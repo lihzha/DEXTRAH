@@ -66,7 +66,13 @@ mkdir -p \
   "$(dirname "$REMOTE_CODE_DIR")" \
   "$(dirname "$REMOTE_FABRICS_DIR")" \
   "$NFS_ROOT/cache" "$NFS_ROOT/envs" "$NFS_ROOT/results/dextrah" \
-  "$NFS_ROOT/slurm_logs/dextrah" "$NFS_ROOT/isaac_cache"
+  "$NFS_ROOT/slurm_logs/dextrah" "$NFS_ROOT/isaac_cache" "$NFS_ROOT/.locks"
+
+exec 9>"$NFS_ROOT/.locks/dextrah_git_sync.lock"
+if ! flock -w 600 9; then
+  echo "Timed out waiting for DEXTRAH git sync lock." >&2
+  exit 2
+fi
 
 if [ ! -d "$REMOTE_CODE_DIR/.git" ]; then
   if [ -e "$REMOTE_CODE_DIR" ]; then
