@@ -1596,6 +1596,281 @@ class DextrahKukaAllegroEnv(DirectRLEnv):
         # Write wrench data to sim
         self.object.write_data_to_sim()
 
+    def _checkpoint_tensor(self, value):
+        if isinstance(value, torch.Tensor):
+            return value.detach().clone().cpu()
+        if isinstance(value, np.ndarray):
+            return value.copy()
+        if isinstance(value, dict):
+            return {key: self._checkpoint_tensor(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [self._checkpoint_tensor(item) for item in value]
+        if isinstance(value, tuple):
+            return tuple(self._checkpoint_tensor(item) for item in value)
+        return value
+
+    def _restore_tensor(self, name: str, value) -> None:
+        if value is None:
+            return
+        if not hasattr(self, name):
+            return
+
+        current_value = getattr(self, name)
+        if isinstance(current_value, torch.Tensor):
+            restored_value = value.to(device=current_value.device, dtype=current_value.dtype)
+            if current_value.shape != restored_value.shape:
+                raise ValueError(
+                    f"Cannot restore {name}: expected shape {tuple(current_value.shape)}, "
+                    f"got {tuple(restored_value.shape)}"
+                )
+            current_value.copy_(restored_value)
+        elif isinstance(current_value, np.ndarray):
+            restored_value = np.asarray(value, dtype=current_value.dtype)
+            if current_value.shape != restored_value.shape:
+                raise ValueError(
+                    f"Cannot restore {name}: expected shape {current_value.shape}, got {restored_value.shape}"
+                )
+            current_value[...] = restored_value
+        elif isinstance(current_value, dict) and isinstance(value, dict):
+            for key, restored_item in value.items():
+                if key not in current_value:
+                    current_value[key] = restored_item
+                    continue
+                current_item = current_value[key]
+                if isinstance(current_item, torch.Tensor):
+                    restored_item = restored_item.to(device=current_item.device, dtype=current_item.dtype)
+                    if current_item.shape != restored_item.shape:
+                        raise ValueError(
+                            f"Cannot restore {name}.{key}: expected shape {tuple(current_item.shape)}, "
+                            f"got {tuple(restored_item.shape)}"
+                        )
+                    current_item.copy_(restored_item)
+                else:
+                    current_value[key] = restored_item
+        else:
+            setattr(self, name, value)
+
+    def _named_checkpoint_tensors(self):
+        return (
+            "episode_length_buf",
+            "reset_terminated",
+            "reset_time_outs",
+            "reset_buf",
+            "reward_buf",
+            "actions",
+            "robot_dof_targets",
+            "dof_pos_targets",
+            "dof_vel_targets",
+            "object_goal",
+            "fabric_q",
+            "fabric_qd",
+            "fabric_qdd",
+            "fabric_q_for_obs",
+            "fabric_qd_for_obs",
+            "fabric_qdd_for_obs",
+            "hand_pca_targets",
+            "palm_pose_targets",
+            "fabric_damping_gain",
+            "hand_to_object_pos_error",
+            "in_success_region",
+            "time_in_success_region",
+            "object_applied_force",
+            "object_applied_torque",
+            "object_pos_bias_width",
+            "object_rot_bias_width",
+            "object_pos_bias",
+            "object_rot_bias",
+            "object_pos_noise_width",
+            "object_rot_noise_width",
+            "robot_joint_pos_bias_width",
+            "robot_joint_vel_bias_width",
+            "robot_joint_pos_bias",
+            "robot_joint_vel_bias",
+            "robot_joint_pos_noise_width",
+            "robot_joint_vel_noise_width",
+            "multi_object_idx",
+            "multi_object_idx_onehot",
+            "object_scale",
+            "total_object_scales",
+            "left_pos",
+            "left_rot",
+            "right_pos",
+            "right_rot",
+            "object_mass",
+            "robot_dof_stiffness",
+            "robot_dof_damping",
+            "robot_material_props",
+            "apply_wrench",
+            "robot_dof_pos",
+            "robot_dof_pos_noisy",
+            "robot_dof_vel",
+            "robot_dof_vel_noisy",
+            "hand_pos",
+            "hand_vel",
+            "hand_pos_noisy",
+            "hand_vel_noisy",
+            "hand_forces",
+            "measured_joint_torque",
+            "object_pos",
+            "object_pos_noisy",
+            "object_rot",
+            "object_rot_noisy",
+            "object_vel",
+            "table_pos",
+            "table_pos_z",
+            "object_to_object_goal_pos_error",
+            "object_vertical_error",
+        )
+
+    def _collect_checkpoint_tensors(self):
+        state = {}
+        for name in self._named_checkpoint_tensors():
+            if hasattr(self, name):
+                state[name] = self._checkpoint_tensor(getattr(self, name))
+        return state
+
+    def _restore_checkpoint_tensors(self, tensor_state) -> None:
+        for name, value in tensor_state.items():
+            self._restore_tensor(name, value)
+
+    def _root_state_w(self, asset):
+        return torch.cat((asset.data.root_pos_w, asset.data.root_quat_w, asset.data.root_vel_w), dim=-1)
+
+    def get_env_state(self):
+        """Return a torch-saveable snapshot for RL-Games checkpoint resume."""
+        sim_state = {
+            "robot_joint_pos": self._checkpoint_tensor(self.robot.data.joint_pos),
+            "robot_joint_vel": self._checkpoint_tensor(self.robot.data.joint_vel),
+            "robot_root_state": self._checkpoint_tensor(self._root_state_w(self.robot)),
+            "object_root_state": self._checkpoint_tensor(self._root_state_w(self.object)),
+            "table_root_state": self._checkpoint_tensor(self._root_state_w(self.table)),
+        }
+
+        try:
+            sim_state["robot_joint_friction"] = self._checkpoint_tensor(
+                self.robot.root_physx_view.get_dof_friction_coefficients()
+            )
+        except Exception:
+            pass
+        try:
+            sim_state["robot_joint_stiffness"] = self._checkpoint_tensor(self.robot.root_physx_view.get_dof_stiffnesses())
+            sim_state["robot_joint_damping"] = self._checkpoint_tensor(self.robot.root_physx_view.get_dof_dampings())
+        except Exception:
+            pass
+        try:
+            sim_state["object_masses"] = self._checkpoint_tensor(self.object.root_physx_view.get_masses())
+        except Exception:
+            pass
+
+        rng_state = {
+            "torch": self._checkpoint_tensor(torch.get_rng_state()),
+            "numpy": self._checkpoint_tensor(np.random.get_state()),
+            "python": random.getstate(),
+        }
+        if torch.cuda.is_available() and str(self.device).startswith("cuda"):
+            rng_state["cuda"] = self._checkpoint_tensor(torch.cuda.get_rng_state(self.device))
+
+        return {
+            "version": 1,
+            "num_envs": self.num_envs,
+            "device": str(self.device),
+            "common_step_counter": self.common_step_counter,
+            "sim_step_counter": self._sim_step_counter,
+            "step_since_last_dr_change": self.step_since_last_dr_change,
+            "adr_increment": self.dextrah_adr.num_increments(),
+            "local_adr_increment": self._checkpoint_tensor(self.local_adr_increment),
+            "global_min_adr_increment": self._checkpoint_tensor(self.global_min_adr_increment),
+            "tensors": self._collect_checkpoint_tensors(),
+            "camera_pose": self._checkpoint_tensor(getattr(self, "camera_pose", None)),
+            "camera_right_pose": self._checkpoint_tensor(getattr(self, "camera_right_pose", None)),
+            "obs_buf": self._checkpoint_tensor(getattr(self, "obs_buf", None)),
+            "sim": sim_state,
+            "rng": rng_state,
+        }
+
+    def set_env_state(self, env_state) -> None:
+        """Restore a snapshot returned by :meth:`get_env_state`."""
+        if env_state is None:
+            return
+        if env_state.get("num_envs") != self.num_envs:
+            raise ValueError(
+                f"Cannot restore env state with num_envs={env_state.get('num_envs')} into num_envs={self.num_envs}"
+            )
+
+        self.common_step_counter = int(env_state.get("common_step_counter", self.common_step_counter))
+        self._sim_step_counter = int(env_state.get("sim_step_counter", self._sim_step_counter))
+        self.step_since_last_dr_change = int(
+            env_state.get("step_since_last_dr_change", self.step_since_last_dr_change)
+        )
+        self.dextrah_adr.set_num_increments(int(env_state.get("adr_increment", self.dextrah_adr.num_increments())))
+        self._restore_tensor("local_adr_increment", env_state.get("local_adr_increment"))
+        self._restore_tensor("global_min_adr_increment", env_state.get("global_min_adr_increment"))
+
+        tensor_state = env_state.get("tensors", {})
+        self._restore_checkpoint_tensors(tensor_state)
+        self._restore_tensor("camera_pose", env_state.get("camera_pose"))
+        self._restore_tensor("camera_right_pose", env_state.get("camera_right_pose"))
+
+        sim_state = env_state.get("sim", {})
+        if "robot_root_state" in sim_state:
+            self.robot.write_root_state_to_sim(sim_state["robot_root_state"].to(self.device))
+        if "robot_joint_pos" in sim_state and "robot_joint_vel" in sim_state:
+            self.robot.write_joint_state_to_sim(
+                sim_state["robot_joint_pos"].to(self.device),
+                sim_state["robot_joint_vel"].to(self.device),
+            )
+        if "robot_joint_stiffness" in sim_state and hasattr(self.robot, "write_joint_stiffness_to_sim"):
+            self.robot.write_joint_stiffness_to_sim(sim_state["robot_joint_stiffness"].to(self.device))
+        if "robot_joint_damping" in sim_state and hasattr(self.robot, "write_joint_damping_to_sim"):
+            self.robot.write_joint_damping_to_sim(sim_state["robot_joint_damping"].to(self.device))
+        if "robot_joint_friction" in sim_state and hasattr(self.robot, "write_joint_friction_coefficient_to_sim"):
+            self.robot.write_joint_friction_coefficient_to_sim(sim_state["robot_joint_friction"].to(self.device))
+        if "object_root_state" in sim_state:
+            self.object.write_root_state_to_sim(sim_state["object_root_state"].to(self.device))
+        if "table_root_state" in sim_state:
+            self.table.write_root_state_to_sim(sim_state["table_root_state"].to(self.device))
+        if "object_masses" in sim_state and hasattr(self.object.root_physx_view, "set_masses"):
+            try:
+                self.object.root_physx_view.set_masses(sim_state["object_masses"].to(self.device))
+            except Exception:
+                pass
+
+        self.robot.set_joint_position_target(
+            self.dof_pos_targets[:, self.actuated_dof_indices],
+            joint_ids=self.actuated_dof_indices,
+        )
+        self.robot.set_joint_velocity_target(
+            self.dof_vel_targets[:, self.actuated_dof_indices],
+            joint_ids=self.actuated_dof_indices,
+        )
+        self.object.set_external_force_and_torque(
+            forces=self.object_applied_force,
+            torques=self.object_applied_torque,
+            body_ids=None,
+            env_ids=None,
+        )
+
+        self.scene.write_data_to_sim()
+        self.object.write_data_to_sim()
+        self.sim.forward()
+        self.scene.update(dt=0.0)
+        self._compute_intermediate_values()
+        self._restore_checkpoint_tensors(tensor_state)
+        self._restore_tensor("obs_buf", env_state.get("obs_buf"))
+
+        rng_state = env_state.get("rng", {})
+        if "torch" in rng_state:
+            torch.set_rng_state(rng_state["torch"].cpu())
+        if "cuda" in rng_state and torch.cuda.is_available() and str(self.device).startswith("cuda"):
+            torch.cuda.set_rng_state(rng_state["cuda"].cpu(), device=self.device)
+        if "numpy" in rng_state:
+            np.random.set_state(rng_state["numpy"])
+        if "python" in rng_state:
+            random.setstate(rng_state["python"])
+
+    def get_current_observations(self):
+        return self._get_observations()
+
     @property
     @functools.lru_cache()
     def hand_pca_lower_limits(self) -> torch.Tensor:

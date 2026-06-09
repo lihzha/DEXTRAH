@@ -9,9 +9,12 @@ runs/
 pretrained_ckpts/
 wandb/
 outputs/
+cluster_logs/
+cluster_results/
 background_imgs/
 dome_light_textures/
 object_textures/
 table_textures/
 curated_table_textures/
 eval_results/
+.DS_Store

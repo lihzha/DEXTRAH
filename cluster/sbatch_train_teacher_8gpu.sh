@@ -1,0 +1,237 @@
+#!/bin/bash
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --account=nvr_lpr_rvp
+#SBATCH --gpus-per-node=8
+#SBATCH --job-name=dextrah_teacher_8gpu
+#SBATCH --partition=batch_singlenode,grizzly,polar,polar3,polar4,interactive_singlenode
+#SBATCH --time=0-03:50:00
+#SBATCH --mem=0
+#SBATCH --cpus-per-task=64
+#SBATCH --output=/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_%j.out
+#SBATCH --signal=B:TERM@300
+
+set -euo pipefail
+
+NFS_ROOT="${NFS_ROOT:-/lustre/fsw/portfolios/nvr/users/lzha}"
+CODE_NFS="${CODE_NFS:-$NFS_ROOT/src/DEXTRAH}"
+FABRICS_NFS="${FABRICS_NFS:-$NFS_ROOT/src/FABRICS}"
+ISAACLAB_NFS="${ISAACLAB_NFS:-$NFS_ROOT/src/IsaacLab-v2.2.1}"
+IMAGE="${IMAGE:-$NFS_ROOT/cache/isaac_lab_2.2.0.sqsh}"
+ENV_ROOT="${ENV_ROOT:-$NFS_ROOT/envs}"
+ENV_NAME="${ENV_NAME:-dextrah-isaaclab}"
+RESULTS_NFS="${RESULTS_NFS:-$NFS_ROOT/results/dextrah}"
+CACHE_NFS="${CACHE_NFS:-$NFS_ROOT/isaac_cache}"
+
+NPROC_PER_NODE="${NPROC_PER_NODE:-8}"
+NUM_NODES="${NUM_NODES:-1}"
+NUM_ENVS="${NUM_ENVS:-4096}"
+USE_CUDA_GRAPH="${USE_CUDA_GRAPH:-True}"
+MASTER_PORT="${MASTER_PORT:-$((10000 + ${SLURM_JOB_ID: -4}))}"
+MAX_ITERATIONS="${MAX_ITERATIONS:-}"
+DISTRIBUTED="${DISTRIBUTED:-True}"
+MULTI_GPU="${MULTI_GPU:-True}"
+MINIBATCH_SIZE="${MINIBATCH_SIZE:-16384}"
+CENTRAL_VALUE_MINIBATCH_SIZE="${CENTRAL_VALUE_MINIBATCH_SIZE:-$MINIBATCH_SIZE}"
+LEARNING_RATE="${LEARNING_RATE:-0.0001}"
+HORIZON_LENGTH="${HORIZON_LENGTH:-16}"
+MINI_EPOCHS="${MINI_EPOCHS:-4}"
+SAVE_FREQUENCY="${SAVE_FREQUENCY:-10}"
+AUTO_RESUME="${AUTO_RESUME:-True}"
+CHECKPOINT="${CHECKPOINT:-}"
+FULL_EXPERIMENT_NAME="${FULL_EXPERIMENT_NAME:-}"
+SELF_RELAUNCH="${SELF_RELAUNCH:-True}"
+RUN_NAME="${FULL_EXPERIMENT_NAME:-slurm_${SLURM_JOB_ID}}"
+LOG_FILE="$NFS_ROOT/slurm_logs/dextrah/teacher_8gpu_${SLURM_JOB_ID}.out"
+SRUN_PID=""
+REQUEUE_SUBMITTED=0
+
+requeue_job() {
+  local reason="${1:-signal}"
+  if [ "$SELF_RELAUNCH" != "True" ]; then
+    echo "SELF_RELAUNCH=$SELF_RELAUNCH; not requeuing job"
+    return 0
+  fi
+
+  if [ "$REQUEUE_SUBMITTED" = "1" ]; then
+    return 0
+  fi
+  REQUEUE_SUBMITTED=1
+
+  echo "Requeuing DEXTRAH job ${SLURM_JOB_ID} for run $RUN_NAME after $reason"
+  scontrol requeue "$SLURM_JOB_ID" || true
+}
+
+handle_signal() {
+  local signal_name="$1"
+
+  requeue_job "$signal_name"
+
+  if [ -n "$SRUN_PID" ]; then
+    echo "Forwarding $signal_name to srun pid $SRUN_PID"
+    kill "-$signal_name" "$SRUN_PID" 2>/dev/null || true
+  fi
+
+  if [ "$signal_name" = "INT" ]; then
+    exit 130
+  fi
+  exit 15
+}
+
+trap 'handle_signal TERM' TERM
+trap 'handle_signal INT' INT
+
+if [ ! -f "$IMAGE" ]; then
+  echo "Missing Isaac Lab container image: $IMAGE"
+  echo "Submit cluster/sbatch_import_isaaclab_sqsh.sh first."
+  exit 2
+fi
+if [ ! -d "$ENV_ROOT/$ENV_NAME/site" ]; then
+  echo "Missing DEXTRAH Python target: $ENV_ROOT/$ENV_NAME/site"
+  echo "Submit cluster/sbatch_setup_dextrah_env.sh first."
+  exit 2
+fi
+
+mkdir -p \
+  "$RESULTS_NFS/logs" \
+  "$NFS_ROOT/slurm_logs/dextrah" \
+  "$CACHE_NFS/kit" "$CACHE_NFS/ov" "$CACHE_NFS/pip" \
+  "$CACHE_NFS/glcache" "$CACHE_NFS/computecache" \
+  "$CACHE_NFS/omni_logs" "$CACHE_NFS/carb_logs" \
+  "$CACHE_NFS/data" "$CACHE_NFS/documents"
+
+echo "Running DextrAH privileged FGP teacher training"
+echo "SLURM_JOB_ID=$SLURM_JOB_ID"
+echo "IMAGE=$IMAGE"
+echo "CODE_NFS=$CODE_NFS"
+echo "FABRICS_NFS=$FABRICS_NFS"
+echo "ISAACLAB_NFS=$ISAACLAB_NFS"
+echo "RESULTS_NFS=$RESULTS_NFS"
+echo "NPROC_PER_NODE=$NPROC_PER_NODE"
+echo "NUM_ENVS=$NUM_ENVS"
+echo "MASTER_PORT=$MASTER_PORT"
+echo "DISTRIBUTED=$DISTRIBUTED"
+echo "MULTI_GPU=$MULTI_GPU"
+echo "SAVE_FREQUENCY=$SAVE_FREQUENCY"
+echo "AUTO_RESUME=$AUTO_RESUME"
+echo "CHECKPOINT=$CHECKPOINT"
+echo "FULL_EXPERIMENT_NAME=$FULL_EXPERIMENT_NAME"
+echo "SELF_RELAUNCH=$SELF_RELAUNCH"
+echo "RUN_NAME=$RUN_NAME"
+
+srun \
+  --ntasks=1 \
+  --container-image="$IMAGE" \
+  --container-mounts=/dev/shm:/dev/shm,"$CODE_NFS":/code,"$FABRICS_NFS":/fabrics,"$ISAACLAB_NFS":/IsaacLab,"$ENV_ROOT":/envs,"$RESULTS_NFS":/results,"$CACHE_NFS/kit":/isaac-sim/kit/cache,"$CACHE_NFS/ov":/root/.cache/ov,"$CACHE_NFS/pip":/root/.cache/pip,"$CACHE_NFS/glcache":/root/.cache/nvidia/GLCache,"$CACHE_NFS/computecache":/root/.nv/ComputeCache,"$CACHE_NFS/omni_logs":/root/.nvidia-omniverse/logs,"$CACHE_NFS/carb_logs":/isaac-sim/kit/logs/Kit/Isaac-Sim,"$CACHE_NFS/data":/root/.local/share/ov/data,"$CACHE_NFS/documents":/root/Documents \
+  --no-container-entrypoint \
+  --container-remap-root \
+  --container-writable \
+  --export=ALL,PYTHONUNBUFFERED=1,HYDRA_FULL_ERROR=1,PYTHONFAULTHANDLER=1,TORCH_SHOW_CPP_STACKTRACES=1,NCCL_DEBUG=INFO,ACCEPT_EULA=Y,PRIVACY_CONSENT=Y \
+  bash -lc "
+    set -euxo pipefail
+    export SITE='/envs/$ENV_NAME/site'
+    export PYTHONPATH=\"\$SITE:/code:/fabrics/src\"
+    for d in /IsaacLab/source/*; do
+      if [ -d \"\$d\" ]; then
+        export PYTHONPATH=\"\$d:\$PYTHONPATH\"
+      fi
+    done
+    export MASTER_ADDR=127.0.0.1
+    export MASTER_PORT='$MASTER_PORT'
+    export WANDB_MODE=offline
+    export DEXTRAH_AUTO_RESUME='$AUTO_RESUME'
+    export DEXTRAH_RUN_NAME='$RUN_NAME'
+    export DEXTRAH_LOG_ROOT=/results/logs
+    mkdir -p /isaac-sim/kit/data/Kit/Isaac-Sim/5.0/pip3-envs/default
+    mkdir -p /results/logs
+
+    cd /code/dextrah_lab/rl_games
+
+    /isaac-sim/python.sh - <<'PY'
+import sys
+import torch
+import isaaclab
+import fabrics_sim
+import dextrah_lab
+print('python', sys.version)
+print('torch', torch.__version__, 'cuda_available', torch.cuda.is_available(), 'device_count', torch.cuda.device_count())
+print('isaaclab', isaaclab.__file__)
+print('fabrics_sim', fabrics_sim.__file__)
+print('dextrah_lab', dextrah_lab.__file__)
+PY
+
+    MAX_ITER_ARGS=()
+    if [ -n '$MAX_ITERATIONS' ]; then
+      MAX_ITER_ARGS=(--max_iterations '$MAX_ITERATIONS')
+    fi
+
+    DISTRIBUTED_ARGS=()
+    if [ '$DISTRIBUTED' = 'True' ]; then
+      DISTRIBUTED_ARGS=(--distributed)
+    fi
+
+    RESUME_ARGS=()
+    if [ -n '$CHECKPOINT' ]; then
+      RESUME_ARGS=(--checkpoint '$CHECKPOINT')
+    elif [ '$AUTO_RESUME' = 'True' ]; then
+      RESUME_ARGS=(--auto_resume)
+    fi
+
+    TRAIN_ARGS=(
+      train.py \
+        --headless \
+        --task=Dextrah-Kuka-Allegro \
+        --seed -1 \
+        \"\${DISTRIBUTED_ARGS[@]}\" \
+        \"\${RESUME_ARGS[@]}\" \
+        --num_envs '$NUM_ENVS' \
+        \"\${MAX_ITER_ARGS[@]}\" \
+        agent.params.config.minibatch_size='$MINIBATCH_SIZE' \
+        agent.params.config.central_value_config.minibatch_size='$CENTRAL_VALUE_MINIBATCH_SIZE' \
+        agent.params.config.learning_rate='$LEARNING_RATE' \
+        agent.params.config.horizon_length='$HORIZON_LENGTH' \
+        agent.params.config.mini_epochs='$MINI_EPOCHS' \
+        agent.params.config.save_frequency='$SAVE_FREQUENCY' \
+        agent.params.config.multi_gpu='$MULTI_GPU' \
+        agent.wandb_activate=False \
+        env.success_for_adr=0.4 \
+        env.objects_dir=visdex_objects \
+        'env.adr_custom_cfg_dict.fabric_damping.gain=[10.0, 20.0]' \
+        'env.adr_custom_cfg_dict.reward_weights.finger_curl_reg=[-0.01, -0.01]' \
+        'env.adr_custom_cfg_dict.reward_weights.lift_weight=[5.0, 0.0]' \
+        env.max_pose_angle=45.0 \
+        env.use_cuda_graph='$USE_CUDA_GRAPH'
+    )
+
+    if [ '$DISTRIBUTED' = 'True' ]; then
+      /isaac-sim/python.sh -m torch.distributed.run \
+        --nnodes='$NUM_NODES' \
+        --nproc_per_node='$NPROC_PER_NODE' \
+        --master_addr=127.0.0.1 \
+        --master_port='$MASTER_PORT' \
+        \"\${TRAIN_ARGS[@]}\"
+    else
+      /isaac-sim/python.sh \"\${TRAIN_ARGS[@]}\"
+    fi
+  " &
+SRUN_PID=$!
+set +e
+wait "$SRUN_PID"
+SRUN_EXIT=$?
+set -e
+
+if [ "$SRUN_EXIT" -ge 128 ]; then
+  echo "srun killed by signal $((SRUN_EXIT - 128)) (exit $SRUN_EXIT)"
+  requeue_job "srun_exit_$SRUN_EXIT"
+  exit 15
+elif [ "$SRUN_EXIT" -ne 0 ]; then
+  echo "srun exited with code $SRUN_EXIT (training error), NOT requeuing."
+  exit "$SRUN_EXIT"
+fi
+
+if [ -f "$LOG_FILE" ] && grep -E "Traceback|RuntimeError:|Error executing job with overrides|ChildFailedError|Could not execute <function load" "$LOG_FILE" >/dev/null; then
+  echo "Detected training error patterns in $LOG_FILE despite zero srun exit; NOT requeuing."
+  exit 1
+fi
+
+echo "Training Done"
