@@ -448,6 +448,27 @@ Result:
   `stash@{0}: On main: pre-git-sync-20260609_133607`.
 - Added a shared remote lock in `cluster/sync_to_a1001.sh` so a1001/l401
   submit helpers do not race on the same NFS checkout.
+
+## 2026-06-09 - remote stash cleanup
+
+Goal:
+- Remove outdated remote backup state after confirming the DEXTRAH source tree
+  is preserved in Git.
+
+Version Control:
+- branch: `codex/dextrah-cluster-dev`
+- base_commit: `7acb9137c4f30d6d7809676f99bbbbea62a207c9`
+- implementation_commit: pending
+
+Change:
+- Removed the shared remote stash
+  `stash@{0}: On main: pre-git-sync-20260609_133607`.
+- Checked for the unneeded remote `skills/` directory; it was not present in
+  the active checkout.
+
+Result:
+- status: passed
+- The shared remote checkout stayed clean on `codex/dextrah-cluster-dev`.
 - Latest local video:
   - `cluster_results/l401/clutter_bin_gpu_sphere160_g5_settled_20260609_092732/overview.mp4`
 
