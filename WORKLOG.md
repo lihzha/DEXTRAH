@@ -315,6 +315,61 @@ Next:
   and a separate debug run name, then inspect logs for direct `/results/logs`
   checkpoint load, runtime restore, and absence of tracebacks.
 
+## 2026-06-09 13:35 PDT - Bounded 8-GPU Resume Smoke After Path Fix
+
+Goal:
+- Validate that the path fix resolves the production resume failure in the full
+  8-GPU Isaac environment, not only in a lightweight checkpoint-load diagnostic.
+
+Hypothesis:
+- With `DEXTRAH_LOG_ROOT=/results/logs` and an explicit `/results/logs/...`
+  checkpoint path, the checkpoint should remain resolvable after scene setup and
+  all ranks should restore runtime state instead of failing with `Errno 2`.
+
+Change:
+- No additional code change after the path/log-guard patch.
+- Launched a bounded resume smoke with a separate debug run name so the
+  production run directory was not overwritten.
+
+Command / Job:
+- command: `ssh a1001 'cd /lustre/fsw/portfolios/nvr/users/lzha/src/DEXTRAH && sbatch --parsable --export=ALL,FULL_EXPERIMENT_NAME=resume_path_debug_20260609_132025,CHECKPOINT=/results/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021/nn/last_dextrah_lstm_ep_510_rew_176.34055.pth,MAX_ITERATIONS=511,AUTO_RESUME=False,SELF_RELAUNCH=False cluster/sbatch_train_teacher_8gpu.sh'`
+- job_id: `28900470`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/resume_path_debug_20260609_132025`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28900470.out`
+- artifacts: `nn/dextrah_lstm.pth`,
+  `nn/last_dextrah_lstm_ep_511_rew__181.58945_.pth`,
+  `summaries/events.out.tfevents.1781037260.batch-block5-00279`
+
+Result:
+- status: passed
+- metrics/artifacts: Slurm state `COMPLETED`, elapsed `00:13:23`, exit `0:0`.
+  The debug run saved epoch-511 checkpoint with reward `181.58945`.
+- key evidence: all eight ranks used log root `/results/logs/rl_games/dextrah_lstm`
+  and loaded checkpoint
+  `/results/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021/nn/last_dextrah_lstm_ep_510_rew_176.34055.pth`.
+- key evidence: all eight ranks logged
+  `[DEXTRAH resume] restored runtime state ... at epoch 510`.
+- key evidence: epoch `511/511` ran with `fps total: 48985`, then saved
+  `last_dextrah_lstm_ep_511_rew__181.58945_.pth`.
+- key evidence: error scan found no `Exception ... trying`, `Traceback`,
+  `RuntimeError`, `No such file`, `Could not execute`, or wrapper
+  `Detected training error` patterns.
+
+Analysis:
+- The old production resume failure is explained by the shared `/code/.../logs`
+  path, not by the checkpoint itself. The fixed absolute `/results/logs` path
+  survives full scene setup and RL-Games restore.
+- The wrapper's new log guard was not triggered in this smoke, but it protects
+  future runs from false `COMPLETED` states if rank-level errors return through
+  `srun` as zero.
+- There are currently no `lzha` jobs queued or running on `a1001`.
+
+Next:
+- Relaunch the actual production run from
+  `teacher_short_20260609_100021` with the corrected script when ready. Use the
+  same all-partition 8-GPU script and `SELF_RELAUNCH=True` for wall-time
+  continuation.
+
 ## 2026-06-09 - clutter-bin visualization cleanup
 
 Goal:
@@ -369,7 +424,7 @@ Version Control:
 - base_commit: `ebc08edafe5f7c5ad73dcb25ffa15e8d0353df50`
 - fork: `git@github.com:lihzha/DEXTRAH.git`
 - upstream: `https://github.com/NVlabs/DEXTRAH.git`
-- implementation_commit: pending
+- implementation_commit: `62306bf`
 
 Change:
 - Created the `lihzha/DEXTRAH` fork because local `origin` pointed at the
@@ -383,7 +438,7 @@ Change:
 
 Result:
 - status: pending remote pull
-- Next step is to commit/push this branch and fast-forward both a1001 and l401
+- Next step is to push this branch and fast-forward both a1001 and l401
   checkouts to the pushed commit.
 - Latest local video:
   - `cluster_results/l401/clutter_bin_gpu_sphere160_g5_settled_20260609_092732/overview.mp4`
