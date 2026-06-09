@@ -424,7 +424,7 @@ Version Control:
 - base_commit: `ebc08edafe5f7c5ad73dcb25ffa15e8d0353df50`
 - fork: `git@github.com:lihzha/DEXTRAH.git`
 - upstream: `https://github.com/NVlabs/DEXTRAH.git`
-- implementation_commit: `62306bf`
+- implementation_commits: `62306bf`, `8618bed`, `d95861e`, `b91dcb9`
 
 Change:
 - Created the `lihzha/DEXTRAH` fork because local `origin` pointed at the
@@ -437,9 +437,17 @@ Change:
   artifacts remain outside Git.
 
 Result:
-- status: pending remote pull
-- Next step is to push this branch and fast-forward both a1001 and l401
-  checkouts to the pushed commit.
+- status: passed
+- Pushed `codex/dextrah-cluster-dev` to `git@github.com:lihzha/DEXTRAH.git`.
+- Fast-forwarded the shared remote checkout through the Git sync helper:
+  - remote path: `/lustre/fsw/portfolios/nvr/users/lzha/src/DEXTRAH`
+  - branch: `codex/dextrah-cluster-dev`
+  - remote commit: `b91dcb94f4e3a2012bfedbc523419b177818acc2`
+  - verified from: `l401`, `a1001`
+- Preserved the pre-Git rsync-era dirty remote state as
+  `stash@{0}: On main: pre-git-sync-20260609_133607`.
+- Added a shared remote lock in `cluster/sync_to_a1001.sh` so a1001/l401
+  submit helpers do not race on the same NFS checkout.
 - Latest local video:
   - `cluster_results/l401/clutter_bin_gpu_sphere160_g5_settled_20260609_092732/overview.mp4`
 
