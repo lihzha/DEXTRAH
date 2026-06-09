@@ -107,7 +107,7 @@ if [ "$remote_head" != "$LOCAL_HEAD" ]; then
   exit 2
 fi
 if git lfs version >/dev/null 2>&1; then
-  git lfs install --local
+  git lfs install --local --force
   git lfs pull
 else
   echo "Warning: git-lfs is not installed on $(hostname); skipping git lfs pull." >&2
@@ -131,7 +131,7 @@ else
     git pull --ff-only origin "$FABRICS_BRANCH"
   fi
   if git lfs version >/dev/null 2>&1; then
-    git lfs install --local
+    git lfs install --local --force
     git lfs pull
   fi
 fi
