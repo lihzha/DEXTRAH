@@ -3708,3 +3708,41 @@ Current Status:
 Next:
 - Wait for validation metrics and video artifacts, fetch and inspect them, and
   launch the next 8-GPU PPO only if the validation passes.
+
+## 2026-06-10 05:31 PDT - Franka Star Stability-Gated Validation Passed
+
+Goal:
+- Confirm the stability-gated close/grasp/lift rewards do not regress scripted
+  lift feasibility or the environment safety gates before launching PPO.
+
+Evidence:
+- validation job_id: `28934642`, run
+  `franka_star_env_validate_stabilitygate_20260610_051853`.
+- source behavior commit: `c4e54478226ceed62057619fd3fac9d93b72cb90`;
+  current worklog-only remote HEAD at inspection:
+  `86cde75b54d8244863f6f55e3a1c90e86326a609`.
+- Slurm status: completed `0:0`, elapsed `00:01:20`.
+- all `32` validation checks passed.
+- hard gate metrics: `max_pretransport_star_initial_xy_error=0.02956`,
+  `validation_lifted_rate=0.5`, `max_star_lift_height=0.07345`.
+- diagnostic late unlifted drag remained visible but outside the hard
+  pre-transport gate: `max_unlifted_late_drag_xy_error=0.09897`.
+- local artifacts fetched under
+  `cluster_results/a1001/franka_star_env_validate_stabilitygate_20260610_051853`.
+- validation video is playable and nonblank:
+  `1280x720`, `179` frames, `2.98s`, `60 FPS`; contact sheet visually shows
+  the Franka, star, fixture, and scripted grasp/lift motion.
+
+Analysis:
+- The latest reward patch preserves the corrected environment geometry and
+  scripted lift feasibility while preventing early close/grasp/lift credit from
+  being collected after excessive pre-lift XY drift.
+- PPO can now be relaunched with the stable DEXTRAH rl_games setup, keeping
+  the previous conservative star-kitting hyperparameters but using the
+  stability-gated reward source.
+
+Next:
+- Launch 8-GPU PPO with `NUM_ENVS=2048`, `HORIZON_LENGTH=64`,
+  `LEARNING_RATE=1e-4`, `CENTRAL_VALUE_LEARNING_RATE=8e-5`,
+  `ENTROPY_COEF=0.004`, `MAX_ITERATIONS=600`, `SELF_RELAUNCH=False`, then
+  monitor reward terms and request early eval videos at saved checkpoints.
