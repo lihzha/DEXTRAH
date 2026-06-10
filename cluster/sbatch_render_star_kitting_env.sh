@@ -32,6 +32,13 @@ else
   RESULT_SUBDIR="${RESULT_SUBDIR:-star_kitting_env}"
   RUN_NAME="${RUN_NAME:-star_kitting_${SLURM_JOB_ID:-manual}}"
 fi
+if [ -z "${FRANKA_RENDER_MODE:-}" ]; then
+  if [ "$SCENE" = "cube_motion" ]; then
+    FRANKA_RENDER_MODE="static_urdf_obj_meshes"
+  else
+    FRANKA_RENDER_MODE="articulation_usd"
+  fi
+fi
 OUT_DIR="$RESULTS_NFS/$RESULT_SUBDIR/$RUN_NAME"
 
 if [ ! -f "$IMAGE" ]; then
@@ -77,7 +84,7 @@ echo "SCENE=$SCENE"
 echo "ROBOT=$ROBOT"
 echo "GRASPGENX_NFS=$GRASPGENX_NFS"
 echo "CUROBO_ASSETS_NFS=$CUROBO_ASSETS_NFS"
-echo "FRANKA_RENDER_MODE=${FRANKA_RENDER_MODE:-static_urdf_obj_meshes}"
+echo "FRANKA_RENDER_MODE=$FRANKA_RENDER_MODE"
 echo "FRANKA_USD=${FRANKA_USD:-}"
 echo "FRANKA_SCENE_YAW_DEG=${FRANKA_SCENE_YAW_DEG:-180.0}"
 
@@ -116,7 +123,7 @@ srun \
       --robot \"$ROBOT\" \
       --graspgenx_root /graspgenx \
       --curobo_assets_root /curobo_assets \
-      --franka_render_mode \"${FRANKA_RENDER_MODE:-static_urdf_obj_meshes}\" \
+      --franka_render_mode \"$FRANKA_RENDER_MODE\" \
       --franka_usd \"${FRANKA_USD:-}\" \
       --franka_scene_yaw_deg \"${FRANKA_SCENE_YAW_DEG:-180.0}\" \
       --seed \"${SEED:-23}\" \

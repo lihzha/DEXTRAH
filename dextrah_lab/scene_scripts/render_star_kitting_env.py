@@ -73,8 +73,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--franka_render_mode",
         choices=("static_urdf_obj_meshes", "articulation_usd"),
-        default="static_urdf_obj_meshes",
-        help="Render GraspGenX Franka as static URDF OBJ meshes, or opt into an Isaac Lab articulation.",
+        default=None,
+        help="Render GraspGenX Franka as static URDF OBJ meshes or an Isaac Lab articulation.",
     )
     parser.add_argument(
         "--franka_usd",
@@ -735,7 +735,10 @@ def _resolve_graspgenx_franka_robot(output_dir: Path) -> RobotSpec:
     joint_positions["panda_finger_joint1"] = 0.04
     joint_positions["panda_finger_joint2"] = 0.04
 
-    render_mode = str(args_cli.franka_render_mode)
+    render_mode = str(
+        args_cli.franka_render_mode
+        or ("static_urdf_obj_meshes" if args_cli.scene == "cube_motion" else "articulation_usd")
+    )
     if render_mode == "static_urdf_obj_meshes":
         return RobotSpec(
             name="graspgenx_franka_panda",
