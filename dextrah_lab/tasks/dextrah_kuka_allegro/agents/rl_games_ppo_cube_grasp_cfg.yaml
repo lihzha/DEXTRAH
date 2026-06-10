@@ -51,23 +51,23 @@ params:
     reward_shaper:
       scale_value: 0.01
     normalize_advantage: True
-    gamma: 0.99
+    gamma: 0.995
     tau: 0.95
-    learning_rate: 3e-4
+    learning_rate: 2e-4
     lr_schedule: adaptive
     schedule_type: standard
-    kl_threshold: 0.016
+    kl_threshold: 0.012
     score_to_win: 100000
     max_epochs: 10000
     save_best_after: 100
-    save_frequency: 50
+    save_frequency: 25
     print_stats: True
     grad_norm: 1.0
-    entropy_coef: 0.001
+    entropy_coef: 0.0005
     truncate_grads: True
     e_clip: 0.2
-    horizon_length: 16
-    minibatch_size: 16384
+    horizon_length: 32
+    minibatch_size: 32768
     mini_epochs: 4
     critic_coef: 4
     clip_value: True
@@ -76,10 +76,10 @@ params:
     bounds_loss_coef: 0.001
 
     central_value_config:
-      minibatch_size: 16384
+      minibatch_size: 32768
       mini_epochs: 4
       learning_rate: 1e-4
-      kl_threshold: 0.016
+      kl_threshold: 0.012
       clip_value: True
       normalize_input: True
       truncate_grads: True

@@ -88,6 +88,12 @@ def parse_args() -> argparse.Namespace:
         help="Yaw applied to the GraspGenX Franka base pose so the arm faces the DEXTRAH table.",
     )
     parser.add_argument(
+        "--franka_base_z_offset",
+        type=float,
+        default=0.2,
+        help="Vertical offset added to the GraspGenX Franka base pose.",
+    )
+    parser.add_argument(
         "--franka_motion",
         choices=("hold", "all_directions"),
         default="hold",
@@ -179,6 +185,7 @@ class RobotSpec:
     source_base_translation: tuple[float, float, float] | None = None
     source_base_quaternion_xyzw: tuple[float, float, float, float] | None = None
     scene_yaw_deg: float | None = None
+    base_z_offset: float = 0.0
     actuator_config: dict[str, dict[str, object]] | None = None
 
 
@@ -717,10 +724,16 @@ def _resolve_graspgenx_franka_robot(output_dir: Path) -> RobotSpec:
     )
 
     base_pose = cfg.get("robot_base_pose", {})
-    base_translation = _as_float_tuple(
+    source_base_translation = _as_float_tuple(
         base_pose.get("translation", [0.0, 0.0, 0.0]),
         length=3,
         field_name="robot_base_pose.translation",
+    )
+    franka_base_z_offset = float(args_cli.franka_base_z_offset)
+    base_translation = (
+        float(source_base_translation[0]),
+        float(source_base_translation[1]),
+        float(source_base_translation[2]) + franka_base_z_offset,
     )
     base_quat = _as_float_tuple(
         base_pose.get("quaternion_xyzw", [0.0, 0.0, 0.0, 1.0]),
@@ -765,6 +778,9 @@ def _resolve_graspgenx_franka_robot(output_dir: Path) -> RobotSpec:
             default_joint_position=default_joint_position,
             joint_names=joint_names,
             joint_positions=joint_positions,
+            source_base_translation=source_base_translation,  # type: ignore[arg-type]
+            source_base_quaternion_xyzw=base_quat,  # type: ignore[arg-type]
+            base_z_offset=franka_base_z_offset,
         )
 
     scene_yaw_deg = float(args_cli.franka_scene_yaw_deg)
@@ -818,9 +834,10 @@ def _resolve_graspgenx_franka_robot(output_dir: Path) -> RobotSpec:
         default_joint_position=default_joint_position,
         joint_names=joint_names,
         joint_positions=joint_positions,
-        source_base_translation=base_translation,  # type: ignore[arg-type]
+        source_base_translation=source_base_translation,  # type: ignore[arg-type]
         source_base_quaternion_xyzw=base_quat,  # type: ignore[arg-type]
         scene_yaw_deg=scene_yaw_deg,
+        base_z_offset=franka_base_z_offset,
         actuator_config=actuator_config,
     )
 
@@ -996,6 +1013,7 @@ def _robot_metadata(robot: RobotSpec) -> dict[str, object]:
             list(robot.source_base_quaternion_xyzw) if robot.source_base_quaternion_xyzw else None
         ),
         "scene_yaw_deg": robot.scene_yaw_deg,
+        "base_z_offset": robot.base_z_offset,
         "joint_names": robot.joint_names,
         "default_joint_position": robot.default_joint_position,
         "joint_positions": robot.joint_positions,

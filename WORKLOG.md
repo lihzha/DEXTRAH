@@ -1605,3 +1605,29 @@ Analysis:
   actuated Franka path instead of static URDF meshes, commands actuator targets
   throughout the capture, and produces a video with visible motion in all three
   Cartesian axes.
+
+## 2026-06-09 22:38 PDT - Franka Height and Cube PPO Launch Prep
+
+Goal:
+- Raise the GraspGenX Franka base by 0.2 m in the star-kitting/cube-motion
+  render script.
+- Launch a state-based PPO training run for `Dextrah-Cube-Grasp` on one
+  8-GPU node.
+
+Change:
+- Added `--franka_base_z_offset` with default `0.2` and persisted the source
+  and raised base poses in render metadata.
+- Forwarded `FRANKA_BASE_Z_OFFSET` through
+  `cluster/sbatch_render_star_kitting_env.sh`.
+- Updated the cube PPO profile for the single-cube grasp/lift task:
+  `num_envs=4096`, `horizon_length=32`, `minibatch_size=32768`,
+  `mini_epochs=4`, `learning_rate=2e-4`, `central_value_lr=1e-4`,
+  `gamma=0.995`, `tau=0.95`, `kl_threshold=0.012`,
+  `entropy_coef=5e-4`, `e_clip=0.2`, `grad_norm=1.0`.
+
+Command / Job:
+- planned launch:
+  `TASK=Dextrah-Cube-Grasp NUM_ENVS=4096 MAX_ITERATIONS=6000 DISTRIBUTED=True MULTI_GPU=True USE_CUDA_GRAPH=True sbatch --export=ALL cluster/sbatch_train_teacher_8gpu.sh`
+
+Result:
+- status: validation and launch pending.
