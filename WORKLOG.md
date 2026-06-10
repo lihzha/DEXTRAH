@@ -3428,3 +3428,46 @@ Next:
 - Commit/push, update A100, rerun the Franka star environment validation from
   the patched reward code, and launch the next PPO run only if validation
   passes.
+
+## 2026-06-10 04:45 PDT - Franka Star Grasp Reward Validation Passed
+
+Goal:
+- Revalidate the Franka star environment after the grasp-discovery reward patch
+  and before relaunching PPO.
+
+Evidence:
+- first validation attempt after reward patch: job_id `28933751`, run
+  `franka_star_env_validate_graspreward_20260610_043721`, source commit
+  `679359e00f995adb72ebcc35a18743163b713411`.
+- reward sanity checks and scripted lift feasibility passed, but the old
+  pre-lift drift gate failed due late failed-controller drag in a non-lifted
+  env: phase `0.916`, gripper command `-1.0`, target already at fixture,
+  `star_initial_xy_error=0.09897`, `star_lift_height=0.00089`.
+- validation gate fix: commit `590e8413400deb7cb8737ae098910f409c0418ce`,
+  separating hard pre-transport stability from diagnostic late unlifted drag.
+- validation retry: job_id `28933812`, run
+  `franka_star_env_validate_graspreward2_20260610_044242`, source commit
+  `590e8413400deb7cb8737ae098910f409c0418ce`.
+- status: passed metrics gate, Slurm exit `0:0`, elapsed `00:01:10`.
+- hard gate metrics: `max_pretransport_star_initial_xy_error=0.02956`,
+  `validation_lifted_rate=0.5`, `max_star_lift_height=0.07345`.
+- per-env max lift heights:
+  `[0.00354284, 0.14143163, 0.14175844, 0.02116644]`.
+- diagnostic late unlifted drag remained visible:
+  `max_unlifted_late_drag_xy_error=0.09897`.
+- local artifacts fetched under
+  `cluster_results/a1001/franka_star_env_validate_graspreward2_20260610_044242`.
+- validation video is nonblank and playable:
+  `1280x720`, `179` frames, `2.98s`, `60 FPS`.
+
+Analysis:
+- The patched reward terms are valid and the environment remains physically
+  feasible for lift.
+- The earlier drift failure was a validation-controller diagnostic, not a
+  reset/pre-grasp environment regression; it is now logged without blocking
+  training.
+
+Next:
+- Launch the second fixed-curriculum PPO run from commit `590e841`, monitor
+  grasp/lift discovery metrics, and request sidecar eval videos at early
+  checkpoints.
