@@ -2285,6 +2285,102 @@ Next:
 - Commit, push, update `a1001`, and relaunch the overhead eval from the same
   epoch-225 checkpoint.
 
+## 2026-06-10 01:31 PDT - Close Overhead Eval Video
+
+Goal:
+- Produce a usable close overhead rollout video while keeping training job
+  `28930031` running.
+
+Hypothesis:
+- The first overhead video used 4 envs and a high top-down camera, so it framed
+  the clone grid rather than the hand/cube clearly. A single-env eval with a
+  lower overhead camera should provide a clear rollout video without changing
+  training.
+
+Command / Job:
+- eval job_id: `28930752`
+- eval run_name: `cube_grasp_static_eval_ep300_overhead_close_20260610_012633`
+- checkpoint:
+  `/results/logs/rl_games/dextrah_cube_grasp/cube_grasp_static_ppo_opt8gpu_20260610_004351/nn/last_dextrah_cube_grasp_ep_300_rew_1617.5892.pth`
+- camera: eye `(-0.55, 0.10, 0.85)`, target `(-0.55, 0.10, 0.25)`
+- num_envs: `1`
+- video:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/cube_grasp_static_eval_ep300_overhead_close_20260610_012633/videos/cube-grasp-eval-overhead-close-step-0.mp4`
+- local copy:
+  `cluster_results/a1001/cube_grasp_static_eval_ep300_overhead_close_20260610_012633/videos/cube-grasp-eval-overhead-close-step-0.mp4`
+
+Result:
+- status: eval completed successfully.
+- Slurm state: `COMPLETED`, elapsed `00:02:25`, exit `0:0`.
+- video validation: `1280x720`, `600` frames, `10.0s`, `60 FPS`.
+- visual validation: extracted middle/final frames show the end-effector and
+  cube clearly from overhead.
+- metrics:
+  - `reward_mean=2.97221122721831`
+  - `reward_final=1.0069568157196045`
+  - `success_rate_mean=0.0`
+  - `success_rate_final=0.0`
+  - `max_cube_lift_height=0.016946882009506226`
+  - `min_hand_to_cube_mean_dist=0.054815080016851425`
+- training monitor: job `28930031` remained running through at least epoch
+  `346/6000`, with best reward reaching about `1657.7869`.
+
+Analysis:
+- The policy is contacting/approaching better than earlier evals, but it is
+  still not grasping/lifting to the success threshold. The max lift is about
+  `1.7 cm`, far below the `12 cm` success lift threshold.
+- For future video evals, use `NUM_ENVS=1` and the close overhead camera rather
+  than multi-env video.
+
+Next:
+- Continue monitoring the training reward and launch the next periodic close
+  overhead eval from a newer checkpoint.
+
+## 2026-06-10 01:35 PDT - Epoch 350 Close Overhead Eval
+
+Goal:
+- Continue periodic eval from a newer checkpoint and save the close overhead
+  rollout video.
+
+Command / Job:
+- eval job_id: `28930834`
+- eval run_name: `cube_grasp_static_eval_ep350_overhead_close_20260610_013129`
+- checkpoint:
+  `/results/logs/rl_games/dextrah_cube_grasp/cube_grasp_static_ppo_opt8gpu_20260610_004351/nn/last_dextrah_cube_grasp_ep_350_rew_1664.3583.pth`
+- camera: eye `(-0.55, 0.10, 0.85)`, target `(-0.55, 0.10, 0.25)`
+- num_envs: `1`
+- video:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/cube_grasp_static_eval_ep350_overhead_close_20260610_013129/videos/cube-grasp-eval-overhead-close-step-0.mp4`
+- local copy:
+  `cluster_results/a1001/cube_grasp_static_eval_ep350_overhead_close_20260610_013129/videos/cube-grasp-eval-overhead-close-step-0.mp4`
+
+Result:
+- status: eval completed successfully.
+- Slurm state: `COMPLETED`, elapsed `00:02:15`, exit `0:0`.
+- video validation: `1280x720`, `600` frames, `10.0s`, `60 FPS`.
+- visual validation: extracted middle frame shows the cube and end-effector
+  clearly from the close overhead camera.
+- metrics:
+  - `reward_mean=2.983435416420301`
+  - `reward_final=1.007120132446289`
+  - `success_rate_mean=0.0`
+  - `success_rate_final=0.0`
+  - `max_cube_lift_height=0.01432192325592041`
+  - `min_hand_to_cube_mean_dist=0.050149351358413696`
+- training monitor: job `28930031` remained running through at least epoch
+  `381/6000`, with periodic checkpoint
+  `last_dextrah_cube_grasp_ep_375_rew_1744.3245.pth` and best reward at least
+  `1745.2559`.
+
+Analysis:
+- The checkpoint reward is continuing to improve, but deterministic eval still
+  shows no successful grasp/lift. The policy is getting close to the cube and
+  causing small lift, not stable lifting.
+
+Next:
+- Continue periodic close overhead evals from later checkpoints, using the same
+  single-env camera settings.
+
 ## 2026-06-10 01:35 PDT - Franka Star Validation Gate Fix
 
 Goal:
@@ -2331,3 +2427,52 @@ Checks:
 Next:
 - Commit/push, update the `a1001` checkout, rerun validation, and continue
   fixing until the environment and video inspection are correct.
+
+## 2026-06-10 01:48 PDT - Franka Star Validation Diagnostics Update
+
+Goal:
+- Keep the Franka star task blocked from training/eval until the validation
+  rollout, metrics, and video inspection are all credible.
+
+Evidence:
+- validation job_id: `28930763`
+- run_name: `franka_star_env_validate_20260610_012702`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_star_28930763.out`
+- remote results:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_star_env_validate_20260610_012702`
+- local results:
+  `cluster_results/a1001/franka_star_env_validate_20260610_012702`
+- video:
+  `cluster_results/a1001/franka_star_env_validate_20260610_012702/videos/franka-star-kitting-validation-step-0.mp4`
+
+Result:
+- status: validation failed, so no Franka star training/eval launched.
+- failed check: `scripted_rollout_approaches_star`.
+- metrics: `initial_ee_to_star=0.20345714688301086`,
+  `min_ee_to_star=0.12809023261070251`, `max_star_lift_height=0.0`.
+- second wrapper bug: Slurm still reported `COMPLETED 0:0` even though
+  metrics had `passed: false`.
+- video issue: rollout video was nonblank but too far away to inspect the
+  star/fixture interaction clearly.
+
+Change:
+- Moved pickup/fixture centers closer to the Franka centerline while preserving
+  a real table transfer.
+- Added a close validation camera with CLI overrides.
+- Extended the default validation rollout/video length to 480 steps.
+- Lengthened the scripted reach/descend/close phases.
+- Added finger-center approach metrics, final pose diagnostics, and gripper
+  width diagnostics to `metrics.json`.
+- Made the Slurm wrapper fail from host-side `metrics.json` inspection if
+  `passed` is false.
+
+Checks:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_star_kitting/star_kitting_geometry.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_rewards.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env_cfg.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env.py dextrah_lab/tasks/dextrah_franka_star_kitting/gym_setup.py dextrah_lab/rl_games/validate_franka_star_kitting_env.py dextrah_lab/rl_games/train.py dextrah_lab/rl_games/play.py`
+- `bash -n cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_validate_franka_star_kitting_env_1gpu.sh`
+- `ruby -e "require 'yaml'; YAML.load_file('dextrah_lab/tasks/dextrah_franka_star_kitting/agents/rl_games_ppo_franka_star_kitting_cfg.yaml'); puts 'yaml ok'"`
+- `git diff --check`
+
+Next:
+- Commit/push the code changes, update `a1001`, and rerun validation before
+  any training/eval.
