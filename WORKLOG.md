@@ -2803,3 +2803,42 @@ Next:
 - Commit/push, update A100 checkout, run the stricter validation, inspect
   metrics/video, and only then launch another PPO smoke if the scripted lift
   gate passes.
+
+## 2026-06-10 03:25 PDT - Franka Star Finger-Center Validation Fix
+
+Goal:
+- Fix the stricter validation controller after the first lift-gate run exposed
+  a frame mismatch.
+
+Evidence:
+- validation job_id: `28932420`, run
+  `franka_star_env_validate_liftgate_20260610_032058`, source commit
+  `14491b0e8691683b3542672af0d778993187eb6e`.
+- status: failed metrics gate, exit `1:0`, elapsed `00:01:53`.
+- fetched artifacts:
+  `cluster_results/a1001/franka_star_env_validate_liftgate_20260610_032058`.
+- video validation: `1280x720`, `479` frames, `7.983333s`, `60 FPS`.
+- failed check: `scripted_rollout_limits_prelift_star_motion`,
+  `max_star_initial_xy_error=0.06718`.
+- rollout also showed `min_finger_to_star=0.07857` with no improvement, while
+  the scripted controller produced `max_star_lift_height=0.03825`.
+
+Analysis:
+- The scripted controller was commanding the EE/TCP frame to the star target,
+  but the reward and physical grasp use the finger-center frame. The offset
+  caused the hand to press near the star rather than centering the fingers on
+  the object.
+
+Change:
+- Retarget validation actions so the commanded EE pose places the finger center
+  at the desired scripted target.
+- Tightened `scripted_rollout_fingers_approach_star` to require
+  `min_finger_to_star < 0.060 m` and actual improvement.
+
+Checks:
+- `python3 -m py_compile dextrah_lab/rl_games/validate_franka_star_kitting_env.py`
+- `git diff --check`
+
+Next:
+- Commit/push, update A100, rerun the lift-gate validation, and inspect the
+  resulting metrics/video before any training.
