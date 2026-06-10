@@ -2888,3 +2888,45 @@ Checks:
 Next:
 - Commit/push, update A100, rerun validation, and inspect metrics/video before
   any PPO training.
+
+## 2026-06-10 03:35 PDT - Franka Star Prelift Drift Gate Fix
+
+Goal:
+- Keep the thick-star environment blocked from training until validation is
+  correct, and fix the validation gate without relaxing the actual pre-lift
+  drift requirement.
+
+Evidence:
+- validation job_id: `28932530`, run
+  `franka_star_env_validate_thickstar_20260610_033103`, source commit
+  `da9cb81372b5892da739b69a32f6c95ecc80cbba`.
+- status: failed metrics gate, exit `1:0`, elapsed `00:01:39`.
+- fetched artifacts:
+  `cluster_results/a1001/franka_star_env_validate_thickstar_20260610_033103`.
+- video validation: `1280x720`, `479` frames, `7.983333s`, `60 FPS`.
+- failed check: `scripted_rollout_limits_prelift_star_motion`.
+- rollout: `max_star_lift_height=0.07638`,
+  `max_star_initial_xy_error=0.24637`, `done_count=1`.
+
+Analysis:
+- The check was using the maximum star displacement from the initial pickup
+  pose over the entire rollout, so post-lift transport was counted as
+  "prelift" drift.
+- Reward shaping already gates the pre-lift drag penalty by lift progress and
+  prior lift state; validation should apply the same phase distinction.
+
+Change:
+- Added `max_prelift_star_initial_xy_error`, tracking star XY drift only while
+  the object is below the `0.030 m` lift validation threshold and has not been
+  marked lifted.
+- Kept global `max_star_initial_xy_error` in rollout metrics for diagnostics.
+- Pointed `scripted_rollout_limits_prelift_star_motion` at the true pre-lift
+  metric.
+
+Checks:
+- pending `python3 -m py_compile dextrah_lab/rl_games/validate_franka_star_kitting_env.py`
+- pending `git diff --check`
+
+Next:
+- Commit/push, update A100, rerun thick-star validation, inspect the resulting
+  metrics/video, and launch PPO only if the environment gate passes.
