@@ -5970,6 +5970,40 @@ Validation:
 Next:
 - Commit/push/pull and relaunch the validation smoke.
 
+## 2026-06-10 15:55 PDT - Franka Cube Validation Pass
+
+Command / Job:
+- command:
+  `RUN_NAME=franka_cube_validate_smoke4_20260610_1551 NUM_ENVS=4 NUM_STEPS=160 CAPTURE_VIDEO=True SEED=44 sbatch cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`
+- validation job_id: `28954676`
+- code_commit: `844bbc57f4f1336bb17b9998ffa1ba539bf35a02`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_cube_validate_smoke4_20260610_1551`
+- local_artifacts:
+  `cluster_results/a1002/validations/franka_cube_validate_smoke4_20260610_1551`
+
+Result:
+- status: passed.
+- scheduler: `COMPLETED`, elapsed `00:01:22`, exit code `0:0`.
+- checks: all validator checks passed.
+- synthetic lifted success: lift `0.13 m`, XY error `6.75e-08 m`,
+  mean finger distance `0.1831 m`, success rate `1.0`.
+- rollout: `160` steps completed, finite observations/rewards, `done_count=2`,
+  max mean lift `0.0178 m`, max mean XY error `0.0607 m`, final success `0.0`.
+- video: `franka-cube-validate-step-0.mp4`, `1280x720`, `159` frames,
+  `2.65 s`; contact sheet shows the Franka gripper, tabletop, and blue cube.
+
+Analysis:
+- The task now passes basic construction, reset, observation, reward-shaping,
+  success-predicate, stability, and camera/artifact checks.
+- The random rollout did not lift the cube, which is expected for smoke
+  validation. The next question is whether PPO can exploit the lift reward
+  without stalling in no-lift or drag states.
+
+Next:
+- Launch a bounded Franka cube PPO run for direct comparison with the validated
+  KUKA cube task.
+
 ## 2026-06-10 15:50 PDT - Franka Cube Hand-Distance Tolerance Adjustment
 
 Command / Job:
