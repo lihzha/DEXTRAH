@@ -30,6 +30,10 @@ parser.add_argument("--metrics_path", type=str, default=None)
 parser.add_argument("--video", action="store_true", default=False)
 parser.add_argument("--video_length", type=int, default=180)
 parser.add_argument("--video_folder", type=str, default=None)
+parser.add_argument("--camera_eye", type=float, nargs=3, default=None, help="Viewport camera eye for validation video.")
+parser.add_argument(
+    "--camera_target", type=float, nargs=3, default=None, help="Viewport camera target for validation video."
+)
 parser.add_argument("--print_interval", type=int, default=30)
 parser.add_argument(
     "--disable_fabric", action="store_true", default=False, help="Disable fabric and use USD I/O operations."
@@ -58,10 +62,45 @@ from dextrah_lab.tasks.dextrah_franka_star_kitting.franka_star_kitting_rewards i
 )
 
 
+DEFAULT_CAMERA_EYE = (-0.25, -0.48, 1.18)
+DEFAULT_CAMERA_TARGET = (-0.43, 0.02, 0.76)
+
+
 def _mean(value) -> float:
     if isinstance(value, torch.Tensor):
         return float(value.detach().float().mean().cpu())
     return float(value)
+
+
+def _mean_vec(value: torch.Tensor) -> list[float]:
+    return [float(v) for v in value.detach().float().mean(dim=0).cpu()]
+
+
+def _camera_tuple(values: list[float] | tuple[float, float, float] | None):
+    if values is None:
+        return None
+    return tuple(float(v) for v in values)
+
+
+def _configure_validation_camera(env_cfg, task_env=None) -> None:
+    if not args_cli.video and args_cli.camera_eye is None and args_cli.camera_target is None:
+        return
+    if not hasattr(env_cfg, "viewer"):
+        print("[WARN] Environment config has no viewer config; validation camera override skipped.", flush=True)
+        return
+
+    eye = _camera_tuple(args_cli.camera_eye) or DEFAULT_CAMERA_EYE
+    target = _camera_tuple(args_cli.camera_target) or DEFAULT_CAMERA_TARGET
+    env_cfg.viewer.eye = eye
+    env_cfg.viewer.lookat = target
+    env_cfg.viewer.origin_type = "world"
+    print(f"[INFO] Validation video camera eye={eye} target={target}", flush=True)
+
+    if task_env is not None and hasattr(task_env, "sim"):
+        try:
+            task_env.sim.set_camera_view(eye=eye, target=target, camera_prim_path=env_cfg.viewer.cam_prim_path)
+        except Exception as exc:
+            print(f"[WARN] Could not set active validation camera: {exc}", flush=True)
 
 
 def _yaw_quat_wxyz(yaw: torch.Tensor) -> torch.Tensor:
@@ -257,34 +296,34 @@ def _target_actions_to_world_position(task_env, target_pos_local: torch.Tensor, 
 def _scripted_target(task_env, step: int, num_steps: int) -> tuple[torch.Tensor, float]:
     star = task_env.star_pos.detach()
     goal = task_env.star_goal_pos.detach()
-    z_above_star = star[:, 2] + 0.13
-    z_grasp = star[:, 2] + 0.035
+    z_above_star = star[:, 2] + 0.12
+    z_grasp = star[:, 2] + 0.024
     z_lift = star[:, 2] + 0.17
     z_place = goal[:, 2] + 0.045
     phase = float(step) / max(float(num_steps - 1), 1.0)
 
     target = torch.zeros_like(star)
-    if phase < 0.20:
+    if phase < 0.34:
         target[:, 0:2] = star[:, 0:2]
         target[:, 2] = z_above_star
         gripper = 1.0
-    elif phase < 0.34:
+    elif phase < 0.58:
         target[:, 0:2] = star[:, 0:2]
         target[:, 2] = z_grasp
         gripper = 1.0
-    elif phase < 0.48:
+    elif phase < 0.74:
         target[:, 0:2] = star[:, 0:2]
         target[:, 2] = z_grasp
         gripper = -1.0
-    elif phase < 0.62:
+    elif phase < 0.86:
         target[:, 0:2] = star[:, 0:2]
         target[:, 2] = z_lift
         gripper = -1.0
-    elif phase < 0.82:
+    elif phase < 0.94:
         target[:, 0:2] = goal[:, 0:2]
         target[:, 2] = z_lift
         gripper = -1.0
-    elif phase < 0.94:
+    elif phase < 0.98:
         target[:, 0:2] = goal[:, 0:2]
         target[:, 2] = z_place
         gripper = -1.0
@@ -319,7 +358,9 @@ def _run_scripted_rollout(env, task_env, checks: CheckRecorder, num_steps: int, 
 
     initial_ee = task_env.ee_pos.clone()
     initial_ee_star = _mean(task_env.ee_to_star_dist)
+    initial_finger_star = _mean(task_env.finger_center_to_star_dist)
     min_ee_star = _mean(task_env.ee_to_star_dist)
+    min_finger_star = _mean(task_env.finger_center_to_star_dist)
     max_star_height = _mean(task_env.star_lift_height)
     reward_values: list[float] = []
     done_count = 0
@@ -339,6 +380,7 @@ def _run_scripted_rollout(env, task_env, checks: CheckRecorder, num_steps: int, 
         reward_values.append(_mean(rewards))
         done_count += int(dones.float().sum().detach().cpu()) if isinstance(dones, torch.Tensor) else 0
         min_ee_star = min(min_ee_star, _mean(task_env.ee_to_star_dist))
+        min_finger_star = min(min_finger_star, _mean(task_env.finger_center_to_star_dist))
         max_star_height = max(max_star_height, _mean(task_env.star_lift_height))
 
         if not bool(torch.isfinite(policy_obs).all().item()):
@@ -352,6 +394,8 @@ def _run_scripted_rollout(env, task_env, checks: CheckRecorder, num_steps: int, 
                 "[VALIDATE] "
                 f"step={step + 1} reward={reward_values[-1]:.4f} "
                 f"ee_to_star={_mean(task_env.ee_to_star_dist):.4f} "
+                f"finger_to_star={_mean(task_env.finger_center_to_star_dist):.4f} "
+                f"gripper_width={_mean(task_env.gripper_width):.4f} "
                 f"lift={_mean(task_env.star_lift_height):.4f} "
                 f"success={_mean(task_env.in_success_region.float()):.4f}",
                 flush=True,
@@ -371,9 +415,15 @@ def _run_scripted_rollout(env, task_env, checks: CheckRecorder, num_steps: int, 
     )
     checks.check(
         "scripted_rollout_approaches_star",
-        min_ee_star < 0.12 and min_ee_star < initial_ee_star - 0.08,
+        min_ee_star < 0.10 and min_ee_star < initial_ee_star - 0.05,
         initial_ee_to_star=initial_ee_star,
         min_ee_to_star=min_ee_star,
+    )
+    checks.check(
+        "scripted_rollout_fingers_approach_star",
+        min_finger_star < 0.085 and min_finger_star < initial_finger_star - 0.05,
+        initial_finger_to_star=initial_finger_star,
+        min_finger_to_star=min_finger_star,
     )
     checks.check(
         "scripted_rollout_star_stays_in_workspace",
@@ -388,13 +438,19 @@ def _run_scripted_rollout(env, task_env, checks: CheckRecorder, num_steps: int, 
         "reward_final": reward_values[-1] if reward_values else None,
         "min_ee_to_star": min_ee_star,
         "initial_ee_to_star": initial_ee_star,
+        "min_finger_to_star": min_finger_star,
+        "initial_finger_to_star": initial_finger_star,
         "max_star_lift_height": max_star_height,
         "final_success_rate": _mean(task_env.in_success_region.float()),
+        "final_ee_pos_mean": _mean_vec(task_env.ee_pos),
+        "final_star_pos_mean": _mean_vec(task_env.star_pos),
+        "final_goal_pos_mean": _mean_vec(task_env.star_goal_pos),
+        "final_gripper_width": _mean(task_env.gripper_width),
         "done_count": done_count,
     }
 
 
-def main() -> None:
+def main() -> bool:
     output_dir = Path(args_cli.output_dir or datetime.now().strftime("franka_star_validate_%Y%m%d_%H%M%S"))
     output_dir = output_dir.expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -408,6 +464,7 @@ def main() -> None:
         use_fabric=not args_cli.disable_fabric,
     )
     env_cfg.seed = args_cli.seed
+    _configure_validation_camera(env_cfg)
 
     env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)
     if args_cli.video:
@@ -420,6 +477,7 @@ def main() -> None:
             disable_logger=True,
         )
     task_env = env.unwrapped
+    _configure_validation_camera(env_cfg, task_env)
     checks = CheckRecorder()
 
     checks.check(
@@ -454,15 +512,14 @@ def main() -> None:
     metrics_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
     print(json.dumps(payload, indent=2, sort_keys=True), flush=True)
     failed = not checks.passed
-    try:
-        env.close()
-    finally:
-        if failed:
-            raise SystemExit(1)
+    env.close()
+    return not failed
 
 
 if __name__ == "__main__":
+    exit_code = 0
     try:
-        main()
+        exit_code = 0 if main() else 1
     finally:
         simulation_app.close()
+    raise SystemExit(exit_code)

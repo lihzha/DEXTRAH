@@ -26,8 +26,8 @@ TASK="${TASK:-Dextrah-Franka-Star-Kitting}"
 SLURM_JOB_ID_SAFE="${SLURM_JOB_ID:-manual}"
 RUN_NAME="${RUN_NAME:-franka_star_env_validate_${SLURM_JOB_ID_SAFE}_$(date +%Y%m%d_%H%M%S)}"
 NUM_ENVS="${NUM_ENVS:-4}"
-NUM_STEPS="${NUM_STEPS:-300}"
-VIDEO_LENGTH="${VIDEO_LENGTH:-300}"
+NUM_STEPS="${NUM_STEPS:-480}"
+VIDEO_LENGTH="${VIDEO_LENGTH:-480}"
 CAPTURE_VIDEO="${CAPTURE_VIDEO:-True}"
 PRINT_INTERVAL="${PRINT_INTERVAL:-30}"
 SEED="${SEED:-42}"
@@ -132,5 +132,30 @@ if [ -f "$LOG_FILE" ] && grep -E "Traceback|RuntimeError:|Error executing job wi
   echo "Detected validation error patterns in $LOG_FILE."
   exit 1
 fi
+
+if [ ! -s "$RUN_DIR_HOST/metrics.json" ]; then
+  echo "Missing validation metrics JSON: $RUN_DIR_HOST/metrics.json"
+  exit 1
+fi
+
+python3 - "$RUN_DIR_HOST/metrics.json" <<'PY'
+import json
+import sys
+
+metrics_path = sys.argv[1]
+with open(metrics_path, "r", encoding="utf-8") as f:
+    payload = json.load(f)
+
+if not bool(payload.get("passed", False)):
+    failed = [
+        record.get("name", "<unnamed>")
+        for record in payload.get("checks", [])
+        if not bool(record.get("passed", False))
+    ]
+    print(f"Validation metrics failed: {failed}")
+    sys.exit(1)
+
+print("Validation metrics passed")
+PY
 
 echo "Validation Done"
