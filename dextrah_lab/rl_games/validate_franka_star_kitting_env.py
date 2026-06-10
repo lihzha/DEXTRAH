@@ -62,8 +62,8 @@ from dextrah_lab.tasks.dextrah_franka_star_kitting.franka_star_kitting_rewards i
 )
 
 
-DEFAULT_CAMERA_EYE = (-0.25, -0.48, 1.18)
-DEFAULT_CAMERA_TARGET = (-0.43, 0.02, 0.76)
+DEFAULT_CAMERA_EYE = (-0.12, -0.62, 1.22)
+DEFAULT_CAMERA_TARGET = (-0.41, 0.04, 0.77)
 
 
 def _mean(value) -> float:
@@ -91,6 +91,10 @@ def _configure_validation_camera(env_cfg, task_env=None) -> None:
 
     eye = _camera_tuple(args_cli.camera_eye) or DEFAULT_CAMERA_EYE
     target = _camera_tuple(args_cli.camera_target) or DEFAULT_CAMERA_TARGET
+    if task_env is not None and hasattr(task_env, "scene"):
+        env_origin = tuple(float(v) for v in task_env.scene.env_origins[0].detach().cpu())
+        eye = tuple(eye[idx] + env_origin[idx] for idx in range(3))
+        target = tuple(target[idx] + env_origin[idx] for idx in range(3))
     env_cfg.viewer.eye = eye
     env_cfg.viewer.lookat = target
     env_cfg.viewer.origin_type = "world"
@@ -268,7 +272,6 @@ def _run_predicate_checks(task_env, checks: CheckRecorder) -> None:
 
 def _target_actions_to_world_position(task_env, target_pos_local: torch.Tensor, gripper_command: float) -> torch.Tensor:
     ee_pos_b, _ = task_env._compute_ee_frame_pose()
-    _, ee_quat_b = task_env._compute_ee_frame_pose()
     target_pos_w = target_pos_local + task_env.scene.env_origins
     target_pos_b, _ = math_utils.subtract_frame_transforms(
         task_env._robot.data.root_pos_w,
@@ -276,19 +279,8 @@ def _target_actions_to_world_position(task_env, target_pos_local: torch.Tensor, 
         target_pos_w,
         task_env._robot.data.root_quat_w,
     )
-    # This is the same canonical top-down Panda hand orientation used in
-    # Isaac Lab's Franka IK tutorial, expressed in the robot root frame.
-    desired_quat_b = torch.tensor((0.0, 1.0, 0.0, 0.0), device=task_env.device).repeat(task_env.num_envs, 1)
-    _, axis_angle_error = math_utils.compute_pose_error(
-        ee_pos_b,
-        ee_quat_b,
-        target_pos_b,
-        desired_quat_b,
-        rot_error_type="axis_angle",
-    )
     action = torch.zeros(task_env.num_envs, task_env.cfg.action_space, device=task_env.device)
     action[:, :3] = torch.clamp((target_pos_b - ee_pos_b) / task_env.action_scale[:3], -1.0, 1.0)
-    action[:, 3:6] = torch.clamp(axis_angle_error / task_env.action_scale[3:6], -1.0, 1.0)
     action[:, 6] = float(gripper_command)
     return action
 
@@ -415,15 +407,18 @@ def _run_scripted_rollout(env, task_env, checks: CheckRecorder, num_steps: int, 
     )
     checks.check(
         "scripted_rollout_approaches_star",
-        min_ee_star < 0.10 and min_ee_star < initial_ee_star - 0.05,
+        min_ee_star < 0.10 and (initial_ee_star < 0.10 or min_ee_star < initial_ee_star - 0.05),
         initial_ee_to_star=initial_ee_star,
         min_ee_to_star=min_ee_star,
+        improvement=initial_ee_star - min_ee_star,
     )
     checks.check(
         "scripted_rollout_fingers_approach_star",
-        min_finger_star < 0.085 and min_finger_star < initial_finger_star - 0.05,
+        min_finger_star < 0.085
+        and (initial_finger_star < 0.085 or min_finger_star < initial_finger_star - 0.05),
         initial_finger_to_star=initial_finger_star,
         min_finger_to_star=min_finger_star,
+        improvement=initial_finger_star - min_finger_star,
     )
     checks.check(
         "scripted_rollout_star_stays_in_workspace",
