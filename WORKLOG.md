@@ -5055,3 +5055,66 @@ Next:
   `franka_star_balanced_sigma20_ppo_20260610_093027`.
 - If ep25/ep50 deterministic eval still shows one-sided hover/open behavior,
   stop and patch again before full-budget training.
+
+## 2026-06-10 09:36 PDT - DEXTRAH Teacher Production Relaunch
+
+Goal:
+- Continue the DextrAH privileged FGP teacher run after production job
+  `28910978` left the queue following its final requeue attempt.
+
+Evidence:
+- Prior job `28910978` ended as `CANCELLED by 158351`; its final short
+  allocation logged `Requested operation is presently disabled for job
+  28910978` after attempting another signal requeue.
+- The previous good resume point was
+  `last_dextrah_lstm_ep_8490_rew_1076.7921.pth`, with all eight
+  `dextrah_runtime_rank_*.pth` sidecars timestamped `2026-06-10 05:33 PDT`.
+- A running `dextrah_teacher_8gpu` job `28942109` was checked before
+  relaunch; it was a separate `Dextrah-Franka-Star-Kitting` run, not this
+  teacher continuation.
+
+Version Control:
+- branch: `codex/dextrah-cluster-dev`
+- local_head_at_launch: `41e50315f5f87e87c52f5c64132cbe2254cfeae8`
+- remote_checkout_at_launch: `575f20635598b7f30aa7912d994feecd06e11ef8`,
+  clean.
+- launched script: `cluster/sbatch_train_teacher_8gpu.sh`
+- wrapper checks: `bash -n cluster/sbatch_train_teacher_8gpu.sh` passed on
+  the remote checkout.
+
+Command / Job:
+- command:
+  `sbatch --parsable --export=ALL,FULL_EXPERIMENT_NAME=teacher_short_20260609_100021,AUTO_RESUME=True,SELF_RELAUNCH=True,TASK=Dextrah-Kuka-Allegro,DISTRIBUTED=True,MULTI_GPU=True cluster/sbatch_train_teacher_8gpu.sh`
+- job_id: `28942245`
+- partition/node: `polar3`, `batch-block7-01008`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28942245.out`
+
+Result:
+- status: running and resumed.
+- all 8 ranks loaded
+  `last_dextrah_lstm_ep_8490_rew_1076.7921.pth`, started training, and
+  restored runtime state at epoch 8490.
+- first post-relaunch checkpoints were written:
+  `last_dextrah_lstm_ep_8500_rew_1028.9226.pth` and
+  `last_dextrah_lstm_ep_8510_rew_1037.5626.pth`.
+- all eight runtime sidecars refreshed at `2026-06-10 09:35 PDT`.
+- new TensorBoard event file:
+  `events.out.tfevents.1781109207.batch-block7-01008`.
+
+Analysis:
+- The single-GPU and earlier 8-GPU debug phase is past the code-bug stage for
+  this run: the production relaunch resumes from model and runtime sidecars,
+  trains on 8 GPUs, and writes new checkpoints.
+- The earlier stop was not a Python/training failure. It looks like Slurm or a
+  manual cancellation disabled further requeue for the old job id, so a fresh
+  `sbatch` was the right recovery path.
+
+Next:
+- Continue monitoring job `28942245` for traceback/NCCL errors, checkpoint
+  cadence, reward curve anomalies, and the next wall-time signal/requeue near
+  `2026-06-10 13:05 PDT`.
+- Do not pull newer local Franka-only commits into the active remote checkout
+  while this teacher job is running unless a teacher-code fix is required.
