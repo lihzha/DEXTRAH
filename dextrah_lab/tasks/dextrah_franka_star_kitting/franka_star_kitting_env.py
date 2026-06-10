@@ -269,6 +269,7 @@ class DextrahFrankaStarKittingEnv(DirectRLEnv):
             placement_reward,
             success_bonus,
             prelift_move_penalty,
+            prelift_stall_penalty,
             close_far_penalty,
             open_near_penalty,
             ungrasped_lift_penalty,
@@ -305,6 +306,7 @@ class DextrahFrankaStarKittingEnv(DirectRLEnv):
             float(self.cfg.close_near_weight),
             float(self.cfg.close_action_weight),
             float(self.cfg.prelift_move_penalty_weight),
+            float(self.cfg.prelift_stall_penalty_weight),
             float(self.cfg.close_far_penalty_weight),
             float(self.cfg.open_near_penalty_weight),
             float(self.cfg.ungrasped_lift_penalty_weight),
@@ -335,6 +337,7 @@ class DextrahFrankaStarKittingEnv(DirectRLEnv):
             + placement_reward
             + success_bonus
             + prelift_move_penalty
+            + prelift_stall_penalty
             + close_far_penalty
             + open_near_penalty
             + ungrasped_lift_penalty
@@ -358,6 +361,7 @@ class DextrahFrankaStarKittingEnv(DirectRLEnv):
             "star_placement_reward": placement_reward.mean(),
             "star_success_bonus": success_bonus.mean(),
             "star_prelift_move_penalty": prelift_move_penalty.mean(),
+            "star_prelift_stall_penalty": prelift_stall_penalty.mean(),
             "star_close_far_penalty": close_far_penalty.mean(),
             "star_open_near_penalty": open_near_penalty.mean(),
             "star_ungrasped_lift_penalty": ungrasped_lift_penalty.mean(),

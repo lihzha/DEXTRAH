@@ -174,6 +174,7 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
         "close_near_weight": 3.0,
         "close_action_weight": 4.0,
         "prelift_move_penalty_weight": -45.0,
+        "prelift_stall_penalty_weight": -32.0,
         "close_far_penalty_weight": -14.0,
         "open_near_penalty_weight": -10.0,
         "ungrasped_lift_penalty_weight": -12.0,
@@ -345,13 +346,13 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
         bool(
             (
                 (lift_intent_reward < torch.tensor([55.0], device=device))
-                & (lift_intent_reward < 0.15 * lifted_reward)
+                & (lift_intent_reward < 0.10 * lifted_reward)
             ).item()
         ),
         lift_intent_reward=_mean(lift_intent_reward),
         lifted_reward=_mean(lifted_reward),
         absolute_cap=55.0,
-        lifted_fraction_cap=0.15,
+        lifted_fraction_cap=0.10,
     )
 
     lift_intent_far = dict(base)
@@ -391,7 +392,7 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
     hover_no_lift["actions"] = torch.tensor([[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0]], device=device)
     checks.check(
         "reward_hover_pinching_without_lift_is_capped",
-        bool((_reward_total(**hover_no_lift) < torch.tensor([40.0], device=device)).item()),
+        bool((_reward_total(**hover_no_lift) < torch.tensor([20.0], device=device)).item()),
         hover_no_lift_reward=_mean(_reward_total(**hover_no_lift)),
         lifted_reward=_mean(_reward_total(**lifted)),
     )

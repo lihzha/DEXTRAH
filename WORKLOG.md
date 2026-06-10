@@ -5333,6 +5333,28 @@ Command / Job:
 Result:
 - status: submitted
 
+## 2026-06-10 14:33 PDT - Latest Status: Gated Franka PPO Launch
+
+Context:
+- This entry is intentionally appended at EOF so `tail WORKLOG.md` shows the
+  current audit state. Some earlier entries in this file are out of chronological
+  order.
+
+Command / Job:
+- command:
+  `TASK=Dextrah-Franka-Star-Kitting FULL_EXPERIMENT_NAME=franka_star_liftaction_gated_ppo_20260610_1432 NUM_ENVS=2048 MAX_ITERATIONS=600 USE_CUDA_GRAPH=False LEARNING_RATE=0.0001 CENTRAL_VALUE_LEARNING_RATE=0.00008 HORIZON_LENGTH=96 ENTROPY_COEF=0.00005 SIGMA_INIT_VAL=-2.0 SELF_RELAUNCH=False sbatch cluster/sbatch_train_teacher_8gpu.sh`
+- training job_id: `28951718`
+- code_commit: `afa1dcb09dd39ab9271f0f95fb9f9f420bff95fe`
+
+Result:
+- status: running on `batch-block5-01819` at launch.
+
+Monitor Plan:
+- verify first checkpoint save and TensorBoard scalars.
+- specifically inspect `star_success_rate/iter`, `star_has_lifted_rate/iter`,
+  `star_lift_height/iter`, and `star_lift_action_reward/iter` to confirm the
+  previous action-only lifting exploit is capped.
+
 ## 2026-06-10 14:18 PDT - DEXTRAH Teacher Production Monitor
 
 Goal:
@@ -5586,3 +5608,53 @@ Command / Job:
 
 Result:
 - status: submitted
+
+## 2026-06-10 14:45 PDT - Latest Status: Franka Prelift Stall Patch
+
+Result:
+- Franka run `28951718`
+  (`franka_star_liftaction_gated_ppo_20260610_1432`) was canceled after
+  `ep150` because the policy still did not learn the task.
+- scheduler result: `CANCELLED by 158351`, elapsed about `00:17:00`.
+- checkpoints inspected:
+  - `ep25`: reward `-504.7838`
+  - `ep50`: reward `4782.6235`
+  - `ep75`: reward `5143.0728`
+  - `ep100`: reward `4861.873`
+  - `ep125`: reward `4388.9736`
+  - `ep150`: reward `2774.3318`
+- TensorBoard through step `162`:
+  - `star_success_rate/iter`: max `0`
+  - `in_success_region/iter`: max `0`
+  - `star_has_lifted_rate/iter`: max `0.038085938`, last10 mean
+    `0.025390625`
+  - `star_lift_height/iter`: max `0.0042930832 m`, last10 mean
+    `0.00044287569 m`
+  - `star_lift_action_reward/iter`: max `0.050381728`, so the previous
+    lift-action exploit was fixed.
+  - static no-lift terms still grew: `star_lift_ready_reward/iter` last
+    `4.5420952`, `star_closed_grasp_reward/iter` last `3.0281038`.
+
+Analysis:
+- The second patch successfully removed the lift-action reward exploit.
+- The remaining failure is a static grasp-ready/closed-pose local optimum:
+  PPO can still score shaped reward while keeping the star essentially on the
+  table.
+
+Change:
+- Added `prelift_stall_penalty_weight = -32.0`.
+- Added `prelift_stall_penalty` gated by closed gripper, lift-ready pose,
+  prelift stability, and zero/near-zero star height. The penalty decays away as
+  star height approaches `0.020 m`.
+- Logged the new term as `star_prelift_stall_penalty`.
+- Tightened validation caps for no-lift grasp/lift intent.
+
+Validation:
+- local `py_compile` passed for Franka config/reward/env, validation, shared
+  eval rollout, and trainer.
+- `git diff --check` passed.
+
+Next:
+- commit/push/pull the stall patch.
+- rerun Franka validation.
+- launch another PPO run only if the new no-lift caps pass.
