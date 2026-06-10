@@ -252,6 +252,7 @@ class DextrahFrankaStarKittingEnv(DirectRLEnv):
             placement_reward,
             success_bonus,
             prelift_move_penalty,
+            close_far_penalty,
             action_penalty,
         ) = compute_franka_star_kitting_rewards(
             self.ee_to_star_dist,
@@ -274,6 +275,7 @@ class DextrahFrankaStarKittingEnv(DirectRLEnv):
             float(self.cfg.grasp_sharpness),
             float(self.cfg.lift_weight),
             float(self.cfg.prelift_move_penalty_weight),
+            float(self.cfg.close_far_penalty_weight),
             float(self.cfg.transport_weight),
             float(self.cfg.transport_xy_sharpness),
             float(self.cfg.yaw_weight),
@@ -293,6 +295,7 @@ class DextrahFrankaStarKittingEnv(DirectRLEnv):
             + placement_reward
             + success_bonus
             + prelift_move_penalty
+            + close_far_penalty
             + action_penalty
         )
         log_terms = {
@@ -305,6 +308,7 @@ class DextrahFrankaStarKittingEnv(DirectRLEnv):
             "star_placement_reward": placement_reward.mean(),
             "star_success_bonus": success_bonus.mean(),
             "star_prelift_move_penalty": prelift_move_penalty.mean(),
+            "star_close_far_penalty": close_far_penalty.mean(),
             "star_action_penalty": action_penalty.mean(),
             "star_lift_height": self.star_lift_height.mean(),
             "star_initial_xy_error": self.star_initial_xy_error.mean(),

@@ -154,7 +154,8 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
         "closed_grasp_weight": 4.0,
         "grasp_sharpness": 18.0,
         "lift_weight": 16.0,
-        "prelift_move_penalty_weight": -5.0,
+        "prelift_move_penalty_weight": -2.0,
+        "close_far_penalty_weight": -1.5,
         "transport_weight": 5.0,
         "transport_xy_sharpness": 18.0,
         "yaw_weight": 3.0,
@@ -230,6 +231,15 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
         bool((_reward_total(**dragged) < _reward_total(**near)).item()),
         near_reward=_mean(_reward_total(**near)),
         dragged_reward=_mean(_reward_total(**dragged)),
+    )
+
+    closed_far = dict(base)
+    closed_far["gripper_width"] = torch.tensor([0.0], device=device)
+    checks.check(
+        "reward_penalizes_closing_far_from_star",
+        bool((_reward_total(**closed_far) < _reward_total(**base)).item()),
+        open_far_reward=_mean(_reward_total(**base)),
+        closed_far_reward=_mean(_reward_total(**closed_far)),
     )
 
 

@@ -27,6 +27,7 @@ def compute_franka_star_kitting_rewards(
     grasp_sharpness: float,
     lift_weight: float,
     prelift_move_penalty_weight: float,
+    close_far_penalty_weight: float,
     transport_weight: float,
     transport_xy_sharpness: float,
     yaw_weight: float,
@@ -54,6 +55,7 @@ def compute_franka_star_kitting_rewards(
     grasp_ready = finger_near_star * (0.25 + 0.75 * near_star)
     prelift_gate = 1.0 - torch.clamp(lift_progress + has_lifted_star.float(), 0.0, 1.0)
     prelift_xy_motion = torch.clamp(star_initial_xy_error / 0.10, 0.0, 1.0)
+    close_far_penalty_gate = torch.clamp(1.0 - finger_near_star, 0.0, 1.0)
 
     xy_align = torch.exp(-transport_xy_sharpness * goal_xy_error)
     yaw_align = torch.exp(-yaw_sharpness * goal_yaw_error)
@@ -68,6 +70,7 @@ def compute_franka_star_kitting_rewards(
     placement_reward = placement_weight * xy_align * yaw_align * height_align * has_lifted_star.float()
     success_bonus = success_bonus_weight * in_success_region.float()
     prelift_move_penalty = prelift_move_penalty_weight * prelift_gate * prelift_xy_motion
+    close_far_penalty = close_far_penalty_weight * closed_gripper * close_far_penalty_gate
     action_penalty = action_penalty_weight * torch.sum(actions * actions, dim=-1)
 
     return (
@@ -80,5 +83,6 @@ def compute_franka_star_kitting_rewards(
         placement_reward,
         success_bonus,
         prelift_move_penalty,
+        close_far_penalty,
         action_penalty,
     )
