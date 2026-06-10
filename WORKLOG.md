@@ -1692,3 +1692,36 @@ Result:
 - Startup log shows all 8 ranks parsing `DextrahCubeGraspEnvCfg`, writing
   params, creating 4096-env scenes, and starting simulation. No traceback or
   runtime-error patterns were present in the checked log tail.
+
+## 2026-06-09 23:16 PDT - Cube PPO Monitoring Checkpoint
+
+Command / Job:
+- job_id: `28927711`
+- run_name: `cube_grasp_ppo_opt8gpu_20260609_224426`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28927711.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_cube_grasp/cube_grasp_ppo_opt8gpu_20260609_224426`
+
+Result:
+- status: running cleanly.
+- Slurm at `00:30:42`: `RUNNING`, exit `0:0`, node
+  `batch-block7-01395`.
+- Latest observed progress:
+  `epoch=205/6000`, `frames=213909504`, total FPS around `150k`.
+- Checkpoints observed:
+  - `last_dextrah_cube_grasp_ep_25_rew_528.4545.pth`
+  - `last_dextrah_cube_grasp_ep_50_rew_399.92648.pth`
+  - `last_dextrah_cube_grasp_ep_75_rew_1046.7179.pth`
+  - `last_dextrah_cube_grasp_ep_100_rew_1264.9803.pth`
+  - `last_dextrah_cube_grasp_ep_125_rew_1410.1632.pth`
+  - `last_dextrah_cube_grasp_ep_150_rew_1459.2155.pth`
+  - `last_dextrah_cube_grasp_ep_175_rew_1444.1439.pth`
+  - `last_dextrah_cube_grasp_ep_200_rew_1473.8158.pth`
+- Error-pattern count from the monitor grep: `0`.
+
+Analysis:
+- Training is past startup and producing checkpoints/events/resume sidecars.
+- Reward is non-monotonic early on but generally improving from epoch 75
+  through epoch 200. Continue monitoring for plateau/divergence and for
+  wall-time requeue behavior.
