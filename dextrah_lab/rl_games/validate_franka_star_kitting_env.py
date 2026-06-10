@@ -432,6 +432,7 @@ def _scripted_target(
     z_grasp = star_anchor[:, 2] - 0.008
     z_lift = star_anchor[:, 2] + 0.17
     z_place = goal[:, 2] + 0.045
+    grasp_gripper = 0.25
     phase = float(step) / max(float(num_steps - 1), 1.0)
 
     target = torch.zeros_like(pickup)
@@ -454,19 +455,19 @@ def _scripted_target(
     elif phase < 0.74:
         target[:, 0:2] = pickup[:, 0:2]
         target[:, 2] = z_grasp
-        gripper = -1.0
+        gripper = grasp_gripper
     elif phase < 0.88:
         target[:, 0:2] = pickup[:, 0:2]
         target[:, 2] = z_lift
-        gripper = -1.0
+        gripper = grasp_gripper
     elif phase < 0.91:
         target[:, 0:2] = goal[:, 0:2]
         target[:, 2] = z_lift
-        gripper = -1.0
+        gripper = grasp_gripper
     elif phase < 0.95:
         target[:, 0:2] = goal[:, 0:2]
         target[:, 2] = z_place
-        gripper = -1.0
+        gripper = grasp_gripper
     else:
         target[:, 0:2] = goal[:, 0:2]
         target[:, 2] = z_place

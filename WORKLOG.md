@@ -4536,6 +4536,38 @@ Next:
 - Commit/push and rerun validation. If gripper closure passes, proceed to PPO
   with lower entropy/sigma than the failed deterministic-open run.
 
+## 2026-06-10 08:12 PDT - Strong-Gripper Validation Overclosed; Finite Pinch Script
+
+Goal:
+- Keep the stronger gripper actuator for trainability while preventing the
+  validation script from commanding a table-dragging full close.
+
+Evidence:
+- validation job_id: `28938703`
+- run_name: `franka_star_env_validate_stronggripper_20260610_080306`
+- source commit: `88d400c5593dac3ef90a550c6d64b51825018c6c`
+- stronger hand closed to near-zero width in one failed env:
+  gripper width `0.0063` at step 127 and `0.00031` at step 145.
+- this overclosed/dragged the star: `max_pretransport_star_initial_xy_error`
+  reached `0.18319 m`.
+- validation lift rate dropped to `0.25`.
+
+Analysis:
+- The gripper actuator change fixed authority but made the scripted command
+  `-1.0` too aggressive for validation.
+- Validation should test a finite pinch width, not full finger closure.
+
+Change:
+- Added `grasp_gripper=0.25` in the validation scripted controller.
+- Use that finite pinch command during close, lift, transport, and place
+  phases; release still uses `+1.0`.
+
+Checks:
+- `python3 -m py_compile dextrah_lab/rl_games/validate_franka_star_kitting_env.py`
+
+Next:
+- Commit/push and rerun full validation.
+
 ## 2026-06-10 08:01 PDT - Anchor-Noise Validation Nearly Passes; Deeper Close Phase
 
 Goal:
