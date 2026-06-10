@@ -78,7 +78,7 @@ class DextrahFrankaStarKittingEnvCfg(DirectRLEnvCfg):
 
     # Franka geometry/control
     max_gripper_width = 0.08
-    arm_joint_reset_noise = 0.035
+    arm_joint_reset_noise = 0.015
     robot_base_z = 0.20
     robot_yaw_wxyz = (0.0, 0.0, 0.0, 1.0)  # 180 deg about z; points arm toward negative X table.
     ee_offset_pos = (0.0, 0.0, 0.1034)

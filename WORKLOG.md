@@ -4497,3 +4497,33 @@ Checks:
 
 Next:
 - Commit/push and rerun full validation.
+
+## 2026-06-10 07:52 PDT - Script-Stable Validation Still Lift-Brittle; Intermediate Noise Test
+
+Goal:
+- Improve scripted grasp reliability after the validation controller again
+  lifted only part of the batch.
+
+Evidence:
+- validation job_id: `28938018`
+- run_name: `franka_star_env_validate_scriptstable_20260610_074501`
+- source commit: `b147ad57e6f2626896e2171eb37d1cb96f9fddb4`
+- reward checks and pretransport stability passed.
+- failed checks:
+  `scripted_rollout_fingers_approach_star` and
+  `scripted_rollout_lifts_star`.
+- `min_finger_to_star=0.10597`, about `1 mm` above the strict threshold.
+- `validation_lifted_rate=0.375`; non-lifting cases still had gripper widths
+  around `0.049`, so the fingers were not closing around the object.
+
+Change:
+- Set `arm_joint_reset_noise=0.015`, between the stuck zero-noise case and the
+  noisier `0.035` case.
+- Lowered validation grasp target from `star_anchor_z - 0.004` to
+  `star_anchor_z - 0.006`.
+
+Checks:
+- `python3 -m py_compile dextrah_lab/rl_games/validate_franka_star_kitting_env.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env_cfg.py`
+
+Next:
+- Commit/push and rerun full validation.
