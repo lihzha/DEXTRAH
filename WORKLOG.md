@@ -5456,6 +5456,36 @@ Next:
 - rerun validation with the same deterministic seed used for the last passing
   scripted rollout (`SEED=44`) before relaunching training.
 
+## 2026-06-10 14:29 PDT - Gated Lift-Action Validation Pass
+
+Command / Job:
+- command:
+  `RUN_NAME=franka_star_validate_lift_action_gated_seed44_20260610_1427 NUM_ENVS=4 NUM_STEPS=220 CAPTURE_VIDEO=False USE_CUDA_GRAPH=False SEED=44 sbatch cluster/sbatch_validate_franka_star_kitting_env_1gpu.sh`
+- validation job_id: `28951628`
+- code_commit: `026b87ef66dd78fb4f29d1100317a1b84ce3d31a`
+
+Result:
+- job completed with exit code `0:0`.
+- metrics:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_star_validate_lift_action_gated_seed44_20260610_1427/metrics.json`
+- local metrics:
+  `cluster_results/a1002/validations/franka_star_validate_lift_action_gated_seed44_20260610_1427/metrics.json`
+- all `42` validation checks passed.
+- key reward-shape checks:
+  - `reward_lift_intent_without_lift_is_capped`: lift-intent reward
+    `45.95866775512695`, actual-lift reward `359.5626220703125`,
+    absolute cap `55`, lifted fraction cap `0.15`.
+  - `reward_hover_pinching_without_lift_is_capped`: hover/no-lift reward
+    `34.01615905761719`, lifted reward `359.5626220703125`.
+- scripted rollout lifted `2/4` envs:
+  max mean lift `0.06609654426574707 m`, per-env max lift
+  `[0.13225120306015015, 0.0, 0.13213497400283813, 0.0]`.
+
+Next:
+- launch a fresh Franka PPO run from `026b87ef66dd78fb4f29d1100317a1b84ce3d31a`
+  with the same settings as the canceled rebalanced run so the lift-action
+  reward patch is the primary variable.
+
 ## 2026-06-10 13:54 PDT - Rebalanced Franka Validation Result And Training Launch Plan
 
 Result:
