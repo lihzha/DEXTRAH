@@ -6368,6 +6368,85 @@ Next For Handoff:
   `cube_grasp_ready_reward` against the stalled `franka_cube_ppo_20260610_1558`
   run.
 
+## 2026-06-10 16:19 PDT - Franka Cube Reward-Gate Cluster Validation Launch
+
+Goal:
+- Validate commit `04ed88cc00498798785562a2b46ed3918670c9e8` on A100 without
+  modifying the main remote checkout used by the active KUKA/Allegro teacher
+  job.
+
+Version Control:
+- local branch: `codex/dextrah-cluster-dev`
+- implementation_commit: `04ed88cc00498798785562a2b46ed3918670c9e8`
+- remote validation worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/DEXTRAH_franka_rewardgate_04ed88c`
+- remote validation worktree commit:
+  `04ed88cc00498798785562a2b46ed3918670c9e8`
+- main remote checkout left at `35333679f66fc1679de8ec98c31987be39f89261`
+  because job `28942245` is still running with that path mounted.
+
+Command / Job:
+- command:
+  `RUN_NAME=franka_cube_validate_rewardgate_20260610_1619 CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/DEXTRAH_franka_rewardgate_04ed88c NUM_ENVS=4 NUM_STEPS=160 CAPTURE_VIDEO=True SEED=47 sbatch --parsable cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`
+- job_id: `28955256`
+- expected run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_cube_validate_rewardgate_20260610_1619`
+- expected log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_cube_28955256.out`
+
+Next:
+- Monitor job `28955256`; fetch and inspect `metrics.json` and video if it
+  completes.
+
+## 2026-06-10 16:24 PDT - Franka Cube Reward-Gate Validation Check Split
+
+Command / Job:
+- validation job_id: `28955256`
+- run_name: `franka_cube_validate_rewardgate_20260610_1619`
+- code commit: `04ed88cc00498798785562a2b46ed3918670c9e8`
+- local artifacts:
+  `cluster_results/a1002/validations/franka_cube_validate_rewardgate_20260610_1619`
+
+Result:
+- status: failed one new validator check.
+- failed check: `reward_accepts_success_geometry_for_grasp_and_lift`.
+- key details:
+  - success predicate accepted the synthetic lifted Franka pose:
+    `success_rate=1.0`, lift `0.13 m`, mean hand distance `0.1738 m`.
+  - the new reward check saw `grasp_ready_reward=0.0`,
+    `closed_grasp_reward=0.0`, `lift_action_reward=0.0`,
+    `lift_reward=17.3165`.
+- rollout checks still passed: finite observations/rewards, cube stayed in
+  workspace, video was written.
+
+Analysis:
+- The failure is real evidence that the validator is now probing the right
+  geometry, but the assertion mixed phases. In the synthetic lifted pose
+  `has_lifted_cube=True`, so pre-lift-only terms such as `grasp_ready_reward`
+  and `closed_grasp_reward` are intentionally gated to zero.
+- The check should separately verify:
+  - pre-lift, closed-gripper reward terms are positive for the same measured
+    Franka success geometry; and
+  - lifted success geometry receives lift/success credit and is not treated as
+    far-closing.
+
+Change:
+- Updated `validate_franka_cube_grasp_env.py` to split the single check into:
+  - `reward_accepts_success_geometry_for_prelift_grasp`
+  - `reward_accepts_success_geometry_for_lift`
+- The reward implementation remains unchanged from commit `04ed88c`; this is a
+  validator correction so the cluster validation can distinguish reward-gate
+  bugs from intentional phase gating.
+
+Validation:
+- local `python3 -m py_compile` passed for the validator and Franka cube reward
+  files.
+- local `git diff --check` passed.
+
+Next:
+- Commit/push the validator correction, update the isolated A100 validation
+  worktree, and relaunch the Franka cube reward-gate validation.
+
 ## 2026-06-10 15:50 PDT - Franka Cube Hand-Distance Tolerance Adjustment
 
 Command / Job:

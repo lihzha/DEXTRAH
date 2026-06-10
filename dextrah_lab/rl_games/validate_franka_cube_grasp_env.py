@@ -268,28 +268,80 @@ def _run_predicate_checks(task_env, checks: CheckRecorder) -> None:
         hand_mean_dist=_mean(task_env.hand_to_cube_mean_dist),
         hand_max_dist=_mean(task_env.hand_to_cube_max_dist),
     )
-    (
-        approach_reward,
-        finger_approach_reward,
-        grasp_ready_reward,
-        closed_grasp_reward,
-        lift_reward,
-        height_tracking_reward,
-        xy_stability_reward,
-        close_action_reward,
-        lift_action_reward,
-        success_bonus,
-        prelift_move_penalty,
-        close_far_penalty,
-        open_near_penalty,
-        ungrasped_lift_penalty,
-        action_penalty,
-    ) = compute_franka_cube_grasp_rewards(
+    closed_width = torch.full_like(task_env.gripper_width, 0.024)
+    zero_lift = torch.zeros_like(task_env.cube_lift_height)
+    prelift_goal_height_error = torch.full_like(task_env.cube_goal_height_error, float(task_env.cfg.cube_lift_height))
+    prelift_false = torch.zeros_like(task_env.has_lifted_cube)
+    prelift_actions = task_env.actions.clone()
+    prelift_actions[:, 2] = 0.0
+    prelift_actions[:, 6] = -1.0
+    prelift_rewards = compute_franka_cube_grasp_rewards(
         task_env.ee_to_cube_dist,
         task_env.finger_center_to_cube_dist,
         task_env.left_finger_to_cube_dist,
         task_env.right_finger_to_cube_dist,
-        task_env.gripper_width,
+        closed_width,
+        zero_lift,
+        task_env.cube_xy_error,
+        prelift_goal_height_error,
+        prelift_false,
+        prelift_false,
+        prelift_actions,
+        float(task_env.cfg.cube_lift_height),
+        float(task_env.cfg.cube_success_hand_dist),
+        float(task_env.cfg.max_gripper_width),
+        float(task_env.cfg.cube_approach_weight),
+        float(task_env.cfg.cube_approach_sharpness),
+        float(task_env.cfg.cube_finger_approach_weight),
+        float(task_env.cfg.cube_finger_approach_sharpness),
+        float(task_env.cfg.cube_grasp_ready_weight),
+        float(task_env.cfg.cube_closed_grasp_weight),
+        float(task_env.cfg.cube_lift_weight),
+        float(task_env.cfg.cube_height_tracking_weight),
+        float(task_env.cfg.cube_height_tracking_sharpness),
+        float(task_env.cfg.cube_xy_stability_weight),
+        float(task_env.cfg.cube_xy_stability_sharpness),
+        float(task_env.cfg.cube_close_action_weight),
+        float(task_env.cfg.cube_lift_action_weight),
+        float(task_env.cfg.cube_success_bonus_weight),
+        float(task_env.cfg.cube_prelift_move_penalty_weight),
+        float(task_env.cfg.cube_close_far_penalty_weight),
+        float(task_env.cfg.cube_open_near_penalty_weight),
+        float(task_env.cfg.cube_ungrasped_lift_penalty_weight),
+        float(task_env.cfg.cube_action_penalty_weight),
+    )
+    grasp_ready_reward = prelift_rewards[2]
+    closed_grasp_reward = prelift_rewards[3]
+    close_action_reward = prelift_rewards[7]
+    close_far_penalty = prelift_rewards[11]
+    grasp_ready_value = _mean(grasp_ready_reward)
+    closed_grasp_value = _mean(closed_grasp_reward)
+    close_action_value = _mean(close_action_reward)
+    close_far_penalty_value = _mean(close_far_penalty)
+    checks.check(
+        "reward_accepts_success_geometry_for_prelift_grasp",
+        (
+            grasp_ready_value > 0.05
+            and closed_grasp_value > 0.01
+            and close_action_value >= 0.0
+            and close_far_penalty_value > -0.5
+        ),
+        grasp_ready_reward=grasp_ready_value,
+        closed_grasp_reward=closed_grasp_value,
+        close_action_reward=close_action_value,
+        close_far_penalty=close_far_penalty_value,
+        hand_mean_dist=_mean(task_env.hand_to_cube_mean_dist),
+        hand_max_dist=_mean(task_env.hand_to_cube_max_dist),
+        finger_center_dist=_mean(task_env.finger_center_to_cube_dist),
+        ee_to_cube_dist=_mean(task_env.ee_to_cube_dist),
+    )
+
+    lifted_rewards = compute_franka_cube_grasp_rewards(
+        task_env.ee_to_cube_dist,
+        task_env.finger_center_to_cube_dist,
+        task_env.left_finger_to_cube_dist,
+        task_env.right_finger_to_cube_dist,
+        closed_width,
         task_env.cube_lift_height,
         task_env.cube_xy_error,
         task_env.cube_goal_height_error,
@@ -319,38 +371,25 @@ def _run_predicate_checks(task_env, checks: CheckRecorder) -> None:
         float(task_env.cfg.cube_ungrasped_lift_penalty_weight),
         float(task_env.cfg.cube_action_penalty_weight),
     )
-    del (
-        approach_reward,
-        finger_approach_reward,
-        height_tracking_reward,
-        xy_stability_reward,
-        success_bonus,
-        prelift_move_penalty,
-        open_near_penalty,
-        ungrasped_lift_penalty,
-        action_penalty,
-    )
-    grasp_ready_value = _mean(grasp_ready_reward)
-    closed_grasp_value = _mean(closed_grasp_reward)
+    lift_reward = lifted_rewards[4]
+    lift_action_reward = lifted_rewards[8]
+    success_bonus = lifted_rewards[9]
+    close_far_penalty = lifted_rewards[11]
     lift_value = _mean(lift_reward)
     lift_action_value = _mean(lift_action_reward)
-    close_action_value = _mean(close_action_reward)
+    success_bonus_value = _mean(success_bonus)
     close_far_penalty_value = _mean(close_far_penalty)
     checks.check(
-        "reward_accepts_success_geometry_for_grasp_and_lift",
+        "reward_accepts_success_geometry_for_lift",
         (
-            grasp_ready_value > 0.05
-            and closed_grasp_value > 0.01
-            and lift_value > 20.0
+            lift_value > 20.0
             and lift_action_value >= 0.0
-            and close_action_value >= 0.0
+            and success_bonus_value > 0.0
             and close_far_penalty_value > -0.5
         ),
-        grasp_ready_reward=grasp_ready_value,
-        closed_grasp_reward=closed_grasp_value,
         lift_reward=lift_value,
         lift_action_reward=lift_action_value,
-        close_action_reward=close_action_value,
+        success_bonus=success_bonus_value,
         close_far_penalty=close_far_penalty_value,
         hand_mean_dist=_mean(task_env.hand_to_cube_mean_dist),
         hand_max_dist=_mean(task_env.hand_to_cube_max_dist),
