@@ -1919,8 +1919,24 @@ Command / Job:
   `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/cube_grasp_eval_ep725_video_20260610_002001/videos/`
 
 Result:
-- status: submitted; running on `batch-block1-0044` at first check.
+- status: completed.
+- Slurm state: `COMPLETED`, elapsed `00:03:43`, exit `0:0`.
+- metrics:
+  - `num_steps_completed=600`
+  - `success_rate_final=0.0`
+  - `success_rate_mean=0.0`
+  - `reward_mean=2.684174687465032`
+  - `reward_final=1.0055654048919678`
+- video:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/cube_grasp_eval_ep725_video_20260610_002001/videos/cube-grasp-eval-step-0.mp4`
+- local copy:
+  `cluster_results/a1001/cube_grasp_eval_ep725_video_20260610_002001/videos/cube-grasp-eval-step-0.mp4`
+- validation:
+  `ffprobe` on the local copy reports `1280x720`, `600` frames, `10.0s`,
+  `60 FPS`; middle/final preview frames are nonblank and show four vectorized
+  single-cube env replicas.
 
 Next:
-- Monitor job `28929700` until it writes `metrics.json` and video artifacts or
-  exposes a new failure mode.
+- Continue monitoring the PPO training job. The rendered eval confirms current
+  checkpoint behavior: the arm moves, but it does not lift the cube and the
+  success predicate remains zero.
