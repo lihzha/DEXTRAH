@@ -1554,3 +1554,54 @@ Command / Job:
 
 Result:
 - status: implementation ready for commit/push/sync and l401 render.
+
+## 2026-06-09 22:27 PDT - Actuated Franka Single-Cube Motion Result
+
+Goal:
+- Produce the requested single-cube video with the Franka as an actual Isaac
+  Lab articulation and with actuator-commanded motion in all directions.
+
+Version Control:
+- branch: `codex/dextrah-cluster-dev`
+- implementation_commit: `066c34df62ad403dbc4ed6d698e89af216e277a2`
+- remote_commit: `066c34df62ad403dbc4ed6d698e89af216e277a2`
+- push/pull: pushed to origin and synced to l401 with
+  `REMOTE=l401 ./cluster/sync_to_a1001.sh`.
+
+Command / Job:
+- command:
+  `SCENE=cube_motion RUN_NAME=franka_cube_motion_actuated_all_dirs_20260609_222457 WIDTH=640 HEIGHT=360 FPS=12 VIDEO_SECONDS=6.0 SIM_STEPS_PER_FRAME=5 CAPTURE_VIDEO=1 PHYSICS_DEVICE=cuda:0 FRANKA_RENDER_MODE=articulation_usd FRANKA_MOTION=all_directions FRANKA_MOTION_SCALE=1.0 CUBE_START_Y=-0.12 sbatch --export=ALL cluster/sbatch_render_star_kitting_env.sh`
+- job_id: `1019914`
+- node: `pool0-00019`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/star_kitting_1019914.out`
+- remote_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/franka_cube_motion/franka_cube_motion_actuated_all_dirs_20260609_222457`
+- local_dir:
+  `cluster_results/l401/franka_cube_motion_actuated_all_dirs_20260609_222457`
+
+Result:
+- status: passed
+- Slurm: `COMPLETED`, exit `0:0`, elapsed `00:01:01`.
+- artifacts:
+  - `overview.mp4`
+  - `contact_sheet.png`
+  - `franka_cube_motion_env.usda`
+  - `scene_metadata.json`
+  - `trajectory.json`
+  - `robot_motion_trajectory.json`
+- video probe: `640x360`, `72` frames, `12 fps`, `6.0 s`.
+- metadata check: `render_mode=articulation_usd`,
+  `franka_is_articulation=True`, `franka_motion_commanded=True`,
+  `motion=all_directions`, `cube_trajectory_frames=72`,
+  `robot_motion_frames=72`.
+- end-effector range from `robot_motion_trajectory.json`:
+  `x=0.131 m`, `y=0.329 m`, `z=0.259 m`.
+- visual check: contact sheet shows the articulated Franka sweeping around the
+  table while the blue cube remains visible.
+
+Analysis:
+- This run satisfies the revised request: the single-cube experiment uses the
+  actuated Franka path instead of static URDF meshes, commands actuator targets
+  throughout the capture, and produces a video with visible motion in all three
+  Cartesian axes.
