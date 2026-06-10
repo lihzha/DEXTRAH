@@ -1991,3 +1991,55 @@ Result:
 Next:
 - Relaunch any future single-cube render/eval jobs from commit `3414dd6` or
   newer so the cube remains static unless `ANIMATE_CUBE=true` is explicitly set.
+
+## 2026-06-10 00:43 PDT - Static Cube PPO Relaunch
+
+Goal:
+- Cancel the cube-grasp PPO run trained/evaluated before the static-cube fix,
+  remove its artifacts, and relaunch PPO from corrected code.
+
+Hypothesis:
+- The pre-fix run is invalid because the cube task/render path allowed
+  visualization-only cube motion and inherited object wrench disturbances.
+  Starting from commit `34744ab` with a fresh run name prevents resume from the
+  bad checkpoint tree.
+
+Change:
+- Canceled only cube-grasp job `28927711`.
+- Left unrelated `Dextrah-Kuka-Allegro` job `28910978` running.
+- Removed the old cube-grasp training directory, eval directories, and old
+  cube-grasp Slurm logs.
+- Submitted a new 8-GPU PPO job from the corrected a1001 checkout.
+
+Version Control:
+- branch: `codex/dextrah-cluster-dev`
+- implementation_commit: `34744ab97709adbff2da7cf8b749960bfcce1037`
+- remote_commit/status:
+  `34744ab97709adbff2da7cf8b749960bfcce1037`, clean
+
+Command / Job:
+- canceled job: `28927711`
+- bad run_dir removed:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_cube_grasp/cube_grasp_ppo_opt8gpu_20260609_224426`
+- bad eval dirs removed:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/cube_grasp_eval_ep725_video_20260610_002001`,
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/cube_grasp_metrics_20260610_000324`,
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/cube_grasp_metrics_ep500_retry_20260610_000249`,
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/cube_grasp_metrics_ep500_20260609_235902`
+- bad local eval copy removed:
+  `cluster_results/a1001/cube_grasp_eval_ep725_video_20260610_002001`
+- relaunch command:
+  `TASK=Dextrah-Cube-Grasp FULL_EXPERIMENT_NAME=cube_grasp_static_ppo_opt8gpu_20260610_004351 MAX_ITERATIONS=6000 USE_CUDA_GRAPH=True AUTO_RESUME=True SELF_RELAUNCH=True sbatch --export=ALL cluster/sbatch_train_teacher_8gpu.sh`
+- new job_id: `28930031`
+- new run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_cube_grasp/cube_grasp_static_ppo_opt8gpu_20260610_004351`
+- new log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28930031.out`
+
+Result:
+- status: submitted and running on `batch-block7-01550` at first check.
+- cleanup verification:
+  bad training dir, bad eval video dir, and bad training log are absent.
+
+Next:
+- Monitor job `28930031` through startup and first checkpoint/error checks.
