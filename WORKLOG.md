@@ -639,13 +639,21 @@ Command / Job:
   `scene_metadata.json`, `trajectory.json`, `render_manifest.json`
 
 Result:
-- status: pending
+- status: first smoke failed before rendering
+- key evidence: l401 job `1019337` installed `newton[sim]` into
+  `/envs/dextrah-newton-render-site`, then `pyrender` import failed inside
+  PyOpenGL 3.1.10 with `AttributeError: 'NoneType' object has no attribute
+  'glGetError'`.
 
 Analysis:
 - The current GraspGenX NFS venv has pyrender/trimesh/PIL but not Newton or
   Warp. The Slurm wrapper will install `newton[sim]` into
   `/envs/dextrah-newton-render-site` only when those imports are missing.
+- `newton[sim]` also installs PyOpenGL 3.1.10 into the target path, which
+  shadows GraspGenX's pinned PyOpenGL 3.1.5. Remove the target OpenGL package
+  after install so pyrender uses the known venv renderer stack while Newton
+  and Warp stay isolated in the target.
 
 Next:
-- Run syntax checks, commit/push, pull to l401, launch a low-resolution smoke,
+- Commit/push the wrapper fix, pull to l401, relaunch the low-resolution smoke,
   inspect frames/logs, then scale to the final requested video.

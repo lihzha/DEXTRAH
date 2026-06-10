@@ -74,6 +74,9 @@ PY
     elif [ \"\$status\" != \"0\" ]; then
       exit \"\$status\"
     fi
+    # Keep GraspGenX's known-working PyOpenGL==3.1.5 ahead of the newer
+    # PyOpenGL pulled by newton[sim]; pyrender EGL failed with 3.1.10 here.
+    rm -rf '$NEWTON_SITE'/OpenGL '$NEWTON_SITE'/PyOpenGL* '$NEWTON_SITE'/pyopengl*
 
     python - <<'PY'
 import sys
