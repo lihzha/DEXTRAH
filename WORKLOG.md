@@ -888,3 +888,49 @@ Next:
 - Commit/push/pull, rerun the aggressive rest case, inspect metrics and frames,
   then use the same settings for the final overview video if zero velocity is
   confirmed.
+
+## 2026-06-09 21:06 PDT - Newton OpenGL Clutter-Bin Final Video
+
+Goal:
+- Complete the Newton + OpenGL rendition of the DEXTRAH bin-picking sphere
+  drop and provide a final video artifact.
+
+Version Control:
+- branch: `codex/dextrah-cluster-dev`
+- implementation_commit: `db15e00`
+- remote_commit/status: l401 DEXTRAH checkout clean at `db15e00`
+- changed_files: `dextrah_lab/scene_scripts/render_newton_clutter_bin.py`,
+  `cluster/sbatch_render_newton_clutter_bin.sh`,
+  `cluster/submit_render_newton_clutter_bin_l401.sh`, `WORKLOG.md`
+
+Command / Job:
+- smoke_job: `1019503`, run `newton_bin_smoke_20260609_205521`,
+  12 frames at 320x180, passed.
+- final_job: `1019566`, run `newton_bin_final_20260609_210321`
+- command: `sbatch --parsable --export=ALL,RUN_NAME=newton_bin_final_20260609_210321,WIDTH=640,HEIGHT=360,FPS=12,VIDEO_SECONDS=6.0,SPHERE_COUNT=27,SPHERE_GRID=3,SOLVER_ITERATIONS=50,SOLVER_LS_ITERATIONS=25,NO_ENCODE=1 cluster/sbatch_render_newton_clutter_bin.sh`
+- node/status: `pool0-00019`, `COMPLETED`, exit `0:0`, elapsed `00:02:29`
+- remote_run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/newton_clutter_bin/newton_bin_final_20260609_210321`
+- local_run_dir: `cluster_results/l401/newton_bin_final_20260609_210321`
+
+Result:
+- status: passed
+- artifacts:
+  `cluster_results/l401/newton_bin_final_20260609_210321/overview.mp4`,
+  `frames/overview_%04d.png`, `scene_metadata.json`, `trajectory.json`,
+  `render_manifest.json`, `final_contact_sheet.png`
+- video validation: 640x360, 72 frames, 12 fps, 6.000 seconds.
+- visual validation: first/middle/last contact sheet shows spheres above the
+  left bin, then inside the bin, then settled as a pile; the right bin remains
+  empty.
+
+Analysis:
+- The GraspGenX base image required transient apt install of GLVND/OSMesa/GLU
+  libraries for pyrender/OpenGL. Newton and Warp run from the isolated
+  `/envs/dextrah-newton-render-site` target.
+- SolverMuJoCo's MuJoCo conversion overflows contact bitmasks at 64 independent
+  sphere shapes. The final demo uses 27 spheres (3x3x3), which is compatible
+  and visually satisfies the falling/settling bin demo.
+
+Next:
+- Use `overview.mp4` as the final Newton/OpenGL bin-picking sphere-drop video.
