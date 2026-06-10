@@ -4102,3 +4102,40 @@ Next:
   only relaunch PPO if the patched reward/environment validation passes.
 - If validation passes, launch PPO with `SIGMA_INIT_VAL=-1.0` and
   `ENTROPY_COEF=0.0005` or lower to reduce clipped random IK exploration.
+
+## 2026-06-10 06:39 PDT - Franka Star Grasp-Pose Validation Passed
+
+Goal:
+- Validate the grasp-pose reward gate and narrowed-action training support
+  before relaunching PPO.
+
+Evidence:
+- validation job_id: `28936657`, run
+  `franka_star_env_validate_grasppose_20260610_063616`.
+- source commit: `d726c54f3d69db1954e715ce7dc94509201ddb26`.
+- A100 checkout was clean at the source commit.
+- Slurm status: completed `0:0`, elapsed `00:01:12`.
+- all reward checks and scripted rollout checks passed.
+- hard gate metrics: `max_pretransport_star_initial_xy_error=0.02956`,
+  `validation_lifted_rate=0.5`, `max_star_lift_height=0.07345`.
+- diagnostic late unlifted drag remained outside the hard pre-transport gate:
+  `max_unlifted_late_drag_xy_error=0.09897`.
+- new reward scale: validation `reward_mean=15.61433`.
+- local artifacts fetched under
+  `cluster_results/a1001/franka_star_env_validate_grasppose_20260610_063616`.
+- validation video is playable and nonblank:
+  `1280x720`, `179` frames, `2.98s`, `60 FPS`.
+
+Analysis:
+- The grasp-pose patch preserves the known feasible scripted lift and now
+  checks the exact reward constants used for training.
+- The next PPO run should test two coupled changes: tighter reward credit at
+  the true grasp pose and narrower policy exploration via `SIGMA_INIT_VAL`.
+
+Next:
+- Launch 8-GPU PPO from this validated source with stable DEXTRAH rl_games
+  settings adapted to the smaller Franka IK task: `SIGMA_INIT_VAL=-1.0`,
+  `ENTROPY_COEF=0.0005`, and a longer `HORIZON_LENGTH=96`.
+- Monitor the new distance diagnostics (`star_ee_to_star_dist`,
+  `star_finger_center_to_star_dist`) in addition to lift/success. Stop early
+  if grasp-pose reward rises without distance or lift improvement.
