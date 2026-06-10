@@ -2476,3 +2476,48 @@ Checks:
 Next:
 - Commit/push the code changes, update `a1001`, and rerun validation before
   any training/eval.
+
+## 2026-06-10 01:55 PDT - Franka Star Validation Pass And Eval Wrapper
+
+Goal:
+- Clear the user-requested environment correctness gate and prepare periodic
+  checkpoint video eval for the Franka star kitting task.
+
+Validation:
+- validation job_id: `28931083`
+- run_name: `franka_star_env_validate_20260610_014331`
+- source_commit: `ea6143b664fd7cf4bd13e85657631d5995c7be13`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_star_28931083.out`
+- remote results:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_star_env_validate_20260610_014331`
+- local results:
+  `cluster_results/a1001/franka_star_env_validate_20260610_014331`
+- video:
+  `cluster_results/a1001/franka_star_env_validate_20260610_014331/videos/franka-star-kitting-validation-step-0.mp4`
+- video validation: `1280x720`, `479` frames, `7.983333s`, `60 FPS`.
+
+Result:
+- status: validation passed; Slurm state `COMPLETED`, exit `0:0`, elapsed
+  `00:01:37`.
+- `metrics.json` has `passed: true` and no failed checks.
+- key rollout metrics: `min_ee_to_star=0.08669093251228333`,
+  `min_finger_to_star=0.0765390545129776`,
+  `max_star_lift_height=0.012858569622039795`.
+- visual inspection: the validation video is nonblank and frames the Franka
+  gripper with the yellow star and fixture region visible.
+
+Change:
+- Re-enabled Franka task registration in `dextrah_lab/rl_games/eval_rollout.py`.
+- Added `cluster/sbatch_eval_franka_star_kitting_1gpu.sh` for checkpoint eval
+  videos without cube-specific overrides.
+
+Checks:
+- `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/train.py dextrah_lab/rl_games/validate_franka_star_kitting_env.py`
+- `bash -n cluster/sbatch_eval_franka_star_kitting_1gpu.sh cluster/sbatch_eval_cube_grasp_1gpu.sh cluster/sbatch_train_teacher_8gpu.sh`
+- `ruby -e "require 'yaml'; YAML.load_file('dextrah_lab/tasks/dextrah_franka_star_kitting/agents/rl_games_ppo_franka_star_kitting_cfg.yaml'); puts 'yaml ok'"`
+- `git diff --check`
+
+Next:
+- Commit/push, update `a1001`, launch Franka star smoke training, and assign a
+  separate agent to launch eval/video jobs once checkpoints exist.

@@ -70,6 +70,7 @@ from isaaclab_tasks.utils.hydra import hydra_task_config
 from isaaclab_rl.rl_games import RlGamesGpuEnv, RlGamesVecEnvWrapper
 
 import dextrah_lab.tasks.dextrah_kuka_allegro.gym_setup  # noqa: F401
+import dextrah_lab.tasks.dextrah_franka_star_kitting.gym_setup  # noqa: F401
 
 
 def _mean_float(value) -> float | None:
