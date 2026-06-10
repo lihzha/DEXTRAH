@@ -6624,3 +6624,107 @@ Next:
   left active for the next agent, with latest observed checkpoint
   `last_dextrah_lstm_ep_13310_rew_588.98224.pth` at `16:31 PDT`.
 - This agent is stopping per user request after committing/pushing this worklog.
+
+## 2026-06-10 16:39 PDT - Final Documentation Stop After Read-Only Resume
+
+Goal:
+- Stop all development activity per user request and document the current audit
+  state for handoff.
+
+Actions Taken:
+- No code changes were made after the previous handoff commit.
+- No new Slurm jobs were launched.
+- No active jobs were canceled.
+- Read-only inspection only:
+  - local git/worklog state;
+  - active A100 queue state;
+  - Franka cube validation artifacts;
+  - Franka star-kitting validation/eval/training scalars and video contact
+    sheet;
+  - original DEXTRAH KUKA/Allegro teacher scalars and latest checkpoint state.
+
+Version Control:
+- branch: `codex/dextrah-cluster-dev`
+- base commit before this documentation-only commit:
+  `943074c4c272ebfb35650772150851e11e51d13e`
+  (`Document Franka cube reward-gate handoff`)
+- dirty files before this entry:
+  - `WORKLOG.md` from this documentation update;
+  - untracked `AGENTS.md`, intentionally left untouched.
+- generated local artifacts are not committed:
+  - `cluster_results/a1002/analysis/franka_star_ppo_scalar_key_summary.json`
+  - `cluster_results/a1002/training/teacher_short_20260609_100021/summaries/events.out.tfevents.1781122897.batch-block7-01008`
+
+Current Job State:
+- scheduler snapshot at `2026-06-10 16:38:57 PDT`:
+  - job `28942245`, `dextrah_teacher_8gpu`, state `RUNNING`;
+  - partition `polar3`, node `batch-block7-01008`;
+  - elapsed `03:30:03`;
+  - current allocation end remains `2026-06-10 16:58:55 PDT`.
+- latest log/checkpoint snapshot inspected at `16:37 PDT`:
+  - latest observed progress: epoch `13390/20000`;
+  - latest checkpoint:
+    `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021/nn/last_dextrah_lstm_ep_13390_rew_615.46655.pth`;
+  - all `dextrah_runtime_rank_*.pth` sidecars refreshed at `16:37 PDT`.
+- parsed current teacher TensorBoard event:
+  - `in_success_region/iter`: last `0.45752`, tail-50 mean `0.450293`;
+  - `rewards/iter`: last `628.295`, tail-50 mean `625.986`;
+  - `num_adr_increases/iter`: last and tail-50 mean `50`;
+  - `lift_reward/iter`: `0` because the active ADR schedule has annealed lift
+    reward to zero, consistent with earlier notes.
+
+Franka Cube Audit State:
+- Validated implementation commit remains
+  `b268d76034ecff0ea765a456cada8f0364280aae`.
+- Validation job `28955366`
+  (`franka_cube_validate_rewardgate2_20260610_1626`) passed all checks.
+- Important passing checks:
+  - `reward_accepts_success_geometry_for_prelift_grasp`;
+  - `reward_accepts_success_geometry_for_lift`;
+  - success predicate accepts lifted cube near the Franka gripper and rejects
+    low/wrong-XY poses.
+- Local artifacts:
+  `cluster_results/a1002/validations/franka_cube_validate_rewardgate2_20260610_1626`.
+- Remaining gap:
+  - This proves environment/reward geometry, not learning.
+  - The next unresolved audit step is a bounded PPO run from
+    `b268d76034ecff0ea765a456cada8f0364280aae` compared against the stalled
+    `franka_cube_ppo_20260610_1558` baseline.
+
+Franka Star-Kitting Audit State:
+- Existing validation smoke tests establish basic geometry/reset/reward
+  monotonicity and scripted physical feasibility, but they do not prove learned
+  policy success.
+- Deterministic eval artifacts inspected show zero task success:
+  - `cluster_results/a1002/franka_star_balanced_eval_ep100_video_20260610_1331`
+    has `success_rate` final/mean/max all `0.0`;
+  - visual contact sheet shows the gripper hovering/approaching the yellow star,
+    with no pick, transport, or placement into the fixture.
+- Compact scalar summary saved locally at:
+  `cluster_results/a1002/analysis/franka_star_ppo_scalar_key_summary.json`.
+- Key scalar findings across fetched Franka star PPO runs:
+  - `star_success_rate/iter` remained `0` in all inspected runs;
+  - `star_lift_height/iter` stayed around sub-millimeter to a few millimeters;
+  - goal XY error stayed around `0.30 m`, so policies were not transporting the
+    object toward the fixture;
+  - several runs increased dense shaping terms such as
+    `star_lift_ready_reward`, `star_closed_grasp_reward`, or
+    `star_lift_action_reward` without corresponding real lift/success.
+- Most concrete reward-local-minimum example:
+  - `franka_star_rebalanced_ppo_20260610_1354`:
+    `star_lift_action_reward/iter` tail-50 mean about `9.8582`, while
+    `star_success_rate/iter` was `0` and `star_lift_height/iter` tail-50 mean
+    was about `0.000534 m`.
+- Current interpretation:
+  - Franka kitting is unresolved and should not be considered validated.
+  - The likely issue is still reward/curriculum/local-minimum behavior, not a
+    passing proof of task correctness.
+  - A useful next non-training step would be a cube-style validator check that
+    evaluates the star reward on actual measured Franka success/prelift geometry
+    rather than only synthetic scalar distances.
+
+Stop State:
+- Per user instruction, stop development here after committing this
+  documentation.
+- Do not continue monitoring, patching, launching, or canceling jobs in this
+  turn unless the user gives a new explicit instruction.
