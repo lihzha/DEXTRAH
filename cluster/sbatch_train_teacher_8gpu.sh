@@ -26,6 +26,7 @@ CACHE_NFS="${CACHE_NFS:-$NFS_ROOT/isaac_cache}"
 NPROC_PER_NODE="${NPROC_PER_NODE:-8}"
 NUM_NODES="${NUM_NODES:-1}"
 NUM_ENVS="${NUM_ENVS:-4096}"
+TASK="${TASK:-Dextrah-Kuka-Allegro}"
 USE_CUDA_GRAPH="${USE_CUDA_GRAPH:-True}"
 SLURM_JOB_ID_SAFE="${SLURM_JOB_ID:-0}"
 JOB_ID_SUFFIX="${SLURM_JOB_ID_SAFE: -4}"
@@ -111,6 +112,7 @@ echo "ISAACLAB_NFS=$ISAACLAB_NFS"
 echo "RESULTS_NFS=$RESULTS_NFS"
 echo "NPROC_PER_NODE=$NPROC_PER_NODE"
 echo "NUM_ENVS=$NUM_ENVS"
+echo "TASK=$TASK"
 echo "MASTER_PORT=$MASTER_PORT"
 echo "DISTRIBUTED=$DISTRIBUTED"
 echo "MULTI_GPU=$MULTI_GPU"
@@ -179,10 +181,33 @@ PY
       RESUME_ARGS=(--auto_resume)
     fi
 
+    TASK_OVERRIDES=()
+    if [ '$TASK' = 'Dextrah-Cube-Grasp' ]; then
+      TASK_OVERRIDES=(
+        agent.wandb_activate=False
+        env.max_pose_angle=45.0
+        env.use_cuda_graph='$USE_CUDA_GRAPH'
+        env.enable_adr=False
+        'env.adr_custom_cfg_dict.object_spawn.x_width_spawn=[0.08, 0.08]'
+        'env.adr_custom_cfg_dict.object_spawn.y_width_spawn=[0.08, 0.08]'
+      )
+    else
+      TASK_OVERRIDES=(
+        agent.wandb_activate=False
+        env.success_for_adr=0.4
+        env.objects_dir=visdex_objects
+        'env.adr_custom_cfg_dict.fabric_damping.gain=[10.0, 20.0]'
+        'env.adr_custom_cfg_dict.reward_weights.finger_curl_reg=[-0.01, -0.01]'
+        'env.adr_custom_cfg_dict.reward_weights.lift_weight=[5.0, 0.0]'
+        env.max_pose_angle=45.0
+        env.use_cuda_graph='$USE_CUDA_GRAPH'
+      )
+    fi
+
     TRAIN_ARGS=(
       train.py \
         --headless \
-        --task=Dextrah-Kuka-Allegro \
+        --task='$TASK' \
         --seed -1 \
         \"\${DISTRIBUTED_ARGS[@]}\" \
         \"\${RESUME_ARGS[@]}\" \
@@ -195,14 +220,7 @@ PY
         agent.params.config.mini_epochs='$MINI_EPOCHS' \
         agent.params.config.save_frequency='$SAVE_FREQUENCY' \
         agent.params.config.multi_gpu='$MULTI_GPU' \
-        agent.wandb_activate=False \
-        env.success_for_adr=0.4 \
-        env.objects_dir=visdex_objects \
-        'env.adr_custom_cfg_dict.fabric_damping.gain=[10.0, 20.0]' \
-        'env.adr_custom_cfg_dict.reward_weights.finger_curl_reg=[-0.01, -0.01]' \
-        'env.adr_custom_cfg_dict.reward_weights.lift_weight=[5.0, 0.0]' \
-        env.max_pose_angle=45.0 \
-        env.use_cuda_graph='$USE_CUDA_GRAPH'
+        \"\${TASK_OVERRIDES[@]}\"
     )
 
     if [ '$DISTRIBUTED' = 'True' ]; then

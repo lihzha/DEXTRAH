@@ -24,8 +24,15 @@ ENV_NAME="${ENV_NAME:-dextrah-isaaclab}"
 RESULTS_NFS="${RESULTS_NFS:-$NFS_ROOT/results/dextrah}"
 CACHE_NFS="${CACHE_NFS:-$NFS_ROOT/isaac_cache}"
 ROBOT="${ROBOT:-graspgenx_franka}"
-RUN_NAME="${RUN_NAME:-star_kitting_${SLURM_JOB_ID:-manual}}"
-OUT_DIR="$RESULTS_NFS/star_kitting_env/$RUN_NAME"
+SCENE="${SCENE:-star_kitting}"
+if [ "$SCENE" = "cube_motion" ]; then
+  RESULT_SUBDIR="${RESULT_SUBDIR:-franka_cube_motion}"
+  RUN_NAME="${RUN_NAME:-franka_cube_motion_${SLURM_JOB_ID:-manual}}"
+else
+  RESULT_SUBDIR="${RESULT_SUBDIR:-star_kitting_env}"
+  RUN_NAME="${RUN_NAME:-star_kitting_${SLURM_JOB_ID:-manual}}"
+fi
+OUT_DIR="$RESULTS_NFS/$RESULT_SUBDIR/$RUN_NAME"
 
 if [ ! -f "$IMAGE" ]; then
   echo "Missing Isaac Lab container image: $IMAGE"
@@ -66,6 +73,7 @@ echo "Rendering DEXTRAH star-kitting scene"
 echo "SLURM_JOB_ID=${SLURM_JOB_ID:-manual}"
 echo "OUT_DIR=$OUT_DIR"
 echo "IMAGE=$IMAGE"
+echo "SCENE=$SCENE"
 echo "ROBOT=$ROBOT"
 echo "GRASPGENX_NFS=$GRASPGENX_NFS"
 echo "CUROBO_ASSETS_NFS=$CUROBO_ASSETS_NFS"
@@ -93,7 +101,8 @@ srun \
       --headless \
       --enable_cameras \
       --device cuda:0 \
-      --output_dir /results/star_kitting_env/$RUN_NAME \
+      --output_dir /results/$RESULT_SUBDIR/$RUN_NAME \
+      --scene \"$SCENE\" \
       --width \"${WIDTH:-1280}\" \
       --height \"${HEIGHT:-720}\" \
       --fps \"${FPS:-12}\" \
@@ -114,6 +123,13 @@ srun \
       --fixture_clearance \"${FIXTURE_CLEARANCE:-0.012}\" \
       --star_start_yaw_deg \"${STAR_START_YAW_DEG:--24.0}\" \
       --fixture_yaw_deg \"${FIXTURE_YAW_DEG:-18.0}\" \
+      --cube_size \"${CUBE_SIZE:-0.06}\" \
+      --cube_start_x \"${CUBE_START_X:--0.55}\" \
+      --cube_start_y \"${CUBE_START_Y:-0.10}\" \
+      --cube_forward_travel \"${CUBE_FORWARD_TRAVEL:--0.14}\" \
+      --cube_lateral_disturbance \"${CUBE_LATERAL_DISTURBANCE:-0.08}\" \
+      --cube_vertical_disturbance \"${CUBE_VERTICAL_DISTURBANCE:-0.035}\" \
+      --cube_yaw_disturbance_deg \"${CUBE_YAW_DISTURBANCE_DEG:-55.0}\" \
       --view \"${VIEW:-overview}\" \
       --dynamic_star \
       \${STATIC_STAR:+--static_star} \

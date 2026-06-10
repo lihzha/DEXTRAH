@@ -32,6 +32,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output_dir", type=Path, default=Path("/tmp/dextrah_star_kitting"))
     parser.add_argument("--seed", type=int, default=23)
+    parser.add_argument(
+        "--scene",
+        choices=("star_kitting", "cube_motion"),
+        default="star_kitting",
+        help="Scene to render. cube_motion keeps the Franka static and moves a single disturbed cube.",
+    )
     parser.add_argument("--width", type=int, default=1280)
     parser.add_argument("--height", type=int, default=720)
     parser.add_argument("--fps", type=int, default=12)
@@ -73,6 +79,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--fixture_clearance", type=float, default=0.012)
     parser.add_argument("--star_start_yaw_deg", type=float, default=-24.0)
     parser.add_argument("--fixture_yaw_deg", type=float, default=18.0)
+    parser.add_argument("--cube_size", type=float, default=0.06)
+    parser.add_argument("--cube_start_x", type=float, default=-0.55)
+    parser.add_argument("--cube_start_y", type=float, default=0.10)
+    parser.add_argument("--cube_forward_travel", type=float, default=-0.14)
+    parser.add_argument("--cube_lateral_disturbance", type=float, default=0.08)
+    parser.add_argument("--cube_vertical_disturbance", type=float, default=0.035)
+    parser.add_argument("--cube_yaw_disturbance_deg", type=float, default=55.0)
     parser.add_argument(
         "--dynamic_star",
         dest="dynamic_star",
@@ -1138,6 +1151,24 @@ def _create_fixture(
     }
 
 
+def _create_cube_object(
+    stage: Usd.Stage,
+    *,
+    root_path: str,
+    center: tuple[float, float, float],
+    size: float,
+    mat: UsdShade.Material,
+) -> dict[str, object]:
+    prim = _add_box(stage, root_path, center, (size, size, size), mat, collision=True)
+    return {
+        "prim_path": root_path,
+        "center": list(center),
+        "size": float(size),
+        "dynamic": False,
+        "motion_source": "deterministic keyframed disturbance trajectory",
+    }
+
+
 def _create_table(
     stage: Usd.Stage,
     *,
@@ -1344,6 +1375,7 @@ def _capture_overview_video(
     fps: int,
     seconds: float,
     sim_steps_per_frame: int,
+    frame_callback=None,
 ) -> list[str]:
     frame_count = max(2, int(round(float(fps) * float(seconds))))
     frames_dir = output_dir / "frames"
@@ -1374,6 +1406,8 @@ def _capture_overview_video(
         step_count = 1 if frame_idx == 0 else max(1, int(sim_steps_per_frame))
         for _ in range(step_count):
             sim.step(render=False)
+        if frame_callback is not None:
+            frame_callback(frame_idx, frame_count)
         sim.render()
         camera.update(float(sim.cfg.dt) * step_count)
         dst = frames_dir / f"overview_{frame_idx:04d}.png"
@@ -1383,6 +1417,201 @@ def _capture_overview_video(
 
     del camera
     return frames
+
+
+def _smoothstep(t: float) -> float:
+    t = max(0.0, min(1.0, float(t)))
+    return t * t * (3.0 - 2.0 * t)
+
+
+def _disturbance_pulse(t: float, center: float, width: float) -> float:
+    x = (float(t) - float(center)) / max(float(width), 1.0e-6)
+    return math.exp(-0.5 * x * x)
+
+
+def _cube_motion_state(frame_idx: int, frame_count: int, surface_z: float) -> dict[str, object]:
+    t = 0.0 if frame_count <= 1 else float(frame_idx) / float(frame_count - 1)
+    travel = _smoothstep(t)
+
+    kick_0 = _disturbance_pulse(t, 0.23, 0.045)
+    kick_1 = _disturbance_pulse(t, 0.52, 0.060)
+    kick_2 = _disturbance_pulse(t, 0.77, 0.050)
+    lateral = float(args_cli.cube_lateral_disturbance) * (0.75 * kick_0 - 1.0 * kick_1 + 0.55 * kick_2)
+    lift = float(args_cli.cube_vertical_disturbance) * (0.35 * kick_0 + 1.0 * kick_1 + 0.45 * kick_2)
+    yaw = float(args_cli.cube_yaw_disturbance_deg) * (0.25 * travel + 0.45 * kick_0 - 0.55 * kick_1 + 0.35 * kick_2)
+    pitch = 11.0 * kick_1 - 5.0 * kick_2
+    roll = -7.0 * kick_0 + 6.0 * kick_2
+
+    size = float(args_cli.cube_size)
+    center = (
+        float(args_cli.cube_start_x) + float(args_cli.cube_forward_travel) * travel,
+        float(args_cli.cube_start_y) + lateral,
+        float(surface_z) + 0.5 * size + 0.001 + lift,
+    )
+    return {
+        "frame": int(frame_idx),
+        "t": t,
+        "center": [float(v) for v in center],
+        "roll_pitch_yaw_deg": [float(roll), float(pitch), float(yaw)],
+        "disturbance_pulses": [float(kick_0), float(kick_1), float(kick_2)],
+    }
+
+
+def _apply_cube_motion(stage: Usd.Stage, cube_path: str, state: dict[str, object]) -> None:
+    prim = stage.GetPrimAtPath(cube_path)
+    if not prim.IsValid():
+        raise RuntimeError(f"Cube prim is missing: {cube_path}")
+    center = state["center"]
+    rpy = state["roll_pitch_yaw_deg"]
+    _set_xform(
+        prim,
+        (float(center[0]), float(center[1]), float(center[2])),
+        (float(args_cli.cube_size), float(args_cli.cube_size), float(args_cli.cube_size)),
+        rotate_xyz_deg=(float(rpy[0]), float(rpy[1]), float(rpy[2])),
+    )
+    update_stage()
+
+
+def _render_cube_motion_scene(
+    *,
+    output_dir: Path,
+    stage: Usd.Stage,
+    sim,
+    robot_spec: RobotSpec,
+    table: dict[str, float],
+    floor_mat: UsdShade.Material,
+    cube_mat: UsdShade.Material,
+) -> None:
+    surface_z = table["surface_z"]
+    table_center_x = table["center_x"]
+    cube_path = "/World/CubeTask/Cube"
+    cube_center = (
+        float(args_cli.cube_start_x),
+        float(args_cli.cube_start_y),
+        float(surface_z) + 0.5 * float(args_cli.cube_size) + 0.001,
+    )
+
+    UsdGeom.Xform.Define(stage, "/World/CubeTask")
+    _log("creating disturbed cube object")
+    cube = _create_cube_object(
+        stage,
+        root_path=cube_path,
+        center=cube_center,
+        size=float(args_cli.cube_size),
+        mat=cube_mat,
+    )
+    _add_box(stage, "/World/Floor", (0.0, 0.0, -0.015), (3.2, 2.8, 0.03), floor_mat, collision=True)
+
+    dome = stage.DefinePrim("/World/DomeLight", "DomeLight")
+    dome.CreateAttribute("inputs:intensity", Sdf.ValueTypeNames.Float).Set(650.0)
+    dome.CreateAttribute("inputs:color", Sdf.ValueTypeNames.Color3f).Set(Gf.Vec3f(1.0, 0.98, 0.92))
+    sun = stage.DefinePrim("/World/KeyLight", "DistantLight")
+    sun.CreateAttribute("inputs:intensity", Sdf.ValueTypeNames.Float).Set(1500.0)
+    sun.CreateAttribute("inputs:angle", Sdf.ValueTypeNames.Float).Set(0.35)
+    _set_xform(sun, (0.0, 0.0, 0.0), rotate_xyz_deg=(-45.0, 0.0, 35.0))
+
+    trajectory: list[dict[str, object]] = []
+
+    def frame_callback(frame_idx: int, frame_count: int) -> None:
+        state = _cube_motion_state(frame_idx, frame_count, surface_z)
+        _apply_cube_motion(stage, cube_path, state)
+        trajectory.append(state)
+
+    metadata = {
+        "generated_at_unix": time.time(),
+        "task": "single_cube_motion",
+        "task_description": "Static GraspGenX Franka with one cube moved by deterministic disturbance kicks.",
+        "simulation_backend": "Isaac Sim / Isaac Lab / PhysX USD scene",
+        "robot": _robot_metadata(robot_spec),
+        "axes": {
+            "table_long_axis": "world_y",
+            "table_short_axis": "world_x",
+            "robot_base_origin": list(robot_spec.base_translation),
+            "table_is_in_front_of_robot_at_negative_x": True,
+        },
+        "dimensions_m": {
+            "table_short_x": table["short_x"],
+            "table_long_y": table["long_y"],
+            "table_height": table["height"],
+            "table_surface_z": surface_z,
+            "cube_size": float(args_cli.cube_size),
+            "cube_forward_travel": float(args_cli.cube_forward_travel),
+            "cube_lateral_disturbance": float(args_cli.cube_lateral_disturbance),
+            "cube_vertical_disturbance": float(args_cli.cube_vertical_disturbance),
+        },
+        "objects": {
+            "cube": cube,
+            "disturbances": [
+                {"center_t": 0.23, "description": "positive lateral slide with small bounce"},
+                {"center_t": 0.52, "description": "negative lateral shove with main vertical hop"},
+                {"center_t": 0.77, "description": "settling correction shove"},
+            ],
+        },
+        "simulation": {
+            "physics_device": str(args_cli.physics_device),
+            "sim_dt": 1.0 / 60.0,
+            "render_interval": 1,
+            "cube_motion_is_keyframed": True,
+        },
+        "checks": {
+            "robot_selected": robot_spec.name,
+            "uses_graspgenx_franka": robot_spec.name == "graspgenx_franka_panda",
+            "franka_is_static": True,
+            "cube_moves": True,
+        },
+    }
+    _write_metadata(output_dir / "scene_metadata.json", metadata)
+
+    usd_path = output_dir / "franka_cube_motion_env.usda"
+    _log(f"exporting USD: {usd_path}")
+    stage.GetRootLayer().Export(str(usd_path))
+
+    table_target = (table_center_x, float(args_cli.cube_start_y), surface_z + 0.16)
+    views = {
+        "overview": ((0.22, -0.72, 2.18), table_target),
+        "robot_side": ((1.20, 0.06, 1.32), (float(args_cli.cube_start_x), float(args_cli.cube_start_y), surface_z + 0.12)),
+        "topdown": ((table_center_x, float(args_cli.cube_start_y), 2.05), (table_center_x, float(args_cli.cube_start_y), surface_z + 0.02)),
+        "pickup_close": ((0.05, float(args_cli.cube_start_y) - 0.46, 1.16), (float(args_cli.cube_start_x), float(args_cli.cube_start_y), surface_z + 0.08)),
+        "fixture_close": ((0.05, float(args_cli.cube_start_y) - 0.46, 1.16), (float(args_cli.cube_start_x), float(args_cli.cube_start_y), surface_z + 0.08)),
+    }
+    name = str(args_cli.view)
+    eye, look_at = views[name]
+    if bool(args_cli.capture_video):
+        if name != "overview":
+            raise ValueError("--capture_video is currently overview-only")
+        frame_paths = _capture_overview_video(
+            sim=sim,
+            eye=eye,
+            target=look_at,
+            output_dir=output_dir,
+            fps=int(args_cli.fps),
+            seconds=float(args_cli.video_seconds),
+            sim_steps_per_frame=int(args_cli.sim_steps_per_frame),
+            frame_callback=frame_callback,
+        )
+        rendered = {"overview_frames": frame_paths}
+    else:
+        frame_callback(0, 1)
+        _log(f"capturing view: {name}")
+        rendered = {name: str(_capture_view(name, eye, look_at, output_dir))}
+
+    _write_metadata(output_dir / "trajectory.json", {"cube_trajectory": trajectory})
+    _write_metadata(
+        output_dir / "render_manifest.json",
+        {
+            "usd": str(usd_path),
+            "metadata": str(output_dir / "scene_metadata.json"),
+            "trajectory": str(output_dir / "trajectory.json"),
+            "renders": rendered,
+            "fps": int(args_cli.fps),
+            "video_seconds": float(args_cli.video_seconds),
+            "sim_steps_per_frame": int(args_cli.sim_steps_per_frame),
+        },
+    )
+
+    print(f"Wrote Franka cube-motion scene renders to {output_dir}")
+    print(f"Cube trajectory frames: {len(trajectory)}")
+    print(f"USD: {usd_path}")
 
 
 def main() -> None:
@@ -1410,6 +1639,7 @@ def main() -> None:
     leg_mat = _material(stage, "/World/Looks/table_dark", (0.20, 0.22, 0.24))
     floor_mat = _material(stage, "/World/Looks/floor_gray", (0.28, 0.30, 0.31))
     star_mat = _material(stage, "/World/Looks/star_yellow", (0.95, 0.70, 0.16), roughness=0.55)
+    cube_mat = _material(stage, "/World/Looks/cube_blue", (0.10, 0.42, 0.86), roughness=0.62)
     collision_mat = _material(stage, "/World/Looks/collision_hidden", (0.95, 0.70, 0.16), roughness=0.55)
     fixture_mat = _material(stage, "/World/Looks/fixture_graphite", (0.16, 0.18, 0.19), roughness=0.47)
 
@@ -1440,6 +1670,20 @@ def main() -> None:
         table_top_thick=table_top_thick,
     )
     surface_z = table["surface_z"]
+
+    if args_cli.scene == "cube_motion":
+        _render_cube_motion_scene(
+            output_dir=output_dir,
+            stage=stage,
+            sim=sim,
+            robot_spec=robot_spec,
+            table=table,
+            floor_mat=floor_mat,
+            cube_mat=cube_mat,
+        )
+        sim.clear_all_callbacks()
+        sim.clear_instance()
+        return
 
     star_outer_radius = float(args_cli.star_outer_radius)
     star_inner_radius = float(args_cli.star_inner_radius)

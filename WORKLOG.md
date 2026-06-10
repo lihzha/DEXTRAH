@@ -1166,3 +1166,216 @@ Analysis:
 Next:
 - Commit/push/pull the DEXTRAH changes, stage the cuRobo Franka asset tree on
   L401, and run a short `640x360` star-kitting render smoke.
+
+## 2026-06-09 21:19 PDT - Single Cube Grasp Task Implementation
+
+Goal:
+- Add a state-based DEXTRAH RL task for grasping and lifting one cube, with
+  reset XY randomization over 8 cm by 8 cm.
+
+Hypothesis:
+- The existing Kuka-Allegro DirectRLEnv can be reused if cube-specific object
+  spawning, observation sizing, and reward computation are isolated in a
+  subclass and separate reward module.
+
+Change:
+- Added `Dextrah-Cube-Grasp` as a new Gym task.
+- Added a procedural dynamic cube object with explicit collision, friction,
+  damping, mass, and low restitution settings.
+- Added modular cube reward terms for approach, enclosure, lift progress,
+  target height, XY stability, success, finger regularization, and action
+  penalty.
+- Added a state-based RL-Games PPO config and made the A100 training wrapper
+  selectable with `TASK=Dextrah-Cube-Grasp`.
+
+Version Control:
+- branch: `codex/dextrah-cluster-dev`
+- base_commit: `7ba1f5b1f902a7e63541d5495ea7c18d64b74dd4`
+- implementation_commit: pending
+- push/pull: pending
+- changed_files: `dextrah_lab/tasks/dextrah_kuka_allegro/dextrah_cube_grasp_env.py`,
+  `dextrah_lab/tasks/dextrah_kuka_allegro/dextrah_cube_grasp_env_cfg.py`,
+  `dextrah_lab/tasks/dextrah_kuka_allegro/dextrah_cube_grasp_rewards.py`,
+  `dextrah_lab/tasks/dextrah_kuka_allegro/gym_setup.py`,
+  `dextrah_lab/tasks/dextrah_kuka_allegro/agents/rl_games_ppo_cube_grasp_cfg.yaml`,
+  `cluster/sbatch_train_teacher_8gpu.sh`, `README.md`, `WORKLOG.md`
+
+Command / Job:
+- local checks:
+  - `python3 -m py_compile dextrah_lab/tasks/dextrah_kuka_allegro/dextrah_cube_grasp_rewards.py dextrah_lab/tasks/dextrah_kuka_allegro/dextrah_cube_grasp_env_cfg.py dextrah_lab/tasks/dextrah_kuka_allegro/dextrah_cube_grasp_env.py dextrah_lab/tasks/dextrah_kuka_allegro/gym_setup.py`
+  - `bash -n cluster/sbatch_train_teacher_8gpu.sh`
+  - `ruby -e "require 'yaml'; YAML.load_file('dextrah_lab/tasks/dextrah_kuka_allegro/agents/rl_games_ppo_cube_grasp_cfg.yaml'); puts 'yaml ok'"`
+- cluster job: not launched
+
+Result:
+- status: fixed locally; simulator smoke pending
+- key evidence: Python compile, shell syntax, and YAML parse checks passed.
+- limitation: local reward runtime smoke could not run because this shell does
+  not have `torch` installed.
+
+Analysis:
+- The task intentionally keeps ADR disabled initially. The required object
+  location randomization is fixed through the object spawn custom range instead
+  of being tied to ADR curriculum progress.
+- The cube-specific checkpoint tensor names are appended in the subclass so
+  RL-Games auto-resume preserves the cube reset reference pose and reward
+  state.
+
+Next:
+- Run a bounded Isaac Lab smoke in the cluster container, e.g. with
+  `TASK=Dextrah-Cube-Grasp NUM_ENVS=64 MAX_ITERATIONS=1 DISTRIBUTED=False MULTI_GPU=False`.
+
+## 2026-06-09 21:23 PDT - Clutter-Bin Initial Settling Video
+
+Goal:
+- Produce a new l401 overview video that starts at the initial sphere pile/drop
+  state and records the dynamic settling, instead of only showing the final
+  slept state.
+
+Hypothesis:
+- Recording TiledCamera frames inside the existing settle loop at
+  `SIM_STEPS_PER_FRAME` cadence will show the full initial settling while
+  preserving the same GPU PhysX contact, rest-gate, and velocity-zeroing path.
+
+Change:
+- Added `--capture_settle_video` to
+  `dextrah_lab/scene_scripts/render_clutter_bin_env.py`.
+- Added `CAPTURE_SETTLE_VIDEO=1` support to
+  `cluster/sbatch_render_clutter_bin_env.sh`.
+- Local checks passed:
+  `python3 -m py_compile dextrah_lab/scene_scripts/render_clutter_bin_env.py`
+  and `bash -n cluster/sbatch_render_clutter_bin_env.sh`.
+
+Version Control:
+- branch: `codex/dextrah-cluster-dev`
+- base_commit: `1f21ccc6c6cd45ac18ea1fe38e9a1cd91f4529e7`
+- implementation_commit: pending
+- push/pull: pending
+- changed_files:
+  `dextrah_lab/scene_scripts/render_clutter_bin_env.py`,
+  `cluster/sbatch_render_clutter_bin_env.sh`
+- note: `WORKLOG.md` already contains unrelated uncommitted entries, so this
+  entry is append-only and may stay unstaged if needed.
+
+Command / Job:
+- target run: `clutter_bin_settle_video_sphere160_<timestamp>`
+- planned l401 command: interactive `salloc` on a known-good L40 node with
+  `CAPTURE_VIDEO=1`, `CAPTURE_SETTLE_VIDEO=1`, `DYNAMIC_SPHERE_COUNT=160`,
+  `FPS=8`, `VIDEO_SECONDS=10.0`, `SIM_STEPS_PER_FRAME=30`, and GPU PhysX.
+
+Result:
+- status: implementation ready for deploy.
+
+Analysis:
+- The old video mode intentionally rendered after settling; the new mode keeps
+  that default and adds a separate during-settle path for this visualization.
+
+Next:
+- Commit/push/pull the renderer/wrapper change, run the l401 job, fetch and
+  inspect the video, then clean older visualizations after the new one passes.
+
+## 2026-06-09 21:27 PDT - Clutter-Bin Initial Settling Video Result
+
+Goal:
+- Validate and keep the final clutter-bin video that starts from the initial
+  settling state.
+
+Version Control:
+- branch: `codex/dextrah-cluster-dev`
+- implementation_commit: `d24a38bbacee8cf6227845d1ea654019abdbf799`
+- push/pull: pushed to origin and fast-forwarded on l401.
+- remote_commit/status: l401 checkout at
+  `d24a38bbacee8cf6227845d1ea654019abdbf799`.
+- changed_files:
+  `dextrah_lab/scene_scripts/render_clutter_bin_env.py`,
+  `cluster/sbatch_render_clutter_bin_env.sh`
+
+Command / Job:
+- command: l401 `salloc` on `pool0-00019`
+- job_id: `1019656`
+- run_name: `clutter_bin_initial_settle_sphere160_20260609_212506`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/clutter_bin_env/clutter_bin_initial_settle_sphere160_20260609_212506`
+- local_dir:
+  `cluster_results/l401/clutter_bin_initial_settle_sphere160_20260609_212506`
+- key settings: `CAPTURE_VIDEO=1`, `CAPTURE_SETTLE_VIDEO=1`,
+  `DYNAMIC_SPHERE_COUNT=160`, `FPS=8`, `VIDEO_SECONDS=10.0`,
+  `SIM_STEPS_PER_FRAME=30`, GPU PhysX `cuda:0`.
+
+Result:
+- status: passed
+- video: `overview.mp4`, `640x360`, `8 fps`, `80` frames, `10.0 s`.
+- contact sheet: `settling_contact_sheet.png`.
+- settle metrics: `video_capture_mode=during_initial_settle`,
+  `settled=true`, `rest_gate_passed=true`,
+  `rest_gate_zeroed_velocities=true`, `actual_steps=2280`,
+  `actual_sim_time_s=19.0`, final max linear/angular speeds `0.0`.
+- frame coverage: frames 1-77 capture physics steps `0..2280` at 30-step
+  cadence; frames 78-80 hold the slept settled state.
+- visual inspection: first frame shows the initial filled left bin, middle
+  frames show the spheres compacting under gravity, final frame shows the
+  settled pile; the right bin remains empty.
+- cleanup: removed outdated clutter-bin local and remote result
+  `clutter_bin_vel_final_sphere160_20260609_211415`; only the new clutter-bin
+  run remains in both locations.
+- remote artifact completion: copied locally encoded `overview.mp4` and
+  `settling_contact_sheet.png` back into the l401 run directory.
+
+Analysis:
+- The new capture mode uses the same contact/rest-gate path as the final
+  velocity-settled run, but records frames during the settling loop rather than
+  after the pile has already been slept.
+
+Next:
+- User can inspect the local `overview.mp4` and sidecar metrics in the final
+  result directory.
+
+## 2026-06-09 21:54 PDT - Franka Single-Cube Motion Render
+
+Goal:
+- Render a video of the single-cube task visualization using the GraspGenX
+  Franka, with the Franka static and only the cube moving.
+
+Hypothesis:
+- The existing star-kitting scene script already has the correct GraspGenX
+  Franka loader, camera capture path, and L401 wrapper mounts. Adding a
+  `cube_motion` scene mode will reuse that loader while avoiding a separate
+  launch stack.
+
+Change:
+- Added `--scene cube_motion` to `render_star_kitting_env.py`.
+- The new mode creates a single cube on the table and keyframes deterministic
+  disturbance kicks: lateral slides, a small vertical hop, and yaw/roll/pitch
+  perturbations.
+- The Franka is rendered from GraspGenX/cuRobo assets and remains static.
+- Added `SCENE=cube_motion` support to
+  `cluster/sbatch_render_star_kitting_env.sh`, writing results under
+  `franka_cube_motion/<run_name>`.
+
+Version Control:
+- branch: `codex/dextrah-cluster-dev`
+- base_commit: `aaec18489b96e47b5d8eba9327fffe14d0522165`
+- implementation_commit: pending
+- push/pull: pending
+- changed_files:
+  `dextrah_lab/scene_scripts/render_star_kitting_env.py`,
+  `cluster/sbatch_render_star_kitting_env.sh`, `WORKLOG.md`
+
+Command / Job:
+- local checks:
+  - `python3 -m py_compile dextrah_lab/scene_scripts/render_star_kitting_env.py`
+  - `bash -n cluster/sbatch_render_star_kitting_env.sh`
+- planned l401 command:
+  `SCENE=cube_motion RUN_NAME=franka_cube_motion_<timestamp> WIDTH=640 HEIGHT=360 FPS=12 VIDEO_SECONDS=5.0 CAPTURE_VIDEO=1 PHYSICS_DEVICE=cuda:0 sbatch --export=ALL cluster/sbatch_render_star_kitting_env.sh`
+
+Result:
+- status: implementation ready for deploy.
+
+Analysis:
+- The current Franka is authored as static URDF OBJ meshes, not a live PhysX
+  articulation. This matches the revised request: no Franka motion, cube
+  motion only.
+
+Next:
+- Commit/push/pull source, submit a short L401 render, fetch frames, encode
+  MP4, and inspect first/middle/last frames.
