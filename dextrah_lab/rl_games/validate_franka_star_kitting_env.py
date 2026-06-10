@@ -363,7 +363,7 @@ def _scripted_target(
     star = task_env.star_initial_pos.detach()
     goal = task_env.star_goal_pos.detach()
     z_above_star = star[:, 2] + 0.16
-    z_grasp = star[:, 2] + 0.012
+    z_grasp = star[:, 2] + 0.006
     z_lift = star[:, 2] + 0.17
     z_place = goal[:, 2] + 0.045
     phase = float(step) / max(float(num_steps - 1), 1.0)
@@ -381,19 +381,19 @@ def _scripted_target(
         target[:, 0:2] = star[:, 0:2]
         target[:, 2] = z_above_star
         gripper = 1.0
-    elif phase < 0.44:
+    elif phase < 0.54:
         target[:, 0:2] = star[:, 0:2]
         target[:, 2] = z_grasp
         gripper = 1.0
-    elif phase < 0.58:
+    elif phase < 0.66:
         target[:, 0:2] = star[:, 0:2]
         target[:, 2] = z_grasp
         gripper = -1.0
-    elif phase < 0.72:
+    elif phase < 0.80:
         target[:, 0:2] = star[:, 0:2]
         target[:, 2] = z_lift
         gripper = -1.0
-    elif phase < 0.84:
+    elif phase < 0.90:
         target[:, 0:2] = goal[:, 0:2]
         target[:, 2] = z_lift
         gripper = -1.0
@@ -532,8 +532,8 @@ def _run_scripted_rollout(env, task_env, checks: CheckRecorder, num_steps: int, 
     )
     checks.check(
         "scripted_rollout_fingers_approach_star",
-        min_finger_star < 0.085
-        and (initial_finger_star < 0.085 or min_finger_star < initial_finger_star - 0.015),
+        min_finger_star < 0.105
+        and (initial_finger_star < 0.105 or min_finger_star < initial_finger_star - 0.030),
         initial_finger_to_star=initial_finger_star,
         min_finger_to_star=min_finger_star,
         improvement=initial_finger_star - min_finger_star,

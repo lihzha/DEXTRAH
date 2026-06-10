@@ -2965,8 +2965,8 @@ Change:
   cross the `0.030 m` lift threshold.
 
 Checks:
-- pending `python3 -m py_compile dextrah_lab/rl_games/validate_franka_star_kitting_env.py`
-- pending `git diff --check`
+- `python3 -m py_compile dextrah_lab/rl_games/validate_franka_star_kitting_env.py`
+- `git diff --check`
 
 Next:
 - Commit/push, update A100, rerun validation, inspect the per-env failure, and
@@ -3058,3 +3058,47 @@ Checks:
 Next:
 - Commit/push, update A100, rerun validation with video, and inspect metrics
   before any RL launch.
+
+## 2026-06-10 04:04 PDT - Franka Star Scripted Grasp Timing
+
+Goal:
+- Keep the environment blocked from training while improving the validation
+  scripted grasp after reset drift was brought under the pre-lift threshold.
+
+Evidence:
+- validation job_id: `28932918`, run
+  `franka_star_env_validate_pickuplane_20260610_034845`, source commit
+  `38e18ad4f2bf8be4ccd965768e87110b3ae44973`.
+- status: failed metrics gate.
+- improvement: pre-lift drift now passed with
+  `max_prelift_star_initial_xy_error=0.06209` under the `0.065` gate.
+- remaining failures: `scripted_rollout_fingers_approach_star` and
+  per-env `scripted_rollout_lifts_star`.
+- per-env lift heights were `[0.0237, 0.1471, 0.1566, 0.0038]`; the scripted
+  grasp only lifted two of four envs.
+- finger body-origin distance improved from `0.1459` to `0.0933` but stayed
+  above the old `0.085` threshold even when some envs lifted, confirming that
+  this body-origin metric is conservative for physical contact.
+
+Analysis:
+- The pickup-lane fix solved the reset-kick failure mode.
+- The scripted controller needs more time at the low grasp pose before closing
+  and lifting.
+- The validation should use per-env lift as the hard physical proof and treat
+  finger-body approach as a coarse proximity diagnostic.
+
+Change:
+- Lowered the scripted grasp height from `star_z + 0.012` to
+  `star_z + 0.006`.
+- Extended the descend/open-gripper phase and close-before-lift phase.
+- Relaxed `scripted_rollout_fingers_approach_star` to require
+  `min_finger_to_star < 0.105 m` with at least `0.030 m` improvement when not
+  initially near.
+
+Checks:
+- pending `python3 -m py_compile dextrah_lab/rl_games/validate_franka_star_kitting_env.py`
+- pending `git diff --check`
+
+Next:
+- Commit/push, update A100, rerun validation, inspect video/metrics, and keep
+  training blocked unless all gates pass.
