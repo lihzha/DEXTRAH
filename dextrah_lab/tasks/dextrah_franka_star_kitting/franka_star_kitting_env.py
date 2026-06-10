@@ -320,6 +320,7 @@ class DextrahFrankaStarKittingEnv(DirectRLEnv):
             "star_goal_height_error": self.goal_height_error.mean(),
             "star_goal_yaw_error": self.goal_yaw_error.mean(),
             "star_success_rate": self.in_success_region.float().mean(),
+            "star_has_lifted_rate": self.has_lifted_star.float().mean(),
             "star_gripper_width": self.gripper_width.mean(),
         }
         self.extras["log"] = log_terms

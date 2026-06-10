@@ -2699,3 +2699,107 @@ Checks:
 Next:
 - Commit/push, update A100, rerun validation, then launch smoke training only
   if validation passes and artifacts are inspected.
+
+## 2026-06-10 02:55 PDT - Franka Star Validation Pass And Lift-Discovery Smoke
+
+Goal:
+- Start a bounded PPO smoke run only after the environment, reward predicates,
+  validation video, and cluster wrapper all pass on the deployed source.
+
+Validation:
+- validation job_id: `28931852`
+- run_name: `franka_star_env_validate_threshold_20260610_025207`
+- source_commit: `8a03066d7c09dbf8b60e19379436f4a4bb407652`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_star_28931852.out`
+- remote results:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_star_env_validate_threshold_20260610_025207`
+- local results:
+  `cluster_results/a1001/franka_star_env_validate_threshold_20260610_025207`
+- status: `COMPLETED 0:0`, elapsed `00:01:47`; host-side output ended with
+  `Validation metrics passed` and `Validation Done`.
+- video validation: `1280x720`, `479` frames, `7.983333s`, `60 FPS`.
+- key metrics: `passed=true`, no failed checks,
+  `min_finger_to_star=0.0786`, `max_star_initial_xy_error=0.0622`,
+  `max_star_lift_height=0.0088`.
+
+Training Launch:
+- job_id: `28931878`
+- run_name: `franka_star_liftdiscovery_smoke_ppo_20260610_025457`
+- source_commit: `8a03066d7c09dbf8b60e19379436f4a4bb407652`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28931878.out`
+- expected run dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_star_kitting/franka_star_liftdiscovery_smoke_ppo_20260610_025457`
+- config: `NUM_ENVS=1024`, `HORIZON_LENGTH=48`,
+  `MINIBATCH_SIZE=16384`, `MAX_ITERATIONS=300`,
+  `SAVE_FREQUENCY=25`, `ENTROPY_COEF=0.002`,
+  `AUTO_RESUME=False`, `SELF_RELAUNCH=False`, `USE_CUDA_GRAPH=False`.
+
+Next:
+- Monitor reward terms/losses and checkpoints; launch eval/video from the first
+  useful checkpoint via the eval wrapper, then tune reward/hyperparameters based
+  on rollout evidence.
+
+## 2026-06-10 03:19 PDT - Franka Star Reward Exploit Patch
+
+Goal:
+- Diagnose the completed lift-discovery smoke and patch the environment before
+  launching any further training.
+
+Evidence:
+- smoke training job_id: `28931878`, run
+  `franka_star_liftdiscovery_smoke_ppo_20260610_025457`, source commit
+  `8a03066d7c09dbf8b60e19379436f4a4bb407652`.
+- status: `COMPLETED 0:0`, elapsed `00:13:33`, final checkpoint
+  `last_dextrah_franka_star_kitting_ep_300_rew_2125.4338.pth`.
+- training scalars through iter `254`: `star_success_rate=0`,
+  `star_success_bonus=0`, `star_lift_height=0.0133`,
+  `star_initial_xy_error=0.0956`, `star_goal_xy_error=0.2829`.
+- ep25 eval job `28932016`: completed, no success/lift; video valid
+  `1280x720`, `600` frames, `10s`.
+- ep250 eval job `28932067`: completed, `success_rate_final=0`,
+  `reward_mean=0.5559`; no meaningful lift.
+- ep300 eval job `28932109`, run
+  `franka_star_liftdiscovery_smoke_eval_ep300_20260610_031109`: completed,
+  `success_rate_final=0`, `success_rate_mean=0`,
+  `reward_mean=0.6502`, `reward_final=-0.4679`, max lift `0.01248 m`,
+  final lift `0.00585 m`, final star drift `0.0510 m`, final goal XY error
+  `0.2598 m`.
+- ep300 video fetched locally under
+  `cluster_results/a1001/franka_star_liftdiscovery_smoke_eval_ep300_20260610_031109`;
+  `ffprobe`: `1280x720`, `600` frames, `10.000s`, `60 FPS`.
+- visual inspection: the hand crowds and pinches around the star, causing
+  small bumps and drift, but never performs a stable lift or moves the star to
+  the fixture.
+
+Analysis:
+- The environment geometry/render path was valid, but the validation gate was
+  not strict enough: it accepted approach and bounded drift without requiring a
+  scripted physical lift.
+- The reward was exploitable because approach/closed-grasp/lift-intent and tiny
+  lift shaping could outweigh the weak pre-lift drag and far-close penalties.
+
+Change:
+- Tightened grasp/lift rewards with a finger-contact gate and delayed lift
+  reward until visible object height change.
+- Reduced pure approach reward, reduced lift-intent weight, increased
+  anti-drag and far-close penalties, and increased lift/place/success weights.
+- Added `star_has_lifted_rate` logging and eval-side metric summaries.
+- Extended validation reward checks with hover-pinching and actual-lift checks.
+- Made scripted validation lower the gripper target and require
+  `scripted_rollout_lifts_star > 0.030 m`.
+
+Checks:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_rewards.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env_cfg.py dextrah_lab/rl_games/validate_franka_star_kitting_env.py dextrah_lab/rl_games/eval_rollout.py`
+- `bash -n cluster/sbatch_validate_franka_star_kitting_env_1gpu.sh`
+- `bash -n cluster/sbatch_eval_franka_star_kitting_1gpu.sh`
+- `bash -n cluster/sbatch_train_teacher_8gpu.sh`
+- Local pure Torch reward script could not run because local `torch` is not
+  installed; the cluster validation will run those reward checks inside the
+  Isaac/DEXTRAH container before any further training.
+
+Next:
+- Commit/push, update A100 checkout, run the stricter validation, inspect
+  metrics/video, and only then launch another PPO smoke if the scripted lift
+  gate passes.

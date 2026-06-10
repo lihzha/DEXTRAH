@@ -100,11 +100,32 @@ def _collect_task_metrics(task_env) -> dict[str, float | None]:
         "goal_xy_error",
         "goal_height_error",
         "goal_yaw_error",
+        "has_lifted_star",
         "ee_to_star_dist",
         "finger_center_to_star_dist",
         "gripper_width",
     ]
     return {name: _env_metric(task_env, name) for name in metric_names if hasattr(task_env, name)}
+
+
+def _summarize_step_metrics(step_metrics: list[dict[str, float | int | None]]) -> dict[str, dict[str, float | int]]:
+    summaries: dict[str, dict[str, float | int]] = {}
+    for name in sorted({key for item in step_metrics for key in item.keys()} - {"step"}):
+        records = [(item, float(item[name])) for item in step_metrics if item.get(name) is not None]
+        if not records:
+            continue
+        float_values = [value for _, value in records]
+        max_idx = max(range(len(float_values)), key=lambda idx: float_values[idx])
+        min_idx = min(range(len(float_values)), key=lambda idx: float_values[idx])
+        summaries[name] = {
+            "final": float_values[-1],
+            "max": float_values[max_idx],
+            "max_step": int(records[max_idx][0]["step"]),
+            "min": float_values[min_idx],
+            "min_step": int(records[min_idx][0]["step"]),
+            "mean": sum(float_values) / len(float_values),
+        }
+    return summaries
 
 
 def _checkpoint_path(agent_cfg: dict) -> str:
@@ -291,6 +312,7 @@ def main(env_cfg, agent_cfg: dict):
         "video_files": _latest_video_files(video_folder),
         "output_dir": str(output_dir),
         "env_closed": env_closed,
+        "metric_summaries": _summarize_step_metrics(step_metrics),
     }
     payload = {"summary": summary, "steps": step_metrics}
     metrics_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")

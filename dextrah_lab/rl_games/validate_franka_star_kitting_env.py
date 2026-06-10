@@ -148,22 +148,22 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
         "actions": torch.zeros(1, 7, device=device),
         "target_lift_height": 0.08,
         "max_gripper_width": 0.08,
-        "approach_weight": 2.0,
+        "approach_weight": 1.0,
         "approach_sharpness": 9.0,
-        "grasp_weight": 1.5,
-        "closed_grasp_weight": 4.0,
-        "grasp_sharpness": 18.0,
-        "lift_weight": 16.0,
-        "lift_action_weight": 2.0,
-        "prelift_move_penalty_weight": -2.0,
-        "close_far_penalty_weight": -1.5,
-        "transport_weight": 5.0,
+        "grasp_weight": 2.0,
+        "closed_grasp_weight": 5.0,
+        "grasp_sharpness": 28.0,
+        "lift_weight": 26.0,
+        "lift_action_weight": 0.5,
+        "prelift_move_penalty_weight": -8.0,
+        "close_far_penalty_weight": -4.0,
+        "transport_weight": 6.0,
         "transport_xy_sharpness": 18.0,
         "yaw_weight": 3.0,
         "yaw_sharpness": 4.5,
-        "placement_weight": 8.0,
+        "placement_weight": 12.0,
         "placement_height_sharpness": 18.0,
-        "success_bonus_weight": 40.0,
+        "success_bonus_weight": 80.0,
         "action_penalty_weight": -0.002,
     }
 
@@ -197,6 +197,12 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
         near_reward=_mean(_reward_total(**near)),
         lift_intent_reward=_mean(_reward_total(**lift_intent)),
     )
+    checks.check(
+        "reward_actual_lift_exceeds_lift_intent",
+        bool((_reward_total(**lifted) > _reward_total(**lift_intent)).item()),
+        lift_intent_reward=_mean(_reward_total(**lift_intent)),
+        lifted_reward=_mean(_reward_total(**lifted)),
+    )
 
     lift_intent_far = dict(base)
     lift_intent_far["gripper_width"] = torch.tensor([0.018], device=device)
@@ -206,6 +212,18 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
         bool((_reward_total(**lift_intent) > _reward_total(**lift_intent_far)).item()),
         lift_intent_reward=_mean(_reward_total(**lift_intent)),
         far_lift_intent_reward=_mean(_reward_total(**lift_intent_far)),
+    )
+
+    hover_pinched = dict(near)
+    hover_pinched["finger_center_to_star_dist"] = torch.tensor([0.065], device=device)
+    hover_pinched["gripper_width"] = torch.tensor([0.030], device=device)
+    hover_pinched["star_initial_xy_error"] = torch.tensor([0.020], device=device)
+    hover_pinched["actions"] = torch.tensor([[0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -1.0]], device=device)
+    checks.check(
+        "reward_penalizes_hover_pinching_without_contact",
+        bool((_reward_total(**hover_pinched) < _reward_total(**near)).item()),
+        near_reward=_mean(_reward_total(**near)),
+        hover_pinched_reward=_mean(_reward_total(**hover_pinched)),
     )
 
     transported = dict(lifted)
@@ -247,7 +265,7 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
     )
 
     dragged = dict(near)
-    dragged["star_initial_xy_error"] = torch.tensor([0.10], device=device)
+    dragged["star_initial_xy_error"] = torch.tensor([0.05], device=device)
     checks.check(
         "reward_penalizes_prelift_dragging",
         bool((_reward_total(**dragged) < _reward_total(**near)).item()),
@@ -336,33 +354,33 @@ def _scripted_target(task_env, step: int, num_steps: int) -> tuple[torch.Tensor,
     star = task_env.star_initial_pos.detach()
     goal = task_env.star_goal_pos.detach()
     z_above_star = star[:, 2] + 0.12
-    z_grasp = star[:, 2] + 0.5 * float(task_env.cfg.star_thickness) + 0.010
+    z_grasp = star[:, 2] + 0.008
     z_lift = star[:, 2] + 0.17
     z_place = goal[:, 2] + 0.045
     phase = float(step) / max(float(num_steps - 1), 1.0)
 
     target = torch.zeros_like(star)
-    if phase < 0.34:
+    if phase < 0.22:
         target[:, 0:2] = star[:, 0:2]
         target[:, 2] = z_above_star
         gripper = 1.0
-    elif phase < 0.58:
+    elif phase < 0.40:
         target[:, 0:2] = star[:, 0:2]
         target[:, 2] = z_grasp
         gripper = 1.0
-    elif phase < 0.74:
+    elif phase < 0.56:
         target[:, 0:2] = star[:, 0:2]
         target[:, 2] = z_grasp
         gripper = -1.0
-    elif phase < 0.86:
+    elif phase < 0.72:
         target[:, 0:2] = star[:, 0:2]
         target[:, 2] = z_lift
         gripper = -1.0
-    elif phase < 0.94:
+    elif phase < 0.84:
         target[:, 0:2] = goal[:, 0:2]
         target[:, 2] = z_lift
         gripper = -1.0
-    elif phase < 0.98:
+    elif phase < 0.94:
         target[:, 0:2] = goal[:, 0:2]
         target[:, 2] = z_place
         gripper = -1.0
@@ -479,6 +497,12 @@ def _run_scripted_rollout(env, task_env, checks: CheckRecorder, num_steps: int, 
         "scripted_rollout_limits_prelift_star_motion",
         max_star_initial_xy_error < 0.065,
         max_star_initial_xy_error=max_star_initial_xy_error,
+    )
+    checks.check(
+        "scripted_rollout_lifts_star",
+        max_star_height > 0.030,
+        max_star_lift_height=max_star_height,
+        required_lift_height=0.030,
     )
 
     return {
