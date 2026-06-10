@@ -4498,6 +4498,34 @@ Checks:
 Next:
 - Commit/push and rerun full validation.
 
+## 2026-06-10 08:01 PDT - Anchor-Noise Validation Nearly Passes; Deeper Close Phase
+
+Goal:
+- Push the scripted validation over the physical lift gate without changing
+  task geometry or reward terms.
+
+Evidence:
+- validation job_id: `28938243`
+- run_name: `franka_star_env_validate_anchornoise_20260610_075338`
+- source commit: `924dfc7cedbcfb496ea6318e5a62178787b46549`
+- stable reward/pretransport behavior, but failed:
+  `scripted_rollout_fingers_approach_star` and
+  `scripted_rollout_lifts_star`.
+- `min_finger_to_star=0.10596`, about `1 mm` over the strict threshold.
+- `validation_lifted_rate=0.375`; one additional env reached
+  `0.02848 m`, just below the `0.030 m` validation lift threshold.
+
+Change:
+- Lowered scripted validation grasp depth from `star_anchor_z - 0.006` to
+  `star_anchor_z - 0.008`.
+- Extended the close phase to `0.74` and lift phase to `0.88`.
+
+Checks:
+- `python3 -m py_compile dextrah_lab/rl_games/validate_franka_star_kitting_env.py`
+
+Next:
+- Commit/push and rerun full validation.
+
 ## 2026-06-10 07:57 PDT - Mid-Noise Validation Failed; Anchored Retry Prepared
 
 Goal:

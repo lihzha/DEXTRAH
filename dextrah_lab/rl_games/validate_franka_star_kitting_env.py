@@ -429,7 +429,7 @@ def _scripted_target(
     goal = task_env.star_goal_pos.detach()
     pickup = star_anchor
     z_above_star = star_anchor[:, 2] + 0.16
-    z_grasp = star_anchor[:, 2] - 0.006
+    z_grasp = star_anchor[:, 2] - 0.008
     z_lift = star_anchor[:, 2] + 0.17
     z_place = goal[:, 2] + 0.045
     phase = float(step) / max(float(num_steps - 1), 1.0)
@@ -451,11 +451,11 @@ def _scripted_target(
         target[:, 0:2] = pickup[:, 0:2]
         target[:, 2] = z_grasp
         gripper = 1.0
-    elif phase < 0.70:
+    elif phase < 0.74:
         target[:, 0:2] = pickup[:, 0:2]
         target[:, 2] = z_grasp
         gripper = -1.0
-    elif phase < 0.84:
+    elif phase < 0.88:
         target[:, 0:2] = pickup[:, 0:2]
         target[:, 2] = z_lift
         gripper = -1.0
