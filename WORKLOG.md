@@ -3746,3 +3746,48 @@ Next:
   `LEARNING_RATE=1e-4`, `CENTRAL_VALUE_LEARNING_RATE=8e-5`,
   `ENTROPY_COEF=0.004`, `MAX_ITERATIONS=600`, `SELF_RELAUNCH=False`, then
   monitor reward terms and request early eval videos at saved checkpoints.
+
+## 2026-06-10 05:33 PDT - Franka Star Stability-Gated PPO Launched
+
+Goal:
+- Train the Franka star-kitting policy from the environment/reward source that
+  passed the stability-gated validation.
+
+Version Control:
+- branch: `codex/dextrah-cluster-dev`
+- behavior_commit: `c4e54478226ceed62057619fd3fac9d93b72cb90`
+- launch_commit: `2574ca4a13a2d2bb5423bdd10aadb9bfb1ce22c9`
+- remote_commit/status: A100 checkout clean at launch commit.
+
+Command / Job:
+- training job_id: `28935060`
+- run_name: `franka_star_stabilitygate_ppo_20260610_053229`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_star_kitting/franka_star_stabilitygate_ppo_20260610_053229`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28935060.out`
+- command: `sbatch --partition=batch_singlenode,grizzly,polar,polar3,polar4,interactive_singlenode --export=ALL,TASK=Dextrah-Franka-Star-Kitting,FULL_EXPERIMENT_NAME=franka_star_stabilitygate_ppo_20260610_053229,NUM_ENVS=2048,HORIZON_LENGTH=64,MINIBATCH_SIZE=32768,CENTRAL_VALUE_MINIBATCH_SIZE=32768,MAX_ITERATIONS=600,SAVE_FREQUENCY=25,ENTROPY_COEF=0.004,LEARNING_RATE=0.0001,CENTRAL_VALUE_LEARNING_RATE=0.00008,GAMMA=0.997,TAU=0.95,KL_THRESHOLD=0.012,MINI_EPOCHS=4,AUTO_RESUME=False,SELF_RELAUNCH=False,USE_CUDA_GRAPH=False,DISTRIBUTED=True,MULTI_GPU=True cluster/sbatch_train_teacher_8gpu.sh`
+
+Hyperparameters:
+- `NUM_ENVS=2048`, `HORIZON_LENGTH=64`, `MINIBATCH_SIZE=32768`,
+  `CENTRAL_VALUE_MINIBATCH_SIZE=32768`.
+- `MAX_ITERATIONS=600`, `SAVE_FREQUENCY=25`.
+- `LEARNING_RATE=0.0001`,
+  `CENTRAL_VALUE_LEARNING_RATE=0.00008`.
+- `ENTROPY_COEF=0.004`, `GAMMA=0.997`, `TAU=0.95`,
+  `KL_THRESHOLD=0.012`, `MINI_EPOCHS=4`.
+- `AUTO_RESUME=False`, `SELF_RELAUNCH=False`,
+  `USE_CUDA_GRAPH=False`, `DISTRIBUTED=True`, `MULTI_GPU=True`.
+
+Scheduler Cleanup:
+- job initially blocked by `QOSMaxJobsPerUserLimit` because the unrelated
+  stale run `teacher_short_20260609_100021` (`28910978`) was still consuming
+  an 8-GPU slot.
+- requested cancellation of stale job `28910978`; current PPO job changed to
+  priority-pending afterward.
+
+Next:
+- Monitor startup logs and saved configs. Once checkpoints appear, delegate
+  eval rollout videos for early checkpoints while the main loop monitors
+  TensorBoard scalars for lift, gripper width, pre-lift drift, and reward
+  balance.
