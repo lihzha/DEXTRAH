@@ -5692,3 +5692,36 @@ Next:
 - commit/push/pull the stall patch.
 - rerun Franka validation.
 - launch another PPO run only if the new no-lift caps pass.
+
+## 2026-06-10 14:53 PDT - Franka Stall-24 Validation Pass
+
+Command / Job:
+- command:
+  `RUN_NAME=franka_star_validate_prelift_stall24_20260610_1452 NUM_ENVS=4 NUM_STEPS=220 CAPTURE_VIDEO=False USE_CUDA_GRAPH=False SEED=44 sbatch cluster/sbatch_validate_franka_star_kitting_env_1gpu.sh`
+- validation job_id: `28952926`
+- code_commit: `9ee6b11015183064191ae3090d8eb9d3b7ca6d0f`
+
+Result:
+- job completed with exit code `0:0`.
+- metrics:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_star_validate_prelift_stall24_20260610_1452/metrics.json`
+- local metrics:
+  `cluster_results/a1002/validations/franka_star_validate_prelift_stall24_20260610_1452/metrics.json`
+- all `42` validation checks passed.
+- key reward checks:
+  - `reward_near_close_increases_when_fingers_near_star`: closed
+    `12.707462310791016`, open `12.336283683776855`.
+  - `reward_lift_ready_requires_tight_finger_center`: tight
+    `7.726085662841797`, loose `6.774146556854248`.
+  - `reward_lift_intent_without_lift_is_capped`: lift-intent/no-lift
+    `21.958669662475586`, actual lift `359.5626220703125`, cap `<10%`.
+  - `reward_hover_pinching_without_lift_is_capped`: hover/no-lift
+    `16.3623104095459`, actual lift `359.5626220703125`.
+- scripted rollout lifted `2/4` envs:
+  max mean lift `0.06609654426574707 m`, per-env max lift
+  `[0.13225120306015015, 0.0, 0.13213497400283813, 0.0]`.
+
+Next:
+- launch a new Franka PPO run with stall penalty `-24.0`.
+- monitor reward terms to verify the static no-lift plateau is gone and actual
+  lift/success metrics improve.
