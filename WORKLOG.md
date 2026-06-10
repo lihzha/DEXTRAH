@@ -554,3 +554,49 @@ Change:
 Next:
 - Commit/push the wrapper fix, pull the exact commit on a1001, relaunch, and
   resume monitoring.
+
+## 2026-06-09 19:57 PDT - Production Relaunch Running
+
+Goal:
+- Verify the fixed wrapper relaunches the production
+  `teacher_short_20260609_100021` run and resumes robustly on one 8-A100 node.
+
+Version Control:
+- branch: `codex/dextrah-cluster-dev`
+- launch_commit: `7884cd9`
+- remote_checkout: a1001 clean at `7884cd9` before relaunch
+- changed_files: `WORKLOG.md`
+
+Command / Job:
+- job_id: `28910978`
+- node: `batch-block5-01166`
+- partition: `interactive_singlenode`
+- time_limit: `03:50:00`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28910978.out`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+
+Result:
+- status: `RUNNING` at elapsed `02:44:37`
+- allocated resources: one node, 64 CPUs, 8 GPUs, all memory
+- startup log includes `DEXTRAH_LOG_ROOT=/results/logs` and
+  `RUN_NAME=teacher_short_20260609_100021`
+- all 8 ranks reached `Started to train`
+- all 8 ranks restored runtime state from epoch 510
+- auto-resume loaded
+  `/results/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021/nn/last_dextrah_lstm_ep_510_rew_176.34055.pth`
+- fresh production checkpoints were saved beginning at epoch 520; latest observed
+  checkpoint at this monitor pass was
+  `last_dextrah_lstm_ep_2290_rew_1954.927.pth`
+- rank runtime sidecars are being refreshed periodically for ranks 0-7.
+
+Analysis:
+- The single-node 8-GPU production resume path is now past the prior failure
+  surface and training steadily.
+- Error-pattern scan found only expected headless display warnings, not Python
+  tracebacks, missing checkpoint paths, Slurm step errors, or the launcher
+  training-error guard.
+
+Next:
+- Leave job `28910978` running. The wrapper should requeue/relaunch on
+  preemption or wall-time signal, while ordinary training failures should remain
+  non-requeued for debugging.
