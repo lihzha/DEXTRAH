@@ -4530,6 +4530,43 @@ Next:
 - Commit/push, rerun validation once more from the exact source, then launch
   PPO only if the adjusted feasibility gate passes and video is valid.
 
+## 2026-06-10 08:16 PDT - Franka Star Train-Ready Validation Passed
+
+Goal:
+- Confirm the final pre-training environment/reward/script/video gate before
+  relaunching PPO.
+
+Evidence:
+- validation job_id: `28939930`
+- run_name: `franka_star_env_validate_trainready_20260610_081206`
+- source commit: `08425aca7da01d1d4d38dc99f2c816dd84ee898c`
+- remote metrics:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_star_env_validate_trainready_20260610_081206/metrics.json`
+- remote video:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_star_env_validate_trainready_20260610_081206/videos/franka-star-kitting-validation-step-0.mp4`
+- local mirror:
+  `cluster_results/a1001/franka_star_env_validate_trainready_20260610_081206`
+
+Results:
+- `passed=true`; no failed checks.
+- reward checks, success predicate checks, geometry checks, approach,
+  fingertip approach, pretransport stability, workspace, and scripted lift
+  feasibility all passed.
+- `validation_lifted_rate=0.375` with the adjusted scripted feasibility gate.
+- `max_star_lift_height=0.04011 m`
+- `min_ee_to_star=0.10011 m`
+- `min_finger_to_star=0.10685 m`
+- `max_pretransport_star_initial_xy_error=0.01447 m`
+- `reward_mean=10.999`
+- validation video is valid: `1280x720`, `60 fps`, `179` frames, `2.98 s`.
+- contact-sheet inspection confirmed expected camera framing, robot, star, and
+  fixture.
+
+Next:
+- Relaunch PPO from this validated source with stronger hand dynamics,
+  contact/lift reward patch, action diagnostics, lower entropy, and narrower
+  initial sigma.
+
 ## 2026-06-10 08:07 PDT - Deep-Grasp Validation Still Lift-Brittle; Finger Actuator Patch
 
 Goal:
