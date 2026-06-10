@@ -3102,3 +3102,43 @@ Checks:
 Next:
 - Commit/push, update A100, rerun validation, inspect video/metrics, and keep
   training blocked unless all gates pass.
+
+## 2026-06-10 04:12 PDT - Franka Star Fixed Pickup Curriculum
+
+Goal:
+- Get to a physically stable, trainable first version by removing residual
+  reset/approach drift and spawn variation before PPO.
+
+Evidence:
+- validation job_id: `28932981`, run
+  `franka_star_env_validate_grasptiming_20260610_035223`, source commit
+  `c7b5bdaba11302d36993f9637cc646c7899bd3de`.
+- status: failed metrics gate.
+- passing checks now include reward predicates, approach, finger approach,
+  workspace bounds, and pre-lift drift.
+- remaining failure: per-env `scripted_rollout_lifts_star`.
+- per-env lift heights were `[0.0237, 0.1634, 0.1623, 0.0037]`, so two envs
+  lifted strongly, one nearly lifted, and one missed.
+- worst pre-lift detail still showed env0 drifting from `(-0.365, -0.105)` to
+  `(-0.425, -0.123)` before grasp, enough to make the later scripted grasp
+  target stale even though the drift gate technically passed.
+
+Analysis:
+- Continuing to validate with randomized spawns is wasting the training gate
+  on reset-clearance edge cases before a baseline policy exists.
+- The first RL run should use a fixed, repeatable pickup curriculum; once it
+  learns lift/transport/place, randomization can be widened deliberately.
+
+Change:
+- Moved `pickup_x` from `-0.36` to `-0.30`, farther from the reset hand in the
+  direction that avoids the observed kick.
+- Set `star_spawn_xy_randomization=0.0`.
+- Set `star_spawn_yaw_randomization_deg=0.0`.
+
+Checks:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env_cfg.py`
+- `git diff --check`
+
+Next:
+- Commit/push, update A100, rerun validation, inspect artifacts, then proceed
+  to PPO only if the fixed curriculum environment passes.
