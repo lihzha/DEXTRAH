@@ -3565,3 +3565,38 @@ Checks:
 Next:
 - Commit/push, update A100, rerun validation, and relaunch PPO only if the
   validation gate passes.
+
+## 2026-06-10 05:08 PDT - Franka Star Close-Lift Reward Validation Passed
+
+Goal:
+- Revalidate the task after adding explicit near-object close-action and
+  stronger close/lift incentives.
+
+Evidence:
+- validation job_id: `28934392`, run
+  `franka_star_env_validate_closelift_20260610_050553`, source commit
+  `3d5137fbd49c7c5ad35d972f522afe582fde24d8`.
+- status: passed metrics gate, Slurm exit `0:0`, elapsed `00:01:20`.
+- all reward sanity checks passed, including
+  `reward_close_action_increases_when_fingers_near_star`.
+- hard gate metrics: `max_pretransport_star_initial_xy_error=0.02956`,
+  `validation_lifted_rate=0.5`, `max_star_lift_height=0.07345`.
+- per-env max lift heights:
+  `[0.00354284, 0.14143163, 0.14175844, 0.02116644]`.
+- diagnostic late unlifted drag remained visible:
+  `max_unlifted_late_drag_xy_error=0.09897`.
+- local artifacts fetched under
+  `cluster_results/a1001/franka_star_env_validate_closelift_20260610_050553`.
+- validation video is nonblank and playable:
+  `1280x720`, `179` frames, `2.98s`, `60 FPS`.
+
+Analysis:
+- The stronger close/lift reward does not regress environment stability or
+  scripted lift feasibility.
+- This run should test whether explicit close-command reward and less punitive
+  near-object closing can move deterministic PPO from reach/hover into
+  actual capture and lift.
+
+Next:
+- Launch another 8-GPU PPO run from the validated close-lift reward source and
+  monitor close action, gripper width, lift height, and eval videos.
