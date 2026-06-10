@@ -48,6 +48,21 @@ if [ "$TASK" = "Dextrah-Cube-Grasp" ]; then
   ENTROPY_COEF="${ENTROPY_COEF:-0.0005}"
   E_CLIP="${E_CLIP:-0.2}"
   GRAD_NORM="${GRAD_NORM:-1.0}"
+elif [ "$TASK" = "Dextrah-Franka-Star-Kitting" ]; then
+  NUM_ENVS="${NUM_ENVS:-2048}"
+  MINIBATCH_SIZE="${MINIBATCH_SIZE:-32768}"
+  CENTRAL_VALUE_MINIBATCH_SIZE="${CENTRAL_VALUE_MINIBATCH_SIZE:-32768}"
+  LEARNING_RATE="${LEARNING_RATE:-0.00015}"
+  CENTRAL_VALUE_LEARNING_RATE="${CENTRAL_VALUE_LEARNING_RATE:-0.0001}"
+  HORIZON_LENGTH="${HORIZON_LENGTH:-48}"
+  MINI_EPOCHS="${MINI_EPOCHS:-4}"
+  SAVE_FREQUENCY="${SAVE_FREQUENCY:-25}"
+  GAMMA="${GAMMA:-0.997}"
+  TAU="${TAU:-0.95}"
+  KL_THRESHOLD="${KL_THRESHOLD:-0.012}"
+  ENTROPY_COEF="${ENTROPY_COEF:-0.001}"
+  E_CLIP="${E_CLIP:-0.2}"
+  GRAD_NORM="${GRAD_NORM:-1.0}"
 else
   NUM_ENVS="${NUM_ENVS:-4096}"
   MINIBATCH_SIZE="${MINIBATCH_SIZE:-16384}"
@@ -226,6 +241,11 @@ PY
         env.enable_adr=False
         'env.adr_custom_cfg_dict.object_spawn.x_width_spawn=[0.08, 0.08]'
         'env.adr_custom_cfg_dict.object_spawn.y_width_spawn=[0.08, 0.08]'
+      )
+    elif [ '$TASK' = 'Dextrah-Franka-Star-Kitting' ]; then
+      TASK_OVERRIDES=(
+        agent.wandb_activate=False
+        env.use_cuda_graph='$USE_CUDA_GRAPH'
       )
     else
       TASK_OVERRIDES=(

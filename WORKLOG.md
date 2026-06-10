@@ -458,7 +458,7 @@ Goal:
 Version Control:
 - branch: `codex/dextrah-cluster-dev`
 - base_commit: `7acb9137c4f30d6d7809676f99bbbbea62a207c9`
-- implementation_commit: pending
+- implementation_commit: `48c9a69a0219f981eba1f45311008153ceb3b729`
 
 Change:
 - Removed the shared remote stash
@@ -2099,6 +2099,69 @@ Result:
 Next:
 - Continue monitoring reward/checkpoints. Current eval shows early shaped
   reward progress and small cube lift, but no task success yet.
+
+## 2026-06-10 01:17 PDT - Franka Star-Kitting RL Environment Gate
+
+Goal:
+- Add a Franka RL task for picking a star-shaped object and placing it into a
+  matching star fixture, with an explicit validation gate before any training
+  or checkpoint eval is launched.
+
+Hypothesis:
+- The stable cube-grasp RL-Games infrastructure can be reused, but the
+  environment must be a new Franka DirectRLEnv rather than a Kuka-Allegro
+  subclass because the existing task is tied to FABRICS and Allegro hand PCA
+  control.
+
+Change:
+- Added a new `Dextrah-Franka-Star-Kitting` task package with procedural
+  star/fixture geometry, reward terms, env config, Gym registration, and a
+  state-based RL-Games PPO config.
+- Added `validate_franka_star_kitting_env.py` and a one-GPU Slurm wrapper that
+  must pass before training: geometry checks, reward monotonicity checks,
+  success-predicate pose checks, and a short scripted no-learning rollout with
+  optional video.
+- Updated RL-Games train/play imports and added a task-specific training
+  hyperparameter branch, but did not launch training.
+
+Version Control:
+- branch: `codex/dextrah-cluster-dev`
+- base_commit: `725d2533e7f4fd0cf88f4109fcf1ccc8d96a07eb`
+- implementation_commit: pending
+- changed_files:
+  `dextrah_lab/tasks/dextrah_franka_star_kitting/*`,
+  `dextrah_lab/rl_games/validate_franka_star_kitting_env.py`,
+  `dextrah_lab/rl_games/train.py`,
+  `dextrah_lab/rl_games/play.py`,
+  `cluster/sbatch_validate_franka_star_kitting_env_1gpu.sh`,
+  `cluster/sbatch_train_teacher_8gpu.sh`,
+  `WORKLOG.md`
+
+Command / Job:
+- local checks:
+  `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_star_kitting/star_kitting_geometry.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_rewards.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env_cfg.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env.py dextrah_lab/tasks/dextrah_franka_star_kitting/gym_setup.py dextrah_lab/rl_games/validate_franka_star_kitting_env.py dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/train.py dextrah_lab/rl_games/play.py`
+- local checks:
+  `bash -n cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_validate_franka_star_kitting_env_1gpu.sh cluster/sbatch_eval_cube_grasp_1gpu.sh`
+- local checks:
+  `ruby -e "require 'yaml'; YAML.load_file('dextrah_lab/tasks/dextrah_franka_star_kitting/agents/rl_games_ppo_franka_star_kitting_cfg.yaml'); puts 'yaml ok'"`
+- local checks: `git diff --check`
+
+Result:
+- status: implementation checks passed locally; runtime validation not yet
+  launched.
+- key evidence: local syntax, shell syntax, YAML parsing, and whitespace checks
+  passed. Local runtime import is not expected because this workstation does
+  not provide the Isaac Lab/torch environment used by the cluster container.
+
+Analysis:
+- The training/eval loop is intentionally gated. Launching PPO before the
+  validation wrapper confirms geometry, reset, reward, success, and rollout
+  behavior would violate the current task requirement.
+
+Next:
+- Commit/push/pull this implementation, run
+  `cluster/sbatch_validate_franka_star_kitting_env_1gpu.sh`, inspect metrics
+  and video, and only then consider smoke training.
 
 ## 2026-06-10 01:14 PDT - Overhead Eval Camera
 
