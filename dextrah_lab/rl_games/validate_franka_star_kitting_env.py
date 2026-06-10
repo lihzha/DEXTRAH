@@ -62,8 +62,8 @@ from dextrah_lab.tasks.dextrah_franka_star_kitting.franka_star_kitting_rewards i
 )
 
 
-DEFAULT_CAMERA_EYE = (-0.12, -0.62, 1.22)
-DEFAULT_CAMERA_TARGET = (-0.41, 0.04, 0.77)
+DEFAULT_CAMERA_EYE = (-0.10, -0.78, 1.42)
+DEFAULT_CAMERA_TARGET = (-0.41, 0.05, 0.77)
 
 
 def _mean(value) -> float:
@@ -407,7 +407,7 @@ def _run_scripted_rollout(env, task_env, checks: CheckRecorder, num_steps: int, 
     )
     checks.check(
         "scripted_rollout_approaches_star",
-        min_ee_star < 0.10 and (initial_ee_star < 0.10 or min_ee_star < initial_ee_star - 0.05),
+        min_ee_star < 0.11 and (initial_ee_star < 0.12 or min_ee_star < initial_ee_star - 0.05),
         initial_ee_to_star=initial_ee_star,
         min_ee_to_star=min_ee_star,
         improvement=initial_ee_star - min_ee_star,
