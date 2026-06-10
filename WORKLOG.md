@@ -6447,6 +6447,119 @@ Next:
 - Commit/push the validator correction, update the isolated A100 validation
   worktree, and relaunch the Franka cube reward-gate validation.
 
+## 2026-06-10 16:26 PDT - Franka Cube Reward-Gate Validation Relaunch
+
+Goal:
+- Validate the phase-specific reward-geometry checks from commit
+  `b268d76034ecff0ea765a456cada8f0364280aae`.
+
+Version Control:
+- branch: `codex/dextrah-cluster-dev`
+- implementation_commit: `b268d76034ecff0ea765a456cada8f0364280aae`
+- note: local commit was rebased over remote commit `b684a96`
+  (`Add GraspGenX cuRobo Franka star demo`) before pushing.
+- remote validation worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/DEXTRAH_franka_rewardgate_04ed88c`
+- remote validation worktree commit:
+  `b268d76034ecff0ea765a456cada8f0364280aae`
+
+Command / Job:
+- command:
+  `RUN_NAME=franka_cube_validate_rewardgate2_20260610_1626 CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/DEXTRAH_franka_rewardgate_04ed88c NUM_ENVS=4 NUM_STEPS=160 CAPTURE_VIDEO=True SEED=48 sbatch --parsable cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`
+- job_id: `28955366`
+- expected run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_cube_validate_rewardgate2_20260610_1626`
+- expected log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_cube_28955366.out`
+
+Result:
+- status: passed.
+- scheduler: `COMPLETED`, exit code `0:0`, elapsed `00:01:38`.
+- all 19 validation checks passed, including:
+  - `success_predicate_accepts_lifted_cube_near_gripper`
+    (`success_rate=1.0`, lift `0.13 m`, mean hand distance `0.1687 m`);
+  - `reward_accepts_success_geometry_for_prelift_grasp`
+    (`grasp_ready_reward=0.9083`, `closed_grasp_reward=0.6288`,
+    `close_far_penalty=0.0`);
+  - `reward_accepts_success_geometry_for_lift`
+    (`lift_reward=68.4763`, `success_bonus=80.0`,
+    `close_far_penalty=0.0`).
+- rollout smoke completed all `160/160` requested steps with finite
+  observations/rewards, no terminations, cube in workspace, and final success
+  rate `0.0` as expected for the scripted non-solving rollout.
+
+Artifacts:
+- remote run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_cube_validate_rewardgate2_20260610_1626`
+- remote log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_cube_28955366.out`
+- local fetched artifacts:
+  `cluster_results/a1002/validations/franka_cube_validate_rewardgate2_20260610_1626`
+- video:
+  `videos/franka-cube-validate-step-0.mp4`, `1280x720`, `159` frames,
+  `2.65 s`.
+- visual inspection:
+  contact sheet has one black startup frame followed by valid Franka/table/cube
+  render frames; no blank-video or wrong-scene failure.
+
+Analysis:
+- The current fix is validated at the environment/reward-geometry level. The
+  original PPO failure is now explained by reward gates that were tighter than
+  the Franka success geometry; the validator now checks that the accepted
+  Franka geometry receives pre-lift grasp credit and lifted success credit.
+- This does not yet prove the patched task learns. The next required evidence is
+  a fresh bounded PPO run from commit `b268d76034ecff0ea765a456cada8f0364280aae`
+  and comparison against the stalled `franka_cube_ppo_20260610_1558` run.
+
+Handoff State:
+- validated implementation commit:
+  `b268d76034ecff0ea765a456cada8f0364280aae`.
+- local branch before this handoff documentation commit:
+  `codex/dextrah-cluster-dev` at
+  `b268d76034ecff0ea765a456cada8f0364280aae`.
+- pushed branch before this handoff documentation commit:
+  `origin/codex/dextrah-cluster-dev` at
+  `b268d76034ecff0ea765a456cada8f0364280aae`.
+- active validation worktree on A100:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/DEXTRAH_franka_rewardgate_04ed88c`
+  at `b268d76034ecff0ea765a456cada8f0364280aae`.
+- main A100 checkout:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/DEXTRAH` is currently clean at
+  `b684a9649e046124119bf4b965007f5bad2477ba`.
+- no new Franka PPO was launched after this validation, per the user's handoff
+  request.
+
+Active Jobs At Stop:
+- Franka cube validation job `28955366`: complete and inspected.
+- Franka cube PPO job `28954774`: previously canceled after stalled metrics.
+- Franka cube eval job `28955181`: previously canceled before completion for
+  handoff.
+- DEXTRAH KUKA/Allegro teacher job `28942245`: still running and intentionally
+  left for the next agent to monitor, because it is a productive training run
+  and the user did not explicitly request cancellation.
+  - scheduler snapshot at `2026-06-10 16:31 PDT`: `RUNNING` on `polar3`,
+    node `batch-block7-01008`, runtime `03:22:24/03:50:00`,
+    end time `2026-06-10T16:58:55`.
+  - latest observed progress: epoch `13310/20000`.
+  - latest checkpoint:
+    `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021/nn/last_dextrah_lstm_ep_13310_rew_588.98224.pth`.
+  - all `dextrah_runtime_rank_*.pth` sidecars refreshed at `16:31 PDT`.
+  - stdout:
+    `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28942245.out`.
+
+Next For Fresh Agent:
+- Continue monitoring teacher job `28942245`; verify the expected signal/requeue
+  behavior near `2026-06-10 16:53:55 PDT` and inspect checkpoints/sidecars after
+  requeue.
+- If continuing Franka cube, use the isolated validation worktree or update the
+  main checkout only after considering the active teacher job. Launch a bounded
+  patched PPO from `b268d76034ecff0ea765a456cada8f0364280aae` and compare
+  `cube_lift_height`, `cube_success_rate`, `cube_action_z`, and
+  `cube_grasp_ready_reward` against the stalled `franka_cube_ppo_20260610_1558`
+  baseline.
+- Do not treat this validation pass as full learning proof; it proves the
+  reward/success geometry mismatch is fixed and covered by validation.
+
 ## 2026-06-10 15:50 PDT - Franka Cube Hand-Distance Tolerance Adjustment
 
 Command / Job:
@@ -6497,3 +6610,17 @@ Next:
   runtime sidecars refreshed at `16:04`.
 - Next agent should continue the active monitor loop and verify the expected
   wall-time requeue around the `16:53:55 PDT` signal window.
+
+## 2026-06-10 16:34 PDT - EOF Stop Marker For Handoff
+
+- Current Franka cube reward-gate fix is complete and validated. See
+  `## 2026-06-10 16:26 PDT - Franka Cube Reward-Gate Validation Relaunch` for
+  full metrics, artifact paths, visual inspection notes, and next PPO
+  recommendation.
+- Documentation-only handoff commit is being made after validated implementation
+  commit `b268d76034ecff0ea765a456cada8f0364280aae`.
+- No new jobs were launched after validation job `28955366`.
+- DEXTRAH KUKA/Allegro teacher job `28942245` is still running and intentionally
+  left active for the next agent, with latest observed checkpoint
+  `last_dextrah_lstm_ep_13310_rew_588.98224.pth` at `16:31 PDT`.
+- This agent is stopping per user request after committing/pushing this worklog.
