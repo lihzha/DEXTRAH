@@ -4419,3 +4419,45 @@ Checks:
 Next:
 - Commit/push, fast-forward A100, rerun full validation with video, and only
   launch PPO after the physical scripted rollout passes.
+
+## 2026-06-10 07:43 PDT - Robust-Grasp Validation Failed; Reverted Geometry and Anchored Script
+
+Goal:
+- Recover from the failed physical-robustness validation without launching
+  PPO from an invalid environment.
+
+Evidence:
+- validation job_id: `28937316`
+- run_name: `franka_star_env_validate_robustgrasp_20260610_073455`
+- source commit: `436b93aea78eb8645ab6a39f9fd9cc3445ef842c`
+- failed checks:
+  `scripted_rollout_approaches_star`,
+  `scripted_rollout_fingers_approach_star`,
+  `scripted_rollout_limits_pretransport_star_motion`, and
+  `scripted_rollout_lifts_star`.
+- `max_pretransport_star_initial_xy_error=0.20575 m`, so the thicker/lighter
+  star setup was being disturbed before grasp.
+- `validation_lifted_rate=0.375`, still below the `0.5` gate.
+
+Analysis:
+- The thicker/lighter star worsened pregrasp disturbance and is not acceptable.
+- The validation controller also followed the live star pose before lift, which
+  can mask or amplify early disturbances instead of testing a clean anchored
+  pickup.
+
+Change:
+- Reverted star thickness and density to the previously stable values:
+  `0.040 m` and `260`.
+- Kept the reset-noise knob but set `arm_joint_reset_noise=0.0` for the
+  nominal solve.
+- Changed validation scripted pickup to target the anchored initial star pose
+  until the lift phase, not the disturbed live star pose.
+- Set validation grasp depth to `star_anchor_z - 0.004`.
+
+Checks:
+- `python3 -m py_compile dextrah_lab/rl_games/validate_franka_star_kitting_env.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env_cfg.py dextrah_lab/tasks/dextrah_franka_star_kitting/star_kitting_geometry.py`
+- Targeted search found no remaining validation references to the removed live
+  `star` variable in the scripted target.
+
+Next:
+- Commit/push, rerun full validation, and only train if it passes.

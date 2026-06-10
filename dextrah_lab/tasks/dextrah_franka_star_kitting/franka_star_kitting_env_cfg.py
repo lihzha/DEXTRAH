@@ -69,16 +69,16 @@ class DextrahFrankaStarKittingEnvCfg(DirectRLEnvCfg):
 
     star_outer_radius = 0.032
     star_inner_radius = 0.0145
-    star_thickness = 0.045
+    star_thickness = 0.040
     fixture_size_x = 0.18
     fixture_size_y = 0.18
     fixture_thickness = 0.060
     fixture_clearance = 0.006
-    star_density = 220.0
+    star_density = 260.0
 
     # Franka geometry/control
     max_gripper_width = 0.08
-    arm_joint_reset_noise = 0.015
+    arm_joint_reset_noise = 0.0
     robot_base_z = 0.20
     robot_yaw_wxyz = (0.0, 0.0, 0.0, 1.0)  # 180 deg about z; points arm toward negative X table.
     ee_offset_pos = (0.0, 0.0, 0.1034)
