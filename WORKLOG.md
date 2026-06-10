@@ -601,6 +601,51 @@ Next:
   preemption or wall-time signal, while ordinary training failures should remain
   non-requeued for debugging.
 
+## 2026-06-09 21:17 PDT - Production Wall-Time Requeue Verified
+
+Goal:
+- Continue monitoring production job `28910978` through the first wall-time
+  signal and verify the requeue/resume path is actually usable.
+
+Version Control:
+- branch: `codex/dextrah-cluster-dev`
+- launch_commit: `7884cd9`
+- latest_worklog_commit_before_entry: `c363613`
+- remote_checkout: active a1001 checkout left untouched while the job runs
+- changed_files: `WORKLOG.md`
+
+Command / Job:
+- job_id: `28910978`
+- first allocation: `batch-block5-01166`
+- second allocation after requeue: `batch-block5-00615`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28910978.out`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+
+Result:
+- first allocation reached the configured `TERM@300` window at elapsed
+  `03:44:48` and Slurm marked the job `REQUEUED`.
+- wrapper logged `Requeuing DEXTRAH job 28910978 ... after TERM` before
+  forwarding TERM to `srun`.
+- latest checkpoint before requeue was
+  `last_dextrah_lstm_ep_2990_rew_2335.1267.pth`; rank sidecars 0-7 were
+  refreshed at `20:57:36`.
+- Slurm restarted the same job id on `batch-block5-00615` with `Restarts=1`.
+- second allocation auto-resumed from epoch 2990, all 8 ranks reached
+  `Started to train`, all 8 ranks restored runtime at epoch 2990, and fresh
+  production checkpoints were saved through at least
+  `last_dextrah_lstm_ep_3030_rew_2209.5952.pth`.
+
+Analysis:
+- The signal-aware requeue path and the training checkpoint/runtime sidecar
+  resume path are both working in production.
+- Startup after requeue took roughly 14 minutes before all ranks restored and
+  training resumed, which is consistent with the Isaac/object setup phase rather
+  than a hang.
+
+Next:
+- Leave the job running and continue periodic monitoring for ordinary training
+  failures or the next wall-time requeue.
+
 ## 2026-06-09 20:07 PDT - Newton OpenGL Clutter-Bin Video
 
 Goal:
@@ -1075,3 +1120,49 @@ Analysis:
 
 Next:
 - Use `overview.mp4` as the final Newton/OpenGL bin-picking sphere-drop video.
+
+## 2026-06-09 21:17 PDT - GraspGenX Franka Star-Kitting Render
+
+Goal:
+- Render the DEXTRAH star-kitting scene with a different robot: the Franka
+  Panda selected from GraspGenX's `end2end/robots/franka_panda.yaml`.
+
+Hypothesis:
+- The kitting scene can keep its existing procedural table, star, fixture, and
+  camera path while swapping the robot reference to a USD converted from the
+  GraspGenX Franka URDF path.
+
+Change:
+- Added `--robot graspgenx_franka` as the default for
+  `render_star_kitting_env.py`, while preserving `--robot kuka_allegro`.
+- Added GraspGenX YAML and cuRobo asset resolution, URDF-to-USD conversion, and
+  robot source metadata.
+- Updated the L401 star-kitting wrapper to mount `/graspgenx` and
+  `/curobo_assets` for the default Franka render.
+
+Version Control:
+- branch: `codex/dextrah-cluster-dev`
+- base_commit: `3de2baa2a7f6110766f9866c41fa72041c7c6414`
+- implementation_commit: pending
+- push/pull: pending
+- changed_files: `dextrah_lab/scene_scripts/render_star_kitting_env.py`,
+  `cluster/sbatch_render_star_kitting_env.sh`, `WORKLOG.md`
+
+Command / Job:
+- local checks:
+  - `python3 -m py_compile dextrah_lab/scene_scripts/render_star_kitting_env.py`
+  - `bash -n cluster/sbatch_render_star_kitting_env.sh`
+- cluster job: pending
+
+Result:
+- status: fixed locally; cluster smoke pending.
+
+Analysis:
+- GraspGenX does not vendor the Franka meshes directly; its robot config points
+  `${CUROBO_ASSETS}` at cuRobo's `robot/franka_description/franka_panda.urdf`.
+  L401 has the GraspGenX checkout but needs the cuRobo Franka asset tree staged
+  under NFS before the default wrapper can run.
+
+Next:
+- Commit/push/pull the DEXTRAH changes, stage the cuRobo Franka asset tree on
+  L401, and run a short `640x360` star-kitting render smoke.
