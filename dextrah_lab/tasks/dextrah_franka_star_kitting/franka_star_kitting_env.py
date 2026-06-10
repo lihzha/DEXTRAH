@@ -240,7 +240,12 @@ class DextrahFrankaStarKittingEnv(DirectRLEnv):
             (self.time_in_success_region >= self.cfg.success_timeout)
             & (self.episode_length_buf >= int(self.cfg.min_episode_steps_before_success))
         )
-        terminated = star_out | success_done
+        prelift_drag_done = (
+            (~self.has_lifted_star)
+            & (self.star_initial_xy_error >= float(self.cfg.prelift_drag_termination_xy_error))
+            & (self.episode_length_buf > 2)
+        )
+        terminated = star_out | success_done | prelift_drag_done
         truncated = self.episode_length_buf >= self.max_episode_length - 1
         return terminated, truncated
 

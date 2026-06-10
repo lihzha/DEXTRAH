@@ -128,8 +128,8 @@ def compute_franka_star_kitting_rewards(
     yaw_align = torch.exp(-yaw_sharpness * goal_yaw_error)
     height_align = torch.exp(-placement_height_sharpness * goal_height_error)
 
-    approach_reward = approach_weight * near_star
-    finger_approach_reward = finger_approach_weight * finger_approach
+    approach_reward = approach_weight * stable_or_lifted_gate * near_star
+    finger_approach_reward = finger_approach_weight * stable_or_lifted_gate * finger_approach
     grasp_pose_reward = grasp_pose_weight * prelift_stability_gate * (0.35 * contact_ready + 0.65 * lift_ready_gate)
     both_fingers_near_reward = both_fingers_near_weight * prelift_stability_gate * tight_ee_gate * both_fingers_near_gate
     lift_ready_reward = lift_ready_weight * stable_or_lifted_gate * lift_ready_gate * closed_gripper

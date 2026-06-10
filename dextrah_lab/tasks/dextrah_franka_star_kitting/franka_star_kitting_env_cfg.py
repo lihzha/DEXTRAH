@@ -166,6 +166,7 @@ class DextrahFrankaStarKittingEnvCfg(DirectRLEnvCfg):
     success_timeout = 0.20
     out_of_bounds_margin = 0.18
     min_episode_steps_before_success = 50
+    prelift_drag_termination_xy_error = 0.050
 
     # rewards
     approach_weight = 3.0
