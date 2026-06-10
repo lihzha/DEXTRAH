@@ -3471,3 +3471,36 @@ Next:
 - Launch the second fixed-curriculum PPO run from commit `590e841`, monitor
   grasp/lift discovery metrics, and request sidecar eval videos at early
   checkpoints.
+
+## 2026-06-10 04:47 PDT - Franka Star Grasp-Reward PPO Launched
+
+Goal:
+- Launch the second PPO run after the grasp-discovery reward patch passed
+  validation.
+
+Evidence:
+- training job_id: `28933976`, run
+  `franka_star_graspreward_ppo_20260610_044700`.
+- remote checkout HEAD at launch:
+  `0e45a1d896b3648b1e4369a2581065ec13c5037b`.
+- behavior source was validated at commit
+  `590e8413400deb7cb8737ae098910f409c0418ce`; `0e45a1d` only records the
+  validation-pass worklog entry.
+- Slurm partition: `polar3`; allocated node: `batch-block7-03058`.
+
+Hyperparameters:
+- `NUM_ENVS=2048`, `HORIZON_LENGTH=64`, `MINIBATCH_SIZE=32768`,
+  `CENTRAL_VALUE_MINIBATCH_SIZE=32768`.
+- `MAX_ITERATIONS=600`, `SAVE_FREQUENCY=25`.
+- `LEARNING_RATE=0.0001`,
+  `CENTRAL_VALUE_LEARNING_RATE=0.00008`.
+- `ENTROPY_COEF=0.004`, `GAMMA=0.997`, `TAU=0.95`,
+  `KL_THRESHOLD=0.012`, `MINI_EPOCHS=4`.
+- `AUTO_RESUME=False`, `SELF_RELAUNCH=False`,
+  `USE_CUDA_GRAPH=False`, `DISTRIBUTED=True`, `MULTI_GPU=True`.
+
+Next:
+- Verify startup configs, monitor scalar terms
+  `star_finger_approach_reward`, `star_close_near_reward`,
+  `star_grasp_reward`, `star_lift_reward`, `star_has_lifted_rate`, and launch
+  sidecar eval videos from early checkpoints.
