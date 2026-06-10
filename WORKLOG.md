@@ -1726,6 +1726,29 @@ Analysis:
   through epoch 200. Continue monitoring for plateau/divergence and for
   wall-time requeue behavior.
 
+## 2026-06-10 00:00 PDT - Cube PPO Metrics Eval Launch Prep
+
+Goal:
+- Launch a separate one-GPU evaluation job for the running cube-grasp PPO
+  checkpoint without interrupting training job `28927711`.
+
+Change:
+- Added `cluster/sbatch_eval_cube_grasp.sh`, a one-GPU Pyxis wrapper around
+  `dextrah_lab/rl_games/play.py`.
+- The wrapper runs `Dextrah-Cube-Grasp` with a supplied checkpoint and small
+  `NUM_ENVS`, writes stdout to both the Slurm log and
+  `/results/eval/cube_grasp/<RUN_NAME>/eval_stdout.txt`.
+
+Command / Job:
+- planned checkpoint:
+  `/results/logs/rl_games/dextrah_cube_grasp/cube_grasp_ppo_opt8gpu_20260609_224426/nn/last_dextrah_cube_grasp_ep_550_rew_1600.1677.pth`
+- planned command:
+  `TASK=Dextrah-Cube-Grasp NUM_ENVS=16 RUN_NAME=<eval_run> CHECKPOINT=<checkpoint> sbatch --export=ALL cluster/sbatch_eval_cube_grasp.sh`
+
+Result:
+- status: validation and launch pending.
+- note: this is metrics-only; `play.py` does not record rollout video.
+
 ## 2026-06-09 23:50 PDT - Cube Grasp Eval Video Path
 
 Goal:
