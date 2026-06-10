@@ -5426,6 +5426,29 @@ Next:
 - Continue rolling monitor until completion or the next wall-time requeue, then
   verify resume from the newest checkpoint/runtime state.
 
+## 2026-06-10 15:23 PDT - DEXTRAH Teacher Epoch 12500 Milestone
+
+Result:
+- status: running healthy.
+- progress: log advanced past epoch `12502/20000`.
+- checkpoint: `last_dextrah_lstm_ep_12500_rew_596.34357.pth` at `15:23:01`,
+  normal size.
+- sidecars: all rank runtime sidecars refreshed at `15:22:59`.
+- scheduler: job `28942245` still running on `polar3`,
+  `batch-block7-01008`, current allocation endpoint `16:58:55`.
+- errors: no traceback, CUDA/NCCL, OOM, killed, requested-operation, or
+  training-failure patterns.
+- metrics through epoch `12483`: `in_success_region/iter` last-50 `0.445312`,
+  `info/kl` last-50 `0.010415`, RL update FPS last-50 about `104998`.
+
+Analysis:
+- Training remains above the ADR success threshold and checkpoint/runtime state
+  remains resumable. No patch or relaunch is indicated.
+
+Next:
+- Continue active monitor. Verify the next wall-time requeue/resume from the
+  newest checkpoint when the allocation enters the signal window.
+
 ## 2026-06-10 14:16 PDT - Franka Lift-Action Exploit Diagnosis And Second Reward Patch
 
 Result:
@@ -5725,3 +5748,94 @@ Next:
 - launch a new Franka PPO run with stall penalty `-24.0`.
 - monitor reward terms to verify the static no-lift plateau is gone and actual
   lift/success metrics improve.
+
+## 2026-06-10 15:05 PDT - Franka Stall-24 Default PPO Failure
+
+Command / Job:
+- command:
+  `TASK=Dextrah-Franka-Star-Kitting FULL_EXPERIMENT_NAME=franka_star_stall24_ppo_20260610_1455 NUM_ENVS=2048 MAX_ITERATIONS=600 USE_CUDA_GRAPH=False LEARNING_RATE=0.0001 CENTRAL_VALUE_LEARNING_RATE=0.00008 HORIZON_LENGTH=96 ENTROPY_COEF=0.00005 SIGMA_INIT_VAL=-2.0 SELF_RELAUNCH=False sbatch cluster/sbatch_train_teacher_8gpu.sh`
+- training job_id: `28952942`
+- code_commit: `514b56b50619e565ddd11b917f03c38e3ebc0944`
+
+Result:
+- status: canceled after the diagnostic was clear.
+- elapsed: about `00:17:00`.
+- checkpoints inspected:
+  - `ep25`: reward `761.58826`
+  - `ep50`: reward `1240.1376`
+  - `ep75`: reward `492.66782`
+  - `ep100`: reward `2065.8938`
+  - `ep125`: reward `1449.4744`
+  - `ep150`: reward `1117.6989`
+- TensorBoard through step `159`:
+  - `star_success_rate/iter`: max `0`
+  - `in_success_region/iter`: max `0`
+  - `star_has_lifted_rate/iter`: last10 mean `0.029589844`
+  - `star_lift_height/iter`: max `0.0058183772 m`, last10 mean
+    `0.00054033993 m`
+  - `star_prelift_stall_penalty/iter`: active, last10 mean `-6.3612297`
+  - `star_lift_action_reward/iter`: small, last10 mean `0.022458093`
+
+Analysis:
+- The stall penalty and lift-action gate constrain the previous obvious reward
+  exploits, but normal resets still do not discover a meaningful lift policy.
+- The remaining issue is not a clean scalar reward bug; it looks like a
+  contact/exploration/curriculum problem around establishing a valid Franka
+  pinch and upward lift.
+
+Next:
+- Run a near-hand reset curriculum as a diagnostic. If near-hand resets still
+  fail to produce lift, the task likely needs stronger contact-state
+  bootstrapping or a revised first-stage objective rather than longer PPO.
+
+## 2026-06-10 15:25 PDT - Franka Stall-24 Near-Hand Curriculum Failure
+
+Command / Job:
+- command:
+  `TASK=Dextrah-Franka-Star-Kitting FULL_EXPERIMENT_NAME=franka_star_stall24_nearhand_ppo_20260610_1508 NUM_ENVS=2048 MAX_ITERATIONS=600 USE_CUDA_GRAPH=False LEARNING_RATE=0.0001 CENTRAL_VALUE_LEARNING_RATE=0.00008 HORIZON_LENGTH=96 ENTROPY_COEF=0.00005 SIGMA_INIT_VAL=-2.0 STAR_RESET_NEAR_HAND_PROBABILITY=1.0 STAR_RESET_NEAR_HAND_X=-0.360 STAR_RESET_NEAR_HAND_Y=-0.120 STAR_RESET_NEAR_HAND_XY_NOISE=0.020 SELF_RELAUNCH=False sbatch cluster/sbatch_train_teacher_8gpu.sh`
+- training job_id: `28953232`
+- code_commit: `514b56b50619e565ddd11b917f03c38e3ebc0944`
+- remote run:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_star_kitting/franka_star_stall24_nearhand_ppo_20260610_1508`
+- local artifacts:
+  `cluster_results/a1002/franka_star_stall24_nearhand_ppo_20260610_1508`
+
+Result:
+- status: canceled after epoch `150`; scheduler state
+  `CANCELLED by 158351`, elapsed `00:16:54`.
+- checkpoints inspected:
+  - `ep25`: reward `-1412.4299`
+  - `ep50`: reward `1426.8517`
+  - `ep75`: reward `-965.5483`
+  - `ep100`: reward `640.8136`
+  - `ep125`: reward `1731.4994`
+  - `ep150`: reward `2343.7002`
+- best-reward checkpoint reached `3162.214`.
+- TensorBoard through step `151`:
+  - `rewards/iter`: last `2143.3252`, last10 mean `2290.7278`, max
+    `3162.2141`
+  - `star_success_rate/iter`: min/max/last `0`
+  - `in_success_region/iter`: min/max/last `0`
+  - `star_has_lifted_rate/iter`: max `0.044921875`, last10 mean
+    `0.036669922`
+  - `star_lift_height/iter`: max `0.0050363359 m`, last30 mean
+    `0.00069273815 m`
+  - `star_lift_ready_reward/iter`: last10 mean `4.8207032`
+  - `star_closed_grasp_reward/iter`: last10 mean `3.2138415`
+  - `star_prelift_stall_penalty/iter`: last10 mean `-9.5879779`
+
+Analysis:
+- Near-hand reset makes the shaped reward easier to optimize but still does not
+  produce lift or success.
+- The policy converges to a high-reward closed/lift-ready pose while the object
+  remains essentially on the table. This confirms the Franka task is not
+  validated as an RL task yet.
+- Since the run was already optimizing the wrong behavior by epoch `150`,
+  continuing to `600` epochs would likely reinforce the same no-lift optimum.
+
+Next:
+- Inspect or generate a successful scripted/teleop lift state distribution for
+  the Franka star, then train or evaluate from those states.
+- Consider splitting the task into an explicit first-stage pickup curriculum
+  where reward is dominated by real object height/contact retention and no
+  placement/yaw reward is available until lift is achieved.
