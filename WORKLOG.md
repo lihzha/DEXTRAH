@@ -600,3 +600,52 @@ Next:
 - Leave job `28910978` running. The wrapper should requeue/relaunch on
   preemption or wall-time signal, while ordinary training failures should remain
   non-requeued for debugging.
+
+## 2026-06-09 20:07 PDT - Newton OpenGL Clutter-Bin Video
+
+Goal:
+- Replicate the DEXTRAH clutter-bin sphere demo using Newton physics and an
+  OpenGL/EGL renderer, then run it on l401 and return a video of spheres
+  falling into and settling in the bin.
+
+Hypothesis:
+- A standalone Newton scene using the same DEXTRAH table/bin dimensions and
+  GraspGenX-style primitive hollow-bin collisions will produce a reliable
+  short video without depending on Isaac Sim.
+
+Change:
+- Add a Newton + pyrender script for dynamic sphere drops.
+- Add an l401 Slurm wrapper that uses the GraspGenX base image/venv and keeps
+  Newton runtime packages isolated in an NFS target directory.
+
+Version Control:
+- branch: `codex/dextrah-cluster-dev`
+- base_commit: `c363613`
+- implementation_commit: pending
+- push/pull: pending
+- changed_files:
+  `dextrah_lab/scene_scripts/render_newton_clutter_bin.py`,
+  `cluster/sbatch_render_newton_clutter_bin.sh`,
+  `cluster/submit_render_newton_clutter_bin_l401.sh`, `WORKLOG.md`
+- remote_commit/status: l401 DEXTRAH checkout was clean at `7884cd9` before
+  this implementation.
+
+Command / Job:
+- command: pending local checks, Git sync, then l401 smoke/final render.
+- job_id: pending
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/newton_clutter_bin/<run_name>`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/newton_bin_<jobid>.out`
+- artifacts: `frames/overview_%04d.png`, `overview.mp4`,
+  `scene_metadata.json`, `trajectory.json`, `render_manifest.json`
+
+Result:
+- status: pending
+
+Analysis:
+- The current GraspGenX NFS venv has pyrender/trimesh/PIL but not Newton or
+  Warp. The Slurm wrapper will install `newton[sim]` into
+  `/envs/dextrah-newton-render-site` only when those imports are missing.
+
+Next:
+- Run syntax checks, commit/push, pull to l401, launch a low-resolution smoke,
+  inspect frames/logs, then scale to the final requested video.
