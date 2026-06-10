@@ -108,6 +108,8 @@ class DextrahFrankaStarKittingEnv(DirectRLEnv):
         self.finger_center_to_star_dist = torch.zeros(self.num_envs, device=self.device)
         self.left_finger_to_star_dist = torch.zeros(self.num_envs, device=self.device)
         self.right_finger_to_star_dist = torch.zeros(self.num_envs, device=self.device)
+        self.max_finger_to_star_dist = torch.zeros(self.num_envs, device=self.device)
+        self.finger_distance_asymmetry = torch.zeros(self.num_envs, device=self.device)
         self.star_initial_xy_error = torch.zeros(self.num_envs, device=self.device)
         self.goal_xy_error = torch.zeros(self.num_envs, device=self.device)
         self.goal_height_error = torch.zeros(self.num_envs, device=self.device)
@@ -367,6 +369,8 @@ class DextrahFrankaStarKittingEnv(DirectRLEnv):
             "star_finger_center_to_star_dist": self.finger_center_to_star_dist.mean(),
             "star_left_finger_to_star_dist": self.left_finger_to_star_dist.mean(),
             "star_right_finger_to_star_dist": self.right_finger_to_star_dist.mean(),
+            "star_max_finger_to_star_dist": self.max_finger_to_star_dist.mean(),
+            "star_finger_distance_asymmetry": self.finger_distance_asymmetry.mean(),
             "star_action_z": self.actions[:, 2].mean(),
             "star_action_up": torch.clamp(self.actions[:, 2], 0.0, 1.0).mean(),
             "star_action_down": torch.clamp(-self.actions[:, 2], 0.0, 1.0).mean(),
@@ -550,6 +554,12 @@ class DextrahFrankaStarKittingEnv(DirectRLEnv):
         )
         self.right_finger_to_star_dist[env_ids] = torch.norm(
             self.right_finger_pos[env_ids] - self.star_pos[env_ids], dim=-1
+        )
+        self.max_finger_to_star_dist[env_ids] = torch.maximum(
+            self.left_finger_to_star_dist[env_ids], self.right_finger_to_star_dist[env_ids]
+        )
+        self.finger_distance_asymmetry[env_ids] = torch.abs(
+            self.left_finger_to_star_dist[env_ids] - self.right_finger_to_star_dist[env_ids]
         )
         self.star_lift_height[env_ids] = torch.clamp(
             self.star_pos[env_ids, 2] - self.star_initial_pos[env_ids, 2], min=0.0

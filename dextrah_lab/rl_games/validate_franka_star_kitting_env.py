@@ -160,23 +160,23 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
         "max_gripper_width": 0.08,
         "approach_weight": 3.0,
         "approach_sharpness": 9.0,
-        "finger_approach_weight": 7.0,
+        "finger_approach_weight": 9.0,
         "finger_approach_sharpness": 14.0,
         "grasp_pose_weight": 10.0,
-        "both_fingers_near_weight": 8.0,
-        "lift_ready_weight": 24.0,
+        "both_fingers_near_weight": 14.0,
+        "lift_ready_weight": 36.0,
         "grasp_weight": 2.0,
-        "closed_grasp_weight": 22.0,
+        "closed_grasp_weight": 26.0,
         "grasp_sharpness": 18.0,
         "lift_weight": 260.0,
         "descend_action_weight": 10.0,
-        "lift_action_weight": 36.0,
+        "lift_action_weight": 44.0,
         "close_near_weight": 6.0,
-        "close_action_weight": 12.0,
-        "prelift_move_penalty_weight": -22.0,
-        "close_far_penalty_weight": -10.0,
-        "open_near_penalty_weight": -8.0,
-        "ungrasped_lift_penalty_weight": -8.0,
+        "close_action_weight": 14.0,
+        "prelift_move_penalty_weight": -34.0,
+        "close_far_penalty_weight": -14.0,
+        "open_near_penalty_weight": -10.0,
+        "ungrasped_lift_penalty_weight": -12.0,
         "transport_weight": 6.0,
         "transport_xy_sharpness": 18.0,
         "yaw_weight": 3.0,
@@ -238,6 +238,18 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
         bool((_reward_total(**both_fingers_near) > _reward_total(**one_finger_near)).item()),
         one_finger_reward=_mean(_reward_total(**one_finger_near)),
         both_fingers_reward=_mean(_reward_total(**both_fingers_near)),
+    )
+
+    asymmetric_tight_center = dict(both_fingers_near)
+    asymmetric_tight_center["finger_center_to_star_dist"] = torch.tensor([0.095], device=device)
+    asymmetric_tight_center["right_finger_to_star_dist"] = torch.tensor([0.165], device=device)
+    balanced_tight_center = dict(asymmetric_tight_center)
+    balanced_tight_center["right_finger_to_star_dist"] = torch.tensor([0.095], device=device)
+    checks.check(
+        "reward_lift_ready_requires_balanced_fingers",
+        bool((_reward_total(**balanced_tight_center) > _reward_total(**asymmetric_tight_center)).item()),
+        asymmetric_reward=_mean(_reward_total(**asymmetric_tight_center)),
+        balanced_reward=_mean(_reward_total(**balanced_tight_center)),
     )
 
     loose_center = dict(both_fingers_near)
@@ -568,10 +580,14 @@ def _run_scripted_rollout(env, task_env, checks: CheckRecorder, num_steps: int, 
     initial_finger_star = _mean(task_env.finger_center_to_star_dist)
     initial_left_finger_star = _mean(task_env.left_finger_to_star_dist)
     initial_right_finger_star = _mean(task_env.right_finger_to_star_dist)
+    initial_max_finger_star = _mean(task_env.max_finger_to_star_dist)
+    initial_finger_asymmetry = _mean(task_env.finger_distance_asymmetry)
     min_ee_star = _mean(task_env.ee_to_star_dist)
     min_finger_star = _mean(task_env.finger_center_to_star_dist)
     min_left_finger_star = _mean(task_env.left_finger_to_star_dist)
     min_right_finger_star = _mean(task_env.right_finger_to_star_dist)
+    min_max_finger_star = _mean(task_env.max_finger_to_star_dist)
+    min_finger_asymmetry = _mean(task_env.finger_distance_asymmetry)
     max_star_height = _mean(task_env.star_lift_height)
     max_star_height_per_env = task_env.star_lift_height.detach().clone()
     max_star_initial_xy_error = _mean(task_env.star_initial_xy_error)
@@ -602,6 +618,8 @@ def _run_scripted_rollout(env, task_env, checks: CheckRecorder, num_steps: int, 
         min_finger_star = min(min_finger_star, _mean(task_env.finger_center_to_star_dist))
         min_left_finger_star = min(min_left_finger_star, _mean(task_env.left_finger_to_star_dist))
         min_right_finger_star = min(min_right_finger_star, _mean(task_env.right_finger_to_star_dist))
+        min_max_finger_star = min(min_max_finger_star, _mean(task_env.max_finger_to_star_dist))
+        min_finger_asymmetry = min(min_finger_asymmetry, _mean(task_env.finger_distance_asymmetry))
         max_star_height = max(max_star_height, _mean(task_env.star_lift_height))
         max_star_height_per_env = torch.maximum(max_star_height_per_env, task_env.star_lift_height.detach())
         max_star_initial_xy_error = max(max_star_initial_xy_error, _mean(task_env.star_initial_xy_error))
@@ -667,6 +685,8 @@ def _run_scripted_rollout(env, task_env, checks: CheckRecorder, num_steps: int, 
                 f"finger_to_star={_mean(task_env.finger_center_to_star_dist):.4f} "
                 f"left_finger_to_star={_mean(task_env.left_finger_to_star_dist):.4f} "
                 f"right_finger_to_star={_mean(task_env.right_finger_to_star_dist):.4f} "
+                f"max_finger_to_star={_mean(task_env.max_finger_to_star_dist):.4f} "
+                f"finger_asym={_mean(task_env.finger_distance_asymmetry):.4f} "
                 f"gripper_width={_mean(task_env.gripper_width):.4f} "
                 f"lift={_mean(task_env.star_lift_height):.4f} "
                 f"lift_max={float(task_env.star_lift_height.detach().max().cpu()):.4f} "
@@ -749,6 +769,10 @@ def _run_scripted_rollout(env, task_env, checks: CheckRecorder, num_steps: int, 
         "initial_left_finger_to_star": initial_left_finger_star,
         "min_right_finger_to_star": min_right_finger_star,
         "initial_right_finger_to_star": initial_right_finger_star,
+        "min_max_finger_to_star": min_max_finger_star,
+        "initial_max_finger_to_star": initial_max_finger_star,
+        "min_finger_distance_asymmetry": min_finger_asymmetry,
+        "initial_finger_distance_asymmetry": initial_finger_asymmetry,
         "max_star_lift_height": max_star_height,
         "min_max_star_lift_height": float(max_star_height_per_env_cpu.min()),
         "max_star_lift_height_per_env": _tensor_list(max_star_height_per_env),
