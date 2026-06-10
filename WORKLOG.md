@@ -4046,3 +4046,59 @@ Next:
 - Monitor saved configs and early scalars. Sidecar agent will launch ep25
   eval video; main loop will stop early if static close reward again rises
   without actual lift.
+
+## 2026-06-10 06:34 PDT - Franka Star Lift-Focused PPO Stopped; Grasp-Pose Patch Prepared
+
+Goal:
+- Decide whether the lift-focused run was learning the kitting task or only
+  exploiting shaped action rewards, then patch the next attempt.
+
+Evidence:
+- training job_id: `28936437`, run
+  `franka_star_liftfocus_ppo_20260610_061635`.
+- stopped at elapsed `00:15:11` after ep200 checkpoint was written.
+- TensorBoard at iter 199 still showed `star_success_rate=0`,
+  `star_has_lifted_rate=0.0254`, `star_lift_height=0.00094`,
+  `star_gripper_width=0.0303`, with reward dominated by shaped close/up
+  behavior (`star_lift_action_reward=2.418`, `star_lift_reward=0.231`).
+- sidecar eval job_id: `28936617`, run
+  `franka_star_liftfocus_eval_ep150_20260610_062920`, checkpoint
+  `last_dextrah_franka_star_kitting_ep_150_rew_2260.914.pth`.
+- ep150 deterministic eval completed successfully as an evaluation job but
+  failed the task: `success_rate_final=0`, `has_lifted_star.max=0`,
+  `star_lift_height.max=0`, gripper width mean `0.06545`, finger-center
+  distance mean `0.17691`, and valid `1280x720`, `600` frame video.
+- Visual inspection shows the robot moving near/around the star with an open
+  gripper, no stable pinch, no lift, and no transport.
+
+Analysis:
+- The physics/environment remains feasible from the scripted validation, but
+  the learned deterministic policy is not reaching the tight grasp pose used
+  by the successful scripted lift.
+- The previous reward still let stochastic training collect close/up intent
+  reward without verified object lift; high fixed-sigma exploration likely
+  widened the gap between stochastic training rewards and deterministic eval.
+
+Change:
+- Added a sharp `grasp_pose_reward` based on end-effector distance to the star
+  and finger-center contact gate.
+- Gated close-action and lift-action rewards on that true grasp pose instead
+  of the broader near-star region.
+- Reduced lift-action, close-near, and close-action shaping; increased
+  coarse approach, finger approach, closed-grasp at the true pose, and actual
+  lift reward.
+- Added TensorBoard diagnostics for `star_ee_to_star_dist` and
+  `star_finger_center_to_star_dist`.
+- Added `SIGMA_INIT_VAL` to the training wrapper so the next PPO launch can
+  use a narrower initial action std for this small IK task.
+- Updated validation reward constants and added a grasp-pose reward check.
+
+Checks:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_rewards.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env_cfg.py dextrah_lab/rl_games/validate_franka_star_kitting_env.py`
+- `bash -n cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_validate_franka_star_kitting_env_1gpu.sh cluster/sbatch_eval_franka_star_kitting_1gpu.sh`
+
+Next:
+- Commit/push, fast-forward A100, rerun the validation gate with video, and
+  only relaunch PPO if the patched reward/environment validation passes.
+- If validation passes, launch PPO with `SIGMA_INIT_VAL=-1.0` and
+  `ENTROPY_COEF=0.0005` or lower to reduce clipped random IK exploration.

@@ -152,19 +152,20 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
         "actions": torch.zeros(1, 7, device=device),
         "target_lift_height": 0.08,
         "max_gripper_width": 0.08,
-        "approach_weight": 1.0,
+        "approach_weight": 3.0,
         "approach_sharpness": 9.0,
-        "finger_approach_weight": 3.0,
+        "finger_approach_weight": 5.0,
         "finger_approach_sharpness": 14.0,
-        "grasp_weight": 3.0,
-        "closed_grasp_weight": 10.0,
+        "grasp_pose_weight": 18.0,
+        "grasp_weight": 2.0,
+        "closed_grasp_weight": 12.0,
         "grasp_sharpness": 18.0,
-        "lift_weight": 90.0,
-        "lift_action_weight": 18.0,
-        "close_near_weight": 2.0,
-        "close_action_weight": 1.5,
-        "prelift_move_penalty_weight": -9.0,
-        "close_far_penalty_weight": -3.0,
+        "lift_weight": 140.0,
+        "lift_action_weight": 4.0,
+        "close_near_weight": 0.5,
+        "close_action_weight": 0.8,
+        "prelift_move_penalty_weight": -10.0,
+        "close_far_penalty_weight": -4.0,
         "transport_weight": 6.0,
         "transport_xy_sharpness": 18.0,
         "yaw_weight": 3.0,
@@ -193,6 +194,15 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
         finger_near_reward=_mean(_reward_total(**finger_near)),
     )
 
+    grasp_pose = dict(finger_near)
+    grasp_pose["ee_to_star_dist"] = torch.tensor([0.018], device=device)
+    checks.check(
+        "reward_grasp_pose_increases_when_ee_reaches_star",
+        bool((_reward_total(**grasp_pose) > _reward_total(**finger_near)).item()),
+        finger_near_reward=_mean(_reward_total(**finger_near)),
+        grasp_pose_reward=_mean(_reward_total(**grasp_pose)),
+    )
+
     close_near = dict(finger_near)
     close_near["gripper_width"] = torch.tensor([0.030], device=device)
     checks.check(
@@ -202,12 +212,12 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
         closed_near_reward=_mean(_reward_total(**close_near)),
     )
 
-    close_action_near = dict(finger_near)
+    close_action_near = dict(grasp_pose)
     close_action_near["actions"] = torch.tensor([[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0]], device=device)
     checks.check(
         "reward_close_action_increases_when_fingers_near_star",
-        bool((_reward_total(**close_action_near) > _reward_total(**finger_near)).item()),
-        open_action_reward=_mean(_reward_total(**finger_near)),
+        bool((_reward_total(**close_action_near) > _reward_total(**grasp_pose)).item()),
+        open_action_reward=_mean(_reward_total(**grasp_pose)),
         close_action_reward=_mean(_reward_total(**close_action_near)),
     )
 

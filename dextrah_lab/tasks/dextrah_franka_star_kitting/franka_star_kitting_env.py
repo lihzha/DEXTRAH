@@ -245,6 +245,7 @@ class DextrahFrankaStarKittingEnv(DirectRLEnv):
         (
             approach_reward,
             finger_approach_reward,
+            grasp_pose_reward,
             grasp_reward,
             closed_grasp_reward,
             lift_reward,
@@ -276,6 +277,7 @@ class DextrahFrankaStarKittingEnv(DirectRLEnv):
             float(self.cfg.approach_sharpness),
             float(self.cfg.finger_approach_weight),
             float(self.cfg.finger_approach_sharpness),
+            float(self.cfg.grasp_pose_weight),
             float(self.cfg.grasp_weight),
             float(self.cfg.closed_grasp_weight),
             float(self.cfg.grasp_sharpness),
@@ -297,6 +299,7 @@ class DextrahFrankaStarKittingEnv(DirectRLEnv):
         total_reward = (
             approach_reward
             + finger_approach_reward
+            + grasp_pose_reward
             + grasp_reward
             + closed_grasp_reward
             + lift_reward
@@ -314,6 +317,7 @@ class DextrahFrankaStarKittingEnv(DirectRLEnv):
         log_terms = {
             "star_approach_reward": approach_reward.mean(),
             "star_finger_approach_reward": finger_approach_reward.mean(),
+            "star_grasp_pose_reward": grasp_pose_reward.mean(),
             "star_grasp_reward": grasp_reward.mean(),
             "star_closed_grasp_reward": closed_grasp_reward.mean(),
             "star_lift_reward": lift_reward.mean(),
@@ -335,6 +339,8 @@ class DextrahFrankaStarKittingEnv(DirectRLEnv):
             "star_success_rate": self.in_success_region.float().mean(),
             "star_has_lifted_rate": self.has_lifted_star.float().mean(),
             "star_gripper_width": self.gripper_width.mean(),
+            "star_ee_to_star_dist": self.ee_to_star_dist.mean(),
+            "star_finger_center_to_star_dist": self.finger_center_to_star_dist.mean(),
         }
         self.extras["log"] = log_terms
         for key, value in log_terms.items():

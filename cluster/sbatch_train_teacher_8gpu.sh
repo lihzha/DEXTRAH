@@ -79,6 +79,7 @@ else
   E_CLIP="${E_CLIP:-0.2}"
   GRAD_NORM="${GRAD_NORM:-1.0}"
 fi
+SIGMA_INIT_VAL="${SIGMA_INIT_VAL:-0}"
 AUTO_RESUME="${AUTO_RESUME:-True}"
 CHECKPOINT="${CHECKPOINT:-}"
 FULL_EXPERIMENT_NAME="${FULL_EXPERIMENT_NAME:-}"
@@ -167,6 +168,7 @@ echo "KL_THRESHOLD=$KL_THRESHOLD"
 echo "ENTROPY_COEF=$ENTROPY_COEF"
 echo "E_CLIP=$E_CLIP"
 echo "GRAD_NORM=$GRAD_NORM"
+echo "SIGMA_INIT_VAL=$SIGMA_INIT_VAL"
 echo "SAVE_FREQUENCY=$SAVE_FREQUENCY"
 echo "AUTO_RESUME=$AUTO_RESUME"
 echo "CHECKPOINT=$CHECKPOINT"
@@ -280,6 +282,7 @@ PY
         agent.params.config.kl_threshold='$KL_THRESHOLD' \
         agent.params.config.central_value_config.kl_threshold='$KL_THRESHOLD' \
         agent.params.config.entropy_coef='$ENTROPY_COEF' \
+        agent.params.network.space.continuous.sigma_init.val='$SIGMA_INIT_VAL' \
         agent.params.config.e_clip='$E_CLIP' \
         agent.params.config.grad_norm='$GRAD_NORM' \
         agent.params.config.save_frequency='$SAVE_FREQUENCY' \
