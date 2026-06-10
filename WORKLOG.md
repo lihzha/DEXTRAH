@@ -2204,3 +2204,38 @@ Result:
 Next:
 - Commit and deploy the camera patch to `a1001`, then launch the next periodic
   eval from a fresh checkpoint with the overhead view.
+
+## 2026-06-10 01:20 PDT - Overhead Eval Relaunch Fix
+
+Goal:
+- Relaunch the overhead eval without disrupting training.
+
+Hypothesis:
+- The failed eval job was caused by `eval_rollout.py` importing the local
+  untracked Franka task package; the cube eval only needs the KUKA/Allegro task
+  registration.
+
+Change:
+- Removed `dextrah_lab.tasks.dextrah_franka_star_kitting.gym_setup` from
+  `dextrah_lab/rl_games/eval_rollout.py`.
+- Removed failed eval output directory:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/cube_grasp_static_eval_ep225_overhead_20260610_011653`.
+
+Command / Job:
+- failed eval job_id: `28930620`
+- failed eval log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_cube_grasp_28930620.out`
+- failed checkpoint:
+  `/results/logs/rl_games/dextrah_cube_grasp/cube_grasp_static_ppo_opt8gpu_20260610_004351/nn/last_dextrah_cube_grasp_ep_225_rew_1474.1598.pth`
+- local check:
+  `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py`
+
+Result:
+- status: failed eval classified and cleanup complete.
+- key evidence: `ModuleNotFoundError: No module named
+  'dextrah_lab.tasks.dextrah_franka_star_kitting'`.
+- training job `28930031` remained running.
+
+Next:
+- Commit, push, update `a1001`, and relaunch the overhead eval from the same
+  epoch-225 checkpoint.
