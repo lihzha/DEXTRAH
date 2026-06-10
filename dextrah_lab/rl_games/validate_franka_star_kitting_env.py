@@ -145,6 +145,8 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
     base = {
         "ee_to_star_dist": torch.tensor([0.18], device=device),
         "finger_center_to_star_dist": torch.tensor([0.18], device=device),
+        "left_finger_to_star_dist": torch.tensor([0.18], device=device),
+        "right_finger_to_star_dist": torch.tensor([0.18], device=device),
         "gripper_width": torch.tensor([0.08], device=device),
         "star_lift_height": zeros.clone(),
         "star_initial_xy_error": zeros.clone(),
@@ -158,21 +160,23 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
         "max_gripper_width": 0.08,
         "approach_weight": 3.0,
         "approach_sharpness": 9.0,
-        "finger_approach_weight": 5.0,
+        "finger_approach_weight": 7.0,
         "finger_approach_sharpness": 14.0,
-        "grasp_pose_weight": 8.0,
+        "grasp_pose_weight": 10.0,
+        "both_fingers_near_weight": 8.0,
+        "lift_ready_weight": 24.0,
         "grasp_weight": 2.0,
-        "closed_grasp_weight": 18.0,
+        "closed_grasp_weight": 22.0,
         "grasp_sharpness": 18.0,
-        "lift_weight": 240.0,
-        "descend_action_weight": 12.0,
-        "lift_action_weight": 30.0,
+        "lift_weight": 260.0,
+        "descend_action_weight": 10.0,
+        "lift_action_weight": 36.0,
         "close_near_weight": 6.0,
-        "close_action_weight": 10.0,
-        "prelift_move_penalty_weight": -10.0,
-        "close_far_penalty_weight": -8.0,
-        "open_near_penalty_weight": -6.0,
-        "ungrasped_lift_penalty_weight": -4.0,
+        "close_action_weight": 12.0,
+        "prelift_move_penalty_weight": -22.0,
+        "close_far_penalty_weight": -10.0,
+        "open_near_penalty_weight": -8.0,
+        "ungrasped_lift_penalty_weight": -8.0,
         "transport_weight": 6.0,
         "transport_xy_sharpness": 18.0,
         "yaw_weight": 3.0,
@@ -194,6 +198,8 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
 
     finger_near = dict(near)
     finger_near["finger_center_to_star_dist"] = torch.tensor([0.065], device=device)
+    finger_near["left_finger_to_star_dist"] = torch.tensor([0.085], device=device)
+    finger_near["right_finger_to_star_dist"] = torch.tensor([0.085], device=device)
     checks.check(
         "reward_finger_approach_increases_near_star",
         bool((_reward_total(**finger_near) > _reward_total(**near)).item()),
@@ -219,6 +225,32 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
         closed_near_reward=_mean(_reward_total(**close_near)),
     )
 
+    one_finger_near = dict(base)
+    one_finger_near["ee_to_star_dist"] = torch.tensor([0.095], device=device)
+    one_finger_near["finger_center_to_star_dist"] = torch.tensor([0.105], device=device)
+    one_finger_near["left_finger_to_star_dist"] = torch.tensor([0.085], device=device)
+    one_finger_near["right_finger_to_star_dist"] = torch.tensor([0.180], device=device)
+    one_finger_near["gripper_width"] = torch.tensor([0.030], device=device)
+    both_fingers_near = dict(one_finger_near)
+    both_fingers_near["right_finger_to_star_dist"] = torch.tensor([0.085], device=device)
+    checks.check(
+        "reward_both_fingers_near_exceeds_one_finger",
+        bool((_reward_total(**both_fingers_near) > _reward_total(**one_finger_near)).item()),
+        one_finger_reward=_mean(_reward_total(**one_finger_near)),
+        both_fingers_reward=_mean(_reward_total(**both_fingers_near)),
+    )
+
+    loose_center = dict(both_fingers_near)
+    loose_center["finger_center_to_star_dist"] = torch.tensor([0.142], device=device)
+    tight_center = dict(both_fingers_near)
+    tight_center["finger_center_to_star_dist"] = torch.tensor([0.095], device=device)
+    checks.check(
+        "reward_lift_ready_requires_tight_finger_center",
+        bool((_reward_total(**tight_center) > _reward_total(**loose_center)).item()),
+        loose_center_reward=_mean(_reward_total(**loose_center)),
+        tight_center_reward=_mean(_reward_total(**tight_center)),
+    )
+
     close_action_near = dict(grasp_pose)
     close_action_near["actions"] = torch.tensor([[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0]], device=device)
     checks.check(
@@ -239,6 +271,8 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
     pregrasp = dict(base)
     pregrasp["ee_to_star_dist"] = torch.tensor([0.125], device=device)
     pregrasp["finger_center_to_star_dist"] = torch.tensor([0.115], device=device)
+    pregrasp["left_finger_to_star_dist"] = torch.tensor([0.135], device=device)
+    pregrasp["right_finger_to_star_dist"] = torch.tensor([0.135], device=device)
     pregrasp_close_action = dict(pregrasp)
     pregrasp_close_action["actions"] = close_action_near["actions"]
     checks.check(
@@ -251,6 +285,8 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
     precontact_descend = dict(base)
     precontact_descend["ee_to_star_dist"] = torch.tensor([0.150], device=device)
     precontact_descend["finger_center_to_star_dist"] = torch.tensor([0.135], device=device)
+    precontact_descend["left_finger_to_star_dist"] = torch.tensor([0.155], device=device)
+    precontact_descend["right_finger_to_star_dist"] = torch.tensor([0.155], device=device)
     precontact_descend["actions"] = torch.tensor([[0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0]], device=device)
     checks.check(
         "reward_descend_action_increases_before_contact",
@@ -261,6 +297,8 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
 
     lifted = dict(near)
     lifted["finger_center_to_star_dist"] = torch.tensor([0.018], device=device)
+    lifted["left_finger_to_star_dist"] = torch.tensor([0.055], device=device)
+    lifted["right_finger_to_star_dist"] = torch.tensor([0.055], device=device)
     lifted["gripper_width"] = torch.tensor([0.018], device=device)
     lifted["star_lift_height"] = torch.tensor([0.08], device=device)
     checks.check(
@@ -272,6 +310,8 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
 
     lift_intent = dict(near)
     lift_intent["finger_center_to_star_dist"] = torch.tensor([0.018], device=device)
+    lift_intent["left_finger_to_star_dist"] = torch.tensor([0.055], device=device)
+    lift_intent["right_finger_to_star_dist"] = torch.tensor([0.055], device=device)
     lift_intent["gripper_width"] = torch.tensor([0.018], device=device)
     lift_intent["actions"] = torch.tensor([[0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -1.0]], device=device)
     checks.check(
@@ -308,6 +348,8 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
 
     hover_pinched = dict(near)
     hover_pinched["finger_center_to_star_dist"] = torch.tensor([0.065], device=device)
+    hover_pinched["left_finger_to_star_dist"] = torch.tensor([0.085], device=device)
+    hover_pinched["right_finger_to_star_dist"] = torch.tensor([0.085], device=device)
     hover_pinched["gripper_width"] = torch.tensor([0.030], device=device)
     hover_pinched["star_initial_xy_error"] = torch.tensor([0.020], device=device)
     hover_pinched["actions"] = torch.tensor([[0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -1.0]], device=device)
@@ -524,8 +566,12 @@ def _run_scripted_rollout(env, task_env, checks: CheckRecorder, num_steps: int, 
     initial_ee = task_env.ee_pos.clone()
     initial_ee_star = _mean(task_env.ee_to_star_dist)
     initial_finger_star = _mean(task_env.finger_center_to_star_dist)
+    initial_left_finger_star = _mean(task_env.left_finger_to_star_dist)
+    initial_right_finger_star = _mean(task_env.right_finger_to_star_dist)
     min_ee_star = _mean(task_env.ee_to_star_dist)
     min_finger_star = _mean(task_env.finger_center_to_star_dist)
+    min_left_finger_star = _mean(task_env.left_finger_to_star_dist)
+    min_right_finger_star = _mean(task_env.right_finger_to_star_dist)
     max_star_height = _mean(task_env.star_lift_height)
     max_star_height_per_env = task_env.star_lift_height.detach().clone()
     max_star_initial_xy_error = _mean(task_env.star_initial_xy_error)
@@ -554,6 +600,8 @@ def _run_scripted_rollout(env, task_env, checks: CheckRecorder, num_steps: int, 
         done_count += int(dones.float().sum().detach().cpu()) if isinstance(dones, torch.Tensor) else 0
         min_ee_star = min(min_ee_star, _mean(task_env.ee_to_star_dist))
         min_finger_star = min(min_finger_star, _mean(task_env.finger_center_to_star_dist))
+        min_left_finger_star = min(min_left_finger_star, _mean(task_env.left_finger_to_star_dist))
+        min_right_finger_star = min(min_right_finger_star, _mean(task_env.right_finger_to_star_dist))
         max_star_height = max(max_star_height, _mean(task_env.star_lift_height))
         max_star_height_per_env = torch.maximum(max_star_height_per_env, task_env.star_lift_height.detach())
         max_star_initial_xy_error = max(max_star_initial_xy_error, _mean(task_env.star_initial_xy_error))
@@ -617,6 +665,8 @@ def _run_scripted_rollout(env, task_env, checks: CheckRecorder, num_steps: int, 
                 f"step={step + 1} reward={reward_values[-1]:.4f} "
                 f"ee_to_star={_mean(task_env.ee_to_star_dist):.4f} "
                 f"finger_to_star={_mean(task_env.finger_center_to_star_dist):.4f} "
+                f"left_finger_to_star={_mean(task_env.left_finger_to_star_dist):.4f} "
+                f"right_finger_to_star={_mean(task_env.right_finger_to_star_dist):.4f} "
                 f"gripper_width={_mean(task_env.gripper_width):.4f} "
                 f"lift={_mean(task_env.star_lift_height):.4f} "
                 f"lift_max={float(task_env.star_lift_height.detach().max().cpu()):.4f} "
@@ -695,6 +745,10 @@ def _run_scripted_rollout(env, task_env, checks: CheckRecorder, num_steps: int, 
         "initial_ee_to_star": initial_ee_star,
         "min_finger_to_star": min_finger_star,
         "initial_finger_to_star": initial_finger_star,
+        "min_left_finger_to_star": min_left_finger_star,
+        "initial_left_finger_to_star": initial_left_finger_star,
+        "min_right_finger_to_star": min_right_finger_star,
+        "initial_right_finger_to_star": initial_right_finger_star,
         "max_star_lift_height": max_star_height,
         "min_max_star_lift_height": float(max_star_height_per_env_cpu.min()),
         "max_star_lift_height_per_env": _tensor_list(max_star_height_per_env),

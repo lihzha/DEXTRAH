@@ -103,6 +103,8 @@ def _collect_task_metrics(task_env) -> dict[str, float | None]:
         "has_lifted_star",
         "ee_to_star_dist",
         "finger_center_to_star_dist",
+        "left_finger_to_star_dist",
+        "right_finger_to_star_dist",
         "gripper_width",
     ]
     return {name: _env_metric(task_env, name) for name in metric_names if hasattr(task_env, name)}
