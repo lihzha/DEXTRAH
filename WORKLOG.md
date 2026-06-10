@@ -4233,3 +4233,37 @@ Checks:
 Next:
 - Commit/push, fast-forward A100, rerun validation with video, and only
   relaunch PPO if the close-band reward passes all environment checks.
+
+## 2026-06-10 07:08 PDT - Franka Star Close-Band Environment Validation Passed
+
+Goal:
+- Verify the pregrasp close-band reward patch and environment setup before
+  relaunching PPO.
+
+Evidence:
+- source commit: `83cd32d93425b03cb06947d3dc2dac3e379d7de9`
+  (`Reward Franka star pregrasp closure`).
+- validation job_id: `28936865`
+- run_name: `franka_star_env_validate_closeband_20260610_070146`
+- metrics:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_star_env_validate_closeband_20260610_070146/metrics.json`
+- video:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_star_env_validate_closeband_20260610_070146/videos/franka-star-kitting-validation-step-0.mp4`
+- local mirror:
+  `cluster_results/a1001/franka_star_env_validate_closeband_20260610_070146`
+
+Results:
+- `passed=true`; all reward and scripted rollout checks passed.
+- `validation_lifted_rate=0.5`
+- `max_star_lift_height=0.07345 m`
+- `max_pretransport_star_initial_xy_error=0.02956 m`
+- `reward_mean=16.256`
+- video is valid: `1280x720`, `60 fps`, `179` frames, `2.98 s`.
+- contact-sheet inspection confirmed usable camera framing and expected star,
+  fixture, and Franka layout.
+
+Next:
+- Relaunch PPO from this validated source with the stable DEXTRAH PPO
+  implementation and task-specific close/lift hyperparameters.
+- Monitor TensorBoard for closure and lift rather than reward alone; request
+  sidecar deterministic eval/video at early checkpoints.
