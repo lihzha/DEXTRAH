@@ -724,3 +724,43 @@ Next:
 - Commit/push/pull this implementation, launch l401 smoke, inspect
   `settle_metrics.json` and the overview frames, then tighten or retune the
   damping/sleep/friction settings if any sphere remains above threshold.
+
+## 2026-06-09 20:52 PDT - Isaac Lab Velocity Smoke Import Fix
+
+Goal:
+- Unblock the first l401 smoke for adaptive sphere velocity settling.
+
+Hypothesis:
+- The smoke failed before scene creation because `SimulationManager` is not
+  re-exported from `isaaclab.sim` in Isaac Lab v2.2.1; Isaac Lab source imports
+  it from `isaacsim.core.simulation_manager`.
+
+Change:
+- Switched the clutter render script import to
+  `from isaacsim.core.simulation_manager import SimulationManager`.
+
+Version Control:
+- branch: `codex/dextrah-cluster-dev`
+- base_commit: `27704b61f0d2f65778d359b2243ab5ae18e09076`
+- implementation_commit: pending
+- push/pull: pending
+- changed_files: `dextrah_lab/scene_scripts/render_clutter_bin_env.py`,
+  `WORKLOG.md`
+
+Command / Job:
+- failed command: l401 allocation `1019478`, run
+  `clutter_bin_vel_tune_smoke_20260609_204543`
+- failed run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/clutter_bin_env/clutter_bin_vel_tune_smoke_20260609_204543`
+- key error:
+  `ImportError: cannot import name 'SimulationManager' from 'isaaclab.sim'`
+
+Result:
+- status: fixed locally; relaunch pending.
+
+Analysis:
+- The failure occurred before scene construction, so no physics conclusions can
+  be drawn from this run.
+
+Next:
+- Commit/push/pull the import fix and rerun the same 160-sphere smoke.

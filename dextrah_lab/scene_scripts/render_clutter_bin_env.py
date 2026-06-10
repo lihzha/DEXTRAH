@@ -104,8 +104,9 @@ import omni.timeline  # noqa: E402
 import omni.usd  # noqa: E402
 import isaaclab.sim as sim_utils  # noqa: E402
 from isaaclab.sensors.camera import TiledCamera, TiledCameraCfg  # noqa: E402
-from isaaclab.sim import PhysxCfg, SimulationCfg, SimulationManager  # noqa: E402
+from isaaclab.sim import PhysxCfg, SimulationCfg  # noqa: E402
 from isaaclab.sim.spawners.materials.physics_materials_cfg import RigidBodyMaterialCfg  # noqa: E402
+from isaacsim.core.simulation_manager import SimulationManager  # noqa: E402
 from pxr import Gf, PhysxSchema, Sdf, Usd, UsdGeom, UsdPhysics, UsdShade  # noqa: E402
 
 try:
