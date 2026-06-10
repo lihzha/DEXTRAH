@@ -3333,3 +3333,34 @@ Next:
 - Launch an 8-GPU PPO run from commit `52618ec` with fixed spawn curriculum,
   monitor logs continuously, and start periodic checkpoint eval videos from a
   separate agent once checkpoints are available.
+
+## 2026-06-10 04:20 PDT - Franka Star Fixed-Curriculum PPO Launched
+
+Goal:
+- Start the first full PPO learning run only after the environment validation
+  gate passed.
+
+Evidence:
+- training job_id: `28933585`, run
+  `franka_star_fixedcurriculum_ppo_20260610_042007`.
+- remote checkout HEAD at launch:
+  `918f80f89825452f4c5a36c6cff7b05c0325933b`.
+- behavior source is unchanged from validated commit `52618ec`; `918f80f`
+  only records the validation-pass worklog entry.
+- Slurm partition: `polar3`; allocated node: pending first monitor, then
+  `batch-block7-00808`.
+
+Hyperparameters:
+- `NUM_ENVS=2048`, `HORIZON_LENGTH=64`, `MINIBATCH_SIZE=32768`,
+  `CENTRAL_VALUE_MINIBATCH_SIZE=32768`.
+- `MAX_ITERATIONS=600`, `SAVE_FREQUENCY=25`.
+- `LEARNING_RATE=0.00015`,
+  `CENTRAL_VALUE_LEARNING_RATE=0.0001`.
+- `ENTROPY_COEF=0.003`, `GAMMA=0.997`, `TAU=0.95`,
+  `KL_THRESHOLD=0.012`, `MINI_EPOCHS=4`.
+- `AUTO_RESUME=False`, `SELF_RELAUNCH=False`,
+  `USE_CUDA_GRAPH=False`, `DISTRIBUTED=True`, `MULTI_GPU=True`.
+
+Next:
+- Monitor startup, PPO metrics, checkpoints, and launch sidecar eval videos
+  from saved checkpoints once available.
