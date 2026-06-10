@@ -18,9 +18,11 @@ import argparse
 import asyncio
 import json
 import math
+import os
 import time
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable
 
 from isaaclab.app import AppLauncher
 
@@ -37,6 +39,30 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sim_steps_per_frame", type=int, default=2)
     parser.add_argument("--settle_steps", type=int, default=30)
     parser.add_argument("--physics_device", default="cpu", help="PhysX device used by SimulationContext.")
+    parser.add_argument(
+        "--robot",
+        choices=("graspgenx_franka", "kuka_allegro"),
+        default="graspgenx_franka",
+        help="Robot asset to render in the kitting scene.",
+    )
+    parser.add_argument(
+        "--graspgenx_root",
+        type=Path,
+        default=None,
+        help="GraspGenX repo root used to load end2end/robots/franka_panda.yaml.",
+    )
+    parser.add_argument(
+        "--curobo_assets_root",
+        type=Path,
+        default=None,
+        help="cuRobo content/assets root used by GraspGenX's ${CUROBO_ASSETS} token.",
+    )
+    parser.add_argument(
+        "--franka_urdf",
+        type=Path,
+        default=None,
+        help="Override the Franka URDF path after loading the GraspGenX config.",
+    )
     parser.add_argument("--star_outer_radius", type=float, default=0.092)
     parser.add_argument("--star_inner_radius", type=float, default=0.042)
     parser.add_argument("--star_thickness", type=float, default=0.034)
@@ -76,6 +102,7 @@ import omni.usd  # noqa: E402
 import isaaclab.sim as sim_utils  # noqa: E402
 from isaaclab.sensors.camera import TiledCamera, TiledCameraCfg  # noqa: E402
 from isaaclab.sim import PhysxCfg, SimulationCfg  # noqa: E402
+from isaaclab.sim.converters import UrdfConverter, UrdfConverterCfg  # noqa: E402
 from isaaclab.sim.spawners.materials.physics_materials_cfg import RigidBodyMaterialCfg  # noqa: E402
 from pxr import Gf, PhysxSchema, Sdf, Usd, UsdGeom, UsdPhysics, UsdShade  # noqa: E402
 
@@ -87,6 +114,20 @@ except Exception:  # Isaac Sim 4.x fallback namespace
 
 Color = tuple[float, float, float]
 Point2 = tuple[float, float]
+
+
+@dataclass(frozen=True)
+class RobotSpec:
+    name: str
+    usd_path: Path
+    source: str
+    base_translation: tuple[float, float, float]
+    base_quaternion_xyzw: tuple[float, float, float, float]
+    source_config: Path | None = None
+    urdf_path: Path | None = None
+    asset_root_path: Path | None = None
+    default_joint_position: list[float] | None = None
+    joint_names: list[str] | None = None
 
 
 def _log(message: str) -> None:
@@ -110,12 +151,18 @@ def _set_xform(
     translate: Iterable[float],
     scale: Iterable[float] | None = None,
     rotate_xyz_deg: Iterable[float] | None = None,
+    rotate_quat_xyzw: Iterable[float] | None = None,
 ) -> None:
+    if rotate_xyz_deg is not None and rotate_quat_xyzw is not None:
+        raise ValueError("Use either rotate_xyz_deg or rotate_quat_xyzw, not both")
     xformable = UsdGeom.Xformable(prim)
     xformable.ClearXformOpOrder()
     xformable.AddTranslateOp().Set(Gf.Vec3d(*[float(v) for v in translate]))
     if rotate_xyz_deg is not None:
         xformable.AddRotateXYZOp().Set(Gf.Vec3f(*[float(v) for v in rotate_xyz_deg]))
+    if rotate_quat_xyzw is not None:
+        qx, qy, qz, qw = [float(v) for v in rotate_quat_xyzw]
+        xformable.AddOrientOp().Set(Gf.Quatf(qw, qx, qy, qz))
     if scale is not None:
         xformable.AddScaleOp().Set(Gf.Vec3f(*[float(v) for v in scale]))
 
@@ -204,10 +251,240 @@ def _create_sim_context():
     return sim_utils.SimulationContext(sim_cfg)
 
 
-def _create_robot(stage: Usd.Stage, robot_usd: Path) -> None:
-    robot = UsdGeom.Xform.Define(stage, "/World/Robot").GetPrim()
-    robot.GetReferences().AddReference(str(robot_usd))
-    _set_xform(robot, (0.0, 0.0, 0.0), rotate_xyz_deg=(0.0, 0.0, 0.0))
+def _path_from_arg_or_env(
+    arg_value: Path | None,
+    env_names: Iterable[str],
+    candidates: Iterable[Path],
+    *,
+    required_file: Path | None = None,
+) -> Path | None:
+    paths: list[Path] = []
+    if arg_value is not None:
+        paths.append(arg_value)
+    for env_name in env_names:
+        value = os.environ.get(env_name)
+        if value:
+            paths.append(Path(value))
+    paths.extend(candidates)
+
+    for path in paths:
+        expanded = path.expanduser()
+        if required_file is None:
+            if expanded.exists():
+                return expanded.resolve()
+        elif (expanded / required_file).is_file():
+            return expanded.resolve()
+    return None
+
+
+def _load_yaml(path: Path) -> dict[str, Any]:
+    try:
+        import yaml
+    except ImportError as exc:
+        raise RuntimeError(
+            f"PyYAML is required to load GraspGenX robot config {path}. "
+            "Install PyYAML in the Isaac Lab environment or pass a pre-resolved --franka_urdf."
+        ) from exc
+    with path.open("r", encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+    if not isinstance(data, dict):
+        raise ValueError(f"Expected mapping in GraspGenX robot config: {path}")
+    return data
+
+
+def _resolve_graspgenx_root() -> Path:
+    root = _path_from_arg_or_env(
+        args_cli.graspgenx_root,
+        ("GRASPGENX_ROOT", "GRASPGENX_REPO"),
+        (
+            Path("/graspgenx"),
+            _repo_root().parent / "graspgenx",
+        ),
+        required_file=Path("end2end/robots/franka_panda.yaml"),
+    )
+    if root is None:
+        raise FileNotFoundError(
+            "Could not find GraspGenX root containing end2end/robots/franka_panda.yaml. "
+            "Pass --graspgenx_root or set GRASPGENX_ROOT."
+        )
+    return root
+
+
+def _resolve_curobo_assets_root(graspgenx_root: Path) -> Path:
+    candidates = [
+        Path("/curobo_assets"),
+        Path("/curobo/curobo/content/assets"),
+        graspgenx_root / "ext/curobo/curobo/content/assets",
+        _repo_root().parent / "curobo/curobo/content/assets",
+    ]
+    override = os.environ.get("GRASPGENX_CUROBO_DIR")
+    if override:
+        candidates.insert(0, Path(override) / "curobo/content/assets")
+    root = _path_from_arg_or_env(
+        args_cli.curobo_assets_root,
+        ("CUROBO_ASSETS_ROOT", "CUROBO_ASSETS"),
+        candidates,
+        required_file=Path("robot/franka_description/franka_panda.urdf"),
+    )
+    if root is None:
+        raise FileNotFoundError(
+            "Could not find cuRobo assets root containing robot/franka_description/franka_panda.urdf. "
+            "Pass --curobo_assets_root or set CUROBO_ASSETS_ROOT."
+        )
+    return root
+
+
+def _expand_graspgenx_path(value: str | Path, *, graspgenx_root: Path, curobo_assets_root: Path) -> Path:
+    raw = str(value)
+    expanded = (
+        raw.replace("${CUROBO_ASSETS}", str(curobo_assets_root))
+        .replace("${REPO}", str(graspgenx_root))
+        .replace("${E2E}", str(graspgenx_root / "end2end"))
+    )
+    path = Path(expanded).expanduser()
+    if not path.is_absolute():
+        path = graspgenx_root / path
+    return path.resolve()
+
+
+def _as_float_tuple(value: Any, *, length: int, field_name: str) -> tuple[float, ...]:
+    if not isinstance(value, (list, tuple)) or len(value) != length:
+        raise ValueError(f"{field_name} must be a sequence of {length} numbers")
+    return tuple(float(v) for v in value)
+
+
+def _convert_franka_urdf_to_usd(urdf_path: Path, output_dir: Path) -> Path:
+    if not urdf_path.is_file():
+        raise FileNotFoundError(f"Franka URDF is missing: {urdf_path}")
+    usd_dir = output_dir / "generated_assets" / "graspgenx_franka_panda"
+    usd_dir.mkdir(parents=True, exist_ok=True)
+    _log(f"converting GraspGenX Franka URDF to USD: {urdf_path}")
+    converter_cfg = UrdfConverterCfg(
+        asset_path=str(urdf_path),
+        usd_dir=str(usd_dir),
+        usd_file_name="franka_panda.usd",
+        fix_base=True,
+        merge_fixed_joints=False,
+        force_usd_conversion=True,
+        make_instanceable=False,
+        convex_decompose_mesh=False,
+    )
+    converter = UrdfConverter(converter_cfg)
+    usd_path = Path(converter.usd_path)
+    if not usd_path.is_file():
+        raise FileNotFoundError(f"URDF converter did not create expected USD: {usd_path}")
+    return usd_path
+
+
+def _resolve_graspgenx_franka_robot(output_dir: Path) -> RobotSpec:
+    graspgenx_root = _resolve_graspgenx_root()
+    cfg_path = graspgenx_root / "end2end/robots/franka_panda.yaml"
+    cfg = _load_yaml(cfg_path)
+    curobo_assets_root = _resolve_curobo_assets_root(graspgenx_root)
+
+    urdf_path = args_cli.franka_urdf.expanduser().resolve() if args_cli.franka_urdf else None
+    if urdf_path is None:
+        urdf_path = _expand_graspgenx_path(
+            str(cfg["urdf_path"]),
+            graspgenx_root=graspgenx_root,
+            curobo_assets_root=curobo_assets_root,
+        )
+    asset_root = _expand_graspgenx_path(
+        str(cfg.get("asset_root_path", urdf_path.parent)),
+        graspgenx_root=graspgenx_root,
+        curobo_assets_root=curobo_assets_root,
+    )
+
+    base_pose = cfg.get("robot_base_pose", {})
+    base_translation = _as_float_tuple(
+        base_pose.get("translation", [0.0, 0.0, 0.0]),
+        length=3,
+        field_name="robot_base_pose.translation",
+    )
+    base_quat = _as_float_tuple(
+        base_pose.get("quaternion_xyzw", [0.0, 0.0, 0.0, 1.0]),
+        length=4,
+        field_name="robot_base_pose.quaternion_xyzw",
+    )
+
+    curobo_cfg = cfg.get("curobo", {})
+    default_joint_position = None
+    if isinstance(curobo_cfg, dict) and "default_joint_position" in curobo_cfg:
+        default_joint_position = [float(v) for v in curobo_cfg["default_joint_position"]]
+    joint_names = [
+        "panda_joint1",
+        "panda_joint2",
+        "panda_joint3",
+        "panda_joint4",
+        "panda_joint5",
+        "panda_joint6",
+        "panda_joint7",
+    ]
+
+    usd_path = _convert_franka_urdf_to_usd(urdf_path, output_dir)
+    return RobotSpec(
+        name="graspgenx_franka_panda",
+        usd_path=usd_path,
+        source="GraspGenX end2end/robots/franka_panda.yaml",
+        source_config=cfg_path,
+        urdf_path=urdf_path,
+        asset_root_path=asset_root,
+        base_translation=base_translation,  # type: ignore[arg-type]
+        base_quaternion_xyzw=base_quat,  # type: ignore[arg-type]
+        default_joint_position=default_joint_position,
+        joint_names=joint_names,
+    )
+
+
+def _resolve_kuka_allegro_robot() -> RobotSpec:
+    robot_usd = _repo_root() / "dextrah_lab/assets/kuka_allegro/kuka_allegro_colored.usd"
+    if not robot_usd.exists():
+        raise FileNotFoundError(f"Robot USD is missing: {robot_usd}")
+    if _is_git_lfs_pointer(robot_usd):
+        raise RuntimeError(
+            f"Robot USD is a Git LFS pointer, not a materialized USD asset: {robot_usd}. "
+            "Run `git lfs pull` before rendering."
+        )
+    return RobotSpec(
+        name="kuka_allegro",
+        usd_path=robot_usd,
+        source="DEXTRAH dextrah_lab/assets/kuka_allegro/kuka_allegro_colored.usd",
+        base_translation=(0.0, 0.0, 0.0),
+        base_quaternion_xyzw=(0.0, 0.0, 0.0, 1.0),
+    )
+
+
+def _resolve_robot(output_dir: Path) -> RobotSpec:
+    if args_cli.robot == "graspgenx_franka":
+        return _resolve_graspgenx_franka_robot(output_dir)
+    if args_cli.robot == "kuka_allegro":
+        return _resolve_kuka_allegro_robot()
+    raise ValueError(f"Unsupported robot: {args_cli.robot}")
+
+
+def _create_robot(stage: Usd.Stage, robot: RobotSpec) -> None:
+    robot_prim = UsdGeom.Xform.Define(stage, "/World/Robot").GetPrim()
+    robot_prim.GetReferences().AddReference(str(robot.usd_path))
+    _set_xform(
+        robot_prim,
+        robot.base_translation,
+        rotate_quat_xyzw=robot.base_quaternion_xyzw,
+    )
+
+
+def _robot_metadata(robot: RobotSpec) -> dict[str, object]:
+    return {
+        "name": robot.name,
+        "source": robot.source,
+        "source_config": str(robot.source_config) if robot.source_config else None,
+        "usd_path": str(robot.usd_path),
+        "urdf_path": str(robot.urdf_path) if robot.urdf_path else None,
+        "asset_root_path": str(robot.asset_root_path) if robot.asset_root_path else None,
+        "base_translation": list(robot.base_translation),
+        "base_quaternion_xyzw": list(robot.base_quaternion_xyzw),
+        "joint_names": robot.joint_names,
+        "default_joint_position": robot.default_joint_position,
+    }
 
 
 def _star_vertices(
@@ -811,6 +1088,8 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     _log(f"output_dir={output_dir}")
 
+    robot_spec = _resolve_robot(output_dir)
+
     _log("creating USD stage")
     create_new_stage()
     update_stage()
@@ -823,15 +1102,6 @@ def main() -> None:
     UsdGeom.Xform.Define(stage, "/World/Table")
     UsdGeom.Xform.Define(stage, "/World/Kitting")
     UsdGeom.Xform.Define(stage, "/World/Looks")
-
-    robot_usd = _repo_root() / "dextrah_lab/assets/kuka_allegro/kuka_allegro_colored.usd"
-    if not robot_usd.exists():
-        raise FileNotFoundError(f"Robot USD is missing: {robot_usd}")
-    if _is_git_lfs_pointer(robot_usd):
-        raise RuntimeError(
-            f"Robot USD is a Git LFS pointer, not a materialized USD asset: {robot_usd}. "
-            "Run `git lfs pull` before rendering."
-        )
 
     _log("creating materials")
     table_mat = _material(stage, "/World/Looks/table_matte", (0.54, 0.50, 0.44))
@@ -850,8 +1120,8 @@ def main() -> None:
     pickup_y = -0.26
     fixture_y = 0.26
 
-    _log(f"referencing robot USD: {robot_usd}")
-    _create_robot(stage, robot_usd)
+    _log(f"referencing robot USD: {robot_spec.usd_path}")
+    _create_robot(stage, robot_spec)
 
     _log("creating table")
     table = _create_table(
@@ -937,11 +1207,12 @@ def main() -> None:
         "task": "star_kitting",
         "task_description": "Pick the star-shaped object and place it into the matching star-shaped fixture.",
         "simulation_backend": "Isaac Sim / Isaac Lab / PhysX USD scene",
-        "robot_usd": str(robot_usd),
+        "robot": _robot_metadata(robot_spec),
+        "robot_usd": str(robot_spec.usd_path),
         "axes": {
             "table_long_axis": "world_y",
             "table_short_axis": "world_x",
-            "robot_base_origin": [0.0, 0.0, 0.0],
+            "robot_base_origin": list(robot_spec.base_translation),
             "table_is_in_front_of_robot_at_negative_x": True,
         },
         "dimensions_m": {
@@ -974,7 +1245,8 @@ def main() -> None:
             "physx_bounce_threshold_velocity": 0.2,
         },
         "checks": {
-            "same_robot_as_clutter_bin_scene": True,
+            "robot_selected": robot_spec.name,
+            "uses_graspgenx_franka": robot_spec.name == "graspgenx_franka_panda",
             "same_table_convention_as_clutter_bin_scene": True,
             "star_has_convex_child_colliders": True,
             "fixture_is_rectangular_block_with_star_through_hole": True,

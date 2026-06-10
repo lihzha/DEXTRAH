@@ -16,11 +16,14 @@ NFS_ROOT="${NFS_ROOT:-/lustre/fsw/portfolios/nvr/users/lzha}"
 CODE_NFS="${CODE_NFS:-$NFS_ROOT/src/DEXTRAH}"
 FABRICS_NFS="${FABRICS_NFS:-$NFS_ROOT/src/FABRICS}"
 ISAACLAB_NFS="${ISAACLAB_NFS:-$NFS_ROOT/src/IsaacLab-v2.2.1}"
+GRASPGENX_NFS="${GRASPGENX_NFS:-$NFS_ROOT/src/graspgenx}"
+CUROBO_ASSETS_NFS="${CUROBO_ASSETS_NFS:-$NFS_ROOT/assets/curobo/content/assets}"
 IMAGE="${IMAGE:-$NFS_ROOT/cache/isaac_lab_2.2.0.sqsh}"
 ENV_ROOT="${ENV_ROOT:-$NFS_ROOT/envs}"
 ENV_NAME="${ENV_NAME:-dextrah-isaaclab}"
 RESULTS_NFS="${RESULTS_NFS:-$NFS_ROOT/results/dextrah}"
 CACHE_NFS="${CACHE_NFS:-$NFS_ROOT/isaac_cache}"
+ROBOT="${ROBOT:-graspgenx_franka}"
 RUN_NAME="${RUN_NAME:-star_kitting_${SLURM_JOB_ID:-manual}}"
 OUT_DIR="$RESULTS_NFS/star_kitting_env/$RUN_NAME"
 
@@ -32,6 +35,16 @@ if [ ! -d "$ENV_ROOT/$ENV_NAME/site" ]; then
   echo "Missing DEXTRAH Python target: $ENV_ROOT/$ENV_NAME/site"
   exit 2
 fi
+if [ "$ROBOT" = "graspgenx_franka" ]; then
+  if [ ! -f "$GRASPGENX_NFS/end2end/robots/franka_panda.yaml" ]; then
+    echo "Missing GraspGenX Franka config: $GRASPGENX_NFS/end2end/robots/franka_panda.yaml"
+    exit 2
+  fi
+  if [ ! -f "$CUROBO_ASSETS_NFS/robot/franka_description/franka_panda.urdf" ]; then
+    echo "Missing cuRobo Franka URDF: $CUROBO_ASSETS_NFS/robot/franka_description/franka_panda.urdf"
+    exit 2
+  fi
+fi
 
 mkdir -p \
   "$OUT_DIR" \
@@ -41,15 +54,26 @@ mkdir -p \
   "$CACHE_NFS/omni_logs" "$CACHE_NFS/carb_logs" \
   "$CACHE_NFS/data" "$CACHE_NFS/documents"
 
+CONTAINER_MOUNTS="/dev/shm:/dev/shm,$CODE_NFS:/code,$FABRICS_NFS:/fabrics,$ISAACLAB_NFS:/IsaacLab,$ENV_ROOT:/envs,$RESULTS_NFS:/results,$CACHE_NFS/kit:/isaac-sim/kit/cache,$CACHE_NFS/ov:/root/.cache/ov,$CACHE_NFS/pip:/root/.cache/pip,$CACHE_NFS/glcache:/root/.cache/nvidia/GLCache,$CACHE_NFS/computecache:/root/.nv/ComputeCache,$CACHE_NFS/omni_logs:/root/.nvidia-omniverse/logs,$CACHE_NFS/carb_logs:/isaac-sim/kit/logs/Kit/Isaac-Sim,$CACHE_NFS/data:/root/.local/share/ov/data,$CACHE_NFS/documents:/root/Documents"
+if [ -d "$GRASPGENX_NFS" ]; then
+  CONTAINER_MOUNTS="$CONTAINER_MOUNTS,$GRASPGENX_NFS:/graspgenx"
+fi
+if [ -d "$CUROBO_ASSETS_NFS" ]; then
+  CONTAINER_MOUNTS="$CONTAINER_MOUNTS,$CUROBO_ASSETS_NFS:/curobo_assets"
+fi
+
 echo "Rendering DEXTRAH star-kitting scene"
 echo "SLURM_JOB_ID=${SLURM_JOB_ID:-manual}"
 echo "OUT_DIR=$OUT_DIR"
 echo "IMAGE=$IMAGE"
+echo "ROBOT=$ROBOT"
+echo "GRASPGENX_NFS=$GRASPGENX_NFS"
+echo "CUROBO_ASSETS_NFS=$CUROBO_ASSETS_NFS"
 
 srun \
   --ntasks=1 \
   --container-image="$IMAGE" \
-  --container-mounts=/dev/shm:/dev/shm,"$CODE_NFS":/code,"$FABRICS_NFS":/fabrics,"$ISAACLAB_NFS":/IsaacLab,"$ENV_ROOT":/envs,"$RESULTS_NFS":/results,"$CACHE_NFS/kit":/isaac-sim/kit/cache,"$CACHE_NFS/ov":/root/.cache/ov,"$CACHE_NFS/pip":/root/.cache/pip,"$CACHE_NFS/glcache":/root/.cache/nvidia/GLCache,"$CACHE_NFS/computecache":/root/.nv/ComputeCache,"$CACHE_NFS/omni_logs":/root/.nvidia-omniverse/logs,"$CACHE_NFS/carb_logs":/isaac-sim/kit/logs/Kit/Isaac-Sim,"$CACHE_NFS/data":/root/.local/share/ov/data,"$CACHE_NFS/documents":/root/Documents \
+  --container-mounts="$CONTAINER_MOUNTS" \
   --no-container-entrypoint \
   --container-remap-root \
   --container-writable \
@@ -77,6 +101,9 @@ srun \
       --sim_steps_per_frame \"${SIM_STEPS_PER_FRAME:-2}\" \
       --settle_steps \"${SETTLE_STEPS:-30}\" \
       --physics_device \"${PHYSICS_DEVICE:-cuda:0}\" \
+      --robot \"$ROBOT\" \
+      --graspgenx_root /graspgenx \
+      --curobo_assets_root /curobo_assets \
       --seed \"${SEED:-23}\" \
       --star_outer_radius \"${STAR_OUTER_RADIUS:-0.092}\" \
       --star_inner_radius \"${STAR_INNER_RADIUS:-0.042}\" \
