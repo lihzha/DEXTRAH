@@ -474,3 +474,52 @@ Result:
 
 Next:
 - Use the latest settled run for visual inspection and future iteration.
+
+## 2026-06-09 17:08 PDT - Production Relaunch Preflight
+
+Goal:
+- Relaunch the production `teacher_short_20260609_100021` DextrAH privileged
+  FGP teacher training run on one 8-A100 node after the checkpoint path fix was
+  validated.
+
+Hypothesis:
+- With committed clean local/remote Git state and direct `/results/logs`
+  checkpoint paths, production auto-resume should pick up
+  `last_dextrah_lstm_ep_510_rew_176.34055.pth`, restore all rank runtime
+  sidecars, continue training, and save fresh production checkpoints.
+
+Change:
+- No code changes since the validated resume smoke.
+- Preflight checked the latest cluster development skill, DEXTRAH/a1001 skills,
+  local Git status, remote Git status, script headers, and current scheduler
+  state.
+
+Version Control:
+- branch: `codex/dextrah-cluster-dev`
+- base_commit: `a379bce`
+- implementation_commit: `a379bce`
+- push/pull: local and a1001 remote checkout clean and matching before this
+  worklog entry; this entry will be committed and pulled before launch.
+- changed_files: `WORKLOG.md`
+- remote_commit/status: a1001 remote checkout clean at `a379bce` before this
+  entry.
+
+Command / Job:
+- command: `ssh a1001 'cd /lustre/fsw/portfolios/nvr/users/lzha/src/DEXTRAH && sbatch --parsable --export=ALL,FULL_EXPERIMENT_NAME=teacher_short_20260609_100021,AUTO_RESUME=True,SELF_RELAUNCH=True cluster/sbatch_train_teacher_8gpu.sh'`
+- job_id: pending
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_<jobid>.out`
+- artifacts: next expected production checkpoint under `nn/` after epoch 510.
+
+Result:
+- status: pending
+
+Analysis:
+- The latest production checkpoint set before relaunch is epoch 510 plus all
+  eight rank runtime sidecars.
+- No `lzha` jobs are queued or running on a1001 at preflight.
+
+Next:
+- Commit/push this worklog entry, pull on a1001, submit the production job,
+  then monitor through checkpoint load, runtime restore, and first fresh
+  production checkpoint.
