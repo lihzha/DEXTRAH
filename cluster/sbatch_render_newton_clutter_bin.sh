@@ -23,6 +23,7 @@ NEWTON_SITE_NFS="${NEWTON_SITE_NFS:-$ENV_NFS/dextrah-newton-render-site}"
 PIP_CACHE_NFS="${PIP_CACHE_NFS:-$NFS_ROOT/cache/pip}"
 GL_CACHE_NFS="${GL_CACHE_NFS:-$NFS_ROOT/cache/glcache}"
 OPENGL_PLATFORM="${PYOPENGL_PLATFORM:-osmesa}"
+INSTALL_GL_RUNTIME="${INSTALL_GL_RUNTIME:-1}"
 RUN_NAME="${RUN_NAME:-newton_clutter_bin_${SLURM_JOB_ID:-manual}}"
 OUT_DIR="$RESULTS_NFS/newton_clutter_bin/$RUN_NAME"
 
@@ -45,6 +46,7 @@ echo "CODE_NFS=$CODE_NFS"
 echo "VENV=$ENV_NFS/$VENV_NAME"
 echo "NEWTON_SITE_NFS=$NEWTON_SITE_NFS"
 echo "PYOPENGL_PLATFORM=$OPENGL_PLATFORM"
+echo "INSTALL_GL_RUNTIME=$INSTALL_GL_RUNTIME"
 
 srun \
   --ntasks=1 \
@@ -56,6 +58,12 @@ srun \
   --export=ALL,PYTHONUNBUFFERED=1,PYTHONDONTWRITEBYTECODE=1,PYOPENGL_PLATFORM="$OPENGL_PLATFORM",PYGLET_HEADLESS=true,EGL_PLATFORM=surfaceless,__GLX_VENDOR_LIBRARY_NAME=nvidia,HYDRA_FULL_ERROR=1,PYTHONFAULTHANDLER=1 \
   bash -lc "
     set -euxo pipefail
+    if [ \"$INSTALL_GL_RUNTIME\" = \"1\" ]; then
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update
+      apt-get install -y --no-install-recommends \
+        libegl1 libgl1 libglvnd0 libosmesa6 libglu1-mesa
+    fi
     export VIRTUAL_ENV=/envs/$VENV_NAME
     export PATH=/envs/$VENV_NAME/bin:\$PATH
     export PYTHONPATH=$NEWTON_SITE:/code:\${PYTHONPATH:-}

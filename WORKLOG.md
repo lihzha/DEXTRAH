@@ -647,6 +647,13 @@ Result:
 - key evidence: l401 job `1019467` removed the target OpenGL package and then
   failed with the same PyOpenGL loader error from the venv's PyOpenGL 3.1.5
   while `PYOPENGL_PLATFORM=egl`.
+- key evidence: l401 job `1019477` switched to `PYOPENGL_PLATFORM=osmesa`
+  but still failed because the container had no generic GL/OSMesa/GLU runtime
+  libraries.
+- key evidence: debug allocation `1019488` installed
+  `libegl1 libgl1 libglvnd0 libosmesa6 libglu1-mesa`; after that,
+  `pyrender.OffscreenRenderer(64, 48)` initialized successfully with
+  `PYOPENGL_PLATFORM=osmesa`.
 
 Analysis:
 - The current GraspGenX NFS venv has pyrender/trimesh/PIL but not Newton or
@@ -659,9 +666,13 @@ Analysis:
 - EGL itself is failing in this container path on `pool0-00019`; switch the
   wrapper default to `PYOPENGL_PLATFORM=osmesa`, matching GraspGenX's cluster
   training wrapper, while still using pyrender/OpenGL rendering.
+- The GraspGenX base image only exposes NVIDIA vendor GL libraries by default.
+  PyOpenGL needs generic GLVND/OSMesa/GLU package names, so the wrapper should
+  install those apt packages in the ephemeral writable container before
+  importing pyrender.
 
 Next:
-- Commit/push the OSMesa wrapper fix, pull to l401, relaunch the
+- Commit/push the apt GL-runtime wrapper fix, pull to l401, relaunch the
   low-resolution smoke, inspect frames/logs, then scale to the final requested
   video.
 
