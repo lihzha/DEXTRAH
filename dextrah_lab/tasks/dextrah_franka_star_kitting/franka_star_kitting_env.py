@@ -259,6 +259,8 @@ class DextrahFrankaStarKittingEnv(DirectRLEnv):
             success_bonus,
             prelift_move_penalty,
             close_far_penalty,
+            open_near_penalty,
+            ungrasped_lift_penalty,
             action_penalty,
         ) = compute_franka_star_kitting_rewards(
             self.ee_to_star_dist,
@@ -289,6 +291,8 @@ class DextrahFrankaStarKittingEnv(DirectRLEnv):
             float(self.cfg.close_action_weight),
             float(self.cfg.prelift_move_penalty_weight),
             float(self.cfg.close_far_penalty_weight),
+            float(self.cfg.open_near_penalty_weight),
+            float(self.cfg.ungrasped_lift_penalty_weight),
             float(self.cfg.transport_weight),
             float(self.cfg.transport_xy_sharpness),
             float(self.cfg.yaw_weight),
@@ -315,6 +319,8 @@ class DextrahFrankaStarKittingEnv(DirectRLEnv):
             + success_bonus
             + prelift_move_penalty
             + close_far_penalty
+            + open_near_penalty
+            + ungrasped_lift_penalty
             + action_penalty
         )
         log_terms = {
@@ -334,6 +340,8 @@ class DextrahFrankaStarKittingEnv(DirectRLEnv):
             "star_success_bonus": success_bonus.mean(),
             "star_prelift_move_penalty": prelift_move_penalty.mean(),
             "star_close_far_penalty": close_far_penalty.mean(),
+            "star_open_near_penalty": open_near_penalty.mean(),
+            "star_ungrasped_lift_penalty": ungrasped_lift_penalty.mean(),
             "star_action_penalty": action_penalty.mean(),
             "star_lift_height": self.star_lift_height.mean(),
             "star_initial_xy_error": self.star_initial_xy_error.mean(),
@@ -385,6 +393,30 @@ class DextrahFrankaStarKittingEnv(DirectRLEnv):
         spawn_xy += float(self.cfg.star_spawn_xy_randomization) * (
             2.0 * torch.rand(num_ids, 2, device=self.device) - 1.0
         )
+        near_hand_probability = float(self.cfg.star_reset_near_hand_probability)
+        if near_hand_probability > 0.0:
+            near_hand_mask = torch.rand(num_ids, device=self.device) < min(max(near_hand_probability, 0.0), 1.0)
+            near_hand_count = int(near_hand_mask.sum().item())
+            if near_hand_count > 0:
+                near_hand_xy = torch.zeros(near_hand_count, 2, device=self.device)
+                near_hand_xy[:, 0] = float(self.cfg.star_reset_near_hand_x) + float(
+                    self.cfg.star_reset_near_hand_x_offset
+                )
+                near_hand_xy[:, 1] = float(self.cfg.star_reset_near_hand_y) + float(
+                    self.cfg.star_reset_near_hand_y_offset
+                )
+                near_hand_noise = float(self.cfg.star_reset_near_hand_xy_noise)
+                if near_hand_noise > 0.0:
+                    near_hand_xy += near_hand_noise * (
+                        2.0 * torch.rand(near_hand_count, 2, device=self.device) - 1.0
+                    )
+                min_x = float(self.cfg.table_center_x - 0.5 * self.cfg.table_size_x + self.cfg.star_outer_radius)
+                max_x = float(self.cfg.table_center_x + 0.5 * self.cfg.table_size_x - self.cfg.star_outer_radius)
+                min_y = float(-0.5 * self.cfg.table_size_y + self.cfg.star_outer_radius)
+                max_y = float(0.5 * self.cfg.table_size_y - self.cfg.star_outer_radius)
+                near_hand_xy[:, 0] = torch.clamp(near_hand_xy[:, 0], min=min_x, max=max_x)
+                near_hand_xy[:, 1] = torch.clamp(near_hand_xy[:, 1], min=min_y, max=max_y)
+                spawn_xy[near_hand_mask] = near_hand_xy
         yaw_base = math.radians(float(self.cfg.star_start_yaw_deg))
         yaw_noise = math.radians(float(self.cfg.star_spawn_yaw_randomization_deg)) * (
             2.0 * torch.rand(num_ids, device=self.device) - 1.0

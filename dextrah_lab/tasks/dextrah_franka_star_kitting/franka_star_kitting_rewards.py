@@ -35,6 +35,8 @@ def compute_franka_star_kitting_rewards(
     close_action_weight: float,
     prelift_move_penalty_weight: float,
     close_far_penalty_weight: float,
+    open_near_penalty_weight: float,
+    ungrasped_lift_penalty_weight: float,
     transport_weight: float,
     transport_xy_sharpness: float,
     yaw_weight: float,
@@ -55,15 +57,15 @@ def compute_franka_star_kitting_rewards(
     finger_approach = torch.exp(-finger_approach_sharpness * finger_center_to_star_dist)
     finger_near_star = torch.exp(-grasp_sharpness * finger_center_to_star_dist)
     ee_grasp_pose = torch.exp(-45.0 * ee_to_star_dist)
-    finger_contact_gate = torch.clamp((0.115 - finger_center_to_star_dist) / 0.095, 0.0, 1.0)
-    close_near_gate = torch.clamp((0.185 - finger_center_to_star_dist) / 0.135, 0.0, 1.0)
+    finger_contact_gate = torch.clamp((0.100 - finger_center_to_star_dist) / 0.075, 0.0, 1.0)
+    close_near_gate = torch.clamp((0.170 - finger_center_to_star_dist) / 0.120, 0.0, 1.0)
     pregrasp_close_gate = (
-        torch.clamp((0.155 - ee_to_star_dist) / 0.060, 0.0, 1.0)
-        * torch.clamp((0.135 - finger_center_to_star_dist) / 0.055, 0.0, 1.0)
+        torch.clamp((0.155 - ee_to_star_dist) / 0.065, 0.0, 1.0)
+        * torch.clamp((0.130 - finger_center_to_star_dist) / 0.055, 0.0, 1.0)
     )
     contact_close_gate = (
-        torch.clamp((0.110 - ee_to_star_dist) / 0.060, 0.0, 1.0)
-        * torch.clamp((0.105 - finger_center_to_star_dist) / 0.055, 0.0, 1.0)
+        torch.clamp((0.100 - ee_to_star_dist) / 0.050, 0.0, 1.0)
+        * torch.clamp((0.095 - finger_center_to_star_dist) / 0.045, 0.0, 1.0)
     )
     lift_credit_gate = torch.clamp((0.140 - ee_to_star_dist) / 0.100, 0.0, 1.0)
     lift_progress = torch.clamp((star_lift_height - lift_reward_start_height) / lift_denom, 0.0, 1.0)
@@ -87,7 +89,7 @@ def compute_franka_star_kitting_rewards(
         * torch.clamp((finger_center_to_star_dist - 0.075) / 0.085, 0.0, 1.0)
         * (1.0 - closed_gripper)
     )
-    close_action_gate = 0.25 * pregrasp_close_gate + 0.75 * contact_close_gate
+    close_action_gate = 0.55 * pregrasp_close_gate + 0.45 * contact_close_gate
     closed_near_ready = 0.25 * close_near_ready + 0.75 * contact_close_gate
 
     xy_align = torch.exp(-transport_xy_sharpness * goal_xy_error)
@@ -135,6 +137,21 @@ def compute_franka_star_kitting_rewards(
     success_bonus = success_bonus_weight * in_success_region.float()
     prelift_move_penalty = prelift_move_penalty_weight * prelift_gate * prelift_xy_motion
     close_far_penalty = close_far_penalty_weight * closed_gripper * close_far_penalty_gate * (0.35 + 0.65 * near_star)
+    open_near_penalty = (
+        open_near_penalty_weight
+        * prelift_gate
+        * prelift_stability_gate
+        * pregrasp_close_gate
+        * torch.clamp(actions[:, 6], 0.0, 1.0)
+    )
+    ungrasped_lift_penalty = (
+        ungrasped_lift_penalty_weight
+        * prelift_gate
+        * prelift_stability_gate
+        * pregrasp_close_gate
+        * (1.0 - closed_gripper)
+        * torch.clamp(actions[:, 2], 0.0, 1.0)
+    )
     action_penalty = action_penalty_weight * torch.sum(actions * actions, dim=-1)
 
     return (
@@ -154,5 +171,7 @@ def compute_franka_star_kitting_rewards(
         success_bonus,
         prelift_move_penalty,
         close_far_penalty,
+        open_near_penalty,
+        ungrasped_lift_penalty,
         action_penalty,
     )

@@ -30,6 +30,10 @@ parser.add_argument("--metrics_path", type=str, default=None)
 parser.add_argument("--video", action="store_true", default=False)
 parser.add_argument("--video_length", type=int, default=180)
 parser.add_argument("--video_folder", type=str, default=None)
+parser.add_argument("--star_reset_near_hand_probability", type=float, default=0.0)
+parser.add_argument("--star_reset_near_hand_x", type=float, default=-0.432)
+parser.add_argument("--star_reset_near_hand_y", type=float, default=0.009)
+parser.add_argument("--star_reset_near_hand_xy_noise", type=float, default=0.020)
 parser.add_argument("--camera_eye", type=float, nargs=3, default=None, help="Viewport camera eye for validation video.")
 parser.add_argument(
     "--camera_target", type=float, nargs=3, default=None, help="Viewport camera target for validation video."
@@ -156,17 +160,19 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
         "approach_sharpness": 9.0,
         "finger_approach_weight": 5.0,
         "finger_approach_sharpness": 14.0,
-        "grasp_pose_weight": 18.0,
+        "grasp_pose_weight": 8.0,
         "grasp_weight": 2.0,
-        "closed_grasp_weight": 28.0,
+        "closed_grasp_weight": 18.0,
         "grasp_sharpness": 18.0,
-        "lift_weight": 180.0,
-        "descend_action_weight": 2.5,
-        "lift_action_weight": 10.0,
-        "close_near_weight": 2.0,
-        "close_action_weight": 1.5,
+        "lift_weight": 240.0,
+        "descend_action_weight": 12.0,
+        "lift_action_weight": 30.0,
+        "close_near_weight": 6.0,
+        "close_action_weight": 10.0,
         "prelift_move_penalty_weight": -10.0,
         "close_far_penalty_weight": -8.0,
+        "open_near_penalty_weight": -6.0,
+        "ungrasped_lift_penalty_weight": -4.0,
         "transport_weight": 6.0,
         "transport_xy_sharpness": 18.0,
         "yaw_weight": 3.0,
@@ -219,6 +225,14 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
         "reward_close_action_increases_when_fingers_near_star",
         bool((_reward_total(**close_action_near) > _reward_total(**grasp_pose)).item()),
         open_action_reward=_mean(_reward_total(**grasp_pose)),
+        close_action_reward=_mean(_reward_total(**close_action_near)),
+    )
+    open_action_near = dict(grasp_pose)
+    open_action_near["actions"] = torch.tensor([[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]], device=device)
+    checks.check(
+        "reward_penalizes_opening_in_pregrasp_band",
+        bool((_reward_total(**open_action_near) < _reward_total(**close_action_near)).item()),
+        open_action_reward=_mean(_reward_total(**open_action_near)),
         close_action_reward=_mean(_reward_total(**close_action_near)),
     )
 
@@ -281,6 +295,15 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
         bool((_reward_total(**lift_intent) > _reward_total(**lift_intent_far)).item()),
         lift_intent_reward=_mean(_reward_total(**lift_intent)),
         far_lift_intent_reward=_mean(_reward_total(**lift_intent_far)),
+    )
+    ungrasped_lift_intent = dict(finger_near)
+    ungrasped_lift_intent["gripper_width"] = torch.tensor([0.08], device=device)
+    ungrasped_lift_intent["actions"] = torch.tensor([[0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]], device=device)
+    checks.check(
+        "reward_penalizes_lifting_before_grasp",
+        bool((_reward_total(**ungrasped_lift_intent) < _reward_total(**lift_intent)).item()),
+        ungrasped_lift_reward=_mean(_reward_total(**ungrasped_lift_intent)),
+        lift_intent_reward=_mean(_reward_total(**lift_intent)),
     )
 
     hover_pinched = dict(near)
@@ -488,8 +511,9 @@ def _run_scripted_rollout(env, task_env, checks: CheckRecorder, num_steps: int, 
     checks.check("reset_observation_finite", bool(torch.isfinite(policy_obs).all().item()))
     checks.check(
         "reset_star_on_pickup_side",
-        bool((task_env.star_pos[:, 1] < 0.0).all().item()),
+        float(args_cli.star_reset_near_hand_probability) > 0.0 or bool((task_env.star_pos[:, 1] < 0.0).all().item()),
         star_y_mean=_mean(task_env.star_pos[:, 1]),
+        star_reset_near_hand_probability=float(args_cli.star_reset_near_hand_probability),
     )
     checks.check(
         "fixture_goal_on_placement_side",
@@ -705,6 +729,10 @@ def main() -> bool:
         use_fabric=not args_cli.disable_fabric,
     )
     env_cfg.seed = args_cli.seed
+    env_cfg.star_reset_near_hand_probability = args_cli.star_reset_near_hand_probability
+    env_cfg.star_reset_near_hand_x = args_cli.star_reset_near_hand_x
+    env_cfg.star_reset_near_hand_y = args_cli.star_reset_near_hand_y
+    env_cfg.star_reset_near_hand_xy_noise = args_cli.star_reset_near_hand_xy_noise
     _configure_validation_camera(env_cfg)
 
     env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)
@@ -743,6 +771,10 @@ def main() -> bool:
         "num_envs": args_cli.num_envs,
         "num_steps": args_cli.num_steps,
         "seed": args_cli.seed,
+        "star_reset_near_hand_probability": args_cli.star_reset_near_hand_probability,
+        "star_reset_near_hand_x": args_cli.star_reset_near_hand_x,
+        "star_reset_near_hand_y": args_cli.star_reset_near_hand_y,
+        "star_reset_near_hand_xy_noise": args_cli.star_reset_near_hand_xy_noise,
         "passed": checks.passed,
         "checks": checks.records,
         "rollout": rollout,

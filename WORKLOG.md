@@ -4766,3 +4766,82 @@ Checks:
 
 Next:
 - Commit/push and rerun full validation.
+
+## 2026-06-10 08:36 PDT - Tight-Sigma PPO Stopped; Contact-Gated Reward Patch
+
+Goal:
+- Stop the unproductive full-task PPO run once deterministic eval and training
+  diagnostics showed no grasp/lift, then prepare a reward/curriculum iteration
+  that targets the open-hover failure mode.
+
+Hypothesis:
+- The previous reward allowed substantial near-object credit while the policy
+  hovered or dragged with a partially/open gripper. Tightening contact gates,
+  explicitly penalizing opening in the pregrasp band, penalizing lift before a
+  grasp, and optionally mixing in near-hand reset starts should make the first
+  grasp/lift behavior discoverable.
+
+Change:
+- Reduced hover-like `grasp_pose` and `closed_grasp` reward weights.
+- Increased close, descend, and lift-action shaping.
+- Tightened contact gates for close/lift reward credit.
+- Added `open_near_penalty` and `ungrasped_lift_penalty` TensorBoard terms.
+- Added train/validation wrapper controls for optional near-hand reset
+  curriculum:
+  `STAR_RESET_NEAR_HAND_PROBABILITY`,
+  `STAR_RESET_NEAR_HAND_X`, `STAR_RESET_NEAR_HAND_Y`, and
+  `STAR_RESET_NEAR_HAND_XY_NOISE`.
+
+Version Control:
+- branch: `codex/dextrah-cluster-dev`
+- base_commit: `316d843`
+- implementation_commit: pending
+- changed_files:
+  `dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_rewards.py`,
+  `dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env_cfg.py`,
+  `dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env.py`,
+  `dextrah_lab/rl_games/validate_franka_star_kitting_env.py`,
+  `cluster/sbatch_train_teacher_8gpu.sh`,
+  `cluster/sbatch_validate_franka_star_kitting_env_1gpu.sh`,
+  `WORKLOG.md`
+
+Command / Job:
+- stopped job_id: `28940486`
+- stopped run_name:
+  `franka_star_contactlift_tightsigma_ppo_20260610_081630`
+- stop command: `ssh a1002 'scancel 28940486'`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_star_kitting/franka_star_contactlift_tightsigma_ppo_20260610_081630`
+- logs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28940486.out`
+- eval jobs: `28940866` ep25, `28940915` ep50, `28940956` ep100
+- eval artifacts:
+  `cluster_results/a1002/evals/franka_star_contactlift_tightsigma_eval_ep25_20260610_082244`,
+  `cluster_results/a1002/evals/franka_star_contactlift_tightsigma_eval_ep50_20260610_082752`,
+  `cluster_results/a1002/evals/franka_star_contactlift_tightsigma_eval_ep100_20260610_083113`
+
+Result:
+- status: failed, stopped at epoch 113 after epoch-100 gate.
+- training metrics at epoch 97: `star_success_rate=0`,
+  `star_has_lifted_rate=0.0254`, `star_lift_height=0.00061`,
+  `star_gripper_action=0.0868` opening, `star_gripper_close_action=0.0254`,
+  `star_finger_center_to_star_dist=0.1094`.
+- ep100 deterministic eval: success `0`, has_lifted `0`,
+  max lift `0.0127 m`, final gripper width `0.0789 m`, mean
+  finger-center distance `0.1827 m`.
+- eval videos are valid `1280x720`, 60 FPS, 600 frames, 10 seconds.
+- latest contact sheet shows the hand hovering near the star without grasping
+  or lifting.
+
+Checks:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_rewards.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env_cfg.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env.py dextrah_lab/rl_games/validate_franka_star_kitting_env.py`
+- `bash -n cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_validate_franka_star_kitting_env_1gpu.sh cluster/sbatch_eval_franka_star_kitting_1gpu.sh`
+
+Next:
+- Commit/push/pull the patch.
+- Validate the default full environment first.
+- Validate the mixed near-hand reset training environment before launching the
+  next PPO run.
+- Relaunch PPO with moderate exploration and a mixed near-hand curriculum, then
+  gate again on ep25/ep50/ep100 deterministic videos and new penalty/action
+  diagnostics.
