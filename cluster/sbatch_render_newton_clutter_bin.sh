@@ -22,6 +22,7 @@ NEWTON_SITE="${NEWTON_SITE:-/envs/dextrah-newton-render-site}"
 NEWTON_SITE_NFS="${NEWTON_SITE_NFS:-$ENV_NFS/dextrah-newton-render-site}"
 PIP_CACHE_NFS="${PIP_CACHE_NFS:-$NFS_ROOT/cache/pip}"
 GL_CACHE_NFS="${GL_CACHE_NFS:-$NFS_ROOT/cache/glcache}"
+OPENGL_PLATFORM="${PYOPENGL_PLATFORM:-osmesa}"
 RUN_NAME="${RUN_NAME:-newton_clutter_bin_${SLURM_JOB_ID:-manual}}"
 OUT_DIR="$RESULTS_NFS/newton_clutter_bin/$RUN_NAME"
 
@@ -43,6 +44,7 @@ echo "IMAGE=$IMAGE"
 echo "CODE_NFS=$CODE_NFS"
 echo "VENV=$ENV_NFS/$VENV_NAME"
 echo "NEWTON_SITE_NFS=$NEWTON_SITE_NFS"
+echo "PYOPENGL_PLATFORM=$OPENGL_PLATFORM"
 
 srun \
   --ntasks=1 \
@@ -51,7 +53,7 @@ srun \
   --no-container-entrypoint \
   --container-remap-root \
   --container-writable \
-  --export=ALL,PYTHONUNBUFFERED=1,PYTHONDONTWRITEBYTECODE=1,PYOPENGL_PLATFORM=egl,PYGLET_HEADLESS=true,EGL_PLATFORM=surfaceless,__GLX_VENDOR_LIBRARY_NAME=nvidia,HYDRA_FULL_ERROR=1,PYTHONFAULTHANDLER=1 \
+  --export=ALL,PYTHONUNBUFFERED=1,PYTHONDONTWRITEBYTECODE=1,PYOPENGL_PLATFORM="$OPENGL_PLATFORM",PYGLET_HEADLESS=true,EGL_PLATFORM=surfaceless,__GLX_VENDOR_LIBRARY_NAME=nvidia,HYDRA_FULL_ERROR=1,PYTHONFAULTHANDLER=1 \
   bash -lc "
     set -euxo pipefail
     export VIRTUAL_ENV=/envs/$VENV_NAME

@@ -644,6 +644,9 @@ Result:
   `/envs/dextrah-newton-render-site`, then `pyrender` import failed inside
   PyOpenGL 3.1.10 with `AttributeError: 'NoneType' object has no attribute
   'glGetError'`.
+- key evidence: l401 job `1019467` removed the target OpenGL package and then
+  failed with the same PyOpenGL loader error from the venv's PyOpenGL 3.1.5
+  while `PYOPENGL_PLATFORM=egl`.
 
 Analysis:
 - The current GraspGenX NFS venv has pyrender/trimesh/PIL but not Newton or
@@ -653,7 +656,11 @@ Analysis:
   shadows GraspGenX's pinned PyOpenGL 3.1.5. Remove the target OpenGL package
   after install so pyrender uses the known venv renderer stack while Newton
   and Warp stay isolated in the target.
+- EGL itself is failing in this container path on `pool0-00019`; switch the
+  wrapper default to `PYOPENGL_PLATFORM=osmesa`, matching GraspGenX's cluster
+  training wrapper, while still using pyrender/OpenGL rendering.
 
 Next:
-- Commit/push the wrapper fix, pull to l401, relaunch the low-resolution smoke,
-  inspect frames/logs, then scale to the final requested video.
+- Commit/push the OSMesa wrapper fix, pull to l401, relaunch the
+  low-resolution smoke, inspect frames/logs, then scale to the final requested
+  video.

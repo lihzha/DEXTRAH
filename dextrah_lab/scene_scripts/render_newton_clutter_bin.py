@@ -708,7 +708,7 @@ def main() -> None:
     (output_dir / "trajectory.json").write_text(json.dumps(trajectory, indent=2) + "\n")
     metadata = {
         "generated_at_unix": time.time(),
-        "backend": "Newton physics + pyrender EGL/OpenGL",
+        "backend": f"Newton physics + pyrender OpenGL ({os.environ.get('PYOPENGL_PLATFORM', 'default')})",
         "package_versions": {
             "newton": _module_version("newton"),
             "warp": _module_version("warp"),
