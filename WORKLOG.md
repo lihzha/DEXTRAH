@@ -1631,3 +1631,28 @@ Command / Job:
 
 Result:
 - status: validation and launch pending.
+
+## 2026-06-09 22:44 PDT - Cube PPO Launch Failure and Import Fix
+
+Command / Job:
+- failed job_id: `28927696`
+- run_name: `cube_grasp_ppo_opt8gpu_20260609_224029`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28927696.out`
+
+Result:
+- status: failed before training.
+- failure:
+  `AttributeError: type object 'DextrahKukaAllegroEnvCfg' has no attribute 'adr_custom_cfg_dict'`
+  while importing `DextrahCubeGraspEnvCfg`.
+
+Fix:
+- Replaced class-body `copy.deepcopy(DextrahKukaAllegroEnvCfg.adr_custom_cfg_dict)`
+  with a self-contained cube ADR custom config helper. This preserves the
+  single-cube 8 cm XY spawn randomization and avoids relying on a base
+  `@configclass` field as a class attribute.
+
+Checks:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_kuka_allegro/dextrah_cube_grasp_env_cfg.py dextrah_lab/scene_scripts/render_star_kitting_env.py`
+- `bash -n cluster/sbatch_render_star_kitting_env.sh cluster/sbatch_train_teacher_8gpu.sh`
+- `git diff --check`

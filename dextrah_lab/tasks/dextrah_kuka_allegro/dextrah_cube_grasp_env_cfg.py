@@ -9,8 +9,6 @@
 
 from __future__ import annotations
 
-import copy
-
 import isaaclab.envs.mdp as mdp
 from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import SceneEntityCfg
@@ -18,6 +16,51 @@ from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.utils import configclass
 
 from .dextrah_kuka_allegro_env_cfg import DextrahKukaAllegroEnvCfg, EventCfg
+
+
+def _cube_adr_custom_cfg_dict(spawn_xy_randomization: float) -> dict[str, dict[str, tuple[float, float]]]:
+    """ADR parameter ranges for the focused single-cube grasp task."""
+
+    return {
+        "object_wrench": {
+            "max_linear_accel": (0.0, 0.0),
+        },
+        "object_spawn": {
+            "x_width_spawn": (spawn_xy_randomization, spawn_xy_randomization),
+            "y_width_spawn": (spawn_xy_randomization, spawn_xy_randomization),
+            "rotation": (0.0, 0.0),
+        },
+        "object_state_noise": {
+            "object_pos_noise": (0.0, 0.0),
+            "object_pos_bias": (0.0, 0.0),
+            "object_rot_noise": (0.0, 0.0),
+            "object_rot_bias": (0.0, 0.0),
+        },
+        "robot_spawn": {
+            "joint_pos_noise": (0.0, 0.05),
+            "joint_vel_noise": (0.0, 0.1),
+        },
+        "robot_state_noise": {
+            "robot_joint_pos_noise": (0.0, 0.0),
+            "robot_joint_pos_bias": (0.0, 0.0),
+            "robot_joint_vel_noise": (0.0, 0.0),
+            "robot_joint_vel_bias": (0.0, 0.0),
+        },
+        "reward_weights": {
+            "finger_curl_reg": (-0.002, -0.002),
+            "object_to_goal_sharpness": (-18.0, -18.0),
+            "lift_weight": (10.0, 10.0),
+        },
+        "pd_targets": {
+            "velocity_target_factor": (1.0, 1.0),
+        },
+        "fabric_damping": {
+            "gain": (10.0, 10.0),
+        },
+        "observation_annealing": {
+            "coefficient": (1.0, 1.0),
+        },
+    }
 
 
 @configclass
@@ -133,25 +176,4 @@ class DextrahCubeGraspEnvCfg(DextrahKukaAllegroEnvCfg):
 
     events: CubeGraspEventCfg = CubeGraspEventCfg()
 
-    adr_custom_cfg_dict = copy.deepcopy(DextrahKukaAllegroEnvCfg.adr_custom_cfg_dict)
-    adr_custom_cfg_dict["object_spawn"]["x_width_spawn"] = (
-        cube_spawn_xy_randomization,
-        cube_spawn_xy_randomization,
-    )
-    adr_custom_cfg_dict["object_spawn"]["y_width_spawn"] = (
-        cube_spawn_xy_randomization,
-        cube_spawn_xy_randomization,
-    )
-    adr_custom_cfg_dict["object_spawn"]["rotation"] = (0.0, 0.0)
-    adr_custom_cfg_dict["object_wrench"]["max_linear_accel"] = (0.0, 0.0)
-    adr_custom_cfg_dict["object_state_noise"]["object_pos_noise"] = (0.0, 0.0)
-    adr_custom_cfg_dict["object_state_noise"]["object_pos_bias"] = (0.0, 0.0)
-    adr_custom_cfg_dict["object_state_noise"]["object_rot_noise"] = (0.0, 0.0)
-    adr_custom_cfg_dict["object_state_noise"]["object_rot_bias"] = (0.0, 0.0)
-    adr_custom_cfg_dict["robot_state_noise"]["robot_joint_pos_noise"] = (0.0, 0.0)
-    adr_custom_cfg_dict["robot_state_noise"]["robot_joint_pos_bias"] = (0.0, 0.0)
-    adr_custom_cfg_dict["robot_state_noise"]["robot_joint_vel_noise"] = (0.0, 0.0)
-    adr_custom_cfg_dict["robot_state_noise"]["robot_joint_vel_bias"] = (0.0, 0.0)
-    adr_custom_cfg_dict["robot_spawn"]["joint_pos_noise"] = (0.0, 0.05)
-    adr_custom_cfg_dict["robot_spawn"]["joint_vel_noise"] = (0.0, 0.1)
-    adr_custom_cfg_dict["observation_annealing"]["coefficient"] = (1.0, 1.0)
+    adr_custom_cfg_dict = _cube_adr_custom_cfg_dict(cube_spawn_xy_randomization)
