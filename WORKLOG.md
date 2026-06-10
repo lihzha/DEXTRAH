@@ -3096,8 +3096,8 @@ Change:
   initially near.
 
 Checks:
-- pending `python3 -m py_compile dextrah_lab/rl_games/validate_franka_star_kitting_env.py`
-- pending `git diff --check`
+- `python3 -m py_compile dextrah_lab/rl_games/validate_franka_star_kitting_env.py`
+- `git diff --check`
 
 Next:
 - Commit/push, update A100, rerun validation, inspect video/metrics, and keep
@@ -3176,3 +3176,43 @@ Checks:
 Next:
 - Commit/push, update A100, rerun validation, and continue blocking PPO until
   the fixed-spawn lane is validated.
+
+## 2026-06-10 04:27 PDT - Franka Star Scripted Grasp Tracks Current Star
+
+Goal:
+- Fix the remaining scripted validation lift failure without weakening the
+  actual pre-lift drift gate.
+
+Evidence:
+- validation job_id: `28933087`, run
+  `franka_star_env_validate_fixedspawn_xrevert_20260610_035910`, source commit
+  `2511b1224904de76df20b39e28e49f9271545d2b`.
+- status: failed metrics gate, exit `1:0`, elapsed `00:01:32`.
+- all checks passed except per-env `scripted_rollout_lifts_star`.
+- reset and approach were now stable: `max_prelift_star_initial_xy_error=0.06046`
+  and both approach checks passed.
+- per-env max lift heights were `[0.0035, 0.0225, 0.1629, 0.0058]`.
+- video inspection of env0 shows the gripper near the object but missing after
+  small physical drift, while the scripted target continued using the reset
+  star pose.
+
+Analysis:
+- The validation controller should use observed current star XY for grasping,
+  just as a policy would, while the drift gate still prevents hiding large
+  dragging.
+- Grasp height should be near the midline of the 40 mm star rather than above
+  it.
+
+Change:
+- Changed `_scripted_target` to use `task_env.star_pos` for approach/descent
+  XY targets.
+- Kept z targets tied to `star_initial_pos` for stable table-relative grasp,
+  lift, and place heights.
+- Lowered scripted grasp z from `star_z + 0.006` to `star_z - 0.002`.
+
+Checks:
+- pending `python3 -m py_compile dextrah_lab/rl_games/validate_franka_star_kitting_env.py`
+- pending `git diff --check`
+
+Next:
+- Commit/push, update A100, rerun validation, and inspect artifacts before PPO.

@@ -360,11 +360,12 @@ def _scripted_target(
     num_steps: int,
     initial_ee_pos: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, float]:
-    star = task_env.star_initial_pos.detach()
+    star_anchor = task_env.star_initial_pos.detach()
+    star = task_env.star_pos.detach()
     goal = task_env.star_goal_pos.detach()
-    z_above_star = star[:, 2] + 0.16
-    z_grasp = star[:, 2] + 0.006
-    z_lift = star[:, 2] + 0.17
+    z_above_star = star_anchor[:, 2] + 0.16
+    z_grasp = star_anchor[:, 2] - 0.002
+    z_lift = star_anchor[:, 2] + 0.17
     z_place = goal[:, 2] + 0.045
     phase = float(step) / max(float(num_steps - 1), 1.0)
 
