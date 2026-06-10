@@ -69,12 +69,12 @@ class DextrahFrankaStarKittingEnvCfg(DirectRLEnvCfg):
 
     star_outer_radius = 0.032
     star_inner_radius = 0.0145
-    star_thickness = 0.050
+    star_thickness = 0.040
     fixture_size_x = 0.18
     fixture_size_y = 0.18
-    fixture_thickness = 0.072
+    fixture_thickness = 0.060
     fixture_clearance = 0.006
-    star_density = 220.0
+    star_density = 260.0
 
     # Franka geometry/control
     max_gripper_width = 0.08

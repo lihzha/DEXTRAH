@@ -2971,3 +2971,50 @@ Checks:
 Next:
 - Commit/push, update A100, rerun validation, inspect the per-env failure, and
   patch the grasp/controller/geometry before training.
+
+## 2026-06-10 03:49 PDT - Franka Star Reset-Clearance Adjustment
+
+Goal:
+- Fix the real validation failure where the star is displaced before any
+  intentional grasp, then rerun the hard validation gate before training.
+
+Evidence:
+- validation job_id: `28932656`, run
+  `franka_star_env_validate_perenvdiag_20260610_033952`, source commit
+  `6b8f81ed56973b9450c9e66732ac5b9de5da3ad2`.
+- status: failed metrics gate, exit `1:0`, elapsed `00:01:44`.
+- fetched artifacts:
+  `cluster_results/a1001/franka_star_env_validate_perenvdiag_20260610_033952`.
+- failed checks: `scripted_rollout_limits_prelift_star_motion` and the new
+  per-env `scripted_rollout_lifts_star`.
+- diagnostics: worst pre-lift drift happened in env0 at step 27, phase
+  `0.054`, with gripper open and target still above the star:
+  `star_initial_xy_error=0.10476`, `star_lift_height=0.0011`.
+- per-env max lift heights were `[0.0162, 0.2886, 0.0093, 0.0071]`, so only
+  one of four envs crossed the lift threshold.
+- opening-frame contact sheet shows the object disturbed immediately during
+  the high approach.
+
+Analysis:
+- The `0.050 m` star likely raised the part into the reset/approach clearance
+  envelope. The controller then swept the hand from a reset pose that was too
+  close to the pickup region.
+- The environment is not train-ready until reset settling and a clean scripted
+  pickup are reliable across all validation envs.
+
+Change:
+- Reduced star thickness from `0.050 m` to `0.040 m`.
+- Reduced fixture thickness from `0.072 m` to `0.060 m` to keep insertion
+  geometry matched.
+- Increased star density from `220` to `260` to keep mass close to the prior
+  thick-star value.
+- Changed scripted validation to first raise from the reset end-effector pose,
+  then translate above the star at higher clearance before descending.
+- Raised the scripted grasp target from `star_z + 0.008` to `star_z + 0.012`.
+
+Checks:
+- `python3 -m py_compile dextrah_lab/rl_games/validate_franka_star_kitting_env.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env_cfg.py dextrah_lab/tasks/dextrah_franka_star_kitting/star_kitting_geometry.py`
+- `git diff --check`
+
+Next:
+- Commit/push, update A100, rerun validation, and only then consider PPO.

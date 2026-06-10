@@ -354,25 +354,38 @@ def _target_actions_to_world_position(task_env, target_pos_local: torch.Tensor, 
     return action
 
 
-def _scripted_target(task_env, step: int, num_steps: int) -> tuple[torch.Tensor, float]:
+def _scripted_target(
+    task_env,
+    step: int,
+    num_steps: int,
+    initial_ee_pos: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, float]:
     star = task_env.star_initial_pos.detach()
     goal = task_env.star_goal_pos.detach()
-    z_above_star = star[:, 2] + 0.12
-    z_grasp = star[:, 2] + 0.008
+    z_above_star = star[:, 2] + 0.16
+    z_grasp = star[:, 2] + 0.012
     z_lift = star[:, 2] + 0.17
     z_place = goal[:, 2] + 0.045
     phase = float(step) / max(float(num_steps - 1), 1.0)
 
     target = torch.zeros_like(star)
-    if phase < 0.22:
+    if phase < 0.12:
+        if initial_ee_pos is None:
+            target[:, 0:2] = star[:, 0:2]
+            target[:, 2] = z_above_star
+        else:
+            target[:, 0:2] = initial_ee_pos[:, 0:2]
+            target[:, 2] = torch.maximum(initial_ee_pos[:, 2] + 0.08, z_above_star)
+        gripper = 1.0
+    elif phase < 0.30:
         target[:, 0:2] = star[:, 0:2]
         target[:, 2] = z_above_star
         gripper = 1.0
-    elif phase < 0.40:
+    elif phase < 0.44:
         target[:, 0:2] = star[:, 0:2]
         target[:, 2] = z_grasp
         gripper = 1.0
-    elif phase < 0.56:
+    elif phase < 0.58:
         target[:, 0:2] = star[:, 0:2]
         target[:, 2] = z_grasp
         gripper = -1.0
@@ -431,7 +444,7 @@ def _run_scripted_rollout(env, task_env, checks: CheckRecorder, num_steps: int, 
     reward_values: list[float] = []
     done_count = 0
     for step in range(num_steps):
-        target, gripper = _scripted_target(task_env, step, num_steps)
+        target, gripper = _scripted_target(task_env, step, num_steps, initial_ee)
         actions = _target_actions_to_world_position(task_env, target, gripper)
         step_out = env.step(actions)
         if len(step_out) == 5:
