@@ -158,12 +158,12 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
         "finger_approach_sharpness": 14.0,
         "grasp_pose_weight": 18.0,
         "grasp_weight": 2.0,
-        "closed_grasp_weight": 12.0,
+        "closed_grasp_weight": 18.0,
         "grasp_sharpness": 18.0,
         "lift_weight": 140.0,
-        "lift_action_weight": 4.0,
-        "close_near_weight": 0.5,
-        "close_action_weight": 0.8,
+        "lift_action_weight": 6.0,
+        "close_near_weight": 3.0,
+        "close_action_weight": 3.0,
         "prelift_move_penalty_weight": -10.0,
         "close_far_penalty_weight": -4.0,
         "transport_weight": 6.0,
@@ -219,6 +219,18 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
         bool((_reward_total(**close_action_near) > _reward_total(**grasp_pose)).item()),
         open_action_reward=_mean(_reward_total(**grasp_pose)),
         close_action_reward=_mean(_reward_total(**close_action_near)),
+    )
+
+    pregrasp = dict(base)
+    pregrasp["ee_to_star_dist"] = torch.tensor([0.125], device=device)
+    pregrasp["finger_center_to_star_dist"] = torch.tensor([0.115], device=device)
+    pregrasp_close_action = dict(pregrasp)
+    pregrasp_close_action["actions"] = close_action_near["actions"]
+    checks.check(
+        "reward_close_action_increases_in_pregrasp_band",
+        bool((_reward_total(**pregrasp_close_action) > _reward_total(**pregrasp)).item()),
+        pregrasp_reward=_mean(_reward_total(**pregrasp)),
+        pregrasp_close_action_reward=_mean(_reward_total(**pregrasp_close_action)),
     )
 
     lifted = dict(near)

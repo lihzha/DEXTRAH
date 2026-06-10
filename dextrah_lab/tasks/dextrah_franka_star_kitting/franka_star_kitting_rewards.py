@@ -56,6 +56,10 @@ def compute_franka_star_kitting_rewards(
     ee_grasp_pose = torch.exp(-45.0 * ee_to_star_dist)
     finger_contact_gate = torch.clamp((0.115 - finger_center_to_star_dist) / 0.095, 0.0, 1.0)
     close_near_gate = torch.clamp((0.185 - finger_center_to_star_dist) / 0.135, 0.0, 1.0)
+    pregrasp_close_gate = (
+        torch.clamp((0.155 - ee_to_star_dist) / 0.060, 0.0, 1.0)
+        * torch.clamp((0.135 - finger_center_to_star_dist) / 0.055, 0.0, 1.0)
+    )
     lift_credit_gate = torch.clamp((0.140 - ee_to_star_dist) / 0.100, 0.0, 1.0)
     lift_progress = torch.clamp((star_lift_height - lift_reward_start_height) / lift_denom, 0.0, 1.0)
     lifted_gate = has_lifted_star.float()
@@ -64,7 +68,7 @@ def compute_franka_star_kitting_rewards(
     if gripper_denom < 1.0e-6:
         gripper_denom = 1.0e-6
     closed_gripper = torch.clamp((0.90 * max_gripper_width - gripper_width) / (1.30 * gripper_denom), 0.0, 1.0)
-    close_near_ready = close_near_gate * (0.10 + 0.90 * near_star)
+    close_near_ready = torch.maximum(close_near_gate * (0.10 + 0.90 * near_star), pregrasp_close_gate)
     grasp_pose_ready = ee_grasp_pose * (0.25 + 0.75 * finger_contact_gate)
     grasp_ready = grasp_pose_ready * (0.20 + 0.80 * finger_near_star)
     prelift_gate = 1.0 - torch.clamp(lift_progress + has_lifted_star.float(), 0.0, 1.0)
@@ -94,14 +98,14 @@ def compute_franka_star_kitting_rewards(
         close_action_weight
         * prelift_gate
         * prelift_stability_gate
-        * grasp_pose_ready
+        * pregrasp_close_gate
         * torch.clamp(-actions[:, 6], 0.0, 1.0)
     )
     lift_action_reward = (
         lift_action_weight
         * prelift_gate
         * prelift_stability_gate
-        * grasp_pose_ready
+        * torch.maximum(grasp_pose_ready, 0.25 * pregrasp_close_gate)
         * closed_gripper
         * torch.clamp(actions[:, 2], 0.0, 1.0)
     )

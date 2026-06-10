@@ -4176,3 +4176,60 @@ Next:
 - Monitor startup/config and TensorBoard. Request sidecar eval at ep25, then
   continue to ep75/100 only if distance, closed grasp, and actual lift metrics
   improve without reward hacking.
+
+## 2026-06-10 06:58 PDT - Franka Star Grasp-Pose/Sigma PPO Stopped; Close-Band Patch Prepared
+
+Goal:
+- Decide whether the grasp-pose/sigma run learned deterministic pregrasp,
+  closure, and lift, then patch the next bottleneck.
+
+Evidence:
+- training job_id: `28936679`, run
+  `franka_star_grasppose_sigma_ppo_20260610_064024`.
+- stopped after ep150 checkpoint; Slurm cancellation requested at elapsed
+  `00:16:42`.
+- training improved approach without solving closure: at iter 155,
+  `star_ee_to_star_dist=0.1199`, `star_finger_center_to_star_dist=0.1111`,
+  `star_grasp_pose_reward=0.2327`, but `star_gripper_width=0.0480`,
+  `star_lift_height=0.00086`, `star_has_lifted_rate=0.0317`, and
+  `star_success_rate=0`.
+- ep25 sidecar eval run
+  `franka_star_grasppose_sigma_eval_ep25_20260610_064729` failed as expected:
+  success `0`, no has-lifted predicate, max lift `0.01261 m`, gripper mean
+  `0.06037`, valid `1280x720`, `600` frame video.
+- ep100 sidecar eval run
+  `franka_star_grasppose_sigma_eval_ep100_20260610_065435` confirmed the
+  deterministic failure: success `0`, no has-lifted predicate, max lift
+  `0.01248 m`, gripper mean `0.05857`, EE distance mean `0.19963`,
+  finger-center distance mean `0.18381`, valid `1280x720`, `600` frame video.
+- visual inspection shows the policy reaches/hovers near the star but keeps an
+  open gripper and never forms a stable pinch.
+
+Analysis:
+- Narrower sigma and the grasp-pose patch fixed the previous action-only
+  reward exploit and taught a better pregrasp neighborhood in stochastic
+  training.
+- The next bottleneck is closure: close-action reward was gated too sharply on
+  the final grasp pose, so the policy reached the pregrasp band but had little
+  gradient to close before the exact pose.
+
+Change:
+- Added a `pregrasp_close_gate` active around the learned pregrasp band
+  (`ee_to_star_dist < ~0.155`, `finger_center_to_star_dist < ~0.135`).
+- Gated close-action reward on this pregrasp band instead of only the sharp
+  final grasp-pose term.
+- Let lift-action use the final grasp gate or a small amount of pregrasp close
+  gate, still requiring closed-gripper progress.
+- Increased `close_near_weight`, `close_action_weight`,
+  `closed_grasp_weight`, and `lift_action_weight` while keeping actual lift
+  reward dominant and close-far penalties unchanged.
+- Added a validation check that close action improves reward inside the
+  pregrasp band.
+
+Checks:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_rewards.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env_cfg.py dextrah_lab/rl_games/validate_franka_star_kitting_env.py`
+- `bash -n cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_validate_franka_star_kitting_env_1gpu.sh cluster/sbatch_eval_franka_star_kitting_1gpu.sh`
+
+Next:
+- Commit/push, fast-forward A100, rerun validation with video, and only
+  relaunch PPO if the close-band reward passes all environment checks.
