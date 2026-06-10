@@ -1725,3 +1725,45 @@ Analysis:
 - Reward is non-monotonic early on but generally improving from epoch 75
   through epoch 200. Continue monitoring for plateau/divergence and for
   wall-time requeue behavior.
+
+## 2026-06-09 23:50 PDT - Cube Grasp Eval Video Path
+
+Goal:
+- Launch a separate one-GPU evaluation/rollout visualization for the active
+  cube grasp PPO training run without modifying or canceling training job
+  `28927711`.
+
+Hypothesis:
+- The existing `play.py` is metrics-only, while `train.py` already proves the
+  project can use Gym `RecordVideo`; a narrow eval script plus a one-GPU Slurm
+  wrapper should produce a rollout video and metrics without touching the
+  8-GPU training wrapper.
+
+Change:
+- Added `dextrah_lab/rl_games/eval_rollout.py` for checkpoint playback with
+  optional video capture, step metrics, and `metrics.json` output.
+- Added `cluster/sbatch_eval_cube_grasp_1gpu.sh` for a one-GPU cube grasp eval
+  using the existing Isaac Lab container, DEXTRAH env, cache mounts, and results
+  path.
+
+Version Control:
+- branch: `codex/dextrah-cluster-dev`
+- base_commit: `f651a4a3af63c7b3f94fe32b8ded406e0fc10f56`
+- implementation_commit: pending
+- changed_files: `dextrah_lab/rl_games/eval_rollout.py`,
+  `cluster/sbatch_eval_cube_grasp_1gpu.sh`, `WORKLOG.md`
+
+Command / Job:
+- command: pending validation, commit, push, remote pull, and `sbatch`
+- job_id: pending
+- run_dir: pending
+- logs: pending
+- artifacts: rollout video under `/results/evals/<run>/videos` and
+  `/results/evals/<run>/metrics.json`
+
+Result:
+- status: in progress
+
+Next:
+- Validate syntax, commit/push, sync a1001, select the newest usable cube grasp
+  checkpoint, submit the one-GPU eval, and monitor startup logs.
