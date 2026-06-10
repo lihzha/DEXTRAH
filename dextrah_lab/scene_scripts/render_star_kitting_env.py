@@ -23,6 +23,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
+import xml.etree.ElementTree as ET
 
 from isaaclab.app import AppLauncher
 
@@ -102,7 +103,6 @@ import omni.usd  # noqa: E402
 import isaaclab.sim as sim_utils  # noqa: E402
 from isaaclab.sensors.camera import TiledCamera, TiledCameraCfg  # noqa: E402
 from isaaclab.sim import PhysxCfg, SimulationCfg  # noqa: E402
-from isaaclab.sim.converters import UrdfConverter, UrdfConverterCfg  # noqa: E402
 from isaaclab.sim.spawners.materials.physics_materials_cfg import RigidBodyMaterialCfg  # noqa: E402
 from pxr import Gf, PhysxSchema, Sdf, Usd, UsdGeom, UsdPhysics, UsdShade  # noqa: E402
 
@@ -119,15 +119,35 @@ Point2 = tuple[float, float]
 @dataclass(frozen=True)
 class RobotSpec:
     name: str
-    usd_path: Path
+    usd_path: Path | None
     source: str
     base_translation: tuple[float, float, float]
     base_quaternion_xyzw: tuple[float, float, float, float]
+    render_mode: str
     source_config: Path | None = None
     urdf_path: Path | None = None
     asset_root_path: Path | None = None
     default_joint_position: list[float] | None = None
     joint_names: list[str] | None = None
+    joint_positions: dict[str, float] | None = None
+
+
+@dataclass(frozen=True)
+class UrdfMesh:
+    filename: Path
+    origin_xyz: tuple[float, float, float]
+    origin_rpy: tuple[float, float, float]
+
+
+@dataclass(frozen=True)
+class UrdfJoint:
+    name: str
+    joint_type: str
+    parent: str
+    child: str
+    origin_xyz: tuple[float, float, float]
+    origin_rpy: tuple[float, float, float]
+    axis: tuple[float, float, float]
 
 
 def _log(message: str) -> None:
@@ -353,30 +373,247 @@ def _as_float_tuple(value: Any, *, length: int, field_name: str) -> tuple[float,
     return tuple(float(v) for v in value)
 
 
-def _convert_franka_urdf_to_usd(urdf_path: Path, output_dir: Path) -> Path:
-    if not urdf_path.is_file():
-        raise FileNotFoundError(f"Franka URDF is missing: {urdf_path}")
-    usd_dir = output_dir / "generated_assets" / "graspgenx_franka_panda"
-    usd_dir.mkdir(parents=True, exist_ok=True)
-    _log(f"converting GraspGenX Franka URDF to USD: {urdf_path}")
-    converter_cfg = UrdfConverterCfg(
-        asset_path=str(urdf_path),
-        usd_dir=str(usd_dir),
-        usd_file_name="franka_panda.usd",
-        fix_base=True,
-        merge_fixed_joints=False,
-        force_usd_conversion=True,
-        make_instanceable=False,
-        convex_decompose_mesh=False,
+Matrix4 = list[list[float]]
+
+
+def _mat_identity() -> Matrix4:
+    return [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ]
+
+
+def _mat_mul(a: Matrix4, b: Matrix4) -> Matrix4:
+    return [[sum(a[i][k] * b[k][j] for k in range(4)) for j in range(4)] for i in range(4)]
+
+
+def _mat_translation(xyz: Iterable[float]) -> Matrix4:
+    m = _mat_identity()
+    x, y, z = [float(v) for v in xyz]
+    m[0][3] = x
+    m[1][3] = y
+    m[2][3] = z
+    return m
+
+
+def _mat_rot_x(angle: float) -> Matrix4:
+    c, s = math.cos(angle), math.sin(angle)
+    return [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, c, -s, 0.0],
+        [0.0, s, c, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ]
+
+
+def _mat_rot_y(angle: float) -> Matrix4:
+    c, s = math.cos(angle), math.sin(angle)
+    return [
+        [c, 0.0, s, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [-s, 0.0, c, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ]
+
+
+def _mat_rot_z(angle: float) -> Matrix4:
+    c, s = math.cos(angle), math.sin(angle)
+    return [
+        [c, -s, 0.0, 0.0],
+        [s, c, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ]
+
+
+def _mat_from_xyz_rpy(xyz: Iterable[float], rpy: Iterable[float]) -> Matrix4:
+    roll, pitch, yaw = [float(v) for v in rpy]
+    rotation = _mat_mul(_mat_mul(_mat_rot_z(yaw), _mat_rot_y(pitch)), _mat_rot_x(roll))
+    return _mat_mul(_mat_translation(xyz), rotation)
+
+
+def _mat_from_quat_xyzw(quat_xyzw: Iterable[float]) -> Matrix4:
+    x, y, z, w = [float(v) for v in quat_xyzw]
+    norm = math.sqrt(x * x + y * y + z * z + w * w)
+    if norm <= 1.0e-12:
+        return _mat_identity()
+    x, y, z, w = x / norm, y / norm, z / norm, w / norm
+    return [
+        [1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - z * w), 2.0 * (x * z + y * w), 0.0],
+        [2.0 * (x * y + z * w), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z - x * w), 0.0],
+        [2.0 * (x * z - y * w), 2.0 * (y * z + x * w), 1.0 - 2.0 * (x * x + y * y), 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ]
+
+
+def _mat_axis_angle(axis: Iterable[float], angle: float) -> Matrix4:
+    ax, ay, az = [float(v) for v in axis]
+    norm = math.sqrt(ax * ax + ay * ay + az * az)
+    if norm <= 1.0e-12:
+        return _mat_identity()
+    ax, ay, az = ax / norm, ay / norm, az / norm
+    c, s = math.cos(angle), math.sin(angle)
+    t = 1.0 - c
+    return [
+        [t * ax * ax + c, t * ax * ay - s * az, t * ax * az + s * ay, 0.0],
+        [t * ax * ay + s * az, t * ay * ay + c, t * ay * az - s * ax, 0.0],
+        [t * ax * az - s * ay, t * ay * az + s * ax, t * az * az + c, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ]
+
+
+def _mat_apply_point(m: Matrix4, p: Iterable[float]) -> tuple[float, float, float]:
+    x, y, z = [float(v) for v in p]
+    return (
+        m[0][0] * x + m[0][1] * y + m[0][2] * z + m[0][3],
+        m[1][0] * x + m[1][1] * y + m[1][2] * z + m[1][3],
+        m[2][0] * x + m[2][1] * y + m[2][2] * z + m[2][3],
     )
-    converter = UrdfConverter(converter_cfg)
-    usd_path = Path(converter.usd_path)
-    if not usd_path.is_file():
-        raise FileNotFoundError(f"URDF converter did not create expected USD: {usd_path}")
-    return usd_path
+
+
+def _joint_motion_matrix(joint: UrdfJoint, joint_positions: dict[str, float]) -> Matrix4:
+    q = float(joint_positions.get(joint.name, 0.0))
+    if joint.joint_type in ("revolute", "continuous"):
+        return _mat_axis_angle(joint.axis, q)
+    if joint.joint_type == "prismatic":
+        return _mat_translation(tuple(q * float(v) for v in joint.axis))
+    return _mat_identity()
+
+
+def _parse_float_attr(element: ET.Element | None, attr: str, default: str) -> tuple[float, float, float]:
+    value = default if element is None else element.attrib.get(attr, default)
+    parts = [float(v) for v in value.split()]
+    if len(parts) != 3:
+        raise ValueError(f"Expected 3 floats for URDF {attr}, got {value!r}")
+    return (parts[0], parts[1], parts[2])
+
+
+def _parse_urdf_robot(urdf_path: Path) -> tuple[dict[str, list[UrdfMesh]], list[UrdfJoint]]:
+    tree = ET.parse(urdf_path)
+    root = tree.getroot()
+    asset_root = urdf_path.parent
+
+    link_meshes: dict[str, list[UrdfMesh]] = {}
+    for link in root.findall("link"):
+        link_name = link.attrib["name"]
+        meshes: list[UrdfMesh] = []
+        for collision in link.findall("collision"):
+            mesh_element = collision.find("geometry/mesh")
+            if mesh_element is None or "filename" not in mesh_element.attrib:
+                continue
+            origin = collision.find("origin")
+            meshes.append(
+                UrdfMesh(
+                    filename=(asset_root / mesh_element.attrib["filename"]).resolve(),
+                    origin_xyz=_parse_float_attr(origin, "xyz", "0 0 0"),
+                    origin_rpy=_parse_float_attr(origin, "rpy", "0 0 0"),
+                )
+            )
+        if meshes:
+            link_meshes[link_name] = meshes
+
+    joints: list[UrdfJoint] = []
+    for joint in root.findall("joint"):
+        parent = joint.find("parent")
+        child = joint.find("child")
+        if parent is None or child is None:
+            continue
+        origin = joint.find("origin")
+        axis = joint.find("axis")
+        joints.append(
+            UrdfJoint(
+                name=joint.attrib["name"],
+                joint_type=joint.attrib.get("type", "fixed"),
+                parent=parent.attrib["link"],
+                child=child.attrib["link"],
+                origin_xyz=_parse_float_attr(origin, "xyz", "0 0 0"),
+                origin_rpy=_parse_float_attr(origin, "rpy", "0 0 0"),
+                axis=_parse_float_attr(axis, "xyz", "0 0 1"),
+            )
+        )
+    return link_meshes, joints
+
+
+def _compute_link_transforms(joints: list[UrdfJoint], robot: RobotSpec) -> dict[str, Matrix4]:
+    children = {joint.child for joint in joints}
+    parents = {joint.parent for joint in joints}
+    roots = sorted(parents - children)
+    root_link = roots[0] if roots else "base_link"
+    base = _mat_mul(_mat_translation(robot.base_translation), _mat_from_quat_xyzw(robot.base_quaternion_xyzw))
+    transforms: dict[str, Matrix4] = {root_link: base}
+    pending = list(joints)
+    while pending:
+        next_pending: list[UrdfJoint] = []
+        progressed = False
+        for joint in pending:
+            parent_transform = transforms.get(joint.parent)
+            if parent_transform is None:
+                next_pending.append(joint)
+                continue
+            joint_origin = _mat_from_xyz_rpy(joint.origin_xyz, joint.origin_rpy)
+            child_transform = _mat_mul(
+                _mat_mul(parent_transform, joint_origin),
+                _joint_motion_matrix(joint, robot.joint_positions or {}),
+            )
+            transforms[joint.child] = child_transform
+            progressed = True
+        if not progressed:
+            unresolved = ", ".join(joint.name for joint in next_pending)
+            raise RuntimeError(f"Could not resolve URDF joint chain: {unresolved}")
+        pending = next_pending
+    return transforms
+
+
+def _load_obj_mesh(path: Path) -> tuple[list[tuple[float, float, float]], list[int], list[int]]:
+    vertices: list[tuple[float, float, float]] = []
+    face_counts: list[int] = []
+    face_indices: list[int] = []
+    with path.open("r", encoding="utf-8", errors="ignore") as f:
+        for line in f:
+            if line.startswith("v "):
+                _, x, y, z, *_ = line.split()
+                vertices.append((float(x), float(y), float(z)))
+            elif line.startswith("f "):
+                refs = line.split()[1:]
+                if len(refs) < 3:
+                    continue
+                face_counts.append(len(refs))
+                for ref in refs:
+                    idx = int(ref.split("/")[0])
+                    if idx < 0:
+                        idx = len(vertices) + idx + 1
+                    face_indices.append(idx - 1)
+    if not vertices or not face_counts:
+        raise ValueError(f"OBJ mesh has no vertices/faces: {path}")
+    return vertices, face_counts, face_indices
+
+
+def _add_obj_mesh(
+    stage: Usd.Stage,
+    path: str,
+    obj_path: Path,
+    transform: Matrix4,
+    mat: UsdShade.Material,
+) -> Usd.Prim:
+    vertices, face_counts, face_indices = _load_obj_mesh(obj_path)
+    points = [Gf.Vec3f(*_mat_apply_point(transform, vertex)) for vertex in vertices]
+    prim = _add_mesh(
+        stage,
+        path,
+        points,
+        face_counts,
+        face_indices,
+        mat,
+        collision=False,
+        visible=True,
+    )
+    return prim
 
 
 def _resolve_graspgenx_franka_robot(output_dir: Path) -> RobotSpec:
+    _ = output_dir
     graspgenx_root = _resolve_graspgenx_root()
     cfg_path = graspgenx_root / "end2end/robots/franka_panda.yaml"
     cfg = _load_yaml(cfg_path)
@@ -420,19 +657,23 @@ def _resolve_graspgenx_franka_robot(output_dir: Path) -> RobotSpec:
         "panda_joint6",
         "panda_joint7",
     ]
+    joint_positions = dict(zip(joint_names, default_joint_position or [0.0] * len(joint_names)))
+    joint_positions["panda_finger_joint1"] = 0.04
+    joint_positions["panda_finger_joint2"] = 0.04
 
-    usd_path = _convert_franka_urdf_to_usd(urdf_path, output_dir)
     return RobotSpec(
         name="graspgenx_franka_panda",
-        usd_path=usd_path,
+        usd_path=None,
         source="GraspGenX end2end/robots/franka_panda.yaml",
         source_config=cfg_path,
         urdf_path=urdf_path,
         asset_root_path=asset_root,
         base_translation=base_translation,  # type: ignore[arg-type]
         base_quaternion_xyzw=base_quat,  # type: ignore[arg-type]
+        render_mode="static_urdf_obj_meshes",
         default_joint_position=default_joint_position,
         joint_names=joint_names,
+        joint_positions=joint_positions,
     )
 
 
@@ -451,6 +692,7 @@ def _resolve_kuka_allegro_robot() -> RobotSpec:
         source="DEXTRAH dextrah_lab/assets/kuka_allegro/kuka_allegro_colored.usd",
         base_translation=(0.0, 0.0, 0.0),
         base_quaternion_xyzw=(0.0, 0.0, 0.0, 1.0),
+        render_mode="usd_reference",
     )
 
 
@@ -462,28 +704,88 @@ def _resolve_robot(output_dir: Path) -> RobotSpec:
     raise ValueError(f"Unsupported robot: {args_cli.robot}")
 
 
+def _safe_prim_name(name: str) -> str:
+    return "".join(ch if ch.isalnum() or ch == "_" else "_" for ch in name)
+
+
+def _create_static_urdf_robot(stage: Usd.Stage, robot: RobotSpec) -> None:
+    if robot.urdf_path is None:
+        raise ValueError("Static URDF robot is missing urdf_path")
+    _log(f"authoring static robot meshes from URDF: {robot.urdf_path}")
+    link_meshes, joints = _parse_urdf_robot(robot.urdf_path)
+    link_transforms = _compute_link_transforms(joints, robot)
+
+    UsdGeom.Xform.Define(stage, "/World/Robot/Links")
+    body_mat = _material(stage, "/World/Looks/franka_body_white", (0.82, 0.83, 0.80), roughness=0.58)
+    joint_mat = _material(stage, "/World/Looks/franka_joint_dark", (0.18, 0.19, 0.20), roughness=0.62)
+    finger_mat = _material(stage, "/World/Looks/franka_finger_gray", (0.34, 0.35, 0.35), roughness=0.64)
+
+    mesh_count = 0
+    for link_name in sorted(link_meshes):
+        link_transform = link_transforms.get(link_name)
+        if link_transform is None:
+            _log(f"skipping URDF link without resolved transform: {link_name}")
+            continue
+        for mesh_idx, mesh in enumerate(link_meshes[link_name]):
+            if not mesh.filename.is_file():
+                raise FileNotFoundError(f"URDF mesh is missing: {mesh.filename}")
+            mesh_transform = _mat_mul(link_transform, _mat_from_xyz_rpy(mesh.origin_xyz, mesh.origin_rpy))
+            if "finger" in link_name:
+                mat = finger_mat
+            elif "hand" in link_name or link_name.endswith("7"):
+                mat = joint_mat
+            else:
+                mat = body_mat
+            _add_obj_mesh(
+                stage,
+                f"/World/Robot/Links/{_safe_prim_name(link_name)}_{mesh_idx}",
+                mesh.filename,
+                mesh_transform,
+                mat,
+            )
+            mesh_count += 1
+    if mesh_count == 0:
+        raise RuntimeError(f"No renderable OBJ meshes found in URDF: {robot.urdf_path}")
+    _log(f"authored {mesh_count} static Franka mesh prims")
+
+
 def _create_robot(stage: Usd.Stage, robot: RobotSpec) -> None:
     robot_prim = UsdGeom.Xform.Define(stage, "/World/Robot").GetPrim()
-    robot_prim.GetReferences().AddReference(str(robot.usd_path))
-    _set_xform(
-        robot_prim,
-        robot.base_translation,
-        rotate_quat_xyzw=robot.base_quaternion_xyzw,
-    )
+    if robot.render_mode == "usd_reference":
+        if robot.usd_path is None:
+            raise ValueError("USD reference robot is missing usd_path")
+        robot_prim.GetReferences().AddReference(str(robot.usd_path))
+        _set_xform(
+            robot_prim,
+            robot.base_translation,
+            rotate_quat_xyzw=robot.base_quaternion_xyzw,
+        )
+        return
+
+    if robot.render_mode == "static_urdf_obj_meshes":
+        if robot.urdf_path is None:
+            raise ValueError("Static URDF robot is missing urdf_path")
+        _set_xform(robot_prim, (0.0, 0.0, 0.0))
+        _create_static_urdf_robot(stage, robot)
+        return
+
+    raise ValueError(f"Unsupported robot render mode: {robot.render_mode}")
 
 
 def _robot_metadata(robot: RobotSpec) -> dict[str, object]:
     return {
         "name": robot.name,
         "source": robot.source,
+        "render_mode": robot.render_mode,
         "source_config": str(robot.source_config) if robot.source_config else None,
-        "usd_path": str(robot.usd_path),
+        "usd_path": str(robot.usd_path) if robot.usd_path else None,
         "urdf_path": str(robot.urdf_path) if robot.urdf_path else None,
         "asset_root_path": str(robot.asset_root_path) if robot.asset_root_path else None,
         "base_translation": list(robot.base_translation),
         "base_quaternion_xyzw": list(robot.base_quaternion_xyzw),
         "joint_names": robot.joint_names,
         "default_joint_position": robot.default_joint_position,
+        "joint_positions": robot.joint_positions,
     }
 
 
@@ -1120,7 +1422,10 @@ def main() -> None:
     pickup_y = -0.26
     fixture_y = 0.26
 
-    _log(f"referencing robot USD: {robot_spec.usd_path}")
+    if robot_spec.usd_path is not None:
+        _log(f"referencing robot USD: {robot_spec.usd_path}")
+    else:
+        _log(f"creating robot with render_mode={robot_spec.render_mode}")
     _create_robot(stage, robot_spec)
 
     _log("creating table")
@@ -1208,7 +1513,7 @@ def main() -> None:
         "task_description": "Pick the star-shaped object and place it into the matching star-shaped fixture.",
         "simulation_backend": "Isaac Sim / Isaac Lab / PhysX USD scene",
         "robot": _robot_metadata(robot_spec),
-        "robot_usd": str(robot_spec.usd_path),
+        "robot_usd": str(robot_spec.usd_path) if robot_spec.usd_path else None,
         "axes": {
             "table_long_axis": "world_y",
             "table_short_axis": "world_x",
