@@ -338,11 +338,20 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
         lift_intent_reward=_mean(_reward_total(**lift_intent)),
         lifted_reward=_mean(_reward_total(**lifted)),
     )
+    lift_intent_reward = _reward_total(**lift_intent)
+    lifted_reward = _reward_total(**lifted)
     checks.check(
         "reward_lift_intent_without_lift_is_capped",
-        bool((_reward_total(**lift_intent) < torch.tensor([45.0], device=device)).item()),
-        lift_intent_reward=_mean(_reward_total(**lift_intent)),
-        lifted_reward=_mean(_reward_total(**lifted)),
+        bool(
+            (
+                (lift_intent_reward < torch.tensor([55.0], device=device))
+                & (lift_intent_reward < 0.15 * lifted_reward)
+            ).item()
+        ),
+        lift_intent_reward=_mean(lift_intent_reward),
+        lifted_reward=_mean(lifted_reward),
+        absolute_cap=55.0,
+        lifted_fraction_cap=0.15,
     )
 
     lift_intent_far = dict(base)
