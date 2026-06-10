@@ -4567,6 +4567,47 @@ Next:
   contact/lift reward patch, action diagnostics, lower entropy, and narrower
   initial sigma.
 
+## 2026-06-10 08:16 PDT - Contact/Lift Tight-Sigma PPO Launched
+
+Goal:
+- Train from the validated contact/lift environment with stronger hand
+  dynamics and lower stochasticity so deterministic eval does not remain
+  open/hovering.
+
+Command / Job:
+- training job_id: `28940486`
+- run_name: `franka_star_contactlift_tightsigma_ppo_20260610_081630`
+- source commit at launch:
+  `02a1219e74dad9b46f273c5a420f37161bb8f750`
+- behavior validation commit:
+  `08425aca7da01d1d4d38dc99f2c816dd84ee898c`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_star_kitting/franka_star_contactlift_tightsigma_ppo_20260610_081630`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28940486.out`
+
+Hyperparameters:
+- Stable DEXTRAH rl_games PPO with task-specific deterministic-policy
+  tightening:
+  `NUM_ENVS=2048`, `HORIZON_LENGTH=96`, `MINIBATCH_SIZE=32768`,
+  `CENTRAL_VALUE_MINIBATCH_SIZE=32768`, `MAX_ITERATIONS=600`,
+  `SAVE_FREQUENCY=25`, `LEARNING_RATE=0.0001`,
+  `CENTRAL_VALUE_LEARNING_RATE=0.00008`, `ENTROPY_COEF=0.0001`,
+  `SIGMA_INIT_VAL=-2.0`, `GAMMA=0.997`, `TAU=0.95`,
+  `KL_THRESHOLD=0.012`, `MINI_EPOCHS=4`, `AUTO_RESUME=False`,
+  `SELF_RELAUNCH=False`, `USE_CUDA_GRAPH=False`, `DISTRIBUTED=True`,
+  `MULTI_GPU=True`.
+
+Eval sidecar:
+- Darwin assigned to launch deterministic eval/video at ep25 and ep100 unless
+  redirected.
+
+Next:
+- Monitor startup, TensorBoard action diagnostics, closure, lift, and
+  deterministic eval videos. Stop and patch if reward rises while
+  `star_gripper_close_action`, `star_action_up`, lift, or eval success remain
+  inconsistent.
+
 ## 2026-06-10 08:07 PDT - Deep-Grasp Validation Still Lift-Brittle; Finger Actuator Patch
 
 Goal:
