@@ -5118,3 +5118,77 @@ Next:
   `2026-06-10 13:05 PDT`.
 - Do not pull newer local Franka-only commits into the active remote checkout
   while this teacher job is running unless a teacher-code fix is required.
+
+## 2026-06-10 09:45 PDT - Cube Grasp Monitor Restart And Close Eval
+
+Goal:
+- Recover the single-cube KUKA/Allegro PPO run after wall-time termination,
+  keep the monitoring loop active, and produce a close overhead eval video from
+  a verified checkpoint.
+
+Hypothesis:
+- The previous ep1875 checkpoint from job `28930031` was truncated during TERM
+  handling, so continuing from the last full checkpoint, ep1850, should restore
+  training and produce a fresh valid ep1875 checkpoint.
+
+Change:
+- No code change in this pass.
+- Quarantined the corrupt ep1875 checkpoint by renaming it to
+  `last_dextrah_cube_grasp_ep_1875_rew_2062.649.pth.corrupt`.
+- Removed the failed eval output that attempted to load the corrupt checkpoint.
+- Relaunched cube training from verified ep1850 with `AUTO_RESUME=False` and
+  explicit `CHECKPOINT`.
+
+Version Control:
+- branch: `codex/dextrah-cluster-dev`
+- local_head_at_monitor: `8ee6cdafa3dbb8bd5a5e4feeedbc673ada085fce`
+- remote_checkout: existing A100 checkout under
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/DEXTRAH`
+- changed_files: `WORKLOG.md` only for this entry.
+
+Command / Job:
+- canceled stale failed restart: `28942609`.
+- training command:
+  `TASK=Dextrah-Cube-Grasp FULL_EXPERIMENT_NAME=cube_grasp_static_ppo_opt8gpu_20260610_004351 CHECKPOINT=/results/logs/rl_games/dextrah_cube_grasp/cube_grasp_static_ppo_opt8gpu_20260610_004351/nn/last_dextrah_cube_grasp_ep_1850_rew_2075.738.pth MAX_ITERATIONS=6000 USE_CUDA_GRAPH=True AUTO_RESUME=False SELF_RELAUNCH=True sbatch cluster/sbatch_train_teacher_8gpu.sh`
+- training job_id: `28943108`
+- training log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28943108.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_cube_grasp/cube_grasp_static_ppo_opt8gpu_20260610_004351`
+- eval command:
+  `TASK=Dextrah-Cube-Grasp RUN_NAME=cube_grasp_static_eval_ep1875_overhead_close_20260610_093647 CHECKPOINT=/results/logs/rl_games/dextrah_cube_grasp/cube_grasp_static_ppo_opt8gpu_20260610_004351/nn/last_dextrah_cube_grasp_ep_1875_rew_2070.8137.pth NUM_ENVS=1 NUM_STEPS=600 VIDEO_LENGTH=600 VIDEO_NAME_PREFIX=cube-grasp-eval-overhead-close CAPTURE_VIDEO=True USE_CUDA_GRAPH=False SEED=42 CAMERA_EYE_X=-0.55 CAMERA_EYE_Y=0.10 CAMERA_EYE_Z=0.85 CAMERA_TARGET_X=-0.55 CAMERA_TARGET_Y=0.10 CAMERA_TARGET_Z=0.25 sbatch cluster/sbatch_eval_cube_grasp_1gpu.sh`
+- eval job_id: `28943428`
+- eval run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/cube_grasp_static_eval_ep1875_overhead_close_20260610_093647`
+- local eval artifacts:
+  `cluster_results/a1001/cube_grasp_static_eval_ep1875_overhead_close_20260610_093647/`
+
+Result:
+- status: training running, eval completed.
+- ep1850 restart loaded on all eight ranks and advanced through PPO epochs.
+- fresh periodic checkpoint written:
+  `last_dextrah_cube_grasp_ep_1875_rew_2070.8137.pth`, size `396584199`.
+- training continued past epoch 1911 and wrote ep1900 checkpoint
+  `last_dextrah_cube_grasp_ep_1900_rew_2074.246.pth`.
+- eval `28943428` completed in `00:03:31` with exit code `0:0`.
+- eval video validated by `ffprobe`: `1280x720`, 60 FPS, 10.0 s, 600 frames.
+- eval metrics: reward mean `3.4596575431029`, reward final
+  `1.0055190324783325`, success mean/final `0.0`, max cube lift
+  `0.018937617540359497 m`, mean cube lift `0.015536198318004608 m`, minimum
+  hand-to-cube mean distance `0.04555023834109306 m`.
+
+Analysis:
+- The earlier failure was a corrupt/truncated checkpoint, not an environment
+  start failure. The replacement ep1875 checkpoint is normal-sized and loads
+  for evaluation.
+- The close overhead video uses the KUKA/Allegro training task, not Franka.
+- Visual inspection of preview frames shows the hand and cube in the requested
+  close overhead view with no moving visualization cube artifact.
+- Behavior is still not a successful grasp: the policy approaches and nudges or
+  partially lifts the cube by about `1.9 cm`, but success remains zero.
+
+Next:
+- Keep monitoring job `28943108`; launch the next close-overhead eval from a
+  later verified checkpoint if reward improves or at the next periodic cadence.
+- If success remains zero despite stable reward, inspect the reward term balance
+  and success threshold rather than relying on aggregate PPO reward alone.
