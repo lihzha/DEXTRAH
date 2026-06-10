@@ -1379,3 +1379,53 @@ Analysis:
 Next:
 - Commit/push/pull source, submit a short L401 render, fetch frames, encode
   MP4, and inspect first/middle/last frames.
+
+## 2026-06-09 21:59 PDT - Actuated GraspGenX Franka In Star Kitting
+
+Goal:
+- Replace the static GraspGenX Franka mesh rendering with a live Isaac Lab
+  Franka articulation with actuators in the DEXTRAH star-kitting scene.
+
+Hypothesis:
+- Isaac Lab's supported Franka Panda USD can provide the actual PhysX
+  articulation while the GraspGenX YAML remains the source for default joint
+  pose, base pose, and PD gains. Applying a 180 degree scene yaw makes the
+  Franka face the DEXTRAH table at negative X.
+
+Change:
+- `render_star_kitting_env.py` now resolves GraspGenX Franka config, spawns an
+  Isaac Lab Franka `Articulation`, applies GraspGenX joint defaults and dynamic
+  PD gains, and writes actuator targets during settling/capture.
+- Added metadata for the source GraspGenX base pose, the scene yaw, actuator
+  groups, and runtime articulation joint/body names.
+- `sbatch_render_star_kitting_env.sh` now exposes `FRANKA_USD` and
+  `FRANKA_SCENE_YAW_DEG` overrides.
+
+Version Control:
+- branch: `codex/dextrah-cluster-dev`
+- base_commit: `cfc9b7fac27ddd5b65400268e610156a36df3d5b`
+- implementation_commit: pending
+- push/pull: pending
+- changed_files:
+  `dextrah_lab/scene_scripts/render_star_kitting_env.py`,
+  `cluster/sbatch_render_star_kitting_env.sh`, `WORKLOG.md`
+
+Command / Job:
+- local checks:
+  - `python3 -m py_compile dextrah_lab/scene_scripts/render_star_kitting_env.py`
+  - `bash -n cluster/sbatch_render_star_kitting_env.sh`
+  - `git diff --check -- dextrah_lab/scene_scripts/render_star_kitting_env.py cluster/sbatch_render_star_kitting_env.sh`
+- planned l401 smoke:
+  `SCENE=star_kitting RUN_NAME=star_kitting_franka_articulation_<timestamp> WIDTH=640 HEIGHT=360 FPS=4 VIDEO_SECONDS=1.0 CAPTURE_VIDEO=1 PHYSICS_DEVICE=cuda:0 sbatch --export=ALL cluster/sbatch_render_star_kitting_env.sh`
+
+Result:
+- status: implementation ready for deploy.
+
+Analysis:
+- The previous Franka path authored OBJ collision meshes directly into USD,
+  so it had no joints or drives. The new path creates a fixed-base Franka
+  articulation with shoulder, forearm, and hand implicit actuators.
+
+Next:
+- Commit/push/pull source, submit the L401 smoke, fetch outputs, and inspect
+  metadata/video for an initialized actuated Franka facing the table.

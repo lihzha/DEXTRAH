@@ -70,6 +70,17 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Override the Franka URDF path after loading the GraspGenX config.",
     )
+    parser.add_argument(
+        "--franka_usd",
+        default=None,
+        help="Override the actuated Franka USD/URI used to spawn the Isaac Lab articulation.",
+    )
+    parser.add_argument(
+        "--franka_scene_yaw_deg",
+        type=float,
+        default=180.0,
+        help="Yaw applied to the GraspGenX Franka base pose so the arm faces the DEXTRAH table.",
+    )
     parser.add_argument("--star_outer_radius", type=float, default=0.092)
     parser.add_argument("--star_inner_radius", type=float, default=0.042)
     parser.add_argument("--star_thickness", type=float, default=0.034)
@@ -114,9 +125,13 @@ simulation_app = app_launcher.app
 
 import omni.usd  # noqa: E402
 import isaaclab.sim as sim_utils  # noqa: E402
+from isaaclab.actuators import ImplicitActuatorCfg  # noqa: E402
+from isaaclab.assets import Articulation  # noqa: E402
+from isaaclab.assets.articulation import ArticulationCfg  # noqa: E402
 from isaaclab.sensors.camera import TiledCamera, TiledCameraCfg  # noqa: E402
 from isaaclab.sim import PhysxCfg, SimulationCfg  # noqa: E402
 from isaaclab.sim.spawners.materials.physics_materials_cfg import RigidBodyMaterialCfg  # noqa: E402
+from isaaclab.utils.assets import ISAACLAB_NUCLEUS_DIR  # noqa: E402
 from pxr import Gf, PhysxSchema, Sdf, Usd, UsdGeom, UsdPhysics, UsdShade  # noqa: E402
 
 try:
@@ -132,7 +147,7 @@ Point2 = tuple[float, float]
 @dataclass(frozen=True)
 class RobotSpec:
     name: str
-    usd_path: Path | None
+    usd_path: Path | str | None
     source: str
     base_translation: tuple[float, float, float]
     base_quaternion_xyzw: tuple[float, float, float, float]
@@ -143,6 +158,10 @@ class RobotSpec:
     default_joint_position: list[float] | None = None
     joint_names: list[str] | None = None
     joint_positions: dict[str, float] | None = None
+    source_base_translation: tuple[float, float, float] | None = None
+    source_base_quaternion_xyzw: tuple[float, float, float, float] | None = None
+    scene_yaw_deg: float | None = None
+    actuator_config: dict[str, dict[str, object]] | None = None
 
 
 @dataclass(frozen=True)
@@ -461,6 +480,40 @@ def _mat_from_quat_xyzw(quat_xyzw: Iterable[float]) -> Matrix4:
     ]
 
 
+def _normalize_quat_xyzw(quat_xyzw: Iterable[float]) -> tuple[float, float, float, float]:
+    x, y, z, w = [float(v) for v in quat_xyzw]
+    norm = math.sqrt(x * x + y * y + z * z + w * w)
+    if norm <= 1.0e-12:
+        return (0.0, 0.0, 0.0, 1.0)
+    return (x / norm, y / norm, z / norm, w / norm)
+
+
+def _quat_xyzw_mul(
+    lhs: Iterable[float],
+    rhs: Iterable[float],
+) -> tuple[float, float, float, float]:
+    ax, ay, az, aw = _normalize_quat_xyzw(lhs)
+    bx, by, bz, bw = _normalize_quat_xyzw(rhs)
+    return _normalize_quat_xyzw(
+        (
+            aw * bx + ax * bw + ay * bz - az * by,
+            aw * by - ax * bz + ay * bw + az * bx,
+            aw * bz + ax * by - ay * bx + az * bw,
+            aw * bw - ax * bx - ay * by - az * bz,
+        )
+    )
+
+
+def _yaw_quat_xyzw(yaw_deg: float) -> tuple[float, float, float, float]:
+    half = 0.5 * math.radians(float(yaw_deg))
+    return (0.0, 0.0, math.sin(half), math.cos(half))
+
+
+def _quat_xyzw_to_wxyz(quat_xyzw: Iterable[float]) -> tuple[float, float, float, float]:
+    x, y, z, w = _normalize_quat_xyzw(quat_xyzw)
+    return (w, x, y, z)
+
+
 def _mat_axis_angle(axis: Iterable[float], angle: float) -> Matrix4:
     ax, ay, az = [float(v) for v in axis]
     norm = math.sqrt(ax * ax + ay * ay + az * az)
@@ -656,12 +709,14 @@ def _resolve_graspgenx_franka_robot(output_dir: Path) -> RobotSpec:
         length=4,
         field_name="robot_base_pose.quaternion_xyzw",
     )
+    scene_yaw_deg = float(args_cli.franka_scene_yaw_deg)
+    scene_base_quat = _quat_xyzw_mul(_yaw_quat_xyzw(scene_yaw_deg), base_quat)
 
     curobo_cfg = cfg.get("curobo", {})
     default_joint_position = None
     if isinstance(curobo_cfg, dict) and "default_joint_position" in curobo_cfg:
         default_joint_position = [float(v) for v in curobo_cfg["default_joint_position"]]
-    joint_names = [
+    arm_joint_names = [
         "panda_joint1",
         "panda_joint2",
         "panda_joint3",
@@ -670,23 +725,64 @@ def _resolve_graspgenx_franka_robot(output_dir: Path) -> RobotSpec:
         "panda_joint6",
         "panda_joint7",
     ]
-    joint_positions = dict(zip(joint_names, default_joint_position or [0.0] * len(joint_names)))
+    finger_joint_names = ["panda_finger_joint1", "panda_finger_joint2"]
+    joint_names = arm_joint_names + finger_joint_names
+    joint_positions = dict(zip(arm_joint_names, default_joint_position or [0.0] * len(arm_joint_names)))
     joint_positions["panda_finger_joint1"] = 0.04
     joint_positions["panda_finger_joint2"] = 0.04
+    dynamic_cfg = cfg.get("dynamic", {})
+    if not isinstance(dynamic_cfg, dict):
+        dynamic_cfg = {}
+    arm_kp = float(dynamic_cfg.get("arm_kp", 2000.0))
+    arm_kd = float(dynamic_cfg.get("arm_kd", 100.0))
+    finger_kp = float(dynamic_cfg.get("finger_kp", 4000.0))
+    finger_kd = float(dynamic_cfg.get("finger_kd", 400.0))
+    finger_effort_limit = float(dynamic_cfg.get("finger_effort_limit", 1000.0))
+    actuator_config: dict[str, dict[str, object]] = {
+        "panda_shoulder": {
+            "joint_names_expr": ["panda_joint[1-4]"],
+            "effort_limit_sim": 87.0,
+            "stiffness": arm_kp,
+            "damping": arm_kd,
+        },
+        "panda_forearm": {
+            "joint_names_expr": ["panda_joint[5-7]"],
+            "effort_limit_sim": 12.0,
+            "stiffness": arm_kp,
+            "damping": arm_kd,
+        },
+        "panda_hand": {
+            "joint_names_expr": ["panda_finger_joint.*"],
+            "effort_limit_sim": finger_effort_limit,
+            "stiffness": finger_kp,
+            "damping": finger_kd,
+        },
+    }
+    franka_usd = (
+        str(args_cli.franka_usd).strip()
+        if args_cli.franka_usd is not None and str(args_cli.franka_usd).strip()
+        else os.environ.get("FRANKA_USD", "").strip()
+    )
+    if not franka_usd:
+        franka_usd = f"{ISAACLAB_NUCLEUS_DIR}/Robots/FrankaEmika/panda_instanceable.usd"
 
     return RobotSpec(
         name="graspgenx_franka_panda",
-        usd_path=None,
-        source="GraspGenX end2end/robots/franka_panda.yaml",
+        usd_path=franka_usd,
+        source="GraspGenX end2end/robots/franka_panda.yaml with Isaac Lab actuated Franka USD",
         source_config=cfg_path,
         urdf_path=urdf_path,
         asset_root_path=asset_root,
         base_translation=base_translation,  # type: ignore[arg-type]
-        base_quaternion_xyzw=base_quat,  # type: ignore[arg-type]
-        render_mode="static_urdf_obj_meshes",
+        base_quaternion_xyzw=scene_base_quat,
+        render_mode="articulation_usd",
         default_joint_position=default_joint_position,
         joint_names=joint_names,
         joint_positions=joint_positions,
+        source_base_translation=base_translation,  # type: ignore[arg-type]
+        source_base_quaternion_xyzw=base_quat,  # type: ignore[arg-type]
+        scene_yaw_deg=scene_yaw_deg,
+        actuator_config=actuator_config,
     )
 
 
@@ -762,7 +858,67 @@ def _create_static_urdf_robot(stage: Usd.Stage, robot: RobotSpec) -> None:
     _log(f"authored {mesh_count} static Franka mesh prims")
 
 
-def _create_robot(stage: Usd.Stage, robot: RobotSpec) -> None:
+def _franka_actuator_cfg(robot: RobotSpec) -> dict[str, ImplicitActuatorCfg]:
+    actuator_config = robot.actuator_config or {}
+
+    def implicit_cfg(name: str) -> ImplicitActuatorCfg:
+        cfg = actuator_config[name]
+        return ImplicitActuatorCfg(
+            joint_names_expr=list(cfg["joint_names_expr"]),  # type: ignore[arg-type]
+            effort_limit_sim=float(cfg["effort_limit_sim"]),
+            stiffness=float(cfg["stiffness"]),
+            damping=float(cfg["damping"]),
+        )
+
+    return {
+        "panda_shoulder": implicit_cfg("panda_shoulder"),
+        "panda_forearm": implicit_cfg("panda_forearm"),
+        "panda_hand": implicit_cfg("panda_hand"),
+    }
+
+
+def _create_franka_articulation(robot: RobotSpec) -> Articulation:
+    if robot.usd_path is None:
+        raise ValueError("Franka articulation is missing usd_path")
+    _log(f"spawning actuated Franka articulation from USD: {robot.usd_path}")
+    franka_cfg = ArticulationCfg(
+        prim_path="/World/Robot",
+        spawn=sim_utils.UsdFileCfg(
+            usd_path=str(robot.usd_path),
+            activate_contact_sensors=False,
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                disable_gravity=True,
+                retain_accelerations=True,
+                linear_damping=0.0,
+                angular_damping=0.0,
+                max_depenetration_velocity=5.0,
+            ),
+            articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+                enabled_self_collisions=True,
+                solver_position_iteration_count=8,
+                solver_velocity_iteration_count=0,
+                sleep_threshold=0.005,
+                stabilization_threshold=0.0005,
+                fix_root_link=True,
+            ),
+            joint_drive_props=sim_utils.JointDrivePropertiesCfg(drive_type="force"),
+        ),
+        init_state=ArticulationCfg.InitialStateCfg(
+            pos=robot.base_translation,
+            rot=_quat_xyzw_to_wxyz(robot.base_quaternion_xyzw),
+            joint_pos=robot.joint_positions or {".*": 0.0},
+            joint_vel={".*": 0.0},
+        ),
+        actuators=_franka_actuator_cfg(robot),
+        soft_joint_pos_limit_factor=1.0,
+    )
+    return Articulation(franka_cfg)
+
+
+def _create_robot(stage: Usd.Stage, robot: RobotSpec) -> Articulation | None:
+    if robot.render_mode == "articulation_usd":
+        return _create_franka_articulation(robot)
+
     robot_prim = UsdGeom.Xform.Define(stage, "/World/Robot").GetPrim()
     if robot.render_mode == "usd_reference":
         if robot.usd_path is None:
@@ -773,14 +929,14 @@ def _create_robot(stage: Usd.Stage, robot: RobotSpec) -> None:
             robot.base_translation,
             rotate_quat_xyzw=robot.base_quaternion_xyzw,
         )
-        return
+        return None
 
     if robot.render_mode == "static_urdf_obj_meshes":
         if robot.urdf_path is None:
             raise ValueError("Static URDF robot is missing urdf_path")
         _set_xform(robot_prim, (0.0, 0.0, 0.0))
         _create_static_urdf_robot(stage, robot)
-        return
+        return None
 
     raise ValueError(f"Unsupported robot render mode: {robot.render_mode}")
 
@@ -796,9 +952,15 @@ def _robot_metadata(robot: RobotSpec) -> dict[str, object]:
         "asset_root_path": str(robot.asset_root_path) if robot.asset_root_path else None,
         "base_translation": list(robot.base_translation),
         "base_quaternion_xyzw": list(robot.base_quaternion_xyzw),
+        "source_base_translation": list(robot.source_base_translation) if robot.source_base_translation else None,
+        "source_base_quaternion_xyzw": (
+            list(robot.source_base_quaternion_xyzw) if robot.source_base_quaternion_xyzw else None
+        ),
+        "scene_yaw_deg": robot.scene_yaw_deg,
         "joint_names": robot.joint_names,
         "default_joint_position": robot.default_joint_position,
         "joint_positions": robot.joint_positions,
+        "actuator_config": robot.actuator_config,
     }
 
 
@@ -1225,13 +1387,66 @@ def _bake_root_transform(stage: Usd.Stage, prim_path: str, record: dict[str, obj
     xformable.AddTransformOp().Set(world_xform)
 
 
-def _settle_scene(sim, stage: Usd.Stage, star_record: dict[str, object], settle_steps: int) -> bool:
+def _reset_robot_articulation(robot: Articulation | None) -> None:
+    if robot is None:
+        return
+    root_state = robot.data.default_root_state.clone()
+    robot.write_root_pose_to_sim(root_state[:, :7])
+    robot.write_root_velocity_to_sim(root_state[:, 7:])
+    joint_pos = robot.data.default_joint_pos.clone()
+    joint_vel = robot.data.default_joint_vel.clone()
+    robot.write_joint_state_to_sim(joint_pos, joint_vel)
+    robot.set_joint_position_target(joint_pos)
+    robot.write_data_to_sim()
+    robot.reset()
+
+
+def _write_robot_articulation_targets(robot: Articulation | None) -> None:
+    if robot is None:
+        return
+    robot.set_joint_position_target(robot.data.default_joint_pos)
+    robot.write_data_to_sim()
+
+
+def _update_robot_articulation(robot: Articulation | None, dt: float) -> None:
+    if robot is None:
+        return
+    robot.update(dt)
+
+
+def _robot_runtime_metadata(robot: Articulation | None) -> dict[str, object]:
+    if robot is None:
+        return {"articulation_initialized": False}
+    return {
+        "articulation_initialized": True,
+        "is_fixed_base": bool(robot.is_fixed_base),
+        "num_joints": int(robot.num_joints),
+        "num_bodies": int(robot.num_bodies),
+        "joint_names_sim": list(robot.joint_names),
+        "body_names_sim": list(robot.body_names),
+        "actuator_group_names": list(robot.actuators.keys()),
+    }
+
+
+def _settle_scene(
+    sim,
+    stage: Usd.Stage,
+    star_record: dict[str, object],
+    settle_steps: int,
+    robot_articulation: Articulation | None,
+) -> bool:
+    _log("resetting SimulationContext for scene initialization")
+    sim.reset()
+    _reset_robot_articulation(robot_articulation)
     if settle_steps <= 0 or not bool(star_record.get("dynamic")):
+        sim.render()
+        update_stage()
         return False
     _log(f"settling dynamic star for {settle_steps} physics steps")
-    sim.reset()
     for _ in range(settle_steps):
+        _write_robot_articulation_targets(robot_articulation)
         sim.step(render=False)
+        _update_robot_articulation(robot_articulation, float(sim.cfg.dt))
     sim.render()
     update_stage()
     _bake_root_transform(stage, str(star_record["prim_path"]), star_record)
@@ -1369,6 +1584,7 @@ def _capture_view(
 def _capture_overview_video(
     *,
     sim,
+    robot_articulation: Articulation | None,
     eye: tuple[float, float, float],
     target: tuple[float, float, float],
     output_dir: Path,
@@ -1400,12 +1616,15 @@ def _capture_overview_video(
     camera = TiledCamera(camera_cfg)
     _log("resetting SimulationContext")
     sim.reset()
+    _reset_robot_articulation(robot_articulation)
 
     _log(f"capturing overview video frames with TiledCamera: {frame_count} frames")
     for frame_idx in range(frame_count):
         step_count = 1 if frame_idx == 0 else max(1, int(sim_steps_per_frame))
         for _ in range(step_count):
+            _write_robot_articulation_targets(robot_articulation)
             sim.step(render=False)
+            _update_robot_articulation(robot_articulation, float(sim.cfg.dt))
         if frame_callback is not None:
             frame_callback(frame_idx, frame_count)
         sim.render()
@@ -1477,6 +1696,7 @@ def _render_cube_motion_scene(
     output_dir: Path,
     stage: Usd.Stage,
     sim,
+    robot_articulation: Articulation | None,
     robot_spec: RobotSpec,
     table: dict[str, float],
     floor_mat: UsdShade.Material,
@@ -1510,6 +1730,12 @@ def _render_cube_motion_scene(
     sun.CreateAttribute("inputs:angle", Sdf.ValueTypeNames.Float).Set(0.35)
     _set_xform(sun, (0.0, 0.0, 0.0), rotate_xyz_deg=(-45.0, 0.0, 35.0))
 
+    _log("resetting SimulationContext for cube-motion initialization")
+    sim.reset()
+    _reset_robot_articulation(robot_articulation)
+    sim.render()
+    update_stage()
+
     trajectory: list[dict[str, object]] = []
 
     def frame_callback(frame_idx: int, frame_count: int) -> None:
@@ -1520,9 +1746,10 @@ def _render_cube_motion_scene(
     metadata = {
         "generated_at_unix": time.time(),
         "task": "single_cube_motion",
-        "task_description": "Static GraspGenX Franka with one cube moved by deterministic disturbance kicks.",
+        "task_description": "Actuated GraspGenX Franka rendered with one cube moved by deterministic disturbance kicks.",
         "simulation_backend": "Isaac Sim / Isaac Lab / PhysX USD scene",
         "robot": _robot_metadata(robot_spec),
+        "robot_runtime": _robot_runtime_metadata(robot_articulation),
         "axes": {
             "table_long_axis": "world_y",
             "table_short_axis": "world_x",
@@ -1556,7 +1783,8 @@ def _render_cube_motion_scene(
         "checks": {
             "robot_selected": robot_spec.name,
             "uses_graspgenx_franka": robot_spec.name == "graspgenx_franka_panda",
-            "franka_is_static": True,
+            "franka_is_articulation": robot_spec.render_mode == "articulation_usd",
+            "franka_has_actuators": bool(robot_spec.actuator_config),
             "cube_moves": True,
         },
     }
@@ -1581,6 +1809,7 @@ def _render_cube_motion_scene(
             raise ValueError("--capture_video is currently overview-only")
         frame_paths = _capture_overview_video(
             sim=sim,
+            robot_articulation=robot_articulation,
             eye=eye,
             target=look_at,
             output_dir=output_dir,
@@ -1656,7 +1885,7 @@ def main() -> None:
         _log(f"referencing robot USD: {robot_spec.usd_path}")
     else:
         _log(f"creating robot with render_mode={robot_spec.render_mode}")
-    _create_robot(stage, robot_spec)
+    robot_articulation = _create_robot(stage, robot_spec)
 
     _log("creating table")
     table = _create_table(
@@ -1676,6 +1905,7 @@ def main() -> None:
             output_dir=output_dir,
             stage=stage,
             sim=sim,
+            robot_articulation=robot_articulation,
             robot_spec=robot_spec,
             table=table,
             floor_mat=floor_mat,
@@ -1740,7 +1970,7 @@ def main() -> None:
     _set_xform(sun, (0.0, 0.0, 0.0), rotate_xyz_deg=(-45.0, 0.0, 35.0))
 
     settle_steps = max(0, int(args_cli.settle_steps))
-    settled_transform_baked = _settle_scene(sim, stage, star, settle_steps)
+    settled_transform_baked = _settle_scene(sim, stage, star, settle_steps, robot_articulation)
 
     goal_pose = {
         "position": [
@@ -1757,6 +1987,7 @@ def main() -> None:
         "task_description": "Pick the star-shaped object and place it into the matching star-shaped fixture.",
         "simulation_backend": "Isaac Sim / Isaac Lab / PhysX USD scene",
         "robot": _robot_metadata(robot_spec),
+        "robot_runtime": _robot_runtime_metadata(robot_articulation),
         "robot_usd": str(robot_spec.usd_path) if robot_spec.usd_path else None,
         "axes": {
             "table_long_axis": "world_y",
@@ -1796,6 +2027,9 @@ def main() -> None:
         "checks": {
             "robot_selected": robot_spec.name,
             "uses_graspgenx_franka": robot_spec.name == "graspgenx_franka_panda",
+            "franka_is_articulation": robot_spec.render_mode == "articulation_usd",
+            "franka_has_actuators": bool(robot_spec.actuator_config),
+            "franka_scene_yaw_points_arm_toward_table": abs(((float(robot_spec.scene_yaw_deg or 0.0) % 360.0) - 180.0)) < 1.0e-6,
             "same_table_convention_as_clutter_bin_scene": True,
             "star_has_convex_child_colliders": True,
             "fixture_is_rectangular_block_with_star_through_hole": True,
@@ -1835,6 +2069,7 @@ def main() -> None:
             raise ValueError("--capture_video is currently overview-only")
         frame_paths = _capture_overview_video(
             sim=sim,
+            robot_articulation=robot_articulation,
             eye=eye,
             target=look_at,
             output_dir=output_dir,

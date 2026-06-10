@@ -77,6 +77,8 @@ echo "SCENE=$SCENE"
 echo "ROBOT=$ROBOT"
 echo "GRASPGENX_NFS=$GRASPGENX_NFS"
 echo "CUROBO_ASSETS_NFS=$CUROBO_ASSETS_NFS"
+echo "FRANKA_USD=${FRANKA_USD:-}"
+echo "FRANKA_SCENE_YAW_DEG=${FRANKA_SCENE_YAW_DEG:-180.0}"
 
 srun \
   --ntasks=1 \
@@ -113,6 +115,8 @@ srun \
       --robot \"$ROBOT\" \
       --graspgenx_root /graspgenx \
       --curobo_assets_root /curobo_assets \
+      --franka_usd \"${FRANKA_USD:-}\" \
+      --franka_scene_yaw_deg \"${FRANKA_SCENE_YAW_DEG:-180.0}\" \
       --seed \"${SEED:-23}\" \
       --star_outer_radius \"${STAR_OUTER_RADIUS:-0.092}\" \
       --star_inner_radius \"${STAR_INNER_RADIUS:-0.042}\" \
