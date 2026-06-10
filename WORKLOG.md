@@ -889,6 +889,45 @@ Next:
   then use the same settings for the final overview video if zero velocity is
   confirmed.
 
+## 2026-06-09 21:11 PDT - Rest Gate Tensor Write Index Fix
+
+Goal:
+- Unblock the rest-gate run that stalled while trying to apply the final
+  zero-velocity sleep state.
+
+Hypothesis:
+- `RigidBodyView.set_velocities()` should be called with explicit tensor indices,
+  matching Isaac Lab's `RigidObject.write_root_velocity_to_sim()` pattern.
+
+Change:
+- Updated `_zero_body_velocities()` to pass
+  `indices=torch.arange(count, dtype=torch.long, device=velocities.device)`.
+
+Version Control:
+- branch: `codex/dextrah-cluster-dev`
+- base_commit: `474d24192384601d3392c4ad3bec6023eee72992`
+- implementation_commit: pending
+- push/pull: pending
+- changed_files: `dextrah_lab/scene_scripts/render_clutter_bin_env.py`,
+  `WORKLOG.md`
+
+Command / Job:
+- canceled command: l401 allocation `1019575`, run
+  `clutter_bin_vel_final_sphere160_20260609_210640`
+- evidence: run entered the settle loop and then stopped emitting project logs;
+  it was canceled after several minutes.
+
+Result:
+- status: fixed locally; relaunch pending.
+
+Analysis:
+- The 240/384 sphere runs remained too energetic for the current rest gate.
+  The final candidate is therefore 160 spheres unless a larger count can be
+  made to pass without excessive rest-gate thresholds.
+
+Next:
+- Commit/push/pull and rerun the 160-sphere rest-gate candidate.
+
 ## 2026-06-09 21:06 PDT - Newton OpenGL Clutter-Bin Final Video
 
 Goal:

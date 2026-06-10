@@ -710,7 +710,8 @@ def _zero_body_velocities(body_view) -> None:
     import torch
 
     velocities = body_view.get_velocities()
-    body_view.set_velocities(torch.zeros_like(velocities))
+    indices = torch.arange(velocities.shape[0], dtype=torch.long, device=velocities.device)
+    body_view.set_velocities(torch.zeros_like(velocities), indices=indices)
 
 
 def _settle_scene(
