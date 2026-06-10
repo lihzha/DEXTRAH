@@ -4267,3 +4267,50 @@ Next:
   implementation and task-specific close/lift hyperparameters.
 - Monitor TensorBoard for closure and lift rather than reward alone; request
   sidecar deterministic eval/video at early checkpoints.
+
+## 2026-06-10 07:10 PDT - Franka Star Close-Band/Sigma PPO Launched
+
+Goal:
+- Train the Franka star kitting policy from the validated close-band reward
+  environment with stable DEXTRAH rl_games PPO.
+
+Command / Job:
+- training job_id: `28936930`
+- run_name: `franka_star_closeband_sigma_ppo_20260610_071013`
+- source commit at launch:
+  `05d9e0c95cabf8b34f427acc5cd1fef7a4753c68`
+- behavior validation commit:
+  `83cd32d93425b03cb06947d3dc2dac3e379d7de9`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_star_kitting/franka_star_closeband_sigma_ppo_20260610_071013`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28936930.out`
+
+Hyperparameters:
+- `NUM_ENVS=2048`
+- `HORIZON_LENGTH=96`
+- `MINIBATCH_SIZE=32768`
+- `CENTRAL_VALUE_MINIBATCH_SIZE=32768`
+- `MAX_ITERATIONS=600`
+- `SAVE_FREQUENCY=25`
+- `LEARNING_RATE=0.0001`
+- `CENTRAL_VALUE_LEARNING_RATE=0.00008`
+- `ENTROPY_COEF=0.0005`
+- `SIGMA_INIT_VAL=-1.0`
+- `GAMMA=0.997`
+- `TAU=0.95`
+- `KL_THRESHOLD=0.012`
+- `MINI_EPOCHS=4`
+- `AUTO_RESUME=False`
+- `SELF_RELAUNCH=False`
+- `USE_CUDA_GRAPH=False`
+- `DISTRIBUTED=True`
+- `MULTI_GPU=True`
+
+Eval sidecar:
+- Darwin assigned to launch deterministic eval/video at ep25 and later
+  checkpoints without editing source or controlling training.
+
+Next:
+- Monitor Slurm startup and TensorBoard. Continue only if closure/lift metrics
+  improve; stop and patch if reward rises while the policy remains open/hover.
