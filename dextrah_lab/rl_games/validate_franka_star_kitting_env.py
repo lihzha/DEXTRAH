@@ -170,7 +170,7 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
         "grasp_sharpness": 18.0,
         "lift_weight": 320.0,
         "descend_action_weight": 10.0,
-        "lift_action_weight": 60.0,
+        "lift_action_weight": 16.0,
         "close_near_weight": 3.0,
         "close_action_weight": 4.0,
         "prelift_move_penalty_weight": -45.0,
@@ -335,6 +335,12 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
     checks.check(
         "reward_actual_lift_exceeds_lift_intent",
         bool((_reward_total(**lifted) > _reward_total(**lift_intent)).item()),
+        lift_intent_reward=_mean(_reward_total(**lift_intent)),
+        lifted_reward=_mean(_reward_total(**lifted)),
+    )
+    checks.check(
+        "reward_lift_intent_without_lift_is_capped",
+        bool((_reward_total(**lift_intent) < torch.tensor([45.0], device=device)).item()),
         lift_intent_reward=_mean(_reward_total(**lift_intent)),
         lifted_reward=_mean(_reward_total(**lifted)),
     )

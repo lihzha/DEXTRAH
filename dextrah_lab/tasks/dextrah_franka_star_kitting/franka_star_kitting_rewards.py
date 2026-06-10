@@ -115,6 +115,7 @@ def compute_franka_star_kitting_rewards(
     asymmetry_drag_gate = torch.clamp((finger_distance_asymmetry - 0.030) / 0.070, 0.0, 1.0)
     prelift_stability_gate = 1.0 - torch.clamp((star_initial_xy_error - 0.022) / 0.035, 0.0, 1.0)
     stable_or_lifted_gate = torch.maximum(prelift_stability_gate, lifted_gate)
+    lift_action_progress_gate = 0.15 + 0.85 * torch.clamp(star_lift_height / 0.020, 0.0, 1.0)
     close_far_penalty_gate = torch.clamp((max_finger_to_star_dist - 0.128) / 0.064, 0.0, 1.0)
     descend_gate = (
         torch.clamp((0.205 - ee_to_star_dist) / 0.130, 0.0, 1.0)
@@ -163,6 +164,7 @@ def compute_franka_star_kitting_rewards(
         * prelift_stability_gate
         * lift_ready_gate
         * closed_gripper
+        * lift_action_progress_gate
         * torch.clamp(actions[:, 2], 0.0, 1.0)
     )
     transport_reward = transport_weight * xy_align * lifted_gate

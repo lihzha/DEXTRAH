@@ -5332,6 +5332,68 @@ Command / Job:
 
 Result:
 - status: submitted
+
+## 2026-06-10 14:16 PDT - Franka Lift-Action Exploit Diagnosis And Second Reward Patch
+
+Result:
+- rebalanced Franka training job `28950936`
+  (`franka_star_rebalanced_ppo_20260610_1354`) was canceled after scalar
+  inspection showed a new local optimum.
+- scheduler result: `CANCELLED by 158351`, elapsed `00:27:54`.
+- the run reached at least epoch `275`; reward improved through checkpoint
+  saves, but task metrics did not:
+  - `star_success_rate/iter`: max `0.0`
+  - `star_has_lifted_rate/iter`: max about `0.037`
+  - `star_lift_height/iter`: max about `0.0047 m`
+  - `star_lift_action_reward/iter`: recent about `11-12`, dominant among
+    non-success rewards.
+
+Analysis:
+- The first Franka reward rebalance fixed the high closed-hover reward, but
+  made a second issue visible: `lift_action_reward` was paid before the object
+  actually moved upward. PPO learned to command upward motion near the star
+  without producing a real lift.
+
+Change:
+- `lift_action_weight 60 -> 16`.
+- Added `lift_action_progress_gate = 0.15 + 0.85 * clamp(star_lift_height /
+  0.020, 0, 1)` so lift-action reward is only a small cue before the star
+  height changes and grows after real lift progress starts.
+- Added validation check `reward_lift_intent_without_lift_is_capped`.
+
+Validation:
+- local `py_compile` passed for Franka config/reward/env, validation, shared
+  eval rollout, trainer, and rl-games utils.
+- `bash -n` passed for Franka validation/eval, cube eval, and 8-GPU teacher
+  training wrappers.
+- `git diff --check` passed.
+
+Next:
+- Commit/push/pull this second reward patch.
+- Run Franka validation again from the A100 checkout.
+- Relaunch Franka training only if the validation check confirms the new cap.
+
+## 2026-06-10 13:54 PDT - Rebalanced Franka Validation Result And Training Launch Plan
+
+Result:
+- validation job `28950503` completed with exit code `0:0`.
+- metrics:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_star_validate_reward_rebalanced_20260610_1350/metrics.json`
+- local metrics:
+  `cluster_results/a1002/validations/franka_star_validate_reward_rebalanced_20260610_1350/metrics.json`
+- validation passed with no failed checks.
+- new reward-shape check passed:
+  `reward_hover_pinching_without_lift_is_capped`, hover no-lift reward
+  `34.01615905761719`, lifted reward `359.5626220703125`.
+- scripted rollout still lifted `2/4` envs above the required validation height:
+  max mean lift `0.06609654426574707 m`, per-env max lift
+  `[0.13225120306015015, 0.0, 0.13213497400283813, 0.0]`.
+
+Next Command / Job:
+- launch a comparable Franka PPO run with the rebalanced rewards:
+  `TASK=Dextrah-Franka-Star-Kitting FULL_EXPERIMENT_NAME=franka_star_rebalanced_ppo_20260610_1354 NUM_ENVS=2048 MAX_ITERATIONS=600 USE_CUDA_GRAPH=False LEARNING_RATE=0.0001 CENTRAL_VALUE_LEARNING_RATE=0.00008 HORIZON_LENGTH=96 ENTROPY_COEF=0.00005 SIGMA_INIT_VAL=-2.0 SELF_RELAUNCH=False sbatch cluster/sbatch_train_teacher_8gpu.sh`
+- training job_id: `28950936`
+- status: submitted
 - cube video job_id: `28949649`
 - cube aggregate job_id: `28949651`
 - Franka video job_id: `28949653`
@@ -5400,3 +5462,14 @@ Next:
 - Commit/push/pull the reward fix.
 - Run the Franka validation wrapper from the cluster checkout, then launch a new
   Franka training run only if validation remains healthy.
+
+## 2026-06-10 13:50 PDT - Rebalanced Franka Validation Launch
+
+Command / Job:
+- command:
+  `RUN_NAME=franka_star_validate_reward_rebalanced_20260610_1350 NUM_ENVS=4 NUM_STEPS=220 CAPTURE_VIDEO=False USE_CUDA_GRAPH=False SEED=44 sbatch cluster/sbatch_validate_franka_star_kitting_env_1gpu.sh`
+- validation job_id: `28950503`
+- code_commit: `0ee6a132339f2499a0d92dd3ba53af10885f9f7f`
+
+Result:
+- status: submitted
