@@ -26,6 +26,7 @@ def compute_franka_star_kitting_rewards(
     closed_grasp_weight: float,
     grasp_sharpness: float,
     lift_weight: float,
+    lift_action_weight: float,
     prelift_move_penalty_weight: float,
     close_far_penalty_weight: float,
     transport_weight: float,
@@ -65,6 +66,9 @@ def compute_franka_star_kitting_rewards(
     grasp_reward = grasp_weight * grasp_ready * (0.25 + 0.75 * closed_gripper)
     closed_grasp_reward = closed_grasp_weight * grasp_ready * closed_gripper
     lift_reward = lift_weight * lift_progress * (0.10 + 0.90 * finger_near_star) * (0.10 + 0.90 * closed_gripper)
+    lift_action_reward = (
+        lift_action_weight * prelift_gate * grasp_ready * closed_gripper * torch.clamp(actions[:, 2], 0.0, 1.0)
+    )
     transport_reward = transport_weight * xy_align * lifted_gate
     yaw_reward = yaw_weight * yaw_align * xy_align * lifted_gate
     placement_reward = placement_weight * xy_align * yaw_align * height_align * has_lifted_star.float()
@@ -78,6 +82,7 @@ def compute_franka_star_kitting_rewards(
         grasp_reward,
         closed_grasp_reward,
         lift_reward,
+        lift_action_reward,
         transport_reward,
         yaw_reward,
         placement_reward,

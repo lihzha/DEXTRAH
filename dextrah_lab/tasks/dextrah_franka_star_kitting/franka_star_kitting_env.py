@@ -247,6 +247,7 @@ class DextrahFrankaStarKittingEnv(DirectRLEnv):
             grasp_reward,
             closed_grasp_reward,
             lift_reward,
+            lift_action_reward,
             transport_reward,
             yaw_reward,
             placement_reward,
@@ -274,6 +275,7 @@ class DextrahFrankaStarKittingEnv(DirectRLEnv):
             float(self.cfg.closed_grasp_weight),
             float(self.cfg.grasp_sharpness),
             float(self.cfg.lift_weight),
+            float(self.cfg.lift_action_weight),
             float(self.cfg.prelift_move_penalty_weight),
             float(self.cfg.close_far_penalty_weight),
             float(self.cfg.transport_weight),
@@ -290,6 +292,7 @@ class DextrahFrankaStarKittingEnv(DirectRLEnv):
             + grasp_reward
             + closed_grasp_reward
             + lift_reward
+            + lift_action_reward
             + transport_reward
             + yaw_reward
             + placement_reward
@@ -303,6 +306,7 @@ class DextrahFrankaStarKittingEnv(DirectRLEnv):
             "star_grasp_reward": grasp_reward.mean(),
             "star_closed_grasp_reward": closed_grasp_reward.mean(),
             "star_lift_reward": lift_reward.mean(),
+            "star_lift_action_reward": lift_action_reward.mean(),
             "star_transport_reward": transport_reward.mean(),
             "star_yaw_reward": yaw_reward.mean(),
             "star_placement_reward": placement_reward.mean(),

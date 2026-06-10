@@ -18,12 +18,12 @@ class StarKittingGeometryCfg:
 
     star_outer_radius: float = 0.035
     star_inner_radius: float = 0.016
-    star_thickness: float = 0.024
+    star_thickness: float = 0.032
     fixture_size_x: float = 0.18
     fixture_size_y: float = 0.18
-    fixture_thickness: float = 0.034
+    fixture_thickness: float = 0.044
     fixture_clearance: float = 0.006
-    star_density: float = 520.0
+    star_density: float = 360.0
 
 
 def star_vertices(outer_radius: float, inner_radius: float, *, points: int = 5) -> list[Point2]:
@@ -406,4 +406,3 @@ def create_fixture(
         "hole_outer_radius": hole_outer,
         "hole_inner_radius": hole_inner,
     }
-

@@ -2570,3 +2570,54 @@ Checks:
 
 Next:
 - Commit/push, rerun validation, then relaunch smoke training from scratch.
+
+## 2026-06-10 02:40 PDT - Franka Star Lift Discovery Patch
+
+Goal:
+- Continue the RL/debug loop after the grasp-penalty smoke improved star
+  stability but still failed to learn a lift.
+
+Evidence:
+- validation job_id: `28931647`, run
+  `franka_star_env_validate_grasppenalty_20260610_022701`, status passed.
+- smoke training job_id: `28931669`, run
+  `franka_star_grasppenalty_smoke_ppo_20260610_022923`, status `COMPLETED 0:0`.
+- eval job_id: `28931729`, run
+  `franka_star_grasppenalty_smoke_eval_ep25_20260610_023203`, status
+  `COMPLETED 0:0`; local artifacts in
+  `cluster_results/a1001/franka_star_grasppenalty_smoke_eval_ep25_20260610_023203`.
+- video validation: eval video is `1280x720`, `600` frames, `10.0s`.
+- eval metrics: success stayed `0.0`, max lift was `0.0081 m`,
+  `star_initial_xy_error` stayed bounded below `0.0325 m`, min
+  `finger_center_to_star_dist` was `0.088 m`, and gripper width partially
+  closed from about `0.0635 m` to `0.0499 m`.
+- stale pre-fix production job `28931335`
+  (`franka_star_static_ppo_20260610_015640`) requeued with
+  `SELF_RELAUNCH=True`; it was manually canceled again before launching new
+  work.
+
+Hypothesis:
+- The grasp-penalty reward removed the shove exploit, but the star is still a
+  narrow/relatively heavy object for the Franka parallel gripper and the policy
+  has little dense signal for pulling upward once it is near and closing.
+
+Change:
+- Increased star thickness from `0.024 m` to `0.032 m`, fixture thickness from
+  `0.034 m` to `0.044 m`, and lowered star density from `520` to `360`.
+- Reduced initial spawn spread from `0.035 m`/`35 deg` to
+  `0.025 m`/`25 deg` for the grasp-discovery phase.
+- Added `star_lift_action_reward`, gated by finger proximity, gripper closure,
+  pre-lift state, and positive z action, so it cannot pay out for closing far
+  away from the star.
+- Added validation checks for the new lift-intent reward and updated the
+  scripted validation grasp height to follow the configured star thickness.
+
+Checks:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_rewards.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env_cfg.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env.py dextrah_lab/tasks/dextrah_franka_star_kitting/star_kitting_geometry.py dextrah_lab/rl_games/validate_franka_star_kitting_env.py dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/train.py`
+- `bash -n cluster/sbatch_validate_franka_star_kitting_env_1gpu.sh cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_eval_franka_star_kitting_1gpu.sh`
+- `ruby -e "require 'yaml'; YAML.load_file('dextrah_lab/tasks/dextrah_franka_star_kitting/agents/rl_games_ppo_franka_star_kitting_cfg.yaml'); puts 'yaml ok'"`
+- `git diff --check`
+
+Next:
+- Commit/push, update the A100 checkout, rerun environment validation with
+  video, and only then relaunch smoke training/eval.

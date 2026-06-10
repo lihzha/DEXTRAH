@@ -64,17 +64,17 @@ class DextrahFrankaStarKittingEnvCfg(DirectRLEnvCfg):
     fixture_y = 0.16
     fixture_yaw_deg = 18.0
     star_start_yaw_deg = -24.0
-    star_spawn_xy_randomization = 0.035
-    star_spawn_yaw_randomization_deg = 35.0
+    star_spawn_xy_randomization = 0.025
+    star_spawn_yaw_randomization_deg = 25.0
 
     star_outer_radius = 0.035
     star_inner_radius = 0.016
-    star_thickness = 0.024
+    star_thickness = 0.032
     fixture_size_x = 0.18
     fixture_size_y = 0.18
-    fixture_thickness = 0.034
+    fixture_thickness = 0.044
     fixture_clearance = 0.006
-    star_density = 520.0
+    star_density = 360.0
 
     # Franka geometry/control
     max_gripper_width = 0.08
@@ -144,6 +144,7 @@ class DextrahFrankaStarKittingEnvCfg(DirectRLEnvCfg):
     closed_grasp_weight = 4.0
     grasp_sharpness = 18.0
     lift_weight = 16.0
+    lift_action_weight = 2.0
     prelift_move_penalty_weight = -2.0
     close_far_penalty_weight = -1.5
     transport_weight = 5.0

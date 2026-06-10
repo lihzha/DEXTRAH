@@ -154,6 +154,7 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
         "closed_grasp_weight": 4.0,
         "grasp_sharpness": 18.0,
         "lift_weight": 16.0,
+        "lift_action_weight": 2.0,
         "prelift_move_penalty_weight": -2.0,
         "close_far_penalty_weight": -1.5,
         "transport_weight": 5.0,
@@ -184,6 +185,27 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
         bool((_reward_total(**lifted) > _reward_total(**near)).item()),
         near_reward=_mean(_reward_total(**near)),
         lifted_reward=_mean(_reward_total(**lifted)),
+    )
+
+    lift_intent = dict(near)
+    lift_intent["finger_center_to_star_dist"] = torch.tensor([0.018], device=device)
+    lift_intent["gripper_width"] = torch.tensor([0.018], device=device)
+    lift_intent["actions"] = torch.tensor([[0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -1.0]], device=device)
+    checks.check(
+        "reward_lift_intent_increases_when_grasp_ready",
+        bool((_reward_total(**lift_intent) > _reward_total(**near)).item()),
+        near_reward=_mean(_reward_total(**near)),
+        lift_intent_reward=_mean(_reward_total(**lift_intent)),
+    )
+
+    lift_intent_far = dict(base)
+    lift_intent_far["gripper_width"] = torch.tensor([0.018], device=device)
+    lift_intent_far["actions"] = lift_intent["actions"]
+    checks.check(
+        "reward_lift_intent_is_gated_near_star",
+        bool((_reward_total(**lift_intent) > _reward_total(**lift_intent_far)).item()),
+        lift_intent_reward=_mean(_reward_total(**lift_intent)),
+        far_lift_intent_reward=_mean(_reward_total(**lift_intent_far)),
     )
 
     transported = dict(lifted)
@@ -314,7 +336,7 @@ def _scripted_target(task_env, step: int, num_steps: int) -> tuple[torch.Tensor,
     star = task_env.star_pos.detach()
     goal = task_env.star_goal_pos.detach()
     z_above_star = star[:, 2] + 0.12
-    z_grasp = star[:, 2] + 0.024
+    z_grasp = star[:, 2] + 0.5 * float(task_env.cfg.star_thickness) + 0.010
     z_lift = star[:, 2] + 0.17
     z_place = goal[:, 2] + 0.045
     phase = float(step) / max(float(num_steps - 1), 1.0)
