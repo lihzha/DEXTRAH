@@ -1656,3 +1656,39 @@ Checks:
 - `python3 -m py_compile dextrah_lab/tasks/dextrah_kuka_allegro/dextrah_cube_grasp_env_cfg.py dextrah_lab/scene_scripts/render_star_kitting_env.py`
 - `bash -n cluster/sbatch_render_star_kitting_env.sh cluster/sbatch_train_teacher_8gpu.sh`
 - `git diff --check`
+
+## 2026-06-09 22:49 PDT - Cube PPO Relaunch Running
+
+Version Control:
+- branch: `codex/dextrah-cluster-dev`
+- implementation_commit: `a9a8a75aea268254f19314f44a95a8fc28b79566`
+- import_fix_commit: `55f3484689dfd71815205187fb3d17f0287f2269`
+- remote_commit: `55f3484689dfd71815205187fb3d17f0287f2269`
+- push/sync: pushed to origin and synced to `a1001`.
+
+Command / Job:
+- command:
+  `TASK=Dextrah-Cube-Grasp FULL_EXPERIMENT_NAME=cube_grasp_ppo_opt8gpu_20260609_224426 AUTO_RESUME=True SELF_RELAUNCH=True NUM_ENVS=4096 MAX_ITERATIONS=6000 DISTRIBUTED=True MULTI_GPU=True USE_CUDA_GRAPH=True LEARNING_RATE=0.0002 CENTRAL_VALUE_LEARNING_RATE=0.0001 HORIZON_LENGTH=32 MINIBATCH_SIZE=32768 CENTRAL_VALUE_MINIBATCH_SIZE=32768 MINI_EPOCHS=4 GAMMA=0.995 TAU=0.95 KL_THRESHOLD=0.012 ENTROPY_COEF=0.0005 E_CLIP=0.2 GRAD_NORM=1.0 SAVE_FREQUENCY=25 sbatch --export=ALL cluster/sbatch_train_teacher_8gpu.sh`
+- job_id: `28927711`
+- node: `batch-block7-01395`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28927711.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_cube_grasp/cube_grasp_ppo_opt8gpu_20260609_224426`
+
+Result:
+- status: running after startup checks.
+- Slurm at `00:05:12`: `RUNNING`, exit `0:0`.
+- Verified `params/agent.yaml` values:
+  `learning_rate=0.0002`, `central_value_learning_rate=0.0001`,
+  `horizon_length=32`, `minibatch_size=32768`,
+  `central_value_minibatch_size=32768`, `mini_epochs=4`,
+  `gamma=0.995`, `tau=0.95`, `kl_threshold=0.012`,
+  `entropy_coef=0.0005`, `save_frequency=25`.
+- Verified `params/env.yaml` values:
+  `num_envs=4096`, `enable_adr=false`,
+  `object_spawn.x_width_spawn=[0.08, 0.08]`,
+  `object_spawn.y_width_spawn=[0.08, 0.08]`.
+- Startup log shows all 8 ranks parsing `DextrahCubeGraspEnvCfg`, writing
+  params, creating 4096-env scenes, and starting simulation. No traceback or
+  runtime-error patterns were present in the checked log tail.
