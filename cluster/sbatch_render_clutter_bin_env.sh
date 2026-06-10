@@ -75,19 +75,27 @@ srun \
       --fps \"${FPS:-12}\" \
       --video_seconds \"${VIDEO_SECONDS:-3.0}\" \
       --sim_steps_per_frame \"${SIM_STEPS_PER_FRAME:-2}\" \
-      --settle_steps \"${SETTLE_STEPS:-300}\" \
+      --sim_dt \"${SIM_DT:-0.008333333333333333}\" \
+      --settle_steps \"${SETTLE_STEPS:-900}\" \
+      --max_settle_steps \"${MAX_SETTLE_STEPS:-3000}\" \
+      --settle_check_interval \"${SETTLE_CHECK_INTERVAL:-30}\" \
+      --settle_consecutive_passes \"${SETTLE_CONSECUTIVE_PASSES:-8}\" \
+      --settle_linear_velocity_threshold \"${SETTLE_LINEAR_VELOCITY_THRESHOLD:-1e-6}\" \
+      --settle_angular_velocity_threshold \"${SETTLE_ANGULAR_VELOCITY_THRESHOLD:-1e-5}\" \
       --physics_device \"${PHYSICS_DEVICE:-cuda:0}\" \
-      --contact_offset \"${CONTACT_OFFSET:-0.004}\" \
+      --contact_offset \"${CONTACT_OFFSET:-0.0035}\" \
       --rest_offset \"${REST_OFFSET:-0.0}\" \
-      --solver_position_iterations \"${SOLVER_POSITION_ITERATIONS:-12}\" \
-      --solver_velocity_iterations \"${SOLVER_VELOCITY_ITERATIONS:-2}\" \
-      --max_depenetration_velocity \"${MAX_DEPENETRATION_VELOCITY:-3.0}\" \
-      --sphere_static_friction \"${SPHERE_STATIC_FRICTION:-1.2}\" \
-      --sphere_dynamic_friction \"${SPHERE_DYNAMIC_FRICTION:-0.9}\" \
-      --sphere_linear_damping \"${SPHERE_LINEAR_DAMPING:-0.12}\" \
-      --sphere_angular_damping \"${SPHERE_ANGULAR_DAMPING:-0.65}\" \
-      --sphere_sleep_threshold \"${SPHERE_SLEEP_THRESHOLD:-0.03}\" \
-      --sphere_stabilization_threshold \"${SPHERE_STABILIZATION_THRESHOLD:-0.01}\" \
+      --solver_position_iterations \"${SOLVER_POSITION_ITERATIONS:-16}\" \
+      --solver_velocity_iterations \"${SOLVER_VELOCITY_ITERATIONS:-8}\" \
+      --max_depenetration_velocity \"${MAX_DEPENETRATION_VELOCITY:-1.0}\" \
+      --sphere_static_friction \"${SPHERE_STATIC_FRICTION:-1.8}\" \
+      --sphere_dynamic_friction \"${SPHERE_DYNAMIC_FRICTION:-1.2}\" \
+      --sphere_linear_damping \"${SPHERE_LINEAR_DAMPING:-0.35}\" \
+      --sphere_angular_damping \"${SPHERE_ANGULAR_DAMPING:-4.0}\" \
+      --sphere_sleep_threshold \"${SPHERE_SLEEP_THRESHOLD:-0.25}\" \
+      --sphere_stabilization_threshold \"${SPHERE_STABILIZATION_THRESHOLD:-0.05}\" \
+      --sphere_torsional_patch_radius \"${SPHERE_TORSIONAL_PATCH_RADIUS:-0.012}\" \
+      --sphere_min_torsional_patch_radius \"${SPHERE_MIN_TORSIONAL_PATCH_RADIUS:-0.004}\" \
       --seed \"${SEED:-17}\" \
       --bin_l \"${BIN_L:-0.48}\" \
       --gripper_open_width \"${GRIPPER_OPEN_WIDTH:-0.09}\" \

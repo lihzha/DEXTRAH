@@ -664,3 +664,63 @@ Next:
 - Commit/push the OSMesa wrapper fix, pull to l401, relaunch the
   low-resolution smoke, inspect frames/logs, then scale to the final requested
   video.
+
+## 2026-06-09 20:44 PDT - Isaac Lab Clutter-Bin Velocity Settling
+
+Goal:
+- Make the Isaac Lab/PhysX sphere clutter pile settle with simulator-reported
+  velocities damped to zero instead of relying on visual stillness.
+
+Hypothesis:
+- The previous render could keep residual sphere velocities because settling was
+  a fixed-step visual pass and video capture reset/stepped the simulation after
+  that pass. A PhysX tensor velocity check plus higher damping, torsional
+  friction, solver velocity iterations, sleep/stabilization thresholds, and a
+  smaller timestep should let the pile enter the PhysX sleep/zero-velocity state.
+
+Change:
+- Added adaptive settle metrics using `RigidBodyView.get_velocities()`.
+- Added thresholds, check interval, consecutive-pass criteria, and
+  `settle_metrics.json`.
+- Changed the default contact/physics settings for dense spheres:
+  `dt=1/120`, solver iterations `16/8`, depenetration `1.0`,
+  static/dynamic friction `1.8/1.2`, damping `0.35/4.0`,
+  sleep/stabilization thresholds `0.25/0.05`, and torsional patch radii
+  `0.012/0.004`.
+- Changed overview video capture to reuse the current settled simulation state
+  instead of resetting after settling, then bake/export the final transforms.
+
+Version Control:
+- branch: `codex/dextrah-cluster-dev`
+- base_commit: `607e72e6f6cc451dcd82d8479ff1b64580ad9b24`
+- implementation_commit: pending
+- push/pull: pending
+- changed_files:
+  `dextrah_lab/scene_scripts/render_clutter_bin_env.py`,
+  `cluster/sbatch_render_clutter_bin_env.sh`, `WORKLOG.md`
+- remote_commit/status: l401 DEXTRAH checkout currently
+  `607e72e6f6cc451dcd82d8479ff1b64580ad9b24`.
+
+Command / Job:
+- local checks:
+  `python3 -m py_compile dextrah_lab/scene_scripts/render_clutter_bin_env.py`
+  and `bash -n cluster/sbatch_render_clutter_bin_env.sh`
+- job_id: pending
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/clutter_bin_env/<run_name>`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/clutter_bin_<jobid>.out`
+- artifacts: `overview.mp4`, `frames/overview_%04d.png`,
+  `settle_metrics.json`, `scene_metadata.json`, `clutter_bin_env.usda`
+
+Result:
+- status: local checks passed; l401 smoke pending.
+
+Analysis:
+- Official PhysX documentation says a sleeping dynamic rigid actor has zero
+  linear and angular velocity. The acceptance criterion for this pass is
+  therefore the final `settle_metrics.json` reporting all sphere velocities below
+  strict thresholds, preferably exact zero, after repeated consecutive checks.
+
+Next:
+- Commit/push/pull this implementation, launch l401 smoke, inspect
+  `settle_metrics.json` and the overview frames, then tighten or retune the
+  damping/sleep/friction settings if any sphere remains above threshold.

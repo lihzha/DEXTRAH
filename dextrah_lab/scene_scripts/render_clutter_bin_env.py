@@ -20,7 +20,7 @@ import math
 import random
 import time
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable
 
 from isaaclab.app import AppLauncher
 
@@ -36,7 +36,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--rt_subframes", type=int, default=16)
     parser.add_argument("--capture_video", action="store_true", help="Capture an overview PNG sequence for video encoding.")
     parser.add_argument("--sim_steps_per_frame", type=int, default=2)
-    parser.add_argument("--settle_steps", type=int, default=300)
+    parser.add_argument("--sim_dt", type=float, default=1.0 / 120.0)
+    parser.add_argument("--settle_steps", type=int, default=900, help="Minimum physics steps before accepting settle.")
+    parser.add_argument("--max_settle_steps", type=int, default=3000)
+    parser.add_argument("--settle_check_interval", type=int, default=30)
+    parser.add_argument("--settle_consecutive_passes", type=int, default=8)
+    parser.add_argument("--settle_linear_velocity_threshold", type=float, default=1.0e-6)
+    parser.add_argument("--settle_angular_velocity_threshold", type=float, default=1.0e-5)
     parser.add_argument("--bin_l", type=float, default=0.48)
     parser.add_argument("--gripper_open_width", type=float, default=0.09)
     parser.add_argument(
@@ -61,17 +67,19 @@ def parse_args() -> argparse.Namespace:
         help="Optional target sphere count. When >0, layers are expanded to place at least this many spheres.",
     )
     parser.add_argument("--physics_device", default="cpu", help="PhysX device used by SimulationContext video capture.")
-    parser.add_argument("--contact_offset", type=float, default=0.004)
+    parser.add_argument("--contact_offset", type=float, default=0.0035)
     parser.add_argument("--rest_offset", type=float, default=0.0)
-    parser.add_argument("--solver_position_iterations", type=int, default=12)
-    parser.add_argument("--solver_velocity_iterations", type=int, default=2)
-    parser.add_argument("--max_depenetration_velocity", type=float, default=3.0)
-    parser.add_argument("--sphere_static_friction", type=float, default=1.2)
-    parser.add_argument("--sphere_dynamic_friction", type=float, default=0.9)
-    parser.add_argument("--sphere_linear_damping", type=float, default=0.12)
-    parser.add_argument("--sphere_angular_damping", type=float, default=0.65)
-    parser.add_argument("--sphere_sleep_threshold", type=float, default=0.03)
-    parser.add_argument("--sphere_stabilization_threshold", type=float, default=0.01)
+    parser.add_argument("--solver_position_iterations", type=int, default=16)
+    parser.add_argument("--solver_velocity_iterations", type=int, default=8)
+    parser.add_argument("--max_depenetration_velocity", type=float, default=1.0)
+    parser.add_argument("--sphere_static_friction", type=float, default=1.8)
+    parser.add_argument("--sphere_dynamic_friction", type=float, default=1.2)
+    parser.add_argument("--sphere_linear_damping", type=float, default=0.35)
+    parser.add_argument("--sphere_angular_damping", type=float, default=4.0)
+    parser.add_argument("--sphere_sleep_threshold", type=float, default=0.25)
+    parser.add_argument("--sphere_stabilization_threshold", type=float, default=0.05)
+    parser.add_argument("--sphere_torsional_patch_radius", type=float, default=0.012)
+    parser.add_argument("--sphere_min_torsional_patch_radius", type=float, default=0.004)
     parser.add_argument(
         "--clutter_shape",
         choices=("cube", "sphere"),
@@ -96,7 +104,7 @@ import omni.timeline  # noqa: E402
 import omni.usd  # noqa: E402
 import isaaclab.sim as sim_utils  # noqa: E402
 from isaaclab.sensors.camera import TiledCamera, TiledCameraCfg  # noqa: E402
-from isaaclab.sim import PhysxCfg, SimulationCfg  # noqa: E402
+from isaaclab.sim import PhysxCfg, SimulationCfg, SimulationManager  # noqa: E402
 from isaaclab.sim.spawners.materials.physics_materials_cfg import RigidBodyMaterialCfg  # noqa: E402
 from pxr import Gf, PhysxSchema, Sdf, Usd, UsdGeom, UsdPhysics, UsdShade  # noqa: E402
 
@@ -245,7 +253,7 @@ def _add_physics_scene(stage: Usd.Stage) -> None:
 def _create_sim_context():
     _log(f"creating SimulationContext on physics_device={args_cli.physics_device}")
     sim_cfg = SimulationCfg(
-        dt=1.0 / 60.0,
+        dt=float(args_cli.sim_dt),
         render_interval=1,
         device=str(args_cli.physics_device),
         physics_prim_path="/World/physicsScene",
@@ -488,6 +496,8 @@ def _create_dynamic_sphere_clutter(
                     collision_enabled=True,
                     contact_offset=float(args_cli.contact_offset),
                     rest_offset=float(args_cli.rest_offset),
+                    torsional_patch_radius=float(args_cli.sphere_torsional_patch_radius),
+                    min_torsional_patch_radius=float(args_cli.sphere_min_torsional_patch_radius),
                 ),
                 rigid_props=sim_utils.RigidBodyPropertiesCfg(
                     rigid_body_enabled=True,
@@ -562,18 +572,206 @@ def _bake_clutter_transforms(stage: Usd.Stage, clutter: list[dict[str, float]]) 
         xformable.AddTransformOp().Set(world_xform)
 
 
-def _settle_scene(sim, stage: Usd.Stage, clutter: list[dict[str, float]], settle_steps: int) -> bool:
-    if settle_steps <= 0:
-        return False
+def _create_clutter_body_view(prim_expr: str):
+    physics_sim_view = SimulationManager.get_physics_sim_view()
+    view = physics_sim_view.create_rigid_body_view(prim_expr)
+    if getattr(view, "_backend", None) is None:
+        raise RuntimeError(f"Failed to create PhysX rigid body view for {prim_expr}")
+    return view
 
-    _log(f"settling dynamic scene for {settle_steps} physics steps")
+
+def _percentile(values, q: float) -> float:
+    if int(values.numel()) == 0:
+        return 0.0
+    sorted_values = values.sort().values
+    idx = int(math.ceil(float(q) * float(values.numel()))) - 1
+    idx = max(0, min(int(values.numel()) - 1, idx))
+    return float(sorted_values[idx].item())
+
+
+def _velocity_metrics(
+    body_view,
+    *,
+    linear_threshold: float,
+    angular_threshold: float,
+    top_k: int = 5,
+) -> dict[str, Any]:
+    import torch
+
+    velocities = body_view.get_velocities()
+    if velocities is None or int(velocities.numel()) == 0:
+        return {
+            "count": 0,
+            "linear_threshold": float(linear_threshold),
+            "angular_threshold": float(angular_threshold),
+            "all_below_thresholds": True,
+            "all_exact_zero": True,
+            "max_linear_speed": 0.0,
+            "max_angular_speed": 0.0,
+        }
+
+    velocities_cpu = velocities.detach().cpu()
+    linear_speed = torch.linalg.norm(velocities_cpu[:, :3], dim=-1)
+    angular_speed = torch.linalg.norm(velocities_cpu[:, 3:], dim=-1)
+    linear_over = linear_speed > float(linear_threshold)
+    angular_over = angular_speed > float(angular_threshold)
+    combined = linear_speed / max(float(linear_threshold), 1.0e-12) + angular_speed / max(
+        float(angular_threshold), 1.0e-12
+    )
+    top_count = min(top_k, int(velocities_cpu.shape[0]))
+    top_indices = torch.argsort(combined, descending=True)[:top_count]
+    prim_paths = list(getattr(body_view, "prim_paths", []))
+
+    top_movers = []
+    for idx_tensor in top_indices:
+        idx = int(idx_tensor.item())
+        top_movers.append(
+            {
+                "index": idx,
+                "prim_path": prim_paths[idx] if idx < len(prim_paths) else None,
+                "linear_speed": float(linear_speed[idx].item()),
+                "angular_speed": float(angular_speed[idx].item()),
+                "linear_velocity": [float(v) for v in velocities_cpu[idx, :3].tolist()],
+                "angular_velocity": [float(v) for v in velocities_cpu[idx, 3:].tolist()],
+            }
+        )
+
+    return {
+        "count": int(velocities_cpu.shape[0]),
+        "linear_threshold": float(linear_threshold),
+        "angular_threshold": float(angular_threshold),
+        "all_below_thresholds": bool(not linear_over.any().item() and not angular_over.any().item()),
+        "all_exact_zero": bool((velocities_cpu == 0.0).all().item()),
+        "nonzero_velocity_scalar_count": int((velocities_cpu != 0.0).sum().item()),
+        "linear_over_threshold_count": int(linear_over.sum().item()),
+        "angular_over_threshold_count": int(angular_over.sum().item()),
+        "max_linear_speed": float(linear_speed.max().item()),
+        "mean_linear_speed": float(linear_speed.mean().item()),
+        "p95_linear_speed": _percentile(linear_speed, 0.95),
+        "max_angular_speed": float(angular_speed.max().item()),
+        "mean_angular_speed": float(angular_speed.mean().item()),
+        "p95_angular_speed": _percentile(angular_speed, 0.95),
+        "top_movers": top_movers,
+    }
+
+
+def _update_clutter_records_from_view(body_view, clutter: list[dict[str, float]]) -> None:
+    transforms = body_view.get_transforms().detach().cpu()
+    prim_paths = list(getattr(body_view, "prim_paths", []))
+    path_to_record = {str(record.get("prim_path")): record for record in clutter if record.get("prim_path")}
+    for idx, prim_path in enumerate(prim_paths):
+        record = path_to_record.get(str(prim_path))
+        if record is None:
+            continue
+        record.setdefault("initial_x", record.get("x"))
+        record.setdefault("initial_y", record.get("y"))
+        record.setdefault("initial_z", record.get("z"))
+        record["x"] = float(transforms[idx, 0].item())
+        record["y"] = float(transforms[idx, 1].item())
+        record["z"] = float(transforms[idx, 2].item())
+        record["settled_transform_recorded_from_physx"] = True
+
+
+def _settle_scene(
+    sim,
+    clutter: list[dict[str, float]],
+    *,
+    settle_steps: int,
+    dynamic_clutter: bool,
+    clutter_shape: str,
+) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "requested_min_steps": max(0, int(settle_steps)),
+        "max_steps": max(max(0, int(settle_steps)), int(args_cli.max_settle_steps)),
+        "check_interval": max(1, int(args_cli.settle_check_interval)),
+        "consecutive_passes_required": max(1, int(args_cli.settle_consecutive_passes)),
+        "linear_velocity_threshold": float(args_cli.settle_linear_velocity_threshold),
+        "angular_velocity_threshold": float(args_cli.settle_angular_velocity_threshold),
+        "used_velocity_view": False,
+        "settled": False,
+        "ran": False,
+        "samples": [],
+    }
+    if result["requested_min_steps"] <= 0:
+        return result
+
+    _log(
+        "settling dynamic scene for at least "
+        f"{result['requested_min_steps']} steps and at most {result['max_steps']} steps"
+    )
     sim.reset()
-    for _ in range(settle_steps):
+    result["ran"] = True
+
+    body_view = None
+    if dynamic_clutter and clutter_shape == "sphere" and clutter:
+        body_view = _create_clutter_body_view("/World/Clutter/left_bin_sphere_*")
+        result["used_velocity_view"] = True
+        result["body_count"] = int(body_view.count)
+
+    consecutive_passes = 0
+    final_step = 0
+    max_steps = int(result["max_steps"])
+    min_steps = int(result["requested_min_steps"])
+    check_interval = int(result["check_interval"])
+    samples: list[dict[str, Any]] = []
+
+    for step_idx in range(1, max_steps + 1):
         sim.step(render=False)
+        final_step = step_idx
+        should_check = step_idx % check_interval == 0 or step_idx == max_steps
+        if body_view is None or not should_check:
+            continue
+
+        metrics = _velocity_metrics(
+            body_view,
+            linear_threshold=float(args_cli.settle_linear_velocity_threshold),
+            angular_threshold=float(args_cli.settle_angular_velocity_threshold),
+        )
+        sample = {
+            "step": step_idx,
+            "sim_time_s": step_idx * float(sim.cfg.dt),
+            "all_below_thresholds": metrics["all_below_thresholds"],
+            "all_exact_zero": metrics["all_exact_zero"],
+            "max_linear_speed": metrics["max_linear_speed"],
+            "max_angular_speed": metrics["max_angular_speed"],
+            "linear_over_threshold_count": metrics.get("linear_over_threshold_count", 0),
+            "angular_over_threshold_count": metrics.get("angular_over_threshold_count", 0),
+        }
+        samples.append(sample)
+        samples = samples[-24:]
+
+        if step_idx >= min_steps and bool(metrics["all_below_thresholds"]):
+            consecutive_passes += 1
+        else:
+            consecutive_passes = 0
+
+        if consecutive_passes >= int(result["consecutive_passes_required"]):
+            result["settled"] = True
+            break
+
     sim.render()
     update_stage()
-    _bake_clutter_transforms(stage, clutter)
-    return True
+
+    result["actual_steps"] = final_step
+    result["actual_sim_time_s"] = final_step * float(sim.cfg.dt)
+    result["samples"] = samples
+    result["consecutive_passes_observed"] = consecutive_passes
+    if body_view is not None:
+        final_metrics = _velocity_metrics(
+            body_view,
+            linear_threshold=float(args_cli.settle_linear_velocity_threshold),
+            angular_threshold=float(args_cli.settle_angular_velocity_threshold),
+        )
+        result["final_velocity_metrics"] = final_metrics
+        _update_clutter_records_from_view(body_view, clutter)
+        _log(
+            "settle metrics: "
+            f"settled={result['settled']} steps={final_step} "
+            f"max_linear={final_metrics['max_linear_speed']:.3e} "
+            f"max_angular={final_metrics['max_angular_speed']:.3e} "
+            f"exact_zero={final_metrics['all_exact_zero']}"
+        )
+    return result
 
 
 def _write_metadata(path: Path, metadata: dict) -> None:
@@ -713,6 +911,7 @@ def _capture_overview_video(
     fps: int,
     seconds: float,
     sim_steps_per_frame: int,
+    reset_before_capture: bool,
 ) -> list[str]:
     frame_count = max(2, int(round(float(fps) * float(seconds))))
     frames_dir = output_dir / "frames"
@@ -735,8 +934,13 @@ def _capture_overview_video(
     )
     _log("creating overview TiledCamera")
     camera = TiledCamera(camera_cfg)
-    _log("resetting SimulationContext")
-    sim.reset()
+    if reset_before_capture:
+        _log("resetting SimulationContext before video capture")
+        sim.reset()
+    else:
+        _log("capturing from current settled SimulationContext state")
+        sim.render()
+        camera.update(0.0)
 
     _log(f"capturing overview video frames with TiledCamera: {frame_count} frames")
     for frame_idx in range(frame_count):
@@ -912,7 +1116,53 @@ def main() -> None:
     _set_xform(sun, (0.0, 0.0, 0.0), rotate_xyz_deg=(-45.0, 0.0, 35.0))
 
     settle_steps = max(0, int(args_cli.settle_steps))
-    settled_transforms_baked = _settle_scene(sim, stage, clutter, settle_steps)
+    settle_result = _settle_scene(
+        sim,
+        clutter,
+        settle_steps=settle_steps,
+        dynamic_clutter=dynamic_clutter,
+        clutter_shape=str(args_cli.clutter_shape),
+    )
+    _write_metadata(output_dir / "settle_metrics.json", settle_result)
+
+    target = (bin_center_x, left_bin_y, table_top_z + 0.25)
+    views = {
+        "overview": ((0.22, left_bin_y - 0.70, 2.85), target),
+        "robot_side": ((1.35, 0.0, 1.48), (table_center_x, 0.0, table_top_z + 0.28)),
+        "topdown": ((table_center_x, 0.0, 2.65), (table_center_x, 0.0, table_top_z + 0.03)),
+        "filled_bin_close": ((0.02, left_bin_y - 0.72, 1.55), (bin_center_x, left_bin_y, table_top_z + 0.34)),
+    }
+    name = str(args_cli.view)
+    eye, look_at = views[name]
+    if bool(args_cli.capture_video):
+        if name != "overview":
+            raise ValueError("--capture_video is currently overview-only")
+        frame_paths = _capture_overview_video(
+            sim=sim,
+            eye=eye,
+            target=look_at,
+            output_dir=output_dir,
+            fps=int(args_cli.fps),
+            seconds=float(args_cli.video_seconds),
+            sim_steps_per_frame=int(args_cli.sim_steps_per_frame),
+            reset_before_capture=not bool(settle_result.get("ran")),
+        )
+        rendered = {"overview_frames": frame_paths}
+    else:
+        _log(f"capturing view: {name}")
+        rendered = {name: str(_capture_view(name, eye, look_at, output_dir))}
+
+    settled_transforms_baked = False
+    if bool(settle_result.get("ran")):
+        _log("baking final clutter transforms to USD")
+        sim.render()
+        update_stage()
+        _bake_clutter_transforms(stage, clutter)
+        settled_transforms_baked = True
+
+    usd_path = output_dir / "clutter_bin_env.usda"
+    metadata_path = output_dir / "scene_metadata.json"
+    render_manifest_path = output_dir / "render_manifest.json"
 
     metadata = {
         "generated_at_unix": time.time(),
@@ -944,6 +1194,7 @@ def main() -> None:
             "dynamic_sphere_layers": int(args_cli.dynamic_sphere_layers),
             "dynamic_sphere_count_target": int(args_cli.dynamic_sphere_count),
             "settle_steps": settle_steps,
+            "max_settle_steps": int(args_cli.max_settle_steps),
             "settled_transforms_baked_to_usd": settled_transforms_baked,
             "usd_exported_after_settle": True,
             "clutter_size_min": 0.5 * float(args_cli.gripper_open_width),
@@ -953,7 +1204,7 @@ def main() -> None:
         "simulation": {
             "simulation_context_created_before_scene_assets": True,
             "physics_device": str(args_cli.physics_device),
-            "sim_dt": 1.0 / 60.0,
+            "sim_dt": float(args_cli.sim_dt),
             "render_interval": 1,
             "default_static_friction": 1.0,
             "default_dynamic_friction": 1.0,
@@ -972,8 +1223,11 @@ def main() -> None:
             "sphere_angular_damping": float(args_cli.sphere_angular_damping),
             "sleep_threshold": float(args_cli.sphere_sleep_threshold),
             "stabilization_threshold": float(args_cli.sphere_stabilization_threshold),
+            "sphere_torsional_patch_radius": float(args_cli.sphere_torsional_patch_radius),
+            "sphere_min_torsional_patch_radius": float(args_cli.sphere_min_torsional_patch_radius),
             "density": 380.0,
         },
+        "settle": settle_result,
         "bins": {
             "left_filled": left_bin,
             "right_empty": right_bin,
@@ -1001,56 +1255,21 @@ def main() -> None:
         },
     }
     _log("writing metadata")
-    _write_metadata(output_dir / "scene_metadata.json", metadata)
+    _write_metadata(metadata_path, metadata)
 
-    usd_path = output_dir / "clutter_bin_env.usda"
     _log(f"exporting USD: {usd_path}")
     stage.GetRootLayer().Export(str(usd_path))
 
-    target = (bin_center_x, left_bin_y, table_top_z + 0.25)
-    views = {
-        "overview": ((0.22, left_bin_y - 0.70, 2.85), target),
-        "robot_side": ((1.35, 0.0, 1.48), (table_center_x, 0.0, table_top_z + 0.28)),
-        "topdown": ((table_center_x, 0.0, 2.65), (table_center_x, 0.0, table_top_z + 0.03)),
-        "filled_bin_close": ((0.02, left_bin_y - 0.72, 1.55), (bin_center_x, left_bin_y, table_top_z + 0.34)),
-    }
-    name = str(args_cli.view)
-    eye, look_at = views[name]
-    expected_png = output_dir / f"{name}.png"
-    _write_metadata(
-        output_dir / "render_manifest.json",
-        {
-            "usd": str(usd_path),
-            "metadata": str(output_dir / "scene_metadata.json"),
-            "view": name,
-            "expected_png": str(expected_png),
-            "capture_video": bool(args_cli.capture_video),
-        },
-    )
-    if bool(args_cli.capture_video):
-        if name != "overview":
-            raise ValueError("--capture_video is currently overview-only")
-        frame_paths = _capture_overview_video(
-            sim=sim,
-            eye=eye,
-            target=look_at,
-            output_dir=output_dir,
-            fps=int(args_cli.fps),
-            seconds=float(args_cli.video_seconds),
-            sim_steps_per_frame=int(args_cli.sim_steps_per_frame),
-        )
-        rendered = {"overview_frames": frame_paths}
-    else:
-        _log(f"capturing view: {name}")
-        rendered = {name: str(_capture_view(name, eye, look_at, output_dir))}
-
     _log("writing render manifest")
     _write_metadata(
-        output_dir / "render_manifest.json",
+        render_manifest_path,
         {
             "usd": str(usd_path),
-            "metadata": str(output_dir / "scene_metadata.json"),
+            "metadata": str(metadata_path),
+            "settle_metrics": str(output_dir / "settle_metrics.json"),
             "renders": rendered,
+            "view": name,
+            "capture_video": bool(args_cli.capture_video),
             "fps": int(args_cli.fps),
             "video_seconds": float(args_cli.video_seconds),
             "sim_steps_per_frame": int(args_cli.sim_steps_per_frame),
