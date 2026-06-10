@@ -5192,3 +5192,116 @@ Next:
   later verified checkpoint if reward improves or at the next periodic cadence.
 - If success remains zero despite stable reward, inspect the reward term balance
   and success threshold rather than relying on aggregate PPO reward alone.
+
+## 2026-06-10 12:18 PDT - Single-Cube And Franka Kitting Correctness Audit Start
+
+Goal:
+- Thoroughly audit the newly implemented `Dextrah-Cube-Grasp` single-cube RL
+  task and `Dextrah-Franka-Star-Kitting` task before further development.
+
+Hypothesis:
+- Static review plus targeted local and cluster checks are needed because prior
+  jobs showed high rewards with zero deterministic success, which can indicate
+  hidden reward/task bugs rather than normal learning variance.
+
+Change:
+- No task code changes.
+- Started read-only inspection of registrations, env configs, reward functions,
+  eval/validation wrappers, worklog history, live scheduler state, and current
+  training/eval artifacts.
+
+Version Control:
+- branch: `codex/dextrah-cluster-dev`
+- base_commit: `ae755a1b9e554771c541ba8a1f4253dc6f40dfdf`
+- implementation_commit: pending
+- push/pull: not needed for read-only audit start
+- changed_files: `WORKLOG.md`
+- dirty_files_at_start: untracked `AGENTS.md`
+
+Command / Job:
+- command: `git status --short --branch`
+- command: `git rev-parse HEAD`
+- command: `ssh a1001 'squeue -u lzha -o "%.18i %.10T %.35j %.24P %.30R %.8M" | head -40'`
+- active target job: `28943108` cube training
+- active unrelated job: `28942245` DEXTRAH teacher continuation
+- initial evidence paths:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28943108.out`,
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28943333.out`
+
+Result:
+- status: in progress
+- key evidence: `Dextrah-Cube-Grasp` is registered in
+  `dextrah_lab/tasks/dextrah_kuka_allegro/gym_setup.py`; Franka kitting is
+  registered in `dextrah_lab/tasks/dextrah_franka_star_kitting/gym_setup.py`.
+- key evidence: A100 job `28943108` is still running for cube training and must
+  be monitored and artifact-checked before final audit conclusions.
+
+Analysis:
+- Initial code-reading focus is on reward hacking, reset/object state
+  consistency, observation/action dimensions, success predicates, checkpoint
+  runtime state, and eval metrics coverage.
+
+Next:
+- Finish static audit of both envs and wrappers.
+- Parse active cube and latest Franka logs/TensorBoard scalars.
+- Run local compile/import checks and targeted reward/property tests.
+- Launch bounded eval/validation jobs only after static/local evidence defines
+  what needs simulator confirmation.
+
+## 2026-06-10 13:29 PDT - Resume And Requeue Audit Fixes
+
+Goal:
+- Remove reliability bugs found while auditing the cube and Franka RL tasks, so
+  subsequent evidence is not polluted by bad checkpoint/runtime resumes or
+  accidental relaunches.
+
+Hypothesis:
+- The cube run restart was not safe: job `28943108` was explicitly launched
+  from `last_dextrah_cube_grasp_ep_1850_rew_2075.738.pth` while rank sidecars in
+  the same run directory had advanced to epoch `3700`.
+- The training wrapper requeued on TERM before forwarding the signal, so a
+  manual `scancel` could relaunch the same unsafe job.
+
+Change:
+- Updated `DextrahResumableAlgoObserver` to ignore checkpoint runtime state or
+  rank sidecars unless epoch, rank, and world-size match the checkpoint being
+  restored.
+- Updated `cluster/sbatch_train_teacher_8gpu.sh` so `SELF_RELAUNCH=True`
+  requeues only inside a near-walltime signal window by default; early TERM
+  requeue now requires `REQUEUE_ON_EARLY_TERM=True`.
+- Canceled pending/requeued job `28943108` after it had restarted from the old
+  explicit checkpoint.
+
+Version Control:
+- branch: `codex/dextrah-cluster-dev`
+- base_commit: `ae755a1b9e554771c541ba8a1f4253dc6f40dfdf`
+- implementation_commit: pending
+- changed_files:
+  `dextrah_lab/rl_games/rl_games_utils.py`,
+  `cluster/sbatch_train_teacher_8gpu.sh`,
+  `WORKLOG.md`
+
+Command / Job:
+- command: `ssh a1002 'scancel 28943108 ...'`
+- command: `python3 -m py_compile dextrah_lab/rl_games/rl_games_utils.py ...`
+- command: `bash -n cluster/sbatch_train_teacher_8gpu.sh ...`
+- command: `git diff --check`
+
+Result:
+- local Python compile passed for resume/train/eval and both target env files.
+- shell syntax validation passed for training/eval/validation sbatch wrappers.
+- `git diff --check` passed.
+- job `28943108` is no longer queued after the second cancel while pending.
+
+Analysis:
+- This is a confirmed correctness defect in the training infrastructure rather
+  than a task reward bug: explicit older checkpoints could be restored with newer
+  simulator/runtime state, and manual cancellation could keep relaunching the
+  same bad job.
+- The stronger high-epoch cube checkpoints through epoch `3700` still exist and
+  should be used explicitly for bounded eval, not the polluted post-cancel
+  `ep_1875` continuation.
+
+Next:
+- Commit and push the fix, pull it into the A100 checkout, then launch bounded
+  high-epoch cube and Franka evals from explicit checkpoints.

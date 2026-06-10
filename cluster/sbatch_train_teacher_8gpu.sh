@@ -88,15 +88,95 @@ AUTO_RESUME="${AUTO_RESUME:-True}"
 CHECKPOINT="${CHECKPOINT:-}"
 FULL_EXPERIMENT_NAME="${FULL_EXPERIMENT_NAME:-}"
 SELF_RELAUNCH="${SELF_RELAUNCH:-True}"
+REQUEUE_SIGNAL_WINDOW_SECONDS="${REQUEUE_SIGNAL_WINDOW_SECONDS:-420}"
+REQUEUE_ON_EARLY_TERM="${REQUEUE_ON_EARLY_TERM:-False}"
 RUN_NAME="${FULL_EXPERIMENT_NAME:-slurm_${SLURM_JOB_ID}}"
 LOG_FILE="$NFS_ROOT/slurm_logs/dextrah/teacher_8gpu_${SLURM_JOB_ID}.out"
 SRUN_PID=""
 REQUEUE_SUBMITTED=0
 
-requeue_job() {
+time_left_to_seconds() {
+  local raw="${1// /}"
+  if [ -z "$raw" ] || [ "$raw" = "N/A" ] || [ "$raw" = "UNLIMITED" ] || [ "$raw" = "INVALID" ]; then
+    echo "-1"
+    return 0
+  fi
+
+  local days=0
+  local clock="$raw"
+  if [[ "$clock" == *-* ]]; then
+    days="${clock%%-*}"
+    clock="${clock#*-}"
+  fi
+
+  local p1=0
+  local p2=0
+  local p3=""
+  local hours=0
+  local minutes=0
+  local seconds=0
+  IFS=: read -r p1 p2 p3 <<< "$clock"
+  if [ -n "$p3" ]; then
+    hours="$p1"
+    minutes="$p2"
+    seconds="$p3"
+  else
+    minutes="$p1"
+    seconds="$p2"
+  fi
+
+  if ! [[ "$days" =~ ^[0-9]+$ && "$hours" =~ ^[0-9]+$ && "$minutes" =~ ^[0-9]+$ && "$seconds" =~ ^[0-9]+$ ]]; then
+    echo "-1"
+    return 0
+  fi
+  echo $((10#$days * 86400 + 10#$hours * 3600 + 10#$minutes * 60 + 10#$seconds))
+}
+
+current_time_left_seconds() {
+  local raw_left=""
+  raw_left="$(squeue -h -j "$SLURM_JOB_ID" -o "%L" 2>/dev/null | head -n 1 || true)"
+  local parsed
+  parsed="$(time_left_to_seconds "$raw_left")"
+  if [ "$parsed" -ge 0 ]; then
+    echo "$parsed"
+    return 0
+  fi
+
+  if [[ "${SLURM_JOB_END_TIME:-}" =~ ^[0-9]+$ ]]; then
+    local now
+    now="$(date +%s)"
+    echo $((SLURM_JOB_END_TIME - now))
+    return 0
+  fi
+
+  echo "-1"
+}
+
+should_requeue_job() {
   local reason="${1:-signal}"
   if [ "$SELF_RELAUNCH" != "True" ]; then
     echo "SELF_RELAUNCH=$SELF_RELAUNCH; not requeuing job"
+    return 1
+  fi
+
+  if [ "$REQUEUE_ON_EARLY_TERM" = "True" ]; then
+    return 0
+  fi
+
+  local time_left
+  time_left="$(current_time_left_seconds)"
+  if [ "$time_left" -ge 0 ] && [ "$time_left" -le "$REQUEUE_SIGNAL_WINDOW_SECONDS" ]; then
+    return 0
+  fi
+
+  echo "Not requeuing DEXTRAH job ${SLURM_JOB_ID} after $reason; time_left=${time_left}s exceeds requeue window ${REQUEUE_SIGNAL_WINDOW_SECONDS}s"
+  echo "Set REQUEUE_ON_EARLY_TERM=True to requeue non-walltime TERM signals."
+  return 1
+}
+
+requeue_job() {
+  local reason="${1:-signal}"
+  if ! should_requeue_job "$reason"; then
     return 0
   fi
 
@@ -182,6 +262,8 @@ echo "AUTO_RESUME=$AUTO_RESUME"
 echo "CHECKPOINT=$CHECKPOINT"
 echo "FULL_EXPERIMENT_NAME=$FULL_EXPERIMENT_NAME"
 echo "SELF_RELAUNCH=$SELF_RELAUNCH"
+echo "REQUEUE_SIGNAL_WINDOW_SECONDS=$REQUEUE_SIGNAL_WINDOW_SECONDS"
+echo "REQUEUE_ON_EARLY_TERM=$REQUEUE_ON_EARLY_TERM"
 echo "RUN_NAME=$RUN_NAME"
 
 srun \

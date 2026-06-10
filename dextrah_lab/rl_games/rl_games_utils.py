@@ -299,9 +299,14 @@ class DextrahResumableAlgoObserver(AlgoObserver):
             return state
 
         def set_full_state_weights_deferred(weights, set_epoch=True):
+            checkpoint_epoch = self._as_int(weights.get("epoch"))
             runtime_state = weights.get("dextrah_runtime_state")
             env_state = weights.get("env_state")
-            runtime_state = self._load_rank_runtime_sidecar(weights) or runtime_state
+            runtime_state = self._load_rank_runtime_sidecar(weights, checkpoint_epoch) or runtime_state
+            if runtime_state is not None and not self._runtime_state_matches_checkpoint(
+                runtime_state, checkpoint_epoch, "checkpoint"
+            ):
+                runtime_state = None
 
             weights_without_env = dict(weights)
             weights_without_env["env_state"] = None
@@ -348,6 +353,43 @@ class DextrahResumableAlgoObserver(AlgoObserver):
 
     def _world_size(self):
         return int(getattr(self.algo, "world_size", os.environ.get("WORLD_SIZE", 1)))
+
+    def _as_int(self, value):
+        if isinstance(value, torch.Tensor):
+            if value.numel() != 1:
+                return None
+            return int(value.item())
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _runtime_state_matches_checkpoint(self, runtime_state, checkpoint_epoch, source):
+        state_rank = self._as_int(runtime_state.get("rank"))
+        if state_rank is not None and state_rank != self._rank():
+            print(
+                f"[DEXTRAH resume] ignoring {source} runtime state for rank {state_rank} "
+                f"on rank {self._rank()}"
+            )
+            return False
+
+        state_world_size = self._as_int(runtime_state.get("world_size"))
+        if state_world_size is not None and state_world_size != self._world_size():
+            print(
+                f"[DEXTRAH resume] ignoring {source} runtime state with world_size {state_world_size} "
+                f"on world_size {self._world_size()}"
+            )
+            return False
+
+        state_epoch = self._as_int(runtime_state.get("epoch"))
+        if checkpoint_epoch is not None and state_epoch is not None and state_epoch != checkpoint_epoch:
+            print(
+                f"[DEXTRAH resume] ignoring {source} runtime state at epoch {state_epoch} "
+                f"for checkpoint epoch {checkpoint_epoch}"
+            )
+            return False
+
+        return True
 
     def _get_sidecar_interval(self):
         if self._sidecar_interval is not None:
@@ -503,7 +545,7 @@ class DextrahResumableAlgoObserver(AlgoObserver):
         finally:
             self._saving = False
 
-    def _load_rank_runtime_sidecar(self, weights):
+    def _load_rank_runtime_sidecar(self, weights, checkpoint_epoch):
         checkpoint_path = getattr(self.algo, "_dextrah_restore_checkpoint", None)
         if checkpoint_path is None:
             return None
@@ -517,13 +559,8 @@ class DextrahResumableAlgoObserver(AlgoObserver):
         except TypeError:
             runtime_state = torch.load(sidecar_path, map_location="cpu")
 
-        checkpoint_epoch = weights.get("epoch")
-        sidecar_epoch = runtime_state.get("epoch")
-        if checkpoint_epoch is not None and sidecar_epoch is not None and checkpoint_epoch != sidecar_epoch:
-            print(
-                f"[DEXTRAH resume] warning: rank {self._rank()} sidecar epoch {sidecar_epoch} "
-                f"does not match checkpoint epoch {checkpoint_epoch}"
-            )
+        if not self._runtime_state_matches_checkpoint(runtime_state, checkpoint_epoch, "sidecar"):
+            return None
         return runtime_state
 
     def _install_signal_handlers(self):
