@@ -4881,3 +4881,46 @@ Next:
 - Relaunch PPO on the validated full environment with stronger contact-gated
   reward shaping, `SIGMA_INIT_VAL=-1.2`, and checkpoint/eval gates at
   ep25/ep50/ep100.
+
+## 2026-06-10 08:56 PDT - Contact-Gated Full-Task PPO Relaunch
+
+Goal:
+- Train the Franka star-kitting policy on the validated full pickup task after
+  rejecting unsafe near-hand reset curriculum.
+
+Hypothesis:
+- Contact-gated rewards plus explicit penalties for opening near pregrasp and
+  lifting before grasp should prevent the previous hover/open solution. A
+  moderately larger fixed policy sigma should help the policy discover close
+  and lift actions without returning to the fully broad original exploration.
+
+Version Control:
+- branch: `codex/dextrah-cluster-dev`
+- implementation_commit: `6066c2a9dfd6534cf25f213d9da81bcada2cc45e`
+- remote_commit/status: remote checkout fast-forwarded to `6066c2a`, clean.
+- environment gate:
+  `franka_star_env_validate_contactgate_full180_final_20260610_0852`, job
+  `28941445`, passed all checks.
+
+Command / Job:
+- command:
+  `sbatch --export=ALL,TASK=Dextrah-Franka-Star-Kitting,FULL_EXPERIMENT_NAME=franka_star_contactgate_full_sigma12_ppo_20260610_0855,NUM_ENVS=2048,HORIZON_LENGTH=96,MINIBATCH_SIZE=32768,CENTRAL_VALUE_MINIBATCH_SIZE=32768,MAX_ITERATIONS=600,SAVE_FREQUENCY=25,ENTROPY_COEF=0.0007,SIGMA_INIT_VAL=-1.2,LEARNING_RATE=0.0001,CENTRAL_VALUE_LEARNING_RATE=0.00008,GAMMA=0.997,TAU=0.95,KL_THRESHOLD=0.012,MINI_EPOCHS=4,DISTRIBUTED=True,MULTI_GPU=True,USE_CUDA_GRAPH=False,AUTO_RESUME=False,SELF_RELAUNCH=False,STAR_RESET_NEAR_HAND_PROBABILITY=0.0 cluster/sbatch_train_teacher_8gpu.sh`
+- job_id: `28941461`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_star_kitting/franka_star_contactgate_full_sigma12_ppo_20260610_0855`
+- logs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28941461.out`
+
+Expected Checkpoints / Evals:
+- sidecar agent: `019eb0f7-19e6-7070-957c-bc1e9d8272bf`
+- checkpoint gates: ep25, ep50, ep100 deterministic videos/metrics.
+- monitor keys:
+  `star_success_rate`, `star_has_lifted_rate`, `star_lift_height`,
+  `star_gripper_action`, `star_gripper_close_action`,
+  `star_open_near_penalty`, `star_ungrasped_lift_penalty`,
+  `star_initial_xy_error`, `star_prelift_move_penalty`.
+
+Next:
+- Watch startup and TensorBoard scalars.
+- If ep100 deterministic eval still shows open/hover with no lift, stop and
+  patch again instead of burning the full allocation.
