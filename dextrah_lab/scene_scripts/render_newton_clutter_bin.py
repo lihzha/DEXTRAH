@@ -424,6 +424,7 @@ def _sphere_specs(
     layer_step = 1.16 * nominal
     max_diameter = min(1.20 * nominal, 0.82 * min(step_x, step_y, layer_step))
     min_diameter = min(0.58 * nominal, 0.75 * max_diameter)
+    mode_diameter = min(max_diameter, max(min_diameter, 0.88 * nominal))
     colors = [
         (0.72, 0.22, 0.18, 1.0),
         (0.92, 0.66, 0.18, 1.0),
@@ -442,7 +443,7 @@ def _sphere_specs(
         for row_idx, col_idx in cells:
             if len(specs) >= count:
                 break
-            diameter = float(rng.triangular(min_diameter, max_diameter, 0.88 * nominal))
+            diameter = float(rng.triangular(min_diameter, mode_diameter, max_diameter))
             radius = diameter / 2.0
             safe = radius + 0.018
             x = dims.bin_center_x - usable / 2.0 + (col_idx + rng.uniform(0.35, 0.65)) * step_x + layer_jitter_x

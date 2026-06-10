@@ -654,6 +654,10 @@ Result:
   `libegl1 libgl1 libglvnd0 libosmesa6 libglu1-mesa`; after that,
   `pyrender.OffscreenRenderer(64, 48)` initialized successfully with
   `PYOPENGL_PLATFORM=osmesa`.
+- key evidence: l401 job `1019489` validated imports and started the Newton
+  script, then failed in sphere sampling because NumPy
+  `Generator.triangular(left, mode, right)` was called with Python
+  `random.triangular(low, high, mode)` ordering.
 
 Analysis:
 - The current GraspGenX NFS venv has pyrender/trimesh/PIL but not Newton or
@@ -670,9 +674,11 @@ Analysis:
   PyOpenGL needs generic GLVND/OSMesa/GLU package names, so the wrapper should
   install those apt packages in the ephemeral writable container before
   importing pyrender.
+- The script should clamp the triangular diameter mode into `[min, max]` and
+  call NumPy's argument order correctly.
 
 Next:
-- Commit/push the apt GL-runtime wrapper fix, pull to l401, relaunch the
+- Commit/push the diameter sampling fix, pull to l401, relaunch the
   low-resolution smoke, inspect frames/logs, then scale to the final requested
   video.
 
