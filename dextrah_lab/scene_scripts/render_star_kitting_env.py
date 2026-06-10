@@ -98,7 +98,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--franka_motion",
-        choices=("hold", "all_directions"),
+        choices=("hold", "all_directions", "trajectory"),
         default="hold",
         help="Actuated Franka motion program. all_directions commands a deterministic arm sweep.",
     )
@@ -107,6 +107,18 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=1.0,
         help="Scale for the actuated Franka all_directions joint target sweep.",
+    )
+    parser.add_argument(
+        "--franka_trajectory_json",
+        type=Path,
+        default=None,
+        help="GraspGenX/cuRobo trajectory.json used when --franka_motion trajectory.",
+    )
+    parser.add_argument(
+        "--franka_trajectory_object_id",
+        type=str,
+        default="object",
+        help="Object id in trajectory frames whose pose should drive the DEXTRAH star.",
     )
     parser.add_argument("--star_outer_radius", type=float, default=0.092)
     parser.add_argument("--star_inner_radius", type=float, default=0.042)
@@ -1502,12 +1514,177 @@ def _franka_all_directions_target(robot: Articulation, phase: float):
     return target
 
 
-def _robot_articulation_target(robot: Articulation | None, phase: float):
+_TRAJECTORY_CACHE: dict[str, object] | None = None
+
+
+def _load_franka_trajectory() -> dict[str, object] | None:
+    global _TRAJECTORY_CACHE
+    if args_cli.franka_trajectory_json is None:
+        return None
+    if _TRAJECTORY_CACHE is None:
+        path = args_cli.franka_trajectory_json.expanduser().resolve()
+        _log(f"loading Franka trajectory JSON: {path}")
+        with path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+        frames = data.get("frames")
+        if not isinstance(frames, list) or len(frames) == 0:
+            raise ValueError(f"Trajectory JSON has no frames: {path}")
+        _TRAJECTORY_CACHE = data
+    return _TRAJECTORY_CACHE
+
+
+def _trajectory_frame_index(trajectory: dict[str, object], frame_idx: int, frame_count: int) -> int:
+    frames = trajectory.get("frames")
+    if not isinstance(frames, list) or len(frames) == 0:
+        return 0
+    if frame_count <= 1:
+        return 0
+    alpha = max(0.0, min(1.0, float(frame_idx) / float(frame_count - 1)))
+    return min(len(frames) - 1, max(0, int(round(alpha * float(len(frames) - 1)))))
+
+
+def _trajectory_frame(trajectory: dict[str, object], frame_idx: int, frame_count: int) -> dict[str, object]:
+    frames = trajectory.get("frames")
+    if not isinstance(frames, list) or len(frames) == 0:
+        raise ValueError("Trajectory JSON has no frames")
+    item = frames[_trajectory_frame_index(trajectory, frame_idx, frame_count)]
+    if not isinstance(item, dict):
+        raise ValueError("Trajectory frame is not a mapping")
+    return item
+
+
+def _franka_trajectory_target(robot: Articulation, frame_idx: int, frame_count: int):
+    trajectory = _load_franka_trajectory()
+    if trajectory is None:
+        raise ValueError("--franka_motion trajectory requires --franka_trajectory_json")
+    frame = _trajectory_frame(trajectory, frame_idx, frame_count)
+    joint_position = frame.get("joint_position")
+    if not isinstance(joint_position, list) or len(joint_position) < 7:
+        raise ValueError("Trajectory frame is missing a Franka joint_position vector")
+
+    target = robot.data.default_joint_pos.clone()
+    joint_indices = {name: idx for idx, name in enumerate(robot.joint_names)}
+    arm_names = [
+        "panda_joint1",
+        "panda_joint2",
+        "panda_joint3",
+        "panda_joint4",
+        "panda_joint5",
+        "panda_joint6",
+        "panda_joint7",
+    ]
+    for src_idx, joint_name in enumerate(arm_names):
+        joint_idx = joint_indices.get(joint_name)
+        if joint_idx is not None:
+            target[:, joint_idx] = float(joint_position[src_idx])
+
+    if len(joint_position) >= 8:
+        finger_1 = float(joint_position[7])
+        finger_2 = float(joint_position[8]) if len(joint_position) >= 9 else finger_1
+        for joint_name, value in (
+            ("panda_finger_joint1", finger_1),
+            ("panda_finger_joint2", finger_2),
+        ):
+            joint_idx = joint_indices.get(joint_name)
+            if joint_idx is not None:
+                target[:, joint_idx] = value
+    return target
+
+
+def _robot_articulation_target(
+    robot: Articulation | None,
+    phase: float,
+    frame_idx: int = 0,
+    frame_count: int = 1,
+):
     if robot is None:
         return None
     if args_cli.franka_motion == "all_directions":
         return _franka_all_directions_target(robot, phase)
+    if args_cli.franka_motion == "trajectory":
+        return _franka_trajectory_target(robot, frame_idx, frame_count)
     return robot.data.default_joint_pos.clone()
+
+
+def _quat_xyzw_from_matrix(m: list[list[float]]) -> tuple[float, float, float, float]:
+    trace = float(m[0][0]) + float(m[1][1]) + float(m[2][2])
+    if trace > 0.0:
+        s = math.sqrt(trace + 1.0) * 2.0
+        qw = 0.25 * s
+        qx = (float(m[2][1]) - float(m[1][2])) / s
+        qy = (float(m[0][2]) - float(m[2][0])) / s
+        qz = (float(m[1][0]) - float(m[0][1])) / s
+    elif float(m[0][0]) > float(m[1][1]) and float(m[0][0]) > float(m[2][2]):
+        s = math.sqrt(1.0 + float(m[0][0]) - float(m[1][1]) - float(m[2][2])) * 2.0
+        qw = (float(m[2][1]) - float(m[1][2])) / s
+        qx = 0.25 * s
+        qy = (float(m[0][1]) + float(m[1][0])) / s
+        qz = (float(m[0][2]) + float(m[2][0])) / s
+    elif float(m[1][1]) > float(m[2][2]):
+        s = math.sqrt(1.0 + float(m[1][1]) - float(m[0][0]) - float(m[2][2])) * 2.0
+        qw = (float(m[0][2]) - float(m[2][0])) / s
+        qx = (float(m[0][1]) + float(m[1][0])) / s
+        qy = 0.25 * s
+        qz = (float(m[1][2]) + float(m[2][1])) / s
+    else:
+        s = math.sqrt(1.0 + float(m[2][2]) - float(m[0][0]) - float(m[1][1])) * 2.0
+        qw = (float(m[1][0]) - float(m[0][1])) / s
+        qx = (float(m[0][2]) + float(m[2][0])) / s
+        qy = (float(m[1][2]) + float(m[2][1])) / s
+        qz = 0.25 * s
+    return _normalize_quat_xyzw((qx, qy, qz, qw))
+
+
+def _object_pose_from_trajectory_frame(
+    trajectory: dict[str, object],
+    frame_idx: int,
+    frame_count: int,
+    object_id: str,
+) -> list[list[float]] | None:
+    frame = _trajectory_frame(trajectory, frame_idx, frame_count)
+    object_poses = frame.get("object_poses")
+    if isinstance(object_poses, dict):
+        pose = object_poses.get(object_id)
+        if pose is None and object_id == "object":
+            objects = trajectory.get("objects")
+            if isinstance(objects, list) and objects:
+                first = objects[0]
+                if isinstance(first, dict):
+                    pose = object_poses.get(str(first.get("id", "")))
+        if isinstance(pose, list):
+            return pose
+    parts = frame.get("parts")
+    if isinstance(parts, list):
+        for part in parts:
+            if not isinstance(part, dict):
+                continue
+            if part.get("name") in (object_id, "object"):
+                pose = part.get("transform")
+                if isinstance(pose, list):
+                    return pose
+    return None
+
+
+def _apply_trajectory_object_pose(
+    stage: Usd.Stage,
+    prim_path: str,
+    trajectory: dict[str, object] | None,
+    frame_idx: int,
+    frame_count: int,
+    object_id: str,
+) -> None:
+    if trajectory is None:
+        return
+    pose = _object_pose_from_trajectory_frame(trajectory, frame_idx, frame_count, object_id)
+    if pose is None:
+        return
+    prim = stage.GetPrimAtPath(prim_path)
+    if not prim.IsValid():
+        return
+    translate = (float(pose[0][3]), float(pose[1][3]), float(pose[2][3]))
+    quat_xyzw = _quat_xyzw_from_matrix(pose)
+    _set_xform(prim, translate, rotate_quat_xyzw=quat_xyzw)
+    update_stage()
 
 
 def _robot_end_effector_record(robot: Articulation | None) -> dict[str, object] | None:
@@ -1772,7 +1949,12 @@ def _capture_overview_video(
         for substep_idx in range(step_count):
             substep = 0.0 if step_count <= 1 else float(substep_idx) / float(step_count)
             phase = min(1.0, (float(frame_idx) + substep) / max(float(frame_count - 1), 1.0))
-            last_robot_target = _robot_articulation_target(robot_articulation, phase)
+            last_robot_target = _robot_articulation_target(
+                robot_articulation,
+                phase,
+                frame_idx=frame_idx,
+                frame_count=frame_count,
+            )
             _write_robot_articulation_targets(robot_articulation, last_robot_target)
             sim.step(render=False)
             _update_robot_articulation(robot_articulation, float(sim.cfg.dt))
@@ -2044,6 +2226,7 @@ def main() -> None:
     _log(f"output_dir={output_dir}")
 
     robot_spec = _resolve_robot(output_dir)
+    trajectory_data = _load_franka_trajectory() if args_cli.franka_motion == "trajectory" else None
 
     _log("creating USD stage")
     create_new_stage()
@@ -2081,6 +2264,8 @@ def main() -> None:
     else:
         _log(f"creating robot with render_mode={robot_spec.render_mode}")
     robot_articulation = _create_robot(stage, robot_spec)
+    if args_cli.franka_motion == "trajectory" and robot_articulation is None:
+        raise ValueError("--franka_motion trajectory requires --franka_render_mode articulation_usd")
 
     _log("creating table")
     table = _create_table(
@@ -2184,6 +2369,17 @@ def main() -> None:
         "robot": _robot_metadata(robot_spec),
         "robot_runtime": _robot_runtime_metadata(robot_articulation),
         "robot_usd": str(robot_spec.usd_path) if robot_spec.usd_path else None,
+        "robot_motion": {
+            "mode": str(args_cli.franka_motion),
+            "scale": float(args_cli.franka_motion_scale),
+            "trajectory_json": str(args_cli.franka_trajectory_json.expanduser().resolve())
+            if args_cli.franka_trajectory_json is not None
+            else None,
+            "trajectory_frames": len(trajectory_data.get("frames", []))
+            if isinstance(trajectory_data, dict) and isinstance(trajectory_data.get("frames"), list)
+            else 0,
+            "trajectory_object_id": str(args_cli.franka_trajectory_object_id),
+        },
         "axes": {
             "table_long_axis": "world_y",
             "table_short_axis": "world_x",
@@ -2224,6 +2420,12 @@ def main() -> None:
             "uses_graspgenx_franka": robot_spec.name == "graspgenx_franka_panda",
             "franka_is_articulation": robot_spec.render_mode == "articulation_usd",
             "franka_has_actuators": bool(robot_spec.actuator_config),
+            "franka_trajectory_playback": args_cli.franka_motion == "trajectory",
+            "franka_trajectory_has_frames": bool(
+                isinstance(trajectory_data, dict)
+                and isinstance(trajectory_data.get("frames"), list)
+                and len(trajectory_data.get("frames", [])) > 0
+            ),
             "franka_scene_yaw_points_arm_toward_table": abs(((float(robot_spec.scene_yaw_deg or 0.0) % 360.0) - 180.0)) < 1.0e-6,
             "same_table_convention_as_clutter_bin_scene": True,
             "star_has_convex_child_colliders": True,
@@ -2235,6 +2437,16 @@ def main() -> None:
     }
     _log("writing metadata")
     _write_metadata(output_dir / "scene_metadata.json", metadata)
+
+    if trajectory_data is not None:
+        _apply_trajectory_object_pose(
+            stage,
+            str(star["prim_path"]),
+            trajectory_data,
+            0,
+            1,
+            str(args_cli.franka_trajectory_object_id),
+        )
 
     usd_path = output_dir / "star_kitting_env.usda"
     _log(f"exporting USD: {usd_path}")
@@ -2250,6 +2462,17 @@ def main() -> None:
     }
     name = str(args_cli.view)
     eye, look_at = views[name]
+
+    def trajectory_frame_callback(frame_idx: int, frame_count: int) -> None:
+        _apply_trajectory_object_pose(
+            stage,
+            str(star["prim_path"]),
+            trajectory_data,
+            frame_idx,
+            frame_count,
+            str(args_cli.franka_trajectory_object_id),
+        )
+
     _write_metadata(
         output_dir / "render_manifest.json",
         {
@@ -2257,6 +2480,10 @@ def main() -> None:
             "metadata": str(output_dir / "scene_metadata.json"),
             "view": name,
             "capture_video": bool(args_cli.capture_video),
+            "franka_motion": str(args_cli.franka_motion),
+            "franka_trajectory_json": str(args_cli.franka_trajectory_json.expanduser().resolve())
+            if args_cli.franka_trajectory_json is not None
+            else None,
         },
     )
     if bool(args_cli.capture_video):
@@ -2271,9 +2498,12 @@ def main() -> None:
             fps=int(args_cli.fps),
             seconds=float(args_cli.video_seconds),
             sim_steps_per_frame=int(args_cli.sim_steps_per_frame),
+            frame_callback=trajectory_frame_callback if trajectory_data is not None else None,
         )
         rendered = {"overview_frames": frame_paths}
     else:
+        if trajectory_data is not None:
+            trajectory_frame_callback(0, 1)
         _log(f"capturing view: {name}")
         rendered = {name: str(_capture_view(name, eye, look_at, output_dir))}
 
@@ -2287,6 +2517,10 @@ def main() -> None:
             "fps": int(args_cli.fps),
             "video_seconds": float(args_cli.video_seconds),
             "sim_steps_per_frame": int(args_cli.sim_steps_per_frame),
+            "franka_motion": str(args_cli.franka_motion),
+            "franka_trajectory_json": str(args_cli.franka_trajectory_json.expanduser().resolve())
+            if args_cli.franka_trajectory_json is not None
+            else None,
         },
     )
 

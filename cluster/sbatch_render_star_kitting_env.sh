@@ -104,6 +104,8 @@ echo "FRANKA_SCENE_YAW_DEG=${FRANKA_SCENE_YAW_DEG:-180.0}"
 echo "FRANKA_BASE_Z_OFFSET=${FRANKA_BASE_Z_OFFSET:-0.2}"
 echo "FRANKA_MOTION=${FRANKA_MOTION:-hold}"
 echo "FRANKA_MOTION_SCALE=${FRANKA_MOTION_SCALE:-1.0}"
+echo "FRANKA_TRAJECTORY_JSON=${FRANKA_TRAJECTORY_JSON:-}"
+echo "FRANKA_TRAJECTORY_OBJECT_ID=${FRANKA_TRAJECTORY_OBJECT_ID:-object}"
 echo "ANIMATE_CUBE=$ANIMATE_CUBE"
 
 srun \
@@ -147,6 +149,8 @@ srun \
       --franka_base_z_offset \"${FRANKA_BASE_Z_OFFSET:-0.2}\" \
       --franka_motion \"${FRANKA_MOTION:-hold}\" \
       --franka_motion_scale \"${FRANKA_MOTION_SCALE:-1.0}\" \
+      \${FRANKA_TRAJECTORY_JSON:+--franka_trajectory_json \"\$FRANKA_TRAJECTORY_JSON\"} \
+      --franka_trajectory_object_id \"${FRANKA_TRAJECTORY_OBJECT_ID:-object}\" \
       --seed \"${SEED:-23}\" \
       --star_outer_radius \"${STAR_OUTER_RADIUS:-0.092}\" \
       --star_inner_radius \"${STAR_INNER_RADIUS:-0.042}\" \
