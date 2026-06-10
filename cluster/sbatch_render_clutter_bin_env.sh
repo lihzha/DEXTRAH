@@ -109,7 +109,8 @@ srun \
       --view \"${VIEW:-overview}\" \
       --dynamic_clutter \
       \${STATIC_CLUTTER:+--static_clutter} \
-      \${CAPTURE_VIDEO:+--capture_video}
+      \${CAPTURE_VIDEO:+--capture_video} \
+      \${CAPTURE_SETTLE_VIDEO:+--capture_settle_video}
   "
 
 echo "Done: $OUT_DIR"

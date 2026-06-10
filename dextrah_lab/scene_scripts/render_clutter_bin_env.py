@@ -35,6 +35,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--video_seconds", type=float, default=4.0)
     parser.add_argument("--rt_subframes", type=int, default=16)
     parser.add_argument("--capture_video", action="store_true", help="Capture an overview PNG sequence for video encoding.")
+    parser.add_argument(
+        "--capture_settle_video",
+        action="store_true",
+        help="When capturing overview video, record frames during the initial dynamic settling.",
+    )
     parser.add_argument("--sim_steps_per_frame", type=int, default=2)
     parser.add_argument("--sim_dt", type=float, default=1.0 / 120.0)
     parser.add_argument("--settle_steps", type=int, default=900, help="Minimum physics steps before accepting settle.")
@@ -743,6 +748,11 @@ def _settle_scene(
     dynamic_clutter: bool,
     clutter_shape: str,
     reset_before_settle: bool = True,
+    capture_camera=None,
+    capture_frames_dir: Path | None = None,
+    capture_frame_count: int = 0,
+    capture_frame_stride_steps: int = 1,
+    capture_frame_paths: list[str] | None = None,
 ) -> dict[str, Any]:
     result: dict[str, Any] = {
         "requested_min_steps": max(0, int(settle_steps)),
@@ -787,10 +797,45 @@ def _settle_scene(
     min_steps = int(result["requested_min_steps"])
     check_interval = int(result["check_interval"])
     samples: list[dict[str, Any]] = []
+    frame_count = max(0, int(capture_frame_count))
+    frame_stride_steps = max(1, int(capture_frame_stride_steps))
+    capture_enabled = (
+        capture_camera is not None
+        and capture_frames_dir is not None
+        and capture_frame_paths is not None
+        and frame_count > 0
+    )
+    frame_idx = 0
+    next_capture_step = 0
+    last_capture_step = 0
+
+    def capture_settle_frame(step_idx: int, *, force: bool = False) -> None:
+        nonlocal frame_idx, next_capture_step, last_capture_step
+        if not capture_enabled or capture_frames_dir is None or capture_frame_paths is None:
+            return
+        if frame_idx >= frame_count:
+            return
+        if not force and int(step_idx) < next_capture_step:
+            return
+        delta_steps = max(0, int(step_idx) - last_capture_step)
+        sim.render()
+        capture_camera.update(float(sim.cfg.dt) * delta_steps)
+        dst = capture_frames_dir / f"overview_{frame_idx:04d}.png"
+        _log(f"capturing overview settle frame {frame_idx + 1}/{frame_count} at step {step_idx}")
+        _save_rgb_tensor(dst, capture_camera.data.output["rgb"][0])
+        capture_frame_paths.append(str(dst))
+        frame_idx += 1
+        last_capture_step = int(step_idx)
+        if not force:
+            while next_capture_step <= int(step_idx):
+                next_capture_step += frame_stride_steps
+
+    capture_settle_frame(0)
 
     for step_idx in range(1, max_steps + 1):
         sim.step(render=False)
         final_step = step_idx
+        capture_settle_frame(step_idx)
         should_check = step_idx % check_interval == 0 or step_idx == max_steps
         if body_view is None or not should_check:
             continue
@@ -840,6 +885,15 @@ def _settle_scene(
                 result["rest_gate_zeroed_velocities"] = True
                 result["settled"] = True
             break
+
+    if capture_enabled:
+        if bool(result.get("settled")):
+            while frame_idx < frame_count:
+                capture_settle_frame(final_step, force=True)
+        result["capture_during_settle"] = True
+        result["requested_capture_frames"] = frame_count
+        result["captured_frames"] = frame_idx
+        result["capture_frame_stride_steps"] = frame_stride_steps
 
     sim.render()
     update_stage()
@@ -1015,6 +1069,7 @@ def _capture_overview_video(
     fps: int,
     seconds: float,
     sim_steps_per_frame: int,
+    capture_settle_video: bool,
 ) -> tuple[list[str], dict[str, Any]]:
     frame_count = max(2, int(round(float(fps) * float(seconds))))
     frames_dir = output_dir / "frames"
@@ -1039,6 +1094,25 @@ def _capture_overview_video(
     camera = TiledCamera(camera_cfg)
     _log("resetting SimulationContext after camera creation")
     sim.reset()
+    if capture_settle_video:
+        _log(f"capturing overview video during initial settling: {frame_count} frames")
+        settle_result = _settle_scene(
+            sim,
+            clutter,
+            settle_steps=settle_steps,
+            dynamic_clutter=dynamic_clutter,
+            clutter_shape=clutter_shape,
+            reset_before_settle=False,
+            capture_camera=camera,
+            capture_frames_dir=frames_dir,
+            capture_frame_count=frame_count,
+            capture_frame_stride_steps=max(1, int(sim_steps_per_frame)),
+            capture_frame_paths=frames,
+        )
+        settle_result["video_capture_mode"] = "during_initial_settle"
+        del camera
+        return frames, settle_result
+
     settle_result = _settle_scene(
         sim,
         clutter,
@@ -1047,6 +1121,7 @@ def _capture_overview_video(
         clutter_shape=clutter_shape,
         reset_before_settle=False,
     )
+    settle_result["video_capture_mode"] = "after_settle"
     sim.render()
     camera.update(0.0)
 
@@ -1252,6 +1327,7 @@ def main() -> None:
             fps=int(args_cli.fps),
             seconds=float(args_cli.video_seconds),
             sim_steps_per_frame=int(args_cli.sim_steps_per_frame),
+            capture_settle_video=bool(args_cli.capture_settle_video),
         )
         rendered = {"overview_frames": frame_paths}
     else:
@@ -1384,6 +1460,7 @@ def main() -> None:
             "renders": rendered,
             "view": name,
             "capture_video": bool(args_cli.capture_video),
+            "capture_settle_video": bool(args_cli.capture_settle_video),
             "fps": int(args_cli.fps),
             "video_seconds": float(args_cli.video_seconds),
             "sim_steps_per_frame": int(args_cli.sim_steps_per_frame),
