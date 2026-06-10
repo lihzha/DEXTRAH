@@ -118,43 +118,33 @@ def _reward_total(**kwargs) -> torch.Tensor:
 def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
     zeros = torch.zeros(1, device=device)
     base = {
-        "ee_to_cube_dist": torch.tensor([0.25], device=device),
-        "finger_center_to_cube_dist": torch.tensor([0.22], device=device),
         "left_finger_to_cube_dist": torch.tensor([0.22], device=device),
         "right_finger_to_cube_dist": torch.tensor([0.22], device=device),
         "gripper_width": torch.tensor([0.08], device=device),
         "cube_lift_height": zeros.clone(),
-        "cube_xy_error": zeros.clone(),
         "cube_goal_height_error": torch.tensor([0.16], device=device),
-        "has_lifted_cube": torch.zeros(1, dtype=torch.bool, device=device),
+        "cube_xy_error": zeros.clone(),
         "in_success_region": torch.zeros(1, dtype=torch.bool, device=device),
         "actions": torch.zeros(1, 7, device=device),
         "target_lift_height": 0.16,
-        "success_hand_dist": 0.20,
         "max_gripper_width": 0.08,
         "approach_weight": 2.0,
-        "approach_sharpness": 9.0,
-        "finger_approach_weight": 5.0,
-        "finger_approach_sharpness": 12.0,
-        "grasp_ready_weight": 4.0,
-        "closed_grasp_weight": 3.0,
-        "lift_weight": 180.0,
-        "height_tracking_weight": 24.0,
+        "approach_sharpness": 10.0,
+        "enclosure_weight": 1.0,
+        "enclosure_sharpness": 8.0,
+        "lift_weight": 10.0,
+        "height_tracking_weight": 3.0,
         "height_tracking_sharpness": 18.0,
-        "xy_stability_weight": 5.0,
-        "xy_stability_sharpness": 14.0,
-        "close_action_weight": 1.5,
-        "lift_action_weight": 2.0,
-        "success_bonus_weight": 80.0,
-        "prelift_move_penalty_weight": -35.0,
-        "close_far_penalty_weight": -8.0,
-        "open_near_penalty_weight": -5.0,
-        "ungrasped_lift_penalty_weight": -8.0,
-        "action_penalty_weight": -0.002,
+        "xy_stability_weight": 1.0,
+        "xy_stability_sharpness": 12.0,
+        "success_bonus_weight": 15.0,
+        "gripper_close_reg_weight": -0.002,
+        "action_penalty_weight": -0.0005,
     }
 
     near = dict(base)
-    near["ee_to_cube_dist"] = torch.tensor([0.050], device=device)
+    near["left_finger_to_cube_dist"] = torch.tensor([0.075], device=device)
+    near["right_finger_to_cube_dist"] = torch.tensor([0.075], device=device)
     checks.check(
         "reward_approach_increases_near_cube",
         bool((_reward_total(**near) > _reward_total(**base)).item()),
@@ -162,31 +152,29 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
         near_reward=_mean(_reward_total(**near)),
     )
 
-    finger_near = dict(near)
-    finger_near["finger_center_to_cube_dist"] = torch.tensor([0.055], device=device)
-    finger_near["left_finger_to_cube_dist"] = torch.tensor([0.075], device=device)
-    finger_near["right_finger_to_cube_dist"] = torch.tensor([0.075], device=device)
+    balanced_near = dict(near)
+    imbalanced_near = dict(near)
+    imbalanced_near["right_finger_to_cube_dist"] = torch.tensor([0.16], device=device)
     checks.check(
-        "reward_finger_approach_increases_near_cube",
-        bool((_reward_total(**finger_near) > _reward_total(**near)).item()),
-        near_reward=_mean(_reward_total(**near)),
-        finger_near_reward=_mean(_reward_total(**finger_near)),
+        "reward_enclosure_prefers_both_fingers_near",
+        bool((_reward_total(**balanced_near) > _reward_total(**imbalanced_near)).item()),
+        balanced_reward=_mean(_reward_total(**balanced_near)),
+        imbalanced_reward=_mean(_reward_total(**imbalanced_near)),
     )
 
-    closed_near = dict(finger_near)
+    closed_near = dict(balanced_near)
     closed_near["gripper_width"] = torch.tensor([0.024], device=device)
     closed_near["actions"] = torch.tensor([[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0]], device=device)
     checks.check(
         "reward_close_near_exceeds_open_near",
-        bool((_reward_total(**closed_near) > _reward_total(**finger_near)).item()),
-        open_reward=_mean(_reward_total(**finger_near)),
+        bool((_reward_total(**closed_near) > _reward_total(**balanced_near)).item()),
+        open_reward=_mean(_reward_total(**balanced_near)),
         closed_reward=_mean(_reward_total(**closed_near)),
     )
 
     lifted = dict(closed_near)
     lifted["cube_lift_height"] = torch.tensor([0.16], device=device)
     lifted["cube_goal_height_error"] = torch.tensor([0.0], device=device)
-    lifted["has_lifted_cube"] = torch.ones(1, dtype=torch.bool, device=device)
     checks.check(
         "reward_actual_lift_dominates_no_lift_grasp",
         bool((_reward_total(**lifted) > 10.0 * _reward_total(**closed_near)).item()),
@@ -225,8 +213,8 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
     closed_far = dict(base)
     closed_far["gripper_width"] = torch.tensor([0.0], device=device)
     checks.check(
-        "reward_penalizes_closing_far_from_cube",
-        bool((_reward_total(**closed_far) < _reward_total(**base)).item()),
+        "reward_closed_gripper_regularizer_prefers_closed",
+        bool((_reward_total(**closed_far) > _reward_total(**base)).item()),
         open_far_reward=_mean(_reward_total(**base)),
         closed_far_reward=_mean(_reward_total(**closed_far)),
     )
@@ -269,67 +257,49 @@ def _run_predicate_checks(task_env, checks: CheckRecorder) -> None:
         hand_max_dist=_mean(task_env.hand_to_cube_max_dist),
     )
     closed_width = torch.full_like(task_env.gripper_width, 0.024)
-    zero_lift = torch.zeros_like(task_env.cube_lift_height)
-    prelift_goal_height_error = torch.full_like(task_env.cube_goal_height_error, float(task_env.cfg.cube_lift_height))
-    prelift_false = torch.zeros_like(task_env.has_lifted_cube)
     prelift_actions = task_env.actions.clone()
     prelift_actions[:, 2] = 0.0
     prelift_actions[:, 6] = -1.0
     prelift_rewards = compute_franka_cube_grasp_rewards(
-        task_env.ee_to_cube_dist,
-        task_env.finger_center_to_cube_dist,
         task_env.left_finger_to_cube_dist,
         task_env.right_finger_to_cube_dist,
         closed_width,
-        zero_lift,
+        torch.zeros_like(task_env.cube_lift_height),
+        torch.full_like(task_env.cube_goal_height_error, float(task_env.cfg.cube_lift_height)),
         task_env.cube_xy_error,
-        prelift_goal_height_error,
-        prelift_false,
-        prelift_false,
+        torch.zeros_like(task_env.in_success_region),
         prelift_actions,
         float(task_env.cfg.cube_lift_height),
-        float(task_env.cfg.cube_success_hand_dist),
         float(task_env.cfg.max_gripper_width),
         float(task_env.cfg.cube_approach_weight),
         float(task_env.cfg.cube_approach_sharpness),
-        float(task_env.cfg.cube_finger_approach_weight),
-        float(task_env.cfg.cube_finger_approach_sharpness),
-        float(task_env.cfg.cube_grasp_ready_weight),
-        float(task_env.cfg.cube_closed_grasp_weight),
+        float(task_env.cfg.cube_enclosure_weight),
+        float(task_env.cfg.cube_enclosure_sharpness),
         float(task_env.cfg.cube_lift_weight),
         float(task_env.cfg.cube_height_tracking_weight),
         float(task_env.cfg.cube_height_tracking_sharpness),
         float(task_env.cfg.cube_xy_stability_weight),
         float(task_env.cfg.cube_xy_stability_sharpness),
-        float(task_env.cfg.cube_close_action_weight),
-        float(task_env.cfg.cube_lift_action_weight),
         float(task_env.cfg.cube_success_bonus_weight),
-        float(task_env.cfg.cube_prelift_move_penalty_weight),
-        float(task_env.cfg.cube_close_far_penalty_weight),
-        float(task_env.cfg.cube_open_near_penalty_weight),
-        float(task_env.cfg.cube_ungrasped_lift_penalty_weight),
+        float(task_env.cfg.cube_gripper_close_reg_weight),
         float(task_env.cfg.cube_action_penalty_weight),
     )
-    grasp_ready_reward = prelift_rewards[2]
-    closed_grasp_reward = prelift_rewards[3]
-    close_action_reward = prelift_rewards[7]
-    close_far_penalty = prelift_rewards[11]
-    grasp_ready_value = _mean(grasp_ready_reward)
-    closed_grasp_value = _mean(closed_grasp_reward)
-    close_action_value = _mean(close_action_reward)
-    close_far_penalty_value = _mean(close_far_penalty)
+    approach_reward = prelift_rewards[0]
+    enclosure_reward = prelift_rewards[1]
+    gripper_close_reg = prelift_rewards[6]
+    approach_value = _mean(approach_reward)
+    enclosure_value = _mean(enclosure_reward)
+    gripper_close_reg_value = _mean(gripper_close_reg)
     checks.check(
-        "reward_accepts_success_geometry_for_prelift_grasp",
+        "reward_accepts_success_geometry_for_prelift_enclosure",
         (
-            grasp_ready_value > 0.05
-            and closed_grasp_value > 0.01
-            and close_action_value >= 0.0
-            and close_far_penalty_value > -0.5
+            approach_value > 0.10
+            and enclosure_value > 0.10
+            and gripper_close_reg_value > -0.001
         ),
-        grasp_ready_reward=grasp_ready_value,
-        closed_grasp_reward=closed_grasp_value,
-        close_action_reward=close_action_value,
-        close_far_penalty=close_far_penalty_value,
+        approach_reward=approach_value,
+        enclosure_reward=enclosure_value,
+        gripper_close_reg=gripper_close_reg_value,
         hand_mean_dist=_mean(task_env.hand_to_cube_mean_dist),
         hand_max_dist=_mean(task_env.hand_to_cube_max_dist),
         finger_center_dist=_mean(task_env.finger_center_to_cube_dist),
@@ -337,60 +307,41 @@ def _run_predicate_checks(task_env, checks: CheckRecorder) -> None:
     )
 
     lifted_rewards = compute_franka_cube_grasp_rewards(
-        task_env.ee_to_cube_dist,
-        task_env.finger_center_to_cube_dist,
         task_env.left_finger_to_cube_dist,
         task_env.right_finger_to_cube_dist,
         closed_width,
         task_env.cube_lift_height,
-        task_env.cube_xy_error,
         task_env.cube_goal_height_error,
-        task_env.has_lifted_cube,
+        task_env.cube_xy_error,
         task_env.in_success_region,
         task_env.actions,
         float(task_env.cfg.cube_lift_height),
-        float(task_env.cfg.cube_success_hand_dist),
         float(task_env.cfg.max_gripper_width),
         float(task_env.cfg.cube_approach_weight),
         float(task_env.cfg.cube_approach_sharpness),
-        float(task_env.cfg.cube_finger_approach_weight),
-        float(task_env.cfg.cube_finger_approach_sharpness),
-        float(task_env.cfg.cube_grasp_ready_weight),
-        float(task_env.cfg.cube_closed_grasp_weight),
+        float(task_env.cfg.cube_enclosure_weight),
+        float(task_env.cfg.cube_enclosure_sharpness),
         float(task_env.cfg.cube_lift_weight),
         float(task_env.cfg.cube_height_tracking_weight),
         float(task_env.cfg.cube_height_tracking_sharpness),
         float(task_env.cfg.cube_xy_stability_weight),
         float(task_env.cfg.cube_xy_stability_sharpness),
-        float(task_env.cfg.cube_close_action_weight),
-        float(task_env.cfg.cube_lift_action_weight),
         float(task_env.cfg.cube_success_bonus_weight),
-        float(task_env.cfg.cube_prelift_move_penalty_weight),
-        float(task_env.cfg.cube_close_far_penalty_weight),
-        float(task_env.cfg.cube_open_near_penalty_weight),
-        float(task_env.cfg.cube_ungrasped_lift_penalty_weight),
+        float(task_env.cfg.cube_gripper_close_reg_weight),
         float(task_env.cfg.cube_action_penalty_weight),
     )
-    lift_reward = lifted_rewards[4]
-    lift_action_reward = lifted_rewards[8]
-    success_bonus = lifted_rewards[9]
-    close_far_penalty = lifted_rewards[11]
+    lift_reward = lifted_rewards[2]
+    success_bonus = lifted_rewards[5]
     lift_value = _mean(lift_reward)
-    lift_action_value = _mean(lift_action_reward)
     success_bonus_value = _mean(success_bonus)
-    close_far_penalty_value = _mean(close_far_penalty)
     checks.check(
         "reward_accepts_success_geometry_for_lift",
         (
-            lift_value > 20.0
-            and lift_action_value >= 0.0
+            lift_value > 1.0
             and success_bonus_value > 0.0
-            and close_far_penalty_value > -0.5
         ),
         lift_reward=lift_value,
-        lift_action_reward=lift_action_value,
         success_bonus=success_bonus_value,
-        close_far_penalty=close_far_penalty_value,
         hand_mean_dist=_mean(task_env.hand_to_cube_mean_dist),
         hand_max_dist=_mean(task_env.hand_to_cube_max_dist),
         finger_center_dist=_mean(task_env.finger_center_to_cube_dist),

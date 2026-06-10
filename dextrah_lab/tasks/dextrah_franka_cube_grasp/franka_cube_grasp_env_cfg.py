@@ -45,26 +45,22 @@ class DextrahFrankaCubeGraspEnvCfg(DextrahFrankaStarKittingEnvCfg):
     min_episode_steps_before_success = 40
     prelift_drag_termination_xy_error = 0.10
 
-    # reward weights for franka_cube_grasp_rewards.compute_franka_cube_grasp_rewards.
+    # KUKA-cube-shaped reward weights for franka_cube_grasp_rewards.compute_franka_cube_grasp_rewards.
+    # Robot-specific differences are handled in the reward inputs: two Franka
+    # finger distances replace the DEXTRAH multi-finger hand distances, and the
+    # parallel gripper width replaces the Allegro curl regularizer.
     cube_approach_weight = 2.0
-    cube_approach_sharpness = 9.0
-    cube_finger_approach_weight = 5.0
-    cube_finger_approach_sharpness = 12.0
-    cube_grasp_ready_weight = 4.0
-    cube_closed_grasp_weight = 3.0
-    cube_lift_weight = 180.0
-    cube_height_tracking_weight = 24.0
+    cube_approach_sharpness = 10.0
+    cube_enclosure_weight = 1.0
+    cube_enclosure_sharpness = 8.0
+    cube_lift_weight = 10.0
+    cube_height_tracking_weight = 3.0
     cube_height_tracking_sharpness = 18.0
-    cube_xy_stability_weight = 5.0
-    cube_xy_stability_sharpness = 14.0
-    cube_close_action_weight = 1.5
-    cube_lift_action_weight = 2.0
-    cube_success_bonus_weight = 80.0
-    cube_prelift_move_penalty_weight = -35.0
-    cube_close_far_penalty_weight = -8.0
-    cube_open_near_penalty_weight = -5.0
-    cube_ungrasped_lift_penalty_weight = -8.0
-    cube_action_penalty_weight = -0.002
+    cube_xy_stability_weight = 1.0
+    cube_xy_stability_sharpness = 12.0
+    cube_success_bonus_weight = 15.0
+    cube_gripper_close_reg_weight = -0.002
+    cube_action_penalty_weight = -0.0005
 
     # explicit low-bounce cube contact setup, kept close to Dextrah-Cube-Grasp.
     cube_static_friction = 1.5

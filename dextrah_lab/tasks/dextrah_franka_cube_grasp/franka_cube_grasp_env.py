@@ -95,87 +95,55 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         self._compute_intermediate_values(update_success_timer=True)
         (
             approach_reward,
-            finger_approach_reward,
-            grasp_ready_reward,
-            closed_grasp_reward,
+            enclosure_reward,
             lift_reward,
             height_tracking_reward,
             xy_stability_reward,
-            close_action_reward,
-            lift_action_reward,
             success_bonus,
-            prelift_move_penalty,
-            close_far_penalty,
-            open_near_penalty,
-            ungrasped_lift_penalty,
+            gripper_close_reg,
             action_penalty,
         ) = compute_franka_cube_grasp_rewards(
-            self.ee_to_cube_dist,
-            self.finger_center_to_cube_dist,
             self.left_finger_to_cube_dist,
             self.right_finger_to_cube_dist,
             self.gripper_width,
             self.cube_lift_height,
-            self.cube_xy_error,
             self.cube_goal_height_error,
-            self.has_lifted_cube,
+            self.cube_xy_error,
             self.in_success_region,
             self.actions,
             float(self.cfg.cube_lift_height),
-            float(self.cfg.cube_success_hand_dist),
             float(self.cfg.max_gripper_width),
             float(self.cfg.cube_approach_weight),
             float(self.cfg.cube_approach_sharpness),
-            float(self.cfg.cube_finger_approach_weight),
-            float(self.cfg.cube_finger_approach_sharpness),
-            float(self.cfg.cube_grasp_ready_weight),
-            float(self.cfg.cube_closed_grasp_weight),
+            float(self.cfg.cube_enclosure_weight),
+            float(self.cfg.cube_enclosure_sharpness),
             float(self.cfg.cube_lift_weight),
             float(self.cfg.cube_height_tracking_weight),
             float(self.cfg.cube_height_tracking_sharpness),
             float(self.cfg.cube_xy_stability_weight),
             float(self.cfg.cube_xy_stability_sharpness),
-            float(self.cfg.cube_close_action_weight),
-            float(self.cfg.cube_lift_action_weight),
             float(self.cfg.cube_success_bonus_weight),
-            float(self.cfg.cube_prelift_move_penalty_weight),
-            float(self.cfg.cube_close_far_penalty_weight),
-            float(self.cfg.cube_open_near_penalty_weight),
-            float(self.cfg.cube_ungrasped_lift_penalty_weight),
+            float(self.cfg.cube_gripper_close_reg_weight),
             float(self.cfg.cube_action_penalty_weight),
         )
         total_reward = (
             approach_reward
-            + finger_approach_reward
-            + grasp_ready_reward
-            + closed_grasp_reward
+            + enclosure_reward
             + lift_reward
             + height_tracking_reward
             + xy_stability_reward
-            + close_action_reward
-            + lift_action_reward
             + success_bonus
-            + prelift_move_penalty
-            + close_far_penalty
-            + open_near_penalty
-            + ungrasped_lift_penalty
+            + gripper_close_reg
             + action_penalty
         )
         log_terms = {
             "cube_approach_reward": approach_reward.mean(),
-            "cube_finger_approach_reward": finger_approach_reward.mean(),
-            "cube_grasp_ready_reward": grasp_ready_reward.mean(),
-            "cube_closed_grasp_reward": closed_grasp_reward.mean(),
+            "cube_enclosure_reward": enclosure_reward.mean(),
             "cube_lift_reward": lift_reward.mean(),
             "cube_height_tracking_reward": height_tracking_reward.mean(),
             "cube_xy_stability_reward": xy_stability_reward.mean(),
-            "cube_close_action_reward": close_action_reward.mean(),
-            "cube_lift_action_reward": lift_action_reward.mean(),
             "cube_success_bonus": success_bonus.mean(),
-            "cube_prelift_move_penalty": prelift_move_penalty.mean(),
-            "cube_close_far_penalty": close_far_penalty.mean(),
-            "cube_open_near_penalty": open_near_penalty.mean(),
-            "cube_ungrasped_lift_penalty": ungrasped_lift_penalty.mean(),
+            "cube_gripper_close_reg": gripper_close_reg.mean(),
             "cube_action_penalty": action_penalty.mean(),
             "cube_lift_height": self.cube_lift_height.mean(),
             "cube_xy_error": self.cube_xy_error.mean(),
