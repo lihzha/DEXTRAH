@@ -4845,3 +4845,39 @@ Next:
 - Relaunch PPO with moderate exploration and a mixed near-hand curriculum, then
   gate again on ep25/ep50/ep100 deterministic videos and new penalty/action
   diagnostics.
+
+## 2026-06-10 08:50 PDT - Curriculum Reset Rejected; Full-Task Relaunch Path
+
+Goal:
+- Verify the contact-gated reward patch without launching training on an
+  unsafe reset distribution.
+
+Evidence:
+- full validation job_id: `28941186`
+- full validation run:
+  `franka_star_env_validate_contactgate_full180_20260610_0842`
+- full validation source commit: `c28c758`
+- full validation passed all checks with `validation_lifted_rate=0.375`,
+  `max_star_lift_height=0.04011`, `min_finger_to_star=0.10685`, and
+  `max_pretransport_star_initial_xy_error=0.01447`.
+- mixed curriculum validation job_id: `28941292`
+- safer midpoint curriculum validation job_id: `28941327`
+- both curriculum validations failed
+  `scripted_rollout_limits_pretransport_star_motion`; the near-hand starts
+  can launch or drag the star before a controlled grasp.
+
+Change:
+- Set optional reset-curriculum default coordinates back to the normal pickup
+  pose so the feature is a no-op unless deliberately overridden.
+- Next PPO run will use the validated full environment, not near-hand reset
+  curriculum.
+
+Checks:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env_cfg.py dextrah_lab/rl_games/validate_franka_star_kitting_env.py`
+- `bash -n cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_validate_franka_star_kitting_env_1gpu.sh`
+
+Next:
+- Commit/push/pull the safe-default patch.
+- Relaunch PPO on the validated full environment with stronger contact-gated
+  reward shaping, `SIGMA_INIT_VAL=-1.2`, and checkpoint/eval gates at
+  ep25/ep50/ep100.

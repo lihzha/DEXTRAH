@@ -97,8 +97,8 @@ class DextrahFrankaStarKittingEnvCfg(DirectRLEnvCfg):
     star_spawn_xy_randomization = 0.0
     star_spawn_yaw_randomization_deg = 0.0
     star_reset_near_hand_probability = 0.0
-    star_reset_near_hand_x = -0.432
-    star_reset_near_hand_y = 0.009
+    star_reset_near_hand_x = -0.360
+    star_reset_near_hand_y = -0.120
     star_reset_near_hand_xy_noise = 0.020
     star_reset_near_hand_x_offset = 0.0
     star_reset_near_hand_y_offset = 0.0
