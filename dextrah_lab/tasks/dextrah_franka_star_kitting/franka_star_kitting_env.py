@@ -106,6 +106,7 @@ class DextrahFrankaStarKittingEnv(DirectRLEnv):
 
         self.ee_to_star_dist = torch.zeros(self.num_envs, device=self.device)
         self.finger_center_to_star_dist = torch.zeros(self.num_envs, device=self.device)
+        self.star_initial_xy_error = torch.zeros(self.num_envs, device=self.device)
         self.goal_xy_error = torch.zeros(self.num_envs, device=self.device)
         self.goal_height_error = torch.zeros(self.num_envs, device=self.device)
         self.goal_yaw_error = torch.zeros(self.num_envs, device=self.device)
@@ -244,16 +245,20 @@ class DextrahFrankaStarKittingEnv(DirectRLEnv):
         (
             approach_reward,
             grasp_reward,
+            closed_grasp_reward,
             lift_reward,
             transport_reward,
             yaw_reward,
             placement_reward,
             success_bonus,
+            prelift_move_penalty,
             action_penalty,
         ) = compute_franka_star_kitting_rewards(
             self.ee_to_star_dist,
             self.finger_center_to_star_dist,
+            self.gripper_width,
             self.star_lift_height,
+            self.star_initial_xy_error,
             self.goal_xy_error,
             self.goal_height_error,
             self.goal_yaw_error,
@@ -261,11 +266,14 @@ class DextrahFrankaStarKittingEnv(DirectRLEnv):
             self.in_success_region,
             self.actions,
             float(self.cfg.target_lift_height),
+            float(self.cfg.max_gripper_width),
             float(self.cfg.approach_weight),
             float(self.cfg.approach_sharpness),
             float(self.cfg.grasp_weight),
+            float(self.cfg.closed_grasp_weight),
             float(self.cfg.grasp_sharpness),
             float(self.cfg.lift_weight),
+            float(self.cfg.prelift_move_penalty_weight),
             float(self.cfg.transport_weight),
             float(self.cfg.transport_xy_sharpness),
             float(self.cfg.yaw_weight),
@@ -278,23 +286,28 @@ class DextrahFrankaStarKittingEnv(DirectRLEnv):
         total_reward = (
             approach_reward
             + grasp_reward
+            + closed_grasp_reward
             + lift_reward
             + transport_reward
             + yaw_reward
             + placement_reward
             + success_bonus
+            + prelift_move_penalty
             + action_penalty
         )
         log_terms = {
             "star_approach_reward": approach_reward.mean(),
             "star_grasp_reward": grasp_reward.mean(),
+            "star_closed_grasp_reward": closed_grasp_reward.mean(),
             "star_lift_reward": lift_reward.mean(),
             "star_transport_reward": transport_reward.mean(),
             "star_yaw_reward": yaw_reward.mean(),
             "star_placement_reward": placement_reward.mean(),
             "star_success_bonus": success_bonus.mean(),
+            "star_prelift_move_penalty": prelift_move_penalty.mean(),
             "star_action_penalty": action_penalty.mean(),
             "star_lift_height": self.star_lift_height.mean(),
+            "star_initial_xy_error": self.star_initial_xy_error.mean(),
             "star_goal_xy_error": self.goal_xy_error.mean(),
             "star_goal_height_error": self.goal_height_error.mean(),
             "star_goal_yaw_error": self.goal_yaw_error.mean(),
@@ -447,6 +460,9 @@ class DextrahFrankaStarKittingEnv(DirectRLEnv):
         self.finger_center_to_star_dist[env_ids] = torch.norm(finger_center - self.star_pos[env_ids], dim=-1)
         self.star_lift_height[env_ids] = torch.clamp(
             self.star_pos[env_ids, 2] - self.star_initial_pos[env_ids, 2], min=0.0
+        )
+        self.star_initial_xy_error[env_ids] = torch.norm(
+            self.star_pos[env_ids, :2] - self.star_initial_pos[env_ids, :2], dim=-1
         )
         self.has_lifted_star[env_ids] |= self.star_lift_height[env_ids] >= float(self.cfg.lifted_success_height)
         self.goal_xy_error[env_ids] = torch.norm(

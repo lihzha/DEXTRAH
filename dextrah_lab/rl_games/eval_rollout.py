@@ -96,6 +96,7 @@ def _collect_task_metrics(task_env) -> dict[str, float | None]:
         "cube_xy_error",
         "hand_to_cube_mean_dist",
         "star_lift_height",
+        "star_initial_xy_error",
         "goal_xy_error",
         "goal_height_error",
         "goal_yaw_error",

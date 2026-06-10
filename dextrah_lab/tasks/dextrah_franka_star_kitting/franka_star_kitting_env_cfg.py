@@ -140,14 +140,16 @@ class DextrahFrankaStarKittingEnvCfg(DirectRLEnvCfg):
     # rewards
     approach_weight = 2.0
     approach_sharpness = 9.0
-    grasp_weight = 2.0
+    grasp_weight = 1.5
+    closed_grasp_weight = 4.0
     grasp_sharpness = 18.0
-    lift_weight = 8.0
+    lift_weight = 16.0
+    prelift_move_penalty_weight = -5.0
     transport_weight = 5.0
     transport_xy_sharpness = 18.0
     yaw_weight = 3.0
     yaw_sharpness = 4.5
     placement_weight = 8.0
     placement_height_sharpness = 18.0
-    success_bonus_weight = 20.0
-    action_penalty_weight = -0.003
+    success_bonus_weight = 40.0
+    action_penalty_weight = -0.002

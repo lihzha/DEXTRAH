@@ -2521,3 +2521,52 @@ Checks:
 Next:
 - Commit/push, update `a1001`, launch Franka star smoke training, and assign a
   separate agent to launch eval/video jobs once checkpoints exist.
+
+## 2026-06-10 02:12 PDT - Franka Star Reward Exploit Fix
+
+Goal:
+- Fix the first training loop failure mode where PPO reward increased while
+  eval videos showed no star lift.
+
+Evidence:
+- smoke training job_id: `28931228`, run
+  `franka_star_smoke_ppo_20260610_014838`, status `COMPLETED 0:0`, final
+  checkpoint `last_dextrah_franka_star_kitting_ep_120_rew_511.84647.pth`.
+- production training job_id: `28931335`, run
+  `franka_star_static_ppo_20260610_015640`, manually cancelled after eval
+  showed the policy was exploiting approach/contact reward without lifting.
+- production ep25 eval job_id: `28931403`, run
+  `franka_star_static_eval_ep25_20260610_020145`, status `COMPLETED 0:0`,
+  success `0.0`, max lift about `0.0001 m`.
+- production ep100 eval job_id: `28931428`, run
+  `franka_star_static_eval_ep100_20260610_020805`, status `COMPLETED 0:0`,
+  success `0.0`, final reward `0.8671`.
+- local eval artifacts:
+  `cluster_results/a1001/franka_star_static_eval_ep25_20260610_020145`,
+  `cluster_results/a1001/franka_star_static_eval_ep100_20260610_020805`.
+
+Analysis:
+- Eval videos show the Franka moving around the star and closing near it, but
+  not establishing a lift.
+- The reward allowed high approach/grasp reward with an open gripper and did
+  not penalize lateral star motion before lifting, so pushing/orbiting was a
+  stable local optimum.
+
+Change:
+- Added closed-gripper grasp shaping from `gripper_width`.
+- Increased lift and success weights.
+- Gated transport/yaw rewards on `has_lifted_star` instead of partial lift
+  progress.
+- Added a pre-lift XY-motion penalty using distance from the initial star
+  pickup position.
+- Added `star_initial_xy_error` and closed-grasp/pre-lift-penalty terms to
+  training logs and eval metrics.
+
+Checks:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_rewards.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env_cfg.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env.py dextrah_lab/rl_games/validate_franka_star_kitting_env.py dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/train.py`
+- `bash -n cluster/sbatch_validate_franka_star_kitting_env_1gpu.sh cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_eval_franka_star_kitting_1gpu.sh`
+- `ruby -e "require 'yaml'; YAML.load_file('dextrah_lab/tasks/dextrah_franka_star_kitting/agents/rl_games_ppo_franka_star_kitting_cfg.yaml'); puts 'yaml ok'"`
+- `git diff --check`
+
+Next:
+- Commit/push, rerun validation, then relaunch smoke training from scratch.

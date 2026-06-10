@@ -137,7 +137,9 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
     base = {
         "ee_to_star_dist": torch.tensor([0.18], device=device),
         "finger_center_to_star_dist": torch.tensor([0.18], device=device),
+        "gripper_width": torch.tensor([0.08], device=device),
         "star_lift_height": zeros.clone(),
+        "star_initial_xy_error": zeros.clone(),
         "goal_xy_error": torch.tensor([0.22], device=device),
         "goal_height_error": torch.tensor([0.12], device=device),
         "goal_yaw_error": torch.tensor([1.2], device=device),
@@ -145,19 +147,22 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
         "in_success_region": torch.zeros(1, dtype=torch.bool, device=device),
         "actions": torch.zeros(1, 7, device=device),
         "target_lift_height": 0.08,
+        "max_gripper_width": 0.08,
         "approach_weight": 2.0,
         "approach_sharpness": 9.0,
-        "grasp_weight": 2.0,
+        "grasp_weight": 1.5,
+        "closed_grasp_weight": 4.0,
         "grasp_sharpness": 18.0,
-        "lift_weight": 8.0,
+        "lift_weight": 16.0,
+        "prelift_move_penalty_weight": -5.0,
         "transport_weight": 5.0,
         "transport_xy_sharpness": 18.0,
         "yaw_weight": 3.0,
         "yaw_sharpness": 4.5,
         "placement_weight": 8.0,
         "placement_height_sharpness": 18.0,
-        "success_bonus_weight": 20.0,
-        "action_penalty_weight": -0.003,
+        "success_bonus_weight": 40.0,
+        "action_penalty_weight": -0.002,
     }
 
     near = dict(base)
@@ -171,6 +176,7 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
 
     lifted = dict(near)
     lifted["finger_center_to_star_dist"] = torch.tensor([0.018], device=device)
+    lifted["gripper_width"] = torch.tensor([0.018], device=device)
     lifted["star_lift_height"] = torch.tensor([0.08], device=device)
     checks.check(
         "reward_lift_increases_after_grasp",
@@ -215,6 +221,15 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
         bool((_reward_total(**action_penalized) < _reward_total(**placed)).item()),
         placed_reward=_mean(_reward_total(**placed)),
         action_penalized_reward=_mean(_reward_total(**action_penalized)),
+    )
+
+    dragged = dict(near)
+    dragged["star_initial_xy_error"] = torch.tensor([0.10], device=device)
+    checks.check(
+        "reward_penalizes_prelift_dragging",
+        bool((_reward_total(**dragged) < _reward_total(**near)).item()),
+        near_reward=_mean(_reward_total(**near)),
+        dragged_reward=_mean(_reward_total(**dragged)),
     )
 
 
