@@ -77,6 +77,7 @@ echo "SCENE=$SCENE"
 echo "ROBOT=$ROBOT"
 echo "GRASPGENX_NFS=$GRASPGENX_NFS"
 echo "CUROBO_ASSETS_NFS=$CUROBO_ASSETS_NFS"
+echo "FRANKA_RENDER_MODE=${FRANKA_RENDER_MODE:-static_urdf_obj_meshes}"
 echo "FRANKA_USD=${FRANKA_USD:-}"
 echo "FRANKA_SCENE_YAW_DEG=${FRANKA_SCENE_YAW_DEG:-180.0}"
 
@@ -115,6 +116,7 @@ srun \
       --robot \"$ROBOT\" \
       --graspgenx_root /graspgenx \
       --curobo_assets_root /curobo_assets \
+      --franka_render_mode \"${FRANKA_RENDER_MODE:-static_urdf_obj_meshes}\" \
       --franka_usd \"${FRANKA_USD:-}\" \
       --franka_scene_yaw_deg \"${FRANKA_SCENE_YAW_DEG:-180.0}\" \
       --seed \"${SEED:-23}\" \

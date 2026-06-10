@@ -71,6 +71,12 @@ def parse_args() -> argparse.Namespace:
         help="Override the Franka URDF path after loading the GraspGenX config.",
     )
     parser.add_argument(
+        "--franka_render_mode",
+        choices=("static_urdf_obj_meshes", "articulation_usd"),
+        default="static_urdf_obj_meshes",
+        help="Render GraspGenX Franka as static URDF OBJ meshes, or opt into an Isaac Lab articulation.",
+    )
+    parser.add_argument(
         "--franka_usd",
         default=None,
         help="Override the actuated Franka USD/URI used to spawn the Isaac Lab articulation.",
@@ -709,8 +715,6 @@ def _resolve_graspgenx_franka_robot(output_dir: Path) -> RobotSpec:
         length=4,
         field_name="robot_base_pose.quaternion_xyzw",
     )
-    scene_yaw_deg = float(args_cli.franka_scene_yaw_deg)
-    scene_base_quat = _quat_xyzw_mul(_yaw_quat_xyzw(scene_yaw_deg), base_quat)
 
     curobo_cfg = cfg.get("curobo", {})
     default_joint_position = None
@@ -730,6 +734,26 @@ def _resolve_graspgenx_franka_robot(output_dir: Path) -> RobotSpec:
     joint_positions = dict(zip(arm_joint_names, default_joint_position or [0.0] * len(arm_joint_names)))
     joint_positions["panda_finger_joint1"] = 0.04
     joint_positions["panda_finger_joint2"] = 0.04
+
+    render_mode = str(args_cli.franka_render_mode)
+    if render_mode == "static_urdf_obj_meshes":
+        return RobotSpec(
+            name="graspgenx_franka_panda",
+            usd_path=None,
+            source="GraspGenX end2end/robots/franka_panda.yaml",
+            source_config=cfg_path,
+            urdf_path=urdf_path,
+            asset_root_path=asset_root,
+            base_translation=base_translation,  # type: ignore[arg-type]
+            base_quaternion_xyzw=base_quat,  # type: ignore[arg-type]
+            render_mode=render_mode,
+            default_joint_position=default_joint_position,
+            joint_names=joint_names,
+            joint_positions=joint_positions,
+        )
+
+    scene_yaw_deg = float(args_cli.franka_scene_yaw_deg)
+    scene_base_quat = _quat_xyzw_mul(_yaw_quat_xyzw(scene_yaw_deg), base_quat)
     dynamic_cfg = cfg.get("dynamic", {})
     if not isinstance(dynamic_cfg, dict):
         dynamic_cfg = {}
@@ -775,7 +799,7 @@ def _resolve_graspgenx_franka_robot(output_dir: Path) -> RobotSpec:
         asset_root_path=asset_root,
         base_translation=base_translation,  # type: ignore[arg-type]
         base_quaternion_xyzw=scene_base_quat,
-        render_mode="articulation_usd",
+        render_mode=render_mode,
         default_joint_position=default_joint_position,
         joint_names=joint_names,
         joint_positions=joint_positions,
@@ -1746,7 +1770,7 @@ def _render_cube_motion_scene(
     metadata = {
         "generated_at_unix": time.time(),
         "task": "single_cube_motion",
-        "task_description": "Actuated GraspGenX Franka rendered with one cube moved by deterministic disturbance kicks.",
+        "task_description": "Static GraspGenX Franka rendered with one cube moved by deterministic disturbance kicks.",
         "simulation_backend": "Isaac Sim / Isaac Lab / PhysX USD scene",
         "robot": _robot_metadata(robot_spec),
         "robot_runtime": _robot_runtime_metadata(robot_articulation),
@@ -1783,6 +1807,7 @@ def _render_cube_motion_scene(
         "checks": {
             "robot_selected": robot_spec.name,
             "uses_graspgenx_franka": robot_spec.name == "graspgenx_franka_panda",
+            "franka_is_static": robot_spec.render_mode == "static_urdf_obj_meshes",
             "franka_is_articulation": robot_spec.render_mode == "articulation_usd",
             "franka_has_actuators": bool(robot_spec.actuator_config),
             "cube_moves": True,
@@ -1794,9 +1819,9 @@ def _render_cube_motion_scene(
     _log(f"exporting USD: {usd_path}")
     stage.GetRootLayer().Export(str(usd_path))
 
-    table_target = (table_center_x, float(args_cli.cube_start_y), surface_z + 0.16)
+    table_target = (float(args_cli.cube_start_x) - 0.05, float(args_cli.cube_start_y), surface_z + 0.12)
     views = {
-        "overview": ((0.22, -0.72, 2.18), table_target),
+        "overview": ((1.28, -0.72, 1.42), table_target),
         "robot_side": ((1.20, 0.06, 1.32), (float(args_cli.cube_start_x), float(args_cli.cube_start_y), surface_z + 0.12)),
         "topdown": ((table_center_x, float(args_cli.cube_start_y), 2.05), (table_center_x, float(args_cli.cube_start_y), surface_z + 0.02)),
         "pickup_close": ((0.05, float(args_cli.cube_start_y) - 0.46, 1.16), (float(args_cli.cube_start_x), float(args_cli.cube_start_y), surface_z + 0.08)),
