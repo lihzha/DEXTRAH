@@ -16,8 +16,8 @@ Point2 = tuple[float, float]
 class StarKittingGeometryCfg:
     """Geometry parameters shared by training, eval, and validation."""
 
-    star_outer_radius: float = 0.035
-    star_inner_radius: float = 0.016
+    star_outer_radius: float = 0.032
+    star_inner_radius: float = 0.0145
     star_thickness: float = 0.032
     fixture_size_x: float = 0.18
     fixture_size_y: float = 0.18

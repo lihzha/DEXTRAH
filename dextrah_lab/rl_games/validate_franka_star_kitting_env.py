@@ -333,7 +333,7 @@ def _target_actions_to_world_position(task_env, target_pos_local: torch.Tensor, 
 
 
 def _scripted_target(task_env, step: int, num_steps: int) -> tuple[torch.Tensor, float]:
-    star = task_env.star_pos.detach()
+    star = task_env.star_initial_pos.detach()
     goal = task_env.star_goal_pos.detach()
     z_above_star = star[:, 2] + 0.12
     z_grasp = star[:, 2] + 0.5 * float(task_env.cfg.star_thickness) + 0.010
@@ -401,6 +401,7 @@ def _run_scripted_rollout(env, task_env, checks: CheckRecorder, num_steps: int, 
     min_ee_star = _mean(task_env.ee_to_star_dist)
     min_finger_star = _mean(task_env.finger_center_to_star_dist)
     max_star_height = _mean(task_env.star_lift_height)
+    max_star_initial_xy_error = _mean(task_env.star_initial_xy_error)
     reward_values: list[float] = []
     done_count = 0
     for step in range(num_steps):
@@ -421,6 +422,7 @@ def _run_scripted_rollout(env, task_env, checks: CheckRecorder, num_steps: int, 
         min_ee_star = min(min_ee_star, _mean(task_env.ee_to_star_dist))
         min_finger_star = min(min_finger_star, _mean(task_env.finger_center_to_star_dist))
         max_star_height = max(max_star_height, _mean(task_env.star_lift_height))
+        max_star_initial_xy_error = max(max_star_initial_xy_error, _mean(task_env.star_initial_xy_error))
 
         if not bool(torch.isfinite(policy_obs).all().item()):
             checks.check("scripted_rollout_observation_finite", False, step=step)
@@ -473,6 +475,11 @@ def _run_scripted_rollout(env, task_env, checks: CheckRecorder, num_steps: int, 
         star_z_min=float(task_env.star_pos[:, 2].detach().min().cpu()),
         done_count=done_count,
     )
+    checks.check(
+        "scripted_rollout_limits_prelift_star_motion",
+        max_star_initial_xy_error < 0.065,
+        max_star_initial_xy_error=max_star_initial_xy_error,
+    )
 
     return {
         "steps_completed": len(reward_values),
@@ -483,6 +490,7 @@ def _run_scripted_rollout(env, task_env, checks: CheckRecorder, num_steps: int, 
         "min_finger_to_star": min_finger_star,
         "initial_finger_to_star": initial_finger_star,
         "max_star_lift_height": max_star_height,
+        "max_star_initial_xy_error": max_star_initial_xy_error,
         "final_success_rate": _mean(task_env.in_success_region.float()),
         "final_ee_pos_mean": _mean_vec(task_env.ee_pos),
         "final_star_pos_mean": _mean_vec(task_env.star_pos),

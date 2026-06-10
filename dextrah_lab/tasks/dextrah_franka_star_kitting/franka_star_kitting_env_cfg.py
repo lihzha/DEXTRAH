@@ -67,8 +67,8 @@ class DextrahFrankaStarKittingEnvCfg(DirectRLEnvCfg):
     star_spawn_xy_randomization = 0.025
     star_spawn_yaw_randomization_deg = 25.0
 
-    star_outer_radius = 0.035
-    star_inner_radius = 0.016
+    star_outer_radius = 0.032
+    star_inner_radius = 0.0145
     star_thickness = 0.032
     fixture_size_x = 0.18
     fixture_size_y = 0.18

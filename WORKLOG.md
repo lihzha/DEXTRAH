@@ -2621,3 +2621,45 @@ Checks:
 Next:
 - Commit/push, update the A100 checkout, rerun environment validation with
   video, and only then relaunch smoke training/eval.
+
+## 2026-06-10 02:50 PDT - Franka Star Validation Failure Follow-up
+
+Goal:
+- Fix the post-lift-discovery validation failure before launching any new
+  training.
+
+Evidence:
+- validation job_id: `28931810`, run
+  `franka_star_env_validate_liftdiscovery_20260610_024210`.
+- source_commit: `f15fc918800df126166609d884f5851c94908143`.
+- status: `FAILED`, exit `1:0`, elapsed `00:01:36`; the failure was the
+  intended host-side metrics gate, not an Isaac crash.
+- local artifacts:
+  `cluster_results/a1001/franka_star_env_validate_liftdiscovery_20260610_024210`.
+- video validation: `1280x720`, `479` frames, `7.983333s`, `60 FPS`.
+- failed check: `scripted_rollout_approaches_star`.
+- metrics: reward/geometry predicates passed, `initial_finger_to_star=0.0786`,
+  `min_finger_to_star=0.0786`, `initial_ee_to_star=0.1124`,
+  `min_ee_to_star=0.1124`, `max_star_lift_height=0.0064`.
+- visual inspection: the thicker full-size star left too little Franka
+  clearance; the scripted hand crowded and moved the star instead of proving a
+  clean approach.
+
+Change:
+- Reduced the star planform from `0.035/0.016 m` outer/inner radius to
+  `0.032/0.0145 m` while keeping the thicker `0.032 m` body and `0.044 m`
+  fixture.
+- Changed validation's scripted controller to aim at the reset star anchor
+  instead of chasing the current star pose after contact.
+- Added a validation check and rollout metric for maximum pre-lift star XY
+  drift (`max_star_initial_xy_error < 0.065`).
+
+Checks:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_rewards.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env_cfg.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env.py dextrah_lab/tasks/dextrah_franka_star_kitting/star_kitting_geometry.py dextrah_lab/rl_games/validate_franka_star_kitting_env.py dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/train.py`
+- `bash -n cluster/sbatch_validate_franka_star_kitting_env_1gpu.sh cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_eval_franka_star_kitting_1gpu.sh`
+- `ruby -e "require 'yaml'; YAML.load_file('dextrah_lab/tasks/dextrah_franka_star_kitting/agents/rl_games_ppo_franka_star_kitting_cfg.yaml'); puts 'yaml ok'"`
+- `git diff --check`
+
+Next:
+- Commit/push, update A100, and rerun validation before launching smoke
+  training.
