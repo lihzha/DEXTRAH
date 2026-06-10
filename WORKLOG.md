@@ -5970,6 +5970,121 @@ Validation:
 Next:
 - Commit/push/pull and relaunch the validation smoke.
 
+## 2026-06-10 16:07 PDT - DEXTRAH Teacher Handoff Pointer
+
+- Full handoff for the active DEXTRAH privileged FGP teacher job is in
+  `## 2026-06-10 16:05 PDT - DEXTRAH Teacher Handoff Snapshot` above.
+- Active teacher job: `28942245`, run `teacher_short_20260609_100021`, task
+  `Dextrah-Kuka-Allegro`.
+- Latest handoff snapshot: `RUNNING` on `polar3`, node
+  `batch-block7-01008`, current allocation ends at `16:58:55 PDT`.
+- Latest observed log progress reached epoch `12995/20000`; latest complete
+  checkpoint was `last_dextrah_lstm_ep_12990_rew_754.952.pth`; all rank
+  runtime sidecars refreshed at `16:04`.
+- Next agent should continue the active monitor loop and verify the expected
+  wall-time requeue around the `16:53:55 PDT` signal window.
+
+## 2026-06-10 16:05 PDT - DEXTRAH Teacher Handoff Snapshot
+
+Goal:
+- Hand off active monitoring of the DEXTRAH privileged FGP teacher production
+  run to a fresh agent without losing scheduler, artifact, metric, or
+  resumability context.
+
+Version Control:
+- local branch: `codex/dextrah-cluster-dev`
+- local HEAD: `35333679f66fc1679de8ec98c31987be39f89261`
+  (`Record Franka cube validation pass`)
+- remote checkout:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/DEXTRAH` clean at the same
+  `35333679f66fc1679de8ec98c31987be39f89261`
+- local dirty files: `WORKLOG.md` and untracked `AGENTS.md`.
+- note: the DEXTRAH teacher job was launched before the later Franka-cube
+  commits, but future Slurm requeue/re-exec will use the current clean remote
+  checkout. Diff from the earlier monitoring commit added the Franka-cube task
+  branch to `cluster/sbatch_train_teacher_8gpu.sh` and imported the
+  Franka-cube task in `dextrah_lab/rl_games/train.py`; the Kuka/Allegro teacher
+  defaults are not intentionally changed.
+
+Command / Job:
+- job_id: `28942245`
+- task: `Dextrah-Kuka-Allegro`
+- run_name: `teacher_short_20260609_100021`
+- job log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28942245.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+- current allocation: `polar3`, node `batch-block7-01008`,
+  `2026-06-10T13:08:55` to `2026-06-10T16:58:55`.
+- scheduler state at `2026-06-10 16:04:40 PDT`: `RUNNING`, `Requeue=1`,
+  `Restarts=1`, elapsed `02:55:46`.
+
+Result:
+- status: running healthy.
+- prior allocation requeued successfully once at wall time; current allocation
+  auto-resumed and has continued saving checkpoints/runtime state.
+- latest log tail reached epoch `12995/20000`.
+- latest complete checkpoints at handoff:
+  - `last_dextrah_lstm_ep_12990_rew_754.952.pth` at `16:04`
+  - `last_dextrah_lstm_ep_12980_rew_599.4532.pth` at `16:03`
+  - `last_dextrah_lstm_ep_12970_rew_548.5926.pth` at `16:02`
+- all runtime sidecars `dextrah_runtime_rank_0.pth` through
+  `dextrah_runtime_rank_7.pth` refreshed at `16:04`.
+- current TensorBoard file:
+  `events.out.tfevents.1781122897.batch-block7-01008`, mtime `16:03`.
+- recent error scans have no matches for traceback, runtime error,
+  CUDA/NCCL error, OOM, killed, requested-operation, or training-failure
+  patterns.
+
+Metrics:
+- latest parsed TensorBoard data through epoch `12982` at `16:03:37`:
+  - `rewards/iter`: latest `585.421814`, last-50 `614.504057`,
+    last-200 `614.816157`.
+  - `in_success_region/iter`: latest `0.450195`, last-50 `0.447432`,
+    last-200 `0.450436`.
+  - `num_adr_increases/iter`: `50.0`.
+  - `info/kl`: latest `0.015119`, last-50 `0.009873`,
+    last-200 `0.0104`.
+  - `losses/a_loss`: last-50 `-0.004421`.
+  - `losses/c_loss`: last-50 `0.019844`.
+  - `performance/step_inference_rl_update_fps`: last-50 about `106899`.
+
+Analysis:
+- The run is in max-ADR mode (`num_adr_increases=50`). Lower aggregate reward
+  than early best is expected because the README schedule anneals lift reward to
+  zero at max ADR.
+- The key success metric remains above the `success_for_adr=0.4` threshold.
+- KL spikes have been transient and not paired with loss divergence or reward
+  collapse.
+- Checkpoints and all eight per-rank runtime sidecars are refreshing on cadence,
+  so the current resumability implementation is behaving as intended.
+- Local SSH monitor commands occasionally stalled when bundled into one long
+  remote `find`/`grep` command. Shorter one-shot SSH checks with
+  `ConnectTimeout`, `ServerAliveInterval`, and separate queue/log/artifact
+  commands worked more reliably. These stalls were local monitor issues, not
+  training stalls.
+
+Recommended Next Steps For The Fresh Agent:
+- Read the latest `robotics-cluster-development-core`,
+  `dextrah-cluster-workflow`, and `a1001-l401-cluster-workflow` skills first.
+- Continue the active monitor loop; do not send a final while this job is still
+  running or waiting for requeue.
+- Near `16:53:55 PDT` the `#SBATCH --signal=B:TERM@300` signal should arrive
+  for the `16:58:55` wall-time endpoint. Verify the script logs
+  `Requeuing DEXTRAH job 28942245...`, then verify the next allocation restores
+  from the newest checkpoint/runtime sidecars.
+- Prefer short checks like:
+  `ssh -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 a1001 'squeue -j 28942245 -o "%.18i %.22P %.35j %.12T %.12M %.8D %.40R"; tail -n 120 /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28942245.out'`
+- For artifacts:
+  `ssh a1001 'RUN=/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021; ls -lt "$RUN"/nn/last_dextrah_lstm_ep_*.pth | head; ls -lt "$RUN"/nn/dextrah_runtime_rank_*.pth; ls -lt "$RUN"/summaries | head'`
+- For TensorBoard metrics, rsync the summaries to
+  `/tmp/dextrah_teacher_events` and parse with the temporary TensorBoard package
+  already installed at `/tmp/codex_tensorboard_pkg`.
+- If future requeue/resume fails, first inspect the fact that the remote
+  checkout is now `3533367` rather than the earlier launch-time `0ee6a13`, then
+  check `cluster/sbatch_train_teacher_8gpu.sh` and
+  `dextrah_lab/rl_games/train.py`.
+
 ## 2026-06-10 15:55 PDT - Franka Cube Validation Pass
 
 Command / Job:
@@ -6131,6 +6246,128 @@ Recommended Next Steps For The Fresh Agent:
 - Do not pull the A100 checkout while job `28954774` is running unless there is
   a clear reason; the running container has `/code` mounted from that checkout.
 
+## 2026-06-10 16:12 PDT - Franka Cube PPO Stalled And Eval Launched
+
+Goal:
+- Decide whether the first Franka cube PPO run is learnable enough to continue
+  and preserve diagnostic evidence before changing the task.
+
+Command / Job:
+- training job: `28954774`
+- run_name: `franka_cube_ppo_20260610_1558`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ppo_20260610_1558`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28954774.out`
+- local artifacts:
+  `cluster_results/a1002/training/franka_cube_ppo_20260610_1558`
+
+Result:
+- status: canceled intentionally at epoch `246/600` after the epoch-200
+  decision threshold; scheduler state `CANCELLED by 158351`.
+- no training traceback/OOM/NCCL failure found in the log; only normal headless
+  display and Isaac warnings.
+- latest flushed TensorBoard scalars are through epoch `231`.
+- checkpoints include:
+  - `last_dextrah_franka_cube_grasp_ep_200_rew_-1549.2926.pth`
+  - `last_dextrah_franka_cube_grasp_ep_225_rew_-1935.4565.pth`
+  - `last_dextrah_franka_cube_grasp_ep_250_rew_-1209.7743.pth`
+  - best reward checkpoint `dextrah_franka_cube_grasp.pth`
+- scalar evidence at epoch `231`, tail-50:
+  - `cube_success_rate/iter`: last `0.0`, mean `9.77e-06`, max `0.000488`.
+  - `in_success_region/iter`: last `0.0`, mean `9.77e-06`, max `0.000488`.
+  - `cube_lift_height/iter`: last `0.00169 m`, mean `0.00136 m`,
+    max `0.00208 m`.
+  - `cube_has_lifted_rate/iter`: last `0.00586`, mean `0.00689`.
+  - `cube_action_z/iter`: last `-0.231`, mean `-0.205`.
+  - `cube_action_down/iter`: last `0.433`, mean `0.415`.
+  - `cube_grasp_ready_reward/iter`: last `0.247`, mean `0.140`.
+  - `cube_closed_grasp_reward/iter`: last `0.147`, mean `0.0743`.
+  - `cube_prelift_move_penalty/iter`: last `-3.87`, mean `-4.03`.
+
+Analysis:
+- The PPO run is stable and improves shaped approach/close reward, but it does
+  not learn the actual cube lift objective. The policy approaches and partially
+  closes while preferring downward motion, so the best-reward checkpoints are
+  likely reward-shaping/local-minimum checkpoints rather than solved task
+  checkpoints.
+- This is now a concrete negative result for the Franka cube comparison: the
+  task construction validates, but the default reward/curriculum is not
+  learnable under this PPO run.
+
+Follow-up Eval:
+- launched eval job `28955181` from best checkpoint:
+  `RUN_NAME=franka_cube_ppo_20260610_1558_best_eval64_20260610_1612 CHECKPOINT=/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ppo_20260610_1558/nn/dextrah_franka_cube_grasp.pth NUM_ENVS=64 NUM_STEPS=600 VIDEO_LENGTH=360 PRINT_INTERVAL=60 CAPTURE_VIDEO=True DETERMINISTIC=True USE_CUDA_GRAPH=False CUBE_SPAWN_XY_RANDOMIZATION=0.08 SEED=45 sbatch --parsable cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- eval run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_ppo_20260610_1558_best_eval64_20260610_1612`
+- eval log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_28955181.out`
+
+Next:
+- Monitor eval job `28955181`, fetch `metrics.json` and video, and inspect the
+  video/contact-sheet before patching the reward or curriculum.
+
+## 2026-06-10 16:16 PDT - Franka Cube Reward-Gate Fix For Handoff
+
+Goal:
+- Finish the current Franka cube reward fix and stop this agent's launched jobs
+  before the user hands over to a fresh agent.
+
+Finding:
+- The Franka cube success predicate had already been relaxed to use mean
+  two-finger distance with `cube_success_hand_dist=0.20`, because the synthetic
+  valid lifted pose measured about `0.183 m` from the Franka finger bodies.
+- The reward gates still used hard-coded tighter thresholds based mostly on
+  `max_finger_to_cube_dist` (`0.125 m`, `0.150 m`, `0.180 m`). This meant a
+  pose accepted by the task success predicate could receive weak or near-zero
+  grasp-ready/lift-action shaping, which matches the stalled PPO behavior:
+  approach/close rewards increased, but actual mean lift stayed around
+  `1-2 mm` and success stayed essentially zero.
+- The existing validator missed this mismatch because reward checks used
+  artificial `0.075 m` finger distances instead of the actual synthetic Franka
+  success geometry.
+
+Change:
+- `franka_cube_grasp_rewards.py`
+  - added `success_hand_dist` to `compute_franka_cube_grasp_rewards`.
+  - changed finger-approach/grasp/close gates to use mean finger distance and
+    thresholds derived from `cube_success_hand_dist` instead of fixed tight
+    KUKA-like max-finger thresholds.
+  - reduced close-far penalty gating so the accepted Franka success geometry is
+    not treated as a far-close state.
+- `franka_cube_grasp_env.py`
+  - passes `cfg.cube_success_hand_dist` into the reward helper.
+- `validate_franka_cube_grasp_env.py`
+  - passes `success_hand_dist` into reward-helper unit checks.
+  - added `reward_accepts_success_geometry_for_grasp_and_lift`, which computes
+    rewards at the actual synthetic lifted Franka success pose and checks that
+    grasp/lift shaping is positive there.
+
+Validation:
+- local `python3 -m py_compile` passed for:
+  - `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_rewards.py`
+  - `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`
+  - `dextrah_lab/rl_games/validate_franka_cube_grasp_env.py`
+- local `git diff --check` passed.
+- No new cluster validation was launched because the user requested the current
+  fix be documented and this agent stop for handoff.
+
+Stopped Jobs:
+- canceled this agent's Franka cube PPO job `28954774` after stalled metrics.
+- canceled this agent's follow-up eval job `28955181` before completion, per the
+  stop/handoff request.
+- original DEXTRAH KUKA/Allegro teacher job `28942245` remains running and is
+  intentionally left for the next agent to monitor.
+
+Next For Handoff:
+- Run `cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh` on this patched
+  code and verify the new `reward_accepts_success_geometry_for_grasp_and_lift`
+  check passes.
+- If validation passes, launch a new bounded Franka cube PPO run and compare
+  `cube_lift_height`, `cube_success_rate`, `cube_action_z`, and
+  `cube_grasp_ready_reward` against the stalled `franka_cube_ppo_20260610_1558`
+  run.
+
 ## 2026-06-10 15:50 PDT - Franka Cube Hand-Distance Tolerance Adjustment
 
 Command / Job:
@@ -6167,3 +6404,17 @@ Validation:
 
 Next:
 - Commit/push/pull and relaunch the validation smoke.
+
+## 2026-06-10 16:08 PDT - DEXTRAH Teacher Handoff Pointer
+
+- Full handoff for the active DEXTRAH privileged FGP teacher job is in
+  `## 2026-06-10 16:05 PDT - DEXTRAH Teacher Handoff Snapshot`.
+- Active teacher job: `28942245`, run `teacher_short_20260609_100021`, task
+  `Dextrah-Kuka-Allegro`.
+- Latest handoff snapshot: `RUNNING` on `polar3`, node
+  `batch-block7-01008`, current allocation ends at `16:58:55 PDT`.
+- Latest observed log progress reached epoch `12995/20000`; latest complete
+  checkpoint was `last_dextrah_lstm_ep_12990_rew_754.952.pth`; all rank
+  runtime sidecars refreshed at `16:04`.
+- Next agent should continue the active monitor loop and verify the expected
+  wall-time requeue around the `16:53:55 PDT` signal window.

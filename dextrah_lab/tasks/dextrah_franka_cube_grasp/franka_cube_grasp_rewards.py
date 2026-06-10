@@ -19,6 +19,7 @@ def compute_franka_cube_grasp_rewards(
     in_success_region: torch.Tensor,
     actions: torch.Tensor,
     target_lift_height: float,
+    success_hand_dist: float,
     max_gripper_width: float,
     approach_weight: float,
     approach_sharpness: float,
@@ -53,16 +54,23 @@ def compute_franka_cube_grasp_rewards(
         lift_denom = 1.0e-6
 
     max_finger_to_cube_dist = torch.maximum(left_finger_to_cube_dist, right_finger_to_cube_dist)
+    mean_finger_to_cube_dist = 0.5 * (left_finger_to_cube_dist + right_finger_to_cube_dist)
     finger_distance_asymmetry = torch.abs(left_finger_to_cube_dist - right_finger_to_cube_dist)
     finger_balance_gate = 1.0 - torch.clamp((finger_distance_asymmetry - 0.020) / 0.070, 0.0, 1.0)
     near_cube = torch.exp(-approach_sharpness * ee_to_cube_dist)
-    finger_approach = torch.exp(-finger_approach_sharpness * max_finger_to_cube_dist) * (
+    finger_approach = torch.exp(-finger_approach_sharpness * mean_finger_to_cube_dist) * (
         0.30 + 0.70 * finger_balance_gate
     )
-    tight_finger_gate = torch.clamp((0.125 - max_finger_to_cube_dist) / 0.075, 0.0, 1.0) * finger_balance_gate
-    tight_center_gate = torch.clamp((0.115 - finger_center_to_cube_dist) / 0.065, 0.0, 1.0)
-    tight_ee_gate = torch.clamp((0.150 - ee_to_cube_dist) / 0.090, 0.0, 1.0)
-    grasp_ready_gate = tight_finger_gate * tight_center_gate * tight_ee_gate
+    if success_hand_dist < 1.0e-6:
+        success_hand_dist = 0.20
+    loose_contact_dist = success_hand_dist + 0.035
+    tight_finger_gate = (
+        torch.clamp((loose_contact_dist - mean_finger_to_cube_dist) / 0.110, 0.0, 1.0)
+        * (0.25 + 0.75 * finger_balance_gate)
+    )
+    tight_center_gate = torch.clamp((loose_contact_dist - finger_center_to_cube_dist) / 0.120, 0.0, 1.0)
+    tight_ee_gate = torch.clamp((loose_contact_dist - ee_to_cube_dist) / 0.140, 0.0, 1.0)
+    grasp_ready_gate = tight_finger_gate * (0.35 + 0.65 * tight_center_gate) * (0.35 + 0.65 * tight_ee_gate)
 
     gripper_denom = 0.5 * max_gripper_width
     if gripper_denom < 1.0e-6:
@@ -78,10 +86,10 @@ def compute_franka_cube_grasp_rewards(
     closed_credit_gate = 0.25 + 0.75 * closed_gripper
     lift_action_progress_gate = 0.15 + 0.85 * torch.clamp(cube_lift_height / 0.020, 0.0, 1.0)
 
-    close_near_gate = torch.clamp((0.180 - max_finger_to_cube_dist) / 0.120, 0.0, 1.0) * (
+    close_near_gate = torch.clamp((loose_contact_dist - mean_finger_to_cube_dist) / 0.140, 0.0, 1.0) * (
         0.25 + 0.75 * finger_balance_gate
     )
-    close_far_gate = torch.clamp((max_finger_to_cube_dist - 0.140) / 0.080, 0.0, 1.0)
+    close_far_gate = torch.clamp((mean_finger_to_cube_dist - success_hand_dist) / 0.100, 0.0, 1.0)
     open_near_gate = torch.maximum(close_near_gate, grasp_ready_gate)
     prelift_xy_motion = torch.clamp((cube_xy_error - 0.015) / 0.065, 0.0, 1.0)
 
@@ -141,4 +149,3 @@ def compute_franka_cube_grasp_rewards(
         ungrasped_lift_penalty,
         action_penalty,
     )
-

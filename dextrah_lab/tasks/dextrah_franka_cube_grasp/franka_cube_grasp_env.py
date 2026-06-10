@@ -122,6 +122,7 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             self.in_success_region,
             self.actions,
             float(self.cfg.cube_lift_height),
+            float(self.cfg.cube_success_hand_dist),
             float(self.cfg.max_gripper_width),
             float(self.cfg.cube_approach_weight),
             float(self.cfg.cube_approach_sharpness),
