@@ -3018,3 +3018,43 @@ Checks:
 
 Next:
 - Commit/push, update A100, rerun validation, and only then consider PPO.
+
+## 2026-06-10 03:56 PDT - Franka Star Pickup Lane Separation
+
+Goal:
+- Remove reset-time contact between the Franka hand and the randomized star
+  spawn before launching any training.
+
+Evidence:
+- validation job_id: `28932773`, run
+  `franka_star_env_validate_clearance_20260610_034522`, source commit
+  `17e97109d0eeeff0c85047f8070e0f4d709b522d`.
+- status: failed metrics gate, exit `1:0`.
+- diagnostics: worst pre-lift drift happened at step 4 while the gripper was
+  open and the scripted controller was only raising from reset:
+  `star_initial_xy_error=0.12639`, `star_lift_height=0.03713`.
+- reset target detail showed the reset EE lane near `(-0.443, 0.013)` while a
+  randomized star spawned near `(-0.381, -0.051)`, close enough for the hand to
+  kick the part before the task began.
+- per-env lift remained unreliable: validation-lifted rate `0.5`, with min
+  per-env max lift only `0.00859 m`.
+
+Analysis:
+- The reset/approach controller is no longer the main issue; the object can
+  spawn too close to the reset hand envelope.
+- The first trainable version should use a physically separated pickup lane
+  and modest spawn randomization. Broader randomization can be reintroduced
+  after a working policy exists.
+
+Change:
+- Moved `pickup_y` from `-0.04` to `-0.12`.
+- Reduced `star_spawn_xy_randomization` from `0.025` to `0.015`.
+- Reduced `star_spawn_yaw_randomization_deg` from `25` to `15`.
+
+Checks:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env_cfg.py`
+- `git diff --check`
+
+Next:
+- Commit/push, update A100, rerun validation with video, and inspect metrics
+  before any RL launch.

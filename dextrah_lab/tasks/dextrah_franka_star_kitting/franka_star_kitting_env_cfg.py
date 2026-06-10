@@ -59,13 +59,13 @@ class DextrahFrankaStarKittingEnvCfg(DirectRLEnvCfg):
     table_surface_z = table_center_z + 0.5 * table_thickness
 
     pickup_x = -0.36
-    pickup_y = -0.04
+    pickup_y = -0.12
     fixture_x = -0.45
     fixture_y = 0.16
     fixture_yaw_deg = 18.0
     star_start_yaw_deg = -24.0
-    star_spawn_xy_randomization = 0.025
-    star_spawn_yaw_randomization_deg = 25.0
+    star_spawn_xy_randomization = 0.015
+    star_spawn_yaw_randomization_deg = 15.0
 
     star_outer_radius = 0.032
     star_inner_radius = 0.0145
