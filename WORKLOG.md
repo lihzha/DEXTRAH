@@ -3849,3 +3849,38 @@ Checks:
 Next:
 - Commit/push, update A100, rerun the validation gate with video, and only
   relaunch PPO if the environment/reward validation still passes.
+
+## 2026-06-10 05:56 PDT - Franka Star Capture-Boost Validation Passed
+
+Goal:
+- Validate the broader close/capture reward gates and stronger gated
+  close/grasp/lift weights before relaunching PPO.
+
+Evidence:
+- validation job_id: `28936064`, run
+  `franka_star_env_validate_captureboost_20260610_055317`.
+- source commit: `fdf42c9903584ae4d47bff866e6266cb3f239af5`.
+- Slurm status: completed `0:0`, elapsed `00:01:21`.
+- all validation reward checks and scripted rollout checks passed.
+- hard gate metrics: `max_pretransport_star_initial_xy_error=0.02956`,
+  `validation_lifted_rate=0.5`, `max_star_lift_height=0.07345`.
+- diagnostic late unlifted drag remains visible but outside the hard
+  pre-transport gate: `max_unlifted_late_drag_xy_error=0.09897`.
+- reward scale increased as intended: validation `reward_mean=7.58513`,
+  lifted reward sanity value `79.77748`.
+- local artifacts fetched under
+  `cluster_results/a1001/franka_star_env_validate_captureboost_20260610_055317`.
+- validation video is playable and nonblank:
+  `1280x720`, `179` frames, `2.98s`, `60 FPS`; contact sheet shows the same
+  stable Franka/star/fixture scripted lift path.
+
+Analysis:
+- The capture-boost patch preserves the environment safety/feasibility gates.
+- The next PPO run should reveal whether broader near-close eligibility and
+  stronger close/capture rewards move the policy from hover/push into actual
+  pinch and lift.
+
+Next:
+- Launch 8-GPU PPO from `fdf42c9` using the same stable rl_games
+  hyperparameters as the previous run, monitor early close/gripper/lift terms,
+  and request checkpoint eval videos.
