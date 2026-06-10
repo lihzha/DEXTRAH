@@ -1404,11 +1404,17 @@ Change:
 Version Control:
 - branch: `codex/dextrah-cluster-dev`
 - base_commit: `cfc9b7fac27ddd5b65400268e610156a36df3d5b`
-- implementation_commit: pending
-- push/pull: pending
+- implementation_commits:
+  - `1872830401a9370a8155e72044de1cb27653a148`
+  - `1f367158f8e0fd2d526811a9082d78c4fd629678`
+  - `69bf69e513fb17c7e7e8d5b302f193fae3a48c27`
+- push/pull: pushed to origin and pulled on L401
 - changed_files:
   `dextrah_lab/scene_scripts/render_star_kitting_env.py`,
   `cluster/sbatch_render_star_kitting_env.sh`, `WORKLOG.md`
+- remote_commit/status: `69bf69e513fb17c7e7e8d5b302f193fae3a48c27`
+  for the final render job; later branch-tip `a95b5e1` only updates
+  `WORKLOG.md`.
 
 Command / Job:
 - local checks:
@@ -1417,18 +1423,41 @@ Command / Job:
   - `git diff --check -- dextrah_lab/scene_scripts/render_star_kitting_env.py cluster/sbatch_render_star_kitting_env.sh`
 - planned l401 smoke:
   `SCENE=star_kitting RUN_NAME=star_kitting_franka_articulation_<timestamp> WIDTH=640 HEIGHT=360 FPS=4 VIDEO_SECONDS=1.0 CAPTURE_VIDEO=1 PHYSICS_DEVICE=cuda:0 sbatch --export=ALL cluster/sbatch_render_star_kitting_env.sh`
+- final l401 smoke:
+  `SCENE=star_kitting RUN_NAME=star_kitting_franka_articulation_final_20260609_220558 WIDTH=640 HEIGHT=360 FPS=4 VIDEO_SECONDS=1.0 CAPTURE_VIDEO=1 PHYSICS_DEVICE=cuda:0 SETTLE_STEPS=10 sbatch --export=ALL cluster/sbatch_render_star_kitting_env.sh`
+- job_id: `1019816`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/star_kitting_env/star_kitting_franka_articulation_final_20260609_220558`
+- local_dir:
+  `cluster_results/l401/star_kitting_franka_articulation_final_20260609_220558`
+- logs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/star_kitting_1019816.out`
 
 Result:
-- status: implementation ready for deploy.
+- status: passed
+- Slurm: `COMPLETED`, `0:0`, elapsed `00:00:49`, node `pool0-00014`.
+- artifacts: `overview.mp4`, `contact_sheet.png`, 4 PNG frames,
+  `scene_metadata.json`, `render_manifest.json`, `star_kitting_env.usda`.
+- video probe: `640x360`, `4` frames, `4 fps`, `1.0 s`.
+- metadata check: `render_mode=articulation_usd`,
+  `articulation_initialized=true`, `is_fixed_base=true`, `num_joints=9`,
+  `num_bodies=11`, actuator groups `panda_shoulder`, `panda_forearm`,
+  `panda_hand`, and `franka_scene_yaw_points_arm_toward_table=true`.
+- visual check: contact sheet shows the Franka arm at the table edge facing
+  the table, with the star and fixture visible.
 
 Analysis:
 - The previous Franka path authored OBJ collision meshes directly into USD,
   so it had no joints or drives. The new path creates a fixed-base Franka
   articulation with shoulder, forearm, and hand implicit actuators.
+- An intervening cube-motion commit made the wrapper default back to static
+  meshes. The final `69bf69e` patch makes star-kitting default to
+  `articulation_usd` while preserving static as the cube-motion default unless
+  explicitly overridden.
 
 Next:
-- Commit/push/pull source, submit the L401 smoke, fetch outputs, and inspect
-  metadata/video for an initialized actuated Franka facing the table.
+- Use `FRANKA_RENDER_MODE=static_urdf_obj_meshes` only for explicit static
+  inspection renders; normal star-kitting runs now use the actuated Franka.
 
 ## 2026-06-09 22:06 PDT - Static Franka Single-Cube Motion Video
 
