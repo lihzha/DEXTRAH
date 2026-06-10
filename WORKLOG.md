@@ -5969,3 +5969,40 @@ Validation:
 
 Next:
 - Commit/push/pull and relaunch the validation smoke.
+
+## 2026-06-10 15:50 PDT - Franka Cube Hand-Distance Tolerance Adjustment
+
+Command / Job:
+- command:
+  `RUN_NAME=franka_cube_validate_smoke3_20260610_1545 NUM_ENVS=4 NUM_STEPS=160 CAPTURE_VIDEO=True SEED=44 sbatch cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`
+- validation job_id: `28954547`
+- code_commit: `72d9751a46b61d2bdbf5c72c02f979ba18802184`
+
+Result:
+- status: failed the same synthetic lifted-cube acceptance check.
+- scheduler: `FAILED`, elapsed `00:01:27`, exit code `1:0`.
+- measured lifted synthetic state:
+  - lift height `0.12999999523162842 m`
+  - XY error about `6.75e-08 m`
+  - mean two-finger distance `0.18306875228881836 m`
+  - max two-finger distance `0.18387693166732788 m`
+  - success rate `0.5`
+- all reward checks, observation shape, finite rollout, low-lift rejection,
+  wrong-XY rejection, and workspace checks passed.
+
+Analysis:
+- Switching to mean finger distance was directionally correct but the inherited
+  `0.18 m` tolerance was still slightly too tight for the Franka fingertip
+  geometry in the synthetic lifted pose.
+- Keep KUKA-matching lift and XY thresholds, but use a Franka-specific hand
+  proximity tolerance of `0.20 m`.
+
+Change:
+- Set `cube_success_hand_dist` from `0.18` to `0.20`.
+
+Validation:
+- local `py_compile` passed for the patched config.
+- `git diff --check` passed.
+
+Next:
+- Commit/push/pull and relaunch the validation smoke.

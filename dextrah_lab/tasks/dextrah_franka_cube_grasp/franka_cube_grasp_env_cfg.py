@@ -38,7 +38,7 @@ class DextrahFrankaCubeGraspEnvCfg(DextrahFrankaStarKittingEnvCfg):
     cube_lift_height = 0.16
     cube_success_lift_height = 0.12
     cube_success_xy_tol = 0.08
-    cube_success_hand_dist = 0.18
+    cube_success_hand_dist = 0.20
     target_lift_height = cube_lift_height
     lifted_success_height = cube_success_lift_height
     success_timeout = 0.20
