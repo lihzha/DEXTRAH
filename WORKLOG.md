@@ -1834,3 +1834,44 @@ Result:
 
 Next:
 - Poll job `28929372` for allocation and first `count ... sr:` metric lines.
+
+## 2026-06-10 00:09 PDT - Cube Grasp Metrics Eval Results
+
+Goal:
+- Confirm whether the high shaped checkpoint rewards correspond to the actual
+  cube-grasp success predicate.
+
+Command / Job:
+- worker metrics eval:
+  - job_id: `28929372`
+  - checkpoint:
+    `last_dextrah_cube_grasp_ep_500_rew_1595.4742.pth`
+  - log:
+    `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/metrics_cube_grasp_28929372.out`
+  - run_dir:
+    `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/cube_grasp_metrics_ep500_retry_20260610_000249`
+- comparison metrics eval:
+  - job_id: `28929393`
+  - checkpoint:
+    `last_dextrah_cube_grasp_ep_600_rew_1606.0074.pth`
+  - log:
+    `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/metrics_cube_grasp_28929393.out`
+  - run_dir:
+    `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/cube_grasp_metrics_20260610_000324`
+
+Result:
+- status: both completed successfully.
+- `28929372`: `COMPLETED`, exit `0:0`, `final sr: tensor(0., device='cuda:0')`.
+- `28929393`: `COMPLETED`, exit `0:0`, `final sr: tensor(0., device='cuda:0')`.
+- Both jobs printed `sr=0` through the end of the 5000-step rollout.
+- No traceback/runtime/error guard patterns were observed.
+
+Analysis:
+- The current checkpoints are improving dense shaped reward but do not satisfy
+  the task success predicate in metrics eval.
+- This matches the TensorBoard scalar inspection: `cube_success_rate=0`,
+  `cube_success_bonus=0`, and mean lift height remains near zero while approach,
+  enclosure, and XY-stability reward terms dominate.
+- The rollout-video path exists in `dextrah_lab/rl_games/eval_rollout.py` and
+  `cluster/sbatch_eval_cube_grasp_1gpu.sh`, but the urgent completed evals were
+  metrics-only.
