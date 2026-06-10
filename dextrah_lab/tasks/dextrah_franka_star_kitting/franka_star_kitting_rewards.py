@@ -30,6 +30,7 @@ def compute_franka_star_kitting_rewards(
     lift_weight: float,
     lift_action_weight: float,
     close_near_weight: float,
+    close_action_weight: float,
     prelift_move_penalty_weight: float,
     close_far_penalty_weight: float,
     transport_weight: float,
@@ -65,7 +66,7 @@ def compute_franka_star_kitting_rewards(
     grasp_ready = finger_contact_gate * (0.35 + 0.65 * finger_near_star) * (0.25 + 0.75 * near_star)
     prelift_gate = 1.0 - torch.clamp(lift_progress + has_lifted_star.float(), 0.0, 1.0)
     prelift_xy_motion = torch.clamp((star_initial_xy_error - 0.012) / 0.055, 0.0, 1.0)
-    close_far_penalty_gate = torch.clamp(1.0 - finger_contact_gate, 0.0, 1.0)
+    close_far_penalty_gate = torch.clamp((finger_center_to_star_dist - 0.125) / 0.055, 0.0, 1.0)
 
     xy_align = torch.exp(-transport_xy_sharpness * goal_xy_error)
     yaw_align = torch.exp(-yaw_sharpness * goal_yaw_error)
@@ -77,8 +78,13 @@ def compute_franka_star_kitting_rewards(
     closed_grasp_reward = closed_grasp_weight * grasp_ready * closed_gripper
     lift_reward = lift_weight * lift_progress * (0.35 + 0.65 * lift_credit_gate) * (0.25 + 0.75 * closed_gripper)
     close_near_reward = close_near_weight * close_near_ready * closed_gripper
+    close_action_reward = close_action_weight * prelift_gate * close_near_ready * torch.clamp(-actions[:, 6], 0.0, 1.0)
     lift_action_reward = (
-        lift_action_weight * prelift_gate * close_near_ready * closed_gripper * torch.clamp(actions[:, 2], 0.0, 1.0)
+        lift_action_weight
+        * prelift_gate
+        * close_near_ready
+        * (0.20 + 0.80 * closed_gripper)
+        * torch.clamp(actions[:, 2], 0.0, 1.0)
     )
     transport_reward = transport_weight * xy_align * lifted_gate
     yaw_reward = yaw_weight * yaw_align * xy_align * lifted_gate
@@ -95,6 +101,7 @@ def compute_franka_star_kitting_rewards(
         closed_grasp_reward,
         lift_reward,
         close_near_reward,
+        close_action_reward,
         lift_action_reward,
         transport_reward,
         yaw_reward,

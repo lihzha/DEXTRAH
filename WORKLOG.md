@@ -3504,3 +3504,64 @@ Next:
   `star_finger_approach_reward`, `star_close_near_reward`,
   `star_grasp_reward`, `star_lift_reward`, `star_has_lifted_rate`, and launch
   sidecar eval videos from early checkpoints.
+
+## 2026-06-10 05:04 PDT - Franka Star Grasp-Reward Run Still No Lift
+
+Goal:
+- Stop the second PPO run after it improved shaped reward but still failed to
+  learn deterministic grasp/lift, then patch the close/lift discovery path.
+
+Evidence:
+- training job_id: `28933976`, run
+  `franka_star_graspreward_ppo_20260610_044700`.
+- cancelled after epoch ~238; Slurm accounting reported
+  `CANCELLED by 158351`, elapsed `00:16:17`.
+- checkpoint rewards improved substantially:
+  ep25 `-321.44`, ep50 `-182.64`, ep75 `10.34`,
+  ep100 `-9.58`, ep125 `220.14`, ep150 `433.26`,
+  ep175 `239.85`, ep200 `436.92`.
+- tensorboard scalars through ep203 still showed no task success and no
+  reliable lift: success `0`, has-lifted around `0.03-0.04`, mean lift height
+  below `0.001 m`.
+- intended precursor terms improved:
+  `star_finger_approach_reward` reached about `0.69-0.72`,
+  `star_grasp_reward` about `0.12`, and
+  `star_closed_grasp_reward` about `0.16`.
+- ep25 eval job_id `28934149`, run
+  `franka_star_graspreward_eval_ep25_20260610_045209`, completed `0:0`;
+  success `0`, max lift `0.01258 m`, min finger-center distance `0.13154 m`.
+- ep150 eval job_id `28934307`, run
+  `franka_star_graspreward_eval_ep150_20260610_045956`, completed `0:0`;
+  success `0`, max lift `0.01277 m`, min finger-center distance `0.13154 m`.
+- ep150 eval video is valid (`1280x720`, `600` frames, `10.0s`) and visual
+  inspection showed offset hover/no useful grasp/no lift.
+
+Analysis:
+- The reward patch fixed reach/grasp precursor learning but not the decisive
+  close-and-lift behavior.
+- The deterministic policy stayed too open and too far from the star during
+  eval; training averages showed gripper width around `0.05 m`, which is not a
+  capture.
+- The remaining issue is reward pressure: near-star closing and upward lift
+  intent need stronger credit, while close-far penalty should not suppress
+  closing once the fingers are genuinely near the object.
+
+Change:
+- Added `star_close_action_reward` for commanding the gripper closed when the
+  fingers are near the star.
+- Increased near-close, closed-grasp, lift-action, and lift weights.
+- Changed lift-action reward to begin before full closure by multiplying by
+  `(0.20 + 0.80 * closed_gripper)`.
+- Changed close-far penalty to apply only when finger-center distance is
+  genuinely far (`>0.125 m`) rather than punishing most near-grasp states.
+- Reduced pre-lift XY penalty from `-4.0` to `-3.0` and close-far penalty from
+  `-2.0` to `-1.0`.
+- Updated validation reward checks for the new close-action term.
+
+Checks:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_rewards.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env_cfg.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env.py dextrah_lab/rl_games/validate_franka_star_kitting_env.py`
+- `git diff --check`
+
+Next:
+- Commit/push, update A100, rerun validation, and relaunch PPO only if the
+  validation gate passes.

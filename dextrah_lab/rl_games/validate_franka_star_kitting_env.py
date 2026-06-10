@@ -156,14 +156,15 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
         "approach_sharpness": 9.0,
         "finger_approach_weight": 2.5,
         "finger_approach_sharpness": 14.0,
-        "grasp_weight": 3.0,
-        "closed_grasp_weight": 6.0,
+        "grasp_weight": 4.0,
+        "closed_grasp_weight": 10.0,
         "grasp_sharpness": 18.0,
-        "lift_weight": 26.0,
-        "lift_action_weight": 1.5,
-        "close_near_weight": 0.75,
-        "prelift_move_penalty_weight": -4.0,
-        "close_far_penalty_weight": -2.0,
+        "lift_weight": 30.0,
+        "lift_action_weight": 3.0,
+        "close_near_weight": 3.0,
+        "close_action_weight": 1.25,
+        "prelift_move_penalty_weight": -3.0,
+        "close_far_penalty_weight": -1.0,
         "transport_weight": 6.0,
         "transport_xy_sharpness": 18.0,
         "yaw_weight": 3.0,
@@ -199,6 +200,15 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
         bool((_reward_total(**close_near) > _reward_total(**finger_near)).item()),
         open_near_reward=_mean(_reward_total(**finger_near)),
         closed_near_reward=_mean(_reward_total(**close_near)),
+    )
+
+    close_action_near = dict(finger_near)
+    close_action_near["actions"] = torch.tensor([[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0]], device=device)
+    checks.check(
+        "reward_close_action_increases_when_fingers_near_star",
+        bool((_reward_total(**close_action_near) > _reward_total(**finger_near)).item()),
+        open_action_reward=_mean(_reward_total(**finger_near)),
+        close_action_reward=_mean(_reward_total(**close_action_near)),
     )
 
     lifted = dict(near)
