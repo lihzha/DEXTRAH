@@ -6004,6 +6004,133 @@ Next:
 - Launch a bounded Franka cube PPO run for direct comparison with the validated
   KUKA cube task.
 
+## 2026-06-10 15:56 PDT - Franka Cube PPO Launch
+
+Goal:
+- Test whether the validated Franka cube task is actually learnable under PPO,
+  as a 1-to-1 cube-picking comparison point against the existing KUKA cube task.
+
+Hypothesis:
+- If the Franka task wiring, observations, reward scale, action path, and
+  contact setup are sound, a bounded run should show increasing cube lift and
+  success-region metrics well before 600 iterations.
+
+Version Control:
+- branch: `codex/dextrah-cluster-dev`
+- implementation_commit: `35333679f66fc1679de8ec98c31987be39f89261`
+- push/pull: pushed locally and fast-forwarded on A100 checkout.
+- remote_commit: `35333679f66fc1679de8ec98c31987be39f89261`
+
+Command / Job:
+- command:
+  `RUN_NAME=franka_cube_ppo_20260610_1558 TASK=Dextrah-Franka-Cube-Grasp FULL_EXPERIMENT_NAME=franka_cube_ppo_20260610_1558 NUM_ENVS=2048 MAX_ITERATIONS=600 USE_CUDA_GRAPH=False CUBE_SPAWN_XY_RANDOMIZATION=0.08 SELF_RELAUNCH=False sbatch --parsable cluster/sbatch_train_teacher_8gpu.sh`
+- job_id: `28954774`
+- node: `batch-block5-01819`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28954774.out`
+- expected run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/franka_cube_ppo_20260610_1558`
+
+Next:
+- Monitor early startup for import/config failures, then inspect reward,
+  lift, success, loss, KL, and checkpoint sidecars before deciding whether to
+  continue, cancel, or patch.
+
+## 2026-06-10 16:04 PDT - Handoff Snapshot: Franka Cube PPO Running
+
+Current State:
+- User is handing this thread to another agent. No new jobs should be launched
+  by this agent after this entry.
+- Active Franka cube PPO job: `28954774`, `RUNNING` on `batch-block5-01819`,
+  elapsed about `00:08:25` at the last check.
+- Active original DEXTRAH baseline job: `28942245`, `RUNNING` on
+  `batch-block7-01008`, elapsed about `02:55:21` at the last check.
+- Local HEAD: `35333679f66fc1679de8ec98c31987be39f89261`.
+- Local dirty files before committing this handoff note: `WORKLOG.md` only,
+  plus unrelated untracked `AGENTS.md`.
+
+Franka Cube PPO Run:
+- run_name: `franka_cube_ppo_20260610_1558`
+- task: `Dextrah-Franka-Cube-Grasp`
+- launch commit: `35333679f66fc1679de8ec98c31987be39f89261`
+- job_id: `28954774`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28954774.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ppo_20260610_1558`
+- command:
+  `RUN_NAME=franka_cube_ppo_20260610_1558 TASK=Dextrah-Franka-Cube-Grasp FULL_EXPERIMENT_NAME=franka_cube_ppo_20260610_1558 NUM_ENVS=2048 MAX_ITERATIONS=600 USE_CUDA_GRAPH=False CUBE_SPAWN_XY_RANDOMIZATION=0.08 SELF_RELAUNCH=False sbatch --parsable cluster/sbatch_train_teacher_8gpu.sh`
+- training settings confirmed in log:
+  `NUM_ENVS=2048`, `HORIZON_LENGTH=64`, `MINIBATCH_SIZE=32768`,
+  `LEARNING_RATE=0.00015`, `ENTROPY_COEF=0.0005`, `SAVE_FREQUENCY=25`,
+  `MAX_ITERATIONS=600`, `SELF_RELAUNCH=False`.
+
+Latest PPO Evidence:
+- Startup succeeded across all 8 ranks. Environment construction completed with
+  observation network input size `72`.
+- Throughput is healthy, roughly `330k-370k` total FPS after startup.
+- Checkpoints and runtime sidecars are being written:
+  - epoch 25: `last_dextrah_franka_cube_grasp_ep_25_rew_-4159.4995.pth`
+  - epoch 100: `last_dextrah_franka_cube_grasp_ep_100_rew_-2294.0872.pth`
+  - epoch 125: `last_dextrah_franka_cube_grasp_ep_125_rew_-1474.8004.pth`
+  - best checkpoint: `nn/dextrah_franka_cube_grasp.pth`
+  - sidecars: `nn/dextrah_runtime_rank_0.pth` ... `rank_7.pth`
+- Last log tail reached epoch `132/600` at the handoff snapshot.
+- TensorBoard scalar snapshot parsed at event step/epoch `116`:
+  - `cube_success_rate/iter`: last `0.0`, tail mean `0.0`.
+  - `in_success_region/iter`: last `0.0`, tail mean `0.0`.
+  - `cube_has_lifted_rate/iter`: last `0.005859`, tail mean `0.005884`.
+  - `cube_lift_height/iter`: last `0.00123 m`, tail mean `0.00093 m`.
+  - `cube_xy_error/iter`: last `0.01725 m`, tail mean `0.01624 m`.
+  - `cube_ee_to_cube_dist/iter`: last `0.1831 m`, tail mean `0.1800 m`.
+  - `cube_max_finger_to_cube_dist/iter`: last `0.1946 m`, tail mean `0.1928 m`.
+  - `cube_gripper_width/iter`: last `0.0687 m`, tail mean `0.0677 m`.
+  - `cube_action_z/iter`: last `-0.1964`, tail mean `-0.1641`.
+  - `cube_action_down/iter`: last `0.4092`, tail mean `0.3906`.
+  - `cube_prelift_move_penalty/iter`: last `-4.704`, tail mean `-4.587`.
+  - `cube_lift_reward/iter`: last `0.0534`, tail mean `0.0426`.
+  - `cube_grasp_ready_reward/iter`: last `0.0191`, tail mean `0.0151`.
+  - `cube_closed_grasp_reward/iter`: last `0.0114`, tail mean `0.00937`.
+  - `episode_lengths/iter`: last `383.8`, tail mean `418.7`.
+  - `info/kl`: last `0.0101`, tail mean `0.0122`.
+  - `losses/entropy`: last `7.83`, tail mean `8.07`.
+
+Analysis:
+- The new Franka cube task itself passed validation before this PPO run:
+  construction/reset/finite rollout/reward checks/success predicate/video all
+  passed in job `28954676`.
+- The current PPO run is stable and saving artifacts, but it has not learned
+  cube pickup by epoch 116. Reward has improved from the severe early negative
+  phase and best checkpoints are being saved, but the cube metrics remain
+  essentially no-lift/no-success. The policy also shows negative mean vertical
+  action (`cube_action_z < 0`), which is suspicious for a lift task.
+- Early interpretation: this may be the same failure mode as Franka star,
+  reduced to a cube. The learner approaches the cube and keeps XY error low,
+  but does not discover a stable pinch/lift. The strong pre-lift move penalty
+  and weak early grasp/lift rewards may be suppressing useful lift exploration.
+
+Recommended Next Steps For The Fresh Agent:
+- Continue monitoring job `28954774` to at least epoch `200` unless it fails.
+  If `cube_success_rate` and `cube_lift_height` remain near zero, cancel the run
+  rather than letting all 600 iterations finish.
+- Use this command for queue/log state:
+  `ssh a1002 'squeue -j 28954774,28942245 -o "%.18i %.10T %.25j %.12P %.30R %.8M"; tail -n 80 /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28954774.out'`
+- Use this command pattern to parse current scalars from inside the active
+  allocation:
+  `ssh a1002 'bash -s'` with an `srun --overlap --jobid=28954774` command that
+  runs `/isaac-sim/python.sh` and TensorBoard `EventAccumulator` on
+  `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ppo_20260610_1558/summaries`.
+- If the run stalls through epoch 200, likely next patches to test:
+  - reduce or gate `cube_prelift_move_penalty_weight` so lift exploration is not
+    dominated by horizontal drift penalties;
+  - add/strengthen a pre-lift balanced-finger and close-gripper reward before
+    requiring actual lift;
+  - consider a near-cube reset/curriculum or a short scripted-lift sanity check
+    to verify contacts can physically lift the cube with the Franka gripper;
+  - inspect eval/video from `nn/dextrah_franka_cube_grasp.pth` before changing
+    reward if scalar lift becomes nonzero.
+- Do not pull the A100 checkout while job `28954774` is running unless there is
+  a clear reason; the running container has `/code` mounted from that checkout.
+
 ## 2026-06-10 15:50 PDT - Franka Cube Hand-Distance Tolerance Adjustment
 
 Command / Job:
