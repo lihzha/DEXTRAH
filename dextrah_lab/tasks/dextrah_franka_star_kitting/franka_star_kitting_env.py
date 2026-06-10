@@ -367,7 +367,11 @@ class DextrahFrankaStarKittingEnv(DirectRLEnv):
         joint_pos = self._robot.data.default_joint_pos[env_ids].clone()
         joint_vel = torch.zeros_like(joint_pos)
         joint_noise = torch.zeros_like(joint_pos)
-        joint_noise[:, self.arm_joint_ids] = 0.035 * (2.0 * torch.rand(num_ids, len(self.arm_joint_ids), device=self.device) - 1.0)
+        arm_noise = float(self.cfg.arm_joint_reset_noise)
+        if arm_noise > 0.0:
+            joint_noise[:, self.arm_joint_ids] = arm_noise * (
+                2.0 * torch.rand(num_ids, len(self.arm_joint_ids), device=self.device) - 1.0
+            )
         joint_pos = torch.clamp(joint_pos + joint_noise, self.robot_dof_lower_limits, self.robot_dof_upper_limits)
         self._robot.write_joint_state_to_sim(joint_pos, joint_vel, env_ids=env_ids)
         self._robot.set_joint_position_target(joint_pos, env_ids=env_ids)

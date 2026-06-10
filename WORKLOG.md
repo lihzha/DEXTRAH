@@ -4374,3 +4374,48 @@ Checks:
 Next:
 - Commit/push, fast-forward A100, run full Franka star environment validation
   with video, and only relaunch PPO if all checks pass.
+
+## 2026-06-10 07:36 PDT - Contact/Lift Validation Failed; Physical Robustness Patch Prepared
+
+Goal:
+- Validate the contact/lift reward patch before retraining and fix any
+  physical environment brittleness.
+
+Evidence:
+- validation job_id: `28937204`
+- run_name: `franka_star_env_validate_contactlift_20260610_072910`
+- source commit: `a0461b22cb84e954b0d2dd7da5d09307275800ce`
+- reward checks passed, including
+  `reward_descend_action_increases_before_contact`.
+- scripted rollout failed:
+  `scripted_rollout_fingers_approach_star` and
+  `scripted_rollout_lifts_star`.
+- `min_finger_to_star=0.10629`, missing the validation threshold by about
+  `1.3 mm`.
+- `validation_lifted_rate=0.375`, below the required `0.5`.
+- per-env max lift heights:
+  `[0.0034, 0.1420, 0.1424, 0.0207, 0.0005, 0.0025, 0.1431, 0.0]`.
+
+Analysis:
+- The new reward ordering is valid, but the physical scripted grasp is still
+  too brittle for a training/eval gate.
+- The task should not launch PPO unless a simple scripted side grasp reliably
+  lifts the star across the validation batch.
+
+Change:
+- Increased star thickness from `0.040 m` to `0.045 m`, still below the
+  `0.060 m` fixture thickness.
+- Reduced star density from `260` to `220` to keep pickup easier after the
+  thickness increase.
+- Replaced the hard-coded reset arm joint noise with
+  `arm_joint_reset_noise=0.015`, down from the previous `0.035`.
+- Lowered the validation scripted grasp target from
+  `star_anchor_z - 0.002` to `star_anchor_z - 0.010` so validation tests an
+  actual side grasp.
+
+Checks:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_star_kitting/star_kitting_geometry.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env_cfg.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env.py dextrah_lab/rl_games/validate_franka_star_kitting_env.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_rewards.py`
+
+Next:
+- Commit/push, fast-forward A100, rerun full validation with video, and only
+  launch PPO after the physical scripted rollout passes.
