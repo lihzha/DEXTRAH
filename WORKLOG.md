@@ -646,6 +646,51 @@ Next:
 - Leave the job running and continue periodic monitoring for ordinary training
   failures or the next wall-time requeue.
 
+## 2026-06-10 01:20 PDT - Production Second Requeue Verified
+
+Goal:
+- Continue monitoring job `28910978` through the next wall-time boundary and
+  verify another automatic requeue/resume cycle.
+
+Version Control:
+- branch: `codex/dextrah-cluster-dev`
+- active_launch_commit: `7884cd9`
+- latest_worklog_commit_before_entry: `99a182c`
+- remote_checkout: active a1001 checkout left untouched while the job runs
+- changed_files: `WORKLOG.md`
+
+Command / Job:
+- job_id: `28910978`
+- previous allocation: `batch-block5-00615`
+- current allocation after requeue: `batch-block7-03150`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28910978.out`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+
+Result:
+- previous allocation requeued at the `TERM@300` window with Slurm showing
+  `REQUEUED` and the wrapper logging `Requeuing ... after TERM`.
+- Slurm restarted the same job id on `batch-block7-03150`; `Restarts=2`.
+- newest checkpoint before requeue was
+  `last_dextrah_lstm_ep_5490_rew_1606.1681.pth`; rank runtime sidecars 0-7
+  were refreshed at `00:45:56`.
+- third allocation auto-resumed from epoch 5490, all 8 ranks reached
+  `Started to train`, and all 8 ranks restored runtime at epoch 5490.
+- fresh checkpoints were saved through at least
+  `last_dextrah_lstm_ep_5700_rew_1480.072.pth`; rank sidecars 0-7 refreshed
+  again at `01:20:10`.
+- latest monitor state: `RUNNING` on `batch-block7-03150`, elapsed `00:31:34`,
+  expected wall time end `2026-06-10T04:38:59`.
+
+Analysis:
+- Both the Slurm requeue handler and DEXTRAH training resume state are working
+  repeatedly across allocations.
+- Third-allocation startup again took roughly 14 minutes before all ranks were
+  training, matching earlier Isaac startup behavior.
+
+Next:
+- Continue periodic monitoring. The next expected wall-time signal is around
+  `2026-06-10 04:33 PDT`.
+
 ## 2026-06-09 20:07 PDT - Newton OpenGL Clutter-Bin Video
 
 Goal:
