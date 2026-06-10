@@ -82,6 +82,9 @@ srun \
       --settle_consecutive_passes \"${SETTLE_CONSECUTIVE_PASSES:-8}\" \
       --settle_linear_velocity_threshold \"${SETTLE_LINEAR_VELOCITY_THRESHOLD:-1e-6}\" \
       --settle_angular_velocity_threshold \"${SETTLE_ANGULAR_VELOCITY_THRESHOLD:-1e-5}\" \
+      --rest_gate_linear_velocity_threshold \"${REST_GATE_LINEAR_VELOCITY_THRESHOLD:-0.02}\" \
+      --rest_gate_angular_velocity_threshold \"${REST_GATE_ANGULAR_VELOCITY_THRESHOLD:-0.8}\" \
+      \"${SLEEP_AFTER_REST_GATE:---sleep_after_rest_gate}\" \
       --physics_device \"${PHYSICS_DEVICE:-cuda:0}\" \
       --contact_offset \"${CONTACT_OFFSET:-0.0035}\" \
       --rest_offset \"${REST_OFFSET:-0.0}\" \

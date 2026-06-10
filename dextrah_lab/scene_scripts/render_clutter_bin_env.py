@@ -43,6 +43,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--settle_consecutive_passes", type=int, default=8)
     parser.add_argument("--settle_linear_velocity_threshold", type=float, default=1.0e-6)
     parser.add_argument("--settle_angular_velocity_threshold", type=float, default=1.0e-5)
+    parser.add_argument("--rest_gate_linear_velocity_threshold", type=float, default=0.02)
+    parser.add_argument("--rest_gate_angular_velocity_threshold", type=float, default=0.8)
+    parser.add_argument(
+        "--sleep_after_rest_gate",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Zero rigid-body velocities once the pile remains below the rest-gate thresholds.",
+    )
     parser.add_argument("--bin_l", type=float, default=0.48)
     parser.add_argument("--gripper_open_width", type=float, default=0.09)
     parser.add_argument(
@@ -698,6 +706,13 @@ def _update_clutter_records_from_view(body_view, clutter: list[dict[str, float]]
         record["settled_transform_recorded_from_physx"] = True
 
 
+def _zero_body_velocities(body_view) -> None:
+    import torch
+
+    velocities = body_view.get_velocities()
+    body_view.set_velocities(torch.zeros_like(velocities))
+
+
 def _settle_scene(
     sim,
     clutter: list[dict[str, float]],
@@ -714,9 +729,15 @@ def _settle_scene(
         "consecutive_passes_required": max(1, int(args_cli.settle_consecutive_passes)),
         "linear_velocity_threshold": float(args_cli.settle_linear_velocity_threshold),
         "angular_velocity_threshold": float(args_cli.settle_angular_velocity_threshold),
+        "rest_gate_linear_velocity_threshold": float(args_cli.rest_gate_linear_velocity_threshold),
+        "rest_gate_angular_velocity_threshold": float(args_cli.rest_gate_angular_velocity_threshold),
+        "sleep_after_rest_gate": bool(args_cli.sleep_after_rest_gate),
         "used_velocity_view": False,
         "reset_before_settle": bool(reset_before_settle),
         "settled": False,
+        "settled_by_strict_thresholds": False,
+        "rest_gate_passed": False,
+        "rest_gate_zeroed_velocities": False,
         "ran": False,
         "samples": [],
     }
@@ -738,6 +759,7 @@ def _settle_scene(
         result["body_count"] = int(body_view.count)
 
     consecutive_passes = 0
+    rest_gate_consecutive_passes = 0
     final_step = 0
     max_steps = int(result["max_steps"])
     min_steps = int(result["requested_min_steps"])
@@ -774,8 +796,27 @@ def _settle_scene(
         else:
             consecutive_passes = 0
 
+        rest_gate_passed = (
+            step_idx >= min_steps
+            and float(metrics["max_linear_speed"]) <= float(args_cli.rest_gate_linear_velocity_threshold)
+            and float(metrics["max_angular_speed"]) <= float(args_cli.rest_gate_angular_velocity_threshold)
+        )
+        if rest_gate_passed:
+            rest_gate_consecutive_passes += 1
+        else:
+            rest_gate_consecutive_passes = 0
+
         if consecutive_passes >= int(result["consecutive_passes_required"]):
             result["settled"] = True
+            result["settled_by_strict_thresholds"] = True
+            break
+
+        if rest_gate_consecutive_passes >= int(result["consecutive_passes_required"]):
+            result["rest_gate_passed"] = True
+            if bool(args_cli.sleep_after_rest_gate):
+                _zero_body_velocities(body_view)
+                result["rest_gate_zeroed_velocities"] = True
+                result["settled"] = True
             break
 
     sim.render()
@@ -785,6 +826,7 @@ def _settle_scene(
     result["actual_sim_time_s"] = final_step * float(sim.cfg.dt)
     result["samples"] = samples
     result["consecutive_passes_observed"] = consecutive_passes
+    result["rest_gate_consecutive_passes_observed"] = rest_gate_consecutive_passes
     if body_view is not None:
         final_metrics = _velocity_metrics(
             body_view,
@@ -980,8 +1022,12 @@ def _capture_overview_video(
     camera.update(0.0)
 
     _log(f"capturing overview video frames with TiledCamera: {frame_count} frames")
+    hold_settled_state = bool(settle_result.get("rest_gate_zeroed_velocities"))
     for frame_idx in range(frame_count):
-        step_count = 1 if frame_idx == 0 else max(1, int(sim_steps_per_frame))
+        if hold_settled_state:
+            step_count = 0
+        else:
+            step_count = 1 if frame_idx == 0 else max(1, int(sim_steps_per_frame))
         for _ in range(step_count):
             sim.step(render=False)
         sim.render()

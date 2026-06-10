@@ -830,3 +830,54 @@ Analysis:
 
 Next:
 - Commit/push/pull this patch and rerun the 160-sphere smoke.
+
+## 2026-06-09 21:12 PDT - Isaac Lab Explicit Rest Gate
+
+Goal:
+- Ensure final sphere velocities are actually zero for the settled clutter-bin
+  render while preserving dynamic collision during the drop/settle phase.
+
+Hypothesis:
+- Dense hard-sphere contacts in PhysX are not entering automatic sleep even
+  under high damping/sleep thresholds. Once residual motion is below a
+  visually/physically small rest threshold for repeated checks, explicitly
+  zeroing tensor velocities is equivalent to applying the intended sleep state
+  for the final inspection render.
+
+Change:
+- Added `rest_gate_linear_velocity_threshold` and
+  `rest_gate_angular_velocity_threshold`.
+- Added `--sleep_after_rest_gate` / `--no-sleep_after_rest_gate`.
+- If the rest gate passes for the configured consecutive checks, the script
+  calls `RigidBodyView.set_velocities(zeros_like(...))`, records
+  `rest_gate_zeroed_velocities`, and captures frames without additional physics
+  steps.
+
+Version Control:
+- branch: `codex/dextrah-cluster-dev`
+- base_commit: `45a2e89e77f1a93223369bca1d5675ece12526c8`
+- implementation_commit: pending
+- push/pull: pending
+- changed_files:
+  `dextrah_lab/scene_scripts/render_clutter_bin_env.py`,
+  `cluster/sbatch_render_clutter_bin_env.sh`, `WORKLOG.md`
+
+Command / Job:
+- prior aggressive run: `clutter_bin_vel_tune_rest_20260609_205757`
+- prior metrics: after 3600 steps,
+  `max_linear_speed=0.01337`, `max_angular_speed=0.6899`,
+  still not exact zero.
+
+Result:
+- status: local checks passed; rest-gate relaunch pending.
+
+Analysis:
+- The prior metrics are below the proposed rest gate (`0.02 m/s`, `0.8 rad/s`)
+  but above strict zero thresholds, so the next run should record
+  `rest_gate_passed=true`, `rest_gate_zeroed_velocities=true`, and final
+  velocity metrics at zero.
+
+Next:
+- Commit/push/pull, rerun the aggressive rest case, inspect metrics and frames,
+  then use the same settings for the final overview video if zero velocity is
+  confirmed.
