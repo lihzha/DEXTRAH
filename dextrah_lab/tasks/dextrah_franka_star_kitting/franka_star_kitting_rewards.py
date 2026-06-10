@@ -66,6 +66,8 @@ def compute_franka_star_kitting_rewards(
     grasp_ready = finger_contact_gate * (0.35 + 0.65 * finger_near_star) * (0.25 + 0.75 * near_star)
     prelift_gate = 1.0 - torch.clamp(lift_progress + has_lifted_star.float(), 0.0, 1.0)
     prelift_xy_motion = torch.clamp((star_initial_xy_error - 0.012) / 0.055, 0.0, 1.0)
+    prelift_stability_gate = 1.0 - torch.clamp((star_initial_xy_error - 0.030) / 0.045, 0.0, 1.0)
+    stable_or_lifted_gate = torch.maximum(prelift_stability_gate, lifted_gate)
     close_far_penalty_gate = torch.clamp((finger_center_to_star_dist - 0.125) / 0.055, 0.0, 1.0)
 
     xy_align = torch.exp(-transport_xy_sharpness * goal_xy_error)
@@ -74,14 +76,27 @@ def compute_franka_star_kitting_rewards(
 
     approach_reward = approach_weight * near_star
     finger_approach_reward = finger_approach_weight * finger_approach
-    grasp_reward = grasp_weight * grasp_ready * (0.25 + 0.75 * closed_gripper)
-    closed_grasp_reward = closed_grasp_weight * grasp_ready * closed_gripper
-    lift_reward = lift_weight * lift_progress * (0.35 + 0.65 * lift_credit_gate) * (0.25 + 0.75 * closed_gripper)
-    close_near_reward = close_near_weight * close_near_ready * closed_gripper
-    close_action_reward = close_action_weight * prelift_gate * close_near_ready * torch.clamp(-actions[:, 6], 0.0, 1.0)
+    grasp_reward = grasp_weight * stable_or_lifted_gate * grasp_ready * (0.25 + 0.75 * closed_gripper)
+    closed_grasp_reward = closed_grasp_weight * stable_or_lifted_gate * grasp_ready * closed_gripper
+    lift_reward = (
+        lift_weight
+        * stable_or_lifted_gate
+        * lift_progress
+        * (0.35 + 0.65 * lift_credit_gate)
+        * (0.25 + 0.75 * closed_gripper)
+    )
+    close_near_reward = close_near_weight * prelift_stability_gate * close_near_ready * closed_gripper
+    close_action_reward = (
+        close_action_weight
+        * prelift_gate
+        * prelift_stability_gate
+        * close_near_ready
+        * torch.clamp(-actions[:, 6], 0.0, 1.0)
+    )
     lift_action_reward = (
         lift_action_weight
         * prelift_gate
+        * prelift_stability_gate
         * close_near_ready
         * (0.20 + 0.80 * closed_gripper)
         * torch.clamp(actions[:, 2], 0.0, 1.0)

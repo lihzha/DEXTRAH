@@ -3632,3 +3632,48 @@ Next:
 - Verify saved env config includes `close_action_weight=1.25`,
   `close_near_weight=3.0`, `lift_action_weight=3.0`; monitor close-action,
   gripper width, lift metrics, and request early eval videos.
+
+## 2026-06-10 05:18 PDT - Franka Star Close-Lift Drag Exploit Patch
+
+Goal:
+- Stop the close-lift PPO run after it discovered high shaped reward through
+  closing and lateral object drag rather than lift.
+
+Evidence:
+- training job_id: `28934455`, run
+  `franka_star_closelift_ppo_20260610_050941`.
+- cancelled after epoch ~80; Slurm accounting initially reported running while
+  completing, with stop requested at elapsed about `00:07:19`.
+- checkpoint rewards: ep25 `572.74`, ep50 `1772.06`, ep75 `1909.99`.
+- tensorboard scalars through ep31 showed the exploit:
+  - gripper width dropped to `0.026 m`.
+  - `star_initial_xy_error` rose to `0.088-0.127 m`.
+  - success stayed `0`, has-lifted stayed around `0.03-0.04`,
+    and mean lift height stayed below `0.002 m`.
+- ep25 eval job_id `28934515`, run
+  `franka_star_closelift_eval_ep25_20260610_051406`, completed `0:0`;
+  success `0`, max lift `0.01242 m`, min finger-center distance `0.13154 m`.
+
+Analysis:
+- Strong close/lift shaping was too easy to collect by closing and pushing the
+  star sideways.
+- The reward needs to preserve near-object close exploration but remove
+  close/grasp/lift-action credit once the star has moved too far in XY before
+  a real lift.
+
+Change:
+- Added a pre-lift stability gate based on `star_initial_xy_error`.
+- Gated grasp, closed-grasp, close-near, close-action, lift-action, and lift
+  rewards by stability before lift.
+- Kept lifted states eligible for actual lift credit via a
+  stable-or-lifted gate.
+- Reduced close-action and close-near weights, increased actual lift weight,
+  and strengthened the pre-lift XY drag penalty to `-10.0`.
+
+Checks:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_rewards.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env_cfg.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env.py dextrah_lab/rl_games/validate_franka_star_kitting_env.py`
+- `git diff --check`
+
+Next:
+- Commit/push, update A100, rerun validation, and only then launch the next
+  PPO attempt.
