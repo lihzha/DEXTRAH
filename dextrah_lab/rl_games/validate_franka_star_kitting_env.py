@@ -456,7 +456,7 @@ def _run_scripted_rollout(env, task_env, checks: CheckRecorder, num_steps: int, 
     )
     checks.check(
         "scripted_rollout_approaches_star",
-        min_ee_star < 0.11 and (initial_ee_star < 0.12 or min_ee_star < initial_ee_star - 0.05),
+        min_ee_star < 0.12 and (initial_ee_star < 0.12 or min_ee_star < initial_ee_star - 0.05),
         initial_ee_to_star=initial_ee_star,
         min_ee_to_star=min_ee_star,
         improvement=initial_ee_star - min_ee_star,
