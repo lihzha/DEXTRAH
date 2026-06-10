@@ -5305,3 +5305,98 @@ Analysis:
 Next:
 - Commit and push the fix, pull it into the A100 checkout, then launch bounded
   high-epoch cube and Franka evals from explicit checkpoints.
+
+## 2026-06-10 13:31 PDT - High-Epoch Cube And Franka Eval Launch Plan
+
+Goal:
+- Evaluate the strongest available single-cube checkpoint and the latest
+  balanced Franka kitting checkpoint after fixing resume/requeue safeguards.
+
+Hypothesis:
+- Single-env video evals are needed for visual sanity checks; multi-env no-video
+  evals are needed to avoid over-interpreting one deterministic seed.
+
+Version Control:
+- local_commit: `2618eb99ae16e84fc30aa429f704de3153c497d8`
+- remote_a100_commit: `2618eb99ae16e84fc30aa429f704de3153c497d8`
+
+Command / Job:
+- cube video run:
+  `TASK=Dextrah-Cube-Grasp RUN_NAME=cube_grasp_static_eval_ep3700_video_20260610_1331 CHECKPOINT=/results/logs/rl_games/dextrah_cube_grasp/cube_grasp_static_ppo_opt8gpu_20260610_004351/nn/last_dextrah_cube_grasp_ep_3700_rew_13608.216.pth NUM_ENVS=1 NUM_STEPS=600 VIDEO_LENGTH=600 CAPTURE_VIDEO=True USE_CUDA_GRAPH=False SEED=42 CAMERA_EYE_X=-0.55 CAMERA_EYE_Y=0.10 CAMERA_EYE_Z=0.85 CAMERA_TARGET_X=-0.55 CAMERA_TARGET_Y=0.10 CAMERA_TARGET_Z=0.25 sbatch cluster/sbatch_eval_cube_grasp_1gpu.sh`
+- cube aggregate run:
+  `TASK=Dextrah-Cube-Grasp RUN_NAME=cube_grasp_static_eval_ep3700_64env_20260610_1331 CHECKPOINT=/results/logs/rl_games/dextrah_cube_grasp/cube_grasp_static_ppo_opt8gpu_20260610_004351/nn/last_dextrah_cube_grasp_ep_3700_rew_13608.216.pth NUM_ENVS=64 NUM_STEPS=600 CAPTURE_VIDEO=False USE_CUDA_GRAPH=False SEED=43 sbatch cluster/sbatch_eval_cube_grasp_1gpu.sh`
+- Franka video run:
+  `TASK=Dextrah-Franka-Star-Kitting RUN_NAME=franka_star_balanced_eval_ep100_video_20260610_1331 CHECKPOINT=/results/logs/rl_games/dextrah_franka_star_kitting/franka_star_balanced_sigma20_ppo_20260610_093027/nn/last_dextrah_franka_star_kitting_ep_100_rew_12329.639.pth NUM_ENVS=1 NUM_STEPS=600 VIDEO_LENGTH=600 CAPTURE_VIDEO=True DETERMINISTIC=True USE_CUDA_GRAPH=False SEED=42 sbatch cluster/sbatch_eval_franka_star_kitting_1gpu.sh`
+- Franka aggregate run:
+  `TASK=Dextrah-Franka-Star-Kitting RUN_NAME=franka_star_balanced_eval_ep100_64env_20260610_1331 CHECKPOINT=/results/logs/rl_games/dextrah_franka_star_kitting/franka_star_balanced_sigma20_ppo_20260610_093027/nn/last_dextrah_franka_star_kitting_ep_100_rew_12329.639.pth NUM_ENVS=64 NUM_STEPS=600 CAPTURE_VIDEO=False DETERMINISTIC=True USE_CUDA_GRAPH=False SEED=43 sbatch cluster/sbatch_eval_franka_star_kitting_1gpu.sh`
+
+Result:
+- status: submitted
+- cube video job_id: `28949649`
+- cube aggregate job_id: `28949651`
+- Franka video job_id: `28949653`
+- Franka aggregate job_id: `28949654`
+
+## 2026-06-10 13:48 PDT - Eval Results And Franka Reward-Shaping Fix
+
+Goal:
+- Inspect the high-epoch evals and fix any confirmed task-design bug that
+  prevents the Franka policy from learning the intended lift/place behavior.
+
+Result:
+- all four eval jobs completed with exit code `0:0`.
+- local artifacts:
+  `cluster_results/a1002/cube_grasp_static_eval_ep3700_video_20260610_1331`,
+  `cluster_results/a1002/cube_grasp_static_eval_ep3700_64env_20260610_1331`,
+  `cluster_results/a1002/franka_star_balanced_eval_ep100_video_20260610_1331`,
+  `cluster_results/a1002/franka_star_balanced_eval_ep100_64env_20260610_1331`.
+- cube `ep_3700` deterministic eval:
+  - video eval: success mean `0.8883333333333333`, last-window mean `0.98`,
+    success max `1.0`, max lift `0.1888900101184845 m`, video `1280x720`,
+    60 FPS, 600 frames.
+  - 64-env eval: success mean `0.8794010416666667`, last-window mean
+    `0.9646875`, success max `1.0`, max mean lift `0.17642712593078613 m`,
+    done count `64`.
+- Franka `ep_100` deterministic eval:
+  - video eval: success mean/final/window `0.0`, max lift
+    `0.012628018856048584 m`, `has_lifted` max `0.0`.
+  - 64-env eval: success mean/final/window `0.0`, max mean lift
+    `0.004685716703534126 m`, transient `has_lifted` max `0.03125`,
+    done count `67`.
+- visual inspection:
+  - cube video shows the KUKA/Allegro hand grasping and holding the cube.
+  - Franka video shows the arm near the star, but the star remains on the table
+    and is not transported to the fixture.
+
+Analysis:
+- Cube task now has positive simulator evidence. The final scalar success is
+  `0.0` only because eval continues after successful episodes reset; the
+  relevant fields are success max and last-window success.
+- Franka has a confirmed reward-shaping bug: a near-star, closed/no-lift state
+  can earn about `82.6` reward per step, so PPO can settle into hovering and
+  closing without lifting.
+
+Change:
+- Reduced Franka pre-lift hover/closed-grasp weights:
+  `grasp_pose_weight 10 -> 4`, `both_fingers_near_weight 14 -> 4`,
+  `lift_ready_weight 36 -> 12`, `closed_grasp_weight 26 -> 8`,
+  `close_near_weight 6 -> 3`, `close_action_weight 14 -> 4`.
+- Increased lift/success emphasis:
+  `lift_weight 260 -> 320`, `lift_action_weight 44 -> 60`,
+  `success_bonus_weight 80 -> 120`, `prelift_move_penalty_weight -34 -> -45`.
+- Added validation check `reward_hover_pinching_without_lift_is_capped`.
+
+Validation:
+- local py_compile passed for the Franka config, reward helper, validation
+  script, and eval rollout.
+- `bash -n` passed for Franka validation/eval and teacher training wrappers.
+- `git diff --check` passed.
+- scalar diagnostic after the fix:
+  - closed no-lift hover reward: `31.026518289024793`
+  - partial lift away from goal: `153.63269700160038`
+  - success state: `383.00870148761607`
+
+Next:
+- Commit/push/pull the reward fix.
+- Run the Franka validation wrapper from the cluster checkout, then launch a new
+  Franka training run only if validation remains healthy.

@@ -162,18 +162,18 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
         "approach_sharpness": 9.0,
         "finger_approach_weight": 9.0,
         "finger_approach_sharpness": 14.0,
-        "grasp_pose_weight": 10.0,
-        "both_fingers_near_weight": 14.0,
-        "lift_ready_weight": 36.0,
+        "grasp_pose_weight": 4.0,
+        "both_fingers_near_weight": 4.0,
+        "lift_ready_weight": 12.0,
         "grasp_weight": 2.0,
-        "closed_grasp_weight": 26.0,
+        "closed_grasp_weight": 8.0,
         "grasp_sharpness": 18.0,
-        "lift_weight": 260.0,
+        "lift_weight": 320.0,
         "descend_action_weight": 10.0,
-        "lift_action_weight": 44.0,
-        "close_near_weight": 6.0,
-        "close_action_weight": 14.0,
-        "prelift_move_penalty_weight": -34.0,
+        "lift_action_weight": 60.0,
+        "close_near_weight": 3.0,
+        "close_action_weight": 4.0,
+        "prelift_move_penalty_weight": -45.0,
         "close_far_penalty_weight": -14.0,
         "open_near_penalty_weight": -10.0,
         "ungrasped_lift_penalty_weight": -12.0,
@@ -183,7 +183,7 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
         "yaw_sharpness": 4.5,
         "placement_weight": 12.0,
         "placement_height_sharpness": 18.0,
-        "success_bonus_weight": 80.0,
+        "success_bonus_weight": 120.0,
         "action_penalty_weight": -0.002,
     }
 
@@ -370,6 +370,15 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
         bool((_reward_total(**hover_pinched) < _reward_total(**lifted)).item()),
         lifted_reward=_mean(_reward_total(**lifted)),
         hover_pinched_reward=_mean(_reward_total(**hover_pinched)),
+    )
+    hover_no_lift = dict(hover_pinched)
+    hover_no_lift["star_initial_xy_error"] = zeros.clone()
+    hover_no_lift["actions"] = torch.tensor([[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0]], device=device)
+    checks.check(
+        "reward_hover_pinching_without_lift_is_capped",
+        bool((_reward_total(**hover_no_lift) < torch.tensor([40.0], device=device)).item()),
+        hover_no_lift_reward=_mean(_reward_total(**hover_no_lift)),
+        lifted_reward=_mean(_reward_total(**lifted)),
     )
 
     transported = dict(lifted)
