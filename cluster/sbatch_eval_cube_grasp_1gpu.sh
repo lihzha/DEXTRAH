@@ -116,8 +116,8 @@ srun \
     cd /code
     echo "container_host=$(hostname)"
     echo "container_cuda_visible_devices=${CUDA_VISIBLE_DEVICES:-unset}"
-    git rev-parse HEAD
-    git status --short
+    git rev-parse HEAD || true
+    echo "git_status_skipped=container_git_lfs_unavailable"
     nvidia-smi || true
 
     cd /code/dextrah_lab/rl_games

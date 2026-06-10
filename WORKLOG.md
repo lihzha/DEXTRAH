@@ -1875,3 +1875,40 @@ Analysis:
 - The rollout-video path exists in `dextrah_lab/rl_games/eval_rollout.py` and
   `cluster/sbatch_eval_cube_grasp_1gpu.sh`, but the urgent completed evals were
   metrics-only.
+
+## 2026-06-10 00:18 PDT - Cube Grasp Video Eval Relaunch Fix
+
+Goal:
+- Produce a rendered rollout video for the cube grasp checkpoint eval.
+
+Hypothesis:
+- The previous video eval failed before rollout because
+  `git status --short` inside the Isaac container invoked Git LFS, but the
+  container does not provide `git-lfs`. Removing that fatal diagnostic should
+  let `eval_rollout.py` reach the environment and write video artifacts.
+
+Change:
+- Made the video eval wrapper tolerate `git rev-parse` failure and skip
+  in-container `git status`.
+
+Version Control:
+- branch: `codex/dextrah-cluster-dev`
+- base_commit: `f055fd169d5d6a5d2e896150b9d8f29fed92ff5f`
+- implementation_commit: pending
+- changed_files: `cluster/sbatch_eval_cube_grasp_1gpu.sh`, `WORKLOG.md`
+
+Command / Job:
+- failed prior video job: `28929268`
+- failed prior log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_cube_grasp_28929268.out`
+- failed prior result: no `.mp4`, `.png`, or `metrics.json` artifacts were
+  produced under `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals`.
+- relaunch: pending commit, push, remote pull, and `sbatch`
+
+Result:
+- status: in progress
+
+Next:
+- Commit/push the wrapper fix, update the a1001 checkout, launch a fresh video
+  eval from the latest available checkpoint, and monitor until artifacts appear
+  or a new root cause is identified.
