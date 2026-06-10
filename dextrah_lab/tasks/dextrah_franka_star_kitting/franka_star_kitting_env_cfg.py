@@ -15,6 +15,36 @@ from isaaclab.utils import configclass
 from isaaclab_assets.robots.franka import FRANKA_PANDA_HIGH_PD_CFG
 
 
+def _franka_star_robot_cfg(
+    robot_base_z: float,
+    robot_yaw_wxyz: tuple[float, float, float, float],
+    finger_effort_limit: float,
+    finger_stiffness: float,
+    finger_damping: float,
+) -> ArticulationCfg:
+    robot_cfg = FRANKA_PANDA_HIGH_PD_CFG.copy().replace(prim_path="/World/envs/env_.*/Robot").replace(
+        init_state=ArticulationCfg.InitialStateCfg(
+            pos=(0.0, 0.0, robot_base_z),
+            rot=robot_yaw_wxyz,
+            joint_pos={
+                "panda_joint1": 0.0,
+                "panda_joint2": -0.68,
+                "panda_joint3": 0.0,
+                "panda_joint4": -2.45,
+                "panda_joint5": 0.0,
+                "panda_joint6": 2.28,
+                "panda_joint7": 0.78,
+                "panda_finger_joint.*": 0.04,
+            },
+            joint_vel={".*": 0.0},
+        )
+    )
+    robot_cfg.actuators["panda_hand"].effort_limit_sim = float(finger_effort_limit)
+    robot_cfg.actuators["panda_hand"].stiffness = float(finger_stiffness)
+    robot_cfg.actuators["panda_hand"].damping = float(finger_damping)
+    return robot_cfg
+
+
 @configclass
 class DextrahFrankaStarKittingEnvCfg(DirectRLEnvCfg):
     """State-based Franka pick-and-place kitting task for a star object."""
@@ -84,23 +114,16 @@ class DextrahFrankaStarKittingEnvCfg(DirectRLEnvCfg):
     ee_offset_pos = (0.0, 0.0, 0.1034)
     ik_position_action_scale = (0.060, 0.060, 0.045)
     ik_rotation_action_scale = (0.25, 0.25, 0.30)
+    finger_effort_limit = 1000.0
+    finger_stiffness = 4000.0
+    finger_damping = 400.0
 
-    robot: ArticulationCfg = FRANKA_PANDA_HIGH_PD_CFG.replace(prim_path="/World/envs/env_.*/Robot").replace(
-        init_state=ArticulationCfg.InitialStateCfg(
-            pos=(0.0, 0.0, robot_base_z),
-            rot=robot_yaw_wxyz,
-            joint_pos={
-                "panda_joint1": 0.0,
-                "panda_joint2": -0.68,
-                "panda_joint3": 0.0,
-                "panda_joint4": -2.45,
-                "panda_joint5": 0.0,
-                "panda_joint6": 2.28,
-                "panda_joint7": 0.78,
-                "panda_finger_joint.*": 0.04,
-            },
-            joint_vel={".*": 0.0},
-        )
+    robot: ArticulationCfg = _franka_star_robot_cfg(
+        robot_base_z,
+        robot_yaw_wxyz,
+        finger_effort_limit,
+        finger_stiffness,
+        finger_damping,
     )
 
     table: RigidObjectCfg = RigidObjectCfg(

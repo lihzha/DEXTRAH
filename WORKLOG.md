@@ -4498,6 +4498,44 @@ Checks:
 Next:
 - Commit/push and rerun full validation.
 
+## 2026-06-10 08:07 PDT - Deep-Grasp Validation Still Lift-Brittle; Finger Actuator Patch
+
+Goal:
+- Address the repeated validation pattern where commanded close does not close
+  the gripper enough around the star in several environments.
+
+Evidence:
+- validation job_id: `28938408`
+- run_name: `franka_star_env_validate_deepgrasp_20260610_075747`
+- source commit: `a5691169d3c3d2aa45edcc0f8d7457874bd82655`
+- failed checks:
+  `scripted_rollout_fingers_approach_star` and
+  `scripted_rollout_lifts_star`.
+- `min_finger_to_star=0.10578`, still just above the approach threshold.
+- `validation_lifted_rate=0.375`; non-lifting envs still show gripper width
+  around `0.049` despite close command.
+
+Analysis:
+- The remaining scripted failures look like gripper authority/contact closure,
+  not reward ordering or star geometry.
+- Isaac Lab's stock `FRANKA_PANDA_HIGH_PD_CFG` stiffens the arm but leaves the
+  hand at `effort=200`, `stiffness=2000`, `damping=100`.
+- The local star-render scene helper uses stronger hand values:
+  `effort=1000`, `stiffness=4000`, `damping=400`.
+
+Change:
+- Added a task-local Franka config factory so this task can override the Panda
+  hand actuator without mutating the global Isaac Lab asset config.
+- Set `panda_hand` to `effort_limit_sim=1000`,
+  `stiffness=4000`, `damping=400`.
+
+Checks:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env_cfg.py`
+
+Next:
+- Commit/push and rerun validation. If gripper closure passes, proceed to PPO
+  with lower entropy/sigma than the failed deterministic-open run.
+
 ## 2026-06-10 08:01 PDT - Anchor-Noise Validation Nearly Passes; Deeper Close Phase
 
 Goal:
