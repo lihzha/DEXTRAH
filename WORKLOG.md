@@ -4977,3 +4977,81 @@ Next:
 - At ep25/ep50/ep100, deterministic eval videos/metrics via sidecar agent
   `019eb0f7-19e6-7070-957c-bc1e9d8272bf`.
 - Stop and patch again if deterministic evals still show open/hover/no lift.
+
+## 2026-06-10 09:30 PDT - Balanced-Grasp Reward Relaunch
+
+Goal:
+- Fix the Franka star-kitting policy after deterministic eval showed the
+  lift-ready reward still allowed one-sided hover/push behavior.
+
+Hypothesis:
+- The previous reward overcredited finger-center proximity: one finger could be
+  close while the other stayed far, producing stochastic lift reward in
+  training but no deterministic clamp in eval. Using the worse finger distance,
+  finger-distance asymmetry, and stricter pre-lift stability should make the
+  learned mean policy approach both fingers around the star before closing and
+  lifting.
+
+Change:
+- Stopped failed training job `28942109` after ep100 deterministic eval.
+- Added balanced-finger reward gating in
+  `dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_rewards.py`.
+- Added `max_finger_to_star_dist` and `finger_distance_asymmetry` logs to
+  training, validation, and eval metrics.
+- Tightened reward weights in
+  `dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env_cfg.py`.
+- Added validation check `reward_lift_ready_requires_balanced_fingers`.
+- Added `DETERMINISTIC` switch to
+  `cluster/sbatch_eval_franka_star_kitting_1gpu.sh`.
+
+Checks:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_rewards.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env_cfg.py dextrah_lab/rl_games/validate_franka_star_kitting_env.py dextrah_lab/rl_games/eval_rollout.py`
+- `git diff --check`
+- full A100 validation job `28943231`, passed.
+
+Command / Job:
+- failed eval: `franka_star_liftready_sigma18_eval_ep100_20260610_092037`
+- failed eval job_id: `28942246`
+- failed train job_id: `28942109`
+- patch commit: `8ee6cdafa3dbb8bd5a5e4feeedbc673ada085fce`
+- validation command:
+  `RUN_NAME=franka_star_env_validate_balanced_full180_20260610_092726 NUM_ENVS=4 NUM_STEPS=180 VIDEO_LENGTH=180 CAPTURE_VIDEO=True PRINT_INTERVAL=30 SEED=42 STAR_RESET_NEAR_HAND_PROBABILITY=0.0 sbatch cluster/sbatch_validate_franka_star_kitting_env_1gpu.sh`
+- validation job_id: `28943231`
+- training command:
+  `FULL_EXPERIMENT_NAME=franka_star_balanced_sigma20_ppo_20260610_093027 TASK=Dextrah-Franka-Star-Kitting NUM_ENVS=2048 HORIZON_LENGTH=96 MINIBATCH_SIZE=32768 CENTRAL_VALUE_MINIBATCH_SIZE=32768 MAX_ITERATIONS=600 SAVE_FREQUENCY=25 ENTROPY_COEF=0.00005 SIGMA_INIT_VAL=-2.0 LEARNING_RATE=0.0001 CENTRAL_VALUE_LEARNING_RATE=0.00008 GAMMA=0.997 TAU=0.95 KL_THRESHOLD=0.012 MINI_EPOCHS=4 DISTRIBUTED=True MULTI_GPU=True USE_CUDA_GRAPH=False AUTO_RESUME=False SELF_RELAUNCH=False STAR_RESET_NEAR_HAND_PROBABILITY=0.0 sbatch cluster/sbatch_train_teacher_8gpu.sh`
+- training job_id: `28943333`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_star_kitting/franka_star_balanced_sigma20_ppo_20260610_093027`
+- train log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28943333.out`
+- validation artifacts:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_star_env_validate_balanced_full180_20260610_092726`
+
+Result:
+- status: running
+- ep100 failed-eval evidence: success `0.0`, lifted `0.0`, max lift
+  `0.01318`, mean left-finger distance `0.20323`, mean right-finger distance
+  `0.15098`, mean reward `-10.42`, final gripper width `0.07887`.
+- validation passed from commit `8ee6cda` with `validation_lifted_rate=0.5`,
+  `max_star_lift_height=0.05350`, `min_max_finger_to_star=0.11387`,
+  `min_finger_distance_asymmetry=0.02160`, and no near-hand reset.
+- new training reached multi-rank environment setup and epoch 2 with no
+  tracebacks.
+
+Analysis:
+- The failed ep100 video and metrics matched ep50: the arm hovered/pushed the
+  star, kept the left finger far, and ended open. Continuing that run would
+  waste the budget.
+- The new validation confirms the environment remains physically feasible after
+  stricter balanced-finger gating.
+- New PPO settings intentionally reduce exploration pressure versus the failed
+  run (`SIGMA_INIT_VAL=-2.0`, `ENTROPY_COEF=0.00005`) while keeping the stable
+  DEXTRAH PPO stack.
+
+Next:
+- Monitor training scalars through ep25 for `star_max_finger_to_star_dist`,
+  `star_finger_distance_asymmetry`, lift rate, gripper action, and XY drag.
+- Sidecar eval agent should launch deterministic ep25 video eval for
+  `franka_star_balanced_sigma20_ppo_20260610_093027`.
+- If ep25/ep50 deterministic eval still shows one-sided hover/open behavior,
+  stop and patch again before full-budget training.
