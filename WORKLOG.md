@@ -4924,3 +4924,56 @@ Next:
 - Watch startup and TensorBoard scalars.
 - If ep100 deterministic eval still shows open/hover with no lift, stop and
   patch again instead of burning the full allocation.
+
+## 2026-06-10 09:12 PDT - Lift-Ready Grasp Reward Relaunch
+
+Goal:
+- Stop the contact-gated run after deterministic eval showed the same no-lift
+  failure mode, add explicit lift-ready grasp shaping, validate the environment
+  again, and relaunch PPO only after the validation gate passed.
+
+Evidence:
+- stopped run/job: `franka_star_contactgate_full_sigma12_ppo_20260610_0855`,
+  job `28941461`.
+- ep100 eval run:
+  `franka_star_contactgate_full_sigma12_eval_ep100_20260610_090002`
+- ep100 deterministic eval failed with success `0`, has_lifted `0`,
+  max lift `0.012731 m`, mean finger-center distance `0.18050 m`, and final
+  gripper width `0.07885 m`.
+- validation run:
+  `franka_star_env_validate_liftready_full180_20260610_090653`, job
+  `28942089`, source commit `575f20635598b7f30aa7912d994feecd06e11ef8`.
+- validation passed all checks: `validation_lifted_rate=0.5`,
+  `max_star_lift_height=0.05350`, `min_ee_to_star=0.08379`,
+  `min_finger_to_star=0.09703`, `min_left_finger_to_star=0.11025`,
+  `min_right_finger_to_star=0.09190`,
+  `max_pretransport_star_initial_xy_error=0.01447`.
+- validation video fetched and probed: `1280x720`, 60 FPS, 179 frames.
+
+Change:
+- Added left/right fingertip distances to env diagnostics and eval metrics.
+- Added reward terms for both-fingers-near and lift-ready grasp state.
+- Gated up-action reward on the tighter lift-ready condition.
+- Increased penalties for pre-lift drag, opening near pregrasp, and lifting
+  before a closed grasp.
+
+Checks:
+- `python3 -m compileall -q dextrah_lab/tasks/dextrah_franka_star_kitting dextrah_lab/rl_games/validate_franka_star_kitting_env.py dextrah_lab/rl_games/eval_rollout.py`
+- `git diff --check`
+- full A100 validation job `28942089`, passed.
+
+Command / Job:
+- command:
+  `sbatch --export=ALL,TASK=Dextrah-Franka-Star-Kitting,FULL_EXPERIMENT_NAME=franka_star_liftready_sigma18_ppo_20260610_090917,NUM_ENVS=2048,HORIZON_LENGTH=96,MINIBATCH_SIZE=32768,CENTRAL_VALUE_MINIBATCH_SIZE=32768,MAX_ITERATIONS=600,SAVE_FREQUENCY=25,ENTROPY_COEF=0.0002,SIGMA_INIT_VAL=-1.8,LEARNING_RATE=0.0001,CENTRAL_VALUE_LEARNING_RATE=0.00008,GAMMA=0.997,TAU=0.95,KL_THRESHOLD=0.012,MINI_EPOCHS=4,DISTRIBUTED=True,MULTI_GPU=True,USE_CUDA_GRAPH=False,AUTO_RESUME=False,SELF_RELAUNCH=False,STAR_RESET_NEAR_HAND_PROBABILITY=0.0 cluster/sbatch_train_teacher_8gpu.sh`
+- job_id: `28942109`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_star_kitting/franka_star_liftready_sigma18_ppo_20260610_090917`
+- logs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28942109.out`
+- startup status: reached training, epoch 18 by 09:13 PDT, no tracebacks.
+
+Next:
+- Parse TensorBoard scalars after the event file flushes.
+- At ep25/ep50/ep100, deterministic eval videos/metrics via sidecar agent
+  `019eb0f7-19e6-7070-957c-bc1e9d8272bf`.
+- Stop and patch again if deterministic evals still show open/hover/no lift.
