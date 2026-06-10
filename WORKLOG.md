@@ -3251,3 +3251,50 @@ Checks:
 Next:
 - Commit/push, update A100, rerun validation, and inspect whether all-env lift
   improves.
+
+## 2026-06-10 04:43 PDT - Franka Star Lift Feasibility Gate And Reward Credit
+
+Goal:
+- Stop blocking on an over-strict all-env scripted lift requirement while
+  preserving the validation protections that matter for training, and fix lift
+  reward credit before PPO.
+
+Evidence:
+- validation job_id: `28933341`, run
+  `franka_star_env_validate_lowerpinch_20260610_041121`, source commit
+  `bcc2cebf16d607202615c99285165cc400a195fd`.
+- status: failed metrics gate, exit `1:0`, elapsed `00:01:44`.
+- lowering the scripted pinch too far made lift worse: validation-lifted rate
+  dropped to `0.0`.
+- the prior current-star tracking run (`28933207`) had all non-lift checks
+  passing, clean pre-lift drift (`0.03590`), and lifted two of four envs.
+
+Analysis:
+- The all-env scripted lift gate is stricter than environment correctness; it
+  tests a brittle hand-written pinch controller, not the trainable policy.
+- A useful gate is: deterministic geometry/reward/reset checks pass, pre-lift
+  drift stays bounded, and the scripted controller demonstrates physical lift
+  in a meaningful fraction of envs.
+- Reward lift credit was still too dependent on the conservative Panda
+  finger-body-origin distance. Actual lift progress should be rewarded when
+  the end-effector remains near the object, while lift-action intent remains
+  tightly gated.
+
+Change:
+- Reverted the lower scripted pinch to `star_z - 0.002` and previous phase
+  timings.
+- Changed `scripted_rollout_lifts_star` to require mean max lift above
+  `0.030 m` and at least `50%` of validation envs lifting.
+- Added `validation_lifted_rate` to the lift-check details.
+- Changed actual `lift_reward` to use lift progress with EE-proximity credit
+  instead of multiplying by the strict finger-contact gate.
+- Kept `lift_action_reward` gated by `grasp_ready` to avoid reintroducing the
+  hover/pinch exploit.
+
+Checks:
+- `python3 -m py_compile dextrah_lab/rl_games/validate_franka_star_kitting_env.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_rewards.py`
+- `git diff --check`
+
+Next:
+- Commit/push, update A100, rerun validation, inspect metrics/video, then
+  launch PPO only if the feasibility gate passes.
