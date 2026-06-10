@@ -3920,3 +3920,57 @@ Next:
   gripper width, close-action reward, closed-grasp reward, lift height,
   lifted-rate, success, and pre-lift drift. Sidecar agent will launch the
   first checkpoint eval video.
+
+## 2026-06-10 06:11 PDT - Franka Star Capture-Boost PPO Stopped For Close Reward Hacking
+
+Goal:
+- Decide whether the capture-boost run converted improved closing into actual
+  object lift.
+
+Evidence:
+- training job_id: `28936136`, run
+  `franka_star_captureboost_ppo_20260610_055650`.
+- stopped at elapsed `00:13:59`; log had advanced beyond ep170.
+- checkpoint rewards rose quickly: ep25 `-1050.96`, ep50 `-33.99`,
+  ep75 `1676.68`, ep100 `2241.62`, ep125 `2414.21`,
+  ep150 `2450.45`.
+- TensorBoard at iter 164 showed the failure mode:
+  `star_success_rate=0`, `star_has_lifted_rate=0.0293`,
+  `star_lift_height=0.00070`, `star_gripper_width=0.0304`,
+  `star_initial_xy_error=0.0329`, `star_closed_grasp_reward=1.5779`,
+  `star_close_near_reward=1.3818`, `star_lift_reward=0.0380`.
+- ep25 eval run `franka_star_captureboost_eval_ep25_20260610_060258`:
+  success `0`, max lift `0.01258 m`, no has-lifted predicate, gripper mean
+  `0.05823 m`, valid `1280x720`, `600` frame video.
+- ep100 eval run `franka_star_captureboost_eval_ep100_20260610_060759`:
+  success `0`, no has-lifted predicate, max lift `0.01235 m`, max star XY
+  displacement `0.06011 m`, gripper mean `0.06053 m`, valid `1280x720`,
+  `600` frame video.
+- visual inspection of ep25 and ep100 videos shows hover/push behavior, no
+  stable pinch, no lift, no transport, and no insertion.
+
+Analysis:
+- The broader close/capture reward fixed exploration of gripper closure in the
+  stochastic training distribution, but static close/closed-grasp reward became
+  another easy shaped-reward target.
+- Deterministic eval remained open/hovering and pushed the star laterally.
+- Reward needs to withhold most static close payoff and move credit toward
+  verified upward object motion after a near-star closed-gripper state.
+
+Change:
+- Lowered static finger-approach, grasp, closed-grasp, near-close, and
+  close-action weights.
+- Increased actual lift and lift-intent weights.
+- Started actual lift reward at `1 mm` instead of `4 mm` so small successful
+  object lifts get a dense gradient.
+- Made lift-intent reward depend much more strongly on closed-gripper progress.
+- Restored a stronger pre-lift movement penalty and stronger close-far
+  penalty to discourage push/drag while closed.
+
+Checks:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_rewards.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env_cfg.py dextrah_lab/rl_games/validate_franka_star_kitting_env.py`
+
+Next:
+- Commit/push, validate the lift-focused reward rebalance with video, and if
+  it passes relaunch PPO with slightly lower entropy (`0.002`) to reduce the
+  gap between stochastic training closure and deterministic evaluation.

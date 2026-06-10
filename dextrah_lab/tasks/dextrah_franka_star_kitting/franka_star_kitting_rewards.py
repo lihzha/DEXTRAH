@@ -44,7 +44,7 @@ def compute_franka_star_kitting_rewards(
 ):
     """Compute shaped rewards for pick-lift-transport-place behavior."""
 
-    lift_reward_start_height = 0.004
+    lift_reward_start_height = 0.001
     lift_denom = target_lift_height - lift_reward_start_height
     if lift_denom < 1.0e-6:
         lift_denom = 1.0e-6
@@ -98,7 +98,7 @@ def compute_franka_star_kitting_rewards(
         * prelift_gate
         * prelift_stability_gate
         * close_near_ready
-        * (0.20 + 0.80 * closed_gripper)
+        * (0.05 + 0.95 * closed_gripper)
         * torch.clamp(actions[:, 2], 0.0, 1.0)
     )
     transport_reward = transport_weight * xy_align * lifted_gate
