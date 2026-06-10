@@ -3600,3 +3600,35 @@ Analysis:
 Next:
 - Launch another 8-GPU PPO run from the validated close-lift reward source and
   monitor close action, gripper width, lift height, and eval videos.
+
+## 2026-06-10 05:09 PDT - Franka Star Close-Lift PPO Launched
+
+Goal:
+- Launch the next PPO run after the close-action and close-lift reward patch
+  passed validation.
+
+Evidence:
+- training job_id: `28934455`, run
+  `franka_star_closelift_ppo_20260610_050941`.
+- remote checkout HEAD at launch:
+  `d91657232905134cb7760c6c28c88060acfd1df0`.
+- behavior source was validated at commit
+  `3d5137fbd49c7c5ad35d972f522afe582fde24d8`; `d916572` only records the
+  validation-pass worklog entry.
+- Slurm partition: `polar3`; allocated node: `batch-block7-01177`.
+
+Hyperparameters:
+- `NUM_ENVS=2048`, `HORIZON_LENGTH=64`, `MINIBATCH_SIZE=32768`,
+  `CENTRAL_VALUE_MINIBATCH_SIZE=32768`.
+- `MAX_ITERATIONS=600`, `SAVE_FREQUENCY=25`.
+- `LEARNING_RATE=0.0001`,
+  `CENTRAL_VALUE_LEARNING_RATE=0.00008`.
+- `ENTROPY_COEF=0.004`, `GAMMA=0.997`, `TAU=0.95`,
+  `KL_THRESHOLD=0.012`, `MINI_EPOCHS=4`.
+- `AUTO_RESUME=False`, `SELF_RELAUNCH=False`,
+  `USE_CUDA_GRAPH=False`, `DISTRIBUTED=True`, `MULTI_GPU=True`.
+
+Next:
+- Verify saved env config includes `close_action_weight=1.25`,
+  `close_near_weight=3.0`, `lift_action_weight=3.0`; monitor close-action,
+  gripper width, lift metrics, and request early eval videos.
