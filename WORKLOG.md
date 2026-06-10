@@ -1790,3 +1790,47 @@ Result:
 Next:
 - Validate syntax, commit/push, sync a1001, select the newest usable cube grasp
   checkpoint, submit the one-GPU eval, and monitor startup logs.
+
+## 2026-06-10 00:03 PDT - Cube Grasp Metrics Eval Retry
+
+Goal:
+- Launch a minimal metrics-only one-GPU eval immediately using `play.py`, with
+  no video work on the critical path.
+
+Change:
+- Added `cluster/sbatch_play_cube_grasp_metrics_1gpu.sh`, a minimal one-GPU
+  Pyxis wrapper that runs `dextrah_lab/rl_games/play.py` and tees stdout to the
+  eval output directory.
+- Fixed `play.py` success-rate logging to read from the unwrapped task env
+  instead of Gym's `OrderEnforcing` wrapper.
+- Added an error-pattern guard to the metrics wrapper.
+
+Version Control:
+- branch: `codex/dextrah-cluster-dev`
+- implementation_commit: `8a8c8a12323e213529347b59cb328ee4dfcf0ca0`
+- remote_commit: `8a8c8a12323e213529347b59cb328ee4dfcf0ca0`
+- changed_files: `cluster/sbatch_play_cube_grasp_metrics_1gpu.sh`,
+  `dextrah_lab/rl_games/play.py`
+
+Command / Job:
+- failed video attempt: `28929268`, log
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_cube_grasp_28929268.out`
+- failed metrics attempt: `28929325`, log
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/metrics_cube_grasp_28929325.out`
+- retry command:
+  `RUN_NAME=cube_grasp_metrics_ep500_retry_20260610_000249 CHECKPOINT=/results/logs/rl_games/dextrah_cube_grasp/cube_grasp_ppo_opt8gpu_20260609_224426/nn/last_dextrah_cube_grasp_ep_500_rew_1595.4742.pth NUM_ENVS=16 sbatch --export=ALL cluster/sbatch_play_cube_grasp_metrics_1gpu.sh`
+- job_id: `28929372`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/cube_grasp_metrics_ep500_retry_20260610_000249`
+- logs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/metrics_cube_grasp_28929372.out`
+- artifacts:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/cube_grasp_metrics_ep500_retry_20260610_000249/play_stdout.log`
+
+Result:
+- status: submitted, pending resources at first check.
+- checkpoint used:
+  `last_dextrah_cube_grasp_ep_500_rew_1595.4742.pth`
+
+Next:
+- Poll job `28929372` for allocation and first `count ... sr:` metric lines.
