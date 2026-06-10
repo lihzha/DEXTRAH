@@ -2284,3 +2284,50 @@ Result:
 Next:
 - Commit, push, update `a1001`, and relaunch the overhead eval from the same
   epoch-225 checkpoint.
+
+## 2026-06-10 01:35 PDT - Franka Star Validation Gate Fix
+
+Goal:
+- Keep the Franka star kitting task behind a hard environment-validation gate
+  before launching any training or eval.
+
+Evidence:
+- validation job_id: `28930645`
+- run_name: `franka_star_env_validate_20260610_012007`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_star_28930645.out`
+- remote results:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_star_env_validate_20260610_012007`
+- local results:
+  `cluster_results/a1001/franka_star_env_validate_20260610_012007`
+- video:
+  `cluster_results/a1001/franka_star_env_validate_20260610_012007/videos/franka-star-kitting-validation-step-0.mp4`
+
+Result:
+- status: validation failed, so training/eval remains blocked.
+- passed checks: procedural geometry fit, reset observation shape/finite values,
+  reward monotonicity, and success/failure predicates.
+- failed check: scripted rollout did not approach the star closely enough
+  (`min_ee_to_star=0.16175222396850586`), and no lift occurred.
+- wrapper bug: validation wrote `passed: false` but exited zero after
+  `env.close()`, so Slurm reported success incorrectly.
+
+Change:
+- Moved the default pickup and fixture sites closer to the reachable Franka
+  work area.
+- Increased IK action scales and made the scripted validation command a
+  top-down Panda hand orientation while approaching the target positions.
+- Tightened the scripted approach check to require both absolute proximity and
+  improvement from the initial end-effector/star distance.
+- Made failed validation exit nonzero after closing the environment.
+- Extended default validation rollout/video length from 180 to 300 steps.
+
+Checks:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_star_kitting/star_kitting_geometry.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_rewards.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env_cfg.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env.py dextrah_lab/tasks/dextrah_franka_star_kitting/gym_setup.py dextrah_lab/rl_games/validate_franka_star_kitting_env.py dextrah_lab/rl_games/train.py dextrah_lab/rl_games/play.py`
+- `bash -n cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_validate_franka_star_kitting_env_1gpu.sh`
+- `ruby -e "require 'yaml'; YAML.load_file('dextrah_lab/tasks/dextrah_franka_star_kitting/agents/rl_games_ppo_franka_star_kitting_cfg.yaml'); puts 'yaml ok'"`
+- `git diff --check`
+
+Next:
+- Commit/push, update the `a1001` checkout, rerun validation, and continue
+  fixing until the environment and video inspection are correct.

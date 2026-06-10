@@ -229,6 +229,7 @@ def _run_predicate_checks(task_env, checks: CheckRecorder) -> None:
 
 def _target_actions_to_world_position(task_env, target_pos_local: torch.Tensor, gripper_command: float) -> torch.Tensor:
     ee_pos_b, _ = task_env._compute_ee_frame_pose()
+    _, ee_quat_b = task_env._compute_ee_frame_pose()
     target_pos_w = target_pos_local + task_env.scene.env_origins
     target_pos_b, _ = math_utils.subtract_frame_transforms(
         task_env._robot.data.root_pos_w,
@@ -236,8 +237,19 @@ def _target_actions_to_world_position(task_env, target_pos_local: torch.Tensor, 
         target_pos_w,
         task_env._robot.data.root_quat_w,
     )
+    # This is the same canonical top-down Panda hand orientation used in
+    # Isaac Lab's Franka IK tutorial, expressed in the robot root frame.
+    desired_quat_b = torch.tensor((0.0, 1.0, 0.0, 0.0), device=task_env.device).repeat(task_env.num_envs, 1)
+    _, axis_angle_error = math_utils.compute_pose_error(
+        ee_pos_b,
+        ee_quat_b,
+        target_pos_b,
+        desired_quat_b,
+        rot_error_type="axis_angle",
+    )
     action = torch.zeros(task_env.num_envs, task_env.cfg.action_space, device=task_env.device)
     action[:, :3] = torch.clamp((target_pos_b - ee_pos_b) / task_env.action_scale[:3], -1.0, 1.0)
+    action[:, 3:6] = torch.clamp(axis_angle_error / task_env.action_scale[3:6], -1.0, 1.0)
     action[:, 6] = float(gripper_command)
     return action
 
@@ -306,6 +318,7 @@ def _run_scripted_rollout(env, task_env, checks: CheckRecorder, num_steps: int, 
     )
 
     initial_ee = task_env.ee_pos.clone()
+    initial_ee_star = _mean(task_env.ee_to_star_dist)
     min_ee_star = _mean(task_env.ee_to_star_dist)
     max_star_height = _mean(task_env.star_lift_height)
     reward_values: list[float] = []
@@ -358,7 +371,8 @@ def _run_scripted_rollout(env, task_env, checks: CheckRecorder, num_steps: int, 
     )
     checks.check(
         "scripted_rollout_approaches_star",
-        min_ee_star < 0.12,
+        min_ee_star < 0.12 and min_ee_star < initial_ee_star - 0.08,
+        initial_ee_to_star=initial_ee_star,
         min_ee_to_star=min_ee_star,
     )
     checks.check(
@@ -373,6 +387,7 @@ def _run_scripted_rollout(env, task_env, checks: CheckRecorder, num_steps: int, 
         "reward_mean": sum(reward_values) / len(reward_values) if reward_values else None,
         "reward_final": reward_values[-1] if reward_values else None,
         "min_ee_to_star": min_ee_star,
+        "initial_ee_to_star": initial_ee_star,
         "max_star_lift_height": max_star_height,
         "final_success_rate": _mean(task_env.in_success_region.float()),
         "done_count": done_count,
@@ -438,9 +453,12 @@ def main() -> None:
     }
     metrics_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
     print(json.dumps(payload, indent=2, sort_keys=True), flush=True)
-    env.close()
-    if not checks.passed:
-        raise SystemExit(1)
+    failed = not checks.passed
+    try:
+        env.close()
+    finally:
+        if failed:
+            raise SystemExit(1)
 
 
 if __name__ == "__main__":

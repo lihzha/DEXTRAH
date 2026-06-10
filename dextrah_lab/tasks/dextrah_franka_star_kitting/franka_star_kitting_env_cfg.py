@@ -58,10 +58,10 @@ class DextrahFrankaStarKittingEnvCfg(DirectRLEnvCfg):
     table_thickness = 0.052
     table_surface_z = table_center_z + 0.5 * table_thickness
 
-    pickup_x = -0.56
-    pickup_y = -0.22
-    fixture_x = -0.56
-    fixture_y = 0.23
+    pickup_x = -0.50
+    pickup_y = -0.17
+    fixture_x = -0.50
+    fixture_y = 0.18
     fixture_yaw_deg = 18.0
     star_start_yaw_deg = -24.0
     star_spawn_xy_randomization = 0.035
@@ -81,8 +81,8 @@ class DextrahFrankaStarKittingEnvCfg(DirectRLEnvCfg):
     robot_base_z = 0.20
     robot_yaw_wxyz = (0.0, 0.0, 0.0, 1.0)  # 180 deg about z; points arm toward negative X table.
     ee_offset_pos = (0.0, 0.0, 0.1034)
-    ik_position_action_scale = (0.045, 0.045, 0.035)
-    ik_rotation_action_scale = (0.20, 0.20, 0.24)
+    ik_position_action_scale = (0.060, 0.060, 0.045)
+    ik_rotation_action_scale = (0.25, 0.25, 0.30)
 
     robot: ArticulationCfg = FRANKA_PANDA_HIGH_PD_CFG.replace(prim_path="/World/envs/env_.*/Robot").replace(
         init_state=ArticulationCfg.InitialStateCfg(
