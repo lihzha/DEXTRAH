@@ -1964,12 +1964,15 @@ Change:
 Version Control:
 - branch: `codex/dextrah-cluster-dev`
 - base_commit: `975abfbc5c1e2efb655528af74c5beb8cc473081`
-- implementation_commit: pending
+- implementation_commit: `3414dd623c67d33425ce74a5e55f6a78f1ec7c09`
+- push/pull: pushed to origin and pulled on a1001
 - changed_files:
   `dextrah_lab/scene_scripts/render_star_kitting_env.py`,
   `cluster/sbatch_render_star_kitting_env.sh`,
   `dextrah_lab/tasks/dextrah_kuka_allegro/dextrah_cube_grasp_env.py`,
   `WORKLOG.md`
+- remote_commit/status:
+  `3414dd623c67d33425ce74a5e55f6a78f1ec7c09`, clean
 
 Command / Job:
 - local checks:
@@ -1980,8 +1983,11 @@ Command / Job:
   `git diff --check`
 
 Result:
-- status: checks passed locally; commit/push/sync pending.
+- status: checks passed locally; fix committed, pushed, and deployed to the
+  shared cluster checkout.
+- key evidence: remote grep confirms `single_cube`, `--animate_cube`,
+  `cube_moves: animate_cube`, and `DextrahCubeGraspEnv.apply_object_wrench`.
 
 Next:
-- Commit/push the fix and update the cluster checkout before launching any new
-  single-cube render/eval jobs.
+- Relaunch any future single-cube render/eval jobs from commit `3414dd6` or
+  newer so the cube remains static unless `ANIMATE_CUBE=true` is explicitly set.
