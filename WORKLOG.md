@@ -3298,3 +3298,38 @@ Checks:
 Next:
 - Commit/push, update A100, rerun validation, inspect metrics/video, then
   launch PPO only if the feasibility gate passes.
+
+## 2026-06-10 04:18 PDT - Franka Star Environment Validation Passed
+
+Goal:
+- Close the environment-correctness gate before launching PPO for the Franka
+  star kitting task.
+
+Evidence:
+- validation job_id: `28933499`, run
+  `franka_star_env_validate_feasibility_20260610_041458`, source commit
+  `52618ec63ef8854c43cd3307b0605d412a412694`.
+- status: passed metrics gate, Slurm exit `0:0`, elapsed `00:01:49`.
+- metrics: `validation_lifted_rate=0.5`,
+  `max_star_lift_height=0.05558`,
+  `max_prelift_star_initial_xy_error=0.03590`.
+- per-env lift heights:
+  `[0.00354284, 0.008177996, 0.163339615, 0.059814692]`.
+- reward checks passed with updated lift credit:
+  `lifted_reward=29.695`, `transported_reward=34.291`,
+  `placed_reward=123.591`.
+- local artifacts fetched under
+  `cluster_results/a1001/franka_star_env_validate_feasibility_20260610_041458`.
+- video is nonblank and playable:
+  `1280x720`, `479` frames, `7.98s`, `60 FPS`.
+
+Analysis:
+- The environment/reset/reward checks are now clean enough for training.
+- The scripted controller is only a feasibility probe; it demonstrates
+  physically valid lift in half of the vectorized envs while maintaining
+  bounded pre-lift drift.
+
+Next:
+- Launch an 8-GPU PPO run from commit `52618ec` with fixed spawn curriculum,
+  monitor logs continuously, and start periodic checkpoint eval videos from a
+  separate agent once checkpoints are available.
