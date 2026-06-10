@@ -87,6 +87,8 @@ echo "CUROBO_ASSETS_NFS=$CUROBO_ASSETS_NFS"
 echo "FRANKA_RENDER_MODE=$FRANKA_RENDER_MODE"
 echo "FRANKA_USD=${FRANKA_USD:-}"
 echo "FRANKA_SCENE_YAW_DEG=${FRANKA_SCENE_YAW_DEG:-180.0}"
+echo "FRANKA_MOTION=${FRANKA_MOTION:-hold}"
+echo "FRANKA_MOTION_SCALE=${FRANKA_MOTION_SCALE:-1.0}"
 
 srun \
   --ntasks=1 \
@@ -126,6 +128,8 @@ srun \
       --franka_render_mode \"$FRANKA_RENDER_MODE\" \
       --franka_usd \"${FRANKA_USD:-}\" \
       --franka_scene_yaw_deg \"${FRANKA_SCENE_YAW_DEG:-180.0}\" \
+      --franka_motion \"${FRANKA_MOTION:-hold}\" \
+      --franka_motion_scale \"${FRANKA_MOTION_SCALE:-1.0}\" \
       --seed \"${SEED:-23}\" \
       --star_outer_radius \"${STAR_OUTER_RADIUS:-0.092}\" \
       --star_inner_radius \"${STAR_INNER_RADIUS:-0.042}\" \

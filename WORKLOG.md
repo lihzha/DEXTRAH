@@ -1512,3 +1512,45 @@ Result:
 Analysis:
 - The final contact sheet shows the blue cube visible in the first, middle,
   and last frames while the Franka remains fixed.
+
+## 2026-06-09 22:24 PDT - Actuated Franka Single-Cube Motion Setup
+
+Goal:
+- Render the single-cube scene with the Franka spawned as the Isaac Lab
+  articulation and commanded through actuators while the cube disturbance
+  motion remains visible.
+
+Hypothesis:
+- The existing `articulation_usd` Franka path can be reused for cube-motion if
+  the capture loop writes time-varying joint targets instead of always holding
+  the default GraspGenX joint pose.
+
+Change:
+- Added `--franka_motion {hold,all_directions}` and
+  `--franka_motion_scale`.
+- `all_directions` commands a deterministic joint-space sweep through the
+  Franka actuators, intended to move the hand laterally, vertically, and
+  forward/back in the camera view.
+- Cube-motion now writes `robot_motion_trajectory.json` with commanded joint
+  targets and sampled end-effector body poses.
+- The Slurm wrapper now forwards `FRANKA_MOTION` and
+  `FRANKA_MOTION_SCALE`.
+
+Version Control:
+- branch: `codex/dextrah-cluster-dev`
+- base_commit: `0d1172dff0bb252b18e708b72df63f7cdfceda1b`
+- implementation_commit: pending
+- changed_files:
+  `dextrah_lab/scene_scripts/render_star_kitting_env.py`,
+  `cluster/sbatch_render_star_kitting_env.sh`, `WORKLOG.md`
+
+Command / Job:
+- checks:
+  - `python3 -m py_compile dextrah_lab/scene_scripts/render_star_kitting_env.py`
+  - `bash -n cluster/sbatch_render_star_kitting_env.sh`
+  - `git diff --check -- dextrah_lab/scene_scripts/render_star_kitting_env.py cluster/sbatch_render_star_kitting_env.sh`
+- planned launch:
+  `SCENE=cube_motion FRANKA_RENDER_MODE=articulation_usd FRANKA_MOTION=all_directions FRANKA_MOTION_SCALE=1.0 CUBE_START_Y=-0.12 WIDTH=640 HEIGHT=360 FPS=12 VIDEO_SECONDS=6.0 SIM_STEPS_PER_FRAME=5 CAPTURE_VIDEO=1 PHYSICS_DEVICE=cuda:0 sbatch --export=ALL cluster/sbatch_render_star_kitting_env.sh`
+
+Result:
+- status: implementation ready for commit/push/sync and l401 render.

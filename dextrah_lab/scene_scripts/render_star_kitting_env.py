@@ -87,6 +87,18 @@ def parse_args() -> argparse.Namespace:
         default=180.0,
         help="Yaw applied to the GraspGenX Franka base pose so the arm faces the DEXTRAH table.",
     )
+    parser.add_argument(
+        "--franka_motion",
+        choices=("hold", "all_directions"),
+        default="hold",
+        help="Actuated Franka motion program. all_directions commands a deterministic arm sweep.",
+    )
+    parser.add_argument(
+        "--franka_motion_scale",
+        type=float,
+        default=1.0,
+        help="Scale for the actuated Franka all_directions joint target sweep.",
+    )
     parser.add_argument("--star_outer_radius", type=float, default=0.092)
     parser.add_argument("--star_inner_radius", type=float, default=0.042)
     parser.add_argument("--star_thickness", type=float, default=0.034)
@@ -1428,10 +1440,89 @@ def _reset_robot_articulation(robot: Articulation | None) -> None:
     robot.reset()
 
 
-def _write_robot_articulation_targets(robot: Articulation | None) -> None:
+def _franka_motion_envelope(phase: float) -> float:
+    t = max(0.0, min(1.0, float(phase)))
+    return _smoothstep(min(1.0, t / 0.12)) * _smoothstep(min(1.0, (1.0 - t) / 0.12))
+
+
+def _franka_all_directions_target(robot: Articulation, phase: float):
+    target = robot.data.default_joint_pos.clone()
+    joint_indices = {name: idx for idx, name in enumerate(robot.joint_names)}
+    scale = max(0.0, min(1.5, float(args_cli.franka_motion_scale)))
+    t = max(0.0, min(1.0, float(phase)))
+    tau = 2.0 * math.pi * t
+    envelope = _franka_motion_envelope(t)
+    offsets = {
+        "panda_joint1": 0.46 * math.sin(tau),
+        "panda_joint2": 0.26 * math.sin(tau + 0.5 * math.pi),
+        "panda_joint3": 0.34 * math.sin(2.0 * tau + 0.35),
+        "panda_joint4": 0.30 * math.sin(tau + math.pi),
+        "panda_joint5": 0.38 * math.sin(1.5 * tau + 0.80),
+        "panda_joint6": 0.24 * math.sin(tau - 0.65),
+        "panda_joint7": 0.64 * math.sin(2.0 * tau + 1.20),
+    }
+    for joint_name, offset in offsets.items():
+        joint_idx = joint_indices.get(joint_name)
+        if joint_idx is not None:
+            target[:, joint_idx] = target[:, joint_idx] + float(scale * envelope * offset)
+
+    finger_opening = 0.025 + 0.015 * (0.5 + 0.5 * math.sin(2.0 * tau + 0.30))
+    for joint_name in ("panda_finger_joint1", "panda_finger_joint2"):
+        joint_idx = joint_indices.get(joint_name)
+        if joint_idx is not None:
+            target[:, joint_idx] = float(finger_opening)
+    return target
+
+
+def _robot_articulation_target(robot: Articulation | None, phase: float):
+    if robot is None:
+        return None
+    if args_cli.franka_motion == "all_directions":
+        return _franka_all_directions_target(robot, phase)
+    return robot.data.default_joint_pos.clone()
+
+
+def _robot_end_effector_record(robot: Articulation | None) -> dict[str, object] | None:
+    if robot is None:
+        return None
+    body_names = list(robot.body_names)
+    for body_name in ("panda_hand", "panda_link8", "panda_leftfinger", "panda_rightfinger", "panda_link7"):
+        if body_name not in body_names:
+            continue
+        body_idx = body_names.index(body_name)
+        try:
+            pos = robot.data.body_pos_w[0, body_idx].detach().cpu().tolist()
+            quat = robot.data.body_quat_w[0, body_idx].detach().cpu().tolist()
+        except Exception:
+            return {"body_name": body_name}
+        return {
+            "body_name": body_name,
+            "position_w": [float(v) for v in pos],
+            "quaternion_wxyz": [float(v) for v in quat],
+        }
+    return None
+
+
+def _robot_motion_record(robot: Articulation | None, frame_idx: int, frame_count: int, target) -> dict[str, object] | None:
+    if robot is None or target is None:
+        return None
+    values = target[0].detach().cpu().tolist()
+    joint_targets = {name: float(values[idx]) for idx, name in enumerate(robot.joint_names)}
+    return {
+        "frame": int(frame_idx),
+        "t": 0.0 if frame_count <= 1 else float(frame_idx) / float(frame_count - 1),
+        "motion": str(args_cli.franka_motion),
+        "joint_targets": joint_targets,
+        "end_effector": _robot_end_effector_record(robot),
+    }
+
+
+def _write_robot_articulation_targets(robot: Articulation | None, joint_pos_target=None) -> None:
     if robot is None:
         return
-    robot.set_joint_position_target(robot.data.default_joint_pos)
+    if joint_pos_target is None:
+        joint_pos_target = robot.data.default_joint_pos
+    robot.set_joint_position_target(joint_pos_target)
     robot.write_data_to_sim()
 
 
@@ -1619,6 +1710,7 @@ def _capture_overview_video(
     seconds: float,
     sim_steps_per_frame: int,
     frame_callback=None,
+    robot_motion_trace: list[dict[str, object]] | None = None,
 ) -> list[str]:
     frame_count = max(2, int(round(float(fps) * float(seconds))))
     frames_dir = output_dir / "frames"
@@ -1648,12 +1740,20 @@ def _capture_overview_video(
     _log(f"capturing overview video frames with TiledCamera: {frame_count} frames")
     for frame_idx in range(frame_count):
         step_count = 1 if frame_idx == 0 else max(1, int(sim_steps_per_frame))
-        for _ in range(step_count):
-            _write_robot_articulation_targets(robot_articulation)
+        last_robot_target = None
+        for substep_idx in range(step_count):
+            substep = 0.0 if step_count <= 1 else float(substep_idx) / float(step_count)
+            phase = min(1.0, (float(frame_idx) + substep) / max(float(frame_count - 1), 1.0))
+            last_robot_target = _robot_articulation_target(robot_articulation, phase)
+            _write_robot_articulation_targets(robot_articulation, last_robot_target)
             sim.step(render=False)
             _update_robot_articulation(robot_articulation, float(sim.cfg.dt))
         if frame_callback is not None:
             frame_callback(frame_idx, frame_count)
+        if robot_motion_trace is not None:
+            motion_record = _robot_motion_record(robot_articulation, frame_idx, frame_count, last_robot_target)
+            if motion_record is not None:
+                robot_motion_trace.append(motion_record)
         sim.render()
         camera.update(float(sim.cfg.dt) * step_count)
         dst = frames_dir / f"overview_{frame_idx:04d}.png"
@@ -1764,6 +1864,7 @@ def _render_cube_motion_scene(
     update_stage()
 
     trajectory: list[dict[str, object]] = []
+    robot_motion_trace: list[dict[str, object]] = []
 
     def frame_callback(frame_idx: int, frame_count: int) -> None:
         state = _cube_motion_state(frame_idx, frame_count, surface_z)
@@ -1773,10 +1874,19 @@ def _render_cube_motion_scene(
     metadata = {
         "generated_at_unix": time.time(),
         "task": "single_cube_motion",
-        "task_description": "Static GraspGenX Franka rendered with one cube moved by deterministic disturbance kicks.",
+        "task_description": (
+            "GraspGenX Franka rendered in the single-cube scene; the cube is disturbed and "
+            "the Franka can be held or driven by actuator targets."
+        ),
         "simulation_backend": "Isaac Sim / Isaac Lab / PhysX USD scene",
         "robot": _robot_metadata(robot_spec),
         "robot_runtime": _robot_runtime_metadata(robot_articulation),
+        "robot_motion": {
+            "mode": str(args_cli.franka_motion),
+            "scale": float(args_cli.franka_motion_scale),
+            "commanded": bool(robot_articulation is not None and args_cli.franka_motion != "hold"),
+            "description": "all_directions commands a deterministic joint-space sweep that moves the hand laterally, vertically, and forward/back.",
+        },
         "axes": {
             "table_long_axis": "world_y",
             "table_short_axis": "world_x",
@@ -1813,6 +1923,7 @@ def _render_cube_motion_scene(
             "franka_is_static": robot_spec.render_mode == "static_urdf_obj_meshes",
             "franka_is_articulation": robot_spec.render_mode == "articulation_usd",
             "franka_has_actuators": bool(robot_spec.actuator_config),
+            "franka_motion_commanded": bool(robot_articulation is not None and args_cli.franka_motion != "hold"),
             "cube_moves": True,
         },
     }
@@ -1845,6 +1956,7 @@ def _render_cube_motion_scene(
             seconds=float(args_cli.video_seconds),
             sim_steps_per_frame=int(args_cli.sim_steps_per_frame),
             frame_callback=frame_callback,
+            robot_motion_trace=robot_motion_trace,
         )
         rendered = {"overview_frames": frame_paths}
     else:
@@ -1853,12 +1965,22 @@ def _render_cube_motion_scene(
         rendered = {name: str(_capture_view(name, eye, look_at, output_dir))}
 
     _write_metadata(output_dir / "trajectory.json", {"cube_trajectory": trajectory})
+    robot_motion_path = output_dir / "robot_motion_trajectory.json"
+    _write_metadata(
+        robot_motion_path,
+        {
+            "motion": str(args_cli.franka_motion),
+            "scale": float(args_cli.franka_motion_scale),
+            "robot_motion_trajectory": robot_motion_trace,
+        },
+    )
     _write_metadata(
         output_dir / "render_manifest.json",
         {
             "usd": str(usd_path),
             "metadata": str(output_dir / "scene_metadata.json"),
             "trajectory": str(output_dir / "trajectory.json"),
+            "robot_motion_trajectory": str(robot_motion_path),
             "renders": rendered,
             "fps": int(args_cli.fps),
             "video_seconds": float(args_cli.video_seconds),
