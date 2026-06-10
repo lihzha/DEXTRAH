@@ -4461,3 +4461,39 @@ Checks:
 
 Next:
 - Commit/push, rerun full validation, and only train if it passes.
+
+## 2026-06-10 07:47 PDT - Anchor-Pickup Validation Failed; Restored Scripted IK Path
+
+Goal:
+- Fix the failed anchored-pickup validation while preserving the contact/lift
+  reward patch.
+
+Evidence:
+- validation job_id: `28937758`
+- run_name: `franka_star_env_validate_anchorpickup_20260610_074039`
+- source commit: `3d9ea5f4d21641b86c986a6dcf669de1792ced6c`
+- failed checks:
+  `scripted_rollout_approaches_star`,
+  `scripted_rollout_fingers_approach_star`, and
+  `scripted_rollout_lifts_star`.
+- the zero-noise reset left the scripted IK path in a bad posture:
+  `min_ee_to_star=0.1590`, `min_finger_to_star=0.1366`,
+  `validation_lifted_rate=0.0`.
+
+Analysis:
+- The established random reset perturbation is needed to avoid the nominal
+  scripted IK path getting stuck in a poor configuration.
+- Anchoring pickup target XY was too restrictive for this validation controller.
+
+Change:
+- Restored `arm_joint_reset_noise=0.035`.
+- Restored live-star XY targeting in the validation scripted approach/grasp.
+- Kept a slightly deeper validation grasp depth, `star_anchor_z - 0.004`.
+- Extended scripted close and lift phase durations to make the validation grasp
+  less timing-brittle.
+
+Checks:
+- `python3 -m py_compile dextrah_lab/rl_games/validate_franka_star_kitting_env.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env_cfg.py`
+
+Next:
+- Commit/push and rerun full validation.

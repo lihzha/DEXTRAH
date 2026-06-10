@@ -426,44 +426,44 @@ def _scripted_target(
     initial_ee_pos: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, float]:
     star_anchor = task_env.star_initial_pos.detach()
+    star = task_env.star_pos.detach()
     goal = task_env.star_goal_pos.detach()
-    pickup = star_anchor
     z_above_star = star_anchor[:, 2] + 0.16
     z_grasp = star_anchor[:, 2] - 0.004
     z_lift = star_anchor[:, 2] + 0.17
     z_place = goal[:, 2] + 0.045
     phase = float(step) / max(float(num_steps - 1), 1.0)
 
-    target = torch.zeros_like(pickup)
+    target = torch.zeros_like(star)
     if phase < 0.12:
         if initial_ee_pos is None:
-            target[:, 0:2] = pickup[:, 0:2]
+            target[:, 0:2] = star[:, 0:2]
             target[:, 2] = z_above_star
         else:
             target[:, 0:2] = initial_ee_pos[:, 0:2]
             target[:, 2] = torch.maximum(initial_ee_pos[:, 2] + 0.08, z_above_star)
         gripper = 1.0
     elif phase < 0.30:
-        target[:, 0:2] = pickup[:, 0:2]
+        target[:, 0:2] = star[:, 0:2]
         target[:, 2] = z_above_star
         gripper = 1.0
     elif phase < 0.54:
-        target[:, 0:2] = pickup[:, 0:2]
+        target[:, 0:2] = star[:, 0:2]
         target[:, 2] = z_grasp
         gripper = 1.0
-    elif phase < 0.66:
-        target[:, 0:2] = pickup[:, 0:2]
+    elif phase < 0.70:
+        target[:, 0:2] = star[:, 0:2]
         target[:, 2] = z_grasp
         gripper = -1.0
-    elif phase < 0.80:
-        target[:, 0:2] = pickup[:, 0:2]
+    elif phase < 0.84:
+        target[:, 0:2] = star[:, 0:2]
         target[:, 2] = z_lift
         gripper = -1.0
-    elif phase < 0.90:
+    elif phase < 0.91:
         target[:, 0:2] = goal[:, 0:2]
         target[:, 2] = z_lift
         gripper = -1.0
-    elif phase < 0.94:
+    elif phase < 0.95:
         target[:, 0:2] = goal[:, 0:2]
         target[:, 2] = z_place
         gripper = -1.0
