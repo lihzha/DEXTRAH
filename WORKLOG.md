@@ -5402,6 +5402,30 @@ Next:
   sidecars. Patch and relaunch only if logs, metrics, or artifacts become
   abnormal.
 
+## 2026-06-10 14:43 PDT - DEXTRAH Teacher Epoch 12000 Milestone
+
+Result:
+- status: running healthy.
+- progress: log advanced past epoch `12025/20000`.
+- checkpoints:
+  `last_dextrah_lstm_ep_12000_rew_592.58044.pth` at `14:41:10`,
+  `last_dextrah_lstm_ep_12010_rew_561.5644.pth` at `14:41:59`,
+  and `last_dextrah_lstm_ep_12020_rew_665.1854.pth` at `14:42:49`, all normal
+  size.
+- sidecars: all rank runtime sidecars refreshed at the save boundary.
+- errors: no traceback, CUDA/NCCL, OOM, killed, requested-operation, or
+  training-failure patterns.
+- metrics through epoch `12005`: `in_success_region/iter` last-50 `0.446162`,
+  `info/kl` last-50 `0.011498`, RL update FPS last-50 about `109546`.
+
+Analysis:
+- The run remains in the expected max-ADR regime and continues checkpointing
+  resumably. No code/debug intervention is needed at this milestone.
+
+Next:
+- Continue rolling monitor until completion or the next wall-time requeue, then
+  verify resume from the newest checkpoint/runtime state.
+
 ## 2026-06-10 14:16 PDT - Franka Lift-Action Exploit Diagnosis And Second Reward Patch
 
 Result:
@@ -5642,7 +5666,7 @@ Analysis:
   table.
 
 Change:
-- Added `prelift_stall_penalty_weight = -32.0`.
+- Added `prelift_stall_penalty_weight = -24.0`.
 - Added `prelift_stall_penalty` gated by closed gripper, lift-ready pose,
   prelift stability, and zero/near-zero star height. The penalty decays away as
   star height approaches `0.020 m`.
@@ -5653,6 +5677,16 @@ Validation:
 - local `py_compile` passed for Franka config/reward/env, validation, shared
   eval rollout, and trainer.
 - `git diff --check` passed.
+- cluster validation job `28952539` at penalty `-32.0` failed only outdated
+  no-lift monotonic checks:
+  `reward_near_close_increases_when_fingers_near_star` and
+  `reward_lift_ready_requires_tight_finger_center`.
+- the exploit caps passed at `-32.0`:
+  lift-intent/no-lift reward `13.958669662475586`, hover/no-lift reward
+  `10.477696418762207`, actual-lift reward `359.5626220703125`, scripted
+  rollout lifted `2/4` envs.
+- tuned `prelift_stall_penalty_weight` to `-24.0` to keep the no-lift state
+  capped while preserving useful close/tight prelift reward ordering.
 
 Next:
 - commit/push/pull the stall patch.

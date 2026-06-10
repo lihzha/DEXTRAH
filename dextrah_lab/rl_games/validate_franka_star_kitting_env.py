@@ -174,7 +174,7 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
         "close_near_weight": 3.0,
         "close_action_weight": 4.0,
         "prelift_move_penalty_weight": -45.0,
-        "prelift_stall_penalty_weight": -32.0,
+        "prelift_stall_penalty_weight": -24.0,
         "close_far_penalty_weight": -14.0,
         "open_near_penalty_weight": -10.0,
         "ungrasped_lift_penalty_weight": -12.0,
