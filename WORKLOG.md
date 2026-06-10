@@ -2924,9 +2924,50 @@ Change:
   metric.
 
 Checks:
-- pending `python3 -m py_compile dextrah_lab/rl_games/validate_franka_star_kitting_env.py`
-- pending `git diff --check`
+- `python3 -m py_compile dextrah_lab/rl_games/validate_franka_star_kitting_env.py`
+- `git diff --check`
 
 Next:
 - Commit/push, update A100, rerun thick-star validation, inspect the resulting
   metrics/video, and launch PPO only if the environment gate passes.
+
+## 2026-06-10 03:41 PDT - Franka Star Per-Env Validation Diagnostics
+
+Goal:
+- Diagnose the remaining true pre-lift drift failure before any PPO launch.
+
+Evidence:
+- validation job_id: `28932582`, run
+  `franka_star_env_validate_preliftgate_20260610_033454`, source commit
+  `6526681c138af9952019ee0efe5543b71a4ab159`.
+- status: failed metrics gate, exit `1:0`, elapsed `00:01:54`.
+- fetched artifacts:
+  `cluster_results/a1001/franka_star_env_validate_preliftgate_20260610_033454`.
+- video validation: nonblank rendered env0 shows a lift/carry attempt, but the
+  rollout metrics are over four randomized envs.
+- failed check: `scripted_rollout_limits_prelift_star_motion`.
+- rollout: `max_prelift_star_initial_xy_error=0.16205`,
+  `max_star_initial_xy_error=0.24637`, `max_star_lift_height=0.07638`.
+
+Analysis:
+- The prior patch correctly separated global transport drift from true pre-lift
+  drift, and the true drift is still too high.
+- The rendered camera only shows one env, so this may be a per-env/randomized
+  start failure hidden by the vectorized rollout.
+
+Change:
+- Added per-env maximum lift tracking and `validation_lifted_rate` metrics.
+- Added `max_prelift_detail` with step, env id, phase, gripper command, star
+  pose, target pose, distances, and lift state for the worst pre-lift drift.
+- Printed `lift_max`, `xy_max`, `prelift_xy_max`, and validation-lifted rate at
+  validation intervals.
+- Tightened `scripted_rollout_lifts_star` to require every validation env to
+  cross the `0.030 m` lift threshold.
+
+Checks:
+- pending `python3 -m py_compile dextrah_lab/rl_games/validate_franka_star_kitting_env.py`
+- pending `git diff --check`
+
+Next:
+- Commit/push, update A100, rerun validation, inspect the per-env failure, and
+  patch the grasp/controller/geometry before training.

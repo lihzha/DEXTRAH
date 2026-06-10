@@ -76,6 +76,10 @@ def _mean_vec(value: torch.Tensor) -> list[float]:
     return [float(v) for v in value.detach().float().mean(dim=0).cpu()]
 
 
+def _tensor_list(value: torch.Tensor) -> list[float] | list[list[float]]:
+    return value.detach().float().cpu().tolist()
+
+
 def _camera_tuple(values: list[float] | tuple[float, float, float] | None):
     if values is None:
         return None
@@ -419,8 +423,11 @@ def _run_scripted_rollout(env, task_env, checks: CheckRecorder, num_steps: int, 
     min_ee_star = _mean(task_env.ee_to_star_dist)
     min_finger_star = _mean(task_env.finger_center_to_star_dist)
     max_star_height = _mean(task_env.star_lift_height)
+    max_star_height_per_env = task_env.star_lift_height.detach().clone()
     max_star_initial_xy_error = _mean(task_env.star_initial_xy_error)
     max_prelift_star_initial_xy_error = float(task_env.star_initial_xy_error.detach().max().cpu())
+    validation_lift_reached = task_env.star_lift_height >= 0.030
+    max_prelift_detail: dict[str, object] = {}
     reward_values: list[float] = []
     done_count = 0
     for step in range(num_steps):
@@ -441,14 +448,33 @@ def _run_scripted_rollout(env, task_env, checks: CheckRecorder, num_steps: int, 
         min_ee_star = min(min_ee_star, _mean(task_env.ee_to_star_dist))
         min_finger_star = min(min_finger_star, _mean(task_env.finger_center_to_star_dist))
         max_star_height = max(max_star_height, _mean(task_env.star_lift_height))
+        max_star_height_per_env = torch.maximum(max_star_height_per_env, task_env.star_lift_height.detach())
         max_star_initial_xy_error = max(max_star_initial_xy_error, _mean(task_env.star_initial_xy_error))
-        prelift_active = (~task_env.has_lifted_star) & (task_env.star_lift_height < 0.030)
+        prelift_active = ~validation_lift_reached
         if bool(prelift_active.any().item()):
             prelift_xy_error = task_env.star_initial_xy_error[prelift_active]
-            max_prelift_star_initial_xy_error = max(
-                max_prelift_star_initial_xy_error,
-                float(prelift_xy_error.detach().max().cpu()),
-            )
+            current_max = float(prelift_xy_error.detach().max().cpu())
+            if current_max > max_prelift_star_initial_xy_error:
+                active_env_ids = torch.nonzero(prelift_active, as_tuple=False).squeeze(-1)
+                env_id = int(active_env_ids[torch.argmax(prelift_xy_error)].detach().cpu())
+                max_prelift_star_initial_xy_error = current_max
+                max_prelift_detail = {
+                    "step": step + 1,
+                    "env_id": env_id,
+                    "phase": float(step) / max(float(num_steps - 1), 1.0),
+                    "gripper_command": float(gripper),
+                    "star_initial_xy_error": current_max,
+                    "star_lift_height": float(task_env.star_lift_height[env_id].detach().cpu()),
+                    "ee_to_star": float(task_env.ee_to_star_dist[env_id].detach().cpu()),
+                    "finger_to_star": float(task_env.finger_center_to_star_dist[env_id].detach().cpu()),
+                    "gripper_width": float(task_env.gripper_width[env_id].detach().cpu()),
+                    "star_pos": _tensor_list(task_env.star_pos[env_id]),
+                    "star_initial_pos": _tensor_list(task_env.star_initial_pos[env_id]),
+                    "target_pos": _tensor_list(target[env_id]),
+                    "reached_validation_lift": bool(validation_lift_reached[env_id].detach().cpu()),
+                    "has_lifted_star": bool(task_env.has_lifted_star[env_id].detach().cpu()),
+                }
+        validation_lift_reached |= task_env.star_lift_height >= 0.030
 
         if not bool(torch.isfinite(policy_obs).all().item()):
             checks.check("scripted_rollout_observation_finite", False, step=step)
@@ -464,6 +490,10 @@ def _run_scripted_rollout(env, task_env, checks: CheckRecorder, num_steps: int, 
                 f"finger_to_star={_mean(task_env.finger_center_to_star_dist):.4f} "
                 f"gripper_width={_mean(task_env.gripper_width):.4f} "
                 f"lift={_mean(task_env.star_lift_height):.4f} "
+                f"lift_max={float(task_env.star_lift_height.detach().max().cpu()):.4f} "
+                f"xy_max={float(task_env.star_initial_xy_error.detach().max().cpu()):.4f} "
+                f"prelift_xy_max={max_prelift_star_initial_xy_error:.4f} "
+                f"validation_lifted={_mean(validation_lift_reached.float()):.4f} "
                 f"success={_mean(task_env.in_success_region.float()):.4f}",
                 flush=True,
             )
@@ -506,11 +536,15 @@ def _run_scripted_rollout(env, task_env, checks: CheckRecorder, num_steps: int, 
         max_prelift_star_initial_xy_error < 0.065,
         max_prelift_star_initial_xy_error=max_prelift_star_initial_xy_error,
         max_star_initial_xy_error=max_star_initial_xy_error,
+        max_prelift_detail=max_prelift_detail,
     )
+    max_star_height_per_env_cpu = max_star_height_per_env.detach().cpu()
     checks.check(
         "scripted_rollout_lifts_star",
-        max_star_height > 0.030,
+        bool((max_star_height_per_env > 0.030).all().item()),
         max_star_lift_height=max_star_height,
+        min_max_star_lift_height=float(max_star_height_per_env_cpu.min()),
+        max_star_lift_height_per_env=_tensor_list(max_star_height_per_env),
         required_lift_height=0.030,
     )
 
@@ -523,8 +557,12 @@ def _run_scripted_rollout(env, task_env, checks: CheckRecorder, num_steps: int, 
         "min_finger_to_star": min_finger_star,
         "initial_finger_to_star": initial_finger_star,
         "max_star_lift_height": max_star_height,
+        "min_max_star_lift_height": float(max_star_height_per_env_cpu.min()),
+        "max_star_lift_height_per_env": _tensor_list(max_star_height_per_env),
         "max_prelift_star_initial_xy_error": max_prelift_star_initial_xy_error,
+        "max_prelift_detail": max_prelift_detail,
         "max_star_initial_xy_error": max_star_initial_xy_error,
+        "validation_lifted_rate": _mean(validation_lift_reached.float()),
         "final_success_rate": _mean(task_env.in_success_region.float()),
         "final_ee_pos_mean": _mean_vec(task_env.ee_pos),
         "final_star_pos_mean": _mean_vec(task_env.star_pos),
