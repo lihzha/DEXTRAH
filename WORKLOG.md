@@ -3974,3 +3974,38 @@ Next:
 - Commit/push, validate the lift-focused reward rebalance with video, and if
   it passes relaunch PPO with slightly lower entropy (`0.002`) to reduce the
   gap between stochastic training closure and deterministic evaluation.
+
+## 2026-06-10 06:16 PDT - Franka Star Lift-Focused Validation Passed
+
+Goal:
+- Validate the reward rebalance that reduces static close payoff and increases
+  lift/lift-intent credit before another PPO run.
+
+Evidence:
+- validation job_id: `28936398`, run
+  `franka_star_env_validate_liftfocus_20260610_061257`.
+- source commit: `fc16fde1a292defe50c5b51fd7022f912693ee01`.
+- Slurm status: completed `0:0`, elapsed `00:01:38`.
+- validation reward checks and scripted rollout checks all passed.
+- hard gate metrics: `max_pretransport_star_initial_xy_error=0.02956`,
+  `validation_lifted_rate=0.5`, `max_star_lift_height=0.07345`.
+- diagnostic late unlifted drag remained outside the hard pre-transport gate:
+  `max_unlifted_late_drag_xy_error=0.09897`.
+- reward sanity values shifted as intended: actual lifted reward
+  `103.1559`, validation `reward_mean=9.59115`.
+- local artifacts fetched under
+  `cluster_results/a1001/franka_star_env_validate_liftfocus_20260610_061257`.
+- validation video is playable and nonblank:
+  `1280x720`, `179` frames, `2.98s`, `60 FPS`.
+
+Analysis:
+- The lift-focused reward rebalance preserves task feasibility and safety
+  gates while making actual object lift the dominant positive reward.
+- The next PPO run should use lower entropy (`0.002`) to reduce the previous
+  mismatch where stochastic training showed closed-gripper rewards but
+  deterministic eval stayed open.
+
+Next:
+- Launch 8-GPU PPO from `fc16fde` with the same stable DEXTRAH rl_games
+  settings except `ENTROPY_COEF=0.002`, then monitor for actual lift and
+  request early eval videos.
