@@ -3211,8 +3211,43 @@ Change:
 - Lowered scripted grasp z from `star_z + 0.006` to `star_z - 0.002`.
 
 Checks:
+- `python3 -m py_compile dextrah_lab/rl_games/validate_franka_star_kitting_env.py`
+- `git diff --check`
+
+Next:
+- Commit/push, update A100, rerun validation, and inspect artifacts before PPO.
+
+## 2026-06-10 04:35 PDT - Franka Star Lower Scripted Pinch
+
+Goal:
+- Make the heuristic validation grasp more robust before deciding whether the
+  all-env scripted lift gate is too strict.
+
+Evidence:
+- validation job_id: `28933207`, run
+  `franka_star_env_validate_trackcurrent_20260610_040808`, source commit
+  `84fccc73a2735449e73d3f7c95a049a6641c8cea`.
+- status: failed metrics gate, exit `1:0`, elapsed `00:01:37`.
+- all checks passed except per-env `scripted_rollout_lifts_star`.
+- current-star tracking improved lift coverage from one/four to two/four envs:
+  per-env lift heights `[0.0035, 0.0082, 0.1633, 0.0598]`.
+- pre-lift drift stayed clean: `max_prelift_star_initial_xy_error=0.03590`.
+
+Analysis:
+- The environment/reset/reward predicates are now clean; the remaining issue is
+  the heuristic parallel-gripper pinch being marginal.
+- One more controller-only attempt is justified before relaxing the all-env
+  scripted lift gate.
+
+Change:
+- Lowered scripted grasp z from `star_z - 0.002` to `star_z - 0.010`.
+- Extended the close-before-lift phase from `0.66` to `0.72`.
+- Extended the lift phase from `0.80` to `0.88`.
+
+Checks:
 - pending `python3 -m py_compile dextrah_lab/rl_games/validate_franka_star_kitting_env.py`
 - pending `git diff --check`
 
 Next:
-- Commit/push, update A100, rerun validation, and inspect artifacts before PPO.
+- Commit/push, update A100, rerun validation, and inspect whether all-env lift
+  improves.
