@@ -970,6 +970,66 @@ Analysis:
 Next:
 - Commit/push/pull and rerun the final 160-sphere overview.
 
+## 2026-06-09 21:18 PDT - Final Isaac Lab Velocity-Settled Overview
+
+Goal:
+- Produce the final l401 overview visualization with final sphere velocities at
+  zero after settling.
+
+Hypothesis:
+- The 160-sphere scene can reach the configured rest gate reliably; after that,
+  holding the slept state for rendering produces a stable final video and
+  exact-zero final velocity metrics.
+
+Change:
+- No code change after commit `7ba1f5b`; launched final render with:
+  `DYNAMIC_SPHERE_COUNT=160`, `SETTLE_CONSECUTIVE_PASSES=4`,
+  `REST_GATE_LINEAR_VELOCITY_THRESHOLD=0.02`,
+  `REST_GATE_ANGULAR_VELOCITY_THRESHOLD=1.5`,
+  `SPHERE_LINEAR_DAMPING=10.0`, `SPHERE_ANGULAR_DAMPING=120.0`,
+  `MAX_DEPENETRATION_VELOCITY=0.1`, and GPU PhysX on `cuda:0`.
+
+Version Control:
+- branch: `codex/dextrah-cluster-dev`
+- implementation_commit: `7ba1f5b1f902a7e63541d5495ea7c18d64b74dd4`
+- push/pull: pushed locally and fast-forwarded on l401.
+- remote_commit/status: l401 checkout at
+  `7ba1f5b1f902a7e63541d5495ea7c18d64b74dd4`.
+
+Command / Job:
+- command: l401 `salloc` on `pool0-00019`, allocation `1019604`
+- run_name: `clutter_bin_vel_final_sphere160_20260609_211415`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/clutter_bin_env/clutter_bin_vel_final_sphere160_20260609_211415`
+- local_dir:
+  `cluster_results/l401/clutter_bin_vel_final_sphere160_20260609_211415`
+- artifacts: `overview.mp4`, `frames/overview_%04d.png`,
+  `settle_metrics.json`, `scene_metadata.json`, `clutter_bin_env.usda`
+
+Result:
+- status: passed
+- final metrics: `settled=true`, `rest_gate_passed=true`,
+  `rest_gate_zeroed_velocities=true`, `actual_steps=2280`,
+  `actual_sim_time_s=19.0`, final max linear speed `0.0`, final max angular
+  speed `0.0`, `all_exact_zero=true`.
+- pre-sleep residuals preserved in metadata:
+  `pre_sleep_max_linear=0.01732885092496872`,
+  `pre_sleep_max_angular=1.29145348072052`.
+- encoded video: `640x360`, `8 fps`, `16` frames, `2.0 s`.
+- cleanup: removed older local and remote clutter-bin visualization dirs; only
+  `clutter_bin_vel_final_sphere160_20260609_211415` remains in both locations.
+
+Analysis:
+- Automatic PhysX sleep did not trigger for dense sphere contacts even after
+  damping/friction/sleep-threshold tuning. The final implementation therefore
+  uses an explicit rest gate after dynamic settling, records pre-sleep residual
+  velocities, zeros/holds the final state, and avoids additional physics steps
+  during final frame capture.
+
+Next:
+- User can inspect `overview.mp4` and the sidecar metrics in the final local
+  result directory.
+
 ## 2026-06-09 21:06 PDT - Newton OpenGL Clutter-Bin Final Video
 
 Goal:
