@@ -1894,8 +1894,11 @@ Change:
 Version Control:
 - branch: `codex/dextrah-cluster-dev`
 - base_commit: `f055fd169d5d6a5d2e896150b9d8f29fed92ff5f`
-- implementation_commit: pending
+- implementation_commit: `9563f6d197cb4ae967b188e06b37ff60959284f7`
 - changed_files: `cluster/sbatch_eval_cube_grasp_1gpu.sh`, `WORKLOG.md`
+- push/pull: pushed to origin and pulled on a1001
+- remote_commit/status:
+  `9563f6d197cb4ae967b188e06b37ff60959284f7`, clean
 
 Command / Job:
 - failed prior video job: `28929268`
@@ -1903,12 +1906,21 @@ Command / Job:
   `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_cube_grasp_28929268.out`
 - failed prior result: no `.mp4`, `.png`, or `metrics.json` artifacts were
   produced under `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals`.
-- relaunch: pending commit, push, remote pull, and `sbatch`
+- relaunch command:
+  `RUN_NAME=cube_grasp_eval_ep725_video_20260610_002001 CHECKPOINT=/results/logs/rl_games/dextrah_cube_grasp/cube_grasp_ppo_opt8gpu_20260609_224426/nn/last_dextrah_cube_grasp_ep_725_rew_1603.1135.pth NUM_ENVS=4 NUM_STEPS=600 VIDEO_LENGTH=600 CAPTURE_VIDEO=True USE_CUDA_GRAPH=False PRINT_INTERVAL=20 sbatch --export=ALL cluster/sbatch_eval_cube_grasp_1gpu.sh`
+- job_id: `28929700`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/cube_grasp_eval_ep725_video_20260610_002001`
+- logs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_cube_grasp_28929700.out`
+- artifacts:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/cube_grasp_eval_ep725_video_20260610_002001/metrics.json`
+  and MP4 files under
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/cube_grasp_eval_ep725_video_20260610_002001/videos/`
 
 Result:
-- status: in progress
+- status: submitted; running on `batch-block1-0044` at first check.
 
 Next:
-- Commit/push the wrapper fix, update the a1001 checkout, launch a fresh video
-  eval from the latest available checkpoint, and monitor until artifacts appear
-  or a new root cause is identified.
+- Monitor job `28929700` until it writes `metrics.json` and video artifacts or
+  exposes a new failure mode.
