@@ -1429,3 +1429,57 @@ Analysis:
 Next:
 - Commit/push/pull source, submit the L401 smoke, fetch outputs, and inspect
   metadata/video for an initialized actuated Franka facing the table.
+
+## 2026-06-09 22:06 PDT - Static Franka Single-Cube Motion Video
+
+Goal:
+- Render the single-cube scene with the GraspGenX Franka visible but not
+  moving; only the cube motion is keyframed.
+
+Change:
+- Added an explicit `--franka_render_mode` switch and made
+  `static_urdf_obj_meshes` the default path again.
+- The Slurm wrapper now passes `FRANKA_RENDER_MODE`, defaulting to the static
+  GraspGenX/cuRobo URDF OBJ mesh renderer.
+- Lowered the cube-motion overview camera to a robot-side view so the Franka
+  and cube are visible together.
+
+Version Control:
+- branch: `codex/dextrah-cluster-dev`
+- code_commit: `8aefc9b3a4b7f6cde05209ebcf27ade4c246527f`
+- changed_files:
+  `dextrah_lab/scene_scripts/render_star_kitting_env.py`,
+  `cluster/sbatch_render_star_kitting_env.sh`
+
+Command / Job:
+- checks:
+  - `python3 -m py_compile dextrah_lab/scene_scripts/render_star_kitting_env.py`
+  - `bash -n cluster/sbatch_render_star_kitting_env.sh`
+  - `git diff --check -- dextrah_lab/scene_scripts/render_star_kitting_env.py cluster/sbatch_render_star_kitting_env.sh`
+- first render job: `1019806`, run
+  `franka_cube_motion_static_20260609_220225`; completed with static Franka,
+  but the starting cube was partly hidden by the hand from the chosen view.
+- final render job: `1019813`, run
+  `franka_cube_motion_static_visible_20260609_220409`.
+- final command delta: same render settings as the first run, plus
+  `CUBE_START_Y=-0.12` to keep the cube visible from the robot-side camera.
+
+Result:
+- final_remote_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/franka_cube_motion/franka_cube_motion_static_visible_20260609_220409`
+- final_local_dir:
+  `cluster_results/l401/franka_cube_motion_static_visible_20260609_220409`
+- artifacts:
+  - `overview.mp4`
+  - `contact_sheet.png`
+  - `franka_cube_motion_env.usda`
+  - `scene_metadata.json`
+  - `trajectory.json`
+- video probe: `640x360`, `60` frames, `12 fps`, `5.0 s`.
+- metadata check: `render_mode=static_urdf_obj_meshes`,
+  `franka_is_static=True`, `franka_is_articulation=False`,
+  `cube_moves=True`, `trajectory_frames=60`.
+
+Analysis:
+- The final contact sheet shows the blue cube visible in the first, middle,
+  and last frames while the Franka remains fixed.
