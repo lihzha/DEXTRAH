@@ -453,16 +453,35 @@ def _create_dynamic_sphere_clutter(
     x_center = bin_info["center_x"]
     y_center = bin_info["center_y"]
     z_floor = bin_info["inner_floor_z"]
+    z_limit = bin_info["inner_top_z"] - 0.018
 
     grid_count = max(1, int(grid_count))
     layer_count = max(1, int(layer_count))
     target_count = max(0, int(target_count))
+    max_initial_diameter = max_diameter
+    max_fit_layers = layer_count
     if target_count > 0:
-        layer_count = max(layer_count, math.ceil(target_count / float(grid_count * grid_count)))
+        for candidate_grid in range(grid_count, 14):
+            candidate_step = usable / float(candidate_grid)
+            candidate_diameter = max(min_diameter, min(max_diameter, 0.84 * candidate_step))
+            candidate_layer_step = 1.05 * candidate_diameter
+            candidate_layers = max(
+                1,
+                int(math.floor(max(0.0, z_limit - z_floor - candidate_diameter) / candidate_layer_step)) + 1,
+            )
+            if candidate_grid * candidate_grid * candidate_layers >= target_count:
+                grid_count = candidate_grid
+                max_initial_diameter = candidate_diameter
+                max_fit_layers = candidate_layers
+                break
+        layer_count = min(
+            max_fit_layers,
+            max(layer_count, math.ceil(target_count / float(grid_count * grid_count))),
+        )
     step_x = usable / grid_count
     step_y = usable / grid_count
-    layer_step = 1.08 * nominal_diameter
-    max_initial_diameter = 0.86 * min(step_x, step_y, layer_step)
+    max_initial_diameter = max(min_diameter, min(max_initial_diameter, 0.84 * min(step_x, step_y)))
+    layer_step = 1.05 * max_initial_diameter
     records: list[dict[str, float]] = []
 
     for layer_idx in range(layer_count):
@@ -477,7 +496,11 @@ def _create_dynamic_sphere_clutter(
                 break
             if rng.random() > layer_fill:
                 continue
-            diameter = rng.triangular(min_diameter, max_diameter, 0.90 * nominal_diameter)
+            diameter = rng.triangular(
+                min_diameter,
+                max_initial_diameter,
+                min(0.90 * nominal_diameter, max_initial_diameter),
+            )
             diameter = min(diameter, max_initial_diameter)
             diameter = max(min_diameter, diameter)
             radius = diameter / 2.0
@@ -486,8 +509,10 @@ def _create_dynamic_sphere_clutter(
             safe_margin = radius + 0.018
             x = max(x_center - usable / 2.0 + safe_margin, min(x_center + usable / 2.0 - safe_margin, x))
             y = max(y_center - usable / 2.0 + safe_margin, min(y_center + usable / 2.0 - safe_margin, y))
-            z_boost = 0.030 + rng.uniform(0.0, 0.012)
+            z_boost = 0.006 + rng.uniform(0.0, 0.006)
             z = z_floor + radius + layer_idx * layer_step + z_boost
+            if z + radius > z_limit:
+                continue
 
             mat_color = mat_colors[(row_idx + col_idx + layer_idx + rng.randrange(len(mat_colors))) % len(mat_colors)]
             path = f"/World/Clutter/left_bin_sphere_{len(records):03d}"
@@ -680,6 +705,7 @@ def _settle_scene(
     settle_steps: int,
     dynamic_clutter: bool,
     clutter_shape: str,
+    reset_before_settle: bool = True,
 ) -> dict[str, Any]:
     result: dict[str, Any] = {
         "requested_min_steps": max(0, int(settle_steps)),
@@ -689,6 +715,7 @@ def _settle_scene(
         "linear_velocity_threshold": float(args_cli.settle_linear_velocity_threshold),
         "angular_velocity_threshold": float(args_cli.settle_angular_velocity_threshold),
         "used_velocity_view": False,
+        "reset_before_settle": bool(reset_before_settle),
         "settled": False,
         "ran": False,
         "samples": [],
@@ -700,7 +727,8 @@ def _settle_scene(
         "settling dynamic scene for at least "
         f"{result['requested_min_steps']} steps and at most {result['max_steps']} steps"
     )
-    sim.reset()
+    if reset_before_settle:
+        sim.reset()
     result["ran"] = True
 
     body_view = None
@@ -906,14 +934,17 @@ def _capture_view(
 def _capture_overview_video(
     *,
     sim,
+    clutter: list[dict[str, float]],
+    dynamic_clutter: bool,
+    clutter_shape: str,
+    settle_steps: int,
     eye: tuple[float, float, float],
     target: tuple[float, float, float],
     output_dir: Path,
     fps: int,
     seconds: float,
     sim_steps_per_frame: int,
-    reset_before_capture: bool,
-) -> list[str]:
+) -> tuple[list[str], dict[str, Any]]:
     frame_count = max(2, int(round(float(fps) * float(seconds))))
     frames_dir = output_dir / "frames"
     frames: list[str] = []
@@ -935,13 +966,18 @@ def _capture_overview_video(
     )
     _log("creating overview TiledCamera")
     camera = TiledCamera(camera_cfg)
-    if reset_before_capture:
-        _log("resetting SimulationContext before video capture")
-        sim.reset()
-    else:
-        _log("capturing from current settled SimulationContext state")
-        sim.render()
-        camera.update(0.0)
+    _log("resetting SimulationContext after camera creation")
+    sim.reset()
+    settle_result = _settle_scene(
+        sim,
+        clutter,
+        settle_steps=settle_steps,
+        dynamic_clutter=dynamic_clutter,
+        clutter_shape=clutter_shape,
+        reset_before_settle=False,
+    )
+    sim.render()
+    camera.update(0.0)
 
     _log(f"capturing overview video frames with TiledCamera: {frame_count} frames")
     for frame_idx in range(frame_count):
@@ -956,7 +992,7 @@ def _capture_overview_video(
         frames.append(str(dst))
 
     del camera
-    return frames
+    return frames, settle_result
 
 
 def main() -> None:
@@ -1117,15 +1153,6 @@ def main() -> None:
     _set_xform(sun, (0.0, 0.0, 0.0), rotate_xyz_deg=(-45.0, 0.0, 35.0))
 
     settle_steps = max(0, int(args_cli.settle_steps))
-    settle_result = _settle_scene(
-        sim,
-        clutter,
-        settle_steps=settle_steps,
-        dynamic_clutter=dynamic_clutter,
-        clutter_shape=str(args_cli.clutter_shape),
-    )
-    _write_metadata(output_dir / "settle_metrics.json", settle_result)
-
     target = (bin_center_x, left_bin_y, table_top_z + 0.25)
     views = {
         "overview": ((0.22, left_bin_y - 0.70, 2.85), target),
@@ -1138,20 +1165,31 @@ def main() -> None:
     if bool(args_cli.capture_video):
         if name != "overview":
             raise ValueError("--capture_video is currently overview-only")
-        frame_paths = _capture_overview_video(
+        frame_paths, settle_result = _capture_overview_video(
             sim=sim,
+            clutter=clutter,
+            dynamic_clutter=dynamic_clutter,
+            clutter_shape=str(args_cli.clutter_shape),
+            settle_steps=settle_steps,
             eye=eye,
             target=look_at,
             output_dir=output_dir,
             fps=int(args_cli.fps),
             seconds=float(args_cli.video_seconds),
             sim_steps_per_frame=int(args_cli.sim_steps_per_frame),
-            reset_before_capture=not bool(settle_result.get("ran")),
         )
         rendered = {"overview_frames": frame_paths}
     else:
+        settle_result = _settle_scene(
+            sim,
+            clutter,
+            settle_steps=settle_steps,
+            dynamic_clutter=dynamic_clutter,
+            clutter_shape=str(args_cli.clutter_shape),
+        )
         _log(f"capturing view: {name}")
         rendered = {name: str(_capture_view(name, eye, look_at, output_dir))}
+    _write_metadata(output_dir / "settle_metrics.json", settle_result)
 
     settled_transforms_baked = False
     if bool(settle_result.get("ran")):

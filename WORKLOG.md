@@ -775,3 +775,52 @@ Analysis:
 
 Next:
 - Commit/push/pull the import fix and rerun the same 160-sphere smoke.
+
+## 2026-06-09 21:02 PDT - Isaac Lab Velocity Spawn And Camera Fix
+
+Goal:
+- Make the 160-sphere smoke both render and reach a low-velocity settled state.
+
+Hypothesis:
+- The second smoke reached the script but did not settle because the dynamic
+  sphere generator expanded target count by adding layers with a fixed
+  gripper-width vertical step, placing upper layers above the half-height bin.
+  The same run then hung at video capture because the camera was created after
+  the settle-time reset.
+
+Change:
+- Constrain dynamic sphere initial placement by the bin inner height.
+- Auto-increase the XY grid up to 13 cells per side when the requested target
+  count would otherwise require layers above the bin wall.
+- Base vertical layer spacing on the grid-limited sphere diameter.
+- Refactor overview capture so the `TiledCamera` is created before the reset,
+  then the same reset/settle pass is used for both metrics and frames.
+
+Version Control:
+- branch: `codex/dextrah-cluster-dev`
+- base_commit: `e6422ad43268bc2981e5c14d176b85775f58774c`
+- implementation_commit: pending
+- push/pull: pending
+- changed_files: `dextrah_lab/scene_scripts/render_clutter_bin_env.py`,
+  `WORKLOG.md`
+
+Command / Job:
+- failed command: l401 allocation `1019481`, run
+  `clutter_bin_vel_tune_smoke_20260609_204728`
+- failed run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/clutter_bin_env/clutter_bin_vel_tune_smoke_20260609_204728`
+- key metrics: after 3000 steps / 25.0 s, `settled=false`,
+  `max_linear_speed=0.11819262057542801`, and
+  `max_angular_speed=6.530699253082275`.
+
+Result:
+- status: fixed locally; relaunch pending.
+
+Analysis:
+- The velocity metrics were high across most bodies, which is consistent with
+  an over-tall initial stack still cascading rather than just tiny contact
+  jitter. Lowering the initial pile should make damping/sleep thresholds
+  meaningful.
+
+Next:
+- Commit/push/pull this patch and rerun the 160-sphere smoke.
