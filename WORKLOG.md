@@ -3142,3 +3142,37 @@ Checks:
 Next:
 - Commit/push, update A100, rerun validation, inspect artifacts, then proceed
   to PPO only if the fixed curriculum environment passes.
+
+## 2026-06-10 04:19 PDT - Franka Star Pickup X Revert
+
+Goal:
+- Undo the invalid fixed-pickup X change while keeping the fixed-spawn
+  curriculum.
+
+Evidence:
+- validation job_id: `28933033`, run
+  `franka_star_env_validate_fixedpickup_20260610_035550`, source commit
+  `7bab97612f2ecab17d219a4902062ef831e6c62f`.
+- status: failed metrics gate, exit `1:0`, elapsed `00:01:36`.
+- moving `pickup_x` to `-0.30` made the reset interaction much worse:
+  `max_prelift_star_initial_xy_error=0.42589`.
+- worst detail showed the star moving from `(-0.300, -0.120)` to
+  `(-0.674, -0.323)` by step 23 before any grasp, so this pickup is invalid.
+
+Analysis:
+- The previous `pickup_y=-0.12` lane helped, but `pickup_x=-0.30` interacts
+  badly with the reset hand/arm path or table contact.
+- Keep the fixed curriculum, but restore the prior reachable `pickup_x`.
+
+Change:
+- Reverted `pickup_x` from `-0.30` to `-0.36`.
+- Kept `star_spawn_xy_randomization=0.0` and
+  `star_spawn_yaw_randomization_deg=0.0`.
+
+Checks:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env_cfg.py`
+- `git diff --check`
+
+Next:
+- Commit/push, update A100, rerun validation, and continue blocking PPO until
+  the fixed-spawn lane is validated.
