@@ -12,6 +12,11 @@ from dextrah_lab.tasks.dextrah_franka_star_kitting.franka_star_kitting_env_cfg i
 )
 
 
+FRANKA_TABLE_CENTER_Z = 0.72
+FRANKA_TABLE_THICKNESS = 0.052
+FRANKA_TABLE_SURFACE_Z = FRANKA_TABLE_CENTER_Z + 0.5 * FRANKA_TABLE_THICKNESS
+
+
 @configclass
 class DextrahFrankaCubeGraspEnvCfg(DextrahFrankaStarKittingEnvCfg):
     """State-based Franka pick-up task for the same procedural cube objective as Dextrah-Cube-Grasp."""
@@ -29,7 +34,7 @@ class DextrahFrankaCubeGraspEnvCfg(DextrahFrankaStarKittingEnvCfg):
 
     # cube geometry and lift target match the KUKA/Allegro cube task.
     cube_size = 0.06
-    cube_spawn_z = DextrahFrankaStarKittingEnvCfg.table_surface_z + cube_size / 2.0 + 0.005
+    cube_spawn_z = FRANKA_TABLE_SURFACE_Z + cube_size / 2.0 + 0.005
     cube_lift_height = 0.16
     cube_success_lift_height = 0.12
     cube_success_xy_tol = 0.08
@@ -118,4 +123,3 @@ class DextrahFrankaCubeGraspEnvCfg(DextrahFrankaStarKittingEnvCfg):
             rot=(1.0, 0.0, 0.0, 0.0),
         ),
     )
-

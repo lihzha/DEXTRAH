@@ -5893,3 +5893,33 @@ Next:
 - Run the Franka cube 1-GPU validation smoke.
 - If validation passes, launch bounded PPO and evaluate the best checkpoint
   against the existing KUKA cube metrics/video.
+
+## 2026-06-10 15:39 PDT - Franka Cube Validation Import Failure
+
+Command / Job:
+- command:
+  `RUN_NAME=franka_cube_validate_smoke_20260610_1535 NUM_ENVS=4 NUM_STEPS=160 CAPTURE_VIDEO=True SEED=44 sbatch cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`
+- validation job_id: `28954063`
+- code_commit: `a6fa64f8d350b9d4733caeca10960294dfd83f77`
+
+Result:
+- status: failed during import/config construction.
+- scheduler: `FAILED`, elapsed `00:01:02`, exit code `1:0`.
+- key error:
+  `AttributeError: type object 'DextrahFrankaStarKittingEnvCfg' has no attribute 'table_surface_z'`
+
+Analysis:
+- The subclass config referenced a parent `configclass` attribute as a normal
+  class attribute. Isaac Lab's config processing does not expose that inherited
+  value that way at import time.
+
+Change:
+- Patched `franka_cube_grasp_env_cfg.py` to define explicit Franka table z
+  constants for computing `cube_spawn_z`.
+
+Validation:
+- local `py_compile` passed for the patched config/env/validator.
+- `git diff --check` passed.
+
+Next:
+- Commit/push/pull the patch and relaunch the same validation smoke.
