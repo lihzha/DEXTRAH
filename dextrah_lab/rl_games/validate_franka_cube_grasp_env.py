@@ -261,7 +261,8 @@ def _run_predicate_checks(task_env, checks: CheckRecorder) -> None:
         success_rate=_mean(task_env.in_success_region.float()),
         lift_height=_mean(task_env.cube_lift_height),
         xy_error=_mean(task_env.cube_xy_error),
-        hand_dist=_mean(task_env.hand_to_cube_max_dist),
+        hand_mean_dist=_mean(task_env.hand_to_cube_mean_dist),
+        hand_max_dist=_mean(task_env.hand_to_cube_max_dist),
     )
 
     low_pose = synthetic_initial.clone()
@@ -443,4 +444,3 @@ if __name__ == "__main__":
         main()
     finally:
         simulation_app.close()
-

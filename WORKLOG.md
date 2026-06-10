@@ -5923,3 +5923,49 @@ Validation:
 
 Next:
 - Commit/push/pull the patch and relaunch the same validation smoke.
+
+## 2026-06-10 15:44 PDT - Franka Cube Success Predicate Adjustment
+
+Command / Job:
+- command:
+  `RUN_NAME=franka_cube_validate_smoke2_20260610_1541 NUM_ENVS=4 NUM_STEPS=160 CAPTURE_VIDEO=True SEED=44 sbatch cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`
+- validation job_id: `28954212`
+- code_commit: `8f7ee1540d60c4a2c64b96e23329746dd73b8457`
+
+Result:
+- status: failed one validation check after the environment successfully built
+  and ran.
+- scheduler: `FAILED`, elapsed `00:01:22`, exit code `1:0`.
+- passing evidence:
+  - env construction completed.
+  - observation shape was `[4, 72]`.
+  - observations/rewards remained finite for `160` validation steps.
+  - cube remained in workspace.
+  - low-lift and wrong-XY success predicates were rejected.
+- failing check:
+  `success_predicate_accepts_lifted_cube_near_gripper`.
+- measured lifted synthetic state:
+  - lift height `0.12999999523162842 m`
+  - XY error about `6.75e-08 m`
+  - mean max-finger distance `0.18387693166732788 m`
+  - success rate `0.25`
+
+Analysis:
+- The predicate used max two-finger distance with a tight `0.18 m` threshold.
+  For Franka, this rejects valid centered synthetic lifted poses where one
+  finger is slightly farther than the KUKA mean-hand-distance analogue.
+- The KUKA cube task uses mean hand distance. The Franka cube task should use
+  mean two-finger distance for the success contact/proximity part while still
+  logging max distance for diagnostics.
+
+Change:
+- Patched Franka cube success predicate to use `hand_to_cube_mean_dist` instead
+  of `hand_to_cube_max_dist`.
+- Updated validator details to report both mean and max hand distances.
+
+Validation:
+- local `py_compile` passed for the patched env and validator.
+- `git diff --check` passed.
+
+Next:
+- Commit/push/pull and relaunch the validation smoke.

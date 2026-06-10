@@ -369,7 +369,7 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         success = (
             (self.cube_lift_height[env_ids] >= float(self.cfg.cube_success_lift_height))
             & (self.cube_xy_error[env_ids] <= float(self.cfg.cube_success_xy_tol))
-            & (self.hand_to_cube_max_dist[env_ids] <= float(self.cfg.cube_success_hand_dist))
+            & (self.hand_to_cube_mean_dist[env_ids] <= float(self.cfg.cube_success_hand_dist))
         )
         self.in_success_region[env_ids] = success
         if update_success_timer:
@@ -384,4 +384,3 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
                 self.time_in_success_region[env_ids],
                 torch.zeros_like(self.time_in_success_region[env_ids]),
             )
-
