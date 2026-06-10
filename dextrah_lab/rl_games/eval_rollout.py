@@ -21,6 +21,8 @@ parser.add_argument("--video", action="store_true", default=False, help="Record 
 parser.add_argument("--video_length", type=int, default=600, help="Length of the recorded video in steps.")
 parser.add_argument("--video_folder", type=str, default=None, help="Directory for rollout videos.")
 parser.add_argument("--video_name_prefix", type=str, default="cube-grasp-eval", help="Prefix for rollout video files.")
+parser.add_argument("--camera_eye", type=float, nargs=3, default=None, help="Viewport camera eye for video eval.")
+parser.add_argument("--camera_target", type=float, nargs=3, default=None, help="Viewport camera target for video eval.")
 parser.add_argument("--num_steps", type=int, default=600, help="Number of policy steps to run.")
 parser.add_argument("--success_window", type=int, default=100, help="Trailing window for final success-rate average.")
 parser.add_argument("--print_interval", type=int, default=20, help="Print metrics every N steps.")
@@ -68,6 +70,7 @@ from isaaclab_tasks.utils.hydra import hydra_task_config
 from isaaclab_rl.rl_games import RlGamesGpuEnv, RlGamesVecEnvWrapper
 
 import dextrah_lab.tasks.dextrah_kuka_allegro.gym_setup  # noqa: F401
+import dextrah_lab.tasks.dextrah_franka_star_kitting.gym_setup  # noqa: F401
 
 
 def _mean_float(value) -> float | None:
@@ -87,6 +90,22 @@ def _env_metric(task_env, name: str) -> float | None:
     return _mean_float(getattr(task_env, name))
 
 
+def _collect_task_metrics(task_env) -> dict[str, float | None]:
+    metric_names = [
+        "cube_lift_height",
+        "cube_xy_error",
+        "hand_to_cube_mean_dist",
+        "star_lift_height",
+        "goal_xy_error",
+        "goal_height_error",
+        "goal_yaw_error",
+        "ee_to_star_dist",
+        "finger_center_to_star_dist",
+        "gripper_width",
+    ]
+    return {name: _env_metric(task_env, name) for name in metric_names if hasattr(task_env, name)}
+
+
 def _checkpoint_path(agent_cfg: dict) -> str:
     log_root_path = os.path.abspath(os.path.join("logs", "rl_games", agent_cfg["params"]["config"]["name"]))
     print(f"[INFO] Loading experiment from directory: {log_root_path}")
@@ -104,6 +123,33 @@ def _latest_video_files(video_folder: Path | None) -> list[str]:
     return [str(path) for path in sorted(video_folder.glob("*.mp4"))]
 
 
+def _camera_tuple(values: list[float] | tuple[float, float, float] | None):
+    if values is None:
+        return None
+    return tuple(float(v) for v in values)
+
+
+def _configure_eval_camera(env_cfg, task_env=None) -> None:
+    if args_cli.camera_eye is None and args_cli.camera_target is None:
+        return
+    if not hasattr(env_cfg, "viewer"):
+        print("[WARN] Environment config has no viewer config; eval camera override skipped.")
+        return
+
+    eye = _camera_tuple(args_cli.camera_eye) or tuple(env_cfg.viewer.eye)
+    target = _camera_tuple(args_cli.camera_target) or tuple(env_cfg.viewer.lookat)
+    env_cfg.viewer.eye = eye
+    env_cfg.viewer.lookat = target
+    env_cfg.viewer.origin_type = "world"
+    print(f"[INFO] Eval video camera eye={eye} target={target}")
+
+    if task_env is not None and hasattr(task_env, "sim"):
+        try:
+            task_env.sim.set_camera_view(eye=eye, target=target, camera_prim_path=env_cfg.viewer.cam_prim_path)
+        except Exception as exc:
+            print(f"[WARN] Could not set active viewport camera: {exc}")
+
+
 @hydra_task_config(args_cli.task, "rl_games_cfg_entry_point")
 def main(env_cfg, agent_cfg: dict):
     """Run checkpoint evaluation."""
@@ -119,6 +165,7 @@ def main(env_cfg, agent_cfg: dict):
     if args_cli.seed is not None:
         env_cfg.seed = args_cli.seed
         agent_cfg["params"]["seed"] = args_cli.seed
+    _configure_eval_camera(env_cfg)
 
     resume_path = _checkpoint_path(agent_cfg)
     agent_cfg["params"]["load_checkpoint"] = True
@@ -133,6 +180,7 @@ def main(env_cfg, agent_cfg: dict):
     if isinstance(gym_env.unwrapped, DirectMARLEnv):
         gym_env = multi_agent_to_single_agent(gym_env)
     task_env = gym_env.unwrapped
+    _configure_eval_camera(env_cfg, task_env)
 
     if args_cli.video:
         video_kwargs = {
@@ -192,9 +240,7 @@ def main(env_cfg, agent_cfg: dict):
 
                 success_rate = _env_metric(task_env, "in_success_region")
                 reward_mean = _mean_float(rewards)
-                lift_height = _env_metric(task_env, "cube_lift_height")
-                xy_error = _env_metric(task_env, "cube_xy_error")
-                hand_to_cube = _env_metric(task_env, "hand_to_cube_mean_dist")
+                task_metrics = _collect_task_metrics(task_env)
 
                 if isinstance(dones, torch.Tensor):
                     dones_bool = dones.bool()
@@ -207,9 +253,7 @@ def main(env_cfg, agent_cfg: dict):
                     "step": step + 1,
                     "success_rate": success_rate,
                     "reward_mean": reward_mean,
-                    "cube_lift_height": lift_height,
-                    "cube_xy_error": xy_error,
-                    "hand_to_cube_mean_dist": hand_to_cube,
+                    **task_metrics,
                 }
                 step_metrics.append(step_record)
 
@@ -219,7 +263,7 @@ def main(env_cfg, agent_cfg: dict):
                         f"step={step + 1} "
                         f"success_rate={success_rate} "
                         f"reward_mean={reward_mean} "
-                        f"cube_lift_height={lift_height}"
+                        f"task_metrics={task_metrics}"
                     )
     finally:
         env.close()
