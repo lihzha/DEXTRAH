@@ -4139,3 +4139,40 @@ Next:
 - Monitor the new distance diagnostics (`star_ee_to_star_dist`,
   `star_finger_center_to_star_dist`) in addition to lift/success. Stop early
   if grasp-pose reward rises without distance or lift improvement.
+
+## 2026-06-10 06:41 PDT - Franka Star Grasp-Pose/Sigma PPO Launched
+
+Goal:
+- Train from the validated grasp-pose reward patch and test whether narrower
+  exploration turns stochastic reward discovery into deterministic reach,
+  pinch, lift, and insertion behavior.
+
+Version Control:
+- branch: `codex/dextrah-cluster-dev`
+- behavior_commit: `d726c54f3d69db1954e715ce7dc94509201ddb26`
+- launch_commit: `daeeab89ce399c2a66ee3d04692bf7cacbe5c43a`
+- remote_commit/status: A100 checkout clean at launch commit.
+
+Command / Job:
+- training job_id: `28936679`
+- run_name: `franka_star_grasppose_sigma_ppo_20260610_064024`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_star_kitting/franka_star_grasppose_sigma_ppo_20260610_064024`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28936679.out`
+- command: `sbatch --partition=batch_singlenode,grizzly,polar,polar3,polar4,interactive_singlenode --export=ALL,TASK=Dextrah-Franka-Star-Kitting,FULL_EXPERIMENT_NAME=franka_star_grasppose_sigma_ppo_20260610_064024,NUM_ENVS=2048,HORIZON_LENGTH=96,MINIBATCH_SIZE=32768,CENTRAL_VALUE_MINIBATCH_SIZE=32768,MAX_ITERATIONS=600,SAVE_FREQUENCY=25,ENTROPY_COEF=0.0005,SIGMA_INIT_VAL=-1.0,LEARNING_RATE=0.0001,CENTRAL_VALUE_LEARNING_RATE=0.00008,GAMMA=0.997,TAU=0.95,KL_THRESHOLD=0.012,MINI_EPOCHS=4,AUTO_RESUME=False,SELF_RELAUNCH=False,USE_CUDA_GRAPH=False,DISTRIBUTED=True,MULTI_GPU=True cluster/sbatch_train_teacher_8gpu.sh`
+
+Hyperparameters:
+- Stable DEXTRAH rl_games PPO with task-specific changes:
+  `NUM_ENVS=2048`, `HORIZON_LENGTH=96`, `MINIBATCH_SIZE=32768`,
+  `CENTRAL_VALUE_MINIBATCH_SIZE=32768`, `MAX_ITERATIONS=600`,
+  `SAVE_FREQUENCY=25`, `LEARNING_RATE=0.0001`,
+  `CENTRAL_VALUE_LEARNING_RATE=0.00008`, `ENTROPY_COEF=0.0005`,
+  `SIGMA_INIT_VAL=-1.0`, `GAMMA=0.997`, `TAU=0.95`,
+  `KL_THRESHOLD=0.012`, `MINI_EPOCHS=4`, `AUTO_RESUME=False`,
+  `SELF_RELAUNCH=False`, `USE_CUDA_GRAPH=False`.
+
+Next:
+- Monitor startup/config and TensorBoard. Request sidecar eval at ep25, then
+  continue to ep75/100 only if distance, closed grasp, and actual lift metrics
+  improve without reward hacking.
