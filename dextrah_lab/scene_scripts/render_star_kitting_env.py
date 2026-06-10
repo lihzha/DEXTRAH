@@ -2072,7 +2072,7 @@ def main() -> None:
 
     table_target = (table_center_x, 0.0, surface_z + 0.13)
     views = {
-        "overview": ((0.25, -0.76, 2.45), table_target),
+        "overview": ((0.45, -0.92, 2.10), (-0.50, 0.0, surface_z + 0.12)),
         "robot_side": ((1.35, 0.0, 1.42), (table_center_x, 0.0, surface_z + 0.18)),
         "topdown": ((table_center_x, 0.0, 2.10), (table_center_x, 0.0, surface_z + 0.02)),
         "pickup_close": ((0.08, pickup_y - 0.47, 1.25), (table_center_x, pickup_y, surface_z + 0.08)),
