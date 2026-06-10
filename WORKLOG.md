@@ -2050,3 +2050,94 @@ Result:
 Next:
 - Continue monitoring job `28930031`; the corrected run is past startup and
   checkpointing normally.
+
+## 2026-06-10 00:58 PDT - Static Cube Reward Monitor And Eval Video
+
+Goal:
+- Monitor the corrected PPO reward, automatically launch checkpoint eval, and
+  save a rollout video.
+
+Hypothesis:
+- The epoch-75 checkpoint should be a better eval target than epoch 50 because
+  the checkpoint reward jumped from `661.8385` to `994.8821`.
+
+Command / Job:
+- training job monitored: `28930031`
+- training run:
+  `cube_grasp_static_ppo_opt8gpu_20260610_004351`
+- checkpoint selected:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_cube_grasp/cube_grasp_static_ppo_opt8gpu_20260610_004351/nn/last_dextrah_cube_grasp_ep_75_rew_994.8821.pth`
+- eval command:
+  `RUN_NAME=cube_grasp_static_eval_ep75_video_20260610_005847 CHECKPOINT=/results/logs/rl_games/dextrah_cube_grasp/cube_grasp_static_ppo_opt8gpu_20260610_004351/nn/last_dextrah_cube_grasp_ep_75_rew_994.8821.pth NUM_ENVS=4 NUM_STEPS=600 VIDEO_LENGTH=600 CAPTURE_VIDEO=True USE_CUDA_GRAPH=False PRINT_INTERVAL=20 sbatch --export=ALL cluster/sbatch_eval_cube_grasp_1gpu.sh`
+- eval job_id: `28930260`
+- eval run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/cube_grasp_static_eval_ep75_video_20260610_005847`
+- eval log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_cube_grasp_28930260.out`
+
+Result:
+- status: eval completed successfully.
+- Slurm state: `COMPLETED`, elapsed `00:02:28`, exit `0:0`.
+- reward/checkpoint monitor:
+  - latest before eval: `last_dextrah_cube_grasp_ep_50_rew_661.8385.pth`
+  - selected eval checkpoint: `last_dextrah_cube_grasp_ep_75_rew_994.8821.pth`
+- metrics:
+  - `num_steps_completed=600`
+  - `reward_mean=1.7456187343597411`
+  - `reward_final=1.0087100267410278`
+  - `success_rate_mean=0.0`
+  - `success_rate_final=0.0`
+  - `max_cube_lift_height=0.014073193073272705`
+- video:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/cube_grasp_static_eval_ep75_video_20260610_005847/videos/cube-grasp-eval-step-0.mp4`
+- local copy:
+  `cluster_results/a1001/cube_grasp_static_eval_ep75_video_20260610_005847/videos/cube-grasp-eval-step-0.mp4`
+- validation:
+  `ffprobe` reports `1280x720`, `600` frames, `10.0s`, `60 FPS`; middle and
+  final preview frames are nonblank and show the static single-cube envs.
+
+Next:
+- Continue monitoring reward/checkpoints. Current eval shows early shaped
+  reward progress and small cube lift, but no task success yet.
+
+## 2026-06-10 01:14 PDT - Overhead Eval Camera
+
+Goal:
+- Keep the corrected cube PPO training running and make future eval videos use
+  a closer overhead table-centered view.
+
+Hypothesis:
+- The eval rollout already shares the training task and checkpoint; only the
+  viewport camera needs to be overridden for clearer video inspection.
+
+Change:
+- Added `--camera_eye` and `--camera_target` to
+  `dextrah_lab/rl_games/eval_rollout.py`.
+- Updated `cluster/sbatch_eval_cube_grasp_1gpu.sh` to pass a default overhead
+  camera centered at `(-0.55, 0.10, 0.25)` with eye `(-0.55, 0.10, 1.45)`.
+- Set the default eval video prefix to `cube-grasp-eval-overhead`.
+
+Version Control:
+- branch: `codex/dextrah-cluster-dev`
+- base_commit: `725d2533e7f4fd0cf88f4109fcf1ccc8d96a07eb`
+- implementation_commit: `6d7fac5476a8b45c39e09b00e95e86f537ccf6ef`
+- changed_files:
+  `dextrah_lab/rl_games/eval_rollout.py`,
+  `cluster/sbatch_eval_cube_grasp_1gpu.sh`, `WORKLOG.md`
+
+Command / Job:
+- local checks:
+  `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py`
+- local checks:
+  `bash -n cluster/sbatch_eval_cube_grasp_1gpu.sh`
+
+Result:
+- status: local checks passed.
+- training job `28930031` remained running and reached at least epoch `205/6000`,
+  with latest best reward checkpoint `dextrah_cube_grasp.pth` at reward
+  `1517.1261` and periodic checkpoint
+  `last_dextrah_cube_grasp_ep_200_rew_1493.3677.pth`.
+
+Next:
+- Commit and deploy the camera patch to `a1001`, then launch the next periodic
+  eval from a fresh checkpoint with the overhead view.
