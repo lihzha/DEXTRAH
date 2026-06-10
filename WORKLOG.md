@@ -2037,9 +2037,16 @@ Command / Job:
   `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28930031.out`
 
 Result:
-- status: submitted and running on `batch-block7-01550` at first check.
+- status: submitted and running on `batch-block7-01550`.
 - cleanup verification:
   bad training dir, bad eval video dir, and bad training log are absent.
+- startup verification:
+  - reached PPO training output by epoch `3/6000`
+  - reached epoch `51/6000` by the follow-up check
+  - saved checkpoints:
+    `last_dextrah_cube_grasp_ep_25_rew_544.2628.pth`,
+    `last_dextrah_cube_grasp_ep_50_rew_661.8385.pth`
 
 Next:
-- Monitor job `28930031` through startup and first checkpoint/error checks.
+- Continue monitoring job `28930031`; the corrected run is past startup and
+  checkpointing normally.
