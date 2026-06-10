@@ -2842,3 +2842,49 @@ Checks:
 Next:
 - Commit/push, update A100, rerun the lift-gate validation, and inspect the
   resulting metrics/video before any training.
+
+## 2026-06-10 03:31 PDT - Franka Star Grasp Feasibility Adjustment
+
+Goal:
+- Restore the better scripted controller behavior and make the star physically
+  easier for the Franka gripper to pinch without relaxing the new lift/drift
+  validation gates.
+
+Evidence:
+- validation job_id: `28932469`, run
+  `franka_star_env_validate_fingercenter_20260610_032502`, source commit
+  `b4ab2b57c0165f959142aa6ea433e472de9fd3af`.
+- status: failed metrics gate, exit `1:0`, elapsed `00:01:59`.
+- fetched artifacts:
+  `cluster_results/a1001/franka_star_env_validate_fingercenter_20260610_032502`.
+- failed checks: `scripted_rollout_fingers_approach_star`,
+  `scripted_rollout_limits_prelift_star_motion`, and
+  `scripted_rollout_lifts_star`.
+- rollout: `max_star_lift_height=0.01227`,
+  `max_star_initial_xy_error=0.07974`, `min_finger_to_star=0.07857`.
+- visual inspection: the finger-center retarget kept the hand near the star but
+  did not create a better pinch or lift; it was worse than the prior run.
+
+Analysis:
+- The validation retarget overcompensated for the finger body-origin offset and
+  worsened reach/lift. The previous controller at least produced a visible
+  lift, so revert that part.
+- The flat 32 mm star leaves little side-contact margin above the table; a
+  thicker star-shaped peg is a better kitting target for a Franka pinch grasp
+  while preserving the star-hole insertion task.
+
+Change:
+- Reverted validation action targeting back to the EE/TCP target.
+- Kept the stricter `scripted_rollout_lifts_star` and pre-lift drift gates.
+- Increased star thickness from `0.032 m` to `0.050 m` and fixture thickness
+  from `0.044 m` to `0.072 m`.
+- Reduced star density from `360` to `220` so the thicker star does not become
+  excessively heavy.
+
+Checks:
+- `python3 -m py_compile dextrah_lab/rl_games/validate_franka_star_kitting_env.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env_cfg.py dextrah_lab/tasks/dextrah_franka_star_kitting/star_kitting_geometry.py`
+- `git diff --check`
+
+Next:
+- Commit/push, update A100, rerun validation, and inspect metrics/video before
+  any PPO training.

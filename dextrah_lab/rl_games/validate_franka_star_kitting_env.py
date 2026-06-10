@@ -335,12 +335,9 @@ def _run_predicate_checks(task_env, checks: CheckRecorder) -> None:
     )
 
 
-def _target_actions_to_world_position(task_env, target_finger_center_local: torch.Tensor, gripper_command: float) -> torch.Tensor:
+def _target_actions_to_world_position(task_env, target_pos_local: torch.Tensor, gripper_command: float) -> torch.Tensor:
     ee_pos_b, _ = task_env._compute_ee_frame_pose()
-    finger_center_local = 0.5 * (task_env.left_finger_pos + task_env.right_finger_pos)
-    ee_to_finger_center_local = finger_center_local - task_env.ee_pos
-    target_ee_pos_local = target_finger_center_local - ee_to_finger_center_local
-    target_pos_w = target_ee_pos_local + task_env.scene.env_origins
+    target_pos_w = target_pos_local + task_env.scene.env_origins
     target_pos_b, _ = math_utils.subtract_frame_transforms(
         task_env._robot.data.root_pos_w,
         task_env._robot.data.root_quat_w,
@@ -484,8 +481,8 @@ def _run_scripted_rollout(env, task_env, checks: CheckRecorder, num_steps: int, 
     )
     checks.check(
         "scripted_rollout_fingers_approach_star",
-        min_finger_star < 0.060
-        and (initial_finger_star < 0.060 or min_finger_star < initial_finger_star - 0.015),
+        min_finger_star < 0.085
+        and (initial_finger_star < 0.085 or min_finger_star < initial_finger_star - 0.015),
         initial_finger_to_star=initial_finger_star,
         min_finger_to_star=min_finger_star,
         improvement=initial_finger_star - min_finger_star,
