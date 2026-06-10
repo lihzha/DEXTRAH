@@ -3791,3 +3791,61 @@ Next:
   eval rollout videos for early checkpoints while the main loop monitors
   TensorBoard scalars for lift, gripper width, pre-lift drift, and reward
   balance.
+
+## 2026-06-10 05:51 PDT - Franka Star Stability-Gated PPO Stopped For No-Grasp
+
+Goal:
+- Decide whether the stability-gated PPO run is learning the core pick/lift
+  behavior or only improving shaped reach/close terms.
+
+Evidence:
+- training job_id: `28935060`, run
+  `franka_star_stabilitygate_ppo_20260610_053229`.
+- stopped at elapsed `00:16:54`; latest saved checkpoint before cancellation
+  reached ep200, and the log had advanced past ep220.
+- checkpoint rewards improved but did not correspond to the task:
+  ep25 `-1370.70`, ep50 `-688.73`, ep100 `-959.48`,
+  ep150 `-566.78`, ep175 `-506.49`, ep200 `-270.55`.
+- TensorBoard at iter 208:
+  `star_success_rate=0`, `star_has_lifted_rate=0.0337`,
+  `star_lift_height=0.00140`, `star_initial_xy_error=0.0414`,
+  `star_gripper_width=0.0479`, `star_closed_grasp_reward=0.1097`.
+- ep25 eval job_id `28935806`, run
+  `franka_star_stabilitygate_eval_ep25_20260610_053815`:
+  success `0`, max lift `0.01252 m`, no has-lifted predicate, valid
+  `1280x720`, `600` frame video.
+- ep175 eval job_id `28935962`, run
+  `franka_star_stabilitygate_eval_ep175_20260610_054710`:
+  success `0`, max `has_lifted_star=0`, max `star_lift_height=0`,
+  max pre-reset star XY displacement `0.05778 m`, mean gripper width
+  `0.05847 m`, min gripper width `0.05315 m`, valid `1280x720`,
+  `600` frame video.
+- visual inspection of ep25 and ep175 contact sheets shows approach and
+  pushing/hovering near the star, but no stable pinch, no lift, no transport,
+  and no insertion.
+
+Analysis:
+- The stability gate prevented the earlier high-reward drag exploit from
+  exploding, but the near-close/capture reward became too weak and too narrow.
+- Deterministic eval never drove the finger center inside the old close gate
+  reliably and kept the gripper mostly open.
+- Continuing the 600-epoch run would spend GPU time on a policy that has not
+  learned the prerequisite capture behavior.
+
+Change:
+- Broadened near-close and contact reward gates so close intent starts before
+  the policy is already perfectly centered on the small star.
+- Made gripper-closure progress smoother by rewarding partial closure below
+  about `90%` open instead of only after a near-closed threshold.
+- Increased gated finger approach, grasp, closed-grasp, close-near,
+  close-action, lift-action, and actual lift weights.
+- Reduced the pre-lift drift penalty magnitude and delayed its onset so it
+  does not dominate the capture curriculum before grasp exists.
+- Updated validation reward constants to match the new training reward regime.
+
+Checks:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_rewards.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env_cfg.py dextrah_lab/rl_games/validate_franka_star_kitting_env.py`
+
+Next:
+- Commit/push, update A100, rerun the validation gate with video, and only
+  relaunch PPO if the environment/reward validation still passes.
