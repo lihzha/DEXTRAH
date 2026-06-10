@@ -91,7 +91,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--bin_l", type=float, default=0.48)
     parser.add_argument("--gripper_open_width", type=float, default=0.09)
-    parser.add_argument("--sphere_count", type=int, default=64)
+    parser.add_argument(
+        "--sphere_count",
+        type=int,
+        default=27,
+        help="Number of falling spheres. Keep <=27 for SolverMuJoCo contact bitmask compatibility.",
+    )
     parser.add_argument("--sphere_grid", type=int, default=4)
     parser.add_argument("--drop_height", type=float, default=0.34)
     parser.add_argument("--solver_iterations", type=int, default=80)

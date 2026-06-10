@@ -109,7 +109,7 @@ PY
       --seed \"${SEED:-17}\" \
       --bin_l \"${BIN_L:-0.48}\" \
       --gripper_open_width \"${GRIPPER_OPEN_WIDTH:-0.09}\" \
-      --sphere_count \"${SPHERE_COUNT:-64}\" \
+      --sphere_count \"${SPHERE_COUNT:-27}\" \
       --sphere_grid \"${SPHERE_GRID:-4}\" \
       --drop_height \"${DROP_HEIGHT:-0.34}\" \
       --solver_iterations \"${SOLVER_ITERATIONS:-80}\" \

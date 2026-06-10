@@ -658,6 +658,10 @@ Result:
   script, then failed in sphere sampling because NumPy
   `Generator.triangular(left, mode, right)` was called with Python
   `random.triangular(low, high, mode)` ordering.
+- key evidence: l401 job `1019548` with 64 spheres failed during
+  `newton.solvers.SolverMuJoCo` conversion when MuJoCo received
+  `contype=2147483648` for a sphere geom; this is a contact bitmask/coloring
+  overflow at higher independent shape counts.
 
 Analysis:
 - The current GraspGenX NFS venv has pyrender/trimesh/PIL but not Newton or
@@ -676,11 +680,14 @@ Analysis:
   importing pyrender.
 - The script should clamp the triangular diameter mode into `[min, max]` and
   call NumPy's argument order correctly.
+- Keep the default demo to 27 spheres (3x3x3) for SolverMuJoCo compatibility.
+  This is enough to show a pile falling and settling while avoiding the
+  MuJoCo contact bitmask overflow seen at 64 spheres.
 
 Next:
-- Commit/push the diameter sampling fix, pull to l401, relaunch the
-  low-resolution smoke, inspect frames/logs, then scale to the final requested
-  video.
+- Commit/push the 27-sphere default, pull to l401, launch the final 27-sphere
+  video, fetch frames, encode MP4 locally, and inspect first/middle/last
+  frames.
 
 ## 2026-06-09 20:44 PDT - Isaac Lab Clutter-Bin Velocity Settling
 
