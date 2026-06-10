@@ -106,4 +106,9 @@ srun \
     /isaac-sim/python.sh play.py --headless --task="$TASK" --checkpoint "$CHECKPOINT_ARG" --num_envs "$NUM_ENVS" 2>&1 | tee "$RUN_DIR_CONTAINER/play_stdout.log"
   '
 
+if grep -E "Traceback|RuntimeError:|AttributeError:|Error executing job" "$LOG_FILE" "$RUN_DIR_HOST/play_stdout.log" >/dev/null 2>&1; then
+  echo "Detected metrics eval error patterns in $LOG_FILE or $RUN_DIR_HOST/play_stdout.log."
+  exit 1
+fi
+
 echo "Metrics eval done"

@@ -69,6 +69,7 @@ def main():
 
     # create isaac environment
     env = gym.make(args_cli.task, cfg=env_cfg)
+    task_env = env.unwrapped
     # wrap around environment for rl-games
     env = RlGamesVecEnvWrapper(env, rl_device, clip_obs, clip_actions)
 
@@ -138,8 +139,9 @@ def main():
             actions = agent.get_action(obs, is_deterministic=False)
             # env stepping
             obs, _, dones, _ = env.step(actions)
-            print("count", count, "sr: ", env.env.in_success_region.float().mean())
-            sr[count] = env.env.in_success_region.float().mean()
+            success_rate = task_env.in_success_region.float().mean()
+            print("count", count, "sr: ", success_rate)
+            sr[count] = success_rate
             count += 1
 
             # perform operations for terminated episodes
@@ -163,4 +165,3 @@ if __name__ == "__main__":
     main()
     # close sim app
     simulation_app.close()
-
