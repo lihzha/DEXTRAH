@@ -4498,6 +4498,37 @@ Checks:
 Next:
 - Commit/push and rerun full validation.
 
+## 2026-06-10 07:57 PDT - Mid-Noise Validation Failed; Anchored Retry Prepared
+
+Goal:
+- Fix the validation controller after the intermediate reset-noise attempt
+  worsened pregrasp disturbance.
+
+Evidence:
+- validation job_id: `28938107`
+- run_name: `franka_star_env_validate_midnoise_20260610_074906`
+- source commit: `202d290a34359d90487fdfab9efb5079142a42a7`
+- failed checks:
+  `scripted_rollout_approaches_star`,
+  `scripted_rollout_fingers_approach_star`,
+  `scripted_rollout_limits_pretransport_star_motion`, and
+  `scripted_rollout_lifts_star`.
+- `max_pretransport_star_initial_xy_error=0.35070 m`; the live-star target
+  followed a disturbed object and amplified the failure.
+- `validation_lifted_rate=0.25`.
+
+Change:
+- Restored `arm_joint_reset_noise=0.035`, the previously workable reset
+  perturbation.
+- Re-anchored scripted pickup/grasp/lift XY to the initial star pose while
+  keeping the longer close/lift phases and `z_grasp=star_anchor_z - 0.006`.
+
+Checks:
+- `python3 -m py_compile dextrah_lab/rl_games/validate_franka_star_kitting_env.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env_cfg.py`
+
+Next:
+- Commit/push and rerun full validation.
+
 ## 2026-06-10 07:52 PDT - Script-Stable Validation Still Lift-Brittle; Intermediate Noise Test
 
 Goal:
