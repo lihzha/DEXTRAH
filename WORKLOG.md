@@ -3677,3 +3677,34 @@ Checks:
 Next:
 - Commit/push, update A100, rerun validation, and only then launch the next
   PPO attempt.
+
+## 2026-06-10 05:28 PDT - Franka Star Stability-Gated Validation Wait
+
+Goal:
+- Keep the environment gate strict before launching another PPO run from the
+  stability-gated close/reward patch.
+
+Evidence:
+- validation job_id: `28934642`, run
+  `franka_star_env_validate_stabilitygate_20260610_051853`.
+- local and A100 remote checkout are both
+  `c4e54478226ceed62057619fd3fac9d93b72cb90`.
+- source state is clean locally and remotely on `codex/dextrah-cluster-dev`.
+- local cheap checks passed:
+  `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_rewards.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env_cfg.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env.py dextrah_lab/rl_games/validate_franka_star_kitting_env.py dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/train.py`
+  and
+  `bash -n cluster/sbatch_validate_franka_star_kitting_env_1gpu.sh cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_eval_franka_star_kitting_1gpu.sh`.
+- stopped stale star-kitting job `28931333`
+  (`franka_star_static_ppo_20260610_015600`) because it was launched before
+  the later reward/validation fixes, used outdated hyperparameters
+  (`HORIZON_LENGTH=48`, `ENTROPY_COEF=0.001`, `AUTO_RESUME=True`), and would
+  otherwise continue competing for GPUs through self-requeue.
+
+Current Status:
+- validation job `28934642` is still pending in Slurm and has not run task
+  code yet.
+- no training or eval has been launched from the stability-gated patch.
+
+Next:
+- Wait for validation metrics and video artifacts, fetch and inspect them, and
+  launch the next 8-GPU PPO only if the validation passes.
