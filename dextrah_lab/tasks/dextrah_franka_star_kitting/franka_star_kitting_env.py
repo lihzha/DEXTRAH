@@ -244,9 +244,11 @@ class DextrahFrankaStarKittingEnv(DirectRLEnv):
         self._compute_intermediate_values(update_success_timer=True)
         (
             approach_reward,
+            finger_approach_reward,
             grasp_reward,
             closed_grasp_reward,
             lift_reward,
+            close_near_reward,
             lift_action_reward,
             transport_reward,
             yaw_reward,
@@ -271,11 +273,14 @@ class DextrahFrankaStarKittingEnv(DirectRLEnv):
             float(self.cfg.max_gripper_width),
             float(self.cfg.approach_weight),
             float(self.cfg.approach_sharpness),
+            float(self.cfg.finger_approach_weight),
+            float(self.cfg.finger_approach_sharpness),
             float(self.cfg.grasp_weight),
             float(self.cfg.closed_grasp_weight),
             float(self.cfg.grasp_sharpness),
             float(self.cfg.lift_weight),
             float(self.cfg.lift_action_weight),
+            float(self.cfg.close_near_weight),
             float(self.cfg.prelift_move_penalty_weight),
             float(self.cfg.close_far_penalty_weight),
             float(self.cfg.transport_weight),
@@ -289,9 +294,11 @@ class DextrahFrankaStarKittingEnv(DirectRLEnv):
         )
         total_reward = (
             approach_reward
+            + finger_approach_reward
             + grasp_reward
             + closed_grasp_reward
             + lift_reward
+            + close_near_reward
             + lift_action_reward
             + transport_reward
             + yaw_reward
@@ -303,9 +310,11 @@ class DextrahFrankaStarKittingEnv(DirectRLEnv):
         )
         log_terms = {
             "star_approach_reward": approach_reward.mean(),
+            "star_finger_approach_reward": finger_approach_reward.mean(),
             "star_grasp_reward": grasp_reward.mean(),
             "star_closed_grasp_reward": closed_grasp_reward.mean(),
             "star_lift_reward": lift_reward.mean(),
+            "star_close_near_reward": close_near_reward.mean(),
             "star_lift_action_reward": lift_action_reward.mean(),
             "star_transport_reward": transport_reward.mean(),
             "star_yaw_reward": yaw_reward.mean(),

@@ -3364,3 +3364,67 @@ Hyperparameters:
 Next:
 - Monitor startup, PPO metrics, checkpoints, and launch sidecar eval videos
   from saved checkpoints once available.
+
+## 2026-06-10 04:36 PDT - Franka Star PPO Hover Failure And Reward Patch
+
+Goal:
+- Stop the first fixed-curriculum PPO run once logs showed it was not learning
+  the pick/lift behavior, then patch reward shaping toward a usable grasp
+  curriculum.
+
+Evidence:
+- training job_id: `28933585`, run
+  `franka_star_fixedcurriculum_ppo_20260610_042007`.
+- cancelled after epoch ~178; Slurm terminal state:
+  `CANCELLED by 158351`, elapsed `00:12:49`.
+- saved checkpoints included ep25/50/75/100/125/150/175.
+- tensorboard scalars:
+  - ep100: reward `-614.525`, success `0`,
+    has-lifted `0.0269`, mean lift height `0.00050 m`.
+  - ep150: reward `-441.629`, success `0`,
+    has-lifted `0.0200`, mean lift height `0.00070 m`.
+  - ep170: reward `-445.885`, success `0`,
+    has-lifted `0.0283`, mean lift height `0.00084 m`.
+- ep25 eval job_id `28933635`, run
+  `franka_star_fixedcurriculum_eval_ep25_20260610_042433`, completed
+  `0:0`; video `1280x720`, `600` frames, `10.0s`.
+  Metrics: success `0`, max lift `0.01313 m`,
+  min finger-center distance `0.13154 m`.
+- ep100 eval job_id `28933691`, run
+  `franka_star_fixedcurriculum_eval_ep100_20260610_042935`, completed
+  `0:0`; video `1280x720`, `600` frames, `10.0s`.
+  Metrics: success `0`, max lift `0.01309 m`,
+  min finger-center distance `0.13154 m`.
+- visual inspection of both eval contact sheets showed hover/stabilization near
+  the pickup area, no valid grasp, no lift, no transport, and no insertion.
+
+Analysis:
+- The policy improved reward by reducing pre-lift movement penalties and
+  hovering near the pickup side.
+- The sparse grasp path was not being discovered: finger-center distance stayed
+  far from the star, gripper width stayed mostly open, and lift metrics did not
+  improve over noise.
+- The reward needs denser shaping for finger-center approach, near-object
+  closing, and initial lift intent before launching another full PPO run.
+
+Change:
+- Added `star_finger_approach_reward` using finger-center distance.
+- Added `star_close_near_reward` for closing when the fingers are near the
+  star.
+- Relaxed the grasp gate from a strict contact-only threshold to a wider
+  near-grasp region.
+- Moved lift reward onset from `0.012 m` to `0.004 m`.
+- Changed lift-action reward to use the near-close gate rather than strict
+  contact readiness.
+- Reduced `prelift_move_penalty_weight` from `-8.0` to `-4.0` and
+  `close_far_penalty_weight` from `-4.0` to `-2.0`.
+- Updated validation reward sanity checks for the new staged shaping terms.
+
+Checks:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_rewards.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env_cfg.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env.py dextrah_lab/rl_games/validate_franka_star_kitting_env.py`
+- `git diff --check`
+
+Next:
+- Commit/push, update A100, rerun the Franka star environment validation from
+  the patched reward code, and launch the next PPO run only if validation
+  passes.

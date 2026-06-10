@@ -154,13 +154,16 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
         "max_gripper_width": 0.08,
         "approach_weight": 1.0,
         "approach_sharpness": 9.0,
-        "grasp_weight": 2.0,
-        "closed_grasp_weight": 5.0,
-        "grasp_sharpness": 28.0,
+        "finger_approach_weight": 2.5,
+        "finger_approach_sharpness": 14.0,
+        "grasp_weight": 3.0,
+        "closed_grasp_weight": 6.0,
+        "grasp_sharpness": 18.0,
         "lift_weight": 26.0,
-        "lift_action_weight": 0.5,
-        "prelift_move_penalty_weight": -8.0,
-        "close_far_penalty_weight": -4.0,
+        "lift_action_weight": 1.5,
+        "close_near_weight": 0.75,
+        "prelift_move_penalty_weight": -4.0,
+        "close_far_penalty_weight": -2.0,
         "transport_weight": 6.0,
         "transport_xy_sharpness": 18.0,
         "yaw_weight": 3.0,
@@ -178,6 +181,24 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
         bool((_reward_total(**near) > _reward_total(**base)).item()),
         far_reward=_mean(_reward_total(**base)),
         near_reward=_mean(_reward_total(**near)),
+    )
+
+    finger_near = dict(near)
+    finger_near["finger_center_to_star_dist"] = torch.tensor([0.065], device=device)
+    checks.check(
+        "reward_finger_approach_increases_near_star",
+        bool((_reward_total(**finger_near) > _reward_total(**near)).item()),
+        near_reward=_mean(_reward_total(**near)),
+        finger_near_reward=_mean(_reward_total(**finger_near)),
+    )
+
+    close_near = dict(finger_near)
+    close_near["gripper_width"] = torch.tensor([0.030], device=device)
+    checks.check(
+        "reward_near_close_increases_when_fingers_near_star",
+        bool((_reward_total(**close_near) > _reward_total(**finger_near)).item()),
+        open_near_reward=_mean(_reward_total(**finger_near)),
+        closed_near_reward=_mean(_reward_total(**close_near)),
     )
 
     lifted = dict(near)
@@ -224,9 +245,9 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
     hover_pinched["star_initial_xy_error"] = torch.tensor([0.020], device=device)
     hover_pinched["actions"] = torch.tensor([[0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -1.0]], device=device)
     checks.check(
-        "reward_penalizes_hover_pinching_without_contact",
-        bool((_reward_total(**hover_pinched) < _reward_total(**near)).item()),
-        near_reward=_mean(_reward_total(**near)),
+        "reward_hover_pinching_stays_below_actual_lift",
+        bool((_reward_total(**hover_pinched) < _reward_total(**lifted)).item()),
+        lifted_reward=_mean(_reward_total(**lifted)),
         hover_pinched_reward=_mean(_reward_total(**hover_pinched)),
     )
 
