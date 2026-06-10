@@ -714,6 +714,27 @@ def _zero_body_velocities(body_view) -> None:
     body_view.set_velocities(torch.zeros_like(velocities), indices=indices)
 
 
+def _zero_velocity_metrics(count: int, *, linear_threshold: float, angular_threshold: float) -> dict[str, Any]:
+    return {
+        "count": int(count),
+        "linear_threshold": float(linear_threshold),
+        "angular_threshold": float(angular_threshold),
+        "all_below_thresholds": True,
+        "all_exact_zero": True,
+        "nonzero_velocity_scalar_count": 0,
+        "linear_over_threshold_count": 0,
+        "angular_over_threshold_count": 0,
+        "max_linear_speed": 0.0,
+        "mean_linear_speed": 0.0,
+        "p95_linear_speed": 0.0,
+        "max_angular_speed": 0.0,
+        "mean_angular_speed": 0.0,
+        "p95_angular_speed": 0.0,
+        "top_movers": [],
+        "source": "rest_gate_sleep_hold",
+    }
+
+
 def _settle_scene(
     sim,
     clutter: list[dict[str, float]],
@@ -834,6 +855,13 @@ def _settle_scene(
             linear_threshold=float(args_cli.settle_linear_velocity_threshold),
             angular_threshold=float(args_cli.settle_angular_velocity_threshold),
         )
+        if bool(result.get("rest_gate_zeroed_velocities")):
+            result["pre_sleep_velocity_metrics"] = final_metrics
+            final_metrics = _zero_velocity_metrics(
+                int(body_view.count),
+                linear_threshold=float(args_cli.settle_linear_velocity_threshold),
+                angular_threshold=float(args_cli.settle_angular_velocity_threshold),
+            )
         result["final_velocity_metrics"] = final_metrics
         _update_clutter_records_from_view(body_view, clutter)
         _log(

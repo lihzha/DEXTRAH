@@ -928,6 +928,48 @@ Analysis:
 Next:
 - Commit/push/pull and rerun the 160-sphere rest-gate candidate.
 
+## 2026-06-09 21:16 PDT - Rest Gate Metrics Split
+
+Goal:
+- Make the rest-gate metrics accurately describe both the residual pre-sleep
+  state and the final held/slept state used for rendering.
+
+Hypothesis:
+- `RigidBodyView.get_velocities()` immediately after `set_velocities()` can
+  still report the pre-write tensor values, while the render path intentionally
+  takes no further physics steps after the rest gate. The metadata should keep
+  both values instead of overwriting the pre-sleep evidence.
+
+Change:
+- Added `pre_sleep_velocity_metrics` when the rest gate is applied.
+- Added final zero-valued `final_velocity_metrics` with source
+  `rest_gate_sleep_hold` when frames are captured from the held state.
+
+Version Control:
+- branch: `codex/dextrah-cluster-dev`
+- base_commit: `90bee242805e6c1f4e64894fb2fe8fb4b45864aa`
+- implementation_commit: pending
+- push/pull: pending
+- changed_files: `dextrah_lab/scene_scripts/render_clutter_bin_env.py`,
+  `WORKLOG.md`
+
+Command / Job:
+- validation run: `clutter_bin_vel_restgate160_test_20260609_211152`
+- result: rest gate completed at step 2280, but immediate velocity read still
+  showed the pre-sleep values (`max_linear=0.01733`,
+  `max_angular=1.291`).
+
+Result:
+- status: fixed locally; final rerun pending.
+
+Analysis:
+- This is now a transparent sleep/hold policy: dynamic physics runs until the
+  rest gate is stable, then final frames are rendered without further stepping
+  and metadata records both pre-sleep residuals and final held-zero velocities.
+
+Next:
+- Commit/push/pull and rerun the final 160-sphere overview.
+
 ## 2026-06-09 21:06 PDT - Newton OpenGL Clutter-Bin Final Video
 
 Goal:
