@@ -70,6 +70,7 @@ from isaaclab_tasks.utils.hydra import hydra_task_config
 from isaaclab_rl.rl_games import RlGamesGpuEnv, RlGamesVecEnvWrapper
 
 import dextrah_lab.tasks.dextrah_kuka_allegro.gym_setup  # noqa: F401
+import dextrah_lab.tasks.dextrah_franka_cube_grasp.gym_setup  # noqa: F401
 import dextrah_lab.tasks.dextrah_franka_star_kitting.gym_setup  # noqa: F401
 
 
@@ -94,7 +95,16 @@ def _collect_task_metrics(task_env) -> dict[str, float | None]:
     metric_names = [
         "cube_lift_height",
         "cube_xy_error",
+        "cube_goal_height_error",
+        "has_lifted_cube",
+        "ee_to_cube_dist",
+        "finger_center_to_cube_dist",
+        "left_finger_to_cube_dist",
+        "right_finger_to_cube_dist",
+        "max_finger_to_cube_dist",
+        "finger_distance_asymmetry",
         "hand_to_cube_mean_dist",
+        "hand_to_cube_max_dist",
         "star_lift_height",
         "star_initial_xy_error",
         "goal_xy_error",

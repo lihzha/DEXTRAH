@@ -5839,3 +5839,57 @@ Next:
 - Consider splitting the task into an explicit first-stage pickup curriculum
   where reward is dominated by real object height/contact retention and no
   placement/yaw reward is available until lift is achieved.
+
+## 2026-06-10 15:35 PDT - Franka Cube-Grasp Comparison Task Implementation
+
+Goal:
+- Add a Franka version of the single-cube pickup task so the Franka embodiment
+  can be compared 1-to-1 against the validated KUKA/Allegro
+  `Dextrah-Cube-Grasp` task.
+
+Hypothesis:
+- The Franka star-kitting failure may be dominated by object geometry,
+  placement horizon, or reward/curriculum issues. A Franka cube-grasp task with
+  the same cube size and lift success threshold as the KUKA cube task isolates
+  robot embodiment and contact mechanics.
+
+Change:
+- Added `Dextrah-Franka-Cube-Grasp` with Franka IK/table setup and procedural
+  cube pickup/lift objective.
+- Added Franka cube reward helper with modest no-lift shaping and dominant real
+  lift/height/success terms.
+- Added Gym registration, RL-Games config, train/eval imports, eval metrics,
+  training wrapper defaults, validation wrapper, eval wrapper, and environment
+  validation script.
+
+Version Control:
+- branch: `codex/dextrah-cluster-dev`
+- base_commit: `e3fa5309a489eadf94cc5d2b712441b56052a3d7`
+- implementation_commit: pending
+- changed_files:
+  - `dextrah_lab/tasks/dextrah_franka_cube_grasp/*`
+  - `dextrah_lab/rl_games/validate_franka_cube_grasp_env.py`
+  - `dextrah_lab/rl_games/train.py`
+  - `dextrah_lab/rl_games/eval_rollout.py`
+  - `dextrah_lab/rl_games/play.py`
+  - `cluster/sbatch_train_teacher_8gpu.sh`
+  - `cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`
+  - `cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+  - `WORKLOG.md`
+
+Validation:
+- local `python3 -m py_compile` passed for new/changed Python files.
+- local `bash -n` passed for changed cluster wrappers.
+- `git diff --check` passed.
+- local reward-helper execution could not run because the local Python lacks
+  `torch`; cluster validation will run the helper inside the Isaac environment.
+
+Command / Job:
+- planned validation command:
+  `RUN_NAME=franka_cube_validate_smoke_20260610_1535 NUM_ENVS=4 NUM_STEPS=160 CAPTURE_VIDEO=True SEED=44 sbatch cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`
+
+Next:
+- Commit/push/pull this implementation.
+- Run the Franka cube 1-GPU validation smoke.
+- If validation passes, launch bounded PPO and evaluate the best checkpoint
+  against the existing KUKA cube metrics/video.
