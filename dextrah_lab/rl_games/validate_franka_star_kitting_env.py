@@ -158,14 +158,15 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
         "finger_approach_sharpness": 14.0,
         "grasp_pose_weight": 18.0,
         "grasp_weight": 2.0,
-        "closed_grasp_weight": 18.0,
+        "closed_grasp_weight": 28.0,
         "grasp_sharpness": 18.0,
-        "lift_weight": 140.0,
-        "lift_action_weight": 6.0,
-        "close_near_weight": 3.0,
-        "close_action_weight": 3.0,
+        "lift_weight": 180.0,
+        "descend_action_weight": 2.5,
+        "lift_action_weight": 10.0,
+        "close_near_weight": 2.0,
+        "close_action_weight": 1.5,
         "prelift_move_penalty_weight": -10.0,
-        "close_far_penalty_weight": -4.0,
+        "close_far_penalty_weight": -8.0,
         "transport_weight": 6.0,
         "transport_xy_sharpness": 18.0,
         "yaw_weight": 3.0,
@@ -231,6 +232,17 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
         bool((_reward_total(**pregrasp_close_action) > _reward_total(**pregrasp)).item()),
         pregrasp_reward=_mean(_reward_total(**pregrasp)),
         pregrasp_close_action_reward=_mean(_reward_total(**pregrasp_close_action)),
+    )
+
+    precontact_descend = dict(base)
+    precontact_descend["ee_to_star_dist"] = torch.tensor([0.150], device=device)
+    precontact_descend["finger_center_to_star_dist"] = torch.tensor([0.135], device=device)
+    precontact_descend["actions"] = torch.tensor([[0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0]], device=device)
+    checks.check(
+        "reward_descend_action_increases_before_contact",
+        bool((_reward_total(**precontact_descend) > _reward_total(**pregrasp)).item()),
+        pregrasp_reward=_mean(_reward_total(**pregrasp)),
+        precontact_descend_reward=_mean(_reward_total(**precontact_descend)),
     )
 
     lifted = dict(near)

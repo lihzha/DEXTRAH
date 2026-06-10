@@ -251,6 +251,7 @@ class DextrahFrankaStarKittingEnv(DirectRLEnv):
             lift_reward,
             close_near_reward,
             close_action_reward,
+            descend_action_reward,
             lift_action_reward,
             transport_reward,
             yaw_reward,
@@ -282,6 +283,7 @@ class DextrahFrankaStarKittingEnv(DirectRLEnv):
             float(self.cfg.closed_grasp_weight),
             float(self.cfg.grasp_sharpness),
             float(self.cfg.lift_weight),
+            float(self.cfg.descend_action_weight),
             float(self.cfg.lift_action_weight),
             float(self.cfg.close_near_weight),
             float(self.cfg.close_action_weight),
@@ -305,6 +307,7 @@ class DextrahFrankaStarKittingEnv(DirectRLEnv):
             + lift_reward
             + close_near_reward
             + close_action_reward
+            + descend_action_reward
             + lift_action_reward
             + transport_reward
             + yaw_reward
@@ -323,6 +326,7 @@ class DextrahFrankaStarKittingEnv(DirectRLEnv):
             "star_lift_reward": lift_reward.mean(),
             "star_close_near_reward": close_near_reward.mean(),
             "star_close_action_reward": close_action_reward.mean(),
+            "star_descend_action_reward": descend_action_reward.mean(),
             "star_lift_action_reward": lift_action_reward.mean(),
             "star_transport_reward": transport_reward.mean(),
             "star_yaw_reward": yaw_reward.mean(),
@@ -341,6 +345,11 @@ class DextrahFrankaStarKittingEnv(DirectRLEnv):
             "star_gripper_width": self.gripper_width.mean(),
             "star_ee_to_star_dist": self.ee_to_star_dist.mean(),
             "star_finger_center_to_star_dist": self.finger_center_to_star_dist.mean(),
+            "star_action_z": self.actions[:, 2].mean(),
+            "star_action_up": torch.clamp(self.actions[:, 2], 0.0, 1.0).mean(),
+            "star_action_down": torch.clamp(-self.actions[:, 2], 0.0, 1.0).mean(),
+            "star_gripper_action": self.actions[:, 6].mean(),
+            "star_gripper_close_action": torch.clamp(-self.actions[:, 6], 0.0, 1.0).mean(),
         }
         self.extras["log"] = log_terms
         for key, value in log_terms.items():

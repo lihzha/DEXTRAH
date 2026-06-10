@@ -4314,3 +4314,63 @@ Eval sidecar:
 Next:
 - Monitor Slurm startup and TensorBoard. Continue only if closure/lift metrics
   improve; stop and patch if reward rises while the policy remains open/hover.
+
+## 2026-06-10 07:27 PDT - Close-Band/Sigma PPO Stopped; Contact/Lift Patch Prepared
+
+Goal:
+- Decide whether the close-band PPO run solved deterministic grasp/lift, then
+  patch the observed reward exploit.
+
+Evidence:
+- training job_id: `28936930`
+- run_name: `franka_star_closeband_sigma_ppo_20260610_071013`
+- stopped with `scancel` at about epoch 150; Slurm reports
+  `CANCELLED by 158351`, elapsed `00:15:08`.
+- ep25 sidecar eval
+  `franka_star_closeband_sigma_eval_ep25_20260610_071530`, job `28936968`:
+  success `0`, has-lifted `0`, max lift `0.01260 m`, gripper mean
+  `0.05691`, valid `1280x720`, `600` frame video.
+- ep100 sidecar eval
+  `franka_star_closeband_sigma_eval_ep100_20260610_072221`, job `28937162`:
+  success `0`, has-lifted `0`, max lift `0.011997 m`, gripper mean
+  `0.06057`, EE distance mean `0.17760`, finger-center distance mean
+  `0.15801`, valid `1280x720`, `600` frame video.
+- ep100 contact-sheet inspection confirms the deterministic policy hovers near
+  the star and does not close into a stable grasp.
+- training metrics around iter 144 showed the exploit clearly: shaped reward
+  rose to `31.44`, gripper width in stochastic rollouts fell to `0.0329`, but
+  success remained `0`, has-lifted stayed near `0.032`, and mean lift height
+  was only `0.0030 m`.
+
+Analysis:
+- The broadened pregrasp close band fixed exploration of closure, but it paid
+  too much reward before true fingertip contact.
+- Stochastic rollouts could earn close/pregrasp reward while deterministic
+  eval stayed open/hovering.
+- The next reward should make the sequence explicit: descend/open toward
+  contact, close mostly at contact, then lift only from contact.
+
+Change:
+- Added a descent-action reward before contact, gated by near-star/open-gripper
+  state.
+- Added a tighter contact-close gate and made grasp/closed/lift rewards depend
+  on contact readiness instead of loose pregrasp readiness.
+- Reduced pregrasp close-action reward influence; made close-near reward
+  contact-heavy.
+- Removed loose pregrasp credit from lift-action reward.
+- Strengthened closed-far penalty and moved its threshold closer to contact.
+- Increased closed-grasp, lift, and lift-action weights; reduced close-only
+  reward weights.
+- Added TensorBoard diagnostics for z action, up/down action, gripper action,
+  and gripper-close action.
+- Added a reward validation check for descent intent before contact.
+
+Checks:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_rewards.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env_cfg.py dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env.py dextrah_lab/rl_games/validate_franka_star_kitting_env.py`
+- `bash -n cluster/sbatch_validate_franka_star_kitting_env_1gpu.sh cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_eval_franka_star_kitting_1gpu.sh`
+- local Torch is unavailable, so numeric reward validation will be performed by
+  the cluster Isaac validation job before retraining.
+
+Next:
+- Commit/push, fast-forward A100, run full Franka star environment validation
+  with video, and only relaunch PPO if all checks pass.
