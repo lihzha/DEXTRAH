@@ -25,15 +25,29 @@ RESULTS_NFS="${RESULTS_NFS:-$NFS_ROOT/results/dextrah}"
 CACHE_NFS="${CACHE_NFS:-$NFS_ROOT/isaac_cache}"
 ROBOT="${ROBOT:-graspgenx_franka}"
 SCENE="${SCENE:-star_kitting}"
-if [ "$SCENE" = "cube_motion" ]; then
-  RESULT_SUBDIR="${RESULT_SUBDIR:-franka_cube_motion}"
-  RUN_NAME="${RUN_NAME:-franka_cube_motion_${SLURM_JOB_ID:-manual}}"
+ANIMATE_CUBE="${ANIMATE_CUBE:-False}"
+case "${ANIMATE_CUBE,,}" in
+  1|true|yes|on)
+    ANIMATE_CUBE_FLAG="--animate_cube"
+    ;;
+  *)
+    ANIMATE_CUBE_FLAG=""
+    ;;
+esac
+if [ "$SCENE" = "cube_motion" ] || [ "$SCENE" = "single_cube" ]; then
+  if [ -n "$ANIMATE_CUBE_FLAG" ]; then
+    RESULT_SUBDIR="${RESULT_SUBDIR:-franka_cube_motion}"
+    RUN_NAME="${RUN_NAME:-franka_cube_motion_${SLURM_JOB_ID:-manual}}"
+  else
+    RESULT_SUBDIR="${RESULT_SUBDIR:-franka_single_cube}"
+    RUN_NAME="${RUN_NAME:-franka_single_cube_${SLURM_JOB_ID:-manual}}"
+  fi
 else
   RESULT_SUBDIR="${RESULT_SUBDIR:-star_kitting_env}"
   RUN_NAME="${RUN_NAME:-star_kitting_${SLURM_JOB_ID:-manual}}"
 fi
 if [ -z "${FRANKA_RENDER_MODE:-}" ]; then
-  if [ "$SCENE" = "cube_motion" ]; then
+  if [ "$SCENE" = "cube_motion" ] || [ "$SCENE" = "single_cube" ]; then
     FRANKA_RENDER_MODE="static_urdf_obj_meshes"
   else
     FRANKA_RENDER_MODE="articulation_usd"
@@ -90,6 +104,7 @@ echo "FRANKA_SCENE_YAW_DEG=${FRANKA_SCENE_YAW_DEG:-180.0}"
 echo "FRANKA_BASE_Z_OFFSET=${FRANKA_BASE_Z_OFFSET:-0.2}"
 echo "FRANKA_MOTION=${FRANKA_MOTION:-hold}"
 echo "FRANKA_MOTION_SCALE=${FRANKA_MOTION_SCALE:-1.0}"
+echo "ANIMATE_CUBE=$ANIMATE_CUBE"
 
 srun \
   --ntasks=1 \
@@ -149,6 +164,7 @@ srun \
       --cube_lateral_disturbance \"${CUBE_LATERAL_DISTURBANCE:-0.08}\" \
       --cube_vertical_disturbance \"${CUBE_VERTICAL_DISTURBANCE:-0.035}\" \
       --cube_yaw_disturbance_deg \"${CUBE_YAW_DISTURBANCE_DEG:-55.0}\" \
+      $ANIMATE_CUBE_FLAG \
       --view \"${VIEW:-overview}\" \
       --dynamic_star \
       \${STATIC_STAR:+--static_star} \

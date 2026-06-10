@@ -34,9 +34,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=23)
     parser.add_argument(
         "--scene",
-        choices=("star_kitting", "cube_motion"),
+        choices=("star_kitting", "single_cube", "cube_motion"),
         default="star_kitting",
-        help="Scene to render. cube_motion keeps the Franka static and moves a single disturbed cube.",
+        help=(
+            "Scene to render. single_cube renders a static cube task. "
+            "cube_motion is kept as a legacy alias and only moves the cube with --animate_cube."
+        ),
     )
     parser.add_argument("--width", type=int, default=1280)
     parser.add_argument("--height", type=int, default=720)
@@ -121,6 +124,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cube_lateral_disturbance", type=float, default=0.08)
     parser.add_argument("--cube_vertical_disturbance", type=float, default=0.035)
     parser.add_argument("--cube_yaw_disturbance_deg", type=float, default=55.0)
+    parser.add_argument(
+        "--animate_cube",
+        action="store_true",
+        default=False,
+        help="Opt into the legacy keyframed cube disturbance visualization.",
+    )
     parser.add_argument(
         "--dynamic_star",
         dest="dynamic_star",
@@ -1377,6 +1386,7 @@ def _create_cube_object(
     center: tuple[float, float, float],
     size: float,
     mat: UsdShade.Material,
+    animate: bool = False,
 ) -> dict[str, object]:
     prim = _add_box(stage, root_path, center, (size, size, size), mat, collision=True)
     return {
@@ -1384,7 +1394,7 @@ def _create_cube_object(
         "center": list(center),
         "size": float(size),
         "dynamic": False,
-        "motion_source": "deterministic keyframed disturbance trajectory",
+        "motion_source": "deterministic keyframed disturbance trajectory" if animate else "static task cube",
     }
 
 
@@ -1821,6 +1831,16 @@ def _cube_motion_state(frame_idx: int, frame_count: int, surface_z: float) -> di
     }
 
 
+def _cube_static_state(frame_idx: int, frame_count: int, cube_center: tuple[float, float, float]) -> dict[str, object]:
+    return {
+        "frame": int(frame_idx),
+        "t": 0.0 if frame_count <= 1 else float(frame_idx) / float(frame_count - 1),
+        "center": [float(v) for v in cube_center],
+        "roll_pitch_yaw_deg": [0.0, 0.0, 0.0],
+        "disturbance_pulses": [],
+    }
+
+
 def _apply_cube_motion(stage: Usd.Stage, cube_path: str, state: dict[str, object]) -> None:
     prim = stage.GetPrimAtPath(cube_path)
     if not prim.IsValid():
@@ -1849,6 +1869,7 @@ def _render_cube_motion_scene(
 ) -> None:
     surface_z = table["surface_z"]
     table_center_x = table["center_x"]
+    animate_cube = bool(args_cli.animate_cube)
     cube_path = "/World/CubeTask/Cube"
     cube_center = (
         float(args_cli.cube_start_x),
@@ -1857,13 +1878,14 @@ def _render_cube_motion_scene(
     )
 
     UsdGeom.Xform.Define(stage, "/World/CubeTask")
-    _log("creating disturbed cube object")
+    _log("creating animated cube object" if animate_cube else "creating static cube object")
     cube = _create_cube_object(
         stage,
         root_path=cube_path,
         center=cube_center,
         size=float(args_cli.cube_size),
         mat=cube_mat,
+        animate=animate_cube,
     )
     _add_box(stage, "/World/Floor", (0.0, 0.0, -0.015), (3.2, 2.8, 0.03), floor_mat, collision=True)
 
@@ -1885,16 +1907,19 @@ def _render_cube_motion_scene(
     robot_motion_trace: list[dict[str, object]] = []
 
     def frame_callback(frame_idx: int, frame_count: int) -> None:
-        state = _cube_motion_state(frame_idx, frame_count, surface_z)
-        _apply_cube_motion(stage, cube_path, state)
+        if animate_cube:
+            state = _cube_motion_state(frame_idx, frame_count, surface_z)
+            _apply_cube_motion(stage, cube_path, state)
+        else:
+            state = _cube_static_state(frame_idx, frame_count, cube_center)
         trajectory.append(state)
 
     metadata = {
         "generated_at_unix": time.time(),
-        "task": "single_cube_motion",
+        "task": "single_cube_motion" if animate_cube else "single_cube_static",
         "task_description": (
-            "GraspGenX Franka rendered in the single-cube scene; the cube is disturbed and "
-            "the Franka can be held or driven by actuator targets."
+            "GraspGenX Franka rendered in the single-cube scene; the cube is static unless "
+            "legacy cube animation is explicitly enabled, and the Franka can be held or driven by actuator targets."
         ),
         "simulation_backend": "Isaac Sim / Isaac Lab / PhysX USD scene",
         "robot": _robot_metadata(robot_spec),
@@ -1927,13 +1952,15 @@ def _render_cube_motion_scene(
                 {"center_t": 0.23, "description": "positive lateral slide with small bounce"},
                 {"center_t": 0.52, "description": "negative lateral shove with main vertical hop"},
                 {"center_t": 0.77, "description": "settling correction shove"},
-            ],
+            ]
+            if animate_cube
+            else [],
         },
         "simulation": {
             "physics_device": str(args_cli.physics_device),
             "sim_dt": 1.0 / 60.0,
             "render_interval": 1,
-            "cube_motion_is_keyframed": True,
+            "cube_motion_is_keyframed": animate_cube,
         },
         "checks": {
             "robot_selected": robot_spec.name,
@@ -1942,12 +1969,12 @@ def _render_cube_motion_scene(
             "franka_is_articulation": robot_spec.render_mode == "articulation_usd",
             "franka_has_actuators": bool(robot_spec.actuator_config),
             "franka_motion_commanded": bool(robot_articulation is not None and args_cli.franka_motion != "hold"),
-            "cube_moves": True,
+            "cube_moves": animate_cube,
         },
     }
     _write_metadata(output_dir / "scene_metadata.json", metadata)
 
-    usd_path = output_dir / "franka_cube_motion_env.usda"
+    usd_path = output_dir / ("franka_cube_motion_env.usda" if animate_cube else "franka_single_cube_env.usda")
     _log(f"exporting USD: {usd_path}")
     stage.GetRootLayer().Export(str(usd_path))
 
@@ -2006,7 +2033,7 @@ def _render_cube_motion_scene(
         },
     )
 
-    print(f"Wrote Franka cube-motion scene renders to {output_dir}")
+    print(f"Wrote Franka single-cube scene renders to {output_dir}")
     print(f"Cube trajectory frames: {len(trajectory)}")
     print(f"USD: {usd_path}")
 
@@ -2068,7 +2095,7 @@ def main() -> None:
     )
     surface_z = table["surface_z"]
 
-    if args_cli.scene == "cube_motion":
+    if args_cli.scene in ("single_cube", "cube_motion"):
         _render_cube_motion_scene(
             output_dir=output_dir,
             stage=stage,

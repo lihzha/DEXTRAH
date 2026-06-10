@@ -143,6 +143,21 @@ class DextrahCubeGraspEnv(DextrahKukaAllegroEnv):
         self._compute_intermediate_values()
         self.compute_intermediate_reward_values()
 
+    def apply_object_wrench(self):
+        """Disable inherited object disturbances for the single-cube grasp task."""
+
+        if not hasattr(self, "object_applied_force") or not hasattr(self, "object_applied_torque"):
+            return
+        self.object_applied_force.zero_()
+        self.object_applied_torque.zero_()
+        self.object.set_external_force_and_torque(
+            forces=self.object_applied_force,
+            torques=self.object_applied_torque,
+            body_ids=None,
+            env_ids=None,
+        )
+        self.object.write_data_to_sim()
+
     def compute_intermediate_reward_values(self):
         self._ensure_cube_task_buffers()
 

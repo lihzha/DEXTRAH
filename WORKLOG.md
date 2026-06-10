@@ -1940,3 +1940,48 @@ Next:
 - Continue monitoring the PPO training job. The rendered eval confirms current
   checkpoint behavior: the arm moves, but it does not lift the cube and the
   success predicate remains zero.
+
+## 2026-06-10 00:31 PDT - Static Cube Bug Fix
+
+Goal:
+- Stop the cube from moving itself in the single-cube task and render path.
+
+Hypothesis:
+- The old `cube_motion` visualization path was still keyframing the cube each
+  frame. That was only meant for an early visualization and should not be the
+  default behavior for the actual single-cube experiment. The cube-grasp RL env
+  should also explicitly reject inherited object wrench disturbances.
+
+Change:
+- Added a `single_cube` scene alias and made cube animation opt-in with
+  `--animate_cube`.
+- Updated the star-kitting render wrapper so `SCENE=single_cube` and legacy
+  `SCENE=cube_motion` default to a static cube; `ANIMATE_CUBE=true` is required
+  for the old keyframed disturbance.
+- Overrode `DextrahCubeGraspEnv.apply_object_wrench()` to zero force/torque
+  buffers and disable inherited object disturbances for this focused task.
+
+Version Control:
+- branch: `codex/dextrah-cluster-dev`
+- base_commit: `975abfbc5c1e2efb655528af74c5beb8cc473081`
+- implementation_commit: pending
+- changed_files:
+  `dextrah_lab/scene_scripts/render_star_kitting_env.py`,
+  `cluster/sbatch_render_star_kitting_env.sh`,
+  `dextrah_lab/tasks/dextrah_kuka_allegro/dextrah_cube_grasp_env.py`,
+  `WORKLOG.md`
+
+Command / Job:
+- local checks:
+  `python3 -m py_compile dextrah_lab/scene_scripts/render_star_kitting_env.py dextrah_lab/tasks/dextrah_kuka_allegro/dextrah_cube_grasp_env.py`
+- local checks:
+  `bash -n cluster/sbatch_render_star_kitting_env.sh`
+- local checks:
+  `git diff --check`
+
+Result:
+- status: checks passed locally; commit/push/sync pending.
+
+Next:
+- Commit/push the fix and update the cluster checkout before launching any new
+  single-cube render/eval jobs.
