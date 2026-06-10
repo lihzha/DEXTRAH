@@ -3884,3 +3884,39 @@ Next:
 - Launch 8-GPU PPO from `fdf42c9` using the same stable rl_games
   hyperparameters as the previous run, monitor early close/gripper/lift terms,
   and request checkpoint eval videos.
+
+## 2026-06-10 05:57 PDT - Franka Star Capture-Boost PPO Launched
+
+Goal:
+- Test whether the validated capture-boost reward patch moves PPO from
+  hover/push behavior into pinch, lift, and eventual insertion.
+
+Version Control:
+- branch: `codex/dextrah-cluster-dev`
+- behavior_commit: `fdf42c9903584ae4d47bff866e6266cb3f239af5`
+- launch_commit: `a94700c66641732b4e4b1ad845efd8dd43970f10`
+- remote_commit/status: A100 checkout clean at launch commit.
+
+Command / Job:
+- training job_id: `28936136`
+- run_name: `franka_star_captureboost_ppo_20260610_055650`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_star_kitting/franka_star_captureboost_ppo_20260610_055650`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28936136.out`
+- command: `sbatch --partition=batch_singlenode,grizzly,polar,polar3,polar4,interactive_singlenode --export=ALL,TASK=Dextrah-Franka-Star-Kitting,FULL_EXPERIMENT_NAME=franka_star_captureboost_ppo_20260610_055650,NUM_ENVS=2048,HORIZON_LENGTH=64,MINIBATCH_SIZE=32768,CENTRAL_VALUE_MINIBATCH_SIZE=32768,MAX_ITERATIONS=600,SAVE_FREQUENCY=25,ENTROPY_COEF=0.004,LEARNING_RATE=0.0001,CENTRAL_VALUE_LEARNING_RATE=0.00008,GAMMA=0.997,TAU=0.95,KL_THRESHOLD=0.012,MINI_EPOCHS=4,AUTO_RESUME=False,SELF_RELAUNCH=False,USE_CUDA_GRAPH=False,DISTRIBUTED=True,MULTI_GPU=True cluster/sbatch_train_teacher_8gpu.sh`
+
+Hyperparameters:
+- Same stable rl_games setup as the previous validated attempt:
+  `NUM_ENVS=2048`, `HORIZON_LENGTH=64`, `MINIBATCH_SIZE=32768`,
+  `CENTRAL_VALUE_MINIBATCH_SIZE=32768`, `MAX_ITERATIONS=600`,
+  `SAVE_FREQUENCY=25`, `LEARNING_RATE=0.0001`,
+  `CENTRAL_VALUE_LEARNING_RATE=0.00008`, `ENTROPY_COEF=0.004`,
+  `GAMMA=0.997`, `TAU=0.95`, `KL_THRESHOLD=0.012`, `MINI_EPOCHS=4`,
+  `AUTO_RESUME=False`, `SELF_RELAUNCH=False`, `USE_CUDA_GRAPH=False`.
+
+Next:
+- Verify saved configs include the capture-boost reward weights; monitor
+  gripper width, close-action reward, closed-grasp reward, lift height,
+  lifted-rate, success, and pre-lift drift. Sidecar agent will launch the
+  first checkpoint eval video.
