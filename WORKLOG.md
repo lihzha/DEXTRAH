@@ -523,3 +523,34 @@ Next:
 - Commit/push this worklog entry, pull on a1001, submit the production job,
   then monitor through checkpoint load, runtime restore, and first fresh
   production checkpoint.
+
+## 2026-06-09 17:11 PDT - Production Relaunch Wrapper Fix
+
+Goal:
+- Recover the production relaunch after the first submitted job failed in the
+  Slurm wrapper before entering Python.
+
+Version Control:
+- branch: `codex/dextrah-cluster-dev`
+- prelaunch_commit: `43e03bf`
+- job_id: `28910893`
+- changed_files: `cluster/sbatch_train_teacher_8gpu.sh`, `WORKLOG.md`
+
+Command / Job:
+- submitted: `sbatch --parsable --export=ALL,FULL_EXPERIMENT_NAME=teacher_short_20260609_100021,AUTO_RESUME=True,SELF_RELAUNCH=True cluster/sbatch_train_teacher_8gpu.sh`
+- result: `FAILED`, exit `1:0`, elapsed `00:00:08`, node
+  `batch-block5-01372`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28910893.out`
+
+Observation:
+- The wrapper evaluated `10000 + 0893` for `SLURM_JOB_ID=28910893`.
+- Bash treated the leading-zero suffix as octal and rejected digit `9`, leaving
+  `MASTER_PORT` unset under `set -u`.
+
+Change:
+- Parse the job-id suffix explicitly as base 10 before deriving
+  `MASTER_PORT`.
+
+Next:
+- Commit/push the wrapper fix, pull the exact commit on a1001, relaunch, and
+  resume monitoring.
