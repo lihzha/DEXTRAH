@@ -218,6 +218,273 @@ Version Control:
 - base_commit: 589dd81c9f9691fcda3a3d4b9ad714d90dae4794
 - implementation_commit: ca1bcae19a07b45d530860bfc12169ea3efc8ebd
 - push/pull: not pushed; local agent branch checkpoint
+
+## 2026-06-11T12:22:08-07:00 - real GraspGenX/cuRobo cube dataset plan
+
+Goal:
+- Move Worker C beyond geometric/debug demonstrations by generating real
+  cuRobo-validated Franka cube task-space trajectories for official Diffusion
+  Policy BC, or prove a precise external blocker.
+
+Hypothesis:
+- The existing GraspGenX `end2end` planner stack can be reused for DEXTRAH's
+  60 mm cube if a DEXTRAH-owned scene wrapper writes a matching cube mesh,
+  table/cube/robot config, and exports `trajectory.json` plus
+  `plan_summary.json`.
+- The safest first BC target remains approach-to-pregrasp. Close/lift will be
+  exported in the raw cuRobo plan but kept out of the initial DP dataset until
+  contact/lift semantics are inspected in DEXTRAH/Isaac.
+
+Evidence before edits:
+- No existing Franka cube cuRobo time-indexed trajectory dataset was found in
+  local DEXTRAH/GraspGenX artifacts. Existing local `trajectory.json` artifacts
+  are Franka star kitting, not cube.
+- Worker A's cube artifact
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/local_results/franka_cube_grasp_prior/franka_cube_ggx_grasps_smoke.npz`
+  is a static grasp library, not a cuRobo trajectory dataset.
+- Canonical local GraspGenX venv imports Torch/CUDA but lacks `curobo`.
+- Isolated prior GraspGenX/cuRobo worktrees are viable for planning:
+  - GraspGenX:
+    `/home/lzha/code/.codex-worktrees/graspgenx/franka-ggx-curobo-local-20260610T234641Z-86074`
+  - cuRobo:
+    `/home/lzha/code/.codex-worktrees/curobo/franka-ggx-curobo-local-20260610T234641Z-86074`
+  - Python:
+    `/home/lzha/code/.codex-worktrees/graspgenx/franka-ggx-curobo-local-20260610T234641Z-86074/.venv/bin/python`
+  - import check: Torch 2.6.0+cu124, CUDA available, cuRobo imports from the
+    isolated cuRobo worktree.
+- GraspGenX attempted to fetch `gripper_descriptions` during import and hit
+  upstream LFS budget limits, but the local checkout already contains the
+  `franka_panda` assets needed for this path.
+
+Planned source edits:
+- Add a DEXTRAH-owned
+  `dextrah_lab/scene_scripts/plan_franka_cube_graspgenx_curobo.py`, adapted
+  from the existing Franka star GraspGenX/cuRobo script and GraspGenX's
+  `validate_franka_cube_graspgenx_curobo.py`.
+- Patch `dextrah_lab/offline_dp_bc/trajectory_conversion.py` to propagate
+  `curobo_validated=true/false` and planner summary fields into converted DP
+  dataset metadata. The converter should only mark a dataset as cuRobo
+  validated when all source summaries say planning succeeded.
+- Keep all generated artifacts under the external Worker C artifact root:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/`.
+
+Planned validation:
+- Run syntax/import checks for the new script and converter.
+- Launch a bounded local planning smoke first: one or a few seeds, GraspGenX
+  topdown/grasp-ranking enabled, capped planning attempts, no full BC/RL run.
+- If real planning succeeds, convert successful `trajectory.json` files with
+  `--phase-set approach_pregrasp`, validate shapes/metadata, run a tiny
+  official `real-stanford/diffusion_policy` train with validation split, then
+  run the existing checkpoint bridge smoke.
+- If real planning is blocked by missing assets, dependency failures, or
+  planner infeasibility, record the exact command/log/blocker and pivot to the
+  next bridge milestone: an explicit DEXTRAH/Isaac eval wrapper for a geometric
+  DP checkpoint, clearly marked non-curobo/geometric-only.
+
+Version Control:
+- branch: codex/franka-cube-diffusion-policy-bc
+- starting_commit: c3c33fd0e6e2404200bce9091d7345981227a13a
+- implementation_commit: pending
+- push/pull: pending
+
+## 2026-06-11T12:27:37-07:00 - real cuRobo planning smoke
+
+Goal:
+- Prove a real GraspGenX + cuRobo Franka cube trajectory can be generated for
+  the DP BC path, separate from prior geometric/debug datasets.
+
+Change:
+- Added DEXTRAH-owned cube planner wrapper
+  `dextrah_lab/scene_scripts/plan_franka_cube_graspgenx_curobo.py`.
+- Patched `dextrah_lab/offline_dp_bc/trajectory_conversion.py` to propagate
+  per-source `plan_summary.json` fields and top-level `curobo_validated`.
+- Fixed wrapper default yaw after debugging: DEXTRAH's
+  `robot_yaw_wxyz=(0, 0, 0, 1)` is a 180 degree Z rotation in wxyz, while
+  GraspGenX YAML uses xyzw. The wrapper now defaults to `--robot_yaw_deg 180`.
+
+Command / Job:
+- command: `PYTHONPATH=$DEX:$GGX:$GGX/end2end:$CU GRASPGENX_ROOT=$GGX GRASPGENX_CUROBO_DIR=$CU GRASPGENX_CHECKPOINT_DIR=$GGX/ext/graspgenx_checkpoints GRASPGENX_GRIPPER_CFG_DIR=$GGX/ext/gripper_descriptions CUDA_VISIBLE_DEVICES=0 $GGX/.venv/bin/python dextrah_lab/scene_scripts/plan_franka_cube_graspgenx_curobo.py --output_dir /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/curobo_plans --run_name cube_curobo_smoke_seed0_20260611_122546 --seed 0 --num_sample_points 1000 --num_grasps 64 --topk 32 --grasp_threshold 0.0 --grasp_planner topdown --moe_obb_density dense --max_plan_attempts 32 --rank_grasps_by_confidence`
+- run_dir: `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/curobo_plans/cube_curobo_smoke_seed0_20260611_122546`
+- log: `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/cube_curobo_smoke_seed0_20260611_122546.log`
+
+Result:
+- status: failed, useful diagnostic
+- key evidence: CUDA/checkpoints/GraspGenX/cuRobo all loaded; GraspGenX
+  produced 32 topdown grasp candidates; cuRobo rejected every candidate with
+  `Start or End state in collision` and `No grasp in goal set was reachable`.
+- diagnosis: wrapper used `--robot_yaw_deg 0`, which points the GraspGenX
+  Franka away from the negative-X DEXTRAH table. This mismatched Isaac's
+  wxyz yaw convention.
+
+Command / Job:
+- command: same as above after wrapper yaw fix, run name
+  `cube_curobo_smoke_seed0_yaw180_20260611_122709`
+- run_dir: `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/curobo_plans/cube_curobo_smoke_seed0_yaw180_20260611_122709`
+- log: `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/cube_curobo_smoke_seed0_yaw180_20260611_122709.log`
+- artifacts:
+  - `trajectory.json`
+  - `plan_summary.json`
+  - `run_config.json`
+  - `environment.json`
+
+Result:
+- status: passed
+- metrics/artifacts: `curobo_validated=true`, 32 grasp candidates, selected
+  grasp index `0`, confidence `0.7619073987007141`, plan segments
+  `approach=62`, `grasp=42`, `lift=42`, exported trajectory frames `722`.
+- key evidence: log printed `DEXTRAH_CUBE_GRASPGENX_CUROBO_PLAN_PASSED`.
+
+Analysis:
+- The real-planner blocker was not external; it was a wrapper convention bug.
+- The raw plan includes close/lift, but the first DP conversion will continue
+  to use `approach_pregrasp` for low-risk BC. Full pick/lift can be converted
+  later once contact rollout behavior is inspected in DEXTRAH/Isaac.
+
+Next:
+- Generate a tiny multi-episode real cuRobo dataset using varied cube XY
+  offsets inside DEXTRAH reset randomization.
+- Convert successful `trajectory.json` files with real planner metadata,
+  validate dataset shape/normalization, run official Diffusion Policy tiny
+  train with validation split, and bridge-smoke the checkpoint.
+
+## 2026-06-11T12:33:54-07:00 - real cuRobo DP BC tiny train + eval wrapper
+
+Goal:
+- Move from geometric/debug demonstrations to real GraspGenX + cuRobo
+  trajectory demonstrations and prove official Diffusion Policy compatibility
+  through a tiny train/validation run and checkpoint bridge smoke.
+
+Change:
+- Generated an 8-episode real cuRobo cube trajectory batch with varied cube XY
+  offsets inside the DEXTRAH reset randomization range.
+- Fixed converter phase expansion for sorted JSON `task_segments` by using
+  GraspGenX pick-and-lift canonical phase order.
+- Added `dextrah_lab/rl_games/eval_franka_cube_dp_policy.py`, a no-learning
+  Isaac/DEXTRAH rollout wrapper that:
+  - loads an official Diffusion Policy checkpoint;
+  - extracts 21D lowdim observations from DEXTRAH's 72D PPO observations;
+  - calls `predict_action_from_ppo_obs()`;
+  - clips DEXTRAH 7D relative EE + gripper actions;
+  - writes rollout metrics/video paths for inspection.
+
+Official Diffusion Policy Source:
+- source URL: `https://github.com/real-stanford/diffusion_policy`
+- project page: `https://diffusion-policy.cs.columbia.edu/`
+- local checkout:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/diffusion_policy`
+- commit: `5ba07ac6661db573af695b419a7947ecb704690f`
+
+Command / Job:
+- command: 8-run local batch using
+  `dextrah_lab/scene_scripts/plan_franka_cube_graspgenx_curobo.py`
+  with `--grasp_planner topdown --num_grasps 64 --topk 32
+  --max_plan_attempts 32 --rank_grasps_by_confidence`.
+- batch: `cube_curobo_batch_20260611_122807`
+- success list:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/curobo_plans/cube_curobo_batch_20260611_122807_success_trajectories.txt`
+- logs:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/cube_curobo_batch_20260611_122807_seed{0..7}.log`
+- run dirs:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/curobo_plans/cube_curobo_batch_20260611_122807_seed{0..7}`
+
+Result:
+- status: passed
+- metrics/artifacts: 8/8 trajectories passed with `curobo_validated=true`.
+  Seed 0 selected grasp confidence `0.7619073987007141` with segments
+  `approach=62`, `grasp=42`, `lift=42`; seeds 1-7 each used
+  `approach=42`, `grasp=42`, `lift=42`.
+- key evidence: every per-seed log printed
+  `DEXTRAH_CUBE_GRASPGENX_CUROBO_PLAN_PASSED`.
+
+Command / Job:
+- command: `PYTHONPATH=$DEX:$GGX:$GGX/end2end:$CU $GGX/.venv/bin/python -m dextrah_lab.offline_dp_bc.trajectory_conversion <8 trajectory.json files> --output $ART/datasets/franka_cube_curobo_lowdim_cube_curobo_batch_20260611_122807_approach_pregrasp.npz --input-format json --phase-set approach_pregrasp --graspgenx-root $GGX --robot-config $ART/curobo_plans/cube_curobo_batch_20260611_122807_seed0/configs/franka_panda_dextrah_cube.yaml`
+- dataset:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/datasets/franka_cube_curobo_lowdim_cube_curobo_batch_20260611_122807_approach_pregrasp.npz`
+- metadata:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/datasets/franka_cube_curobo_lowdim_cube_curobo_batch_20260611_122807_approach_pregrasp.npz.metadata.json`
+- logs:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/cube_curobo_batch_20260611_122807_conversion_rerun.log`
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/cube_curobo_batch_20260611_122807_dataset_smoke_rerun.log`
+
+Result:
+- status: passed
+- metrics/artifacts: `num_episodes=8`, `num_steps=836`, `obs_dim=21`,
+  `action_dim=7`, top-level `curobo_validated=true`, all source flags true.
+  Selected approach-to-pregrasp frames per source:
+  `[122, 102, 102, 102, 102, 102, 102, 102]`.
+- smoke: `FRANKA_CUBE_DP_BC_SMOKE_PASSED`, sample obs `[8, 21]`, sample action
+  `[8, 7]`, first-step position replay error `0.0`.
+
+Command / Job:
+- command: `PYTHONPATH=$DP:$DEX $VENV/bin/python train.py --config-dir $DEX/dextrah_lab/offline_dp_bc/config --config-name franka_cube_lowdim_dp task.dataset_path=$DATASET task.dataset.val_ratio=0.25 training.device=cpu training.max_train_steps=2 training.max_val_steps=1 training.num_epochs=1 policy.num_inference_steps=2 dataloader.batch_size=8 val_dataloader.batch_size=8 hydra.run.dir=$OUT`
+- run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_debug/run_20260611_123104_curobo_batch`
+- log:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/official_dp_curobo_batch_debug_train.log`
+- artifacts:
+  - `.hydra/config.yaml`
+  - `logs.json.txt`
+  - `train.log`
+  - `checkpoints/latest.ckpt`
+  - `checkpoints/epoch=0000-test_mean_score=0.000.ckpt`
+
+Result:
+- status: passed
+- metrics/artifacts: official model constructed with `1.662478e+07`
+  parameters. Final logged row:
+  `train_loss=1.186620056629181`, `val_loss=1.0896008014678955`,
+  `train_action_mse_error=0.6653574705123901`, `test/mean_score=0.0`,
+  `global_step=1`. Checkpoints are present, about 254 MB each.
+
+Command / Job:
+- command: `PYTHONPATH=$DP:$DEX $VENV/bin/python -m dextrah_lab.offline_dp_bc.validate_official_checkpoint_smoke --checkpoint $OUT/checkpoints/latest.ckpt --dataset $DATASET --device cpu --batch-size 2 --num-inference-steps 2`
+- log:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/official_dp_curobo_batch_checkpoint_smoke.log`
+
+Result:
+- status: passed
+- metrics/artifacts: loaded official
+  `TrainDiffusionUnetLowdimWorkspace` / `DiffusionUnetLowdimPolicy`, direct
+  action shape `[2, 8, 7]`, PPO bridge action shape `[2, 7]`, PPO obs shape
+  `[2, 72]`, dataset episodes `8`, dataset steps `836`, finite bridge
+  actions. Action extrema were close to the clipped controller range; eval
+  wrapper clips before stepping DEXTRAH.
+
+Command / Job:
+- command: `TERM=xterm PYTHONPATH=$DEX /home/lzha/code/IsaacLab-v2.2.1/isaaclab.sh -p $DEX/dextrah_lab/rl_games/eval_franka_cube_dp_policy.py --help`
+- log:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/dp_policy_eval_help_isaaclab_blocker.log`
+
+Result:
+- status: externally blocked locally
+- blocker evidence: command exited `1` with
+  `python: command not found` and
+  `Unable to find any Python executable at path: '/home/lzha/code/IsaacLab-v2.2.1/_isaac_sim/python.sh'`.
+- local inspection: no local `/isaac-sim/python.sh` was found and `srun` is not
+  installed on this host. Existing DEXTRAH cluster scripts run Isaac through
+  `/isaac-sim/python.sh` inside the cluster Isaac container.
+
+Analysis:
+- Real cuRobo data generation is now viable. The first failure was caused by
+  a DEXTRAH/GraspGenX quaternion convention mismatch, not missing assets.
+- The current BC dataset intentionally imitates approach-to-pregrasp only.
+  Close/lift are present in the real exported trajectories and can be included
+  later, but contact rollout should be inspected in Isaac before training DP
+  on close/lift.
+- The DP checkpoint remains a teacher/eval artifact, not an rl_games PPO
+  initialization. PPO fine-tuning should either run through the eval wrapper as
+  a no-learning teacher rollout, or distill DP teacher actions into a PPO actor
+  that consumes the full 72D observation.
+
+Version Control:
+- branch: codex/franka-cube-diffusion-policy-bc
+- source_checkpoint_commit: 3e943d5
+- push/pull: pending
+- changed_files:
+  - `dextrah_lab/scene_scripts/plan_franka_cube_graspgenx_curobo.py`
+  - `dextrah_lab/offline_dp_bc/trajectory_conversion.py`
+  - `dextrah_lab/rl_games/eval_franka_cube_dp_policy.py`
+  - `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
 - changed_files: owned worklog final entry only since implementation commit
 - remote_commit/status: n/a/local env
 

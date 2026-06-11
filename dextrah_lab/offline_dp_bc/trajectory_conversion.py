@@ -45,6 +45,17 @@ PHASE_PRESETS: dict[str, tuple[str, ...] | None] = {
     "all": None,
 }
 
+PICK_AND_LIFT_PHASE_ORDER = (
+    "go_to_pre_grasp_pose",
+    "hold_at_pre_grasp",
+    "go_from_pre_grasp_to_grasp_pose",
+    "hold_at_grasp",
+    "close_fingers",
+    "hold_after_close",
+    "lift_object",
+    "hold_after_lift",
+)
+
 COMPACT_OBS_SCHEMA = (
     "ee_pos_x",
     "ee_pos_y",
@@ -182,13 +193,61 @@ def _expand_phase_labels(frames: list[dict[str, Any]], plan_summary: Path | None
         task_segments = summary.get("task_segments", {})
         expanded: list[str] = []
         if isinstance(task_segments, dict):
-            for name, count in task_segments.items():
+            ordered_names = [name for name in PICK_AND_LIFT_PHASE_ORDER if name in task_segments]
+            ordered_names.extend(name for name in task_segments.keys() if name not in set(ordered_names))
+            for name in ordered_names:
+                count = task_segments[name]
                 expanded.extend([str(name)] * int(count))
         if expanded:
             if len(expanded) < len(frames):
                 expanded.extend([expanded[-1]] * (len(frames) - len(expanded)))
             return np.asarray(expanded[: len(frames)], dtype="<U64")
     return phases
+
+
+def _load_plan_summary(path: Path | None) -> dict[str, Any] | None:
+    if path is None or not path.is_file():
+        return None
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError(f"Expected mapping in plan summary {path}")
+    return payload
+
+
+def _plan_summary_for_input(path: Path, args: argparse.Namespace) -> Path | None:
+    if args.input_format == "npz" or (args.input_format == "auto" and path.suffix.lower() == ".npz"):
+        return None
+    if args.plan_summary is not None:
+        return args.plan_summary.expanduser().resolve()
+    sibling = path.parent / "plan_summary.json"
+    return sibling if sibling.is_file() else None
+
+
+def _source_metadata_from_plan_summary(path: Path | None) -> dict[str, Any]:
+    payload = _load_plan_summary(path)
+    if payload is None:
+        return {}
+
+    metadata: dict[str, Any] = {
+        "plan_summary": str(path),
+        "curobo_validated": bool(payload.get("curobo_validated", False)),
+    }
+    for key in (
+        "status",
+        "source",
+        "run_name",
+        "selected_grasp_index",
+        "selected_grasp_confidence",
+        "num_grasps",
+        "plan_segments",
+        "task_segments",
+        "pregrasp_traj_shape",
+        "lift_traj_shape",
+        "trajectory_frames",
+    ):
+        if key in payload:
+            metadata[key] = payload[key]
+    return metadata
 
 
 def _load_robot_profile(graspgenx_root: Path, robot_config: Path):
@@ -544,20 +603,24 @@ def main() -> None:
     episodes = []
     sources = []
     for path in args.inputs:
-        traj = _load_input(path.expanduser().resolve(), args)
+        resolved_path = path.expanduser().resolve()
+        plan_summary_path = _plan_summary_for_input(resolved_path, args)
+        traj = _load_input(resolved_path, args)
         selected = select_phases(traj, selected_phases)
         episodes.append(trajectory_to_episode(selected, convention=convention, cube_lift_height=args.cube_lift_height))
-        sources.append(
-            {
-                "path": str(path),
-                "frames_in": int(traj.ee_pos.shape[0]),
-                "frames_selected": int(selected.ee_pos.shape[0]),
-                "fps": selected.fps,
-                "phases_selected": sorted(set(selected.phases.tolist())),
-            }
-        )
+        source_metadata = {
+            "path": str(path),
+            "frames_in": int(traj.ee_pos.shape[0]),
+            "frames_selected": int(selected.ee_pos.shape[0]),
+            "fps": selected.fps,
+            "phases_selected": sorted(set(selected.phases.tolist())),
+        }
+        source_metadata.update(_source_metadata_from_plan_summary(plan_summary_path))
+        sources.append(source_metadata)
+    curobo_flags = [source.get("curobo_validated") for source in sources if "curobo_validated" in source]
     metadata = {
         "source": "graspgenx_curobo_to_dextrah_franka_cube_lowdim",
+        "curobo_validated": bool(curobo_flags) and all(flag is True for flag in curobo_flags),
         "phase_set": args.phase_set,
         "selected_phases": list(selected_phases) if selected_phases is not None else None,
         "action_convention": asdict(convention),

@@ -1,0 +1,343 @@
+"""Evaluate a lowdim Diffusion Policy checkpoint in the Franka cube env.
+
+This is a no-learning rollout wrapper. It loads an official
+``real-stanford/diffusion_policy`` low-dimensional checkpoint, extracts the
+compact 21D observation from DEXTRAH's 72D Franka cube observation, queries
+``predict_action_from_ppo_obs()``, and steps the Isaac environment with the
+resulting 7D relative EE + gripper action.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import math
+import sys
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+from isaaclab.app import AppLauncher
+
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--checkpoint", type=str, required=True, help="Official Diffusion Policy .ckpt path.")
+parser.add_argument("--diffusion_policy_root", type=str, default=None, help="Path to real-stanford/diffusion_policy.")
+parser.add_argument("--task", type=str, default="Dextrah-Franka-Cube-Grasp")
+parser.add_argument("--num_envs", type=int, default=16)
+parser.add_argument("--num_steps", type=int, default=240)
+parser.add_argument("--seed", type=int, default=42)
+parser.add_argument("--num_inference_steps", type=int, default=2)
+parser.add_argument("--clip_actions", type=float, default=1.0)
+parser.add_argument("--success_window", type=int, default=80)
+parser.add_argument("--print_interval", type=int, default=20)
+parser.add_argument("--output_dir", type=str, default=None)
+parser.add_argument("--metrics_path", type=str, default=None)
+parser.add_argument("--video", action="store_true", default=False, help="Record rollout video.")
+parser.add_argument("--video_length", type=int, default=240)
+parser.add_argument("--video_folder", type=str, default=None)
+parser.add_argument("--video_name_prefix", type=str, default="franka-cube-dp-eval")
+parser.add_argument("--camera_eye", type=float, nargs=3, default=None)
+parser.add_argument("--camera_target", type=float, nargs=3, default=None)
+parser.add_argument(
+    "--disable_fabric",
+    action="store_true",
+    default=False,
+    help="Disable fabric and use USD I/O operations.",
+)
+AppLauncher.add_app_launcher_args(parser)
+args_cli = parser.parse_args()
+
+if args_cli.video:
+    args_cli.enable_cameras = True
+
+app_launcher = AppLauncher(args_cli)
+simulation_app = app_launcher.app
+
+
+import gymnasium as gym
+import numpy as np
+import torch
+
+import isaaclab_tasks  # noqa: F401
+from isaaclab_tasks.utils import parse_env_cfg
+
+import dextrah_lab.tasks.dextrah_franka_cube_grasp.gym_setup  # noqa: F401
+from dextrah_lab.offline_dp_bc.ppo_bridge import (
+    FRANKA_CUBE_ACTION_DIM,
+    FRANKA_CUBE_PPO_OBS_DIM,
+    LowdimObsHistory,
+    predict_action_from_ppo_obs,
+)
+
+
+DEFAULT_CAMERA_EYE = (-0.10, -0.78, 1.42)
+DEFAULT_CAMERA_TARGET = (-0.41, -0.10, 0.82)
+
+
+def _mean_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, torch.Tensor):
+        return float(value.detach().float().mean().cpu())
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _tensor_list(value: torch.Tensor) -> list[float] | list[list[float]]:
+    return value.detach().float().cpu().tolist()
+
+
+def _env_metric(task_env: Any, name: str) -> float | None:
+    if not hasattr(task_env, name):
+        return None
+    return _mean_float(getattr(task_env, name))
+
+
+def _collect_task_metrics(task_env: Any) -> dict[str, float | None]:
+    metric_names = [
+        "cube_lift_height",
+        "cube_xy_error",
+        "cube_goal_height_error",
+        "has_lifted_cube",
+        "in_success_region",
+        "ee_to_cube_dist",
+        "finger_center_to_cube_dist",
+        "left_finger_to_cube_dist",
+        "right_finger_to_cube_dist",
+        "max_finger_to_cube_dist",
+        "finger_distance_asymmetry",
+        "gripper_width",
+        "finger_table_clearance",
+        "finger_table_clearance_violation",
+    ]
+    return {name: _env_metric(task_env, name) for name in metric_names if hasattr(task_env, name)}
+
+
+def _summarize_step_metrics(step_metrics: list[dict[str, float | int | None]]) -> dict[str, dict[str, float | int]]:
+    summaries: dict[str, dict[str, float | int]] = {}
+    for name in sorted({key for item in step_metrics for key in item.keys()} - {"step"}):
+        records = [(item, float(item[name])) for item in step_metrics if item.get(name) is not None]
+        if not records:
+            continue
+        values = [value for _, value in records]
+        max_idx = max(range(len(values)), key=lambda idx: values[idx])
+        min_idx = min(range(len(values)), key=lambda idx: values[idx])
+        summaries[name] = {
+            "final": values[-1],
+            "max": values[max_idx],
+            "max_step": int(records[max_idx][0]["step"]),
+            "min": values[min_idx],
+            "min_step": int(records[min_idx][0]["step"]),
+            "mean": sum(values) / len(values),
+        }
+    return summaries
+
+
+def _camera_tuple(values: list[float] | tuple[float, float, float] | None):
+    if values is None:
+        return None
+    return tuple(float(v) for v in values)
+
+
+def _configure_eval_camera(env_cfg: Any, task_env: Any | None = None) -> None:
+    if args_cli.camera_eye is None and args_cli.camera_target is None and not args_cli.video:
+        return
+    if not hasattr(env_cfg, "viewer"):
+        print("[WARN] Environment config has no viewer config; eval camera override skipped.", flush=True)
+        return
+
+    eye = _camera_tuple(args_cli.camera_eye) or DEFAULT_CAMERA_EYE
+    target = _camera_tuple(args_cli.camera_target) or DEFAULT_CAMERA_TARGET
+    if task_env is not None and hasattr(task_env, "scene") and len(task_env.scene.env_origins) > 0:
+        env_origin = task_env.scene.env_origins[0].detach().cpu().tolist()
+        eye = tuple(eye[idx] + env_origin[idx] for idx in range(3))
+        target = tuple(target[idx] + env_origin[idx] for idx in range(3))
+    env_cfg.viewer.eye = eye
+    env_cfg.viewer.lookat = target
+    env_cfg.viewer.origin_type = "world"
+    print(f"[INFO] DP eval camera eye={eye} target={target}", flush=True)
+
+    if task_env is not None and hasattr(task_env, "sim"):
+        try:
+            task_env.sim.set_camera_view(eye=eye, target=target, camera_prim_path=env_cfg.viewer.cam_prim_path)
+        except Exception as exc:
+            print(f"[WARN] Could not set active viewport camera: {exc}", flush=True)
+
+
+def _load_policy(checkpoint: Path, device: str, num_inference_steps: int, diffusion_policy_root: str | None):
+    if diffusion_policy_root:
+        root = str(Path(diffusion_policy_root).expanduser().resolve())
+        if root not in sys.path:
+            sys.path.insert(0, root)
+    from diffusion_policy.workspace.train_diffusion_unet_lowdim_workspace import (
+        TrainDiffusionUnetLowdimWorkspace,
+    )
+
+    workspace = TrainDiffusionUnetLowdimWorkspace.create_from_checkpoint(str(checkpoint))
+    policy = workspace.ema_model if getattr(workspace, "ema_model", None) is not None else workspace.model
+    policy.num_inference_steps = int(num_inference_steps)
+    policy.to(torch.device(device))
+    policy.eval()
+    return workspace, policy
+
+
+def _policy_obs_from_reset(reset_out: Any) -> torch.Tensor:
+    obs = reset_out[0] if isinstance(reset_out, tuple) else reset_out
+    return obs["policy"] if isinstance(obs, dict) else obs
+
+
+def _policy_obs_from_step(step_out: Any) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, Any]:
+    if len(step_out) == 5:
+        obs, rewards, terminated, truncated, info = step_out
+    else:
+        obs, rewards, dones, info = step_out
+        terminated = dones
+        truncated = torch.zeros_like(dones, dtype=torch.bool)
+    policy_obs = obs["policy"] if isinstance(obs, dict) else obs
+    return policy_obs, rewards, terminated, truncated, info
+
+
+def _latest_video_files(video_folder: Path | None) -> list[str]:
+    if video_folder is None or not video_folder.exists():
+        return []
+    return [str(path) for path in sorted(video_folder.glob("*.mp4"))]
+
+
+def main() -> None:
+    output_dir = Path(args_cli.output_dir or datetime.now().strftime("franka_cube_dp_eval_%Y%m%d_%H%M%S"))
+    output_dir = output_dir.expanduser().resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    metrics_path = Path(args_cli.metrics_path).expanduser().resolve() if args_cli.metrics_path else output_dir / "metrics.json"
+    metrics_path.parent.mkdir(parents=True, exist_ok=True)
+    video_folder = Path(args_cli.video_folder).expanduser().resolve() if args_cli.video_folder else output_dir / "videos"
+
+    checkpoint = Path(args_cli.checkpoint).expanduser().resolve()
+    if not checkpoint.is_file():
+        raise FileNotFoundError(checkpoint)
+
+    env_cfg = parse_env_cfg(
+        args_cli.task,
+        device=args_cli.device,
+        num_envs=args_cli.num_envs,
+        use_fabric=not args_cli.disable_fabric,
+    )
+    env_cfg.seed = int(args_cli.seed)
+    _configure_eval_camera(env_cfg)
+
+    workspace, policy = _load_policy(
+        checkpoint,
+        str(args_cli.device),
+        int(args_cli.num_inference_steps),
+        args_cli.diffusion_policy_root,
+    )
+    n_obs_steps = int(policy.n_obs_steps)
+
+    gym_env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)
+    task_env = gym_env.unwrapped
+    _configure_eval_camera(env_cfg, task_env)
+
+    if args_cli.video:
+        gym_env = gym.wrappers.RecordVideo(
+            gym_env,
+            video_folder=str(video_folder),
+            step_trigger=lambda step: step == 0,
+            video_length=min(args_cli.video_length, args_cli.num_steps),
+            name_prefix=args_cli.video_name_prefix,
+            disable_logger=True,
+        )
+
+    history = LowdimObsHistory(num_envs=task_env.num_envs, n_obs_steps=n_obs_steps)
+    step_metrics: list[dict[str, float | int | None]] = []
+    action_min = np.full(FRANKA_CUBE_ACTION_DIM, np.inf, dtype=np.float64)
+    action_max = np.full(FRANKA_CUBE_ACTION_DIM, -np.inf, dtype=np.float64)
+    done_count = 0
+    env_closed = False
+    try:
+        policy_obs = _policy_obs_from_reset(gym_env.reset())
+        if policy_obs.shape[-1] != FRANKA_CUBE_PPO_OBS_DIM:
+            raise RuntimeError(f"Expected PPO obs dim {FRANKA_CUBE_PPO_OBS_DIM}, got {tuple(policy_obs.shape)}")
+
+        for step in range(int(args_cli.num_steps)):
+            if not simulation_app.is_running():
+                break
+
+            with torch.inference_mode():
+                action_np = predict_action_from_ppo_obs(policy, policy_obs, history)
+                clip = float(args_cli.clip_actions)
+                if math.isfinite(clip) and clip > 0.0:
+                    action_np = np.clip(action_np, -clip, clip)
+                action_min = np.minimum(action_min, action_np.min(axis=0))
+                action_max = np.maximum(action_max, action_np.max(axis=0))
+                actions = torch.as_tensor(action_np, dtype=torch.float32, device=task_env.device)
+                policy_obs, rewards, terminated, truncated, _ = _policy_obs_from_step(gym_env.step(actions))
+                dones = torch.logical_or(terminated, truncated)
+                if dones.any():
+                    done_env_ids = torch.nonzero(dones, as_tuple=False).view(-1).detach().cpu().numpy()
+                    history.reset(done_env_ids)
+                    done_count += int(done_env_ids.shape[0])
+
+            reward_mean = _mean_float(rewards)
+            task_metrics = _collect_task_metrics(task_env)
+            step_record = {
+                "step": step + 1,
+                "reward_mean": reward_mean,
+                **task_metrics,
+            }
+            step_metrics.append(step_record)
+            if args_cli.print_interval > 0 and ((step + 1) % args_cli.print_interval == 0 or step == 0):
+                print(
+                    "[DP_EVAL] "
+                    f"step={step + 1} reward_mean={reward_mean} "
+                    f"success_rate={task_metrics.get('in_success_region')} "
+                    f"cube_lift_height={task_metrics.get('cube_lift_height')} "
+                    f"action_min={action_min.tolist()} action_max={action_max.tolist()}",
+                    flush=True,
+                )
+    finally:
+        gym_env.close()
+        env_closed = True
+
+    success_values = [item["in_success_region"] for item in step_metrics if item.get("in_success_region") is not None]
+    reward_values = [item["reward_mean"] for item in step_metrics if item.get("reward_mean") is not None]
+    window = max(1, min(int(args_cli.success_window), len(success_values)))
+    summary = {
+        "task": args_cli.task,
+        "checkpoint": str(checkpoint),
+        "official_workspace": workspace.__class__.__name__,
+        "policy_class": policy.__class__.__name__,
+        "ppo_bridge": "predict_action_from_ppo_obs",
+        "no_learning": True,
+        "num_envs": int(task_env.num_envs),
+        "num_steps_requested": int(args_cli.num_steps),
+        "steps_completed": len(step_metrics),
+        "done_count": done_count,
+        "reward_mean": sum(reward_values) / len(reward_values) if reward_values else None,
+        "reward_final": reward_values[-1] if reward_values else None,
+        "final_success_rate": success_values[-1] if success_values else None,
+        "window_success_rate": sum(success_values[-window:]) / window if success_values else None,
+        "action_min": action_min.astype(float).tolist(),
+        "action_max": action_max.astype(float).tolist(),
+        "step_metric_summary": _summarize_step_metrics(step_metrics),
+        "final_cube_pos_mean": _tensor_list(task_env.cube_pos.mean(dim=0)) if hasattr(task_env, "cube_pos") else None,
+        "final_gripper_width": _env_metric(task_env, "gripper_width"),
+        "output_dir": str(output_dir),
+        "metrics_path": str(metrics_path),
+        "video_enabled": bool(args_cli.video),
+        "video_files": _latest_video_files(video_folder if args_cli.video else None),
+        "env_closed": env_closed,
+    }
+    metrics_path.write_text(
+        json.dumps({"summary": summary, "steps": step_metrics}, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    print("FRANKA_CUBE_DP_POLICY_EVAL_DONE " + json.dumps(summary, sort_keys=True), flush=True)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    finally:
+        simulation_app.close()
