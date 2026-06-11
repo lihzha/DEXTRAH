@@ -3139,3 +3139,146 @@ Next:
   the EE as recorded by the demos, patch action scale/frame/controller bridge;
   if replay works, focus on official-DP sequence indexing and live-state
   observation support mismatch.
+
+## 2026-06-11T14:45:44-07:00 - action-semantics and train/eval config audit artifacts
+
+Goal:
+- Finish the bounded official-DP action-semantics diagnostic after the chunk
+  ablation and add a dedicated train/eval config audit artifact. No training or
+  rollout was launched for this entry.
+
+Hypothesis:
+- If the failure is a remaining train/eval mismatch rather than weak BC, exact
+  training windows should be close to labels but live trace windows should show
+  out-of-support state/action behavior. EMA-vs-raw-model comparison should
+  indicate whether the short overfit EMA policy source is itself the cause.
+
+Change:
+- Added `dextrah_lab/offline_dp_bc/diagnose_dp_action_semantics.py`.
+  - Loads the official `real-stanford/diffusion_policy` checkpoint through
+    `TrainDiffusionUnetLowdimWorkspace`.
+  - Compares `predict_action()` output against dataset labels at offsets
+    `[-2, -1, 0, 1, 2, 4, 7]`.
+  - Samples exact demo windows and live trace windows from chunk8/chunk1
+    history-fixed evals.
+  - Supports `--policy-source ema|model|auto`.
+- Added `dextrah_lab/offline_dp_bc/audit_train_eval_config.py`.
+  - Audits official DP config, checkpoint normalizer, dataset metadata, PPO
+    lowdim bridge slices, action frame/scale, gripper convention, history
+    gaps, chunking, reset distribution, live observation support, and controller
+    replay status.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `23ec84c`
+- implementation_commit: pending
+- changed_files:
+  - `dextrah_lab/offline_dp_bc/diagnose_dp_action_semantics.py`
+  - `dextrah_lab/offline_dp_bc/audit_train_eval_config.py`
+
+Commands:
+- syntax:
+  `python3 -m py_compile dextrah_lab/rl_games/replay_franka_cube_dataset_actions.py dextrah_lab/offline_dp_bc/audit_train_eval_config.py dextrah_lab/offline_dp_bc/diagnose_dp_action_semantics.py`
+- action semantics EMA:
+  `PYTHONPATH=$OFFICIAL_DP:$PWD $VENV/bin/python -m dextrah_lab.offline_dp_bc.diagnose_dp_action_semantics --checkpoint $CKPT --dataset $DATA --output-dir .../action_semantics_framefix_overfit2k_ep29_chunk8_chunk1_ema_20260611_145500 --diffusion-policy-root $OFFICIAL_DP --device cpu --num-inference-steps 100 --policy-source ema --seed 42 --episode-index 29 --row-index 20393 --row-index 20394 --trace $TRACE8 --trace $TRACE1`
+- action semantics raw model:
+  `PYTHONPATH=$OFFICIAL_DP:$PWD $VENV/bin/python -m dextrah_lab.offline_dp_bc.diagnose_dp_action_semantics --checkpoint $CKPT --dataset $DATA --output-dir .../action_semantics_framefix_overfit2k_ep29_chunk8_chunk1_model_20260611_145500 --diffusion-policy-root $OFFICIAL_DP --device cpu --num-inference-steps 100 --policy-source model --seed 42 --episode-index 29 --row-index 20393 --row-index 20394 --trace $TRACE8 --trace $TRACE1`
+- train/eval config audit:
+  `PYTHONPATH=$PWD $VENV/bin/python -m dextrah_lab.offline_dp_bc.audit_train_eval_config --dataset $DATA --metadata ${DATA}.metadata.json --checkpoint $CKPT --train-config $CONFIG --metrics $RUN/metrics.json --trace $RUN/policy_trace.json --output-dir .../train_eval_config_audit_1027744_historyfix_20260611_150100`
+
+Artifacts:
+- action semantics EMA:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/action_semantics_framefix_overfit2k_ep29_chunk8_chunk1_ema_20260611_145500`
+- action semantics raw model:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/action_semantics_framefix_overfit2k_ep29_chunk8_chunk1_model_20260611_145500`
+- train/eval config audit:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/train_eval_config_audit_1027744_historyfix_20260611_150100`
+- viz-open URLs:
+  - `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/action_semantics_framefix_overfit2k_ep29_chunk8_chunk1_ema_20260611_145500/action_semantics_offsets.png`
+  - `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/chunk_ablation_1027744_chunk8_vs_1027746_chunk1_20260611_143900/chunk_ablation_curves.png`
+
+Result:
+- Official DP train/eval sequence convention from config:
+  `horizon=16`, `n_obs_steps=2`, `n_action_steps=8`,
+  `pad_before=1`, `pad_after=7`, `oa_step_convention=True`, so first returned
+  eval action should target dataset `a[t]`.
+- EMA and raw model agree on the important failure; raw model does not fix it.
+- Exact demo rows:
+  - `demo_first_hard_close`: EMA returned MSE@0 `0.000261`, pred grip
+    `-0.970` vs label `-0.931`; raw model MSE@0 `0.000122`, pred grip
+    `-1.000`.
+  - `demo_first_negative_gripper`: best offset `4`, indicating the learned
+    close ramp is temporally smeared/future-biased around the transition.
+  - pregrasp rows `20393/20394`: best offset `7` but gripper remains open,
+    so this offset bias alone does not explain hard-close failure.
+- Live trace windows:
+  - chunk8 `live_first_hard_close` nearest row `20393` is still
+    `go_to_pre_grasp_pose`, nearest distance `0.819`, nearest dataset grip
+    `+1.0`, but EMA predicts grip `-0.987` and raw model predicts `-1.000`.
+  - chunk1 `live_first_hard_close` nearest row `20394` is still
+    `go_to_pre_grasp_pose`, nearest distance `0.901`, nearest dataset grip
+    `+1.0`, but EMA predicts grip `-0.884` and raw model predicts `-0.926`.
+- Config audit:
+  - normalizer matches dataset means: max obs mean diff `6.23e-05`, max action
+    mean diff `0`.
+  - PPO-to-lowdim bridge slices match the 72D env layout.
+  - action frame/scale matches the framefix dataset:
+    position `[0.06,0.06,0.045]`, rotation `[0.25,0.25,0.3]`,
+    `world_to_action_quat_wxyz=[0,0,0,1]`.
+  - gripper sign matches and physical gripper closes (`final_width=0.00116`).
+  - history cadence is fixed (`history_step_gap` unique `[0,1]`).
+  - live trace still leaves dataset support in:
+    `ee_pos_x`, `ee_pos_y`, `ee_pos_z`, `ee_quat_w`, `cube_pos_z`,
+    `cube_minus_ee_z`, and `cube_goal_delta_z`.
+
+Analysis:
+- Chunk size is not sufficient, and EMA lag is not the primary cause.
+- The remaining failure is still a train/eval mismatch or controller/action
+  execution issue: live rollout enters lowdim states that are outside demo
+  support, then the policy outputs close commands while nearest demo windows
+  are still pregrasp/open.
+- Before any new training or RL handoff, run a real-env one-step/short-horizon
+  teacher-forcing replay to verify dataset labels produce the expected EE
+  motion direction in DEXTRAH's controller.
+
+Next:
+- Commit and push the new diagnostics.
+- Deploy the commit to the agent-owned l401 worktree.
+- Stage the framefix dataset under the mounted `/results` namespace if it is
+  not already present on l401.
+- Launch a bounded no-video replay job with `STEPS=8`,
+  `MODES=dataset_t,dataset_t_plus_1,dataset_t_plus_7,dp_replan`,
+  `NUM_ENVS=1`, same checkpoint and seed.
+
+## 2026-06-11T14:45:44-07:00 - bounded replay implementation before launch
+
+Goal:
+- Add the real-env teacher-forcing replay path required before any scale-up or
+  RL warm-start claim.
+
+Change:
+- Added `dextrah_lab/rl_games/replay_franka_cube_dataset_actions.py`.
+  - Runs the DEXTRAH Franka cube env through Isaac Lab.
+  - Finds the nearest converted lowdim demo row to the live reset/current
+    observation.
+  - Compares official-DP first action against dataset labels at `t`, `t+1`,
+    and `t+7`.
+  - Executes short sequences for modes `dataset_t`, `dataset_t_plus_1`,
+    `dataset_t_plus_7`, and/or `dp_replan`.
+  - Records expected action-frame/world delta, actual EE delta, cosine,
+    EE-to-cube distance, gripper width, labels, predictions, and executed
+    actions to CSV/JSON/PNG/Markdown.
+- Added `cluster/sbatch_replay_franka_cube_dp_actions_1gpu.sh`.
+  - Reuses the DEXTRAH Isaac Lab container and official DP env mounts.
+  - Writes artifacts under `/lustre/.../results/dextrah/replays/$RUN_NAME`.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/replay_franka_cube_dataset_actions.py dextrah_lab/offline_dp_bc/audit_train_eval_config.py dextrah_lab/offline_dp_bc/diagnose_dp_action_semantics.py`
+- `bash -n cluster/sbatch_replay_franka_cube_dp_actions_1gpu.sh cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+
+Result:
+- Local syntax validation passed.
+- Replay cluster job not launched yet at this entry; commit/push/deploy first.
