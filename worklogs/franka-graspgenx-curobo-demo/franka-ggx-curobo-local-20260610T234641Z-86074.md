@@ -136,7 +136,7 @@ Version Control:
 - worktree: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-ggx-curobo-local-20260610T234641Z-86074
 - branch: codex/franka-graspgenx-curobo-demo/franka-ggx-curobo-local-20260610T234641Z-86074
 - base_commit: 1460efd71bb92ce05ec32705f6dd26a2a6cba16b
-- implementation_commit: pending
+- implementation_commit: f8e1bf6d6d7078785b2f1bc30a4edd39718b94ee
 - changed_files: dextrah_lab/scene_scripts/render_star_kitting_env.py, cluster/sbatch_render_star_kitting_env.sh, worklogs/franka-graspgenx-curobo-demo/franka-ggx-curobo-local-20260610T234641Z-86074.md
 
 Command / Job:
@@ -145,8 +145,18 @@ Command / Job:
 - validation: `git diff --check`
 
 Result:
-- status: implementation validated; corrected render relaunch pending.
-- key evidence: trajectory JSON keeps fingers open through approach and closes at the intended close segment, so the observed early close was playback lag.
+- status: passed
+- implementation_commit: f8e1bf6d6d7078785b2f1bc30a4edd39718b94ee
+- corrected render: /home/lzha/code/local_results/franka_ggx_curobo_demo/franka-ggx-curobo-local-20260610T234641Z-86074/render/render_state_playback_final_20260611T000518Z
+- final video: /home/lzha/code/local_results/franka_ggx_curobo_demo/franka-ggx-curobo-local-20260610T234641Z-86074/render/render_state_playback_final_20260611T000518Z/overview.mp4
+- zoomed video: /home/lzha/code/local_results/franka_ggx_curobo_demo/franka-ggx-curobo-local-20260610T234641Z-86074/render/render_state_playback_final_20260611T000518Z/overview_pickup_crop.mp4
+- viewer: http://localhost:8765/view?path=local_results/franka_ggx_curobo_demo/franka-ggx-curobo-local-20260610T234641Z-86074/render/render_state_playback_final_20260611T000518Z/overview.mp4
+- zoomed viewer: http://localhost:8765/view?path=local_results/franka_ggx_curobo_demo/franka-ggx-curobo-local-20260610T234641Z-86074/render/render_state_playback_final_20260611T000518Z/overview_pickup_crop.mp4
+- ffprobe: 640x360, 72 frames, 12 FPS, 6.0 s.
+- crop ffprobe: 960x720, 72 frames, 12 FPS, 6.0 s.
+- metadata: `robot_motion.trajectory_playback=state`, `checks.franka_trajectory_state_playback=true`, final manifest `franka_trajectory_playback=state`.
+- visual evidence: frame 20 shows open/approaching gripper at the star, frame 33 shows close at the star, and frame 71 shows the star lifted.
+- key evidence: trajectory JSON keeps fingers open through approach and closes at the intended close segment; the original early-close visual was playback lag.
 
 Next:
-- Commit the playback fix and rerender with `--franka_trajectory_playback state`; inspect frames around approach, close, and lift.
+- Hand off the isolated branch/worktree for integration review. Dynamic contact validation remains future work because this local demo intentionally uses kinematic state playback.
