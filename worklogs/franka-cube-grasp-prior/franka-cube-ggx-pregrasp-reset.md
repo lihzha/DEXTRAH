@@ -851,3 +851,35 @@ Analysis:
 
 Next:
 - Continue monitoring the active training job through wall-time/requeue and later checkpoints. Consider a later multi-seed eval video after success frequency improves, but do not change training config for this artifact.
+
+## 2026-06-11T20:59:02Z - final 8-GPU training monitor checkpoint
+
+Goal:
+- Record the post-artifact training health window while continuing to monitor active job `28987954`.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- running_job_commit: `99ea26d5b449581988594f40168806642c486326`
+- latest_branch_commit_before_entry: `7878b1b`
+- note: code changes after the running job commit are wrapper/worklog only and do not mutate the active training process
+
+Command / Job:
+- monitor command: eight-sample loop reading bounded `squeue`, rank-0 JSONL, checkpoint files, best checkpoint size, and targeted log error signatures
+- job_id: `28987954`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28987954.out`
+
+Result:
+- status: running_healthy
+- scheduler latest: `RUNNING`, elapsed `01:28:09`, remaining `2:21:51`, node `batch-block5-00308`
+- JSONL scalar health: records advanced through epoch `952`; `bad_scalar_count=0`; targeted error signatures `0`
+- checkpoints observed in this window: epoch 775 `rew_2167.0908`, epoch 800 `rew_2172.8542`, epoch 825 `rew_2178.2688`, epoch 850 `rew_2183.0295`, epoch 875 `rew_2194.6606`, epoch 900 `rew_2213.7234`, epoch 925 `rew_2196.059`, epoch 950 `rew_2206.857`
+- prior reset metrics at latest sample: success/farther rates `1.0`; pos error `0.001854 m`; rot error `0.018178 rad`; finger-table clearance `0.134985 m`
+- behavior metrics at latest sample: approach reward `1.11909`; enclosure reward `0.627716`; lift reward `0.002958`; lift height `0.0001858 m`; lifted rate `0.00048828125`; success rate `0.0`
+- active job remained healthy while the separate l401 eval job ran and completed
+
+Analysis:
+- The active final training is still numerically stable and checkpointing. Interval reward improved above `2200`, reset metrics remain ideal, and lift remains present but sparse. Success frequency remains the main watch item; no reset-prior or runtime defect is indicated.
+
+Next:
+- Continue monitoring toward wall-time/requeue. Verify resume behavior if Slurm requeues, and inspect metrics/checkpoints after resume before any final report.
