@@ -768,3 +768,31 @@ Analysis:
 
 Next:
 - Continue the active monitor loop on job `28987954`; do not treat this artifact bundle as completion. Update/refresh artifacts later if the orchestrator asks or if the run reaches a requeue/final boundary.
+
+## 2026-06-11T20:41:56Z - refreshed interim inspection artifact bundle
+
+Goal:
+- Refresh the inspectable artifact bundle after the next meaningful checkpoint window without interrupting active job `28987954`.
+
+Command / Job:
+- source artifacts: copied rank-0 JSONL, Slurm stdout, params, checkpoint filename listing, and scheduler snapshot from the active run
+- local bundle: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/a1001/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005/inspection_20260611_204031`
+- generated files: `summary.json`, `training_curves.png`, `REPORT.md`, plus `raw/` copied text inputs
+- viewer: `viz-open /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/a1001/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005/inspection_20260611_204031/training_curves.png`
+- viewer_url: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/a1001/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005/inspection_20260611_204031/training_curves.png`
+
+Result:
+- status: produced
+- scheduler snapshot: `RUNNING`, elapsed `01:11:56`, remaining `2:38:04`, node `batch-block5-00308`; `sacct` job and batch step are `RUNNING`, exit `0:0`
+- summary snapshot: rank-0 JSONL reached epoch `770`, frame `806354944`, with `770` records, `bad_scalar_count=0`, and `targeted_error_signature_count=0`
+- best reward: stdout best checkpoint reward `2186.5708` at epoch `748`
+- last interval checkpoint in the snapshot: `last_dextrah_franka_cube_grasp_ep_750_rew_2153.0076.pth`
+- prior reset metrics: success/farther rates stayed `1.0`; latest pos error `0.001906 m`, max pos error `0.002012 m`; latest rot error `0.017208 rad`, max rot error `0.020425 rad`; latest finger/table clearance `0.134984 m`
+- behavior metrics: latest success rate `0.0` with max `0.00048828125`; latest lifted rate `0.00146484375`, max `0.00244140625`; latest lift height `0.0003055 m`; latest lift reward `0.009072`; latest approach/enclosure rewards `1.13898` / `0.636892`
+- visual inspection: refreshed `training_curves.png` extends through epoch `770` and remains readable via the viewer URL above
+
+Analysis:
+- The refreshed bundle shows continued training progress after the previous artifact handoff. Reset-prior health remains stable, best reward improved from `2128.5742` to `2186.5708`, and lift frequency/height improved in the latest snapshot. Success is still sparse and remains the main behavior watch item, not an immediate reset-prior defect.
+
+Next:
+- Continue monitoring through wall-time/requeue. Refresh artifacts again after a requeue/resume event or another substantive checkpoint window if requested.
