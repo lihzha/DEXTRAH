@@ -3540,3 +3540,55 @@ Next:
 - Launch a bounded closed-loop video eval with support tracing:
   `NUM_STEPS=320`, `ACTION_CHUNK_STEPS=1`, `DEBUG_POLICY_TRACE_MAX_CALLS=320`,
   `CAPTURE_VIDEO=True`, same framefix overfit2k checkpoint, same dataset.
+
+## 2026-06-11T15:19:30-07:00 - closed-loop support-drift video eval launch
+
+Goal:
+- Run the bounded closed-loop diagnostic required after the bad C video:
+  verify whether live closed-loop rollout leaves demo support, when it closes,
+  and whether closing happens near valid cube-relative geometry.
+
+Hypothesis:
+- If nearest-demo phase/distance stays pregrasp or grows while the policy
+  closes, then the remaining issue is train/eval support drift or hidden eval
+  mismatch, not BC readiness.
+- If nearest-demo support progresses into grasp/close phases before hard close
+  and the video shows coherent object-relative motion, then the previous
+  failure was tied to missing trace/video instrumentation or an older bug.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- local_commit: `065e81e54665eb88bb2eb75bf6750dcef51f9be9`
+- remote worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- remote_commit/status:
+  `065e81e54665eb88bb2eb75bf6750dcef51f9be9`, detached clean.
+- official Diffusion Policy commit:
+  `5ba07ac6661db573af695b419a7947ecb704690f`
+
+Command / Job:
+- job_id: `1027767`
+- run_name:
+  `franka_cube_dp_eval_framefix_overfit2k_supporttrace_video320_20260611_151930`
+- command:
+  `RUN_NAME=franka_cube_dp_eval_framefix_overfit2k_supporttrace_video320_20260611_151930 CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart CHECKPOINT=/results/dp_bc/checkpoints/franka_cube_curobo32_full_pick_lift_framefix_overfit2k/latest.ckpt SUPPORT_DATASET=/results/dp_bc/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz NUM_ENVS=1 NUM_STEPS=320 VIDEO_LENGTH=320 NUM_INFERENCE_STEPS=100 ACTION_CHUNK_STEPS=1 DEBUG_POLICY_TRACE_MAX_CALLS=320 DEBUG_POLICY_TRACE_ENV_INDEX=0 PRINT_INTERVAL=32 CAPTURE_VIDEO=True SEED=42 sbatch cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- remote run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_framefix_overfit2k_supporttrace_video320_20260611_151930`
+- remote log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_dp_policy_1027767.out`
+- expected artifacts:
+  - `metrics.json`
+  - `policy_trace.json`
+  - `support_trace.json`
+  - `support_trace.csv`
+  - `videos/*.mp4`
+
+Acceptance:
+- Fetch logs/results locally.
+- Generate a viewer-ready bundle with support plots, trace/config audit,
+  video contact sheet, and `viz-open` URLs.
+- No BC/RL scale-up unless the closed-loop video and support trace are
+  coherent; expected outcome is still diagnostic, not final BC readiness.
