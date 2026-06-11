@@ -517,3 +517,211 @@ Next:
   real GraspGenX/cuRobo traces, run a tiny official DP train with a validation
   split, then choose between DP eval-wrapper rollouts in Isaac Lab or
   distillation into the rl_games PPO actor.
+
+## 2026-06-11T12:22:40-07:00 - grasp-library geometric BC smoke plan
+
+Goal:
+- Continue the BC warm-start loop after official-DP validation by creating a
+  multi-episode dataset that exercises validation splits and varied cube poses.
+
+Hypothesis:
+- No real Franka cube cuRobo trajectory artifacts are currently present in the
+  local Worker C workspace, Worker B trajectory-tracking worktree, or shared
+  local results. Worker A's cube GraspGenX artifact is a grasp library, not a
+  time-indexed trajectory. A clearly labeled geometric approach generator from
+  that grasp library can still test official DP mechanics on varied
+  multi-episode data while preserving the cuRobo-data blocker.
+
+Change:
+- Planned new script:
+  `dextrah_lab/offline_dp_bc/generate_grasp_library_demos.py`.
+- The script will read a GraspGenX cube grasp-library NPZ with object-local
+  grasps, sample cube poses from the current Franka cube reset range, transform
+  grasp/tool poses into the DEXTRAH EE frame using the `panda_hand` plus
+  `0.1034 m` EE offset convention, interpolate approach-to-pregrasp waypoints,
+  and write the same lowdim dataset schema used by official DP.
+- This is intentionally marked `curobo_validated=false`; it is a bridge smoke,
+  not final offline BC data.
+
+Version Control:
+- agent_id: franka-cube-dp-bc-warmstart
+- worktree: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart
+- worklog: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart/worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md
+- branch: codex/franka-cube-diffusion-policy-bc
+- base_commit: 1fad16fa6b4b9eacbe1edf67ca8153ff399694ad
+- implementation_commit: pending
+- push/pull: pending after validation
+- changed_files: owned worklog plan only so far
+- remote_commit/status: origin/codex/franka-cube-diffusion-policy-bc currently at
+  `1fad16fa6b4b9eacbe1edf67ca8153ff399694ad`
+
+Command / Job:
+- command: locate artifacts under `/home/lzha/code/local_results`,
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking`, and
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- job_id: n/a
+- run_dir: local filesystems
+- logs: terminal
+- artifacts: discovered Worker A grasp library
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/local_results/franka_cube_grasp_prior/franka_cube_ggx_grasps_smoke.npz`
+
+Result:
+- status: in_progress
+- metrics/artifacts: grasp library has `32` object-frame grasps,
+  `gripper_name=franka_panda`, `tool_frame=panda_hand`, `cube_size_m=0.06`,
+  and `grasp_to_tool_transform`; no cube cuRobo trajectory JSON/NPZ found.
+
+Analysis:
+- This generator should not be used to claim cuRobo trajectory BC success.
+  It is useful for testing official-DP training and PPO bridge mechanics with
+  multiple episodes before real cube planner traces are available.
+
+Next:
+- Implement the generator, run DEXTRAH dataset smoke and a bounded official DP
+  debug train with a validation split, inspect logs/metadata/checkpoint, then
+  commit and push if coherent.
+
+## 2026-06-11T12:30:21-07:00 - grasp-library geometric BC smoke validation
+
+Goal:
+- Exercise official Diffusion Policy on a multi-episode Franka cube dataset
+  with validation samples while keeping the data provenance honest.
+
+Hypothesis:
+- A geometric GraspGenX grasp-library approach dataset should validate the
+  official DP training/validation path and PPO bridge under varied cube poses,
+  but it should still be treated as `curobo_validated=false` until real cube
+  planner traces are generated or located.
+
+Change:
+- Added `dextrah_lab/offline_dp_bc/generate_grasp_library_demos.py`.
+- The generator:
+  - reads GraspGenX cube grasp-library fields `grasps_object`, `confidence`,
+    `grasp_to_tool_transform`, `tool_frame`, and `gripper_name`;
+  - samples cube positions from the current Franka cube reset center and
+    `0.08 m` XY randomization range;
+  - computes `T_world_ee` as
+    `T_world_object @ T_object_grasp @ T_grasp_tool @ T_panda_hand_ee_offset`;
+  - interpolates open-gripper approach-to-pregrasp waypoints;
+  - verifies pregrasp EE distance is farther from the cube than exact grasp EE
+    distance for every episode;
+  - writes the same lowdim NPZ/metadata schema as the cuRobo converter.
+- No Worker A/B task files were edited.
+
+Version Control:
+- agent_id: franka-cube-dp-bc-warmstart
+- worktree: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart
+- worklog: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart/worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md
+- branch: codex/franka-cube-diffusion-policy-bc
+- base_commit: 1fad16fa6b4b9eacbe1edf67ca8153ff399694ad
+- implementation_commit: pending
+- push/pull: pending
+- changed_files:
+  - `dextrah_lab/offline_dp_bc/generate_grasp_library_demos.py`
+  - `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+- remote_commit/status: origin branch currently at
+  `1fad16fa6b4b9eacbe1edf67ca8153ff399694ad`
+
+Command / Job:
+- command: `PYTHONPATH="$dp:$dex" "$venv/bin/python" -m py_compile dextrah_lab/offline_dp_bc/*.py`
+- job_id: n/a
+- run_dir: local worktree
+- logs: terminal
+- artifacts: none
+
+Result:
+- status: passed
+- metrics/artifacts: offline BC modules compile with the new generator.
+
+Command / Job:
+- command: `PYTHONPATH="$dp:$dex" "$venv/bin/python" -m dextrah_lab.offline_dp_bc.generate_grasp_library_demos --grasp-library "$library" --output "$art/datasets/franka_cube_grasp_library_geometric_debug.npz" --num-episodes 16 --steps 24 --hold-steps 4 --top-k 16 --seed 123`
+- job_id: n/a
+- run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/datasets`
+- logs:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/grasp_library_geometric_generate.log`
+- artifacts:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/datasets/franka_cube_grasp_library_geometric_debug.npz`
+  and `.metadata.json`
+
+Result:
+- status: passed
+- metrics/artifacts: `16` episodes, `448` steps, `obs_dim=21`,
+  `action_dim=7`, `curobo_validated=false`, all generated pregrasps farther
+  from the cube than their exact grasp poses.
+- key evidence: printed `FRANKA_CUBE_DP_BC_GRASP_LIBRARY_DEMOS`.
+
+Command / Job:
+- command: `PYTHONPATH="$dp:$dex" "$venv/bin/python" -m dextrah_lab.offline_dp_bc.validate_dataset_smoke --dataset "$art/datasets/franka_cube_grasp_library_geometric_debug.npz"`
+- job_id: n/a
+- run_dir: external artifact directory
+- logs:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/grasp_library_geometric_dataset_smoke.log`
+- artifacts: generated dataset and metadata
+
+Result:
+- status: passed
+- metrics/artifacts: sample obs `[8, 21]`, action `[8, 7]`,
+  `num_train_samples=252`, first-step position replay error `0.0`, official
+  DP import visible.
+- key evidence: printed `FRANKA_CUBE_DP_BC_SMOKE_PASSED`.
+
+Command / Job:
+- command: official tiny train with validation split:
+  `"$venv/bin/python" train.py --config-dir "$dex/dextrah_lab/offline_dp_bc/config" --config-name franka_cube_lowdim_dp task.dataset_path="$art/datasets/franka_cube_grasp_library_geometric_debug.npz" task.dataset.val_ratio=0.25 training.device=cpu training.max_train_steps=2 training.max_val_steps=1 training.num_epochs=1 policy.num_inference_steps=2 dataloader.batch_size=8 val_dataloader.batch_size=8 hydra.run.dir="$out"`
+- job_id: n/a
+- run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_debug/run_20260611_121600_grasp_library`
+- logs:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/official_dp_grasp_library_debug_train.log`
+  and run `logs.json.txt`
+- artifacts:
+  `.hydra/config.yaml`, `.hydra/overrides.yaml`, `train.log`,
+  `checkpoints/latest.ckpt`,
+  `checkpoints/epoch=0000-test_mean_score=0.000.ckpt`, W&B offline run.
+
+Result:
+- status: passed
+- metrics/artifacts: official UNet parameters `1.662478e+07`; logged two
+  train steps and one validation batch. Final record:
+  `train_loss=1.143653690814972`, `val_loss=1.0723308324813843`,
+  `train_action_mse_error=0.6667237877845764`, `test/mean_score=0.0`,
+  `lr=2e-6`. Two checkpoints were produced, each about `254M`.
+- key evidence: `logs.json.txt` contains train step records for global steps
+  `0` and `1`, plus the validation/sample metrics record.
+
+Command / Job:
+- command: checkpoint bridge smoke on the grasp-library debug checkpoint:
+  `PYTHONPATH="$dp:$dex" "$venv/bin/python" -m dextrah_lab.offline_dp_bc.validate_official_checkpoint_smoke --checkpoint "$run_dir/checkpoints/latest.ckpt" --dataset "$art/datasets/franka_cube_grasp_library_geometric_debug.npz" --device cpu --batch-size 2 --num-inference-steps 2`
+- job_id: n/a
+- run_dir: external official-DP debug run
+- logs:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/official_dp_grasp_library_checkpoint_smoke.log`
+- artifacts: uses generated official DP checkpoint
+
+Result:
+- status: passed
+- metrics/artifacts: loaded official workspace/policy, dataset episodes `16`,
+  dataset steps `448`, lowdim sequence `[2, 2, 21]`, PPO obs `[2, 72]`,
+  direct action `[2, 8, 7]`, bridge first-action `[2, 7]`, finite outputs.
+- key evidence: printed `FRANKA_CUBE_DP_BC_CHECKPOINT_SMOKE_PASSED`.
+
+Analysis:
+- The official DP path is now validated on both one-episode synthetic data and
+  a multi-episode GraspGenX grasp-library geometric dataset with a validation
+  split.
+- This still does not close the real-data requirement: no local Franka cube
+  cuRobo trajectory JSON/NPZ was found. The geometric dataset should be used
+  only for mechanics/debugging and not for claims about cuRobo-planned BC.
+- The action ranges are bounded and mostly approach/open-gripper:
+  min approximately `[-0.066, -0.00008, -0.126, 0, 0, 0, 1]`,
+  max approximately `[0.00036, 0, 0, 0, 0, 0, 1]`.
+- Because the generated trajectories keep orientation and gripper state mostly
+  fixed, they are not sufficient for final BC quality. The next real dataset
+  must include true planner approach diversity and later close/lift ablations.
+
+Next:
+- Commit and push this generator/validation checkpoint.
+- Next Worker C loop should either generate true Franka cube cuRobo trajectories
+  from the grasp library or build the Isaac eval wrapper around
+  `predict_action_from_ppo_obs()` for no-learning policy rollout inspection.
