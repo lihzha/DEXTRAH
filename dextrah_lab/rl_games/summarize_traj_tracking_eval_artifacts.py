@@ -182,7 +182,11 @@ def _draw_plot(steps: list[dict[str, object]], output_path: Path) -> None:
     image.save(output_path)
 
 
-def _consistency(train_env: dict[str, object], eval_env: dict[str, object]) -> dict[str, object]:
+def _consistency(
+    train_env: dict[str, object],
+    eval_env: dict[str, object],
+    summary: dict[str, object],
+) -> dict[str, object]:
     keys = [
         "observation_space",
         "state_space",
@@ -205,14 +209,74 @@ def _consistency(train_env: dict[str, object], eval_env: dict[str, object]) -> d
     ]
     rows = {}
     mismatches = []
+    missing_train_keys = []
+    missing_eval_keys = []
+    if not train_env:
+        for key in keys:
+            eval_value = eval_env.get(key)
+            rows[key] = {
+                "train": None,
+                "eval": eval_value,
+                "match": None,
+                "status": "train_config_unavailable",
+            }
+            if eval_value is not None:
+                missing_train_keys.append(key)
+        return {
+            "checks": rows,
+            "mismatches": [],
+            "missing_train_keys": missing_train_keys,
+            "missing_eval_keys": missing_eval_keys,
+            "expected_eval_overrides": _expected_eval_overrides(summary),
+            "passed": None,
+            "status": "train_config_unavailable",
+        }
     for key in keys:
         train_value = train_env.get(key)
         eval_value = eval_env.get(key)
-        match = train_value == eval_value
-        rows[key] = {"train": train_value, "eval": eval_value, "match": match}
+        if train_value is None and eval_value is not None:
+            status = "missing_train_key"
+            match = None
+            missing_train_keys.append(key)
+        elif eval_value is None and train_value is not None:
+            status = "missing_eval_key"
+            match = None
+            missing_eval_keys.append(key)
+        else:
+            match = train_value == eval_value
+            status = "match" if match else "mismatch"
         if not match:
-            mismatches.append(key)
-    return {"checks": rows, "mismatches": mismatches, "passed": len(mismatches) == 0}
+            if status == "mismatch":
+                mismatches.append(key)
+        rows[key] = {"train": train_value, "eval": eval_value, "match": match, "status": status}
+    passed = len(mismatches) == 0 and len(missing_train_keys) == 0 and len(missing_eval_keys) == 0
+    return {
+        "checks": rows,
+        "mismatches": mismatches,
+        "missing_train_keys": missing_train_keys,
+        "missing_eval_keys": missing_eval_keys,
+        "expected_eval_overrides": _expected_eval_overrides(summary),
+        "passed": passed,
+        "status": "passed" if passed else "failed",
+    }
+
+
+def _expected_eval_overrides(summary: dict[str, object]) -> dict[str, object]:
+    """Fields intentionally controlled by an eval diagnostic, not train/eval env parity."""
+
+    keys = [
+        "action_source",
+        "action_source_notes",
+        "reference_mix_alpha",
+        "hold_config",
+        "checkpoint",
+        "num_envs",
+        "num_steps_requested",
+        "deterministic",
+        "video_enabled",
+        "video_folder",
+    ]
+    return {key: summary.get(key) for key in keys if summary.get(key) is not None}
 
 
 def main() -> None:
@@ -233,7 +297,7 @@ def main() -> None:
 
     train_env = _load_train_env(args.train_env_yaml)
     eval_env = summary.get("env_config", {}) if isinstance(summary.get("env_config"), dict) else {}
-    consistency = _consistency(train_env, eval_env)
+    consistency = _consistency(train_env, eval_env, summary)
     (output_dir / "train_eval_consistency.json").write_text(json.dumps(consistency, indent=2, sort_keys=True) + "\n")
 
     compact = {
@@ -441,7 +505,8 @@ def main() -> None:
 - done count: {summary.get('done_count')}
 - target unsafe max: {_fmt(compact['target_unsafe_rate_max'])}
 - target clearance min: {_fmt(compact['target_clearance_min'])} m
-- train/eval consistency passed: {consistency['passed']} mismatches={consistency['mismatches']}
+- train/eval consistency status: {consistency['status']} real_mismatches={consistency['mismatches']} missing_train_keys={consistency['missing_train_keys']} missing_eval_keys={consistency['missing_eval_keys']}
+- expected eval-only overrides: `{consistency['expected_eval_overrides']}`
 - reference caveat: curobo_validated={compact['reference_curobo_validated']}, source_tag={compact['reference_source_tag']}
 
 ## Behavior
