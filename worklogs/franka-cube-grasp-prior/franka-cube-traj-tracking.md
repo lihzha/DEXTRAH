@@ -3168,5 +3168,24 @@ Acceptance:
 
 Version Control:
 - agent_id: franka-cube-traj-tracking
-- local_commit: pending after this worklog update
+- local_commit: `5d7bd12b4e363bcde0b67d910f5770e9a407f058`
+- push: pushed to `origin/codex/franka-cube-trajectory-tracking`
+- remote_commit/status: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking` detached clean at `5d7bd12b4e363bcde0b67d910f5770e9a407f058`.
 - changed_files: worklog only
+
+Command / Jobs:
+- alpha `0.25`: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:30:00 --job-name=hold_nr_a025 --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_refmix_hold_noreset_a025_520_20260611_164421,NUM_ENVS=4,NUM_STEPS=520,VIDEO_LENGTH=520,VIDEO_NAME_PREFIX=refmix-hold-noreset-a025-520,CAPTURE_VIDEO=True,DETERMINISTIC=True,ACTION_SOURCE=policy_reference_mix_hold,REFERENCE_MIX_ALPHA=0.25,HOLD_TARGET_POLICY=cube_current_plus_trigger_ee_offset,HOLD_PHASE_START=0.67,HOLD_TRIGGER_LIFT_HEIGHT=0.02,HOLD_CONTACT_MAX_FINGER_DIST=0.0,HOLD_LIFT_HEIGHT=0.03,HOLD_GRIPPER_ACTION=-0.4,SUPPRESS_SUCCESS_TERMINATION=True,USE_CUDA_GRAPH=False,SEED=64,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_WEIGHT=1.5,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_PHASE_START=0.0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_SHARPNESS=1.0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_USE_CONTACT_GATE=False,CHECKPOINT=/results/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_actionalign_rl_smoke_20260611_151520/nn/last_dextrah_franka_cube_traj_tracking_ep_5_rew_-inf.pth cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- alpha `0.50`: same command with `RUN_NAME=franka_cube_traj_tracking_refmix_hold_noreset_a050_520_20260611_164421`, `VIDEO_NAME_PREFIX=refmix-hold-noreset-a050-520`, `REFERENCE_MIX_ALPHA=0.50`, `--job-name=hold_nr_a050`.
+- alpha `0.75`: same command with `RUN_NAME=franka_cube_traj_tracking_refmix_hold_noreset_a075_520_20260611_164421`, `VIDEO_NAME_PREFIX=refmix-hold-noreset-a075-520`, `REFERENCE_MIX_ALPHA=0.75`, `--job-name=hold_nr_a075`.
+- job_ids: alpha `0.25` -> `1027886`, alpha `0.50` -> `1027887`, alpha `0.75` -> `1027888`
+- run_dirs:
+  - `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_traj_tracking_refmix_hold_noreset_a025_520_20260611_164421`
+  - `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_traj_tracking_refmix_hold_noreset_a050_520_20260611_164421`
+  - `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_traj_tracking_refmix_hold_noreset_a075_520_20260611_164421`
+- logs:
+  - `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1027886.out`
+  - `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1027887.out`
+  - `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1027888.out`
+
+Launch Status:
+- submitted to l401. Initial `squeue`: all three jobs pending behind other batch work. Awaiting completion and artifact inspection.
