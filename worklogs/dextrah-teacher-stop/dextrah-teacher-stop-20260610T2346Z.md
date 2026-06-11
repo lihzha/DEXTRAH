@@ -1451,3 +1451,48 @@ Analysis:
 Next:
 - Keep the shorter monitoring cadence and tighten again near the expected
   `2026-06-11 00:27 PDT` TERM/requeue signal.
+
+## 2026-06-10 23:43 PDT - Teacher Monitor Metric Pass
+
+Goal:
+- Verify continued training health on shorter cadence.
+
+Command / Job:
+- job_id: `28955904`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28955904.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+- local TensorBoard copy:
+  `/tmp/dextrah_teacher_events`
+
+Result:
+- status: running healthy.
+- scheduler: `RUNNING` on `batch-block5-03072`, elapsed `03:00:56`,
+  time left `49:04` at `23:43:29 PDT`.
+- stdout advanced to epoch `18144/20000`.
+- latest complete checkpoint:
+  `last_dextrah_lstm_ep_18140_rew_728.52997.pth` at `23:43:09`.
+- runtime sidecars rank `0-7` all refreshed at `23:43:07`.
+- narrow critical failure scan over recent stdout returned no matches.
+- TensorBoard summaries parsed through epoch `18143` for epoch-keyed scalars.
+- `in_success_region/iter`: latest `0.44873`, last-50 `0.461323`,
+  last-200 `0.462301`, post-resume mean `0.463055`.
+- `rewards/iter`: latest `609.916`, last-50 `651.516`,
+  last-200 `649.219`, post-resume mean `644.372`.
+- `num_adr_increases/iter`: latest `50`, last-50 `50`.
+- `info/kl`: latest `0.003654`, last-50 `0.00306509`,
+  last-200 `0.00341482`.
+- `losses/a_loss`: latest `-0.0033099`, last-50 `-0.00295416`.
+- `losses/c_loss`: latest `0.0234913`, last-50 `0.0213291`.
+- `performance/step_inference_rl_update_fps`: latest `112558`,
+  last-20 about `108695`, last-50 about `110028`, last-200 about `109974`.
+
+Analysis:
+- Training remains healthy. The short two-epoch FPS dip in stdout recovered,
+  rolling throughput is normal, and success, reward, KL, losses, checkpoints,
+  and runtime sidecars remain in the expected post-resume band.
+
+Next:
+- Continue shortened cadence and tighten further inside the final 15 minutes
+  before the expected TERM/requeue signal.
