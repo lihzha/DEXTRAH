@@ -4673,3 +4673,53 @@ Expected artifacts per job:
 - `replay_motion.png`
 - `action_realization_audit.png`
 - per-job mp4/contact sheet after local fetch.
+
+Launch:
+- implementation_commit:
+  `12c44c51fa49407ec3bec7c04c206f87ae1bb1d0`
+- remote worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- remote_commit/status:
+  `12c44c51fa49407ec3bec7c04c206f87ae1bb1d0`, detached clean.
+- shared settings:
+  - dataset:
+    `/results/dp_bc/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz`
+  - checkpoint:
+    `/results/dp_bc/checkpoints/franka_cube_curobo32_full_pick_lift_framefix_overfit2k/latest.ckpt`
+  - source trajectory:
+    `/results/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed24/trajectory.json`
+  - `DEMO_RESET_EPISODE=24`, `DEMO_RESET_STEP=0`
+  - `DATASET_START_EPISODE=24`, `DATASET_START_STEP=0`
+  - `MODES=dataset_t`, `STEPS=96`, `NUM_ENVS=1`
+  - `POSE_ACTION_MULTIPLIER=1`, `CLIP_ACTIONS=1.0`
+  - `CAPTURE_VIDEO=True`, `VIDEO_LENGTH=96`
+- `ACTION_REPEAT=2`:
+  - job_id: `1027871`
+  - run_name:
+    `franka_cube_dp_replay_sourcejoint_repeat2_dataset_t_96_20260611_163750`
+  - remote run_dir:
+    `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/replays/franka_cube_dp_replay_sourcejoint_repeat2_dataset_t_96_20260611_163750`
+  - log:
+    `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/replay_franka_cube_dp_actions_1027871.out`
+- `ACTION_REPEAT=4`:
+  - job_id: `1027872`
+  - run_name:
+    `franka_cube_dp_replay_sourcejoint_repeat4_dataset_t_96_20260611_163750`
+  - remote run_dir:
+    `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/replays/franka_cube_dp_replay_sourcejoint_repeat4_dataset_t_96_20260611_163750`
+  - log:
+    `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/replay_franka_cube_dp_actions_1027872.out`
+- `ACTION_REPEAT=8`:
+  - job_id: `1027873`
+  - run_name:
+    `franka_cube_dp_replay_sourcejoint_repeat8_dataset_t_96_20260611_163750`
+  - remote run_dir:
+    `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/replays/franka_cube_dp_replay_sourcejoint_repeat8_dataset_t_96_20260611_163750`
+  - log:
+    `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/replay_franka_cube_dp_actions_1027873.out`
+
+Next:
+- Monitor jobs `1027871`-`1027873`.
+- Fetch completed artifacts, generate contact sheets and a comparison report,
+  open viewer URLs, and decide whether repeat/hold is a viable bridge or still
+  leaves the policy/demo outside support.
