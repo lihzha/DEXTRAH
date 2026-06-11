@@ -1628,3 +1628,65 @@ Worker handoff state:
 - Current orchestrator decision remains: all three branches are in bounded
   diagnostic/debug mode. No A100 or long-scale RL/BC run is allowed from the
   current artifacts.
+
+## 2026-06-11 Monitor Check 23:00 UTC
+
+User artifact lineage question:
+
+- `actionscale-rewinf-diag-video480-step-0.mp4` is from Worker B's trajectory
+  tracking branch, but it is an older failed learned-policy diagnostic from the
+  action-scale experiment:
+  `franka_cube_traj_tracking_actionscale_rewinf_diag_video480_20260611_144318`.
+- Viewer URL:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_actionscale_rewinf_diag_video480_20260611_144318/videos/actionscale-rewinf-diag-video480-step-0.mp4`
+- It is not evidence that B is currently progressing. The artifact report had
+  zero success/lift, final EE-to-cube about `0.244 m`, final finger-center to
+  cube about `0.242 m`, and visual drift/hovering rather than grasp.
+- B's newer action-alignment PPO eval also failed behaviorally, so B has been
+  asked to continue with an eval-only `policy_reference_mix` diagnostic at
+  blend coefficients `0.25`, `0.50`, `0.75`, and `1.0`, with per-run videos,
+  traces, plots, contact sheets, consistency checks, and pass/fail reports.
+
+Worker A filtered exact-close gate:
+
+- Filtered exact-close diagnostic job `1027772`
+  (`franka_cube_ggx_pregrasp_exact_close_filtered_20260611_222557`) completed
+  `0:0` and was fetched locally.
+- Local artifacts:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_exact_close_filtered_20260611_222557`
+- Viewer URLs:
+  - reset JSON:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_exact_close_filtered_20260611_222557/reset_geometry.json`
+  - all-reset contact sheet:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_exact_close_filtered_20260611_222557/inspection_20260611_2228/all_reset_contact_sheet.png`
+  - all-reset exact-close video:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_exact_close_filtered_20260611_222557/inspection_20260611_2228/all_reset_exact_close_frames.mp4`
+- Metrics: pregrasp remains good (`reset_success_rate=1.0`,
+  `reset_quality_success_rate=1.0`, `pregrasp_reset_gate_pass=true`,
+  immediate done rate `0.0`), but exact-close still fails:
+  enclosure/contact-proxy success `0.2`, exact-close tip-center mean
+  `0.04447 m`, cube displacement mean `0.01971 m`, and
+  `rl_relaunch_gate_verdict=FAIL`.
+- Visual interpretation: the robot is not far away from the cube; this is a
+  robustness/contact geometry failure. Pass-index filtering from job `1027771`
+  is not stable under new reset/object randomization. A has been told not to
+  launch A100 RL and to move to grasp-pose convention/TCP/tool/finger-axis and
+  object-transform robustness diagnostics.
+
+Worker C active demo-conditioned reset eval:
+
+- C committed `7913a82` and launched l401 job `1027773`
+  (`franka_cube_dp_eval_framefix_overfit2k_demoreset_ep24s0_video320_20260611_160700`).
+- Remote run dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_framefix_overfit2k_demoreset_ep24s0_video320_20260611_160700`
+- Log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_dp_policy_1027773.out`
+- Early log confirms the selected demo row is loaded (`episode=24`, row
+  `16868`, phase `go_to_pre_grasp_pose`) and the reset matches cube position
+  exactly with lowdim infinity diff about `0.010 m`. Through step `64`, success
+  and lift remain zero.
+- Interpretation so far: if this persists through the final artifact bundle,
+  C's drift is not explained by object/cube reset mismatch alone; likely next
+  checks are robot/pregrasp alignment, history seeding, observation semantics,
+  or policy rollout/action interpretation. Job `1027773` is still active and
+  needs artifact inspection before any conclusion.
