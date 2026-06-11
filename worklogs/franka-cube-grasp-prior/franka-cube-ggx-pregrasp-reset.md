@@ -1962,3 +1962,39 @@ Result:
 
 Next:
 - Monitor eval jobs `1027857`-`1027861`, fetch `metrics.json`, `trace.csv/jsonl`, videos, and logs, then generate contact sheets, geometry/lift traces, reward/lift/success curves, and a paired comparison report with viewer URLs.
+
+## 2026-06-11T23:32:04Z - plan focused pregrasp usability diagnostics
+
+Goal:
+- Determine whether the validated 3 cm GraspGenX pregrasp reset is physically usable without learning, and whether the 200-epoch PPO miss is mainly an action/closure/reward-learning issue.
+
+Hypothesis:
+- The reset distribution is now geometrically coherent, but the policy is not learning a robust close/lift sequence from the open pregrasp. A debug-only scripted close/lift rollout using the same reset distribution should separate reset usability from PPO exploration/reward shaping.
+
+Change:
+- Add eval-only oracle diagnostics to `dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py`: after reset, drive the normal env action path through approach, close, lift, and hold phases; record action, gripper width, TCP/tip/cube geometry, rewards/dones, lift/success, contact proxies, and labeled frames/video.
+- Extend `cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh` with opt-in oracle env vars. Defaults remain disabled, so main training/eval configs are unchanged.
+- Generate a local artifact bundle from existing prior ep200 eval traces for PPO action/reward audit: gripper action/width, ee/finger distances, reward terms, lift/success, plus contact sheet/report.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `da5256466daa8e2ade0963fdb71e54efdff6750e`
+- implementation_commit: pending
+- changed_files: planned `dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py`, `cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`, this worklog
+
+Planned Jobs / Artifacts:
+- l401 bounded diagnostic job, 1 GPU, no PPO training, `NUM_ENVS=1`, `NUM_RESETS=5`, same `CUBE_SPAWN_XY_RANDOMIZATION=0.08`, same validated library `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_orig006_single.npz`.
+- Output under `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/<run_name>` and fetched to `cluster_results/l401/<run_name>`.
+- Required artifacts: `reset_geometry.json/csv`, `oracle_trace.csv/jsonl`, labeled pregrasp/oracle frames, oracle video/contact sheet, PPO action/reward audit plots, report opened with `viz-open`.
+
+Acceptance:
+- Do not launch A100 or longer final RL.
+- Treat scheduler success as insufficient; inspect metrics/video. If oracle cannot grasp/lift from reset, debug reset/control geometry. If oracle can but PPO does not, keep A100 blocked and diagnose action/reward learning.
+
+Result:
+- status: planned
+
+Next:
+- Implement debug-only oracle diagnostic, run local syntax checks, commit/push, deploy exact commit to the l401 agent worktree, launch the bounded diagnostic, fetch/open artifacts, and update this worklog with the job id and verdict.

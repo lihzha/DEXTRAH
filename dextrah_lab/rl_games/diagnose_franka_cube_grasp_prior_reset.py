@@ -36,6 +36,16 @@ parser.add_argument("--exact_close_steps", type=int, default=80)
 parser.add_argument("--exact_close_command_width", type=float, default=0.0)
 parser.add_argument("--exact_close_approach_offset", type=float, default=0.0)
 parser.add_argument("--exact_close_lateral_offset", type=float, default=0.0)
+parser.add_argument("--include_oracle_close_lift_check", action="store_true", default=False)
+parser.add_argument("--oracle_approach_steps", type=int, default=16)
+parser.add_argument("--oracle_close_steps", type=int, default=50)
+parser.add_argument("--oracle_lift_steps", type=int, default=80)
+parser.add_argument("--oracle_hold_steps", type=int, default=30)
+parser.add_argument("--oracle_approach_distance", type=float, default=0.030)
+parser.add_argument("--oracle_close_width", type=float, default=0.055)
+parser.add_argument("--oracle_lift_action_z", type=float, default=0.05)
+parser.add_argument("--oracle_lift_success_height", type=float, default=0.020)
+parser.add_argument("--oracle_render_interval", type=int, default=12)
 parser.add_argument("--render_all_resets", action="store_true", default=False)
 parser.add_argument("--render_failed_exact_close", action="store_true", default=False)
 parser.add_argument("--disable_fabric", action="store_true", default=False)
@@ -693,7 +703,391 @@ def _run_exact_close_check(
     return result
 
 
+def _gripper_action_for_width(width: float, max_width: float) -> float:
+    if max_width <= 1.0e-6:
+        return -1.0
+    return float(np.clip(2.0 * float(width) / float(max_width) - 1.0, -1.0, 1.0))
+
+
+def _mean_extra_value(value) -> float | None:
+    if isinstance(value, torch.Tensor):
+        return float(value.detach().float().mean().cpu())
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _reward_log_terms(task_env) -> dict[str, float]:
+    terms: dict[str, float] = {}
+    extras = getattr(task_env, "extras", {})
+    if not isinstance(extras, dict):
+        return terms
+    log_terms = extras.get("log", {})
+    if isinstance(log_terms, dict):
+        for key, value in log_terms.items():
+            scalar = _mean_extra_value(value)
+            if scalar is not None:
+                terms[f"reward_term_{key}"] = scalar
+    for key, value in extras.items():
+        if key == "log":
+            continue
+        scalar = _mean_extra_value(value)
+        if scalar is not None:
+            terms[f"extra_{key}"] = scalar
+    return terms
+
+
+def _oracle_trace_record(
+    task_env,
+    env_id: int,
+    *,
+    reset_index: int,
+    oracle_step: int,
+    phase: str,
+    phase_step: int,
+    action: torch.Tensor,
+    reward,
+    terminated,
+    truncated,
+) -> dict[str, object]:
+    task_env._compute_intermediate_values(torch.tensor([env_id], device=task_env.device), update_success_timer=False)
+    geometry = _actual_tip_geometry(task_env, env_id)
+    contact = _contact_metrics(task_env, env_id)
+    if isinstance(reward, torch.Tensor):
+        reward_value = float(reward.detach().float().mean().cpu())
+    else:
+        reward_value = float(reward)
+    if isinstance(terminated, torch.Tensor):
+        terminated_flag = bool(terminated[env_id].detach().cpu())
+    else:
+        terminated_flag = bool(terminated)
+    if isinstance(truncated, torch.Tensor):
+        truncated_flag = bool(truncated[env_id].detach().cpu())
+    else:
+        truncated_flag = bool(truncated)
+    action_env = action[env_id].detach().float().cpu()
+    record: dict[str, object] = {
+        "reset_index": int(reset_index),
+        "env_id": int(env_id),
+        "oracle_step": int(oracle_step),
+        "phase": str(phase),
+        "phase_step": int(phase_step),
+        "reward": reward_value,
+        "terminated": terminated_flag,
+        "truncated": truncated_flag,
+        "done": bool(terminated_flag or truncated_flag),
+        "success_rate": _as_float(task_env.in_success_region[env_id]),
+        "has_lifted_cube": _as_float(task_env.has_lifted_cube[env_id]),
+        "cube_lift_height_m": _as_float(task_env.cube_lift_height[env_id]),
+        "cube_xy_error_m": _as_float(task_env.cube_xy_error[env_id]),
+        "cube_goal_height_error_m": _as_float(task_env.cube_goal_height_error[env_id]),
+        "ee_to_cube_dist_m": _as_float(task_env.ee_to_cube_dist[env_id]),
+        "finger_center_to_cube_dist_m": _as_float(task_env.finger_center_to_cube_dist[env_id]),
+        "left_finger_to_cube_dist_m": _as_float(task_env.left_finger_to_cube_dist[env_id]),
+        "right_finger_to_cube_dist_m": _as_float(task_env.right_finger_to_cube_dist[env_id]),
+        "max_finger_to_cube_dist_m": _as_float(task_env.max_finger_to_cube_dist[env_id]),
+        "finger_distance_asymmetry_m": _as_float(task_env.finger_distance_asymmetry[env_id]),
+        "finger_table_clearance_m": _as_float(task_env.finger_table_clearance[env_id]),
+        "gripper_width_m": _as_float(task_env.gripper_width[env_id]),
+        "action_x": float(action_env[0]),
+        "action_y": float(action_env[1]),
+        "action_z": float(action_env[2]),
+        "action_roll": float(action_env[3]),
+        "action_pitch": float(action_env[4]),
+        "action_yaw": float(action_env[5]),
+        "action_gripper": float(action_env[6]),
+    }
+    for key in (
+        "actual_tip_center_to_cube_dist_m",
+        "actual_tip_max_to_cube_dist_m",
+        "actual_left_tip_proxy_to_cube_dist_m",
+        "actual_right_tip_proxy_to_cube_dist_m",
+        "actual_tip_table_clearance_m",
+    ):
+        record[key] = geometry[key]
+    record["cube_pos_env"] = geometry["cube_pos_env"]
+    record["actual_tip_center_pos_env"] = geometry["actual_tip_center_pos_env"]
+    record["relative_to_cube_env"] = geometry["relative_to_cube_env"]
+    record.update(contact)
+    record.update(_reward_log_terms(task_env))
+    return record
+
+
+def _oracle_frame_lines(sample: dict[str, object], record: dict[str, object], summary: dict[str, object]) -> list[str]:
+    rel = record.get("relative_to_cube_env", {})
+    tip_rel = rel.get("actual_tip_center", [0.0, 0.0, 0.0]) if isinstance(rel, dict) else [0.0, 0.0, 0.0]
+    return [
+        "PHASE 3: ORACLE_CLOSE_LIFT_FROM_RESET - debug-only scripted env.step rollout",
+        "sequence: approach along reset offset -> light close -> small upward lift -> hold",
+        f"reset={record['reset_index']} sample={sample['sample_index']} step={record['oracle_step']} phase={record['phase']} phase_step={record['phase_step']}",
+        f"action xyz=({record['action_x']:+.3f},{record['action_y']:+.3f},{record['action_z']:+.3f}) gripper={record['action_gripper']:+.3f}",
+        f"close_width_cmd={summary['close_width_command_m']:.4f} lift_gate={summary['lift_success_height_m']:.4f}",
+        f"cube_env={_fmt_vec(record['cube_pos_env'])} lift={record['cube_lift_height_m']:.4f} xy={record['cube_xy_error_m']:.4f}",
+        f"tip_center_rel={_fmt_vec(tip_rel)} tip_dist={record['actual_tip_center_to_cube_dist_m']:.4f} tip_max={record['actual_tip_max_to_cube_dist_m']:.4f}",
+        f"ee={record['ee_to_cube_dist_m']:.4f} finger_center={record['finger_center_to_cube_dist_m']:.4f} width={record['gripper_width_m']:.4f}",
+        f"table_clearance tip={record['actual_tip_table_clearance_m']:.4f} body={record['finger_table_clearance_m']:.4f}",
+        f"reward={record['reward']:.4f} success={record['success_rate']:.1f} lifted_flag={record['has_lifted_cube']:.1f} done={record['done']}",
+    ]
+
+
+def _render_oracle_frame(
+    gym_env,
+    task_env,
+    env_cfg,
+    markers: dict[str, VisualizationMarkers],
+    sample: dict[str, object],
+    record: dict[str, object],
+    oracle_summary: dict[str, object],
+    *,
+    frames_dir: Path,
+    rendered_frames: list[Path],
+    view_specs: list[dict[str, object]],
+    key_frame: bool,
+) -> None:
+    actual_geometry = _actual_tip_geometry(task_env, int(record["env_id"]))
+    actual_geometry["target_ee_pos_w"] = actual_geometry["actual_ee_pos_w"]
+    _visualize_markers(markers, task_env, int(record["env_id"]), actual_geometry=actual_geometry)
+    env_origin = task_env.scene.env_origins[int(record["env_id"])].detach().cpu().tolist()
+    views = view_specs if key_frame else [view_specs[0]]
+    for view in views:
+        eye = tuple(float(view["eye"][idx]) + float(env_origin[idx]) for idx in range(3))
+        target = tuple(float(view["target"][idx]) + float(env_origin[idx]) for idx in range(3))
+        _set_camera(task_env, env_cfg, eye, target)
+        frame = _render_rgb(gym_env, task_env)
+        title = (
+            f"Franka cube GGX oracle close/lift | reset {record['reset_index']} | "
+            f"step {record['oracle_step']} | view {view['name']} | seed {args_cli.seed}"
+        )
+        image = _overlay_frame(frame, title, _oracle_frame_lines(sample, record, oracle_summary))
+        frame_path = (
+            frames_dir
+            / f"reset_{int(record['reset_index']):03d}_phase3_oracle_step_{int(record['oracle_step']):04d}_{record['phase']}_{view['name']}.png"
+        )
+        image.save(frame_path)
+        rendered_frames.append(frame_path)
+
+
+def _run_oracle_close_lift_check(
+    gym_env,
+    task_env,
+    env_cfg,
+    markers: dict[str, VisualizationMarkers],
+    sample: dict[str, object],
+    env_id: int,
+    *,
+    frames_dir: Path,
+    rendered_frames: list[Path],
+    view_specs: list[dict[str, object]],
+    render_this_reset: bool,
+) -> dict[str, object]:
+    env_ids = torch.tensor([env_id], dtype=torch.long, device=task_env.device)
+    root_quat_w = task_env._robot.data.root_quat_w[env_ids]
+    away_dir_w = task_env.grasp_prior_reset_offset_dir_w[env_ids]
+    away_dir_w = away_dir_w / torch.clamp(torch.norm(away_dir_w, dim=-1, keepdim=True), min=1.0e-6)
+    approach_dir_w = -away_dir_w
+    approach_dir_b = math_utils.quat_apply_inverse(root_quat_w, approach_dir_w)
+    approach_dir_b = approach_dir_b / torch.clamp(torch.norm(approach_dir_b, dim=-1, keepdim=True), min=1.0e-6)
+    action_scale = task_env.action_scale.detach().clone()
+    approach_steps = max(int(args_cli.oracle_approach_steps), 0)
+    close_steps = max(int(args_cli.oracle_close_steps), 0)
+    lift_steps = max(int(args_cli.oracle_lift_steps), 0)
+    hold_steps = max(int(args_cli.oracle_hold_steps), 0)
+    per_step_distance = float(args_cli.oracle_approach_distance) / max(approach_steps, 1)
+    approach_xyz_action = torch.clamp((approach_dir_b[0] * per_step_distance) / action_scale[:3], -1.0, 1.0)
+    gripper_action = _gripper_action_for_width(float(args_cli.oracle_close_width), float(task_env.cfg.max_gripper_width))
+    open_action = _gripper_action_for_width(float(task_env.cfg.max_gripper_width), float(task_env.cfg.max_gripper_width))
+
+    phase_actions: list[tuple[str, int, torch.Tensor]] = []
+    base_action = torch.zeros(task_env.num_envs, int(task_env.cfg.action_space), device=task_env.device)
+    if approach_steps > 0:
+        action = base_action.clone()
+        action[:, 0:3] = approach_xyz_action
+        action[:, 6] = open_action
+        phase_actions.append(("approach_to_exact", approach_steps, action))
+    if close_steps > 0:
+        action = base_action.clone()
+        action[:, 6] = gripper_action
+        phase_actions.append(("light_close", close_steps, action))
+    if lift_steps > 0:
+        action = base_action.clone()
+        action[:, 2] = float(np.clip(args_cli.oracle_lift_action_z, -1.0, 1.0))
+        action[:, 6] = gripper_action
+        phase_actions.append(("lift", lift_steps, action))
+    if hold_steps > 0:
+        action = base_action.clone()
+        action[:, 6] = gripper_action
+        phase_actions.append(("hold", hold_steps, action))
+
+    trace: list[dict[str, object]] = []
+    done_seen = False
+    oracle_step = 0
+    total_planned = sum(steps for _, steps, _ in phase_actions)
+    key_steps = {1, max(1, approach_steps), max(1, approach_steps + close_steps), max(1, total_planned)}
+    render_interval = max(int(args_cli.oracle_render_interval), 1)
+    oracle_summary_seed = {
+        "close_width_command_m": float(args_cli.oracle_close_width),
+        "lift_success_height_m": float(args_cli.oracle_lift_success_height),
+    }
+    for phase, steps, action in phase_actions:
+        for phase_step in range(1, steps + 1):
+            oracle_step += 1
+            step_out = gym_env.step(action)
+            if len(step_out) == 5:
+                _, reward, terminated, truncated, _ = step_out
+            else:
+                _, reward, dones, _ = step_out
+                terminated = dones
+                truncated = torch.zeros_like(dones) if isinstance(dones, torch.Tensor) else False
+            record = _oracle_trace_record(
+                task_env,
+                env_id,
+                reset_index=int(sample["reset_index"]),
+                oracle_step=oracle_step,
+                phase=phase,
+                phase_step=phase_step,
+                action=action,
+                reward=reward,
+                terminated=terminated,
+                truncated=truncated,
+            )
+            trace.append(record)
+            done_seen = done_seen or bool(record["done"])
+            should_render = render_this_reset and (
+                oracle_step in key_steps or oracle_step % render_interval == 0 or bool(record["done"])
+            )
+            if should_render:
+                _render_oracle_frame(
+                    gym_env,
+                    task_env,
+                    env_cfg,
+                    markers,
+                    sample,
+                    record,
+                    oracle_summary_seed,
+                    frames_dir=frames_dir,
+                    rendered_frames=rendered_frames,
+                    view_specs=view_specs,
+                    key_frame=oracle_step in key_steps or bool(record["done"]),
+                )
+            if done_seen:
+                break
+        if done_seen:
+            break
+
+    lift_values = [float(item["cube_lift_height_m"]) for item in trace]
+    success_values = [float(item["success_rate"]) for item in trace]
+    tip_values = [float(item["actual_tip_center_to_cube_dist_m"]) for item in trace]
+    width_values = [float(item["gripper_width_m"]) for item in trace]
+    reward_values = [float(item["reward"]) for item in trace]
+    max_lift = max(lift_values) if lift_values else 0.0
+    final_record = trace[-1] if trace else None
+    lift_gate = max_lift >= float(args_cli.oracle_lift_success_height)
+    no_done = not any(bool(item["done"]) for item in trace)
+    final_tip_close = bool(final_record and float(final_record["actual_tip_center_to_cube_dist_m"]) <= 1.0 * float(task_env.cfg.cube_size))
+    oracle_success = bool(lift_gate and no_done and final_tip_close)
+    result = {
+        "enabled": True,
+        "approach_steps": approach_steps,
+        "close_steps": close_steps,
+        "lift_steps": lift_steps,
+        "hold_steps": hold_steps,
+        "steps_completed": len(trace),
+        "done_seen": bool(any(bool(item["done"]) for item in trace)),
+        "terminated_seen": bool(any(bool(item["terminated"]) for item in trace)),
+        "truncated_seen": bool(any(bool(item["truncated"]) for item in trace)),
+        "approach_distance_command_m": float(args_cli.oracle_approach_distance),
+        "approach_per_step_distance_m": per_step_distance,
+        "approach_dir_w": _tensor_list(approach_dir_w[0]),
+        "approach_dir_b": _tensor_list(approach_dir_b[0]),
+        "approach_action_xyz": _tensor_list(approach_xyz_action),
+        "close_width_command_m": float(args_cli.oracle_close_width),
+        "close_gripper_action": gripper_action,
+        "lift_action_z": float(args_cli.oracle_lift_action_z),
+        "lift_success_height_m": float(args_cli.oracle_lift_success_height),
+        "lift_gate_pass": bool(lift_gate),
+        "final_tip_close_gate_pass": final_tip_close,
+        "oracle_success": oracle_success,
+        "verdict": "PASS" if oracle_success else "FAIL",
+        "max_cube_lift_height_m": max_lift,
+        "final_cube_lift_height_m": lift_values[-1] if lift_values else None,
+        "max_success_rate": max(success_values) if success_values else 0.0,
+        "final_success_rate": success_values[-1] if success_values else None,
+        "min_tip_center_to_cube_dist_m": min(tip_values) if tip_values else None,
+        "final_tip_center_to_cube_dist_m": tip_values[-1] if tip_values else None,
+        "min_gripper_width_m": min(width_values) if width_values else None,
+        "final_gripper_width_m": width_values[-1] if width_values else None,
+        "reward_mean": _mean_values(reward_values),
+        "reward_final": reward_values[-1] if reward_values else None,
+        "trace": trace,
+    }
+    return result
+
+
+def _json_safe_csv_value(value) -> object:
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, sort_keys=True)
+    return value
+
+
+def _write_oracle_trace_files(
+    trace_records: list[dict[str, object]],
+    *,
+    trace_jsonl_path: Path,
+    trace_csv_path: Path,
+) -> None:
+    trace_jsonl_path.parent.mkdir(parents=True, exist_ok=True)
+    with trace_jsonl_path.open("w", encoding="utf-8") as f:
+        for record in trace_records:
+            f.write(json.dumps(record, sort_keys=True) + "\n")
+
+    trace_csv_path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = sorted({key for record in trace_records for key in record.keys()})
+    if "oracle_step" in fieldnames:
+        fieldnames.remove("oracle_step")
+        fieldnames.insert(0, "oracle_step")
+    if "reset_index" in fieldnames:
+        fieldnames.remove("reset_index")
+        fieldnames.insert(0, "reset_index")
+    with trace_csv_path.open("w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for record in trace_records:
+            writer.writerow({key: _json_safe_csv_value(record.get(key)) for key in fieldnames})
+
+
 def _write_csv(path: Path, samples: list[dict[str, object]]) -> None:
+    oracle_scalar_keys = [
+        "enabled",
+        "approach_steps",
+        "close_steps",
+        "lift_steps",
+        "hold_steps",
+        "steps_completed",
+        "done_seen",
+        "terminated_seen",
+        "truncated_seen",
+        "approach_distance_command_m",
+        "approach_per_step_distance_m",
+        "close_width_command_m",
+        "close_gripper_action",
+        "lift_action_z",
+        "lift_success_height_m",
+        "lift_gate_pass",
+        "final_tip_close_gate_pass",
+        "oracle_success",
+        "verdict",
+        "max_cube_lift_height_m",
+        "final_cube_lift_height_m",
+        "max_success_rate",
+        "final_success_rate",
+        "min_tip_center_to_cube_dist_m",
+        "final_tip_center_to_cube_dist_m",
+        "min_gripper_width_m",
+        "final_gripper_width_m",
+        "reward_mean",
+        "reward_final",
+    ]
     exact_close_scalar_keys = [
         "enabled",
         "exact_ik_success",
@@ -755,7 +1149,9 @@ def _write_csv(path: Path, samples: list[dict[str, object]]) -> None:
         "pregrasp_tip_table_clearance_m",
         "projected_exact_tip_table_clearance_m",
         "finger_table_clearance_m",
-    ] + [f"exact_close_{key}" for key in exact_close_scalar_keys]
+    ] + [f"exact_close_{key}" for key in exact_close_scalar_keys] + [
+        f"oracle_{key}" for key in oracle_scalar_keys
+    ]
     with path.open("w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=scalar_keys)
         writer.writeheader()
@@ -765,6 +1161,10 @@ def _write_csv(path: Path, samples: list[dict[str, object]]) -> None:
             if isinstance(exact_close, dict):
                 for key in exact_close_scalar_keys:
                     row[f"exact_close_{key}"] = exact_close.get(key)
+            oracle = sample.get("oracle_close_lift_check")
+            if isinstance(oracle, dict):
+                for key in oracle_scalar_keys:
+                    row[f"oracle_{key}"] = oracle.get(key)
             writer.writerow(row)
 
 
@@ -812,6 +1212,12 @@ def _write_video(frames: list[Path], video_path: Path, fps: int) -> bool:
 
 
 def main() -> None:
+    if args_cli.include_exact_close_check and args_cli.include_oracle_close_lift_check:
+        raise ValueError(
+            "--include_exact_close_check and --include_oracle_close_lift_check are mutually exclusive because both "
+            "checks intentionally mutate the same reset state."
+        )
+
     output_dir = Path(args_cli.output_dir or datetime.now().strftime("franka_cube_prior_diag_%Y%m%d_%H%M%S"))
     output_dir = output_dir.expanduser().resolve()
     frames_dir = output_dir / "frames"
@@ -819,6 +1225,8 @@ def main() -> None:
     metrics_path = Path(args_cli.metrics_path).expanduser().resolve() if args_cli.metrics_path else output_dir / "reset_geometry.json"
     metrics_path.parent.mkdir(parents=True, exist_ok=True)
     csv_path = output_dir / "reset_geometry.csv"
+    oracle_trace_jsonl_path = output_dir / "oracle_trace.jsonl"
+    oracle_trace_csv_path = output_dir / "oracle_trace.csv"
     video_path = output_dir / "reset_geometry.mp4"
 
     env_cfg = parse_env_cfg(
@@ -844,6 +1252,7 @@ def main() -> None:
     markers = _make_markers()
 
     samples: list[dict[str, object]] = []
+    oracle_trace_records: list[dict[str, object]] = []
     rendered_frames: list[Path] = []
     env_closed = False
     try:
@@ -882,6 +1291,33 @@ def main() -> None:
                     frame_path = frames_dir / f"reset_{reset_index:03d}_phase1_pregrasp_{view['name']}.png"
                     image.save(frame_path)
                     rendered_frames.append(frame_path)
+            if args_cli.include_oracle_close_lift_check:
+                oracle_check = _run_oracle_close_lift_check(
+                    gym_env,
+                    task_env,
+                    env_cfg,
+                    markers,
+                    sample,
+                    env_id,
+                    frames_dir=frames_dir,
+                    rendered_frames=rendered_frames,
+                    view_specs=view_specs,
+                    render_this_reset=(reset_index == 0 or bool(args_cli.render_all_resets)),
+                )
+                sample["oracle_close_lift_check"] = oracle_check
+                oracle_trace_records.extend(oracle_check["trace"])
+                print(
+                    "[ORACLE_CLOSE_LIFT_DIAG] "
+                    f"reset={reset_index} sample={sample['sample_index']} "
+                    f"verdict={oracle_check['verdict']} "
+                    f"steps={oracle_check['steps_completed']} "
+                    f"max_lift={oracle_check['max_cube_lift_height_m']:.5f} "
+                    f"final_lift={oracle_check['final_cube_lift_height_m']:.5f} "
+                    f"min_tip_center={oracle_check['min_tip_center_to_cube_dist_m']:.5f} "
+                    f"final_width={oracle_check['final_gripper_width_m']:.5f} "
+                    f"done={oracle_check['done_seen']}",
+                    flush=True,
+                )
             if args_cli.include_exact_close_check:
                 exact_close = _run_exact_close_check(
                     task_env,
@@ -940,7 +1376,13 @@ def main() -> None:
         for sample in samples
         if isinstance(sample.get("exact_close_check"), dict)
     ]
+    oracle_checks = [
+        sample["oracle_close_lift_check"]
+        for sample in samples
+        if isinstance(sample.get("oracle_close_lift_check"), dict)
+    ]
     exact_close_enabled = bool(args_cli.include_exact_close_check)
+    oracle_enabled = bool(args_cli.include_oracle_close_lift_check)
     reset_gate_pass = bool(
         samples
         and all(bool(sample["reset_grasp_quality_success"]) for sample in samples)
@@ -954,6 +1396,14 @@ def main() -> None:
             and all(bool(check["enclosure_success"]) for check in exact_checks)
         )
     )
+    oracle_gate_pass = bool(
+        (not oracle_enabled)
+        or (
+            oracle_checks
+            and len(oracle_checks) == len(samples)
+            and all(bool(check["oracle_success"]) for check in oracle_checks)
+        )
+    )
     summary = {
         "task": args_cli.task,
         "code_commit_env": os.environ.get("CODE_COMMIT", ""),
@@ -965,15 +1415,26 @@ def main() -> None:
         "cube_spawn_xy_randomization": float(args_cli.cube_spawn_xy_randomization),
         "prior_enabled": True,
         "exact_close_check_enabled": exact_close_enabled,
+        "oracle_close_lift_check_enabled": oracle_enabled,
         "exact_close_steps": int(args_cli.exact_close_steps),
         "exact_close_command_width_m": float(args_cli.exact_close_command_width),
         "exact_close_approach_offset_m": float(args_cli.exact_close_approach_offset),
         "exact_close_lateral_offset_m": float(args_cli.exact_close_lateral_offset),
+        "oracle_approach_steps": int(args_cli.oracle_approach_steps),
+        "oracle_close_steps": int(args_cli.oracle_close_steps),
+        "oracle_lift_steps": int(args_cli.oracle_lift_steps),
+        "oracle_hold_steps": int(args_cli.oracle_hold_steps),
+        "oracle_approach_distance_m": float(args_cli.oracle_approach_distance),
+        "oracle_close_width_m": float(args_cli.oracle_close_width),
+        "oracle_lift_action_z": float(args_cli.oracle_lift_action_z),
+        "oracle_lift_success_height_m": float(args_cli.oracle_lift_success_height),
+        "oracle_render_interval": int(args_cli.oracle_render_interval),
         "render_all_resets": bool(args_cli.render_all_resets),
         "render_failed_exact_close": bool(args_cli.render_failed_exact_close),
         "pregrasp_reset_gate_pass": reset_gate_pass,
         "exact_close_gate_pass": exact_close_gate_pass,
-        "rl_relaunch_gate_verdict": "PASS" if reset_gate_pass and exact_close_gate_pass else "FAIL",
+        "oracle_close_lift_gate_pass": oracle_gate_pass,
+        "rl_relaunch_gate_verdict": "PASS" if reset_gate_pass and exact_close_gate_pass and oracle_gate_pass else "FAIL",
         "attempt_rate": sum(1 for s in samples if s["reset_attempted"]) / len(samples) if samples else 0.0,
         "reset_success_rate": sum(1 for s in samples if s["reset_success"]) / len(samples) if samples else 0.0,
         "reset_quality_success_rate": sum(1 for s in samples if s["reset_grasp_quality_success"]) / len(samples)
@@ -1032,6 +1493,29 @@ def main() -> None:
             [float(c["actual_tip_table_clearance_m"]) for c in exact_checks]
         ),
         "exact_close_cube_pos_delta_mean_m": _mean_values([float(c["cube_pos_delta_m"]) for c in exact_checks]),
+        "oracle_success_rate": sum(1 for c in oracle_checks if c["oracle_success"]) / len(oracle_checks)
+        if oracle_checks
+        else None,
+        "oracle_lift_gate_pass_rate": sum(1 for c in oracle_checks if c["lift_gate_pass"]) / len(oracle_checks)
+        if oracle_checks
+        else None,
+        "oracle_done_seen_rate": sum(1 for c in oracle_checks if c["done_seen"]) / len(oracle_checks)
+        if oracle_checks
+        else None,
+        "oracle_max_cube_lift_height_mean_m": _mean_values(
+            [float(c["max_cube_lift_height_m"]) for c in oracle_checks]
+        ),
+        "oracle_final_cube_lift_height_mean_m": _mean_values(
+            [float(c["final_cube_lift_height_m"]) for c in oracle_checks if c["final_cube_lift_height_m"] is not None]
+        ),
+        "oracle_min_tip_center_dist_mean_m": _mean_values(
+            [float(c["min_tip_center_to_cube_dist_m"]) for c in oracle_checks if c["min_tip_center_to_cube_dist_m"] is not None]
+        ),
+        "oracle_final_gripper_width_mean_m": _mean_values(
+            [float(c["final_gripper_width_m"]) for c in oracle_checks if c["final_gripper_width_m"] is not None]
+        ),
+        "oracle_trace_jsonl_path": str(oracle_trace_jsonl_path) if oracle_trace_records else None,
+        "oracle_trace_csv_path": str(oracle_trace_csv_path) if oracle_trace_records else None,
         "frame_paths": [str(path) for path in rendered_frames],
         "video_path": str(video_path) if video_path.exists() else None,
         "csv_path": str(csv_path),
@@ -1044,6 +1528,7 @@ def main() -> None:
             "body-origin finger distances are retained for reward consistency but are not used alone as grasp-quality geometry",
             "positions are reported in world, env-local, and robot-root frames where applicable",
             "exact_close_check, when enabled, is a diagnostic-only scripted move from pregrasp to exact pose followed by a close command; it is not part of the RL reset path",
+            "oracle_close_lift_check, when enabled, is a diagnostic-only scripted env.step rollout from the actual reset/pregrasp state; it does not change the RL task reset, observation, reward, or PPO path",
         ],
     }
     payload = {
@@ -1053,6 +1538,12 @@ def main() -> None:
         "grasp_to_tool_transform": getattr(task_env, "_grasp_prior_grasp_to_tool", torch.eye(4)).detach().cpu().tolist(),
     }
     _write_csv(csv_path, samples)
+    if oracle_trace_records:
+        _write_oracle_trace_files(
+            oracle_trace_records,
+            trace_jsonl_path=oracle_trace_jsonl_path,
+            trace_csv_path=oracle_trace_csv_path,
+        )
     video_written = _write_video(rendered_frames, video_path, args_cli.video_fps)
     payload["summary"]["video_path"] = str(video_path) if video_written else None
     metrics_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
