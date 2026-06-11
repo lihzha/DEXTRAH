@@ -293,3 +293,38 @@ Decision:
   KUKA-cube-shaped design, with only robot/table geometry differences retained.
 - Proceed to bounded PPO from the isolated worktree with `AUTO_RESUME=False` to
   avoid inheriting the prior stalled checkpoint/run state.
+
+## 2026-06-10 17:10 PDT - Bounded KUKA-Parity PPO Launch Intent
+
+Goal:
+- Launch a bounded Franka cube PPO run from the validated KUKA-parity reward
+  patch and check whether it escapes the previous stalled behavior
+  (`~1-2mm` lift, success near zero, downward mean z action).
+
+Version Control:
+- local commit before launch intent:
+  `fad70b4c856da040e37b68f793157c9ef25ee44a`
+- remote worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-rl-20260610T2353Z`
+- remote commit before launch intent:
+  `fad70b4c856da040e37b68f793157c9ef25ee44a`
+
+Planned Command:
+- run_name: `franka_cube_kukaparity_ppo_20260610_1710`
+- command:
+  `TASK=Dextrah-Franka-Cube-Grasp FULL_EXPERIMENT_NAME=franka_cube_kukaparity_ppo_20260610_1710 CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-rl-20260610T2353Z NUM_ENVS=2048 MAX_ITERATIONS=600 USE_CUDA_GRAPH=False CUBE_SPAWN_XY_RANDOMIZATION=0.08 AUTO_RESUME=False SELF_RELAUNCH=False sbatch --parsable cluster/sbatch_train_teacher_8gpu.sh`
+
+Expected Artifacts:
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_<jobid>.out`
+- training root:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/franka_cube_grasp/franka_cube_kukaparity_ppo_20260610_1710`
+
+Monitoring Criteria:
+- confirm no `--auto_resume` or inherited checkpoint is used.
+- watch `cube_lift_height`, `cube_has_lifted_rate`, `cube_success_rate`,
+  `in_success_region`, `cube_action_z`, `cube_action_up/down`,
+  `cube_enclosure_reward`, `cube_lift_reward`, PPO loss/KL/entropy, and
+  checkpoint creation.
+- cancel and patch rather than let it run to walltime if it reproduces the old
+  stalled signature after enough epochs for a clear trend.
