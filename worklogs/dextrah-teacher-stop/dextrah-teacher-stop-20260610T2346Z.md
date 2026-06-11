@@ -263,3 +263,47 @@ Analysis:
 Next:
 - Continue monitoring with explicit-key SSH/rsync commands. Tighten polling
   before the `20:39 PDT` TERM/requeue window.
+
+## 2026-06-10 18:20 PDT - Teacher Monitor Metric Pass
+
+Goal:
+- Verify continued training health after the SSH monitor workaround and record
+  the current checkpoint/metric state.
+
+Command / Job:
+- job_id: `28955904`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28955904.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+
+Result:
+- status: running healthy.
+- scheduler: running on `batch-block5-03072`, time left `2:23:53`.
+- stdout advanced to epoch `14397/20000`.
+- latest complete checkpoint:
+  `last_dextrah_lstm_ep_14390_rew_709.83954.pth`.
+- rank sidecars `dextrah_runtime_rank_0.pth` through
+  `dextrah_runtime_rank_7.pth` refreshed at `18:19:47`.
+- narrow failure scan returned no matches.
+- TensorBoard parsed through epoch `14383`.
+- `in_success_region/iter`: latest `0.458984`, last-50 `0.454028`,
+  last-200 `0.449281`.
+- `rewards/iter`: latest `687.197`, last-50 `626.175`,
+  last-200 `621.101`.
+- `num_adr_increases/iter`: `50`.
+- `info/kl`: latest `0.00679376`, last-50 `0.00789`,
+  last-200 `0.00829513`.
+- `losses/a_loss`: last-50 `-0.00427106`.
+- `losses/c_loss`: last-50 `0.01878`.
+- `performance/step_inference_rl_update_fps`: last-50 about `110299`.
+
+Analysis:
+- Training remains stable and productive. Success-region and reward are in the
+  same healthy band as before the temporary stop, KL remains controlled, value
+  loss is not drifting upward, and checkpoint/sidecar cadence is intact.
+
+Next:
+- Continue periodic monitoring. Increase polling frequency as `20:39 PDT`
+  approaches, then verify signal-triggered relaunch and resume from the newest
+  checkpoint/runtime sidecars.
