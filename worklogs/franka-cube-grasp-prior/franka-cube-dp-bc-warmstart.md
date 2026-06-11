@@ -4233,3 +4233,66 @@ Next:
   labeled video/contact sheet per mode window.
 - Run a small source-joint reset replay with the patched audit before any
   further training.
+
+## 2026-06-11T16:16:00-07:00 - source-joint action-realization audit launch
+
+Goal:
+- Compare dataset action labels and DP first actions to actual live EE motion
+  under the DEXTRAH Isaac controller from an exact source-joint/cube reset.
+
+Hypothesis:
+- The source-joint replay failure is caused by action realization semantics:
+  converted labels encode one-step kinematic EE deltas, but the live
+  DifferentialIK + PD controller realizes only a fraction of those deltas per
+  environment step.
+
+Change:
+- Added detailed row-level replay audit fields:
+  action scale, root/action frame quaternion, executed label row/offset,
+  expected target EE pose, actual EE delta, actual/expected translation and
+  rotation norms, realization ratios, target errors, dataset-next errors, and
+  gripper target width errors.
+- Changed replay video trigger to start a video every `VIDEO_LENGTH` global
+  steps so multi-mode bounded diagnostics can capture separate mode windows.
+
+Version Control:
+- implementation_commit:
+  `5281c9847c0615705cf362d92a47aa37bb0fee68`
+- push/pull:
+  - pushed to `origin/codex/franka-cube-diffusion-policy-bc`
+  - deployed to l401 via Git bundle
+    `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart-5281c98.bundle`
+- remote worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- remote_commit/status:
+  `5281c9847c0615705cf362d92a47aa37bb0fee68`, detached clean.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/replay_franka_cube_dataset_actions.py dextrah_lab/offline_dp_bc/audit_dataset_action_semantics.py dextrah_lab/offline_dp_bc/action_conversion.py`
+- `bash -n cluster/sbatch_replay_franka_cube_dp_actions_1gpu.sh`
+- `git diff --check`
+
+Command / Job:
+- job_id: `1027855`
+- run_name:
+  `franka_cube_dp_replay_sourcejoint_actionaudit96_20260611_161600`
+- command:
+  `RUN_NAME=franka_cube_dp_replay_sourcejoint_actionaudit96_20260611_161600 CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart DATASET=/results/dp_bc/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz CHECKPOINT=/results/dp_bc/checkpoints/franka_cube_curobo32_full_pick_lift_framefix_overfit2k/latest.ckpt DEMO_RESET_DATASET=/results/dp_bc/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz DEMO_RESET_TRAJECTORY_JSON=/results/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed24/trajectory.json DEMO_RESET_EPISODE=24 DEMO_RESET_STEP=0 DATASET_START_EPISODE=24 DATASET_START_STEP=0 NUM_ENVS=1 STEPS=96 NUM_INFERENCE_STEPS=100 MODES=dataset_t,dataset_t_plus_7,dp_replan PRINT_INTERVAL=16 CAPTURE_VIDEO=True VIDEO_LENGTH=96 VIDEO_NAME_PREFIX=franka-cube-dp-replay-actionaudit SEED=42 sbatch --parsable cluster/sbatch_replay_franka_cube_dp_actions_1gpu.sh`
+- remote run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/replays/franka_cube_dp_replay_sourcejoint_actionaudit96_20260611_161600`
+- remote log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/replay_franka_cube_dp_actions_1027855.out`
+
+Expected artifacts:
+- `replay_summary.json`
+- `replay_steps.csv`
+- `replay_report.md`
+- `replay_motion.png`
+- `action_realization_audit.png`
+- per-mode video windows if `RecordVideo` starts as intended
+- local contact sheet after fetch
+
+Next:
+- Monitor `1027855`, fetch outputs, create/open viewer URLs, inspect action
+  realization ratios and target errors, then patch conversion/control timing
+  rather than training if the under-realization hypothesis holds.
