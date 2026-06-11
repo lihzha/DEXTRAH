@@ -2175,3 +2175,55 @@ Validation:
 Next:
 - Commit/push/deploy this exact code.
 - Launch one diagnostic-only video eval from the `1027751` `rew_-inf` checkpoint. Do not treat it as a clean learned-policy checkpoint; use it only to inspect behavior and reward-term wiring.
+
+## 2026-06-11T14:43:18-07:00 - action-scale `rew_-inf` diagnostic video eval launch
+
+Goal:
+- Produce inspectable artifacts for the pathological `1027751` checkpoint: short rollout video, per-step trace CSV/JSONL, metrics JSON, and later local plot/report/consistency bundle.
+
+Version Control:
+- agent_id: franka-cube-traj-tracking
+- local_commit: `3eece1ab59be14ee9457e4f7a0da8b7b29f7b167`
+- remote_commit/status: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking` at `3eece1ab59be14ee9457e4f7a0da8b7b29f7b167`, detached after HTTPS fetch.
+
+Command / Job:
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:30:00 --job-name=franka_cube_traj_rewinf_diag --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_actionscale_rewinf_diag_video480_20260611_144318,CHECKPOINT=/results/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_actionscale_rl_smoke_20260611_143711/nn/last_dextrah_franka_cube_traj_tracking_ep_3_rew_-inf.pth,NUM_ENVS=4,NUM_STEPS=480,VIDEO_LENGTH=480,VIDEO_NAME_PREFIX=actionscale-rewinf-diag-video480,CAPTURE_VIDEO=True,PRINT_INTERVAL=120,USE_CUDA_GRAPH=False,SEED=61,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- job_id: 1027753 `franka_cube_traj_rewinf_diag`
+- expected_log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_<job_id>.out
+- expected_run_dir: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_traj_tracking_actionscale_rewinf_diag_video480_20260611_144318
+
+Acceptance Criteria:
+- Diagnostic-only eval completes without traceback and writes `metrics.json`, `trace.csv`, `trace.jsonl`, and a valid video.
+- Trace includes phase/progress, target pose, EE-to-target, EE/cube/finger distances, gripper width/action, contact gate, close/lift action rewards, lift/success, and target-safety/clearance terms.
+- Local post-processing must produce a plot/report/summary and train-vs-eval consistency JSON, then `viz-open` the main plot/video/report.
+- Do not treat this as a clean learned-policy result because the source checkpoint is `rew_-inf`.
+
+Result:
+- status: completed diagnostic eval; Slurm job `1027753` completed `0:0` after `00:01:18` on `pool0-00016`; rollout completed 480/480 steps with `done_count=0`.
+- remote_artifacts: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_traj_tracking_actionscale_rewinf_diag_video480_20260611_144318/metrics.json`, `trace.csv`, `trace.jsonl`, and `videos/actionscale-rewinf-diag-video480-step-0.mp4`.
+- local_run_artifacts: `cluster_results/l401/franka_cube_traj_tracking_actionscale_rewinf_diag_video480_20260611_144318/metrics.json`, `cluster_results/l401/franka_cube_traj_tracking_actionscale_rewinf_diag_video480_20260611_144318/trace.csv`, `cluster_results/l401/franka_cube_traj_tracking_actionscale_rewinf_diag_video480_20260611_144318/trace.jsonl`, `cluster_results/l401/franka_cube_traj_tracking_actionscale_rewinf_diag_video480_20260611_144318/videos/actionscale-rewinf-diag-video480-step-0.mp4`, `cluster_results/l401/franka_cube_traj_tracking_actionscale_rewinf_diag_video480_20260611_144318/eval_franka_cube_1027753.out`.
+- local_summary_bundle: `cluster_results/l401/franka_cube_traj_tracking_actionscale_rewinf_diag_artifacts_20260611_144318/report.md`, `cluster_results/l401/franka_cube_traj_tracking_actionscale_rewinf_diag_artifacts_20260611_144318/trajectory_trace_plot.png`, `cluster_results/l401/franka_cube_traj_tracking_actionscale_rewinf_diag_artifacts_20260611_144318/summary.json`, `cluster_results/l401/franka_cube_traj_tracking_actionscale_rewinf_diag_artifacts_20260611_144318/train_eval_consistency.json`, `cluster_results/l401/franka_cube_traj_tracking_actionscale_rewinf_diag_artifacts_20260611_144318/actionscale_rewinf_contact_sheet.png`, and first/mid/last frames under `cluster_results/l401/franka_cube_traj_tracking_actionscale_rewinf_diag_artifacts_20260611_144318/frames/`.
+- viz_video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_actionscale_rewinf_diag_video480_20260611_144318/videos/actionscale-rewinf-diag-video480-step-0.mp4`
+- viz_plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_actionscale_rewinf_diag_artifacts_20260611_144318/trajectory_trace_plot.png`
+- viz_report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_actionscale_rewinf_diag_artifacts_20260611_144318/report.md`
+- viz_contact_sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_actionscale_rewinf_diag_artifacts_20260611_144318/actionscale_rewinf_contact_sheet.png`
+- video_validation: `ffprobe` reports width `1280`, height `720`, frame rate `60/1`, duration `7.983333`, frame count `479`.
+- frame_inspection: first extracted frame is black; mid frame is valid and shows the gripper close to the cube without stable grasp/lift; final frame is valid and shows the hand backed off/open above the table while the cube remains unmoved.
+- rollout_metrics: reward mean/final `1.7957129741708437`/`1.4740009307861328`; success mean/final `0.0`/`0.0`; cube lift max/final `0.0011679381132125854`/`0.0`.
+- behavior_metrics: EE-to-cube mean/final/min/max `0.16845380614201227`/`0.2437351942062378`/`0.14689967036247253`/`0.2437351942062378`; finger-center-to-cube mean/final/min/max `0.16707455115392805`/`0.24166952073574066`/`0.1404552161693573`/`0.24166952073574066`; gripper width mean/final/min/max `0.03806898454980304`/`0.03689180314540863`/`0.03685402497649193`/`0.0735347718000412`.
+- target_safety: unsafe target rate max `0.0`; target table clearance min `0.06511414051055908`, above the configured `0.025` m minimum.
+- gate_reward_metrics: contact gate mean/final `0.671323234277467`/`0.4682384431362152`; close action reward mean/final/max `0.04193698822834461`/`0.10366229712963104`/`0.12158110737800598`; lift action reward mean/final/max `0.0014248974564035658`/`0.008166111074388027`/`0.008166111074388027`.
+- reward_ceiling_vs_utilization: close reward ceiling mean/final/max `0.3401560637184102`/`0.8174505233764648`/`0.8863068222999573` with utilization mean/final/max `0.04562834727888306`/`0.08682597428560257`/`0.09350184351205826`; lift reward ceiling mean/final/max `0.4283437394549882`/`1.3079209327697754`/`1.3080124855041504` with utilization mean/final/max `0.0014013022674286427`/`0.007636710070073605`/`0.007636710070073605`.
+- action_metrics: policy close action mean/final `0.07871637370747825`/`0.08682597428560257`; policy up action mean/final `0.026006365313272304`/`0.04892357438802719`; gripper action mean/final `-0.06638652887195348`/`-0.07222630828619003`; z action mean/final `-0.033771018986590205`/`-0.022558368742465973`.
+- train_eval_consistency: `train_eval_consistency.json` passed with no mismatches for observation/state/action sizes, cube randomization, reference path/duration, phase observations, close/lift weights, relaxed gate thresholds, min gripper width, and late reference reweight knobs.
+- reference: still `curobo_validated=false`; source tag remains `graspgenx_curobo_60mm_export_pending_exact_validation`; this eval remains a trajectory-tracking diagnostic, not a DEXTRAH-ready exact-geometry validated reference claim.
+
+Analysis:
+- This confirms the eval artifact path works for the pathological `rew_-inf` checkpoint: per-step trace, summary report, train/eval consistency check, and valid short video are all present and locally inspectable.
+- The `-inf` RL-Games suffix is not itself a simulation failure here; it is a short-training metric semantics issue caused by no episode termination before `MAX_ITERATIONS=3`. The useful signal comes from the diagnostic eval, not the checkpoint reward suffix.
+- The behavior is not useful for scale-up: reward is finite and target safety is clean, but success/lift remain zero, EE/finger distances worsen by the end, and final visual behavior shows the hand moving away rather than closing/lifting.
+- The reward ablation isolates a concrete issue: gate-normalized close/lift reward ceilings are large enough by late rollout, but realized utilization is tiny, especially lift. That points to policy/action learning or action-path incentives failing to produce close/up commands, not to missing logs, unsafe target transforms, or train/eval config drift.
+
+Next:
+- Do not launch longer RL from this checkpoint.
+- Next bounded debugging should be a diagnostic ablation that makes the short-run metric route interpretable without relying on episode termination: either force a short eval-only action prior / scripted action comparison against the same reference, or alter the tiny RL smoke/eval route to log rollout reward summaries independent of episode completion before any further training.
