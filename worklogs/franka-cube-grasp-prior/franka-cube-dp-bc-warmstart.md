@@ -1233,3 +1233,85 @@ Analysis:
 Next:
 - Commit/push the summary snapshot fix, update remote worktree, and relaunch
   the bounded 1-env/16-step eval once more.
+
+## 2026-06-11T12:57:38-07:00 - l401 DP eval-wrapper smoke passed
+
+Goal:
+- Close the bounded DEXTRAH/Isaac cluster mechanics validation for
+  `eval_franka_cube_dp_policy.py` using the official DP checkpoint trained
+  from 8 real cuRobo demonstrations.
+
+Hypothesis:
+- With official-DP dependencies isolated and final metrics snapshotted before
+  env close, the no-learning wrapper should serialize a valid 16-step rollout
+  metrics artifact.
+
+Change:
+- No new source changes after commit `df98650f3d8f7c6c9fb172171f4a50172c2c38a1`.
+- Remote l401 Worker C worktree was updated to exactly that commit via git
+  bundle because l401 cannot fetch GitHub over SSH.
+
+Version Control:
+- implementation_commit: df98650f3d8f7c6c9fb172171f4a50172c2c38a1
+- branch: codex/franka-cube-diffusion-policy-bc
+- official_dp_source: `https://github.com/real-stanford/diffusion_policy`
+- official_dp_commit: `5ba07ac6661db573af695b419a7947ecb704690f`
+- official_dp_cluster_path:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/external/real-stanford-diffusion_policy`
+- official_dp_dependency_site:
+  `/lustre/fsw/portfolios/nvr/users/lzha/envs/franka-cube-dp-bc-warmstart-official-dp/site`
+
+Command / Job:
+- command:
+  `CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart OFFICIAL_DP_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/external/real-stanford-diffusion_policy OFFICIAL_DP_ENV_NAME=franka-cube-dp-bc-warmstart-official-dp CHECKPOINT=/results/dp_bc/franka-cube-dp-bc-warmstart/checkpoints/run_20260611_123104_curobo_batch/latest.ckpt RUN_NAME=franka_cube_dp_eval_curobo8_smoke3_20260611_125635 NUM_ENVS=1 NUM_STEPS=16 NUM_INFERENCE_STEPS=2 PRINT_INTERVAL=4 CAPTURE_VIDEO=False sbatch cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- job_id: `1027713`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_dp_policy_1027713.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_curobo8_smoke3_20260611_125635`
+- metrics:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_curobo8_smoke3_20260611_125635/metrics.json`
+
+Result:
+- status: passed
+- sacct: `COMPLETED`, exit `0:0`, elapsed `00:00:42`,
+  step max RSS about `22101932K`.
+- launcher validation: printed `DP eval metrics passed` and
+  `DP Evaluation Done`.
+- metrics summary:
+  - `official_workspace=TrainDiffusionUnetLowdimWorkspace`
+  - `policy_class=DiffusionUnetLowdimPolicy`
+  - `ppo_bridge=predict_action_from_ppo_obs`
+  - `num_envs=1`
+  - `steps_completed=16`
+  - `env_closed=true`
+  - `reward_mean=1.3180006965994835`
+  - `reward_final=1.308260202407837`
+  - `final_success_rate=0.0`
+  - `window_success_rate=0.0`
+  - `final_gripper_width=0.04295472055673599`
+  - `action_min=[-1.0, -1.0, -0.9044985771179199, -1.0, -1.0, -1.0, -1.0]`
+  - `action_max=[1.0, 1.0, 1.0, 1.0, 1.0, 0.9629597067832947, 1.0]`
+- artifact inspection:
+  - `metrics.json` has 16 step records.
+  - grep for Python error patterns in the Slurm log found none.
+  - no video was requested for this smoke.
+
+Analysis:
+- The eval-wrapper mechanics milestone is complete: official DP checkpoint
+  load, 72D PPO observation to 21D lowdim bridge, 7D relative EE+gripper action
+  output, Isaac env stepping, metrics serialization, and launcher validation
+  all passed on l401.
+- The behavior is not successful manipulation. The policy is a tiny debug
+  checkpoint from 8 approach-only real cuRobo demos, actions saturate at clip
+  bounds, and cube lift/success remain zero. This is expected and should be
+  reported only as mechanics validation.
+- The next practical step is to scale the real cuRobo demo dataset and run a
+  bounded official-DP BC pretrain with validation, still approach-only at
+  first. After action saturation improves, add close/lift ablation and then
+  route through the same eval wrapper or a PPO distillation bridge.
+
+Next:
+- Commit/push this worklog checkpoint.
+- Start the next bounded scale-up: expand real cuRobo demonstrations beyond 8
+  episodes and run a small official-DP validation pretrain, not final BC/RL.
