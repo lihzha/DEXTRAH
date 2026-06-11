@@ -2298,3 +2298,86 @@ Worker C current next step:
   run a bounded action-repeat/temporal semantics diagnostic from exact
   source-joint reset. No BC/RL training until replay labels follow the teacher
   EE geometry under the actual controller.
+
+## 2026-06-11 Monitor Check 23:48 UTC
+
+New worker jobs completed:
+
+- Worker A oracle close/lift reset diagnostic: job `1027869`, completed `0:0`.
+- Worker B learned-prefix handoff diagnostic: job `1027870`, completed `0:0`.
+- Worker C action-repeat replay sweep: jobs `1027871`, `1027872`,
+  `1027873`, completed `0:0`.
+- Worker C residual-target job `1027867` was cancelled intentionally after an
+  invalid Slurm `--export` parse dropped comma-separated modes; do not use it
+  as residual-target evidence.
+
+Worker A artifact inspection:
+
+- Run: `franka_cube_ggx_pregrasp_oracle_close_lift_20260611_2338`.
+- Local dir:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_oracle_close_lift_20260611_2338`.
+- Viewer URLs:
+  - report:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_oracle_close_lift_20260611_2338/inspection/REPORT.md`
+  - keyframe sheet:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_oracle_close_lift_20260611_2338/inspection/reset000_oracle_keyframes.jpg`
+- Key metrics:
+  - `reset_success_rate=1.0`, `reset_quality_success_rate=1.0`,
+    `pregrasp_reset_gate_pass=True`.
+  - `oracle_success_rate=0.0`, `oracle_lift_gate_pass_rate=0.0`.
+  - `oracle_max_cube_lift_height_mean_m=0.0`,
+    `oracle_final_cube_lift_height_mean_m=0.0`.
+  - `oracle_min_tip_center_dist_mean_m=0.0576`.
+  - `oracle_final_gripper_width_mean_m=0.0550`.
+  - `rl_relaunch_gate_verdict=FAIL`.
+- Interpretation: the 3 cm pregrasp reset passes the current reset quality
+  checks, but the scripted reset-to-close/lift sequence does not create a
+  physical lift. Final RL remains blocked. A should debug reset-to-contact and
+  control geometry before any more PPO.
+- Instruction sent to A: run a bounded diagnostic matrix for offset/approach,
+  close width, lift action magnitude/frame, and fingertip/TCP/contact geometry.
+  Keep all changes debug-only; do not change the main apple-to-apple reset path.
+
+Worker B artifact inspection:
+
+- Run: `franka_cube_traj_tracking_learned_prefix_hold_noreset520_20260611_163724`.
+- Local dir:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_learned_prefix_hold_noreset520_20260611_163724`.
+- Viewer URLs:
+  - report:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_learned_prefix_hold_noreset520_20260611_163724_artifacts/report.md`
+  - contact sheet:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_learned_prefix_hold_noreset520_20260611_163724_artifacts/contact_sheet_quick.jpg`
+- Key metrics: `success_ever=0`, `success_rate_max=0`,
+  `cube_lift_height_max=0.001512 m`, final EE-cube `0.5066 m`, final
+  finger-center-cube `0.4771 m`, target unsafe max `0`.
+- Visual interpretation: the learned prefix moves away from the cube; the
+  phase-triggered stable hold then holds in free space. This confirms the
+  stable reference hold is useful only if the prefix reaches the handoff state.
+- Instruction sent to B: run a small eval-only reference-blend alpha sweep
+  (`0.25`, `0.5`, `0.75`) with the same no-reset stable hold. Identify the
+  minimum alpha that reaches lift/success before any training scale-up.
+
+Worker C artifact inspection:
+
+- Runs:
+  - `franka_cube_dp_replay_sourcejoint_repeat2_dataset_t_96_20260611_163750`
+  - `franka_cube_dp_replay_sourcejoint_repeat4_dataset_t_96_20260611_163750`
+  - `franka_cube_dp_replay_sourcejoint_repeat8_dataset_t_96_20260611_163750`
+- Local base:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays`.
+- Representative viewer URL:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_repeat4_dataset_t_96_20260611_163750/replay_report.md`
+- Repeat sweep metrics:
+  - repeat `2`: final EE-cube `0.1672 m`, final finger-cube `0.1659 m`,
+    median xyz realization ratio `0.0936`, no close/hard-close.
+  - repeat `4`: final EE-cube `0.1449 m`, final finger-cube `0.1488 m`,
+    median xyz realization ratio `0.0934`, no close/hard-close.
+  - repeat `8`: final EE-cube `0.1713 m`, final finger-cube `0.1667 m`,
+    median xyz realization ratio `0.0942`, no close/hard-close.
+- Interpretation: simple action repeat is not a viable bridge; it does not fix
+  the action/controller mismatch and still leaves the replay short of the
+  teacher geometry.
+- Instruction sent to C: rerun the residual-target diagnostic correctly with
+  preserved modes (`dataset_t,dataset_target_t_plus_1,dataset_target_t_plus_7`)
+  because the first residual-target launch was invalid. No BC/RL training.
