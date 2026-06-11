@@ -1715,3 +1715,41 @@ Analysis:
 Next:
 - Continue tight polling through the expected TERM/requeue signal and validate
   the next restore from the newest checkpoint/sidecars.
+
+## 2026-06-11 00:28 PDT - Teacher Requeue Signal Observed
+
+Goal:
+- Validate wall-time TERM/requeue behavior and record the freshest resume
+  artifacts before the next allocation starts.
+
+Command / Job:
+- job_id: `28955904`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28955904.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+
+Result:
+- status: requeue observed; waiting for next allocation and restore validation.
+- scheduler: `COMPLETING` on `batch-block5-03072` at `00:28:08 PDT`.
+- `sacct`: parent job `REQUEUED`, step `28955904.0` `REQUEUED`, batch step
+  `FAILED` with exit `15:0` from the signal path.
+- stdout logged:
+  `JOB 28955904 ... CANCELLED AT 2026-06-11T00:27:14`, then
+  `Requeuing DEXTRAH job 28955904 ... after TERM`, then
+  `STEP 28955904.0 ... CANCELLED ... DUE TO JOB REQUEUE`.
+- stdout reached epoch `18677/20000` before TERM forwarding.
+- freshest checkpoint:
+  `last_dextrah_lstm_ep_18680_rew_599.0859.pth` at `00:27:31`.
+- runtime sidecars rank `0-7` all refreshed at `00:27:29`.
+
+Analysis:
+- Requeue behavior is correct so far. The wrapper requeued on TERM and avoided
+  treating the signal as an ordinary training failure. Fresh checkpoint and
+  sidecar artifacts exist after the signal, so the next launch should restore
+  from the `18680` state.
+
+Next:
+- Continue active polling until Slurm moves the job out of completing/pending,
+  then validate restore logs, sidecar load for all ranks, and training progress
+  past epoch `18680`.
