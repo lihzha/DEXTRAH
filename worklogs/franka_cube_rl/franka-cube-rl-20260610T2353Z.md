@@ -538,3 +538,26 @@ Decision:
 - Monitor the new scalar terms directly:
   `cube_close_action_reward`, `cube_lift_action_reward`, and
   `cube_descend_action_penalty`, in addition to lift/success/z-action.
+
+## 2026-06-10 17:30 PDT - Gated Lift-Action PPO Submitted
+
+Command / Job:
+- command:
+  `TASK=Dextrah-Franka-Cube-Grasp FULL_EXPERIMENT_NAME=franka_cube_liftaction_ppo_20260610_1730 CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-rl-20260610T2353Z NUM_ENVS=2048 MAX_ITERATIONS=600 USE_CUDA_GRAPH=False CUBE_SPAWN_XY_RANDOMIZATION=0.08 AUTO_RESUME=False SELF_RELAUNCH=False sbatch --parsable cluster/sbatch_train_teacher_8gpu.sh`
+- job_id: `28957106`
+- code_commit:
+  `295a1675acd30a4157a4b6ca55114ca81ca8d2bf`
+- remote worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-rl-20260610T2353Z`
+- expected log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28957106.out`
+- expected training root:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_liftaction_ppo_20260610_1730`
+
+Monitoring Criteria:
+- confirm fresh run and no inherited checkpoint.
+- compare against the canceled KUKA-only run:
+  - z-action should not drift strongly negative by epoch ~100-200;
+  - `cube_lift_height` and `cube_has_lifted_rate` should exceed the previous
+    maxes (`0.00753m`, `0.01416`);
+  - success should move above zero before committing to a long run.
