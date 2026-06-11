@@ -189,3 +189,52 @@ Cleanup:
 
 Next:
 - Integration should happen from a separate integration worktree by reviewing or merging the pushed branch.
+
+## 2026-06-11T01:52:30Z - Local dynamic PhysX validation after gripper asset fix
+
+Goal:
+- Verify the updated Franka gripper meshes resolve the GraspGenX dummy-gripper issue and continue toward a local dynamic Isaac Sim Franka star grasp demo.
+
+Hypothesis:
+- The restored `franka_panda` gripper meshes/TSDF should remove the GraspGenX dummy fallback. In Isaac Sim, raw PhysX contact may move the dynamic star, but the referenced Franka USD needs contact/proxy or grasp-assist support for a reliable thin-object lift.
+
+Change:
+- Verified GraspGenX `get_gripper_info("franka_panda")` loads real `vis_mesh.obj`, `coll_mesh.obj`, and `tsdf.npy`.
+- Added `--franka_trajectory_object_mode physics` so the star can remain under live PhysX instead of replaying trajectory object poses.
+- Added live `RigidObject` tracing for `star_motion_trajectory.json`.
+- Added hidden articulation-child fingertip collision proxies and `--franka_contact_proxy_mode`, defaulting to `articulation`.
+- Added optional `--franka_grasp_constraint_mode attach_on_close`, implemented as an explicit kinematic pose weld after the gripper closes near the dynamic star.
+- Updated `cluster/sbatch_render_star_kitting_env.sh` to pass contact-proxy and grasp-assist knobs.
+
+Version Control:
+- agent_id: franka-ggx-curobo-local-20260610T234641Z-86074
+- worktree: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-ggx-curobo-local-20260610T234641Z-86074
+- branch: codex/franka-graspgenx-curobo-demo/franka-ggx-curobo-local-20260610T234641Z-86074
+- implementation_commit: 7674e10
+- changed_files: dextrah_lab/scene_scripts/render_star_kitting_env.py, cluster/sbatch_render_star_kitting_env.sh, worklogs/franka-graspgenx-curobo-demo/franka-ggx-curobo-local-20260610T234641Z-86074.md
+
+Command / Job:
+- planner rerun: `planner_assets_verify_20260611T005550Z`
+- raw dynamic run: `render_dynamic_physics_live_star_articulation_proxy_gpu0_20260611T013615Z`
+- fixed-joint attempts: `render_dynamic_physics_attach_constraint_gpu0_20260611T014147Z`, `render_dynamic_physics_pose_joint_gpu0_20260611T014447Z`
+- assisted weld run: `render_dynamic_physics_weld_fix_gpu0_20260611T014920Z`
+- logs: /home/lzha/code/local_results/franka_ggx_curobo_demo/franka-ggx-curobo-local-20260610T234641Z-86074/logs
+- artifacts: each render run's `overview.mp4`, `contact_sheet.png`, `star_motion_trajectory.json`, `robot_motion_trajectory.json`, `scene_metadata.json`
+
+Result:
+- status: partial pass
+- gripper assets: passed; GraspGenX loaded real Franka collision/visual meshes and TSDF with no dummy-gripper warnings.
+- planner: passed; selected grasp index 16, confidence 0.8296340108, 742 trajectory frames.
+- raw dynamic contact: partial; actual fingers closed to about 4-6 mm and live PhysX moved the star about 3.2 cm laterally, but it did not lift.
+- USD fixed-joint grasp assist: failed; PhysX snapped or destabilized the star, so the fixed-joint path was removed.
+- kinematic weld assist: passed as an assisted demo; attach fired at frame 22/substep 6, actual max finger opening 0.01196 m, star z moved from 0.763 m to 0.810 m, and lateral drift after attach stayed under about 6 mm.
+- final assisted artifact: /home/lzha/code/local_results/franka_ggx_curobo_demo/franka-ggx-curobo-local-20260610T234641Z-86074/render/render_dynamic_physics_weld_fix_gpu0_20260611T014920Z/overview.mp4
+
+Analysis:
+- The user's gripper mesh fix resolves the hard GraspGenX asset constraint.
+- The remaining hard dynamic-contact constraint is Isaac Sim contact fidelity for the referenced Franka USD and thin star: articulation-child proxies are enough to produce contact and close the fingers, but not enough for a clean frictional pinch/lift.
+- The current demo is dynamic until grasp acquisition, then uses an explicit in-Isaac pose weld. It is suitable as a local pipeline visualization, not a proof of pure contact-only grasping.
+- No Newton dependency is required; all validation here runs in Isaac Sim/PhysX.
+
+Next:
+- Run final syntax/wrapper validation, open the final artifact with `viz-open`, then commit the DEXTRAH worktree changes if clean.

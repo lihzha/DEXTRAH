@@ -114,6 +114,12 @@ echo "FRANKA_MOTION_SCALE=${FRANKA_MOTION_SCALE:-1.0}"
 echo "FRANKA_TRAJECTORY_JSON=${FRANKA_TRAJECTORY_JSON:-}"
 echo "FRANKA_TRAJECTORY_PLAYBACK=$FRANKA_TRAJECTORY_PLAYBACK"
 echo "FRANKA_TRAJECTORY_OBJECT_ID=${FRANKA_TRAJECTORY_OBJECT_ID:-object}"
+echo "FRANKA_TRAJECTORY_OBJECT_MODE=${FRANKA_TRAJECTORY_OBJECT_MODE:-trajectory}"
+echo "FRANKA_CONTACT_PROXY_MODE=${FRANKA_CONTACT_PROXY_MODE:-articulation}"
+echo "FRANKA_GRASP_CONSTRAINT_MODE=${FRANKA_GRASP_CONSTRAINT_MODE:-off}"
+echo "FRANKA_GRASP_CONSTRAINT_CLOSE_THRESHOLD=${FRANKA_GRASP_CONSTRAINT_CLOSE_THRESHOLD:-0.012}"
+echo "FRANKA_GRASP_CONSTRAINT_XY_THRESHOLD=${FRANKA_GRASP_CONSTRAINT_XY_THRESHOLD:-0.050}"
+echo "FRANKA_GRASP_CONSTRAINT_Z_THRESHOLD=${FRANKA_GRASP_CONSTRAINT_Z_THRESHOLD:-0.080}"
 echo "ANIMATE_CUBE=$ANIMATE_CUBE"
 
 srun \
@@ -160,6 +166,12 @@ srun \
       \${FRANKA_TRAJECTORY_JSON:+--franka_trajectory_json \"\$FRANKA_TRAJECTORY_JSON\"} \
       --franka_trajectory_playback \"$FRANKA_TRAJECTORY_PLAYBACK\" \
       --franka_trajectory_object_id \"${FRANKA_TRAJECTORY_OBJECT_ID:-object}\" \
+      --franka_trajectory_object_mode \"${FRANKA_TRAJECTORY_OBJECT_MODE:-trajectory}\" \
+      --franka_contact_proxy_mode \"${FRANKA_CONTACT_PROXY_MODE:-articulation}\" \
+      --franka_grasp_constraint_mode \"${FRANKA_GRASP_CONSTRAINT_MODE:-off}\" \
+      --franka_grasp_constraint_close_threshold \"${FRANKA_GRASP_CONSTRAINT_CLOSE_THRESHOLD:-0.012}\" \
+      --franka_grasp_constraint_xy_threshold \"${FRANKA_GRASP_CONSTRAINT_XY_THRESHOLD:-0.050}\" \
+      --franka_grasp_constraint_z_threshold \"${FRANKA_GRASP_CONSTRAINT_Z_THRESHOLD:-0.080}\" \
       --seed \"${SEED:-23}\" \
       --star_outer_radius \"${STAR_OUTER_RADIUS:-0.092}\" \
       --star_inner_radius \"${STAR_INNER_RADIUS:-0.042}\" \
