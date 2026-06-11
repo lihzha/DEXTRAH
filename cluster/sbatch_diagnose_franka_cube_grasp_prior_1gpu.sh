@@ -1,0 +1,164 @@
+#!/bin/bash
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --account=nvr_lpr_rvp
+#SBATCH --gpus-per-node=1
+#SBATCH --job-name=dextrah_cube_prior_diag
+#SBATCH --partition=batch
+#SBATCH --time=0-00:30:00
+#SBATCH --mem=128G
+#SBATCH --cpus-per-task=16
+#SBATCH --output=/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/diagnose_franka_cube_prior_%j.out
+
+set -euo pipefail
+
+NFS_ROOT="${NFS_ROOT:-/lustre/fsw/portfolios/nvr/users/lzha}"
+CODE_NFS="${CODE_NFS:-$NFS_ROOT/src/DEXTRAH}"
+FABRICS_NFS="${FABRICS_NFS:-$NFS_ROOT/src/FABRICS}"
+ISAACLAB_NFS="${ISAACLAB_NFS:-$NFS_ROOT/src/IsaacLab-v2.2.1}"
+IMAGE="${IMAGE:-$NFS_ROOT/cache/isaac_lab_2.2.0.sqsh}"
+ENV_ROOT="${ENV_ROOT:-$NFS_ROOT/envs}"
+ENV_NAME="${ENV_NAME:-dextrah-isaaclab}"
+RESULTS_NFS="${RESULTS_NFS:-$NFS_ROOT/results/dextrah}"
+CACHE_NFS="${CACHE_NFS:-$NFS_ROOT/isaac_cache}"
+
+TASK="${TASK:-Dextrah-Franka-Cube-Grasp}"
+SLURM_JOB_ID_SAFE="${SLURM_JOB_ID:-manual}"
+RUN_NAME="${RUN_NAME:-franka_cube_prior_diag_${SLURM_JOB_ID_SAFE}_$(date +%Y%m%d_%H%M%S)}"
+NUM_ENVS="${NUM_ENVS:-1}"
+NUM_RESETS="${NUM_RESETS:-3}"
+SEED="${SEED:-42}"
+CUBE_SPAWN_XY_RANDOMIZATION="${CUBE_SPAWN_XY_RANDOMIZATION:-0.08}"
+GRASP_PRIOR_LIBRARY_PATH="${GRASP_PRIOR_LIBRARY_PATH:?Set GRASP_PRIOR_LIBRARY_PATH to a library path visible inside the container.}"
+DIAGNOSTIC_ENV_ID="${DIAGNOSTIC_ENV_ID:-0}"
+RENDER_WIDTH="${RENDER_WIDTH:-1280}"
+RENDER_HEIGHT="${RENDER_HEIGHT:-720}"
+VIDEO_FPS="${VIDEO_FPS:-6}"
+CAMERA_EYE_X="${CAMERA_EYE_X:--0.15}"
+CAMERA_EYE_Y="${CAMERA_EYE_Y:--1.05}"
+CAMERA_EYE_Z="${CAMERA_EYE_Z:-1.55}"
+CAMERA_TARGET_X="${CAMERA_TARGET_X:--0.41}"
+CAMERA_TARGET_Y="${CAMERA_TARGET_Y:--0.08}"
+CAMERA_TARGET_Z="${CAMERA_TARGET_Z:-0.80}"
+CODE_COMMIT="${CODE_COMMIT:-}"
+if [ -z "$CODE_COMMIT" ] && git -C "$CODE_NFS" rev-parse HEAD >/dev/null 2>&1; then
+  CODE_COMMIT="$(git -C "$CODE_NFS" rev-parse HEAD)"
+fi
+
+RUN_DIR_HOST="$RESULTS_NFS/diagnostics/$RUN_NAME"
+RUN_DIR_CONTAINER="/results/diagnostics/$RUN_NAME"
+METRICS_CONTAINER="$RUN_DIR_CONTAINER/reset_geometry.json"
+LOG_FILE="$NFS_ROOT/slurm_logs/dextrah/diagnose_franka_cube_prior_${SLURM_JOB_ID_SAFE}.out"
+
+if [ ! -f "$IMAGE" ]; then
+  echo "Missing Isaac Lab container image: $IMAGE"
+  exit 2
+fi
+if [ ! -d "$ENV_ROOT/$ENV_NAME/site" ]; then
+  echo "Missing DEXTRAH Python target: $ENV_ROOT/$ENV_NAME/site"
+  exit 2
+fi
+
+mkdir -p \
+  "$RUN_DIR_HOST" \
+  "$NFS_ROOT/slurm_logs/dextrah" \
+  "$CACHE_NFS/kit" "$CACHE_NFS/ov" "$CACHE_NFS/pip" \
+  "$CACHE_NFS/glcache" "$CACHE_NFS/computecache" \
+  "$CACHE_NFS/omni_logs" "$CACHE_NFS/carb_logs" \
+  "$CACHE_NFS/data" "$CACHE_NFS/documents"
+
+export TASK RUN_NAME NUM_ENVS NUM_RESETS SEED CUBE_SPAWN_XY_RANDOMIZATION
+export GRASP_PRIOR_LIBRARY_PATH DIAGNOSTIC_ENV_ID RENDER_WIDTH RENDER_HEIGHT VIDEO_FPS
+export CAMERA_EYE_X CAMERA_EYE_Y CAMERA_EYE_Z CAMERA_TARGET_X CAMERA_TARGET_Y CAMERA_TARGET_Z
+export CODE_COMMIT RUN_DIR_CONTAINER METRICS_CONTAINER ENV_NAME
+
+echo "Running DextrAH Franka cube GraspGenX reset-prior diagnostic"
+echo "SLURM_JOB_ID=$SLURM_JOB_ID_SAFE"
+echo "SLURM_JOB_NODELIST=${SLURM_JOB_NODELIST:-unset}"
+echo "IMAGE=$IMAGE"
+echo "CODE_NFS=$CODE_NFS"
+echo "FABRICS_NFS=$FABRICS_NFS"
+echo "ISAACLAB_NFS=$ISAACLAB_NFS"
+echo "CODE_COMMIT=${CODE_COMMIT:-unknown}"
+echo "RESULTS_NFS=$RESULTS_NFS"
+echo "TASK=$TASK"
+echo "RUN_NAME=$RUN_NAME"
+echo "NUM_ENVS=$NUM_ENVS"
+echo "NUM_RESETS=$NUM_RESETS"
+echo "SEED=$SEED"
+echo "CUBE_SPAWN_XY_RANDOMIZATION=$CUBE_SPAWN_XY_RANDOMIZATION"
+echo "GRASP_PRIOR_LIBRARY_PATH=$GRASP_PRIOR_LIBRARY_PATH"
+echo "DIAGNOSTIC_ENV_ID=$DIAGNOSTIC_ENV_ID"
+echo "RENDER_WIDTH=$RENDER_WIDTH"
+echo "RENDER_HEIGHT=$RENDER_HEIGHT"
+echo "CAMERA_EYE=($CAMERA_EYE_X $CAMERA_EYE_Y $CAMERA_EYE_Z)"
+echo "CAMERA_TARGET=($CAMERA_TARGET_X $CAMERA_TARGET_Y $CAMERA_TARGET_Z)"
+echo "RUN_DIR_HOST=$RUN_DIR_HOST"
+echo "METRICS_CONTAINER=$METRICS_CONTAINER"
+
+srun \
+  --ntasks=1 \
+  --container-image="$IMAGE" \
+  --container-mounts=/dev/shm:/dev/shm,"$CODE_NFS":/code,"$FABRICS_NFS":/fabrics,"$ISAACLAB_NFS":/IsaacLab,"$ENV_ROOT":/envs,"$RESULTS_NFS":/results,"$CACHE_NFS/kit":/isaac-sim/kit/cache,"$CACHE_NFS/ov":/root/.cache/ov,"$CACHE_NFS/pip":/root/.cache/pip,"$CACHE_NFS/glcache":/root/.cache/nvidia/GLCache,"$CACHE_NFS/computecache":/root/.nv/ComputeCache,"$CACHE_NFS/omni_logs":/root/.nvidia-omniverse/logs,"$CACHE_NFS/carb_logs":/isaac-sim/kit/logs/Kit/Isaac-Sim,"$CACHE_NFS/data":/root/.local/share/ov/data,"$CACHE_NFS/documents":/root/Documents \
+  --no-container-entrypoint \
+  --container-remap-root \
+  --container-writable \
+  --export=ALL,PYTHONUNBUFFERED=1,HYDRA_FULL_ERROR=1,PYTHONFAULTHANDLER=1,TORCH_SHOW_CPP_STACKTRACES=1,ACCEPT_EULA=Y,PRIVACY_CONSENT=Y \
+  bash -lc '
+    set -euo pipefail
+    export SITE="/envs/$ENV_NAME/site"
+    export PYTHONPATH="$SITE:/code:/fabrics/src"
+    for d in /IsaacLab/source/*; do
+      if [ -d "$d" ]; then
+        export PYTHONPATH="$d:$PYTHONPATH"
+      fi
+    done
+    export WANDB_MODE=offline
+    mkdir -p "$RUN_DIR_CONTAINER" /results/logs
+
+    cd /code
+    echo "container_host=$(hostname)"
+    echo "container_cuda_visible_devices=${CUDA_VISIBLE_DEVICES:-unset}"
+    echo "CODE_COMMIT=${CODE_COMMIT:-unknown}"
+    git rev-parse HEAD 2>/dev/null || true
+    echo "git_status_skipped=container_git_lfs_unavailable"
+    nvidia-smi || true
+
+    cd /code/dextrah_lab/rl_games
+    DIAG_ARGS=(
+      diagnose_franka_cube_grasp_prior_reset.py
+      --headless
+      --device cuda:0
+      --task "$TASK"
+      --num_envs "$NUM_ENVS"
+      --num_resets "$NUM_RESETS"
+      --seed "$SEED"
+      --output_dir "$RUN_DIR_CONTAINER"
+      --metrics_path "$METRICS_CONTAINER"
+      --cube_spawn_xy_randomization "$CUBE_SPAWN_XY_RANDOMIZATION"
+      --grasp_prior_library_path "$GRASP_PRIOR_LIBRARY_PATH"
+      --diagnostic_env_id "$DIAGNOSTIC_ENV_ID"
+      --render_width "$RENDER_WIDTH"
+      --render_height "$RENDER_HEIGHT"
+      --video_fps "$VIDEO_FPS"
+      --camera_eye "$CAMERA_EYE_X" "$CAMERA_EYE_Y" "$CAMERA_EYE_Z"
+      --camera_target "$CAMERA_TARGET_X" "$CAMERA_TARGET_Y" "$CAMERA_TARGET_Z"
+    )
+
+    printf "diagnose_command="
+    printf "%q " /isaac-sim/python.sh "${DIAG_ARGS[@]}"
+    printf "\n"
+    /isaac-sim/python.sh "${DIAG_ARGS[@]}"
+  '
+
+if [ -f "$LOG_FILE" ] && grep -E "Traceback|RuntimeError:|Error executing job with overrides|ChildFailedError|Could not execute <function load" "$LOG_FILE" >/dev/null; then
+  echo "Detected diagnostic error patterns in $LOG_FILE."
+  exit 1
+fi
+
+if [ ! -s "$RUN_DIR_HOST/reset_geometry.json" ]; then
+  echo "Missing reset diagnostic metrics JSON: $RUN_DIR_HOST/reset_geometry.json"
+  exit 1
+fi
+
+echo "Reset Diagnostic Done"

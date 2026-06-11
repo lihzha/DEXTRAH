@@ -6,6 +6,7 @@
 """Evaluate an RL-Games checkpoint and optionally record a rollout video."""
 
 import argparse
+import csv
 import json
 import math
 import os
@@ -28,6 +29,8 @@ parser.add_argument("--success_window", type=int, default=100, help="Trailing wi
 parser.add_argument("--print_interval", type=int, default=20, help="Print metrics every N steps.")
 parser.add_argument("--output_dir", type=str, default=None, help="Directory for eval outputs.")
 parser.add_argument("--metrics_path", type=str, default=None, help="Path to write metrics JSON.")
+parser.add_argument("--trace_jsonl_path", type=str, default=None, help="Path to write per-step metrics JSONL.")
+parser.add_argument("--trace_csv_path", type=str, default=None, help="Path to write per-step metrics CSV.")
 parser.add_argument("--deterministic", action=argparse.BooleanOptionalAction, default=True, help="Use deterministic actions.")
 parser.add_argument("--seed", type=int, default=None, help="Seed used for the environment.")
 parser.add_argument(
@@ -107,6 +110,21 @@ def _collect_task_metrics(task_env) -> dict[str, float | None]:
         "hand_to_cube_max_dist",
         "finger_table_clearance",
         "finger_table_clearance_violation",
+        "grasp_prior_reset_attempted",
+        "grasp_prior_reset_success",
+        "grasp_prior_reset_farther",
+        "grasp_prior_reset_pos_error",
+        "grasp_prior_reset_rot_error",
+        "grasp_prior_reset_exact_tool_dist",
+        "grasp_prior_reset_pregrasp_tool_dist",
+        "grasp_prior_reset_finger_center_dist",
+        "grasp_prior_reset_finger_table_clearance",
+        "grasp_prior_reset_gripper_width",
+        "grasp_prior_reset_open_width_margin",
+        "grasp_prior_reset_offset_radial_dot",
+        "grasp_prior_reset_offset_radial_angle",
+        "grasp_prior_reset_projected_exact_finger_center_dist",
+        "grasp_prior_reset_quality_success",
         "star_lift_height",
         "star_initial_xy_error",
         "goal_xy_error",
@@ -122,6 +140,26 @@ def _collect_task_metrics(task_env) -> dict[str, float | None]:
         "gripper_width",
     ]
     return {name: _env_metric(task_env, name) for name in metric_names if hasattr(task_env, name)}
+
+
+def _collect_action_metrics(actions: torch.Tensor) -> dict[str, float | None]:
+    if not isinstance(actions, torch.Tensor):
+        return {}
+    action_cpu = actions.detach().float().cpu()
+    flat = action_cpu.flatten()
+    metrics: dict[str, float | None] = {
+        "action_mean": float(flat.mean()),
+        "action_abs_mean": float(flat.abs().mean()),
+        "action_min": float(flat.min()),
+        "action_max": float(flat.max()),
+    }
+    if action_cpu.ndim >= 2 and action_cpu.shape[0] > 0:
+        first = action_cpu[0]
+        for idx, value in enumerate(first.tolist()):
+            metrics[f"action_env0_{idx}"] = float(value)
+        if first.numel() > 6:
+            metrics["gripper_action_env0"] = float(first[6])
+    return metrics
 
 
 def _summarize_step_metrics(step_metrics: list[dict[str, float | int | None]]) -> dict[str, dict[str, float | int]]:
@@ -159,6 +197,29 @@ def _latest_video_files(video_folder: Path | None) -> list[str]:
     if video_folder is None or not video_folder.exists():
         return []
     return [str(path) for path in sorted(video_folder.glob("*.mp4"))]
+
+
+def _write_trace_files(
+    step_metrics: list[dict[str, float | int | None]],
+    *,
+    trace_jsonl_path: Path,
+    trace_csv_path: Path,
+) -> None:
+    trace_jsonl_path.parent.mkdir(parents=True, exist_ok=True)
+    with trace_jsonl_path.open("w", encoding="utf-8") as f:
+        for record in step_metrics:
+            f.write(json.dumps(record, sort_keys=True) + "\n")
+
+    trace_csv_path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = sorted({key for record in step_metrics for key in record.keys()})
+    if "step" in fieldnames:
+        fieldnames.remove("step")
+        fieldnames.insert(0, "step")
+    with trace_csv_path.open("w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for record in step_metrics:
+            writer.writerow(record)
 
 
 def _camera_tuple(values: list[float] | tuple[float, float, float] | None):
@@ -200,6 +261,16 @@ def main(env_cfg, agent_cfg: dict):
     output_dir.mkdir(parents=True, exist_ok=True)
     metrics_path = Path(args_cli.metrics_path).expanduser().resolve() if args_cli.metrics_path else output_dir / "metrics.json"
     metrics_path.parent.mkdir(parents=True, exist_ok=True)
+    trace_jsonl_path = (
+        Path(args_cli.trace_jsonl_path).expanduser().resolve()
+        if args_cli.trace_jsonl_path
+        else output_dir / "trace.jsonl"
+    )
+    trace_csv_path = (
+        Path(args_cli.trace_csv_path).expanduser().resolve()
+        if args_cli.trace_csv_path
+        else output_dir / "trace.csv"
+    )
     video_folder = Path(args_cli.video_folder).expanduser().resolve() if args_cli.video_folder else output_dir / "videos"
 
     env_cfg.scene.num_envs = args_cli.num_envs if args_cli.num_envs is not None else env_cfg.scene.num_envs
@@ -283,6 +354,7 @@ def main(env_cfg, agent_cfg: dict):
                 success_rate = _env_metric(task_env, "in_success_region")
                 reward_mean = _mean_float(rewards)
                 task_metrics = _collect_task_metrics(task_env)
+                action_metrics = _collect_action_metrics(actions)
 
                 if isinstance(dones, torch.Tensor):
                     dones_bool = dones.bool()
@@ -296,6 +368,7 @@ def main(env_cfg, agent_cfg: dict):
                     "success_rate": success_rate,
                     "reward_mean": reward_mean,
                     **task_metrics,
+                    **action_metrics,
                 }
                 step_metrics.append(step_record)
 
@@ -330,13 +403,18 @@ def main(env_cfg, agent_cfg: dict):
         "video_enabled": args_cli.video,
         "video_folder": str(video_folder) if args_cli.video else None,
         "video_files": _latest_video_files(video_folder),
+        "trace_jsonl_path": str(trace_jsonl_path),
+        "trace_csv_path": str(trace_csv_path),
         "output_dir": str(output_dir),
         "env_closed": env_closed,
         "metric_summaries": _summarize_step_metrics(step_metrics),
     }
     payload = {"summary": summary, "steps": step_metrics}
     metrics_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+    _write_trace_files(step_metrics, trace_jsonl_path=trace_jsonl_path, trace_csv_path=trace_csv_path)
     print(f"[INFO] Wrote metrics to {metrics_path}")
+    print(f"[INFO] Wrote trace JSONL to {trace_jsonl_path}")
+    print(f"[INFO] Wrote trace CSV to {trace_csv_path}")
     print("[INFO] Eval summary:")
     print(json.dumps(summary, indent=2, sort_keys=True))
 

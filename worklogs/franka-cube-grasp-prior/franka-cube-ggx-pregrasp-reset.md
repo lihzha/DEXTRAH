@@ -952,3 +952,81 @@ Analysis:
 
 Next:
 - Continue monitoring active job `28987954` through wall-time/requeue. If later checkpoints show sustained success/lift improvement, produce another eval video from a newer checkpoint; otherwise keep the current videos as evidence of approach behavior and sparse lift.
+
+## 2026-06-11T21:42:12Z - reset-grasp geometry diagnostic plan
+
+Goal:
+- Resolve the user/orchestrator concern that the prior-enabled reset may be numerically tracking an end-effector target without placing the gripper in a physically graspable geometry around the cube.
+
+Hypothesis:
+- The existing `cube_grasp_prior_reset_success_rate` likely measures reset IK/target tracking only. A transform, tool-frame, approach-axis, gripper-open-width, or root-frame convention issue could still make the reset branch report success while fingertips are not positioned to enclose a 0.06 m cube.
+
+Change:
+- Planned before edits: add a reset-only diagnostic artifact path that records cube center, sampled exact grasp pose, 3 cm pregrasp target, offset direction, left/right fingertip centers, gripper center, gripper opening, fingertip/cube distances, table clearance, and a separate reset-grasp-quality verdict.
+- Planned before edits: generate labeled reset-only frames/video before policy actions, plus a policy rollout trace from the latest checkpoint with reset geometry metrics, action/gripper signals, cube lift, success/lift, and target pose error.
+- Planned before edits: audit training-vs-eval consistency for task config, prior library, reset path, cube randomization, robot/root conventions, action scaling, and checkpoint normalization.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- worklog: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/worklogs/franka-cube-grasp-prior/franka-cube-ggx-pregrasp-reset.md`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `efe5562769ae78ca5c31a5d92a638f6b3d717343`
+- implementation_commit: pending
+- push/pull: pending
+- changed_files: pending; expected owned source/wrapper/worklog only
+- remote_commit/status: pending after deploy
+
+Command / Job:
+- intended local checks: targeted `py_compile` plus `bash -n` on any changed wrapper
+- intended cluster jobs: bounded l401 reset-only diagnostic and latest-checkpoint eval artifact job, both in the agent-owned remote worktree
+- active training guardrail: do not interrupt job `28987954`; keep monitoring rank-0 JSONL, stdout, checkpoints, and reset/lift/success trends
+
+Result:
+- status: planned
+- current active training state at plan time: job `28987954` `RUNNING`, elapsed `02:13:09`, remaining `01:36:51`, node `batch-block5-00308`; stdout just wrote epoch `1450` checkpoint `last_dextrah_franka_cube_grasp_ep_1450_rew_2270.1106.pth`
+
+Analysis:
+- The scalar reset success/farther metrics remain useful for IK/path health, but they do not by themselves prove grasp-quality geometry. The next artifact must directly answer where the cube, target, pregrasp, fingertips, gripper center, and 3 cm approach offset are in the same frame, and whether the opening is compatible with a 0.06 m cube.
+
+Next:
+- Inspect current env/eval code, add explicit reset-grasp-quality instrumentation and artifact generation, commit/push/deploy, then run and inspect the bounded l401 diagnostic without touching active training.
+
+## 2026-06-11T21:48:20Z - reset-grasp diagnostic implementation checkpoint
+
+Goal:
+- Add instrumentation and artifact generation that directly answers the reset geometry questions before launching the l401 diagnostic.
+
+Change:
+- Added diagnostic-only reset buffers for cube world pose, exact tool pose, pregrasp tool pose, target EE pose, offset direction, fingertip positions, gripper width/margin, offset radial angle, projected exact finger-center distance, and reset-grasp-quality success.
+- Extended eval rollout trace output with JSONL/CSV step traces, prior reset-quality metrics, and action/gripper command fields.
+- Added a reset-only diagnostic script that renders labeled reset frames/video with colored markers and writes JSON/CSV geometry tables in world/env/root frames.
+- Added a minimal l401 Slurm wrapper for the reset diagnostic.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `efe5562769ae78ca5c31a5d92a638f6b3d717343`
+- implementation_commit: pending commit after this entry
+- push/pull: pending
+- changed_files: `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`, `dextrah_lab/rl_games/eval_rollout.py`, `dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py`, `cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`, this worklog
+- remote_commit/status: pending after deploy
+
+Command / Job:
+- local syntax: `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py`
+- wrapper syntax: `bash -n cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh cluster/sbatch_eval_franka_cube_grasp_1gpu.sh cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`
+- active training monitor: bounded A100 query of `squeue`, rank-0 JSONL, latest checkpoints, and log error signatures for job `28987954`
+
+Result:
+- status: local_checks_passed
+- syntax checks: passed
+- active training guardrail: job `28987954` still `RUNNING`, elapsed `02:19:39`, remaining `01:30:21`; rank-0 JSONL reached epoch `1522`, `bad_scalars=0`, targeted error signatures `0`
+- latest active training metrics: reset success/farther `1.0/1.0`; pos/rot error `0.001938 m/0.017254 rad`; finger-table clearance `0.134919 m`; lift reward `0.003508`; lift height `0.000115 m`; lifted rate `0.000488`; success rate `0.0`
+- latest checkpoints observed: epoch `1450` reward `2270.1106`, epoch `1475` reward `2271.4248`, epoch `1500` reward `2260.2036`
+
+Analysis:
+- The new diagnostics intentionally do not change observations, actions, rewards, terminations, PPO settings, cube reset randomization, or prior-disabled defaults. They add inspectable evidence for the frame/geometry concern that scalar IK success alone cannot resolve.
+
+Next:
+- Commit/push this diagnostic checkpoint, deploy the exact commit to the l401 agent worktree, run the bounded reset-only diagnostic and latest-checkpoint eval trace/video, fetch artifacts, open the most useful frames/video with `viz-open`, and inspect the geometry before making validity claims about the active training.
