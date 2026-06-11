@@ -430,3 +430,35 @@ Worker C status:
   `cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh` for a bounded l401 DP
   policy eval smoke using the official-DP checkpoint and the real cuRobo-demo
   dataset context.
+
+## 2026-06-11 Monitor Check 19:46 UTC
+
+Final RL job `28987954`:
+
+- still running on a1001 at about 15.5 minutes elapsed
+- reached at least epoch 154 / 10000
+- latest rank-0 JSONL: 154 records, `bad_scalar_count=0`
+- prior reset success rate remains `1.0`
+- latest success rate `0.0`; lifted rate returned to `0.0` after a small
+  earlier nonzero blip
+- best-checkpoint messages continue improving, reaching about `1823.7875` at
+  epoch 150
+
+Worker B:
+
+- Short 60 mm external-reference tracking RL smoke job `1027698` completed
+  with exit `0:0`, 16 envs, 3 epochs, and the external trajectory-tracking
+  reference task/config.
+- Job `1027697` was a cancelled duplicate / stale submission with no assigned
+  node.
+- The RL smoke produced a checkpoint named with `rew_-inf` because max epochs
+  were reached before any env terminated. This is not sufficient training
+  evidence by itself; Worker B still owns checkpoint eval / metric inspection
+  and any wrapper patch/relaunch loop before claiming the trajectory-tracking
+  variant is viable.
+
+Worker C:
+
+- First l401 DP-eval submission was blocked before scheduling by an invalid
+  inherited partition list (`batch_singlenode` on l401). Worker C is patching
+  the DP eval launcher to use the l401 `batch` partition.
