@@ -4097,3 +4097,61 @@ Next:
 - Deploy the exact commit to l401.
 - Launch the bounded source-joint replay with episode `24`, step `0`, modes
   `dataset_open_t_plus_7,dataset_t,dp_replan`, 320 steps, one env, video on.
+
+## 2026-06-11T17:14:00-07:00 - source-joint fixed-label replay launch
+
+Goal:
+- Test whether fixed cuRobo/demo labels reach approach/contact when both cube
+  pose and Franka robot joint state are initialized from the selected raw
+  source trajectory frame.
+
+Hypothesis:
+- If this replay works, the closed-loop DP failure is primarily a reset/robot
+  state alignment issue. If it still fails, then the problem is deeper in
+  trajectory/action label semantics or controller execution timing.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- implementation_commit:
+  `ecedc9720fa31be7427732a9e08450b0f595a230`
+- push/pull:
+  - pushed to `origin/codex/franka-cube-diffusion-policy-bc`
+  - l401 GitHub fetch is still blocked by SSH auth, so deployed via Git bundle
+    `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart-ecedc97.bundle`.
+- remote worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- remote_commit/status:
+  `ecedc9720fa31be7427732a9e08450b0f595a230`, detached clean.
+- official Diffusion Policy commit:
+  `5ba07ac6661db573af695b419a7947ecb704690f`
+
+Artifact staging:
+- raw source trajectory for episode `24` was copied as an untracked artifact to:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed24/trajectory.json`
+- container-visible path:
+  `/results/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed24/trajectory.json`
+
+Command / Job:
+- job_id: `1027846`
+- run_name:
+  `franka_cube_dp_replay_sourcejoint_ep24s0_fixedlabels320_20260611_171400`
+- command:
+  `RUN_NAME=franka_cube_dp_replay_sourcejoint_ep24s0_fixedlabels320_20260611_171400 CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart DATASET=/results/dp_bc/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz CHECKPOINT=/results/dp_bc/checkpoints/franka_cube_curobo32_full_pick_lift_framefix_overfit2k/latest.ckpt DEMO_RESET_DATASET=/results/dp_bc/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz DEMO_RESET_TRAJECTORY_JSON=/results/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed24/trajectory.json DEMO_RESET_EPISODE=24 DEMO_RESET_STEP=0 DATASET_START_EPISODE=24 DATASET_START_STEP=0 NUM_ENVS=1 STEPS=320 NUM_INFERENCE_STEPS=100 MODES=dataset_open_t_plus_7,dataset_t,dp_replan PRINT_INTERVAL=32 CAPTURE_VIDEO=True VIDEO_LENGTH=320 VIDEO_NAME_PREFIX=franka-cube-dp-replay-sourcejoint SEED=42 sbatch cluster/sbatch_replay_franka_cube_dp_actions_1gpu.sh`
+- remote run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/replays/franka_cube_dp_replay_sourcejoint_ep24s0_fixedlabels320_20260611_171400`
+- remote log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/replay_franka_cube_dp_actions_1027846.out`
+
+Expected artifacts:
+- `replay_summary.json`
+- `replay_steps.csv`
+- `replay_report.md`
+- `replay_motion.png`
+- source-joint reset metadata in `demo_reset`
+- video/contact sheet after fetch
+
+Next:
+- Monitor job `1027846`, fetch artifacts, generate contact sheet / viz-open
+  URLs, inspect metrics and video, then decide whether fixed labels reach
+  contact from matched robot state.
