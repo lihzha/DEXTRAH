@@ -482,3 +482,31 @@ Next:
 - Recheck stdout throughput and checkpoint cadence sooner than the usual
   5-minute interval. If FPS continues falling or checkpoints stall, inspect
   node/job state more deeply.
+
+## 2026-06-10 19:10 PDT - Teacher Throughput Follow-Up
+
+Goal:
+- Check whether the throughput dip observed at `19:06 PDT` persisted.
+
+Command / Job:
+- job_id: `28955904`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28955904.out`
+
+Result:
+- status: running healthy; throughput recovered.
+- scheduler: running on `batch-block5-03072`, time left `1:34:36`.
+- stdout advanced to epoch `14998/20000`.
+- latest complete checkpoint:
+  `last_dextrah_lstm_ep_14990_rew_634.49927.pth`.
+- recent non-checkpoint epochs returned to roughly `111k-113k` total FPS.
+- sidecars refreshed in stdout at `19:08:59`; checkpoint-sidecar interval at
+  epoch `14990` showed the expected temporary FPS dip.
+
+Analysis:
+- The earlier throughput drop appears transient, likely tied to checkpoint or
+  system load rather than a persistent training slowdown. Checkpoint cadence and
+  stdout progression remain normal.
+
+Next:
+- Return to normal periodic monitoring and continue scalar checks.
