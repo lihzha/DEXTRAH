@@ -317,6 +317,18 @@ def main() -> None:
         "reward_final": summary.get("reward_final"),
         "success_rate_mean": summary.get("success_rate_mean"),
         "success_rate_final": summary.get("success_rate_final"),
+        "success_rate_max": summary.get("success_rate_max") or _summary(summary, "success_rate", "max"),
+        "success_ever_rate": summary.get("success_ever_rate"),
+        "success_ever_count": summary.get("success_ever_count"),
+        "first_success_step": summary.get("first_success_step"),
+        "last_success_step": summary.get("last_success_step"),
+        "done_ever_rate": summary.get("done_ever_rate"),
+        "done_ever_count": summary.get("done_ever_count"),
+        "first_done_step": summary.get("first_done_step"),
+        "done_after_success_rate": summary.get("done_after_success_rate"),
+        "done_after_success_count": summary.get("done_after_success_count"),
+        "done_reason_counts": summary.get("done_reason_counts"),
+        "done_events": summary.get("done_events"),
         "cube_lift_height_max": _summary(summary, "cube_lift_height", "max"),
         "ee_to_cube_final": _summary(summary, "ee_to_cube_dist", "final"),
         "finger_center_to_cube_final": _summary(summary, "finger_center_to_cube_dist", "final"),
@@ -510,8 +522,9 @@ def main() -> None:
 - checkpoint: `{summary.get('checkpoint')}`
 - steps: {summary.get('num_steps_completed')}/{summary.get('num_steps_requested')}
 - reward mean/final: {_fmt(summary.get('reward_mean'))} / {_fmt(summary.get('reward_final'))}
-- success mean/final: {_fmt(summary.get('success_rate_mean'))} / {_fmt(summary.get('success_rate_final'))}
-- done count: {summary.get('done_count')}
+- success mean/final/max: {_fmt(summary.get('success_rate_mean'))} / {_fmt(summary.get('success_rate_final'))} / {_fmt(compact['success_rate_max'])}
+- success ever count/rate: {compact['success_ever_count']} / {_fmt(compact['success_ever_rate'])}
+- done count: {summary.get('done_count')} (done ever count/rate: {compact['done_ever_count']} / {_fmt(compact['done_ever_rate'])})
 - target unsafe max: {_fmt(compact['target_unsafe_rate_max'])}
 - target clearance min: {_fmt(compact['target_clearance_min'])} m
 - train/eval consistency status: {consistency['status']} real_mismatches={consistency['mismatches']} missing_train_keys={consistency['missing_train_keys']} missing_eval_keys={consistency['missing_eval_keys']}
@@ -548,6 +561,15 @@ def main() -> None:
 - hold action close/up mean: {_fmt(compact['hold_action_close_mean'])} / {_fmt(compact['hold_action_up_mean'])}
 - hold-applied action close/up mean: {_fmt(compact['hold_applied_action_close_mean'])} / {_fmt(compact['hold_applied_action_up_mean'])}
 - applied-reference action L2 mean: {_fmt(compact['applied_reference_action_error_l2_mean'])}
+
+## Done Semantics
+
+- first success step summary: `{compact['first_success_step']}`
+- last success step summary: `{compact['last_success_step']}`
+- first done step summary: `{compact['first_done_step']}`
+- done-after-success count/rate: {compact['done_after_success_count']} / {_fmt(compact['done_after_success_rate'])}
+- done reason counts: `{compact['done_reason_counts']}`
+- done events: `{compact['done_events']}`
 
 ## Fixed-Window Rollout Metrics
 

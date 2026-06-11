@@ -2702,6 +2702,68 @@ Launch Status:
 - submitted to l401 as eval-only diagnostic. Awaiting completion and artifact inspection.
 
 Result:
+- status: completed `0:0` in `00:01:25` on `pool0-00004`; fetched locally, summarized, and visually inspected.
+- local_run_dir: `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_a10_video480_20260611_160358`
+- local_artifact_dir: `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_a10_video480_20260611_160358_artifacts`
+- video validation: `1280x720`, `479` frames, `7.983333 s`, `60/1` FPS.
+- metrics: `num_steps_completed=480`, `done_count=3`, `reward_mean/final=3.9467/2.6719`, `success_rate_mean/final/max=0.01875/0/0.75`, `cube_lift_height_max=0.108942 m`, `cube_lift_height_final=0`, `target_unsafe_rate_max=0`, `target_clearance_min=0.065114 m`.
+- hold metrics: `hold_active_rate_mean/final=0.1729/0.25`; first trigger at step `319`; trigger route was lift (`hold_lift_trigger_rate_mean=0.1729`, phase/success/contact triggers `0`); target policy id `1.0` confirms `cube_current_plus_trigger_ee_offset`; final trigger offset mean x/y/z `-0.000152/0.000365/0.009102 m`; `mixed_reference_action_error_l2_mean=0.0`; `applied_reference_action_error_l2_mean=0.1274`.
+- behavior metrics: final EE-to-cube `0.1190 m`, final finger-center-to-cube `0.1601 m`, final gripper width `0.0660 m`. These final values are post-reset/post-drop and should not be read as the whole rollout behavior.
+- success-window trace: step `319` entered hold at cube lift `0.0225 m`; step `363` reached `success_rate=0.75`; step `373` reached `cube_lift_height=0.1089 m` and `success_rate=0.75`; by step `380`, phase dropped to `0.206`, lift reset to `0`, and only one env remained in hold (`hold_active_rate=0.25`), consistent with `done_count=3`.
+- consistency artifact: corrected after the initial summary used a nonexistent train YAML. Final `train_eval_consistency.json` status is `passed`, with real mismatches, missing train keys, and missing eval keys all empty; expected eval overrides include action source, alpha, hold config, checkpoint, deterministic/video settings, and requested step count.
+- artifact paths:
+  - report: `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_a10_video480_20260611_160358_artifacts/report.md`
+  - summary: `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_a10_video480_20260611_160358_artifacts/summary.json` and `summary.csv`
+  - trace plot: `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_a10_video480_20260611_160358_artifacts/trajectory_trace_plot.png`
+  - full video: `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_a10_video480_20260611_160358/videos/refmix-hold-offset-a10-video480-step-0.mp4`
+  - full contact sheet: `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_a10_video480_20260611_160358_artifacts/contact_sheet_first_mid_lift_final.jpg`
+  - success-window slow video: `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_a10_video480_20260611_160358_artifacts/success_window_slow_step300_380.mp4`
+  - success-window contact sheet: `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_a10_video480_20260611_160358_artifacts/success_window_contact_sheet.jpg`
+  - consistency JSON: `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_a10_video480_20260611_160358_artifacts/train_eval_consistency.json`
+- viz_urls:
+  - full video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_a10_video480_20260611_160358/videos/refmix-hold-offset-a10-video480-step-0.mp4`
+  - full contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_a10_video480_20260611_160358_artifacts/contact_sheet_first_mid_lift_final.jpg`
+  - success-window slow video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_a10_video480_20260611_160358_artifacts/success_window_slow_step300_380.mp4`
+  - success-window contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_a10_video480_20260611_160358_artifacts/success_window_contact_sheet.jpg`
+  - trace plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_a10_video480_20260611_160358_artifacts/trajectory_trace_plot.png`
+  - report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_a10_video480_20260611_160358_artifacts/report.md`
+  - consistency JSON: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_a10_video480_20260611_160358_artifacts/train_eval_consistency.json`
+
+Analysis:
+- This is not a simple drift failure and not a learned-policy success claim. The offset-hold policy preserved the trigger-frame contact geometry well enough to produce transient task success (`success_rate=0.75`) and max lift `0.1089 m`, with target safety still clean.
+- The final `success_rate=0` is misleading by itself because three envs reset after the success window (`done_count=3`), and the final frame/last metrics reflect post-reset/post-drop state for most envs.
+- Existing `1027851` metrics were produced before per-env success/done instrumentation, so `success_ever` and done reasons cannot be recovered exactly from the aggregate trace. The aggregate trace does show max concurrent success `0.75`, but not per-env success history or done reason attribution.
+
+Next:
+- Patch eval artifacts to log `success_ever`, first/last success step, per-step done rates, done-after-success count, and per-env first-done event records with pre-auto-reset reason snapshots. Then run one bounded success-window eval/video around the same offset-hold setup; no PPO scale-up.
+
+## 2026-06-11T16:10:00-07:00 - success/done semantics artifact plan
+
+Goal:
+- Make the offset-hold diagnostic interpretable around the first success/reset window rather than relying on final metrics after auto-reset.
+
+Hypothesis:
+- `1027851` likely reached real task success in three envs and reset due success-timeout semantics rather than simply drifting/dropping. Adding per-env event logging and a short success-window video should distinguish robust success/reset from brief visual lift/drop.
+
+Planned Change:
+- `dextrah_lab/rl_games/eval_rollout.py`: track per-env `success_ever`, first/last success step, done-ever, first done step, done-after-success, and first-done event records. Snapshot likely done reasons before `env.step()` can auto-reset state, including success-timeout, cube-out, pre-lift drag, finger-table penetration, and truncation.
+- `dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py`: surface success/done semantics in `summary.json`, `summary.csv`, and `report.md`.
+- Artifact generation: produce a success-window slow video/contact sheet focused on steps around lift trigger, success, max lift, and reset.
+
+Validation Before Launch:
+- `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py`
+- `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- `git diff --check`
+
+Planned Job:
+- One bounded eval-only success-window run on l401 with the same checkpoint/reference/seed/config as `1027851`, `ACTION_SOURCE=policy_reference_mix_hold`, `REFERENCE_MIX_ALPHA=1.0`, `HOLD_TARGET_POLICY=cube_current_plus_trigger_ee_offset`, `HOLD_CONTACT_MAX_FINGER_DIST=0.0`, `HOLD_PHASE_START=0.67`, `HOLD_TRIGGER_LIFT_HEIGHT=0.02`, `HOLD_LIFT_HEIGHT=0.03`, `HOLD_GRIPPER_ACTION=-0.4`, `NUM_ENVS=4`, `NUM_STEPS=390`, `VIDEO_LENGTH=390`.
+
+Acceptance:
+- Report must include non-null `success_ever`, first/last success steps, done-after-success counts, and per-env first-done event records when any env resets.
+- Viewer bundle must include mp4, success-window contact sheet, trace plot, report, summary JSON/CSV, consistency JSON, and stdout log.
+- Interpretation must answer whether offset-hold achieves task success before reset and whether reset/drop semantics make final success misleading. No PPO scale-up.
+
+Result:
 - status: completed `0:0` in `00:01:25` on `pool0-00016`; fetched locally and summarized.
 - local_run_dir: `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_a10_video480_20260611_154910`
 - local_artifact_dir: `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_a10_video480_20260611_154910_artifacts`
@@ -2827,3 +2889,42 @@ Implementation Checkpoint:
 - validation: `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh` passed.
 - validation: `git diff --check` passed.
 - validation: summarizer regression on `1027845` metrics wrote `/tmp/traj_hold_offset_summary_regression/{report.md,summary.json,train_eval_consistency.json,trajectory_trace_plot.png}` and preserved old metrics while showing new offset fields as `n/a` for old artifacts.
+
+Version Control:
+- agent_id: franka-cube-traj-tracking
+- local_commit: `0a8cf038bae6a12b26ff94cb6dc837c5c98da06d`
+- push: pushed to `origin/codex/franka-cube-trajectory-tracking`
+- remote_commit/status: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking` detached clean at `0a8cf038bae6a12b26ff94cb6dc837c5c98da06d`. First remote fetch via `git@github.com` failed with public-key auth; retry used one-shot HTTPS fetch without changing persistent remote config.
+
+Command / Job:
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:30:00 --job-name=refmix_hold_offset --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_refmix_hold_offset_a10_video480_20260611_160358,NUM_ENVS=4,NUM_STEPS=480,VIDEO_LENGTH=480,VIDEO_NAME_PREFIX=refmix-hold-offset-a10-video480,CAPTURE_VIDEO=True,DETERMINISTIC=True,ACTION_SOURCE=policy_reference_mix_hold,REFERENCE_MIX_ALPHA=1.0,HOLD_TARGET_POLICY=cube_current_plus_trigger_ee_offset,HOLD_PHASE_START=0.67,HOLD_TRIGGER_LIFT_HEIGHT=0.02,HOLD_CONTACT_MAX_FINGER_DIST=0.0,HOLD_LIFT_HEIGHT=0.03,HOLD_GRIPPER_ACTION=-0.4,USE_CUDA_GRAPH=False,SEED=64,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_WEIGHT=1.5,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_PHASE_START=0.0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_SHARPNESS=1.0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_USE_CONTACT_GATE=False,CHECKPOINT=/results/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_actionalign_rl_smoke_20260611_151520/nn/last_dextrah_franka_cube_traj_tracking_ep_5_rew_-inf.pth cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- job_id: `1027851`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_traj_tracking_refmix_hold_offset_a10_video480_20260611_160358`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1027851.out`
+- expected artifacts: `metrics.json`, `trace.csv`, `trace.jsonl`, `videos/refmix-hold-offset-a10-video480-step-0.mp4`, local summary/report/plot/contact sheet after fetch.
+
+Launch Status:
+- submitted to l401 as eval-only diagnostic. Awaiting completion and artifact inspection.
+
+## 2026-06-11T16:12:00-07:00 - current 1027851 acknowledgement and next launch state
+
+Status:
+- Acknowledged orchestrator diagnosis: job `1027851` is a transient-success/reset-semantics artifact, not a simple drift failure.
+- Key evidence from fetched artifacts: `done_count=3`, `success_rate_max=0.75` around steps `363-373`, `cube_lift_height_max=0.108942 m`, target unsafe `0`, target clearance min `0.065114 m`, and final success/lift reset to `0` after env resets/drop.
+- Local artifacts updated with explicit addendum and success-window views:
+  - report: `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_a10_video480_20260611_160358_artifacts/report.md`
+  - full video: `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_a10_video480_20260611_160358/videos/refmix-hold-offset-a10-video480-step-0.mp4`
+  - full contact sheet: `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_a10_video480_20260611_160358_artifacts/contact_sheet_first_mid_lift_final.jpg`
+  - success-window slow video: `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_a10_video480_20260611_160358_artifacts/success_window_slow_step300_380.mp4`
+  - success-window contact sheet: `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_a10_video480_20260611_160358_artifacts/success_window_contact_sheet.jpg`
+  - trace plot: `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_a10_video480_20260611_160358_artifacts/trajectory_trace_plot.png`
+  - consistency JSON: `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_a10_video480_20260611_160358_artifacts/train_eval_consistency.json`
+- Current implementation patch adds per-env eval semantics for the next run: `success_ever`, first/last success step summaries, done-ever/done-after-success, per-step done rates, and first-done event records with pre-auto-reset reason snapshots.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py` passed.
+- `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh` passed.
+- `git diff --check` passed.
+
+Next:
+- Commit/push/deploy this instrumentation patch, then launch exactly one bounded success-window eval with the same offset-hold config as `1027851` but `NUM_STEPS=390` / `VIDEO_LENGTH=390`. No PPO scale-up.

@@ -417,6 +417,101 @@ def _env_tensor(task_env, name: str, default: float = 0.0) -> torch.Tensor:
     return torch.full((task_env.num_envs,), float(default), device=task_env.device)
 
 
+def _env_bool_tensor(task_env, name: str, default: bool = False) -> torch.Tensor:
+    value = getattr(task_env, name, None)
+    if isinstance(value, torch.Tensor):
+        tensor = value.detach()
+        if tensor.ndim == 0:
+            return tensor.bool().reshape(1).expand(task_env.num_envs).to(device=task_env.device)
+        return tensor.reshape(task_env.num_envs, -1)[:, 0].bool().to(device=task_env.device)
+    return torch.full((task_env.num_envs,), bool(default), dtype=torch.bool, device=task_env.device)
+
+
+def _step_tensor_summary(values: torch.Tensor) -> dict[str, float | int | None]:
+    if not isinstance(values, torch.Tensor):
+        return {"count": 0, "mean": None, "min": None, "max": None}
+    valid = values.detach().float()
+    valid = valid[valid >= 0.0]
+    if valid.numel() == 0:
+        return {"count": 0, "mean": None, "min": None, "max": None}
+    return {
+        "count": int(valid.numel()),
+        "mean": float(valid.mean().cpu()),
+        "min": float(valid.min().cpu()),
+        "max": float(valid.max().cpu()),
+    }
+
+
+def _done_reason_snapshot(task_env) -> dict[str, torch.Tensor]:
+    """Snapshot likely termination reasons before env.step may auto-reset done envs."""
+
+    if hasattr(task_env, "_compute_intermediate_values"):
+        task_env._compute_intermediate_values()
+
+    false = torch.zeros(task_env.num_envs, dtype=torch.bool, device=task_env.device)
+    if not hasattr(task_env, "cube_pos"):
+        return {
+            "success_region": _env_bool_tensor(task_env, "in_success_region"),
+            "success_done": false,
+            "cube_out": false,
+            "prelift_drag": false,
+            "finger_table_penetration": false,
+            "truncated": false,
+        }
+
+    cfg = getattr(task_env, "cfg", None)
+    if cfg is None:
+        return {
+            "success_region": _env_bool_tensor(task_env, "in_success_region"),
+            "success_done": false,
+            "cube_out": false,
+            "prelift_drag": false,
+            "finger_table_penetration": false,
+            "truncated": false,
+        }
+
+    cube_pos = getattr(task_env, "cube_pos")
+    lower_x = float(getattr(cfg, "table_center_x", 0.0)) - 0.5 * float(getattr(cfg, "table_size_x", 0.0)) - float(
+        getattr(cfg, "out_of_bounds_margin", 0.0)
+    )
+    upper_x = float(getattr(cfg, "table_center_x", 0.0)) + 0.5 * float(getattr(cfg, "table_size_x", 0.0)) + float(
+        getattr(cfg, "out_of_bounds_margin", 0.0)
+    )
+    lower_y = -0.5 * float(getattr(cfg, "table_size_y", 0.0)) - float(getattr(cfg, "out_of_bounds_margin", 0.0))
+    upper_y = 0.5 * float(getattr(cfg, "table_size_y", 0.0)) + float(getattr(cfg, "out_of_bounds_margin", 0.0))
+    cube_out = (
+        (cube_pos[:, 0] < lower_x)
+        | (cube_pos[:, 0] > upper_x)
+        | (cube_pos[:, 1] < lower_y)
+        | (cube_pos[:, 1] > upper_y)
+        | (cube_pos[:, 2] < float(getattr(cfg, "table_surface_z", 0.0)) - 0.08)
+    )
+    episode_length = _env_tensor(task_env, "episode_length_buf")
+    success_region = _env_bool_tensor(task_env, "in_success_region")
+    success_done = (
+        (_env_tensor(task_env, "time_in_success_region") >= float(getattr(cfg, "success_timeout", math.inf)))
+        & (episode_length >= int(getattr(cfg, "min_episode_steps_before_success", 0)))
+    )
+    prelift_drag = (
+        (~_env_bool_tensor(task_env, "has_lifted_cube"))
+        & (_env_tensor(task_env, "cube_xy_error") >= float(getattr(cfg, "prelift_drag_termination_xy_error", math.inf)))
+        & (episode_length > 2)
+    )
+    finger_table_penetration = (
+        _env_tensor(task_env, "finger_table_clearance", default=math.inf)
+        < float(getattr(cfg, "finger_table_penetration_termination_margin", -math.inf))
+    ) & (episode_length > 2)
+    truncated = episode_length >= int(getattr(task_env, "max_episode_length", math.inf)) - 1
+    return {
+        "success_region": success_region,
+        "success_done": success_done,
+        "cube_out": cube_out,
+        "prelift_drag": prelift_drag,
+        "finger_table_penetration": finger_table_penetration,
+        "truncated": truncated,
+    }
+
+
 def _ensure_hold_state(task_env) -> dict[str, torch.Tensor]:
     state = getattr(task_env, "_eval_terminal_hold_state", None)
     if (
@@ -850,6 +945,22 @@ def main(env_cfg, agent_cfg: dict):
 
     step_metrics = []
     done_count = 0
+    success_ever_env = torch.zeros(task_env.num_envs, dtype=torch.bool, device=task_env.device)
+    first_success_step = torch.full((task_env.num_envs,), -1.0, device=task_env.device)
+    last_success_step = torch.full((task_env.num_envs,), -1.0, device=task_env.device)
+    done_ever_env = torch.zeros(task_env.num_envs, dtype=torch.bool, device=task_env.device)
+    first_done_step = torch.full((task_env.num_envs,), -1.0, device=task_env.device)
+    done_after_success_env = torch.zeros(task_env.num_envs, dtype=torch.bool, device=task_env.device)
+    done_reason_counts = {
+        "success_done": 0,
+        "cube_out": 0,
+        "prelift_drag": 0,
+        "finger_table_penetration": 0,
+        "truncated": 0,
+        "done_after_success_unclassified": 0,
+        "unclassified": 0,
+    }
+    done_events: list[dict[str, object]] = []
     env_closed = False
     try:
         obs = env.reset()
@@ -868,33 +979,116 @@ def main(env_cfg, agent_cfg: dict):
 
             with torch.inference_mode():
                 actions, action_source_metrics = _actions_from_source(args_cli.action_source, task_env, agent, obs)
+                pre_step_done_reasons = _done_reason_snapshot(task_env)
                 step_out = env.step(actions)
                 if len(step_out) == 5:
                     obs, rewards, terminated, truncated, _ = step_out
                     dones = torch.logical_or(terminated, truncated)
                 else:
                     obs, rewards, dones, _ = step_out
+                    terminated = None
+                    truncated = None
 
                 if args_cli.action_source in POLICY_ACTION_SOURCES and isinstance(obs, dict):
                     obs = obs["obs"]
 
-                success_rate = _env_metric(task_env, "in_success_region")
+                success_tensor = _env_bool_tensor(task_env, "in_success_region")
                 reward_mean = _mean_float(rewards)
                 task_metrics = _collect_task_metrics(task_env, actions)
 
+                dones_bool = None
                 if isinstance(dones, torch.Tensor):
                     dones_bool = dones.bool()
                     done_count += int(dones_bool.sum().detach().cpu())
+                    success_tensor = success_tensor | (dones_bool & pre_step_done_reasons["success_region"])
+                    success_tensor = success_tensor | (dones_bool & pre_step_done_reasons["success_done"])
                     if agent is not None and agent.is_rnn and agent.states is not None and dones_bool.any():
                         for state in agent.states:
                             state[:, dones_bool, :] = 0.0
-                    if args_cli.action_source in HOLD_ACTION_SOURCES and dones_bool.any():
+                new_success = success_tensor & (~success_ever_env)
+                if bool(new_success.any()):
+                    first_success_step[new_success] = float(step + 1)
+                if bool(success_tensor.any()):
+                    last_success_step[success_tensor] = float(step + 1)
+                success_ever_env |= success_tensor
+
+                if dones_bool is not None and bool(dones_bool.any()):
+                    new_done = dones_bool & (~done_ever_env)
+                    if bool(new_done.any()):
+                        first_done_step[new_done] = float(step + 1)
+                    done_after_success_env |= dones_bool & success_ever_env
+                    reason_names = ("success_done", "cube_out", "prelift_drag", "finger_table_penetration", "truncated")
+                    classified = torch.zeros_like(dones_bool)
+                    for reason_name in reason_names:
+                        reason_mask = dones_bool & pre_step_done_reasons[reason_name]
+                        done_reason_counts[reason_name] += int(reason_mask.sum().detach().cpu())
+                        classified |= reason_mask
+                    after_success_unclassified = dones_bool & (~classified) & success_ever_env
+                    done_reason_counts["done_after_success_unclassified"] += int(
+                        after_success_unclassified.sum().detach().cpu()
+                    )
+                    classified |= after_success_unclassified
+                    done_reason_counts["unclassified"] += int((dones_bool & (~classified)).sum().detach().cpu())
+                    for env_id in torch.nonzero(new_done, as_tuple=False).flatten().detach().cpu().tolist():
+                        first_success_value = float(first_success_step[env_id].detach().cpu())
+                        last_success_value = float(last_success_step[env_id].detach().cpu())
+                        reasons = [
+                            name
+                            for name in reason_names
+                            if bool(pre_step_done_reasons[name][env_id].detach().cpu())
+                        ]
+                        if not reasons and bool(success_ever_env[env_id].detach().cpu()):
+                            reasons = ["done_after_success_unclassified"]
+                        elif not reasons:
+                            reasons = ["unclassified"]
+                        done_events.append(
+                            {
+                                "env_id": int(env_id),
+                                "first_done_step": int(step + 1),
+                                "first_success_step": int(first_success_value) if first_success_value >= 0 else None,
+                                "last_success_step": int(last_success_value) if last_success_value >= 0 else None,
+                                "success_ever_before_done": bool(success_ever_env[env_id].detach().cpu()),
+                                "reason_source": "pre_step_snapshot_before_auto_reset",
+                                "reasons": reasons,
+                            }
+                        )
+                    done_ever_env |= dones_bool
+                    if args_cli.action_source in HOLD_ACTION_SOURCES:
                         _reset_hold_state(task_env, dones_bool)
+
+                success_rate = _mean_float(success_tensor.float())
+                done_step_rate = _mean_float(dones_bool.float()) if isinstance(dones_bool, torch.Tensor) else None
+                terminated_rate = _mean_float(terminated.bool().float()) if isinstance(terminated, torch.Tensor) else None
+                truncated_rate = _mean_float(truncated.bool().float()) if isinstance(truncated, torch.Tensor) else None
+                eval_event_metrics = {
+                    "eval_success_ever_rate": _mean_float(success_ever_env.float()),
+                    "eval_success_ever_count": int(success_ever_env.sum().detach().cpu()),
+                    "eval_first_success_step_mean": _step_tensor_summary(first_success_step)["mean"],
+                    "eval_last_success_step_mean": _step_tensor_summary(last_success_step)["mean"],
+                    "eval_done_rate": done_step_rate,
+                    "eval_done_count_step": (
+                        int(dones_bool.sum().detach().cpu()) if isinstance(dones_bool, torch.Tensor) else 0
+                    ),
+                    "eval_done_count_cumulative": done_count,
+                    "eval_done_ever_rate": _mean_float(done_ever_env.float()),
+                    "eval_done_ever_count": int(done_ever_env.sum().detach().cpu()),
+                    "eval_done_after_success_rate": _mean_float(done_after_success_env.float()),
+                    "eval_terminated_rate": terminated_rate,
+                    "eval_truncated_rate": truncated_rate,
+                }
+                if isinstance(dones_bool, torch.Tensor):
+                    for reason_name, reason_tensor in pre_step_done_reasons.items():
+                        if reason_name == "success_region":
+                            continue
+                        eval_event_metrics[f"eval_done_{reason_name}_rate"] = _mean_float(
+                            (dones_bool & reason_tensor).float()
+                        )
 
                 step_record = {
                     "step": step + 1,
                     "success_rate": success_rate,
                     "reward_mean": reward_mean,
+                    **eval_event_metrics,
                     **action_source_metrics,
                     **task_metrics,
                 }
@@ -915,6 +1109,9 @@ def main(env_cfg, agent_cfg: dict):
     success_values = [item["success_rate"] for item in step_metrics if item["success_rate"] is not None]
     reward_values = [item["reward_mean"] for item in step_metrics if item["reward_mean"] is not None]
     window = max(1, min(args_cli.success_window, len(success_values)))
+    first_success_summary = _step_tensor_summary(first_success_step)
+    last_success_summary = _step_tensor_summary(last_success_step)
+    first_done_summary = _step_tensor_summary(first_done_step)
     summary = {
         "task": args_cli.task,
         "checkpoint": resume_path,
@@ -964,7 +1161,19 @@ def main(env_cfg, agent_cfg: dict):
         "done_count": done_count,
         "success_rate_mean": sum(success_values) / len(success_values) if success_values else None,
         "success_rate_final": success_values[-1] if success_values else None,
+        "success_rate_max": max(success_values) if success_values else None,
         "success_rate_last_window_mean": sum(success_values[-window:]) / window if success_values else None,
+        "success_ever_count": int(success_ever_env.sum().detach().cpu()),
+        "success_ever_rate": _mean_float(success_ever_env.float()),
+        "first_success_step": first_success_summary,
+        "last_success_step": last_success_summary,
+        "done_ever_count": int(done_ever_env.sum().detach().cpu()),
+        "done_ever_rate": _mean_float(done_ever_env.float()),
+        "first_done_step": first_done_summary,
+        "done_after_success_count": int(done_after_success_env.sum().detach().cpu()),
+        "done_after_success_rate": _mean_float(done_after_success_env.float()),
+        "done_reason_counts": done_reason_counts,
+        "done_events": done_events,
         "reward_mean": sum(reward_values) / len(reward_values) if reward_values else None,
         "reward_final": reward_values[-1] if reward_values else None,
         "video_enabled": args_cli.video,
