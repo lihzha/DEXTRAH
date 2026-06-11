@@ -726,3 +726,51 @@ Local Validation:
 Next:
 - Commit/push this patch, update the A100 worktree, and rerun the Franka cube
   table-clearance validator before launching any new PPO.
+
+## 2026-06-10 17:48 PDT - Base-Clearance Validation Submitted
+
+Command / Job:
+- command:
+  `RUN_NAME=franka_cube_validate_baseclear_20260610_1748 CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-rl-20260610T2353Z NUM_ENVS=4 NUM_STEPS=160 CAPTURE_VIDEO=True SEED=54 sbatch --parsable cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`
+- job_id: `28957434`
+- code_commit:
+  `0c9dcc10f048e4a641ffaf335fe532d60de29578`
+- remote worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-rl-20260610T2353Z`
+- expected run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_cube_validate_baseclear_20260610_1748`
+- expected log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_cube_28957434.out`
+
+Monitoring Criteria:
+- `reset_fingers_clear_table` must pass with all envs above
+  `finger_table_clearance_margin=0.025m`.
+- The previous failing checks must recover:
+  `success_predicate_accepts_lifted_cube_near_gripper`,
+  `reward_accepts_success_geometry_for_prelift_enclosure`, and
+  `reward_accepts_success_geometry_for_lift`.
+- Scripted rollout should have non-negative mean finger/table clearance and no
+  early terminations from table penetration.
+
+## 2026-06-10 17:49 PDT - Base-Clearance Validation Import Failure
+
+Result:
+- job_id: `28957434`
+- scheduler state: failed during environment import.
+- root cause:
+  `AttributeError: type object 'DextrahFrankaStarKittingEnvCfg' has no attribute 'robot_yaw_wxyz'`
+
+Diagnosis:
+- `python3 -m py_compile` was insufficient because Isaac Lab's `@configclass`
+  transformation does not expose inherited config fields as plain class
+  attributes during subclass class-body evaluation.
+
+Patch:
+- Restated the inherited Franka robot constants locally in
+  `DextrahFrankaCubeGraspEnvCfg` before rebuilding the cube-specific robot cfg:
+  `robot_yaw_wxyz`, `finger_effort_limit`, `finger_stiffness`, and
+  `finger_damping`.
+
+Next:
+- Re-run static checks, commit/push, update the A100 worktree, and relaunch
+  the base-clearance validator.

@@ -48,6 +48,14 @@ class DextrahFrankaCubeGraspEnvCfg(DextrahFrankaStarKittingEnvCfg):
     finger_table_clearance_margin = 0.025
     finger_table_penetration_termination_margin = -0.002
     finger_table_clearance_success_margin = 0.005
+
+    # Restate the inherited Franka constants locally because Isaac Lab's
+    # configclass fields are not reliable class attributes during subclass
+    # body evaluation.
+    robot_yaw_wxyz = (0.0, 0.0, 0.0, 1.0)
+    finger_effort_limit = 1000.0
+    finger_stiffness = 4000.0
+    finger_damping = 400.0
     robot_base_z = 0.25
 
     # The star task keeps the robot base lower for its fixture geometry.  In
@@ -55,10 +63,10 @@ class DextrahFrankaCubeGraspEnvCfg(DextrahFrankaStarKittingEnvCfg):
     # so rebuild the inherited robot cfg with a cube-specific base height.
     robot: ArticulationCfg = _franka_star_robot_cfg(
         robot_base_z,
-        DextrahFrankaStarKittingEnvCfg.robot_yaw_wxyz,
-        DextrahFrankaStarKittingEnvCfg.finger_effort_limit,
-        DextrahFrankaStarKittingEnvCfg.finger_stiffness,
-        DextrahFrankaStarKittingEnvCfg.finger_damping,
+        robot_yaw_wxyz,
+        finger_effort_limit,
+        finger_stiffness,
+        finger_damping,
     )
 
     # KUKA-cube-shaped reward weights for franka_cube_grasp_rewards.compute_franka_cube_grasp_rewards.
