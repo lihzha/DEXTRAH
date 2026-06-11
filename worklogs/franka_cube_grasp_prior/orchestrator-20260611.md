@@ -831,3 +831,43 @@ Final RL job `28987954`:
   `2213.7234` and epoch `925` reward suffix `2196.059`
 - best reward improved to at least `2217.4502` around epoch `837`
   before the eval-video checkpoint was sampled
+
+## 2026-06-11 Monitor Check 21:04 UTC
+
+Worker C DP train/eval mismatch escalation:
+
+- User reviewed Worker C's DP rollout video and called out the same failure:
+  the policy visibly drifts away from the object and ignores it. This is being
+  treated as a train/eval mismatch or bug until disproven, not as merely weak
+  BC performance.
+- Worker C has found a concrete mismatch: the stale approach/full-pick datasets
+  encoded EE translation/rotation deltas in world/env coordinates, while the
+  DEXTRAH Franka action path passes relative commands to the differential IK
+  controller in the robot root frame. The Franka cube robot root is yawed
+  180 degrees, so old-label x/y and roll/pitch signs were inverted at execution
+  time.
+- Consequence: old 503-step and overfit2k full-pick checkpoints are stale for
+  behavior claims. Their mechanics checks remain useful only for checkpoint
+  loading and bridge plumbing, not for manipulation quality.
+- Worker C produced a frame-corrected dataset:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz`
+- Worker C trained a corrected overfit/debug checkpoint with official DP:
+  `global_step=2523`, train loss about `0.00885`, val loss about `0.00978`,
+  train action MSE about `0.00115`.
+- Corrected checkpoint:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_debug/run_20260611_135200_curobo32_full_pick_lift_framefix_overfit2k/checkpoints/latest.ckpt`
+- Corrected 96-step l401 trace job `1027736` completed `0:0`. It still failed
+  behavior within the short horizon, but approach improved versus the stale
+  trace: EE-to-cube distance `0.2332 -> 0.1729 m` and finger-center-to-cube
+  distance `0.2200 -> 0.1777 m`. Gripper stayed open (`0.0798 -> 0.0739 m`)
+  and success/lift remained `0`.
+- Worker C's dataset timing check shows close starts around local step
+  `282/283`, lift around `402/403`, and hold-after-lift around `642/643`, so
+  the 96-step trace is too short to validate whether close/lift phases are now
+  reached.
+- Worker C launched or queued a longer corrected 512-step trace job `1027737`
+  to test whether the corrected policy closes/lifts at the dataset phase timing.
+  This remains active/pending at this checkpoint.
+- Orchestrator instruction to Worker C: do not pivot to data augmentation or RL
+  warm-start until action frame, observation bridge, action timing, train/eval
+  normalization, and history ordering are all explicitly checked and recorded.
