@@ -1513,6 +1513,42 @@ Analysis:
 Next:
 - Commit the pending diagnostic offset-control patch, deploy the exact commit, and run a bounded randomized exact-close gate using the broader geometry-filtered library with `EXACT_CLOSE_COMMAND_WIDTH=0.055`.
 
+## 2026-06-11T22:41:22Z - plan bounded reset-prior RL smoke after light-close gate update
+
+Goal:
+- Convert the latest diagnostic evidence into the current gate language and run only a bounded reset-prior RL smoke before any final-scale A100 relaunch.
+
+Hypothesis:
+- The reset/pregrasp transform is coherent because jobs `1027781` and `1027782` pass when the close check uses a cube-compatible light close width (`0.055 m`). The zero-width exact-close gate was measuring an overly destructive close command, not the RL start-state correctness.
+- A short one-GPU RL smoke should verify that training starts from the intended 3 cm open pregrasp path, metrics stay finite, checkpoints are written, and a first-checkpoint eval/video shows policy interaction with the cube rather than reset drift.
+
+Change:
+- Add an owned, minimal 1-GPU RL smoke wrapper for `Dextrah-Franka-Cube-Grasp` instead of modifying the final 8-GPU training wrapper.
+- Keep production defaults unchanged: the prior remains disabled by default, cube reset randomization/orientation/spawn height is unchanged, and final 8-GPU wrapper defaults are untouched.
+- Smoke-only expected config diffs versus final apple-to-apple training: one GPU, small env count, short max epochs, smaller minibatch for the small rollout batch, more frequent checkpointing, JSONL metrics enabled, and a single validated grasp library path.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `99175259b8bd6005ebcd3fe214d9ea968f4f12e4`
+- implementation_commit: pending
+- changed_files: planned `cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`, this worklog
+
+Command / Job:
+- local checks after edit: `bash -n cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`; `git diff --check`
+- planned l401 launch: 1 GPU, `NUM_ENVS=64`, `MAX_ITERATIONS=45`, `SAVE_FREQUENCY=5`, `DEXTRAH_RLGAMES_JSONL_METRICS=True`, `GRASP_PRIOR_RESET_ENABLED=True`, `GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_orig006_single.npz`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`
+- planned follow-up: fetch run dir/logs, inspect rank-0 JSONL and checkpoints, then run a bounded eval/video from the first usable checkpoint with the same prior-reset overrides.
+
+Result:
+- status: planned
+
+Analysis:
+- No A100 final RL is authorized by this entry. The smoke is intended to validate the open-pregrasp RL path and first-checkpoint behavior with viewer artifacts.
+
+Next:
+- Implement wrapper, commit/push/deploy exact commit, launch l401 smoke, monitor to terminal state, inspect metrics/checkpoints, and produce eval/contact-sheet artifacts before deciding the next step.
+
 ## 2026-06-11T22:41:10Z - plan exact-close offset sweep controls
 
 Goal:
