@@ -1019,3 +1019,65 @@ Acceptance Criteria:
 - Resolved env config remains reset-pose with external reference and observation space 72.
 - Epochs complete without traceback/NaN; checkpoint written at epoch 25.
 - Follow-up 720-step eval has finite metrics, no unsafe tracking targets, and no immediate reset pathology.
+
+Launch:
+- local_commit: 9abe6fbcd732afbe4a1339d3f4ffed72d29ff82c
+- remote_commit/status: /lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking at 9abe6fbcd732afbe4a1339d3f4ffed72d29ff82c, detached clean
+- job_id: 1027718 `franka_cube_traj_reset_rl25`
+- log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_1027718.out
+- run_dir: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_resetpose_ref_rl25_20260611_130509
+
+Result:
+- status: passed; Slurm completed `0:0` after `00:01:27` on `pool0-00016`.
+- local_artifacts: `cluster_results/l401/franka_cube_traj_tracking_resetpose_ref_rl25_20260611_130509/` with params, TensorBoard sidecar, and stdout log; checkpoints remain on NFS under the run `nn/` directory.
+- resolved_config: `params/env.yaml` has `observation_space: 72`, `trajectory_tracking_enabled: true`, external reference path, `trajectory_tracking_phase_observations: false`, and `trajectory_tracking_follow_current_cube_pose: false`.
+- training_log: actor and critic MLPs both built with `72`; epochs 1-25 completed with no traceback/runtime/NaN pattern in stdout.
+- checkpoint reward suffixes: ep5 `202.9117`, ep10 `968.0235`, ep15 `639.41724`, ep20 `931.91156`, ep25 `864.1978`.
+- checkpoint: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_resetpose_ref_rl25_20260611_130509/nn/last_dextrah_franka_cube_traj_tracking_ep_25_rew_864.1978.pth
+- caveat: TensorBoard event file is still 0 bytes, so follow-up rollout eval is the usable reward-term/safety evidence.
+
+Next:
+- Evaluate the epoch-25 checkpoint for 720 steps with the same external 60 mm reference and reset-pose target policy.
+
+## 2026-06-11T13:07:48-07:00 - reset-pose RL25 checkpoint 720-step eval launch
+
+Goal:
+- Inspect the bounded reset-pose RL25 checkpoint across a timeout/reset window.
+
+Command / Job:
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:30:00 --job-name=franka_cube_traj_reset25_eval --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_resetpose_rl25_eval720_20260611_130748,CHECKPOINT=/results/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_resetpose_ref_rl25_20260611_130509/nn/last_dextrah_franka_cube_traj_tracking_ep_25_rew_864.1978.pth,NUM_ENVS=4,NUM_STEPS=720,VIDEO_LENGTH=240,CAPTURE_VIDEO=False,PRINT_INTERVAL=120,USE_CUDA_GRAPH=False,SEED=47,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- expected_log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_<job>.out
+- expected_metrics: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_traj_tracking_resetpose_rl25_eval720_20260611_130748/metrics.json
+
+Acceptance Criteria:
+- 720/720 steps complete with finite metrics and no immediate reset pathology.
+- Tracking reference summary reports reset-pose runtime policy, external 60 mm compact reference, and `curobo_validated=false`.
+- `cube_traj_tracking_unsafe_target_rate` remains `0.0`; target min clearance remains above `0.025`.
+- Inspect policy behavior: success/lift, finger table clearance, gripper collapse, and reset/termination count.
+
+Launch:
+- job_id: 1027719 `franka_cube_traj_reset25_eval`
+- log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1027719.out
+- run_dir: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_traj_tracking_resetpose_rl25_eval720_20260611_130748
+
+Result:
+- status: passed; Slurm completed `0:0` after `00:00:58` on `pool0-00016`.
+- local_artifacts: `cluster_results/l401/franka_cube_traj_tracking_resetpose_rl25_eval720_20260611_130748/metrics.json`, `cluster_results/l401/franka_cube_traj_tracking_resetpose_rl25_eval720_20260611_130748/eval_franka_cube_1027719.out`
+- rollout: 720/720 steps, `done_count=7`, reward mean `1.9178464568323559`, reward final `2.1220836639404297`, success mean/final/last-window `0.0`.
+- finite_check: recursive JSON numeric scan `nonfinite_count=0`.
+- tracking_reference: external 60 mm compact reference, `graspgenx_source=true`, `curobo_validated=false`, `validation_passed=true`, `runtime_object_pose_policy=reset_cube_pose`, `unsafe_target_reward_policy=zero_tracking_weight_below_min_target_table_clearance`, source duration `22.033333333333335` s.
+- target_safety: `cube_traj_tracking_unsafe_target_rate` max/mean/final `0.0`; `cube_traj_tracking_safe_target_rate` min/mean/final `1.0`; target clearance batch min over all steps `0.06511414051055908`, above the configured `0.025`.
+- task_behavior: no success/lift; `cube_lift_height_max` max only `0.030698418617248535`, `has_lifted_cube` remains `0.0`.
+- finger_safety: `finger_table_clearance_min` min `0.023657560348510742`; `finger_table_clearance_violation_max` max `0.053697600960731506` across 8 violation steps around steps 373-380.
+- tracking_metrics: tracking reward mean `0.11186522472028931`, final `0.07273757457733154`; position error mean `0.2378308145329356`; orientation error mean `0.516163813509047`; gripper error mean `0.01963886580973243`.
+- phase_progress: max `0.35835859179496765`, final `0.11081695556640625`; phase drops at steps 6, 211, 497, and 599 due environment resets.
+
+Analysis:
+- Target-generation safety is now clean under reset-pose transforms: no unsafe task-space targets, the safety gate never had to zero targets, and baseline observation size remained unchanged in the preceding smoke/train/eval sequence.
+- The remaining failure is behavior/learning, not target validity: the policy does not lift and sometimes dips a finger below the configured table clearance.
+- The most suspicious wiring issue is reference timing. The compact GraspGenX/cuRobo reference still runs over `22.033333333333335` s, while the DEXTRAH episode is 10 s. The 720-step eval never gets beyond phase progress `0.358`, so the policy mainly sees approach targets and never reaches the intended grasp/lift phase before resets/timeouts.
+
+Next:
+- Commit and push this worklog result first, per orchestrator request.
+- Patch the trajectory-tracking variant to retime external compact references to a runtime horizon shorter than the DEXTRAH episode, while preserving source timing in the reference summary and keeping `curobo_validated=false`.
+- Add a validator check that the runtime reference duration fits within the task episode, then rerun task-registration/env smoke before any further RL.
