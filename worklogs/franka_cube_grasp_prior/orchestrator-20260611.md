@@ -1531,3 +1531,78 @@ Worker B tiny PPO smoke:
   this five-epoch smoke because no env terminated; it is not a policy-quality
   verdict. B must run the fixed-seed and random-seed video eval bundles from
   this checkpoint before any further training or scale-up.
+
+## 2026-06-11 Monitor Check 22:22 UTC
+
+Worker C closed-loop DP support trace:
+
+- C's support-trace eval job `1027767`
+  (`franka_cube_dp_eval_framefix_overfit2k_supporttrace_video320_20260611_151930`)
+  completed `0:0` and was fetched locally.
+- Local artifacts:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_framefix_overfit2k_supporttrace_video320_20260611_151930`
+- Viewer URLs:
+  - video:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_framefix_overfit2k_supporttrace_video320_20260611_151930/videos/franka-cube-dp-policy-eval-step-0.mp4`
+  - contact sheet:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_framefix_overfit2k_supporttrace_video320_20260611_151930/dp_supporttrace_contact_sheet.jpg`
+- Metrics: success/lift stayed zero; final EE-to-cube `0.146 m`;
+  final finger-center-to-cube `0.173 m`; final gripper width `0.0008 m`;
+  nearest-demo phase was `go_to_pre_grasp_pose` for all `320` steps; nearest
+  demo distance grew `0.354 -> 1.129`; first negative gripper at step `208`,
+  first hard close at step `225`.
+- Visual inspection: the contact sheet shows the hand remaining away from the
+  cube while closing. This confirms C's original bad-video concern as a real
+  closed-loop support-drift/train-eval mismatch. No BC/RL scale-up.
+
+Worker B action-alignment PPO eval:
+
+- Fixed eval job `1027769` and random eval job `1027770` completed `0:0` and
+  were fetched locally.
+- Local fixed artifacts:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_actionalign_rl5_eval_fixed_video480_20260611_152420`
+- Local random artifacts:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_actionalign_rl5_eval_random_video480_20260611_152420`
+- Viewer URLs:
+  - fixed video:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_actionalign_rl5_eval_fixed_video480_20260611_152420/videos/actionalign-rl5-fixed-video480-step-0.mp4`
+  - fixed contact sheet:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_actionalign_rl5_eval_fixed_video480_20260611_152420/actionalign_fixed_contact_sheet.jpg`
+  - random video:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_actionalign_rl5_eval_random_video480_20260611_152420/videos/actionalign-rl5-random-video480-step-0.mp4`
+  - random contact sheet:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_actionalign_rl5_eval_random_video480_20260611_152420/actionalign_random_contact_sheet.jpg`
+- Fixed metrics: success mean/final/last `0/0/0`, cube lift max `0.0015 m`,
+  final EE-to-cube `0.596 m`, final finger-center-to-cube `0.561 m`.
+- Random metrics: success mean/final/last `0/0/0`, cube lift max `0.0 m`,
+  final EE-to-cube `0.417 m`, final finger-center-to-cube `0.378 m`.
+- Action diagnostics: action-alignment utilization was nonzero
+  (`0.347` fixed, `0.401` random), but learned close/up actions stayed too weak
+  or wrong. Random run had mean policy up `0.036` versus mean reference up
+  `0.803`, and both runs ended with close action `0.0`.
+- Visual inspection: both contact sheets show the hand moving away/around the
+  cube rather than grasping. The action-alignment reward alone did not fix B's
+  learned-policy behavior. No scale-up.
+
+Worker A exact-close reset-prior gate:
+
+- A's exact-close diagnostic job `1027771`
+  (`franka_cube_ggx_pregrasp_exact_close_20260611_221828`) completed `0:0` and
+  was fetched locally.
+- Local artifacts:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_exact_close_20260611_221828`
+- Viewer URLs:
+  - reset JSON:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_exact_close_20260611_221828/reset_geometry.json`
+  - exact-close side frame:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_exact_close_20260611_221828/frames/reset_000_phase2_exact_close_last_side.png`
+- Metrics: pregrasp reset gate passed (`reset_success_rate=1.0`,
+  `reset_quality_success_rate=1.0`, `pregrasp_reset_gate_pass=true`), but the
+  exact-close aggregate gate failed (`exact_close_gate_pass=false`,
+  `rl_relaunch_gate_verdict=FAIL`). Exact-close enclosure and contact-proxy
+  success were only `0.4`; tip-center mean `0.082 m`; tip-max mean `0.087 m`;
+  cube displacement mean `0.0365 m`.
+- Interpretation: the displayed sample can look plausible, but the sampled
+  grasp library is not reliable enough across randomized resets. A must
+  diagnose/filter grasp samples or fix exact-close execution before any A100
+  relaunch.
