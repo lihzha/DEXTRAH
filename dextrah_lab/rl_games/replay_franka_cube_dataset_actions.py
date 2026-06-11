@@ -56,6 +56,32 @@ parser.add_argument("--camera_target", type=float, nargs=3, default=None)
 parser.add_argument("--video", action="store_true", default=False)
 parser.add_argument("--video_length", type=int, default=80)
 parser.add_argument("--video_name_prefix", type=str, default="franka-cube-dp-replay")
+parser.add_argument(
+    "--demo_reset_dataset",
+    type=str,
+    default=None,
+    help="Optional converted lowdim NPZ dataset used to overwrite reset cube pose from a selected demo row.",
+)
+parser.add_argument("--demo_reset_episode", type=int, default=0)
+parser.add_argument("--demo_reset_step", type=int, default=0)
+parser.add_argument(
+    "--dataset_start_row",
+    type=int,
+    default=-1,
+    help="Optional global dataset row used as the start of replay labels. Overrides nearest-row selection.",
+)
+parser.add_argument(
+    "--dataset_start_episode",
+    type=int,
+    default=-1,
+    help="Optional episode index for replay label start. Ignored when --dataset_start_row is non-negative.",
+)
+parser.add_argument(
+    "--dataset_start_step",
+    type=int,
+    default=0,
+    help="Episode-local step for replay label start when --dataset_start_episode is set.",
+)
 parser.add_argument("--disable_fabric", action="store_true", default=False)
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
@@ -107,6 +133,16 @@ def _episode_for_row(row_idx: int, episode_ends: np.ndarray) -> tuple[int, int, 
     return ep_idx, start, end
 
 
+def _row_for_episode_step(episode_ends: np.ndarray, episode: int, episode_step: int) -> int:
+    if episode_ends.size == 0:
+        raise ValueError("dataset has no episodes")
+    episode_idx = int(np.clip(int(episode), 0, int(episode_ends.size - 1)))
+    start = 0 if episode_idx == 0 else int(episode_ends[episode_idx - 1])
+    end = int(episode_ends[episode_idx])
+    local_step = int(np.clip(int(episode_step), 0, max(0, end - start - 1)))
+    return int(start + local_step)
+
+
 def _clipped_row(row_idx: int, episode_ends: np.ndarray) -> int:
     _ep, start, end = _episode_for_row(row_idx, episode_ends)
     return int(np.clip(int(row_idx), start, end - 1))
@@ -122,6 +158,102 @@ def _nearest_dataset_row(obs: np.ndarray, query_obs: np.ndarray) -> tuple[int, f
 def _episode_step(row_idx: int, episode_ends: np.ndarray) -> int:
     _ep, start, _end = _episode_for_row(row_idx, episode_ends)
     return int(row_idx - start)
+
+
+def _phase_name_for_row(phase_ids: np.ndarray, phase_names: list[str], row_idx: int) -> str:
+    return str(phase_names[int(phase_ids[int(row_idx)])])
+
+
+def _demo_reset_payload(path: Path | None, episode: int, episode_step: int) -> dict[str, Any] | None:
+    if path is None:
+        return None
+    data = np.load(path, allow_pickle=False)
+    obs = np.asarray(data["obs"], dtype=np.float32)
+    action = np.asarray(data["action"], dtype=np.float32)
+    phase_ids = np.asarray(data["phase_ids"], dtype=np.int32)
+    episode_ends = np.asarray(data["episode_ends"], dtype=np.int64)
+    row_idx = _row_for_episode_step(episode_ends, episode, episode_step)
+    ep_idx, start, end = _episode_for_row(row_idx, episode_ends)
+    phase_names = _phase_names()
+    return {
+        "path": str(path),
+        "obs": obs,
+        "action": action,
+        "phase_ids": phase_ids,
+        "episode_ends": episode_ends,
+        "phase_names": phase_names,
+        "episode": int(ep_idx),
+        "episode_start": int(start),
+        "episode_end": int(end),
+        "episode_step": int(row_idx - start),
+        "row": int(row_idx),
+        "phase": _phase_name_for_row(phase_ids, phase_names, row_idx),
+        "target_obs": obs[row_idx].copy(),
+        "target_action": action[row_idx].copy(),
+    }
+
+
+def _policy_obs_from_task_env(task_env: Any) -> torch.Tensor:
+    task_env._compute_intermediate_values()
+    obs_dict = task_env._get_observations()
+    return obs_dict["policy"] if isinstance(obs_dict, dict) else obs_dict
+
+
+def _apply_demo_reset(task_env: Any, demo_reset: dict[str, Any]) -> tuple[torch.Tensor, dict[str, Any]]:
+    """Overwrite cube pose/goal from a converted demo row.
+
+    The converted lowdim dataset does not contain Franka joint states, so this
+    diagnostic intentionally leaves the robot at the task reset state and
+    reports the remaining lowdim mismatch after object reset.
+    """
+
+    env_ids = torch.as_tensor(task_env._robot._ALL_INDICES, device=task_env.device, dtype=torch.long)
+    num_ids = int(env_ids.numel())
+    target_obs = np.asarray(demo_reset["target_obs"], dtype=np.float32)
+    target_cube_pos = torch.as_tensor(target_obs[7:10], dtype=torch.float32, device=task_env.device).repeat(num_ids, 1)
+    target_cube_quat = torch.as_tensor(target_obs[10:14], dtype=torch.float32, device=task_env.device).repeat(num_ids, 1)
+    object_state = torch.zeros(num_ids, 13, device=task_env.device)
+    object_state[:, 0:3] = target_cube_pos + task_env.scene.env_origins[env_ids]
+    object_state[:, 3:7] = target_cube_quat
+    task_env._cube.write_root_state_to_sim(object_state, env_ids=env_ids)
+
+    task_env.cube_initial_pos[env_ids] = target_cube_pos
+    task_env.cube_goal_pos[env_ids] = target_cube_pos
+    task_env.cube_goal_pos[env_ids, 2] = target_cube_pos[:, 2] + float(task_env.cfg.cube_lift_height)
+    task_env.has_lifted_cube[env_ids] = False
+    task_env.in_success_region[env_ids] = False
+    task_env.time_in_success_region[env_ids] = 0.0
+    task_env.actions[env_ids] = 0.0
+    task_env.ik_controller.reset(env_ids)
+    task_env.scene.write_data_to_sim()
+    task_env.sim.forward()
+
+    policy_obs = _policy_obs_from_task_env(task_env)
+    live_lowdim = extract_lowdim_obs_from_ppo_obs(policy_obs).detach().float().cpu().numpy()
+    live0 = live_lowdim[0]
+    diff = live0 - target_obs
+    summary = {
+        "dataset": str(demo_reset["path"]),
+        "episode": int(demo_reset["episode"]),
+        "episode_step": int(demo_reset["episode_step"]),
+        "row": int(demo_reset["row"]),
+        "phase": str(demo_reset["phase"]),
+        "target_cube_pos": target_obs[7:10].astype(float).tolist(),
+        "target_cube_quat": target_obs[10:14].astype(float).tolist(),
+        "target_cube_minus_ee": target_obs[14:17].astype(float).tolist(),
+        "target_gripper_width": float(target_obs[20]),
+        "target_action": np.asarray(demo_reset["target_action"], dtype=np.float32).astype(float).tolist(),
+        "live_lowdim_after_reset_env0": live0.astype(float).tolist(),
+        "live_cube_pos_after_reset_env0": live0[7:10].astype(float).tolist(),
+        "live_cube_minus_ee_after_reset_env0": live0[14:17].astype(float).tolist(),
+        "lowdim_linf_diff_env0": float(np.max(np.abs(diff))),
+        "lowdim_l2_diff_env0": float(np.linalg.norm(diff)),
+        "cube_pos_l2_diff_env0": float(np.linalg.norm(diff[7:10])),
+        "cube_minus_ee_l2_diff_env0": float(np.linalg.norm(diff[14:17])),
+        "exact_robot_joint_reset_available": False,
+        "robot_reset_note": "converted lowdim NPZ has no Franka joint state; robot remains at task reset",
+    }
+    return policy_obs, summary
 
 
 def _load_policy(checkpoint: Path, device: str, num_inference_steps: int, diffusion_policy_root: str | None):
@@ -223,6 +355,12 @@ def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         writer.writerows(rows)
 
 
+def _latest_video_files(video_folder: Path) -> list[str]:
+    if not video_folder.exists():
+        return []
+    return [str(path) for path in sorted(video_folder.glob("*.mp4"))]
+
+
 def _safe_norm(value: np.ndarray) -> float:
     return float(np.linalg.norm(np.asarray(value, dtype=np.float64)))
 
@@ -278,11 +416,16 @@ def _build_report(summary: dict[str, Any]) -> str:
     lines = [
         "# Franka Cube DP Dataset-Action Replay",
         "",
-        "This is a bounded Isaac controller replay. It does not train. Each mode resets the env, finds the nearest converted cuRobo demo row to the live lowdim observation, compares official-DP prediction against dataset labels, and executes a short sequence.",
+        "This is a bounded Isaac controller replay. It does not train. Each mode resets the env, optionally applies a demo-conditioned cube reset, chooses either a fixed demo label window or the nearest converted cuRobo demo row, compares official-DP prediction against dataset labels, and executes a short sequence.",
         "",
         "## Verdict",
         "",
         summary["verdict"],
+        "",
+        "## Reset / Label Selection",
+        "",
+        f"- Demo reset: `{summary['demo_reset']}`",
+        f"- Dataset start: `{summary['dataset_start']}`",
         "",
         "## Mode Summary",
         "",
@@ -304,6 +447,7 @@ def _build_report(summary: dict[str, Any]) -> str:
             f"- CSV: `{summary['csv']}`",
             f"- JSON: `{summary['json']}`",
             f"- Plot: `{summary['plot']}`",
+            f"- Videos: `{summary['video_files']}`",
         ]
     )
     return "\n".join(lines) + "\n"
@@ -321,6 +465,43 @@ def main() -> None:
     episode_ends = np.asarray(data["episode_ends"], dtype=np.int64)
     phase_ids = np.asarray(data["phase_ids"], dtype=np.int32)
     phase_names = _phase_names()
+    demo_reset_dataset_path = (
+        Path(args_cli.demo_reset_dataset).expanduser().resolve() if args_cli.demo_reset_dataset else None
+    )
+    if demo_reset_dataset_path is not None and not demo_reset_dataset_path.is_file():
+        raise FileNotFoundError(demo_reset_dataset_path)
+    demo_reset = _demo_reset_payload(
+        demo_reset_dataset_path,
+        int(args_cli.demo_reset_episode),
+        int(args_cli.demo_reset_step),
+    )
+    dataset_start_row: int | None = None
+    dataset_start_source = "nearest_live_row"
+    if int(args_cli.dataset_start_row) >= 0:
+        dataset_start_row = _clipped_row(int(args_cli.dataset_start_row), episode_ends)
+        dataset_start_source = "global_row"
+    elif int(args_cli.dataset_start_episode) >= 0:
+        dataset_start_row = _row_for_episode_step(
+            episode_ends,
+            int(args_cli.dataset_start_episode),
+            int(args_cli.dataset_start_step),
+        )
+        dataset_start_source = "episode_step"
+    dataset_start_summary: dict[str, Any] | None = None
+    if dataset_start_row is not None:
+        dataset_start_episode, dataset_start_ep_start, _dataset_start_ep_end = _episode_for_row(
+            dataset_start_row, episode_ends
+        )
+        dataset_start_summary = {
+            "source": dataset_start_source,
+            "row": int(dataset_start_row),
+            "episode": int(dataset_start_episode),
+            "episode_step": int(dataset_start_row - dataset_start_ep_start),
+            "phase": _phase_name_for_row(phase_ids, phase_names, dataset_start_row),
+            "cube_minus_ee": dataset_obs[dataset_start_row, 14:17].astype(float).tolist(),
+            "gripper_width": float(dataset_obs[dataset_start_row, 20]),
+            "action": dataset_action[dataset_start_row].astype(float).tolist(),
+        }
 
     modes = args_cli.mode or ["dataset_t", "dp_replan"]
     env_cfg = parse_env_cfg(
@@ -353,9 +534,13 @@ def main() -> None:
 
     rows: list[dict[str, Any]] = []
     summaries: dict[str, Any] = {}
+    demo_reset_summary: dict[str, Any] | None = None
     try:
         for mode_index, mode in enumerate(modes):
             policy_obs = _reset_env(gym_env, seed=int(args_cli.seed))
+            demo_reset_summary = None
+            if demo_reset is not None:
+                policy_obs, demo_reset_summary = _apply_demo_reset(task_env, demo_reset)
             if policy_obs.shape[-1] != FRANKA_CUBE_PPO_OBS_DIM:
                 raise RuntimeError(f"Expected PPO obs dim {FRANKA_CUBE_PPO_OBS_DIM}, got {tuple(policy_obs.shape)}")
             history = LowdimObsHistory(num_envs=task_env.num_envs, n_obs_steps=int(policy.n_obs_steps))
@@ -367,10 +552,16 @@ def main() -> None:
             for step in range(int(args_cli.steps)):
                 lowdim = extract_lowdim_obs_from_ppo_obs(policy_obs).detach().float().cpu().numpy()
                 if nearest_rows is None:
-                    nearest_rows = np.asarray(
-                        [_nearest_dataset_row(dataset_obs, lowdim[env_idx])[0] for env_idx in range(lowdim.shape[0])],
-                        dtype=np.int64,
-                    )
+                    if dataset_start_row is None:
+                        nearest_rows = np.asarray(
+                            [
+                                _nearest_dataset_row(dataset_obs, lowdim[env_idx])[0]
+                                for env_idx in range(lowdim.shape[0])
+                            ],
+                            dtype=np.int64,
+                        )
+                    else:
+                        nearest_rows = np.full(lowdim.shape[0], int(dataset_start_row), dtype=np.int64)
                 nearest_distances = [
                     _nearest_dataset_row(dataset_obs, lowdim[env_idx])[1] for env_idx in range(lowdim.shape[0])
                 ]
@@ -439,14 +630,23 @@ def main() -> None:
                         "mode_index": mode_index,
                         "step": step,
                         "env_index": env_idx,
+                        "demo_reset_applied": demo_reset_summary is not None,
+                        "fixed_dataset_start": dataset_start_row is not None,
                         "nearest_initial_row": nearest_row,
                         "dataset_row": current_row,
+                        "dataset_episode": _episode_for_row(current_row, episode_ends)[0],
                         "dataset_episode_step": _episode_step(current_row, episode_ends),
                         "dataset_phase": phase,
                         "nearest_live_row": live_nearest_row,
                         "nearest_live_episode_step": _episode_step(live_nearest_row, episode_ends),
                         "nearest_live_phase": live_nearest_phase,
                         "nearest_live_distance": float(nearest_distances[env_idx]),
+                        "live_minus_dataset_cube_minus_ee_norm": float(
+                            np.linalg.norm(before_lowdim[env_idx, 14:17] - dataset_obs[current_row, 14:17])
+                        ),
+                        "live_minus_nearest_cube_minus_ee_norm": float(
+                            np.linalg.norm(before_lowdim[env_idx, 14:17] - dataset_obs[live_nearest_row, 14:17])
+                        ),
                         "ee_to_cube_before": float(before_ee_to_cube[env_idx]),
                         "ee_to_cube_after": float(after_ee_to_cube[env_idx]),
                         "finger_center_to_cube_dist_after": _env_metric_for_env(
@@ -527,8 +727,13 @@ def main() -> None:
             summaries[mode] = {
                 "steps": len(mode_rows),
                 "initial_nearest_row": int(mode_first["nearest_initial_row"]),
+                "initial_dataset_episode": int(mode_first["dataset_episode"]),
+                "initial_dataset_episode_step": int(mode_first["dataset_episode_step"]),
                 "initial_nearest_phase": str(mode_first["dataset_phase"]),
                 "initial_nearest_live_distance": float(mode_first["nearest_live_distance"]),
+                "initial_live_minus_dataset_cube_minus_ee_norm": float(
+                    mode_first["live_minus_dataset_cube_minus_ee_norm"]
+                ),
                 "final_ee_to_cube": float(mode_distances[-1]) if mode_distances else float("nan"),
                 "min_ee_to_cube": float(np.min(mode_distances)) if mode_distances else float("nan"),
                 "final_finger_center_to_cube": float(last_row["finger_center_to_cube_dist_after"]),
@@ -587,11 +792,15 @@ def main() -> None:
         "num_envs": int(args_cli.num_envs),
         "steps_requested": int(args_cli.steps),
         "modes": summaries,
+        "demo_reset": demo_reset_summary,
+        "dataset_start": dataset_start_summary
+        or {"source": "nearest_live_row", "note": "first live observation selected label start independently per mode"},
         "verdict": verdict,
         "csv": str(csv_path),
         "json": str(json_path),
         "plot": str(plot_path),
         "report": str(report_path),
+        "video_files": _latest_video_files(output_dir / "videos"),
     }
     json_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     report_path.write_text(_build_report(summary), encoding="utf-8")

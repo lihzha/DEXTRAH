@@ -3768,3 +3768,95 @@ Acceptance:
   row and the rollout enters close/grasp/lift support before closing.
 - Failure means support drift persists despite object/demo reset; next bounded
   diagnostic should tighten robot pregrasp alignment and/or history seeding.
+
+## 2026-06-11T16:20:00-07:00 - demo-reset result and robot/demo replay plan
+
+Goal:
+- Finish the inspectable artifact bundle for eval job `1027773`, then run the
+  next bounded diagnostic to separate robot/demo reset mismatch from
+  action/controller semantics and learned support drift.
+
+Hypothesis:
+- The object-conditioned reset should have been sufficient if the main issue
+  were cube pose/reset randomization. If it still fails while starting close to
+  the selected demo lowdim row, then either the Franka robot/finger state is not
+  aligned with the demo, the lowdim history/action semantics are still wrong,
+  or the learned policy rolls out of support despite matched object state.
+- The converted DP dataset stores 21D lowdim observations/actions, not Franka
+  joint states, so exact robot joint reset from the dataset is not directly
+  feasible. The next practical diagnostic is to replay selected demo labels
+  from the selected demo episode/step after applying the same cube/object demo
+  reset, rather than using whichever row is nearest after a normal reset.
+
+Result:
+- job `1027773` completed `0:0`.
+- run:
+  `franka_cube_dp_eval_framefix_overfit2k_demoreset_ep24s0_video320_20260611_160700`
+- local run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_framefix_overfit2k_demoreset_ep24s0_video320_20260611_160700`
+- demo reset worked for object state:
+  - `cube_pos_l2_diff_env0=0.0`
+  - `cube_minus_ee_l2_diff_env0=0.0108979`
+  - `lowdim_linf_diff_env0=0.0099964`
+- closed-loop behavior still fails:
+  - `final_success_rate=0`, `window_success_rate=0`
+  - `cube_lift_height max=0`
+  - `final_gripper_width=0.0009156 m`
+  - `EE-to-cube min/final=0.1314/0.1323 m`
+  - `finger-center-to-cube min/final=0.1555/0.1619 m`
+  - nearest-demo phase counts: `{"go_to_pre_grasp_pose": 320}`
+  - nearest-demo distance: `0.1692 -> 0.9690`
+  - first negative gripper step: `235`
+  - first hard-close step: `249`
+- This is still a closed-loop support-drift failure. Demo/object reset improves
+  the initial support distance and raw EE distance versus job `1027767`, but it
+  does not make the hand close near the cube or enter close/grasp/lift support.
+
+Artifact bundle:
+- report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/closed_loop_supporttrace_1027773_demoreset_20260611_160700/closed_loop_support_report.md`
+- plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/closed_loop_supporttrace_1027773_demoreset_20260611_160700/closed_loop_support_trace.png`
+- contact sheet:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_framefix_overfit2k_demoreset_ep24s0_video320_20260611_160700/dp_demoreset_contact_sheet.jpg`
+- video:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_framefix_overfit2k_demoreset_ep24s0_video320_20260611_160700/videos/franka-cube-dp-policy-eval-step-0.mp4`
+- summary JSON:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/closed_loop_supporttrace_1027773_demoreset_20260611_160700/closed_loop_support_summary.json`
+- key rows CSV:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/closed_loop_supporttrace_1027773_demoreset_20260611_160700/closed_loop_support_key_rows.csv`
+
+Change Plan:
+- Add a reusable offline report builder:
+  `dextrah_lab/offline_dp_bc/make_closed_loop_support_report.py`.
+- Extend `dextrah_lab/rl_games/replay_franka_cube_dataset_actions.py` with:
+  - explicit `--demo_reset_dataset/episode/step` support for the same cube
+    demo reset used by eval;
+  - explicit `--dataset_start_episode/step/row` support so replay labels come
+    from a selected demo window instead of the nearest live row;
+  - reset/selection metadata in replay JSON/report.
+- Extend `cluster/sbatch_replay_franka_cube_dp_actions_1gpu.sh` to pass those
+  options from environment variables.
+
+Validation / Launch Plan:
+- Local cheap checks:
+  `python3 -m py_compile dextrah_lab/offline_dp_bc/make_closed_loop_support_report.py dextrah_lab/rl_games/replay_franka_cube_dataset_actions.py dextrah_lab/rl_games/eval_franka_cube_dp_policy.py`
+- Wrapper checks:
+  `bash -n cluster/sbatch_replay_franka_cube_dp_actions_1gpu.sh cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- Commit/push, deploy exact commit to the agent-owned l401 worktree, then
+  launch a bounded no-learning replay with:
+  - `DEMO_RESET_DATASET=<framefix dataset>`
+  - `DEMO_RESET_EPISODE=24`, `DEMO_RESET_STEP=0`
+  - `DATASET_START_EPISODE=24`, `DATASET_START_STEP=0`
+  - modes `dataset_t,dataset_open_t_plus_7,dp_replan`
+  - `STEPS=320`, `NUM_ENVS=1`, `CAPTURE_VIDEO=True`,
+    `VIDEO_LENGTH=320`, `SEED=42`.
+
+Acceptance:
+- If selected demo labels from matched object/reset support reproduce approach
+  and contact/lift, then the closed-loop DP failure is learned policy support
+  drift or history/prediction semantics, not controller/action labels.
+- If selected demo labels still stall or drift while direction cosines remain
+  positive, the issue is reset/robot timing or the converted planned trajectory
+  is not closed-loop executable from the actual Franka state.
+- No BC/RL scale-up until one of those is resolved.

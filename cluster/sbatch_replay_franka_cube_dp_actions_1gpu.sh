@@ -45,6 +45,12 @@ CAMERA_TARGET_Z="${CAMERA_TARGET_Z:-0.82}"
 CHECKPOINT="${CHECKPOINT:?Set CHECKPOINT to an official Diffusion Policy .ckpt visible in the container.}"
 DATASET="${DATASET:?Set DATASET to a converted lowdim NPZ visible in the container.}"
 MODES="${MODES:-dataset_t,dp_replan}"
+DEMO_RESET_DATASET="${DEMO_RESET_DATASET:-}"
+DEMO_RESET_EPISODE="${DEMO_RESET_EPISODE:-0}"
+DEMO_RESET_STEP="${DEMO_RESET_STEP:-0}"
+DATASET_START_ROW="${DATASET_START_ROW:--1}"
+DATASET_START_EPISODE="${DATASET_START_EPISODE:--1}"
+DATASET_START_STEP="${DATASET_START_STEP:-0}"
 
 RUN_DIR_HOST="$RESULTS_NFS/replays/$RUN_NAME"
 RUN_DIR_CONTAINER="/results/replays/$RUN_NAME"
@@ -72,6 +78,13 @@ CHECKPOINT_HOST="$(host_path_from_container "$CHECKPOINT")"
 DATASET_HOST="$(host_path_from_container "$DATASET")"
 CHECKPOINT_ARG="$(container_path_from_host "$CHECKPOINT")"
 DATASET_ARG="$(container_path_from_host "$DATASET")"
+if [ -n "$DEMO_RESET_DATASET" ]; then
+  DEMO_RESET_DATASET_HOST="$(host_path_from_container "$DEMO_RESET_DATASET")"
+  DEMO_RESET_DATASET_ARG="$(container_path_from_host "$DEMO_RESET_DATASET")"
+else
+  DEMO_RESET_DATASET_HOST=""
+  DEMO_RESET_DATASET_ARG=""
+fi
 
 if [ ! -f "$IMAGE" ]; then
   echo "Missing Isaac Lab container image: $IMAGE"
@@ -93,6 +106,10 @@ if [ ! -f "$DATASET_HOST" ]; then
   echo "Missing dataset: $DATASET_HOST"
   exit 2
 fi
+if [ -n "$DEMO_RESET_DATASET_HOST" ] && [ ! -f "$DEMO_RESET_DATASET_HOST" ]; then
+  echo "Missing demo reset dataset: $DEMO_RESET_DATASET_HOST"
+  exit 2
+fi
 
 mkdir -p \
   "$RUN_DIR_HOST" \
@@ -106,6 +123,8 @@ export TASK RUN_NAME NUM_ENVS STEPS NUM_INFERENCE_STEPS CLIP_ACTIONS PRINT_INTER
 export CAPTURE_VIDEO VIDEO_LENGTH VIDEO_NAME_PREFIX
 export CAMERA_EYE_X CAMERA_EYE_Y CAMERA_EYE_Z CAMERA_TARGET_X CAMERA_TARGET_Y CAMERA_TARGET_Z
 export CHECKPOINT_ARG DATASET_ARG RUN_DIR_CONTAINER ENV_NAME OFFICIAL_DP_ENV_NAME MODES
+export DEMO_RESET_DATASET_ARG DEMO_RESET_EPISODE DEMO_RESET_STEP
+export DATASET_START_ROW DATASET_START_EPISODE DATASET_START_STEP
 
 echo "Running DextrAH Franka cube DP dataset-action replay"
 echo "SLURM_JOB_ID=$SLURM_JOB_ID_SAFE"
@@ -123,6 +142,13 @@ echo "CHECKPOINT_ARG=$CHECKPOINT_ARG"
 echo "CHECKPOINT_HOST=$CHECKPOINT_HOST"
 echo "DATASET_ARG=$DATASET_ARG"
 echo "DATASET_HOST=$DATASET_HOST"
+echo "DEMO_RESET_DATASET_ARG=${DEMO_RESET_DATASET_ARG:-}"
+echo "DEMO_RESET_DATASET_HOST=${DEMO_RESET_DATASET_HOST:-}"
+echo "DEMO_RESET_EPISODE=$DEMO_RESET_EPISODE"
+echo "DEMO_RESET_STEP=$DEMO_RESET_STEP"
+echo "DATASET_START_ROW=$DATASET_START_ROW"
+echo "DATASET_START_EPISODE=$DATASET_START_EPISODE"
+echo "DATASET_START_STEP=$DATASET_START_STEP"
 
 srun \
   --ntasks=1 \
@@ -165,6 +191,23 @@ srun \
     if [ "$CAPTURE_VIDEO" = "True" ]; then
       VIDEO_ARGS=(--video --video_length "$VIDEO_LENGTH" --video_name_prefix "$VIDEO_NAME_PREFIX")
     fi
+    DEMO_RESET_ARGS=()
+    if [ -n "${DEMO_RESET_DATASET_ARG:-}" ]; then
+      DEMO_RESET_ARGS=(
+        --demo_reset_dataset "$DEMO_RESET_DATASET_ARG"
+        --demo_reset_episode "$DEMO_RESET_EPISODE"
+        --demo_reset_step "$DEMO_RESET_STEP"
+      )
+    fi
+    DATASET_START_ARGS=()
+    if [ "$DATASET_START_ROW" -ge 0 ]; then
+      DATASET_START_ARGS=(--dataset_start_row "$DATASET_START_ROW")
+    elif [ "$DATASET_START_EPISODE" -ge 0 ]; then
+      DATASET_START_ARGS=(
+        --dataset_start_episode "$DATASET_START_EPISODE"
+        --dataset_start_step "$DATASET_START_STEP"
+      )
+    fi
     REPLAY_ARGS=(
       /code/dextrah_lab/rl_games/replay_franka_cube_dataset_actions.py
       --headless
@@ -184,6 +227,8 @@ srun \
       --camera_target "$CAMERA_TARGET_X" "$CAMERA_TARGET_Y" "$CAMERA_TARGET_Z"
       "${MODE_ARGS[@]}"
       "${VIDEO_ARGS[@]}"
+      "${DEMO_RESET_ARGS[@]}"
+      "${DATASET_START_ARGS[@]}"
     )
     printf "replay_command="
     printf "%q " /isaac-sim/python.sh "${REPLAY_ARGS[@]}"
