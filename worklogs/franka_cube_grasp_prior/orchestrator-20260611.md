@@ -76,3 +76,29 @@ Recommended next steps before merging any worker branch into `main`:
 3. Review Worker C as offline utilities only. Install or clone the official
    `real-stanford/diffusion_policy` environment and run a one-step train/debug
    check on a real converted dataset before treating it as a trainable BC path.
+
+## 2026-06-11 Resume After Early Checkpoint Stop
+
+The user clarified that worker checkpoint completion is not enough; agents
+should follow the robotics development loop and continue validating/debugging.
+The orchestrator resumed all three agent sessions after they had been closed
+and assigned another pass:
+
+- Worker A: continue the GraspGenX pregrasp reset branch until there is a real
+  Isaac Lab reset smoke or a hard external blocker. Local runtime should be
+  rechecked; if blocked, use an agent-owned l401 worktree and a small Slurm
+  validation job. No full RL training.
+- Worker B: continue the trajectory-tracking branch until the new task id has a
+  real DEXTRAH/Isaac task-registration/env smoke or a hard external blocker.
+  No full training.
+- Worker C: continue the Diffusion Policy BC branch until the official
+  `real-stanford/diffusion_policy` implementation has at least config/model
+  construction and preferably one-step/debug-train validation on a converted
+  Franka cube dataset, or a precise external blocker is documented.
+
+Current orchestrator stance:
+
+- Do not merge worker branches into `main` yet.
+- Keep monitoring workers until the next validation/debug loop completes.
+- If any worker launches a local or cluster job, scheduler state alone is not
+  sufficient; logs, metrics, and artifacts must be inspected.
