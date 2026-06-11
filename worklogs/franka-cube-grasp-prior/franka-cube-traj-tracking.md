@@ -1382,3 +1382,68 @@ Analysis:
 Next:
 - Commit/push this worklog result.
 - Launch a tiny clamp RL smoke before any longer training: one GPU, 16 envs, 3 iterations, then evaluate the checkpoint for 720 steps if training completes.
+
+## 2026-06-11T13:39:28-07:00 - gripper clamp short RL smoke launch
+
+Goal:
+- Verify RL-Games training still runs with the gripper target clamp and writes a checkpoint suitable for eval.
+
+Hypothesis:
+- The clamp should keep observation size and training wiring unchanged while changing only the trajectory tracking target for close-phase gripper width. A 3-iteration run is enough to catch config/runtime breakage and produce a checkpoint; it is not expected to solve the task.
+
+Version Control:
+- agent_id: franka-cube-traj-tracking
+- local_commit: `0eafbad235c2b821f86eb46f61095fdd3f710031`
+- remote_commit/status: /lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking at `0eafbad235c2b821f86eb46f61095fdd3f710031`, detached clean. SSH Git auth failed; HTTPS fetch fallback succeeded.
+
+Command / Job:
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:30:00 --job-name=franka_cube_traj_gripclamp_rl --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,FULL_EXPERIMENT_NAME=franka_cube_traj_tracking_gripclamp_rl_smoke_20260611_133928,NPROC_PER_NODE=1,NUM_NODES=1,DISTRIBUTED=False,MULTI_GPU=False,NUM_ENVS=16,HORIZON_LENGTH=16,MINIBATCH_SIZE=256,CENTRAL_VALUE_MINIBATCH_SIZE=256,MINI_EPOCHS=1,MAX_ITERATIONS=3,SAVE_FREQUENCY=1,AUTO_RESUME=False,SELF_RELAUNCH=False,USE_CUDA_GRAPH=False,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json cluster/sbatch_train_teacher_8gpu.sh`
+- job_id: 1027730 `franka_cube_traj_gripclamp_rl`
+- expected_log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_1027730.out
+- expected_run_dir: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_gripclamp_rl_smoke_20260611_133928
+
+Acceptance Criteria:
+- Job completes without traceback/Hydra/config errors.
+- Resolved env config has observation space `72`, `trajectory_tracking_min_target_gripper_width: 0.024`, external reference path, `trajectory_tracking_reference_duration_s: 8.0`, phase observations false, and reset-pose target policy.
+- Actor/critic observation dimension remains 72; checkpoint is written by epoch 3.
+- Follow-up eval can load the checkpoint and report finite tracking metrics with runtime gripper target min `0.024`.
+
+Result:
+- status: passed; Slurm completed `0:0` after `00:00:52` on `pool0-00016`.
+- local_artifacts: `cluster_results/l401/franka_cube_traj_tracking_gripclamp_rl_smoke_20260611_133928/params/`, `cluster_results/l401/franka_cube_traj_tracking_gripclamp_rl_smoke_20260611_133928/teacher_8gpu_1027730.out`; checkpoints remain on NFS under the run `nn/` directory.
+- resolved_config: `params/env.yaml` has `observation_space: 72`, `trajectory_tracking_reference_duration_s: 8.0`, `trajectory_tracking_phase_observations: false`, `trajectory_tracking_min_target_gripper_width: 0.024`, `trajectory_tracking_follow_current_cube_pose: false`, and the external 60 mm reference path.
+- training_log: actor and critic MLPs both built with `72`; epochs 1/3, 2/3, and 3/3 completed; no traceback/Hydra/runtime error and no NaN pattern in stdout.
+- checkpoints: epoch 1/2/3 checkpoints were written; selected eval checkpoint `/results/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_gripclamp_rl_smoke_20260611_133928/nn/last_dextrah_franka_cube_traj_tracking_ep_3_rew_5.704905.pth`.
+- caveat: TensorBoard event file is 0 bytes, consistent with prior short smokes; rollout eval remains the behavior evidence.
+
+Analysis:
+- The clamp does not break RL-Games wiring. This still is not a policy-performance result because it only ran 3 iterations.
+- The next bounded check is a 720-step eval of this epoch-3 checkpoint to compare early behavior against the prior retimed 3-epoch eval and verify runtime gripper target min stays clamped.
+
+Next:
+- Commit/push this worklog checkpoint.
+- Launch a 720-step eval of the gripper-clamp 3-epoch checkpoint; do not scale training until that eval is inspected.
+
+## 2026-06-11T13:42:40-07:00 - gripper clamp short checkpoint eval launch
+
+Goal:
+- Evaluate the gripper-clamp 3-iteration checkpoint across a full 8 s retimed reference horizon.
+
+Hypothesis:
+- The tiny checkpoint will not solve the task, but metrics should remain finite and target-safe. Compared with the raw-zero gripper retimed 3-epoch eval, the runtime target gripper width should stay at or above `0.024` and the learned gripper should avoid collapsing to near zero.
+
+Version Control:
+- agent_id: franka-cube-traj-tracking
+- local_commit: pending worklog-only checkpoint; implementation code is `0eafbad235c2b821f86eb46f61095fdd3f710031`.
+
+Command / Job:
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:30:00 --job-name=franka_cube_traj_gripclamp_eval3 --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_gripclamp_eval720_20260611_134240,CHECKPOINT=/results/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_gripclamp_rl_smoke_20260611_133928/nn/last_dextrah_franka_cube_traj_tracking_ep_3_rew_5.704905.pth,NUM_ENVS=4,NUM_STEPS=720,VIDEO_LENGTH=240,CAPTURE_VIDEO=False,PRINT_INTERVAL=120,USE_CUDA_GRAPH=False,SEED=52,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- job_id: pending
+- expected_log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_<job>.out
+- expected_metrics: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_traj_tracking_gripclamp_eval720_20260611_134240/metrics.json
+
+Acceptance Criteria:
+- 720/720 steps complete with finite metrics and no immediate reset pathology.
+- Reference summary reports runtime duration `8.0`, source duration `22.033333333333335`, `gripper_schedule_policy=clamp_source_width_to_min_target_gripper_width`, runtime gripper min `0.024`, reset-pose target policy, and `curobo_validated=false`.
+- Phase progress reaches 1.0; `cube_traj_tracking_unsafe_target_rate` remains `0.0`; target min clearance remains above `0.025`.
+- Inspect policy behavior without overclaiming: gripper width, finger distances, lift/success, finger table clearance, resets/terminations.
