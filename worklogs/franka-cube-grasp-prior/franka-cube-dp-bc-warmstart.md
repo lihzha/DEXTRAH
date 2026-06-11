@@ -2477,3 +2477,111 @@ Next:
 - Launch a bounded corrected-label official-DP overfit/debug run only after
   this source checkpoint is recorded; do not reuse stale old-label checkpoints
   for more behavior claims.
+
+## 2026-06-11T13:52:00-07:00 - corrected-label overfit/debug launch
+
+Goal:
+- Train the first behavior-relevant official Diffusion Policy checkpoint on
+  frame-corrected full-pick/lift labels.
+
+Hypothesis:
+- With x/y and roll/pitch labels rotated into the Franka root action frame, a
+  bounded ~2.5k-step overfit/debug run should learn the same low train/val loss
+  as the stale overfit2k checkpoint while producing approach actions that move
+  toward the cube when interpreted by the Isaac controller.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- source_commit: `6f58a973c60fa21154c207a31b47ef8f20b46584`
+- push/pull: pushed to `origin/codex/franka-cube-diffusion-policy-bc`
+
+Command / Job:
+- command:
+  `PYTHONPATH="$DP:$DEX" WANDB_MODE=offline "$VENV/bin/python" train.py --config-dir "$DEX/dextrah_lab/offline_dp_bc/config" --config-name franka_cube_lowdim_dp task.dataset_path="$DATASET" task.dataset.val_ratio=0.25 training.device=cuda:0 training.max_train_steps=100 training.max_val_steps=4 training.num_epochs=25 policy.num_inference_steps=100 dataloader.batch_size=32 val_dataloader.batch_size=32 hydra.run.dir="$RUN_DIR"`
+- job_id: local process, no Slurm
+- dataset:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz`
+- run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_debug/run_20260611_135200_curobo32_full_pick_lift_framefix_overfit2k`
+- log:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/official_dp_curobo32_full_pick_lift_framefix_overfit2k_train.log`
+
+Result:
+- status: passed local official-DP training and bridge-smoke gates.
+- final official-DP metrics from `logs.json.txt`:
+  - `global_step=2523`
+  - `train_loss=0.00884601678699255`
+  - `val_loss=0.009782439097762108`
+  - `train_action_mse_error=0.0011517644161358476`
+- checkpoint:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_debug/run_20260611_135200_curobo32_full_pick_lift_framefix_overfit2k/checkpoints/latest.ckpt`
+- local checkpoint bridge smokes, all using official DP workspace loading,
+  `--num-inference-steps 100`, and `--warm-history-from-dataset`:
+  - first/open log:
+    `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/official_dp_curobo32_full_pick_lift_framefix_overfit2k_checkpoint_smoke_first_warm_100step.log`
+    - bridge action min/max:
+      x `[-0.0309, 0.0088]`, y `[0.0294, 0.0569]`, z `[0.0769, 0.1583]`,
+      gripper `[0.9341, 1.0000]`
+  - gripper-closed log:
+    `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/official_dp_curobo32_full_pick_lift_framefix_overfit2k_checkpoint_smoke_gripper_closed_warm_100step.log`
+    - bridge action min/max:
+      x `[-0.0186, -0.0030]`, y `[-0.0054, 0.0072]`,
+      z `[-0.0037, 0.0235]`, gripper `[-0.9653, -0.8589]`
+  - lift-high log:
+    `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/official_dp_curobo32_full_pick_lift_framefix_overfit2k_checkpoint_smoke_lift_high_warm_100step.log`
+    - bridge action min/max:
+      x `[-0.0130, 0.0039]`, y `[-0.0020, 0.0083]`,
+      z `[-0.0056, 0.0175]`, gripper `[-1.0000, -0.9333]`
+
+Next:
+- Commit/push this worklog-only evidence boundary, copy the corrected
+  checkpoint to l401 results storage, deploy the exact branch commit into the
+  agent-owned l401 worktree, then launch a tiny traced l401 eval with
+  `NUM_STEPS=96`, `ACTION_CHUNK_STEPS=8`, and
+  `DEBUG_POLICY_TRACE_MAX_CALLS=12`.
+
+## 2026-06-11T13:59:30-07:00 - corrected-label l401 traced eval gate
+
+Goal:
+- Run the first bounded DEXTRAH/Isaac rollout against the frame-corrected
+  official-DP overfit checkpoint, with trace enabled for the same 12-call
+  dataset-nearest-neighbor diagnosis used on job `1027729`.
+
+Hypothesis:
+- If the frame fix is correct, early action chunks should no longer command
+  the robot away from the cube in world x/y. The tiny rollout may still fail
+  grasp/lift because the dataset is only 32 cuRobo demos and the observation
+  bridge is sparse, but trace evidence should show approach motion and phase
+  progression improving relative to stale job `1027729`.
+
+Change:
+- No new source changes planned for this launch. The source boundary is the
+  committed frame/action fix plus this worklog evidence update.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `6f58a973c60fa21154c207a31b47ef8f20b46584`
+- implementation_commit: pending worklog commit before remote launch
+- push/pull: pending
+- changed_files:
+  - `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+
+Command / Job:
+- planned checkpoint source:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_debug/run_20260611_135200_curobo32_full_pick_lift_framefix_overfit2k/checkpoints/latest.ckpt`
+- planned remote checkpoint:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/franka_cube_curobo32_full_pick_lift_framefix_overfit2k/latest.ckpt`
+- planned eval:
+  `RUN_NAME=franka_cube_dp_eval_curobo32_full_pick_lift_framefix_overfit2k_chunk8_trace96_<timestamp> NUM_ENVS=1 NUM_STEPS=96 NUM_INFERENCE_STEPS=100 ACTION_CHUNK_STEPS=8 DEBUG_POLICY_TRACE_MAX_CALLS=12 DEBUG_POLICY_TRACE_ENV_INDEX=0 CHECKPOINT=/results/dp_bc/checkpoints/franka_cube_curobo32_full_pick_lift_framefix_overfit2k/latest.ckpt sbatch cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+
+Result:
+- status: pending launch after commit/push/deploy.
+
+Next:
+- Deploy, launch, poll Slurm, fetch metrics and `policy_trace.json`, compare
+  against the corrected framefix dataset, and patch/relaunch if rollout still
+  drifts or stays open for a traceable reason.
