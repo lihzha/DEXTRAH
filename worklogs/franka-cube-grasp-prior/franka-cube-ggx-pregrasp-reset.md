@@ -811,3 +811,43 @@ Plan:
 
 Next:
 - Patch the eval wrapper, run local `bash -n`, commit/push/deploy, and submit the small l401 eval.
+
+## 2026-06-11T20:54:38Z - eval video artifact result
+
+Goal:
+- Produce and inspect a bounded rollout video artifact for the reset-prior run without interrupting active 8-GPU training job `28987954`.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- implementation_commit: `51cac4a7ced0d23ef967e806cfef3cfe872bb810`
+- changed_files: `cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`, owned worklog
+- push/pull: pushed to `origin/codex/franka-cube-ggx-pregrasp-reset`; deployed to l401 agent worktree via Git bundle
+- remote_commit/status: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset` detached at `51cac4a7ced0d23ef967e806cfef3cfe872bb810`
+
+Command / Job:
+- launch command: `sbatch --parsable --partition=batch --time=00:25:00 --job-name=ggx_eval_video --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,TASK=Dextrah-Franka-Cube-Grasp,RUN_NAME=franka_cube_ggx_pregrasp_reset_eval_ep875_20260611_205141,NUM_ENVS=1,NUM_STEPS=360,VIDEO_LENGTH=360,PRINT_INTERVAL=30,CAPTURE_VIDEO=True,DETERMINISTIC=True,USE_CUDA_GRAPH=False,SEED=20260611,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_smoke.npz,CHECKPOINT=/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005/nn/last_dextrah_franka_cube_grasp_ep_875_rew_2194.6606.pth,VIDEO_NAME_PREFIX=ggx-pregrasp-reset-ep875 cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- job_id: `1027734`
+- checkpoint: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005/nn/last_dextrah_franka_cube_grasp_ep_875_rew_2194.6606.pth`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_ggx_pregrasp_reset_eval_ep875_20260611_205141`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1027734.out`
+- local_artifacts: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_reset_eval_ep875_20260611_205141`
+
+Result:
+- status: completed
+- scheduler: `COMPLETED`, exit `0:0`, elapsed `00:01:11`, node `pool0-00016`
+- metrics: `num_envs=1`, `num_steps_completed=360`, `done_count=0`, `reward_mean=3.83645`, `reward_final=4.06477`, `success_rate_mean=0.0`, `success_rate_final=0.0`, `success_rate_last_window_mean=0.0`
+- task metrics: `cube_lift_height` and `has_lifted_cube` stayed `0.0` in this single deterministic rollout; `finger_table_clearance` mean/min/final `0.08445/0.07862/0.08454 m`; `finger_table_clearance_violation=0.0`; `ee_to_cube_dist` mean/final `0.06855/0.07057 m`; `finger_center_to_cube_dist` mean/final `0.06270/0.06196 m`
+- video: remote `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_ggx_pregrasp_reset_eval_ep875_20260611_205141/videos/ggx-pregrasp-reset-ep875-step-0.mp4`
+- video: local raw `cluster_results/l401/franka_cube_ggx_pregrasp_reset_eval_ep875_20260611_205141/videos/ggx-pregrasp-reset-ep875-step-0.mp4`
+- video: local trimmed preview `cluster_results/l401/franka_cube_ggx_pregrasp_reset_eval_ep875_20260611_205141/videos/ggx-pregrasp-reset-ep875-step-0-trimmed.mp4`
+- video validation: raw video H.264 `1280x720`, `359` frames, `5.983 s`, `60 fps`; trimmed preview H.264 `1280x720`, `353` frames, `5.883 s`, `60 fps`
+- visual inspection: first raw frame is black, likely a capture-start frame; middle/final sampled frames show the Franka hand at the cube with close but usable camera framing; trimmed preview skips the black opener
+- viewer_url: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_reset_eval_ep875_20260611_205141/videos/ggx-pregrasp-reset-ep875-step-0-trimmed.mp4`
+- errors: no traceback/runtime/child failure; log contains only the known non-fatal Warp CUDA driver-entry warning observed in successful Isaac runs
+- active training status during eval: job `28987954` continued running on a1001 and reached epoch `906` with `bad_scalars=0` and checkpoint `last_dextrah_franka_cube_grasp_ep_900_rew_2213.7234.pth`
+
+Analysis:
+- The video artifact was produced without touching the active 8-GPU training job. This single deterministic rollout did not lift or succeed, which is consistent with sparse success in rank-0 training metrics so far and should be treated as behavior evidence to watch, not a reset-prior runtime failure. The rollout remained finite, did not terminate early, kept table clearance positive, and produced an inspectable video.
+
+Next:
+- Continue monitoring the active training job through wall-time/requeue and later checkpoints. Consider a later multi-seed eval video after success frequency improves, but do not change training config for this artifact.
