@@ -479,7 +479,7 @@ Analysis:
 Version Control:
 - branch: codex/franka-cube-diffusion-policy-bc
 - source_checkpoint_commit: b62f3b2
-- push/pull: pending
+- push/pull: pushed to `origin/codex/franka-cube-diffusion-policy-bc`
 - changed_files:
   - `dextrah_lab/scene_scripts/plan_franka_cube_graspgenx_curobo.py`
   - `dextrah_lab/offline_dp_bc/trajectory_conversion.py`
