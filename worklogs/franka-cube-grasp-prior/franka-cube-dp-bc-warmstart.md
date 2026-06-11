@@ -4466,3 +4466,106 @@ Next:
   viewer URLs, compare filtered realization ratio, EE/finger distance,
   nearest-demo support, and clip fractions, then decide whether to patch
   conversion timing or run an action-repeat sweep.
+
+## 2026-06-11T16:35:00-07:00 - controller compensation sweep result
+
+Goal:
+- Inspect jobs `1027862`, `1027863`, and `1027864` and decide whether
+  replay-only action multiplication is a plausible fix for the converted
+  cuRobo label/controller mismatch.
+
+Result:
+- status: failed as a fix, useful as a diagnostic.
+- All jobs completed `0:0` and artifacts were fetched locally.
+- Local report:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/controller_compensation_20260611_162300/controller_compensation_report.md`
+- Viewer URLs:
+  - report:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/controller_compensation_20260611_162300/controller_compensation_report.md`
+  - dataset_t_plus_7 plot:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/controller_compensation_20260611_162300/controller_compensation_dataset_t_plus_7.png`
+  - m10 step128 video:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_comp_m10_r1_128_20260611_162300/videos/franka-cube-dp-replay-comp-m10-r1-step-128.mp4`
+
+Key evidence:
+- m3:
+  final EE-to-cube about `0.147-0.150 m`, median nonzero xyz realization
+  ratio about `0.081-0.086`, no clipping, nearest-demo support distance about
+  `0.49-0.50`.
+- m6:
+  final EE-to-cube about `0.106-0.108 m`, median realization ratio about
+  `0.079-0.085`, first clipping at steps `7-14`, support distance about
+  `0.84-0.87`.
+- m10:
+  minimum EE-to-cube improved to `0.074-0.085 m`, final about `0.101-0.104 m`,
+  but max pose clip fraction reached `0.5`, support distance reached `0.91`
+  for `dataset_t` and pathological `>150` for `dataset_t_plus_7`.
+- No run produces a valid close/contact/lift trajectory. Gripper stays open in
+  the fixed-label replay modes, as expected for the selected approach labels.
+
+Analysis:
+- Action multiplication is not the real fix. It can reduce raw distance, but
+  it does not change the core observation that actual one-step EE motion is
+  only about `8-9%` of the label-implied target, and high multipliers create
+  clipping/support drift instead of a coherent teacher trajectory.
+- The remaining likely root cause is controller/action temporal semantics:
+  converted labels are one-step relative target deltas between cuRobo waypoints,
+  while DEXTRAH applies them through a DifferentialIK target plus joint-level
+  controller over only one env step.
+
+Next:
+- Stop treating label scaling as the main path.
+- Inspect the DEXTRAH action application and converter end-to-end:
+  env decimation, `pre_physics_step`, DifferentialIK command semantics,
+  root/body/end-effector frames, normalized-vs-scaled actions, and whether
+  dataset labels should be held/integrated over multiple env steps.
+- Run only one or two bounded replay diagnostics with videos/plots after a
+  narrow semantic patch.
+
+## 2026-06-11T16:36:00-07:00 - live residual target replay plan
+
+Goal:
+- Answer why source labels with expected one-step EE deltas of roughly
+  `6-13 mm` realize only `0.5-1 mm` in the Isaac controller, without launching
+  any BC/RL scale-up.
+
+Hypothesis:
+- Converted labels are normalized relative deltas between source cuRobo/FK
+  waypoints at 60 Hz. DEXTRAH applies those deltas as DifferentialIK relative
+  target-pose setpoints, then joint PD only partially moves toward the setpoint
+  over `decimation=2` physics steps. If this is true, recomputing a residual
+  action from the live EE pose to a dataset target row every env step should
+  track source waypoints better than replaying stale source one-step labels.
+
+Planned Change:
+- Add replay-only modes to
+  `dextrah_lab/rl_games/replay_franka_cube_dataset_actions.py`:
+  `dataset_target_t_plus_1` and `dataset_target_t_plus_7`.
+- These modes compute the normalized action from the current live lowdim EE
+  pose/quaternion to the target dataset row's EE pose/quaternion at each env
+  step, using the same DEXTRAH frame/scale conversion as the dataset
+  converter, and retain the target row's gripper command.
+- Extend CSV/JSON/report/plots with target-row tracking error before/after,
+  target row phase/episode step, and clip fraction.
+
+Validation Before Cluster:
+- `python3 -m py_compile dextrah_lab/rl_games/replay_franka_cube_dataset_actions.py`
+- `bash -n cluster/sbatch_replay_franka_cube_dp_actions_1gpu.sh`
+- `git diff --check`
+
+Planned Cluster Diagnostic:
+- Deploy the exact committed patch to the agent-owned l401 worktree.
+- Launch a bounded source-joint reset replay with:
+  `DEMO_RESET_EPISODE=24`, `DEMO_RESET_STEP=0`,
+  `DATASET_START_EPISODE=24`, `DATASET_START_STEP=0`,
+  `STEPS=96`, `NUM_ENVS=1`, `ACTION_REPEAT=1`,
+  `POSE_ACTION_MULTIPLIER=1`, and modes
+  `dataset_t,dataset_target_t_plus_1,dataset_target_t_plus_7`.
+- Fetch logs, CSV/JSON/report, plots, videos/contact sheets, open the most
+  useful artifacts with `viz-open`, and update this worklog.
+
+Acceptance:
+- Diagnostic clarity only. If residual-target modes track the source path
+  substantially better, the issue is open-loop/temporal target semantics in the
+  converted labels. If they still under-realize, inspect controller gains,
+  decimation, target frame, and waypoint cadence before any training.

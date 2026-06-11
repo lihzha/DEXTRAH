@@ -17,6 +17,7 @@ import json
 import math
 import sys
 import traceback
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -44,6 +45,8 @@ parser.add_argument(
         "dataset_open_t",
         "dataset_open_t_plus_1",
         "dataset_open_t_plus_7",
+        "dataset_target_t_plus_1",
+        "dataset_target_t_plus_7",
         "dp_replan",
     ],
     help="Replay mode. May be passed multiple times. Defaults to dataset_t and dp_replan.",
@@ -136,6 +139,7 @@ from dextrah_lab.offline_dp_bc.action_conversion import (
     DEFAULT_DEXTRAH_ACTION_CONVENTION,
     apply_normalized_action_to_world_pose,
     axis_angle_from_quat_wxyz,
+    derive_relative_ee_actions,
     normalized_action_to_world_delta,
     quat_inv_wxyz,
     quat_mul_wxyz,
@@ -153,6 +157,7 @@ from dextrah_lab.offline_dp_bc.trajectory_conversion import PICK_AND_LIFT_PHASE_
 
 DEFAULT_CAMERA_EYE = (-0.10, -0.78, 1.42)
 DEFAULT_CAMERA_TARGET = (-0.41, -0.10, 0.82)
+RESIDUAL_TARGET_ACTION_CONVENTION = replace(DEFAULT_DEXTRAH_ACTION_CONVENTION, clip_actions=False)
 
 
 def _phase_names() -> list[str]:
@@ -517,6 +522,44 @@ def _ratio(actual: float, expected: float) -> float | None:
     return float(actual / expected)
 
 
+def _normalized_action_to_dataset_target(
+    live_lowdim: np.ndarray,
+    target_lowdim: np.ndarray,
+    *,
+    gripper_action: float,
+) -> np.ndarray:
+    """Compute a live-state residual action toward a dataset target row.
+
+    This is a replay-only diagnostic. Converted BC labels are deltas between
+    adjacent source waypoints. Here we instead ask what DEXTRAH action would
+    target a selected source waypoint from the live controller state at the
+    current env step.
+    """
+
+    ee_pos = np.stack(
+        (
+            np.asarray(live_lowdim[:3], dtype=np.float32),
+            np.asarray(target_lowdim[:3], dtype=np.float32),
+        ),
+        axis=0,
+    )
+    ee_quat = np.stack(
+        (
+            np.asarray(live_lowdim[3:7], dtype=np.float32),
+            np.asarray(target_lowdim[3:7], dtype=np.float32),
+        ),
+        axis=0,
+    )
+    grip = np.asarray([float(gripper_action), float(gripper_action)], dtype=np.float32)
+    return derive_relative_ee_actions(
+        ee_pos,
+        ee_quat,
+        gripper_action=grip,
+        convention=RESIDUAL_TARGET_ACTION_CONVENTION,
+        terminal_action="drop",
+    )[0].astype(np.float32, copy=False)
+
+
 def _finite_values(rows: list[dict[str, Any]], key: str) -> list[float]:
     values: list[float] = []
     for row in rows:
@@ -589,6 +632,14 @@ def _plot_action_audit(rows: list[dict[str, Any]], output_path: Path) -> None:
             linestyle="--",
             label=f"{mode} dataset-next",
         )
+        tracking_after = [row.get("tracking_target_error_after") for row in mode_rows]
+        if any(value is not None for value in tracking_after):
+            axes[2].plot(
+                x,
+                [float(value) if value is not None else np.nan for value in tracking_after],
+                linestyle=":",
+                label=f"{mode} residual-target",
+            )
         axes[3].plot(x, [row["expected_rot_delta_norm"] for row in mode_rows], label=f"{mode} expected")
         axes[3].plot(x, [row["actual_rot_delta_norm"] for row in mode_rows], linestyle="--", label=f"{mode} actual")
         axes[4].plot(x, [row["gripper_width_after"] for row in mode_rows], label=f"{mode} width")
@@ -616,7 +667,7 @@ def _build_report(summary: dict[str, Any]) -> str:
     lines = [
         "# Franka Cube DP Dataset-Action Replay",
         "",
-        "This is a bounded Isaac controller replay. It does not train. Each mode resets the env, optionally applies a demo-conditioned cube reset, chooses either a fixed demo label window or the nearest converted cuRobo demo row, compares official-DP prediction against dataset labels, and executes a short sequence.",
+        "This is a bounded Isaac controller replay. It does not train. Each mode resets the env, optionally applies a demo-conditioned cube reset, chooses either a fixed demo label window or the nearest converted cuRobo demo row, compares official-DP prediction against dataset labels, and executes a short sequence. `dataset_target_*` modes are replay-only residual-target diagnostics that recompute a live-state action toward a selected source waypoint.",
         "",
         "## Verdict",
         "",
@@ -632,8 +683,8 @@ def _build_report(summary: dict[str, Any]) -> str:
         "",
         "## Mode Summary",
         "",
-        "| mode | steps | nearest row | nearest phase | final EE-cube | final finger-cube | final cube-minus-EE | first close | first hard close | mean cosine | median xyz ratio | mean target err | mean clip frac | max clip frac |",
-        "|---|---:|---:|---|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|",
+        "| mode | steps | nearest row | nearest phase | final EE-cube | final finger-cube | final cube-minus-EE | first close | first hard close | mean cosine | median xyz ratio | mean target err | mean residual target before | mean residual target after | mean clip frac | max clip frac |",
+        "|---|---:|---:|---|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for mode, payload in summary["modes"].items():
         lines.append(
@@ -643,6 +694,8 @@ def _build_report(summary: dict[str, Any]) -> str:
             f"{payload['first_executed_hard_close_step']} | {payload['mean_actual_vs_expected_xyz_cosine']:.4f} | "
             f"{payload.get('median_xyz_realization_ratio', float('nan')):.4f} | "
             f"{payload.get('mean_xyz_target_error_norm', float('nan')):.5f} | "
+            f"{payload.get('mean_tracking_target_error_before', float('nan')):.5f} | "
+            f"{payload.get('mean_tracking_target_error_after', float('nan')):.5f} | "
             f"{payload.get('mean_pose_action_clip_fraction', float('nan')):.3f} | "
             f"{payload.get('max_pose_action_clip_fraction', float('nan')):.3f} |"
         )
@@ -823,6 +876,8 @@ def main() -> None:
                 labels_t7 = np.zeros_like(exec_actions)
                 exec_label_rows = np.full(task_env.num_envs, -1, dtype=np.int64)
                 exec_label_offsets = np.full(task_env.num_envs, -1, dtype=np.int64)
+                tracking_target_rows = np.full(task_env.num_envs, -1, dtype=np.int64)
+                tracking_target_offsets = np.full(task_env.num_envs, -1, dtype=np.int64)
                 exec_action_sources: list[str] = ["unknown"] * task_env.num_envs
                 for env_idx in range(task_env.num_envs):
                     base = int(nearest_rows[env_idx])
@@ -865,6 +920,28 @@ def main() -> None:
                         exec_label_rows[env_idx] = row_t7
                         exec_label_offsets[env_idx] = 7
                         exec_action_sources[env_idx] = "dataset_open_t_plus_7"
+                    elif mode == "dataset_target_t_plus_1":
+                        exec_actions[env_idx] = _normalized_action_to_dataset_target(
+                            lowdim[env_idx],
+                            dataset_obs[row_t1],
+                            gripper_action=float(dataset_action[row_t1, 6]),
+                        )
+                        exec_label_rows[env_idx] = row_t1
+                        exec_label_offsets[env_idx] = 1
+                        tracking_target_rows[env_idx] = row_t1
+                        tracking_target_offsets[env_idx] = 1
+                        exec_action_sources[env_idx] = "dataset_target_t_plus_1"
+                    elif mode == "dataset_target_t_plus_7":
+                        exec_actions[env_idx] = _normalized_action_to_dataset_target(
+                            lowdim[env_idx],
+                            dataset_obs[row_t7],
+                            gripper_action=float(dataset_action[row_t7, 6]),
+                        )
+                        exec_label_rows[env_idx] = row_t7
+                        exec_label_offsets[env_idx] = 7
+                        tracking_target_rows[env_idx] = row_t7
+                        tracking_target_offsets[env_idx] = 7
+                        exec_action_sources[env_idx] = "dataset_target_t_plus_7"
                     elif mode == "dp_replan":
                         exec_actions[env_idx] = dp_seq[env_idx, 0]
                         exec_action_sources[env_idx] = "dp_replan_first_action"
@@ -947,6 +1024,29 @@ def main() -> None:
                         dataset_label_delta_rot = None
                         executed_label_phase = ""
                         executed_label_episode_step = -1
+                    tracking_target_row = int(tracking_target_rows[env_idx])
+                    if tracking_target_row >= 0:
+                        tracking_target_phase = _phase_name_for_row(phase_ids, phase_names, tracking_target_row)
+                        tracking_target_episode_step = _episode_step(tracking_target_row, episode_ends)
+                        tracking_target_error_before = _safe_norm(
+                            before_lowdim[env_idx, :3] - dataset_obs[tracking_target_row, :3]
+                        )
+                        tracking_target_error_after = _safe_norm(
+                            after_lowdim[env_idx, :3] - dataset_obs[tracking_target_row, :3]
+                        )
+                        tracking_target_cube_minus_ee_error_after = _safe_norm(
+                            after_lowdim[env_idx, 14:17] - dataset_obs[tracking_target_row, 14:17]
+                        )
+                        tracking_target_ee_pos = dataset_obs[tracking_target_row, :3].astype(float).tolist()
+                        tracking_target_cube_minus_ee = dataset_obs[tracking_target_row, 14:17].astype(float).tolist()
+                    else:
+                        tracking_target_phase = ""
+                        tracking_target_episode_step = -1
+                        tracking_target_error_before = None
+                        tracking_target_error_after = None
+                        tracking_target_cube_minus_ee_error_after = None
+                        tracking_target_ee_pos = None
+                        tracking_target_cube_minus_ee = None
                     if cosine is not None:
                         mode_cosines.append(float(cosine))
                     mode_distances.append(float(after_ee_to_cube[env_idx]))
@@ -971,6 +1071,15 @@ def main() -> None:
                         "executed_label_episode_step": int(executed_label_episode_step),
                         "executed_label_next_row": int(label_next_row),
                         "executed_label_phase": executed_label_phase,
+                        "tracking_target_row": tracking_target_row,
+                        "tracking_target_offset": int(tracking_target_offsets[env_idx]),
+                        "tracking_target_episode_step": int(tracking_target_episode_step),
+                        "tracking_target_phase": tracking_target_phase,
+                        "tracking_target_error_before": tracking_target_error_before,
+                        "tracking_target_error_after": tracking_target_error_after,
+                        "tracking_target_cube_minus_ee_error_after": tracking_target_cube_minus_ee_error_after,
+                        "tracking_target_ee_pos": tracking_target_ee_pos,
+                        "tracking_target_cube_minus_ee": tracking_target_cube_minus_ee,
                         "nearest_live_row": live_nearest_row,
                         "nearest_live_episode_step": _episode_step(live_nearest_row, episode_ends),
                         "nearest_live_phase": live_nearest_phase,
@@ -1095,6 +1204,11 @@ def main() -> None:
             rot_ratios = _finite_values(mode_rows, "rot_realization_ratio")
             xyz_target_errors = _finite_values(mode_rows, "xyz_target_error_norm")
             dataset_next_errors = _finite_values(mode_rows, "actual_vs_dataset_next_ee_pos_norm")
+            tracking_target_errors_before = _finite_values(mode_rows, "tracking_target_error_before")
+            tracking_target_errors_after = _finite_values(mode_rows, "tracking_target_error_after")
+            tracking_target_cme_errors_after = _finite_values(
+                mode_rows, "tracking_target_cube_minus_ee_error_after"
+            )
             gripper_width_errors = _finite_values(mode_rows, "gripper_width_target_error_after")
             pose_clip_fractions = _finite_values(mode_rows, "pose_action_clip_fraction")
             summaries[mode] = {
@@ -1139,6 +1253,23 @@ def main() -> None:
                 ),
                 "median_actual_vs_dataset_next_ee_pos_norm": (
                     float(np.median(dataset_next_errors)) if dataset_next_errors else float("nan")
+                ),
+                "mean_tracking_target_error_before": (
+                    float(np.mean(tracking_target_errors_before)) if tracking_target_errors_before else float("nan")
+                ),
+                "median_tracking_target_error_before": (
+                    float(np.median(tracking_target_errors_before)) if tracking_target_errors_before else float("nan")
+                ),
+                "mean_tracking_target_error_after": (
+                    float(np.mean(tracking_target_errors_after)) if tracking_target_errors_after else float("nan")
+                ),
+                "median_tracking_target_error_after": (
+                    float(np.median(tracking_target_errors_after)) if tracking_target_errors_after else float("nan")
+                ),
+                "mean_tracking_target_cube_minus_ee_error_after": (
+                    float(np.mean(tracking_target_cme_errors_after))
+                    if tracking_target_cme_errors_after
+                    else float("nan")
                 ),
                 "mean_gripper_width_target_error_after": (
                     float(np.mean(gripper_width_errors)) if gripper_width_errors else float("nan")
