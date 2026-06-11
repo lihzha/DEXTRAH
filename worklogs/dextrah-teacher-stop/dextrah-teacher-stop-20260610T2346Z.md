@@ -859,3 +859,48 @@ Next:
 - Continue active monitoring at a wider cadence while the job is running.
   Watch checkpoint/sidecar cadence, success-region and KL stability, and the
   next wall-time/requeue window.
+
+## 2026-06-10 21:05 PDT - Teacher Monitor Metric Pass
+
+Goal:
+- Verify steady-state health after the validated requeue/resume.
+
+Command / Job:
+- job_id: `28955904`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28955904.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+- local TensorBoard copy:
+  `/tmp/dextrah_teacher_events`
+
+Result:
+- status: running healthy.
+- scheduler: `RUNNING` on `batch-block5-03072`, elapsed `22:21`, time left
+  `03:27:39` at `21:04:55 PDT`.
+- stdout advanced to epoch `16203/20000`.
+- latest complete checkpoint:
+  `last_dextrah_lstm_ep_16200_rew_583.6304.pth` at `21:04:38`.
+- runtime sidecars rank `0-7` all refreshed at `21:04:36`.
+- narrow critical failure scan over recent stdout returned no matches.
+- TensorBoard summaries parsed through epoch `16185` for epoch-keyed scalars.
+- `in_success_region/iter`: latest `0.46875`, last-50 `0.460566`,
+  last-200 `0.462706`, post-resume mean `0.463667`.
+- `rewards/iter`: latest `619.194`, last-50 `632.377`,
+  last-200 `639.781`, post-resume mean `643.058`.
+- `num_adr_increases/iter`: latest `50`, last-50 `50`.
+- `info/kl`: latest `0.00688349`, last-50 `0.00590158`,
+  last-200 `0.00629317`.
+- `losses/a_loss`: latest `-0.00186837`, last-50 `-0.00398713`.
+- `losses/c_loss`: latest `0.0204783`, last-50 `0.0219376`.
+- `performance/step_inference_rl_update_fps`: latest `112235`,
+  last-50 about `110081`, last-200 about `109235`.
+
+Analysis:
+- Post-resume training is stable. Success remains above the ADR threshold,
+  reward and losses are in the recent historical range, KL is controlled, and
+  checkpoint/sidecar cadence is normal.
+
+Next:
+- Continue active monitoring at a widened cadence while this allocation is
+  running.
