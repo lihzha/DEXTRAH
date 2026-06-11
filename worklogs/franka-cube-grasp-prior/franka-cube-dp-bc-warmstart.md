@@ -5023,6 +5023,15 @@ Expected Artifacts:
 - controller rollout `.npz` and metadata JSON
 - video/contact sheet after fetch
 
+Command / Job:
+- command:
+  `CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart RUN_NAME=franka_cube_dp_replay_sourcejoint_controllerhold_ep24s260_mh2_340_20260611_165939 DATASET=/results/dp_bc/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz CHECKPOINT=/results/dp_bc/checkpoints/franka_cube_curobo32_full_pick_lift_framefix_overfit2k/latest.ckpt DEMO_RESET_DATASET=/results/dp_bc/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz DEMO_RESET_TRAJECTORY_JSON=/results/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed24/trajectory.json DEMO_RESET_EPISODE=24 DEMO_RESET_STEP=260 DATASET_START_EPISODE=24 DATASET_START_STEP=260 NUM_ENVS=1 STEPS=340 NUM_INFERENCE_STEPS=100 MODES=controller_target_hold ACTION_REPEAT=1 POSE_ACTION_MULTIPLIER=1 CLIP_ACTIONS=1.0 CONTROLLER_TARGET_LOOKAHEAD=1 CONTROLLER_TARGET_TOLERANCE=0.015 CONTROLLER_TARGET_MAX_HOLD=2 CAPTURE_VIDEO=True VIDEO_LENGTH=340 VIDEO_NAME_PREFIX=franka-cube-dp-replay-controllerhold PRINT_INTERVAL=20 SEED=42 sbatch --parsable cluster/sbatch_replay_franka_cube_dp_actions_1gpu.sh`
+- job_id: `1027893`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/replays/franka_cube_dp_replay_sourcejoint_controllerhold_ep24s260_mh2_340_20260611_165939`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/replay_franka_cube_dp_actions_1027893.out`
+
 Acceptance:
 - Diagnostic acceptance only. Check final/min EE-cube, finger-cube, gripper
   width, clip fraction, target close/lift step, cube lift, video/contact sheet,
