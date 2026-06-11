@@ -371,3 +371,20 @@ Analysis:
 
 Next:
 - Run final source validation, commit the render/metadata support and worklog, push the isolated branch, and report the final artifact.
+
+## 2026-06-11T07:43:46Z - Final validation and push
+
+Result:
+- status: complete
+- source_change_commit: 385fd24b19e3a670284e023776201666312ca787
+- pushed_to: origin/codex/franka-graspgenx-curobo-demo/franka-ggx-curobo-local-20260610T234641Z-86074
+- validation: `python3 -m py_compile dextrah_lab/scene_scripts/render_star_kitting_env.py dextrah_lab/scene_scripts/plan_franka_star_graspgenx_curobo.py`
+- validation: `bash -n cluster/sbatch_render_star_kitting_env.sh`
+- validation: `bash -n cluster/sbatch_plan_franka_star_graspgenx_curobo.sh`
+- validation: `git diff --check`
+- active_demo_containers: none
+- active_demo_gpu_processes: none
+- final_viewer: http://localhost:8765/view?path=local_results/franka_ggx_curobo_demo/franka-ggx-curobo-local-20260610T234641Z-86074/render/render_raw_physics_all40_grasps_gpu0_20260611T074033Z/overview.mp4
+
+Analysis:
+- The final artifact is not an assisted grasp success. It is a faithful Isaac Sim/PhysX replay of the selected GraspGenX/cuRobo plan with all 40 generated grasp candidates shown, and the selected top-down grasp fails to lift the star.
