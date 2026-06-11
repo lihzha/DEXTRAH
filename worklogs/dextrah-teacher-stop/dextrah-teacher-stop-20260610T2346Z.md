@@ -1358,3 +1358,49 @@ Analysis:
 Next:
 - Continue widened monitoring for one more interval, then begin tightening as
   the expected wall-time TERM/requeue window approaches.
+
+## 2026-06-10 23:20 PDT - Teacher Monitor Metric Pass
+
+Goal:
+- Verify continued steady-state training health before switching to a shorter
+  cadence ahead of the wall-time signal window.
+
+Command / Job:
+- job_id: `28955904`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28955904.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+- local TensorBoard copy:
+  `/tmp/dextrah_teacher_events`
+
+Result:
+- status: running healthy.
+- scheduler: `RUNNING` on `batch-block5-03072`, elapsed `02:37:54`,
+  time left `01:12:06` at `23:20:28 PDT`.
+- stdout advanced to epoch `17860/20000`.
+- latest complete checkpoint:
+  `last_dextrah_lstm_ep_17860_rew_643.3928.pth` at `23:20:25`.
+- runtime sidecars rank `0-7` all refreshed at `23:20:23`.
+- narrow critical failure scan over recent stdout returned no matches.
+- TensorBoard summaries parsed through epoch `17848` for epoch-keyed scalars.
+- `in_success_region/iter`: latest `0.458984`, last-50 `0.467007`,
+  last-200 `0.464991`, post-resume mean `0.463094`.
+- `rewards/iter`: latest `638.031`, last-50 `651.344`,
+  last-200 `649.861`, post-resume mean `644.568`.
+- `num_adr_increases/iter`: latest `50`, last-50 `50`.
+- `info/kl`: latest `0.00632707`, last-50 `0.00389646`,
+  last-200 `0.00412442`.
+- `losses/a_loss`: latest `-0.00274446`, last-50 `-0.00336167`.
+- `losses/c_loss`: latest `0.0254587`, last-50 `0.0260481`.
+- `performance/step_inference_rl_update_fps`: latest `113254`,
+  last-20 about `109407`, last-50 about `107915`, last-200 about `109093`.
+
+Analysis:
+- Training remains healthy. A short stdout throughput valley near epochs
+  `17821-17830` recovered, checkpoint/sidecar cadence stayed intact, and the
+  rolling success, reward, KL, loss, and FPS windows remain normal.
+
+Next:
+- Shorten monitoring cadence as the next expected wall-time TERM/requeue window
+  approaches.
