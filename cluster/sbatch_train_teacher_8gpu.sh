@@ -100,6 +100,8 @@ STAR_RESET_NEAR_HAND_X="${STAR_RESET_NEAR_HAND_X:--0.360}"
 STAR_RESET_NEAR_HAND_Y="${STAR_RESET_NEAR_HAND_Y:--0.120}"
 STAR_RESET_NEAR_HAND_XY_NOISE="${STAR_RESET_NEAR_HAND_XY_NOISE:-0.020}"
 CUBE_SPAWN_XY_RANDOMIZATION="${CUBE_SPAWN_XY_RANDOMIZATION:-0.08}"
+GRASP_PRIOR_RESET_ENABLED="${GRASP_PRIOR_RESET_ENABLED:-False}"
+GRASP_PRIOR_LIBRARY_PATH="${GRASP_PRIOR_LIBRARY_PATH:-}"
 AUTO_RESUME="${AUTO_RESUME:-True}"
 CHECKPOINT="${CHECKPOINT:-}"
 FULL_EXPERIMENT_NAME="${FULL_EXPERIMENT_NAME:-}"
@@ -108,8 +110,25 @@ REQUEUE_SIGNAL_WINDOW_SECONDS="${REQUEUE_SIGNAL_WINDOW_SECONDS:-420}"
 REQUEUE_ON_EARLY_TERM="${REQUEUE_ON_EARLY_TERM:-False}"
 RUN_NAME="${FULL_EXPERIMENT_NAME:-slurm_${SLURM_JOB_ID}}"
 LOG_FILE="$NFS_ROOT/slurm_logs/dextrah/teacher_8gpu_${SLURM_JOB_ID}.out"
+CODE_COMMIT="${CODE_COMMIT:-}"
+if [ -z "$CODE_COMMIT" ] && git -C "$CODE_NFS" rev-parse HEAD >/dev/null 2>&1; then
+  CODE_COMMIT="$(git -C "$CODE_NFS" rev-parse HEAD)"
+fi
 SRUN_PID=""
 REQUEUE_SUBMITTED=0
+
+case "$GRASP_PRIOR_RESET_ENABLED" in
+  True|true|1|yes|Yes)
+    if [ "$TASK" != "Dextrah-Franka-Cube-Grasp" ]; then
+      echo "GRASP_PRIOR_RESET_ENABLED is only supported for TASK=Dextrah-Franka-Cube-Grasp" >&2
+      exit 2
+    fi
+    if [ -z "$GRASP_PRIOR_LIBRARY_PATH" ]; then
+      echo "GRASP_PRIOR_RESET_ENABLED requires GRASP_PRIOR_LIBRARY_PATH" >&2
+      exit 2
+    fi
+    ;;
+esac
 
 time_left_to_seconds() {
   local raw="${1// /}"
@@ -249,6 +268,7 @@ echo "IMAGE=$IMAGE"
 echo "CODE_NFS=$CODE_NFS"
 echo "FABRICS_NFS=$FABRICS_NFS"
 echo "ISAACLAB_NFS=$ISAACLAB_NFS"
+echo "CODE_COMMIT=${CODE_COMMIT:-unknown}"
 echo "RESULTS_NFS=$RESULTS_NFS"
 echo "NPROC_PER_NODE=$NPROC_PER_NODE"
 echo "NUM_ENVS=$NUM_ENVS"
@@ -274,6 +294,8 @@ echo "STAR_RESET_NEAR_HAND_X=$STAR_RESET_NEAR_HAND_X"
 echo "STAR_RESET_NEAR_HAND_Y=$STAR_RESET_NEAR_HAND_Y"
 echo "STAR_RESET_NEAR_HAND_XY_NOISE=$STAR_RESET_NEAR_HAND_XY_NOISE"
 echo "CUBE_SPAWN_XY_RANDOMIZATION=$CUBE_SPAWN_XY_RANDOMIZATION"
+echo "GRASP_PRIOR_RESET_ENABLED=$GRASP_PRIOR_RESET_ENABLED"
+echo "GRASP_PRIOR_LIBRARY_PATH=$GRASP_PRIOR_LIBRARY_PATH"
 echo "SAVE_FREQUENCY=$SAVE_FREQUENCY"
 echo "AUTO_RESUME=$AUTO_RESUME"
 echo "CHECKPOINT=$CHECKPOINT"
@@ -310,6 +332,7 @@ srun \
     mkdir -p /results/logs
 
     cd /code/dextrah_lab/rl_games
+    echo \"CODE_COMMIT=${CODE_COMMIT:-unknown}\"
 
     /isaac-sim/python.sh - <<'PY'
 import sys
@@ -340,6 +363,16 @@ PY
     elif [ '$AUTO_RESUME' = 'True' ]; then
       RESUME_ARGS=(--auto_resume)
     fi
+
+    PRIOR_RESET_OVERRIDES=()
+    case '$GRASP_PRIOR_RESET_ENABLED' in
+      True|true|1|yes|Yes)
+        PRIOR_RESET_OVERRIDES=(
+          env.grasp_prior_reset_enabled=True
+          env.grasp_prior_library_path='$GRASP_PRIOR_LIBRARY_PATH'
+        )
+        ;;
+    esac
 
     TASK_OVERRIDES=()
     if [ '$TASK' = 'Dextrah-Cube-Grasp' ]; then
@@ -405,6 +438,7 @@ PY
         agent.params.config.save_frequency='$SAVE_FREQUENCY' \
         agent.params.config.multi_gpu='$MULTI_GPU' \
         \"\${TASK_OVERRIDES[@]}\"
+        \"\${PRIOR_RESET_OVERRIDES[@]}\"
     )
 
     if [ '$DISTRIBUTED' = 'True' ]; then

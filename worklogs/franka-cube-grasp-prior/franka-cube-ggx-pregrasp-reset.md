@@ -170,3 +170,133 @@ Analysis:
 
 Next:
 - Patch wrapper, run cheap checks, commit/push, deploy exact commit to l401, launch and actively monitor the bounded reset-prior smoke until metrics/logs are inspected or a hard external blocker is identified.
+
+## 2026-06-11T19:07:37Z - l401 reset smoke launch record
+
+Goal:
+- Run the smallest practical Isaac Lab validation that actually exercises `grasp_prior_reset_enabled=True` for `Dextrah-Franka-Cube-Grasp`.
+
+Hypothesis:
+- The DEXTRAH Isaac Lab container on l401 can load the pinned agent worktree and compact GraspGenX library, then the validator will report whether reset-time IK, pregrasp sign, table clearance, finite observations, and immediate dones are sane.
+
+Change:
+- Added disabled-by-default prior-reset argument forwarding to `cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh` in commit `9d5e98271c7aa6012900e161cd0a5f81b6273e12`.
+- Because l401 cannot fetch GitHub over SSH (`Permission denied (publickey)`), deployed tracked source as Git objects via a small bundle into the remote canonical repository and created the agent-owned detached worktree from that commit. No tracked source was rsynced.
+- Copied only the untracked compact grasp library artifact to the DEXTRAH results mount.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset
+- worklog: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/worklogs/franka-cube-grasp-prior/franka-cube-ggx-pregrasp-reset.md
+- branch: codex/franka-cube-ggx-pregrasp-reset
+- base_commit: 86ae7dfc5820e59ad310ef7c2ac1f64a49e0e399
+- implementation_commit: 9d5e98271c7aa6012900e161cd0a5f81b6273e12
+- push/pull: pushed to `origin/codex/franka-cube-ggx-pregrasp-reset`; l401 GitHub fetch blocked, so used Git bundle `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/.bundles/franka-cube-ggx-pregrasp-reset-9d5e982.bundle`
+- changed_files: `cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`, this owned worklog
+- remote_commit/status: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset` detached at `9d5e98271c7aa6012900e161cd0a5f81b6273e12`, clean
+
+Command / Job:
+- command: `bash -n cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`
+- command: `python3 -m compileall dextrah_lab/tasks/dextrah_franka_cube_grasp dextrah_lab/scene_scripts/export_franka_cube_graspgenx_library.py dextrah_lab/rl_games/validate_franka_cube_grasp_env.py`
+- command: `sbatch --partition=batch --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,RUN_NAME=franka_cube_ggx_pregrasp_reset_smoke_20260611_190737,NUM_ENVS=8,NUM_STEPS=4,CAPTURE_VIDEO=False,PRINT_INTERVAL=1,SEED=0,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_smoke.npz,GRASP_PRIOR_RESET_CYCLES=3 cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`
+- job_id: 1027681
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_cube_ggx_pregrasp_reset_smoke_20260611_190737`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_cube_1027681.out`
+- artifacts: `metrics.json`; compact library `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_smoke.npz` with SHA256 `028fe588421014832e95e65ff0451500ff1c497fd4ac6f98455ee0366ff25660`
+
+Result:
+- status: submitted
+- metrics/artifacts: pending
+- key evidence: pending
+
+Analysis:
+- Success requires more than Slurm completion: inspect the metrics JSON for prior reset attempt/success rates, pose errors, pregrasp-farther sign, table clearance, immediate done count, finite observation/reward checks, and the printed `validate_command` proving the prior arguments were active.
+
+Next:
+- Submit the l401 job, monitor queue and logs to completion, fetch/inspect artifacts, then patch and relaunch if the metrics show reset pathology.
+
+## 2026-06-11T19:09:43Z - l401 reset smoke result
+
+Goal:
+- Inspect the actual Isaac reset-prior smoke results for job `1027681` and decide whether the reset path is sane enough for a short RL smoke.
+
+Hypothesis:
+- If the prior reset path is wired correctly, every reset cycle should show attempted resets, high IK success, the pregrasp pose farther from the cube than the exact grasp pose, finite observations, safe finger/table clearance, and no immediate dones.
+
+Change:
+- No code changes after launch.
+- Fetched Slurm log and metrics locally for inspection.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset
+- worklog: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/worklogs/franka-cube-grasp-prior/franka-cube-ggx-pregrasp-reset.md
+- branch: codex/franka-cube-ggx-pregrasp-reset
+- implementation_commit: 9d5e98271c7aa6012900e161cd0a5f81b6273e12
+- remote_commit/status: l401 worktree detached at `9d5e98271c7aa6012900e161cd0a5f81b6273e12`
+
+Command / Job:
+- command: `ssh l401 'sacct -j 1027681 --format=JobID,JobName,State,ExitCode,Elapsed,NodeList -P'`
+- command: `rsync -av l401:/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_cube_ggx_pregrasp_reset_smoke_20260611_190737/ cluster_results/l401/franka_cube_ggx_pregrasp_reset_smoke_20260611_190737/`
+- command: `rsync -av l401:/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_cube_1027681.out cluster_logs/l401/dextrah/`
+- job_id: 1027681
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_cube_ggx_pregrasp_reset_smoke_20260611_190737`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_cube_1027681.out`; local copy `cluster_logs/l401/dextrah/validate_franka_cube_1027681.out`
+- artifacts: remote/local `metrics.json` under the run dir and `cluster_results/l401/franka_cube_ggx_pregrasp_reset_smoke_20260611_190737/metrics.json`
+
+Result:
+- status: passed
+- scheduler: `COMPLETED`, exit code `0:0`, elapsed `00:00:43`, node `pool0-00016`
+- metrics/artifacts: metrics `passed=True`, failed checks `[]`; log `validate_command` includes `--enable_grasp_prior_reset`, expected `--grasp_prior_library_path`, and `--grasp_prior_reset_cycles 3`
+- key evidence:
+  - prior cycles: 3 cycles x 8 envs
+  - attempt rate: 1.0 for every cycle
+  - IK/reset success rate: 1.0 for every cycle
+  - pregrasp farther rate: 1.0 for every cycle
+  - immediate done count: 0
+  - min finger/table clearance: 0.120101 m, above penetration margin -0.002 m and above the normal 0.025 m clearance check in the rollout reset
+  - max finger center distance: 0.107195 m
+  - target position error: per-cycle max values 0.006292 m, 0.001199 m, 0.017894 m; mean values 0.001145 m, 0.000150 m, 0.002353 m
+  - target rotation error: per-cycle max values 0.222254 rad, 0.000793 rad, 0.159875 rad; mean values 0.027893 rad, 0.000100 rad, 0.020036 rad
+  - pregrasp sign evidence: exact tool distance means 0.130382/0.130946/0.127957 m versus pregrasp tool distance means 0.160262/0.160722/0.157818 m
+  - rollout finite check passed for 4/4 steps with reward mean 2.135709 and done count 0
+
+Analysis:
+- The reset-prior branch is genuinely exercised and passes the requested smoke evidence: IK success/failure, target pose error, pregrasp-farther sign, finger/table clearance, immediate termination rate, finite observations/rewards, and prior-branch logging.
+- Warnings observed in the log are non-blocking for this run: the known Warp CUDA UUID warning appeared, and `git rev-parse HEAD` printed a worktree metadata warning inside the container because the `.git` file points outside the mounted worktree. The latter is worth cleaning up in wrappers before longer jobs so logs can record the commit without noise.
+- This smoke is metrics-only (`CAPTURE_VIDEO=False`), intentionally avoiding renderer/camera overhead for the first reset gate.
+
+Next:
+- Add minimal opt-in prior override support to the RL training wrapper and clean up commit logging for agent-owned worktrees.
+- Run a short RL smoke with the same task and prior enabled, using reduced envs/steps but preserving the default prior-disabled path and final-training defaults.
+
+## 2026-06-11T19:10:32Z - RL smoke wrapper patch plan
+
+Goal:
+- Prepare the existing DEXTRAH teacher-training wrapper for a short RL smoke and eventual apple-to-apple full training with the prior enabled.
+
+Hypothesis:
+- The training path can remain apple-to-apple if the wrapper only adds opt-in Hydra env overrides for `Dextrah-Franka-Cube-Grasp` and leaves all default task/PPO/env settings unchanged when `GRASP_PRIOR_RESET_ENABLED` is unset.
+
+Change:
+- Patch `cluster/sbatch_train_teacher_8gpu.sh` to add disabled-by-default `GRASP_PRIOR_RESET_ENABLED` and `GRASP_PRIOR_LIBRARY_PATH` env vars, echo them, validate that the prior is only used with `Dextrah-Franka-Cube-Grasp`, and append Hydra overrides `env.grasp_prior_reset_enabled=True` and `env.grasp_prior_library_path=<path>` only when requested.
+- Add a `CODE_COMMIT` echo path to training and validation wrappers so agent-owned Git worktrees that are mounted without their external `.git/worktrees` metadata can still log the pinned commit cleanly.
+- Do not change the default Franka cube PPO settings, default `NUM_ENVS=2048`, observation/action spaces, reward logic, termination logic, cube reset behavior, or the prior-disabled default path.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset
+- branch: codex/franka-cube-ggx-pregrasp-reset
+- base_commit: 9d5e98271c7aa6012900e161cd0a5f81b6273e12
+- implementation_commit: pending
+- changed_files: planned `cluster/sbatch_train_teacher_8gpu.sh`, `cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`, this owned worklog
+
+Command / Job:
+- local checks after edit: `bash -n cluster/sbatch_train_teacher_8gpu.sh`; `bash -n cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`; `python3 -m compileall dextrah_lab/tasks/dextrah_franka_cube_grasp dextrah_lab/rl_games/train.py dextrah_lab/rl_games/validate_franka_cube_grasp_env.py`
+- planned short RL smoke after commit/deploy: one L40S GPU, `TASK=Dextrah-Franka-Cube-Grasp`, reduced `NUM_ENVS` and `MAX_ITERATIONS`, `DISTRIBUTED=False`, prior enabled with the same compact library.
+
+Result:
+- status: planned
+
+Next:
+- Apply the wrapper patch, run cheap checks, commit/push, deploy exact commit to the l401 agent worktree, then launch/monitor a short RL smoke if checks pass.

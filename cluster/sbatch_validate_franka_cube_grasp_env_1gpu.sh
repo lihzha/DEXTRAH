@@ -35,6 +35,10 @@ CUBE_SPAWN_XY_RANDOMIZATION="${CUBE_SPAWN_XY_RANDOMIZATION:-0.08}"
 GRASP_PRIOR_RESET_ENABLED="${GRASP_PRIOR_RESET_ENABLED:-False}"
 GRASP_PRIOR_LIBRARY_PATH="${GRASP_PRIOR_LIBRARY_PATH:-}"
 GRASP_PRIOR_RESET_CYCLES="${GRASP_PRIOR_RESET_CYCLES:-4}"
+CODE_COMMIT="${CODE_COMMIT:-}"
+if [ -z "$CODE_COMMIT" ] && git -C "$CODE_NFS" rev-parse HEAD >/dev/null 2>&1; then
+  CODE_COMMIT="$(git -C "$CODE_NFS" rev-parse HEAD)"
+fi
 
 RUN_DIR_HOST="$RESULTS_NFS/validations/$RUN_NAME"
 RUN_DIR_CONTAINER="/results/validations/$RUN_NAME"
@@ -59,7 +63,7 @@ mkdir -p \
   "$CACHE_NFS/data" "$CACHE_NFS/documents"
 
 export TASK RUN_NAME NUM_ENVS NUM_STEPS VIDEO_LENGTH CAPTURE_VIDEO PRINT_INTERVAL SEED CUBE_SPAWN_XY_RANDOMIZATION
-export GRASP_PRIOR_RESET_ENABLED GRASP_PRIOR_LIBRARY_PATH GRASP_PRIOR_RESET_CYCLES
+export GRASP_PRIOR_RESET_ENABLED GRASP_PRIOR_LIBRARY_PATH GRASP_PRIOR_RESET_CYCLES CODE_COMMIT
 export RUN_DIR_CONTAINER METRICS_CONTAINER ENV_NAME
 
 echo "Running DextrAH Franka cube-grasp environment validation"
@@ -69,6 +73,7 @@ echo "IMAGE=$IMAGE"
 echo "CODE_NFS=$CODE_NFS"
 echo "FABRICS_NFS=$FABRICS_NFS"
 echo "ISAACLAB_NFS=$ISAACLAB_NFS"
+echo "CODE_COMMIT=${CODE_COMMIT:-unknown}"
 echo "RESULTS_NFS=$RESULTS_NFS"
 echo "TASK=$TASK"
 echo "RUN_NAME=$RUN_NAME"
@@ -107,7 +112,8 @@ srun \
     cd /code
     echo "container_host=$(hostname)"
     echo "container_cuda_visible_devices=${CUDA_VISIBLE_DEVICES:-unset}"
-    git rev-parse HEAD || true
+    echo "CODE_COMMIT=${CODE_COMMIT:-unknown}"
+    git rev-parse HEAD 2>/dev/null || true
     echo "git_status_skipped=container_git_lfs_unavailable"
     nvidia-smi || true
 
