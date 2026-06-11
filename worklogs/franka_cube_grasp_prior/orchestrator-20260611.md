@@ -321,3 +321,37 @@ Next monitoring actions:
   reward/success curves are not pathological.
 - Keep polling l401 job `1027692` until the negative gate result and artifacts
   are inspected by Worker B.
+
+## 2026-06-11 Final RL Early Health 19:35 UTC
+
+Final RL job `28987954` remains running on a1001 after startup:
+
+- all 8 ranks initialized with `world_size = 8`
+- rank-local JSONL metric files were opened; rank 0 is the active non-empty
+  scalar stream at this point
+- training reached at least epoch 31 / 10000
+- first checkpoint written at epoch 25:
+  `last_dextrah_franka_cube_grasp_ep_25_rew_1176.0144.pth`
+- runtime sidecars were written for all ranks
+- TensorBoard event file is non-empty
+- grep for traceback/runtime/NCCL/CUDA failure signatures found no actionable
+  error pattern
+
+Early rank-0 JSONL sanity:
+
+- 31 records, 162 scalar keys
+- `bad_scalar_count=0`
+- prior reset attempt/success/farther rates are all `1.0`
+- latest reset position error about `0.00174 m`
+- latest reset rotation error about `0.01642 rad`
+- latest prior finger-table clearance about `0.13511 m`
+- latest finger-table clearance violation `0.0`
+- success/lifted rates remain `0.0`, expected this early
+
+Worker B status:
+
+- Converter job `1027692` completed successfully. It produced the 45 mm compact
+  task-space reference, kept `curobo_validated=false`, and the intentional
+  60 mm validation gate rejected the 45 mm validation JSON as expected.
+- Worker B launched job `1027694` (`ggx_cube_60mm_ref2`) to attempt a scratch
+  60 mm GraspGenX/cuRobo validation/export path.
