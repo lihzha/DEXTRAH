@@ -31,6 +31,9 @@ parser.add_argument("--camera_target", type=float, nargs=3, default=(-0.41, -0.0
 parser.add_argument("--render_width", type=int, default=1280)
 parser.add_argument("--render_height", type=int, default=720)
 parser.add_argument("--video_fps", type=int, default=6)
+parser.add_argument("--include_exact_close_check", action="store_true", default=False)
+parser.add_argument("--exact_close_steps", type=int, default=80)
+parser.add_argument("--exact_close_command_width", type=float, default=0.0)
 parser.add_argument("--disable_fabric", action="store_true", default=False)
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
@@ -116,6 +119,94 @@ def _mean_attr(task_env, name: str) -> float | None:
         return None
 
 
+def _mean_values(values: list[float]) -> float | None:
+    if not values:
+        return None
+    return float(np.asarray(values, dtype=np.float64).mean())
+
+
+def _contact_metrics(task_env, env_id: int) -> dict[str, object]:
+    metrics: dict[str, object] = {"contact_available": False, "contact_flag": None}
+    for asset_name in ("_cube", "_robot"):
+        asset = getattr(task_env, asset_name, None)
+        data = getattr(asset, "data", None)
+        if data is None:
+            continue
+        label = asset_name.lstrip("_")
+        for attr in ("net_contact_forces_w", "body_contact_forces_w", "contact_forces_w"):
+            value = getattr(data, attr, None)
+            if not isinstance(value, torch.Tensor):
+                continue
+            metrics["contact_available"] = True
+            env_value = value[env_id] if value.ndim > 0 and value.shape[0] == task_env.num_envs else value
+            force_norm = float(torch.norm(env_value.detach().float()).cpu())
+            metrics[f"{label}_{attr}_norm"] = force_norm
+            if metrics["contact_flag"] is None:
+                metrics["contact_flag"] = force_norm > 1.0e-3
+            else:
+                metrics["contact_flag"] = bool(metrics["contact_flag"]) or force_norm > 1.0e-3
+    return metrics
+
+
+def _actual_tip_geometry(task_env, env_id: int) -> dict[str, object]:
+    env_ids = torch.tensor([env_id], device=task_env.device, dtype=torch.long)
+    task_env._compute_intermediate_values(env_ids)
+    env_origin = task_env.scene.env_origins[env_id]
+    cube_env = task_env.cube_pos[env_id]
+    cube_w = cube_env + env_origin
+    left_env = task_env.left_finger_pos[env_id]
+    right_env = task_env.right_finger_pos[env_id]
+    actual_ee_env = task_env.ee_pos[env_id]
+    gripper_center_env = 0.5 * (left_env + right_env)
+    gripper_half_axis = 0.5 * (left_env - right_env)
+    left_tip_env = actual_ee_env + gripper_half_axis
+    right_tip_env = actual_ee_env - gripper_half_axis
+    tip_center_env = 0.5 * (left_tip_env + right_tip_env)
+    left_tip_dist = torch.norm(left_tip_env - cube_env)
+    right_tip_dist = torch.norm(right_tip_env - cube_env)
+    tip_center_dist = torch.norm(tip_center_env - cube_env)
+    tip_max_dist = torch.maximum(left_tip_dist, right_tip_dist)
+    tip_table_clearance = torch.minimum(left_tip_env[2], right_tip_env[2]) - float(task_env.cfg.table_surface_z)
+    return {
+        "cube_pos_env": _tensor_list(cube_env),
+        "cube_pos_w": _tensor_list(cube_w),
+        "actual_ee_pos_env": _tensor_list(actual_ee_env),
+        "actual_ee_pos_w": _tensor_list(actual_ee_env + env_origin),
+        "left_finger_pos_env": _tensor_list(left_env),
+        "right_finger_pos_env": _tensor_list(right_env),
+        "left_finger_pos_w": _tensor_list(left_env + env_origin),
+        "right_finger_pos_w": _tensor_list(right_env + env_origin),
+        "gripper_center_pos_env": _tensor_list(gripper_center_env),
+        "gripper_center_pos_w": _tensor_list(gripper_center_env + env_origin),
+        "actual_left_tip_proxy_pos_env": _tensor_list(left_tip_env),
+        "actual_right_tip_proxy_pos_env": _tensor_list(right_tip_env),
+        "actual_left_tip_proxy_pos_w": _tensor_list(left_tip_env + env_origin),
+        "actual_right_tip_proxy_pos_w": _tensor_list(right_tip_env + env_origin),
+        "actual_tip_center_pos_env": _tensor_list(tip_center_env),
+        "actual_tip_center_pos_w": _tensor_list(tip_center_env + env_origin),
+        "relative_to_cube_env": {
+            "left_finger": _tensor_list(left_env - cube_env),
+            "right_finger": _tensor_list(right_env - cube_env),
+            "gripper_center": _tensor_list(gripper_center_env - cube_env),
+            "actual_ee": _tensor_list(actual_ee_env - cube_env),
+            "actual_left_tip_proxy": _tensor_list(left_tip_env - cube_env),
+            "actual_right_tip_proxy": _tensor_list(right_tip_env - cube_env),
+            "actual_tip_center": _tensor_list(tip_center_env - cube_env),
+        },
+        "gripper_width_m": _as_float(task_env.gripper_width[env_id]),
+        "finger_center_to_cube_dist_m": _as_float(task_env.finger_center_to_cube_dist[env_id]),
+        "left_finger_to_cube_dist_m": _as_float(task_env.left_finger_to_cube_dist[env_id]),
+        "right_finger_to_cube_dist_m": _as_float(task_env.right_finger_to_cube_dist[env_id]),
+        "max_finger_to_cube_dist_m": _as_float(task_env.max_finger_to_cube_dist[env_id]),
+        "finger_table_clearance_m": _as_float(task_env.finger_table_clearance[env_id]),
+        "actual_left_tip_proxy_to_cube_dist_m": _as_float(left_tip_dist),
+        "actual_right_tip_proxy_to_cube_dist_m": _as_float(right_tip_dist),
+        "actual_tip_center_to_cube_dist_m": _as_float(tip_center_dist),
+        "actual_tip_max_to_cube_dist_m": _as_float(tip_max_dist),
+        "actual_tip_table_clearance_m": _as_float(tip_table_clearance),
+    }
+
+
 def _marker_cfg(path: str, color: tuple[float, float, float], radius: float) -> VisualizationMarkersCfg:
     return VisualizationMarkersCfg(
         prim_path=path,
@@ -163,7 +254,12 @@ def _make_markers() -> dict[str, VisualizationMarkers]:
     }
 
 
-def _visualize_markers(markers: dict[str, VisualizationMarkers], task_env, env_id: int) -> None:
+def _visualize_markers(
+    markers: dict[str, VisualizationMarkers],
+    task_env,
+    env_id: int,
+    actual_geometry: dict[str, object] | None = None,
+) -> None:
     env_origin = task_env.scene.env_origins[env_id]
     cube_w = task_env.grasp_prior_reset_cube_pos_w[env_id]
     exact_tool_w = task_env.grasp_prior_reset_exact_tool_pos_w[env_id]
@@ -173,8 +269,20 @@ def _visualize_markers(markers: dict[str, VisualizationMarkers], task_env, env_i
     left_w = task_env.left_finger_pos[env_id] + env_origin
     right_w = task_env.right_finger_pos[env_id] + env_origin
     center_w = 0.5 * (left_w + right_w)
-    left_tip_w = _world_from_env(task_env, env_id, task_env.grasp_prior_reset_left_tip_proxy_pos[env_id])
-    right_tip_w = _world_from_env(task_env, env_id, task_env.grasp_prior_reset_right_tip_proxy_pos[env_id])
+    if actual_geometry is not None:
+        left_tip_w = torch.tensor(
+            actual_geometry["actual_left_tip_proxy_pos_w"],
+            dtype=torch.float32,
+            device=task_env.device,
+        )
+        right_tip_w = torch.tensor(
+            actual_geometry["actual_right_tip_proxy_pos_w"],
+            dtype=torch.float32,
+            device=task_env.device,
+        )
+    else:
+        left_tip_w = _world_from_env(task_env, env_id, task_env.grasp_prior_reset_left_tip_proxy_pos[env_id])
+        right_tip_w = _world_from_env(task_env, env_id, task_env.grasp_prior_reset_right_tip_proxy_pos[env_id])
     exact_left_tip_w = _world_from_env(
         task_env, env_id, task_env.grasp_prior_reset_projected_exact_left_tip_proxy_pos[env_id]
     )
@@ -259,9 +367,33 @@ def _fmt_vec(values: list[float]) -> str:
     return "[" + ", ".join(f"{v:+.4f}" for v in values) + "]"
 
 
-def _frame_lines(sample: dict[str, object]) -> list[str]:
+def _frame_lines(
+    sample: dict[str, object],
+    *,
+    phase: str = "pregrasp",
+    exact_close: dict[str, object] | None = None,
+) -> list[str]:
     rel = sample["relative_to_cube_env"]
+    if phase == "exact_close" and exact_close is not None:
+        close_rel = exact_close["relative_to_cube_env"]
+        contact_flag = exact_close.get("contact_flag")
+        contact_text = "unavailable" if contact_flag is None else str(contact_flag)
+        return [
+            "PHASE 2: EXACT_GRASP_CLOSE_CHECK - scripted diagnostic, not the RL start state",
+            "markers: cube cyan | panda_hand exact/pre magenta/green | TCP exact/pre blue/yellow | actual closed tip proxies blue/cyan",
+            f"sample={sample['sample_index']} exact_ik={exact_close['exact_ik_success']} enclosure={exact_close['enclosure_success']} proxy_contact={exact_close['contact_proxy_success']}",
+            f"close_cmd_width={exact_close['close_command_width_m']:.4f} observed_width={exact_close['observed_gripper_width_m']:.4f} contact_flag={contact_text}",
+            f"cube_env={_fmt_vec(exact_close['cube_pos_env'])} cube_delta={exact_close['cube_pos_delta_m']:.4f} lift={exact_close['cube_lift_height_m']:.4f}",
+            f"exact_pose_err pos={exact_close['exact_pos_error_m']:.4f} rot={exact_close['exact_rot_error_rad']:.4f} immediate_done={exact_close['immediate_done']}",
+            f"TCP actual_rel={_fmt_vec(close_rel['actual_ee'])} tip_center_rel={_fmt_vec(close_rel['actual_tip_center'])}",
+            f"tip_proxy rel L={_fmt_vec(close_rel['actual_left_tip_proxy'])} R={_fmt_vec(close_rel['actual_right_tip_proxy'])}",
+            f"body_fingers rel L={_fmt_vec(close_rel['left_finger'])} R={_fmt_vec(close_rel['right_finger'])} center={_fmt_vec(close_rel['gripper_center'])}",
+            f"tip dists center={exact_close['actual_tip_center_to_cube_dist_m']:.4f} max={exact_close['actual_tip_max_to_cube_dist_m']:.4f}",
+            f"table_clearance tip={exact_close['actual_tip_table_clearance_m']:.4f} body={exact_close['finger_table_clearance_m']:.4f}",
+            f"verdict={exact_close['verdict']} | pregrasp offset shown by yellow beads remains 0.03 m away from exact target",
+        ]
     return [
+        "PHASE 1: RESET_PREGRASP_RL_START - 3 cm offset, open gripper, policy starts here",
         "markers: cube cyan | panda_hand exact/pre magenta/green | TCP exact/pre blue/yellow | link origins orange | tip proxies blue/cyan",
         f"sample={sample['sample_index']} reset_success={sample['reset_success']} quality={sample['reset_grasp_quality_success']} immediate_done={sample['immediate_done']}",
         f"cube_env={_fmt_vec(sample['cube_pos_env'])} cube_w={_fmt_vec(sample['cube_pos_w'])}",
@@ -420,7 +552,137 @@ def _collect_sample(task_env, env_id: int, reset_index: int) -> dict[str, object
     return sample
 
 
+def _run_exact_close_check(
+    task_env,
+    env_id: int,
+    *,
+    close_steps: int,
+    close_command_width: float,
+) -> dict[str, object]:
+    env_ids = torch.tensor([env_id], dtype=torch.long, device=task_env.device)
+    joint_pos = task_env._robot.data.joint_pos[env_ids].clone()
+    joint_vel = torch.zeros_like(joint_pos)
+    root_pos_w = task_env._robot.data.root_pos_w[env_ids]
+    root_quat_w = task_env._robot.data.root_quat_w[env_ids]
+    exact_ee_pos_w = task_env.grasp_prior_reset_exact_ee_pos_w[env_ids]
+    exact_ee_quat_w = task_env.grasp_prior_reset_exact_ee_quat_w[env_ids]
+    target_ee_pos_b, target_ee_quat_b = math_utils.subtract_frame_transforms(
+        root_pos_w,
+        root_quat_w,
+        exact_ee_pos_w,
+        exact_ee_quat_w,
+    )
+    exact_joint_pos, ik_success, pos_error_norm, rot_error_norm = task_env._solve_reset_ik(
+        env_ids,
+        joint_pos,
+        joint_vel,
+        target_ee_pos_b,
+        target_ee_quat_b,
+    )
+    exact_joint_pos[:, task_env.finger_joint_ids] = task_env._robot.data.default_joint_pos[env_ids][
+        :, task_env.finger_joint_ids
+    ]
+    task_env._sync_reset_joint_state(env_ids, exact_joint_pos, joint_vel, update_buffers=True)
+    exact_open_geometry = _actual_tip_geometry(task_env, env_id)
+    cube_before_close_env = task_env.cube_pos[env_id].detach().clone()
+
+    close_width = max(float(close_command_width), 0.0)
+    close_target_per_finger = min(0.5 * close_width, 0.04)
+    close_joint_pos = exact_joint_pos.clone()
+    close_joint_pos[:, task_env.finger_joint_ids] = close_target_per_finger
+    task_env.robot_dof_targets[env_ids] = close_joint_pos
+    task_env.arm_joint_pos_target[env_ids] = close_joint_pos[:, task_env.arm_joint_ids]
+    task_env.finger_joint_pos_target[env_ids] = close_joint_pos[:, task_env.finger_joint_ids]
+    for _ in range(max(int(close_steps), 0)):
+        task_env._robot.set_joint_position_target(close_joint_pos, env_ids=env_ids)
+        task_env.scene.write_data_to_sim()
+        task_env.sim.step(render=False)
+        task_env.scene.update(dt=task_env.sim.cfg.dt)
+    task_env.sim.forward()
+    task_env.scene.update(dt=0.0)
+    task_env._compute_intermediate_values(env_ids)
+
+    close_geometry = _actual_tip_geometry(task_env, env_id)
+    term, trunc = task_env._get_dones()
+    immediate_done = bool((term[env_id] | trunc[env_id]).detach().cpu())
+    cube_after_close_env = task_env.cube_pos[env_id].detach().clone()
+    cube_pos_delta = torch.norm(cube_after_close_env - cube_before_close_env)
+    cube_size = float(task_env.cfg.cube_size)
+    observed_width = float(close_geometry["gripper_width_m"])
+    width_contact_proxy = (observed_width >= 0.75 * cube_size) and (observed_width <= float(task_env.cfg.max_gripper_width) + 0.01)
+    tip_center_close = float(close_geometry["actual_tip_center_to_cube_dist_m"]) <= 0.80 * cube_size
+    tip_max_close = float(close_geometry["actual_tip_max_to_cube_dist_m"]) <= 1.40 * cube_size
+    table_clearance_ok = float(close_geometry["actual_tip_table_clearance_m"]) >= float(
+        task_env.cfg.finger_table_penetration_termination_margin
+    )
+    contact_proxy_success = bool(width_contact_proxy and tip_center_close and tip_max_close)
+    exact_ik_success = bool(ik_success[0].detach().cpu())
+    enclosure_success = bool(
+        exact_ik_success
+        and contact_proxy_success
+        and table_clearance_ok
+        and not immediate_done
+        and torch.isfinite(cube_pos_delta).item()
+    )
+    verdict = "PASS" if enclosure_success else "FAIL"
+    contact = _contact_metrics(task_env, env_id)
+    result = {
+        "enabled": True,
+        "exact_ik_success": exact_ik_success,
+        "exact_pos_error_m": _as_float(pos_error_norm[0]),
+        "exact_rot_error_rad": _as_float(rot_error_norm[0]),
+        "close_steps": int(close_steps),
+        "close_command_width_m": close_width,
+        "close_target_per_finger_m": close_target_per_finger,
+        "observed_gripper_width_m": observed_width,
+        "width_contact_proxy": bool(width_contact_proxy),
+        "tip_center_close_proxy": bool(tip_center_close),
+        "tip_max_close_proxy": bool(tip_max_close),
+        "table_clearance_ok": bool(table_clearance_ok),
+        "contact_proxy_success": contact_proxy_success,
+        "enclosure_success": enclosure_success,
+        "verdict": verdict,
+        "immediate_done": immediate_done,
+        "immediate_terminated": bool(term[env_id].detach().cpu()),
+        "immediate_truncated": bool(trunc[env_id].detach().cpu()),
+        "cube_pos_before_close_env": _tensor_list(cube_before_close_env),
+        "cube_pos_after_close_env": _tensor_list(cube_after_close_env),
+        "cube_pos_delta_m": _as_float(cube_pos_delta),
+        "cube_lift_height_m": _as_float(task_env.cube_lift_height[env_id]),
+        "exact_open_geometry": exact_open_geometry,
+        **close_geometry,
+        **contact,
+    }
+    return result
+
+
 def _write_csv(path: Path, samples: list[dict[str, object]]) -> None:
+    exact_close_scalar_keys = [
+        "enabled",
+        "exact_ik_success",
+        "exact_pos_error_m",
+        "exact_rot_error_rad",
+        "close_steps",
+        "close_command_width_m",
+        "close_target_per_finger_m",
+        "observed_gripper_width_m",
+        "width_contact_proxy",
+        "tip_center_close_proxy",
+        "tip_max_close_proxy",
+        "table_clearance_ok",
+        "contact_proxy_success",
+        "enclosure_success",
+        "verdict",
+        "immediate_done",
+        "cube_pos_delta_m",
+        "cube_lift_height_m",
+        "actual_tip_center_to_cube_dist_m",
+        "actual_tip_max_to_cube_dist_m",
+        "actual_tip_table_clearance_m",
+        "finger_table_clearance_m",
+        "contact_available",
+        "contact_flag",
+    ]
     scalar_keys = [
         "reset_index",
         "env_id",
@@ -454,12 +716,17 @@ def _write_csv(path: Path, samples: list[dict[str, object]]) -> None:
         "pregrasp_tip_table_clearance_m",
         "projected_exact_tip_table_clearance_m",
         "finger_table_clearance_m",
-    ]
+    ] + [f"exact_close_{key}" for key in exact_close_scalar_keys]
     with path.open("w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=scalar_keys)
         writer.writeheader()
         for sample in samples:
-            writer.writerow({key: sample.get(key) for key in scalar_keys})
+            row = {key: sample.get(key) for key in scalar_keys}
+            exact_close = sample.get("exact_close_check")
+            if isinstance(exact_close, dict):
+                for key in exact_close_scalar_keys:
+                    row[f"exact_close_{key}"] = exact_close.get(key)
+            writer.writerow(row)
 
 
 def _write_video(frames: list[Path], video_path: Path, fps: int) -> bool:
@@ -568,17 +835,78 @@ def main() -> None:
                     _set_camera(task_env, env_cfg, eye, target)
                     frame = _render_rgb(gym_env, task_env)
                     title = (
-                        f"Franka cube GGX pregrasp reset diagnostic | reset {reset_index} | "
+                        f"Franka cube GGX reset/pregrasp RL start | reset {reset_index} | "
                         f"view {view['name']} | seed {args_cli.seed}"
                     )
-                    image = _overlay_frame(frame, title, _frame_lines(sample))
-                    frame_path = frames_dir / f"reset_{reset_index:03d}_{view['name']}.png"
+                    image = _overlay_frame(frame, title, _frame_lines(sample, phase="pregrasp"))
+                    frame_path = frames_dir / f"reset_{reset_index:03d}_phase1_pregrasp_{view['name']}.png"
                     image.save(frame_path)
                     rendered_frames.append(frame_path)
+            if args_cli.include_exact_close_check:
+                exact_close = _run_exact_close_check(
+                    task_env,
+                    env_id,
+                    close_steps=args_cli.exact_close_steps,
+                    close_command_width=args_cli.exact_close_command_width,
+                )
+                sample["exact_close_check"] = exact_close
+                print(
+                    "[EXACT_CLOSE_DIAG] "
+                    f"reset={reset_index} sample={sample['sample_index']} "
+                    f"ik={exact_close['exact_ik_success']} enclosure={exact_close['enclosure_success']} "
+                    f"proxy_contact={exact_close['contact_proxy_success']} "
+                    f"width={exact_close['observed_gripper_width_m']:.5f} "
+                    f"cmd_width={exact_close['close_command_width_m']:.5f} "
+                    f"tip_center={exact_close['actual_tip_center_to_cube_dist_m']:.5f} "
+                    f"tip_max={exact_close['actual_tip_max_to_cube_dist_m']:.5f} "
+                    f"tip_clearance={exact_close['actual_tip_table_clearance_m']:.5f} "
+                    f"cube_delta={exact_close['cube_pos_delta_m']:.5f} "
+                    f"immediate_done={exact_close['immediate_done']} verdict={exact_close['verdict']}",
+                    flush=True,
+                )
+                if reset_index == 0:
+                    _visualize_markers(markers, task_env, env_id, actual_geometry=exact_close)
+                    env_origin = task_env.scene.env_origins[env_id].detach().cpu().tolist()
+                    for view in view_specs:
+                        eye = tuple(float(view["eye"][idx]) + float(env_origin[idx]) for idx in range(3))
+                        target = tuple(float(view["target"][idx]) + float(env_origin[idx]) for idx in range(3))
+                        _set_camera(task_env, env_cfg, eye, target)
+                        frame = _render_rgb(gym_env, task_env)
+                        title = (
+                            f"Franka cube GGX exact grasp close check | reset {reset_index} | "
+                            f"view {view['name']} | seed {args_cli.seed}"
+                        )
+                        image = _overlay_frame(
+                            frame,
+                            title,
+                            _frame_lines(sample, phase="exact_close", exact_close=exact_close),
+                        )
+                        frame_path = frames_dir / f"reset_{reset_index:03d}_phase2_exact_close_{view['name']}.png"
+                        image.save(frame_path)
+                        rendered_frames.append(frame_path)
     finally:
         gym_env.close()
         env_closed = True
 
+    exact_checks = [
+        sample["exact_close_check"]
+        for sample in samples
+        if isinstance(sample.get("exact_close_check"), dict)
+    ]
+    exact_close_enabled = bool(args_cli.include_exact_close_check)
+    reset_gate_pass = bool(
+        samples
+        and all(bool(sample["reset_grasp_quality_success"]) for sample in samples)
+        and all(not bool(sample["immediate_done"]) for sample in samples)
+    )
+    exact_close_gate_pass = bool(
+        (not exact_close_enabled)
+        or (
+            exact_checks
+            and len(exact_checks) == len(samples)
+            and all(bool(check["enclosure_success"]) for check in exact_checks)
+        )
+    )
     summary = {
         "task": args_cli.task,
         "code_commit_env": os.environ.get("CODE_COMMIT", ""),
@@ -589,6 +917,12 @@ def main() -> None:
         "grasp_prior_library_path": args_cli.grasp_prior_library_path,
         "cube_spawn_xy_randomization": float(args_cli.cube_spawn_xy_randomization),
         "prior_enabled": True,
+        "exact_close_check_enabled": exact_close_enabled,
+        "exact_close_steps": int(args_cli.exact_close_steps),
+        "exact_close_command_width_m": float(args_cli.exact_close_command_width),
+        "pregrasp_reset_gate_pass": reset_gate_pass,
+        "exact_close_gate_pass": exact_close_gate_pass,
+        "rl_relaunch_gate_verdict": "PASS" if reset_gate_pass and exact_close_gate_pass else "FAIL",
         "attempt_rate": sum(1 for s in samples if s["reset_attempted"]) / len(samples) if samples else 0.0,
         "reset_success_rate": sum(1 for s in samples if s["reset_success"]) / len(samples) if samples else 0.0,
         "reset_quality_success_rate": sum(1 for s in samples if s["reset_grasp_quality_success"]) / len(samples)
@@ -620,6 +954,33 @@ def main() -> None:
             task_env,
             "grasp_prior_reset_projected_exact_tip_table_clearance",
         ),
+        "exact_close_ik_success_rate": sum(1 for c in exact_checks if c["exact_ik_success"]) / len(exact_checks)
+        if exact_checks
+        else None,
+        "exact_close_enclosure_success_rate": sum(1 for c in exact_checks if c["enclosure_success"])
+        / len(exact_checks)
+        if exact_checks
+        else None,
+        "exact_close_contact_proxy_success_rate": sum(1 for c in exact_checks if c["contact_proxy_success"])
+        / len(exact_checks)
+        if exact_checks
+        else None,
+        "exact_close_immediate_done_rate": sum(1 for c in exact_checks if c["immediate_done"]) / len(exact_checks)
+        if exact_checks
+        else None,
+        "exact_close_observed_gripper_width_mean_m": _mean_values(
+            [float(c["observed_gripper_width_m"]) for c in exact_checks]
+        ),
+        "exact_close_tip_center_dist_mean_m": _mean_values(
+            [float(c["actual_tip_center_to_cube_dist_m"]) for c in exact_checks]
+        ),
+        "exact_close_tip_max_dist_mean_m": _mean_values(
+            [float(c["actual_tip_max_to_cube_dist_m"]) for c in exact_checks]
+        ),
+        "exact_close_tip_table_clearance_mean_m": _mean_values(
+            [float(c["actual_tip_table_clearance_m"]) for c in exact_checks]
+        ),
+        "exact_close_cube_pos_delta_mean_m": _mean_values([float(c["cube_pos_delta_m"]) for c in exact_checks]),
         "frame_paths": [str(path) for path in rendered_frames],
         "video_path": str(video_path) if video_path.exists() else None,
         "csv_path": str(csv_path),
@@ -631,6 +992,7 @@ def main() -> None:
             "panda_hand/tool and DEXTRAH TCP/EE are both reported because the task controls panda_hand plus ee_offset_pos",
             "body-origin finger distances are retained for reward consistency but are not used alone as grasp-quality geometry",
             "positions are reported in world, env-local, and robot-root frames where applicable",
+            "exact_close_check, when enabled, is a diagnostic-only scripted move from pregrasp to exact pose followed by a close command; it is not part of the RL reset path",
         ],
     }
     payload = {

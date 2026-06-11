@@ -1114,3 +1114,107 @@ Analysis:
 
 Next:
 - Commit/push this checkpoint, deploy the exact commit to the agent-owned l401 worktree, run a fresh reset-only diagnostic, fetch artifacts, inspect the new TCP/tip-proxy tables and labeled frames, and only then decide whether the actual reset target needs a further transform/offset correction.
+
+## 2026-06-11T22:06:08Z - launch TCP-aware reset-only diagnostic
+
+Goal:
+- Validate the patched reset-quality geometry in a real Isaac Lab runtime without RL training.
+
+Hypothesis:
+- If the old failure was mostly a frame/diagnostic error, the new TCP/tip-proxy metrics should show reset quality success with low IK error, outward 3 cm pregrasp offset, open gripper width margin, positive TCP-proxy table clearance, no immediate terminations, and labeled frames that place the TCP/tip proxy plausibly around the cube.
+- If the physical reset is still wrong, the updated JSON/CSV/frames should localize whether the bug is the saved object-local pose, `grasp_to_tool_transform`, EE offset application, or offset direction.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- local_commit: `327593a806a7f945d0ba11226dcb974c09aa9216`
+- pushed: `origin/codex/franka-cube-ggx-pregrasp-reset`
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `327593a806a7f945d0ba11226dcb974c09aa9216`, detached `HEAD`
+- deploy_note: l401 GitHub fetch failed with `Permission denied (publickey)`; deployed with a Git bundle fetched into the agent-owned worktree, not by copying source files.
+
+Command / Job:
+- command: `sbatch --parsable --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=327593a806a7f945d0ba11226dcb974c09aa9216,TASK=Dextrah-Franka-Cube-Grasp,RUN_NAME=franka_cube_ggx_pregrasp_reset_geometry_tcp_20260611_150608,NUM_ENVS=1,NUM_RESETS=5,SEED=20260613,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_smoke.npz,DIAGNOSTIC_ENV_ID=0,RENDER_WIDTH=1280,RENDER_HEIGHT=720,VIDEO_FPS=6,CAMERA_EYE_X=-0.15,CAMERA_EYE_Y=-1.05,CAMERA_EYE_Z=1.55,CAMERA_TARGET_X=-0.41,CAMERA_TARGET_Y=-0.08,CAMERA_TARGET_Z=0.80 cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`
+- job_id: `1027761`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pregrasp_reset_geometry_tcp_20260611_150608`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/diagnose_franka_cube_prior_1027761.out`
+- expected_artifacts: `reset_geometry.json`, `reset_geometry.csv`, labeled frames under `frames/`, and optional `reset_geometry.mp4`
+
+Result:
+- status: submitted
+
+Analysis:
+- This is the required reset-only gate. No A100 RL relaunch is allowed unless this job’s metrics and frames pass visual/numeric inspection.
+
+Next:
+- Monitor `1027761` to terminal state, inspect log and reset metrics, fetch artifacts locally, open the most useful frame/report with `viz-open`, and patch again if quality or visuals remain wrong.
+
+## 2026-06-11T22:13:57Z - plan exact-grasp close visual gate
+
+Goal:
+- Add the bounded visual gate requested after the TCP-aware reset diagnostic: prove the reset prior as two separate phases before any A100 RL relaunch.
+
+Hypothesis:
+- The current reset/pregrasp phase is now numerically valid and visually matches the intended 3 cm open RL start state, but it does not by itself prove the corresponding GraspGenX exact grasp would enclose/contact the 0.06 m cube. A scripted exact-pose-and-close diagnostic should distinguish a valid pregrasp prior from a still-wrong tool/TCP transform.
+
+Change:
+- Extend `dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py` with an opt-in exact-close check that, after reset, solves/sets the robot to the exact transformed TCP pose, commands the gripper closed for a bounded number of sim steps, records TCP/tip-proxy/cube metrics, table clearance, immediate done, close command/width, and contact/proxy-contact flags, and renders side/top/oblique labeled frames for both phases.
+- Pass the exact-close diagnostic flags through `cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`.
+- Preserve task behavior: this is diagnostic-only; the environment reset path, cube randomization, obs/action/reward/PPO defaults, and prior-disabled default remain unchanged.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- worklog: `worklogs/franka-cube-grasp-prior/franka-cube-ggx-pregrasp-reset.md`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `327593a806a7f945d0ba11226dcb974c09aa9216`
+- implementation_commit: pending
+- changed_files: planned `dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py`, planned `cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`, this worklog
+
+Command / Job:
+- local checks after edit: `python3 -m py_compile dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py`; `bash -n cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`; `git diff --check`
+- l401 run after commit/deploy: bounded `NUM_ENVS=1`, `NUM_RESETS=3-5`, `INCLUDE_EXACT_CLOSE_CHECK=1`, no RL training
+- expected artifacts: `reset_geometry.json`, `reset_geometry.csv`, labeled pregrasp and exact-close PNGs, short MP4/contact sheet/report opened with `viz-open`
+
+Result:
+- status: planned
+
+Analysis:
+- The prior A100 run remains canceled/invalidated. Passing the TCP pregrasp diagnostic is necessary but not sufficient for relaunch; the new exact-close artifact must pass numerically and visually first.
+
+Next:
+- Implement the diagnostic-only exact-close phase, run cheap checks, commit/push/deploy exact commit to the l401 agent worktree, launch/monitor the bounded l401 diagnostic, fetch/open artifacts, and record a pass/fail verdict.
+
+## 2026-06-11T22:17:45Z - TCP-aware reset/pregrasp diagnostic inspected
+
+Goal:
+- Record the completed result of l401 job `1027761` after artifact inspection and clarify the current gate status.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- diagnostic_commit: `327593a806a7f945d0ba11226dcb974c09aa9216`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- changed_files: this worklog entry only
+
+Command / Job:
+- job_id: `1027761`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pregrasp_reset_geometry_tcp_20260611_150608`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/diagnose_franka_cube_prior_1027761.out`
+- local artifact bundle: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_reset_geometry_tcp_20260611_150608/inspection_bundle_20260611_1512`
+- opened contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_reset_geometry_tcp_20260611_150608/inspection_bundle_20260611_1512/contact_sheet.png`
+- opened report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_reset_geometry_tcp_20260611_150608/inspection_bundle_20260611_1512/REPORT.md`
+- opened video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_reset_geometry_tcp_20260611_150608/inspection_bundle_20260611_1512/reset_geometry_frames.mp4`
+
+Result:
+- status: pregrasp_gate_passed_exact_close_missing
+- slurm: `COMPLETED`, exit `0:0`, elapsed `00:00:49`
+- summary metrics: `reset_success_rate=1.0`, `reset_quality_success_rate=1.0`, `farther_rate=1.0`, `immediate_done_rate=0.0`, `all_scalars_finite=true`
+- TCP/tip metrics: `projected_exact_tip_center_dist_mean_m=0.030102`, `projected_exact_tip_max_dist_mean_m=0.050196`, `pregrasp_tip_table_clearance_mean_m=0.095032`, `projected_exact_tip_table_clearance_mean_m=0.065032`
+- reset 0 evidence: `panda_hand` exact/pregrasp relative to cube about `+0.1335/+0.1635 m` in z, but DEXTRAH TCP exact/pregrasp relative to cube about `+0.0301/+0.0601 m`; open gripper width `0.0800 m`; offset direction outward/upward; no immediate done.
+- visual verdict: side/oblique frames show the intended 3 cm open pregrasp RL start state, not a closed grasp. This is expected for reset but can look like "not grasping" without the second exact-close phase.
+
+Analysis:
+- The TCP-aware metric fixed the old diagnostic frame mistake. The reset/pregrasp path now passes as an RL start state, but it is still not sufficient evidence for A100 relaunch because it does not show the corresponding exact GraspGenX pose can enclose/contact the cube after closing.
+- Supersede the previous bundle wording that treated the open pregrasp visual alone as an RL gate failure. The current gate state is: pregrasp reset pass, exact-close proof missing.
+
+Next:
+- Complete and run the exact-grasp close visual gate before any RL relaunch.
