@@ -999,3 +999,123 @@ Validation:
 Next:
 - Commit/push the patch and launch the next eval from a separate remote
   worktree so the still-running PPO job's source checkout is not mutated.
+
+## 2026-06-10 18:10 PDT - Camera-Fixed Eval Submitted
+
+Command / Job:
+- local commit: `185d31c24f4fa4b0115ba6a468013ab36a2c0091`
+- push: pushed to
+  `origin/codex/franka-cube-rl-debug/franka-cube-rl-20260610T2353Z`.
+- remote deployment:
+  - A100 host could not fetch GitHub directly (`Permission denied
+    (publickey)`), so the commit was transferred as a Git bundle rather than
+    rsyncing source files.
+  - bundle:
+    `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-franka-evalfix-185d31c.bundle`
+  - keepalive ref:
+    `refs/keepalive/franka-cube-rl-evalfix-185d31c`
+  - eval worktree:
+    `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-rl-20260610T2353Z-evalfix`
+  - remote commit: `185d31c24f4fa4b0115ba6a468013ab36a2c0091`
+- command:
+  `RUN_NAME=franka_cube_baseclear_eval_camfix_20260610_1810 CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-rl-20260610T2353Z-evalfix CHECKPOINT=/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseclear_ppo_20260610_1756/nn/dextrah_franka_cube_grasp.pth NUM_ENVS=4 NUM_STEPS=600 VIDEO_LENGTH=600 PRINT_INTERVAL=20 SEED=102 CUBE_SPAWN_XY_RANDOMIZATION=0.08 sbatch --parsable cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- job_id: `28957758`
+- expected log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_28957758.out`
+- expected run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_baseclear_eval_camfix_20260610_1810`
+
+Monitoring Criteria:
+- Confirm MP4 now frames the table/cube workspace.
+- Use metrics and video to decide whether current PPO should continue or a
+  reward/control-shaping patch is required.
+
+## 2026-06-10 18:13 PDT - Camera-Fixed Eval Passed Lift Smoke, Grasp Still Rough
+
+Result:
+- job_id: `28957758`
+- scheduler status: `COMPLETED`, exit `0:0`, elapsed `00:02:10`.
+- local artifact mirror:
+  `cluster_results/a1002/evals/franka_cube_baseclear_eval_camfix_20260610_1810`
+- viewer URL:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-rl-20260610T2353Z/cluster_results/a1002/evals/franka_cube_baseclear_eval_camfix_20260610_1810/videos/franka-cube-grasp-eval-step-0.mp4`
+- video metadata: `1280x720`, `600` frames, `10.0s`.
+
+Metrics:
+- `num_steps_completed=600`, `done_count=4`.
+- success: mean `0.59125`, final `0.25`, last-window mean `0.735`,
+  max `1.0`.
+- cube lift height: mean `0.10386m`, max `0.16181m`, final `0.03344m`.
+- has-lifted: mean `0.7925`, max `1.0`, final `0.25`.
+- finger table clearance: mean `0.14464m`, min `0.05342m`.
+- clearance violation: `0.0`.
+- cube XY error: mean `0.04998m`, max `0.07621m`, inside the `0.08m`
+  success tolerance at peak.
+
+Visual Inspection:
+- The camera patch worked; the MP4 now frames the cube/table workspace.
+- The robot approaches the cube, lifts it above the table, and carries it
+  without fingertip/table penetration.
+- The grasp is not yet robust-looking: the cube rides high on/near the gripper
+  fingers instead of appearing as a clean centered pinch, and some envs have
+  reset by the final frame.
+
+Decision:
+- Do not patch reward/control yet; training scalars changed qualitatively after
+  epoch ~275 and the later checkpoint is already producing real lifts.
+- Continue current PPO to later checkpoints and run another eval against a
+  later/best checkpoint before deciding whether grasp-quality shaping is needed.
+
+## 2026-06-10 18:15 PDT - Ep350 Best-Checkpoint Eval Submitted
+
+Reason:
+- Training continued improving after the camera-fixed eval checkpoint; stdout
+  reached epoch `349/600` with best reward `11777.56`.
+- Latest local TensorBoard scalars available through epoch `320` show
+  last-10 mean success about `0.653`, has-lifted about `0.829`, mean lift about
+  `0.128m`, and zero table-clearance violations.
+
+Command / Job:
+- command:
+  `RUN_NAME=franka_cube_baseclear_eval_ep350_20260610_1815 CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-rl-20260610T2353Z-evalfix CHECKPOINT=/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseclear_ppo_20260610_1756/nn/dextrah_franka_cube_grasp.pth NUM_ENVS=4 NUM_STEPS=600 VIDEO_LENGTH=600 PRINT_INTERVAL=20 SEED=103 CUBE_SPAWN_XY_RANDOMIZATION=0.08 sbatch --parsable cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- job_id: `28957917`
+- expected log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_28957917.out`
+- expected run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_baseclear_eval_ep350_20260610_1815`
+
+Monitoring Criteria:
+- Compare success/lift/table-clearance metrics against the camera-fixed eval.
+- Inspect MP4 via `viz-open` for robust grasp/lift quality.
+
+## 2026-06-10 18:18 PDT - Ep350 Eval Completed, Similar Success
+
+Result:
+- job_id: `28957917`
+- scheduler status: `COMPLETED`, exit `0:0`, elapsed `00:01:56`.
+- local artifact mirror:
+  `cluster_results/a1002/evals/franka_cube_baseclear_eval_ep350_20260610_1815`
+- viewer URL:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-rl-20260610T2353Z/cluster_results/a1002/evals/franka_cube_baseclear_eval_ep350_20260610_1815/videos/franka-cube-grasp-eval-step-0.mp4`
+- video metadata: `1280x720`, `600` frames, `10.0s`.
+
+Metrics:
+- `num_steps_completed=600`, `done_count=4`.
+- success: mean `0.58292`, final `0.0`, last-window mean `0.65`,
+  max `0.75`.
+- cube lift height: mean `0.10905m`, max `0.12916m`, final `0.0m`.
+- has-lifted: mean `0.65958`, max `0.75`, final `0.0`.
+- finger table clearance: mean `0.15387m`, min `0.04580m`.
+- clearance violation: `0.0`.
+- cube XY error: mean `0.05878m`, max `0.07155m`.
+
+Visual Inspection:
+- The video again shows a real lift without table penetration.
+- Grasp quality remains rough: the cube rides on the top/inner area of the
+  gripper fingers rather than a clean centered pinch.
+
+Decision:
+- Continue the current PPO run. Do not declare final success yet.
+- Run a final eval at a later or final checkpoint and decide whether the
+  remaining issue is acceptable task behavior or needs additional grasp-quality
+  shaping.
