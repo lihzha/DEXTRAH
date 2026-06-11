@@ -4767,3 +4767,100 @@ Next:
   without clipping/support drift, the fix is a live-residual/controller-aware
   label conversion. If they fail, move to a controller-rollout dataset or a
   more direct controller semantic patch before any BC/RL training.
+
+## 2026-06-11T16:43:00-07:00 - corrected residual-target replay launch
+
+Goal:
+- Test the residual-target hypothesis that was not exercised by canceled job
+  `1027867`, using comma-safe environment export.
+
+Version Control:
+- implementation_commit:
+  `67a3346f812b6419f272712a6f81deb04370b232`
+- remote worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- remote_commit/status:
+  `67a3346f812b6419f272712a6f81deb04370b232`, detached clean.
+- deployment:
+  Git bundle
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart-67a3346.bundle`
+
+Command / Job:
+- job_id: `1027877`
+- run_name:
+  `franka_cube_dp_replay_sourcejoint_targetresidual_ep24s0_96_20260611_164300`
+- remote run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/replays/franka_cube_dp_replay_sourcejoint_targetresidual_ep24s0_96_20260611_164300`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/replay_franka_cube_dp_actions_1027877.out`
+- key settings:
+  - `MODES=dataset_t,dataset_target_t_plus_1,dataset_target_t_plus_7`
+  - `DEMO_RESET_EPISODE=24`, `DEMO_RESET_STEP=0`
+  - `DATASET_START_EPISODE=24`, `DATASET_START_STEP=0`
+  - `STEPS=96`, `ACTION_REPEAT=1`, `POSE_ACTION_MULTIPLIER=1`
+  - `CLIP_ACTIONS=1.0`, `CAPTURE_VIDEO=True`, `VIDEO_LENGTH=96`
+
+Expected artifacts:
+- `replay_summary.json`
+- `replay_steps.csv`
+- `replay_report.md`
+- `replay_motion.png`
+- `action_realization_audit.png`
+- per-mode mp4 files under `videos/`
+
+Next:
+- Monitor job `1027877`, verify the log includes all three modes, then fetch
+  artifacts and compare residual target tracking error, support drift, clip
+  fraction, and video/contact sheets.
+
+Result:
+- status: failed acceptance, useful diagnostic.
+- Job `1027877` completed with `DP_REPLAY_DONE`.
+- The log confirmed all three modes were passed correctly:
+  `dataset_t`, `dataset_target_t_plus_1`, and `dataset_target_t_plus_7`.
+- Artifacts were fetched locally.
+- Local run dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_targetresidual_ep24s0_96_20260611_164300/`
+- Local report bundle:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/residual_target_1027877_20260611_164300/`
+- Viewer URLs:
+  - report:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/residual_target_1027877_20260611_164300/residual_target_report.md`
+  - combined plot:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/residual_target_1027877_20260611_164300/residual_target_comparison.png`
+  - `dataset_target_t_plus_1` contact sheet:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/residual_target_1027877_20260611_164300/dataset_target_t_plus_1_contact_sheet.jpg`
+  - `dataset_target_t_plus_1` video:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_targetresidual_ep24s0_96_20260611_164300/videos/franka-cube-dp-replay-targetresidual-step-96.mp4`
+
+Metrics:
+
+| mode | final EE-cube | min EE-cube | min step | final finger-cube | final support | max support | median nonzero xyz realization | mean clip frac | max clip frac | verdict |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `dataset_t` | `0.1887` | `0.1887` | `45` | `0.1815` | `0.168` | `0.181` | `0.093` | `0.000` | `0.000` | baseline still stalls when source labels become near-zero |
+| `dataset_target_t_plus_1` | `0.1752` | `0.0764` | `33` | `0.2199` | `0.035` | `0.564` | `0.080` | `0.090` | `0.333` | transiently approaches, but clips/support spikes and drifts back |
+| `dataset_target_t_plus_7` | `0.1756` | `0.0762` | `28` | `0.2203` | `0.034` | `0.566` | `0.080` | `0.090` | `0.333` | more aggressive transient approach, same clipping/drift failure |
+
+Analysis:
+- The residual-target modes validate the diagnosis that source waypoint labels
+  are not controller-realized actions. Recomputing live residuals can move the
+  hand toward source geometry much faster than `dataset_t`.
+- Residual chasing is not acceptable as a direct bridge: both target modes
+  require clipped z actions (`max_pose_action_clip_fraction=0.333`), spike
+  nearest-demo support distance above `0.56`, and end around `0.175 m`
+  EE-cube with finger-center around `0.22 m`.
+- The contact sheets show the hand makes a transient close pass near the cube
+  but does not settle into coherent approach/contact geometry.
+- This rules out simple label scaling, simple action repeat, and naive residual
+  target chasing as the BC label convention.
+
+Next:
+- Implement a bounded controller-rollout dataset diagnostic: reset to source
+  trajectory state, use the DEXTRAH controller in the env to chase raw source
+  waypoints with an action-limited residual teacher, and record the actual
+  lowdim observations plus executed actions. Acceptance is a short replay that
+  follows source EE geometry without large clipping/support spikes.
+- If the controller-rollout teacher works, convert that rollout into official
+  DP lowdim dataset format and run only a tiny official-DP mechanics smoke
+  before any scale-up. If it does not, inspect controller gains/decimation or
+  waypoint timing as the next semantic patch.
