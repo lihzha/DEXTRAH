@@ -1313,3 +1313,48 @@ Analysis:
 Next:
 - Continue widened monitoring until closer to the expected wall-time TERM
   signal around `2026-06-11 00:27 PDT`.
+
+## 2026-06-10 23:06 PDT - Teacher Monitor Metric Pass
+
+Goal:
+- Verify continued steady-state training health.
+
+Command / Job:
+- job_id: `28955904`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28955904.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+- local TensorBoard copy:
+  `/tmp/dextrah_teacher_events`
+
+Result:
+- status: running healthy.
+- scheduler: `RUNNING` on `batch-block5-03072`, elapsed `02:23:43`,
+  time left `01:26:17` at `23:06:17 PDT`.
+- stdout advanced to epoch `17688/20000`.
+- latest complete checkpoint:
+  `last_dextrah_lstm_ep_17680_rew_640.2444.pth` at `23:05:39`.
+- runtime sidecars rank `0-7` refreshed at `23:05:37-23:05:38`.
+- narrow critical failure scan over recent stdout returned no matches.
+- TensorBoard summaries parsed through epoch `17677` for epoch-keyed scalars.
+- `in_success_region/iter`: latest `0.469238`, last-50 `0.461978`,
+  last-200 `0.462888`, post-resume mean `0.462778`.
+- `rewards/iter`: latest `587.875`, last-50 `642.258`,
+  last-200 `649.419`, post-resume mean `643.863`.
+- `num_adr_increases/iter`: latest `50`, last-50 `50`.
+- `info/kl`: latest `0.00486958`, last-50 `0.00423239`,
+  last-200 `0.00436882`.
+- `losses/a_loss`: latest `-0.0027175`, last-50 `-0.00319704`.
+- `losses/c_loss`: latest `0.0221314`, last-50 `0.0224796`.
+- `performance/step_inference_rl_update_fps`: latest `112702`,
+  last-20 about `111032`, last-50 about `110388`, last-200 about `110091`.
+
+Analysis:
+- Training remains healthy. Success and reward are steady in the post-resume
+  band, KL and losses remain controlled, throughput is normal, and checkpoint
+  and sidecar cadence is intact.
+
+Next:
+- Continue widened monitoring for one more interval, then begin tightening as
+  the expected wall-time TERM/requeue window approaches.
