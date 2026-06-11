@@ -167,3 +167,22 @@ Validation Before Launch:
 Next:
 - Commit/push this launch intent, update the isolated A100 worktree to the new
   exact commit, submit the validation job, then monitor logs and artifacts.
+
+## 2026-06-10 17:03 PDT - KUKA-Parity Cluster Validation Submitted
+
+Command / Job:
+- command:
+  `RUN_NAME=franka_cube_validate_kukaparity_20260610_1701 CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-rl-20260610T2353Z NUM_ENVS=4 NUM_STEPS=160 CAPTURE_VIDEO=True SEED=49 sbatch --parsable cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`
+- job_id: `28956047`
+- code_commit:
+  `5830cc1e380f1ac721111f850cf35ce5c1e8cc1e`
+- remote_worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-rl-20260610T2353Z`
+- expected run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_cube_validate_kukaparity_20260610_1701`
+- expected log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_cube_28956047.out`
+
+Next:
+- Monitor job `28956047`; inspect log, `metrics.json`, and validation video
+  before launching PPO.
