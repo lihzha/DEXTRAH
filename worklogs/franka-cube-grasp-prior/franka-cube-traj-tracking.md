@@ -3094,3 +3094,79 @@ Planned Job:
 Acceptance:
 - Full artifact bundle: mp4, contact sheet, slow handoff window video, `metrics.json`, trace CSV/JSONL, summary JSON/CSV, success diagnostics JSON/CSV/window trace, trace plot, report, consistency JSON, stdout log, and `viz-open` URLs.
 - Target unsafe remains `0`; report whether learned-prefix handoff reaches lift/success or simply holds in free space. No PPO scale-up.
+
+Version Control:
+- agent_id: franka-cube-traj-tracking
+- local_commit: `20444260437fde3fefc6eb8af623a48fb37bd9a1`
+- push: pushed to `origin/codex/franka-cube-trajectory-tracking`
+- remote_commit/status: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking` detached clean at `20444260437fde3fefc6eb8af623a48fb37bd9a1`.
+
+Command / Job:
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:30:00 --job-name=learned_prefix_hold --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_learned_prefix_hold_noreset520_20260611_163724,NUM_ENVS=4,NUM_STEPS=520,VIDEO_LENGTH=520,VIDEO_NAME_PREFIX=learned-prefix-hold-noreset520,CAPTURE_VIDEO=True,DETERMINISTIC=True,ACTION_SOURCE=policy_reference_mix_hold,REFERENCE_MIX_ALPHA=0.0,HOLD_TARGET_POLICY=cube_current_plus_trigger_ee_offset,HOLD_PHASE_START=0.67,HOLD_TRIGGER_LIFT_HEIGHT=0.02,HOLD_CONTACT_MAX_FINGER_DIST=0.0,HOLD_LIFT_HEIGHT=0.03,HOLD_GRIPPER_ACTION=-0.4,SUPPRESS_SUCCESS_TERMINATION=True,USE_CUDA_GRAPH=False,SEED=64,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_WEIGHT=1.5,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_PHASE_START=0.0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_SHARPNESS=1.0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_USE_CONTACT_GATE=False,CHECKPOINT=/results/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_actionalign_rl_smoke_20260611_151520/nn/last_dextrah_franka_cube_traj_tracking_ep_5_rew_-inf.pth cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- job_id: `1027870`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_traj_tracking_learned_prefix_hold_noreset520_20260611_163724`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1027870.out`
+- expected artifacts: `metrics.json`, `trace.csv`, `trace.jsonl`, `videos/learned-prefix-hold-noreset520-step-0.mp4`, local summary/report/plot/contact sheet/success diagnostics after fetch.
+
+Launch Status:
+- submitted to l401 as eval-only learned-prefix handoff diagnostic. Awaiting completion and artifact inspection.
+
+Result:
+- status: completed `0:0` in `00:01:38` on `pool0-00015`; fetched locally, summarized, and visually inspected.
+- local_run_dir: `cluster_results/l401/franka_cube_traj_tracking_learned_prefix_hold_noreset520_20260611_163724`
+- local_artifact_dir: `cluster_results/l401/franka_cube_traj_tracking_learned_prefix_hold_noreset520_20260611_163724_artifacts`
+- stdout_log: `cluster_results/l401/franka_cube_traj_tracking_learned_prefix_hold_noreset520_20260611_163724/slurm_eval_franka_cube_1027870.out`
+- video validation: `1280x720`, `520` frames, `8.666667 s`, `60/1` FPS.
+- metrics: `num_steps_completed=520`, `done_count=0`, `reward_mean/final=1.6404/1.5443`, `success_rate_mean/final/max=0/0/0`, `success_ever_count/rate=0/0`, `suppressed_success_done_count/rate=0/0`, `cube_lift_height_max=0.001512 m`, final EE-to-cube `0.5066 m`, final finger-center-to-cube `0.4771 m`, target unsafe max `0`.
+- action diagnostics: raw learned close/up means `0.0445/0.1454` versus reference-delta close/up means `0.2218/0.4453`; policy-reference L2 mean `2.1153`. Close/lift reward means are both `0`.
+- hold diagnostics: hold became active by phase fallback at step `323` (`hold_active_rate_final=1.0`) with no lift/success/contact trigger; trigger EE-cube offset was large (`x/y/z=-0.105/-0.153/0.273 m`), so the terminal hold stabilized free space instead of a grasp.
+- visual diagnosis: the labeled contact sheet shows an early near approach, then the learned prefix moves away; after the phase-triggered hold the hand remains away from the cube through the final frame.
+- reference caveat remains explicit in report/metrics: `curobo_validated=false`, `source_tag=graspgenx_curobo_60mm_export_pending_exact_validation`.
+- artifact files:
+  - report: `cluster_results/l401/franka_cube_traj_tracking_learned_prefix_hold_noreset520_20260611_163724_artifacts/report.md`
+  - plot: `cluster_results/l401/franka_cube_traj_tracking_learned_prefix_hold_noreset520_20260611_163724_artifacts/trajectory_trace_plot.png`
+  - full video: `cluster_results/l401/franka_cube_traj_tracking_learned_prefix_hold_noreset520_20260611_163724/videos/learned-prefix-hold-noreset520-step-0.mp4`
+  - slow handoff video: `cluster_results/l401/franka_cube_traj_tracking_learned_prefix_hold_noreset520_20260611_163724_artifacts/learned_prefix_handoff_slow_step80_519.mp4`
+  - labeled contact sheet: `cluster_results/l401/franka_cube_traj_tracking_learned_prefix_hold_noreset520_20260611_163724_artifacts/learned_prefix_handoff_contact_sheet.jpg`
+  - quick contact sheet from summarizer: `cluster_results/l401/franka_cube_traj_tracking_learned_prefix_hold_noreset520_20260611_163724_artifacts/contact_sheet_quick.jpg`
+  - metrics: `cluster_results/l401/franka_cube_traj_tracking_learned_prefix_hold_noreset520_20260611_163724/metrics.json`
+  - trace CSV/JSONL: `cluster_results/l401/franka_cube_traj_tracking_learned_prefix_hold_noreset520_20260611_163724/trace.csv`, `cluster_results/l401/franka_cube_traj_tracking_learned_prefix_hold_noreset520_20260611_163724/trace.jsonl`
+  - success diagnostics: `cluster_results/l401/franka_cube_traj_tracking_learned_prefix_hold_noreset520_20260611_163724_artifacts/success_diagnostics.json`, `cluster_results/l401/franka_cube_traj_tracking_learned_prefix_hold_noreset520_20260611_163724_artifacts/success_diagnostics.csv`, `cluster_results/l401/franka_cube_traj_tracking_learned_prefix_hold_noreset520_20260611_163724_artifacts/success_window_trace.csv`
+  - summary JSON/CSV: `cluster_results/l401/franka_cube_traj_tracking_learned_prefix_hold_noreset520_20260611_163724_artifacts/summary.json`, `cluster_results/l401/franka_cube_traj_tracking_learned_prefix_hold_noreset520_20260611_163724_artifacts/summary.csv`
+  - consistency JSON: `cluster_results/l401/franka_cube_traj_tracking_learned_prefix_hold_noreset520_20260611_163724_artifacts/train_eval_consistency.json`
+  - video metadata: `cluster_results/l401/franka_cube_traj_tracking_learned_prefix_hold_noreset520_20260611_163724_artifacts/video_metadata.json`
+  - manifest: `cluster_results/l401/franka_cube_traj_tracking_learned_prefix_hold_noreset520_20260611_163724_artifacts/artifact_manifest.json`
+- viz_urls:
+  - report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_learned_prefix_hold_noreset520_20260611_163724_artifacts/report.md`
+  - plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_learned_prefix_hold_noreset520_20260611_163724_artifacts/trajectory_trace_plot.png`
+  - labeled contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_learned_prefix_hold_noreset520_20260611_163724_artifacts/learned_prefix_handoff_contact_sheet.jpg`
+  - full video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_learned_prefix_hold_noreset520_20260611_163724/videos/learned-prefix-hold-noreset520-step-0.mp4`
+  - slow handoff video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_learned_prefix_hold_noreset520_20260611_163724_artifacts/learned_prefix_handoff_slow_step80_519.mp4`
+  - success diagnostics JSON: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_learned_prefix_hold_noreset520_20260611_163724_artifacts/success_diagnostics.json`
+
+Analysis:
+- This is a clear learned-policy prefix failure, not a terminal hold failure. `1027866` proves the same hold can sustain lift when the prefix/reference reaches a valid grasp; `1027870` shows the five-epoch PPO policy moves away before the handoff and never reaches lift/success.
+- The next bounded question is quantitative: how much reference blending is required before the stable hold becomes viable? If only alpha `1.0` works, the trainable path should be approach/action imitation or teacher-forced reference mixing before terminal hold, not longer PPO with the current reward.
+
+Next:
+- Run eval-only no-reset stable-hold alpha sweep for `REFERENCE_MIX_ALPHA=0.25,0.50,0.75` using the same checkpoint/reference/seed and artifact bundle. Acceptance: identify the lowest alpha that reaches lift/success while keeping target unsafe max `0`; no PPO scale-up.
+
+## 2026-06-11T16:58:00-07:00 - no-reset hold alpha sweep plan
+
+Goal:
+- Quantify how much reference_delta blending is needed before the stable offset-hold target becomes viable after the learned action-alignment checkpoint.
+
+Hypothesis:
+- Intermediate blend values may recover the approach/handoff that pure learned policy misses. If alpha `0.25/0.50/0.75` still fail and only the earlier alpha `1.0` succeeds, then the immediate training task is stronger approach/action imitation or a teacher-forced curriculum before PPO scale-up.
+
+Planned Jobs:
+- Eval-only l401 runs, no source changes: `ACTION_SOURCE=policy_reference_mix_hold`, `SUPPRESS_SUCCESS_TERMINATION=True`, stable hold config from `1027866`, `NUM_ENVS=4`, `NUM_STEPS=520`, `VIDEO_LENGTH=520`, same checkpoint/reference/seed, `REFERENCE_MIX_ALPHA in {0.25,0.50,0.75}`.
+
+Acceptance:
+- Per-run artifact bundle: mp4, labeled contact sheet, slow handoff video, `metrics.json`, trace CSV/JSONL, summary JSON/CSV, success diagnostics JSON/CSV/window trace, trace plot, report, consistency JSON, stdout log, `viz-open` URLs.
+- Sweep result table answers lowest viable alpha for lift/success and confirms target unsafe remains `0`. No PPO scale-up.
+
+Version Control:
+- agent_id: franka-cube-traj-tracking
+- local_commit: pending after this worklog update
+- changed_files: worklog only
