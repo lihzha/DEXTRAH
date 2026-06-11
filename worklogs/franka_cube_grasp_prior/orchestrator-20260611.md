@@ -726,3 +726,69 @@ Worker C Diffusion Policy alternative:
   finger-center distance about `0.588 m`, final gripper width about
   `0.0798 m`, cube lift `0.0`, success `0.0`
 - artifact bundle/report remains pending after the orchestrator interruption
+
+## 2026-06-11 Monitor Check 20:50 UTC
+
+Artifact request status:
+
+- Worker A reset-prior bundle remains available at
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/a1001/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005/inspection_20260611_202705`
+- Worker B trajectory-tracking bundle is now available at
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_artifact_bundle_20260611_133000`
+- Worker B viewer URLs:
+  - phase/safety:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_artifact_bundle_20260611_133000/phase_progress_and_target_safety.png`
+  - behavior:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_artifact_bundle_20260611_133000/behavior_reward_lift_finger_metrics.png`
+- Worker C DP BC bundle is now available at
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/dp_bc_warmstart_artifacts_20260611_133640`
+- Worker C viewer URLs:
+  - eval behavior:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/dp_bc_warmstart_artifacts_20260611_133640/plots/eval_behavior_metrics.png`
+  - train/val loss:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/dp_bc_warmstart_artifacts_20260611_133640/plots/full_pick_train_val_loss_5epoch_vs_25epoch.png`
+  - rollout video:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/dp_bc_warmstart_artifacts_20260611_133640/videos/franka-cube-dp-overfit2k-chunk8-step-0.mp4`
+
+Final RL job `28987954`:
+
+- still running on a1001 at about `1:08:30` elapsed
+- rank-0 JSONL reached epoch `740`, frame `774897664`; `bad_scalar_count=0`
+- best checkpoint reward has improved to at least `2183.229` by epoch `731`
+- recent interval checkpoints include epoch `700` reward suffix `2141.7861`
+  and epoch `725` reward suffix `2149.8704`
+- reset-prior success tail100 mean remains `1.0`
+- approach/enclosure reward terms remain high but oscillatory; success and lift
+  are still sparse (`cube_success_rate` max `0.00048828125`, lifted max
+  `0.00244140625`)
+
+Worker B trajectory-tracking alternative:
+
+- artifact report conclusion: retiming fixed the phase-starvation failure
+  (`0.3584` max phase before retiming versus `1.0` after retiming), while
+  target safety stayed clean (`unsafe_target_rate_max=0.0`, target clearance
+  min `0.0651 m`)
+- behavior remains unsolved at retimed RL25 scale: success `0.0`, max lift
+  `0.0168 m`, gripper collapses near zero, and orientation error remains high
+- branch moved to commit `c786e59` with a variant-only gripper target clamp
+  (`trajectory_tracking_min_target_gripper_width=0.024`)
+- l401 validation job `1027728` completed `0:0` in `00:00:45`; metrics passed
+  with 240 rollout steps, no early dones, target unsafe rate `0.0`, target
+  clearance min `0.065114 m`, source gripper min `0.0`, runtime gripper min
+  `0.024`, and final gripper width about `0.02946`
+- Worker B was told to append/commit/push this result and only then proceed to
+  the next bounded RL smoke/eval; the validation result is not learned-policy
+  success
+
+Worker C Diffusion Policy alternative:
+
+- artifact report conclusion: the official-DP overfit2k checkpoint can output
+  close/lift commands on dataset-like closed/lift rows, but live Isaac chunk8
+  rollout stays open and drifts away
+- overfit2k chunk8 eval behavior: final success `0.0`, lift `0.0`, gripper
+  width final about `0.0798 m`, EE-to-cube distance grows from about `0.234 m`
+  to `0.609 m`, and reward decays to about `1.01`
+- branch moved to commit `fdb77c9` with the artifact generator plus a
+  disabled-by-default policy-call trace hook
+- Worker C was nudged to run the next tiny traced eval and compare live lowdim
+  observation history/action chunks against converted dataset phases
