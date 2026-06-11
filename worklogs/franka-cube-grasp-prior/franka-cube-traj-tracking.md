@@ -1614,3 +1614,49 @@ Result:
 Next:
 - Commit/push the artifact generator and this worklog entry.
 - Launch a cheap video/per-step visual diagnosis of the clamp RL25 checkpoint if feasible before any further reward/tuning change.
+
+## 2026-06-11T13:59:50-07:00 - clamp RL25 video eval launch
+
+Goal:
+- Generate a cheap inspectable video/per-step rollout for the latest gripper-clamp RL25 checkpoint to diagnose the partial-lift/reset behavior before any reward or training-scale change.
+
+Hypothesis:
+- A 480-step deterministic rollout should cover the approach/grasp segment and the early reset/partial-lift behavior seen in the 720-step metrics, while staying bounded and avoiding any training launch.
+
+Version Control:
+- agent_id: franka-cube-traj-tracking
+- local_commit: `1cf832442f02f23b936d3a745f8d36ae88651fce`
+- remote_commit/status: /lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking at `1cf832442f02f23b936d3a745f8d36ae88651fce`, detached clean. SSH Git auth failed; HTTPS fetch fallback succeeded.
+
+Command / Job:
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:30:00 --job-name=franka_cube_traj_gripclamp_vid --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_gripclamp_rl25_video480_20260611_135930,CHECKPOINT=/results/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_gripclamp_rl25_20260611_134613/nn/last_dextrah_franka_cube_traj_tracking_ep_25_rew_1037.0807.pth,NUM_ENVS=4,NUM_STEPS=480,VIDEO_LENGTH=480,VIDEO_NAME_PREFIX=gripclamp-rl25-eval480,CAPTURE_VIDEO=True,PRINT_INTERVAL=120,USE_CUDA_GRAPH=False,SEED=54,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- job_id: 1027738 `franka_cube_traj_gripclamp_vid`
+- expected_log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1027738.out
+- expected_run_dir: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_traj_tracking_gripclamp_rl25_video480_20260611_135930
+- expected_artifacts: metrics JSON plus `videos/gripclamp-rl25-eval480*.mp4` or equivalent Gymnasium video output.
+
+Acceptance Criteria:
+- Job completes without traceback and writes metrics JSON.
+- Metrics remain finite; target unsafe rate remains 0; target clearance stays above 0.025 m.
+- Video exists, has nonzero duration/frames, and is inspected or opened with `viz-open`.
+- Do not treat video rollout as learned-policy success; use it to diagnose behavior before the next bounded ablation.
+
+Result:
+- status: passed as a diagnostic artifact; Slurm completed `0:0` after `00:01:18` on `pool0-00016`.
+- local_artifacts: `cluster_results/l401/franka_cube_traj_tracking_gripclamp_rl25_video480_20260611_135930/metrics.json`, `cluster_results/l401/franka_cube_traj_tracking_gripclamp_rl25_video480_20260611_135930/eval_franka_cube_1027738.out`, `cluster_results/l401/franka_cube_traj_tracking_gripclamp_rl25_video480_20260611_135930/videos/gripclamp-rl25-eval480-step-0.mp4`, `cluster_results/l401/franka_cube_traj_tracking_gripclamp_rl25_video480_20260611_135930/video_frames/contact_sheet.png`
+- video_metadata: `ffprobe` reports `1280x720`, `479` frames, `7.983333` s, `60/1` fps.
+- viz_video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_gripclamp_rl25_video480_20260611_135930/videos/gripclamp-rl25-eval480-step-0.mp4`
+- viz_contact_sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_gripclamp_rl25_video480_20260611_135930/video_frames/contact_sheet.png`
+- rollout: 480/480 steps, `done_count=0`, reward mean `2.5610283367335795`, reward final `2.5189738273620605`, success mean/final `0.0`, nonfinite numeric count `0`.
+- phase/safety: phase reaches `1.0` at step 480; `cube_traj_tracking_unsafe_target_rate` max `0.0`; target clearance min `0.06511414051055908`; finger table violation max `0.0`.
+- gripper/contact: measured gripper width mean/min `0.04682684224875023`/`0.04380180314183235`; target gripper min `0.023999998345971107`; finger-center-to-cube mean `0.08327599153853953`; EE-to-cube mean `0.09221385022004445`.
+- lift/task: `cube_lift_height_max` max only `0.00038486719131469727`; `has_lifted_cube` max `0.0`; success stays `0.0`.
+- reference: external 60 mm compact reference still reports `curobo_validated=false`, `runtime_retime_policy=normalize_to_configured_runtime_duration`, `runtime_object_pose_policy=reset_cube_pose`, and `gripper_schedule_policy=clamp_source_width_to_min_target_gripper_width`.
+
+Analysis:
+- The video confirms the metric diagnosis: the policy approaches near the cube and keeps a plausible non-collapsed gripper width, but it does not close into a useful two-finger grasp and does not lift. The cube remains on the table through the 480-step reference.
+- This points away from target safety and toward behavior/reward wiring: the tracker can follow gross pose timing, but the current reward does not produce contact closure or lift under the clamped schedule. A likely next bounded ablation is to increase close/lift phase incentives or change phase-specific weighting so approach/orientation/gripper terms do not dominate without contact.
+
+Next:
+- Commit/push this worklog result.
+- Before any more RL scale-up, inspect the variant reward terms/config and implement one small behavior-side ablation with cheap local checks plus a short env/RL smoke.
