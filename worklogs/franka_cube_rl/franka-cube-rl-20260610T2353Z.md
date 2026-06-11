@@ -389,3 +389,55 @@ Eval Command / Job:
   `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_kukaparity_eval_ep100_20260610_1720`
 - expected eval log:
   `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_28956573.out`
+
+## 2026-06-10 17:24 PDT - KUKA-Only PPO Canceled After Stall
+
+Training Job:
+- job_id: `28956257`
+- status: canceled intentionally after epoch ~193.
+- reason: the run reproduced the prior stall signature despite the validated
+  KUKA-shaped reward surface.
+
+Training Metrics:
+- event scalars through epoch `191`:
+  - reward latest `970.6882`, max `985.5291`
+  - `cube_lift_height/iter`: latest `0.00264m`, max `0.00753m`
+  - `cube_has_lifted_rate/iter`: latest `0.00537`, max `0.01416`
+  - `cube_success_rate/iter`: latest `0.0`, max `0.000488`
+  - `cube_action_z/iter`: latest `-0.2232`, last-10 mean `-0.2038`
+  - `cube_action_down/iter`: latest `0.4688`, last-10 mean `0.4555`
+  - `cube_action_up/iter`: latest `0.2456`, last-10 mean `0.2517`
+  - `cube_gripper_close_action/iter`: latest `0.5899`, last-10 mean `0.6172`
+  - `cube_ee_to_cube_dist/iter`: latest `0.1297m`
+  - `cube_max_finger_to_cube_dist/iter`: latest `0.1362m`
+- checkpoint rewards rose, but the policy optimized approach/close without
+  discovering upward lift.
+
+Eval Job:
+- job_id: `28956573`
+- checkpoint:
+  `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_kukaparity_ppo_20260610_1710/nn/last_dextrah_franka_cube_grasp_ep_100_rew_813.57214.pth`
+- status: completed, exit `0:0`.
+- local artifacts:
+  `cluster_results/a1002/evals/franka_cube_kukaparity_eval_ep100_20260610_1720`
+- viewer URL:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-rl-20260610T2353Z/cluster_results/a1002/evals/franka_cube_kukaparity_eval_ep100_20260610_1720/videos/franka-cube-grasp-eval-step-0.mp4`
+- eval summary:
+  - `num_envs=4`, `num_steps_completed=600`
+  - `success_rate_mean=0.0`, `success_rate_final=0.0`
+  - `cube_lift_height`: final `0.0m`, mean `0.00063m`, max `0.04455m`
+    at step 5 only, before the policy settles.
+  - `has_lifted_cube`: max `0.0`
+  - `gripper_width`: mean `0.0400m`, min `0.0272m`
+  - `hand_to_cube_mean_dist`: mean `0.1379m`, min `0.1142m`
+- visual note: the default eval camera produced a valid `1280x720`, 600-frame
+  MP4 but framed the wrist/table poorly for diagnosing cube contact. Use a
+  closer camera on the next eval.
+
+Decision:
+- The environment/reward parity audit was still useful: it isolated the failure
+  to Franka exploration/control rather than a gross KUKA task mismatch.
+- Patch next by preserving the KUKA state rewards and adding small,
+  tightly-gated Franka-specific close/up action shaping so the parallel gripper
+  receives a gradient toward closing near the cube and lifting only after a
+  near/enclosed/closed pre-grasp.
