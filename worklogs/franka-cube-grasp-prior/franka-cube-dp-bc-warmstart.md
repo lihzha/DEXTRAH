@@ -993,3 +993,82 @@ Next:
 - Next Worker C loop should either generate true Franka cube cuRobo trajectories
   from the grasp library or build the Isaac eval wrapper around
   `predict_action_from_ppo_obs()` for no-learning policy rollout inspection.
+
+## 2026-06-11T12:38:20-07:00 - l401 DP eval-wrapper smoke plan
+
+Goal:
+- Validate the implemented
+  `dextrah_lab/rl_games/eval_franka_cube_dp_policy.py` no-learning wrapper in
+  a bounded DEXTRAH/Isaac cluster smoke instead of stopping at the local
+  IsaacLab Python blocker.
+
+Hypothesis:
+- The official Diffusion Policy checkpoint trained from 8 real
+  GraspGenX/cuRobo-planned cube demonstrations can be loaded inside the
+  DEXTRAH Isaac container if the official `real-stanford/diffusion_policy`
+  checkout and minimal DP dependencies are mounted separately from DEXTRAH.
+- A 1-env, 16-step rollout is enough to validate mechanics:
+  official checkpoint load, 72D PPO observation to 21D DP bridge, 7D relative
+  EE + gripper action emission, env stepping, and metrics serialization. It is
+  not a BC-quality or final-training claim.
+
+Change:
+- Planned new cluster launcher:
+  `cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`.
+- The launcher will:
+  - mount the Worker C remote worktree at `/code`;
+  - mount official Diffusion Policy at `/official_dp`;
+  - optionally add an isolated official-DP dependency target from
+    `/envs/franka-cube-dp-bc-warmstart-official-dp/site`;
+  - run `eval_franka_cube_dp_policy.py` with `NUM_ENVS=1`,
+    `NUM_STEPS=16`, `NUM_INFERENCE_STEPS=2`, and no video by default;
+  - fail if logs contain Python error patterns or `metrics.json` is missing,
+    incomplete, non-finite, or reports an unclosed env.
+
+Version Control:
+- agent_id: franka-cube-dp-bc-warmstart
+- worktree: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart
+- worklog: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart/worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md
+- branch: codex/franka-cube-diffusion-policy-bc
+- implementation_commit: pending
+- local_head_before_edits: 30b305ecf65630b03a9fa8a07574f6bf228eac70
+- official_dp_source: `https://github.com/real-stanford/diffusion_policy`
+- official_dp_commit: `5ba07ac6661db573af695b419a7947ecb704690f`
+- source_checkpoint_for_eval:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_debug/run_20260611_123104_curobo_batch/checkpoints/latest.ckpt`
+- source_dataset_for_eval_context:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/datasets/franka_cube_curobo_lowdim_cube_curobo_batch_20260611_122807_approach_pregrasp.npz`
+- changed_files:
+  - `cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+  - `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+
+Command / Job:
+- planned deploy: push branch, update remote worktree
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+  to the exact commit.
+- planned artifact copy: rsync only untracked/generated artifacts, including
+  the 254M official DP checkpoint, to
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/franka-cube-dp-bc-warmstart/`.
+- planned run:
+  `sbatch cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh` with
+  `CODE_NFS` set to the Worker C remote worktree and `CHECKPOINT` set to the
+  copied official DP checkpoint under `/results/dp_bc/.../latest.ckpt`.
+
+Result:
+- status: in_progress
+- job_id: pending
+- logs: pending
+- artifacts: pending
+
+Analysis:
+- The 8 real cuRobo demonstrations are sufficient only for mechanics
+  validation and bridge debugging. They should not be described as a final BC
+  dataset or final warm-start quality evidence.
+- If the first cluster eval fails, expected debug targets are official-DP
+  dependency visibility, checkpoint module import paths, Isaac env creation,
+  or bridge/action shape assumptions. Patch DEXTRAH-owned code/launcher issues
+  and relaunch before claiming success.
+
+Next:
+- Deploy code and artifacts to l401, run an import/eval smoke, inspect logs and
+  `metrics.json`, then update this worklog with exact job IDs and results.
