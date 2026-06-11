@@ -586,3 +586,36 @@ Analysis:
 
 Next:
 - Keep monitoring job `28987954`; fetch and inspect later checkpoints/metrics; update this worklog after the next meaningful checkpoint or requeue event; do not mark complete until final training and artifact inspection are done.
+
+## 2026-06-11T19:37:01Z - final 8-GPU training monitor checkpoint
+
+Goal:
+- Record the next full-scale training health checkpoint while continuing to monitor job `28987954`.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- implementation_commit: 99ea26d5b449581988594f40168806642c486326 for the running job; latest branch/worklog commit before this entry is `81ca0f4d952d70459b2deecd23c2cdcd6726b737`
+- remote_commit/status: a1001 NFS worktree remains clean at `99ea26d5b449581988594f40168806642c486326`; later local commits are worklog-only monitor records
+
+Command / Job:
+- monitor command: `squeue -j 28987954 -o "%.18i %.24j %.10T %.10M %.9l %.12N %.18R"; sacct -j 28987954 --format=JobID,JobName%24,State,ExitCode,Elapsed,NodeList -P`
+- monitor command: parse `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005/metrics/direct_info_rank_0.jsonl`
+- job_id: 28987954
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28987954.out`
+
+Result:
+- status: running_healthy
+- scheduler: `RUNNING`, elapsed about `00:08:01`, node `batch-block5-00308`
+- log progress: epochs visible through `72/10000`; no traceback/runtime/NCCL/child-failure signatures in the inspected tail
+- checkpoints: `last_dextrah_franka_cube_grasp_ep_25_rew_1176.0144.pth` and `last_dextrah_franka_cube_grasp_ep_50_rew_1646.5193.pth`, both `140033037` bytes; rank runtime sidecars are present for ranks `0-7`
+- metric artifacts: TensorBoard event file is nonzero; JSONL files exist for ranks `0-7`, with rank 0 writing `656114` bytes and nonzero scalar records
+- JSONL scalar health: 72 records, last epoch `72`, `bad_scalar_count=0`
+- prior reset metrics: success/farther rates are `1.0` for all records; reset position error min/max/mean `0.0000974/0.0019149/0.001502 m`; reset rotation error min/max/mean `0.002747/0.019035/0.014168 rad`; finger-table clearance min/mean `0.134935/0.135155 m`
+- behavior/reward metrics: approach reward last/mean `0.97594/0.87968`; enclosure reward last/mean `0.56250/0.51335`; lift reward last/max/mean `0.00200/0.01889/0.00510`; success and lifted rates remain `0.0`; finger table-clearance violation max/mean `0.0000686/0.00000152`
+
+Analysis:
+- The final-scale reset-prior path remains active and numerically stable. Checkpoints and sidecars are advancing at the expected cadence. The task has not yet reached lift/success, but this is still early in a long run and not yet a failure signal given the increasing approach/enclosure rewards.
+
+Next:
+- Continue monitoring through the next checkpoint/requeue event. If success/lift metrics remain flat after substantially more training, inspect against the baseline learning curve before patching; preserve the apple-to-apple config unless there is a clear reset-prior defect.
