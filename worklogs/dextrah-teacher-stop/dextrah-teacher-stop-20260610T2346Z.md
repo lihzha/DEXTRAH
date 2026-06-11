@@ -2223,3 +2223,47 @@ Analysis:
 Next:
 - Continue short final polling until epoch `20000` completion and final
   artifacts can be inspected.
+
+## 2026-06-11 02:27 PDT - Teacher Near-Final Artifact/Metric Pass
+
+Goal:
+- Verify the run around epoch `19900` before final completion.
+
+Command / Job:
+- job_id: `28955904`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28955904.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+- local TensorBoard copy:
+  `/tmp/dextrah_teacher_events`
+
+Result:
+- status: running healthy near final completion.
+- `sacct`: parent, batch, extern, and step all `RUNNING` on
+  `batch-block7-00110`; parent elapsed `01:56:23`, time limit `03:50:00` at
+  `02:27:09 PDT`.
+- stdout advanced to epoch `19900/20000`.
+- newest complete checkpoint:
+  `last_dextrah_lstm_ep_19900_rew_738.42535.pth` at `02:27:07`.
+- runtime sidecars rank `0-7` refreshed at `02:27:05`.
+- narrow critical failure scan over recent stdout returned no matches.
+- TensorBoard summaries parsed through epoch `19880` for epoch-keyed scalars.
+- post-requeue `in_success_region/iter`: n=`1200`, mean `0.465570`; latest
+  `0.464111`, last-50 `0.465552`.
+- post-requeue `rewards/iter`: n=`1200`, mean `650.154`; latest `729.804`,
+  last-50 `651.370`.
+- `num_adr_increases/iter`: latest `50`, last-50 `50`.
+- `info/kl`: latest `-0.0000087941`, last-50 `-0.0000195994`.
+- `losses/a_loss`: latest `-0.00110342`, last-50 `-0.00102083`.
+- `losses/c_loss`: latest `0.0297067`, last-50 `0.0286351`.
+- `performance/step_inference_rl_update_fps`: latest `92926`,
+  last-20 about `108966`, last-50 about `109085`, last-200 about `109064`.
+
+Analysis:
+- The run remains healthy with about `100` epochs left. Checkpoint and sidecar
+  artifacts are fresh, metrics are stable, and no critical errors appeared.
+
+Next:
+- Poll more frequently until the job exits, then inspect final checkpoint,
+  final rolling model, summaries, scheduler completion, and recent logs.
