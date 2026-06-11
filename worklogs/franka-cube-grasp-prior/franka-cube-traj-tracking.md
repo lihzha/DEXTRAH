@@ -1558,3 +1558,25 @@ Analysis:
 Next:
 - Commit/push this result.
 - Generate/update a comparison artifact including the clamp runs and launch a cheap video eval of the clamp RL25 checkpoint if feasible, because the reset/partial-lift behavior needs visual inspection before another training change.
+
+## 2026-06-11T13:55:12-07:00 - reconcile stale clamp eval pending handoff
+
+Goal:
+- Resolve the orchestrator report that `franka_cube_traj_tracking_gripclamp_eval720_20260611_134240` was still recorded with `job_id: pending` and appeared to have no l401 metrics directory.
+
+Result:
+- status: resolved; no resubmission required.
+- branch_tip: local and origin `codex/franka-cube-trajectory-tracking` are at `b1242078721c71896c89390448306825ca7f1168`, which is ahead of the orchestrator-observed `92e69c06b8c99a09d6c8ab97177c81f5bf2d0c33`.
+- actual_job_id: `1027731` (`franka_cube_traj_gripclamp_eval3`), completed `0:0` in `00:00:58` on `pool0-00016`.
+- actual_metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_traj_tracking_gripclamp_eval720_20260611_134240/metrics.json`
+- actual_log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1027731.out`
+- local_artifacts: `cluster_results/l401/franka_cube_traj_tracking_gripclamp_eval720_20260611_134240/metrics.json`, `cluster_results/l401/franka_cube_traj_tracking_gripclamp_eval720_20260611_134240/eval_franka_cube_1027731.out`
+- scheduler_check: `sacct -j 1027731` confirms `COMPLETED|0:0`; current `squeue -u lzha` shows no active l401 jobs from this run.
+
+Analysis:
+- The stale `job_id: pending` state was from an older branch/worklog view. The resolved launch/result block is present in the pushed branch at and after `d32d980` and explicitly lists job `1027731`.
+- The missing-directory check likely looked outside the DEXTRAH eval namespace. Evaluation metrics are under `/results/dextrah/evals/<run_name>/`, not directly under the top-level DEXTRAH results directory.
+
+Next:
+- Commit/push this reconciliation note.
+- Continue with the already planned clamp comparison artifact update and cheap visual diagnosis of the clamp RL25 reset/partial-lift behavior.
