@@ -1055,10 +1055,14 @@ Command / Job:
   copied official DP checkpoint under `/results/dp_bc/.../latest.ckpt`.
 
 Result:
-- status: in_progress
-- job_id: pending
-- logs: pending
-- artifacts: pending
+- status: first submission blocked before scheduling
+- job_id: n/a
+- logs: terminal only
+- artifacts: none
+- key evidence: l401 rejected the inherited DEXTRAH partition list with
+  `sbatch: error: invalid partition specified: batch_singlenode`. Current
+  `sinfo` reports GPU partitions `batch` and `batch_long`; the DP launcher is
+  being patched to use `batch` only.
 
 Analysis:
 - The 8 real cuRobo demonstrations are sufficient only for mechanics
