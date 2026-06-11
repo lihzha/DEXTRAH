@@ -1014,3 +1014,70 @@ Worker A reset-prior final RL:
 - Last-50 means: success `2.93e-05`, lifted `4.69e-04`, lift height
   `1.07e-04 m`, reset success `1.0`, reset farther rate `1.0`. Continue
   monitoring; not task-solved yet.
+
+## 2026-06-11 Monitor Check 21:22 UTC
+
+Worker C DP mismatch audit:
+
+- User flagged C's video as clearly wrong: the hand drifts away and ignores the
+  object. Orchestrator agrees this remains a real train/eval mismatch bug until
+  disproven.
+- History-cadence fix trace job `1027744` completed `0:0` in `00:01:20`.
+  Remote run:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_curobo32_full_pick_lift_framefix_overfit2k_chunk8_historyfix_trace512_20260611_141802`
+- Local fetched run:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_curobo32_full_pick_lift_framefix_overfit2k_chunk8_historyfix_trace512_20260611_141802`
+- Metrics: `512/512` steps, reward mean `1.6488`, reward final `1.6844`,
+  success/window success `0.0`, lift `0.0`, no dones, final gripper width
+  `0.00116 m`.
+- Behavior: EE-to-cube distance improves from `0.2332 m` to best `0.1360 m`
+  and final `0.1371 m`, but finger-center-to-cube remains far at best
+  `0.1640 m` and final `0.1695 m`. The gripper becomes fully closed while the
+  fingers are still far from a valid grasp.
+- Trace check: the history-cadence patch is mechanically effective. The first
+  policy call has the reset duplicate `history_step_gap=0`; all later recorded
+  policy calls have `history_step_gap=1` and histories like `[t-1, t]`.
+- Interpretation: C has fixed the prior action-frame bug and the eval history
+  cadence bug, but behavior remains invalid. The next bug search should focus
+  on train/eval observation schema and normalization, action scale/sign/clamp,
+  gripper convention, frame/root transforms, reset distribution/object pose,
+  DP sequence padding, and live geometry vs nearest training window.
+- Worker C was interrupted with this evidence and instructed to generate a
+  new mismatch report/plots comparing live eval windows to nearest train
+  windows around approach and close before any scale-up training.
+
+Worker B trajectory-tracking phase-gate eval:
+
+- Metrics rerun job `1027743` completed and was fetched to:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_phasegate_ep3_metrics480_20260611_141725`
+- The instrumentation patch worked: new phase-gate terms are now present in
+  metrics.
+- Result: `480` steps, reward mean about `1.510`, success `0.0`, lift `0.0`,
+  position error mean about `0.296` and final about `0.403`. EE-to-cube and
+  finger-center distances worsen to roughly `0.34 m` by the end.
+- Key diagnosis: `cube_traj_tracking_close_action_reward` and
+  `cube_traj_tracking_lift_action_reward` are exactly `0`; contact gate mean is
+  only about `0.00167` and max about `0.00663`, while the closed-target gate is
+  active by the end. The current gate makes close/lift shaping effectively
+  silent for this policy.
+- Worker B was instructed not to scale training, to record the metrics, and to
+  run a bounded gate/reward diagnostic or ablation with inspectable report/video
+  evidence.
+
+Worker A reset-prior final RL:
+
+- A100 job `28987954` remains running at about `1:51` elapsed. Stdout reached
+  epoch `1213`; rank-0 JSONL reached epoch `1216`, frame `1274019840`.
+- Best stdout reward improved to `2276.3032` around epoch `1202`.
+- Latest interval checkpoints include epoch `1175` reward suffix `2247.8704`
+  and epoch `1200` reward suffix `2227.9263`; best checkpoint file
+  `dextrah_franka_cube_grasp.pth` was updated at epoch `1202`.
+- Latest rank-0 scalars keep reset mechanics healthy:
+  `cube_grasp_prior_reset_success_rate=1.0`, reset farther rate `1.0`, reset
+  position error around `0.00185 m`, reset rotation error around `0.0186 rad`,
+  and table-clearance violation `0.0`.
+- Policy behavior is improving but still needs artifact validation: gripper is
+  closing hard and finger-center distance is about `0.059 m`, but lift/success
+  remain sparse in the sampled scalar stream. Continue monitoring and require
+  eval/video evidence from a usable checkpoint before making the comparison
+  claim.
