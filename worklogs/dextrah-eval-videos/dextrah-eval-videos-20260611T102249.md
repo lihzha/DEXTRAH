@@ -161,3 +161,40 @@ Analysis:
 
 Next:
 - Stop. Optional later improvement: add a `--video_start_step` option to `eval_rollout.py` so cluster-produced originals can skip warmup frames without local trimming.
+
+## 2026-06-11 10:42 PDT - Orchestrator merge handoff
+
+Goal:
+- Prepare this isolated implementation branch for merge by a separate orchestrator.
+
+Change:
+- No runtime or wrapper behavior changes after validation. Added this merge-prep handoff entry only.
+
+Version Control:
+- agent_id: dextrah-eval-videos-20260611T102249
+- branch: `codex/dextrah-eval-videos/20260611T102249`
+- base_commit: `d7ff3d0`
+- merge_head_before_this_entry: `49b4eba04f7b02339b7d1b9b0d3d9e7b07c16ec0`
+- changed_files_for_merge:
+  - `cluster/sbatch_eval_kuka_allegro_1gpu.sh`
+  - `worklogs/dextrah-eval-videos/dextrah-eval-videos-20260611T102249.md`
+- generated_artifacts_not_committed:
+  - local videos/metrics under `/home/lzha/code/cluster_results/a1002/dextrah_eval_videos_20260611T102249_*`
+  - remote videos/metrics under `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/dextrah_eval_videos_20260611T102249_*`
+
+Validation:
+- `bash -n cluster/sbatch_eval_kuka_allegro_1gpu.sh`
+- `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py`
+- Slurm jobs `28985403` and `28985459` completed `0:0`
+- `ffprobe` validated original and trimmed MP4 frame counts, durations, resolution, and FPS
+- first/middle/last representative frames were visually inspected for both trimmed review clips
+- `squeue -u lzha` returned no active jobs
+
+Merge Notes:
+- This branch is an implementation-agent branch. The orchestrator should merge or cherry-pick it from a clean integration worktree, not from this agent worktree.
+- The only source behavior change is the new Kuka Allegro eval wrapper. It is parameterized with `CODE_NFS`, `RUN_NAME`, checkpoint, camera, seed, and runtime settings so it can launch from an isolated cluster worktree.
+- The final videos are intentionally not committed to Git. Use the local `cluster_results/a1002/...` paths or remote `/lustre/.../results/dextrah/evals/...` paths for artifact review.
+- Known visual caveat: the eval logs report missing `Walnut_Planks_BaseColor.png`, so the table renders gray; robot/object motion remains clear.
+
+Next:
+- Orchestrator can fetch `origin/codex/dextrah-eval-videos/20260611T102249`, inspect the two changed files, merge/cherry-pick, and summarize this owned worklog into shared `WORKLOG.md` if desired.
