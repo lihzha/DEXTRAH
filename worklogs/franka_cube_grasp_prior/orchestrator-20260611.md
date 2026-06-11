@@ -159,3 +159,79 @@ Latest remote worker refs observed:
 
 Current queue state when checked: no a1001 jobs; l401 job `1027683` had
 completed. Continue polling workers rather than closing them.
+
+## 2026-06-11 Worker C DP Milestone And Reassignment
+
+Worker C reported a completed official-Diffusion-Policy mechanics milestone on
+branch `codex/franka-cube-diffusion-policy-bc` at
+`c3c33fd0e6e2404200bce9091d7345981227a13a`.
+
+Evidence reported:
+
+- Official Diffusion Policy source:
+  `https://github.com/real-stanford/diffusion_policy`, external clone commit
+  `5ba07ac6661db573af695b419a7947ecb704690f`.
+- Official DP import/config/model construction passed.
+- One-step official DP train on converted debug data passed and saved a
+  checkpoint.
+- Official checkpoint load plus PPO bridge smoke passed:
+  PPO obs `[2, 72]`, lowdim sequence `[2, 2, 21]`, direct DP action `[2, 8, 7]`,
+  bridge action `[2, 7]`.
+- Multi-episode geometric grasp-library debug dataset passed:
+  `16` episodes, `448` steps, `obs_dim=21`, `action_dim=7`,
+  `curobo_validated=false`.
+- Tiny official DP train on that multi-episode debug dataset passed with
+  `train_loss=1.14365`, `val_loss=1.07233`,
+  `train_action_mse_error=0.66672`.
+
+Important limitation:
+
+- Worker C did not find real Franka cube cuRobo trajectory artifacts locally.
+  The geometric dataset is valid for mechanics/debugging only, not for a
+  cuRobo-planned BC claim.
+
+Orchestrator action:
+
+- Reassigned Worker C immediately. Next milestone is to generate/find real
+  GraspGenX+cuRobo trajectory demonstrations for BC, or document a hard blocker
+  and proceed to a DEXTRAH/Isaac DP eval-wrapper or distillation bridge smoke.
+
+## 2026-06-11 Active Monitor Check 19:24 UTC
+
+The user clarified that this is a long-running orchestration job: keep all
+three agents developing/debugging through many iterations until the final RL
+training is finished. The orchestrator should not take over low-level debugging.
+
+Current observations:
+
+- Worker A reset-prior branch advanced to
+  `c36d3f867bc87dc65617dd0942dcc0507f3c33c1`
+  (`Add opt-in RL direct metrics sidecar`). Prior scalar smoke job `1027687`
+  completed with exit `0:0`, checkpoints at epochs 15/30/45, and finite reward
+  filenames up to about `581.206`, but TensorBoard events were still zero-byte.
+  Worker A is expected to launch the same bounded 64-env/45-epoch prior-enabled
+  smoke with `DEXTRAH_RLGAMES_JSONL_METRICS=True` and gate full 8-GPU training
+  on inspecting JSONL sidecar metrics.
+- Worker B retry job `1027688` completed with exit `0:0` and is a real
+  GraspGenX/cuRobo availability pass: 80 candidates, selected grasp #22,
+  selected confidence about `0.601`, and 42-waypoint approach/grasp/lift
+  segments. Caveat: the validator used the GraspGenX 45 mm cube asset, so this
+  is not yet a DEXTRAH 60 mm validated tracking reference. Worker B launched
+  trajectory export job `1027689` (`ggx_cube_traj_export`) and owns conversion
+  / geometry validation.
+- Worker C has no new visible committed milestone after the geometric
+  Diffusion Policy validation. It was nudged to either consume Worker B's real
+  trajectory artifact when available or build the DEXTRAH/Isaac eval bridge
+  around `predict_action_from_ppo_obs()` without waiting idle.
+
+Queue state:
+
+- l401: job `1027689` pending for Worker B trajectory export at this check.
+- a1001: no active jobs observed in this loop.
+
+Orchestrator actions:
+
+- Sent targeted continuation messages to all workers.
+- Keep polling agents and Slurm. If a worker completes another milestone,
+  immediately assign the next development/debugging loop unless final
+  apple-to-apple RL training and artifact inspection are truly finished.
