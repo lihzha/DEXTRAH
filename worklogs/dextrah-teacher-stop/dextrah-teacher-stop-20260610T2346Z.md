@@ -2178,3 +2178,48 @@ Analysis:
 Next:
 - Continue tightened active monitoring. About `220` epochs remain by stdout;
   inspect final checkpoint/completion artifacts after the run exits.
+
+## 2026-06-11 02:23 PDT - Teacher Final-Window Artifact/Metric Pass
+
+Goal:
+- Continue tightened final-window monitoring with roughly `150` epochs left.
+
+Command / Job:
+- job_id: `28955904`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28955904.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+- local TensorBoard copy:
+  `/tmp/dextrah_teacher_events`
+
+Result:
+- status: running healthy in final training window.
+- `sacct`: parent, batch, extern, and step all `RUNNING` on
+  `batch-block7-00110`; parent elapsed `01:52:01`, time limit `03:50:00` at
+  `02:22:47 PDT`.
+- stdout advanced to epoch `19847/20000`.
+- newest complete checkpoint:
+  `last_dextrah_lstm_ep_19840_rew_640.06616.pth` at `02:22:13`.
+- runtime sidecars rank `0-7` refreshed at `02:22:11`.
+- narrow critical failure scan over recent stdout returned no matches.
+- TensorBoard summaries parsed through epoch `19831` for epoch-keyed scalars.
+- post-requeue `in_success_region/iter`: n=`1151`, mean `0.465575`; latest
+  `0.469971`, last-50 `0.467959`.
+- post-requeue `rewards/iter`: n=`1151`, mean `650.088`; latest `634.981`,
+  last-50 `642.853`.
+- `num_adr_increases/iter`: latest `50`, last-50 `50`.
+- `info/kl`: latest `-0.0000705902`, last-50 `0.000103471`.
+- `losses/a_loss`: latest `-0.00101596`, last-50 `-0.00104052`.
+- `losses/c_loss`: latest `0.0302946`, last-50 `0.0285799`.
+- `performance/step_inference_rl_update_fps`: latest `111915`,
+  last-20 about `107488`, last-50 about `108325`, last-200 about `108199`.
+
+Analysis:
+- The job remains healthy and close to completion. Fresh checkpoint and
+  sidecar artifacts are present, scalar windows remain stable, and the recent
+  log window is clean.
+
+Next:
+- Continue short final polling until epoch `20000` completion and final
+  artifacts can be inspected.
