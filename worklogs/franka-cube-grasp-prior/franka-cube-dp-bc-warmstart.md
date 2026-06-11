@@ -1149,3 +1149,87 @@ Analysis:
 Next:
 - Commit/push the protobuf/stage-marker patch, update the remote worktree via
   Git bundle, and relaunch the 1-env/16-step eval smoke.
+
+## 2026-06-11T12:55:32-07:00 - l401 DP dependency site + eval summary fix
+
+Goal:
+- Continue the l401 eval-wrapper smoke until the official DP checkpoint can
+  run through DEXTRAH/Isaac and serialize metrics.
+
+Hypothesis:
+- The eval path is mechanically sound after official-DP dependencies are
+  isolated. The current failure is a wrapper bookkeeping bug: metrics are
+  read from `task_env` after `gym_env.close()`, but Isaac Lab removes
+  `task_env.scene` during close.
+
+Change:
+- Created isolated official-DP dependency target:
+  `/lustre/fsw/portfolios/nvr/users/lzha/envs/franka-cube-dp-bc-warmstart-official-dp/site`.
+- Installed only cluster-eval dependencies there, leaving shared Isaac env
+  untouched:
+  `dill==0.3.5.1`, `diffusers==0.11.1`,
+  `huggingface-hub==0.10.1`, `einops==0.4.1`,
+  `transformers==4.25.1`, `tokenizers==0.13.3`,
+  `zarr==2.18.3`, `numcodecs==0.12.1`, `asciitree==0.3.3`,
+  `fasteners==0.19`.
+- Patched `eval_franka_cube_dp_policy.py` to snapshot final cube pose,
+  gripper width, and `num_envs` before closing the Isaac env.
+
+Version Control:
+- implementation_commit: pending
+- changed_files:
+  - `dextrah_lab/rl_games/eval_franka_cube_dp_policy.py`
+  - `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+
+Command / Job:
+- dependency install jobs:
+  - `1027703`: installed `dill`, `diffusers`, `huggingface-hub`, `einops`;
+    completed, exit `0:0`.
+  - `1027706`: installed `transformers==4.25.1`; validation found container
+    `tokenizers==0.21.4` incompatible; failed intentionally as diagnostic.
+  - `1027708`: installed `tokenizers==0.13.3`; completed, exit `0:0`.
+  - `1027710`: installed `zarr`, `numcodecs`, `asciitree`, `fasteners`;
+    completed, exit `0:0`.
+- checkpoint import/forward jobs:
+  - `1027702`: protobuf workaround passed, failed on missing `dill`.
+  - `1027705`: failed on container `transformers` vs pinned
+    `huggingface-hub` mismatch.
+  - `1027709`: failed on missing `zarr`.
+  - `1027711`: passed official DP checkpoint forward:
+    `TrainDiffusionUnetLowdimWorkspace`, `DiffusionUnetLowdimPolicy`,
+    `n_obs_steps=2`, action shape `(1, 8, 7)`, finite `True`.
+
+Command / Job:
+- eval relaunch command:
+  `CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart OFFICIAL_DP_ENV_NAME=franka-cube-dp-bc-warmstart-official-dp CHECKPOINT=/results/dp_bc/franka-cube-dp-bc-warmstart/checkpoints/run_20260611_123104_curobo_batch/latest.ckpt RUN_NAME=franka_cube_dp_eval_curobo8_smoke2_20260611_125418 NUM_ENVS=1 NUM_STEPS=16 NUM_INFERENCE_STEPS=2 PRINT_INTERVAL=4 CAPTURE_VIDEO=False sbatch cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- eval job_id: `1027712`
+- eval log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_dp_policy_1027712.out`
+- eval run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_curobo8_smoke2_20260611_125418`
+
+Result:
+- status: failed after successful 16-step rollout
+- key evidence:
+  - official DP checkpoint loaded and moved to CUDA;
+  - DEXTRAH env created and reset with PPO obs shape `[1, 72]`;
+  - rollout printed steps `1`, `4`, `8`, `12`, and `16`;
+  - action bounds were finite but heavily clipped to `[-1, 1]`, expected for
+    a tiny 8-demo debug checkpoint;
+  - no success/lift claim: final printed `success_rate=0.0`,
+    `cube_lift_height=0.0`;
+  - metrics writing failed with
+    `AttributeError: 'DextrahFrankaCubeGraspEnv' object has no attribute 'scene'`
+    while reading `task_env.num_envs` after env close.
+
+Analysis:
+- This failure is a DEXTRAH wrapper summary-order bug, not an official DP
+  checkpoint or environment stepping failure. The next relaunch should pass if
+  metrics are snapshotted before close.
+- The 8 real cuRobo demonstrations remain mechanics-only; the clipped actions
+  and no-lift result are expected and should not be presented as final BC
+  performance.
+
+Next:
+- Commit/push the summary snapshot fix, update remote worktree, and relaunch
+  the bounded 1-env/16-step eval once more.

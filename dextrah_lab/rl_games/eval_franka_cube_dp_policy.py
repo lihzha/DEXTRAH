@@ -267,7 +267,8 @@ def main() -> None:
     gym_env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)
     task_env = gym_env.unwrapped
     _configure_eval_camera(env_cfg, task_env)
-    _stage("gym_make_done", task=args_cli.task, task_env=task_env.__class__.__name__, num_envs=int(task_env.num_envs))
+    task_num_envs = int(task_env.num_envs)
+    _stage("gym_make_done", task=args_cli.task, task_env=task_env.__class__.__name__, num_envs=task_num_envs)
 
     if args_cli.video:
         gym_env = gym.wrappers.RecordVideo(
@@ -285,6 +286,8 @@ def main() -> None:
     action_max = np.full(FRANKA_CUBE_ACTION_DIM, -np.inf, dtype=np.float64)
     done_count = 0
     env_closed = False
+    final_cube_pos_mean: list[float] | list[list[float]] | None = None
+    final_gripper_width: float | None = None
     try:
         _stage("env_reset_start")
         policy_obs = _policy_obs_from_reset(gym_env.reset())
@@ -330,6 +333,8 @@ def main() -> None:
                     f"action_min={action_min.tolist()} action_max={action_max.tolist()}",
                     flush=True,
                 )
+        final_cube_pos_mean = _tensor_list(task_env.cube_pos.mean(dim=0)) if hasattr(task_env, "cube_pos") else None
+        final_gripper_width = _env_metric(task_env, "gripper_width")
     finally:
         _stage("env_close_start")
         gym_env.close()
@@ -346,7 +351,7 @@ def main() -> None:
         "policy_class": policy.__class__.__name__,
         "ppo_bridge": "predict_action_from_ppo_obs",
         "no_learning": True,
-        "num_envs": int(task_env.num_envs),
+        "num_envs": task_num_envs,
         "num_steps_requested": int(args_cli.num_steps),
         "steps_completed": len(step_metrics),
         "done_count": done_count,
@@ -357,8 +362,8 @@ def main() -> None:
         "action_min": action_min.astype(float).tolist(),
         "action_max": action_max.astype(float).tolist(),
         "step_metric_summary": _summarize_step_metrics(step_metrics),
-        "final_cube_pos_mean": _tensor_list(task_env.cube_pos.mean(dim=0)) if hasattr(task_env, "cube_pos") else None,
-        "final_gripper_width": _env_metric(task_env, "gripper_width"),
+        "final_cube_pos_mean": final_cube_pos_mean,
+        "final_gripper_width": final_gripper_width,
         "output_dir": str(output_dir),
         "metrics_path": str(metrics_path),
         "video_enabled": bool(args_cli.video),
