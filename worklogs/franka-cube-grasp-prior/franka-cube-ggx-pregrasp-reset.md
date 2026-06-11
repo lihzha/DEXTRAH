@@ -707,3 +707,36 @@ Analysis:
 
 Next:
 - Continue artifact-based monitoring until Slurm CLI responsiveness returns. Record the next checkpoint window and verify eventual wall-time requeue/resume semantics.
+
+## 2026-06-11T20:23:17Z - final 8-GPU training monitor checkpoint
+
+Goal:
+- Record the epoch 425-550 monitor window for job `28987954`, including restored Slurm visibility, best-checkpoint updates, and rank-0 JSONL health.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- implementation_commit: 99ea26d5b449581988594f40168806642c486326 for the running job; latest branch/worklog commit before this entry is `651b7d6e6e813fce3f502a26f6929a90c228ef18`
+- remote_commit/status: a1001 NFS worktree remains clean at `99ea26d5b449581988594f40168806642c486326`; later local commits are worklog-only monitor records
+
+Command / Job:
+- monitor command: bounded `squeue`/`sacct` probes plus log-tail/error-signature probes for job `28987954`
+- monitor command: six-sample artifact loop reading rank-0 JSONL and checkpoints under `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005`
+- job_id: 28987954
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28987954.out`
+
+Result:
+- status: running_healthy
+- scheduler: `RUNNING` on `batch-block5-00308`; bounded `squeue` reported elapsed `00:45:17` and time remaining `3:04:43`; `sacct` reported job and batch step `RUNNING`, exit `0:0`
+- JSONL scalar health: records advanced from epoch `448` to `558`; `bad_scalar_count=0` at every sample
+- checkpoints: epoch 425 `rew_2057.8845`, epoch 450 `rew_2076.4912`, epoch 475 `rew_2083.0796`, epoch 500 `rew_2086.0613`, epoch 525 `rew_2070.765`, epoch 550 `rew_2110.0083`
+- best-checkpoint evidence: log saved best policy at epoch 402 with `rew_2084.8135` and again at epoch 466 with `rew_2116.91`
+- prior reset metrics: success/farther rates remain `1.0`; latest reset position error `0.001836 m`; latest reset rotation error `0.018304 rad`; latest finger-table clearance `0.134983 m`
+- behavior/reward metrics: latest approach reward `1.13741`; latest enclosure reward `0.63599`; latest lift reward `0.00306`; latest `cube_has_lifted_rate=0.00048828125`; latest `cube_success_rate=0.00048828125`
+- log/error evidence: log tail shows normal fps/frames, interval checkpoint, best checkpoint, and runtime-sidecar writes; targeted grep found no traceback/runtime/child/CUDA/NCCL failure signatures
+
+Analysis:
+- The final run remains healthy past the mid-500 epochs. Prior reset metrics continue to prove the branch is active and stable. Best reward is now above 2116, and both lift and success have appeared again in rank-0 metrics, so the behavior is not flatlined.
+
+Next:
+- Continue monitoring toward later checkpoints and wall-time/requeue. If the job requeues, verify it resumes in the same run dir from the latest checkpoint/runtime sidecars and that JSONL/checkpoint cadence continues without reset-metric regressions.
