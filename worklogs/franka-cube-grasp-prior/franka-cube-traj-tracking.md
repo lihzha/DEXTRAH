@@ -1137,3 +1137,97 @@ Analysis:
 Next:
 - Commit/push this worklog result and redeploy the l401 agent worktree.
 - Run a tiny retimed RL-Games smoke, then checkpoint eval, before any larger scale-up.
+
+## 2026-06-11T13:17:04-07:00 - retimed reference short RL smoke launch
+
+Goal:
+- Verify RL-Games training still runs with the retimed 8 s reference and writes a checkpoint that can be evaluated.
+
+Hypothesis:
+- Since task-registration validation passed with finite tracking metrics and safe retimed targets, a tiny 3-epoch run should complete with the same baseline observation dimension. This only validates training wiring under retiming; it is not expected to solve the task.
+
+Version Control:
+- agent_id: franka-cube-traj-tracking
+- local_commit: `08ce93bb4afb294dee88f1202fcf64e82e028f6e`
+- remote_commit/status: /lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking at `08ce93bb4afb294dee88f1202fcf64e82e028f6e`, detached clean.
+- push/pull: pushed to origin and deployed on l401 using HTTPS fallback after SSH git auth failed.
+
+Command / Job:
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:30:00 --job-name=franka_cube_traj_retime_rl --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,FULL_EXPERIMENT_NAME=franka_cube_traj_tracking_retime_ref_rl_smoke_20260611_131704,NPROC_PER_NODE=1,NUM_NODES=1,DISTRIBUTED=False,MULTI_GPU=False,NUM_ENVS=16,HORIZON_LENGTH=16,MINIBATCH_SIZE=256,CENTRAL_VALUE_MINIBATCH_SIZE=256,MINI_EPOCHS=1,MAX_ITERATIONS=3,SAVE_FREQUENCY=1,AUTO_RESUME=False,SELF_RELAUNCH=False,USE_CUDA_GRAPH=False,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json cluster/sbatch_train_teacher_8gpu.sh`
+- job_id: 1027721 `franka_cube_traj_retime_rl`
+- expected_log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_<job>.out
+- expected_run_dir: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_retime_ref_rl_smoke_20260611_131704
+
+Acceptance Criteria:
+- Job completes without traceback/Hydra/config errors.
+- Resolved env config has observation space `72`, `trajectory_tracking_reference_duration_s: 8.0`, external reference path, `trajectory_tracking_phase_observations: false`, and `trajectory_tracking_follow_current_cube_pose: false`.
+- Actor/critic observation dimension remains 72; checkpoint is written by epoch 3.
+- Follow-up eval can load the checkpoint and report finite retimed tracking metrics.
+
+Result:
+- status: passed; Slurm completed `0:0` after `00:00:48` on `pool0-00016`.
+- local_artifacts: `cluster_results/l401/franka_cube_traj_tracking_retime_ref_rl_smoke_20260611_131704/` with params, TensorBoard sidecar, and stdout log; checkpoints remain on NFS under the run `nn/` directory.
+- resolved_config: `params/env.yaml` has `episode_length_s: 10.0`, `observation_space: 72`, `trajectory_tracking_enabled: true`, external reference path, `trajectory_tracking_reference_duration_s: 8.0`, `trajectory_tracking_phase_observations: false`, and `trajectory_tracking_follow_current_cube_pose: false`.
+- training_log: actor and critic MLPs both built with `72`; epochs 1/3, 2/3, and 3/3 completed; no traceback/Hydra/runtime error and no NaN pattern in stdout.
+- checkpoints: epoch 1/2/3 checkpoints were written; selected eval checkpoint `/results/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_retime_ref_rl_smoke_20260611_131704/nn/last_dextrah_franka_cube_traj_tracking_ep_3_rew_9.2871895.pth`.
+- caveat: TensorBoard event file is still 0 bytes; rollout eval remains the reward-term/safety evidence.
+
+Next:
+- Evaluate the epoch-3 checkpoint for 720 steps so retimed phase progress can reach the end of the 8 s reference.
+
+## 2026-06-11T13:18:55-07:00 - retimed short RL checkpoint 720-step eval launch
+
+Goal:
+- Verify the tiny retimed checkpoint can be loaded and evaluated across a full reference horizon.
+
+Hypothesis:
+- The checkpoint itself will not solve the task, but rollout metrics should remain finite, target-safe, and show phase progress reaching near 1.0 under the 8 s runtime reference.
+
+Command / Job:
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:30:00 --job-name=franka_cube_traj_retime_eval3 --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_retime_ref_eval720_20260611_131855,CHECKPOINT=/results/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_retime_ref_rl_smoke_20260611_131704/nn/last_dextrah_franka_cube_traj_tracking_ep_3_rew_9.2871895.pth,NUM_ENVS=4,NUM_STEPS=720,VIDEO_LENGTH=240,CAPTURE_VIDEO=False,PRINT_INTERVAL=120,USE_CUDA_GRAPH=False,SEED=49,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- job_id: 1027723 `franka_cube_traj_retime_eval3`
+- expected_log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_<job>.out
+- expected_metrics: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_traj_tracking_retime_ref_eval720_20260611_131855/metrics.json
+
+Acceptance Criteria:
+- 720/720 steps complete with finite metrics and no immediate reset pathology.
+- Reference summary reports runtime duration `8.0`, source duration `22.033333333333335`, reset-pose target policy, and `curobo_validated=false`.
+- Phase progress reaches near 1.0 in at least one interval; `cube_traj_tracking_unsafe_target_rate` remains `0.0`; target min clearance remains above `0.025`.
+
+Result:
+- status: passed; Slurm completed `0:0` after `00:00:58` on `pool0-00016`.
+- local_artifacts: `cluster_results/l401/franka_cube_traj_tracking_retime_ref_eval720_20260611_131855/metrics.json`, `cluster_results/l401/franka_cube_traj_tracking_retime_ref_eval720_20260611_131855/eval_franka_cube_1027723.out`
+- rollout: 720/720 steps, `done_count=4`, reward mean `1.7883200655380884`, reward final `1.933864712715149`, success mean/final/last-window `0.0`.
+- finite_check: recursive JSON numeric scan `nonfinite_count=0`.
+- tracking_reference: external 60 mm compact reference, `duration_s=8.0`, `runtime_duration_s=8.0`, `source_duration_s=22.033333333333335`, `runtime_retime_policy=normalize_to_configured_runtime_duration`, `runtime_object_pose_policy=reset_cube_pose`, `curobo_validated=false`, `validation_passed=true`.
+- phase_progress: `traj_phase_progress` max `1.0` at step 480, final `0.25208336114883423`, with one reset drop at step 599. This proves the full reference now fits within the episode.
+- target_safety: `cube_traj_tracking_unsafe_target_rate` max/mean/final `0.0`; `safe_target_rate` min/mean/final `1.0`; target clearance min over all steps `0.06511414051055908`, above the configured `0.025`.
+- finger_safety: `finger_table_clearance_min` min `0.05048090219497681`; `finger_table_clearance_violation_max` max `0.0`; no violation steps.
+- task_behavior: no lift/success, as expected for a 3-epoch wiring smoke; `cube_lift_height_max` max `0.011038422584533691`, `has_lifted_cube` remains `0.0`.
+- tracking_metrics: tracking reward mean `0.10420224249569907`, final `0.13189668953418732`; position error mean `0.23880642677346867`; orientation error mean `0.1835750435789426`; gripper error mean `0.03696417411685818`.
+
+Analysis:
+- The retiming patch fixes the phase-starvation problem: the 8 s runtime reference reaches close/lift phases before timeout while staying target-safe.
+- The tiny checkpoint is not a performance result. The next useful test is a bounded one-GPU 25-iteration scale-up comparable to the earlier RL25 smoke, now using the retimed target schedule.
+
+Next:
+- Commit/push this worklog evidence, redeploy the l401 worktree, and launch a bounded retimed RL25 run. If it completes, evaluate 720 steps and inspect lift/success, finger clearance, phase tracking, and target safety.
+
+## 2026-06-11T13:21:07-07:00 - retimed bounded RL25 plan
+
+Goal:
+- Run a bounded retimed trajectory-tracking scale-up to see whether exposing the full approach/grasp/lift reference improves behavior relative to the previous phase-starved RL25 run.
+
+Hypothesis:
+- Compared with the 22 s source-timing run, the 8 s retimed run should train against all phases within the episode. The scale is still too small to guarantee success, but the 720-step eval should remain finite, target-safe, and may show stronger gripper/lift behavior.
+
+Command / Job:
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:45:00 --job-name=franka_cube_traj_retime_rl25 --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,FULL_EXPERIMENT_NAME=franka_cube_traj_tracking_retime_ref_rl25_20260611_132107,NPROC_PER_NODE=1,NUM_NODES=1,DISTRIBUTED=False,MULTI_GPU=False,NUM_ENVS=256,HORIZON_LENGTH=64,MINIBATCH_SIZE=4096,CENTRAL_VALUE_MINIBATCH_SIZE=4096,MINI_EPOCHS=2,MAX_ITERATIONS=25,SAVE_FREQUENCY=5,AUTO_RESUME=False,SELF_RELAUNCH=False,USE_CUDA_GRAPH=False,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json cluster/sbatch_train_teacher_8gpu.sh`
+- expected_log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_<job>.out
+- expected_run_dir: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_retime_ref_rl25_20260611_132107
+
+Acceptance Criteria:
+- Still not full training: one GPU, 256 envs, 25 iterations, no self-relaunch.
+- Resolved env config remains reward-only with observation space 72, external reference path, `trajectory_tracking_reference_duration_s: 8.0`, phase observations false, and reset-pose target policy.
+- Epochs complete without traceback/NaN; checkpoint written at epoch 25.
+- Follow-up 720-step eval has finite metrics, phase progress reaching 1.0, no unsafe tracking targets, and no immediate reset pathology.
