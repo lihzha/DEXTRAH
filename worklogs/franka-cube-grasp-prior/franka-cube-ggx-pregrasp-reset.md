@@ -1784,3 +1784,76 @@ Result:
 
 Next:
 - Continue monitoring job `1027842` through completion, inspect stdout/JSONL/checkpoints, choose the best usable checkpoint, run fixed-seed eval/video with prior disabled, fetch artifacts, and create/open the inspection bundle.
+
+## 2026-06-11T23:02:53Z - matched prior-disabled baseline smoke/eval inspected
+
+Goal:
+- Complete the matched prior-disabled baseline smoke/eval and compare its early-learning behavior against the prior-enabled smoke artifact.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- smoke_source_commit: `fae66c7446c3bf25a9e61d0878ca992e276de7e9`
+- worklog_commit_after_launch: `6c50304`
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `fae66c7446c3bf25a9e61d0878ca992e276de7e9`, detached `HEAD`
+- changed_files: this worklog only
+
+Jobs / Paths:
+- smoke_job_id: `1027842`, status `COMPLETED`, exit `0:0`, elapsed `00:01:46`, node `pool0-00016`
+- eval_job_id: `1027848`, status `COMPLETED`, exit `0:0`, elapsed `00:01:03`, node `pool0-00004`
+- smoke_run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseline_noprior_smoke_1gpu_20260611_2253`
+- smoke_log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_smoke_1027842.out`
+- eval_run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_baseline_noprior_smoke_ep10_eval_20260611_2258`
+- eval_log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1027848.out`
+- eval_checkpoint: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseline_noprior_smoke_1gpu_20260611_2253/nn/last_dextrah_franka_cube_grasp_ep_10_rew_678.5467.pth`
+- local_smoke_artifacts: `cluster_results/l401/franka_cube_baseline_noprior_smoke_1gpu_20260611_2253`
+- local_eval_artifacts: `cluster_results/l401/franka_cube_baseline_noprior_smoke_ep10_eval_20260611_2258`
+- local_inspection_dir: `cluster_results/l401/franka_cube_baseline_noprior_smoke_ep10_eval_20260611_2258/inspection_20260611_2300`
+
+Config Audit:
+- task unchanged: `Dextrah-Franka-Cube-Grasp`
+- prior reset disabled: `GRASP_PRIOR_RESET_ENABLED=False`
+- no prior library override
+- cube XY randomization: `CUBE_SPAWN_XY_RANDOMIZATION=0.08`
+- matched smoke scale: l401 1 GPU, `NUM_ENVS=64`, `MAX_ITERATIONS=45`, `HORIZON_LENGTH=64`, `MINIBATCH_SIZE=4096`, `CENTRAL_VALUE_MINIBATCH_SIZE=4096`, `SAVE_FREQUENCY=5`, train seed `20260620`
+- matched eval shape: 1 env, 240 steps, deterministic, eval seed `20260621`, same camera as prior-enabled eval, `USE_CUDA_GRAPH=False` for video capture only
+
+Viewer Artifacts:
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_baseline_noprior_smoke_ep10_eval_20260611_2258/inspection_20260611_2300/REPORT.md`
+- contact_sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_baseline_noprior_smoke_ep10_eval_20260611_2258/inspection_20260611_2300/contact_sheet.png`
+- eval_geometry_trace: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_baseline_noprior_smoke_ep10_eval_20260611_2258/inspection_20260611_2300/eval_geometry_trace.png`
+- eval_video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_baseline_noprior_smoke_ep10_eval_20260611_2258/videos/franka-cube-baseline-noprior-smoke-ep10-step-0.mp4`
+
+Metrics:
+- smoke_jsonl: `45` rank-0 records, `bad_scalar_count=0`, `world_size=1`, no `grasp_prior` scalar keys
+- checkpoints: every 5 epochs through 45; best interval checkpoint by stdout reward is epoch 10, `last_dextrah_franka_cube_grasp_ep_10_rew_678.5467.pth`
+- smoke success/lift: `cube_success_rate` max `0.0`; `cube_has_lifted_rate` max `0.015625`
+- smoke distance trend: `cube_ee_to_cube_dist` first/final `0.1541/0.3126 m`
+- eval prior audit: `grasp_prior_reset_attempted` max `0.0`
+- eval geometry: ee-to-cube min/final `0.1230/0.3129 m`; finger-center-to-cube min/final `0.1067/0.3321 m`
+- eval task outcome: max lift height `0.0 m`, success max `0.0`, final gripper width `0.0350 m`
+- video metadata: 1280x720, 239 frames, 3.983 s, 60 FPS
+
+Comparison Against Prior-Enabled Ep10 Eval:
+- prior-enabled: ee-to-cube min/final `0.0496/0.6780 m`, finger-center min/final `0.0870/0.6852 m`, max lift `0.0142 m`, success max `0.0`
+- prior-disabled baseline: ee-to-cube min/final `0.1230/0.3129 m`, finger-center min/final `0.1067/0.3321 m`, max lift `0.0 m`, success max `0.0`
+
+Visual Inspection:
+- The baseline contact sheet starts from the normal prior-disabled reset, not the 3 cm GraspGenX pregrasp.
+- The gripper is near the cube at the beginning and closes partially, but no lift or stable enclosure appears.
+- The baseline drifts less far than the prior-enabled eval by the final frame, but it also shows less useful cube motion and no lift.
+
+Verdict:
+- baseline smoke/eval runtime: `PASS`
+- baseline config audit: `PASS`
+- baseline policy artifact gate: `FAIL for task success`
+- A100 final RL relaunch: `STILL BLOCKED`
+- interpretation: this matched baseline does not show a better early policy than the prior-enabled variant. It supports running a paired longer small PPO smoke before any final-scale claim, rather than treating the prior-enabled 45-epoch eval drift as a reset-prior-specific bug.
+
+Active Job Check:
+- l401: no matching Worker A jobs active after `1027842`/`1027848` completed
+- a1001: no matching Worker A pregrasp/final jobs active
+
+Next:
+- Do not launch A100.
+- Recommended bounded next step: paired longer small PPO smoke for prior-enabled and prior-disabled variants, keeping the artifact cadence and matched seeds/config. A reasonable candidate is still one-GPU l401 with more epochs and/or 256 envs, but the exact scale should remain bounded and artifact-gated.
