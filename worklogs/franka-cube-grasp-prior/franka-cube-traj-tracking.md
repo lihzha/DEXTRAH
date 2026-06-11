@@ -762,3 +762,22 @@ Analysis:
 Next:
 - Commit/push this worklog result.
 - Launch a bounded one-GPU scale-up smoke with the same external reference, more envs/iterations than the 3-epoch wiring smoke, and explicit reduced CPU/memory Slurm resources.
+
+## 2026-06-11T14:55:00-07:00 - bounded external-reference RL scale-up plan
+
+Goal:
+- Move beyond pure wiring smoke by running enough policy steps to observe timeout resets/episode statistics and scalar logging, while staying clearly below full training.
+
+Hypothesis:
+- A one-GPU 256-env, 25-epoch run with horizon 64 produces `25 * 64 = 1600` policy steps per env, exceeding the 600-step/10-second timeout and giving at least two timeout windows for episode/reward diagnostics.
+- 256 envs should fit on one L40S with the already validated state-only Franka cube task; if it fails for memory or launch reasons, reduce env count before changing task code.
+
+Planned Command / Job:
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:45:00 --job-name=franka_cube_traj_60mm_rl25 --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,FULL_EXPERIMENT_NAME=<run>,NPROC_PER_NODE=1,NUM_NODES=1,DISTRIBUTED=False,MULTI_GPU=False,NUM_ENVS=256,HORIZON_LENGTH=64,MINIBATCH_SIZE=4096,CENTRAL_VALUE_MINIBATCH_SIZE=4096,MINI_EPOCHS=2,MAX_ITERATIONS=25,SAVE_FREQUENCY=5,AUTO_RESUME=False,SELF_RELAUNCH=False,USE_CUDA_GRAPH=False,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json cluster/sbatch_train_teacher_8gpu.sh`
+- expected_run_dir: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_traj_tracking/<run>
+
+Acceptance Criteria:
+- No full training: 25 epochs only, one GPU.
+- Job writes non-empty scalar/event or equivalent logs, resolved configs, and checkpoints.
+- It reaches at least one timeout/reset window without NaNs, runaway reward/loss, or table/finger safety pathology.
+- Follow-up eval of the latest checkpoint loads the same external reference and reports finite tracking metrics.
