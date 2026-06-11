@@ -2040,3 +2040,48 @@ Next:
 - Continue active monitoring. With about `535` epochs left by stdout at the
   snapshot, keep widened polling but prepare to tighten once the run crosses
   roughly epoch `19700`.
+
+## 2026-06-11 02:03 PDT - Teacher Artifact/Metric Pass
+
+Goal:
+- Continue active monitoring and tighten toward the final training window.
+
+Command / Job:
+- job_id: `28955904`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28955904.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+- local TensorBoard copy:
+  `/tmp/dextrah_teacher_events`
+
+Result:
+- status: running healthy with continued artifact production.
+- `sacct`: parent, batch, extern, and step all `RUNNING` on
+  `batch-block7-00110`; parent elapsed `01:32:47`, time limit `03:50:00` at
+  `02:03:33 PDT`.
+- stdout advanced to epoch `19614/20000`.
+- newest complete checkpoint:
+  `last_dextrah_lstm_ep_19610_rew_697.0739.pth` at `02:03:10`.
+- runtime sidecars rank `0-7` refreshed at `02:03:08`.
+- narrow critical failure scan over recent stdout returned no matches.
+- TensorBoard summaries parsed through epoch `19614` for epoch-keyed scalars.
+- post-requeue `in_success_region/iter`: n=`934`, mean `0.465182`; latest
+  `0.464600`, last-50 `0.467422`.
+- post-requeue `rewards/iter`: n=`934`, mean `649.581`; latest `665.856`,
+  last-50 `637.009`.
+- `num_adr_increases/iter`: latest `50`, last-50 `50`.
+- `info/kl`: latest `0.000523889`, last-50 `0.000565275`.
+- `losses/a_loss`: latest `-0.0016014`, last-50 `-0.00142359`.
+- `losses/c_loss`: latest `0.0278724`, last-50 `0.0257365`.
+- `performance/step_inference_rl_update_fps`: latest `111779`,
+  last-20 about `109195`, last-50 about `109291`, last-200 about `107133`.
+
+Analysis:
+- The run remains healthy. Checkpoints and sidecars are fresh, scalar windows
+  are stable, KL is low, and throughput is strong enough to finish well before
+  the next wall-time signal if it stays near this rate.
+
+Next:
+- Tighten active monitoring intervals because stdout shows fewer than `400`
+  epochs remaining.
