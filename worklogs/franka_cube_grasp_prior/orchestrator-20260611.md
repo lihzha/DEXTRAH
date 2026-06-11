@@ -269,3 +269,55 @@ Current worker expectations:
   next tracking smoke/debug loop.
 - Worker C: continue real cuRobo-demo dataset generation or the DP eval bridge;
   do not stop at the geometric DP debug dataset.
+
+## 2026-06-11 Final RL Launch Monitor 19:31 UTC
+
+Worker A launched the final apple-to-apple prior-reset RL training on a1001:
+
+- job_id: `28987954`
+- job_name: `ggx_reset_8gpu`
+- node: `batch-block5-00308`
+- run_name: `franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005`
+- branch commit used by the job:
+  `99ea26d5b449581988594f40168806642c486326`
+- reason a1001 was used: l401 rejected the wrapper's 8-GPU partition shape;
+  a1001 exposes valid 8-GPU partitions, keeping the final training geometry
+  unchanged.
+
+Startup log evidence:
+
+- `NPROC_PER_NODE=8`
+- `NUM_ENVS=2048`
+- `DISTRIBUTED=True`
+- `MULTI_GPU=True`
+- `TASK=Dextrah-Franka-Cube-Grasp`
+- default PPO wrapper values visible: horizon `64`, minibatch `32768`,
+  mini-epochs `4`, learning rate `0.0002`, gamma `0.995`, tau `0.95`,
+  save frequency `25`
+- prior reset enabled with library
+  `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_smoke.npz`
+- `DEXTRAH_RLGAMES_JSONL_METRICS=True`
+
+Current queue state:
+
+- a1001: `28987954` running.
+- l401: Worker B converter validation job `1027692`
+  (`dextrah_ggx_ref_convert2`) running.
+
+Worker B converter evidence observed so far:
+
+- The 45 mm export converted to a compact task-space-only reference with
+  9 waypoints and `curobo_validated=false`.
+- Converter validation passed schema, waypoint validity, increasing time,
+  phase labels, approximate EE table clearance, target-outside-cube AABB,
+  no joint trajectory arrays, and explicit task-space transform policy checks.
+- The job then started the negative validation gate that tries to mark the
+  45 mm validation JSON as a 60 mm DEXTRAH reference; this should reject.
+
+Next monitoring actions:
+
+- Keep polling a1001 job `28987954` through startup into real epochs. Confirm
+  distributed ranks train, JSONL metrics appear, checkpoints are written, and
+  reward/success curves are not pathological.
+- Keep polling l401 job `1027692` until the negative gate result and artifacts
+  are inspected by Worker B.
