@@ -1992,3 +1992,51 @@ Analysis:
 Next:
 - Continue active monitoring. With about `671` epochs left at the snapshot,
   keep widened polling and tighten near the final artifact window.
+
+## 2026-06-11 01:51 PDT - Teacher Artifact/Metric Pass
+
+Goal:
+- Continue active monitoring and verify progress while `squeue` was briefly
+  slow from the login node.
+
+Command / Job:
+- job_id: `28955904`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28955904.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+- local TensorBoard copy:
+  `/tmp/dextrah_teacher_events`
+
+Result:
+- status: running healthy with continued artifact production.
+- `squeue` printed timestamp `01:51:14 PDT` but timed out before printing the
+  row; narrow `sacct` immediately confirmed `RUNNING`.
+- `sacct`: parent, batch, extern, and step all `RUNNING` on
+  `batch-block7-00110`; parent elapsed `01:21:27`, time limit `03:50:00`.
+- stdout advanced to epoch `19465/20000`.
+- newest complete checkpoint:
+  `last_dextrah_lstm_ep_19460_rew_726.69403.pth` at `01:50:47`.
+- runtime sidecars rank `0-7` refreshed at `01:50:45`.
+- narrow critical failure scan over recent stdout returned no matches.
+- TensorBoard summaries parsed through epoch `19468` for epoch-keyed scalars.
+- post-requeue `in_success_region/iter`: n=`788`, mean `0.465250`; latest
+  `0.467285`, last-50 `0.460161`.
+- post-requeue `rewards/iter`: n=`788`, mean `648.976`; latest `615.169`,
+  last-50 `649.693`.
+- `num_adr_increases/iter`: latest `50`, last-50 `50`.
+- `info/kl`: latest `0.00040475`, last-50 `0.000755323`.
+- `losses/a_loss`: latest `-0.0025052`, last-50 `-0.00186377`.
+- `losses/c_loss`: latest `0.030671`, last-50 `0.0356693`.
+- `performance/step_inference_rl_update_fps`: latest `100903`,
+  last-20 about `105236`, last-50 about `103540`, last-200 about `105007`.
+
+Analysis:
+- The run is live and advancing despite the transient `squeue` timeout.
+  Fresh checkpoints, sidecars, stdout, and `sacct` all agree the job is
+  running. Scalar windows remain acceptable, with low KL and stable rewards.
+
+Next:
+- Continue active monitoring. With about `535` epochs left by stdout at the
+  snapshot, keep widened polling but prepare to tighten once the run crosses
+  roughly epoch `19700`.
