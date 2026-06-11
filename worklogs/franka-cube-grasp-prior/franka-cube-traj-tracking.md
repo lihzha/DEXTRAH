@@ -1223,6 +1223,7 @@ Hypothesis:
 
 Command / Job:
 - command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:45:00 --job-name=franka_cube_traj_retime_rl25 --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,FULL_EXPERIMENT_NAME=franka_cube_traj_tracking_retime_ref_rl25_20260611_132107,NPROC_PER_NODE=1,NUM_NODES=1,DISTRIBUTED=False,MULTI_GPU=False,NUM_ENVS=256,HORIZON_LENGTH=64,MINIBATCH_SIZE=4096,CENTRAL_VALUE_MINIBATCH_SIZE=4096,MINI_EPOCHS=2,MAX_ITERATIONS=25,SAVE_FREQUENCY=5,AUTO_RESUME=False,SELF_RELAUNCH=False,USE_CUDA_GRAPH=False,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json cluster/sbatch_train_teacher_8gpu.sh`
+- job_id: 1027724 `franka_cube_traj_retime_rl25`
 - expected_log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_<job>.out
 - expected_run_dir: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_retime_ref_rl25_20260611_132107
 
@@ -1231,3 +1232,102 @@ Acceptance Criteria:
 - Resolved env config remains reward-only with observation space 72, external reference path, `trajectory_tracking_reference_duration_s: 8.0`, phase observations false, and reset-pose target policy.
 - Epochs complete without traceback/NaN; checkpoint written at epoch 25.
 - Follow-up 720-step eval has finite metrics, phase progress reaching 1.0, no unsafe tracking targets, and no immediate reset pathology.
+
+Launch:
+- implementation_commit: `26fa0b7ef0b412979aa6476c075125c49a32afcc`
+- remote_commit/status: /lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking at `26fa0b7ef0b412979aa6476c075125c49a32afcc`, detached clean.
+- job_id: 1027724 `franka_cube_traj_retime_rl25`
+
+Result:
+- status: passed; Slurm completed `0:0` after `00:01:25` on `pool0-00016`.
+- local_artifacts: `cluster_results/l401/franka_cube_traj_tracking_retime_ref_rl25_20260611_132107/` with params, TensorBoard sidecar, and stdout log; checkpoints remain on NFS under the run `nn/` directory.
+- resolved_config: `params/env.yaml` has `episode_length_s: 10.0`, `observation_space: 72`, `trajectory_tracking_enabled: true`, external reference path, `trajectory_tracking_reference_duration_s: 8.0`, `trajectory_tracking_phase_observations: false`, and `trajectory_tracking_follow_current_cube_pose: false`.
+- training_log: actor and critic MLPs both built with `72`; epochs 1-25 completed; no traceback/Hydra/runtime error and no NaN pattern in stdout.
+- checkpoint reward suffixes: ep5 `311.5034`, ep10 `762.69403`, ep15 `714.5559`, ep20 `952.6169`, ep25 `937.84894`.
+- checkpoint: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_retime_ref_rl25_20260611_132107/nn/last_dextrah_franka_cube_traj_tracking_ep_25_rew_937.84894.pth
+- caveat: TensorBoard event file is still 0 bytes; rollout eval remains the usable reward-term/safety evidence.
+
+Next:
+- Evaluate the epoch-25 checkpoint for 720 steps with the retimed reference.
+
+## 2026-06-11T13:24:11-07:00 - retimed RL25 checkpoint 720-step eval launch
+
+Goal:
+- Inspect the bounded retimed RL25 checkpoint across a timeout/reset window.
+
+Command / Job:
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:30:00 --job-name=franka_cube_traj_retime25_eval --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_retime_rl25_eval720_20260611_132411,CHECKPOINT=/results/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_retime_ref_rl25_20260611_132107/nn/last_dextrah_franka_cube_traj_tracking_ep_25_rew_937.84894.pth,NUM_ENVS=4,NUM_STEPS=720,VIDEO_LENGTH=240,CAPTURE_VIDEO=False,PRINT_INTERVAL=120,USE_CUDA_GRAPH=False,SEED=50,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- job_id: 1027726 `franka_cube_traj_retime25_eval`
+- expected_log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_<job>.out
+- expected_metrics: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_traj_tracking_retime_rl25_eval720_20260611_132411/metrics.json
+
+Acceptance Criteria:
+- 720/720 steps complete with finite metrics and no immediate reset pathology.
+- Reference summary reports runtime duration `8.0`, source duration `22.033333333333335`, reset-pose target policy, and `curobo_validated=false`.
+- Phase progress reaches 1.0; `cube_traj_tracking_unsafe_target_rate` remains `0.0`; target min clearance remains above `0.025`.
+- Inspect policy behavior: success/lift, finger table clearance, gripper collapse, and reset/termination count.
+
+Result:
+- status: passed; Slurm completed `0:0` after `00:00:58` on `pool0-00016`.
+- local_artifacts: `cluster_results/l401/franka_cube_traj_tracking_retime_rl25_eval720_20260611_132411/metrics.json`, `cluster_results/l401/franka_cube_traj_tracking_retime_rl25_eval720_20260611_132411/eval_franka_cube_1027726.out`
+- rollout: 720/720 steps, `done_count=5`, reward mean `2.421528760592143`, reward final `2.6456546783447266`, success mean/final/last-window `0.0`.
+- finite_check: recursive JSON numeric scan `nonfinite_count=0`.
+- tracking_reference: external 60 mm compact reference, `duration_s=8.0`, `runtime_duration_s=8.0`, `source_duration_s=22.033333333333335`, `runtime_retime_policy=normalize_to_configured_runtime_duration`, `runtime_object_pose_policy=reset_cube_pose`, `curobo_validated=false`, `validation_passed=true`.
+- phase_progress: `traj_phase_progress` max `1.0` at step 480, final `0.24895834922790527`, with a reset drop at step 599.
+- target_safety: `cube_traj_tracking_unsafe_target_rate` max/mean/final `0.0`; `safe_target_rate` min/mean/final `1.0`; target clearance min over all steps `0.06511414051055908`, above the configured `0.025`.
+- finger_safety: `finger_table_clearance_min` min `0.04968386888504028`; `finger_table_clearance_violation_max` max `0.0`; no violation steps.
+- task_behavior: still no lift/success; `cube_lift_height_max` max only `0.01680278778076172`, `has_lifted_cube` remains `0.0`.
+- tracking_metrics: tracking reward mean `0.3129379769994153`, final `0.23790881037712097`; position error mean `0.13399624147245454`; orientation error mean `0.6262307724811964`; gripper error mean `0.01597770556602174`.
+- behavior_metrics: gripper width mean `0.02455970673686857`, min `0.00021008600015193224`; EE-to-cube mean `0.07299324613478449`; finger-center-to-cube mean `0.10512903414459693`.
+
+Analysis:
+- Retiming remains valid and safe under the RL25 checkpoint: the reference reaches the lift phase inside the episode, unsafe target rate stays zero, and finger-table violations are gone.
+- The RL25 policy improves reward and tracking/approach metrics compared with the phase-starved reset-pose RL25 eval, but it still does not establish a useful grasp/lift. The gripper collapses nearly closed while the finger-center distance remains roughly 10 cm on average, and orientation error is high during the retimed run.
+- The next bounded iteration should target behavior rather than target generation: gripper schedule and orientation/contact reward balance are likely suspects.
+
+Next:
+- Generate the requested inspectable artifact bundle before launching more training.
+
+## 2026-06-11T13:27:29-07:00 - retimed artifact bundle plan
+
+Goal:
+- Produce inspectable local artifacts comparing the old phase-starved trajectory-tracking path with the retimed path, while continuing the bounded debug loop.
+
+Hypothesis:
+- The plots/report should make the retiming effect obvious: phase progress should reach `1.0` after retiming while target safety remains clean. The same artifacts should also expose the remaining behavior failure: no lift/success and imperfect approach/grasp behavior after RL25.
+
+Planned Change:
+- Add a small reproducible report generator under `dextrah_lab/scene_scripts/` that reads existing fetched JSON metrics and training logs, writes a markdown comparison report, CSV/JSON summary, phase/safety PNG, and behavior PNG into an ignored local artifact bundle under `cluster_results/l401/`.
+- Include these completed runs: old phase-starved reset-pose RL25/eval `1027718`/`1027719`, retimed env smoke `1027720`, retimed 3-epoch eval `1027723`, retimed RL25 train `1027724`, and retimed RL25 eval `1027726`.
+- Open the most useful artifact with `viz-open` and record the local path/URL.
+
+Validation Plan:
+- Run `python3 -m py_compile` on the new report script and `git diff --check`.
+- Run the generator locally against fetched artifacts and inspect its summary output.
+- If `1027726` metrics confirm no lift/success, use the comparison to choose the next bounded patch/ablation before any new training scale-up.
+
+Result:
+- status: passed; generated from existing fetched metrics/logs only, no new training launched.
+- generator: `dextrah_lab/scene_scripts/summarize_franka_cube_traj_tracking_artifacts.py`
+- command: `python3 dextrah_lab/scene_scripts/summarize_franka_cube_traj_tracking_artifacts.py --root cluster_results/l401 --output-dir cluster_results/l401/franka_cube_traj_tracking_artifact_bundle_20260611_133000`
+- artifact_dir: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_artifact_bundle_20260611_133000`
+- report: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_artifact_bundle_20260611_133000/comparison_report.md`
+- summary_json: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_artifact_bundle_20260611_133000/summary.json`
+- summary_csv: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_artifact_bundle_20260611_133000/summary.csv`
+- phase_safety_png: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_artifact_bundle_20260611_133000/phase_progress_and_target_safety.png`
+- behavior_png: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_artifact_bundle_20260611_133000/behavior_reward_lift_finger_metrics.png`
+- viz_open_phase_safety: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_artifact_bundle_20260611_133000/phase_progress_and_target_safety.png`
+- viz_open_report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_artifact_bundle_20260611_133000/comparison_report.md`
+
+Validation:
+- `python3 -m py_compile dextrah_lab/scene_scripts/summarize_franka_cube_traj_tracking_artifacts.py`: passed.
+- `git diff --check`: passed.
+- Artifact inspection: report table includes jobs `1027718`, `1027719`, `1027720`, `1027723`, `1027724`, `1027726`; summary JSON contains 6 run records; PNGs open locally at `1500x1142` and `1500x1254`.
+
+Analysis:
+- Artifact conclusion matches the rollout evidence: retiming fixes phase starvation (`0.3584` max phase before retime vs `1.0` after), target safety remains clean (`unsafe_target_rate_max=0.0`, target clearance min `0.0651` m), but behavior is not yet successful (`success=0.0`, RL25 max lift `0.0168` m).
+- The artifact bundle should be regenerated after each next ablation so the comparison remains inspectable without rereading raw logs.
+
+Next:
+- Commit and push the generator plus worklog.
+- Continue bounded debugging with a small variant-only ablation around gripper schedule/orientation/contact shaping before any additional training scale-up.
