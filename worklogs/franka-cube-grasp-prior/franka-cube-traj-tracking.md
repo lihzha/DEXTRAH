@@ -2360,3 +2360,49 @@ Result:
 Next:
 - Commit/push/deploy exact implementation commit to the B l401 worktree.
 - Launch one 4-env/480-step alignment env smoke with no video first. If it passes and logs are finite/present with target safety intact, launch the tiny PPO smoke and a short video eval artifact bundle. No scale-up.
+
+## 2026-06-11T15:08:40-07:00 - reference-action alignment env smoke launch
+
+Goal:
+- Validate the action-alignment diagnostic wiring in the real DEXTRAH/Isaac task before any PPO smoke.
+
+Version Control:
+- agent_id: franka-cube-traj-tracking
+- local_commit: `c5d5b50568aefb5b44ae43e93d5c56239e05e7c8`
+- remote_commit/status: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking` at `c5d5b50568aefb5b44ae43e93d5c56239e05e7c8`, detached clean after HTTPS fetch fallback.
+
+Command / Job:
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:30:00 --job-name=franka_cube_traj_align_smoke --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_actionalign_env_smoke_20260611_150840,NUM_ENVS=4,NUM_STEPS=480,VIDEO_LENGTH=1,CAPTURE_VIDEO=False,PRINT_INTERVAL=120,SEED=63,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_WEIGHT=1.5,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_PHASE_START=0.0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_SHARPNESS=1.0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_USE_CONTACT_GATE=False cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`
+- job_id: 1027763 `franka_cube_traj_align_smoke`
+- expected_log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_cube_1027763.out`
+- expected_metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_cube_traj_tracking_actionalign_env_smoke_20260611_150840/metrics.json`
+
+Acceptance Criteria:
+- Task registration works and reset observation remains `[4,72]`.
+- New `cube_traj_tracking_action_alignment_*` and reference-action logs are present and finite.
+- Target unsafe rate remains `0.0`, target clearance remains above `0.025`, and no immediate reset/termination pathology appears.
+- This validates wiring only; no learned-policy behavior claim.
+
+Result:
+- status: passed wiring/runtime validation; Slurm job `1027763` completed `0:0` after `00:00:57` on `pool0-00016`.
+- remote_artifacts: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_cube_traj_tracking_actionalign_env_smoke_20260611_150840/metrics.json`; log `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_cube_1027763.out`.
+- local_run_artifacts: `cluster_results/l401/franka_cube_traj_tracking_actionalign_env_smoke_20260611_150840/metrics.json`, `cluster_results/l401/franka_cube_traj_tracking_actionalign_env_smoke_20260611_150840/validate_franka_cube_1027763.out`.
+- local_summary_bundle: `cluster_results/l401/franka_cube_traj_tracking_actionalign_env_smoke_artifacts_20260611_150840/report.md`, `summary.json`, `config.json`, `validation_trace.csv`, `validation_trace.jsonl`, `validation_trace_plot.png`, and `no_video_contact_sheet.png`.
+- viz_report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_actionalign_env_smoke_artifacts_20260611_150840/report.md`
+- viz_plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_actionalign_env_smoke_artifacts_20260611_150840/validation_trace_plot.png`
+- viz_no_video_sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_actionalign_env_smoke_artifacts_20260611_150840/no_video_contact_sheet.png`
+- validation: `passed=true`; registration/reset obs `[4,72]`; 480/480 steps; `done_count=0`, `early_done_count=0`; reward mean/final `2.146636782834927`/`1.5051473379135132`; final success `0.0`; max mean lift `0.0026998966932296753`; final gripper width `0.020000018179416656`.
+- target_safety: `tracking_unsafe_target_rate_max=0.0`; target clearance min and batch min `0.06511414051055908`.
+- alignment_logs: missing logs `[]`; alignment reward mean `0.3232666042396886`; ceiling mean `0.5921848454435046`; utilization mean `0.49077520444989203`; alignment error mean `0.8480767693370581`; alignment phase gate final `1.0`; contact gate for alignment `1.0`.
+- action_comparison: scripted validation policy action close/up means `0.33229166666666665`/`0.165625`; reference-delta close/up means `0.20780815382798512`/`0.8821516993736925`, confirming the diagnostic target asks for substantially more upward action than the current scripted validation actions.
+- reference: still `curobo_validated=false`; source tag `graspgenx_curobo_60mm_export_pending_exact_validation`; `reference_delta` remains position-only delta IK plus gripper schedule, not cuRobo replay.
+- artifact_caveat: this smoke was launched with `CAPTURE_VIDEO=False` before the stricter artifact cadence. The bundle includes a no-video sheet and parsed trace/plot, but the next PPO/eval step must include video/contact sheets.
+
+Analysis:
+- The action-alignment reward path is wired and finite under Isaac. It adds a meaningful reward scale without target-safety regression or reset pathology.
+- The reference-vs-actual action comparison shows the diagnostic is testing the intended question: the reference prior wants high upward action on average (`0.882`) while the scripted validation action schedule only supplies low upward action (`0.166`). PPO eval can now reveal whether the learned policy moves toward that reference-like action profile.
+- This remains wiring evidence only. No learning or behavior success is claimed from 1027763.
+
+Next:
+- Commit/push the validation artifact summarizer and worklog result.
+- Launch exactly one tiny PPO smoke from the pushed branch, then run fixed-seed and random-seed short video evals from its checkpoint if a checkpoint is produced. Fetch each eval's metrics/video/trace artifacts, generate plots/reports/contact sheets, `viz-open` them, and record pass/fail interpretation before any further action.
