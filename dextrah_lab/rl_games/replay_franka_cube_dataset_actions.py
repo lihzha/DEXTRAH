@@ -114,7 +114,14 @@ import isaaclab_tasks  # noqa: F401
 from isaaclab_tasks.utils import parse_env_cfg
 
 import dextrah_lab.tasks.dextrah_franka_cube_grasp.gym_setup  # noqa: F401
-from dextrah_lab.offline_dp_bc.action_conversion import normalized_action_to_world_delta
+from dextrah_lab.offline_dp_bc.action_conversion import (
+    DEFAULT_DEXTRAH_ACTION_CONVENTION,
+    apply_normalized_action_to_world_pose,
+    axis_angle_from_quat_wxyz,
+    normalized_action_to_world_delta,
+    quat_inv_wxyz,
+    quat_mul_wxyz,
+)
 from dextrah_lab.offline_dp_bc.analyze_policy_trace import POSITION_FEATURE_IDX
 from dextrah_lab.offline_dp_bc.ppo_bridge import (
     FRANKA_CUBE_ACTION_DIM,
@@ -486,6 +493,27 @@ def _cosine(a: np.ndarray, b: np.ndarray) -> float | None:
     return float(np.dot(a, b) / (a_norm * b_norm))
 
 
+def _ratio(actual: float, expected: float) -> float | None:
+    if not math.isfinite(expected) or abs(expected) < 1.0e-8:
+        return None
+    return float(actual / expected)
+
+
+def _finite_values(rows: list[dict[str, Any]], key: str) -> list[float]:
+    values: list[float] = []
+    for row in rows:
+        value = row.get(key)
+        if value is None:
+            continue
+        try:
+            value_f = float(value)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(value_f):
+            values.append(value_f)
+    return values
+
+
 def _plot(rows: list[dict[str, Any]], output_path: Path) -> None:
     if not rows:
         return
@@ -525,6 +553,47 @@ def _plot(rows: list[dict[str, Any]], output_path: Path) -> None:
     plt.close(fig)
 
 
+def _plot_action_audit(rows: list[dict[str, Any]], output_path: Path) -> None:
+    if not rows:
+        return
+    modes = list(dict.fromkeys(str(row["mode"]) for row in rows))
+    fig, axes = plt.subplots(5, 1, figsize=(13, 16), sharex=True, constrained_layout=True)
+    for mode in modes:
+        mode_rows = [row for row in rows if row["mode"] == mode and int(row["env_index"]) == 0]
+        x = [row["step"] for row in mode_rows]
+        axes[0].plot(x, [row["expected_xyz_delta_norm"] for row in mode_rows], label=f"{mode} expected")
+        axes[0].plot(x, [row["actual_xyz_delta_norm"] for row in mode_rows], linestyle="--", label=f"{mode} actual")
+        axes[1].plot(x, [row["xyz_realization_ratio"] for row in mode_rows], label=mode)
+        axes[2].plot(x, [row["xyz_target_error_norm"] for row in mode_rows], label=f"{mode} target")
+        axes[2].plot(
+            x,
+            [row["actual_vs_dataset_next_ee_pos_norm"] for row in mode_rows],
+            linestyle="--",
+            label=f"{mode} dataset-next",
+        )
+        axes[3].plot(x, [row["expected_rot_delta_norm"] for row in mode_rows], label=f"{mode} expected")
+        axes[3].plot(x, [row["actual_rot_delta_norm"] for row in mode_rows], linestyle="--", label=f"{mode} actual")
+        axes[4].plot(x, [row["gripper_width_after"] for row in mode_rows], label=f"{mode} width")
+        axes[4].plot(x, [row["target_gripper_width_from_action"] for row in mode_rows], linestyle="--", label=f"{mode} target")
+    axes[0].set_title("Expected vs Realized EE Translation Delta")
+    axes[0].set_ylabel("m / env step")
+    axes[1].set_title("Translation Realization Ratio")
+    axes[1].set_ylabel("actual / expected")
+    axes[1].axhline(1.0, color="black", alpha=0.25, linewidth=1.0)
+    axes[2].set_title("Actual EE Target Error")
+    axes[2].set_ylabel("m")
+    axes[3].set_title("Expected vs Realized EE Rotation Delta")
+    axes[3].set_ylabel("rad / env step")
+    axes[4].set_title("Gripper Width Target From Action")
+    axes[4].set_ylabel("m")
+    axes[4].set_xlabel("replay step")
+    for ax in axes:
+        ax.grid(True, alpha=0.25)
+        ax.legend(fontsize=6, ncol=2)
+    fig.savefig(output_path, dpi=180)
+    plt.close(fig)
+
+
 def _build_report(summary: dict[str, Any]) -> str:
     lines = [
         "# Franka Cube DP Dataset-Action Replay",
@@ -539,18 +608,21 @@ def _build_report(summary: dict[str, Any]) -> str:
         "",
         f"- Demo reset: `{summary['demo_reset']}`",
         f"- Dataset start: `{summary['dataset_start']}`",
+        f"- Action audit: `{summary.get('action_audit')}`",
         "",
         "## Mode Summary",
         "",
-        "| mode | steps | nearest row | nearest phase | final EE-cube | final finger-cube | final cube-minus-EE | first close | first hard close | mean delta cosine |",
-        "|---|---:|---:|---|---:|---:|---|---:|---:|---:|",
+        "| mode | steps | nearest row | nearest phase | final EE-cube | final finger-cube | final cube-minus-EE | first close | first hard close | mean cosine | median xyz ratio | mean target err |",
+        "|---|---:|---:|---|---:|---:|---|---:|---:|---:|---:|---:|",
     ]
     for mode, payload in summary["modes"].items():
         lines.append(
             f"| {mode} | {payload['steps']} | {payload['initial_nearest_row']} | {payload['initial_nearest_phase']} | "
             f"{payload['final_ee_to_cube']:.4f} | {payload['final_finger_center_to_cube']:.4f} | "
             f"{payload['final_cube_minus_ee']} | {payload['first_executed_negative_step']} | "
-            f"{payload['first_executed_hard_close_step']} | {payload['mean_actual_vs_expected_xyz_cosine']:.4f} |"
+            f"{payload['first_executed_hard_close_step']} | {payload['mean_actual_vs_expected_xyz_cosine']:.4f} | "
+            f"{payload.get('median_xyz_realization_ratio', float('nan')):.4f} | "
+            f"{payload.get('mean_xyz_target_error_norm', float('nan')):.5f} |"
         )
     lines.extend(
         [
@@ -560,6 +632,7 @@ def _build_report(summary: dict[str, Any]) -> str:
             f"- CSV: `{summary['csv']}`",
             f"- JSON: `{summary['json']}`",
             f"- Plot: `{summary['plot']}`",
+            f"- Action audit plot: `{summary.get('action_audit_plot')}`",
             f"- Videos: `{summary['video_files']}`",
         ]
     )
@@ -644,14 +717,31 @@ def main() -> None:
     task_env = gym_env.unwrapped
     _configure_eval_camera(env_cfg, task_env)
     if args_cli.video:
+        video_period = max(1, int(args_cli.video_length))
         gym_env = gym.wrappers.RecordVideo(
             gym_env,
             video_folder=str(output_dir / "videos"),
-            step_trigger=lambda step: step == 0,
+            step_trigger=lambda step: step % video_period == 0,
             video_length=int(args_cli.video_length),
             name_prefix=str(args_cli.video_name_prefix),
             disable_logger=True,
         )
+    action_scale_np = task_env.action_scale.detach().float().cpu().numpy()
+    root_quat_wxyz_np = task_env._robot.data.root_quat_w[0].detach().float().cpu().numpy()
+    action_audit_summary = {
+        "controller": "IsaacLab DifferentialIKController(command_type=pose, use_relative_mode=True, ik_method=dls)",
+        "action_space": int(task_env.cfg.action_space),
+        "env_decimation": int(task_env.cfg.decimation),
+        "sim_dt": float(task_env.cfg.sim.dt),
+        "env_dt": float(task_env.dt),
+        "task_action_scale": action_scale_np.astype(float).tolist(),
+        "conversion_pose_scale": DEFAULT_DEXTRAH_ACTION_CONVENTION.pose_scale.astype(float).tolist(),
+        "conversion_world_to_action_quat_wxyz": list(DEFAULT_DEXTRAH_ACTION_CONVENTION.world_to_action_quat_wxyz),
+        "robot_root_quat_wxyz_env0": root_quat_wxyz_np.astype(float).tolist(),
+        "gripper_convention": "-1 closes, +1 opens; target_width=0.5*(action+1)*max_gripper_width",
+        "max_gripper_width": float(task_env.cfg.max_gripper_width),
+        "video_step_trigger": "global_step % video_length == 0",
+    }
 
     rows: list[dict[str, Any]] = []
     summaries: dict[str, Any] = {}
@@ -696,29 +786,53 @@ def main() -> None:
                 labels_t = np.zeros_like(exec_actions)
                 labels_t1 = np.zeros_like(exec_actions)
                 labels_t7 = np.zeros_like(exec_actions)
+                exec_label_rows = np.full(task_env.num_envs, -1, dtype=np.int64)
+                exec_label_offsets = np.full(task_env.num_envs, -1, dtype=np.int64)
+                exec_action_sources: list[str] = ["unknown"] * task_env.num_envs
                 for env_idx in range(task_env.num_envs):
                     base = int(nearest_rows[env_idx])
                     row_t = _clipped_row(base + step, episode_ends)
+                    row_t1 = _clipped_row(row_t + 1, episode_ends)
+                    row_t7 = _clipped_row(row_t + 7, episode_ends)
                     labels_t[env_idx] = dataset_action[row_t]
-                    labels_t1[env_idx] = dataset_action[_clipped_row(row_t + 1, episode_ends)]
-                    labels_t7[env_idx] = dataset_action[_clipped_row(row_t + 7, episode_ends)]
+                    labels_t1[env_idx] = dataset_action[row_t1]
+                    labels_t7[env_idx] = dataset_action[row_t7]
                     if mode == "dataset_t":
                         exec_actions[env_idx] = labels_t[env_idx]
+                        exec_label_rows[env_idx] = row_t
+                        exec_label_offsets[env_idx] = 0
+                        exec_action_sources[env_idx] = "dataset_t"
                     elif mode == "dataset_t_plus_1":
                         exec_actions[env_idx] = labels_t1[env_idx]
+                        exec_label_rows[env_idx] = row_t1
+                        exec_label_offsets[env_idx] = 1
+                        exec_action_sources[env_idx] = "dataset_t_plus_1"
                     elif mode == "dataset_t_plus_7":
                         exec_actions[env_idx] = labels_t7[env_idx]
+                        exec_label_rows[env_idx] = row_t7
+                        exec_label_offsets[env_idx] = 7
+                        exec_action_sources[env_idx] = "dataset_t_plus_7"
                     elif mode == "dataset_open_t":
                         exec_actions[env_idx] = labels_t[env_idx]
                         exec_actions[env_idx, 6] = 1.0
+                        exec_label_rows[env_idx] = row_t
+                        exec_label_offsets[env_idx] = 0
+                        exec_action_sources[env_idx] = "dataset_open_t"
                     elif mode == "dataset_open_t_plus_1":
                         exec_actions[env_idx] = labels_t1[env_idx]
                         exec_actions[env_idx, 6] = 1.0
+                        exec_label_rows[env_idx] = row_t1
+                        exec_label_offsets[env_idx] = 1
+                        exec_action_sources[env_idx] = "dataset_open_t_plus_1"
                     elif mode == "dataset_open_t_plus_7":
                         exec_actions[env_idx] = labels_t7[env_idx]
                         exec_actions[env_idx, 6] = 1.0
+                        exec_label_rows[env_idx] = row_t7
+                        exec_label_offsets[env_idx] = 7
+                        exec_action_sources[env_idx] = "dataset_open_t_plus_7"
                     elif mode == "dp_replan":
                         exec_actions[env_idx] = dp_seq[env_idx, 0]
+                        exec_action_sources[env_idx] = "dp_replan_first_action"
                     else:
                         raise ValueError(mode)
 
@@ -728,12 +842,24 @@ def main() -> None:
                 expected_world_delta = normalized_action_to_world_delta(exec_actions)
                 before_lowdim = lowdim.copy()
                 before_ee_to_cube = np.linalg.norm(before_lowdim[:, 14:17], axis=1)
+                expected_target_pos, expected_target_quat = apply_normalized_action_to_world_pose(
+                    before_lowdim[:, :3],
+                    before_lowdim[:, 3:7],
+                    exec_actions,
+                )
+                target_gripper_width = np.clip(
+                    0.5 * (exec_actions[:, 6] + 1.0) * float(task_env.cfg.max_gripper_width),
+                    0.0,
+                    float(task_env.cfg.max_gripper_width),
+                )
                 policy_obs_next, rewards, terminated, truncated, _info = _policy_obs_from_step(
                     gym_env.step(torch.as_tensor(exec_actions, dtype=torch.float32, device=task_env.device))
                 )
                 after_lowdim = extract_lowdim_obs_from_ppo_obs(policy_obs_next).detach().float().cpu().numpy()
                 after_ee_to_cube = np.linalg.norm(after_lowdim[:, 14:17], axis=1)
                 actual_delta = after_lowdim[:, :3] - before_lowdim[:, :3]
+                actual_quat_delta = quat_mul_wxyz(after_lowdim[:, 3:7], quat_inv_wxyz(before_lowdim[:, 3:7]))
+                actual_rot_delta = axis_angle_from_quat_wxyz(actual_quat_delta)
                 reward_np = rewards.detach().float().cpu().numpy()
 
                 for env_idx in range(task_env.num_envs):
@@ -743,6 +869,45 @@ def main() -> None:
                     phase = phase_names[int(phase_ids[current_row])]
                     live_nearest_phase = phase_names[int(phase_ids[live_nearest_row])]
                     cosine = _cosine(actual_delta[env_idx], expected_world_delta[env_idx, :3])
+                    rot_cosine = _cosine(actual_rot_delta[env_idx], expected_world_delta[env_idx, 3:6])
+                    expected_xyz_norm = _safe_norm(expected_world_delta[env_idx, :3])
+                    actual_xyz_norm = _safe_norm(actual_delta[env_idx])
+                    expected_rot_norm = _safe_norm(expected_world_delta[env_idx, 3:6])
+                    actual_rot_norm = _safe_norm(actual_rot_delta[env_idx])
+                    xyz_target_error_norm = _safe_norm(after_lowdim[env_idx, :3] - expected_target_pos[env_idx])
+                    quat_target_error = quat_mul_wxyz(after_lowdim[env_idx, 3:7], quat_inv_wxyz(expected_target_quat[env_idx]))
+                    quat_target_error_norm = _safe_norm(axis_angle_from_quat_wxyz(quat_target_error))
+                    label_row = int(exec_label_rows[env_idx])
+                    if label_row >= 0:
+                        label_next_row = _clipped_row(label_row + 1, episode_ends)
+                        label_delta_xyz = dataset_obs[label_next_row, :3] - dataset_obs[label_row, :3]
+                        label_delta_quat = quat_mul_wxyz(
+                            dataset_obs[label_next_row, 3:7],
+                            quat_inv_wxyz(dataset_obs[label_row, 3:7]),
+                        )
+                        label_delta_rot = axis_angle_from_quat_wxyz(label_delta_quat)
+                        expected_vs_dataset_delta_norm = _safe_norm(expected_world_delta[env_idx, :3] - label_delta_xyz)
+                        expected_vs_dataset_rot_norm = _safe_norm(expected_world_delta[env_idx, 3:6] - label_delta_rot)
+                        expected_target_vs_dataset_next_ee_pos_norm = _safe_norm(
+                            expected_target_pos[env_idx] - dataset_obs[label_next_row, :3]
+                        )
+                        actual_vs_dataset_next_ee_pos_norm = _safe_norm(
+                            after_lowdim[env_idx, :3] - dataset_obs[label_next_row, :3]
+                        )
+                        dataset_label_delta_xyz = label_delta_xyz.astype(float).tolist()
+                        dataset_label_delta_rot = label_delta_rot.astype(float).tolist()
+                        executed_label_phase = _phase_name_for_row(phase_ids, phase_names, label_row)
+                        executed_label_episode_step = _episode_step(label_row, episode_ends)
+                    else:
+                        label_next_row = -1
+                        expected_vs_dataset_delta_norm = None
+                        expected_vs_dataset_rot_norm = None
+                        expected_target_vs_dataset_next_ee_pos_norm = None
+                        actual_vs_dataset_next_ee_pos_norm = None
+                        dataset_label_delta_xyz = None
+                        dataset_label_delta_rot = None
+                        executed_label_phase = ""
+                        executed_label_episode_step = -1
                     if cosine is not None:
                         mode_cosines.append(float(cosine))
                     mode_distances.append(float(after_ee_to_cube[env_idx]))
@@ -758,6 +923,12 @@ def main() -> None:
                         "dataset_episode": _episode_for_row(current_row, episode_ends)[0],
                         "dataset_episode_step": _episode_step(current_row, episode_ends),
                         "dataset_phase": phase,
+                        "executed_action_source": exec_action_sources[env_idx],
+                        "executed_label_row": label_row,
+                        "executed_label_offset": int(exec_label_offsets[env_idx]),
+                        "executed_label_episode_step": int(executed_label_episode_step),
+                        "executed_label_next_row": int(label_next_row),
+                        "executed_label_phase": executed_label_phase,
                         "nearest_live_row": live_nearest_row,
                         "nearest_live_episode_step": _episode_step(live_nearest_row, episode_ends),
                         "nearest_live_phase": live_nearest_phase,
@@ -801,12 +972,37 @@ def main() -> None:
                         "label_t_plus_7_action": labels_t7[env_idx].astype(float).tolist(),
                         "dp_first_action": dp_seq[env_idx, 0].astype(float).tolist(),
                         "executed_action": exec_actions[env_idx].astype(float).tolist(),
+                        "action_scale": action_scale_np.astype(float).tolist(),
+                        "action_frame_robot_root_quat_wxyz": root_quat_wxyz_np.astype(float).tolist(),
                         "expected_world_delta_xyz": expected_world_delta[env_idx, :3].astype(float).tolist(),
+                        "expected_world_delta_rot": expected_world_delta[env_idx, 3:6].astype(float).tolist(),
+                        "expected_target_ee_pos": np.asarray(expected_target_pos[env_idx]).astype(float).tolist(),
+                        "expected_target_ee_quat": np.asarray(expected_target_quat[env_idx]).astype(float).tolist(),
                         "actual_world_delta_xyz": actual_delta[env_idx].astype(float).tolist(),
+                        "actual_world_delta_rot": np.asarray(actual_rot_delta[env_idx]).astype(float).tolist(),
                         "actual_vs_expected_xyz_cosine": cosine,
+                        "actual_vs_expected_rot_cosine": rot_cosine,
+                        "expected_xyz_delta_norm": expected_xyz_norm,
+                        "actual_xyz_delta_norm": actual_xyz_norm,
+                        "xyz_realization_ratio": _ratio(actual_xyz_norm, expected_xyz_norm),
+                        "xyz_target_error_norm": xyz_target_error_norm,
+                        "expected_rot_delta_norm": expected_rot_norm,
+                        "actual_rot_delta_norm": actual_rot_norm,
+                        "rot_realization_ratio": _ratio(actual_rot_norm, expected_rot_norm),
+                        "rot_target_error_norm": quat_target_error_norm,
+                        "dataset_label_delta_xyz": dataset_label_delta_xyz,
+                        "dataset_label_delta_rot": dataset_label_delta_rot,
+                        "expected_vs_dataset_delta_norm": expected_vs_dataset_delta_norm,
+                        "expected_vs_dataset_rot_norm": expected_vs_dataset_rot_norm,
+                        "expected_target_vs_dataset_next_ee_pos_norm": expected_target_vs_dataset_next_ee_pos_norm,
+                        "actual_vs_dataset_next_ee_pos_norm": actual_vs_dataset_next_ee_pos_norm,
                         "label_t_gripper": float(labels_t[env_idx, 6]),
                         "dp_first_gripper": float(dp_seq[env_idx, 0, 6]),
                         "executed_gripper": float(exec_actions[env_idx, 6]),
+                        "target_gripper_width_from_action": float(target_gripper_width[env_idx]),
+                        "gripper_width_target_error_after": float(
+                            after_lowdim[env_idx, 20] - target_gripper_width[env_idx]
+                        ),
                     }
                     if mode_first is None and env_idx == 0:
                         mode_first = record
@@ -845,6 +1041,11 @@ def main() -> None:
                 (row["step"] for row in mode_rows if row["nearest_live_phase"] == "close_fingers"), None
             )
             last_row = mode_rows[-1]
+            xyz_ratios = _finite_values(mode_rows, "xyz_realization_ratio")
+            rot_ratios = _finite_values(mode_rows, "rot_realization_ratio")
+            xyz_target_errors = _finite_values(mode_rows, "xyz_target_error_norm")
+            dataset_next_errors = _finite_values(mode_rows, "actual_vs_dataset_next_ee_pos_norm")
+            gripper_width_errors = _finite_values(mode_rows, "gripper_width_target_error_after")
             summaries[mode] = {
                 "steps": len(mode_rows),
                 "initial_nearest_row": int(mode_first["nearest_initial_row"]),
@@ -876,6 +1077,21 @@ def main() -> None:
                 "first_label_hard_close_step": first_label_hard,
                 "first_nearest_close_phase_step": first_nearest_close,
                 "mean_actual_vs_expected_xyz_cosine": float(np.mean(mode_cosines)) if mode_cosines else float("nan"),
+                "mean_xyz_realization_ratio": float(np.mean(xyz_ratios)) if xyz_ratios else float("nan"),
+                "median_xyz_realization_ratio": float(np.median(xyz_ratios)) if xyz_ratios else float("nan"),
+                "mean_rot_realization_ratio": float(np.mean(rot_ratios)) if rot_ratios else float("nan"),
+                "median_rot_realization_ratio": float(np.median(rot_ratios)) if rot_ratios else float("nan"),
+                "mean_xyz_target_error_norm": float(np.mean(xyz_target_errors)) if xyz_target_errors else float("nan"),
+                "median_xyz_target_error_norm": float(np.median(xyz_target_errors)) if xyz_target_errors else float("nan"),
+                "mean_actual_vs_dataset_next_ee_pos_norm": (
+                    float(np.mean(dataset_next_errors)) if dataset_next_errors else float("nan")
+                ),
+                "median_actual_vs_dataset_next_ee_pos_norm": (
+                    float(np.median(dataset_next_errors)) if dataset_next_errors else float("nan")
+                ),
+                "mean_gripper_width_target_error_after": (
+                    float(np.mean(gripper_width_errors)) if gripper_width_errors else float("nan")
+                ),
                 "first_dp_action": mode_first["dp_first_action"],
                 "first_label_action": mode_first["label_t_action"],
                 "first_executed_action": mode_first["executed_action"],
@@ -889,18 +1105,34 @@ def main() -> None:
     csv_path = output_dir / "replay_steps.csv"
     json_path = output_dir / "replay_summary.json"
     plot_path = output_dir / "replay_motion.png"
+    action_plot_path = output_dir / "action_realization_audit.png"
     report_path = output_dir / "replay_report.md"
     _write_csv(csv_path, rows)
     _plot(rows, plot_path)
+    _plot_action_audit(rows, action_plot_path)
     bad_modes = [
         mode
         for mode, payload in summaries.items()
         if payload["mean_actual_vs_expected_xyz_cosine"] < 0.25 or not np.isfinite(payload["mean_actual_vs_expected_xyz_cosine"])
     ]
+    underrealized_modes = [
+        mode
+        for mode, payload in summaries.items()
+        if (
+            mode.startswith("dataset")
+            and math.isfinite(payload.get("median_xyz_realization_ratio", float("nan")))
+            and payload["median_xyz_realization_ratio"] < 0.50
+        )
+    ]
     verdict = (
         "Controller replay did not reliably follow the expected dataset action direction: " + ", ".join(bad_modes)
         if bad_modes
-        else "Controller replay follows the expected dataset action direction at this reset; continue debugging policy/live-state semantics."
+        else (
+            "Controller follows the expected dataset action direction but under-realizes one-step action magnitude: "
+            + ", ".join(underrealized_modes)
+            if underrealized_modes
+            else "Controller replay follows the expected dataset action direction and magnitude at this reset; continue debugging policy/live-state semantics."
+        )
     )
     summary = {
         "dataset": str(dataset_path),
@@ -914,12 +1146,14 @@ def main() -> None:
         "steps_requested": int(args_cli.steps),
         "modes": summaries,
         "demo_reset": demo_reset_summary,
+        "action_audit": action_audit_summary,
         "dataset_start": dataset_start_summary
         or {"source": "nearest_live_row", "note": "first live observation selected label start independently per mode"},
         "verdict": verdict,
         "csv": str(csv_path),
         "json": str(json_path),
         "plot": str(plot_path),
+        "action_audit_plot": str(action_plot_path),
         "report": str(report_path),
         "video_files": _latest_video_files(output_dir / "videos"),
     }

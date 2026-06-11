@@ -4155,3 +4155,81 @@ Next:
 - Monitor job `1027846`, fetch artifacts, generate contact sheet / viz-open
   URLs, inspect metrics and video, then decide whether fixed labels reach
   contact from matched robot state.
+
+## 2026-06-11T16:11:42-07:00 - source-joint replay result and action-realization pivot
+
+Goal:
+- Resolve whether the DP drift/far-close failure is due to reset mismatch or a
+  deeper action/controller semantics mismatch.
+
+Result:
+- status: failed as a behavior replay; useful as a root-cause diagnostic.
+- job_id: `1027846`
+- run_name:
+  `franka_cube_dp_replay_sourcejoint_ep24s0_fixedlabels320_20260611_171400`
+- remote run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/replays/franka_cube_dp_replay_sourcejoint_ep24s0_fixedlabels320_20260611_171400`
+- local artifact dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_ep24s0_fixedlabels320_20260611_171400`
+- local log:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_logs/l401/replay_franka_cube_dp_actions_1027846.out`
+- viewer URLs:
+  - report:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_ep24s0_fixedlabels320_20260611_171400/replay_report.md`
+  - plot:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_ep24s0_fixedlabels320_20260611_171400/replay_motion.png`
+  - video:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_ep24s0_fixedlabels320_20260611_171400/videos/franka-cube-dp-replay-sourcejoint-step-0.mp4`
+  - contact sheet:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_ep24s0_fixedlabels320_20260611_171400/replay_contact_sheet.jpg`
+  - focused action-realization report:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_ep24s0_fixedlabels320_20260611_171400/sourcejoint_action_realization_existing1027846.md`
+  - focused action-realization plot:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_ep24s0_fixedlabels320_20260611_171400/sourcejoint_action_realization_existing1027846.png`
+
+Key evidence:
+- Exact reset is available and was applied:
+  `exact_robot_joint_reset_available=true`,
+  `joint_linf_diff_after_write_env0=0`,
+  `lowdim_linf_diff_env0=5.7e-7`,
+  `cube_minus_ee_l2_diff_env0=3.0e-7`,
+  `ee_pos_l2_diff_env0=3.0e-7`.
+- `dataset_open_t_plus_7` final/min EE-to-cube:
+  `0.1902 / 0.1900 m`; final finger-center-to-cube `0.1802 m`;
+  nearest live phase remains `go_to_pre_grasp_pose`.
+- `dataset_t` final/min EE-to-cube:
+  `0.1889 / 0.1887 m`; final finger-center-to-cube `0.1791 m`;
+  hard close occurs at step `310` while far from the cube.
+- `dp_replan` final/min EE-to-cube:
+  `0.1276 / 0.1272 m`; final finger-center-to-cube `0.1613 m`;
+  nearest-demo distance grows to `0.6944`; first negative gripper action only
+  appears at step `316`.
+- Source-joint reset video/contact sheet still show the hand away from the
+  cube. The video currently records the first mode only because the wrapper
+  starts video at global step 0.
+
+Analysis:
+- Reset mismatch is ruled out for episode `24`, step `0`: the robot state,
+  cube state, lowdim observation, and cube-minus-EE all match the converted
+  demo to numerical precision.
+- The fixed labels mostly point in the expected direction, but the realized EE
+  displacement per env step is much smaller than the action-implied
+  kinematic target. Example rows in the focused report show 6-13 mm commanded
+  translation with roughly 0.3-1.2 mm realized translation during early
+  approach.
+- The current converted labels are therefore not behaving as executable
+  one-env-step relative IK commands under the live DEXTRAH controller. The
+  likely root is controller/action timing or target semantics, not BC capacity.
+- No BC/RL scale-up is valid until this controller/action-realization mismatch
+  is explained and patched.
+
+Next:
+- Patch the replay diagnostic to log a first-class action-semantics audit:
+  action scales, root/action frame, gripper target width mapping, selected
+  label row/offset, expected kinematic EE target, actual EE delta,
+  actual/expected translation and rotation norms, realization ratios, target
+  errors, and gripper width errors.
+- Fix multi-mode video triggering so bounded replay diagnostics can produce a
+  labeled video/contact sheet per mode window.
+- Run a small source-joint reset replay with the patched audit before any
+  further training.
