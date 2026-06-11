@@ -1947,3 +1947,48 @@ Analysis:
 Next:
 - Continue active monitoring. With about `801` epochs left at the snapshot,
   keep widened polling for now and tighten as the run approaches epoch `20000`.
+
+## 2026-06-11 01:40 PDT - Teacher Artifact/Metric Pass
+
+Goal:
+- Continue active monitoring and verify that the restored teacher run is still
+  producing fresh artifacts with stable scalar windows.
+
+Command / Job:
+- job_id: `28955904`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28955904.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+- local TensorBoard copy:
+  `/tmp/dextrah_teacher_events`
+
+Result:
+- status: running healthy with continued artifact production.
+- scheduler: `RUNNING` on `batch-block7-00110`, elapsed `1:09:12`,
+  time left `02:40:48` at `01:39:56 PDT`.
+- stdout advanced to epoch `19329/20000`.
+- newest complete checkpoint:
+  `last_dextrah_lstm_ep_19320_rew_631.42334.pth` at `01:39:05`.
+- runtime sidecars rank `0-7` refreshed at `01:39:55`.
+- narrow critical failure scan over recent stdout returned no matches.
+- TensorBoard summaries parsed through epoch `19325` for epoch-keyed scalars.
+- post-requeue `in_success_region/iter`: n=`645`, mean `0.466204`; latest
+  `0.453857`, last-50 `0.461270`.
+- post-requeue `rewards/iter`: n=`645`, mean `651.551`; latest `720.573`,
+  last-50 `648.729`.
+- `num_adr_increases/iter`: latest `50`, last-50 `50`.
+- `info/kl`: latest `0.000568738`, last-50 `0.00113567`.
+- `losses/a_loss`: latest `-0.00110378`, last-50 `-0.00199877`.
+- `losses/c_loss`: latest `0.0215791`, last-50 `0.0221063`.
+- `performance/step_inference_rl_update_fps`: latest `102419`,
+  last-20 about `102017`, last-50 about `99572`, last-200 about `103234`.
+
+Analysis:
+- Checkpoints and sidecars continue to advance normally. Success-region dipped
+  slightly in the latest 50-epoch window but remains in the established
+  healthy band; reward, KL, losses, and throughput are stable.
+
+Next:
+- Continue active monitoring. With about `671` epochs left at the snapshot,
+  keep widened polling and tighten near the final artifact window.
