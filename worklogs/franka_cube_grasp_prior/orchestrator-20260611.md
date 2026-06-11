@@ -1275,3 +1275,77 @@ Worker C DP BC status:
   `dataset_t,dataset_t_plus_1,dataset_t_plus_7,dp_replan`, `STEPS=8`.
   The job is running and must be fetched/inspected before any BC warm-start
   claim.
+
+## 2026-06-11 Monitor Check 21:54 UTC
+
+Worker A reset-prior bug confirmed:
+
+- A reset-only diagnostic job `1027755`
+  (`franka_cube_ggx_pregrasp_reset_geometry_20260611_214944`) completed
+  `0:0` on l401 from commit `17d5c5e6b68055540a6f020e2a5450afcda52311`.
+- Local artifacts:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_reset_geometry_20260611_214944`
+- Viewer URLs:
+  - geometry video:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_reset_geometry_20260611_214944/reset_geometry_frames.mp4`
+  - first oblique frame:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_reset_geometry_20260611_214944/frames/reset_000_first_oblique.png`
+  - side frame:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_reset_geometry_20260611_214944/frames/reset_000_last_side.png`
+  - JSON:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_reset_geometry_20260611_214944/reset_geometry.json`
+- Result: old reset metric passes, but grasp-quality fails. `reset_success`
+  is true for all 5 sampled resets, while `reset_grasp_quality_success` is
+  false for all 5. CSV examples show gripper width about `0.080 m` and width
+  margin `0.020 m`, but finger-center-to-cube is about `0.095-0.104 m`, and
+  projected exact finger-center distance is about `0.066-0.074 m`.
+- Visual inspection confirms the user's concern. The side frame shows the
+  finger/tool above the cube rather than around it. Overlay for reset 0 reports
+  exact tool about `0.134 m` above cube center, pregrasp about `0.164 m` above,
+  and gripper center about `0.103 m` above cube center.
+- Decision: active A100 training job `28987954` was canceled by the
+  orchestrator because it is invalid for the intended apple-to-apple
+  grasp-prior comparison. Slurm recorded `CANCELLED by 158351`, elapsed
+  `02:24:51`; wrapper log says it did not requeue because time left exceeded
+  the requeue window.
+- A was instructed not to relaunch RL until reset-only artifacts pass. The next
+  A work is to patch the low-level reset geometry, likely around GraspGenX
+  tool frame vs Franka EE frame, exact grasp vs pregrasp convention,
+  approach-axis/offset sign, or centered-object grasp pose compatibility with
+  the DEXTRAH cube/gripper frame.
+
+Worker C DP replay result:
+
+- Replay job `1027754`
+  (`franka_cube_dp_replay_framefix_overfit2k_teacher8_20260611_144800`)
+  completed `0:0` on l401 and was fetched/inspected by C.
+- Viewer URLs:
+  - replay plot:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_replays/franka_cube_dp_replay_framefix_overfit2k_teacher8_20260611_144800/replay_motion.png`
+  - replay report:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_replays/franka_cube_dp_replay_framefix_overfit2k_teacher8_20260611_144800/replay_report.md`
+  - inspection report:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/replay_inspection_1027754_teacher8_20260611_144800/replay_inspection_report.md`
+- Result: dataset and DP replay actions move in the expected direction at the
+  reset state, so the controller/action frame is not grossly inverted there.
+
+| mode | start EE-cube | final EE-cube | reward start/final | mean cosine | sign match |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `dataset_t` | `0.2336` | `0.2317` | `1.3647/1.3673` | `0.836` | `1.000` |
+| `dataset_t_plus_1` | `0.2336` | `0.2311` | `1.3647/1.3693` | `0.851` | `1.000` |
+| `dataset_t_plus_7` | `0.2336` | `0.2268` | `1.3657/1.3819` | `0.904` | `0.958` |
+| `dp_replan` | `0.2336` | `0.2293` | `1.3654/1.3741` | `0.875` | `0.958` |
+
+- Interpretation: C's failure is not a gross controller/action-frame inversion
+  at reset. The remaining DP bug is closed-loop live-state/support drift: later
+  close windows are outside demo support and nearest train rows are still
+  pregrasp/open while the policy commands hard close. C should continue with a
+  bounded later-window teacher-forcing/reset-alignment diagnostic before any
+  BC/RL scale-up.
+
+Worker B trajectory tracking:
+
+- B launched next bounded l401 job `1027757`
+  (`franka_cube_traj_refdelta`) after completing the `rew_-inf` diagnostic.
+  This job is part of the requested episode-independent/reference feasibility
+  follow-up and needs the same artifact inspection before any scale-up.
