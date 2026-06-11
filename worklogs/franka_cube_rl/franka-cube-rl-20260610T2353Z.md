@@ -248,3 +248,48 @@ Command / Job:
 
 Next:
 - Monitor job `28956084`; inspect log, metrics, and video before launching PPO.
+
+## 2026-06-10 17:09 PDT - KUKA-Parity Validation Passed
+
+Command / Job:
+- job_id: `28956084`
+- run_name: `franka_cube_validate_kukaparity2_20260610_1706`
+- code_commit:
+  `287e818e26c5775074ec6471325c94430e6bf03e`
+- remote run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_cube_validate_kukaparity2_20260610_1706`
+- remote log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_cube_28956084.out`
+- local artifact mirror:
+  `cluster_results/a1002/validations/franka_cube_validate_kukaparity2_20260610_1706`
+- viewer URL:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-rl-20260610T2353Z/cluster_results/a1002/validations/franka_cube_validate_kukaparity2_20260610_1706/videos/franka-cube-validate-step-0.mp4`
+
+Result:
+- scheduler status: `COMPLETED`, exit `0:0`, elapsed `00:01:32`.
+- validator status: passed.
+- checks: `19 / 19` passed.
+- video: present and decodable, `1280x720`, `159` frames, `2.65s`.
+- visual inspection: contact sheet shows the cube on the tabletop and the
+  Franka gripper approaching in the expected task frame; no obvious placement
+  or rendering issue.
+
+Key Metrics:
+- `reward_enclosure_prefers_both_fingers_near`: balanced `2.5711`,
+  imbalanced `1.9457`.
+- `reward_actual_lift_dominates_no_lift_grasp`: lifted `9.6889`, no-lift
+  `2.5724`, threshold floor `3.0x`.
+- `reward_lift_intent_without_lift_is_capped`: lift-intent `2.5719`, lifted
+  `9.6889`, cap `0.35x`.
+- `success_predicate_accepts_lifted_cube_near_gripper`: success rate `1.0`,
+  lift height `0.13m`, hand mean distance `0.1822m`, hand max distance
+  `0.1832m`.
+- rollout: `160 / 160` steps completed, final success `0.0` as expected for
+  the non-solving scripted rollout, max mean lift `0.03235m`, cube stayed in
+  workspace.
+
+Decision:
+- The Franka cube environment and reward surface are now validated against the
+  KUKA-cube-shaped design, with only robot/table geometry differences retained.
+- Proceed to bounded PPO from the isolated worktree with `AUTO_RESUME=False` to
+  avoid inheriting the prior stalled checkpoint/run state.
