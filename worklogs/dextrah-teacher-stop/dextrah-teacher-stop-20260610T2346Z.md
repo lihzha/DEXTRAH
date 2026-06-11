@@ -721,3 +721,45 @@ Analysis:
 Next:
 - Continue five-minute monitoring through about `20:20 PDT`, then shorten
   cadence for signal/requeue validation.
+
+## 2026-06-10 20:12 PDT - Teacher Monitor Metric Pass
+
+Goal:
+- Verify health before tightening the cadence for wall-time signal/requeue
+  validation.
+
+Command / Job:
+- job_id: `28955904`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28955904.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+
+Result:
+- status: running healthy.
+- scheduler: running on `batch-block5-03072`, time left `32:26`.
+- stdout advanced to epoch `15756/20000`.
+- latest complete checkpoint:
+  `last_dextrah_lstm_ep_15750_rew_601.42883.pth`.
+- sidecars refreshed in stdout at `20:11:17`.
+- narrow failure scan returned no matches.
+- TensorBoard parsed through epoch `15749`.
+- `in_success_region/iter`: latest `0.446289`, last-50 `0.454551`,
+  last-200 `0.455035`.
+- `rewards/iter`: latest `596.484`, last-50 `626.231`,
+  last-200 `634.999`.
+- `num_adr_increases/iter`: `50`.
+- `info/kl`: latest `0.0047396`, last-50 `0.00669583`,
+  last-200 `0.00687517`.
+- `losses/a_loss`: last-50 `-0.00373115`.
+- `losses/c_loss`: last-50 `0.0182164`.
+- `performance/step_inference_rl_update_fps`: latest `112163`,
+  last-50 about `109555`, last-200 about `108398`.
+
+Analysis:
+- Training remains healthy and stable. The run is ready for tighter monitoring
+  around the wall-time signal/requeue window.
+
+Next:
+- Shorten polling cadence as the job approaches the expected `20:39 PDT` TERM
+  signal and verify requeue/resume from the newest checkpoint and sidecars.
