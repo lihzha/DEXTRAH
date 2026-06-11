@@ -677,3 +677,33 @@ Analysis:
 
 Next:
 - Continue monitoring toward later checkpoints and the first wall-time/requeue boundary. Watch for sustained lift/success growth and verify requeue resumes from the latest checkpoint without losing reset metrics.
+
+## 2026-06-11T20:10:14Z - final 8-GPU training monitor checkpoint
+
+Goal:
+- Record the epoch 300-400 training window for job `28987954` using artifact-based liveness while Slurm CLI probes are slow.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- implementation_commit: 99ea26d5b449581988594f40168806642c486326 for the running job; latest branch/worklog commit before this entry is `ad584acd751f897c3a4ed1fe775db72f266ea887`
+- remote_commit/status: a1001 NFS worktree remains clean at `99ea26d5b449581988594f40168806642c486326`; later local commits are worklog-only monitor records
+
+Command / Job:
+- monitor command: six-sample artifact liveness loop reading rank-0 JSONL, checkpoint files, and Slurm log tail from `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005`
+- note: `squeue`/`sacct` probes on a1001 timed out during this window, but the JSONL/log/checkpoint artifacts continued advancing normally
+- job_id: 28987954
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005`
+
+Result:
+- status: running_healthy
+- JSONL scalar health: records advanced from epoch `305` to `415`; `bad_scalar_count=0` at every sample
+- checkpoints: epoch 300 `rew_1974.4305`, epoch 325 `rew_1987.0923`, epoch 350 `rew_2022.6237`, epoch 375 `rew_2001.7737`, epoch 400 `rew_2044.1816`
+- prior reset metrics: success/farther rates remain `1.0`; latest reset position error `0.001838 m`; latest reset rotation error `0.017492 rad`; latest finger-table clearance `0.135041 m`
+- behavior/reward metrics: approach reward rose to `1.12921` at epoch 415; enclosure reward rose to `0.63244`; lift reward reached `0.00904`; `cube_has_lifted_rate` reached `0.0014648438`; `cube_success_rate` remained `0.0` in the latest sample
+- log evidence: log tail reached epoch `415/10000` and continued printing normal fps/frames lines; a specific error-signature grep for traceback/runtime/child/CUDA/NCCL failure patterns returned no matches
+
+Analysis:
+- Training is still healthy and no reset-prior pathology has appeared. The best and interval checkpoints are advancing, reward terms trend upward, and lift is becoming more frequent. Sparse success is acceptable at this stage, but it remains the main behavior metric to watch.
+
+Next:
+- Continue artifact-based monitoring until Slurm CLI responsiveness returns. Record the next checkpoint window and verify eventual wall-time requeue/resume semantics.
