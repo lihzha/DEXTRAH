@@ -2132,3 +2132,49 @@ Analysis:
 Next:
 - Continue tightened active monitoring with shorter intervals until final
   checkpoint/completion artifacts are inspected.
+
+## 2026-06-11 02:17 PDT - Teacher Final-Window Artifact/Metric Pass
+
+Goal:
+- Continue tightened final-window monitoring and verify progress around
+  epoch `19780`.
+
+Command / Job:
+- job_id: `28955904`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28955904.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+- local TensorBoard copy:
+  `/tmp/dextrah_teacher_events`
+
+Result:
+- status: running healthy in final training window.
+- `sacct`: parent, batch, extern, and step all `RUNNING` on
+  `batch-block7-00110`; parent elapsed `01:46:35`, time limit `03:50:00` at
+  `02:17:20 PDT`.
+- stdout advanced to epoch `19780/20000`.
+- newest complete checkpoint:
+  `last_dextrah_lstm_ep_19780_rew_654.76404.pth` at `02:17:17`.
+- runtime sidecars rank `0-7` refreshed at `02:17:15`.
+- narrow critical failure scan over recent stdout returned no matches.
+- TensorBoard summaries parsed through epoch `19758` for epoch-keyed scalars.
+- post-requeue `in_success_region/iter`: n=`1078`, mean `0.465406`; latest
+  `0.465576`, last-50 `0.466646`.
+- post-requeue `rewards/iter`: n=`1078`, mean `650.133`; latest `675.774`,
+  last-50 `649.003`.
+- `num_adr_increases/iter`: latest `50`, last-50 `50`.
+- `info/kl`: latest `0.000281998`, last-50 `0.000217068`.
+- `losses/a_loss`: latest `-0.00095349`, last-50 `-0.00124528`.
+- `losses/c_loss`: latest `0.0241664`, last-50 `0.0270815`.
+- `performance/step_inference_rl_update_fps`: latest `112330`,
+  last-20 about `109760`, last-50 about `109299`, last-200 about `107651`.
+
+Analysis:
+- Final-window progress remains normal. Checkpoints and sidecars are fresh,
+  stdout is advancing, scalar windows are stable, KL is very low, and the
+  recent log window has no critical errors.
+
+Next:
+- Continue tightened active monitoring. About `220` epochs remain by stdout;
+  inspect final checkpoint/completion artifacts after the run exits.
