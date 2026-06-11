@@ -2566,3 +2566,83 @@ Implementation Checkpoint:
 - validation: `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py` passed.
 - validation: `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh` passed.
 - validation: summarizer regression on `cluster_results/l401/franka_cube_traj_tracking_actionalign_rl5_eval_fixed_video480_20260611_152420/metrics.json` wrote `/tmp/traj_summary_regression/{report.md,summary.json,train_eval_consistency.json,trajectory_trace_plot.png}` and correctly showed new mix-only fields as `n/a` for the older pure-policy run.
+
+## 2026-06-11T15:34:42-07:00 - policy-reference mix eval launch
+
+Goal:
+- Run the bounded alpha sweep for `policy_reference_mix` using the action-alignment epoch-5 checkpoint. This is diagnostic eval only; no new training or PPO scale-up.
+
+Version Control:
+- agent_id: franka-cube-traj-tracking
+- local_commit: `354c9c9057f728e3ad48982d9ce5c0a24c5e934e`
+- push: pushed to `origin/codex/franka-cube-trajectory-tracking`
+- remote_commit/status: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking` detached at `354c9c9057f728e3ad48982d9ce5c0a24c5e934e`, clean after HTTPS fetch.
+
+Shared Config:
+- task: `Dextrah-Franka-Cube-Grasp-Traj-Tracking`
+- checkpoint: `/results/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_actionalign_rl_smoke_20260611_151520/nn/last_dextrah_franka_cube_traj_tracking_ep_5_rew_-inf.pth`
+- reference: `/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json`
+- action source: `policy_reference_mix`
+- seed: `64`; num_envs: `4`; num_steps/video_length: `480`; deterministic: `True`
+- tracking/action-alignment eval config: `TRAJECTORY_TRACKING_ACTION_ALIGNMENT_WEIGHT=1.5`, phase start `0.0`, sharpness `1.0`, contact gate `False`, reset XY randomization `0.08`, CUDA graph disabled.
+- caveat: compact reference remains `curobo_validated=false`; `reference_delta` is position-only delta IK plus gripper schedule, not cuRobo replay.
+
+Command / Jobs:
+- command template: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:30:00 --job-name=refmix_a<tag> --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=<run>,NUM_ENVS=4,NUM_STEPS=480,VIDEO_LENGTH=480,VIDEO_NAME_PREFIX=<prefix>,CAPTURE_VIDEO=True,DETERMINISTIC=True,ACTION_SOURCE=policy_reference_mix,REFERENCE_MIX_ALPHA=<alpha>,USE_CUDA_GRAPH=False,SEED=64,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_WEIGHT=1.5,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_PHASE_START=0.0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_SHARPNESS=1.0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_USE_CONTACT_GATE=False,CHECKPOINT=/results/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_actionalign_rl_smoke_20260611_151520/nn/last_dextrah_franka_cube_traj_tracking_ep_5_rew_-inf.pth cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- alpha `0.25`: job_id `1027777`; run `franka_cube_traj_tracking_policy_refmix_a025_video480_20260611_153442`; log `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1027777.out`
+- alpha `0.50`: job_id `1027778`; run `franka_cube_traj_tracking_policy_refmix_a050_video480_20260611_153442`; log `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1027778.out`
+- alpha `0.75`: job_id `1027779`; run `franka_cube_traj_tracking_policy_refmix_a075_video480_20260611_153442`; log `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1027779.out`
+- alpha `1.0`: job_id `1027780`; run `franka_cube_traj_tracking_policy_refmix_a10_video480_20260611_153442`; log `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1027780.out`
+
+Acceptance:
+- For each job, fetch results, inspect log and metrics, validate mp4 metadata, generate contact sheet/report/plot/summary/consistency JSON, open viewer URLs, and compare behavior against old `actionscale-rewinf`, failed `actionalign-rl5`, and policy-free `reference_delta`.
+
+Result:
+- status: all four jobs completed `0:0`, fetched locally, summarized, and visually inspected.
+- video validation: all four mp4s are valid `1280x720`, `479` frames, `7.983333` seconds, `60/1` FPS.
+- train/eval consistency: all four per-run consistency JSONs passed with no mismatches. Observation/state/action sizes remained `72/72/7`, phase observations stayed `False`, reset randomization/reference path/action-alignment config matched the training smoke config.
+- target safety: all four had `target_unsafe_rate_max=0.0` and `target_clearance_min=0.06511414051055908`.
+- reference caveat: all four use the compact reference with `curobo_validated=false`, source tag `graspgenx_curobo_60mm_export_pending_exact_validation`; `reference_delta` remains position-only delta IK plus gripper schedule, not cuRobo replay.
+
+Alpha Sweep Metrics:
+
+| Alpha | Job | Reward mean/final | Success final/last | Lift max m | EE-cube final m | Finger-cube final m | Mixed ref L2 | Mixed up/close mean | Interpretation |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 0.25 | 1027777 | 1.8533 / 1.5442 | 0.0 / 0.0 | 0.0000 | 0.5752 | 0.5319 | 1.5136 | 0.1243 / 0.0000 | weak mix stays close to failed policy; approaches then drifts away, no lift/success |
+| 0.50 | 1027778 | 2.8628 / 2.3131 | 0.0 / 0.0 | 0.0000 | 0.2572 | 0.2559 | 0.7402 | 0.1815 / 0.0142 | clearer mid-rollout approach/contact vicinity but final hand away and cube on table |
+| 0.75 | 1027779 | 3.1953 / 2.6037 | 0.0 / 0.0 | 0.0000 | 0.2406 | 0.2685 | 0.2861 | 0.2084 / 0.1054 | similar partial recovery; near cube mid-rollout then departs, no lift/success |
+| 1.00 | 1027780 | 4.0495 / 2.3340 | 0.0 / 0.0675 | 0.1021 | 0.1774 | 0.2178 | 0.0000 | 0.2969 / 0.1507 | full reference override recovers transient contact/lift; final success still zero after release |
+
+Artifacts:
+- combined report: `cluster_results/l401/franka_cube_traj_tracking_policy_refmix_comparison_20260611_153442/comparison_report.md`
+- combined summary: `cluster_results/l401/franka_cube_traj_tracking_policy_refmix_comparison_20260611_153442/summary.json` and `summary.csv`
+- combined plot: `cluster_results/l401/franka_cube_traj_tracking_policy_refmix_comparison_20260611_153442/policy_refmix_comparison_plot.png`
+- combined contact-sheet grid: `cluster_results/l401/franka_cube_traj_tracking_policy_refmix_comparison_20260611_153442/policy_refmix_contact_sheet_grid.png`
+- alpha 0.25 bundle: `cluster_results/l401/franka_cube_traj_tracking_policy_refmix_a025_video480_20260611_153442/` and `cluster_results/l401/franka_cube_traj_tracking_policy_refmix_a025_video480_20260611_153442_artifacts/`
+- alpha 0.50 bundle: `cluster_results/l401/franka_cube_traj_tracking_policy_refmix_a050_video480_20260611_153442/` and `cluster_results/l401/franka_cube_traj_tracking_policy_refmix_a050_video480_20260611_153442_artifacts/`
+- alpha 0.75 bundle: `cluster_results/l401/franka_cube_traj_tracking_policy_refmix_a075_video480_20260611_153442/` and `cluster_results/l401/franka_cube_traj_tracking_policy_refmix_a075_video480_20260611_153442_artifacts/`
+- alpha 1.00 bundle: `cluster_results/l401/franka_cube_traj_tracking_policy_refmix_a10_video480_20260611_153442/` and `cluster_results/l401/franka_cube_traj_tracking_policy_refmix_a10_video480_20260611_153442_artifacts/`
+- per-run bundle contents: `metrics.json`, `trace.csv`, `trace.jsonl`, stdout log copy, mp4, `report.md`, `summary.json`, `summary.csv`, `trajectory_trace_plot.png`, `train_eval_consistency.json`, `video_metadata.json`, first/middle/last frames, and `contact_sheet_firstusable.png`.
+
+Viz URLs:
+- combined report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_policy_refmix_comparison_20260611_153442/comparison_report.md`
+- combined plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_policy_refmix_comparison_20260611_153442/policy_refmix_comparison_plot.png`
+- combined contact grid: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_policy_refmix_comparison_20260611_153442/policy_refmix_contact_sheet_grid.png`
+- alpha 0.25 contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_policy_refmix_a025_video480_20260611_153442_artifacts/contact_sheet_firstusable.png`
+- alpha 0.50 contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_policy_refmix_a050_video480_20260611_153442_artifacts/contact_sheet_firstusable.png`
+- alpha 0.75 contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_policy_refmix_a075_video480_20260611_153442_artifacts/contact_sheet_firstusable.png`
+- alpha 1.00 contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_policy_refmix_a10_video480_20260611_153442_artifacts/contact_sheet_firstusable.png`
+- alpha 1.00 quick sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_policy_refmix_a10_video480_20260611_153442/contact_sheet_quick.jpg`
+- alpha 1.00 video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_policy_refmix_a10_video480_20260611_153442/videos/policy-refmix-a10-video480-step-0.mp4`
+
+Analysis:
+- Direct answer: the mix implementation is acting correctly. `mixed_reference_action_error_l2_mean` decreases with alpha and reaches exactly `0.0` at alpha `1.0`; alpha `1.0` recovers the policy-free reference-style transient lift signal. This rejects the hypothesis that the failure is a basic task-space transform, delta-IK action interface, or phase schedule impossibility.
+- The remaining failure is timing/phase/hold/stability. The reference/action path can produce contact/lift mid-rollout, but the rollout ends with the cube back on the table and the hand away. Partial mixes approach more plausibly than the learned policy but still do not produce enough close/hold/lift behavior.
+- This is not learned-policy success. Alpha `1.0` is an eval-only action override equivalent to `reference_delta`; no PPO scale-up is justified from the learned checkpoint.
+- The next training-side direction should not track the whole reference blindly. It should either train/imitation-match through approach/pregrasp/grasp and then hand off to a hold/lift objective, or add a terminal hold/stability phase to the reference/action diagnostic before PPO scale-up.
+
+Next Proposed Bounded Diagnostic:
+- Implement an eval-only `reference_delta_hold` or `policy_reference_mix_hold` action source/config: run alpha `1.0`/reference_delta until contact/lift/success or a fixed phase threshold, then freeze the current lifted/object-conditioned EE target, keep the gripper command closed, and hold/lift vertically for the remainder of a 480-step rollout.
+- Acceptance for this tiny job: target unsafe remains `0`, no reset pathology, `mixed_reference_l2=0` before hold, final success/lift remains positive rather than only transient, and video/contact sheet shows sustained grasp/hold through the final frame.
+- If hold fixes final success, patch the training design toward approach/pregrasp/grasp tracking followed by RL hold/lift stabilization instead of full-trajectory tracking. If hold still fails, debug gripper closure/contact geometry/pose target stability before more PPO.
+- No long PPO scale-up until this hold/stabilization diagnostic is run and visually/quantitatively inspected.

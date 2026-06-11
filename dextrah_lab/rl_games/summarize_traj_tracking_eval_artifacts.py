@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 from pathlib import Path
 
@@ -346,6 +347,18 @@ def main() -> None:
         "video_files": summary.get("video_files"),
     }
     (output_dir / "summary.json").write_text(json.dumps(compact, indent=2, sort_keys=True) + "\n")
+    csv_path = output_dir / "summary.csv"
+    with csv_path.open("w", newline="") as csv_file:
+        fieldnames = sorted(key for key in compact if key != "fixed_windows")
+        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerow(
+            {
+                key: json.dumps(value, sort_keys=True) if isinstance(value, (dict, list)) else value
+                for key, value in compact.items()
+                if key != "fixed_windows"
+            }
+        )
 
     window_rows = []
     for window_name in ("first", "middle", "last"):
@@ -424,6 +437,7 @@ def main() -> None:
 
 - plot: `{plot_path}`
 - summary_json: `{output_dir / 'summary.json'}`
+- summary_csv: `{csv_path}`
 - consistency_json: `{output_dir / 'train_eval_consistency.json'}`
 - trace_csv: `{summary.get('trace_csv_path')}`
 - trace_jsonl: `{summary.get('trace_jsonl_path')}`
