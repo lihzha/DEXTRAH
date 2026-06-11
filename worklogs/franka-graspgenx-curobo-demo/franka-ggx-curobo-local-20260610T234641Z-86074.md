@@ -238,3 +238,24 @@ Analysis:
 
 Next:
 - Run final syntax/wrapper validation, open the final artifact with `viz-open`, then commit the DEXTRAH worktree changes if clean.
+
+## 2026-06-11T01:57:10Z - Final local validation and push
+
+Result:
+- status: passed with documented limitation
+- validation: `python3 -m py_compile dextrah_lab/scene_scripts/render_star_kitting_env.py dextrah_lab/scene_scripts/plan_franka_star_graspgenx_curobo.py`
+- validation: `bash -n cluster/sbatch_render_star_kitting_env.sh cluster/sbatch_plan_franka_star_graspgenx_curobo.sh`
+- validation: `git diff --check`
+- active_demo_containers: none
+- active_demo_gpu_processes: none
+- final_viewer: http://localhost:8765/view?path=local_results/franka_ggx_curobo_demo/franka-ggx-curobo-local-20260610T234641Z-86074/render/render_dynamic_physics_weld_fix_gpu0_20260611T014920Z/overview.mp4
+
+Version Control:
+- source_change_commit: 8a9ad62
+- worklog_correction_commit: e902ca9
+- pushed_to: origin/codex/franka-graspgenx-curobo-demo/franka-ggx-curobo-local-20260610T234641Z-86074
+
+Analysis:
+- The user gripper asset fix is verified.
+- The local demo is complete as an assisted Isaac Sim/PhysX grasp visualization.
+- Pure contact-only lifting remains blocked by the current Franka USD gripper collision/contact fidelity for the thin star.
