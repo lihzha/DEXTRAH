@@ -1225,3 +1225,49 @@ Decision:
 - Treat the Franka cube RL debug objective as functionally fixed for lift
   learning and table clearance.
 - No further reward/base-height patch is required before handing this back.
+
+## 2026-06-10 18:39 PDT - Inherited Teacher Job Audit
+
+Scope:
+- This is not the Franka cube task. It is the inherited
+  `Dextrah-Kuka-Allegro` teacher production run
+  `teacher_short_20260609_100021`, which the previous shared worklog left
+  active for continued monitoring.
+
+Scheduler:
+- job_id: `28955904`
+- state: `RUNNING`
+- node: `batch-block5-03072`
+- elapsed at audit: about `01:40:18`
+- time limit: `03:50:00`
+- allocation end: `2026-06-10T20:44:19 PDT`
+- `Requeue=1`, `Restarts=0`
+- workdir:
+  `/lustre/fs11/portfolios/nvr/projects/nvr_lpr_rvp/users/lzha/src/worktrees/DEXTRAH/dextrah-teacher-stop-20260610T2346Z`
+- stdout:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28955904.out`
+
+Health Check:
+- latest log progress reached epoch `14560/20000`.
+- latest observed checkpoint:
+  `last_dextrah_lstm_ep_14560_rew_572.66675.pth`.
+- all eight `dextrah_runtime_rank_*.pth` sidecars refreshed at `18:33 PDT`.
+- latest parsed TensorBoard event:
+  `events.out.tfevents.1781136435.batch-block5-03072`.
+- metrics through epoch `14556`:
+  - `rewards/iter`: latest `586.39044`, tail-50 mean `613.60728`.
+  - `in_success_region/iter`: latest `0.46680`, tail-50 mean `0.44678`.
+  - `num_adr_increases/iter`: `50`.
+  - `info/kl`: latest `0.00444`, tail-50 mean `0.00826`.
+  - `losses/c_loss`: latest `0.01650`, tail-50 mean `0.01555`.
+  - `performance/step_inference_rl_update_fps`: tail-50 mean `110203`.
+
+Analysis:
+- The inherited teacher job is healthy: checkpoints and rank sidecars are
+  updating, KL/losses are stable, and success-region metrics remain above the
+  ADR threshold.
+- No KUKA/Allegro video-eval wrapper exists in this branch. The repo has
+  task-specific cube/Franka eval wrappers and generic `play.py` metrics, so no
+  ad hoc video eval was launched for this unrelated teacher job.
+- If this job remains in scope, the next monitor point is the expected
+  wall-time signal/requeue before `20:44:19 PDT`.
