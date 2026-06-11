@@ -394,3 +394,39 @@ Worker C Diffusion Policy alternative:
 - Local Isaac eval is blocked by the local IsaacLab install missing
   `_isaac_sim/python.sh`; Worker C was reassigned to validate the eval wrapper
   on cluster instead of stopping.
+
+## 2026-06-11 Mid-Run Monitor 19:42 UTC
+
+Final RL job `28987954` remains healthy:
+
+- running on a1001 at about 12 minutes elapsed
+- reached at least epoch 115 / 10000
+- checkpoints written at epochs 25, 50, 75, and 100; best checkpoint updates
+  started after epoch 100, reaching reward filenames / best-reward messages
+  around `1768.6901`
+- rank-0 JSONL: 115 records, 162 scalar keys, `bad_scalar_count=0`
+- latest prior reset success rate `1.0`; reset position error about
+  `0.00171 m`
+- latest lifted rate `0.00048828125`; success rate still `0.0`
+
+Worker B status:
+
+- 60 mm external-reference DEXTRAH Isaac env smoke job `1027695` completed
+  with exit `0:0`.
+- Metrics: validation payload `passed=true`, observation shape `[4, 72]`,
+  rollout 80/80 steps, `done_count=0`, `early_done_count=0`, final reward
+  about `1.769`, mean reward about `1.816`.
+- Tracking reference loaded from the 60 mm compact GraspGenX-derived reference,
+  with `graspgenx_source=true`, `curobo_validated=false`,
+  `waypoint_count=9`, and `validation_passed=true`.
+- Tracking metrics were finite: tracking reward mean about `0.03957`, target
+  table clearance min about `0.2764`, unsafe target rate max `0.0`.
+- Worker B is planning train/eval wrapper passthroughs for the external
+  reference before any trajectory-tracking RL smoke.
+
+Worker C status:
+
+- Worker C accepted the cluster continuation and is preparing
+  `cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh` for a bounded l401 DP
+  policy eval smoke using the official-DP checkpoint and the real cuRobo-demo
+  dataset context.
