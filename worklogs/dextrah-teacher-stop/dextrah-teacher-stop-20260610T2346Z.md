@@ -1637,3 +1637,49 @@ Analysis:
 Next:
 - Keep 5-minute cadence, then tighten to near-continuous validation inside the
   final 10-15 minutes before expected TERM/requeue.
+
+## 2026-06-11 00:12 PDT - Teacher Monitor Metric Pass
+
+Goal:
+- Verify training health before tightening to the expected wall-time
+  TERM/requeue validation window.
+
+Command / Job:
+- job_id: `28955904`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28955904.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+- local TensorBoard copy:
+  `/tmp/dextrah_teacher_events`
+
+Result:
+- status: running healthy.
+- scheduler: `RUNNING` on `batch-block5-03072`, elapsed `03:30:18`,
+  time left `19:42` at `00:12:51 PDT`.
+- stdout advanced to epoch `18503/20000`.
+- latest complete checkpoint:
+  `last_dextrah_lstm_ep_18500_rew_545.6601.pth` at `00:12:36`.
+- runtime sidecars rank `0-7` refreshed at `00:12:33-00:12:34`.
+- narrow critical failure scan over recent stdout returned no matches.
+- TensorBoard summaries parsed through epoch `18485` for epoch-keyed scalars.
+- `in_success_region/iter`: latest `0.460205`, last-50 `0.462559`,
+  last-200 `0.460126`, post-resume mean `0.463109`.
+- `rewards/iter`: latest `548.981`, last-50 `641.27`,
+  last-200 `638.024`, post-resume mean `644.365`.
+- `num_adr_increases/iter`: latest `50`, last-50 `50`.
+- `info/kl`: latest `0.00306955`, last-50 `0.00290096`,
+  last-200 `0.00305509`.
+- `losses/a_loss`: latest `-0.0029219`, last-50 `-0.00290631`.
+- `losses/c_loss`: latest `0.0238105`, last-50 `0.0268015`.
+- `performance/step_inference_rl_update_fps`: latest `112212`,
+  last-20 about `110466`, last-50 about `110420`, last-200 about `109110`.
+
+Analysis:
+- Training remains healthy. Success returned to the normal band, reward/KL/loss
+  windows are stable, throughput is normal, and checkpoint/sidecar cadence is
+  intact.
+
+Next:
+- Tighten polling for the expected `2026-06-11 00:27 PDT` TERM/requeue signal
+  and validate checkpoint/sidecar freshness before and after the requeue.
