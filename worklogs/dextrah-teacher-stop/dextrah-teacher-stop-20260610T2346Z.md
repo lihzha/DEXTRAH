@@ -153,3 +153,59 @@ Analysis:
 Next:
 - Continue active monitoring for checkpoint cadence, metric stability, and the
   next wall-time requeue window for job `28955904`.
+
+## 2026-06-10 17:50 PDT - Isolated Teacher Monitor Pass
+
+Goal:
+- Confirm the replacement job remains isolated, advancing, checkpointing, and
+  numerically healthy after the resume from epoch `13500`.
+
+Version Control:
+- agent_id: `dextrah-teacher-stop-20260610T2346Z`
+- branch: `codex/dextrah-teacher-stop/dextrah-teacher-stop-20260610T2346Z`
+- local_worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/dextrah-teacher-stop-20260610T2346Z`
+- remote_worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-teacher-stop-20260610T2346Z`
+- running_remote_commit: `12c3119d4363922f352a79fc74827d5595121a66`
+
+Command / Job:
+- job_id: `28955904`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28955904.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+
+Result:
+- status: running healthy.
+- scheduler: running on `batch-block5-03072`, `EndTime=2026-06-10T20:44:19`;
+  expected TERM/relaunch window around `20:39:19 PDT`.
+- `Command` and `WorkDir` still point at the agent-owned remote worktree.
+- stdout advanced to epoch `14010/20000`.
+- latest complete checkpoint:
+  `last_dextrah_lstm_ep_14010_rew_567.0352.pth`.
+- rank sidecars `dextrah_runtime_rank_0.pth` through
+  `dextrah_runtime_rank_7.pth` refreshed at `17:48:52`.
+- TensorBoard parsed through epoch `13989`.
+- `in_success_region/iter`: latest `0.439209`, last-50 `0.448428`,
+  last-200 `0.445414`.
+- `rewards/iter`: latest `713.596`, last-50 `609.623`,
+  last-200 `607.849`.
+- `num_adr_increases/iter`: `50`.
+- `info/kl`: latest `0.00514335`, last-50 `0.00883904`,
+  last-200 `0.00867971`.
+- `losses/a_loss`: last-50 `-0.00405108`.
+- `losses/c_loss`: last-50 `0.0156901`.
+- `performance/step_inference_rl_update_fps`: last-50 about `110712`.
+
+Analysis:
+- Resume remains stable: checkpoints and sidecars are advancing on schedule,
+  success-region is consistent with the prior healthy band, KL is controlled,
+  and losses/throughput show no immediate instability. A broad `inf` error
+  scan matched normal `inference` text, so later scans should use a narrower
+  failure-signature pattern.
+
+Next:
+- Continue active monitoring with short one-shot SSH checks. Tighten polling
+  before the `20:39 PDT` signal window and verify the next relaunch resumes
+  from the newest checkpoint and rank runtime sidecars.
