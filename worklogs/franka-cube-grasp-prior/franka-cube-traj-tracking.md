@@ -509,3 +509,132 @@ Analysis:
 
 Next:
 - Commit the converter/worklog, push the DEXTRAH branch, deploy the exact commit to the l401 DEXTRAH agent worktree, and run the converter in the GraspGenX container with DEXTRAH mounted at `/dextrah`.
+
+## 2026-06-11T13:36:00-07:00 - compact converter smoke result
+
+Goal:
+- Exercise the DEXTRAH converter on a real GraspGenX/cuRobo-exported `trajectory.json` and prove it refuses to mark a 45 mm validation artifact as DEXTRAH 60 mm validated.
+
+Version Control:
+- agent_id: franka-cube-traj-tracking
+- local_commit: ffe0e671ed2bac13ae8cd4db388e16f69915f2e4
+- push/pull: pushed to origin; l401 DEXTRAH agent worktree deployed at the exact commit
+- remote_commit/status: /lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking at ffe0e671ed2bac13ae8cd4db388e16f69915f2e4, detached clean
+- deploy_note: initial SSH-origin fetch failed on l401 (`Permission denied (publickey)`); retried with HTTPS fetch and deployed successfully.
+
+Command / Job:
+- failed_job: 1027691 `dextrah_ggx_ref_convert`, FAILED after `00:00:27`
+- failed_log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/ggx_ref_convert_1027691.out
+- failure_cause: wrapper tried `git -C /dextrah rev-parse HEAD` inside a Pyxis mount of a Git worktree; the `.git` pointer referenced an unmounted canonical path, so Git failed before the converter ran.
+- relaunch_job: 1027692 `dextrah_ggx_ref_convert2`, COMPLETED `0:0` after `00:00:33` on `pool0-00016`
+- relaunch_log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/ggx_ref_convert_1027692.out
+- command: `python /dextrah/dextrah_lab/scene_scripts/convert_graspgenx_cube_trajectory_reference.py --trajectory /results/trajectory_exports/franka_cube_traj_ref_export_20260611_132400/trajectory.json --output /dextrah_results/trajectory_references/franka_cube_traj_ref_export_20260611_132400_45mm_unvalidated/compact_reference.json --summary /dextrah_results/trajectory_references/franka_cube_traj_ref_export_20260611_132400_45mm_unvalidated/conversion_summary.json --graspgenx-root /code --validation-json /results/prior_validation/franka_cube_traj_ref_ggx_curobo_retry_20260611_130100/validation.json --cube-size 0.045 --table-surface-z 0.5 --cube-spawn-z 0.5225 --source-tag graspgenx_curobo_45mm_export_unvalidated_for_dextrah`
+- negative_gate_command: same converter with `--mark-curobo-validated --cube-size 0.06 --table-surface-z 0.746` against the 45 mm validation JSON.
+
+Artifacts:
+- remote_reference: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/trajectory_references/franka_cube_traj_ref_export_20260611_132400_45mm_unvalidated/compact_reference.json
+- remote_summary: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/trajectory_references/franka_cube_traj_ref_export_20260611_132400_45mm_unvalidated/conversion_summary.json
+- local_copy: cluster_results/l401/franka_cube_traj_ref_export_20260611_132400_45mm_unvalidated/
+
+Metrics / Checks:
+- compact reference validation: passed 11/11 records
+- waypoint_count: 9
+- cube_size_m: 0.045
+- source.graspgenx_source: true
+- source.curobo_validated: false
+- validation.requires_curobo_collision_validation_before_training: true
+- no joint arrays stored: `no_joint_trajectory_arrays` passed and local grep found no payload joint arrays; only policy/diagnostic strings mention `joint_trajectory`.
+- min target table margin under 45 mm GraspGenX table model: `0.04510111162814601 m`
+- min cube AABB clearance: `0.00010111162814604308 m`
+- negative gate: expected failure with `object_extents_match_cube_size=false`; converter exited rc `1` and wrapper printed `EXPECTED_60MM_VALIDATION_GATE_REJECTION`.
+
+Analysis:
+- The new converter is operational against a real GraspGenX/cuRobo-exported trajectory and emits compact object-local task-space waypoints only.
+- The reference is intentionally not DEXTRAH-ready: it is a 45 mm GraspGenX cube artifact and remains `curobo_validated=false`.
+- The validation gate prevents silently blessing the 45 mm GraspGenX validation as a 60 mm DEXTRAH reference.
+
+Next:
+- Try a scratch GraspGenX 60 mm cube env config by changing only `mesh_scale` to `0.60` in a temporary l401 job. If validation/export succeeds, convert a 60 mm compact reference. If it fails, record the exact planner/export blocker and keep the runtime task on the unvalidated template path.
+
+## 2026-06-11T13:40:00-07:00 - 60 mm GraspGenX reference attempt plan
+
+Goal:
+- Determine whether the GraspGenX/cuRobo path can produce a DEXTRAH-geometry 60 mm cube validation/export without modifying the GraspGenX repo.
+
+Plan:
+- Submit a bounded l401 GraspGenX container job that creates `/tmp/franka_cube_lift_60mm.yaml` by copying `end2end/envs/franka_cube_lift.yaml` and replacing `mesh_scale: 0.45` with `mesh_scale: 0.60`.
+- Run `validate_franka_cube_graspgenx_curobo.py` with `--env-config /tmp/franka_cube_lift_60mm.yaml --cube-size 0.06`, broad grasp settings, and no fallback.
+- If validation passes, run `e2e_grasp_demo.py` against the same scratch env to export a 60 mm `trajectory.json`.
+- If export passes, run the DEXTRAH converter for a 60 mm compact reference. Keep `curobo_validated=false` unless the validation/export evidence is exact enough to avoid overstating readiness.
+
+Acceptance Criteria:
+- No full training.
+- Validation JSON must report `object_extents_m` near `[0.06, 0.06, 0.06]` and positive approach/grasp/lift segments before any DEXTRAH-ready claim.
+- Export must produce a positive-frame trajectory JSON.
+- Converter output must still contain no joint trajectory arrays and must pass compact loader checks.
+
+## 2026-06-11T13:50:00-07:00 - 60 mm GraspGenX reference attempt result
+
+Goal:
+- Run the scratch 60 mm GraspGenX/cuRobo path and convert a DEXTRAH-geometry compact reference if validation/export pass.
+
+Command / Job:
+- failed_job: 1027693 `ggx_cube_60mm_ref`, FAILED after `00:00:26`
+- failed_log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/graspgenx/ggx_cube_60mm_ref_1027693.out
+- failure_cause: wrapper generated the scratch 60 mm YAML correctly but did not `cd /code` before running `python end2end/validate_franka_cube_graspgenx_curobo.py`; Python looked under `/workspace/end2end/...`.
+- relaunch_job: 1027694 `ggx_cube_60mm_ref2`, COMPLETED `0:0` after `00:01:24` on `pool0-00016`
+- relaunch_log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/graspgenx/ggx_cube_60mm_ref_1027694.out
+- scratch_env: copied `end2end/envs/franka_cube_lift.yaml` and replaced `mesh_scale: 0.45` with `mesh_scale: 0.60`; no GraspGenX repo files modified.
+
+60 mm Validation:
+- run_dir: /lustre/fsw/portfolios/nvr/users/lzha/results/graspgenx/prior_validation/franka_cube_traj_ref_ggx_curobo_60mm_retry_20260611_134500
+- validation_json: /lustre/fsw/portfolios/nvr/users/lzha/results/graspgenx/prior_validation/franka_cube_traj_ref_ggx_curobo_60mm_retry_20260611_134500/validation.json
+- result: `VALIDATION_PASSED`
+- object_extents_m: `[0.06, 0.06, 0.06]`
+- num_grasps: 120
+- confidence_range: `0.6334112882614136..0.8303762674331665`
+- selected_grasp_index: 36
+- selected_grasp_confidence: `0.6739507913589478`
+- plan_segments: approach 42, grasp 42, lift 42
+
+60 mm Export:
+- run_dir: /lustre/fsw/portfolios/nvr/users/lzha/results/graspgenx/trajectory_exports/franka_cube_traj_ref_export_60mm_retry_20260611_134500
+- trajectory_json: /lustre/fsw/portfolios/nvr/users/lzha/results/graspgenx/trajectory_exports/franka_cube_traj_ref_export_60mm_retry_20260611_134500/trajectory.json
+- result: exported `trajectory.json` with 662 frames, 30 fps, 8 joint columns, static `object` and `table` meshes
+- export_selected_grasp: original grasp #101 at confidence `0.714`
+- export_plan_segments: approach 42, grasp 42, lift 42
+
+60 mm Compact Reference:
+- remote_reference: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json
+- remote_summary: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/conversion_summary.json
+- local_copy: cluster_results/l401/franka_cube_traj_ref_60mm_retry_20260611_134500/
+- compact validation: passed 11/11 records locally and in-container
+- cube_size_m: 0.06
+- waypoint_count: 9
+- source.curobo_validated: false
+- no joint arrays stored: `no_joint_trajectory_arrays` passed and grep found no payload joint arrays; only policy/diagnostic strings mention `joint_trajectory`.
+- min DEXTRAH-table target margin: `0.06511412328056643 m`
+- min cube AABB clearance: `0.0001141232805663972 m`
+
+Analysis:
+- The GraspGenX/cuRobo path can validate and export a 60 mm cube reference when the env config geometry is adjusted to match DEXTRAH.
+- I intentionally kept the converted reference `curobo_validated=false`. The validation and export used the same scratch geometry and object pose but selected different grasp indices in separate processes (#36 for validator, #101 for exporter), so this is a strong DEXTRAH-geometry reference artifact but not an exact single-run validated trajectory record.
+- The next exactness improvement is a unified GraspGenX export/validation path that writes validation metadata from the same `e2e_grasp_demo.py` trajectory export process.
+
+Next:
+- Patch the DEXTRAH env validator/wrapper to accept an external compact reference path, then run a real Isaac task smoke for `Dextrah-Franka-Cube-Grasp-Traj-Tracking` loading the 60 mm compact reference.
+
+## 2026-06-11T13:53:00-07:00 - external-reference env smoke patch plan
+
+Goal:
+- Validate the tracking task against the 60 mm compact reference instead of only the built-in manual template.
+
+Change:
+- Add `--trajectory_tracking_reference_path` to `dextrah_lab/rl_games/validate_franka_cube_grasp_env.py` and set `env_cfg.trajectory_tracking_reference_path` when provided.
+- Add `TRAJECTORY_TRACKING_REFERENCE_PATH` passthrough to `cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`.
+- Keep default path empty so `Dextrah-Franka-Cube-Grasp` and the tracking variant baseline behavior remain unchanged unless explicitly overridden.
+
+Validation Plan:
+- Local: `python3 -m py_compile dextrah_lab/rl_games/validate_franka_cube_grasp_env.py` and `bash -n cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`.
+- Cluster: run `Dextrah-Franka-Cube-Grasp-Traj-Tracking` validation with `TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json`, 4 envs, 80 steps, no video.
+- Acceptance: task registers, baseline registration still resolves, observation dim stays 72, runtime reference summary points at the external path with `graspgenx_source=true`, tracking metrics finite, unsafe target rate 0, no immediate reset/termination pathology.

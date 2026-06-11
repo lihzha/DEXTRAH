@@ -22,6 +22,12 @@ parser.add_argument("--video", action="store_true", default=False)
 parser.add_argument("--video_length", type=int, default=120)
 parser.add_argument("--video_folder", type=str, default=None)
 parser.add_argument("--cube_spawn_xy_randomization", type=float, default=0.08)
+parser.add_argument(
+    "--trajectory_tracking_reference_path",
+    type=str,
+    default=None,
+    help="Optional compact task-space reference JSON for the trajectory-tracking task variant.",
+)
 parser.add_argument("--camera_eye", type=float, nargs=3, default=None, help="Viewport camera eye for validation video.")
 parser.add_argument(
     "--camera_target", type=float, nargs=3, default=None, help="Viewport camera target for validation video."
@@ -703,6 +709,15 @@ def main() -> None:
     )
     env_cfg.seed = args_cli.seed
     env_cfg.cube_spawn_xy_randomization = args_cli.cube_spawn_xy_randomization
+    if args_cli.trajectory_tracking_reference_path:
+        if not hasattr(env_cfg, "trajectory_tracking_reference_path"):
+            raise ValueError(
+                "--trajectory_tracking_reference_path was provided for a task config "
+                "without trajectory_tracking_reference_path"
+            )
+        env_cfg.trajectory_tracking_reference_path = str(
+            Path(args_cli.trajectory_tracking_reference_path).expanduser().resolve()
+        )
     _configure_validation_camera(env_cfg)
 
     checks = CheckRecorder()
@@ -750,6 +765,7 @@ def main() -> None:
         "output_dir": str(output_dir),
         "video_enabled": args_cli.video,
         "video_folder": str(video_folder) if args_cli.video else None,
+        "trajectory_tracking_reference_path": getattr(env_cfg, "trajectory_tracking_reference_path", None),
         "tracking_reference": tracking_reference_summary,
         "env_closed": env_closed,
     }
