@@ -1349,3 +1349,50 @@ Worker B trajectory tracking:
   (`franka_cube_traj_refdelta`) after completing the `rew_-inf` diagnostic.
   This job is part of the requested episode-independent/reference feasibility
   follow-up and needs the same artifact inspection before any scale-up.
+
+## 2026-06-11 Monitor Check 21:59 UTC
+
+Worker B reference-delta sanity result:
+
+- B's policy-free `reference_delta` eval job `1027757`
+  (`franka_cube_traj_tracking_refdelta_video480_20260611_145440`) completed
+  `0:0` on l401 and artifacts are local.
+- Local run artifacts:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refdelta_video480_20260611_145440`
+- Local summary artifacts:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refdelta_artifacts_20260611_145440`
+- Viewer URLs:
+  - video:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refdelta_video480_20260611_145440/videos/refdelta-video480-step-0.mp4`
+  - report:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refdelta_artifacts_20260611_145440/report.md`
+  - plot:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refdelta_artifacts_20260611_145440/trajectory_trace_plot.png`
+- Metrics: `480/480` steps, reward mean/final `3.2933/1.8666`,
+  success mean/final `0.0125/0.0`, last-window success mean `0.045`, done
+  count `2`, cube lift max `0.0681 m`, final EE-to-cube `0.1966 m`, final
+  finger-center-to-cube `0.2358 m`, final gripper width `0.0520 m`, target
+  unsafe max `0`, target clearance min `0.0651 m`.
+- Fixed-window summary: the middle window tracks the reference closely
+  (`EE-to-target` mean `0.0035 m`, `EE-to-cube` mean `0.0389 m`) with no
+  success; the last window has `lift max 0.0681 m` and success mean `0.05`,
+  but the hand/cube geometry degrades by the final frame.
+- Visual inspection: first frame is black, middle frame shows contact/enclosure
+  around the cube, and final frame shows the hand moved away with the cube not
+  stably lifted.
+- Interpretation: the current trajectory reference and delta-IK action path are
+  partially feasible; a simple non-policy reference-delta baseline can create
+  contact and transient lift/success. The learned policy failure is therefore
+  not explained by an impossible reference transform alone. Remaining B work is
+  policy/action learning, reward timing/hold incentives, and orientation/contact
+  quality. The result is still diagnostic only: `reference_delta` is a
+  position-only delta-IK plus gripper schedule baseline, not cuRobo joint replay
+  and not a learned policy result.
+
+Worker C later-window replay:
+
+- C launched l401 job `1027759`
+  (`franka_cube_dp_replay_framefix_overfit2k_open_to_close320_20260611_145800`)
+  with modes `dataset_open_t_plus_7,dp_replan`, `STEPS=320`. This job is meant
+  to test the later close-window support issue after the reset-time replay
+  showed the controller/action frame is not grossly inverted.
