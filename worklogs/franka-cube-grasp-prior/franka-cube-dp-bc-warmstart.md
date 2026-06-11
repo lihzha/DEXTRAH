@@ -2911,3 +2911,126 @@ Next:
 - Acceptance for the next trace: recorded history slot gap should be `1`
   after reset, close timing should move toward demo timing, and EE/finger
   distances/cube-minus-EE should not regress relative to job `1027737`.
+
+## 2026-06-11T14:18:02-07:00 - history-refresh l401 trace launch
+
+Goal:
+- Validate the narrow eval-history fix on l401 without training: history slots
+  should be adjacent control steps while action chunks still execute open-loop.
+
+Hypothesis:
+- Refreshing `LowdimObsHistory` every env step will remove the `step-8`/`step`
+  conditioning bug. With the same checkpoint/seed, close timing should move
+  toward the demo close/hard-close timing and cube-relative/finger distances
+  should not regress versus job `1027737`.
+
+Change:
+- No new source changes after commit `5d5b09520bce4e00517d1ce7e0a0d9db71eaa24e`.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- implementation_commit: `5d5b09520bce4e00517d1ce7e0a0d9db71eaa24e`
+- push/pull: pushed to `origin/codex/franka-cube-diffusion-policy-bc`;
+  remote GitHub fetch blocked by l401 SSH auth, so deployed by Git bundle.
+- remote_commit/status:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+  at `5d5b09520bce4e00517d1ce7e0a0d9db71eaa24e`, detached HEAD,
+  clean at launch.
+
+Command / Job:
+- planned eval command:
+  `CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart RUN_NAME=franka_cube_dp_eval_curobo32_full_pick_lift_framefix_overfit2k_chunk8_historyfix_trace512_20260611_141802 NUM_ENVS=1 NUM_STEPS=512 NUM_INFERENCE_STEPS=100 ACTION_CHUNK_STEPS=8 DEBUG_POLICY_TRACE_MAX_CALLS=64 DEBUG_POLICY_TRACE_ENV_INDEX=0 CAPTURE_VIDEO=False PRINT_INTERVAL=32 CHECKPOINT=/results/dp_bc/checkpoints/franka_cube_curobo32_full_pick_lift_framefix_overfit2k/latest.ckpt sbatch cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- expected run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_curobo32_full_pick_lift_framefix_overfit2k_chunk8_historyfix_trace512_20260611_141802`
+- expected log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_dp_policy_<job_id>.out`
+- job_id: `1027744`
+
+Result:
+- status: submitted, monitoring.
+
+Next:
+- Submit the bounded trace, monitor Slurm/logs, fetch `metrics.json` and
+  `policy_trace.json`, rerun trace analysis plus live-vs-demo geometry
+  diagnostic, and compare against job `1027737`.
+
+## 2026-06-11T14:34:00-07:00 - history-refresh trace result and chunk ablation plan
+
+Goal:
+- Inspect job `1027744` and decide whether the history-cadence fix resolved
+  the visible eval drift.
+
+Command / Job:
+- job_id: `1027744`
+- run_name:
+  `franka_cube_dp_eval_curobo32_full_pick_lift_framefix_overfit2k_chunk8_historyfix_trace512_20260611_141802`
+- remote run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_curobo32_full_pick_lift_framefix_overfit2k_chunk8_historyfix_trace512_20260611_141802`
+- local run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_curobo32_full_pick_lift_framefix_overfit2k_chunk8_historyfix_trace512_20260611_141802`
+- local log:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_logs/l401/eval_franka_cube_dp_policy_1027744.out`
+- trace analysis:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/trace_analysis_1027744_historyfix_20260611_141802`
+- live-vs-demo geometry:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/live_demo_geometry_1027744_historyfix_20260611_141802`
+
+Result:
+- Slurm status: `COMPLETED`, exit `0:0`.
+- Eval metrics: `steps_completed=512`, `final_success_rate=0.0`,
+  `cube_lift_height.max=0.0`, `reward_mean=1.6488098790869117`,
+  `reward_final=1.6844426393508911`,
+  `final_gripper_width=0.0011646132916212082`.
+- Geometry metrics:
+  `ee_to_cube_dist.min/final=0.13600821793079376/0.13712914288043976`,
+  `finger_center_to_cube_dist.min/final=0.16404975950717926/0.16952744126319885`.
+- Trace metrics:
+  final live cube-minus-EE
+  `[-0.00996100902557373, -0.10787208378314972, -0.08425873517990112]`;
+  nearest-demo distance increased `0.3562566041946411 -> 1.2926826477050781`;
+  nearest phases were `52` pregrasp calls and `12` lift calls.
+- History validation:
+  `eval_policy_call_step_delta_unique=[8]` as expected for chunk queries,
+  but `history_slot_step_gap_unique=[0, 1]`; the `0` is only the reset
+  duplicate and subsequent policy histories use adjacent control steps.
+  Therefore the history-cadence patch is mechanically correct.
+- Temporal behavior regressed relative to dataset timing:
+  first negative gripper command moved to step `144`, first hard close to
+  step `168`, while dataset first close/hard-close means are
+  `282.625/310.625`.
+- At live hard close, history gap is `1`, but grasp geometry is still wrong:
+  live cube-minus-EE
+  `[0.07217836380004883, -0.12357199192047119, -0.04983395338058472]`,
+  nearest-demo cube-minus-EE
+  `[0.09566575288772583, -0.11058403551578522, -0.04289048910140991]`,
+  nearest episode hard-close cube-minus-EE
+  `[-0.01989993453025818, -0.0000015050172805786133, -0.02014338970184326]`,
+  live-to-hard-close-demo distance `0.14052984586502268 m`.
+
+Analysis:
+- The original history-cadence bug is fixed, but behavior remains invalid for
+  BC claims: the policy closes/lifts while the live cube-relative grasp
+  geometry is still far from the demo close geometry, and the cube never lifts.
+- This is still a train/eval mismatch or bridge bug until disproven. Do not
+  use old pre-framefix or pre-history-fix videos/checkpoints as behavior
+  evidence.
+- New orchestrator hypothesis: with history fixed, remaining mismatch may be
+  open-loop execution drift from applying 8 predicted actions before the next
+  policy query. Need a bounded `ACTION_CHUNK_STEPS=1` ablation using the same
+  checkpoint/seed and no training.
+
+Next:
+- Commit/push this evidence checkpoint.
+- Launch l401 no-video trace:
+  `NUM_ENVS=1`, `NUM_STEPS=512`, `NUM_INFERENCE_STEPS=100`,
+  `ACTION_CHUNK_STEPS=1`, `DEBUG_POLICY_TRACE_MAX_CALLS=512`,
+  `DEBUG_POLICY_TRACE_ENV_INDEX=0`, `CAPTURE_VIDEO=False`,
+  same framefix overfit checkpoint and remote code commit
+  `5d5b09520bce4e00517d1ce7e0a0d9db71eaa24e`.
+- Compare chunk 1 vs chunk 8 on close timing, EE/finger distances,
+  cube-minus-EE at first negative/hard-close/live width <1 cm, gripper width,
+  and nearest-demo distance. If chunk 1 improves substantially, root cause is
+  action-chunk open-loop drift; if both are bad, continue observation/action
+  semantics audit.
