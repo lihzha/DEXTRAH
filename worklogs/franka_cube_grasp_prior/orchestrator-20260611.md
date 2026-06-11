@@ -102,3 +102,31 @@ Current orchestrator stance:
 - Keep monitoring workers until the next validation/debug loop completes.
 - If any worker launches a local or cluster job, scheduler state alone is not
   sufficient; logs, metrics, and artifacts must be inspected.
+
+## 2026-06-11 Long-Running Orchestration Goal
+
+The user clarified that all agents should remain on their duties through the
+full robotics development loop, including many code-fix/debug/relaunch rounds
+before final RL training. The orchestrator should keep agents on track and
+monitor progress, while leaving low-level debugging to the responsible worker.
+
+Updated agent directives:
+
+- Worker A owns the main apple-to-apple GraspGenX pregrasp-reset variant. It
+  should continue from real Isaac reset smoke to short RL smoke and eventually
+  final same-config Franka cube RL training once evidence is sane.
+- Worker B owns the trajectory-tracking alternative. It should continue through
+  real task-registration/env smoke, reference validation/export, short RL
+  smoke, and possible scaled alternative training if viable.
+- Worker C owns the Diffusion Policy BC warm-start alternative. It should
+  continue through official `real-stanford/diffusion_policy` setup/debug-train,
+  BC dataset/training validation, and a bridge toward RL fine-tuning if viable.
+
+Orchestrator guardrails:
+
+- Workers may launch cluster validation/training jobs when their own smokes
+  justify scaling; no direct jump to full training without smoke evidence.
+- Workers must inspect logs, metrics, artifacts, checkpoints, and abnormal
+  behavior before declaring progress.
+- Worker branches remain isolated; integration into `main` waits for reviewed
+  evidence and an explicit merge decision.
