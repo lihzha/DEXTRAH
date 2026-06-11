@@ -13,6 +13,7 @@ import argparse
 import json
 import math
 import sys
+import traceback
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -116,6 +117,11 @@ def _collect_task_metrics(task_env: Any) -> dict[str, float | None]:
     return {name: _env_metric(task_env, name) for name in metric_names if hasattr(task_env, name)}
 
 
+def _stage(name: str, **details: Any) -> None:
+    payload = {"stage": name, **details}
+    print("DP_EVAL_STAGE " + json.dumps(payload, sort_keys=True, default=str), flush=True)
+
+
 def _summarize_step_metrics(step_metrics: list[dict[str, float | int | None]]) -> dict[str, dict[str, float | int]]:
     summaries: dict[str, dict[str, float | int]] = {}
     for name in sorted({key for item in step_metrics for key in item.keys()} - {"step"}):
@@ -172,15 +178,27 @@ def _load_policy(checkpoint: Path, device: str, num_inference_steps: int, diffus
         root = str(Path(diffusion_policy_root).expanduser().resolve())
         if root not in sys.path:
             sys.path.insert(0, root)
+        _stage("official_dp_root_added", diffusion_policy_root=root)
+    _stage("official_dp_import_start")
     from diffusion_policy.workspace.train_diffusion_unet_lowdim_workspace import (
         TrainDiffusionUnetLowdimWorkspace,
     )
 
+    _stage("official_dp_checkpoint_load_start", checkpoint=str(checkpoint))
     workspace = TrainDiffusionUnetLowdimWorkspace.create_from_checkpoint(str(checkpoint))
     policy = workspace.ema_model if getattr(workspace, "ema_model", None) is not None else workspace.model
     policy.num_inference_steps = int(num_inference_steps)
+    _stage(
+        "official_dp_checkpoint_loaded",
+        workspace=workspace.__class__.__name__,
+        policy=policy.__class__.__name__,
+        n_obs_steps=int(policy.n_obs_steps),
+        num_inference_steps=int(policy.num_inference_steps),
+    )
+    _stage("official_dp_policy_to_device_start", device=device)
     policy.to(torch.device(device))
     policy.eval()
+    _stage("official_dp_policy_ready", device=device)
     return workspace, policy
 
 
@@ -217,6 +235,15 @@ def main() -> None:
     checkpoint = Path(args_cli.checkpoint).expanduser().resolve()
     if not checkpoint.is_file():
         raise FileNotFoundError(checkpoint)
+    _stage(
+        "start",
+        output_dir=str(output_dir),
+        metrics_path=str(metrics_path),
+        checkpoint=str(checkpoint),
+        checkpoint_size=checkpoint.stat().st_size,
+        num_envs=int(args_cli.num_envs),
+        num_steps=int(args_cli.num_steps),
+    )
 
     env_cfg = parse_env_cfg(
         args_cli.task,
@@ -226,6 +253,7 @@ def main() -> None:
     )
     env_cfg.seed = int(args_cli.seed)
     _configure_eval_camera(env_cfg)
+    _stage("env_cfg_ready", task=args_cli.task, device=str(args_cli.device), seed=int(args_cli.seed))
 
     workspace, policy = _load_policy(
         checkpoint,
@@ -235,9 +263,11 @@ def main() -> None:
     )
     n_obs_steps = int(policy.n_obs_steps)
 
+    _stage("gym_make_start", task=args_cli.task)
     gym_env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)
     task_env = gym_env.unwrapped
     _configure_eval_camera(env_cfg, task_env)
+    _stage("gym_make_done", task=args_cli.task, task_env=task_env.__class__.__name__, num_envs=int(task_env.num_envs))
 
     if args_cli.video:
         gym_env = gym.wrappers.RecordVideo(
@@ -256,12 +286,16 @@ def main() -> None:
     done_count = 0
     env_closed = False
     try:
+        _stage("env_reset_start")
         policy_obs = _policy_obs_from_reset(gym_env.reset())
+        _stage("env_reset_done", policy_obs_shape=tuple(policy_obs.shape))
         if policy_obs.shape[-1] != FRANKA_CUBE_PPO_OBS_DIM:
             raise RuntimeError(f"Expected PPO obs dim {FRANKA_CUBE_PPO_OBS_DIM}, got {tuple(policy_obs.shape)}")
 
+        _stage("rollout_start")
         for step in range(int(args_cli.num_steps)):
             if not simulation_app.is_running():
+                _stage("simulation_app_stopped", step=step)
                 break
 
             with torch.inference_mode():
@@ -297,8 +331,10 @@ def main() -> None:
                     flush=True,
                 )
     finally:
+        _stage("env_close_start")
         gym_env.close()
         env_closed = True
+        _stage("env_close_done")
 
     success_values = [item["in_success_region"] for item in step_metrics if item.get("in_success_region") is not None]
     reward_values = [item["reward_mean"] for item in step_metrics if item.get("reward_mean") is not None]
@@ -339,5 +375,9 @@ def main() -> None:
 if __name__ == "__main__":
     try:
         main()
+    except BaseException as exc:
+        print(f"FRANKA_CUBE_DP_POLICY_EVAL_FAILED {exc.__class__.__name__}: {exc}", flush=True)
+        traceback.print_exc()
+        raise
     finally:
         simulation_app.close()

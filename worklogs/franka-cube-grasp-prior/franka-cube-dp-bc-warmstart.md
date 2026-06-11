@@ -1076,3 +1076,76 @@ Analysis:
 Next:
 - Deploy code and artifacts to l401, run an import/eval smoke, inspect logs and
   `metrics.json`, then update this worklog with exact job IDs and results.
+
+## 2026-06-11T12:46:10-07:00 - l401 DP eval first failure / protobuf patch
+
+Goal:
+- Debug the first bounded l401 eval smoke for the official-DP Franka cube
+  no-learning wrapper.
+
+Hypothesis:
+- The first eval failed before metrics because the official DP workspace import
+  reached `wandb`, and the Isaac Sim Python environment has a `wandb`/protobuf
+  compatibility issue. The known protobuf workaround should let official DP
+  imports proceed without installing a separate dependency site.
+
+Change:
+- Patched `cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh` to export
+  `PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python` inside the container.
+- Patched `dextrah_lab/rl_games/eval_franka_cube_dp_policy.py` with
+  `DP_EVAL_STAGE` markers around startup, official DP import, checkpoint load,
+  policy device transfer, gym creation, reset, rollout, and env close.
+- Added explicit top-level exception printing before `simulation_app.close()`.
+
+Version Control:
+- implementation_commit: pending
+- changed_files:
+  - `cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+  - `dextrah_lab/rl_games/eval_franka_cube_dp_policy.py`
+  - `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+
+Command / Job:
+- eval command:
+  `CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart CHECKPOINT=/results/dp_bc/franka-cube-dp-bc-warmstart/checkpoints/run_20260611_123104_curobo_batch/latest.ckpt RUN_NAME=franka_cube_dp_eval_curobo8_smoke_20260611_124302 NUM_ENVS=1 NUM_STEPS=16 NUM_INFERENCE_STEPS=2 PRINT_INTERVAL=4 CAPTURE_VIDEO=False sbatch cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- eval job_id: `1027699`
+- eval log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_dp_policy_1027699.out`
+- eval run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_curobo8_smoke_20260611_124302`
+
+Result:
+- status: failed as expected by launcher guard
+- sacct: `FAILED`, exit `1:0`, elapsed `00:00:36`
+- metrics/artifacts: no `metrics.json` was produced.
+- key evidence: log reached Isaac startup and DEXTRAH task config parsing,
+  then the launcher emitted `Missing DP eval metrics JSON`. No traceback was
+  present in the eval log, which motivated stage-marker instrumentation.
+
+Command / Job:
+- import/checkpoint diagnostic: one-off Slurm job using the same Isaac
+  container, Worker C `/code`, official DP `/official_dp`, copied checkpoint,
+  and `/isaac-sim/python.sh` without creating an Isaac env.
+- import job_id: `1027701`
+- import log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/dp_ckpt_import_smoke_1027701.out`
+
+Result:
+- status: failed before official DP workspace construction
+- key evidence: Python `3.11.13`, Torch `2.7.0+cu128`, official DP import path
+  visible, then `wandb` import failed with protobuf:
+  `TypeError: Descriptors cannot be created directly`.
+- diagnosis: the container's installed `wandb` generated protos are
+  incompatible with the active protobuf runtime. The error message recommends
+  either protobuf `3.20.x` or setting
+  `PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python`; the launcher now uses the
+  latter to avoid mutating the shared Isaac environment.
+
+Analysis:
+- This is not a data or policy-shape failure yet. The official DP checkpoint
+  was not constructed in the cluster container before the protobuf blocker.
+- The real cuRobo dataset remains an 8-demo mechanics dataset only. This loop
+  is validating bridge/eval mechanics, not final BC performance.
+
+Next:
+- Commit/push the protobuf/stage-marker patch, update the remote worktree via
+  Git bundle, and relaunch the 1-env/16-step eval smoke.

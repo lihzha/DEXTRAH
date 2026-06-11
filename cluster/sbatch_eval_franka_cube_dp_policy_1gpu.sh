@@ -123,7 +123,7 @@ srun \
   --no-container-entrypoint \
   --container-remap-root \
   --container-writable \
-  --export=ALL,PYTHONUNBUFFERED=1,HYDRA_FULL_ERROR=1,PYTHONFAULTHANDLER=1,TORCH_SHOW_CPP_STACKTRACES=1,ACCEPT_EULA=Y,PRIVACY_CONSENT=Y \
+  --export=ALL,PYTHONUNBUFFERED=1,HYDRA_FULL_ERROR=1,PYTHONFAULTHANDLER=1,TORCH_SHOW_CPP_STACKTRACES=1,PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python,ACCEPT_EULA=Y,PRIVACY_CONSENT=Y \
   bash -lc '
     set -euo pipefail
     export SITE="/envs/$ENV_NAME/site"
@@ -138,6 +138,7 @@ srun \
       fi
     done
     export WANDB_MODE=offline
+    export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
     mkdir -p "$RUN_DIR_CONTAINER" /results/logs
 
     cd /code
