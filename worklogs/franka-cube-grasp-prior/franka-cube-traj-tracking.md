@@ -1470,3 +1470,27 @@ Analysis:
 Next:
 - Commit/push this worklog result.
 - Launch a bounded clamp RL25 run only after the worklog push, then monitor/evaluate it before considering larger training.
+
+## 2026-06-11T13:46:13-07:00 - gripper clamp bounded RL25 plan
+
+Goal:
+- Compare the gripper-clamp variant at the same small scale as the previous retimed RL25 run.
+
+Hypothesis:
+- At 25 iterations, the clamp may prevent the raw-zero-width reward from encouraging over-closed gripper collapse while still preserving close-phase intent. The expected signal is not guaranteed success, but should be finite metrics, phase completion, safe targets, no finger-table regression, and either improved or clearly worsened approach/lift behavior relative to the unclamped RL25 eval.
+
+Version Control:
+- agent_id: franka-cube-traj-tracking
+- local_commit: pending worklog-only launch checkpoint; implementation code is `0eafbad235c2b821f86eb46f61095fdd3f710031`.
+
+Command / Job:
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:45:00 --job-name=franka_cube_traj_gripclamp_rl25 --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,FULL_EXPERIMENT_NAME=franka_cube_traj_tracking_gripclamp_rl25_20260611_134613,NPROC_PER_NODE=1,NUM_NODES=1,DISTRIBUTED=False,MULTI_GPU=False,NUM_ENVS=256,HORIZON_LENGTH=64,MINIBATCH_SIZE=4096,CENTRAL_VALUE_MINIBATCH_SIZE=4096,MINI_EPOCHS=2,MAX_ITERATIONS=25,SAVE_FREQUENCY=5,AUTO_RESUME=False,SELF_RELAUNCH=False,USE_CUDA_GRAPH=False,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json cluster/sbatch_train_teacher_8gpu.sh`
+- job_id: pending
+- expected_log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_<job>.out
+- expected_run_dir: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_gripclamp_rl25_20260611_134613
+
+Acceptance Criteria:
+- Still not full training: one GPU, 256 envs, 25 iterations, no self-relaunch.
+- Resolved env config remains reward-only with observation space 72, external reference path, `trajectory_tracking_reference_duration_s: 8.0`, `trajectory_tracking_min_target_gripper_width: 0.024`, phase observations false, and reset-pose target policy.
+- Epochs complete without traceback/NaN; checkpoint written at epoch 25.
+- Follow-up 720-step eval has finite metrics, phase progress reaching 1.0, runtime gripper target min `0.024`, no unsafe tracking targets, and no immediate reset pathology.
