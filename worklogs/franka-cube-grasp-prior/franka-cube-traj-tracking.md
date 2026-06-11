@@ -1844,3 +1844,70 @@ Result:
 - implementation: `_collect_task_metrics()` now exports every scalar/tensor `extras["log"]` key whose name starts with `cube_traj_tracking_`, instead of relying on a stale fixed whitelist.
 - local_validation: `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py` passed.
 - local_validation: `git diff --check` passed.
+
+## 2026-06-11T14:17:25-07:00 - phase-gated epoch-3 metrics rerun launch
+
+Goal:
+- Rerun the same short epoch-3 rollout after the eval instrumentation patch so the close/lift action rewards and gate terms can be inspected directly.
+
+Version Control:
+- agent_id: franka-cube-traj-tracking
+- local_commit: `6125e1d8537da61b16c8a5d11c3dd9bbc56d890a`
+- remote_commit/status: /lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking at `6125e1d8537da61b16c8a5d11c3dd9bbc56d890a`, detached clean after HTTPS fetch fallback.
+
+Command / Job:
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:30:00 --job-name=franka_cube_traj_phasegate_metrics --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_phasegate_ep3_metrics480_20260611_141725,CHECKPOINT=/results/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_phasegate_rl_smoke_20260611_140730/nn/last_dextrah_franka_cube_traj_tracking_ep_3_rew_4.5636964.pth,NUM_ENVS=4,NUM_STEPS=480,VIDEO_LENGTH=1,VIDEO_NAME_PREFIX=phasegate-ep3-metrics480,CAPTURE_VIDEO=False,PRINT_INTERVAL=120,USE_CUDA_GRAPH=False,SEED=56,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- job_id: 1027743 `franka_cube_traj_phasegate_metrics`
+- expected_log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1027743.out
+- expected_run_dir: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_traj_tracking_phasegate_ep3_metrics480_20260611_141725
+
+Acceptance Criteria:
+- 480-step eval completes without traceback and writes `metrics.json`.
+- Numeric metrics are finite; target unsafe rate remains `0.0`; target clearance remains above `0.025`.
+- `cube_traj_tracking_close_action_reward`, `cube_traj_tracking_lift_action_reward`, `cube_traj_tracking_contact_gate`, `cube_traj_tracking_closed_target_gate`, `cube_traj_tracking_close_phase_gate`, and `cube_traj_tracking_lift_phase_gate` are present in `metrics.json`.
+- If close/lift rewards and contact gate remain effectively zero, treat the gates as too strict or unreachable for this policy and patch before any longer training.
+
+Result:
+- status: passed instrumentation, failed behavior/shaping activation; Slurm completed `0:0` after `00:00:54` on `pool0-00016`.
+- local_artifacts: `cluster_results/l401/franka_cube_traj_tracking_phasegate_ep3_metrics480_20260611_141725/metrics.json`, `cluster_results/l401/franka_cube_traj_tracking_phasegate_ep3_metrics480_20260611_141725/eval_franka_cube_1027743.out`
+- rollout: 480/480 steps, `done_count=1`, reward mean/final `1.510228872547547`/`1.312933087348938`, success mean/final `0.0`, nonfinite numeric count `0`.
+- target_safety: `cube_traj_tracking_unsafe_target_rate` max `0.0`, `cube_traj_tracking_safe_target_rate` mean `1.0`, target clearance min `0.06511414051055908`.
+- phase/gates: required new terms are present in `metrics.json`; `closed_target_gate` mean/final `0.5622601961323413`/`0.9999998807907104`, `close_phase_gate` mean/final `0.27448512139698406`/`0.9971591234207153`, `lift_phase_gate` mean/final `0.22448643996419074`/`0.9965277910232544`.
+- contact/action_rewards: `cube_traj_tracking_contact_gate` max/mean only `0.006634526886045933`/`0.0016727626404886564`; `cube_traj_tracking_close_action_reward` max/mean/final all `0.0`; `cube_traj_tracking_lift_action_reward` max/mean/final all `0.0`.
+- task_behavior: same poor behavior as the video run; success `0.0`, no sustained lift, final EE-to-cube `0.34083348512649536`, final finger-center-to-cube `0.34247004985809326`, final max finger-to-cube `0.36102867126464844`, gripper width mean/final `0.039188646928717694`/`0.038653671741485596`.
+- reference: still `curobo_validated=false`; 60 mm source remains exact-geometry-unvalidated.
+
+Analysis:
+- The eval instrumentation is now fixed. The reward ablation itself is not useful yet: phase and closed-target gates activate, but the contact gate is effectively unreachable for this policy by the time the reference reaches the grasp/lift phases.
+- Because close/lift action rewards are multiplied by the near-zero contact gate, the new shaping terms provide no learning signal in this bounded rollout. This matches the visual diagnosis that the gripper hovers and drifts away rather than establishing contact.
+
+Next:
+- Patch the trajectory variant only: loosen the proximity/contact gate to activate within the observed 20-30 cm approach envelope and add explicit tracking action-signal diagnostics (`action_close`, `action_up`, etc.) so the next smoke can tell whether the policy lacks proximity, close/up commands, or both.
+- Run local syntax checks, then a bounded env validation before any RL smoke or training.
+
+## 2026-06-11T14:21:20-07:00 - relaxed proximity-gate patch plan
+
+Goal:
+- Make the phase-gated close/lift shaping reachable enough to provide a nonzero early learning signal, while logging enough diagnostics to avoid guessing about action sign.
+
+Hypothesis:
+- The current contact gate (`max_finger_to_cube_dist < 0.14 m`, width `0.08`) is too strict for the current tracking policy, whose max-finger distance is about `0.26 m` at the close phase and worsens later. A broader proximity gate should activate around the close phase without changing observations or baseline task code.
+
+Planned Change:
+- `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env_cfg.py`: relax `trajectory_tracking_contact_gate_max_finger_dist` and `trajectory_tracking_contact_gate_width` for this variant only, and document it as a broad proximity/contact gate.
+- `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env.py`: log `cube_traj_tracking_action_close`, `cube_traj_tracking_action_up`, `cube_traj_tracking_action_z`, `cube_traj_tracking_gripper_action`, `cube_traj_tracking_contact_distance_gate`, and `cube_traj_tracking_finger_balance_gate`.
+
+Validation Plan:
+- Local: `python3 -m py_compile` on the variant env/cfg and eval helper; `git diff --check`.
+- Cluster: bounded 4-env/240-step env validation first. Acceptance: obs remains `[4,72]`, metrics finite, target unsafe `0`, relaxed gate/action diagnostics present, and no immediate reset pathology.
+
+Result:
+- status: implemented locally; cluster validation pending.
+- changed_files: `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env_cfg.py`, `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env.py`, `dextrah_lab/rl_games/validate_franka_cube_grasp_env.py`, this worklog.
+- implementation: relaxed the trajectory variant proximity/contact gate from `0.14 m`/`0.08 m` to `0.30 m`/`0.18 m`; added tracking logs for contact-distance gate, finger-balance gate, close/up action signals, raw z action, and raw gripper action; validator now requires these logs.
+- local_validation: `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env_cfg.py dextrah_lab/rl_games/validate_franka_cube_grasp_env.py dextrah_lab/rl_games/eval_rollout.py` passed.
+- local_validation: `git diff --check` passed.
+
+Next:
+- Commit/push and deploy exact commit to l401.
+- Launch a 4-env/240-step env validation before any RL smoke.

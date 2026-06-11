@@ -29,14 +29,15 @@ class DextrahFrankaCubeTrajTrackingEnvCfg(DextrahFrankaCubeGraspEnvCfg):
     trajectory_tracking_orientation_sharpness = 6.0
     trajectory_tracking_gripper_weight = 0.20
     trajectory_tracking_gripper_sharpness = 45.0
-    # Phase-gated contact shaping for the tracking variant.  These action
-    # bonuses are intentionally separate from the baseline cube reward.
+    # Phase-gated proximity/contact shaping for the tracking variant.  These
+    # action bonuses are intentionally separate from the baseline cube reward.
+    # The gate is broad enough to provide a learning signal before hard contact.
     trajectory_tracking_close_action_weight = 0.35
     trajectory_tracking_close_action_phase_start = 0.45
     trajectory_tracking_lift_action_weight = 0.50
     trajectory_tracking_lift_action_phase_start = 0.55
-    trajectory_tracking_contact_gate_max_finger_dist = 0.14
-    trajectory_tracking_contact_gate_width = 0.08
+    trajectory_tracking_contact_gate_max_finger_dist = 0.30
+    trajectory_tracking_contact_gate_width = 0.18
     # GraspGenX exports use zero as a close command.  In this DEXTRAH task the
     # tracked value is measured fingertip-body separation, so clamp close-phase
     # targets to the contact-width scale used by the cube reward checks.

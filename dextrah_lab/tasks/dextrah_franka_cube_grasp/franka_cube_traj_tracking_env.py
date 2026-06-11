@@ -272,13 +272,15 @@ class DextrahFrankaCubeTrajTrackingEnv(DextrahFrankaCubeGraspEnv):
         )
         finger_balance_gate = 1.0 - torch.clamp((self.finger_distance_asymmetry - 0.025) / 0.075, 0.0, 1.0)
         contact_gate = contact_distance_gate * (0.25 + 0.75 * finger_balance_gate)
+        close_action_signal = torch.clamp(-self.actions[:, 6], 0.0, 1.0)
+        lift_action_signal = torch.clamp(self.actions[:, 2], 0.0, 1.0)
         close_action_reward = (
             float(getattr(self.cfg, "trajectory_tracking_close_action_weight", 0.0))
             * effective_phase_weight
             * closed_target_gate
             * close_phase_gate
             * contact_gate
-            * torch.clamp(-self.actions[:, 6], 0.0, 1.0)
+            * close_action_signal
         )
         lift_action_reward = (
             float(getattr(self.cfg, "trajectory_tracking_lift_action_weight", 0.0))
@@ -286,7 +288,7 @@ class DextrahFrankaCubeTrajTrackingEnv(DextrahFrankaCubeGraspEnv):
             * closed_target_gate
             * lift_phase_gate
             * contact_gate
-            * torch.clamp(self.actions[:, 2], 0.0, 1.0)
+            * lift_action_signal
         )
 
         tracking_reward = position_reward + orientation_reward + gripper_reward + close_action_reward + lift_action_reward
@@ -307,6 +309,12 @@ class DextrahFrankaCubeTrajTrackingEnv(DextrahFrankaCubeGraspEnv):
                 "cube_traj_tracking_close_phase_gate": close_phase_gate.mean(),
                 "cube_traj_tracking_lift_phase_gate": lift_phase_gate.mean(),
                 "cube_traj_tracking_contact_gate": contact_gate.mean(),
+                "cube_traj_tracking_contact_distance_gate": contact_distance_gate.mean(),
+                "cube_traj_tracking_finger_balance_gate": finger_balance_gate.mean(),
+                "cube_traj_tracking_action_close": close_action_signal.mean(),
+                "cube_traj_tracking_action_up": lift_action_signal.mean(),
+                "cube_traj_tracking_action_z": self.actions[:, 2].mean(),
+                "cube_traj_tracking_gripper_action": self.actions[:, 6].mean(),
                 "cube_traj_tracking_phase_progress": self.traj_phase_progress.mean(),
                 "cube_traj_tracking_curriculum_scale": torch.tensor(curriculum_scale, device=self.device),
                 "cube_traj_tracking_phase_weight": phase_weight.mean(),
