@@ -871,3 +871,77 @@ Worker C DP train/eval mismatch escalation:
 - Orchestrator instruction to Worker C: do not pivot to data augmentation or RL
   warm-start until action frame, observation bridge, action timing, train/eval
   normalization, and history ordering are all explicitly checked and recorded.
+
+## 2026-06-11 Monitor Check 21:11 UTC
+
+Worker C DP mismatch follow-up:
+
+- Corrected 512-step l401 trace job `1027737` completed `0:0` in `00:01:24`.
+  Remote run:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_curobo32_full_pick_lift_framefix_overfit2k_chunk8_trace512_20260611_135907`
+- Local fetched run:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_curobo32_full_pick_lift_framefix_overfit2k_chunk8_trace512_20260611_135907`
+- Metrics: `512/512` steps, reward mean `1.6550`, reward final `1.6986`,
+  success/window success `0.0`, lift `0.0`, no dones. EE-to-cube distance
+  improved `0.2332 -> 0.1343 m`, finger-center-to-cube distance improved
+  `0.2200 -> 0.1680 m`, and gripper width closed from about `0.0798 m` to
+  `0.0012 m`.
+- Trace analysis:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/trace_analysis_1027737_framefix_20260611_135907`
+- Trace plot viewer:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/trace_analysis_1027737_framefix_20260611_135907/trace_phase_comparison.png`
+- Analysis summary: the corrected policy no longer behaves like the stale
+  action-frame-bug run, because it approaches and closes at the expected later
+  phase. It is still not acceptable: nearest-demo distance worsens
+  `0.356 -> 1.220`, live cube-minus-EE norm only improves `0.234 -> 0.134 m`,
+  and the rollout ends off-manifold with the gripper closed away from contact.
+- Worker C has started a systematic train/eval mismatch audit in its worklog,
+  with planned utility `dextrah_lab/offline_dp_bc/audit_eval_mismatch.py` and
+  output namespace:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/mismatch_audit_1027737_framefix_20260611_135907`
+- Orchestrator stance: C is not cleared. The old video was a real bug/stale
+  artifact; the corrected run still needs observation/action/timing/reset audit
+  before any DP scale-up or RL warm-start.
+
+Worker B trajectory-tracking artifacts:
+
+- Gripper-clamp RL25 eval job `1027733` completed earlier with zero success and
+  zero sustained lift. It fixed the near-zero gripper-collapse pathology but
+  still failed task behavior; mean phase did not reach `1.0` in the 720-step
+  averaged rollout because some envs reset.
+- Worker B produced a refreshed comparison bundle:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_artifact_bundle_clamp_20260611_135512`
+- Viewer:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_artifact_bundle_clamp_20260611_135512/comparison_report.md`
+- B also launched video eval job `1027738`, which completed `0:0` in
+  `00:01:18`; local fetched video:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_gripclamp_rl25_video480_20260611_135930/videos/gripclamp-rl25-eval480-step-0.mp4`
+- Video viewer:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_gripclamp_rl25_video480_20260611_135930/videos/gripclamp-rl25-eval480-step-0.mp4`
+- Video metadata: `1280x720`, `479` frames, `7.98 s`. Contact sheet is
+  nonblank; visually the gripper approaches but stays wide/off-contact and
+  does not lift the cube.
+- Video metrics: `480/480` steps, reward mean `2.5610`, success `0.0`, lift
+  `0.0`, phase reaches `1.0`, target unsafe rate `0.0`, target clearance min
+  `0.0651 m`, EE-to-cube distance `0.1799 -> 0.0841 m`, finger-center-to-cube
+  distance `0.1690 -> 0.0773 m`, gripper width ends around `0.0444 m`.
+- Worker B was asked to inspect the video and propose the next bounded ablation
+  before any longer training.
+
+Worker A reset-prior final RL:
+
+- A100 job `28987954` is still running at about `1:35` elapsed. Stdout reached
+  epoch `1036` during this monitor window; rank-0 JSONL reached epoch `1039`,
+  frame `1088421888`.
+- Latest interval checkpoint observed: epoch `1025` reward suffix `2199.798`.
+  Best stdout checkpoint reward improved to at least `2236.2048` around epoch
+  `993`.
+- Rank-0 last-50 JSONL means: reset success `1.0`, reset farther rate `1.0`,
+  reset position error about `0.00193 m`, reset rotation error about
+  `0.01845 rad`, table-clearance violation `0.0`, success mean about
+  `9.77e-06`, lifted mean about `3.71e-04`, EE-to-cube distance about
+  `0.0675 m`, finger-center-to-cube distance about `0.0592 m`, and gripper
+  width about `0.0025 m`.
+- Interpretation: reset-prior mechanics remain healthy and the policy learns
+  approach/close behavior, but sustained lift/success is still sparse at this
+  training point. Continue monitoring/requeue rather than declaring success.
