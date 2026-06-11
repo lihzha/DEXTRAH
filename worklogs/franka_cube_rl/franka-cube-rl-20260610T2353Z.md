@@ -1119,3 +1119,109 @@ Decision:
 - Run a final eval at a later or final checkpoint and decide whether the
   remaining issue is acceptable task behavior or needs additional grasp-quality
   shaping.
+
+## 2026-06-10 18:29 PDT - Final PPO Training Completed
+
+Result:
+- job_id: `28957528`
+- scheduler status: `COMPLETED`, exit `0:0`, elapsed `00:31:22`.
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseclear_ppo_20260610_1756`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28957528.out`
+- final stdout reached `epoch: 600/600`, saved final checkpoints, then printed
+  `MAX EPOCHS NUM!` and `Training Done`.
+- best checkpoint:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseclear_ppo_20260610_1756/nn/dextrah_franka_cube_grasp.pth`
+- final checkpoint:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseclear_ppo_20260610_1756/nn/last_dextrah_franka_cube_grasp_ep_600_rew_13045.947.pth`
+
+Training Scalars:
+- final `rewards/iter`: `13052.224`; last-10 mean `13064.818`.
+- final `Episode/cube_success_rate`: `0.85997`; last-10 mean `0.82792`.
+- final `Episode/cube_has_lifted_rate`: `0.94377`; last-10 mean `0.90838`.
+- final `Episode/cube_lift_height`: `0.15435m`; last-10 mean `0.14879m`.
+- final `Episode/cube_finger_table_clearance`: `0.19452m`.
+- final `Episode/cube_finger_table_clearance_violation`: `0.0`.
+- final `Episode/cube_gripper_width`: `0.05884m`.
+- final `Episode/cube_ee_to_cube_dist`: `0.01516m`.
+
+Analysis:
+- The base-height/table-clearance fix remains effective through training:
+  final clearance violations are zero.
+- PPO learned the lift objective after the earlier stuck phase: training
+  success and has-lifted rates are high by the final epochs.
+- Final visual eval is still required because prior evals showed real lifts but
+  rough, high-on-fingers grasp geometry.
+
+Next:
+- Submit a final camera-fixed eval against the best checkpoint.
+
+## 2026-06-10 18:29 PDT - Final Best-Checkpoint Eval Submitted
+
+Goal:
+- Verify the final best PPO checkpoint in camera-fixed eval with video and
+  metrics, focusing on lift success, table clearance, and remaining grasp
+  quality.
+
+Command / Job:
+- local commit: `7c8a301` plus this pending worklog update.
+- eval source commit on A100:
+  `185d31c24f4fa4b0115ba6a468013ab36a2c0091`.
+- command:
+  `RUN_NAME=franka_cube_baseclear_eval_final_20260610_1829 CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-rl-20260610T2353Z-evalfix CHECKPOINT=/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseclear_ppo_20260610_1756/nn/dextrah_franka_cube_grasp.pth NUM_ENVS=4 NUM_STEPS=600 VIDEO_LENGTH=600 PRINT_INTERVAL=20 SEED=104 CUBE_SPAWN_XY_RANDOMIZATION=0.08 sbatch --parsable cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- job_id: `28958630`
+- expected log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_28958630.out`
+- expected run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_baseclear_eval_final_20260610_1829`
+
+Monitoring Criteria:
+- Fetch final video and metrics locally.
+- Open the MP4 with `viz-open`.
+- Confirm nonblank video, valid frame count/duration, cube/table in frame, no
+  gripper/table penetration, and whether grasp quality is acceptable or still
+  needs shaping.
+
+## 2026-06-10 18:34 PDT - Final Best-Checkpoint Eval Completed
+
+Result:
+- job_id: `28958630`
+- scheduler status: `COMPLETED`, exit `0:0`, elapsed `00:01:45`.
+- local artifact mirror:
+  `cluster_results/a1002/evals/franka_cube_baseclear_eval_final_20260610_1829`
+- fetched log:
+  `cluster_logs/a1002/dextrah/eval_franka_cube_28958630.out`
+- viewer URL:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-rl-20260610T2353Z/cluster_results/a1002/evals/franka_cube_baseclear_eval_final_20260610_1829/videos/franka-cube-grasp-eval-step-0.mp4`
+- video metadata: `1280x720`, `600` frames, `10.0s`.
+- contact sheet:
+  `cluster_results/a1002/evals/franka_cube_baseclear_eval_final_20260610_1829/inspection/contact_sheet.jpg`
+
+Metrics:
+- `num_steps_completed=600`, `done_count=4`.
+- success: mean `0.83125`, final `0.0`, last-window mean `0.8975`,
+  max `1.0`.
+- cube lift height: mean `0.14686m`, max `0.16407m`, final `0.0m`.
+- has-lifted: mean `0.90667`, max `1.0`, final `0.0`.
+- finger table clearance: mean `0.18568m`, min `0.05630m`.
+- clearance violation: `0.0`.
+- cube XY error: mean `0.06959m`, max `0.07920m`.
+- gripper width: mean `0.05912m`.
+- ee-to-cube distance: mean `0.01497m`.
+
+Visual Inspection:
+- The video is valid and camera framing is correct.
+- The final checkpoint repeatedly lifts the cube above the table; no fingertip
+  or gripper/table penetration is visible.
+- The last frame occurs after env resets/drop, matching `success_rate_final=0`.
+- Residual grasp quality is still rough: the cube often rides high on or near
+  the gripper fingers rather than a centered pinch. This is much better than
+  the original table-penetration failure and is sufficient evidence that the
+  Franka cube RL task now learns the cube-lift objective, but a future
+  grasp-quality iteration could tighten the manipulation style.
+
+Decision:
+- Treat the Franka cube RL debug objective as functionally fixed for lift
+  learning and table clearance.
+- No further reward/base-height patch is required before handing this back.
