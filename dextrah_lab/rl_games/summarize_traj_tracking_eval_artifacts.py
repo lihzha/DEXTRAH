@@ -107,6 +107,7 @@ def _draw_plot(steps: list[dict[str, object]], output_path: Path) -> None:
                 ("phase", "cube_traj_tracking_phase_progress", (40, 90, 190), 1.0),
                 ("target clearance", "cube_traj_tracking_target_table_clearance", (45, 145, 95), 0.36),
                 ("unsafe rate", "cube_traj_tracking_unsafe_target_rate", (210, 40, 40), 1.0),
+                ("hold active", "hold_active_rate", (120, 70, 170), 1.0),
             ],
         ),
         (
@@ -145,6 +146,7 @@ def _draw_plot(steps: list[dict[str, object]], output_path: Path) -> None:
                 ("raw close", "raw_policy_action_close_mean", (205, 95, 45), 1.0),
                 ("ref close", "reference_delta_action_close_mean", (215, 150, 55), 1.0),
                 ("mixed close", "mixed_action_close_mean", (40, 150, 150), 1.0),
+                ("hold close", "hold_applied_action_close_mean", (80, 80, 80), 1.0),
             ],
         ),
     ]
@@ -238,6 +240,7 @@ def main() -> None:
         "action_source": summary.get("action_source"),
         "action_source_notes": summary.get("action_source_notes"),
         "reference_mix_alpha": summary.get("reference_mix_alpha"),
+        "hold_config": summary.get("hold_config"),
         "checkpoint": summary.get("checkpoint"),
         "done_count": summary.get("done_count"),
         "num_steps_completed": summary.get("num_steps_completed"),
@@ -290,6 +293,22 @@ def main() -> None:
         "mixed_reference_action_error_up_abs_mean": _summary(
             summary, "mixed_reference_action_error_up_abs_mean", "mean"
         ),
+        "hold_active_rate_mean": _summary(summary, "hold_active_rate", "mean"),
+        "hold_active_rate_final": _summary(summary, "hold_active_rate", "final"),
+        "hold_new_trigger_rate_max": _summary(summary, "hold_new_trigger_rate", "max"),
+        "hold_trigger_step_mean": _summary(summary, "hold_trigger_step_mean", "mean"),
+        "hold_phase_trigger_rate_mean": _summary(summary, "hold_phase_trigger_rate", "mean"),
+        "hold_lift_trigger_rate_mean": _summary(summary, "hold_lift_trigger_rate", "mean"),
+        "hold_success_trigger_rate_mean": _summary(summary, "hold_success_trigger_rate", "mean"),
+        "hold_contact_trigger_rate_mean": _summary(summary, "hold_contact_trigger_rate", "mean"),
+        "hold_target_pos_z_final": _summary(summary, "hold_target_pos_z_mean", "final"),
+        "hold_action_close_mean": _summary(summary, "hold_action_close_mean", "mean"),
+        "hold_action_up_mean": _summary(summary, "hold_action_up_mean", "mean"),
+        "hold_applied_action_close_mean": _summary(summary, "hold_applied_action_close_mean", "mean"),
+        "hold_applied_action_up_mean": _summary(summary, "hold_applied_action_up_mean", "mean"),
+        "applied_reference_action_error_l2_mean": _summary(
+            summary, "applied_reference_action_error_l2_mean", "mean"
+        ),
         "fixed_windows": {
             window_name: {
                 "reward_mean": _window_metric(summary, window_name, "reward_mean", "mean"),
@@ -323,6 +342,16 @@ def main() -> None:
                 "reference_up_mean": _window_metric(summary, window_name, "reference_delta_action_up_mean", "mean"),
                 "mixed_close_mean": _window_metric(summary, window_name, "mixed_action_close_mean", "mean"),
                 "mixed_up_mean": _window_metric(summary, window_name, "mixed_action_up_mean", "mean"),
+                "hold_active_rate": _window_metric(summary, window_name, "hold_active_rate", "mean"),
+                "hold_applied_close_mean": _window_metric(
+                    summary, window_name, "hold_applied_action_close_mean", "mean"
+                ),
+                "hold_applied_up_mean": _window_metric(
+                    summary, window_name, "hold_applied_action_up_mean", "mean"
+                ),
+                "applied_reference_error_l2_mean": _window_metric(
+                    summary, window_name, "applied_reference_action_error_l2_mean", "mean"
+                ),
                 "policy_reference_error_l2_mean": _window_metric(
                     summary, window_name, "policy_reference_action_error_l2_mean", "mean"
                 ),
@@ -378,8 +407,11 @@ def main() -> None:
                     f"{_fmt(window['raw_policy_close_mean'], 4)}/{_fmt(window['raw_policy_up_mean'], 4)}",
                     f"{_fmt(window['reference_close_mean'], 4)}/{_fmt(window['reference_up_mean'], 4)}",
                     f"{_fmt(window['mixed_close_mean'], 4)}/{_fmt(window['mixed_up_mean'], 4)}",
+                    f"{_fmt(window['hold_active_rate'], 4)}",
+                    f"{_fmt(window['hold_applied_close_mean'], 4)}/{_fmt(window['hold_applied_up_mean'], 4)}",
                     _fmt(window["policy_reference_error_l2_mean"], 4),
                     _fmt(window["mixed_reference_error_l2_mean"], 4),
+                    _fmt(window["applied_reference_error_l2_mean"], 4),
                     _fmt(window["action_alignment_reward_mean"], 4),
                     _fmt(window["action_alignment_error_mean"], 4),
                     _fmt(window["target_clearance_min"], 4),
@@ -391,8 +423,8 @@ def main() -> None:
         )
     window_table = "\n".join(
         [
-            "| Window | Reward | EE-target | EE-cube | Finger-cube | Grip width | Close util | Lift util | Raw close/up | Ref close/up | Mixed close/up | Policy-ref L2 | Mixed-ref L2 | Align reward | Align err | Target clearance min | Lift max | Success |",
-            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+            "| Window | Reward | EE-target | EE-cube | Finger-cube | Grip width | Close util | Lift util | Raw close/up | Ref close/up | Mixed close/up | Hold active | Hold applied close/up | Policy-ref L2 | Mixed-ref L2 | Applied-ref L2 | Align reward | Align err | Target clearance min | Lift max | Success |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
             *window_rows,
         ]
     )
@@ -401,6 +433,7 @@ def main() -> None:
 
 - action source: `{summary.get('action_source')}` ({summary.get('action_source_notes')})
 - reference mix alpha: {_fmt(summary.get('reference_mix_alpha'))}
+- hold config: `{summary.get('hold_config')}`
 - checkpoint: `{summary.get('checkpoint')}`
 - steps: {summary.get('num_steps_completed')}/{summary.get('num_steps_requested')}
 - reward mean/final: {_fmt(summary.get('reward_mean'))} / {_fmt(summary.get('reward_final'))}
@@ -428,6 +461,17 @@ def main() -> None:
 - mixed close/up mean: {_fmt(compact['mixed_action_close_mean'])} / {_fmt(compact['mixed_action_up_mean'])}
 - policy-reference L2/close/up error mean: {_fmt(compact['policy_reference_action_error_l2_mean'])} / {_fmt(compact['policy_reference_action_error_close_abs_mean'])} / {_fmt(compact['policy_reference_action_error_up_abs_mean'])}
 - mixed-reference L2/close/up error mean: {_fmt(compact['mixed_reference_action_error_l2_mean'])} / {_fmt(compact['mixed_reference_action_error_close_abs_mean'])} / {_fmt(compact['mixed_reference_action_error_up_abs_mean'])}
+
+## Terminal Hold
+
+- hold active mean/final: {_fmt(compact['hold_active_rate_mean'])} / {_fmt(compact['hold_active_rate_final'])}
+- hold new-trigger max: {_fmt(compact['hold_new_trigger_rate_max'])}
+- hold trigger step mean: {_fmt(compact['hold_trigger_step_mean'])}
+- phase/lift/success/contact trigger rates: {_fmt(compact['hold_phase_trigger_rate_mean'])} / {_fmt(compact['hold_lift_trigger_rate_mean'])} / {_fmt(compact['hold_success_trigger_rate_mean'])} / {_fmt(compact['hold_contact_trigger_rate_mean'])}
+- hold target z final: {_fmt(compact['hold_target_pos_z_final'])} m
+- hold action close/up mean: {_fmt(compact['hold_action_close_mean'])} / {_fmt(compact['hold_action_up_mean'])}
+- hold-applied action close/up mean: {_fmt(compact['hold_applied_action_close_mean'])} / {_fmt(compact['hold_applied_action_up_mean'])}
+- applied-reference action L2 mean: {_fmt(compact['applied_reference_action_error_l2_mean'])}
 
 ## Fixed-Window Rollout Metrics
 

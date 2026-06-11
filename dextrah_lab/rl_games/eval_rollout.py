@@ -34,21 +34,60 @@ parser.add_argument("--trace_jsonl_path", type=str, default=None, help="Path to 
 parser.add_argument("--deterministic", action=argparse.BooleanOptionalAction, default=True, help="Use deterministic actions.")
 parser.add_argument(
     "--action_source",
-    choices=("policy", "zero", "reference_delta", "policy_reference_mix"),
+    choices=(
+        "policy",
+        "zero",
+        "reference_delta",
+        "policy_reference_mix",
+        "reference_delta_hold",
+        "policy_reference_mix_hold",
+    ),
     default="policy",
     help=(
         "Action source for rollout. 'policy' loads an RL-Games checkpoint. "
         "'reference_delta' maps the trajectory target position/gripper schedule "
         "into the existing Franka delta-IK action interface. "
         "'policy_reference_mix' loads a policy checkpoint and blends its action "
-        "toward the reference_delta action."
+        "toward the reference_delta action. '*_hold' variants follow the source "
+        "until a contact/lift/success/phase trigger, then hold a lifted target "
+        "with a closed gripper."
     ),
 )
 parser.add_argument(
     "--reference_mix_alpha",
     type=float,
     default=0.0,
-    help="For action_source=policy_reference_mix, fraction of reference_delta action in the applied action.",
+    help="For policy_reference_mix* action sources, fraction of reference_delta action in the pre-hold action.",
+)
+parser.add_argument(
+    "--hold_phase_start",
+    type=float,
+    default=0.42,
+    help="For *_hold action sources, force terminal hold once trajectory phase progress reaches this value.",
+)
+parser.add_argument(
+    "--hold_trigger_lift_height",
+    type=float,
+    default=0.02,
+    help="For *_hold action sources, enter hold when cube lift height reaches this many meters.",
+)
+parser.add_argument(
+    "--hold_contact_max_finger_dist",
+    type=float,
+    default=0.16,
+    help="For *_hold action sources, enter hold when max finger-to-cube distance is below this value.",
+)
+parser.add_argument(
+    "--hold_lift_height",
+    type=float,
+    default=0.10,
+    help="For *_hold action sources, hold target z is cube z at trigger plus this many meters.",
+)
+parser.add_argument(
+    "--hold_gripper_action",
+    type=float,
+    default=-1.0,
+    help="For *_hold action sources, gripper command after hold trigger.",
 )
 parser.add_argument(
     "--summary_window",
@@ -100,6 +139,11 @@ from isaaclab_rl.rl_games import RlGamesGpuEnv, RlGamesVecEnvWrapper
 import dextrah_lab.tasks.dextrah_kuka_allegro.gym_setup  # noqa: F401
 import dextrah_lab.tasks.dextrah_franka_cube_grasp.gym_setup  # noqa: F401
 import dextrah_lab.tasks.dextrah_franka_star_kitting.gym_setup  # noqa: F401
+
+
+POLICY_ACTION_SOURCES = ("policy", "policy_reference_mix", "policy_reference_mix_hold")
+MIX_ACTION_SOURCES = ("policy_reference_mix", "policy_reference_mix_hold")
+HOLD_ACTION_SOURCES = ("reference_delta_hold", "policy_reference_mix_hold")
 
 
 def _mean_float(value) -> float | None:
@@ -321,6 +365,154 @@ def _reference_delta_actions(task_env) -> torch.Tensor:
     return actions
 
 
+def _delta_actions_to_local_targets(
+    task_env,
+    target_pos_local: torch.Tensor,
+    gripper_action: float,
+) -> torch.Tensor:
+    """Convert local env-frame task-space targets into the Franka delta-IK action convention."""
+
+    if hasattr(task_env, "_compute_intermediate_values"):
+        task_env._compute_intermediate_values()
+
+    ee_pos_b, _ = task_env._compute_ee_frame_pose()
+    target_pos_w = target_pos_local + task_env.scene.env_origins
+    target_pos_b, _ = math_utils.subtract_frame_transforms(
+        task_env._robot.data.root_pos_w,
+        task_env._robot.data.root_quat_w,
+        target_pos_w,
+        task_env._robot.data.root_quat_w,
+    )
+
+    actions = _zero_actions(task_env)
+    position_scale = torch.clamp(task_env.action_scale[:3], min=1.0e-6)
+    actions[:, :3] = torch.clamp((target_pos_b - ee_pos_b) / position_scale, -1.0, 1.0)
+    if actions.shape[-1] >= 7:
+        actions[:, 6] = torch.clamp(
+            torch.full((task_env.num_envs,), float(gripper_action), device=task_env.device),
+            -1.0,
+            1.0,
+        )
+    return actions
+
+
+def _env_tensor(task_env, name: str, default: float = 0.0) -> torch.Tensor:
+    value = getattr(task_env, name, None)
+    if isinstance(value, torch.Tensor):
+        tensor = value.detach().float()
+        if tensor.ndim == 0:
+            return tensor.reshape(1).expand(task_env.num_envs).to(device=task_env.device)
+        return tensor.reshape(task_env.num_envs, -1)[:, 0].to(device=task_env.device)
+    return torch.full((task_env.num_envs,), float(default), device=task_env.device)
+
+
+def _ensure_hold_state(task_env) -> dict[str, torch.Tensor]:
+    state = getattr(task_env, "_eval_terminal_hold_state", None)
+    if (
+        not isinstance(state, dict)
+        or state.get("active", torch.empty(0, device=task_env.device)).shape[0] != task_env.num_envs
+    ):
+        state = {
+            "active": torch.zeros(task_env.num_envs, dtype=torch.bool, device=task_env.device),
+            "target_pos_local": torch.zeros(task_env.num_envs, 3, device=task_env.device),
+            "trigger_step": torch.full((task_env.num_envs,), -1.0, device=task_env.device),
+            "phase_triggered": torch.zeros(task_env.num_envs, dtype=torch.bool, device=task_env.device),
+            "lift_triggered": torch.zeros(task_env.num_envs, dtype=torch.bool, device=task_env.device),
+            "success_triggered": torch.zeros(task_env.num_envs, dtype=torch.bool, device=task_env.device),
+            "contact_triggered": torch.zeros(task_env.num_envs, dtype=torch.bool, device=task_env.device),
+            "call_count": torch.zeros((), device=task_env.device),
+        }
+        setattr(task_env, "_eval_terminal_hold_state", state)
+    return state
+
+
+def _reset_hold_state(task_env, env_mask: torch.Tensor) -> None:
+    state = getattr(task_env, "_eval_terminal_hold_state", None)
+    if not isinstance(state, dict):
+        return
+    mask = env_mask.to(device=task_env.device, dtype=torch.bool).reshape(-1)
+    if mask.numel() != task_env.num_envs or not bool(mask.any()):
+        return
+    state["active"][mask] = False
+    state["target_pos_local"][mask] = 0.0
+    state["trigger_step"][mask] = -1.0
+    for name in ("phase_triggered", "lift_triggered", "success_triggered", "contact_triggered"):
+        state[name][mask] = False
+
+
+def _hold_actions_from_source(task_env, base_actions: torch.Tensor) -> tuple[torch.Tensor, dict[str, float | None]]:
+    """Apply terminal hold to a pre-hold reference/mixed action stream."""
+
+    if not hasattr(task_env, "cube_pos"):
+        raise ValueError("terminal hold action sources require cube task metrics.")
+    if hasattr(task_env, "_compute_intermediate_values"):
+        task_env._compute_intermediate_values()
+
+    state = _ensure_hold_state(task_env)
+    state["call_count"] += 1.0
+
+    phase = _env_tensor(task_env, "traj_phase_progress")
+    lift_height = _env_tensor(task_env, "cube_lift_height")
+    success = _env_tensor(task_env, "in_success_region")
+    max_finger_dist = _env_tensor(task_env, "max_finger_to_cube_dist", default=math.inf)
+
+    phase_trigger = phase >= float(args_cli.hold_phase_start)
+    lift_trigger = lift_height >= float(args_cli.hold_trigger_lift_height)
+    success_trigger = success >= 0.5
+    contact_trigger = max_finger_dist <= float(args_cli.hold_contact_max_finger_dist)
+    trigger = phase_trigger | lift_trigger | success_trigger | contact_trigger
+    new_hold = (~state["active"]) & trigger
+
+    if bool(new_hold.any()):
+        cube_pos = getattr(task_env, "cube_pos").detach().clone()
+        ee_pos = getattr(task_env, "ee_pos", cube_pos).detach().clone()
+        target_pos = cube_pos.clone()
+        target_pos[:, 2] = torch.maximum(
+            cube_pos[:, 2] + float(args_cli.hold_lift_height),
+            ee_pos[:, 2],
+        )
+        state["target_pos_local"][new_hold] = target_pos[new_hold]
+        state["trigger_step"][new_hold] = state["call_count"]
+        state["phase_triggered"] |= new_hold & phase_trigger
+        state["lift_triggered"] |= new_hold & lift_trigger
+        state["success_triggered"] |= new_hold & success_trigger
+        state["contact_triggered"] |= new_hold & contact_trigger
+        state["active"] |= new_hold
+
+    hold_actions = _delta_actions_to_local_targets(
+        task_env,
+        state["target_pos_local"],
+        gripper_action=float(args_cli.hold_gripper_action),
+    )
+    active = state["active"].unsqueeze(-1)
+    applied_actions = torch.where(active, hold_actions, base_actions)
+
+    metrics: dict[str, float | None] = {
+        "hold_phase_start": float(args_cli.hold_phase_start),
+        "hold_trigger_lift_height": float(args_cli.hold_trigger_lift_height),
+        "hold_contact_max_finger_dist": float(args_cli.hold_contact_max_finger_dist),
+        "hold_lift_height": float(args_cli.hold_lift_height),
+        "hold_gripper_action": float(args_cli.hold_gripper_action),
+        "hold_active_rate": _mean_float(state["active"].float()),
+        "hold_new_trigger_rate": _mean_float(new_hold.float()),
+        "hold_phase_trigger_rate": _mean_float(state["phase_triggered"].float()),
+        "hold_lift_trigger_rate": _mean_float(state["lift_triggered"].float()),
+        "hold_success_trigger_rate": _mean_float(state["success_triggered"].float()),
+        "hold_contact_trigger_rate": _mean_float(state["contact_triggered"].float()),
+    }
+    triggered_steps = state["trigger_step"][state["trigger_step"] >= 0.0]
+    if triggered_steps.numel() > 0:
+        metrics["hold_trigger_step_mean"] = _mean_float(triggered_steps)
+        metrics["hold_trigger_step_min"] = _tensor_stat_float(triggered_steps, "min")
+        metrics["hold_trigger_step_max"] = _tensor_stat_float(triggered_steps, "max")
+    _add_vector_metrics(metrics, "hold_target_pos", state["target_pos_local"], ("x", "y", "z"))
+    _add_action_signal_metrics(metrics, "hold_action", hold_actions)
+    _add_action_signal_metrics(metrics, "hold_applied_action", applied_actions)
+    _add_action_delta_metrics(metrics, "hold_reference_action_error", hold_actions, base_actions)
+    _add_action_delta_metrics(metrics, "applied_reference_action_error", applied_actions, base_actions)
+    return applied_actions, metrics
+
+
 def _policy_actions(agent: BasePlayer | None, obs) -> torch.Tensor:
     if agent is None:
         raise ValueError("policy action source requires an RL-Games player.")
@@ -346,6 +538,12 @@ def _actions_from_source(
         reference_actions = _reference_delta_actions(task_env)
         _add_action_signal_metrics(metrics, "reference_delta_action", reference_actions)
         return reference_actions, metrics
+    if action_source == "reference_delta_hold":
+        reference_actions = _reference_delta_actions(task_env)
+        _add_action_signal_metrics(metrics, "reference_delta_action", reference_actions)
+        applied_actions, hold_metrics = _hold_actions_from_source(task_env, reference_actions)
+        metrics.update(hold_metrics)
+        return applied_actions, metrics
     if action_source == "policy_reference_mix":
         raw_policy_actions = _policy_actions(agent, obs)
         reference_actions = _reference_delta_actions(task_env)
@@ -359,6 +557,21 @@ def _actions_from_source(
         _add_action_delta_metrics(metrics, "mixed_reference_action_error", mixed_actions, reference_actions)
         _add_action_delta_metrics(metrics, "mixed_policy_action_error", mixed_actions, raw_policy_actions)
         return mixed_actions, metrics
+    if action_source == "policy_reference_mix_hold":
+        raw_policy_actions = _policy_actions(agent, obs)
+        reference_actions = _reference_delta_actions(task_env)
+        alpha = max(0.0, min(1.0, float(args_cli.reference_mix_alpha)))
+        mixed_actions = torch.clamp((1.0 - alpha) * raw_policy_actions + alpha * reference_actions, -1.0, 1.0)
+        metrics["reference_mix_alpha"] = alpha
+        _add_action_signal_metrics(metrics, "raw_policy_action", raw_policy_actions)
+        _add_action_signal_metrics(metrics, "reference_delta_action", reference_actions)
+        _add_action_signal_metrics(metrics, "mixed_action", mixed_actions)
+        _add_action_delta_metrics(metrics, "policy_reference_action_error", raw_policy_actions, reference_actions)
+        _add_action_delta_metrics(metrics, "mixed_reference_action_error", mixed_actions, reference_actions)
+        _add_action_delta_metrics(metrics, "mixed_policy_action_error", mixed_actions, raw_policy_actions)
+        applied_actions, hold_metrics = _hold_actions_from_source(task_env, mixed_actions)
+        metrics.update(hold_metrics)
+        return applied_actions, metrics
     raise ValueError(f"Unsupported action source: {action_source}")
 
 
@@ -557,7 +770,7 @@ def main(env_cfg, agent_cfg: dict):
     _configure_eval_camera(env_cfg)
 
     resume_path = None
-    if args_cli.action_source in ("policy", "policy_reference_mix"):
+    if args_cli.action_source in POLICY_ACTION_SOURCES:
         resume_path = _checkpoint_path(agent_cfg)
         agent_cfg["params"]["load_checkpoint"] = True
         agent_cfg["params"]["load_path"] = resume_path
@@ -586,7 +799,7 @@ def main(env_cfg, agent_cfg: dict):
         gym_env = gym.wrappers.RecordVideo(gym_env, **video_kwargs)
 
     agent: BasePlayer | None = None
-    if args_cli.action_source in ("policy", "policy_reference_mix"):
+    if args_cli.action_source in POLICY_ACTION_SOURCES:
         rl_device = agent_cfg["params"]["config"]["device"]
         clip_obs = agent_cfg["params"]["env"].get("clip_observations", math.inf)
         clip_actions = agent_cfg["params"]["env"].get("clip_actions", math.inf)
@@ -613,7 +826,7 @@ def main(env_cfg, agent_cfg: dict):
         obs = env.reset()
         if isinstance(obs, tuple):
             obs = obs[0]
-        if args_cli.action_source in ("policy", "policy_reference_mix") and isinstance(obs, dict):
+        if args_cli.action_source in POLICY_ACTION_SOURCES and isinstance(obs, dict):
             obs = obs["obs"]
         if agent is not None:
             _ = agent.get_batch_size(obs, 1)
@@ -633,7 +846,7 @@ def main(env_cfg, agent_cfg: dict):
                 else:
                     obs, rewards, dones, _ = step_out
 
-                if args_cli.action_source in ("policy", "policy_reference_mix") and isinstance(obs, dict):
+                if args_cli.action_source in POLICY_ACTION_SOURCES and isinstance(obs, dict):
                     obs = obs["obs"]
 
                 success_rate = _env_metric(task_env, "in_success_region")
@@ -646,6 +859,8 @@ def main(env_cfg, agent_cfg: dict):
                     if agent is not None and agent.is_rnn and agent.states is not None and dones_bool.any():
                         for state in agent.states:
                             state[:, dones_bool, :] = 0.0
+                    if args_cli.action_source in HOLD_ACTION_SOURCES and dones_bool.any():
+                        _reset_hold_state(task_env, dones_bool)
 
                 step_record = {
                     "step": step + 1,
@@ -682,15 +897,37 @@ def main(env_cfg, agent_cfg: dict):
                 "position_only_delta_ik_from_runtime_task_space_reference_plus_gripper_schedule"
                 if args_cli.action_source == "reference_delta"
                 else (
+                    "position_only_delta_ik_reference_delta_until_terminal_hold_target_plus_closed_gripper"
+                    if args_cli.action_source == "reference_delta_hold"
+                    else (
                     "rl_games_policy_blended_with_position_only_delta_ik_reference_delta_plus_gripper_schedule"
                     if args_cli.action_source == "policy_reference_mix"
-                    else "zero_actions"
+                    else (
+                        "rl_games_policy_blended_with_reference_delta_until_terminal_hold_target_plus_closed_gripper"
+                        if args_cli.action_source == "policy_reference_mix_hold"
+                        else "zero_actions"
+                    )
+                    )
                 )
             )
         ),
         "reference_mix_alpha": (
             max(0.0, min(1.0, float(args_cli.reference_mix_alpha)))
-            if args_cli.action_source == "policy_reference_mix"
+            if args_cli.action_source in MIX_ACTION_SOURCES
+            else None
+        ),
+        "hold_config": (
+            {
+                "hold_phase_start": float(args_cli.hold_phase_start),
+                "hold_trigger_lift_height": float(args_cli.hold_trigger_lift_height),
+                "hold_contact_max_finger_dist": float(args_cli.hold_contact_max_finger_dist),
+                "hold_lift_height": float(args_cli.hold_lift_height),
+                "hold_gripper_action": float(args_cli.hold_gripper_action),
+                "target_policy": (
+                    "freeze_cube_position_at_trigger_plus_lift_height_with_z_at_least_current_ee_z"
+                ),
+            }
+            if args_cli.action_source in HOLD_ACTION_SOURCES
             else None
         ),
         "num_envs": env_cfg.scene.num_envs,

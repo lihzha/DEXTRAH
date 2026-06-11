@@ -2646,3 +2646,41 @@ Next Proposed Bounded Diagnostic:
 - Acceptance for this tiny job: target unsafe remains `0`, no reset pathology, `mixed_reference_l2=0` before hold, final success/lift remains positive rather than only transient, and video/contact sheet shows sustained grasp/hold through the final frame.
 - If hold fixes final success, patch the training design toward approach/pregrasp/grasp tracking followed by RL hold/lift stabilization instead of full-trajectory tracking. If hold still fails, debug gripper closure/contact geometry/pose target stability before more PPO.
 - No long PPO scale-up until this hold/stabilization diagnostic is run and visually/quantitatively inspected.
+
+## 2026-06-11T15:44:28-07:00 - terminal hold/reference stabilization diagnostic plan
+
+Goal:
+- Implement and run the next bounded eval-only terminal hold diagnostic requested by the orchestrator. This is not PPO scale-up.
+
+Hypothesis:
+- The alpha `1.0` policy-reference sweep proved the transformed reference plus delta-IK action interface can produce transient lift, but final success drops because the reference/phase timing moves the hand away or fails to stabilize the grasp. If we follow the reference until contact/lift/success or a fixed phase threshold, then hold a stable object-conditioned lifted EE target with a closed gripper, final lift/success should be sustained. If not, the remaining problem is gripper/contact/hold target stability rather than PPO learning alone.
+
+Planned Change:
+- `dextrah_lab/rl_games/eval_rollout.py`: add eval-only action sources `reference_delta_hold` and `policy_reference_mix_hold`; add hold parameters for phase trigger, lift trigger, contact trigger, hold lift height, and gripper close command; maintain per-env hold state; log hold-active/trigger rates, hold target position, reference/policy/mixed/hold actions, and action errors.
+- `cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`: export/pass the hold parameters and require `CHECKPOINT` for `policy_reference_mix_hold`.
+- `dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py`: include hold config and hold metrics in summary/report artifacts so the run is inspectable without opening raw `metrics.json`.
+- Owned worklog only: record validation, exact commit, l401 deploy state, job id, remote/local run dirs, artifact paths, `viz-open` URLs, and interpretation.
+
+Validation Before Launch:
+- `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py`
+- `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- `git diff --check`
+- Commit/push, then update the agent-owned l401 worktree to the exact commit via Git.
+
+Planned Job:
+- One 480-step video eval on l401 with `ACTION_SOURCE=policy_reference_mix_hold`, `REFERENCE_MIX_ALPHA=1.0`, the same epoch-5 action-alignment checkpoint, `NUM_ENVS=4`, seed `64`, same unvalidated 60 mm compact reference, and bounded hold defaults.
+- Candidate hold defaults: trigger when `traj_phase_progress >= 0.42`, `cube_lift_height >= 0.02 m`, `in_success_region > 0`, or `max_finger_to_cube_dist <= 0.16 m`; target is `cube_pos_at_trigger + [0, 0, 0.10]` with z at least current EE z; gripper action `-1.0`.
+
+Acceptance Criteria:
+- `metrics.json`, `trace.csv`, `trace.jsonl`, stdout log, mp4, contact sheet, `report.md`, `summary.json/csv`, `trajectory_trace_plot.png`, and `train_eval_consistency.json` are fetched locally and opened with `viz-open`.
+- Target unsafe remains `0`; target clearance remains sane; observation size remains `72`, phase observations false, no reset pathology, and reference caveat remains explicit: `curobo_validated=false`, `reference_delta` is position-only delta IK plus gripper schedule, not cuRobo replay.
+- The report directly answers whether terminal hold recovers sustained final lift/success compared with alpha `1.0` transient lift and the failed learned-policy artifacts.
+
+Implementation Checkpoint:
+- `eval_rollout.py` now supports `reference_delta_hold` and `policy_reference_mix_hold`, including per-env hold state, phase/lift/success/contact triggers, frozen object-conditioned lift targets, closed gripper hold actions, pre-hold policy/reference/mixed action metrics, applied hold action metrics, and reset-aware hold-state clearing.
+- `sbatch_eval_franka_cube_grasp_1gpu.sh` now exports/echoes/passes `HOLD_PHASE_START`, `HOLD_TRIGGER_LIFT_HEIGHT`, `HOLD_CONTACT_MAX_FINGER_DIST`, `HOLD_LIFT_HEIGHT`, and `HOLD_GRIPPER_ACTION`; `policy_reference_mix_hold` requires `CHECKPOINT`.
+- `summarize_traj_tracking_eval_artifacts.py` now includes hold config, hold activation/trigger/action/error metrics, fixed-window hold columns, and hold-active trace plotting.
+- validation: `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py` passed.
+- validation: `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh` passed.
+- validation: `git diff --check` passed.
+- validation: summarizer regression on previous alpha `1.0` refmix metrics wrote `/tmp/traj_hold_summary_regression/{report.md,summary.json,train_eval_consistency.json,trajectory_trace_plot.png}` with hold-only fields as `n/a`.
