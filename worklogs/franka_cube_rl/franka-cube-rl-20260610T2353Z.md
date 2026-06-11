@@ -496,3 +496,45 @@ Command / Job:
 Next:
 - Monitor validator completion and inspect metrics/video before launching the
   second bounded PPO attempt.
+
+## 2026-06-10 17:29 PDT - Gated Lift-Action Validation Passed
+
+Command / Job:
+- job_id: `28957056`
+- run_name: `franka_cube_validate_liftaction_20260610_1726`
+- code_commit:
+  `71800a88bc9befe7c40412609ed811526a626e51`
+- remote run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_cube_validate_liftaction_20260610_1726`
+- remote log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_cube_28957056.out`
+- local artifact mirror:
+  `cluster_results/a1002/validations/franka_cube_validate_liftaction_20260610_1726`
+- viewer URL:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-rl-20260610T2353Z/cluster_results/a1002/validations/franka_cube_validate_liftaction_20260610_1726/videos/franka-cube-validate-step-0.mp4`
+
+Result:
+- scheduler status: `COMPLETED`, exit `0:0`, elapsed `00:01:16`.
+- validator status: passed.
+- checks: `21 / 21` passed.
+- video: present and decodable, `1280x720`, `159` frames, `2.65s`.
+- visual inspection: contact sheet shows expected Franka/table/cube placement
+  and no rendering/frame issue.
+
+Key Metrics:
+- `reward_lift_intent_without_lift_is_capped`: lift-intent `3.7950`,
+  lifted `9.6889`, cap `0.45x`.
+- `reward_penalizes_descend_when_lift_ready`: closed `2.8724`, descend
+  `1.9488`.
+- `reward_lift_action_is_near_gated`: near lift intent `3.7950`, far lift
+  intent `1.4111`.
+- `success_predicate_accepts_lifted_cube_near_gripper`: success rate `1.0`,
+  lift `0.13m`, hand mean distance `0.1722m`, hand max distance `0.1724m`.
+- rollout: `160 / 160` steps completed, final success `0.0` for the scripted
+  rollout, max mean lift `0.0223m`, cube stayed in workspace.
+
+Decision:
+- Proceed to a second bounded PPO attempt from the gated lift-action patch.
+- Monitor the new scalar terms directly:
+  `cube_close_action_reward`, `cube_lift_action_reward`, and
+  `cube_descend_action_penalty`, in addition to lift/success/z-action.
