@@ -792,3 +792,42 @@ Worker C Diffusion Policy alternative:
   disabled-by-default policy-call trace hook
 - Worker C was nudged to run the next tiny traced eval and compare live lowdim
   observation history/action chunks against converted dataset phases
+
+## 2026-06-11 Monitor Check 20:58 UTC
+
+Worker A reset-prior eval video:
+
+- User asked whether the first agent has eval videos. Initially only curve and
+  report artifacts existed; Worker A then patched the eval wrapper to expose
+  reset-prior overrides and launched a bounded 1-GPU l401 eval from the current
+  reset-prior checkpoint without interrupting active training job `28987954`.
+- Worker A branch now includes `51cac4a`:
+  `Enable prior reset eval video overrides`.
+- Eval job `1027734` (`ggx_eval_video`) completed `0:0` in `00:01:11` on
+  `pool0-00016`.
+- Remote eval run:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_ggx_pregrasp_reset_eval_ep875_20260611_205141`
+- Local fetched eval run:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_reset_eval_ep875_20260611_205141`
+- Video viewer:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_reset_eval_ep875_20260611_205141/videos/ggx-pregrasp-reset-ep875-step-0.mp4`
+- Video metadata: `1280x720`, `359` frames, `5.98 s`; representative frame is
+  nonblank and shows a tight camera on the gripper/cube.
+- Eval metrics from `metrics.json`: 360 steps; reward mean `3.836`, reward
+  final `4.065`; success rate mean/final/max `0.0`; has-lifted mean/final/max
+  `0.0`; cube lift height mean/final/max `0.0`; gripper width closes from
+  about `0.0796 m` to `0.00022 m`; finger-center-to-cube distance improves
+  from about `0.0956 m` to `0.0620 m`; table-clearance violation remains `0.0`.
+- Interpretation: the first-agent checkpoint is visually and metrically doing
+  the pregrasp/close behavior, but not yet a task-solving lift. This matches
+  the online training metrics: reset-prior is stable and reward is improving,
+  but sustained success/lift has not emerged yet.
+
+Final RL job `28987954`:
+
+- still running on a1001 at about `1:26` elapsed; reached at least epoch `928`
+  in stdout during this monitor window
+- interval checkpoints continue, including epoch `900` reward suffix
+  `2213.7234` and epoch `925` reward suffix `2196.059`
+- best reward improved to at least `2217.4502` around epoch `837`
+  before the eval-video checkpoint was sampled
