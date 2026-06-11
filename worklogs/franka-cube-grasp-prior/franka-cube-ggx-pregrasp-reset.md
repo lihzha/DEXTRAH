@@ -532,3 +532,35 @@ Next:
 - Deploy the latest branch commit to the l401 agent worktree.
 - Launch final 8-GPU training with `TASK=Dextrah-Franka-Cube-Grasp`, default wrapper PPO/env settings, `GRASP_PRIOR_RESET_ENABLED=True`, `GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_smoke.npz`, and JSONL direct metrics enabled for artifact inspection.
 - Monitor through requeues if needed; inspect JSONL reset/reward metrics, checkpoints, logs, and any eval artifacts before considering the final run complete.
+
+## 2026-06-11T19:30:05Z - final 8-GPU training launch record
+
+Goal:
+- Launch the apple-to-apple GraspGenX pregrasp-reset variant at the required final scale: `Dextrah-Franka-Cube-Grasp`, 2048 envs, 8 GPUs, same PPO wrapper/settings, only prior reset plus library overrides, with JSONL direct metrics enabled for inspection.
+
+Change:
+- Committed and pushed worklog result as `99ea26d5b449581988594f40168806642c486326`.
+- Deployed the exact branch state to the NFS agent worktree; both l401 and a1001 see `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset` at `99ea26d5b449581988594f40168806642c486326`.
+- Attempted to submit from l401 first, but no job was created because l401 rejected the wrapper's default partition list: `invalid partition specified: batch_singlenode`. `sinfo` on l401 shows only `batch`/`batch_long` GPU partitions with `gpu:4`, so l401 cannot run the required single-node 8-GPU shape without changing the training geometry.
+- Switched final training to a1001, where `sinfo` shows valid 8-GPU partitions (`batch_singlenode`, `grizzly`, `polar`, `polar3`, `polar4`, etc.) and the same DEXTRAH container/env/worktree/results paths are visible.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- implementation_commit: 99ea26d5b449581988594f40168806642c486326
+- push/pull: pushed to `origin/codex/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: a1001 NFS worktree clean at `99ea26d5b449581988594f40168806642c486326`
+
+Command / Job:
+- failed l401 command: `sbatch --job-name=ggx_reset_8gpu --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=99ea26d5b449581988594f40168806642c486326,TASK=Dextrah-Franka-Cube-Grasp,FULL_EXPERIMENT_NAME=franka_cube_ggx_pregrasp_reset_8gpu_20260611_192735,AUTO_RESUME=True,SELF_RELAUNCH=True,DEXTRAH_RLGAMES_JSONL_METRICS=True,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_smoke.npz cluster/sbatch_train_teacher_8gpu.sh`
+- final a1001 command: `sbatch --job-name=ggx_reset_8gpu --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=99ea26d5b449581988594f40168806642c486326,TASK=Dextrah-Franka-Cube-Grasp,FULL_EXPERIMENT_NAME=franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005,AUTO_RESUME=True,SELF_RELAUNCH=True,DEXTRAH_RLGAMES_JSONL_METRICS=True,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_smoke.npz cluster/sbatch_train_teacher_8gpu.sh`
+- job_id: 28987954
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28987954.out`
+- expected artifacts: rank-local JSONL direct metrics, checkpoints under `nn/`, runtime sidecars, params, Slurm log
+
+Result:
+- status: submitted
+- metrics/artifacts: pending
+
+Next:
+- Monitor job `28987954` on a1001 through startup and any requeues. Confirm the log prints 8 GPUs, 2048 envs, distributed/multi-GPU defaults, prior enabled, and JSONL metrics enabled. Inspect rank-local metrics/checkpoints/logs, patch/relaunch if abnormal, and do not stop at scheduler completion.
