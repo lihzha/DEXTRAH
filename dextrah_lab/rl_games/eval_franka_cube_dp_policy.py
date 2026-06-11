@@ -12,6 +12,7 @@ execute Diffusion Policy action chunks.
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import math
 import sys
@@ -60,6 +61,18 @@ parser.add_argument(
     default=0,
     help="Environment index to record when --debug_policy_trace_max_calls is positive.",
 )
+parser.add_argument(
+    "--support_dataset",
+    type=str,
+    default=None,
+    help="Optional converted lowdim NPZ dataset for per-step nearest-demo support tracing.",
+)
+parser.add_argument(
+    "--support_trace_path",
+    type=str,
+    default=None,
+    help="Optional JSON/CSV prefix for nearest-demo support trace. Defaults under output_dir when --support_dataset is set.",
+)
 parser.add_argument("--video", action="store_true", default=False, help="Record rollout video.")
 parser.add_argument("--video_length", type=int, default=240)
 parser.add_argument("--video_folder", type=str, default=None)
@@ -90,6 +103,7 @@ import isaaclab_tasks  # noqa: F401
 from isaaclab_tasks.utils import parse_env_cfg
 
 import dextrah_lab.tasks.dextrah_franka_cube_grasp.gym_setup  # noqa: F401
+from dextrah_lab.offline_dp_bc.analyze_policy_trace import POSITION_FEATURE_IDX
 from dextrah_lab.offline_dp_bc.ppo_bridge import (
     FRANKA_CUBE_ACTION_DIM,
     FRANKA_CUBE_PPO_OBS_DIM,
@@ -97,6 +111,7 @@ from dextrah_lab.offline_dp_bc.ppo_bridge import (
     extract_lowdim_obs_from_ppo_obs,
     predict_action_sequence_from_ppo_obs,
 )
+from dextrah_lab.offline_dp_bc.trajectory_conversion import PICK_AND_LIFT_PHASE_ORDER
 
 
 DEFAULT_CAMERA_EYE = (-0.10, -0.78, 1.42)
@@ -251,6 +266,171 @@ def _latest_video_files(video_folder: Path | None) -> list[str]:
     return [str(path) for path in sorted(video_folder.glob("*.mp4"))]
 
 
+def _phase_names() -> list[str]:
+    # trajectory_to_episode writes phase ids from sorted(set(phases)).
+    return sorted(PICK_AND_LIFT_PHASE_ORDER)
+
+
+def _episode_for_row(row_idx: int, episode_ends: np.ndarray) -> tuple[int, int, int]:
+    episode_idx = int(np.searchsorted(episode_ends, int(row_idx), side="right"))
+    episode_idx = min(max(episode_idx, 0), int(episode_ends.shape[0] - 1))
+    start = 0 if episode_idx == 0 else int(episode_ends[episode_idx - 1])
+    end = int(episode_ends[episode_idx])
+    return episode_idx, start, end
+
+
+def _support_dataset_payload(path: Path | None) -> dict[str, Any] | None:
+    if path is None:
+        return None
+    data = np.load(path, allow_pickle=False)
+    obs = np.asarray(data["obs"], dtype=np.float32)
+    action = np.asarray(data["action"], dtype=np.float32)
+    phase_ids = np.asarray(data["phase_ids"], dtype=np.int32)
+    episode_ends = np.asarray(data["episode_ends"], dtype=np.int64)
+    feature_std = np.maximum(obs[:, POSITION_FEATURE_IDX].std(axis=0), 1.0e-4).astype(np.float32)
+    return {
+        "path": str(path),
+        "obs": obs,
+        "action": action,
+        "phase_ids": phase_ids,
+        "episode_ends": episode_ends,
+        "phase_names": _phase_names(),
+        "feature_std": feature_std,
+    }
+
+
+def _nearest_support_row(support: dict[str, Any], lowdim_obs: np.ndarray) -> tuple[int, float]:
+    obs = support["obs"]
+    feature_std = support["feature_std"]
+    distances = np.sqrt((((obs[:, POSITION_FEATURE_IDX] - lowdim_obs[POSITION_FEATURE_IDX]) / feature_std) ** 2).mean(axis=1))
+    idx = int(np.argmin(distances))
+    return idx, float(distances[idx])
+
+
+def _phase_min_distances(support: dict[str, Any], lowdim_obs: np.ndarray) -> dict[str, float]:
+    obs = support["obs"]
+    phase_ids = support["phase_ids"]
+    feature_std = support["feature_std"]
+    distances = np.sqrt((((obs[:, POSITION_FEATURE_IDX] - lowdim_obs[POSITION_FEATURE_IDX]) / feature_std) ** 2).mean(axis=1))
+    out: dict[str, float] = {}
+    for phase_id, phase_name in enumerate(support["phase_names"]):
+        mask = phase_ids == phase_id
+        if np.any(mask):
+            out[str(phase_name)] = float(np.min(distances[mask]))
+    return out
+
+
+def _history_step_payload(history: LowdimObsHistory, env_index: int) -> tuple[list[int], int]:
+    steps = np.asarray(history._step_history[int(env_index)], dtype=np.int64)
+    valid_steps = steps[steps >= 0]
+    gap = int(valid_steps[-1] - valid_steps[-2]) if valid_steps.shape[0] >= 2 else 0
+    return steps.astype(int).tolist(), gap
+
+
+def _collect_support_record(
+    *,
+    support: dict[str, Any],
+    step: int,
+    env_index: int,
+    lowdim_obs: np.ndarray,
+    action: np.ndarray | None,
+    reward_mean: float | None,
+    task_metrics: dict[str, float | None],
+    history: LowdimObsHistory,
+    action_queue_len_after_pop: int,
+) -> dict[str, Any]:
+    nearest_idx, nearest_distance = _nearest_support_row(support, lowdim_obs)
+    episode_idx, episode_start, _episode_end = _episode_for_row(nearest_idx, support["episode_ends"])
+    phase_id = int(support["phase_ids"][nearest_idx])
+    phase_name = str(support["phase_names"][phase_id])
+    nearest_obs = support["obs"][nearest_idx]
+    nearest_action = support["action"][nearest_idx]
+    phase_distances = _phase_min_distances(support, lowdim_obs)
+    history_steps, history_gap = _history_step_payload(history, env_index)
+    live_cme = np.asarray(lowdim_obs[14:17], dtype=np.float32)
+    nearest_cme = np.asarray(nearest_obs[14:17], dtype=np.float32)
+    action = np.asarray(action, dtype=np.float32) if action is not None else np.full(FRANKA_CUBE_ACTION_DIM, np.nan, dtype=np.float32)
+    return {
+        "step": int(step),
+        "env_index": int(env_index),
+        "nearest_demo_row": int(nearest_idx),
+        "nearest_demo_episode": int(episode_idx),
+        "nearest_demo_episode_step": int(nearest_idx - episode_start),
+        "nearest_demo_phase": phase_name,
+        "nearest_demo_distance": float(nearest_distance),
+        "nearest_demo_action_gripper": float(nearest_action[6]),
+        "nearest_demo_gripper_width": float(nearest_obs[20]),
+        "nearest_demo_cube_minus_ee": nearest_cme.astype(float).tolist(),
+        "live_cube_minus_ee": live_cme.astype(float).tolist(),
+        "live_to_nearest_demo_cube_minus_ee_norm": float(np.linalg.norm(live_cme - nearest_cme)),
+        "live_ee_pos": np.asarray(lowdim_obs[0:3], dtype=np.float32).astype(float).tolist(),
+        "live_cube_pos": np.asarray(lowdim_obs[7:10], dtype=np.float32).astype(float).tolist(),
+        "live_gripper_width": float(lowdim_obs[20]),
+        "ee_to_cube_dist": task_metrics.get("ee_to_cube_dist"),
+        "finger_center_to_cube_dist": task_metrics.get("finger_center_to_cube_dist"),
+        "cube_lift_height": task_metrics.get("cube_lift_height"),
+        "reward_mean": reward_mean,
+        "executed_action": action.astype(float).tolist(),
+        "executed_gripper": float(action[6]),
+        "history_steps": history_steps,
+        "history_step_gap": int(history_gap),
+        "action_queue_len_after_pop": int(action_queue_len_after_pop),
+        "phase_min_distances": phase_distances,
+    }
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): _json_safe(val) for key, val in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, tuple):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, np.ndarray):
+        return _json_safe(value.tolist())
+    if isinstance(value, np.generic):
+        return value.item()
+    return value
+
+
+def _write_support_csv(path: Path, records: list[dict[str, Any]]) -> None:
+    fieldnames = [
+        "step",
+        "env_index",
+        "nearest_demo_row",
+        "nearest_demo_episode",
+        "nearest_demo_episode_step",
+        "nearest_demo_phase",
+        "nearest_demo_distance",
+        "nearest_demo_action_gripper",
+        "nearest_demo_gripper_width",
+        "live_to_nearest_demo_cube_minus_ee_norm",
+        "live_gripper_width",
+        "ee_to_cube_dist",
+        "finger_center_to_cube_dist",
+        "cube_lift_height",
+        "reward_mean",
+        "executed_gripper",
+        "history_step_gap",
+        "action_queue_len_after_pop",
+        "live_cube_minus_ee",
+        "nearest_demo_cube_minus_ee",
+        "executed_action",
+        "history_steps",
+        "phase_min_distances",
+    ]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
+        writer.writeheader()
+        for record in records:
+            row = dict(record)
+            for key, value in list(row.items()):
+                if isinstance(value, (list, dict)):
+                    row[key] = json.dumps(_json_safe(value), sort_keys=True)
+            writer.writerow(row)
+
+
 def _lowdim_components(lowdim_obs: np.ndarray) -> dict[str, Any]:
     return {
         "ee_pos": lowdim_obs[0:3].astype(float).tolist(),
@@ -324,6 +504,15 @@ def main() -> None:
     )
     if debug_trace_path is not None:
         debug_trace_path.parent.mkdir(parents=True, exist_ok=True)
+    support_dataset_path = Path(args_cli.support_dataset).expanduser().resolve() if args_cli.support_dataset else None
+    support_trace_path = (
+        Path(args_cli.support_trace_path).expanduser().resolve()
+        if args_cli.support_trace_path
+        else (output_dir / "support_trace.json" if support_dataset_path is not None else None)
+    )
+    support_trace_csv_path = support_trace_path.with_suffix(".csv") if support_trace_path is not None else None
+    if support_trace_path is not None:
+        support_trace_path.parent.mkdir(parents=True, exist_ok=True)
     video_folder = Path(args_cli.video_folder).expanduser().resolve() if args_cli.video_folder else output_dir / "videos"
 
     checkpoint = Path(args_cli.checkpoint).expanduser().resolve()
@@ -339,7 +528,17 @@ def main() -> None:
         num_steps=int(args_cli.num_steps),
         debug_policy_trace_path=str(debug_trace_path) if debug_trace_path is not None else None,
         debug_policy_trace_max_calls=debug_trace_max_calls,
+        support_dataset=str(support_dataset_path) if support_dataset_path is not None else None,
+        support_trace_path=str(support_trace_path) if support_trace_path is not None else None,
     )
+    support_dataset = _support_dataset_payload(support_dataset_path)
+    if support_dataset is not None:
+        _stage(
+            "support_dataset_loaded",
+            dataset=str(support_dataset_path),
+            obs_shape=list(support_dataset["obs"].shape),
+            action_shape=list(support_dataset["action"].shape),
+        )
 
     env_cfg = parse_env_cfg(
         args_cli.task,
@@ -381,6 +580,7 @@ def main() -> None:
     action_queue = np.empty((task_env.num_envs, 0, FRANKA_CUBE_ACTION_DIM), dtype=np.float32)
     step_metrics: list[dict[str, float | int | None]] = []
     policy_trace_records: list[dict[str, Any]] = []
+    support_trace_records: list[dict[str, Any]] = []
     action_min = np.full(FRANKA_CUBE_ACTION_DIM, np.inf, dtype=np.float64)
     action_max = np.full(FRANKA_CUBE_ACTION_DIM, -np.inf, dtype=np.float64)
     done_count = 0
@@ -438,6 +638,22 @@ def main() -> None:
 
             reward_mean = _mean_float(rewards)
             task_metrics = _collect_task_metrics(task_env)
+            if support_dataset is not None:
+                lowdim_after = extract_lowdim_obs_from_ppo_obs(policy_obs).detach().float().cpu().numpy()
+                env_index = min(max(0, int(args_cli.debug_policy_trace_env_index)), int(lowdim_after.shape[0]) - 1)
+                support_trace_records.append(
+                    _collect_support_record(
+                        support=support_dataset,
+                        step=step + 1,
+                        env_index=env_index,
+                        lowdim_obs=lowdim_after[env_index],
+                        action=action_np[env_index],
+                        reward_mean=reward_mean,
+                        task_metrics=task_metrics,
+                        history=history,
+                        action_queue_len_after_pop=action_queue.shape[1],
+                    )
+                )
             step_record = {
                 "step": step + 1,
                 "reward_mean": reward_mean,
@@ -489,6 +705,10 @@ def main() -> None:
         "metrics_path": str(metrics_path),
         "debug_policy_trace_path": str(debug_trace_path) if debug_trace_path is not None else None,
         "debug_policy_trace_records": len(policy_trace_records),
+        "support_dataset": str(support_dataset_path) if support_dataset_path is not None else None,
+        "support_trace_path": str(support_trace_path) if support_trace_path is not None else None,
+        "support_trace_csv_path": str(support_trace_csv_path) if support_trace_csv_path is not None else None,
+        "support_trace_records": len(support_trace_records),
         "video_enabled": bool(args_cli.video),
         "video_files": _latest_video_files(video_folder if args_cli.video else None),
         "env_closed": env_closed,
@@ -519,6 +739,43 @@ def main() -> None:
             + "\n",
             encoding="utf-8",
         )
+    if support_trace_path is not None:
+        support_summary = {
+            "task": args_cli.task,
+            "checkpoint": str(checkpoint),
+            "dataset": str(support_dataset_path),
+            "num_envs": task_num_envs,
+            "num_steps_requested": int(args_cli.num_steps),
+            "action_chunk_steps": requested_action_chunk_steps,
+            "num_inference_steps": int(args_cli.num_inference_steps),
+            "env_index": int(args_cli.debug_policy_trace_env_index),
+            "records": len(support_trace_records),
+            "first_negative_gripper_step": next(
+                (int(record["step"]) for record in support_trace_records if float(record["executed_gripper"]) < 0.0),
+                None,
+            ),
+            "first_hard_close_step": next(
+                (int(record["step"]) for record in support_trace_records if float(record["executed_gripper"]) <= -0.9),
+                None,
+            ),
+            "nearest_demo_distance_start": support_trace_records[0]["nearest_demo_distance"] if support_trace_records else None,
+            "nearest_demo_distance_final": support_trace_records[-1]["nearest_demo_distance"] if support_trace_records else None,
+            "nearest_demo_phase_counts": {
+                phase: sum(1 for record in support_trace_records if record["nearest_demo_phase"] == phase)
+                for phase in sorted({str(record["nearest_demo_phase"]) for record in support_trace_records})
+            },
+        }
+        support_trace_path.write_text(
+            json.dumps(
+                {"summary": _json_safe(support_summary), "records": _json_safe(support_trace_records)},
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        if support_trace_csv_path is not None:
+            _write_support_csv(support_trace_csv_path, support_trace_records)
     print("FRANKA_CUBE_DP_POLICY_EVAL_DONE " + json.dumps(summary, sort_keys=True), flush=True)
 
 

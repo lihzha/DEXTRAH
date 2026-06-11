@@ -3413,3 +3413,130 @@ Planned Command / Job:
 Acceptance:
 - Diagnostic clarity only. Fetch run artifacts, inspect report/CSV/plot,
   generate/open viz URLs, update worklog. No BC/RL scale-up.
+
+## 2026-06-11T15:11:12-07:00 - open-to-close320 replay fetched and inspected
+
+Goal:
+- Complete the artifact loop for the later-window replay and decide whether it
+  supports train/eval mismatch, support drift, or a solved BC prior.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- local_commit: `00d96eb4a3d65abaad1d3d7706ae52ed1f1dfa96`
+- remote worktree commit for job:
+  `00d96eb4a3d65abaad1d3d7706ae52ed1f1dfa96`
+- official Diffusion Policy commit:
+  `5ba07ac6661db573af695b419a7947ecb704690f`
+
+Command / Job:
+- job_id: `1027759`
+- run_name:
+  `franka_cube_dp_replay_framefix_overfit2k_open_to_close320_20260611_145800`
+- Slurm status: `COMPLETED`, exit `0:0`, elapsed `00:06:07`,
+  node `pool0-00037`.
+- command:
+  `RUN_NAME=franka_cube_dp_replay_framefix_overfit2k_open_to_close320_20260611_145800 CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart DATASET=/results/dp_bc/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz CHECKPOINT=/results/dp_bc/checkpoints/franka_cube_curobo32_full_pick_lift_framefix_overfit2k/latest.ckpt NUM_ENVS=1 STEPS=320 NUM_INFERENCE_STEPS=100 MODES=dataset_open_t_plus_7,dp_replan PRINT_INTERVAL=32 CAPTURE_VIDEO=False SEED=42 sbatch cluster/sbatch_replay_franka_cube_dp_actions_1gpu.sh`
+- remote run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/replays/franka_cube_dp_replay_framefix_overfit2k_open_to_close320_20260611_145800`
+- local run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_replays/franka_cube_dp_replay_framefix_overfit2k_open_to_close320_20260611_145800`
+- local log:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_logs/l401/replay_franka_cube_dp_actions_1027759.out`
+- local inspection bundle:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/replay_inspection_1027759_open_to_close320_20260611_145800`
+- viz-open:
+  - `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/replay_inspection_1027759_open_to_close320_20260611_145800/later_window_support_comparison.png`
+  - `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/replay_inspection_1027759_open_to_close320_20260611_145800/inspection_report.md`
+  - `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_replays/franka_cube_dp_replay_framefix_overfit2k_open_to_close320_20260611_145800/replay_motion.png`
+
+Result:
+- `dataset_open_t_plus_7`:
+  - EE-to-cube improves from `0.2331 m` to `0.2119 m` by step 32,
+    then plateaus at `0.2124 m` through step 320.
+  - Finger-center-to-cube final is `0.2014 m`.
+  - Nearest live phase never leaves `go_to_pre_grasp_pose`; final nearest
+    demo distance is `0.3182`.
+  - Gripper stays open (`+1.0`), final width `0.0800 m`.
+  - First label negative/hard-close markers on the selected demo timeline are
+    steps `297/310`, but live geometry is still pregrasp-like at those steps.
+- `dp_replan`:
+  - EE-to-cube improves from `0.2332 m` to `0.1463 m` by step 320.
+  - Finger-center-to-cube final is `0.1730 m`.
+  - Nearest live phase still stays `go_to_pre_grasp_pose`, but nearest demo
+    distance grows to `1.1283`, indicating increasing out-of-support drift.
+  - First negative/hard-close commands occur at steps `207/224`, while the
+    selected dataset label close markers are steps `297/310`.
+  - Final gripper width is `0.00080 m`, and final live cube-minus-EE is
+    `[0.0309, -0.1198, -0.0779]`, not valid grasp geometry.
+- Motion-direction cosines remain positive:
+  `dataset_open_t_plus_7` mean `0.9735`; `dp_replan` mean `0.9182`.
+
+Analysis:
+- This is diagnostic but not a solved BC prior. It supports the live-state /
+  support-drift hypothesis.
+- Longer teacher-forced one-step relative dataset labels do not reach the true
+  close-boundary cube-relative geometry from the current eval reset. That
+  implicates reset alignment, controller timing/cadence, or selected
+  demo-window semantics for relative labels.
+- DP replan moves closer in raw EE distance, but the nearest-demo distance gets
+  worse and it closes while still nearest to pregrasp/open rows. That preserves
+  the train/eval mismatch concern from the bad video.
+- Do not scale BC/RL or claim warm-start viability until a closed-loop video
+  shows the policy approaching and closing near the cube within demo support.
+
+Next:
+- Patch the closed-loop eval wrapper to emit per-step nearest-demo support
+  traces against the converted dataset.
+- Launch a bounded video eval with the same framefix overfit2k checkpoint,
+  `NUM_ENVS=1`, `NUM_STEPS=320`, `ACTION_CHUNK_STEPS=1`,
+  `DEBUG_POLICY_TRACE_MAX_CALLS=320`, and dataset support trace enabled.
+- Fetch metrics, policy trace, support trace, video, contact sheet, and a
+  train/eval audit bundle; open the most useful artifacts with `viz-open`.
+
+## 2026-06-11T15:18:40-07:00 - closed-loop support trace instrumentation
+
+Goal:
+- Make the next closed-loop eval bundle directly inspect train/eval support
+  drift instead of relying only on policy-call traces or post-hoc replay.
+
+Change:
+- Updated `dextrah_lab/rl_games/eval_franka_cube_dp_policy.py`.
+  - Added optional `--support_dataset` and `--support_trace_path`.
+  - When enabled, every env step records nearest converted demo row, episode
+    step, phase, nearest-demo distance, live and nearest cube-minus-EE,
+    gripper width/action, EE/finger/cube metrics, history step gap, and
+    per-phase nearest distances.
+  - Writes both `support_trace.json` and `support_trace.csv` next to eval
+    metrics/video.
+- Updated `cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`.
+  - Adds `SUPPORT_DATASET` and `SUPPORT_TRACE_PATH` environment variables.
+  - Maps `/results/...` paths consistently with checkpoint paths.
+  - Fails the job if support tracing was requested but JSON/CSV are missing.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `00d96eb4a3d65abaad1d3d7706ae52ed1f1dfa96`
+- implementation_commit: pending
+- changed_files:
+  - `dextrah_lab/rl_games/eval_franka_cube_dp_policy.py`
+  - `cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+  - `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/eval_franka_cube_dp_policy.py dextrah_lab/rl_games/replay_franka_cube_dataset_actions.py`
+- `bash -n cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh cluster/sbatch_replay_franka_cube_dp_actions_1gpu.sh`
+
+Result:
+- Local syntax validation passed.
+
+Next:
+- Commit/push and deploy this exact commit to the agent-owned l401 worktree.
+- Launch a bounded closed-loop video eval with support tracing:
+  `NUM_STEPS=320`, `ACTION_CHUNK_STEPS=1`, `DEBUG_POLICY_TRACE_MAX_CALLS=320`,
+  `CAPTURE_VIDEO=True`, same framefix overfit2k checkpoint, same dataset.

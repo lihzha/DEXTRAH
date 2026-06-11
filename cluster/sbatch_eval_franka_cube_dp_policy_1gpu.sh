@@ -53,6 +53,8 @@ LOG_FILE="$NFS_ROOT/slurm_logs/dextrah/eval_franka_cube_dp_policy_${SLURM_JOB_ID
 DEBUG_POLICY_TRACE_MAX_CALLS="${DEBUG_POLICY_TRACE_MAX_CALLS:-0}"
 DEBUG_POLICY_TRACE_ENV_INDEX="${DEBUG_POLICY_TRACE_ENV_INDEX:-0}"
 DEBUG_POLICY_TRACE_PATH="${DEBUG_POLICY_TRACE_PATH:-}"
+SUPPORT_DATASET="${SUPPORT_DATASET:-}"
+SUPPORT_TRACE_PATH="${SUPPORT_TRACE_PATH:-}"
 
 CHECKPOINT_ARG="$CHECKPOINT"
 CHECKPOINT_HOST="$CHECKPOINT"
@@ -61,6 +63,17 @@ if [[ "$CHECKPOINT" == /results/* ]]; then
 elif [[ "$CHECKPOINT" == "$RESULTS_NFS"/* ]]; then
   rel_checkpoint="${CHECKPOINT#$RESULTS_NFS/}"
   CHECKPOINT_ARG="/results/$rel_checkpoint"
+fi
+
+SUPPORT_DATASET_ARG="$SUPPORT_DATASET"
+SUPPORT_DATASET_HOST="$SUPPORT_DATASET"
+if [ -n "$SUPPORT_DATASET" ]; then
+  if [[ "$SUPPORT_DATASET" == /results/* ]]; then
+    SUPPORT_DATASET_HOST="$RESULTS_NFS/${SUPPORT_DATASET#/results/}"
+  elif [[ "$SUPPORT_DATASET" == "$RESULTS_NFS"/* ]]; then
+    rel_support_dataset="${SUPPORT_DATASET#$RESULTS_NFS/}"
+    SUPPORT_DATASET_ARG="/results/$rel_support_dataset"
+  fi
 fi
 
 if [ ! -f "$IMAGE" ]; then
@@ -79,6 +92,10 @@ if [ ! -f "$CHECKPOINT_HOST" ]; then
   echo "Missing official Diffusion Policy checkpoint: $CHECKPOINT_HOST"
   exit 2
 fi
+if [ -n "$SUPPORT_DATASET" ] && [ ! -f "$SUPPORT_DATASET_HOST" ]; then
+  echo "Missing support dataset: $SUPPORT_DATASET_HOST"
+  exit 2
+fi
 
 mkdir -p \
   "$RUN_DIR_HOST" \
@@ -93,6 +110,7 @@ export VIDEO_LENGTH VIDEO_NAME_PREFIX PRINT_INTERVAL CAPTURE_VIDEO SEED
 export CAMERA_EYE_X CAMERA_EYE_Y CAMERA_EYE_Z CAMERA_TARGET_X CAMERA_TARGET_Y CAMERA_TARGET_Z
 export CHECKPOINT_ARG RUN_DIR_CONTAINER METRICS_CONTAINER ENV_NAME OFFICIAL_DP_ENV_NAME
 export DEBUG_POLICY_TRACE_MAX_CALLS DEBUG_POLICY_TRACE_ENV_INDEX DEBUG_POLICY_TRACE_PATH
+export SUPPORT_DATASET_ARG SUPPORT_TRACE_PATH
 
 echo "Running DextrAH Franka cube official Diffusion Policy evaluation"
 echo "SLURM_JOB_ID=$SLURM_JOB_ID_SAFE"
@@ -119,6 +137,10 @@ echo "CAMERA_EYE=($CAMERA_EYE_X $CAMERA_EYE_Y $CAMERA_EYE_Z)"
 echo "CAMERA_TARGET=($CAMERA_TARGET_X $CAMERA_TARGET_Y $CAMERA_TARGET_Z)"
 echo "CHECKPOINT_ARG=$CHECKPOINT_ARG"
 echo "CHECKPOINT_HOST=$CHECKPOINT_HOST"
+if [ -n "$SUPPORT_DATASET" ]; then
+  echo "SUPPORT_DATASET_ARG=$SUPPORT_DATASET_ARG"
+  echo "SUPPORT_DATASET_HOST=$SUPPORT_DATASET_HOST"
+fi
 echo "RUN_DIR_HOST=$RUN_DIR_HOST"
 echo "METRICS_CONTAINER=$METRICS_CONTAINER"
 echo "DEBUG_POLICY_TRACE_MAX_CALLS=$DEBUG_POLICY_TRACE_MAX_CALLS"
@@ -176,6 +198,17 @@ srun \
         --debug_policy_trace_env_index "$DEBUG_POLICY_TRACE_ENV_INDEX"
       )
     fi
+    SUPPORT_ARGS=()
+    if [ -n "$SUPPORT_DATASET_ARG" ]; then
+      support_trace_path="$SUPPORT_TRACE_PATH"
+      if [ -z "$support_trace_path" ]; then
+        support_trace_path="$RUN_DIR_CONTAINER/support_trace.json"
+      fi
+      SUPPORT_ARGS=(
+        --support_dataset "$SUPPORT_DATASET_ARG"
+        --support_trace_path "$support_trace_path"
+      )
+    fi
 
     EVAL_ARGS=(
       /code/dextrah_lab/rl_games/eval_franka_cube_dp_policy.py
@@ -197,6 +230,7 @@ srun \
       --camera_eye "$CAMERA_EYE_X" "$CAMERA_EYE_Y" "$CAMERA_EYE_Z"
       --camera_target "$CAMERA_TARGET_X" "$CAMERA_TARGET_Y" "$CAMERA_TARGET_Z"
       "${TRACE_ARGS[@]}"
+      "${SUPPORT_ARGS[@]}"
       "${VIDEO_ARGS[@]}"
     )
 
@@ -217,6 +251,14 @@ if [ ! -s "$RUN_DIR_HOST/metrics.json" ]; then
 fi
 if [ "$DEBUG_POLICY_TRACE_MAX_CALLS" != "0" ] && [ ! -s "$RUN_DIR_HOST/policy_trace.json" ]; then
   echo "Missing DP eval policy trace JSON: $RUN_DIR_HOST/policy_trace.json"
+  exit 1
+fi
+if [ -n "$SUPPORT_DATASET" ] && [ ! -s "$RUN_DIR_HOST/support_trace.json" ]; then
+  echo "Missing DP eval support trace JSON: $RUN_DIR_HOST/support_trace.json"
+  exit 1
+fi
+if [ -n "$SUPPORT_DATASET" ] && [ ! -s "$RUN_DIR_HOST/support_trace.csv" ]; then
+  echo "Missing DP eval support trace CSV: $RUN_DIR_HOST/support_trace.csv"
   exit 1
 fi
 
