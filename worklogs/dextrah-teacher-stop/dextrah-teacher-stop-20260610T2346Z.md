@@ -638,3 +638,45 @@ Analysis:
 Next:
 - Continue periodic monitoring, and start shorter polling intervals closer to
   `20:20 PDT`.
+
+## 2026-06-10 19:49 PDT - Teacher Monitor Metric Pass
+
+Goal:
+- Continue active monitoring as the current allocation moves under one hour
+  remaining.
+
+Command / Job:
+- job_id: `28955904`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28955904.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+
+Result:
+- status: running healthy.
+- scheduler: running on `batch-block5-03072`, time left `55:13`.
+- stdout advanced to epoch `15479/20000`.
+- latest complete checkpoint:
+  `last_dextrah_lstm_ep_15470_rew_692.07513.pth`.
+- sidecars refreshed in stdout at `19:48:18`.
+- narrow failure scan returned no matches.
+- TensorBoard parsed through epoch `15457`.
+- `in_success_region/iter`: latest `0.454346`, last-50 `0.456699`,
+  last-200 `0.4533`.
+- `rewards/iter`: latest `656.66`, last-50 `640.087`,
+  last-200 `633.938`.
+- `num_adr_increases/iter`: `50`.
+- `info/kl`: latest `0.0100388`, last-50 `0.00769837`,
+  last-200 `0.00696036`.
+- `losses/a_loss`: last-50 `-0.00390426`.
+- `losses/c_loss`: last-50 `0.0243148`.
+- `performance/step_inference_rl_update_fps`: latest `110828`,
+  last-50 about `109919`, last-200 about `107918`.
+
+Analysis:
+- Metrics look strong. Success and reward are slightly better than recent
+  monitor passes, KL remains controlled, and rolling throughput is back in the
+  expected band.
+
+Next:
+- Continue periodic monitoring and tighten near `20:20 PDT`.
