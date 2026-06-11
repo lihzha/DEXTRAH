@@ -1396,3 +1396,104 @@ Worker C later-window replay:
   with modes `dataset_open_t_plus_7,dp_replan`, `STEPS=320`. This job is meant
   to test the later close-window support issue after the reset-time replay
   showed the controller/action frame is not grossly inverted.
+
+## 2026-06-11 Monitor Check 22:11 UTC
+
+Artifact cadence escalation:
+
+- User reported that A's uploaded artifact also looked off: the robot was not
+  visibly grasping the cube. I interrupted all three workers with a stricter
+  artifact contract.
+- New requirement for every meaningful smoke/diagnostic/eval/checkpoint loop:
+  fetch/upload a viewer-ready bundle with run id, commit, config, log path,
+  metrics JSON/CSV, plots, videos or labeled frames/contact sheets, worklog
+  entry, `viz-open` URLs/paths, and a short pass/fail interpretation.
+- Long training runs, when allowed, must produce artifacts at least every
+  checkpoint or about every 30 minutes wall-clock. No worker may scale a run
+  whose video drifts, ignores the cube, or lacks a train/eval/config audit.
+
+Worker A reset-prior status:
+
+- TCP-aware reset diagnostic job `1027761`
+  (`franka_cube_ggx_pregrasp_reset_geometry_tcp_20260611_150608`) completed
+  `0:0` on l401 and artifacts were fetched locally.
+- Local artifacts:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_reset_geometry_tcp_20260611_150608`
+- Viewer URLs:
+  - video:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_reset_geometry_tcp_20260611_150608/reset_geometry_frames.mp4`
+  - JSON:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_reset_geometry_tcp_20260611_150608/reset_geometry.json`
+  - side frame:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_reset_geometry_tcp_20260611_150608/frames/reset_000_last_side.png`
+  - top frame:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_reset_geometry_tcp_20260611_150608/frames/reset_000_middle_top.png`
+- Metrics: `reset_success_rate=1.0`, `reset_quality_success_rate=1.0`,
+  `immediate_done_rate=0.0`, `projected_exact_tip_center_dist_mean_m=0.0301`,
+  `projected_exact_tip_max_dist_mean_m=0.0502`,
+  `projected_exact_tip_table_clearance_mean_m=0.0650`,
+  `pregrasp_tip_table_clearance_mean_m=0.0950`, `offset_radial_dot_mean=0.99999`.
+- Interpretation: the prior frame/metric bug was at least partly diagnostic:
+  `panda_hand` and finger body origins made the reset look much worse than the
+  controlled TCP/tip-proxy geometry. However, the visible robot is intentionally
+  at the open 3 cm pregrasp, not already holding the cube. To avoid confusing
+  this with a failed grasp, A must produce a second bounded artifact showing
+  the corresponding exact grasp/close check before any A100 relaunch.
+
+Worker C DP BC status:
+
+- Later-window replay job `1027759`
+  (`franka_cube_dp_replay_framefix_overfit2k_open_to_close320_20260611_145800`)
+  completed `0:0` and was fetched locally.
+- Local artifacts:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_replays/franka_cube_dp_replay_framefix_overfit2k_open_to_close320_20260611_145800`
+- Viewer URLs:
+  - plot:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_replays/franka_cube_dp_replay_framefix_overfit2k_open_to_close320_20260611_145800/replay_motion.png`
+  - report:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_replays/franka_cube_dp_replay_framefix_overfit2k_open_to_close320_20260611_145800/replay_report.md`
+- Metrics: `dataset_open_t_plus_7` stalls around final EE-cube `0.2124 m`
+  with gripper forced open; `dp_replan` moves to final EE-cube `0.1463 m` but
+  nearest-demo distance grows beyond `1.1`, nearest phase remains
+  `go_to_pre_grasp_pose`, and hard close starts around step `224`.
+- Interpretation: this supports the closed-loop live-state/support-drift
+  hypothesis, not BC readiness. C should continue bounded diagnostics with
+  closed-loop video/contact sheets and train/eval audits before any scale-up.
+
+Worker B trajectory tracking status:
+
+- Action-alignment env smoke job `1027763`
+  (`franka_cube_traj_tracking_actionalign_env_smoke_20260611_150840`)
+  completed `0:0` on l401.
+- Metrics from the log: validation passed; observation remained `[4,72]`;
+  `done_count=0`; early done count `0`; target unsafe max `0.0`; target table
+  clearance min `0.0651`; action-alignment logs present and finite;
+  action-alignment reward mean `0.3233`; utilization mean `0.4908`.
+- Interpretation: B's new diagnostic wiring is valid. Next step is a tiny PPO
+  smoke followed by short eval/video/contact-sheet artifacts under the new
+  artifact cadence. No scale-up.
+
+## 2026-06-11 Monitor Check 22:14 UTC
+
+Worker B artifact lineage clarification:
+
+- User asked whether
+  `actionscale-rewinf-diag-video480-step-0.mp4` was from Agent B. Yes: it is
+  B's earlier failed learned-policy diagnostic artifact, not the current
+  action-alignment run.
+- Viewer URLs:
+  - old failed learned-policy video:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_actionscale_rewinf_diag_video480_20260611_144318/videos/actionscale-rewinf-diag-video480-step-0.mp4`
+  - old failed learned-policy report:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_actionscale_rewinf_diag_artifacts_20260611_144318/report.md`
+- Metrics for that old video: success mean/final `0.0/0.0`, cube lift max
+  `0.001168 m`, final EE-to-cube `0.243735 m`, final finger-center-to-cube
+  `0.241670 m`, lift-action utilization mean `0.001401`, and train/eval
+  consistency passed. Visual failure matches the metrics.
+- B has since produced two more useful diagnostics: `reference_delta` showed
+  policy-free reference following can make contact/transient lift, and job
+  `1027763` showed action-alignment reward/log wiring is finite and target-safe.
+- B branch now includes lineage clarification commit
+  `1473033 Clarify trajectory diagnostic artifact lineage`; B worktree is clean
+  at that commit. No B l401/a100 job is active yet. Next expected step remains
+  the bounded tiny PPO smoke plus video/contact-sheet eval bundle.
