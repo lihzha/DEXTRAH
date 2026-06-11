@@ -4723,3 +4723,47 @@ Next:
 - Fetch completed artifacts, generate contact sheets and a comparison report,
   open viewer URLs, and decide whether repeat/hold is a viable bridge or still
   leaves the policy/demo outside support.
+
+Result:
+- status: failed as a fix, useful diagnostic.
+- Jobs `1027871`, `1027872`, and `1027873` completed with `DP_REPLAY_DONE`.
+- Artifacts were fetched locally.
+- Local comparison bundle:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/action_repeat_temporal_20260611_163750/`
+- Viewer URLs:
+  - report:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/action_repeat_temporal_20260611_163750/action_repeat_temporal_report.md`
+  - combined plot:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/action_repeat_temporal_20260611_163750/action_repeat_temporal_comparison.png`
+  - repeat 4 contact sheet:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/action_repeat_temporal_20260611_163750/repeat4_contact_sheet.jpg`
+  - repeat 4 video:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_repeat4_dataset_t_96_20260611_163750/videos/franka-cube-dp-replay-repeat4-step-0.mp4`
+
+Metrics:
+
+| repeat | final EE-cube | final finger-cube | final support dist | max support dist | median nonzero xyz realization | median next-row EE error | max clip | verdict |
+|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| 2 | `0.1672` | `0.1659` | `0.331` | `0.331` | `0.094` | `0.1781` | `0.000` | advances labels to hold rows while live EE is still far, then stalls |
+| 4 | `0.1449` | `0.1488` | `0.337` | `0.337` | `0.093` | `0.0466` | `0.000` | closest raw distance, but support drift grows and visual remains offset |
+| 8 | `0.1713` | `0.1667` | `0.162` | `0.162` | `0.094` | `0.0059` | `0.000` | best source-row timing/support, but progresses too slowly and stays far |
+
+Analysis:
+- Action holding/resampling alone is not a useful bridge. It changes how fast
+  the source label window advances, but it does not change the controller's
+  actual-vs-expected EE delta ratio, which remains about `0.09`.
+- Repeat 4 reduces raw EE-cube distance most, but the nearest-demo support
+  distance climbs to about `0.337`, and the contact sheet/video still show the
+  hand offset from the cube.
+- Repeat 8 best matches the source row timing over 96 env steps, but only
+  because it remains in early approach rows; it still does not approach contact.
+
+Next:
+- Rerun the residual-target diagnostic correctly with comma-safe remote-shell
+  environment export:
+  `MODES=dataset_t,dataset_target_t_plus_1,dataset_target_t_plus_7`,
+  exact source-joint reset, `STEPS=96`, video enabled.
+- If residual-target modes reduce tracking error and follow source geometry
+  without clipping/support drift, the fix is a live-residual/controller-aware
+  label conversion. If they fail, move to a controller-rollout dataset or a
+  more direct controller semantic patch before any BC/RL training.
