@@ -115,6 +115,15 @@ def parse_args() -> argparse.Namespace:
         help="GraspGenX/cuRobo trajectory.json used when --franka_motion trajectory.",
     )
     parser.add_argument(
+        "--franka_trajectory_playback",
+        choices=("target", "state"),
+        default="target",
+        help=(
+            "Trajectory playback mode. target sends joint targets through the articulation controller; "
+            "state writes exact joint states for kinematic demo replay."
+        ),
+    )
+    parser.add_argument(
         "--franka_trajectory_object_id",
         type=str,
         default="object",
@@ -1731,6 +1740,18 @@ def _write_robot_articulation_targets(robot: Articulation | None, joint_pos_targ
     robot.write_data_to_sim()
 
 
+def _write_robot_articulation_state(robot: Articulation | None, joint_pos=None) -> None:
+    if robot is None:
+        return
+    if joint_pos is None:
+        joint_pos = robot.data.default_joint_pos
+    joint_vel = robot.data.default_joint_vel.clone()
+    joint_vel.zero_()
+    robot.write_joint_state_to_sim(joint_pos, joint_vel)
+    robot.set_joint_position_target(joint_pos)
+    robot.write_data_to_sim()
+
+
 def _update_robot_articulation(robot: Articulation | None, dt: float) -> None:
     if robot is None:
         return
@@ -1955,9 +1976,16 @@ def _capture_overview_video(
                 frame_idx=frame_idx,
                 frame_count=frame_count,
             )
-            _write_robot_articulation_targets(robot_articulation, last_robot_target)
-            sim.step(render=False)
-            _update_robot_articulation(robot_articulation, float(sim.cfg.dt))
+            if args_cli.franka_motion == "trajectory" and args_cli.franka_trajectory_playback == "state":
+                _write_robot_articulation_state(robot_articulation, last_robot_target)
+                _update_robot_articulation(robot_articulation, float(sim.cfg.dt))
+                sim.step(render=False)
+                _write_robot_articulation_state(robot_articulation, last_robot_target)
+                _update_robot_articulation(robot_articulation, float(sim.cfg.dt))
+            else:
+                _write_robot_articulation_targets(robot_articulation, last_robot_target)
+                sim.step(render=False)
+                _update_robot_articulation(robot_articulation, float(sim.cfg.dt))
         if frame_callback is not None:
             frame_callback(frame_idx, frame_count)
         if robot_motion_trace is not None:
@@ -2372,6 +2400,7 @@ def main() -> None:
         "robot_motion": {
             "mode": str(args_cli.franka_motion),
             "scale": float(args_cli.franka_motion_scale),
+            "trajectory_playback": str(args_cli.franka_trajectory_playback),
             "trajectory_json": str(args_cli.franka_trajectory_json.expanduser().resolve())
             if args_cli.franka_trajectory_json is not None
             else None,
@@ -2421,6 +2450,9 @@ def main() -> None:
             "franka_is_articulation": robot_spec.render_mode == "articulation_usd",
             "franka_has_actuators": bool(robot_spec.actuator_config),
             "franka_trajectory_playback": args_cli.franka_motion == "trajectory",
+            "franka_trajectory_state_playback": (
+                args_cli.franka_motion == "trajectory" and args_cli.franka_trajectory_playback == "state"
+            ),
             "franka_trajectory_has_frames": bool(
                 isinstance(trajectory_data, dict)
                 and isinstance(trajectory_data.get("frames"), list)
@@ -2481,6 +2513,7 @@ def main() -> None:
             "view": name,
             "capture_video": bool(args_cli.capture_video),
             "franka_motion": str(args_cli.franka_motion),
+            "franka_trajectory_playback": str(args_cli.franka_trajectory_playback),
             "franka_trajectory_json": str(args_cli.franka_trajectory_json.expanduser().resolve())
             if args_cli.franka_trajectory_json is not None
             else None,
@@ -2518,6 +2551,7 @@ def main() -> None:
             "video_seconds": float(args_cli.video_seconds),
             "sim_steps_per_frame": int(args_cli.sim_steps_per_frame),
             "franka_motion": str(args_cli.franka_motion),
+            "franka_trajectory_playback": str(args_cli.franka_trajectory_playback),
             "franka_trajectory_json": str(args_cli.franka_trajectory_json.expanduser().resolve())
             if args_cli.franka_trajectory_json is not None
             else None,

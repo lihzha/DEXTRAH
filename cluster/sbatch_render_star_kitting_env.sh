@@ -53,6 +53,13 @@ if [ -z "${FRANKA_RENDER_MODE:-}" ]; then
     FRANKA_RENDER_MODE="articulation_usd"
   fi
 fi
+if [ -z "${FRANKA_TRAJECTORY_PLAYBACK:-}" ]; then
+  if [ "${FRANKA_MOTION:-hold}" = "trajectory" ]; then
+    FRANKA_TRAJECTORY_PLAYBACK="state"
+  else
+    FRANKA_TRAJECTORY_PLAYBACK="target"
+  fi
+fi
 OUT_DIR="$RESULTS_NFS/$RESULT_SUBDIR/$RUN_NAME"
 
 if [ ! -f "$IMAGE" ]; then
@@ -105,6 +112,7 @@ echo "FRANKA_BASE_Z_OFFSET=${FRANKA_BASE_Z_OFFSET:-0.2}"
 echo "FRANKA_MOTION=${FRANKA_MOTION:-hold}"
 echo "FRANKA_MOTION_SCALE=${FRANKA_MOTION_SCALE:-1.0}"
 echo "FRANKA_TRAJECTORY_JSON=${FRANKA_TRAJECTORY_JSON:-}"
+echo "FRANKA_TRAJECTORY_PLAYBACK=$FRANKA_TRAJECTORY_PLAYBACK"
 echo "FRANKA_TRAJECTORY_OBJECT_ID=${FRANKA_TRAJECTORY_OBJECT_ID:-object}"
 echo "ANIMATE_CUBE=$ANIMATE_CUBE"
 
@@ -150,6 +158,7 @@ srun \
       --franka_motion \"${FRANKA_MOTION:-hold}\" \
       --franka_motion_scale \"${FRANKA_MOTION_SCALE:-1.0}\" \
       \${FRANKA_TRAJECTORY_JSON:+--franka_trajectory_json \"\$FRANKA_TRAJECTORY_JSON\"} \
+      --franka_trajectory_playback \"$FRANKA_TRAJECTORY_PLAYBACK\" \
       --franka_trajectory_object_id \"${FRANKA_TRAJECTORY_OBJECT_ID:-object}\" \
       --seed \"${SEED:-23}\" \
       --star_outer_radius \"${STAR_OUTER_RADIUS:-0.092}\" \
