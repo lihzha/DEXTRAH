@@ -209,3 +209,57 @@ Next:
 - Continue active monitoring with short one-shot SSH checks. Tighten polling
   before the `20:39 PDT` signal window and verify the next relaunch resumes
   from the newest checkpoint and rank runtime sidecars.
+
+## 2026-06-10 18:09 PDT - Teacher Monitor SSH-Agent Workaround
+
+Goal:
+- Continue active monitoring after local SSH checks began stalling, without
+  mutating shared source or leaving hung monitor processes behind.
+
+Change:
+- Killed four stuck local SSH monitor processes from the `18:02 PDT` poll.
+- Diagnosed SSH with a bounded verbose trace; the connection reached userauth
+  and then stalled at the local SSH agent socket.
+- Switched monitor commands and rsync to explicit key auth:
+  `IdentityAgent=none`, `IdentitiesOnly=yes`,
+  `-i /home/lzha/.ssh/id_ed25519`, bounded by local `timeout`.
+
+Command / Job:
+- job_id: `28955904`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28955904.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+
+Result:
+- status: running healthy.
+- scheduler: running on `batch-block5-03072`, time left `2:36:18`.
+- stdout advanced to epoch `14244/20000`.
+- latest complete checkpoint:
+  `last_dextrah_lstm_ep_14240_rew_597.21844.pth`.
+- rank sidecars `dextrah_runtime_rank_0.pth` through
+  `dextrah_runtime_rank_7.pth` refreshed at `18:07:37`.
+- narrow failure scan returned no matches.
+- TensorBoard parsed through epoch `14235`.
+- `in_success_region/iter`: latest `0.454834`, last-50 `0.44252`,
+  last-200 `0.44916`.
+- `rewards/iter`: latest `666.285`, last-50 `611.116`,
+  last-200 `623.045`.
+- `num_adr_increases/iter`: `50`.
+- `info/kl`: latest `0.00953345`, last-50 `0.00850648`,
+  last-200 `0.00883697`.
+- `losses/a_loss`: last-50 `-0.0043094`.
+- `losses/c_loss`: last-50 `0.0206826`.
+- `performance/step_inference_rl_update_fps`: last-50 about `109634`.
+
+Analysis:
+- The apparent monitor stall was local SSH-agent behavior, not evidence of a
+  Slurm or training stall. Explicit key auth keeps future one-shot checks
+  bounded and responsive.
+- Training remains healthy: checkpoint cadence, sidecar cadence, success,
+  reward, KL, losses, and throughput are all consistent with the prior
+  post-resume band.
+
+Next:
+- Continue monitoring with explicit-key SSH/rsync commands. Tighten polling
+  before the `20:39 PDT` TERM/requeue window.
