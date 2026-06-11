@@ -2104,3 +2104,69 @@ Next:
   expected about `2500` optimizer/log steps.
 - Inspect losses, checkpoint, first/open and closed/lift bridge smokes, then
   decide whether to relaunch l401 eval with first-action or chunked execution.
+
+## 2026-06-11T13:28:20-07:00 - full-pick overfit checkpoint inspection and long chunk eval plan
+
+Goal:
+- Improve the full pick/lift BC checkpoint enough to justify another bounded
+  DEXTRAH/Isaac smoke.
+
+Hypothesis:
+- The previous full-pick checkpoint was undertrained at about `503` optimizer
+  steps. A bounded ~2.5k-step official-DP overfit/debug run should learn the
+  close/lift parts of the planned trajectories more cleanly.
+
+Command / Job:
+- local train command:
+  `PYTHONPATH="$DP:$DEX" WANDB_MODE=offline "$VENV/bin/python" train.py --config-dir "$DEX/dextrah_lab/offline_dp_bc/config" --config-name franka_cube_lowdim_dp task.dataset_path="$DATASET" task.dataset.val_ratio=0.25 training.device=cuda:0 training.max_train_steps=100 training.max_val_steps=4 training.num_epochs=25 policy.num_inference_steps=100 dataloader.batch_size=32 val_dataloader.batch_size=32 hydra.run.dir="$RUN_DIR"`
+- run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_debug/run_20260611_132410_curobo32_full_pick_lift_overfit2k`
+- train log:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/official_dp_curobo32_full_pick_lift_overfit2k_train.log`
+- checkpoint smokes:
+  - first/open:
+    `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/official_dp_curobo32_full_pick_lift_overfit2k_checkpoint_smoke_first_warm_100step.log`
+  - gripper-closed:
+    `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/official_dp_curobo32_full_pick_lift_overfit2k_checkpoint_smoke_closed_warm_100step.log`
+  - lift-high:
+    `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/official_dp_curobo32_full_pick_lift_overfit2k_checkpoint_smoke_lift_high_warm_100step.log`
+
+Result:
+- official-DP train: passed
+  - `logs.json.txt` rows: `2525`
+  - final `global_step=2523`
+  - `train_loss=0.00913`
+  - `val_loss=0.00968`
+  - `train_action_mse_error=0.001124`
+  - finite/decreasing loss curves, `latest.ckpt` written at about `266 MB`.
+- first/open 100-step bridge smoke:
+  - selected gripper width `[0.08,0.08,0.08,0.08]`
+  - bridge gripper range `[0.93863,1.00001]`
+  - small pose actions.
+- gripper-closed 100-step bridge smoke:
+  - selected gripper width `[0.0,0.0,0.0,0.0]`
+  - bridge gripper range `[-0.96638,-0.85467]`
+  - small pose actions.
+- lift-high 100-step bridge smoke:
+  - selected EE z about `1.01115`
+  - selected gripper width `[0.0,0.0,0.0,0.0]`
+  - bridge gripper range `[-0.99948,-0.93076]`
+  - small pose actions.
+
+Analysis:
+- The overfit checkpoint now has the state-dependent open/close behavior that
+  the 503-step checkpoint lacked.
+- The previous 64-step l401 eval is too short to test full-pick behavior on
+  the planned trajectory timescale. In the converted demonstrations, close
+  starts after approach/hold/grasp/hold phases, roughly hundreds of frames into
+  the episode, so a 64-step smoke mostly tests approach.
+- The next bounded cluster eval should use the overfit checkpoint, `chunk8`,
+  one env, no video, and a longer but still small horizon such as `360` steps
+  to cover approach, close, and early lift.
+
+Next:
+- Commit/push this worklog boundary.
+- Copy the overfit checkpoint to l401 results storage and run a single-env
+  chunked eval with `NUM_STEPS=360`, `ACTION_CHUNK_STEPS=8`,
+  `NUM_INFERENCE_STEPS=100`, then inspect metrics and compare close/lift
+  progress.
