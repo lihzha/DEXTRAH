@@ -101,6 +101,15 @@ parser.add_argument(
     help="For *_hold action sources, gripper command after hold trigger.",
 )
 parser.add_argument(
+    "--suppress_success_termination",
+    action=argparse.BooleanOptionalAction,
+    default=False,
+    help=(
+        "Eval-only diagnostic: mask success_done termination so the rollout continues after first success. "
+        "Other termination reasons remain active, and metrics still record when success_done would have fired."
+    ),
+)
+parser.add_argument(
     "--summary_window",
     type=int,
     default=120,
@@ -442,7 +451,7 @@ def _step_tensor_summary(values: torch.Tensor) -> dict[str, float | int | None]:
     }
 
 
-def _done_reason_snapshot(task_env) -> dict[str, torch.Tensor]:
+def _done_reason_snapshot(task_env, success_timeout_override: float | None = None) -> dict[str, torch.Tensor]:
     """Snapshot likely termination reasons before env.step may auto-reset done envs."""
 
     if hasattr(task_env, "_compute_intermediate_values"):
@@ -488,8 +497,13 @@ def _done_reason_snapshot(task_env) -> dict[str, torch.Tensor]:
     )
     episode_length = _env_tensor(task_env, "episode_length_buf")
     success_region = _env_bool_tensor(task_env, "in_success_region")
+    success_timeout = (
+        float(success_timeout_override)
+        if success_timeout_override is not None
+        else float(getattr(cfg, "success_timeout", math.inf))
+    )
     success_done = (
-        (_env_tensor(task_env, "time_in_success_region") >= float(getattr(cfg, "success_timeout", math.inf)))
+        (_env_tensor(task_env, "time_in_success_region") >= success_timeout)
         & (episode_length >= int(getattr(cfg, "min_episode_steps_before_success", 0)))
     )
     prelift_drag = (
@@ -510,6 +524,28 @@ def _done_reason_snapshot(task_env) -> dict[str, torch.Tensor]:
         "finger_table_penetration": finger_table_penetration,
         "truncated": truncated,
     }
+
+
+def _install_success_termination_suppression(task_env) -> bool:
+    """Mask success termination for eval-only stability diagnostics."""
+
+    original_get_dones = getattr(task_env, "_get_dones", None)
+    cfg = getattr(task_env, "cfg", None)
+    if original_get_dones is None or cfg is None or not hasattr(cfg, "success_timeout"):
+        return False
+
+    original_success_timeout = float(getattr(cfg, "success_timeout"))
+    setattr(task_env, "_eval_original_success_timeout", original_success_timeout)
+    setattr(task_env, "_eval_suppress_success_termination", True)
+    setattr(task_env, "_eval_original_get_dones", original_get_dones)
+
+    def _get_dones_without_success():
+        terminated, truncated = original_get_dones()
+        reasons = _done_reason_snapshot(task_env, success_timeout_override=original_success_timeout)
+        return terminated & (~reasons["success_done"]), truncated
+
+    setattr(task_env, "_get_dones", _get_dones_without_success)
+    return True
 
 
 def _ensure_hold_state(task_env) -> dict[str, torch.Tensor]:
@@ -907,6 +943,13 @@ def main(env_cfg, agent_cfg: dict):
     if isinstance(gym_env.unwrapped, DirectMARLEnv):
         gym_env = multi_agent_to_single_agent(gym_env)
     task_env = gym_env.unwrapped
+    success_termination_suppression_installed = False
+    if args_cli.suppress_success_termination:
+        success_termination_suppression_installed = _install_success_termination_suppression(task_env)
+        if success_termination_suppression_installed:
+            print("[INFO] Eval-only success termination suppression is active.")
+        else:
+            print("[WARN] Requested success termination suppression, but this env does not expose success_timeout.")
     trajectory_tracking_reference = _trajectory_tracking_reference_summary(task_env)
     _configure_eval_camera(env_cfg, task_env)
 
@@ -951,6 +994,8 @@ def main(env_cfg, agent_cfg: dict):
     done_ever_env = torch.zeros(task_env.num_envs, dtype=torch.bool, device=task_env.device)
     first_done_step = torch.full((task_env.num_envs,), -1.0, device=task_env.device)
     done_after_success_env = torch.zeros(task_env.num_envs, dtype=torch.bool, device=task_env.device)
+    suppressed_success_done_ever_env = torch.zeros(task_env.num_envs, dtype=torch.bool, device=task_env.device)
+    first_suppressed_success_done_step = torch.full((task_env.num_envs,), -1.0, device=task_env.device)
     done_reason_counts = {
         "success_done": 0,
         "cube_out": 0,
@@ -1005,6 +1050,13 @@ def main(env_cfg, agent_cfg: dict):
                     if agent is not None and agent.is_rnn and agent.states is not None and dones_bool.any():
                         for state in agent.states:
                             state[:, dones_bool, :] = 0.0
+                suppressed_success_done = None
+                if args_cli.suppress_success_termination:
+                    suppressed_success_done = pre_step_done_reasons["success_done"]
+                    new_suppressed_success_done = suppressed_success_done & (~suppressed_success_done_ever_env)
+                    if bool(new_suppressed_success_done.any()):
+                        first_suppressed_success_done_step[new_suppressed_success_done] = float(step + 1)
+                    suppressed_success_done_ever_env |= suppressed_success_done
                 new_success = success_tensor & (~success_ever_env)
                 if bool(new_success.any()):
                     first_success_step[new_success] = float(step + 1)
@@ -1075,6 +1127,17 @@ def main(env_cfg, agent_cfg: dict):
                     "eval_done_after_success_rate": _mean_float(done_after_success_env.float()),
                     "eval_terminated_rate": terminated_rate,
                     "eval_truncated_rate": truncated_rate,
+                    "eval_suppressed_success_done_rate": (
+                        _mean_float(suppressed_success_done.float())
+                        if isinstance(suppressed_success_done, torch.Tensor)
+                        else None
+                    ),
+                    "eval_suppressed_success_done_count": int(
+                        suppressed_success_done_ever_env.sum().detach().cpu()
+                    ),
+                    "eval_first_suppressed_success_done_step_mean": _step_tensor_summary(
+                        first_suppressed_success_done_step
+                    )["mean"],
                 }
                 if isinstance(dones_bool, torch.Tensor):
                     for reason_name, reason_tensor in pre_step_done_reasons.items():
@@ -1112,6 +1175,7 @@ def main(env_cfg, agent_cfg: dict):
     first_success_summary = _step_tensor_summary(first_success_step)
     last_success_summary = _step_tensor_summary(last_success_step)
     first_done_summary = _step_tensor_summary(first_done_step)
+    first_suppressed_success_done_summary = _step_tensor_summary(first_suppressed_success_done_step)
     summary = {
         "task": args_cli.task,
         "checkpoint": resume_path,
@@ -1158,6 +1222,8 @@ def main(env_cfg, agent_cfg: dict):
         "num_steps_requested": args_cli.num_steps,
         "num_steps_completed": len(step_metrics),
         "deterministic": args_cli.deterministic,
+        "suppress_success_termination": bool(args_cli.suppress_success_termination),
+        "success_termination_suppression_installed": bool(success_termination_suppression_installed),
         "done_count": done_count,
         "success_rate_mean": sum(success_values) / len(success_values) if success_values else None,
         "success_rate_final": success_values[-1] if success_values else None,
@@ -1172,6 +1238,9 @@ def main(env_cfg, agent_cfg: dict):
         "first_done_step": first_done_summary,
         "done_after_success_count": int(done_after_success_env.sum().detach().cpu()),
         "done_after_success_rate": _mean_float(done_after_success_env.float()),
+        "suppressed_success_done_count": int(suppressed_success_done_ever_env.sum().detach().cpu()),
+        "suppressed_success_done_rate": _mean_float(suppressed_success_done_ever_env.float()),
+        "first_suppressed_success_done_step": first_suppressed_success_done_summary,
         "done_reason_counts": done_reason_counts,
         "done_events": done_events,
         "reward_mean": sum(reward_values) / len(reward_values) if reward_values else None,

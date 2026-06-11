@@ -273,10 +273,132 @@ def _expected_eval_overrides(summary: dict[str, object]) -> dict[str, object]:
         "num_envs",
         "num_steps_requested",
         "deterministic",
+        "suppress_success_termination",
+        "success_termination_suppression_installed",
         "video_enabled",
         "video_folder",
     ]
     return {key: summary.get(key) for key in keys if summary.get(key) is not None}
+
+
+def _step_summary_value(summary: dict[str, object], key: str, field: str) -> float | None:
+    record = summary.get(key)
+    if not isinstance(record, dict):
+        return None
+    value = record.get(field)
+    return float(value) if isinstance(value, (int, float)) else None
+
+
+def _write_success_diagnostics(
+    output_dir: Path,
+    compact: dict[str, object],
+    summary: dict[str, object],
+    steps: list[dict[str, object]],
+) -> tuple[Path, Path, Path]:
+    diagnostics = {
+        "action_source": compact.get("action_source"),
+        "reference_mix_alpha": compact.get("reference_mix_alpha"),
+        "hold_config": compact.get("hold_config"),
+        "suppress_success_termination": compact.get("suppress_success_termination"),
+        "success_termination_suppression_installed": compact.get("success_termination_suppression_installed"),
+        "num_steps_completed": compact.get("num_steps_completed"),
+        "done_count": compact.get("done_count"),
+        "done_ever_count": compact.get("done_ever_count"),
+        "done_after_success_count": compact.get("done_after_success_count"),
+        "done_reason_counts": compact.get("done_reason_counts"),
+        "done_events": compact.get("done_events"),
+        "success_ever_count": compact.get("success_ever_count"),
+        "success_ever_rate": compact.get("success_ever_rate"),
+        "success_rate_mean": compact.get("success_rate_mean"),
+        "success_rate_final": compact.get("success_rate_final"),
+        "success_rate_max": compact.get("success_rate_max"),
+        "first_success_step": compact.get("first_success_step"),
+        "last_success_step": compact.get("last_success_step"),
+        "first_done_step": compact.get("first_done_step"),
+        "suppressed_success_done_count": compact.get("suppressed_success_done_count"),
+        "suppressed_success_done_rate": compact.get("suppressed_success_done_rate"),
+        "first_suppressed_success_done_step": compact.get("first_suppressed_success_done_step"),
+        "cube_lift_height_max": compact.get("cube_lift_height_max"),
+        "ee_to_cube_final": compact.get("ee_to_cube_final"),
+        "finger_center_to_cube_final": compact.get("finger_center_to_cube_final"),
+        "target_unsafe_rate_max": compact.get("target_unsafe_rate_max"),
+        "target_clearance_min": compact.get("target_clearance_min"),
+        "hold_trigger_step_mean": compact.get("hold_trigger_step_mean"),
+        "hold_lift_trigger_rate_mean": compact.get("hold_lift_trigger_rate_mean"),
+        "hold_success_trigger_rate_mean": compact.get("hold_success_trigger_rate_mean"),
+        "hold_contact_trigger_rate_mean": compact.get("hold_contact_trigger_rate_mean"),
+        "reference_curobo_validated": compact.get("reference_curobo_validated"),
+        "reference_source_tag": compact.get("reference_source_tag"),
+    }
+    diagnostics_json_path = output_dir / "success_diagnostics.json"
+    diagnostics_json_path.write_text(json.dumps(diagnostics, indent=2, sort_keys=True) + "\n")
+
+    diagnostics_csv_path = output_dir / "success_diagnostics.csv"
+    with diagnostics_csv_path.open("w", newline="") as csv_file:
+        fieldnames = sorted(diagnostics)
+        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerow(
+            {
+                key: json.dumps(value, sort_keys=True) if isinstance(value, (dict, list)) else value
+                for key, value in diagnostics.items()
+            }
+        )
+
+    focus_candidates = [
+        _step_summary_value(summary, "first_success_step", "min"),
+        _step_summary_value(summary, "last_success_step", "max"),
+        _step_summary_value(summary, "first_done_step", "max"),
+        _step_summary_value(summary, "first_suppressed_success_done_step", "min"),
+        compact.get("hold_trigger_step_mean"),
+    ]
+    focus_steps = [int(round(value)) for value in focus_candidates if isinstance(value, (int, float))]
+    if focus_steps:
+        start_step = max(1, min(focus_steps) - 80)
+        end_step = min(len(steps), max(focus_steps) + 80)
+    else:
+        start_step = 1
+        end_step = min(len(steps), 160)
+    columns = [
+        "step",
+        "success_rate",
+        "eval_success_ever_count",
+        "eval_success_ever_rate",
+        "eval_done_count_step",
+        "eval_done_count_cumulative",
+        "eval_done_after_success_rate",
+        "eval_done_success_done_rate",
+        "eval_suppressed_success_done_rate",
+        "eval_suppressed_success_done_count",
+        "cube_lift_height",
+        "cube_lift_height_max",
+        "ee_to_cube_dist",
+        "finger_center_to_cube_dist",
+        "max_finger_to_cube_dist",
+        "finger_table_clearance",
+        "gripper_width",
+        "hold_active_rate",
+        "hold_new_trigger_rate",
+        "hold_trigger_step_mean",
+        "hold_lift_trigger_rate",
+        "hold_success_trigger_rate",
+        "hold_contact_trigger_rate",
+        "cube_traj_tracking_action_close",
+        "cube_traj_tracking_action_up",
+        "cube_traj_tracking_gripper_action",
+        "cube_traj_tracking_close_action_reward",
+        "cube_traj_tracking_lift_action_reward",
+        "cube_traj_tracking_target_table_clearance",
+        "cube_traj_tracking_unsafe_target_rate",
+        "traj_phase_progress",
+    ]
+    window_trace_path = output_dir / "success_window_trace.csv"
+    with window_trace_path.open("w", newline="") as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=columns)
+        writer.writeheader()
+        for row in steps[start_step - 1 : end_step]:
+            writer.writerow({key: row.get(key) for key in columns})
+    return diagnostics_json_path, diagnostics_csv_path, window_trace_path
 
 
 def main() -> None:
@@ -327,6 +449,9 @@ def main() -> None:
         "first_done_step": summary.get("first_done_step"),
         "done_after_success_rate": summary.get("done_after_success_rate"),
         "done_after_success_count": summary.get("done_after_success_count"),
+        "suppressed_success_done_rate": summary.get("suppressed_success_done_rate"),
+        "suppressed_success_done_count": summary.get("suppressed_success_done_count"),
+        "first_suppressed_success_done_step": summary.get("first_suppressed_success_done_step"),
         "done_reason_counts": summary.get("done_reason_counts"),
         "done_events": summary.get("done_events"),
         "cube_lift_height_max": _summary(summary, "cube_lift_height", "max"),
@@ -456,10 +581,15 @@ def main() -> None:
         },
         "reference_curobo_validated": summary.get("trajectory_tracking_reference", {}).get("curobo_validated"),
         "reference_source_tag": summary.get("trajectory_tracking_reference", {}).get("source_tag"),
+        "suppress_success_termination": summary.get("suppress_success_termination"),
+        "success_termination_suppression_installed": summary.get("success_termination_suppression_installed"),
         "trace_csv_path": summary.get("trace_csv_path"),
         "trace_jsonl_path": summary.get("trace_jsonl_path"),
         "video_files": summary.get("video_files"),
     }
+    diagnostics_json_path, diagnostics_csv_path, window_trace_path = _write_success_diagnostics(
+        output_dir, compact, summary, steps
+    )
     (output_dir / "summary.json").write_text(json.dumps(compact, indent=2, sort_keys=True) + "\n")
     csv_path = output_dir / "summary.csv"
     with csv_path.open("w", newline="") as csv_file:
@@ -519,6 +649,7 @@ def main() -> None:
 - action source: `{summary.get('action_source')}` ({summary.get('action_source_notes')})
 - reference mix alpha: {_fmt(summary.get('reference_mix_alpha'))}
 - hold config: `{summary.get('hold_config')}`
+- suppress success termination: `{summary.get('suppress_success_termination')}` (installed={summary.get('success_termination_suppression_installed')})
 - checkpoint: `{summary.get('checkpoint')}`
 - steps: {summary.get('num_steps_completed')}/{summary.get('num_steps_requested')}
 - reward mean/final: {_fmt(summary.get('reward_mean'))} / {_fmt(summary.get('reward_final'))}
@@ -568,6 +699,8 @@ def main() -> None:
 - last success step summary: `{compact['last_success_step']}`
 - first done step summary: `{compact['first_done_step']}`
 - done-after-success count/rate: {compact['done_after_success_count']} / {_fmt(compact['done_after_success_rate'])}
+- suppressed success-done count/rate: {compact['suppressed_success_done_count']} / {_fmt(compact['suppressed_success_done_rate'])}
+- first suppressed success-done step summary: `{compact['first_suppressed_success_done_step']}`
 - done reason counts: `{compact['done_reason_counts']}`
 - done events: `{compact['done_events']}`
 
@@ -580,6 +713,9 @@ def main() -> None:
 - plot: `{plot_path}`
 - summary_json: `{output_dir / 'summary.json'}`
 - summary_csv: `{csv_path}`
+- success_diagnostics_json: `{diagnostics_json_path}`
+- success_diagnostics_csv: `{diagnostics_csv_path}`
+- success_window_trace_csv: `{window_trace_path}`
 - consistency_json: `{output_dir / 'train_eval_consistency.json'}`
 - trace_csv: `{summary.get('trace_csv_path')}`
 - trace_jsonl: `{summary.get('trace_jsonl_path')}`

@@ -2983,3 +2983,45 @@ Analysis:
 
 Next:
 - Do not scale PPO. The next bounded development step should make this terminal-stabilization route trainable/interpretable: either add a training/eval metric that reports success-ever/done reason windows for RL smokes by default, or run one small eval-only curriculum diagnostic that blends learned actions until the offset-hold trigger and then hands off to the stable hold target. Any next run must include the same artifact bundle and viewer URLs.
+
+## 2026-06-11T16:29:02-07:00 - no-auto-reset stabilization diagnostic plan
+
+Goal:
+- Determine whether the reference/offset-hold controller keeps the cube stable after first success when the env does not immediately auto-reset on `success_done`.
+- Make the existing success-window artifact easier to parse by emitting a dedicated success/done diagnostics JSON/CSV and a focused success-window trace CSV.
+
+Hypothesis:
+- If the offset-hold controller can keep success/lift after the first success when success termination is suppressed, then the current final-zero issue is purely task auto-reset semantics and this terminal-hold target is physically stable enough to train toward.
+- If success is reached and then lost without reset, the remaining issue is post-success hold/contact stability under the reference/hold controller, not just PPO policy weakness.
+
+Planned Change:
+- `dextrah_lab/rl_games/eval_rollout.py`: add an eval-only `--suppress_success_termination` flag. It will mask only `success_done` out of the environment termination signal by monkeypatching the instantiated eval env, while the metrics still record hypothetical success-done events from a pre-step snapshot. This does not change baseline task code.
+- `cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`: pass `SUPPRESS_SUCCESS_TERMINATION` through the wrapper and echo it in logs.
+- `dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py`: write `success_diagnostics.json`, `success_diagnostics.csv`, and `success_window_trace.csv` with success-ever, done-after-success, hold trigger, lift, EE/finger distances, gripper width/action, target safety, and done-reason fields.
+- Worklog: record validation, exact commit/deploy state, job id, artifacts, and pass/fail interpretation.
+
+Validation Before Launch:
+- `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py`
+- `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- Regenerate artifacts for `1027856` to verify the new success diagnostics outputs are written.
+- `git diff --check`
+- Commit/push and update the agent-owned l401 worktree to the exact commit via Git.
+
+Planned Job:
+- One l401 eval-only run with the same offset-hold config as `1027856`, plus `SUPPRESS_SUCCESS_TERMINATION=True`, `NUM_STEPS=520`, `VIDEO_LENGTH=520`, `NUM_ENVS=4`, `ACTION_SOURCE=policy_reference_mix_hold`, `REFERENCE_MIX_ALPHA=1.0`, `HOLD_TARGET_POLICY=cube_current_plus_trigger_ee_offset`, `HOLD_CONTACT_MAX_FINGER_DIST=0.0`, `HOLD_PHASE_START=0.67`, `HOLD_TRIGGER_LIFT_HEIGHT=0.02`, `HOLD_LIFT_HEIGHT=0.03`, `HOLD_GRIPPER_ACTION=-0.4`, same seed/checkpoint/reference.
+
+Acceptance:
+- Fetch and inspect mp4, success-window contact sheet, slow success/loss window video, `metrics.json`, trace CSV/JSONL, summary JSON/CSV, success diagnostics JSON/CSV/window trace, trace plot, report, consistency JSON, stdout log, and `viz-open` URLs.
+- Target unsafe remains `0`; no reset occurs due to success termination; report whether success/lift persist after first success or drop under the controller. No PPO scale-up.
+
+Implementation Checkpoint:
+- `eval_rollout.py` now supports eval-only `--suppress_success_termination`. The instantiated eval env masks `success_done` out of termination while preserving other done reasons; metrics record `suppressed_success_done_count/rate` and first suppressed success-done step.
+- `sbatch_eval_franka_cube_grasp_1gpu.sh` now echoes and passes `SUPPRESS_SUCCESS_TERMINATION`.
+- `summarize_traj_tracking_eval_artifacts.py` now emits `success_diagnostics.json`, `success_diagnostics.csv`, and `success_window_trace.csv`, and includes success-suppression fields in the report.
+- Regenerated the existing `1027856` local artifact summary; new files exist under `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_successwin390_20260611_161503_artifacts/`.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py` passed.
+- `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh` passed.
+- `git diff --check` passed.
+- Existing `1027856` success diagnostics parse expected fields: `success_ever_count=3`, `success_rate_max=0.75`, `done_after_success_count=3`, `done_reason_counts.success_done=3`, `hold_trigger_step_mean=319.0`, `cube_lift_height_max=0.108942`, `target_unsafe_rate_max=0`.
