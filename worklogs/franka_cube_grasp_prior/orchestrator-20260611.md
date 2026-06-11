@@ -130,3 +130,32 @@ Orchestrator guardrails:
   behavior before declaring progress.
 - Worker branches remain isolated; integration into `main` waits for reviewed
   evidence and an explicit merge decision.
+
+## 2026-06-11 Active Loop Progress
+
+Current observed progress after resuming workers:
+
+- Worker A has passed a real l401 reset-prior validation smoke and launched a
+  short RL-Games smoke for the prior-reset variant. Job `1027683` completed
+  successfully on l401 (`ggx_rl_smoke`, exit `0:0`, elapsed `00:00:47`). The
+  log shows `Dextrah-Franka-Cube-Grasp`, 64 envs, 2 epochs, checkpoint output,
+  and prior-enabled wrapper plumbing. Worker A still owns interpretation of
+  short-smoke quality before any scale-up.
+- Worker B has passed a real l401 Isaac validation smoke for
+  `Dextrah-Franka-Cube-Grasp-Traj-Tracking`: task registration, baseline
+  registration, 72D observation shape, finite tracking logs, no immediate
+  termination spike, and manual reference clearly marked unvalidated. It has
+  prepared RL-smoke wrapper/config work for the tracking task.
+- Worker C has progressed beyond synthetic validation: it set up the official
+  `real-stanford/diffusion_policy` path, ran a one-step official lowdim debug
+  train on converted Franka cube data, saved/loaded a checkpoint, and validated
+  a PPO-bridge smoke with finite 7D action output. No full BC/RL training yet.
+
+Latest remote worker refs observed:
+
+- Worker A: `origin/codex/franka-cube-ggx-pregrasp-reset` at `4cdc8c19516fed4fae4355ab7fd3e9f3bba5c5fc`.
+- Worker B: `origin/codex/franka-cube-trajectory-tracking` at `7d9c18066421638331888692d08d9185cc3d00d7`.
+- Worker C: `origin/codex/franka-cube-diffusion-policy-bc` at `1fad16fa6b4b9eacbe1edf67ca8153ff399694ad`.
+
+Current queue state when checked: no a1001 jobs; l401 job `1027683` had
+completed. Continue polling workers rather than closing them.
