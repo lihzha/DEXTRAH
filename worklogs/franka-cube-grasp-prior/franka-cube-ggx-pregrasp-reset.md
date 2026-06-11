@@ -1712,3 +1712,44 @@ Verdict:
 Next:
 - Do not relaunch final-scale A100 from this result.
 - The next bounded iteration should either run a longer still-small reset-prior PPO smoke or a matched prior-disabled small baseline to determine whether the early drift is normal for this smoke horizon versus introduced by the reset prior. Any next launch should keep the same artifact cadence: JSONL scan, checkpoint list, fixed-seed eval video/contact sheet, and pass/fail interpretation before scale-up.
+
+## 2026-06-11T22:53:48Z - plan matched prior-disabled baseline smoke/eval
+
+Goal:
+- Run the matched small-scale baseline smoke/eval requested by the orchestrator so the prior-enabled early-learning artifact can be compared against a prior-disabled `Dextrah-Franka-Cube-Grasp` run.
+
+Hypothesis:
+- If the baseline also briefly interacts and then drifts, the prior-enabled epoch-10 behavior is likely normal for the tiny 64-env/45-epoch smoke horizon. If the baseline shows clearly better early grasp/lift behavior under the same scale/seeds, the prior-start state or policy distribution deserves further debugging before any A100 scale-up.
+
+Change:
+- No source-code change planned.
+- Use the existing 1-GPU smoke/eval wrappers from the same branch.
+- Keep task, env count, epoch count, save/eval workflow, cube XY randomization, and fixed seeds matched to the prior-enabled smoke.
+- Disable only the prior-reset override: `GRASP_PRIOR_RESET_ENABLED=False` and no `GRASP_PRIOR_LIBRARY_PATH`.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `cdaf066ce9e06eb38a1bf57be78bbdb6df22b4aa`
+- implementation_commit: pending worklog-only launch checkpoint
+- changed_files: this worklog only
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+
+Planned Command / Job:
+- smoke run name: `franka_cube_baseline_noprior_smoke_1gpu_20260611_2253`
+- eval run name: `franka_cube_baseline_noprior_smoke_ep_best_eval_20260611_2253`
+- launch shape: l401 `batch`, 1 GPU, `NUM_ENVS=64`, `MAX_ITERATIONS=45`, `HORIZON_LENGTH=64`, `MINIBATCH_SIZE=4096`, `CENTRAL_VALUE_MINIBATCH_SIZE=4096`, `SAVE_FREQUENCY=5`, `SEED=20260620`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`, `DEXTRAH_RLGAMES_JSONL_METRICS=True`, `AUTO_RESUME=False`, `USE_CUDA_GRAPH=True`, `GRASP_PRIOR_RESET_ENABLED=False`
+- eval shape: 1 env, 240 steps, deterministic, `SEED=20260621`, same cube XY randomization, `GRASP_PRIOR_RESET_ENABLED=False`, fixed camera matching the prior-enabled eval
+- expected artifacts: Slurm logs, `params/`, `metrics/direct_info_rank_0.jsonl`, checkpoint list, fixed-seed eval video, `metrics.json`, `trace.csv/jsonl`, contact sheet, reward/distance plots, geometry trace, report, viewer URLs
+
+Acceptance:
+- Do not launch A100.
+- Inspect stdout, JSONL sidecar, checkpoint rewards, bad scalar count, eval metrics, video/contact sheet, and plots.
+- Produce the same artifact bundle and pass/fail interpretation as the prior-enabled smoke.
+
+Result:
+- status: planned
+
+Next:
+- Commit/push this worklog plan, deploy the exact commit to the agent-owned l401 worktree, submit the baseline smoke, monitor to completion, inspect metrics/checkpoints, run eval from the best usable checkpoint, fetch artifacts, build/open the inspection bundle, update the worklog, and push the result.
