@@ -3356,3 +3356,60 @@ Next:
 - If longer teacher forcing follows demos but DP replan drifts, patch policy
   conditioning/data support; if dataset teacher forcing also drifts later,
   inspect reset alignment/controller gains/timing more deeply.
+
+## 2026-06-11T14:57:38-07:00 - later-window open-gripper replay plan
+
+Goal:
+- Test the later failure window rather than only reset-time replay:
+  if the env follows dataset/reference pose labels with the gripper forced open
+  toward the dataset close boundary, does cube-relative geometry become valid
+  before close, or does it drift out of support even under teacher forcing?
+
+Hypothesis:
+- If teacher-forced open-gripper dataset pose labels reach the demo grasp
+  geometry near the close boundary while DP closed-loop does not, the bug is
+  policy/live-state support and closed-loop recovery.
+- If teacher-forced labels also fail to reach valid geometry by the close
+  boundary, the remaining issue is reset alignment, controller timing/gains, or
+  label-to-controller execution over longer horizons.
+
+Change:
+- Extend `dextrah_lab/rl_games/replay_franka_cube_dataset_actions.py` only:
+  - add `dataset_open_t`, `dataset_open_t_plus_1`,
+    `dataset_open_t_plus_7` modes, which use dataset pose labels but override
+    gripper action to `+1.0` open;
+  - log live nearest demo row/episode step/phase at every step;
+  - log live cube-minus-EE, dataset cube-minus-EE, nearest-demo cube-minus-EE;
+  - log EE/finger-to-cube distances, cube lift, gripper width/action,
+    first negative/hard-close timing, and expected-vs-actual motion direction;
+  - expand the PNG plot and report for later-window inspection.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `ab6e1d43f8edb70298620e7fd5bd479b466b5a1b`
+- implementation_commit: pending
+- changed_files:
+  - `dextrah_lab/rl_games/replay_franka_cube_dataset_actions.py`
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/replay_franka_cube_dataset_actions.py`
+- `bash -n cluster/sbatch_replay_franka_cube_dp_actions_1gpu.sh`
+
+Planned Command / Job:
+- run_name:
+  `franka_cube_dp_replay_framefix_overfit2k_open_to_close320_20260611_145800`
+- local/remote commit: pending, then deploy exact commit to
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- command:
+  `RUN_NAME=franka_cube_dp_replay_framefix_overfit2k_open_to_close320_20260611_145800 CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart DATASET=/results/dp_bc/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz CHECKPOINT=/results/dp_bc/checkpoints/franka_cube_curobo32_full_pick_lift_framefix_overfit2k/latest.ckpt NUM_ENVS=1 STEPS=320 NUM_INFERENCE_STEPS=100 MODES=dataset_open_t_plus_7,dp_replan PRINT_INTERVAL=32 CAPTURE_VIDEO=False SEED=42 sbatch cluster/sbatch_replay_franka_cube_dp_actions_1gpu.sh`
+- expected comparison:
+  - `dataset_open_t_plus_7`: open-gripper teacher-forced pose labels toward
+    close boundary;
+  - `dp_replan`: closed-loop DP replanning from the same reset/horizon.
+
+Acceptance:
+- Diagnostic clarity only. Fetch run artifacts, inspect report/CSV/plot,
+  generate/open viz URLs, update worklog. No BC/RL scale-up.

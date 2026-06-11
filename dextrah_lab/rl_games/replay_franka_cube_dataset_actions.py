@@ -37,7 +37,15 @@ parser.add_argument(
     "--mode",
     action="append",
     default=[],
-    choices=["dataset_t", "dataset_t_plus_1", "dataset_t_plus_7", "dp_replan"],
+    choices=[
+        "dataset_t",
+        "dataset_t_plus_1",
+        "dataset_t_plus_7",
+        "dataset_open_t",
+        "dataset_open_t_plus_1",
+        "dataset_open_t_plus_7",
+        "dp_replan",
+    ],
     help="Replay mode. May be passed multiple times. Defaults to dataset_t and dp_replan.",
 )
 parser.add_argument("--clip_actions", type=float, default=1.0)
@@ -111,6 +119,11 @@ def _nearest_dataset_row(obs: np.ndarray, query_obs: np.ndarray) -> tuple[int, f
     return idx, float(dist[idx])
 
 
+def _episode_step(row_idx: int, episode_ends: np.ndarray) -> int:
+    _ep, start, _end = _episode_for_row(row_idx, episode_ends)
+    return int(row_idx - start)
+
+
 def _load_policy(checkpoint: Path, device: str, num_inference_steps: int, diffusion_policy_root: str | None):
     if diffusion_policy_root:
         root = str(Path(diffusion_policy_root).expanduser().resolve())
@@ -168,6 +181,19 @@ def _env_metric(task_env: Any, name: str) -> float | None:
     return _mean_float(getattr(task_env, name))
 
 
+def _env_metric_for_env(task_env: Any, name: str, env_idx: int) -> float | None:
+    if not hasattr(task_env, name):
+        return None
+    value = getattr(task_env, name)
+    if isinstance(value, torch.Tensor):
+        return float(value.detach().flatten()[int(env_idx)].cpu())
+    try:
+        arr = np.asarray(value).reshape(-1)
+        return float(arr[int(env_idx)])
+    except Exception:
+        return _mean_float(value)
+
+
 def _configure_eval_camera(env_cfg: Any, task_env: Any | None = None) -> None:
     if args_cli.camera_eye is None and args_cli.camera_target is None and not args_cli.video:
         return
@@ -213,23 +239,37 @@ def _plot(rows: list[dict[str, Any]], output_path: Path) -> None:
     if not rows:
         return
     modes = list(dict.fromkeys(str(row["mode"]) for row in rows))
-    fig, axes = plt.subplots(3, 1, figsize=(12, 10), sharex=True, constrained_layout=True)
+    fig, axes = plt.subplots(5, 1, figsize=(13, 16), sharex=True, constrained_layout=True)
     for mode in modes:
         mode_rows = [row for row in rows if row["mode"] == mode and int(row["env_index"]) == 0]
         x = [row["step"] for row in mode_rows]
-        axes[0].plot(x, [row["ee_to_cube_after"] for row in mode_rows], marker="o", label=mode)
-        axes[1].plot(x, [row["gripper_width_after"] for row in mode_rows], marker="o", label=mode)
-        axes[2].plot(x, [row["actual_vs_expected_xyz_cosine"] for row in mode_rows], marker="o", label=mode)
-    axes[0].set_title("EE To Cube Distance After Step")
+        axes[0].plot(x, [row["ee_to_cube_after"] for row in mode_rows], label=f"{mode} ee")
+        axes[0].plot(x, [row["finger_center_to_cube_dist_after"] for row in mode_rows], linestyle="--", label=f"{mode} finger")
+        axes[1].plot(x, [row["live_cube_minus_ee_after_x"] for row in mode_rows], label=f"{mode} x")
+        axes[1].plot(x, [row["live_cube_minus_ee_after_y"] for row in mode_rows], label=f"{mode} y")
+        axes[1].plot(x, [row["live_cube_minus_ee_after_z"] for row in mode_rows], label=f"{mode} z")
+        axes[2].plot(x, [row["gripper_width_after"] for row in mode_rows], label=f"{mode} width")
+        axes[2].plot(x, [row["executed_gripper"] for row in mode_rows], linestyle="--", label=f"{mode} action")
+        axes[3].plot(x, [row["nearest_live_distance"] for row in mode_rows], label=mode)
+        axes[4].plot(x, [row["actual_vs_expected_xyz_cosine"] for row in mode_rows], label=mode)
+        first_neg = next((row["step"] for row in mode_rows if row["executed_gripper"] < 0.0), None)
+        if first_neg is not None:
+            for ax in axes:
+                ax.axvline(first_neg, color="tab:red", alpha=0.2, linestyle="--")
+    axes[0].set_title("EE/Finger To Cube Distance After Step")
     axes[0].set_ylabel("m")
-    axes[1].set_title("Gripper Width After Step")
+    axes[1].set_title("Live Cube Minus EE After Step")
     axes[1].set_ylabel("m")
-    axes[2].set_title("Actual EE Delta vs Expected Action World Delta")
-    axes[2].set_ylabel("cosine")
-    axes[2].set_xlabel("replay step")
+    axes[2].set_title("Gripper Width And Executed Gripper Action")
+    axes[2].set_ylabel("m / action")
+    axes[3].set_title("Nearest Demo Distance")
+    axes[3].set_ylabel("scaled distance")
+    axes[4].set_title("Actual EE Delta vs Expected Action World Delta")
+    axes[4].set_ylabel("cosine")
+    axes[4].set_xlabel("replay step")
     for ax in axes:
         ax.grid(True, alpha=0.25)
-        ax.legend(fontsize=8)
+        ax.legend(fontsize=6, ncol=2)
     fig.savefig(output_path, dpi=180)
     plt.close(fig)
 
@@ -246,15 +286,15 @@ def _build_report(summary: dict[str, Any]) -> str:
         "",
         "## Mode Summary",
         "",
-        "| mode | steps | nearest row | nearest phase | final EE-cube | min EE-cube | mean delta cosine | first DP grip | first label grip |",
-        "|---|---:|---:|---|---:|---:|---:|---:|---:|",
+        "| mode | steps | nearest row | nearest phase | final EE-cube | final finger-cube | final cube-minus-EE | first close | first hard close | mean delta cosine |",
+        "|---|---:|---:|---|---:|---:|---|---:|---:|---:|",
     ]
     for mode, payload in summary["modes"].items():
         lines.append(
             f"| {mode} | {payload['steps']} | {payload['initial_nearest_row']} | {payload['initial_nearest_phase']} | "
-            f"{payload['final_ee_to_cube']:.4f} | {payload['min_ee_to_cube']:.4f} | "
-            f"{payload['mean_actual_vs_expected_xyz_cosine']:.4f} | {payload['first_dp_gripper']:.3f} | "
-            f"{payload['first_label_gripper']:.3f} |"
+            f"{payload['final_ee_to_cube']:.4f} | {payload['final_finger_center_to_cube']:.4f} | "
+            f"{payload['final_cube_minus_ee']} | {payload['first_executed_negative_step']} | "
+            f"{payload['first_executed_hard_close_step']} | {payload['mean_actual_vs_expected_xyz_cosine']:.4f} |"
         )
     lines.extend(
         [
@@ -334,6 +374,9 @@ def main() -> None:
                 nearest_distances = [
                     _nearest_dataset_row(dataset_obs, lowdim[env_idx])[1] for env_idx in range(lowdim.shape[0])
                 ]
+                live_nearest = [
+                    _nearest_dataset_row(dataset_obs, lowdim[env_idx])[0] for env_idx in range(lowdim.shape[0])
+                ]
                 with torch.inference_mode():
                     dp_seq = predict_action_sequence_from_ppo_obs(policy, policy_obs, history, step=step)
 
@@ -353,6 +396,15 @@ def main() -> None:
                         exec_actions[env_idx] = labels_t1[env_idx]
                     elif mode == "dataset_t_plus_7":
                         exec_actions[env_idx] = labels_t7[env_idx]
+                    elif mode == "dataset_open_t":
+                        exec_actions[env_idx] = labels_t[env_idx]
+                        exec_actions[env_idx, 6] = 1.0
+                    elif mode == "dataset_open_t_plus_1":
+                        exec_actions[env_idx] = labels_t1[env_idx]
+                        exec_actions[env_idx, 6] = 1.0
+                    elif mode == "dataset_open_t_plus_7":
+                        exec_actions[env_idx] = labels_t7[env_idx]
+                        exec_actions[env_idx, 6] = 1.0
                     elif mode == "dp_replan":
                         exec_actions[env_idx] = dp_seq[env_idx, 0]
                     else:
@@ -374,8 +426,10 @@ def main() -> None:
 
                 for env_idx in range(task_env.num_envs):
                     nearest_row = int(nearest_rows[env_idx])
+                    live_nearest_row = int(live_nearest[env_idx])
                     current_row = _clipped_row(nearest_row + step, episode_ends)
                     phase = phase_names[int(phase_ids[current_row])]
+                    live_nearest_phase = phase_names[int(phase_ids[live_nearest_row])]
                     cosine = _cosine(actual_delta[env_idx], expected_world_delta[env_idx, :3])
                     if cosine is not None:
                         mode_cosines.append(float(cosine))
@@ -387,11 +441,37 @@ def main() -> None:
                         "env_index": env_idx,
                         "nearest_initial_row": nearest_row,
                         "dataset_row": current_row,
+                        "dataset_episode_step": _episode_step(current_row, episode_ends),
                         "dataset_phase": phase,
+                        "nearest_live_row": live_nearest_row,
+                        "nearest_live_episode_step": _episode_step(live_nearest_row, episode_ends),
+                        "nearest_live_phase": live_nearest_phase,
                         "nearest_live_distance": float(nearest_distances[env_idx]),
                         "ee_to_cube_before": float(before_ee_to_cube[env_idx]),
                         "ee_to_cube_after": float(after_ee_to_cube[env_idx]),
+                        "finger_center_to_cube_dist_after": _env_metric_for_env(
+                            task_env, "finger_center_to_cube_dist", env_idx
+                        ),
+                        "left_finger_to_cube_dist_after": _env_metric_for_env(
+                            task_env, "left_finger_to_cube_dist", env_idx
+                        ),
+                        "right_finger_to_cube_dist_after": _env_metric_for_env(
+                            task_env, "right_finger_to_cube_dist", env_idx
+                        ),
+                        "cube_lift_height_after": _env_metric_for_env(task_env, "cube_lift_height", env_idx),
                         "ee_to_cube_delta": float(after_ee_to_cube[env_idx] - before_ee_to_cube[env_idx]),
+                        "live_cube_minus_ee_before_x": float(before_lowdim[env_idx, 14]),
+                        "live_cube_minus_ee_before_y": float(before_lowdim[env_idx, 15]),
+                        "live_cube_minus_ee_before_z": float(before_lowdim[env_idx, 16]),
+                        "live_cube_minus_ee_after_x": float(after_lowdim[env_idx, 14]),
+                        "live_cube_minus_ee_after_y": float(after_lowdim[env_idx, 15]),
+                        "live_cube_minus_ee_after_z": float(after_lowdim[env_idx, 16]),
+                        "dataset_cube_minus_ee_x": float(dataset_obs[current_row, 14]),
+                        "dataset_cube_minus_ee_y": float(dataset_obs[current_row, 15]),
+                        "dataset_cube_minus_ee_z": float(dataset_obs[current_row, 16]),
+                        "nearest_live_cube_minus_ee_x": float(dataset_obs[live_nearest_row, 14]),
+                        "nearest_live_cube_minus_ee_y": float(dataset_obs[live_nearest_row, 15]),
+                        "nearest_live_cube_minus_ee_z": float(dataset_obs[live_nearest_row, 16]),
                         "gripper_width_before": float(before_lowdim[env_idx, 20]),
                         "gripper_width_after": float(after_lowdim[env_idx, 20]),
                         "reward": float(reward_np[env_idx]),
@@ -420,6 +500,8 @@ def main() -> None:
                                 "step": step + 1,
                                 "ee_to_cube_after_mean": float(np.mean(after_ee_to_cube)),
                                 "reward_mean": float(np.mean(reward_np)),
+                                "nearest_live_phase_env0": live_nearest_phase,
+                                "nearest_live_distance_env0": float(nearest_distances[0]),
                                 "exec_action_env0": exec_actions[0].astype(float).tolist(),
                             },
                             sort_keys=True,
@@ -433,13 +515,40 @@ def main() -> None:
 
             if mode_first is None:
                 continue
+            mode_rows = [row for row in rows if row["mode"] == mode]
+            first_neg = next((row["step"] for row in mode_rows if row["executed_gripper"] < 0.0), None)
+            first_hard = next((row["step"] for row in mode_rows if row["executed_gripper"] <= -0.9), None)
+            first_label_neg = next((row["step"] for row in mode_rows if row["label_t_gripper"] < 0.0), None)
+            first_label_hard = next((row["step"] for row in mode_rows if row["label_t_gripper"] <= -0.9), None)
+            first_nearest_close = next(
+                (row["step"] for row in mode_rows if row["nearest_live_phase"] == "close_fingers"), None
+            )
+            last_row = mode_rows[-1]
             summaries[mode] = {
-                "steps": len([row for row in rows if row["mode"] == mode]),
+                "steps": len(mode_rows),
                 "initial_nearest_row": int(mode_first["nearest_initial_row"]),
                 "initial_nearest_phase": str(mode_first["dataset_phase"]),
                 "initial_nearest_live_distance": float(mode_first["nearest_live_distance"]),
                 "final_ee_to_cube": float(mode_distances[-1]) if mode_distances else float("nan"),
                 "min_ee_to_cube": float(np.min(mode_distances)) if mode_distances else float("nan"),
+                "final_finger_center_to_cube": float(last_row["finger_center_to_cube_dist_after"]),
+                "min_finger_center_to_cube": float(
+                    np.min([row["finger_center_to_cube_dist_after"] for row in mode_rows])
+                ),
+                "final_gripper_width": float(last_row["gripper_width_after"]),
+                "final_cube_minus_ee": [
+                    float(last_row["live_cube_minus_ee_after_x"]),
+                    float(last_row["live_cube_minus_ee_after_y"]),
+                    float(last_row["live_cube_minus_ee_after_z"]),
+                ],
+                "final_nearest_live_row": int(last_row["nearest_live_row"]),
+                "final_nearest_live_phase": str(last_row["nearest_live_phase"]),
+                "final_nearest_live_distance": float(last_row["nearest_live_distance"]),
+                "first_executed_negative_step": first_neg,
+                "first_executed_hard_close_step": first_hard,
+                "first_label_negative_step": first_label_neg,
+                "first_label_hard_close_step": first_label_hard,
+                "first_nearest_close_phase_step": first_nearest_close,
                 "mean_actual_vs_expected_xyz_cosine": float(np.mean(mode_cosines)) if mode_cosines else float("nan"),
                 "first_dp_action": mode_first["dp_first_action"],
                 "first_label_action": mode_first["label_t_action"],
