@@ -596,6 +596,12 @@ def _run_short_rollout(env, task_env, checks: CheckRecorder, num_steps: int, pri
         "cube_traj_tracking_position_error",
         "cube_traj_tracking_orientation_error",
         "cube_traj_tracking_gripper_error",
+        "cube_traj_tracking_close_action_reward",
+        "cube_traj_tracking_lift_action_reward",
+        "cube_traj_tracking_closed_target_gate",
+        "cube_traj_tracking_close_phase_gate",
+        "cube_traj_tracking_lift_phase_gate",
+        "cube_traj_tracking_contact_gate",
         "cube_traj_tracking_effective_phase_weight",
         "cube_traj_tracking_target_table_clearance",
         "cube_traj_tracking_target_table_clearance_min",
@@ -609,6 +615,11 @@ def _run_short_rollout(env, task_env, checks: CheckRecorder, num_steps: int, pri
     tracking_clearance_values: list[float] = []
     tracking_clearance_min_values: list[float] = []
     tracking_effective_weight_values: list[float] = []
+    tracking_close_action_reward_values: list[float] = []
+    tracking_lift_action_reward_values: list[float] = []
+    tracking_contact_gate_values: list[float] = []
+    tracking_close_phase_gate_values: list[float] = []
+    tracking_lift_phase_gate_values: list[float] = []
     for step in range(num_steps):
         actions = torch.zeros(task_env.num_envs, task_env.cfg.action_space, device=task_env.device)
         if step > num_steps // 3:
@@ -649,6 +660,16 @@ def _run_short_rollout(env, task_env, checks: CheckRecorder, num_steps: int, pri
                     tracking_clearance_min_values.append(_mean(value))
                 elif key == "cube_traj_tracking_effective_phase_weight":
                     tracking_effective_weight_values.append(_mean(value))
+                elif key == "cube_traj_tracking_close_action_reward":
+                    tracking_close_action_reward_values.append(_mean(value))
+                elif key == "cube_traj_tracking_lift_action_reward":
+                    tracking_lift_action_reward_values.append(_mean(value))
+                elif key == "cube_traj_tracking_contact_gate":
+                    tracking_contact_gate_values.append(_mean(value))
+                elif key == "cube_traj_tracking_close_phase_gate":
+                    tracking_close_phase_gate_values.append(_mean(value))
+                elif key == "cube_traj_tracking_lift_phase_gate":
+                    tracking_lift_phase_gate_values.append(_mean(value))
 
         if not bool(torch.isfinite(policy_obs).all().item()):
             checks.check("rollout_observation_finite", False, step=step)
@@ -707,6 +728,23 @@ def _run_short_rollout(env, task_env, checks: CheckRecorder, num_steps: int, pri
             "tracking_effective_phase_weight_mean": sum(tracking_effective_weight_values)
             / len(tracking_effective_weight_values)
             if tracking_effective_weight_values
+            else None,
+            "tracking_close_action_reward_mean": sum(tracking_close_action_reward_values)
+            / len(tracking_close_action_reward_values)
+            if tracking_close_action_reward_values
+            else None,
+            "tracking_lift_action_reward_mean": sum(tracking_lift_action_reward_values)
+            / len(tracking_lift_action_reward_values)
+            if tracking_lift_action_reward_values
+            else None,
+            "tracking_contact_gate_mean": sum(tracking_contact_gate_values) / len(tracking_contact_gate_values)
+            if tracking_contact_gate_values
+            else None,
+            "tracking_close_phase_gate_final": tracking_close_phase_gate_values[-1]
+            if tracking_close_phase_gate_values
+            else None,
+            "tracking_lift_phase_gate_final": tracking_lift_phase_gate_values[-1]
+            if tracking_lift_phase_gate_values
             else None,
         }
         checks.check(

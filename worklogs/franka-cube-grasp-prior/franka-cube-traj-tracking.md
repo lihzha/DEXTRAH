@@ -1660,3 +1660,35 @@ Analysis:
 Next:
 - Commit/push this worklog result.
 - Before any more RL scale-up, inspect the variant reward terms/config and implement one small behavior-side ablation with cheap local checks plus a short env/RL smoke.
+
+## 2026-06-11T14:03:23-07:00 - phase-gated contact/lift shaping plan
+
+Goal:
+- Patch one small variant-only behavior-side ablation based on the clamp video: encourage actual gripper close and upward lift actions during the reference grasp/lift phases without changing the baseline `Dextrah-Franka-Cube-Grasp` task or observation space.
+
+Hypothesis:
+- The current additive tracker rewards position/orientation/gripper width, but the clamp RL25 video shows the policy stays near the cube with a plausible width and never establishes contact or lift. Adding small phase-gated action bonuses should make the reward less satisfied by hovering near the cube: close the gripper when the compact reference is in its clamped closed phase, and prefer upward action after the lift phase starts.
+
+Planned Change:
+- `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env_cfg.py`: add variant-only shaping config for close-action and lift-action bonuses, with defaults enabled only in this trajectory-tracking variant.
+- `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env.py`: add logged reward terms inside `_compute_trajectory_tracking_reward()`:
+  - `cube_traj_tracking_close_action_reward`: close action gated by phase, safe target, and finger proximity to cube.
+  - `cube_traj_tracking_lift_action_reward`: upward action gated by later phase, safe target, and finger proximity to cube.
+  - supporting gates for diagnosis.
+
+Validation Plan:
+- Local: `python3 -m py_compile` on the touched variant files and validator; `git diff --check`.
+- Cluster: run the existing task-registration/env validation with 4 envs and 240 steps against the same 60 mm compact reference. Acceptance: observation remains `[4,72]`, tracking metrics finite, new reward/log terms finite, target unsafe rate remains `0.0`, target clearance remains above `0.025`, and baseline registration still works.
+- If validation passes, run only a tiny RL smoke/eval before any larger RL scale.
+
+Result:
+- status: implemented locally; cluster validation pending.
+- changed_files: `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env_cfg.py`, `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env.py`, `dextrah_lab/rl_games/validate_franka_cube_grasp_env.py`, this worklog.
+- implementation: added phase-gated `cube_traj_tracking_close_action_reward` and `cube_traj_tracking_lift_action_reward` to the variant tracking reward, gated by safe target, reference closed-gripper phase, phase progress, max finger distance to cube, and finger balance.
+- logging: validator now requires the new reward/gate terms to appear and remain finite during the trajectory-tracking env smoke.
+- local_validation: `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env_cfg.py dextrah_lab/rl_games/validate_franka_cube_grasp_env.py` passed.
+- local_validation: `git diff --check` passed.
+
+Next:
+- Commit/push the ablation and deploy the exact commit to the l401 agent-owned worktree.
+- Launch only the bounded 4-env/240-step task-registration/env validation first. If it fails, inspect logs and patch before any RL smoke.

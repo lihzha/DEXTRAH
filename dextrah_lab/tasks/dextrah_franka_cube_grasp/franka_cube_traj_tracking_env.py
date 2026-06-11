@@ -245,7 +245,51 @@ class DextrahFrankaCubeTrajTrackingEnv(DextrahFrankaCubeGraspEnv):
             * torch.exp(-float(self.cfg.trajectory_tracking_gripper_sharpness) * gripper_error)
         )
 
-        tracking_reward = position_reward + orientation_reward + gripper_reward
+        max_gripper_width = max(float(self.cfg.max_gripper_width), 1.0e-6)
+        closed_width_span = max(
+            max_gripper_width - float(getattr(self.cfg, "trajectory_tracking_min_target_gripper_width", 0.0) or 0.0),
+            1.0e-6,
+        )
+        closed_target_gate = torch.clamp((max_gripper_width - self.traj_target_gripper_width) / closed_width_span, 0.0, 1.0)
+        close_phase_start = float(getattr(self.cfg, "trajectory_tracking_close_action_phase_start", 0.0))
+        close_phase_gate = torch.clamp(
+            (self.traj_phase_progress - close_phase_start) / max(1.0 - close_phase_start, 1.0e-6),
+            0.0,
+            1.0,
+        )
+        lift_phase_start = float(getattr(self.cfg, "trajectory_tracking_lift_action_phase_start", 0.0))
+        lift_phase_gate = torch.clamp(
+            (self.traj_phase_progress - lift_phase_start) / max(1.0 - lift_phase_start, 1.0e-6),
+            0.0,
+            1.0,
+        )
+        contact_gate_distance = float(getattr(self.cfg, "trajectory_tracking_contact_gate_max_finger_dist", 0.14))
+        contact_gate_width = max(float(getattr(self.cfg, "trajectory_tracking_contact_gate_width", 0.08)), 1.0e-6)
+        contact_distance_gate = torch.clamp(
+            (contact_gate_distance - self.max_finger_to_cube_dist) / contact_gate_width,
+            0.0,
+            1.0,
+        )
+        finger_balance_gate = 1.0 - torch.clamp((self.finger_distance_asymmetry - 0.025) / 0.075, 0.0, 1.0)
+        contact_gate = contact_distance_gate * (0.25 + 0.75 * finger_balance_gate)
+        close_action_reward = (
+            float(getattr(self.cfg, "trajectory_tracking_close_action_weight", 0.0))
+            * effective_phase_weight
+            * closed_target_gate
+            * close_phase_gate
+            * contact_gate
+            * torch.clamp(-self.actions[:, 6], 0.0, 1.0)
+        )
+        lift_action_reward = (
+            float(getattr(self.cfg, "trajectory_tracking_lift_action_weight", 0.0))
+            * effective_phase_weight
+            * closed_target_gate
+            * lift_phase_gate
+            * contact_gate
+            * torch.clamp(self.actions[:, 2], 0.0, 1.0)
+        )
+
+        tracking_reward = position_reward + orientation_reward + gripper_reward + close_action_reward + lift_action_reward
 
         log_terms = self.extras.setdefault("log", {})
         log_terms.update(
@@ -254,9 +298,15 @@ class DextrahFrankaCubeTrajTrackingEnv(DextrahFrankaCubeGraspEnv):
                 "cube_traj_tracking_position_reward": position_reward.mean(),
                 "cube_traj_tracking_orientation_reward": orientation_reward.mean(),
                 "cube_traj_tracking_gripper_reward": gripper_reward.mean(),
+                "cube_traj_tracking_close_action_reward": close_action_reward.mean(),
+                "cube_traj_tracking_lift_action_reward": lift_action_reward.mean(),
                 "cube_traj_tracking_position_error": position_error.mean(),
                 "cube_traj_tracking_orientation_error": orientation_error.mean(),
                 "cube_traj_tracking_gripper_error": gripper_error.mean(),
+                "cube_traj_tracking_closed_target_gate": closed_target_gate.mean(),
+                "cube_traj_tracking_close_phase_gate": close_phase_gate.mean(),
+                "cube_traj_tracking_lift_phase_gate": lift_phase_gate.mean(),
+                "cube_traj_tracking_contact_gate": contact_gate.mean(),
                 "cube_traj_tracking_phase_progress": self.traj_phase_progress.mean(),
                 "cube_traj_tracking_curriculum_scale": torch.tensor(curriculum_scale, device=self.device),
                 "cube_traj_tracking_phase_weight": phase_weight.mean(),
