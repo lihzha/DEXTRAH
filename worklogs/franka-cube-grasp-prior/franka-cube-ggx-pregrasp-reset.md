@@ -564,3 +564,25 @@ Result:
 
 Next:
 - Monitor job `28987954` on a1001 through startup and any requeues. Confirm the log prints 8 GPUs, 2048 envs, distributed/multi-GPU defaults, prior enabled, and JSONL metrics enabled. Inspect rank-local metrics/checkpoints/logs, patch/relaunch if abnormal, and do not stop at scheduler completion.
+
+## 2026-06-11T19:33:41Z - final 8-GPU training monitor checkpoint
+
+Goal:
+- Record the first full-scale training health checkpoint while continuing to monitor job `28987954`.
+
+Result:
+- status: running_healthy
+- scheduler: `RUNNING`, elapsed about `00:04:52`, node `batch-block5-00308`
+- startup evidence: log prints `torch ... cuda_available True device_count 8`; distributed command uses `--nproc_per_node=8`; ranks `0-7` initialize with `world_size = 8`; each rank creates `Number of environments: 2048`
+- config evidence: wrapper logs `NUM_ENVS=2048`, `NPROC_PER_NODE=8`, `DISTRIBUTED=True`, `MULTI_GPU=True`, `HORIZON_LENGTH=64`, `MINIBATCH_SIZE=32768`, `SAVE_FREQUENCY=25`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`, `GRASP_PRIOR_RESET_ENABLED=True`, and JSONL metrics enabled
+- artifacts: rank-local metric files created; rank 0 is writing scalar records; all rank runtime sidecars written at epoch 25; TensorBoard event file is nonzero; first model checkpoint written at `nn/last_dextrah_franka_cube_grasp_ep_25_rew_1176.0144.pth`
+- current log progress: epoch `36/10000` visible in the live log; latest local snapshot has 33 rank-0 JSONL records through epoch 33
+- scalar health from local snapshot: `bad_scalar_count=0`; prior attempt/success/farther rates all `1.0`; reset pos error min/max/mean `0.0000974/0.0017676/0.001138 m`; reset rot error min/max/mean `0.002747/0.017189/0.010816 rad`; prior finger table clearance min/mean `0.134935/0.135270 m`; pregrasp distance remains larger than exact grasp distance; table-clearance violation mean `0.00000333`
+- behavior snapshot: approach reward increased to `0.907` by epoch 33; enclosure reward to `0.530`; lift reward remains small; success and lifted rates are still `0.0`, which is not yet abnormal this early in training
+- errors: no traceback/runtime/NCCL/child-failure signature observed in fetched log snapshot
+
+Analysis:
+- The reset-prior path remains stable at final scale and within configured IK tolerances. The run is not complete; continue monitoring checkpoint cadence, scalar health, requeue behavior, and eventual success/lift metrics.
+
+Next:
+- Keep monitoring job `28987954`; fetch and inspect later checkpoints/metrics; update this worklog after the next meaningful checkpoint or requeue event; do not mark complete until final training and artifact inspection are done.
