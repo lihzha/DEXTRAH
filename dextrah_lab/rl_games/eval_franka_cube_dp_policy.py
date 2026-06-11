@@ -73,6 +73,24 @@ parser.add_argument(
     default=None,
     help="Optional JSON/CSV prefix for nearest-demo support trace. Defaults under output_dir when --support_dataset is set.",
 )
+parser.add_argument(
+    "--demo_reset_dataset",
+    type=str,
+    default=None,
+    help="Optional converted lowdim NPZ dataset used to overwrite reset cube pose from a selected demo row.",
+)
+parser.add_argument(
+    "--demo_reset_episode",
+    type=int,
+    default=0,
+    help="Episode index for --demo_reset_dataset. Default 0.",
+)
+parser.add_argument(
+    "--demo_reset_step",
+    type=int,
+    default=0,
+    help="Episode-local row for --demo_reset_dataset. Default 0 matches the padded-history train reset.",
+)
 parser.add_argument("--video", action="store_true", default=False, help="Record rollout video.")
 parser.add_argument("--video_length", type=int, default=240)
 parser.add_argument("--video_folder", type=str, default=None)
@@ -299,6 +317,104 @@ def _support_dataset_payload(path: Path | None) -> dict[str, Any] | None:
     }
 
 
+def _demo_reset_payload(path: Path | None, episode: int, episode_step: int) -> dict[str, Any] | None:
+    if path is None:
+        return None
+    data = np.load(path, allow_pickle=False)
+    obs = np.asarray(data["obs"], dtype=np.float32)
+    action = np.asarray(data["action"], dtype=np.float32)
+    phase_ids = np.asarray(data["phase_ids"], dtype=np.int32)
+    episode_ends = np.asarray(data["episode_ends"], dtype=np.int64)
+    if episode_ends.size == 0:
+        raise ValueError(f"Demo reset dataset has no episodes: {path}")
+    episode_idx = int(np.clip(int(episode), 0, int(episode_ends.size - 1)))
+    episode_start = 0 if episode_idx == 0 else int(episode_ends[episode_idx - 1])
+    episode_end = int(episode_ends[episode_idx])
+    local_step = int(np.clip(int(episode_step), 0, max(0, episode_end - episode_start - 1)))
+    row_idx = int(episode_start + local_step)
+    phase_names = _phase_names()
+    phase_id = int(phase_ids[row_idx])
+    return {
+        "path": str(path),
+        "obs": obs,
+        "action": action,
+        "phase_ids": phase_ids,
+        "episode_ends": episode_ends,
+        "phase_names": phase_names,
+        "episode": episode_idx,
+        "episode_start": episode_start,
+        "episode_end": episode_end,
+        "episode_step": local_step,
+        "row": row_idx,
+        "phase": str(phase_names[phase_id]),
+        "target_obs": obs[row_idx].copy(),
+        "target_action": action[row_idx].copy(),
+    }
+
+
+def _reset_policy_obs_from_task_env(task_env: Any) -> torch.Tensor:
+    task_env._compute_intermediate_values()
+    obs_dict = task_env._get_observations()
+    policy_obs = obs_dict["policy"] if isinstance(obs_dict, dict) else obs_dict
+    return policy_obs
+
+
+def _apply_demo_reset(task_env: Any, demo_reset: dict[str, Any]) -> tuple[torch.Tensor, dict[str, Any]]:
+    """Overwrite the reset cube pose/goal from a converted demo row.
+
+    The current first diagnostic deliberately keeps the robot at the task's
+    normal reset joint pose. For demo row 0 this matches the converter's
+    padded-history initial state while letting us isolate object/reset
+    conditioning from policy semantics.
+    """
+
+    env_ids = task_env._robot._ALL_INDICES
+    env_ids = torch.as_tensor(env_ids, device=task_env.device, dtype=torch.long)
+    num_ids = int(env_ids.numel())
+    target_obs = np.asarray(demo_reset["target_obs"], dtype=np.float32)
+    target_cube_pos = torch.as_tensor(target_obs[7:10], dtype=torch.float32, device=task_env.device).repeat(num_ids, 1)
+    target_cube_quat = torch.as_tensor(target_obs[10:14], dtype=torch.float32, device=task_env.device).repeat(num_ids, 1)
+    object_state = torch.zeros(num_ids, 13, device=task_env.device)
+    object_state[:, 0:3] = target_cube_pos + task_env.scene.env_origins[env_ids]
+    object_state[:, 3:7] = target_cube_quat
+    task_env._cube.write_root_state_to_sim(object_state, env_ids=env_ids)
+
+    task_env.cube_initial_pos[env_ids] = target_cube_pos
+    task_env.cube_goal_pos[env_ids] = target_cube_pos
+    task_env.cube_goal_pos[env_ids, 2] = target_cube_pos[:, 2] + float(task_env.cfg.cube_lift_height)
+    task_env.has_lifted_cube[env_ids] = False
+    task_env.in_success_region[env_ids] = False
+    task_env.time_in_success_region[env_ids] = 0.0
+    task_env.actions[env_ids] = 0.0
+    task_env.ik_controller.reset(env_ids)
+    task_env.scene.write_data_to_sim()
+    task_env.sim.forward()
+
+    policy_obs = _reset_policy_obs_from_task_env(task_env)
+    live_lowdim = extract_lowdim_obs_from_ppo_obs(policy_obs).detach().float().cpu().numpy()
+    live0 = live_lowdim[0]
+    diff = live0 - target_obs
+    summary = {
+        "dataset": str(demo_reset["path"]),
+        "episode": int(demo_reset["episode"]),
+        "episode_step": int(demo_reset["episode_step"]),
+        "row": int(demo_reset["row"]),
+        "phase": str(demo_reset["phase"]),
+        "target_cube_pos": target_obs[7:10].astype(float).tolist(),
+        "target_cube_quat": target_obs[10:14].astype(float).tolist(),
+        "target_cube_minus_ee": target_obs[14:17].astype(float).tolist(),
+        "target_gripper_width": float(target_obs[20]),
+        "live_lowdim_after_reset_env0": live0.astype(float).tolist(),
+        "live_cube_pos_after_reset_env0": live0[7:10].astype(float).tolist(),
+        "live_cube_minus_ee_after_reset_env0": live0[14:17].astype(float).tolist(),
+        "lowdim_linf_diff_env0": float(np.max(np.abs(diff))),
+        "lowdim_l2_diff_env0": float(np.linalg.norm(diff)),
+        "cube_pos_l2_diff_env0": float(np.linalg.norm(diff[7:10])),
+        "cube_minus_ee_l2_diff_env0": float(np.linalg.norm(diff[14:17])),
+    }
+    return policy_obs, summary
+
+
 def _nearest_support_row(support: dict[str, Any], lowdim_obs: np.ndarray) -> tuple[int, float]:
     obs = support["obs"]
     feature_std = support["feature_std"]
@@ -513,11 +629,16 @@ def main() -> None:
     support_trace_csv_path = support_trace_path.with_suffix(".csv") if support_trace_path is not None else None
     if support_trace_path is not None:
         support_trace_path.parent.mkdir(parents=True, exist_ok=True)
+    demo_reset_dataset_path = (
+        Path(args_cli.demo_reset_dataset).expanduser().resolve() if args_cli.demo_reset_dataset else None
+    )
     video_folder = Path(args_cli.video_folder).expanduser().resolve() if args_cli.video_folder else output_dir / "videos"
 
     checkpoint = Path(args_cli.checkpoint).expanduser().resolve()
     if not checkpoint.is_file():
         raise FileNotFoundError(checkpoint)
+    if demo_reset_dataset_path is not None and not demo_reset_dataset_path.is_file():
+        raise FileNotFoundError(demo_reset_dataset_path)
     _stage(
         "start",
         output_dir=str(output_dir),
@@ -530,6 +651,9 @@ def main() -> None:
         debug_policy_trace_max_calls=debug_trace_max_calls,
         support_dataset=str(support_dataset_path) if support_dataset_path is not None else None,
         support_trace_path=str(support_trace_path) if support_trace_path is not None else None,
+        demo_reset_dataset=str(demo_reset_dataset_path) if demo_reset_dataset_path is not None else None,
+        demo_reset_episode=int(args_cli.demo_reset_episode),
+        demo_reset_step=int(args_cli.demo_reset_step),
     )
     support_dataset = _support_dataset_payload(support_dataset_path)
     if support_dataset is not None:
@@ -538,6 +662,20 @@ def main() -> None:
             dataset=str(support_dataset_path),
             obs_shape=list(support_dataset["obs"].shape),
             action_shape=list(support_dataset["action"].shape),
+        )
+    demo_reset = _demo_reset_payload(
+        demo_reset_dataset_path,
+        int(args_cli.demo_reset_episode),
+        int(args_cli.demo_reset_step),
+    )
+    if demo_reset is not None:
+        _stage(
+            "demo_reset_loaded",
+            dataset=str(demo_reset_dataset_path),
+            episode=int(demo_reset["episode"]),
+            episode_step=int(demo_reset["episode_step"]),
+            row=int(demo_reset["row"]),
+            phase=str(demo_reset["phase"]),
         )
 
     env_cfg = parse_env_cfg(
@@ -587,12 +725,23 @@ def main() -> None:
     env_closed = False
     final_cube_pos_mean: list[float] | list[list[float]] | None = None
     final_gripper_width: float | None = None
+    demo_reset_summary: dict[str, Any] | None = None
     try:
         _stage("env_reset_start")
         policy_obs = _policy_obs_from_reset(gym_env.reset())
         _stage("env_reset_done", policy_obs_shape=tuple(policy_obs.shape))
         if policy_obs.shape[-1] != FRANKA_CUBE_PPO_OBS_DIM:
             raise RuntimeError(f"Expected PPO obs dim {FRANKA_CUBE_PPO_OBS_DIM}, got {tuple(policy_obs.shape)}")
+        if demo_reset is not None:
+            _stage(
+                "demo_reset_apply_start",
+                episode=int(demo_reset["episode"]),
+                episode_step=int(demo_reset["episode_step"]),
+                row=int(demo_reset["row"]),
+                phase=str(demo_reset["phase"]),
+            )
+            policy_obs, demo_reset_summary = _apply_demo_reset(task_env, demo_reset)
+            _stage("demo_reset_apply_done", **demo_reset_summary)
 
         _stage("rollout_start", action_chunk_steps=requested_action_chunk_steps)
         for step in range(int(args_cli.num_steps)):
@@ -709,6 +858,7 @@ def main() -> None:
         "support_trace_path": str(support_trace_path) if support_trace_path is not None else None,
         "support_trace_csv_path": str(support_trace_csv_path) if support_trace_csv_path is not None else None,
         "support_trace_records": len(support_trace_records),
+        "demo_reset": demo_reset_summary,
         "video_enabled": bool(args_cli.video),
         "video_files": _latest_video_files(video_folder if args_cli.video else None),
         "env_closed": env_closed,

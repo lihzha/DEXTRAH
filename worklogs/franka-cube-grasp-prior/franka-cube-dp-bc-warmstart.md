@@ -3592,3 +3592,125 @@ Acceptance:
   video contact sheet, and `viz-open` URLs.
 - No BC/RL scale-up unless the closed-loop video and support trace are
   coherent; expected outcome is still diagnostic, not final BC readiness.
+
+## 2026-06-11T15:45:00-07:00 - support-trace eval result and matched-demo reset plan
+
+Goal:
+- Record the completed closed-loop support trace and move to the next bounded
+  root-cause diagnostic: demo-conditioned reset alignment.
+
+Result:
+- job_id: `1027767`
+- run_name:
+  `franka_cube_dp_eval_framefix_overfit2k_supporttrace_video320_20260611_151930`
+- remote run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_framefix_overfit2k_supporttrace_video320_20260611_151930`
+- local run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_framefix_overfit2k_supporttrace_video320_20260611_151930`
+- local log:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_logs/l401/eval_franka_cube_dp_policy_1027767.out`
+- artifacts:
+  - metrics:
+    `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_framefix_overfit2k_supporttrace_video320_20260611_151930/metrics.json`
+  - policy trace:
+    `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_framefix_overfit2k_supporttrace_video320_20260611_151930/policy_trace.json`
+  - support trace:
+    `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_framefix_overfit2k_supporttrace_video320_20260611_151930/support_trace.json`
+  - support trace CSV:
+    `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_framefix_overfit2k_supporttrace_video320_20260611_151930/support_trace.csv`
+  - video:
+    `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_framefix_overfit2k_supporttrace_video320_20260611_151930/videos/franka-cube-dp-policy-eval-step-0.mp4`
+  - contact sheet:
+    `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_framefix_overfit2k_supporttrace_video320_20260611_151930/dp_supporttrace_contact_sheet.jpg`
+- metrics:
+  - `steps_completed=320`
+  - `final_success_rate=0.0`, `window_success_rate=0.0`
+  - `cube_lift_height.max=0.0`
+  - `ee_to_cube_dist.final=0.14623`, `ee_to_cube_dist.min=0.14578`
+  - `finger_center_to_cube_dist.final=0.17304`, `finger_center_to_cube_dist.min=0.16859`
+  - `final_gripper_width=0.000805`
+- support trace:
+  - nearest-demo phase counts: `{"go_to_pre_grasp_pose": 320}`
+  - nearest-demo distance: `0.353998 -> 1.129334`
+  - first negative gripper step: `208`
+  - first hard-close step: `225`
+
+Analysis:
+- This confirms the bug. The closed-loop eval hard-closes while still nearest
+  to open/pregrasp support and never reaches close/grasp/lift support.
+- The video/contact sheet shows the gripper away from the cube while closing.
+- This is a train/eval support-drift mismatch, not a solved DP warm-start.
+- Do not scale BC/RL or claim prior readiness.
+
+Next:
+- Implement a narrow demo-conditioned reset path in
+  `dextrah_lab/rl_games/eval_franka_cube_dp_policy.py`.
+- First diagnostic: after normal env reset, write the cube pose/goal from a
+  selected converted demo episode row, keep the Franka at the normal reset
+  pose, record the initial lowdim diff/support distance, then run the same
+  bounded closed-loop video/support trace.
+- Acceptance: if this eliminates support drift, root cause is reset/demo
+  initial distribution/conditioning. If it does not, continue with tighter
+  pregrasp robot alignment, history seeding, observation ordering, or policy
+  rollout semantics.
+
+Artifact URLs:
+- report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/closed_loop_supporttrace_1027767_20260611_151930/support_drift_report.md`
+- plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/closed_loop_supporttrace_1027767_20260611_151930/support_drift_trace.png`
+- contact sheet:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_framefix_overfit2k_supporttrace_video320_20260611_151930/dp_supporttrace_contact_sheet.jpg`
+- video:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_framefix_overfit2k_supporttrace_video320_20260611_151930/videos/franka-cube-dp-policy-eval-step-0.mp4`
+
+## 2026-06-11T15:58:00-07:00 - demo-conditioned reset implementation
+
+Goal:
+- Test whether closed-loop support drift is caused by reset/demo alignment by
+  starting the eval from a selected converted demo episode row.
+
+Hypothesis:
+- If writing the cube pose/goal from a selected demo row makes the initial
+  lowdim observation match demo support and the closed-loop policy reaches
+  close/grasp/lift support, the main bug is initial-state conditioning.
+- If drift persists despite a near-zero reset support mismatch, then the next
+  root cause is likely robot/pregrasp alignment, observation semantics,
+  history seeding, or policy rollout semantics.
+
+Change:
+- Added `--demo_reset_dataset`, `--demo_reset_episode`, and
+  `--demo_reset_step` to `eval_franka_cube_dp_policy.py`.
+- The first implementation overwrites the cube root pose, cube initial pose,
+  and lift goal from the selected converted lowdim row after normal reset. It
+  deliberately keeps the Franka at the normal reset pose so episode-step `0`
+  tests object/reset conditioning without adding an IK servo confound.
+- Metrics now include a `demo_reset` block with target/live lowdim values and
+  initial lowdim/cube/cube-minus-EE diffs.
+- The l401 Slurm wrapper passes and validates `DEMO_RESET_DATASET`,
+  `DEMO_RESET_EPISODE`, and `DEMO_RESET_STEP`.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `de31be95c282ffe9156aeeab0c6ece8bd52f79ae`
+- implementation_commit: pending
+- changed_files:
+  - `dextrah_lab/rl_games/eval_franka_cube_dp_policy.py`
+  - `cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+  - `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/eval_franka_cube_dp_policy.py dextrah_lab/rl_games/replay_franka_cube_dataset_actions.py`
+- `bash -n cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh cluster/sbatch_replay_franka_cube_dp_actions_1gpu.sh`
+
+Next:
+- Commit/push and deploy to the agent-owned l401 worktree.
+- Launch a bounded video/support-trace eval with:
+  - `DEMO_RESET_DATASET=/results/dp_bc/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz`
+  - `DEMO_RESET_EPISODE=24`
+  - `DEMO_RESET_STEP=0`
+  - `NUM_ENVS=1`, `NUM_STEPS=320`, `ACTION_CHUNK_STEPS=1`,
+    `DEBUG_POLICY_TRACE_MAX_CALLS=320`, `CAPTURE_VIDEO=True`, `SEED=42`

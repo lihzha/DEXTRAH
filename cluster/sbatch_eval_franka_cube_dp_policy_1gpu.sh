@@ -55,6 +55,9 @@ DEBUG_POLICY_TRACE_ENV_INDEX="${DEBUG_POLICY_TRACE_ENV_INDEX:-0}"
 DEBUG_POLICY_TRACE_PATH="${DEBUG_POLICY_TRACE_PATH:-}"
 SUPPORT_DATASET="${SUPPORT_DATASET:-}"
 SUPPORT_TRACE_PATH="${SUPPORT_TRACE_PATH:-}"
+DEMO_RESET_DATASET="${DEMO_RESET_DATASET:-}"
+DEMO_RESET_EPISODE="${DEMO_RESET_EPISODE:-0}"
+DEMO_RESET_STEP="${DEMO_RESET_STEP:-0}"
 
 CHECKPOINT_ARG="$CHECKPOINT"
 CHECKPOINT_HOST="$CHECKPOINT"
@@ -73,6 +76,17 @@ if [ -n "$SUPPORT_DATASET" ]; then
   elif [[ "$SUPPORT_DATASET" == "$RESULTS_NFS"/* ]]; then
     rel_support_dataset="${SUPPORT_DATASET#$RESULTS_NFS/}"
     SUPPORT_DATASET_ARG="/results/$rel_support_dataset"
+  fi
+fi
+
+DEMO_RESET_DATASET_ARG="$DEMO_RESET_DATASET"
+DEMO_RESET_DATASET_HOST="$DEMO_RESET_DATASET"
+if [ -n "$DEMO_RESET_DATASET" ]; then
+  if [[ "$DEMO_RESET_DATASET" == /results/* ]]; then
+    DEMO_RESET_DATASET_HOST="$RESULTS_NFS/${DEMO_RESET_DATASET#/results/}"
+  elif [[ "$DEMO_RESET_DATASET" == "$RESULTS_NFS"/* ]]; then
+    rel_demo_reset_dataset="${DEMO_RESET_DATASET#$RESULTS_NFS/}"
+    DEMO_RESET_DATASET_ARG="/results/$rel_demo_reset_dataset"
   fi
 fi
 
@@ -96,6 +110,10 @@ if [ -n "$SUPPORT_DATASET" ] && [ ! -f "$SUPPORT_DATASET_HOST" ]; then
   echo "Missing support dataset: $SUPPORT_DATASET_HOST"
   exit 2
 fi
+if [ -n "$DEMO_RESET_DATASET" ] && [ ! -f "$DEMO_RESET_DATASET_HOST" ]; then
+  echo "Missing demo reset dataset: $DEMO_RESET_DATASET_HOST"
+  exit 2
+fi
 
 mkdir -p \
   "$RUN_DIR_HOST" \
@@ -111,6 +129,7 @@ export CAMERA_EYE_X CAMERA_EYE_Y CAMERA_EYE_Z CAMERA_TARGET_X CAMERA_TARGET_Y CA
 export CHECKPOINT_ARG RUN_DIR_CONTAINER METRICS_CONTAINER ENV_NAME OFFICIAL_DP_ENV_NAME
 export DEBUG_POLICY_TRACE_MAX_CALLS DEBUG_POLICY_TRACE_ENV_INDEX DEBUG_POLICY_TRACE_PATH
 export SUPPORT_DATASET_ARG SUPPORT_TRACE_PATH
+export DEMO_RESET_DATASET_ARG DEMO_RESET_EPISODE DEMO_RESET_STEP
 
 echo "Running DextrAH Franka cube official Diffusion Policy evaluation"
 echo "SLURM_JOB_ID=$SLURM_JOB_ID_SAFE"
@@ -140,6 +159,12 @@ echo "CHECKPOINT_HOST=$CHECKPOINT_HOST"
 if [ -n "$SUPPORT_DATASET" ]; then
   echo "SUPPORT_DATASET_ARG=$SUPPORT_DATASET_ARG"
   echo "SUPPORT_DATASET_HOST=$SUPPORT_DATASET_HOST"
+fi
+if [ -n "$DEMO_RESET_DATASET" ]; then
+  echo "DEMO_RESET_DATASET_ARG=$DEMO_RESET_DATASET_ARG"
+  echo "DEMO_RESET_DATASET_HOST=$DEMO_RESET_DATASET_HOST"
+  echo "DEMO_RESET_EPISODE=$DEMO_RESET_EPISODE"
+  echo "DEMO_RESET_STEP=$DEMO_RESET_STEP"
 fi
 echo "RUN_DIR_HOST=$RUN_DIR_HOST"
 echo "METRICS_CONTAINER=$METRICS_CONTAINER"
@@ -209,6 +234,14 @@ srun \
         --support_trace_path "$support_trace_path"
       )
     fi
+    DEMO_RESET_ARGS=()
+    if [ -n "$DEMO_RESET_DATASET_ARG" ]; then
+      DEMO_RESET_ARGS=(
+        --demo_reset_dataset "$DEMO_RESET_DATASET_ARG"
+        --demo_reset_episode "$DEMO_RESET_EPISODE"
+        --demo_reset_step "$DEMO_RESET_STEP"
+      )
+    fi
 
     EVAL_ARGS=(
       /code/dextrah_lab/rl_games/eval_franka_cube_dp_policy.py
@@ -231,6 +264,7 @@ srun \
       --camera_target "$CAMERA_TARGET_X" "$CAMERA_TARGET_Y" "$CAMERA_TARGET_Z"
       "${TRACE_ARGS[@]}"
       "${SUPPORT_ARGS[@]}"
+      "${DEMO_RESET_ARGS[@]}"
       "${VIDEO_ARGS[@]}"
     )
 
