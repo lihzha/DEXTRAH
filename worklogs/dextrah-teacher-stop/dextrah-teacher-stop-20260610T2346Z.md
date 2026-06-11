@@ -2085,3 +2085,50 @@ Analysis:
 Next:
 - Tighten active monitoring intervals because stdout shows fewer than `400`
   epochs remaining.
+
+## 2026-06-11 02:11 PDT - Teacher Final-Window Artifact/Metric Pass
+
+Goal:
+- Verify the run after it crosses epoch `19700` and continue tighter final
+  monitoring toward epoch `20000`.
+
+Command / Job:
+- job_id: `28955904`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28955904.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+- local TensorBoard copy:
+  `/tmp/dextrah_teacher_events`
+
+Result:
+- status: running healthy in final training window.
+- `sacct`: parent, batch, extern, and step all `RUNNING` on
+  `batch-block7-00110`; parent elapsed `01:40:10`, time limit `03:50:00` at
+  `02:10:56 PDT`.
+- stdout advanced to epoch `19702/20000`.
+- newest complete checkpoint:
+  `last_dextrah_lstm_ep_19700_rew_769.83997.pth` at `02:10:46`.
+- runtime sidecars rank `0-7` refreshed at `02:10:44`.
+- narrow critical failure scan over recent stdout returned no matches.
+- TensorBoard summaries parsed through epoch `19684` for epoch-keyed scalars;
+  TensorBoard is behind stdout in this pass but still fresh.
+- post-requeue `in_success_region/iter`: n=`1004`, mean `0.465306`; latest
+  `0.453857`, last-50 `0.467896`.
+- post-requeue `rewards/iter`: n=`1004`, mean `649.697`; latest `756.587`,
+  last-50 `645.985`.
+- `num_adr_increases/iter`: latest `50`, last-50 `50`.
+- `info/kl`: latest `0.000272911`, last-50 `0.000448352`.
+- `losses/a_loss`: latest `-0.000973922`, last-50 `-0.00133755`.
+- `losses/c_loss`: latest `0.0323929`, last-50 `0.0304915`.
+- `performance/step_inference_rl_update_fps`: latest `110425`,
+  last-20 about `109993`, last-50 about `106194`, last-200 about `107290`.
+
+Analysis:
+- The final-window checkpoint and sidecars are fresh, the job remains running,
+  and no recent error signatures appeared. Metrics are stable; TensorBoard
+  scalar ingestion is slightly behind stdout but not stale.
+
+Next:
+- Continue tightened active monitoring with shorter intervals until final
+  checkpoint/completion artifacts are inspected.
