@@ -2754,3 +2754,76 @@ Planned Job:
 Acceptance:
 - Fetch and inspect mp4, contact sheet, `metrics.json`, trace CSV/JSONL, summary JSON/CSV, trace plot, report, and consistency JSON.
 - Required pass condition for this diagnostic: no target-safety regression, no reset pathology, hold activates after late phase or lift/success rather than early contact-distance alone, and final lift/success improves over `1027825`. If final lift/success remains zero, do not train; debug hold target/action geometry next.
+
+Version Control:
+- agent_id: franka-cube-traj-tracking
+- local_commit: `0210951c42d31237e98f617254b4c8666096e527`
+- push: pushed to `origin/codex/franka-cube-trajectory-tracking`
+- remote_commit/status: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking` detached clean at `0210951c42d31237e98f617254b4c8666096e527`.
+
+Command / Job:
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:30:00 --job-name=refmix_hold_late --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_refmix_hold_late_a10_video480_20260611_155508,NUM_ENVS=4,NUM_STEPS=480,VIDEO_LENGTH=480,VIDEO_NAME_PREFIX=refmix-hold-late-a10-video480,CAPTURE_VIDEO=True,DETERMINISTIC=True,ACTION_SOURCE=policy_reference_mix_hold,REFERENCE_MIX_ALPHA=1.0,HOLD_PHASE_START=0.67,HOLD_TRIGGER_LIFT_HEIGHT=0.02,HOLD_CONTACT_MAX_FINGER_DIST=0.0,HOLD_LIFT_HEIGHT=0.10,HOLD_GRIPPER_ACTION=-0.4,USE_CUDA_GRAPH=False,SEED=64,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_WEIGHT=1.5,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_PHASE_START=0.0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_SHARPNESS=1.0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_USE_CONTACT_GATE=False,CHECKPOINT=/results/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_actionalign_rl_smoke_20260611_151520/nn/last_dextrah_franka_cube_traj_tracking_ep_5_rew_-inf.pth cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- job_id: `1027845`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_traj_tracking_refmix_hold_late_a10_video480_20260611_155508`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1027845.out`
+- expected artifacts: `metrics.json`, `trace.csv`, `trace.jsonl`, `videos/refmix-hold-late-a10-video480-step-0.mp4`, local summary/report/plot/contact sheet after fetch.
+
+Result:
+- status: completed `0:0` in `00:01:26` on `pool0-00004`; fetched locally, summarized, and visually inspected by orchestrator and B.
+- local_run_dir: `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_late_a10_video480_20260611_155508`
+- local_artifact_dir: `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_late_a10_video480_20260611_155508_artifacts`
+- video validation: `1280x720`, `479` frames, `7.983333 s`, `60/1` FPS.
+- metrics: `num_steps_completed=480`, `done_count=0`, `reward_mean/final=4.3530/6.1762`, `success_rate_mean/final=0/0`, `cube_lift_height_max=0.062284 m`, `cube_lift_height_final=0.062284 m`, `target_unsafe_rate_max=0`, `target_clearance_min=0.065114 m`.
+- hold metrics: `hold_active_rate_mean/final=0.3375/1.0`; trigger step mean `319.0`; trigger was actual lift (`hold_lift_trigger_rate_mean=0.3375`, phase/success/contact triggers `0`); `mixed_reference_action_error_l2_mean=0.0`; `applied_reference_action_error_l2_mean=0.2757`.
+- behavior metrics: final EE-to-cube `0.058844 m`, final finger-center-to-cube `0.100829 m`, final gripper width `0.047560 m`; final success still `0`.
+- consistency artifact: `train_eval_consistency.json` status `passed`; real mismatches, missing train keys, and missing eval keys are empty; expected eval-only overrides include action source, alpha, hold config, checkpoint, deterministic/video settings, and requested step count.
+- visual diagnosis: cube is lifted/perturbed around the middle/lift-trigger region, but by final frame the grasp is not held and success remains zero. The strict delayed trigger fixed the early-hover failure from `1027825`, but the frozen `cube_pos_at_trigger + lift` target likely pulls the gripper off the actual grasp frame.
+- viz_urls:
+  - report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_late_a10_video480_20260611_155508_artifacts/report.md`
+  - plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_late_a10_video480_20260611_155508_artifacts/trajectory_trace_plot.png`
+  - contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_late_a10_video480_20260611_155508/contact_sheet_quick.jpg`
+  - video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_late_a10_video480_20260611_155508/videos/refmix-hold-late-a10-video480-step-0.mp4`
+
+Analysis:
+- This is partial physical improvement, not success and not a PPO scale-up gate. The job demonstrates that a lift-triggered hold can preserve some final lift (`0.062 m`) without target-safety regression, but it does not stabilize the cube to task success.
+- The next hypothesis to test is whether the hold target is wrong. At lift trigger, the current EE pose/object offset is the actual grasp frame that produced lift; replacing it with `cube_pos_at_trigger + [0, 0, hold_lift_height]` may change the contact geometry enough to drop the cube.
+
+Next:
+- Implement a single eval-only target-policy option that stores the trigger-frame EE-minus-cube offset and holds `cube_current_pos + stored_offset + vertical_bias`, keeping the gripper command at `-0.4`. Launch one 480-step video/report bundle with the same alpha `1.0` checkpoint/reference config. No PPO scale-up.
+
+## 2026-06-11T16:00:19-07:00 - trigger-frame offset hold plan
+
+Goal:
+- Test whether preserving the actual grasp frame at first lift trigger sustains final lift/success better than the previous cube-plus-height terminal hold.
+
+Hypothesis:
+- If `cube_pos_at_trigger + [0, 0, hold_lift_height]` pulled the gripper away from the contact geometry, then holding the current trigger-frame EE-minus-cube offset while adding only a small vertical bias should preserve contact better. If this also drops the cube, the reference grasp is not stable under the current Franka gripper/contact geometry, and B should pivot to approach/pregrasp/grasp action/reference loss plus RL stabilization rather than full-trajectory hold.
+
+Planned Change:
+- `dextrah_lab/rl_games/eval_rollout.py`: add a `--hold_target_policy` argument while preserving the existing default policy. Add a new eval-only policy that stores `ee_pos_at_trigger - cube_pos_at_trigger` and tracks `cube_current_pos + stored_offset + hold_lift_height*z` after hold activation. Log the selected hold target policy and stored offset metrics.
+- `cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`: export/echo/pass `HOLD_TARGET_POLICY`.
+- `dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py`: include hold target policy and offset/target diagnostics in `summary.json`, `report.md`, and plots if present.
+- Worklog: record validation, exact commit/deploy state, job id, metrics, video/contact-sheet/report URLs, and the pass/fail interpretation.
+
+Validation Before Launch:
+- `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py`
+- `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- `git diff --check`
+- Commit/push and update the agent-owned l401 worktree to the exact commit via Git.
+
+Planned Job:
+- One l401 eval-only run: `ACTION_SOURCE=policy_reference_mix_hold`, `REFERENCE_MIX_ALPHA=1.0`, `HOLD_TARGET_POLICY=cube_current_plus_trigger_ee_offset`, `HOLD_CONTACT_MAX_FINGER_DIST=0.0`, `HOLD_PHASE_START=0.67`, `HOLD_TRIGGER_LIFT_HEIGHT=0.02`, `HOLD_LIFT_HEIGHT=0.03` vertical bias above the trigger offset, `HOLD_GRIPPER_ACTION=-0.4`, `NUM_ENVS=4`, `NUM_STEPS=480`, same checkpoint/reference/seed as `1027845`.
+
+Acceptance:
+- Produce and fetch `metrics.json`, trace CSV/JSONL, mp4, contact sheet, summary JSON/CSV, trace plot, report, consistency JSON, and `viz-open` URLs.
+- Target unsafe remains `0`; consistency report keeps expected eval overrides separate from real mismatches; hold triggers from actual lift/late phase rather than contact-distance; final lift/success and visual hold are compared directly to `1027845`.
+
+Implementation Checkpoint:
+- `eval_rollout.py` now supports `--hold_target_policy={cube_trigger_plus_lift,cube_current_plus_trigger_ee_offset}`. The default preserves the prior static cube-plus-lift behavior; the new opt-in policy stores `ee_pos - cube_pos` at first hold trigger and tracks `cube_current_pos + stored_offset + hold_lift_height*z`.
+- `eval_rollout.py` logs `hold_target_policy_id` and trigger-frame EE-cube offset components so the trace/report can confirm the selected target route.
+- `sbatch_eval_franka_cube_grasp_1gpu.sh` exports, echoes, and passes `HOLD_TARGET_POLICY`.
+- `summarize_traj_tracking_eval_artifacts.py` includes hold target policy and trigger offset diagnostics in `summary.json`/`summary.csv`/`report.md`.
+- validation: `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py` passed.
+- validation: `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh` passed.
+- validation: `git diff --check` passed.
+- validation: summarizer regression on `1027845` metrics wrote `/tmp/traj_hold_offset_summary_regression/{report.md,summary.json,train_eval_consistency.json,trajectory_trace_plot.png}` and preserved old metrics while showing new offset fields as `n/a` for old artifacts.

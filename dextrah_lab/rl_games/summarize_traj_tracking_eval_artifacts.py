@@ -305,6 +305,11 @@ def main() -> None:
         "action_source_notes": summary.get("action_source_notes"),
         "reference_mix_alpha": summary.get("reference_mix_alpha"),
         "hold_config": summary.get("hold_config"),
+        "hold_target_policy": (
+            summary.get("hold_config", {}).get("target_policy")
+            if isinstance(summary.get("hold_config"), dict)
+            else None
+        ),
         "checkpoint": summary.get("checkpoint"),
         "done_count": summary.get("done_count"),
         "num_steps_completed": summary.get("num_steps_completed"),
@@ -366,6 +371,10 @@ def main() -> None:
         "hold_success_trigger_rate_mean": _summary(summary, "hold_success_trigger_rate", "mean"),
         "hold_contact_trigger_rate_mean": _summary(summary, "hold_contact_trigger_rate", "mean"),
         "hold_target_pos_z_final": _summary(summary, "hold_target_pos_z_mean", "final"),
+        "hold_target_policy_id_mean": _summary(summary, "hold_target_policy_id", "mean"),
+        "hold_trigger_ee_cube_offset_x_final": _summary(summary, "hold_trigger_ee_cube_offset_x_mean", "final"),
+        "hold_trigger_ee_cube_offset_y_final": _summary(summary, "hold_trigger_ee_cube_offset_y_mean", "final"),
+        "hold_trigger_ee_cube_offset_z_final": _summary(summary, "hold_trigger_ee_cube_offset_z_mean", "final"),
         "hold_action_close_mean": _summary(summary, "hold_action_close_mean", "mean"),
         "hold_action_up_mean": _summary(summary, "hold_action_up_mean", "mean"),
         "hold_applied_action_close_mean": _summary(summary, "hold_applied_action_close_mean", "mean"),
@@ -533,7 +542,9 @@ def main() -> None:
 - hold new-trigger max: {_fmt(compact['hold_new_trigger_rate_max'])}
 - hold trigger step mean: {_fmt(compact['hold_trigger_step_mean'])}
 - phase/lift/success/contact trigger rates: {_fmt(compact['hold_phase_trigger_rate_mean'])} / {_fmt(compact['hold_lift_trigger_rate_mean'])} / {_fmt(compact['hold_success_trigger_rate_mean'])} / {_fmt(compact['hold_contact_trigger_rate_mean'])}
+- hold target policy: `{compact['hold_target_policy']}` (id mean {_fmt(compact['hold_target_policy_id_mean'])})
 - hold target z final: {_fmt(compact['hold_target_pos_z_final'])} m
+- trigger EE-cube offset final x/y/z: {_fmt(compact['hold_trigger_ee_cube_offset_x_final'])} / {_fmt(compact['hold_trigger_ee_cube_offset_y_final'])} / {_fmt(compact['hold_trigger_ee_cube_offset_z_final'])} m
 - hold action close/up mean: {_fmt(compact['hold_action_close_mean'])} / {_fmt(compact['hold_action_up_mean'])}
 - hold-applied action close/up mean: {_fmt(compact['hold_applied_action_close_mean'])} / {_fmt(compact['hold_applied_action_up_mean'])}
 - applied-reference action L2 mean: {_fmt(compact['applied_reference_action_error_l2_mean'])}

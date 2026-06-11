@@ -84,6 +84,17 @@ parser.add_argument(
     help="For *_hold action sources, hold target z is cube z at trigger plus this many meters.",
 )
 parser.add_argument(
+    "--hold_target_policy",
+    choices=("cube_trigger_plus_lift", "cube_current_plus_trigger_ee_offset"),
+    default="cube_trigger_plus_lift",
+    help=(
+        "For *_hold action sources, target policy after hold trigger. "
+        "'cube_trigger_plus_lift' preserves the previous static cube-position target. "
+        "'cube_current_plus_trigger_ee_offset' stores the trigger-frame EE-minus-cube "
+        "offset and tracks cube_current + offset + hold_lift_height*z."
+    ),
+)
+parser.add_argument(
     "--hold_gripper_action",
     type=float,
     default=-1.0,
@@ -415,6 +426,7 @@ def _ensure_hold_state(task_env) -> dict[str, torch.Tensor]:
         state = {
             "active": torch.zeros(task_env.num_envs, dtype=torch.bool, device=task_env.device),
             "target_pos_local": torch.zeros(task_env.num_envs, 3, device=task_env.device),
+            "trigger_ee_cube_offset_local": torch.zeros(task_env.num_envs, 3, device=task_env.device),
             "trigger_step": torch.full((task_env.num_envs,), -1.0, device=task_env.device),
             "phase_triggered": torch.zeros(task_env.num_envs, dtype=torch.bool, device=task_env.device),
             "lift_triggered": torch.zeros(task_env.num_envs, dtype=torch.bool, device=task_env.device),
@@ -435,6 +447,7 @@ def _reset_hold_state(task_env, env_mask: torch.Tensor) -> None:
         return
     state["active"][mask] = False
     state["target_pos_local"][mask] = 0.0
+    state["trigger_ee_cube_offset_local"][mask] = 0.0
     state["trigger_step"][mask] = -1.0
     for name in ("phase_triggered", "lift_triggered", "success_triggered", "contact_triggered"):
         state[name][mask] = False
@@ -463,9 +476,11 @@ def _hold_actions_from_source(task_env, base_actions: torch.Tensor) -> tuple[tor
     trigger = phase_trigger | lift_trigger | success_trigger | contact_trigger
     new_hold = (~state["active"]) & trigger
 
+    cube_pos = getattr(task_env, "cube_pos").detach().clone()
+    ee_pos = getattr(task_env, "ee_pos", cube_pos).detach().clone()
     if bool(new_hold.any()):
-        cube_pos = getattr(task_env, "cube_pos").detach().clone()
-        ee_pos = getattr(task_env, "ee_pos", cube_pos).detach().clone()
+        trigger_offset = ee_pos - cube_pos
+        state["trigger_ee_cube_offset_local"][new_hold] = trigger_offset[new_hold]
         target_pos = cube_pos.clone()
         target_pos[:, 2] = torch.maximum(
             cube_pos[:, 2] + float(args_cli.hold_lift_height),
@@ -479,9 +494,16 @@ def _hold_actions_from_source(task_env, base_actions: torch.Tensor) -> tuple[tor
         state["contact_triggered"] |= new_hold & contact_trigger
         state["active"] |= new_hold
 
+    target_pos_local = state["target_pos_local"]
+    if args_cli.hold_target_policy == "cube_current_plus_trigger_ee_offset":
+        dynamic_target_pos = cube_pos + state["trigger_ee_cube_offset_local"]
+        dynamic_target_pos[:, 2] = dynamic_target_pos[:, 2] + float(args_cli.hold_lift_height)
+        target_pos_local = torch.where(state["active"].unsqueeze(-1), dynamic_target_pos, target_pos_local)
+        state["target_pos_local"][state["active"]] = target_pos_local[state["active"]]
+
     hold_actions = _delta_actions_to_local_targets(
         task_env,
-        state["target_pos_local"],
+        target_pos_local,
         gripper_action=float(args_cli.hold_gripper_action),
     )
     active = state["active"].unsqueeze(-1)
@@ -493,6 +515,7 @@ def _hold_actions_from_source(task_env, base_actions: torch.Tensor) -> tuple[tor
         "hold_contact_max_finger_dist": float(args_cli.hold_contact_max_finger_dist),
         "hold_lift_height": float(args_cli.hold_lift_height),
         "hold_gripper_action": float(args_cli.hold_gripper_action),
+        "hold_target_policy_id": 1.0 if args_cli.hold_target_policy == "cube_current_plus_trigger_ee_offset" else 0.0,
         "hold_active_rate": _mean_float(state["active"].float()),
         "hold_new_trigger_rate": _mean_float(new_hold.float()),
         "hold_phase_trigger_rate": _mean_float(state["phase_triggered"].float()),
@@ -506,6 +529,12 @@ def _hold_actions_from_source(task_env, base_actions: torch.Tensor) -> tuple[tor
         metrics["hold_trigger_step_min"] = _tensor_stat_float(triggered_steps, "min")
         metrics["hold_trigger_step_max"] = _tensor_stat_float(triggered_steps, "max")
     _add_vector_metrics(metrics, "hold_target_pos", state["target_pos_local"], ("x", "y", "z"))
+    _add_vector_metrics(
+        metrics,
+        "hold_trigger_ee_cube_offset",
+        state["trigger_ee_cube_offset_local"],
+        ("x", "y", "z"),
+    )
     _add_action_signal_metrics(metrics, "hold_action", hold_actions)
     _add_action_signal_metrics(metrics, "hold_applied_action", applied_actions)
     _add_action_delta_metrics(metrics, "hold_reference_action_error", hold_actions, base_actions)
@@ -923,9 +952,7 @@ def main(env_cfg, agent_cfg: dict):
                 "hold_contact_max_finger_dist": float(args_cli.hold_contact_max_finger_dist),
                 "hold_lift_height": float(args_cli.hold_lift_height),
                 "hold_gripper_action": float(args_cli.hold_gripper_action),
-                "target_policy": (
-                    "freeze_cube_position_at_trigger_plus_lift_height_with_z_at_least_current_ee_z"
-                ),
+                "target_policy": args_cli.hold_target_policy,
             }
             if args_cli.action_source in HOLD_ACTION_SOURCES
             else None
