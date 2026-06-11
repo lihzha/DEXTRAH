@@ -31,6 +31,6 @@ gym.register(
     disable_env_checker=True,
     kwargs={
         "env_cfg_entry_point": DextrahFrankaCubeTrajTrackingEnvCfg,
-        "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_franka_cube_grasp_cfg.yaml",
+        "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_franka_cube_traj_tracking_cfg.yaml",
     },
 )

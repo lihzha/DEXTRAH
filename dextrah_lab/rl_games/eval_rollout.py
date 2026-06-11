@@ -120,8 +120,29 @@ def _collect_task_metrics(task_env) -> dict[str, float | None]:
         "max_finger_to_star_dist",
         "finger_distance_asymmetry",
         "gripper_width",
+        "traj_phase_progress",
+        "traj_target_table_clearance",
+        "traj_target_gripper_width",
     ]
-    return {name: _env_metric(task_env, name) for name in metric_names if hasattr(task_env, name)}
+    metrics = {name: _env_metric(task_env, name) for name in metric_names if hasattr(task_env, name)}
+    log_terms = getattr(task_env, "extras", {}).get("log", {})
+    if isinstance(log_terms, dict):
+        for name in (
+            "cube_traj_tracking_reward",
+            "cube_traj_tracking_position_reward",
+            "cube_traj_tracking_orientation_reward",
+            "cube_traj_tracking_gripper_reward",
+            "cube_traj_tracking_position_error",
+            "cube_traj_tracking_orientation_error",
+            "cube_traj_tracking_gripper_error",
+            "cube_traj_tracking_phase_progress",
+            "cube_traj_tracking_curriculum_scale",
+            "cube_traj_tracking_target_table_clearance",
+            "cube_traj_tracking_unsafe_target_rate",
+        ):
+            if name in log_terms:
+                metrics[name] = _mean_float(log_terms[name])
+    return metrics
 
 
 def _summarize_step_metrics(step_metrics: list[dict[str, float | int | None]]) -> dict[str, dict[str, float | int]]:

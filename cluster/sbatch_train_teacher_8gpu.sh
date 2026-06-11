@@ -63,7 +63,7 @@ elif [ "$TASK" = "Dextrah-Franka-Star-Kitting" ]; then
   ENTROPY_COEF="${ENTROPY_COEF:-0.001}"
   E_CLIP="${E_CLIP:-0.2}"
   GRAD_NORM="${GRAD_NORM:-1.0}"
-elif [ "$TASK" = "Dextrah-Franka-Cube-Grasp" ]; then
+elif [ "$TASK" = "Dextrah-Franka-Cube-Grasp" ] || [ "$TASK" = "Dextrah-Franka-Cube-Grasp-Traj-Tracking" ]; then
   NUM_ENVS="${NUM_ENVS:-2048}"
   MINIBATCH_SIZE="${MINIBATCH_SIZE:-32768}"
   CENTRAL_VALUE_MINIBATCH_SIZE="${CENTRAL_VALUE_MINIBATCH_SIZE:-32768}"
@@ -360,7 +360,7 @@ PY
         env.star_reset_near_hand_y='$STAR_RESET_NEAR_HAND_Y'
         env.star_reset_near_hand_xy_noise='$STAR_RESET_NEAR_HAND_XY_NOISE'
       )
-    elif [ '$TASK' = 'Dextrah-Franka-Cube-Grasp' ]; then
+    elif [ '$TASK' = 'Dextrah-Franka-Cube-Grasp' ] || [ '$TASK' = 'Dextrah-Franka-Cube-Grasp-Traj-Tracking' ]; then
       TASK_OVERRIDES=(
         agent.wandb_activate=False
         env.use_cuda_graph='$USE_CUDA_GRAPH'
