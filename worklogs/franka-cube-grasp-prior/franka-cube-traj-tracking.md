@@ -382,3 +382,130 @@ Analysis:
 Next:
 - Run the GraspGenX Franka cube cuRobo validator in a bounded cluster smoke to determine whether the real cube grasp/plan path is available.
 - Keep the template unvalidated until task-space waypoints are exported from the GraspGenX/cuRobo trajectory path and accepted by the compact loader.
+
+## 2026-06-11T12:54:00-07:00 - GraspGenX/cuRobo cube validation launch plan
+
+Goal:
+- Determine whether the real GraspGenX + cuRobo Franka cube path is available on l401 and produces a validated grasp/plan prior. This is reference validation, not RL training.
+
+Version Control:
+- DEXTRAH branch: codex/franka-cube-trajectory-tracking
+- DEXTRAH head for tracking code: 25fb8bbd1f81eb90f88730ea8352c5705a8770ce
+- GraspGenX l401 checkout: /lustre/fsw/portfolios/nvr/users/lzha/src/graspgenx
+- GraspGenX branch/head: franka-cube-ggx-rl at a0ca3d9f3f85cb3325ca2238107087f03d1555e3
+- GraspGenX local note: `/home/lzha/code/graspgenx` has an unrelated modified `WORKLOG.md`; this agent does not touch/revert it.
+
+Command / Job:
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --time=0-00:45:00 --job-name=ggx_cube_traj_ref_val --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/graspgenx,RUN_NAME=franka_cube_traj_ref_ggx_curobo_20260611_125400,SEED=0,NUM_GRASPS=80,TOPK=40,GRASP_THRESHOLD=0.7,GRASP_PLANNER=graspmoe,MOE_OBB_DENSITY=dense,MAX_PLAN_ATTEMPTS=40 cluster/sbatch_validate_franka_cube_graspgenx_curobo.sh`
+- expected_run_dir: /lustre/fsw/portfolios/nvr/users/lzha/results/graspgenx/prior_validation/franka_cube_traj_ref_ggx_curobo_20260611_125400
+- expected_log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/graspgenx/validate_curobo_<job_id>.out
+- expected_artifacts: environment.json, prior.json, validation.json
+
+Acceptance Criteria:
+- Environment checks find CUDA, GraspGenX checkpoints, Franka gripper assets, cuRobo Python, and Franka cuRobo robot assets.
+- GraspGenX returns at least one cube grasp.
+- cuRobo plans approach/grasp/lift to a selected grasp with positive segment lengths.
+- If this passes, it is evidence of a real selected grasp/plan, but not yet a compact task-space tracking reference because the validator does not export object-local EE waypoints. A separate converter/exporter is still required before setting `curobo_validated=true` in the DEXTRAH runtime reference.
+
+## 2026-06-11T12:58:00-07:00 - GraspGenX trajectory converter plan
+
+Goal:
+- Add an offline converter for GraspGenX `trajectory.json` artifacts so a future cuRobo-planned trajectory can be reduced to the compact DEXTRAH task-space reference schema.
+
+Plan:
+- Add a DEXTRAH-owned scene script that reads GraspGenX `trajectory.json`, loads the Franka profile/FK helpers from a provided GraspGenX checkout, computes the `panda_hand` pose for selected frames, applies the DEXTRAH EE offset, transforms the EE poses into the object frame, and writes only object-local task-space waypoints plus gripper-width schedule.
+- Keep joint arrays out of the compact output. The input may contain joint positions, but the emitted payload must pass `no_joint_trajectory_arrays`.
+- Require an explicit `--mark-curobo-validated` plus a passed GraspGenX validation JSON before setting `source.curobo_validated=true`; otherwise emit `curobo_validated=false`.
+- Preserve the current runtime template behavior. The converter is an offline tool and does not change the baseline or tracking task defaults.
+
+Validation:
+- Run `py_compile`.
+- Run `--help` locally.
+- Run compact loader validation on the generated output when a real trajectory JSON becomes available.
+
+## 2026-06-11T13:01:00-07:00 - GraspGenX/cuRobo validation retry plan
+
+Result From First Attempt:
+- job_id: 1027686
+- state: FAILED
+- exit_code: 1:0
+- elapsed: 00:01:46
+- node: pool0-00016
+- log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/graspgenx/validate_curobo_1027686.out
+- partial_artifact: /lustre/fsw/portfolios/nvr/users/lzha/results/graspgenx/prior_validation/franka_cube_traj_ref_ggx_curobo_20260611_125400/environment.json
+
+Evidence:
+- Environment checks passed: CUDA, GraspGenX checkpoints, Franka gripper assets, cuRobo robot config, and cuRobo kernels initialized.
+- GraspGenX returned grasps, but `GRASP_THRESHOLD=0.7` left only 6 candidates after repeated sampling.
+- cuRobo tried the configured approach/grasp/lift strategy sweep and failed all selected candidates with `Goalset planning returned None`.
+
+Analysis:
+- This is not an external blocker yet. The grasp set was too narrow for the planner. Relaunch with threshold disabled and the larger default candidate set so cuRobo can choose among more reachable candidates.
+- Caveat remains: the GraspGenX env config is a 45 mm cube, while DEXTRAH Franka cube is 60 mm. Even a passed retry is availability evidence, not a DEXTRAH-ready compact reference.
+
+Retry Command / Job:
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --time=0-00:45:00 --job-name=ggx_cube_traj_ref_val2 --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/graspgenx,RUN_NAME=franka_cube_traj_ref_ggx_curobo_retry_20260611_130100,SEED=1,NUM_GRASPS=200,TOPK=80,GRASP_THRESHOLD=-1,GRASP_PLANNER=graspmoe,MOE_OBB_DENSITY=dense,MAX_PLAN_ATTEMPTS=80 cluster/sbatch_validate_franka_cube_graspgenx_curobo.sh`
+- expected_run_dir: /lustre/fsw/portfolios/nvr/users/lzha/results/graspgenx/prior_validation/franka_cube_traj_ref_ggx_curobo_retry_20260611_130100
+- expected_log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/graspgenx/validate_curobo_<job_id>.out
+
+## 2026-06-11T13:24:00-07:00 - GraspGenX trajectory JSON export plan
+
+Goal:
+- Move beyond selected-pose prior validation by producing a real GraspGenX/cuRobo `trajectory.json` for the cube path, then use it to exercise the DEXTRAH compact task-space converter.
+
+Hypothesis:
+- The same broader candidate settings that passed validation (`GRASP_THRESHOLD=-1`, 80 goalset candidates) should let `end2end/e2e_grasp_demo.py` plan and export the kinematic `pick_and_lift` trajectory without editing GraspGenX.
+
+Version Control:
+- agent_id: franka-cube-traj-tracking
+- DEXTRAH branch/head: codex/franka-cube-trajectory-tracking at 25fb8bbd1f81eb90f88730ea8352c5705a8770ce plus local converter/worklog edits
+- GraspGenX checkout: /lustre/fsw/portfolios/nvr/users/lzha/src/graspgenx at a0ca3d9f3f85cb3325ca2238107087f03d1555e3
+- changed_files_pending: `dextrah_lab/scene_scripts/convert_graspgenx_cube_trajectory_reference.py`, this worklog
+
+Command / Job:
+- command: custom l401 `sbatch` using the GraspGenX container and NFS venv, running `python end2end/e2e_grasp_demo.py --robot_config end2end/robots/franka_panda.yaml --env_config end2end/envs/franka_cube_lift.yaml --mesh_file assets/sample_data/object_mesh/box.obj --task pick_and_lift --playback_mode kinematic --no-viser --num_grasps 200 --topk 80 --grasp_threshold -1 --planner graspmoe --moe_obb_density dense --max_plan_attempts 80 --seed 1 --export-trajectory /results/trajectory_exports/franka_cube_traj_ref_export_20260611_132400/trajectory.json`
+- expected_log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/graspgenx/e2e_export_<job_id>.out
+- expected_run_dir: /lustre/fsw/portfolios/nvr/users/lzha/results/graspgenx/trajectory_exports/franka_cube_traj_ref_export_20260611_132400
+- expected_artifacts: `trajectory.json`, `static_meshes/*.obj`
+
+Acceptance Criteria:
+- Export job reaches `Trajectory JSON:` with positive frames and no full training launched.
+- DEXTRAH converter either produces a compact reference with `curobo_validated=false` for the 45 mm cube or correctly rejects attempts to mark it valid against the 60 mm DEXTRAH cube.
+- Any accepted compact reference contains only object-local task-space waypoints and gripper schedule, not joint trajectory arrays.
+
+## 2026-06-11T13:28:00-07:00 - GraspGenX validation/export result and converter deploy plan
+
+Goal:
+- Close the failed `1027686` alert with root-cause evidence, record the successful relaunch/export artifacts, and deploy the DEXTRAH converter for a real compact-reference smoke.
+
+Result:
+- failed_job: 1027686 `ggx_cube_traj_ref_val`
+- failed_log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/graspgenx/validate_curobo_1027686.out
+- failed_local_copy: cluster_results/l401/graspgenx_franka_cube_traj_ref_20260611_125400_failed/
+- failed_state: FAILED, exit `1:0`, elapsed `00:01:46`, node `pool0-00016`
+- root_cause: environment/assets were available, but `GRASP_THRESHOLD=0.7` left only 6 candidates for cuRobo and every `plan_grasp` strategy returned `Goalset planning returned None`; the script raised `RuntimeError("cuRobo failed to plan to all sampled Franka cube grasps")`.
+- retry_job: 1027688 `ggx_cube_traj_ref_val2`
+- retry_log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/graspgenx/validate_curobo_1027688.out
+- retry_local_copy: cluster_results/l401/graspgenx_franka_cube_traj_ref_20260611_130100_retry/
+- retry_state: COMPLETED, exit `0:0`, elapsed `00:00:54`, node `pool0-00016`
+- retry_evidence: 200 raw grasps, threshold disabled, 80 goalset candidates, selected grasp #22 at confidence `0.6011205911636353`, successful strategy `full (a=15, lift=20)`, approach/grasp/lift segment lengths all 42.
+- retry_validation_json: /lustre/fsw/portfolios/nvr/users/lzha/results/graspgenx/prior_validation/franka_cube_traj_ref_ggx_curobo_retry_20260611_130100/validation.json
+- retry_caveat: validation geometry is GraspGenX `franka_cube_lift.yaml`, a 45 mm cube (`object_extents_m=[0.045, 0.045, 0.045]`), not the DEXTRAH 60 mm cube.
+
+Trajectory Export:
+- job_id: 1027689 `ggx_cube_traj_export`
+- state: COMPLETED, exit `0:0`, elapsed `00:00:53`, node `pool0-00016`
+- log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/graspgenx/e2e_export_1027689.out
+- local_copy: cluster_results/l401/graspgenx_franka_cube_traj_ref_export_20260611_132400/
+- run_dir: /lustre/fsw/portfolios/nvr/users/lzha/results/graspgenx/trajectory_exports/franka_cube_traj_ref_export_20260611_132400
+- command: `python end2end/e2e_grasp_demo.py --robot_config end2end/robots/franka_panda.yaml --env_config end2end/envs/franka_cube_lift.yaml --mesh_file assets/sample_data/object_mesh/box.obj --task pick_and_lift --playback_mode kinematic --no-viser --num_grasps 200 --topk 80 --grasp_threshold -1 --planner graspmoe --moe_obb_density dense --max_plan_attempts 80 --seed 1 --export-trajectory /results/trajectory_exports/franka_cube_traj_ref_export_20260611_132400/trajectory.json`
+- artifact: `trajectory.json`, 662 frames, 30 fps, 8 joint columns, static keys `object` and `table`, object z `0.5225`
+- export_evidence: selected grasp #28 at confidence `0.597`, successful strategy `full (a=15, lift=20)`, approach/grasp/lift segment lengths all 42, task trajectory segments total 662 waypoints.
+
+Analysis:
+- The immediate scheduler failure has been debugged and corrected by broadening the candidate set. The GraspGenX/cuRobo path is live on l401 for the 45 mm cube.
+- This is still not a DEXTRAH-ready validated 60 mm reference. The compact converter must keep `curobo_validated=false` for this artifact unless a validation JSON with matching 60 mm extents is supplied.
+- The converter should prove both sides: produce a task-space-only compact reference from the real trajectory, and reject an attempt to mark it validated for the 60 mm DEXTRAH cube using the 45 mm validation JSON.
+
+Next:
+- Commit the converter/worklog, push the DEXTRAH branch, deploy the exact commit to the l401 DEXTRAH agent worktree, and run the converter in the GraspGenX container with DEXTRAH mounted at `/dextrah`.
