@@ -145,6 +145,15 @@ def _collect_task_metrics(task_env) -> dict[str, float | None]:
     return metrics
 
 
+def _trajectory_tracking_reference_summary(task_env) -> dict | None:
+    if not hasattr(task_env, "trajectory_tracking_reference_summary"):
+        return None
+    try:
+        return task_env.trajectory_tracking_reference_summary()
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
 def _summarize_step_metrics(step_metrics: list[dict[str, float | int | None]]) -> dict[str, dict[str, float | int]]:
     summaries: dict[str, dict[str, float | int]] = {}
     for name in sorted({key for item in step_metrics for key in item.keys()} - {"step"}):
@@ -243,6 +252,7 @@ def main(env_cfg, agent_cfg: dict):
     if isinstance(gym_env.unwrapped, DirectMARLEnv):
         gym_env = multi_agent_to_single_agent(gym_env)
     task_env = gym_env.unwrapped
+    trajectory_tracking_reference = _trajectory_tracking_reference_summary(task_env)
     _configure_eval_camera(env_cfg, task_env)
 
     if args_cli.video:
@@ -353,6 +363,8 @@ def main(env_cfg, agent_cfg: dict):
         "video_files": _latest_video_files(video_folder),
         "output_dir": str(output_dir),
         "env_closed": env_closed,
+        "trajectory_tracking_reference": trajectory_tracking_reference,
+        "trajectory_tracking_reference_path": getattr(env_cfg, "trajectory_tracking_reference_path", None),
         "metric_summaries": _summarize_step_metrics(step_metrics),
     }
     payload = {"summary": summary, "steps": step_metrics}

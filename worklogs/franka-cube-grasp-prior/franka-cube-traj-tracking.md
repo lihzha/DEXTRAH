@@ -638,3 +638,40 @@ Validation Plan:
 - Local: `python3 -m py_compile dextrah_lab/rl_games/validate_franka_cube_grasp_env.py` and `bash -n cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`.
 - Cluster: run `Dextrah-Franka-Cube-Grasp-Traj-Tracking` validation with `TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json`, 4 envs, 80 steps, no video.
 - Acceptance: task registers, baseline registration still resolves, observation dim stays 72, runtime reference summary points at the external path with `graspgenx_source=true`, tracking metrics finite, unsafe target rate 0, no immediate reset/termination pathology.
+
+## 2026-06-11T14:07:00-07:00 - external-reference env smoke result and RL wrapper plan
+
+Goal:
+- Close the DEXTRAH Isaac task smoke against the 60 mm compact GraspGenX-derived reference, then prepare a short RL smoke that uses the same external reference.
+
+Version Control:
+- agent_id: franka-cube-traj-tracking
+- local_commit: faa568ad11b8c0fc4b114a88e6649b8e96beb067
+- remote_commit/status: /lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking at faa568ad11b8c0fc4b114a88e6649b8e96beb067, detached clean
+- changed_files_pending: this worklog; planned wrapper/eval changes below
+
+Command / Job:
+- job_id: 1027695 `franka_cube_traj_60mm_ref_val`
+- state: COMPLETED `0:0`, elapsed `00:00:44`, node `pool0-00016`
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --time=0-00:30:00 --job-name=franka_cube_traj_60mm_ref_val --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_60mm_ref_env_smoke_20260611_135700,NUM_ENVS=4,NUM_STEPS=80,VIDEO_LENGTH=80,CAPTURE_VIDEO=False,PRINT_INTERVAL=20,SEED=7,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`
+- log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_cube_1027695.out
+- metrics: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_cube_traj_tracking_60mm_ref_env_smoke_20260611_135700/metrics.json
+- local_copy: cluster_results/l401/franka_cube_traj_tracking_60mm_ref_env_smoke_20260611_135700/
+
+Result:
+- status: passed
+- checks: validation payload `passed=true`; observation shape stayed `[4, 72]`; baseline task registration still resolved inside the validator; 80/80 rollout steps completed; `done_count=0`; `early_done_count=0`.
+- tracking_reference: external path `/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json`; `graspgenx_source=true`; `curobo_validated=false`; `source_tag=graspgenx_curobo_60mm_export_pending_exact_validation`; `waypoint_count=9`; `validation_passed=true`.
+- tracking_metrics: reward mean `0.039574575144797564`; reward final `0.039327189326286316`; target table clearance min `0.27639952301979065`; unsafe target rate max `0.0`.
+- rollout_metrics: reward mean `1.816138543188572`; reward final `1.7689825296401978`; cube stayed in workspace with min z `0.775999903678894`.
+
+Analysis:
+- The trajectory-tracking task now has a real Isaac/DEXTRAH env smoke with a GraspGenX-derived 60 mm task-space reference and no observation-size change.
+- The reference is still not marked DEXTRAH-ready validated because validation and export selected different grasps in separate GraspGenX processes, despite matching the 60 mm geometry. The runtime summary correctly keeps `curobo_validated=false`.
+
+Next / Patch Plan:
+- Add optional `TRAJECTORY_TRACKING_REFERENCE_PATH` passthrough to `cluster/sbatch_train_teacher_8gpu.sh` and `cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`.
+- Keep the default empty so `Dextrah-Franka-Cube-Grasp` baseline and the built-in template path remain unchanged unless explicitly overridden.
+- Add eval metrics for `trajectory_tracking_reference_summary()` when the task exposes it, so the checkpoint rollout can prove which reference was loaded.
+- Local validation: `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py`, `bash -n cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`, `git diff --check`.
+- Cluster validation after commit/deploy: short RL smoke with 16 envs, 3 iterations, no full training, then short checkpoint eval with the same external reference.
