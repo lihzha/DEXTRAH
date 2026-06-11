@@ -235,3 +235,37 @@ Orchestrator actions:
 - Keep polling agents and Slurm. If a worker completes another milestone,
   immediately assign the next development/debugging loop unless final
   apple-to-apple RL training and artifact inspection are truly finished.
+
+## 2026-06-11 Active Monitor Check 19:28 UTC
+
+Cluster jobs from the previous check both completed cleanly:
+
+- Worker A job `1027690` (`ggx_rl_jsonl`) completed with exit `0:0` after
+  `00:01:08`. The run wrote
+  `metrics/direct_info_rank_0.jsonl` with 45 records, 162 scalar keys, no
+  NaN/Inf scalars, and sane prior reset metrics. Prior attempt/success/farther
+  rates were all `1.0`; reset position error mean/max was about
+  `0.000242/0.000469 m`; reset rotation error mean/max was about
+  `0.00585/0.00875 rad`; finger-table clearance min was about `0.134568 m`.
+  The short smoke remained unsuccessful at lifting, as expected for an
+  untrained 64-env/45-epoch run, but checkpointed at epoch 45 with reward
+  filename about `736.6942`. Worker A recorded that the final same-config
+  8-GPU run is now ready to launch with only prior/library overrides plus the
+  JSONL inspection sidecar.
+- Worker B job `1027689` (`ggx_cube_traj_export`) completed with exit `0:0`
+  after `00:00:53`. It exported a real GraspGenX/cuRobo `trajectory.json` with
+  662 frames for the 45 mm GraspGenX cube path, using 80 goalset candidates and
+  selected grasp #28 at confidence about `0.597`. Worker B is expected to
+  validate/commit the DEXTRAH compact converter and keep the 45 mm vs 60 mm
+  caveat explicit.
+
+Current worker expectations:
+
+- Worker A: commit/push the JSONL result note and launch the final
+  apple-to-apple 8-GPU Franka cube prior-reset RL training. Then monitor logs,
+  JSONL metrics, checkpoints, reward/success curves, and abnormal terminations.
+- Worker B: convert the exported trajectory into a compact task-space-only
+  reference if possible, reject invalid 60 mm validation claims, and run the
+  next tracking smoke/debug loop.
+- Worker C: continue real cuRobo-demo dataset generation or the DP eval bridge;
+  do not stop at the geometric DP debug dataset.
