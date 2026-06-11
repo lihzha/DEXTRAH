@@ -2557,31 +2557,123 @@ Hypothesis:
   progression improving relative to stale job `1027729`.
 
 Change:
-- No new source changes planned for this launch. The source boundary is the
-  committed frame/action fix plus this worklog evidence update.
+- No eval-path source changes for this launch. The source boundary was the
+  committed frame/action fix plus the worklog evidence update.
+- After artifact inspection, patched
+  `dextrah_lab/offline_dp_bc/analyze_policy_trace.py` so trace-analysis prose
+  reports actual action-frame/world-delta means and distance changes instead
+  of the stale old-label sign diagnosis.
 
 Version Control:
 - agent_id: `franka-cube-dp-bc-warmstart`
 - worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
 - branch: `codex/franka-cube-diffusion-policy-bc`
 - base_commit: `6f58a973c60fa21154c207a31b47ef8f20b46584`
-- implementation_commit: pending worklog commit before remote launch
-- push/pull: pending
+- implementation_commit: `5e3e27c215cc2421fbcfab203457290864a6320b`
+- push/pull: pushed to `origin/codex/franka-cube-diffusion-policy-bc`;
+  deployed to l401 agent-owned worktree by Git bundle
 - changed_files:
+  - `dextrah_lab/offline_dp_bc/analyze_policy_trace.py`
   - `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+- remote_commit/status:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+  at `5e3e27c215cc2421fbcfab203457290864a6320b`, detached HEAD,
+  clean at launch.
 
 Command / Job:
 - planned checkpoint source:
   `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_debug/run_20260611_135200_curobo32_full_pick_lift_framefix_overfit2k/checkpoints/latest.ckpt`
-- planned remote checkpoint:
+- remote checkpoint:
   `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/franka_cube_curobo32_full_pick_lift_framefix_overfit2k/latest.ckpt`
-- planned eval:
-  `RUN_NAME=franka_cube_dp_eval_curobo32_full_pick_lift_framefix_overfit2k_chunk8_trace96_<timestamp> NUM_ENVS=1 NUM_STEPS=96 NUM_INFERENCE_STEPS=100 ACTION_CHUNK_STEPS=8 DEBUG_POLICY_TRACE_MAX_CALLS=12 DEBUG_POLICY_TRACE_ENV_INDEX=0 CHECKPOINT=/results/dp_bc/checkpoints/franka_cube_curobo32_full_pick_lift_framefix_overfit2k/latest.ckpt sbatch cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- deployment:
+  - bundle:
+    `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart-5e3e27c215cc2421fbcfab203457290864a6320b.bundle`
+  - checkpoint transfer verified remote size `254M`
+- eval command:
+  `CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart RUN_NAME=franka_cube_dp_eval_curobo32_full_pick_lift_framefix_overfit2k_chunk8_trace96_20260611_135436 NUM_ENVS=1 NUM_STEPS=96 NUM_INFERENCE_STEPS=100 ACTION_CHUNK_STEPS=8 DEBUG_POLICY_TRACE_MAX_CALLS=12 DEBUG_POLICY_TRACE_ENV_INDEX=0 CAPTURE_VIDEO=False PRINT_INTERVAL=8 CHECKPOINT=/results/dp_bc/checkpoints/franka_cube_curobo32_full_pick_lift_framefix_overfit2k/latest.ckpt sbatch cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- job_id: `1027736`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_curobo32_full_pick_lift_framefix_overfit2k_chunk8_trace96_20260611_135436`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_dp_policy_1027736.out`
 
 Result:
-- status: pending launch after commit/push/deploy.
+- status: passed mechanics, failed behavior within 96-step horizon.
+- Slurm: `COMPLETED 0:0`, elapsed `00:00:49`, node `pool0-00016`.
+- local fetched artifacts:
+  - run_dir:
+    `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_curobo32_full_pick_lift_framefix_overfit2k_chunk8_trace96_20260611_135436`
+  - log:
+    `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_logs/l401/eval_franka_cube_dp_policy_1027736.out`
+  - trace analysis:
+    `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/trace_analysis_1027736_framefix_20260611_135436`
+- metrics:
+  - `steps_completed=96`
+  - `reward_mean=1.455226716895898`, `reward_final=1.5437241792678833`
+  - `final_success_rate=0.0`, `cube_lift_height=0.0`
+  - `ee_to_cube_dist` improved `0.2332 -> 0.1729 m`
+  - `finger_center_to_cube_dist` improved `0.2200 -> 0.1777 m`
+  - `gripper_width` stayed open `0.0798 -> 0.0739 m`
+  - action range:
+    x `[-0.0909, -0.0204]`, y `[0.0583, 0.1358]`,
+    z `[0.0801, 0.2091]`, gripper `[0.7906, 1.0]`
+- trace analysis against corrected framefix dataset:
+  - all `12` policy calls nearest to `go_to_pre_grasp_pose`
+  - nearest-demo distance `0.3563 -> 0.4031`
+  - live cube-minus-EE norm `0.2336 -> 0.1766 m`
+  - gripper chunks stayed open/positive `[0.791, 1.000]`
+  - mean first action-frame xyz
+    `[-0.0399, 0.0901, 0.1182]` maps to mean world delta xyz
+    `[0.00239, -0.00541, 0.00532]`
+- dataset timing check:
+  - close starts at local step min/mean/max `282/282.625/302`
+  - lift starts at `402/402.625/422`
+  - hold-after-lift starts at `642/642.625/662`
 
 Next:
-- Deploy, launch, poll Slurm, fetch metrics and `policy_trace.json`, compare
-  against the corrected framefix dataset, and patch/relaunch if rollout still
-  drifts or stays open for a traceable reason.
+- Commit/push the analyzer/worklog update, deploy the latest commit to the
+  agent-owned l401 worktree, and launch a longer bounded no-video trace:
+  `NUM_STEPS=512`, `ACTION_CHUNK_STEPS=8`,
+  `DEBUG_POLICY_TRACE_MAX_CALLS=64`. This should reach the close/lift phase
+  if the bridge can stay on-distribution; if gripper remains open through
+  step 512, the next patch should target phase/history conditioning or
+  dataset/action timing rather than the already-fixed action frame.
+
+## 2026-06-11T14:00:00-07:00 - corrected-label 512-step trace plan
+
+Goal:
+- Test whether the corrected official-DP checkpoint reaches close/lift once
+  the rollout horizon spans the dataset's close and lift phase timings.
+
+Hypothesis:
+- The 96-step trace was a mechanics smoke and ended before the demonstration
+  phase where close starts. A 512-step trace should show negative gripper
+  actions after ~283 env steps and lift intent after ~403 env steps if live
+  observations stay close enough to the converted demo manifold.
+
+Change:
+- Source change since the previous launch is limited to the trace-analysis
+  summary prose patch; eval behavior is unchanged.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `5e3e27c215cc2421fbcfab203457290864a6320b`
+- implementation_commit: pending commit before launch
+- push/pull: pending
+- changed_files:
+  - `dextrah_lab/offline_dp_bc/analyze_policy_trace.py`
+  - `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+
+Command / Job:
+- planned eval:
+  `CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart RUN_NAME=franka_cube_dp_eval_curobo32_full_pick_lift_framefix_overfit2k_chunk8_trace512_<timestamp> NUM_ENVS=1 NUM_STEPS=512 NUM_INFERENCE_STEPS=100 ACTION_CHUNK_STEPS=8 DEBUG_POLICY_TRACE_MAX_CALLS=64 DEBUG_POLICY_TRACE_ENV_INDEX=0 CAPTURE_VIDEO=False PRINT_INTERVAL=32 CHECKPOINT=/results/dp_bc/checkpoints/franka_cube_curobo32_full_pick_lift_framefix_overfit2k/latest.ckpt sbatch cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+
+Result:
+- status: pending commit/deploy/launch.
+
+Next:
+- Commit/push, deploy by Git bundle, launch the bounded trace, fetch metrics
+  and trace, and decide whether the next fix is phase/history conditioning,
+  dataset timing, or a longer/full-pick dataset expansion.

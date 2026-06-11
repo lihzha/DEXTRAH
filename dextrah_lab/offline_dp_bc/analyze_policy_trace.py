@@ -2,8 +2,8 @@
 
 This compares live low-dimensional observations from
 ``eval_franka_cube_dp_policy.py --debug_policy_trace_*`` against a converted
-demonstration dataset. It also exposes whether a policy action that was trained
-from world-frame labels is interpreted by Isaac as a robot-root-frame command.
+demonstration dataset. It also reports how action-frame policy commands map
+back to world-frame end-effector deltas under the DEXTRAH action convention.
 """
 
 from __future__ import annotations
@@ -120,6 +120,64 @@ def _plot(rows: list[dict[str, Any]], output_path: Path) -> None:
     plt.close(fig)
 
 
+def _mean_vector(rows: list[dict[str, Any]], prefix: str) -> list[float] | None:
+    if not rows:
+        return None
+    return [
+        float(np.mean([row[f"{prefix}_{axis}"] for row in rows]))
+        for axis in "xyz"
+    ]
+
+
+def _norm(values: list[float] | None) -> float | None:
+    if values is None:
+        return None
+    return float(np.linalg.norm(np.asarray(values, dtype=np.float32)))
+
+
+def _build_analysis(rows: list[dict[str, Any]], all_pregrasp: bool) -> str:
+    if not rows:
+        return "No policy trace records were available for analysis."
+
+    nearest_delta = float(rows[-1]["nearest_position_distance"] - rows[0]["nearest_position_distance"])
+    cube_minus_ee_start = [rows[0][f"live_cube_minus_ee_{axis}"] for axis in "xyz"]
+    cube_minus_ee_end = [rows[-1][f"live_cube_minus_ee_{axis}"] for axis in "xyz"]
+    cube_norm_start = _norm(cube_minus_ee_start)
+    cube_norm_end = _norm(cube_minus_ee_end)
+    gripper_min = min(row["chunk_gripper_action_min"] for row in rows)
+    gripper_max = max(row["chunk_gripper_action_max"] for row in rows)
+    mean_first = _mean_vector(rows, "first_action")
+    mean_world = _mean_vector(rows, "env_world_delta")
+
+    phase_msg = (
+        "All traced states remain nearest to go_to_pre_grasp_pose"
+        if all_pregrasp
+        else "Traced states include non-pregrasp nearest-neighbor phases"
+    )
+    distance_msg = (
+        f"nearest-demo distance increased by {nearest_delta:.3f}"
+        if nearest_delta > 0.0
+        else f"nearest-demo distance decreased by {abs(nearest_delta):.3f}"
+    )
+    cube_msg = (
+        f"live cube-minus-EE norm changed {cube_norm_start:.3f}->{cube_norm_end:.3f} m"
+        if cube_norm_start is not None and cube_norm_end is not None
+        else "live cube-minus-EE norm unavailable"
+    )
+    if gripper_min > 0.5:
+        gripper_msg = f"chunk gripper commands stayed open/positive [{gripper_min:.3f}, {gripper_max:.3f}]"
+    elif gripper_max < -0.5:
+        gripper_msg = f"chunk gripper commands stayed closed/negative [{gripper_min:.3f}, {gripper_max:.3f}]"
+    else:
+        gripper_msg = f"chunk gripper commands crossed neutral [{gripper_min:.3f}, {gripper_max:.3f}]"
+    action_msg = (
+        f"mean first action-frame xyz={mean_first} maps to mean world delta xyz={mean_world}"
+        if mean_first is not None and mean_world is not None
+        else "action-frame/world-delta means unavailable"
+    )
+    return f"{phase_msg}; {distance_msg}; {cube_msg}; {gripper_msg}; {action_msg}."
+
+
 def analyze(dataset_path: Path, trace_path: Path, output_dir: Path) -> dict[str, Any]:
     dataset = np.load(dataset_path, allow_pickle=False)
     obs = np.asarray(dataset["obs"], dtype=np.float32)
@@ -185,6 +243,8 @@ def analyze(dataset_path: Path, trace_path: Path, output_dir: Path) -> dict[str,
 
     nearest_phases = [row["nearest_position_phase"] for row in rows]
     all_pregrasp = all(phase == "go_to_pre_grasp_pose" for phase in nearest_phases)
+    live_cube_minus_ee_start = [rows[0][f"live_cube_minus_ee_{axis}"] for axis in "xyz"] if rows else None
+    live_cube_minus_ee_end = [rows[-1][f"live_cube_minus_ee_{axis}"] for axis in "xyz"] if rows else None
     summary = {
         "dataset": str(dataset_path),
         "trace": str(trace_path),
@@ -195,15 +255,18 @@ def analyze(dataset_path: Path, trace_path: Path, output_dir: Path) -> dict[str,
         "all_nearest_pregrasp": all_pregrasp,
         "nearest_distance_start": rows[0]["nearest_position_distance"] if rows else None,
         "nearest_distance_end": rows[-1]["nearest_position_distance"] if rows else None,
-        "live_cube_minus_ee_start": [rows[0][f"live_cube_minus_ee_{axis}"] for axis in "xyz"] if rows else None,
-        "live_cube_minus_ee_end": [rows[-1][f"live_cube_minus_ee_{axis}"] for axis in "xyz"] if rows else None,
+        "nearest_distance_delta": (
+            float(rows[-1]["nearest_position_distance"] - rows[0]["nearest_position_distance"]) if rows else None
+        ),
+        "live_cube_minus_ee_start": live_cube_minus_ee_start,
+        "live_cube_minus_ee_end": live_cube_minus_ee_end,
+        "live_cube_minus_ee_norm_start": _norm(live_cube_minus_ee_start),
+        "live_cube_minus_ee_norm_end": _norm(live_cube_minus_ee_end),
+        "mean_first_action_xyz": _mean_vector(rows, "first_action"),
+        "mean_env_world_delta_xyz": _mean_vector(rows, "env_world_delta"),
         "chunk_gripper_action_min": min(row["chunk_gripper_action_min"] for row in rows) if rows else None,
         "chunk_gripper_action_max": max(row["chunk_gripper_action_max"] for row in rows) if rows else None,
-        "analysis": (
-            "All traced states remain nearest to go_to_pre_grasp_pose while distance increases; "
-            "positive model x / negative model y commands become negative world x / positive world y "
-            "under the Franka root-frame action convention."
-        ),
+        "analysis": _build_analysis(rows, all_pregrasp),
     }
 
     output_dir.mkdir(parents=True, exist_ok=True)
