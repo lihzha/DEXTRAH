@@ -2007,3 +2007,100 @@ Next:
 - Commit/push the chunk bridge patch, deploy the exact commit to l401 via Git,
   then run a bounded chunked eval smoke and compare gripper/finger/cube metrics
   against the first-action job.
+
+## 2026-06-11T13:22:13-07:00 - chunked l401 eval launch plan
+
+Goal:
+- Test whether executing official DP action chunks improves the full-pick/lift
+  checkpoint rollout compared with first-action replanning job `1027722`.
+
+Hypothesis:
+- With `ACTION_CHUNK_STEPS=8`, the wrapper will follow the policy's learned
+  action horizon instead of discarding seven predicted actions every step.
+  This should improve phase progression or at least clarify whether the
+  remaining failure is data/training rather than bridge mechanics.
+
+Version Control:
+- source_commit_to_deploy:
+  `52bcc43c19253205ee37a5d375e0afaad82d8df7`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- remote_worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+
+Command / Job:
+- run_name:
+  `franka_cube_dp_eval_curobo32_full_pick_lift_chunk8_20260611_132213`
+- command:
+  `CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart OFFICIAL_DP_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/external/real-stanford-diffusion_policy OFFICIAL_DP_ENV_NAME=franka-cube-dp-bc-warmstart-official-dp CHECKPOINT=/results/dp_bc/franka-cube-dp-bc-warmstart/checkpoints/run_20260611_131845_curobo32_full_pick_lift_debug/latest.ckpt RUN_NAME=franka_cube_dp_eval_curobo32_full_pick_lift_chunk8_20260611_132213 NUM_ENVS=1 NUM_STEPS=64 NUM_INFERENCE_STEPS=100 ACTION_CHUNK_STEPS=8 PRINT_INTERVAL=8 CAPTURE_VIDEO=False sbatch cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- expected metrics:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_curobo32_full_pick_lift_chunk8_20260611_132213/metrics.json`
+
+Result:
+- status: pending
+
+Analysis:
+- Pass criteria remain mechanics: Slurm exit `0`, wrapper metrics validation,
+  `steps_completed=64`, `env_closed=true`, finite action ranges.
+- Behavior comparison targets versus job `1027722`: gripper width, action
+  gripper min, finger-center distance, EE-to-cube distance, and cube lift
+  height. Success is not expected yet, but chunk execution should not degrade
+  stability.
+
+Next:
+- Deploy source commit `52bcc43` to l401, submit chunked eval, monitor logs,
+  inspect metrics, and record the comparison.
+
+## 2026-06-11T13:24:10-07:00 - chunked eval result and full-pick overfit plan
+
+Goal:
+- Compare chunked DP action execution against first-action replanning and pick
+  the next development step.
+
+Command / Job:
+- source commit deployed:
+  `52bcc43c19253205ee37a5d375e0afaad82d8df7`
+- run_name:
+  `franka_cube_dp_eval_curobo32_full_pick_lift_chunk8_20260611_132213`
+- job_id: `1027725`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_dp_policy_1027725.out`
+- metrics:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_curobo32_full_pick_lift_chunk8_20260611_132213/metrics.json`
+
+Result:
+- status: passed mechanics, worse behavior than first-action replanning
+- sacct: `COMPLETED`, exit `0:0`, elapsed `00:00:47`, step max RSS about
+  `22304884K`.
+- wrapper printed `DP eval metrics passed`.
+- comparison against first-action job `1027722`:
+  - first-action:
+    - final gripper width `0.04912`, min width `0.04516` at step `56`
+    - gripper action min `-0.30297`
+    - final EE-to-cube distance `0.26818`
+    - final finger-center-to-cube distance `0.26017`
+    - cube lift max `0.0`, success `0.0`
+  - chunk8:
+    - final gripper width `0.07726`, min width `0.07096` at step `32`
+    - gripper action min `0.50134`
+    - final EE-to-cube distance `0.28375`
+    - final finger-center-to-cube distance `0.27481`
+    - cube lift max `0.0`, success `0.0`
+
+Analysis:
+- The action-chunk implementation is mechanically valid and useful to keep,
+  but the current 32-demo full-pick checkpoint is not trained enough for
+  rollout. Chunking preserves an open/approach sequence and never reaches close
+  commands in 64 steps; first-action replanning closes partially but still
+  drifts away and never lifts.
+- This shifts the next bottleneck back to the BC checkpoint/dataset, not the
+  eval wrapper. The full-pick checkpoint only saw about `503` optimizer/log
+  steps, whereas the approach-only overfit needed about `2024` steps before
+  local bridge actions became stable.
+
+Next:
+- Run a bounded local full-pick/lift official-DP overfit/debug pretrain:
+  same 32 real cuRobo demos, validation split `0.25`, `num_epochs=25`,
+  `max_train_steps=100` per epoch, `policy.num_inference_steps=100`,
+  expected about `2500` optimizer/log steps.
+- Inspect losses, checkpoint, first/open and closed/lift bridge smokes, then
+  decide whether to relaunch l401 eval with first-action or chunked execution.
