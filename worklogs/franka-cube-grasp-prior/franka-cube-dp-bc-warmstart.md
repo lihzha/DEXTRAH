@@ -2842,7 +2842,9 @@ Version Control:
 - worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
 - branch: `codex/franka-cube-diffusion-policy-bc`
 - base_commit: `aad5eef545aac4c1fffb6acf7507c1c6fc70255f`
-- implementation_commit: pending local commit before l401 deployment
+- implementation_commit: `cadf96733e72454d1fd8bdb30bb20afefc723d66`
+- push/pull: pushed to `origin/codex/franka-cube-diffusion-policy-bc`;
+  l401 deployment pending.
 - changed_files:
   - `dextrah_lab/offline_dp_bc/diagnose_live_demo_geometry.py`
   - `dextrah_lab/offline_dp_bc/ppo_bridge.py`
@@ -2859,7 +2861,7 @@ Command / Job:
   - `PYTHONPATH=/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/diffusion_policy:$PWD /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/venv/bin/python -m dextrah_lab.offline_dp_bc.validate_official_checkpoint_smoke --checkpoint /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_debug/run_20260611_135200_curobo32_full_pick_lift_framefix_overfit2k/checkpoints/latest.ckpt --dataset /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz --device cpu --batch-size 2 --num-inference-steps 2 --row-selector first --warm-history-from-dataset`
 
 Result:
-- status: diagnostic passed, patch implemented locally.
+- status: diagnostic passed, patch committed/pushed.
 - artifact_dir:
   `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/live_demo_geometry_1027737_framefix_20260611_135907`
 - files:
