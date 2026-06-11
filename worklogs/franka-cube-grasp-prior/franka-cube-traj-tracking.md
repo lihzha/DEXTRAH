@@ -1522,12 +1522,13 @@ Hypothesis:
 
 Version Control:
 - agent_id: franka-cube-traj-tracking
-- local_commit: pending worklog-only checkpoint; implementation code is `0eafbad235c2b821f86eb46f61095fdd3f710031`.
+- local_commit: `6f8bbdda08d6686b8b308d32adf9c225e1d2978b`; implementation code is `0eafbad235c2b821f86eb46f61095fdd3f710031`.
+- remote_commit/status: /lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking at `6f8bbdda08d6686b8b308d32adf9c225e1d2978b`, detached clean. SSH Git auth failed; HTTPS fetch fallback succeeded.
 
 Command / Job:
 - command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:30:00 --job-name=franka_cube_traj_gripclamp25_eval --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_gripclamp_rl25_eval720_20260611_134918,CHECKPOINT=/results/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_gripclamp_rl25_20260611_134613/nn/last_dextrah_franka_cube_traj_tracking_ep_25_rew_1037.0807.pth,NUM_ENVS=4,NUM_STEPS=720,VIDEO_LENGTH=240,CAPTURE_VIDEO=False,PRINT_INTERVAL=120,USE_CUDA_GRAPH=False,SEED=53,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
-- job_id: pending
-- expected_log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_<job>.out
+- job_id: 1027733 `franka_cube_traj_gripclamp25_eval`
+- expected_log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1027733.out
 - expected_metrics: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_traj_tracking_gripclamp_rl25_eval720_20260611_134918/metrics.json
 
 Acceptance Criteria:
@@ -1535,3 +1536,25 @@ Acceptance Criteria:
 - Reference summary reports runtime duration `8.0`, source duration `22.033333333333335`, `gripper_schedule_policy=clamp_source_width_to_min_target_gripper_width`, runtime gripper min `0.024`, reset-pose target policy, and `curobo_validated=false`.
 - Phase progress reaches 1.0; `cube_traj_tracking_unsafe_target_rate` remains `0.0`; target min clearance remains above `0.025`.
 - Inspect policy behavior: success/lift, finger table clearance, gripper width, finger distances, orientation/position errors, resets/terminations.
+
+Result:
+- status: inconclusive/failed acceptance; Slurm completed `0:0` after `00:00:58` on `pool0-00016`, but the mean phase trace did not reach 1.0 because some envs reset before the end of the reference.
+- local_artifacts: `cluster_results/l401/franka_cube_traj_tracking_gripclamp_rl25_eval720_20260611_134918/metrics.json`, `cluster_results/l401/franka_cube_traj_tracking_gripclamp_rl25_eval720_20260611_134918/eval_franka_cube_1027733.out`
+- rollout: 720/720 steps, `done_count=5`, reward mean `2.3614377533396085`, reward final `2.6098151206970215`, success mean/final/last-window `0.0`.
+- finite_check: recursive JSON numeric scan `nonfinite_count=0`.
+- tracking_reference: external 60 mm compact reference, `duration_s=8.0`, `runtime_duration_s=8.0`, `source_duration_s=22.033333333333335`, `runtime_retime_policy=normalize_to_configured_runtime_duration`, `runtime_object_pose_policy=reset_cube_pose`, `gripper_schedule_policy=clamp_source_width_to_min_target_gripper_width`, runtime gripper width min/max `0.024`/`0.07999999821186066`, source gripper width min/max `0.0`/`0.07999999821186066`, `curobo_validated=false`, `validation_passed=true`.
+- phase_progress: `traj_phase_progress` max `0.8875000476837158`, final `0.33645835518836975`; mean phase drops around steps 429, 599, and 607 due resets, so the full mean rollout did not reach phase 1.0.
+- target_safety: `cube_traj_tracking_unsafe_target_rate` max/mean/final `0.0`; `safe_target_rate` min/mean/final `1.0`; target clearance min over all steps `0.06511414051055908`, above configured `0.025`.
+- gripper_tracking: target gripper width min `0.023999998345971107`; measured gripper width mean `0.05157652743574646`, min `0.04474366828799248`, final `0.044823113828897476`. The clamp prevented near-zero measured gripper collapse but the policy keeps a wider opening than the clamped target.
+- finger_safety: `finger_table_clearance_min` min `0.04111748933792114`; `finger_table_clearance_violation_max` max `0.0`; no violation steps.
+- task_behavior: no success and `has_lifted_cube` remains `0.0`; `cube_lift_height_max` max `0.08642691373825073` at step 7 but still below the `0.12` success lift threshold and not sustained; EE-to-cube mean `0.10301682248504626`; finger-center-to-cube mean `0.09497410427365038`.
+- tracking_metrics: tracking reward mean `0.20148737518530752`, final `0.19174256920814514`; position error mean `0.16218089361985524`; orientation error mean `0.25570363098134596`; gripper error mean `0.02780139044366984`.
+- comparison_to_unclamped_retime_RL25: unclamped RL25 reached mean phase max `1.0`, reward mean `2.421528760592143`, target gripper min `0.0`, measured gripper min `0.00021008600015193224`, max lift `0.01680278778076172`, and finger-center mean `0.10512903414459693`. Clamp RL25 avoids gripper collapse and improves finger-center mean and orientation error, but has lower tracking reward/reward mean, does not complete the mean phase trace, and still has zero success.
+
+Analysis:
+- The clamp is not an immediate win. It fixes one pathology (near-zero measured gripper collapse) and may encourage more physically plausible gripper openings, but the policy still fails to lift/succeed and now resets before the averaged phase trace reaches the final lift target.
+- The partial lift spike and resets need visual or per-step diagnosis before scaling. The likely failure is not target safety; it is contact/drag behavior under a wider gripper and the reward balance between approach, lift, and trajectory tracking.
+
+Next:
+- Commit/push this result.
+- Generate/update a comparison artifact including the clamp runs and launch a cheap video eval of the clamp RL25 checkpoint if feasible, because the reset/partial-lift behavior needs visual inspection before another training change.
