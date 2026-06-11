@@ -1172,3 +1172,51 @@ Analysis:
 Next:
 - Continue widened active monitoring. Tighten polling near the next wall-time
   signal window.
+
+## 2026-06-10 22:25 PDT - Teacher Monitor Metric Pass
+
+Goal:
+- Verify continued steady-state training health after the validated requeue
+  resume.
+
+Command / Job:
+- job_id: `28955904`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28955904.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+- local TensorBoard copy:
+  `/tmp/dextrah_teacher_events`
+
+Result:
+- status: running healthy.
+- scheduler: `RUNNING` on `batch-block5-03072`, elapsed `01:42:49`,
+  time left `02:07:11` at `22:25:23 PDT`.
+- stdout advanced to epoch `17185/20000`.
+- latest complete checkpoint:
+  `last_dextrah_lstm_ep_17180_rew_486.6669.pth` at `22:24:57`.
+- runtime sidecars rank `0-7` all refreshed at `22:24:55`.
+- narrow critical failure scan over recent stdout returned no matches.
+- TensorBoard summaries parsed through epoch `17186` for epoch-keyed scalars.
+- `in_success_region/iter`: latest `0.468018`, last-50 `0.455352`,
+  last-200 `0.459124`, post-resume mean `0.461755`.
+- `rewards/iter`: latest `649.808`, last-50 `632.478`,
+  last-200 `638.268`, post-resume mean `641.384`.
+- `num_adr_increases/iter`: latest `50`, last-50 `50`.
+- `info/kl`: latest `0.00438264`, last-50 `0.00516815`,
+  last-200 `0.00509207`.
+- `losses/a_loss`: latest `-0.00258737`, last-50 `-0.0032819`.
+- `losses/c_loss`: latest `0.0199249`, last-50 `0.0186364`.
+- `performance/step_inference_rl_update_fps`: latest `112634`,
+  last-20 about `110564`, last-50 about `110450`, last-200 about `108432`.
+
+Analysis:
+- Training remains healthy. Success and reward dipped slightly from the prior
+  rolling window but remain in the same band as earlier post-resume passes,
+  ADR remains saturated, KL is controlled, losses are low, and artifact cadence
+  is intact.
+
+Next:
+- Continue widened active monitoring until the next wall-time signal window,
+  then tighten polling to validate checkpoint/sidecar refresh and requeue
+  behavior again.
