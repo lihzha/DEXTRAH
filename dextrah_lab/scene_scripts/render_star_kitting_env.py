@@ -47,6 +47,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--video_seconds", type=float, default=3.0)
     parser.add_argument("--capture_video", action="store_true", help="Capture an overview PNG sequence.")
     parser.add_argument("--sim_steps_per_frame", type=int, default=2)
+    parser.add_argument(
+        "--physics_dt",
+        type=float,
+        default=1.0 / 60.0,
+        help="PhysX simulation timestep in seconds.",
+    )
     parser.add_argument("--settle_steps", type=int, default=30)
     parser.add_argument("--physics_device", default="cpu", help="PhysX device used by SimulationContext.")
     parser.add_argument(
@@ -146,6 +152,100 @@ def parse_args() -> argparse.Namespace:
             "Contact fallback for the referenced Franka USD. kinematic adds hidden PhysX boxes that "
             "follow the finger body poses; articulation only authors hidden child colliders."
         ),
+    )
+    parser.add_argument(
+        "--show_contact_debug",
+        action="store_true",
+        default=False,
+        help="Show debug collision geometry for contact diagnosis.",
+    )
+    parser.add_argument(
+        "--show_franka_contact_proxies",
+        action="store_true",
+        default=False,
+        help="Show Franka finger contact proxy boxes even when --show_contact_debug is not set.",
+    )
+    parser.add_argument(
+        "--show_star_collision",
+        action="store_true",
+        default=False,
+        help="Show star convex collision pieces even when --show_contact_debug is not set.",
+    )
+    parser.add_argument(
+        "--contact_debug_opacity",
+        type=float,
+        default=0.38,
+        help="Preview opacity for visible contact-debug geometry.",
+    )
+    parser.add_argument(
+        "--franka_contact_proxy_center",
+        type=float,
+        nargs=3,
+        default=(0.0, 0.0, 0.030),
+        metavar=("X", "Y", "Z"),
+        help="Local center of the Franka finger proxy box, in meters.",
+    )
+    parser.add_argument(
+        "--franka_contact_proxy_size",
+        type=float,
+        nargs=3,
+        default=(0.020, 0.012, 0.050),
+        metavar=("X", "Y", "Z"),
+        help="Local size of the Franka finger proxy box, in meters.",
+    )
+    parser.add_argument(
+        "--franka_contact_proxy_contact_offset",
+        type=float,
+        default=None,
+        help="Optional PhysX contact offset for Franka finger proxy colliders.",
+    )
+    parser.add_argument(
+        "--star_collision_contact_offset",
+        type=float,
+        default=None,
+        help="Optional PhysX contact offset for star collision pieces.",
+    )
+    parser.add_argument(
+        "--collision_rest_offset",
+        type=float,
+        default=None,
+        help="Optional PhysX rest offset applied to debugged star/proxy contact colliders.",
+    )
+    parser.add_argument(
+        "--franka_max_depenetration_velocity",
+        type=float,
+        default=5.0,
+        help="Maximum depenetration velocity for Franka articulation rigid bodies.",
+    )
+    parser.add_argument(
+        "--franka_solver_position_iterations",
+        type=int,
+        default=8,
+        help="Franka articulation solver position iteration count.",
+    )
+    parser.add_argument(
+        "--franka_solver_velocity_iterations",
+        type=int,
+        default=0,
+        help="Franka articulation solver velocity iteration count.",
+    )
+    parser.add_argument(
+        "--star_max_depenetration_velocity",
+        type=float,
+        default=None,
+        help="Optional maximum depenetration velocity for the dynamic star rigid body.",
+    )
+    parser.add_argument(
+        "--star_solver_position_iterations",
+        type=int,
+        default=None,
+        help="Optional solver position iteration count for the dynamic star rigid body.",
+    )
+    parser.add_argument(
+        "--star_solver_velocity_iterations",
+        type=int,
+        default=None,
+        help="Optional solver velocity iteration count for the dynamic star rigid body.",
     )
     parser.add_argument(
         "--franka_grasp_constraint_mode",
@@ -369,6 +469,36 @@ def _bind(prim: Usd.Prim, mat: UsdShade.Material) -> None:
     UsdShade.MaterialBindingAPI.Apply(prim).Bind(mat)
 
 
+def _set_schema_float_attr(api: object, prim: Usd.Prim, method_name: str, attr_name: str, value: float | None) -> None:
+    if value is None:
+        return
+    try:
+        method = getattr(api, method_name)
+        method().Set(float(value))
+        return
+    except Exception:
+        pass
+    try:
+        prim.CreateAttribute(attr_name, Sdf.ValueTypeNames.Float).Set(float(value))
+    except Exception:
+        pass
+
+
+def _set_schema_int_attr(api: object, prim: Usd.Prim, method_name: str, attr_name: str, value: int | None) -> None:
+    if value is None:
+        return
+    try:
+        method = getattr(api, method_name)
+        method().Set(int(value))
+        return
+    except Exception:
+        pass
+    try:
+        prim.CreateAttribute(attr_name, Sdf.ValueTypeNames.Int).Set(int(value))
+    except Exception:
+        pass
+
+
 def _add_box(
     stage: Usd.Stage,
     path: str,
@@ -378,6 +508,8 @@ def _add_box(
     *,
     collision: bool = True,
     visible: bool = True,
+    contact_offset: float | None = None,
+    rest_offset: float | None = None,
 ) -> Usd.Prim:
     cube = UsdGeom.Cube.Define(stage, path)
     cube.CreateSizeAttr(1.0)
@@ -387,7 +519,7 @@ def _add_box(
     if not visible:
         UsdGeom.Imageable(prim).MakeInvisible()
     if collision:
-        _apply_collision(prim, approximation="box")
+        _apply_collision(prim, approximation="box", contact_offset=contact_offset, rest_offset=rest_offset)
     return prim
 
 
@@ -576,7 +708,13 @@ def _add_grasp_candidate_markers(
     }
 
 
-def _apply_collision(prim: Usd.Prim, *, approximation: str = "none") -> None:
+def _apply_collision(
+    prim: Usd.Prim,
+    *,
+    approximation: str = "none",
+    contact_offset: float | None = None,
+    rest_offset: float | None = None,
+) -> None:
     UsdPhysics.CollisionAPI.Apply(prim)
     mesh_collision_api_cls = getattr(UsdPhysics, "MeshCollisionAPI", None)
     if mesh_collision_api_cls is not None:
@@ -586,34 +724,91 @@ def _apply_collision(prim: Usd.Prim, *, approximation: str = "none") -> None:
         except Exception:
             pass
     try:
-        PhysxSchema.PhysxCollisionAPI.Apply(prim)
+        physx_api = PhysxSchema.PhysxCollisionAPI.Apply(prim)
+        _set_schema_float_attr(
+            physx_api,
+            prim,
+            "CreateContactOffsetAttr",
+            "physxCollision:contactOffset",
+            contact_offset,
+        )
+        _set_schema_float_attr(
+            physx_api,
+            prim,
+            "CreateRestOffsetAttr",
+            "physxCollision:restOffset",
+            rest_offset,
+        )
     except Exception:
         pass
 
 
-def _make_rigid_body(prim: Usd.Prim, *, density: float) -> None:
+def _make_rigid_body(
+    prim: Usd.Prim,
+    *,
+    density: float,
+    max_depenetration_velocity: float | None = None,
+    solver_position_iterations: int | None = None,
+    solver_velocity_iterations: int | None = None,
+) -> None:
     rb_api = UsdPhysics.RigidBodyAPI.Apply(prim)
     try:
         rb_api.CreateRigidBodyEnabledAttr(True)
         rb_api.CreateStartsAsleepAttr(False)
     except Exception:
         pass
+    if (
+        max_depenetration_velocity is not None
+        or solver_position_iterations is not None
+        or solver_velocity_iterations is not None
+    ):
+        try:
+            physx_rb_api = PhysxSchema.PhysxRigidBodyAPI.Apply(prim)
+            _set_schema_float_attr(
+                physx_rb_api,
+                prim,
+                "CreateMaxDepenetrationVelocityAttr",
+                "physxRigidBody:maxDepenetrationVelocity",
+                max_depenetration_velocity,
+            )
+            _set_schema_int_attr(
+                physx_rb_api,
+                prim,
+                "CreateSolverPositionIterationCountAttr",
+                "physxRigidBody:solverPositionIterationCount",
+                solver_position_iterations,
+            )
+            _set_schema_int_attr(
+                physx_rb_api,
+                prim,
+                "CreateSolverVelocityIterationCountAttr",
+                "physxRigidBody:solverVelocityIterationCount",
+                solver_velocity_iterations,
+            )
+        except Exception:
+            pass
     mass_api = UsdPhysics.MassAPI.Apply(prim)
     mass_api.CreateDensityAttr(float(density))
 
 
 def _create_sim_context():
     _log(f"creating SimulationContext on physics_device={args_cli.physics_device}")
+    physx_cfg_kwargs: dict[str, object] = {
+        "bounce_threshold_velocity": 0.2,
+        "gpu_max_rigid_patch_count": 4 * 5 * 2**15,
+    }
+    if int(args_cli.franka_solver_velocity_iterations) > 0:
+        physx_cfg_kwargs["min_velocity_iteration_count"] = max(
+            0,
+            int(args_cli.franka_solver_velocity_iterations),
+        )
     sim_cfg = SimulationCfg(
-        dt=1.0 / 60.0,
+        dt=float(args_cli.physics_dt),
         render_interval=1,
         device=str(args_cli.physics_device),
         physics_prim_path="/World/physicsScene",
         physics_material=RigidBodyMaterialCfg(static_friction=1.0, dynamic_friction=1.0),
-        physx=PhysxCfg(
-            bounce_threshold_velocity=0.2,
-            gpu_max_rigid_patch_count=4 * 5 * 2**15,
-        ),
+        physx=PhysxCfg(**physx_cfg_kwargs),
     )
     return sim_utils.SimulationContext(sim_cfg)
 
@@ -1255,12 +1450,12 @@ def _create_franka_articulation(robot: RobotSpec) -> Articulation:
                 retain_accelerations=True,
                 linear_damping=0.0,
                 angular_damping=0.0,
-                max_depenetration_velocity=5.0,
+                max_depenetration_velocity=float(args_cli.franka_max_depenetration_velocity),
             ),
             articulation_props=sim_utils.ArticulationRootPropertiesCfg(
                 enabled_self_collisions=True,
-                solver_position_iteration_count=8,
-                solver_velocity_iteration_count=0,
+                solver_position_iteration_count=max(1, int(args_cli.franka_solver_position_iterations)),
+                solver_velocity_iteration_count=max(0, int(args_cli.franka_solver_velocity_iterations)),
                 sleep_threshold=0.005,
                 stabilization_threshold=0.0005,
                 fix_root_link=True,
@@ -1308,6 +1503,12 @@ def _create_robot(stage: Usd.Stage, robot: RobotSpec) -> Articulation | None:
 def _add_franka_finger_collision_proxies(
     stage: Usd.Stage,
     mat: UsdShade.Material,
+    *,
+    visible: bool,
+    local_center: tuple[float, float, float],
+    local_size: tuple[float, float, float],
+    contact_offset: float | None,
+    rest_offset: float | None,
 ) -> dict[str, object]:
     """Add minimal fingertip colliders when the referenced Franka USD is visual-only."""
 
@@ -1323,21 +1524,110 @@ def _add_franka_finger_collision_proxies(
         _add_box(
             stage,
             proxy_path,
-            center=(0.0, 0.0, 0.030),
-            size=(0.020, 0.012, 0.050),
+            center=local_center,
+            size=local_size,
             mat=mat,
             collision=True,
-            visible=False,
+            visible=visible,
+            contact_offset=contact_offset,
+            rest_offset=rest_offset,
         )
         created.append(proxy_path)
     return {
         "created": created,
         "missing_links": missing,
         "count": len(created),
-        "shape": "invisible box per Franka finger link",
-        "local_center": [0.0, 0.0, 0.030],
-        "local_size": [0.020, 0.012, 0.050],
+        "shape": "box per Franka finger link",
+        "visible": bool(visible),
+        "local_center": [float(v) for v in local_center],
+        "local_size": [float(v) for v in local_size],
+        "contact_offset": None if contact_offset is None else float(contact_offset),
+        "rest_offset": None if rest_offset is None else float(rest_offset),
     }
+
+
+def _add_franka_contact_debug_visual_overlays(
+    stage: Usd.Stage,
+    mat: UsdShade.Material,
+    *,
+    visible: bool,
+    local_center: tuple[float, float, float],
+    local_size: tuple[float, float, float],
+) -> dict[str, object]:
+    root_path = "/World/ContactDebug/FrankaFingerProxies"
+    UsdGeom.Xform.Define(stage, "/World/ContactDebug")
+    UsdGeom.Xform.Define(stage, root_path)
+    followers: dict[str, dict[str, object]] = {}
+    created: list[str] = []
+    for link_name, suffix in (("panda_leftfinger", "leftfinger"), ("panda_rightfinger", "rightfinger")):
+        path = f"{root_path}/{suffix}"
+        prim = _add_box(
+            stage,
+            path,
+            center=(0.0, 0.0, -10.0),
+            size=local_size,
+            mat=mat,
+            collision=False,
+            visible=visible,
+        )
+        try:
+            UsdPhysics.CollisionAPI.Apply(prim).CreateCollisionEnabledAttr(False)
+        except Exception:
+            pass
+        followers[link_name] = {
+            "path": path,
+            "local_center": [float(v) for v in local_center],
+            "local_size": [float(v) for v in local_size],
+        }
+        created.append(path)
+    return {
+        "enabled": bool(visible),
+        "root_path": root_path,
+        "created": created if visible else [],
+        "count": len(created) if visible else 0,
+        "followers": followers if visible else {},
+        "shape": "visual-only box follower per Franka finger body",
+        "local_center": [float(v) for v in local_center],
+        "local_size": [float(v) for v in local_size],
+    }
+
+
+def _update_franka_contact_debug_visual_overlays(
+    stage: Usd.Stage,
+    robot: Articulation | None,
+    overlay_record: dict[str, object] | None,
+) -> None:
+    if robot is None or not overlay_record or not bool(overlay_record.get("enabled")):
+        return
+    followers = overlay_record.get("followers")
+    if not isinstance(followers, dict):
+        return
+    body_poses = _robot_body_pose_records(robot)
+    updated = False
+    for body_name, info in followers.items():
+        if not isinstance(info, dict):
+            continue
+        path = info.get("path")
+        pose = body_poses.get(str(body_name))
+        if not isinstance(path, str) or not isinstance(pose, dict):
+            continue
+        pos = pose.get("position_w")
+        quat_wxyz = pose.get("quaternion_wxyz")
+        local_center = info.get("local_center", [0.0, 0.0, 0.030])
+        local_size = info.get("local_size", [0.020, 0.012, 0.050])
+        if not isinstance(pos, list) or not isinstance(quat_wxyz, list):
+            continue
+        prim = stage.GetPrimAtPath(path)
+        if not prim.IsValid():
+            continue
+        quat_xyzw = _quat_wxyz_to_xyzw(quat_wxyz)
+        rot = _mat_from_quat_xyzw(quat_xyzw)
+        offset = _mat_apply_vector(rot, local_center)
+        center = tuple(float(pos[idx]) + float(offset[idx]) for idx in range(3))
+        _set_xform(prim, center, scale=local_size, rotate_quat_xyzw=quat_xyzw)
+        updated = True
+    if updated:
+        update_stage()
 
 
 def _make_kinematic_body(prim: Usd.Prim) -> None:
@@ -1358,11 +1648,15 @@ def _make_kinematic_body(prim: Usd.Prim) -> None:
 def _add_franka_kinematic_contact_proxies(
     stage: Usd.Stage,
     mat: UsdShade.Material,
+    *,
+    visible: bool,
+    local_center: tuple[float, float, float],
+    local_size: tuple[float, float, float],
+    contact_offset: float | None,
+    rest_offset: float | None,
 ) -> dict[str, object]:
     _ = stage, mat
     root_path = "/World/FrankaContactProxies"
-    local_center = (0.0, 0.0, 0.030)
-    local_size = (0.020, 0.012, 0.050)
     followers: dict[str, dict[str, object]] = {}
     created: list[str] = []
     for link_name, suffix in (("panda_leftfinger", "leftfinger"), ("panda_rightfinger", "rightfinger")):
@@ -1371,8 +1665,11 @@ def _add_franka_kinematic_contact_proxies(
             prim_path=proxy_path,
             spawn=sim_utils.CuboidCfg(
                 size=local_size,
-                visible=False,
-                collision_props=sim_utils.CollisionPropertiesCfg(),
+                visible=visible,
+                collision_props=sim_utils.CollisionPropertiesCfg(
+                    contact_offset=contact_offset,
+                    rest_offset=rest_offset,
+                ),
                 rigid_props=sim_utils.RigidBodyPropertiesCfg(
                     rigid_body_enabled=True,
                     kinematic_enabled=True,
@@ -1397,9 +1694,12 @@ def _add_franka_kinematic_contact_proxies(
         "created": created,
         "count": len(created),
         "followers": followers,
-        "shape": "invisible kinematic box per Franka finger body",
+        "shape": "kinematic box per Franka finger body",
+        "visible": bool(visible),
         "local_center": list(local_center),
         "local_size": list(local_size),
+        "contact_offset": None if contact_offset is None else float(contact_offset),
+        "rest_offset": None if rest_offset is None else float(rest_offset),
     }
 
 
@@ -1517,6 +1817,8 @@ def _add_mesh(
     collision: bool = False,
     approximation: str = "none",
     visible: bool = True,
+    contact_offset: float | None = None,
+    rest_offset: float | None = None,
 ) -> Usd.Prim:
     mesh = UsdGeom.Mesh.Define(stage, path)
     mesh.CreatePointsAttr(points)
@@ -1538,7 +1840,7 @@ def _add_mesh(
     if not visible:
         UsdGeom.Imageable(prim).MakeInvisible()
     if collision:
-        _apply_collision(prim, approximation=approximation)
+        _apply_collision(prim, approximation=approximation, contact_offset=contact_offset, rest_offset=rest_offset)
     return prim
 
 
@@ -1600,6 +1902,8 @@ def _add_extruded_polygon_mesh(
     collision: bool = False,
     approximation: str = "none",
     visible: bool = True,
+    contact_offset: float | None = None,
+    rest_offset: float | None = None,
 ) -> Usd.Prim:
     points, counts, indices = _extruded_polygon_mesh_data(vertices, thickness, fan_center=fan_center)
     return _add_mesh(
@@ -1612,6 +1916,8 @@ def _add_extruded_polygon_mesh(
         collision=collision,
         approximation=approximation,
         visible=visible,
+        contact_offset=contact_offset,
+        rest_offset=rest_offset,
     )
 
 
@@ -1747,11 +2053,24 @@ def _create_star_object(
     visual_mat: UsdShade.Material,
     collision_mat: UsdShade.Material,
     dynamic: bool,
+    visual_visible: bool,
+    collision_visible: bool,
+    collision_contact_offset: float | None,
+    collision_rest_offset: float | None,
+    max_depenetration_velocity: float | None,
+    solver_position_iterations: int | None,
+    solver_velocity_iterations: int | None,
 ) -> dict[str, object]:
     root = UsdGeom.Xform.Define(stage, root_path).GetPrim()
     _set_xform(root, center, rotate_xyz_deg=(0.0, 0.0, float(yaw_deg)))
     if dynamic:
-        _make_rigid_body(root, density=520.0)
+        _make_rigid_body(
+            root,
+            density=520.0,
+            max_depenetration_velocity=max_depenetration_velocity,
+            solver_position_iterations=solver_position_iterations,
+            solver_velocity_iterations=solver_velocity_iterations,
+        )
 
     vertices = _star_vertices(outer_radius, inner_radius)
     _add_extruded_polygon_mesh(
@@ -1762,6 +2081,7 @@ def _create_star_object(
         visual_mat,
         fan_center=(0.0, 0.0),
         collision=False,
+        visible=visual_visible,
     )
 
     for idx in range(len(vertices)):
@@ -1775,7 +2095,9 @@ def _create_star_object(
             fan_center=None,
             collision=True,
             approximation="convexHull",
-            visible=False,
+            visible=collision_visible,
+            contact_offset=collision_contact_offset,
+            rest_offset=collision_rest_offset,
         )
 
     return {
@@ -1786,8 +2108,23 @@ def _create_star_object(
         "inner_radius": float(inner_radius),
         "thickness": float(thickness),
         "dynamic": bool(dynamic),
+        "visual_visible": bool(visual_visible),
         "collision_pieces": len(vertices),
         "collision_model": "ten convex triangular-prism child colliders under one rigid body",
+        "collision_visible": bool(collision_visible),
+        "collision_debug_visuals": 0,
+        "collision_debug_visual_margin": 0.0,
+        "collision_contact_offset": None if collision_contact_offset is None else float(collision_contact_offset),
+        "collision_rest_offset": None if collision_rest_offset is None else float(collision_rest_offset),
+        "max_depenetration_velocity": None
+        if max_depenetration_velocity is None
+        else float(max_depenetration_velocity),
+        "solver_position_iterations": None
+        if solver_position_iterations is None
+        else int(solver_position_iterations),
+        "solver_velocity_iterations": None
+        if solver_velocity_iterations is None
+        else int(solver_velocity_iterations),
     }
 
 
@@ -2523,6 +2860,7 @@ def _settle_scene(
     robot_articulation: Articulation | None,
     star_rigid_object: RigidObject | None = None,
     contact_proxy_followers: dict[str, object] | None = None,
+    contact_debug_overlays: dict[str, object] | None = None,
 ) -> bool:
     _log("resetting SimulationContext for scene initialization")
     sim.reset()
@@ -2531,6 +2869,7 @@ def _settle_scene(
         star_rigid_object.update(float(sim.cfg.dt))
     _update_franka_kinematic_contact_proxies(stage, robot_articulation, contact_proxy_followers)
     if settle_steps <= 0 or not bool(star_record.get("dynamic")):
+        _update_franka_contact_debug_visual_overlays(stage, robot_articulation, contact_debug_overlays)
         sim.render()
         update_stage()
         return False
@@ -2542,6 +2881,7 @@ def _settle_scene(
         _update_robot_articulation(robot_articulation, float(sim.cfg.dt))
         if star_rigid_object is not None:
             star_rigid_object.update(float(sim.cfg.dt))
+    _update_franka_contact_debug_visual_overlays(stage, robot_articulation, contact_debug_overlays)
     sim.render()
     update_stage()
     _bake_root_transform(stage, str(star_record["prim_path"]), star_record)
@@ -2693,6 +3033,7 @@ def _capture_overview_video(
     object_prim_path: str | None = None,
     object_rigid_object: RigidObject | None = None,
     contact_proxy_followers: dict[str, object] | None = None,
+    contact_debug_overlays: dict[str, object] | None = None,
     grasp_constraint_state: dict[str, object] | None = None,
 ) -> list[str]:
     frame_count = max(2, int(round(float(fps) * float(seconds))))
@@ -2786,6 +3127,11 @@ def _capture_overview_video(
             motion_record = _robot_motion_record(robot_articulation, frame_idx, frame_count, last_robot_target)
             if motion_record is not None:
                 robot_motion_trace.append(motion_record)
+        _update_franka_contact_debug_visual_overlays(
+            object_stage or omni.usd.get_context().get_stage(),
+            robot_articulation,
+            contact_debug_overlays,
+        )
         sim.render()
         camera.update(float(sim.cfg.dt) * step_count)
         if object_motion_trace is not None and object_stage is not None and object_prim_path is not None:
@@ -3055,6 +3401,31 @@ def main() -> None:
     output_dir = args_cli.output_dir.expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     _log(f"output_dir={output_dir}")
+    if float(args_cli.physics_dt) <= 0.0:
+        raise ValueError("--physics_dt must be positive")
+    if int(args_cli.franka_solver_position_iterations) <= 0:
+        raise ValueError("--franka_solver_position_iterations must be positive")
+    if int(args_cli.franka_solver_velocity_iterations) < 0:
+        raise ValueError("--franka_solver_velocity_iterations must be non-negative")
+    proxy_center = tuple(float(v) for v in args_cli.franka_contact_proxy_center)
+    proxy_size = tuple(float(v) for v in args_cli.franka_contact_proxy_size)
+    if any(v <= 0.0 for v in proxy_size):
+        raise ValueError("--franka_contact_proxy_size entries must be positive")
+    contact_debug_opacity = max(0.0, min(1.0, float(args_cli.contact_debug_opacity)))
+    contact_debug_enabled = bool(args_cli.show_contact_debug)
+    show_franka_contact_proxies = contact_debug_enabled or bool(args_cli.show_franka_contact_proxies)
+    show_star_collision = contact_debug_enabled or bool(args_cli.show_star_collision)
+    collision_rest_offset = (
+        None if args_cli.collision_rest_offset is None else float(args_cli.collision_rest_offset)
+    )
+    franka_proxy_contact_offset = (
+        None
+        if args_cli.franka_contact_proxy_contact_offset is None
+        else float(args_cli.franka_contact_proxy_contact_offset)
+    )
+    star_collision_contact_offset = (
+        None if args_cli.star_collision_contact_offset is None else float(args_cli.star_collision_contact_offset)
+    )
 
     _log("resolving robot")
     robot_spec = _resolve_robot(output_dir)
@@ -3081,9 +3452,29 @@ def main() -> None:
     table_mat = _material(stage, "/World/Looks/table_matte", (0.54, 0.50, 0.44))
     leg_mat = _material(stage, "/World/Looks/table_dark", (0.20, 0.22, 0.24))
     floor_mat = _material(stage, "/World/Looks/floor_gray", (0.28, 0.30, 0.31))
-    star_mat = _material(stage, "/World/Looks/star_yellow", (0.95, 0.70, 0.16), roughness=0.55)
+    star_mat = _material(
+        stage,
+        "/World/Looks/star_yellow",
+        (0.95, 0.70, 0.16),
+        roughness=0.55,
+        opacity=0.45 if show_star_collision else 1.0,
+    )
     cube_mat = _material(stage, "/World/Looks/cube_blue", (0.10, 0.42, 0.86), roughness=0.62)
     collision_mat = _material(stage, "/World/Looks/collision_hidden", (0.95, 0.70, 0.16), roughness=0.55)
+    proxy_debug_mat = _material(
+        stage,
+        "/World/Looks/contact_proxy_debug_red",
+        (1.0, 0.08, 0.04),
+        roughness=0.45,
+        opacity=contact_debug_opacity,
+    )
+    star_collision_debug_mat = _material(
+        stage,
+        "/World/Looks/star_collision_debug_cyan",
+        (0.05, 0.82, 1.0),
+        roughness=0.45,
+        opacity=contact_debug_opacity,
+    )
     fixture_mat = _material(stage, "/World/Looks/fixture_graphite", (0.16, 0.18, 0.19), roughness=0.47)
     grasp_x_mat = _material(stage, "/World/Looks/grasp_axis_x", (0.86, 0.10, 0.10), roughness=0.45)
     grasp_y_mat = _material(stage, "/World/Looks/grasp_axis_y", (0.12, 0.62, 0.18), roughness=0.45)
@@ -3108,15 +3499,38 @@ def main() -> None:
     franka_kinematic_contact_proxies: dict[str, object] | None = None
     if robot_spec.name == "graspgenx_franka_panda" and robot_spec.render_mode == "articulation_usd":
         if str(args_cli.franka_contact_proxy_mode) in ("articulation", "kinematic"):
-            franka_articulation_contact_proxies = _add_franka_finger_collision_proxies(stage, collision_mat)
+            franka_articulation_contact_proxies = _add_franka_finger_collision_proxies(
+                stage,
+                collision_mat,
+                visible=False,
+                local_center=proxy_center,
+                local_size=proxy_size,
+                contact_offset=franka_proxy_contact_offset,
+                rest_offset=collision_rest_offset,
+            )
         if str(args_cli.franka_contact_proxy_mode) == "kinematic":
-            franka_kinematic_contact_proxies = _add_franka_kinematic_contact_proxies(stage, collision_mat)
+            franka_kinematic_contact_proxies = _add_franka_kinematic_contact_proxies(
+                stage,
+                collision_mat,
+                visible=False,
+                local_center=proxy_center,
+                local_size=proxy_size,
+                contact_offset=franka_proxy_contact_offset,
+                rest_offset=collision_rest_offset,
+            )
         update_stage()
     franka_contact_proxies: dict[str, object] = {
         "mode": str(args_cli.franka_contact_proxy_mode),
         "articulation_child": franka_articulation_contact_proxies,
         "kinematic_followers": franka_kinematic_contact_proxies,
     }
+    franka_contact_debug_visual_overlays = _add_franka_contact_debug_visual_overlays(
+        stage,
+        proxy_debug_mat,
+        visible=show_franka_contact_proxies,
+        local_center=proxy_center,
+        local_size=proxy_size,
+    )
     if args_cli.franka_motion == "trajectory" and robot_articulation is None:
         raise ValueError("--franka_motion trajectory requires --franka_render_mode articulation_usd")
     if (
@@ -3198,8 +3612,27 @@ def main() -> None:
         inner_radius=star_inner_radius,
         thickness=star_thickness,
         visual_mat=star_mat,
-        collision_mat=collision_mat,
+        collision_mat=star_collision_debug_mat if show_star_collision else collision_mat,
         dynamic=bool(args_cli.dynamic_star),
+        visual_visible=True,
+        collision_visible=show_star_collision,
+        collision_contact_offset=star_collision_contact_offset,
+        collision_rest_offset=collision_rest_offset,
+        max_depenetration_velocity=(
+            None
+            if args_cli.star_max_depenetration_velocity is None
+            else float(args_cli.star_max_depenetration_velocity)
+        ),
+        solver_position_iterations=(
+            None
+            if args_cli.star_solver_position_iterations is None
+            else int(args_cli.star_solver_position_iterations)
+        ),
+        solver_velocity_iterations=(
+            None
+            if args_cli.star_solver_velocity_iterations is None
+            else int(args_cli.star_solver_velocity_iterations)
+        ),
     )
     star_rigid_object = (
         RigidObject(RigidObjectCfg(prim_path=str(star["prim_path"]))) if bool(star.get("dynamic")) else None
@@ -3254,6 +3687,7 @@ def main() -> None:
         robot_articulation,
         star_rigid_object=star_rigid_object,
         contact_proxy_followers=franka_kinematic_contact_proxies,
+        contact_debug_overlays=franka_contact_debug_visual_overlays,
     )
     trajectory_drives_star = (
         trajectory_data is not None and str(args_cli.franka_trajectory_object_mode) == "trajectory"
@@ -3279,6 +3713,18 @@ def main() -> None:
         "requires_dynamic_star": True,
         "requires_target_playback": True,
     }
+    contact_debug_metadata = {
+        "show_contact_debug": contact_debug_enabled,
+        "show_franka_contact_proxies": show_franka_contact_proxies,
+        "show_star_collision": show_star_collision,
+        "opacity": contact_debug_opacity,
+        "franka_contact_proxy_center": [float(v) for v in proxy_center],
+        "franka_contact_proxy_size": [float(v) for v in proxy_size],
+        "franka_contact_proxy_contact_offset": franka_proxy_contact_offset,
+        "star_collision_contact_offset": star_collision_contact_offset,
+        "collision_rest_offset": collision_rest_offset,
+        "franka_visual_overlays": _contact_proxy_metadata(franka_contact_debug_visual_overlays),
+    }
     metadata = {
         "generated_at_unix": time.time(),
         "task": "star_kitting",
@@ -3289,6 +3735,7 @@ def main() -> None:
         "robot_collision_summary": robot_collision_summary,
         "franka_contact_proxies": _contact_proxy_metadata(franka_contact_proxies),
         "franka_grasp_constraint": _contact_proxy_metadata(grasp_constraint_state),
+        "contact_debug": contact_debug_metadata,
         "grasp_candidate_markers": grasp_candidate_markers,
         "robot_usd": str(robot_spec.usd_path) if robot_spec.usd_path else None,
         "robot_motion": {
@@ -3333,11 +3780,19 @@ def main() -> None:
         "simulation": {
             "simulation_context_created_before_scene_assets": True,
             "physics_device": str(args_cli.physics_device),
-            "sim_dt": 1.0 / 60.0,
+            "sim_dt": float(args_cli.physics_dt),
             "render_interval": 1,
             "default_static_friction": 1.0,
             "default_dynamic_friction": 1.0,
             "physx_bounce_threshold_velocity": 0.2,
+            "physx_min_velocity_iteration_count": (
+                max(0, int(args_cli.franka_solver_velocity_iterations))
+                if int(args_cli.franka_solver_velocity_iterations) > 0
+                else None
+            ),
+            "franka_max_depenetration_velocity": float(args_cli.franka_max_depenetration_velocity),
+            "franka_solver_position_iterations": max(1, int(args_cli.franka_solver_position_iterations)),
+            "franka_solver_velocity_iterations": max(0, int(args_cli.franka_solver_velocity_iterations)),
         },
         "checks": {
             "robot_selected": robot_spec.name,
@@ -3421,6 +3876,7 @@ def main() -> None:
             "franka_trajectory_object_mode": str(args_cli.franka_trajectory_object_mode),
             "show_grasp_candidates": bool(args_cli.show_grasp_candidates),
             "grasp_candidate_markers": grasp_candidate_markers,
+            "contact_debug": contact_debug_metadata,
             "franka_trajectory_json": str(args_cli.franka_trajectory_json.expanduser().resolve())
             if args_cli.franka_trajectory_json is not None
             else None,
@@ -3445,6 +3901,7 @@ def main() -> None:
             object_prim_path=str(star["prim_path"]),
             object_rigid_object=star_rigid_object,
             contact_proxy_followers=franka_kinematic_contact_proxies,
+            contact_debug_overlays=franka_contact_debug_visual_overlays,
             grasp_constraint_state=grasp_constraint_state,
         )
         rendered = {"overview_frames": frame_paths}
@@ -3501,6 +3958,7 @@ def main() -> None:
             else None,
             "show_grasp_candidates": bool(args_cli.show_grasp_candidates),
             "grasp_candidate_markers": grasp_candidate_markers,
+            "contact_debug": contact_debug_metadata,
             "franka_grasp_constraint": _contact_proxy_metadata(grasp_constraint_state),
             "star_motion_trajectory": str(star_motion_path),
             "robot_motion_trajectory": str(robot_motion_path),

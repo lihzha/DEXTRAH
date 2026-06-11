@@ -449,3 +449,81 @@ Analysis:
 
 Next:
 - Final validation, commit the default alignment, push the branch, and report the new small-star artifacts.
+
+## 2026-06-11T08:04:28Z - Contact debug and solver-tuned diagnostic
+
+Goal:
+- Make the gripper/star contact geometry visible and test whether smaller timestep, solver velocity iterations, contact offsets, and capped depenetration reduce the apparent penetration-then-jump behavior.
+
+Hypothesis:
+- The weird contact is an Isaac Sim/PhysX collision/proxy artifact, not the old GraspGenX gripper mesh issue. Showing the Franka proxy boxes and star convex hulls should reveal the mismatch, while 240 Hz physics and lower depenetration velocity should reduce the abrupt lateral jump.
+
+Change:
+- Added contact-debug CLI flags for visible Franka proxy boxes and star convex collision pieces.
+- Added tunable contact offsets, rest offset, physics dt, Franka solver iterations/depenetration, and star solver iterations/depenetration.
+- Recorded these settings in scene metadata and render manifests.
+
+Version Control:
+- agent_id: franka-ggx-curobo-local-20260610T234641Z-86074
+- worktree: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-ggx-curobo-local-20260610T234641Z-86074
+- branch: codex/franka-graspgenx-curobo-demo/franka-ggx-curobo-local-20260610T234641Z-86074
+- base_commit: 855513179527f98de98e669730dee2168c557933
+- implementation_commit: pending
+- changed_files: dextrah_lab/scene_scripts/render_star_kitting_env.py, worklogs/franka-graspgenx-curobo-demo/franka-ggx-curobo-local-20260610T234641Z-86074.md
+
+Command / Job:
+- validation: `python3 -m py_compile dextrah_lab/scene_scripts/render_star_kitting_env.py dextrah_lab/scene_scripts/plan_franka_star_graspgenx_curobo.py`
+- validation: `bash -n cluster/sbatch_render_star_kitting_env.sh`
+- validation: `bash -n cluster/sbatch_plan_franka_star_graspgenx_curobo.sh`
+- validation: `git diff --check`
+- planned render: local Docker Isaac Lab/Isaac Sim on GPU0, small-star trajectory `planner_assets_verify_20260611T005550Z/trajectory.json`, `--show_contact_debug`, `--physics_dt 0.0041666667`, `--sim_steps_per_frame 20`, contact offsets `0.003`, rest offset `0.0`, Franka/star solver velocity iterations `4`, max depenetration `1.5`.
+
+Result:
+- status: in progress
+
+Next:
+- Render, encode overview/zoom, inspect overlay and motion traces, then decide whether a smaller proxy shape is needed.
+
+## 2026-06-11T08:39:20Z - Franka/star contact diagnosis
+
+Result:
+- status: diagnosed; no default proxy change committed yet
+- original_raw_run: render_small_star_raw_physics_all40_gpu0_20260611T074748Z
+- current_raw_control_run: render_current_raw_control_gpu0_20260611T083053Z
+- tuned_proxy_run: render_proxy_shape_tuned_raw_gpu0_20260611T083752Z
+- tuned_proxy_zoom: /home/lzha/code/local_results/franka_ggx_curobo_demo/franka-ggx-curobo-local-20260610T234641Z-86074/render/render_proxy_shape_tuned_raw_gpu0_20260611T083752Z/overview_pickup_crop.mp4
+- tuned_proxy_contact_sheet: /home/lzha/code/local_results/franka_ggx_curobo_demo/franka-ggx-curobo-local-20260610T234641Z-86074/render/render_proxy_shape_tuned_raw_gpu0_20260611T083752Z/contact_sheet_pickup_crop.png
+
+Metrics:
+- original raw proxy: local center `[0, 0, 0.030]`, size `[0.020, 0.012, 0.050]`; star max z lift `0.000758 m`, max xy displacement `0.032155 m`.
+- current-code raw control with no debug flags exactly matched original raw metrics, confirming defaults remain safe after conditional PhysX patches.
+- frame-level geometry audit showed the original hidden Franka proxy bottom at z `0.767-0.768 m` while the star top is z `0.786-0.789 m`, so the proxy is already `~0.019-0.021 m` inside the star volume during closure.
+- tuned proxy candidate `[center z=0.020, size z=0.030]` reduced the visual top-intersection pattern but changed the behavior into a lift: star max z lift `0.061107 m`, max xy displacement `0.019303 m`.
+
+Analysis:
+- The contact artifact is not caused by the old GraspGenX gripper mesh; the Isaac render uses the Franka USD plus DEXTRAH-authored hidden contact proxy boxes.
+- The weird "penetrate then jump" is caused by a mismatch between the visible finger mesh and the hidden Franka contact proxy geometry, combined with the selected top-down grasp. PhysX resolves the overlap once the proxy collides with the star.
+- Live USD visual proxy followers perturb the same physics run when updated into the stage, even when authored as non-colliding. They are useful for screenshots only if replayed out-of-band, not for faithful dynamic evaluation.
+- Shrinking/raising the proxy is a candidate geometry fix, but it changes the task outcome and should not be treated as a neutral debug-only change.
+
+Next:
+- Either keep the current raw failure as the faithful demo result, or explicitly choose a better Franka fingertip collision proxy after visual/geometry calibration and rerun the full pipeline.
+
+## 2026-06-11T08:40:05Z - Orchestrator handoff commit prep
+
+Result:
+- status: ready for orchestrator merge review
+- branch: codex/franka-graspgenx-curobo-demo/franka-ggx-curobo-local-20260610T234641Z-86074
+- changed_files: dextrah_lab/scene_scripts/render_star_kitting_env.py, worklogs/franka-graspgenx-curobo-demo/franka-ggx-curobo-local-20260610T234641Z-86074.md
+- active_jobs: none; no active Docker/Isaac render jobs remained at handoff check
+
+Validation:
+- `python3 -m py_compile dextrah_lab/scene_scripts/render_star_kitting_env.py dextrah_lab/scene_scripts/plan_franka_star_graspgenx_curobo.py`
+- `bash -n cluster/sbatch_render_star_kitting_env.sh`
+- `bash -n cluster/sbatch_plan_franka_star_graspgenx_curobo.sh`
+- `git diff --check`
+
+Handoff Notes:
+- The current branch preserves the raw render default behavior; the current-code no-debug control run matched `render_small_star_raw_physics_all40_gpu0_20260611T074748Z` exactly on star motion metrics.
+- The contact issue is diagnosed as hidden Franka contact proxy geometry mismatch, not GraspGenX gripper mesh.
+- Smaller proxy geometry is documented as a candidate but not made default because it changes the physical outcome into a lift.
