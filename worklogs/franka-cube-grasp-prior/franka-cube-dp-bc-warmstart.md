@@ -3860,3 +3860,240 @@ Acceptance:
   positive, the issue is reset/robot timing or the converted planned trajectory
   is not closed-loop executable from the actual Franka state.
 - No BC/RL scale-up until one of those is resolved.
+
+## 2026-06-11T16:40:00-07:00 - demo-reset fixed-label replay launch
+
+Goal:
+- Test robot/demo alignment with a bounded no-learning replay from the selected
+  demo window, after applying the same demo-conditioned cube reset as job
+  `1027773`.
+
+Hypothesis:
+- If selected demo labels from episode `24`, step `0` reproduce approach and
+  contact from the demo-conditioned reset, then the action labels/controller are
+  executable and the failing DP eval is learned closed-loop support drift or
+  policy/history semantics.
+- If selected demo labels still stall or close/lift away from contact, then the
+  converted cuRobo/planned labels are not closed-loop executable from the live
+  Franka reset even after object alignment; root cause shifts toward robot
+  state/timing/reset mismatch or dataset trajectory semantics.
+
+Change:
+- Added `dextrah_lab/offline_dp_bc/make_closed_loop_support_report.py` for
+  reusable fetched eval reports.
+- Extended `dextrah_lab/rl_games/replay_franka_cube_dataset_actions.py` with
+  demo-conditioned cube reset plus fixed dataset-start row/episode support.
+- Extended `cluster/sbatch_replay_franka_cube_dp_actions_1gpu.sh` with
+  `DEMO_RESET_*` and `DATASET_START_*` environment variables.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- implementation_commit: `1425add15ce877a1897e1da5a70e636fc16d1f2a`
+- push/pull:
+  - pushed to `origin/codex/franka-cube-diffusion-policy-bc`
+  - l401 GitHub fetch still failed with `Permission denied (publickey)`;
+    deployed the exact commit through Git bundle
+    `franka-cube-dp-bc-warmstart-1425add.bundle`.
+- remote worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- remote_commit/status:
+  `1425add15ce877a1897e1da5a70e636fc16d1f2a`, detached clean.
+- official Diffusion Policy commit:
+  `5ba07ac6661db573af695b419a7947ecb704690f`
+
+Validation:
+- `python3 -m py_compile dextrah_lab/offline_dp_bc/make_closed_loop_support_report.py dextrah_lab/rl_games/replay_franka_cube_dataset_actions.py dextrah_lab/rl_games/eval_franka_cube_dp_policy.py`
+- `bash -n cluster/sbatch_replay_franka_cube_dp_actions_1gpu.sh cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- `git diff --check`
+
+Command / Job:
+- job_id: `1027792`
+- run_name:
+  `franka_cube_dp_replay_demoreset_ep24s0_fixedlabels320_20260611_164000`
+- command:
+  `RUN_NAME=franka_cube_dp_replay_demoreset_ep24s0_fixedlabels320_20260611_164000 CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart DATASET=/results/dp_bc/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz CHECKPOINT=/results/dp_bc/checkpoints/franka_cube_curobo32_full_pick_lift_framefix_overfit2k/latest.ckpt DEMO_RESET_DATASET=/results/dp_bc/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz DEMO_RESET_EPISODE=24 DEMO_RESET_STEP=0 DATASET_START_EPISODE=24 DATASET_START_STEP=0 NUM_ENVS=1 STEPS=320 NUM_INFERENCE_STEPS=100 MODES=dataset_open_t_plus_7,dataset_t,dp_replan PRINT_INTERVAL=32 CAPTURE_VIDEO=True VIDEO_LENGTH=320 VIDEO_NAME_PREFIX=franka-cube-dp-replay-demoreset-fixedlabels SEED=42 sbatch cluster/sbatch_replay_franka_cube_dp_actions_1gpu.sh`
+- remote run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/replays/franka_cube_dp_replay_demoreset_ep24s0_fixedlabels320_20260611_164000`
+- remote log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/replay_franka_cube_dp_actions_1027792.out`
+
+Expected artifacts:
+- `replay_summary.json`
+- `replay_steps.csv`
+- `replay_report.md`
+- `replay_motion.png`
+- `videos/*.mp4` for the first replay mode
+
+Next:
+- Monitor job `1027792`, fetch artifacts/logs, create a contact sheet and
+  viz-open URLs, then record whether selected demo labels are executable from
+  the matched object reset.
+
+## 2026-06-11T16:58:00-07:00 - demo-reset fixed-label replay result and joint-reset plan
+
+Goal:
+- Close out job `1027792` with fetched artifacts and move to the next bounded
+  robot-state/dataset-semantics diagnostic.
+
+Result:
+- status: failed behavior / useful diagnostic.
+- job `1027792` completed `0:0`.
+- run:
+  `franka_cube_dp_replay_demoreset_ep24s0_fixedlabels320_20260611_164000`
+- local run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_demoreset_ep24s0_fixedlabels320_20260611_164000`
+- local log:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_logs/l401/replay_franka_cube_dp_actions_1027792.out`
+- viewer URLs:
+  - report: `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_demoreset_ep24s0_fixedlabels320_20260611_164000/replay_report.md`
+  - plot: `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_demoreset_ep24s0_fixedlabels320_20260611_164000/replay_motion.png`
+  - contact sheet: `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_demoreset_ep24s0_fixedlabels320_20260611_164000/replay_contact_sheet.jpg`
+  - video: `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_demoreset_ep24s0_fixedlabels320_20260611_164000/videos/franka-cube-dp-replay-demoreset-fixedlabels-step-0.mp4`
+- demo reset:
+  - cube pose exactly matched episode `24`, step `0`
+    (`cube_pos_l2_diff_env0=0`).
+  - compact lowdim mismatch was small but nonzero
+    (`cube_minus_ee_l2_diff_env0=0.0108979`,
+    `lowdim_linf_diff_env0=0.0099964`).
+  - `exact_robot_joint_reset_available=false` in the current lowdim NPZ, so
+    the robot stayed at the task reset.
+- mode summaries:
+  - `dataset_open_t_plus_7`: final/min EE-cube `0.1861/0.1856 m`,
+    final/min finger-center-cube `0.1757/0.1757 m`, gripper held open,
+    nearest-live phase remained `go_to_pre_grasp_pose`, nearest distance
+    `0.166 -> 0.257`, mean direction cosine `0.9735`.
+  - `dataset_t`: final/min EE-cube `0.1848/0.1843 m`,
+    final/min finger-center-cube `0.1746/0.1746 m`, first negative/hard close
+    at steps `297/310`, nearest-live phase remained `go_to_pre_grasp_pose`,
+    nearest distance `0.166 -> 0.597`, mean direction cosine `0.9706`.
+  - `dp_replan`: final/min EE-cube `0.1323/0.1314 m`,
+    final/min finger-center-cube `0.1619/0.1555 m`, first negative/hard close
+    at steps `234/248`, nearest-live phase remained `go_to_pre_grasp_pose`,
+    nearest distance `0.166 -> 0.968`, mean direction cosine `0.9083`.
+
+Analysis:
+- Object reset alone is not enough. Even fixed dataset labels selected from
+  the same episode step do not reach contact from the live robot reset.
+- The high expected-vs-actual motion direction cosines mean the DEXTRAH
+  controller is broadly following the sign/frame of the executed labels at this
+  reset. The remaining mismatch is not simply an action sign flip.
+- The selected episode's first action is near zero because episode step `0`
+  in the converted trajectory is a cuRobo task-space frame already at the
+  source trajectory start, not necessarily the live Isaac task reset. Replaying
+  it from the task reset therefore tests the wrong robot state.
+- Raw source recovery is feasible: metadata maps episode `24` to
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/curobo_plans/cube_curobo_scale32_20260611_125957_seed24/trajectory.json`,
+  and that file contains frame-by-frame `joint_position` with 8 values.
+  The converted DP NPZ only stores `obs`, `action`, `episode_ends`, and
+  `phase_ids`, so joint state must be recovered from the source trajectory or
+  added to future converted datasets.
+
+Change Plan:
+- Extend `dextrah_lab/rl_games/replay_franka_cube_dataset_actions.py` with an
+  optional raw trajectory source reset:
+  `--demo_reset_trajectory_json <trajectory.json>`.
+- When supplied, load the selected frame's `joint_position` and reset the
+  Franka articulation joints, position targets, IK controller state, and
+  object pose before replay. Report lowdim, cube-minus-EE, joint, and gripper
+  mismatch after reset.
+- Keep the existing lowdim demo reset as a fallback and keep no-learning replay
+  modes unchanged.
+- Add a small offline action-semantics audit artifact for the selected episode
+  that reports action schema, phase windows, near-zero/clip rates, t->t+1
+  action reconstruction error, and the frame/source metadata.
+
+Validation / Launch Plan:
+- Local checks:
+  `python3 -m py_compile dextrah_lab/rl_games/replay_franka_cube_dataset_actions.py`
+- Wrapper check:
+  `bash -n cluster/sbatch_replay_franka_cube_dp_actions_1gpu.sh`
+- Commit/push/deploy exact commit to the agent-owned l401 worktree.
+- Launch a bounded one-env replay with:
+  - `DEMO_RESET_TRAJECTORY_JSON=/home/lzha/code/.codex-external/.../seed24/trajectory.json`
+    mapped to the cluster-visible `/results/.../seed24/trajectory.json`
+  - `DEMO_RESET_EPISODE=24`, `DEMO_RESET_STEP=0`
+  - `DATASET_START_EPISODE=24`, `DATASET_START_STEP=0`
+  - modes `dataset_open_t_plus_7,dataset_t,dp_replan`
+  - `STEPS=320`, `NUM_ENVS=1`, `CAPTURE_VIDEO=True`, `SEED=42`.
+
+Acceptance:
+- If exact source-joint reset makes fixed labels reach approach/contact, the
+  immediate blocker is robot-state/demo reset alignment and future DP data must
+  include reproducible robot initial states or an env reset/settle wrapper.
+- If exact source-joint reset still stalls far from contact, the next suspect is
+  trajectory/action label semantics: cuRobo waypoints may not be one-step
+  executable by the DEXTRAH relative-IK controller at the policy control rate,
+  or the replay is applying the wrong temporal offset.
+- No BC/RL scale-up until this is resolved.
+
+## 2026-06-11T17:09:00-07:00 - source-joint reset implementation and action audit
+
+Goal:
+- Implement the exact source-joint reset replay diagnostic requested after job
+  `1027792`, and produce an offline action-semantics audit before launching
+  the next bounded cluster replay.
+
+Hypothesis:
+- The previous replay failed because the cube matched the demo but the robot
+  remained at the task reset. If we reset Franka arm/finger state from the raw
+  cuRobo source trajectory, fixed demo labels should become a fair test of
+  whether planned labels reach approach/contact.
+
+Change:
+- `dextrah_lab/rl_games/replay_franka_cube_dataset_actions.py`
+  - added `--demo_reset_trajectory_json`.
+  - loads selected raw source frame `joint_position`.
+  - maps 8D raw Franka state as 7 arm joints plus one finger joint repeated
+    onto both Isaac finger joints.
+  - writes joint state/targets, resets IK controller, then writes cube
+    pose/goal and reports post-reset lowdim/joint mismatch.
+- `cluster/sbatch_replay_franka_cube_dp_actions_1gpu.sh`
+  - added `DEMO_RESET_TRAJECTORY_JSON` path handling, validation, logging, and
+    CLI forwarding.
+- `dextrah_lab/offline_dp_bc/audit_dataset_action_semantics.py`
+  - added a reusable offline audit for selected converted lowdim episodes.
+  - reports source frame metadata, action convention, phase windows,
+    near-zero/clip rates, and action t-to-t+1 reconstruction error.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/offline_dp_bc/audit_dataset_action_semantics.py dextrah_lab/rl_games/replay_franka_cube_dataset_actions.py dextrah_lab/rl_games/eval_franka_cube_dp_policy.py`
+- `bash -n cluster/sbatch_replay_franka_cube_dp_actions_1gpu.sh cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- `git diff --check`
+
+Action-semantics audit:
+- command:
+  `PYTHONPATH=/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/venv/bin/python -m dextrah_lab.offline_dp_bc.audit_dataset_action_semantics --dataset /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz --episode 24 --selected_step 0 --source_trajectory_json /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/curobo_plans/cube_curobo_scale32_20260611_125957_seed24/trajectory.json --output_dir /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/dataset_action_semantics_ep24_step0_20260611_170900`
+- output_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/dataset_action_semantics_ep24_step0_20260611_170900`
+- viewer URLs:
+  - report: `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/dataset_action_semantics_ep24_step0_20260611_170900/dataset_action_semantics_report.md`
+  - plot: `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/dataset_action_semantics_ep24_step0_20260611_170900/dataset_action_semantics.png`
+- key evidence:
+  - selected episode `24`, step `0`, phase `go_to_pre_grasp_pose`.
+  - selected action:
+    `[0, 0, 0, 1.16e-7, -3.58e-13, -1.74e-7, 1]`.
+  - raw source frame `0` has `joint_position_dim=8`.
+  - pose-action near-zero rate across episode: `0.4972`; clipped pose-action
+    rate: `0.0`.
+  - one-step reconstruction error is numerical precision only:
+    position mean/max `8.63e-12 / 4.66e-10`, rotation mean/max
+    `2.12e-11 / 9.88e-10`.
+  - first negative/hard-close gripper label steps: `297/310`.
+
+Analysis:
+- Converted labels are normalized relative DEXTRAH actions:
+  action `t` reconstructs dataset pose `t+1` under
+  `apply_normalized_action_to_world_pose`. They are not absolute target poses.
+- The near-zero first label is explained by identical or near-identical source
+  waypoints at the trajectory start. Replaying that label from task reset holds
+  the task reset state, which invalidates `1027792` as a fixed-label robot
+  execution test.
+- The exact source-joint reset cluster replay is now the right bounded test of
+  whether fixed labels reach approach/contact from a matched robot state.
+
+Next:
+- Commit/push this implementation and worklog.
+- Deploy the exact commit to l401.
+- Launch the bounded source-joint replay with episode `24`, step `0`, modes
+  `dataset_open_t_plus_7,dataset_t,dp_replan`, 320 steps, one env, video on.

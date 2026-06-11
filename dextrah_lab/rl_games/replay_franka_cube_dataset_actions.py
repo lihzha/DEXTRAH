@@ -62,6 +62,15 @@ parser.add_argument(
     default=None,
     help="Optional converted lowdim NPZ dataset used to overwrite reset cube pose from a selected demo row.",
 )
+parser.add_argument(
+    "--demo_reset_trajectory_json",
+    type=str,
+    default=None,
+    help=(
+        "Optional raw GraspGenX/cuRobo trajectory.json for the selected demo episode. "
+        "When present, the selected frame's joint_position is also written into the Franka env."
+    ),
+)
 parser.add_argument("--demo_reset_episode", type=int, default=0)
 parser.add_argument("--demo_reset_step", type=int, default=0)
 parser.add_argument(
@@ -164,7 +173,37 @@ def _phase_name_for_row(phase_ids: np.ndarray, phase_names: list[str], row_idx: 
     return str(phase_names[int(phase_ids[int(row_idx)])])
 
 
-def _demo_reset_payload(path: Path | None, episode: int, episode_step: int) -> dict[str, Any] | None:
+def _trajectory_joint_payload(path: Path | None, episode_step: int) -> dict[str, Any] | None:
+    if path is None:
+        return None
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    frames = payload.get("frames")
+    if not isinstance(frames, list) or not frames:
+        raise ValueError(f"{path} does not contain a non-empty frames list")
+    frame_idx = int(np.clip(int(episode_step), 0, len(frames) - 1))
+    frame = frames[frame_idx]
+    if "joint_position" not in frame:
+        raise ValueError(f"{path} frame {frame_idx} has no joint_position")
+    q = np.asarray(frame["joint_position"], dtype=np.float32)
+    if q.ndim != 1:
+        raise ValueError(f"{path} frame {frame_idx} joint_position must be 1D, got {q.shape}")
+    return {
+        "path": str(path),
+        "frame": int(frame_idx),
+        "phase": str(frame.get("phase", "")),
+        "joint_position": q,
+        "raw_joint_dim": int(q.shape[0]),
+        "total_frames": int(len(frames)),
+    }
+
+
+def _demo_reset_payload(
+    path: Path | None,
+    episode: int,
+    episode_step: int,
+    *,
+    trajectory_json: Path | None = None,
+) -> dict[str, Any] | None:
     if path is None:
         return None
     data = np.load(path, allow_pickle=False)
@@ -190,6 +229,7 @@ def _demo_reset_payload(path: Path | None, episode: int, episode_step: int) -> d
         "phase": _phase_name_for_row(phase_ids, phase_names, row_idx),
         "target_obs": obs[row_idx].copy(),
         "target_action": action[row_idx].copy(),
+        "source_trajectory": _trajectory_joint_payload(trajectory_json, int(row_idx - start)),
     }
 
 
@@ -199,17 +239,74 @@ def _policy_obs_from_task_env(task_env: Any) -> torch.Tensor:
     return obs_dict["policy"] if isinstance(obs_dict, dict) else obs_dict
 
 
-def _apply_demo_reset(task_env: Any, demo_reset: dict[str, Any]) -> tuple[torch.Tensor, dict[str, Any]]:
-    """Overwrite cube pose/goal from a converted demo row.
+def _reset_robot_from_source_trajectory(
+    task_env: Any,
+    env_ids: torch.Tensor,
+    source: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if source is None:
+        return {
+            "exact_robot_joint_reset_available": False,
+            "robot_reset_note": "converted lowdim NPZ has no Franka joint state; robot remains at task reset",
+        }
 
-    The converted lowdim dataset does not contain Franka joint states, so this
-    diagnostic intentionally leaves the robot at the task reset state and
-    reports the remaining lowdim mismatch after object reset.
-    """
+    num_ids = int(env_ids.numel())
+    raw_q = np.asarray(source["joint_position"], dtype=np.float32)
+    raw_q_tensor = torch.as_tensor(raw_q, dtype=torch.float32, device=task_env.device).repeat(num_ids, 1)
+    joint_pos = task_env._robot.data.default_joint_pos[env_ids].clone()
+    joint_vel = torch.zeros_like(joint_pos)
+    arm_count = len(task_env.arm_joint_ids)
+    finger_count = len(task_env.finger_joint_ids)
+
+    if raw_q_tensor.shape[1] == joint_pos.shape[1]:
+        joint_pos[:] = raw_q_tensor
+        mapping = "full_articulation"
+    elif raw_q_tensor.shape[1] == arm_count + finger_count:
+        joint_pos[:, task_env.arm_joint_ids] = raw_q_tensor[:, :arm_count]
+        joint_pos[:, task_env.finger_joint_ids] = raw_q_tensor[:, arm_count : arm_count + finger_count]
+        mapping = "arm_plus_two_fingers"
+    elif raw_q_tensor.shape[1] == arm_count + 1:
+        joint_pos[:, task_env.arm_joint_ids] = raw_q_tensor[:, :arm_count]
+        joint_pos[:, task_env.finger_joint_ids] = raw_q_tensor[:, arm_count : arm_count + 1].repeat(1, finger_count)
+        mapping = "arm_plus_single_finger_repeated"
+    else:
+        raise ValueError(
+            f"Cannot map trajectory joint_position dim {raw_q_tensor.shape[1]} to "
+            f"{joint_pos.shape[1]} env joints ({arm_count} arm, {finger_count} fingers)"
+        )
+
+    joint_pos = torch.clamp(joint_pos, task_env.robot_dof_lower_limits, task_env.robot_dof_upper_limits)
+    task_env._robot.write_joint_state_to_sim(joint_pos, joint_vel, env_ids=env_ids)
+    task_env._robot.set_joint_position_target(joint_pos, env_ids=env_ids)
+    task_env.robot_dof_targets[env_ids] = joint_pos
+    task_env.arm_joint_pos_target[env_ids] = joint_pos[:, task_env.arm_joint_ids]
+    task_env.finger_joint_pos_target[env_ids] = joint_pos[:, task_env.finger_joint_ids]
+
+    return {
+        "exact_robot_joint_reset_available": True,
+        "robot_reset_note": "raw trajectory joint_position applied to Franka articulation",
+        "source_trajectory_json": str(source["path"]),
+        "source_trajectory_frame": int(source["frame"]),
+        "source_trajectory_phase": str(source.get("phase", "")),
+        "source_trajectory_total_frames": int(source["total_frames"]),
+        "source_joint_position_raw": raw_q.astype(float).tolist(),
+        "source_joint_position_raw_dim": int(source["raw_joint_dim"]),
+        "source_joint_mapping": mapping,
+        "applied_joint_position_env0": joint_pos[0].detach().float().cpu().numpy().astype(float).tolist(),
+    }
+
+
+def _apply_demo_reset(task_env: Any, demo_reset: dict[str, Any]) -> tuple[torch.Tensor, dict[str, Any]]:
+    """Overwrite cube pose/goal and, when available, Franka joint state from a demo row."""
 
     env_ids = torch.as_tensor(task_env._robot._ALL_INDICES, device=task_env.device, dtype=torch.long)
     num_ids = int(env_ids.numel())
     target_obs = np.asarray(demo_reset["target_obs"], dtype=np.float32)
+    robot_reset_summary = _reset_robot_from_source_trajectory(
+        task_env,
+        env_ids,
+        demo_reset.get("source_trajectory"),
+    )
     target_cube_pos = torch.as_tensor(target_obs[7:10], dtype=torch.float32, device=task_env.device).repeat(num_ids, 1)
     target_cube_quat = torch.as_tensor(target_obs[10:14], dtype=torch.float32, device=task_env.device).repeat(num_ids, 1)
     object_state = torch.zeros(num_ids, 13, device=task_env.device)
@@ -232,6 +329,15 @@ def _apply_demo_reset(task_env: Any, demo_reset: dict[str, Any]) -> tuple[torch.
     live_lowdim = extract_lowdim_obs_from_ppo_obs(policy_obs).detach().float().cpu().numpy()
     live0 = live_lowdim[0]
     diff = live0 - target_obs
+    joint_after = task_env._robot.data.joint_pos[env_ids].detach().float().cpu().numpy()
+    if robot_reset_summary["exact_robot_joint_reset_available"]:
+        applied = np.asarray(robot_reset_summary["applied_joint_position_env0"], dtype=np.float32)
+        joint_diff = joint_after[0] - applied
+        joint_linf_diff = float(np.max(np.abs(joint_diff)))
+        joint_l2_diff = float(np.linalg.norm(joint_diff))
+    else:
+        joint_linf_diff = None
+        joint_l2_diff = None
     summary = {
         "dataset": str(demo_reset["path"]),
         "episode": int(demo_reset["episode"]),
@@ -241,17 +347,24 @@ def _apply_demo_reset(task_env: Any, demo_reset: dict[str, Any]) -> tuple[torch.
         "target_cube_pos": target_obs[7:10].astype(float).tolist(),
         "target_cube_quat": target_obs[10:14].astype(float).tolist(),
         "target_cube_minus_ee": target_obs[14:17].astype(float).tolist(),
+        "target_ee_pos": target_obs[0:3].astype(float).tolist(),
+        "target_ee_quat": target_obs[3:7].astype(float).tolist(),
         "target_gripper_width": float(target_obs[20]),
         "target_action": np.asarray(demo_reset["target_action"], dtype=np.float32).astype(float).tolist(),
         "live_lowdim_after_reset_env0": live0.astype(float).tolist(),
+        "live_ee_pos_after_reset_env0": live0[0:3].astype(float).tolist(),
+        "live_ee_quat_after_reset_env0": live0[3:7].astype(float).tolist(),
         "live_cube_pos_after_reset_env0": live0[7:10].astype(float).tolist(),
         "live_cube_minus_ee_after_reset_env0": live0[14:17].astype(float).tolist(),
         "lowdim_linf_diff_env0": float(np.max(np.abs(diff))),
         "lowdim_l2_diff_env0": float(np.linalg.norm(diff)),
         "cube_pos_l2_diff_env0": float(np.linalg.norm(diff[7:10])),
         "cube_minus_ee_l2_diff_env0": float(np.linalg.norm(diff[14:17])),
-        "exact_robot_joint_reset_available": False,
-        "robot_reset_note": "converted lowdim NPZ has no Franka joint state; robot remains at task reset",
+        "ee_pos_l2_diff_env0": float(np.linalg.norm(diff[0:3])),
+        "joint_position_after_reset_env0": joint_after[0].astype(float).tolist(),
+        "joint_linf_diff_after_write_env0": joint_linf_diff,
+        "joint_l2_diff_after_write_env0": joint_l2_diff,
+        **robot_reset_summary,
     }
     return policy_obs, summary
 
@@ -468,12 +581,20 @@ def main() -> None:
     demo_reset_dataset_path = (
         Path(args_cli.demo_reset_dataset).expanduser().resolve() if args_cli.demo_reset_dataset else None
     )
+    demo_reset_trajectory_path = (
+        Path(args_cli.demo_reset_trajectory_json).expanduser().resolve()
+        if args_cli.demo_reset_trajectory_json
+        else None
+    )
     if demo_reset_dataset_path is not None and not demo_reset_dataset_path.is_file():
         raise FileNotFoundError(demo_reset_dataset_path)
+    if demo_reset_trajectory_path is not None and not demo_reset_trajectory_path.is_file():
+        raise FileNotFoundError(demo_reset_trajectory_path)
     demo_reset = _demo_reset_payload(
         demo_reset_dataset_path,
         int(args_cli.demo_reset_episode),
         int(args_cli.demo_reset_step),
+        trajectory_json=demo_reset_trajectory_path,
     )
     dataset_start_row: int | None = None
     dataset_start_source = "nearest_live_row"
