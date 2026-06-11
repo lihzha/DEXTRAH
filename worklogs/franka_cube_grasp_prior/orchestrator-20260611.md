@@ -602,3 +602,65 @@ Worker C Diffusion Policy alternative:
   cannot teach close/lift; Worker C was nudged to append/commit/push and then
   continue toward close/lift-capable data or a clearly documented BC-to-RL
   initialization path
+
+## 2026-06-11 Monitor Check 20:21 UTC
+
+Final RL job `28987954`:
+
+- still running on a1001 at about 52.5 minutes elapsed
+- reached at least epoch `559` in the visible stdout tail
+- rank-0 JSONL check at epoch `541`: `541` records, `bad_scalar_count=0`
+- latest interval checkpoint observed at epoch `550`:
+  `last_dextrah_franka_cube_grasp_ep_550_rew_2110.0083.pth`
+- best reward remains at least `2116.91` from the earlier epoch-466 best
+  checkpoint message
+- reset-prior diagnostics remain healthy: rank-0 reset success `1.0`; lift and
+  success signals are still tiny/intermittent, with success max observed so far
+  only `0.00048828125`
+
+Worker B trajectory-tracking alternative:
+
+- committed and pushed retiming patch `22f674c`
+  (`Retime cube trajectory tracking references`), then committed retiming smoke
+  evidence `08ce93b` (`Record retimed trajectory smoke`)
+- retimed validation job `1027720` completed `0:0`; validation metrics passed
+  with observation shape `[4,72]`, 240/240 rollout steps, no non-finite JSON
+  values, no early termination spike, unsafe target rate `0.0`, target table
+  clearance batch min `0.06511414051055908`, and reference summary reporting
+  `runtime_duration_s=8.0` while preserving `source_duration_s=22.033333333333335`
+- retimed 3-epoch RL smoke job `1027721` completed `0:0`; actor/critic still
+  build with obs dim `72`, checkpoints written through epoch 3, resolved config
+  keeps `trajectory_tracking_phase_observations=false` and
+  `trajectory_tracking_follow_current_cube_pose=false`
+- retimed checkpoint eval job `1027723` completed `0:0`; metrics show 720/720
+  steps, `done_count=4`, reward mean `1.7883200655380884`, final reward
+  `1.933864712715149`, no non-finite JSON values, success still `0.0`
+- key retiming result: `cube_traj_tracking_phase_progress.max=1.0` at step
+  `480`, compared with the old run stalling around `0.358`; target safety
+  stayed clean with unsafe target rate `0.0`, safe target rate `1.0`, and
+  target clearance min `0.06511414051055908`
+- task behavior is still a smoke-level negative: no success/lift, but finger
+  table clearance stayed clean (`finger_table_clearance_violation_max=0.0`);
+  next useful Worker B step is a bounded retimed scale-up, not a full claim
+
+Worker C Diffusion Policy alternative:
+
+- converted the 32 real cuRobo trajectories to a full pick/lift lowdim dataset:
+  `num_episodes=32`, `num_steps=22484`, `obs_dim=21`, `action_dim=7`,
+  all sources marked `curobo_validated=true`, gripper action min/max `-1.0/1.0`,
+  and close-command fraction about `0.5764`
+- trained a bounded official-DP full-pick/lift checkpoint locally:
+  `global_step=503`, `train_loss=0.04288`, `val_loss=0.03742`,
+  `train_action_mse_error=0.01642`; bridge checks at 100 denoising steps
+  showed open-gripper behavior on first rows and close commands on closed/lift
+  rows
+- l401 DP eval job `1027722` completed `0:0`; metrics passed with
+  `steps_completed=64`, `env_closed=true`, reward mean `1.3106193002313375`,
+  final reward `1.264480471611023`, success `0.0`, finite action ranges
+  `[-0.20807,-0.35009,-0.05984,-0.16531,-0.31083,-0.26626,-0.30297]` to
+  `[0.37037,0.19806,0.39653,0.27571,0.28798,0.22835,1.0]`, and final gripper
+  width `0.0491`
+- Worker C diagnosed the next bridge issue: the eval wrapper currently executes
+  only the first action from each 8-action DP output and replans every sim step;
+  worker is patching optional action-chunk execution while preserving the
+  default first-action behavior
