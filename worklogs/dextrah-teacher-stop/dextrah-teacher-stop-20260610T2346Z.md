@@ -1496,3 +1496,49 @@ Analysis:
 Next:
 - Continue shortened cadence and tighten further inside the final 15 minutes
   before the expected TERM/requeue signal.
+
+## 2026-06-10 23:53 PDT - Teacher Monitor Metric Pass
+
+Goal:
+- Verify that the stdout throughput dip seen around epochs `18221-18231`
+  recovered while the job remains on shortened cadence.
+
+Command / Job:
+- job_id: `28955904`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28955904.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+- local TensorBoard copy:
+  `/tmp/dextrah_teacher_events`
+
+Result:
+- status: running healthy.
+- scheduler: `RUNNING` on `batch-block5-03072`, elapsed `03:11:05`,
+  time left `38:55` at `23:53:38 PDT`.
+- stdout advanced to epoch `18267/20000`.
+- latest complete checkpoint:
+  `last_dextrah_lstm_ep_18260_rew_646.908.pth` at `23:53:00`.
+- runtime sidecars rank `0-7` refreshed at `23:52:58-23:52:59`.
+- narrow critical failure scan over recent stdout returned no matches.
+- TensorBoard summaries parsed through epoch `18265` for epoch-keyed scalars.
+- `in_success_region/iter`: latest `0.472168`, last-50 `0.467847`,
+  last-200 `0.465524`, post-resume mean `0.463313`.
+- `rewards/iter`: latest `640.302`, last-50 `658.693`,
+  last-200 `653.369`, post-resume mean `644.812`.
+- `num_adr_increases/iter`: latest `50`, last-50 `50`.
+- `info/kl`: latest `0.00227695`, last-50 `0.00341779`,
+  last-200 `0.00341525`.
+- `losses/a_loss`: latest `-0.00358635`, last-50 `-0.00315264`.
+- `losses/c_loss`: latest `0.0234645`, last-50 `0.0262091`.
+- `performance/step_inference_rl_update_fps`: latest `112389`,
+  last-20 about `110250`, last-50 about `106637`, last-200 about `109270`.
+
+Analysis:
+- Training remains healthy. The stdout throughput dip recovered by epochs
+  `18235-18259`, latest scalar FPS is normal, checkpoint/sidecar cadence is
+  intact, and reward/success/KL/loss windows are stable.
+
+Next:
+- Continue shortened cadence and tighten further in the final 15 minutes before
+  the expected TERM/requeue signal.
