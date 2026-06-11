@@ -608,3 +608,22 @@ Next:
 - Commit/push, update the A100 worktree, rerun the Franka cube validator, and
   evaluate the previous epoch-100 checkpoint with the new clearance metrics and
   a better camera before launching any further PPO.
+
+## 2026-06-10 17:36 PDT - Table-Clearance Validation Submitted
+
+Command / Job:
+- command:
+  `RUN_NAME=franka_cube_validate_tableclear_20260610_1736 CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-rl-20260610T2353Z NUM_ENVS=4 NUM_STEPS=160 CAPTURE_VIDEO=True SEED=53 sbatch --parsable cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`
+- job_id: `28957205`
+- code_commit:
+  `af5da520c9d99d8efd2d0eb0faacce59a1e94c45`
+- remote worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-rl-20260610T2353Z`
+- expected run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_cube_validate_tableclear_20260610_1736`
+- expected log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_cube_28957205.out`
+
+Next:
+- Monitor validator completion; if it passes, run a checkpoint eval with
+  clearer camera framing and inspect `finger_table_clearance` metrics.
