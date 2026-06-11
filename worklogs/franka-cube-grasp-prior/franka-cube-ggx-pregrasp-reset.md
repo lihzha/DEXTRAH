@@ -1998,3 +1998,135 @@ Result:
 
 Next:
 - Implement debug-only oracle diagnostic, run local syntax checks, commit/push, deploy exact commit to the l401 agent worktree, launch the bounded diagnostic, fetch/open artifacts, and update this worklog with the job id and verdict.
+
+## 2026-06-11T23:37:22Z - launch oracle close/lift reset diagnostic
+
+Goal:
+- Run the bounded scripted close/lift diagnostic from the exact reset-prior distribution to test whether the open 3 cm pregrasp can be converted into a grasp/lift without learning.
+
+Change:
+- Implemented debug-only oracle diagnostics in `dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py`.
+- Extended `cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh` with opt-in oracle environment variables.
+- No main RL task defaults changed; oracle behavior is only active with `INCLUDE_ORACLE_CLOSE_LIFT_CHECK=1`.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- local_commit: `ee51e280e2abcfddbf70d65fcdf3289493b32aea`
+- push/pull: pushed local branch to origin; l401 GitHub SSH fetch failed with `Permission denied (publickey)`, so deployed the exact commit via a Git bundle fetched into the agent-owned l401 worktree
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `ee51e280e2abcfddbf70d65fcdf3289493b32aea`, detached `HEAD`
+- changed_files: `dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py`, `cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`, this worklog
+
+Validation Before Launch:
+- `python3 -m py_compile dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py`: passed
+- `bash -n cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`: passed
+
+Command / Job:
+- job_id: `1027869`
+- run_name: `franka_cube_ggx_pregrasp_oracle_close_lift_20260611_2338`
+- command: `sbatch --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=ee51e280e2abcfddbf70d65fcdf3289493b32aea,RUN_NAME=franka_cube_ggx_pregrasp_oracle_close_lift_20260611_2338,TASK=Dextrah-Franka-Cube-Grasp,NUM_ENVS=1,NUM_RESETS=5,SEED=20260622,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_orig006_single.npz,INCLUDE_EXACT_CLOSE_CHECK=0,INCLUDE_ORACLE_CLOSE_LIFT_CHECK=1,ORACLE_APPROACH_STEPS=16,ORACLE_CLOSE_STEPS=50,ORACLE_LIFT_STEPS=80,ORACLE_HOLD_STEPS=30,ORACLE_APPROACH_DISTANCE=0.030,ORACLE_CLOSE_WIDTH=0.055,ORACLE_LIFT_ACTION_Z=0.05,ORACLE_LIFT_SUCCESS_HEIGHT=0.020,ORACLE_RENDER_INTERVAL=20,RENDER_ALL_RESETS=1,RENDER_WIDTH=1280,RENDER_HEIGHT=720,VIDEO_FPS=6,CAMERA_EYE_X=-0.15,CAMERA_EYE_Y=-1.05,CAMERA_EYE_Z=1.55,CAMERA_TARGET_X=-0.41,CAMERA_TARGET_Y=-0.08,CAMERA_TARGET_Z=0.80 cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pregrasp_oracle_close_lift_20260611_2338`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/diagnose_franka_cube_prior_1027869.out`
+- expected artifacts: `reset_geometry.json`, `reset_geometry.csv`, `oracle_trace.jsonl`, `oracle_trace.csv`, labeled frames, `reset_geometry.mp4`
+
+Result:
+- status: submitted
+
+Next:
+- Monitor job `1027869`; fetch artifacts; build/open a viewer-ready report/contact sheet; inspect whether oracle close/lift succeeds from reset and whether PPO failure is action/reward learning rather than reset geometry.
+
+## 2026-06-11T23:42:11Z - oracle close/lift result and matrix plan
+
+Goal:
+- Interpret the first oracle close/lift diagnostic and define a bounded diagnostic matrix that distinguishes reset offset/control, gripper closure/contact, lift action, and fingertip/TCP proxy alignment causes.
+
+Result:
+- job `1027869` completed `0:0` on l401 `pool0-00016`.
+- local run dir: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_oracle_close_lift_20260611_2338`
+- local inspection bundle: `cluster_results/l401/franka_cube_ggx_pregrasp_oracle_close_lift_20260611_2338/inspection_20260611_2340`
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_oracle_close_lift_20260611_2338/inspection_20260611_2340/REPORT.md`
+- contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_oracle_close_lift_20260611_2338/inspection_20260611_2340/oracle_contact_sheet.png`
+- oracle trace curves: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_oracle_close_lift_20260611_2338/inspection_20260611_2340/oracle_trace_curves.png`
+- PPO ep200 action/reward audit: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_oracle_close_lift_20260611_2338/inspection_20260611_2340/ppo_ep200_action_reward_audit.png`
+- video: `cluster_results/l401/franka_cube_ggx_pregrasp_oracle_close_lift_20260611_2338/inspection_20260611_2340/oracle_close_lift_frames.mp4`, `1280x720`, `482` frames, `19.28s`
+- metrics: `reset_success_rate=1.0`, `reset_quality_success_rate=1.0`, `pregrasp_reset_gate_pass=True`, but `oracle_success_rate=0.0`, `oracle_lift_gate_pass_rate=0.0`, `oracle_max_cube_lift_height_mean_m=0.0`, `oracle_min_tip_center_dist_mean_m=0.0576`, `oracle_final_gripper_width_mean_m=0.0550`, `rl_relaunch_gate_verdict=FAIL`
+- prior ep200 PPO audit from existing eval: `success_max=0.0`, `lift_max_m=0.003682`, `ee_min_m=0.0251`, `finger_center_min_m=0.0554`, mean gripper action approximately `+0.9999`, final gripper width approximately `0.08m`
+
+Analysis:
+- Reset/pregrasp geometry is still passing, but the scripted action-space close/lift did not generate a grasp or any lift.
+- In reset 0, the approach action was a small negative root-frame z command intended to move from pregrasp to exact, but the actual TCP/tip distance stayed near `0.060m`; during lift, tip distance increased to about `0.073m`, meaning the lift moved the hand away without cube contact.
+- The PPO policy also mostly commands fully open gripper at ep200, so full-scale RL remains blocked even before considering reward.
+
+Next Matrix:
+- Keep main RL task unchanged and use only debug/eval flags.
+- Run a bounded l401 diagnostic matrix from commit `ee51e280e2abcfddbf70d65fcdf3289493b32aea`, `NUM_RESETS=3`, same single-grasp library, same cube XY randomization `0.08`.
+- Exact-close reference: `INCLUDE_EXACT_CLOSE_CHECK=1`, command width `0.055`, rendered resets, to confirm direct exact-pose light-close still works under the current commit.
+- Oracle action variants:
+  - `a00_w055_z005`: approach `0.00m`, close width `0.055m`, lift action z `0.05`
+  - `a01_w055_z005`: approach `0.01m`, close width `0.055m`, lift action z `0.05`
+  - `a03_w055_z005`: approach `0.03m`, close width `0.055m`, lift action z `0.05`
+  - `a03_w045_z005`: approach `0.03m`, close width `0.045m`, lift action z `0.05`
+  - `a03_w035_z005`: approach `0.03m`, close width `0.035m`, lift action z `0.05`
+  - `a03_w035_z015`: approach `0.03m`, close width `0.035m`, lift action z `0.15`
+  - `a-03_w035_z015`: reverse approach `-0.03m`, close width `0.035m`, lift action z `0.15`, to catch sign/frame errors
+- Acceptance: no PPO/A100. Fetch all artifacts, aggregate per-variant metrics/contact sheets/videos, inspect whether any variant obtains contact/lift and whether exact-close diverges from action-space approach.
+
+## 2026-06-11T23:44:06Z - launch reset-to-contact diagnostic matrix
+
+Goal:
+- Distinguish action-space approach sign/distance, gripper close width/contact, lift action magnitude, and exact-pose/proxy geometry causes for the failed oracle close/lift.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `ee51e280e2abcfddbf70d65fcdf3289493b32aea`, detached `HEAD`
+- source changes since commit: none for matrix; debug-only oracle/exact-close code from `ee51e28`
+
+Common Command / Config:
+- wrapper: `cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`
+- common export: `TASK=Dextrah-Franka-Cube-Grasp`, `NUM_ENVS=1`, `NUM_RESETS=3`, `SEED=20260623`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`, `GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_orig006_single.npz`, `RENDER_ALL_RESETS=1`, `RENDER_WIDTH=1280`, `RENDER_HEIGHT=720`, `VIDEO_FPS=6`
+- remote result namespace: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pregrasp_matrix_20260611_2344_*`
+- log namespace: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/diagnose_franka_cube_prior_<job>.out`
+
+Jobs:
+- `1027878`: `franka_cube_ggx_pregrasp_matrix_20260611_2344_exact_w055`, `INCLUDE_EXACT_CLOSE_CHECK=1`, `EXACT_CLOSE_COMMAND_WIDTH=0.055`
+- `1027879`: `franka_cube_ggx_pregrasp_matrix_20260611_2344_a00_w055_z005`, oracle approach `0.000m`, close width `0.055m`, lift z `0.05`
+- `1027880`: `franka_cube_ggx_pregrasp_matrix_20260611_2344_a01_w055_z005`, oracle approach `0.010m`, close width `0.055m`, lift z `0.05`
+- `1027881`: `franka_cube_ggx_pregrasp_matrix_20260611_2344_a03_w055_z005`, oracle approach `0.030m`, close width `0.055m`, lift z `0.05`
+- `1027882`: `franka_cube_ggx_pregrasp_matrix_20260611_2344_a03_w045_z005`, oracle approach `0.030m`, close width `0.045m`, lift z `0.05`
+- `1027883`: `franka_cube_ggx_pregrasp_matrix_20260611_2344_a03_w035_z005`, oracle approach `0.030m`, close width `0.035m`, lift z `0.05`
+- `1027884`: `franka_cube_ggx_pregrasp_matrix_20260611_2344_a03_w035_z015`, oracle approach `0.030m`, close width `0.035m`, lift z `0.15`
+- `1027885`: `franka_cube_ggx_pregrasp_matrix_20260611_2344_arev03_w035_z015`, oracle approach `-0.030m`, close width `0.035m`, lift z `0.15`
+
+Result:
+- status: submitted
+
+Next:
+- Monitor all matrix jobs to completion, fetch result/log dirs, aggregate per-variant exact-close/oracle metrics, build contact sheets/videos/plots, open with `viz-open`, and decide whether to patch action-space approach/control diagnostics or reset geometry.
+
+## 2026-06-12T00:02:10Z - action-tracking diagnostic plan
+
+Goal:
+- Patch and run a bounded diagnostic that explains why direct exact-pose light-close succeeds while normal `env.step` action-space oracle rollouts do not reach contact/lift.
+
+Evidence From Completed Matrix:
+- jobs `1027878` through `1027885` completed `0:0`; all artifacts fetched locally under `cluster_results/l401/franka_cube_ggx_pregrasp_matrix_20260611_2344_*`.
+- local inspection bundle: `cluster_results/l401/franka_cube_ggx_pregrasp_matrix_20260611_2344_inspection`
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_matrix_20260611_2344_inspection/REPORT.md`
+- contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_matrix_20260611_2344_inspection/matrix_contact_sheet.jpg`
+- trace plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_matrix_20260611_2344_inspection/oracle_trace_matrix.png`
+- key metrics: `exact_w055` direct exact IK close passed with exact-close enclosure/contact proxy success `1.0`; all seven `env.step` oracle variants failed with `oracle_success_rate=0.0`, `oracle_lift_gate_pass_rate=0.0`, max cube lift `0.0m`, and min actual tip-center distance approximately `0.0564-0.0571m`.
+- varied approach distance (`0/1/3cm`), approach sign (`+/-3cm`), close width (`0.055/0.045/0.035m`), and lift action (`0.05/0.15`) did not produce contact or lift.
+
+Analysis:
+- This points away from GraspGenX object transform or cube XY randomization as the primary blocker.
+- The next likely blocker is normal RL action-space tracking/TCP/controller semantics: the direct exact-close diagnostic sets an IK/joint target directly, while the oracle uses the task's `DifferentialIKController` through `env.step`.
+
+Planned Change:
+- Modify only `dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py` and `cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`.
+- Add per-step action-tracking trace fields: commanded relative action, controller target pose proxy from current EE plus scaled action, measured EE/TCP pose before/after `env.step`, cube pose, gripper width, tip/finger distances, and commanded-vs-realized delta.
+- Add a debug-only controller-assisted `oracle_approach_mode=proportional_exact` that recomputes the relative action from current measured EE pose to the exact GraspGenX EE target under the same task action limits.
+- Preserve defaults as `fixed_direction`; no main RL reset, reward, observation, action space, PPO config, or baseline defaults change.
+
+Next:
+- Finish patch, run local syntax checks, commit/push, deploy exact commit to the agent-owned l401 worktree, launch paired bounded fixed-vs-assisted diagnostics, fetch artifacts, build/open a report/contact sheet/video, and decide whether PPO needs curriculum/action bias or whether the action path/TCP convention is the remaining blocker.
