@@ -1404,3 +1404,50 @@ Analysis:
 Next:
 - Shorten monitoring cadence as the next expected wall-time TERM/requeue window
   approaches.
+
+## 2026-06-10 23:34 PDT - Teacher Monitor Metric Pass
+
+Goal:
+- Verify continued training health on shorter cadence as the wall-time signal
+  window approaches.
+
+Command / Job:
+- job_id: `28955904`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28955904.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+- local TensorBoard copy:
+  `/tmp/dextrah_teacher_events`
+
+Result:
+- status: running healthy.
+- scheduler: `RUNNING` on `batch-block5-03072`, elapsed `02:51:40`,
+  time left `58:20` at `23:34:14 PDT`.
+- stdout advanced to epoch `18029/20000`.
+- latest complete checkpoint:
+  `last_dextrah_lstm_ep_18020_rew_616.2878.pth` at `23:33:25`.
+- runtime sidecars rank `0-7` all refreshed at `23:34:13`.
+- narrow critical failure scan over recent stdout returned no matches.
+- TensorBoard summaries parsed through epoch `18020` for epoch-keyed scalars.
+- `in_success_region/iter`: latest `0.477295`, last-50 `0.463472`,
+  last-200 `0.463857`, post-resume mean `0.463116`.
+- `rewards/iter`: latest `616.288`, last-50 `632.749`,
+  last-200 `637.019`, post-resume mean `643.634`.
+- `num_adr_increases/iter`: latest `50`, last-50 `50`.
+- `info/kl`: latest `0.00231622`, last-50 `0.00328188`,
+  last-200 `0.00385593`.
+- `losses/a_loss`: latest `-0.00339492`, last-50 `-0.00325661`.
+- `losses/c_loss`: latest `0.0244347`, last-50 `0.0253629`.
+- `performance/step_inference_rl_update_fps`: latest `90084.8`,
+  last-20 about `110199`, last-50 about `110134`, last-200 about `109347`.
+
+Analysis:
+- Training remains healthy. The job continued past epoch `18000/20000` and is
+  still advancing toward `20000`. The latest FPS sample is low on a
+  checkpoint/sidecar interval, but the rolling windows are normal and artifacts
+  are refreshing on cadence.
+
+Next:
+- Keep the shorter monitoring cadence and tighten again near the expected
+  `2026-06-11 00:27 PDT` TERM/requeue signal.
