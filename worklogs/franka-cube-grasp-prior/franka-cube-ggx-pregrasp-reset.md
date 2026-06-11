@@ -1585,6 +1585,43 @@ Analysis:
 Next:
 - Monitor job `1027808`, inspect stdout/JSONL/checkpoints, fetch artifacts locally, then launch a bounded eval/video from the first usable checkpoint if the smoke is sane.
 
+## 2026-06-11T22:46:08Z - reset-prior RL smoke completed and eval launched
+
+Goal:
+- Inspect terminal smoke status and launch the first checkpoint eval/video artifact from the best early interval checkpoint.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- smoke_source_commit: `1d3a8e30d2410413a83c8e3e2d6224f4a95ae7fe`
+- worklog_commit_after_launch: `9217548c087b2a576aa724d23be5259ebe36ca48`
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `1d3a8e30d2410413a83c8e3e2d6224f4a95ae7fe`, detached `HEAD`
+
+Command / Job:
+- smoke_job_id: `1027808`
+- smoke_run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_smoke_1gpu_20260611_224311`
+- smoke_log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_smoke_1027808.out`
+- fetched_smoke_artifacts: `cluster_results/l401/franka_cube_ggx_pregrasp_smoke_1gpu_20260611_224311`
+- eval_command: `sbatch --parsable --partition=batch --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,TASK=Dextrah-Franka-Cube-Grasp,RUN_NAME=franka_cube_ggx_pregrasp_smoke_ep10_eval_20260611_224608,NUM_ENVS=1,NUM_STEPS=240,VIDEO_LENGTH=240,VIDEO_NAME_PREFIX=franka-cube-ggx-pregrasp-smoke-ep10,PRINT_INTERVAL=20,CAPTURE_VIDEO=True,DETERMINISTIC=True,USE_CUDA_GRAPH=False,SEED=20260621,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_orig006_single.npz,CHECKPOINT=/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_smoke_1gpu_20260611_224311/nn/last_dextrah_franka_cube_grasp_ep_10_rew_880.1311.pth,CAMERA_EYE_X=-0.15,CAMERA_EYE_Y=-1.05,CAMERA_EYE_Z=1.45,CAMERA_TARGET_X=-0.41,CAMERA_TARGET_Y=-0.08,CAMERA_TARGET_Z=0.80 cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- eval_job_id: `1027817`
+- eval_run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_ggx_pregrasp_smoke_ep10_eval_20260611_224608`
+- eval_log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1027817.out`
+
+Result:
+- smoke_status: `COMPLETED`, exit `0:0`, elapsed `00:01:57`
+- smoke_jsonl: `45` rank-0 records, `bad_scalar_count=0`, `world_size=1`
+- reset_prior_metrics: success/quality/farther rates all `1.0`; reset position error mean `0.00671 m`; reset rotation error mean `0.1003 rad`; pregrasp tip table clearance mean `0.08509 m`; projected exact tip center/max distances mean `0.02827/0.05767 m`
+- checkpoints: every 5 epochs through 45; best interval checkpoint by stdout reward is epoch 10, `last_dextrah_franka_cube_grasp_ep_10_rew_880.1311.pth`
+- policy smoke metrics: no success/lift yet (`cube_success_rate=0`, `cube_has_lifted_rate=0` throughout), and distance metrics worsened after early epochs. This is acceptable for reset-path smoke only, but blocks any final-scale claim until eval visuals are inspected.
+
+Analysis:
+- The RL training path can exercise the prior reset without immediate numerical/runtime failure.
+- The policy did not learn a lift in 45 tiny epochs and sometimes drifted away from the cube. This is a short-smoke limitation/diagnostic signal, not a successful training result.
+- Eval uses the same task, prior library, cube XY randomization, action scaling, and RL-Games checkpoint/normalization path. Eval sets `env.use_cuda_graph=False` for video/rendering; this is a render-path difference, not a reset/action/reward change.
+
+Next:
+- Monitor eval job `1027817`, fetch metrics/video/trace, create contact sheet/report/plot artifacts with `viz-open`, and inspect whether the first frame starts at the correct open pregrasp and whether policy actions interact with the cube or drift.
+
 ## 2026-06-11T22:41:10Z - plan exact-close offset sweep controls
 
 Goal:
@@ -1620,3 +1657,58 @@ Analysis:
 
 Next:
 - Implement offset controls, commit/push/deploy, inspect current light-close results when they complete, then launch the smallest offset sweep informed by those results.
+
+## 2026-06-11T22:51:05Z - bounded reset-prior RL smoke/eval inspected
+
+Goal:
+- Finish the requested bounded reset-prior RL smoke/eval loop, inspect viewer-ready artifacts, and decide whether this is enough to unblock final-scale A100 training.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- smoke_source_commit: `1d3a8e30d2410413a83c8e3e2d6224f4a95ae7fe`
+- current_worklog_commit_before_this_entry: `9217548c087b2a576aa724d23be5259ebe36ca48`
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `1d3a8e30d2410413a83c8e3e2d6224f4a95ae7fe`, detached `HEAD`
+
+Jobs / Paths:
+- smoke_job_id: `1027808`, status `COMPLETED`, exit `0:0`, elapsed `00:01:57`
+- eval_job_id: `1027817`, status `COMPLETED`, exit `0:0`, elapsed `00:01:08`
+- smoke_run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_smoke_1gpu_20260611_224311`
+- smoke_log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_smoke_1027808.out`
+- eval_run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_ggx_pregrasp_smoke_ep10_eval_20260611_224608`
+- eval_log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1027817.out`
+- eval_checkpoint: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_smoke_1gpu_20260611_224311/nn/last_dextrah_franka_cube_grasp_ep_10_rew_880.1311.pth`
+- local_inspection_dir: `cluster_results/l401/franka_cube_ggx_pregrasp_smoke_ep10_eval_20260611_224608/inspection_20260611_2248`
+
+Config Diff Versus Final Apple-to-Apple Training:
+- task unchanged: `Dextrah-Franka-Cube-Grasp`
+- prior reset enabled via override: `GRASP_PRIOR_RESET_ENABLED=True`
+- prior library: single validated grasp `franka_cube_ggx_grasp_orig006_single.npz`
+- cube XY randomization: `CUBE_SPAWN_XY_RANDOMIZATION=0.08`
+- smoke-only scale changes: l401 1 GPU, `NUM_ENVS=64`, `MAX_ITERATIONS=45`, `HORIZON_LENGTH=64`, `MINIBATCH_SIZE=4096`, `CENTRAL_VALUE_MINIBATCH_SIZE=4096`, `SAVE_FREQUENCY=5`, fixed seeds `20260620/20260621`
+- eval render-only difference: `USE_CUDA_GRAPH=False` for video capture; reset/action/reward/task config and RL-Games checkpoint normalization path match the smoke.
+
+Viewer Artifacts:
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_smoke_ep10_eval_20260611_224608/inspection_20260611_2248/REPORT.md`
+- contact_sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_smoke_ep10_eval_20260611_224608/inspection_20260611_2248/contact_sheet.png`
+- eval_geometry_trace: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_smoke_ep10_eval_20260611_224608/inspection_20260611_2248/eval_geometry_trace.png`
+- eval_video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_smoke_ep10_eval_20260611_224608/videos/franka-cube-ggx-pregrasp-smoke-ep10-step-0.mp4`
+
+Metrics:
+- smoke_jsonl: `45` rank-0 records, `bad_scalar_count=0`, `world_size=1`
+- reset metrics: prior attempted/success/farther/quality rates all `1.0`; reset position error mean `0.00671 m`; reset rotation error mean `0.1003 rad`; pregrasp tip table clearance mean `0.08509 m`
+- checkpoint: best early interval checkpoint epoch `10`, stdout reward `880.1311`
+- eval first/reset state: prior reset active, quality success `1.0`, open gripper width about `0.08 m`, positive table clearance, correct 3 cm open pregrasp start
+- eval best interaction: near/contact around steps `40-60`, max lift height about `0.01417 m` at step `56`
+- eval failure mode: no success or sustained lift; final ee-to-cube distance about `0.678 m`, final finger-center-to-cube distance about `0.685 m`
+
+Verdict:
+- reset/pregrasp gate: `PASS`
+- light-close feasibility gate remains the relevant exact-grasp sanity check; previous zero-width close gate should not be used as the relaunch criterion.
+- bounded RL smoke runtime/metrics/checkpoint gate: `PASS`
+- policy/eval artifact gate for scale-up: `FAIL`; the policy starts from the correct pregrasp and briefly interacts with the cube but drifts away without grasp/lift.
+- A100 final RL relaunch: `BLOCKED` from this checkpoint/artifact. No matching Worker A l401 or a1001 jobs remain active at this inspection point.
+
+Next:
+- Do not relaunch final-scale A100 from this result.
+- The next bounded iteration should either run a longer still-small reset-prior PPO smoke or a matched prior-disabled small baseline to determine whether the early drift is normal for this smoke horizon versus introduced by the reset prior. Any next launch should keep the same artifact cadence: JSONL scan, checkpoint list, fixed-seed eval video/contact sheet, and pass/fail interpretation before scale-up.
