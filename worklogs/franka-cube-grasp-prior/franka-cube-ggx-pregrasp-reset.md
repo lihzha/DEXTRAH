@@ -1857,3 +1857,46 @@ Active Job Check:
 Next:
 - Do not launch A100.
 - Recommended bounded next step: paired longer small PPO smoke for prior-enabled and prior-disabled variants, keeping the artifact cadence and matched seeds/config. A reasonable candidate is still one-GPU l401 with more epochs and/or 256 envs, but the exact scale should remain bounded and artifact-gated.
+
+## 2026-06-11T23:11:36Z - plan paired 200-epoch small PPO comparison
+
+Goal:
+- Run a bounded paired longer PPO comparison for reset-prior enabled versus prior-disabled baseline, using the same small l401 configuration and artifact cadence as the previous smoke/eval loop.
+
+Hypothesis:
+- The 45-epoch smoke was too short for either variant to show stable task success. A 200-epoch, 64-env, 1-GPU pair should reveal whether the reset-prior start helps early interaction/lift relative to the same baseline without changing the apple-to-apple task config.
+
+Change:
+- No source-code change planned.
+- Use existing owned wrappers: `cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh` and `cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`.
+- Keep task, seeds, env count, horizon/minibatch/PPO overrides, cube XY randomization, camera, eval steps, and JSONL sidecar matched.
+- Difference between pair: only `GRASP_PRIOR_RESET_ENABLED` plus the prior library path on the enabled variant.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `1287311ef37847090ffb6060a96ac6380374e24a`
+- implementation_commit: pending worklog-only plan checkpoint
+- changed_files: this worklog only
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+
+Planned Runs:
+- prior-enabled run name: `franka_cube_ggx_pregrasp_long200_1gpu_20260611_2311`
+- prior-disabled run name: `franka_cube_baseline_noprior_long200_1gpu_20260611_2311`
+- common train shape: l401 `batch`, 1 GPU, `NUM_ENVS=64`, `MAX_ITERATIONS=200`, `SAVE_FREQUENCY=25`, `HORIZON_LENGTH=64`, `MINIBATCH_SIZE=4096`, `CENTRAL_VALUE_MINIBATCH_SIZE=4096`, `SEED=20260620`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`, `DEXTRAH_RLGAMES_JSONL_METRICS=True`, `AUTO_RESUME=False`, `USE_CUDA_GRAPH=True`
+- prior-enabled extra: `GRASP_PRIOR_RESET_ENABLED=True`, `GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_orig006_single.npz`
+- prior-disabled extra: `GRASP_PRIOR_RESET_ENABLED=False`, no prior library override
+- eval checkpoints after training: epoch 100 mid checkpoint, best checkpoint by stdout reward, and final epoch 200 if distinct from best
+- common eval shape: 1 env, 240 steps, deterministic, `SEED=20260621`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`, matched camera from previous artifacts, `USE_CUDA_GRAPH=False` for video capture
+
+Acceptance:
+- Do not launch A100.
+- Inspect scheduler state, logs, JSONL sidecars, checkpoint lists, bad scalar counts, reward/lift/success/distance curves, and eval videos/contact sheets for both variants.
+- Produce viewer-ready artifacts for both variants and a paired comparison report.
+
+Result:
+- status: planned
+
+Next:
+- Commit/push this worklog plan, deploy the exact commit to the l401 agent worktree, launch both 200-epoch jobs, monitor to completion, then run the bounded eval set for each variant.
