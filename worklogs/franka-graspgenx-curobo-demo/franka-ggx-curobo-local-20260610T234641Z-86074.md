@@ -160,3 +160,32 @@ Result:
 
 Next:
 - Hand off the isolated branch/worktree for integration review. Dynamic contact validation remains future work because this local demo intentionally uses kinematic state playback.
+
+## 2026-06-11T00:11:45Z - Final handoff
+
+Goal:
+- Preserve the final local demo evidence and hand off the isolated implementation branch without modifying the shared checkout.
+
+Version Control:
+- agent_id: franka-ggx-curobo-local-20260610T234641Z-86074
+- worktree: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-ggx-curobo-local-20260610T234641Z-86074
+- branch: codex/franka-graspgenx-curobo-demo/franka-ggx-curobo-local-20260610T234641Z-86074
+- final_validated_commit: fc720f4f25fb6e390a7c66ae3406d5406ba7c4ab
+- pushed_to: origin/codex/franka-graspgenx-curobo-demo/franka-ggx-curobo-local-20260610T234641Z-86074
+
+Artifacts:
+- planner: /home/lzha/code/local_results/franka_ggx_curobo_demo/franka-ggx-curobo-local-20260610T234641Z-86074/planner/planner_smoke_20260610T235114Z
+- render: /home/lzha/code/local_results/franka_ggx_curobo_demo/franka-ggx-curobo-local-20260610T234641Z-86074/render/render_state_playback_final_20260611T000518Z
+- overview_video: /home/lzha/code/local_results/franka_ggx_curobo_demo/franka-ggx-curobo-local-20260610T234641Z-86074/render/render_state_playback_final_20260611T000518Z/overview.mp4
+- zoomed_video: /home/lzha/code/local_results/franka_ggx_curobo_demo/franka-ggx-curobo-local-20260610T234641Z-86074/render/render_state_playback_final_20260611T000518Z/overview_pickup_crop.mp4
+- overview_viewer: http://localhost:8765/view?path=local_results/franka_ggx_curobo_demo/franka-ggx-curobo-local-20260610T234641Z-86074/render/render_state_playback_final_20260611T000518Z/overview.mp4
+- zoomed_viewer: http://localhost:8765/view?path=local_results/franka_ggx_curobo_demo/franka-ggx-curobo-local-20260610T234641Z-86074/render/render_state_playback_final_20260611T000518Z/overview_pickup_crop.mp4
+
+Cleanup:
+- active_demo_containers: none
+- active_demo_gpu_processes: none
+- worktree_status: clean before this final worklog entry
+- unrelated_processes: existing non-DEXTRAH TPU command observed and left untouched
+
+Next:
+- Integration should happen from a separate integration worktree by reviewing or merging the pushed branch.
