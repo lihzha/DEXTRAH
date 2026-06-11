@@ -22,6 +22,7 @@ class DextrahActionConvention:
 
     position_scale: tuple[float, float, float] = (0.060, 0.060, 0.045)
     rotation_scale: tuple[float, float, float] = (0.25, 0.25, 0.30)
+    world_to_action_quat_wxyz: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 1.0)
     max_gripper_width: float = 0.08
     open_gripper_action: float = 1.0
     close_gripper_action: float = -1.0
@@ -99,6 +100,18 @@ def quat_from_axis_angle_wxyz(axis_angle: np.ndarray, eps: float = 1.0e-12) -> n
     return normalize_quat_wxyz(np.where(angle > eps, quat, identity))
 
 
+def rotate_vectors_wxyz(quat: np.ndarray, vectors: np.ndarray) -> np.ndarray:
+    """Rotate 3D vectors by a WXYZ quaternion with NumPy broadcasting."""
+
+    vectors = np.asarray(vectors, dtype=np.float64)
+    quat = normalize_quat_wxyz(np.asarray(quat, dtype=np.float64))
+    quat_vec = quat[..., 1:4]
+    w = quat[..., 0:1]
+    uv = np.cross(quat_vec, vectors, axis=-1)
+    uuv = np.cross(quat_vec, uv, axis=-1)
+    return vectors + 2.0 * (w * uv + uuv)
+
+
 def apply_delta_pose(
     source_pos: np.ndarray,
     source_quat_wxyz: np.ndarray,
@@ -113,6 +126,34 @@ def apply_delta_pose(
     delta_quat = quat_from_axis_angle_wxyz(delta_pose[..., 3:6])
     target_quat = quat_mul_wxyz(delta_quat, source_quat_wxyz)
     return target_pos, target_quat
+
+
+def normalized_action_to_world_delta(
+    action: np.ndarray,
+    *,
+    convention: DextrahActionConvention = DEFAULT_DEXTRAH_ACTION_CONVENTION,
+) -> np.ndarray:
+    """Convert normalized action-frame pose commands back to world deltas."""
+
+    action = np.asarray(action, dtype=np.float64)
+    raw_delta = action[..., :6] * convention.pose_scale
+    action_to_world_quat = quat_inv_wxyz(np.asarray(convention.world_to_action_quat_wxyz, dtype=np.float64))
+    pos_delta_world = rotate_vectors_wxyz(action_to_world_quat, raw_delta[..., :3])
+    rot_delta_world = rotate_vectors_wxyz(action_to_world_quat, raw_delta[..., 3:6])
+    return np.concatenate((pos_delta_world, rot_delta_world), axis=-1).astype(np.float32)
+
+
+def apply_normalized_action_to_world_pose(
+    source_pos: np.ndarray,
+    source_quat_wxyz: np.ndarray,
+    action: np.ndarray,
+    *,
+    convention: DextrahActionConvention = DEFAULT_DEXTRAH_ACTION_CONVENTION,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Replay a normalized DEXTRAH action against world-frame EE poses."""
+
+    world_delta = normalized_action_to_world_delta(action, convention=convention)
+    return apply_delta_pose(source_pos, source_quat_wxyz, world_delta)
 
 
 def gripper_width_to_action(
@@ -166,6 +207,12 @@ def derive_relative_ee_actions(
     ``gripper_width`` when supplied, or falls back to phase-derived open/close
     labels. The default terminal action repeats the previous command so
     observations and actions keep the same length.
+
+    DEXTRAH Franka observations are recorded in the environment/world frame,
+    while Isaac's differential IK controller receives relative commands in the
+    robot root frame. ``world_to_action_quat_wxyz`` rotates translation and
+    axis-angle deltas into that controller frame before normalization. The
+    default is the Franka cube root's 180 degree yaw about world z.
     """
 
     ee_pos = np.asarray(ee_pos, dtype=np.float64)
@@ -180,6 +227,9 @@ def derive_relative_ee_actions(
     pos_delta = ee_pos[1:] - ee_pos[:-1]
     quat_delta = quat_mul_wxyz(ee_quat_wxyz[1:], quat_inv_wxyz(ee_quat_wxyz[:-1]))
     rot_delta = axis_angle_from_quat_wxyz(quat_delta)
+    world_to_action_quat = np.asarray(convention.world_to_action_quat_wxyz, dtype=np.float64)
+    pos_delta = rotate_vectors_wxyz(world_to_action_quat, pos_delta)
+    rot_delta = rotate_vectors_wxyz(world_to_action_quat, rot_delta)
     pose_delta = np.concatenate((pos_delta, rot_delta), axis=-1).astype(np.float32)
     normalized_pose = pose_delta / convention.pose_scale[None, :]
 

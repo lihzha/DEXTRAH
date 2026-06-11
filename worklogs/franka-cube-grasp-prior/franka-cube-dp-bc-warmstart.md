@@ -2317,3 +2317,161 @@ Next:
   no-video eval, e.g. `NUM_STEPS=96`, `ACTION_CHUNK_STEPS=8`,
   `DEBUG_POLICY_TRACE_MAX_CALLS=12`, then fetch `policy_trace.json` and compare
   live lowdim observations/action chunks against the converted dataset phases.
+
+## 2026-06-11T13:38:15-07:00 - traced overfit2k chunk8 eval launch
+
+Goal:
+- Capture live policy-call lowdim observations and action chunks for the
+  overfit2k chunk8 failure mode.
+
+Hypothesis:
+- The first dozen policy calls will show gripper-open action chunks and growing
+  cube-minus-EE / distance features, confirming the policy remains in approach
+  mode while drifting away from the demonstration manifold.
+
+Version Control:
+- implementation_commit: `fdb77c9dc967d1476361b4cb106190cec696e0a8`
+- push/pull: pushed to `origin/codex/franka-cube-diffusion-policy-bc`; deployed
+  to l401 agent worktree via Git bundle because l401 GitHub SSH fetch is still
+  unavailable.
+- remote_commit/status:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+  at `fdb77c9dc967d1476361b4cb106190cec696e0a8`, detached clean.
+
+Command / Job:
+- command:
+  `sbatch --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart,RUN_NAME=franka_cube_dp_eval_curobo32_full_pick_lift_overfit2k_chunk8_trace96_20260611_133812,NUM_ENVS=1,NUM_STEPS=96,NUM_INFERENCE_STEPS=100,ACTION_CHUNK_STEPS=8,DEBUG_POLICY_TRACE_MAX_CALLS=12,DEBUG_POLICY_TRACE_ENV_INDEX=0,PRINT_INTERVAL=24,CAPTURE_VIDEO=False,CHECKPOINT=/results/dp_bc/franka-cube-dp-bc-warmstart/checkpoints/run_20260611_132410_curobo32_full_pick_lift_overfit2k/latest.ckpt cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- job_id: `1027729`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_curobo32_full_pick_lift_overfit2k_chunk8_trace96_20260611_133812`
+- logs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_dp_policy_1027729.out`
+- expected artifacts:
+  - `metrics.json`
+  - `policy_trace.json`
+
+Result:
+- status: running/queued, monitoring pending.
+
+Next:
+- Poll job `1027729`, inspect logs and artifacts, fetch metrics/trace locally,
+  then compare trace records against dataset phases before deciding the next
+  patch or data augmentation step.
+
+## 2026-06-11T13:49:30-07:00 - traced eval diagnosis and frame-fixed dataset
+
+Goal:
+- Analyze traced eval job `1027729`, resolve the open/drift failure mode, and
+  create the next valid BC dataset boundary.
+
+Hypothesis:
+- If live lowdim observations stay nearest to early pregrasp frames and the
+  predicted action chunks move away from the cube, the failure is not just
+  undertraining; it is likely a mismatch between how trajectory labels are
+  encoded and how the DEXTRAH Franka controller interprets actions.
+
+Change:
+- Added `dextrah_lab/offline_dp_bc/analyze_policy_trace.py` to compare traced
+  live lowdim observations/action chunks against converted dataset phases.
+- Fixed `dextrah_lab/offline_dp_bc/action_conversion.py` so task-space deltas
+  are rotated from world/env frame into the Franka controller action frame
+  before normalization. For the cube task this is the robot root yaw of 180 deg,
+  represented as WXYZ quaternion `[0, 0, 0, 1]`.
+- Added replay helpers that convert normalized action-frame commands back to
+  world deltas for validation.
+- Exposed `--world-to-action-quat-wxyz` in both trajectory converters and
+  updated `validate_dataset_smoke.py` to validate replay in world coordinates.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `fdb77c9dc967d1476361b4cb106190cec696e0a8`
+- implementation_commit: pending
+- push/pull: pending
+- changed_files:
+  - `dextrah_lab/offline_dp_bc/action_conversion.py`
+  - `dextrah_lab/offline_dp_bc/analyze_policy_trace.py`
+  - `dextrah_lab/offline_dp_bc/trajectory_conversion.py`
+  - `dextrah_lab/offline_dp_bc/generate_grasp_library_demos.py`
+  - `dextrah_lab/offline_dp_bc/validate_dataset_smoke.py`
+  - `dextrah_lab/offline_dp_bc/__init__.py`
+  - `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+
+Command / Job:
+- completed traced eval:
+  - job_id: `1027729`
+  - remote run_dir:
+    `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_curobo32_full_pick_lift_overfit2k_chunk8_trace96_20260611_133812`
+  - local fetched run_dir:
+    `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_curobo32_full_pick_lift_overfit2k_chunk8_trace96_20260611_133812`
+  - log:
+    `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_logs/l401/eval_franka_cube_dp_policy_1027729.out`
+- trace analysis:
+  `PYTHONPATH=$PWD $VENV/bin/python -m dextrah_lab.offline_dp_bc.analyze_policy_trace --dataset .../franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift.npz --trace .../policy_trace.json --output-dir .../reports/trace_analysis_1027729_20260611_133812`
+- corrected conversion:
+  `PYTHONPATH="$DEX:$GGX:$GGX/end2end:$CU" GRASPGENX_ROOT="$GGX" "$GGX/.venv/bin/python" -m dextrah_lab.offline_dp_bc.trajectory_conversion <32 trajectory.json files> --output .../datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz --input-format json --phase-set full_pick_lift --graspgenx-root "$GGX" --robot-config "$ROBOT_CONFIG"`
+- corrected dataset smoke:
+  `PYTHONPATH="$DEX" "$GGX/.venv/bin/python" -m dextrah_lab.offline_dp_bc.validate_dataset_smoke --dataset .../franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz`
+- official-DP tiny train:
+  `PYTHONPATH="$DP:$DEX" WANDB_MODE=offline "$VENV/bin/python" train.py --config-dir "$DEX/dextrah_lab/offline_dp_bc/config" --config-name franka_cube_lowdim_dp task.dataset_path="$DATASET" task.dataset.val_ratio=0.25 training.device=cuda:0 training.max_train_steps=20 training.max_val_steps=2 training.num_epochs=1 policy.num_inference_steps=25 dataloader.batch_size=32 val_dataloader.batch_size=32 hydra.run.dir="$RUN_DIR"`
+
+Result:
+- traced eval status: passed mechanically, failed behavior
+  - `steps_completed=96`
+  - `debug_policy_trace_records=12`
+  - action gripper range `[0.890, 1.000]`
+  - gripper width stayed open, final `0.07725 m`
+  - EE-to-cube distance increased `0.2337 m -> 0.3047 m`
+  - cube lift remained `0`
+- trace analysis artifacts:
+  - `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/trace_analysis_1027729_20260611_133812/trace_phase_comparison.csv`
+  - `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/trace_analysis_1027729_20260611_133812/trace_phase_comparison.json`
+  - `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/trace_analysis_1027729_20260611_133812/trace_phase_comparison.png`
+  - viewer:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/trace_analysis_1027729_20260611_133812/trace_phase_comparison.png`
+- trace-vs-dataset finding:
+  - all 12 policy calls nearest to `go_to_pre_grasp_pose`
+  - nearest-demo scaled distance grew `0.356 -> 1.293`
+  - live `cube_minus_ee` drifted from `[0.1457,-0.1815,0.0200]` to
+    `[0.1960,-0.2203,-0.0367]`
+  - model action labels from the old checkpoint had positive x / negative y,
+    but the Franka root-frame controller applied them as negative world x /
+    positive world y, matching the observed drift.
+- corrected dataset:
+  - `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz`
+  - `32` episodes, `22484` steps, obs/action dims `21/7`
+  - corrected smoke `first_step_position_replay_error=0.0`
+  - observations and phase ids are identical to the old dataset; action labels
+    flip the expected x/y and roll/pitch signs.
+- official-DP tiny train on corrected dataset:
+  - run_dir:
+    `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_debug/run_20260611_134700_curobo32_full_pick_lift_framefix_tiny`
+  - final `global_step=19`, `train_loss=1.0844`, `val_loss=1.0373`,
+    `train_action_mse_error=0.7494`
+  - checkpoint-smoke loads passed for `first`, `gripper_closed`, and
+    `lift_high`; action ranges are saturated because this is only a 20-step
+    mechanics smoke, not a trained policy.
+
+Analysis:
+- Root cause for the previous BC eval failure is now concrete: the old
+  full-pick/approach datasets encoded EE translation/rotation deltas in
+  world/env coordinates, but `DextrahFrankaStarKittingEnv._pre_physics_step`
+  passes relative commands to `DifferentialIKController` in the robot root
+  frame. The Franka cube robot root is yawed 180 deg, so x/y and roll/pitch
+  signs were inverted at execution.
+- Existing checkpoints trained on the old labels, including the 503-step and
+  overfit2k full-pick checkpoints, are stale for behavior. Their official-DP
+  mechanics evidence remains useful, but no further l401 policy eval should use
+  them as BC quality evidence.
+- The corrected framefix dataset is the next valid input for a bounded overfit
+  run. Since the 20-step checkpoint is intentionally undertrained and saturated,
+  the next scale-up should be a local official-DP 2k-step overfit/debug similar
+  to the prior overfit2k, then local bridge smokes, then l401 eval only if
+  action ranges are sane.
+
+Next:
+- Commit/push the frame-fix, trace-analysis utility, and worklog.
+- Launch a bounded corrected-label official-DP overfit/debug run only after
+  this source checkpoint is recorded; do not reuse stale old-label checkpoints
+  for more behavior claims.

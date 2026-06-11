@@ -588,6 +588,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--plan-summary", type=Path, default=None)
     parser.add_argument("--cube-lift-height", type=float, default=0.16)
     parser.add_argument("--max-gripper-width", type=float, default=0.08)
+    parser.add_argument(
+        "--world-to-action-quat-wxyz",
+        type=float,
+        nargs=4,
+        default=list(DEFAULT_DEXTRAH_ACTION_CONVENTION.world_to_action_quat_wxyz),
+        help="Rotate world-frame EE deltas into the controller action frame; Franka cube default is root yaw 180deg.",
+    )
     parser.add_argument("--ee-offset-pos", type=float, nargs=3, default=list(DEFAULT_EE_OFFSET_POS))
     parser.add_argument("--no-clip-actions", action="store_true")
     return parser.parse_args()
@@ -596,6 +603,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     convention = DextrahActionConvention(
+        world_to_action_quat_wxyz=tuple(float(v) for v in args.world_to_action_quat_wxyz),
         max_gripper_width=float(args.max_gripper_width),
         clip_actions=not bool(args.no_clip_actions),
     )

@@ -11,7 +11,7 @@ import numpy as np
 
 from .action_conversion import (
     DEFAULT_DEXTRAH_ACTION_CONVENTION,
-    apply_delta_pose,
+    apply_normalized_action_to_world_pose,
     quat_from_axis_angle_wxyz,
 )
 from .dp_dataset import FrankaCubeLowdimDataset, dataset_statistics
@@ -99,11 +99,11 @@ def main() -> None:
         raise RuntimeError("Action sample exceeds normalized DEXTRAH action bounds")
 
     replay_idx = min(max(int(args.pad_before), 0), args.horizon - 2)
-    raw_delta = action[replay_idx, :6] * DEFAULT_DEXTRAH_ACTION_CONVENTION.pose_scale
-    next_pos, _next_quat = apply_delta_pose(
+    next_pos, _next_quat = apply_normalized_action_to_world_pose(
         obs[replay_idx : replay_idx + 1, :3],
         obs[replay_idx : replay_idx + 1, 3:7],
-        raw_delta[None, :],
+        action[replay_idx : replay_idx + 1],
+        convention=DEFAULT_DEXTRAH_ACTION_CONVENTION,
     )
     replay_error = float(np.linalg.norm(next_pos[0] - obs[replay_idx + 1, :3]))
     stats = dataset_statistics(dataset_path)
