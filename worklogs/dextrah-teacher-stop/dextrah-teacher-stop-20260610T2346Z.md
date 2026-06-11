@@ -594,3 +594,47 @@ Analysis:
 Next:
 - Continue periodic monitoring; start tightening cadence around `20:20 PDT`
   and verify signal/requeue behavior around `20:39 PDT`.
+
+## 2026-06-10 19:38 PDT - Teacher Monitor Metric Pass
+
+Goal:
+- Continue monitoring and check whether the intermittent throughput dips are
+  affecting training health.
+
+Command / Job:
+- job_id: `28955904`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28955904.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+
+Result:
+- status: running healthy.
+- scheduler: running on `batch-block5-03072`, time left `1:06:31`.
+- stdout advanced to epoch `15342/20000`.
+- latest complete checkpoint:
+  `last_dextrah_lstm_ep_15340_rew_573.71826.pth`.
+- sidecars refreshed in stdout at `19:37:32`.
+- narrow failure scan returned no matches.
+- TensorBoard parsed through epoch `15336`.
+- `in_success_region/iter`: latest `0.442139`, last-50 `0.452363`,
+  last-200 `0.450874`.
+- `rewards/iter`: latest `712.889`, last-50 `629.174`,
+  last-200 `628.1`.
+- `num_adr_increases/iter`: `50`.
+- `info/kl`: latest `0.00553722`, last-50 `0.00687874`,
+  last-200 `0.00722852`.
+- `losses/a_loss`: last-50 `-0.00409601`.
+- `losses/c_loss`: last-50 `0.021564`.
+- `performance/step_inference_rl_update_fps`: latest `101339`,
+  last-50 about `107588`, last-200 about `109128`.
+
+Analysis:
+- Training quality remains healthy. Throughput again dipped for a short run of
+  epochs around `15331-15341`, then recovered in stdout by epoch `15342`.
+  Continue to watch, but there is no evidence of a training failure or stalled
+  checkpoint cadence.
+
+Next:
+- Continue periodic monitoring, and start shorter polling intervals closer to
+  `20:20 PDT`.
