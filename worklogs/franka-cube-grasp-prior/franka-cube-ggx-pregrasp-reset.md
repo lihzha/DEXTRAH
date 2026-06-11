@@ -916,3 +916,39 @@ Analysis:
 
 Next:
 - Refresh inspectable artifacts from current stdout/JSONL/checkpoints, then launch a bounded eval video from the next usable recent checkpoint without interrupting the active training job. Continue monitoring training through wall-time/requeue.
+
+## 2026-06-11T21:35:12Z - refreshed artifacts and second eval video
+
+Goal:
+- Produce the next inspectable artifact set and eval video from a newer usable checkpoint while keeping active training job `28987954` running.
+
+Command / Job:
+- artifact source: copied rank-0 JSONL, Slurm stdout, params, checkpoint filename listing, and scheduler snapshot from the active run
+- local artifact bundle: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/a1001/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005/inspection_20260611_213041`
+- plot viewer URL: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/a1001/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005/inspection_20260611_213041/training_curves.png`
+- eval launch command: `sbatch --parsable --partition=batch --time=00:25:00 --job-name=ggx_eval_video2 --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,TASK=Dextrah-Franka-Cube-Grasp,RUN_NAME=franka_cube_ggx_pregrasp_reset_eval_ep1325_20260611_213227,NUM_ENVS=1,NUM_STEPS=360,VIDEO_LENGTH=360,PRINT_INTERVAL=30,CAPTURE_VIDEO=True,DETERMINISTIC=True,USE_CUDA_GRAPH=False,SEED=20260612,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_smoke.npz,CHECKPOINT=/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005/nn/last_dextrah_franka_cube_grasp_ep_1325_rew_2241.5117.pth,VIDEO_NAME_PREFIX=ggx-pregrasp-reset-ep1325,CAMERA_EYE_X=-0.15,CAMERA_EYE_Y=-1.05,CAMERA_EYE_Z=1.55,CAMERA_TARGET_X=-0.41,CAMERA_TARGET_Y=-0.08,CAMERA_TARGET_Z=0.78 cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- eval job_id: `1027749`
+- eval run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_ggx_pregrasp_reset_eval_ep1325_20260611_213227`
+- eval log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1027749.out`
+- local eval artifacts: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_reset_eval_ep1325_20260611_213227`
+
+Result:
+- artifact status: produced
+- artifact snapshot: active job `RUNNING`, elapsed `02:02:07`, remaining `1:47:53`; rank-0 JSONL epoch `1328`, frame `1391460352`, `bad_scalar_count=0`, targeted log error signatures `0`
+- artifact best/checkpoint evidence: stdout best reward `2276.3032` at epoch `1202`; latest interval checkpoint in bundle `last_dextrah_franka_cube_grasp_ep_1325_rew_2241.5117.pth`; checkpoint list now verified numerically through epochs `975, 1000, 1025, 1050, 1075, 1100, 1125, 1150, 1175, 1200, 1225, 1250, 1275, 1300, 1325`
+- artifact reset metrics: success/farther rates `1.0`; latest pos error `0.001873 m`; latest rot error `0.017186 rad`; latest finger-table clearance `0.135052 m`
+- artifact behavior metrics: latest success rate `0.0`; latest lifted rate `0.00146484375`; latest lift height `0.000472 m`; latest lift reward `0.008748`; latest approach/enclosure `1.11228/0.624592`
+- eval status: `COMPLETED`, exit `0:0`, elapsed `00:01:10`, node `pool0-00016`
+- eval checkpoint: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005/nn/last_dextrah_franka_cube_grasp_ep_1325_rew_2241.5117.pth`
+- eval metrics: `num_envs=1`, `num_steps_completed=360`, `done_count=0`, `reward_mean=3.88144`, `reward_final=4.17788`, `success_rate_mean/final=0.0`, `cube_lift_height max=0.0`, `has_lifted_cube max=0.0`
+- eval clearance/contact metrics: finger-table clearance mean/min/final `0.08337/0.07290/0.08053 m`; `finger_table_clearance_violation=0.0`; `ee_to_cube_dist` mean/final `0.06826/0.06858 m`; `finger_center_to_cube_dist` mean/final `0.05806/0.05532 m`
+- eval video: raw H.264 `1280x720`, `359` frames, `5.983 s`, `60 fps`; trimmed preview H.264 `1280x720`, `353` frames, `5.883 s`, `60 fps`
+- eval video viewer URL: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_reset_eval_ep1325_20260611_213227/videos/ggx-pregrasp-reset-ep1325-step-0-trimmed.mp4`
+- visual inspection: wider camera view is better than the first eval; middle/final frames show the robot, gripper, and cube clearly; the rollout still does not lift in this single deterministic seed
+- active training during eval: job `28987954` remained `RUNNING` and reached epoch `1352`, with no bad scalars and interval checkpoint `last_dextrah_franka_cube_grasp_ep_1350_rew_2255.2527.pth`
+
+Analysis:
+- The refreshed artifact bundle and second eval video are inspectable and were produced without affecting active training. The single deterministic eval remains non-successful, matching sparse success in training metrics. The active training itself continues to show stable reset-prior metrics, no numerical issues, and improving checkpoint/best rewards.
+
+Next:
+- Continue monitoring active job `28987954` through wall-time/requeue. If later checkpoints show sustained success/lift improvement, produce another eval video from a newer checkpoint; otherwise keep the current videos as evidence of approach behavior and sparse lift.
