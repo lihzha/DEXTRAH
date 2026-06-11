@@ -86,7 +86,7 @@ def _fmt(value: object, digits: int = 6) -> str:
 
 
 def _draw_plot(steps: list[dict[str, object]], output_path: Path) -> None:
-    width, height = 1500, 1400
+    width, height = 1500, 1730
     margin_l, margin_r, margin_t = 96, 42, 76
     panel_h, panel_gap = 245, 86
     image = Image.new("RGB", (width, height), "white")
@@ -133,6 +133,17 @@ def _draw_plot(steps: list[dict[str, object]], output_path: Path) -> None:
                 ("success", "success_rate", (20, 80, 190), 1.0),
                 ("close action", "cube_traj_tracking_action_close", (215, 95, 45), 1.0),
                 ("up action", "cube_traj_tracking_action_up", (140, 70, 170), 1.0),
+            ],
+        ),
+        (
+            "Policy / Reference / Mixed Actions",
+            [
+                ("raw up", "raw_policy_action_up_mean", (35, 95, 190), 1.0),
+                ("ref up", "reference_delta_action_up_mean", (45, 150, 95), 1.0),
+                ("mixed up", "mixed_action_up_mean", (140, 70, 170), 1.0),
+                ("raw close", "raw_policy_action_close_mean", (205, 95, 45), 1.0),
+                ("ref close", "reference_delta_action_close_mean", (215, 150, 55), 1.0),
+                ("mixed close", "mixed_action_close_mean", (40, 150, 150), 1.0),
             ],
         ),
     ]
@@ -225,6 +236,7 @@ def main() -> None:
     compact = {
         "action_source": summary.get("action_source"),
         "action_source_notes": summary.get("action_source_notes"),
+        "reference_mix_alpha": summary.get("reference_mix_alpha"),
         "checkpoint": summary.get("checkpoint"),
         "done_count": summary.get("done_count"),
         "num_steps_completed": summary.get("num_steps_completed"),
@@ -251,6 +263,32 @@ def main() -> None:
         "action_alignment_error_mean": _summary(summary, "cube_traj_tracking_action_alignment_error", "mean"),
         "reference_action_close_mean": _summary(summary, "cube_traj_tracking_reference_action_close", "mean"),
         "reference_action_up_mean": _summary(summary, "cube_traj_tracking_reference_action_up", "mean"),
+        "raw_policy_action_close_mean": _summary(summary, "raw_policy_action_close_mean", "mean"),
+        "raw_policy_action_up_mean": _summary(summary, "raw_policy_action_up_mean", "mean"),
+        "raw_policy_action_gripper_mean": _summary(summary, "raw_policy_action_gripper_mean", "mean"),
+        "raw_policy_action_z_mean": _summary(summary, "raw_policy_action_z_mean", "mean"),
+        "reference_delta_action_close_mean": _summary(summary, "reference_delta_action_close_mean", "mean"),
+        "reference_delta_action_up_mean": _summary(summary, "reference_delta_action_up_mean", "mean"),
+        "reference_delta_action_gripper_mean": _summary(summary, "reference_delta_action_gripper_mean", "mean"),
+        "reference_delta_action_z_mean": _summary(summary, "reference_delta_action_z_mean", "mean"),
+        "mixed_action_close_mean": _summary(summary, "mixed_action_close_mean", "mean"),
+        "mixed_action_up_mean": _summary(summary, "mixed_action_up_mean", "mean"),
+        "mixed_action_gripper_mean": _summary(summary, "mixed_action_gripper_mean", "mean"),
+        "mixed_action_z_mean": _summary(summary, "mixed_action_z_mean", "mean"),
+        "policy_reference_action_error_l2_mean": _summary(summary, "policy_reference_action_error_l2_mean", "mean"),
+        "policy_reference_action_error_close_abs_mean": _summary(
+            summary, "policy_reference_action_error_close_abs_mean", "mean"
+        ),
+        "policy_reference_action_error_up_abs_mean": _summary(
+            summary, "policy_reference_action_error_up_abs_mean", "mean"
+        ),
+        "mixed_reference_action_error_l2_mean": _summary(summary, "mixed_reference_action_error_l2_mean", "mean"),
+        "mixed_reference_action_error_close_abs_mean": _summary(
+            summary, "mixed_reference_action_error_close_abs_mean", "mean"
+        ),
+        "mixed_reference_action_error_up_abs_mean": _summary(
+            summary, "mixed_reference_action_error_up_abs_mean", "mean"
+        ),
         "fixed_windows": {
             window_name: {
                 "reward_mean": _window_metric(summary, window_name, "reward_mean", "mean"),
@@ -275,6 +313,20 @@ def main() -> None:
                 ),
                 "action_alignment_error_mean": _window_metric(
                     summary, window_name, "cube_traj_tracking_action_alignment_error", "mean"
+                ),
+                "raw_policy_close_mean": _window_metric(summary, window_name, "raw_policy_action_close_mean", "mean"),
+                "raw_policy_up_mean": _window_metric(summary, window_name, "raw_policy_action_up_mean", "mean"),
+                "reference_close_mean": _window_metric(
+                    summary, window_name, "reference_delta_action_close_mean", "mean"
+                ),
+                "reference_up_mean": _window_metric(summary, window_name, "reference_delta_action_up_mean", "mean"),
+                "mixed_close_mean": _window_metric(summary, window_name, "mixed_action_close_mean", "mean"),
+                "mixed_up_mean": _window_metric(summary, window_name, "mixed_action_up_mean", "mean"),
+                "policy_reference_error_l2_mean": _window_metric(
+                    summary, window_name, "policy_reference_action_error_l2_mean", "mean"
+                ),
+                "mixed_reference_error_l2_mean": _window_metric(
+                    summary, window_name, "mixed_reference_action_error_l2_mean", "mean"
                 ),
                 "unsafe_target_rate_max": _window_metric(
                     summary, window_name, "cube_traj_tracking_unsafe_target_rate", "max"
@@ -310,6 +362,11 @@ def main() -> None:
                     _fmt(window["gripper_width_mean"], 4),
                     _fmt(window["close_utilization_mean"], 4),
                     _fmt(window["lift_utilization_mean"], 4),
+                    f"{_fmt(window['raw_policy_close_mean'], 4)}/{_fmt(window['raw_policy_up_mean'], 4)}",
+                    f"{_fmt(window['reference_close_mean'], 4)}/{_fmt(window['reference_up_mean'], 4)}",
+                    f"{_fmt(window['mixed_close_mean'], 4)}/{_fmt(window['mixed_up_mean'], 4)}",
+                    _fmt(window["policy_reference_error_l2_mean"], 4),
+                    _fmt(window["mixed_reference_error_l2_mean"], 4),
                     _fmt(window["action_alignment_reward_mean"], 4),
                     _fmt(window["action_alignment_error_mean"], 4),
                     _fmt(window["target_clearance_min"], 4),
@@ -321,8 +378,8 @@ def main() -> None:
         )
     window_table = "\n".join(
         [
-            "| Window | Reward | EE-target | EE-cube | Finger-cube | Grip width | Close util | Lift util | Align reward | Align err | Target clearance min | Lift max | Success |",
-            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+            "| Window | Reward | EE-target | EE-cube | Finger-cube | Grip width | Close util | Lift util | Raw close/up | Ref close/up | Mixed close/up | Policy-ref L2 | Mixed-ref L2 | Align reward | Align err | Target clearance min | Lift max | Success |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
             *window_rows,
         ]
     )
@@ -330,6 +387,7 @@ def main() -> None:
     report = f"""# Trajectory Tracking Diagnostic Artifact
 
 - action source: `{summary.get('action_source')}` ({summary.get('action_source_notes')})
+- reference mix alpha: {_fmt(summary.get('reference_mix_alpha'))}
 - checkpoint: `{summary.get('checkpoint')}`
 - steps: {summary.get('num_steps_completed')}/{summary.get('num_steps_requested')}
 - reward mean/final: {_fmt(summary.get('reward_mean'))} / {_fmt(summary.get('reward_final'))}
@@ -352,6 +410,11 @@ def main() -> None:
 - action-alignment reward mean/final: {_fmt(compact['action_alignment_reward_mean'])} / {_fmt(compact['action_alignment_reward_final'])}
 - action-alignment utilization/error mean: {_fmt(compact['action_alignment_utilization_mean'])} / {_fmt(compact['action_alignment_error_mean'])}
 - reference close/up action mean: {_fmt(compact['reference_action_close_mean'])} / {_fmt(compact['reference_action_up_mean'])}
+- raw policy close/up mean: {_fmt(compact['raw_policy_action_close_mean'])} / {_fmt(compact['raw_policy_action_up_mean'])}
+- reference-delta close/up mean: {_fmt(compact['reference_delta_action_close_mean'])} / {_fmt(compact['reference_delta_action_up_mean'])}
+- mixed close/up mean: {_fmt(compact['mixed_action_close_mean'])} / {_fmt(compact['mixed_action_up_mean'])}
+- policy-reference L2/close/up error mean: {_fmt(compact['policy_reference_action_error_l2_mean'])} / {_fmt(compact['policy_reference_action_error_close_abs_mean'])} / {_fmt(compact['policy_reference_action_error_up_abs_mean'])}
+- mixed-reference L2/close/up error mean: {_fmt(compact['mixed_reference_action_error_l2_mean'])} / {_fmt(compact['mixed_reference_action_error_close_abs_mean'])} / {_fmt(compact['mixed_reference_action_error_up_abs_mean'])}
 
 ## Fixed-Window Rollout Metrics
 

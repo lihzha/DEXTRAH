@@ -34,13 +34,21 @@ parser.add_argument("--trace_jsonl_path", type=str, default=None, help="Path to 
 parser.add_argument("--deterministic", action=argparse.BooleanOptionalAction, default=True, help="Use deterministic actions.")
 parser.add_argument(
     "--action_source",
-    choices=("policy", "zero", "reference_delta"),
+    choices=("policy", "zero", "reference_delta", "policy_reference_mix"),
     default="policy",
     help=(
         "Action source for rollout. 'policy' loads an RL-Games checkpoint. "
         "'reference_delta' maps the trajectory target position/gripper schedule "
-        "into the existing Franka delta-IK action interface."
+        "into the existing Franka delta-IK action interface. "
+        "'policy_reference_mix' loads a policy checkpoint and blends its action "
+        "toward the reference_delta action."
     ),
+)
+parser.add_argument(
+    "--reference_mix_alpha",
+    type=float,
+    default=0.0,
+    help="For action_source=policy_reference_mix, fraction of reference_delta action in the applied action.",
 )
 parser.add_argument(
     "--summary_window",
@@ -141,6 +149,50 @@ def _add_vector_metrics(metrics: dict[str, float | None], prefix: str, value, la
         metrics[f"{prefix}_{label}_env0"] = float(first_values[idx])
 
 
+def _add_action_signal_metrics(metrics: dict[str, float | None], prefix: str, actions: torch.Tensor | None) -> None:
+    if not isinstance(actions, torch.Tensor):
+        return
+    action_tensor = actions.detach().float()
+    if action_tensor.ndim < 2 or action_tensor.numel() == 0:
+        return
+    dim_count = action_tensor.shape[-1]
+    for dim in range(min(dim_count, 7)):
+        metrics[f"{prefix}_dim{dim}_mean"] = _mean_float(action_tensor[:, dim])
+    if dim_count >= 3:
+        metrics[f"{prefix}_z_mean"] = _mean_float(action_tensor[:, 2])
+        metrics[f"{prefix}_up_mean"] = _mean_float(torch.clamp(action_tensor[:, 2], 0.0, 1.0))
+    if dim_count >= 7:
+        metrics[f"{prefix}_gripper_mean"] = _mean_float(action_tensor[:, 6])
+        metrics[f"{prefix}_close_mean"] = _mean_float(torch.clamp(-action_tensor[:, 6], 0.0, 1.0))
+
+
+def _add_action_delta_metrics(
+    metrics: dict[str, float | None],
+    prefix: str,
+    lhs: torch.Tensor | None,
+    rhs: torch.Tensor | None,
+) -> None:
+    if not isinstance(lhs, torch.Tensor) or not isinstance(rhs, torch.Tensor):
+        return
+    lhs_tensor = lhs.detach().float()
+    rhs_tensor = rhs.detach().float()
+    if lhs_tensor.shape != rhs_tensor.shape or lhs_tensor.ndim < 2 or lhs_tensor.numel() == 0:
+        return
+    delta = lhs_tensor - rhs_tensor
+    metrics[f"{prefix}_mse_mean"] = _mean_float(torch.mean(torch.square(delta), dim=-1))
+    metrics[f"{prefix}_l2_mean"] = _mean_float(torch.norm(delta, dim=-1))
+    if lhs_tensor.shape[-1] >= 3:
+        metrics[f"{prefix}_z_abs_mean"] = _mean_float(torch.abs(delta[:, 2]))
+        lhs_up = torch.clamp(lhs_tensor[:, 2], 0.0, 1.0)
+        rhs_up = torch.clamp(rhs_tensor[:, 2], 0.0, 1.0)
+        metrics[f"{prefix}_up_abs_mean"] = _mean_float(torch.abs(lhs_up - rhs_up))
+    if lhs_tensor.shape[-1] >= 7:
+        metrics[f"{prefix}_gripper_abs_mean"] = _mean_float(torch.abs(delta[:, 6]))
+        lhs_close = torch.clamp(-lhs_tensor[:, 6], 0.0, 1.0)
+        rhs_close = torch.clamp(-rhs_tensor[:, 6], 0.0, 1.0)
+        metrics[f"{prefix}_close_abs_mean"] = _mean_float(torch.abs(lhs_close - rhs_close))
+
+
 def _collect_task_metrics(task_env, actions: torch.Tensor | None = None) -> dict[str, float | None]:
     metric_names = [
         "cube_lift_height",
@@ -215,12 +267,15 @@ def _collect_task_metrics(task_env, actions: torch.Tensor | None = None) -> dict
         metrics["ee_to_traj_target_dist_min"] = _tensor_stat_float(ee_to_target, "min")
         metrics["ee_to_traj_target_dist_max"] = _tensor_stat_float(ee_to_target, "max")
     if isinstance(actions, torch.Tensor):
+        _add_action_signal_metrics(metrics, "applied_action", actions)
         action_tensor = actions.detach().float()
         if action_tensor.ndim >= 2 and action_tensor.shape[-1] >= 7:
-            metrics["policy_action_z_mean"] = _mean_float(action_tensor[:, 2])
-            metrics["policy_action_gripper_mean"] = _mean_float(action_tensor[:, 6])
-            metrics["policy_action_close_mean"] = _mean_float(torch.clamp(-action_tensor[:, 6], 0.0, 1.0))
-            metrics["policy_action_up_mean"] = _mean_float(torch.clamp(action_tensor[:, 2], 0.0, 1.0))
+            # Backward-compatible names from earlier eval artifacts; for mixed
+            # rollouts these describe the action actually applied to the env.
+            metrics["policy_action_z_mean"] = metrics.get("applied_action_z_mean")
+            metrics["policy_action_gripper_mean"] = metrics.get("applied_action_gripper_mean")
+            metrics["policy_action_close_mean"] = metrics.get("applied_action_close_mean")
+            metrics["policy_action_up_mean"] = metrics.get("applied_action_up_mean")
     return metrics
 
 
@@ -266,16 +321,44 @@ def _reference_delta_actions(task_env) -> torch.Tensor:
     return actions
 
 
-def _actions_from_source(action_source: str, task_env, agent: BasePlayer | None, obs) -> torch.Tensor:
+def _policy_actions(agent: BasePlayer | None, obs) -> torch.Tensor:
+    if agent is None:
+        raise ValueError("policy action source requires an RL-Games player.")
+    obs_t = agent.obs_to_torch(obs)
+    return agent.get_action(obs_t, is_deterministic=args_cli.deterministic)
+
+
+def _actions_from_source(
+    action_source: str,
+    task_env,
+    agent: BasePlayer | None,
+    obs,
+) -> tuple[torch.Tensor, dict[str, float | None]]:
+    metrics: dict[str, float | None] = {}
     if action_source == "policy":
-        if agent is None:
-            raise ValueError("policy action source requires an RL-Games player.")
-        obs_t = agent.obs_to_torch(obs)
-        return agent.get_action(obs_t, is_deterministic=args_cli.deterministic)
+        raw_policy_actions = _policy_actions(agent, obs)
+        _add_action_signal_metrics(metrics, "raw_policy_action", raw_policy_actions)
+        return raw_policy_actions, metrics
     if action_source == "zero":
-        return _zero_actions(task_env)
+        actions = _zero_actions(task_env)
+        return actions, metrics
     if action_source == "reference_delta":
-        return _reference_delta_actions(task_env)
+        reference_actions = _reference_delta_actions(task_env)
+        _add_action_signal_metrics(metrics, "reference_delta_action", reference_actions)
+        return reference_actions, metrics
+    if action_source == "policy_reference_mix":
+        raw_policy_actions = _policy_actions(agent, obs)
+        reference_actions = _reference_delta_actions(task_env)
+        alpha = max(0.0, min(1.0, float(args_cli.reference_mix_alpha)))
+        mixed_actions = torch.clamp((1.0 - alpha) * raw_policy_actions + alpha * reference_actions, -1.0, 1.0)
+        metrics["reference_mix_alpha"] = alpha
+        _add_action_signal_metrics(metrics, "raw_policy_action", raw_policy_actions)
+        _add_action_signal_metrics(metrics, "reference_delta_action", reference_actions)
+        _add_action_signal_metrics(metrics, "mixed_action", mixed_actions)
+        _add_action_delta_metrics(metrics, "policy_reference_action_error", raw_policy_actions, reference_actions)
+        _add_action_delta_metrics(metrics, "mixed_reference_action_error", mixed_actions, reference_actions)
+        _add_action_delta_metrics(metrics, "mixed_policy_action_error", mixed_actions, raw_policy_actions)
+        return mixed_actions, metrics
     raise ValueError(f"Unsupported action source: {action_source}")
 
 
@@ -474,7 +557,7 @@ def main(env_cfg, agent_cfg: dict):
     _configure_eval_camera(env_cfg)
 
     resume_path = None
-    if args_cli.action_source == "policy":
+    if args_cli.action_source in ("policy", "policy_reference_mix"):
         resume_path = _checkpoint_path(agent_cfg)
         agent_cfg["params"]["load_checkpoint"] = True
         agent_cfg["params"]["load_path"] = resume_path
@@ -503,7 +586,7 @@ def main(env_cfg, agent_cfg: dict):
         gym_env = gym.wrappers.RecordVideo(gym_env, **video_kwargs)
 
     agent: BasePlayer | None = None
-    if args_cli.action_source == "policy":
+    if args_cli.action_source in ("policy", "policy_reference_mix"):
         rl_device = agent_cfg["params"]["config"]["device"]
         clip_obs = agent_cfg["params"]["env"].get("clip_observations", math.inf)
         clip_actions = agent_cfg["params"]["env"].get("clip_actions", math.inf)
@@ -530,7 +613,7 @@ def main(env_cfg, agent_cfg: dict):
         obs = env.reset()
         if isinstance(obs, tuple):
             obs = obs[0]
-        if args_cli.action_source == "policy" and isinstance(obs, dict):
+        if args_cli.action_source in ("policy", "policy_reference_mix") and isinstance(obs, dict):
             obs = obs["obs"]
         if agent is not None:
             _ = agent.get_batch_size(obs, 1)
@@ -542,7 +625,7 @@ def main(env_cfg, agent_cfg: dict):
                 break
 
             with torch.inference_mode():
-                actions = _actions_from_source(args_cli.action_source, task_env, agent, obs)
+                actions, action_source_metrics = _actions_from_source(args_cli.action_source, task_env, agent, obs)
                 step_out = env.step(actions)
                 if len(step_out) == 5:
                     obs, rewards, terminated, truncated, _ = step_out
@@ -550,7 +633,7 @@ def main(env_cfg, agent_cfg: dict):
                 else:
                     obs, rewards, dones, _ = step_out
 
-                if args_cli.action_source == "policy" and isinstance(obs, dict):
+                if args_cli.action_source in ("policy", "policy_reference_mix") and isinstance(obs, dict):
                     obs = obs["obs"]
 
                 success_rate = _env_metric(task_env, "in_success_region")
@@ -568,6 +651,7 @@ def main(env_cfg, agent_cfg: dict):
                     "step": step + 1,
                     "success_rate": success_rate,
                     "reward_mean": reward_mean,
+                    **action_source_metrics,
                     **task_metrics,
                 }
                 step_metrics.append(step_record)
@@ -597,8 +681,17 @@ def main(env_cfg, agent_cfg: dict):
             else (
                 "position_only_delta_ik_from_runtime_task_space_reference_plus_gripper_schedule"
                 if args_cli.action_source == "reference_delta"
-                else "zero_actions"
+                else (
+                    "rl_games_policy_blended_with_position_only_delta_ik_reference_delta_plus_gripper_schedule"
+                    if args_cli.action_source == "policy_reference_mix"
+                    else "zero_actions"
+                )
             )
+        ),
+        "reference_mix_alpha": (
+            max(0.0, min(1.0, float(args_cli.reference_mix_alpha)))
+            if args_cli.action_source == "policy_reference_mix"
+            else None
         ),
         "num_envs": env_cfg.scene.num_envs,
         "num_steps_requested": args_cli.num_steps,

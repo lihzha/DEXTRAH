@@ -2518,3 +2518,51 @@ Analysis:
 Next:
 - Proposed next bounded fix: implement an eval-only reference-action mixing/clamping diagnostic before new PPO training. Add an `ACTION_SOURCE=policy_reference_mix` route (or equivalent) that loads the learned policy action, computes `reference_delta`, and blends selected dimensions with coefficients such as `0.25`, `0.50`, `0.75`, and `1.0`.
 - Acceptance: same 480-step video/trace bundle, target unsafe remains `0`, consistency JSON passes, and traces log raw policy action, reference action, mixed action, action error, lift/success, EE/finger distances, gripper width/action, and close/up utilization. If mixing recovers approach/contact, the next training-side step should be stronger direct imitation/BC or a higher-weight KL/action imitation term. If mixing fails, inspect controller/action mapping or phase/reference timing before more PPO.
+
+## 2026-06-11T15:30:44-07:00 - policy-reference mix eval-only diagnostic plan
+
+Goal:
+- Implement and launch the bounded `policy_reference_mix` diagnostic requested by the user. This is eval-only and uses the epoch-5 action-alignment PPO checkpoint; no PPO scale-up.
+
+Hypothesis:
+- If the transformed task-space reference plus delta-IK action interface is feasible, blending the failed learned policy action toward the policy-free `reference_delta` action should monotonically recover approach/contact as alpha increases. If `alpha=1.0` does not resemble the earlier `reference_delta` feasibility run, the bug is likely in the action-source plumbing, action mapping, phase/reference timing, or eval config rather than PPO learning.
+
+Planned Change:
+- `dextrah_lab/rl_games/eval_rollout.py`: add `--action_source policy_reference_mix` and `--reference_mix_alpha`; load the RL-Games checkpoint, compute raw policy actions and `reference_delta` actions each step, blend `mixed=(1-alpha)*policy+alpha*reference`, clamp to action range, step the env with the mixed action, and log raw policy/reference/mixed action statistics plus action error.
+- `cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`: export `REFERENCE_MIX_ALPHA`, require `CHECKPOINT` for `policy_reference_mix`, echo the setting, and pass `--reference_mix_alpha`.
+- `dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py`: include mix alpha and the new policy/reference/mixed action-error metrics in `summary.json`/`report.md` so every run has an inspectable artifact bundle.
+- Owned worklog only: record commands, commits, job IDs, artifact paths, `viz-open` URLs, and pass/fail interpretation.
+
+Validation Before Launch:
+- `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py`
+- `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- Commit and push the implementation, then update the agent-owned l401 worktree `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking` to the exact commit via Git.
+
+Planned Jobs:
+- Four l401 eval-only 480-step video jobs with `ACTION_SOURCE=policy_reference_mix`, `REFERENCE_MIX_ALPHA` in `{0.25,0.50,0.75,1.0}`, `NUM_ENVS=4`, fixed seed `64`, same unvalidated 60 mm compact reference path, same action-alignment eval config, and checkpoint `/results/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_actionalign_rl_smoke_20260611_151520/nn/last_dextrah_franka_cube_traj_tracking_ep_5_rew_-inf.pth`.
+
+Artifact Contract:
+- For every mix run fetch remote results locally, validate video metadata/frame count, generate a first-usable/middle/last contact sheet, run the trajectory summarizer, create/record `viz-open` URLs for mp4/contact sheet/plot/report, and inspect metrics plus frames.
+- Generate a combined comparison report/summary/plot across old `actionscale-rewinf`, current failed `actionalign-rl5`, policy-free `reference_delta`, and the four mix alphas.
+
+Acceptance Criteria:
+- Each mix eval writes `metrics.json`, `trace.csv`, `trace.jsonl`, mp4, per-run report, plot, consistency JSON, contact sheet, and summary.
+- Logs include raw policy action, reference action, mixed action, policy-reference error, lift/success, EE/finger distances, gripper width/action, close/up utilization, target unsafe/clearance, and `reference_mix_alpha`.
+- Target unsafe remains `0`; train/eval config audit is understood; observation size remains `72`, phase observations false; reference caveat remains explicit: `curobo_validated=false`, and `reference_delta` is position-only delta IK plus gripper schedule, not cuRobo replay.
+- Final interpretation directly answers whether mixing recovers approach/contact compared with the old `actionscale-rewinf` and current `actionalign-rl5` failures.
+
+Version Control:
+- agent_id: franka-cube-traj-tracking
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking`
+- branch: `codex/franka-cube-trajectory-tracking`
+- base_commit: `6dc3fd22668f7625b9d6c706d3a65964aa351908`
+- implementation_commit: `60630378cfc5ff0035143afed32dc829ce36a368` before worklog hash amendment
+- changed_files: `dextrah_lab/rl_games/eval_rollout.py`, `cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`, `dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py`, `worklogs/franka-cube-grasp-prior/franka-cube-traj-tracking.md`
+
+Implementation Checkpoint:
+- `eval_rollout.py` now supports `ACTION_SOURCE=policy_reference_mix` via `--reference_mix_alpha`, loads the RL-Games policy, computes the existing `reference_delta` action, applies the clamped blended action, and records raw-policy/reference/mixed action statistics and error terms in `metrics.json`/trace rows.
+- `sbatch_eval_franka_cube_grasp_1gpu.sh` now exports/echoes `REFERENCE_MIX_ALPHA`, requires a checkpoint for `policy_reference_mix`, and passes `--reference_mix_alpha`.
+- `summarize_traj_tracking_eval_artifacts.py` now includes mix alpha, raw/reference/mixed close-up action overlays, and policy/reference error summaries in `summary.json`, report tables, and the diagnostic trace plot.
+- validation: `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py` passed.
+- validation: `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh` passed.
+- validation: summarizer regression on `cluster_results/l401/franka_cube_traj_tracking_actionalign_rl5_eval_fixed_video480_20260611_152420/metrics.json` wrote `/tmp/traj_summary_regression/{report.md,summary.json,train_eval_consistency.json,trajectory_trace_plot.png}` and correctly showed new mix-only fields as `n/a` for the older pure-policy run.
