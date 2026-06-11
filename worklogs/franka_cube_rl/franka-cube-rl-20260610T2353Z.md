@@ -328,3 +328,23 @@ Monitoring Criteria:
   checkpoint creation.
 - cancel and patch rather than let it run to walltime if it reproduces the old
   stalled signature after enough epochs for a clear trend.
+
+## 2026-06-10 17:12 PDT - Bounded KUKA-Parity PPO Submitted
+
+Command / Job:
+- command:
+  `TASK=Dextrah-Franka-Cube-Grasp FULL_EXPERIMENT_NAME=franka_cube_kukaparity_ppo_20260610_1710 CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-rl-20260610T2353Z NUM_ENVS=2048 MAX_ITERATIONS=600 USE_CUDA_GRAPH=False CUBE_SPAWN_XY_RANDOMIZATION=0.08 AUTO_RESUME=False SELF_RELAUNCH=False sbatch --parsable cluster/sbatch_train_teacher_8gpu.sh`
+- job_id: `28956257`
+- code_commit:
+  `ec9d08d2db958073b616aed135827d6ae422f34f`
+- remote worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-rl-20260610T2353Z`
+- expected log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28956257.out`
+- expected training root:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/franka_cube_grasp/franka_cube_kukaparity_ppo_20260610_1710`
+
+Next:
+- Monitor scheduler/log startup; confirm `AUTO_RESUME=False` prevents
+  inherited checkpoint selection; inspect scalar trends and checkpoints before
+  deciding whether to continue, cancel, patch, or evaluate.
