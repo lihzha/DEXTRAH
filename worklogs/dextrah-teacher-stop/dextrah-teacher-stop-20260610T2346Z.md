@@ -1753,3 +1753,53 @@ Next:
 - Continue active polling until Slurm moves the job out of completing/pending,
   then validate restore logs, sidecar load for all ranks, and training progress
   past epoch `18680`.
+
+## 2026-06-11 00:48 PDT - Teacher Requeue Restore Validated
+
+Goal:
+- Validate that the requeued allocation restored from the newest runtime state
+  and resumed healthy training.
+
+Command / Job:
+- job_id: `28955904`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28955904.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+- local TensorBoard copy:
+  `/tmp/dextrah_teacher_events`
+
+Result:
+- status: restore validated; training running healthy.
+- scheduler: `RUNNING` on `batch-block7-00110`, elapsed `16:53`,
+  time left `03:33:07` at `00:47:38 PDT`.
+- startup: scene creation completed on the new allocation after about
+  `517-520` seconds per rank, then training started.
+- restore: all ranks `0-7` logged restored runtime state at epoch `18680`.
+- stdout advanced past the restore to epoch `18727/20000`.
+- checkpoints advanced from pre-requeue `last_dextrah_lstm_ep_18680_rew_599.0859.pth`
+  to `last_dextrah_lstm_ep_18720_rew_528.04224.pth` at `00:47:04`.
+- runtime sidecars rank `0-7` refreshed at `00:47:01-00:47:02`.
+- narrow critical failure scan over recent stdout returned no matches.
+- TensorBoard summaries parsed through epoch `18725` for epoch-keyed scalars.
+- post-requeue `in_success_region/iter`: n=`45`, mean `0.468593`; latest
+  `0.459717`, last-50 `0.468491`.
+- post-requeue `rewards/iter`: n=`45`, mean `662.555`; latest `611.487`,
+  last-50 `665.392`.
+- `num_adr_increases/iter`: latest `50`, last-50 `50`.
+- `info/kl`: latest `0.00182933`, last-50 `0.00254236`.
+- `losses/a_loss`: latest `-0.00279579`, last-50 `-0.00262076`.
+- `losses/c_loss`: latest `0.0236278`, last-50 `0.0258549`.
+- `performance/step_inference_rl_update_fps`: latest `109794`,
+  last-20 about `108972`, last-50 about `107627`.
+
+Analysis:
+- The requeue/restore path is healthy. Fresh pre-requeue checkpoint and
+  sidecars were loaded, all ranks restored from epoch `18680`, training
+  advanced well past the restore point, artifacts refreshed, and early
+  post-requeue metrics are stable.
+
+Next:
+- Return to widened active monitoring on the new allocation, with the next
+  expected TERM/requeue window around `2026-06-11 04:15 PDT` if training has
+  not completed first.
