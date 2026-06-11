@@ -648,3 +648,32 @@ Analysis:
 
 Next:
 - Continue monitoring toward the next checkpoints and wall-time/requeue boundary. Inspect whether lift/success become more frequent with training; if not, compare to baseline timing before any code/config intervention.
+
+## 2026-06-11T19:55:41Z - final 8-GPU training monitor checkpoint
+
+Goal:
+- Record the epoch 150-250 checkpoint window for job `28987954` and confirm the reset-prior path remains stable while training progresses.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- implementation_commit: 99ea26d5b449581988594f40168806642c486326 for the running job; latest branch/worklog commit before this entry is `6eea3ba0cffb86804a2259a9668e1d5cf54c7b67`
+- remote_commit/status: a1001 NFS worktree remains clean at `99ea26d5b449581988594f40168806642c486326`; later local commits are worklog-only monitor records
+
+Command / Job:
+- monitor command: ten-sample local polling loop reading `squeue` and rank-0 JSONL from `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005/metrics/direct_info_rank_0.jsonl`
+- job_id: 28987954
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005`
+
+Result:
+- status: running_healthy
+- scheduler: `RUNNING`, elapsed about `00:25:55` at the last sample, node `batch-block5-00308`
+- JSONL scalar health: records advanced from epoch `166` to `267`; `bad_scalar_count=0` at every sample
+- checkpoints: epoch 150 `rew_1823.7875`, epoch 175 `rew_1837.514`, epoch 200 `rew_1861.1962`, epoch 225 `rew_1870.5924`, epoch 250 `rew_1925.6487`
+- prior reset metrics: success/farther rates remain `1.0`; latest reset position error `0.001821 m`; latest reset rotation error `0.015713 rad`; latest finger-table clearance `0.135130 m`
+- behavior/reward metrics: approach reward reached `1.08332` at epoch 256 and was `1.08062` at epoch 267; enclosure reward reached `0.61189` at epoch 256 and was `0.61050` at epoch 267; lift remains sparse but produced repeated nonzero samples (`0.00048828125` at epochs 166/177/211/233/245/256); success remained mostly zero in this window
+
+Analysis:
+- The final-scale run continues to checkpoint at the expected cadence with no numerical or reset-prior pathology. The policy is clearly improving on approach/enclosure and has intermittent lift, but sustained success has not emerged yet. This remains a monitor condition, not a patch condition.
+
+Next:
+- Continue monitoring toward later checkpoints and the first wall-time/requeue boundary. Watch for sustained lift/success growth and verify requeue resumes from the latest checkpoint without losing reset metrics.
