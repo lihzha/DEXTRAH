@@ -76,6 +76,7 @@ def _read_config_scalars(path: Path | None) -> dict[str, str]:
         "trajectory_tracking_reference_duration_s",
         "trajectory_tracking_phase_observations",
         "trajectory_tracking_follow_current_cube_pose",
+        "trajectory_tracking_min_target_gripper_width",
     }
     scalars: dict[str, str] = {}
     pattern = re.compile(r"^([A-Za-z0-9_]+):\s*(.*)$")
@@ -185,6 +186,7 @@ def _summarize_run(spec: RunSpec) -> dict:
         "lift_height_max": _summary_stat(metrics, "cube_lift_height_max", "max", rollout.get("max_mean_lift", "")),
         "gripper_width_mean": _summary_stat(metrics, "gripper_width", "mean", ""),
         "gripper_width_min": _summary_stat(metrics, "gripper_width", "min", ""),
+        "target_gripper_width_min": _summary_stat(metrics, "traj_target_gripper_width", "min", ""),
         "ee_to_cube_mean": _summary_stat(metrics, "ee_to_cube_dist", "mean", ""),
         "ee_to_cube_min": _summary_stat(metrics, "ee_to_cube_dist", "min", ""),
         "finger_center_to_cube_mean": _summary_stat(metrics, "finger_center_to_cube_dist", "mean", ""),
@@ -198,6 +200,10 @@ def _summarize_run(spec: RunSpec) -> dict:
         "object_pose_policy": trajectory.get("runtime_object_pose_policy", ""),
         "curobo_validated": trajectory.get("curobo_validated", ""),
         "reference_source": trajectory.get("source", ""),
+        "gripper_schedule_policy": trajectory.get("gripper_schedule_policy", ""),
+        "min_target_gripper_width_m": trajectory.get("min_target_gripper_width_m", ""),
+        "runtime_gripper_width_min_m": trajectory.get("runtime_gripper_width_min_m", ""),
+        "source_gripper_width_min_m": trajectory.get("source_gripper_width_min_m", ""),
         "checkpoint_rewards": ckpt_rewards,
         "config": config,
     }
@@ -343,6 +349,7 @@ def _write_csv(path: Path, summaries: list[dict]) -> None:
         "lift_height_max",
         "gripper_width_mean",
         "gripper_width_min",
+        "target_gripper_width_min",
         "ee_to_cube_mean",
         "finger_center_to_cube_mean",
         "position_error_mean",
@@ -353,6 +360,10 @@ def _write_csv(path: Path, summaries: list[dict]) -> None:
         "retime_policy",
         "object_pose_policy",
         "curobo_validated",
+        "gripper_schedule_policy",
+        "min_target_gripper_width_m",
+        "runtime_gripper_width_min_m",
+        "source_gripper_width_min_m",
         "checkpoint_reward_final",
         "checkpoint_reward_best",
         "nonfinite_count",
@@ -376,8 +387,12 @@ def _write_report(path: Path, summaries: list[dict], phase_png: Path, behavior_p
     old = by_key["phase_starved_rl25_eval"]
     retime = by_key["retimed_rl25_eval"]
     env_smoke = by_key["retimed_env_smoke"]
+    clamp_smoke = by_key["gripclamp_env_smoke"]
+    clamp_3epoch = by_key["gripclamp_3epoch_eval"]
+    clamp = by_key["gripclamp_rl25_eval"]
     train_old = by_key["phase_starved_rl25_train"]
     train_retime = by_key["retimed_rl25_train"]
+    train_clamp = by_key["gripclamp_rl25_train"]
     old_reference_duration = old.get("source_duration_s") or old.get("runtime_duration_s")
     retime_source_duration = retime.get("source_duration_s") or retime.get("runtime_duration_s")
     rows = []
@@ -387,6 +402,10 @@ def _write_report(path: Path, summaries: list[dict], phase_png: Path, behavior_p
         "retimed_3epoch_eval",
         "retimed_rl25_train",
         "retimed_rl25_eval",
+        "gripclamp_env_smoke",
+        "gripclamp_3epoch_eval",
+        "gripclamp_rl25_train",
+        "gripclamp_rl25_eval",
     ):
         summary = by_key[key]
         rows.append(
@@ -406,13 +425,15 @@ def _write_report(path: Path, summaries: list[dict], phase_png: Path, behavior_p
             ]
         )
     config_rows = [
-        ["Observation size", old["config"].get("observation_space", "72"), retime["config"].get("observation_space", "72")],
-        ["Phase observations", old["config"].get("trajectory_tracking_phase_observations", "false"), retime["config"].get("trajectory_tracking_phase_observations", "false")],
-        ["Reference duration", _fmt(old.get("runtime_duration_s")), _fmt(retime.get("runtime_duration_s"))],
-        ["Source duration", _fmt(old_reference_duration), _fmt(retime_source_duration)],
-        ["Retime policy", str(old.get("retime_policy") or "source_timing"), str(retime.get("retime_policy"))],
-        ["Object pose policy", str(old.get("object_pose_policy")), str(retime.get("object_pose_policy"))],
-        ["cuRobo validated", str(old.get("curobo_validated")), str(retime.get("curobo_validated"))],
+        ["Observation size", old["config"].get("observation_space", "72"), retime["config"].get("observation_space", "72"), clamp["config"].get("observation_space", "72")],
+        ["Phase observations", old["config"].get("trajectory_tracking_phase_observations", "false"), retime["config"].get("trajectory_tracking_phase_observations", "false"), clamp["config"].get("trajectory_tracking_phase_observations", "false")],
+        ["Reference duration", _fmt(old.get("runtime_duration_s")), _fmt(retime.get("runtime_duration_s")), _fmt(clamp.get("runtime_duration_s"))],
+        ["Source duration", _fmt(old_reference_duration), _fmt(retime_source_duration), _fmt(clamp.get("source_duration_s") or clamp.get("runtime_duration_s"))],
+        ["Retime policy", str(old.get("retime_policy") or "source_timing"), str(retime.get("retime_policy")), str(clamp.get("retime_policy"))],
+        ["Object pose policy", str(old.get("object_pose_policy")), str(retime.get("object_pose_policy")), str(clamp.get("object_pose_policy"))],
+        ["Gripper schedule policy", str(old.get("gripper_schedule_policy") or "raw_reference_widths"), str(retime.get("gripper_schedule_policy") or "raw_reference_widths"), str(clamp.get("gripper_schedule_policy"))],
+        ["Runtime target gripper min", _fmt(old.get("runtime_gripper_width_min_m") or old.get("target_gripper_width_min")), _fmt(retime.get("runtime_gripper_width_min_m") or retime.get("target_gripper_width_min")), _fmt(clamp.get("runtime_gripper_width_min_m") or clamp.get("target_gripper_width_min"))],
+        ["cuRobo validated", str(old.get("curobo_validated")), str(retime.get("curobo_validated")), str(clamp.get("curobo_validated"))],
     ]
     text = f"""# Franka Cube Trajectory-Tracking Artifact Comparison
 
@@ -422,7 +443,9 @@ Generated: {datetime.now().isoformat(timespec="seconds")}
 
 The retiming patch fixes the previous phase-starvation failure mode. The reset-pose RL25 eval before retiming only reached phase `{_fmt(old.get("phase_max"))}` because the reference duration was `{_fmt(old_reference_duration)}` s inside a 10 s episode. The retimed eval reaches phase `{_fmt(retime.get("phase_max"))}` with runtime duration `{_fmt(retime.get("runtime_duration_s"))}` s, while target safety remains clean: unsafe target rate max `{_fmt(retime.get("unsafe_target_rate_max"))}` and target clearance min `{_fmt(retime.get("target_clearance_min"))}` m.
 
-The remaining issue is behavior, not target generation. The retimed RL25 checkpoint improves tracking reward and approach distance versus the phase-starved eval, but it still has success `{_fmt(retime.get("success_rate_mean"))}` and max lift only `{_fmt(retime.get("lift_height_max"))}` m. Gripper width collapses near zero during the grasp/lift phase, and orientation error remains high, so the next bounded iteration should diagnose grasp contact/orientation/gripper scheduling before scaling training.
+The gripper-clamp iteration removes the raw zero-width gripper target from runtime tracking: the unclamped RL25 eval reaches measured gripper width min `{_fmt(retime.get("gripper_width_min"))}` m, while the clamped RL25 eval stays at measured min `{_fmt(clamp.get("gripper_width_min"))}` m with runtime target min `{_fmt(clamp.get("runtime_gripper_width_min_m") or clamp.get("target_gripper_width_min"))}` m. This is a useful wiring fix, but not a learned-task success: clamp RL25 still has success `{_fmt(clamp.get("success_rate_mean"))}`, max lift `{_fmt(clamp.get("lift_height_max"))}` m, and phase max `{_fmt(clamp.get("phase_max"))}` because some envs reset before the full reference completes.
+
+The remaining issue is behavior, not target generation. Target safety is clean across the retimed and clamped runs, but neither bounded RL25 checkpoint lifts reliably. The clamp improves gripper plausibility and finger-center distance to the cube, yet lowers tracking reward versus the unclamped retimed RL25 eval and does not solve contact/lift. The next bounded step should be visual diagnosis of the clamp reset/partial-lift behavior before changing reward weights or scaling training.
 
 The compact 60 mm reference is still reported as `curobo_validated=false`; it should not be treated as a DEXTRAH-ready validated reference until exact geometry/validation matches.
 
@@ -439,23 +462,30 @@ The compact 60 mm reference is still reported as `curobo_validated=false`; it sh
 
 ## Config Differences
 
-{_markdown_table(["Setting", "Before retiming eval", "Retimed RL25 eval"], config_rows)}
+{_markdown_table(["Setting", "Before retiming eval", "Retimed RL25 eval", "Clamp RL25 eval"], config_rows)}
 
 ## Training Checkpoints
 
 - Phase-starved RL25 train `{train_old["job_id"]}` checkpoint reward suffix final/best: `{_fmt(train_old.get("checkpoint_reward_final"))}` / `{_fmt(train_old.get("checkpoint_reward_best"))}`.
 - Retimed RL25 train `{train_retime["job_id"]}` checkpoint reward suffix final/best: `{_fmt(train_retime.get("checkpoint_reward_final"))}` / `{_fmt(train_retime.get("checkpoint_reward_best"))}`.
+- Gripper-clamp RL25 train `{train_clamp["job_id"]}` checkpoint reward suffix final/best: `{_fmt(train_clamp.get("checkpoint_reward_final"))}` / `{_fmt(train_clamp.get("checkpoint_reward_best"))}`.
 - TensorBoard event files fetched for these short smokes are zero-byte sidecars in the local artifact directories, so rollout JSON metrics are the inspectable evidence.
 
-## Retimed Env Smoke
+## Validation Smokes
 
 - Job `{env_smoke["job_id"]}` completed `{_fmt(env_smoke.get("steps_completed"))}` steps with non-finite count `{env_smoke.get("nonfinite_count")}`.
 - Observation size remained baseline `72`; task registration and baseline registration checks passed in the validation JSON.
 - Runtime duration `{_fmt(env_smoke.get("runtime_duration_s"))}` s is within the 10 s episode, target clearance min `{_fmt(env_smoke.get("target_clearance_min"))}` m, unsafe target rate max `{_fmt(env_smoke.get("unsafe_target_rate_max"))}`.
+- Clamp validation job `{clamp_smoke["job_id"]}` completed `{_fmt(clamp_smoke.get("steps_completed"))}` steps with non-finite count `{clamp_smoke.get("nonfinite_count")}`, final success rate `{_fmt(clamp_smoke.get("success_rate_final"))}`, and `gripper_schedule_policy={clamp_smoke.get("gripper_schedule_policy")}`. This is validation-rollout evidence only, not learned-policy success.
+
+## Clamp Eval Notes
+
+- Tiny clamp eval `{clamp_3epoch["job_id"]}`: phase max `{_fmt(clamp_3epoch.get("phase_max"))}`, reward mean `{_fmt(clamp_3epoch.get("reward_mean"))}`, success `{_fmt(clamp_3epoch.get("success_rate_mean"))}`, measured gripper width min `{_fmt(clamp_3epoch.get("gripper_width_min"))}` m.
+- Clamp RL25 eval `{clamp["job_id"]}`: reward mean `{_fmt(clamp.get("reward_mean"))}`, success `{_fmt(clamp.get("success_rate_mean"))}`, lift max `{_fmt(clamp.get("lift_height_max"))}` m, unsafe target rate max `{_fmt(clamp.get("unsafe_target_rate_max"))}`, target clearance min `{_fmt(clamp.get("target_clearance_min"))}` m.
 
 ## Next Debug Direction
 
-Keep the original baseline unchanged and continue in the separate `Dextrah-Franka-Cube-Grasp-Traj-Tracking` variant. Based on the retimed RL25 eval, the next cheap ablation should target behavior: inspect whether gripper width target `0.0` and weak orientation tracking encourage closing before useful contact. A bounded follow-up should adjust only the variant's tracking/reward schedule, run a task smoke, then a short RL smoke/eval before any larger training.
+Keep the original baseline unchanged and continue in the separate `Dextrah-Franka-Cube-Grasp-Traj-Tracking` variant. Based on the clamp RL25 eval, inspect a short video/per-step trace before any reward change. If the visual evidence confirms premature reset, slipping, or weak closure, the next cheap ablation should adjust only the variant's behavior-side tracking schedule or reward balance, then run a task smoke and short RL smoke/eval before any larger training.
 """
     path.write_text(text, encoding="utf-8")
 
@@ -524,6 +554,48 @@ def _build_run_specs(root: Path) -> list[RunSpec]:
             log_path=root / "franka_cube_traj_tracking_retime_rl25_eval720_20260611_132411" / "eval_franka_cube_1027726.out",
             config_path=root / "franka_cube_traj_tracking_retime_ref_rl25_20260611_132107" / "params" / "env.yaml",
         ),
+        RunSpec(
+            key="gripclamp_env_smoke",
+            label="Gripper clamp env smoke",
+            run_type="validation",
+            job_id="1027728",
+            commit="c786e59eb6058081ff5d0d8b27c1f947b66f1e40",
+            result_dir=root / "franka_cube_traj_tracking_gripclamp_env_smoke_20260611_133800",
+            metrics_path=root / "franka_cube_traj_tracking_gripclamp_env_smoke_20260611_133800" / "metrics.json",
+            log_path=root / "franka_cube_traj_tracking_gripclamp_env_smoke_20260611_133800" / "validate_franka_cube_1027728.out",
+        ),
+        RunSpec(
+            key="gripclamp_3epoch_eval",
+            label="Gripper clamp 3-epoch eval",
+            run_type="eval",
+            job_id="1027731",
+            commit="92e69c06b8c99a09d6c8ab97177c81f5bf2d0c33",
+            result_dir=root / "franka_cube_traj_tracking_gripclamp_eval720_20260611_134240",
+            metrics_path=root / "franka_cube_traj_tracking_gripclamp_eval720_20260611_134240" / "metrics.json",
+            log_path=root / "franka_cube_traj_tracking_gripclamp_eval720_20260611_134240" / "eval_franka_cube_1027731.out",
+            config_path=root / "franka_cube_traj_tracking_gripclamp_rl_smoke_20260611_133928" / "params" / "env.yaml",
+        ),
+        RunSpec(
+            key="gripclamp_rl25_train",
+            label="Gripper clamp RL25 train",
+            run_type="train",
+            job_id="1027732",
+            commit="b4fc9d75a8be253ce542366960023682aeb07ad7",
+            result_dir=root / "franka_cube_traj_tracking_gripclamp_rl25_20260611_134613",
+            log_path=root / "franka_cube_traj_tracking_gripclamp_rl25_20260611_134613" / "teacher_8gpu_1027732.out",
+            config_path=root / "franka_cube_traj_tracking_gripclamp_rl25_20260611_134613" / "params" / "env.yaml",
+        ),
+        RunSpec(
+            key="gripclamp_rl25_eval",
+            label="Gripper clamp RL25 eval",
+            run_type="eval",
+            job_id="1027733",
+            commit="6f8bbdda08d6686b8b308d32adf9c225e1d2978b",
+            result_dir=root / "franka_cube_traj_tracking_gripclamp_rl25_eval720_20260611_134918",
+            metrics_path=root / "franka_cube_traj_tracking_gripclamp_rl25_eval720_20260611_134918" / "metrics.json",
+            log_path=root / "franka_cube_traj_tracking_gripclamp_rl25_eval720_20260611_134918" / "eval_franka_cube_1027733.out",
+            config_path=root / "franka_cube_traj_tracking_gripclamp_rl25_20260611_134613" / "params" / "env.yaml",
+        ),
     ]
 
 
@@ -532,11 +604,13 @@ def _write_plots(root: Path, output_dir: Path, summaries: list[dict]) -> tuple[P
         "before": _load_json(root / "franka_cube_traj_tracking_resetpose_rl25_eval720_20260611_130748" / "metrics.json"),
         "retime3": _load_json(root / "franka_cube_traj_tracking_retime_ref_eval720_20260611_131855" / "metrics.json"),
         "retime25": _load_json(root / "franka_cube_traj_tracking_retime_rl25_eval720_20260611_132411" / "metrics.json"),
+        "clamp3": _load_json(root / "franka_cube_traj_tracking_gripclamp_eval720_20260611_134240" / "metrics.json"),
+        "clamp25": _load_json(root / "franka_cube_traj_tracking_gripclamp_rl25_eval720_20260611_134918" / "metrics.json"),
     }
     phase_png = output_dir / "phase_progress_and_target_safety.png"
     _draw_plot(
         phase_png,
-        "Franka Cube Trajectory Tracking: Retiming Fixes Phase Starvation, Target Safety Stays Clean",
+        "Franka Cube Trajectory Tracking: Retiming Fixes Phase Starvation, Grip Clamp Remains Target-Safe",
         [
             {
                 "title": "Phase progress",
@@ -546,6 +620,8 @@ def _write_plots(root: Path, output_dir: Path, summaries: list[dict]) -> tuple[P
                     ("before retime RL25 eval 1027719", _step_series(metrics["before"], "traj_phase_progress")),
                     ("retimed 3-epoch eval 1027723", _step_series(metrics["retime3"], "traj_phase_progress")),
                     ("retimed RL25 eval 1027726", _step_series(metrics["retime25"], "traj_phase_progress")),
+                    ("gripper clamp 3-epoch eval 1027731", _step_series(metrics["clamp3"], "traj_phase_progress")),
+                    ("gripper clamp RL25 eval 1027733", _step_series(metrics["clamp25"], "traj_phase_progress")),
                 ],
             },
             {
@@ -557,6 +633,8 @@ def _write_plots(root: Path, output_dir: Path, summaries: list[dict]) -> tuple[P
                     ("before retime RL25 eval 1027719", _step_series(metrics["before"], "cube_traj_tracking_target_table_clearance_min")),
                     ("retimed 3-epoch eval 1027723", _step_series(metrics["retime3"], "cube_traj_tracking_target_table_clearance_min")),
                     ("retimed RL25 eval 1027726", _step_series(metrics["retime25"], "cube_traj_tracking_target_table_clearance_min")),
+                    ("gripper clamp 3-epoch eval 1027731", _step_series(metrics["clamp3"], "cube_traj_tracking_target_table_clearance_min")),
+                    ("gripper clamp RL25 eval 1027733", _step_series(metrics["clamp25"], "cube_traj_tracking_target_table_clearance_min")),
                 ],
             },
             {
@@ -567,6 +645,8 @@ def _write_plots(root: Path, output_dir: Path, summaries: list[dict]) -> tuple[P
                     ("before retime RL25 eval 1027719", _step_series(metrics["before"], "cube_traj_tracking_unsafe_target_rate")),
                     ("retimed 3-epoch eval 1027723", _step_series(metrics["retime3"], "cube_traj_tracking_unsafe_target_rate")),
                     ("retimed RL25 eval 1027726", _step_series(metrics["retime25"], "cube_traj_tracking_unsafe_target_rate")),
+                    ("gripper clamp 3-epoch eval 1027731", _step_series(metrics["clamp3"], "cube_traj_tracking_unsafe_target_rate")),
+                    ("gripper clamp RL25 eval 1027733", _step_series(metrics["clamp25"], "cube_traj_tracking_unsafe_target_rate")),
                 ],
             },
         ],
@@ -574,7 +654,7 @@ def _write_plots(root: Path, output_dir: Path, summaries: list[dict]) -> tuple[P
     behavior_png = output_dir / "behavior_reward_lift_finger_metrics.png"
     _draw_plot(
         behavior_png,
-        "Franka Cube Trajectory Tracking: Behavior Metrics After Retiming",
+        "Franka Cube Trajectory Tracking: Behavior Metrics After Retiming And Gripper Clamp",
         [
             {
                 "title": "Reward mean",
@@ -582,6 +662,8 @@ def _write_plots(root: Path, output_dir: Path, summaries: list[dict]) -> tuple[P
                     ("before retime RL25 eval 1027719", _step_series(metrics["before"], "reward_mean")),
                     ("retimed 3-epoch eval 1027723", _step_series(metrics["retime3"], "reward_mean")),
                     ("retimed RL25 eval 1027726", _step_series(metrics["retime25"], "reward_mean")),
+                    ("gripper clamp 3-epoch eval 1027731", _step_series(metrics["clamp3"], "reward_mean")),
+                    ("gripper clamp RL25 eval 1027733", _step_series(metrics["clamp25"], "reward_mean")),
                 ],
             },
             {
@@ -593,14 +675,19 @@ def _write_plots(root: Path, output_dir: Path, summaries: list[dict]) -> tuple[P
                     ("before retime RL25 eval 1027719", _step_series(metrics["before"], "cube_lift_height_max")),
                     ("retimed 3-epoch eval 1027723", _step_series(metrics["retime3"], "cube_lift_height_max")),
                     ("retimed RL25 eval 1027726", _step_series(metrics["retime25"], "cube_lift_height_max")),
+                    ("gripper clamp 3-epoch eval 1027731", _step_series(metrics["clamp3"], "cube_lift_height_max")),
+                    ("gripper clamp RL25 eval 1027733", _step_series(metrics["clamp25"], "cube_lift_height_max")),
                 ],
             },
             {
                 "title": "Gripper width and finger distance to cube (m)",
                 "series": [
                     ("retimed RL25 gripper width", _step_series(metrics["retime25"], "gripper_width")),
+                    ("clamp RL25 gripper width", _step_series(metrics["clamp25"], "gripper_width")),
                     ("retimed RL25 finger-center to cube", _step_series(metrics["retime25"], "finger_center_to_cube_dist")),
+                    ("clamp RL25 finger-center to cube", _step_series(metrics["clamp25"], "finger_center_to_cube_dist")),
                     ("retimed RL25 ee to cube", _step_series(metrics["retime25"], "ee_to_cube_dist")),
+                    ("clamp RL25 ee to cube", _step_series(metrics["clamp25"], "ee_to_cube_dist")),
                 ],
             },
             {
@@ -611,7 +698,9 @@ def _write_plots(root: Path, output_dir: Path, summaries: list[dict]) -> tuple[P
                 "series": [
                     ("before retime min clearance", _step_series(metrics["before"], "finger_table_clearance_min")),
                     ("retimed RL25 min clearance", _step_series(metrics["retime25"], "finger_table_clearance_min")),
+                    ("clamp RL25 min clearance", _step_series(metrics["clamp25"], "finger_table_clearance_min")),
                     ("retimed RL25 violation max", _step_series(metrics["retime25"], "finger_table_clearance_violation_max")),
+                    ("clamp RL25 violation max", _step_series(metrics["clamp25"], "finger_table_clearance_violation_max")),
                 ],
             },
         ],

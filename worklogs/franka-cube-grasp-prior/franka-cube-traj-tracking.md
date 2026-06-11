@@ -1580,3 +1580,37 @@ Analysis:
 Next:
 - Commit/push this reconciliation note.
 - Continue with the already planned clamp comparison artifact update and cheap visual diagnosis of the clamp RL25 reset/partial-lift behavior.
+
+## 2026-06-11T13:58:28-07:00 - clamp comparison artifact bundle
+
+Goal:
+- Generate the requested inspectable artifact bundle from fetched metrics/logs, now including the gripper-clamp validation, tiny eval, RL25 train, and RL25 eval runs in addition to the old phase-starved and retimed runs.
+
+Change:
+- Extended `dextrah_lab/scene_scripts/summarize_franka_cube_traj_tracking_artifacts.py` to include clamp run specs/jobs `1027728`, `1027731`, `1027732`, and `1027733`.
+- Added gripper-schedule policy fields to the summary JSON/CSV and report: target gripper width min, runtime/source gripper min, and clamp policy.
+- Updated the phase/safety and behavior PNGs to overlay clamp RL25 against the old phase-starved and retimed traces.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/scene_scripts/summarize_franka_cube_traj_tracking_artifacts.py`: passed.
+- `git diff --check`: passed.
+- `python3 dextrah_lab/scene_scripts/summarize_franka_cube_traj_tracking_artifacts.py --root cluster_results/l401 --output-dir cluster_results/l401/franka_cube_traj_tracking_artifact_bundle_clamp_20260611_135512`: passed.
+- Visual inspection via `view_image`: phase/safety and behavior PNGs are nonblank and legible; phase/safety shows retiming reaching phase 1.0, clamp RL25 resetting before phase 1.0, and unsafe targets staying at 0.
+
+Artifacts:
+- report: `cluster_results/l401/franka_cube_traj_tracking_artifact_bundle_clamp_20260611_135512/comparison_report.md`
+- summary_json: `cluster_results/l401/franka_cube_traj_tracking_artifact_bundle_clamp_20260611_135512/summary.json`
+- summary_csv: `cluster_results/l401/franka_cube_traj_tracking_artifact_bundle_clamp_20260611_135512/summary.csv`
+- phase_safety_png: `cluster_results/l401/franka_cube_traj_tracking_artifact_bundle_clamp_20260611_135512/phase_progress_and_target_safety.png`
+- behavior_png: `cluster_results/l401/franka_cube_traj_tracking_artifact_bundle_clamp_20260611_135512/behavior_reward_lift_finger_metrics.png`
+- viz_phase_safety_png: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_artifact_bundle_clamp_20260611_135512/phase_progress_and_target_safety.png`
+- viz_report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_artifact_bundle_clamp_20260611_135512/comparison_report.md`
+
+Result:
+- status: passed; artifact bundle generated from existing fetched metrics/logs before any additional training launch.
+- main conclusion: retiming fixed the phase-starvation failure. The gripper clamp prevents raw zero target widths and measured gripper collapse, but clamp RL25 is not a learned-policy success: success remains `0.0`, max lift is `0.0864` m but not sustained, and phase max is only `0.8875` because resets occur before the full reference completes. Target safety remains clean.
+- caveat: the 60 mm compact reference still reports `curobo_validated=false`, so this remains an unvalidated geometry-match reference.
+
+Next:
+- Commit/push the artifact generator and this worklog entry.
+- Launch a cheap video/per-step visual diagnosis of the clamp RL25 checkpoint if feasible before any further reward/tuning change.
