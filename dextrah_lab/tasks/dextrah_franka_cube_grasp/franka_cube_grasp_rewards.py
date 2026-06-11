@@ -13,10 +13,12 @@ def compute_franka_cube_grasp_rewards(
     cube_lift_height: torch.Tensor,
     cube_goal_height_error: torch.Tensor,
     cube_xy_error: torch.Tensor,
+    finger_table_clearance: torch.Tensor,
     in_success_region: torch.Tensor,
     actions: torch.Tensor,
     target_lift_height: float,
     max_gripper_width: float,
+    table_clearance_margin: float,
     approach_weight: float,
     approach_sharpness: float,
     enclosure_weight: float,
@@ -30,6 +32,7 @@ def compute_franka_cube_grasp_rewards(
     close_action_weight: float,
     lift_action_weight: float,
     descend_action_penalty_weight: float,
+    table_clearance_penalty_weight: float,
     gripper_close_reg_weight: float,
     action_penalty_weight: float,
 ):
@@ -59,6 +62,14 @@ def compute_franka_cube_grasp_rewards(
         * (0.25 + 0.75 * finger_balance_gate)
     )
     lift_ready_gate = near_enclosure_gate * closed_gripper * xy_stability
+    table_clearance_denom = table_clearance_margin
+    if table_clearance_denom < 1.0e-6:
+        table_clearance_denom = 1.0e-6
+    table_clearance_violation = torch.clamp(
+        (table_clearance_margin - finger_table_clearance) / table_clearance_denom,
+        0.0,
+        1.0,
+    )
 
     approach_reward = approach_weight * near_gate
     enclosure_reward = enclosure_weight * enclosure_gate
@@ -71,6 +82,7 @@ def compute_franka_cube_grasp_rewards(
     descend_action_penalty = (
         descend_action_penalty_weight * prelift_gate * lift_ready_gate * torch.clamp(-actions[:, 2], 0.0, 1.0)
     )
+    table_clearance_penalty = table_clearance_penalty_weight * table_clearance_violation * table_clearance_violation
     gripper_close_reg = gripper_close_reg_weight * gripper_open_fraction * gripper_open_fraction
     action_penalty = action_penalty_weight * torch.sum(actions * actions, dim=-1)
 
@@ -84,6 +96,7 @@ def compute_franka_cube_grasp_rewards(
         close_action_reward,
         lift_action_reward,
         descend_action_penalty,
+        table_clearance_penalty,
         gripper_close_reg,
         action_penalty,
     )

@@ -105,6 +105,8 @@ def _collect_task_metrics(task_env) -> dict[str, float | None]:
         "finger_distance_asymmetry",
         "hand_to_cube_mean_dist",
         "hand_to_cube_max_dist",
+        "finger_table_clearance",
+        "finger_table_clearance_violation",
         "star_lift_height",
         "star_initial_xy_error",
         "goal_xy_error",

@@ -64,6 +64,8 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         self.hand_to_cube_mean_dist = torch.zeros(self.num_envs, device=self.device)
         self.hand_to_cube_max_dist = torch.zeros(self.num_envs, device=self.device)
         self.gripper_width = torch.zeros(self.num_envs, device=self.device)
+        self.finger_table_clearance = torch.zeros(self.num_envs, device=self.device)
+        self.finger_table_clearance_violation = torch.zeros(self.num_envs, device=self.device)
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
         self._compute_intermediate_values()
@@ -87,7 +89,11 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             & (self.cube_xy_error >= float(self.cfg.prelift_drag_termination_xy_error))
             & (self.episode_length_buf > 2)
         )
-        terminated = cube_out | success_done | prelift_drag_done
+        finger_table_penetration_done = (
+            (self.finger_table_clearance < float(self.cfg.finger_table_penetration_termination_margin))
+            & (self.episode_length_buf > 2)
+        )
+        terminated = cube_out | success_done | prelift_drag_done | finger_table_penetration_done
         truncated = self.episode_length_buf >= self.max_episode_length - 1
         return terminated, truncated
 
@@ -103,6 +109,7 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             close_action_reward,
             lift_action_reward,
             descend_action_penalty,
+            table_clearance_penalty,
             gripper_close_reg,
             action_penalty,
         ) = compute_franka_cube_grasp_rewards(
@@ -112,10 +119,12 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             self.cube_lift_height,
             self.cube_goal_height_error,
             self.cube_xy_error,
+            self.finger_table_clearance,
             self.in_success_region,
             self.actions,
             float(self.cfg.cube_lift_height),
             float(self.cfg.max_gripper_width),
+            float(self.cfg.finger_table_clearance_margin),
             float(self.cfg.cube_approach_weight),
             float(self.cfg.cube_approach_sharpness),
             float(self.cfg.cube_enclosure_weight),
@@ -129,6 +138,7 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             float(self.cfg.cube_close_action_weight),
             float(self.cfg.cube_lift_action_weight),
             float(self.cfg.cube_descend_action_penalty_weight),
+            float(self.cfg.cube_table_clearance_penalty_weight),
             float(self.cfg.cube_gripper_close_reg_weight),
             float(self.cfg.cube_action_penalty_weight),
         )
@@ -142,6 +152,7 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             + close_action_reward
             + lift_action_reward
             + descend_action_penalty
+            + table_clearance_penalty
             + gripper_close_reg
             + action_penalty
         )
@@ -155,6 +166,7 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             "cube_close_action_reward": close_action_reward.mean(),
             "cube_lift_action_reward": lift_action_reward.mean(),
             "cube_descend_action_penalty": descend_action_penalty.mean(),
+            "cube_table_clearance_penalty": table_clearance_penalty.mean(),
             "cube_gripper_close_reg": gripper_close_reg.mean(),
             "cube_action_penalty": action_penalty.mean(),
             "cube_lift_height": self.cube_lift_height.mean(),
@@ -169,6 +181,8 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             "cube_right_finger_to_cube_dist": self.right_finger_to_cube_dist.mean(),
             "cube_max_finger_to_cube_dist": self.max_finger_to_cube_dist.mean(),
             "cube_finger_distance_asymmetry": self.finger_distance_asymmetry.mean(),
+            "cube_finger_table_clearance": self.finger_table_clearance.mean(),
+            "cube_finger_table_clearance_violation": self.finger_table_clearance_violation.mean(),
             "cube_action_z": self.actions[:, 2].mean(),
             "cube_action_up": torch.clamp(self.actions[:, 2], 0.0, 1.0).mean(),
             "cube_action_down": torch.clamp(-self.actions[:, 2], 0.0, 1.0).mean(),
@@ -338,6 +352,19 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             self.left_finger_to_cube_dist[env_ids] + self.right_finger_to_cube_dist[env_ids]
         )
         self.hand_to_cube_max_dist[env_ids] = self.max_finger_to_cube_dist[env_ids]
+        self.finger_table_clearance[env_ids] = torch.minimum(
+            self.left_finger_pos[env_ids, 2],
+            self.right_finger_pos[env_ids, 2],
+        ) - float(self.cfg.table_surface_z)
+        clearance_margin = float(self.cfg.finger_table_clearance_margin)
+        if clearance_margin < 1.0e-6:
+            clearance_margin = 1.0e-6
+        self.finger_table_clearance_violation[env_ids] = torch.clamp(
+            (float(self.cfg.finger_table_clearance_margin) - self.finger_table_clearance[env_ids])
+            / clearance_margin,
+            0.0,
+            1.0,
+        )
         self.cube_lift_height[env_ids] = torch.clamp(
             self.cube_pos[env_ids, 2] - self.cube_initial_pos[env_ids, 2], min=0.0
         )
@@ -351,6 +378,7 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             (self.cube_lift_height[env_ids] >= float(self.cfg.cube_success_lift_height))
             & (self.cube_xy_error[env_ids] <= float(self.cfg.cube_success_xy_tol))
             & (self.hand_to_cube_mean_dist[env_ids] <= float(self.cfg.cube_success_hand_dist))
+            & (self.finger_table_clearance[env_ids] >= float(self.cfg.finger_table_clearance_success_margin))
         )
         self.in_success_region[env_ids] = success
         if update_success_timer:

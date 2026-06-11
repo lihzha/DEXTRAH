@@ -561,3 +561,50 @@ Monitoring Criteria:
   - `cube_lift_height` and `cube_has_lifted_rate` should exceed the previous
     maxes (`0.00753m`, `0.01416`);
   - success should move above zero before committing to a long run.
+
+## 2026-06-10 17:35 PDT - PPO Attempt 2 Canceled for Table Penetration Audit
+
+User Artifact Observation:
+- User inspected the new artifacts and reported that the Franka hand went
+  directly to the table and the gripper tip penetrated the table.
+
+Action:
+- Canceled PPO attempt 2 (`28957106`) after `00:02:07` elapsed, at about epoch
+  12, before spending more GPU time.
+- Scheduler state:
+  `CANCELLED by 158351`; batch step exit `15:0`.
+
+Analysis:
+- This is consistent with the previous eval/scalars: the policy can optimize
+  approach/close rewards while moving downward toward the tabletop instead of
+  setting up a valid side grasp.
+- The Franka cube env did not expose a numeric table-clearance metric in
+  training/eval artifacts, so invalid hand/table contact could be visible in
+  video without being flagged in JSON.
+- The likely root cause is reward geometry: distance-to-cube-center and close
+  action shaping did not include a table-clearance constraint for the parallel
+  gripper. This differs from the KUKA/Allegro hand because the Franka gripper
+  can exploit tabletop contact while still reducing finger/cube distance.
+
+Patch:
+- Added `finger_table_clearance` and `finger_table_clearance_violation` buffers
+  to the Franka cube env.
+- Added `cube_table_clearance_penalty` to the reward, with margin
+  `0.025m` and weight `-3.0`.
+- Added conservative termination only when measured finger body clearance drops
+  below the tabletop by more than `0.002m`.
+- Rejected success unless finger table clearance is at least `0.005m`.
+- Added training/eval scalar metrics for clearance and violation.
+- Updated `eval_rollout.py` so checkpoint eval JSON includes these metrics.
+- Updated the Franka cube validator reward checks and rollout summary to cover
+  low-clearance penalties and min rollout clearance.
+
+Local Validation:
+- `python3 -m py_compile` passed for the reward, config, env, validator, and
+  eval files.
+- `git diff --check` passed.
+
+Next:
+- Commit/push, update the A100 worktree, rerun the Franka cube validator, and
+  evaluate the previous epoch-100 checkpoint with the new clearance metrics and
+  a better camera before launching any further PPO.

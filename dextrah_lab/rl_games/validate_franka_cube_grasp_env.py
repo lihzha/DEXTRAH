@@ -124,10 +124,12 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
         "cube_lift_height": zeros.clone(),
         "cube_goal_height_error": torch.tensor([0.16], device=device),
         "cube_xy_error": zeros.clone(),
+        "finger_table_clearance": torch.tensor([0.04], device=device),
         "in_success_region": torch.zeros(1, dtype=torch.bool, device=device),
         "actions": torch.zeros(1, 7, device=device),
         "target_lift_height": 0.16,
         "max_gripper_width": 0.08,
+        "table_clearance_margin": 0.025,
         "approach_weight": 2.0,
         "approach_sharpness": 10.0,
         "enclosure_weight": 1.0,
@@ -141,6 +143,7 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
         "close_action_weight": 0.3,
         "lift_action_weight": 1.0,
         "descend_action_penalty_weight": -1.0,
+        "table_clearance_penalty_weight": -3.0,
         "gripper_close_reg_weight": -0.002,
         "action_penalty_weight": -0.0005,
     }
@@ -215,6 +218,15 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
         far_lift_intent_reward=_mean(_reward_total(**lift_far)),
     )
 
+    table_low = dict(closed_near)
+    table_low["finger_table_clearance"] = torch.tensor([0.0], device=device)
+    checks.check(
+        "reward_penalizes_low_finger_table_clearance",
+        bool((_reward_total(**table_low) < _reward_total(**closed_near)).item()),
+        safe_reward=_mean(_reward_total(**closed_near)),
+        low_clearance_reward=_mean(_reward_total(**table_low)),
+    )
+
     dragged = dict(closed_near)
     dragged["cube_xy_error"] = torch.tensor([0.090], device=device)
     checks.check(
@@ -276,6 +288,7 @@ def _run_predicate_checks(task_env, checks: CheckRecorder) -> None:
         success_rate=_mean(task_env.in_success_region.float()),
         lift_height=_mean(task_env.cube_lift_height),
         xy_error=_mean(task_env.cube_xy_error),
+        finger_table_clearance=_mean(task_env.finger_table_clearance),
         hand_mean_dist=_mean(task_env.hand_to_cube_mean_dist),
         hand_max_dist=_mean(task_env.hand_to_cube_max_dist),
     )
@@ -290,10 +303,12 @@ def _run_predicate_checks(task_env, checks: CheckRecorder) -> None:
         torch.zeros_like(task_env.cube_lift_height),
         torch.full_like(task_env.cube_goal_height_error, float(task_env.cfg.cube_lift_height)),
         task_env.cube_xy_error,
+        task_env.finger_table_clearance,
         torch.zeros_like(task_env.in_success_region),
         prelift_actions,
         float(task_env.cfg.cube_lift_height),
         float(task_env.cfg.max_gripper_width),
+        float(task_env.cfg.finger_table_clearance_margin),
         float(task_env.cfg.cube_approach_weight),
         float(task_env.cfg.cube_approach_sharpness),
         float(task_env.cfg.cube_enclosure_weight),
@@ -307,16 +322,19 @@ def _run_predicate_checks(task_env, checks: CheckRecorder) -> None:
         float(task_env.cfg.cube_close_action_weight),
         float(task_env.cfg.cube_lift_action_weight),
         float(task_env.cfg.cube_descend_action_penalty_weight),
+        float(task_env.cfg.cube_table_clearance_penalty_weight),
         float(task_env.cfg.cube_gripper_close_reg_weight),
         float(task_env.cfg.cube_action_penalty_weight),
     )
     approach_reward = prelift_rewards[0]
     enclosure_reward = prelift_rewards[1]
     close_action_reward = prelift_rewards[6]
-    gripper_close_reg = prelift_rewards[9]
+    table_clearance_penalty = prelift_rewards[9]
+    gripper_close_reg = prelift_rewards[10]
     approach_value = _mean(approach_reward)
     enclosure_value = _mean(enclosure_reward)
     close_action_value = _mean(close_action_reward)
+    table_clearance_penalty_value = _mean(table_clearance_penalty)
     gripper_close_reg_value = _mean(gripper_close_reg)
     checks.check(
         "reward_accepts_success_geometry_for_prelift_enclosure",
@@ -324,12 +342,15 @@ def _run_predicate_checks(task_env, checks: CheckRecorder) -> None:
             approach_value > 0.10
             and enclosure_value > 0.10
             and close_action_value >= 0.0
+            and table_clearance_penalty_value >= -0.001
             and gripper_close_reg_value > -0.001
         ),
         approach_reward=approach_value,
         enclosure_reward=enclosure_value,
         close_action_reward=close_action_value,
+        table_clearance_penalty=table_clearance_penalty_value,
         gripper_close_reg=gripper_close_reg_value,
+        finger_table_clearance=_mean(task_env.finger_table_clearance),
         hand_mean_dist=_mean(task_env.hand_to_cube_mean_dist),
         hand_max_dist=_mean(task_env.hand_to_cube_max_dist),
         finger_center_dist=_mean(task_env.finger_center_to_cube_dist),
@@ -343,10 +364,12 @@ def _run_predicate_checks(task_env, checks: CheckRecorder) -> None:
         task_env.cube_lift_height,
         task_env.cube_goal_height_error,
         task_env.cube_xy_error,
+        task_env.finger_table_clearance,
         task_env.in_success_region,
         task_env.actions,
         float(task_env.cfg.cube_lift_height),
         float(task_env.cfg.max_gripper_width),
+        float(task_env.cfg.finger_table_clearance_margin),
         float(task_env.cfg.cube_approach_weight),
         float(task_env.cfg.cube_approach_sharpness),
         float(task_env.cfg.cube_enclosure_weight),
@@ -360,6 +383,7 @@ def _run_predicate_checks(task_env, checks: CheckRecorder) -> None:
         float(task_env.cfg.cube_close_action_weight),
         float(task_env.cfg.cube_lift_action_weight),
         float(task_env.cfg.cube_descend_action_penalty_weight),
+        float(task_env.cfg.cube_table_clearance_penalty_weight),
         float(task_env.cfg.cube_gripper_close_reg_weight),
         float(task_env.cfg.cube_action_penalty_weight),
     )
@@ -379,6 +403,7 @@ def _run_predicate_checks(task_env, checks: CheckRecorder) -> None:
         lift_reward=lift_value,
         success_bonus=success_bonus_value,
         lift_action_reward=lift_action_value,
+        finger_table_clearance=_mean(task_env.finger_table_clearance),
         hand_mean_dist=_mean(task_env.hand_to_cube_mean_dist),
         hand_max_dist=_mean(task_env.hand_to_cube_max_dist),
         finger_center_dist=_mean(task_env.finger_center_to_cube_dist),
@@ -429,6 +454,7 @@ def _run_short_rollout(env, task_env, checks: CheckRecorder, num_steps: int, pri
     done_count = 0
     max_lift = _mean(task_env.cube_lift_height)
     max_xy_error = _mean(task_env.cube_xy_error)
+    min_finger_table_clearance = _mean(task_env.finger_table_clearance)
     for step in range(num_steps):
         actions = torch.zeros(task_env.num_envs, task_env.cfg.action_space, device=task_env.device)
         if step > num_steps // 3:
@@ -446,6 +472,7 @@ def _run_short_rollout(env, task_env, checks: CheckRecorder, num_steps: int, pri
         done_count += int(dones.float().sum().detach().cpu()) if isinstance(dones, torch.Tensor) else 0
         max_lift = max(max_lift, _mean(task_env.cube_lift_height))
         max_xy_error = max(max_xy_error, _mean(task_env.cube_xy_error))
+        min_finger_table_clearance = min(min_finger_table_clearance, _mean(task_env.finger_table_clearance))
 
         if not bool(torch.isfinite(policy_obs).all().item()):
             checks.check("rollout_observation_finite", False, step=step)
@@ -460,6 +487,7 @@ def _run_short_rollout(env, task_env, checks: CheckRecorder, num_steps: int, pri
                 f"ee_to_cube={_mean(task_env.ee_to_cube_dist):.4f} "
                 f"finger_to_cube={_mean(task_env.finger_center_to_cube_dist):.4f} "
                 f"gripper_width={_mean(task_env.gripper_width):.4f} "
+                f"finger_table_clearance={_mean(task_env.finger_table_clearance):.4f} "
                 f"lift={_mean(task_env.cube_lift_height):.4f} "
                 f"xy_error={_mean(task_env.cube_xy_error):.4f} "
                 f"success={_mean(task_env.in_success_region.float()):.4f}",
@@ -485,6 +513,7 @@ def _run_short_rollout(env, task_env, checks: CheckRecorder, num_steps: int, pri
         "done_count": done_count,
         "max_mean_lift": max_lift,
         "max_mean_xy_error": max_xy_error,
+        "min_mean_finger_table_clearance": min_finger_table_clearance,
         "final_cube_pos_mean": _tensor_list(task_env.cube_pos.mean(dim=0)),
         "final_gripper_width": _mean(task_env.gripper_width),
         "final_success_rate": _mean(task_env.in_success_region.float()),

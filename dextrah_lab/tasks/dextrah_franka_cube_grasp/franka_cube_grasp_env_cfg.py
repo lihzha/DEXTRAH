@@ -44,6 +44,9 @@ class DextrahFrankaCubeGraspEnvCfg(DextrahFrankaStarKittingEnvCfg):
     success_timeout = 0.20
     min_episode_steps_before_success = 40
     prelift_drag_termination_xy_error = 0.10
+    finger_table_clearance_margin = 0.025
+    finger_table_penetration_termination_margin = -0.002
+    finger_table_clearance_success_margin = 0.005
 
     # KUKA-cube-shaped reward weights for franka_cube_grasp_rewards.compute_franka_cube_grasp_rewards.
     # Robot-specific differences are handled in the reward inputs: two Franka
@@ -62,6 +65,7 @@ class DextrahFrankaCubeGraspEnvCfg(DextrahFrankaStarKittingEnvCfg):
     cube_close_action_weight = 0.3
     cube_lift_action_weight = 1.0
     cube_descend_action_penalty_weight = -1.0
+    cube_table_clearance_penalty_weight = -3.0
     cube_gripper_close_reg_weight = -0.002
     cube_action_penalty_weight = -0.0005
 
