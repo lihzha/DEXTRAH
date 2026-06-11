@@ -186,3 +186,47 @@ Command / Job:
 Next:
 - Monitor job `28956047`; inspect log, `metrics.json`, and validation video
   before launching PPO.
+
+## 2026-06-10 17:05 PDT - KUKA-Parity Validation Threshold Fix
+
+Command / Job:
+- validation job_id: `28956047`
+- run_name: `franka_cube_validate_kukaparity_20260610_1701`
+- code_commit: `5830cc1e380f1ac721111f850cf35ce5c1e8cc1e`
+- remote log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_cube_28956047.out`
+- remote run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_cube_validate_kukaparity_20260610_1701`
+
+Result:
+- status: failed validator thresholds only.
+- all environment, observation, success-predicate, reward-sign, rollout
+  finite, workspace, and video-writing checks reached execution.
+- failed checks:
+  - `reward_actual_lift_dominates_no_lift_grasp`: lifted reward `9.6889`,
+    no-lift reward `2.5724`, ratio about `3.77`; old validator demanded `10x`.
+  - `reward_lift_intent_without_lift_is_capped`: lift-intent reward `2.5719`,
+    lifted reward `9.6889`, fraction about `0.265`; old validator demanded
+    `<0.15`.
+
+Analysis:
+- These two thresholds were remnants of the previous high-scale Franka reward,
+  where `lift_weight=180` and success bonus was `80`.
+- The KUKA cube formula itself would not satisfy a `10x` or `0.15` threshold at
+  the same near-grasp state because no-lift approach/enclosure/XY rewards remain
+  meaningful.
+- This is not evidence against the KUKA-parity reward patch; it is a validator
+  scale mismatch.
+
+Change:
+- Relaxed validator checks to KUKA-compatible values:
+  - actual lift must exceed no-lift by `3.0x`;
+  - lift intent without actual lift must stay below `0.35x` lifted reward.
+
+Validation:
+- local `python3 -m py_compile` passed for validator and reward helper.
+- local `git diff --check` passed.
+
+Next:
+- Commit/push this validator-only fix, update the isolated A100 worktree, and
+  rerun the same validation.

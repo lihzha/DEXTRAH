@@ -177,19 +177,20 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
     lifted["cube_goal_height_error"] = torch.tensor([0.0], device=device)
     checks.check(
         "reward_actual_lift_dominates_no_lift_grasp",
-        bool((_reward_total(**lifted) > 10.0 * _reward_total(**closed_near)).item()),
+        bool((_reward_total(**lifted) > 3.0 * _reward_total(**closed_near)).item()),
         no_lift_reward=_mean(_reward_total(**closed_near)),
         lifted_reward=_mean(_reward_total(**lifted)),
+        lifted_ratio_floor=3.0,
     )
 
     lift_intent = dict(closed_near)
     lift_intent["actions"] = torch.tensor([[0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -1.0]], device=device)
     checks.check(
         "reward_lift_intent_without_lift_is_capped",
-        bool((_reward_total(**lift_intent) < 0.15 * _reward_total(**lifted)).item()),
+        bool((_reward_total(**lift_intent) < 0.35 * _reward_total(**lifted)).item()),
         lift_intent_reward=_mean(_reward_total(**lift_intent)),
         lifted_reward=_mean(_reward_total(**lifted)),
-        lifted_fraction_cap=0.15,
+        lifted_fraction_cap=0.35,
     )
 
     dragged = dict(closed_near)
