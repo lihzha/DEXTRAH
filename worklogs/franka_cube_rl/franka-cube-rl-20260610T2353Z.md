@@ -230,3 +230,21 @@ Validation:
 Next:
 - Commit/push this validator-only fix, update the isolated A100 worktree, and
   rerun the same validation.
+
+## 2026-06-10 17:06 PDT - KUKA-Parity Cluster Validation Relaunch
+
+Command / Job:
+- command:
+  `RUN_NAME=franka_cube_validate_kukaparity2_20260610_1706 CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-rl-20260610T2353Z NUM_ENVS=4 NUM_STEPS=160 CAPTURE_VIDEO=True SEED=50 sbatch --parsable cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`
+- job_id: `28956084`
+- code_commit:
+  `287e818e26c5775074ec6471325c94430e6bf03e`
+- remote_worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-rl-20260610T2353Z`
+- expected run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_cube_validate_kukaparity2_20260610_1706`
+- expected log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_cube_28956084.out`
+
+Next:
+- Monitor job `28956084`; inspect log, metrics, and video before launching PPO.
