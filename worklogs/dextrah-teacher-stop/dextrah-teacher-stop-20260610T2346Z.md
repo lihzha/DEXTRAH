@@ -57,3 +57,60 @@ Next:
   28942245` from `a1001`, then verify it restores from
   `last_dextrah_lstm_ep_13500_rew_577.9305.pth` and the rank runtime
   sidecars.
+
+## 2026-06-10 17:10 PDT - Isolated Teacher Resume Relaunch
+
+Goal:
+- Continue the teacher run while following the updated multi-agent isolation
+  guidance.
+
+Change:
+- Pushed branch
+  `codex/dextrah-teacher-stop/dextrah-teacher-stop-20260610T2346Z`.
+- Created remote worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-teacher-stop-20260610T2346Z`.
+- Submitted a replacement resume job from the remote worktree with
+  `CODE_NFS` pointing to that same remote worktree.
+- Canceled old held job `28942245` after replacement job `28955904` was
+  confirmed running.
+
+Version Control:
+- agent_id: `dextrah-teacher-stop-20260610T2346Z`
+- local_commit: `12c3119d4363922f352a79fc74827d5595121a66`
+- remote_commit: `12c3119d4363922f352a79fc74827d5595121a66`
+- remote_worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-teacher-stop-20260610T2346Z`
+
+Command / Job:
+- command:
+  `CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-teacher-stop-20260610T2346Z FULL_EXPERIMENT_NAME=teacher_short_20260609_100021 AUTO_RESUME=True SELF_RELAUNCH=True TASK=Dextrah-Kuka-Allegro DISTRIBUTED=True MULTI_GPU=True sbatch --parsable cluster/sbatch_train_teacher_8gpu.sh`
+- new_job_id: `28955904`
+- old_job_id: `28942245`, canceled after new job was running.
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28955904.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+
+Result:
+- status: running healthy after isolated resume.
+- scheduler: `28955904` running on `batch-block5-03072`.
+- log confirms `CODE_NFS` uses the agent-owned remote worktree.
+- auto-resume loaded
+  `last_dextrah_lstm_ep_13500_rew_577.9305.pth`.
+- runtime state restored at epoch `13500`.
+- post-resume training advanced to epoch `13520/20000`.
+- new complete checkpoints:
+  - `last_dextrah_lstm_ep_13510_rew_731.1301.pth`
+  - `last_dextrah_lstm_ep_13520_rew_725.3122.pth`
+- runtime sidecars rank `0` through `7` refreshed at `17:09`.
+
+Analysis:
+- The replacement job removes the shared-checkout resume risk from the held
+  Slurm job. Future wall-time requeues of `28955904` should rerun the batch
+  script from the agent-owned remote worktree and keep mounting that same path
+  as `/code`.
+
+Next:
+- Continue active monitoring, parse TensorBoard once the new event file has
+  flushed, and verify loss/reward/success/KL remain healthy after the
+  isolated resume.
