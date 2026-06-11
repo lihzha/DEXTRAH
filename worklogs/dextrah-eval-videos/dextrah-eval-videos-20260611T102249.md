@@ -17,22 +17,22 @@ Version Control:
 - worklog: `worklogs/dextrah-eval-videos/dextrah-eval-videos-20260611T102249.md`
 - branch: `codex/dextrah-eval-videos/20260611T102249`
 - base_commit: `d7ff3d0`
-- implementation_commit: pending
+- implementation_commit: `ef4da5f`
 - push/pull: pending
 - changed_files: `cluster/sbatch_eval_kuka_allegro_1gpu.sh`, `worklogs/dextrah-eval-videos/dextrah-eval-videos-20260611T102249.md`
 - remote_commit/status: pending
 
 Command / Job:
-- command: pending validation and Slurm submission
+- command: `bash -n cluster/sbatch_eval_kuka_allegro_1gpu.sh`; `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py`
 - job_id: pending
 - run_dir: pending
 - logs: pending
 - artifacts: expected `metrics.json` and `videos/*.mp4`
 
 Result:
-- status: in progress
-- metrics/artifacts: pending
-- key evidence: pending
+- status: local validation passed
+- metrics/artifacts: pending cluster launch
+- key evidence: shell syntax check passed; evaluator Python compile passed
 
 Analysis:
 - The shared checkout is dirty and behind remote, so all edits and launches are isolated in this worktree. Eval will use the final checkpoint `last_dextrah_lstm_ep_20000_rew_673.2542.pth`.
