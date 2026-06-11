@@ -801,3 +801,61 @@ Next:
 - Continue short one-shot SSH polling until the job returns to `RUNNING`, then
   verify allocation, wrapper restart, checkpoint/runtime-sidecar restore, epoch
   advancement beyond `16090`, and absence of fresh failure signatures.
+
+## 2026-06-10 20:59 PDT - Teacher Requeue Resume Validated
+
+Goal:
+- Confirm replacement job `28955904` resumed correctly after the TERM/requeue
+  cycle and returned to healthy training.
+
+Command / Job:
+- job_id: `28955904`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28955904.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+- local TensorBoard copy:
+  `/tmp/dextrah_teacher_events`
+
+Result:
+- status: running healthy after requeue.
+- scheduler: `RUNNING` on `batch-block5-03072`, elapsed `16:16`, time left
+  `03:33:44` at `20:58:49 PDT`.
+- wrapper restarted from the agent-owned remote worktree
+  `/lustre/fs11/portfolios/nvr/projects/nvr_lpr_rvp/users/lzha/src/worktrees/DEXTRAH/dextrah-teacher-stop-20260610T2346Z`.
+- all ranks logged restored runtime state at epoch `16090`.
+- stdout advanced after resume from epoch `16091` through epoch `16128/20000`.
+- latest complete checkpoints:
+  `last_dextrah_lstm_ep_16100_rew_530.53937.pth`,
+  `last_dextrah_lstm_ep_16110_rew_780.6249.pth`, and
+  `last_dextrah_lstm_ep_16120_rew_566.7988.pth`.
+- runtime sidecars `dextrah_runtime_rank_0.pth` through
+  `dextrah_runtime_rank_7.pth` all refreshed at `20:58:07`.
+- narrow critical failure scan over recent stdout returned no matches.
+- TensorBoard summaries were rsynced locally and parsed with
+  `PYTHONPATH=/tmp/codex_tensorboard_pkg`.
+- TensorBoard parsed through epoch `16111` for epoch-keyed scalars.
+- `in_success_region/iter`: latest `0.472656`, last-50 `0.468911`,
+  last-200 `0.461284`, post-resume mean for epochs `>=16090` `0.481852`.
+- `rewards/iter`: latest `637.557`, last-50 `640.431`, last-200 `637.087`,
+  post-resume mean for epochs `>=16090` `645.473`.
+- `num_adr_increases/iter`: latest `50`, last-50 `50`.
+- `info/kl`: latest `0.00420051`, last-50 `0.00658351`,
+  last-200 `0.00637556`.
+- `losses/a_loss`: latest `-0.00444179`, last-50 `-0.00382845`.
+- `losses/c_loss`: latest `0.0206344`, last-50 `0.0217725`.
+- `performance/step_inference_rl_update_fps`: latest `98750.2`,
+  last-50 about `107685`, last-200 about `109573`.
+
+Analysis:
+- Requeue/resume is validated. The restored runtime state matched the newest
+  pre-signal checkpoint and rank sidecars, training advanced beyond the resume
+  epoch, sidecar/checkpoint cadence resumed, and reward/success/KL/loss
+  metrics remain healthy.
+- The first post-resume epoch had expected lower throughput due to startup,
+  and later throughput recovered into the normal range.
+
+Next:
+- Continue active monitoring at a wider cadence while the job is running.
+  Watch checkpoint/sidecar cadence, success-region and KL stability, and the
+  next wall-time/requeue window.
