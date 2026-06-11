@@ -883,3 +883,36 @@ Analysis:
 
 Next:
 - Continue monitoring toward wall-time/requeue. Verify resume behavior if Slurm requeues, and inspect metrics/checkpoints after resume before any final report.
+
+## 2026-06-11T21:30:05Z - final 8-GPU training monitor checkpoint
+
+Goal:
+- Record the epoch 975-1250 checkpoint window while continuing active monitoring of final job `28987954`.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- running_job_commit: `99ea26d5b449581988594f40168806642c486326`
+- latest_branch_commit_before_entry: `fbe9782`
+- note: later branch commits are wrapper/worklog/artifact records only and do not mutate the active training process
+
+Command / Job:
+- monitor command: six-sample loop reading bounded `squeue`, rank-0 JSONL, tail-100 lift/success metrics, checkpoint files, and targeted log error signatures
+- job_id: `28987954`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28987954.out`
+
+Result:
+- status: running_healthy
+- scheduler latest: `RUNNING`, elapsed `01:56:17`, remaining `1:53:43`, node `batch-block5-00308`
+- JSONL scalar health: records advanced through epoch `1265`; `bad_scalar_count=0`; targeted error signatures `0`
+- checkpoints observed in this window: epoch 975 `rew_2226.7686`, epoch 1000 `rew_2209.9124`, epoch 1025 `rew_2199.798`, epoch 1050 `rew_2206.5005`, epoch 1075 `rew_2220.847`, epoch 1100 `rew_2195.5464`, epoch 1125 `rew_2223.8977`, epoch 1150 `rew_2230.6763`, epoch 1175 `rew_2247.8704`, epoch 1200 `rew_2227.9263`, epoch 1225 `rew_2223.4565`, epoch 1250 `rew_2250.487`
+- best-checkpoint note: orchestrator observed a stdout best reward `2276.3032` near epoch 1202; this is consistent with interval checkpointing continuing normally and will be included in the next artifact refresh from stdout
+- prior reset metrics at latest sample: success/farther rates `1.0`; pos error `0.001929 m`; rot error `0.019827 rad`; finger-table clearance `0.135199 m`
+- behavior metrics at latest sample: approach reward `1.11606`; enclosure reward `0.626357`; lift reward `0.0000656`; lift height `0.00000196 m`; lifted rate `0.0`; success rate `0.0`
+- tail-100 metrics at latest sample: success mean/max `0.0000146/0.000488`; lifted mean/max `0.000449/0.0014648`; lift-height mean/max `0.0001136/0.0003417 m`; lift-reward mean/max `0.003045/0.007978`
+
+Analysis:
+- The final job remains stable with ideal reset-prior metrics, no bad scalars, no log error signatures, and normal checkpoint cadence. Interval reward improved to `2250.487`, with stdout best reportedly higher. Lift/success remain sparse and are the main behavior watch item, but there is no reset-prior runtime defect.
+
+Next:
+- Refresh inspectable artifacts from current stdout/JSONL/checkpoints, then launch a bounded eval video from the next usable recent checkpoint without interrupting the active training job. Continue monitoring training through wall-time/requeue.
