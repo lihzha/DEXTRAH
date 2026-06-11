@@ -1,11 +1,8 @@
 params:
   seed: 42
 
-  # environment wrapper clipping
   env:
-    # added to the wrapper
     clip_observations: 5.0
-    # can make custom wrapper?
     clip_actions: 1.0
 
   algo:
@@ -17,7 +14,6 @@ params:
   network:
     name: actor_critic
     separate: False
-
     space:
       continuous:
         mu_activation: None
@@ -29,27 +25,19 @@ params:
           val: 0
         fixed_sigma: True
     mlp:
-      units: [512, 512]
+      units: [512, 512, 256, 128]
       activation: elu
       d2rl: False
       initializer:
         name: default
       regularizer:
         name: None
-    rnn:
-      name: lstm
-      units: 1024
-      layers: 1
-      before_mlp: True
-      layer_norm: True
-      concat_input: True
-      concat_output: True
 
-  load_checkpoint: False # flag which sets whether to load the checkpoint
-  load_path: '' # path to the checkpoint to load
+  load_checkpoint: False
+  load_path: ''
 
   config:
-    name: dextrah_lstm
+    name: dextrah_franka_star_kitting
     env_name: rlgpu
     device: 'cuda:0'
     device_name: 'cuda:0'
@@ -58,77 +46,66 @@ params:
     mixed_precision: False
     normalize_input: True
     normalize_value: True
-    value_bootstrap: False
-    num_actors: -1  # configured from the script (based on num_envs)
+    value_bootstrap: True
+    num_actors: -1
     reward_shaper:
       scale_value: 0.01
     normalize_advantage: True
-    gamma: 0.998
+    gamma: 0.997
     tau: 0.95
-    learning_rate: 3e-4
-    lr_schedule: linear #adaptive
+    learning_rate: 1.5e-4
+    lr_schedule: adaptive
     schedule_type: standard
-    kl_threshold: 0.013
+    kl_threshold: 0.012
     score_to_win: 100000
-    max_epochs: 20000
+    max_epochs: 10000
     save_best_after: 100
-    save_frequency: 10
+    save_frequency: 25
     print_stats: True
     grad_norm: 1.0
-    entropy_coef: 0.002
+    entropy_coef: 0.001
     truncate_grads: True
     e_clip: 0.2
-    horizon_length: 16
-    minibatch_size: 16384
+    horizon_length: 48
+    minibatch_size: 32768
     mini_epochs: 4
     critic_coef: 4
     clip_value: True
-    seq_length: 16
+    seq_length: 4
     bound_loss_type: regularization
-    bounds_loss_coef: 0.005
-    zero_rnn_on_done: True
+    bounds_loss_coef: 0.001
 
     central_value_config:
-      minibatch_size: 16384 
+      minibatch_size: 32768
       mini_epochs: 4
-      learning_rate: 5e-5
-      kl_threshold: 0.016
+      learning_rate: 1.0e-4
+      kl_threshold: 0.012
       clip_value: True
       normalize_input: True
       truncate_grads: True
-
       network:
         name: actor_critic
         central_value: True
         mlp:
-          units: [1024, 512] 
+          units: [512, 512, 256, 128]
           activation: elu
           d2rl: False
           initializer:
             name: default
           regularizer:
             name: None
-        rnn:
-          name: lstm
-          units: 2048
-          layers: 1
-          before_mlp: False
-          layer_norm: True
-          concat_input: True
-          concat_output: True
-
 
     player:
       deterministic: True
       games_num: 100000
       print_stats: True
 
-wandb_activate: True
+wandb_activate: False
 wandb_group: 'rl_gpu'
-wandb_name: 'large_scale_'
+wandb_name: 'franka_star_kitting_'
 wandb_entity: 'nvidia'
-wandb_project: 'dextrah-kuka-allegro'
-wandb_tags: []
+wandb_project: 'dextrah-franka-star-kitting'
+wandb_tags: ['franka', 'star-kitting', 'state', 'ik']
 
 hydra:
   output_subdir: null

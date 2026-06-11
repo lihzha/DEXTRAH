@@ -7,6 +7,8 @@ from isaaclab_tasks.utils import import_packages
 import gymnasium as gym
 
 from . import agents
+from .dextrah_cube_grasp_env import DextrahCubeGraspEnv
+from .dextrah_cube_grasp_env_cfg import DextrahCubeGraspEnvCfg
 from .dextrah_kuka_allegro_env import DextrahKukaAllegroEnv
 from .dextrah_kuka_allegro_env_cfg import DextrahKukaAllegroEnvCfg
 
@@ -25,6 +27,16 @@ gym.register(
         "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_lstm_cfg.yaml",
         # "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_lstm_scratch_cnn_aux.yaml",
         #"rsl_rl_cfg_entry_point": agents.rsl_rl_ppo_cfg.ShadowHandPPORunnerCfg,
+    },
+)
+
+gym.register(
+    id="Dextrah-Cube-Grasp",
+    entry_point="dextrah_lab.tasks.dextrah_kuka_allegro.dextrah_cube_grasp_env:DextrahCubeGraspEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": DextrahCubeGraspEnvCfg,
+        "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cube_grasp_cfg.yaml",
     },
 )
 

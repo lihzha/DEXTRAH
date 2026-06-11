@@ -28,6 +28,9 @@
 from collections import deque
 from typing import Callable
 
+import os
+import random
+import signal
 import numpy as np
 import torch
 from rl_games.common import env_configurations, vecenv
@@ -242,6 +245,352 @@ class MultiObserver(AlgoObserver):
         self._call_multi('after_print_stats', frame, epoch_num, total_time)
 
 
+class DextrahResumableAlgoObserver(AlgoObserver):
+    """Adds DEXTRAH runtime state to RL-Games checkpoints.
+
+    RL-Games restores env_state before train() calls env_reset(), so this observer
+    defers env/runtime restore until after the first reset. It also writes
+    rank-local runtime sidecars because distributed RL-Games only saves the main
+    model checkpoint from rank 0.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.algo = None
+        self.writer = None
+        self._save_runtime_buffer = os.environ.get("DEXTRAH_RESUME_SAVE_BUFFER", "1") != "0"
+        self._sidecar_interval = os.environ.get("DEXTRAH_RESUME_SIDECAR_INTERVAL")
+        self._checkpoint_requested = False
+        self._saving = False
+        self._signals_installed = False
+
+    def after_init(self, algo):
+        self.algo = algo
+        self.writer = self.algo.writer
+        self._patch_algo()
+        self._install_signal_handlers()
+
+    def after_steps(self):
+        if self.algo is None:
+            return
+
+        epoch_num = int(getattr(self.algo, "epoch_num", 0))
+        interval = self._get_sidecar_interval()
+        if interval > 0 and epoch_num > 0 and epoch_num % interval == 0:
+            self._save_runtime_sidecar(reason="interval")
+
+        if self._checkpoint_requested:
+            self._save_interrupt_checkpoint()
+            self._checkpoint_requested = False
+
+    def _patch_algo(self):
+        algo = self.algo
+        if getattr(algo, "_dextrah_resume_patched", False):
+            return
+
+        original_get_full_state_weights = algo.get_full_state_weights
+        original_set_full_state_weights = algo.set_full_state_weights
+        original_env_reset = algo.env_reset
+        original_restore = getattr(algo, "restore", None)
+
+        def get_full_state_weights_with_runtime():
+            state = original_get_full_state_weights()
+            state["dextrah_runtime_state"] = self._pack_runtime_state()
+            return state
+
+        def set_full_state_weights_deferred(weights, set_epoch=True):
+            checkpoint_epoch = self._as_int(weights.get("epoch"))
+            runtime_state = weights.get("dextrah_runtime_state")
+            env_state = weights.get("env_state")
+            runtime_state = self._load_rank_runtime_sidecar(weights, checkpoint_epoch) or runtime_state
+            if runtime_state is not None and not self._runtime_state_matches_checkpoint(
+                runtime_state, checkpoint_epoch, "checkpoint"
+            ):
+                runtime_state = None
+
+            weights_without_env = dict(weights)
+            weights_without_env["env_state"] = None
+            weights_without_env.pop("dextrah_runtime_state", None)
+            original_set_full_state_weights(weights_without_env, set_epoch=set_epoch)
+
+            if runtime_state is not None:
+                algo._dextrah_pending_runtime_state = runtime_state
+            elif env_state is not None:
+                algo._dextrah_pending_runtime_state = {"env_state": env_state}
+
+        def env_reset_with_deferred_restore(*args, **kwargs):
+            obs = original_env_reset(*args, **kwargs)
+            runtime_state = getattr(algo, "_dextrah_pending_runtime_state", None)
+            if runtime_state is None:
+                return obs
+
+            restored_obs = self._restore_runtime_state(runtime_state)
+            if restored_obs is not None:
+                obs = self._to_device(restored_obs, algo.device)
+            elif hasattr(algo.vec_env, "get_current_obs"):
+                obs = algo.obs_to_tensors(algo.vec_env.get_current_obs())
+
+            algo._dextrah_pending_runtime_state = None
+            print(
+                f"[DEXTRAH resume] restored runtime state on rank {self._rank()} "
+                f"at epoch {getattr(algo, 'epoch_num', 'unknown')}"
+            )
+            return obs
+
+        def restore_with_checkpoint_path(fn, set_epoch=True):
+            algo._dextrah_restore_checkpoint = fn
+            return original_restore(fn, set_epoch=set_epoch)
+
+        algo.get_full_state_weights = get_full_state_weights_with_runtime
+        algo.set_full_state_weights = set_full_state_weights_deferred
+        algo.env_reset = env_reset_with_deferred_restore
+        if original_restore is not None:
+            algo.restore = restore_with_checkpoint_path
+        algo._dextrah_resume_patched = True
+
+    def _rank(self):
+        return int(getattr(self.algo, "global_rank", os.environ.get("RANK", 0)))
+
+    def _world_size(self):
+        return int(getattr(self.algo, "world_size", os.environ.get("WORLD_SIZE", 1)))
+
+    def _as_int(self, value):
+        if isinstance(value, torch.Tensor):
+            if value.numel() != 1:
+                return None
+            return int(value.item())
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _runtime_state_matches_checkpoint(self, runtime_state, checkpoint_epoch, source):
+        state_rank = self._as_int(runtime_state.get("rank"))
+        if state_rank is not None and state_rank != self._rank():
+            print(
+                f"[DEXTRAH resume] ignoring {source} runtime state for rank {state_rank} "
+                f"on rank {self._rank()}"
+            )
+            return False
+
+        state_world_size = self._as_int(runtime_state.get("world_size"))
+        if state_world_size is not None and state_world_size != self._world_size():
+            print(
+                f"[DEXTRAH resume] ignoring {source} runtime state with world_size {state_world_size} "
+                f"on world_size {self._world_size()}"
+            )
+            return False
+
+        state_epoch = self._as_int(runtime_state.get("epoch"))
+        if checkpoint_epoch is not None and state_epoch is not None and state_epoch != checkpoint_epoch:
+            print(
+                f"[DEXTRAH resume] ignoring {source} runtime state at epoch {state_epoch} "
+                f"for checkpoint epoch {checkpoint_epoch}"
+            )
+            return False
+
+        return True
+
+    def _get_sidecar_interval(self):
+        if self._sidecar_interval is not None:
+            return int(self._sidecar_interval)
+        save_freq = int(getattr(self.algo, "save_freq", 0))
+        return save_freq if save_freq > 0 else 0
+
+    def _cpu_clone(self, value):
+        if isinstance(value, torch.Tensor):
+            return value.detach().clone().cpu()
+        if isinstance(value, np.ndarray):
+            return value.copy()
+        if isinstance(value, dict):
+            return {key: self._cpu_clone(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [self._cpu_clone(item) for item in value]
+        if isinstance(value, tuple):
+            return tuple(self._cpu_clone(item) for item in value)
+        return value
+
+    def _to_device(self, value, device):
+        if isinstance(value, torch.Tensor):
+            return value.to(device=device)
+        if isinstance(value, dict):
+            return {key: self._to_device(item, device) for key, item in value.items()}
+        if isinstance(value, list):
+            return [self._to_device(item, device) for item in value]
+        if isinstance(value, tuple):
+            return tuple(self._to_device(item, device) for item in value)
+        return value
+
+    def _copy_algo_attr(self, name, value):
+        if value is None:
+            return
+        if not hasattr(self.algo, name):
+            setattr(self.algo, name, self._to_device(value, self.algo.device))
+            return
+
+        current_value = getattr(self.algo, name)
+        if isinstance(current_value, torch.Tensor):
+            restored_value = value.to(device=current_value.device, dtype=current_value.dtype)
+            current_value.copy_(restored_value)
+        else:
+            setattr(self.algo, name, self._to_device(value, self.algo.device))
+
+    def _rng_state(self):
+        state = {
+            "torch": self._cpu_clone(torch.get_rng_state()),
+            "numpy": self._cpu_clone(np.random.get_state()),
+            "python": random.getstate(),
+        }
+        if torch.cuda.is_available() and str(self.algo.device).startswith("cuda"):
+            state["cuda"] = self._cpu_clone(torch.cuda.get_rng_state(self.algo.device))
+        return state
+
+    def _restore_rng_state(self, state):
+        if not state:
+            return
+        if "torch" in state:
+            torch.set_rng_state(state["torch"].cpu())
+        if "cuda" in state and torch.cuda.is_available() and str(self.algo.device).startswith("cuda"):
+            torch.cuda.set_rng_state(state["cuda"].cpu(), device=self.algo.device)
+        if "numpy" in state:
+            np.random.set_state(state["numpy"])
+        if "python" in state:
+            random.setstate(state["python"])
+
+    def _pack_runtime_state(self):
+        algo = self.algo
+        runtime_state = {
+            "version": 1,
+            "rank": self._rank(),
+            "world_size": self._world_size(),
+            "epoch": int(getattr(algo, "epoch_num", 0)),
+            "frame": int(getattr(algo, "frame", 0)),
+            "rng": self._rng_state(),
+        }
+
+        for name in ("obs", "dones", "current_rewards", "current_shaped_rewards", "current_lengths", "rnn_states"):
+            if hasattr(algo, name):
+                runtime_state[name] = self._cpu_clone(getattr(algo, name))
+
+        if hasattr(algo, "vec_env") and hasattr(algo.vec_env, "get_env_state"):
+            runtime_state["env_state"] = self._cpu_clone(algo.vec_env.get_env_state())
+
+        if self._save_runtime_buffer and hasattr(algo, "experience_buffer"):
+            runtime_state["experience_buffer"] = {
+                "tensor_dict": self._cpu_clone(getattr(algo.experience_buffer, "tensor_dict", None))
+            }
+        if self._save_runtime_buffer and hasattr(algo, "dataset"):
+            runtime_state["dataset"] = {
+                "values_dict": self._cpu_clone(getattr(algo.dataset, "values_dict", None)),
+                "last_range": getattr(algo.dataset, "last_range", None),
+            }
+        if self._save_runtime_buffer and hasattr(algo, "central_value_net") and hasattr(algo.central_value_net, "dataset"):
+            runtime_state["central_value_dataset"] = {
+                "values_dict": self._cpu_clone(getattr(algo.central_value_net.dataset, "values_dict", None)),
+                "last_range": getattr(algo.central_value_net.dataset, "last_range", None),
+            }
+        return runtime_state
+
+    def _restore_runtime_state(self, runtime_state):
+        algo = self.algo
+        env_state = runtime_state.get("env_state")
+        if env_state is not None and hasattr(algo.vec_env, "set_env_state"):
+            algo.vec_env.set_env_state(env_state)
+
+        for name in ("dones", "current_rewards", "current_shaped_rewards", "current_lengths", "rnn_states"):
+            if name in runtime_state:
+                self._copy_algo_attr(name, runtime_state[name])
+
+        if "experience_buffer" in runtime_state and hasattr(algo, "experience_buffer"):
+            tensor_dict = runtime_state["experience_buffer"].get("tensor_dict")
+            if tensor_dict is not None:
+                algo.experience_buffer.tensor_dict = self._to_device(tensor_dict, algo.device)
+
+        if "dataset" in runtime_state and hasattr(algo, "dataset"):
+            values_dict = runtime_state["dataset"].get("values_dict")
+            algo.dataset.update_values_dict(self._to_device(values_dict, algo.device))
+            if runtime_state["dataset"].get("last_range") is not None:
+                algo.dataset.last_range = runtime_state["dataset"]["last_range"]
+
+        if (
+            "central_value_dataset" in runtime_state
+            and hasattr(algo, "central_value_net")
+            and hasattr(algo.central_value_net, "dataset")
+        ):
+            values_dict = runtime_state["central_value_dataset"].get("values_dict")
+            algo.central_value_net.dataset.update_values_dict(self._to_device(values_dict, algo.device))
+            if runtime_state["central_value_dataset"].get("last_range") is not None:
+                algo.central_value_net.dataset.last_range = runtime_state["central_value_dataset"]["last_range"]
+
+        self._restore_rng_state(runtime_state.get("rng"))
+        return runtime_state.get("obs")
+
+    def _runtime_sidecar_path(self):
+        return os.path.join(self.algo.nn_dir, f"dextrah_runtime_rank_{self._rank()}.pth")
+
+    def _save_runtime_sidecar(self, reason):
+        if self.algo is None or self._saving:
+            return
+        self._saving = True
+        try:
+            os.makedirs(self.algo.nn_dir, exist_ok=True)
+            path = self._runtime_sidecar_path()
+            tmp_path = f"{path}.tmp.{os.getpid()}"
+            torch.save(self._pack_runtime_state(), tmp_path)
+            os.replace(tmp_path, path)
+            print(
+                f"[DEXTRAH resume] saved {reason} runtime sidecar for rank {self._rank()} "
+                f"at {path}"
+            )
+        finally:
+            self._saving = False
+
+    def _load_rank_runtime_sidecar(self, weights, checkpoint_epoch):
+        checkpoint_path = getattr(self.algo, "_dextrah_restore_checkpoint", None)
+        if checkpoint_path is None:
+            return None
+
+        sidecar_path = os.path.join(os.path.dirname(checkpoint_path), f"dextrah_runtime_rank_{self._rank()}.pth")
+        if not os.path.exists(sidecar_path):
+            return None
+
+        try:
+            runtime_state = torch.load(sidecar_path, map_location="cpu", weights_only=False)
+        except TypeError:
+            runtime_state = torch.load(sidecar_path, map_location="cpu")
+
+        if not self._runtime_state_matches_checkpoint(runtime_state, checkpoint_epoch, "sidecar"):
+            return None
+        return runtime_state
+
+    def _install_signal_handlers(self):
+        if self._signals_installed:
+            return
+
+        def handle_signal(signum, frame):
+            print(f"[DEXTRAH resume] received signal {signum}; saving interrupt checkpoint")
+            self._checkpoint_requested = True
+            self._save_interrupt_checkpoint()
+            raise KeyboardInterrupt
+
+        signal.signal(signal.SIGTERM, handle_signal)
+        signal.signal(signal.SIGINT, handle_signal)
+        self._signals_installed = True
+
+    def _save_interrupt_checkpoint(self):
+        if self.algo is None or self._saving:
+            return
+        self._save_runtime_sidecar(reason="interrupt")
+        if self._rank() != 0:
+            return
+
+        epoch_num = int(getattr(self.algo, "epoch_num", 0))
+        frame = int(getattr(self.algo, "frame", 0))
+        checkpoint_name = f"interrupt_{self.algo.config['name']}_ep_{epoch_num}_frame_{frame}"
+        self.algo.save(os.path.join(self.algo.nn_dir, checkpoint_name))
+        print(f"[DEXTRAH resume] saved interrupt checkpoint {checkpoint_name} on rank 0")
+
+
 class RLGPUEnv(vecenv.IVecEnv):
     def __init__(self, config_name, _num_actors, **kwargs):
         self.env = env_configurations.configurations[config_name]['env_creator'](**kwargs)
@@ -288,4 +637,3 @@ class RLGPUEnv(vecenv.IVecEnv):
     def set_env_state(self, env_state):
         if hasattr(self.env, 'set_env_state'):
             self.env.set_env_state(env_state)
-

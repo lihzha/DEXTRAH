@@ -59,6 +59,33 @@ DextrAH is a high-performance hand-arm grasping policy. This codebase provides t
             env.max_pose_angle=45.0 \
             env.use_cuda_graph=True
 ```
+
+### Single-cube state-based grasp training
+The single-cube task reuses the RL-Games PPO training path and registers as
+`Dextrah-Cube-Grasp`. It spawns one procedural cube, randomizes its reset
+location over an 8 cm by 8 cm XY square, exposes cube state to the policy, and
+uses grasp/lift reward terms logged under `cube_*`.
+
+```bash
+        cd <DEXTRAH>/dextrah_lab/rl_games
+        python train.py \
+            --headless \
+            --task=Dextrah-Cube-Grasp \
+            --seed -1 \
+            --num_envs 4096 \
+            agent.params.config.minibatch_size=16384 \
+            agent.params.config.central_value_config.minibatch_size=16384 \
+            agent.params.config.learning_rate=0.0003 \
+            agent.wandb_activate=False \
+            env.use_cuda_graph=True
+```
+
+The A100 wrapper can launch the same task with:
+```bash
+        TASK=Dextrah-Cube-Grasp FULL_EXPERIMENT_NAME=cube_grasp_smoke \
+          sbatch --export=ALL cluster/sbatch_train_teacher_8gpu.sh
+```
+
 ## DextrAH Camera-based FGP Student Distillation
 **Note**: Before starting the student training, you also need to download the visual texture data (textures.zip) and place its contents inside `dextrah_lab/assets` directory. Download the assets from [link](https://huggingface.co/datasets/nvidia/dextrah_textures/blob/main/textures.zip) and unzip its contents into the assets folder.
 
