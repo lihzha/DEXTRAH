@@ -2228,3 +2228,73 @@ Worker C controller-compensation sweep inspection:
   transforms, action integration over env steps, and whether the dataset action
   is already normalized by task action scale. Run minimal replay diagnostics
   with videos/plots only; no BC/RL scale-up yet.
+
+## 2026-06-11 Monitor Check 23:36 UTC
+
+Worker A next diagnostic state:
+
+- A acknowledged the paired 200-epoch failure mode and planned a focused
+  pregrasp usability diagnostic instead of longer training.
+- Planned A change: add debug-only oracle/scripted close-lift phases to
+  `dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py`, extend the
+  diagnostic Slurm wrapper, and generate a PPO action/reward audit from the
+  prior ep200 eval traces.
+- Planned A job: l401, one GPU, no PPO training, `NUM_ENVS=1`,
+  `NUM_RESETS=5`, same validated prior library and same cube randomization.
+- Orchestrator expectation: if the oracle cannot grasp/lift from the reset,
+  debug reset/control geometry; if the oracle works but PPO does not, final
+  A100 RL remains blocked by policy/reward/exploration rather than reset
+  geometry.
+
+Worker B no-auto-reset hold diagnostic:
+
+- B implemented and launched eval-only success termination suppression for the
+  offset-hold reference controller.
+- Job `1027866` completed `0:0` in `00:01:31`.
+- Run:
+  `franka_cube_traj_tracking_refmix_hold_offset_noreset520_20260611_163220`.
+- Local run dir:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_noreset520_20260611_163220`.
+- Local artifact dir:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_noreset520_20260611_163220_artifacts`.
+- Viewer URLs:
+  - report:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_noreset520_20260611_163220_artifacts/report.md`
+  - contact sheet:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_noreset520_20260611_163220_artifacts/contact_sheet_quick.jpg`
+  - slow success/hold window:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_noreset520_20260611_163220_artifacts/success_hold_window_slow.mp4`
+- Metrics:
+  - `success_termination_suppression_installed=True`,
+    `suppress_success_termination=True`.
+  - no actual done/reset events: `done_count=0`, `done_ever_count=0`.
+  - `success_ever_count/rate=3/0.75`.
+  - `suppressed_success_done_count/rate=3/0.75`.
+  - `success_rate_mean/final/max=0.2255/0.5/0.75`.
+  - last-window success mean `0.735`.
+  - first success step mean `362.67`; last success step min/mean/max
+    `514/518/520`.
+  - max lift `0.220861 m`; final EE-cube `0.043913 m`;
+    final finger-center-cube `0.086143 m`; final gripper width `0.047492 m`.
+  - target unsafe max `0`; target clearance min `0.065114 m`.
+- Visual interpretation: the no-reset reference/offset-hold controller keeps a
+  stable high lift in the successful envs through the end of the rollout. The
+  prior final-zero ambiguity is confirmed to be auto-reset semantics for the
+  previous success-window run, not loss of the cube under reference hold.
+- Orchestrator instruction sent to B: commit/push the worklog/artifact links,
+  then move to bounded trainability diagnostics. Do not launch a large PPO
+  scale-up. Next useful step is making the success-window/hold metrics
+  available for RL/eval and testing a minimal learned-action-to-reference-hold
+  handoff/curriculum.
+
+Worker C current next step:
+
+- C produced a combined controller compensation report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/controller_compensation_20260611_162300/controller_compensation_report.md`
+- Report conclusion matches orchestrator inspection: scaling labels reduces
+  raw distance but does not solve the controller/action semantics mismatch; high
+  multipliers leave support and clip.
+- Orchestrator instruction sent to C: commit/push the report/worklog state, then
+  run a bounded action-repeat/temporal semantics diagnostic from exact
+  source-joint reset. No BC/RL training until replay labels follow the teacher
+  EE geometry under the actual controller.
