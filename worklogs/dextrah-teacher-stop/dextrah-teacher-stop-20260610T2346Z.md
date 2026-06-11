@@ -1803,3 +1803,52 @@ Next:
 - Return to widened active monitoring on the new allocation, with the next
   expected TERM/requeue window around `2026-06-11 04:15 PDT` if training has
   not completed first.
+
+## 2026-06-11 01:04 PDT - Teacher Post-Restore Artifact/Metric Pass
+
+Goal:
+- Verify new artifacts and scalar health after the restored allocation has
+  been training for a sustained interval.
+
+Command / Job:
+- job_id: `28955904`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28955904.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+- local TensorBoard copy:
+  `/tmp/dextrah_teacher_events`
+
+Result:
+- status: running healthy with new post-restore artifacts.
+- scheduler: `RUNNING` on `batch-block7-00110`, elapsed `33:21`,
+  time left `03:16:39` at `01:04:06 PDT`.
+- stdout advanced to epoch `18919/20000`.
+- new complete checkpoints after restore include:
+  `last_dextrah_lstm_ep_18910_rew_671.05133.pth` at `01:03:19`.
+- rolling checkpoint `dextrah_lstm.pth` refreshed at `01:02:47`.
+- runtime sidecars rank `0-7` refreshed at `01:03:17`.
+- new TensorBoard event file:
+  `events.out.tfevents.1781163810.batch-block7-00110`, updated at `01:03:30`.
+- TensorBoard summaries parsed through epoch `18912` for epoch-keyed scalars.
+- post-requeue `in_success_region/iter`: n=`232`, mean `0.468626`; latest
+  `0.456787`, last-50 `0.466641`.
+- post-requeue `rewards/iter`: n=`232`, mean `651.031`; latest `625.866`,
+  last-50 `648.943`.
+- `num_adr_increases/iter`: latest `50`, last-50 `50`.
+- `info/kl`: latest `0.00123596`, last-50 `0.00216464`.
+- `losses/a_loss`: latest `-0.00218845`, last-50 `-0.00238555`.
+- `losses/c_loss`: latest `0.0265377`, last-50 `0.0295105`.
+- `performance/step_inference_rl_update_fps`: latest `103470`,
+  last-20 about `98671`, last-50 about `101048`, last-200 about `104837`.
+
+Analysis:
+- Training remains healthy. Post-restore checkpoint, sidecar, rolling model,
+  and TensorBoard artifacts are all advancing. Success/reward/KL/loss windows
+  are stable. Throughput is lower than the pre-requeue steady state but still
+  advancing normally after the long scene initialization and lower-throughput
+  early post-restore epochs.
+
+Next:
+- Continue widened active monitoring, watching throughput and final progress
+  toward epoch `20000`.
