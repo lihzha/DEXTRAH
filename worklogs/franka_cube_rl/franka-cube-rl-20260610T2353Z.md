@@ -627,3 +627,102 @@ Command / Job:
 Next:
 - Monitor validator completion; if it passes, run a checkpoint eval with
   clearer camera framing and inspect `finger_table_clearance` metrics.
+
+## 2026-06-10 17:43 PDT - GraspGenX Franka Panda Asset Audit
+
+User Follow-Up:
+- User asked to verify whether GraspGenX `franka_panda` gripper-description
+  assets exist anywhere and whether they are corrupted/incomplete, because bad
+  selected grasps could come from bad gripper geometry regardless of simulator.
+
+Checked Locations:
+- Local GraspGenX checkout:
+  `/home/lzha/code/graspgenx/ext/gripper_descriptions/gripper_descriptions/assets/x_grippers/franka_panda`
+- Shared cluster asset root used by GraspGenX jobs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/assets/gripper_descriptions_full/gripper_descriptions/assets/x_grippers/franka_panda`
+- Local and shared result trees for cached copies of `coll_mesh.obj`,
+  `vis_mesh.obj`, `tsdf.npy`, `hand.stl`, `hand.dae`, and `finger.dae`.
+
+Result:
+- The asset directory exists in both local and shared locations, and
+  `config.json`, `points.json`, `proc_gripper_only_pointnet_vae_repr.json`,
+  `gripper.urdf`, and `gripper_spherical_dof.urdf` parse successfully.
+- The required LFS geometry/TSDF files are missing or only pointer stubs:
+  - `coll_mesh.obj`: missing locally and on shared assets.
+  - `vis_mesh.obj`: missing locally and on shared assets.
+  - `tsdf.npy`: missing locally and on shared assets.
+  - `meshes/collision/hand.stl`: missing locally; shared copy is a Git LFS
+    pointer stub (`130` bytes), not the real `10084` byte STL.
+  - `meshes/visual/finger.dae`: missing locally; shared copy is a Git LFS
+    pointer stub (`130` bytes), not the real `51239` byte DAE.
+  - `meshes/visual/hand.dae`: missing locally; shared copy is a Git LFS
+    pointer stub (`131` bytes), not the real `549239` byte DAE.
+- `git lfs ls-files -l` confirms all six files are expected LFS objects.
+- The local and shared LFS object stores do not contain those six OIDs.
+- `git lfs pull --include='gripper_descriptions/assets/x_grippers/franka_panda/**'`
+  fails both locally and on shared storage with:
+  `This repository exceeded its LFS budget.`
+
+Impact:
+- Confirmed: GraspGenX `franka_panda` gripper-description assets are
+  incomplete/corrupted in the checkouts currently available to local and A100
+  runs.
+- `graspgenx.x_grippers.get_gripper_info()` silently falls back to dummy
+  collision mesh, dummy visual mesh, and zero TSDF when those files are missing,
+  so GraspGenX-generated Franka grasps can be geometrically degraded even if
+  the simulator is correct.
+- The Franka cube RL environment does not import GraspGenX or
+  `gripper_descriptions`; DEXTRAH hits are in the separate Franka star
+  GraspGenX/cuRobo planner. The table penetration found by the cube validator
+  is therefore still an Isaac Lab robot/table geometry issue, not explained by
+  GraspGenX assets alone.
+
+Decision:
+- Treat GraspGenX Franka grasp generation as externally asset-blocked until a
+  valid `franka_panda` LFS asset copy is provided or the upstream LFS quota is
+  restored.
+- Continue the Franka cube RL path by fixing the confirmed table-clearance
+  failure in the Isaac Lab environment.
+
+## 2026-06-10 17:45 PDT - Table-Clearance Validation Failed; Base Height Patch
+
+Validation Result:
+- job_id: `28957205`
+- run_name: `franka_cube_validate_tableclear_20260610_1736`
+- scheduler status: `FAILED`, exit `1:0`.
+- local artifact mirror:
+  `cluster_results/a1002/validations/franka_cube_validate_tableclear_20260610_1736`
+
+Key Failure Metrics:
+- `success_predicate_accepts_lifted_cube_near_gripper`: failed with
+  `finger_table_clearance=-0.01856m` and `success_rate=0.0`.
+- `reward_accepts_success_geometry_for_prelift_enclosure`: failed because
+  table-clearance penalty saturated at `-3.0`.
+- `reward_accepts_success_geometry_for_lift`: failed because the clearance
+  gate zeroed the success bonus.
+- scripted rollout: `min_mean_finger_table_clearance=-0.01125m`,
+  `done_count=11`.
+
+Diagnosis:
+- The issue is present at reset/synthetic geometry, not only after learning:
+  the inherited Franka star robot base (`robot_base_z=0.20`) places the cube
+  task's default fingertips below the table surface.
+- This matches the user's video observation that the gripper penetrates the
+  table.
+
+Patch:
+- Rebuilt the inherited Franka robot cfg only for
+  `DextrahFrankaCubeGraspEnvCfg` with `robot_base_z=0.25`.
+- Left the shared Franka star-kitting task unchanged.
+- Added a validator check `reset_fingers_clear_table` requiring reset
+  fingertips to clear the configured `finger_table_clearance_margin`.
+
+Local Validation:
+- `python3 -m py_compile` passed for:
+  - `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env_cfg.py`
+  - `dextrah_lab/rl_games/validate_franka_cube_grasp_env.py`
+- `git diff --check` passed.
+
+Next:
+- Commit/push this patch, update the A100 worktree, and rerun the Franka cube
+  table-clearance validator before launching any new PPO.

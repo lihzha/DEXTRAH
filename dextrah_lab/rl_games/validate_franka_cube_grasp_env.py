@@ -449,6 +449,13 @@ def _run_short_rollout(env, task_env, checks: CheckRecorder, num_steps: int, pri
         cube_z_min=float(task_env.cube_pos[:, 2].detach().min().cpu()),
         table_surface_z=float(task_env.cfg.table_surface_z),
     )
+    checks.check(
+        "reset_fingers_clear_table",
+        bool((task_env.finger_table_clearance >= float(task_env.cfg.finger_table_clearance_margin)).all().item()),
+        finger_table_clearance_min=float(task_env.finger_table_clearance.detach().min().cpu()),
+        finger_table_clearance_mean=_mean(task_env.finger_table_clearance),
+        required_margin=float(task_env.cfg.finger_table_clearance_margin),
+    )
 
     reward_values: list[float] = []
     done_count = 0

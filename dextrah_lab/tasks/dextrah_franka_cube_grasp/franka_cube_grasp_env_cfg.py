@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import isaaclab.sim as sim_utils
-from isaaclab.assets import RigidObjectCfg
+from isaaclab.assets import ArticulationCfg, RigidObjectCfg
 from isaaclab.sim.spawners.materials.physics_materials_cfg import RigidBodyMaterialCfg
 from isaaclab.utils import configclass
 
 from dextrah_lab.tasks.dextrah_franka_star_kitting.franka_star_kitting_env_cfg import (
     DextrahFrankaStarKittingEnvCfg,
+    _franka_star_robot_cfg,
 )
 
 
@@ -47,6 +48,18 @@ class DextrahFrankaCubeGraspEnvCfg(DextrahFrankaStarKittingEnvCfg):
     finger_table_clearance_margin = 0.025
     finger_table_penetration_termination_margin = -0.002
     finger_table_clearance_success_margin = 0.005
+    robot_base_z = 0.25
+
+    # The star task keeps the robot base lower for its fixture geometry.  In
+    # the cube task that places the default Franka fingertips below the table,
+    # so rebuild the inherited robot cfg with a cube-specific base height.
+    robot: ArticulationCfg = _franka_star_robot_cfg(
+        robot_base_z,
+        DextrahFrankaStarKittingEnvCfg.robot_yaw_wxyz,
+        DextrahFrankaStarKittingEnvCfg.finger_effort_limit,
+        DextrahFrankaStarKittingEnvCfg.finger_stiffness,
+        DextrahFrankaStarKittingEnvCfg.finger_damping,
+    )
 
     # KUKA-cube-shaped reward weights for franka_cube_grasp_rewards.compute_franka_cube_grasp_rewards.
     # Robot-specific differences are handled in the reward inputs: two Franka
