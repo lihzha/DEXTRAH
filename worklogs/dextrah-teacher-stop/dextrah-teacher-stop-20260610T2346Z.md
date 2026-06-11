@@ -1852,3 +1852,52 @@ Analysis:
 Next:
 - Continue widened active monitoring, watching throughput and final progress
   toward epoch `20000`.
+
+## 2026-06-11 01:16 PDT - Teacher Artifact/Metric Pass
+
+Goal:
+- Answer whether new artifacts are being produced and verify scalar health
+  while keeping the teacher job under active monitoring.
+
+Command / Job:
+- job_id: `28955904`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28955904.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+- local TensorBoard copy:
+  `/tmp/dextrah_teacher_events`
+
+Result:
+- status: running healthy with new artifacts.
+- scheduler: `RUNNING` on `batch-block7-00110`, elapsed `45:57`,
+  time left `03:04:03` at `01:16:43 PDT`.
+- stdout advanced to epoch `19059/20000`.
+- newest complete checkpoint:
+  `last_dextrah_lstm_ep_19050_rew_646.82513.pth` at `01:15:54`.
+- recent complete checkpoints also include epochs `18920` through `19040`,
+  written about every ten epochs.
+- runtime sidecars rank `0-7` refreshed at `01:16:43`.
+- narrow critical failure scan over recent stdout returned no matches.
+- TensorBoard summaries parsed through epoch `19045` for epoch-keyed scalars.
+- post-requeue `in_success_region/iter`: n=`365`, mean `0.466899`; latest
+  `0.458008`, last-50 `0.466948`.
+- post-requeue `rewards/iter`: n=`365`, mean `651.889`; latest `595.822`,
+  last-50 `668.301`.
+- `num_adr_increases/iter`: latest `50`, last-50 `50`.
+- `info/kl`: latest `0.00123357`, last-50 `0.00183524`.
+- `losses/a_loss`: latest `-0.00153663`, last-50 `-0.00216855`.
+- `losses/c_loss`: latest `0.0280529`, last-50 `0.0253654`.
+- `performance/step_inference_rl_update_fps`: latest `102219`,
+  last-20 about `99098`, last-50 about `97380`, last-200 about `99728`.
+
+Analysis:
+- Yes, new artifacts are advancing. Checkpoints, runtime sidecars, TensorBoard
+  summaries, and stdout progress are all fresh after the second restore.
+- Metrics remain stable: success-region is holding near `0.467`, reward has
+  recovered in the last-50 window, KL is low, and no error signatures appeared
+  in the recent log window.
+
+Next:
+- Continue active monitoring toward epoch `20000`; tighten polling as the run
+  approaches final checkpoint/final artifact generation.
