@@ -1151,3 +1151,71 @@ Worker A reset-prior final RL:
 - Continue monitoring. The run is not complete and still needs checkpoint
   selection, eval videos, metrics, and artifact inspection before the
   apple-to-apple claim can be made.
+
+## 2026-06-11 Monitor Check 21:40 UTC
+
+Artifact cadence and visual-debug directive:
+
+- The user reported that Agent C's video drifts away/ignores the object and
+  that Agent A's uploaded artifact also looks off because the robot is not
+  grasping the cube. Treat both as likely implementation/debugging signals, not
+  acceptable weak-policy artifacts.
+- All three workers were instructed to fetch/upload compact artifacts more
+  often: short labeled videos or first/middle/last frames, trace CSV/JSONL,
+  plots, train-vs-eval consistency audits, exact commands/job ids, local paths,
+  and `viz-open` URLs. Prefer frequent small bundles after every diagnostic,
+  tiny smoke, meaningful checkpoint interval, or new-best checkpoint.
+- For A, the next required bundle must separate reset-only evidence from policy
+  rollout evidence. It must report cube center, sampled grasp, 3 cm pregrasp
+  offset target, gripper/fingertip centers, gripper width, pose errors, and
+  whether train/eval use the same reset path and root-relative conventions.
+  The current reset-success scalar may only prove robot target tracking, not
+  grasp-quality geometry.
+- For C, no scale-up is allowed until official-DP action-semantics diagnostics
+  and one-step/short-horizon controller replay prove the predicted and executed
+  actions match dataset labels and move in the expected direction. Every eval
+  video must be paired with action/history/chunk/object-pose traces.
+- For B, every trajectory-tracking smoke/eval must include visual artifacts and
+  reference/phase/reward/action traces before any longer training.
+
+Worker A reset-prior visual concern:
+
+- The active A100 job `28987954` is still numerically stable and reached epoch
+  `1425` / frame `1.493B`. Recent stdout observed a new best checkpoint update
+  around epoch `1422` with reward `2282.798`; interval checkpoint epoch `1425`
+  had suffix `2248.1533`.
+- Latest rank-0 scalar window still shows ideal reset-prior target tracking:
+  `cube_grasp_prior_reset_success_rate=1.0`, reset position error about
+  `0.0019 m`, reset rotation error about `0.018 rad`, and no reset-target
+  failure in the sampled logs.
+- Behavior remains suspicious despite reward improvement: mean success over the
+  last 200 samples is about `1.5e-5`, mean lifted rate about `5.4e-4`, mean lift
+  height about `0.00013 m`, finger-center distance about `0.059 m`, and the
+  gripper is nearly always hard-closing.
+- I extracted a first/middle/last-frame triptych from A's ep1325 eval video.
+  The file is valid (`1280x720`, 353 frames, about 5.9 s), but visually the
+  fingers are near the cube rather than clearly enclosing it, and the rollout
+  does not grasp or lift. Agent A was told to debug transform/gripper-frame/
+  reset-geometry and add a reset-grasp-quality diagnostic if the current scalar
+  only checks target pose tracking.
+- Current A eval viewer URL:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_reset_eval_ep1325_20260611_213227/videos/ggx-pregrasp-reset-ep1325-step-0-trimmed.mp4`
+
+Worker B trajectory-tracking smoke concern:
+
+- l401 job `1027751` (`franka_cube_traj_actionscale_rl`) completed `0:0`, but
+  stdout saved checkpoint
+  `last_dextrah_franka_cube_traj_tracking_ep_3_rew_-inf.pth` after warning
+  `Max epochs reached before any env terminated at least once`.
+- Agent B was told not to record this as a clean RL-smoke pass or scale-up
+  evidence. The immediate B question is whether no-termination/`-inf` is an
+  expected artifact of this very short RL-Games smoke or a wrapper/metric
+  pathology that needs a different bounded eval route.
+
+Worker C DP BC:
+
+- C's latest committed evidence still says chunk-size 1 does not fix the
+  drifting/early-close failure. C has an uncommitted
+  `dextrah_lab/offline_dp_bc/diagnose_dp_action_semantics.py` diagnostic in
+  progress and was re-instructed to finish it before any next training or RL
+  handoff.
