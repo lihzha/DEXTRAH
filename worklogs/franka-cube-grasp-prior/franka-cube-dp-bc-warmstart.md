@@ -4569,3 +4569,107 @@ Acceptance:
   substantially better, the issue is open-loop/temporal target semantics in the
   converted labels. If they still under-realize, inspect controller gains,
   decimation, target frame, and waypoint cadence before any training.
+
+## 2026-06-11T16:38:00-07:00 - live residual target replay launch
+
+Goal:
+- Run the bounded residual-target replay diagnostic on l401 with exact
+  source-joint reset and source cube pose reset.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `ce8d94ee4fc1b96f6943264e47edb93cc7bc7736`
+- implementation_commit:
+  `b9a6009a798d7d39642fd8960049454da207294b`
+- changed_files:
+  - `dextrah_lab/rl_games/replay_franka_cube_dataset_actions.py`
+  - `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+- push/pull:
+  - pushed to `origin/codex/franka-cube-diffusion-policy-bc`
+  - remote GitHub fetch still blocked by SSH publickey on l401, so deployed
+    via Git bundle:
+    `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart-b9a6009.bundle`
+- remote worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- remote_commit/status:
+  `b9a6009a798d7d39642fd8960049454da207294b`, detached clean.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/replay_franka_cube_dataset_actions.py`
+- `bash -n cluster/sbatch_replay_franka_cube_dp_actions_1gpu.sh`
+- `git diff --check`
+
+Command / Job:
+- job_id: `1027867`
+- run_name:
+  `franka_cube_dp_replay_sourcejoint_targetresidual_ep24s0_96_20260611_163800`
+- launch command:
+  `sbatch --parsable --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart,RUN_NAME=franka_cube_dp_replay_sourcejoint_targetresidual_ep24s0_96_20260611_163800,DATASET=/results/dp_bc/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz,CHECKPOINT=/results/dp_bc/checkpoints/franka_cube_curobo32_full_pick_lift_framefix_overfit2k/latest.ckpt,DEMO_RESET_DATASET=/results/dp_bc/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz,DEMO_RESET_TRAJECTORY_JSON=/results/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed24/trajectory.json,DEMO_RESET_EPISODE=24,DEMO_RESET_STEP=0,DATASET_START_EPISODE=24,DATASET_START_STEP=0,MODES=dataset_t\\,dataset_target_t_plus_1\\,dataset_target_t_plus_7,STEPS=96,NUM_ENVS=1,ACTION_REPEAT=1,POSE_ACTION_MULTIPLIER=1,CLIP_ACTIONS=1.0,CAPTURE_VIDEO=True,VIDEO_LENGTH=96,VIDEO_NAME_PREFIX=franka-cube-dp-replay-targetresidual,PRINT_INTERVAL=16,NUM_INFERENCE_STEPS=100,SEED=42 cluster/sbatch_replay_franka_cube_dp_actions_1gpu.sh`
+- remote run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/replays/franka_cube_dp_replay_sourcejoint_targetresidual_ep24s0_96_20260611_163800`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/replay_franka_cube_dp_actions_1027867.out`
+
+Expected artifacts:
+- `replay_summary.json`
+- `replay_steps.csv`
+- `replay_report.md`
+- `replay_motion.png`
+- `action_realization_audit.png`
+- per-mode mp4 files under `videos/`
+
+Next:
+- Monitor job `1027867`, fetch artifacts locally, generate/open viewer URLs,
+  and compare whether residual-target modes reduce tracking error and
+  EE-to-cube distance without pathological clipping/support drift.
+
+Update:
+- `1027867` was canceled before completion because the `sbatch --export`
+  command parsed the comma-separated `MODES` value incorrectly. The replay log
+  showed the script received only `--mode dataset_t`, so this run could not
+  answer the residual-target hypothesis. Do not use this run as residual-target
+  evidence.
+- Next launch will use a remote-shell `export MODES=...; sbatch --export=ALL`
+  pattern so comma-separated modes are preserved.
+
+## 2026-06-11T16:40:00-07:00 - action repeat temporal semantics plan
+
+Goal:
+- Run the bounded action-repeat/hold diagnostic requested by the orchestrator:
+  determine whether temporal resampling/action holding can make source labels
+  follow the teacher EE geometry, versus needing converter/controller semantic
+  changes.
+
+Hypothesis:
+- If the DEXTRAH controller simply needs more env steps per source waypoint,
+  holding each normalized source action for `2`, `4`, or `8` env steps should
+  improve actual EE path magnitude and reduce EE-to-cube/source waypoint error
+  without high clipping or leaving demo support.
+- If repeat/hold only reduces raw distance while nearest-demo support worsens
+  or tracking remains far from source geometry, then the fix is not a simple
+  action-repeat bridge; we need a converter/controller semantic patch or a
+  controller-rollout dataset.
+
+Planned Jobs:
+- Exact source-joint and cube reset at episode `24`, step `0`.
+- Fixed label start episode `24`, step `0`.
+- One mode per job: `dataset_t`.
+- `POSE_ACTION_MULTIPLIER=1`, `CLIP_ACTIONS=1.0`, `NUM_ENVS=1`,
+  `STEPS=96`, video enabled.
+- Sweep `ACTION_REPEAT=2`, `4`, `8`.
+
+Acceptance:
+- Diagnostic clarity only. A useful repeat setting must follow teacher
+  geometry without pathological clipping/support drift, not merely reduce final
+  EE-to-cube distance.
+
+Expected artifacts per job:
+- `replay_summary.json`
+- `replay_steps.csv`
+- `replay_report.md`
+- `replay_motion.png`
+- `action_realization_audit.png`
+- per-job mp4/contact sheet after local fetch.
