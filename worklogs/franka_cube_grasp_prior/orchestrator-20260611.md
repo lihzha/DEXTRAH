@@ -1690,3 +1690,43 @@ Worker C active demo-conditioned reset eval:
   checks are robot/pregrasp alignment, history seeding, observation semantics,
   or policy rollout/action interpretation. Job `1027773` is still active and
   needs artifact inspection before any conclusion.
+
+## 2026-06-11 Monitor Check 23:08 UTC
+
+Worker C demo-conditioned reset result:
+
+- C's l401 job `1027773`
+  (`franka_cube_dp_eval_framefix_overfit2k_demoreset_ep24s0_video320_20260611_160700`)
+  completed `0:0` and was fetched locally.
+- Local artifacts:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_framefix_overfit2k_demoreset_ep24s0_video320_20260611_160700`
+- Viewer URLs:
+  - video:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_framefix_overfit2k_demoreset_ep24s0_video320_20260611_160700/videos/franka-cube-dp-policy-eval-step-0.mp4`
+  - contact sheet:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_framefix_overfit2k_demoreset_ep24s0_video320_20260611_160700/dp_demoreset_contact_sheet.jpg`
+- Video validation: `1280x720`, `319` frames, `5.316667 s`.
+- Metrics: `final_success_rate=0.0`, `window_success_rate=0.0`,
+  cube-lift max/final `0.0`, `final_gripper_width=0.0009156 m`,
+  final finger-center-to-cube `0.1619 m`, reward mean/final
+  `1.6533/1.7558`, support trace records `320`.
+- Demo reset matched the selected object state: `cube_pos_l2_diff=0.0`,
+  lowdim infinity diff about `0.010 m`, and cube-minus-EE L2 diff about
+  `0.0109 m` at reset.
+- Visual inspection: the hand starts offset from the cube and drifts farther
+  away while closing. This confirms the C failure is not explained by object
+  pose randomization alone.
+- C has been asked to continue with robot-state/demo alignment, open-loop demo
+  action replay if feasible, history seeding, observation conversion, action
+  normalization/order/sign, and gripper convention diagnostics. No BC/RL
+  scale-up.
+
+Current worker/scheduler state:
+
+- l401 and a1001 queues are empty for `lzha` at this poll.
+- B is editing `eval_rollout.py`, the eval wrapper, summarizer, and its owned
+  worklog for the `policy_reference_mix` diagnostic.
+- A has an owned worklog modification after receiving the filtered exact-close
+  failure. No A100 RL launch is allowed.
+- C is clean locally after the demo-reset run but has been handed the next
+  diagnostic assignment.
