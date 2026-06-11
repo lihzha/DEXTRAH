@@ -1812,3 +1812,198 @@ Next:
 - Deploy the exact commit to the agent-owned l401 worktree, copy the full
   pick/lift checkpoint as an untracked artifact, and launch a tiny Isaac eval
   with `NUM_ENVS=1`, short horizon, and `NUM_INFERENCE_STEPS=100`.
+
+## 2026-06-11T13:15:58-07:00 - full pick/lift l401 eval launch plan
+
+Goal:
+- Validate that the full-pick/lift official-DP checkpoint can load through the
+  DEXTRAH Isaac eval wrapper and step a tiny Franka cube environment with sane
+  action ranges.
+
+Hypothesis:
+- The local bridge smokes show the checkpoint is action-range sane at
+  `100` denoising steps, so a tiny l401 eval should now be useful mechanics
+  evidence. Success still means eval-wrapper mechanics and plausible
+  approach/close/lift commands, not final manipulation performance.
+
+Change:
+- Source commit to deploy:
+  `8a96fd5acea097539d5b5dd5bdf149bba39f5c49`
+- Checkpoint artifact to copy:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_debug/run_20260611_131845_curobo32_full_pick_lift_debug/checkpoints/latest.ckpt`
+
+Command / Job:
+- remote code:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- remote checkpoint:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/franka-cube-dp-bc-warmstart/checkpoints/run_20260611_131845_curobo32_full_pick_lift_debug/latest.ckpt`
+- planned run_name:
+  `franka_cube_dp_eval_curobo32_full_pick_lift_20260611_131558`
+- planned command:
+  `CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart OFFICIAL_DP_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/external/real-stanford-diffusion_policy OFFICIAL_DP_ENV_NAME=franka-cube-dp-bc-warmstart-official-dp CHECKPOINT=/results/dp_bc/franka-cube-dp-bc-warmstart/checkpoints/run_20260611_131845_curobo32_full_pick_lift_debug/latest.ckpt RUN_NAME=franka_cube_dp_eval_curobo32_full_pick_lift_20260611_131558 NUM_ENVS=1 NUM_STEPS=64 NUM_INFERENCE_STEPS=100 PRINT_INTERVAL=8 CAPTURE_VIDEO=False sbatch cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- expected log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_dp_policy_<job_id>.out`
+- expected metrics:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_curobo32_full_pick_lift_20260611_131558/metrics.json`
+
+Result:
+- status: pending
+
+Analysis:
+- This eval should be launched only after the remote source tree is updated to
+  the exact commit and the checkpoint is present at the expected path.
+- Pass criteria: Slurm exit 0, wrapper prints metrics validation, metrics JSON
+  has `env_closed=true`, `steps_completed>=64`, finite action min/max, and no
+  Python error patterns in the log. Reward/success are inspected but are not
+  expected to prove task success on this tiny planned-demo checkpoint.
+
+Next:
+- Deploy source/checkpoint to l401, submit the job, monitor scheduler/logs,
+  inspect `metrics.json`, patch/relaunch if the wrapper fails.
+
+## 2026-06-11T13:21:50-07:00 - full pick/lift l401 eval smoke result and chunk-bridge plan
+
+Goal:
+- Inspect the full pick/lift checkpoint in DEXTRAH/Isaac and identify the next
+  bridge patch needed for a useful BC warm-start path.
+
+Hypothesis:
+- The full pick/lift checkpoint should load and step in Isaac with finite
+  actions. If it fails to make task progress, the most likely bridge issue is
+  that the wrapper executes only the first action of each 8-action DP output
+  and replans every simulator step, rather than executing an action chunk as
+  official Diffusion Policy is designed to do.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- local_branch: `codex/franka-cube-diffusion-policy-bc`
+- local_source_commit_deployed: `8a96fd5acea097539d5b5dd5bdf149bba39f5c49`
+- remote_worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- remote_commit/status: detached at
+  `8a96fd5acea097539d5b5dd5bdf149bba39f5c49`; clean after transient Git
+  bundle removal.
+- deploy note: l401 GitHub fetch failed with `Permission denied (publickey)`,
+  so the source commit was deployed via a Git bundle requiring base commit
+  `589dd81c9f9691fcda3a3d4b9ad714d90dae4794`.
+
+Command / Job:
+- checkpoint copied to:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/franka-cube-dp-bc-warmstart/checkpoints/run_20260611_131845_curobo32_full_pick_lift_debug/latest.ckpt`
+- command:
+  `CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart OFFICIAL_DP_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/external/real-stanford-diffusion_policy OFFICIAL_DP_ENV_NAME=franka-cube-dp-bc-warmstart-official-dp CHECKPOINT=/results/dp_bc/franka-cube-dp-bc-warmstart/checkpoints/run_20260611_131845_curobo32_full_pick_lift_debug/latest.ckpt RUN_NAME=franka_cube_dp_eval_curobo32_full_pick_lift_20260611_131558 NUM_ENVS=1 NUM_STEPS=64 NUM_INFERENCE_STEPS=100 PRINT_INTERVAL=8 CAPTURE_VIDEO=False sbatch cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- job_id: `1027722`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_dp_policy_1027722.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_curobo32_full_pick_lift_20260611_131558`
+- metrics:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_curobo32_full_pick_lift_20260611_131558/metrics.json`
+
+Result:
+- status: passed mechanics, failed task progress
+- sacct: `COMPLETED`, exit `0:0`, elapsed `00:01:13`, step max RSS about
+  `22394056K`.
+- wrapper printed `DP eval metrics passed` and
+  `FRANKA_CUBE_DP_POLICY_EVAL_DONE`.
+- metrics summary:
+  - `steps_completed=64`
+  - `env_closed=true`
+  - `reward_mean=1.3106193002313375`
+  - `reward_final=1.264480471611023`
+  - `final_success_rate=0.0`
+  - `window_success_rate=0.0`
+  - `action_min=[-0.20807,-0.35009,-0.05984,-0.16531,-0.31083,-0.26626,-0.30297]`
+  - `action_max=[0.37037,0.19806,0.39653,0.27571,0.28798,0.22835,1.0]`
+  - gripper width decreased from about `0.0796` to final `0.0491`,
+    min `0.04516` at step `56`.
+  - `cube_lift_height.max=0.0`.
+  - final `ee_to_cube_dist=0.26818`,
+    `finger_center_to_cube_dist=0.26017`.
+
+Analysis:
+- The cluster eval validates the full-pick checkpoint load path, official-DP
+  policy inference, PPO-observation bridge, DEXTRAH 7D action stepping, metric
+  writing, and environment shutdown.
+- It does not show useful manipulation behavior yet. The policy starts with
+  plausible open-gripper approach actions and eventually emits close commands
+  by step 48, but the hand drifts away from the cube and never lifts.
+- The next bridge patch should execute DP action chunks. The official lowdim
+  policy is configured with `n_action_steps=8`; repeatedly throwing away
+  seven predicted actions may prevent phase progress and amplify sampling
+  jitter.
+
+Next:
+- Add an optional action-chunk execution mode to the PPO bridge/eval wrapper:
+  default remains first-action replanning for compatibility, while
+  `--action_chunk_steps 8` queues the predicted action sequence for execution.
+- Run local syntax/checkpoint smokes, commit/push, deploy, and relaunch a
+  tiny l401 eval with `ACTION_CHUNK_STEPS=8` if the local checks pass.
+
+## 2026-06-11T13:25:40-07:00 - action chunk bridge patch validation
+
+Goal:
+- Make the DEXTRAH eval wrapper closer to official Diffusion Policy rollout
+  mechanics by optionally executing DP action chunks instead of only the first
+  predicted action at every simulator step.
+
+Hypothesis:
+- Chunk execution should preserve phase progression better for the full
+  pick/lift checkpoint. The previous first-action eval only partially closed
+  the gripper and drifted away from the cube.
+
+Change:
+- `dextrah_lab/offline_dp_bc/ppo_bridge.py`
+  - added `predict_action_sequence_from_ppo_obs()`;
+  - preserved `predict_action_from_ppo_obs()` as the first-action wrapper.
+- `dextrah_lab/rl_games/eval_franka_cube_dp_policy.py`
+  - added `--action_chunk_steps`;
+  - added action-queue execution for predicted DP action sequences;
+  - clears the queue on env reset.
+- `cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+  - added `ACTION_CHUNK_STEPS` env var, preamble logging, and CLI forwarding.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `8a96fd5acea097539d5b5dd5bdf149bba39f5c49`
+- implementation_commit: pending
+- changed_files:
+  - `dextrah_lab/offline_dp_bc/ppo_bridge.py`
+  - `dextrah_lab/rl_games/eval_franka_cube_dp_policy.py`
+  - `cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+  - `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+
+Command / Job:
+- syntax:
+  `python3 -m py_compile dextrah_lab/offline_dp_bc/ppo_bridge.py dextrah_lab/offline_dp_bc/validate_official_checkpoint_smoke.py dextrah_lab/rl_games/eval_franka_cube_dp_policy.py && bash -n cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- preserved first-action checkpoint smoke:
+  `validate_official_checkpoint_smoke --row-selector lift_high --warm-history-from-dataset --num-inference-steps 100`
+- sequence-shape smoke:
+  local official-DP checkpoint load plus
+  `predict_action_sequence_from_ppo_obs()` on two open dataset rows.
+
+Result:
+- syntax checks: passed.
+- preserved first-action smoke: passed with the same lift-high closed gripper
+  action range as before, about `[-1.00001,-0.51134]`.
+- sequence-shape smoke at 4 denoising steps: returned finite `(2,8,7)` but
+  clipped/noisy actions as expected for too few denoising steps.
+- sequence-shape smoke at 100 denoising steps: returned finite `(2,8,7)` with
+  open-row action range:
+  - full sequence min
+    `[-0.00888,-0.11842,0.01279,-0.01949,-0.13708,0.01630,0.67468]`
+  - full sequence max
+    `[0.12398,-0.00496,0.20087,0.12081,-0.01849,0.20287,0.98030]`
+
+Analysis:
+- The patch is backward-compatible for first-action bridge smokes and exposes
+  the action sequence needed for more faithful Diffusion Policy rollout.
+- The chunked cluster smoke should use `ACTION_CHUNK_STEPS=8`,
+  `NUM_INFERENCE_STEPS=100`, and the same full-pick/lift checkpoint as job
+  `1027722`.
+
+Next:
+- Commit/push the chunk bridge patch, deploy the exact commit to l401 via Git,
+  then run a bounded chunked eval smoke and compare gripper/finger/cube metrics
+  against the first-action job.

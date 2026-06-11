@@ -3,8 +3,10 @@
 This is a no-learning rollout wrapper. It loads an official
 ``real-stanford/diffusion_policy`` low-dimensional checkpoint, extracts the
 compact 21D observation from DEXTRAH's 72D Franka cube observation, queries
-``predict_action_from_ppo_obs()``, and steps the Isaac environment with the
-resulting 7D relative EE + gripper action.
+the official lowdim policy, and steps the Isaac environment with the resulting
+7D relative EE + gripper action. By default it replans every simulator step
+for compatibility with the initial smoke path; ``--action_chunk_steps`` can
+execute Diffusion Policy action chunks.
 """
 
 from __future__ import annotations
@@ -29,6 +31,12 @@ parser.add_argument("--num_envs", type=int, default=16)
 parser.add_argument("--num_steps", type=int, default=240)
 parser.add_argument("--seed", type=int, default=42)
 parser.add_argument("--num_inference_steps", type=int, default=2)
+parser.add_argument(
+    "--action_chunk_steps",
+    type=int,
+    default=1,
+    help="Number of predicted DP action steps to execute before replanning. Default 1 preserves first-action replanning.",
+)
 parser.add_argument("--clip_actions", type=float, default=1.0)
 parser.add_argument("--success_window", type=int, default=80)
 parser.add_argument("--print_interval", type=int, default=20)
@@ -68,7 +76,7 @@ from dextrah_lab.offline_dp_bc.ppo_bridge import (
     FRANKA_CUBE_ACTION_DIM,
     FRANKA_CUBE_PPO_OBS_DIM,
     LowdimObsHistory,
-    predict_action_from_ppo_obs,
+    predict_action_sequence_from_ppo_obs,
 )
 
 
@@ -281,6 +289,8 @@ def main() -> None:
         )
 
     history = LowdimObsHistory(num_envs=task_env.num_envs, n_obs_steps=n_obs_steps)
+    requested_action_chunk_steps = max(1, int(args_cli.action_chunk_steps))
+    action_queue = np.empty((task_env.num_envs, 0, FRANKA_CUBE_ACTION_DIM), dtype=np.float32)
     step_metrics: list[dict[str, float | int | None]] = []
     action_min = np.full(FRANKA_CUBE_ACTION_DIM, np.inf, dtype=np.float64)
     action_max = np.full(FRANKA_CUBE_ACTION_DIM, -np.inf, dtype=np.float64)
@@ -295,14 +305,21 @@ def main() -> None:
         if policy_obs.shape[-1] != FRANKA_CUBE_PPO_OBS_DIM:
             raise RuntimeError(f"Expected PPO obs dim {FRANKA_CUBE_PPO_OBS_DIM}, got {tuple(policy_obs.shape)}")
 
-        _stage("rollout_start")
+        _stage("rollout_start", action_chunk_steps=requested_action_chunk_steps)
         for step in range(int(args_cli.num_steps)):
             if not simulation_app.is_running():
                 _stage("simulation_app_stopped", step=step)
                 break
 
             with torch.inference_mode():
-                action_np = predict_action_from_ppo_obs(policy, policy_obs, history)
+                if action_queue.shape[1] == 0:
+                    action_seq = predict_action_sequence_from_ppo_obs(policy, policy_obs, history)
+                    if action_seq.ndim != 3 or action_seq.shape[0] != task_env.num_envs:
+                        raise RuntimeError(f"Unexpected DP action sequence shape {action_seq.shape}")
+                    chunk_steps = min(requested_action_chunk_steps, int(action_seq.shape[1]))
+                    action_queue = np.asarray(action_seq[:, :chunk_steps], dtype=np.float32)
+                action_np = action_queue[:, 0]
+                action_queue = action_queue[:, 1:]
                 clip = float(args_cli.clip_actions)
                 if math.isfinite(clip) and clip > 0.0:
                     action_np = np.clip(action_np, -clip, clip)
@@ -314,6 +331,7 @@ def main() -> None:
                 if dones.any():
                     done_env_ids = torch.nonzero(dones, as_tuple=False).view(-1).detach().cpu().numpy()
                     history.reset(done_env_ids)
+                    action_queue = np.empty((task_env.num_envs, 0, FRANKA_CUBE_ACTION_DIM), dtype=np.float32)
                     done_count += int(done_env_ids.shape[0])
 
             reward_mean = _mean_float(rewards)
@@ -349,7 +367,8 @@ def main() -> None:
         "checkpoint": str(checkpoint),
         "official_workspace": workspace.__class__.__name__,
         "policy_class": policy.__class__.__name__,
-        "ppo_bridge": "predict_action_from_ppo_obs",
+        "ppo_bridge": "predict_action_sequence_from_ppo_obs",
+        "action_chunk_steps": requested_action_chunk_steps,
         "no_learning": True,
         "num_envs": task_num_envs,
         "num_steps_requested": int(args_cli.num_steps),

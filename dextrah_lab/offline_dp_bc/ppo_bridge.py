@@ -157,12 +157,13 @@ class LowdimObsHistory:
         return self._history.copy()
 
 
-def predict_action_from_ppo_obs(policy: Any, ppo_obs: Any, history: LowdimObsHistory) -> Any:
-    """Query an official lowdim DP policy from a single-step 72D PPO obs.
+def predict_action_sequence_from_ppo_obs(policy: Any, ppo_obs: Any, history: LowdimObsHistory) -> Any:
+    """Query an official lowdim DP policy for an action sequence.
 
-    The returned action is the first denoised action step in DEXTRAH's 7D
-    normalized controller convention. This function is for evaluation wrappers
-    and distillation data collection, not PPO checkpoint initialization.
+    The returned sequence has shape ``(num_envs, n_action_steps, 7)`` in
+    DEXTRAH's normalized relative-EE plus gripper convention. This is for
+    evaluation wrappers and distillation data collection, not PPO checkpoint
+    initialization.
     """
 
     lowdim = extract_lowdim_obs_from_ppo_obs(ppo_obs)
@@ -176,5 +177,17 @@ def predict_action_from_ppo_obs(policy: Any, ppo_obs: Any, history: LowdimObsHis
     obs_tensor = torch.as_tensor(obs_seq, dtype=torch.float32, device=device)
     with torch.no_grad():
         result = policy.predict_action({"obs": obs_tensor})
-    action = result["action"][:, 0]
+    action = result["action"]
     return action.detach().cpu().numpy()
+
+
+def predict_action_from_ppo_obs(policy: Any, ppo_obs: Any, history: LowdimObsHistory) -> Any:
+    """Query an official lowdim DP policy from a single-step 72D PPO obs.
+
+    The returned action is the first denoised action step in DEXTRAH's 7D
+    normalized controller convention. This preserves the original eval-wrapper
+    behavior. Prefer ``predict_action_sequence_from_ppo_obs`` when a caller can
+    execute Diffusion Policy action chunks.
+    """
+
+    return predict_action_sequence_from_ppo_obs(policy, ppo_obs, history)[:, 0]
