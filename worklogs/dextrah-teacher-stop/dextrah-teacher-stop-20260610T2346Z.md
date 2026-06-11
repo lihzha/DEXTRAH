@@ -1220,3 +1220,50 @@ Next:
 - Continue widened active monitoring until the next wall-time signal window,
   then tighten polling to validate checkpoint/sidecar refresh and requeue
   behavior again.
+
+## 2026-06-10 22:38 PDT - Teacher Monitor Metric Pass
+
+Goal:
+- Verify continued steady-state training health and check the short throughput
+  dip visible in the stdout tail.
+
+Command / Job:
+- job_id: `28955904`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28955904.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+- local TensorBoard copy:
+  `/tmp/dextrah_teacher_events`
+
+Result:
+- status: running healthy.
+- scheduler: `RUNNING` on `batch-block5-03072`, elapsed `01:55:14`,
+  time left `01:54:46` at `22:37:48 PDT`.
+- stdout advanced to epoch `17336/20000`.
+- latest complete checkpoint:
+  `last_dextrah_lstm_ep_17330_rew_612.2449.pth` at `22:37:16`.
+- runtime sidecars rank `0-7` all refreshed at `22:37:14`.
+- narrow critical failure scan over recent stdout returned no matches.
+- TensorBoard summaries parsed through epoch `17332` for epoch-keyed scalars.
+- `in_success_region/iter`: latest `0.47876`, last-50 `0.47144`,
+  last-200 `0.463901`, post-resume mean `0.462375`.
+- `rewards/iter`: latest `649.654`, last-50 `647.435`,
+  last-200 `644.556`, post-resume mean `642.186`.
+- `num_adr_increases/iter`: latest `50`, last-50 `50`.
+- `info/kl`: latest `0.00704429`, last-50 `0.00489331`,
+  last-200 `0.00521332`.
+- `losses/a_loss`: latest `-0.00289003`, last-50 `-0.00359385`.
+- `losses/c_loss`: latest `0.0228959`, last-50 `0.0255061`.
+- `performance/step_inference_rl_update_fps`: latest `112934`,
+  last-20 about `101295`, last-50 about `106590`, last-200 about `109094`.
+
+Analysis:
+- Training remains healthy. The stdout tail showed a brief throughput dip near
+  epochs `17314-17326`, but FPS recovered by the latest scalar, checkpoint and
+  sidecar cadence stayed intact, and success/reward/KL remain in the expected
+  post-resume band.
+
+Next:
+- Continue widened active monitoring, with the next tight polling window still
+  expected near the wall-time signal around `2026-06-11 00:27 PDT`.
