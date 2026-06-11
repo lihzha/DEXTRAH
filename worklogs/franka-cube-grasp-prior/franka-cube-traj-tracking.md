@@ -1692,3 +1692,45 @@ Result:
 Next:
 - Commit/push the ablation and deploy the exact commit to the l401 agent-owned worktree.
 - Launch only the bounded 4-env/240-step task-registration/env validation first. If it fails, inspect logs and patch before any RL smoke.
+
+## 2026-06-11T14:05:52-07:00 - phase-gated shaping env smoke launch
+
+Goal:
+- Validate the phase-gated close/lift shaping ablation in Isaac before any RL smoke or longer training.
+
+Version Control:
+- agent_id: franka-cube-traj-tracking
+- local_commit: `c0d545dfbb9f7417bb7bba2d6a3941509a371b86`
+- remote_commit/status: /lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking at `c0d545dfbb9f7417bb7bba2d6a3941509a371b86`, detached clean. SSH Git auth failed; HTTPS fetch fallback succeeded.
+
+Command / Job:
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:30:00 --job-name=franka_cube_traj_phasegate_smoke --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_phasegate_env_smoke_20260611_140552,NUM_ENVS=4,NUM_STEPS=240,VIDEO_LENGTH=240,CAPTURE_VIDEO=False,PRINT_INTERVAL=40,SEED=55,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`
+- job_id: 1027739 `franka_cube_traj_phasegate_smoke`
+- expected_log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_cube_1027739.out
+- expected_metrics: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_cube_traj_tracking_phasegate_env_smoke_20260611_140552/metrics.json
+
+Acceptance Criteria:
+- Task registration and baseline registration still resolve.
+- Reset observation shape remains `[4,72]`; this is still a reward-only observation contract.
+- Tracking metrics and the new close/lift/gate logs are present and finite.
+- Target unsafe rate remains `0.0`; target clearance stays above `0.025`.
+- No immediate reset/termination pathology.
+
+Result:
+- status: passed; Slurm completed `0:0` after `00:00:47` on `pool0-00016`.
+- local_artifacts: `cluster_results/l401/franka_cube_traj_tracking_phasegate_env_smoke_20260611_140552/metrics.json`, `cluster_results/l401/franka_cube_traj_tracking_phasegate_env_smoke_20260611_140552/validate_franka_cube_1027739.out`
+- validation: `passed=true`, 35 checks, failed checks `[]`, recursive numeric scan `nonfinite_count=0`.
+- task/obs: registration resolved to `DextrahFrankaCubeTrajTrackingEnv`; reset and initial observation shapes were `[4,72]`, so this remains reward-only with baseline-sized observations.
+- tracking_logs: new `cube_traj_tracking_close_action_reward`, `cube_traj_tracking_lift_action_reward`, `cube_traj_tracking_closed_target_gate`, `cube_traj_tracking_close_phase_gate`, `cube_traj_tracking_lift_phase_gate`, and `cube_traj_tracking_contact_gate` were present and finite.
+- rollout: 240/240 steps, `done_count=1`, `early_done_count=0`, reward mean `1.7976593032479287`, reward final `1.548109531402588`, final success `0.0`, max mean lift `0.014957889914512634`.
+- target_safety: `tracking_unsafe_target_rate_max=0.0`; target clearance min and batch min `0.06511414051055908`, above configured `0.025`.
+- phasegate_behavior: scripted validation produced `tracking_close_action_reward_mean=0.0`, `tracking_lift_action_reward_mean=0.0`, `tracking_contact_gate_mean=0.009603163352585398`, `tracking_close_phase_gate_final=0.08238638937473297`, `tracking_lift_phase_gate_final=0.0`. This proves logging/wiring but not learned behavior; the zero action rewards are expected because the scripted smoke does not hold contact while phase gates are active.
+- reference: external 60 mm compact reference, `runtime_duration_s=8.0`, `source_duration_s=22.033333333333335`, `runtime_retime_policy=normalize_to_configured_runtime_duration`, `runtime_object_pose_policy=reset_cube_pose`, `gripper_schedule_policy=clamp_source_width_to_min_target_gripper_width`, `curobo_validated=false`, `validation_passed=true`.
+
+Analysis:
+- The ablation is runtime-safe and does not alter the observation contract or baseline task registration. Target safety remains clean.
+- The validation smoke is insufficient to judge the ablation's learning value, because scripted zero/close/up actions do not create the same near-contact state as the RL policy. The next bounded step is a tiny RL smoke to verify training runs and writes a checkpoint with the new reward terms, followed by a short eval only if the checkpoint is valid.
+
+Next:
+- Commit/push this validation result.
+- Launch a tiny 3-iteration phase-gated RL smoke, not a longer training run, and inspect config/log/checkpoint before any eval.
