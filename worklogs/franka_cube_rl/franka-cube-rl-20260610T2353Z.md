@@ -348,3 +348,44 @@ Next:
 - Monitor scheduler/log startup; confirm `AUTO_RESUME=False` prevents
   inherited checkpoint selection; inspect scalar trends and checkpoints before
   deciding whether to continue, cancel, patch, or evaluate.
+
+## 2026-06-10 17:20 PDT - PPO Early Trend and Epoch-100 Eval Launch
+
+Training Job:
+- job_id: `28956257`
+- actual training root:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_kukaparity_ppo_20260610_1710`
+- note: the root includes `dextrah_franka_cube_grasp`; the earlier launch
+  intent used the shorter expected path.
+
+Early Training Result:
+- startup confirmed fresh run: log shows `AUTO_RESUME=False`, empty
+  `CHECKPOINT`, and epochs starting from `1/600`.
+- checkpoints written:
+  - epoch 25 reward `469.86267`
+  - epoch 50 reward `746.7792`
+  - epoch 75 reward `933.0838`
+  - epoch 100 reward `813.57214`
+- event scalars through epoch 77 show approach/enclosure improving and gripper
+  close action increasing, but lift/success remain poor:
+  - `cube_lift_height/iter`: max `0.00753m`, latest `0.00156m`
+  - `cube_has_lifted_rate/iter`: max `0.01416`, latest `0.00391`
+  - `cube_success_rate/iter`: max `0.000488`, latest `0.0`
+  - `cube_action_z/iter`: latest `-0.0733`, with down action exceeding up
+  - `cube_gripper_close_action/iter`: latest `0.6855`
+
+Analysis:
+- The KUKA-parity reward is learning approach and close behavior, but by
+  epoch ~100 it still resembles the previous stall signature: little actual
+  lift, essentially zero success, and net downward z action.
+- Keep PPO running to the 150-200 epoch range for a clear trend, while
+  evaluating the epoch-100 checkpoint to capture deterministic behavior/video.
+
+Eval Command / Job:
+- command:
+  `RUN_NAME=franka_cube_kukaparity_eval_ep100_20260610_1720 CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-rl-20260610T2353Z CHECKPOINT=/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_kukaparity_ppo_20260610_1710/nn/last_dextrah_franka_cube_grasp_ep_100_rew_813.57214.pth NUM_ENVS=4 NUM_STEPS=600 VIDEO_LENGTH=600 CAPTURE_VIDEO=True DETERMINISTIC=True USE_CUDA_GRAPH=False CUBE_SPAWN_XY_RANDOMIZATION=0.08 SEED=101 sbatch --parsable cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- eval_job_id: `28956573`
+- expected eval run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_kukaparity_eval_ep100_20260610_1720`
+- expected eval log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_28956573.out`
