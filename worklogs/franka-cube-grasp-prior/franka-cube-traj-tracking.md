@@ -2444,3 +2444,77 @@ Acceptance Criteria:
 - No traceback/NaN; actor/critic build with input dimension `72`; checkpoint written.
 - This is training wiring only. Any `rew_-inf` suffix from no episode termination must be labeled as short-run metric semantics, not policy success/failure by itself.
 - If a checkpoint exists, run fixed-seed and random-seed short video eval bundles before any further training.
+
+Result:
+- status: completed `0:0` in `00:00:53` on `pool0-00016`; checkpoint produced.
+- remote_run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_actionalign_rl_smoke_20260611_151520`
+- local_run_dir: `cluster_results/l401/franka_cube_traj_tracking_actionalign_rl_smoke_20260611_151520`
+- checkpoint: `/results/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_actionalign_rl_smoke_20260611_151520/nn/last_dextrah_franka_cube_traj_tracking_ep_5_rew_-inf.pth`
+- evidence: actor/critic both built with MLP input `72`; run wrote `params/env.yaml`, `params/agent.yaml`, TensorBoard event file, `dextrah_runtime_rank_0.pth`, and the epoch-5 checkpoint.
+- metric_semantics: `rew_-inf` is the expected short RL-Games episode-return suffix when no environment terminates during this five-epoch smoke (`WARNING: Max epochs reached before any env terminated at least once`). It is not by itself a policy verdict.
+
+Analysis:
+- This is a training-wrapper/checkpoint smoke only. It confirms the action-alignment task variant can instantiate and optimize for five short epochs without NaN/traceback, but no conclusion about approach/grasp behavior can be drawn until fixed-window eval/video artifacts are inspected.
+
+Next:
+- Run fixed-seed and alternate-seed 480-step video evals from the epoch-5 `rew_-inf` checkpoint. Required artifacts: metrics JSON, trace CSV/JSONL, train-vs-eval consistency JSON, reward/action-alignment plots, contact sheets, mp4s, `viz-open` URLs, and pass/fail interpretation against the old actionscale failed learned-policy video.
+
+## 2026-06-11T15:24:20-07:00 - action-alignment PPO eval video launch
+
+Goal:
+- Evaluate the `1027766` action-alignment checkpoint with two bounded 480-step policy rollouts so behavior is numerically and visually inspectable before any further training.
+
+Version Control:
+- agent_id: franka-cube-traj-tracking
+- local_commit: `2fddf05102af4e9b620f7adca40640a98478be89`
+- remote_commit/status: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking` detached at `2fddf05102af4e9b620f7adca40640a98478be89`, clean; HTTPS fetch was required because l401 SSH fetch to `git@github.com:lihzha/DEXTRAH.git` lacks a key.
+
+Command / Jobs:
+- fixed command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:30:00 --job-name=traj_align_eval_fix --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_actionalign_rl5_eval_fixed_video480_20260611_152420,NUM_ENVS=4,NUM_STEPS=480,VIDEO_LENGTH=480,VIDEO_NAME_PREFIX=actionalign-rl5-fixed-video480,CAPTURE_VIDEO=True,DETERMINISTIC=True,ACTION_SOURCE=policy,USE_CUDA_GRAPH=False,SEED=64,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_WEIGHT=1.5,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_PHASE_START=0.0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_SHARPNESS=1.0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_USE_CONTACT_GATE=False,CHECKPOINT=/results/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_actionalign_rl_smoke_20260611_151520/nn/last_dextrah_franka_cube_traj_tracking_ep_5_rew_-inf.pth cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- fixed job_id: `1027769`
+- fixed run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_traj_tracking_actionalign_rl5_eval_fixed_video480_20260611_152420`
+- fixed log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1027769.out`
+- random command: same config with `RUN_NAME=franka_cube_traj_tracking_actionalign_rl5_eval_random_video480_20260611_152420`, `VIDEO_NAME_PREFIX=actionalign-rl5-random-video480`, and `SEED=165`.
+- random job_id: `1027770`
+- random run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_traj_tracking_actionalign_rl5_eval_random_video480_20260611_152420`
+- random log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1027770.out`
+
+Acceptance Criteria:
+- Both evals write `metrics.json`, `trace.csv`, `trace.jsonl`, and a valid 480-frame-ish mp4.
+- Summaries include `cube_traj_tracking_action_alignment_*`, close/up action diagnostics, target safety/clearance, EE/finger/cube distances, gripper width/action, lift/success, and fixed-window summaries.
+- Train/eval config audit is saved and reviewed. Expected observation size remains 72 and phase observations remain false.
+- Pass/fail interpretation must answer whether action alignment increases close/up/reference-like actions and produces approach/contact behavior compared with the old `actionscale-rewinf` failed learned-policy artifact. No scale-up before inspection.
+
+Result:
+- status: completed and fetched; both evals wrote metrics, trace CSV/JSONL, and mp4s.
+- fixed job `1027769`: completed `0:0` in `00:01:21` on `pool0-00016`; local run dir `cluster_results/l401/franka_cube_traj_tracking_actionalign_rl5_eval_fixed_video480_20260611_152420`.
+- random job `1027770`: completed `0:0` in `00:01:47` on `pool0-00037`; local run dir `cluster_results/l401/franka_cube_traj_tracking_actionalign_rl5_eval_random_video480_20260611_152420`.
+- video validation: both mp4s are valid `1280x720`, `479` frames, `7.983333` seconds. Frame 0 is black recorder warm-up, so contact sheets use first usable frame 30 plus middle and last frames.
+- train/eval consistency: both per-run `train_eval_consistency.json` files passed with no mismatches.
+- fixed metrics: reward mean/final `1.5777`/`1.3953`; success final `0`; lift max `0.0015115 m`; final EE-to-cube `0.5963 m`; final finger-center-to-cube `0.5611 m`; final gripper width `0.0587 m`; target unsafe max `0`; target clearance min `0.065114 m`; action-alignment utilization mean `0.3469`; close/lift utilization mean `0.0`/`0.000106`; reference close/up action means `0.2078`/`0.4614`.
+- random metrics: reward mean/final `1.6756`/`1.6011`; success final `0`; lift max `0`; final EE-to-cube `0.4168 m`; final finger-center-to-cube `0.3783 m`; final gripper width `0.0492 m`; target unsafe max `0`; target clearance min `0.065114 m`; action-alignment utilization mean `0.4012`; close/lift utilization mean `0.0110`/`0.00124`; reference close/up action means `0.2078`/`0.8033`.
+- visual diagnosis: fixed contact sheet shows an initial approach but by middle/last frames the hand moves away/around the cube with no grasp. Random contact sheet shows the hand near the cube initially but drifting/hovering without grasp by middle/last frames. Neither eval is a plausible approach/contact behavior.
+- artifact bundle:
+  - combined report: `cluster_results/l401/franka_cube_traj_tracking_actionalign_rl5_eval_comparison_20260611_152420/comparison_report.md`
+  - combined summary: `cluster_results/l401/franka_cube_traj_tracking_actionalign_rl5_eval_comparison_20260611_152420/summary.json` and `summary.csv`
+  - combined plot: `cluster_results/l401/franka_cube_traj_tracking_actionalign_rl5_eval_comparison_20260611_152420/behavior_action_comparison.png`
+  - fixed per-run report/plot/sheet/video: `cluster_results/l401/franka_cube_traj_tracking_actionalign_rl5_eval_fixed_video480_20260611_152420_artifacts/report.md`, `trajectory_trace_plot.png`, `contact_sheet_firstusable.png`, and `cluster_results/l401/franka_cube_traj_tracking_actionalign_rl5_eval_fixed_video480_20260611_152420/videos/actionalign-rl5-fixed-video480-step-0.mp4`
+  - random per-run report/plot/sheet/video: `cluster_results/l401/franka_cube_traj_tracking_actionalign_rl5_eval_random_video480_20260611_152420_artifacts/report.md`, `trajectory_trace_plot.png`, `contact_sheet_firstusable.png`, and `cluster_results/l401/franka_cube_traj_tracking_actionalign_rl5_eval_random_video480_20260611_152420/videos/actionalign-rl5-random-video480-step-0.mp4`
+- viz_urls:
+  - combined report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_actionalign_rl5_eval_comparison_20260611_152420/comparison_report.md`
+  - combined plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_actionalign_rl5_eval_comparison_20260611_152420/behavior_action_comparison.png`
+  - fixed contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_actionalign_rl5_eval_fixed_video480_20260611_152420_artifacts/contact_sheet_firstusable.png`
+  - random contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_actionalign_rl5_eval_random_video480_20260611_152420_artifacts/contact_sheet_firstusable.png`
+  - fixed video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_actionalign_rl5_eval_fixed_video480_20260611_152420/videos/actionalign-rl5-fixed-video480-step-0.mp4`
+  - random video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_actionalign_rl5_eval_random_video480_20260611_152420/videos/actionalign-rl5-random-video480-step-0.mp4`
+
+Analysis:
+- Pass/fail: fail behaviorally. The action-alignment reward is wired and nonzero, but this 5-epoch PPO checkpoint still does not emit sufficiently reference-like close/up/gripper actions and does not grasp.
+- Compared with the old `actionscale-rewinf` failed learned-policy artifact, action-alignment improves the availability of a reference-action reward signal but does not improve the core behavior enough. Fixed seed is worse on final EE/finger distances; alternate seed is still far from the cube and has zero lift/success.
+- Compared with policy-free `reference_delta`, the learned policy remains much worse. `reference_delta` produced transient lift (`0.068 m` max) and much larger close/lift utilization, so the transformed reference plus delta-IK action interface is feasible. The remaining issue is policy/action learning and incentive strength/timing, not basic reference transform/controller impossibility.
+- Reference caveat remains explicit: `curobo_validated=false`; `reference_delta` is position-only delta IK plus gripper schedule, not cuRobo replay and not a learned policy.
+- No scale-up is justified from these artifacts.
+
+Next:
+- Proposed next bounded fix: implement an eval-only reference-action mixing/clamping diagnostic before new PPO training. Add an `ACTION_SOURCE=policy_reference_mix` route (or equivalent) that loads the learned policy action, computes `reference_delta`, and blends selected dimensions with coefficients such as `0.25`, `0.50`, `0.75`, and `1.0`.
+- Acceptance: same 480-step video/trace bundle, target unsafe remains `0`, consistency JSON passes, and traces log raw policy action, reference action, mixed action, action error, lift/success, EE/finger distances, gripper width/action, and close/up utilization. If mixing recovers approach/contact, the next training-side step should be stronger direct imitation/BC or a higher-weight KL/action imitation term. If mixing fails, inspect controller/action mapping or phase/reference timing before more PPO.
