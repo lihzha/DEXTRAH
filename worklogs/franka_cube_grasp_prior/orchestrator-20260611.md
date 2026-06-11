@@ -1081,3 +1081,73 @@ Worker A reset-prior final RL:
   remain sparse in the sampled scalar stream. Continue monitoring and require
   eval/video evidence from a usable checkpoint before making the comparison
   claim.
+
+## 2026-06-11 Monitor Check 21:31 UTC
+
+Worker C DP BC mismatch:
+
+- C committed/pushed the history-fix eval result as branch commit `b487ba6`.
+- Chunk-size ablation job `1027746` completed `0:0` in `00:04:54`.
+  Run:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_curobo32_full_pick_lift_framefix_overfit2k_chunk1_historyfix_trace512_20260611_143900`
+- Local fetched run:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_curobo32_full_pick_lift_framefix_overfit2k_chunk1_historyfix_trace512_20260611_143900`
+- Chunk-1 did not fix the bad video behavior. It delayed gripper closure but
+  worsened geometry relative to chunk-8 history-fix:
+
+| Setting | Success/Lift | Reward mean/final | EE-to-cube min/final | Finger-center min/final | First negative grip | Hard close |
+| --- | --- | --- | --- | --- | --- | --- |
+| chunk 8 history-fix | `0/0` | `1.6488/1.6844` | `0.1360/0.1371 m` | `0.1640/0.1695 m` | step `144` | step `168` |
+| chunk 1 history-fix | `0/0` | `1.5820/1.5789` | `0.1458/0.1517 m` | `0.1686/0.1824 m` | step `207` | step `224` |
+
+- Both traces have valid adjacent history gaps `[0, 1]`; chunk 1 has policy
+  call deltas of `1`, chunk 8 has deltas of `8`.
+- Chunk 1 still closes before the dataset mean first-close and hard-close
+  timing (`~282.6` and `~310.6` steps), and it closes with incorrect
+  cube-relative geometry. Final chunk-1 cube-minus-EE is approximately
+  `[-0.0076, -0.1180, -0.0949]`, still far from the hard-close demo geometry.
+- Interpretation: the remaining C bug is not primarily eight-step open-loop
+  chunk drift. Continue train/eval bug search around action/trajectory target
+  semantics, real-controller one-step action replay, sequence target alignment,
+  reset/live state distribution, and predicted actions at matched demo states.
+- Worker C was instructed to produce a chunk8-vs-chunk1 mismatch report/plot
+  artifact and not to train or scale.
+
+Worker B trajectory-tracking relaxed gate:
+
+- Relaxed-gate env validation job `1027745` completed `0:0`; local artifacts:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_relaxgate_env_smoke_20260611_142312`
+- Result: 35/35 checks passed, reset obs `[4,72]`, no immediate dones, no
+  nonfinite values, target unsafe max `0.0`, target clearance min `0.0651 m`.
+  The relaxed gate is no longer silent: contact gate mean `0.6522`, contact
+  distance gate mean `0.6774`, finger balance gate mean `0.9482`.
+- Tiny RL smoke job `1027747` completed `0:0`; local artifacts:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_relaxgate_rl_smoke_20260611_142540`
+- RL smoke criteria passed: one GPU, 16 envs, 3 iterations, actor/central value
+  MLP input `72`, no traceback/NaN, relaxed gate config `0.30/0.18`, and
+  epoch-3 checkpoint written with reward suffix `5.782907`.
+- Metrics eval job `1027748` completed `0:0`; local artifacts:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_relaxgate_ep3_metrics480_20260611_142910`
+- Eval result: 480 steps, no dones, reward mean/final `1.6774/1.3972`,
+  success mean/final `0.00052/0.0`, last-window success `0.0`, target unsafe
+  max `0.0`, target clearance min `0.0651 m`.
+- Relaxed gate/action diagnostics are present and nonzero but weak:
+  contact gate mean/final `0.560/0.388`, action-close mean/final
+  `0.0289/0.0322`, action-up mean/final `0.0108/0.0169`, gripper-action
+  mean/final `0.0207/0.0335`, close reward mean/final `0.00052/0.00128`, lift
+  reward mean/final `0.00061/0.00183`.
+- Behavior remains poor: EE-to-cube final `0.232 m`, finger-center final
+  `0.227 m`, max-finger final `0.239 m`, gripper width final `0.0413 m`, cube
+  lift final `0.0`. Worker B was instructed to generate the planned
+  report/plot artifact and debug action-signal scale/weights or phase timing
+  before any longer training.
+
+Worker A reset-prior final RL:
+
+- A100 job `28987954` remains running at about `2:01` elapsed. Stdout reached
+  epoch `1322`; checkpoint `last_dextrah_franka_cube_grasp_ep_1300_rew_2244.6438.pth`
+  was written. The best checkpoint remains at least the epoch-1202 reward
+  `2276.3032` observed earlier.
+- Continue monitoring. The run is not complete and still needs checkpoint
+  selection, eval videos, metrics, and artifact inspection before the
+  apple-to-apple claim can be made.
