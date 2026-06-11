@@ -69,6 +69,18 @@ class DextrahFrankaCubeGraspEnvCfg(DextrahFrankaStarKittingEnvCfg):
         finger_damping,
     )
 
+    # Optional reset-only GraspGenX prior.  Disabled by default so the
+    # production Franka cube baseline remains unchanged.
+    grasp_prior_reset_enabled = False
+    grasp_prior_library_path = ""
+    grasp_prior_pregrasp_offset = 0.03
+    grasp_prior_reset_ik_iterations = 24
+    grasp_prior_reset_ik_damping = 0.05
+    grasp_prior_reset_ik_max_joint_step = 0.20
+    grasp_prior_reset_ik_pos_tolerance = 0.020
+    grasp_prior_reset_ik_rot_tolerance = 0.35
+    grasp_prior_fallback_to_default_on_ik_failure = True
+
     # KUKA-cube-shaped reward weights for franka_cube_grasp_rewards.compute_franka_cube_grasp_rewards.
     # Robot-specific differences are handled in the reward inputs: two Franka
     # finger distances replace the DEXTRAH multi-finger hand distances, and the

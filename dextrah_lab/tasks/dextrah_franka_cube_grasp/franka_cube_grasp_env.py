@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+import json
+from pathlib import Path
 
 import torch
 
@@ -27,6 +29,7 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
     def __init__(self, cfg: DextrahFrankaCubeGraspEnvCfg, render_mode: str | None = None, **kwargs):
         super().__init__(cfg, render_mode, **kwargs)
         self._ensure_cube_buffers()
+        self._setup_grasp_prior_reset()
 
     def _setup_scene(self):
         self._robot = Articulation(self.cfg.robot)
@@ -45,27 +48,342 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         light_cfg.func("/World/Light", light_cfg)
 
     def _ensure_cube_buffers(self) -> None:
-        if hasattr(self, "cube_initial_pos"):
+        if not hasattr(self, "cube_initial_pos"):
+            self.cube_initial_pos = torch.zeros(self.num_envs, 3, device=self.device)
+            self.cube_goal_pos = torch.zeros(self.num_envs, 3, device=self.device)
+            self.cube_lift_height = torch.zeros(self.num_envs, device=self.device)
+            self.cube_xy_error = torch.zeros(self.num_envs, device=self.device)
+            self.cube_goal_height_error = torch.zeros(self.num_envs, device=self.device)
+            self.has_lifted_cube = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+            self.in_success_region = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+            self.time_in_success_region = torch.zeros(self.num_envs, device=self.device)
+            self.ee_to_cube_dist = torch.zeros(self.num_envs, device=self.device)
+            self.finger_center_to_cube_dist = torch.zeros(self.num_envs, device=self.device)
+            self.left_finger_to_cube_dist = torch.zeros(self.num_envs, device=self.device)
+            self.right_finger_to_cube_dist = torch.zeros(self.num_envs, device=self.device)
+            self.max_finger_to_cube_dist = torch.zeros(self.num_envs, device=self.device)
+            self.finger_distance_asymmetry = torch.zeros(self.num_envs, device=self.device)
+            self.hand_to_cube_mean_dist = torch.zeros(self.num_envs, device=self.device)
+            self.hand_to_cube_max_dist = torch.zeros(self.num_envs, device=self.device)
+            self.gripper_width = torch.zeros(self.num_envs, device=self.device)
+            self.finger_table_clearance = torch.zeros(self.num_envs, device=self.device)
+            self.finger_table_clearance_violation = torch.zeros(self.num_envs, device=self.device)
+        if not hasattr(self, "grasp_prior_reset_attempted"):
+            self.grasp_prior_reset_attempted = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+            self.grasp_prior_reset_success = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+            self.grasp_prior_reset_farther = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+            self.grasp_prior_reset_sample_index = torch.full(
+                (self.num_envs,), -1, dtype=torch.long, device=self.device
+            )
+            self.grasp_prior_reset_pos_error = torch.zeros(self.num_envs, device=self.device)
+            self.grasp_prior_reset_rot_error = torch.zeros(self.num_envs, device=self.device)
+            self.grasp_prior_reset_exact_tool_dist = torch.zeros(self.num_envs, device=self.device)
+            self.grasp_prior_reset_pregrasp_tool_dist = torch.zeros(self.num_envs, device=self.device)
+            self.grasp_prior_reset_finger_center_dist = torch.zeros(self.num_envs, device=self.device)
+            self.grasp_prior_reset_finger_table_clearance = torch.zeros(self.num_envs, device=self.device)
+
+    def _setup_grasp_prior_reset(self) -> None:
+        self._grasp_prior_reset_enabled = bool(self.cfg.grasp_prior_reset_enabled)
+        self._grasp_prior_grasps_object: torch.Tensor | None = None
+        self._grasp_prior_confidence: torch.Tensor | None = None
+        self._grasp_prior_grasp_to_tool = torch.eye(4, device=self.device)
+        self._grasp_prior_metadata: dict[str, object] = {}
+        if not self._grasp_prior_reset_enabled:
             return
-        self.cube_initial_pos = torch.zeros(self.num_envs, 3, device=self.device)
-        self.cube_goal_pos = torch.zeros(self.num_envs, 3, device=self.device)
-        self.cube_lift_height = torch.zeros(self.num_envs, device=self.device)
-        self.cube_xy_error = torch.zeros(self.num_envs, device=self.device)
-        self.cube_goal_height_error = torch.zeros(self.num_envs, device=self.device)
-        self.has_lifted_cube = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
-        self.in_success_region = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
-        self.time_in_success_region = torch.zeros(self.num_envs, device=self.device)
-        self.ee_to_cube_dist = torch.zeros(self.num_envs, device=self.device)
-        self.finger_center_to_cube_dist = torch.zeros(self.num_envs, device=self.device)
-        self.left_finger_to_cube_dist = torch.zeros(self.num_envs, device=self.device)
-        self.right_finger_to_cube_dist = torch.zeros(self.num_envs, device=self.device)
-        self.max_finger_to_cube_dist = torch.zeros(self.num_envs, device=self.device)
-        self.finger_distance_asymmetry = torch.zeros(self.num_envs, device=self.device)
-        self.hand_to_cube_mean_dist = torch.zeros(self.num_envs, device=self.device)
-        self.hand_to_cube_max_dist = torch.zeros(self.num_envs, device=self.device)
-        self.gripper_width = torch.zeros(self.num_envs, device=self.device)
-        self.finger_table_clearance = torch.zeros(self.num_envs, device=self.device)
-        self.finger_table_clearance_violation = torch.zeros(self.num_envs, device=self.device)
+
+        library_path = Path(str(self.cfg.grasp_prior_library_path)).expanduser()
+        if not library_path.is_file():
+            raise FileNotFoundError(
+                "grasp_prior_reset_enabled=True requires a compact grasp library at "
+                f"grasp_prior_library_path, got {library_path}"
+            )
+        self._load_grasp_prior_library(library_path)
+
+    @staticmethod
+    def _json_npz_scalar(value) -> object:
+        if hasattr(value, "item"):
+            value = value.item()
+        if isinstance(value, bytes):
+            return value.decode("utf-8")
+        return value
+
+    def _load_grasp_prior_library(self, path: Path) -> None:
+        import numpy as np
+
+        metadata: dict[str, object] = {}
+        if path.suffix.lower() == ".npz":
+            with np.load(path, allow_pickle=False) as data:
+                if "metadata_json" in data.files:
+                    metadata = json.loads(str(self._json_npz_scalar(data["metadata_json"])))
+                for key in ("cube_size_m", "gripper_name", "tool_frame"):
+                    if key in data.files:
+                        metadata.setdefault(key, self._json_npz_scalar(data[key]))
+                grasps_object = data["grasps_object"]
+                confidence = data["confidence"] if "confidence" in data.files else None
+                grasp_to_tool = (
+                    data["grasp_to_tool_transform"]
+                    if "grasp_to_tool_transform" in data.files
+                    else np.eye(4, dtype=np.float32)
+                )
+        elif path.suffix.lower() == ".json":
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(payload, dict):
+                raise ValueError(f"Expected JSON object in grasp prior library: {path}")
+            metadata = dict(payload.get("metadata", {}))
+            for key in ("cube_size_m", "gripper_name", "tool_frame"):
+                if key in payload:
+                    metadata.setdefault(key, payload[key])
+            grasps_object = payload["grasps_object"]
+            confidence = payload.get("confidence")
+            grasp_to_tool = payload.get("grasp_to_tool_transform", np.eye(4, dtype=np.float32))
+        else:
+            raise ValueError(f"Unsupported grasp prior library extension for {path}; expected .npz or .json")
+
+        grasps_tensor = torch.as_tensor(grasps_object, dtype=torch.float32, device=self.device)
+        if grasps_tensor.ndim != 3 or tuple(grasps_tensor.shape[1:]) != (4, 4) or grasps_tensor.shape[0] == 0:
+            raise ValueError(f"grasps_object must have shape (N, 4, 4), got {tuple(grasps_tensor.shape)}")
+        if not torch.isfinite(grasps_tensor).all().item():
+            raise ValueError(f"grasps_object contains NaN/Inf values: {path}")
+        expected_bottom = torch.tensor((0.0, 0.0, 0.0, 1.0), device=self.device)
+        if not torch.allclose(grasps_tensor[:, 3, :], expected_bottom.expand_as(grasps_tensor[:, 3, :]), atol=1.0e-4):
+            raise ValueError(f"grasps_object transforms must have homogeneous bottom rows: {path}")
+
+        grasp_to_tool_tensor = torch.as_tensor(grasp_to_tool, dtype=torch.float32, device=self.device)
+        if tuple(grasp_to_tool_tensor.shape) != (4, 4):
+            raise ValueError(
+                f"grasp_to_tool_transform must have shape (4, 4), got {tuple(grasp_to_tool_tensor.shape)}"
+            )
+        if not torch.isfinite(grasp_to_tool_tensor).all().item():
+            raise ValueError(f"grasp_to_tool_transform contains NaN/Inf values: {path}")
+
+        cube_size_m = metadata.get("cube_size_m")
+        if cube_size_m is not None and abs(float(cube_size_m) - float(self.cfg.cube_size)) > 1.0e-4:
+            raise ValueError(
+                f"Grasp prior cube_size_m={cube_size_m} does not match task cube_size={self.cfg.cube_size}"
+            )
+        tool_frame = str(metadata.get("tool_frame", "panda_hand"))
+        if tool_frame != "panda_hand":
+            raise ValueError(
+                f"Variant 1 expects GraspGenX tool_frame='panda_hand' for DEXTRAH Franka, got {tool_frame!r}"
+            )
+
+        if confidence is None:
+            confidence_tensor = torch.ones(grasps_tensor.shape[0], dtype=torch.float32, device=self.device)
+        else:
+            confidence_tensor = torch.as_tensor(confidence, dtype=torch.float32, device=self.device).flatten()
+            if confidence_tensor.shape[0] != grasps_tensor.shape[0]:
+                raise ValueError(
+                    "confidence length must match grasps_object count, got "
+                    f"{confidence_tensor.shape[0]} vs {grasps_tensor.shape[0]}"
+                )
+
+        self._grasp_prior_grasps_object = grasps_tensor.contiguous()
+        self._grasp_prior_confidence = confidence_tensor.contiguous()
+        self._grasp_prior_grasp_to_tool = grasp_to_tool_tensor.contiguous()
+        self._grasp_prior_metadata = metadata
+
+    def _reset_grasp_prior_metrics(self, env_ids: torch.Tensor) -> None:
+        self.grasp_prior_reset_attempted[env_ids] = False
+        self.grasp_prior_reset_success[env_ids] = False
+        self.grasp_prior_reset_farther[env_ids] = False
+        self.grasp_prior_reset_sample_index[env_ids] = -1
+        self.grasp_prior_reset_pos_error[env_ids] = 0.0
+        self.grasp_prior_reset_rot_error[env_ids] = 0.0
+        self.grasp_prior_reset_exact_tool_dist[env_ids] = 0.0
+        self.grasp_prior_reset_pregrasp_tool_dist[env_ids] = 0.0
+        self.grasp_prior_reset_finger_center_dist[env_ids] = 0.0
+        self.grasp_prior_reset_finger_table_clearance[env_ids] = 0.0
+
+    def _sync_reset_joint_state(
+        self,
+        env_ids: torch.Tensor,
+        joint_pos: torch.Tensor,
+        joint_vel: torch.Tensor,
+        *,
+        update_buffers: bool,
+    ) -> None:
+        self._robot.write_joint_state_to_sim(joint_pos, joint_vel, env_ids=env_ids)
+        self._robot.set_joint_position_target(joint_pos, env_ids=env_ids)
+        if update_buffers:
+            self.robot_dof_targets[env_ids] = joint_pos
+            self.arm_joint_pos_target[env_ids] = joint_pos[:, self.arm_joint_ids]
+            self.finger_joint_pos_target[env_ids] = joint_pos[:, self.finger_joint_ids]
+        self.scene.write_data_to_sim()
+        self.sim.forward()
+        self.scene.update(dt=0.0)
+
+    def _compose_grasp_prior_targets(self, env_ids: torch.Tensor, cube_pos: torch.Tensor) -> dict[str, torch.Tensor]:
+        if self._grasp_prior_grasps_object is None:
+            raise RuntimeError("Grasp prior reset is enabled but no grasp library is loaded")
+
+        num_ids = int(env_ids.numel())
+        sample_indices = torch.randint(
+            self._grasp_prior_grasps_object.shape[0],
+            (num_ids,),
+            device=self.device,
+        )
+        object_grasp_t = self._grasp_prior_grasps_object[sample_indices]
+        world_object_t = torch.eye(4, device=self.device).repeat(num_ids, 1, 1)
+        cube_pos_w = cube_pos + self.scene.env_origins[env_ids]
+        world_object_t[:, :3, 3] = cube_pos_w
+        world_grasp_t = torch.bmm(world_object_t, object_grasp_t)
+        world_tool_t = torch.bmm(
+            world_grasp_t,
+            self._grasp_prior_grasp_to_tool.unsqueeze(0).expand(num_ids, -1, -1),
+        )
+
+        exact_tool_pos_w = world_tool_t[:, :3, 3]
+        tool_z_axis_w = world_tool_t[:, :3, 2]
+        tool_z_axis_w = tool_z_axis_w / torch.clamp(torch.norm(tool_z_axis_w, dim=-1, keepdim=True), min=1.0e-6)
+        pregrasp_offset = abs(float(self.cfg.grasp_prior_pregrasp_offset))
+        plus_tool_pos_w = exact_tool_pos_w + pregrasp_offset * tool_z_axis_w
+        minus_tool_pos_w = exact_tool_pos_w - pregrasp_offset * tool_z_axis_w
+        exact_tool_dist = torch.norm(exact_tool_pos_w - cube_pos_w, dim=-1)
+        plus_tool_dist = torch.norm(plus_tool_pos_w - cube_pos_w, dim=-1)
+        minus_tool_dist = torch.norm(minus_tool_pos_w - cube_pos_w, dim=-1)
+        use_plus = plus_tool_dist >= minus_tool_dist
+        pregrasp_tool_pos_w = torch.where(use_plus.unsqueeze(-1), plus_tool_pos_w, minus_tool_pos_w)
+        pregrasp_tool_dist = torch.where(use_plus, plus_tool_dist, minus_tool_dist)
+        pregrasp_farther = pregrasp_tool_dist > exact_tool_dist
+
+        tool_quat_w = math_utils.quat_from_matrix(world_tool_t[:, :3, :3])
+        target_ee_pos_w, target_ee_quat_w = math_utils.combine_frame_transforms(
+            pregrasp_tool_pos_w,
+            tool_quat_w,
+            self.ee_offset_pos[env_ids],
+            self.ee_offset_rot[env_ids],
+        )
+        root_pos_w = self._robot.data.root_pos_w[env_ids]
+        root_quat_w = self._robot.data.root_quat_w[env_ids]
+        target_ee_pos_b, target_ee_quat_b = math_utils.subtract_frame_transforms(
+            root_pos_w,
+            root_quat_w,
+            target_ee_pos_w,
+            target_ee_quat_w,
+        )
+        return {
+            "sample_indices": sample_indices,
+            "target_ee_pos_b": target_ee_pos_b,
+            "target_ee_quat_b": target_ee_quat_b,
+            "exact_tool_dist": exact_tool_dist,
+            "pregrasp_tool_dist": pregrasp_tool_dist,
+            "pregrasp_farther": pregrasp_farther,
+        }
+
+    def _solve_reset_ik(
+        self,
+        env_ids: torch.Tensor,
+        joint_pos: torch.Tensor,
+        joint_vel: torch.Tensor,
+        target_ee_pos_b: torch.Tensor,
+        target_ee_quat_b: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        solved_joint_pos = joint_pos.clone()
+        solved_joint_pos[:, self.finger_joint_ids] = self._robot.data.default_joint_pos[env_ids][:, self.finger_joint_ids]
+        arm_lower = self.robot_dof_lower_limits[self.arm_joint_ids]
+        arm_upper = self.robot_dof_upper_limits[self.arm_joint_ids]
+        damping = max(float(self.cfg.grasp_prior_reset_ik_damping), 1.0e-6)
+        lambda_matrix = (damping**2) * torch.eye(6, device=self.device).unsqueeze(0)
+        max_joint_step = float(self.cfg.grasp_prior_reset_ik_max_joint_step)
+        pos_error_norm = torch.full((env_ids.numel(),), float("inf"), device=self.device)
+        rot_error_norm = torch.full((env_ids.numel(),), float("inf"), device=self.device)
+        success = torch.zeros(env_ids.numel(), dtype=torch.bool, device=self.device)
+
+        for _ in range(max(int(self.cfg.grasp_prior_reset_ik_iterations), 1)):
+            self._sync_reset_joint_state(env_ids, solved_joint_pos, joint_vel, update_buffers=False)
+            ee_pos_b, ee_quat_b = self._compute_ee_frame_pose()
+            ee_pos_b = ee_pos_b[env_ids]
+            ee_quat_b = ee_quat_b[env_ids]
+            pos_error, rot_error = math_utils.compute_pose_error(
+                ee_pos_b,
+                ee_quat_b,
+                target_ee_pos_b,
+                target_ee_quat_b,
+                rot_error_type="axis_angle",
+            )
+            pos_error_norm = torch.norm(pos_error, dim=-1)
+            rot_error_norm = torch.norm(rot_error, dim=-1)
+            success = (
+                (pos_error_norm <= float(self.cfg.grasp_prior_reset_ik_pos_tolerance))
+                & (rot_error_norm <= float(self.cfg.grasp_prior_reset_ik_rot_tolerance))
+            )
+            if bool(success.all().item()):
+                break
+
+            jacobian = self._compute_ee_frame_jacobian()[env_ids]
+            pose_error = torch.cat((pos_error, rot_error), dim=-1)
+            jacobian_t = torch.transpose(jacobian, dim0=1, dim1=2)
+            dls_rhs = torch.bmm(jacobian, jacobian_t) + lambda_matrix
+            delta_joint_pos = torch.bmm(
+                jacobian_t,
+                torch.linalg.solve(dls_rhs, pose_error.unsqueeze(-1)),
+            ).squeeze(-1)
+            if max_joint_step > 0.0:
+                delta_joint_pos = torch.clamp(delta_joint_pos, min=-max_joint_step, max=max_joint_step)
+            current_arm_joint_pos = self._robot.data.joint_pos[env_ids][:, self.arm_joint_ids]
+            solved_joint_pos[:, self.arm_joint_ids] = torch.clamp(
+                current_arm_joint_pos + delta_joint_pos,
+                arm_lower,
+                arm_upper,
+            )
+
+        self._sync_reset_joint_state(env_ids, solved_joint_pos, joint_vel, update_buffers=False)
+        ee_pos_b, ee_quat_b = self._compute_ee_frame_pose()
+        pos_error, rot_error = math_utils.compute_pose_error(
+            ee_pos_b[env_ids],
+            ee_quat_b[env_ids],
+            target_ee_pos_b,
+            target_ee_quat_b,
+            rot_error_type="axis_angle",
+        )
+        pos_error_norm = torch.norm(pos_error, dim=-1)
+        rot_error_norm = torch.norm(rot_error, dim=-1)
+        success = (
+            (pos_error_norm <= float(self.cfg.grasp_prior_reset_ik_pos_tolerance))
+            & (rot_error_norm <= float(self.cfg.grasp_prior_reset_ik_rot_tolerance))
+        )
+        return solved_joint_pos, success, pos_error_norm, rot_error_norm
+
+    def _apply_grasp_prior_reset(
+        self,
+        env_ids: torch.Tensor,
+        baseline_joint_pos: torch.Tensor,
+        joint_vel: torch.Tensor,
+        cube_pos: torch.Tensor,
+    ) -> None:
+        targets = self._compose_grasp_prior_targets(env_ids, cube_pos)
+        solved_joint_pos, ik_success, pos_error_norm, rot_error_norm = self._solve_reset_ik(
+            env_ids,
+            baseline_joint_pos,
+            joint_vel,
+            targets["target_ee_pos_b"],
+            targets["target_ee_quat_b"],
+        )
+        self._compute_intermediate_values(env_ids)
+        table_clearance_ok = self.finger_table_clearance[env_ids] >= float(
+            self.cfg.finger_table_penetration_termination_margin
+        )
+        success = ik_success & targets["pregrasp_farther"] & table_clearance_ok
+
+        final_joint_pos = solved_joint_pos
+        failed = ~success
+        if bool(self.cfg.grasp_prior_fallback_to_default_on_ik_failure) and bool(failed.any().item()):
+            final_joint_pos = solved_joint_pos.clone()
+            final_joint_pos[failed] = baseline_joint_pos[failed]
+            self._sync_reset_joint_state(env_ids, final_joint_pos, joint_vel, update_buffers=False)
+            self._compute_intermediate_values(env_ids)
+
+        self._sync_reset_joint_state(env_ids, final_joint_pos, joint_vel, update_buffers=True)
+        self.grasp_prior_reset_attempted[env_ids] = True
+        self.grasp_prior_reset_success[env_ids] = success
+        self.grasp_prior_reset_farther[env_ids] = targets["pregrasp_farther"]
+        self.grasp_prior_reset_sample_index[env_ids] = targets["sample_indices"]
+        self.grasp_prior_reset_pos_error[env_ids] = pos_error_norm
+        self.grasp_prior_reset_rot_error[env_ids] = rot_error_norm
+        self.grasp_prior_reset_exact_tool_dist[env_ids] = targets["exact_tool_dist"]
+        self.grasp_prior_reset_pregrasp_tool_dist[env_ids] = targets["pregrasp_tool_dist"]
+        self.grasp_prior_reset_finger_center_dist[env_ids] = self.finger_center_to_cube_dist[env_ids]
+        self.grasp_prior_reset_finger_table_clearance[env_ids] = self.finger_table_clearance[env_ids]
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
         self._compute_intermediate_values()
@@ -189,6 +507,20 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             "cube_gripper_action": self.actions[:, 6].mean(),
             "cube_gripper_close_action": torch.clamp(-self.actions[:, 6], 0.0, 1.0).mean(),
         }
+        if getattr(self, "_grasp_prior_reset_enabled", False):
+            log_terms.update(
+                {
+                    "cube_grasp_prior_reset_attempt_rate": self.grasp_prior_reset_attempted.float().mean(),
+                    "cube_grasp_prior_reset_success_rate": self.grasp_prior_reset_success.float().mean(),
+                    "cube_grasp_prior_reset_farther_rate": self.grasp_prior_reset_farther.float().mean(),
+                    "cube_grasp_prior_reset_pos_error": self.grasp_prior_reset_pos_error.mean(),
+                    "cube_grasp_prior_reset_rot_error": self.grasp_prior_reset_rot_error.mean(),
+                    "cube_grasp_prior_exact_tool_dist": self.grasp_prior_reset_exact_tool_dist.mean(),
+                    "cube_grasp_prior_pregrasp_tool_dist": self.grasp_prior_reset_pregrasp_tool_dist.mean(),
+                    "cube_grasp_prior_finger_center_dist": self.grasp_prior_reset_finger_center_dist.mean(),
+                    "cube_grasp_prior_finger_table_clearance": self.grasp_prior_reset_finger_table_clearance.mean(),
+                }
+            )
         self.extras["log"] = log_terms
         for key, value in log_terms.items():
             self.extras[key] = value
@@ -201,6 +533,7 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             env_ids = self._robot._ALL_INDICES
         env_ids = torch.as_tensor(env_ids, device=self.device, dtype=torch.long)
         super(DextrahFrankaStarKittingEnv, self)._reset_idx(env_ids)
+        self._reset_grasp_prior_metrics(env_ids)
 
         num_ids = len(env_ids)
         joint_pos = self._robot.data.default_joint_pos[env_ids].clone()
@@ -245,6 +578,8 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         self.has_lifted_cube[env_ids] = False
         self.in_success_region[env_ids] = False
         self.time_in_success_region[env_ids] = 0.0
+        if getattr(self, "_grasp_prior_reset_enabled", False):
+            self._apply_grasp_prior_reset(env_ids, joint_pos, joint_vel, cube_pos)
         self.actions[env_ids] = 0.0
         self.ik_controller.reset(env_ids)
 

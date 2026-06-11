@@ -22,6 +22,9 @@ parser.add_argument("--video", action="store_true", default=False)
 parser.add_argument("--video_length", type=int, default=120)
 parser.add_argument("--video_folder", type=str, default=None)
 parser.add_argument("--cube_spawn_xy_randomization", type=float, default=0.08)
+parser.add_argument("--enable_grasp_prior_reset", action="store_true", default=False)
+parser.add_argument("--grasp_prior_library_path", type=str, default=None)
+parser.add_argument("--grasp_prior_reset_cycles", type=int, default=4)
 parser.add_argument("--camera_eye", type=float, nargs=3, default=None, help="Viewport camera eye for validation video.")
 parser.add_argument(
     "--camera_target", type=float, nargs=3, default=None, help="Viewport camera target for validation video."
@@ -435,6 +438,99 @@ def _run_predicate_checks(task_env, checks: CheckRecorder) -> None:
     )
 
 
+def _run_grasp_prior_reset_checks(env, task_env, checks: CheckRecorder, reset_cycles: int) -> dict[str, object]:
+    if not bool(getattr(task_env.cfg, "grasp_prior_reset_enabled", False)):
+        return {}
+
+    cycles = max(int(reset_cycles), 1)
+    cycle_summaries: list[dict[str, object]] = []
+    immediate_done_count = 0
+    for cycle_idx in range(cycles):
+        obs_out = env.reset()
+        obs = obs_out[0] if isinstance(obs_out, tuple) else obs_out
+        policy_obs = obs["policy"] if isinstance(obs, dict) else obs
+        task_env._compute_intermediate_values()
+        terminated, truncated = task_env._get_dones()
+        dones = torch.logical_or(terminated, truncated)
+        immediate_done_count += int(dones.float().sum().detach().cpu())
+        cycle_summaries.append(
+            {
+                "cycle": cycle_idx,
+                "obs_finite": bool(torch.isfinite(policy_obs).all().item()),
+                "attempt_rate": _mean(task_env.grasp_prior_reset_attempted.float()),
+                "success_rate": _mean(task_env.grasp_prior_reset_success.float()),
+                "farther_rate": _mean(task_env.grasp_prior_reset_farther.float()),
+                "pos_error_mean": _mean(task_env.grasp_prior_reset_pos_error),
+                "pos_error_max": float(task_env.grasp_prior_reset_pos_error.detach().max().cpu()),
+                "rot_error_mean": _mean(task_env.grasp_prior_reset_rot_error),
+                "rot_error_max": float(task_env.grasp_prior_reset_rot_error.detach().max().cpu()),
+                "exact_tool_dist_mean": _mean(task_env.grasp_prior_reset_exact_tool_dist),
+                "pregrasp_tool_dist_mean": _mean(task_env.grasp_prior_reset_pregrasp_tool_dist),
+                "finger_center_dist_mean": _mean(task_env.finger_center_to_cube_dist),
+                "finger_center_dist_max": float(task_env.finger_center_to_cube_dist.detach().max().cpu()),
+                "finger_table_clearance_min": float(task_env.finger_table_clearance.detach().min().cpu()),
+                "finger_table_clearance_mean": _mean(task_env.finger_table_clearance),
+                "immediate_done_count": int(dones.float().sum().detach().cpu()),
+            }
+        )
+
+    attempt_rates = [float(item["attempt_rate"]) for item in cycle_summaries]
+    success_rates = [float(item["success_rate"]) for item in cycle_summaries]
+    farther_rates = [float(item["farther_rate"]) for item in cycle_summaries]
+    clearance_mins = [float(item["finger_table_clearance_min"]) for item in cycle_summaries]
+    finger_center_maxes = [float(item["finger_center_dist_max"]) for item in cycle_summaries]
+    pregrasp_dist_means = [float(item["pregrasp_tool_dist_mean"]) for item in cycle_summaries]
+    exact_dist_means = [float(item["exact_tool_dist_mean"]) for item in cycle_summaries]
+    obs_finite = all(bool(item["obs_finite"]) for item in cycle_summaries)
+
+    checks.check("grasp_prior_reset_observation_finite", obs_finite, cycles=cycles)
+    checks.check(
+        "grasp_prior_reset_attempted_all_envs",
+        min(attempt_rates) >= 1.0,
+        min_attempt_rate=min(attempt_rates),
+    )
+    checks.check(
+        "grasp_prior_reset_success_rate",
+        sum(success_rates) / len(success_rates) >= 0.50,
+        mean_success_rate=sum(success_rates) / len(success_rates),
+        per_cycle_success_rate=success_rates,
+    )
+    checks.check(
+        "grasp_prior_reset_pregrasp_farther_from_cube",
+        min(farther_rates) >= 1.0,
+        min_farther_rate=min(farther_rates),
+    )
+    checks.check(
+        "grasp_prior_reset_no_table_penetration",
+        min(clearance_mins) >= float(task_env.cfg.finger_table_penetration_termination_margin),
+        min_finger_table_clearance=min(clearance_mins),
+        penetration_margin=float(task_env.cfg.finger_table_penetration_termination_margin),
+    )
+    checks.check(
+        "grasp_prior_reset_no_immediate_done_spike",
+        immediate_done_count == 0,
+        immediate_done_count=immediate_done_count,
+        cycles=cycles,
+        num_envs=task_env.num_envs,
+    )
+    checks.check(
+        "grasp_prior_reset_plausible_distance",
+        max(finger_center_maxes) <= 0.35 and min(pregrasp_dist_means) > min(exact_dist_means),
+        max_finger_center_dist=max(finger_center_maxes),
+        min_exact_tool_dist_mean=min(exact_dist_means),
+        min_pregrasp_tool_dist_mean=min(pregrasp_dist_means),
+    )
+    return {
+        "cycles": cycles,
+        "immediate_done_count": immediate_done_count,
+        "mean_success_rate": sum(success_rates) / len(success_rates),
+        "mean_farther_rate": sum(farther_rates) / len(farther_rates),
+        "min_finger_table_clearance": min(clearance_mins),
+        "max_finger_center_dist": max(finger_center_maxes),
+        "cycles_detail": cycle_summaries,
+    }
+
+
 def _run_short_rollout(env, task_env, checks: CheckRecorder, num_steps: int, print_interval: int) -> dict[str, object]:
     obs_out = env.reset()
     obs = obs_out[0] if isinstance(obs_out, tuple) else obs_out
@@ -546,6 +642,11 @@ def main() -> None:
     )
     env_cfg.seed = args_cli.seed
     env_cfg.cube_spawn_xy_randomization = args_cli.cube_spawn_xy_randomization
+    if args_cli.enable_grasp_prior_reset:
+        if not args_cli.grasp_prior_library_path:
+            raise ValueError("--enable_grasp_prior_reset requires --grasp_prior_library_path")
+        env_cfg.grasp_prior_reset_enabled = True
+        env_cfg.grasp_prior_library_path = args_cli.grasp_prior_library_path
     _configure_validation_camera(env_cfg)
 
     checks = CheckRecorder()
@@ -565,6 +666,7 @@ def main() -> None:
         )
 
     rollout_summary: dict[str, object] = {}
+    prior_reset_summary: dict[str, object] = {}
     env_closed = False
     try:
         reset_out = gym_env.reset()
@@ -575,6 +677,12 @@ def main() -> None:
             tuple(policy_obs.shape) == (task_env.num_envs, task_env.cfg.observation_space),
             observed_shape=list(policy_obs.shape),
             expected_shape=[task_env.num_envs, task_env.cfg.observation_space],
+        )
+        prior_reset_summary = _run_grasp_prior_reset_checks(
+            gym_env,
+            task_env,
+            checks,
+            args_cli.grasp_prior_reset_cycles,
         )
         _run_predicate_checks(task_env, checks)
         rollout_summary = _run_short_rollout(gym_env, task_env, checks, args_cli.num_steps, args_cli.print_interval)
@@ -587,6 +695,7 @@ def main() -> None:
         "passed": checks.passed,
         "checks": checks.records,
         "rollout": rollout_summary,
+        "grasp_prior_reset": prior_reset_summary,
         "output_dir": str(output_dir),
         "video_enabled": args_cli.video,
         "video_folder": str(video_folder) if args_cli.video else None,
