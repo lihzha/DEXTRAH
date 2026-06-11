@@ -474,3 +474,61 @@ Analysis:
 
 Next:
 - Commit/push/deploy the JSONL observer patch, launch the short prior-enabled RL smoke with JSONL metrics enabled, inspect the resulting metric sidecar and checkpoints, then decide whether the full 8-GPU apple-to-apple training is ready.
+
+## 2026-06-11T19:24:30Z - JSONL RL smoke launch record
+
+Goal:
+- Run the bounded 64-env/45-epoch prior-enabled RL smoke with the opt-in JSONL direct metrics sidecar enabled.
+
+Hypothesis:
+- The same normal RL path that already completed and checkpointed will now additionally write `metrics/direct_info_rank_0.jsonl`, allowing inspection of reset-prior success/farther rates, pose/table metrics, reward terms, finite values, and any termination pathology before full-scale training.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- implementation_commit: c36d3f8bcd8237bcc127019aac35f0f7217f554f
+- push/pull: pushed to `origin/codex/franka-cube-ggx-pregrasp-reset`; l401 updated through Git bundle `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/.bundles/franka-cube-ggx-pregrasp-reset-c36d3f8.bundle`
+- remote_commit/status: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset` detached at `c36d3f8bcd8237bcc127019aac35f0f7217f554f`, clean before submission
+
+Command / Job:
+- command: `python3 -m compileall dextrah_lab/rl_games/train.py dextrah_lab/rl_games/rl_games_utils.py dextrah_lab/tasks/dextrah_franka_cube_grasp dextrah_lab/scene_scripts/export_franka_cube_graspgenx_library.py dextrah_lab/rl_games/validate_franka_cube_grasp_env.py`
+- command: `bash -n cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`
+- command: `sbatch --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=128G --time=01:00:00 --job-name=ggx_rl_jsonl --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=c36d3f8bcd8237bcc127019aac35f0f7217f554f,TASK=Dextrah-Franka-Cube-Grasp,FULL_EXPERIMENT_NAME=franka_cube_ggx_pregrasp_rl_jsonl_20260611_192430,NUM_ENVS=64,MAX_ITERATIONS=45,HORIZON_LENGTH=16,MINIBATCH_SIZE=1024,CENTRAL_VALUE_MINIBATCH_SIZE=1024,SAVE_FREQUENCY=15,DISTRIBUTED=False,MULTI_GPU=False,NPROC_PER_NODE=1,AUTO_RESUME=False,SELF_RELAUNCH=False,USE_CUDA_GRAPH=False,DEXTRAH_RLGAMES_JSONL_METRICS=True,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_smoke.npz cluster/sbatch_train_teacher_8gpu.sh`
+- job_id: 1027690
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_rl_jsonl_20260611_192430`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_1027690.out`
+- artifacts: expected params, `metrics/direct_info_rank_0.jsonl`, checkpoints, Slurm log
+
+Result:
+- status: running
+- metrics/artifacts: pending
+
+Next:
+- Monitor job 1027690 to completion, fetch logs/artifacts, parse `direct_info_rank_0.jsonl`, inspect configs/checkpoints, update this worklog with metrics, and only then decide on full 8-GPU launch.
+
+## 2026-06-11T19:26:31Z - JSONL RL smoke result and full-run plan
+
+Goal:
+- Decide whether the prior-enabled branch is ready for the final apple-to-apple 8-GPU Franka cube run.
+
+Result:
+- status: passed
+- job_id: 1027690
+- scheduler: `COMPLETED`, exit `0:0`, elapsed `00:01:08`, node `pool0-00016`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_rl_jsonl_20260611_192430`
+- local_artifacts: `cluster_results/l401/franka_cube_ggx_pregrasp_rl_jsonl_20260611_192430/`, `cluster_logs/l401/dextrah/teacher_8gpu_1027690.out`
+- checkpoints: `last_dextrah_franka_cube_grasp_ep_45_rew_736.6942.pth`, `last_dextrah_franka_cube_grasp_ep_45_rew__736.6942_.pth`, plus `dextrah_runtime_rank_0.pth`
+- JSONL sidecar: `metrics/direct_info_rank_0.jsonl`, 400920 bytes, 45 records, epochs 1-45, frames 0-45056, 162 scalar keys
+- scalar health: `bad_scalar_count=0`; no NaN/Inf in JSONL; Slurm log has no traceback/runtime/child-failure patterns and ends with `Training Done`
+- prior reset metrics: attempt/success/farther rates all `1.0` for all 45 records; reset position error mean/max `0.0002419/0.0004691 m`; reset rotation error mean/max `0.005852/0.008752 rad`; exact tool distance mean `0.129151 m`; pregrasp tool distance mean `0.158952 m`; prior finger-center distance mean `0.100986 m`; prior finger-table clearance min/mean `0.134568/0.134635 m`
+- reward/behavior scalars: approach reward mean `0.1891`; enclosure reward mean `0.1262`; lift reward mean/max `0.00289/0.04286`; xy stability reward mean/min `0.9452/0.8520`; action penalty mean `-0.00238`; success/lifted rates remained `0.0` in this short untrained smoke; table-clearance violation mean/max `0.00129/0.03552`
+- config evidence: `params/env.yaml` records `num_envs: 64`, `observation_space: 72`, `action_space: 7`, `cube_spawn_xy_randomization: 0.08`, `grasp_prior_reset_enabled: true`, `grasp_prior_pregrasp_offset: 0.03`; `params/agent.yaml` records the smoke-only overrides `max_epochs: 45`, `horizon_length: 16`, `minibatch_size: 1024`, `multi_gpu: false`
+
+Analysis:
+- The actual Isaac RL path uses the prior branch, produces sane reset metrics, finite reward/extras values, and checkpoints. The short smoke does not solve the task, but that is expected for a 45-epoch, 64-env random-start smoke. No reset pathology or immediate-failure signature appeared. The earlier reset validator remains the stronger immediate-done evidence: `passed=True`, immediate done count `0`, reset success/farther rates `1.0`, and positive table clearance.
+- The full run is now clear to launch with the wrapper defaults for `Dextrah-Franka-Cube-Grasp`: 2048 envs, 8 GPUs, default horizon/minibatch/lr/gamma/tau/save cadence/max epochs, default PPO wrapper/settings, and only the prior/library Hydra overrides. `DEXTRAH_RLGAMES_JSONL_METRICS=True` will be used for inspection only; it does not change the policy data path.
+
+Next:
+- Commit/push this worklog result.
+- Deploy the latest branch commit to the l401 agent worktree.
+- Launch final 8-GPU training with `TASK=Dextrah-Franka-Cube-Grasp`, default wrapper PPO/env settings, `GRASP_PRIOR_RESET_ENABLED=True`, `GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_smoke.npz`, and JSONL direct metrics enabled for artifact inspection.
+- Monitor through requeues if needed; inspect JSONL reset/reward metrics, checkpoints, logs, and any eval artifacts before considering the final run complete.
