@@ -500,3 +500,46 @@ Worker C:
 - Worker C is patching the eval launcher with
   `PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python` and adding DP eval stage
   markers before relaunch.
+
+## 2026-06-11 Monitor Check 20:00 UTC
+
+Final RL job `28987954`:
+
+- still running on a1001 at about 32 minutes elapsed
+- reached at least epoch 331 / 10000
+- rank-0 JSONL: 331 records, `bad_scalar_count=0`
+- best-reward messages improved past `2007.6512`
+- latest prior reset success rate `1.0`
+- latest lifted rate `0.0009765625`; latest success rate still `0.0`
+
+Worker B trajectory alternative:
+
+- 720-step eval job `1027707` completed with exit `0:0` after `00:00:59`.
+  The visible metrics report 720/720 steps, reward mean about `2.269`, final
+  reward about `2.486`, success rate `0.0`, tracking reference loaded from the
+  same 60 mm compact GraspGenX path, and no non-finite JSON values.
+- Worker B then patched target safety behavior and pushed
+  `origin/codex/franka-cube-trajectory-tracking` at
+  `dfd5587` (`Gate unsafe tracking targets`).
+- Reset/target-gating smoke job `1027714` completed with exit `0:0`. It ran
+  160/160 validation steps, kept the external reference summary, reported
+  `runtime_object_pose_policy=reset_cube_pose`,
+  `unsafe_target_reward_policy=zero_tracking_weight_below_min_target_table_clearance`,
+  tracking target clearance min about `0.2197`, unsafe target rate `0.0`, and
+  no immediate termination spike.
+
+Worker C Diffusion Policy alternative:
+
+- After several dependency diagnostics, Worker C passed the cluster DP eval
+  smoke on job `1027713` with exit `0:0`.
+- The passing eval loaded the official `real-stanford/diffusion_policy`
+  checkpoint, bridged 72D PPO observations through `predict_action_from_ppo_obs`,
+  emitted 7D actions, stepped the Isaac env for 16/16 steps, wrote
+  `metrics.json`, and the launcher printed `DP eval metrics passed`.
+- Metrics: `reward_mean=1.3180`, `reward_final=1.3083`,
+  `final_success_rate=0.0`, `window_success_rate=0.0`,
+  `final_gripper_width=0.04295`; actions are clipped/saturated, which matches
+  the tiny 8-demo debug-checkpoint limitation.
+- Worker C pushed `origin/codex/franka-cube-diffusion-policy-bc` at
+  `7ae5d24` (`Plan real cuRobo DP dataset scale-up`) and is moving toward a
+  bounded real-demo dataset expansion, still not final BC/RL.
