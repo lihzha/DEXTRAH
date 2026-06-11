@@ -1901,3 +1901,49 @@ Analysis:
 Next:
 - Continue active monitoring toward epoch `20000`; tighten polling as the run
   approaches final checkpoint/final artifact generation.
+
+## 2026-06-11 01:28 PDT - Teacher Artifact/Metric Pass
+
+Goal:
+- Continue active monitoring after the 01:16 artifact check and verify that
+  artifacts and scalar metrics are still advancing.
+
+Command / Job:
+- job_id: `28955904`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28955904.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+- local TensorBoard copy:
+  `/tmp/dextrah_teacher_events`
+
+Result:
+- status: running healthy with continued artifact production.
+- scheduler: `RUNNING` on `batch-block7-00110`, elapsed `57:41`,
+  time left `02:52:19` at `01:28:26 PDT`.
+- stdout advanced to epoch `19199/20000`.
+- newest complete checkpoint:
+  `last_dextrah_lstm_ep_19190_rew_759.6456.pth` at `01:27:41`.
+- rolling checkpoint `dextrah_lstm.pth` refreshed at `01:24:45`.
+- runtime sidecars rank `0-7` refreshed at `01:27:39`.
+- narrow critical failure scan over recent stdout returned no matches.
+- TensorBoard summaries parsed through epoch `19188` for epoch-keyed scalars.
+- post-requeue `in_success_region/iter`: n=`508`, mean `0.467643`; latest
+  `0.469727`, last-50 `0.467139`.
+- post-requeue `rewards/iter`: n=`508`, mean `653.566`; latest `672.979`,
+  last-50 `665.922`.
+- `num_adr_increases/iter`: latest `50`, last-50 `50`.
+- `info/kl`: latest `0.0016689`, last-50 `0.00150572`.
+- `losses/a_loss`: latest `-0.00219071`, last-50 `-0.00206859`.
+- `losses/c_loss`: latest `0.0279032`, last-50 `0.0240307`.
+- `performance/step_inference_rl_update_fps`: latest `109404`,
+  last-20 about `109694`, last-50 about `109104`, last-200 about `103402`.
+
+Analysis:
+- The job continues to produce checkpoints and sidecars normally. Scalar
+  windows remain stable, reward and throughput improved versus the 01:16 pass,
+  and KL remains low.
+
+Next:
+- Continue active monitoring. With about `801` epochs left at the snapshot,
+  keep widened polling for now and tighten as the run approaches epoch `20000`.
