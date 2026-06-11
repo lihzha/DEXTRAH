@@ -1911,3 +1911,62 @@ Result:
 Next:
 - Commit/push and deploy exact commit to l401.
 - Launch a 4-env/240-step env validation before any RL smoke.
+
+## 2026-06-11T14:22:30-07:00 - phase-gate diagnostic artifact bundle
+
+Goal:
+- Provide inspectable evidence for why the current phase-gated shaping is not ready for scale-up.
+
+Artifacts:
+- report: `cluster_results/l401/franka_cube_traj_tracking_phasegate_diagnostic_20260611_142230/report.md`
+- metrics_plot: `cluster_results/l401/franka_cube_traj_tracking_phasegate_diagnostic_20260611_142230/phasegate_diagnostic_metrics.png`
+- summary_csv: `cluster_results/l401/franka_cube_traj_tracking_phasegate_diagnostic_20260611_142230/summary.csv`
+- summary_json: `cluster_results/l401/franka_cube_traj_tracking_phasegate_diagnostic_20260611_142230/summary.json`
+- viz_plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_phasegate_diagnostic_20260611_142230/phasegate_diagnostic_metrics.png`
+- viz_report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_phasegate_diagnostic_20260611_142230/report.md`
+
+Result:
+- status: generated locally from fetched `1027742`/`1027743` metrics and video artifacts.
+- note: first attempt to use `matplotlib` failed because the local Python environment lacks that dependency; regenerated the PNG with Pillow, which is available.
+
+## 2026-06-11T14:23:12-07:00 - relaxed proximity-gate env smoke launch
+
+Goal:
+- Validate the relaxed proximity/contact gate and new diagnostics in the Isaac task runtime before any RL or eval relaunch.
+
+Version Control:
+- agent_id: franka-cube-traj-tracking
+- local_commit: `b7edd3f355db556626577f22be1155518083ff03`
+- remote_commit/status: /lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking at `b7edd3f355db556626577f22be1155518083ff03`, detached clean after HTTPS fetch fallback.
+
+Command / Job:
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:30:00 --job-name=franka_cube_traj_relaxgate_smoke --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_relaxgate_env_smoke_20260611_142312,NUM_ENVS=4,NUM_STEPS=240,VIDEO_LENGTH=240,CAPTURE_VIDEO=False,PRINT_INTERVAL=40,SEED=57,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`
+- job_id: 1027745 `franka_cube_traj_relaxgate_smoke`
+- expected_log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_cube_1027745.out
+- expected_metrics: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_cube_traj_tracking_relaxgate_env_smoke_20260611_142312/metrics.json
+
+Acceptance Criteria:
+- Task registration and baseline registration still resolve.
+- Reset observation shape remains `[4,72]`.
+- Metrics are finite; target unsafe rate remains `0.0`; target clearance remains above `0.025`.
+- Relaxed-gate/action diagnostics are present and finite: contact-distance gate, finger-balance gate, action-close/up, raw z/gripper action.
+- No immediate reset/termination pathology.
+
+Result:
+- status: passed; Slurm completed `0:0` after `00:00:45` on `pool0-00016`.
+- local_artifacts: `cluster_results/l401/franka_cube_traj_tracking_relaxgate_env_smoke_20260611_142312/metrics.json`, `cluster_results/l401/franka_cube_traj_tracking_relaxgate_env_smoke_20260611_142312/validate_franka_cube_1027745.out`
+- validation: `passed=true`, 35 checks, failed checks `[]`, recursive numeric scan nonfinite count `0`.
+- task/obs: reset observation shape `[4,72]`; baseline and trajectory task registration still resolved.
+- rollout: 240/240 steps, `done_count=0`, `early_done_count=0`, reward mean/final `1.6414374127984046`/`1.4329001903533936`, final success `0.0`, max mean lift `0.004192143678665161`.
+- relaxed_gate_signal: `tracking_contact_distance_gate_mean=0.6774192040165266`, `tracking_finger_balance_gate_mean=0.9482417523860931`, `tracking_contact_gate_mean=0.6521847594529391`, `tracking_action_close_mean=0.33125`, `tracking_action_up_mean=0.16458333333333333`.
+- shaping_terms: `tracking_close_action_reward_mean=0.000215970992482221`; `tracking_lift_action_reward_mean=0.0` because the 240-step smoke only reaches close phase (`tracking_close_phase_gate_final=0.09090910851955414`, `tracking_lift_phase_gate_final=0.0`).
+- target_safety: `tracking_unsafe_target_rate_max=0.0`, target clearance min and batch min `0.06511414051055908`.
+- reference: still `curobo_validated=false`, exact 60 mm geometry validation remains pending.
+
+Analysis:
+- The relaxed gate is runtime-safe and no longer silent in the controlled env smoke. It creates a measurable close-action shaping signal while preserving the reward-only observation contract and target safety.
+- This does not prove policy improvement. The next bounded diagnostic is a metrics-only eval of the existing epoch-3 checkpoint under the relaxed-gate code, to see whether the previously drifting policy now receives nonzero close/lift shaping and whether the action diagnostics reveal wrong gripper/up commands.
+
+Next:
+- Commit/push this worklog evidence.
+- Run a short metrics-only eval from the same epoch-3 checkpoint under the relaxed-gate commit. Do not launch longer training.
