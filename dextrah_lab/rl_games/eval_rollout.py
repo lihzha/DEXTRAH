@@ -6,6 +6,7 @@
 """Evaluate an RL-Games checkpoint and optionally record a rollout video."""
 
 import argparse
+import csv
 import json
 import math
 import os
@@ -28,6 +29,8 @@ parser.add_argument("--success_window", type=int, default=100, help="Trailing wi
 parser.add_argument("--print_interval", type=int, default=20, help="Print metrics every N steps.")
 parser.add_argument("--output_dir", type=str, default=None, help="Directory for eval outputs.")
 parser.add_argument("--metrics_path", type=str, default=None, help="Path to write metrics JSON.")
+parser.add_argument("--trace_csv_path", type=str, default=None, help="Path to write per-step trace CSV.")
+parser.add_argument("--trace_jsonl_path", type=str, default=None, help="Path to write per-step trace JSONL.")
 parser.add_argument("--deterministic", action=argparse.BooleanOptionalAction, default=True, help="Use deterministic actions.")
 parser.add_argument("--seed", type=int, default=None, help="Seed used for the environment.")
 parser.add_argument(
@@ -106,7 +109,22 @@ def _env_metric(task_env, name: str) -> float | None:
     return _mean_float(getattr(task_env, name))
 
 
-def _collect_task_metrics(task_env) -> dict[str, float | None]:
+def _add_vector_metrics(metrics: dict[str, float | None], prefix: str, value, labels: tuple[str, ...]) -> None:
+    if not isinstance(value, torch.Tensor) or value.numel() == 0:
+        return
+    tensor = value.detach().float()
+    if tensor.ndim == 1:
+        tensor = tensor.unsqueeze(0)
+    if tensor.shape[-1] < len(labels):
+        return
+    mean_values = tensor[..., : len(labels)].reshape(-1, len(labels)).mean(dim=0).cpu().tolist()
+    first_values = tensor.reshape(-1, tensor.shape[-1])[0, : len(labels)].cpu().tolist()
+    for idx, label in enumerate(labels):
+        metrics[f"{prefix}_{label}_mean"] = float(mean_values[idx])
+        metrics[f"{prefix}_{label}_env0"] = float(first_values[idx])
+
+
+def _collect_task_metrics(task_env, actions: torch.Tensor | None = None) -> dict[str, float | None]:
     metric_names = [
         "cube_lift_height",
         "cube_xy_error",
@@ -164,6 +182,28 @@ def _collect_task_metrics(task_env) -> dict[str, float | None]:
                 mean_value = _mean_float(value)
                 if mean_value is not None:
                     metrics[name] = mean_value
+    _add_vector_metrics(metrics, "ee_pos", getattr(task_env, "ee_pos", None), ("x", "y", "z"))
+    _add_vector_metrics(metrics, "cube_pos", getattr(task_env, "cube_pos", None), ("x", "y", "z"))
+    _add_vector_metrics(metrics, "traj_target_ee_pos", getattr(task_env, "traj_target_ee_pos", None), ("x", "y", "z"))
+    _add_vector_metrics(metrics, "ee_quat", getattr(task_env, "ee_quat", None), ("w", "x", "y", "z"))
+    _add_vector_metrics(
+        metrics,
+        "traj_target_ee_quat",
+        getattr(task_env, "traj_target_ee_quat", None),
+        ("w", "x", "y", "z"),
+    )
+    if hasattr(task_env, "ee_pos") and hasattr(task_env, "traj_target_ee_pos"):
+        ee_to_target = torch.norm(task_env.ee_pos - task_env.traj_target_ee_pos, dim=-1)
+        metrics["ee_to_traj_target_dist"] = _mean_float(ee_to_target)
+        metrics["ee_to_traj_target_dist_min"] = _tensor_stat_float(ee_to_target, "min")
+        metrics["ee_to_traj_target_dist_max"] = _tensor_stat_float(ee_to_target, "max")
+    if isinstance(actions, torch.Tensor):
+        action_tensor = actions.detach().float()
+        if action_tensor.ndim >= 2 and action_tensor.shape[-1] >= 7:
+            metrics["policy_action_z_mean"] = _mean_float(action_tensor[:, 2])
+            metrics["policy_action_gripper_mean"] = _mean_float(action_tensor[:, 6])
+            metrics["policy_action_close_mean"] = _mean_float(torch.clamp(-action_tensor[:, 6], 0.0, 1.0))
+            metrics["policy_action_up_mean"] = _mean_float(torch.clamp(action_tensor[:, 2], 0.0, 1.0))
     return metrics
 
 
@@ -194,6 +234,64 @@ def _summarize_step_metrics(step_metrics: list[dict[str, float | int | None]]) -
             "mean": sum(float_values) / len(float_values),
         }
     return summaries
+
+
+def _write_trace_artifacts(
+    step_metrics: list[dict[str, float | int | None]],
+    trace_csv_path: Path,
+    trace_jsonl_path: Path,
+) -> None:
+    trace_csv_path.parent.mkdir(parents=True, exist_ok=True)
+    trace_jsonl_path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = sorted({key for item in step_metrics for key in item.keys()})
+    with trace_csv_path.open("w", newline="") as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=fieldnames, extrasaction="ignore")
+        writer.writeheader()
+        for item in step_metrics:
+            writer.writerow(item)
+    with trace_jsonl_path.open("w") as jsonl_file:
+        for item in step_metrics:
+            jsonl_file.write(json.dumps(item, sort_keys=True) + "\n")
+
+
+def _env_config_summary(env_cfg, task_env) -> dict[str, object]:
+    cfg = getattr(task_env, "cfg", env_cfg)
+    keys = [
+        "observation_space",
+        "num_observations",
+        "state_space",
+        "num_states",
+        "action_space",
+        "num_actions",
+        "cube_spawn_xy_randomization",
+        "trajectory_tracking_enabled",
+        "trajectory_tracking_reference_path",
+        "trajectory_tracking_reference_duration_s",
+        "trajectory_tracking_phase_observations",
+        "trajectory_tracking_close_action_weight",
+        "trajectory_tracking_lift_action_weight",
+        "trajectory_tracking_contact_gate_max_finger_dist",
+        "trajectory_tracking_contact_gate_width",
+        "trajectory_tracking_reference_reweight_phase_start",
+        "trajectory_tracking_reference_late_weight_scale",
+        "trajectory_tracking_min_target_gripper_width",
+        "trajectory_tracking_min_target_table_clearance",
+        "trajectory_tracking_follow_current_cube_pose",
+    ]
+    summary = {
+        "scene_num_envs": int(getattr(env_cfg.scene, "num_envs", 0)),
+        "seed": getattr(env_cfg, "seed", None),
+        "sim_device": getattr(env_cfg.sim, "device", None),
+        "physics_dt": float(getattr(env_cfg.sim, "dt", 0.0)),
+        "env_dt": float(getattr(cfg, "decimation", 1)) * float(getattr(env_cfg.sim, "dt", 0.0)),
+        "episode_length_s": float(getattr(cfg, "episode_length_s", 0.0)),
+    }
+    for key in keys:
+        if hasattr(cfg, key):
+            value = getattr(cfg, key)
+            if isinstance(value, (str, bool, int, float)) or value is None:
+                summary[key] = value
+    return summary
 
 
 def _checkpoint_path(agent_cfg: dict) -> str:
@@ -252,6 +350,16 @@ def main(env_cfg, agent_cfg: dict):
     output_dir.mkdir(parents=True, exist_ok=True)
     metrics_path = Path(args_cli.metrics_path).expanduser().resolve() if args_cli.metrics_path else output_dir / "metrics.json"
     metrics_path.parent.mkdir(parents=True, exist_ok=True)
+    trace_csv_path = (
+        Path(args_cli.trace_csv_path).expanduser().resolve()
+        if args_cli.trace_csv_path
+        else output_dir / "trace.csv"
+    )
+    trace_jsonl_path = (
+        Path(args_cli.trace_jsonl_path).expanduser().resolve()
+        if args_cli.trace_jsonl_path
+        else output_dir / "trace.jsonl"
+    )
     video_folder = Path(args_cli.video_folder).expanduser().resolve() if args_cli.video_folder else output_dir / "videos"
 
     env_cfg.scene.num_envs = args_cli.num_envs if args_cli.num_envs is not None else env_cfg.scene.num_envs
@@ -335,7 +443,7 @@ def main(env_cfg, agent_cfg: dict):
 
                 success_rate = _env_metric(task_env, "in_success_region")
                 reward_mean = _mean_float(rewards)
-                task_metrics = _collect_task_metrics(task_env)
+                task_metrics = _collect_task_metrics(task_env, actions)
 
                 if isinstance(dones, torch.Tensor):
                     dones_bool = dones.bool()
@@ -387,11 +495,17 @@ def main(env_cfg, agent_cfg: dict):
         "env_closed": env_closed,
         "trajectory_tracking_reference": trajectory_tracking_reference,
         "trajectory_tracking_reference_path": getattr(env_cfg, "trajectory_tracking_reference_path", None),
+        "env_config": _env_config_summary(env_cfg, task_env),
+        "trace_csv_path": str(trace_csv_path),
+        "trace_jsonl_path": str(trace_jsonl_path),
         "metric_summaries": _summarize_step_metrics(step_metrics),
     }
     payload = {"summary": summary, "steps": step_metrics}
     metrics_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+    _write_trace_artifacts(step_metrics, trace_csv_path, trace_jsonl_path)
     print(f"[INFO] Wrote metrics to {metrics_path}")
+    print(f"[INFO] Wrote trace CSV to {trace_csv_path}")
+    print(f"[INFO] Wrote trace JSONL to {trace_jsonl_path}")
     print("[INFO] Eval summary:")
     print(json.dumps(summary, indent=2, sort_keys=True))
 

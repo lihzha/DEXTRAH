@@ -2128,6 +2128,7 @@ Version Control:
 
 Planned Command / Job:
 - command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:30:00 --job-name=franka_cube_traj_actionscale_rl --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,FULL_EXPERIMENT_NAME=franka_cube_traj_tracking_actionscale_rl_smoke_20260611_143711,NPROC_PER_NODE=1,NUM_NODES=1,DISTRIBUTED=False,MULTI_GPU=False,NUM_ENVS=16,HORIZON_LENGTH=16,MINIBATCH_SIZE=256,CENTRAL_VALUE_MINIBATCH_SIZE=256,MINI_EPOCHS=1,MAX_ITERATIONS=3,SAVE_FREQUENCY=1,AUTO_RESUME=False,SELF_RELAUNCH=False,USE_CUDA_GRAPH=False,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json cluster/sbatch_train_teacher_8gpu.sh`
+- job_id: 1027751 `franka_cube_traj_actionscale_rl`
 - expected_log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_<job_id>.out
 - expected_run_dir: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_actionscale_rl_smoke_20260611_143711
 
@@ -2137,3 +2138,40 @@ Acceptance Criteria:
 - Actor/critic MLP input dimensions remain `72`; no traceback/NaN; epoch-3 checkpoint written.
 - If the smoke passes, launch one bounded metrics-only epoch-3 eval with all `cube_traj_tracking_*` terms exported. Do not launch longer training.
 - Reference caveat remains explicit: `curobo_validated=false`, exact DEXTRAH 60 mm geometry validation remains pending.
+
+Result:
+- status: completed scheduler/runtime, but **not a clean RL smoke pass**; treat as metric-pathology smoke.
+- slurm: job `1027751` completed `0:0` after `00:00:48` on `pool0-00016`.
+- local_artifacts: `cluster_results/l401/franka_cube_traj_tracking_actionscale_rl_smoke_20260611_143711/`, `cluster_results/l401/franka_cube_traj_tracking_actionscale_rl_smoke_20260611_143711/teacher_8gpu_1027751.out`.
+- config: resolved `observation_space=72`, `state_space=72`, `trajectory_tracking_phase_observations=false`, close/lift weights `2.5`/`4.0`, reference reweight phase/scale `0.55`/`0.35`, reference duration `8.0`, min gripper width `0.024`.
+- model_shapes: actor and central-value MLPs both built with input dimension `72`.
+- pathology: log warning `Max epochs reached before any env terminated at least once`; only checkpoint is `nn/last_dextrah_franka_cube_traj_tracking_ep_3_rew_-inf.pth`.
+- no full-training claim: this does not establish reward improvement or learned behavior and must not be used for scale-up.
+- reference: still `curobo_validated=false`, source tag `graspgenx_curobo_60mm_export_pending_exact_validation`.
+
+Analysis:
+- The `-inf` reward suffix is likely expected for a 3-iteration RL-Games smoke in this env because no episode terminates during the short rollout. With `num_envs=16`, `horizon_length=16`, and `max_iterations=3`, the trainer only advances tens of policy steps per actor, while the DEXTRAH episode horizon is about 10 s / 0.0167 s = ~600 policy steps. RL-Games episode-return bookkeeping stays at its initialized value until at least one episode finishes.
+- The wrapper therefore needs a short-run interpretability route: either run enough iterations to force at least one termination, or keep tiny RL smoke as a wiring-only training check and immediately use a diagnostic eval/video/trace from the produced checkpoint. For B, prefer the latter before any further RL.
+
+Next:
+- Patch eval artifact export to write trace CSV/JSONL with target/EE/cube pose, distance, gripper/action, gate/reward, lift/success, and target-safety fields.
+- Add a local summarizer for report/plot/train-vs-eval consistency artifacts.
+- Run a diagnostic-only video eval from the `rew_-inf` checkpoint, explicitly labeled as diagnostic-only. Use it only to inspect behavior/reward-term wiring.
+
+## 2026-06-11T14:45:10-07:00 - diagnostic artifact export patch
+
+Goal:
+- Make every bounded B eval produce inspectable artifacts: video, per-step trace files, trace plot, report, and train-vs-eval consistency check.
+
+Change:
+- `dextrah_lab/rl_games/eval_rollout.py`: added default `trace.csv` and `trace.jsonl` outputs; trace now includes target EE pose/quaternion, EE pose/quaternion, cube pose, EE-to-target distance, policy action z/gripper/close/up, existing task metrics, and all `cube_traj_tracking_*` terms.
+- `dextrah_lab/rl_games/eval_rollout.py`: added `env_config` summary to `metrics.json` for observation/action size, reset/randomization, reference path/duration/transform-related flags, phase observation flag, action-scale weights, reference reweight knobs, and safety gates.
+- `dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py`: added local artifact summarizer that writes `trajectory_trace_plot.png`, `summary.json`, `train_eval_consistency.json`, and `report.md` from fetched eval outputs.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py` passed.
+- `git diff --check` passed.
+
+Next:
+- Commit/push/deploy this exact code.
+- Launch one diagnostic-only video eval from the `1027751` `rew_-inf` checkpoint. Do not treat it as a clean learned-policy checkpoint; use it only to inspect behavior and reward-term wiring.
