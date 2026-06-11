@@ -740,3 +740,31 @@ Analysis:
 
 Next:
 - Continue monitoring toward later checkpoints and wall-time/requeue. If the job requeues, verify it resumes in the same run dir from the latest checkpoint/runtime sidecars and that JSONL/checkpoint cadence continues without reset-metric regressions.
+
+## 2026-06-11T20:29:11Z - interim inspection artifact bundle
+
+Goal:
+- Produce inspectable user artifacts from existing run outputs only, without interrupting or slowing active job `28987954`.
+
+Command / Job:
+- source artifacts: copied rank-0 JSONL, Slurm stdout, params, checkpoint filename listing, and scheduler snapshot from the active run
+- local bundle: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/a1001/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005/inspection_20260611_202705`
+- generated files: `summary.json`, `training_curves.png`, `REPORT.md`, plus `raw/` copied text inputs
+- viewer: `viz-open /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/a1001/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005/inspection_20260611_202705/training_curves.png`
+- viewer_url: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/a1001/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005/inspection_20260611_202705/training_curves.png`
+
+Result:
+- status: produced
+- summary snapshot: rank-0 JSONL reached epoch `622`, frame `651165696`, with `622` records and `bad_scalar_count=0`
+- best reward: stdout best checkpoint reward `2128.5742` at epoch `595`
+- last interval checkpoint in the snapshot: `last_dextrah_franka_cube_grasp_ep_600_rew_2112.7615.pth`
+- prior reset metrics: success/farther rates stayed `1.0`; latest pos error `0.001877 m`; max pos error `0.002012 m`; latest rot error is recorded in `summary.json`; reset clearance remains positive
+- behavior metrics: latest success rate `0.0` with max `0.00048828125`; latest lifted rate `0.00048828125`, max `0.00244140625`; lift height is sparse but present; approach reward latest `1.13808`; enclosure reward latest `0.636284`
+- report: `REPORT.md` lists exact remote paths for the run dir, Slurm log, rank-0 JSONL, checkpoint dir, best checkpoint, and last checkpoint, plus healthy signals and watch items
+- visual inspection: `training_curves.png` renders reset success/farther, reset pose/clearance, success/lift/lift-height, reward terms, and checkpoint reward curves; the PNG is readable via the viewer URL above
+
+Analysis:
+- The bundle gives an inspectable, self-contained interim view without copying checkpoint weights or modifying the active run. It supports the same conclusion as the live monitor: reset-prior behavior is stable, no rank-0 bad scalars are present, checkpoints/best reward are advancing, and the main watch item is still sparse success frequency.
+
+Next:
+- Continue the active monitor loop on job `28987954`; do not treat this artifact bundle as completion. Update/refresh artifacts later if the orchestrator asks or if the run reaches a requeue/final boundary.
