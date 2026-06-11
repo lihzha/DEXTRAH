@@ -763,3 +763,41 @@ Analysis:
 Next:
 - Shorten polling cadence as the job approaches the expected `20:39 PDT` TERM
   signal and verify requeue/resume from the newest checkpoint and sidecars.
+
+## 2026-06-10 20:42 PDT - Teacher Requeue Signal Observed
+
+Goal:
+- Validate the wall-time TERM/requeue path for replacement job `28955904`.
+
+Command / Job:
+- job_id: `28955904`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28955904.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+
+Result:
+- status: requeued, pending resume validation.
+- scheduler: `PENDING`, `Reason=BeginTime`, eligible/start time
+  `2026-06-10T20:42:29`, time limit `03:50:00`.
+- command/workdir still point at the agent-owned remote worktree
+  `/lustre/fs11/portfolios/nvr/projects/nvr_lpr_rvp/users/lzha/src/worktrees/DEXTRAH/dextrah-teacher-stop-20260610T2346Z`.
+- stdout showed Slurm cancellation for requeue at `20:39:12-20:39:13` and the
+  wrapper message `Requeuing DEXTRAH job 28955904 ... after TERM`.
+- latest complete checkpoint before termination:
+  `last_dextrah_lstm_ep_16090_rew_585.0768.pth` at `20:39:30`.
+- runtime sidecars `dextrah_runtime_rank_0.pth` through
+  `dextrah_runtime_rank_7.pth` were all refreshed at `20:39:28`.
+- narrow failure scan over the recent stdout tail returned no matches.
+
+Analysis:
+- The signal path behaved as intended: the wrapper trapped TERM, requested
+  Slurm requeue for the same job id, forwarded TERM to the running `srun`, and
+  preserved a complete checkpoint plus all rank runtime sidecars. The run is
+  not yet validated after resume because the job is still pending its next
+  allocation.
+
+Next:
+- Continue short one-shot SSH polling until the job returns to `RUNNING`, then
+  verify allocation, wrapper restart, checkpoint/runtime-sidecar restore, epoch
+  advancement beyond `16090`, and absence of fresh failure signatures.
