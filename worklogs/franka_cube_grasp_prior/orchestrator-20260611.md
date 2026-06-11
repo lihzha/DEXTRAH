@@ -1951,3 +1951,78 @@ Current scheduler state:
 - l401 was empty immediately before A was assigned the matched baseline and B
   was assigned the stricter hold follow-up. Continue polling for new worker
   launches.
+
+## 2026-06-11 Monitor Check 23:09 UTC
+
+Worker B offset-hold diagnostic:
+
+- Job `1027851` (`refmix_hold_offset`) completed `0:0` from B commit
+  `0a8cf038bae6a12b26ff94cb6dc837c5c98da06d`.
+- Run:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_traj_tracking_refmix_hold_offset_a10_video480_20260611_160358`.
+- Local artifacts:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_a10_video480_20260611_160358`.
+- Viewer artifacts:
+  - video:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_a10_video480_20260611_160358/videos/refmix-hold-offset-a10-video480-step-0.mp4`
+  - selected contact sheet:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_a10_video480_20260611_160358_artifacts/contact_sheet_selected.jpg`
+  - report:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_a10_video480_20260611_160358_artifacts/report.md`
+  - trace plot:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_a10_video480_20260611_160358_artifacts/trajectory_trace_plot.png`
+- Metrics:
+  - `done_count=3`, transient `success_rate=0.75` from steps `363-373`,
+    success mean/final `0.01875 / 0.0`.
+  - max cube lift `0.10894 m`; target unsafe max `0.0`.
+  - final EE-cube `0.1190 m`, final finger-center-cube `0.1601 m`, final
+    gripper width `0.0660 m`.
+  - hold activated from actual lift at mean trigger step `319`; contact/phase
+    trigger rates stayed `0.0`.
+  - train/eval consistency report passed with no real mismatches; eval-only
+    overrides are listed separately.
+- Visual interpretation: the selected frames and trace show a real transient
+  lift/success event followed by reset/drop behavior. The final frame looks
+  failed because the eval artifact continues after success resets; this is not
+  the same failure mode as the earlier drift-only videos.
+- Orchestrator verdict: B has a promising reference/hold diagnostic, but the
+  artifact contract is not yet clear enough for PPO scale-up. Need explicit
+  `success_ever`/done-reason reporting and a success-window/no-auto-reset video
+  before deciding whether this trajectory variant is valid.
+- Instruction sent to B: update B worklog/report with the transient-success
+  interpretation and run one artifact-focused diagnostic for per-env
+  success/done semantics. No PPO scale-up yet.
+
+Worker C source-joint reset replay:
+
+- Job `1027846` (`dextrah_cube_dp_replay`) completed `0:0`.
+- Run:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/replays/franka_cube_dp_replay_sourcejoint_ep24s0_fixedlabels320_20260611_171400`.
+- Local artifacts:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_ep24s0_fixedlabels320_20260611_171400`.
+- Viewer artifacts:
+  - video:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_ep24s0_fixedlabels320_20260611_171400/videos/franka-cube-dp-replay-sourcejoint-step-0.mp4`
+  - contact sheet:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_ep24s0_fixedlabels320_20260611_171400/replay_contact_sheet.jpg`
+  - report:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_ep24s0_fixedlabels320_20260611_171400/replay_report.md`
+  - plot:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_ep24s0_fixedlabels320_20260611_171400/replay_motion.png`
+- Metrics:
+  - exact source robot joint reset is now available and applied:
+    `joint_linf_diff_after_write_env0=0.0`, lowdim/cube/EE diffs are about
+    `1e-6` or lower.
+  - fixed `dataset_open_t_plus_7`: final EE-cube `0.1902 m`.
+  - fixed `dataset_t`: final EE-cube `0.1889 m`; first negative gripper action
+    around step `297`.
+  - `dp_replan`: final EE-cube `0.1276 m`, final finger-center-cube `0.1613 m`.
+- Visual interpretation: the reset is no longer the blocker, but the robot
+  still stays offset and never grasps in the source-joint replay video.
+- Orchestrator verdict: C should stop spending cycles on reset mismatch and
+  pivot to action/control semantics. The next bounded diagnostic should compare
+  dataset action labels against actual live EE displacement under the Isaac
+  controller at the same control rate, including action scaling, gripper
+  sign/width mapping, quaternion/axis convention, and temporal offset.
+- Instruction sent to C: produce an action-semantics audit artifact bundle
+  before any further BC/RL training.
