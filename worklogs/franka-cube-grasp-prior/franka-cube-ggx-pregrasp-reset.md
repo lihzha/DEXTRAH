@@ -27,7 +27,7 @@ Version Control:
 - worklog: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/worklogs/franka-cube-grasp-prior/franka-cube-ggx-pregrasp-reset.md
 - branch: codex/franka-cube-ggx-pregrasp-reset
 - base_commit: 589dd81c9f9691fcda3a3d4b9ad714d90dae4794
-- implementation_commit: pending
+- implementation_commit: current HEAD after this checkpoint; exact deployed commit recorded in the launch entry
 - push/pull: n/a for local implementation checkpoint unless requested by orchestrator
 - changed_files: planned as above, plus this owned worklog
 - remote_commit/status: n/a/local env
@@ -1030,3 +1030,87 @@ Analysis:
 
 Next:
 - Commit/push this diagnostic checkpoint, deploy the exact commit to the l401 agent worktree, run the bounded reset-only diagnostic and latest-checkpoint eval trace/video, fetch artifacts, open the most useful frames/video with `viz-open`, and inspect the geometry before making validity claims about the active training.
+
+## 2026-06-11T21:55:07Z - invalid reset geometry confirmed and A100 run canceled
+
+Goal:
+- Close the loop on reset diagnostic job `1027755`, preserve inspectable evidence, and stop the active A100 training run that used invalid reset geometry.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- diagnostic_commit: `17d5c5e6b68055540a6f020e2a5450afcda52311`
+- running_a100_job_commit: `99ea26d5b449581988594f40168806642c486326`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- changed_files: this worklog entry only
+
+Command / Job:
+- diagnostic job: `1027755`
+- diagnostic run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pregrasp_reset_geometry_20260611_214944`
+- diagnostic log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/diagnose_franka_cube_prior_1027755.out`
+- local artifact copy: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_reset_geometry_20260611_214944`
+- opened frame URL: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_reset_geometry_20260611_214944/frames/reset_000_last_side.png`
+- opened JSON URL: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_reset_geometry_20260611_214944/reset_geometry.json`
+- canceled A100 job: `28987954`
+- canceled A100 run_dir retained for traceability: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005`
+- canceled A100 log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28987954.out`
+
+Result:
+- status: failed_reset_geometry
+- diagnostic job status: `COMPLETED`, exit `0:0`
+- reset scalar/quality mismatch: `reset_success_rate=1.0`, `reset_quality_success_rate=0.0`, `farther_rate=1.0`, `immediate_done_rate=0.0`, `all_scalars_finite=true`
+- reset 0 evidence: cube env pos `[-0.3749, -0.0861, 0.7810]`; exact tool relative to cube `[-0.0001, +0.0000, +0.1335]`; pregrasp relative to cube `[-0.0001, +0.0000, +0.1635]`; left/right finger body origins relative to cube `[-0.0371, -0.0068, +0.1031]` and `[+0.0417, +0.0070, +0.1027]`; gripper width `0.0800 m`; open-width margin over 0.06 m cube `0.0200 m`; projected exact finger-center distance `0.0729 m`
+- reset 1-4 evidence: projected exact finger-center distance stayed `0.0659-0.0739 m`; quality stayed false despite IK success
+- visual evidence: side-view labeled frame shows the gripper/finger body origins above the cube rather than an enclosing grasp-quality reset
+- A100 cancellation: `sacct` reports `28987954|ggx_reset_8gpu|CANCELLED by 158351|0:0|02:24:51`; `.batch` exited `FAILED|15:0` from cancellation; `squeue` still showed transient `COMPLETING` while the node drained
+
+Analysis:
+- The active 8-GPU run `28987954` is invalid for the apple-to-apple GraspGenX pregrasp-reset comparison. It trained with a reset branch that satisfied IK/farther/table-clearance scalars but did not produce grasp-quality geometry under the current diagnostic definition and visual inspection.
+- Do not report this as a successful RL result. The useful result is that reset-only diagnostics caught a geometry bug before accepting the training run.
+- Likely causes remain frame/convention-related: the GraspGenX `run_graspgen` poses appear to be `panda_hand` tool-frame poses with a high top-down tool origin; DEXTRAH reward/diagnostics were using finger body origins as fingertip centers; and the current reset target offsets along the top-down tool axis, yielding a hover-pregrasp rather than an enclosing geometry by the diagnostic.
+
+Next:
+- Verify `28987954` leaves `squeue` and no replacement/requeue appears; cancel any requeued replacement as invalidated by reset geometry.
+- Patch the reset geometry/debug path. Prioritize correct fingertip/contact-point measurement and the reset target frame/offset so reset-only diagnostics can distinguish valid top-down pregrasp from invalid hover geometry.
+- Rerun reset-only l401 diagnostics until numeric `reset_grasp_quality_success_rate` and labeled frames show a plausible pregrasp/grasp geometry. No A100 RL relaunch before that passes.
+
+## 2026-06-11T22:03:52Z - patch reset-prior quality geometry instrumentation
+
+Goal:
+- Fix the reset-only diagnostic blind spot before any RL relaunch by making grasp quality measure the frame the reset IK actually controls and by exposing numeric/visual evidence for tool, TCP, fingertip proxy, offset, and clearance geometry.
+
+Hypothesis:
+- The failed diagnostic used `panda_hand` and finger link body origins as grasp-quality contact proxies. DEXTRAH Franka controls `panda_hand + ee_offset_pos`; GraspGenX/Franka `panda_hand` top-down poses can therefore sit about 10 cm above the controlled TCP/fingertip plane. A diagnostic that reports both frames should tell whether the implementation is truly hovering or whether the prior geometry was mis-measured.
+
+Change:
+- Add reset-prior buffers and RL extras for exact/pregrasp DEXTRAH EE/TCP poses, projected exact/pregrasp TCP fingertip proxies, projected exact TCP/tip distances, and TCP-proxy table clearance.
+- Tighten the opt-in `grasp_prior_reset_quality_success` metric to require reset success, open width margin, outward pregrasp offset, projected exact TCP/tip proximity to the cube, and TCP-proxy table clearance.
+- Update `diagnose_franka_cube_grasp_prior_reset.py` to render and write both `panda_hand` tool poses and DEXTRAH TCP/tip-proxy poses in world/env/root frames, keeping old body-origin distances for reward-context comparison.
+- Update `eval_rollout.py` to include the new reset quality metrics in rollout traces.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- worklog: `worklogs/franka-cube-grasp-prior/franka-cube-ggx-pregrasp-reset.md`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `17d5c5e6b68055540a6f020e2a5450afcda52311`
+- implementation_commit: pending
+- changed_files: `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`, `dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py`, `dextrah_lab/rl_games/eval_rollout.py`, this worklog
+
+Command / Job:
+- cheap checks: `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py`
+- cheap checks: `bash -n cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`
+- cheap checks: `git diff --check`
+- scheduler guard: `ssh a1001 'squeue ...; sacct -j 28987954 ...'`
+
+Result:
+- status: local_checks_passed
+- A100 invalidated run state: no queued `28987954` requeue/replacement observed; `sacct` reports `28987954|ggx_reset_8gpu|CANCELLED by 158351|0:0|02:24:51`.
+- old diagnostic artifacts re-opened with `viz-open`: side frame `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_reset_geometry_20260611_214944/frames/reset_000_last_side.png`; JSON `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_reset_geometry_20260611_214944/reset_geometry.json`
+- local validation: `py_compile`, wrapper `bash -n`, and `git diff --check` passed.
+
+Analysis:
+- This is a bounded diagnostic/reset-quality patch, not an RL result. The old A100 run remains invalidated until a fresh l401 reset-only diagnostic shows plausible geometry under the new metrics and visual labels.
+- The patch intentionally keeps the prior disabled by default and does not change cube spawn randomization, observation/action spaces, reward terms, PPO settings, or default wrappers.
+
+Next:
+- Commit/push this checkpoint, deploy the exact commit to the agent-owned l401 worktree, run a fresh reset-only diagnostic, fetch artifacts, inspect the new TCP/tip-proxy tables and labeled frames, and only then decide whether the actual reset target needs a further transform/offset correction.

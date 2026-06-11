@@ -84,18 +84,34 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             self.grasp_prior_reset_cube_pos_w = torch.zeros(self.num_envs, 3, device=self.device)
             self.grasp_prior_reset_exact_tool_pos_w = torch.zeros(self.num_envs, 3, device=self.device)
             self.grasp_prior_reset_pregrasp_tool_pos_w = torch.zeros(self.num_envs, 3, device=self.device)
+            self.grasp_prior_reset_exact_ee_pos_w = torch.zeros(self.num_envs, 3, device=self.device)
             self.grasp_prior_reset_target_ee_pos_w = torch.zeros(self.num_envs, 3, device=self.device)
             self.grasp_prior_reset_offset_dir_w = torch.zeros(self.num_envs, 3, device=self.device)
             self.grasp_prior_reset_exact_tool_quat_w = torch.zeros(self.num_envs, 4, device=self.device)
             self.grasp_prior_reset_pregrasp_tool_quat_w = torch.zeros(self.num_envs, 4, device=self.device)
+            self.grasp_prior_reset_exact_ee_quat_w = torch.zeros(self.num_envs, 4, device=self.device)
             self.grasp_prior_reset_target_ee_quat_w = torch.zeros(self.num_envs, 4, device=self.device)
             self.grasp_prior_reset_left_finger_pos = torch.zeros(self.num_envs, 3, device=self.device)
             self.grasp_prior_reset_right_finger_pos = torch.zeros(self.num_envs, 3, device=self.device)
+            self.grasp_prior_reset_left_tip_proxy_pos = torch.zeros(self.num_envs, 3, device=self.device)
+            self.grasp_prior_reset_right_tip_proxy_pos = torch.zeros(self.num_envs, 3, device=self.device)
+            self.grasp_prior_reset_projected_exact_left_tip_proxy_pos = torch.zeros(
+                self.num_envs, 3, device=self.device
+            )
+            self.grasp_prior_reset_projected_exact_right_tip_proxy_pos = torch.zeros(
+                self.num_envs, 3, device=self.device
+            )
             self.grasp_prior_reset_gripper_width = torch.zeros(self.num_envs, device=self.device)
             self.grasp_prior_reset_open_width_margin = torch.zeros(self.num_envs, device=self.device)
             self.grasp_prior_reset_offset_radial_dot = torch.zeros(self.num_envs, device=self.device)
             self.grasp_prior_reset_offset_radial_angle = torch.zeros(self.num_envs, device=self.device)
+            self.grasp_prior_reset_exact_ee_dist = torch.zeros(self.num_envs, device=self.device)
+            self.grasp_prior_reset_pregrasp_ee_dist = torch.zeros(self.num_envs, device=self.device)
             self.grasp_prior_reset_projected_exact_finger_center_dist = torch.zeros(self.num_envs, device=self.device)
+            self.grasp_prior_reset_projected_exact_tip_center_dist = torch.zeros(self.num_envs, device=self.device)
+            self.grasp_prior_reset_projected_exact_tip_max_dist = torch.zeros(self.num_envs, device=self.device)
+            self.grasp_prior_reset_pregrasp_tip_table_clearance = torch.zeros(self.num_envs, device=self.device)
+            self.grasp_prior_reset_projected_exact_tip_table_clearance = torch.zeros(self.num_envs, device=self.device)
             self.grasp_prior_reset_quality_success = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
 
     def _setup_grasp_prior_reset(self) -> None:
@@ -212,18 +228,30 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         self.grasp_prior_reset_cube_pos_w[env_ids] = 0.0
         self.grasp_prior_reset_exact_tool_pos_w[env_ids] = 0.0
         self.grasp_prior_reset_pregrasp_tool_pos_w[env_ids] = 0.0
+        self.grasp_prior_reset_exact_ee_pos_w[env_ids] = 0.0
         self.grasp_prior_reset_target_ee_pos_w[env_ids] = 0.0
         self.grasp_prior_reset_offset_dir_w[env_ids] = 0.0
         self.grasp_prior_reset_exact_tool_quat_w[env_ids] = 0.0
         self.grasp_prior_reset_pregrasp_tool_quat_w[env_ids] = 0.0
+        self.grasp_prior_reset_exact_ee_quat_w[env_ids] = 0.0
         self.grasp_prior_reset_target_ee_quat_w[env_ids] = 0.0
         self.grasp_prior_reset_left_finger_pos[env_ids] = 0.0
         self.grasp_prior_reset_right_finger_pos[env_ids] = 0.0
+        self.grasp_prior_reset_left_tip_proxy_pos[env_ids] = 0.0
+        self.grasp_prior_reset_right_tip_proxy_pos[env_ids] = 0.0
+        self.grasp_prior_reset_projected_exact_left_tip_proxy_pos[env_ids] = 0.0
+        self.grasp_prior_reset_projected_exact_right_tip_proxy_pos[env_ids] = 0.0
         self.grasp_prior_reset_gripper_width[env_ids] = 0.0
         self.grasp_prior_reset_open_width_margin[env_ids] = 0.0
         self.grasp_prior_reset_offset_radial_dot[env_ids] = 0.0
         self.grasp_prior_reset_offset_radial_angle[env_ids] = 0.0
+        self.grasp_prior_reset_exact_ee_dist[env_ids] = 0.0
+        self.grasp_prior_reset_pregrasp_ee_dist[env_ids] = 0.0
         self.grasp_prior_reset_projected_exact_finger_center_dist[env_ids] = 0.0
+        self.grasp_prior_reset_projected_exact_tip_center_dist[env_ids] = 0.0
+        self.grasp_prior_reset_projected_exact_tip_max_dist[env_ids] = 0.0
+        self.grasp_prior_reset_pregrasp_tip_table_clearance[env_ids] = 0.0
+        self.grasp_prior_reset_projected_exact_tip_table_clearance[env_ids] = 0.0
         self.grasp_prior_reset_quality_success[env_ids] = False
 
     def _sync_reset_joint_state(
@@ -284,6 +312,12 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         )
 
         tool_quat_w = math_utils.quat_from_matrix(world_tool_t[:, :3, :3])
+        exact_ee_pos_w, exact_ee_quat_w = math_utils.combine_frame_transforms(
+            exact_tool_pos_w,
+            tool_quat_w,
+            self.ee_offset_pos[env_ids],
+            self.ee_offset_rot[env_ids],
+        )
         target_ee_pos_w, target_ee_quat_w = math_utils.combine_frame_transforms(
             pregrasp_tool_pos_w,
             tool_quat_w,
@@ -307,11 +341,15 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             "exact_tool_quat_w": tool_quat_w,
             "pregrasp_tool_pos_w": pregrasp_tool_pos_w,
             "pregrasp_tool_quat_w": tool_quat_w,
+            "exact_ee_pos_w": exact_ee_pos_w,
+            "exact_ee_quat_w": exact_ee_quat_w,
             "target_ee_pos_w": target_ee_pos_w,
             "target_ee_quat_w": target_ee_quat_w,
             "pregrasp_offset_dir_w": pregrasp_offset_dir_w,
             "exact_tool_dist": exact_tool_dist,
             "pregrasp_tool_dist": pregrasp_tool_dist,
+            "exact_ee_dist": torch.norm(exact_ee_pos_w - cube_pos_w, dim=-1),
+            "pregrasp_ee_dist": torch.norm(target_ee_pos_w - cube_pos_w, dim=-1),
             "pregrasp_farther": pregrasp_farther,
         }
 
@@ -432,33 +470,67 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         self.grasp_prior_reset_cube_pos_w[env_ids] = targets["cube_pos_w"]
         self.grasp_prior_reset_exact_tool_pos_w[env_ids] = targets["exact_tool_pos_w"]
         self.grasp_prior_reset_pregrasp_tool_pos_w[env_ids] = targets["pregrasp_tool_pos_w"]
+        self.grasp_prior_reset_exact_ee_pos_w[env_ids] = targets["exact_ee_pos_w"]
         self.grasp_prior_reset_target_ee_pos_w[env_ids] = targets["target_ee_pos_w"]
         self.grasp_prior_reset_offset_dir_w[env_ids] = targets["pregrasp_offset_dir_w"]
         self.grasp_prior_reset_exact_tool_quat_w[env_ids] = targets["exact_tool_quat_w"]
         self.grasp_prior_reset_pregrasp_tool_quat_w[env_ids] = targets["pregrasp_tool_quat_w"]
+        self.grasp_prior_reset_exact_ee_quat_w[env_ids] = targets["exact_ee_quat_w"]
         self.grasp_prior_reset_target_ee_quat_w[env_ids] = targets["target_ee_quat_w"]
         self.grasp_prior_reset_left_finger_pos[env_ids] = self.left_finger_pos[env_ids]
         self.grasp_prior_reset_right_finger_pos[env_ids] = self.right_finger_pos[env_ids]
         self.grasp_prior_reset_gripper_width[env_ids] = self.gripper_width[env_ids]
         self.grasp_prior_reset_open_width_margin[env_ids] = self.gripper_width[env_ids] - float(self.cfg.cube_size)
+        self.grasp_prior_reset_exact_ee_dist[env_ids] = targets["exact_ee_dist"]
+        self.grasp_prior_reset_pregrasp_ee_dist[env_ids] = targets["pregrasp_ee_dist"]
 
-        cube_to_exact = targets["exact_tool_pos_w"] - targets["cube_pos_w"]
+        cube_to_exact = targets["exact_ee_pos_w"] - targets["cube_pos_w"]
         cube_to_exact = cube_to_exact / torch.clamp(torch.norm(cube_to_exact, dim=-1, keepdim=True), min=1.0e-6)
         offset_dot = torch.sum(targets["pregrasp_offset_dir_w"] * cube_to_exact, dim=-1)
         self.grasp_prior_reset_offset_radial_dot[env_ids] = offset_dot
         self.grasp_prior_reset_offset_radial_angle[env_ids] = torch.acos(torch.clamp(offset_dot, -1.0, 1.0))
 
         pregrasp_offset = abs(float(self.cfg.grasp_prior_pregrasp_offset))
-        finger_center = 0.5 * (self.left_finger_pos[env_ids] + self.right_finger_pos[env_ids])
-        projected_exact_finger_center = finger_center - pregrasp_offset * targets["pregrasp_offset_dir_w"]
+        body_finger_center = 0.5 * (self.left_finger_pos[env_ids] + self.right_finger_pos[env_ids])
+        projected_exact_body_finger_center = body_finger_center - pregrasp_offset * targets["pregrasp_offset_dir_w"]
         cube_pos_env = targets["cube_pos_w"] - self.scene.env_origins[env_ids]
-        projected_center_dist = torch.norm(projected_exact_finger_center - cube_pos_env, dim=-1)
-        self.grasp_prior_reset_projected_exact_finger_center_dist[env_ids] = projected_center_dist
+        self.grasp_prior_reset_projected_exact_finger_center_dist[env_ids] = torch.norm(
+            projected_exact_body_finger_center - cube_pos_env, dim=-1
+        )
+
+        gripper_half_axis = 0.5 * (self.left_finger_pos[env_ids] - self.right_finger_pos[env_ids])
+        pregrasp_ee_pos_env = targets["target_ee_pos_w"] - self.scene.env_origins[env_ids]
+        exact_ee_pos_env = targets["exact_ee_pos_w"] - self.scene.env_origins[env_ids]
+        left_tip_proxy = pregrasp_ee_pos_env + gripper_half_axis
+        right_tip_proxy = pregrasp_ee_pos_env - gripper_half_axis
+        exact_left_tip_proxy = exact_ee_pos_env + gripper_half_axis
+        exact_right_tip_proxy = exact_ee_pos_env - gripper_half_axis
+        self.grasp_prior_reset_left_tip_proxy_pos[env_ids] = left_tip_proxy
+        self.grasp_prior_reset_right_tip_proxy_pos[env_ids] = right_tip_proxy
+        self.grasp_prior_reset_projected_exact_left_tip_proxy_pos[env_ids] = exact_left_tip_proxy
+        self.grasp_prior_reset_projected_exact_right_tip_proxy_pos[env_ids] = exact_right_tip_proxy
+        exact_tip_center_dist = torch.norm(exact_ee_pos_env - cube_pos_env, dim=-1)
+        exact_left_tip_dist = torch.norm(exact_left_tip_proxy - cube_pos_env, dim=-1)
+        exact_right_tip_dist = torch.norm(exact_right_tip_proxy - cube_pos_env, dim=-1)
+        exact_tip_max_dist = torch.maximum(exact_left_tip_dist, exact_right_tip_dist)
+        pregrasp_tip_table_clearance = torch.minimum(left_tip_proxy[:, 2], right_tip_proxy[:, 2]) - float(
+            self.cfg.table_surface_z
+        )
+        exact_tip_table_clearance = torch.minimum(exact_left_tip_proxy[:, 2], exact_right_tip_proxy[:, 2]) - float(
+            self.cfg.table_surface_z
+        )
+        self.grasp_prior_reset_projected_exact_tip_center_dist[env_ids] = exact_tip_center_dist
+        self.grasp_prior_reset_projected_exact_tip_max_dist[env_ids] = exact_tip_max_dist
+        self.grasp_prior_reset_pregrasp_tip_table_clearance[env_ids] = pregrasp_tip_table_clearance
+        self.grasp_prior_reset_projected_exact_tip_table_clearance[env_ids] = exact_tip_table_clearance
         self.grasp_prior_reset_quality_success[env_ids] = (
             success
             & (self.grasp_prior_reset_open_width_margin[env_ids] >= 0.0)
             & (offset_dot > 0.25)
-            & (projected_center_dist <= float(self.cfg.cube_size))
+            & (exact_tip_center_dist <= 0.75 * float(self.cfg.cube_size))
+            & (exact_tip_max_dist <= 1.25 * float(self.cfg.cube_size))
+            & (pregrasp_tip_table_clearance >= float(self.cfg.finger_table_penetration_termination_margin))
+            & (exact_tip_table_clearance >= float(self.cfg.finger_table_penetration_termination_margin))
         )
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
@@ -593,12 +665,18 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
                     "cube_grasp_prior_reset_rot_error": self.grasp_prior_reset_rot_error.mean(),
                     "cube_grasp_prior_exact_tool_dist": self.grasp_prior_reset_exact_tool_dist.mean(),
                     "cube_grasp_prior_pregrasp_tool_dist": self.grasp_prior_reset_pregrasp_tool_dist.mean(),
+                    "cube_grasp_prior_exact_ee_dist": self.grasp_prior_reset_exact_ee_dist.mean(),
+                    "cube_grasp_prior_pregrasp_ee_dist": self.grasp_prior_reset_pregrasp_ee_dist.mean(),
                     "cube_grasp_prior_finger_center_dist": self.grasp_prior_reset_finger_center_dist.mean(),
                     "cube_grasp_prior_finger_table_clearance": self.grasp_prior_reset_finger_table_clearance.mean(),
                     "cube_grasp_prior_open_width_margin": self.grasp_prior_reset_open_width_margin.mean(),
                     "cube_grasp_prior_offset_radial_dot": self.grasp_prior_reset_offset_radial_dot.mean(),
                     "cube_grasp_prior_offset_radial_angle": self.grasp_prior_reset_offset_radial_angle.mean(),
                     "cube_grasp_prior_projected_exact_finger_center_dist": self.grasp_prior_reset_projected_exact_finger_center_dist.mean(),
+                    "cube_grasp_prior_projected_exact_tip_center_dist": self.grasp_prior_reset_projected_exact_tip_center_dist.mean(),
+                    "cube_grasp_prior_projected_exact_tip_max_dist": self.grasp_prior_reset_projected_exact_tip_max_dist.mean(),
+                    "cube_grasp_prior_pregrasp_tip_table_clearance": self.grasp_prior_reset_pregrasp_tip_table_clearance.mean(),
+                    "cube_grasp_prior_projected_exact_tip_table_clearance": self.grasp_prior_reset_projected_exact_tip_table_clearance.mean(),
                     "cube_grasp_prior_quality_success_rate": self.grasp_prior_reset_quality_success.float().mean(),
                 }
             )

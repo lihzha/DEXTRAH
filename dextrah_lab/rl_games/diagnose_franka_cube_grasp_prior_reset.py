@@ -100,6 +100,10 @@ def _pos_in_root(task_env, env_id: int, pos_w: torch.Tensor) -> torch.Tensor:
     return pos_b[0]
 
 
+def _world_from_env(task_env, env_id: int, pos_env: torch.Tensor) -> torch.Tensor:
+    return pos_env + task_env.scene.env_origins[env_id]
+
+
 def _mean_attr(task_env, name: str) -> float | None:
     if not hasattr(task_env, name):
         return None
@@ -127,12 +131,15 @@ def _marker_cfg(path: str, color: tuple[float, float, float], radius: float) -> 
 def _make_markers() -> dict[str, VisualizationMarkers]:
     return {
         "cube": VisualizationMarkers(_marker_cfg("/Visuals/GraspPriorResetDiag/CubeCenter", (0.0, 0.85, 1.0), 0.012)),
-        "exact": VisualizationMarkers(_marker_cfg("/Visuals/GraspPriorResetDiag/ExactTool", (0.0, 1.0, 0.15), 0.010)),
-        "pregrasp": VisualizationMarkers(
+        "exact_tool": VisualizationMarkers(_marker_cfg("/Visuals/GraspPriorResetDiag/ExactTool", (0.0, 1.0, 0.15), 0.010)),
+        "pregrasp_tool": VisualizationMarkers(
             _marker_cfg("/Visuals/GraspPriorResetDiag/PregraspTool", (1.0, 0.0, 0.85), 0.010)
         ),
-        "target_ee": VisualizationMarkers(
-            _marker_cfg("/Visuals/GraspPriorResetDiag/TargetEe", (1.0, 0.85, 0.0), 0.008)
+        "exact_ee": VisualizationMarkers(
+            _marker_cfg("/Visuals/GraspPriorResetDiag/ExactTcp", (0.0, 0.35, 1.0), 0.009)
+        ),
+        "pregrasp_ee": VisualizationMarkers(
+            _marker_cfg("/Visuals/GraspPriorResetDiag/PregraspTcp", (1.0, 0.85, 0.0), 0.009)
         ),
         "left_finger": VisualizationMarkers(
             _marker_cfg("/Visuals/GraspPriorResetDiag/LeftFinger", (1.0, 0.15, 0.0), 0.008)
@@ -143,6 +150,15 @@ def _make_markers() -> dict[str, VisualizationMarkers]:
         "gripper_center": VisualizationMarkers(
             _marker_cfg("/Visuals/GraspPriorResetDiag/GripperCenter", (1.0, 1.0, 1.0), 0.007)
         ),
+        "left_tip_proxy": VisualizationMarkers(
+            _marker_cfg("/Visuals/GraspPriorResetDiag/LeftTipProxy", (0.0, 0.55, 1.0), 0.007)
+        ),
+        "right_tip_proxy": VisualizationMarkers(
+            _marker_cfg("/Visuals/GraspPriorResetDiag/RightTipProxy", (0.0, 0.20, 1.0), 0.007)
+        ),
+        "exact_tip_proxy": VisualizationMarkers(
+            _marker_cfg("/Visuals/GraspPriorResetDiag/ExactTipProxy", (0.1, 1.0, 0.75), 0.006)
+        ),
         "offset": VisualizationMarkers(_marker_cfg("/Visuals/GraspPriorResetDiag/OffsetBeads", (1.0, 1.0, 0.0), 0.005)),
     }
 
@@ -150,25 +166,40 @@ def _make_markers() -> dict[str, VisualizationMarkers]:
 def _visualize_markers(markers: dict[str, VisualizationMarkers], task_env, env_id: int) -> None:
     env_origin = task_env.scene.env_origins[env_id]
     cube_w = task_env.grasp_prior_reset_cube_pos_w[env_id]
-    exact_w = task_env.grasp_prior_reset_exact_tool_pos_w[env_id]
-    pregrasp_w = task_env.grasp_prior_reset_pregrasp_tool_pos_w[env_id]
-    target_ee_w = task_env.grasp_prior_reset_target_ee_pos_w[env_id]
+    exact_tool_w = task_env.grasp_prior_reset_exact_tool_pos_w[env_id]
+    pregrasp_tool_w = task_env.grasp_prior_reset_pregrasp_tool_pos_w[env_id]
+    exact_ee_w = task_env.grasp_prior_reset_exact_ee_pos_w[env_id]
+    pregrasp_ee_w = task_env.grasp_prior_reset_target_ee_pos_w[env_id]
     left_w = task_env.left_finger_pos[env_id] + env_origin
     right_w = task_env.right_finger_pos[env_id] + env_origin
     center_w = 0.5 * (left_w + right_w)
+    left_tip_w = _world_from_env(task_env, env_id, task_env.grasp_prior_reset_left_tip_proxy_pos[env_id])
+    right_tip_w = _world_from_env(task_env, env_id, task_env.grasp_prior_reset_right_tip_proxy_pos[env_id])
+    exact_left_tip_w = _world_from_env(
+        task_env, env_id, task_env.grasp_prior_reset_projected_exact_left_tip_proxy_pos[env_id]
+    )
+    exact_right_tip_w = _world_from_env(
+        task_env, env_id, task_env.grasp_prior_reset_projected_exact_right_tip_proxy_pos[env_id]
+    )
     offset_beads = torch.stack(
         (
-            exact_w + (pregrasp_w - exact_w) * 0.33,
-            exact_w + (pregrasp_w - exact_w) * 0.66,
+            exact_tool_w + (pregrasp_tool_w - exact_tool_w) * 0.33,
+            exact_tool_w + (pregrasp_tool_w - exact_tool_w) * 0.66,
+            exact_ee_w + (pregrasp_ee_w - exact_ee_w) * 0.33,
+            exact_ee_w + (pregrasp_ee_w - exact_ee_w) * 0.66,
         )
     )
     markers["cube"].visualize(cube_w.unsqueeze(0))
-    markers["exact"].visualize(exact_w.unsqueeze(0))
-    markers["pregrasp"].visualize(pregrasp_w.unsqueeze(0))
-    markers["target_ee"].visualize(target_ee_w.unsqueeze(0))
+    markers["exact_tool"].visualize(exact_tool_w.unsqueeze(0))
+    markers["pregrasp_tool"].visualize(pregrasp_tool_w.unsqueeze(0))
+    markers["exact_ee"].visualize(exact_ee_w.unsqueeze(0))
+    markers["pregrasp_ee"].visualize(pregrasp_ee_w.unsqueeze(0))
     markers["left_finger"].visualize(left_w.unsqueeze(0))
     markers["right_finger"].visualize(right_w.unsqueeze(0))
     markers["gripper_center"].visualize(center_w.unsqueeze(0))
+    markers["left_tip_proxy"].visualize(left_tip_w.unsqueeze(0))
+    markers["right_tip_proxy"].visualize(right_tip_w.unsqueeze(0))
+    markers["exact_tip_proxy"].visualize(torch.stack((exact_left_tip_w, exact_right_tip_w)))
     markers["offset"].visualize(offset_beads)
 
 
@@ -196,9 +227,11 @@ def _set_camera(task_env, env_cfg, eye: tuple[float, float, float], target: tupl
 
 
 def _render_rgb(gym_env, task_env):
-    for _ in range(3):
+    for _ in range(6):
         task_env.sim.render()
-    frame = gym_env.render()
+    frame = None
+    for _ in range(2):
+        frame = gym_env.render()
     if isinstance(frame, list):
         frame = frame[0] if frame else None
     if frame is None:
@@ -229,14 +262,18 @@ def _fmt_vec(values: list[float]) -> str:
 def _frame_lines(sample: dict[str, object]) -> list[str]:
     rel = sample["relative_to_cube_env"]
     return [
-        "markers: cube cyan | exact grasp green | pregrasp magenta | target ee yellow | fingers orange/red | offset beads yellow",
+        "markers: cube cyan | panda_hand exact/pre magenta/green | TCP exact/pre blue/yellow | link origins orange | tip proxies blue/cyan",
         f"sample={sample['sample_index']} reset_success={sample['reset_success']} quality={sample['reset_grasp_quality_success']} immediate_done={sample['immediate_done']}",
         f"cube_env={_fmt_vec(sample['cube_pos_env'])} cube_w={_fmt_vec(sample['cube_pos_w'])}",
-        f"exact_tool_env={_fmt_vec(sample['exact_tool_pos_env'])} pregrasp_tool_env={_fmt_vec(sample['pregrasp_tool_pos_env'])}",
+        f"panda_hand exact_rel={_fmt_vec(rel['exact_tool'])} pregrasp_rel={_fmt_vec(rel['pregrasp_tool'])}",
+        f"TCP exact_rel={_fmt_vec(rel['exact_ee'])} pregrasp_rel={_fmt_vec(rel['target_ee'])} actual_rel={_fmt_vec(rel['actual_ee'])}",
         f"offset_dir_w={_fmt_vec(sample['pregrasp_offset_dir_w'])} offset_len={sample['pregrasp_offset_m']:.4f} radial_dot={sample['offset_radial_dot']:.4f}",
-        f"left_rel_cube={_fmt_vec(rel['left_finger'])} right_rel_cube={_fmt_vec(rel['right_finger'])}",
-        f"gripper_center_rel_cube={_fmt_vec(rel['gripper_center'])} width={sample['gripper_width_m']:.4f} cube={sample['cube_size_m']:.4f} margin={sample['open_width_margin_m']:.4f}",
-        f"projected_exact_finger_center_dist={sample['projected_exact_finger_center_dist_m']:.4f} finger_table_clearance={sample['finger_table_clearance_m']:.4f}",
+        f"body_fingers rel L={_fmt_vec(rel['left_finger'])} R={_fmt_vec(rel['right_finger'])} center={_fmt_vec(rel['gripper_center'])}",
+        f"pregrasp_tip_proxy rel L={_fmt_vec(rel['left_tip_proxy'])} R={_fmt_vec(rel['right_tip_proxy'])}",
+        f"exact_tip_proxy rel L={_fmt_vec(rel['projected_exact_left_tip_proxy'])} R={_fmt_vec(rel['projected_exact_right_tip_proxy'])}",
+        f"width={sample['gripper_width_m']:.4f} cube={sample['cube_size_m']:.4f} margin={sample['open_width_margin_m']:.4f} body_table={sample['finger_table_clearance_m']:.4f}",
+        f"tip_table pre={sample['pregrasp_tip_table_clearance_m']:.4f} exact={sample['projected_exact_tip_table_clearance_m']:.4f}",
+        f"quality dists: exact_tcp_center={sample['projected_exact_tip_center_dist_m']:.4f} exact_tip_max={sample['projected_exact_tip_max_dist_m']:.4f} body_center_old={sample['projected_exact_finger_center_dist_m']:.4f}",
     ]
 
 
@@ -246,13 +283,21 @@ def _collect_sample(task_env, env_id: int, reset_index: int) -> dict[str, object
     cube_w = task_env.grasp_prior_reset_cube_pos_w[env_id]
     exact_w = task_env.grasp_prior_reset_exact_tool_pos_w[env_id]
     pregrasp_w = task_env.grasp_prior_reset_pregrasp_tool_pos_w[env_id]
+    exact_ee_w = task_env.grasp_prior_reset_exact_ee_pos_w[env_id]
     target_ee_w = task_env.grasp_prior_reset_target_ee_pos_w[env_id]
     left_env = task_env.left_finger_pos[env_id]
     right_env = task_env.right_finger_pos[env_id]
+    left_tip_env = task_env.grasp_prior_reset_left_tip_proxy_pos[env_id]
+    right_tip_env = task_env.grasp_prior_reset_right_tip_proxy_pos[env_id]
+    projected_exact_left_tip_env = task_env.grasp_prior_reset_projected_exact_left_tip_proxy_pos[env_id]
+    projected_exact_right_tip_env = task_env.grasp_prior_reset_projected_exact_right_tip_proxy_pos[env_id]
     cube_env = task_env.cube_pos[env_id]
+    actual_ee_env = task_env.ee_pos[env_id]
+    actual_ee_w = actual_ee_env + env_origin
     gripper_center_env = 0.5 * (left_env + right_env)
     exact_env = exact_w - env_origin
     pregrasp_env = pregrasp_w - env_origin
+    exact_ee_env = exact_ee_w - env_origin
     target_ee_env = target_ee_w - env_origin
     pregrasp_offset = pregrasp_w - exact_w
     pregrasp_offset_m = torch.norm(pregrasp_offset)
@@ -288,31 +333,57 @@ def _collect_sample(task_env, env_id: int, reset_index: int) -> dict[str, object
         "pregrasp_tool_pos_w": _tensor_list(pregrasp_w),
         "pregrasp_tool_pos_root": _tensor_list(_pos_in_root(task_env, env_id, pregrasp_w)),
         "pregrasp_tool_quat_w_wxyz": _tensor_list(task_env.grasp_prior_reset_pregrasp_tool_quat_w[env_id]),
+        "exact_ee_pos_env": _tensor_list(exact_ee_env),
+        "exact_ee_pos_w": _tensor_list(exact_ee_w),
+        "exact_ee_pos_root": _tensor_list(_pos_in_root(task_env, env_id, exact_ee_w)),
+        "exact_ee_quat_w_wxyz": _tensor_list(task_env.grasp_prior_reset_exact_ee_quat_w[env_id]),
         "target_ee_pos_env": _tensor_list(target_ee_env),
         "target_ee_pos_w": _tensor_list(target_ee_w),
         "target_ee_pos_root": _tensor_list(_pos_in_root(task_env, env_id, target_ee_w)),
         "target_ee_quat_w_wxyz": _tensor_list(task_env.grasp_prior_reset_target_ee_quat_w[env_id]),
+        "actual_ee_pos_env": _tensor_list(actual_ee_env),
+        "actual_ee_pos_w": _tensor_list(actual_ee_w),
+        "actual_ee_pos_root": _tensor_list(_pos_in_root(task_env, env_id, actual_ee_w)),
         "left_finger_pos_env": _tensor_list(left_env),
         "right_finger_pos_env": _tensor_list(right_env),
         "left_finger_pos_w": _tensor_list(left_env + env_origin),
         "right_finger_pos_w": _tensor_list(right_env + env_origin),
         "gripper_center_pos_env": _tensor_list(gripper_center_env),
         "gripper_center_pos_w": _tensor_list(gripper_center_env + env_origin),
+        "left_tip_proxy_pos_env": _tensor_list(left_tip_env),
+        "right_tip_proxy_pos_env": _tensor_list(right_tip_env),
+        "left_tip_proxy_pos_w": _tensor_list(left_tip_env + env_origin),
+        "right_tip_proxy_pos_w": _tensor_list(right_tip_env + env_origin),
+        "projected_exact_left_tip_proxy_pos_env": _tensor_list(projected_exact_left_tip_env),
+        "projected_exact_right_tip_proxy_pos_env": _tensor_list(projected_exact_right_tip_env),
+        "projected_exact_left_tip_proxy_pos_w": _tensor_list(projected_exact_left_tip_env + env_origin),
+        "projected_exact_right_tip_proxy_pos_w": _tensor_list(projected_exact_right_tip_env + env_origin),
         "relative_to_cube_env": {
             "left_finger": _tensor_list(left_env - cube_env),
             "right_finger": _tensor_list(right_env - cube_env),
             "gripper_center": _tensor_list(gripper_center_env - cube_env),
             "exact_tool": _tensor_list(exact_env - cube_env),
             "pregrasp_tool": _tensor_list(pregrasp_env - cube_env),
+            "exact_ee": _tensor_list(exact_ee_env - cube_env),
             "target_ee": _tensor_list(target_ee_env - cube_env),
+            "actual_ee": _tensor_list(actual_ee_env - cube_env),
+            "left_tip_proxy": _tensor_list(left_tip_env - cube_env),
+            "right_tip_proxy": _tensor_list(right_tip_env - cube_env),
+            "projected_exact_left_tip_proxy": _tensor_list(projected_exact_left_tip_env - cube_env),
+            "projected_exact_right_tip_proxy": _tensor_list(projected_exact_right_tip_env - cube_env),
         },
         "pregrasp_offset_dir_w": _tensor_list(task_env.grasp_prior_reset_offset_dir_w[env_id]),
         "pregrasp_offset_m": float(pregrasp_offset_m.detach().cpu()),
         "exact_tool_dist_m": _as_float(task_env.grasp_prior_reset_exact_tool_dist[env_id]),
         "pregrasp_tool_dist_m": _as_float(task_env.grasp_prior_reset_pregrasp_tool_dist[env_id]),
+        "exact_ee_dist_m": _as_float(task_env.grasp_prior_reset_exact_ee_dist[env_id]),
+        "pregrasp_ee_dist_m": _as_float(task_env.grasp_prior_reset_pregrasp_ee_dist[env_id]),
         "pregrasp_minus_exact_tool_dist_m": _as_float(
             task_env.grasp_prior_reset_pregrasp_tool_dist[env_id]
             - task_env.grasp_prior_reset_exact_tool_dist[env_id]
+        ),
+        "pregrasp_minus_exact_ee_dist_m": _as_float(
+            task_env.grasp_prior_reset_pregrasp_ee_dist[env_id] - task_env.grasp_prior_reset_exact_ee_dist[env_id]
         ),
         "reset_pos_error_m": _as_float(task_env.grasp_prior_reset_pos_error[env_id]),
         "reset_rot_error_rad": _as_float(task_env.grasp_prior_reset_rot_error[env_id]),
@@ -328,6 +399,18 @@ def _collect_sample(task_env, env_id: int, reset_index: int) -> dict[str, object
         "max_finger_to_cube_dist_m": _as_float(task_env.max_finger_to_cube_dist[env_id]),
         "projected_exact_finger_center_dist_m": _as_float(
             task_env.grasp_prior_reset_projected_exact_finger_center_dist[env_id]
+        ),
+        "projected_exact_tip_center_dist_m": _as_float(
+            task_env.grasp_prior_reset_projected_exact_tip_center_dist[env_id]
+        ),
+        "projected_exact_tip_max_dist_m": _as_float(
+            task_env.grasp_prior_reset_projected_exact_tip_max_dist[env_id]
+        ),
+        "pregrasp_tip_table_clearance_m": _as_float(
+            task_env.grasp_prior_reset_pregrasp_tip_table_clearance[env_id]
+        ),
+        "projected_exact_tip_table_clearance_m": _as_float(
+            task_env.grasp_prior_reset_projected_exact_tip_table_clearance[env_id]
         ),
         "finger_table_clearance_m": _as_float(task_env.finger_table_clearance[env_id]),
         "root_pos_w": _tensor_list(task_env._robot.data.root_pos_w[env_id]),
@@ -353,6 +436,9 @@ def _write_csv(path: Path, samples: list[dict[str, object]]) -> None:
         "exact_tool_dist_m",
         "pregrasp_tool_dist_m",
         "pregrasp_minus_exact_tool_dist_m",
+        "exact_ee_dist_m",
+        "pregrasp_ee_dist_m",
+        "pregrasp_minus_exact_ee_dist_m",
         "offset_radial_dot",
         "offset_radial_angle_deg",
         "gripper_width_m",
@@ -363,6 +449,10 @@ def _write_csv(path: Path, samples: list[dict[str, object]]) -> None:
         "right_finger_to_cube_dist_m",
         "max_finger_to_cube_dist_m",
         "projected_exact_finger_center_dist_m",
+        "projected_exact_tip_center_dist_m",
+        "projected_exact_tip_max_dist_m",
+        "pregrasp_tip_table_clearance_m",
+        "projected_exact_tip_table_clearance_m",
         "finger_table_clearance_m",
     ]
     with path.open("w", encoding="utf-8", newline="") as f:
@@ -463,7 +553,9 @@ def main() -> None:
                 f"success={sample['reset_success']} quality={sample['reset_grasp_quality_success']} "
                 f"width={sample['gripper_width_m']:.5f} margin={sample['open_width_margin_m']:.5f} "
                 f"offset_dot={sample['offset_radial_dot']:.5f} "
-                f"projected_center={sample['projected_exact_finger_center_dist_m']:.5f} "
+                f"body_center={sample['projected_exact_finger_center_dist_m']:.5f} "
+                f"tip_center={sample['projected_exact_tip_center_dist_m']:.5f} "
+                f"tip_max={sample['projected_exact_tip_max_dist_m']:.5f} "
                 f"immediate_done={sample['immediate_done']}",
                 flush=True,
             )
@@ -512,6 +604,22 @@ def main() -> None:
             task_env,
             "grasp_prior_reset_projected_exact_finger_center_dist",
         ),
+        "projected_exact_tip_center_dist_mean_m": _mean_attr(
+            task_env,
+            "grasp_prior_reset_projected_exact_tip_center_dist",
+        ),
+        "projected_exact_tip_max_dist_mean_m": _mean_attr(
+            task_env,
+            "grasp_prior_reset_projected_exact_tip_max_dist",
+        ),
+        "pregrasp_tip_table_clearance_mean_m": _mean_attr(
+            task_env,
+            "grasp_prior_reset_pregrasp_tip_table_clearance",
+        ),
+        "projected_exact_tip_table_clearance_mean_m": _mean_attr(
+            task_env,
+            "grasp_prior_reset_projected_exact_tip_table_clearance",
+        ),
         "frame_paths": [str(path) for path in rendered_frames],
         "video_path": str(video_path) if video_path.exists() else None,
         "csv_path": str(csv_path),
@@ -519,7 +627,9 @@ def main() -> None:
         "env_closed": env_closed,
         "notes": [
             "reset_success measures IK target tracking plus farther/table checks, not grasp-quality geometry",
-            "reset_grasp_quality_success additionally requires open width >= cube size, offset away from cube, and projected exact finger center within one cube size",
+            "reset_grasp_quality_success additionally requires open width >= cube size, offset away from cube, and a projected exact TCP/fingertip proxy near the cube",
+            "panda_hand/tool and DEXTRAH TCP/EE are both reported because the task controls panda_hand plus ee_offset_pos",
+            "body-origin finger distances are retained for reward consistency but are not used alone as grasp-quality geometry",
             "positions are reported in world, env-local, and robot-root frames where applicable",
         ],
     }
