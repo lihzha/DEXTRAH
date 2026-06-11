@@ -619,3 +619,32 @@ Analysis:
 
 Next:
 - Continue monitoring through the next checkpoint/requeue event. If success/lift metrics remain flat after substantially more training, inspect against the baseline learning curve before patching; preserve the apple-to-apple config unless there is a clear reset-prior defect.
+
+## 2026-06-11T19:44:38Z - final 8-GPU training monitor checkpoint
+
+Goal:
+- Record the epoch 100/125 checkpoint window and early behavior evidence for job `28987954`.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- implementation_commit: 99ea26d5b449581988594f40168806642c486326 for the running job; latest branch/worklog commit before this entry is `19eaf870d686e77289dd1853e2d60e8fb74734f5`
+- remote_commit/status: a1001 NFS worktree remains clean at `99ea26d5b449581988594f40168806642c486326`; later local commits are worklog-only monitor records
+
+Command / Job:
+- monitor command: six-sample local polling loop reading `squeue` and rank-0 JSONL from `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005/metrics/direct_info_rank_0.jsonl`
+- job_id: 28987954
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005`
+
+Result:
+- status: running_healthy
+- scheduler: `RUNNING`, elapsed about `00:14:47` at the last sample, node `batch-block5-00308`
+- JSONL scalar health: records advanced from epoch `90` to `146`; `bad_scalar_count=0` at every sample
+- checkpoints: epoch 100 checkpoint `last_dextrah_franka_cube_grasp_ep_100_rew_1739.3138.pth`; epoch 125 checkpoint `last_dextrah_franka_cube_grasp_ep_125_rew_1777.433.pth`; earlier epoch 25/50/75 checkpoints still present
+- prior reset metrics: success/farther rates remain `1.0`; latest reset position error `0.001653 m`; latest reset rotation error `0.017002 rad`; latest finger-table clearance `0.135049 m`
+- behavior/reward metrics: approach reward rose to `1.06079` by epoch 146; enclosure reward rose to `0.60161`; lift reward remains sparse but finite; `cube_has_lifted_rate` produced nonzero samples, including `0.0009765625` at epoch 124 and `0.00048828125` at epoch 146; `cube_success_rate` first showed a nonzero sample of `0.00048828125` at epoch 124, then returned to `0.0` in later samples
+
+Analysis:
+- The final run is still early but no longer completely flat on lift/success, and the primary reset-prior acceptance metrics continue to hold. The reward increase and occasional lift/success samples argue against an immediate reset-path regression. Continue monitoring instead of changing configuration.
+
+Next:
+- Continue monitoring toward the next checkpoints and wall-time/requeue boundary. Inspect whether lift/success become more frequent with training; if not, compare to baseline timing before any code/config intervention.
