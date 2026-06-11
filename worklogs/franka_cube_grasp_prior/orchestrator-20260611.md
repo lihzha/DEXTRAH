@@ -1219,3 +1219,59 @@ Worker C DP BC:
   `dextrah_lab/offline_dp_bc/diagnose_dp_action_semantics.py` diagnostic in
   progress and was re-instructed to finish it before any next training or RL
   handoff.
+
+## 2026-06-11 Monitor Check 21:49 UTC
+
+Worker B trajectory-tracking artifact refresh:
+
+- B fetched and summarized diagnostic eval job `1027753` from the
+  `rew_-inf` checkpoint. Branch commit:
+  `830ad738a3d5ef33c4b7ec079eef1959f2ab8e7d`.
+- Local eval artifacts:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_actionscale_rewinf_diag_video480_20260611_144318`
+- Local summary artifacts:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_actionscale_rewinf_diag_artifacts_20260611_144318`
+- Viewer URLs:
+  - video:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_actionscale_rewinf_diag_video480_20260611_144318/videos/actionscale-rewinf-diag-video480-step-0.mp4`
+  - plot:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_actionscale_rewinf_diag_artifacts_20260611_144318/trajectory_trace_plot.png`
+  - report:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_actionscale_rewinf_diag_artifacts_20260611_144318/report.md`
+  - contact sheet:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_actionscale_rewinf_diag_artifacts_20260611_144318/actionscale_rewinf_contact_sheet.png`
+- Metrics: `480/480` steps, reward mean/final `1.7957/1.4740`,
+  success mean/final `0/0`, cube lift max/final `0.00117/0.0 m`, final
+  EE-to-cube `0.2437 m`, final finger-center-to-cube `0.2417 m`, final
+  gripper width `0.0369 m`, target unsafe max `0`, target clearance min
+  `0.0651 m`.
+- Train/eval consistency JSON passed for tracked fields: observation/action
+  dimensions, cube spawn randomization, phase observations, reference duration,
+  action weights, safety gates, and min gripper width.
+- Visual inspection: first frame is black, but middle/final frames are valid.
+  The hand approaches early and then drifts away; there is no grasp or lift.
+- Interpretation: B currently shows weak learned actions/reference use rather
+  than an obvious train/eval config mismatch. Close utilization mean is only
+  about `0.0456` and lift utilization mean about `0.0014` despite nonzero
+  gates. The `rew_-inf` suffix is expected for a 3-iteration smoke with no env
+  termination, so B was assigned the next task of adding/using
+  episode-independent rollout metrics and a bounded reference/controller
+  feasibility sanity check before any longer RL training.
+
+Worker C DP BC status:
+
+- Offline diagnostics now show the DP checkpoint predicts correct hard-close
+  behavior on exact demo hard-close rows, and EMA/raw checkpoints agree on the
+  live failure. On live hard-close windows, the nearest demo row is still
+  pregrasp/open gripper, but the policy predicts hard close. This points to
+  live rollout distribution/support drift rather than a gripper-sign,
+  normalizer, or history-cadence bug.
+- Config audit says normalizer means match the dataset, PPO-to-lowdim slices
+  match the 72D env layout, framefix action scale/frame metadata matches, and
+  gripper sign physically closes. Live trace remains outside demo support in
+  several EE/cube relative coordinates.
+- C launched real-env teacher-forcing replay job `1027754`
+  (`dextrah_cube_dp_replay`) on l401 with modes
+  `dataset_t,dataset_t_plus_1,dataset_t_plus_7,dp_replan`, `STEPS=8`.
+  The job is running and must be fetched/inspected before any BC warm-start
+  claim.
