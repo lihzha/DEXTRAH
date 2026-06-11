@@ -2660,20 +2660,151 @@ Version Control:
 - worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
 - branch: `codex/franka-cube-diffusion-policy-bc`
 - base_commit: `5e3e27c215cc2421fbcfab203457290864a6320b`
-- implementation_commit: pending commit before launch
-- push/pull: pending
+- implementation_commit: `cdd181dd7311fd913029143b762c81fe83af9d7e`
+- push/pull: pushed to `origin/codex/franka-cube-diffusion-policy-bc`;
+  deployed to l401 agent-owned worktree by Git bundle
 - changed_files:
   - `dextrah_lab/offline_dp_bc/analyze_policy_trace.py`
   - `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+- remote_commit/status:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+  at `cdd181dd7311fd913029143b762c81fe83af9d7e`, detached HEAD,
+  clean at launch.
 
 Command / Job:
-- planned eval:
-  `CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart RUN_NAME=franka_cube_dp_eval_curobo32_full_pick_lift_framefix_overfit2k_chunk8_trace512_<timestamp> NUM_ENVS=1 NUM_STEPS=512 NUM_INFERENCE_STEPS=100 ACTION_CHUNK_STEPS=8 DEBUG_POLICY_TRACE_MAX_CALLS=64 DEBUG_POLICY_TRACE_ENV_INDEX=0 CAPTURE_VIDEO=False PRINT_INTERVAL=32 CHECKPOINT=/results/dp_bc/checkpoints/franka_cube_curobo32_full_pick_lift_framefix_overfit2k/latest.ckpt sbatch cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- eval command:
+  `CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart RUN_NAME=franka_cube_dp_eval_curobo32_full_pick_lift_framefix_overfit2k_chunk8_trace512_20260611_135907 NUM_ENVS=1 NUM_STEPS=512 NUM_INFERENCE_STEPS=100 ACTION_CHUNK_STEPS=8 DEBUG_POLICY_TRACE_MAX_CALLS=64 DEBUG_POLICY_TRACE_ENV_INDEX=0 CAPTURE_VIDEO=False PRINT_INTERVAL=32 CHECKPOINT=/results/dp_bc/checkpoints/franka_cube_curobo32_full_pick_lift_framefix_overfit2k/latest.ckpt sbatch cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- job_id: `1027737`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_curobo32_full_pick_lift_framefix_overfit2k_chunk8_trace512_20260611_135907`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_dp_policy_1027737.out`
 
 Result:
-- status: pending commit/deploy/launch.
+- status: completed, behavior still failed.
+- Slurm: `COMPLETED 0:0`, elapsed `00:01:24`, node `pool0-00016`.
+- local fetched artifacts:
+  - run_dir:
+    `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_curobo32_full_pick_lift_framefix_overfit2k_chunk8_trace512_20260611_135907`
+  - log:
+    `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_logs/l401/eval_franka_cube_dp_policy_1027737.out`
+  - trace analysis:
+    `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/trace_analysis_1027737_framefix_20260611_135907`
+- metrics:
+  - `steps_completed=512`
+  - `reward_final=1.6986042261123657`
+  - `final_success_rate=0.0`, `cube_lift_height max=0.0`
+  - `final_gripper_width=0.0012196956668049097`
+  - `ee_to_cube_dist final/min=0.13433830440044403/0.13275255262851715`
+  - `finger_center_to_cube_dist final/min=0.16798599064350128/0.16150173544883728`
+  - `final_trace_cube_minus_ee=[-0.010522693395614624, -0.10216313600540161, -0.08673244714736938]`
+- trace analysis:
+  - nearest phases: `49` calls `go_to_pre_grasp_pose`, `15` calls `lift_object`
+  - first negative gripper chunk at step `184`
+  - first hard-close chunk at step `208`
+  - first live gripper width `<1cm` at step `216`
+  - first nearest `lift_object` at step `392`
+  - nearest-demo distance increased `0.3563 -> 1.2201`
+  - live cube-minus-EE norm improved `0.2336 -> 0.1344 m`
+
+Analysis:
+- The corrected-label checkpoint no longer simply drives away from the cube and
+  it does close the gripper. The failure is still behaviorally invalid: closure
+  happens while the live cube-relative grasp geometry is not near the converted
+  demo manifold, and no cube lift occurs.
+
+## 2026-06-11T14:08:30-07:00 - systematic DP BC train/eval mismatch audit
+
+Goal:
+- Treat the bad DP BC eval behavior as an implementation mismatch until
+  disproven. Audit action frames, observation extraction/normalization,
+  reset distribution, and temporal chunking before launching any more training,
+  augmentation, or RL warm-start work.
+
+Hypothesis:
+- The framefix checkpoint now closes when the rollout reaches later phases, so
+  the remaining failure is likely train/eval mismatch in observation bridge,
+  reset distribution, temporal semantics, or residual action-frame handling.
+
+Change:
+- Planned new local audit utility:
+  `dextrah_lab/offline_dp_bc/audit_eval_mismatch.py`
+- Planned artifact namespace:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/mismatch_audit_1027737_framefix_20260611_135907`
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `cdd181dd7311fd913029143b762c81fe83af9d7e`
+- implementation_commit: pending local commit for this entry
+- changed_files:
+  - `dextrah_lab/offline_dp_bc/audit_eval_mismatch.py`
+  - `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+
+Command / Job:
+- inputs:
+  - dataset:
+    `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz`
+  - metadata:
+    `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz.metadata.json`
+  - metrics:
+    `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_curobo32_full_pick_lift_framefix_overfit2k_chunk8_trace512_20260611_135907/metrics.json`
+  - trace:
+    `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_curobo32_full_pick_lift_framefix_overfit2k_chunk8_trace512_20260611_135907/policy_trace.json`
+  - trace phase comparison:
+    `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/trace_analysis_1027737_framefix_20260611_135907/trace_phase_comparison.json`
+- planned command:
+  `PYTHONPATH=$DEX $VENV/bin/python -m dextrah_lab.offline_dp_bc.audit_eval_mismatch --dataset <framefix.npz> --metadata <metadata.json> --metrics <metrics.json> --trace <policy_trace.json> --trace-analysis <trace_phase_comparison.json> --output-dir <audit_dir>`
+- actual command:
+  `PYTHONPATH=/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/venv/bin/python -m dextrah_lab.offline_dp_bc.audit_eval_mismatch --dataset /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz --metadata /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz.metadata.json --metrics /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_curobo32_full_pick_lift_framefix_overfit2k_chunk8_trace512_20260611_135907/metrics.json --trace /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_curobo32_full_pick_lift_framefix_overfit2k_chunk8_trace512_20260611_135907/policy_trace.json --trace-analysis /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/trace_analysis_1027737_framefix_20260611_135907/trace_phase_comparison.json --checkpoint /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_debug/run_20260611_135200_curobo32_full_pick_lift_framefix_overfit2k/checkpoints/latest.ckpt --output-dir /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/mismatch_audit_1027737_framefix_20260611_135907`
+- validation:
+  `PYTHONPATH=$PWD /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/venv/bin/python -m py_compile dextrah_lab/offline_dp_bc/audit_eval_mismatch.py`
+
+Result:
+- status: completed.
+- artifact_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/mismatch_audit_1027737_framefix_20260611_135907`
+- files:
+  - `mismatch_audit_report.md`
+  - `audit_summary.json`
+  - `behavior_metrics.png`
+  - `trace_phase_action.png`
+  - `obs_distribution.png`
+  - `trace_phase_rows.csv`
+- viz-open:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/mismatch_audit_1027737_framefix_20260611_135907/trace_phase_action.png`
+- key evidence:
+  - Old pre-framefix checkpoints/videos are stale and invalid for behavior
+    claims.
+  - Dataset action frame uses `world_to_action_quat_wxyz=[0.0, 0.0, 0.0, 1.0]`;
+    eval action scales match `(0.06, 0.06, 0.045)` and `(0.25, 0.25, 0.30)`.
+  - 72D bridge slices match the env layout and checkpoint normalizer matches
+    dataset means (`obs mean max abs diff=6.22868537902832e-05`,
+    action mean diff `0.0`).
+  - Trace lowdim fields outside dataset min/max:
+    `['ee_pos_x', 'ee_pos_y', 'ee_pos_z', 'ee_quat_w', 'cube_pos_z', 'cube_minus_ee_z', 'cube_goal_delta_z']`.
+  - Reset start cube position is within dataset episode-start cube range;
+    nearest dataset start has raw 21D L2 `0.0375`.
+  - Temporal commands are no longer completely wrong: first negative gripper
+    command at step `184`, hard close at `208`, live width `<1cm` at `216`,
+    and first nearest `lift_object` at step `392`.
+  - Actual failure: final cube-minus-EE
+    `[-0.010522693395614624, -0.10216313600540161, -0.08673244714736938]`,
+    EE-to-cube final/min `0.13433830440044403/0.13275255262851715 m`,
+    finger-center final/min `0.16798599064350128/0.16150173544883728 m`,
+    max lift `0.0`.
+
+Analysis:
+- The frame/action convention and checkpoint normalization are now checked and
+  do not explain the bad video. The remaining concrete mismatch is geometric
+  and temporal: the policy starts closing before the dataset close marker and
+  while live cube-relative geometry is still far from the demo grasp geometry.
+- Do not use stale pre-framefix videos/checkpoints for behavior claims.
 
 Next:
-- Commit/push, deploy by Git bundle, launch the bounded trace, fetch metrics
-  and trace, and decide whether the next fix is phase/history conditioning,
-  dataset timing, or a longer/full-pick dataset expansion.
+- Commit/push the audit utility plus this worklog update.
+- Next bounded root-cause check: compare live cube-minus-EE and gripper width
+  against the nearest demo step and against the demo first-close/hard-close
+  geometry; also verify two-step observation-history initialization and
+  action-chunk/repeat timing before any larger training launch.
