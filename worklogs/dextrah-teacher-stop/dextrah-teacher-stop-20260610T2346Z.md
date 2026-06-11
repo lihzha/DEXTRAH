@@ -904,3 +904,48 @@ Analysis:
 Next:
 - Continue active monitoring at a widened cadence while this allocation is
   running.
+
+## 2026-06-10 21:16 PDT - Teacher Monitor Metric Pass
+
+Goal:
+- Verify continued health after the requeue/resume validation and 21:05 pass.
+
+Command / Job:
+- job_id: `28955904`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28955904.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+- local TensorBoard copy:
+  `/tmp/dextrah_teacher_events`
+
+Result:
+- status: running healthy.
+- scheduler: `RUNNING` on `batch-block5-03072`, elapsed `33:48`, time left
+  `03:16:12` at `21:16:21 PDT`.
+- stdout advanced to epoch `16343/20000`.
+- latest complete checkpoint:
+  `last_dextrah_lstm_ep_16340_rew_759.84076.pth` at `21:16:05`.
+- runtime sidecars rank `0-7` refreshed at `21:16:03-21:16:04`.
+- narrow critical failure scan over recent stdout returned no matches.
+- TensorBoard summaries parsed through epoch `16331` for epoch-keyed scalars.
+- `in_success_region/iter`: latest `0.466309`, last-50 `0.460093`,
+  last-200 `0.461899`, post-resume mean `0.463165`.
+- `rewards/iter`: latest `529.719`, last-50 `635.854`,
+  last-200 `636.392`, post-resume mean `640.582`.
+- `num_adr_increases/iter`: latest `50`, last-50 `50`.
+- `info/kl`: latest `0.00856836`, last-50 `0.00685097`,
+  last-200 `0.00621095`.
+- `losses/a_loss`: latest `-0.00297445`, last-50 `-0.00354536`.
+- `losses/c_loss`: latest `0.0186439`, last-50 `0.0179362`.
+- `performance/step_inference_rl_update_fps`: latest `112616`,
+  last-50 about `110392`, last-200 about `109511`.
+
+Analysis:
+- The training curve remains healthy and stable after the requeue. Checkpoints,
+  runtime sidecars, KL, losses, and throughput are all within the expected
+  recent range; the success metric remains above the ADR threshold.
+
+Next:
+- Continue widened active monitoring through the allocation, with tighter
+  polling again near the next wall-time signal window.
