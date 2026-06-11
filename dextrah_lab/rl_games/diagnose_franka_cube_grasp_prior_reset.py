@@ -34,6 +34,8 @@ parser.add_argument("--video_fps", type=int, default=6)
 parser.add_argument("--include_exact_close_check", action="store_true", default=False)
 parser.add_argument("--exact_close_steps", type=int, default=80)
 parser.add_argument("--exact_close_command_width", type=float, default=0.0)
+parser.add_argument("--render_all_resets", action="store_true", default=False)
+parser.add_argument("--render_failed_exact_close", action="store_true", default=False)
 parser.add_argument("--disable_fabric", action="store_true", default=False)
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
@@ -826,7 +828,8 @@ def main() -> None:
                 f"immediate_done={sample['immediate_done']}",
                 flush=True,
             )
-            if reset_index == 0:
+            render_pregrasp = reset_index == 0 or bool(args_cli.render_all_resets)
+            if render_pregrasp:
                 _visualize_markers(markers, task_env, env_id)
                 env_origin = task_env.scene.env_origins[env_id].detach().cpu().tolist()
                 for view in view_specs:
@@ -864,7 +867,12 @@ def main() -> None:
                     f"immediate_done={exact_close['immediate_done']} verdict={exact_close['verdict']}",
                     flush=True,
                 )
-                if reset_index == 0:
+                render_exact_close = (
+                    reset_index == 0
+                    or bool(args_cli.render_all_resets)
+                    or (bool(args_cli.render_failed_exact_close) and not bool(exact_close["enclosure_success"]))
+                )
+                if render_exact_close:
                     _visualize_markers(markers, task_env, env_id, actual_geometry=exact_close)
                     env_origin = task_env.scene.env_origins[env_id].detach().cpu().tolist()
                     for view in view_specs:
@@ -920,6 +928,8 @@ def main() -> None:
         "exact_close_check_enabled": exact_close_enabled,
         "exact_close_steps": int(args_cli.exact_close_steps),
         "exact_close_command_width_m": float(args_cli.exact_close_command_width),
+        "render_all_resets": bool(args_cli.render_all_resets),
+        "render_failed_exact_close": bool(args_cli.render_failed_exact_close),
         "pregrasp_reset_gate_pass": reset_gate_pass,
         "exact_close_gate_pass": exact_close_gate_pass,
         "rl_relaunch_gate_verdict": "PASS" if reset_gate_pass and exact_close_gate_pass else "FAIL",

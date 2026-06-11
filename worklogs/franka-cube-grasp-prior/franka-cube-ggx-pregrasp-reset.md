@@ -1218,3 +1218,117 @@ Analysis:
 
 Next:
 - Complete and run the exact-grasp close visual gate before any RL relaunch.
+
+## 2026-06-11T22:18:28Z - launch exact-grasp close visual gate
+
+Goal:
+- Run the new two-phase reset/pregrasp plus exact-close diagnostic on l401 at the exact implementation commit.
+
+Hypothesis:
+- If the object-local GraspGenX pose and DEXTRAH TCP transform are correct, the phase-1 pregrasp frames will show the 3 cm open RL start state and the phase-2 exact-close frames/metrics will show a physically plausible cube enclosure/contact proxy with no immediate done.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- local_commit: `18fa0b11084500af3c7be022fe23629650b2dec3`
+- pushed: `origin/codex/franka-cube-ggx-pregrasp-reset`
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `18fa0b11084500af3c7be022fe23629650b2dec3`, detached `HEAD`
+- deploy_note: l401 GitHub fetch remains unavailable; deployed via Git bundle into the agent-owned worktree.
+- changed_files: `dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py`, `cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`, this worklog
+
+Command / Job:
+- command: `sbatch --parsable --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=18fa0b11084500af3c7be022fe23629650b2dec3,TASK=Dextrah-Franka-Cube-Grasp,RUN_NAME=franka_cube_ggx_pregrasp_exact_close_20260611_221828,NUM_ENVS=1,NUM_RESETS=5,SEED=20260614,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_smoke.npz,DIAGNOSTIC_ENV_ID=0,RENDER_WIDTH=1280,RENDER_HEIGHT=720,VIDEO_FPS=6,INCLUDE_EXACT_CLOSE_CHECK=1,EXACT_CLOSE_STEPS=100,EXACT_CLOSE_COMMAND_WIDTH=0.0,CAMERA_EYE_X=-0.15,CAMERA_EYE_Y=-1.05,CAMERA_EYE_Z=1.55,CAMERA_TARGET_X=-0.41,CAMERA_TARGET_Y=-0.08,CAMERA_TARGET_Z=0.80 cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`
+- job_id: `1027771`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pregrasp_exact_close_20260611_221828`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/diagnose_franka_cube_prior_1027771.out`
+- expected_artifacts: `reset_geometry.json`, `reset_geometry.csv`, phase-1 and phase-2 labeled frames, and optional MP4
+
+Result:
+- status: submitted
+
+Analysis:
+- This is a bounded l401 diagnostic only. A100 RL relaunch remains blocked until the JSON/CSV and labeled frames/video from this job are inspected and pass.
+
+Next:
+- Monitor `1027771` to terminal state, fetch artifacts locally, build/open a viewer-ready bundle with `viz-open`, and record the pass/fail verdict.
+
+## 2026-06-11T22:31:20Z - plan post exact-close failure diagnosis
+
+Goal:
+- Stay in bounded diagnostic mode after exact-close job `1027771` failed the aggregate gate, and determine whether the issue is the sampled grasp library distribution versus the reset/TCP transform.
+
+Hypothesis:
+- The pregrasp path now passes, and exact IK success was `1.0`, but only 2/5 sampled grasps produced plausible close/enclosure. The observed pass/fail split suggests some top-down library samples put the controlled TCP/fingertip proxy directly over the cube center and close through/push the cube, while samples with lateral TCP offset form a side-biased enclosure. Filtering the compact library to exact-close observed pass samples should make the bounded gate pass if library quality is the main issue.
+
+Change:
+- Produce a local inspectable report from job `1027771` grouping sampled grasp indices, object-local matrices, exact TCP pose, exact-close width/tip/cube-displacement metrics, and pass/fail verdict.
+- Patch the diagnostic renderer so future exact-close jobs can render every reset, or at least failed samples, rather than only reset 0.
+- Create an untracked filtered compact library from exact-close PASS sample indices and rerun the exact-close gate on l401 with `RENDER_ALL_RESETS=1`.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- worklog: `worklogs/franka-cube-grasp-prior/franka-cube-ggx-pregrasp-reset.md`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `18fa0b11084500af3c7be022fe23629650b2dec3`
+- implementation_commit: pending
+- changed_files: planned `dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py`, planned `cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`, this worklog; generated reports/libraries remain untracked artifacts
+
+Command / Job:
+- local analysis: use `/home/lzha/code/graspgenx/.venv/bin/python` for NPZ processing because system `python3` lacks numpy
+- local checks after patch: `python3 -m py_compile dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py`; `bash -n cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`; `git diff --check`
+- l401 rerun: bounded `NUM_ENVS=1`, `NUM_RESETS=5`, exact-close enabled, filtered library path, render all resets, no RL training
+
+Result:
+- status: planned
+
+Analysis:
+- A100 RL remains blocked. Scheduler success of `1027771` is not enough; the inspected metrics show aggregate exact-close failure.
+
+Next:
+- Generate and open the pass/fail report, patch render coverage, commit/push/deploy, stage the filtered library artifact to l401, rerun the exact-close gate, and inspect metrics plus visuals.
+
+## 2026-06-11T22:23:28Z - exact-close failure report and render coverage patch
+
+Goal:
+- Make exact-close job `1027771` inspectable by sampled grasp index and prevent future visual artifacts from showing only one favorable reset.
+
+Change:
+- Generated a local pass/fail report from `1027771`, including object-local matrices and exact TCP/close metrics for each sampled grasp.
+- Created an untracked filtered compact library containing only observed exact-close PASS sample indices `[6, 23]`.
+- Patched `diagnose_franka_cube_grasp_prior_reset.py` and `cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh` with diagnostic-only `render_all_resets` / `RENDER_ALL_RESETS` and `render_failed_exact_close` / `RENDER_FAILED_EXACT_CLOSE` controls.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- worklog: `worklogs/franka-cube-grasp-prior/franka-cube-ggx-pregrasp-reset.md`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `18fa0b11084500af3c7be022fe23629650b2dec3`
+- implementation_commit: pending
+- changed_files: `dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py`, `cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`, this worklog
+
+Command / Job:
+- source diagnostic job: `1027771`
+- source run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pregrasp_exact_close_20260611_221828`
+- source local copy: `cluster_results/l401/franka_cube_ggx_pregrasp_exact_close_20260611_221828`
+- local analysis command: `/home/lzha/code/graspgenx/.venv/bin/python - <<'PY' ...`
+- local checks: `python3 -m py_compile dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py`; `bash -n cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`; `git diff --check`
+- opened report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_exact_close_20260611_221828/analysis_20260611_222328/REPORT.md`
+- opened contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_exact_close_20260611_221828/analysis_20260611_222328/contact_sheet_1027771.png`
+- opened video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_exact_close_20260611_221828/analysis_20260611_222328/exact_close_1027771_frames.mp4`
+- report artifacts: `pass_fail_grasp_report.json`, `pass_fail_grasp_report.csv`, `library_geometry.csv`, `REPORT.md`, `contact_sheet_1027771.png`, `exact_close_1027771_frames.mp4`
+- filtered local library: `local_results/franka_cube_grasp_prior/franka_cube_ggx_grasps_exact_close_pass_1027771.npz`
+
+Result:
+- status: local_report_complete_patch_checks_passed
+- source metrics: `reset_success_rate=1.0`, `reset_quality_success_rate=1.0`, `exact_close_gate_pass=false`, `rl_relaunch_gate_verdict=FAIL`, `exact_close_enclosure_success_rate=0.4`, `exact_close_contact_proxy_success_rate=0.4`, `exact_close_tip_center_dist_mean_m=0.08219`, `exact_close_tip_max_dist_mean_m=0.08689`, `exact_close_cube_pos_delta_mean_m=0.03650`
+- observed PASS samples: `23` and `6`; both have exact TCP relative pose about `[+0.0199, +0.0000, +0.0201]`, observed close width `0.0526/0.0484 m`, tip center distance `0.0336/0.0342 m`, and cube displacement `0.0080/0.0129 m`.
+- observed FAIL samples: `4`, `19`, and `18`; all have nearly centerline exact TCP relative pose about `[-0.0001, +0.0000, +0.0301]`, close width collapsed to `0.0035/0.0002/0.0004 m`; sample `19` also displaced the cube by `0.1488 m`.
+- local checks passed.
+
+Analysis:
+- The exact-close failures are not IK failures (`exact_close_ik_success_rate=1.0`) and not immediate termination pathologies (`exact_close_immediate_done_rate=0.0`). The sampled compact library contains top-down centerline grasps that satisfy pregrasp/TCP proximity but do not reliably close around the cube.
+- Filtering to observed PASS samples is a narrow diagnostic test, not a final library policy. It should show whether library quality/filtering is sufficient to make the exact-close gate pass before designing a broader filter/export rule.
+
+Next:
+- Commit/push/deploy the render-coverage patch, stage the filtered library on l401, rerun the exact-close diagnostic with `RENDER_ALL_RESETS=1`, fetch/open artifacts, and decide whether the filtered library is enough or a better export-time filter is needed.
