@@ -114,3 +114,42 @@ Next:
 - Continue active monitoring, parse TensorBoard once the new event file has
   flushed, and verify loss/reward/success/KL remain healthy after the
   isolated resume.
+
+## 2026-06-10 17:11 PDT - Post-Resume Metric Check
+
+Goal:
+- Verify that the isolated resume is not just advancing stdout, but has healthy
+  scalar metrics and no fresh failure signatures.
+
+Command / Job:
+- job_id: `28955904`
+- metrics source:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021/summaries`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28955904.out`
+
+Result:
+- status: running healthy.
+- TensorBoard parsed through epoch `13521`.
+- `in_success_region/iter`: latest `0.471436`, last-50 `0.455444`,
+  last-200 `0.451368`.
+- `rewards/iter`: latest `671.356`, last-50 `632.381`,
+  last-200 `623.643`.
+- `num_adr_increases/iter`: `50`.
+- `info/kl`: latest `0.00744328`, last-50 `0.00966099`,
+  last-200 `0.00953316`.
+- `losses/a_loss`: last-50 `-0.00408088`.
+- `losses/c_loss`: last-50 `0.0203441`.
+- `performance/step_inference_rl_update_fps`: last-50 about `106459`.
+- recent failure scan found no traceback, RuntimeError, CUDA error, OOM,
+  ChildFailedError, or training-failure signature; only the NCCL version banner
+  matched the broad NCCL pattern.
+
+Analysis:
+- The isolated resume is behaving like the previous healthy run: max ADR,
+  success-region comfortably above `0.4`, stable KL/losses, normal throughput,
+  and fresh checkpoints/sidecars.
+
+Next:
+- Continue active monitoring for checkpoint cadence, metric stability, and the
+  next wall-time requeue window for job `28955904`.
