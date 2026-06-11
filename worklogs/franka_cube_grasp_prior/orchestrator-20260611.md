@@ -945,3 +945,72 @@ Worker A reset-prior final RL:
 - Interpretation: reset-prior mechanics remain healthy and the policy learns
   approach/close behavior, but sustained lift/success is still sparse at this
   training point. Continue monitoring/requeue rather than declaring success.
+
+## 2026-06-11 Monitor Check 21:18 UTC
+
+Worker C DP mismatch audit:
+
+- Worker C finalized and pushed the mismatch-audit utility at branch commit
+  `aad5eef` (`Add Franka DP mismatch audit report utility`).
+- Audit artifact directory:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/mismatch_audit_1027737_framefix_20260611_135907`
+- Audit report viewer:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/mismatch_audit_1027737_framefix_20260611_135907/mismatch_audit_report.md`
+- Plots:
+  `obs_distribution.png`, `trace_phase_action.png`, `behavior_metrics.png`
+  in the same artifact directory; all are nonblank and inspected.
+- Audit result: old pre-framefix videos/checkpoints remain invalid for behavior
+  claims. The framefix action convention, eval action scales, 72D observation
+  bridge layout, and checkpoint normalizer now check out. The failure remains
+  a geometric/temporal train-eval mismatch: the policy closes before the live
+  cube-relative geometry matches the demo grasp geometry.
+- Key evidence: trace fields outside dataset support include `ee_pos_x/y/z`,
+  `ee_quat_w`, `cube_pos_z`, `cube_minus_ee_z`, and `cube_goal_delta_z`;
+  cube-minus-EE z-score is especially bad in x/y. First negative gripper chunk
+  occurs at step `184`, hard close at `208`, live gripper width `<1cm` at
+  `216`, and first nearest `lift_object` phase at `392`. Final
+  cube-minus-EE is about `[-0.0105, -0.1022, -0.0867]`, with EE-to-cube
+  `0.134 m`, finger-center-to-cube `0.168 m`, and lift `0.0`.
+- Worker C was instructed to run a bounded live-vs-demo geometry/history/timing
+  check next: compare cube-minus-EE and gripper width against nearest demo step
+  and first-close/hard-close demo geometry, and verify two-step history
+  initialization plus chunk/repeat timing before any larger DP training.
+
+Worker B trajectory-tracking phase-gated ablation:
+
+- B's phase-gated env smoke `1027739` completed `0:0`; local metrics fetched
+  to:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_phasegate_env_smoke_20260611_140552`
+- Env smoke result: `35` checks passed; reset obs shape `[4,72]`; target
+  unsafe rate `0.0`; target clearance min `0.0651 m`; no nonfinite values.
+  The new close/lift/gate logs are present and finite. Close/lift action reward
+  means are `0.0` in scripted validation because contact gate mean is only
+  `0.0096`, so this proves wiring but not learned behavior.
+- B's tiny phase-gated RL smoke `1027740` completed `0:0`; params fetched to:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_phasegate_rl_smoke_20260611_140730`
+- RL smoke log shows actor/critic input dim `72`, 16 envs, 3 iterations, and
+  checkpoints for epochs 1-3. Remote checkpoints remain under:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_phasegate_rl_smoke_20260611_140730/nn`
+- Resolved config confirms reward-only observation contract and ablation
+  settings: `observation_space=72`, `trajectory_tracking_phase_observations=false`,
+  reference duration `8.0`, min target gripper width `0.024`,
+  close-action weight `0.35`, lift-action weight `0.5`, contact gate max
+  finger distance `0.14`, and contact gate width `0.08`.
+- TensorBoard event file is still `0` bytes; stdout/params/checkpoint listing
+  are the current smoke evidence. Worker B still needs to commit its latest
+  worklog update and should only launch a bounded eval/video before considering
+  any longer training.
+
+Worker A reset-prior final RL:
+
+- A100 job `28987954` remains running at about `1:41` elapsed. Stdout reached
+  epoch `1094`; rank-0 JSONL reached epoch `1103`, frame `1155530752`.
+- Best stdout reward improved to at least `2239.0322` around epoch `1062`;
+  latest observed interval checkpoint is epoch `1075` reward suffix `2220.847`.
+- Latest rank-0 scalar line: reset success `1.0`, reset farther rate `1.0`,
+  reset pos error `0.00184 m`, reset rot error `0.01863 rad`, success rate
+  `0.000488`, lifted rate `0.001465`, EE-to-cube `0.0676 m`,
+  finger-center-to-cube `0.0584 m`, and gripper width `0.00179 m`.
+- Last-50 means: success `2.93e-05`, lifted `4.69e-04`, lift height
+  `1.07e-04 m`, reset success `1.0`, reset farther rate `1.0`. Continue
+  monitoring; not task-solved yet.
