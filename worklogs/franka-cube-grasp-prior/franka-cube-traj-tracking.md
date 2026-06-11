@@ -1348,3 +1348,37 @@ Planned Change:
 Validation Plan:
 - Local: `python3 -m py_compile` on touched Python files, `git diff --check`.
 - Cluster smoke only: `Dextrah-Franka-Cube-Grasp-Traj-Tracking`, 4 envs, short validation rollout against the same 60 mm compact reference. Acceptance: obs remains `[4,72]`, baseline task registration still resolves, runtime summary reports `min_target_gripper_width_m=0.024`, target gripper min is `0.024`, target safety remains clean, tracking metrics finite, and no immediate reset pathology.
+
+Change:
+- implementation_commit: `c786e59eb6058081ff5d0d8b27c1f947b66f1e40`
+- push/pull: pushed to origin and deployed on l401 agent worktree using HTTPS fallback after SSH Git auth failed.
+- remote_commit/status: /lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking at `c786e59eb6058081ff5d0d8b27c1f947b66f1e40`, detached clean.
+- changed_files: `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env_cfg.py`, `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env.py`, `dextrah_lab/rl_games/validate_franka_cube_grasp_env.py`, this worklog.
+
+Local Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env_cfg.py dextrah_lab/rl_games/validate_franka_cube_grasp_env.py dextrah_lab/scene_scripts/summarize_franka_cube_traj_tracking_artifacts.py`: passed.
+- `git diff --check`: passed.
+
+Command / Job:
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:30:00 --job-name=franka_cube_traj_gripclamp_smoke --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_gripclamp_env_smoke_20260611_133800,NUM_ENVS=4,NUM_STEPS=240,VIDEO_LENGTH=240,CAPTURE_VIDEO=False,PRINT_INTERVAL=40,SEED=51,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`
+- job_id: 1027728 `franka_cube_traj_gripclamp_smoke`
+- expected_log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_cube_1027728.out
+- expected_metrics: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_cube_traj_tracking_gripclamp_env_smoke_20260611_133800/metrics.json
+
+Result:
+- status: passed; Slurm completed `0:0` after `00:00:45` on `pool0-00016`.
+- local_artifacts: `cluster_results/l401/franka_cube_traj_tracking_gripclamp_env_smoke_20260611_133800/metrics.json`, `cluster_results/l401/franka_cube_traj_tracking_gripclamp_env_smoke_20260611_133800/validate_franka_cube_1027728.out`
+- validation: `passed=true`, 35 checks, failed checks `[]`, recursive numeric scan `nonfinite_count=0`.
+- task/obs: reset observation shape `[4, 72]`; rollout completed 240/240 steps with `done_count=0`, `early_done_count=0`.
+- gripper_policy: `gripper_schedule_policy=clamp_source_width_to_min_target_gripper_width`; source gripper width min/max `0.0`/`0.07999999821186066`; runtime gripper width min/max `0.024`/`0.07999999821186066`; `min_target_gripper_width_m=0.024`.
+- tracking_reference: external 60 mm compact reference, `duration_s=8.0`, `runtime_duration_s=8.0`, `source_duration_s=22.033333333333335`, `runtime_retime_policy=normalize_to_configured_runtime_duration`, `runtime_object_pose_policy=reset_cube_pose`, `curobo_validated=false`, `validation_passed=true`.
+- target_safety: `tracking_unsafe_target_rate_max=0.0`; target clearance min over rollout `0.06511414051055908`, above configured `0.025`.
+- rollout_behavior: reward mean `2.3197436779737473`, final `7.1029462814331055`; max mean lift `0.031335875391960144`; final success rate `0.25`; final gripper width `0.029464447870850563`; min mean finger-table clearance `0.05007199943065643`.
+
+Analysis:
+- The gripper schedule clamp is wired correctly and does not break registration, observation shape, target transforms, or target safety.
+- This is only a validation rollout, not a learned-policy result. The useful next step is a short RL-Games smoke with this clamp, followed by a bounded eval, to see whether avoiding the raw zero-width target reduces gripper collapse and improves approach/lift metrics.
+
+Next:
+- Commit/push this worklog result.
+- Launch a tiny clamp RL smoke before any longer training: one GPU, 16 envs, 3 iterations, then evaluate the checkpoint for 720 steps if training completes.
