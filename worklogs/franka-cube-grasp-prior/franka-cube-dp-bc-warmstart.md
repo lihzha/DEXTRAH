@@ -4384,3 +4384,85 @@ Next:
 - Acceptance is diagnostic only: reduce action realization error and EE-cube
   distance toward the source trajectory without excessive clipping,
   instability, or gripper/control convention regressions.
+
+## 2026-06-11T16:23:00-07:00 - controller compensation sweep launch
+
+Goal:
+- Test whether replay-only pose-action scaling can make converted cuRobo
+  labels match live DEXTRAH controller EE path magnitude from exact
+  source-joint reset.
+
+Hypothesis:
+- If the problem is controller under-realization, multiplying the first six
+  pose action dimensions should raise the actual/expected realization ratio
+  and reduce EE-to-cube distance without changing gripper semantics. Excessive
+  multipliers should reveal clipping or instability.
+
+Change:
+- Added diagnostic-only `--pose_action_multiplier`.
+- Added diagnostic-only `--action_repeat`, with per-env-step observation
+  history updates even during held-action repeats.
+- Added wrapper variables `POSE_ACTION_MULTIPLIER` and `ACTION_REPEAT`.
+- Report now includes multiplier, repeat, mean/max pose clip fraction, and
+  action-realization audit fields.
+
+Version Control:
+- implementation_commit:
+  `3aa54155ec1e15b333ff8e40cb00f4b33b46eef7`
+- push/pull:
+  - pushed to `origin/codex/franka-cube-diffusion-policy-bc`
+  - deployed to l401 via Git bundle
+    `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart-3aa5415.bundle`
+- remote worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- remote_commit/status:
+  `3aa54155ec1e15b333ff8e40cb00f4b33b46eef7`, detached clean.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/replay_franka_cube_dataset_actions.py`
+- `bash -n cluster/sbatch_replay_franka_cube_dp_actions_1gpu.sh`
+- `git diff --check`
+
+Command / Jobs:
+- shared settings:
+  - `DEMO_RESET_EPISODE=24`, `DEMO_RESET_STEP=0`
+  - `DATASET_START_EPISODE=24`, `DATASET_START_STEP=0`
+  - `MODES=dataset_t,dataset_t_plus_7`
+  - `STEPS=128`, `ACTION_REPEAT=1`, `NUM_ENVS=1`
+  - `CAPTURE_VIDEO=True`, `VIDEO_LENGTH=128`
+  - checkpoint:
+    `/results/dp_bc/checkpoints/franka_cube_curobo32_full_pick_lift_framefix_overfit2k/latest.ckpt`
+  - dataset:
+    `/results/dp_bc/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz`
+- multiplier `3`:
+  - job_id: `1027862`
+  - run_name:
+    `franka_cube_dp_replay_sourcejoint_comp_m3_r1_128_20260611_162300`
+  - log:
+    `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/replay_franka_cube_dp_actions_1027862.out`
+- multiplier `6`:
+  - job_id: `1027863`
+  - run_name:
+    `franka_cube_dp_replay_sourcejoint_comp_m6_r1_128_20260611_162300`
+  - log:
+    `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/replay_franka_cube_dp_actions_1027863.out`
+- multiplier `10`:
+  - job_id: `1027864`
+  - run_name:
+    `franka_cube_dp_replay_sourcejoint_comp_m10_r1_128_20260611_162300`
+  - log:
+    `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/replay_franka_cube_dp_actions_1027864.out`
+
+Expected artifacts:
+- `replay_summary.json`
+- `replay_steps.csv`
+- `replay_report.md`
+- `replay_motion.png`
+- `action_realization_audit.png`
+- per-mode videos and local contact sheets after fetch
+
+Next:
+- Monitor jobs `1027862`, `1027863`, `1027864`, fetch artifacts, create/open
+  viewer URLs, compare filtered realization ratio, EE/finger distance,
+  nearest-demo support, and clip fractions, then decide whether to patch
+  conversion timing or run an action-repeat sweep.
