@@ -1315,3 +1315,63 @@ Next:
 - Commit/push this worklog checkpoint.
 - Start the next bounded scale-up: expand real cuRobo demonstrations beyond 8
   episodes and run a small official-DP validation pretrain, not final BC/RL.
+
+## 2026-06-11T12:59:02-07:00 - 32-demo real cuRobo scale-up plan
+
+Goal:
+- Move beyond the 8-demo mechanics dataset by generating a bounded 32-demo
+  real GraspGenX/cuRobo approach-to-pregrasp dataset and running a small
+  official-DP validation pretrain.
+
+Hypothesis:
+- Increasing from 8 to 32 real cuRobo-validated episodes with varied cube XY
+  positions should reduce the most extreme debug/checkpoint artifacts, while
+  still remaining a mechanics/early-BC scale-up rather than a final BC claim.
+- Approach-to-pregrasp remains the right first expansion because the l401
+  eval smoke showed no lift and saturated actions from an approach-only
+  8-demo checkpoint. Close/lift should be added as a separate ablation after
+  approach behavior and action normalization look sane.
+
+Change:
+- No source edits planned for generation/conversion unless a DEXTRAH bug is
+  found.
+- Planned new artifacts under
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/`:
+  - real cuRobo plan batch `cube_curobo_scale32_<timestamp>_seed{8..31}`;
+  - converted NPZ using existing seed `0..7` trajectories plus new successful
+    seed `8..31` trajectories;
+  - official DP debug-pretrain run with validation split.
+
+Command / Job:
+- generation command: local RTX 6000 Ada, sequential seeds `8..31`, script
+  `dextrah_lab/scene_scripts/plan_franka_cube_graspgenx_curobo.py`, same
+  GraspGenX/cuRobo worktrees as the 8-demo batch:
+  - GraspGenX:
+    `/home/lzha/code/.codex-worktrees/graspgenx/franka-ggx-curobo-local-20260610T234641Z-86074`
+  - cuRobo:
+    `/home/lzha/code/.codex-worktrees/curobo/franka-ggx-curobo-local-20260610T234641Z-86074`
+  - Python:
+    `/home/lzha/code/.codex-worktrees/graspgenx/franka-ggx-curobo-local-20260610T234641Z-86074/.venv/bin/python`
+- planned planner args:
+  `--num_sample_points 1000 --num_grasps 64 --topk 32 --grasp_threshold 0.0 --grasp_planner topdown --moe_obb_density dense --max_plan_attempts 32 --rank_grasps_by_confidence`.
+- conversion: `trajectory_conversion --input-format json --phase-set approach_pregrasp`
+  with the DEXTRAH/GraspGenX FK robot config.
+- official-DP pretrain: external official repo
+  `real-stanford/diffusion_policy@5ba07ac6661db573af695b419a7947ecb704690f`,
+  local venv, validation split `0.25`, bounded `max_train_steps` around
+  `100`, no final/full BC or RL training.
+
+Result:
+- status: planned
+- logs/artifacts: pending
+
+Analysis:
+- Acceptance criterion for data scale-up is not task success. It is:
+  successful cuRobo plan summaries, converted dataset shape/provenance,
+  official-DP training/validation logs without NaNs, finite bridge actions,
+  and a clearer decision about whether action clipping/normalization needs
+  adjustment before any larger pretrain or PPO handoff.
+
+Next:
+- Launch local generation, monitor success/failure logs, then convert and run
+  the bounded official-DP validation pretrain if enough new trajectories pass.
