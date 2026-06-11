@@ -1730,3 +1730,73 @@ Current worker/scheduler state:
   failure. No A100 RL launch is allowed.
 - C is clean locally after the demo-reset run but has been handed the next
   diagnostic assignment.
+
+## 2026-06-11 Monitor Check 23:42 UTC
+
+Worker A reset-prior gate update:
+
+- Same-grasp zero-width exact-close diagnostics completed and were inspected:
+  - `1027775` deterministic XY, single grasp orig006, zero-width close:
+    exact-close enclosure/contact `0.0`, pregrasp gate `1.0`.
+  - `1027776` randomized XY, same grasp, zero-width close: exact-close
+    enclosure/contact `0.2`, pregrasp gate `1.0`.
+- Local zero-width artifacts:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_same_grasp_orig006_detxy_20260611_222927`
+  and
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_same_grasp_orig006_randxy_20260611_222927`
+- Visual interpretation: the gripper stays in the cube neighborhood and the
+  object transform is coherent, but zero-width exact close ends offset/marginal
+  relative to the cube. This points to close-command mechanics rather than an
+  XY transform bug.
+- Light-close follow-up diagnostics completed and passed:
+  - `1027781` deterministic same-grasp light close with
+    `EXACT_CLOSE_COMMAND_WIDTH=0.055`: enclosure/contact `1.0`, cube delta mean
+    `0.00634 m`, `rl_relaunch_gate_verdict=PASS`.
+  - `1027782` randomized same-grasp light close with
+    `EXACT_CLOSE_COMMAND_WIDTH=0.055`: enclosure/contact `1.0`, cube delta mean
+    `0.00647 m`, `rl_relaunch_gate_verdict=PASS`.
+- Viewer URLs:
+  - deterministic light-close sheet:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_same_grasp_orig006_detxy_lightclose_20260611_223441/inspection_20260611_2242/contact_sheet.png`
+  - randomized light-close sheet:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_same_grasp_orig006_randxy_lightclose_20260611_223441/inspection_20260611_2242/contact_sheet.png`
+  - randomized light-close report:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_same_grasp_orig006_randxy_lightclose_20260611_223441/inspection_20260611_2242/REPORT.md`
+- Orchestrator decision: the user's requested A variant resets to open
+  3 cm-offset pregrasp, not a zero-width grasp. The current acceptance gate is
+  pregrasp reset quality plus light-close feasibility, which passes under
+  RL-style cube randomization. A is unblocked for one bounded RL smoke/eval with
+  frequent artifacts, but not for full final-scale A100 training yet.
+
+Worker B policy-reference mix diagnostic:
+
+- B committed `354c9c9 Add policy-reference mix eval diagnostic` and launched
+  alpha sweep jobs `1027777`-`1027780`.
+- Alpha `0.25`, `0.50`, and `0.75` completed with zero success/lift. Higher
+  alpha improved reward and approach, but videos show the hand approaches near
+  the cube mid-rollout and then departs, leaving the cube on the table.
+- Alpha `1.0` completed with transient success/lift:
+  `success_rate_mean=0.01875`, `success_rate_last_window_mean=0.0675`,
+  max lift about `0.102 m`, but `success_rate_final=0.0`.
+- Viewer URLs:
+  - alpha `0.25` quick sheet:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_policy_refmix_a025_video480_20260611_153442/contact_sheet_quick.jpg`
+  - alpha `0.50` quick sheet:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_policy_refmix_a050_video480_20260611_153442/contact_sheet_quick.jpg`
+  - alpha `0.75` quick sheet:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_policy_refmix_a075_video480_20260611_153442/contact_sheet_quick.jpg`
+  - alpha `1.0` quick sheet:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_policy_refmix_a10_video480_20260611_153442/contact_sheet_quick.jpg`
+  - alpha `1.0` video:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_policy_refmix_a10_video480_20260611_153442/videos/policy-refmix-a10-video480-step-0.mp4`
+- Interpretation: the transformed reference/action interface is partially
+  feasible because alpha `1.0` can transiently grasp/lift. The problem is
+  timing/phase/hold stability: the trajectory/reference does not preserve final
+  grasp/lift. B has been asked to produce the full comparison report and then
+  test a bounded terminal-hold/reference-stabilization variant before any PPO
+  tracking-loss scale-up.
+
+Current scheduler state:
+
+- l401 queue was empty after fetching B alpha `1.0` and A light-close
+  diagnostics.
