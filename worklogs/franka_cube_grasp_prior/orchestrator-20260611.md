@@ -462,3 +462,41 @@ Worker C:
 - First l401 DP-eval submission was blocked before scheduling by an invalid
   inherited partition list (`batch_singlenode` on l401). Worker C is patching
   the DP eval launcher to use the l401 `batch` partition.
+
+## 2026-06-11 Monitor Check 19:50 UTC
+
+Final RL job `28987954`:
+
+- still running on a1001 at about 19 minutes elapsed
+- reached at least epoch 194 / 10000
+- rank-0 JSONL: 194 records, `bad_scalar_count=0`
+- prior reset success rate remains `1.0`; average reset position error over
+  the last 20 records about `0.00179 m`
+- best reward messages continue improving up to about `1866.2578`
+- latest success rate `0.0`; last-20 average success rate is a small
+  `2.44e-05`; last-20 lifted-rate average about `2.20e-04`
+
+Worker B:
+
+- External-reference checkpoint eval job `1027700` completed with exit `0:0`.
+- Eval loaded the same 60 mm compact reference path and reported
+  `graspgenx_source=true`, `curobo_validated=false`, `validation_passed=true`,
+  `waypoint_count=9`, and the expected transform/joint policies.
+- Rollout completed 120/120 steps with no non-finite JSON metrics, reward mean
+  about `1.768`, final reward about `1.778`, success rate `0.0`.
+- Tracking metrics were finite: tracking reward mean about `0.04245`, position
+  error mean about `0.348`, orientation error mean about `0.178`, target table
+  clearance min about `0.2456`, unsafe target rate max `0.0`.
+- Worker B's next step is a modest one-GPU scale-up smoke, still not full
+  trajectory-tracking training.
+
+Worker C:
+
+- DP eval job `1027699` failed with no metrics JSON after Isaac task config
+  parsing; a diagnostic checkpoint-import job `1027701` isolated the blocker to
+  official DP importing `wandb` in the Isaac Python environment.
+- The concrete error is protobuf incompatibility:
+  `TypeError: Descriptors cannot be created directly`.
+- Worker C is patching the eval launcher with
+  `PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python` and adding DP eval stage
+  markers before relaunch.
