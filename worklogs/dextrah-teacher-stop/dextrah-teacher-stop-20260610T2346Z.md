@@ -1590,3 +1590,50 @@ Next:
 - Continue shortened cadence; watch whether success returns toward the prior
   `0.46-0.47` band while preparing to tighten near the expected TERM/requeue
   signal.
+
+## 2026-06-11 00:06 PDT - Teacher Monitor Metric Pass
+
+Goal:
+- Verify post-midnight training health and continue tightening before the
+  expected TERM/requeue signal.
+
+Command / Job:
+- job_id: `28955904`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28955904.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+- local TensorBoard copy:
+  `/tmp/dextrah_teacher_events`
+
+Result:
+- status: running healthy.
+- scheduler: `RUNNING` on `batch-block5-03072`, elapsed `03:24:01`,
+  time left `25:59` at `00:06:34 PDT`.
+- stdout advanced to epoch `18425/20000`.
+- latest complete checkpoint:
+  `last_dextrah_lstm_ep_18420_rew_703.6122.pth` at `00:06:05`.
+- runtime sidecars rank `0-7` refreshed at `00:06:02-00:06:03`.
+- narrow critical failure scan over recent stdout returned no matches.
+- TensorBoard summaries parsed through epoch `18412` for epoch-keyed scalars.
+- `in_success_region/iter`: latest `0.467529`, last-50 `0.461406`,
+  last-200 `0.461917`, post-resume mean `0.463093`.
+- `rewards/iter`: latest `642.374`, last-50 `638.052`,
+  last-200 `645.897`, post-resume mean `644.528`.
+- `num_adr_increases/iter`: latest `50`, last-50 `50`.
+- `info/kl`: latest `0.00230432`, last-50 `0.00310831`,
+  last-200 `0.00315776`.
+- `losses/a_loss`: latest `-0.00360745`, last-50 `-0.00290439`.
+- `losses/c_loss`: latest `0.026772`, last-50 `0.0265315`.
+- `performance/step_inference_rl_update_fps`: latest `113213`,
+  last-20 about `107521`, last-50 about `108993`, last-200 about `108888`.
+
+Analysis:
+- Training remains healthy. The prior success dip recovered toward the normal
+  band, reward/KL/losses remain controlled, ADR is saturated, and
+  checkpoint/sidecar cadence is intact. A fresh stdout FPS dip near epochs
+  `18416-18425` is under watch but not reflected as a sustained metric issue.
+
+Next:
+- Keep 5-minute cadence, then tighten to near-continuous validation inside the
+  final 10-15 minutes before expected TERM/requeue.
