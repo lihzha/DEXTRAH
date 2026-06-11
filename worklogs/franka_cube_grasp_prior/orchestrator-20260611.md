@@ -1800,3 +1800,78 @@ Current scheduler state:
 
 - l401 queue was empty after fetching B alpha `1.0` and A light-close
   diagnostics.
+
+## 2026-06-11 Monitor Check 22:49 UTC
+
+Direct user question: `actionscale-rewinf-diag-video480-step-0.mp4`
+
+- Answer: yes, this video is from Worker B / Popper's trajectory-tracking
+  branch, but it is an older failed learned-policy diagnostic, not the current
+  best B artifact.
+- Artifact:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_actionscale_rewinf_diag_video480_20260611_144318/videos/actionscale-rewinf-diag-video480-step-0.mp4`
+- Interpretation: this run drifted/hovered away from the cube and did not
+  grasp. Use it as evidence of a previous failure mode, not as evidence that
+  B's current reference/action path is working.
+
+Worker B current state:
+
+- Current useful B signal is the policy-reference mix sweep, especially alpha
+  `1.0`.
+- Alpha `1.0` recovered transient contact/lift:
+  `success_rate_mean=0.01875`, `success_rate_last_window_mean=0.0675`,
+  `success_rate_final=0.0`, max lift about `0.102 m`.
+- This suggests the transformed reference/delta-IK action interface can reach
+  and lift transiently, but timing/phase/terminal hold is wrong. It is not a
+  learned-policy success and does not authorize PPO scale-up.
+- Current artifact:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_policy_refmix_a10_video480_20260611_153442/videos/policy-refmix-a10-video480-step-0.mp4`
+- Orchestrator instruction sent to B: continue with a bounded terminal hold /
+  reference-stabilization diagnostic and upload artifacts for every run; no
+  long PPO tracking-loss training yet.
+
+Worker C demo-reset fixed-label replay:
+
+- Job `1027792` completed `0:0`:
+  `franka_cube_dp_replay_demoreset_ep24s0_fixedlabels320_20260611_164000`.
+- Local artifacts:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_demoreset_ep24s0_fixedlabels320_20260611_164000`
+- Viewer URLs:
+  - video:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_demoreset_ep24s0_fixedlabels320_20260611_164000/videos/franka-cube-dp-replay-demoreset-fixedlabels-step-0.mp4`
+  - contact sheet:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_demoreset_ep24s0_fixedlabels320_20260611_164000/replay_contact_sheet.jpg`
+  - report:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_demoreset_ep24s0_fixedlabels320_20260611_164000/replay_report.md`
+  - plot:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_demoreset_ep24s0_fixedlabels320_20260611_164000/replay_motion.png`
+- Metrics:
+  - fixed `dataset_open_t_plus_7`: final EE-cube `0.1861 m`, final
+    finger-cube `0.1757 m`.
+  - fixed `dataset_t`: final EE-cube `0.1848 m`, final finger-cube
+    `0.1746 m`.
+  - `dp_replan`: min EE-cube `0.1314 m`, final EE-cube `0.1323 m`, final
+    finger-cube `0.1619 m`, final gripper width `0.0009 m`.
+- Important report finding: demo cube reset matches, but
+  `exact_robot_joint_reset_available=false`; the converted lowdim NPZ has no
+  Franka joint state, so the robot remains at task reset. Fixed-label replay
+  therefore starts from a robot state that does not actually match the selected
+  demo robot state.
+- Orchestrator interpretation: do not treat C's wrapper verdict as sufficient.
+  The video/metrics are not acceptable for BC warm start. C must first prove
+  replay from a matched robot state, either by recovering Franka joint state or
+  resetting by IK to the dataset EE pose/cube-minus-EE, and must audit action
+  semantics before more BC/RL.
+
+Current scheduler state:
+
+- After the B nudge, B implemented the hold diagnostic at local/remote commit
+  `d8956ac8131e26130ebba16be6082119c71e22a7` and launched job `1027825`
+  (`refmix_hold_a10`) on l401.
+- B run:
+  `franka_cube_traj_tracking_refmix_hold_a10_video480_20260611_154910`.
+- B log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1027825.out`.
+- C job `1027792` is complete and artifacts are fetched.
+- Continue monitoring A/B/C; do not launch final-scale RL until bounded
+  diagnostics produce visually and quantitatively acceptable artifacts.
