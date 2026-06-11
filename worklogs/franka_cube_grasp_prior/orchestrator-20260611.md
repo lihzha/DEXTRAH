@@ -43,3 +43,36 @@ The official project page links the sim/real repo and describes Diffusion
 Policy as a conditional denoising diffusion process for visuomotor policy
 learning with receding-horizon action prediction.
 
+## 2026-06-11 Worker Completion Update
+
+All three workers reported completion. No full training, cluster job, or Isaac
+smoke was launched by the workers.
+
+| Role | Final commit | Remote branch status | Local status | Validation summary | Remaining blocker |
+| --- | --- | --- | --- | --- | --- |
+| Variant 1 reset prior | `86ae7dfc5820e59ad310ef7c2ac1f64a49e0e399` | present on `origin/codex/franka-cube-ggx-pregrasp-reset` | worktree has untracked `local_results/` smoke artifact only | compile passed; GraspGenX import/list grippers passed; exported 32 centered-cube grasps, confidence `0.6894..0.7568`, `cube_size_m=0.06`, `tool_frame=panda_hand`, `pregrasp_farther_fraction=1.0` | local Isaac reset smoke blocked by missing Isaac Sim launcher/runtime |
+| Trajectory tracking alternative | `92556e3215938ca222bd60cf1ddab6c1531b21f3` | present on `origin/codex/franka-cube-trajectory-tracking` | clean | py_compile passed; compact reference validator passed 11/11 checks; 5 phase waypoints; no joint arrays; approximate EE table margin `0.060 m`; original baseline registration unchanged | gym registration import blocked locally by missing `gymnasium`; reference is template and `curobo_validated=false` |
+| Diffusion Policy BC warm start | `a21857f58ce211cb67f3174e56bb49c5f8f64ae8` | present on `origin/codex/franka-cube-diffusion-policy-bc` after orchestrator push | clean | py_compile passed; synthetic DP dataset smoke passed with obs `[8, 21]`, action `[8, 7]`, replay error `0.0`; converter CLI smoke passed; YAML parse passed | official Diffusion Policy one-step train blocked locally because `diffusion_policy` and `omegaconf` are not installed |
+
+Notes:
+
+- Worker C's final worklog said the branch was not pushed, while the agent
+  notification said it was pushed. The orchestrator verified the branch was
+  absent on `origin`, then pushed
+  `codex/franka-cube-diffusion-policy-bc` to `origin` at `a21857f`.
+- Worker A's untracked artifact is:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/local_results/franka_cube_grasp_prior/franka_cube_ggx_grasps_smoke.npz`.
+
+## Integration Queue
+
+Recommended next steps before merging any worker branch into `main`:
+
+1. Review Worker A's diff first because it is the main apple-to-apple variant.
+   Run a real Isaac reset smoke in an environment with Isaac Sim/Isaac Lab
+   available before launching training.
+2. Review Worker B as a separate experimental task id. Require a real
+   GraspGenX/cuRobo-exported, collision-validated reference before any training
+   claims.
+3. Review Worker C as offline utilities only. Install or clone the official
+   `real-stanford/diffusion_policy` environment and run a one-step train/debug
+   check on a real converted dataset before treating it as a trainable BC path.
