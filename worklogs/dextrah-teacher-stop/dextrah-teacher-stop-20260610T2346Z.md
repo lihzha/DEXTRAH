@@ -680,3 +680,44 @@ Analysis:
 
 Next:
 - Continue periodic monitoring and tighten near `20:20 PDT`.
+
+## 2026-06-10 20:00 PDT - Teacher Monitor Metric Pass
+
+Goal:
+- Verify run health with under 45 minutes remaining in the current allocation.
+
+Command / Job:
+- job_id: `28955904`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28955904.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+
+Result:
+- status: running healthy.
+- scheduler: running on `batch-block5-03072`, time left `43:54`.
+- stdout advanced to epoch `15618/20000`.
+- latest complete checkpoint:
+  `last_dextrah_lstm_ep_15610_rew_675.95154.pth`.
+- sidecars refreshed in stdout at `19:59:42`.
+- narrow failure scan returned no matches.
+- TensorBoard parsed through epoch `15604`.
+- `in_success_region/iter`: latest `0.453613`, last-50 `0.455356`,
+  last-200 `0.456844`.
+- `rewards/iter`: latest `639.124`, last-50 `636.983`,
+  last-200 `637.528`.
+- `num_adr_increases/iter`: `50`.
+- `info/kl`: latest `0.0100831`, last-50 `0.00663687`,
+  last-200 `0.00735408`.
+- `losses/a_loss`: last-50 `-0.00402971`.
+- `losses/c_loss`: last-50 `0.0232297`.
+- `performance/step_inference_rl_update_fps`: latest `112705`,
+  last-50 about `109075`, last-200 about `109375`.
+
+Analysis:
+- Metrics remain healthy and stable. Checkpoint cadence, sidecar refreshes, and
+  rolling throughput are all normal.
+
+Next:
+- Continue five-minute monitoring through about `20:20 PDT`, then shorten
+  cadence for signal/requeue validation.
