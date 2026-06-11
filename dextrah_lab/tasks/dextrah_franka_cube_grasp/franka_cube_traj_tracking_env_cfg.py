@@ -13,6 +13,10 @@ class DextrahFrankaCubeTrajTrackingEnvCfg(DextrahFrankaCubeGraspEnvCfg):
 
     trajectory_tracking_enabled = True
     trajectory_tracking_reference_path = ""
+    # Normalize compact reference timestamps to this runtime horizon.  The
+    # original GraspGenX/cuRobo export can be much longer than the 10 s DEXTRAH
+    # episode; source timing is still reported in the runtime summary.
+    trajectory_tracking_reference_duration_s = 8.0
 
     # Keep the first variant reward-only.  Enabling reference observations is a
     # separate ablation because it changes the observation contract.

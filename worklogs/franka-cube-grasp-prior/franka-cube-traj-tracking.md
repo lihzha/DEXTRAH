@@ -1081,3 +1081,23 @@ Next:
 - Commit and push this worklog result first, per orchestrator request.
 - Patch the trajectory-tracking variant to retime external compact references to a runtime horizon shorter than the DEXTRAH episode, while preserving source timing in the reference summary and keeping `curobo_validated=false`.
 - Add a validator check that the runtime reference duration fits within the task episode, then rerun task-registration/env smoke before any further RL.
+
+## 2026-06-11T13:25:00-07:00 - reference retiming patch plan
+
+Goal:
+- Fix the identified trajectory timing mismatch without changing the production `Dextrah-Franka-Cube-Grasp` baseline or adding reference observations.
+
+Hypothesis:
+- The 60 mm compact GraspGenX/cuRobo export is a task-space path with useful approach/grasp/lift phases, but its source timestamps span `22.033333333333335` s. Retiming the same task-space waypoints to an 8 s runtime reference should let a 10 s DEXTRAH episode reach all phases and expose the grasp/lift curriculum to RL.
+- Because the source export is still not exact DEXTRAH-geometry/cuRobo-validated in one single run, runtime summaries must continue reporting `curobo_validated=false` and the 45 mm vs 60 mm history remains a caveat.
+
+Planned Change:
+- `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env_cfg.py`: add `trajectory_tracking_reference_duration_s=8.0`.
+- `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env.py`: preserve source timestamps/duration, normalize waypoint timestamps to the configured runtime duration when positive, and report source/runtime durations plus the retime policy in `trajectory_tracking_reference_summary()`.
+- `dextrah_lab/rl_games/validate_franka_cube_grasp_env.py`: check that the runtime reference duration fits within the task episode and expose the source/runtime timing in validation metrics.
+- Owned worklog: record patch, checks, l401 deploy, job ids, and metrics.
+
+Validation Plan:
+- Local cheap checks: `python3 -m py_compile` on touched Python files, `git diff --check`, wrapper syntax as needed.
+- Commit/push, deploy exact commit to `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking`.
+- First cluster validation only: `Dextrah-Franka-Cube-Grasp-Traj-Tracking`, 4 envs, short rollout, same 60 mm compact reference. Acceptance: obs stays `[4, 72]`, baseline task registration still resolves, summary reports runtime duration `8.0` s and source duration `22.033333333333335` s, tracking terms finite, unsafe target rate `0.0`, target clearance above margin, no immediate reset pathology.

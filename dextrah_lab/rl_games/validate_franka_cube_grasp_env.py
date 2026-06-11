@@ -326,6 +326,20 @@ def _run_tracking_reset_checks(task_env, checks: CheckRecorder) -> dict[str, obj
         summary.get("curobo_validated") is False,
         **summary,
     )
+    runtime_duration_s = float(summary.get("runtime_duration_s", summary.get("duration_s", 0.0)) or 0.0)
+    episode_length_s = float(
+        getattr(task_env.cfg, "episode_length_s", 0.0)
+        or (float(getattr(task_env, "max_episode_length", 0)) * float(getattr(task_env, "dt", 0.0)))
+    )
+    checks.check(
+        "trajectory_tracking_runtime_duration_within_episode",
+        runtime_duration_s > 0.0 and (episode_length_s <= 0.0 or runtime_duration_s <= episode_length_s),
+        runtime_duration_s=runtime_duration_s,
+        source_duration_s=float(summary.get("source_duration_s", 0.0) or 0.0),
+        configured_runtime_duration_s=float(summary.get("configured_runtime_duration_s", 0.0) or 0.0),
+        runtime_retime_policy=summary.get("runtime_retime_policy"),
+        episode_length_s=episode_length_s,
+    )
 
     if hasattr(task_env, "_update_trajectory_tracking_targets"):
         task_env._update_trajectory_tracking_targets()

@@ -60,8 +60,26 @@ class DextrahFrankaCubeTrajTrackingEnv(DextrahFrankaCubeGraspEnv):
             float(waypoint.get("gripper_width", float(self.cfg.max_gripper_width))) for waypoint in waypoints
         ]
         tracking_weight = [float(waypoint.get("tracking_weight", 1.0)) for waypoint in waypoints]
+        source_start_time = float(times[0])
+        source_end_time = float(times[-1])
+        source_duration = max(source_end_time - source_start_time, 0.0)
+        runtime_duration_cfg = float(getattr(self.cfg, "trajectory_tracking_reference_duration_s", 0.0) or 0.0)
+        if runtime_duration_cfg > 0.0 and source_duration > 1.0e-6:
+            runtime_times = [
+                (float(time_s) - source_start_time) / source_duration * runtime_duration_cfg for time_s in times
+            ]
+            retime_policy = "normalize_to_configured_runtime_duration"
+        else:
+            runtime_times = times
+            retime_policy = "use_source_timestamps"
 
-        self.traj_ref_times = torch.tensor(times, dtype=torch.float32, device=self.device)
+        self.traj_ref_source_start_time = source_start_time
+        self.traj_ref_source_end_time = source_end_time
+        self.traj_ref_source_duration = source_duration
+        self.traj_ref_runtime_duration_cfg = runtime_duration_cfg
+        self.traj_ref_retime_policy = retime_policy
+
+        self.traj_ref_times = torch.tensor(runtime_times, dtype=torch.float32, device=self.device)
         self.traj_ref_pos_object = torch.tensor(pos_object, dtype=torch.float32, device=self.device)
         self.traj_ref_quat_object = torch.tensor(quat_object, dtype=torch.float32, device=self.device)
         self.traj_ref_quat_object = self.traj_ref_quat_object / torch.clamp(
@@ -70,7 +88,7 @@ class DextrahFrankaCubeTrajTrackingEnv(DextrahFrankaCubeGraspEnv):
         )
         self.traj_ref_gripper_width = torch.tensor(gripper_width, dtype=torch.float32, device=self.device)
         self.traj_ref_tracking_weight = torch.tensor(tracking_weight, dtype=torch.float32, device=self.device)
-        self.traj_ref_duration = float(times[-1])
+        self.traj_ref_duration = float(runtime_times[-1])
 
         self.traj_target_ee_pos = torch.zeros(self.num_envs, 3, device=self.device)
         self.traj_target_ee_quat = torch.zeros(self.num_envs, 4, device=self.device)
@@ -248,6 +266,12 @@ class DextrahFrankaCubeTrajTrackingEnv(DextrahFrankaCubeGraspEnv):
             "graspgenx_source": bool(source.get("graspgenx_source", False)) if isinstance(source, dict) else False,
             "waypoint_count": int(self.traj_ref_times.numel()) if hasattr(self, "traj_ref_times") else 0,
             "duration_s": float(self.traj_ref_duration) if hasattr(self, "traj_ref_duration") else 0.0,
+            "runtime_duration_s": float(self.traj_ref_duration) if hasattr(self, "traj_ref_duration") else 0.0,
+            "source_duration_s": float(getattr(self, "traj_ref_source_duration", 0.0)),
+            "source_start_time_s": float(getattr(self, "traj_ref_source_start_time", 0.0)),
+            "source_end_time_s": float(getattr(self, "traj_ref_source_end_time", 0.0)),
+            "configured_runtime_duration_s": float(getattr(self, "traj_ref_runtime_duration_cfg", 0.0)),
+            "runtime_retime_policy": getattr(self, "traj_ref_retime_policy", "uninitialized"),
             "transform_policy": tracking.get("transform_policy") if isinstance(tracking, dict) else None,
             "joint_trajectory_policy": tracking.get("joint_trajectory_policy") if isinstance(tracking, dict) else None,
             "runtime_object_pose_policy": runtime_object_pose_policy,
