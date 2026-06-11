@@ -115,3 +115,60 @@ Result:
 
 Next:
 - Orchestrator can inspect/cherry-pick commit `8ac8dc54cc3841ca623be242c448a54361ff44ec` and run Isaac Lab smoke validation in an environment with the DEXTRAH dependencies installed.
+
+## 2026-06-11T12:09:00-07:00 - resumed Isaac smoke plan
+
+Goal:
+- Move beyond the local scaffold and validate `Dextrah-Franka-Cube-Grasp-Traj-Tracking` in a real Isaac/DEXTRAH runtime, or reach a hard external blocker.
+
+Hypothesis:
+- The existing Franka cube validation entry point can be extended to assert tracking-specific runtime evidence while preserving the baseline task, then run as a small l401 smoke if local dependencies remain unavailable.
+
+Plan:
+- Re-check local runtime availability from this worktree: GPU, `gymnasium`, Isaac Lab imports, repo wrappers, and a short validation command when feasible.
+- Patch the validation script only as needed to record tracking reward/log finite checks, baseline registration sanity, reference source metadata, and immediate termination/reset pathology.
+- Run cheap local syntax/reference checks after edits.
+- If local remains blocked, commit and push fixes, deploy exact commit to an agent-owned l401 worktree with Git/LFS, and launch a small one-GPU Isaac validation smoke. No full training.
+- Monitor the l401 job to completion, inspect logs/metrics/artifacts, patch and relaunch if the smoke fails for code reasons.
+
+Acceptance Criteria:
+- New task id registers in Isaac runtime.
+- Original `Dextrah-Franka-Cube-Grasp` registration still resolves.
+- Reset observation dim remains baseline size 72 for the tracking variant.
+- Tracking reward/log terms are finite and visible.
+- Runtime metadata makes the manual template's `curobo_validated=false` state explicit.
+- Short rollout has no NaN/Inf, no immediate reset/termination spike, and no tracking target table-clearance pathology.
+
+Version Control:
+- agent_id: franka-cube-traj-tracking
+- worktree: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking
+- worklog: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/worklogs/franka-cube-grasp-prior/franka-cube-traj-tracking.md
+- branch: codex/franka-cube-trajectory-tracking
+- base_commit: 92556e3215938ca222bd60cf1ddab6c1531b21f3
+- implementation_commit: pending
+- push/pull: pending after edits
+- changed_files: pending
+- remote_commit/status: pending if l401 fallback is needed
+
+Command / Job:
+- command: `nvidia-smi -L`
+- command: `python3 - <<'PY' ... import gymnasium, isaaclab, isaaclab_tasks, torch ...`
+- command: `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_reference.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env_cfg.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env.py dextrah_lab/scene_scripts/make_franka_cube_traj_tracking_reference.py dextrah_lab/rl_games/validate_franka_cube_grasp_env.py dextrah_lab/tasks/dextrah_franka_cube_grasp/gym_setup.py`
+- command: `PYTHONDONTWRITEBYTECODE=1 python3 dextrah_lab/scene_scripts/make_franka_cube_traj_tracking_reference.py --validate-only`
+- command: `bash -n cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`
+- job_id: n/a
+- run_dir: n/a
+- logs: terminal stdout/stderr only
+- artifacts: no retained local artifacts
+
+Result:
+- status: local Isaac runtime blocked; validation-script patch cheap checks passed
+- metrics/artifacts: local host has GPUs `NVIDIA RTX 6000 Ada Generation` and `NVIDIA T400 4GB`; `/usr/bin/python3` is Python 3.12.3 but lacks `gymnasium`, `isaaclab`, `isaaclab_tasks`, and `torch`.
+- key evidence: reference template validation passed with `curobo_validated=false`; shell wrapper syntax check passed.
+
+Analysis:
+- Local GPU exists, but the active local Python is not a DEXTRAH/Isaac Lab runtime. A real local smoke is therefore externally blocked by missing local dependencies, so the next valid execution surface is l401 using the DEXTRAH Isaac Lab container.
+- The validation script now needs to be committed and deployed before l401 launch because it adds the required tracking-specific evidence checks.
+
+Next:
+- Commit and push the validation-check patch, deploy the exact commit into an agent-owned l401 worktree, and run a small `Dextrah-Franka-Cube-Grasp-Traj-Tracking` validation smoke through the repo wrapper with `TASK` and `CODE_NFS` overrides.

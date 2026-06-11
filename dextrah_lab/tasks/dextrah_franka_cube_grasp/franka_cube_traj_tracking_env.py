@@ -10,7 +10,11 @@ import isaaclab.utils.math as math_utils
 
 from .franka_cube_grasp_env import DextrahFrankaCubeGraspEnv
 from .franka_cube_traj_tracking_env_cfg import DextrahFrankaCubeTrajTrackingEnvCfg
-from .franka_cube_traj_tracking_reference import build_template_reference, load_reference_payload
+from .franka_cube_traj_tracking_reference import (
+    build_template_reference,
+    load_reference_payload,
+    validate_reference_payload,
+)
 
 
 class DextrahFrankaCubeTrajTrackingEnv(DextrahFrankaCubeGraspEnv):
@@ -45,6 +49,8 @@ class DextrahFrankaCubeTrajTrackingEnv(DextrahFrankaCubeGraspEnv):
                 max_gripper_width_m=float(self.cfg.max_gripper_width),
             )
             self._trajectory_tracking_reference_source = "builtin_manual_template_pending_validation"
+        self._trajectory_tracking_reference_payload = payload
+        self._trajectory_tracking_reference_validation_records = validate_reference_payload(payload)
 
         waypoints = payload["waypoints"]
         times = [float(waypoint["time_s"]) for waypoint in waypoints]
@@ -201,3 +207,24 @@ class DextrahFrankaCubeTrajTrackingEnv(DextrahFrankaCubeGraspEnv):
         for key, value in log_terms.items():
             self.extras[key] = value
         return tracking_reward
+
+    def trajectory_tracking_reference_summary(self) -> dict[str, object]:
+        payload = getattr(self, "_trajectory_tracking_reference_payload", {})
+        source = payload.get("source", {}) if isinstance(payload, dict) else {}
+        tracking = payload.get("tracking", {}) if isinstance(payload, dict) else {}
+        records = getattr(self, "_trajectory_tracking_reference_validation_records", [])
+        failed_records = [record.get("name", "<unnamed>") for record in records if not bool(record.get("passed"))]
+        return {
+            "enabled": bool(self.cfg.trajectory_tracking_enabled),
+            "source": getattr(self, "_trajectory_tracking_reference_source", None),
+            "source_tag": source.get("tag") if isinstance(source, dict) else None,
+            "planner": source.get("planner") if isinstance(source, dict) else None,
+            "curobo_validated": bool(source.get("curobo_validated", False)) if isinstance(source, dict) else False,
+            "graspgenx_source": bool(source.get("graspgenx_source", False)) if isinstance(source, dict) else False,
+            "waypoint_count": int(self.traj_ref_times.numel()) if hasattr(self, "traj_ref_times") else 0,
+            "duration_s": float(self.traj_ref_duration) if hasattr(self, "traj_ref_duration") else 0.0,
+            "transform_policy": tracking.get("transform_policy") if isinstance(tracking, dict) else None,
+            "joint_trajectory_policy": tracking.get("joint_trajectory_policy") if isinstance(tracking, dict) else None,
+            "validation_passed": len(failed_records) == 0,
+            "failed_validation_records": failed_records,
+        }

@@ -52,6 +52,10 @@ import dextrah_lab.tasks.dextrah_franka_star_kitting.gym_setup  # noqa: F401
 from dextrah_lab.tasks.dextrah_franka_cube_grasp.franka_cube_grasp_rewards import (
     compute_franka_cube_grasp_rewards,
 )
+from dextrah_lab.tasks.dextrah_franka_cube_grasp.franka_cube_traj_tracking_reference import (
+    build_template_reference,
+    validate_reference_payload,
+)
 
 
 DEFAULT_CAMERA_EYE = (-0.10, -0.78, 1.42)
@@ -253,6 +257,94 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
         open_far_reward=_mean(_reward_total(**base)),
         closed_far_reward=_mean(_reward_total(**closed_far)),
     )
+
+
+def _run_registration_checks(task: str, checks: CheckRecorder) -> None:
+    registered: dict[str, str] = {}
+    for task_id in ("Dextrah-Franka-Cube-Grasp", task):
+        try:
+            spec = gym.spec(task_id)
+            registered[task_id] = str(spec.entry_point)
+        except Exception as exc:
+            checks.check("task_registration_resolves", False, task=task_id, error=repr(exc))
+            return
+    checks.check(
+        "task_registration_resolves",
+        True,
+        baseline_entry_point=registered["Dextrah-Franka-Cube-Grasp"],
+        requested_entry_point=registered[task],
+    )
+
+
+def _run_reference_loader_checks(checks: CheckRecorder) -> None:
+    payload = build_template_reference()
+    records = validate_reference_payload(payload)
+    checks.check(
+        "trajectory_reference_template_valid",
+        all(bool(record["passed"]) for record in records),
+        curobo_validated=bool(payload["source"]["curobo_validated"]),
+        waypoint_count=len(payload["waypoints"]),
+        failed=[record["name"] for record in records if not bool(record["passed"])],
+    )
+
+    bad_payload = build_template_reference()
+    bad_payload["waypoints"][0]["joint_position"] = [0.0]
+    bad_records = validate_reference_payload(bad_payload)
+    bad_failed = [record["name"] for record in bad_records if not bool(record["passed"])]
+    checks.check(
+        "trajectory_reference_rejects_joint_arrays",
+        "no_joint_trajectory_arrays" in bad_failed,
+        failed=bad_failed,
+    )
+
+
+def _run_tracking_reset_checks(task_env, checks: CheckRecorder) -> dict[str, object]:
+    if not bool(getattr(task_env.cfg, "trajectory_tracking_enabled", False)):
+        return {"enabled": False}
+
+    summary = (
+        task_env.trajectory_tracking_reference_summary()
+        if hasattr(task_env, "trajectory_tracking_reference_summary")
+        else {"enabled": True, "summary_missing": True}
+    )
+    checks.check(
+        "trajectory_tracking_reference_runtime_summary",
+        bool(summary.get("enabled"))
+        and int(summary.get("waypoint_count", 0)) >= 2
+        and summary.get("transform_policy") == "transform_task_space_waypoints_by_cube_pose"
+        and summary.get("joint_trajectory_policy") == "do_not_transform_joint_trajectories",
+        **summary,
+    )
+    checks.check(
+        "trajectory_tracking_template_marked_unvalidated",
+        summary.get("curobo_validated") is False,
+        **summary,
+    )
+
+    if hasattr(task_env, "_update_trajectory_tracking_targets"):
+        task_env._update_trajectory_tracking_targets()
+    target_tensors = {
+        "traj_target_ee_pos": getattr(task_env, "traj_target_ee_pos", None),
+        "traj_target_ee_quat": getattr(task_env, "traj_target_ee_quat", None),
+        "traj_target_gripper_width": getattr(task_env, "traj_target_gripper_width", None),
+        "traj_target_tracking_weight": getattr(task_env, "traj_target_tracking_weight", None),
+        "traj_target_table_clearance": getattr(task_env, "traj_target_table_clearance", None),
+    }
+    finite_targets = all(value is not None and torch.isfinite(value).all().item() for value in target_tensors.values())
+    min_clearance = float(target_tensors["traj_target_table_clearance"].detach().min().cpu())
+    checks.check(
+        "trajectory_tracking_targets_finite",
+        bool(finite_targets),
+        min_target_table_clearance=min_clearance,
+        required_margin=float(task_env.cfg.trajectory_tracking_min_target_table_clearance),
+    )
+    checks.check(
+        "trajectory_tracking_targets_clear_table",
+        min_clearance >= float(task_env.cfg.trajectory_tracking_min_target_table_clearance),
+        min_target_table_clearance=min_clearance,
+        required_margin=float(task_env.cfg.trajectory_tracking_min_target_table_clearance),
+    )
+    return summary
 
 
 def _write_cube_pose(task_env, pos_local: torch.Tensor, has_lifted: bool) -> None:
@@ -462,9 +554,24 @@ def _run_short_rollout(env, task_env, checks: CheckRecorder, num_steps: int, pri
 
     reward_values: list[float] = []
     done_count = 0
+    early_done_count = 0
     max_lift = _mean(task_env.cube_lift_height)
     max_xy_error = _mean(task_env.cube_xy_error)
     min_finger_table_clearance = _mean(task_env.finger_table_clearance)
+    tracking_enabled = bool(getattr(task_env.cfg, "trajectory_tracking_enabled", False))
+    tracking_log_keys = (
+        "cube_traj_tracking_reward",
+        "cube_traj_tracking_position_error",
+        "cube_traj_tracking_orientation_error",
+        "cube_traj_tracking_gripper_error",
+        "cube_traj_tracking_target_table_clearance",
+        "cube_traj_tracking_unsafe_target_rate",
+    )
+    tracking_log_seen = {key: False for key in tracking_log_keys}
+    tracking_log_finite = True
+    tracking_reward_values: list[float] = []
+    tracking_unsafe_values: list[float] = []
+    tracking_clearance_values: list[float] = []
     for step in range(num_steps):
         actions = torch.zeros(task_env.num_envs, task_env.cfg.action_space, device=task_env.device)
         if step > num_steps // 3:
@@ -479,10 +586,28 @@ def _run_short_rollout(env, task_env, checks: CheckRecorder, num_steps: int, pri
             obs, rewards, dones, _ = step_out
         policy_obs = obs["policy"] if isinstance(obs, dict) else obs
         reward_values.append(_mean(rewards))
-        done_count += int(dones.float().sum().detach().cpu()) if isinstance(dones, torch.Tensor) else 0
+        step_done_count = int(dones.float().sum().detach().cpu()) if isinstance(dones, torch.Tensor) else 0
+        done_count += step_done_count
+        if step < min(5, num_steps):
+            early_done_count += step_done_count
         max_lift = max(max_lift, _mean(task_env.cube_lift_height))
         max_xy_error = max(max_xy_error, _mean(task_env.cube_xy_error))
         min_finger_table_clearance = min(min_finger_table_clearance, _mean(task_env.finger_table_clearance))
+        if tracking_enabled:
+            log_terms = task_env.extras.get("log", {})
+            for key in tracking_log_keys:
+                value = log_terms.get(key)
+                if value is None:
+                    continue
+                tracking_log_seen[key] = True
+                if isinstance(value, torch.Tensor):
+                    tracking_log_finite = tracking_log_finite and bool(torch.isfinite(value).all().item())
+                if key == "cube_traj_tracking_reward":
+                    tracking_reward_values.append(_mean(value))
+                elif key == "cube_traj_tracking_unsafe_target_rate":
+                    tracking_unsafe_values.append(_mean(value))
+                elif key == "cube_traj_tracking_target_table_clearance":
+                    tracking_clearance_values.append(_mean(value))
 
         if not bool(torch.isfinite(policy_obs).all().item()):
             checks.check("rollout_observation_finite", False, step=step)
@@ -516,17 +641,49 @@ def _run_short_rollout(env, task_env, checks: CheckRecorder, num_steps: int, pri
         cube_z_min=float(task_env.cube_pos[:, 2].detach().min().cpu()),
         done_count=done_count,
     )
+    checks.check(
+        "rollout_no_immediate_termination_spike",
+        early_done_count == 0,
+        early_done_count=early_done_count,
+        early_window_steps=min(5, num_steps),
+        total_done_count=done_count,
+    )
+    tracking_summary: dict[str, object] = {"enabled": tracking_enabled}
+    if tracking_enabled:
+        missing_tracking_logs = [key for key, seen in tracking_log_seen.items() if not seen]
+        tracking_summary = {
+            "enabled": True,
+            "missing_logs": missing_tracking_logs,
+            "tracking_reward_mean": sum(tracking_reward_values) / len(tracking_reward_values)
+            if tracking_reward_values
+            else None,
+            "tracking_reward_final": tracking_reward_values[-1] if tracking_reward_values else None,
+            "tracking_unsafe_target_rate_max": max(tracking_unsafe_values) if tracking_unsafe_values else None,
+            "tracking_target_table_clearance_min": min(tracking_clearance_values) if tracking_clearance_values else None,
+        }
+        checks.check(
+            "trajectory_tracking_logs_present_and_finite",
+            len(missing_tracking_logs) == 0 and tracking_log_finite,
+            **tracking_summary,
+        )
+        checks.check(
+            "trajectory_tracking_runtime_targets_safe",
+            bool(tracking_unsafe_values) and max(tracking_unsafe_values) <= 0.0,
+            **tracking_summary,
+        )
     return {
         "steps_completed": len(reward_values),
         "reward_mean": sum(reward_values) / len(reward_values) if reward_values else None,
         "reward_final": reward_values[-1] if reward_values else None,
         "done_count": done_count,
+        "early_done_count": early_done_count,
         "max_mean_lift": max_lift,
         "max_mean_xy_error": max_xy_error,
         "min_mean_finger_table_clearance": min_finger_table_clearance,
         "final_cube_pos_mean": _tensor_list(task_env.cube_pos.mean(dim=0)),
         "final_gripper_width": _mean(task_env.gripper_width),
         "final_success_rate": _mean(task_env.in_success_region.float()),
+        "tracking": tracking_summary,
     }
 
 
@@ -549,6 +706,8 @@ def main() -> None:
     _configure_validation_camera(env_cfg)
 
     checks = CheckRecorder()
+    _run_registration_checks(args_cli.task, checks)
+    _run_reference_loader_checks(checks)
     _run_reward_checks(args_cli.device, checks)
 
     gym_env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)
@@ -576,6 +735,7 @@ def main() -> None:
             observed_shape=list(policy_obs.shape),
             expected_shape=[task_env.num_envs, task_env.cfg.observation_space],
         )
+        tracking_reference_summary = _run_tracking_reset_checks(task_env, checks)
         _run_predicate_checks(task_env, checks)
         rollout_summary = _run_short_rollout(gym_env, task_env, checks, args_cli.num_steps, args_cli.print_interval)
     finally:
@@ -590,6 +750,7 @@ def main() -> None:
         "output_dir": str(output_dir),
         "video_enabled": args_cli.video,
         "video_folder": str(video_folder) if args_cli.video else None,
+        "tracking_reference": tracking_reference_summary,
         "env_closed": env_closed,
     }
     metrics_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
