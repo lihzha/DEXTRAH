@@ -3714,3 +3714,57 @@ Next:
   - `DEMO_RESET_STEP=0`
   - `NUM_ENVS=1`, `NUM_STEPS=320`, `ACTION_CHUNK_STEPS=1`,
     `DEBUG_POLICY_TRACE_MAX_CALLS=320`, `CAPTURE_VIDEO=True`, `SEED=42`
+
+## 2026-06-11T16:07:00-07:00 - demo-conditioned reset eval launch
+
+Goal:
+- Run the bounded matched-demo reset diagnostic requested after support-trace
+  job `1027767`.
+
+Hypothesis:
+- Demo episode `24`, row `0` was the nearest support episode at the start of
+  the failing support-trace run. If resetting the cube to this demo row makes
+  the policy stay in support and close near the cube, the main problem is env
+  reset/demo conditioning. If not, continue to robot/pregrasp alignment,
+  history seeding, observation semantics, or policy rollout semantics.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- implementation_commit: `7913a82694f86bd21465145deca452b032070634`
+- push/pull:
+  - pushed to `origin/codex/franka-cube-diffusion-policy-bc`
+  - l401 GitHub fetch failed with `Permission denied (publickey)`; deployed
+    the exact commit through a Git bundle, not rsync, into the agent-owned
+    l401 worktree.
+- remote worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- remote_commit/status:
+  `7913a82694f86bd21465145deca452b032070634`, detached clean.
+- official Diffusion Policy commit:
+  `5ba07ac6661db573af695b419a7947ecb704690f`
+
+Command / Job:
+- job_id: `1027773`
+- run_name:
+  `franka_cube_dp_eval_framefix_overfit2k_demoreset_ep24s0_video320_20260611_160700`
+- command:
+  `RUN_NAME=franka_cube_dp_eval_framefix_overfit2k_demoreset_ep24s0_video320_20260611_160700 CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart CHECKPOINT=/results/dp_bc/checkpoints/franka_cube_curobo32_full_pick_lift_framefix_overfit2k/latest.ckpt SUPPORT_DATASET=/results/dp_bc/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz DEMO_RESET_DATASET=/results/dp_bc/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz DEMO_RESET_EPISODE=24 DEMO_RESET_STEP=0 NUM_ENVS=1 NUM_STEPS=320 VIDEO_LENGTH=320 NUM_INFERENCE_STEPS=100 ACTION_CHUNK_STEPS=1 DEBUG_POLICY_TRACE_MAX_CALLS=320 DEBUG_POLICY_TRACE_ENV_INDEX=0 PRINT_INTERVAL=32 CAPTURE_VIDEO=True SEED=42 sbatch cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- remote run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_framefix_overfit2k_demoreset_ep24s0_video320_20260611_160700`
+- remote log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_dp_policy_1027773.out`
+- expected artifacts:
+  - `metrics.json`
+  - `policy_trace.json`
+  - `support_trace.json`
+  - `support_trace.csv`
+  - `videos/*.mp4`
+
+Acceptance:
+- Scheduler success is not enough. Fetch and inspect metrics, support trace,
+  policy trace, video, contact sheet, and support-drift report.
+- Pass for the hypothesis means the demo reset starts near the selected demo
+  row and the rollout enters close/grasp/lift support before closing.
+- Failure means support drift persists despite object/demo reset; next bounded
+  diagnostic should tighten robot pregrasp alignment and/or history seeding.
