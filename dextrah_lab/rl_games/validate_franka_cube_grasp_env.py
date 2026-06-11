@@ -138,6 +138,9 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
         "xy_stability_weight": 1.0,
         "xy_stability_sharpness": 12.0,
         "success_bonus_weight": 15.0,
+        "close_action_weight": 0.3,
+        "lift_action_weight": 1.0,
+        "descend_action_penalty_weight": -1.0,
         "gripper_close_reg_weight": -0.002,
         "action_penalty_weight": -0.0005,
     }
@@ -187,10 +190,29 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
     lift_intent["actions"] = torch.tensor([[0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -1.0]], device=device)
     checks.check(
         "reward_lift_intent_without_lift_is_capped",
-        bool((_reward_total(**lift_intent) < 0.35 * _reward_total(**lifted)).item()),
+        bool((_reward_total(**lift_intent) < 0.45 * _reward_total(**lifted)).item()),
         lift_intent_reward=_mean(_reward_total(**lift_intent)),
         lifted_reward=_mean(_reward_total(**lifted)),
-        lifted_fraction_cap=0.35,
+        lifted_fraction_cap=0.45,
+    )
+
+    descend_intent = dict(closed_near)
+    descend_intent["actions"] = torch.tensor([[0.0, 0.0, -1.0, 0.0, 0.0, 0.0, -1.0]], device=device)
+    checks.check(
+        "reward_penalizes_descend_when_lift_ready",
+        bool((_reward_total(**descend_intent) < _reward_total(**closed_near)).item()),
+        closed_reward=_mean(_reward_total(**closed_near)),
+        descend_reward=_mean(_reward_total(**descend_intent)),
+    )
+
+    lift_far = dict(base)
+    lift_far["gripper_width"] = torch.tensor([0.024], device=device)
+    lift_far["actions"] = torch.tensor([[0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -1.0]], device=device)
+    checks.check(
+        "reward_lift_action_is_near_gated",
+        bool((_reward_total(**lift_intent) > _reward_total(**lift_far)).item()),
+        near_lift_intent_reward=_mean(_reward_total(**lift_intent)),
+        far_lift_intent_reward=_mean(_reward_total(**lift_far)),
     )
 
     dragged = dict(closed_near)
@@ -282,24 +304,31 @@ def _run_predicate_checks(task_env, checks: CheckRecorder) -> None:
         float(task_env.cfg.cube_xy_stability_weight),
         float(task_env.cfg.cube_xy_stability_sharpness),
         float(task_env.cfg.cube_success_bonus_weight),
+        float(task_env.cfg.cube_close_action_weight),
+        float(task_env.cfg.cube_lift_action_weight),
+        float(task_env.cfg.cube_descend_action_penalty_weight),
         float(task_env.cfg.cube_gripper_close_reg_weight),
         float(task_env.cfg.cube_action_penalty_weight),
     )
     approach_reward = prelift_rewards[0]
     enclosure_reward = prelift_rewards[1]
-    gripper_close_reg = prelift_rewards[6]
+    close_action_reward = prelift_rewards[6]
+    gripper_close_reg = prelift_rewards[9]
     approach_value = _mean(approach_reward)
     enclosure_value = _mean(enclosure_reward)
+    close_action_value = _mean(close_action_reward)
     gripper_close_reg_value = _mean(gripper_close_reg)
     checks.check(
         "reward_accepts_success_geometry_for_prelift_enclosure",
         (
             approach_value > 0.10
             and enclosure_value > 0.10
+            and close_action_value >= 0.0
             and gripper_close_reg_value > -0.001
         ),
         approach_reward=approach_value,
         enclosure_reward=enclosure_value,
+        close_action_reward=close_action_value,
         gripper_close_reg=gripper_close_reg_value,
         hand_mean_dist=_mean(task_env.hand_to_cube_mean_dist),
         hand_max_dist=_mean(task_env.hand_to_cube_max_dist),
@@ -328,21 +357,28 @@ def _run_predicate_checks(task_env, checks: CheckRecorder) -> None:
         float(task_env.cfg.cube_xy_stability_weight),
         float(task_env.cfg.cube_xy_stability_sharpness),
         float(task_env.cfg.cube_success_bonus_weight),
+        float(task_env.cfg.cube_close_action_weight),
+        float(task_env.cfg.cube_lift_action_weight),
+        float(task_env.cfg.cube_descend_action_penalty_weight),
         float(task_env.cfg.cube_gripper_close_reg_weight),
         float(task_env.cfg.cube_action_penalty_weight),
     )
     lift_reward = lifted_rewards[2]
     success_bonus = lifted_rewards[5]
+    lift_action_reward = lifted_rewards[7]
     lift_value = _mean(lift_reward)
     success_bonus_value = _mean(success_bonus)
+    lift_action_value = _mean(lift_action_reward)
     checks.check(
         "reward_accepts_success_geometry_for_lift",
         (
             lift_value > 1.0
             and success_bonus_value > 0.0
+            and lift_action_value >= 0.0
         ),
         lift_reward=lift_value,
         success_bonus=success_bonus_value,
+        lift_action_reward=lift_action_value,
         hand_mean_dist=_mean(task_env.hand_to_cube_mean_dist),
         hand_max_dist=_mean(task_env.hand_to_cube_max_dist),
         finger_center_dist=_mean(task_env.finger_center_to_cube_dist),

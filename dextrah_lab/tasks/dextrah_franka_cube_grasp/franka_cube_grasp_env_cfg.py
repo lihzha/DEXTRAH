@@ -59,6 +59,9 @@ class DextrahFrankaCubeGraspEnvCfg(DextrahFrankaStarKittingEnvCfg):
     cube_xy_stability_weight = 1.0
     cube_xy_stability_sharpness = 12.0
     cube_success_bonus_weight = 15.0
+    cube_close_action_weight = 0.3
+    cube_lift_action_weight = 1.0
+    cube_descend_action_penalty_weight = -1.0
     cube_gripper_close_reg_weight = -0.002
     cube_action_penalty_weight = -0.0005
 

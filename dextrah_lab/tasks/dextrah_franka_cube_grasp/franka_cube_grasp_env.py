@@ -100,6 +100,9 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             height_tracking_reward,
             xy_stability_reward,
             success_bonus,
+            close_action_reward,
+            lift_action_reward,
+            descend_action_penalty,
             gripper_close_reg,
             action_penalty,
         ) = compute_franka_cube_grasp_rewards(
@@ -123,6 +126,9 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             float(self.cfg.cube_xy_stability_weight),
             float(self.cfg.cube_xy_stability_sharpness),
             float(self.cfg.cube_success_bonus_weight),
+            float(self.cfg.cube_close_action_weight),
+            float(self.cfg.cube_lift_action_weight),
+            float(self.cfg.cube_descend_action_penalty_weight),
             float(self.cfg.cube_gripper_close_reg_weight),
             float(self.cfg.cube_action_penalty_weight),
         )
@@ -133,6 +139,9 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             + height_tracking_reward
             + xy_stability_reward
             + success_bonus
+            + close_action_reward
+            + lift_action_reward
+            + descend_action_penalty
             + gripper_close_reg
             + action_penalty
         )
@@ -143,6 +152,9 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             "cube_height_tracking_reward": height_tracking_reward.mean(),
             "cube_xy_stability_reward": xy_stability_reward.mean(),
             "cube_success_bonus": success_bonus.mean(),
+            "cube_close_action_reward": close_action_reward.mean(),
+            "cube_lift_action_reward": lift_action_reward.mean(),
+            "cube_descend_action_penalty": descend_action_penalty.mean(),
             "cube_gripper_close_reg": gripper_close_reg.mean(),
             "cube_action_penalty": action_penalty.mean(),
             "cube_lift_height": self.cube_lift_height.mean(),

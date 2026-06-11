@@ -27,10 +27,13 @@ def compute_franka_cube_grasp_rewards(
     xy_stability_weight: float,
     xy_stability_sharpness: float,
     success_bonus_weight: float,
+    close_action_weight: float,
+    lift_action_weight: float,
+    descend_action_penalty_weight: float,
     gripper_close_reg_weight: float,
     action_penalty_weight: float,
 ):
-    """Compute KUKA-cube-shaped rewards for Franka cube pickup."""
+    """Compute KUKA-cube-shaped rewards plus gated Franka gripper action shaping."""
 
     lift_denom = target_lift_height
     if lift_denom < 1.0e-6:
@@ -38,6 +41,8 @@ def compute_franka_cube_grasp_rewards(
 
     mean_finger_to_cube_dist = 0.5 * (left_finger_to_cube_dist + right_finger_to_cube_dist)
     max_finger_to_cube_dist = torch.maximum(left_finger_to_cube_dist, right_finger_to_cube_dist)
+    finger_distance_asymmetry = torch.abs(left_finger_to_cube_dist - right_finger_to_cube_dist)
+    finger_balance_gate = 1.0 - torch.clamp((finger_distance_asymmetry - 0.025) / 0.075, 0.0, 1.0)
     near_gate = torch.exp(-approach_sharpness * mean_finger_to_cube_dist)
     enclosure_gate = torch.exp(-enclosure_sharpness * max_finger_to_cube_dist)
     lift_progress = torch.clamp(cube_lift_height / lift_denom, 0.0, 1.0)
@@ -47,6 +52,13 @@ def compute_franka_cube_grasp_rewards(
     if gripper_width_denom < 1.0e-6:
         gripper_width_denom = 1.0e-6
     gripper_open_fraction = torch.clamp(gripper_width / gripper_width_denom, 0.0, 1.0)
+    closed_gripper = torch.clamp((0.90 * max_gripper_width - gripper_width) / (0.65 * max_gripper_width), 0.0, 1.0)
+    prelift_gate = 1.0 - lift_progress
+    near_enclosure_gate = (
+        torch.clamp((0.180 - max_finger_to_cube_dist) / 0.100, 0.0, 1.0)
+        * (0.25 + 0.75 * finger_balance_gate)
+    )
+    lift_ready_gate = near_enclosure_gate * closed_gripper * xy_stability
 
     approach_reward = approach_weight * near_gate
     enclosure_reward = enclosure_weight * enclosure_gate
@@ -54,6 +66,11 @@ def compute_franka_cube_grasp_rewards(
     height_tracking_reward = height_tracking_weight * height_tracking * near_gate
     xy_stability_reward = xy_stability_weight * xy_stability
     success_bonus = success_bonus_weight * in_success_region.float()
+    close_action_reward = close_action_weight * prelift_gate * near_enclosure_gate * torch.clamp(-actions[:, 6], 0.0, 1.0)
+    lift_action_reward = lift_action_weight * prelift_gate * lift_ready_gate * torch.clamp(actions[:, 2], 0.0, 1.0)
+    descend_action_penalty = (
+        descend_action_penalty_weight * prelift_gate * lift_ready_gate * torch.clamp(-actions[:, 2], 0.0, 1.0)
+    )
     gripper_close_reg = gripper_close_reg_weight * gripper_open_fraction * gripper_open_fraction
     action_penalty = action_penalty_weight * torch.sum(actions * actions, dim=-1)
 
@@ -64,6 +81,9 @@ def compute_franka_cube_grasp_rewards(
         height_tracking_reward,
         xy_stability_reward,
         success_bonus,
+        close_action_reward,
+        lift_action_reward,
+        descend_action_penalty,
         gripper_close_reg,
         action_penalty,
     )

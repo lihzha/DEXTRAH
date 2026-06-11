@@ -441,3 +441,39 @@ Decision:
   tightly-gated Franka-specific close/up action shaping so the parallel gripper
   receives a gradient toward closing near the cube and lifting only after a
   near/enclosed/closed pre-grasp.
+
+## 2026-06-10 17:25 PDT - Gated Franka Lift/Close Shaping Patch
+
+Change:
+- Preserved the KUKA-shaped state reward components:
+  `approach`, `enclosure`, actual `lift`, height tracking, XY stability,
+  success bonus, gripper width regularizer, and action penalty.
+- Added three Franka-specific action terms gated by pre-lift,
+  near/enclosed/balanced fingers, closed gripper, and XY stability:
+  - `cube_close_action_reward`, weight `0.3`
+  - `cube_lift_action_reward`, weight `1.0`
+  - `cube_descend_action_penalty`, weight `-1.0`
+- Added scalar logging for the three new terms.
+- Updated the Franka cube validator to check:
+  - intent-only lift remains capped below actual-lift reward;
+  - downward z is penalized when lift-ready;
+  - lift action reward is near-gated and not available far from the cube;
+  - success-geometry reward checks include the new tuple layout.
+
+Files:
+- `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_rewards.py`
+- `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env_cfg.py`
+- `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`
+- `dextrah_lab/rl_games/validate_franka_cube_grasp_env.py`
+
+Local Validation:
+- `python3 -m py_compile ...` passed for the reward, config, env, and
+  validator files.
+- `git diff --check` passed.
+- A direct local reward probe was attempted but local Python lacks `torch`;
+  cluster validation will execute the reward checks inside the Isaac
+  environment.
+
+Next:
+- Commit/push this patch, update the isolated A100 worktree, rerun the Franka
+  cube validator, and only then launch the next bounded PPO attempt.
