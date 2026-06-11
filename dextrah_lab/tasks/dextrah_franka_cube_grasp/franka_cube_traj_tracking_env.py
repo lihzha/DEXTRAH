@@ -222,10 +222,23 @@ class DextrahFrankaCubeTrajTrackingEnv(DextrahFrankaCubeGraspEnv):
         self.traj_target_safe_mask[:] = safe_target
         self.traj_effective_tracking_weight[:] = effective_phase_weight
 
+        reference_reweight_phase_start = float(
+            getattr(self.cfg, "trajectory_tracking_reference_reweight_phase_start", 1.0)
+        )
+        late_reference_scale = float(getattr(self.cfg, "trajectory_tracking_reference_late_weight_scale", 1.0))
+        reference_phase_gate = torch.clamp(
+            (self.traj_phase_progress - reference_reweight_phase_start)
+            / max(1.0 - reference_reweight_phase_start, 1.0e-6),
+            0.0,
+            1.0,
+        )
+        reference_reweight = 1.0 + reference_phase_gate * (late_reference_scale - 1.0)
+        tracking_term_weight = effective_phase_weight * reference_reweight
+
         position_error = torch.norm(self.ee_pos - self.traj_target_ee_pos, dim=-1)
         position_reward = (
             float(self.cfg.trajectory_tracking_position_weight)
-            * effective_phase_weight
+            * tracking_term_weight
             * torch.exp(-float(self.cfg.trajectory_tracking_position_sharpness) * position_error)
         )
 
@@ -234,14 +247,14 @@ class DextrahFrankaCubeTrajTrackingEnv(DextrahFrankaCubeGraspEnv):
         orientation_error = 1.0 - quat_alignment
         orientation_reward = (
             float(self.cfg.trajectory_tracking_orientation_weight)
-            * effective_phase_weight
+            * tracking_term_weight
             * torch.exp(-float(self.cfg.trajectory_tracking_orientation_sharpness) * orientation_error)
         )
 
         gripper_error = torch.abs(self.gripper_width - self.traj_target_gripper_width)
         gripper_reward = (
             float(self.cfg.trajectory_tracking_gripper_weight)
-            * effective_phase_weight
+            * tracking_term_weight
             * torch.exp(-float(self.cfg.trajectory_tracking_gripper_sharpness) * gripper_error)
         )
 
@@ -274,21 +287,31 @@ class DextrahFrankaCubeTrajTrackingEnv(DextrahFrankaCubeGraspEnv):
         contact_gate = contact_distance_gate * (0.25 + 0.75 * finger_balance_gate)
         close_action_signal = torch.clamp(-self.actions[:, 6], 0.0, 1.0)
         lift_action_signal = torch.clamp(self.actions[:, 2], 0.0, 1.0)
-        close_action_reward = (
+        close_action_reward_ceiling = (
             float(getattr(self.cfg, "trajectory_tracking_close_action_weight", 0.0))
             * effective_phase_weight
             * closed_target_gate
             * close_phase_gate
             * contact_gate
-            * close_action_signal
         )
-        lift_action_reward = (
+        lift_action_reward_ceiling = (
             float(getattr(self.cfg, "trajectory_tracking_lift_action_weight", 0.0))
             * effective_phase_weight
             * closed_target_gate
             * lift_phase_gate
             * contact_gate
-            * lift_action_signal
+        )
+        close_action_reward = close_action_reward_ceiling * close_action_signal
+        lift_action_reward = lift_action_reward_ceiling * lift_action_signal
+        close_action_utilization = torch.where(
+            close_action_reward_ceiling > 1.0e-8,
+            close_action_reward / torch.clamp(close_action_reward_ceiling, min=1.0e-8),
+            torch.zeros_like(close_action_reward),
+        )
+        lift_action_utilization = torch.where(
+            lift_action_reward_ceiling > 1.0e-8,
+            lift_action_reward / torch.clamp(lift_action_reward_ceiling, min=1.0e-8),
+            torch.zeros_like(lift_action_reward),
         )
 
         tracking_reward = position_reward + orientation_reward + gripper_reward + close_action_reward + lift_action_reward
@@ -302,6 +325,10 @@ class DextrahFrankaCubeTrajTrackingEnv(DextrahFrankaCubeGraspEnv):
                 "cube_traj_tracking_gripper_reward": gripper_reward.mean(),
                 "cube_traj_tracking_close_action_reward": close_action_reward.mean(),
                 "cube_traj_tracking_lift_action_reward": lift_action_reward.mean(),
+                "cube_traj_tracking_close_action_reward_ceiling": close_action_reward_ceiling.mean(),
+                "cube_traj_tracking_lift_action_reward_ceiling": lift_action_reward_ceiling.mean(),
+                "cube_traj_tracking_close_action_utilization": close_action_utilization.mean(),
+                "cube_traj_tracking_lift_action_utilization": lift_action_utilization.mean(),
                 "cube_traj_tracking_position_error": position_error.mean(),
                 "cube_traj_tracking_orientation_error": orientation_error.mean(),
                 "cube_traj_tracking_gripper_error": gripper_error.mean(),
@@ -319,6 +346,8 @@ class DextrahFrankaCubeTrajTrackingEnv(DextrahFrankaCubeGraspEnv):
                 "cube_traj_tracking_curriculum_scale": torch.tensor(curriculum_scale, device=self.device),
                 "cube_traj_tracking_phase_weight": phase_weight.mean(),
                 "cube_traj_tracking_effective_phase_weight": effective_phase_weight.mean(),
+                "cube_traj_tracking_reference_reweight": reference_reweight.mean(),
+                "cube_traj_tracking_tracking_term_weight": tracking_term_weight.mean(),
                 "cube_traj_tracking_target_table_clearance": self.traj_target_table_clearance.mean(),
                 "cube_traj_tracking_target_table_clearance_min": self.traj_target_table_clearance.min(),
                 "cube_traj_tracking_safe_target_rate": safe_target.float().mean(),

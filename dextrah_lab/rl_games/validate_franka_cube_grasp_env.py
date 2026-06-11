@@ -598,6 +598,10 @@ def _run_short_rollout(env, task_env, checks: CheckRecorder, num_steps: int, pri
         "cube_traj_tracking_gripper_error",
         "cube_traj_tracking_close_action_reward",
         "cube_traj_tracking_lift_action_reward",
+        "cube_traj_tracking_close_action_reward_ceiling",
+        "cube_traj_tracking_lift_action_reward_ceiling",
+        "cube_traj_tracking_close_action_utilization",
+        "cube_traj_tracking_lift_action_utilization",
         "cube_traj_tracking_closed_target_gate",
         "cube_traj_tracking_close_phase_gate",
         "cube_traj_tracking_lift_phase_gate",
@@ -609,6 +613,8 @@ def _run_short_rollout(env, task_env, checks: CheckRecorder, num_steps: int, pri
         "cube_traj_tracking_action_z",
         "cube_traj_tracking_gripper_action",
         "cube_traj_tracking_effective_phase_weight",
+        "cube_traj_tracking_reference_reweight",
+        "cube_traj_tracking_tracking_term_weight",
         "cube_traj_tracking_target_table_clearance",
         "cube_traj_tracking_target_table_clearance_min",
         "cube_traj_tracking_safe_target_rate",
@@ -623,9 +629,15 @@ def _run_short_rollout(env, task_env, checks: CheckRecorder, num_steps: int, pri
     tracking_effective_weight_values: list[float] = []
     tracking_close_action_reward_values: list[float] = []
     tracking_lift_action_reward_values: list[float] = []
+    tracking_close_action_reward_ceiling_values: list[float] = []
+    tracking_lift_action_reward_ceiling_values: list[float] = []
+    tracking_close_action_utilization_values: list[float] = []
+    tracking_lift_action_utilization_values: list[float] = []
     tracking_contact_gate_values: list[float] = []
     tracking_contact_distance_gate_values: list[float] = []
     tracking_finger_balance_gate_values: list[float] = []
+    tracking_reference_reweight_values: list[float] = []
+    tracking_term_weight_values: list[float] = []
     tracking_action_close_values: list[float] = []
     tracking_action_up_values: list[float] = []
     tracking_close_phase_gate_values: list[float] = []
@@ -674,12 +686,24 @@ def _run_short_rollout(env, task_env, checks: CheckRecorder, num_steps: int, pri
                     tracking_close_action_reward_values.append(_mean(value))
                 elif key == "cube_traj_tracking_lift_action_reward":
                     tracking_lift_action_reward_values.append(_mean(value))
+                elif key == "cube_traj_tracking_close_action_reward_ceiling":
+                    tracking_close_action_reward_ceiling_values.append(_mean(value))
+                elif key == "cube_traj_tracking_lift_action_reward_ceiling":
+                    tracking_lift_action_reward_ceiling_values.append(_mean(value))
+                elif key == "cube_traj_tracking_close_action_utilization":
+                    tracking_close_action_utilization_values.append(_mean(value))
+                elif key == "cube_traj_tracking_lift_action_utilization":
+                    tracking_lift_action_utilization_values.append(_mean(value))
                 elif key == "cube_traj_tracking_contact_gate":
                     tracking_contact_gate_values.append(_mean(value))
                 elif key == "cube_traj_tracking_contact_distance_gate":
                     tracking_contact_distance_gate_values.append(_mean(value))
                 elif key == "cube_traj_tracking_finger_balance_gate":
                     tracking_finger_balance_gate_values.append(_mean(value))
+                elif key == "cube_traj_tracking_reference_reweight":
+                    tracking_reference_reweight_values.append(_mean(value))
+                elif key == "cube_traj_tracking_tracking_term_weight":
+                    tracking_term_weight_values.append(_mean(value))
                 elif key == "cube_traj_tracking_action_close":
                     tracking_action_close_values.append(_mean(value))
                 elif key == "cube_traj_tracking_action_up":
@@ -755,6 +779,22 @@ def _run_short_rollout(env, task_env, checks: CheckRecorder, num_steps: int, pri
             / len(tracking_lift_action_reward_values)
             if tracking_lift_action_reward_values
             else None,
+            "tracking_close_action_reward_ceiling_mean": sum(tracking_close_action_reward_ceiling_values)
+            / len(tracking_close_action_reward_ceiling_values)
+            if tracking_close_action_reward_ceiling_values
+            else None,
+            "tracking_lift_action_reward_ceiling_mean": sum(tracking_lift_action_reward_ceiling_values)
+            / len(tracking_lift_action_reward_ceiling_values)
+            if tracking_lift_action_reward_ceiling_values
+            else None,
+            "tracking_close_action_utilization_mean": sum(tracking_close_action_utilization_values)
+            / len(tracking_close_action_utilization_values)
+            if tracking_close_action_utilization_values
+            else None,
+            "tracking_lift_action_utilization_mean": sum(tracking_lift_action_utilization_values)
+            / len(tracking_lift_action_utilization_values)
+            if tracking_lift_action_utilization_values
+            else None,
             "tracking_contact_gate_mean": sum(tracking_contact_gate_values) / len(tracking_contact_gate_values)
             if tracking_contact_gate_values
             else None,
@@ -765,6 +805,13 @@ def _run_short_rollout(env, task_env, checks: CheckRecorder, num_steps: int, pri
             "tracking_finger_balance_gate_mean": sum(tracking_finger_balance_gate_values)
             / len(tracking_finger_balance_gate_values)
             if tracking_finger_balance_gate_values
+            else None,
+            "tracking_reference_reweight_mean": sum(tracking_reference_reweight_values)
+            / len(tracking_reference_reweight_values)
+            if tracking_reference_reweight_values
+            else None,
+            "tracking_term_weight_mean": sum(tracking_term_weight_values) / len(tracking_term_weight_values)
+            if tracking_term_weight_values
             else None,
             "tracking_action_close_mean": sum(tracking_action_close_values) / len(tracking_action_close_values)
             if tracking_action_close_values

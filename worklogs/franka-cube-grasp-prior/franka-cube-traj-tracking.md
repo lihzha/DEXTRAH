@@ -2047,3 +2047,35 @@ Analysis:
 - The relaxed gate fixes the earlier silent-shaping issue and satisfies the metrics-only eval acceptance criteria. However, the learned behavior remains poor: the hand moves away from the cube during close/lift phases and the gripper remains too open relative to the 0.024 m target.
 - The action bonuses are active but too small to influence policy behavior in this smoke. Lift-phase averages: close/lift action rewards are about `0.0012`/`0.0016`, while position/gripper tracking terms are about `0.0607`/`0.0799` and total reward remains around `1.4-1.7`.
 - The next bounded debug ablation should stay in the trajectory variant: increase the close/lift action shaping scale and log the gate-normalized potential reward ceilings so it is clear whether the policy is choosing small actions or whether gating/weighting still suppresses the signal. Do not launch longer training before this diagnostic passes a cheap env/eval check.
+
+## 2026-06-11T14:36:05-07:00 - action-scale/reference-pull diagnostic ablation plan
+
+Goal:
+- Test the current failure mode without scaling training: distinguish weak close/up action incentives from late-phase reference attraction pulling the EE away from the cube.
+
+Planned Change:
+- `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env_cfg.py`: trajectory variant only; increase close/lift action reward weights to diagnostic scale and add configurable late-phase reference reweighting knobs.
+- `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env.py`: apply the late-phase reference reweight only to position/orientation/gripper tracking terms, not to close/lift action terms; log `cube_traj_tracking_reference_reweight`, action reward ceilings, and action utilization ratios.
+- `dextrah_lab/rl_games/validate_franka_cube_grasp_env.py`: require the new diagnostic logs in trajectory validation.
+
+Hypothesis:
+- If gate-normalized reward ceilings are now significant but action utilization remains near zero after a tiny smoke/eval, the issue is policy/action learning rather than gate silence.
+- If late-phase position/orientation/gripper reweighting reduces the reward incentive to chase a moving lift target while target safety stays clean, the next learning smoke can test whether close/up commands improve without reference pull dominating.
+
+Validation Plan:
+- Local: `python3 -m py_compile` for touched files and `git diff --check`.
+- Cluster: 4-env/240-step env smoke for registration/logs/finite metrics/target safety only.
+- If env smoke passes, run only a bounded metrics-only eval or tiny smoke/eval as requested; no longer training.
+- Reference caveat remains explicit: the compact reference is `curobo_validated=false` and should not be called DEXTRAH-ready exact-geometry validated.
+
+Result:
+- status: implemented locally; cluster validation pending.
+- changed_files: `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env_cfg.py`, `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env.py`, `dextrah_lab/rl_games/validate_franka_cube_grasp_env.py`, this worklog.
+- implementation: increased trajectory-only close/lift action reward weights from `0.35`/`0.50` to `2.5`/`4.0`; added late-phase reference reweighting after phase `0.55` with scale `0.35` for position/orientation/gripper tracking terms only; action bonuses still use the unscaled safe phase weight.
+- diagnostics: added logs for `cube_traj_tracking_reference_reweight`, `cube_traj_tracking_tracking_term_weight`, `cube_traj_tracking_close_action_reward_ceiling`, `cube_traj_tracking_lift_action_reward_ceiling`, `cube_traj_tracking_close_action_utilization`, and `cube_traj_tracking_lift_action_utilization`; validator now requires/summarizes them.
+- local_validation: `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env_cfg.py dextrah_lab/rl_games/validate_franka_cube_grasp_env.py dextrah_lab/rl_games/eval_rollout.py` passed.
+- local_validation: `git diff --check` passed.
+
+Next:
+- Commit/push and deploy the exact commit to l401.
+- Launch a bounded 4-env/240-step env smoke; acceptance is registration/log presence/finite metrics/target safety/no immediate reset pathology. No longer training.
