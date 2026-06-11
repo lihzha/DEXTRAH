@@ -2096,3 +2096,56 @@ Worker C current state:
   realizes about `0.3-1.2 mm`.
 - C is patching replay diagnostics to log first-class action-semantics fields
   and per-mode videos before any BC/RL scale-up.
+
+## 2026-06-11 Monitor Check 23:22 UTC
+
+Worker B success-window artifact inspection:
+
+- B's added success-window artifact clarifies the confusing full-run video.
+- Viewer URLs:
+  - success-window slow video:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_a10_video480_20260611_160358_artifacts/success_window_slow_step300_380.mp4`
+  - success-window contact sheet:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_a10_video480_20260611_160358_artifacts/success_window_contact_sheet.jpg`
+- Video metadata: 1280x720, 134 frames, 5.36 s, 25 FPS.
+- Visual interpretation: the isolated frames show a real interaction/lift
+  window: pre-trigger around step `300`, lift trigger at step `319`, held/lift
+  frames at steps `340`, `363`, and `373`, then post-reset at step `380`.
+  This supports the transient-success interpretation and explains why the full
+  video ending looks off.
+- B still needs a first-class `success_ever`/done-reason eval artifact before
+  PPO scale-up.
+
+Worker C action-realization audit result:
+
+- Job `1027855` completed `0:0`:
+  `franka_cube_dp_replay_sourcejoint_actionaudit96_20260611_161600`.
+- Run dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/replays/franka_cube_dp_replay_sourcejoint_actionaudit96_20260611_161600`.
+- Local artifact dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_actionaudit96_20260611_161600`.
+- Viewer URLs:
+  - report:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_actionaudit96_20260611_161600/replay_report.md`
+  - action audit plot:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_actionaudit96_20260611_161600/action_realization_audit.png`
+  - videos:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_actionaudit96_20260611_161600/videos/franka-cube-dp-replay-actionaudit-step-0.mp4`
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_actionaudit96_20260611_161600/videos/franka-cube-dp-replay-actionaudit-step-96.mp4`
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_actionaudit96_20260611_161600/videos/franka-cube-dp-replay-actionaudit-step-192.mp4`
+- Report verdict: controller follows the expected dataset action direction but
+  under-realizes one-step action magnitude for `dataset_t` and
+  `dataset_t_plus_7`.
+- Mode summary:
+  - `dataset_t`: final EE-cube `0.1887 m`, median xyz realization ratio
+    `0.0932`, mean target error `0.00294`.
+  - `dataset_t_plus_7`: final EE-cube `0.1900 m`, median xyz realization
+    ratio `0.0947`, mean target error `0.00279`.
+  - `dp_replan`: final EE-cube `0.1657 m`, median xyz realization ratio
+    `0.0849`, mean target error `0.00699`.
+- Orchestrator interpretation: BC data/execution is blocked by controller
+  semantics. The next C diagnostic should be a replay-only action multiplier or
+  action-repeat sweep, not training.
+- Instruction sent to C: run a bounded compensation sweep around multipliers
+  `3`, `6`, `10` and/or repeats `2`, `4`, `8`, with exact source-joint reset
+  and per-mode videos/audit plots. No BC/RL scale-up.
