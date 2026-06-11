@@ -42,6 +42,24 @@ parser.add_argument("--success_window", type=int, default=80)
 parser.add_argument("--print_interval", type=int, default=20)
 parser.add_argument("--output_dir", type=str, default=None)
 parser.add_argument("--metrics_path", type=str, default=None)
+parser.add_argument(
+    "--debug_policy_trace_path",
+    type=str,
+    default=None,
+    help="Optional JSON path for lowdim observations and action chunks at policy-call boundaries.",
+)
+parser.add_argument(
+    "--debug_policy_trace_max_calls",
+    type=int,
+    default=0,
+    help="Maximum policy-call trace records to write. Default 0 disables tracing.",
+)
+parser.add_argument(
+    "--debug_policy_trace_env_index",
+    type=int,
+    default=0,
+    help="Environment index to record when --debug_policy_trace_max_calls is positive.",
+)
 parser.add_argument("--video", action="store_true", default=False, help="Record rollout video.")
 parser.add_argument("--video_length", type=int, default=240)
 parser.add_argument("--video_folder", type=str, default=None)
@@ -76,6 +94,7 @@ from dextrah_lab.offline_dp_bc.ppo_bridge import (
     FRANKA_CUBE_ACTION_DIM,
     FRANKA_CUBE_PPO_OBS_DIM,
     LowdimObsHistory,
+    extract_lowdim_obs_from_ppo_obs,
     predict_action_sequence_from_ppo_obs,
 )
 
@@ -232,12 +251,68 @@ def _latest_video_files(video_folder: Path | None) -> list[str]:
     return [str(path) for path in sorted(video_folder.glob("*.mp4"))]
 
 
+def _lowdim_components(lowdim_obs: np.ndarray) -> dict[str, Any]:
+    return {
+        "ee_pos": lowdim_obs[0:3].astype(float).tolist(),
+        "ee_quat": lowdim_obs[3:7].astype(float).tolist(),
+        "cube_pos": lowdim_obs[7:10].astype(float).tolist(),
+        "cube_quat": lowdim_obs[10:14].astype(float).tolist(),
+        "cube_minus_ee": lowdim_obs[14:17].astype(float).tolist(),
+        "cube_goal_delta": lowdim_obs[17:20].astype(float).tolist(),
+        "gripper_width": float(lowdim_obs[20]),
+    }
+
+
+def _trace_policy_call(
+    *,
+    trace_records: list[dict[str, Any]],
+    max_calls: int,
+    step: int,
+    env_index: int,
+    policy_obs: torch.Tensor,
+    history: LowdimObsHistory,
+    action_seq: np.ndarray,
+    chunk_steps: int,
+) -> None:
+    if max_calls <= 0 or len(trace_records) >= max_calls:
+        return
+    env_index = min(max(0, int(env_index)), int(action_seq.shape[0]) - 1)
+    lowdim = extract_lowdim_obs_from_ppo_obs(policy_obs)
+    lowdim_np = lowdim.detach().float().cpu().numpy()
+    action_chunk = np.asarray(action_seq[env_index, :chunk_steps], dtype=np.float32)
+    trace_records.append(
+        {
+            "policy_call_index": len(trace_records),
+            "step": int(step),
+            "env_index": int(env_index),
+            "lowdim_obs": lowdim_np[env_index].astype(float).tolist(),
+            "lowdim_components": _lowdim_components(lowdim_np[env_index]),
+            "history_after_push": history._history[env_index].astype(float).tolist(),
+            "chunk_steps": int(chunk_steps),
+            "action_sequence_shape": list(action_seq.shape),
+            "action_chunk": action_chunk.astype(float).tolist(),
+            "first_action": action_chunk[0].astype(float).tolist(),
+            "chunk_gripper_action_min": float(action_chunk[:, 6].min()),
+            "chunk_gripper_action_max": float(action_chunk[:, 6].max()),
+            "chunk_pose_action_absmax": float(np.max(np.abs(action_chunk[:, :6]))),
+        }
+    )
+
+
 def main() -> None:
     output_dir = Path(args_cli.output_dir or datetime.now().strftime("franka_cube_dp_eval_%Y%m%d_%H%M%S"))
     output_dir = output_dir.expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     metrics_path = Path(args_cli.metrics_path).expanduser().resolve() if args_cli.metrics_path else output_dir / "metrics.json"
     metrics_path.parent.mkdir(parents=True, exist_ok=True)
+    debug_trace_max_calls = max(0, int(args_cli.debug_policy_trace_max_calls))
+    debug_trace_path = (
+        Path(args_cli.debug_policy_trace_path).expanduser().resolve()
+        if args_cli.debug_policy_trace_path
+        else (output_dir / "policy_trace.json" if debug_trace_max_calls > 0 else None)
+    )
+    if debug_trace_path is not None:
+        debug_trace_path.parent.mkdir(parents=True, exist_ok=True)
     video_folder = Path(args_cli.video_folder).expanduser().resolve() if args_cli.video_folder else output_dir / "videos"
 
     checkpoint = Path(args_cli.checkpoint).expanduser().resolve()
@@ -251,6 +326,8 @@ def main() -> None:
         checkpoint_size=checkpoint.stat().st_size,
         num_envs=int(args_cli.num_envs),
         num_steps=int(args_cli.num_steps),
+        debug_policy_trace_path=str(debug_trace_path) if debug_trace_path is not None else None,
+        debug_policy_trace_max_calls=debug_trace_max_calls,
     )
 
     env_cfg = parse_env_cfg(
@@ -292,6 +369,7 @@ def main() -> None:
     requested_action_chunk_steps = max(1, int(args_cli.action_chunk_steps))
     action_queue = np.empty((task_env.num_envs, 0, FRANKA_CUBE_ACTION_DIM), dtype=np.float32)
     step_metrics: list[dict[str, float | int | None]] = []
+    policy_trace_records: list[dict[str, Any]] = []
     action_min = np.full(FRANKA_CUBE_ACTION_DIM, np.inf, dtype=np.float64)
     action_max = np.full(FRANKA_CUBE_ACTION_DIM, -np.inf, dtype=np.float64)
     done_count = 0
@@ -318,6 +396,16 @@ def main() -> None:
                         raise RuntimeError(f"Unexpected DP action sequence shape {action_seq.shape}")
                     chunk_steps = min(requested_action_chunk_steps, int(action_seq.shape[1]))
                     action_queue = np.asarray(action_seq[:, :chunk_steps], dtype=np.float32)
+                    _trace_policy_call(
+                        trace_records=policy_trace_records,
+                        max_calls=debug_trace_max_calls,
+                        step=step,
+                        env_index=int(args_cli.debug_policy_trace_env_index),
+                        policy_obs=policy_obs,
+                        history=history,
+                        action_seq=action_seq,
+                        chunk_steps=chunk_steps,
+                    )
                 action_np = action_queue[:, 0]
                 action_queue = action_queue[:, 1:]
                 clip = float(args_cli.clip_actions)
@@ -385,6 +473,8 @@ def main() -> None:
         "final_gripper_width": final_gripper_width,
         "output_dir": str(output_dir),
         "metrics_path": str(metrics_path),
+        "debug_policy_trace_path": str(debug_trace_path) if debug_trace_path is not None else None,
+        "debug_policy_trace_records": len(policy_trace_records),
         "video_enabled": bool(args_cli.video),
         "video_files": _latest_video_files(video_folder if args_cli.video else None),
         "env_closed": env_closed,
@@ -393,6 +483,28 @@ def main() -> None:
         json.dumps({"summary": summary, "steps": step_metrics}, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    if debug_trace_path is not None:
+        debug_trace_path.write_text(
+            json.dumps(
+                {
+                    "summary": {
+                        "task": args_cli.task,
+                        "checkpoint": str(checkpoint),
+                        "num_envs": task_num_envs,
+                        "num_steps_requested": int(args_cli.num_steps),
+                        "action_chunk_steps": requested_action_chunk_steps,
+                        "num_inference_steps": int(args_cli.num_inference_steps),
+                        "env_index": int(args_cli.debug_policy_trace_env_index),
+                        "records": len(policy_trace_records),
+                    },
+                    "policy_calls": policy_trace_records,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
     print("FRANKA_CUBE_DP_POLICY_EVAL_DONE " + json.dumps(summary, sort_keys=True), flush=True)
 
 

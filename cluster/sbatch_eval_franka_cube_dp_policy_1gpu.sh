@@ -50,6 +50,9 @@ RUN_DIR_HOST="$RESULTS_NFS/evals/$RUN_NAME"
 RUN_DIR_CONTAINER="/results/evals/$RUN_NAME"
 METRICS_CONTAINER="$RUN_DIR_CONTAINER/metrics.json"
 LOG_FILE="$NFS_ROOT/slurm_logs/dextrah/eval_franka_cube_dp_policy_${SLURM_JOB_ID_SAFE}.out"
+DEBUG_POLICY_TRACE_MAX_CALLS="${DEBUG_POLICY_TRACE_MAX_CALLS:-0}"
+DEBUG_POLICY_TRACE_ENV_INDEX="${DEBUG_POLICY_TRACE_ENV_INDEX:-0}"
+DEBUG_POLICY_TRACE_PATH="${DEBUG_POLICY_TRACE_PATH:-}"
 
 CHECKPOINT_ARG="$CHECKPOINT"
 CHECKPOINT_HOST="$CHECKPOINT"
@@ -89,6 +92,7 @@ export TASK RUN_NAME NUM_ENVS NUM_STEPS NUM_INFERENCE_STEPS ACTION_CHUNK_STEPS C
 export VIDEO_LENGTH VIDEO_NAME_PREFIX PRINT_INTERVAL CAPTURE_VIDEO SEED
 export CAMERA_EYE_X CAMERA_EYE_Y CAMERA_EYE_Z CAMERA_TARGET_X CAMERA_TARGET_Y CAMERA_TARGET_Z
 export CHECKPOINT_ARG RUN_DIR_CONTAINER METRICS_CONTAINER ENV_NAME OFFICIAL_DP_ENV_NAME
+export DEBUG_POLICY_TRACE_MAX_CALLS DEBUG_POLICY_TRACE_ENV_INDEX DEBUG_POLICY_TRACE_PATH
 
 echo "Running DextrAH Franka cube official Diffusion Policy evaluation"
 echo "SLURM_JOB_ID=$SLURM_JOB_ID_SAFE"
@@ -117,6 +121,11 @@ echo "CHECKPOINT_ARG=$CHECKPOINT_ARG"
 echo "CHECKPOINT_HOST=$CHECKPOINT_HOST"
 echo "RUN_DIR_HOST=$RUN_DIR_HOST"
 echo "METRICS_CONTAINER=$METRICS_CONTAINER"
+echo "DEBUG_POLICY_TRACE_MAX_CALLS=$DEBUG_POLICY_TRACE_MAX_CALLS"
+echo "DEBUG_POLICY_TRACE_ENV_INDEX=$DEBUG_POLICY_TRACE_ENV_INDEX"
+if [ -n "$DEBUG_POLICY_TRACE_PATH" ]; then
+  echo "DEBUG_POLICY_TRACE_PATH=$DEBUG_POLICY_TRACE_PATH"
+fi
 
 srun \
   --ntasks=1 \
@@ -155,6 +164,18 @@ srun \
     if [ "$CAPTURE_VIDEO" = "True" ]; then
       VIDEO_ARGS=(--video --video_length "$VIDEO_LENGTH" --video_name_prefix "$VIDEO_NAME_PREFIX")
     fi
+    TRACE_ARGS=()
+    if [ "$DEBUG_POLICY_TRACE_MAX_CALLS" != "0" ]; then
+      trace_path="$DEBUG_POLICY_TRACE_PATH"
+      if [ -z "$trace_path" ]; then
+        trace_path="$RUN_DIR_CONTAINER/policy_trace.json"
+      fi
+      TRACE_ARGS=(
+        --debug_policy_trace_path "$trace_path"
+        --debug_policy_trace_max_calls "$DEBUG_POLICY_TRACE_MAX_CALLS"
+        --debug_policy_trace_env_index "$DEBUG_POLICY_TRACE_ENV_INDEX"
+      )
+    fi
 
     EVAL_ARGS=(
       /code/dextrah_lab/rl_games/eval_franka_cube_dp_policy.py
@@ -175,6 +196,7 @@ srun \
       --print_interval "$PRINT_INTERVAL"
       --camera_eye "$CAMERA_EYE_X" "$CAMERA_EYE_Y" "$CAMERA_EYE_Z"
       --camera_target "$CAMERA_TARGET_X" "$CAMERA_TARGET_Y" "$CAMERA_TARGET_Z"
+      "${TRACE_ARGS[@]}"
       "${VIDEO_ARGS[@]}"
     )
 
@@ -191,6 +213,10 @@ fi
 
 if [ ! -s "$RUN_DIR_HOST/metrics.json" ]; then
   echo "Missing DP eval metrics JSON: $RUN_DIR_HOST/metrics.json"
+  exit 1
+fi
+if [ "$DEBUG_POLICY_TRACE_MAX_CALLS" != "0" ] && [ ! -s "$RUN_DIR_HOST/policy_trace.json" ]; then
+  echo "Missing DP eval policy trace JSON: $RUN_DIR_HOST/policy_trace.json"
   exit 1
 fi
 

@@ -2170,3 +2170,150 @@ Next:
   chunked eval with `NUM_STEPS=360`, `ACTION_CHUNK_STEPS=8`,
   `NUM_INFERENCE_STEPS=100`, then inspect metrics and compare close/lift
   progress.
+
+## 2026-06-11T13:36:40-07:00 - inspectable artifact bundle plan
+
+Goal:
+- Produce an inspectable bundle for the Diffusion Policy BC warm-start path,
+  including train curves, bridge/eval behavior plots, summary tables, the
+  overfit2k rollout video, and a markdown report with analysis.
+
+Hypothesis:
+- The completed overfit2k chunk8 DEXTRAH eval will show whether the improved
+  local official-DP close/lift behavior survives the 72D PPO-observation bridge
+  inside Isaac. If it still fails, the metrics/video should isolate whether the
+  failure is action range, gripper schedule, observation mismatch, or closed-loop
+  drift.
+
+Change:
+- Add a scoped offline artifact-report script under `dextrah_lab/offline_dp_bc/`
+  that reads existing official-DP logs, checkpoint-smoke logs, and fetched
+  l401 eval metrics. The script will write generated artifacts under the
+  external artifact namespace, not into git.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- worklog: `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `ce5940a459a632f6e1ce20b3155fd4ac94e99d62`
+- implementation_commit: pending
+
+Command / Job:
+- completed l401 eval: job `1027727`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_curobo32_full_pick_lift_overfit2k_chunk8_video_20260611_132637`
+- local fetched copy:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_curobo32_full_pick_lift_overfit2k_chunk8_video_20260611_132637`
+- video:
+  `videos/franka-cube-dp-overfit2k-chunk8-step-0.mp4`
+
+Result:
+- status: in progress
+- scheduler evidence: `COMPLETED`, exit `0:0`, elapsed `00:01:29`
+- video evidence: `1280x720`, `359` frames, `5.98s`, fetched locally.
+
+Analysis:
+- Initial metrics show the run completed mechanically but still failed the task:
+  success `0`, cube lift `0`, final gripper width about `0.0798 m`, final
+  EE-to-cube distance about `0.609 m`, and reward decayed from about `1.36` to
+  `1.01`. This points to closed-loop drift and open-gripper behavior, not a
+  simulator crash or missing checkpoint.
+
+Next:
+- Generate the artifact bundle, run `viz-open` on the most useful video/plot,
+  update this worklog with paths and analysis, then continue with the next
+  bounded diagnostic for why chunked overfit execution still drifts away.
+
+## 2026-06-11T13:35:30-07:00 - inspectable artifact bundle and trace-hook checkpoint
+
+Goal:
+- Hand off inspectable artifacts for the DP BC warm-start path and continue the
+  low-level debug loop with a bounded policy-call trace diagnostic.
+
+Hypothesis:
+- If the overfit2k checkpoint still stays open in Isaac while bridge smokes
+  close on selected dataset states, the failure is likely due to live
+  observation/history drift or bridge-channel mismatch. A per-policy-call trace
+  should expose which 21D lowdim states the policy actually sees during eval.
+
+Change:
+- Added `dextrah_lab/offline_dp_bc/make_artifact_bundle.py` to generate report,
+  plots, CSV/JSON summaries, and copy the fetched rollout video into a stable
+  external bundle.
+- Added disabled-by-default policy-call tracing to
+  `dextrah_lab/rl_games/eval_franka_cube_dp_policy.py`.
+- Added `DEBUG_POLICY_TRACE_MAX_CALLS`, `DEBUG_POLICY_TRACE_ENV_INDEX`, and
+  optional `DEBUG_POLICY_TRACE_PATH` forwarding in
+  `cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `ce5940a459a632f6e1ce20b3155fd4ac94e99d62`
+- implementation_commit: pending
+- changed_files:
+  - `dextrah_lab/offline_dp_bc/make_artifact_bundle.py`
+  - `dextrah_lab/rl_games/eval_franka_cube_dp_policy.py`
+  - `cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+  - `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+
+Command / Job:
+- fetched eval artifacts:
+  `rsync -a l401:/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/<run>/ .../artifacts/cluster_evals/<run>/`
+- artifact bundle command:
+  `VENV=/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/venv; "$VENV/bin/python" -m dextrah_lab.offline_dp_bc.make_artifact_bundle --output-dir /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/dp_bc_warmstart_artifacts_20260611_133640`
+- validation:
+  - `python3 -m py_compile dextrah_lab/offline_dp_bc/make_artifact_bundle.py`
+  - `python3 -m py_compile dextrah_lab/rl_games/eval_franka_cube_dp_policy.py dextrah_lab/offline_dp_bc/make_artifact_bundle.py`
+  - `bash -n cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+
+Result:
+- status: artifact bundle passed; trace hook validated locally
+- bundle:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/dp_bc_warmstart_artifacts_20260611_133640`
+- report:
+  `.../report.md`
+- train plots:
+  - `plots/full_pick_train_val_loss_5epoch_vs_25epoch.png`
+  - `plots/full_pick_train_action_mse_5epoch_vs_25epoch.png`
+- bridge/eval plots:
+  - `plots/bridge_gripper_action_ranges.png`
+  - `plots/bridge_pose_action_ranges.png`
+  - `plots/eval_behavior_metrics.png`
+- summary tables:
+  - `tables/train_summary.csv`
+  - `tables/bridge_smokes_summary.csv`
+  - `tables/eval_summary.csv`
+  - `tables/eval_timeseries.csv`
+  - `tables/artifact_manifest.json`
+- video:
+  `videos/franka-cube-dp-overfit2k-chunk8-step-0.mp4`
+  (`1280x720`, `359` frames, `5.98s`)
+- viewer URLs:
+  - video:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/dp_bc_warmstart_artifacts_20260611_133640/videos/franka-cube-dp-overfit2k-chunk8-step-0.mp4`
+  - behavior plot:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/dp_bc_warmstart_artifacts_20260611_133640/plots/eval_behavior_metrics.png`
+
+Analysis:
+- The artifact evidence is consistent:
+  - 5-epoch full-pick first-action partially closes late but does not lift.
+  - 5-epoch chunk8 stays mostly open.
+  - overfit2k chunk8 uses the best local checkpoint but still stays open
+    (`gripper_action_min=0.855`, gripper width final `0.0798 m`) and drifts
+    away (`EE-to-cube distance 0.234 m -> 0.609 m`, reward final `1.010`).
+  - local overfit2k bridge smokes prove the checkpoint can close for
+    closed/lift dataset rows (`gripper action roughly -0.97` to `-0.85` for
+    closed rows and `-1.00` to `-0.93` for lift-high rows).
+- Therefore the current blocker is not official-DP model construction or
+  checkpoint loading; it is live closed-loop observation/history mismatch,
+  covariate shift, or a subtle PPO-observation channel mismatch.
+
+Next:
+- Commit/push the artifact generator and trace hook.
+- Deploy the commit to the agent-owned l401 worktree and run a tiny traced
+  no-video eval, e.g. `NUM_STEPS=96`, `ACTION_CHUNK_STEPS=8`,
+  `DEBUG_POLICY_TRACE_MAX_CALLS=12`, then fetch `policy_trace.json` and compare
+  live lowdim observations/action chunks against the converted dataset phases.
