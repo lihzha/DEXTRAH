@@ -434,3 +434,51 @@ Analysis:
 Next:
 - Continue periodic monitoring, with a status-only poll next and another
   scalar pass around `19:05 PDT`.
+
+## 2026-06-10 19:06 PDT - Teacher Monitor Metric Pass
+
+Goal:
+- Verify training health and investigate a visible throughput dip in the
+  recent stdout window.
+
+Command / Job:
+- job_id: `28955904`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28955904.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+
+Result:
+- status: running, training metrics healthy, throughput lower than prior band.
+- scheduler: running on `batch-block5-03072`, time left `1:37:36`.
+- stdout advanced to epoch `14961/20000`.
+- latest complete checkpoint:
+  `last_dextrah_lstm_ep_14960_rew_657.4944.pth`.
+- rank sidecars refreshed in stdout at `19:06:32`.
+- narrow failure scan returned no matches.
+- TensorBoard parsed through epoch `14946`.
+- `in_success_region/iter`: latest `0.451904`, last-50 `0.449844`,
+  last-200 `0.450654`.
+- `rewards/iter`: latest `510.678`, last-50 `622.799`,
+  last-200 `626.377`.
+- `num_adr_increases/iter`: `50`.
+- `info/kl`: latest `0.00794625`, last-50 `0.00727767`,
+  last-200 `0.00741877`.
+- `losses/a_loss`: last-50 `-0.00412864`.
+- `losses/c_loss`: last-50 `0.0198254`.
+- `performance/step_inference_rl_update_fps`: latest `98783`,
+  last-50 about `106117`, last-200 about `108764`.
+
+Analysis:
+- Training quality metrics remain healthy: success, reward, KL, losses, and ADR
+  state are not showing instability.
+- Throughput has dipped below the prior ~109-110k last-50 band, and stdout
+  showed one checkpoint interval around `75k-83k` total FPS followed by
+  `98k-100k`. This looks like a performance regression or transient node/load
+  effect rather than a training failure, but it warrants a closer follow-up
+  poll.
+
+Next:
+- Recheck stdout throughput and checkpoint cadence sooner than the usual
+  5-minute interval. If FPS continues falling or checkpoints stall, inspect
+  node/job state more deeply.
