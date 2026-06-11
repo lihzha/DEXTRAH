@@ -134,30 +134,51 @@ class LowdimObsHistory:
         self.n_obs_steps = int(n_obs_steps)
         self.obs_dim = int(obs_dim)
         self._history = np.zeros((self.num_envs, self.n_obs_steps, self.obs_dim), dtype=np.float32)
+        self._step_history = np.full((self.num_envs, self.n_obs_steps), -1, dtype=np.int64)
         self._filled = np.zeros(self.num_envs, dtype=np.int32)
 
     def reset(self, env_ids: np.ndarray | list[int] | None = None) -> None:
         if env_ids is None:
             self._history[...] = 0.0
+            self._step_history[...] = -1
             self._filled[...] = 0
         else:
-            self._history[np.asarray(env_ids, dtype=np.int64)] = 0.0
-            self._filled[np.asarray(env_ids, dtype=np.int64)] = 0
+            env_ids_arr = np.asarray(env_ids, dtype=np.int64)
+            self._history[env_ids_arr] = 0.0
+            self._step_history[env_ids_arr] = -1
+            self._filled[env_ids_arr] = 0
 
-    def push(self, lowdim_obs: np.ndarray) -> np.ndarray:
+    def push(self, lowdim_obs: np.ndarray, *, step: int | np.ndarray | None = None) -> np.ndarray:
         lowdim_obs = np.asarray(lowdim_obs, dtype=np.float32)
         if lowdim_obs.shape != (self.num_envs, self.obs_dim):
             raise ValueError(f"Expected lowdim obs {(self.num_envs, self.obs_dim)}, got {lowdim_obs.shape}")
+        if step is None:
+            step_values = self._step_history[:, -1].copy()
+        elif np.isscalar(step):
+            step_values = np.full(self.num_envs, int(step), dtype=np.int64)
+        else:
+            step_values = np.asarray(step, dtype=np.int64)
+            if step_values.shape != (self.num_envs,):
+                raise ValueError(f"Expected step shape {(self.num_envs,)}, got {step_values.shape}")
         self._history[:, :-1] = self._history[:, 1:]
         self._history[:, -1] = lowdim_obs
+        self._step_history[:, :-1] = self._step_history[:, 1:]
+        self._step_history[:, -1] = step_values
         not_filled = self._filled < self.n_obs_steps
         if np.any(not_filled):
             self._history[not_filled] = lowdim_obs[not_filled, None, :]
+            self._step_history[not_filled] = step_values[not_filled, None]
         self._filled = np.minimum(self._filled + 1, self.n_obs_steps)
         return self._history.copy()
 
 
-def predict_action_sequence_from_ppo_obs(policy: Any, ppo_obs: Any, history: LowdimObsHistory) -> Any:
+def predict_action_sequence_from_ppo_obs(
+    policy: Any,
+    ppo_obs: Any,
+    history: LowdimObsHistory,
+    *,
+    step: int | np.ndarray | None = None,
+) -> Any:
     """Query an official lowdim DP policy for an action sequence.
 
     The returned sequence has shape ``(num_envs, n_action_steps, 7)`` in
@@ -167,7 +188,7 @@ def predict_action_sequence_from_ppo_obs(policy: Any, ppo_obs: Any, history: Low
     """
 
     lowdim = extract_lowdim_obs_from_ppo_obs(ppo_obs)
-    obs_seq = history.push(_as_numpy(lowdim).astype(np.float32, copy=False))
+    obs_seq = history.push(_as_numpy(lowdim).astype(np.float32, copy=False), step=step)
     try:
         import torch
     except Exception as exc:  # pragma: no cover
@@ -181,7 +202,13 @@ def predict_action_sequence_from_ppo_obs(policy: Any, ppo_obs: Any, history: Low
     return action.detach().cpu().numpy()
 
 
-def predict_action_from_ppo_obs(policy: Any, ppo_obs: Any, history: LowdimObsHistory) -> Any:
+def predict_action_from_ppo_obs(
+    policy: Any,
+    ppo_obs: Any,
+    history: LowdimObsHistory,
+    *,
+    step: int | np.ndarray | None = None,
+) -> Any:
     """Query an official lowdim DP policy from a single-step 72D PPO obs.
 
     The returned action is the first denoised action step in DEXTRAH's 7D
@@ -190,4 +217,4 @@ def predict_action_from_ppo_obs(policy: Any, ppo_obs: Any, history: LowdimObsHis
     execute Diffusion Policy action chunks.
     """
 
-    return predict_action_sequence_from_ppo_obs(policy, ppo_obs, history)[:, 0]
+    return predict_action_sequence_from_ppo_obs(policy, ppo_obs, history, step=step)[:, 0]

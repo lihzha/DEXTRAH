@@ -280,6 +280,15 @@ def _trace_policy_call(
     lowdim = extract_lowdim_obs_from_ppo_obs(policy_obs)
     lowdim_np = lowdim.detach().float().cpu().numpy()
     action_chunk = np.asarray(action_seq[env_index, :chunk_steps], dtype=np.float32)
+    history_steps = getattr(history, "_step_history", None)
+    if history_steps is not None:
+        history_steps_env = np.asarray(history_steps[env_index], dtype=np.int64)
+        valid_steps = history_steps_env[history_steps_env >= 0]
+        history_step_gap = int(valid_steps[-1] - valid_steps[-2]) if valid_steps.shape[0] >= 2 else 0
+        history_steps_payload = history_steps_env.astype(int).tolist()
+    else:
+        history_step_gap = None
+        history_steps_payload = None
     trace_records.append(
         {
             "policy_call_index": len(trace_records),
@@ -288,6 +297,8 @@ def _trace_policy_call(
             "lowdim_obs": lowdim_np[env_index].astype(float).tolist(),
             "lowdim_components": _lowdim_components(lowdim_np[env_index]),
             "history_after_push": history._history[env_index].astype(float).tolist(),
+            "history_steps_after_push": history_steps_payload,
+            "history_step_gap": history_step_gap,
             "chunk_steps": int(chunk_steps),
             "action_sequence_shape": list(action_seq.shape),
             "action_chunk": action_chunk.astype(float).tolist(),
@@ -391,7 +402,7 @@ def main() -> None:
 
             with torch.inference_mode():
                 if action_queue.shape[1] == 0:
-                    action_seq = predict_action_sequence_from_ppo_obs(policy, policy_obs, history)
+                    action_seq = predict_action_sequence_from_ppo_obs(policy, policy_obs, history, step=step)
                     if action_seq.ndim != 3 or action_seq.shape[0] != task_env.num_envs:
                         raise RuntimeError(f"Unexpected DP action sequence shape {action_seq.shape}")
                     chunk_steps = min(requested_action_chunk_steps, int(action_seq.shape[1]))
@@ -421,6 +432,9 @@ def main() -> None:
                     history.reset(done_env_ids)
                     action_queue = np.empty((task_env.num_envs, 0, FRANKA_CUBE_ACTION_DIM), dtype=np.float32)
                     done_count += int(done_env_ids.shape[0])
+                elif action_queue.shape[1] > 0:
+                    lowdim = extract_lowdim_obs_from_ppo_obs(policy_obs)
+                    history.push(lowdim.detach().float().cpu().numpy(), step=step + 1)
 
             reward_mean = _mean_float(rewards)
             task_metrics = _collect_task_metrics(task_env)

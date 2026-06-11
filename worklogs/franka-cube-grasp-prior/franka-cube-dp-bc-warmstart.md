@@ -2808,3 +2808,104 @@ Next:
   against the nearest demo step and against the demo first-close/hard-close
   geometry; also verify two-step observation-history initialization and
   action-chunk/repeat timing before any larger training launch.
+
+## 2026-06-11T14:10:22-07:00 - live-vs-demo geometry and history-cadence diagnostic plan
+
+Goal:
+- Verify whether the failed framefix rollout is caused by a reset/pregrasp
+  distribution mismatch, wrong object-relative close/lift geometry, or a
+  temporal-history mismatch introduced by chunked evaluation.
+
+Hypothesis:
+- Training samples two adjacent lowdim observations (`pad_before=1`,
+  contiguous 16-step sequences). The current chunked eval only pushes a new
+  observation into `LowdimObsHistory` when it queries a new 8-step action chunk,
+  so after the first call the policy sees an 8-env-step history gap rather than
+  adjacent control-timestep observations. This can explain early closing and
+  off-manifold cube-relative geometry even though static slices/normalization
+  are correct.
+
+Change:
+- Added local artifact utility:
+  `dextrah_lab/offline_dp_bc/diagnose_live_demo_geometry.py`
+- Artifact namespace:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/live_demo_geometry_1027737_framefix_20260611_135907`
+- Patched `LowdimObsHistory` to track step timestamps and accept an optional
+  `step=` on push/inference helpers.
+- Patched `eval_franka_cube_dp_policy.py` so lowdim history is refreshed every
+  env step while action chunks execute open-loop; the trace now writes
+  `history_steps_after_push` and `history_step_gap`.
+- Updated the diagnostic to prefer recorded history steps when present.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `aad5eef545aac4c1fffb6acf7507c1c6fc70255f`
+- implementation_commit: pending local commit before l401 deployment
+- changed_files:
+  - `dextrah_lab/offline_dp_bc/diagnose_live_demo_geometry.py`
+  - `dextrah_lab/offline_dp_bc/ppo_bridge.py`
+  - `dextrah_lab/rl_games/eval_franka_cube_dp_policy.py`
+  - `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+
+Command / Job:
+- planned diagnostic command:
+  `PYTHONPATH=$DEX $VENV/bin/python -m dextrah_lab.offline_dp_bc.diagnose_live_demo_geometry --dataset <framefix.npz> --trace <policy_trace.json> --trace-analysis <trace_phase_comparison.json> --output-dir <geometry_dir>`
+- actual diagnostic command:
+  `PYTHONPATH=$PWD /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/venv/bin/python -m dextrah_lab.offline_dp_bc.diagnose_live_demo_geometry --dataset /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz --trace /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_curobo32_full_pick_lift_framefix_overfit2k_chunk8_trace512_20260611_135907/policy_trace.json --trace-analysis /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/trace_analysis_1027737_framefix_20260611_135907/trace_phase_comparison.json --output-dir /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/live_demo_geometry_1027737_framefix_20260611_135907`
+- local validation:
+  - `PYTHONPATH=$PWD /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/venv/bin/python -m py_compile dextrah_lab/offline_dp_bc/diagnose_live_demo_geometry.py dextrah_lab/offline_dp_bc/ppo_bridge.py dextrah_lab/rl_games/eval_franka_cube_dp_policy.py`
+  - `PYTHONPATH=/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/diffusion_policy:$PWD /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/venv/bin/python -m dextrah_lab.offline_dp_bc.validate_official_checkpoint_smoke --checkpoint /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_debug/run_20260611_135200_curobo32_full_pick_lift_framefix_overfit2k/checkpoints/latest.ckpt --dataset /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz --device cpu --batch-size 2 --num-inference-steps 2 --row-selector first --warm-history-from-dataset`
+
+Result:
+- status: diagnostic passed, patch implemented locally.
+- artifact_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/live_demo_geometry_1027737_framefix_20260611_135907`
+- files:
+  - `geometry_diagnosis_report.md`
+  - `geometry_diagnosis_summary.json`
+  - `live_vs_nearest_demo_geometry.csv`
+  - `live_vs_nearest_demo_geometry.png`
+- viz-open:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/live_demo_geometry_1027737_framefix_20260611_135907/live_vs_nearest_demo_geometry.png`
+- required table fields present:
+  policy call index, env step, history obs timestamps/gap,
+  live cube-minus-EE, nearest-demo cube-minus-EE, first-close demo
+  cube-minus-EE, hard-close demo cube-minus-EE, gripper command/width,
+  nearest phase, and nearest distance.
+- diagnostic evidence:
+  - training history step delta: `1`
+  - pre-patch eval policy-call deltas: `[8]`
+  - pre-patch history slot gaps: `[0, 8]`; the `0` is reset duplicate, then
+    history is `step-8`/`step`
+  - live first negative gripper step: `184`
+  - live first hard-close step: `208`
+  - dataset first close phase mean step: `282.625`
+  - dataset first hard-close mean step: `310.625`
+  - at live hard close, `history_step_gap=8`, live cube-minus-EE
+    `[0.056520432233810425, -0.11438523977994919, -0.0592767596244812]`
+  - nearest-demo cube-minus-EE at that point:
+    `[0.08766841888427734, -0.09175277501344681, -0.05864214897155762]`
+  - nearest-episode hard-close demo cube-minus-EE:
+    `[-0.01989993453025818, -0.0000015050172805786133, -0.02014338970184326]`
+  - live-to-demo hard-close mean distance: `0.126915844401538 m`
+- local official-DP checkpoint bridge smoke passed after the history API patch.
+
+Analysis:
+- Concrete mismatch confirmed. The model was trained on adjacent lowdim
+  histories but the chunked eval conditioned it on observations spaced by one
+  8-step action chunk. This is an implementation bug in the eval bridge, not a
+  reason to pivot to augmentation or RL.
+- The post-patch trace must show policy calls still every 8 env steps, but
+  `history_step_gap=1` after the reset duplicate because history is refreshed
+  during open-loop chunk execution.
+
+Next:
+- Commit/push code and worklog, deploy exact commit to the agent-owned l401
+  worktree, and launch a bounded no-video trace with the same checkpoint/seed:
+  `NUM_ENVS=1`, `NUM_STEPS=512`, `ACTION_CHUNK_STEPS=8`,
+  `DEBUG_POLICY_TRACE_MAX_CALLS=64`, `CAPTURE_VIDEO=False`.
+- Acceptance for the next trace: recorded history slot gap should be `1`
+  after reset, close timing should move toward demo timing, and EE/finger
+  distances/cube-minus-EE should not regress relative to job `1027737`.
