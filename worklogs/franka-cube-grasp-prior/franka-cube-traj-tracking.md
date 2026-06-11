@@ -1082,7 +1082,7 @@ Next:
 - Patch the trajectory-tracking variant to retime external compact references to a runtime horizon shorter than the DEXTRAH episode, while preserving source timing in the reference summary and keeping `curobo_validated=false`.
 - Add a validator check that the runtime reference duration fits within the task episode, then rerun task-registration/env smoke before any further RL.
 
-## 2026-06-11T13:25:00-07:00 - reference retiming patch plan
+## 2026-06-11T13:12:00-07:00 - reference retiming patch plan
 
 Goal:
 - Fix the identified trajectory timing mismatch without changing the production `Dextrah-Franka-Cube-Grasp` baseline or adding reference observations.
@@ -1101,3 +1101,39 @@ Validation Plan:
 - Local cheap checks: `python3 -m py_compile` on touched Python files, `git diff --check`, wrapper syntax as needed.
 - Commit/push, deploy exact commit to `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking`.
 - First cluster validation only: `Dextrah-Franka-Cube-Grasp-Traj-Tracking`, 4 envs, short rollout, same 60 mm compact reference. Acceptance: obs stays `[4, 72]`, baseline task registration still resolves, summary reports runtime duration `8.0` s and source duration `22.033333333333335` s, tracking terms finite, unsafe target rate `0.0`, target clearance above margin, no immediate reset pathology.
+
+Change:
+- implementation_commit: `22f674cd42eaf79fa9e42433a9e2f1dff04a917a`
+- push/pull: pushed to origin and deployed to l401 agent worktree at exact detached commit using HTTPS fallback after SSH git auth failed.
+- remote_commit/status: /lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking at `22f674cd42eaf79fa9e42433a9e2f1dff04a917a`, detached clean.
+- changed_files: `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env.py`, `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env_cfg.py`, `dextrah_lab/rl_games/validate_franka_cube_grasp_env.py`, this worklog.
+
+Local Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env_cfg.py dextrah_lab/rl_games/validate_franka_cube_grasp_env.py dextrah_lab/rl_games/eval_rollout.py`: passed.
+- `git diff --check`: passed.
+- `bash -n cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh cluster/sbatch_eval_franka_cube_grasp_1gpu.sh cluster/sbatch_train_teacher_8gpu.sh`: passed.
+
+Command / Job:
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:30:00 --job-name=franka_cube_traj_retime_smoke --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_retime_ref_env_smoke_20260611_131430,NUM_ENVS=4,NUM_STEPS=240,VIDEO_LENGTH=240,CAPTURE_VIDEO=False,PRINT_INTERVAL=40,SEED=48,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`
+- job_id: 1027720 `franka_cube_traj_retime_smoke`
+- expected_log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_cube_<job>.out
+- expected_metrics: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_cube_traj_tracking_retime_ref_env_smoke_20260611_131430/metrics.json
+
+Result:
+- status: passed; Slurm completed `0:0` after `00:00:49` on `pool0-00016`.
+- local_artifacts: `cluster_results/l401/franka_cube_traj_tracking_retime_ref_env_smoke_20260611_131430/metrics.json`, `cluster_results/l401/franka_cube_traj_tracking_retime_ref_env_smoke_20260611_131430/validate_franka_cube_1027720.out`
+- validation: `passed=true`, failed checks `[]`, recursive numeric scan `nonfinite_count=0`.
+- task/obs: task registration passed; baseline task registration still resolved; reset observation shape `[4, 72]`; rollout completed 240/240 steps with `done_count=0`, `early_done_count=0`.
+- reference_timing: `duration_s=8.0`, `runtime_duration_s=8.0`, `source_duration_s=22.033333333333335`, `configured_runtime_duration_s=8.0`, `runtime_retime_policy=normalize_to_configured_runtime_duration`, `episode_length_s=10.0`; the new `trajectory_tracking_runtime_duration_within_episode` check passed.
+- tracking_reference: external 60 mm compact reference, `graspgenx_source=true`, `curobo_validated=false`, `validation_passed=true`, `runtime_object_pose_policy=reset_cube_pose`, `unsafe_target_reward_policy=zero_tracking_weight_below_min_target_table_clearance`.
+- tracking_safety: `tracking_unsafe_target_rate_max=0.0`, `tracking_target_table_clearance_batch_min=0.06511414051055908`, `tracking_effective_phase_weight_mean=0.5628080325822036`.
+- rollout_reward: reward mean `1.7527947117884954`, final `1.498579502105713`; tracking reward mean `0.08229613187722862`, final `0.13901259005069733`.
+
+Analysis:
+- The retiming patch fixes the identified runtime mismatch at the task-registration level: the same task-space reference is now played over 8 s inside the 10 s episode while source duration remains auditable.
+- Target safety remains clean under retimed playback; the tighter timing did not introduce table-clearance violations.
+- This is still a reward-only variant with baseline observation size. The next question is whether a policy can learn from the retimed shaping without the earlier phase starvation.
+
+Next:
+- Commit/push this worklog result and redeploy the l401 agent worktree.
+- Run a tiny retimed RL-Games smoke, then checkpoint eval, before any larger scale-up.
