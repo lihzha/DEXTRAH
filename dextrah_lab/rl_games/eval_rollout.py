@@ -32,6 +32,22 @@ parser.add_argument("--metrics_path", type=str, default=None, help="Path to writ
 parser.add_argument("--trace_csv_path", type=str, default=None, help="Path to write per-step trace CSV.")
 parser.add_argument("--trace_jsonl_path", type=str, default=None, help="Path to write per-step trace JSONL.")
 parser.add_argument("--deterministic", action=argparse.BooleanOptionalAction, default=True, help="Use deterministic actions.")
+parser.add_argument(
+    "--action_source",
+    choices=("policy", "zero", "reference_delta"),
+    default="policy",
+    help=(
+        "Action source for rollout. 'policy' loads an RL-Games checkpoint. "
+        "'reference_delta' maps the trajectory target position/gripper schedule "
+        "into the existing Franka delta-IK action interface."
+    ),
+)
+parser.add_argument(
+    "--summary_window",
+    type=int,
+    default=120,
+    help="Fixed window size in steps for episode-independent first/middle/last metric summaries.",
+)
 parser.add_argument("--seed", type=int, default=None, help="Seed used for the environment.")
 parser.add_argument(
     "--disable_fabric", action="store_true", default=False, help="Disable fabric and use USD I/O operations."
@@ -66,6 +82,7 @@ from rl_games.torch_runner import Runner
 from isaaclab.envs import DirectMARLEnv, multi_agent_to_single_agent
 from isaaclab.utils.assets import retrieve_file_path
 from isaaclab.utils.dict import print_dict
+import isaaclab.utils.math as math_utils
 
 import isaaclab_tasks  # noqa: F401
 from isaaclab_tasks.utils import get_checkpoint_path, parse_env_cfg
@@ -207,6 +224,59 @@ def _collect_task_metrics(task_env, actions: torch.Tensor | None = None) -> dict
     return metrics
 
 
+def _zero_actions(task_env) -> torch.Tensor:
+    return torch.zeros(task_env.num_envs, task_env.cfg.action_space, device=task_env.device)
+
+
+def _reference_delta_actions(task_env) -> torch.Tensor:
+    """Track the current task-space reference using the env's delta-IK action convention.
+
+    This is deliberately not joint replay.  The compact reference is transformed
+    into runtime task-space targets by the environment; this helper converts the
+    current target position and gripper width into the 7-D relative action used
+    by the Franka task.  Orientation is left to the existing IK/controller state
+    for this cheap feasibility smoke.
+    """
+
+    if not hasattr(task_env, "traj_target_ee_pos"):
+        raise ValueError("reference_delta action source requires a trajectory-tracking task environment.")
+    if hasattr(task_env, "_compute_intermediate_values"):
+        task_env._compute_intermediate_values()
+    if hasattr(task_env, "_update_trajectory_tracking_targets"):
+        task_env._update_trajectory_tracking_targets()
+
+    ee_pos_b, _ = task_env._compute_ee_frame_pose()
+    target_pos_local = task_env.traj_target_ee_pos
+    target_pos_w = target_pos_local + task_env.scene.env_origins
+    target_pos_b, _ = math_utils.subtract_frame_transforms(
+        task_env._robot.data.root_pos_w,
+        task_env._robot.data.root_quat_w,
+        target_pos_w,
+        task_env._robot.data.root_quat_w,
+    )
+
+    actions = _zero_actions(task_env)
+    position_scale = torch.clamp(task_env.action_scale[:3], min=1.0e-6)
+    actions[:, :3] = torch.clamp((target_pos_b - ee_pos_b) / position_scale, -1.0, 1.0)
+    if actions.shape[-1] >= 7 and hasattr(task_env, "traj_target_gripper_width"):
+        max_width = max(float(task_env.cfg.max_gripper_width), 1.0e-6)
+        actions[:, 6] = torch.clamp(2.0 * task_env.traj_target_gripper_width / max_width - 1.0, -1.0, 1.0)
+    return actions
+
+
+def _actions_from_source(action_source: str, task_env, agent: BasePlayer | None, obs) -> torch.Tensor:
+    if action_source == "policy":
+        if agent is None:
+            raise ValueError("policy action source requires an RL-Games player.")
+        obs_t = agent.obs_to_torch(obs)
+        return agent.get_action(obs_t, is_deterministic=args_cli.deterministic)
+    if action_source == "zero":
+        return _zero_actions(task_env)
+    if action_source == "reference_delta":
+        return _reference_delta_actions(task_env)
+    raise ValueError(f"Unsupported action source: {action_source}")
+
+
 def _trajectory_tracking_reference_summary(task_env) -> dict | None:
     if not hasattr(task_env, "trajectory_tracking_reference_summary"):
         return None
@@ -252,6 +322,31 @@ def _write_trace_artifacts(
     with trace_jsonl_path.open("w") as jsonl_file:
         for item in step_metrics:
             jsonl_file.write(json.dumps(item, sort_keys=True) + "\n")
+
+
+def _fixed_window_summaries(
+    step_metrics: list[dict[str, float | int | None]],
+    window_size: int,
+) -> dict[str, dict[str, object]]:
+    if not step_metrics:
+        return {}
+    count = len(step_metrics)
+    size = max(1, min(int(window_size), count))
+    spans = {
+        "first": (0, size),
+        "middle": (max((count - size) // 2, 0), max((count - size) // 2, 0) + size),
+        "last": (count - size, count),
+    }
+    summaries: dict[str, dict[str, object]] = {}
+    for name, (start, end) in spans.items():
+        rows = step_metrics[start:end]
+        summaries[name] = {
+            "start_step": int(rows[0]["step"]),
+            "end_step": int(rows[-1]["step"]),
+            "num_steps": len(rows),
+            "metric_summaries": _summarize_step_metrics(rows),
+        }
+    return summaries
 
 
 def _env_config_summary(env_cfg, task_env) -> dict[str, object]:
@@ -369,14 +464,15 @@ def main(env_cfg, agent_cfg: dict):
         agent_cfg["params"]["seed"] = args_cli.seed
     _configure_eval_camera(env_cfg)
 
-    resume_path = _checkpoint_path(agent_cfg)
-    agent_cfg["params"]["load_checkpoint"] = True
-    agent_cfg["params"]["load_path"] = resume_path
-    print(f"[INFO]: Loading model checkpoint from: {agent_cfg['params']['load_path']}")
-
-    rl_device = agent_cfg["params"]["config"]["device"]
-    clip_obs = agent_cfg["params"]["env"].get("clip_observations", math.inf)
-    clip_actions = agent_cfg["params"]["env"].get("clip_actions", math.inf)
+    resume_path = None
+    if args_cli.action_source == "policy":
+        resume_path = _checkpoint_path(agent_cfg)
+        agent_cfg["params"]["load_checkpoint"] = True
+        agent_cfg["params"]["load_path"] = resume_path
+        print(f"[INFO]: Loading model checkpoint from: {agent_cfg['params']['load_path']}")
+    elif args_cli.checkpoint:
+        resume_path = retrieve_file_path(args_cli.checkpoint)
+        print(f"[INFO]: Non-policy action source will not restore checkpoint: {resume_path}")
 
     gym_env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)
     if isinstance(gym_env.unwrapped, DirectMARLEnv):
@@ -397,19 +493,26 @@ def main(env_cfg, agent_cfg: dict):
         print_dict(video_kwargs, nesting=4)
         gym_env = gym.wrappers.RecordVideo(gym_env, **video_kwargs)
 
-    env = RlGamesVecEnvWrapper(gym_env, rl_device, clip_obs, clip_actions)
+    agent: BasePlayer | None = None
+    if args_cli.action_source == "policy":
+        rl_device = agent_cfg["params"]["config"]["device"]
+        clip_obs = agent_cfg["params"]["env"].get("clip_observations", math.inf)
+        clip_actions = agent_cfg["params"]["env"].get("clip_actions", math.inf)
+        env = RlGamesVecEnvWrapper(gym_env, rl_device, clip_obs, clip_actions)
 
-    vecenv.register(
-        "IsaacRlgWrapper", lambda config_name, num_actors, **kwargs: RlGamesGpuEnv(config_name, num_actors, **kwargs)
-    )
-    env_configurations.register("rlgpu", {"vecenv_type": "IsaacRlgWrapper", "env_creator": lambda **kwargs: env})
+        vecenv.register(
+            "IsaacRlgWrapper", lambda config_name, num_actors, **kwargs: RlGamesGpuEnv(config_name, num_actors, **kwargs)
+        )
+        env_configurations.register("rlgpu", {"vecenv_type": "IsaacRlgWrapper", "env_creator": lambda **kwargs: env})
 
-    agent_cfg["params"]["config"]["num_actors"] = env.unwrapped.num_envs
-    runner = Runner()
-    runner.load(agent_cfg)
-    agent: BasePlayer = runner.create_player()
-    agent.restore(resume_path)
-    agent.reset()
+        agent_cfg["params"]["config"]["num_actors"] = env.unwrapped.num_envs
+        runner = Runner()
+        runner.load(agent_cfg)
+        agent = runner.create_player()
+        agent.restore(resume_path)
+        agent.reset()
+    else:
+        env = gym_env
 
     step_metrics = []
     done_count = 0
@@ -418,19 +521,19 @@ def main(env_cfg, agent_cfg: dict):
         obs = env.reset()
         if isinstance(obs, tuple):
             obs = obs[0]
-        if isinstance(obs, dict):
+        if args_cli.action_source == "policy" and isinstance(obs, dict):
             obs = obs["obs"]
-        _ = agent.get_batch_size(obs, 1)
-        if agent.is_rnn:
-            agent.init_rnn()
+        if agent is not None:
+            _ = agent.get_batch_size(obs, 1)
+            if agent.is_rnn:
+                agent.init_rnn()
 
         for step in range(args_cli.num_steps):
             if not simulation_app.is_running():
                 break
 
             with torch.inference_mode():
-                obs = agent.obs_to_torch(obs)
-                actions = agent.get_action(obs, is_deterministic=args_cli.deterministic)
+                actions = _actions_from_source(args_cli.action_source, task_env, agent, obs)
                 step_out = env.step(actions)
                 if len(step_out) == 5:
                     obs, rewards, terminated, truncated, _ = step_out
@@ -438,7 +541,7 @@ def main(env_cfg, agent_cfg: dict):
                 else:
                     obs, rewards, dones, _ = step_out
 
-                if isinstance(obs, dict):
+                if args_cli.action_source == "policy" and isinstance(obs, dict):
                     obs = obs["obs"]
 
                 success_rate = _env_metric(task_env, "in_success_region")
@@ -448,7 +551,7 @@ def main(env_cfg, agent_cfg: dict):
                 if isinstance(dones, torch.Tensor):
                     dones_bool = dones.bool()
                     done_count += int(dones_bool.sum().detach().cpu())
-                    if agent.is_rnn and agent.states is not None and dones_bool.any():
+                    if agent is not None and agent.is_rnn and agent.states is not None and dones_bool.any():
                         for state in agent.states:
                             state[:, dones_bool, :] = 0.0
 
@@ -478,6 +581,16 @@ def main(env_cfg, agent_cfg: dict):
     summary = {
         "task": args_cli.task,
         "checkpoint": resume_path,
+        "action_source": args_cli.action_source,
+        "action_source_notes": (
+            "rl_games_policy"
+            if args_cli.action_source == "policy"
+            else (
+                "position_only_delta_ik_from_runtime_task_space_reference_plus_gripper_schedule"
+                if args_cli.action_source == "reference_delta"
+                else "zero_actions"
+            )
+        ),
         "num_envs": env_cfg.scene.num_envs,
         "num_steps_requested": args_cli.num_steps,
         "num_steps_completed": len(step_metrics),
@@ -499,6 +612,7 @@ def main(env_cfg, agent_cfg: dict):
         "trace_csv_path": str(trace_csv_path),
         "trace_jsonl_path": str(trace_jsonl_path),
         "metric_summaries": _summarize_step_metrics(step_metrics),
+        "fixed_window_summaries": _fixed_window_summaries(step_metrics, args_cli.summary_window),
     }
     payload = {"summary": summary, "steps": step_metrics}
     metrics_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")

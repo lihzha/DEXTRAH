@@ -32,6 +32,7 @@ VIDEO_NAME_PREFIX="${VIDEO_NAME_PREFIX:-franka-cube-grasp-eval}"
 PRINT_INTERVAL="${PRINT_INTERVAL:-20}"
 CAPTURE_VIDEO="${CAPTURE_VIDEO:-True}"
 DETERMINISTIC="${DETERMINISTIC:-True}"
+ACTION_SOURCE="${ACTION_SOURCE:-policy}"
 USE_CUDA_GRAPH="${USE_CUDA_GRAPH:-False}"
 SEED="${SEED:-42}"
 CUBE_SPAWN_XY_RANDOMIZATION="${CUBE_SPAWN_XY_RANDOMIZATION:-0.08}"
@@ -42,7 +43,11 @@ CAMERA_EYE_Z="${CAMERA_EYE_Z:-1.42}"
 CAMERA_TARGET_X="${CAMERA_TARGET_X:--0.41}"
 CAMERA_TARGET_Y="${CAMERA_TARGET_Y:--0.10}"
 CAMERA_TARGET_Z="${CAMERA_TARGET_Z:-0.82}"
-CHECKPOINT="${CHECKPOINT:?Set CHECKPOINT to a checkpoint path visible inside the container, e.g. /results/logs/rl_games/dextrah_franka_cube_grasp/<run>/nn/foo.pth}"
+CHECKPOINT="${CHECKPOINT:-}"
+if [ "$ACTION_SOURCE" = "policy" ] && [ -z "$CHECKPOINT" ]; then
+  echo "Set CHECKPOINT for ACTION_SOURCE=policy, e.g. /results/logs/rl_games/dextrah_franka_cube_grasp/<run>/nn/foo.pth"
+  exit 2
+fi
 
 RUN_DIR_HOST="$RESULTS_NFS/evals/$RUN_NAME"
 RUN_DIR_CONTAINER="/results/evals/$RUN_NAME"
@@ -51,11 +56,13 @@ LOG_FILE="$NFS_ROOT/slurm_logs/dextrah/eval_franka_cube_${SLURM_JOB_ID_SAFE}.out
 
 CHECKPOINT_ARG="$CHECKPOINT"
 CHECKPOINT_HOST="$CHECKPOINT"
-if [[ "$CHECKPOINT" == /results/* ]]; then
-  CHECKPOINT_HOST="$RESULTS_NFS/${CHECKPOINT#/results/}"
-elif [[ "$CHECKPOINT" == "$RESULTS_NFS"/* ]]; then
-  rel_checkpoint="${CHECKPOINT#$RESULTS_NFS/}"
-  CHECKPOINT_ARG="/results/$rel_checkpoint"
+if [ -n "$CHECKPOINT" ]; then
+  if [[ "$CHECKPOINT" == /results/* ]]; then
+    CHECKPOINT_HOST="$RESULTS_NFS/${CHECKPOINT#/results/}"
+  elif [[ "$CHECKPOINT" == "$RESULTS_NFS"/* ]]; then
+    rel_checkpoint="${CHECKPOINT#$RESULTS_NFS/}"
+    CHECKPOINT_ARG="/results/$rel_checkpoint"
+  fi
 fi
 
 if [ ! -f "$IMAGE" ]; then
@@ -66,7 +73,7 @@ if [ ! -d "$ENV_ROOT/$ENV_NAME/site" ]; then
   echo "Missing DEXTRAH Python target: $ENV_ROOT/$ENV_NAME/site"
   exit 2
 fi
-if [ ! -f "$CHECKPOINT_HOST" ]; then
+if [ -n "$CHECKPOINT_HOST" ] && [ ! -f "$CHECKPOINT_HOST" ]; then
   echo "Missing checkpoint: $CHECKPOINT_HOST"
   exit 2
 fi
@@ -79,7 +86,7 @@ mkdir -p \
   "$CACHE_NFS/omni_logs" "$CACHE_NFS/carb_logs" \
   "$CACHE_NFS/data" "$CACHE_NFS/documents"
 
-export TASK RUN_NAME NUM_ENVS NUM_STEPS VIDEO_LENGTH VIDEO_NAME_PREFIX PRINT_INTERVAL CAPTURE_VIDEO DETERMINISTIC USE_CUDA_GRAPH SEED CUBE_SPAWN_XY_RANDOMIZATION TRAJECTORY_TRACKING_REFERENCE_PATH
+export TASK RUN_NAME NUM_ENVS NUM_STEPS VIDEO_LENGTH VIDEO_NAME_PREFIX PRINT_INTERVAL CAPTURE_VIDEO DETERMINISTIC ACTION_SOURCE USE_CUDA_GRAPH SEED CUBE_SPAWN_XY_RANDOMIZATION TRAJECTORY_TRACKING_REFERENCE_PATH
 export CAMERA_EYE_X CAMERA_EYE_Y CAMERA_EYE_Z CAMERA_TARGET_X CAMERA_TARGET_Y CAMERA_TARGET_Z
 export CHECKPOINT_ARG RUN_DIR_CONTAINER METRICS_CONTAINER ENV_NAME
 
@@ -99,6 +106,7 @@ echo "VIDEO_LENGTH=$VIDEO_LENGTH"
 echo "VIDEO_NAME_PREFIX=$VIDEO_NAME_PREFIX"
 echo "CAPTURE_VIDEO=$CAPTURE_VIDEO"
 echo "DETERMINISTIC=$DETERMINISTIC"
+echo "ACTION_SOURCE=$ACTION_SOURCE"
 echo "USE_CUDA_GRAPH=$USE_CUDA_GRAPH"
 echo "SEED=$SEED"
 echo "CUBE_SPAWN_XY_RANDOMIZATION=$CUBE_SPAWN_XY_RANDOMIZATION"
@@ -149,6 +157,11 @@ srun \
       DETERMINISTIC_ARGS=(--no-deterministic)
     fi
 
+    CHECKPOINT_ARGS=()
+    if [ -n "$CHECKPOINT_ARG" ]; then
+      CHECKPOINT_ARGS=(--checkpoint "$CHECKPOINT_ARG")
+    fi
+
     TASK_OVERRIDES=(
       agent.wandb_activate=False
       env.use_cuda_graph="$USE_CUDA_GRAPH"
@@ -164,7 +177,7 @@ srun \
       eval_rollout.py
       --headless
       --task="$TASK"
-      --checkpoint "$CHECKPOINT_ARG"
+      --action_source "$ACTION_SOURCE"
       --num_envs "$NUM_ENVS"
       --num_steps "$NUM_STEPS"
       --seed "$SEED"
@@ -175,6 +188,7 @@ srun \
       --camera_target "$CAMERA_TARGET_X" "$CAMERA_TARGET_Y" "$CAMERA_TARGET_Z"
       "${VIDEO_ARGS[@]}"
       "${DETERMINISTIC_ARGS[@]}"
+      "${CHECKPOINT_ARGS[@]}"
       "${TASK_OVERRIDES[@]}"
     )
 

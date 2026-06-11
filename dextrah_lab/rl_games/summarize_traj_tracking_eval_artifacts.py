@@ -53,6 +53,28 @@ def _summary(summary: dict[str, object], key: str, field: str = "mean") -> float
     return float(value) if isinstance(value, (int, float)) else None
 
 
+def _window_metric(
+    summary: dict[str, object],
+    window_name: str,
+    key: str,
+    field: str = "mean",
+) -> float | None:
+    windows = summary.get("fixed_window_summaries", {})
+    if not isinstance(windows, dict):
+        return None
+    window = windows.get(window_name, {})
+    if not isinstance(window, dict):
+        return None
+    metrics = window.get("metric_summaries", {})
+    if not isinstance(metrics, dict):
+        return None
+    record = metrics.get(key, {})
+    if not isinstance(record, dict):
+        return None
+    value = record.get(field)
+    return float(value) if isinstance(value, (int, float)) else None
+
+
 def _fmt(value: object, digits: int = 6) -> str:
     if value is None:
         return "n/a"
@@ -196,6 +218,8 @@ def main() -> None:
     (output_dir / "train_eval_consistency.json").write_text(json.dumps(consistency, indent=2, sort_keys=True) + "\n")
 
     compact = {
+        "action_source": summary.get("action_source"),
+        "action_source_notes": summary.get("action_source_notes"),
         "checkpoint": summary.get("checkpoint"),
         "done_count": summary.get("done_count"),
         "num_steps_completed": summary.get("num_steps_completed"),
@@ -214,6 +238,33 @@ def main() -> None:
         "lift_action_reward_mean": _summary(summary, "cube_traj_tracking_lift_action_reward", "mean"),
         "close_action_utilization_mean": _summary(summary, "cube_traj_tracking_close_action_utilization", "mean"),
         "lift_action_utilization_mean": _summary(summary, "cube_traj_tracking_lift_action_utilization", "mean"),
+        "fixed_windows": {
+            window_name: {
+                "reward_mean": _window_metric(summary, window_name, "reward_mean", "mean"),
+                "reward_final": _window_metric(summary, window_name, "reward_mean", "final"),
+                "ee_to_target_mean": _window_metric(summary, window_name, "ee_to_traj_target_dist", "mean"),
+                "ee_to_cube_mean": _window_metric(summary, window_name, "ee_to_cube_dist", "mean"),
+                "finger_center_to_cube_mean": _window_metric(
+                    summary, window_name, "finger_center_to_cube_dist", "mean"
+                ),
+                "gripper_width_mean": _window_metric(summary, window_name, "gripper_width", "mean"),
+                "close_utilization_mean": _window_metric(
+                    summary, window_name, "cube_traj_tracking_close_action_utilization", "mean"
+                ),
+                "lift_utilization_mean": _window_metric(
+                    summary, window_name, "cube_traj_tracking_lift_action_utilization", "mean"
+                ),
+                "unsafe_target_rate_max": _window_metric(
+                    summary, window_name, "cube_traj_tracking_unsafe_target_rate", "max"
+                ),
+                "target_clearance_min": _window_metric(
+                    summary, window_name, "cube_traj_tracking_target_table_clearance", "min"
+                ),
+                "lift_height_max": _window_metric(summary, window_name, "cube_lift_height", "max"),
+                "success_rate_mean": _window_metric(summary, window_name, "success_rate", "mean"),
+            }
+            for window_name in ("first", "middle", "last")
+        },
         "reference_curobo_validated": summary.get("trajectory_tracking_reference", {}).get("curobo_validated"),
         "reference_source_tag": summary.get("trajectory_tracking_reference", {}).get("source_tag"),
         "trace_csv_path": summary.get("trace_csv_path"),
@@ -222,8 +273,39 @@ def main() -> None:
     }
     (output_dir / "summary.json").write_text(json.dumps(compact, indent=2, sort_keys=True) + "\n")
 
+    window_rows = []
+    for window_name in ("first", "middle", "last"):
+        window = compact["fixed_windows"][window_name]
+        window_rows.append(
+            "| "
+            + " | ".join(
+                [
+                    window_name,
+                    _fmt(window["reward_mean"], 4),
+                    _fmt(window["ee_to_target_mean"], 4),
+                    _fmt(window["ee_to_cube_mean"], 4),
+                    _fmt(window["finger_center_to_cube_mean"], 4),
+                    _fmt(window["gripper_width_mean"], 4),
+                    _fmt(window["close_utilization_mean"], 4),
+                    _fmt(window["lift_utilization_mean"], 4),
+                    _fmt(window["target_clearance_min"], 4),
+                    _fmt(window["lift_height_max"], 4),
+                    _fmt(window["success_rate_mean"], 4),
+                ]
+            )
+            + " |"
+        )
+    window_table = "\n".join(
+        [
+            "| Window | Reward | EE-target | EE-cube | Finger-cube | Grip width | Close util | Lift util | Target clearance min | Lift max | Success |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+            *window_rows,
+        ]
+    )
+
     report = f"""# Trajectory Tracking Diagnostic Artifact
 
+- action source: `{summary.get('action_source')}` ({summary.get('action_source_notes')})
 - checkpoint: `{summary.get('checkpoint')}`
 - steps: {summary.get('num_steps_completed')}/{summary.get('num_steps_requested')}
 - reward mean/final: {_fmt(summary.get('reward_mean'))} / {_fmt(summary.get('reward_final'))}
@@ -243,6 +325,10 @@ def main() -> None:
 - contact gate mean: {_fmt(compact['contact_gate_mean'])}
 - close/lift action reward mean: {_fmt(compact['close_action_reward_mean'])} / {_fmt(compact['lift_action_reward_mean'])}
 - close/lift utilization mean: {_fmt(compact['close_action_utilization_mean'])} / {_fmt(compact['lift_action_utilization_mean'])}
+
+## Fixed-Window Rollout Metrics
+
+{window_table}
 
 ## Files
 

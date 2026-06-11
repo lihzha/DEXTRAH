@@ -2227,3 +2227,41 @@ Analysis:
 Next:
 - Do not launch longer RL from this checkpoint.
 - Next bounded debugging should be a diagnostic ablation that makes the short-run metric route interpretable without relying on episode termination: either force a short eval-only action prior / scripted action comparison against the same reference, or alter the tiny RL smoke/eval route to log rollout reward summaries independent of episode completion before any further training.
+
+## 2026-06-11T14:50:58-07:00 - fixed-window rollout metrics and reference-delta sanity plan
+
+Goal:
+- Make short trajectory-tracking RL/eval smoke results interpretable without relying on RL-Games episode return suffixes when no env terminates.
+- Run one bounded policy-free sanity eval to separate "the learned policy does not emit useful close/up actions" from "the task-space reference cannot be followed through the current Franka delta-IK action interface."
+
+Planned Change:
+- `dextrah_lab/rl_games/eval_rollout.py`: add episode-independent fixed-window metric summaries to `metrics.json` and add an `action_source` option. Default remains `policy`; a new `reference_delta` mode will step the env without a checkpoint by mapping the current trajectory target EE position plus target gripper width into the existing 7-D Franka action interface.
+- `cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`: add `ACTION_SOURCE` env plumbing and allow no checkpoint only for non-policy evals. Baseline policy eval behavior remains unchanged.
+- `dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py`: include action source and fixed-window summaries in the report/summary so short runs expose reward terms, EE-to-target, EE/finger-to-cube, gripper, action utilization, safety, lift, and success independent of episode termination.
+- Worklog: record the action-interface caveat. This is not cuRobo joint replay; it is a cheap position-only delta-IK sanity baseline using transformed task-space waypoints and the env's gripper schedule.
+
+Validation Plan:
+- Local cheap checks: `python3 -m py_compile` on touched Python files, `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`, and `git diff --check`.
+- Commit/push/deploy exact commit to B l401 worktree.
+- Launch one bounded 4-env/480-step `ACTION_SOURCE=reference_delta` eval with video and trace artifacts for `Dextrah-Franka-Cube-Grasp-Traj-Tracking`, same reference path, same reset randomization.
+- Fetch full run, validate video metadata/frames, generate trace plot/report/summary/consistency JSON, `viz-open` video/plot/report/contact sheet, inspect behavior, and record exact metrics/URLs.
+
+Acceptance Criteria:
+- No long RL training.
+- Eval writes `metrics.json`, `trace.csv`, `trace.jsonl`, a valid video, and fixed-window summaries.
+- Target unsafe rate remains zero and target clearance stays above `0.025`.
+- The result should show whether the current delta-IK action interface can at least approach/contact the reference target. If it cannot, document the minimal bridge needed: a proper IK/action bridge that uses both task-space pose orientation and validated gripper/object contact timing, not blind joint trajectory replay.
+
+Result:
+- status: implemented locally; cluster launch pending.
+- changed_files: `dextrah_lab/rl_games/eval_rollout.py`, `dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py`, `cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`, this worklog.
+- implementation: `eval_rollout.py` now writes `fixed_window_summaries` for first/middle/last rollout windows and records `action_source`/notes in the summary. The default `policy` action source still loads an RL-Games checkpoint. The new `reference_delta` source runs without a checkpoint and maps the current runtime task-space reference target position plus gripper target width into the existing 7-D Franka delta-IK action convention.
+- caveat: `reference_delta` is position-only delta IK plus gripper schedule; it does not replay cuRobo joint trajectories and does not yet track reference orientation. It is intended only as a cheap controller/reference feasibility sanity check.
+- wrapper: `cluster/sbatch_eval_franka_cube_grasp_1gpu.sh` accepts `ACTION_SOURCE`; `policy` still requires a checkpoint, non-policy sources may omit one. Default behavior remains `ACTION_SOURCE=policy`.
+- local_validation: `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py` passed.
+- local_validation: `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh` passed.
+- local_validation: `git diff --check` passed.
+
+Next:
+- Commit/push/deploy exact implementation commit.
+- Launch one bounded l401 `ACTION_SOURCE=reference_delta` eval with video, trace files, fixed-window summaries, and artifact bundle. No RL training.
