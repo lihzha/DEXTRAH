@@ -259,3 +259,115 @@ Analysis:
 - The user gripper asset fix is verified.
 - The local demo is complete as an assisted Isaac Sim/PhysX grasp visualization.
 - Pure contact-only lifting remains blocked by the current Franka USD gripper collision/contact fidelity for the thin star.
+
+## 2026-06-11T07:34:19Z - Faithful dynamic render with grasp candidates
+
+Goal:
+- Respond to the user's correction by visualizing diverse GraspGenX candidates while keeping the selected plan and Isaac Sim/PhysX execution faithful, so bad grasps remain visible failures.
+
+Hypothesis:
+- The previous "sticky top" impression came from the selected top-down candidate and the debug-only attach assist. Rendering the raw dynamic run with non-colliding grasp-frame overlays should show the candidate distribution and preserve the physical failure/success outcome without deliberate top-down filtering.
+
+Change:
+- Added `--show_grasp_candidates` and candidate-axis sizing flags to `render_star_kitting_env.py`.
+- Added non-colliding grasp-frame triads from `trajectory.annotations.all_grasps`; selection is target plus evenly sampled candidates and does not change planning.
+- Marked `--franka_grasp_constraint_mode attach_on_close` as debug-only and will keep it off for this render.
+- Added wrapper pass-through for grasp candidate visualization flags.
+
+Version Control:
+- agent_id: franka-ggx-curobo-local-20260610T234641Z-86074
+- worktree: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-ggx-curobo-local-20260610T234641Z-86074
+- worklog: worklogs/franka-graspgenx-curobo-demo/franka-ggx-curobo-local-20260610T234641Z-86074.md
+- branch: codex/franka-graspgenx-curobo-demo/franka-ggx-curobo-local-20260610T234641Z-86074
+- base_commit: 287b117a7ca571f6fe4744c01c15eb945c597c30
+- implementation_commit: pending
+- push/pull: n/a for local pre-launch
+- changed_files: dextrah_lab/scene_scripts/render_star_kitting_env.py, cluster/sbatch_render_star_kitting_env.sh, worklogs/franka-graspgenx-curobo-demo/franka-ggx-curobo-local-20260610T234641Z-86074.md
+
+Command / Job:
+- validation: `python3 -m py_compile dextrah_lab/scene_scripts/render_star_kitting_env.py dextrah_lab/scene_scripts/plan_franka_star_graspgenx_curobo.py`
+- validation: `bash -n cluster/sbatch_render_star_kitting_env.sh`
+- validation: `bash -n cluster/sbatch_plan_franka_star_graspgenx_curobo.sh`
+- validation: `git diff --check`
+- planned render: local Docker Isaac Lab/Isaac Sim on GPU0, raw dynamic star physics, articulation fingertip proxies, `--franka_grasp_constraint_mode off`, `--show_grasp_candidates --max_grasp_candidates 24`
+
+Result:
+- status: in progress
+- syntax/wrapper validation: passed before launch
+
+Next:
+- Launch the local render, encode video/contact sheet, inspect first/middle/last frames and motion traces, then commit and push if the artifact matches the faithful-render requirement.
+
+## 2026-06-11T07:37:47Z - Faithful dynamic render with all grasp candidates
+
+Goal:
+- Produce the final user-facing raw PhysX video with every GraspGenX candidate in the current trajectory annotation visible, rather than only a sampled subset.
+
+Hypothesis:
+- Showing all 40 candidates is the most literal visualization for this scene and avoids making the overlay itself look like a planner-side grasp filter.
+
+Version Control:
+- agent_id: franka-ggx-curobo-local-20260610T234641Z-86074
+- worktree: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-ggx-curobo-local-20260610T234641Z-86074
+- branch: codex/franka-graspgenx-curobo-demo/franka-ggx-curobo-local-20260610T234641Z-86074
+- implementation_commit: pending
+
+Command / Job:
+- planned render: local Docker Isaac Lab/Isaac Sim on GPU0, raw dynamic star physics, articulation fingertip proxies, `--franka_grasp_constraint_mode off`, `--show_grasp_candidates --max_grasp_candidates 40`
+
+Result:
+- status: in progress
+
+Next:
+- Encode and inspect the all-candidate video/contact sheet, then use this as the final artifact if markers remain legible and the physics trace is faithful.
+
+## 2026-06-11T07:40:10Z - Grasp candidate selector correction
+
+Goal:
+- Ensure the visualization truly shows every candidate when the requested max count covers the trajectory's source grasp set.
+
+Change:
+- Fixed `_select_grasp_candidate_indices()` so a budget greater than or equal to the source grasp count returns all source candidates, with the target candidate first.
+- Added source-level orientation counts to the grasp marker metadata.
+
+Version Control:
+- agent_id: franka-ggx-curobo-local-20260610T234641Z-86074
+- worktree: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-ggx-curobo-local-20260610T234641Z-86074
+- branch: codex/franka-graspgenx-curobo-demo/franka-ggx-curobo-local-20260610T234641Z-86074
+- implementation_commit: pending
+
+Command / Job:
+- validation: `python3 -m py_compile dextrah_lab/scene_scripts/render_star_kitting_env.py dextrah_lab/scene_scripts/plan_franka_star_graspgenx_curobo.py`
+- validation: `bash -n cluster/sbatch_render_star_kitting_env.sh`
+- validation: `bash -n cluster/sbatch_plan_franka_star_graspgenx_curobo.sh`
+- validation: `git diff --check`
+
+Result:
+- status: passed
+- previous all-candidate render visualized 39/40 due to duplicate target handling; needs one rerun after this patch.
+
+Next:
+- Rerun raw dynamic video with `--max_grasp_candidates 40` and use it as the final artifact if metadata reports 40/40 visualized.
+
+## 2026-06-11T07:42:20Z - Final all-candidate raw PhysX artifact
+
+Result:
+- status: passed as faithful render, failed as a physical grasp/lift
+- final_run: render_raw_physics_all40_grasps_gpu0_20260611T074033Z
+- run_dir: /home/lzha/code/local_results/franka_ggx_curobo_demo/franka-ggx-curobo-local-20260610T234641Z-86074/render/render_raw_physics_all40_grasps_gpu0_20260611T074033Z
+- overview_video: /home/lzha/code/local_results/franka_ggx_curobo_demo/franka-ggx-curobo-local-20260610T234641Z-86074/render/render_raw_physics_all40_grasps_gpu0_20260611T074033Z/overview.mp4
+- contact_sheet: /home/lzha/code/local_results/franka_ggx_curobo_demo/franka-ggx-curobo-local-20260610T234641Z-86074/render/render_raw_physics_all40_grasps_gpu0_20260611T074033Z/contact_sheet.png
+- viewer: http://localhost:8765/view?path=local_results/franka_ggx_curobo_demo/franka-ggx-curobo-local-20260610T234641Z-86074/render/render_raw_physics_all40_grasps_gpu0_20260611T074033Z/overview.mp4
+- ffprobe: 640x360, 48 frames, 12 FPS, 4.0 s
+- grasp markers: 40 source candidates, 40 visualized; source distribution `top_down=34`, `side_or_oblique=4`, `steep_oblique=2`; target source index 16
+- faithful physics knobs: `franka_trajectory_object_mode=physics`, `franka_trajectory_playback=target`, `franka_grasp_constraint.mode=off`, `franka_grasp_constraint.attached=false`
+- star motion: max z lift 0.000083 m, max xy displacement 0.000160 m, final z delta 0.0 m
+- gripper motion: actual finger sum closed from 0.0800 m to min 0.00994 m
+
+Analysis:
+- The star top mesh is not the root issue for this render; the selected target candidate is top-down and the generated candidate distribution is heavily top-down.
+- With assist off and the object left dynamic, Isaac Sim/PhysX shows the attempted grasp as a failure: the gripper closes, but the star remains effectively stationary and is not lifted.
+- This satisfies the user's latest instruction: no deliberate top-down filtering, no fake attachment, and failures remain visible failures.
+
+Next:
+- Run final source validation, commit the render/metadata support and worklog, push the isolated branch, and report the final artifact.

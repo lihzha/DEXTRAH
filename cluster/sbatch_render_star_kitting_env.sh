@@ -34,6 +34,15 @@ case "${ANIMATE_CUBE,,}" in
     ANIMATE_CUBE_FLAG=""
     ;;
 esac
+SHOW_GRASP_CANDIDATES="${SHOW_GRASP_CANDIDATES:-False}"
+case "${SHOW_GRASP_CANDIDATES,,}" in
+  1|true|yes|on)
+    SHOW_GRASP_CANDIDATES_FLAG="--show_grasp_candidates"
+    ;;
+  *)
+    SHOW_GRASP_CANDIDATES_FLAG=""
+    ;;
+esac
 if [ "$SCENE" = "cube_motion" ] || [ "$SCENE" = "single_cube" ]; then
   if [ -n "$ANIMATE_CUBE_FLAG" ]; then
     RESULT_SUBDIR="${RESULT_SUBDIR:-franka_cube_motion}"
@@ -120,6 +129,10 @@ echo "FRANKA_GRASP_CONSTRAINT_MODE=${FRANKA_GRASP_CONSTRAINT_MODE:-off}"
 echo "FRANKA_GRASP_CONSTRAINT_CLOSE_THRESHOLD=${FRANKA_GRASP_CONSTRAINT_CLOSE_THRESHOLD:-0.012}"
 echo "FRANKA_GRASP_CONSTRAINT_XY_THRESHOLD=${FRANKA_GRASP_CONSTRAINT_XY_THRESHOLD:-0.050}"
 echo "FRANKA_GRASP_CONSTRAINT_Z_THRESHOLD=${FRANKA_GRASP_CONSTRAINT_Z_THRESHOLD:-0.080}"
+echo "SHOW_GRASP_CANDIDATES=$SHOW_GRASP_CANDIDATES"
+echo "MAX_GRASP_CANDIDATES=${MAX_GRASP_CANDIDATES:-24}"
+echo "GRASP_CANDIDATE_AXIS_LENGTH=${GRASP_CANDIDATE_AXIS_LENGTH:-0.045}"
+echo "GRASP_CANDIDATE_AXIS_THICKNESS=${GRASP_CANDIDATE_AXIS_THICKNESS:-0.004}"
 echo "ANIMATE_CUBE=$ANIMATE_CUBE"
 
 srun \
@@ -176,6 +189,10 @@ srun \
       --star_outer_radius \"${STAR_OUTER_RADIUS:-0.092}\" \
       --star_inner_radius \"${STAR_INNER_RADIUS:-0.042}\" \
       --star_thickness \"${STAR_THICKNESS:-0.034}\" \
+      $SHOW_GRASP_CANDIDATES_FLAG \
+      --max_grasp_candidates \"${MAX_GRASP_CANDIDATES:-24}\" \
+      --grasp_candidate_axis_length \"${GRASP_CANDIDATE_AXIS_LENGTH:-0.045}\" \
+      --grasp_candidate_axis_thickness \"${GRASP_CANDIDATE_AXIS_THICKNESS:-0.004}\" \
       --fixture_size_x \"${FIXTURE_SIZE_X:-0.33}\" \
       --fixture_size_y \"${FIXTURE_SIZE_Y:-0.33}\" \
       --fixture_thickness \"${FIXTURE_THICKNESS:-0.052}\" \

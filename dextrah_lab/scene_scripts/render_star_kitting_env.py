@@ -152,8 +152,7 @@ def parse_args() -> argparse.Namespace:
         choices=("off", "attach_on_close"),
         default="off",
         help=(
-            "Optional Isaac Sim grasp assist for dynamic demos. attach_on_close leaves the star dynamic until "
-            "the fingers close near the object, then welds the object pose to the measured Franka hand pose."
+            "Debug-only grasp assist. Leave this off for faithful physics renders where failures remain failures."
         ),
     )
     parser.add_argument(
@@ -177,6 +176,33 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--star_outer_radius", type=float, default=0.092)
     parser.add_argument("--star_inner_radius", type=float, default=0.042)
     parser.add_argument("--star_thickness", type=float, default=0.034)
+    parser.add_argument(
+        "--show_grasp_candidates",
+        action="store_true",
+        default=False,
+        help="Render GraspGenX candidate frames from trajectory annotations without changing the plan.",
+    )
+    parser.add_argument(
+        "--max_grasp_candidates",
+        type=int,
+        default=24,
+        help=(
+            "Maximum number of grasp candidates to visualize when --show_grasp_candidates is set. "
+            "Use a value at least as large as the source count to show every candidate."
+        ),
+    )
+    parser.add_argument(
+        "--grasp_candidate_axis_length",
+        type=float,
+        default=0.045,
+        help="Axis triad length, in meters, for visualized grasp candidates.",
+    )
+    parser.add_argument(
+        "--grasp_candidate_axis_thickness",
+        type=float,
+        default=0.004,
+        help="Axis triad thickness, in meters, for visualized grasp candidates.",
+    )
     parser.add_argument("--fixture_size_x", type=float, default=0.33)
     parser.add_argument("--fixture_size_y", type=float, default=0.33)
     parser.add_argument("--fixture_thickness", type=float, default=0.052)
@@ -363,6 +389,191 @@ def _add_box(
     if collision:
         _apply_collision(prim, approximation="box")
     return prim
+
+
+def _as_matrix4(value: object) -> list[list[float]] | None:
+    if not isinstance(value, list) or len(value) != 4:
+        return None
+    matrix: list[list[float]] = []
+    for row in value:
+        if not isinstance(row, list) or len(row) != 4:
+            return None
+        try:
+            matrix.append([float(v) for v in row])
+        except (TypeError, ValueError):
+            return None
+    return matrix
+
+
+def _transform_distance(a: list[list[float]], b: list[list[float]]) -> float:
+    return math.sqrt(sum((float(a[r][c]) - float(b[r][c])) ** 2 for r in range(4) for c in range(4)))
+
+
+def _select_grasp_candidate_indices(
+    grasps: list[list[list[float]]],
+    target_grasp: list[list[float]] | None,
+    max_count: int,
+) -> list[int]:
+    budget = max(0, int(max_count))
+    if not grasps or budget <= 0:
+        return []
+    selected: list[int] = []
+    target_idx = None
+    if target_grasp is not None:
+        distances = [_transform_distance(grasp, target_grasp) for grasp in grasps]
+        target_idx = int(min(range(len(distances)), key=distances.__getitem__))
+        selected.append(target_idx)
+
+    if budget >= len(grasps):
+        return selected + [idx for idx in range(len(grasps)) if idx not in selected]
+
+    remaining_budget = max(0, budget - len(selected))
+    if remaining_budget <= 0:
+        return selected
+    if remaining_budget == 1:
+        candidates = [0]
+    else:
+        candidates = [
+            int(round(float(idx) * float(len(grasps) - 1) / float(remaining_budget - 1)))
+            for idx in range(remaining_budget)
+        ]
+    for idx in candidates:
+        if idx not in selected:
+            selected.append(idx)
+    if len(selected) < budget:
+        for idx in range(len(grasps)):
+            if idx not in selected:
+                selected.append(idx)
+                if len(selected) >= budget:
+                    break
+    return selected[:budget]
+
+
+def _grasp_orientation_label(transform: list[list[float]]) -> str:
+    z_axis_z = float(transform[2][2])
+    if z_axis_z <= -0.8:
+        return "top_down"
+    if z_axis_z >= 0.8:
+        return "bottom_up"
+    if abs(z_axis_z) <= 0.5:
+        return "side_or_oblique"
+    return "steep_oblique"
+
+
+def _add_local_axis_box(
+    stage: Usd.Stage,
+    path: str,
+    axis: str,
+    length: float,
+    thickness: float,
+    mat: UsdShade.Material,
+) -> None:
+    half = 0.5 * float(length)
+    t = float(thickness)
+    if axis == "x":
+        center = (half, 0.0, 0.0)
+        size = (float(length), t, t)
+    elif axis == "y":
+        center = (0.0, half, 0.0)
+        size = (t, float(length), t)
+    elif axis == "z":
+        center = (0.0, 0.0, half)
+        size = (t, t, float(length))
+    else:
+        raise ValueError(f"Unsupported axis: {axis}")
+    _add_box(stage, path, center, size, mat, collision=False, visible=True)
+
+
+def _add_grasp_candidate_markers(
+    stage: Usd.Stage,
+    trajectory: dict[str, object] | None,
+    *,
+    max_count: int,
+    axis_length: float,
+    axis_thickness: float,
+    x_mat: UsdShade.Material,
+    y_mat: UsdShade.Material,
+    z_mat: UsdShade.Material,
+    target_mat: UsdShade.Material,
+) -> dict[str, object]:
+    if trajectory is None:
+        return {"enabled": False, "reason": "missing_trajectory"}
+    annotations = trajectory.get("annotations")
+    if not isinstance(annotations, dict):
+        return {"enabled": False, "reason": "missing_annotations"}
+    raw_grasps = annotations.get("all_grasps")
+    if not isinstance(raw_grasps, list):
+        return {"enabled": False, "reason": "missing_all_grasps"}
+    grasps = [matrix for item in raw_grasps if (matrix := _as_matrix4(item)) is not None]
+    target_grasp = _as_matrix4(annotations.get("target_grasp_transform"))
+    if not grasps:
+        return {"enabled": False, "reason": "empty_all_grasps"}
+
+    source_counts_by_label: dict[str, int] = {}
+    for grasp in grasps:
+        label = _grasp_orientation_label(grasp)
+        source_counts_by_label[label] = source_counts_by_label.get(label, 0) + 1
+
+    root_path = "/World/GraspCandidates"
+    UsdGeom.Xform.Define(stage, root_path)
+    selected_indices = _select_grasp_candidate_indices(grasps, target_grasp, max_count)
+    target_idx = None
+    if target_grasp is not None:
+        distances = [_transform_distance(grasp, target_grasp) for grasp in grasps]
+        target_idx = int(min(range(len(distances)), key=distances.__getitem__))
+        if target_idx not in selected_indices:
+            selected_indices = [target_idx] + selected_indices[:-1]
+
+    markers: list[dict[str, object]] = []
+    for marker_idx, grasp_idx in enumerate(selected_indices):
+        transform = grasps[grasp_idx]
+        marker_root_path = f"{root_path}/g_{marker_idx:03d}_src_{grasp_idx:03d}"
+        root = UsdGeom.Xform.Define(stage, marker_root_path).GetPrim()
+        pos = (float(transform[0][3]), float(transform[1][3]), float(transform[2][3]))
+        quat = _quat_xyzw_from_matrix(transform)
+        _set_xform(root, pos, rotate_quat_xyzw=quat)
+        is_target = target_idx is not None and grasp_idx == target_idx
+        length = float(axis_length) * (1.35 if is_target else 1.0)
+        thickness = float(axis_thickness) * (1.45 if is_target else 1.0)
+        _add_local_axis_box(stage, f"{marker_root_path}/x_axis", "x", length, thickness, x_mat)
+        _add_local_axis_box(stage, f"{marker_root_path}/y_axis", "y", length, thickness, y_mat)
+        _add_local_axis_box(stage, f"{marker_root_path}/z_axis", "z", length, thickness, z_mat)
+        if is_target:
+            _add_box(
+                stage,
+                f"{marker_root_path}/target_center",
+                (0.0, 0.0, 0.0),
+                (thickness * 2.5, thickness * 2.5, thickness * 2.5),
+                target_mat,
+                collision=False,
+                visible=True,
+            )
+        markers.append(
+            {
+                "marker_path": marker_root_path,
+                "source_index": int(grasp_idx),
+                "is_target": bool(is_target),
+                "position_w": [float(pos[0]), float(pos[1]), float(pos[2])],
+                "z_axis_z": float(transform[2][2]),
+                "orientation_label": _grasp_orientation_label(transform),
+            }
+        )
+
+    counts_by_label: dict[str, int] = {}
+    for marker in markers:
+        label = str(marker["orientation_label"])
+        counts_by_label[label] = counts_by_label.get(label, 0) + 1
+    return {
+        "enabled": True,
+        "root_path": root_path,
+        "source_count": len(grasps),
+        "source_counts_by_orientation_label": source_counts_by_label,
+        "visualized_count": len(markers),
+        "target_source_index": target_idx,
+        "selection": "target plus evenly sampled candidates, or all source candidates when max_count covers them; no planning filter",
+        "counts_by_orientation_label": counts_by_label,
+        "markers": markers,
+    }
 
 
 def _apply_collision(prim: Usd.Prim, *, approximation: str = "none") -> None:
@@ -2874,6 +3085,10 @@ def main() -> None:
     cube_mat = _material(stage, "/World/Looks/cube_blue", (0.10, 0.42, 0.86), roughness=0.62)
     collision_mat = _material(stage, "/World/Looks/collision_hidden", (0.95, 0.70, 0.16), roughness=0.55)
     fixture_mat = _material(stage, "/World/Looks/fixture_graphite", (0.16, 0.18, 0.19), roughness=0.47)
+    grasp_x_mat = _material(stage, "/World/Looks/grasp_axis_x", (0.86, 0.10, 0.10), roughness=0.45)
+    grasp_y_mat = _material(stage, "/World/Looks/grasp_axis_y", (0.12, 0.62, 0.18), roughness=0.45)
+    grasp_z_mat = _material(stage, "/World/Looks/grasp_axis_z", (0.12, 0.28, 0.92), roughness=0.45)
+    grasp_target_mat = _material(stage, "/World/Looks/grasp_target_white", (1.0, 0.95, 0.70), roughness=0.35)
 
     # Match the current clutter-bin scene table and robot convention.
     table_height = 0.72
@@ -3014,6 +3229,21 @@ def main() -> None:
     sun.CreateAttribute("inputs:intensity", Sdf.ValueTypeNames.Float).Set(1500.0)
     sun.CreateAttribute("inputs:angle", Sdf.ValueTypeNames.Float).Set(0.35)
     _set_xform(sun, (0.0, 0.0, 0.0), rotate_xyz_deg=(-45.0, 0.0, 35.0))
+    grasp_candidate_markers = (
+        _add_grasp_candidate_markers(
+            stage,
+            trajectory_data,
+            max_count=max(0, int(args_cli.max_grasp_candidates)),
+            axis_length=float(args_cli.grasp_candidate_axis_length),
+            axis_thickness=float(args_cli.grasp_candidate_axis_thickness),
+            x_mat=grasp_x_mat,
+            y_mat=grasp_y_mat,
+            z_mat=grasp_z_mat,
+            target_mat=grasp_target_mat,
+        )
+        if bool(args_cli.show_grasp_candidates)
+        else {"enabled": False, "reason": "disabled"}
+    )
 
     settle_steps = max(0, int(args_cli.settle_steps))
     settled_transform_baked = _settle_scene(
@@ -3059,6 +3289,7 @@ def main() -> None:
         "robot_collision_summary": robot_collision_summary,
         "franka_contact_proxies": _contact_proxy_metadata(franka_contact_proxies),
         "franka_grasp_constraint": _contact_proxy_metadata(grasp_constraint_state),
+        "grasp_candidate_markers": grasp_candidate_markers,
         "robot_usd": str(robot_spec.usd_path) if robot_spec.usd_path else None,
         "robot_motion": {
             "mode": str(args_cli.franka_motion),
@@ -3188,6 +3419,8 @@ def main() -> None:
             "franka_motion": str(args_cli.franka_motion),
             "franka_trajectory_playback": str(args_cli.franka_trajectory_playback),
             "franka_trajectory_object_mode": str(args_cli.franka_trajectory_object_mode),
+            "show_grasp_candidates": bool(args_cli.show_grasp_candidates),
+            "grasp_candidate_markers": grasp_candidate_markers,
             "franka_trajectory_json": str(args_cli.franka_trajectory_json.expanduser().resolve())
             if args_cli.franka_trajectory_json is not None
             else None,
@@ -3266,6 +3499,8 @@ def main() -> None:
             "franka_trajectory_json": str(args_cli.franka_trajectory_json.expanduser().resolve())
             if args_cli.franka_trajectory_json is not None
             else None,
+            "show_grasp_candidates": bool(args_cli.show_grasp_candidates),
+            "grasp_candidate_markers": grasp_candidate_markers,
             "franka_grasp_constraint": _contact_proxy_metadata(grasp_constraint_state),
             "star_motion_trajectory": str(star_motion_path),
             "robot_motion_trajectory": str(robot_motion_path),
