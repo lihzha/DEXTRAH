@@ -675,3 +675,90 @@ Next / Patch Plan:
 - Add eval metrics for `trajectory_tracking_reference_summary()` when the task exposes it, so the checkpoint rollout can prove which reference was loaded.
 - Local validation: `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py`, `bash -n cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`, `git diff --check`.
 - Cluster validation after commit/deploy: short RL smoke with 16 envs, 3 iterations, no full training, then short checkpoint eval with the same external reference.
+
+## 2026-06-11T14:40:00-07:00 - external-reference short RL smoke launch
+
+Goal:
+- Verify RL-Games can train the trajectory-tracking variant for a tiny bounded smoke while loading the 60 mm compact GraspGenX-derived reference.
+
+Version Control:
+- agent_id: franka-cube-traj-tracking
+- local_commit: fa534c7d8decbf5978d4a21d32a04fc3df7e2bd7
+- push/pull: pushed to origin; l401 agent worktree deployed at exact commit
+- remote_commit/status: /lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking at fa534c7d8decbf5978d4a21d32a04fc3df7e2bd7, detached clean
+- changed_files: `cluster/sbatch_train_teacher_8gpu.sh`, `cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`, `dextrah_lab/rl_games/eval_rollout.py`, this worklog
+
+Local Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py`: passed
+- `bash -n cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_eval_franka_cube_grasp_1gpu.sh cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`: passed
+- `git diff --check`: passed
+
+Command / Job:
+- job_id: 1027697 `franka_cube_traj_60mm_rl`
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --time=0-00:45:00 --job-name=franka_cube_traj_60mm_rl --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,FULL_EXPERIMENT_NAME=franka_cube_traj_tracking_60mm_ref_rl_smoke_20260611_124055,NPROC_PER_NODE=1,NUM_NODES=1,DISTRIBUTED=False,MULTI_GPU=False,NUM_ENVS=16,HORIZON_LENGTH=16,MINIBATCH_SIZE=256,CENTRAL_VALUE_MINIBATCH_SIZE=256,MINI_EPOCHS=1,MAX_ITERATIONS=3,SAVE_FREQUENCY=1,AUTO_RESUME=False,SELF_RELAUNCH=False,USE_CUDA_GRAPH=False,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json cluster/sbatch_train_teacher_8gpu.sh`
+- log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_1027697.out
+- expected_run_dir: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_60mm_ref_rl_smoke_20260611_124055
+- expected_artifacts: resolved env/agent params, checkpoint(s), stdout log, TensorBoard/W&B sidecars if produced.
+
+Acceptance Criteria:
+- Job completes without full training; no Hydra override errors.
+- Log proves `TRAJECTORY_TRACKING_REFERENCE_PATH` reached the wrapper and env config.
+- Checkpoint is written by epoch 3.
+- Reward/loss diagnostics are finite, and follow-up eval loads the same external reference.
+
+Monitor Update:
+- `1027697` remained PENDING with `Reason=Resources`; `scontrol show job` showed the inherited 8-GPU teacher wrapper defaults still requested `NumCPUs=64` and `ReqTRES=mem=1004G` despite the one-GPU smoke override.
+- Action: canceled `1027697` before it started; no log/run artifacts were produced.
+- Relaunch job_id: 1027698 `franka_cube_traj_60mm_rl`
+- relaunch_command_delta: same training/env/reference settings, plus `--cpus-per-task=16 --mem=160G`.
+- relaunch_run_name: `franka_cube_traj_tracking_60mm_ref_rl_smoke_20260611_124252`
+- relaunch_log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_1027698.out
+- relaunch_run_dir: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_60mm_ref_rl_smoke_20260611_124252
+
+Result Update:
+- `1027698` completed `0:0` after `00:00:48` on `pool0-00016`.
+- wrapper/path evidence: log command included `env.trajectory_tracking_reference_path=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json`.
+- resolved config evidence: `params/env.yaml` contains `trajectory_tracking_enabled: true`, the external reference path above, and `trajectory_tracking_phase_observations: false`.
+- observation/network evidence: RL-Games built the actor/critic MLP with `72` observations.
+- checkpoint: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_60mm_ref_rl_smoke_20260611_124252/nn/last_dextrah_franka_cube_traj_tracking_ep_3_rew_-inf.pth
+- caveat: the `rew_-inf` suffix is expected for this tiny three-epoch smoke because no environment terminated before max epochs; the TensorBoard event file is 0 bytes, so the reward/term sanity check must come from checkpoint rollout eval.
+
+Next:
+- Run short eval with the same external reference path, 4 envs, 120 steps, no video, and inspect `metric_summaries` plus the new `trajectory_tracking_reference` summary in `metrics.json`.
+
+## 2026-06-11T14:44:00-07:00 - external-reference checkpoint eval launch
+
+Goal:
+- Inspect finite rollout metrics for the checkpoint from the external-reference RL smoke.
+
+Command / Job:
+- job_id: 1027700 `franka_cube_traj_60mm_eval`
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:30:00 --job-name=franka_cube_traj_60mm_eval --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_60mm_ref_eval_smoke_20260611_124447,CHECKPOINT=/results/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_60mm_ref_rl_smoke_20260611_124252/nn/last_dextrah_franka_cube_traj_tracking_ep_3_rew_-inf.pth,NUM_ENVS=4,NUM_STEPS=120,VIDEO_LENGTH=120,CAPTURE_VIDEO=False,PRINT_INTERVAL=20,USE_CUDA_GRAPH=False,SEED=42,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1027700.out
+- expected_metrics: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_traj_tracking_60mm_ref_eval_smoke_20260611_124447/metrics.json
+
+Acceptance Criteria:
+- Eval loads checkpoint and same external compact reference.
+- 120 rollout steps complete with finite reward and tracking metric summaries.
+- `trajectory_tracking_reference` in metrics reports `graspgenx_source=true`, `curobo_validated=false`, and the external path, not the manual template.
+- No immediate reset/termination pathology.
+
+Result:
+- job_id: 1027700 completed `0:0` after `00:00:47` on `pool0-00016`.
+- remote_metrics: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_traj_tracking_60mm_ref_eval_smoke_20260611_124447/metrics.json
+- local_copy: cluster_results/l401/franka_cube_traj_tracking_60mm_ref_eval_smoke_20260611_124447/
+- rollout: 120/120 steps completed, `done_count=0`, `reward_mean=1.7681481450796128`, `reward_final=1.777575969696045`, `success_rate_mean=0.0`.
+- finite_check: recursive JSON numeric scan reported `nonfinite_count=0`.
+- tracking_reference: `source=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json`, `graspgenx_source=true`, `curobo_validated=false`, `validation_passed=true`, `waypoint_count=9`, `transform_policy=transform_task_space_waypoints_by_cube_pose`, `joint_trajectory_policy=do_not_transform_joint_trajectories`.
+- tracking_reward: mean `0.04245300240193804`, final `0.04073528200387955`, max `0.09654676914215088`.
+- tracking_errors: position mean `0.34843481456240016`, final `0.27720147371292114`; orientation mean `0.1784153180817763`, final `0.19622422754764557`; gripper mean `0.037403301584223905`, final `0.03949643671512604`.
+- safety: tracking target clearance min `0.245569109916687`; unsafe target rate max `0.0`; finger table clearance min `0.05314174294471741`; finger table violation max `0.0`.
+
+Analysis:
+- The external-reference tracking path now has a real task smoke, short RL smoke, and checkpoint rollout smoke in Isaac/DEXTRAH, all loading the same compact 60 mm reference.
+- The short RL checkpoint is not a performance claim: three epochs ended before any environment terminated and did not lift the cube. It is only evidence that the training/eval path is wired, finite, and baseline observation-compatible.
+- The next useful step is a modest one-GPU scale-up, still not full training, with enough iterations to produce non-empty scalar logs and at least a small number of resets/episode statistics.
+
+Next:
+- Commit/push this worklog result.
+- Launch a bounded one-GPU scale-up smoke with the same external reference, more envs/iterations than the 3-epoch wiring smoke, and explicit reduced CPU/memory Slurm resources.
