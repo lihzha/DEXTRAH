@@ -245,3 +245,274 @@ Next:
 - Commit this log-only handoff entry.
 - Orchestrator can inspect/cherry-pick the branch; no Worker C job monitoring
   remains.
+
+## 2026-06-11T12:02:11-07:00 - official DP validation plan
+
+Goal:
+- Move beyond synthetic DEXTRAH-only smoke tests and validate the Franka cube
+  BC path against the official `real-stanford/diffusion_policy` implementation.
+
+Hypothesis:
+- The DEXTRAH lowdim dataset adapter and config will need small compatibility
+  fixes once exercised inside the official workspace, especially around Hydra
+  config loading, runner assertions, normalizer imports, and output/log paths.
+- A local isolated official-DP venv can reuse the existing GraspGenX venv's
+  Torch/NumPy packages via a venv-local `.pth` bridge, avoiding a full CUDA
+  PyTorch reinstall while keeping official-DP dependencies outside DEXTRAH.
+
+Change:
+- Planned external-only setup:
+  - clone official repo to `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/diffusion_policy`;
+  - create official-DP validation venv under
+    `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/venv`;
+  - keep generated debug dataset/logs under
+    `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts`.
+- Planned DEXTRAH edits only if official validation exposes issues in our
+  adapter/config or if an eval-wrapper/distillation stub is practical.
+
+Version Control:
+- agent_id: franka-cube-dp-bc-warmstart
+- worktree: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart
+- worklog: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart/worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md
+- branch: codex/franka-cube-diffusion-policy-bc
+- base_commit: a21857f58ce211cb67f3174e56bb49c5f8f64ae8
+- implementation_commit: pending
+- push/pull: will push branch after coherent checkpoint
+- changed_files: worklog plan only so far
+- remote_commit/status: n/a/local env
+
+Command / Job:
+- command: `git clone https://github.com/real-stanford/diffusion_policy ...; uv venv ...; uv pip install ...; tiny official-DP debug train/forward`
+- job_id: n/a
+- run_dir: `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart`
+- logs: planned under `artifacts/logs`
+- artifacts: planned converted dataset, resolved config, official-DP debug output
+
+Result:
+- status: in_progress
+- metrics/artifacts: none yet
+- key evidence: n/a
+
+Analysis:
+- No full BC training will be launched. Stop condition for this attempt is
+  official config/dataset/model construction plus one tiny train/forward step,
+  or a precise external dependency blocker with command output and paths.
+
+Next:
+- Materialize official repo and environment, generate a tiny converted dataset,
+  run official workspace, patch DEXTRAH if the failure is ours, then commit and
+  push.
+
+## 2026-06-11T12:14:08-07:00 - official DP one-step train and bridge smoke
+
+Goal:
+- Validate Worker C's Franka cube lowdim BC path with the official
+  `real-stanford/diffusion_policy` code, then make the PPO handoff concrete
+  enough for eval-wrapper/distillation follow-up.
+
+Hypothesis:
+- Official DP compatibility is now mostly a dependency/config issue, not a
+  dataset-shape issue. The generated checkpoint still cannot initialize
+  rl_games PPO directly because the official DP policy is a denoising UNet over
+  action sequences with a compact 21D observation history, while rl_games PPO is
+  a 72D-observation Gaussian actor-critic MLP.
+
+Change:
+- Materialized the official repository externally, not vendored into DEXTRAH:
+  - source URL: `https://github.com/real-stanford/diffusion_policy`
+  - project page verified: `https://diffusion-policy.cs.columbia.edu/`
+  - local path:
+    `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/diffusion_policy`
+  - official commit: `5ba07ac6661db573af695b419a7947ecb704690f`
+- Built an isolated official-DP validation venv at
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/venv`, with
+  the GraspGenX venv Torch packages exposed through a venv-local `.pth`.
+  Relevant resolved versions:
+  `torch==2.6.0`, `numpy==1.26.4`, `hydra-core==1.3.2`,
+  `omegaconf==2.3.0`, `diffusers==0.11.1`,
+  `huggingface-hub==0.10.1`, `transformers==4.25.1`,
+  `wandb==0.13.3`, `zarr==2.18.3`, `numcodecs==0.12.1`,
+  `pandas==2.2.2`, `einops==0.4.1`, `dill==0.3.5.1`.
+- Added `dextrah_lab/offline_dp_bc/ppo_bridge.py`:
+  - extracts the 21D DP lowdim observation from the Franka cube 72D PPO
+    observation using the env's actual observation concatenation;
+  - keeps the DP `n_obs_steps` history for inference;
+  - provides a lowdim-to-PPO embedding helper for bridge tests and future
+    distillation data generation;
+  - exposes `predict_action_from_ppo_obs()` for eval wrappers, explicitly not
+    for direct PPO weight initialization.
+- Added `dextrah_lab/offline_dp_bc/validate_official_checkpoint_smoke.py` to
+  load an official DP checkpoint and query it through the PPO bridge.
+- Updated `dextrah_lab/offline_dp_bc/__init__.py` exports.
+
+Version Control:
+- agent_id: franka-cube-dp-bc-warmstart
+- worktree: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart
+- worklog: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart/worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md
+- branch: codex/franka-cube-diffusion-policy-bc
+- base_commit: a21857f58ce211cb67f3174e56bb49c5f8f64ae8
+- implementation_commit: pending
+- push/pull: pending
+- changed_files:
+  - `dextrah_lab/offline_dp_bc/__init__.py`
+  - `dextrah_lab/offline_dp_bc/ppo_bridge.py`
+  - `dextrah_lab/offline_dp_bc/validate_official_checkpoint_smoke.py`
+  - `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+- remote_commit/status: pending
+
+Command / Job:
+- command: `PYTHONPATH="$dp:$dex" "$venv/bin/python" -m py_compile dextrah_lab/offline_dp_bc/*.py`
+- job_id: n/a
+- run_dir: local worktree
+- logs: terminal
+- artifacts: none
+
+Result:
+- status: passed
+- metrics/artifacts: all Worker C offline BC modules compile.
+- key evidence: command exited 0.
+
+Command / Job:
+- command: bridge round-trip smoke with NumPy and torch PPO observations
+- job_id: n/a
+- run_dir: local worktree
+- logs: terminal
+- artifacts: none
+
+Result:
+- status: passed
+- metrics/artifacts: extracted lowdim shape `(3, 21)`, embedded PPO shape
+  `(3, 72)`, history shape `(3, 2, 21)`.
+- key evidence: printed `ppo_bridge ok ...`.
+
+Command / Job:
+- command: official import smoke for
+  `diffusion_policy.workspace.train_diffusion_unet_lowdim_workspace`,
+  `diffusion_policy.dataset.base_dataset`, DEXTRAH adapter, and checkpoint
+  smoke script.
+- job_id: n/a
+- run_dir: local worktree with external official repo on `PYTHONPATH`
+- logs: terminal
+- artifacts: none
+
+Result:
+- status: passed
+- metrics/artifacts: official workspace and DEXTRAH adapter import together.
+- key evidence: printed `official imports ok`.
+
+Command / Job:
+- command: `PYTHONPATH="$dp:$dex" "$venv/bin/python" -m dextrah_lab.offline_dp_bc.trajectory_conversion "$art/datasets/franka_cube_taskspace_debug_input.npz" --output "$art/datasets/franka_cube_lowdim_debug.npz" --input-format npz --phase-set approach_pregrasp`
+- job_id: n/a
+- run_dir: `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/datasets`
+- logs:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/converter_debug_current.log`
+- artifacts:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/datasets/franka_cube_lowdim_debug.npz`
+
+Result:
+- status: passed
+- metrics/artifacts: one approach/pregrasp debug episode, `24` steps,
+  `obs_dim=21`, `action_dim=7`.
+- key evidence: printed `FRANKA_CUBE_DP_BC_CONVERTED`.
+
+Command / Job:
+- command: `PYTHONPATH="$dp:$dex" "$venv/bin/python" -m dextrah_lab.offline_dp_bc.validate_dataset_smoke --dataset "$art/datasets/franka_cube_lowdim_debug.npz"`
+- job_id: n/a
+- run_dir: external artifacts directory
+- logs:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/dextrah_dataset_smoke_current.log`
+- artifacts: converted dataset plus metadata JSON
+
+Result:
+- status: passed
+- metrics/artifacts: `sample_obs_shape=[8, 21]`,
+  `sample_action_shape=[8, 7]`, `num_train_samples=24`,
+  first-step position replay error `0.0`, official DP import visible.
+- key evidence: printed `FRANKA_CUBE_DP_BC_SMOKE_PASSED`.
+
+Command / Job:
+- command: official one-step debug train from the external official repo:
+  `"$venv/bin/python" train.py --config-dir "$dex/dextrah_lab/offline_dp_bc/config" --config-name franka_cube_lowdim_dp task.dataset_path="$art/datasets/franka_cube_lowdim_debug.npz" training.device=cpu training.max_train_steps=1 training.max_val_steps=1 training.num_epochs=1 dataloader.batch_size=8 val_dataloader.batch_size=8 hydra.run.dir="$out"`
+- job_id: n/a
+- run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_debug/run_20260611_120953_current`
+- logs:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/official_dp_debug_train_current.log`
+  and the run's `logs.json.txt`
+- artifacts:
+  `.hydra/config.yaml`, `.hydra/overrides.yaml`, `train.log`,
+  `checkpoints/latest.ckpt`,
+  `checkpoints/epoch=0000-test_mean_score=0.000.ckpt`, W&B offline run.
+
+Result:
+- status: passed
+- metrics/artifacts: official UNet parameters `1.662478e+07`; one training
+  step logged `train_loss=1.1275699138641357`, `lr=1e-6`,
+  `test/mean_score=0.0`, `train_action_mse_error=0.7768738865852356`.
+  Two checkpoints were produced, each about `254M`.
+- key evidence: official W&B run finished successfully; `logs.json.txt`
+  contains two JSON records for global step `0`.
+
+Command / Job:
+- command: checkpoint bridge smoke:
+  `PYTHONPATH="$dp:$dex" "$venv/bin/python" -m dextrah_lab.offline_dp_bc.validate_official_checkpoint_smoke --checkpoint "$run_dir/checkpoints/latest.ckpt" --dataset "$art/datasets/franka_cube_lowdim_debug.npz" --device cpu --batch-size 2 --num-inference-steps 2`
+- job_id: n/a
+- run_dir: external official-DP debug run
+- logs:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/official_dp_checkpoint_smoke_current.log`
+- artifacts: uses `latest.ckpt`; no new training artifact
+
+Result:
+- status: passed
+- metrics/artifacts: loaded `TrainDiffusionUnetLowdimWorkspace` and
+  `DiffusionUnetLowdimPolicy`, lowdim sequence shape `[2, 2, 21]`,
+  PPO observation shape `[2, 72]`, direct official action shape `[2, 8, 7]`,
+  bridge first-action shape `[2, 7]`, all finite.
+- key evidence: printed `FRANKA_CUBE_DP_BC_CHECKPOINT_SMOKE_PASSED`.
+
+Command / Job:
+- command: dataset/checkpoint metadata probe
+- job_id: n/a
+- run_dir: external artifacts directory
+- logs:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/official_dp_metadata_current.log`
+- artifacts: none beyond logs
+
+Result:
+- status: passed after adjusting the probe to official `LinearNormalizer`
+  state-dict APIs.
+- metrics/artifacts: dataset `obs_shape=[24, 21]`, `action_shape=[24, 7]`,
+  `train_samples=24`, `val_samples=0` because this bounded debug dataset has
+  one episode; checkpoint state contains both `model` and `ema_model`;
+  normalizer has 12 parameter/stat keys for `obs` and `action`.
+- key evidence: printed `FRANKA_CUBE_DP_BC_METADATA`.
+
+Analysis:
+- Official implementation validation is now achieved for config parsing,
+  dataset construction, normalizer construction, model construction, one
+  bounded train step, checkpoint save, checkpoint load, and bridge inference.
+- The one-episode debug dataset is intentionally too small to assess BC
+  quality and produces no validation split. That is acceptable for this
+  milestone but not for BC evaluation. Next dataset generation should use
+  multiple real GraspGenX/cuRobo rollouts with varied cube poses and include
+  a held-out split.
+- The debug action range is nearly constant because the synthetic waypoints are
+  a straight approach segment. A meaningful BC smoke should include multiple
+  approach directions and, once contact semantics are validated, separate
+  approach-only vs approach+close+lift ablations.
+- PPO bridge decision: do not direct-load DP weights into rl_games. Use either
+  (1) a DP eval wrapper that extracts the 21D lowdim observation from the 72D
+  env observation and sends the first denoised action to the existing 7D IK
+  controller, or (2) distill DP actions into the 72D-observation PPO actor by
+  collecting `obs72 -> action7` targets from the DP teacher. PPO fine-tuning
+  should then initialize from the distilled actor or run RL with the DP wrapper
+  as a scripted teacher/curriculum, not by loading the DP checkpoint into
+  rl_games.
+- No local/cluster full BC or RL training was launched. No active jobs remain.
+
+Next:
+- Commit and push this coherent official-validation checkpoint.
+- Next Worker C loop should generate a multi-episode converted dataset from
+  real GraspGenX/cuRobo traces, run a tiny official DP train with a validation
+  split, then choose between DP eval-wrapper rollouts in Isaac Lab or
+  distillation into the rl_games PPO actor.
