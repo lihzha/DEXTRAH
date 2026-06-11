@@ -3073,3 +3073,69 @@ Next:
 - Build an inspectable mismatch report comparing chunk 8 post-history-fix
   against chunk 1 on close timing, cube-minus-EE at close events, gripper width,
   EE/finger distance curves, and nearest-demo distance.
+
+## 2026-06-11T14:44:00-07:00 - chunk1 ablation result and comparison artifact
+
+Goal:
+- Complete the chunk-size ablation requested after the history-cadence fix and
+  determine whether open-loop 8-step chunk execution explains the bad video.
+
+Command / Job:
+- job_id: `1027746`
+- run_name:
+  `franka_cube_dp_eval_curobo32_full_pick_lift_framefix_overfit2k_chunk1_historyfix_trace512_20260611_143900`
+- Slurm status: `COMPLETED`, exit `0:0`, elapsed `00:04:54`,
+  node `pool0-00016`.
+- local run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_curobo32_full_pick_lift_framefix_overfit2k_chunk1_historyfix_trace512_20260611_143900`
+- local log:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_logs/l401/eval_franka_cube_dp_policy_1027746.out`
+- trace analysis:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/trace_analysis_1027746_chunk1_historyfix_20260611_143900`
+- live-vs-demo geometry:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/live_demo_geometry_1027746_chunk1_historyfix_20260611_143900`
+- comparison bundle:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/chunk_ablation_1027744_chunk8_vs_1027746_chunk1_20260611_143900`
+- viz-open:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/chunk_ablation_1027744_chunk8_vs_1027746_chunk1_20260611_143900/chunk_ablation_curves.png`
+
+Result:
+- Chunk 1 did not fix the task failure:
+  `success=0`, `cube_lift_height.max=0`, `reward_mean/final=1.5820/1.5789`.
+- Compared with chunk 8 historyfix (`1027744`):
+  - chunk8: reward mean/final `1.6488/1.6844`,
+    EE-to-cube min/final `0.1360/0.1371`,
+    finger-center-to-cube min/final `0.1640/0.1695`,
+    first negative/hard-close steps `144/168`,
+    final cube-minus-EE `[-0.010, -0.108, -0.084]`.
+  - chunk1: reward mean/final `1.5820/1.5789`,
+    EE-to-cube min/final `0.1458/0.1517`,
+    finger-center-to-cube min/final `0.1686/0.1824`,
+    first negative/hard-close steps `207/224`,
+    final cube-minus-EE `[-0.0076, -0.1180, -0.0949]`.
+- Both runs have expected history slot gaps `[0, 1]`.
+- Chunk 1 delays closure in the right direction, but it still closes before
+  the dataset mean close/hard-close steps (`282.625/310.625`) and closes while
+  nearest train windows are still pregrasp/open-gripper windows.
+- At chunk1 hard close, nearest train action gripper is still `+1.0` open,
+  while the live policy command is about `-0.954` close. Live hard-close
+  cube-minus-EE is `[0.0611, -0.1192, -0.0633]`, still far from the demo
+  hard-close geometry `[-0.0199, -0.0000015, -0.0201]`.
+
+Analysis:
+- Open-loop chunk execution contributes to premature close timing but is not
+  the root cause of the drifting/ignoring-object failure.
+- Since history cadence and chunk size are not sufficient, continue treating
+  this as a train/eval mismatch or implementation bug. The next bounded checks
+  are action/trajectory target semantics and controller execution.
+
+Next:
+- Do not train or scale.
+- Add/run a local official-DP action-semantics diagnostic:
+  compare checkpoint predictions on exact training windows and live trace
+  windows against dataset labels at `t`, `t+1`, and future horizon offsets.
+- Then validate one-step or short-snippet execution of selected dataset labels
+  in the real DEXTRAH env/controller on l401. If dataset actions do not move
+  the EE as recorded by the demos, patch action scale/frame/controller bridge;
+  if replay works, focus on official-DP sequence indexing and live-state
+  observation support mismatch.
