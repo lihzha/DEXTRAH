@@ -126,3 +126,47 @@ Result:
 
 Next:
 - Push this worklog-only follow-up commit and report final branch status to the orchestrator.
+
+## 2026-06-11T19:03:51Z - resumed l401 reset-prior smoke plan
+
+Goal:
+- Validate and debug the actual `Dextrah-Franka-Cube-Grasp` GraspGenX pregrasp reset path in an Isaac Lab runtime, not just local import/export checks.
+
+Hypothesis:
+- Local Isaac is blocked by missing runtime setup, so the fastest reproducible validation path is a small l401 Slurm/Pyxis job launched from an agent-owned remote worktree pinned to this branch commit, using the previously exported compact 0.06 m cube grasp library as an untracked artifact.
+
+Change:
+- Re-check local runtime paths and wrappers instead of assuming the earlier missing `_isaac_sim/python.sh` was the only blocker.
+- Add only opt-in prior-reset environment variables and argument forwarding to `cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`, preserving its current defaults when disabled.
+- Commit and push the wrapper/worklog change, deploy the exact commit to `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`, rsync only the untracked `.npz` library, then submit a small l401 validation with `GRASP_PRIOR_RESET_ENABLED=True`.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset
+- worklog: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/worklogs/franka-cube-grasp-prior/franka-cube-ggx-pregrasp-reset.md
+- branch: codex/franka-cube-ggx-pregrasp-reset
+- base_commit: 86ae7dfc5820e59ad310ef7c2ac1f64a49e0e399
+- implementation_commit: pending
+- push/pull: pending
+- changed_files: planned `cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`, this owned worklog
+- remote_commit/status: pending l401 agent-owned worktree
+
+Command / Job:
+- local runtime probes: `which python python3 conda micromamba mamba poetry uv`; `find /home/lzha/code/IsaacLab-v2.2.1 -maxdepth 3 \( -name python.sh -o -name _isaac_sim -o -name isaaclab.sh \) -print`; `python3 - <<'PY' ... importlib probes ... PY`; `TERM=xterm /home/lzha/code/IsaacLab-v2.2.1/isaaclab.sh -p -c "import isaaclab; print(isaaclab.__file__)"`
+- local wrapper checks after edit: `bash -n cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`; `python3 -m compileall dextrah_lab/rl_games/validate_franka_cube_grasp_env.py`
+- planned l401 job: `sbatch --partition=batch --export=ALL,CODE_NFS=<agent worktree>,RUN_NAME=<unique>,NUM_ENVS=8,NUM_STEPS=4,CAPTURE_VIDEO=False,PRINT_INTERVAL=1,SEED=0,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_smoke.npz,GRASP_PRIOR_RESET_CYCLES=3 cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`
+- job_id: pending
+- run_dir: pending `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/<run_name>`
+- logs: pending `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_cube_<job_id>.out`
+- artifacts: expected `metrics.json` plus fetched local copies under `cluster_results/l401/`
+
+Result:
+- status: in_progress
+- metrics/artifacts: local probes confirm GPU present but local Isaac unavailable: `isaaclab`, `isaacsim`, `isaaclab_tasks`, `torch`, `trimesh`, and `graspgenx` are absent from system Python; `isaaclab.sh` fails because `python` is not on PATH and `/home/lzha/code/IsaacLab-v2.2.1/_isaac_sim/python.sh` is missing.
+- key evidence: local GPU exists (`NVIDIA RTX 6000 Ada Generation` plus `NVIDIA T400`), so the blocker is software/runtime setup rather than hardware.
+
+Analysis:
+- The cluster route is appropriate because the DEXTRAH wrapper already mounts the known Isaac Lab image, IsaacLab source, FABRICS, venv target, and results/cache paths. The wrapper just needs disabled-by-default prior argument forwarding so the actual reset branch can be exercised by Slurm.
+
+Next:
+- Patch wrapper, run cheap checks, commit/push, deploy exact commit to l401, launch and actively monitor the bounded reset-prior smoke until metrics/logs are inspected or a hard external blocker is identified.

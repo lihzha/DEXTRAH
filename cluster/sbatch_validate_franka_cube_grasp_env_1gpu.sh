@@ -32,6 +32,9 @@ CAPTURE_VIDEO="${CAPTURE_VIDEO:-True}"
 PRINT_INTERVAL="${PRINT_INTERVAL:-30}"
 SEED="${SEED:-42}"
 CUBE_SPAWN_XY_RANDOMIZATION="${CUBE_SPAWN_XY_RANDOMIZATION:-0.08}"
+GRASP_PRIOR_RESET_ENABLED="${GRASP_PRIOR_RESET_ENABLED:-False}"
+GRASP_PRIOR_LIBRARY_PATH="${GRASP_PRIOR_LIBRARY_PATH:-}"
+GRASP_PRIOR_RESET_CYCLES="${GRASP_PRIOR_RESET_CYCLES:-4}"
 
 RUN_DIR_HOST="$RESULTS_NFS/validations/$RUN_NAME"
 RUN_DIR_CONTAINER="/results/validations/$RUN_NAME"
@@ -56,6 +59,7 @@ mkdir -p \
   "$CACHE_NFS/data" "$CACHE_NFS/documents"
 
 export TASK RUN_NAME NUM_ENVS NUM_STEPS VIDEO_LENGTH CAPTURE_VIDEO PRINT_INTERVAL SEED CUBE_SPAWN_XY_RANDOMIZATION
+export GRASP_PRIOR_RESET_ENABLED GRASP_PRIOR_LIBRARY_PATH GRASP_PRIOR_RESET_CYCLES
 export RUN_DIR_CONTAINER METRICS_CONTAINER ENV_NAME
 
 echo "Running DextrAH Franka cube-grasp environment validation"
@@ -74,6 +78,9 @@ echo "VIDEO_LENGTH=$VIDEO_LENGTH"
 echo "CAPTURE_VIDEO=$CAPTURE_VIDEO"
 echo "SEED=$SEED"
 echo "CUBE_SPAWN_XY_RANDOMIZATION=$CUBE_SPAWN_XY_RANDOMIZATION"
+echo "GRASP_PRIOR_RESET_ENABLED=$GRASP_PRIOR_RESET_ENABLED"
+echo "GRASP_PRIOR_LIBRARY_PATH=$GRASP_PRIOR_LIBRARY_PATH"
+echo "GRASP_PRIOR_RESET_CYCLES=$GRASP_PRIOR_RESET_CYCLES"
 echo "RUN_DIR_HOST=$RUN_DIR_HOST"
 echo "METRICS_CONTAINER=$METRICS_CONTAINER"
 
@@ -109,6 +116,20 @@ srun \
     if [ "$CAPTURE_VIDEO" = "True" ]; then
       VIDEO_ARGS=(--video --video_length "$VIDEO_LENGTH")
     fi
+    PRIOR_ARGS=()
+    case "$GRASP_PRIOR_RESET_ENABLED" in
+      True|true|1|yes|Yes)
+        if [ -z "$GRASP_PRIOR_LIBRARY_PATH" ]; then
+          echo "GRASP_PRIOR_RESET_ENABLED requires GRASP_PRIOR_LIBRARY_PATH" >&2
+          exit 2
+        fi
+        PRIOR_ARGS=(
+          --enable_grasp_prior_reset
+          --grasp_prior_library_path "$GRASP_PRIOR_LIBRARY_PATH"
+          --grasp_prior_reset_cycles "$GRASP_PRIOR_RESET_CYCLES"
+        )
+        ;;
+    esac
 
     VALIDATE_ARGS=(
       validate_franka_cube_grasp_env.py
@@ -122,6 +143,7 @@ srun \
       --metrics_path "$METRICS_CONTAINER"
       --print_interval "$PRINT_INTERVAL"
       --cube_spawn_xy_randomization "$CUBE_SPAWN_XY_RANDOMIZATION"
+      "${PRIOR_ARGS[@]}"
       "${VIDEO_ARGS[@]}"
     )
 
