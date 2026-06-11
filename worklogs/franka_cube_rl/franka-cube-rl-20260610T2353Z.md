@@ -879,3 +879,123 @@ Decision:
 - The table-penetration/root-geometry issue is fixed for the Franka cube task.
 - Proceed to a fresh PPO attempt from commit `009ea18` and monitor clearance,
   lift, success, z-action, reward terms, and eval video artifacts.
+
+## 2026-06-10 17:56 PDT - Base-Clearance PPO Submitted
+
+Command / Job:
+- command:
+  `TASK=Dextrah-Franka-Cube-Grasp FULL_EXPERIMENT_NAME=franka_cube_baseclear_ppo_20260610_1756 CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-rl-20260610T2353Z NUM_ENVS=2048 MAX_ITERATIONS=600 USE_CUDA_GRAPH=False CUBE_SPAWN_XY_RANDOMIZATION=0.08 AUTO_RESUME=False SELF_RELAUNCH=False sbatch --parsable cluster/sbatch_train_teacher_8gpu.sh`
+- job_id: `28957528`
+- code_commit:
+  `b75fcdbf8df5331ee89f170b6b1b02a44bd6d745`
+- expected log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28957528.out`
+- expected training root:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseclear_ppo_20260610_1756`
+
+Monitoring Criteria:
+- confirm fresh run and no inherited checkpoint (`AUTO_RESUME=False`).
+- track `cube_finger_table_clearance`, `cube_finger_table_clearance_violation`,
+  `cube_lift_height`, `cube_has_lifted_rate`, `cube_success_rate`,
+  `cube_action_z`, `cube_action_up/down`, and PPO loss/KL/entropy.
+- launch checkpoint evals without asking once checkpoints appear; fetch eval
+  videos locally and open them with `viz-open`.
+
+## 2026-06-10 18:02 PDT - Base-Clearance PPO Reached First Checkpoints
+
+Result:
+- job_id: `28957528`
+- scheduler status: `RUNNING`, elapsed about `6m27s` on `batch-block7-01305`.
+- stdout confirms epoch progress through `107/600` with no traceback.
+- checkpoints written:
+  - `last_dextrah_franka_cube_grasp_ep_25_rew_1105.9012.pth`
+  - `last_dextrah_franka_cube_grasp_ep_50_rew_1443.2318.pth`
+  - `last_dextrah_franka_cube_grasp_ep_75_rew_1486.4724.pth`
+  - `last_dextrah_franka_cube_grasp_ep_100_rew_1626.5775.pth`
+  - `dextrah_franka_cube_grasp.pth` best checkpoint updated after epoch 100.
+
+Operational Note:
+- SSH polling briefly stalled because the local SSH agent blocked
+  authentication; direct-key polling with
+  `-o IdentityAgent=none -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519`
+  restored access.
+
+Next:
+- Launch the first pre-approved deterministic eval from the current best
+  checkpoint and inspect `metrics.json` plus the fetched MP4 through
+  `viz-open`.
+
+## 2026-06-10 18:03 PDT - Ep100 Best-Checkpoint Eval Submitted
+
+Command / Job:
+- command:
+  `RUN_NAME=franka_cube_baseclear_eval_ep100_20260610_1802 CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-rl-20260610T2353Z CHECKPOINT=/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseclear_ppo_20260610_1756/nn/dextrah_franka_cube_grasp.pth NUM_ENVS=4 NUM_STEPS=600 VIDEO_LENGTH=600 PRINT_INTERVAL=20 SEED=101 CUBE_SPAWN_XY_RANDOMIZATION=0.08 sbatch --parsable cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- job_id: `28957635`
+- checkpoint:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseclear_ppo_20260610_1756/nn/dextrah_franka_cube_grasp.pth`
+- expected log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_28957635.out`
+- expected run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_baseclear_eval_ep100_20260610_1802`
+
+Monitoring Criteria:
+- `metrics.json` exists and reports 600 completed steps.
+- Inspect success, reward, lift height, table clearance, gripper width, and
+  done count.
+- Fetch and open the video locally with `viz-open`; reject the run if the hand
+  dives into the table, fails to approach the cube, or exhibits obvious physics
+  abuse.
+
+## 2026-06-10 18:05 PDT - Ep100 Eval Completed, No Lift
+
+Result:
+- job_id: `28957635`
+- scheduler status: `COMPLETED`, exit `0:0`, elapsed `00:01:57`.
+- local artifact mirror:
+  `cluster_results/a1002/evals/franka_cube_baseclear_eval_ep100_20260610_1802`
+- viewer URL:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-rl-20260610T2353Z/cluster_results/a1002/evals/franka_cube_baseclear_eval_ep100_20260610_1802/videos/franka-cube-grasp-eval-step-0.mp4`
+- video metadata: `1280x720`, `600` frames, `10.0s`.
+
+Metrics:
+- `num_steps_completed=600`, `done_count=4`.
+- success: mean `0.0`, final `0.0`, last-window mean `0.0`.
+- cube lift: max `0.00072m`, final `0.0m`.
+- has-lifted: `0.0`.
+- finger table clearance: mean `0.08406m`, min `0.04847m`.
+- clearance violation: `0.0`.
+- gripper width: mean `0.00142m`, final `0.07531m`.
+- finger-center-to-cube distance: mean `0.06954m`, final `0.14979m`.
+
+Visual Inspection:
+- The fetched MP4 is valid, but the contact sheet mostly shows floor/table leg
+  rather than the cube workspace. This exposed an eval-camera bug: unlike the
+  validator, `eval_rollout.py` did not offset the camera by the first rendered
+  environment origin for vectorized evals.
+
+Analysis:
+- Table penetration remains fixed in both training scalars and eval metrics.
+- The policy has learned approach/close behavior but not reliable lift by this
+  checkpoint.
+- The first eval video cannot be used for behavioral acceptance because the
+  camera target is wrong for vectorized eval origin placement.
+
+Next:
+- Patch `eval_rollout.py` to offset camera eye/target by env 0 origin, commit
+  it, deploy it to a separate remote eval worktree, and relaunch visual eval.
+
+## 2026-06-10 18:07 PDT - Eval Camera Origin Patch
+
+Change:
+- Updated `dextrah_lab/rl_games/eval_rollout.py` so `_configure_eval_camera`
+  adds `task_env.scene.env_origins[0]` to the requested camera eye/target after
+  environment construction.
+- This matches the validator behavior and should make vectorized eval videos
+  show the table/cube workspace instead of the global origin.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py`
+
+Next:
+- Commit/push the patch and launch the next eval from a separate remote
+  worktree so the still-running PPO job's source checkout is not mutated.

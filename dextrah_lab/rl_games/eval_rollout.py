@@ -176,6 +176,10 @@ def _configure_eval_camera(env_cfg, task_env=None) -> None:
 
     eye = _camera_tuple(args_cli.camera_eye) or tuple(env_cfg.viewer.eye)
     target = _camera_tuple(args_cli.camera_target) or tuple(env_cfg.viewer.lookat)
+    if task_env is not None and hasattr(task_env, "scene") and len(task_env.scene.env_origins) > 0:
+        env_origin = task_env.scene.env_origins[0].detach().cpu().tolist()
+        eye = tuple(eye[idx] + env_origin[idx] for idx in range(3))
+        target = tuple(target[idx] + env_origin[idx] for idx in range(3))
     env_cfg.viewer.eye = eye
     env_cfg.viewer.lookat = target
     env_cfg.viewer.origin_type = "world"
