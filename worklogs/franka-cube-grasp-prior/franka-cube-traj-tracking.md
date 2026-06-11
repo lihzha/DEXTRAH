@@ -1734,3 +1734,43 @@ Analysis:
 Next:
 - Commit/push this validation result.
 - Launch a tiny 3-iteration phase-gated RL smoke, not a longer training run, and inspect config/log/checkpoint before any eval.
+
+## 2026-06-11T14:07:30-07:00 - phase-gated shaping tiny RL smoke launch
+
+Goal:
+- Verify RL-Games training still runs and writes a checkpoint with the phase-gated contact/lift shaping ablation before any longer training.
+
+Version Control:
+- agent_id: franka-cube-traj-tracking
+- local_commit: `5aba7a9ce03e8fd73c2c51fa5fc139f488389a69`
+- remote_commit/status: /lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking at `5aba7a9ce03e8fd73c2c51fa5fc139f488389a69`, detached clean. SSH Git auth failed; HTTPS fetch fallback succeeded.
+
+Command / Job:
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:30:00 --job-name=franka_cube_traj_phasegate_rl --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,FULL_EXPERIMENT_NAME=franka_cube_traj_tracking_phasegate_rl_smoke_20260611_140730,NPROC_PER_NODE=1,NUM_NODES=1,DISTRIBUTED=False,MULTI_GPU=False,NUM_ENVS=16,HORIZON_LENGTH=16,MINIBATCH_SIZE=256,CENTRAL_VALUE_MINIBATCH_SIZE=256,MINI_EPOCHS=1,MAX_ITERATIONS=3,SAVE_FREQUENCY=1,AUTO_RESUME=False,SELF_RELAUNCH=False,USE_CUDA_GRAPH=False,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json cluster/sbatch_train_teacher_8gpu.sh`
+- job_id: 1027740 `franka_cube_traj_phasegate_rl`
+- expected_log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_1027740.out
+- expected_run_dir: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_phasegate_rl_smoke_20260611_140730
+
+Acceptance Criteria:
+- One GPU, 16 envs, 3 iterations only; no auto-resume or self-relaunch.
+- Resolved config has observation space `72`, phase observations false, reference duration `8.0`, gripper clamp `0.024`, and the new phase-gated shaping config values.
+- Actor/critic input dimensions remain `72`; no traceback/NaN; epoch-3 checkpoint written.
+- Inspect stdout/config for the new reward/gate instrumentation. Only if this is clean, run a bounded eval/video to see whether behavior changes.
+
+Result:
+- status: passed as an RL wiring smoke; Slurm completed `0:0` after `00:00:50` on `pool0-00016`.
+- local_artifacts: `cluster_results/l401/franka_cube_traj_tracking_phasegate_rl_smoke_20260611_140730/teacher_8gpu_1027740.out`, `cluster_results/l401/franka_cube_traj_tracking_phasegate_rl_smoke_20260611_140730/params/env.yaml`, `cluster_results/l401/franka_cube_traj_tracking_phasegate_rl_smoke_20260611_140730/params/agent.yaml`, `cluster_results/l401/franka_cube_traj_tracking_phasegate_rl_smoke_20260611_140730/nn/last_dextrah_franka_cube_traj_tracking_ep_3_rew_4.5636964.pth`
+- stdout: no traceback/NaN match in the inspected log; RL-Games reached `MAX EPOCHS NUM!` and `Training Done`.
+- checkpoint: epoch 1/2/3 checkpoints were written, plus a runtime sidecar; final checkpoint size was about `7.76 MB`.
+- config: `params/env.yaml` resolved `observation_space: 72`, `trajectory_tracking_phase_observations: false`, `trajectory_tracking_reference_duration_s: 8.0`, `trajectory_tracking_min_target_gripper_width: 0.024`, `trajectory_tracking_follow_current_cube_pose: false`, and the new phase-gated shaping defaults (`close_action_weight=0.35`, `lift_action_weight=0.5`, `contact_gate_max_finger_dist=0.14`, `contact_gate_width=0.08`).
+- network: stdout logged `build mlp: 72` for both actor/central value paths.
+- trainer: `NUM_ENVS=16`, `horizon_length=16`, `mini_epochs=1`, `max_epochs=3`, `multi_gpu=false`, no auto-resume or self-relaunch.
+- caveat: the TensorBoard event sidecar is still `0` bytes for this short smoke, so behavior/reward-term evidence must come from a bounded rollout eval rather than curves.
+
+Analysis:
+- This verifies that the phase-gated ablation is trainable in the Isaac/RL-Games runtime and preserves the reward-only observation contract. It does not show learned policy success.
+- Because the env smoke had zero close/lift action rewards under scripted actions, the next bounded check must be an eval/video of this epoch-3 checkpoint with the new reward logs in `metrics.json`. If close/lift rewards remain zero for the learned rollout too, the gates are too strict for early learning and should be loosened before any longer training.
+
+Next:
+- Commit/push this result.
+- Launch one short phase-gated epoch-3 eval/video rollout (not training scale-up) to inspect behavior and reward-term activation before any additional training.
