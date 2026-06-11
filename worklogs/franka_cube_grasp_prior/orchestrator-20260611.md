@@ -2381,3 +2381,91 @@ Worker C artifact inspection:
 - Instruction sent to C: rerun the residual-target diagnostic correctly with
   preserved modes (`dataset_t,dataset_target_t_plus_1,dataset_target_t_plus_7`)
   because the first residual-target launch was invalid. No BC/RL training.
+
+## 2026-06-11 Monitor Check 23:52 UTC
+
+User-facing B provenance:
+
+- The video `actionscale-rewinf-diag-video480-step-0.mp4` is from Worker B
+  / Popper, but it is an older failed action-scale/reward-inference diagnostic:
+  `franka_cube_traj_tracking_actionscale_rewinf_diag_video480_20260611_144318`.
+- Viewer URL:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_actionscale_rewinf_diag_video480_20260611_144318/videos/actionscale-rewinf-diag-video480-step-0.mp4`
+- Do not treat that video as the latest B result. The latest B positive
+  control remains the no-reset reference/offset hold run:
+  `franka_cube_traj_tracking_refmix_hold_offset_noreset520_20260611_163220`.
+
+Worker B alpha-sweep inspection:
+
+- Combined report:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_noreset_alpha_sweep_20260611_164421_artifacts/report.md`
+- Positive-control video:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_noreset520_20260611_163220/videos/refmix-hold-offset-noreset520-step-0.mp4`
+- Metrics:
+
+| alpha | role | success ever | success max/final | max lift m | final EE-cube m | final finger-cube m | decision |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 0.00 | learned-prefix | 0 | 0.000/0.000 | 0.001512 | 0.5066 | 0.4771 | failed handoff |
+| 0.25 | reference blend | 0 | 0.000/0.000 | 0.000000 | 0.3344 | 0.3020 | failed handoff |
+| 0.50 | reference blend | 0 | 0.000/0.000 | 0.000000 | 0.1119 | 0.1298 | close but no lift |
+| 0.75 | reference blend | 0 | 0.000/0.000 | 0.000000 | 0.1006 | 0.1352 | close but no lift |
+| 1.00 | reference control | 3 | 0.750/0.500 | 0.220861 | 0.0439 | 0.0861 | viable positive control |
+
+- Visual interpretation: alpha `0.75` approaches the cube but never gets a
+  lifted grasp; alpha `1.0` clearly lifts and holds in the successful envs.
+- Analysis: this is not currently a train/eval mismatch in the reference path.
+  It is a learned-policy handoff/control-learning failure. Worker B should stop
+  treating partial blending as sufficient and build a teacher-forced curriculum
+  or action-imitation loss that first matches the reference approach under the
+  actual env controller.
+
+Worker A matrix inspection:
+
+- Report:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_matrix_20260611_2344_inspection/REPORT.md`
+- Matrix contact sheet:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_matrix_20260611_2344_inspection/matrix_contact_sheet.jpg`
+- Metrics:
+  - direct exact-pose light-close `exact_w055` passes the exact-close gate.
+  - all normal `env.step` oracle variants fail:
+    `oracle_success_rate=0.0`, `trace_max_cube_lift_m=0.0`.
+  - approach distances `0.00/0.01/0.03 m`, close widths
+    `0.055/0.045/0.035 m`, larger lift action `0.15`, and reversed approach
+    sign all fail.
+  - min tip-center distance stays around `0.0564-0.0565 m`; the gripper width
+    command is applied but physical contact/lift does not occur.
+- Analysis: saved grasp transform and cube XY randomization are unlikely to be
+  the primary issue. The blocker is the normal action-space control path from
+  pregrasp to exact/contact, or a mismatch between the RL action TCP proxy and
+  the direct exact-pose diagnostic.
+
+Worker C residual-target inspection:
+
+- Report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_targetresidual_ep24s0_96_20260611_164300/replay_report.md`
+- Quick sheet:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_targetresidual_ep24s0_96_20260611_164300/videos/franka-cube-dp-replay-targetresidual-step-0_sheet.jpg`
+- Metrics:
+
+| mode | final EE-cube m | min EE-cube m | final finger-cube m | median xyz realization | mean cosine | mean target before/after | clip mean/max | first close |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| dataset_t | 0.1887 | 0.1887 | 0.1815 | 0.0932 | 0.8907 | n/a | 0.000/0.000 | none |
+| dataset_target_t_plus_1 | 0.1752 | 0.0764 | 0.2199 | 0.0802 | 0.9603 | 0.0503/0.0474 | 0.090/0.333 | none |
+| dataset_target_t_plus_7 | 0.1756 | 0.0762 | 0.2203 | 0.0803 | 0.9676 | 0.0506/0.0476 | 0.090/0.333 | none |
+
+- Visual interpretation: replay approaches but does not close or lift in the
+  inspected 96-step videos. The residual target variants improve direction but
+  not enough magnitude; realized motion remains about `8%` of the requested
+  step.
+- Analysis: DP warm start remains blocked on controller/action realization. C
+  should not launch BC/RL until the actual env controller can replay teacher
+  waypoints with adequate magnitude and close-phase timing.
+
+Next orchestrator actions:
+
+- Send Worker A a targeted request for action-tracking probes and a
+  controller-assisted move-to-exact diagnostic.
+- Send Worker B a targeted request for teacher-forced/action-imitation
+  curriculum artifacts before any large PPO.
+- Send Worker C a targeted request to resolve controller realization and
+  close-phase replay before more DP training.
