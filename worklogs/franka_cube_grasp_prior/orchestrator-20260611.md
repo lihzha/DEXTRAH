@@ -1875,3 +1875,79 @@ Current scheduler state:
 - C job `1027792` is complete and artifacts are fetched.
 - Continue monitoring A/B/C; do not launch final-scale RL until bounded
   diagnostics produce visually and quantitatively acceptable artifacts.
+
+## 2026-06-11 Monitor Check 22:53 UTC
+
+Worker A bounded reset-prior smoke/eval:
+
+- A reported completion and the orchestrator inspected the report/contact
+  sheet.
+- Branch: `codex/franka-cube-ggx-pregrasp-reset`.
+- Latest pushed A commit: `cdaf066ce9e06eb38a1bf57be78bbdb6df22b4aa`.
+- Smoke source commit: `1d3a8e30d2410413a83c8e3e2d6224f4a95ae7fe`.
+- Jobs:
+  - reset-prior RL smoke `1027808`: `COMPLETED 0:0`.
+  - reset-prior eval/video `1027817`: `COMPLETED 0:0`.
+- Viewer artifacts:
+  - report:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_smoke_ep10_eval_20260611_224608/inspection_20260611_2248/REPORT.md`
+  - contact sheet:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_smoke_ep10_eval_20260611_224608/inspection_20260611_2248/contact_sheet.png`
+  - geometry trace:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_smoke_ep10_eval_20260611_224608/inspection_20260611_2248/eval_geometry_trace.png`
+  - eval video:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_smoke_ep10_eval_20260611_224608/videos/franka-cube-ggx-pregrasp-smoke-ep10-step-0.mp4`
+- Metrics:
+  - smoke JSONL records `45`, bad scalar count `0`.
+  - prior attempted/success/farther/quality rates all `1.0`.
+  - eval max lift `0.01417 m` around step `56`, but success/lift flags stay
+    `0`.
+  - eval min EE-cube `0.0496 m`, final EE-cube `0.6780 m`; min
+    finger-center `0.0870 m`, final finger-center `0.6852 m`.
+- Visual interpretation: first frame is the intended open pregrasp; the policy
+  briefly interacts/bumps the cube around steps `40-60`, then drifts far away.
+- Orchestrator verdict: reset/pregrasp gate `PASS`, smoke runtime/checkpoint
+  gate `PASS`, policy/eval scale-up gate `FAIL`; final A100 remains blocked.
+- Instruction sent to A: run a matched prior-disabled 1-GPU/64-env/45-epoch
+  baseline smoke/eval with the same cube randomization, seeds if compatible,
+  checkpoint/eval cadence, and viewer artifact contract. No A100 launch.
+
+Worker B terminal-hold diagnostic:
+
+- Job `1027825` (`refmix_hold_a10`) completed `0:0`; source commit
+  `d8956ac8131e26130ebba16be6082119c71e22a7`.
+- Run:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_traj_tracking_refmix_hold_a10_video480_20260611_154910`.
+- Local artifacts:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_a10_video480_20260611_154910`.
+- Viewer artifacts:
+  - video:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_a10_video480_20260611_154910/videos/refmix-hold-a10-video480-step-0.mp4`
+  - contact sheet:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_a10_video480_20260611_154910/contact_sheet_quick.jpg`
+  - report:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_a10_video480_20260611_154910_artifacts/report.md`
+  - trace plot:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_a10_video480_20260611_154910_artifacts/trajectory_trace_plot.png`
+- Metrics:
+  - success mean/final `0.0 / 0.0`; cube lift max `0.0 m`.
+  - final EE-cube `0.1128 m`, final finger-center-cube `0.1538 m`.
+  - final gripper width `0.0002 m`.
+  - hold active mean/final `0.746 / 1.0`.
+  - lift/success trigger rates `0.0 / 0.0`; hold activated via the loose
+    contact-distance trigger.
+- Visual interpretation: gripper approaches near the cube and closes in free
+  space; the cube stays on the table.
+- Orchestrator verdict: the first hold variant failed. The hold trigger was too
+  loose and fired before a real grasp/lift. This does not unblock PPO scale-up.
+- Instruction sent to B: compare against the previous alpha `1.0` transient
+  lift trace, identify the actual lift window/conditions, then rerun a stricter
+  hold that triggers only after real lift/success or the known lift window.
+  Also clean up train/eval consistency reporting so expected eval overrides are
+  not mixed with real mismatches.
+
+Current scheduler state:
+
+- l401 was empty immediately before A was assigned the matched baseline and B
+  was assigned the stricter hold follow-up. Continue polling for new worker
+  launches.
