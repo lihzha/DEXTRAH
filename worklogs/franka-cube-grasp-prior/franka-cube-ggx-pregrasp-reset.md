@@ -796,3 +796,18 @@ Analysis:
 
 Next:
 - Continue monitoring through wall-time/requeue. Refresh artifacts again after a requeue/resume event or another substantive checkpoint window if requested.
+
+## 2026-06-11T20:50:11Z - eval video artifact plan
+
+Goal:
+- Produce a bounded rollout video artifact from the current reset-prior best checkpoint without interrupting or slowing active 8-GPU training job `28987954`.
+
+Plan:
+- Make a minimal eval-wrapper change only: expose disabled-by-default `GRASP_PRIOR_RESET_ENABLED` and `GRASP_PRIOR_LIBRARY_PATH` through `cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`, mirroring the training wrapper override style.
+- Commit/push that wrapper/worklog change and deploy the exact commit to the agent-owned NFS worktree.
+- Launch a 1-GPU l401 eval/render job from the agent worktree with `TASK=Dextrah-Franka-Cube-Grasp`, `NUM_ENVS=1`, short `NUM_STEPS`/`VIDEO_LENGTH`, reset prior enabled, and checkpoint `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005/nn/dextrah_franka_cube_grasp.pth`.
+- Monitor eval scheduler/logs/metrics to completion; fetch metrics/video locally; run `viz-open`; record exact job id, checkpoint, metrics, video path, and viewer URL.
+- Continue training monitor separately; do not cancel or modify job `28987954`.
+
+Next:
+- Patch the eval wrapper, run local `bash -n`, commit/push/deploy, and submit the small l401 eval.
