@@ -340,6 +340,18 @@ def _run_tracking_reset_checks(task_env, checks: CheckRecorder) -> dict[str, obj
         runtime_retime_policy=summary.get("runtime_retime_policy"),
         episode_length_s=episode_length_s,
     )
+    configured_min_gripper_width = float(summary.get("min_target_gripper_width_m", 0.0) or 0.0)
+    runtime_min_gripper_width = float(summary.get("runtime_gripper_width_min_m", 0.0) or 0.0)
+    checks.check(
+        "trajectory_tracking_gripper_width_policy",
+        runtime_min_gripper_width + 1.0e-6 >= configured_min_gripper_width,
+        runtime_gripper_width_min_m=runtime_min_gripper_width,
+        runtime_gripper_width_max_m=float(summary.get("runtime_gripper_width_max_m", 0.0) or 0.0),
+        source_gripper_width_min_m=float(summary.get("source_gripper_width_min_m", 0.0) or 0.0),
+        source_gripper_width_max_m=float(summary.get("source_gripper_width_max_m", 0.0) or 0.0),
+        min_target_gripper_width_m=configured_min_gripper_width,
+        gripper_schedule_policy=summary.get("gripper_schedule_policy"),
+    )
 
     if hasattr(task_env, "_update_trajectory_tracking_targets"):
         task_env._update_trajectory_tracking_targets()

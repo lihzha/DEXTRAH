@@ -29,6 +29,10 @@ class DextrahFrankaCubeTrajTrackingEnvCfg(DextrahFrankaCubeGraspEnvCfg):
     trajectory_tracking_orientation_sharpness = 6.0
     trajectory_tracking_gripper_weight = 0.20
     trajectory_tracking_gripper_sharpness = 45.0
+    # GraspGenX exports use zero as a close command.  In this DEXTRAH task the
+    # tracked value is measured fingertip-body separation, so clamp close-phase
+    # targets to the contact-width scale used by the cube reward checks.
+    trajectory_tracking_min_target_gripper_width = 0.024
 
     # Global training-step curriculum for fading the shaping term.  Set
     # end_weight equal to start_weight to keep it constant.

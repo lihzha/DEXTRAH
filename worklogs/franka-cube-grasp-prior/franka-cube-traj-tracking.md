@@ -1331,3 +1331,20 @@ Analysis:
 Next:
 - Commit and push the generator plus worklog.
 - Continue bounded debugging with a small variant-only ablation around gripper schedule/orientation/contact shaping before any additional training scale-up.
+
+## 2026-06-11T13:35:44-07:00 - gripper schedule contact-width clamp plan
+
+Goal:
+- Remove the most obvious reward-shaping mismatch in the trajectory-tracking variant before any further training scale-up.
+
+Hypothesis:
+- The compact GraspGenX/cuRobo reference uses `gripper_width=0.0` as a close command, but the DEXTRAH Franka task logs/rewards `gripper_width` as measured fingertip-body separation. Rewarding the policy for measured width `0.0` encourages collapse even when the gripper is not enclosing the cube. The existing cube reward tests treat `0.024` m as a closed-near contact width, so clamping the tracking target to at least `0.024` m should preserve close-phase intent without rewarding an impossible over-closed measured width.
+
+Planned Change:
+- `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env_cfg.py`: add a variant-only `trajectory_tracking_min_target_gripper_width=0.024` config field. Setting it to `0.0` restores raw reference widths.
+- `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env.py`: clamp loaded reference gripper widths into `[min_target_gripper_width, max_gripper_width]`, keep source/runtime width stats, and report the clamp policy in `trajectory_tracking_reference_summary()`.
+- `dextrah_lab/rl_games/validate_franka_cube_grasp_env.py`: extend validation/details to prove the runtime reference no longer contains measured target width `0.0` when the clamp is enabled.
+
+Validation Plan:
+- Local: `python3 -m py_compile` on touched Python files, `git diff --check`.
+- Cluster smoke only: `Dextrah-Franka-Cube-Grasp-Traj-Tracking`, 4 envs, short validation rollout against the same 60 mm compact reference. Acceptance: obs remains `[4,72]`, baseline task registration still resolves, runtime summary reports `min_target_gripper_width_m=0.024`, target gripper min is `0.024`, target safety remains clean, tracking metrics finite, and no immediate reset pathology.

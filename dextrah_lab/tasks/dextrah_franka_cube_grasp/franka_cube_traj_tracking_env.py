@@ -56,8 +56,21 @@ class DextrahFrankaCubeTrajTrackingEnv(DextrahFrankaCubeGraspEnv):
         times = [float(waypoint["time_s"]) for waypoint in waypoints]
         pos_object = [waypoint["ee_pos_object"] for waypoint in waypoints]
         quat_object = [waypoint["ee_quat_object_wxyz"] for waypoint in waypoints]
-        gripper_width = [
+        source_gripper_width = [
             float(waypoint.get("gripper_width", float(self.cfg.max_gripper_width))) for waypoint in waypoints
+        ]
+        min_target_gripper_width = max(
+            0.0,
+            float(getattr(self.cfg, "trajectory_tracking_min_target_gripper_width", 0.0) or 0.0),
+        )
+        max_target_gripper_width = float(self.cfg.max_gripper_width)
+        if min_target_gripper_width > max_target_gripper_width:
+            raise ValueError(
+                "trajectory_tracking_min_target_gripper_width must not exceed max_gripper_width "
+                f"({min_target_gripper_width} > {max_target_gripper_width})."
+            )
+        gripper_width = [
+            min(max(width, min_target_gripper_width), max_target_gripper_width) for width in source_gripper_width
         ]
         tracking_weight = [float(waypoint.get("tracking_weight", 1.0)) for waypoint in waypoints]
         source_start_time = float(times[0])
@@ -78,6 +91,16 @@ class DextrahFrankaCubeTrajTrackingEnv(DextrahFrankaCubeGraspEnv):
         self.traj_ref_source_duration = source_duration
         self.traj_ref_runtime_duration_cfg = runtime_duration_cfg
         self.traj_ref_retime_policy = retime_policy
+        self.traj_ref_gripper_width_source_min = min(source_gripper_width)
+        self.traj_ref_gripper_width_source_max = max(source_gripper_width)
+        self.traj_ref_gripper_width_runtime_min = min(gripper_width)
+        self.traj_ref_gripper_width_runtime_max = max(gripper_width)
+        self.traj_ref_min_target_gripper_width = min_target_gripper_width
+        self.traj_ref_gripper_schedule_policy = (
+            "clamp_source_width_to_min_target_gripper_width"
+            if min_target_gripper_width > 0.0
+            else "use_source_gripper_width"
+        )
 
         self.traj_ref_times = torch.tensor(runtime_times, dtype=torch.float32, device=self.device)
         self.traj_ref_pos_object = torch.tensor(pos_object, dtype=torch.float32, device=self.device)
@@ -272,6 +295,12 @@ class DextrahFrankaCubeTrajTrackingEnv(DextrahFrankaCubeGraspEnv):
             "source_end_time_s": float(getattr(self, "traj_ref_source_end_time", 0.0)),
             "configured_runtime_duration_s": float(getattr(self, "traj_ref_runtime_duration_cfg", 0.0)),
             "runtime_retime_policy": getattr(self, "traj_ref_retime_policy", "uninitialized"),
+            "source_gripper_width_min_m": float(getattr(self, "traj_ref_gripper_width_source_min", 0.0)),
+            "source_gripper_width_max_m": float(getattr(self, "traj_ref_gripper_width_source_max", 0.0)),
+            "runtime_gripper_width_min_m": float(getattr(self, "traj_ref_gripper_width_runtime_min", 0.0)),
+            "runtime_gripper_width_max_m": float(getattr(self, "traj_ref_gripper_width_runtime_max", 0.0)),
+            "min_target_gripper_width_m": float(getattr(self, "traj_ref_min_target_gripper_width", 0.0)),
+            "gripper_schedule_policy": getattr(self, "traj_ref_gripper_schedule_policy", "uninitialized"),
             "transform_policy": tracking.get("transform_policy") if isinstance(tracking, dict) else None,
             "joint_trajectory_policy": tracking.get("joint_trajectory_policy") if isinstance(tracking, dict) else None,
             "runtime_object_pose_policy": runtime_object_pose_policy,
