@@ -1375,3 +1375,240 @@ Analysis:
 Next:
 - Launch local generation, monitor success/failure logs, then convert and run
   the bounded official-DP validation pretrain if enough new trajectories pass.
+
+## 2026-06-11T13:06:18-07:00 - 32-demo cuRobo generation completed
+
+Goal:
+- Produce enough real GraspGenX/cuRobo-validated Franka cube trajectories for
+  the next bounded official Diffusion Policy BC pretrain.
+
+Hypothesis:
+- Sequential local planning for seeds `8..31` should provide a small but
+  materially better mechanics dataset than the original 8-demo checkpoint,
+  while keeping generation inspectable and recoverable seed by seed.
+
+Change:
+- No source code changed. Generated new untracked real cuRobo plan artifacts.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `7ae5d242832ee42f453166e9cd8a14a687b66569`
+- implementation_commit: pending for this worklog/data-loop update
+- push/pull: pending
+- changed_files: worklog only so far
+
+Command / Job:
+- command: local sequential planner loop over seeds `8..31` using
+  `dextrah_lab/scene_scripts/plan_franka_cube_graspgenx_curobo.py` with
+  `--num_sample_points 1000 --num_grasps 64 --topk 32 --grasp_threshold 0.0 --grasp_planner topdown --moe_obb_density dense --max_plan_attempts 32 --rank_grasps_by_confidence`.
+- job_id: local session `77761`
+- run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/curobo_plans/cube_curobo_scale32_20260611_125957_seed{8..31}`
+- logs:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/cube_curobo_scale32_20260611_125957_seed{8..31}.log`
+- artifacts:
+  - success list:
+    `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/curobo_plans/cube_curobo_scale32_20260611_125957_success_trajectories.txt`
+  - failed list:
+    `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/curobo_plans/cube_curobo_scale32_20260611_125957_failed_seeds.txt`
+  - positions:
+    `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/curobo_plans/cube_curobo_scale32_20260611_125957_positions.txt`
+
+Result:
+- status: passed
+- metrics/artifacts:
+  - planner result: `PLAN_BATCH_DONE batch=cube_curobo_scale32_20260611_125957 success=24 fail=0`
+  - success list length: `24`
+  - failed list length: `0`
+  - representative seed `31`: `curobo_validated=true`,
+    `plan_segments={"approach":42,"grasp":42,"lift":42}`,
+    `trajectory.json` has `702` frames.
+
+Analysis:
+- The dataset remains small and should be described as mechanics/early-BC
+  validation only. The `curobo_validated=true` flag is backed by the planner
+  success marker in each seed log rather than being synthesized by the
+  converter.
+- The next conversion should combine the original 8 successful real cuRobo
+  trajectories with these 24 new trajectories, keeping the output name and
+  metadata distinct from all geometric/debug datasets.
+
+Next:
+- Convert the combined 32 real cuRobo trajectories to low-dimensional
+  approach-to-pregrasp DP demonstrations, run dataset-shape validation, then
+  run a bounded official-DP pretrain with a validation split.
+
+## 2026-06-11T13:07:42-07:00 - 32-demo conversion and bounded official-DP pretrain launch plan
+
+Goal:
+- Validate the official Diffusion Policy BC path on a combined 32-demo real
+  cuRobo dataset, then inspect losses/checkpoints/action bridge behavior.
+
+Hypothesis:
+- A 32-demo approach/pregrasp dataset with all sources cuRobo-validated should
+  run through the official `TrainDiffusionUnetLowdimWorkspace` with validation
+  enabled and produce a finite debug checkpoint. This is still not a final BC
+  claim because the dataset omits close/lift and remains small.
+
+Change:
+- Converted combined 8+24 real cuRobo trajectories to:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_approach_pregrasp.npz`
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- implementation_commit: pending
+- changed_files: worklog only
+
+Command / Job:
+- conversion command:
+  `PYTHONPATH="$DEX:$GGX:$GGX/end2end:$CU" GRASPGENX_ROOT="$GGX" "$GGX/.venv/bin/python" -m dextrah_lab.offline_dp_bc.trajectory_conversion <32 trajectory.json files> --output "$DATASET" --input-format json --phase-set approach_pregrasp --graspgenx-root "$GGX" --robot-config "$ROBOT_CONFIG"`
+- conversion log:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/cube_curobo_scale32_20260611_125957_conversion.log`
+- dataset smoke command:
+  `PYTHONPATH="$DP:$DEX" "$VENV/bin/python" -m dextrah_lab.offline_dp_bc.validate_dataset_smoke --dataset "$DATASET"`
+- dataset smoke log:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/cube_curobo_scale32_20260611_125957_dataset_smoke.log`
+- planned official-DP pretrain command:
+  `PYTHONPATH="$DP:$DEX" WANDB_MODE=offline "$VENV/bin/python" train.py --config-dir "$DEX/dextrah_lab/offline_dp_bc/config" --config-name franka_cube_lowdim_dp task.dataset_path="$DATASET" task.dataset.val_ratio=0.25 training.device=cuda:0 training.max_train_steps=100 training.max_val_steps=4 training.num_epochs=5 policy.num_inference_steps=2 dataloader.batch_size=32 val_dataloader.batch_size=32 hydra.run.dir="$RUN_DIR"`
+- planned run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_debug/run_20260611_130742_curobo32_scale`
+
+Result:
+- conversion: passed with `num_episodes=32`, `num_steps=3284`,
+  `obs_dim=21`, `action_dim=7`.
+- dataset smoke: passed with `official_diffusion_policy_imported=true`,
+  train samples `1958`, sample shapes `(8,21)` and `(8,7)`, and position
+  replay error `0.0`.
+- metadata:
+  - dataset-level `curobo_validated=true`
+  - source-level cuRobo validation true for all 32 trajectories
+  - action bounds are finite and within the DEXTRAH normalized range:
+    min `[-0.04198,-0.16348,-0.000001,-0.07269,-0.09689,-0.16468,1.0]`,
+    max `[0.13624,0.04179,0.20882,0.09963,0.000001,0.25439,1.0]`
+
+Analysis:
+- This approach/pregrasp dataset has stable numeric ranges and should avoid
+  the extreme clipping seen during the 8-demo cluster eval except where the
+  learned policy extrapolates badly from too little data.
+- Gripper action is constant open (`1.0`) by design for approach/pregrasp, so
+  this checkpoint cannot learn close/lift. Close/lift remains a required next
+  ablation before any manipulation-success claim.
+
+Next:
+- Run the bounded official-DP debug pretrain, inspect `logs.json.txt`,
+  checkpoints, and bridge-smoke action ranges, then decide whether to launch
+  a second tiny l401 eval with the scaled checkpoint.
+
+## 2026-06-11T13:09:17-07:00 - 32-demo official-DP overfit/debug run plan
+
+Goal:
+- Determine whether the action saturation seen in the 32-demo 5-epoch
+  checkpoint is mainly undertraining/debug-inference noise by running a still
+  bounded official Diffusion Policy overfit/debug pretrain on the same real
+  cuRobo dataset.
+
+Hypothesis:
+- The first 5-epoch run produced finite, decreasing losses but only `405`
+  optimizer steps and bridge samples still touched `[-1,1]` clip bounds.
+  A roughly 2k-step run should reduce sampling noise if the lowdim official-DP
+  config and dataset are coherent.
+
+Change:
+- No source edits planned.
+- Training scale increases only within the same 32 real cuRobo approach-only
+  dataset. This is not a final BC run and still cannot learn close/lift.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `7ae5d242832ee42f453166e9cd8a14a687b66569`
+- implementation_commit: pending worklog update
+
+Command / Job:
+- command:
+  `PYTHONPATH="$DP:$DEX" WANDB_MODE=offline "$VENV/bin/python" train.py --config-dir "$DEX/dextrah_lab/offline_dp_bc/config" --config-name franka_cube_lowdim_dp task.dataset_path="$DATASET" task.dataset.val_ratio=0.25 training.device=cuda:0 training.max_train_steps=100 training.max_val_steps=4 training.num_epochs=25 policy.num_inference_steps=25 dataloader.batch_size=32 val_dataloader.batch_size=32 hydra.run.dir="$RUN_DIR"`
+- note: official `train_diffusion_unet_lowdim_workspace.py` applies
+  `training.max_train_steps` per epoch (`batch_idx >= max_train_steps-1`),
+  not globally. With 32 demos the dataloader has `81` batches, so this launch
+  is expected to run about `25 * 81 = 2025` optimizer/log steps.
+- planned run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_debug/run_20260611_130917_curobo32_overfit2k`
+- planned log:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/official_dp_curobo32_overfit2k_train.log`
+
+Result:
+- status: pending
+
+Analysis:
+- If bridge actions remain saturated after this bounded overfit run, the next
+  patch should be on the BC representation/training setup rather than another
+  simulator eval: likely action normalization, deterministic DDIM inference,
+  reduced output clip impact, or close/lift data balance.
+
+Next:
+- Launch and monitor the official-DP overfit/debug run, then inspect
+  `logs.json.txt`, checkpoint files, and bridge action ranges at realistic
+  inference-step counts.
+
+## 2026-06-11T13:11:10-07:00 - 32-demo official-DP train inspection
+
+Goal:
+- Inspect the 32-demo official-DP checkpoints and decide whether the scaled
+  checkpoint is sane enough for a tiny l401 Isaac eval wrapper smoke.
+
+Command / Job:
+- first debug run:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_debug/run_20260611_130742_curobo32_scale`
+- first debug train log:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/official_dp_curobo32_scale_train.log`
+- overfit/debug run:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_debug/run_20260611_130917_curobo32_overfit2k`
+- overfit/debug train log:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/official_dp_curobo32_overfit2k_train.log`
+- checkpoint smoke logs:
+  - `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/official_dp_curobo32_scale_checkpoint_smoke_25step.log`
+  - `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/official_dp_curobo32_overfit2k_checkpoint_smoke_25step.log`
+  - `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/official_dp_curobo32_overfit2k_checkpoint_smoke_100step.log`
+
+Result:
+- first 5-epoch debug run:
+  - completed with `405` JSON log rows, `global_step=404`.
+  - `train_loss` decreased to `0.06738`; `val_loss` to `0.05896`.
+  - `train_action_mse_error=0.63745`.
+  - `latest.ckpt` written, size about `266 MB`.
+  - bridge smoke at 25 denoising steps still sampled pose actions at clip
+    bounds.
+- 25-epoch overfit/debug run:
+  - completed with `2025` JSON log rows, `global_step=2024`.
+  - `train_loss` decreased to `0.00821`; `val_loss=0.00871`.
+  - `train_action_mse_error=0.29439`.
+  - `latest.ckpt` written, size about `266 MB`.
+  - bridge smoke at 25 denoising steps still touched clip bounds in some pose
+    dimensions.
+  - bridge smoke at 100 denoising steps produced small pose actions:
+    min `[-0.04952,-0.04517,0.01290,-0.02120,-0.03273,-0.03319,0.98674]`,
+    max `[-0.00841,-0.01031,0.09045,0.00534,-0.00904,0.03201,1.00001]`.
+
+Analysis:
+- The official-DP mechanics now validate on a real 32-demo cuRobo dataset:
+  official config parsing, official workspace construction/training,
+  validation split, checkpoints, and PPO observation bridge all run.
+- Inference-step count matters. The fast 2-step/25-step debug settings are too
+  noisy for simulator policy rollout, while 100 denoising steps matches the
+  100-step train scheduler and gives action ranges consistent with the
+  demonstration deltas.
+- This remains approach/pregrasp only. The constant open gripper action and no
+  close/lift data mean the next Isaac smoke should be interpreted as rollout
+  wiring and approach behavior only, not manipulation success.
+
+Next:
+- Copy the 32-demo overfit/debug `latest.ckpt` to l401 results storage and run
+  a tiny `eval_franka_cube_dp_policy.py` cluster smoke with
+  `NUM_INFERENCE_STEPS=100`, `NUM_ENVS=1`, and a short horizon. Inspect logs
+  and metrics before any further scale-up.
