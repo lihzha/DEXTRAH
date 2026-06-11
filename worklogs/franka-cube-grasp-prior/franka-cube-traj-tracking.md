@@ -2079,3 +2079,61 @@ Result:
 Next:
 - Commit/push and deploy the exact commit to l401.
 - Launch a bounded 4-env/240-step env smoke; acceptance is registration/log presence/finite metrics/target safety/no immediate reset pathology. No longer training.
+
+## 2026-06-11T14:37:20-07:00 - action-scale diagnostic env smoke launch
+
+Goal:
+- Validate the action-scale/reference-reweight diagnostic wiring in Isaac before any training or eval. Use 480 steps so close/lift phases and late reference reweight actually activate.
+
+Version Control:
+- agent_id: franka-cube-traj-tracking
+- local_commit: `c1452dfa990714cde3565bbb3880cc24683d5d7f`
+- remote_commit/status: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking` at `c1452dfa990714cde3565bbb3880cc24683d5d7f`, detached after HTTPS fetch.
+
+Command / Job:
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:30:00 --job-name=franka_cube_traj_actionscale_smoke --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_actionscale_env_smoke_20260611_143720,NUM_ENVS=4,NUM_STEPS=480,VIDEO_LENGTH=1,CAPTURE_VIDEO=False,PRINT_INTERVAL=120,SEED=59,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`
+- job_id: 1027750 `franka_cube_traj_actionscale_smoke`
+- expected_log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_cube_<job_id>.out
+- expected_metrics: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_cube_traj_tracking_actionscale_env_smoke_20260611_143720/metrics.json
+
+Acceptance Criteria:
+- Task registration still works and reset observation shape remains `[4,72]`.
+- All tracking logs, including new ceiling/utilization/reference-reweight terms, are present and finite.
+- Target unsafe rate remains `0.0`, target clearance min remains above `0.025`, and there is no immediate reset/termination pathology.
+- This is wiring/runtime validation only; no learning or policy success claim.
+
+Result:
+- status: passed; Slurm completed `0:0` after `00:00:50` on `pool0-00016`.
+- local_artifacts: `cluster_results/l401/franka_cube_traj_tracking_actionscale_env_smoke_20260611_143720/metrics.json`, `cluster_results/l401/franka_cube_traj_tracking_actionscale_env_smoke_20260611_143720/validate_franka_cube_1027750.out`.
+- validation: `passed=true`, 35 checks, failed checks `[]`.
+- rollout: 480/480 steps, `done_count=0`, `early_done_count=0`, reward mean/final `1.9010794838269551`/`1.17800772190094`, final success `0.0`, max mean lift `0.00035771727561950684`, final gripper width `0.020000029355287552`.
+- target_safety: `tracking_unsafe_target_rate_max=0.0`, target clearance min and batch min `0.06511414051055908`.
+- diagnostic_logs: missing logs `[]`; `tracking_reference_reweight_mean=0.8530728967239459`, `tracking_term_weight_mean=0.5911970233544708`.
+- action_scale_signal: `tracking_close_action_reward_ceiling_mean=0.19872593636010868`, `tracking_lift_action_reward_ceiling_mean=0.2142587032498947`; realized close/lift rewards mean `0.09936296818005434`/`0.08621291266851282` under scripted close/up actions; utilization means `0.23072916666666668`/`0.1203125`.
+- reference: still `curobo_validated=false`, source tag `graspgenx_curobo_60mm_export_pending_exact_validation`, transform policy `transform_task_space_waypoints_by_cube_pose`, runtime object pose policy `reset_cube_pose`.
+
+Analysis:
+- The diagnostic-scale weights and late reference reweighting are runtime-safe in the environment smoke and produce action reward ceilings large enough to matter when actions are present.
+- The smoke is scripted and does not answer learned behavior. The next bounded step is a metrics-only eval of the existing epoch-3 checkpoint under this diagnostic reward config. That will not change actions, but it will show whether the failed policy has large available close/up reward ceilings and low utilization, which isolates weak policy actions from gate silence.
+
+## 2026-06-11T14:37:11-07:00 - action-scale diagnostic tiny RL smoke launch plan
+
+Goal:
+- Run a tiny RL-Games smoke under the action-scale/reference-reweight diagnostic reward config, then evaluate the resulting epoch-3 checkpoint only if the smoke passes.
+
+Version Control:
+- agent_id: franka-cube-traj-tracking
+- source_commit: `c1452dfa990714cde3565bbb3880cc24683d5d7f`
+- remote_commit/status: will redeploy `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking` to the exact pushed branch commit before launch.
+
+Planned Command / Job:
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:30:00 --job-name=franka_cube_traj_actionscale_rl --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,FULL_EXPERIMENT_NAME=franka_cube_traj_tracking_actionscale_rl_smoke_20260611_143711,NPROC_PER_NODE=1,NUM_NODES=1,DISTRIBUTED=False,MULTI_GPU=False,NUM_ENVS=16,HORIZON_LENGTH=16,MINIBATCH_SIZE=256,CENTRAL_VALUE_MINIBATCH_SIZE=256,MINI_EPOCHS=1,MAX_ITERATIONS=3,SAVE_FREQUENCY=1,AUTO_RESUME=False,SELF_RELAUNCH=False,USE_CUDA_GRAPH=False,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json cluster/sbatch_train_teacher_8gpu.sh`
+- expected_log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_<job_id>.out
+- expected_run_dir: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_actionscale_rl_smoke_20260611_143711
+
+Acceptance Criteria:
+- One GPU, 16 envs, 3 iterations only; no auto-resume or self-relaunch.
+- Resolved config keeps observation/state dimensions at `72`, phase observations false, action-scale close/lift weights `2.5`/`4.0`, and reference reweight `0.35` after phase `0.55`.
+- Actor/critic MLP input dimensions remain `72`; no traceback/NaN; epoch-3 checkpoint written.
+- If the smoke passes, launch one bounded metrics-only epoch-3 eval with all `cube_traj_tracking_*` terms exported. Do not launch longer training.
+- Reference caveat remains explicit: `curobo_validated=false`, exact DEXTRAH 60 mm geometry validation remains pending.
