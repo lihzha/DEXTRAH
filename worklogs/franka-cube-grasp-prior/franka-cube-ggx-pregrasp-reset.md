@@ -1549,6 +1549,42 @@ Analysis:
 Next:
 - Implement wrapper, commit/push/deploy exact commit, launch l401 smoke, monitor to terminal state, inspect metrics/checkpoints, and produce eval/contact-sheet artifacts before deciding the next step.
 
+## 2026-06-11T22:43:11Z - launch bounded reset-prior RL smoke
+
+Goal:
+- Run the first bounded RL smoke after the TCP/pregrasp plus light-close diagnostics passed, without launching final-scale A100 training.
+
+Hypothesis:
+- With the validated single-grasp library, short PPO training should start from the intended 3 cm open pregrasp reset path, keep reset metrics finite/sane, and write early checkpoints suitable for eval video inspection.
+
+Change:
+- Added and used `cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`.
+- Smoke-only config diffs versus final: l401 one GPU, `NUM_ENVS=64`, `MAX_ITERATIONS=45`, `MINIBATCH_SIZE=4096`, `CENTRAL_VALUE_MINIBATCH_SIZE=4096`, `SAVE_FREQUENCY=5`, fixed seed `20260620`, JSONL sidecar enabled, single validated grasp library.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- local_commit: `1d3a8e30d2410413a83c8e3e2d6224f4a95ae7fe`
+- pushed: `origin/codex/franka-cube-ggx-pregrasp-reset`
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `1d3a8e30d2410413a83c8e3e2d6224f4a95ae7fe`, detached `HEAD`
+- changed_files: `cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`, this worklog
+
+Command / Job:
+- command: `sbatch --parsable --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=1d3a8e30d2410413a83c8e3e2d6224f4a95ae7fe,TASK=Dextrah-Franka-Cube-Grasp,FULL_EXPERIMENT_NAME=franka_cube_ggx_pregrasp_smoke_1gpu_20260611_224311,NUM_ENVS=64,MAX_ITERATIONS=45,SAVE_FREQUENCY=5,HORIZON_LENGTH=64,MINIBATCH_SIZE=4096,CENTRAL_VALUE_MINIBATCH_SIZE=4096,SEED=20260620,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_orig006_single.npz,DEXTRAH_RLGAMES_JSONL_METRICS=True,AUTO_RESUME=False,USE_CUDA_GRAPH=True cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`
+- job_id: `1027808`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_smoke_1gpu_20260611_224311`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_smoke_1027808.out`
+- expected_artifacts: checkpoints under `nn/`, rank-0 JSONL under `metrics/direct_info_rank_0.jsonl`, env/agent YAML under `params/`
+
+Result:
+- status: submitted
+
+Analysis:
+- This run is only a bounded smoke. It does not authorize A100 final RL until metrics and a first-checkpoint eval/video are inspected.
+
+Next:
+- Monitor job `1027808`, inspect stdout/JSONL/checkpoints, fetch artifacts locally, then launch a bounded eval/video from the first usable checkpoint if the smoke is sane.
+
 ## 2026-06-11T22:41:10Z - plan exact-close offset sweep controls
 
 Goal:
