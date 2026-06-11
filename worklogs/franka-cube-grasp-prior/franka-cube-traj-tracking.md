@@ -2265,3 +2265,54 @@ Result:
 Next:
 - Commit/push/deploy exact implementation commit.
 - Launch one bounded l401 `ACTION_SOURCE=reference_delta` eval with video, trace files, fixed-window summaries, and artifact bundle. No RL training.
+
+## 2026-06-11T14:54:40-07:00 - reference-delta sanity eval launch
+
+Goal:
+- Run the policy-free reference-following sanity baseline through the same trajectory-tracking eval artifact path.
+
+Version Control:
+- agent_id: franka-cube-traj-tracking
+- local_commit: `c1e3bffb619b05ee7abfb87d5ebda685602e2cc6`
+- remote_commit/status: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking` at `c1e3bffb619b05ee7abfb87d5ebda685602e2cc6`, detached clean after HTTPS fetch fallback.
+
+Command / Job:
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:30:00 --job-name=franka_cube_traj_refdelta --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_refdelta_video480_20260611_145440,NUM_ENVS=4,NUM_STEPS=480,VIDEO_LENGTH=480,VIDEO_NAME_PREFIX=refdelta-video480,CAPTURE_VIDEO=True,ACTION_SOURCE=reference_delta,PRINT_INTERVAL=120,USE_CUDA_GRAPH=False,SEED=62,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- job_id: 1027757 `franka_cube_traj_refdelta`
+- expected_log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1027757.out`
+- expected_run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_traj_tracking_refdelta_video480_20260611_145440`
+
+Acceptance Criteria:
+- Completion alone is not enough. Inspect `metrics.json`, `trace.csv/jsonl`, video metadata/frames, generated plot/report/consistency JSON, and behavior.
+- Fixed-window summaries must exist in `metrics.json`.
+- Target unsafe rate remains zero; target clearance remains above `0.025`.
+- Result must be labeled as `reference_delta` position-only delta-IK baseline, not learned policy and not cuRobo joint replay.
+
+Result:
+- status: completed and inspected; Slurm job `1027757` completed `0:0` after `00:01:18` on `pool0-00016`.
+- remote_artifacts: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_traj_tracking_refdelta_video480_20260611_145440/metrics.json`, `trace.csv`, `trace.jsonl`, and `videos/refdelta-video480-step-0.mp4`; log `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1027757.out`.
+- local_run_artifacts: `cluster_results/l401/franka_cube_traj_tracking_refdelta_video480_20260611_145440/metrics.json`, `trace.csv`, `trace.jsonl`, `videos/refdelta-video480-step-0.mp4`, and `eval_franka_cube_1027757.out`.
+- local_summary_bundle: `cluster_results/l401/franka_cube_traj_tracking_refdelta_artifacts_20260611_145440/report.md`, `trajectory_trace_plot.png`, `summary.json`, `train_eval_consistency.json`, `refdelta_contact_sheet_scene_labeled.png`, `refdelta_contact_sheet_labeled.png`, plus extracted frames under `frames/`.
+- viz_video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refdelta_video480_20260611_145440/videos/refdelta-video480-step-0.mp4`
+- viz_plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refdelta_artifacts_20260611_145440/trajectory_trace_plot.png`
+- viz_report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refdelta_artifacts_20260611_145440/report.md`
+- viz_contact_sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refdelta_artifacts_20260611_145440/refdelta_contact_sheet_scene_labeled.png`
+- video_validation: `ffprobe` reports width `1280`, height `720`, frame rate `60/1`, duration `7.983333`, frame count `479`.
+- visual_inspection: first encoded frame is black, so the labeled scene sheet uses frames 30/239/478; frame 30 shows approach above the cube, frame 239 shows contact/closing around the cube, and frame 478 shows the hand away/releasing with cube on the table.
+- action_source: `reference_delta`; notes `position_only_delta_ik_from_runtime_task_space_reference_plus_gripper_schedule`. This is not a learned policy, not cuRobo replay, and not joint-trajectory replay.
+- rollout_metrics: 480/480 steps, `done_count=2`, reward mean/final `3.2933460235595704`/`1.8666270971298218`, success mean/final/last-window `0.0125`/`0.0`/`0.045`.
+- behavior_metrics: cube lift mean/final/max `0.006362190749496221`/`0.0`/`0.06810680031776428`; EE-to-target mean/final/min `0.0446284413880979`/`0.008654721081256866`/`0.002153026405721903`; EE-to-cube mean/final/min `0.11663868233251075`/`0.19660887122154236`/`0.03757987171411514`; finger-center-to-cube mean/final/min `0.15371926327546437`/`0.2357914000749588`/`0.07885409891605377`; gripper width mean/final/min `0.06098952287963281`/`0.051999446004629135`/`0.039746686816215515`.
+- target_safety: unsafe target rate max `0.0`; target clearance min `0.06511414051055908`, above the configured `0.025` m minimum.
+- action_reward_metrics: close/lift action reward means `0.1146852563705276`/`0.11695309294833957`; close/lift utilization means `0.16947482296576102`/`0.10177070496914288`; contact gate mean `0.6714751257250706`.
+- fixed_windows: first window reward `1.7790`, EE-target `0.1011`, no close/lift utilization, no success; middle window reward `3.7954`, EE-target `0.0035`, EE-cube `0.0389`, finger-cube `0.0799`, close utilization `0.2279`, no success; last window reward `3.6765`, success mean `0.05`, lift max `0.0681`, close/lift utilization `0.2500`/`0.1687`, but EE/finger distances worsen to `0.1797`/`0.2148`.
+- train_eval_consistency: `train_eval_consistency.json` passed with no mismatches for observation/state/action sizes, cube randomization, reference path/duration, phase observations, close/lift weights, relaxed gate thresholds, min gripper width, and late reference reweight knobs.
+- reference: still `curobo_validated=false`; source tag remains `graspgenx_curobo_60mm_export_pending_exact_validation`. The 45 mm GraspGenX vs DEXTRAH 60 mm geometry caveat remains unresolved, so this is not a DEXTRAH-ready exact-geometry validated reference.
+
+Analysis:
+- The reference-delta sanity eval answers the immediate controller/reference feasibility question more positively than the learned checkpoint eval: the same transformed runtime task-space reference can drive the Franka delta-IK interface to millimeter-scale EE-target error in the middle window and to near-cube contact, with nonzero close/up utilization and transient lift/success.
+- This strongly suggests the remaining B failure is mostly policy/action learning and reward incentive use, not an impossible task-space reference transform or target-safety issue. The learned `rew_-inf` checkpoint failed to emit meaningful close/up actions and drifted away, while the policy-free action source follows the target and produces some lift signal.
+- It is still not a solved controller. Final success is zero, `done_count=2` occurs, final EE/finger-to-cube distances worsen, and the video shows the hand releasing/backing away by the end. Because `reference_delta` tracks position only and follows the gripper schedule without orientation/contact hold logic, it likely exposes a timing/hold weakness after transient lift.
+
+Next:
+- Do not scale RL training yet.
+- Next bounded debugging should use this evidence to make learned policy actions easier to compare against the scripted prior: either add a short diagnostic eval that mixes/clamps learned actions toward `reference_delta` for close/up dimensions, or add a behavior-cloning/action-prior reward/log that penalizes divergence from the reference-delta action in contact/lift phases. The first check should remain eval/smoke-only with video/trace/report artifacts and `curobo_validated=false` explicit.
