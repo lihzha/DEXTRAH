@@ -543,3 +543,62 @@ Worker C Diffusion Policy alternative:
 - Worker C pushed `origin/codex/franka-cube-diffusion-policy-bc` at
   `7ae5d24` (`Plan real cuRobo DP dataset scale-up`) and is moving toward a
   bounded real-demo dataset expansion, still not final BC/RL.
+
+## 2026-06-11 Monitor Check 20:11 UTC
+
+Final RL job `28987954`:
+
+- still running on a1001 at about 41 minutes elapsed
+- reached at least epoch `436` in rank-0 JSONL and epoch `432` in the visible
+  stdout tail during this check
+- rank-0 JSONL: `436` records, `bad_scalar_count=0`
+- best-checkpoint messages improved to at least `2084.8135` at epoch `402`
+- interval checkpoint observed at epoch `425` with reward suffix `2057.8845`
+- latest rank-0 sidecar still reports prior reset diagnostics, including reset
+  attempt/farther/success rates at `1.0`; the run remains a live final
+  apple-to-apple RL training, not a completed result
+
+Worker B trajectory-tracking alternative:
+
+- l401 queue is empty, and reset-pose RL25 eval job `1027719` completed with
+  exit `0:0` after `00:00:58`
+- eval artifacts:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_traj_tracking_resetpose_rl25_eval720_20260611_130748/metrics.json`
+  and
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1027719.out`
+- rollout completed `720/720` requested steps with `done_count=7`,
+  `reward_mean=1.9178464568323559`, `reward_final=2.1220836639404297`, and
+  success mean/final/window all `0.0`
+- recursive numeric JSON check found no non-finite values
+- trajectory target safety remained clean:
+  `cube_traj_tracking_unsafe_target_rate=0.0`,
+  `cube_traj_tracking_safe_target_rate=1.0`, and
+  `cube_traj_tracking_target_table_clearance_min` minimum
+  `0.06511414051055908` above the `0.025 m` safety threshold
+- behavior is still not task-successful: `cube_lift_height_max` maximum is only
+  about `0.0307 m`, `has_lifted_cube=0.0`, and there is a small finger-table
+  violation signal with `finger_table_clearance_violation_max` maximum about
+  `0.0537`
+- Worker B was nudged to append/commit/push this eval result and continue with
+  a bounded next iteration focused on no-lift/no-success and table-contact
+  behavior, while keeping the target-safety path intact
+
+Worker C Diffusion Policy alternative:
+
+- l401 queue is empty; Worker C's latest activity is local official-DP training
+  and checkpoint validation
+- 32-demo real cuRobo conversion and dataset smoke completed locally:
+  `num_episodes=32`, `num_steps=3284`, `obs_dim=21`, `action_dim=7`,
+  all source trajectories marked `curobo_validated=true`
+- bounded official-DP overfit/debug run
+  `run_20260611_130917_curobo32_overfit2k` completed with `global_step=2024`,
+  `train_loss=0.00821`, `val_loss=0.00871`, and
+  `train_action_mse_error=0.29439`
+- checkpoint bridge smoke at `25` diffusion inference steps still touches some
+  normalized clip bounds; at `100` inference steps action ranges are mostly
+  small and inside bounds except the constant-open gripper near `1.0`, which is
+  expected for the approach/pregrasp-only dataset
+- this is still only a mechanics/BC sanity result because approach-only demos
+  cannot teach close/lift; Worker C was nudged to append/commit/push and then
+  continue toward close/lift-capable data or a clearly documented BC-to-RL
+  initialization path
