@@ -1542,3 +1542,51 @@ Analysis:
 Next:
 - Continue shortened cadence and tighten further in the final 15 minutes before
   the expected TERM/requeue signal.
+
+## 2026-06-10 23:59 PDT - Teacher Monitor Metric Pass
+
+Goal:
+- Verify continued training health on shortened cadence and watch the recent
+  success-window dip.
+
+Command / Job:
+- job_id: `28955904`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28955904.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+- local TensorBoard copy:
+  `/tmp/dextrah_teacher_events`
+
+Result:
+- status: running healthy, with success window under watch.
+- scheduler: `RUNNING` on `batch-block5-03072`, elapsed `03:17:21`,
+  time left `32:39` at `23:59:53 PDT`.
+- stdout advanced to epoch `18344/20000`.
+- latest complete checkpoint:
+  `last_dextrah_lstm_ep_18340_rew_541.1027.pth` at `23:59:30`.
+- runtime sidecars rank `0-7` all refreshed at `23:59:28`.
+- narrow critical failure scan over recent stdout returned no matches.
+- TensorBoard summaries parsed through epoch `18339` for epoch-keyed scalars.
+- `in_success_region/iter`: latest `0.443115`, last-50 `0.452207`,
+  last-200 `0.463706`, post-resume mean `0.463134`.
+- `rewards/iter`: latest `688.273`, last-50 `638.872`,
+  last-200 `649.208`, post-resume mean `644.815`.
+- `num_adr_increases/iter`: latest `50`, last-50 `50`.
+- `info/kl`: latest `0.00298156`, last-50 `0.00297848`,
+  last-200 `0.00331759`.
+- `losses/a_loss`: latest `-0.00312311`, last-50 `-0.00293985`.
+- `losses/c_loss`: latest `0.0244747`, last-50 `0.0235516`.
+- `performance/step_inference_rl_update_fps`: latest `113131`,
+  last-20 about `108707`, last-50 about `109688`, last-200 about `109277`.
+
+Analysis:
+- Training remains acceptable. Success dipped in the latest 20/50-epoch
+  windows, but the longer 200-window and post-resume mean remain stable,
+  reward/KL/losses are normal, ADR is saturated, throughput recovered, and
+  checkpoints/sidecars are refreshing.
+
+Next:
+- Continue shortened cadence; watch whether success returns toward the prior
+  `0.46-0.47` band while preparing to tighten near the expected TERM/requeue
+  signal.
