@@ -300,3 +300,105 @@ Result:
 
 Next:
 - Apply the wrapper patch, run cheap checks, commit/push, deploy exact commit to the l401 agent worktree, then launch/monitor a short RL smoke if checks pass.
+
+## 2026-06-11T19:12:22Z - short RL smoke launch record
+
+Goal:
+- Run a bounded one-GPU RL smoke with `Dextrah-Franka-Cube-Grasp` and the GraspGenX pregrasp reset prior enabled, after the reset-only validation passed.
+
+Hypothesis:
+- A two-iteration, reduced-env PPO smoke should prove that the prior-enabled reset path can run inside the normal RL training wrapper, write rl_games logs/checkpoints/configs, and expose reset-prior reward extras without NaNs or immediate training failures.
+
+Change:
+- Committed wrapper support for prior-enabled training in `4cdc8c19516fed4fae4355ab7fd3e9f3bba5c5fc`.
+- Deployed `4cdc8c19516fed4fae4355ab7fd3e9f3bba5c5fc` to the l401 agent-owned worktree using a Git bundle delta from `9d5e982`, because l401 GitHub SSH fetch remains blocked.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset
+- branch: codex/franka-cube-ggx-pregrasp-reset
+- implementation_commit: 4cdc8c19516fed4fae4355ab7fd3e9f3bba5c5fc
+- push/pull: pushed to `origin/codex/franka-cube-ggx-pregrasp-reset`; l401 updated through bundle `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/.bundles/franka-cube-ggx-pregrasp-reset-4cdc8c1.bundle`
+- remote_commit/status: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset` detached at `4cdc8c19516fed4fae4355ab7fd3e9f3bba5c5fc`, clean
+
+Command / Job:
+- command: `bash -n cluster/sbatch_train_teacher_8gpu.sh`
+- command: `bash -n cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`
+- command: `python3 -m compileall dextrah_lab/tasks/dextrah_franka_cube_grasp dextrah_lab/rl_games/train.py dextrah_lab/rl_games/validate_franka_cube_grasp_env.py`
+- command: `sbatch --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=128G --time=00:45:00 --job-name=ggx_rl_smoke --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=4cdc8c19516fed4fae4355ab7fd3e9f3bba5c5fc,TASK=Dextrah-Franka-Cube-Grasp,FULL_EXPERIMENT_NAME=franka_cube_ggx_pregrasp_rl_smoke_20260611_191222,NUM_ENVS=64,MAX_ITERATIONS=2,HORIZON_LENGTH=8,MINIBATCH_SIZE=512,CENTRAL_VALUE_MINIBATCH_SIZE=512,SAVE_FREQUENCY=1,DISTRIBUTED=False,MULTI_GPU=False,NPROC_PER_NODE=1,AUTO_RESUME=False,SELF_RELAUNCH=False,USE_CUDA_GRAPH=False,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_smoke.npz cluster/sbatch_train_teacher_8gpu.sh`
+- job_id: 1027683
+- run_dir: expected `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_rl_smoke_20260611_191222`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_1027683.out`
+- artifacts: expected `params/env.yaml`, `params/agent.yaml`, `summaries/`, `nn/` checkpoints
+
+Result:
+- status: submitted
+- metrics/artifacts: pending
+
+Analysis:
+- This is intentionally not the final apple-to-apple training scale. It reduces env count, horizon, and max iterations only to smoke the normal RL path with the prior enabled. Final training must return to the Franka cube wrapper defaults: 2048 envs, 8 GPUs, same PPO settings, and only prior/library overrides.
+
+Next:
+- Submit, monitor logs to completion, fetch and inspect rl_games configs, reward/reset metrics, summaries, and checkpoints. Patch/relaunch before any full-scale run if behavior is abnormal.
+
+## 2026-06-11T19:14:36Z - longer RL smoke launch record
+
+Goal:
+- Run a bounded one-GPU RL smoke that is long enough to produce episode/reset scalar summaries, after the two-epoch smoke proved training startup/checkpointing but ended before any environment terminated.
+
+Hypothesis:
+- With `HORIZON_LENGTH=16` and `MAX_ITERATIONS=45`, each env gets 720 policy steps, enough to cross the 600-step timeout implied by `episode_length_s=10.0` and `decimation=2`. This should produce TensorBoard scalars for rewards/extras, including the prior reset metrics, while remaining a small smoke rather than a production run.
+
+Change:
+- No source changes since commit `4cdc8c19516fed4fae4355ab7fd3e9f3bba5c5fc`.
+- First RL smoke `1027683` completed and wrote a checkpoint, but its TensorBoard event file was 0 bytes and rl_games warned that max epochs were reached before any environment terminated. It is useful execution evidence but not enough for reward/reset-metric inspection.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- implementation_commit: 4cdc8c19516fed4fae4355ab7fd3e9f3bba5c5fc
+- remote_commit/status: l401 worktree detached at `4cdc8c19516fed4fae4355ab7fd3e9f3bba5c5fc`
+
+Command / Job:
+- command: `sbatch --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=128G --time=01:00:00 --job-name=ggx_rl_smoke2 --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=4cdc8c19516fed4fae4355ab7fd3e9f3bba5c5fc,TASK=Dextrah-Franka-Cube-Grasp,FULL_EXPERIMENT_NAME=franka_cube_ggx_pregrasp_rl_smoke2_20260611_191436,NUM_ENVS=64,MAX_ITERATIONS=45,HORIZON_LENGTH=16,MINIBATCH_SIZE=1024,CENTRAL_VALUE_MINIBATCH_SIZE=1024,SAVE_FREQUENCY=15,DISTRIBUTED=False,MULTI_GPU=False,NPROC_PER_NODE=1,AUTO_RESUME=False,SELF_RELAUNCH=False,USE_CUDA_GRAPH=False,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_smoke.npz cluster/sbatch_train_teacher_8gpu.sh`
+- job_id: 1027685
+- run_dir: expected `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_rl_smoke2_20260611_191436`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_1027685.out`
+- artifacts: expected params, TensorBoard scalars, checkpoints, Slurm log
+
+Result:
+- status: submitted
+- metrics/artifacts: pending
+
+Analysis:
+- This is the current gate before final training: it must show prior-enabled config, finite scalar values, sane reset success/farther rates, no termination pathology, and at least one checkpoint. If it fails or produces abnormal metrics, patch/relaunch rather than scaling.
+
+Next:
+- Submit and actively monitor job; fetch and parse scalars/checkpoints/logs before deciding on full-scale training.
+
+## 2026-06-11T19:16:49Z - train scalar observability patch plan
+
+Goal:
+- Fix the RL smoke observability gap: the normal training stack completed and checkpointed, but TensorBoard events stayed empty, so reward terms and prior reset metrics could not be inspected from scalars.
+
+Hypothesis:
+- `dextrah_lab/rl_games/rl_games_utils.py` already contains `RLGPUAlgoObserver`, which logs `infos` scalars, episode cumulatives, and direct env extras through `writer.add_scalar`, but `train.py` currently does not install it. Adding this existing observer should produce the required scalar evidence without changing training behavior.
+
+Change:
+- Patch `dextrah_lab/rl_games/train.py` to import `RLGPUAlgoObserver` and include it in `observers = [IsaacAlgoObserver(), RLGPUAlgoObserver(), DextrahResumableAlgoObserver()]`.
+- Do not change PPO hyperparameters, task config defaults, reward code, termination logic, action/observation spaces, cube reset, or the prior reset mechanics.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- base_commit: 4cdc8c19516fed4fae4355ab7fd3e9f3bba5c5fc
+- implementation_commit: pending
+- changed_files: planned `dextrah_lab/rl_games/train.py`, this owned worklog
+
+Command / Job:
+- local checks after edit: `python3 -m compileall dextrah_lab/rl_games/train.py dextrah_lab/rl_games/rl_games_utils.py`; `bash -n cluster/sbatch_train_teacher_8gpu.sh`
+- planned relaunch: same bounded one-GPU prior-enabled RL smoke as `1027685`, new run namespace, then parse TensorBoard scalars and checkpoints.
+
+Result:
+- status: planned
+
+Next:
+- Patch, validate, commit/push/deploy exact commit, rerun the bounded RL smoke, and inspect scalar tags/values for finite rewards and prior reset metrics.
