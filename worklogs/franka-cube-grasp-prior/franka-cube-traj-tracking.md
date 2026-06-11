@@ -3189,3 +3189,56 @@ Command / Jobs:
 
 Launch Status:
 - submitted to l401. Initial `squeue`: all three jobs pending behind other batch work. Awaiting completion and artifact inspection.
+
+Result:
+- status: all three sweep jobs completed `0:0`.
+  - alpha `0.25` / job `1027886`: `COMPLETED`, elapsed `00:01:30`, node `pool0-00037`
+  - alpha `0.50` / job `1027887`: `COMPLETED`, elapsed `00:02:46`, node `pool0-00037`
+  - alpha `0.75` / job `1027888`: `COMPLETED`, elapsed `00:01:30`, node `pool0-00004`
+- local run dirs:
+  - `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_noreset_a025_520_20260611_164421`
+  - `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_noreset_a050_520_20260611_164421`
+  - `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_noreset_a075_520_20260611_164421`
+- local artifact dirs:
+  - `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_noreset_a025_520_20260611_164421_artifacts`
+  - `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_noreset_a050_520_20260611_164421_artifacts`
+  - `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_noreset_a075_520_20260611_164421_artifacts`
+  - combined: `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_noreset_alpha_sweep_20260611_164421_artifacts`
+- video validation: all three videos are `1280x720`, `520` frames, `8.666667 s`, `60/1` FPS.
+
+Metrics:
+
+| Alpha | Job | success_ever | success max/final | suppressed_success_done | max lift m | final EE-cube m | final finger-cube m | target unsafe max | mixed-ref L2 | Decision |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 0.00 | 1027870 | 0 | 0.000/0.000 | 0 | 0.001512 | 0.5066 | 0.4771 | 0.000 | 2.1153 | learned-prefix failed handoff |
+| 0.25 | 1027886 | 0 | 0.000/0.000 | 0 | 0.000000 | 0.3344 | 0.3020 | 0.000 | 1.5144 | failed handoff |
+| 0.50 | 1027887 | 0 | 0.000/0.000 | 0 | 0.000000 | 0.1119 | 0.1298 | 0.000 | 0.7197 | close but no lift |
+| 0.75 | 1027888 | 0 | 0.000/0.000 | 0 | 0.000000 | 0.1006 | 0.1352 | 0.000 | 0.2885 | close but no lift |
+| 1.00 | 1027866 | 3 | 0.750/0.500 | 3 | 0.220861 | 0.0439 | 0.0861 | 0.000 | 0.0000 | viable reference-dominant hold |
+
+Artifact files:
+- combined report: `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_noreset_alpha_sweep_20260611_164421_artifacts/report.md`
+- combined plot: `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_noreset_alpha_sweep_20260611_164421_artifacts/alpha_sweep_plot.png`
+- combined summary JSON/CSV: `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_noreset_alpha_sweep_20260611_164421_artifacts/alpha_sweep_summary.json`, `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_noreset_alpha_sweep_20260611_164421_artifacts/alpha_sweep_summary.csv`
+- alpha `0.25`: report `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_noreset_a025_520_20260611_164421_artifacts/report.md`, plot `.../trajectory_trace_plot.png`, contact sheet `.../refmix_hold_noreset_a025_contact_sheet.jpg`, slow video `.../refmix_hold_noreset_a025_slow_step80_519.mp4`, full video `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_noreset_a025_520_20260611_164421/videos/refmix-hold-noreset-a025-520-step-0.mp4`, metrics/trace under the local run dir.
+- alpha `0.50`: report `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_noreset_a050_520_20260611_164421_artifacts/report.md`, plot `.../trajectory_trace_plot.png`, contact sheet `.../refmix_hold_noreset_a050_contact_sheet.jpg`, slow video `.../refmix_hold_noreset_a050_slow_step80_519.mp4`, full video `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_noreset_a050_520_20260611_164421/videos/refmix-hold-noreset-a050-520-step-0.mp4`, metrics/trace under the local run dir.
+- alpha `0.75`: report `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_noreset_a075_520_20260611_164421_artifacts/report.md`, plot `.../trajectory_trace_plot.png`, contact sheet `.../refmix_hold_noreset_a075_contact_sheet.jpg`, slow video `.../refmix_hold_noreset_a075_slow_step80_519.mp4`, full video `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_noreset_a075_520_20260611_164421/videos/refmix-hold-noreset-a075-520-step-0.mp4`, metrics/trace under the local run dir.
+
+viz_urls:
+- combined report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_noreset_alpha_sweep_20260611_164421_artifacts/report.md`
+- combined plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_noreset_alpha_sweep_20260611_164421_artifacts/alpha_sweep_plot.png`
+- alpha `0.25` contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_noreset_a025_520_20260611_164421_artifacts/refmix_hold_noreset_a025_contact_sheet.jpg`
+- alpha `0.25` video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_noreset_a025_520_20260611_164421/videos/refmix-hold-noreset-a025-520-step-0.mp4`
+- alpha `0.50` contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_noreset_a050_520_20260611_164421_artifacts/refmix_hold_noreset_a050_contact_sheet.jpg`
+- alpha `0.50` video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_noreset_a050_520_20260611_164421/videos/refmix-hold-noreset-a050-520-step-0.mp4`
+- alpha `0.75` contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_noreset_a075_520_20260611_164421_artifacts/refmix_hold_noreset_a075_contact_sheet.jpg`
+- alpha `0.75` video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_noreset_a075_520_20260611_164421/videos/refmix-hold-noreset-a075-520-step-0.mp4`
+- alpha `0.75` slow video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_noreset_a075_520_20260611_164421_artifacts/refmix_hold_noreset_a075_slow_step80_519.mp4`
+
+Analysis:
+- The alpha sweep answers the handoff threshold question: `0.25`, `0.50`, and `0.75` all preserve target safety but never produce lift/success. `0.50` and `0.75` approach the cube and reduce the mixed-reference error substantially, but they still trigger terminal hold by phase fallback rather than by lift/success. The hold then keeps the gripper near but not grasping the cube.
+- Only the reference-dominant alpha `1.0` no-reset run (`1027866`) is currently viable, with `success_ever=3/4`, suppressed success done `3/4`, max lift `0.220861 m`, and final success `0.5`.
+- This narrows the trainability issue to the approach/pregrasp/closure action profile. The next B training-oriented diagnostic should be stronger action imitation / teacher-forced reference mixing through approach-pregrasp-grasp, or BC-style supervised pretraining from `reference_delta` actions, before trying longer PPO. The reference caveat remains unchanged: `curobo_validated=false`.
+
+Next:
+- Do not scale PPO from the current action-alignment checkpoint. Prepare a bounded curriculum/BC diagnostic: keep phase/reference observations disabled for apple-to-apple clarity unless explicitly documented, use fixed-window rollout metrics, and evaluate with videos after a tiny smoke. Candidate least-invasive next patch: add a configurable training-time reference-action imitation term or scripted teacher-forcing probability for the approach/pregrasp phase only, then run env smoke plus tiny PPO/eval; do not run a long job until the short eval video shows actual contact/lift.
