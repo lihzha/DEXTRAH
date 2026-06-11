@@ -477,3 +477,22 @@ Local Validation:
 Next:
 - Commit/push this patch, update the isolated A100 worktree, rerun the Franka
   cube validator, and only then launch the next bounded PPO attempt.
+
+## 2026-06-10 17:26 PDT - Gated Lift-Action Validation Submitted
+
+Command / Job:
+- command:
+  `RUN_NAME=franka_cube_validate_liftaction_20260610_1726 CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-rl-20260610T2353Z NUM_ENVS=4 NUM_STEPS=160 CAPTURE_VIDEO=True SEED=52 sbatch --parsable cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`
+- job_id: `28957056`
+- code_commit:
+  `71800a88bc9befe7c40412609ed811526a626e51`
+- remote worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-rl-20260610T2353Z`
+- expected run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_cube_validate_liftaction_20260610_1726`
+- expected log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_cube_28957056.out`
+
+Next:
+- Monitor validator completion and inspect metrics/video before launching the
+  second bounded PPO attempt.
