@@ -3034,3 +3034,42 @@ Next:
   and nearest-demo distance. If chunk 1 improves substantially, root cause is
   action-chunk open-loop drift; if both are bad, continue observation/action
   semantics audit.
+
+## 2026-06-11T14:39:00-07:00 - chunk1 open-loop ablation launch
+
+Goal:
+- Test whether the remaining failure after the history fix is caused by
+  executing 8 predicted actions open-loop before querying the policy again.
+
+Hypothesis:
+- If chunk execution drift is the main bug, `ACTION_CHUNK_STEPS=1` with the
+  same checkpoint/seed should delay close timing toward the demo close phases
+  and improve EE/finger/cube geometry relative to job `1027744`.
+- If chunk 1 is still bad, the remaining issue is likely in observation/action
+  semantics, reset distribution, sequence target semantics, or controller
+  execution rather than only chunk open-loop drift.
+
+Command / Job:
+- job_id: `1027746`
+- run_name:
+  `franka_cube_dp_eval_curobo32_full_pick_lift_framefix_overfit2k_chunk1_historyfix_trace512_20260611_143900`
+- command:
+  `CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart RUN_NAME=franka_cube_dp_eval_curobo32_full_pick_lift_framefix_overfit2k_chunk1_historyfix_trace512_20260611_143900 NUM_ENVS=1 NUM_STEPS=512 NUM_INFERENCE_STEPS=100 ACTION_CHUNK_STEPS=1 DEBUG_POLICY_TRACE_MAX_CALLS=512 DEBUG_POLICY_TRACE_ENV_INDEX=0 CAPTURE_VIDEO=False PRINT_INTERVAL=32 CHECKPOINT=/results/dp_bc/checkpoints/franka_cube_curobo32_full_pick_lift_framefix_overfit2k/latest.ckpt sbatch cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- remote source:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+  at code commit `5d5b09520bce4e00517d1ce7e0a0d9db71eaa24e`.
+- expected remote run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_curobo32_full_pick_lift_framefix_overfit2k_chunk1_historyfix_trace512_20260611_143900`
+- expected log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_dp_policy_1027746.out`
+
+Result:
+- status: submitted, monitoring.
+
+Next:
+- Fetch metrics/trace after completion.
+- Run the same trace phase analysis and live-vs-demo geometry diagnostic as
+  jobs `1027737` and `1027744`.
+- Build an inspectable mismatch report comparing chunk 8 post-history-fix
+  against chunk 1 on close timing, cube-minus-EE at close events, gripper width,
+  EE/finger distance curves, and nearest-demo distance.
