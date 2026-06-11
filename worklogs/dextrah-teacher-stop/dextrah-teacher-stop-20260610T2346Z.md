@@ -2267,3 +2267,60 @@ Analysis:
 Next:
 - Poll more frequently until the job exits, then inspect final checkpoint,
   final rolling model, summaries, scheduler completion, and recent logs.
+
+## 2026-06-11 02:37 PDT - Teacher Completion And Final Artifact Inspection
+
+Goal:
+- Confirm the teacher job exited cleanly after epoch `20000` and inspect final
+  artifacts, logs, scheduler state, and scalar metrics.
+
+Command / Job:
+- job_id: `28955904`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28955904.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+- local TensorBoard copy:
+  `/tmp/dextrah_teacher_events`
+
+Result:
+- status: completed successfully.
+- `sacct` at `02:37:03 PDT`: parent, batch, extern, and step all
+  `COMPLETED`; parent elapsed `02:04:56`, exit code `0:0`.
+- stdout reached `epoch: 20000/20000` and ended with:
+  `MAX EPOCHS NUM!` and `Training Done`.
+- final complete checkpoints:
+  `last_dextrah_lstm_ep_20000_rew_673.2542.pth` at `02:35:29`,
+  size `634629441`.
+- duplicate/compat final checkpoint:
+  `last_dextrah_lstm_ep_20000_rew__673.2542_.pth` at `02:35:30`,
+  size `634629995`.
+- runtime sidecars rank `0-7` refreshed at `02:35:27`.
+- latest TensorBoard event file:
+  `events.out.tfevents.1781163810.batch-block7-00110`, updated at
+  `02:35:31`, size `3513593`.
+- narrow critical failure scan over recent stdout returned no matches. The
+  only `CANCELLED` / `Requeuing` matches in the full targeted grep are the
+  expected earlier wall-time requeues.
+- TensorBoard summaries parsed through epoch `20000` for epoch-keyed scalars.
+- post-requeue `in_success_region/iter`: n=`1320`, mean `0.465962`; latest
+  `0.481201`, last-50 `0.473916`.
+- post-requeue `rewards/iter`: n=`1320`, mean `650.196`; latest `673.254`,
+  last-50 `648.660`.
+- `num_adr_increases/iter`: latest `50`, last-50 `50`.
+- `info/kl`: latest `-0.000287209`, last-50 `-0.000218200`.
+- `losses/a_loss`: latest `-0.000644692`, last-50 `-0.000640393`.
+- `losses/c_loss`: latest `0.0272136`, last-50 `0.0266805`.
+- `performance/step_inference_rl_update_fps`: latest `91012`,
+  last-20 about `106147`, last-50 about `104022`, last-200 about `107784`.
+
+Analysis:
+- The teacher run completed normally after the second restore, with final
+  checkpoints, runtime sidecars, and TensorBoard summaries all flushed. Final
+  metrics are healthy: success-region improved in the last-50 window, reward
+  stayed in the established band, ADR remained saturated at `50`, and KL was
+  effectively zero.
+
+Next:
+- No active Slurm monitoring remains for job `28955904`. Final artifacts are
+  ready for downstream use or evaluation.
