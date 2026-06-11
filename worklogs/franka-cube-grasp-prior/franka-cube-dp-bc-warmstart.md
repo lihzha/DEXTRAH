@@ -3282,3 +3282,77 @@ Validation:
 Result:
 - Local syntax validation passed.
 - Replay cluster job not launched yet at this entry; commit/push/deploy first.
+
+## 2026-06-11T14:51:56-07:00 - replay 1027754 fetched and inspected
+
+Goal:
+- Complete the artifact loop for the bounded real-env teacher-forcing replay
+  and record what it proves before any BC/RL scale-up.
+
+Command / Job:
+- job_id: `1027754`
+- run_name:
+  `franka_cube_dp_replay_framefix_overfit2k_teacher8_20260611_144800`
+- Slurm status: `COMPLETED`, exit `0:0`, elapsed `00:00:59`,
+  node `pool0-00016`.
+- remote run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/replays/franka_cube_dp_replay_framefix_overfit2k_teacher8_20260611_144800`
+- local run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_replays/franka_cube_dp_replay_framefix_overfit2k_teacher8_20260611_144800`
+- local log:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_logs/l401/replay_franka_cube_dp_actions_1027754.out`
+- local inspection report:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/replay_inspection_1027754_teacher8_20260611_144800/replay_inspection_report.md`
+- inspection CSV/JSON:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/replay_inspection_1027754_teacher8_20260611_144800/replay_inspection_summary.csv`
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/replay_inspection_1027754_teacher8_20260611_144800/replay_inspection_summary.json`
+- viz-open:
+  - `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_replays/franka_cube_dp_replay_framefix_overfit2k_teacher8_20260611_144800/replay_motion.png`
+  - `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_replays/franka_cube_dp_replay_framefix_overfit2k_teacher8_20260611_144800/replay_report.md`
+  - `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/replay_inspection_1027754_teacher8_20260611_144800/replay_inspection_report.md`
+  - `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/reports/replay_inspection_1027754_teacher8_20260611_144800/replay_inspection_summary.json`
+
+Result:
+- Replay verdict printed by job:
+  `Controller replay follows the expected dataset action direction at this reset; continue debugging policy/live-state semantics.`
+- Mode-by-mode replay metrics:
+
+| mode | start EE-cube before | final EE-cube | reward start | reward final | mean cosine | min cosine | sign match | result |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `dataset_t` | `0.2336` | `0.2317` | `1.3647` | `1.3673` | `0.836` | `0.686` | `1.000` | moves toward cube |
+| `dataset_t_plus_1` | `0.2336` | `0.2311` | `1.3647` | `1.3693` | `0.851` | `0.686` | `1.000` | moves toward cube |
+| `dataset_t_plus_7` | `0.2336` | `0.2268` | `1.3657` | `1.3819` | `0.904` | `0.636` | `0.958` | moves toward cube |
+| `dp_replan` | `0.2336` | `0.2293` | `1.3654` | `1.3741` | `0.875` | `0.348` | `0.958` | moves toward cube |
+
+- All teacher-forced dataset modes reduce EE-to-cube distance over 8 env
+  steps. `dataset_t_plus_7` moves fastest, but `dataset_t`, `dataset_t_plus_1`,
+  and `dp_replan` also improve distance and reward.
+- Expected-vs-actual EE motion direction checks are positive. Mean cosine is
+  `0.836-0.904` for dataset modes and `0.875` for DP replan; sign-match is
+  `1.000` for `dataset_t`/`dataset_t_plus_1` and `0.958` for
+  `dataset_t_plus_7`/`dp_replan`.
+- Initial nearest demo row is `16868` in `go_to_pre_grasp_pose`, with scaled
+  nearest live distance about `0.356`.
+
+Analysis:
+- The replay narrows the bug: dataset labels and the DEXTRAH controller/action
+  frame are not grossly inverted at reset.
+- The reset is offset from the nearest demo window, but the short replay still
+  moves toward the cube. This means the reset offset alone does not explain the
+  later close failure.
+- The remaining evidence points to live-state/support mismatch accumulated
+  during closed-loop approach: by the close windows in the full eval, nearest
+  train rows are still pregrasp/open while the policy commands hard close.
+- Next DP fixes should focus on observation conditioning and live-state
+  support, closed-loop recovery behavior, reset/pregrasp alignment, and dataset
+  coverage around recovery/close timing. No BC/RL scale-up is justified yet.
+
+Next:
+- Do not launch BC/RL scale-up.
+- Run the next bounded diagnostic against the later failure window: teacher
+  force a longer open-gripper approach to the dataset close boundary or reset
+  the env closer to the nearest demo/pregrasp geometry, then compare whether
+  hard-close timing and cube-relative geometry become valid.
+- If longer teacher forcing follows demos but DP replan drifts, patch policy
+  conditioning/data support; if dataset teacher forcing also drifts later,
+  inspect reset alignment/controller gains/timing more deeply.
