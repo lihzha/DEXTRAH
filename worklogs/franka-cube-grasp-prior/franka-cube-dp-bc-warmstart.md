@@ -194,3 +194,54 @@ Next:
   trajectories with explicit EE poses or provide GraspGenX FK inputs, then run
   the converter and an official Diffusion Policy one-step debug train in the
   official DP environment.
+
+## 2026-06-11T11:50:48-07:00 - final handoff
+
+Goal:
+- Record final checkpoint state for Worker C handoff.
+
+Hypothesis:
+- The branch is ready for orchestrator review because source, config, local
+  shape validation, and the worklog are committed, with no active local or
+  cluster jobs.
+
+Change:
+- Source checkpoint committed.
+- Updated this final handoff entry after commit so the worklog names the code
+  implementation commit explicitly.
+
+Version Control:
+- agent_id: franka-cube-dp-bc-warmstart
+- worktree: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart
+- worklog: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart/worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md
+- branch: codex/franka-cube-diffusion-policy-bc
+- base_commit: 589dd81c9f9691fcda3a3d4b9ad714d90dae4794
+- implementation_commit: ca1bcae19a07b45d530860bfc12169ea3efc8ebd
+- push/pull: not pushed; local agent branch checkpoint
+- changed_files: owned worklog final entry only since implementation commit
+- remote_commit/status: n/a/local env
+
+Command / Job:
+- command: `git status --short --branch`
+- job_id: n/a
+- run_dir: local worktree
+- logs: terminal
+- artifacts: none
+
+Result:
+- status: passed
+- metrics/artifacts: after implementation commit, only the owned worklog final
+  entry was modified.
+- key evidence: no active local process, Slurm job, or remote submitter was
+  launched by this worker.
+
+Analysis:
+- The useful next validation is not more local synthetic testing; it is running
+  the official Diffusion Policy debug train against a real converted Franka
+  cube dataset in an environment where `real-stanford/diffusion_policy` is
+  installed.
+
+Next:
+- Commit this log-only handoff entry.
+- Orchestrator can inspect/cherry-pick the branch; no Worker C job monitoring
+  remains.
