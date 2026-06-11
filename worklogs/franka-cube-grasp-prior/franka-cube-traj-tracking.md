@@ -2928,3 +2928,58 @@ Validation:
 
 Next:
 - Commit/push/deploy this instrumentation patch, then launch exactly one bounded success-window eval with the same offset-hold config as `1027851` but `NUM_STEPS=390` / `VIDEO_LENGTH=390`. No PPO scale-up.
+
+Version Control:
+- agent_id: franka-cube-traj-tracking
+- local_commit: `f8aa20b7b413394554999f16706c36c39ed471f6`
+- push: pushed to `origin/codex/franka-cube-trajectory-tracking`
+- remote_commit/status: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking` detached clean at `f8aa20b7b413394554999f16706c36c39ed471f6`.
+
+Command / Job:
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:30:00 --job-name=refmix_hold_successwin --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_refmix_hold_offset_successwin390_20260611_161503,NUM_ENVS=4,NUM_STEPS=390,VIDEO_LENGTH=390,VIDEO_NAME_PREFIX=refmix-hold-offset-successwin390,CAPTURE_VIDEO=True,DETERMINISTIC=True,ACTION_SOURCE=policy_reference_mix_hold,REFERENCE_MIX_ALPHA=1.0,HOLD_TARGET_POLICY=cube_current_plus_trigger_ee_offset,HOLD_PHASE_START=0.67,HOLD_TRIGGER_LIFT_HEIGHT=0.02,HOLD_CONTACT_MAX_FINGER_DIST=0.0,HOLD_LIFT_HEIGHT=0.03,HOLD_GRIPPER_ACTION=-0.4,USE_CUDA_GRAPH=False,SEED=64,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_WEIGHT=1.5,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_PHASE_START=0.0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_SHARPNESS=1.0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_USE_CONTACT_GATE=False,CHECKPOINT=/results/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_actionalign_rl_smoke_20260611_151520/nn/last_dextrah_franka_cube_traj_tracking_ep_5_rew_-inf.pth cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- job_id: `1027856`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_traj_tracking_refmix_hold_offset_successwin390_20260611_161503`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1027856.out`
+- expected artifacts: `metrics.json`, `trace.csv`, `trace.jsonl`, `videos/refmix-hold-offset-successwin390-step-0.mp4`, local summary/report/plot/contact sheet after fetch.
+
+Launch Status:
+- submitted to l401 as eval-only success-window diagnostic. Awaiting completion and artifact inspection.
+
+Result:
+- status: completed `0:0` in `00:02:39` on `pool0-00032`; fetched locally and summarized.
+- local_run_dir: `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_successwin390_20260611_161503`
+- local_artifact_dir: `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_successwin390_20260611_161503_artifacts`
+- stdout_log: `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_successwin390_20260611_161503/slurm_eval_franka_cube_1027856.out`
+- video validation: `1280x720`, `389` frames, `6.483333 s`, `60/1` FPS. The first encoded frame is black, so the contact sheet uses frame 30 as first usable.
+- metrics: `num_steps_completed=390`, `done_count=3`, `reward_mean/final=4.3246/2.1124`, `success_rate_mean/final/max=0.0250/0.0/0.75`, `success_ever_count/rate=3/0.75`, `success_rate_last_window_mean=0.0975`, `cube_lift_height_max=0.108942 m`, `target_unsafe_rate_max=0`, `target_clearance_min=0.065114 m`.
+- hold metrics: `hold_active_rate_mean/final=0.1551/0.25`; trigger step mean `319.0`; trigger came from actual lift only (`hold_lift_trigger_rate_mean=0.1551`, phase/success/contact trigger rates `0`); hold target policy `cube_current_plus_trigger_ee_offset`; final trigger offset `x/y/z=-0.000152/0.000365/0.009102 m`.
+- done semantics: first success step count `3`, mean `362.67`, min/max `362/363`; last success step count `3`, mean `374.67`; first done step count `3`, mean `374.67`; `done_after_success_count/rate=3/0.75`; done reason counts `success_done=3`, all other reasons `0`. This directly answers the reset-semantics question: the offset-hold succeeds in three envs and then resets by task success, so final success/lift of zero is post-reset state, not absence of success.
+- behavior metrics: final EE-to-cube `0.1625 m`, finger-center-to-cube `0.1795 m`, gripper width `0.0658 m`; final visual frame is post-reset. The success-window contact sheet shows approach, lift trigger, first success, success-done, and final post-reset frames. The camera angle makes vertical lift clearer in the trace plot than in still frames.
+- consistency artifact: `train_eval_consistency.json` status `passed`; real mismatches, missing train keys, and missing eval keys are empty; expected eval-only overrides include action source, alpha, hold config, checkpoint, deterministic/video settings, and requested step count.
+- reference caveat remains explicit in report and metrics: `curobo_validated=false`, `source_tag=graspgenx_curobo_60mm_export_pending_exact_validation`.
+- artifact files:
+  - report: `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_successwin390_20260611_161503_artifacts/report.md`
+  - plot: `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_successwin390_20260611_161503_artifacts/trajectory_trace_plot.png`
+  - full video: `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_successwin390_20260611_161503/videos/refmix-hold-offset-successwin390-step-0.mp4`
+  - slow success-window video: `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_successwin390_20260611_161503_artifacts/success_window_slow_step300_389.mp4`
+  - success-window contact sheet: `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_successwin390_20260611_161503_artifacts/success_window_contact_sheet.jpg`
+  - metrics: `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_successwin390_20260611_161503/metrics.json`
+  - trace CSV/JSONL: `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_successwin390_20260611_161503/trace.csv`, `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_successwin390_20260611_161503/trace.jsonl`
+  - summary JSON/CSV: `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_successwin390_20260611_161503_artifacts/summary.json`, `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_successwin390_20260611_161503_artifacts/summary.csv`
+  - consistency JSON: `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_successwin390_20260611_161503_artifacts/train_eval_consistency.json`
+  - video metadata: `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_successwin390_20260611_161503_artifacts/video_metadata.json`
+  - manifest: `cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_successwin390_20260611_161503_artifacts/artifact_manifest.json`
+- viz_urls:
+  - report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_successwin390_20260611_161503_artifacts/report.md`
+  - plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_successwin390_20260611_161503_artifacts/trajectory_trace_plot.png`
+  - contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_successwin390_20260611_161503_artifacts/success_window_contact_sheet.jpg`
+  - full video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_successwin390_20260611_161503/videos/refmix-hold-offset-successwin390-step-0.mp4`
+  - slow success-window video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_successwin390_20260611_161503_artifacts/success_window_slow_step300_389.mp4`
+
+Analysis:
+- The terminal offset-hold diagnostic is now mechanically viable for the policy-free/reference-action path: alpha `1.0` plus trigger-frame EE-cube offset hold reaches task success in three of four envs without target-safety regression.
+- The prior `1027851` final-zero ambiguity is resolved. Final state is not a good sole metric for this diagnostic because auto-reset hides the success window; `success_ever`, first/last success steps, and done reasons are required for future short eval reports.
+- This does not justify PPO scale-up by itself. It shows reference/action feasibility and a plausible terminal stabilization target, while the learned PPO checkpoint still does not imitate the required action profile without heavy reference injection.
+
+Next:
+- Do not scale PPO. The next bounded development step should make this terminal-stabilization route trainable/interpretable: either add a training/eval metric that reports success-ever/done reason windows for RL smokes by default, or run one small eval-only curriculum diagnostic that blends learned actions until the offset-hold trigger and then hands off to the stable hold target. Any next run must include the same artifact bundle and viewer URLs.
