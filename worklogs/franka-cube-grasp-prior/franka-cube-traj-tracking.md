@@ -1774,3 +1774,73 @@ Analysis:
 Next:
 - Commit/push this result.
 - Launch one short phase-gated epoch-3 eval/video rollout (not training scale-up) to inspect behavior and reward-term activation before any additional training.
+
+## 2026-06-11T14:12:22-07:00 - phase-gated epoch-3 eval/video launch
+
+Goal:
+- Inspect whether the phase-gated close/lift shaping terms activate under the tiny epoch-3 policy and whether visible behavior changes before any longer training.
+
+Hypothesis:
+- If the learned rollout reaches near-contact states, `cube_traj_tracking_contact_gate`, `cube_traj_tracking_close_action_reward`, and possibly `cube_traj_tracking_lift_action_reward` should become nonzero. If they remain zero, the gates are too strict for early learning.
+
+Version Control:
+- agent_id: franka-cube-traj-tracking
+- local_commit: `51b0e4be7a41cfce139af38af9b76c5cd7786bb8`
+- remote_commit/status: /lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking at `51b0e4be7a41cfce139af38af9b76c5cd7786bb8`, detached clean after HTTPS fetch fallback.
+
+Command / Job:
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:30:00 --job-name=franka_cube_traj_phasegate_vid --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_phasegate_ep3_video480_20260611_141222,CHECKPOINT=/results/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_phasegate_rl_smoke_20260611_140730/nn/last_dextrah_franka_cube_traj_tracking_ep_3_rew_4.5636964.pth,NUM_ENVS=4,NUM_STEPS=480,VIDEO_LENGTH=480,VIDEO_NAME_PREFIX=phasegate-ep3-eval480,CAPTURE_VIDEO=True,PRINT_INTERVAL=120,USE_CUDA_GRAPH=False,SEED=56,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- job_id: 1027742 `franka_cube_traj_phasegate_vid`
+- expected_log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1027742.out
+- expected_run_dir: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_traj_tracking_phasegate_ep3_video480_20260611_141222
+
+Acceptance Criteria:
+- 480-step eval completes without traceback and writes metrics plus MP4.
+- Numeric metrics are finite; target unsafe rate remains `0.0`; target clearance remains above `0.025`.
+- New close/lift/contact gate reward terms are present and inspected.
+- Video metadata is valid and frames are inspected before deciding the next ablation.
+
+Result:
+- status: failed the instrumentation acceptance criterion; Slurm completed `0:0` after `00:01:18` on `pool0-00016`, and the rollout/video are valid, but the eval metrics omit the new phase-gated terms.
+- local_artifacts: `cluster_results/l401/franka_cube_traj_tracking_phasegate_ep3_video480_20260611_141222/metrics.json`, `cluster_results/l401/franka_cube_traj_tracking_phasegate_ep3_video480_20260611_141222/eval_franka_cube_1027742.out`, `cluster_results/l401/franka_cube_traj_tracking_phasegate_ep3_video480_20260611_141222/videos/phasegate-ep3-eval480-step-0.mp4`, `cluster_results/l401/franka_cube_traj_tracking_phasegate_ep3_video480_20260611_141222/video_frames/contact_sheet.png`
+- viz_contact_sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_phasegate_ep3_video480_20260611_141222/video_frames/contact_sheet.png`
+- video_metadata: `ffprobe` reports `1280x720`, `479` frames, `7.983333` s, `60/1` fps.
+- rollout: 480/480 steps, `done_count=1`, `reward_mean=1.510228872547547`, `reward_final=1.312933087348938`, success mean/final `0.0`, nonfinite numeric count `0`.
+- task_behavior: `cube_lift_height` max `0.025222614407539368` at step 2 but no sustained lift and `has_lifted_cube` max `0.0`; EE-to-cube distance worsened from min `0.17762282490730286` to final `0.34083348512649536`; finger-center-to-cube distance worsened from min `0.17076227068901062` to final `0.34247004985809326`; max finger-to-cube distance final `0.36102867126464844`.
+- gripper: measured gripper width mean `0.039188646928717694`, final `0.038653671741485596`, min `0.036159977316856384`.
+- target_safety: `cube_traj_tracking_unsafe_target_rate` max `0.0`, `cube_traj_tracking_safe_target_rate` mean `1.0`, target clearance min `0.06511414051055908`, finger-table violation max `0.0`.
+- phase/reference: phase reached `0.9984375238418579`; reference still reports `curobo_validated=false`, `runtime_retime_policy=normalize_to_configured_runtime_duration`, `runtime_object_pose_policy=reset_cube_pose`, and `gripper_schedule_policy=clamp_source_width_to_min_target_gripper_width`.
+- missing_terms: `rg` and JSON inspection found no `close_action`, `lift_action`, `contact_gate`, `closed_target_gate`, `close_phase_gate`, or `lift_phase_gate` entries in `metrics.json` or stdout.
+- visual_diagnosis: the contact sheet shows the gripper hovering beside/above the cube and moving away over the rollout rather than closing around or lifting the cube. The first contact-sheet tile is blank from video startup; subsequent frames are valid.
+
+Analysis:
+- This eval answers behavior but not phase-gate activation. Behavior is poor: the tiny phase-gated policy does not grasp, lift, or maintain contact; the hand drifts farther from the cube while target safety remains clean.
+- The missing phase-gate metrics are an eval instrumentation bug, not evidence that the terms are zero. Env validation `1027739` already showed the new logs exist in `extras["log"]`; `eval_rollout.py` simply omitted them from its fixed export whitelist.
+
+Next:
+- Patch eval metric export before any longer training. Rerun a short bounded eval from the same checkpoint to inspect `cube_traj_tracking_close_action_reward`, `cube_traj_tracking_lift_action_reward`, and all gate terms.
+
+## 2026-06-11T14:14:44-07:00 - eval tracking-log instrumentation patch plan
+
+Goal:
+- Fix the eval metrics export so the phase-gated close/lift action reward and gate terms can be inspected explicitly before any longer training.
+
+Finding:
+- Job `1027742` completed and produced a valid video/metrics file, but `metrics.json` and stdout do not contain `cube_traj_tracking_close_action_reward`, `cube_traj_tracking_lift_action_reward`, `cube_traj_tracking_contact_gate`, `cube_traj_tracking_closed_target_gate`, `cube_traj_tracking_close_phase_gate`, or `cube_traj_tracking_lift_phase_gate`.
+- Root cause: `dextrah_lab/rl_games/eval_rollout.py` copies only a fixed whitelist from `task_env.extras["log"]`; the new terms were present in env validation but omitted from eval export.
+
+Planned Change:
+- Patch `dextrah_lab/rl_games/eval_rollout.py` to export all scalar/tensor `cube_traj_tracking_*` log terms from `extras["log"]` instead of the stale whitelist.
+- Keep the change eval-helper-only; do not touch the baseline task implementation.
+
+Validation Plan:
+- Local: `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py` and `git diff --check`.
+- Commit/push and deploy the exact commit to the l401 agent worktree.
+- Relaunch a bounded 480-step eval from the same epoch-3 checkpoint, metrics-focused and without another video unless needed, to inspect the newly exported terms.
+
+Result:
+- status: implemented locally; cluster relaunch pending.
+- changed_files: `dextrah_lab/rl_games/eval_rollout.py`, this worklog.
+- implementation: `_collect_task_metrics()` now exports every scalar/tensor `extras["log"]` key whose name starts with `cube_traj_tracking_`, instead of relying on a stale fixed whitelist.
+- local_validation: `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py` passed.
+- local_validation: `git diff --check` passed.

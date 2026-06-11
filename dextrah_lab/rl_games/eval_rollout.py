@@ -159,25 +159,11 @@ def _collect_task_metrics(task_env) -> dict[str, float | None]:
             metrics[f"{name}_max"] = _tensor_stat_float(value, "max")
     log_terms = getattr(task_env, "extras", {}).get("log", {})
     if isinstance(log_terms, dict):
-        for name in (
-            "cube_traj_tracking_reward",
-            "cube_traj_tracking_position_reward",
-            "cube_traj_tracking_orientation_reward",
-            "cube_traj_tracking_gripper_reward",
-            "cube_traj_tracking_position_error",
-            "cube_traj_tracking_orientation_error",
-            "cube_traj_tracking_gripper_error",
-            "cube_traj_tracking_phase_progress",
-            "cube_traj_tracking_curriculum_scale",
-            "cube_traj_tracking_phase_weight",
-            "cube_traj_tracking_effective_phase_weight",
-            "cube_traj_tracking_target_table_clearance",
-            "cube_traj_tracking_target_table_clearance_min",
-            "cube_traj_tracking_safe_target_rate",
-            "cube_traj_tracking_unsafe_target_rate",
-        ):
-            if name in log_terms:
-                metrics[name] = _mean_float(log_terms[name])
+        for name, value in log_terms.items():
+            if isinstance(name, str) and name.startswith("cube_traj_tracking_"):
+                mean_value = _mean_float(value)
+                if mean_value is not None:
+                    metrics[name] = mean_value
     return metrics
 
 
