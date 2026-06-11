@@ -1497,3 +1497,37 @@ Worker B artifact lineage clarification:
   `1473033 Clarify trajectory diagnostic artifact lineage`; B worktree is clean
   at that commit. No B l401/a100 job is active yet. Next expected step remains
   the bounded tiny PPO smoke plus video/contact-sheet eval bundle.
+
+## 2026-06-11 Monitor Check 22:17 UTC
+
+Worker B tiny PPO smoke:
+
+- B launched and completed l401 job `1027766`
+  (`franka_cube_traj_align_rl`) for the bounded action-alignment PPO smoke.
+- Run name:
+  `franka_cube_traj_tracking_actionalign_rl_smoke_20260611_151520`
+- Remote run dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_actionalign_rl_smoke_20260611_151520`
+- Local artifact copy:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_actionalign_rl_smoke_20260611_151520`
+- Log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_1027766.out`
+- Checkpoint:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_actionalign_rl_smoke_20260611_151520/nn/last_dextrah_franka_cube_traj_tracking_ep_5_rew_-inf.pth`
+- Scheduler/log result: completed `0:0` after `00:00:53`; actor/critic built with
+  MLP input `72`; epochs `1/5` through `5/5`; checkpoint saved; no traceback or
+  NaN observed in the tailed log.
+- Resolved config spot check from fetched YAML: obs/state/action
+  `72/72/7`, `cube_spawn_xy_randomization=0.08`,
+  `trajectory_tracking_reference_path` points to the intended compact reference,
+  `trajectory_tracking_action_alignment_weight=1.5`, phase start `0.0`,
+  sharpness `1.0`, contact gate `false`, PPO horizon `32`, max epochs `5`,
+  minibatch `512`.
+- Local TensorBoard scalar decoding was attempted but unavailable because the
+  local Python environment lacks `tensorboard`. The event file and resolved
+  configs are fetched for later inspection.
+- Interpretation: this proves the bounded PPO smoke can run and checkpoint with
+  the action-alignment diagnostic enabled. The `rew_-inf` suffix is expected in
+  this five-epoch smoke because no env terminated; it is not a policy-quality
+  verdict. B must run the fixed-seed and random-seed video eval bundles from
+  this checkpoint before any further training or scale-up.
