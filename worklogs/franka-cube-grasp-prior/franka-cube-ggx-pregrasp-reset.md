@@ -1403,3 +1403,148 @@ Analysis:
 
 Next:
 - Move to same-grasp deterministic-vs-randomized diagnostics. Use a single object-local grasp entry so object-frame convention, TCP/tool offset, finger closing axis, and XY randomization effects can be inspected independently.
+
+## 2026-06-11T22:29:27Z - launch same-grasp deterministic/randomized diagnostics
+
+Goal:
+- Test one fixed object-local grasp entry across deterministic cube pose and RL-style randomized cube pose to separate object-frame/TCP convention from cube XY randomization and close-command mechanics.
+
+Hypothesis:
+- If the same grasp entry behaves differently under deterministic versus randomized cube XY, the issue may involve IK reachability/root-relative conventions or object transform handling. If both fail similarly, the exact-close pose or finger close mechanics are marginal even for the filtered grasp.
+
+Change:
+- Created untracked single-grasp library `franka_cube_ggx_grasp_orig006_single.npz` from original compact library index `6`.
+- The selected entry has DEXTRAH TCP relative pose approximately `[+0.0199, +0.0000, +0.0201]` and confidence `0.72356`.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- local_commit: `ebe8a5b81d6b3171d3bb3e3daca3e324a80b9c4e`
+- pushed: `origin/codex/franka-cube-ggx-pregrasp-reset`
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `ebe8a5b81d6b3171d3bb3e3daca3e324a80b9c4e`, detached `HEAD`
+- library: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_orig006_single.npz`
+
+Command / Job:
+- deterministic command: `sbatch --parsable --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=ebe8a5b81d6b3171d3bb3e3daca3e324a80b9c4e,TASK=Dextrah-Franka-Cube-Grasp,RUN_NAME=franka_cube_ggx_same_grasp_orig006_detxy_20260611_222927,NUM_ENVS=1,NUM_RESETS=3,SEED=20260616,CUBE_SPAWN_XY_RANDOMIZATION=0.0,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_orig006_single.npz,DIAGNOSTIC_ENV_ID=0,RENDER_WIDTH=1280,RENDER_HEIGHT=720,VIDEO_FPS=6,INCLUDE_EXACT_CLOSE_CHECK=1,EXACT_CLOSE_STEPS=100,EXACT_CLOSE_COMMAND_WIDTH=0.0,RENDER_ALL_RESETS=1,RENDER_FAILED_EXACT_CLOSE=1,CAMERA_EYE_X=-0.15,CAMERA_EYE_Y=-1.05,CAMERA_EYE_Z=1.55,CAMERA_TARGET_X=-0.41,CAMERA_TARGET_Y=-0.08,CAMERA_TARGET_Z=0.80 cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`
+- deterministic job_id: `1027775`
+- deterministic run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_same_grasp_orig006_detxy_20260611_222927`
+- deterministic log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/diagnose_franka_cube_prior_1027775.out`
+- randomized command: same as deterministic except `RUN_NAME=franka_cube_ggx_same_grasp_orig006_randxy_20260611_222927`, `NUM_RESETS=5`, `SEED=20260617`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`
+- randomized job_id: `1027776`
+- randomized run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_same_grasp_orig006_randxy_20260611_222927`
+- randomized log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/diagnose_franka_cube_prior_1027776.out`
+
+Result:
+- status: submitted
+
+Analysis:
+- Both jobs are bounded diagnostics only and use zero-width exact-close command to match the prior exact-close checks. A100 RL remains blocked.
+
+Next:
+- Monitor both jobs to terminal state, inspect logs/metrics and all-reset frames, fetch/open bundles with `viz-open`, and decide whether to patch the exact-close diagnostic/control or the export-time grasp filter.
+
+## 2026-06-11T22:34:41Z - launch same-grasp light-close diagnostics
+
+Goal:
+- Test whether the exact-close failures are caused by the diagnostic's zero-width close target pushing the cube, rather than object-frame/TCP transform or cube XY randomization.
+
+Hypothesis:
+- If a light close command near cube width (`0.055 m`) succeeds while the zero-width command fails, the exact GraspGenX pose may be geometrically plausible but the diagnostic/policy-equivalent close command is too aggressive for proving stable enclosure.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- local_commit: `ebe8a5b81d6b3171d3bb3e3daca3e324a80b9c4e`
+- remote_commit/status: `ebe8a5b81d6b3171d3bb3e3daca3e324a80b9c4e`, detached `HEAD`
+- library: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_orig006_single.npz`
+
+Command / Job:
+- deterministic command: same as job `1027775` except `RUN_NAME=franka_cube_ggx_same_grasp_orig006_detxy_lightclose_20260611_223441`, `SEED=20260618`, and `EXACT_CLOSE_COMMAND_WIDTH=0.055`
+- deterministic job_id: `1027781`
+- deterministic run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_same_grasp_orig006_detxy_lightclose_20260611_223441`
+- deterministic log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/diagnose_franka_cube_prior_1027781.out`
+- randomized command: same as job `1027776` except `RUN_NAME=franka_cube_ggx_same_grasp_orig006_randxy_lightclose_20260611_223441`, `SEED=20260619`, and `EXACT_CLOSE_COMMAND_WIDTH=0.055`
+- randomized job_id: `1027782`
+- randomized run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_same_grasp_orig006_randxy_lightclose_20260611_223441`
+- randomized log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/diagnose_franka_cube_prior_1027782.out`
+
+Result:
+- status: submitted
+
+Analysis:
+- This does not change the RL reset path and does not unblock A100. It is a diagnostic to understand whether the exact-close artifact should use a gentler close target or whether the exact pose itself remains bad.
+
+Next:
+- Monitor jobs `1027781` and `1027782`, fetch artifacts, inspect all-reset frames/metrics, and compare with zero-width jobs `1027775` and `1027776`.
+
+## 2026-06-11T22:42:55Z - same-grasp light-close diagnostics passed
+
+Goal:
+- Inspect jobs `1027781` and `1027782`, which repeated the same original grasp index `6` with a physically meaningful close target width of `0.055 m`.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- diagnostic_commit: `ebe8a5b81d6b3171d3bb3e3daca3e324a80b9c4e`
+- changed_files: this worklog entry only; exact-close offset-control code remains a pending diagnostic patch
+
+Command / Job:
+- deterministic job_id: `1027781`
+- deterministic run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_same_grasp_orig006_detxy_lightclose_20260611_223441`
+- deterministic local_artifacts: `cluster_results/l401/franka_cube_ggx_same_grasp_orig006_detxy_lightclose_20260611_223441`
+- deterministic report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_same_grasp_orig006_detxy_lightclose_20260611_223441/inspection_20260611_2242/REPORT.md`
+- deterministic sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_same_grasp_orig006_detxy_lightclose_20260611_223441/inspection_20260611_2242/contact_sheet.png`
+- randomized job_id: `1027782`
+- randomized run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_same_grasp_orig006_randxy_lightclose_20260611_223441`
+- randomized local_artifacts: `cluster_results/l401/franka_cube_ggx_same_grasp_orig006_randxy_lightclose_20260611_223441`
+- randomized report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_same_grasp_orig006_randxy_lightclose_20260611_223441/inspection_20260611_2242/REPORT.md`
+- randomized sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_same_grasp_orig006_randxy_lightclose_20260611_223441/inspection_20260611_2242/contact_sheet.png`
+- randomized video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_same_grasp_orig006_randxy_lightclose_20260611_223441/inspection_20260611_2242/frames.mp4`
+
+Result:
+- status: light_close_same_grasp_passed
+- deterministic XY: `reset_quality_success_rate=1.0`, `exact_close_enclosure_success_rate=1.0`, `exact_close_contact_proxy_success_rate=1.0`, `rl_relaunch_gate_verdict=PASS`, `exact_close_observed_gripper_width_mean_m≈0.0599`, `cube_delta_mean≈0.0063 m`
+- randomized XY: `reset_quality_success_rate=1.0`, `exact_close_enclosure_success_rate=1.0`, `exact_close_contact_proxy_success_rate=1.0`, `rl_relaunch_gate_verdict=PASS`, `exact_close_observed_gripper_width_mean_m≈0.0595`, `cube_delta_mean≈0.0067 m`
+- zero-width comparison: the same grasp failed `0/3` deterministic and `1/5` randomized under `EXACT_CLOSE_COMMAND_WIDTH=0.0`, with mean cube displacement about `0.022 m`.
+
+Analysis:
+- The fixed object-local grasp and TCP/tool transform are coherent: pregrasp passes and exact-close passes when the close target is physically near the 0.06 m cube width.
+- The previous exact-close failures were dominated by an over-aggressive zero-width close command that drove the fingers through/past the cube and displaced it. A zero-width command is a poor physical gate for "does this exact pose enclose/contact a 0.06 m cube?"
+- This does not yet authorize A100 RL because the broader library still needs to pass under RL-style randomization with a robust exact-close diagnostic and export-time geometry filter.
+
+Next:
+- Commit the pending diagnostic offset-control patch, deploy the exact commit, and run a bounded randomized exact-close gate using the broader geometry-filtered library with `EXACT_CLOSE_COMMAND_WIDTH=0.055`.
+
+## 2026-06-11T22:41:10Z - plan exact-close offset sweep controls
+
+Goal:
+- Add bounded diagnostic controls for exact-close approach/finger-axis offsets so the next l401 sweep can determine whether the transformed GraspGenX exact pose is marginal because of TCP depth, lateral finger-axis centering, or close command width.
+
+Hypothesis:
+- Same-grasp zero-width diagnostics failed in both deterministic and randomized cube placements, which argues against cube XY randomization as the primary bug. The failures may come from commanding the exact TCP slightly too high/deep/laterally biased relative to the cube or from using a zero-width close target. Adding controlled exact-close target offsets will let the next jobs compare pose geometry with frames rather than only filtering by previous pass/fail outcomes.
+
+Change:
+- Add diagnostic-only CLI/wrapper controls for exact-close target offsets:
+  - approach-axis offset along the already computed pregrasp/exact offset direction.
+  - lateral offset along the projected Franka finger closing axis.
+- Keep the environment reset path, prior library semantics, observations/actions/rewards/PPO defaults, and cube reset randomization unchanged.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `ebe8a5b81d6b3171d3bb3e3daca3e324a80b9c4e`
+- implementation_commit: pending
+- changed_files: planned `dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py`, planned `cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`, this worklog
+
+Command / Job:
+- local checks after edit: `python3 -m py_compile dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py`; `bash -n cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`; `git diff --check`
+- pending light-close jobs already launched: `1027781`, `1027782`
+- next jobs after patch: small same-grasp randomized sweep with all-reset frames, likely approach offsets `-0.005/0.0/+0.005 m` and lateral offsets around `-0.010/0.0/+0.010 m`, no A100
+
+Result:
+- status: planned
+
+Analysis:
+- A100 RL remains blocked. This is a diagnostic-only patch to localize transform/control margins.
+
+Next:
+- Implement offset controls, commit/push/deploy, inspect current light-close results when they complete, then launch the smallest offset sweep informed by those results.

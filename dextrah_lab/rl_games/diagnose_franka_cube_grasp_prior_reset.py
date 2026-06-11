@@ -34,6 +34,8 @@ parser.add_argument("--video_fps", type=int, default=6)
 parser.add_argument("--include_exact_close_check", action="store_true", default=False)
 parser.add_argument("--exact_close_steps", type=int, default=80)
 parser.add_argument("--exact_close_command_width", type=float, default=0.0)
+parser.add_argument("--exact_close_approach_offset", type=float, default=0.0)
+parser.add_argument("--exact_close_lateral_offset", type=float, default=0.0)
 parser.add_argument("--render_all_resets", action="store_true", default=False)
 parser.add_argument("--render_failed_exact_close", action="store_true", default=False)
 parser.add_argument("--disable_fabric", action="store_true", default=False)
@@ -234,6 +236,9 @@ def _make_markers() -> dict[str, VisualizationMarkers]:
         "pregrasp_ee": VisualizationMarkers(
             _marker_cfg("/Visuals/GraspPriorResetDiag/PregraspTcp", (1.0, 0.85, 0.0), 0.009)
         ),
+        "close_target_ee": VisualizationMarkers(
+            _marker_cfg("/Visuals/GraspPriorResetDiag/CloseTargetTcp", (1.0, 0.0, 0.0), 0.010)
+        ),
         "left_finger": VisualizationMarkers(
             _marker_cfg("/Visuals/GraspPriorResetDiag/LeftFinger", (1.0, 0.15, 0.0), 0.008)
         ),
@@ -282,9 +287,15 @@ def _visualize_markers(
             dtype=torch.float32,
             device=task_env.device,
         )
+        close_target_ee_w = torch.tensor(
+            actual_geometry["target_ee_pos_w"],
+            dtype=torch.float32,
+            device=task_env.device,
+        )
     else:
         left_tip_w = _world_from_env(task_env, env_id, task_env.grasp_prior_reset_left_tip_proxy_pos[env_id])
         right_tip_w = _world_from_env(task_env, env_id, task_env.grasp_prior_reset_right_tip_proxy_pos[env_id])
+        close_target_ee_w = exact_ee_w
     exact_left_tip_w = _world_from_env(
         task_env, env_id, task_env.grasp_prior_reset_projected_exact_left_tip_proxy_pos[env_id]
     )
@@ -304,6 +315,7 @@ def _visualize_markers(
     markers["pregrasp_tool"].visualize(pregrasp_tool_w.unsqueeze(0))
     markers["exact_ee"].visualize(exact_ee_w.unsqueeze(0))
     markers["pregrasp_ee"].visualize(pregrasp_ee_w.unsqueeze(0))
+    markers["close_target_ee"].visualize(close_target_ee_w.unsqueeze(0))
     markers["left_finger"].visualize(left_w.unsqueeze(0))
     markers["right_finger"].visualize(right_w.unsqueeze(0))
     markers["gripper_center"].visualize(center_w.unsqueeze(0))
@@ -382,9 +394,10 @@ def _frame_lines(
         contact_text = "unavailable" if contact_flag is None else str(contact_flag)
         return [
             "PHASE 2: EXACT_GRASP_CLOSE_CHECK - scripted diagnostic, not the RL start state",
-            "markers: cube cyan | panda_hand exact/pre magenta/green | TCP exact/pre blue/yellow | actual closed tip proxies blue/cyan",
+            "markers: cube cyan | panda_hand exact/pre magenta/green | TCP exact/pre blue/yellow | close target red | actual closed tip proxies blue/cyan",
             f"sample={sample['sample_index']} exact_ik={exact_close['exact_ik_success']} enclosure={exact_close['enclosure_success']} proxy_contact={exact_close['contact_proxy_success']}",
             f"close_cmd_width={exact_close['close_command_width_m']:.4f} observed_width={exact_close['observed_gripper_width_m']:.4f} contact_flag={contact_text}",
+            f"target_offsets approach={exact_close['target_approach_offset_m']:+.4f} lateral={exact_close['target_lateral_offset_m']:+.4f}",
             f"cube_env={_fmt_vec(exact_close['cube_pos_env'])} cube_delta={exact_close['cube_pos_delta_m']:.4f} lift={exact_close['cube_lift_height_m']:.4f}",
             f"exact_pose_err pos={exact_close['exact_pos_error_m']:.4f} rot={exact_close['exact_rot_error_rad']:.4f} immediate_done={exact_close['immediate_done']}",
             f"TCP actual_rel={_fmt_vec(close_rel['actual_ee'])} tip_center_rel={_fmt_vec(close_rel['actual_tip_center'])}",
@@ -560,18 +573,31 @@ def _run_exact_close_check(
     *,
     close_steps: int,
     close_command_width: float,
+    approach_offset: float,
+    lateral_offset: float,
 ) -> dict[str, object]:
     env_ids = torch.tensor([env_id], dtype=torch.long, device=task_env.device)
     joint_pos = task_env._robot.data.joint_pos[env_ids].clone()
     joint_vel = torch.zeros_like(joint_pos)
     root_pos_w = task_env._robot.data.root_pos_w[env_ids]
     root_quat_w = task_env._robot.data.root_quat_w[env_ids]
-    exact_ee_pos_w = task_env.grasp_prior_reset_exact_ee_pos_w[env_ids]
+    original_exact_ee_pos_w = task_env.grasp_prior_reset_exact_ee_pos_w[env_ids]
     exact_ee_quat_w = task_env.grasp_prior_reset_exact_ee_quat_w[env_ids]
+    approach_axis_w = task_env.grasp_prior_reset_offset_dir_w[env_ids]
+    approach_axis_w = approach_axis_w / torch.clamp(torch.norm(approach_axis_w, dim=-1, keepdim=True), min=1.0e-6)
+    left_tip_env = task_env.grasp_prior_reset_projected_exact_left_tip_proxy_pos[env_ids]
+    right_tip_env = task_env.grasp_prior_reset_projected_exact_right_tip_proxy_pos[env_ids]
+    lateral_axis_w = left_tip_env - right_tip_env
+    lateral_axis_w = lateral_axis_w / torch.clamp(torch.norm(lateral_axis_w, dim=-1, keepdim=True), min=1.0e-6)
+    target_ee_pos_w = (
+        original_exact_ee_pos_w
+        + float(approach_offset) * approach_axis_w
+        + float(lateral_offset) * lateral_axis_w
+    )
     target_ee_pos_b, target_ee_quat_b = math_utils.subtract_frame_transforms(
         root_pos_w,
         root_quat_w,
-        exact_ee_pos_w,
+        target_ee_pos_w,
         exact_ee_quat_w,
     )
     exact_joint_pos, ik_success, pos_error_norm, rot_error_norm = task_env._solve_reset_ik(
@@ -633,6 +659,15 @@ def _run_exact_close_check(
         "exact_ik_success": exact_ik_success,
         "exact_pos_error_m": _as_float(pos_error_norm[0]),
         "exact_rot_error_rad": _as_float(rot_error_norm[0]),
+        "target_approach_offset_m": float(approach_offset),
+        "target_lateral_offset_m": float(lateral_offset),
+        "target_approach_axis_w": _tensor_list(approach_axis_w[0]),
+        "target_lateral_axis_w": _tensor_list(lateral_axis_w[0]),
+        "original_exact_ee_pos_w": _tensor_list(original_exact_ee_pos_w[0]),
+        "target_ee_pos_w": _tensor_list(target_ee_pos_w[0]),
+        "target_ee_pos_env": _tensor_list(target_ee_pos_w[0] - task_env.scene.env_origins[env_id]),
+        "target_ee_pos_root": _tensor_list(_pos_in_root(task_env, env_id, target_ee_pos_w[0])),
+        "target_ee_quat_w_wxyz": _tensor_list(exact_ee_quat_w[0]),
         "close_steps": int(close_steps),
         "close_command_width_m": close_width,
         "close_target_per_finger_m": close_target_per_finger,
@@ -664,6 +699,8 @@ def _write_csv(path: Path, samples: list[dict[str, object]]) -> None:
         "exact_ik_success",
         "exact_pos_error_m",
         "exact_rot_error_rad",
+        "target_approach_offset_m",
+        "target_lateral_offset_m",
         "close_steps",
         "close_command_width_m",
         "close_target_per_finger_m",
@@ -851,6 +888,8 @@ def main() -> None:
                     env_id,
                     close_steps=args_cli.exact_close_steps,
                     close_command_width=args_cli.exact_close_command_width,
+                    approach_offset=args_cli.exact_close_approach_offset,
+                    lateral_offset=args_cli.exact_close_lateral_offset,
                 )
                 sample["exact_close_check"] = exact_close
                 print(
@@ -928,6 +967,8 @@ def main() -> None:
         "exact_close_check_enabled": exact_close_enabled,
         "exact_close_steps": int(args_cli.exact_close_steps),
         "exact_close_command_width_m": float(args_cli.exact_close_command_width),
+        "exact_close_approach_offset_m": float(args_cli.exact_close_approach_offset),
+        "exact_close_lateral_offset_m": float(args_cli.exact_close_lateral_offset),
         "render_all_resets": bool(args_cli.render_all_resets),
         "render_failed_exact_close": bool(args_cli.render_failed_exact_close),
         "pregrasp_reset_gate_pass": reset_gate_pass,
