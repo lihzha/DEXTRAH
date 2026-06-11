@@ -2421,3 +2421,26 @@ Lineage:
 Status:
 - Current branch commit before PPO launch: `a0a92c04fdd4d3f3b132c73aaa3f1f66590837e7`.
 - Local worktree was clean before this worklog-only clarification.
+
+## 2026-06-11T15:15:20-07:00 - action-alignment tiny PPO smoke launch
+
+Goal:
+- Run one bounded PPO smoke under the action-alignment diagnostic config, then evaluate the produced checkpoint with video artifacts if checkpoint creation succeeds.
+
+Version Control:
+- agent_id: franka-cube-traj-tracking
+- local_commit: `14730339f35bac7409b93cebd50c82aaa6bbf9ce`
+- remote_commit/status: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking` at `14730339f35bac7409b93cebd50c82aaa6bbf9ce`, detached clean after HTTPS fetch fallback.
+
+Command / Job:
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:30:00 --job-name=franka_cube_traj_align_rl --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,FULL_EXPERIMENT_NAME=franka_cube_traj_tracking_actionalign_rl_smoke_20260611_151520,NPROC_PER_NODE=1,NUM_NODES=1,DISTRIBUTED=False,MULTI_GPU=False,NUM_ENVS=16,HORIZON_LENGTH=32,MINIBATCH_SIZE=512,CENTRAL_VALUE_MINIBATCH_SIZE=512,MINI_EPOCHS=1,MAX_ITERATIONS=5,SAVE_FREQUENCY=5,AUTO_RESUME=False,SELF_RELAUNCH=False,USE_CUDA_GRAPH=False,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_WEIGHT=1.5,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_PHASE_START=0.0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_SHARPNESS=1.0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_USE_CONTACT_GATE=False cluster/sbatch_train_teacher_8gpu.sh`
+- job_id: 1027766 `franka_cube_traj_align_rl`
+- expected_log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_1027766.out`
+- expected_run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_actionalign_rl_smoke_20260611_151520`
+
+Acceptance Criteria:
+- One GPU, 16 envs, horizon `32`, max iterations `5`; no auto-resume/self-relaunch.
+- Resolved env config remains obs/state/action `72`/`72`/`7`, phase observations false, action-alignment weight/phase/sharpness/contact-gate `1.5`/`0.0`/`1.0`/`False`, same unvalidated reference path.
+- No traceback/NaN; actor/critic build with input dimension `72`; checkpoint written.
+- This is training wiring only. Any `rew_-inf` suffix from no episode termination must be labeled as short-run metric semantics, not policy success/failure by itself.
+- If a checkpoint exists, run fixed-seed and random-seed short video eval bundles before any further training.
