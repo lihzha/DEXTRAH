@@ -32,6 +32,8 @@ class DextrahFrankaCubeTrajTrackingEnvCfg(DextrahFrankaCubeGraspEnvCfg):
     trajectory_tracking_start_weight = 1.0
     trajectory_tracking_end_weight = 0.0
 
-    # Safety/logging gates for transformed task-space targets.
+    # Safety/logging gates for transformed task-space targets.  By default the
+    # curriculum tracks the reset-pose task-space reference instead of following
+    # post-contact cube tumbles.
     trajectory_tracking_min_target_table_clearance = 0.025
-    trajectory_tracking_follow_current_cube_pose = True
+    trajectory_tracking_follow_current_cube_pose = False

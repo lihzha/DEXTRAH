@@ -85,6 +85,21 @@ def _mean_float(value) -> float | None:
         return None
 
 
+def _tensor_stat_float(value, stat: str) -> float | None:
+    if not isinstance(value, torch.Tensor):
+        return None
+    tensor = value.detach().float()
+    if tensor.numel() == 0:
+        return None
+    if stat == "min":
+        result = tensor.min()
+    elif stat == "max":
+        result = tensor.max()
+    else:
+        result = tensor.mean()
+    return float(result.cpu())
+
+
 def _env_metric(task_env, name: str) -> float | None:
     if not hasattr(task_env, name):
         return None
@@ -124,7 +139,24 @@ def _collect_task_metrics(task_env) -> dict[str, float | None]:
         "traj_target_table_clearance",
         "traj_target_gripper_width",
     ]
-    metrics = {name: _env_metric(task_env, name) for name in metric_names if hasattr(task_env, name)}
+    stat_metric_names = {
+        "cube_lift_height",
+        "cube_xy_error",
+        "finger_table_clearance",
+        "finger_table_clearance_violation",
+        "gripper_width",
+        "traj_target_table_clearance",
+        "traj_target_gripper_width",
+    }
+    metrics = {}
+    for name in metric_names:
+        if not hasattr(task_env, name):
+            continue
+        value = getattr(task_env, name)
+        metrics[name] = _mean_float(value)
+        if name in stat_metric_names:
+            metrics[f"{name}_min"] = _tensor_stat_float(value, "min")
+            metrics[f"{name}_max"] = _tensor_stat_float(value, "max")
     log_terms = getattr(task_env, "extras", {}).get("log", {})
     if isinstance(log_terms, dict):
         for name in (
@@ -137,7 +169,11 @@ def _collect_task_metrics(task_env) -> dict[str, float | None]:
             "cube_traj_tracking_gripper_error",
             "cube_traj_tracking_phase_progress",
             "cube_traj_tracking_curriculum_scale",
+            "cube_traj_tracking_phase_weight",
+            "cube_traj_tracking_effective_phase_weight",
             "cube_traj_tracking_target_table_clearance",
+            "cube_traj_tracking_target_table_clearance_min",
+            "cube_traj_tracking_safe_target_rate",
             "cube_traj_tracking_unsafe_target_rate",
         ):
             if name in log_terms:

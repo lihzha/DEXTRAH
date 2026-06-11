@@ -781,3 +781,60 @@ Acceptance Criteria:
 - Job writes non-empty scalar/event or equivalent logs, resolved configs, and checkpoints.
 - It reaches at least one timeout/reset window without NaNs, runaway reward/loss, or table/finger safety pathology.
 - Follow-up eval of the latest checkpoint loads the same external reference and reports finite tracking metrics.
+
+Launch:
+- local_commit: 8388132ebab6a66ca6b3e4d60cea205f39991b6e
+- remote_commit/status: /lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking at 8388132ebab6a66ca6b3e4d60cea205f39991b6e, detached clean
+- job_id: 1027704 `franka_cube_traj_60mm_rl25`
+- run_name: `franka_cube_traj_tracking_60mm_ref_rl25_20260611_124829`
+- log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_1027704.out
+- run_dir: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_60mm_ref_rl25_20260611_124829
+
+Result Update:
+- `1027704` completed `0:0` after `00:01:26` on `pool0-00016`.
+- env/command evidence: 256 envs, horizon 64, 25 epochs, one GPU, external reference override in the train command.
+- training progressed through epoch 25/25 with no traceback or NaN visible in stdout.
+- checkpoint reward suffixes: ep5 `151.08821`, ep10 `843.2302`, ep15 `729.8349`, ep20 `850.1078`, ep25 `852.57153`.
+- checkpoints: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_60mm_ref_rl25_20260611_124829/nn/
+- caveat: TensorBoard event file is still 0 bytes, so scalar/loss logging remains insufficient from the trainer side; use checkpoint rollout metrics as the current reward-term evidence and patch trainer logging later if this alternative graduates beyond smoke/scale-up.
+
+Next:
+- Run a 720-step eval of the epoch-25 checkpoint with the same external reference. This spans a 600-step timeout window and should expose reset/done behavior in addition to tracking reward/target-safety metrics.
+
+## 2026-06-11T14:50:00-07:00 - rl25 checkpoint 720-step eval launch
+
+Goal:
+- Evaluate the bounded scale-up checkpoint across a timeout/reset window and inspect tracking reward/safety metrics.
+
+Command / Job:
+- job_id: 1027707 `franka_cube_traj_rl25_eval`
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:30:00 --job-name=franka_cube_traj_rl25_eval --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_60mm_ref_rl25_eval720_20260611_125035,CHECKPOINT=/results/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_60mm_ref_rl25_20260611_124829/nn/last_dextrah_franka_cube_traj_tracking_ep_25_rew_852.57153.pth,NUM_ENVS=4,NUM_STEPS=720,VIDEO_LENGTH=240,CAPTURE_VIDEO=False,PRINT_INTERVAL=120,USE_CUDA_GRAPH=False,SEED=43,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1027707.out
+- expected_metrics: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_traj_tracking_60mm_ref_rl25_eval720_20260611_125035/metrics.json
+
+Acceptance Criteria:
+- 720/720 steps complete.
+- `done_count` shows timeout/reset behavior rather than immediate reset pathology.
+- Tracking reference summary remains the external 60 mm compact reference with `curobo_validated=false`.
+- Tracking rewards/errors/target safety finite; unsafe target rate remains 0.
+
+Result / Analysis:
+- `1027707` completed `0:0` after `00:00:59` on `pool0-00016`; metrics fetched to `cluster_results/l401/franka_cube_traj_tracking_60mm_ref_rl25_eval720_20260611_125035/`.
+- rollout: 720/720 steps, `done_count=5`, recursive numeric scan finite (`nonfinite_count=0`), reward mean `2.2687899066`, reward final `2.4857230186`.
+- tracking_reference: external 60 mm compact reference loaded with `graspgenx_source=true`, `curobo_validated=false`, `validation_passed=true`, `waypoint_count=9`, `transform_policy=transform_task_space_waypoints_by_cube_pose`, `joint_trajectory_policy=do_not_transform_joint_trajectories`.
+- tracking metrics improved relative to the 3-epoch smoke: tracking reward mean `0.1123663048`, final `0.1652323902`; position error mean `0.1842913469`, final `0.0945282578`; orientation error mean `0.4052810603`; gripper error mean `0.0644654408`.
+- abnormality: `cube_traj_tracking_unsafe_target_rate` reached max `0.25` and mean `0.0149305556`, even though the logged `cube_traj_tracking_target_table_clearance` mean stayed above `0.15`. This indicates at least one env produced an unsafe transformed task-space target while the eval logged only means.
+- related policy behavior: `finger_table_clearance_violation` max `0.25`, cube lift max only `0.0039871`, success `0.0`, and gripper width collapsed near closed. This is not a performance success; it is a useful smoke exposing target-safety and policy-safety issues.
+
+Patch Plan Before Edits:
+- Keep `Dextrah-Franka-Cube-Grasp` baseline untouched and patch only the trajectory-tracking variant plus eval diagnostics.
+- In `franka_cube_traj_tracking_env.py`, compute the target safety mask before reward assembly and zero the effective tracking phase weight for envs whose transformed task-space target violates `trajectory_tracking_min_target_table_clearance`. This prevents the policy from being rewarded for chasing an unsafe transformed target.
+- Add log terms for effective/safe phase weight and min target clearance so the guard is visible in eval logs. Preserve the existing unsafe-rate diagnostic rather than hiding it.
+- In `eval_rollout.py`, report min/max tensor metrics for tracking target clearance and finger/table clearance so future evals can distinguish a mean-safe batch from one unsafe env.
+- Local validation: `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env.py dextrah_lab/rl_games/eval_rollout.py`, `git diff --check`.
+- Cluster validation after commit/deploy: rerun a bounded env/eval smoke with the same external 60 mm reference and inspect logs/metrics. The exact next job may reuse the RL25 checkpoint to compare the safety guard under the same policy.
+
+Plan Refinement:
+- While inspecting the transform path, I found that `trajectory_tracking_follow_current_cube_pose=False` still used the current cube quaternion. That would continue to rotate reference waypoints with a tipped/moved cube even when the intent is reset-pose tracking.
+- Patch the tracking variant to store a reset/reference object quaternion on reset and use `(cube_initial_pos, reset_cube_quat)` when `trajectory_tracking_follow_current_cube_pose=False`.
+- Change the trajectory-tracking variant default to reset/reference-pose tracking. This is still a task-space transform under object randomization, but it avoids moving the demonstration target with post-contact cube tumbles; the current-pose behavior remains available as an explicit ablation.

@@ -81,6 +81,15 @@ class DextrahFrankaCubeTrajTrackingEnv(DextrahFrankaCubeGraspEnv):
         self.traj_target_tracking_weight = torch.zeros(self.num_envs, device=self.device)
         self.traj_phase_progress = torch.zeros(self.num_envs, device=self.device)
         self.traj_target_table_clearance = torch.zeros(self.num_envs, device=self.device)
+        self.traj_effective_tracking_weight = torch.zeros(self.num_envs, device=self.device)
+        self.traj_target_safe_mask = torch.ones(self.num_envs, dtype=torch.bool, device=self.device)
+        self.traj_reference_object_quat = torch.zeros(self.num_envs, 4, device=self.device)
+        self.traj_reference_object_quat[:, 0] = 1.0
+        if hasattr(self, "cube_quat"):
+            self.traj_reference_object_quat[:] = self.cube_quat / torch.clamp(
+                torch.norm(self.cube_quat, dim=-1, keepdim=True),
+                min=1.0e-8,
+            )
 
     def _reset_idx(self, env_ids: Sequence[int] | None):
         super()._reset_idx(env_ids)
@@ -89,6 +98,11 @@ class DextrahFrankaCubeTrajTrackingEnv(DextrahFrankaCubeGraspEnv):
                 env_ids_tensor = self._robot._ALL_INDICES
             else:
                 env_ids_tensor = torch.as_tensor(env_ids, device=self.device, dtype=torch.long)
+            reset_quat = self.cube_quat[env_ids_tensor]
+            self.traj_reference_object_quat[env_ids_tensor] = reset_quat / torch.clamp(
+                torch.norm(reset_quat, dim=-1, keepdim=True),
+                min=1.0e-8,
+            )
             self._update_trajectory_tracking_targets(env_ids_tensor)
 
     def _get_rewards(self) -> torch.Tensor:
@@ -143,7 +157,7 @@ class DextrahFrankaCubeTrajTrackingEnv(DextrahFrankaCubeGraspEnv):
             object_quat = self.cube_quat[env_ids]
         else:
             object_pos = self.cube_initial_pos[env_ids]
-            object_quat = self.cube_quat[env_ids]
+            object_quat = self.traj_reference_object_quat[env_ids]
         target_pos, target_quat = math_utils.combine_frame_transforms(object_pos, object_quat, pos_object, quat_object)
 
         self.traj_target_ee_pos[env_ids] = target_pos
@@ -160,11 +174,17 @@ class DextrahFrankaCubeTrajTrackingEnv(DextrahFrankaCubeGraspEnv):
         self._update_trajectory_tracking_targets()
         curriculum_scale = self._compute_curriculum_scale()
         phase_weight = self.traj_target_tracking_weight * curriculum_scale
+        min_target_clearance = float(self.cfg.trajectory_tracking_min_target_table_clearance)
+        unsafe_target = self.traj_target_table_clearance < min_target_clearance
+        safe_target = ~unsafe_target
+        effective_phase_weight = torch.where(safe_target, phase_weight, torch.zeros_like(phase_weight))
+        self.traj_target_safe_mask[:] = safe_target
+        self.traj_effective_tracking_weight[:] = effective_phase_weight
 
         position_error = torch.norm(self.ee_pos - self.traj_target_ee_pos, dim=-1)
         position_reward = (
             float(self.cfg.trajectory_tracking_position_weight)
-            * phase_weight
+            * effective_phase_weight
             * torch.exp(-float(self.cfg.trajectory_tracking_position_sharpness) * position_error)
         )
 
@@ -173,20 +193,18 @@ class DextrahFrankaCubeTrajTrackingEnv(DextrahFrankaCubeGraspEnv):
         orientation_error = 1.0 - quat_alignment
         orientation_reward = (
             float(self.cfg.trajectory_tracking_orientation_weight)
-            * phase_weight
+            * effective_phase_weight
             * torch.exp(-float(self.cfg.trajectory_tracking_orientation_sharpness) * orientation_error)
         )
 
         gripper_error = torch.abs(self.gripper_width - self.traj_target_gripper_width)
         gripper_reward = (
             float(self.cfg.trajectory_tracking_gripper_weight)
-            * phase_weight
+            * effective_phase_weight
             * torch.exp(-float(self.cfg.trajectory_tracking_gripper_sharpness) * gripper_error)
         )
 
         tracking_reward = position_reward + orientation_reward + gripper_reward
-        min_target_clearance = float(self.cfg.trajectory_tracking_min_target_table_clearance)
-        unsafe_target = self.traj_target_table_clearance < min_target_clearance
 
         log_terms = self.extras.setdefault("log", {})
         log_terms.update(
@@ -200,7 +218,11 @@ class DextrahFrankaCubeTrajTrackingEnv(DextrahFrankaCubeGraspEnv):
                 "cube_traj_tracking_gripper_error": gripper_error.mean(),
                 "cube_traj_tracking_phase_progress": self.traj_phase_progress.mean(),
                 "cube_traj_tracking_curriculum_scale": torch.tensor(curriculum_scale, device=self.device),
+                "cube_traj_tracking_phase_weight": phase_weight.mean(),
+                "cube_traj_tracking_effective_phase_weight": effective_phase_weight.mean(),
                 "cube_traj_tracking_target_table_clearance": self.traj_target_table_clearance.mean(),
+                "cube_traj_tracking_target_table_clearance_min": self.traj_target_table_clearance.min(),
+                "cube_traj_tracking_safe_target_rate": safe_target.float().mean(),
                 "cube_traj_tracking_unsafe_target_rate": unsafe_target.float().mean(),
             }
         )
@@ -214,6 +236,9 @@ class DextrahFrankaCubeTrajTrackingEnv(DextrahFrankaCubeGraspEnv):
         tracking = payload.get("tracking", {}) if isinstance(payload, dict) else {}
         records = getattr(self, "_trajectory_tracking_reference_validation_records", [])
         failed_records = [record.get("name", "<unnamed>") for record in records if not bool(record.get("passed"))]
+        runtime_object_pose_policy = (
+            "current_cube_pose" if bool(self.cfg.trajectory_tracking_follow_current_cube_pose) else "reset_cube_pose"
+        )
         return {
             "enabled": bool(self.cfg.trajectory_tracking_enabled),
             "source": getattr(self, "_trajectory_tracking_reference_source", None),
@@ -225,6 +250,9 @@ class DextrahFrankaCubeTrajTrackingEnv(DextrahFrankaCubeGraspEnv):
             "duration_s": float(self.traj_ref_duration) if hasattr(self, "traj_ref_duration") else 0.0,
             "transform_policy": tracking.get("transform_policy") if isinstance(tracking, dict) else None,
             "joint_trajectory_policy": tracking.get("joint_trajectory_policy") if isinstance(tracking, dict) else None,
+            "runtime_object_pose_policy": runtime_object_pose_policy,
+            "unsafe_target_reward_policy": "zero_tracking_weight_below_min_target_table_clearance",
+            "min_target_table_clearance_m": float(self.cfg.trajectory_tracking_min_target_table_clearance),
             "validation_passed": len(failed_records) == 0,
             "failed_validation_records": failed_records,
         }
