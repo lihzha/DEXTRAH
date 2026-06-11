@@ -355,3 +355,42 @@ Worker B status:
   60 mm validation gate rejected the 45 mm validation JSON as expected.
 - Worker B launched job `1027694` (`ggx_cube_60mm_ref2`) to attempt a scratch
   60 mm GraspGenX/cuRobo validation/export path.
+
+## 2026-06-11 Worker Alternatives Progress 19:38 UTC
+
+Final RL job `28987954` continues normally:
+
+- still running on a1001 at about 8 minutes elapsed
+- reached at least epoch 71 / 10000
+- checkpoints written at epochs 25 and 50:
+  `rew_1176.0144` and `rew_1646.5193`
+- throughput remains in the expected hundreds-of-thousands fps range
+
+Worker B trajectory-tracking alternative:
+
+- 60 mm GraspGenX/cuRobo scratch attempt job `1027694` completed with exit
+  `0:0`.
+- It reported validation status `passed`, object extents `[0.06, 0.06, 0.06]`,
+  positive approach/grasp/lift segment lengths of 42 each, selected grasp
+  confidence about `0.674`, and a 662-frame trajectory export.
+- The converter produced a 9-waypoint compact reference with no joint arrays
+  and valid table/cube clearance checks.
+- Worker B kept the reference `curobo_validated=false` for now under
+  `graspgenx_curobo_60mm_export_pending_exact_validation`, which is conservative
+  pending exact validation/export consistency.
+- A follow-up l401 job `1027695` (`franka_cube_traj_60mm_ref`) is pending.
+
+Worker C Diffusion Policy alternative:
+
+- Worker C completed another milestone and pushed
+  `origin/codex/franka-cube-diffusion-policy-bc` at
+  `30b305e` (`Record DP BC branch push`).
+- It added a real GraspGenX/cuRobo DP BC path, generated 8/8 real cuRobo
+  trajectories, converted an 8-episode / 836-step lowdim dataset, ran an
+  official Diffusion Policy tiny train, and passed the PPO-observation bridge
+  smoke through `predict_action_from_ppo_obs()`.
+- Reported tiny-train metrics: `train_loss=1.1866`, `val_loss=1.0896`,
+  `train_action_mse_error=0.6654`.
+- Local Isaac eval is blocked by the local IsaacLab install missing
+  `_isaac_sim/python.sh`; Worker C was reassigned to validate the eval wrapper
+  on cluster instead of stopping.
