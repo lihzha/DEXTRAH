@@ -4864,3 +4864,112 @@ Next:
   DP lowdim dataset format and run only a tiny official-DP mechanics smoke
   before any scale-up. If it does not, inspect controller gains/decimation or
   waypoint timing as the next semantic patch.
+
+## 2026-06-11T16:56:00-07:00 - controller-rollout teacher plan
+
+Goal:
+- Test a controller-aware label convention without training: source waypoints
+  become target goals, but the teacher action is recomputed from the live env
+  state and the target row advances only when tracking is close enough or a
+  bounded hold limit is reached.
+
+Hypothesis:
+- The source cuRobo/FK path may be usable if we record the actual
+  DEXTRAH-controller rollout as the BC demonstration instead of directly using
+  source waypoint-to-waypoint deltas. This should avoid the source-label stall
+  and reduce residual-target clipping/support spikes.
+
+Planned Change:
+- Extend `dextrah_lab/rl_games/replay_franka_cube_dataset_actions.py` with a
+  replay-only mode `controller_target_hold`.
+- Add controller rollout parameters:
+  `controller_target_lookahead`, `controller_target_tolerance`,
+  `controller_target_max_hold`.
+- For the new mode, log target row, hold count, target error, support, clip
+  fractions, videos, and save a one-episode lowdim `.npz` containing live
+  observations and executed actions.
+- Extend `cluster/sbatch_replay_franka_cube_dp_actions_1gpu.sh` to pass the
+  controller rollout parameters.
+
+Validation Before Cluster:
+- `python3 -m py_compile dextrah_lab/rl_games/replay_franka_cube_dataset_actions.py`
+- `bash -n cluster/sbatch_replay_franka_cube_dp_actions_1gpu.sh`
+- `git diff --check`
+
+Planned Cluster Diagnostic:
+- Exact source-joint reset, episode `24`, step `0`.
+- Mode: `controller_target_hold`.
+- `STEPS=160`, `CONTROLLER_TARGET_LOOKAHEAD=1`,
+  `CONTROLLER_TARGET_TOLERANCE=0.015`,
+  `CONTROLLER_TARGET_MAX_HOLD=16`, video enabled.
+
+Acceptance:
+- The replay should follow the teacher EE geometry with substantially lower
+  support drift/clipping than naive residual-target modes. Success is not cube
+  lift; it is a controller-realized, inspectable approach trajectory that can
+  become a DP dataset candidate.
+
+## 2026-06-11T17:08:00-07:00 - close-reaching controller semantics diagnostic plan
+
+Goal:
+- Explain and bound the 8-10% per-step action realization mismatch before any
+  further DP BC/RL work.
+- Run a replay that can either follow source waypoints far enough to reach
+  close/lift phases or provide artifact-backed evidence that the current
+  controller/action semantics cannot replay the cuRobo teacher.
+
+Hypothesis:
+- DEXTRAH's Franka cube action is a relative DifferentialIK setpoint, not a
+  one-step realized EE displacement. The env applies one setpoint per 1/60 s
+  RL step and only two physics substeps of joint-position tracking, so
+  waypoint-to-waypoint labels from cuRobo/FK are expected to under-realize when
+  treated as one-step commands.
+- A bounded, absolute-pose-to-relative receding target should be a principled
+  diagnostic: hold each source target row until live EE tracking is close or a
+  maximum hold count expires, then advance. If this reaches close geometry
+  without clipping/support spikes, the BC dataset should be regenerated from
+  controller rollouts rather than raw source deltas. If it fails, the remaining
+  issue is controller capability/gains/substeps or TCP frame semantics.
+
+Change:
+- Finish replay-only `controller_target_hold` mode in
+  `dextrah_lab/rl_games/replay_franka_cube_dataset_actions.py`.
+- Log controller target row/phase/hold/advance, target errors, close timing,
+  clip fractions, EE/finger/cube distances, and save a one-episode live
+  lowdim/action `.npz` artifact for inspection.
+- Pass the controller-target parameters through
+  `cluster/sbatch_replay_franka_cube_dp_actions_1gpu.sh`.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- worklog:
+  `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `cd0aa03a12545c2dadd821c551581fdc805faab2`
+- implementation_commit: pending
+- changed_files:
+  `dextrah_lab/rl_games/replay_franka_cube_dataset_actions.py`,
+  `cluster/sbatch_replay_franka_cube_dp_actions_1gpu.sh`, this worklog.
+
+Validation Before Cluster:
+- `python3 -m py_compile dextrah_lab/rl_games/replay_franka_cube_dataset_actions.py`
+- `bash -n cluster/sbatch_replay_franka_cube_dp_actions_1gpu.sh`
+- `git diff --check`
+
+Planned Cluster Diagnostic:
+- Exact source-joint reset, episode `24`, step `0`.
+- Mode: `controller_target_hold`.
+- At least `STEPS=320` so the replay can reach the dataset close boundary or
+  clearly prove it cannot.
+- Video/contact sheet, `replay_report.md`, `replay_summary.json`,
+  `replay_motion.png`, `action_realization_audit.png`, generated rollout
+  `.npz`, and fetched local artifacts with `viz-open` URLs.
+
+Acceptance:
+- Diagnostic acceptance only. A useful result is one of:
+  - controller-held targets follow source geometry into close/lift support with
+    low clipping, making controller-rollout relabeling the next dataset path;
+  - or the held-target replay still cannot track source geometry, proving the
+    blocker is controller/TCP/IK dynamics rather than DP training.

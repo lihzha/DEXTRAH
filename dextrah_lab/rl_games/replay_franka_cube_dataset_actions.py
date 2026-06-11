@@ -17,7 +17,7 @@ import json
 import math
 import sys
 import traceback
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -47,6 +47,7 @@ parser.add_argument(
         "dataset_open_t_plus_7",
         "dataset_target_t_plus_1",
         "dataset_target_t_plus_7",
+        "controller_target_hold",
         "dp_replan",
     ],
     help="Replay mode. May be passed multiple times. Defaults to dataset_t and dp_replan.",
@@ -69,6 +70,24 @@ parser.add_argument(
         "Replay-only repeat count. The same selected action is executed for this many env steps before "
         "advancing the dataset/policy action index. This is diagnostic and changes temporal semantics."
     ),
+)
+parser.add_argument(
+    "--controller_target_lookahead",
+    type=int,
+    default=1,
+    help="Replay-only target row lookahead for controller_target_hold mode.",
+)
+parser.add_argument(
+    "--controller_target_tolerance",
+    type=float,
+    default=0.015,
+    help="EE-position tolerance in meters before controller_target_hold advances to the next target row.",
+)
+parser.add_argument(
+    "--controller_target_max_hold",
+    type=int,
+    default=16,
+    help="Maximum env steps to hold one target row before controller_target_hold advances.",
 )
 parser.add_argument("--output_dir", type=str, default=None)
 parser.add_argument("--print_interval", type=int, default=1)
@@ -153,6 +172,7 @@ from dextrah_lab.offline_dp_bc.ppo_bridge import (
     predict_action_sequence_from_ppo_obs,
 )
 from dextrah_lab.offline_dp_bc.trajectory_conversion import PICK_AND_LIFT_PHASE_ORDER
+from dextrah_lab.offline_dp_bc.trajectory_conversion import write_demo_dataset
 
 
 DEFAULT_CAMERA_EYE = (-0.10, -0.78, 1.42)
@@ -667,7 +687,7 @@ def _build_report(summary: dict[str, Any]) -> str:
     lines = [
         "# Franka Cube DP Dataset-Action Replay",
         "",
-        "This is a bounded Isaac controller replay. It does not train. Each mode resets the env, optionally applies a demo-conditioned cube reset, chooses either a fixed demo label window or the nearest converted cuRobo demo row, compares official-DP prediction against dataset labels, and executes a short sequence. `dataset_target_*` modes are replay-only residual-target diagnostics that recompute a live-state action toward a selected source waypoint.",
+        "This is a bounded Isaac controller replay. It does not train. Each mode resets the env, optionally applies a demo-conditioned cube reset, chooses either a fixed demo label window or the nearest converted cuRobo demo row, compares official-DP prediction against dataset labels, and executes a short sequence. `dataset_target_*` modes are replay-only residual-target diagnostics that recompute a live-state action toward a selected source waypoint. `controller_target_hold` is a replay-only absolute-pose-to-relative receding-target diagnostic that holds each source target until the live controller reaches it or times out.",
         "",
         "## Verdict",
         "",
@@ -679,19 +699,23 @@ def _build_report(summary: dict[str, Any]) -> str:
         f"- Dataset start: `{summary['dataset_start']}`",
         f"- Pose action multiplier: `{summary.get('pose_action_multiplier')}`",
         f"- Action repeat: `{summary.get('action_repeat')}`",
+        f"- Controller target settings: `{summary.get('controller_target_settings')}`",
         f"- Action audit: `{summary.get('action_audit')}`",
         "",
         "## Mode Summary",
         "",
-        "| mode | steps | nearest row | nearest phase | final EE-cube | final finger-cube | final cube-minus-EE | first close | first hard close | mean cosine | median xyz ratio | mean target err | mean residual target before | mean residual target after | mean clip frac | max clip frac |",
-        "|---|---:|---:|---|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| mode | steps | nearest row | nearest phase | final EE-cube | final finger-cube | final cube-minus-EE | first close | first hard close | target close | target lift | mean cosine | median xyz ratio | mean target err | mean residual target before | mean residual target after | mean clip frac | max clip frac |",
+        "|---|---:|---:|---|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for mode, payload in summary["modes"].items():
         lines.append(
             f"| {mode} | {payload['steps']} | {payload['initial_nearest_row']} | {payload['initial_nearest_phase']} | "
             f"{payload['final_ee_to_cube']:.4f} | {payload['final_finger_center_to_cube']:.4f} | "
             f"{payload['final_cube_minus_ee']} | {payload['first_executed_negative_step']} | "
-            f"{payload['first_executed_hard_close_step']} | {payload['mean_actual_vs_expected_xyz_cosine']:.4f} | "
+            f"{payload['first_executed_hard_close_step']} | "
+            f"{payload.get('first_tracking_target_close_phase_step')} | "
+            f"{payload.get('first_tracking_target_lift_phase_step')} | "
+            f"{payload['mean_actual_vs_expected_xyz_cosine']:.4f} | "
             f"{payload.get('median_xyz_realization_ratio', float('nan')):.4f} | "
             f"{payload.get('mean_xyz_target_error_norm', float('nan')):.5f} | "
             f"{payload.get('mean_tracking_target_error_before', float('nan')):.5f} | "
@@ -709,6 +733,7 @@ def _build_report(summary: dict[str, Any]) -> str:
             f"- Plot: `{summary['plot']}`",
             f"- Action audit plot: `{summary.get('action_audit_plot')}`",
             f"- Videos: `{summary['video_files']}`",
+            f"- Controller rollout datasets: `{summary.get('controller_rollout_datasets', [])}`",
         ]
     )
     return "\n".join(lines) + "\n"
@@ -775,6 +800,9 @@ def main() -> None:
     modes = args_cli.mode or ["dataset_t", "dp_replan"]
     action_repeat = max(1, int(args_cli.action_repeat))
     pose_action_multiplier = float(args_cli.pose_action_multiplier)
+    controller_target_lookahead = max(0, int(args_cli.controller_target_lookahead))
+    controller_target_tolerance = max(0.0, float(args_cli.controller_target_tolerance))
+    controller_target_max_hold = max(1, int(args_cli.controller_target_max_hold))
     env_cfg = parse_env_cfg(
         args_cli.task,
         device=args_cli.device,
@@ -821,10 +849,20 @@ def main() -> None:
         "pose_action_multiplier": pose_action_multiplier,
         "action_repeat": action_repeat,
         "repeat_semantics": "selected dataset/policy action index advances every action_repeat env steps",
+        "controller_target_hold_semantics": (
+            "recompute normalized relative action from live EE pose to a held source dataset target row; "
+            "advance target after tolerance hit or max hold timeout"
+        ),
+    }
+    controller_target_settings = {
+        "lookahead_rows": controller_target_lookahead,
+        "tolerance_m": controller_target_tolerance,
+        "max_hold_env_steps": controller_target_max_hold,
     }
 
     rows: list[dict[str, Any]] = []
     summaries: dict[str, Any] = {}
+    controller_rollout_datasets: list[dict[str, Any]] = []
     demo_reset_summary: dict[str, Any] | None = None
     try:
         for mode_index, mode in enumerate(modes):
@@ -840,6 +878,12 @@ def main() -> None:
             mode_cosines: list[float] = []
             mode_first: dict[str, Any] | None = None
             held_dp_action: np.ndarray | None = None
+            controller_target_rows: np.ndarray | None = None
+            controller_target_holds: np.ndarray | None = None
+            controller_rollout_obs: list[np.ndarray] = []
+            controller_rollout_actions: list[np.ndarray] = []
+            controller_rollout_phase_ids: list[int] = []
+            controller_rollout_target_rows: list[int] = []
 
             for step in range(int(args_cli.steps)):
                 action_index = int(step // action_repeat)
@@ -856,6 +900,15 @@ def main() -> None:
                         )
                     else:
                         nearest_rows = np.full(lowdim.shape[0], int(dataset_start_row), dtype=np.int64)
+                if mode == "controller_target_hold" and controller_target_rows is None:
+                    controller_target_rows = np.asarray(
+                        [
+                            _clipped_row(int(base) + controller_target_lookahead, episode_ends)
+                            for base in nearest_rows
+                        ],
+                        dtype=np.int64,
+                    )
+                    controller_target_holds = np.zeros(lowdim.shape[0], dtype=np.int64)
                 nearest_distances = [
                     _nearest_dataset_row(dataset_obs, lowdim[env_idx])[1] for env_idx in range(lowdim.shape[0])
                 ]
@@ -878,6 +931,11 @@ def main() -> None:
                 exec_label_offsets = np.full(task_env.num_envs, -1, dtype=np.int64)
                 tracking_target_rows = np.full(task_env.num_envs, -1, dtype=np.int64)
                 tracking_target_offsets = np.full(task_env.num_envs, -1, dtype=np.int64)
+                controller_target_rows_after = np.full(task_env.num_envs, -1, dtype=np.int64)
+                controller_target_holds_before = np.full(task_env.num_envs, -1, dtype=np.int64)
+                controller_target_holds_after = np.full(task_env.num_envs, -1, dtype=np.int64)
+                controller_target_advanced = np.zeros(task_env.num_envs, dtype=bool)
+                controller_target_advance_reasons: list[str] = [""] * task_env.num_envs
                 exec_action_sources: list[str] = ["unknown"] * task_env.num_envs
                 for env_idx in range(task_env.num_envs):
                     base = int(nearest_rows[env_idx])
@@ -942,6 +1000,21 @@ def main() -> None:
                         tracking_target_rows[env_idx] = row_t7
                         tracking_target_offsets[env_idx] = 7
                         exec_action_sources[env_idx] = "dataset_target_t_plus_7"
+                    elif mode == "controller_target_hold":
+                        if controller_target_rows is None or controller_target_holds is None:
+                            raise RuntimeError("controller_target_hold state was not initialized")
+                        target_row = int(controller_target_rows[env_idx])
+                        exec_actions[env_idx] = _normalized_action_to_dataset_target(
+                            lowdim[env_idx],
+                            dataset_obs[target_row],
+                            gripper_action=float(dataset_action[target_row, 6]),
+                        )
+                        exec_label_rows[env_idx] = target_row
+                        exec_label_offsets[env_idx] = int(target_row - row_t)
+                        tracking_target_rows[env_idx] = target_row
+                        tracking_target_offsets[env_idx] = int(target_row - row_t)
+                        controller_target_holds_before[env_idx] = int(controller_target_holds[env_idx])
+                        exec_action_sources[env_idx] = "controller_target_hold"
                     elif mode == "dp_replan":
                         exec_actions[env_idx] = dp_seq[env_idx, 0]
                         exec_action_sources[env_idx] = "dp_replan_first_action"
@@ -1047,6 +1120,40 @@ def main() -> None:
                         tracking_target_cube_minus_ee_error_after = None
                         tracking_target_ee_pos = None
                         tracking_target_cube_minus_ee = None
+                    if mode == "controller_target_hold" and controller_target_rows is not None and controller_target_holds is not None:
+                        hold_before = int(controller_target_holds_before[env_idx])
+                        target_error_for_advance = (
+                            float(tracking_target_error_after)
+                            if tracking_target_error_after is not None
+                            else float("inf")
+                        )
+                        reason = ""
+                        should_advance = False
+                        if target_error_for_advance <= controller_target_tolerance:
+                            reason = "tolerance"
+                            should_advance = True
+                        elif hold_before + 1 >= controller_target_max_hold:
+                            reason = "max_hold"
+                            should_advance = True
+                        target_row_for_advance = int(controller_target_rows[env_idx])
+                        _target_ep, _target_start, target_end = _episode_for_row(target_row_for_advance, episode_ends)
+                        if should_advance and target_row_for_advance < target_end - 1:
+                            controller_target_rows[env_idx] = int(target_row_for_advance + 1)
+                            controller_target_holds[env_idx] = 0
+                            controller_target_advanced[env_idx] = True
+                            controller_target_advance_reasons[env_idx] = reason
+                        else:
+                            controller_target_holds[env_idx] = hold_before + 1
+                            controller_target_advance_reasons[env_idx] = reason if should_advance else ""
+                        controller_target_rows_after[env_idx] = int(controller_target_rows[env_idx])
+                        controller_target_holds_after[env_idx] = int(controller_target_holds[env_idx])
+                        if env_idx == 0:
+                            controller_rollout_obs.append(before_lowdim[env_idx].astype(np.float32, copy=True))
+                            controller_rollout_actions.append(exec_actions[env_idx].astype(np.float32, copy=True))
+                            controller_rollout_phase_ids.append(
+                                int(phase_ids[tracking_target_row]) if tracking_target_row >= 0 else int(phase_ids[current_row])
+                            )
+                            controller_rollout_target_rows.append(int(tracking_target_row))
                     if cosine is not None:
                         mode_cosines.append(float(cosine))
                     mode_distances.append(float(after_ee_to_cube[env_idx]))
@@ -1080,6 +1187,14 @@ def main() -> None:
                         "tracking_target_cube_minus_ee_error_after": tracking_target_cube_minus_ee_error_after,
                         "tracking_target_ee_pos": tracking_target_ee_pos,
                         "tracking_target_cube_minus_ee": tracking_target_cube_minus_ee,
+                        "controller_target_row_after": int(controller_target_rows_after[env_idx]),
+                        "controller_target_hold_before": int(controller_target_holds_before[env_idx]),
+                        "controller_target_hold_after": int(controller_target_holds_after[env_idx]),
+                        "controller_target_advanced": bool(controller_target_advanced[env_idx]),
+                        "controller_target_advance_reason": controller_target_advance_reasons[env_idx],
+                        "controller_target_lookahead": controller_target_lookahead,
+                        "controller_target_tolerance": controller_target_tolerance,
+                        "controller_target_max_hold": controller_target_max_hold,
                         "nearest_live_row": live_nearest_row,
                         "nearest_live_episode_step": _episode_step(live_nearest_row, episode_ends),
                         "nearest_live_phase": live_nearest_phase,
@@ -1199,6 +1314,12 @@ def main() -> None:
             first_nearest_close = next(
                 (row["step"] for row in mode_rows if row["nearest_live_phase"] == "close_fingers"), None
             )
+            first_target_close = next(
+                (row["step"] for row in mode_rows if row.get("tracking_target_phase") == "close_fingers"), None
+            )
+            first_target_lift = next(
+                (row["step"] for row in mode_rows if row.get("tracking_target_phase") == "lift_object"), None
+            )
             last_row = mode_rows[-1]
             xyz_ratios = _finite_values(mode_rows, "xyz_realization_ratio")
             rot_ratios = _finite_values(mode_rows, "rot_realization_ratio")
@@ -1241,6 +1362,8 @@ def main() -> None:
                 "first_label_negative_step": first_label_neg,
                 "first_label_hard_close_step": first_label_hard,
                 "first_nearest_close_phase_step": first_nearest_close,
+                "first_tracking_target_close_phase_step": first_target_close,
+                "first_tracking_target_lift_phase_step": first_target_lift,
                 "mean_actual_vs_expected_xyz_cosine": float(np.mean(mode_cosines)) if mode_cosines else float("nan"),
                 "mean_xyz_realization_ratio": float(np.mean(xyz_ratios)) if xyz_ratios else float("nan"),
                 "median_xyz_realization_ratio": float(np.median(xyz_ratios)) if xyz_ratios else float("nan"),
@@ -1287,6 +1410,40 @@ def main() -> None:
                 "first_label_gripper": float(mode_first["label_t_gripper"]),
                 "first_executed_gripper": float(mode_first["executed_gripper"]),
             }
+            if mode == "controller_target_hold" and controller_rollout_obs:
+                rollout_path = output_dir / "controller_target_hold_lowdim_rollout.npz"
+                rollout_episode = {
+                    "obs": np.stack(controller_rollout_obs, axis=0).astype(np.float32),
+                    "action": np.stack(controller_rollout_actions, axis=0).astype(np.float32),
+                    "phase_ids": np.asarray(controller_rollout_phase_ids, dtype=np.int32),
+                }
+                rollout_metadata = {
+                    "source": "dextrah_controller_rollout_teacher_from_curobo_waypoints",
+                    "curobo_validated_source": True,
+                    "source_dataset": str(dataset_path),
+                    "source_checkpoint_for_audit_only": str(checkpoint_path),
+                    "source_demo_reset": demo_reset_summary,
+                    "source_dataset_start": dataset_start_summary,
+                    "source_phase_names": phase_names,
+                    "source_target_rows_env0": [int(row) for row in controller_rollout_target_rows],
+                    "controller_target_settings": controller_target_settings,
+                    "action_convention": asdict(DEFAULT_DEXTRAH_ACTION_CONVENTION),
+                    "notes": [
+                        "Replay-only artifact generated by executing live residual actions in the DEXTRAH Isaac env.",
+                        "This is not a BC readiness claim; inspect tracking, clipping, and support metrics before training.",
+                    ],
+                }
+                rollout_summary = write_demo_dataset([rollout_episode], rollout_path, metadata=rollout_metadata)
+                controller_rollout_datasets.append(
+                    {
+                        "mode": mode,
+                        "dataset_path": str(rollout_path),
+                        "metadata_path": str(rollout_path.with_suffix(rollout_path.suffix + ".metadata.json")),
+                        "num_steps": int(rollout_summary["num_steps"]),
+                        "target_row_first": int(controller_rollout_target_rows[0]),
+                        "target_row_last": int(controller_rollout_target_rows[-1]),
+                    }
+                )
     finally:
         gym_env.close()
 
@@ -1337,6 +1494,8 @@ def main() -> None:
         "modes": summaries,
         "demo_reset": demo_reset_summary,
         "action_audit": action_audit_summary,
+        "controller_target_settings": controller_target_settings,
+        "controller_rollout_datasets": controller_rollout_datasets,
         "dataset_start": dataset_start_summary
         or {"source": "nearest_live_row", "note": "first live observation selected label start independently per mode"},
         "verdict": verdict,
