@@ -1039,6 +1039,51 @@ Next:
 - Continue widened active monitoring, tightening near the next wall-time signal
   window.
 
+## 2026-06-10 22:12 PDT - Teacher Monitor Metric Pass
+
+Goal:
+- Verify continued steady-state training health.
+
+Command / Job:
+- job_id: `28955904`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28955904.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+- local TensorBoard copy:
+  `/tmp/dextrah_teacher_events`
+
+Result:
+- status: running healthy.
+- scheduler: `RUNNING` on `batch-block5-03072`, elapsed `01:29:51`,
+  time left `02:20:09` at `22:12:24 PDT`.
+- stdout advanced to epoch `17028/20000`.
+- latest complete checkpoint:
+  `last_dextrah_lstm_ep_17020_rew_674.27325.pth` at `22:11:44`.
+- runtime sidecars rank `0-7` refreshed at `22:11:42-22:11:43`.
+- narrow critical failure scan over recent stdout returned no matches.
+- TensorBoard summaries parsed through epoch `17016` for epoch-keyed scalars.
+- `in_success_region/iter`: latest `0.476562`, last-50 `0.471118`,
+  last-200 `0.466094`, post-resume mean `0.462458`.
+- `rewards/iter`: latest `651.442`, last-50 `649.274`,
+  last-200 `642.435`, post-resume mean `642.204`.
+- `num_adr_increases/iter`: latest `50`, last-50 `50`.
+- `info/kl`: latest `0.00349445`, last-50 `0.00518375`,
+  last-200 `0.00533017`.
+- `losses/a_loss`: latest `-0.00423858`, last-50 `-0.00377606`.
+- `losses/c_loss`: latest `0.0232393`, last-50 `0.0253416`.
+- `performance/step_inference_rl_update_fps`: latest `112752`,
+  last-20 about `108630`, last-50 about `104408`, last-200 about `108211`.
+
+Analysis:
+- Training remains healthy. The success metric improved over the last pass,
+  reward and KL are stable, checkpoint/sidecar cadence is normal, and the brief
+  throughput dip recovered in the recent last-20 window.
+
+Next:
+- Continue widened active monitoring, tightening near the next wall-time signal
+  window.
+
 ## 2026-06-10 22:01 PDT - Teacher Monitor Metric Pass
 
 Goal:
