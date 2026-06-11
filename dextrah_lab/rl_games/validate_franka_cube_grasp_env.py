@@ -289,6 +289,7 @@ def _run_predicate_checks(task_env, checks: CheckRecorder) -> None:
         lift_height=_mean(task_env.cube_lift_height),
         xy_error=_mean(task_env.cube_xy_error),
         finger_table_clearance=_mean(task_env.finger_table_clearance),
+        finger_table_clearance_min=float(task_env.finger_table_clearance.detach().min().cpu()),
         hand_mean_dist=_mean(task_env.hand_to_cube_mean_dist),
         hand_max_dist=_mean(task_env.hand_to_cube_max_dist),
     )
@@ -351,6 +352,7 @@ def _run_predicate_checks(task_env, checks: CheckRecorder) -> None:
         table_clearance_penalty=table_clearance_penalty_value,
         gripper_close_reg=gripper_close_reg_value,
         finger_table_clearance=_mean(task_env.finger_table_clearance),
+        finger_table_clearance_min=float(task_env.finger_table_clearance.detach().min().cpu()),
         hand_mean_dist=_mean(task_env.hand_to_cube_mean_dist),
         hand_max_dist=_mean(task_env.hand_to_cube_max_dist),
         finger_center_dist=_mean(task_env.finger_center_to_cube_dist),
@@ -404,6 +406,7 @@ def _run_predicate_checks(task_env, checks: CheckRecorder) -> None:
         success_bonus=success_bonus_value,
         lift_action_reward=lift_action_value,
         finger_table_clearance=_mean(task_env.finger_table_clearance),
+        finger_table_clearance_min=float(task_env.finger_table_clearance.detach().min().cpu()),
         hand_mean_dist=_mean(task_env.hand_to_cube_mean_dist),
         hand_max_dist=_mean(task_env.hand_to_cube_max_dist),
         finger_center_dist=_mean(task_env.finger_center_to_cube_dist),

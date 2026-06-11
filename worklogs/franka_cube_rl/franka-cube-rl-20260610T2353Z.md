@@ -774,3 +774,66 @@ Patch:
 Next:
 - Re-run static checks, commit/push, update the A100 worktree, and relaunch
   the base-clearance validator.
+
+## 2026-06-10 17:51 PDT - Corrected Base-Clearance Validation Submitted
+
+Command / Job:
+- command:
+  `RUN_NAME=franka_cube_validate_baseclear2_20260610_1751 CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-rl-20260610T2353Z NUM_ENVS=4 NUM_STEPS=160 CAPTURE_VIDEO=True SEED=55 sbatch --parsable cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`
+- job_id: `28957460`
+- code_commit:
+  `98abd69609128371a57c90b1a1130fe0aa6f7140`
+- remote worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-rl-20260610T2353Z`
+- expected run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_cube_validate_baseclear2_20260610_1751`
+- expected log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_cube_28957460.out`
+
+## 2026-06-10 17:53 PDT - Base-Clearance Validation Mostly Fixed, Margin Too Tight
+
+Result:
+- job_id: `28957460`
+- scheduler status: `FAILED`, exit `1:0`, because validator `passed=false`.
+- Environment import and scene creation succeeded with the corrected config.
+
+Recovered:
+- Reset table clearance is now positive:
+  `finger_table_clearance_min=0.02708m`, `mean=0.04579m`.
+- Scripted rollout has no early table-penetration terminations:
+  `done_count=0`.
+- Rollout mean clearance stays positive:
+  `min_mean_finger_table_clearance=0.04579m`.
+- Previous hard failures recovered:
+  - `success_predicate_accepts_lifted_cube_near_gripper`: passed with
+    `success_rate=1.0`.
+  - `reward_accepts_success_geometry_for_lift`: passed with
+    `success_bonus=15.0`.
+
+Remaining Failure:
+- `reward_accepts_success_geometry_for_prelift_enclosure` failed because the
+  table-clearance penalty was still `-0.1426` in synthetic success geometry.
+- Mean synthetic clearance was `0.02809m`, only barely above the
+  `0.025m` reward margin, so some envs can still sit inside the margin.
+
+Patch:
+- Raised the cube-only Franka base height from `0.25` to `0.27`.
+- Added min-clearance diagnostics to the synthetic success/reward predicate
+  checks, not just mean clearance.
+
+Next:
+- Re-run static checks, commit/push, update A100, and relaunch the validator.
+
+## 2026-06-10 17:54 PDT - Eval Launch Authorization Note
+
+User Instruction:
+- Once the remaining issues are fixed and the actual training is launched,
+  periodically launch evals for the current training run without asking for
+  additional permission.
+- Fetch eval videos locally and visualize them with `viz-open`.
+
+Operational Note:
+- For future training loops in this worklog, checkpoint evals are pre-approved.
+- Do not rely only on scheduler state or scalar logs; inspect fetched videos
+  through the visualization viewer before deciding whether to continue,
+  cancel, patch, or relaunch.

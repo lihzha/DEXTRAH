@@ -56,7 +56,7 @@ class DextrahFrankaCubeGraspEnvCfg(DextrahFrankaStarKittingEnvCfg):
     finger_effort_limit = 1000.0
     finger_stiffness = 4000.0
     finger_damping = 400.0
-    robot_base_z = 0.25
+    robot_base_z = 0.27
 
     # The star task keeps the robot base lower for its fixture geometry.  In
     # the cube task that places the default Franka fingertips below the table,
