@@ -132,3 +132,38 @@ Next:
 - Commit this patch, deploy the exact commit to an isolated A100 worktree, run
   the Franka cube cluster validator, then launch bounded PPO only if validation
   passes.
+
+## 2026-06-10 17:01 PDT - KUKA-Parity Cluster Validation Launch Intent
+
+Goal:
+- Run the Franka cube cluster validator from the isolated A100 worktree after
+  the KUKA-parity reward patch.
+
+Hypothesis:
+- If the reward signature, config, and validator were updated consistently, the
+  same validation surface that accepted `b268d76` should pass with the simpler
+  KUKA-shaped reward and report positive approach/enclosure/lift/success
+  checks at the measured Franka success geometry.
+
+Version Control:
+- agent_id: `franka-cube-rl-20260610T2353Z`
+- local_commit_before_launch_intent: `ce84d85f5fb1e2c510ddbab0e809afa48084a232`
+- remote_worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-rl-20260610T2353Z`
+- remote_commit_before_launch_intent: `ce84d85f5fb1e2c510ddbab0e809afa48084a232`
+
+Command / Job:
+- planned command:
+  `RUN_NAME=franka_cube_validate_kukaparity_20260610_1701 CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-rl-20260610T2353Z NUM_ENVS=4 NUM_STEPS=160 CAPTURE_VIDEO=True SEED=49 sbatch --parsable cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`
+- job_id: pending
+- expected run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_cube_validate_kukaparity_20260610_1701`
+- expected log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_cube_<jobid>.out`
+
+Validation Before Launch:
+- local `py_compile`, `bash -n`, stale-term grep, and `git diff --check` passed.
+
+Next:
+- Commit/push this launch intent, update the isolated A100 worktree to the new
+  exact commit, submit the validation job, then monitor logs and artifacts.
