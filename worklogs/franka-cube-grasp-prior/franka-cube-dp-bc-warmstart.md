@@ -478,7 +478,7 @@ Analysis:
 
 Version Control:
 - branch: codex/franka-cube-diffusion-policy-bc
-- source_checkpoint_commit: 3e943d5
+- source_checkpoint_commit: b62f3b2
 - push/pull: pending
 - changed_files:
   - `dextrah_lab/scene_scripts/plan_franka_cube_graspgenx_curobo.py`
