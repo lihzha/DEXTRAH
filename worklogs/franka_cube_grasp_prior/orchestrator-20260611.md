@@ -664,3 +664,65 @@ Worker C Diffusion Policy alternative:
   only the first action from each 8-action DP output and replans every sim step;
   worker is patching optional action-chunk execution while preserving the
   default first-action behavior
+
+## 2026-06-11 Monitor Check 20:40 UTC
+
+User artifact request:
+
+- Sent explicit artifact-generation requests to all three workers.
+- Worker A has produced an inspectable interim bundle for the final reset-prior
+  RL run:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/a1001/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005/inspection_20260611_202705`
+- Worker A artifact viewer:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/a1001/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005/inspection_20260611_202705/training_curves.png`
+- Worker B was interrupted and redirected to produce its planned retimed vs
+  phase-starved trajectory-tracking artifact bundle before further training.
+  At this checkpoint, no B report/PNG/CSV/summary artifact has appeared yet.
+- Worker C was interrupted and redirected to produce its DP BC comparison
+  bundle. It has fetched the overfit2k chunk8 rollout video locally, but the
+  full report/plots/summary bundle is still in progress.
+- Worker C video viewer:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_curobo32_full_pick_lift_overfit2k_chunk8_video_20260611_132637/videos/franka-cube-dp-overfit2k-chunk8-step-0.mp4`
+
+Final RL job `28987954`:
+
+- still running on a1001 at about `1:03:38` elapsed, with time limit `3:50:00`
+- reached epoch `683`, frame `715128832` in rank-0 JSONL
+- rank-0 direct metrics use a nested `scalars` object; parsed that layout for
+  this checkpoint
+- `bad_scalar_count=0`
+- latest interval checkpoints include epoch `650` reward suffix `2158.793` and
+  epoch `675` reward suffix `2121.1836`; epoch `650` also updated the best
+  checkpoint to `2158.793`
+- prior reset diagnostics remain healthy: reset success tail100 mean `1.0`,
+  reset-farther tail100 mean `1.0`, finger/table clearance latest
+  `0.134811 m`, reset position error latest `0.001875 m`, reset rotation error
+  latest `0.018712 rad`
+- task terms continue to improve: approach reward latest `1.14001` and tail100
+  mean `1.12873`; enclosure latest `0.637126` and tail100 mean `0.631843`
+- lift/success remain sparse: success max `0.00048828125`, tail100 mean
+  `0.000009765625`; lifted max `0.00244140625`, tail100 mean `0.00041015625`;
+  lift-height tail100 mean about `0.0001008 m`
+
+Worker B trajectory-tracking alternative:
+
+- last confirmed state remains retimed RL25/eval complete:
+  `1027724` and `1027726` both completed `0:0`
+- retiming fixed phase starvation: old reset-pose eval only reached phase
+  progress about `0.358`; retimed eval reaches `1.0`
+- target safety remains clean in the retimed eval: unsafe target rate `0.0`,
+  target clearance min `0.065114 m`
+- behavior remains negative at RL25 scale: no lift/success
+- artifact bundle remains pending after the orchestrator interruption
+
+Worker C Diffusion Policy alternative:
+
+- overfit2k chunk8 l401 eval job `1027727` completed `0:0` in `00:01:29`
+- local fetched video:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_curobo32_full_pick_lift_overfit2k_chunk8_video_20260611_132637/videos/franka-cube-dp-overfit2k-chunk8-step-0.mp4`
+- video metadata: `1280x720`, `359` frames, `5.98 s`
+- mechanical eval passed, but behavior is still poor: reward decays from about
+  `1.36` to `1.01`, final EE-to-cube distance about `0.609 m`, final
+  finger-center distance about `0.588 m`, final gripper width about
+  `0.0798 m`, cube lift `0.0`, success `0.0`
+- artifact bundle/report remains pending after the orchestrator interruption
