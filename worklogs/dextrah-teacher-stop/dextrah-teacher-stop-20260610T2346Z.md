@@ -949,3 +949,48 @@ Analysis:
 Next:
 - Continue widened active monitoring through the allocation, with tighter
   polling again near the next wall-time signal window.
+
+## 2026-06-10 21:27 PDT - Teacher Monitor Metric Pass
+
+Goal:
+- Verify continued steady-state training health.
+
+Command / Job:
+- job_id: `28955904`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28955904.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+- local TensorBoard copy:
+  `/tmp/dextrah_teacher_events`
+
+Result:
+- status: running healthy.
+- scheduler: `RUNNING` on `batch-block5-03072`, elapsed `45:01`, time left
+  `03:04:59` at `21:27:35 PDT`.
+- stdout advanced to epoch `16480/20000`.
+- latest complete checkpoint:
+  `last_dextrah_lstm_ep_16480_rew_609.60065.pth` at `21:27:31`.
+- runtime sidecars rank `0-7` all refreshed at `21:27:29`.
+- narrow critical failure scan over recent stdout returned no matches.
+- TensorBoard summaries parsed through epoch `16479` for epoch-keyed scalars.
+- `in_success_region/iter`: latest `0.465088`, last-50 `0.459917`,
+  last-200 `0.459951`, post-resume mean `0.461893`.
+- `rewards/iter`: latest `682.418`, last-50 `633.741`,
+  last-200 `634.216`, post-resume mean `637.962`.
+- `num_adr_increases/iter`: latest `50`, last-50 `50`.
+- `info/kl`: latest `0.00426967`, last-50 `0.00594044`,
+  last-200 `0.0060537`.
+- `losses/a_loss`: latest `-0.00418612`, last-50 `-0.0037655`.
+- `losses/c_loss`: latest `0.0214659`, last-50 `0.0205859`.
+- `performance/step_inference_rl_update_fps`: latest `112249`,
+  last-50 about `109730`, last-200 about `109550`.
+
+Analysis:
+- Training remains stable: success is still above the ADR threshold, KL and
+  losses are controlled, throughput is recovered, and checkpoint/sidecar cadence
+  is normal.
+
+Next:
+- Continue widened active monitoring. Tighten polling near the next wall-time
+  signal window.
