@@ -4973,3 +4973,57 @@ Acceptance:
     low clipping, making controller-rollout relabeling the next dataset path;
   - or the held-target replay still cannot track source geometry, proving the
     blocker is controller/TCP/IK dynamics rather than DP training.
+
+## 2026-06-11T17:22:00-07:00 - controller-target-hold close/lift replay launch plan
+
+Goal:
+- Exercise the controller/action semantics at a window that reaches close and
+  lift targets, not another early-approach-only replay.
+
+Hypothesis:
+- Starting from exact source-joint reset at episode `24` step `260`
+  (`hold_at_grasp`, just before `close_fingers` starts at local step `282`)
+  removes long-range approach/reset confounds. If a live residual target-hold
+  controller cannot remain near the source grasp geometry through close and
+  lift target rows from this state, raw cuRobo waypoint labels are not suitable
+  BC actions under the DEXTRAH controller.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- implementation_commit:
+  `7b903da1e8e96b14b6dbdb87c0311e7b084aac4a`
+- remote worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- remote_commit/status:
+  `7b903da1e8e96b14b6dbdb87c0311e7b084aac4a`, detached clean.
+- validation:
+  - `python3 -m py_compile dextrah_lab/rl_games/replay_franka_cube_dataset_actions.py`
+  - `bash -n cluster/sbatch_replay_franka_cube_dp_actions_1gpu.sh`
+  - `git diff --check`
+
+Planned Command / Job:
+- run_name:
+  `franka_cube_dp_replay_sourcejoint_controllerhold_ep24s260_mh2_340_20260611_1722xx`
+- mode: `controller_target_hold`
+- exact reset:
+  - `DEMO_RESET_EPISODE=24`, `DEMO_RESET_STEP=260`
+  - `DATASET_START_EPISODE=24`, `DATASET_START_STEP=260`
+  - `DEMO_RESET_TRAJECTORY_JSON=/results/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed24/trajectory.json`
+- controller target settings:
+  - `CONTROLLER_TARGET_LOOKAHEAD=1`
+  - `CONTROLLER_TARGET_TOLERANCE=0.015`
+  - `CONTROLLER_TARGET_MAX_HOLD=2`
+- replay:
+  - `STEPS=340`, `ACTION_REPEAT=1`, `POSE_ACTION_MULTIPLIER=1`
+  - `CLIP_ACTIONS=1.0`, `CAPTURE_VIDEO=True`, `VIDEO_LENGTH=340`
+
+Expected Artifacts:
+- `replay_report.md`, `replay_summary.json`, `replay_steps.csv`
+- `replay_motion.png`, `action_realization_audit.png`
+- controller rollout `.npz` and metadata JSON
+- video/contact sheet after fetch
+
+Acceptance:
+- Diagnostic acceptance only. Check final/min EE-cube, finger-cube, gripper
+  width, clip fraction, target close/lift step, cube lift, video/contact sheet,
+  and support distance before any BC/RL training.
