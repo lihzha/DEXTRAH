@@ -837,3 +837,45 @@ Operational Note:
 - Do not rely only on scheduler state or scalar logs; inspect fetched videos
   through the visualization viewer before deciding whether to continue,
   cancel, patch, or relaunch.
+
+## 2026-06-10 17:55 PDT - Base-Clearance Validator Relaunched
+
+Command / Job:
+- command:
+  `RUN_NAME=franka_cube_validate_baseclear3_20260610_1755 CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-rl-20260610T2353Z NUM_ENVS=4 NUM_STEPS=160 CAPTURE_VIDEO=True SEED=56 sbatch --parsable cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`
+- job_id: `28957493`
+- code_commit:
+  `009ea18a0e8d08e9a24724a48e81b3c42c63799d`
+- expected run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_cube_validate_baseclear3_20260610_1755`
+- expected log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_cube_28957493.out`
+
+## 2026-06-10 17:57 PDT - Base-Clearance Validation Passed
+
+Result:
+- job_id: `28957493`
+- scheduler status: `COMPLETED`, exit `0:0`, elapsed `00:01:35`.
+- validator status: passed.
+- checks: `23 / 23` passed.
+- local artifact mirror:
+  `cluster_results/a1002/validations/franka_cube_validate_baseclear3_20260610_1755`
+- viewer URL:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-rl-20260610T2353Z/cluster_results/a1002/validations/franka_cube_validate_baseclear3_20260610_1755/videos/franka-cube-validate-step-0.mp4`
+
+Key Metrics:
+- reset clearance: min `0.04555m`, mean `0.07267m`, required margin `0.025m`.
+- synthetic success clearance: min `0.04213m`, mean `0.05418m`.
+- synthetic prelift table-clearance penalty: `0.0`.
+- rollout: `160 / 160` steps completed, `done_count=0`,
+  `min_mean_finger_table_clearance=0.07267m`.
+- video: valid `1280x720`, `159` frames, `2.65s`.
+
+Visual Inspection:
+- Contact sheet from the fetched MP4 shows the Franka hand above the tabletop
+  throughout the scripted rollout; no visible fingertip/table penetration.
+
+Decision:
+- The table-penetration/root-geometry issue is fixed for the Franka cube task.
+- Proceed to a fresh PPO attempt from commit `009ea18` and monitor clearance,
+  lift, success, z-action, reward terms, and eval video artifacts.
