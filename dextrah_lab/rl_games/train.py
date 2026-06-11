@@ -74,7 +74,7 @@ import dextrah_lab.tasks.dextrah_franka_cube_grasp.gym_setup
 import dextrah_lab.tasks.dextrah_franka_star_kitting.gym_setup
 
 import time
-from rl_games_utils import DextrahResumableAlgoObserver, MultiObserver, RLGPUAlgoObserver
+from rl_games_utils import DirectInfoJsonlObserver, DextrahResumableAlgoObserver, MultiObserver, RLGPUAlgoObserver
 
 from isaaclab.envs import (
     DirectMARLEnv,
@@ -276,7 +276,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     agent_cfg["params"]["config"]["num_actors"] = env.unwrapped.num_envs
     # create runner from rl-games
 
-    observers = [IsaacAlgoObserver(), RLGPUAlgoObserver(), DextrahResumableAlgoObserver()]
+    observers = [IsaacAlgoObserver(), RLGPUAlgoObserver(), DirectInfoJsonlObserver(), DextrahResumableAlgoObserver()]
 
     if agent_cfg["wandb_activate"]:
         if not args_cli.distributed or int(app_launcher.local_rank) == 0:

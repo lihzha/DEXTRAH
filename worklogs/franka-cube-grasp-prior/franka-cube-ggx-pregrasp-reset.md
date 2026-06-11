@@ -402,3 +402,75 @@ Result:
 
 Next:
 - Patch, validate, commit/push/deploy exact commit, rerun the bounded RL smoke, and inspect scalar tags/values for finite rewards and prior reset metrics.
+
+## 2026-06-11T19:17:53Z - scalar-observer RL smoke relaunch record
+
+Goal:
+- Rerun the bounded prior-enabled RL smoke after enabling `RLGPUAlgoObserver`, so reward terms and prior reset metrics can be inspected as TensorBoard scalars.
+
+Hypothesis:
+- The same 64-env, 45-epoch smoke should still complete and checkpoint, but now the event file should contain scalar tags for direct env extras such as `cube_grasp_prior_reset_success_rate` plus episode/reward metrics.
+
+Change:
+- Commit `53e7011fd3794cfafe16459696e434eb1fd9e3b9` imports and installs `RLGPUAlgoObserver` in `train.py`.
+- Deployed exact commit to l401 agent worktree via Git bundle `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/.bundles/franka-cube-ggx-pregrasp-reset-53e7011.bundle`.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- implementation_commit: 53e7011fd3794cfafe16459696e434eb1fd9e3b9
+- remote_commit/status: l401 worktree detached at `53e7011fd3794cfafe16459696e434eb1fd9e3b9`
+
+Command / Job:
+- command: `python3 -m compileall dextrah_lab/rl_games/train.py dextrah_lab/rl_games/rl_games_utils.py`
+- command: `bash -n cluster/sbatch_train_teacher_8gpu.sh`
+- command: `sbatch --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=128G --time=01:00:00 --job-name=ggx_rl_scalar --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=53e7011fd3794cfafe16459696e434eb1fd9e3b9,TASK=Dextrah-Franka-Cube-Grasp,FULL_EXPERIMENT_NAME=franka_cube_ggx_pregrasp_rl_scalar_20260611_191753,NUM_ENVS=64,MAX_ITERATIONS=45,HORIZON_LENGTH=16,MINIBATCH_SIZE=1024,CENTRAL_VALUE_MINIBATCH_SIZE=1024,SAVE_FREQUENCY=15,DISTRIBUTED=False,MULTI_GPU=False,NPROC_PER_NODE=1,AUTO_RESUME=False,SELF_RELAUNCH=False,USE_CUDA_GRAPH=False,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_smoke.npz cluster/sbatch_train_teacher_8gpu.sh`
+- job_id: 1027687
+- run_dir: expected `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_rl_scalar_20260611_191753`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_1027687.out`
+- artifacts: expected params, non-empty TensorBoard event file with scalar tags, checkpoints, Slurm log
+
+Result:
+- status: submitted
+- metrics/artifacts: pending
+
+Analysis:
+- If this run still lacks scalar data, the next fallback should be a lightweight JSONL metrics sidecar from the observer, not full training.
+
+Next:
+- Submit, monitor, fetch artifacts, parse scalar tags/values, and only then decide whether final 8-GPU training is ready.
+
+## 2026-06-11T19:23:02Z - JSONL metric sidecar patch plan
+
+Goal:
+- Close the remaining RL-smoke evidence gap. The prior-enabled training path completes and checkpoints, but TensorBoard event files are still empty in the l401 Isaac runtime, so reward terms and reset-prior scalars cannot yet be inspected from the training artifact.
+
+Hypothesis:
+- A lightweight opt-in `AlgoObserver` can mirror direct env info/extras to rank-local JSONL files under the run directory. This is observability only: it does not alter actions, observations, rewards, terminations, PPO hyperparameters, reset mechanics, or default training behavior when the env var is not set.
+
+Change:
+- Add `DirectInfoJsonlObserver` to `dextrah_lab/rl_games/rl_games_utils.py`.
+- Install it in `dextrah_lab/rl_games/train.py`.
+- Add disabled-by-default `DEXTRAH_RLGAMES_JSONL_METRICS` forwarding to `cluster/sbatch_train_teacher_8gpu.sh`.
+- Rerun the same bounded one-GPU prior-enabled RL smoke with `DEXTRAH_RLGAMES_JSONL_METRICS=True`, then inspect the JSONL scalars for prior reset rates, pose/table metrics, reward terms, finite values, and training pathology before scaling up.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- base_commit: 53e7011fd3794cfafe16459696e434eb1fd9e3b9
+- implementation_commit: pending
+- changed_files: planned `dextrah_lab/rl_games/rl_games_utils.py`, `dextrah_lab/rl_games/train.py`, `cluster/sbatch_train_teacher_8gpu.sh`, this owned worklog
+
+Command / Job:
+- completed prior job: `1027687`
+- completed prior run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_rl_scalar_20260611_191753`
+- local checks after edit: `python3 -m compileall dextrah_lab/rl_games/train.py dextrah_lab/rl_games/rl_games_utils.py dextrah_lab/tasks/dextrah_franka_cube_grasp dextrah_lab/scene_scripts/export_franka_cube_graspgenx_library.py dextrah_lab/rl_games/validate_franka_cube_grasp_env.py`; `bash -n cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`
+- planned relaunch: same 64-env, 45-epoch prior-enabled smoke as `1027687`, with `DEXTRAH_RLGAMES_JSONL_METRICS=True`.
+
+Result:
+- status: patch_in_progress
+- metrics/artifacts from `1027687`: Slurm `COMPLETED` exit `0:0`; prior enabled in command and `params/env.yaml`; `cube_spawn_xy_randomization: 0.08`; checkpoints at epochs 15/30/45 with finite reward filenames `317.39478`, `569.0881`, and `581.206`; `summaries/events.out.tfevents...` remained `0 bytes`, so scalar inspection is still blocked.
+
+Analysis:
+- The scalar observer commit was not sufficient because the cluster TensorBoard writer still produced an empty file. JSONL sidecars are the minimal next step and are opt-in for smoke/final runs.
+
+Next:
+- Commit/push/deploy the JSONL observer patch, launch the short prior-enabled RL smoke with JSONL metrics enabled, inspect the resulting metric sidecar and checkpoints, then decide whether the full 8-GPU apple-to-apple training is ready.

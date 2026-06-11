@@ -28,6 +28,7 @@
 from collections import deque
 from typing import Callable
 
+import json
 import os
 import random
 import signal
@@ -243,6 +244,167 @@ class MultiObserver(AlgoObserver):
 
     def after_print_stats(self, frame, epoch_num, total_time):
         self._call_multi('after_print_stats', frame, epoch_num, total_time)
+
+
+class DirectInfoJsonlObserver(AlgoObserver):
+    """Writes direct environment scalars to rank-local JSONL sidecars.
+
+    TensorBoard event files are not always reliable in the headless cluster
+    runtime, so this observer provides a minimal opt-in artifact for smoke and
+    training inspection without changing the RL update path.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.algo = None
+        self._enabled = os.environ.get("DEXTRAH_RLGAMES_JSONL_METRICS", "0").lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        )
+        self._base_name = None
+        self._config = {}
+        self._experiment_name = None
+        self._direct_info = {}
+        self._file = None
+        self._path = None
+
+    def before_init(self, base_name, config, experiment_name):
+        self._base_name = base_name
+        self._config = config if isinstance(config, dict) else {}
+        self._experiment_name = experiment_name
+
+    def after_init(self, algo):
+        self.algo = algo
+        if not self._enabled:
+            return
+
+        run_dir = self._resolve_run_dir()
+        metrics_dir = os.path.join(run_dir, "metrics")
+        os.makedirs(metrics_dir, exist_ok=True)
+        self._path = os.path.join(metrics_dir, f"direct_info_rank_{self._rank()}.jsonl")
+        self._file = open(self._path, "a", encoding="utf-8")
+        print(f"[DEXTRAH metrics] writing direct info scalars to {self._path}")
+
+    def process_infos(self, infos, done_indices):
+        if not self._enabled or not isinstance(infos, dict):
+            return
+
+        flat_infos = flatten_dict(infos, prefix="", separator="/")
+        self._direct_info = {
+            key: scalar
+            for key, value in flat_infos.items()
+            for scalar in [self._to_scalar(value)]
+            if scalar is not None
+        }
+
+    def after_print_stats(self, frame, epoch_num, total_time):
+        if not self._enabled or self._file is None:
+            return
+
+        scalars = dict(self._direct_info)
+        scalars.update(self._collect_env_extras())
+        if not scalars:
+            return
+
+        record = {
+            "frame": int(frame),
+            "epoch": int(epoch_num),
+            "rank": self._rank(),
+            "world_size": self._world_size(),
+            "time": float(total_time),
+            "wall_time": time.time(),
+            "scalars": scalars,
+        }
+        self._file.write(json.dumps(record, sort_keys=True) + "\n")
+        self._file.flush()
+
+    def _resolve_run_dir(self):
+        train_dir = self._config.get("train_dir")
+        experiment_name = self._config.get("full_experiment_name") or self._experiment_name
+        if train_dir and experiment_name:
+            return os.path.join(str(train_dir), str(experiment_name))
+
+        writer = getattr(self.algo, "writer", None)
+        for attr in ("log_dir", "logdir"):
+            value = getattr(writer, attr, None)
+            if value:
+                path = os.path.abspath(str(value))
+                return os.path.dirname(path) if os.path.basename(path) == "summaries" else path
+
+        get_logdir = getattr(getattr(writer, "file_writer", None), "get_logdir", None)
+        if callable(get_logdir):
+            path = os.path.abspath(str(get_logdir()))
+            return os.path.dirname(path) if os.path.basename(path) == "summaries" else path
+
+        log_root = os.environ.get("DEXTRAH_LOG_ROOT", "logs")
+        run_name = os.environ.get("DEXTRAH_RUN_NAME", experiment_name or "unknown_run")
+        base_name = self._base_name or self._config.get("name") or "unknown_task"
+        return os.path.abspath(os.path.join(log_root, "rl_games", str(base_name), str(run_name)))
+
+    def _collect_env_extras(self):
+        env = self._find_env_with_extras()
+        if env is None:
+            return {}
+
+        extras = getattr(env, "extras", None)
+        if not isinstance(extras, dict):
+            return {}
+
+        flat_extras = flatten_dict(extras, prefix="", separator="/")
+        return {
+            f"env_extras/{key}": scalar
+            for key, value in flat_extras.items()
+            for scalar in [self._to_scalar(value)]
+            if scalar is not None
+        }
+
+    def _find_env_with_extras(self):
+        candidates = [getattr(self.algo, "vec_env", None)]
+        seen = set()
+        while candidates:
+            candidate = candidates.pop(0)
+            if candidate is None:
+                continue
+            ident = id(candidate)
+            if ident in seen:
+                continue
+            seen.add(ident)
+            if isinstance(getattr(candidate, "extras", None), dict):
+                return candidate
+            for attr in ("env", "unwrapped", "_env", "venv"):
+                child = getattr(candidate, attr, None)
+                if child is not None:
+                    candidates.append(child)
+        return None
+
+    def _to_scalar(self, value):
+        if isinstance(value, torch.Tensor):
+            if value.numel() != 1:
+                return None
+            return float(value.detach().cpu().item())
+        if isinstance(value, np.ndarray):
+            if value.size != 1:
+                return None
+            return float(value.reshape(()).item())
+        if isinstance(value, np.generic):
+            return float(value.item())
+        if isinstance(value, bool):
+            return float(value)
+        if isinstance(value, (float, int)):
+            return float(value)
+        return None
+
+    def _rank(self):
+        if self.algo is not None:
+            return int(getattr(self.algo, "global_rank", os.environ.get("RANK", 0)))
+        return int(os.environ.get("RANK", 0))
+
+    def _world_size(self):
+        if self.algo is not None:
+            return int(getattr(self.algo, "world_size", os.environ.get("WORLD_SIZE", 1)))
+        return int(os.environ.get("WORLD_SIZE", 1))
 
 
 class DextrahResumableAlgoObserver(AlgoObserver):
