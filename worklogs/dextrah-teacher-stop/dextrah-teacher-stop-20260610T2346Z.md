@@ -1267,3 +1267,49 @@ Analysis:
 Next:
 - Continue widened active monitoring, with the next tight polling window still
   expected near the wall-time signal around `2026-06-11 00:27 PDT`.
+
+## 2026-06-10 22:51 PDT - Teacher Monitor Metric Pass
+
+Goal:
+- Verify continued steady-state training health after the prior transient
+  throughput dip recovered.
+
+Command / Job:
+- job_id: `28955904`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28955904.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+- local TensorBoard copy:
+  `/tmp/dextrah_teacher_events`
+
+Result:
+- status: running healthy.
+- scheduler: `RUNNING` on `batch-block5-03072`, elapsed `02:08:32`,
+  time left `01:41:28` at `22:51:05 PDT`.
+- stdout advanced to epoch `17500/20000`.
+- latest complete checkpoint:
+  `last_dextrah_lstm_ep_17500_rew_653.61145.pth` at `22:51:04`.
+- runtime sidecars rank `0-7` all refreshed at `22:51:02`.
+- narrow critical failure scan over recent stdout returned no matches.
+- TensorBoard summaries parsed through epoch `17479` for epoch-keyed scalars.
+- `in_success_region/iter`: latest `0.46167`, last-50 `0.461421`,
+  last-200 `0.467341`, post-resume mean `0.46276`.
+- `rewards/iter`: latest `641.475`, last-50 `646.843`,
+  last-200 `648.88`, post-resume mean `643.009`.
+- `num_adr_increases/iter`: latest `50`, last-50 `50`.
+- `info/kl`: latest `0.00540916`, last-50 `0.00449403`,
+  last-200 `0.00471028`.
+- `losses/a_loss`: latest `-0.00346748`, last-50 `-0.00319876`.
+- `losses/c_loss`: latest `0.0253422`, last-50 `0.0233809`.
+- `performance/step_inference_rl_update_fps`: latest `112045`,
+  last-20 about `110814`, last-50 about `110787`, last-200 about `109106`.
+
+Analysis:
+- Training remains healthy. The prior throughput dip recovered, checkpoint and
+  sidecar cadence remains intact, success and reward are steady, KL is
+  controlled, and losses remain low without divergence.
+
+Next:
+- Continue widened monitoring until closer to the expected wall-time TERM
+  signal around `2026-06-11 00:27 PDT`.
