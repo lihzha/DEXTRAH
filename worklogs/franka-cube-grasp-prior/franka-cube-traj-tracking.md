@@ -2406,3 +2406,18 @@ Analysis:
 Next:
 - Commit/push the validation artifact summarizer and worklog result.
 - Launch exactly one tiny PPO smoke from the pushed branch, then run fixed-seed and random-seed short video evals from its checkpoint if a checkpoint is produced. Fetch each eval's metrics/video/trace artifacts, generate plots/reports/contact sheets, `viz-open` them, and record pass/fail interpretation before any further action.
+
+## 2026-06-11T15:12:47-07:00 - artifact lineage clarification before PPO smoke
+
+Goal:
+- Make the trajectory-tracking artifact lineage explicit before launching the next bounded PPO smoke, because the user asked specifically about the older `actionscale-rewinf-diag-video480-step-0.mp4`.
+
+Lineage:
+- `franka_cube_traj_tracking_actionscale_rewinf_diag_video480_20260611_144318/videos/actionscale-rewinf-diag-video480-step-0.mp4`: earlier failed learned-policy diagnostic from the pathological `1027751` `rew_-inf` checkpoint. It showed zero success/lift, worsening EE/finger distances, and the hand drifting/hovering rather than grasping. It is not the current action-alignment run.
+- `franka_cube_traj_tracking_refdelta_video480_20260611_145440/videos/refdelta-video480-step-0.mp4`: policy-free feasibility diagnostic. `ACTION_SOURCE=reference_delta` is position-only delta IK plus gripper schedule, not cuRobo replay and not a learned policy. It produced contact/transient lift and showed the transformed reference plus current action interface are not impossible.
+- `1027763` / `franka_cube_traj_tracking_actionalign_env_smoke_20260611_150840`: current action-alignment wiring smoke. It passed with action-alignment metrics present/finite, target unsafe max `0.0`, target clearance min `0.06511414051055908`, no early done, but no video because it was launched before the stricter visual artifact cadence.
+- Next run: one bounded tiny PPO smoke under the action-alignment diagnostic config, followed by fixed-seed and random-seed short video eval bundles if a checkpoint is produced. Each eval bundle must include video/contact sheet, trace CSV/JSONL, reward/action-alignment plot, report, train-vs-eval consistency JSON, `viz-open` URLs, and a pass/fail interpretation of whether the policy follows the object-conditioned reference instead of drifting.
+
+Status:
+- Current branch commit before PPO launch: `a0a92c04fdd4d3f3b132c73aaa3f1f66590837e7`.
+- Local worktree was clean before this worklog-only clarification.
