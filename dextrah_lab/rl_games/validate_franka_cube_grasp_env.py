@@ -28,6 +28,10 @@ parser.add_argument(
     default=None,
     help="Optional compact task-space reference JSON for the trajectory-tracking task variant.",
 )
+parser.add_argument("--trajectory_tracking_action_alignment_weight", type=float, default=None)
+parser.add_argument("--trajectory_tracking_action_alignment_phase_start", type=float, default=None)
+parser.add_argument("--trajectory_tracking_action_alignment_sharpness", type=float, default=None)
+parser.add_argument("--trajectory_tracking_action_alignment_use_contact_gate", type=str, default=None)
 parser.add_argument("--camera_eye", type=float, nargs=3, default=None, help="Viewport camera eye for validation video.")
 parser.add_argument(
     "--camera_target", type=float, nargs=3, default=None, help="Viewport camera target for validation video."
@@ -82,6 +86,17 @@ def _camera_tuple(values: list[float] | tuple[float, float, float] | None):
     if values is None:
         return None
     return tuple(float(v) for v in values)
+
+
+def _optional_bool(value: str | None) -> bool | None:
+    if value is None:
+        return None
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"Expected boolean string, got {value!r}")
 
 
 def _configure_validation_camera(env_cfg, task_env=None) -> None:
@@ -602,6 +617,13 @@ def _run_short_rollout(env, task_env, checks: CheckRecorder, num_steps: int, pri
         "cube_traj_tracking_lift_action_reward_ceiling",
         "cube_traj_tracking_close_action_utilization",
         "cube_traj_tracking_lift_action_utilization",
+        "cube_traj_tracking_action_alignment_reward",
+        "cube_traj_tracking_action_alignment_reward_ceiling",
+        "cube_traj_tracking_action_alignment_utilization",
+        "cube_traj_tracking_action_alignment_error",
+        "cube_traj_tracking_action_alignment_mse",
+        "cube_traj_tracking_action_alignment_phase_gate",
+        "cube_traj_tracking_action_alignment_contact_gate",
         "cube_traj_tracking_closed_target_gate",
         "cube_traj_tracking_close_phase_gate",
         "cube_traj_tracking_lift_phase_gate",
@@ -612,6 +634,10 @@ def _run_short_rollout(env, task_env, checks: CheckRecorder, num_steps: int, pri
         "cube_traj_tracking_action_up",
         "cube_traj_tracking_action_z",
         "cube_traj_tracking_gripper_action",
+        "cube_traj_tracking_reference_action_close",
+        "cube_traj_tracking_reference_action_up",
+        "cube_traj_tracking_reference_action_z",
+        "cube_traj_tracking_reference_gripper_action",
         "cube_traj_tracking_effective_phase_weight",
         "cube_traj_tracking_reference_reweight",
         "cube_traj_tracking_tracking_term_weight",
@@ -633,6 +659,12 @@ def _run_short_rollout(env, task_env, checks: CheckRecorder, num_steps: int, pri
     tracking_lift_action_reward_ceiling_values: list[float] = []
     tracking_close_action_utilization_values: list[float] = []
     tracking_lift_action_utilization_values: list[float] = []
+    tracking_action_alignment_reward_values: list[float] = []
+    tracking_action_alignment_reward_ceiling_values: list[float] = []
+    tracking_action_alignment_utilization_values: list[float] = []
+    tracking_action_alignment_error_values: list[float] = []
+    tracking_action_alignment_phase_gate_values: list[float] = []
+    tracking_action_alignment_contact_gate_values: list[float] = []
     tracking_contact_gate_values: list[float] = []
     tracking_contact_distance_gate_values: list[float] = []
     tracking_finger_balance_gate_values: list[float] = []
@@ -640,6 +672,8 @@ def _run_short_rollout(env, task_env, checks: CheckRecorder, num_steps: int, pri
     tracking_term_weight_values: list[float] = []
     tracking_action_close_values: list[float] = []
     tracking_action_up_values: list[float] = []
+    tracking_reference_action_close_values: list[float] = []
+    tracking_reference_action_up_values: list[float] = []
     tracking_close_phase_gate_values: list[float] = []
     tracking_lift_phase_gate_values: list[float] = []
     for step in range(num_steps):
@@ -694,6 +728,18 @@ def _run_short_rollout(env, task_env, checks: CheckRecorder, num_steps: int, pri
                     tracking_close_action_utilization_values.append(_mean(value))
                 elif key == "cube_traj_tracking_lift_action_utilization":
                     tracking_lift_action_utilization_values.append(_mean(value))
+                elif key == "cube_traj_tracking_action_alignment_reward":
+                    tracking_action_alignment_reward_values.append(_mean(value))
+                elif key == "cube_traj_tracking_action_alignment_reward_ceiling":
+                    tracking_action_alignment_reward_ceiling_values.append(_mean(value))
+                elif key == "cube_traj_tracking_action_alignment_utilization":
+                    tracking_action_alignment_utilization_values.append(_mean(value))
+                elif key == "cube_traj_tracking_action_alignment_error":
+                    tracking_action_alignment_error_values.append(_mean(value))
+                elif key == "cube_traj_tracking_action_alignment_phase_gate":
+                    tracking_action_alignment_phase_gate_values.append(_mean(value))
+                elif key == "cube_traj_tracking_action_alignment_contact_gate":
+                    tracking_action_alignment_contact_gate_values.append(_mean(value))
                 elif key == "cube_traj_tracking_contact_gate":
                     tracking_contact_gate_values.append(_mean(value))
                 elif key == "cube_traj_tracking_contact_distance_gate":
@@ -708,6 +754,10 @@ def _run_short_rollout(env, task_env, checks: CheckRecorder, num_steps: int, pri
                     tracking_action_close_values.append(_mean(value))
                 elif key == "cube_traj_tracking_action_up":
                     tracking_action_up_values.append(_mean(value))
+                elif key == "cube_traj_tracking_reference_action_close":
+                    tracking_reference_action_close_values.append(_mean(value))
+                elif key == "cube_traj_tracking_reference_action_up":
+                    tracking_reference_action_up_values.append(_mean(value))
                 elif key == "cube_traj_tracking_close_phase_gate":
                     tracking_close_phase_gate_values.append(_mean(value))
                 elif key == "cube_traj_tracking_lift_phase_gate":
@@ -795,6 +845,29 @@ def _run_short_rollout(env, task_env, checks: CheckRecorder, num_steps: int, pri
             / len(tracking_lift_action_utilization_values)
             if tracking_lift_action_utilization_values
             else None,
+            "tracking_action_alignment_reward_mean": sum(tracking_action_alignment_reward_values)
+            / len(tracking_action_alignment_reward_values)
+            if tracking_action_alignment_reward_values
+            else None,
+            "tracking_action_alignment_reward_ceiling_mean": sum(tracking_action_alignment_reward_ceiling_values)
+            / len(tracking_action_alignment_reward_ceiling_values)
+            if tracking_action_alignment_reward_ceiling_values
+            else None,
+            "tracking_action_alignment_utilization_mean": sum(tracking_action_alignment_utilization_values)
+            / len(tracking_action_alignment_utilization_values)
+            if tracking_action_alignment_utilization_values
+            else None,
+            "tracking_action_alignment_error_mean": sum(tracking_action_alignment_error_values)
+            / len(tracking_action_alignment_error_values)
+            if tracking_action_alignment_error_values
+            else None,
+            "tracking_action_alignment_phase_gate_final": tracking_action_alignment_phase_gate_values[-1]
+            if tracking_action_alignment_phase_gate_values
+            else None,
+            "tracking_action_alignment_contact_gate_mean": sum(tracking_action_alignment_contact_gate_values)
+            / len(tracking_action_alignment_contact_gate_values)
+            if tracking_action_alignment_contact_gate_values
+            else None,
             "tracking_contact_gate_mean": sum(tracking_contact_gate_values) / len(tracking_contact_gate_values)
             if tracking_contact_gate_values
             else None,
@@ -818,6 +891,14 @@ def _run_short_rollout(env, task_env, checks: CheckRecorder, num_steps: int, pri
             else None,
             "tracking_action_up_mean": sum(tracking_action_up_values) / len(tracking_action_up_values)
             if tracking_action_up_values
+            else None,
+            "tracking_reference_action_close_mean": sum(tracking_reference_action_close_values)
+            / len(tracking_reference_action_close_values)
+            if tracking_reference_action_close_values
+            else None,
+            "tracking_reference_action_up_mean": sum(tracking_reference_action_up_values)
+            / len(tracking_reference_action_up_values)
+            if tracking_reference_action_up_values
             else None,
             "tracking_close_phase_gate_final": tracking_close_phase_gate_values[-1]
             if tracking_close_phase_gate_values
@@ -877,6 +958,24 @@ def main() -> None:
         env_cfg.trajectory_tracking_reference_path = str(
             Path(args_cli.trajectory_tracking_reference_path).expanduser().resolve()
         )
+    trajectory_overrides = {
+        "trajectory_tracking_action_alignment_weight": args_cli.trajectory_tracking_action_alignment_weight,
+        "trajectory_tracking_action_alignment_phase_start": args_cli.trajectory_tracking_action_alignment_phase_start,
+        "trajectory_tracking_action_alignment_sharpness": args_cli.trajectory_tracking_action_alignment_sharpness,
+    }
+    for name, value in trajectory_overrides.items():
+        if value is not None:
+            if not hasattr(env_cfg, name):
+                raise ValueError(f"--{name} was provided for a task config without {name}")
+            setattr(env_cfg, name, float(value))
+    use_contact_gate = _optional_bool(args_cli.trajectory_tracking_action_alignment_use_contact_gate)
+    if use_contact_gate is not None:
+        if not hasattr(env_cfg, "trajectory_tracking_action_alignment_use_contact_gate"):
+            raise ValueError(
+                "--trajectory_tracking_action_alignment_use_contact_gate was provided for a task config "
+                "without trajectory_tracking_action_alignment_use_contact_gate"
+            )
+        env_cfg.trajectory_tracking_action_alignment_use_contact_gate = bool(use_contact_gate)
     _configure_validation_camera(env_cfg)
 
     checks = CheckRecorder()

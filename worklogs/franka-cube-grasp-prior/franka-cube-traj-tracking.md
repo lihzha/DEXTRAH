@@ -2316,3 +2316,47 @@ Analysis:
 Next:
 - Do not scale RL training yet.
 - Next bounded debugging should use this evidence to make learned policy actions easier to compare against the scripted prior: either add a short diagnostic eval that mixes/clamps learned actions toward `reference_delta` for close/up dimensions, or add a behavior-cloning/action-prior reward/log that penalizes divergence from the reference-delta action in contact/lift phases. The first check should remain eval/smoke-only with video/trace/report artifacts and `curobo_validated=false` explicit.
+
+## 2026-06-11T15:02:24-07:00 - reference-action alignment diagnostic plan
+
+Goal:
+- Test whether PPO can be made to emit useful reference-like close/up actions now that the policy-free `reference_delta` baseline proved the transformed task-space reference and current delta-IK action interface can produce contact/transient lift.
+
+Hypothesis:
+- The learned checkpoint failed because the reward does not make reference-like close/up/vertical actions salient early enough for PPO. A small auxiliary reward that aligns the policy action with the same position-only `reference_delta` action vector used in the sanity eval should increase close/up utilization in a tiny smoke if action incentives are the primary issue.
+
+Planned Change:
+- `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env_cfg.py`: add diagnostic-only config fields for action-alignment weight, phase start, optional contact gate, position/gripper dimensions, and sharpness. Keep defaults scoped to `Dextrah-Franka-Cube-Grasp-Traj-Tracking`; baseline `Dextrah-Franka-Cube-Grasp` remains unchanged.
+- `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env.py`: factor the `reference_delta` action computation into the task variant, add a gated action-alignment reward against policy actions, and log target/policy action means, alignment error, reward, ceiling, utilization, and gate.
+- `dextrah_lab/rl_games/eval_rollout.py`: reuse the task helper for `ACTION_SOURCE=reference_delta` when available; include action-alignment config in eval env summaries for train-vs-eval consistency.
+- `dextrah_lab/rl_games/validate_franka_cube_grasp_env.py`: require/summarize the new action-alignment logs in the env smoke.
+- `dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py`: add action-alignment config checks and summary/report fields so the tiny eval artifacts show whether PPO action utilization moves toward the prior.
+- `cluster/sbatch_train_teacher_8gpu.sh`, `cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`, and `cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`: add environment-variable overrides for the new diagnostic knobs so the run is reproducible from Slurm logs.
+
+Validation Plan:
+- Local cheap checks: `python3 -m py_compile` on touched Python files, `bash -n` on touched wrappers, and `git diff --check`.
+- Commit/push/deploy exact commit to the B l401 worktree.
+- Launch one bounded 4-env env smoke for `Dextrah-Franka-Cube-Grasp-Traj-Tracking` with the same unvalidated compact reference. Acceptance: registration works, reset obs remains `[4,72]`, new alignment logs are present/finite, target unsafe remains `0.0`, target clearance stays above `0.025`, no immediate reset pathology.
+- If env smoke passes, launch one tiny RL smoke only, with no auto-resume/self-relaunch and no scale-up claim. Then run one short video eval from the resulting checkpoint with fixed-window metrics, trace CSV/JSONL, report, plot, consistency JSON, video/contact sheet, and `viz-open` URLs.
+
+Acceptance Criteria:
+- No long training and no A100 scale-up.
+- Original `Dextrah-Franka-Cube-Grasp` baseline remains untouched and runnable.
+- Observation/state/action dimensions remain baseline-sized (`72`/`72`/`7`); no phase observations.
+- Reference caveat remains explicit: `reference_delta` is position-only delta IK plus gripper schedule, not cuRobo replay or learned policy, and the compact reference remains `curobo_validated=false`.
+- The diagnostic answer should be whether alignment reward produces nonzero, interpretable action-alignment reward/utilization and whether the tiny PPO eval emits more reference-like close/up actions than the previous `rew_-inf` checkpoint.
+
+Result:
+- status: implemented locally; cluster env smoke pending.
+- changed_files: `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env_cfg.py`, `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env.py`, `dextrah_lab/rl_games/eval_rollout.py`, `dextrah_lab/rl_games/validate_franka_cube_grasp_env.py`, `dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py`, `cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`, `cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`, `cluster/sbatch_train_teacher_8gpu.sh`, this worklog.
+- implementation: added `compute_reference_delta_actions()` to the trajectory-tracking task and reused it from eval; added a reward-only `trajectory_tracking_action_alignment_*` diagnostic term that compares policy actions against the reference-delta target over XY/Z/gripper dims, with phase/contact gates and logs for reward, ceiling, utilization, error, target close/up/z/gripper, and policy close/up.
+- config: default diagnostic settings are `trajectory_tracking_action_alignment_weight=1.5`, phase start `0.0`, sharpness `1.0`, contact gate disabled, XY/Z/gripper included. This remains only on `Dextrah-Franka-Cube-Grasp-Traj-Tracking`; baseline `Dextrah-Franka-Cube-Grasp` is not modified.
+- artifact support: eval metrics/env config and summarizer now include action-alignment knobs and metrics; trace plot height increased to render all four panels, including lift/action.
+- wrapper support: validate/eval/train wrappers echo and pass optional `TRAJECTORY_TRACKING_ACTION_ALIGNMENT_*` overrides.
+- local_validation: `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env_cfg.py dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/validate_franka_cube_grasp_env.py dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py` passed.
+- local_validation: `bash -n cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh && bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh && bash -n cluster/sbatch_train_teacher_8gpu.sh` passed.
+- local_validation: `git diff --check` passed.
+
+Next:
+- Commit/push/deploy exact implementation commit to the B l401 worktree.
+- Launch one 4-env/480-step alignment env smoke with no video first. If it passes and logs are finite/present with target safety intact, launch the tiny PPO smoke and a short video eval artifact bundle. No scale-up.

@@ -86,7 +86,7 @@ def _fmt(value: object, digits: int = 6) -> str:
 
 
 def _draw_plot(steps: list[dict[str, object]], output_path: Path) -> None:
-    width, height = 1500, 1050
+    width, height = 1500, 1400
     margin_l, margin_r, margin_t = 96, 42, 76
     panel_h, panel_gap = 245, 86
     image = Image.new("RGB", (width, height), "white")
@@ -123,6 +123,7 @@ def _draw_plot(steps: list[dict[str, object]], output_path: Path) -> None:
                 ("contact gate", "cube_traj_tracking_contact_gate", (60, 150, 70), 1.0),
                 ("close reward", "cube_traj_tracking_close_action_reward", (210, 110, 45), 0.35),
                 ("lift reward", "cube_traj_tracking_lift_action_reward", (150, 75, 170), 0.35),
+                ("align reward", "cube_traj_tracking_action_alignment_reward", (40, 150, 150), 0.75),
             ],
         ),
         (
@@ -183,6 +184,10 @@ def _consistency(train_env: dict[str, object], eval_env: dict[str, object]) -> d
         "trajectory_tracking_reference_reweight_phase_start",
         "trajectory_tracking_reference_late_weight_scale",
         "trajectory_tracking_min_target_gripper_width",
+        "trajectory_tracking_action_alignment_weight",
+        "trajectory_tracking_action_alignment_phase_start",
+        "trajectory_tracking_action_alignment_sharpness",
+        "trajectory_tracking_action_alignment_use_contact_gate",
     ]
     rows = {}
     mismatches = []
@@ -238,6 +243,14 @@ def main() -> None:
         "lift_action_reward_mean": _summary(summary, "cube_traj_tracking_lift_action_reward", "mean"),
         "close_action_utilization_mean": _summary(summary, "cube_traj_tracking_close_action_utilization", "mean"),
         "lift_action_utilization_mean": _summary(summary, "cube_traj_tracking_lift_action_utilization", "mean"),
+        "action_alignment_reward_mean": _summary(summary, "cube_traj_tracking_action_alignment_reward", "mean"),
+        "action_alignment_reward_final": _summary(summary, "cube_traj_tracking_action_alignment_reward", "final"),
+        "action_alignment_utilization_mean": _summary(
+            summary, "cube_traj_tracking_action_alignment_utilization", "mean"
+        ),
+        "action_alignment_error_mean": _summary(summary, "cube_traj_tracking_action_alignment_error", "mean"),
+        "reference_action_close_mean": _summary(summary, "cube_traj_tracking_reference_action_close", "mean"),
+        "reference_action_up_mean": _summary(summary, "cube_traj_tracking_reference_action_up", "mean"),
         "fixed_windows": {
             window_name: {
                 "reward_mean": _window_metric(summary, window_name, "reward_mean", "mean"),
@@ -253,6 +266,15 @@ def main() -> None:
                 ),
                 "lift_utilization_mean": _window_metric(
                     summary, window_name, "cube_traj_tracking_lift_action_utilization", "mean"
+                ),
+                "action_alignment_reward_mean": _window_metric(
+                    summary, window_name, "cube_traj_tracking_action_alignment_reward", "mean"
+                ),
+                "action_alignment_utilization_mean": _window_metric(
+                    summary, window_name, "cube_traj_tracking_action_alignment_utilization", "mean"
+                ),
+                "action_alignment_error_mean": _window_metric(
+                    summary, window_name, "cube_traj_tracking_action_alignment_error", "mean"
                 ),
                 "unsafe_target_rate_max": _window_metric(
                     summary, window_name, "cube_traj_tracking_unsafe_target_rate", "max"
@@ -288,6 +310,8 @@ def main() -> None:
                     _fmt(window["gripper_width_mean"], 4),
                     _fmt(window["close_utilization_mean"], 4),
                     _fmt(window["lift_utilization_mean"], 4),
+                    _fmt(window["action_alignment_reward_mean"], 4),
+                    _fmt(window["action_alignment_error_mean"], 4),
                     _fmt(window["target_clearance_min"], 4),
                     _fmt(window["lift_height_max"], 4),
                     _fmt(window["success_rate_mean"], 4),
@@ -297,8 +321,8 @@ def main() -> None:
         )
     window_table = "\n".join(
         [
-            "| Window | Reward | EE-target | EE-cube | Finger-cube | Grip width | Close util | Lift util | Target clearance min | Lift max | Success |",
-            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+            "| Window | Reward | EE-target | EE-cube | Finger-cube | Grip width | Close util | Lift util | Align reward | Align err | Target clearance min | Lift max | Success |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
             *window_rows,
         ]
     )
@@ -325,6 +349,9 @@ def main() -> None:
 - contact gate mean: {_fmt(compact['contact_gate_mean'])}
 - close/lift action reward mean: {_fmt(compact['close_action_reward_mean'])} / {_fmt(compact['lift_action_reward_mean'])}
 - close/lift utilization mean: {_fmt(compact['close_action_utilization_mean'])} / {_fmt(compact['lift_action_utilization_mean'])}
+- action-alignment reward mean/final: {_fmt(compact['action_alignment_reward_mean'])} / {_fmt(compact['action_alignment_reward_final'])}
+- action-alignment utilization/error mean: {_fmt(compact['action_alignment_utilization_mean'])} / {_fmt(compact['action_alignment_error_mean'])}
+- reference close/up action mean: {_fmt(compact['reference_action_close_mean'])} / {_fmt(compact['reference_action_up_mean'])}
 
 ## Fixed-Window Rollout Metrics
 

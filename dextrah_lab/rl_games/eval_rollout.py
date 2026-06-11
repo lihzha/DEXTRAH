@@ -240,6 +240,8 @@ def _reference_delta_actions(task_env) -> torch.Tensor:
 
     if not hasattr(task_env, "traj_target_ee_pos"):
         raise ValueError("reference_delta action source requires a trajectory-tracking task environment.")
+    if hasattr(task_env, "compute_reference_delta_actions"):
+        return task_env.compute_reference_delta_actions()
     if hasattr(task_env, "_compute_intermediate_values"):
         task_env._compute_intermediate_values()
     if hasattr(task_env, "_update_trajectory_tracking_targets"):
@@ -370,6 +372,13 @@ def _env_config_summary(env_cfg, task_env) -> dict[str, object]:
         "trajectory_tracking_reference_reweight_phase_start",
         "trajectory_tracking_reference_late_weight_scale",
         "trajectory_tracking_min_target_gripper_width",
+        "trajectory_tracking_action_alignment_weight",
+        "trajectory_tracking_action_alignment_phase_start",
+        "trajectory_tracking_action_alignment_sharpness",
+        "trajectory_tracking_action_alignment_use_contact_gate",
+        "trajectory_tracking_action_alignment_include_xy",
+        "trajectory_tracking_action_alignment_include_z",
+        "trajectory_tracking_action_alignment_include_gripper",
         "trajectory_tracking_min_target_table_clearance",
         "trajectory_tracking_follow_current_cube_pose",
     ]

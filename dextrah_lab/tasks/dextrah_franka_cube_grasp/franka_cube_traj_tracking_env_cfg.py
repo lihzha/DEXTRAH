@@ -48,6 +48,16 @@ class DextrahFrankaCubeTrajTrackingEnvCfg(DextrahFrankaCubeGraspEnvCfg):
     # safe phase weight.
     trajectory_tracking_reference_reweight_phase_start = 0.55
     trajectory_tracking_reference_late_weight_scale = 0.35
+    # Diagnostic action-prior term: reward policy actions for matching the
+    # same position-only reference_delta action used by the scripted sanity
+    # eval.  This is intentionally reward-only and does not change observations.
+    trajectory_tracking_action_alignment_weight = 1.5
+    trajectory_tracking_action_alignment_phase_start = 0.0
+    trajectory_tracking_action_alignment_sharpness = 1.0
+    trajectory_tracking_action_alignment_use_contact_gate = False
+    trajectory_tracking_action_alignment_include_xy = True
+    trajectory_tracking_action_alignment_include_z = True
+    trajectory_tracking_action_alignment_include_gripper = True
     # GraspGenX exports use zero as a close command.  In this DEXTRAH task the
     # tracked value is measured fingertip-body separation, so clamp close-phase
     # targets to the contact-width scale used by the cube reward checks.
