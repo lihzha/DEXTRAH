@@ -9,7 +9,8 @@ This script is intentionally DEXTRAH-owned, but it reuses the GraspGenX
 2. Build a DEXTRAH-coordinate tabletop scene for GraspGenX and cuRobo.
 3. Run GraspGenX grasp inference.
 4. Run cuRobo approach/grasp/lift planning.
-5. Replay the plan in Newton and export ``trajectory.json``.
+5. Export ``trajectory.json`` with either Newton dynamic playback or a
+   kinematic attached-object fallback.
 
 The exported trajectory can be rendered by
 ``render_star_kitting_env.py --franka_motion trajectory``.
@@ -259,12 +260,85 @@ def _make_env_config(args: argparse.Namespace, run_dir: Path, star_mesh: Path) -
 class PlanSummary:
     status: str
     run_name: str
+    playback_mode: str
     trajectory_json: str
     selected_grasp_index: int
     selected_grasp_confidence: float
     num_grasps: int
     plan_segments: dict[str, int]
     task_segments: dict[str, int]
+
+
+def _joint_cfg_from_row(profile: Any, joint_row: Any) -> dict[str, float]:
+    n_arm = int(profile.n_arm)
+    cfg: dict[str, float] = {}
+    for name, value in zip(profile.arm_joint_names, joint_row[:n_arm]):
+        cfg[name] = float(value)
+    for idx, name in enumerate(profile.gripper_joint_names):
+        col = n_arm + idx
+        cfg[name] = (
+            float(joint_row[col])
+            if col < len(joint_row)
+            else profile.open_value(name)
+        )
+    return cfg
+
+
+def _attachment_start_frame(segments: list[tuple[str, int]]) -> int:
+    frame = 0
+    for name, count in segments:
+        if name in {"hold_after_close", "lift_object", "hold_after_lift"}:
+            return frame
+        frame += int(count)
+    return frame
+
+
+def _augment_kinematic_object_poses(
+    trajectory_json: Path,
+    *,
+    fk: Any,
+    profile: Any,
+    bundle: Any,
+    joint_traj: Any,
+    segments: list[tuple[str, int]],
+    grasp_world_T: Any,
+) -> None:
+    import numpy as np
+    import trimesh.transformations as tra
+
+    payload = json.loads(trajectory_json.read_text(encoding="utf-8"))
+    frames = payload.get("frames", [])
+    if not isinstance(frames, list):
+        raise ValueError(f"Expected list of frames in {trajectory_json}")
+
+    object_initial_T = np.asarray(bundle.object_world_T, dtype=float)
+    tool_at_grasp_T = np.asarray(grasp_world_T, dtype=float) @ np.asarray(
+        profile.grasp_to_tool_transform, dtype=float
+    )
+    object_in_tool_T = tra.inverse_matrix(tool_at_grasp_T) @ object_initial_T
+    attach_start = _attachment_start_frame(segments)
+
+    for idx, frame in enumerate(frames):
+        if idx < attach_start or idx >= len(joint_traj):
+            object_T = object_initial_T
+        else:
+            cfg = _joint_cfg_from_row(profile, joint_traj[idx])
+            link_poses = fk.fk(
+                cfg,
+                base_T=bundle.robot_base_T,
+                link_names=[profile.tool_frame],
+            )
+            object_T = (
+                np.asarray(link_poses[profile.tool_frame], dtype=float)
+                @ object_in_tool_T
+            )
+        frame.setdefault("object_poses", {})["object"] = object_T.tolist()
+
+    payload.setdefault("dextrah", {})
+    payload["dextrah"]["object_pose_mode"] = "kinematic_attached_to_tool"
+    payload["dextrah"]["object_pose_object_id"] = "object"
+    payload["dextrah"]["attachment_start_frame"] = int(attach_start)
+    trajectory_json.write_text(json.dumps(payload), encoding="utf-8")
 
 
 def parse_args() -> argparse.Namespace:
@@ -283,6 +357,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--rank_grasps_by_confidence", action="store_true")
     parser.add_argument("--sim_fps", type=int, default=60)
     parser.add_argument("--sim_dt", type=float, default=0.001)
+    parser.add_argument(
+        "--playback_mode",
+        choices=("dynamic", "kinematic"),
+        default="dynamic",
+        help=(
+            "dynamic replays the plan in Newton; kinematic exports planned "
+            "joints and attaches the object after close."
+        ),
+    )
     parser.add_argument("--settle_frames", type=int, default=30)
     parser.add_argument("--object_mass", type=float, default=0.05)
     parser.add_argument("--object_mu", type=float, default=10.0)
@@ -430,25 +513,57 @@ def main() -> None:
     )
 
     trajectory_json = run_dir / "trajectory.json"
-    from dynamic_playback import simulate_and_export
 
     camera = (env_cfg.get("visual") or {}).get("camera", {})
-    simulate_and_export(
-        bundle=bundle,
-        profile=profile,
-        joint_traj=task_result.joint_traj,
-        out_path=trajectory_json,
-        grasps_world=grasps_world,
-        target_idx=target_idx,
-        camera_eye=list(camera.get("eye", [0.45, -0.92, 2.10])),
-        camera_target=list(camera.get("target", [float(args.table_center_x), 0.0, 0.866])),
-        sim_fps=int(args.sim_fps),
-        sim_dt=float(args.sim_dt),
-        settle_frames=int(args.settle_frames),
-        object_mass=float(args.object_mass),
-        object_mu=float(args.object_mu),
-        finger_mu=float(args.finger_mu),
+    camera_eye = list(camera.get("eye", [0.45, -0.92, 2.10]))
+    camera_target = list(
+        camera.get("target", [float(args.table_center_x), 0.0, 0.866])
     )
+    if args.playback_mode == "dynamic":
+        from dynamic_playback import simulate_and_export
+
+        simulate_and_export(
+            bundle=bundle,
+            profile=profile,
+            joint_traj=task_result.joint_traj,
+            out_path=trajectory_json,
+            grasps_world=grasps_world,
+            target_idx=target_idx,
+            camera_eye=camera_eye,
+            camera_target=camera_target,
+            sim_fps=int(args.sim_fps),
+            sim_dt=float(args.sim_dt),
+            settle_frames=int(args.settle_frames),
+            object_mass=float(args.object_mass),
+            object_mu=float(args.object_mu),
+            finger_mu=float(args.finger_mu),
+        )
+    else:
+        from e2e_grasp_demo import export_trajectory
+        from trajectory_visualizer import URDFFK
+
+        fk = URDFFK(profile.urdf_path, asset_root=profile.asset_root_path)
+        export_trajectory(
+            bundle=bundle,
+            fk=fk,
+            profile=profile,
+            joint_traj=task_result.joint_traj,
+            grasps_world=grasps_world,
+            target_idx=target_idx,
+            camera_eye=camera_eye,
+            camera_target=camera_target,
+            output_path=trajectory_json,
+            fps=int(args.sim_fps),
+        )
+        _augment_kinematic_object_poses(
+            trajectory_json,
+            fk=fk,
+            profile=profile,
+            bundle=bundle,
+            joint_traj=task_result.joint_traj,
+            segments=task_result.segments,
+            grasp_world_T=grasps_world[target_idx],
+        )
 
     plan_segments_src = getattr(result, "_segments", {}) if result is not None else {}
     plan_segments = {
@@ -464,6 +579,7 @@ def main() -> None:
     summary = PlanSummary(
         status="passed",
         run_name=run_name,
+        playback_mode=str(args.playback_mode),
         trajectory_json=str(trajectory_json),
         selected_grasp_index=int(target_idx),
         selected_grasp_confidence=float(conf[target_idx]),

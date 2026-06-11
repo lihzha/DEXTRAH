@@ -47,6 +47,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--video_seconds", type=float, default=3.0)
     parser.add_argument("--capture_video", action="store_true", help="Capture an overview PNG sequence.")
     parser.add_argument("--sim_steps_per_frame", type=int, default=2)
+    parser.add_argument(
+        "--physics_dt",
+        type=float,
+        default=1.0 / 60.0,
+        help="PhysX simulation timestep in seconds.",
+    )
     parser.add_argument("--settle_steps", type=int, default=30)
     parser.add_argument("--physics_device", default="cpu", help="PhysX device used by SimulationContext.")
     parser.add_argument(
@@ -115,18 +121,192 @@ def parse_args() -> argparse.Namespace:
         help="GraspGenX/cuRobo trajectory.json used when --franka_motion trajectory.",
     )
     parser.add_argument(
+        "--franka_trajectory_playback",
+        choices=("target", "state"),
+        default="target",
+        help=(
+            "Trajectory playback mode. target sends joint targets through the articulation controller; "
+            "state writes exact joint states for kinematic demo replay."
+        ),
+    )
+    parser.add_argument(
         "--franka_trajectory_object_id",
         type=str,
         default="object",
         help="Object id in trajectory frames whose pose should drive the DEXTRAH star.",
     )
-    parser.add_argument("--star_outer_radius", type=float, default=0.092)
-    parser.add_argument("--star_inner_radius", type=float, default=0.042)
-    parser.add_argument("--star_thickness", type=float, default=0.034)
-    parser.add_argument("--fixture_size_x", type=float, default=0.33)
-    parser.add_argument("--fixture_size_y", type=float, default=0.33)
-    parser.add_argument("--fixture_thickness", type=float, default=0.052)
-    parser.add_argument("--fixture_clearance", type=float, default=0.012)
+    parser.add_argument(
+        "--franka_trajectory_object_mode",
+        choices=("trajectory", "physics"),
+        default="trajectory",
+        help=(
+            "trajectory replays object_poses from trajectory.json; physics leaves the star under "
+            "PhysX control so Franka contacts must move it dynamically."
+        ),
+    )
+    parser.add_argument(
+        "--franka_contact_proxy_mode",
+        choices=("kinematic", "articulation", "off"),
+        default="articulation",
+        help=(
+            "Contact fallback for the referenced Franka USD. kinematic adds hidden PhysX boxes that "
+            "follow the finger body poses; articulation only authors hidden child colliders."
+        ),
+    )
+    parser.add_argument(
+        "--show_contact_debug",
+        action="store_true",
+        default=False,
+        help="Show debug collision geometry for contact diagnosis.",
+    )
+    parser.add_argument(
+        "--show_franka_contact_proxies",
+        action="store_true",
+        default=False,
+        help="Show Franka finger contact proxy boxes even when --show_contact_debug is not set.",
+    )
+    parser.add_argument(
+        "--show_star_collision",
+        action="store_true",
+        default=False,
+        help="Show star convex collision pieces even when --show_contact_debug is not set.",
+    )
+    parser.add_argument(
+        "--contact_debug_opacity",
+        type=float,
+        default=0.38,
+        help="Preview opacity for visible contact-debug geometry.",
+    )
+    parser.add_argument(
+        "--franka_contact_proxy_center",
+        type=float,
+        nargs=3,
+        default=(0.0, 0.0, 0.030),
+        metavar=("X", "Y", "Z"),
+        help="Local center of the Franka finger proxy box, in meters.",
+    )
+    parser.add_argument(
+        "--franka_contact_proxy_size",
+        type=float,
+        nargs=3,
+        default=(0.020, 0.012, 0.050),
+        metavar=("X", "Y", "Z"),
+        help="Local size of the Franka finger proxy box, in meters.",
+    )
+    parser.add_argument(
+        "--franka_contact_proxy_contact_offset",
+        type=float,
+        default=None,
+        help="Optional PhysX contact offset for Franka finger proxy colliders.",
+    )
+    parser.add_argument(
+        "--star_collision_contact_offset",
+        type=float,
+        default=None,
+        help="Optional PhysX contact offset for star collision pieces.",
+    )
+    parser.add_argument(
+        "--collision_rest_offset",
+        type=float,
+        default=None,
+        help="Optional PhysX rest offset applied to debugged star/proxy contact colliders.",
+    )
+    parser.add_argument(
+        "--franka_max_depenetration_velocity",
+        type=float,
+        default=5.0,
+        help="Maximum depenetration velocity for Franka articulation rigid bodies.",
+    )
+    parser.add_argument(
+        "--franka_solver_position_iterations",
+        type=int,
+        default=8,
+        help="Franka articulation solver position iteration count.",
+    )
+    parser.add_argument(
+        "--franka_solver_velocity_iterations",
+        type=int,
+        default=0,
+        help="Franka articulation solver velocity iteration count.",
+    )
+    parser.add_argument(
+        "--star_max_depenetration_velocity",
+        type=float,
+        default=None,
+        help="Optional maximum depenetration velocity for the dynamic star rigid body.",
+    )
+    parser.add_argument(
+        "--star_solver_position_iterations",
+        type=int,
+        default=None,
+        help="Optional solver position iteration count for the dynamic star rigid body.",
+    )
+    parser.add_argument(
+        "--star_solver_velocity_iterations",
+        type=int,
+        default=None,
+        help="Optional solver velocity iteration count for the dynamic star rigid body.",
+    )
+    parser.add_argument(
+        "--franka_grasp_constraint_mode",
+        choices=("off", "attach_on_close"),
+        default="off",
+        help=(
+            "Debug-only grasp assist. Leave this off for faithful physics renders where failures remain failures."
+        ),
+    )
+    parser.add_argument(
+        "--franka_grasp_constraint_close_threshold",
+        type=float,
+        default=0.012,
+        help="Maximum actual finger joint opening, in meters, before attach_on_close may create the grasp constraint.",
+    )
+    parser.add_argument(
+        "--franka_grasp_constraint_xy_threshold",
+        type=float,
+        default=0.050,
+        help="Maximum XY distance between finger midpoint and star center before attach_on_close may fire.",
+    )
+    parser.add_argument(
+        "--franka_grasp_constraint_z_threshold",
+        type=float,
+        default=0.080,
+        help="Maximum vertical offset between finger midpoint and star center before attach_on_close may fire.",
+    )
+    parser.add_argument("--star_outer_radius", type=float, default=0.032)
+    parser.add_argument("--star_inner_radius", type=float, default=0.0145)
+    parser.add_argument("--star_thickness", type=float, default=0.040)
+    parser.add_argument(
+        "--show_grasp_candidates",
+        action="store_true",
+        default=False,
+        help="Render GraspGenX candidate frames from trajectory annotations without changing the plan.",
+    )
+    parser.add_argument(
+        "--max_grasp_candidates",
+        type=int,
+        default=24,
+        help=(
+            "Maximum number of grasp candidates to visualize when --show_grasp_candidates is set. "
+            "Use a value at least as large as the source count to show every candidate."
+        ),
+    )
+    parser.add_argument(
+        "--grasp_candidate_axis_length",
+        type=float,
+        default=0.045,
+        help="Axis triad length, in meters, for visualized grasp candidates.",
+    )
+    parser.add_argument(
+        "--grasp_candidate_axis_thickness",
+        type=float,
+        default=0.004,
+        help="Axis triad thickness, in meters, for visualized grasp candidates.",
+    )
+    parser.add_argument("--fixture_size_x", type=float, default=0.18)
+    parser.add_argument("--fixture_size_y", type=float, default=0.18)
+    parser.add_argument("--fixture_thickness", type=float, default=0.060)
+    parser.add_argument("--fixture_clearance", type=float, default=0.006)
     parser.add_argument("--star_start_yaw_deg", type=float, default=-24.0)
     parser.add_argument("--fixture_yaw_deg", type=float, default=18.0)
     parser.add_argument("--cube_size", type=float, default=0.06)
@@ -170,8 +350,9 @@ simulation_app = app_launcher.app
 
 import omni.usd  # noqa: E402
 import isaaclab.sim as sim_utils  # noqa: E402
+import torch  # noqa: E402
 from isaaclab.actuators import ImplicitActuatorCfg  # noqa: E402
-from isaaclab.assets import Articulation  # noqa: E402
+from isaaclab.assets import Articulation, RigidObject, RigidObjectCfg  # noqa: E402
 from isaaclab.assets.articulation import ArticulationCfg  # noqa: E402
 from isaaclab.sensors.camera import TiledCamera, TiledCameraCfg  # noqa: E402
 from isaaclab.sim import PhysxCfg, SimulationCfg  # noqa: E402
@@ -288,6 +469,36 @@ def _bind(prim: Usd.Prim, mat: UsdShade.Material) -> None:
     UsdShade.MaterialBindingAPI.Apply(prim).Bind(mat)
 
 
+def _set_schema_float_attr(api: object, prim: Usd.Prim, method_name: str, attr_name: str, value: float | None) -> None:
+    if value is None:
+        return
+    try:
+        method = getattr(api, method_name)
+        method().Set(float(value))
+        return
+    except Exception:
+        pass
+    try:
+        prim.CreateAttribute(attr_name, Sdf.ValueTypeNames.Float).Set(float(value))
+    except Exception:
+        pass
+
+
+def _set_schema_int_attr(api: object, prim: Usd.Prim, method_name: str, attr_name: str, value: int | None) -> None:
+    if value is None:
+        return
+    try:
+        method = getattr(api, method_name)
+        method().Set(int(value))
+        return
+    except Exception:
+        pass
+    try:
+        prim.CreateAttribute(attr_name, Sdf.ValueTypeNames.Int).Set(int(value))
+    except Exception:
+        pass
+
+
 def _add_box(
     stage: Usd.Stage,
     path: str,
@@ -296,18 +507,214 @@ def _add_box(
     mat: UsdShade.Material,
     *,
     collision: bool = True,
+    visible: bool = True,
+    contact_offset: float | None = None,
+    rest_offset: float | None = None,
 ) -> Usd.Prim:
     cube = UsdGeom.Cube.Define(stage, path)
     cube.CreateSizeAttr(1.0)
     prim = cube.GetPrim()
     _set_xform(prim, center, size)
     _bind(prim, mat)
+    if not visible:
+        UsdGeom.Imageable(prim).MakeInvisible()
     if collision:
-        _apply_collision(prim, approximation="box")
+        _apply_collision(prim, approximation="box", contact_offset=contact_offset, rest_offset=rest_offset)
     return prim
 
 
-def _apply_collision(prim: Usd.Prim, *, approximation: str = "none") -> None:
+def _as_matrix4(value: object) -> list[list[float]] | None:
+    if not isinstance(value, list) or len(value) != 4:
+        return None
+    matrix: list[list[float]] = []
+    for row in value:
+        if not isinstance(row, list) or len(row) != 4:
+            return None
+        try:
+            matrix.append([float(v) for v in row])
+        except (TypeError, ValueError):
+            return None
+    return matrix
+
+
+def _transform_distance(a: list[list[float]], b: list[list[float]]) -> float:
+    return math.sqrt(sum((float(a[r][c]) - float(b[r][c])) ** 2 for r in range(4) for c in range(4)))
+
+
+def _select_grasp_candidate_indices(
+    grasps: list[list[list[float]]],
+    target_grasp: list[list[float]] | None,
+    max_count: int,
+) -> list[int]:
+    budget = max(0, int(max_count))
+    if not grasps or budget <= 0:
+        return []
+    selected: list[int] = []
+    target_idx = None
+    if target_grasp is not None:
+        distances = [_transform_distance(grasp, target_grasp) for grasp in grasps]
+        target_idx = int(min(range(len(distances)), key=distances.__getitem__))
+        selected.append(target_idx)
+
+    if budget >= len(grasps):
+        return selected + [idx for idx in range(len(grasps)) if idx not in selected]
+
+    remaining_budget = max(0, budget - len(selected))
+    if remaining_budget <= 0:
+        return selected
+    if remaining_budget == 1:
+        candidates = [0]
+    else:
+        candidates = [
+            int(round(float(idx) * float(len(grasps) - 1) / float(remaining_budget - 1)))
+            for idx in range(remaining_budget)
+        ]
+    for idx in candidates:
+        if idx not in selected:
+            selected.append(idx)
+    if len(selected) < budget:
+        for idx in range(len(grasps)):
+            if idx not in selected:
+                selected.append(idx)
+                if len(selected) >= budget:
+                    break
+    return selected[:budget]
+
+
+def _grasp_orientation_label(transform: list[list[float]]) -> str:
+    z_axis_z = float(transform[2][2])
+    if z_axis_z <= -0.8:
+        return "top_down"
+    if z_axis_z >= 0.8:
+        return "bottom_up"
+    if abs(z_axis_z) <= 0.5:
+        return "side_or_oblique"
+    return "steep_oblique"
+
+
+def _add_local_axis_box(
+    stage: Usd.Stage,
+    path: str,
+    axis: str,
+    length: float,
+    thickness: float,
+    mat: UsdShade.Material,
+) -> None:
+    half = 0.5 * float(length)
+    t = float(thickness)
+    if axis == "x":
+        center = (half, 0.0, 0.0)
+        size = (float(length), t, t)
+    elif axis == "y":
+        center = (0.0, half, 0.0)
+        size = (t, float(length), t)
+    elif axis == "z":
+        center = (0.0, 0.0, half)
+        size = (t, t, float(length))
+    else:
+        raise ValueError(f"Unsupported axis: {axis}")
+    _add_box(stage, path, center, size, mat, collision=False, visible=True)
+
+
+def _add_grasp_candidate_markers(
+    stage: Usd.Stage,
+    trajectory: dict[str, object] | None,
+    *,
+    max_count: int,
+    axis_length: float,
+    axis_thickness: float,
+    x_mat: UsdShade.Material,
+    y_mat: UsdShade.Material,
+    z_mat: UsdShade.Material,
+    target_mat: UsdShade.Material,
+) -> dict[str, object]:
+    if trajectory is None:
+        return {"enabled": False, "reason": "missing_trajectory"}
+    annotations = trajectory.get("annotations")
+    if not isinstance(annotations, dict):
+        return {"enabled": False, "reason": "missing_annotations"}
+    raw_grasps = annotations.get("all_grasps")
+    if not isinstance(raw_grasps, list):
+        return {"enabled": False, "reason": "missing_all_grasps"}
+    grasps = [matrix for item in raw_grasps if (matrix := _as_matrix4(item)) is not None]
+    target_grasp = _as_matrix4(annotations.get("target_grasp_transform"))
+    if not grasps:
+        return {"enabled": False, "reason": "empty_all_grasps"}
+
+    source_counts_by_label: dict[str, int] = {}
+    for grasp in grasps:
+        label = _grasp_orientation_label(grasp)
+        source_counts_by_label[label] = source_counts_by_label.get(label, 0) + 1
+
+    root_path = "/World/GraspCandidates"
+    UsdGeom.Xform.Define(stage, root_path)
+    selected_indices = _select_grasp_candidate_indices(grasps, target_grasp, max_count)
+    target_idx = None
+    if target_grasp is not None:
+        distances = [_transform_distance(grasp, target_grasp) for grasp in grasps]
+        target_idx = int(min(range(len(distances)), key=distances.__getitem__))
+        if target_idx not in selected_indices:
+            selected_indices = [target_idx] + selected_indices[:-1]
+
+    markers: list[dict[str, object]] = []
+    for marker_idx, grasp_idx in enumerate(selected_indices):
+        transform = grasps[grasp_idx]
+        marker_root_path = f"{root_path}/g_{marker_idx:03d}_src_{grasp_idx:03d}"
+        root = UsdGeom.Xform.Define(stage, marker_root_path).GetPrim()
+        pos = (float(transform[0][3]), float(transform[1][3]), float(transform[2][3]))
+        quat = _quat_xyzw_from_matrix(transform)
+        _set_xform(root, pos, rotate_quat_xyzw=quat)
+        is_target = target_idx is not None and grasp_idx == target_idx
+        length = float(axis_length) * (1.35 if is_target else 1.0)
+        thickness = float(axis_thickness) * (1.45 if is_target else 1.0)
+        _add_local_axis_box(stage, f"{marker_root_path}/x_axis", "x", length, thickness, x_mat)
+        _add_local_axis_box(stage, f"{marker_root_path}/y_axis", "y", length, thickness, y_mat)
+        _add_local_axis_box(stage, f"{marker_root_path}/z_axis", "z", length, thickness, z_mat)
+        if is_target:
+            _add_box(
+                stage,
+                f"{marker_root_path}/target_center",
+                (0.0, 0.0, 0.0),
+                (thickness * 2.5, thickness * 2.5, thickness * 2.5),
+                target_mat,
+                collision=False,
+                visible=True,
+            )
+        markers.append(
+            {
+                "marker_path": marker_root_path,
+                "source_index": int(grasp_idx),
+                "is_target": bool(is_target),
+                "position_w": [float(pos[0]), float(pos[1]), float(pos[2])],
+                "z_axis_z": float(transform[2][2]),
+                "orientation_label": _grasp_orientation_label(transform),
+            }
+        )
+
+    counts_by_label: dict[str, int] = {}
+    for marker in markers:
+        label = str(marker["orientation_label"])
+        counts_by_label[label] = counts_by_label.get(label, 0) + 1
+    return {
+        "enabled": True,
+        "root_path": root_path,
+        "source_count": len(grasps),
+        "source_counts_by_orientation_label": source_counts_by_label,
+        "visualized_count": len(markers),
+        "target_source_index": target_idx,
+        "selection": "target plus evenly sampled candidates, or all source candidates when max_count covers them; no planning filter",
+        "counts_by_orientation_label": counts_by_label,
+        "markers": markers,
+    }
+
+
+def _apply_collision(
+    prim: Usd.Prim,
+    *,
+    approximation: str = "none",
+    contact_offset: float | None = None,
+    rest_offset: float | None = None,
+) -> None:
     UsdPhysics.CollisionAPI.Apply(prim)
     mesh_collision_api_cls = getattr(UsdPhysics, "MeshCollisionAPI", None)
     if mesh_collision_api_cls is not None:
@@ -317,34 +724,91 @@ def _apply_collision(prim: Usd.Prim, *, approximation: str = "none") -> None:
         except Exception:
             pass
     try:
-        PhysxSchema.PhysxCollisionAPI.Apply(prim)
+        physx_api = PhysxSchema.PhysxCollisionAPI.Apply(prim)
+        _set_schema_float_attr(
+            physx_api,
+            prim,
+            "CreateContactOffsetAttr",
+            "physxCollision:contactOffset",
+            contact_offset,
+        )
+        _set_schema_float_attr(
+            physx_api,
+            prim,
+            "CreateRestOffsetAttr",
+            "physxCollision:restOffset",
+            rest_offset,
+        )
     except Exception:
         pass
 
 
-def _make_rigid_body(prim: Usd.Prim, *, density: float) -> None:
+def _make_rigid_body(
+    prim: Usd.Prim,
+    *,
+    density: float,
+    max_depenetration_velocity: float | None = None,
+    solver_position_iterations: int | None = None,
+    solver_velocity_iterations: int | None = None,
+) -> None:
     rb_api = UsdPhysics.RigidBodyAPI.Apply(prim)
     try:
         rb_api.CreateRigidBodyEnabledAttr(True)
         rb_api.CreateStartsAsleepAttr(False)
     except Exception:
         pass
+    if (
+        max_depenetration_velocity is not None
+        or solver_position_iterations is not None
+        or solver_velocity_iterations is not None
+    ):
+        try:
+            physx_rb_api = PhysxSchema.PhysxRigidBodyAPI.Apply(prim)
+            _set_schema_float_attr(
+                physx_rb_api,
+                prim,
+                "CreateMaxDepenetrationVelocityAttr",
+                "physxRigidBody:maxDepenetrationVelocity",
+                max_depenetration_velocity,
+            )
+            _set_schema_int_attr(
+                physx_rb_api,
+                prim,
+                "CreateSolverPositionIterationCountAttr",
+                "physxRigidBody:solverPositionIterationCount",
+                solver_position_iterations,
+            )
+            _set_schema_int_attr(
+                physx_rb_api,
+                prim,
+                "CreateSolverVelocityIterationCountAttr",
+                "physxRigidBody:solverVelocityIterationCount",
+                solver_velocity_iterations,
+            )
+        except Exception:
+            pass
     mass_api = UsdPhysics.MassAPI.Apply(prim)
     mass_api.CreateDensityAttr(float(density))
 
 
 def _create_sim_context():
     _log(f"creating SimulationContext on physics_device={args_cli.physics_device}")
+    physx_cfg_kwargs: dict[str, object] = {
+        "bounce_threshold_velocity": 0.2,
+        "gpu_max_rigid_patch_count": 4 * 5 * 2**15,
+    }
+    if int(args_cli.franka_solver_velocity_iterations) > 0:
+        physx_cfg_kwargs["min_velocity_iteration_count"] = max(
+            0,
+            int(args_cli.franka_solver_velocity_iterations),
+        )
     sim_cfg = SimulationCfg(
-        dt=1.0 / 60.0,
+        dt=float(args_cli.physics_dt),
         render_interval=1,
         device=str(args_cli.physics_device),
         physics_prim_path="/World/physicsScene",
         physics_material=RigidBodyMaterialCfg(static_friction=1.0, dynamic_friction=1.0),
-        physx=PhysxCfg(
-            bounce_threshold_velocity=0.2,
-            gpu_max_rigid_patch_count=4 * 5 * 2**15,
-        ),
+        physx=PhysxCfg(**physx_cfg_kwargs),
     )
     return sim_utils.SimulationContext(sim_cfg)
 
@@ -560,6 +1024,11 @@ def _quat_xyzw_to_wxyz(quat_xyzw: Iterable[float]) -> tuple[float, float, float,
     return (w, x, y, z)
 
 
+def _quat_wxyz_to_xyzw(quat_wxyz: Iterable[float]) -> tuple[float, float, float, float]:
+    w, x, y, z = [float(v) for v in quat_wxyz]
+    return _normalize_quat_xyzw((x, y, z, w))
+
+
 def _mat_axis_angle(axis: Iterable[float], angle: float) -> Matrix4:
     ax, ay, az = [float(v) for v in axis]
     norm = math.sqrt(ax * ax + ay * ay + az * az)
@@ -582,6 +1051,15 @@ def _mat_apply_point(m: Matrix4, p: Iterable[float]) -> tuple[float, float, floa
         m[0][0] * x + m[0][1] * y + m[0][2] * z + m[0][3],
         m[1][0] * x + m[1][1] * y + m[1][2] * z + m[1][3],
         m[2][0] * x + m[2][1] * y + m[2][2] * z + m[2][3],
+    )
+
+
+def _mat_apply_vector(m: Matrix4, v: Iterable[float]) -> tuple[float, float, float]:
+    x, y, z = [float(value) for value in v]
+    return (
+        m[0][0] * x + m[0][1] * y + m[0][2] * z,
+        m[1][0] * x + m[1][1] * y + m[1][2] * z,
+        m[2][0] * x + m[2][1] * y + m[2][2] * z,
     )
 
 
@@ -726,10 +1204,14 @@ def _add_obj_mesh(
 
 def _resolve_graspgenx_franka_robot(output_dir: Path) -> RobotSpec:
     _ = output_dir
+    _log("resolving GraspGenX Franka robot config")
     graspgenx_root = _resolve_graspgenx_root()
+    _log(f"resolved GraspGenX root: {graspgenx_root}")
     cfg_path = graspgenx_root / "end2end/robots/franka_panda.yaml"
     cfg = _load_yaml(cfg_path)
+    _log(f"loaded GraspGenX Franka config: {cfg_path}")
     curobo_assets_root = _resolve_curobo_assets_root(graspgenx_root)
+    _log(f"resolved cuRobo assets root: {curobo_assets_root}")
 
     urdf_path = args_cli.franka_urdf.expanduser().resolve() if args_cli.franka_urdf else None
     if urdf_path is None:
@@ -968,12 +1450,12 @@ def _create_franka_articulation(robot: RobotSpec) -> Articulation:
                 retain_accelerations=True,
                 linear_damping=0.0,
                 angular_damping=0.0,
-                max_depenetration_velocity=5.0,
+                max_depenetration_velocity=float(args_cli.franka_max_depenetration_velocity),
             ),
             articulation_props=sim_utils.ArticulationRootPropertiesCfg(
                 enabled_self_collisions=True,
-                solver_position_iteration_count=8,
-                solver_velocity_iteration_count=0,
+                solver_position_iteration_count=max(1, int(args_cli.franka_solver_position_iterations)),
+                solver_velocity_iteration_count=max(0, int(args_cli.franka_solver_velocity_iterations)),
                 sleep_threshold=0.005,
                 stabilization_threshold=0.0005,
                 fix_root_link=True,
@@ -1016,6 +1498,265 @@ def _create_robot(stage: Usd.Stage, robot: RobotSpec) -> Articulation | None:
         return None
 
     raise ValueError(f"Unsupported robot render mode: {robot.render_mode}")
+
+
+def _add_franka_finger_collision_proxies(
+    stage: Usd.Stage,
+    mat: UsdShade.Material,
+    *,
+    visible: bool,
+    local_center: tuple[float, float, float],
+    local_size: tuple[float, float, float],
+    contact_offset: float | None,
+    rest_offset: float | None,
+) -> dict[str, object]:
+    """Add minimal fingertip colliders when the referenced Franka USD is visual-only."""
+
+    created: list[str] = []
+    missing: list[str] = []
+    for link_name in ("panda_leftfinger", "panda_rightfinger"):
+        link_path = f"/World/Robot/{link_name}"
+        link_prim = stage.GetPrimAtPath(link_path)
+        if not link_prim.IsValid():
+            missing.append(link_path)
+            continue
+        proxy_path = f"{link_path}/dextrah_contact_proxy"
+        _add_box(
+            stage,
+            proxy_path,
+            center=local_center,
+            size=local_size,
+            mat=mat,
+            collision=True,
+            visible=visible,
+            contact_offset=contact_offset,
+            rest_offset=rest_offset,
+        )
+        created.append(proxy_path)
+    return {
+        "created": created,
+        "missing_links": missing,
+        "count": len(created),
+        "shape": "box per Franka finger link",
+        "visible": bool(visible),
+        "local_center": [float(v) for v in local_center],
+        "local_size": [float(v) for v in local_size],
+        "contact_offset": None if contact_offset is None else float(contact_offset),
+        "rest_offset": None if rest_offset is None else float(rest_offset),
+    }
+
+
+def _add_franka_contact_debug_visual_overlays(
+    stage: Usd.Stage,
+    mat: UsdShade.Material,
+    *,
+    visible: bool,
+    local_center: tuple[float, float, float],
+    local_size: tuple[float, float, float],
+) -> dict[str, object]:
+    root_path = "/World/ContactDebug/FrankaFingerProxies"
+    UsdGeom.Xform.Define(stage, "/World/ContactDebug")
+    UsdGeom.Xform.Define(stage, root_path)
+    followers: dict[str, dict[str, object]] = {}
+    created: list[str] = []
+    for link_name, suffix in (("panda_leftfinger", "leftfinger"), ("panda_rightfinger", "rightfinger")):
+        path = f"{root_path}/{suffix}"
+        prim = _add_box(
+            stage,
+            path,
+            center=(0.0, 0.0, -10.0),
+            size=local_size,
+            mat=mat,
+            collision=False,
+            visible=visible,
+        )
+        try:
+            UsdPhysics.CollisionAPI.Apply(prim).CreateCollisionEnabledAttr(False)
+        except Exception:
+            pass
+        followers[link_name] = {
+            "path": path,
+            "local_center": [float(v) for v in local_center],
+            "local_size": [float(v) for v in local_size],
+        }
+        created.append(path)
+    return {
+        "enabled": bool(visible),
+        "root_path": root_path,
+        "created": created if visible else [],
+        "count": len(created) if visible else 0,
+        "followers": followers if visible else {},
+        "shape": "visual-only box follower per Franka finger body",
+        "local_center": [float(v) for v in local_center],
+        "local_size": [float(v) for v in local_size],
+    }
+
+
+def _update_franka_contact_debug_visual_overlays(
+    stage: Usd.Stage,
+    robot: Articulation | None,
+    overlay_record: dict[str, object] | None,
+) -> None:
+    if robot is None or not overlay_record or not bool(overlay_record.get("enabled")):
+        return
+    followers = overlay_record.get("followers")
+    if not isinstance(followers, dict):
+        return
+    body_poses = _robot_body_pose_records(robot)
+    updated = False
+    for body_name, info in followers.items():
+        if not isinstance(info, dict):
+            continue
+        path = info.get("path")
+        pose = body_poses.get(str(body_name))
+        if not isinstance(path, str) or not isinstance(pose, dict):
+            continue
+        pos = pose.get("position_w")
+        quat_wxyz = pose.get("quaternion_wxyz")
+        local_center = info.get("local_center", [0.0, 0.0, 0.030])
+        local_size = info.get("local_size", [0.020, 0.012, 0.050])
+        if not isinstance(pos, list) or not isinstance(quat_wxyz, list):
+            continue
+        prim = stage.GetPrimAtPath(path)
+        if not prim.IsValid():
+            continue
+        quat_xyzw = _quat_wxyz_to_xyzw(quat_wxyz)
+        rot = _mat_from_quat_xyzw(quat_xyzw)
+        offset = _mat_apply_vector(rot, local_center)
+        center = tuple(float(pos[idx]) + float(offset[idx]) for idx in range(3))
+        _set_xform(prim, center, scale=local_size, rotate_quat_xyzw=quat_xyzw)
+        updated = True
+    if updated:
+        update_stage()
+
+
+def _make_kinematic_body(prim: Usd.Prim) -> None:
+    rb_api = UsdPhysics.RigidBodyAPI.Apply(prim)
+    rb_api.CreateRigidBodyEnabledAttr(True)
+    rb_api.CreateKinematicEnabledAttr(True)
+    try:
+        rb_api.CreateStartsAsleepAttr(False)
+    except Exception:
+        pass
+    try:
+        physx_api = PhysxSchema.PhysxRigidBodyAPI.Apply(prim)
+        physx_api.CreateDisableGravityAttr(True)
+    except Exception:
+        pass
+
+
+def _add_franka_kinematic_contact_proxies(
+    stage: Usd.Stage,
+    mat: UsdShade.Material,
+    *,
+    visible: bool,
+    local_center: tuple[float, float, float],
+    local_size: tuple[float, float, float],
+    contact_offset: float | None,
+    rest_offset: float | None,
+) -> dict[str, object]:
+    _ = stage, mat
+    root_path = "/World/FrankaContactProxies"
+    followers: dict[str, dict[str, object]] = {}
+    created: list[str] = []
+    for link_name, suffix in (("panda_leftfinger", "leftfinger"), ("panda_rightfinger", "rightfinger")):
+        proxy_path = f"{root_path}/{suffix}"
+        proxy_cfg = RigidObjectCfg(
+            prim_path=proxy_path,
+            spawn=sim_utils.CuboidCfg(
+                size=local_size,
+                visible=visible,
+                collision_props=sim_utils.CollisionPropertiesCfg(
+                    contact_offset=contact_offset,
+                    rest_offset=rest_offset,
+                ),
+                rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                    rigid_body_enabled=True,
+                    kinematic_enabled=True,
+                    disable_gravity=True,
+                ),
+                mass_props=sim_utils.MassPropertiesCfg(mass=0.05),
+                physics_material=RigidBodyMaterialCfg(static_friction=1.2, dynamic_friction=1.2),
+            ),
+            init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, -10.0)),
+        )
+        proxy_object = RigidObject(proxy_cfg)
+        followers[link_name] = {
+            "path": proxy_path,
+            "local_center": list(local_center),
+            "local_size": list(local_size),
+            "object": proxy_object,
+        }
+        created.append(proxy_path)
+    return {
+        "mode": "kinematic",
+        "root_path": root_path,
+        "created": created,
+        "count": len(created),
+        "followers": followers,
+        "shape": "kinematic box per Franka finger body",
+        "visible": bool(visible),
+        "local_center": list(local_center),
+        "local_size": list(local_size),
+        "contact_offset": None if contact_offset is None else float(contact_offset),
+        "rest_offset": None if rest_offset is None else float(rest_offset),
+    }
+
+
+def _update_franka_kinematic_contact_proxies(
+    stage: Usd.Stage,
+    robot: Articulation | None,
+    proxy_record: dict[str, object] | None,
+) -> None:
+    if robot is None or not proxy_record:
+        return
+    followers = proxy_record.get("followers")
+    if not isinstance(followers, dict):
+        return
+    body_poses = _robot_body_pose_records(robot)
+    updated = False
+    for body_name, info in followers.items():
+        if not isinstance(info, dict):
+            continue
+        path = info.get("path")
+        pose = body_poses.get(str(body_name))
+        if not isinstance(path, str) or not isinstance(pose, dict):
+            continue
+        pos = pose.get("position_w")
+        quat_wxyz = pose.get("quaternion_wxyz")
+        if not isinstance(pos, list) or not isinstance(quat_wxyz, list):
+            continue
+        prim = stage.GetPrimAtPath(path)
+        proxy_object = info.get("object")
+        local_center = info.get("local_center", [0.0, 0.0, 0.030])
+        local_size = info.get("local_size", [0.020, 0.012, 0.050])
+        quat_xyzw = _quat_wxyz_to_xyzw(quat_wxyz)
+        rot = _mat_from_quat_xyzw(quat_xyzw)
+        offset = _mat_apply_vector(rot, local_center)
+        center = tuple(float(pos[idx]) + float(offset[idx]) for idx in range(3))
+        if isinstance(proxy_object, RigidObject):
+            root_pose = torch.tensor(
+                [[center[0], center[1], center[2], float(quat_wxyz[0]), float(quat_wxyz[1]), float(quat_wxyz[2]), float(quat_wxyz[3])]],
+                dtype=torch.float32,
+                device=proxy_object.device,
+            )
+            proxy_object.write_root_pose_to_sim(root_pose)
+            updated = True
+        elif prim.IsValid():
+            _set_xform(prim, center, scale=local_size, rotate_quat_xyzw=quat_xyzw)
+            updated = True
+    if updated:
+        pass
+
+
+def _contact_proxy_metadata(value):
+    if isinstance(value, dict):
+        return {str(k): _contact_proxy_metadata(v) for k, v in value.items() if str(k) != "object"}
+    if isinstance(value, list):
+        return [_contact_proxy_metadata(item) for item in value]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
 
 
 def _robot_metadata(robot: RobotSpec) -> dict[str, object]:
@@ -1076,6 +1817,8 @@ def _add_mesh(
     collision: bool = False,
     approximation: str = "none",
     visible: bool = True,
+    contact_offset: float | None = None,
+    rest_offset: float | None = None,
 ) -> Usd.Prim:
     mesh = UsdGeom.Mesh.Define(stage, path)
     mesh.CreatePointsAttr(points)
@@ -1097,7 +1840,7 @@ def _add_mesh(
     if not visible:
         UsdGeom.Imageable(prim).MakeInvisible()
     if collision:
-        _apply_collision(prim, approximation=approximation)
+        _apply_collision(prim, approximation=approximation, contact_offset=contact_offset, rest_offset=rest_offset)
     return prim
 
 
@@ -1159,6 +1902,8 @@ def _add_extruded_polygon_mesh(
     collision: bool = False,
     approximation: str = "none",
     visible: bool = True,
+    contact_offset: float | None = None,
+    rest_offset: float | None = None,
 ) -> Usd.Prim:
     points, counts, indices = _extruded_polygon_mesh_data(vertices, thickness, fan_center=fan_center)
     return _add_mesh(
@@ -1171,6 +1916,8 @@ def _add_extruded_polygon_mesh(
         collision=collision,
         approximation=approximation,
         visible=visible,
+        contact_offset=contact_offset,
+        rest_offset=rest_offset,
     )
 
 
@@ -1306,11 +2053,24 @@ def _create_star_object(
     visual_mat: UsdShade.Material,
     collision_mat: UsdShade.Material,
     dynamic: bool,
+    visual_visible: bool,
+    collision_visible: bool,
+    collision_contact_offset: float | None,
+    collision_rest_offset: float | None,
+    max_depenetration_velocity: float | None,
+    solver_position_iterations: int | None,
+    solver_velocity_iterations: int | None,
 ) -> dict[str, object]:
     root = UsdGeom.Xform.Define(stage, root_path).GetPrim()
     _set_xform(root, center, rotate_xyz_deg=(0.0, 0.0, float(yaw_deg)))
     if dynamic:
-        _make_rigid_body(root, density=520.0)
+        _make_rigid_body(
+            root,
+            density=520.0,
+            max_depenetration_velocity=max_depenetration_velocity,
+            solver_position_iterations=solver_position_iterations,
+            solver_velocity_iterations=solver_velocity_iterations,
+        )
 
     vertices = _star_vertices(outer_radius, inner_radius)
     _add_extruded_polygon_mesh(
@@ -1321,6 +2081,7 @@ def _create_star_object(
         visual_mat,
         fan_center=(0.0, 0.0),
         collision=False,
+        visible=visual_visible,
     )
 
     for idx in range(len(vertices)):
@@ -1334,7 +2095,9 @@ def _create_star_object(
             fan_center=None,
             collision=True,
             approximation="convexHull",
-            visible=False,
+            visible=collision_visible,
+            contact_offset=collision_contact_offset,
+            rest_offset=collision_rest_offset,
         )
 
     return {
@@ -1345,8 +2108,23 @@ def _create_star_object(
         "inner_radius": float(inner_radius),
         "thickness": float(thickness),
         "dynamic": bool(dynamic),
+        "visual_visible": bool(visual_visible),
         "collision_pieces": len(vertices),
         "collision_model": "ten convex triangular-prism child colliders under one rigid body",
+        "collision_visible": bool(collision_visible),
+        "collision_debug_visuals": 0,
+        "collision_debug_visual_margin": 0.0,
+        "collision_contact_offset": None if collision_contact_offset is None else float(collision_contact_offset),
+        "collision_rest_offset": None if collision_rest_offset is None else float(collision_rest_offset),
+        "max_depenetration_velocity": None
+        if max_depenetration_velocity is None
+        else float(max_depenetration_velocity),
+        "solver_position_iterations": None
+        if solver_position_iterations is None
+        else int(solver_position_iterations),
+        "solver_velocity_iterations": None
+        if solver_velocity_iterations is None
+        else int(solver_velocity_iterations),
     }
 
 
@@ -1533,7 +2311,7 @@ def _load_franka_trajectory() -> dict[str, object] | None:
     return _TRAJECTORY_CACHE
 
 
-def _trajectory_frame_index(trajectory: dict[str, object], frame_idx: int, frame_count: int) -> int:
+def _trajectory_frame_index(trajectory: dict[str, object], frame_idx: float, frame_count: int) -> int:
     frames = trajectory.get("frames")
     if not isinstance(frames, list) or len(frames) == 0:
         return 0
@@ -1543,7 +2321,7 @@ def _trajectory_frame_index(trajectory: dict[str, object], frame_idx: int, frame
     return min(len(frames) - 1, max(0, int(round(alpha * float(len(frames) - 1)))))
 
 
-def _trajectory_frame(trajectory: dict[str, object], frame_idx: int, frame_count: int) -> dict[str, object]:
+def _trajectory_frame(trajectory: dict[str, object], frame_idx: float, frame_count: int) -> dict[str, object]:
     frames = trajectory.get("frames")
     if not isinstance(frames, list) or len(frames) == 0:
         raise ValueError("Trajectory JSON has no frames")
@@ -1553,7 +2331,7 @@ def _trajectory_frame(trajectory: dict[str, object], frame_idx: int, frame_count
     return item
 
 
-def _franka_trajectory_target(robot: Articulation, frame_idx: int, frame_count: int):
+def _franka_trajectory_target(robot: Articulation, frame_idx: float, frame_count: int):
     trajectory = _load_franka_trajectory()
     if trajectory is None:
         raise ValueError("--franka_motion trajectory requires --franka_trajectory_json")
@@ -1637,7 +2415,7 @@ def _quat_xyzw_from_matrix(m: list[list[float]]) -> tuple[float, float, float, f
 
 def _object_pose_from_trajectory_frame(
     trajectory: dict[str, object],
-    frame_idx: int,
+    frame_idx: float,
     frame_count: int,
     object_id: str,
 ) -> list[list[float]] | None:
@@ -1669,7 +2447,7 @@ def _apply_trajectory_object_pose(
     stage: Usd.Stage,
     prim_path: str,
     trajectory: dict[str, object] | None,
-    frame_idx: int,
+    frame_idx: float,
     frame_count: int,
     object_id: str,
 ) -> None:
@@ -1685,6 +2463,76 @@ def _apply_trajectory_object_pose(
     quat_xyzw = _quat_xyzw_from_matrix(pose)
     _set_xform(prim, translate, rotate_quat_xyzw=quat_xyzw)
     update_stage()
+
+
+def _object_motion_record(
+    stage: Usd.Stage,
+    prim_path: str,
+    frame_idx: int,
+    frame_count: int,
+) -> dict[str, object] | None:
+    prim = stage.GetPrimAtPath(prim_path)
+    if not prim.IsValid():
+        return None
+    xform_cache = UsdGeom.XformCache(Usd.TimeCode.Default())
+    world_xform = xform_cache.GetLocalToWorldTransform(prim)
+    translation = world_xform.ExtractTranslation()
+    return {
+        "frame": int(frame_idx),
+        "t": 0.0 if frame_count <= 1 else float(frame_idx) / float(frame_count - 1),
+        "prim_path": str(prim_path),
+        "position_w": [float(translation[0]), float(translation[1]), float(translation[2])],
+        "world_transform": [[float(world_xform[row][col]) for col in range(4)] for row in range(4)],
+    }
+
+
+def _rigid_object_motion_record(
+    rigid_object: RigidObject | None,
+    prim_path: str,
+    frame_idx: int,
+    frame_count: int,
+) -> dict[str, object] | None:
+    if rigid_object is None:
+        return None
+    try:
+        pose = rigid_object.data.root_pose_w[0].detach().cpu().tolist()
+        vel = rigid_object.data.root_vel_w[0].detach().cpu().tolist()
+    except Exception:
+        return None
+    return {
+        "frame": int(frame_idx),
+        "t": 0.0 if frame_count <= 1 else float(frame_idx) / float(frame_count - 1),
+        "prim_path": str(prim_path),
+        "position_w": [float(v) for v in pose[:3]],
+        "quaternion_wxyz": [float(v) for v in pose[3:7]],
+        "linear_velocity_w": [float(v) for v in vel[:3]],
+        "angular_velocity_w": [float(v) for v in vel[3:]],
+        "source": "physx_rigid_object",
+    }
+
+
+def _robot_body_pose_records(robot: Articulation | None) -> dict[str, dict[str, object]]:
+    if robot is None:
+        return {}
+    records: dict[str, dict[str, object]] = {}
+    body_names = list(robot.body_names)
+    wanted = ("panda_hand", "panda_leftfinger", "panda_rightfinger", "panda_link7")
+    for body_name in wanted:
+        if body_name not in body_names:
+            continue
+        body_idx = body_names.index(body_name)
+        try:
+            pos = robot.data.body_pos_w[0, body_idx].detach().cpu().tolist()
+            quat = robot.data.body_quat_w[0, body_idx].detach().cpu().tolist()
+        except Exception:
+            records[body_name] = {"body_name": body_name}
+            continue
+        records[body_name] = {
+            "body_name": body_name,
+            "position_w": [float(v) for v in pos],
+            "quaternion_wxyz": [float(v) for v in quat],
+        }
+    return records
 
 
 def _robot_end_effector_record(robot: Articulation | None) -> dict[str, object] | None:
@@ -1713,13 +2561,230 @@ def _robot_motion_record(robot: Articulation | None, frame_idx: int, frame_count
         return None
     values = target[0].detach().cpu().tolist()
     joint_targets = {name: float(values[idx]) for idx, name in enumerate(robot.joint_names)}
+    actual_pos = robot.data.joint_pos[0].detach().cpu().tolist()
+    actual_vel = robot.data.joint_vel[0].detach().cpu().tolist()
     return {
         "frame": int(frame_idx),
         "t": 0.0 if frame_count <= 1 else float(frame_idx) / float(frame_count - 1),
         "motion": str(args_cli.franka_motion),
         "joint_targets": joint_targets,
+        "joint_positions_actual": {name: float(actual_pos[idx]) for idx, name in enumerate(robot.joint_names)},
+        "joint_velocities_actual": {name: float(actual_vel[idx]) for idx, name in enumerate(robot.joint_names)},
         "end_effector": _robot_end_effector_record(robot),
+        "body_poses": _robot_body_pose_records(robot),
     }
+
+
+def _joint_value(robot: Articulation | None, joint_name: str) -> float | None:
+    if robot is None or joint_name not in robot.joint_names:
+        return None
+    joint_idx = list(robot.joint_names).index(joint_name)
+    try:
+        return float(robot.data.joint_pos[0, joint_idx].detach().cpu().item())
+    except Exception:
+        return None
+
+
+def _finger_midpoint_w(robot: Articulation | None) -> list[float] | None:
+    body_poses = _robot_body_pose_records(robot)
+    left = body_poses.get("panda_leftfinger", {}).get("position_w")
+    right = body_poses.get("panda_rightfinger", {}).get("position_w")
+    if not isinstance(left, list) or not isinstance(right, list):
+        return None
+    return [0.5 * (float(left[idx]) + float(right[idx])) for idx in range(3)]
+
+
+def _quat_wxyz_normalize(quat_wxyz: Iterable[float]) -> tuple[float, float, float, float]:
+    w, x, y, z = [float(v) for v in quat_wxyz]
+    norm = math.sqrt(w * w + x * x + y * y + z * z)
+    if norm <= 1.0e-12:
+        return (1.0, 0.0, 0.0, 0.0)
+    return (w / norm, x / norm, y / norm, z / norm)
+
+
+def _quat_wxyz_inverse(quat_wxyz: Iterable[float]) -> tuple[float, float, float, float]:
+    w, x, y, z = _quat_wxyz_normalize(quat_wxyz)
+    return (w, -x, -y, -z)
+
+
+def _quat_wxyz_mul(
+    lhs: Iterable[float],
+    rhs: Iterable[float],
+) -> tuple[float, float, float, float]:
+    aw, ax, ay, az = _quat_wxyz_normalize(lhs)
+    bw, bx, by, bz = _quat_wxyz_normalize(rhs)
+    return _quat_wxyz_normalize(
+        (
+            aw * bw - ax * bx - ay * by - az * bz,
+            aw * bx + ax * bw + ay * bz - az * by,
+            aw * by - ax * bz + ay * bw + az * bx,
+            aw * bz + ax * by - ay * bx + az * bw,
+        )
+    )
+
+
+def _quat_wxyz_rotate_vector(
+    quat_wxyz: Iterable[float],
+    vec: Iterable[float],
+) -> tuple[float, float, float]:
+    w, x, y, z = _quat_wxyz_normalize(quat_wxyz)
+    vx, vy, vz = [float(v) for v in vec]
+    uv = (
+        y * vz - z * vy,
+        z * vx - x * vz,
+        x * vy - y * vx,
+    )
+    uuv = (
+        y * uv[2] - z * uv[1],
+        z * uv[0] - x * uv[2],
+        x * uv[1] - y * uv[0],
+    )
+    return (
+        vx + 2.0 * (w * uv[0] + uuv[0]),
+        vy + 2.0 * (w * uv[1] + uuv[1]),
+        vz + 2.0 * (w * uv[2] + uuv[2]),
+    )
+
+
+def _update_kinematic_grasp_weld(
+    *,
+    robot: Articulation | None,
+    star_rigid_object: RigidObject | None,
+    state: dict[str, object],
+) -> None:
+    if robot is None or star_rigid_object is None:
+        return
+    rel_pos = state.get("relative_position_body0")
+    rel_quat = state.get("relative_quaternion_body0_object")
+    if not isinstance(rel_pos, list) or not isinstance(rel_quat, list):
+        return
+    hand_pose = _robot_body_pose_records(robot).get("panda_hand", {})
+    hand_pos = hand_pose.get("position_w")
+    hand_quat = hand_pose.get("quaternion_wxyz")
+    if not isinstance(hand_pos, list) or not isinstance(hand_quat, list):
+        return
+    hand_quat_wxyz = _quat_wxyz_normalize(hand_quat)
+    offset_w = _quat_wxyz_rotate_vector(hand_quat_wxyz, rel_pos)
+    object_pos = [float(hand_pos[idx]) + float(offset_w[idx]) for idx in range(3)]
+    object_quat = _quat_wxyz_mul(hand_quat_wxyz, rel_quat)
+    root_pose = torch.tensor(
+        [[object_pos[0], object_pos[1], object_pos[2], object_quat[0], object_quat[1], object_quat[2], object_quat[3]]],
+        dtype=torch.float32,
+        device=star_rigid_object.device,
+    )
+    star_rigid_object.write_root_pose_to_sim(root_pose)
+    try:
+        root_vel = torch.zeros((1, 6), dtype=torch.float32, device=star_rigid_object.device)
+        star_rigid_object.write_root_velocity_to_sim(root_vel)
+    except Exception:
+        pass
+    star_rigid_object.update(1.0 / 60.0)
+
+
+def _maybe_attach_franka_grasp_constraint(
+    *,
+    stage: Usd.Stage,
+    robot: Articulation | None,
+    star_rigid_object: RigidObject | None,
+    star_prim_path: str,
+    state: dict[str, object] | None,
+    frame_idx: int,
+    substep_idx: int,
+) -> None:
+    if state is None:
+        return
+    if bool(state.get("attached")):
+        _update_kinematic_grasp_weld(robot=robot, star_rigid_object=star_rigid_object, state=state)
+        return
+    if bool(state.get("failed")):
+        return
+    if str(state.get("mode")) != "attach_on_close":
+        return
+    if robot is None or star_rigid_object is None:
+        state["failed"] = True
+        state["failure_reason"] = "missing_robot_or_star_rigid_object"
+        return
+
+    finger_values = [
+        _joint_value(robot, "panda_finger_joint1"),
+        _joint_value(robot, "panda_finger_joint2"),
+    ]
+    if any(value is None for value in finger_values):
+        state["last_check"] = {"reason": "missing_finger_joint_values"}
+        return
+    max_finger_opening = max(float(value) for value in finger_values if value is not None)
+    close_threshold = float(state["close_threshold"])
+    if max_finger_opening > close_threshold:
+        state["last_check"] = {
+            "reason": "fingers_open",
+            "max_finger_opening": max_finger_opening,
+            "close_threshold": close_threshold,
+        }
+        return
+
+    finger_midpoint = _finger_midpoint_w(robot)
+    object_record = _rigid_object_motion_record(star_rigid_object, star_prim_path, frame_idx, 1)
+    object_pos = object_record.get("position_w") if object_record is not None else None
+    object_quat = object_record.get("quaternion_wxyz") if object_record is not None else None
+    if not isinstance(finger_midpoint, list) or not isinstance(object_pos, list):
+        state["last_check"] = {"reason": "missing_pose"}
+        return
+    dx = float(finger_midpoint[0]) - float(object_pos[0])
+    dy = float(finger_midpoint[1]) - float(object_pos[1])
+    dz = float(finger_midpoint[2]) - float(object_pos[2])
+    xy_distance = math.sqrt(dx * dx + dy * dy)
+    z_distance = abs(dz)
+    xy_threshold = float(state["xy_threshold"])
+    z_threshold = float(state["z_threshold"])
+    state["last_check"] = {
+        "reason": "near_object" if xy_distance <= xy_threshold and z_distance <= z_threshold else "too_far",
+        "frame": int(frame_idx),
+        "substep": int(substep_idx),
+        "max_finger_opening": max_finger_opening,
+        "finger_midpoint_w": [float(v) for v in finger_midpoint],
+        "object_position_w": [float(v) for v in object_pos],
+        "xy_distance": xy_distance,
+        "z_distance": z_distance,
+        "xy_threshold": xy_threshold,
+        "z_threshold": z_threshold,
+    }
+    if xy_distance > xy_threshold or z_distance > z_threshold:
+        return
+
+    hand_pose = _robot_body_pose_records(robot).get("panda_hand", {})
+    hand_pos = hand_pose.get("position_w")
+    hand_quat = hand_pose.get("quaternion_wxyz")
+    if not isinstance(hand_pos, list) or not isinstance(hand_quat, list) or not isinstance(object_quat, list):
+        state["last_check"] = {
+            **dict(state["last_check"]),
+            "reason": "missing_pose_for_constraint",
+        }
+        return
+
+    hand_quat_wxyz = _quat_wxyz_normalize(hand_quat)
+    object_quat_wxyz = _quat_wxyz_normalize(object_quat)
+    hand_inv = _quat_wxyz_inverse(hand_quat_wxyz)
+    relative_pos = _quat_wxyz_rotate_vector(
+        hand_inv,
+        (
+            float(object_pos[0]) - float(hand_pos[0]),
+            float(object_pos[1]) - float(hand_pos[1]),
+            float(object_pos[2]) - float(hand_pos[2]),
+        ),
+    )
+    relative_quat = _quat_wxyz_mul(hand_inv, object_quat_wxyz)
+
+    state["attached"] = True
+    state["attach_frame"] = int(frame_idx)
+    state["attach_substep"] = int(substep_idx)
+    state["body0"] = "/World/Robot/panda_hand"
+    state["body1"] = str(star_prim_path)
+    state["constraint_method"] = "kinematic_pose_weld"
+    state["relative_position_body0"] = [float(v) for v in relative_pos]
+    state["relative_quaternion_body0_object"] = [float(v) for v in relative_quat]
+    state["attach_metrics"] = dict(state["last_check"])
+    _update_kinematic_grasp_weld(robot=robot, star_rigid_object=star_rigid_object, state=state)
+    _log(f"attached Franka grasp weld at frame {frame_idx}, substep {substep_idx}")
 
 
 def _write_robot_articulation_targets(robot: Articulation | None, joint_pos_target=None) -> None:
@@ -1728,6 +2793,18 @@ def _write_robot_articulation_targets(robot: Articulation | None, joint_pos_targ
     if joint_pos_target is None:
         joint_pos_target = robot.data.default_joint_pos
     robot.set_joint_position_target(joint_pos_target)
+    robot.write_data_to_sim()
+
+
+def _write_robot_articulation_state(robot: Articulation | None, joint_pos=None) -> None:
+    if robot is None:
+        return
+    if joint_pos is None:
+        joint_pos = robot.data.default_joint_pos
+    joint_vel = robot.data.default_joint_vel.clone()
+    joint_vel.zero_()
+    robot.write_joint_state_to_sim(joint_pos, joint_vel)
+    robot.set_joint_position_target(joint_pos)
     robot.write_data_to_sim()
 
 
@@ -1751,25 +2828,60 @@ def _robot_runtime_metadata(robot: Articulation | None) -> dict[str, object]:
     }
 
 
+def _stage_collision_summary(stage: Usd.Stage, root_path: str) -> dict[str, object]:
+    counts_by_child: dict[str, int] = {}
+    examples: list[dict[str, object]] = []
+    prefix = str(root_path).rstrip("/")
+    for prim in stage.Traverse():
+        path = str(prim.GetPath())
+        if not path.startswith(prefix):
+            continue
+        schemas = [str(item) for item in prim.GetAppliedSchemas()]
+        if "PhysicsCollisionAPI" not in schemas and "PhysicsMeshCollisionAPI" not in schemas:
+            continue
+        rel = path[len(prefix) :].lstrip("/")
+        child = rel.split("/", 1)[0] if rel else prim.GetName()
+        counts_by_child[child] = counts_by_child.get(child, 0) + 1
+        if len(examples) < 32:
+            examples.append({"path": path, "schemas": schemas})
+    return {
+        "root_path": prefix,
+        "num_collision_prims": int(sum(counts_by_child.values())),
+        "counts_by_child": counts_by_child,
+        "examples": examples,
+    }
+
+
 def _settle_scene(
     sim,
     stage: Usd.Stage,
     star_record: dict[str, object],
     settle_steps: int,
     robot_articulation: Articulation | None,
+    star_rigid_object: RigidObject | None = None,
+    contact_proxy_followers: dict[str, object] | None = None,
+    contact_debug_overlays: dict[str, object] | None = None,
 ) -> bool:
     _log("resetting SimulationContext for scene initialization")
     sim.reset()
     _reset_robot_articulation(robot_articulation)
+    if star_rigid_object is not None:
+        star_rigid_object.update(float(sim.cfg.dt))
+    _update_franka_kinematic_contact_proxies(stage, robot_articulation, contact_proxy_followers)
     if settle_steps <= 0 or not bool(star_record.get("dynamic")):
+        _update_franka_contact_debug_visual_overlays(stage, robot_articulation, contact_debug_overlays)
         sim.render()
         update_stage()
         return False
     _log(f"settling dynamic star for {settle_steps} physics steps")
     for _ in range(settle_steps):
         _write_robot_articulation_targets(robot_articulation)
+        _update_franka_kinematic_contact_proxies(stage, robot_articulation, contact_proxy_followers)
         sim.step(render=False)
         _update_robot_articulation(robot_articulation, float(sim.cfg.dt))
+        if star_rigid_object is not None:
+            star_rigid_object.update(float(sim.cfg.dt))
+    _update_franka_contact_debug_visual_overlays(stage, robot_articulation, contact_debug_overlays)
     sim.render()
     update_stage()
     _bake_root_transform(stage, str(star_record["prim_path"]), star_record)
@@ -1916,6 +3028,13 @@ def _capture_overview_video(
     sim_steps_per_frame: int,
     frame_callback=None,
     robot_motion_trace: list[dict[str, object]] | None = None,
+    object_motion_trace: list[dict[str, object]] | None = None,
+    object_stage: Usd.Stage | None = None,
+    object_prim_path: str | None = None,
+    object_rigid_object: RigidObject | None = None,
+    contact_proxy_followers: dict[str, object] | None = None,
+    contact_debug_overlays: dict[str, object] | None = None,
+    grasp_constraint_state: dict[str, object] | None = None,
 ) -> list[str]:
     frame_count = max(2, int(round(float(fps) * float(seconds))))
     frames_dir = output_dir / "frames"
@@ -1941,6 +3060,9 @@ def _capture_overview_video(
     _log("resetting SimulationContext")
     sim.reset()
     _reset_robot_articulation(robot_articulation)
+    if object_rigid_object is not None:
+        object_rigid_object.update(float(sim.cfg.dt))
+    _update_franka_kinematic_contact_proxies(object_stage or omni.usd.get_context().get_stage(), robot_articulation, contact_proxy_followers)
 
     _log(f"capturing overview video frames with TiledCamera: {frame_count} frames")
     for frame_idx in range(frame_count):
@@ -1952,20 +3074,75 @@ def _capture_overview_video(
             last_robot_target = _robot_articulation_target(
                 robot_articulation,
                 phase,
-                frame_idx=frame_idx,
+                frame_idx=float(frame_idx) + substep,
                 frame_count=frame_count,
             )
-            _write_robot_articulation_targets(robot_articulation, last_robot_target)
-            sim.step(render=False)
-            _update_robot_articulation(robot_articulation, float(sim.cfg.dt))
+            if args_cli.franka_motion == "trajectory" and args_cli.franka_trajectory_playback == "state":
+                _write_robot_articulation_state(robot_articulation, last_robot_target)
+                _update_robot_articulation(robot_articulation, float(sim.cfg.dt))
+                _update_franka_kinematic_contact_proxies(
+                    object_stage or omni.usd.get_context().get_stage(),
+                    robot_articulation,
+                    contact_proxy_followers,
+                )
+                sim.step(render=False)
+                _write_robot_articulation_state(robot_articulation, last_robot_target)
+                _update_robot_articulation(robot_articulation, float(sim.cfg.dt))
+                if object_rigid_object is not None:
+                    object_rigid_object.update(float(sim.cfg.dt))
+                if object_stage is not None and object_prim_path is not None:
+                    _maybe_attach_franka_grasp_constraint(
+                        stage=object_stage,
+                        robot=robot_articulation,
+                        star_rigid_object=object_rigid_object,
+                        star_prim_path=object_prim_path,
+                        state=grasp_constraint_state,
+                        frame_idx=frame_idx,
+                        substep_idx=substep_idx,
+                    )
+            else:
+                _write_robot_articulation_targets(robot_articulation, last_robot_target)
+                _update_franka_kinematic_contact_proxies(
+                    object_stage or omni.usd.get_context().get_stage(),
+                    robot_articulation,
+                    contact_proxy_followers,
+                )
+                sim.step(render=False)
+                _update_robot_articulation(robot_articulation, float(sim.cfg.dt))
+                if object_rigid_object is not None:
+                    object_rigid_object.update(float(sim.cfg.dt))
+                if object_stage is not None and object_prim_path is not None:
+                    _maybe_attach_franka_grasp_constraint(
+                        stage=object_stage,
+                        robot=robot_articulation,
+                        star_rigid_object=object_rigid_object,
+                        star_prim_path=object_prim_path,
+                        state=grasp_constraint_state,
+                        frame_idx=frame_idx,
+                        substep_idx=substep_idx,
+                    )
         if frame_callback is not None:
             frame_callback(frame_idx, frame_count)
         if robot_motion_trace is not None:
             motion_record = _robot_motion_record(robot_articulation, frame_idx, frame_count, last_robot_target)
             if motion_record is not None:
                 robot_motion_trace.append(motion_record)
+        _update_franka_contact_debug_visual_overlays(
+            object_stage or omni.usd.get_context().get_stage(),
+            robot_articulation,
+            contact_debug_overlays,
+        )
         sim.render()
         camera.update(float(sim.cfg.dt) * step_count)
+        if object_motion_trace is not None and object_stage is not None and object_prim_path is not None:
+            object_record = _rigid_object_motion_record(
+                object_rigid_object,
+                object_prim_path,
+                frame_idx,
+                frame_count,
+            ) or _object_motion_record(object_stage, object_prim_path, frame_idx, frame_count)
+            if object_record is not None:
+                object_motion_trace.append(object_record)
         dst = frames_dir / f"overview_{frame_idx:04d}.png"
         _log(f"capturing overview frame {frame_idx + 1}/{frame_count}")
         _save_rgb_tensor(dst, camera.data.output["rgb"][0])
@@ -2224,9 +3401,39 @@ def main() -> None:
     output_dir = args_cli.output_dir.expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     _log(f"output_dir={output_dir}")
+    if float(args_cli.physics_dt) <= 0.0:
+        raise ValueError("--physics_dt must be positive")
+    if int(args_cli.franka_solver_position_iterations) <= 0:
+        raise ValueError("--franka_solver_position_iterations must be positive")
+    if int(args_cli.franka_solver_velocity_iterations) < 0:
+        raise ValueError("--franka_solver_velocity_iterations must be non-negative")
+    proxy_center = tuple(float(v) for v in args_cli.franka_contact_proxy_center)
+    proxy_size = tuple(float(v) for v in args_cli.franka_contact_proxy_size)
+    if any(v <= 0.0 for v in proxy_size):
+        raise ValueError("--franka_contact_proxy_size entries must be positive")
+    contact_debug_opacity = max(0.0, min(1.0, float(args_cli.contact_debug_opacity)))
+    contact_debug_enabled = bool(args_cli.show_contact_debug)
+    show_franka_contact_proxies = contact_debug_enabled or bool(args_cli.show_franka_contact_proxies)
+    show_star_collision = contact_debug_enabled or bool(args_cli.show_star_collision)
+    collision_rest_offset = (
+        None if args_cli.collision_rest_offset is None else float(args_cli.collision_rest_offset)
+    )
+    franka_proxy_contact_offset = (
+        None
+        if args_cli.franka_contact_proxy_contact_offset is None
+        else float(args_cli.franka_contact_proxy_contact_offset)
+    )
+    star_collision_contact_offset = (
+        None if args_cli.star_collision_contact_offset is None else float(args_cli.star_collision_contact_offset)
+    )
 
+    _log("resolving robot")
     robot_spec = _resolve_robot(output_dir)
+    _log(f"resolved robot: {robot_spec.name} render_mode={robot_spec.render_mode}")
+    _log("loading trajectory if requested")
     trajectory_data = _load_franka_trajectory() if args_cli.franka_motion == "trajectory" else None
+    if isinstance(trajectory_data, dict):
+        _log(f"loaded trajectory frames: {len(trajectory_data.get('frames', []))}")
 
     _log("creating USD stage")
     create_new_stage()
@@ -2245,10 +3452,34 @@ def main() -> None:
     table_mat = _material(stage, "/World/Looks/table_matte", (0.54, 0.50, 0.44))
     leg_mat = _material(stage, "/World/Looks/table_dark", (0.20, 0.22, 0.24))
     floor_mat = _material(stage, "/World/Looks/floor_gray", (0.28, 0.30, 0.31))
-    star_mat = _material(stage, "/World/Looks/star_yellow", (0.95, 0.70, 0.16), roughness=0.55)
+    star_mat = _material(
+        stage,
+        "/World/Looks/star_yellow",
+        (0.95, 0.70, 0.16),
+        roughness=0.55,
+        opacity=0.45 if show_star_collision else 1.0,
+    )
     cube_mat = _material(stage, "/World/Looks/cube_blue", (0.10, 0.42, 0.86), roughness=0.62)
     collision_mat = _material(stage, "/World/Looks/collision_hidden", (0.95, 0.70, 0.16), roughness=0.55)
+    proxy_debug_mat = _material(
+        stage,
+        "/World/Looks/contact_proxy_debug_red",
+        (1.0, 0.08, 0.04),
+        roughness=0.45,
+        opacity=contact_debug_opacity,
+    )
+    star_collision_debug_mat = _material(
+        stage,
+        "/World/Looks/star_collision_debug_cyan",
+        (0.05, 0.82, 1.0),
+        roughness=0.45,
+        opacity=contact_debug_opacity,
+    )
     fixture_mat = _material(stage, "/World/Looks/fixture_graphite", (0.16, 0.18, 0.19), roughness=0.47)
+    grasp_x_mat = _material(stage, "/World/Looks/grasp_axis_x", (0.86, 0.10, 0.10), roughness=0.45)
+    grasp_y_mat = _material(stage, "/World/Looks/grasp_axis_y", (0.12, 0.62, 0.18), roughness=0.45)
+    grasp_z_mat = _material(stage, "/World/Looks/grasp_axis_z", (0.12, 0.28, 0.92), roughness=0.45)
+    grasp_target_mat = _material(stage, "/World/Looks/grasp_target_white", (1.0, 0.95, 0.70), roughness=0.35)
 
     # Match the current clutter-bin scene table and robot convention.
     table_height = 0.72
@@ -2264,8 +3495,69 @@ def main() -> None:
     else:
         _log(f"creating robot with render_mode={robot_spec.render_mode}")
     robot_articulation = _create_robot(stage, robot_spec)
+    franka_articulation_contact_proxies: dict[str, object] = {"created": [], "missing_links": [], "count": 0}
+    franka_kinematic_contact_proxies: dict[str, object] | None = None
+    if robot_spec.name == "graspgenx_franka_panda" and robot_spec.render_mode == "articulation_usd":
+        if str(args_cli.franka_contact_proxy_mode) in ("articulation", "kinematic"):
+            franka_articulation_contact_proxies = _add_franka_finger_collision_proxies(
+                stage,
+                collision_mat,
+                visible=False,
+                local_center=proxy_center,
+                local_size=proxy_size,
+                contact_offset=franka_proxy_contact_offset,
+                rest_offset=collision_rest_offset,
+            )
+        if str(args_cli.franka_contact_proxy_mode) == "kinematic":
+            franka_kinematic_contact_proxies = _add_franka_kinematic_contact_proxies(
+                stage,
+                collision_mat,
+                visible=False,
+                local_center=proxy_center,
+                local_size=proxy_size,
+                contact_offset=franka_proxy_contact_offset,
+                rest_offset=collision_rest_offset,
+            )
+        update_stage()
+    franka_contact_proxies: dict[str, object] = {
+        "mode": str(args_cli.franka_contact_proxy_mode),
+        "articulation_child": franka_articulation_contact_proxies,
+        "kinematic_followers": franka_kinematic_contact_proxies,
+    }
+    franka_contact_debug_visual_overlays = _add_franka_contact_debug_visual_overlays(
+        stage,
+        proxy_debug_mat,
+        visible=show_franka_contact_proxies,
+        local_center=proxy_center,
+        local_size=proxy_size,
+    )
     if args_cli.franka_motion == "trajectory" and robot_articulation is None:
         raise ValueError("--franka_motion trajectory requires --franka_render_mode articulation_usd")
+    if (
+        args_cli.scene == "star_kitting"
+        and args_cli.franka_motion == "trajectory"
+        and args_cli.franka_trajectory_object_mode == "physics"
+        and args_cli.franka_trajectory_playback != "target"
+    ):
+        raise ValueError(
+            "--franka_trajectory_object_mode physics requires --franka_trajectory_playback target "
+            "so the robot is driven through the articulation controller instead of kinematic state writes."
+        )
+    if (
+        args_cli.scene == "star_kitting"
+        and args_cli.franka_motion == "trajectory"
+        and args_cli.franka_trajectory_object_mode == "physics"
+        and not bool(args_cli.dynamic_star)
+    ):
+        raise ValueError("--franka_trajectory_object_mode physics requires --dynamic_star")
+    if str(args_cli.franka_grasp_constraint_mode) == "attach_on_close" and not bool(args_cli.dynamic_star):
+        raise ValueError("--franka_grasp_constraint_mode attach_on_close requires --dynamic_star")
+    if (
+        str(args_cli.franka_grasp_constraint_mode) == "attach_on_close"
+        and args_cli.franka_motion == "trajectory"
+        and args_cli.franka_trajectory_object_mode != "physics"
+    ):
+        raise ValueError("--franka_grasp_constraint_mode attach_on_close requires --franka_trajectory_object_mode physics")
 
     _log("creating table")
     table = _create_table(
@@ -2320,8 +3612,30 @@ def main() -> None:
         inner_radius=star_inner_radius,
         thickness=star_thickness,
         visual_mat=star_mat,
-        collision_mat=collision_mat,
+        collision_mat=star_collision_debug_mat if show_star_collision else collision_mat,
         dynamic=bool(args_cli.dynamic_star),
+        visual_visible=True,
+        collision_visible=show_star_collision,
+        collision_contact_offset=star_collision_contact_offset,
+        collision_rest_offset=collision_rest_offset,
+        max_depenetration_velocity=(
+            None
+            if args_cli.star_max_depenetration_velocity is None
+            else float(args_cli.star_max_depenetration_velocity)
+        ),
+        solver_position_iterations=(
+            None
+            if args_cli.star_solver_position_iterations is None
+            else int(args_cli.star_solver_position_iterations)
+        ),
+        solver_velocity_iterations=(
+            None
+            if args_cli.star_solver_velocity_iterations is None
+            else int(args_cli.star_solver_velocity_iterations)
+        ),
+    )
+    star_rigid_object = (
+        RigidObject(RigidObjectCfg(prim_path=str(star["prim_path"]))) if bool(star.get("dynamic")) else None
     )
 
     _log("creating fixture")
@@ -2348,9 +3662,37 @@ def main() -> None:
     sun.CreateAttribute("inputs:intensity", Sdf.ValueTypeNames.Float).Set(1500.0)
     sun.CreateAttribute("inputs:angle", Sdf.ValueTypeNames.Float).Set(0.35)
     _set_xform(sun, (0.0, 0.0, 0.0), rotate_xyz_deg=(-45.0, 0.0, 35.0))
+    grasp_candidate_markers = (
+        _add_grasp_candidate_markers(
+            stage,
+            trajectory_data,
+            max_count=max(0, int(args_cli.max_grasp_candidates)),
+            axis_length=float(args_cli.grasp_candidate_axis_length),
+            axis_thickness=float(args_cli.grasp_candidate_axis_thickness),
+            x_mat=grasp_x_mat,
+            y_mat=grasp_y_mat,
+            z_mat=grasp_z_mat,
+            target_mat=grasp_target_mat,
+        )
+        if bool(args_cli.show_grasp_candidates)
+        else {"enabled": False, "reason": "disabled"}
+    )
 
     settle_steps = max(0, int(args_cli.settle_steps))
-    settled_transform_baked = _settle_scene(sim, stage, star, settle_steps, robot_articulation)
+    settled_transform_baked = _settle_scene(
+        sim,
+        stage,
+        star,
+        settle_steps,
+        robot_articulation,
+        star_rigid_object=star_rigid_object,
+        contact_proxy_followers=franka_kinematic_contact_proxies,
+        contact_debug_overlays=franka_contact_debug_visual_overlays,
+    )
+    trajectory_drives_star = (
+        trajectory_data is not None and str(args_cli.franka_trajectory_object_mode) == "trajectory"
+    )
+    robot_collision_summary = _stage_collision_summary(stage, "/World/Robot")
 
     goal_pose = {
         "position": [
@@ -2361,6 +3703,28 @@ def main() -> None:
         "yaw_deg": float(args_cli.fixture_yaw_deg),
         "description": "Place the star centroid in the fixture hole and align yaw with the fixture slot.",
     }
+    grasp_constraint_state: dict[str, object] = {
+        "mode": str(args_cli.franka_grasp_constraint_mode),
+        "attached": False,
+        "failed": False,
+        "close_threshold": float(args_cli.franka_grasp_constraint_close_threshold),
+        "xy_threshold": float(args_cli.franka_grasp_constraint_xy_threshold),
+        "z_threshold": float(args_cli.franka_grasp_constraint_z_threshold),
+        "requires_dynamic_star": True,
+        "requires_target_playback": True,
+    }
+    contact_debug_metadata = {
+        "show_contact_debug": contact_debug_enabled,
+        "show_franka_contact_proxies": show_franka_contact_proxies,
+        "show_star_collision": show_star_collision,
+        "opacity": contact_debug_opacity,
+        "franka_contact_proxy_center": [float(v) for v in proxy_center],
+        "franka_contact_proxy_size": [float(v) for v in proxy_size],
+        "franka_contact_proxy_contact_offset": franka_proxy_contact_offset,
+        "star_collision_contact_offset": star_collision_contact_offset,
+        "collision_rest_offset": collision_rest_offset,
+        "franka_visual_overlays": _contact_proxy_metadata(franka_contact_debug_visual_overlays),
+    }
     metadata = {
         "generated_at_unix": time.time(),
         "task": "star_kitting",
@@ -2368,10 +3732,16 @@ def main() -> None:
         "simulation_backend": "Isaac Sim / Isaac Lab / PhysX USD scene",
         "robot": _robot_metadata(robot_spec),
         "robot_runtime": _robot_runtime_metadata(robot_articulation),
+        "robot_collision_summary": robot_collision_summary,
+        "franka_contact_proxies": _contact_proxy_metadata(franka_contact_proxies),
+        "franka_grasp_constraint": _contact_proxy_metadata(grasp_constraint_state),
+        "contact_debug": contact_debug_metadata,
+        "grasp_candidate_markers": grasp_candidate_markers,
         "robot_usd": str(robot_spec.usd_path) if robot_spec.usd_path else None,
         "robot_motion": {
             "mode": str(args_cli.franka_motion),
             "scale": float(args_cli.franka_motion_scale),
+            "trajectory_playback": str(args_cli.franka_trajectory_playback),
             "trajectory_json": str(args_cli.franka_trajectory_json.expanduser().resolve())
             if args_cli.franka_trajectory_json is not None
             else None,
@@ -2379,6 +3749,7 @@ def main() -> None:
             if isinstance(trajectory_data, dict) and isinstance(trajectory_data.get("frames"), list)
             else 0,
             "trajectory_object_id": str(args_cli.franka_trajectory_object_id),
+            "trajectory_object_mode": str(args_cli.franka_trajectory_object_mode),
         },
         "axes": {
             "table_long_axis": "world_y",
@@ -2409,18 +3780,34 @@ def main() -> None:
         "simulation": {
             "simulation_context_created_before_scene_assets": True,
             "physics_device": str(args_cli.physics_device),
-            "sim_dt": 1.0 / 60.0,
+            "sim_dt": float(args_cli.physics_dt),
             "render_interval": 1,
             "default_static_friction": 1.0,
             "default_dynamic_friction": 1.0,
             "physx_bounce_threshold_velocity": 0.2,
+            "physx_min_velocity_iteration_count": (
+                max(0, int(args_cli.franka_solver_velocity_iterations))
+                if int(args_cli.franka_solver_velocity_iterations) > 0
+                else None
+            ),
+            "franka_max_depenetration_velocity": float(args_cli.franka_max_depenetration_velocity),
+            "franka_solver_position_iterations": max(1, int(args_cli.franka_solver_position_iterations)),
+            "franka_solver_velocity_iterations": max(0, int(args_cli.franka_solver_velocity_iterations)),
         },
         "checks": {
             "robot_selected": robot_spec.name,
             "uses_graspgenx_franka": robot_spec.name == "graspgenx_franka_panda",
             "franka_is_articulation": robot_spec.render_mode == "articulation_usd",
             "franka_has_actuators": bool(robot_spec.actuator_config),
+            "franka_collision_prim_count": int(robot_collision_summary["num_collision_prims"]),
             "franka_trajectory_playback": args_cli.franka_motion == "trajectory",
+            "franka_trajectory_state_playback": (
+                args_cli.franka_motion == "trajectory" and args_cli.franka_trajectory_playback == "state"
+            ),
+            "franka_trajectory_object_replay": trajectory_drives_star,
+            "franka_trajectory_physics_object": (
+                args_cli.franka_motion == "trajectory" and args_cli.franka_trajectory_object_mode == "physics"
+            ),
             "franka_trajectory_has_frames": bool(
                 isinstance(trajectory_data, dict)
                 and isinstance(trajectory_data.get("frames"), list)
@@ -2438,7 +3825,7 @@ def main() -> None:
     _log("writing metadata")
     _write_metadata(output_dir / "scene_metadata.json", metadata)
 
-    if trajectory_data is not None:
+    if trajectory_drives_star:
         _apply_trajectory_object_pose(
             stage,
             str(star["prim_path"]),
@@ -2462,8 +3849,12 @@ def main() -> None:
     }
     name = str(args_cli.view)
     eye, look_at = views[name]
+    robot_motion_trace: list[dict[str, object]] = []
+    star_motion_trace: list[dict[str, object]] = []
 
     def trajectory_frame_callback(frame_idx: int, frame_count: int) -> None:
+        if not trajectory_drives_star:
+            return
         _apply_trajectory_object_pose(
             stage,
             str(star["prim_path"]),
@@ -2481,6 +3872,11 @@ def main() -> None:
             "view": name,
             "capture_video": bool(args_cli.capture_video),
             "franka_motion": str(args_cli.franka_motion),
+            "franka_trajectory_playback": str(args_cli.franka_trajectory_playback),
+            "franka_trajectory_object_mode": str(args_cli.franka_trajectory_object_mode),
+            "show_grasp_candidates": bool(args_cli.show_grasp_candidates),
+            "grasp_candidate_markers": grasp_candidate_markers,
+            "contact_debug": contact_debug_metadata,
             "franka_trajectory_json": str(args_cli.franka_trajectory_json.expanduser().resolve())
             if args_cli.franka_trajectory_json is not None
             else None,
@@ -2499,13 +3895,50 @@ def main() -> None:
             seconds=float(args_cli.video_seconds),
             sim_steps_per_frame=int(args_cli.sim_steps_per_frame),
             frame_callback=trajectory_frame_callback if trajectory_data is not None else None,
+            robot_motion_trace=robot_motion_trace,
+            object_motion_trace=star_motion_trace,
+            object_stage=stage,
+            object_prim_path=str(star["prim_path"]),
+            object_rigid_object=star_rigid_object,
+            contact_proxy_followers=franka_kinematic_contact_proxies,
+            contact_debug_overlays=franka_contact_debug_visual_overlays,
+            grasp_constraint_state=grasp_constraint_state,
         )
         rendered = {"overview_frames": frame_paths}
     else:
         if trajectory_data is not None:
             trajectory_frame_callback(0, 1)
+        object_record = _rigid_object_motion_record(
+            star_rigid_object,
+            str(star["prim_path"]),
+            0,
+            1,
+        ) or _object_motion_record(stage, str(star["prim_path"]), 0, 1)
+        if object_record is not None:
+            star_motion_trace.append(object_record)
         _log(f"capturing view: {name}")
         rendered = {name: str(_capture_view(name, eye, look_at, output_dir))}
+
+    star_motion_path = output_dir / "star_motion_trajectory.json"
+    _write_metadata(
+        star_motion_path,
+        {
+            "object_mode": str(args_cli.franka_trajectory_object_mode),
+            "object_replay_enabled": bool(trajectory_drives_star),
+            "franka_grasp_constraint": _contact_proxy_metadata(grasp_constraint_state),
+            "star_motion_trajectory": star_motion_trace,
+        },
+    )
+    robot_motion_path = output_dir / "robot_motion_trajectory.json"
+    _write_metadata(
+        robot_motion_path,
+        {
+            "motion": str(args_cli.franka_motion),
+            "trajectory_playback": str(args_cli.franka_trajectory_playback),
+            "franka_grasp_constraint": _contact_proxy_metadata(grasp_constraint_state),
+            "robot_motion_trajectory": robot_motion_trace,
+        },
+    )
 
     _log("writing render manifest")
     _write_metadata(
@@ -2518,9 +3951,17 @@ def main() -> None:
             "video_seconds": float(args_cli.video_seconds),
             "sim_steps_per_frame": int(args_cli.sim_steps_per_frame),
             "franka_motion": str(args_cli.franka_motion),
+            "franka_trajectory_playback": str(args_cli.franka_trajectory_playback),
+            "franka_trajectory_object_mode": str(args_cli.franka_trajectory_object_mode),
             "franka_trajectory_json": str(args_cli.franka_trajectory_json.expanduser().resolve())
             if args_cli.franka_trajectory_json is not None
             else None,
+            "show_grasp_candidates": bool(args_cli.show_grasp_candidates),
+            "grasp_candidate_markers": grasp_candidate_markers,
+            "contact_debug": contact_debug_metadata,
+            "franka_grasp_constraint": _contact_proxy_metadata(grasp_constraint_state),
+            "star_motion_trajectory": str(star_motion_path),
+            "robot_motion_trajectory": str(robot_motion_path),
         },
     )
 

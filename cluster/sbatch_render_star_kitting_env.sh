@@ -34,6 +34,15 @@ case "${ANIMATE_CUBE,,}" in
     ANIMATE_CUBE_FLAG=""
     ;;
 esac
+SHOW_GRASP_CANDIDATES="${SHOW_GRASP_CANDIDATES:-False}"
+case "${SHOW_GRASP_CANDIDATES,,}" in
+  1|true|yes|on)
+    SHOW_GRASP_CANDIDATES_FLAG="--show_grasp_candidates"
+    ;;
+  *)
+    SHOW_GRASP_CANDIDATES_FLAG=""
+    ;;
+esac
 if [ "$SCENE" = "cube_motion" ] || [ "$SCENE" = "single_cube" ]; then
   if [ -n "$ANIMATE_CUBE_FLAG" ]; then
     RESULT_SUBDIR="${RESULT_SUBDIR:-franka_cube_motion}"
@@ -51,6 +60,13 @@ if [ -z "${FRANKA_RENDER_MODE:-}" ]; then
     FRANKA_RENDER_MODE="static_urdf_obj_meshes"
   else
     FRANKA_RENDER_MODE="articulation_usd"
+  fi
+fi
+if [ -z "${FRANKA_TRAJECTORY_PLAYBACK:-}" ]; then
+  if [ "${FRANKA_MOTION:-hold}" = "trajectory" ]; then
+    FRANKA_TRAJECTORY_PLAYBACK="state"
+  else
+    FRANKA_TRAJECTORY_PLAYBACK="target"
   fi
 fi
 OUT_DIR="$RESULTS_NFS/$RESULT_SUBDIR/$RUN_NAME"
@@ -105,7 +121,25 @@ echo "FRANKA_BASE_Z_OFFSET=${FRANKA_BASE_Z_OFFSET:-0.2}"
 echo "FRANKA_MOTION=${FRANKA_MOTION:-hold}"
 echo "FRANKA_MOTION_SCALE=${FRANKA_MOTION_SCALE:-1.0}"
 echo "FRANKA_TRAJECTORY_JSON=${FRANKA_TRAJECTORY_JSON:-}"
+echo "FRANKA_TRAJECTORY_PLAYBACK=$FRANKA_TRAJECTORY_PLAYBACK"
 echo "FRANKA_TRAJECTORY_OBJECT_ID=${FRANKA_TRAJECTORY_OBJECT_ID:-object}"
+echo "FRANKA_TRAJECTORY_OBJECT_MODE=${FRANKA_TRAJECTORY_OBJECT_MODE:-trajectory}"
+echo "FRANKA_CONTACT_PROXY_MODE=${FRANKA_CONTACT_PROXY_MODE:-articulation}"
+echo "FRANKA_GRASP_CONSTRAINT_MODE=${FRANKA_GRASP_CONSTRAINT_MODE:-off}"
+echo "FRANKA_GRASP_CONSTRAINT_CLOSE_THRESHOLD=${FRANKA_GRASP_CONSTRAINT_CLOSE_THRESHOLD:-0.012}"
+echo "FRANKA_GRASP_CONSTRAINT_XY_THRESHOLD=${FRANKA_GRASP_CONSTRAINT_XY_THRESHOLD:-0.050}"
+echo "FRANKA_GRASP_CONSTRAINT_Z_THRESHOLD=${FRANKA_GRASP_CONSTRAINT_Z_THRESHOLD:-0.080}"
+echo "STAR_OUTER_RADIUS=${STAR_OUTER_RADIUS:-0.032}"
+echo "STAR_INNER_RADIUS=${STAR_INNER_RADIUS:-0.0145}"
+echo "STAR_THICKNESS=${STAR_THICKNESS:-0.040}"
+echo "FIXTURE_SIZE_X=${FIXTURE_SIZE_X:-0.18}"
+echo "FIXTURE_SIZE_Y=${FIXTURE_SIZE_Y:-0.18}"
+echo "FIXTURE_THICKNESS=${FIXTURE_THICKNESS:-0.060}"
+echo "FIXTURE_CLEARANCE=${FIXTURE_CLEARANCE:-0.006}"
+echo "SHOW_GRASP_CANDIDATES=$SHOW_GRASP_CANDIDATES"
+echo "MAX_GRASP_CANDIDATES=${MAX_GRASP_CANDIDATES:-24}"
+echo "GRASP_CANDIDATE_AXIS_LENGTH=${GRASP_CANDIDATE_AXIS_LENGTH:-0.045}"
+echo "GRASP_CANDIDATE_AXIS_THICKNESS=${GRASP_CANDIDATE_AXIS_THICKNESS:-0.004}"
 echo "ANIMATE_CUBE=$ANIMATE_CUBE"
 
 srun \
@@ -150,15 +184,26 @@ srun \
       --franka_motion \"${FRANKA_MOTION:-hold}\" \
       --franka_motion_scale \"${FRANKA_MOTION_SCALE:-1.0}\" \
       \${FRANKA_TRAJECTORY_JSON:+--franka_trajectory_json \"\$FRANKA_TRAJECTORY_JSON\"} \
+      --franka_trajectory_playback \"$FRANKA_TRAJECTORY_PLAYBACK\" \
       --franka_trajectory_object_id \"${FRANKA_TRAJECTORY_OBJECT_ID:-object}\" \
+      --franka_trajectory_object_mode \"${FRANKA_TRAJECTORY_OBJECT_MODE:-trajectory}\" \
+      --franka_contact_proxy_mode \"${FRANKA_CONTACT_PROXY_MODE:-articulation}\" \
+      --franka_grasp_constraint_mode \"${FRANKA_GRASP_CONSTRAINT_MODE:-off}\" \
+      --franka_grasp_constraint_close_threshold \"${FRANKA_GRASP_CONSTRAINT_CLOSE_THRESHOLD:-0.012}\" \
+      --franka_grasp_constraint_xy_threshold \"${FRANKA_GRASP_CONSTRAINT_XY_THRESHOLD:-0.050}\" \
+      --franka_grasp_constraint_z_threshold \"${FRANKA_GRASP_CONSTRAINT_Z_THRESHOLD:-0.080}\" \
       --seed \"${SEED:-23}\" \
-      --star_outer_radius \"${STAR_OUTER_RADIUS:-0.092}\" \
-      --star_inner_radius \"${STAR_INNER_RADIUS:-0.042}\" \
-      --star_thickness \"${STAR_THICKNESS:-0.034}\" \
-      --fixture_size_x \"${FIXTURE_SIZE_X:-0.33}\" \
-      --fixture_size_y \"${FIXTURE_SIZE_Y:-0.33}\" \
-      --fixture_thickness \"${FIXTURE_THICKNESS:-0.052}\" \
-      --fixture_clearance \"${FIXTURE_CLEARANCE:-0.012}\" \
+      --star_outer_radius \"${STAR_OUTER_RADIUS:-0.032}\" \
+      --star_inner_radius \"${STAR_INNER_RADIUS:-0.0145}\" \
+      --star_thickness \"${STAR_THICKNESS:-0.040}\" \
+      $SHOW_GRASP_CANDIDATES_FLAG \
+      --max_grasp_candidates \"${MAX_GRASP_CANDIDATES:-24}\" \
+      --grasp_candidate_axis_length \"${GRASP_CANDIDATE_AXIS_LENGTH:-0.045}\" \
+      --grasp_candidate_axis_thickness \"${GRASP_CANDIDATE_AXIS_THICKNESS:-0.004}\" \
+      --fixture_size_x \"${FIXTURE_SIZE_X:-0.18}\" \
+      --fixture_size_y \"${FIXTURE_SIZE_Y:-0.18}\" \
+      --fixture_thickness \"${FIXTURE_THICKNESS:-0.060}\" \
+      --fixture_clearance \"${FIXTURE_CLEARANCE:-0.006}\" \
       --star_start_yaw_deg \"${STAR_START_YAW_DEG:--24.0}\" \
       --fixture_yaw_deg \"${FIXTURE_YAW_DEG:-18.0}\" \
       --cube_size \"${CUBE_SIZE:-0.06}\" \
