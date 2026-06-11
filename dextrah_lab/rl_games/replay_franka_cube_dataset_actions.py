@@ -49,6 +49,24 @@ parser.add_argument(
     help="Replay mode. May be passed multiple times. Defaults to dataset_t and dp_replan.",
 )
 parser.add_argument("--clip_actions", type=float, default=1.0)
+parser.add_argument(
+    "--pose_action_multiplier",
+    type=float,
+    default=1.0,
+    help=(
+        "Replay-only multiplier applied to the first six pose action dimensions before clipping. "
+        "Use only for controller-realization diagnostics; do not use this to claim BC policy quality."
+    ),
+)
+parser.add_argument(
+    "--action_repeat",
+    type=int,
+    default=1,
+    help=(
+        "Replay-only repeat count. The same selected action is executed for this many env steps before "
+        "advancing the dataset/policy action index. This is diagnostic and changes temporal semantics."
+    ),
+)
 parser.add_argument("--output_dir", type=str, default=None)
 parser.add_argument("--print_interval", type=int, default=1)
 parser.add_argument("--camera_eye", type=float, nargs=3, default=None)
@@ -608,12 +626,14 @@ def _build_report(summary: dict[str, Any]) -> str:
         "",
         f"- Demo reset: `{summary['demo_reset']}`",
         f"- Dataset start: `{summary['dataset_start']}`",
+        f"- Pose action multiplier: `{summary.get('pose_action_multiplier')}`",
+        f"- Action repeat: `{summary.get('action_repeat')}`",
         f"- Action audit: `{summary.get('action_audit')}`",
         "",
         "## Mode Summary",
         "",
-        "| mode | steps | nearest row | nearest phase | final EE-cube | final finger-cube | final cube-minus-EE | first close | first hard close | mean cosine | median xyz ratio | mean target err |",
-        "|---|---:|---:|---|---:|---:|---|---:|---:|---:|---:|---:|",
+        "| mode | steps | nearest row | nearest phase | final EE-cube | final finger-cube | final cube-minus-EE | first close | first hard close | mean cosine | median xyz ratio | mean target err | mean clip frac | max clip frac |",
+        "|---|---:|---:|---|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for mode, payload in summary["modes"].items():
         lines.append(
@@ -622,7 +642,9 @@ def _build_report(summary: dict[str, Any]) -> str:
             f"{payload['final_cube_minus_ee']} | {payload['first_executed_negative_step']} | "
             f"{payload['first_executed_hard_close_step']} | {payload['mean_actual_vs_expected_xyz_cosine']:.4f} | "
             f"{payload.get('median_xyz_realization_ratio', float('nan')):.4f} | "
-            f"{payload.get('mean_xyz_target_error_norm', float('nan')):.5f} |"
+            f"{payload.get('mean_xyz_target_error_norm', float('nan')):.5f} | "
+            f"{payload.get('mean_pose_action_clip_fraction', float('nan')):.3f} | "
+            f"{payload.get('max_pose_action_clip_fraction', float('nan')):.3f} |"
         )
     lines.extend(
         [
@@ -698,6 +720,8 @@ def main() -> None:
         }
 
     modes = args_cli.mode or ["dataset_t", "dp_replan"]
+    action_repeat = max(1, int(args_cli.action_repeat))
+    pose_action_multiplier = float(args_cli.pose_action_multiplier)
     env_cfg = parse_env_cfg(
         args_cli.task,
         device=args_cli.device,
@@ -741,6 +765,9 @@ def main() -> None:
         "gripper_convention": "-1 closes, +1 opens; target_width=0.5*(action+1)*max_gripper_width",
         "max_gripper_width": float(task_env.cfg.max_gripper_width),
         "video_step_trigger": "global_step % video_length == 0",
+        "pose_action_multiplier": pose_action_multiplier,
+        "action_repeat": action_repeat,
+        "repeat_semantics": "selected dataset/policy action index advances every action_repeat env steps",
     }
 
     rows: list[dict[str, Any]] = []
@@ -759,8 +786,11 @@ def main() -> None:
             mode_distances: list[float] = []
             mode_cosines: list[float] = []
             mode_first: dict[str, Any] | None = None
+            held_dp_action: np.ndarray | None = None
 
             for step in range(int(args_cli.steps)):
+                action_index = int(step // action_repeat)
+                repeat_index = int(step % action_repeat)
                 lowdim = extract_lowdim_obs_from_ppo_obs(policy_obs).detach().float().cpu().numpy()
                 if nearest_rows is None:
                     if dataset_start_row is None:
@@ -780,7 +810,12 @@ def main() -> None:
                     _nearest_dataset_row(dataset_obs, lowdim[env_idx])[0] for env_idx in range(lowdim.shape[0])
                 ]
                 with torch.inference_mode():
-                    dp_seq = predict_action_sequence_from_ppo_obs(policy, policy_obs, history, step=step)
+                    if repeat_index == 0 or held_dp_action is None:
+                        dp_seq = predict_action_sequence_from_ppo_obs(policy, policy_obs, history, step=step)
+                        held_dp_action = dp_seq[:, 0].copy()
+                    else:
+                        history.push(lowdim.astype(np.float32, copy=False), step=step)
+                        dp_seq = np.repeat(held_dp_action[:, None, :], repeats=1, axis=1)
 
                 exec_actions = np.zeros((task_env.num_envs, FRANKA_CUBE_ACTION_DIM), dtype=np.float32)
                 labels_t = np.zeros_like(exec_actions)
@@ -791,7 +826,7 @@ def main() -> None:
                 exec_action_sources: list[str] = ["unknown"] * task_env.num_envs
                 for env_idx in range(task_env.num_envs):
                     base = int(nearest_rows[env_idx])
-                    row_t = _clipped_row(base + step, episode_ends)
+                    row_t = _clipped_row(base + action_index, episode_ends)
                     row_t1 = _clipped_row(row_t + 1, episode_ends)
                     row_t7 = _clipped_row(row_t + 7, episode_ends)
                     labels_t[env_idx] = dataset_action[row_t]
@@ -836,9 +871,13 @@ def main() -> None:
                     else:
                         raise ValueError(mode)
 
+                raw_exec_actions = exec_actions.copy()
+                if pose_action_multiplier != 1.0:
+                    exec_actions[:, :6] = exec_actions[:, :6] * pose_action_multiplier
                 clip = float(args_cli.clip_actions)
                 if math.isfinite(clip) and clip > 0.0:
                     exec_actions = np.clip(exec_actions, -clip, clip)
+                clip_hits = np.abs(exec_actions[:, :6]) >= (clip - 1.0e-6) if math.isfinite(clip) and clip > 0.0 else np.zeros_like(exec_actions[:, :6], dtype=bool)
                 expected_world_delta = normalized_action_to_world_delta(exec_actions)
                 before_lowdim = lowdim.copy()
                 before_ee_to_cube = np.linalg.norm(before_lowdim[:, 14:17], axis=1)
@@ -915,6 +954,9 @@ def main() -> None:
                         "mode": mode,
                         "mode_index": mode_index,
                         "step": step,
+                        "action_index": action_index,
+                        "repeat_index": repeat_index,
+                        "action_repeat": action_repeat,
                         "env_index": env_idx,
                         "demo_reset_applied": demo_reset_summary is not None,
                         "fixed_dataset_start": dataset_start_row is not None,
@@ -971,7 +1013,11 @@ def main() -> None:
                         "label_t_plus_1_action": labels_t1[env_idx].astype(float).tolist(),
                         "label_t_plus_7_action": labels_t7[env_idx].astype(float).tolist(),
                         "dp_first_action": dp_seq[env_idx, 0].astype(float).tolist(),
+                        "raw_executed_action_before_multiplier": raw_exec_actions[env_idx].astype(float).tolist(),
                         "executed_action": exec_actions[env_idx].astype(float).tolist(),
+                        "pose_action_multiplier": pose_action_multiplier,
+                        "pose_action_clip_count": int(np.count_nonzero(clip_hits[env_idx])),
+                        "pose_action_clip_fraction": float(np.count_nonzero(clip_hits[env_idx]) / 6.0),
                         "action_scale": action_scale_np.astype(float).tolist(),
                         "action_frame_robot_root_quat_wxyz": root_quat_wxyz_np.astype(float).tolist(),
                         "expected_world_delta_xyz": expected_world_delta[env_idx, :3].astype(float).tolist(),
@@ -1020,6 +1066,10 @@ def main() -> None:
                                 "nearest_live_phase_env0": live_nearest_phase,
                                 "nearest_live_distance_env0": float(nearest_distances[0]),
                                 "exec_action_env0": exec_actions[0].astype(float).tolist(),
+                                "pose_action_multiplier": pose_action_multiplier,
+                                "action_repeat": action_repeat,
+                                "action_index": action_index,
+                                "repeat_index": repeat_index,
                             },
                             sort_keys=True,
                         ),
@@ -1046,6 +1096,7 @@ def main() -> None:
             xyz_target_errors = _finite_values(mode_rows, "xyz_target_error_norm")
             dataset_next_errors = _finite_values(mode_rows, "actual_vs_dataset_next_ee_pos_norm")
             gripper_width_errors = _finite_values(mode_rows, "gripper_width_target_error_after")
+            pose_clip_fractions = _finite_values(mode_rows, "pose_action_clip_fraction")
             summaries[mode] = {
                 "steps": len(mode_rows),
                 "initial_nearest_row": int(mode_first["nearest_initial_row"]),
@@ -1091,6 +1142,12 @@ def main() -> None:
                 ),
                 "mean_gripper_width_target_error_after": (
                     float(np.mean(gripper_width_errors)) if gripper_width_errors else float("nan")
+                ),
+                "max_pose_action_clip_fraction": (
+                    float(np.max(pose_clip_fractions)) if pose_clip_fractions else float("nan")
+                ),
+                "mean_pose_action_clip_fraction": (
+                    float(np.mean(pose_clip_fractions)) if pose_clip_fractions else float("nan")
                 ),
                 "first_dp_action": mode_first["dp_first_action"],
                 "first_label_action": mode_first["label_t_action"],
@@ -1140,6 +1197,8 @@ def main() -> None:
         "official_workspace": workspace.__class__.__name__,
         "policy_class": policy.__class__.__name__,
         "num_inference_steps": int(args_cli.num_inference_steps),
+        "pose_action_multiplier": pose_action_multiplier,
+        "action_repeat": action_repeat,
         "task": args_cli.task,
         "seed": int(args_cli.seed),
         "num_envs": int(args_cli.num_envs),

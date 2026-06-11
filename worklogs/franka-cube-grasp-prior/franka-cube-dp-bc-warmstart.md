@@ -4296,3 +4296,91 @@ Next:
 - Monitor `1027855`, fetch outputs, create/open viewer URLs, inspect action
   realization ratios and target errors, then patch conversion/control timing
   rather than training if the under-realization hypothesis holds.
+
+## 2026-06-11T16:20:20-07:00 - source-joint action-realization audit result
+
+Goal:
+- Quantify whether converted dataset/DP relative EE commands are realized by
+  the live DEXTRAH Franka DifferentialIK + PD controller at the expected
+  per-env-step magnitude.
+
+Result:
+- status: completed, diagnostic failure confirms action under-realization.
+- job_id: `1027855`
+- run_name:
+  `franka_cube_dp_replay_sourcejoint_actionaudit96_20260611_161600`
+- scheduler: `COMPLETED 0:0`, elapsed `00:03:33`, node `pool0-00032`.
+- local artifact dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_actionaudit96_20260611_161600`
+- local log:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_logs/l401/replay_franka_cube_dp_actions_1027855.out`
+- viewer URLs:
+  - filtered report:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_actionaudit96_20260611_161600/action_realization_audit_filtered_report.md`
+  - official replay report:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_actionaudit96_20260611_161600/replay_report.md`
+  - action audit plot:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_actionaudit96_20260611_161600/action_realization_audit.png`
+  - motion plot:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_actionaudit96_20260611_161600/replay_motion.png`
+  - `dataset_t` video:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_actionaudit96_20260611_161600/videos/franka-cube-dp-replay-actionaudit-step-0.mp4`
+  - `dataset_t_plus_7` video:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_actionaudit96_20260611_161600/videos/franka-cube-dp-replay-actionaudit-step-96.mp4`
+  - `dp_replan` video:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_actionaudit96_20260611_161600/videos/franka-cube-dp-replay-actionaudit-step-192.mp4`
+  - `dp_replan` contact sheet:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_actionaudit96_20260611_161600/franka-cube-dp-replay-actionaudit-step-192_contact_sheet.jpg`
+
+Key evidence:
+- Reset still matches exactly:
+  `joint_linf_diff_after_write_env0=0`,
+  `lowdim_linf_diff_env0=5.7e-7`,
+  `cube_minus_ee_l2_diff_env0=3.0e-7`.
+- Controller/config convention audit passes:
+  task and converter both use pose scales
+  `[0.06, 0.06, 0.045, 0.25, 0.25, 0.30]`,
+  root/action frame is the expected 180-degree yaw quaternion, and gripper
+  mapping is `-1` close / `+1` open.
+- `dataset_t`:
+  final/min EE-to-cube `0.1887 / 0.1887 m`, final finger-center-to-cube
+  `0.1815 m`, nearest-live phase remains `go_to_pre_grasp_pose`,
+  filtered median xyz realization ratio about `0.093`.
+- `dataset_t_plus_7`:
+  final/min EE-to-cube `0.1900 / 0.1900 m`, final finger-center-to-cube
+  `0.1826 m`, nearest-live phase remains `go_to_pre_grasp_pose`,
+  filtered median xyz realization ratio about `0.095`.
+- `dp_replan`:
+  final/min EE-to-cube `0.1657 / 0.1657 m`, final finger-center-to-cube
+  `0.1679 m`, nearest-live phase remains `go_to_pre_grasp_pose`,
+  median xyz realization ratio about `0.085`.
+- Representative nonzero rows:
+  - `dataset_t` step 16 commands `0.01305 m` but realizes
+    `0.00118 m` (`ratio=0.090`).
+  - `dataset_t_plus_7` step 16 commands `0.01206 m` but realizes
+    `0.00115 m` (`ratio=0.095`).
+  - `dp_replan` step 32 commands `0.01051 m` but realizes
+    `0.00074 m` (`ratio=0.071`).
+
+Analysis:
+- This is not a sign/frame bug: direction cosines are mostly high and the
+  action/root frame audit matches the converter.
+- This is not a gripper convention bug in the approach window: open commands
+  keep gripper width near `0.08 m`.
+- The bug is temporal/controller semantics: converted labels assume a
+  normalized relative EE command reaches the next cuRobo waypoint in one
+  1/60-second env step, while the live DifferentialIK + joint PD stack realizes
+  only about 8-10% of that translation per env step. The replay reaches hold
+  labels while still far from the cube.
+- No BC/RL scale-up is valid until dataset conversion or replay/control timing
+  is fixed.
+
+Next:
+- Add replay-only compensation knobs: pose-action multiplier and action-repeat
+  / hold count.
+- Run a bounded exact-source-reset sweep with multipliers `3`, `6`, and `10`
+  at repeat `1`, short 96-160 step windows, per-mode videos, and
+  `action_realization_audit.png`.
+- Acceptance is diagnostic only: reduce action realization error and EE-cube
+  distance toward the source trajectory without excessive clipping,
+  instability, or gripper/control convention regressions.
