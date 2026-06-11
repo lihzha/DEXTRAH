@@ -1683,3 +1683,35 @@ Analysis:
 Next:
 - Tighten polling for the expected `2026-06-11 00:27 PDT` TERM/requeue signal
   and validate checkpoint/sidecar freshness before and after the requeue.
+
+## 2026-06-11 00:17 PDT - Teacher Pre-Signal Artifact Check
+
+Goal:
+- Capture the last healthy artifact state before the expected wall-time
+  TERM/requeue window.
+
+Command / Job:
+- job_id: `28955904`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28955904.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+
+Result:
+- status: running healthy.
+- scheduler: `RUNNING` on `batch-block5-03072`, elapsed `03:34:56`,
+  time left `15:04` at `00:17:28 PDT`.
+- stdout advanced to epoch `18560/20000`.
+- latest complete checkpoint:
+  `last_dextrah_lstm_ep_18560_rew_559.2869.pth` at `00:17:28`.
+- runtime sidecars rank `0-7` all refreshed at `00:17:26`.
+- narrow critical failure scan over recent stdout returned no matches.
+
+Analysis:
+- The job is still advancing normally immediately before the expected signal
+  window. Checkpoint and runtime sidecar state are fresh enough to resume if
+  the allocation is requeued.
+
+Next:
+- Continue tight polling through the expected TERM/requeue signal and validate
+  the next restore from the newest checkpoint/sidecars.
