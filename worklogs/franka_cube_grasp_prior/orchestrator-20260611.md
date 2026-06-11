@@ -2026,3 +2026,73 @@ Worker C source-joint reset replay:
   sign/width mapping, quaternion/axis convention, and temporal offset.
 - Instruction sent to C: produce an action-semantics audit artifact bundle
   before any further BC/RL training.
+
+## 2026-06-11 Monitor Check 23:17 UTC
+
+Worker A paired 200-epoch small PPO comparison:
+
+- A planned, committed, deployed, and launched the next bounded apple-to-apple
+  smoke pair. No A100 launch.
+- A worktree commit: `1b8652d33ad56a5ae02a689fc31cd13b9219702d`.
+- Prior-enabled job:
+  - job_id: `1027853`
+  - run: `franka_cube_ggx_pregrasp_long200_1gpu_20260611_2311`
+  - run_dir:
+    `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_long200_1gpu_20260611_2311`
+  - log:
+    `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_smoke_1027853.out`
+  - config delta: `GRASP_PRIOR_RESET_ENABLED=True`,
+    `GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_orig006_single.npz`
+- Prior-disabled baseline job:
+  - job_id: `1027854`
+  - run: `franka_cube_baseline_noprior_long200_1gpu_20260611_2311`
+  - run_dir:
+    `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseline_noprior_long200_1gpu_20260611_2311`
+  - log:
+    `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_smoke_1027854.out`
+  - config delta: `GRASP_PRIOR_RESET_ENABLED=False`, no prior library override.
+- Common config: l401 `batch`, 1 GPU, `NUM_ENVS=64`,
+  `MAX_ITERATIONS=200`, `SAVE_FREQUENCY=25`, `HORIZON_LENGTH=64`,
+  `MINIBATCH_SIZE=4096`, `CENTRAL_VALUE_MINIBATCH_SIZE=4096`,
+  `SEED=20260620`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`,
+  `DEXTRAH_RLGAMES_JSONL_METRICS=True`, `USE_CUDA_GRAPH=True`.
+- Early monitor:
+  - both jobs running and saving checkpoints.
+  - prior reached at least epoch `98`; baseline reached at least epoch `110`.
+  - no bad scalars in either direct-info JSONL.
+  - prior aggregate checkpoint rewards: epoch 25 `719.01544`, epoch 50
+    `595.4116`.
+  - baseline aggregate checkpoint rewards: epoch 25 `643.44666`, epoch 50
+    `567.51636`.
+  - direct task metrics at current snapshot: prior success/lifted max
+    `0.0 / 0.0`, prior min EE-cube `0.0798 m`; baseline success max `0.0`,
+    lifted-rate max `0.015625`, min EE-cube `0.0853 m`.
+- Orchestrator interpretation: early learning still does not solve the task.
+  Continue to full 200 epochs, then require checkpoint/eval videos before any
+  scale-up decision.
+
+Worker B current state:
+
+- B acknowledged job `1027851` as a transient-success/reset-semantics artifact.
+- B generated additional local artifacts for the success window, including:
+  `success_window_slow_step300_380.mp4` and
+  `success_window_contact_sheet.jpg` under
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_a10_video480_20260611_160358_artifacts`.
+- B is patching eval instrumentation for `success_ever`, first/last success
+  step, done-ever/done-after-success, per-step done rates, and done-reason
+  snapshots. Planned next job: one bounded 390-step offset-hold eval with the
+  same config as `1027851`, no PPO scale-up.
+
+Worker C current state:
+
+- C produced a focused action-realization report from source-joint replay job
+  `1027846`:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_ep24s0_fixedlabels320_20260611_171400/sourcejoint_action_realization_existing1027846.md`
+- Plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_ep24s0_fixedlabels320_20260611_171400/sourcejoint_action_realization_existing1027846.png`
+- Key finding: exact reset is ruled out as the cause. Dataset labels point in
+  the expected direction, but realized EE displacement is far too small:
+  early approach commands request roughly `6-13 mm` translation while Isaac
+  realizes about `0.3-1.2 mm`.
+- C is patching replay diagnostics to log first-class action-semantics fields
+  and per-mode videos before any BC/RL scale-up.
