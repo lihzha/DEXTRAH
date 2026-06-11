@@ -173,9 +173,9 @@ def parse_args() -> argparse.Namespace:
         default=0.080,
         help="Maximum vertical offset between finger midpoint and star center before attach_on_close may fire.",
     )
-    parser.add_argument("--star_outer_radius", type=float, default=0.092)
-    parser.add_argument("--star_inner_radius", type=float, default=0.042)
-    parser.add_argument("--star_thickness", type=float, default=0.034)
+    parser.add_argument("--star_outer_radius", type=float, default=0.032)
+    parser.add_argument("--star_inner_radius", type=float, default=0.0145)
+    parser.add_argument("--star_thickness", type=float, default=0.040)
     parser.add_argument(
         "--show_grasp_candidates",
         action="store_true",
@@ -203,10 +203,10 @@ def parse_args() -> argparse.Namespace:
         default=0.004,
         help="Axis triad thickness, in meters, for visualized grasp candidates.",
     )
-    parser.add_argument("--fixture_size_x", type=float, default=0.33)
-    parser.add_argument("--fixture_size_y", type=float, default=0.33)
-    parser.add_argument("--fixture_thickness", type=float, default=0.052)
-    parser.add_argument("--fixture_clearance", type=float, default=0.012)
+    parser.add_argument("--fixture_size_x", type=float, default=0.18)
+    parser.add_argument("--fixture_size_y", type=float, default=0.18)
+    parser.add_argument("--fixture_thickness", type=float, default=0.060)
+    parser.add_argument("--fixture_clearance", type=float, default=0.006)
     parser.add_argument("--star_start_yaw_deg", type=float, default=-24.0)
     parser.add_argument("--fixture_yaw_deg", type=float, default=18.0)
     parser.add_argument("--cube_size", type=float, default=0.06)

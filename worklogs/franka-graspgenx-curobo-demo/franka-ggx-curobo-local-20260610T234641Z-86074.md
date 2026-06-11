@@ -388,3 +388,64 @@ Result:
 
 Analysis:
 - The final artifact is not an assisted grasp success. It is a faithful Isaac Sim/PhysX replay of the selected GraspGenX/cuRobo plan with all 40 generated grasp candidates shown, and the selected top-down grasp fails to lift the star.
+
+## 2026-06-11T07:47:13Z - Small-star render alignment
+
+Goal:
+- Make the rendered star smaller so the Franka grasp demo uses the same star dimensions that GraspGenX/cuRobo planned against.
+
+Hypothesis:
+- The current render difficulty comes from a planner/render mismatch: the planner trajectory was generated for `outer=0.032`, `inner=0.0145`, `thickness=0.040`, but the renderer defaulted to `outer=0.092`, `inner=0.042`, `thickness=0.034`. Aligning render defaults to planner dimensions should produce a physically faithful small-star demo without changing the planned grasp.
+
+Change:
+- Updated `render_star_kitting_env.py` defaults to `star_outer_radius=0.032`, `star_inner_radius=0.0145`, `star_thickness=0.040`.
+- Updated render defaults for the fixture to match the planner-sized insert: `fixture_size_x=0.18`, `fixture_size_y=0.18`, `fixture_thickness=0.060`, `fixture_clearance=0.006`.
+- Updated `cluster/sbatch_render_star_kitting_env.sh` fallback defaults the same way.
+
+Version Control:
+- agent_id: franka-ggx-curobo-local-20260610T234641Z-86074
+- worktree: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-ggx-curobo-local-20260610T234641Z-86074
+- branch: codex/franka-graspgenx-curobo-demo/franka-ggx-curobo-local-20260610T234641Z-86074
+- base_commit: 2f52b4295a4c03a0821e9a9bbc2e91abeb4995c1
+- implementation_commit: pending
+- changed_files: dextrah_lab/scene_scripts/render_star_kitting_env.py, cluster/sbatch_render_star_kitting_env.sh, worklogs/franka-graspgenx-curobo-demo/franka-ggx-curobo-local-20260610T234641Z-86074.md
+
+Command / Job:
+- validation: `python3 -m py_compile dextrah_lab/scene_scripts/render_star_kitting_env.py dextrah_lab/scene_scripts/plan_franka_star_graspgenx_curobo.py`
+- validation: `bash -n cluster/sbatch_render_star_kitting_env.sh`
+- validation: `bash -n cluster/sbatch_plan_franka_star_graspgenx_curobo.sh`
+- validation: `git diff --check`
+- planned render: local Docker Isaac Lab/Isaac Sim on GPU0, existing small-star planner trajectory `planner_assets_verify_20260611T005550Z/trajectory.json`, raw dynamic star physics, grasp assist off, all grasp candidates shown.
+
+Result:
+- status: in progress
+
+Next:
+- Render, encode, inspect metadata/video/motion traces, then commit and push if the artifact confirms the smaller star.
+
+## 2026-06-11T07:49:59Z - Small-star render result
+
+Result:
+- status: passed as resized render; raw PhysX still does not lift
+- final_run: render_small_star_raw_physics_all40_gpu0_20260611T074748Z
+- run_dir: /home/lzha/code/local_results/franka_ggx_curobo_demo/franka-ggx-curobo-local-20260610T234641Z-86074/render/render_small_star_raw_physics_all40_gpu0_20260611T074748Z
+- overview_video: /home/lzha/code/local_results/franka_ggx_curobo_demo/franka-ggx-curobo-local-20260610T234641Z-86074/render/render_small_star_raw_physics_all40_gpu0_20260611T074748Z/overview.mp4
+- zoomed_video: /home/lzha/code/local_results/franka_ggx_curobo_demo/franka-ggx-curobo-local-20260610T234641Z-86074/render/render_small_star_raw_physics_all40_gpu0_20260611T074748Z/overview_pickup_crop.mp4
+- contact_sheet: /home/lzha/code/local_results/franka_ggx_curobo_demo/franka-ggx-curobo-local-20260610T234641Z-86074/render/render_small_star_raw_physics_all40_gpu0_20260611T074748Z/contact_sheet.png
+- zoomed_contact_sheet: /home/lzha/code/local_results/franka_ggx_curobo_demo/franka-ggx-curobo-local-20260610T234641Z-86074/render/render_small_star_raw_physics_all40_gpu0_20260611T074748Z/contact_sheet_pickup_crop.png
+- overview_viewer: http://localhost:8765/view?path=local_results/franka_ggx_curobo_demo/franka-ggx-curobo-local-20260610T234641Z-86074/render/render_small_star_raw_physics_all40_gpu0_20260611T074748Z/overview.mp4
+- zoomed_viewer: http://localhost:8765/view?path=local_results/franka_ggx_curobo_demo/franka-ggx-curobo-local-20260610T234641Z-86074/render/render_small_star_raw_physics_all40_gpu0_20260611T074748Z/overview_pickup_crop.mp4
+- ffprobe: overview 640x360, 48 frames, 12 FPS, 4.0 s; zoom 960x720, 48 frames, 12 FPS, 4.0 s
+- dimensions: `star_outer_radius=0.032`, `star_inner_radius=0.0145`, `star_thickness=0.040`; fixture `0.18 x 0.18 x 0.060`, clearance `0.006`
+- grasp markers: 40 source candidates, 40 visualized; source distribution `top_down=34`, `side_or_oblique=4`, `steep_oblique=2`
+- faithful physics knobs: `franka_trajectory_object_mode=physics`, `franka_trajectory_playback=target`, `franka_grasp_constraint.mode=off`, `franka_grasp_constraint.attached=false`
+- star motion: max z lift 0.000758 m, max xy displacement 0.032155 m, final z delta 0.0 m
+- gripper motion: actual finger sum closed from 0.0800 m to min 0.00995 m
+
+Analysis:
+- The object is now visually and metrically the smaller star used by the GraspGenX/cuRobo planner. The prior large-star render was a planner/render mismatch.
+- The smaller star produces real lateral contact in raw PhysX, but the selected top-down grasp still does not lift it. This remains a faithful failure, not an assisted success.
+- The zoomed artifact is the more useful one for inspecting the small object and finger contact.
+
+Next:
+- Final validation, commit the default alignment, push the branch, and report the new small-star artifacts.
