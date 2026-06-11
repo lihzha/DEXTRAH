@@ -1931,3 +1931,34 @@ Result:
 
 Next:
 - Monitor `1027853` and `1027854` through completion, inspect JSONL sidecars/checkpoints/logs, then run deterministic eval videos for epoch 100, best, and final checkpoints as needed for both variants.
+
+## 2026-06-11T23:20:04Z - launch paired 200-epoch deterministic eval set
+
+Goal:
+- Evaluate mid and final/best checkpoints from the paired 200-epoch small PPO comparison with deterministic 1-env videos and geometry traces.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- train_source_commit: `1b8652d33ad56a5ae02a689fc31cd13b9219702d`
+- worklog_commit_after_train_launch: `5f70caf`
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `1b8652d33ad56a5ae02a689fc31cd13b9219702d`, detached `HEAD`
+
+Training Summary Before Eval:
+- prior_job_id: `1027853`, `COMPLETED 0:0`, 200 JSONL records, no bad scalars in initial parse, best/final interval reward `1094.3864`
+- baseline_job_id: `1027854`, `COMPLETED 0:0`, 200 JSONL records, no bad scalars in initial parse, final interval reward `861.7606`, best saved policy around epoch 133 reward `1039.6322`, best interval checkpoint epoch 175 reward `1023.7079`
+- both training runs: success max `0.0`; baseline lifted-rate max `0.015625`; prior lifted-rate max `0.0`
+
+Eval Jobs:
+- prior epoch 100: job `1027857`, run `franka_cube_ggx_pregrasp_long200_eval_ep100_20260611_2320`, checkpoint `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_long200_1gpu_20260611_2311/nn/last_dextrah_franka_cube_grasp_ep_100_rew_860.64087.pth`
+- prior final/best epoch 200: job `1027858`, run `franka_cube_ggx_pregrasp_long200_eval_ep200_20260611_2320`, checkpoint `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_long200_1gpu_20260611_2311/nn/last_dextrah_franka_cube_grasp_ep_200_rew_1094.3864.pth`
+- baseline epoch 100: job `1027859`, run `franka_cube_baseline_noprior_long200_eval_ep100_20260611_2320`, checkpoint `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseline_noprior_long200_1gpu_20260611_2311/nn/last_dextrah_franka_cube_grasp_ep_100_rew_844.08435.pth`
+- baseline saved best: job `1027860`, run `franka_cube_baseline_noprior_long200_eval_best_20260611_2320`, checkpoint `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseline_noprior_long200_1gpu_20260611_2311/nn/dextrah_franka_cube_grasp.pth`
+- baseline final epoch 200: job `1027861`, run `franka_cube_baseline_noprior_long200_eval_ep200_20260611_2320`, checkpoint `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseline_noprior_long200_1gpu_20260611_2311/nn/last_dextrah_franka_cube_grasp_ep_200_rew_861.7606.pth`
+- common eval shape: l401 `batch`, 1 GPU, 1 env, 240 steps, deterministic, `SEED=20260621`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`, matched camera, `USE_CUDA_GRAPH=False` for video capture
+
+Result:
+- status: submitted
+
+Next:
+- Monitor eval jobs `1027857`-`1027861`, fetch `metrics.json`, `trace.csv/jsonl`, videos, and logs, then generate contact sheets, geometry/lift traces, reward/lift/success curves, and a paired comparison report with viewer URLs.
