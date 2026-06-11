@@ -3522,7 +3522,7 @@ Version Control:
   `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
 - branch: `codex/franka-cube-diffusion-policy-bc`
 - base_commit: `00d96eb4a3d65abaad1d3d7706ae52ed1f1dfa96`
-- implementation_commit: pending
+- implementation_commit: `558f2464210bbda784844a7cf36affcc1ab540df`
 - changed_files:
   - `dextrah_lab/rl_games/eval_franka_cube_dp_policy.py`
   - `cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
