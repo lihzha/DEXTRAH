@@ -1434,12 +1434,13 @@ Hypothesis:
 
 Version Control:
 - agent_id: franka-cube-traj-tracking
-- local_commit: pending worklog-only checkpoint; implementation code is `0eafbad235c2b821f86eb46f61095fdd3f710031`.
+- local_commit: `92e69c06b8c99a09d6c8ab97177c81f5bf2d0c33`; implementation code is `0eafbad235c2b821f86eb46f61095fdd3f710031`.
+- remote_commit/status: /lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking at `92e69c06b8c99a09d6c8ab97177c81f5bf2d0c33`, detached clean. SSH Git auth failed; HTTPS fetch fallback succeeded.
 
 Command / Job:
 - command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:30:00 --job-name=franka_cube_traj_gripclamp_eval3 --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_gripclamp_eval720_20260611_134240,CHECKPOINT=/results/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_gripclamp_rl_smoke_20260611_133928/nn/last_dextrah_franka_cube_traj_tracking_ep_3_rew_5.704905.pth,NUM_ENVS=4,NUM_STEPS=720,VIDEO_LENGTH=240,CAPTURE_VIDEO=False,PRINT_INTERVAL=120,USE_CUDA_GRAPH=False,SEED=52,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
-- job_id: pending
-- expected_log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_<job>.out
+- job_id: 1027731 `franka_cube_traj_gripclamp_eval3`
+- expected_log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1027731.out
 - expected_metrics: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_traj_tracking_gripclamp_eval720_20260611_134240/metrics.json
 
 Acceptance Criteria:
@@ -1447,3 +1448,25 @@ Acceptance Criteria:
 - Reference summary reports runtime duration `8.0`, source duration `22.033333333333335`, `gripper_schedule_policy=clamp_source_width_to_min_target_gripper_width`, runtime gripper min `0.024`, reset-pose target policy, and `curobo_validated=false`.
 - Phase progress reaches 1.0; `cube_traj_tracking_unsafe_target_rate` remains `0.0`; target min clearance remains above `0.025`.
 - Inspect policy behavior without overclaiming: gripper width, finger distances, lift/success, finger table clearance, resets/terminations.
+
+Result:
+- status: passed; Slurm completed `0:0` after `00:00:58` on `pool0-00016`.
+- local_artifacts: `cluster_results/l401/franka_cube_traj_tracking_gripclamp_eval720_20260611_134240/metrics.json`, `cluster_results/l401/franka_cube_traj_tracking_gripclamp_eval720_20260611_134240/eval_franka_cube_1027731.out`
+- rollout: 720/720 steps, `done_count=5`, reward mean `1.8378516377674208`, reward final `1.7632802724838257`, success mean/final/last-window `0.0`.
+- finite_check: recursive JSON numeric scan `nonfinite_count=0`.
+- tracking_reference: external 60 mm compact reference, `duration_s=8.0`, `runtime_duration_s=8.0`, `source_duration_s=22.033333333333335`, `runtime_retime_policy=normalize_to_configured_runtime_duration`, `runtime_object_pose_policy=reset_cube_pose`, `gripper_schedule_policy=clamp_source_width_to_min_target_gripper_width`, runtime gripper width min/max `0.024`/`0.07999999821186066`, source gripper width min/max `0.0`/`0.07999999821186066`, `curobo_validated=false`, `validation_passed=true`.
+- phase_progress: `traj_phase_progress` max `1.0` at step 480, final `0.24947918951511383`, with one reset drop at step 599.
+- target_safety: `cube_traj_tracking_unsafe_target_rate` max/mean/final `0.0`; `safe_target_rate` min/mean/final `1.0`; target clearance min over all steps `0.06511414051055908`, above configured `0.025`.
+- gripper_tracking: runtime target gripper width min `0.023999998345971107`; measured gripper width mean `0.041848357487469914`, min `0.04020160809159279`, final `0.041851937770843506`. The clamp avoided the previous near-zero measured collapse in this tiny checkpoint.
+- finger_safety: `finger_table_clearance_min` min `0.03446274995803833`; `finger_table_clearance_violation_max` max `0.0`; no violation steps.
+- task_behavior: no lift/success; `cube_lift_height_max` max `0.0`, `has_lifted_cube` remains `0.0`; EE-to-cube mean `0.170544162289136`; finger-center-to-cube mean `0.1705603083388673`.
+- tracking_metrics: tracking reward mean `0.14404999003745617`, final `0.06403794139623642`; position error mean `0.1954453206103709`; orientation error mean `0.28658324856725004`; gripper error mean `0.025671546287938125`.
+
+Analysis:
+- This eval satisfies the bounded smoke acceptance criteria and removes the stale `job_id: pending` handoff state: job `1027731` ran to completion and produced finite metrics.
+- The clamp changes the learned gripper behavior in the intended direction for this tiny checkpoint: measured gripper width no longer collapses to ~0.0. However, it does not by itself produce useful approach, grasp, lift, or success after only 3 training iterations.
+- The next comparable bounded test is a 25-iteration one-GPU clamp run, matching the previous retimed RL25 scale, then a 720-step eval. That is still not full training and should reveal whether the clamp improves behavior at the same small scale or merely trades off approach reward.
+
+Next:
+- Commit/push this worklog result.
+- Launch a bounded clamp RL25 run only after the worklog push, then monitor/evaluate it before considering larger training.
