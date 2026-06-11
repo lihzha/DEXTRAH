@@ -1900,3 +1900,34 @@ Result:
 
 Next:
 - Commit/push this worklog plan, deploy the exact commit to the l401 agent worktree, launch both 200-epoch jobs, monitor to completion, then run the bounded eval set for each variant.
+
+## 2026-06-11T23:13:02Z - launch paired 200-epoch small PPO comparison
+
+Goal:
+- Launch the bounded paired 200-epoch small PPO comparison for reset-prior enabled versus prior-disabled baseline.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- local_commit: `1b8652d33ad56a5ae02a689fc31cd13b9219702d`
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `1b8652d33ad56a5ae02a689fc31cd13b9219702d`, detached `HEAD`
+- changed_files: this worklog only
+
+Command / Jobs:
+- common train config: `TASK=Dextrah-Franka-Cube-Grasp`, l401 `batch`, 1 GPU, `NUM_ENVS=64`, `MAX_ITERATIONS=200`, `SAVE_FREQUENCY=25`, `HORIZON_LENGTH=64`, `MINIBATCH_SIZE=4096`, `CENTRAL_VALUE_MINIBATCH_SIZE=4096`, `SEED=20260620`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`, `DEXTRAH_RLGAMES_JSONL_METRICS=True`, `AUTO_RESUME=False`, `USE_CUDA_GRAPH=True`
+- prior_job_id: `1027853`
+- prior_run: `franka_cube_ggx_pregrasp_long200_1gpu_20260611_2311`
+- prior_run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_long200_1gpu_20260611_2311`
+- prior_log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_smoke_1027853.out`
+- prior_extra: `GRASP_PRIOR_RESET_ENABLED=True`, `GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_orig006_single.npz`
+- baseline_job_id: `1027854`
+- baseline_run: `franka_cube_baseline_noprior_long200_1gpu_20260611_2311`
+- baseline_run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseline_noprior_long200_1gpu_20260611_2311`
+- baseline_log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_smoke_1027854.out`
+- baseline_extra: `GRASP_PRIOR_RESET_ENABLED=False`, no prior library override
+
+Result:
+- status: submitted
+
+Next:
+- Monitor `1027853` and `1027854` through completion, inspect JSONL sidecars/checkpoints/logs, then run deterministic eval videos for epoch 100, best, and final checkpoints as needed for both variants.
