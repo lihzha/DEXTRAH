@@ -1606,3 +1606,25 @@ Worker A exact-close reset-prior gate:
   grasp library is not reliable enough across randomized resets. A must
   diagnose/filter grasp samples or fix exact-close execution before any A100
   relaunch.
+
+## 2026-06-11 Monitor Check 22:46 UTC
+
+Worker handoff state:
+
+- B handed off and committed
+  `6dc3fd2 Record action alignment eval failure` on
+  `codex/franka-cube-trajectory-tracking`. Its comparison artifact bundle
+  records the failed action-alignment PPO eval and proposes a bounded
+  `policy_reference_mix` eval-only diagnostic at several blend coefficients.
+  No B Slurm jobs are active.
+- A committed `0e309ee Render all exact close diagnostic resets` on
+  `codex/franka-cube-ggx-pregrasp-reset`. Its worklog records a pass/fail report
+  for exact-close job `1027771`, observed PASS grasp indices `[6, 23]`, observed
+  FAIL indices `[4, 19, 18]`, and a filtered-library rerun plan with
+  `RENDER_ALL_RESETS=1`. No A Slurm jobs are active yet.
+- C recorded the support-trace failure in its worklog and is editing
+  `eval_franka_cube_dp_policy.py` plus the DP eval wrapper for a
+  demo-conditioned reset diagnostic. No C Slurm jobs are active yet.
+- Current orchestrator decision remains: all three branches are in bounded
+  diagnostic/debug mode. No A100 or long-scale RL/BC run is allowed from the
+  current artifacts.
