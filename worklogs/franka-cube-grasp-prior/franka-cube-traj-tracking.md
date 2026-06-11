@@ -95,3 +95,23 @@ Analysis:
 Next:
 - Run `Dextrah-Franka-Cube-Grasp-Traj-Tracking` in an Isaac Lab environment with small `num_envs` to validate observation shape, reset stability, tracking logs, unsafe target rate, and immediate termination rate.
 - Replace the manual template with a compact reference exported from actual GraspGenX/cuRobo cube planning, keeping only task-space waypoints plus gripper schedule and recording cuRobo/Isaac validation evidence.
+
+## 2026-06-11T12:08:00-07:00 - handoff checkpoint
+
+Goal:
+- Record the completed local implementation checkpoint for the orchestrator.
+
+Version Control:
+- agent_id: franka-cube-traj-tracking
+- branch: codex/franka-cube-trajectory-tracking
+- implementation_commit: 8ac8dc54cc3841ca623be242c448a54361ff44ec
+- push/pull: not pushed; no cluster job launched
+- active jobs: none launched by this agent
+- cleanup: generated local reference JSON and Python bytecode caches were removed before commit
+
+Result:
+- status: coherent checkpoint committed
+- evidence: syntax/reference validation passed; gym registration import remains locally blocked by missing `gymnasium` in this shell
+
+Next:
+- Orchestrator can inspect/cherry-pick commit `8ac8dc54cc3841ca623be242c448a54361ff44ec` and run Isaac Lab smoke validation in an environment with the DEXTRAH dependencies installed.
