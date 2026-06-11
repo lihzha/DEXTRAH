@@ -2149,3 +2149,82 @@ Worker C action-realization audit result:
 - Instruction sent to C: run a bounded compensation sweep around multipliers
   `3`, `6`, `10` and/or repeats `2`, `4`, `8`, with exact source-joint reset
   and per-mode videos/audit plots. No BC/RL scale-up.
+
+## 2026-06-11 Monitor Check 23:28 UTC
+
+User artifact-provenance question:
+
+- The video
+  `actionscale-rewinf-diag-video480-step-0.mp4` is from Worker B/Popper's
+  older action-scale/reward-inference diagnostic.
+- Viewer URL:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_actionscale_rewinf_diag_video480_20260611_144318/videos/actionscale-rewinf-diag-video480-step-0.mp4`
+- That video is not B's current best result; it is a failed diagnostic where
+  the learned policy drifts/hovers away and does not grasp the cube.
+- B's current useful artifact remains the offset-hold reference replay with a
+  transient success window, including:
+  - full video:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_successwin390_20260611_161503/videos/refmix-hold-offset-successwin390-step-0.mp4`
+  - keyframe sheet:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_successwin390_20260611_161503_artifacts/contact_sheet_keyframes.jpg`
+  - report:
+    `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_refmix_hold_offset_successwin390_20260611_161503_artifacts/report.md`
+- Current B interpretation: B has a real transient grasp/lift signal
+  (`success_ever=3/4`, `success_rate_max=0.75`, max lift about `0.10894 m`),
+  but not a stable final hold/training result.
+
+Worker A paired 200-epoch eval inspection:
+
+- All five eval jobs completed cleanly: `1027857` through `1027861`.
+- Local fetched dirs are under
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401`.
+- Prior-enabled ep200 contact sheet:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_long200_eval_ep200_20260611_2320/contact_sheet_quick.jpg`
+- Baseline-best contact sheet:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_baseline_noprior_long200_eval_best_20260611_2320/contact_sheet_quick.jpg`
+- Parsed eval metrics:
+  - baseline best: `success_max=0`, `lift_max=0`, `ee_min=0.031762 m`,
+    `finger_min=0.075477 m`, mean reward `2.1157`.
+  - baseline ep100: `success_max=0`, `lift_max=0.002084 m`,
+    `ee_min=0.083333 m`, `finger_min=0.100734 m`, mean reward `1.5761`.
+  - baseline ep200: `success_max=0`, `lift_max=0`,
+    `ee_min=0.117119 m`, `finger_min=0.105674 m`, mean reward `1.6371`.
+  - prior ep100: `success_max=0`, `lift_max=0.002204 m`,
+    `ee_min=0.011820 m`, `finger_min=0.050677 m`, mean reward `2.0332`.
+  - prior ep200: `success_max=0`, `lift_max=0.003682 m`,
+    `ee_min=0.025132 m`, `finger_min=0.055386 m`, mean reward `2.2222`.
+- Visual interpretation: the prior reset puts the gripper near the cube, but
+  the policy does not establish a stable pinch/lift. High reward appears to be
+  mostly proximity reward.
+- Instruction sent to A: run focused diagnostics before longer final training:
+  scripted/oracle close-from-prior-reset, reset distribution report, and PPO
+  eval action/reward audit. Keep main RL behavior apple-to-apple and gate
+  diagnostics behind debug/eval-only flags.
+
+Worker C controller-compensation sweep inspection:
+
+- Sweep jobs `1027862`, `1027863`, and `1027864` completed `0:0`.
+- Local artifact dirs:
+  - `franka_cube_dp_replay_sourcejoint_comp_m3_r1_128_20260611_162300`
+  - `franka_cube_dp_replay_sourcejoint_comp_m6_r1_128_20260611_162300`
+  - `franka_cube_dp_replay_sourcejoint_comp_m10_r1_128_20260611_162300`
+  under
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays`.
+- Mode-summary findings:
+  - multiplier `3`: final EE-cube about `0.1469-0.1502 m`, median xyz
+    realization ratio about `0.078-0.082`, no close/hard-close.
+  - multiplier `6`: final EE-cube about `0.1056-0.1079 m`, median xyz
+    realization ratio about `0.079-0.083`, mean clip fraction `0.012`, no
+    close/hard-close.
+  - multiplier `10`: final EE-cube about `0.1011-0.1036 m`, median xyz
+    realization ratio about `0.079-0.092`, mean clip fraction `0.068`, max
+    clip fraction `0.500`, no close/hard-close.
+- Video/plot interpretation: larger multipliers bring the EE closer, but still
+  mostly hover/approach. `m10` starts clipping strongly and does not execute
+  the demonstrated pick.
+- Instruction sent to C: stop treating label scaling as the fix. Diagnose and
+  patch the controller/action temporal semantics: env decimation/action
+  application, DifferentialIK relative command semantics, frame/root/EE
+  transforms, action integration over env steps, and whether the dataset action
+  is already normalized by task action scale. Run minimal replay diagnostics
+  with videos/plots only; no BC/RL scale-up yet.
