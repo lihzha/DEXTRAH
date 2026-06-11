@@ -1753,3 +1753,34 @@ Result:
 
 Next:
 - Commit/push this worklog plan, deploy the exact commit to the agent-owned l401 worktree, submit the baseline smoke, monitor to completion, inspect metrics/checkpoints, run eval from the best usable checkpoint, fetch artifacts, build/open the inspection bundle, update the worklog, and push the result.
+
+## 2026-06-11T22:55:07Z - launch matched prior-disabled baseline smoke
+
+Goal:
+- Execute the planned prior-disabled 64-env/45-epoch baseline smoke on l401 for direct comparison against the prior-enabled smoke.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- local_commit: `fae66c7446c3bf25a9e61d0878ca992e276de7e9`
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `fae66c7446c3bf25a9e61d0878ca992e276de7e9`, detached `HEAD`
+- changed_files: this worklog only
+
+Command / Job:
+- command: `sbatch --parsable --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=fae66c7446c3bf25a9e61d0878ca992e276de7e9,TASK=Dextrah-Franka-Cube-Grasp,FULL_EXPERIMENT_NAME=franka_cube_baseline_noprior_smoke_1gpu_20260611_2253,NUM_ENVS=64,MAX_ITERATIONS=45,SAVE_FREQUENCY=5,HORIZON_LENGTH=64,MINIBATCH_SIZE=4096,CENTRAL_VALUE_MINIBATCH_SIZE=4096,SEED=20260620,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_RESET_ENABLED=False,GRASP_PRIOR_LIBRARY_PATH=,DEXTRAH_RLGAMES_JSONL_METRICS=True,AUTO_RESUME=False,USE_CUDA_GRAPH=True cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`
+- job_id: `1027842`
+- node at first poll: `pool0-00016`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseline_noprior_smoke_1gpu_20260611_2253`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_smoke_1027842.out`
+- expected_artifacts: `params/`, `metrics/direct_info_rank_0.jsonl`, `nn/*.pth`
+
+Initial Evidence:
+- scheduler state at first poll: `RUNNING`
+- logged train command includes `env.cube_spawn_xy_randomization=0.08` and does not include `env.grasp_prior_reset_enabled=True` or any prior library path.
+- the wrapper validates `CODE_COMMIT` on the host before container launch; the container-side `git rev-parse` warning is a known NFS worktree metadata artifact and is not the source-of-truth commit check.
+
+Result:
+- status: running
+
+Next:
+- Continue monitoring job `1027842` through completion, inspect stdout/JSONL/checkpoints, choose the best usable checkpoint, run fixed-seed eval/video with prior disabled, fetch artifacts, and create/open the inspection bundle.
