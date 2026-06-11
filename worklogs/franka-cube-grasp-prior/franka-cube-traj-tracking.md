@@ -1970,3 +1970,80 @@ Analysis:
 Next:
 - Commit/push this worklog evidence.
 - Run a short metrics-only eval from the same epoch-3 checkpoint under the relaxed-gate commit. Do not launch longer training.
+
+## 2026-06-11T14:25:40-07:00 - relaxed-gate tiny RL smoke launch
+
+Goal:
+- Verify that RL-Games training still runs with the relaxed proximity/contact gate and writes a checkpoint before any longer training.
+
+Version Control:
+- agent_id: franka-cube-traj-tracking
+- local_commit: `edc10277c13cfde7a4e1a005d44796157420d0a8`
+- remote_commit/status: /lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking at `edc10277c13cfde7a4e1a005d44796157420d0a8`, detached clean after HTTPS fetch fallback.
+
+Command / Job:
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:30:00 --job-name=franka_cube_traj_relaxgate_rl --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,FULL_EXPERIMENT_NAME=franka_cube_traj_tracking_relaxgate_rl_smoke_20260611_142540,NPROC_PER_NODE=1,NUM_NODES=1,DISTRIBUTED=False,MULTI_GPU=False,NUM_ENVS=16,HORIZON_LENGTH=16,MINIBATCH_SIZE=256,CENTRAL_VALUE_MINIBATCH_SIZE=256,MINI_EPOCHS=1,MAX_ITERATIONS=3,SAVE_FREQUENCY=1,AUTO_RESUME=False,SELF_RELAUNCH=False,USE_CUDA_GRAPH=False,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json cluster/sbatch_train_teacher_8gpu.sh`
+- job_id: 1027747 `franka_cube_traj_relaxgate_rl`
+- expected_log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_1027747.out
+- expected_run_dir: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_relaxgate_rl_smoke_20260611_142540
+
+Acceptance Criteria:
+- One GPU, 16 envs, 3 iterations only; no auto-resume or self-relaunch.
+- Resolved config has observation space `72`, phase observations false, reference duration `8.0`, gripper clamp `0.024`, and relaxed proximity gate config `0.30`/`0.18`.
+- Actor/critic input dimensions remain `72`; no traceback/NaN; epoch-3 checkpoint written.
+- After this smoke, run a bounded eval to inspect close/lift/contact/action metrics. Do not scale training.
+
+Result:
+- status: passed smoke-training criteria; Slurm completed `0:0` after `00:00:49` on `pool0-00016`.
+- local_artifacts: `cluster_results/l401/franka_cube_traj_tracking_relaxgate_rl_smoke_20260611_142540/`, `cluster_results/l401/franka_cube_traj_tracking_relaxgate_rl_smoke_20260611_142540/teacher_8gpu_1027747.out`.
+- runtime: one L40S GPU, `NUM_ENVS=16`, `HORIZON_LENGTH=16`, `MINI_EPOCHS=1`, `MAX_ITERATIONS=3`, `AUTO_RESUME=False`, `SELF_RELAUNCH=False`.
+- config: resolved `observation_space=72`, `state_space=72`, `trajectory_tracking_phase_observations=false`, `trajectory_tracking_reference_duration_s=8.0`, `trajectory_tracking_contact_gate_max_finger_dist=0.3`, `trajectory_tracking_contact_gate_width=0.18`, `trajectory_tracking_min_target_gripper_width=0.024`.
+- model_shapes: train log shows actor and central-value MLPs both built with input dimension `72`.
+- checkpoints: epoch checkpoints were written through `nn/last_dextrah_franka_cube_traj_tracking_ep_3_rew_5.782907.pth`; no traceback or NaN signature found in the fetched log.
+- reference: still `curobo_validated=false`, exact DEXTRAH 60 mm geometry validation remains pending.
+
+Analysis:
+- This only proves the relaxed-gate variant can train for a tiny RL-Games smoke without registration/config regressions. It does not prove learned grasping, lift, or success.
+- Next required check is a bounded epoch-3 rollout/eval that exports the relaxed gate, action, target-safety, distance, gripper, and lift metrics. I will include a short video because it is cheap at this scale and makes the behavior inspectable.
+
+## 2026-06-11T14:29:10-07:00 - relaxed-gate epoch-3 metrics-only eval launch plan
+
+Goal:
+- Evaluate the 3-iteration relaxed-gate smoke checkpoint with a bounded metrics-only rollout to verify whether the relaxed gate produces nonzero learning signal and whether behavior remains sane.
+
+Version Control:
+- agent_id: franka-cube-traj-tracking
+- local_commit: `edc10277c13cfde7a4e1a005d44796157420d0a8`
+- remote_commit/status: expected `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking` at `edc10277c13cfde7a4e1a005d44796157420d0a8`, clean/detached.
+
+Planned Command / Job:
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:30:00 --job-name=franka_cube_traj_relaxgate_metrics --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_relaxgate_ep3_metrics480_20260611_142910,CHECKPOINT=/results/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_relaxgate_rl_smoke_20260611_142540/nn/last_dextrah_franka_cube_traj_tracking_ep_3_rew_5.782907.pth,NUM_ENVS=4,NUM_STEPS=480,VIDEO_LENGTH=1,VIDEO_NAME_PREFIX=relaxgate-ep3-metrics480,CAPTURE_VIDEO=False,PRINT_INTERVAL=120,USE_CUDA_GRAPH=False,SEED=58,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- job_id: 1027748 `franka_cube_traj_relaxgate_metrics`
+- expected_log: /lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_<job_id>.out
+- expected_run_dir: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_traj_tracking_relaxgate_ep3_metrics480_20260611_142910
+
+Acceptance Criteria:
+- Eval completes without traceback and writes `metrics.json`.
+- Numeric metrics are finite; target unsafe rate remains `0.0`; target clearance remains above `0.025`.
+- Required relaxed-gate terms are present and non-missing: `cube_traj_tracking_contact_gate`, `cube_traj_tracking_contact_distance_gate`, `cube_traj_tracking_finger_balance_gate`, `cube_traj_tracking_action_close`, `cube_traj_tracking_action_up`, `cube_traj_tracking_close_action_reward`, and `cube_traj_tracking_lift_action_reward`.
+- Evidence should show whether the relaxed gate creates nonzero reward signal in eval. If behavior still drifts away or close/lift shaping remains negligible, patch/debug rather than scale training.
+- After fetch/inspection, generate a small local report/plot artifact and open the useful plot or report with `viz-open`.
+
+Result:
+- status: completed `0:0`; 480/480 steps fetched and parsed; no traceback/NaN signature in fetched eval log.
+- local_artifacts: `cluster_results/l401/franka_cube_traj_tracking_relaxgate_ep3_metrics480_20260611_142910/metrics.json`, `cluster_results/l401/franka_cube_traj_tracking_relaxgate_ep3_metrics480_20260611_142910/eval_franka_cube_1027748.out`.
+- report_bundle: `cluster_results/l401/franka_cube_traj_tracking_relaxgate_ep3_metrics_diagnostic_20260611_143020/report.md`, `cluster_results/l401/franka_cube_traj_tracking_relaxgate_ep3_metrics_diagnostic_20260611_143020/relaxgate_ep3_metrics_plot.png`, `cluster_results/l401/franka_cube_traj_tracking_relaxgate_ep3_metrics_diagnostic_20260611_143020/summary.json`, `cluster_results/l401/franka_cube_traj_tracking_relaxgate_ep3_metrics_diagnostic_20260611_143020/summary.csv`.
+- viz_plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_relaxgate_ep3_metrics_diagnostic_20260611_143020/relaxgate_ep3_metrics_plot.png`
+- viz_report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_relaxgate_ep3_metrics_diagnostic_20260611_143020/report.md`
+- rollout: `done_count=0`, reward mean/final `1.6773871454099814`/`1.3972491025924683`, success mean/final `0.0005208333333333333`/`0.0`, last-window success `0.0`.
+- target_safety: `cube_traj_tracking_unsafe_target_rate` max `0.0`, target clearance min `0.06511414051055908`.
+- relaxed_gate_signal: `contact_gate` mean/final `0.5602442137276132`/`0.387542188167572`, `contact_distance_gate` mean/final `0.5986778396492203`/`0.39807820320129395`, `finger_balance_gate` mean/final `0.9052443617333968`/`0.942093014717102`.
+- action_signal: `action_close` mean/final `0.02885243067673097`/`0.03220806270837784`, `action_up` mean/final `0.010836406107409857`/`0.01688719354569912`, raw `gripper_action` mean/final `0.02067194979948302`/`0.03351552039384842`, raw z action mean/final about `-0.0079`/`-0.0019`.
+- shaping_signal: `close_action_reward` mean/final/max `0.0005198891313200132`/`0.0012755959760397673`/`0.0013440798502415419`; `lift_action_reward` mean/final/max `0.0006137145110794033`/`0.00183013454079628`/`0.002015831647440791`.
+- behavior: final EE-to-cube `0.23227976262569427`, final finger-center-to-cube `0.22668778896331787`, final max-finger-to-cube `0.23908522725105286`, final gripper width `0.04132682830095291`, final cube lift `0.0`.
+- reference: still `curobo_validated=false`; source tag remains `graspgenx_curobo_60mm_export_pending_exact_validation`.
+
+Analysis:
+- The relaxed gate fixes the earlier silent-shaping issue and satisfies the metrics-only eval acceptance criteria. However, the learned behavior remains poor: the hand moves away from the cube during close/lift phases and the gripper remains too open relative to the 0.024 m target.
+- The action bonuses are active but too small to influence policy behavior in this smoke. Lift-phase averages: close/lift action rewards are about `0.0012`/`0.0016`, while position/gripper tracking terms are about `0.0607`/`0.0799` and total reward remains around `1.4-1.7`.
+- The next bounded debug ablation should stay in the trajectory variant: increase the close/lift action shaping scale and log the gate-normalized potential reward ceilings so it is clear whether the policy is choosing small actions or whether gating/weighting still suppresses the signal. Do not launch longer training before this diagnostic passes a cheap env/eval check.
