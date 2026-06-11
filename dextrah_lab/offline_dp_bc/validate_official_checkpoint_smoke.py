@@ -40,17 +40,105 @@ def _load_workspace(checkpoint: Path) -> Any:
     return TrainDiffusionUnetLowdimWorkspace.create_from_checkpoint(str(checkpoint))
 
 
-def _dataset_lowdim_window(dataset_path: Path, batch_size: int, n_obs_steps: int) -> np.ndarray:
+def _episode_starts(episode_ends: np.ndarray) -> np.ndarray:
+    if episode_ends.ndim != 1:
+        raise ValueError(f"episode_ends must be rank 1, got {episode_ends.shape}")
+    return np.concatenate(([0], episode_ends[:-1])).astype(np.int64)
+
+
+def _history_indices_for_row(
+    row_idx: int,
+    *,
+    episode_starts: np.ndarray,
+    episode_ends: np.ndarray,
+    n_obs_steps: int,
+) -> np.ndarray:
+    ep_idx = int(np.searchsorted(episode_ends, row_idx, side="right"))
+    if ep_idx >= episode_ends.shape[0]:
+        ep_idx = int(episode_ends.shape[0] - 1)
+    ep_start = int(episode_starts[ep_idx])
+    ep_end = int(episode_ends[ep_idx])
+    row_idx = min(max(int(row_idx), ep_start), ep_end - 1)
+    frame_ids = np.arange(row_idx - n_obs_steps + 1, row_idx + 1, dtype=np.int64)
+    return np.clip(frame_ids, ep_start, ep_end - 1)
+
+
+def _select_rows(
+    obs: np.ndarray,
+    episode_ends: np.ndarray,
+    *,
+    batch_size: int,
+    row_selector: str,
+    row_index: int | None,
+) -> np.ndarray:
+    n_rows = int(obs.shape[0])
+    if row_index is not None:
+        if row_index < 0 or row_index >= n_rows:
+            raise ValueError(f"--row-index must be in [0, {n_rows}), got {row_index}")
+        base = np.arange(row_index, min(row_index + batch_size, n_rows), dtype=np.int64)
+    elif row_selector == "first":
+        base = np.arange(min(batch_size, n_rows), dtype=np.int64)
+    elif row_selector == "gripper_open":
+        base = np.argsort(-obs[:, -1], kind="stable")[:batch_size].astype(np.int64)
+    elif row_selector == "gripper_closed":
+        base = np.argsort(obs[:, -1], kind="stable")[:batch_size].astype(np.int64)
+    elif row_selector == "lift_high":
+        closed = obs[:, -1] <= (float(np.min(obs[:, -1])) + 1.0e-6)
+        if np.any(closed):
+            candidate = np.nonzero(closed)[0]
+            order = np.argsort(-obs[candidate, 2], kind="stable")
+            base = candidate[order[:batch_size]].astype(np.int64)
+        else:
+            base = np.argsort(-obs[:, 2], kind="stable")[:batch_size].astype(np.int64)
+    else:
+        raise ValueError(f"Unsupported row selector {row_selector!r}")
+
+    if base.shape[0] == 0:
+        raise ValueError("No rows selected")
+    if base.shape[0] < batch_size:
+        base = np.concatenate((base, np.repeat(base[-1:], batch_size - base.shape[0])))
+    if np.any(base >= episode_ends[-1]):
+        raise ValueError("Selected row outside dataset")
+    return base.astype(np.int64)
+
+
+def _dataset_lowdim_window(
+    dataset_path: Path,
+    batch_size: int,
+    n_obs_steps: int,
+    *,
+    row_selector: str,
+    row_index: int | None,
+) -> tuple[np.ndarray, np.ndarray]:
     data = np.load(dataset_path, allow_pickle=False)
     obs = np.asarray(data["obs"], dtype=np.float32)
+    episode_ends = np.asarray(data["episode_ends"], dtype=np.int64)
     if obs.ndim != 2 or obs.shape[1] != FRANKA_CUBE_LOWDIM_OBS_DIM:
         raise ValueError(f"Expected obs shape (N, {FRANKA_CUBE_LOWDIM_OBS_DIM}), got {obs.shape}")
     if obs.shape[0] < 1:
         raise ValueError("Dataset has no observations")
-    base = obs[: min(batch_size, obs.shape[0])]
-    if base.shape[0] < batch_size:
-        base = np.repeat(base[-1:], batch_size, axis=0)
-    return np.repeat(base[:, None, :], n_obs_steps, axis=1)
+    if episode_ends.ndim != 1 or episode_ends[-1] != obs.shape[0]:
+        raise ValueError("episode_ends must be cumulative exclusive ends ending at obs length")
+    row_indices = _select_rows(
+        obs,
+        episode_ends,
+        batch_size=batch_size,
+        row_selector=row_selector,
+        row_index=row_index,
+    )
+    starts = _episode_starts(episode_ends)
+    windows = [
+        obs[
+            _history_indices_for_row(
+                int(row_idx),
+                episode_starts=starts,
+                episode_ends=episode_ends,
+                n_obs_steps=n_obs_steps,
+            )
+        ]
+        for row_idx in row_indices
+    ]
+    return np.stack(windows, axis=0).astype(np.float32), row_indices
 
 
 def main() -> None:
@@ -60,6 +148,18 @@ def main() -> None:
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--batch-size", type=int, default=2)
     parser.add_argument("--num-inference-steps", type=int, default=2)
+    parser.add_argument(
+        "--row-selector",
+        choices=("first", "gripper_open", "gripper_closed", "lift_high"),
+        default="first",
+        help="Dataset rows used to build the lowdim observation window.",
+    )
+    parser.add_argument("--row-index", type=int, default=None, help="Explicit dataset row start index")
+    parser.add_argument(
+        "--warm-history-from-dataset",
+        action="store_true",
+        help="Prime the PPO bridge history with the selected dataset window before querying the final row.",
+    )
     args = parser.parse_args()
 
     checkpoint = Path(args.checkpoint).expanduser().resolve()
@@ -76,10 +176,19 @@ def main() -> None:
     policy.eval()
 
     n_obs_steps = int(policy.n_obs_steps)
-    lowdim_seq = _dataset_lowdim_window(dataset_path, int(args.batch_size), n_obs_steps)
+    lowdim_seq, row_indices = _dataset_lowdim_window(
+        dataset_path,
+        int(args.batch_size),
+        n_obs_steps,
+        row_selector=str(args.row_selector),
+        row_index=args.row_index,
+    )
     ppo_obs = embed_lowdim_obs_in_ppo_obs(lowdim_seq[:, -1])
     roundtrip = np.asarray(ppo_obs[..., 18:21])
     history = LowdimObsHistory(num_envs=lowdim_seq.shape[0], n_obs_steps=n_obs_steps)
+    if args.warm_history_from_dataset:
+        for obs_t in range(max(0, n_obs_steps - 1)):
+            history.push(lowdim_seq[:, obs_t])
 
     with torch.no_grad():
         direct = policy.predict_action({"obs": torch.as_tensor(lowdim_seq, dtype=torch.float32, device=args.device)})
@@ -101,12 +210,20 @@ def main() -> None:
         "dataset_episodes": int(stats["num_episodes"]),
         "ppo_obs_shape": list(ppo_obs.shape),
         "lowdim_seq_shape": list(lowdim_seq.shape),
+        "row_selector": str(args.row_selector),
+        "row_index": None if args.row_index is None else int(args.row_index),
+        "selected_row_indices": row_indices.astype(int).tolist(),
+        "selected_ee_z": lowdim_seq[:, -1, 2].astype(float).tolist(),
+        "selected_gripper_width": lowdim_seq[:, -1, -1].astype(float).tolist(),
         "direct_action_shape": list(direct_action.shape),
+        "direct_action_min": np.min(direct_action[:, 0], axis=0).astype(float).tolist(),
+        "direct_action_max": np.max(direct_action[:, 0], axis=0).astype(float).tolist(),
         "bridge_action_shape": list(bridge_action.shape),
         "bridge_action_min": np.min(bridge_action, axis=0).astype(float).tolist(),
         "bridge_action_max": np.max(bridge_action, axis=0).astype(float).tolist(),
         "roundtrip_ee_pos": roundtrip[0].astype(float).tolist(),
         "num_inference_steps": int(policy.num_inference_steps),
+        "warm_history_from_dataset": bool(args.warm_history_from_dataset),
         "official_workspace": workspace.__class__.__name__,
         "policy_class": policy.__class__.__name__,
         "ppo_bridge": "eval_wrapper_or_distillation_only_not_rl_games_weight_init",

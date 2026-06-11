@@ -1612,3 +1612,203 @@ Next:
   a tiny `eval_franka_cube_dp_policy.py` cluster smoke with
   `NUM_INFERENCE_STEPS=100`, `NUM_ENVS=1`, and a short horizon. Inspect logs
   and metrics before any further scale-up.
+
+## 2026-06-11T13:17:20-07:00 - full pick/lift dataset plan
+
+Goal:
+- Move beyond the approach-only BC checkpoint by creating a close/lift-capable
+  official Diffusion Policy dataset from the same 32 real cuRobo-validated
+  trajectories, then run cheap local validation before any l401 eval.
+
+Hypothesis:
+- The existing real GraspGenX/cuRobo trajectories contain all phases needed
+  for a first full-pick BC mechanics dataset:
+  `go_to_pre_grasp_pose`, `hold_at_pre_grasp`,
+  `go_from_pre_grasp_to_grasp_pose`, `hold_at_grasp`, `close_fingers`,
+  `hold_after_close`, `lift_object`, and `hold_after_lift`.
+- Converting `phase_set=full_pick_lift` should produce a 7D DEXTRAH
+  relative-EE plus gripper dataset where the gripper action is no longer
+  constant open. This gives the DP checkpoint a plausible close/lift behavior
+  target for later Isaac eval and PPO distillation.
+
+Change:
+- No source edits planned initially. Use existing converter support for
+  `full_pick_lift`.
+- Supersede the previous immediate l401 eval next-step for the approach-only
+  checkpoint. A cluster eval is only useful after a close/lift-capable
+  checkpoint has sane local action ranges.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `20b45767b2f3434bd0645e718365dc652192f27d`
+- implementation_commit: pending
+
+Command / Job:
+- conversion command:
+  `PYTHONPATH="$DEX:$GGX:$GGX/end2end:$CU" GRASPGENX_ROOT="$GGX" "$GGX/.venv/bin/python" -m dextrah_lab.offline_dp_bc.trajectory_conversion <32 trajectory.json files> --output "$DATASET" --input-format json --phase-set full_pick_lift --graspgenx-root "$GGX" --robot-config "$ROBOT_CONFIG"`
+- planned dataset:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift.npz`
+- planned smoke:
+  `PYTHONPATH="$DP:$DEX" "$VENV/bin/python" -m dextrah_lab.offline_dp_bc.validate_dataset_smoke --dataset "$DATASET"`
+- planned official-DP debug train:
+  local official `real-stanford/diffusion_policy@5ba07ac6661db573af695b419a7947ecb704690f`,
+  validation split `0.25`, small bounded run first, then a bounded overfit
+  run only if the data shape and action stats are sane.
+
+Result:
+- status: pending
+
+Analysis:
+- This is still not a final BC or RL claim: the trajectories are planned
+  task-space/FK demonstrations and not Isaac closed-loop successes.
+- Important checks before simulator eval:
+  - dataset-level and source-level `curobo_validated=true`;
+  - gripper action min below zero and max near open;
+  - no non-finite values;
+  - loss curves finite/decreasing with validation;
+  - bridge action ranges at 100 denoising steps are plausible, especially the
+    gripper action showing close commands after the policy conditions on close
+    states.
+
+Next:
+- Convert the full-pick/lift dataset, inspect metadata/action ranges, run the
+  official-DP dataset smoke, then launch a bounded local official-DP train if
+  the dataset is numerically sane.
+
+## 2026-06-11T13:18:45-07:00 - full pick/lift conversion and train launch plan
+
+Goal:
+- Validate a close/lift-capable real cuRobo dataset through official Diffusion
+  Policy training, without launching full BC/RL training.
+
+Hypothesis:
+- The same 32 real cuRobo trajectories are enough to prove mechanics for a
+  close/lift-capable BC checkpoint if the full-pick/lift conversion yields
+  finite observation/action tensors and a non-constant gripper target.
+
+Change:
+- Converted full-pick/lift dataset:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift.npz`
+
+Command / Job:
+- conversion log:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/cube_curobo_scale32_20260611_125957_full_pick_lift_conversion.log`
+- dataset smoke log:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/cube_curobo_scale32_20260611_125957_full_pick_lift_dataset_smoke.log`
+- planned official-DP train command:
+  `PYTHONPATH="$DP:$DEX" WANDB_MODE=offline "$VENV/bin/python" train.py --config-dir "$DEX/dextrah_lab/offline_dp_bc/config" --config-name franka_cube_lowdim_dp task.dataset_path="$DATASET" task.dataset.val_ratio=0.25 training.device=cuda:0 training.max_train_steps=100 training.max_val_steps=4 training.num_epochs=5 policy.num_inference_steps=100 dataloader.batch_size=32 val_dataloader.batch_size=32 hydra.run.dir="$RUN_DIR"`
+- planned run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_debug/run_20260611_131845_curobo32_full_pick_lift_debug`
+
+Result:
+- conversion: passed with `num_episodes=32`, `num_steps=22484`,
+  `obs_dim=21`, `action_dim=7`.
+- dataset smoke: passed with `official_diffusion_policy_imported=true`,
+  train samples `13358`, sample shapes `(8,21)` and `(8,7)`, and position
+  replay error `0.0`.
+- metadata/stats:
+  - dataset-level `curobo_validated=true`
+  - all 32 sources have `curobo_validated=true`
+  - selected phases include all 8 pick/lift phases
+  - gripper action min/max: `-1.0` / `1.0`
+  - close-command fraction: `0.5764`
+  - observation gripper width min/max: `0.0` / `0.08`
+  - pose action bounds remain inside normalized DEXTRAH limits:
+    min `[-0.04198,-0.16348,-0.05103,-0.07269,-0.09689,-0.16468]`,
+    max `[0.13624,0.04179,0.20882,0.09963,0.00084,0.25439]`
+
+Analysis:
+- This dataset can train close/lift mechanics, unlike the approach-only
+  checkpoint. It still does not prove Isaac closed-loop success because the
+  object pose in the demonstration is planned/recorded rather than generated
+  by closed-loop policy rollouts.
+- `phase_ids` are saved for audit but not currently part of the DP observation.
+  The checkpoint must infer progress from EE pose, cube pose, goal delta,
+  gripper width, and the two-step history. If the policy averages incompatible
+  hold/close/lift actions, the next representation patch should add a compact
+  phase/progress feature or split approach and grasp/lift policies.
+
+Next:
+- Run the bounded official-DP debug train, inspect losses/checkpoint, then run
+  bridge smoke at `100` denoising steps against both early/open and
+  closed/lift dataset windows.
+
+## 2026-06-11T13:21:05-07:00 - full pick/lift checkpoint smoke inspection
+
+Goal:
+- Prove the close/lift-capable dataset can train through official Diffusion
+  Policy and that the resulting checkpoint produces plausible bridge actions
+  for open, closed, and lifted closed states.
+
+Change:
+- Extended `dextrah_lab/offline_dp_bc/validate_official_checkpoint_smoke.py`
+  with `--row-selector` and `--warm-history-from-dataset` so checkpoint smokes
+  can query representative full-pick/lift dataset regions instead of only the
+  first approach rows.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `20b45767b2f3434bd0645e718365dc652192f27d`
+- implementation_commit: pending
+- changed_files:
+  - `dextrah_lab/offline_dp_bc/validate_official_checkpoint_smoke.py`
+  - `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+
+Command / Job:
+- train run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_debug/run_20260611_131845_curobo32_full_pick_lift_debug`
+- train log:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/official_dp_curobo32_full_pick_lift_debug_train.log`
+- syntax check:
+  `python3 -m py_compile dextrah_lab/offline_dp_bc/validate_official_checkpoint_smoke.py`
+- checkpoint smokes:
+  - first/open:
+    `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/official_dp_curobo32_full_pick_lift_debug_checkpoint_smoke_first_warm_100step.log`
+  - gripper-closed:
+    `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/official_dp_curobo32_full_pick_lift_debug_checkpoint_smoke_closed_warm_100step.log`
+  - lift-high:
+    `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/official_dp_curobo32_full_pick_lift_debug_checkpoint_smoke_lift_high_warm_100step.log`
+
+Result:
+- official-DP train: passed
+  - `logs.json.txt` rows: `505`
+  - final `global_step=503`
+  - `train_loss=0.04288`
+  - `val_loss=0.03742`
+  - `train_action_mse_error=0.01642`
+  - finite losses, decreasing validation curve, `latest.ckpt` written
+    at about `266 MB`.
+- py_compile: passed.
+- first/open 100-step bridge smoke:
+  - selected gripper width: `[0.08,0.08,0.08,0.08]`
+  - bridge gripper range: `[0.35893,1.00001]`
+  - pose actions remain small.
+- gripper-closed 100-step bridge smoke:
+  - selected gripper width: `[0.0,0.0,0.0,0.0]`
+  - bridge gripper range: `[-0.96083,-0.25979]`
+  - pose actions remain small.
+- lift-high 100-step bridge smoke:
+  - selected EE z: about `1.01115`
+  - selected gripper width: `[0.0,0.0,0.0,0.0]`
+  - bridge gripper range: `[-1.00001,-0.51134]`
+  - pose actions remain small.
+
+Analysis:
+- This is the first close/lift-capable DP BC checkpoint on the branch with
+  official implementation validation and state-dependent gripper behavior.
+- The checkpoint is still small-data and planned-trajectory based, so it is
+  appropriate for a bounded Isaac eval smoke, not a manipulation-performance
+  claim.
+- Because bridge action ranges are now sane at `100` denoising steps, the next
+  l401 eval should use `NUM_INFERENCE_STEPS=100`. A shorter diffusion schedule
+  is known to produce noisy clipped actions on these checkpoints.
+
+Next:
+- Commit and push the helper/worklog patch.
+- Deploy the exact commit to the agent-owned l401 worktree, copy the full
+  pick/lift checkpoint as an untracked artifact, and launch a tiny Isaac eval
+  with `NUM_ENVS=1`, short horizon, and `NUM_INFERENCE_STEPS=100`.
