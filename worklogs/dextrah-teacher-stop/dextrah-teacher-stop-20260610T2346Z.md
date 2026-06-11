@@ -510,3 +510,45 @@ Analysis:
 
 Next:
 - Return to normal periodic monitoring and continue scalar checks.
+
+## 2026-06-10 19:15 PDT - Teacher Monitor Metric Pass
+
+Goal:
+- Verify the run remains healthy after throughput recovered and continue
+  tracking progress toward the next requeue window.
+
+Command / Job:
+- job_id: `28955904`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28955904.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_lstm/teacher_short_20260609_100021`
+
+Result:
+- status: running healthy.
+- scheduler: running on `batch-block5-03072`, time left `1:28:57`.
+- stdout advanced to epoch `15068/20000`.
+- latest complete checkpoint:
+  `last_dextrah_lstm_ep_15060_rew_621.1394.pth`.
+- sidecars refreshed in stdout at `19:14:39`.
+- narrow failure scan returned no matches.
+- TensorBoard parsed through epoch `15067`.
+- `in_success_region/iter`: latest `0.437988`, last-50 `0.448037`,
+  last-200 `0.448562`.
+- `rewards/iter`: latest `516.786`, last-50 `627.454`,
+  last-200 `624.963`.
+- `num_adr_increases/iter`: `50`.
+- `info/kl`: latest `0.0114014`, last-50 `0.00817234`,
+  last-200 `0.00786435`.
+- `losses/a_loss`: last-50 `-0.00383889`.
+- `losses/c_loss`: last-50 `0.0192318`.
+- `performance/step_inference_rl_update_fps`: latest `112755`,
+  last-50 about `110035`, last-200 about `107896`.
+
+Analysis:
+- Metrics remain healthy and throughput has returned to the expected band
+  outside checkpoint/sidecar intervals.
+
+Next:
+- Continue periodic monitoring. Tighten cadence as the job approaches the
+  `20:39 PDT` signal/requeue window.
