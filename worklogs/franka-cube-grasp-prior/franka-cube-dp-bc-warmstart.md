@@ -7302,3 +7302,41 @@ Acceptance:
 
 Result:
 - status: running.
+
+## 2026-06-11T19:29:22-07:00 - hold-stability/contact-retention plan
+
+Goal:
+- Diagnose whether the weighted contact-aware DP policy can retain the cube
+  after first reaching the success lift region, or whether the prior
+  post-success drop is physical contact loss rather than the env's normal
+  success auto-reset.
+
+Plan:
+- Add an eval-only `success_timeout` override to
+  `dextrah_lab/rl_games/eval_franka_cube_dp_policy.py` and expose it through
+  `cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`.
+- Keep the override off by default so normal evaluation semantics are
+  unchanged. For this diagnostic only, set the timeout longer than the rollout
+  horizon so the env does not terminate immediately after the built-in
+  `0.20 s` success hold.
+- Validate locally with `python3 -m py_compile`, `bash -n`, and
+  `git diff --check`.
+- Commit/push/deploy the exact commit to the l401 agent worktree before
+  launching.
+
+Bounded launch:
+- Run one no-video matched source-joint trace first:
+  `NUM_ENVS=1`, `NUM_STEPS=260`, `ACTION_CHUNK_STEPS=1`,
+  `NUM_INFERENCE_STEPS=100`, `SUCCESS_TIMEOUT_OVERRIDE=999.0`,
+  `SUCCESS_WINDOW=80`, `DEBUG_POLICY_TRACE_MAX_CALLS=260`, same weighted
+  checkpoint and same source-joint reset (`episode=1`, `step=0`,
+  `source_frame=260`).
+- Gate: durable final/window success with lift above target and no reset/done
+  is a pass; physical drop/loss before the horizon is a hold/contact-retention
+  blocker. If the trace is pass/near-pass or ambiguous, launch exactly one
+  short video/contact-sheet eval for visual confirmation.
+
+Constraints:
+- No broad DP BC training and no RL scale-up.
+- This tests hold stability after the already observed transient matched-reset
+  success; it does not claim normal-reset generalization.

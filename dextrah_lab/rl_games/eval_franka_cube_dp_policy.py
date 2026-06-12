@@ -40,6 +40,16 @@ parser.add_argument(
 )
 parser.add_argument("--clip_actions", type=float, default=1.0)
 parser.add_argument("--success_window", type=int, default=80)
+parser.add_argument(
+    "--success_timeout_override",
+    type=float,
+    default=None,
+    help=(
+        "Optional eval-only override for env_cfg.success_timeout. "
+        "Use a value larger than the rollout horizon to diagnose post-success hold "
+        "without auto-resetting on the task's normal success timeout."
+    ),
+)
 parser.add_argument("--print_interval", type=int, default=20)
 parser.add_argument("--output_dir", type=str, default=None)
 parser.add_argument("--metrics_path", type=str, default=None)
@@ -814,6 +824,20 @@ def main() -> None:
         use_fabric=not args_cli.disable_fabric,
     )
     env_cfg.seed = int(args_cli.seed)
+    success_timeout_override = None
+    if args_cli.success_timeout_override is not None:
+        if not hasattr(env_cfg, "success_timeout"):
+            raise AttributeError(
+                f"Task config for {args_cli.task} does not expose success_timeout; "
+                "cannot apply --success_timeout_override."
+            )
+        original_success_timeout = float(env_cfg.success_timeout)
+        env_cfg.success_timeout = float(args_cli.success_timeout_override)
+        success_timeout_override = {
+            "original": original_success_timeout,
+            "override": float(env_cfg.success_timeout),
+        }
+        _stage("success_timeout_override_applied", **success_timeout_override)
     _configure_eval_camera(env_cfg)
     _stage("env_cfg_ready", task=args_cli.task, device=str(args_cli.device), seed=int(args_cli.seed))
 
@@ -974,6 +998,7 @@ def main() -> None:
         "reward_final": reward_values[-1] if reward_values else None,
         "final_success_rate": success_values[-1] if success_values else None,
         "window_success_rate": sum(success_values[-window:]) / window if success_values else None,
+        "success_timeout_override": success_timeout_override,
         "action_min": action_min.astype(float).tolist(),
         "action_max": action_max.astype(float).tolist(),
         "step_metric_summary": _summarize_step_metrics(step_metrics),
