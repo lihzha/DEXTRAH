@@ -4661,3 +4661,43 @@ Acceptance:
 - reset-prior success/quality stays `1.0`.
 - video starts from the low-z open 3 cm pregrasp and shows physically plausible close/contact/lift from the BC actor alone.
 - metrics should show nonzero lift and decreasing/controlled finger/cube distance; if not, mark as closed-loop BC actor failure and do not launch PPO.
+
+Launch:
+- branch/worklog commit before launch: `8d76542470a6127877dc75bf1cbc20caefed93e5` (`Record low-z BC supervised gate`)
+- remote worktree: detached `8d76542470a6127877dc75bf1cbc20caefed93e5`, clean.
+- command: `sbatch --parsable --partition=batch --time=0-00:30:00 --job-name=ggx_lowz_bc_eval --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,RUN_NAME=franka_cube_ggx_lowz_bc_actor_eval_20260611_2210,TASK=Dextrah-Franka-Cube-Grasp,NUM_ENVS=1,NUM_STEPS=180,VIDEO_LENGTH=180,VIDEO_NAME_PREFIX=lowz-bc-actor,PRINT_INTERVAL=20,CAPTURE_VIDEO=True,DETERMINISTIC=True,USE_CUDA_GRAPH=False,SEED=20260625,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz,GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False,CHECKPOINT=/results/diagnostics/franka_cube_ggx_lowz_bc_actor_recipe_20260611_2202/bc_pass7_action_warmstart.pth,CAMERA_EYE_X=-0.10,CAMERA_EYE_Y=-0.78,CAMERA_EYE_Z=1.42,CAMERA_TARGET_X=-0.41,CAMERA_TARGET_Y=-0.10,CAMERA_TARGET_Z=0.82 cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- job_id: `1028144`
+- remote run dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_ggx_lowz_bc_actor_eval_20260611_2210`
+- remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1028144.out`
+
+Result:
+- status: partial pass / no PPO gate.
+- Slurm: job `1028144` completed `0:0`, elapsed `00:01:06`, node `pool0-00001`.
+- local artifacts: `cluster_results/l401/franka_cube_ggx_lowz_bc_actor_eval_20260611_2210`.
+- inspection report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_bc_actor_eval_20260611_2210/inspection/REPORT.md`
+- video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_bc_actor_eval_20260611_2210/videos/lowz-bc-actor-step-0.mp4`
+- labeled contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_bc_actor_eval_20260611_2210/inspection/labeled_contact_sheet.jpg`
+- trace plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_bc_actor_eval_20260611_2210/inspection/trace_plot.png`
+- metrics:
+  - reset success/quality mean: `1.0 / 1.0`
+  - success max/final/mean: `1.0 / 0.0 / 0.0667`
+  - lifted max/final/mean: `1.0 / 0.0 / 0.0667`
+  - cube lift max/final: `0.12203 m / 0.01053 m`
+  - EE-to-cube min/final: `0.02593 m / 0.02838 m`
+  - finger-center min/final: `0.06374 m / 0.06460 m`
+  - gripper width min/final: `0.04624 m / 0.05660 m`
+  - reward max/final: `22.708 / 3.294`
+- visual notes:
+  - step 20 to 120: actor closes near the cube and lifts.
+  - step 131: cube is visibly lifted and success/lift gates are active.
+  - step 145: actor emits an open/reposition action (`gripper_action=+1.0`, width returns near `0.080 m`) and drops/loses the cube.
+  - step 160 to 179: actor remains near the cube but does not recover a stable hold.
+
+Analysis:
+- The BC actor no longer fails in closed loop immediately. It can produce a real transient grasp/lift from the low-z reset distribution.
+- The remaining blocker is hold stability/action phase continuation after lift, not reset geometry or supervised one-step action fitting.
+- This does not satisfy a conservative PPO launch gate because success is not held to the final step and the policy reopens after lift.
+
+Next:
+- No PPO/A100/full RL from this checkpoint without explicit approval.
+- Bounded next diagnostic should add or audit a hold phase after lift in the supervised label artifact, or compare actor actions against a teacher hold action after success to identify why it reopens.
