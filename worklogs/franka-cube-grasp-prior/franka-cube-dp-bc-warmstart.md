@@ -6857,3 +6857,127 @@ Next:
   and source frame `260`. Acceptance is improved reset lowdim diff/support
   distance and coherent gripper timing; if that still hard-closes away from
   the cube, the next issue is policy output/conditioning, not reset.
+
+## 2026-06-11T18:55:03-07:00 - matched source-joint reset trace launch
+
+Goal:
+- Test whether starting the eval env from the same contact-aware relabel
+  robot/cube reset eliminates the support drift seen in normal reset.
+
+Hypothesis:
+- If the weighted checkpoint is usable when initialized inside relabel support,
+  the source-joint reset should report low reset diffs, nearest-demo phase
+  should advance beyond `align_open`, and gripper closure should occur near
+  contact instead of at 18-23 cm away.
+
+Version Control:
+- implementation_commit: `ec5ebb05611dde63ebbb7f42fb64d5563daa08cb`
+- push/pull: pushed to `origin/codex/franka-cube-diffusion-policy-bc`;
+  deployed to l401 agent worktree via Git bundle because l401 GitHub SSH fetch
+  remains blocked.
+- remote_commit/status:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+  at `ec5ebb05611dde63ebbb7f42fb64d5563daa08cb`, detached clean.
+
+Command / Job:
+- job_id: `1027980`
+- run_name:
+  `franka_cube_dp_eval_weightedgrip8_inf100_trace160_chunk1_sourcejoint_ep1s0_20260611_185503`
+- command:
+  `sbatch --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart,RUN_NAME=franka_cube_dp_eval_weightedgrip8_inf100_trace160_chunk1_sourcejoint_ep1s0_20260611_185503,NUM_ENVS=1,NUM_STEPS=160,NUM_INFERENCE_STEPS=100,ACTION_CHUNK_STEPS=1,CLIP_ACTIONS=1.0,SUCCESS_WINDOW=160,CAPTURE_VIDEO=False,VIDEO_LENGTH=160,PRINT_INTERVAL=20,SEED=42,DEBUG_POLICY_TRACE_MAX_CALLS=160,DEBUG_POLICY_TRACE_ENV_INDEX=0,CHECKPOINT=/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/contact_relabel_official_dp_debug_pretrain100_weightedgrip8_20260611_1843/latest.ckpt,SUPPORT_DATASET=/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/contact_relabel_set_ep8_16_24_30_s260_high30_defaultfix_20260611_175347/contact_relabel_set_accepted.npz,DEMO_RESET_DATASET=/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/contact_relabel_set_ep8_16_24_30_s260_high30_defaultfix_20260611_175347/contact_relabel_set_accepted.npz,DEMO_RESET_EPISODE=1,DEMO_RESET_STEP=0,DEMO_RESET_SOURCE_TRAJECTORY_JSON=/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed16/trajectory.json,DEMO_RESET_SOURCE_FRAME=260,OFFICIAL_DP_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/external/real-stanford-diffusion_policy cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_weightedgrip8_inf100_trace160_chunk1_sourcejoint_ep1s0_20260611_185503`
+- logs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_dp_policy_1027980.out`
+
+Acceptance:
+- Finite no-video trace, source joint reset actually applied with low joint and
+  lowdim/cube-minus-EE reset diffs, history gaps `[0,1]`, support trace no
+  longer starts tens of normalized units away. If gripper still closes early
+  away from the cube, policy output/conditioning remains the blocker.
+
+Result:
+- status: running.
+
+## 2026-06-11T18:58:15-07:00 - matched source-joint trace160 result
+
+Goal:
+- Inspect job `1027980` artifacts before deciding whether video is warranted.
+
+Version Control:
+- implementation_commit: `ec5ebb05611dde63ebbb7f42fb64d5563daa08cb`
+- remote_commit/status: l401 agent worktree at the same detached commit.
+
+Command / Job:
+- job_id: `1027980`
+- run_name:
+  `franka_cube_dp_eval_weightedgrip8_inf100_trace160_chunk1_sourcejoint_ep1s0_20260611_185503`
+- remote run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_weightedgrip8_inf100_trace160_chunk1_sourcejoint_ep1s0_20260611_185503`
+- local artifact dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_trace160_chunk1_sourcejoint_ep1s0_20260611_185503`
+- stdout:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_trace160_chunk1_sourcejoint_ep1s0_20260611_185503/logs/eval_franka_cube_dp_policy_1027980.out`
+
+Viewer URLs:
+- report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_trace160_chunk1_sourcejoint_ep1s0_20260611_185503/closed_loop_support_report.md`
+- support plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_trace160_chunk1_sourcejoint_ep1s0_20260611_185503/closed_loop_support_trace.png`
+- action plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_trace160_chunk1_sourcejoint_ep1s0_20260611_185503/closed_loop_action_components.png`
+
+Result:
+- status: coherent trace but not success-ready; no RL/scale-up.
+- Slurm: `COMPLETED 0:0`.
+- reset gate: passed exactly. `source_joint_reset_available=true`,
+  `joint_linf_diff_after_write_env0=0`, `lowdim_l2_diff_env0=0`,
+  `cube_minus_ee_l2_diff_env0=0`.
+- mechanics:
+  `steps=160`, `debug_policy_trace_records=160`,
+  `support_trace_records=160`, history gaps `[0,1]`.
+- final metrics:
+  reward mean/final `4.065/7.599`, success/window success `0/0`,
+  cube lift max/final `0.09025 m`, final EE-to-cube `0.00970 m`,
+  final finger-center-to-cube `0.04031 m`, final gripper width
+  `0.04667 m`.
+- support:
+  nearest phase counts `align_open=28`, `close_hold=72`, `lift=60`.
+  Nearest-demo distance started low at `0.0403`, ended `1.418`.
+- close timing:
+  first negative gripper at step `27`, still nearest `align_open`, but
+  already near the cube: EE-to-cube `0.00654 m`,
+  finger-center-to-cube `0.04047 m`, live width `0.06386 m`.
+  First hard close at step `29`, nearest `close_hold`, EE-to-cube
+  `0.00673 m`, finger-center-to-cube `0.04014 m`.
+- lift:
+  `cube_lift_height > 1 cm` at step `105`; `> 8 cm` at step `153`;
+  final lift `9.0 cm`, below the environment success/lift target.
+
+Analysis:
+- The original drift/ignore-cube video was caused in large part by
+  train/eval reset support mismatch. With exact source joint and cube reset,
+  the same weighted checkpoint reaches contact and lifts, so this is no
+  longer the earlier train/eval mismatch failure mode.
+- The remaining blocker is not action-schema or history cadence: it is
+  gripper/contact/lift-goal geometry and possibly insufficient lift horizon or
+  insufficient gripper closure/hold. Final gripper width around `4.7 cm`
+  suggests the cube is being pinched/lifted but not squeezed to a fully closed
+  state; success remains false because the cube lift goal is still about
+  `7 cm` higher than reached.
+- Support distance grows during lift because the live cube/EE relative
+  geometry diverges from the small relabel set while still physically lifting.
+  This means the next training data fix should expand contact-aware relabel
+  support around lift trajectories rather than return to raw cuRobo labels.
+
+Decision:
+- A single short matched-reset video is warranted for visual confirmation,
+  because the no-video trace is finite and coherent. This is not video spam and
+  not a scale-up; it should use the same checkpoint/reset/settings and produce
+  video/contact artifacts for inspection.
+
+Next:
+- Launch one bounded video eval with the same source-joint reset and
+  `NUM_STEPS=160`, fetch video plus metrics/traces, generate contact sheet if
+  possible, then decide whether to patch for longer lift horizon, gripper
+  schedule/weighting, or a larger contact-aware relabel set.
