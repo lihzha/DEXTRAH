@@ -5832,3 +5832,25 @@ Validation:
 Next:
 - Commit/push, deploy exact commit, and relaunch the same bounded 4-rollout
   relabel-set gate.
+
+## 2026-06-11T17:53:47-07:00 - contact relabel set defaultfix relaunch
+
+Goal:
+- Relaunch the four-rollout contact-aware relabel gate after fixing literal
+  brace parsing in the wrapper default.
+
+Version Control:
+- implementation_commit: `e409721d03da09d3797d75594a50c1ce7ca64fc4`
+- push: pushed to `origin/codex/franka-cube-diffusion-policy-bc`.
+- remote deployment: l401 agent-owned worktree detached at
+  `e409721d03da09d3797d75594a50c1ce7ca64fc4`.
+
+Command / Job:
+- command:
+  same settings as `1027930`, run name
+  `franka_cube_contact_relabel_set_ep8_16_24_30_s260_high30_defaultfix_20260611_175347`.
+- job_id: `1027932`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/contact_relabel_sets/franka_cube_contact_relabel_set_ep8_16_24_30_s260_high30_defaultfix_20260611_175347`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/contact_aware_franka_cube_relabel_set_1027932.out`
