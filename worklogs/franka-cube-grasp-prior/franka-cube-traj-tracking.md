@@ -7006,3 +7006,83 @@ Version Control:
   - `cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
   - `dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py`
   - `worklogs/franka-cube-grasp-prior/franka-cube-traj-tracking.md`
+
+## 2026-06-11T23:36:00-07:00 - contact-aware terminal hold video launch
+
+Version Control:
+- launch_commit: `287ed11479e04eddc086930e9eb02d1b4655c81b` (`Record contact-aware hold implementation`), pushed.
+- remote source: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking`, detached clean at `287ed11479e04eddc086930e9eb02d1b4655c81b`.
+
+Common Config:
+- task: `Dextrah-Franka-Cube-Grasp-Traj-Tracking`.
+- action source: `policy_reference_mix_hold`.
+- checkpoint: `/results/bc/franka_cube_traj_tracking_bc_handoff_success_alpha0_20260611_223200/nn/bc_reference_action_imitation.pth`.
+- reference: `/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json` (`curobo_validated=false`).
+- `HOLD_TRIGGER_MODE=contact_after_phase_or_lift_success`, `HOLD_PHASE_START=0.67`, `HOLD_CONTACT_MAX_FINGER_DIST=0.08`, `HOLD_TRIGGER_LIFT_HEIGHT=0.02`, `HOLD_TARGET_POLICY=cube_current_plus_trigger_ee_offset`, `HOLD_LIFT_HEIGHT=0.03`, `HOLD_GRIPPER_ACTION=-0.4`.
+- `SUPPRESS_SUCCESS_TERMINATION=True`, `NUM_ENVS=4`, `NUM_STEPS=520`, `VIDEO_LENGTH=520`, `CAPTURE_VIDEO=True`, `SEED=75`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`.
+
+Jobs:
+- alpha0.10 previous-success env3: job `1028224`, run `franka_cube_traj_tracking_bc_handoff_noreset_contacthold_vis_a010_env3prevsucc_520_20260611_233600`.
+- alpha0.10 previous-failure env0: job `1028225`, run `franka_cube_traj_tracking_bc_handoff_noreset_contacthold_vis_a010_env0prevfail_520_20260611_233600`.
+- alpha0.15 previous-success env1: job `1028226`, run `franka_cube_traj_tracking_bc_handoff_noreset_contacthold_vis_a015_env1prevsucc_520_20260611_233600`.
+- alpha0.15 previous-failure env0: job `1028227`, run `franka_cube_traj_tracking_bc_handoff_noreset_contacthold_vis_a015_env0prevfail_520_20260611_233600`.
+- alpha0.20 previous-success env1: job `1028228`, run `franka_cube_traj_tracking_bc_handoff_noreset_contacthold_vis_a020_env1prevsucc_520_20260611_233600`.
+- alpha0.20 previous-failure env2: job `1028229`, run `franka_cube_traj_tracking_bc_handoff_noreset_contacthold_vis_a020_env2prevfail_520_20260611_233600`.
+
+Acceptance:
+- Fetch logs and run dirs after completion; generate per-run reports/contact sheets/trace plots and a combined comparison report.
+- Validate MP4 metadata and visually inspect success/regression cases.
+- Target unsafe max must remain `0`; train/eval consistency should have no real mismatches.
+- No PPO/RL scale-up until this result is inspected.
+
+Active Jobs:
+- `1028224`, `1028225`, `1028226`, `1028227`, `1028228`, `1028229`.
+
+Result:
+- jobs `1028224`-`1028229` completed `0:0`; fetched logs and run dirs locally under `cluster_results/l401/`.
+- Per-run artifact summarizer generated `report.md`, `summary.json/csv`, `success_diagnostics.json/csv`, `success_window_trace.csv`, `trajectory_trace_plot.png`, `train_eval_consistency.json`, and `video_contact_sheet.png`.
+- MP4 validation passed for all six videos: 1280x720, 520 frames, 8.67 s.
+- Combined artifact bundle:
+  - report: http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_contacthold_comparison_20260611_233600/report.md
+  - plot: http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_contacthold_comparison_20260611_233600/contacthold_comparison_plot.png
+  - summary CSV: `cluster_results/l401/franka_cube_traj_tracking_contacthold_comparison_20260611_233600/summary.csv`
+  - aggregate CSV: `cluster_results/l401/franka_cube_traj_tracking_contacthold_comparison_20260611_233600/aggregate_summary.csv`
+
+Metrics:
+- contact-aware hold alpha0.10: final success `3/4`, success ever `3/4`, max lift `0.2878 m`, final lift `0.2827 m`, done count `0`, target unsafe max `0`, target clearance final/min trace `0.2651 m`.
+- contact-aware hold alpha0.15: final success `3/4`, success ever `3/4`, max lift `0.2668 m`, final lift `0.2612 m`, done count `0`, target unsafe max `0`, target clearance final/min trace `0.2651 m`.
+- contact-aware hold alpha0.20: final success `3/4`, success ever `3/4`, max lift `0.2575 m`, final lift `0.2537 m`, done count `0`, target unsafe max `0`, target clearance final/min trace `0.2651 m`.
+- Hold trigger mode was `contact_after_phase_or_lift_success`; final hold active rate was `0.75` in the contact-aware runs. Final contact-after-phase trigger rate was `0.50` for alpha0.10 and `0.25` for alpha0.15/0.20; final lift-trigger rate was `0.25` for alpha0.10 and `0.50` for alpha0.15/0.20.
+- Comparison against prior assisted boundary probes:
+  - no-hold: alpha0.10/0.15/0.20 final success `1/4`, `2/4`, `3/4`.
+  - gripper-only override: alpha0.10/0.20 final success `2/4`, `2/4`.
+  - z+gripper override: alpha0.10/0.15/0.20 final success `1/4`, `1/4`, `1/4`.
+  - contact-aware hold: alpha0.10/0.15/0.20 final success `3/4`, `3/4`, `3/4`.
+
+Visual Artifacts:
+- alpha0.10 previous-failure env0 recovered:
+  - sheet: http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_contacthold_vis_a010_env0prevfail_520_20260611_233600_artifacts/video_contact_sheet.png
+  - video: http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_contacthold_vis_a010_env0prevfail_520_20260611_233600/videos/handoff-noreset-contacthold-a010_env0prevfail-step-0.mp4
+- alpha0.15 previous-failure env0 recovered:
+  - sheet: http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_contacthold_vis_a015_env0prevfail_520_20260611_233600_artifacts/video_contact_sheet.png
+  - video: http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_contacthold_vis_a015_env0prevfail_520_20260611_233600/videos/handoff-noreset-contacthold-a015_env0prevfail-step-0.mp4
+- alpha0.20 previous-success env1 remains successful:
+  - sheet: http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_contacthold_vis_a020_env1prevsucc_520_20260611_233600_artifacts/video_contact_sheet.png
+  - video: http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_contacthold_vis_a020_env1prevsucc_520_20260611_233600/videos/handoff-noreset-contacthold-a020_env1prevsucc-step-0.mp4
+- alpha0.20 previous-failure env2 remains a visible failure/regression example despite aggregate `3/4` success:
+  - sheet: http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_contacthold_vis_a020_env2prevfail_520_20260611_233600_artifacts/video_contact_sheet.png
+  - video: http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_contacthold_vis_a020_env2prevfail_520_20260611_233600/videos/handoff-noreset-contacthold-a020_env2prevfail-step-0.mp4
+
+Train/Eval Audit:
+- `train_eval_consistency.json` status is `bc_metadata_partial_pass`: available BC metadata matches task/action/observation dims, reference path, min target gripper width, reference duration, and `curobo_validated=false`.
+- Missing keys are unavailable in the old BC metadata, not detected mismatches. Intentional eval-only overrides are `ACTION_SOURCE=policy_reference_mix_hold`, targeted `CAMERA_ENV_INDEX`, alpha sweep values, `SUPPRESS_SUCCESS_TERMINATION=True`, and `HOLD_TRIGGER_MODE=contact_after_phase_or_lift_success`.
+
+Analysis:
+- Contact-aware terminal hold is the best assisted boundary result so far and fixes the alpha0.10/0.15 boundary better than direct gripper-only or z+gripper overrides.
+- The improvement is still assisted `policy_reference_mix_hold`, not policy-only. Alpha0 policy-only remains previously failed, so this is not a PPO/RL scale-up gate.
+- Visual inspection shows real late lift/hold for alpha0.10 env0/env3, alpha0.15 env0, and alpha0.20 env1. Alpha0.20 env2 still fails with the cube on the table at the final frame, so the remaining failure is not an old train/eval drift mismatch; it is residual grasp/contact/hold robustness.
+
+Next:
+- Treat contact-aware hold as the best current handoff target for B. The next bounded step should be supervised/trainability work that learns the contact-conditioned terminal hold or reduces assistance from this improved assisted manifold, with visual alpha0/low-alpha gates before any PPO/RL scale-up.
+- Old `actionscale-rewinf-diag-video480-step-0.mp4` / job `1027753` remains obsolete failed diagnostic evidence.
+- Active jobs after result fetch: none.
