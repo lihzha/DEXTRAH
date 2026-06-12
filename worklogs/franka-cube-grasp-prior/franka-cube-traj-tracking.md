@@ -4748,3 +4748,42 @@ Expected Artifacts:
 Next:
 - Monitor job `1027994`.
 - Fetch and inspect supervised artifacts before any selector eval launch.
+
+## 2026-06-11T19:11:20-07:00 - teacher-mix DAgger tm0.10 supervised result
+
+Result:
+- job `1027994` completed `0:0`, elapsed `00:01:10`, node `pool0-00014`.
+- fetched artifacts locally under `cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm010_all_20260611_190900`.
+- report URL: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm010_all_20260611_190900/report.md`
+- loss plot URL: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm010_all_20260611_190900/bc_loss_plot.png`
+- metrics URL: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm010_all_20260611_190900/bc_metrics.json`
+- checkpoint: `/results/bc/franka_cube_traj_tracking_bc_dagger_tm010_all_20260611_190900/nn/bc_reference_action_imitation.pth`
+
+Supervised Gate:
+- collection: `teacher_mix`, teacher alpha `0.10`, labels still `reference_delta`, all seven action dims.
+- samples: `4160`; obs/action dims: `72/7`.
+- validation MSE: `0.103369 -> 0.001338`.
+- validation L2: `0.628728 -> 0.079111`.
+- validation close/up/gripper abs: `0.090374/0.217260/0.231394 -> 0.015930/0.015096/0.033793`.
+- dataset applied collection means show lower assistance than tm0.25: `applied_collection_close_mean=0.1959`, `applied_collection_up_mean=0.1852`, `applied_collection_gripper_mean=0.2506`.
+- reference caveat preserved: `curobo_validated=false`, `source_tag=graspgenx_curobo_60mm_export_pending_exact_validation`, task-space waypoint transform, `do_not_transform_joint_trajectories`.
+
+Decision:
+- supervised gate passes; launch metrics-only selector evals alpha `0.0`, `0.25`, `0.5`, `0.75`, and `1.0`.
+- Do not launch targeted videos until selector metrics identify alpha `0.0` failure/improvement, lowest-alpha success, and alpha `1.0` context.
+
+## 2026-06-11T19:12:00-07:00 - teacher-mix DAgger tm0.10 selector launch
+
+Selector Eval Launch:
+- alpha `0.0`: job `1027997`, run `franka_cube_traj_tracking_bc_dagger_tm010_select_a000_520_20260611_191200`.
+- alpha `0.25`: job `1027998`, run `franka_cube_traj_tracking_bc_dagger_tm010_select_a025_520_20260611_191200`.
+- alpha `0.5`: job `1027999`, run `franka_cube_traj_tracking_bc_dagger_tm010_select_a050_520_20260611_191200`.
+- alpha `0.75`: job `1028000`, run `franka_cube_traj_tracking_bc_dagger_tm010_select_a075_520_20260611_191200`.
+- alpha `1.0`: job `1028001`, run `franka_cube_traj_tracking_bc_dagger_tm010_select_a100_520_20260611_191200`.
+- checkpoint: `/results/bc/franka_cube_traj_tracking_bc_dagger_tm010_all_20260611_190900/nn/bc_reference_action_imitation.pth`.
+- shared eval config: `NUM_ENVS=4`, `NUM_STEPS=520`, no video, deterministic, success termination suppressed, seed `64`, target reference still `curobo_validated=false`, action-alignment weight `80.0`, fixed teacher alpha per run with phase end `1.0`.
+
+Acceptance:
+- all five selectors complete with metrics/trace JSON/CSV, no NaNs/tracebacks, target unsafe max `0`.
+- compare success/lift/raw-reference error against tm0.25 and tm0.5.
+- if lower-alpha success improves and target safety holds, launch targeted videos for alpha `0.0` failure/improvement, lowest-alpha success, and alpha `1.0` context.
