@@ -9007,3 +9007,50 @@ Active jobs:
 - No C-owned l401 jobs remain. `squeue` shows unrelated job `1028137`
   (`ggx_lowz_bc`) running under the user account; not launched or owned by this
   Worker C run.
+
+## 2026-06-11T22:06:11-07:00 - alpha0.75 relabel branch blocked from DP/RL
+
+Status:
+- Blocked for DP fine-tune, RL warm-start, or broader dataset generation.
+- No additional scalar finger-center/contact-threshold relaunch is technically
+  justified by the 1028134/1028135 video and trace evidence.
+- No new Slurm job launched in this entry.
+
+Evidence:
+- `1028134` showed the source-target `align_open` phase moves alpha0.75 out of
+  support before close: no close/lift rows, `close_start_local_step=-1`, and
+  termination/reset at local step `99`.
+- `1028135` removed that align phase and proved the scalar contact gate is
+  insufficient: `contact_align_trigger_step=0`, `close_start_local_step=1`,
+  zero executed clipping, gripper closes fully, but final EE/finger distances
+  drift to `0.2246/0.2695 m` and max lift stays `0.0143 m`.
+- The contact sheet/video show the gripper closing and lifting beside/above the
+  cube rather than enclosing it. Early rows show unbalanced finger geometry
+  (`left=0.0810`, `right=0.0533` at the trigger), so
+  `finger_center_to_cube <= 0.06` is not a valid grasp-readiness condition.
+
+Artifact references:
+- `1028134` report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_contactalign80_gateclose_ep16s260_a0p75_20260611_215831/contact_relabel_set_report.md`
+- `1028134` plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_contactalign80_gateclose_ep16s260_a0p75_20260611_215831/rollouts/ep16s260_a0p75/contact_rollout_plot.png`
+- `1028134` contact sheet:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_contactalign80_gateclose_ep16s260_a0p75_20260611_215831/rollouts/ep16s260_a0p75/contact_sheet_a0p75_gateclose80_1028134.jpg`
+- `1028134` video:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_contactalign80_gateclose_ep16s260_a0p75_20260611_215831/rollouts/ep16s260_a0p75/videos/franka-cube-contact-gateclose80-ep16s260_a0p75-step-0.mp4`
+- `1028135` report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_noalign_gateclose_ep16s260_a0p75_20260611_220150/contact_relabel_set_report.md`
+- `1028135` plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_noalign_gateclose_ep16s260_a0p75_20260611_220150/rollouts/ep16s260_a0p75/contact_rollout_plot.png`
+- `1028135` contact sheet:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_noalign_gateclose_ep16s260_a0p75_20260611_220150/rollouts/ep16s260_a0p75/contact_sheet_a0p75_noalign_1028135.jpg`
+- `1028135` video:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_noalign_gateclose_ep16s260_a0p75_20260611_220150/rollouts/ep16s260_a0p75/videos/franka-cube-contact-noalign-gateclose-ep16s260_a0p75-step-0.mp4`
+
+Recommendation:
+- Replace the scalar finger-center gate with a different contact controller
+  design before any more DP/RL work. The next design should explicitly use
+  left/right finger geometry and lateral centering around the live cube, or a
+  grasp-specific closed-loop controller that searches for balanced finger
+  placement before closing. Only after that controller passes the same
+  alpha0.75 hard relabel gate should official DP training resume.
