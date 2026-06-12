@@ -13293,3 +13293,153 @@ Next:
   checkpoint. If it still fails, build a broader residual recovery dataset
   using the random-reset failure traces and the accepted multi-pose contact
   relabel data.
+
+## 2026-06-12T10:22:20-07:00 - contact-gated/sample-aggregation 32-env ablation launch
+
+Version Control:
+- local_commit: `18db134080e9b84344c2d4e655458ed545dea132`
+- pushed: `origin/codex/franka-cube-diffusion-policy-bc`
+- remote_deploy: l401 GitHub fetch failed with `Permission denied
+  (publickey)`, so the same commit was deployed Git-to-Git via a small bundle
+  fetched into
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart-gripvote-dbfed79`.
+- remote_commit: `18db134080e9b84344c2d4e655458ed545dea132`
+
+Command / Jobs:
+- common checkpoint:
+  `/results/dp_bc/checkpoints/normalcube_ep16_trunc140_residual_recovery8_x0pred_noema_20260612_095835/epoch200_snapshot.ckpt`
+- common support:
+  `/results/dp_bc/policy_recovery/normalcube_ep16_trunc140_residual_recovery8_20260612_1000/normalcube_ep16_trunc140_residual_recovery8.npz`
+- job `1028524`:
+  `franka_cube_dp_eval_normalcube_32env_seed42_residual8_epoch200_contactgate030_liftw060_sample1_novideo_20260612_102159`
+  with contact-gated phase, close threshold `0.30`, lift width threshold
+  `0.06`, one action sample.
+- job `1028525`:
+  `franka_cube_dp_eval_normalcube_32env_seed42_residual8_epoch200_dataset_sample8_gripvote_novideo_20260612_102159`
+  with dataset phase schedule and `8` sampled action sequences with binary
+  gripper vote.
+- job `1028526`:
+  `franka_cube_dp_eval_normalcube_32env_seed42_residual8_epoch200_contactgate030_liftw060_sample8_novideo_20260612_102159`
+  with both contact gating and `8` sampled action sequences.
+
+Expected evidence:
+- Fetch metrics/support traces for all three jobs.
+- If contact gating fixes env0 but not the batch, build a broader recovery
+  dataset from random-reset traces plus accepted multi-pose relabel data.
+- If sample aggregation fixes the batch, keep the policy/data and use the
+  lower-variance inference setting for the warm-start teacher.
+
+## 2026-06-12T10:35:00-07:00 - cube-translation recovery dataset
+
+Goal:
+- Test whether the 32-env failure is mainly absolute cube/EE position OOD
+  rather than bad local grasp labels.
+
+Hypothesis:
+- The recovery8 checkpoint succeeds on the exact cube pose but closes early and
+  drifts on random resets because all supervised observations share one
+  absolute cube position. Translating the accepted/recovery trajectories across
+  CuRobo32 cube starts should preserve local cube-minus-EE geometry and action
+  labels while broadening the observation support seen by the DP normalizer and
+  UNet.
+
+Change:
+- Added `dextrah_lab/offline_dp_bc/make_cube_translation_dataset.py`, which
+  duplicates 21D/25D lowdim episodes at target cube positions by translating
+  `ee_pos` and `cube_pos` together, recomputing `cube_minus_ee`, and leaving
+  phase/progress features plus relative action labels unchanged.
+- Built
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cube_translation/recovery8_curobo32starts_20260612_103430/normalcube_ep16_trunc140_residual_recovery8_cube_translated_curobo32.npz`
+  from the recovery8 dataset and CuRobo32 start positions.
+
+Version Control:
+- local_commit: pending
+- changed_files:
+  `dextrah_lab/offline_dp_bc/make_cube_translation_dataset.py`,
+  `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+
+Dataset:
+- input: `4445` rows / `24` episodes, one cube pose.
+- output: `142240` rows / `768` episodes.
+- cube start coverage: x `[-0.44, -0.28]`, y `[-0.20, -0.04]`, z `0.781`.
+- phase counts: `{0: 61440, 1: 48544, 2: 32256}`.
+
+Validation:
+- `py_compile` passed for the new transformer plus the touched recovery/eval
+  helpers.
+
+Next:
+- Train a bounded no-EMA x0-pred official-DP checkpoint locally on the
+  translated recovery dataset.
+- Stage the checkpoint/dataset to l401 and evaluate 32-env random reset. If it
+  fails, inspect whether absolute-position OOD is fixed but local contact still
+  fails, then either add multi-env failure recovery traces or tune relabel
+  generation for more true-normal-reset demos.
+
+## 2026-06-12T10:47:00-07:00 - translated checkpoint coherence and eval mismatch
+
+Training:
+- Completed local official-DP training on
+  `normalcube_ep16_trunc140_residual_recovery8_cube_translated_curobo32.npz`.
+- checkpoint:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_cube_translation/recovery8_curobo32_translated_x0pred_noema_20260612_103518/official_dp_train/checkpoints/latest.ckpt`
+- final train loss: about `0.0016`; train action MSE summary: `0.00072`.
+
+Offline coherence:
+- Full coherence over all `142240` translated rows was too slow because the
+  checker builds Python histories for every row, so I interrupted it and ran a
+  contiguous 64-episode subset preserving episode boundaries.
+- command output:
+  `FRANKA_CUBE_DP_OFFLINE_COHERENCE ... "pass": true, "rows_scored": 18496`
+- report:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_cube_translation/recovery8_curobo32_translated_x0pred_noema_20260612_103518/offline_coherence_subset64/offline_coherence_report.md`
+- key result: all phases pass with gripper sign fraction `1.0`, pose cosine
+  about `0.999`, and all-action offset-0 MSE about `1.9e-4`. This makes a
+  basic DP normalizer/model-I/O bug unlikely for this checkpoint.
+
+l401 staged artifacts:
+- dataset:
+  `/results/dp_bc/cube_translation/recovery8_curobo32starts_20260612_103430/normalcube_ep16_trunc140_residual_recovery8_cube_translated_curobo32.npz`
+- checkpoint:
+  `/results/dp_bc/checkpoints/recovery8_curobo32_translated_x0pred_noema_20260612_103518/latest.ckpt`
+
+Negative controls closed:
+- job `1028525`, dataset phase + sample8 binary gripper vote: final/window
+  success `0.03125/0.01953`, max/final lift `0.005898/0.005898 m`, support
+  report verdict fail.
+- job `1028526`, contact-gated phase + sample8 binary gripper vote:
+  final/window success `0.03125/0.003516`, max/final lift
+  `0.006196/0.006196 m`, support report verdict fail.
+- Both still close away from the cube or remain open while drifting out of
+  support; sample aggregation did not fix the one-demo checkpoint.
+
+Mismatch found:
+- The translated-checkpoint eval job `1028527` was launched with the staged
+  translated dataset/checkpoint, but still used two bad runtime choices:
+  1. `ContactGatedPhaseProgressProvider` computed support scaling and phase
+     search from only `episode_index=0`, which is wrong for translated
+     multi-pose support.
+  2. `GRIPPER_SAMPLE_AGGREGATION=binary_vote` with
+     `GRIPPER_CLOSE_THRESHOLD=0.5` turns any gripper output below half-open
+     into a hard close. For DEXTRAH's continuous raw gripper action, this is an
+     eval-time thresholding mismatch; open predictions should not be hardened
+     to `-1` unless they are actually negative or strongly close-biased.
+
+Change:
+- Patched `dextrah_lab/offline_dp_bc/ppo_bridge.py` so contact-gated support
+  distances are normalized over and searched across all dataset rows, while the
+  selected episode is still used only for the deterministic progress schedule.
+
+Validation:
+- `py_compile` passed for `ppo_bridge.py` and
+  `make_cube_translation_dataset.py`.
+- Provider smoke on the translated dataset reports
+  `support_scope=all_dataset_rows` and `support_rows=142240`.
+
+Next:
+- Commit/deploy the provider fix.
+- Relaunch translated-checkpoint eval with continuous gripper output
+  (`GRIPPER_SAMPLE_AGGREGATION=mean`) and a tighter close gate
+  (`PHASE_CLOSE_SUPPORT_DISTANCE_THRESHOLD=0.10`) so close is not enabled just
+  because a translated align row is near close-hold support under a loose
+  normalized threshold.

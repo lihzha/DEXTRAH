@@ -349,9 +349,14 @@ class ContactGatedPhaseProgressProvider:
         self.lift_gripper_width_threshold = float(lift_gripper_width_threshold)
 
         episode_rows = np.arange(episode_start, episode_end, dtype=np.int64)
-        support = self.base_obs[episode_rows][:, PHASE_PROGRESS_SUPPORT_FEATURE_IDX]
+        support_rows = np.arange(obs.shape[0], dtype=np.int64)
+        support = self.base_obs[support_rows][:, PHASE_PROGRESS_SUPPORT_FEATURE_IDX]
         self._episode_rows = episode_rows
+        self._support_rows = support_rows
         self._support_std = np.maximum(support.std(axis=0), 1.0e-4).astype(np.float32)
+        self._phase_support_rows: dict[int, np.ndarray] = {
+            phase_id: support_rows[self.phase_ids[support_rows] == phase_id] for phase_id in (0, 1, 2)
+        }
         self._phase_bounds: dict[int, tuple[int, int]] = {}
         for phase_id in (0, 1, 2):
             phase_rows = episode_rows[self.phase_ids[episode_rows] == phase_id]
@@ -377,7 +382,7 @@ class ContactGatedPhaseProgressProvider:
         distances = np.sqrt((((self.base_obs[:, PHASE_PROGRESS_SUPPORT_FEATURE_IDX] - query) / self._support_std) ** 2).mean(axis=1))
         out = np.full(3, np.inf, dtype=np.float32)
         for phase_id in (0, 1, 2):
-            rows = self._episode_rows[self.phase_ids[self._episode_rows] == phase_id]
+            rows = self._phase_support_rows.get(phase_id)
             if rows.size:
                 out[phase_id] = float(np.min(distances[rows]))
         return out
@@ -424,6 +429,8 @@ class ContactGatedPhaseProgressProvider:
             "start_step": int(self.start_step),
             "feature_names": list(self.feature_names),
             "obs_dim": int(self.obs_dim),
+            "support_scope": "all_dataset_rows",
+            "support_rows": int(self._support_rows.size),
             "close_support_distance_threshold": float(self.close_support_distance_threshold),
             "lift_support_distance_threshold": float(self.lift_support_distance_threshold),
             "lift_gripper_width_threshold": float(self.lift_gripper_width_threshold),
