@@ -49,6 +49,7 @@ parser.add_argument("--lift_action_z", type=float, default=0.15)
 parser.add_argument("--oracle_gain", type=float, default=8.0)
 parser.add_argument("--oracle_max_position_action", type=float, default=1.0)
 parser.add_argument("--track_orientation", action=argparse.BooleanOptionalAction, default=True)
+parser.add_argument("--track_exact_during_lift", action=argparse.BooleanOptionalAction, default=True)
 parser.add_argument("--gate_val_mse", type=float, default=0.04)
 parser.add_argument("--gate_gripper_sign", type=float, default=0.95)
 parser.add_argument("--gate_lift_z_sign", type=float, default=0.90)
@@ -230,7 +231,11 @@ def _reference_action(task_env, phase: str) -> torch.Tensor:
     if phase == "close":
         return _exact_tracking_action(task_env, close_action)
     if phase == "lift":
-        action = _exact_tracking_action(task_env, close_action)
+        if bool(args_cli.track_exact_during_lift):
+            action = _exact_tracking_action(task_env, close_action)
+        else:
+            action = torch.zeros(task_env.num_envs, int(task_env.cfg.action_space), device=task_env.device)
+            action[:, 6] = float(close_action)
         action[:, 2] = float(np.clip(args_cli.lift_action_z, -1.0, 1.0))
         return action
     raise ValueError(f"Unknown phase {phase!r}")
@@ -628,6 +633,7 @@ def main(env_cfg, agent_cfg: dict):
         "oracle_gain": float(args_cli.oracle_gain),
         "oracle_max_position_action": float(args_cli.oracle_max_position_action),
         "track_orientation": bool(args_cli.track_orientation),
+        "track_exact_during_lift": bool(args_cli.track_exact_during_lift),
         "train_epochs": int(args_cli.train_epochs),
         "batch_size": int(args_cli.batch_size),
         "learning_rate": float(args_cli.learning_rate),

@@ -4541,3 +4541,50 @@ Verdict:
 - The target-offset result from `1028126` has been converted into a sampler/library rule: keep the low exact-z GraspGenX sample (`orig027`, object-local grasp z `0.113501884 m`) instead of applying a runtime `offset_z`.
 - No BC, PPO, A100, or full RL was launched.
 - Caveat: the current safe library is a single robust sample. If diversity is required before training, generate/filter more low exact-z samples rather than reintroducing target offsets.
+
+## 2026-06-12T05:02:01Z - Low-Z No-Offset Supervised Label Gate Plan
+
+Goal:
+- Build a small supervised label/action artifact from the low-z no-offset recipe before any PPO.
+
+Hypothesis:
+- The previous BC/action-head attempts failed partly because the pass7 library mixed high-z samples and the label recipe did not come from the final-safe low-z no-offset gate.
+- A supervised diagnostic using the low-z `orig027` library plus the exact passing `act_neg075_z050_free` recipe should produce cleaner labels and a stronger action-head fit.
+
+Change:
+- Add a diagnostic-only `track_exact_during_lift` flag to `bc_franka_cube_pass7_actions.py` and its l401 wrapper so the BC labels can exactly match the passing gate recipe:
+  - approach: exact tracking, gripper open, `16` steps;
+  - close: exact tracking, gripper action equivalent to width `0.010 m` / action `-0.75`, `24` steps;
+  - lift: `z=+0.50`, gripper closed, no exact tracking during lift, `24` steps.
+- Do not change the main environment, reward, termination, PPO config, or reset behavior.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- worklog: `worklogs/franka-cube-grasp-prior/franka-cube-ggx-pregrasp-reset.md`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `1d84f37999f0e28e68f52a9d8e70eebd64adedab`
+- implementation_commit: pending
+- changed_files:
+  - `dextrah_lab/rl_games/bc_franka_cube_pass7_actions.py`
+  - `cluster/sbatch_bc_franka_cube_pass7_actions_1gpu.sh`
+  - this worklog
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/bc_franka_cube_pass7_actions.py`
+- `bash -n cluster/sbatch_bc_franka_cube_pass7_actions_1gpu.sh`
+
+Command / Job Plan:
+- run name: `franka_cube_ggx_lowz_bc_actor_recipe_20260611_2202`
+- job name: `ggx_lowz_bc`
+- code: exact committed branch deployed to the agent-owned l401 worktree.
+- library: `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz`
+- init checkpoint: `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_robust_pass7_smoke45_20260612_0056/nn/last_dextrah_franka_cube_grasp_ep_45_rew_662.51086.pth`
+- scale: `NUM_ENVS=64`, `NUM_RESETS=16`, `TRAIN_EPOCHS=40`, `TRAIN_SCOPE=actor`, no PPO.
+- artifact paths expected under `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_lowz_bc_actor_recipe_20260611_2202`.
+
+Acceptance:
+- supervised gate passes: validation MSE `<=0.04`, gripper sign accuracy `>=0.95`, lift-z sign accuracy `>=0.90`, checkpoint loadable.
+- dataset summary confirms reset-prior success/quality and low-z sample usage.
+- inspect/report artifacts: `REPORT.md`, `metrics.json`, `dataset_summary.json`, `bc_action_metrics.csv`, `bc_loss_curves.png`, `bc_action_phase_means.png`, `bc_z_sign_accuracy.png`.
+- Do not launch PPO/A100 from this result without an explicit follow-up gate.
