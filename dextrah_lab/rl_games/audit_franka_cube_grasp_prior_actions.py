@@ -19,6 +19,12 @@ parser.add_argument("--task", type=str, default="Dextrah-Franka-Cube-Grasp")
 parser.add_argument("--num_envs", type=int, default=1)
 parser.add_argument("--num_resets", type=int, default=3)
 parser.add_argument("--horizon_steps", type=int, default=40)
+parser.add_argument(
+    "--match_reset_state",
+    action=argparse.BooleanOptionalAction,
+    default=False,
+    help="Restore the exact same reset state for each candidate. Default uses fresh resets from the same prior distribution.",
+)
 parser.add_argument("--seed", type=int, default=42)
 parser.add_argument("--output_dir", type=str, default=None)
 parser.add_argument("--metrics_path", type=str, default=None)
@@ -1249,6 +1255,7 @@ def main(env_cfg, agent_cfg: dict):
             "num_envs": env_cfg.scene.num_envs,
             "num_resets": args_cli.num_resets,
             "horizon_steps": args_cli.horizon_steps,
+            "match_reset_state": args_cli.match_reset_state,
             "seed": args_cli.seed,
             "cube_spawn_xy_randomization": args_cli.cube_spawn_xy_randomization,
             "grasp_prior_library_path": args_cli.grasp_prior_library_path,
@@ -1293,53 +1300,111 @@ def main(env_cfg, agent_cfg: dict):
     summary_rows: list[dict[str, object]] = []
     rendered_frames: list[Path] = []
 
-    env.reset()
     env_id = 0
-    for reset_index in range(int(args_cli.num_resets)):
-        if reset_index > 0:
-            env.reset()
-        sample = _collect_reset_sample(task_env, env_id, reset_index)
-        reset_samples.append(sample)
-        snapshot = _snapshot_task_env_state(task_env)
-        print(
-            "[AUDIT_RESET] "
-            f"reset={reset_index} sample={sample['sample_index']} "
-            f"reset_success={sample['reset_success']} quality={sample['reset_grasp_quality_success']} "
-            f"ee={sample['ee_to_cube_dist_m']:.4f} finger={sample['finger_center_to_cube_dist_m']:.4f}",
-            flush=True,
-        )
-        for candidate in all_candidates:
-            player = players.get(candidate)
-            render_candidate = bool(args_cli.render) and reset_index < int(args_cli.render_resets) and candidate in render_candidates
-            records, summary = _run_rollout(
-                env,
-                gym_env,
-                task_env,
-                env_cfg,
-                env_id=env_id,
-                reset_index=reset_index,
-                candidate=candidate,
-                sample=sample,
-                player=player,
-                snapshot=snapshot,
-                frames_dir=frames_dir,
-                rendered_frames=rendered_frames,
-                render_candidate=render_candidate,
+    if bool(args_cli.match_reset_state):
+        env.reset()
+        for reset_index in range(int(args_cli.num_resets)):
+            if reset_index > 0:
+                env.reset()
+            sample = _collect_reset_sample(task_env, env_id, reset_index)
+            sample["matched_reset_state"] = True
+            reset_samples.append(sample)
+            snapshot = _snapshot_task_env_state(task_env)
+            print(
+                "[AUDIT_RESET] "
+                f"reset={reset_index} sample={sample['sample_index']} "
+                f"reset_success={sample['reset_success']} quality={sample['reset_grasp_quality_success']} "
+                f"ee={sample['ee_to_cube_dist_m']:.4f} finger={sample['finger_center_to_cube_dist_m']:.4f} "
+                "matched_state=True",
+                flush=True,
             )
-            trace_rows.extend(records)
-            summary_rows.append(summary)
-            if args_cli.print_interval > 0:
+            for candidate in all_candidates:
+                player = players.get(candidate)
+                render_candidate = (
+                    bool(args_cli.render)
+                    and reset_index < int(args_cli.render_resets)
+                    and candidate in render_candidates
+                )
+                records, summary = _run_rollout(
+                    env,
+                    gym_env,
+                    task_env,
+                    env_cfg,
+                    env_id=env_id,
+                    reset_index=reset_index,
+                    candidate=candidate,
+                    sample=sample,
+                    player=player,
+                    snapshot=snapshot,
+                    frames_dir=frames_dir,
+                    rendered_frames=rendered_frames,
+                    render_candidate=render_candidate,
+                )
+                trace_rows.extend(records)
+                summary_rows.append(summary)
+                if args_cli.print_interval > 0:
+                    print(
+                        "[AUDIT_ROLLOUT] "
+                        f"reset={reset_index} candidate={candidate} "
+                        f"reward_mean={summary.get('reward_mean')} "
+                        f"ee_final={summary.get('ee_to_cube_dist_m_final')} "
+                        f"finger_final={summary.get('finger_center_to_cube_dist_m_final')} "
+                        f"lift_max={summary.get('cube_lift_height_m_max')} "
+                        f"done={summary.get('done_seen')}",
+                        flush=True,
+                    )
+            _restore_task_env_state(task_env, snapshot)
+    else:
+        for reset_index in range(int(args_cli.num_resets)):
+            for candidate in all_candidates:
+                player = players.get(candidate)
+                render_candidate = (
+                    bool(args_cli.render)
+                    and reset_index < int(args_cli.render_resets)
+                    and candidate in render_candidates
+                )
+                env.reset()
+                sample = _collect_reset_sample(task_env, env_id, reset_index)
+                sample["candidate"] = candidate
+                sample["matched_reset_state"] = False
+                reset_samples.append(sample)
+                snapshot = _snapshot_task_env_state(task_env)
                 print(
-                    "[AUDIT_ROLLOUT] "
-                    f"reset={reset_index} candidate={candidate} "
-                    f"reward_mean={summary.get('reward_mean')} "
-                    f"ee_final={summary.get('ee_to_cube_dist_m_final')} "
-                    f"finger_final={summary.get('finger_center_to_cube_dist_m_final')} "
-                    f"lift_max={summary.get('cube_lift_height_m_max')} "
-                    f"done={summary.get('done_seen')}",
+                    "[AUDIT_RESET] "
+                    f"reset={reset_index} candidate={candidate} sample={sample['sample_index']} "
+                    f"reset_success={sample['reset_success']} quality={sample['reset_grasp_quality_success']} "
+                    f"ee={sample['ee_to_cube_dist_m']:.4f} finger={sample['finger_center_to_cube_dist_m']:.4f} "
+                    "matched_state=False",
                     flush=True,
                 )
-        _restore_task_env_state(task_env, snapshot)
+                records, summary = _run_rollout(
+                    env,
+                    gym_env,
+                    task_env,
+                    env_cfg,
+                    env_id=env_id,
+                    reset_index=reset_index,
+                    candidate=candidate,
+                    sample=sample,
+                    player=player,
+                    snapshot=snapshot,
+                    frames_dir=frames_dir,
+                    rendered_frames=rendered_frames,
+                    render_candidate=render_candidate,
+                )
+                trace_rows.extend(records)
+                summary_rows.append(summary)
+                if args_cli.print_interval > 0:
+                    print(
+                        "[AUDIT_ROLLOUT] "
+                        f"reset={reset_index} candidate={candidate} "
+                        f"reward_mean={summary.get('reward_mean')} "
+                        f"ee_final={summary.get('ee_to_cube_dist_m_final')} "
+                        f"finger_final={summary.get('finger_center_to_cube_dist_m_final')} "
+                        f"lift_max={summary.get('cube_lift_height_m_max')} "
+                        f"done={summary.get('done_seen')}",
+                        flush=True,
+                    )
 
     trace_jsonl = output_dir / "action_reward_trace.jsonl"
     trace_csv = output_dir / "action_reward_trace.csv"
@@ -1371,6 +1436,7 @@ def main(env_cfg, agent_cfg: dict):
         "num_envs": int(args_cli.num_envs),
         "num_resets": int(args_cli.num_resets),
         "horizon_steps": int(args_cli.horizon_steps),
+        "match_reset_state": bool(args_cli.match_reset_state),
         "seed": int(args_cli.seed),
         "cube_spawn_xy_randomization": float(args_cli.cube_spawn_xy_randomization),
         "grasp_prior_library_path": str(args_cli.grasp_prior_library_path),

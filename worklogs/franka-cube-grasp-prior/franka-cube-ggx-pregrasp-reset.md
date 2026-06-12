@@ -2772,3 +2772,51 @@ Validation:
 
 Next:
 - Commit/push this wrapper fix, deploy the new exact commit, and relaunch the bounded audit with semicolon-delimited values. Continue diagnostic-only; no PPO/A100.
+
+## 2026-06-12T01:27:00Z - relaunch pass7 action/reward audit
+
+Goal:
+- Rerun the bounded action/reward audit with both checkpoints and all scripted candidates correctly passed through Slurm.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- local_commit: `84c96e78968d5443eeb36ef082502b0d1d9ea85a`
+- push/pull: pushed branch; deployed exact commit to L401 Worker A worktree via Git bundle
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `84c96e78968d5443eeb36ef082502b0d1d9ea85a`, detached clean
+- remote validation: `python3 -m py_compile dextrah_lab/rl_games/audit_franka_cube_grasp_prior_actions.py` passed; `bash -n cluster/sbatch_audit_franka_cube_grasp_prior_actions_1gpu.sh` passed
+
+Command / Job:
+- command: same bounded audit as `1027944`, but `CHECKPOINTS` and `RENDER_CANDIDATES` are semicolon-delimited in the quoted Slurm export string.
+- checkpoints:
+  - `ep10=/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_robust_pass7_smoke45_20260612_0056/nn/last_dextrah_franka_cube_grasp_ep_10_rew_857.09937.pth`
+  - `ep45=/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_robust_pass7_smoke45_20260612_0056/nn/last_dextrah_franka_cube_grasp_ep_45_rew_662.51086.pth`
+- candidates rendered for reset 0: `policy_ep10`, `policy_ep45`, `script_noop`, `script_hold_open`, `script_approach_exact_open`, `script_close_light_pregrasp`, `script_lift_closed`, `script_assisted_oracle_short`
+- job_id: `1027950`
+- run_name: `franka_cube_ggx_pass7_action_reward_audit_20260612_0127`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pass7_action_reward_audit_20260612_0127`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/audit_franka_cube_prior_1027950.out`
+
+Expected artifacts:
+- `metrics.json`, `REPORT.md`, `action_reward_trace.jsonl`, `action_reward_trace.csv`, `rollout_summary.csv`, `reset_samples.csv`, `action_reward_trace_plot.png`, `action_tracking_plot.png`, `action_audit_contact_sheet.jpg`, labeled frames.
+
+Next:
+- Monitor to terminal state; if it fails, inspect traceback and patch. If it succeeds, fetch all artifacts, generate/open viewer URLs, and write verdict. No PPO/A100.
+
+Result:
+- status: canceled / invalid matched-state restore attempt
+- scheduler: `1027950` canceled at `00:02:12`.
+- reason: corrected checkpoint/candidate export worked, but the run again completed only the first `policy_ep10` rollout and then hung/faulted while attempting to restore the exact same PhysX state for the next candidate. Even with `TORCH_DISABLE_ADDR2LINE=1`, the log only showed Hydra's `Error executing job with overrides` and no usable traceback before the process stalled.
+- conclusion: restoring exact in-process PhysX state after a rollout is not reliable enough for this audit path. This is a diagnostic infrastructure issue, not a reset-prior result.
+
+Patch:
+- Made matched reset-state replay optional in `audit_franka_cube_grasp_prior_actions.py` via `--match_reset_state/--no-match_reset_state`.
+- Default diagnostic mode is now `match_reset_state=False`: each policy/scripted candidate gets a fresh reset from the same robust pass7 prior distribution, with its sampled grasp/cube pose logged. This avoids the unstable post-rollout PhysX rewind while still comparing action/reward behavior under the same reset distribution.
+- Added `MATCH_RESET_STATE` to the L401 wrapper's echoed config and CLI args; relaunch will use `MATCH_RESET_STATE=False`.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/audit_franka_cube_grasp_prior_actions.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py` passed.
+- `bash -n cluster/sbatch_audit_franka_cube_grasp_prior_actions_1gpu.sh` passed.
+
+Next:
+- Commit/push/deploy this fresh-reset audit path and relaunch. Artifact/report must explicitly state that candidate rollouts are from the same prior reset distribution, not bit-identical restored states.
