@@ -4835,3 +4835,46 @@ Acceptance:
 - Metrics JSON includes `first_done_step`, `first_episode_summary`, and per-step `done_count_step`.
 - If the first episode succeeds and terminates while the final frame is from a second reset episode, classify final-success failure as an eval-summary artifact, not a physical drop.
 - Still do not launch PPO/A100/RL; this only clarifies the visual gate semantics.
+
+Implementation / Launch:
+- implementation_commit: `40ef5b9be6652baf7e731081b0387fe4c68dddf6` (`Add done-aware eval diagnostics`)
+- push: branch `codex/franka-cube-ggx-pregrasp-reset` pushed.
+- remote deployment: GitHub fetch on l401 still blocked by SSH auth, so a Git bundle was transferred and fetched into the agent-owned remote worktree; remote status detached at exact commit `40ef5b9be6652baf7e731081b0387fe4c68dddf6`.
+- validation:
+  - local `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py`: passed
+  - local `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`: passed
+  - remote same checks at commit `40ef5b9be6652baf7e731081b0387fe4c68dddf6`: passed
+- run name: `franka_cube_ggx_lowz_bc_actor_hold_eval_doneaware_20260611_2223`
+- checkpoint: `/results/diagnostics/franka_cube_ggx_lowz_bc_actor_hold_20260611_2214/bc_pass7_action_warmstart.pth`
+- library: `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz`
+- config: `Dextrah-Franka-Cube-Grasp`, `NUM_ENVS=1`, `NUM_STEPS=240`, `SEED=20260625`, cube XY randomization `0.08`, deterministic, `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`.
+- expected artifacts: `metrics.json`, `trace.csv`, `trace.jsonl`, video, labeled contact sheet, trace/action plot, inspection report with first-episode versus full-rollout verdict.
+- command: `sbatch --parsable --partition=batch --time=0-00:30:00 --job-name=ggx_lowz_hold_done --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,RUN_NAME=franka_cube_ggx_lowz_bc_actor_hold_eval_doneaware_20260611_2223,TASK=Dextrah-Franka-Cube-Grasp,NUM_ENVS=1,NUM_STEPS=240,VIDEO_LENGTH=240,VIDEO_NAME_PREFIX=lowz-bc-hold-doneaware,PRINT_INTERVAL=20,CAPTURE_VIDEO=True,DETERMINISTIC=True,USE_CUDA_GRAPH=False,SEED=20260625,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz,GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False,CHECKPOINT=/results/diagnostics/franka_cube_ggx_lowz_bc_actor_hold_20260611_2214/bc_pass7_action_warmstart.pth,CAMERA_EYE_X=-0.10,CAMERA_EYE_Y=-0.78,CAMERA_EYE_Z=1.42,CAMERA_TARGET_X=-0.41,CAMERA_TARGET_Y=-0.10,CAMERA_TARGET_Z=0.82 cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- job_id: `1028153`
+- remote run dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_ggx_lowz_bc_actor_hold_eval_doneaware_20260611_2223`
+- remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1028153.out`
+
+## 2026-06-11 22:37 - multi-episode done-aware eval gate plan
+
+Goal:
+- Estimate low-z reset + hold actor first-episode grasp/lift robustness across multiple reset samples before any PPO/RL discussion.
+
+Hypothesis:
+- Single-seed visual eval `1028153` is a real successful first episode, and the final-zero metric is due to evaluator continuation after done/reset.
+- A bounded multi-env or multi-reset eval needs per-episode outcome tracking from the state before automatic reset, not only full-rollout final scalars.
+
+Change:
+- Extend `dextrah_lab/rl_games/eval_rollout.py` with diagnostic-only episode outcome tracking:
+  - per-step done counts already added in `40ef5b9`;
+  - add per completed episode success/lift proxies from the pre-reset state;
+  - add aggregate completed-episode success/lift rates and max lift statistics.
+- Keep policy execution, task reset, reward, observation/action spaces, and PPO untouched.
+
+Command / Job Plan:
+- After syntax checks and commit/push/deploy, launch one bounded L401 statistical eval from the same checkpoint/library.
+- Proposed run: `NUM_ENVS=16`, `NUM_STEPS=260`, deterministic, low-z no-offset library, no action warmstart, video disabled for speed; use existing `1028153` video as the visual companion.
+- Expected artifacts: `metrics.json` with `episode_outcomes`, `trace.csv/jsonl`, local summary/report/plot and `viz-open` URLs.
+
+Acceptance:
+- Completed episode success/lift rates are high enough to justify a next comparison protocol discussion; exact threshold for this diagnostic is all or near-all completed episodes succeeding.
+- If episode outcomes are mixed or weak, stay in diagnostic mode; no PPO/A100/RL.

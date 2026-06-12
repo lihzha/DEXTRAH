@@ -94,6 +94,21 @@ def _env_metric(task_env, name: str) -> float | None:
     return _mean_float(getattr(task_env, name))
 
 
+def _tensor_values(value, expected_len: int | None = None) -> list[float] | None:
+    if not isinstance(value, torch.Tensor):
+        return None
+    values = value.detach().float().flatten().cpu().tolist()
+    if expected_len is not None and len(values) != expected_len:
+        return None
+    return [float(item) for item in values]
+
+
+def _env_metric_values(task_env, name: str, expected_len: int | None = None) -> list[float] | None:
+    if not hasattr(task_env, name):
+        return None
+    return _tensor_values(getattr(task_env, name), expected_len=expected_len)
+
+
 def _collect_task_metrics(task_env) -> dict[str, float | None]:
     metric_names = [
         "cube_lift_height",
@@ -156,6 +171,104 @@ def _collect_task_metrics(task_env) -> dict[str, float | None]:
     return {name: _env_metric(task_env, name) for name in metric_names if hasattr(task_env, name)}
 
 
+def _collect_episode_probe_metrics(task_env, num_envs: int) -> dict[str, list[float]]:
+    metric_sources = {
+        "success_rate": "in_success_region",
+        "cube_lift_height": "cube_lift_height",
+        "has_lifted_cube": "has_lifted_cube",
+        "ee_to_cube_dist": "ee_to_cube_dist",
+        "finger_center_to_cube_dist": "finger_center_to_cube_dist",
+        "gripper_width": "gripper_width",
+    }
+    metrics: dict[str, list[float]] = {}
+    for output_name, source_name in metric_sources.items():
+        values = _env_metric_values(task_env, source_name, expected_len=num_envs)
+        if values is not None:
+            metrics[output_name] = values
+    return metrics
+
+
+def _empty_episode_stats(start_step: int) -> dict[str, float | int | None]:
+    return {
+        "start_step": int(start_step),
+        "max_success_rate": None,
+        "max_cube_lift_height": None,
+        "max_has_lifted_cube": None,
+        "min_ee_to_cube_dist": None,
+        "min_finger_center_to_cube_dist": None,
+        "min_gripper_width": None,
+    }
+
+
+def _update_episode_stats(
+    stats: dict[str, float | int | None], probe_metrics: dict[str, list[float]], env_idx: int
+) -> None:
+    max_fields = {
+        "success_rate": "max_success_rate",
+        "cube_lift_height": "max_cube_lift_height",
+        "has_lifted_cube": "max_has_lifted_cube",
+    }
+    min_fields = {
+        "ee_to_cube_dist": "min_ee_to_cube_dist",
+        "finger_center_to_cube_dist": "min_finger_center_to_cube_dist",
+        "gripper_width": "min_gripper_width",
+    }
+    for source_name, stat_name in max_fields.items():
+        values = probe_metrics.get(source_name)
+        if values is None:
+            continue
+        value = values[env_idx]
+        current = stats.get(stat_name)
+        stats[stat_name] = value if current is None else max(float(current), value)
+    for source_name, stat_name in min_fields.items():
+        values = probe_metrics.get(source_name)
+        if values is None:
+            continue
+        value = values[env_idx]
+        current = stats.get(stat_name)
+        stats[stat_name] = value if current is None else min(float(current), value)
+
+
+def _episode_metric_value(probe_metrics: dict[str, list[float]], metric_name: str, env_idx: int) -> float | None:
+    values = probe_metrics.get(metric_name)
+    if values is None:
+        return None
+    return float(values[env_idx])
+
+
+def _finish_episode_outcome(
+    *,
+    env_idx: int,
+    episode_id: int,
+    terminal_step: int,
+    stats: dict[str, float | int | None],
+    terminal_probe_metrics: dict[str, list[float]],
+) -> dict[str, float | int | bool | None]:
+    terminal_success = _episode_metric_value(terminal_probe_metrics, "success_rate", env_idx)
+    terminal_lift = _episode_metric_value(terminal_probe_metrics, "cube_lift_height", env_idx)
+    terminal_has_lifted = _episode_metric_value(terminal_probe_metrics, "has_lifted_cube", env_idx)
+    max_success = stats.get("max_success_rate")
+    max_lifted = stats.get("max_has_lifted_cube")
+    return {
+        "env_idx": int(env_idx),
+        "episode_id": int(episode_id),
+        "start_step": int(stats["start_step"]) if stats.get("start_step") is not None else None,
+        "terminal_step": int(terminal_step),
+        "terminal_source": "pre_done_state",
+        "terminal_success_rate": terminal_success,
+        "terminal_cube_lift_height": terminal_lift,
+        "terminal_has_lifted_cube": terminal_has_lifted,
+        "terminal_ee_to_cube_dist": _episode_metric_value(terminal_probe_metrics, "ee_to_cube_dist", env_idx),
+        "terminal_finger_center_to_cube_dist": _episode_metric_value(
+            terminal_probe_metrics, "finger_center_to_cube_dist", env_idx
+        ),
+        "terminal_gripper_width": _episode_metric_value(terminal_probe_metrics, "gripper_width", env_idx),
+        **{key: value for key, value in stats.items() if key != "start_step"},
+        "success": bool(max_success is not None and float(max_success) >= 0.5),
+        "lifted": bool(max_lifted is not None and float(max_lifted) >= 0.5),
+    }
+
+
 def _collect_action_metrics(actions: torch.Tensor) -> dict[str, float | None]:
     if not isinstance(actions, torch.Tensor):
         return {}
@@ -206,6 +319,47 @@ def _first_done_step(step_metrics: list[dict[str, float | int | None]]) -> int |
         if done_count is not None and int(done_count) > 0:
             return int(item["step"])
     return None
+
+
+def _summarize_episode_outcomes(outcomes: list[dict[str, float | int | bool | None]]) -> dict[str, float | int | None]:
+    if not outcomes:
+        return {
+            "count": 0,
+            "success_rate": None,
+            "lifted_rate": None,
+            "max_lift_mean": None,
+            "max_lift_min": None,
+            "max_lift_max": None,
+            "terminal_success_rate_mean": None,
+            "terminal_lift_mean": None,
+        }
+    success_values = [1.0 if outcome.get("success") else 0.0 for outcome in outcomes]
+    lifted_values = [1.0 if outcome.get("lifted") else 0.0 for outcome in outcomes]
+    max_lifts = [
+        float(outcome["max_cube_lift_height"])
+        for outcome in outcomes
+        if outcome.get("max_cube_lift_height") is not None
+    ]
+    terminal_success = [
+        float(outcome["terminal_success_rate"])
+        for outcome in outcomes
+        if outcome.get("terminal_success_rate") is not None
+    ]
+    terminal_lifts = [
+        float(outcome["terminal_cube_lift_height"])
+        for outcome in outcomes
+        if outcome.get("terminal_cube_lift_height") is not None
+    ]
+    return {
+        "count": len(outcomes),
+        "success_rate": _mean(success_values),
+        "lifted_rate": _mean(lifted_values),
+        "max_lift_mean": _mean(max_lifts),
+        "max_lift_min": min(max_lifts) if max_lifts else None,
+        "max_lift_max": max(max_lifts) if max_lifts else None,
+        "terminal_success_rate_mean": _mean(terminal_success),
+        "terminal_lift_mean": _mean(terminal_lifts),
+    }
 
 
 def _checkpoint_path(agent_cfg: dict) -> str:
@@ -360,11 +514,20 @@ def main(env_cfg, agent_cfg: dict):
         if agent.is_rnn:
             agent.init_rnn()
 
+        num_envs = int(env.unwrapped.num_envs)
+        episode_ids = [0 for _ in range(num_envs)]
+        episode_stats = [_empty_episode_stats(start_step=1) for _ in range(num_envs)]
+        completed_episode_outcomes: list[dict[str, float | int | bool | None]] = []
+
         for step in range(args_cli.num_steps):
             if not simulation_app.is_running():
                 break
 
             with torch.inference_mode():
+                pre_step_episode_probe_metrics = _collect_episode_probe_metrics(task_env, num_envs)
+                for env_idx in range(num_envs):
+                    _update_episode_stats(episode_stats[env_idx], pre_step_episode_probe_metrics, env_idx)
+
                 obs = agent.obs_to_torch(obs)
                 actions = agent.get_action(obs, is_deterministic=args_cli.deterministic)
                 step_out = env.step(actions)
@@ -387,12 +550,36 @@ def main(env_cfg, agent_cfg: dict):
                     dones_bool = dones.bool()
                     step_done_count = int(dones_bool.sum().detach().cpu())
                     done_count += step_done_count
+                    for env_idx in torch.nonzero(dones_bool.flatten(), as_tuple=False).flatten().detach().cpu().tolist():
+                        completed_episode_outcomes.append(
+                            _finish_episode_outcome(
+                                env_idx=int(env_idx),
+                                episode_id=episode_ids[int(env_idx)],
+                                terminal_step=step + 1,
+                                stats=episode_stats[int(env_idx)],
+                                terminal_probe_metrics=pre_step_episode_probe_metrics,
+                            )
+                        )
+                        episode_ids[int(env_idx)] += 1
+                        episode_stats[int(env_idx)] = _empty_episode_stats(start_step=step + 2)
                     if agent.is_rnn and agent.states is not None and dones_bool.any():
                         for state in agent.states:
                             state[:, dones_bool, :] = 0.0
                 elif dones is not None:
                     step_done_count = int(bool(dones))
                     done_count += step_done_count
+                    if step_done_count > 0:
+                        completed_episode_outcomes.append(
+                            _finish_episode_outcome(
+                                env_idx=0,
+                                episode_id=episode_ids[0],
+                                terminal_step=step + 1,
+                                stats=episode_stats[0],
+                                terminal_probe_metrics=pre_step_episode_probe_metrics,
+                            )
+                        )
+                        episode_ids[0] += 1
+                        episode_stats[0] = _empty_episode_stats(start_step=step + 2)
 
                 step_record = {
                     "step": step + 1,
@@ -431,6 +618,7 @@ def main(env_cfg, agent_cfg: dict):
     first_episode_reward_values = [
         item["reward_mean"] for item in first_episode_metrics if item["reward_mean"] is not None
     ]
+    completed_episode_summary = _summarize_episode_outcomes(completed_episode_outcomes)
     summary = {
         "task": args_cli.task,
         "checkpoint": resume_path,
@@ -465,6 +653,9 @@ def main(env_cfg, agent_cfg: dict):
         else None,
         "first_episode_reward_mean": _mean(first_episode_reward_values),
         "first_episode_metric_summaries": _summarize_step_metrics(first_episode_metrics),
+        "completed_episode_count": completed_episode_summary["count"],
+        "completed_episode_summary": completed_episode_summary,
+        "episode_outcomes": completed_episode_outcomes,
         "metric_summaries": _summarize_step_metrics(step_metrics),
     }
     payload = {"summary": summary, "steps": step_metrics}
