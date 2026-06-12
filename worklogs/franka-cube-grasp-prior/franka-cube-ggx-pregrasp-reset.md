@@ -6402,3 +6402,73 @@ Validation:
 Notes:
 - Existing seed `1781139395` reset-prior eval already shows the old ambiguity: `completed_episode_summary.success_rate=1.0` and video shows lift/hold, while `success_rate_final=0.0` because the env reset after success.
 - Future eval JSON should use `eval_success_rate` for the headline attempt success number and `success_occupancy_*` only for the instantaneous occupancy curve.
+
+## 2026-06-12T12:28:45-07:00 - 12-model exact eval batch launch
+
+Goal:
+- Re-evaluate all previous Franka cube models with the corrected eval success logger and generate an eval success-rate comparison graph.
+
+Version Control:
+- agent_id: franka-cube-eval-success-rate
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- implementation_commit: `4b5e14079f82f957408da50dbdb1f9ae0e9b7133`
+- remote source: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-eval-success-rate`
+- remote commit transfer: Git bundle fetched into NFS repo because cluster GitHub auth could not fetch `origin`.
+
+Command / Job:
+- batch: `franka_cube_evalsuccess1024_4b5e140_20260612_122845`
+- host: l401 Slurm `batch`, one L40 GPU per eval job
+- wrapper: `cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- eval config: `NUM_ENVS=1024`, `NUM_STEPS=600`, `CAPTURE_VIDEO=False`, `DETERMINISTIC=True`, `USE_CUDA_GRAPH=False`
+- models: no-prior seeds `1,2,3,4,5`, reset-prior seeds `1,2,3,4,5`, previous same-seed no-prior `1781139395`, and same-seed reset-prior `1781139395`
+- prior evals use `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz`, with action warm-start and action-prior reward disabled.
+
+Expected artifacts:
+- remote eval dirs: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_evalsuccess1024_4b5e140_20260612_122845_*`
+- local summary/plots under `cluster_results/l401/franka_cube_evalsuccess1024_4b5e140_20260612_122845/`
+
+Status:
+- completed.
+
+Job IDs:
+- no-prior seed1: `1028598`
+- no-prior seed2: `1028599`
+- no-prior seed3: `1028600`
+- no-prior seed4: `1028601`
+- no-prior seed5: `1028602`
+- prior seed1: `1028603`
+- prior seed2: `1028604`
+- prior seed3: `1028605`
+- prior seed4: `1028606`
+- prior seed5: `1028607`
+- no-prior seed1781139395: `1028608`
+- prior seed1781139395: `1028609`
+
+Result:
+- All 12 jobs completed `0:0` on l401.
+- Every metrics JSON has `first_attempt_count=1024/1024`.
+- Local artifacts fetched to `cluster_results/l401/franka_cube_evalsuccess1024_4b5e140_20260612_122845/`.
+- Logs fetched to `cluster_logs/l401/dextrah/eval_franka_cube_1028598.out` through `eval_franka_cube_1028609.out`.
+
+Per-model `eval_success_rate`:
+- no-prior seeds 1-5: `0.003906`, `0.954102`, `0.001953`, `0.557617`, `0.006836`
+- prior seeds 1-5: `1.000000`, `1.000000`, `1.000000`, `1.000000`, `1.000000`
+- no-prior seed1781139395: `0.948242`
+- prior seed1781139395: `1.000000`
+
+Seeds 1-5 aggregate:
+- no-prior mean/std: `0.304883 +/- 0.434708`
+- prior mean/std: `1.000000 +/- 0.000000`
+
+Generated artifacts:
+- `cluster_results/l401/franka_cube_evalsuccess1024_4b5e140_20260612_122845/eval_success_rate_comparison.png`
+- `cluster_results/l401/franka_cube_evalsuccess1024_4b5e140_20260612_122845/eval_success_rate_mean_seeds1to5.png`
+- `cluster_results/l401/franka_cube_evalsuccess1024_4b5e140_20260612_122845/eval_success_rate_summary.csv`
+- `cluster_results/l401/franka_cube_evalsuccess1024_4b5e140_20260612_122845/eval_success_rate_group_summary.csv`
+- `cluster_results/l401/franka_cube_evalsuccess1024_4b5e140_20260612_122845/REPORT.md`
+
+Analysis:
+- Corrected first-attempt accounting removes the reset artifact: e.g. no-prior seed2 has `eval_success_rate=0.954102` while `success_occupancy_final=0.041016`.
+- Reset-prior models evaluate at `1.0` first-attempt success for all six evaluated seeds.
+- The stricter `eval_success_hold_rate` audit is also saved. It is lower for some no-prior models, especially seed1781139395 (`0.006836` hold rate despite `0.948242` first-attempt instantaneous success), so future reporting should state which definition is being plotted.
