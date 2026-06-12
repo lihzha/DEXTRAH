@@ -5036,3 +5036,63 @@ Acceptance:
 - Diagnostic acceptance only. Check final/min EE-cube, finger-cube, gripper
   width, clip fraction, target close/lift step, cube lift, video/contact sheet,
   and support distance before any BC/RL training.
+
+Result:
+- status: failed as a teacher replay, useful diagnostic.
+- Job `1027893` completed with `FRANKA_CUBE_DP_DATASET_REPLAY_DONE` and
+  `DP_REPLAY_DONE`.
+- Remote run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/replays/franka_cube_dp_replay_sourcejoint_controllerhold_ep24s260_mh2_340_20260611_165939`
+- Local artifact dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_controllerhold_ep24s260_mh2_340_20260611_165939`
+- Local log:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/replay_franka_cube_dp_actions_1027893.out`
+- Viewer URLs:
+  - report:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_controllerhold_ep24s260_mh2_340_20260611_165939/replay_report.md`
+  - motion plot:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_controllerhold_ep24s260_mh2_340_20260611_165939/replay_motion.png`
+  - action realization plot:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_controllerhold_ep24s260_mh2_340_20260611_165939/action_realization_audit.png`
+  - video:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_controllerhold_ep24s260_mh2_340_20260611_165939/videos/franka-cube-dp-replay-controllerhold-step-0.mp4`
+  - contact sheet:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_controllerhold_ep24s260_mh2_340_20260611_165939/videos/franka-cube-dp-replay-controllerhold-step-0_sheet.jpg`
+- Generated replay-only lowdim rollout:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_controllerhold_ep24s260_mh2_340_20260611_165939/controller_target_hold_lowdim_rollout.npz`
+
+Metrics:
+- `steps=340`
+- `target close step=21`, `target lift step=226`
+- `first executed negative gripper=36`, `first hard close=49`
+- `final EE-cube=0.0808 m`, `min EE-cube=0.0299 m`
+- `final finger-center-cube=0.1247 m`, `min finger-center-cube=0.0701 m`
+- `final gripper_width=0.000565 m`
+- `final cube lift=0`, with only small transient lift in the CSV
+  (`~0.0058 m` near step 319)
+- `mean_tracking_target_error_after=0.01315 m`
+- `mean/max pose_action_clip_fraction=0/0`
+- `final nearest_live_phase=lift_object`, but
+  `final nearest_live_distance=36.79`, indicating the live state leaves demo
+  support badly even when the target row reaches lift.
+
+Analysis:
+- The exact source-joint/cube reset at episode `24` step `260` was excellent:
+  lowdim and EE diffs were around `1e-7`, and joint diff after write was `0`.
+- The controller-target-hold mode reached close and lift target rows without
+  action clipping, so the previous 96-step diagnostic was not merely too short.
+- The failure changed shape: the live controller can stay within roughly
+  `1.3 cm` mean EE target error, but the fingers remain far from a stable
+  grasp and the cube is not lifted. The contact sheet shows close happens near
+  the cube, then lift target rows pull away/above while the cube stays on the
+  table.
+- This is not a DP scale-up candidate. It points to source grasp/TCP/contact
+  semantics or demo generation, not just one-step action under-realization.
+
+Next:
+- Run one more bounded source-state diagnostic: reset directly to the source
+  hard-close row (`episode 24`, local step around `310`) and replay/lift from
+  there. If exact hard-close source joint state cannot lift under DEXTRAH
+  physics, the cuRobo/GraspGenX generated demonstrations are not physically
+  valid for the DEXTRAH Franka cube env without a grasp/contact-aware
+  controller-rollout generator or a TCP/grasp-frame correction.
