@@ -3057,3 +3057,76 @@ Worker A robust passing-set gate:
 - Acceptance: all or near-all resets must pass reset/pregrasp quality and
   oracle close/lift, with viewer-ready report/contact sheet/video, before A
   launches any PPO smoke.
+
+## 2026-06-11T18:57:00-07:00 - A robust gate pass and B align80 negative eval
+
+Worker A robust pass7 gate:
+- Job `1027924`, run `franka_cube_ggx_robust_pass7_gate_20260612_0045`,
+  completed `0:0`.
+- Verdict: bounded reset/oracle gate `PASS`.
+- Metrics: reset success `1.0`, reset quality success `1.0`,
+  pregrasp reset gate `True`, oracle success `1.0`, oracle lift gate `1.0`,
+  oracle done seen `0.0`, mean oracle lift `0.03103 m`, mean min post-to-exact
+  EE error `0.000119 m`.
+- Sampled original indices over 28 resets: `{0: 5, 1: 2, 11: 5, 14: 6,
+  24: 3, 27: 7}`. `orig012` is in the exported library and passed the earlier
+  single-candidate sweep, but this random 28-reset gate did not sample it.
+
+Artifacts:
+- Report:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_robust_pass7_gate_20260612_0045_inspection/REPORT.md`
+- Candidate sheet:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_robust_pass7_gate_20260612_0045_inspection/robust_gate_candidate_sheet.jpg`
+- All-reset sheet:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_robust_pass7_gate_20260612_0045_inspection/robust_gate_all_resets_sheet.jpg`
+- Trace plot:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_robust_pass7_gate_20260612_0045_inspection/robust_gate_trace_plot.png`
+- Oblique slideshow:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_robust_pass7_gate_20260612_0045_inspection/robust_gate_oblique_sequence.mp4`
+
+Worker A steering:
+- A was told to proceed to a bounded 1-GPU reset-prior PPO smoke/eval using
+  the robust pass7 library. No A100/full training yet; the next evidence must
+  be learned-policy video/metrics, not just reset/oracle diagnostics.
+
+Worker B align80 smoke/eval:
+- Training job `1027925`, run
+  `franka_cube_traj_tracking_teacherforce_align80_ft5_20260611_174500`,
+  completed `0:0` and produced checkpoint
+  `/results/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_teacherforce_align80_ft5_20260611_174500/nn/last_dextrah_franka_cube_traj_tracking_ep_6_rew_464.60687.pth`.
+- Important nuance: it restored a checkpoint already at epoch `5`; with
+  `MAX_ITERATIONS=5`, RL-Games advanced only one resumed update and stopped at
+  `epoch 6/5`. This is a tiny diagnostic, not a real 5-new-update training run.
+- Eval jobs `1027926` alpha `0.0`, `1027927` alpha `0.75`, and `1027928`
+  alpha `1.0` completed `0:0`.
+
+Artifacts:
+- Action-semantics report:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_align80_action_semantics_20260611_175206/action_semantics_report.md`
+- Action-semantics plot:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_align80_action_semantics_20260611_175206/action_semantics_plot.png`
+- Alpha `0.0` report:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_align80_eval_a000_phase100_520_20260611_174913_artifacts/report.md`
+- Alpha `0.75` report:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_align80_eval_a075_phase100_520_20260611_174913_artifacts/report.md`
+- Alpha `1.0` report:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_align80_eval_a100_phase100_520_20260611_174913_artifacts/report.md`
+
+Metrics:
+- Alpha `0.0`: success `0`, lift `0`, target unsafe `0`, raw/ref L2 mean
+  `1.8055`, raw close/up mean `0.3533/0.0313`.
+- Alpha `0.75`: success `0`, lift max `0.000139 m`, target unsafe `0`,
+  raw/ref L2 mean `0.7412`, applied/ref L2 mean `0.1831`, raw close/up mean
+  `0.1576/0.0175`.
+- Alpha `1.0`: success final/max `0.75/0.75`, lift max `0.144406 m`, target
+  unsafe `0`, applied/ref L2 mean `0.0140`.
+
+Analysis:
+- B's one-update high-alignment smoke did not recover learned policy or partial
+  teacher behavior. Full teacher still works, which again separates reference
+  feasibility from raw-policy trainability.
+- B was told to fix the iteration-accounting issue and run a corrected bounded
+  several-update continuation, then repeat alpha `0/0.75/1.0` evals. If that
+  still fails, the next B step should be explicit supervised action imitation
+  for the same policy/action parameterization rather than more PPO schedule
+  tweaks.
