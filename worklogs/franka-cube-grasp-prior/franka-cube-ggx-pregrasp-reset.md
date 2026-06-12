@@ -5306,3 +5306,30 @@ Next:
 - Stop same-config scale-up for now.
 - The next useful bounded loop should diagnose reward/action incentives at the ep200 policies, especially why open-gripper proximity/enclosure reward is competitive for the prior and why baseline closes off-target.
 - Any BC/policy-init/curriculum/action-prior experiment should remain explicitly non-apple-to-apple unless the user requests a separate intervention variant.
+
+## 2026-06-12T06:15:04Z - plan: video-first ep200 reward/action audit
+
+Orchestrator note: future meaningful evals should include short labeled MP4s plus contact sheets, not metrics-only. Current long200 visual verdict remains negative: prior ep200 hovers/open near the cube; baseline ep200 closes off-target. No A100/full RL scale-up.
+
+Plan:
+- Run one bounded l401 diagnostic using the existing debug-only action/reward audit path, not a PPO/RL launch.
+- Compare the long200 ep200 prior policy and long200 ep200 baseline policy from the same valid low-z reset-prior distribution against scripted candidates: hold-open, close-at-pregrasp, lift-closed, and assisted close/lift.
+- Keep the main task semantics unchanged. This audit forces `grasp_prior_reset_enabled=True` only to put both policies into the same valid low-z pregrasp state for action/reward diagnosis; it is diagnostic-only, not an apple-to-apple baseline evaluation.
+- Use `NUM_ENVS=1`, `NUM_RESETS=2`, `HORIZON_STEPS=80`, deterministic actions, cube XY randomization `0.08`, low-z library `franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz`, and render reset 0 every 5 steps.
+- Use stronger diagnostic scripted close/lift settings (`CLOSE_WIDTH=0.035`, `LIFT_ACTION_Z=0.50`, `ASSISTED_APPROACH_STEPS=16`, `ASSISTED_CLOSE_STEPS=24`) so scripted rows act as a feasible reference rather than the old weak close/lift labels.
+
+Files/commands:
+- No source edits expected.
+- Syntax checks already passed:
+  - `bash -n cluster/sbatch_audit_franka_cube_grasp_prior_actions_1gpu.sh`
+  - `python3 -m py_compile dextrah_lab/rl_games/audit_franka_cube_grasp_prior_actions.py`
+- Submit via `cluster/sbatch_audit_franka_cube_grasp_prior_actions_1gpu.sh` from the agent-owned l401 worktree after deploying exact commit `dafed258885efd0f751a7991eaeb65efc65335e3`.
+
+Expected artifacts:
+- Remote run dir under `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_lowz_ep200_reward_action_audit_video_20260612_0615`.
+- `metrics.json`, `REPORT.md`, `action_reward_trace.csv/jsonl`, `rollout_summary.csv`, `reset_samples.csv`, reward/action plots, labeled frames, and `action_audit_contact_sheet.jpg`.
+- After fetch, encode short labeled MP4s from candidate frames where feasible and open report/contact sheet/videos with `viz-open`.
+
+Acceptance / decision:
+- This is a diagnosis gate only. It should explain whether the prior ep200 policy is locally rewarded while opening/hovering, whether baseline closes off-target from the same pregrasp, and whether scripted close/lift receives better local reward/contact/lift signals.
+- Do not launch PPO/A100 from this audit. Any reward/action intervention remains a separate explicit diagnostic variant.
