@@ -5096,3 +5096,60 @@ Next:
   physics, the cuRobo/GraspGenX generated demonstrations are not physically
   valid for the DEXTRAH Franka cube env without a grasp/contact-aware
   controller-rollout generator or a TCP/grasp-frame correction.
+
+## 2026-06-11T17:36:00-07:00 - target-frame/control-point audit plan
+
+Goal:
+- Compare target definitions for the same close/lift window and determine
+  whether the converted lowdim target, env FK from source joints, and live
+  controller command frame refer to the same control point.
+
+Hypothesis:
+- The converted dataset lowdim EE target may match env FK from the raw source
+  joints, but the controlled EE/TCP point is not the grasp/contact point needed
+  to lift the cube. If true, the remaining blocker is GraspGenX/cuRobo grasp
+  frame/contact semantics or controller-rollout relabeling, not DP BC scale.
+
+Change:
+- Add `dextrah_lab/rl_games/audit_franka_cube_target_frames.py`.
+- Add `cluster/sbatch_audit_franka_cube_target_frames_1gpu.sh`.
+- The audit will write:
+  `target_frame_state_rows.csv`, `target_frame_one_step.csv`,
+  `target_frame_summary.json`, `target_frame_report.md`,
+  `target_frame_state_plot.png`, and `target_frame_one_step_plot.png`.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `836d22fc03fd793b2eef2b520785572f3bface9a`
+- implementation_commit: pending
+- changed_files:
+  `dextrah_lab/rl_games/audit_franka_cube_target_frames.py`,
+  `cluster/sbatch_audit_franka_cube_target_frames_1gpu.sh`, this worklog.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/audit_franka_cube_target_frames.py`
+- `bash -n cluster/sbatch_audit_franka_cube_target_frames_1gpu.sh`
+- `git diff --check`
+
+Planned Cluster Diagnostic:
+- Run one bounded l401 job over episode `24` close/lift sentinel rows:
+  `260,282,297,310,312,402,450,487`.
+- Inputs:
+  - dataset:
+    `/results/dp_bc/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz`
+  - source trajectory:
+    `/results/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed24/trajectory.json`
+  - replay CSV:
+    `/results/replays/franka_cube_dp_replay_sourcejoint_controllerhold_ep24s260_mh2_340_20260611_165939/replay_steps.csv`
+- Reference video/contact sheet from run `1027893` will be linked in the
+  report as the best available visual for the audited target path.
+
+Acceptance:
+- If converted lowdim and env FK disagree, fix the converter/FK frame.
+- If they agree but FK finger-center distances remain far from contact and
+  one-step commands do not improve that, conclude raw cuRobo labels need a
+  contact-aware controller-rollout relabeler or different controller/grasp
+  target before any DP BC/RL training.
