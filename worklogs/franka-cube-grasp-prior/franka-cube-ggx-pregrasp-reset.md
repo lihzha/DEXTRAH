@@ -5033,3 +5033,112 @@ Final Analysis:
 Cleanup / Active Jobs:
 - Worker A l401 jobs `1028161`, `1028165`, and `1028166` are complete.
 - `squeue -u lzha` showed no active jobs at the final check.
+
+## 2026-06-11 22:43 - matched prior-disabled smoke comparison plan
+
+Goal:
+- Diagnose whether the low-z prior smoke's open/down no-lift behavior is specific to the prior-start reset distribution or a general short-horizon PPO failure for this task/seed.
+
+Hypothesis:
+- If a matched prior-disabled 45-epoch smoke also fails with similar open/down or no-lift behavior, the next apple-to-apple-safe protocol should be a paired longer small-scale comparison rather than changing reset/reward/action semantics.
+- If the prior-disabled baseline learns better than low-z prior under the same settings, the reset-prior start distribution may be interacting badly with early policy exploration/reward terms.
+
+Change:
+- No source changes.
+- Use the same `cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh` wrapper and exact agent-owned remote source commit `e99b2b8d976c037a735f20303fd8cfce967a7f23`.
+- Matched settings to `1028161`: `Dextrah-Franka-Cube-Grasp`, `NUM_ENVS=64`, `MAX_ITERATIONS=45`, `HORIZON_LENGTH=64`, minibatch `4096`, seed `20260625`, cube XY randomization `0.08`, JSONL metrics enabled, no checkpoint, `AUTO_RESUME=False`.
+- Only changed setting: `GRASP_PRIOR_RESET_ENABLED=False` and no prior library override.
+
+Command / Job Plan:
+- run name: `franka_cube_baseline_noprior_smoke45_match_20260611_2243`
+- after completion, fetch JSONL/checkpoints/logs and run the same eval protocol on best-reward and final checkpoints with done-aware video/metrics.
+
+Acceptance:
+- Produce a paired report comparing baseline vs low-z prior smoke: reward/checkpoints, success/lift, gripper/action z, EE/finger distances, reset metrics when present, videos/contact sheets.
+- Do not scale or change task semantics based on scheduler success alone.
+- If both are negative, recommend next bounded protocol explicitly, likely a longer paired small PPO comparison or a non-apple-to-apple policy-init/curriculum diagnostic.
+
+Launch:
+- command: `sbatch --parsable --partition=batch --time=0-01:30:00 --job-name=baseline_rl45 --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=e99b2b8d976c037a735f20303fd8cfce967a7f23,FULL_EXPERIMENT_NAME=franka_cube_baseline_noprior_smoke45_match_20260611_2243,TASK=Dextrah-Franka-Cube-Grasp,NUM_ENVS=64,MAX_ITERATIONS=45,HORIZON_LENGTH=64,MINIBATCH_SIZE=4096,CENTRAL_VALUE_MINIBATCH_SIZE=4096,SAVE_FREQUENCY=5,SEED=20260625,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_RESET_ENABLED=False,GRASP_PRIOR_LIBRARY_PATH=,GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False,AUTO_RESUME=False,CHECKPOINT=,DEXTRAH_RLGAMES_JSONL_METRICS=True cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`
+- job_id: `1028168`
+- remote run dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseline_noprior_smoke45_match_20260611_2243`
+- remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_smoke_1028168.out`
+
+Monitor / Training Result:
+- Slurm: job `1028168` completed `0:0`, elapsed `00:01:49`, node `pool0-00015`.
+- local artifacts fetched:
+  - `cluster_results/l401/franka_cube_baseline_noprior_smoke45_match_20260611_2243`
+  - `cluster_logs/l401/slurm_logs/dextrah/franka_cube_smoke_1028168.out`
+- JSONL records: `45`
+- bad scalar count: `0`
+- checkpoints: epochs `5,10,15,20,25,30,35,40,45`
+- best stdout checkpoint reward: epoch `40`, reward `778.84607`
+- final stdout checkpoint: epoch `45`, reward `771.14764`
+- training task metrics:
+  - `cube_success_rate` max/final: `0.0` / `0.0`
+  - `cube_has_lifted_rate` max/final: `0.0` / `0.0`
+  - `cube_lift_height` max/final: `0.0009117634035646915` / `0.0008034342899918556` m
+  - `cube_ee_to_cube_dist` min/final: `0.1450027972459793` / `0.1450027972459793` m
+  - `cube_finger_center_to_cube_dist` min/final: `0.13499654829502106` / `0.1391720175743103` m
+  - `cube_action_z` min/max/final: `-0.31726112961769104` / `0.1722048670053482` / `0.044487178325653076`
+  - `cube_gripper_action` min/max/final: `-0.797150731086731` / `0.1967436671257019` / `-0.6017162799835205`
+  - `cube_gripper_width` min/max/final: `0.009510072879493237` / `0.04691086336970329` / `0.01498452015221119` m
+
+Analysis:
+- Training scalars are negative just like the low-z prior smoke: zero success/lift and sub-millimeter cube lift.
+- The baseline policy closes by epoch 45 while the low-z prior policy opened, but neither produces grasp/lift in this 45-epoch smoke.
+- The paired comparison remains incomplete until best/final checkpoint visual evals are inspected.
+
+Eval Launch Plan:
+- Launch two bounded done-aware eval/video jobs under the same eval protocol as the low-z prior run, with prior disabled:
+  - best reward checkpoint epoch 40: `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseline_noprior_smoke45_match_20260611_2243/nn/last_dextrah_franka_cube_grasp_ep_40_rew_778.84607.pth`
+  - final checkpoint epoch 45: `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseline_noprior_smoke45_match_20260611_2243/nn/last_dextrah_franka_cube_grasp_ep_45_rew_771.14764.pth`
+- Same eval settings as prior: `Dextrah-Franka-Cube-Grasp`, `NUM_ENVS=1`, `NUM_STEPS=240`, deterministic, video enabled, `SEED=20260625`, cube XY randomization `0.08`, `GRASP_PRIOR_RESET_ENABLED=False`.
+- Acceptance: fetch metrics/videos, generate contact sheets and plots, then produce a paired prior-vs-baseline report. Do not scale from scheduler success or reward logs.
+
+Eval Launch:
+- remote source commit: `e99b2b8d976c037a735f20303fd8cfce967a7f23`
+- ep40 run: `franka_cube_baseline_noprior_smoke45_eval_ep40_20260611_2248`, job `1028171`
+- ep45 run: `franka_cube_baseline_noprior_smoke45_eval_ep45_20260611_2248`, job `1028172`
+- remote eval dirs:
+  - `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_baseline_noprior_smoke45_eval_ep40_20260611_2248`
+  - `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_baseline_noprior_smoke45_eval_ep45_20260611_2248`
+- remote logs:
+  - `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1028171.out`
+  - `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1028172.out`
+
+Eval / Artifact Result:
+- status: matched baseline-vs-prior comparison complete; both 45-epoch from-scratch PPO smokes are negative.
+- baseline eval jobs:
+  - `1028171` ep40 completed `0:0`, elapsed `00:01:08`, node `pool0-00015`
+  - `1028172` ep45 completed `0:0`, elapsed `00:01:07`, node `pool0-00030`
+- fetched local eval artifacts:
+  - `cluster_results/l401/franka_cube_baseline_noprior_smoke45_eval_ep40_20260611_2248`
+  - `cluster_results/l401/franka_cube_baseline_noprior_smoke45_eval_ep45_20260611_2248`
+  - `cluster_logs/l401/slurm_logs/dextrah/eval_franka_cube_1028171.out`
+  - `cluster_logs/l401/slurm_logs/dextrah/eval_franka_cube_1028172.out`
+- paired inspection bundle:
+  - report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_prior_vs_baseline_smoke45_pair_20260611_2255/inspection/REPORT.md`
+  - paired contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_prior_vs_baseline_smoke45_pair_20260611_2255/inspection/paired_eval_contact_sheets.jpg`
+  - paired training curves: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_prior_vs_baseline_smoke45_pair_20260611_2255/inspection/paired_training_curves.png`
+  - paired summary JSON: `cluster_results/l401/franka_cube_lowz_prior_vs_baseline_smoke45_pair_20260611_2255/inspection/paired_summary.json`
+- baseline viewer URLs:
+  - ep40 contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_baseline_noprior_smoke45_eval_ep40_20260611_2248/inspection/contact_sheet.jpg`
+  - ep40 video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_baseline_noprior_smoke45_eval_ep40_20260611_2248/videos/baseline-ep40-step-0.mp4`
+  - ep45 contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_baseline_noprior_smoke45_eval_ep45_20260611_2248/inspection/contact_sheet.jpg`
+  - ep45 video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_baseline_noprior_smoke45_eval_ep45_20260611_2248/videos/baseline-ep45-step-0.mp4`
+- eval metrics:
+  - low-z prior ep10/best: success max `0.0`, lifted max `0.0`, lift max `0.006605327129364014` m, final EE/finger `0.4074215590953827` / `0.39844608306884766` m, final width `0.0497126430273056` m, final z/gripper action `-0.716343343257904` / `0.2261914610862732`
+  - low-z prior ep45/final: success max `0.0`, lifted max `0.0`, lift max `0.016963839530944824` m, final EE/finger `0.1035449430346489` / `0.11341996490955353` m, final width `0.07999639213085175` m, final z/gripper action `-0.7969554662704468` / `1.0`
+  - baseline ep40/best: success max `0.0`, lifted max `0.0`, lift max `0.015574634075164795` m, final EE/finger `0.4092308580875397` / `0.39623093605041504` m, final width `0.048680391162633896` m, final z/gripper action `-0.6635167598724365` / `0.28195053339004517`
+  - baseline ep45/final: success max `0.0`, lifted max `0.0`, lift max `0.0027227401733398438` m, final EE/finger `0.16663043200969696` / `0.17722748219966888` m, final width `0.00021146220387890935` m, final z/gripper action `0.40792134404182434` / `-1.0`
+- visual notes:
+  - Low-z prior ep10 starts at the intended pregrasp, then drifts far from the cube.
+  - Low-z prior ep45 stays closer but keeps the gripper open/hovers near the cube without grasping.
+  - Baseline ep40 also drifts far away.
+  - Baseline ep45 closes almost fully but off-target, so it clamps empty space and never lifts.
+
+Recommendation:
+- Do not launch A100/full RL from these smokes.
+- The low-z reset-prior path remains geometrically healthy, but 45-epoch from-scratch PPO does not exploit it; the matched baseline also fails.
+- The next apple-to-apple-safe option is a paired longer small PPO comparison only if the goal is to test insufficient horizon. Otherwise, any policy initialization, curriculum, or action-prior intervention should remain explicitly labeled non-apple-to-apple.
