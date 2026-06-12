@@ -5784,3 +5784,24 @@ Validation:
 Next:
 - Commit/push, deploy the exact patch commit, and relaunch the same bounded
   4-rollout relabel-set gate.
+
+## 2026-06-11T17:51:59-07:00 - contact relabel set templatefix relaunch
+
+Goal:
+- Relaunch the same four-rollout contact-aware relabel gate after the trajectory
+  template fix.
+
+Version Control:
+- implementation_commit: `0f663b4c3be569a81ef431ce885099ddf131741c`
+- push: pushed to `origin/codex/franka-cube-diffusion-policy-bc`.
+- remote deployment: l401 agent-owned worktree detached at
+  `0f663b4c3be569a81ef431ce885099ddf131741c`.
+
+Command / Job:
+- command:
+  `CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart RUN_NAME=franka_cube_contact_relabel_set_ep8_16_24_30_s260_high30_templatefix_20260611_175159 DATASET=/results/dp_bc/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz TRAJECTORY_ROOT=/results/dp_bc/curobo_plans TRAJECTORY_TEMPLATE=cube_curobo_scale32_20260611_125957_seed{episode}/trajectory.json SPEC_COUNT=4 SPEC_0=8:260 SPEC_1=16:260 SPEC_2=24:260 SPEC_3=30:260 VARIANT=center_high30 ALIGN_STEPS=80 CLOSE_STEPS=80 LIFT_STEPS=160 LIFT_HEIGHT=0.22 FINGER_GAIN=0.75 CLIP_ACTIONS=1.0 CAPTURE_VIDEO=True VIDEO_LENGTH=320 VIDEO_NAME_PREFIX=franka-cube-contact-relabel PRINT_INTERVAL=80 SEED=42 GATE_MIN_LIFT=0.10 GATE_MAX_POSE_CLIP_FRACTION=0.0 GATE_MAX_FINAL_EE_TO_CUBE=0.05 GATE_MAX_FINAL_FINGER_TO_CUBE=0.08 sbatch --export=ALL --parsable cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh`
+- job_id: `1027930`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/contact_relabel_sets/franka_cube_contact_relabel_set_ep8_16_24_30_s260_high30_templatefix_20260611_175159`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/contact_aware_franka_cube_relabel_set_1027930.out`
