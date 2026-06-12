@@ -8830,3 +8830,84 @@ Validation:
 Next:
 - Commit/deploy the gate patch and relaunch the same alpha0.75 bounded smoke.
 - Still no DP fine-tune, RL, or broad training.
+
+## 2026-06-11T21:58:44-07:00 - launch threshold-gated contact alignment alpha0.75
+
+Goal:
+- Retest alpha0.75 with the same live-cube staged contact alignment, now using
+  the threshold as an actual transition gate into close/hold.
+
+Version Control:
+- implementation_commit: `7fe9f0ed4081486a129e88fc5f2e334bbe3a4ab3`
+- remote_commit: `7fe9f0ed4081486a129e88fc5f2e334bbe3a4ab3`
+- push/deploy: pushed to origin and to the l401 NFS transfer repo; remote
+  worktree checked out detached at the same commit.
+
+Command / Job:
+- job_id: `1028134`
+- run_name:
+  `franka_cube_contact_relabel_contactalign80_gateclose_ep16s260_a0p75_20260611_215831`
+- command:
+  `sbatch --parsable --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart,RUN_NAME=franka_cube_contact_relabel_contactalign80_gateclose_ep16s260_a0p75_20260611_215831,DATASET=/results/dp_bc/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz,TRAJECTORY_ROOT=/results/dp_bc/curobo_plans,SPEC_COUNT=1,SPEC_0=16:260:/results/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed16/trajectory.json:0.75,VARIANT=center_high30,ORIENTATION_MODE=source,POSE_ACTION_FILTER=scale,POSE_ACTION_LIMIT=0.95,ALIGN_STEPS=80,CONTACT_ALIGN_STEPS=80,CONTACT_ALIGN_REFERENCE=live_cube,CONTACT_ALIGN_THRESHOLD=0.06,CLOSE_STEPS=80,LIFT_STEPS=160,LIFT_HEIGHT=0.22,FINGER_GAIN=0.75,CLIP_ACTIONS=1.0,CAPTURE_VIDEO=True,VIDEO_LENGTH=400,VIDEO_NAME_PREFIX=franka-cube-contact-gateclose80,PRINT_INTERVAL=40,SEED=42,GATE_MIN_LIFT=0.10,GATE_MAX_POSE_CLIP_FRACTION=0.0,GATE_MAX_FINAL_EE_TO_CUBE=0.05,GATE_MAX_FINAL_FINGER_TO_CUBE=0.08 cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh`
+- remote run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/contact_relabel_sets/franka_cube_contact_relabel_contactalign80_gateclose_ep16s260_a0p75_20260611_215831`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/contact_aware_franka_cube_relabel_set_1028134.out`
+
+Gate:
+- Alpha0.75 must pass final/max lift, final EE/finger distance, zero executed
+  clipping, and visual contact/lift. If it fails, stop at the controller
+  diagnostic and document the failure mode.
+
+## 2026-06-11T22:01:08-07:00 - threshold-gated contact alignment alpha0.75 result
+
+Result:
+- job_id: `1028134`
+- run_name:
+  `franka_cube_contact_relabel_contactalign80_gateclose_ep16s260_a0p75_20260611_215831`
+- scheduler status: `COMPLETED 0:0`
+- artifact status: fetched locally, report/plot/video opened with `viz-open`,
+  contact sheet generated and inspected.
+- verdict: hard-gate failure; do not train DP or launch RL.
+
+Metrics / Evidence:
+- No close/lift rows were produced. The run entered `contact_align_open` but
+  never crossed the `0.06 m` trigger after the initial source-target align.
+- `close_start_local_step=-1`, `contact_align_trigger_step=-1`.
+- `steps=99`, `terminated_next_step=true`, `skipped_post_reset_local_step=99`.
+- `pre_close_phase=contact_align_open`, `pre_close_local_step=98`.
+- `pre_close_finger_center_to_cube=0.0650`, `min_finger_center_to_cube=0.0562`.
+- `final/max lift=0.0032/0.0143 m`.
+- `max_pose_action_clip_fraction=0.0`, `max_raw_pose_action_max_abs=1.283`.
+
+Artifact URLs:
+- report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_contactalign80_gateclose_ep16s260_a0p75_20260611_215831/contact_relabel_set_report.md`
+- trace plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_contactalign80_gateclose_ep16s260_a0p75_20260611_215831/rollouts/ep16s260_a0p75/contact_rollout_plot.png`
+- contact sheet:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_contactalign80_gateclose_ep16s260_a0p75_20260611_215831/rollouts/ep16s260_a0p75/contact_sheet_a0p75_gateclose80_1028134.jpg`
+- video:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_contactalign80_gateclose_ep16s260_a0p75_20260611_215831/rollouts/ep16s260_a0p75/videos/franka-cube-contact-gateclose80-ep16s260_a0p75-step-0.mp4`
+- stdout:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_contactalign80_gateclose_ep16s260_a0p75_20260611_215831/logs/contact_aware_franka_cube_relabel_set_1028134.out`
+
+Analysis:
+- The threshold gate itself works in code, but alpha0.75 does not reach it after
+  the 80-step `align_open` phase. The trace shows the first source-target align
+  step starts close enough (`finger_center_to_cube=0.0562`) but the fixed
+  align phase then drives the hand/cube out of the contact window
+  (`~0.0977 m` by step 79). The live-cube contact-align phase improves back
+  toward the cube, but only to `0.0650 m` before task termination/reset.
+- This narrows the failure mode: the alpha0.75 issue is not executed clipping
+  and not a DP train/eval issue; it is controller support/contact alignment,
+  with the stale/source align phase actively damaging the nearby contact state.
+
+Next bounded diagnostic:
+- Run one no-initial-align variant: `ALIGN_STEPS=0`,
+  `CONTACT_ALIGN_STEPS=80`, `CONTACT_ALIGN_REFERENCE=live_cube`,
+  `CONTACT_ALIGN_THRESHOLD=0.06`, same alpha0.75/source-orientation/pose-scale
+  settings. This directly tests whether closing from the live contact gate can
+  recover alpha0.75 when the damaging source-target align phase is removed.
+- If this still fails, stop at diagnostics and recommend a different
+  controller design rather than DP/RL scale-up.
