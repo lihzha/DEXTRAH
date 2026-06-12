@@ -5223,3 +5223,80 @@ Next:
   DEXTRAH env, or a correction to the GraspGenX/cuRobo EE/TCP/grasp frame
   before conversion. The generated rollout must demonstrate stable close/lift
   in Isaac before official DP training resumes.
+
+## 2026-06-11T17:22:50-07:00 - raw-label blocker and contact-aware rollout smoke plan
+
+Goal:
+- Record the raw-label blocker verdict and move only to a bounded
+  contact-aware controller rollout diagnostic. This is not DP BC or RL
+  training.
+
+Hypothesis:
+- Raw GraspGenX/cuRobo labels are internally frame-consistent, but their
+  controlled EE/TCP point is not the physical cube grasp point in the DEXTRAH
+  Franka cube env. A live controller rollout that targets measured
+  finger-center/cube geometry must first demonstrate stable close/lift before
+  any relabeled dataset or official-DP BC run is justified.
+
+Blocker Verdict:
+- Raw-label BC is blocked for behavior claims. The target-frame audit
+  `1027903` showed converted lowdim and source-joint FK agree
+  (`max_dataset_vs_fk_ee_pos_l2=2.27e-7 m`), but source rows still leave the
+  finger center about `6.8 cm` from the cube at hold/hard-close/lift rows.
+- Reference artifacts:
+  - report:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/target_frame_audits/franka_cube_target_frame_audit_ep24_close_lift_20260611_171200/target_frame_report.md`
+  - state plot:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/target_frame_audits/franka_cube_target_frame_audit_ep24_close_lift_20260611_171200/target_frame_state_plot.png`
+  - one-step plot:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/target_frame_audits/franka_cube_target_frame_audit_ep24_close_lift_20260611_171200/target_frame_one_step_plot.png`
+  - reference video:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_controllerhold_ep24s260_mh2_340_20260611_165939/videos/franka-cube-dp-replay-controllerhold-step-0.mp4`
+  - reference contact sheet:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_controllerhold_ep24s260_mh2_340_20260611_165939/videos/franka-cube-dp-replay-controllerhold-step-0_sheet.jpg`
+
+Change:
+- Add `dextrah_lab/rl_games/contact_aware_franka_cube_rollout.py`, a bounded
+  Isaac smoke that exact-resets to a source episode/step, then drives a live
+  relative-EE controller toward measured finger-center targets through
+  align-open, close-hold, and lift phases.
+- Add `cluster/sbatch_contact_aware_franka_cube_rollout_1gpu.sh` to run the
+  smoke on l401 with DEXTRAH/Isaac container mounts and artifact checks.
+
+Owned Files:
+- `dextrah_lab/rl_games/contact_aware_franka_cube_rollout.py`
+- `cluster/sbatch_contact_aware_franka_cube_rollout_1gpu.sh`
+- this worklog
+
+Acceptance Criteria:
+- The smoke must write `contact_rollout_report.md`,
+  `contact_rollout_summary.json`, `contact_rollout_steps.csv`,
+  `contact_rollout_plot.png`, and a video/contact sheet after fetch.
+- A variant is only a useful relabeling candidate if video and metrics show the
+  hand closes near the cube, finger-center distance reaches contact-scale
+  geometry, cube lift exceeds the task success threshold, and pose action
+  clipping is not the explanation.
+- If no variant lifts, keep DP BC/RL blocked and refine the controller-rollout
+  relabeler or grasp/contact frame rather than training.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/contact_aware_franka_cube_rollout.py`
+- `bash -n cluster/sbatch_contact_aware_franka_cube_rollout_1gpu.sh`
+- `git diff --check`
+
+Planned Cluster Diagnostic:
+- run name:
+  `franka_cube_contact_rollout_ep24s260_center_sweep_<timestamp>`
+- exact reset:
+  - `EPISODE=24`, `EPISODE_STEP=260`
+  - dataset:
+    `/results/dp_bc/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz`
+  - source trajectory:
+    `/results/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed24/trajectory.json`
+- variants: `center,center_high15,center_high30`
+- phases: `ALIGN_STEPS=80`, `CLOSE_STEPS=80`, `LIFT_STEPS=120`,
+  `LIFT_HEIGHT=0.14`, `FINGER_GAIN=0.75`, `CLIP_ACTIONS=1.0`.
+- expected remote run dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/contact_rollouts/$RUN_NAME`
+- local artifact namespace:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_rollouts/$RUN_NAME`
