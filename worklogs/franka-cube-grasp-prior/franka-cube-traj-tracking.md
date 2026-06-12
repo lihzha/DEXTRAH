@@ -7206,3 +7206,45 @@ Next:
 - Keep alpha0.05 contact-aware hold as the current best low-assistance assisted gate.
 - Next bounded work should be supervised/trainability: collect or label states around successful alpha0.0/0.05 contact trigger windows and explicitly train the policy to reproduce the successful approach/contact prefix before terminal hold. Keep alpha0 and alpha0.05 videos as gates.
 - Active B jobs after artifact fetch: none.
+
+## 2026-06-11 23:59 PDT - contact-window handoff BC collection plan
+
+Goal:
+- Start the next bounded trainability step around the successful alpha0.0/alpha0.05 contact-trigger windows, without PPO/RL scale-up.
+
+Hypothesis:
+- The alpha0.0 and alpha0.05 `policy_reference_mix_hold` results show that the current policy sometimes reaches usable contact, then the terminal hold controller can lift/hold. A supervised dataset collected under the exact contact-aware hold controller, plus a derived source of post-trigger lift/contact windows relabeled with alpha0 context, should tell whether the policy/action parameterization can learn that prefix/handoff target before any closed-loop training.
+
+Planned Change:
+- Extend `dextrah_lab/rl_games/bc_reference_action_imitation.py` with a diagnostic-only `policy_reference_mix_hold` collection action source that mirrors eval-time policy/reference blending plus contact-aware terminal hold.
+- Extend `cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh` to pass the hold/mix env vars used by the accepted alpha0.05 contact-aware hold gate.
+- Keep labels as `compute_reference_delta_actions()` and action source labels explicit; this is assisted/handoff BC, not policy-only and not PPO/RL.
+
+Planned Validation:
+- Local cheap checks: `python3 -m py_compile dextrah_lab/rl_games/bc_reference_action_imitation.py`, `bash -n cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh`, `git diff --check`.
+- Commit/push and deploy the exact commit to the agent-owned l401 worktree.
+- Launch one small supervised-only L401 BC job with `COLLECTION_ACTION_SOURCE=policy_reference_mix_hold`, alphas `0.0,0.05`, contact-aware hold settings, and a derived handoff source selected by phase/lift/safety.
+
+Supervised Gate Before Any Selector/Video:
+- `bc_metrics.json`, `bc_loss_curve.csv`, source plots, oracle/source metrics, and report must be present and inspectable.
+- Handoff source must select nonzero lift/contact samples; target unsafe must remain clean.
+- Source validation should improve on the selected handoff/contact-window source without destroying the base alpha0/alpha0.05 collection sources. If this gate is weak or contradictory, stop at supervised artifacts and do not launch selector/video/PPO.
+
+Expected Run:
+- run name target: `franka_cube_traj_tracking_bc_contacthold_handoff_a000_a005_<timestamp>`.
+- result root: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/bc/<run>`.
+- local fetch root: `cluster_results/l401/<run>`.
+
+Implementation Update:
+- Added `policy_reference_mix_hold` as a BC collection action source, with contact-aware terminal hold state isolated as `_bc_terminal_hold_state`.
+- Added collection tensors for `max_finger_to_cube_dist`, `hold_active`, and `hold_contact_after_phase` so the supervised report can audit contact-trigger windows directly.
+- Added handoff source filters `--handoff_max_finger_dist` and `--handoff_require_hold_active`.
+- Extended the L401 BC wrapper to echo/pass reference-mix and hold/handoff env vars.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/bc_reference_action_imitation.py` passed.
+- `bash -n cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh` passed.
+- `git diff --check` passed.
+
+Current Framing:
+- This remains assisted/handoff training. The current best videos are `policy_reference_mix_hold`, and alpha0.0 successes still use terminal hold after contact evidence. No policy-only RL success is claimed.

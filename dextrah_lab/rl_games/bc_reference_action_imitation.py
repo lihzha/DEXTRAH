@@ -165,7 +165,7 @@ parser.add_argument("--source_probe_lr", type=float, default=1.0e-2, help="Learn
 parser.add_argument("--seed", type=int, default=42, help="Random seed for env and supervised split.")
 parser.add_argument(
     "--collection_action_source",
-    choices=("reference_delta", "policy", "teacher_mix"),
+    choices=("reference_delta", "policy", "teacher_mix", "policy_reference_mix_hold"),
     default="reference_delta",
     help=(
         "Action source used to step the rollout while collecting observations. "
@@ -186,6 +186,60 @@ parser.add_argument(
         "Optional comma/colon-separated teacher alphas for multiple fresh collections. "
         "When set, overrides --collection_teacher_alpha and creates one source per alpha."
     ),
+)
+parser.add_argument(
+    "--collection_reference_mix_z_alpha",
+    type=float,
+    default=-1.0,
+    help="Optional z-action reference mix alpha for policy_reference_mix_hold collection; <0 uses source alpha.",
+)
+parser.add_argument(
+    "--collection_reference_mix_gripper_alpha",
+    type=float,
+    default=-1.0,
+    help="Optional gripper reference mix alpha for policy_reference_mix_hold collection; <0 uses source alpha.",
+)
+parser.add_argument(
+    "--hold_trigger_mode",
+    choices=("any", "contact_after_phase_or_lift_success", "lift_success_only"),
+    default="any",
+    help="Terminal hold trigger mode for policy_reference_mix_hold collection.",
+)
+parser.add_argument(
+    "--hold_phase_start",
+    type=float,
+    default=0.67,
+    help="Minimum phase for phase/contact hold triggers in policy_reference_mix_hold collection.",
+)
+parser.add_argument(
+    "--hold_trigger_lift_height",
+    type=float,
+    default=0.02,
+    help="Cube lift height threshold for terminal hold trigger in policy_reference_mix_hold collection.",
+)
+parser.add_argument(
+    "--hold_contact_max_finger_dist",
+    type=float,
+    default=0.08,
+    help="Max finger-to-cube distance for contact-aware terminal hold trigger.",
+)
+parser.add_argument(
+    "--hold_lift_height",
+    type=float,
+    default=0.03,
+    help="Vertical lift bias for terminal hold target.",
+)
+parser.add_argument(
+    "--hold_target_policy",
+    choices=("fixed_target", "cube_current_plus_trigger_ee_offset"),
+    default="cube_current_plus_trigger_ee_offset",
+    help="Terminal hold target construction policy.",
+)
+parser.add_argument(
+    "--hold_gripper_action",
+    type=float,
+    default=-0.4,
+    help="Gripper action applied during terminal hold.",
 )
 parser.add_argument(
     "--residual_context_features",
@@ -240,6 +294,18 @@ parser.add_argument(
     help="Minimum cube lift height for derived handoff samples when success is not already true.",
 )
 parser.add_argument(
+    "--handoff_max_finger_dist",
+    type=float,
+    default=-1.0,
+    help="Optional max finger-to-cube distance for derived handoff samples; <0 disables contact-distance filtering.",
+)
+parser.add_argument(
+    "--handoff_require_hold_active",
+    type=lambda value: str(value).strip().lower() in ("1", "true", "yes", "on"),
+    default=False,
+    help="If true, only duplicate samples where policy_reference_mix_hold terminal hold was active.",
+)
+parser.add_argument(
     "--handoff_require_success",
     type=lambda value: str(value).strip().lower() in ("1", "true", "yes", "on"),
     default=False,
@@ -277,6 +343,7 @@ from rl_games.common.player import BasePlayer
 from rl_games.torch_runner import Runner
 
 from isaaclab.envs import DirectMARLEnv, multi_agent_to_single_agent
+import isaaclab.utils.math as math_utils
 from isaaclab.utils.assets import retrieve_file_path
 from isaaclab_rl.rl_games import RlGamesGpuEnv, RlGamesVecEnvWrapper
 
@@ -472,6 +539,196 @@ def _reference_delta_actions(task_env) -> torch.Tensor:
     if not hasattr(task_env, "compute_reference_delta_actions"):
         raise ValueError("BC diagnostic requires trajectory task env.compute_reference_delta_actions().")
     return task_env.compute_reference_delta_actions().detach().clamp(-1.0, 1.0)
+
+
+def _zero_actions(task_env) -> torch.Tensor:
+    return torch.zeros(task_env.num_envs, task_env.cfg.action_space, device=task_env.device)
+
+
+def _env_tensor(task_env, name: str, default: float = 0.0) -> torch.Tensor:
+    value = getattr(task_env, name, None)
+    if isinstance(value, torch.Tensor):
+        tensor = value.detach().float()
+        if tensor.ndim == 0:
+            return tensor.reshape(1).expand(task_env.num_envs).to(device=task_env.device)
+        return tensor.reshape(task_env.num_envs, -1)[:, 0].to(device=task_env.device)
+    return torch.full((task_env.num_envs,), float(default), device=task_env.device)
+
+
+def _reference_mix_override_alpha(value: float, default_alpha: float) -> float:
+    if value < 0.0:
+        return max(0.0, min(1.0, float(default_alpha)))
+    return max(0.0, min(1.0, float(value)))
+
+
+def _mix_policy_reference_actions(
+    raw_policy_actions: torch.Tensor,
+    reference_actions: torch.Tensor,
+    *,
+    alpha: float,
+    z_alpha: float,
+    gripper_alpha: float,
+) -> torch.Tensor:
+    mixed_actions = torch.clamp((1.0 - alpha) * raw_policy_actions + alpha * reference_actions, -1.0, 1.0)
+    if mixed_actions.shape[-1] >= 3 and z_alpha != alpha:
+        mixed_actions[:, 2] = torch.clamp(
+            (1.0 - z_alpha) * raw_policy_actions[:, 2] + z_alpha * reference_actions[:, 2],
+            -1.0,
+            1.0,
+        )
+    if mixed_actions.shape[-1] >= 7 and gripper_alpha != alpha:
+        mixed_actions[:, 6] = torch.clamp(
+            (1.0 - gripper_alpha) * raw_policy_actions[:, 6] + gripper_alpha * reference_actions[:, 6],
+            -1.0,
+            1.0,
+        )
+    return mixed_actions
+
+
+def _delta_actions_to_local_targets(
+    task_env,
+    target_pos_local: torch.Tensor,
+    gripper_action: float,
+) -> torch.Tensor:
+    if hasattr(task_env, "_compute_intermediate_values"):
+        task_env._compute_intermediate_values()
+
+    ee_pos_b, _ = task_env._compute_ee_frame_pose()
+    target_pos_w = target_pos_local + task_env.scene.env_origins
+    target_pos_b, _ = math_utils.subtract_frame_transforms(
+        task_env._robot.data.root_pos_w,
+        task_env._robot.data.root_quat_w,
+        target_pos_w,
+        task_env._robot.data.root_quat_w,
+    )
+
+    actions = _zero_actions(task_env)
+    position_scale = torch.clamp(task_env.action_scale[:3], min=1.0e-6)
+    actions[:, :3] = torch.clamp((target_pos_b - ee_pos_b) / position_scale, -1.0, 1.0)
+    if actions.shape[-1] >= 7:
+        actions[:, 6] = torch.clamp(
+            torch.full((task_env.num_envs,), float(gripper_action), device=task_env.device),
+            -1.0,
+            1.0,
+        )
+    return actions
+
+
+def _ensure_hold_state(task_env) -> dict[str, torch.Tensor]:
+    state = getattr(task_env, "_bc_terminal_hold_state", None)
+    if (
+        not isinstance(state, dict)
+        or state.get("active", torch.empty(0, device=task_env.device)).shape[0] != task_env.num_envs
+    ):
+        state = {
+            "active": torch.zeros(task_env.num_envs, dtype=torch.bool, device=task_env.device),
+            "target_pos_local": torch.zeros(task_env.num_envs, 3, device=task_env.device),
+            "trigger_ee_cube_offset_local": torch.zeros(task_env.num_envs, 3, device=task_env.device),
+            "phase_triggered": torch.zeros(task_env.num_envs, dtype=torch.bool, device=task_env.device),
+            "lift_triggered": torch.zeros(task_env.num_envs, dtype=torch.bool, device=task_env.device),
+            "success_triggered": torch.zeros(task_env.num_envs, dtype=torch.bool, device=task_env.device),
+            "contact_triggered": torch.zeros(task_env.num_envs, dtype=torch.bool, device=task_env.device),
+            "contact_after_phase_triggered": torch.zeros(task_env.num_envs, dtype=torch.bool, device=task_env.device),
+        }
+        setattr(task_env, "_bc_terminal_hold_state", state)
+    return state
+
+
+def _reset_hold_state(task_env, env_mask: torch.Tensor | None = None) -> None:
+    state = getattr(task_env, "_bc_terminal_hold_state", None)
+    if not isinstance(state, dict):
+        return
+    if env_mask is None:
+        mask = torch.ones(task_env.num_envs, dtype=torch.bool, device=task_env.device)
+    else:
+        mask = env_mask.to(device=task_env.device, dtype=torch.bool).reshape(-1)
+    if mask.numel() != task_env.num_envs or not bool(mask.any()):
+        return
+    state["active"][mask] = False
+    state["target_pos_local"][mask] = 0.0
+    state["trigger_ee_cube_offset_local"][mask] = 0.0
+    for name in (
+        "phase_triggered",
+        "lift_triggered",
+        "success_triggered",
+        "contact_triggered",
+        "contact_after_phase_triggered",
+    ):
+        state[name][mask] = False
+
+
+def _hold_actions_from_source(task_env, base_actions: torch.Tensor) -> torch.Tensor:
+    if not hasattr(task_env, "cube_pos"):
+        raise ValueError("policy_reference_mix_hold collection requires cube task metrics.")
+    if hasattr(task_env, "_compute_intermediate_values"):
+        task_env._compute_intermediate_values()
+
+    state = _ensure_hold_state(task_env)
+    phase = _env_tensor(task_env, "traj_phase_progress")
+    lift_height = _env_tensor(task_env, "cube_lift_height")
+    success = _env_tensor(task_env, "in_success_region")
+    max_finger_dist = _env_tensor(task_env, "max_finger_to_cube_dist", default=math.inf)
+
+    phase_trigger = phase >= float(args_cli.hold_phase_start)
+    lift_trigger = lift_height >= float(args_cli.hold_trigger_lift_height)
+    success_trigger = success >= 0.5
+    contact_trigger = max_finger_dist <= float(args_cli.hold_contact_max_finger_dist)
+    contact_after_phase_trigger = phase_trigger & contact_trigger
+    if args_cli.hold_trigger_mode == "any":
+        trigger = phase_trigger | lift_trigger | success_trigger | contact_trigger
+    elif args_cli.hold_trigger_mode == "contact_after_phase_or_lift_success":
+        trigger = contact_after_phase_trigger | lift_trigger | success_trigger
+    elif args_cli.hold_trigger_mode == "lift_success_only":
+        trigger = lift_trigger | success_trigger
+    else:
+        raise ValueError(f"Unsupported hold_trigger_mode: {args_cli.hold_trigger_mode}")
+    new_hold = (~state["active"]) & trigger
+
+    cube_pos = getattr(task_env, "cube_pos").detach().clone()
+    ee_pos = getattr(task_env, "ee_pos", cube_pos).detach().clone()
+    if bool(new_hold.any()):
+        trigger_offset = ee_pos - cube_pos
+        state["trigger_ee_cube_offset_local"][new_hold] = trigger_offset[new_hold]
+        target_pos = cube_pos.clone()
+        target_pos[:, 2] = torch.maximum(cube_pos[:, 2] + float(args_cli.hold_lift_height), ee_pos[:, 2])
+        state["target_pos_local"][new_hold] = target_pos[new_hold]
+        state["phase_triggered"] |= new_hold & phase_trigger
+        state["lift_triggered"] |= new_hold & lift_trigger
+        state["success_triggered"] |= new_hold & success_trigger
+        state["contact_triggered"] |= new_hold & contact_trigger
+        state["contact_after_phase_triggered"] |= new_hold & contact_after_phase_trigger
+        state["active"] |= new_hold
+
+    target_pos_local = state["target_pos_local"]
+    if args_cli.hold_target_policy == "cube_current_plus_trigger_ee_offset":
+        dynamic_target_pos = cube_pos + state["trigger_ee_cube_offset_local"]
+        dynamic_target_pos[:, 2] = dynamic_target_pos[:, 2] + float(args_cli.hold_lift_height)
+        target_pos_local = torch.where(state["active"].unsqueeze(-1), dynamic_target_pos, target_pos_local)
+        state["target_pos_local"][state["active"]] = target_pos_local[state["active"]]
+
+    hold_actions = _delta_actions_to_local_targets(
+        task_env,
+        target_pos_local,
+        gripper_action=float(args_cli.hold_gripper_action),
+    )
+    return torch.where(state["active"].unsqueeze(-1), hold_actions, base_actions)
+
+
+def _policy_reference_mix_hold_actions(
+    task_env,
+    raw_policy_actions: torch.Tensor,
+    reference_actions: torch.Tensor,
+    source_alpha: float,
+) -> torch.Tensor:
+    alpha = max(0.0, min(1.0, float(source_alpha)))
+    mixed_actions = _mix_policy_reference_actions(
+        raw_policy_actions,
+        reference_actions,
+        alpha=alpha,
+        z_alpha=_reference_mix_override_alpha(float(args_cli.collection_reference_mix_z_alpha), alpha),
+        gripper_alpha=_reference_mix_override_alpha(float(args_cli.collection_reference_mix_gripper_alpha), alpha),
+    )
+    return _hold_actions_from_source(task_env, mixed_actions)
 
 
 def _mean_float(tensor: torch.Tensor) -> float:
@@ -947,9 +1204,11 @@ def _write_report(summary: dict[str, object], rows: list[dict[str, float | int |
             f"- phase/lift/success/unsafe: `{handoff_source.get('phase_mean')}` / "
             f"`{handoff_source.get('lift_mean')}` / `{handoff_source.get('success_rate')}` / "
             f"`{handoff_source.get('unsafe_rate')}`",
+            f"- max finger distance / hold active / contact-after-phase: `{handoff_source.get('max_finger_mean')}` / "
+            f"`{handoff_source.get('hold_active_rate')}` / `{handoff_source.get('hold_contact_after_phase_rate')}`",
             "",
-            "| source | available | selected | success selected | lift selected |",
-            "| --- | ---: | ---: | ---: | ---: |",
+            "| source | available | selected | success selected | lift selected | contact selected | hold active selected |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
         ]
         per_source_counts = handoff_source.get("per_source_counts", [])
         if isinstance(per_source_counts, list):
@@ -959,7 +1218,8 @@ def _write_report(summary: dict[str, object], rows: list[dict[str, float | int |
                 handoff_lines.append(
                     f"| {row.get('source', 'n/a')} | {row.get('available', 'n/a')} | "
                     f"{row.get('selected', 'n/a')} | {row.get('success_selected', 'n/a')} | "
-                    f"{row.get('lift_selected', 'n/a')} |"
+                    f"{row.get('lift_selected', 'n/a')} | {row.get('contact_selected', 'n/a')} | "
+                    f"{row.get('hold_active_selected', 'n/a')} |"
                 )
     source_metric_lines = [
         "| source | split | initial mse | final mse | initial l2 | final l2 | initial up abs | final up abs | initial close abs | final close abs |",
@@ -1109,6 +1369,8 @@ def _write_report(summary: dict[str, object], rows: list[dict[str, float | int |
         f"- collection action source: `{summary.get('collection_action_source')}`",
         f"- collection teacher alpha: `{summary.get('collection_teacher_alpha')}`",
         f"- collection teacher alphas: `{summary.get('collection_teacher_alphas')}`",
+        f"- collection reference z/gripper alpha override: `{summary.get('collection_reference_mix_z_alpha')}` / `{summary.get('collection_reference_mix_gripper_alpha')}`",
+        f"- collection hold config: `{summary.get('collection_hold_config')}`",
         f"- samples: `{summary.get('num_samples')}` total / `{summary.get('num_train')}` train / `{summary.get('num_val')}` held-out",
         f"- observation dim: `{summary.get('obs_dim')}`, action dim: `{summary.get('action_dim')}`",
         f"- loss dims: `{summary.get('loss_dims')}`",
@@ -1305,12 +1567,16 @@ def main(env_cfg, agent_cfg: dict):
             lift_records: list[torch.Tensor] = []
             success_records: list[torch.Tensor] = []
             unsafe_records: list[torch.Tensor] = []
+            max_finger_records: list[torch.Tensor] = []
+            hold_active_records: list[torch.Tensor] = []
+            hold_contact_after_phase_records: list[torch.Tensor] = []
 
             obs = env.reset()
             if isinstance(obs, tuple):
                 obs = obs[0]
             if isinstance(obs, dict) and "obs" in obs:
                 obs = obs["obs"]
+            _reset_hold_state(task_env)
 
             for step in range(args_cli.collection_steps):
                 if not simulation_app.is_running():
@@ -1323,13 +1589,22 @@ def main(env_cfg, agent_cfg: dict):
                         applied_actions = reference_actions
                     elif args_cli.collection_action_source == "policy":
                         applied_actions = raw_mus
-                    else:
+                    elif args_cli.collection_action_source == "teacher_mix":
                         applied_actions = torch.clamp(
                             (1.0 - source_alpha) * raw_mus
                             + source_alpha * reference_actions,
                             -1.0,
                             1.0,
                         )
+                    elif args_cli.collection_action_source == "policy_reference_mix_hold":
+                        applied_actions = _policy_reference_mix_hold_actions(
+                            task_env,
+                            raw_mus,
+                            reference_actions,
+                            source_alpha,
+                        )
+                    else:
+                        raise ValueError(f"Unsupported collection action source: {args_cli.collection_action_source}")
 
                     obs_records.append(obs_t.detach().cpu())
                     reference_records.append(reference_actions.detach().cpu())
@@ -1370,6 +1645,16 @@ def main(env_cfg, agent_cfg: dict):
                         .float()
                         .cpu()
                     )
+                    max_finger_records.append(_env_tensor(task_env, "max_finger_to_cube_dist", default=float("nan")).cpu())
+                    hold_state = getattr(task_env, "_bc_terminal_hold_state", None)
+                    if isinstance(hold_state, dict):
+                        hold_active_records.append(hold_state["active"].detach().float().cpu())
+                        hold_contact_after_phase_records.append(
+                            hold_state["contact_after_phase_triggered"].detach().float().cpu()
+                        )
+                    else:
+                        hold_active_records.append(torch.zeros(task_env.num_envs, dtype=torch.float32))
+                        hold_contact_after_phase_records.append(torch.zeros(task_env.num_envs, dtype=torch.float32))
 
                     step_out = env.step(applied_actions)
                     if len(step_out) == 5:
@@ -1382,6 +1667,8 @@ def main(env_cfg, agent_cfg: dict):
                     if isinstance(dones, torch.Tensor) and bool(dones.any()) and agent.is_rnn and agent.states is not None:
                         for state in agent.states:
                             state[:, dones.bool(), :] = 0.0
+                    if isinstance(dones, torch.Tensor) and bool(dones.any()):
+                        _reset_hold_state(task_env, dones.bool())
 
             if not obs_records:
                 raise RuntimeError(f"BC collection produced no samples for teacher alpha {source_alpha}")
@@ -1396,6 +1683,9 @@ def main(env_cfg, agent_cfg: dict):
                     "lift": torch.cat(lift_records, dim=0).float(),
                     "success": torch.cat(success_records, dim=0).float(),
                     "unsafe": torch.cat(unsafe_records, dim=0).float(),
+                    "max_finger": torch.cat(max_finger_records, dim=0).float(),
+                    "hold_active": torch.cat(hold_active_records, dim=0).float(),
+                    "hold_contact_after_phase": torch.cat(hold_contact_after_phase_records, dim=0).float(),
                 }
             )
     finally:
@@ -1410,6 +1700,9 @@ def main(env_cfg, agent_cfg: dict):
     lift_tensors: list[torch.Tensor] = []
     success_tensors: list[torch.Tensor] = []
     unsafe_tensors: list[torch.Tensor] = []
+    max_finger_tensors: list[torch.Tensor] = []
+    hold_active_tensors: list[torch.Tensor] = []
+    hold_contact_after_phase_tensors: list[torch.Tensor] = []
     source_names: list[str] = []
     source_slugs: list[str] = []
     source_ids: list[torch.Tensor] = []
@@ -1433,6 +1726,9 @@ def main(env_cfg, agent_cfg: dict):
         lift_tensors.append(fresh["lift"])  # type: ignore[arg-type]
         success_tensors.append(fresh["success"])  # type: ignore[arg-type]
         unsafe_tensors.append(fresh["unsafe"])  # type: ignore[arg-type]
+        max_finger_tensors.append(fresh["max_finger"])  # type: ignore[arg-type]
+        hold_active_tensors.append(fresh["hold_active"])  # type: ignore[arg-type]
+        hold_contact_after_phase_tensors.append(fresh["hold_contact_after_phase"])  # type: ignore[arg-type]
         source_names.append(current_source_name)
         source_slugs.append(source_slug)
         source_ids.append(torch.full((obs_loaded.shape[0],), source_id, dtype=torch.long))
@@ -1445,6 +1741,29 @@ def main(env_cfg, agent_cfg: dict):
                 "num_samples": int(obs_loaded.shape[0]),
                 "collection_action_source": args_cli.collection_action_source,
                 "collection_teacher_alpha": source_alpha,
+                "collection_reference_mix_z_alpha": _reference_mix_override_alpha(
+                    float(args_cli.collection_reference_mix_z_alpha),
+                    source_alpha,
+                )
+                if args_cli.collection_action_source == "policy_reference_mix_hold"
+                else "n/a",
+                "collection_reference_mix_gripper_alpha": _reference_mix_override_alpha(
+                    float(args_cli.collection_reference_mix_gripper_alpha),
+                    source_alpha,
+                )
+                if args_cli.collection_action_source == "policy_reference_mix_hold"
+                else "n/a",
+                "hold_config": {
+                    "trigger_mode": args_cli.hold_trigger_mode,
+                    "phase_start": float(args_cli.hold_phase_start),
+                    "trigger_lift_height": float(args_cli.hold_trigger_lift_height),
+                    "contact_max_finger_dist": float(args_cli.hold_contact_max_finger_dist),
+                    "lift_height": float(args_cli.hold_lift_height),
+                    "target_policy": args_cli.hold_target_policy,
+                    "gripper_action": float(args_cli.hold_gripper_action),
+                }
+                if args_cli.collection_action_source == "policy_reference_mix_hold"
+                else "n/a",
             }
         )
 
@@ -1509,6 +1828,21 @@ def main(env_cfg, agent_cfg: dict):
         unsafe_tensors.append(
             loaded.get("unsafe_target", torch.full((obs_loaded.shape[0],), float("nan"))).detach().float().cpu()
         )
+        max_finger_tensors.append(
+            loaded.get("max_finger_to_cube_dist", torch.full((obs_loaded.shape[0],), float("nan")))
+            .detach()
+            .float()
+            .cpu()
+        )
+        hold_active_tensors.append(
+            loaded.get("hold_active", torch.zeros((obs_loaded.shape[0],), dtype=torch.float32)).detach().float().cpu()
+        )
+        hold_contact_after_phase_tensors.append(
+            loaded.get("hold_contact_after_phase", torch.zeros((obs_loaded.shape[0],), dtype=torch.float32))
+            .detach()
+            .float()
+            .cpu()
+        )
         source_id = len(source_names)
         source_names.append(source_name)
         source_slugs.append(source_slug)
@@ -1551,6 +1885,9 @@ def main(env_cfg, agent_cfg: dict):
             "lift": [],
             "success": [],
             "unsafe": [],
+            "max_finger": [],
+            "hold_active": [],
+            "hold_contact_after_phase": [],
         }
         per_source_counts: list[dict[str, object]] = []
         for source_id in selected_source_ids:
@@ -1559,6 +1896,9 @@ def main(env_cfg, agent_cfg: dict):
             lift = lift_tensors[source_id].view(-1).float()
             success = success_tensors[source_id].view(-1).float()
             unsafe = unsafe_tensors[source_id].view(-1).float()
+            max_finger = max_finger_tensors[source_id].view(-1).float()
+            hold_active = hold_active_tensors[source_id].view(-1).float()
+            hold_contact_after_phase = hold_contact_after_phase_tensors[source_id].view(-1).float()
             if phase.shape[0] != source_count:
                 raise ValueError(f"Handoff source {source_names[source_id]!r} phase count does not match obs count.")
             mask = torch.isfinite(phase)
@@ -1566,6 +1906,12 @@ def main(env_cfg, agent_cfg: dict):
             mask = torch.logical_and(mask, phase <= float(args_cli.handoff_max_phase))
             if bool(args_cli.handoff_require_safe_target):
                 mask = torch.logical_and(mask, torch.logical_or(~torch.isfinite(unsafe), unsafe <= 0.5))
+            if float(args_cli.handoff_max_finger_dist) >= 0.0:
+                mask = torch.logical_and(mask, torch.isfinite(max_finger))
+                mask = torch.logical_and(mask, max_finger <= float(args_cli.handoff_max_finger_dist))
+            if bool(args_cli.handoff_require_hold_active):
+                mask = torch.logical_and(mask, torch.isfinite(hold_active))
+                mask = torch.logical_and(mask, hold_active >= 0.5)
             success_mask = torch.logical_and(torch.isfinite(success), success >= 0.5)
             if bool(args_cli.handoff_require_success):
                 mask = torch.logical_and(mask, success_mask)
@@ -1588,6 +1934,21 @@ def main(env_cfg, agent_cfg: dict):
                     )
                     if int(selected.numel())
                     else 0,
+                    "contact_selected": int(
+                        (
+                            torch.isfinite(max_finger[selected])
+                            & (max_finger[selected] <= max(0.0, float(args_cli.handoff_max_finger_dist)))
+                        )
+                        .sum()
+                        .item()
+                    )
+                    if int(selected.numel()) and float(args_cli.handoff_max_finger_dist) >= 0.0
+                    else 0,
+                    "hold_active_selected": int(
+                        (torch.isfinite(hold_active[selected]) & (hold_active[selected] >= 0.5)).sum().item()
+                    )
+                    if int(selected.numel())
+                    else 0,
                 }
             )
             if int(selected.numel()) == 0:
@@ -1600,6 +1961,9 @@ def main(env_cfg, agent_cfg: dict):
             selected_chunks["lift"].append(lift_tensors[source_id][selected])
             selected_chunks["success"].append(success_tensors[source_id][selected])
             selected_chunks["unsafe"].append(unsafe_tensors[source_id][selected])
+            selected_chunks["max_finger"].append(max_finger_tensors[source_id][selected])
+            selected_chunks["hold_active"].append(hold_active_tensors[source_id][selected])
+            selected_chunks["hold_contact_after_phase"].append(hold_contact_after_phase_tensors[source_id][selected])
 
         total_selected = sum(int(chunk.shape[0]) for chunk in selected_chunks["obs"])
         if total_selected <= 0:
@@ -1629,6 +1993,9 @@ def main(env_cfg, agent_cfg: dict):
         handoff_lift = concat_handoff("lift")
         handoff_success = concat_handoff("success")
         handoff_unsafe = concat_handoff("unsafe")
+        handoff_max_finger = concat_handoff("max_finger")
+        handoff_hold_active = concat_handoff("hold_active")
+        handoff_hold_contact_after_phase = concat_handoff("hold_contact_after_phase")
         source_name = args_cli.handoff_source_name.strip() or "policy0_success_handoff"
         source_slug = _source_slug(source_name)
         while source_slug in source_slugs:
@@ -1645,6 +2012,9 @@ def main(env_cfg, agent_cfg: dict):
         lift_tensors.append(handoff_lift)
         success_tensors.append(handoff_success)
         unsafe_tensors.append(handoff_unsafe)
+        max_finger_tensors.append(handoff_max_finger)
+        hold_active_tensors.append(handoff_hold_active)
+        hold_contact_after_phase_tensors.append(handoff_hold_contact_after_phase)
         source_names.append(source_name)
         source_slugs.append(source_slug)
         source_ids.append(torch.full((handoff_obs.shape[0],), source_id, dtype=torch.long))
@@ -1663,6 +2033,8 @@ def main(env_cfg, agent_cfg: dict):
                 "min_phase": float(args_cli.handoff_min_phase),
                 "max_phase": float(args_cli.handoff_max_phase),
                 "min_lift_height": float(args_cli.handoff_min_lift_height),
+                "max_finger_dist": float(args_cli.handoff_max_finger_dist),
+                "require_hold_active": bool(args_cli.handoff_require_hold_active),
                 "require_success": bool(args_cli.handoff_require_success),
                 "require_safe_target": bool(args_cli.handoff_require_safe_target),
                 "max_samples": int(args_cli.handoff_max_samples),
@@ -1671,6 +2043,11 @@ def main(env_cfg, agent_cfg: dict):
             "lift_mean": _mean_float(handoff_lift),
             "success_rate": _mean_float((handoff_success >= 0.5).float()),
             "unsafe_rate": _mean_float((handoff_unsafe > 0.5).float()),
+            "max_finger_mean": _mean_float(handoff_max_finger[torch.isfinite(handoff_max_finger)])
+            if bool(torch.isfinite(handoff_max_finger).any())
+            else None,
+            "hold_active_rate": _mean_float((handoff_hold_active >= 0.5).float()),
+            "hold_contact_after_phase_rate": _mean_float((handoff_hold_contact_after_phase >= 0.5).float()),
         }
         source_metadata.append(
             {
@@ -1696,6 +2073,9 @@ def main(env_cfg, agent_cfg: dict):
     lift_tensor = torch.cat(lift_tensors, dim=0).float()
     success_tensor = torch.cat(success_tensors, dim=0).float()
     unsafe_tensor = torch.cat(unsafe_tensors, dim=0).float()
+    max_finger_tensor = torch.cat(max_finger_tensors, dim=0).float()
+    hold_active_tensor = torch.cat(hold_active_tensors, dim=0).float()
+    hold_contact_after_phase_tensor = torch.cat(hold_contact_after_phase_tensors, dim=0).float()
     source_id_tensor = torch.cat(source_ids, dim=0)
     dataset = {
         "obs": obs_tensor,
@@ -1707,6 +2087,9 @@ def main(env_cfg, agent_cfg: dict):
         "cube_lift_height": lift_tensor,
         "success": success_tensor,
         "unsafe_target": unsafe_tensor,
+        "max_finger_to_cube_dist": max_finger_tensor,
+        "hold_active": hold_active_tensor,
+        "hold_contact_after_phase": hold_contact_after_phase_tensor,
         "source_ids": source_id_tensor,
         "source_names": source_names,
         "source_metadata": source_metadata,
@@ -1716,6 +2099,17 @@ def main(env_cfg, agent_cfg: dict):
         "collection_action_source": args_cli.collection_action_source,
         "collection_teacher_alpha": collection_teacher_alphas[0] if len(collection_teacher_alphas) == 1 else list(collection_teacher_alphas),
         "collection_teacher_alphas": list(collection_teacher_alphas),
+        "collection_reference_mix_z_alpha": float(args_cli.collection_reference_mix_z_alpha),
+        "collection_reference_mix_gripper_alpha": float(args_cli.collection_reference_mix_gripper_alpha),
+        "collection_hold_config": {
+            "trigger_mode": args_cli.hold_trigger_mode,
+            "phase_start": float(args_cli.hold_phase_start),
+            "trigger_lift_height": float(args_cli.hold_trigger_lift_height),
+            "contact_max_finger_dist": float(args_cli.hold_contact_max_finger_dist),
+            "lift_height": float(args_cli.hold_lift_height),
+            "target_policy": args_cli.hold_target_policy,
+            "gripper_action": float(args_cli.hold_gripper_action),
+        },
     }
     dataset_path.parent.mkdir(parents=True, exist_ok=True)
     torch.save(dataset, dataset_path)
@@ -2346,6 +2740,17 @@ def main(env_cfg, agent_cfg: dict):
         "collection_action_source": args_cli.collection_action_source,
         "collection_teacher_alpha": collection_teacher_alphas[0] if len(collection_teacher_alphas) == 1 else list(collection_teacher_alphas),
         "collection_teacher_alphas": list(collection_teacher_alphas),
+        "collection_reference_mix_z_alpha": float(args_cli.collection_reference_mix_z_alpha),
+        "collection_reference_mix_gripper_alpha": float(args_cli.collection_reference_mix_gripper_alpha),
+        "collection_hold_config": {
+            "trigger_mode": args_cli.hold_trigger_mode,
+            "phase_start": float(args_cli.hold_phase_start),
+            "trigger_lift_height": float(args_cli.hold_trigger_lift_height),
+            "contact_max_finger_dist": float(args_cli.hold_contact_max_finger_dist),
+            "lift_height": float(args_cli.hold_lift_height),
+            "target_policy": args_cli.hold_target_policy,
+            "gripper_action": float(args_cli.hold_gripper_action),
+        },
         "rehearsal_dataset_paths": rehearsal_paths,
         "dataset_sources": source_metadata,
         "handoff_source": handoff_source_summary,
