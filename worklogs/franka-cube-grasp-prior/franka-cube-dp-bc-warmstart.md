@@ -8522,3 +8522,172 @@ Gate:
   within gate, `max_pose_action_clip_fraction=0`, and visually coherent contact
   lift.
 - No DP fine-tune, RL, or broad training in this iteration.
+
+## 2026-06-11T21:39:06-07:00 - alpha0.8 pose-filter relabel gate launch
+
+Goal:
+- Test whether a uniform pose-action scaling filter removes the alpha0.8
+  initial clip while preserving exact and alpha0.9 behavior.
+
+Change:
+- Added raw/unclipped pose-action audit fields and optional
+  `--pose_action_filter scale --pose_action_limit <limit>` to the contact-aware
+  controller rollout.
+- Threaded `POSE_ACTION_FILTER` and `POSE_ACTION_LIMIT` through the relabel-set
+  Slurm wrapper and aggregate reports.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- implementation_commit: `5ae2c638917d3591f9e2f97516089b0ced5427a4`
+- push: pushed to `origin/codex/franka-cube-diffusion-policy-bc`
+- remote_commit: `5ae2c638917d3591f9e2f97516089b0ced5427a4`
+- remote_status: clean detached HEAD
+- remote_deploy_note: l401 could not fetch GitHub due SSH public-key auth, so
+  the exact commit was transferred through an agent-owned NFS bare Git remote
+  at
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart-transfer.git`
+  and checked out in the agent worktree.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/contact_aware_franka_cube_rollout.py dextrah_lab/offline_dp_bc/make_contact_relabel_set_report.py dextrah_lab/offline_dp_bc/make_support_expansion_dataset_report.py` -> pass
+- `bash -n cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh` -> pass
+- `git diff --check` -> pass
+
+Command / Job:
+- job_id: `1028127`
+- run_name:
+  `franka_cube_contact_relabel_posefilter095_ep16s260_a1_a0p9_a0p8_20260611_213902`
+- command:
+  `sbatch --parsable --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart,RUN_NAME=franka_cube_contact_relabel_posefilter095_ep16s260_a1_a0p9_a0p8_20260611_213902,DATASET=/results/dp_bc/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz,TRAJECTORY_ROOT=/results/dp_bc/curobo_plans,SPEC_COUNT=3,SPEC_0=16:260:/results/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed16/trajectory.json:1.0,SPEC_1=16:260:/results/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed16/trajectory.json:0.9,SPEC_2=16:260:/results/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed16/trajectory.json:0.8,VARIANT=center_high30,ORIENTATION_MODE=source,POSE_ACTION_FILTER=scale,POSE_ACTION_LIMIT=0.95,ALIGN_STEPS=80,CLOSE_STEPS=80,LIFT_STEPS=160,LIFT_HEIGHT=0.22,FINGER_GAIN=0.75,CLIP_ACTIONS=1.0,CAPTURE_VIDEO=True,VIDEO_LENGTH=320,VIDEO_NAME_PREFIX=franka-cube-contact-posefilter095,PRINT_INTERVAL=80,SEED=42,GATE_MIN_LIFT=0.10,GATE_MAX_POSE_CLIP_FRACTION=0.0,GATE_MAX_FINAL_EE_TO_CUBE=0.05,GATE_MAX_FINAL_FINGER_TO_CUBE=0.08 cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh`
+- expected remote run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/contact_relabel_sets/franka_cube_contact_relabel_posefilter095_ep16s260_a1_a0p9_a0p8_20260611_213902`
+- expected log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/contact_aware_franka_cube_relabel_set_1028127.out`
+
+Gate:
+- Do not test alpha0.75 until this alpha0.8 pose-filter gate passes hard
+  metrics and visual inspection.
+
+## 2026-06-11T21:42:21-07:00 - alpha0.8 pose-filter gate result and alpha0.75 retest plan
+
+Result:
+- job_id: `1028127`
+- scheduler_status: `COMPLETED 0:0`
+- local artifact dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_posefilter095_ep16s260_a1_a0p9_a0p8_20260611_213902`
+- aggregate verdict:
+  `PASS: all contact-aware rollouts satisfied the hard relabel gate; this only permits a tiny official-DP smoke proposal.`
+- gate table:
+
+| alpha | gate | final EE-cube | final finger-cube | final/max lift | max executed clip | max raw | min scale | visual |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 1.00 | pass | 0.0077 | 0.0377 | 0.1360/0.1360 | 0.000 | 0.585 | 1.000 | coherent lift |
+| 0.90 | pass | 0.0094 | 0.0382 | 0.1353/0.1353 | 0.000 | 0.522 | 1.000 | coherent lift |
+| 0.80 | pass | 0.0466 | 0.0587 | 0.1357/0.1357 | 0.000 | 1.026 | 0.926 | coherent lift; raw first command would have clipped |
+
+Artifacts:
+- report:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_posefilter095_ep16s260_a1_a0p9_a0p8_20260611_213902/contact_relabel_set_report.md`
+- support report:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_posefilter095_ep16s260_a1_a0p9_a0p8_20260611_213902/support_expansion_report/support_expansion_report.md`
+- support plot:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_posefilter095_ep16s260_a1_a0p9_a0p8_20260611_213902/support_expansion_report/support_expansion_plot.png`
+- alpha0.8 sheet:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_posefilter095_ep16s260_a1_a0p9_a0p8_20260611_213902/rollouts/ep16s260_a0p8/contact_sheet_a0p8.jpg`
+- alpha0.8 video:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_posefilter095_ep16s260_a1_a0p9_a0p8_20260611_213902/rollouts/ep16s260_a0p8/videos/franka-cube-contact-posefilter095-ep16s260_a0p8-step-0.mp4`
+
+Analysis:
+- Alpha0.8 clipping was a controller/action-limit artifact from the source
+  orientation correction. With the raw command audited and uniformly scaled
+  under `0.95`, alpha0.8 clears hard metrics and visual inspection.
+- This does not authorize DP training yet. It only satisfies the prerequisite
+  to retest alpha0.75 with the same controller filter.
+
+Next bounded launch:
+- Run a one-rollout alpha0.75 retest with the same commit
+  `5ae2c638917d3591f9e2f97516089b0ced5427a4`, `ORIENTATION_MODE=source`,
+  `POSE_ACTION_FILTER=scale`, `POSE_ACTION_LIMIT=0.95`, same episode/source
+  step/settings.
+- Gate: alpha0.75 must pass final/max lift, final EE/finger distances, zero
+  executed clipping, and visual contact/lift. If it fails, stop at artifact
+  reporting; no DP training.
+
+## 2026-06-11T21:42:57-07:00 - alpha0.75 pose-filter retest launch
+
+Goal:
+- Test whether the same audited pose-action scaling filter that recovered
+  alpha0.8 also recovers the first hard support failure at alpha0.75.
+
+Version Control:
+- implementation_commit: `5ae2c638917d3591f9e2f97516089b0ced5427a4`
+- remote_commit: `5ae2c638917d3591f9e2f97516089b0ced5427a4`
+- source_changes_since_alpha0.8_job: none
+
+Command / Job:
+- job_id: `1028128`
+- run_name:
+  `franka_cube_contact_relabel_posefilter095_ep16s260_a0p75_20260611_214249`
+- command:
+  `sbatch --parsable --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart,RUN_NAME=franka_cube_contact_relabel_posefilter095_ep16s260_a0p75_20260611_214249,DATASET=/results/dp_bc/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz,TRAJECTORY_ROOT=/results/dp_bc/curobo_plans,SPEC_COUNT=1,SPEC_0=16:260:/results/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed16/trajectory.json:0.75,VARIANT=center_high30,ORIENTATION_MODE=source,POSE_ACTION_FILTER=scale,POSE_ACTION_LIMIT=0.95,ALIGN_STEPS=80,CLOSE_STEPS=80,LIFT_STEPS=160,LIFT_HEIGHT=0.22,FINGER_GAIN=0.75,CLIP_ACTIONS=1.0,CAPTURE_VIDEO=True,VIDEO_LENGTH=320,VIDEO_NAME_PREFIX=franka-cube-contact-posefilter095,PRINT_INTERVAL=40,SEED=42,GATE_MIN_LIFT=0.10,GATE_MAX_POSE_CLIP_FRACTION=0.0,GATE_MAX_FINAL_EE_TO_CUBE=0.05,GATE_MAX_FINAL_FINGER_TO_CUBE=0.08 cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh`
+- expected remote run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/contact_relabel_sets/franka_cube_contact_relabel_posefilter095_ep16s260_a0p75_20260611_214249`
+- expected log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/contact_aware_franka_cube_relabel_set_1028128.out`
+
+Gate:
+- If alpha0.75 fails metrics or visuals, no DP training; next recommendation
+  should be a staged contact-alignment controller, not BC scale-up.
+
+## 2026-06-11T21:46:28-07:00 - pose-filter alpha0.75 result
+
+Result:
+- alpha0.8 job_id: `1028127`, `COMPLETED 0:0`
+- alpha0.75 job_id: `1028128`, `COMPLETED 0:0`
+- implementation_commit for both jobs:
+  `5ae2c638917d3591f9e2f97516089b0ced5427a4`
+- status: alpha0.8 clipping fixed; alpha0.75 still fails hard relabel gate.
+
+Metrics:
+
+| case | gate | reset cube-minus-EE L2 | final EE | final finger | final/max lift | max clip | max raw | raw would clip | min scale | interpretation |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| alpha0.8 pose-filter | pass | 0.0314 | 0.0466 | 0.0587 | 0.1357/0.1357 | 0.000 | 1.026 | 0.167 | 0.926 | alpha0.8 was primarily an action-limit artifact; uniform pose scaling recovered it |
+| alpha0.75 pose-filter | fail | 0.0394 | 0.2091 | 0.2504 | 0.0000/0.0143 | 0.000 | 1.283 | 0.167 | 0.740 | alpha0.75 remains a contact-alignment/support failure after action-limit damping |
+
+Artifact URLs:
+- combined report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/posefilter095_bridge_summary_20260611_214249/posefilter095_alpha08_alpha075_report.md`
+- combined trace plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/posefilter095_bridge_summary_20260611_214249/posefilter095_alpha08_alpha075_trace.png`
+- alpha0.8 aggregate report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_posefilter095_ep16s260_a1_a0p9_a0p8_20260611_213902/contact_relabel_set_report.md`
+- alpha0.75 aggregate report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_posefilter095_ep16s260_a0p75_20260611_214249/contact_relabel_set_report.md`
+- alpha0.8 pass sheet:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_posefilter095_ep16s260_a1_a0p9_a0p8_20260611_213902/rollouts/ep16s260_a0p8/contact_sheet_a0p8.jpg`
+- alpha0.75 failure sheet:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_posefilter095_ep16s260_a0p75_20260611_214249/rollouts/ep16s260_a0p75/contact_sheet_a0p75.jpg`
+- alpha0.8 video:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_posefilter095_ep16s260_a1_a0p9_a0p8_20260611_213902/rollouts/ep16s260_a0p8/videos/franka-cube-contact-posefilter095-ep16s260_a0p8-step-0.mp4`
+- alpha0.75 video:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_posefilter095_ep16s260_a0p75_20260611_214249/rollouts/ep16s260_a0p75/videos/franka-cube-contact-posefilter095-ep16s260_a0p75-step-0.mp4`
+
+Analysis:
+- The new raw action audit cleanly separates two issues:
+  - alpha0.8 needed only action-limit damping on the initial source-orientation
+    command; it then passed metrics and video inspection.
+  - alpha0.75 also needed damping, but after damping the align-open phase still
+    stalled around `0.097 m` finger-center-to-cube before close. Closing at
+    that geometry leaves the cube behind and lift drives the gripper away.
+- The alpha0.75 accepted NPZ is empty (`obs (0,21)`, `action (0,7)`), so there
+  is no relabel dataset to train on from that rollout.
+- This is not a DP/BC training gate pass. No official Diffusion Policy
+  fine-tune, RL, or broad training should start from this state.
+
+Next:
+- Implement a staged contact-alignment controller diagnostic before close/lift:
+  drive finger-center error below a threshold near the source-contact geometry
+  with open gripper, optionally using a slower or adaptive gain schedule, then
+  close/lift only after the contact-alignment gate is met. Retest alpha0.75
+  with the same hard metrics and video inspection.
