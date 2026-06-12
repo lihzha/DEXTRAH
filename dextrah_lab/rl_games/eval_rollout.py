@@ -181,6 +181,7 @@ def _collect_task_metrics(task_env) -> dict[str, float | None]:
 def _collect_episode_probe_metrics(task_env, num_envs: int) -> dict[str, list[float]]:
     metric_sources = {
         "success_rate": "in_success_region",
+        "time_in_success_region": "time_in_success_region",
         "cube_lift_height": "cube_lift_height",
         "has_lifted_cube": "has_lifted_cube",
         "ee_to_cube_dist": "ee_to_cube_dist",
@@ -199,6 +200,7 @@ def _empty_episode_stats(start_step: int) -> dict[str, float | int | None]:
     return {
         "start_step": int(start_step),
         "max_success_rate": None,
+        "max_time_in_success_region": None,
         "max_cube_lift_height": None,
         "max_has_lifted_cube": None,
         "min_ee_to_cube_dist": None,
@@ -212,6 +214,7 @@ def _update_episode_stats(
 ) -> None:
     max_fields = {
         "success_rate": "max_success_rate",
+        "time_in_success_region": "max_time_in_success_region",
         "cube_lift_height": "max_cube_lift_height",
         "has_lifted_cube": "max_has_lifted_cube",
     }
@@ -250,8 +253,10 @@ def _finish_episode_outcome(
     terminal_step: int,
     stats: dict[str, float | int | None],
     terminal_probe_metrics: dict[str, list[float]],
+    terminal_source: str = "pre_done_state",
 ) -> dict[str, float | int | bool | None]:
     terminal_success = _episode_metric_value(terminal_probe_metrics, "success_rate", env_idx)
+    terminal_success_time = _episode_metric_value(terminal_probe_metrics, "time_in_success_region", env_idx)
     terminal_lift = _episode_metric_value(terminal_probe_metrics, "cube_lift_height", env_idx)
     terminal_has_lifted = _episode_metric_value(terminal_probe_metrics, "has_lifted_cube", env_idx)
     max_success = stats.get("max_success_rate")
@@ -261,8 +266,9 @@ def _finish_episode_outcome(
         "episode_id": int(episode_id),
         "start_step": int(stats["start_step"]) if stats.get("start_step") is not None else None,
         "terminal_step": int(terminal_step),
-        "terminal_source": "pre_done_state",
+        "terminal_source": terminal_source,
         "terminal_success_rate": terminal_success,
+        "terminal_time_in_success_region": terminal_success_time,
         "terminal_cube_lift_height": terminal_lift,
         "terminal_has_lifted_cube": terminal_has_lifted,
         "terminal_ee_to_cube_dist": _episode_metric_value(terminal_probe_metrics, "ee_to_cube_dist", env_idx),
@@ -328,29 +334,59 @@ def _first_done_step(step_metrics: list[dict[str, float | int | None]]) -> int |
     return None
 
 
-def _summarize_episode_outcomes(outcomes: list[dict[str, float | int | bool | None]]) -> dict[str, float | int | None]:
+def _summarize_episode_outcomes(
+    outcomes: list[dict[str, float | int | bool | None]],
+    *,
+    success_hold_time_threshold: float | None = None,
+) -> dict[str, float | int | None]:
     if not outcomes:
         return {
             "count": 0,
             "success_rate": None,
+            "terminal_success_rate": None,
             "lifted_rate": None,
+            "success_hold_time_threshold": success_hold_time_threshold,
+            "success_hold_rate": None,
             "max_lift_mean": None,
             "max_lift_min": None,
             "max_lift_max": None,
+            "max_time_in_success_region_mean": None,
+            "max_time_in_success_region_max": None,
             "terminal_success_rate_mean": None,
+            "terminal_time_in_success_region_mean": None,
             "terminal_lift_mean": None,
         }
     success_values = [1.0 if outcome.get("success") else 0.0 for outcome in outcomes]
+    terminal_success_values = [
+        1.0 if float(outcome["terminal_success_rate"]) >= 0.5 else 0.0
+        for outcome in outcomes
+        if outcome.get("terminal_success_rate") is not None
+    ]
     lifted_values = [1.0 if outcome.get("lifted") else 0.0 for outcome in outcomes]
+    success_hold_values = [
+        1.0 if float(outcome["max_time_in_success_region"]) >= float(success_hold_time_threshold) else 0.0
+        for outcome in outcomes
+        if success_hold_time_threshold is not None and outcome.get("max_time_in_success_region") is not None
+    ]
     max_lifts = [
         float(outcome["max_cube_lift_height"])
         for outcome in outcomes
         if outcome.get("max_cube_lift_height") is not None
     ]
+    max_success_times = [
+        float(outcome["max_time_in_success_region"])
+        for outcome in outcomes
+        if outcome.get("max_time_in_success_region") is not None
+    ]
     terminal_success = [
         float(outcome["terminal_success_rate"])
         for outcome in outcomes
         if outcome.get("terminal_success_rate") is not None
+    ]
+    terminal_success_times = [
+        float(outcome["terminal_time_in_success_region"])
+        for outcome in outcomes
+        if outcome.get("terminal_time_in_success_region") is not None
     ]
     terminal_lifts = [
         float(outcome["terminal_cube_lift_height"])
@@ -360,13 +396,35 @@ def _summarize_episode_outcomes(outcomes: list[dict[str, float | int | bool | No
     return {
         "count": len(outcomes),
         "success_rate": _mean(success_values),
+        "terminal_success_rate": _mean(terminal_success_values),
         "lifted_rate": _mean(lifted_values),
+        "success_hold_time_threshold": success_hold_time_threshold,
+        "success_hold_rate": _mean(success_hold_values),
         "max_lift_mean": _mean(max_lifts),
         "max_lift_min": min(max_lifts) if max_lifts else None,
         "max_lift_max": max(max_lifts) if max_lifts else None,
+        "max_time_in_success_region_mean": _mean(max_success_times),
+        "max_time_in_success_region_max": max(max_success_times) if max_success_times else None,
         "terminal_success_rate_mean": _mean(terminal_success),
+        "terminal_time_in_success_region_mean": _mean(terminal_success_times),
         "terminal_lift_mean": _mean(terminal_lifts),
     }
+
+
+def _filter_first_attempt_outcomes(
+    completed_outcomes: list[dict[str, float | int | bool | None]],
+    horizon_outcomes: list[dict[str, float | int | bool | None]],
+    num_envs: int,
+) -> list[dict[str, float | int | bool | None]]:
+    """Return exactly one initial-attempt outcome per env when available."""
+    by_env: dict[int, dict[str, float | int | bool | None]] = {}
+    for outcome in horizon_outcomes:
+        if int(outcome.get("episode_id", -1)) == 0:
+            by_env[int(outcome["env_idx"])] = outcome
+    for outcome in completed_outcomes:
+        if int(outcome.get("episode_id", -1)) == 0:
+            by_env[int(outcome["env_idx"])] = outcome
+    return [by_env[env_idx] for env_idx in range(num_envs) if env_idx in by_env]
 
 
 def _checkpoint_path(agent_cfg: dict) -> str:
@@ -511,6 +569,8 @@ def main(env_cfg, agent_cfg: dict):
     step_metrics = []
     done_count = 0
     env_closed = False
+    num_envs = 0
+    horizon_episode_outcomes: list[dict[str, float | int | bool | None]] = []
     try:
         obs = env.reset()
         if isinstance(obs, tuple):
@@ -550,14 +610,17 @@ def main(env_cfg, agent_cfg: dict):
                 success_rate = _env_metric(task_env, "in_success_region")
                 reward_mean = _mean_float(rewards)
                 task_metrics = _collect_task_metrics(task_env)
+                post_step_episode_probe_metrics = _collect_episode_probe_metrics(task_env, num_envs)
                 action_metrics = _collect_action_metrics(actions)
 
                 step_done_count = 0
+                done_env_indices: set[int] = set()
                 if isinstance(dones, torch.Tensor):
                     dones_bool = dones.bool()
                     step_done_count = int(dones_bool.sum().detach().cpu())
                     done_count += step_done_count
                     for env_idx in torch.nonzero(dones_bool.flatten(), as_tuple=False).flatten().detach().cpu().tolist():
+                        done_env_indices.add(int(env_idx))
                         completed_episode_outcomes.append(
                             _finish_episode_outcome(
                                 env_idx=int(env_idx),
@@ -576,6 +639,7 @@ def main(env_cfg, agent_cfg: dict):
                     step_done_count = int(bool(dones))
                     done_count += step_done_count
                     if step_done_count > 0:
+                        done_env_indices.add(0)
                         completed_episode_outcomes.append(
                             _finish_episode_outcome(
                                 env_idx=0,
@@ -587,6 +651,10 @@ def main(env_cfg, agent_cfg: dict):
                         )
                         episode_ids[0] += 1
                         episode_stats[0] = _empty_episode_stats(start_step=step + 2)
+
+                for env_idx in range(num_envs):
+                    if env_idx not in done_env_indices:
+                        _update_episode_stats(episode_stats[env_idx], post_step_episode_probe_metrics, env_idx)
 
                 step_record = {
                     "step": step + 1,
@@ -608,6 +676,23 @@ def main(env_cfg, agent_cfg: dict):
                         f"reward_mean={reward_mean} "
                         f"task_metrics={task_metrics}"
                     )
+
+        if num_envs > 0:
+            horizon_probe_metrics = _collect_episode_probe_metrics(task_env, num_envs)
+            horizon_step = len(step_metrics)
+            for env_idx in range(num_envs):
+                _update_episode_stats(episode_stats[env_idx], horizon_probe_metrics, env_idx)
+                if int(episode_stats[env_idx].get("start_step") or 0) <= max(1, horizon_step):
+                    horizon_episode_outcomes.append(
+                        _finish_episode_outcome(
+                            env_idx=env_idx,
+                            episode_id=episode_ids[env_idx],
+                            terminal_step=horizon_step,
+                            stats=episode_stats[env_idx],
+                            terminal_probe_metrics=horizon_probe_metrics,
+                            terminal_source="horizon_end_state",
+                        )
+                    )
     finally:
         env.close()
         env_closed = True
@@ -625,7 +710,33 @@ def main(env_cfg, agent_cfg: dict):
     first_episode_reward_values = [
         item["reward_mean"] for item in first_episode_metrics if item["reward_mean"] is not None
     ]
-    completed_episode_summary = _summarize_episode_outcomes(completed_episode_outcomes)
+    success_occupancy_mean = _mean(success_values)
+    success_occupancy_final = success_values[-1] if success_values else None
+    success_occupancy_last_window_mean = _mean(success_values[-window:]) if success_values else None
+    reward_mean = _mean(reward_values)
+    reward_final = reward_values[-1] if reward_values else None
+    success_hold_time_threshold = None
+    if hasattr(task_env, "cfg") and hasattr(task_env.cfg, "success_timeout"):
+        success_hold_time_threshold = float(task_env.cfg.success_timeout)
+    completed_episode_summary = _summarize_episode_outcomes(
+        completed_episode_outcomes,
+        success_hold_time_threshold=success_hold_time_threshold,
+    )
+    horizon_episode_summary = _summarize_episode_outcomes(
+        horizon_episode_outcomes,
+        success_hold_time_threshold=success_hold_time_threshold,
+    )
+    first_attempt_outcomes = _filter_first_attempt_outcomes(
+        completed_episode_outcomes,
+        horizon_episode_outcomes,
+        num_envs,
+    )
+    first_attempt_summary = _summarize_episode_outcomes(
+        first_attempt_outcomes,
+        success_hold_time_threshold=success_hold_time_threshold,
+    )
+    eval_success_rate = first_attempt_summary["success_rate"]
+    eval_success_rate_source = "first_attempt_success_rate"
     summary = {
         "task": args_cli.task,
         "checkpoint": resume_path,
@@ -634,11 +745,23 @@ def main(env_cfg, agent_cfg: dict):
         "num_steps_completed": len(step_metrics),
         "deterministic": args_cli.deterministic,
         "done_count": done_count,
-        "success_rate_mean": sum(success_values) / len(success_values) if success_values else None,
-        "success_rate_final": success_values[-1] if success_values else None,
-        "success_rate_last_window_mean": sum(success_values[-window:]) / window if success_values else None,
-        "reward_mean": sum(reward_values) / len(reward_values) if reward_values else None,
-        "reward_final": reward_values[-1] if reward_values else None,
+        "success_rate_mean": success_occupancy_mean,
+        "success_rate_final": success_occupancy_final,
+        "success_rate_last_window_mean": success_occupancy_last_window_mean,
+        "success_occupancy_mean": success_occupancy_mean,
+        "success_occupancy_final": success_occupancy_final,
+        "success_occupancy_last_window_mean": success_occupancy_last_window_mean,
+        "eval_success_rate": eval_success_rate,
+        "eval_success_rate_source": eval_success_rate_source,
+        "eval_success_hold_rate": first_attempt_summary["success_hold_rate"],
+        "eval_success_rate_definition": (
+            "Success rate over each env's first evaluation attempt, where an attempt is successful "
+            "if its per-env max in_success_region is >= 0.5. Completed attempts use the pre-reset "
+            "terminal state; unfinished first attempts use horizon-end state. "
+            "success_occupancy_* fields are per-step in_success_region occupancy and may show reset artifacts."
+        ),
+        "reward_mean": reward_mean,
+        "reward_final": reward_final,
         "video_enabled": args_cli.video,
         "video_folder": str(video_folder) if args_cli.video else None,
         "video_files": _latest_video_files(video_folder),
@@ -661,7 +784,19 @@ def main(env_cfg, agent_cfg: dict):
         "first_episode_reward_mean": _mean(first_episode_reward_values),
         "first_episode_metric_summaries": _summarize_step_metrics(first_episode_metrics),
         "completed_episode_count": completed_episode_summary["count"],
+        "completed_episode_success_rate": completed_episode_summary["success_rate"],
+        "completed_episode_success_hold_rate": completed_episode_summary["success_hold_rate"],
         "completed_episode_summary": completed_episode_summary,
+        "horizon_episode_count": horizon_episode_summary["count"],
+        "horizon_episode_summary": horizon_episode_summary,
+        "horizon_episode_outcomes": horizon_episode_outcomes,
+        "first_attempt_count": first_attempt_summary["count"],
+        "first_attempt_count_expected": num_envs,
+        "first_attempt_success_rate": first_attempt_summary["success_rate"],
+        "first_attempt_success_hold_rate": first_attempt_summary["success_hold_rate"],
+        "first_attempt_terminal_success_rate": first_attempt_summary["terminal_success_rate"],
+        "first_attempt_summary": first_attempt_summary,
+        "first_attempt_outcomes": first_attempt_outcomes,
         "episode_outcomes": completed_episode_outcomes,
         "metric_summaries": _summarize_step_metrics(step_metrics),
     }

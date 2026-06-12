@@ -6376,3 +6376,29 @@ Analysis:
 
 Cleanup / active jobs:
 - `squeue -u lzha` on both `a1001` and `l401` was empty after the training and eval jobs completed.
+
+## 2026-06-12T12:17:44-07:00 - exact eval success-rate logging
+
+Goal:
+- Make eval success reporting unambiguous for policy videos and parallel env evals.
+
+Issue:
+- The per-step `success_rate` scalar is an occupancy measure: fraction of envs currently in `in_success_region` after a step.
+- In video evals with auto-reset, `success_rate_final` can be `0.0` immediately after a successful episode resets, even when the episode actually succeeded.
+- Parallel evals also need a denominator that counts each env's initial attempt exactly once, rather than depending on which envs finish before the horizon.
+
+Change:
+- Updated `dextrah_lab/rl_games/eval_rollout.py` to keep the old `success_rate_*` keys as occupancy aliases and add explicit `success_occupancy_*` fields.
+- Added per-env first-attempt accounting:
+  - completed attempts use the pre-reset terminal probe state;
+  - unfinished first attempts use horizon-end probe state;
+  - `eval_success_rate` is the mean first-attempt success rate over envs, based on per-env max `in_success_region`.
+- Added `first_attempt_summary`, `first_attempt_outcomes`, `horizon_episode_summary`, `horizon_episode_outcomes`, `completed_episode_success_rate`, and hold-timer audit fields based on `time_in_success_region`.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py`
+- `git diff --check`
+
+Notes:
+- Existing seed `1781139395` reset-prior eval already shows the old ambiguity: `completed_episode_summary.success_rate=1.0` and video shows lift/hold, while `success_rate_final=0.0` because the env reset after success.
+- Future eval JSON should use `eval_success_rate` for the headline attempt success number and `success_occupancy_*` only for the instantaneous occupancy curve.
