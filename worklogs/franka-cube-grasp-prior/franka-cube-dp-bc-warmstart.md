@@ -14124,3 +14124,60 @@ Next:
 - Commit/deploy this helper and launch the 32-episode relabel job from an
   agent-owned l401 worktree, then fetch and inspect the gate report, videos,
   and accepted NPZ before any DP training.
+
+## 2026-06-12T12:52:13-07:00 - curobo32 contact-aware relabel launch
+
+Goal:
+- Generate executable contact-aware relabel data for all 32 current CuRobo
+  episodes in bounded l401 chunks.
+
+Change:
+- Local commits:
+  - `35e7e527d38a1f9b6484239aafb6728d973f6070`
+    (`Add contact relabel spec helper`)
+  - `aa2c65f676b32f7c16d66cecd57aa9db9d402c27`
+    (`Record contact relabel helper commit`)
+- Pushed branch `codex/franka-cube-diffusion-policy-bc` to origin.
+- l401 could not fetch `origin` because GitHub SSH auth failed
+  (`Permission denied (publickey)`). To keep deployment versioned instead of
+  copying source files directly, transferred a Git bundle artifact and fetched
+  that bundle into an agent-owned remote worktree.
+
+Version Control:
+- agent_id: `franka-cube-bc-relabel32`
+- local_head: `aa2c65f676b32f7c16d66cecd57aa9db9d402c27`
+- remote_code:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-bc-relabel32`
+- remote_head: `aa2c65f676b32f7c16d66cecd57aa9db9d402c27`
+- remote_status: detached clean
+- bundle:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/contact_relabel_specs/curobo32_20260612/dextrah_relabel32_aa2c65f.bundle`
+
+Command / Job:
+- Common command settings:
+  `DATASET=/results/dp_bc/phase_progress_curobo32/full_pick_lift_framefix_phaseprogress_20260612_022104.npz`,
+  `ORIENTATION_MODE=source`, `POSE_ACTION_FILTER=scale`,
+  `POSE_ACTION_LIMIT=0.95`, `CONTACT_ALIGN_STEPS=160`,
+  `CONTACT_ALIGN_REFERENCE=live_cube`, `CONTACT_ALIGN_THRESHOLD=0.055`,
+  `RESET_JOINT_BLEND_ALPHA=0.75`, `RESET_CUBE_POS_BLEND_ALPHA=1.0`,
+  `VARIANT=center_high30`, `CAPTURE_VIDEO=False`.
+- jobs:
+  - `1028616`:
+    `franka_cube_contact_relabel_curobo32_0_7_a0p75_source_livealign_manual_20260612_125202`
+  - `1028617`:
+    `franka_cube_contact_relabel_curobo32_8_15_a0p75_source_livealign_manual_20260612_125202`
+  - `1028618`:
+    `franka_cube_contact_relabel_curobo32_16_23_a0p75_source_livealign_manual_20260612_125202`
+  - `1028619`:
+    `franka_cube_contact_relabel_curobo32_24_31_a0p75_source_livealign_manual_20260612_125202`
+- expected remote outputs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/contact_relabel_sets/<run_name>/contact_relabel_set_summary.json`
+  and `contact_relabel_set_accepted.npz` for each chunk.
+
+Result:
+- status: launched; monitoring pending.
+
+Next:
+- Poll Slurm/logs, fetch completed chunk artifacts, inspect gate reports, then
+  either combine accepted NPZs for 32-episode DP training or diagnose failed
+  episodes before training.
