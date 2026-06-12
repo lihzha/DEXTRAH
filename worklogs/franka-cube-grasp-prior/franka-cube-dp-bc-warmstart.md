@@ -10712,3 +10712,63 @@ Decision:
 - Do not launch DP fine-tune, broad eval, or RL from this checkpoint.
 - Keep official-DP provenance and the eval-only correction code as a diagnostic
   tool only.
+
+## 2026-06-12T00:02:00-07:00 - plan coherent nearest-label action/phase diagnostic
+
+Goal:
+- Run one more bounded diagnostic before any training: test whether the
+  accepted relabel set can execute coherently when pose, gripper, and phase are
+  all taken from the same nearest support row instead of mixing corrected pose
+  with the DP gripper/runtime phase stream.
+
+Hypothesis:
+- If a coherent nearest-label correction passes or reaches lift, the current
+  blocker is the official-DP output stream and phase/gripper coordination, not
+  the DEXTRAH bridge/controller or the accepted relabel data.
+- If it still fails, the accepted four-episode set lacks local closed-loop
+  recovery/retention support even under an oracle-like nearest-label controller,
+  so DP training/eval remains blocked pending relabel/controller redesign.
+
+Planned Change:
+- Add an opt-in eval-only `action_correction_mode` to
+  `dextrah_lab/rl_games/eval_franka_cube_dp_policy.py`.
+- New mode should:
+  - use the existing support dataset and nearest support lookup;
+  - replace or blend all seven action dims with the nearest support label;
+  - optionally write the nearest row's 25D phase/progress features into the
+    lowdim observation before official-DP prediction for logging/coherence;
+  - record correction metadata in `support_trace.json/csv`.
+- Keep defaults unchanged and retain official Diffusion Policy checkpoint
+  loading/provenance. This remains a no-learning diagnostic.
+
+Validation:
+- local `py_compile` for touched Python files.
+- local `bash -n` for the l401 wrapper if wrapper choices change.
+- `git diff --check`.
+- Commit/push/deploy exact commit to the C-owned l401 worktree before launch.
+
+Cluster Gate:
+- One bounded matched source-joint video trace only:
+  `NUM_ENVS=1`, `NUM_STEPS=160`, `ACTION_CHUNK_STEPS=1`,
+  `PHASE_PROGRESS_MODE=contact_gated`, `ACTION_CORRECTION_MODE=<new coherent mode>`,
+  `CAPTURE_VIDEO=True`.
+
+Acceptance:
+- Fetch and inspect metrics, support trace, policy trace, MP4/contact sheet,
+  and plots.
+- This diagnostic can justify only a next small supervised/eval gate, not broad
+  DP training or RL.
+
+Implementation:
+- Added `ACTION_CORRECTION_MODE=nearest_label_full_action`.
+- The new mode uses the existing nearest-support lookup over the accepted
+  relabel dataset, then blends/replaces all seven action dimensions with that
+  label so pose and gripper come from the same row.
+- Added trace fields for full-action L2 before/after correction and
+  gripper before/after/label values.
+
+Local Validation:
+- `PYTHONPATH=$PWD /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/venv/bin/python -m py_compile dextrah_lab/rl_games/eval_franka_cube_dp_policy.py dextrah_lab/offline_dp_bc/diagnose_align_open_support_drift.py dextrah_lab/offline_dp_bc/make_closed_loop_support_report.py`
+  passed.
+- `bash -n cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh` passed.
+- `git diff --check` passed.

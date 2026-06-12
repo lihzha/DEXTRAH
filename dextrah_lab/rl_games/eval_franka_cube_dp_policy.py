@@ -134,13 +134,15 @@ parser.add_argument(
 )
 parser.add_argument(
     "--action_correction_mode",
-    choices=["disabled", "nearest_label_align_pose"],
+    choices=["disabled", "nearest_label_align_pose", "nearest_label_full_action"],
     default="disabled",
     help=(
         "Eval-only diagnostic action correction. 'nearest_label_align_pose' "
         "replaces/blends pose dims 0:6 with the nearest align_open support "
         "dataset label while runtime phase is align_open; gripper is left as "
-        "the DP output. This is not a trained policy result."
+        "the DP output. 'nearest_label_full_action' replaces/blends all seven "
+        "action dims with the nearest support label, coupling pose and gripper "
+        "to the same relabel row. These modes are not trained policy results."
     ),
 )
 parser.add_argument(
@@ -757,6 +759,31 @@ def _apply_eval_action_correction(
                     "pose_l2_after": float(np.linalg.norm(corrected[env_idx, :6] - label[:6])),
                 }
             )
+        elif mode == "nearest_label_full_action":
+            nearest_idx, nearest_distance = _nearest_support_row(support, lowdim_obs[env_idx])
+            label = np.asarray(support["action"][nearest_idx], dtype=np.float32)
+            corrected[env_idx, :] = (1.0 - blend) * corrected[env_idx, :] + blend * label
+            phase_id = int(support["phase_ids"][nearest_idx])
+            nearest_obs = np.asarray(support["obs"][nearest_idx], dtype=np.float32)
+            record.update(
+                {
+                    "applied": True,
+                    "nearest_demo_row": int(nearest_idx),
+                    "nearest_demo_phase": _phase_name_from_id(support["phase_names"], phase_id),
+                    "nearest_demo_distance": float(nearest_distance),
+                    "nearest_demo_phase_progress": (
+                        nearest_obs[21:25].astype(float).tolist() if nearest_obs.shape[0] >= 25 else None
+                    ),
+                    "label_action": label.astype(float).tolist(),
+                    "pose_l2_before": float(np.linalg.norm(original[:6] - label[:6])),
+                    "pose_l2_after": float(np.linalg.norm(corrected[env_idx, :6] - label[:6])),
+                    "action_l2_before": float(np.linalg.norm(original - label)),
+                    "action_l2_after": float(np.linalg.norm(corrected[env_idx] - label)),
+                    "gripper_before": float(original[6]),
+                    "gripper_after": float(corrected[env_idx, 6]),
+                    "gripper_label": float(label[6]),
+                }
+            )
         record["corrected_action"] = corrected[env_idx].astype(float).tolist()
         records.append(record)
     return corrected, records
@@ -856,6 +883,11 @@ def _collect_support_record(
         record["action_correction_nearest_demo_distance"] = action_correction.get("nearest_demo_distance")
         record["action_correction_pose_l2_before"] = action_correction.get("pose_l2_before")
         record["action_correction_pose_l2_after"] = action_correction.get("pose_l2_after")
+        record["action_correction_action_l2_before"] = action_correction.get("action_l2_before")
+        record["action_correction_action_l2_after"] = action_correction.get("action_l2_after")
+        record["action_correction_gripper_before"] = action_correction.get("gripper_before")
+        record["action_correction_gripper_after"] = action_correction.get("gripper_after")
+        record["action_correction_gripper_label"] = action_correction.get("gripper_label")
     return record
 
 
@@ -921,6 +953,11 @@ def _write_support_csv(path: Path, records: list[dict[str, Any]]) -> None:
         "action_correction_nearest_demo_distance",
         "action_correction_pose_l2_before",
         "action_correction_pose_l2_after",
+        "action_correction_action_l2_before",
+        "action_correction_action_l2_after",
+        "action_correction_gripper_before",
+        "action_correction_gripper_after",
+        "action_correction_gripper_label",
         "action_correction",
     ]
     path.parent.mkdir(parents=True, exist_ok=True)
