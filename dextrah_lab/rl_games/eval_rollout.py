@@ -75,6 +75,15 @@ parser.add_argument(
     ),
 )
 parser.add_argument(
+    "--reference_mix_z_alpha",
+    type=float,
+    default=None,
+    help=(
+        "Optional eval-only override for action dim2 under policy_reference_mix* action sources. "
+        "When unset, the z/lift dimension uses --reference_mix_alpha like every other action dimension."
+    ),
+)
+parser.add_argument(
     "--hold_phase_start",
     type=float,
     default=0.42,
@@ -802,6 +811,36 @@ def _add_policy_component_metrics(
         metrics["residual_gate_max"] = _tensor_stat_float(residual_gate, "max")
 
 
+def _reference_mix_override_alpha(value: float | None, default_alpha: float) -> float:
+    if value is None:
+        return default_alpha
+    return max(0.0, min(1.0, float(value)))
+
+
+def _mix_policy_reference_actions(
+    raw_policy_actions: torch.Tensor,
+    reference_actions: torch.Tensor,
+    *,
+    alpha: float,
+    z_alpha: float,
+    gripper_alpha: float,
+) -> torch.Tensor:
+    mixed_actions = torch.clamp((1.0 - alpha) * raw_policy_actions + alpha * reference_actions, -1.0, 1.0)
+    if mixed_actions.shape[-1] >= 3 and z_alpha != alpha:
+        mixed_actions[:, 2] = torch.clamp(
+            (1.0 - z_alpha) * raw_policy_actions[:, 2] + z_alpha * reference_actions[:, 2],
+            -1.0,
+            1.0,
+        )
+    if mixed_actions.shape[-1] >= 7 and gripper_alpha != alpha:
+        mixed_actions[:, 6] = torch.clamp(
+            (1.0 - gripper_alpha) * raw_policy_actions[:, 6] + gripper_alpha * reference_actions[:, 6],
+            -1.0,
+            1.0,
+        )
+    return mixed_actions
+
+
 def _actions_from_source(
     action_source: str,
     task_env,
@@ -834,25 +873,23 @@ def _actions_from_source(
     if action_source == "policy_reference_mix":
         reference_actions = _reference_delta_actions(task_env)
         alpha = max(0.0, min(1.0, float(args_cli.reference_mix_alpha)))
-        gripper_alpha = (
-            alpha
-            if args_cli.reference_mix_gripper_alpha is None
-            else max(0.0, min(1.0, float(args_cli.reference_mix_gripper_alpha)))
-        )
+        z_alpha = _reference_mix_override_alpha(args_cli.reference_mix_z_alpha, alpha)
+        gripper_alpha = _reference_mix_override_alpha(args_cli.reference_mix_gripper_alpha, alpha)
         raw_policy_actions, base_policy_actions, residual_policy_actions, residual_gate = _policy_action_components(
             agent,
             task_env,
             obs,
             teacher_alpha=alpha,
         )
-        mixed_actions = torch.clamp((1.0 - alpha) * raw_policy_actions + alpha * reference_actions, -1.0, 1.0)
-        if mixed_actions.shape[-1] >= 7 and gripper_alpha != alpha:
-            mixed_actions[:, 6] = torch.clamp(
-                (1.0 - gripper_alpha) * raw_policy_actions[:, 6] + gripper_alpha * reference_actions[:, 6],
-                -1.0,
-                1.0,
-            )
+        mixed_actions = _mix_policy_reference_actions(
+            raw_policy_actions,
+            reference_actions,
+            alpha=alpha,
+            z_alpha=z_alpha,
+            gripper_alpha=gripper_alpha,
+        )
         metrics["reference_mix_alpha"] = alpha
+        metrics["reference_mix_z_alpha"] = z_alpha
         metrics["reference_mix_gripper_alpha"] = gripper_alpha
         _add_policy_component_metrics(metrics, raw_policy_actions, base_policy_actions, residual_policy_actions, residual_gate)
         _add_action_signal_metrics(metrics, "reference_delta_action", reference_actions)
@@ -864,25 +901,23 @@ def _actions_from_source(
     if action_source == "policy_reference_mix_hold":
         reference_actions = _reference_delta_actions(task_env)
         alpha = max(0.0, min(1.0, float(args_cli.reference_mix_alpha)))
-        gripper_alpha = (
-            alpha
-            if args_cli.reference_mix_gripper_alpha is None
-            else max(0.0, min(1.0, float(args_cli.reference_mix_gripper_alpha)))
-        )
+        z_alpha = _reference_mix_override_alpha(args_cli.reference_mix_z_alpha, alpha)
+        gripper_alpha = _reference_mix_override_alpha(args_cli.reference_mix_gripper_alpha, alpha)
         raw_policy_actions, base_policy_actions, residual_policy_actions, residual_gate = _policy_action_components(
             agent,
             task_env,
             obs,
             teacher_alpha=alpha,
         )
-        mixed_actions = torch.clamp((1.0 - alpha) * raw_policy_actions + alpha * reference_actions, -1.0, 1.0)
-        if mixed_actions.shape[-1] >= 7 and gripper_alpha != alpha:
-            mixed_actions[:, 6] = torch.clamp(
-                (1.0 - gripper_alpha) * raw_policy_actions[:, 6] + gripper_alpha * reference_actions[:, 6],
-                -1.0,
-                1.0,
-            )
+        mixed_actions = _mix_policy_reference_actions(
+            raw_policy_actions,
+            reference_actions,
+            alpha=alpha,
+            z_alpha=z_alpha,
+            gripper_alpha=gripper_alpha,
+        )
         metrics["reference_mix_alpha"] = alpha
+        metrics["reference_mix_z_alpha"] = z_alpha
         metrics["reference_mix_gripper_alpha"] = gripper_alpha
         _add_policy_component_metrics(metrics, raw_policy_actions, base_policy_actions, residual_policy_actions, residual_gate)
         _add_action_signal_metrics(metrics, "reference_delta_action", reference_actions)
@@ -1409,6 +1444,20 @@ def main(env_cfg, agent_cfg: dict):
                 if args_cli.reference_mix_gripper_alpha is None
                 else max(0.0, min(1.0, float(args_cli.reference_mix_gripper_alpha)))
             )
+            if args_cli.action_source in MIX_ACTION_SOURCES
+            else None
+        ),
+        "reference_mix_z_alpha": (
+            (
+                max(0.0, min(1.0, float(args_cli.reference_mix_alpha)))
+                if args_cli.reference_mix_z_alpha is None
+                else max(0.0, min(1.0, float(args_cli.reference_mix_z_alpha)))
+            )
+            if args_cli.action_source in MIX_ACTION_SOURCES
+            else None
+        ),
+        "reference_mix_z_alpha_override": (
+            args_cli.reference_mix_z_alpha is not None
             if args_cli.action_source in MIX_ACTION_SOURCES
             else None
         ),

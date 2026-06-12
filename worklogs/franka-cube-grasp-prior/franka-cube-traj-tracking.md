@@ -5953,6 +5953,42 @@ Verdict:
 Active Jobs:
 - none (`squeue -u lzha` on l401 showed no active jobs after fetching artifacts).
 
+## 2026-06-11T23:24:00-07:00 - z+gripper reference-mix diagnostic plan
+
+Goal:
+- Test whether the boundary failures are specifically coupled vertical lift timing plus gripper closure, rather than pure gripper closure or global pose tracking.
+- Keep this eval-only with videos/contact sheets. No PPO/RL scale-up.
+
+Hypothesis:
+- Gripper-only override showed mixed results: alpha0.10 gained one success, alpha0.20 lost one success.
+- If the issue is close+lift timing, overriding both action dim2 (z/lift) and dim6 (gripper) toward the reference while leaving the other action dimensions at low global alpha should improve low-alpha sustained success.
+- If this regresses or still leaves failures on the table, then the bottleneck is not just vertical lift and closure; it is coupled contact geometry/XY pose/timing, so the clean handoff plan should not rely on a simple close+lift override.
+
+Planned Change:
+- Add optional `--reference_mix_z_alpha` to `dextrah_lab/rl_games/eval_rollout.py` for `policy_reference_mix*` sources.
+- Add `REFERENCE_MIX_Z_ALPHA` passthrough to `cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`.
+- Add the z-alpha override fields to `dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py`.
+- Defaults preserve current behavior exactly: if unset, dim2 uses the scalar `REFERENCE_MIX_ALPHA`.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py`
+- `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- `git diff --check`
+- commit/push/deploy exact commit to the l401 agent worktree before launch.
+
+Planned Video Jobs If Validation Passes:
+- Run six labeled no-reset videos with `REFERENCE_MIX_Z_ALPHA=1.0`, `REFERENCE_MIX_GRIPPER_ALPHA=1.0`, and global alphas `0.10/0.15/0.20`.
+- Use the same success/failure camera envs from the no-override boundary: alpha0.10 env3/env0, alpha0.15 env1/env0, alpha0.20 env1/env2.
+- Each video run writes metrics for all four envs, so the report can compare aggregate effects and selected-camera behavior.
+
+Acceptance:
+- Target unsafe max must remain `0`.
+- Videos/contact sheets must show whether z+gripper assistance creates real held lifts or causes the hand to lift away from an ungrasped cube.
+- No PPO/RL launch unless a credible low-alpha handoff target is visually and numerically established.
+
+Active Jobs:
+- none before implementation.
+
 ## 2026-06-11T22:58:00-07:00 - no-reset boundary visual sweep plan
 
 Goal:
