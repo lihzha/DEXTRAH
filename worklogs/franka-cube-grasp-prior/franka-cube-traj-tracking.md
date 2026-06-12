@@ -5323,3 +5323,86 @@ Validation Before Launch:
 Notes:
 - Old `actionscale-rewinf-diag-video480-step-0.mp4` remains obsolete failed diagnostic evidence.
 - Compact trajectory reference remains `curobo_validated=false`.
+
+## 2026-06-11T21:03:02-07:00 - frozen-base residual adapter supervised launch
+
+Implementation:
+- implementation commit: `6094b33c5daa283076a660e55a0061a3a2d75f9b` (`Add frozen-base residual BC diagnostic`), pushed to `origin/codex/franka-cube-trajectory-tracking`.
+- remote source: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking`, detached at `6094b33c5daa283076a660e55a0061a3a2d75f9b` via the agent-owned l401 bare Git mirror.
+- local validation passed:
+  - `python3 -m py_compile dextrah_lab/rl_games/bc_reference_action_imitation.py dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py dextrah_lab/rl_games/analyze_traj_tracking_action_semantics.py dextrah_lab/rl_games/residual_action_adapter.py`
+  - `bash -n cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh`
+  - `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+  - `git diff --check`
+- local runtime adapter smoke was not available because this workstation Python lacks `torch`; runtime validation is the l401 DEXTRAH container.
+
+Command / Job:
+- job_id: `1028114`
+- run_name: `franka_cube_traj_tracking_bc_dagger_residual_tm025_tm010_all_20260611_210302`
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:45:00 --job-name=bc_resid --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_bc_dagger_residual_tm025_tm010_all_20260611_210302,NUM_ENVS=8,COLLECTION_STEPS=520,TRAIN_STEPS=400,BATCH_SIZE=1024,LEARNING_RATE=0.00005,VALIDATION_FRACTION=0.2,LOSS_DIMS=all,EVAL_INTERVAL=25,SEED=72,COLLECTION_ACTION_SOURCE=teacher_mix,COLLECTION_TEACHER_ALPHA=0.10,REHEARSAL_DATASET_PATHS=/results/bc/franka_cube_traj_tracking_bc_dagger_tm025_all_20260611_185900/reference_action_dataset.pt,REHEARSAL_DATASET_NAMES=tm025_rehearsal,SOURCE_BATCH_MODE=balanced,SOURCE_LOSS_WEIGHTS=current_teacher_mix_alpha0p10=1__COMMA__tm025_rehearsal=0,BEST_SCORE_WEIGHTS=val_source_current_teacher_mix_alpha0p10_l2=1__COMMA__val_source_tm025_rehearsal_l2=3,EARLY_STOP_PATIENCE=8,RESIDUAL_ADAPTER_ENABLED=True,RESIDUAL_HIDDEN_DIM=64,RESIDUAL_MAX_ACTION=0.5,RESIDUAL_PRESERVE_SOURCES=tm025_rehearsal,RESIDUAL_PRESERVE_WEIGHT=50,RESIDUAL_L2_WEIGHT=0.001,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json,CHECKPOINT=/results/bc/franka_cube_traj_tracking_bc_dagger_tm025_all_20260611_185900/nn/bc_reference_action_imitation.pth cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/bc/franka_cube_traj_tracking_bc_dagger_residual_tm025_tm010_all_20260611_210302`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bc_franka_cube_1028114.out`
+
+Acceptance:
+- supervised-only gate. No selector/video/PPO launch unless this run materially improves per-source metrics.
+- tm0.25 rehearsal val L2 preferred `<=0.045`, hard ceiling `<=0.055`.
+- current alpha `0.10` source val L2 must improve over latest distill `0.182791` and balanced `0.15143`; ideally approach `~0.079`.
+- global val L2 should not regress relative to `1028053` (`0.094008`) if considering rollout.
+- residual/base-preservation metrics must show tm0.25 residual magnitude near zero.
+
+## 2026-06-11T21:05:35-07:00 - frozen-base residual adapter supervised result
+
+Job:
+- job_id: `1028114`
+- scheduler state: `COMPLETED 0:0`, elapsed `00:01:08`, node `pool0-00030`.
+- remote run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/bc/franka_cube_traj_tracking_bc_dagger_residual_tm025_tm010_all_20260611_210302`
+- remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bc_franka_cube_1028114.out`
+- local fetched run_dir: `cluster_results/l401/franka_cube_traj_tracking_bc_dagger_residual_tm025_tm010_all_20260611_210302`
+- local fetched log: `cluster_results/l401/slurm_logs/bc_franka_cube_1028114.out`
+
+Artifacts:
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_residual_tm025_tm010_all_20260611_210302/report.md`
+- aggregate loss plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_residual_tm025_tm010_all_20260611_210302/bc_loss_plot.png`
+- source/residual plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_residual_tm025_tm010_all_20260611_210302/bc_source_metric_plot.png`
+- metrics: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_residual_tm025_tm010_all_20260611_210302/bc_metrics.json`
+- checkpoint: `/results/bc/franka_cube_traj_tracking_bc_dagger_residual_tm025_tm010_all_20260611_210302/nn/bc_reference_action_imitation.pth`
+- dataset: `/results/bc/franka_cube_traj_tracking_bc_dagger_residual_tm025_tm010_all_20260611_210302/reference_action_dataset.pt`
+
+Configuration Evidence:
+- residual adapter enabled: `true`.
+- base actor checkpoint: tm0.25 BC checkpoint; base actor weights are frozen and stored unchanged in the output checkpoint.
+- residual hidden dim / max action: `64 / 0.5`.
+- residual preserve sources: `['tm025_rehearsal']`.
+- residual preserve/l2 weights: `50.0 / 0.001`.
+- reference-label source weights: `{'current_teacher_mix_alpha0p10': 1.0, 'tm025_rehearsal': 0.0}`.
+- best-score weights: `{'val_source_current_teacher_mix_alpha0p10_l2': 1.0, 'val_source_tm025_rehearsal_l2': 3.0}`.
+- selected checkpoint step: `400`; `early_stop_triggered=False`.
+- reference caveat remains: compact reference is `curobo_validated=false`.
+
+Supervised Metrics:
+- frozen-base current alpha `0.10` source val L2: `0.703556`.
+- selected current alpha `0.10` source val L2: `0.687492`; this is only a tiny improvement from base and is much worse than latest distill (`0.182791`) and balanced (`0.15143`), far from tm0.10 (`~0.079`).
+- selected current alpha `0.10` close/up/gripper abs: `0.119141/0.221269/0.314976`.
+- frozen-base tm0.25 rehearsal val L2: `0.035162`.
+- selected tm0.25 rehearsal val L2: `0.038308`; this passes the preferred preservation gate (`<=0.045`).
+- selected tm0.25 rehearsal close/up/gripper abs: `0.006304/0.012121/0.015197`.
+- selected global val L2: `0.372653`, far worse than the rollout consideration ceiling from 1028053 (`0.094008`) because the current alpha `0.10` source remains largely unfitted.
+- residual magnitude on current alpha `0.10` val source: `0.024956` L2.
+- residual magnitude on tm0.25 rehearsal val source: `0.012248` L2.
+- base-preservation error on tm0.25 rehearsal val source: `0.012135` L2.
+
+Verdict:
+- supervised gate failure.
+- No selector sweep, no videos, no PPO, and no RL scale-up launched from this checkpoint.
+
+Analysis:
+- This attempt achieved the construction goal: the base actor was frozen and tm0.25 label behavior was preserved inside the preferred gate (`0.038308`).
+- The same construction prevented meaningful correction on lower-assistance states. The residual stayed small on both sources; current alpha `0.10` val L2 improved by only `0.016063` from the frozen base (`0.703556 -> 0.687492`).
+- The result is useful because it separates two failure modes:
+  - full actor updates can fit current-source labels but damage tm0.25 behavior;
+  - a strongly preserved residual adapter can preserve tm0.25 but cannot reach current-source labels at this constraint/weight setting.
+- This does not justify rollout. If the project continues this line, the next supervised-only diagnostic should explore a more expressive or selectively gated residual with a weaker/harder preservation tradeoff, or collect lower-assistance data closer to tm0.25's reachable manifold. It should still gate on supervised metrics before any selector/video.
+- tm0.25 remains the best B checkpoint; old `actionscale-rewinf-diag-video480-step-0.mp4` remains obsolete failed diagnostic evidence.
+
+Active Jobs:
+- No selector/video/PPO jobs launched for this attempt.
