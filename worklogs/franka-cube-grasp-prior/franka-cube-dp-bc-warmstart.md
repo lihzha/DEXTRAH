@@ -10166,3 +10166,104 @@ Next:
 - Do not launch a video or broad evaluation from this checkpoint.
 - If continuing, run a bounded action/phase timing diagnostic from the fetched
   trace and exact dataset windows before any new Isaac job.
+
+## 2026-06-11T23:25:00-07:00 - plan offline 25D action/phase timing diagnostic
+
+Goal:
+- Diagnose why the 25D phase/progress checkpoint diverges in closed loop even
+  though runtime feature parity and reset/history plumbing passed.
+
+Scope:
+- Offline only: load the official Diffusion Policy checkpoint locally, query
+  exact 25D dataset windows and selected live trace windows from `1028188`,
+  and compare predictions against dataset labels at offsets
+  `[-2,-1,0,1,2,4,7]`.
+- No Isaac job, no video, no DP training, no RL.
+
+Command / Artifacts:
+- script:
+  `python -m dextrah_lab.offline_dp_bc.diagnose_dp_action_semantics`
+- checkpoint:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_lrcentering_a075_set4_phaseprogress_official_dp_smoke_20260611_224001/official_dp_train/checkpoints/latest.ckpt`
+- dataset:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_lrcentering_a075_set4_phaseprogress_official_dp_smoke_20260611_224001/contact_relabel_set_phase_progress.npz`
+- trace:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_trace128_no_video_20260611_230430/policy_trace.json`
+- output dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/action_semantics/phaseprogress_set4_trace1028188_20260611_2325`
+
+Acceptance:
+- Produce CSV/JSON/report and plots for action offsets, per-channel
+  prediction-vs-label, and gripper sign behavior.
+- Check whether the returned official-DP action aligns with `a[t]` or future
+  labels, whether live trace re-query reproduces the executed trace actions,
+  and whether phase schedule changes cause premature close/lift relative to
+  live support.
+
+## 2026-06-11T23:33:00-07:00 - offline action/phase timing diagnostic result
+
+Command:
+- cwd:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- command:
+  `PYTHONPATH=$DEX:$DP_ROOT:$PYTHONPATH $VENV -m dextrah_lab.offline_dp_bc.diagnose_dp_action_semantics --checkpoint $RUN/official_dp_train/checkpoints/latest.ckpt --dataset $RUN/contact_relabel_set_phase_progress.npz --output-dir $OUT --diffusion-policy-root $DP_ROOT --device cpu --num-inference-steps 100 --policy-source auto --episode-index 0 --row-selector gripper_open --row-selector gripper_closed --row-selector lift_high --samples-per-selector 8 --trace $TRACE --max-live-records-per-trace 5 --report-all-channels`
+- job_id: `n/a` local offline CPU diagnostic.
+- output dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/action_semantics/phaseprogress_set4_trace1028188_20260611_2325`
+
+Artifacts:
+- report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/action_semantics/phaseprogress_set4_trace1028188_20260611_2325/action_semantics_report.md`
+- offset plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/action_semantics/phaseprogress_set4_trace1028188_20260611_2325/action_semantics_offsets.png`
+- gripper plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/action_semantics/phaseprogress_set4_trace1028188_20260611_2325/gripper_label_vs_prediction.png`
+- per-channel plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/action_semantics/phaseprogress_set4_trace1028188_20260611_2325/per_channel_first_action_scatter.png`
+- CSV/JSON:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/action_semantics/phaseprogress_set4_trace1028188_20260611_2325/action_semantics_rows.csv`
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/action_semantics/phaseprogress_set4_trace1028188_20260611_2325/action_semantics_summary.json`
+
+Result:
+- status: `failed offline semantics gate`, but the failure is now diagnostic.
+- policy source: `ema`; official return start index `1`
+  (`oa_step_convention=True`), `n_obs_steps=2`, `n_action_steps=8`,
+  `horizon=16`.
+- gripper gate: `false`.
+  - open sign match: `0.8333`.
+  - closed/lift sign match: `0.9444`.
+  - threshold: `0.95`.
+- exact demo rows:
+  - episode start: predicted gripper `0.901`, label `+1`.
+  - first close_hold row 22: predicted gripper `0.041`, label `-1`
+    (ambiguous/late close at boundary).
+  - first lift row 102: predicted gripper `-0.923`, label `-1`.
+- live trace rows:
+  - live start re-query: predicted gripper `+1`, label `+1`,
+    nearest distance `0.0`.
+  - live first negative/hard-close rows are nearest align_open rows 18/19
+    with labels `+1`, but the re-queried policy predicts closed gripper
+    (`-0.893` / `-0.880`) because the runtime phase feature has already
+    advanced to close_hold.
+  - live nearest distances at those close events are already high
+    (`0.804` and `0.886`).
+
+Analysis:
+- This does not look like a raw gripper sign flip: exact open and lift rows
+  mostly have the correct sign, and the normalizer reports gripper input range
+  `[-1, +1]`.
+- The concrete failure mode is phase/support timing. The deterministic runtime
+  phase schedule follows the dataset clock, but closed-loop robot/cube geometry
+  lags and is still nearest to align_open rows when phase_close_hold becomes
+  active. The phase-conditioned policy then closes according to phase, not
+  according to live contact geometry.
+- This explains why 25D offline smokes passed but the matched-reset trace
+  failed: offline labels are queried on-manifold; live states after a few steps
+  are off-manifold, yet the phase feature advances anyway.
+
+Next:
+- Do not run video, broad eval, BC retrain, or RL from this checkpoint.
+- Next bounded implementation should test a geometry/contact-gated runtime
+  phase provider: keep `phase_align_open=1` until live support/contact geometry
+  crosses a close-safe threshold, then advance to close_hold/lift. Validate
+  offline logic first, then at most one tiny no-video matched-reset trace.
