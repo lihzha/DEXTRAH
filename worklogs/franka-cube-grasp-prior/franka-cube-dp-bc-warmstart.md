@@ -6477,7 +6477,87 @@ Acceptance:
   sign for open rows and closed/lift rows. No closed-loop eval on failure.
 
 Result:
-- status: launching.
+- status: initial launch failed before training.
+- error:
+  Hydra rejected `policy.action_loss_weights=[1,1,1,1,1,1,8]` because the
+  config is structured and the key is new. This is a launch syntax issue.
+- fix:
+  Relaunch with additive override
+  `+policy.action_loss_weights=[1,1,1,1,1,1,8]`.
+
+## 2026-06-11T18:44:00-07:00 - weighted gripper-loss bounded pretrain result
+
+Goal:
+- Evaluate whether the weighted gripper-loss official-DP checkpoint fixes
+  open/closed/lift gripper sign under row-conditioned smokes.
+
+Result:
+- status: partially passed; no closed-loop eval launched.
+- run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_pretrain/contact_relabel_official_dp_debug_pretrain100_weightedgrip8_20260611_1843`
+- checkpoint:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_pretrain/contact_relabel_official_dp_debug_pretrain100_weightedgrip8_20260611_1843/official_dp_train/checkpoints/latest.ckpt`
+- official DP policy target:
+  `dextrah_lab.offline_dp_bc.weighted_diffusion_policy.WeightedDiffusionUnetLowdimPolicy`
+- train/val loss:
+  weighted train `2.13880 -> 0.04900`, weighted val
+  `2.13588 -> 0.16774`, `train_action_mse_error=0.19449`.
+- 8-step inference smokes: still `needs_review`; bulk gripper gate failed
+  with open sign match `0.4545`, closed/lift sign match `0.5778`.
+- 100-step inference smokes: row-conditioned selectors passed for both
+  direct official-DP action and PPO bridge action:
+  - `first`: label `+1`, direct gripper `0.952..1.000`, bridge
+    `0.907..1.000`.
+  - `gripper_open`: label `+1`, direct `0.927..1.000`, bridge
+    `0.818..1.000`.
+  - `gripper_closed`: label `-1`, direct `-1.000..-0.966`, bridge
+    `-1.000..-0.973`.
+  - `lift_high`: label `-1`, direct `-1.000..-0.965`, bridge
+    `-1.000..-0.971`.
+- 100-step bulk action-semantics audit:
+  aggregate gripper gate `pass`; open sign match `1.0`, closed/lift sign
+  match `0.9556`. One exact first `close_hold` demo reference still predicted
+  open (`+0.38`), so this is a gripper-sign mechanics pass, not a closed-loop
+  readiness claim.
+
+Viewer URLs:
+- weighted pretrain report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_pretrain/contact_relabel_official_dp_debug_pretrain100_weightedgrip8_20260611_1843/official_dp_pretrain_report.md`
+- weighted loss plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_pretrain/contact_relabel_official_dp_debug_pretrain100_weightedgrip8_20260611_1843/loss_curves.png`
+- 8-step gripper plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_pretrain/contact_relabel_official_dp_debug_pretrain100_weightedgrip8_20260611_1843/gripper_sign_audit/gripper_label_vs_prediction.png`
+- 100-step gripper report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_pretrain/contact_relabel_official_dp_debug_pretrain100_weightedgrip8_20260611_1843/gripper_inference100_report.md`
+- 100-step gripper plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_pretrain/contact_relabel_official_dp_debug_pretrain100_weightedgrip8_20260611_1843/gripper_sign_audit_100steps/gripper_label_vs_prediction.png`
+- 100-step per-channel plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_pretrain/contact_relabel_official_dp_debug_pretrain100_weightedgrip8_20260611_1843/gripper_sign_audit_100steps/per_channel_first_action_scatter.png`
+- 100-step summary JSON:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_pretrain/contact_relabel_official_dp_debug_pretrain100_weightedgrip8_20260611_1843/gripper_inference100_summary.json`
+- resolved config:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_pretrain/contact_relabel_official_dp_debug_pretrain100_weightedgrip8_20260611_1843/official_dp_train/.hydra/config.yaml`
+- train stdout:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_pretrain/contact_relabel_official_dp_debug_pretrain100_weightedgrip8_20260611_1843/logs/official_dp_debug_pretrain.log`
+
+Analysis:
+- The gripper sign incoherence was not a label sign, normalizer, bridge flip,
+  or EMA-only bug. It is sensitive to diffusion sampling noise and loss
+  weighting. The accepted bounded setting is currently: weighted gripper loss
+  `8`, `pred_action_steps_only=true`, and `num_inference_steps=100`.
+- The 8-step checkpoint smokes for this checkpoint remain invalid for behavior
+  claims. Any later closed-loop eval must use the 100-step inference setting
+  and trace action timing.
+- The first close-boundary reference remains a risk; a closed-loop eval could
+  still delay close by one/few steps. This should be traced explicitly rather
+  than hidden.
+
+Next:
+- Proposed next action, not launched here: a bounded no-video closed-loop
+  DEXTRAH/Isaac trace using this weighted checkpoint with
+  `num_inference_steps=100`, `ACTION_CHUNK_STEPS=1` or a very small chunk,
+  support tracing, gripper/EE/cube plots, and contact sheet/video only if the
+  no-video trace is sane.
 
 ## 2026-06-11T18:42:00-07:00 - pred-action-steps-only bounded pretrain result and weighted-loss plan
 
@@ -6528,3 +6608,39 @@ Next:
   `policy._target_=dextrah_lab.offline_dp_bc.weighted_diffusion_policy.WeightedDiffusionUnetLowdimPolicy`,
   `pred_action_steps_only=true`, and gripper loss weight `8`. Stop after
   checkpoint smokes and action-semantics artifacts.
+
+## 2026-06-11T18:43:00-07:00 - weighted gripper-loss bounded pretrain launch
+
+Goal:
+- Test whether a per-channel gripper loss weight fixes row-conditioned gripper
+  sign while keeping the accepted 21D contact-aware dataset and PPO bridge
+  schema unchanged.
+
+Change:
+- Added `dextrah_lab.offline_dp_bc.weighted_diffusion_policy.WeightedDiffusionUnetLowdimPolicy`,
+  a small subclass of the official lowdim Diffusion Policy that only applies
+  action-channel weights inside `compute_loss`. Inference, normalizer, sampler,
+  and model architecture remain official DP.
+
+Version Control:
+- implementation_commit: `c7b9701cf06d6a1aea05647519102d030a7e3347`
+- push/pull: pushed to `origin/codex/franka-cube-diffusion-policy-bc`
+- changed_files:
+  `dextrah_lab/offline_dp_bc/weighted_diffusion_policy.py`,
+  `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`.
+
+Command / Job:
+- job_id: `n/a`, local RTX 6000 debug pretrain.
+- planned run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_pretrain/contact_relabel_official_dp_debug_pretrain100_weightedgrip8_20260611_1843`
+- train command:
+  `PYTHONPATH=$DP:$DEX $VENV/bin/python train.py --config-dir $DEX/dextrah_lab/offline_dp_bc/config --config-name franka_cube_lowdim_dp policy._target_=dextrah_lab.offline_dp_bc.weighted_diffusion_policy.WeightedDiffusionUnetLowdimPolicy 'policy.action_loss_weights=[1,1,1,1,1,1,8]' task.dataset_path=$DATASET task.dataset.val_ratio=0.25 task.dataset.action_normalizer=limits_clamp_constant pred_action_steps_only=true training.device=cuda:0 training.num_epochs=100 training.max_train_steps=20 training.max_val_steps=4 training.lr_warmup_steps=10 training.checkpoint_every=10 policy.num_inference_steps=8 dataloader.batch_size=32 val_dataloader.batch_size=32 hydra.run.dir=$RUN/official_dp_train`
+
+Acceptance:
+- Same as previous gate: finite loss reduction plus row-conditioned gripper
+  sign pass for open rows and closed/lift rows. Failure means no closed-loop
+  eval and likely requires explicit phase/progress conditioning or a
+  deterministic gripper schedule wrapper.
+
+Result:
+- status: launching.
