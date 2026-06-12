@@ -4539,3 +4539,30 @@ Next bounded plan:
   - acceptance before eval launch: held-out all-dim MSE/L2 and close/up/gripper abs decrease; checkpoint written at expected path.
 - If that supervised gate passes, run the same alpha selector/eval bundle for `0.0`, `0.5`, `0.75`, and `1.0`, followed by targeted videos for the lowest-alpha success plus alpha `0.0` failure and alpha `1.0` context.
 - Success criterion for considering any later PPO/RL handoff: low-alpha success rate improves beyond the current `1/4` without target-safety regression and with action semantics showing lower raw/reference error in close/lift/hold windows.
+
+## 2026-06-11T18:59:00-07:00 - teacher-mix DAgger tm0.25 launch
+
+Goal:
+- Run the next bounded on-policy/DAgger BC collection with lower teacher support to test whether policy-reached states closer to low-alpha handoff improve raw-policy imitation.
+
+Version Control:
+- agent_id: `franka-cube-traj-tracking`
+- local_branch: `codex/franka-cube-trajectory-tracking`
+- source_code_commit: `114b86d7019b5ac59ecfbd8306798a5ce6ea0e39`
+- worklog_commit_before_launch: `8678afdc57add0ce97284816a63a03fecc2ed04f`
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking`
+- remote_commit/status: detached at `114b86d7019b5ac59ecfbd8306798a5ce6ea0e39`, clean.
+- note: l401 `git fetch origin` failed with `Permission denied (publickey)`; `8678afd` differs from `114b86d` only in this worklog, so the launched source code is identical to the latest code-bearing commit.
+
+Command / Job:
+- job_id: `1027981`
+- run_name: `franka_cube_traj_tracking_bc_dagger_tm025_all_20260611_185900`
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:35:00 --job-name=bc_dagger_tm025 --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_bc_dagger_tm025_all_20260611_185900,NUM_ENVS=8,COLLECTION_STEPS=520,TRAIN_STEPS=400,BATCH_SIZE=1024,LEARNING_RATE=0.00015,VALIDATION_FRACTION=0.2,LOSS_DIMS=all,EVAL_INTERVAL=25,SEED=66,COLLECTION_ACTION_SOURCE=teacher_mix,COLLECTION_TEACHER_ALPHA=0.25,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json,CHECKPOINT=/results/bc/franka_cube_traj_tracking_bc_dagger_tm05_all_20260611_184300/nn/bc_reference_action_imitation.pth cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/bc/franka_cube_traj_tracking_bc_dagger_tm025_all_20260611_185900`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bc_franka_cube_1027981.out`
+
+Acceptance:
+- wrapper echoes `LOSS_DIMS=all`, `COLLECTION_ACTION_SOURCE=teacher_mix`, `COLLECTION_TEACHER_ALPHA=0.25`.
+- `bc_metrics.json`, `bc_loss_curve.csv`, `bc_loss_plot.png`, `report.md`, dataset, and checkpoint are written.
+- supervised held-out all-dim MSE/L2 and close/up/gripper abs decrease before any eval launch.
+- if supervised gate passes, run selector evals alpha `0.0`, `0.5`, `0.75`, `1.0`; then targeted videos for alpha `0.0` failure, lowest-alpha success, and alpha `1.0` context.
