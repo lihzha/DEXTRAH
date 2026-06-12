@@ -4096,3 +4096,50 @@ Inspection Verdict:
 Next recommendation:
 - Stay diagnostic-only; no PPO/A100.
 - Build closed-loop corrective labels rather than more PPO from this BC checkpoint. The next bounded label-generation diagnostic should sweep/solve close-force/width and lift timing under the same pass7 reset distribution, using actual lift/contact success as the gate, before any new supervised checkpoint or PPO smoke.
+
+## 2026-06-11 21:17 PDT - plan: corrective label recipe sweep
+
+Goal:
+- Find a pass7-reset corrective label recipe that actually clamps and lifts the cube before any new BC/RL work.
+
+Hypothesis:
+- The current BC label recipe fails because `close_width=0.055` maps to `action_gripper=+0.375` and settles near `0.0623 m`, just above the `0.06 m` cube. Stronger close commands, including smaller target widths and negative gripper actions, may be required for real contact/lift under the DEXTRAH gripper convention.
+
+Change Plan:
+- Add diagnostic-only script `dextrah_lab/rl_games/sweep_franka_cube_bc_label_recipes.py`.
+  - Same task/reset path as prior diagnostics: `Dextrah-Franka-Cube-Grasp`, pass7 prior library, same cube XY randomization.
+  - Sweep a small set of close settings: baseline `width=0.055/action=+0.375`, tighter widths, and direct negative gripper actions.
+  - Sweep lift timing lightly: baseline `16/12/12`, longer settle, stronger lift z, and variants that keep exact-pose tracking during lift vs direct z lift.
+  - Gate with actual closed-loop rollout metrics: lift height, success/lift flags, finger/EE distance, realized gripper width, contact/proxy plausibility, action clipping, and immediate/done flags.
+  - Generate JSON/CSV sweep table, trace rows, plots, and contact sheets for baseline, first pass if any, and representative failure.
+- Add minimal L401 wrapper `cluster/sbatch_sweep_franka_cube_bc_label_recipes_1gpu.sh`.
+- Do not alter task reward/reset/PPO or train any BC/RL model.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `d7096a372f71638c5b4f78508e4ea23622baea43`
+- implementation_commit: pending
+- changed_files planned:
+  - `dextrah_lab/rl_games/sweep_franka_cube_bc_label_recipes.py`
+  - `cluster/sbatch_sweep_franka_cube_bc_label_recipes_1gpu.sh`
+  - this owned worklog
+
+Validation Before Launch:
+- `python3 -m py_compile dextrah_lab/rl_games/sweep_franka_cube_bc_label_recipes.py`
+- `bash -n cluster/sbatch_sweep_franka_cube_bc_label_recipes_1gpu.sh`
+- deploy exact committed source to the agent-owned L401 worktree before Slurm launch.
+
+Command / Job:
+- intended run name: `franka_cube_ggx_pass7_label_recipe_sweep_<timestamp>`
+- expected job surface: L401 `batch`, 1 GPU, bounded diagnostic only.
+- config: `NUM_ENVS=1`, `NUM_RESETS=2`, seed `20260624`, cube XY randomization `0.08`, pass7 library `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_robust_pass7_20260612.npz`.
+
+Acceptance:
+- At least one recipe must pass actual closed-loop lift/contact visually and metrically before any new supervised-data generation is proposed.
+- If no recipe passes, report exact failed settings and next bounded control hypothesis; no BC/PPO/A100.
+
+Pre-launch local validation:
+- `python3 -m py_compile dextrah_lab/rl_games/sweep_franka_cube_bc_label_recipes.py` passed.
+- `bash -n cluster/sbatch_sweep_franka_cube_bc_label_recipes_1gpu.sh` passed.
