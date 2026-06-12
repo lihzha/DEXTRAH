@@ -7081,6 +7081,113 @@ Next:
   the same checkpoint/reset/settings. Acceptance is visual confirmation of the
   transient lift and drop/reset timing. Do not train or scale RL.
 
+## 2026-06-11T19:15:11-07:00 - matched source-joint video190 launch
+
+Goal:
+- Capture the transient success and immediate hold/loss behavior found in
+  trace job `1027995` without running a broad video/eval sweep.
+
+Version Control:
+- implementation_commit: `9bb669227de9e09fa456dc2ffc87e195743e9932`
+- remote_commit/status:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+  at `9bb669227de9e09fa456dc2ffc87e195743e9932`, detached clean.
+
+Command / Job:
+- job_id: `1028005`
+- run_name:
+  `franka_cube_dp_eval_weightedgrip8_inf100_video190_chunk1_sourcejoint_ep1s0_20260611_191511`
+- command:
+  `sbatch --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart,RUN_NAME=franka_cube_dp_eval_weightedgrip8_inf100_video190_chunk1_sourcejoint_ep1s0_20260611_191511,NUM_ENVS=1,NUM_STEPS=190,NUM_INFERENCE_STEPS=100,ACTION_CHUNK_STEPS=1,CLIP_ACTIONS=1.0,SUCCESS_WINDOW=80,CAPTURE_VIDEO=True,VIDEO_LENGTH=190,VIDEO_NAME_PREFIX=franka-cube-dp-weighted-sourcejoint-hold,PRINT_INTERVAL=20,SEED=42,DEBUG_POLICY_TRACE_MAX_CALLS=190,DEBUG_POLICY_TRACE_ENV_INDEX=0,CHECKPOINT=/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/contact_relabel_official_dp_debug_pretrain100_weightedgrip8_20260611_1843/latest.ckpt,SUPPORT_DATASET=/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/contact_relabel_set_ep8_16_24_30_s260_high30_defaultfix_20260611_175347/contact_relabel_set_accepted.npz,DEMO_RESET_DATASET=/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/contact_relabel_set_ep8_16_24_30_s260_high30_defaultfix_20260611_175347/contact_relabel_set_accepted.npz,DEMO_RESET_EPISODE=1,DEMO_RESET_STEP=0,DEMO_RESET_SOURCE_TRAJECTORY_JSON=/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed16/trajectory.json,DEMO_RESET_SOURCE_FRAME=260,OFFICIAL_DP_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/external/real-stanford-diffusion_policy cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_weightedgrip8_inf100_video190_chunk1_sourcejoint_ep1s0_20260611_191511`
+- logs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_dp_policy_1028005.out`
+
+Acceptance:
+- Fetch video/log/metrics/traces, generate support/action plots and a labeled
+  contact sheet. The visual should answer whether the cube is dropped, reset
+  after success, or held but failing a metric. No training or RL scale-up.
+
+Result:
+- status: completed and inspected; matched-reset task success achieved, then
+  environment auto-reset; no BC/RL scale-up.
+- Slurm: `COMPLETED 0:0`, elapsed `00:02:35`.
+- local artifact dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_video190_chunk1_sourcejoint_ep1s0_20260611_191511`
+- fetched artifacts:
+  `metrics.json`, `policy_trace.json`, `support_trace.csv/json`,
+  `eval_config.json`, stdout log, mp4, `video_ffprobe.json`, labeled contact
+  sheet, `closed_loop_support_report.md`, `closed_loop_support_trace.png`,
+  `closed_loop_action_components.png`, `lift_threshold_audit.png/csv/json`,
+  `closed_loop_support_summary.json`, `closed_loop_support_key_rows.csv`.
+- viewer URLs:
+  - report:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_video190_chunk1_sourcejoint_ep1s0_20260611_191511/closed_loop_support_report.md`
+  - support plot:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_video190_chunk1_sourcejoint_ep1s0_20260611_191511/closed_loop_support_trace.png`
+  - action plot:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_video190_chunk1_sourcejoint_ep1s0_20260611_191511/closed_loop_action_components.png`
+  - lift/hold audit:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_video190_chunk1_sourcejoint_ep1s0_20260611_191511/lift_threshold_audit.png`
+  - lift/hold CSV:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_video190_chunk1_sourcejoint_ep1s0_20260611_191511/lift_threshold_audit.csv`
+  - contact sheet:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_video190_chunk1_sourcejoint_ep1s0_20260611_191511/closed_loop_contact_sheet.jpg`
+  - video:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_video190_chunk1_sourcejoint_ep1s0_20260611_191511/videos/franka-cube-dp-weighted-sourcejoint-hold-step-0.mp4`
+- video metadata: `1280x720`, `189` frames, `3.15 s`, `60 fps`.
+- metrics:
+  first success step `172`, last success step `183`, `success_steps=12`,
+  window success `0.15`, max lift `0.13691 m` at step `183`, max/final
+  success `1/0`, final lift `0`.
+- gripper/contact during success:
+  at first success, gripper width `0.04628 m`, EE-to-cube `0.00984 m`,
+  finger-center-to-cube `0.04033 m`; at max lift, gripper width
+  `0.04635 m`, EE-to-cube `0.00981 m`, finger-center-to-cube `0.04032 m`.
+- post-success reset:
+  step `184` shows lift `0`, gripper width `0.08 m`, EE-to-cube
+  `0.184 m`, nearest-demo distance `24.4`, and then final success remains
+  `0`. `done_count=1`.
+- env semantics audit:
+  `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`
+  terminates on `success_done` when `time_in_success_region >=
+  cfg.success_timeout` and `episode_length_buf >=
+  min_episode_steps_before_success`. Config sets `success_timeout=0.20`.
+  The 12-step success interval is consistent with this success termination;
+  the visible post-step-184 table state is an automatic reset after success,
+  not a physical slip before success.
+
+Analysis:
+- The current weighted official-DP checkpoint can reach the Franka cube task
+  success predicate under exact source-joint/contact-aware matched reset.
+- This is still only transient success, not a durable warm-start claim:
+  `success_steps=12`, `window_success_rate=0.15`, and the labeled video shows
+  the success/max-lift window followed by a post-success reset/drop-looking
+  state by frame `188`.
+- The env code explains why final metrics are reset-contaminated:
+  `success_done` terminates after `time_in_success_region >=
+  success_timeout`, and `success_timeout=0.20`. Thus the visible post-step-184
+  table state is consistent with an automatic success reset, not proof that
+  the cube slipped before the env's own success termination.
+- For warm-start readiness, this remains a hold-stability/contact-retention
+  blocker: the current eval has not demonstrated that the checkpoint can hold
+  the grasp beyond the 0.2 s success timeout, and final post-reset metrics are
+  unusable for judging durable retention.
+- This does not justify full BC/RL scale-up: success is only under exact
+  source-joint matched reset from the tiny contact-aware relabel support. The
+  normal task reset still needs either support expansion, reset conditioning,
+  or a staged/evaluation wrapper before claiming a usable warm-start prior.
+
+Next:
+- Stop this bounded diagnostic path here. Do not run full DP BC/RL. The next
+  bounded development step should specifically test hold stability/contact
+  retention after lift, e.g. an eval mode that records max/window success and
+  optionally continues physics for a short fixed horizon after success without
+  auto-reset, or a small matched-reset-conditioned eval set across several
+  accepted source episodes/seeds. Keep any follow-up trace-first and
+  artifact-heavy.
+
 ## 2026-06-11T18:58:15-07:00 - matched source-joint trace160 result
 
 Goal:
