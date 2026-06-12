@@ -4930,3 +4930,35 @@ Selector Gate If Supervised Passes:
 - Eval selector alphas `0.0`, `0.25`, `0.5`, `0.75`, `1.0`, metrics/traces first, no videos initially.
 - Acceptance: any improvement in policy-only or lower-alpha success over tm0.25/tm0.10 without target unsafe regression. If selector improves, launch targeted videos/contact sheets only for alpha `0.0` failure/improvement, lowest-alpha success, and alpha `1.0` context.
 - No full PPO/RL scale-up in this iteration.
+
+## 2026-06-11T19:31:40-07:00 - mixed/rehearsal BC supervised launch
+
+Implementation:
+- changed `dextrah_lab/rl_games/bc_reference_action_imitation.py` to support one or more rehearsal datasets plus per-source train/val metrics.
+- changed `cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh` to pass `REHEARSAL_DATASET_PATHS` and `REHEARSAL_DATASET_NAMES`.
+- local validation passed:
+  - `python3 -m py_compile dextrah_lab/rl_games/bc_reference_action_imitation.py dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py dextrah_lab/rl_games/analyze_traj_tracking_action_semantics.py`
+  - `bash -n cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh`
+  - `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+  - `git diff --check`
+- implementation commit: `b5e7b34c4be7cb6fd740b98828704d1629fa2869` (`Add rehearsal BC dataset support`), pushed to `origin/codex/franka-cube-trajectory-tracking`.
+- l401 GitHub fetch remains blocked by `Permission denied (publickey)`, so I used an agent-owned bare Git mirror at `/lustre/fsw/portfolios/nvr/users/lzha/src/git/DEXTRAH-franka-cube-traj-tracking.git` and detached the agent worktree at `b5e7b34c4be7cb6fd740b98828704d1629fa2869`.
+- remote code path: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking`.
+
+Command / Job:
+- job_id: `1028053`
+- run_name: `franka_cube_traj_tracking_bc_dagger_rehearsal_tm025_tm010_all_20260611_193140`
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:45:00 --job-name=bc_rehearsal --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_bc_dagger_rehearsal_tm025_tm010_all_20260611_193140,NUM_ENVS=8,COLLECTION_STEPS=520,TRAIN_STEPS=400,BATCH_SIZE=1024,LEARNING_RATE=0.00015,VALIDATION_FRACTION=0.2,LOSS_DIMS=all,EVAL_INTERVAL=25,SEED=69,COLLECTION_ACTION_SOURCE=teacher_mix,COLLECTION_TEACHER_ALPHA=0.10,REHEARSAL_DATASET_PATHS=/results/bc/franka_cube_traj_tracking_bc_dagger_tm025_all_20260611_185900/reference_action_dataset.pt,REHEARSAL_DATASET_NAMES=tm025_rehearsal,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json,CHECKPOINT=/results/bc/franka_cube_traj_tracking_bc_dagger_tm025_all_20260611_185900/nn/bc_reference_action_imitation.pth cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/bc/franka_cube_traj_tracking_bc_dagger_rehearsal_tm025_tm010_all_20260611_193140`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bc_franka_cube_1028053.out`
+- expected artifacts:
+  - `report.md`
+  - `bc_metrics.json`
+  - `bc_loss_curve.csv`
+  - `bc_loss_plot.png`
+  - `reference_action_dataset.pt`
+  - `nn/bc_reference_action_imitation.pth`
+
+Monitor Plan:
+- Inspect scheduler state and log, then fetch artifacts once complete.
+- Gate on supervised metrics before selector evals; do not launch videos or PPO/RL scale-up from scheduler success alone.
