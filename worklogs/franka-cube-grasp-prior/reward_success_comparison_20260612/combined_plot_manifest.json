@@ -1,0 +1,16 @@
+{
+  "outputs": [
+    "combined_reward_plot_means.csv",
+    "combined_success_rate_plot_means.csv",
+    "combined_reward_mean_std.svg",
+    "combined_success_rate_mean_std.svg"
+  ],
+  "reward_strict_common_seed_epochs": {
+    "Grasp pose prior": 589,
+    "No prior baseline": 567,
+    "Tracking loss": 571
+  },
+  "source_seed_sweep": "/home/lzha/code/DEXTRAH/cluster_results/a1001/franka_cube_seed_sweep600_c7e66a0_20260612_092951",
+  "source_tracking_curves": "/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/worklogs/franka-cube-grasp-prior/reward_success_comparison_20260612/training_curves.csv",
+  "success_epoch_note": "no-prior and grasp prior 1-600 from supplied means; tracking 1-571 common seed epochs"
+}

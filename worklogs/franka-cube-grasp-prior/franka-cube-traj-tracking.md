@@ -7886,3 +7886,59 @@ Analysis:
 
 Next:
 - Use these artifacts as the comparison baseline for the next reward-tuning sweep, especially partial base-closeness reductions or better contact/lift-gated tracking terms.
+
+## 2026-06-12T22:55:51Z - added combined seed-sweep plots and visual inspection
+
+Goal:
+- Plot the tracking-loss seed sweep together with the existing no-prior baseline and grasp-pose-prior seed sweeps.
+- Visually inspect the key plot artifacts instead of relying only on XML/CSV validation.
+
+Inputs:
+- seed-sweep reward means/scalars: `/home/lzha/code/DEXTRAH/cluster_results/a1001/franka_cube_seed_sweep600_c7e66a0_20260612_092951/reward_plot_means.csv`, `reward_plot_scalars.csv`
+- seed-sweep success means/scalars: `/home/lzha/code/DEXTRAH/cluster_results/a1001/franka_cube_seed_sweep600_c7e66a0_20260612_092951/success_rate_plot_means.csv`, `success_rate_plot_scalars.csv`
+- tracking-loss curves: `worklogs/franka-cube-grasp-prior/reward_success_comparison_20260612/training_curves.csv`
+
+Artifacts:
+- `worklogs/franka-cube-grasp-prior/reward_success_comparison_20260612/combined_reward_mean_std.svg`
+- `worklogs/franka-cube-grasp-prior/reward_success_comparison_20260612/combined_success_rate_mean_std.svg`
+- `worklogs/franka-cube-grasp-prior/reward_success_comparison_20260612/combined_reward_plot_means.csv`
+- `worklogs/franka-cube-grasp-prior/reward_success_comparison_20260612/combined_success_rate_plot_means.csv`
+- `worklogs/franka-cube-grasp-prior/reward_success_comparison_20260612/combined_plot_manifest.json`
+
+Method:
+- Ignored any previous-baseline rows.
+- Reward plot is recomputed from scalar rows and restricted to strict common seed-`1..5` epochs per method:
+  - no-prior baseline: epochs `1..567`
+  - grasp pose prior: epochs `1..589`
+  - tracking loss: epochs `1..571`
+- Success plot uses the supplied mean CSV for no-prior/grasp-prior epochs `1..600` and recomputes tracking loss over common seed-`1..5` epochs `1..571`.
+- Shaded bands are mean `+/-` std.
+
+Visual Inspection:
+- Rendered and opened the existing `reward_curve_comparison.svg`, `success_rate_curve_comparison.svg`, and `eval_success_comparison.svg`; they render correctly but only compare tracking loss against a single historical no-tracking seed.
+- Rendered and opened the new combined reward/success plots. The final combined plots are visually coherent and do not include misleading reward tail rows with `n < 5`.
+
+Result:
+- Last strict-five-seed reward mean/std:
+
+| Method | Epoch | Reward mean +/- std |
+| --- | ---: | ---: |
+| no-prior baseline | `567` | `4293.220 +/- 4467.953` |
+| grasp pose prior | `589` | `13825.325 +/- 310.439` |
+| tracking loss | `571` | `8630.591 +/- 4811.139` |
+
+- Last training success mean/std:
+
+| Method | Epoch | Success mean +/- std |
+| --- | ---: | ---: |
+| no-prior baseline | `600` | `0.179 +/- 0.356` |
+| grasp pose prior | `600` | `0.865 +/- 0.030` |
+| tracking loss | `571` | `0.475 +/- 0.387` |
+
+Analysis:
+- Grasp pose prior is clearly strongest in both reward and success.
+- Tracking loss is better than the no-prior mean by late training, but its variance is large and it remains well below grasp pose prior.
+- The earlier tracking-only plot was useful for debugging, but the combined plot is the right high-level comparison.
+
+Next:
+- Use the combined success plot as the primary figure when deciding whether tracking-loss reward tuning is worth continuing versus prioritizing grasp-pose-prior integration.
