@@ -775,6 +775,11 @@ def main() -> None:
             if isinstance(summary.get("hold_config"), dict)
             else None
         ),
+        "hold_trigger_mode": (
+            summary.get("hold_config", {}).get("hold_trigger_mode")
+            if isinstance(summary.get("hold_config"), dict)
+            else None
+        ),
         "checkpoint": summary.get("checkpoint"),
         "done_count": summary.get("done_count"),
         "num_steps_completed": summary.get("num_steps_completed"),
@@ -873,10 +878,14 @@ def main() -> None:
         "hold_active_rate_final": _summary(summary, "hold_active_rate", "final"),
         "hold_new_trigger_rate_max": _summary(summary, "hold_new_trigger_rate", "max"),
         "hold_trigger_step_mean": _summary(summary, "hold_trigger_step_mean", "mean"),
+        "hold_trigger_mode_id_mean": _summary(summary, "hold_trigger_mode_id", "mean"),
         "hold_phase_trigger_rate_mean": _summary(summary, "hold_phase_trigger_rate", "mean"),
         "hold_lift_trigger_rate_mean": _summary(summary, "hold_lift_trigger_rate", "mean"),
         "hold_success_trigger_rate_mean": _summary(summary, "hold_success_trigger_rate", "mean"),
         "hold_contact_trigger_rate_mean": _summary(summary, "hold_contact_trigger_rate", "mean"),
+        "hold_contact_after_phase_trigger_rate_mean": _summary(
+            summary, "hold_contact_after_phase_trigger_rate", "mean"
+        ),
         "hold_target_pos_z_final": _summary(summary, "hold_target_pos_z_mean", "final"),
         "hold_target_policy_id_mean": _summary(summary, "hold_target_policy_id", "mean"),
         "hold_trigger_ee_cube_offset_x_final": _summary(summary, "hold_trigger_ee_cube_offset_x_mean", "final"),
@@ -1107,7 +1116,8 @@ def main() -> None:
 - hold active mean/final: {_fmt(compact['hold_active_rate_mean'])} / {_fmt(compact['hold_active_rate_final'])}
 - hold new-trigger max: {_fmt(compact['hold_new_trigger_rate_max'])}
 - hold trigger step mean: {_fmt(compact['hold_trigger_step_mean'])}
-- phase/lift/success/contact trigger rates: {_fmt(compact['hold_phase_trigger_rate_mean'])} / {_fmt(compact['hold_lift_trigger_rate_mean'])} / {_fmt(compact['hold_success_trigger_rate_mean'])} / {_fmt(compact['hold_contact_trigger_rate_mean'])}
+- hold trigger mode: `{compact['hold_trigger_mode']}` (id mean {_fmt(compact['hold_trigger_mode_id_mean'])})
+- phase/lift/success/contact/contact-after-phase trigger rates: {_fmt(compact['hold_phase_trigger_rate_mean'])} / {_fmt(compact['hold_lift_trigger_rate_mean'])} / {_fmt(compact['hold_success_trigger_rate_mean'])} / {_fmt(compact['hold_contact_trigger_rate_mean'])} / {_fmt(compact['hold_contact_after_phase_trigger_rate_mean'])}
 - hold target policy: `{compact['hold_target_policy']}` (id mean {_fmt(compact['hold_target_policy_id_mean'])})
 - hold target z final: {_fmt(compact['hold_target_pos_z_final'])} m
 - trigger EE-cube offset final x/y/z: {_fmt(compact['hold_trigger_ee_cube_offset_x_final'])} / {_fmt(compact['hold_trigger_ee_cube_offset_y_final'])} / {_fmt(compact['hold_trigger_ee_cube_offset_z_final'])} m

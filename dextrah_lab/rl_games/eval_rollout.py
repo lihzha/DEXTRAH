@@ -84,6 +84,17 @@ parser.add_argument(
     ),
 )
 parser.add_argument(
+    "--hold_trigger_mode",
+    choices=("any", "contact_after_phase_or_lift_success", "lift_success_only"),
+    default="any",
+    help=(
+        "For *_hold action sources, choose how hold activation combines triggers. "
+        "'any' preserves legacy phase OR lift OR success OR contact behavior. "
+        "'contact_after_phase_or_lift_success' prevents phase-only/free-space hold by requiring "
+        "late contact, actual lift, or success. 'lift_success_only' ignores phase/contact triggers."
+    ),
+)
+parser.add_argument(
     "--hold_phase_start",
     type=float,
     default=0.42,
@@ -611,6 +622,7 @@ def _ensure_hold_state(task_env) -> dict[str, torch.Tensor]:
             "lift_triggered": torch.zeros(task_env.num_envs, dtype=torch.bool, device=task_env.device),
             "success_triggered": torch.zeros(task_env.num_envs, dtype=torch.bool, device=task_env.device),
             "contact_triggered": torch.zeros(task_env.num_envs, dtype=torch.bool, device=task_env.device),
+            "contact_after_phase_triggered": torch.zeros(task_env.num_envs, dtype=torch.bool, device=task_env.device),
             "call_count": torch.zeros((), device=task_env.device),
         }
         setattr(task_env, "_eval_terminal_hold_state", state)
@@ -628,7 +640,13 @@ def _reset_hold_state(task_env, env_mask: torch.Tensor) -> None:
     state["target_pos_local"][mask] = 0.0
     state["trigger_ee_cube_offset_local"][mask] = 0.0
     state["trigger_step"][mask] = -1.0
-    for name in ("phase_triggered", "lift_triggered", "success_triggered", "contact_triggered"):
+    for name in (
+        "phase_triggered",
+        "lift_triggered",
+        "success_triggered",
+        "contact_triggered",
+        "contact_after_phase_triggered",
+    ):
         state[name][mask] = False
 
 
@@ -652,7 +670,15 @@ def _hold_actions_from_source(task_env, base_actions: torch.Tensor) -> tuple[tor
     lift_trigger = lift_height >= float(args_cli.hold_trigger_lift_height)
     success_trigger = success >= 0.5
     contact_trigger = max_finger_dist <= float(args_cli.hold_contact_max_finger_dist)
-    trigger = phase_trigger | lift_trigger | success_trigger | contact_trigger
+    contact_after_phase_trigger = phase_trigger & contact_trigger
+    if args_cli.hold_trigger_mode == "any":
+        trigger = phase_trigger | lift_trigger | success_trigger | contact_trigger
+    elif args_cli.hold_trigger_mode == "contact_after_phase_or_lift_success":
+        trigger = contact_after_phase_trigger | lift_trigger | success_trigger
+    elif args_cli.hold_trigger_mode == "lift_success_only":
+        trigger = lift_trigger | success_trigger
+    else:
+        raise ValueError(f"Unsupported hold_trigger_mode: {args_cli.hold_trigger_mode}")
     new_hold = (~state["active"]) & trigger
 
     cube_pos = getattr(task_env, "cube_pos").detach().clone()
@@ -671,6 +697,7 @@ def _hold_actions_from_source(task_env, base_actions: torch.Tensor) -> tuple[tor
         state["lift_triggered"] |= new_hold & lift_trigger
         state["success_triggered"] |= new_hold & success_trigger
         state["contact_triggered"] |= new_hold & contact_trigger
+        state["contact_after_phase_triggered"] |= new_hold & contact_after_phase_trigger
         state["active"] |= new_hold
 
     target_pos_local = state["target_pos_local"]
@@ -689,6 +716,13 @@ def _hold_actions_from_source(task_env, base_actions: torch.Tensor) -> tuple[tor
     applied_actions = torch.where(active, hold_actions, base_actions)
 
     metrics: dict[str, float | None] = {
+        "hold_trigger_mode_id": (
+            1.0
+            if args_cli.hold_trigger_mode == "contact_after_phase_or_lift_success"
+            else 2.0
+            if args_cli.hold_trigger_mode == "lift_success_only"
+            else 0.0
+        ),
         "hold_phase_start": float(args_cli.hold_phase_start),
         "hold_trigger_lift_height": float(args_cli.hold_trigger_lift_height),
         "hold_contact_max_finger_dist": float(args_cli.hold_contact_max_finger_dist),
@@ -701,6 +735,7 @@ def _hold_actions_from_source(task_env, base_actions: torch.Tensor) -> tuple[tor
         "hold_lift_trigger_rate": _mean_float(state["lift_triggered"].float()),
         "hold_success_trigger_rate": _mean_float(state["success_triggered"].float()),
         "hold_contact_trigger_rate": _mean_float(state["contact_triggered"].float()),
+        "hold_contact_after_phase_trigger_rate": _mean_float(state["contact_after_phase_triggered"].float()),
     }
     triggered_steps = state["trigger_step"][state["trigger_step"] >= 0.0]
     if triggered_steps.numel() > 0:
@@ -1469,6 +1504,7 @@ def main(env_cfg, agent_cfg: dict):
         "hold_config": (
             {
                 "hold_phase_start": float(args_cli.hold_phase_start),
+                "hold_trigger_mode": args_cli.hold_trigger_mode,
                 "hold_trigger_lift_height": float(args_cli.hold_trigger_lift_height),
                 "hold_contact_max_finger_dist": float(args_cli.hold_contact_max_finger_dist),
                 "hold_lift_height": float(args_cli.hold_lift_height),

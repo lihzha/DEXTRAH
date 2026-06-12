@@ -6949,3 +6949,59 @@ Decision:
 - preserve alpha0.20/no-reset as the best assisted gate for now.
 - next bounded direction should be contact-aware: trigger terminal hold or close+lift changes only after verified finger/cube contact or lift evidence.
 - no active B jobs after this handoff; old `actionscale-rewinf-diag-video480-step-0.mp4` / job `1027753` remains obsolete failed diagnostic evidence.
+
+## 2026-06-11T23:31:42-07:00 - contact-aware terminal hold plan
+
+Goal:
+- Run the next bounded diagnostic requested by the orchestrator: contact/lift-aware terminal hold after low-alpha `policy_reference_mix`, with videos for success and regression cases.
+- Preserve the baseline task and existing action sources; no PPO/RL scale-up.
+
+Hypothesis:
+- The z+gripper override failed because it changed lift/closure open-loop before a stable grasp existed. A safer terminal-hold route should only activate after evidence of contact in the late grasp/lift phase or after actual cube lift/success.
+- If contact-aware hold improves alpha0.10/0.15/0.20 relative to no-hold, then the next trainable target is a contact-conditioned hold/handoff head. If it regresses or only preserves the already successful env1 pattern, the blocker remains approach/contact geometry and policy-only handoff is still not credible.
+
+Planned Change:
+- `dextrah_lab/rl_games/eval_rollout.py`: add opt-in `--hold_trigger_mode` while preserving current default trigger behavior. New mode will use `(phase >= hold_phase_start AND max_finger_to_cube_dist <= hold_contact_max_finger_dist) OR lift OR success`, so phase alone cannot trigger free-space hold.
+- `cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`: export, echo, and pass `HOLD_TRIGGER_MODE`.
+- `dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py`: include `hold_trigger_mode` and contact-after-phase rate in compact summaries and reports.
+
+Validation Before Launch:
+- `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py`
+- `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- `git diff --check`
+- Commit/push and deploy the exact commit to the l401 Worker B worktree via Git/HTTPS fallback if needed.
+
+Planned Eval Probe:
+- Action source: `policy_reference_mix_hold`.
+- Checkpoint: `/results/bc/franka_cube_traj_tracking_bc_handoff_success_alpha0_20260611_223200/nn/bc_reference_action_imitation.pth`.
+- Reference: `/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json` (`curobo_validated=false`).
+- Common config: `SUPPRESS_SUCCESS_TERMINATION=True`, `NUM_ENVS=4`, `NUM_STEPS=520`, `CAPTURE_VIDEO=True`, `SEED=75`, cube randomization `0.08`, `HOLD_TRIGGER_MODE=contact_after_phase_or_lift_success`, `HOLD_PHASE_START=0.67`, `HOLD_CONTACT_MAX_FINGER_DIST=0.08`, `HOLD_TRIGGER_LIFT_HEIGHT=0.02`, `HOLD_TARGET_POLICY=cube_current_plus_trigger_ee_offset`, `HOLD_LIFT_HEIGHT=0.03`, `HOLD_GRIPPER_ACTION=-0.4`.
+- Launch targeted videos for the same boundary camera envs: alpha0.10 env3/env0, alpha0.15 env1/env0, alpha0.20 env1/env2.
+
+Acceptance:
+- Each run writes metrics, trace CSV/JSONL, report, trace plot, consistency JSON, MP4, and contact sheet.
+- Target unsafe max remains `0`; train/eval consistency has no real mismatches.
+- Compare final/success-ever and visual behavior against no-hold, gripper-only, and z+gripper. No PPO/RL launch unless this establishes a better handoff target with inspectable videos.
+
+Implementation:
+- `eval_rollout.py` now supports `--hold_trigger_mode` with choices:
+  - `any`: legacy phase OR lift OR success OR contact trigger behavior.
+  - `contact_after_phase_or_lift_success`: no phase-only hold; trigger is `(phase AND contact) OR lift OR success`.
+  - `lift_success_only`: ignores phase/contact triggers.
+- `eval_rollout.py` logs `hold_trigger_mode_id` and `hold_contact_after_phase_trigger_rate`.
+- `cluster/sbatch_eval_franka_cube_grasp_1gpu.sh` exports, echoes, and passes `HOLD_TRIGGER_MODE`.
+- `summarize_traj_tracking_eval_artifacts.py` includes the trigger mode and contact-after-phase trigger rate in reports/summary.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py` passed.
+- `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh` passed.
+- `git diff --check` passed.
+- summarizer regression on old z+gripper metrics wrote `/tmp/traj_contact_hold_summary_regression/{report.md,summary.json,train_eval_consistency.json,trajectory_trace_plot.png}` and reports missing trigger-mode fields as `n/a`.
+
+Version Control:
+- implementation_commit: pending.
+- changed_files:
+  - `dextrah_lab/rl_games/eval_rollout.py`
+  - `cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+  - `dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py`
+  - `worklogs/franka-cube-grasp-prior/franka-cube-traj-tracking.md`
