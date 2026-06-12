@@ -196,6 +196,18 @@ def _summarize_step_metrics(step_metrics: list[dict[str, float | int | None]]) -
     return summaries
 
 
+def _mean(values: list[float]) -> float | None:
+    return sum(values) / len(values) if values else None
+
+
+def _first_done_step(step_metrics: list[dict[str, float | int | None]]) -> int | None:
+    for item in step_metrics:
+        done_count = item.get("done_count_step")
+        if done_count is not None and int(done_count) > 0:
+            return int(item["step"])
+    return None
+
+
 def _checkpoint_path(agent_cfg: dict) -> str:
     log_root_path = os.path.abspath(os.path.join("logs", "rl_games", agent_cfg["params"]["config"]["name"]))
     print(f"[INFO] Loading experiment from directory: {log_root_path}")
@@ -370,15 +382,23 @@ def main(env_cfg, agent_cfg: dict):
                 task_metrics = _collect_task_metrics(task_env)
                 action_metrics = _collect_action_metrics(actions)
 
+                step_done_count = 0
                 if isinstance(dones, torch.Tensor):
                     dones_bool = dones.bool()
-                    done_count += int(dones_bool.sum().detach().cpu())
+                    step_done_count = int(dones_bool.sum().detach().cpu())
+                    done_count += step_done_count
                     if agent.is_rnn and agent.states is not None and dones_bool.any():
                         for state in agent.states:
                             state[:, dones_bool, :] = 0.0
+                elif dones is not None:
+                    step_done_count = int(bool(dones))
+                    done_count += step_done_count
 
                 step_record = {
                     "step": step + 1,
+                    "done_any_step": int(step_done_count > 0),
+                    "done_count_step": step_done_count,
+                    "done_count_cumulative": done_count,
                     "success_rate": success_rate,
                     "reward_mean": reward_mean,
                     **task_metrics,
@@ -401,6 +421,16 @@ def main(env_cfg, agent_cfg: dict):
     success_values = [item["success_rate"] for item in step_metrics if item["success_rate"] is not None]
     reward_values = [item["reward_mean"] for item in step_metrics if item["reward_mean"] is not None]
     window = max(1, min(args_cli.success_window, len(success_values)))
+    first_done_step = _first_done_step(step_metrics)
+    first_episode_metrics = [
+        item for item in step_metrics if first_done_step is None or int(item["step"]) <= first_done_step
+    ]
+    first_episode_success_values = [
+        item["success_rate"] for item in first_episode_metrics if item["success_rate"] is not None
+    ]
+    first_episode_reward_values = [
+        item["reward_mean"] for item in first_episode_metrics if item["reward_mean"] is not None
+    ]
     summary = {
         "task": args_cli.task,
         "checkpoint": resume_path,
@@ -421,6 +451,20 @@ def main(env_cfg, agent_cfg: dict):
         "trace_csv_path": str(trace_csv_path),
         "output_dir": str(output_dir),
         "env_closed": env_closed,
+        "first_done_step": first_done_step,
+        "first_episode_num_steps": len(first_episode_metrics),
+        "first_episode_success_rate_final": first_episode_success_values[-1]
+        if first_episode_success_values
+        else None,
+        "first_episode_success_rate_max": max(first_episode_success_values)
+        if first_episode_success_values
+        else None,
+        "first_episode_success_rate_mean": _mean(first_episode_success_values),
+        "first_episode_reward_final": first_episode_reward_values[-1]
+        if first_episode_reward_values
+        else None,
+        "first_episode_reward_mean": _mean(first_episode_reward_values),
+        "first_episode_metric_summaries": _summarize_step_metrics(first_episode_metrics),
         "metric_summaries": _summarize_step_metrics(step_metrics),
     }
     payload = {"summary": summary, "steps": step_metrics}

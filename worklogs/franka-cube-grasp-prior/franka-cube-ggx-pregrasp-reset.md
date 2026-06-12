@@ -4574,6 +4574,8 @@ Validation:
 - `python3 -m py_compile dextrah_lab/rl_games/bc_franka_cube_pass7_actions.py`
 - `bash -n cluster/sbatch_bc_franka_cube_pass7_actions_1gpu.sh`
 - local result: both passed.
+- remote result at commit `93120745f109b5c742b0e60cadf64ca25aec684f`: both passed.
+- local result: both passed.
 - remote result at commit `698e44d4a9e5d2ca0c6c9665b956d80eadb32dff`: both passed.
 
 Command / Job Plan:
@@ -4752,3 +4754,84 @@ Acceptance:
 - hold-phase action metrics show negative/closed gripper sign and non-pathological z action.
 - If supervised gate passes, run one small visual eval from the hold checkpoint with the same low-z reset/library and no action warmstart override.
 - Visual gate requires stable final/held success; transient lift alone is not enough.
+
+Implementation / Launch:
+- implementation_commit: `93120745f109b5c742b0e60cadf64ca25aec684f` (`Add hold phase to BC label diagnostic`)
+- push: branch `codex/franka-cube-ggx-pregrasp-reset` pushed.
+- remote deployment: exact commit deployed to agent-owned l401 worktree through Git bundle; remote status detached clean.
+- command: `sbatch --parsable --job-name=ggx_lowz_bc_hold --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=93120745f109b5c742b0e60cadf64ca25aec684f,RUN_NAME=franka_cube_ggx_lowz_bc_actor_hold_20260611_2214,NUM_ENVS=64,NUM_RESETS=16,SEED=20260625,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz,INIT_CHECKPOINT=/results/diagnostics/franka_cube_ggx_lowz_bc_actor_recipe_20260611_2202/bc_pass7_action_warmstart.pth,TRAIN_EPOCHS=40,BATCH_SIZE=2048,LEARNING_RATE=0.0003,TRAIN_SCOPE=actor,VALIDATION_FRACTION=0.25,PHASE_BALANCE_LOSS=True,LIFT_PHASE_LOSS_WEIGHT=2.0,LIFT_Z_MSE_WEIGHT=8.0,LIFT_Z_SIGN_LOSS_WEIGHT=0.05,APPROACH_STEPS=16,CLOSE_STEPS=24,LIFT_STEPS=24,HOLD_STEPS=96,CLOSE_WIDTH=0.010,LIFT_ACTION_Z=0.50,HOLD_ACTION_Z=0.10,ORACLE_GAIN=8.0,ORACLE_MAX_POSITION_ACTION=1.0,TRACK_ORIENTATION=True,TRACK_EXACT_DURING_LIFT=False,TRACK_EXACT_DURING_HOLD=False,GATE_VAL_MSE=0.04,GATE_GRIPPER_SIGN=0.95,GATE_LIFT_Z_SIGN=0.90,SAVE_BC_CHECKPOINT=True cluster/sbatch_bc_franka_cube_pass7_actions_1gpu.sh`
+- job_id: `1028150`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_lowz_bc_actor_hold_20260611_2214`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bc_franka_cube_pass7_1028150.out`
+
+Result:
+- status: supervised pass.
+- Slurm: job `1028150` completed `0:0`, elapsed `00:01:43`, node `pool0-00017`.
+- local artifacts: `cluster_results/l401/franka_cube_ggx_lowz_bc_actor_hold_20260611_2214`.
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_bc_actor_hold_20260611_2214/REPORT.md`
+- loss curves: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_bc_actor_hold_20260611_2214/bc_loss_curves.png`
+- phase action means: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_bc_actor_hold_20260611_2214/bc_action_phase_means.png`
+- z sign plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_bc_actor_hold_20260611_2214/bc_z_sign_accuracy.png`
+- metrics:
+  - supervised gate: `PASS`
+  - validation MSE: `0.0009264383115805686`
+  - validation gripper sign accuracy: `0.999926745891571`
+  - validation lift-z sign accuracy: `1.0`
+  - validation hold-z sign accuracy: `1.0`
+  - validation z sign accuracy: `0.948974609375`
+  - validation hold-z MAE: `0.012597617693245411`
+  - checkpoint loadable: `true`
+- dataset:
+  - samples: `163840`
+  - phase counts: approach `16384`, close `24576`, lift `24576`, hold `98304`
+  - sample histogram: `{"0": 163840}`
+  - valid resets: `64/64` for all `16` reset batches
+- checkpoint: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_lowz_bc_actor_hold_20260611_2214/bc_pass7_action_warmstart.pth`
+
+Analysis:
+- The hold-phase supervised fit is better than the no-hold checkpoint and explicitly trains closed-gripper hold behavior after lift.
+- This remains a diagnostic actor artifact, not a PPO or apple-to-apple RL result.
+
+Next:
+- Run a visual eval from the hold checkpoint under the same low-z no-offset reset/library, no action warmstart override.
+
+Visual Eval Launch:
+- run name: `franka_cube_ggx_lowz_bc_actor_hold_eval_20260611_2220`
+- checkpoint: `/results/diagnostics/franka_cube_ggx_lowz_bc_actor_hold_20260611_2214/bc_pass7_action_warmstart.pth`
+- library: `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz`
+- config: `Dextrah-Franka-Cube-Grasp`, `NUM_ENVS=1`, `NUM_STEPS=240`, `SEED=20260625`, cube XY randomization `0.08`, deterministic, `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`.
+- command: `sbatch --parsable --partition=batch --time=0-00:30:00 --job-name=ggx_lowz_hold_eval --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,RUN_NAME=franka_cube_ggx_lowz_bc_actor_hold_eval_20260611_2220,TASK=Dextrah-Franka-Cube-Grasp,NUM_ENVS=1,NUM_STEPS=240,VIDEO_LENGTH=240,VIDEO_NAME_PREFIX=lowz-bc-hold,PRINT_INTERVAL=20,CAPTURE_VIDEO=True,DETERMINISTIC=True,USE_CUDA_GRAPH=False,SEED=20260625,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz,GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False,CHECKPOINT=/results/diagnostics/franka_cube_ggx_lowz_bc_actor_hold_20260611_2214/bc_pass7_action_warmstart.pth,CAMERA_EYE_X=-0.10,CAMERA_EYE_Y=-0.78,CAMERA_EYE_Z=1.42,CAMERA_TARGET_X=-0.41,CAMERA_TARGET_Y=-0.10,CAMERA_TARGET_Z=0.82 cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- job_id: `1028151`
+- remote run dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_ggx_lowz_bc_actor_hold_eval_20260611_2220`
+- remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1028151.out`
+
+## 2026-06-11 22:32 - hold-eval termination-aware diagnostics
+
+Goal:
+- Resolve whether hold eval `1028151` represents a true post-lift drop or an episode termination/reset artifact after reaching success.
+
+Hypothesis:
+- The apparent final failure is caused by the evaluator continuing after an automatic task reset: trace step 172 reaches `success_rate=1`, step 183 reaches max lift, then step 184 resets cube lift to zero and gripper width to the open reset width.
+
+Change:
+- Add diagnostic-only per-step done counts and first-episode summaries to `dextrah_lab/rl_games/eval_rollout.py`.
+- This must not change environment reset behavior, reward, observations, actions, policy execution, or PPO/training configuration.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `93120745f109b5c742b0e60cadf64ca25aec684f`
+- implementation_commit: pending
+- changed_files:
+  - `dextrah_lab/rl_games/eval_rollout.py`
+  - this worklog
+
+Validation Plan:
+- `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py`
+- bounded L401 visual eval replay from the same hold checkpoint with the same low-z no-offset reset/library and `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`.
+
+Acceptance:
+- Metrics JSON includes `first_done_step`, `first_episode_summary`, and per-step `done_count_step`.
+- If the first episode succeeds and terminates while the final frame is from a second reset episode, classify final-success failure as an eval-summary artifact, not a physical drop.
+- Still do not launch PPO/A100/RL; this only clarifies the visual gate semantics.
