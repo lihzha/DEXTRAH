@@ -9532,3 +9532,60 @@ Next:
   NPZ with `val_ratio=0.25`, weighted gripper loss, resolved config/log/loss
   artifacts, checkpoint action smokes, and the corrected action-semantics
   report. No Isaac closed-loop eval or RL.
+
+## 2026-06-11T22:32:13-07:00 - launch official DP alpha0.75 set4 offline smoke
+
+Goal:
+- Test whether the official `real-stanford/diffusion_policy` implementation
+  can consume the support-expanded alpha0.75 contact relabel set and produce a
+  bounded checkpoint with coherent offline action/gripper semantics.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- dextrah_commit: `44e049365675074cb09f62b13a6be44b705a1bea`
+- official_dp_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/diffusion_policy`
+- official_dp_commit: `5ba07ac6661db573af695b419a7947ecb704690f`
+- official_dp_remote: `https://github.com/real-stanford/diffusion_policy`
+
+Command / Job:
+- job_id: `n/a`, local bounded official-DP smoke.
+- run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_lrcentering_a075_set4_official_dp_smoke_20260611_223202`
+- launch script:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_lrcentering_a075_set4_official_dp_smoke_20260611_223202/launch_command.sh`
+- dataset:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_lrcentering_ep8_16_24_30_a0p75_20260611_2224/contact_relabel_set_accepted.npz`
+- launch command:
+  `bash /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_lrcentering_a075_set4_official_dp_smoke_20260611_223202/launch_command.sh`
+
+Smoke bounds:
+- offline only; no Isaac closed-loop eval and no RL.
+- dataset expected shapes:
+  `obs (936,21)`, `action (936,7)`, `episode_ends [240,480,706,936]`.
+- official DP config:
+  `WeightedDiffusionUnetLowdimPolicy`,
+  `+policy.action_loss_weights=[1,1,1,1,1,1,8]`,
+  `pred_action_steps_only=true`,
+  `task.dataset.action_normalizer=limits_clamp_constant`,
+  `task.dataset.val_ratio=0.25`, `policy.num_inference_steps=100`,
+  `training.num_epochs=60`, `training.max_train_steps=10`,
+  `training.max_val_steps=2`, batch size `32`.
+- action semantics gate:
+  checkpoint smokes for `first`, `gripper_open`, `gripper_closed`,
+  `lift_high`, and close-boundary rows `22,262,490,721`; corrected
+  gripper/per-channel semantics report at 100 inference steps with pass
+  threshold `0.90`.
+
+Expected artifacts:
+- dataset report/summary/range CSVs.
+- resolved Hydra config, train stdout, `logs.json.txt`, loss CSV/plot.
+- checkpoint `official_dp_train/checkpoints/latest.ckpt`.
+- checkpoint action-range logs.
+- `action_semantics_100steps` CSV/JSON/plots/report.
+- official DP pretrain report/summary.
+
+Next:
+- Run and monitor the local smoke. If the offline gate is `needs_review`, do
+  not launch Isaac eval; analyze and patch the offline semantics path instead.
