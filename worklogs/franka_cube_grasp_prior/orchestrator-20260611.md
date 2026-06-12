@@ -2773,3 +2773,44 @@ Worker steering:
   deploy exact commit, fix variant passing, then relaunch a bounded smoke only.
 - DP BC/RL training remains blocked until a contact-aware rollout produces
   stable close/lift artifacts.
+
+## 2026-06-11T17:56:00-07:00 - Current worker launches after follow-up steering
+
+Worker B:
+- B completed the alpha-`0.75` phase-end diagnostic update and pushed branch
+  `codex/franka-cube-trajectory-tracking` at
+  `462b067cc78d1e766cf8cd0343fe746a368907ef`.
+- The artifact consistency report now treats phase-end `1.0` as an expected
+  eval-only override, while preserving the negative behavior verdict.
+- B was assigned a pure-reference alpha-`1.0`, phase-end `1.0` sanity eval to
+  decide whether the current teacher/reference action path itself can produce
+  stable grasp/lift when policy is fully overridden. No PPO scale-up.
+
+Worker A:
+- A documented the failed orientation/hold result and launched an alternate
+  single-grasp robustness sweep across original grasp indices
+  `[0, 1, 6, 11, 12, 14, 15, 23, 24, 27]`.
+- Jobs:
+  - `1027909`: `orig000`
+  - `1027910`: `orig001`
+  - `1027911`: `orig006`
+  - `1027912`: `orig011`
+  - `1027913`: `orig012`
+  - `1027914`: `orig014`
+  - `1027915`: `orig015`
+  - `1027916`: `orig023`
+  - `1027917`: `orig024`
+  - `1027918`: `orig027`
+- Each job is a bounded L401 diagnostic with `NUM_ENVS=1`, `NUM_RESETS=3`,
+  orientation-tracked proportional-exact action replay, close width `0.055`,
+  cube XY randomization `0.08`, and render artifacts.
+- Acceptance remains: no reset-prior PPO/A100 unless a candidate is robust
+  across all or near-all resets with plausible contact/lift.
+
+Worker C:
+- C documented that contact-aware rollout job `1027908` failed before behavior
+  due a NumPy/tensor handling bug and a comma-splitting variant export issue.
+- C patched locally to handle both NumPy and torch lowdim observations and to
+  pass variants via `VARIANT_COUNT` / `VARIANT_0..N`.
+- Awaiting C validation/commit/deploy/relaunch of the bounded contact-aware
+  smoke. No DP BC/RL training.
