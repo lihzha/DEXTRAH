@@ -5822,6 +5822,67 @@ Next:
 - Commit the audit-tooling/worklog update.
 - Run a bounded eval-only no-reset visual probe for alpha0.25 (and alpha1.0 context if needed) with `SUPPRESS_SUCCESS_TERMINATION=True` to determine whether the low-alpha handoff can maintain lift after the first success window. No PPO/RL.
 
+## 2026-06-11T23:15:00-07:00 - no-reset low-alpha handoff visual launch
+
+Version Control:
+- local implementation/worklog commit: `6d9c0b6773df663c7955a705038f5bbec6e4e60f` (`Add BC metrics consistency audit`), pushed.
+- remote eval source: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking`, clean at `6a403ae2d7bfb39b5faa5b805fa97da8ebb4d4dc`; this already contains the eval/runtime code needed for `SUPPRESS_SUCCESS_TERMINATION=True`. The `6d9c0b6` commit is local artifact tooling and worklog.
+
+Goal:
+- Determine whether the alpha0.25 low-teacher handoff can remain successful after the first success window when automatic success termination is suppressed.
+
+Command / Jobs:
+- checkpoint: `/results/bc/franka_cube_traj_tracking_bc_handoff_success_alpha0_20260611_223200/nn/bc_reference_action_imitation.pth`
+- reference: `/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json`
+- common eval config: `TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking`, `ACTION_SOURCE=policy_reference_mix`, `NUM_ENVS=4`, `NUM_STEPS=520`, `CAPTURE_VIDEO=True`, `VIDEO_LENGTH=520`, `SEED=75`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`, `SUPPRESS_SUCCESS_TERMINATION=True`.
+- alpha0.25: job_id `1028169`, run `franka_cube_traj_tracking_bc_handoff_noreset_vis_a025_env1_520_20260611_231500`, `CAMERA_ENV_INDEX=1`.
+- alpha1.0 context: job_id `1028170`, run `franka_cube_traj_tracking_bc_handoff_noreset_vis_a100_env0_520_20260611_231500`, `CAMERA_ENV_INDEX=0`.
+
+Acceptance:
+- fetch metrics/videos/logs, validate MP4 metadata, regenerate reports using `--train-bc-metrics`, inspect contact sheets.
+- alpha0.25 only becomes a defensible low-alpha handoff gate if success remains active near the end without target-unsafe regression. If success/lift drops after suppression, stay supervised/eval-only and do not launch PPO/RL.
+
+Active Jobs:
+- `1028169`, `1028170`.
+
+## 2026-06-11T23:19:00-07:00 - no-reset low-alpha handoff visual result
+
+Jobs:
+- `1028169` / `1028170` completed `0:0`.
+- local fetched runs:
+  - `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_vis_a025_env1_520_20260611_231500`
+  - `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_vis_a100_env0_520_20260611_231500`
+- MP4 validation: both videos are `1280x720`, `520` frames, `8.666667 s`.
+
+Viewer Artifacts:
+- combined no-reset report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_visual_gate_20260611_2315/report.md`
+- alpha0.25 no-reset report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_vis_a025_env1_520_20260611_231500_artifacts/report.md`
+- alpha0.25 no-reset contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_vis_a025_env1_520_20260611_231500_artifacts/video_contact_sheet.png`
+- alpha0.25 no-reset video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_vis_a025_env1_520_20260611_231500/videos/handoff-noreset-a025-env1-step-0.mp4`
+- alpha1.0 no-reset report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_vis_a100_env0_520_20260611_231500_artifacts/report.md`
+- alpha1.0 no-reset contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_vis_a100_env0_520_20260611_231500_artifacts/video_contact_sheet.png`
+- alpha1.0 no-reset video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_vis_a100_env0_520_20260611_231500/videos/handoff-noreset-a100-env0-step-0.mp4`
+- no-reset action-semantics report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_action_semantics_20260611_2315/action_semantics_report.md`
+- no-reset action-semantics plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_action_semantics_20260611_2315/action_semantics_plot.png`
+
+Metrics / Visual Diagnosis:
+- alpha0.25 no-reset (`1028169`): final success `3/4`, success-ever `3/4`, last-window success `0.75`, done count `0`, suppressed success-done `3/4`, target unsafe max `0`, clearance min `0.065114 m`; final lift by env `[0.20256, 0.22152, 0.0, 0.22493]` m. Contact sheet shows selected env1 still holding the cube in the final frame.
+- alpha1.0 no-reset (`1028170`): final success `4/4`, last-window success `1.0`, done count `0`, suppressed success-done `4/4`, target unsafe max `0`; final lift by env `[0.19259, 0.19277, 0.19251, 0.19266]` m. Contact sheet shows sustained lift in final frame.
+- train/eval consistency artifacts now use `--train-bc-metrics` and report `bc_metadata_partial_pass`, no mismatches, and explicit unverified train keys for older BC metadata gaps.
+- Reference caveat remains `curobo_validated=false`.
+- Old `actionscale-rewinf-diag-video480-step-0.mp4` from job `1027753` remains obsolete failed diagnostic evidence.
+
+Verdict:
+- This is the best current B result for a low-alpha assisted handoff: alpha0.25 can sustain final success under suppressed success termination, with target safety clean and visual evidence.
+- It is still not a policy-only gate. Alpha0.0 policy-only remains failed from the targeted visual gate, so PPO/RL scale-up remains unauthorized unless the objective is explicitly changed to low-alpha assisted tracking or policy-only improves in a bounded supervised/eval loop.
+
+Next:
+- If continuing toward policy-only, collect/fit around no-reset alpha0.25 success states and test alpha0.0/alpha0.1 no-reset before any RL.
+- If accepting low-alpha assisted tracking as the objective, define a formal low-alpha gate around alpha0.25 no-reset success, including target safety, BC metadata consistency, and visual sustained lift.
+
+Active Jobs:
+- none.
+
 ## 2026-06-11T22:31:26-07:00 - handoff selector metrics launch plan
 
 Goal:
