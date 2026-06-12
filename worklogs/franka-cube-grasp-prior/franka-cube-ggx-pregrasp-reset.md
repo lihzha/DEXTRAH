@@ -26,30 +26,40 @@ Version Control:
 - worklog: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/worklogs/franka-cube-grasp-prior/franka-cube-ggx-pregrasp-reset.md
 - branch: codex/franka-cube-ggx-pregrasp-reset
 - base_commit: acbaf16ddf573f816f66e7ac9091ed5a77335197
-- implementation_commit: pending
-- push/pull: pending
+- implementation_commit: c7e66a0a2168214e8a82f4412e9a79669d806750
+- push/pull: local push to GitHub was bypassed because the local SSH agent hung; transferred a Git bundle from remote-known base `d2073d9318277d222ba7506e16d223035927109f` and fetched it into the A100 canonical repo and agent worktree
 - changed_files: `cluster/sbatch_train_teacher_8gpu.sh`, this owned worklog
-- remote_commit/status: pending A100 agent worktree update
+- remote_commit/status: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset` detached at `c7e66a0a2168214e8a82f4412e9a79669d806750`; wrapper `bash -n` passed
 
 Command / Job:
-- planned baseline jobs: `TASK=Dextrah-Franka-Cube-Grasp`, `GRASP_PRIOR_RESET_ENABLED=False`, `SEED=1..5`, `MAX_ITERATIONS=600`, `USE_CUDA_GRAPH=False`, `NUM_ENVS=2048`, `AUTO_RESUME=False`, `SELF_RELAUNCH=False`, PPO knobs matching `handoffs/franka_cube_baseclear_ppo_20260610_1756/config.json`.
-- planned reset-prior jobs: same as baseline, but `GRASP_PRIOR_RESET_ENABLED=True` and `GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz`.
-- job_id: pending
-- run_dir: pending under `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/`
-- logs: pending `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_<job_id>.out`
+- baseline jobs: `TASK=Dextrah-Franka-Cube-Grasp`, `GRASP_PRIOR_RESET_ENABLED=False`, `SEED=1..5`, `MAX_ITERATIONS=600`, `USE_CUDA_GRAPH=False`, `NUM_ENVS=2048`, `AUTO_RESUME=False`, `SELF_RELAUNCH=False`, PPO knobs matching `handoffs/franka_cube_baseclear_ppo_20260610_1756/config.json`.
+- reset-prior jobs: same as baseline, but `GRASP_PRIOR_RESET_ENABLED=True` and `GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz`.
+- job_id:
+  - no-prior seed 1: `29005567`, run `franka_cube_baseclear600_seed1_noprior_c7e66a0_20260612_092951`
+  - no-prior seed 2: `29005568`, run `franka_cube_baseclear600_seed2_noprior_c7e66a0_20260612_092951`
+  - no-prior seed 3: `29005569`, run `franka_cube_baseclear600_seed3_noprior_c7e66a0_20260612_092951`
+  - no-prior seed 4: `29005571`, run `franka_cube_baseclear600_seed4_noprior_c7e66a0_20260612_092951`
+  - no-prior seed 5: `29005573`, run `franka_cube_baseclear600_seed5_noprior_c7e66a0_20260612_092951`
+  - reset-prior seed 1: `29005574`, run `franka_cube_resetprior600_seed1_c7e66a0_20260612_092951`
+  - reset-prior seed 2: `29005576`, run `franka_cube_resetprior600_seed2_c7e66a0_20260612_092951`
+  - reset-prior seed 3: `29005577`, run `franka_cube_resetprior600_seed3_c7e66a0_20260612_092951`
+  - reset-prior seed 4: `29005583`, run `franka_cube_resetprior600_seed4_c7e66a0_20260612_092951`
+  - reset-prior seed 5: `29005584`, run `franka_cube_resetprior600_seed5_c7e66a0_20260612_092951`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/<run_name>`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_<job_id>.out`
 - artifacts: JSONL metrics, TensorBoard summaries, resolved configs, checkpoint rewards, and comparison plots/tables after completion
 
 Result:
-- status: in_progress
-- metrics/artifacts: config comparison against the provided handoff found matching PPO/env scale knobs except the prior replication used 300 epochs and `USE_CUDA_GRAPH=True`; provided baseline used 600 epochs and `USE_CUDA_GRAPH=False`. Provided successful source commit `bdca4e1728ab8d37bac6e18836a3919f84aa6602` is an ancestor of this branch.
-- key evidence: `bash -n cluster/sbatch_train_teacher_8gpu.sh` passed after the seed hook.
+- status: launched and monitoring
+- metrics/artifacts: as of `2026-06-12T09:30:53Z`, all 10 jobs are `RUNNING`. Config comparison against the provided handoff found matching PPO/env scale knobs except the prior replication used 300 epochs and `USE_CUDA_GRAPH=True`; provided baseline used 600 epochs and `USE_CUDA_GRAPH=False`. Provided successful source commit `bdca4e1728ab8d37bac6e18836a3919f84aa6602` is an ancestor of this branch.
+- key evidence: `bash -n cluster/sbatch_train_teacher_8gpu.sh` passed after the seed hook. Each wrapper header confirms `CODE_COMMIT=c7e66a0a2168214e8a82f4412e9a79669d806750`, seed `1..5`, `NUM_ENVS=2048`, `HORIZON_LENGTH=64`, `MINIBATCH_SIZE=32768`, `CENTRAL_VALUE_MINIBATCH_SIZE=32768`, `LEARNING_RATE=0.0002`, `CENTRAL_VALUE_LEARNING_RATE=0.0001`, `GAMMA=0.995`, `TAU=0.95`, `KL_THRESHOLD=0.012`, `ENTROPY_COEF=0.0005`, `E_CLIP=0.2`, `GRAD_NORM=1.0`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`, `AUTO_RESUME=False`, `SELF_RELAUNCH=False`, and the expected prior flag/path. `USE_CUDA_GRAPH=False` was set explicitly in `sbatch --export` and will be rechecked from resolved run config.
 
 Analysis:
 - Use paired seeds `1..5` for both conditions, not the historical time-derived seed.
 - Keep reward weights unchanged for this sweep to isolate reset-prior vs no-prior under the known-good baseline config.
 
 Next:
-- Commit and push the seed hook/worklog; deploy the exact commit to the A100 agent worktree; submit all 10 runs; monitor until completed, failed, or externally blocked; fetch and compare curves/artifacts.
+- Monitor wrapper logs and resolved configs; fetch JSONL/TensorBoard/config artifacts; generate reward/loss comparison PNGs and tables after completion; run/inspect policy-only videos before making any grasp/lift success claim.
 
 ## 2026-06-12T08:59:06Z - reward and loss comparison PNGs
 
