@@ -166,7 +166,12 @@ parser.add_argument(
 )
 parser.add_argument(
     "--action_correction_mode",
-    choices=["disabled", "nearest_label_align_pose", "nearest_label_full_action"],
+    choices=[
+        "disabled",
+        "nearest_label_align_pose",
+        "nearest_label_full_action",
+        "dataset_step_full_action",
+    ],
     default="disabled",
     help=(
         "Eval-only diagnostic action correction. 'nearest_label_align_pose' "
@@ -174,7 +179,10 @@ parser.add_argument(
         "dataset label while runtime phase is align_open; gripper is left as "
         "the DP output. 'nearest_label_full_action' replaces/blends all seven "
         "action dims with the nearest support label, coupling pose and gripper "
-        "to the same relabel row. These modes are not trained policy results."
+        "to the same relabel row. 'dataset_step_full_action' replaces/blends "
+        "all seven action dims with the support label at "
+        "phase_progress_start_step + rollout_step inside phase_progress_episode. "
+        "These modes are not trained policy results."
     ),
 )
 parser.add_argument(
@@ -491,6 +499,16 @@ def _episode_for_row(row_idx: int, episode_ends: np.ndarray) -> tuple[int, int, 
     return episode_idx, start, end
 
 
+def _row_for_episode_step(episode_ends: np.ndarray, episode: int, episode_step: int) -> tuple[int, int, int, int]:
+    if episode_ends.size == 0:
+        raise ValueError("dataset has no episodes")
+    episode_idx = int(np.clip(int(episode), 0, int(episode_ends.size - 1)))
+    start = 0 if episode_idx == 0 else int(episode_ends[episode_idx - 1])
+    end = int(episode_ends[episode_idx])
+    local_step = int(np.clip(int(episode_step), 0, max(0, end - start - 1)))
+    return int(start + local_step), episode_idx, start, end
+
+
 def _support_dataset_payload(path: Path | None) -> dict[str, Any] | None:
     if path is None:
         return None
@@ -776,6 +794,9 @@ def _apply_eval_action_correction(
     support: dict[str, Any] | None,
     mode: str,
     blend: float,
+    step: int = 0,
+    dataset_episode: int = 0,
+    dataset_start_step: int = 0,
 ) -> tuple[np.ndarray, list[dict[str, Any]]]:
     """Apply opt-in eval-only action corrections for diagnostics."""
 
@@ -831,6 +852,40 @@ def _apply_eval_action_correction(
                     "nearest_demo_phase_progress": (
                         nearest_obs[21:25].astype(float).tolist() if nearest_obs.shape[0] >= 25 else None
                     ),
+                    "label_action": label.astype(float).tolist(),
+                    "pose_l2_before": float(np.linalg.norm(original[:6] - label[:6])),
+                    "pose_l2_after": float(np.linalg.norm(corrected[env_idx, :6] - label[:6])),
+                    "action_l2_before": float(np.linalg.norm(original - label)),
+                    "action_l2_after": float(np.linalg.norm(corrected[env_idx] - label)),
+                    "gripper_before": float(original[6]),
+                    "gripper_after": float(corrected[env_idx, 6]),
+                    "gripper_label": float(label[6]),
+                }
+            )
+        elif mode == "dataset_step_full_action":
+            row_idx, episode_idx, episode_start, episode_end = _row_for_episode_step(
+                support["episode_ends"],
+                int(dataset_episode),
+                int(dataset_start_step) + int(step),
+            )
+            label = np.asarray(support["action"][row_idx], dtype=np.float32)
+            corrected[env_idx, :] = (1.0 - blend) * corrected[env_idx, :] + blend * label
+            phase_id = int(support["phase_ids"][row_idx])
+            nearest_obs = np.asarray(support["obs"][row_idx], dtype=np.float32)
+            live_cme = np.asarray(lowdim_obs[env_idx][14:17], dtype=np.float32)
+            label_cme = np.asarray(nearest_obs[14:17], dtype=np.float32)
+            record.update(
+                {
+                    "applied": True,
+                    "nearest_demo_row": int(row_idx),
+                    "nearest_demo_episode": int(episode_idx),
+                    "nearest_demo_episode_step": int(row_idx - episode_start),
+                    "nearest_demo_phase": _phase_name_from_id(support["phase_names"], phase_id),
+                    "nearest_demo_distance": float(np.linalg.norm(live_cme - label_cme)),
+                    "nearest_demo_phase_progress": (
+                        nearest_obs[21:25].astype(float).tolist() if nearest_obs.shape[0] >= 25 else None
+                    ),
+                    "dataset_episode_end": int(episode_end),
                     "label_action": label.astype(float).tolist(),
                     "pose_l2_before": float(np.linalg.norm(original[:6] - label[:6])),
                     "pose_l2_after": float(np.linalg.norm(corrected[env_idx, :6] - label[:6])),
@@ -1365,6 +1420,9 @@ def main() -> None:
                         support=support_dataset,
                         mode=str(args_cli.action_correction_mode),
                         blend=float(args_cli.action_correction_blend),
+                        step=step,
+                        dataset_episode=int(args_cli.phase_progress_episode),
+                        dataset_start_step=int(args_cli.phase_progress_start_step),
                     )
                 clip = float(args_cli.clip_actions)
                 if math.isfinite(clip) and clip > 0.0:

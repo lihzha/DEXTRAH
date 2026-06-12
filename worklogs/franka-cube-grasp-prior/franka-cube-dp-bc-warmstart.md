@@ -11385,6 +11385,397 @@ Command / Job:
 Result:
 - status: launching
 
+## 2026-06-12T04:59:03-07:00 - local one-demo x0-prediction overfit probe
+
+Goal:
+- Debug the failed/likely-failing exact one-demo DP eval without changing the
+  simulator path: determine whether the epsilon-prediction diffusion objective
+  is the source of remaining centimeter-scale first-action error on the critical
+  align/close rows.
+
+Hypothesis:
+- Forced dataset-label replay succeeds from the exact object reset, and the
+  strict epsilon checkpoint predicts on-manifold rows with small but still
+  nonzero pose error. Training the same official lowdim UNet policy with
+  `noise_scheduler.prediction_type=sample` may overfit x0/action sequences more
+  tightly on this tiny deterministic dataset and reduce closed-loop drift.
+
+Change:
+- No source changes planned for this attempt.
+- Local training variant only: same one-demo 25D dataset, same
+  `WeightedDiffusionUnetLowdimPolicy`, same I/O contract, no EMA, but
+  `policy.noise_scheduler.prediction_type=sample`.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `dbfed79ba6ec80ed14891ab04b526d7189989d1a`
+- implementation_commit: `n/a` (config-only local probe)
+- changed_files: worklog pending
+
+Command / Job:
+- command: pending local `train.py` launch
+- job_id: local PID pending
+- run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_normalcube_one_traj/phaseprogress_normalcube_ep16_seed42_x0pred_noema_20260612_0459`
+
+Next:
+- Train locally, run offline coherence against the exact one-demo dataset, and
+  stage/evaluate only if row-level errors improve over the strict epsilon
+  checkpoint. Continue monitoring active l401 job `1028368`.
+
+Result:
+- status: local training completed
+- pid: `1579586`
+- final metrics: epoch `1999`, global step `9999`, `train_loss≈2e-5`,
+  `train_action_mse_error=0.0`.
+- offline coherence: pass on all `289` rows.
+- all-phase row stats: offset-0 sequence MSE all
+  `2.25e-06`, gripper sign match `1.0`, first pose cosine mean
+  `0.999982`, best-offset-zero fraction `0.654`.
+- critical rows:
+  - row `56`: first pose L2 `0.00745`, predicted xyz
+    `[-0.8259, 0.8928, -0.0507]` vs label
+    `[-0.8196, 0.8897, -0.0530]`.
+  - row `83`: first pose L2 `0.00275`, predicted gripper `-0.9999`.
+  - row `240`: first pose L2 `0.00136`, predicted gripper `-1.0000`.
+
+Analysis:
+- This is a much tighter one-demo action fit than the strict epsilon checkpoint,
+  while preserving the same architecture and observation/action contract. The
+  remaining proof is closed-loop exact-reset eval.
+
+Next:
+- Stage the x0 checkpoint to l401 and launch a fast exact-reset eval using the
+  standard chunk8/eight-sample/binary-gripper DP contract without video first.
+  If metrics pass, run a video confirmation and then scale.
+
+Follow-up launch:
+- staged checkpoint:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/phaseprogress_normalcube_ep16_seed42_x0pred_noema_20260612_0459/latest.ckpt`
+- job_id: `1028370`
+- run_name:
+  `franka_cube_dp_eval_normalcube_ep16_seed42_exact_x0pred_chunk8_avg8_gripvote_novideo_20260612_0503`
+- command:
+  `sbatch --parsable --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart-gripvote-dbfed79,RUN_NAME=franka_cube_dp_eval_normalcube_ep16_seed42_exact_x0pred_chunk8_avg8_gripvote_novideo_20260612_0503,NUM_ENVS=1,NUM_STEPS=320,NUM_INFERENCE_STEPS=100,NUM_ACTION_SAMPLES=8,GRIPPER_SAMPLE_AGGREGATION=binary_vote,GRIPPER_CLOSE_THRESHOLD=0.5,GRIPPER_VOTE_THRESHOLD=0.5,ACTION_CHUNK_STEPS=8,CLIP_ACTIONS=1.0,SUCCESS_WINDOW=80,SUCCESS_TIMEOUT_OVERRIDE=999.0,CAPTURE_VIDEO=False,PRINT_INTERVAL=20,SEED=42,DEBUG_POLICY_TRACE_MAX_CALLS=96,DEBUG_POLICY_TRACE_ENV_INDEX=0,CHECKPOINT=/results/dp_bc/checkpoints/phaseprogress_normalcube_ep16_seed42_x0pred_noema_20260612_0459/latest.ckpt,SUPPORT_DATASET=/results/dp_bc/phase_progress_normalcube_one/normalcube_ep16_seed42_phase_progress_20260612_032517.npz,PHASE_PROGRESS_DATASET=/results/dp_bc/phase_progress_normalcube_one/normalcube_ep16_seed42_phase_progress_20260612_032517.npz,PHASE_PROGRESS_EPISODE=0,PHASE_PROGRESS_START_STEP=0,PHASE_PROGRESS_MODE=dataset,ACTION_CORRECTION_MODE=disabled,DEMO_RESET_DATASET=/results/dp_bc/phase_progress_normalcube_one/normalcube_ep16_seed42_phase_progress_20260612_032517.npz,DEMO_RESET_EPISODE=0,DEMO_RESET_STEP=0,DEMO_RESET_JOINT_BLEND_ALPHA=0.0,DEMO_RESET_CUBE_POS_BLEND_ALPHA=1.0 cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- remote run dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_normalcube_ep16_seed42_exact_x0pred_chunk8_avg8_gripvote_novideo_20260612_0503`
+
+Next:
+- Monitor jobs `1028368` and `1028370`; fetch metrics/support traces and
+  inspect before launching any scale-up.
+
+Follow-up launch:
+- job_id: `1028371`
+- run_name:
+  `franka_cube_dp_eval_normalcube_ep16_seed42_exact_x0pred_chunk1_avg8_gripvote_novideo_20260612_0506`
+- reason:
+  x0 chunk8 showed no lift through step `100`, so this tests whether stale
+  future-action chunking is the remaining mismatch. It uses the same x0
+  checkpoint, exact object reset, dataset phase/progress, eight DDPM samples,
+  and binary gripper voting, but `ACTION_CHUNK_STEPS=1`.
+- remote run dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_normalcube_ep16_seed42_exact_x0pred_chunk1_avg8_gripvote_novideo_20260612_0506`
+
+## 2026-06-12T05:08:00-07:00 - local x0 support-expanded one-demo training
+
+Goal:
+- Address the observed off-support failure: x0 predicts exact demo rows tightly,
+  but closed-loop states drift and the policy stops emitting the saturated
+  approach actions.
+
+Hypothesis:
+- Training the same x0 diffusion objective on a support-expanded one-demo
+  dataset, where perturbed EE observations are labeled with actions toward the
+  original demo target pose, should teach local correction behavior while the
+  original copies preserve the exact demonstration policy.
+
+Change:
+- No source change for this run.
+- Dataset:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/support_expansion/normalcube_ep16_seed42_supportexp_balanced_20260612_044829/normalcube_ep16_seed42_supportexp_balanced.npz`
+- Dataset shape: `9248` rows, `32` episodes, `8` original copies plus `24`
+  perturbed copies, pose clip fraction `0.000288`.
+
+Command / Job:
+- command: pending local `train.py` launch
+- run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_normalcube_one_traj/phaseprogress_normalcube_ep16_seed42_supportexp_balanced_x0pred_noema_20260612_0508/official_dp_train`
+
+Next:
+- Train locally with `prediction_type=sample`, then run offline coherence on
+  both the original one-demo dataset and the support-expanded dataset. Stage
+  and evaluate only if original-row precision remains close to the x0 exact
+  checkpoint and support rows are coherent.
+
+Result:
+- status: local training completed
+- final log row: epoch `299`, global step `11099`, train loss
+  `0.001647`, learning rate `0.0`.
+- checkpoint:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_normalcube_one_traj/phaseprogress_normalcube_ep16_seed42_supportexp_balanced_x0pred_noema_20260612_0508/official_dp_train/checkpoints/latest.ckpt`
+- original one-demo offline coherence: pass on `289` rows, all-phase offset-0
+  MSE `1.381e-04`, gripper sign `1.0`, first-pose L2 mean/max
+  `0.00849/0.03762`.
+- support-expanded offline coherence: pass on `9248` rows, all-phase offset-0
+  MSE `8.815e-04`, gripper sign `1.0`.
+
+Analysis:
+- This checkpoint is less exact on original demo rows than the pure one-demo
+  x0 model, but it has learned local corrective labels around perturbed EE
+  states. The next proof is closed-loop exact reset. If it fails, tighten the
+  perturbation radius and increase the original-copy weight instead of scaling.
+
+Follow-up launch:
+- staged checkpoint:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/phaseprogress_normalcube_ep16_seed42_supportexp_balanced_x0pred_noema_20260612_0508/latest.ckpt`
+- job_id: `1028372`
+- run_name:
+  `franka_cube_dp_eval_normalcube_ep16_seed42_exact_supportexp_x0pred_chunk8_avg8_gripvote_novideo_20260612_0520`
+- command:
+  `sbatch --parsable --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart-gripvote-dbfed79,RUN_NAME=franka_cube_dp_eval_normalcube_ep16_seed42_exact_supportexp_x0pred_chunk8_avg8_gripvote_novideo_20260612_0520,NUM_ENVS=1,NUM_STEPS=320,NUM_INFERENCE_STEPS=100,NUM_ACTION_SAMPLES=8,GRIPPER_SAMPLE_AGGREGATION=binary_vote,GRIPPER_CLOSE_THRESHOLD=0.5,GRIPPER_VOTE_THRESHOLD=0.5,ACTION_CHUNK_STEPS=8,CLIP_ACTIONS=1.0,SUCCESS_WINDOW=80,SUCCESS_TIMEOUT_OVERRIDE=999.0,CAPTURE_VIDEO=False,PRINT_INTERVAL=20,SEED=42,DEBUG_POLICY_TRACE_MAX_CALLS=96,DEBUG_POLICY_TRACE_ENV_INDEX=0,CHECKPOINT=/results/dp_bc/checkpoints/phaseprogress_normalcube_ep16_seed42_supportexp_balanced_x0pred_noema_20260612_0508/latest.ckpt,SUPPORT_DATASET=/results/dp_bc/phase_progress_normalcube_one/normalcube_ep16_seed42_phase_progress_20260612_032517.npz,PHASE_PROGRESS_DATASET=/results/dp_bc/phase_progress_normalcube_one/normalcube_ep16_seed42_phase_progress_20260612_032517.npz,PHASE_PROGRESS_EPISODE=0,PHASE_PROGRESS_START_STEP=0,PHASE_PROGRESS_MODE=dataset,ACTION_CORRECTION_MODE=disabled,DEMO_RESET_DATASET=/results/dp_bc/phase_progress_normalcube_one/normalcube_ep16_seed42_phase_progress_20260612_032517.npz,DEMO_RESET_EPISODE=0,DEMO_RESET_STEP=0,DEMO_RESET_JOINT_BLEND_ALPHA=0.0,DEMO_RESET_CUBE_POS_BLEND_ALPHA=1.0 cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- remote run dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_normalcube_ep16_seed42_exact_supportexp_x0pred_chunk8_avg8_gripvote_novideo_20260612_0520`
+
+Next:
+- Monitor jobs `1028371` and `1028372`. Fetch metrics/support traces and
+  inspect artifacts before any scale-up.
+
+## 2026-06-12T04:52:00-07:00 - strict one-demo exact reset chunk1 diagnostic
+
+Goal:
+- Continue the exact-object one-demo overfit gate before any scale-up. The
+  target condition is a successful closed-loop lift on the same cube position
+  used by the overfit trajectory.
+
+Hypothesis:
+- The strict one-demo checkpoint fits dataset rows offline, but
+  `ACTION_CHUNK_STEPS=8` commits stale open-phase actions through contact. A
+  chunk1 exact-reset eval should distinguish stale chunk execution from a
+  deeper policy/action I/O mismatch.
+
+Current evidence:
+- Strict no-EMA one-demo checkpoint
+  `phaseprogress_normalcube_ep16_seed42_strictpose_noema_20260612_1150`
+  reached `train_action_mse_error=9.074e-05` and offline coherence
+  all-phase offset-0 MSE `3.667e-04`.
+- Exact-reset strict chunk8 eval job `1028367`, run
+  `franka_cube_dp_eval_normalcube_ep16_seed42_exact_strictpose_chunk8_avg8_gripvote_video320_20260612_042953`,
+  failed: success/window success `0/0`, max/final lift `0.0152/0 m`,
+  min/final EE-to-cube `0.0598/0.2486 m`, first hard close at step `90`.
+- Policy/action trace shows the live rollout leaves support before close:
+  at eval step `73` the history is duplicated after a reset-like event, and
+  rows `80`-`96` emit open/large approach actions while dataset labels are
+  already close-support actions.
+- Forced dataset-label replay on the same exact cube reset passed, so the
+  low-level label/control path is viable.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- implementation_commit: `dbfed79ba6ec80ed14891ab04b526d7189989d1a`
+- remote_commit/status:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart-gripvote-dbfed79`
+  at `dbfed79ba6ec80ed14891ab04b526d7189989d1a`
+
+Command / Job:
+- next command: launch strict exact-reset eval with
+  `ACTION_CHUNK_STEPS=1`, `NUM_ACTION_SAMPLES=8`,
+  `GRIPPER_SAMPLE_AGGREGATION=binary_vote`, same checkpoint/dataset/demo reset,
+  and full policy/support tracing.
+- job_id: `1028368`
+- run_name:
+  `franka_cube_dp_eval_normalcube_ep16_seed42_exact_strictpose_chunk1_avg8_gripvote_video320_20260612_043854`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_normalcube_ep16_seed42_exact_strictpose_chunk1_avg8_gripvote_video320_20260612_043854`
+- command: `sbatch --export=ALL,CODE_NFS=<agent_worktree>,RUN_NAME=<run>,NUM_ENVS=1,NUM_STEPS=320,NUM_INFERENCE_STEPS=100,NUM_ACTION_SAMPLES=8,GRIPPER_SAMPLE_AGGREGATION=binary_vote,ACTION_CHUNK_STEPS=1,CLIP_ACTIONS=1.0,SUCCESS_WINDOW=16,SUCCESS_TIMEOUT_OVERRIDE=999.0,CHECKPOINT=/results/dp_bc/checkpoints/phaseprogress_normalcube_ep16_seed42_strictpose_noema_20260612_1150/latest.ckpt,PHASE_PROGRESS_DATASET=/results/dp_bc/phase_progress_normalcube_one/normalcube_ep16_seed42_phase_progress_20260612_032517.npz,DEMO_RESET_DATASET=/results/dp_bc/phase_progress_normalcube_one/normalcube_ep16_seed42_phase_progress_20260612_032517.npz cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+
+Next:
+- Submit and monitor chunk1 to completion. If chunk1 succeeds, scale to the
+  prepared multi-demo dataset. If chunk1 fails, debug the live observation/action
+  mismatch directly rather than scaling.
+
+## 2026-06-12T04:44:00-07:00 - support-expanded one-demo fallback training
+
+Goal:
+- Prepare the likely fix while l401 chunk1 eval job `1028368` waits for
+  resources: train a one-demo BC checkpoint that is locally robust to the
+  1-3 cm live observation drift observed before the close phase.
+
+Hypothesis:
+- The strict checkpoint is accurate on demonstration observations but unstable
+  off the demonstration support. Adding synthetic local EE perturbations with
+  labels recomputed to the original accepted action target should teach the DP
+  a corrective vector field without changing the simulator or eval action
+  convention.
+
+Change:
+- Added `dextrah_lab/offline_dp_bc/make_support_expansion_dataset.py`.
+- The tool keeps the original accepted trajectory and appends perturbed copies.
+  For each perturbed row it preserves cube/phase context, updates
+  `ee_pos` and `cube_minus_ee`, then recomputes the 7D normalized action toward
+  the pose produced by the original accepted action. This preserves the original
+  label when perturbation is zero.
+
+Validation:
+- `python -m py_compile dextrah_lab/offline_dp_bc/make_support_expansion_dataset.py`: passed.
+- Generated support-expanded one-demo dataset:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/support_expansion/normalcube_ep16_seed42_supportexp_actiontarget_20260612_044321/normalcube_ep16_seed42_supportexp_actiontarget.npz`
+- Dataset summary: `9537` rows, `33` episodes, original demo plus `32`
+  support copies; pose clip fraction `0.000594`; max pose/action abs `1.0`.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `dbfed79ba6ec80ed14891ab04b526d7189989d1a`
+- implementation_commit: pending
+- changed_files:
+  - `dextrah_lab/offline_dp_bc/make_support_expansion_dataset.py`
+  - `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+
+Command / Job:
+- local training session: `11047`
+- run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_normalcube_one_traj/phaseprogress_normalcube_ep16_seed42_supportexp_noema_20260612_044411`
+- command: official DP `train.py` with the same 25D lowdim UNet,
+  `pred_action_steps_only=true`, `action_normalizer=limits_clamp_constant`,
+  `use_ema=false`, `num_epochs=150`, `batch_size=128`,
+  `+policy.action_loss_weights=[8,8,8,4,4,4,8]`, and dataset path set to the
+  support-expanded NPZ above.
+
+Next:
+- Monitor local train to checkpoint completion. If chunk1 strict eval succeeds,
+  use the result only as fallback evidence. If chunk1 fails, stage this
+  checkpoint/dataset to l401 and evaluate it on the exact object reset.
+
+## 2026-06-12T04:29:00-07:00 - strict one-demo overfit exact-object eval
+
+Goal:
+- Re-evaluate a true one-demo overfit on the exact object position of the demo
+  before scaling BC to more environments.
+
+Hypothesis:
+- The previous one-demo checkpoint passed the coarse offline coherence gate but
+  underfit saturated align/open actions around rows 56-80; this caused the
+  closed-loop policy to leave demonstration support before gripper close. A
+  stricter no-EMA one-demo overfit with weighted xyz/gripper loss should reduce
+  row-level action error enough for exact-reset closed-loop success.
+
+Change:
+- No source changes after commit `dbfed79ba6ec80ed14891ab04b526d7189989d1a`.
+- Trained a new local strict one-demo checkpoint with:
+  `training.num_epochs=2001`, `training.lr_scheduler=constant_with_warmup`,
+  `training.use_ema=false`, `checkpoint.topk.k=0`,
+  `policy.action_loss_weights=[8,8,8,4,4,4,8]`,
+  `task.dataset.action_normalizer=limits_clamp_constant`,
+  `pred_action_steps_only=true`, `policy.num_inference_steps=100`.
+- Staged checkpoint to l401:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/phaseprogress_normalcube_ep16_seed42_strictpose_noema_20260612_1150/latest.ckpt`.
+
+Version Control:
+- agent_id: franka-cube-dp-bc-warmstart-gripvote-dbfed79
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- implementation_commit: `dbfed79ba6ec80ed14891ab04b526d7189989d1a`
+- changed_files: worklog only for this attempt
+- remote_commit/status: l401 worktree
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart-gripvote-dbfed79`
+  at `dbfed79ba6ec80ed14891ab04b526d7189989d1a`
+
+Command / Job:
+- local train run:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_normalcube_one_traj/phaseprogress_normalcube_ep16_seed42_strictpose_noema_20260612_1150`
+- offline coherence:
+  `python -m dextrah_lab.offline_dp_bc.diagnose_dp_offline_coherence --checkpoint .../latest.ckpt --dataset .../contact_relabel_normalcube_ep16_phase_progress.npz --device cuda:0 --num-inference-steps 100`
+- exact eval job: `1028366`
+- exact eval run:
+  `franka_cube_dp_eval_normalcube_ep16_seed42_exact_strictpose_chunk8_avg8_gripvote_video320_20260612_042854`
+- exact eval run dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_normalcube_ep16_seed42_exact_strictpose_chunk8_avg8_gripvote_video320_20260612_042854`
+
+Result:
+- status: exact eval running
+- training metrics: epoch `2000`, global step `10004`,
+  `train_action_mse_error=9.07e-05`, `train_loss=0.04883`.
+- offline coherence: pass on `289` rows; all-phase offset-0 MSE
+  `0.0003667`; align/open offset-0 fraction `0.566`, up from the previous
+  loose run's `0.152`.
+- row-level checks:
+  - row 56: first pose L2 `0.0236`, offset-0 sequence MSE `1.01e-04`
+  - row 80: first pose L2 `0.0283`, offset-0 sequence MSE `7.53e-05`
+  - row 83: predicted gripper `-0.941` for close label `-1`
+  - rows 88-104: predicted gripper `-0.986` to `-0.999`
+
+Analysis:
+- This fixes the prior offline symptom where stochastic mean predictions were
+  visibly attenuated in the align/open phase. The remaining question is whether
+  the exact closed-loop rollout stays on support long enough to close and lift.
+
+Next:
+- Monitor job `1028366`, fetch metrics/log/video/support trace, inspect with a
+  support report and contact sheet. Scale to the prepared 3-demo checkpoint only
+  if this exact one-demo eval succeeds.
+
+## 2026-06-12T04:23:00-07:00 - exact-demo DP failure and stricter one-demo overfit
+
+Goal:
+- Make the exact object-position one-demo BC eval pass before scaling to the
+  three-demo/normal-reset checkpoint.
+
+Hypothesis:
+- The existing one-demo checkpoint is not actually overfit tightly enough for
+  closed-loop control. Forced dataset-label replay passes, but the DP policy
+  leaves support during the saturated align/open approach. Eight-sample pose
+  averaging and single-sample stochastic inference both show insufficient
+  closed-loop lift, so the next step is a stricter one-demo diffusion overfit
+  with more optimizer steps and stronger pose/action weighting.
+
+Evidence:
+- Forced dataset replay job `1028361` completed successfully from exact object
+  reset. Report/video were fetched locally:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_replays/franka_cube_dp_replay_normalcube_ep16_exact_forcedlabels_20260612_105805`.
+  It reached final nearest live row `288`, final EE-to-cube `0.0281 m`, first
+  close step `83`, and visual inspection showed a real grasp/lift.
+- Exact DP eval with chunk8, eight pose samples, and binary gripper vote job
+  `1028363` failed. Max lift was `0.0124 m`, final lift `0`, min/final
+  EE-to-cube `0.0397/0.2663 m`, first hard close `87`, final support distance
+  `6.01`. Support report verdict: `FAIL: closed-loop policy still leaves
+  demonstration support and closes away from the cube`.
+- Policy trace shows the runtime leaves align/open support around step `52`;
+  by step `56`, the offline demo label has saturated approach
+  `[-0.82, 0.89, -0.053, ...]`, while the existing DP checkpoint's sampled
+  mean at the exact offline row is about
+  `[-0.693, 0.818, -0.040, ...]`.
+- Chunk1 exact eval job `1028362` is still running but already showed no lift
+  by step `60`; chunk8 single-sample binary-gripper diagnostic job `1028365`
+  is running and also showed no lift by step `120`.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- implementation_commit: `dbfed79ba6ec80ed14891ab04b526d7189989d1a`
+- changed_files: worklog pending
+- remote_commit/status:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart-gripvote-dbfed79`
+  at `dbfed79ba6ec80ed14891ab04b526d7189989d1a`
+
+Next:
+- Train a stricter local one-demo DP overfit with `obs_dim=25`,
+  `pred_action_steps_only=true`, no EMA, constant-with-warmup LR, more
+  optimizer steps, and heavier pose/action weights.
+- Gate it with a stricter offline check focused on closed-loop-critical rows
+  before staging to l401.
+- Only if the exact one-demo eval passes, stage and evaluate the prepared
+  three-demo checkpoint/dataset.
+
 ## 2026-06-12T10:58:05Z - normal-demo exact reset replay controls
 
 Goal:
@@ -11514,6 +11905,75 @@ Next:
   chunk8 exact normal-demo eval with `NUM_ACTION_SAMPLES=8` and
   `GRIPPER_SAMPLE_AGGREGATION=binary_vote`.
 
+## 2026-06-12T11:10:00Z - chunk8 exact eval with binary gripper vote
+
+Goal:
+- Test whether the one-demo exact normal-reset DP eval succeeds when chunk8
+  still averages pose across eight DDPM samples but aggregates the gripper as a
+  binary close vote.
+
+Hypothesis:
+- The failed chunk8 average run was caused by arithmetic averaging suppressing
+  close commands in the future gripper horizon. Binary voting with
+  `close_threshold=0.5` and `vote_threshold=0.5` should close at the transition
+  rows while preserving the pose variance reduction that made chunk8 viable.
+
+Change:
+- Source commit `dbfed79ba6ec80ed14891ab04b526d7189989d1a` deployed to an
+  isolated l401 worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart-gripvote-dbfed79`
+- The original l401 worktree at `7adb49d` was left untouched because queued
+  jobs `1028361` and `1028362` still reference it.
+
+Command / Job:
+- command:
+  `sbatch --parsable --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart-gripvote-dbfed79,RUN_NAME=franka_cube_dp_eval_normalcube_ep16_seed42_exact_chunk8_avg8_gripvote05_video320_20260612_111000,NUM_ENVS=1,NUM_STEPS=320,NUM_INFERENCE_STEPS=100,NUM_ACTION_SAMPLES=8,GRIPPER_SAMPLE_AGGREGATION=binary_vote,GRIPPER_CLOSE_THRESHOLD=0.5,GRIPPER_VOTE_THRESHOLD=0.5,ACTION_CHUNK_STEPS=8,CLIP_ACTIONS=1.0,SUCCESS_WINDOW=80,SUCCESS_TIMEOUT_OVERRIDE=999.0,CAPTURE_VIDEO=True,VIDEO_LENGTH=320,VIDEO_NAME_PREFIX=franka-cube-dp-normalcube-ep16-exact-chunk8-avg8-gripvote,PRINT_INTERVAL=20,SEED=42,DEBUG_POLICY_TRACE_MAX_CALLS=80,DEBUG_POLICY_TRACE_ENV_INDEX=0,CHECKPOINT=/results/dp_bc/checkpoints/phaseprogress_normalcube_ep16_seed42_noema_20260612_032517/latest.ckpt,SUPPORT_DATASET=/results/dp_bc/phase_progress_normalcube_one/normalcube_ep16_seed42_phase_progress_20260612_032517.npz,PHASE_PROGRESS_DATASET=/results/dp_bc/phase_progress_normalcube_one/normalcube_ep16_seed42_phase_progress_20260612_032517.npz,PHASE_PROGRESS_EPISODE=0,PHASE_PROGRESS_START_STEP=0,PHASE_PROGRESS_MODE=dataset,ACTION_CORRECTION_MODE=disabled,DEMO_RESET_DATASET=/results/dp_bc/phase_progress_normalcube_one/normalcube_ep16_seed42_phase_progress_20260612_032517.npz,DEMO_RESET_EPISODE=0,DEMO_RESET_STEP=0,DEMO_RESET_JOINT_BLEND_ALPHA=0.0,DEMO_RESET_CUBE_POS_BLEND_ALPHA=1.0 cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- job_id: `1028363`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_normalcube_ep16_seed42_exact_chunk8_avg8_gripvote05_video320_20260612_111000`
+
+Result:
+- status: pending/running on l401
+
+Next:
+- Monitor with jobs `1028361` and `1028362`; fetch metrics/video/support
+  report and compare against mean-gripper chunk8.
+
+## 2026-06-12T11:14:00Z - local 3-demo accepted-only DP training
+
+Goal:
+- Prepare the next BC scale-up candidate from accepted true-normal-reset
+  relabel demos while l401 exact-reset diagnostics are pending.
+
+Hypothesis:
+- If one-demo exact eval passes with chunk1 or binary gripper voting, the next
+  useful scale step is a no-EMA official-DP checkpoint trained on all accepted
+  normal-reset demos currently available: the validated ep16 seed42 demo plus
+  the two accepted seed45 demos.
+
+Change:
+- Combined accepted-only relabel NPZs into:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/combined_contact_relabel_normalcube_3eps_20260612_1110/contact_relabel_normalcube_3eps_accepted.npz`
+- Converted to 25D phase/progress dataset:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/combined_contact_relabel_normalcube_3eps_20260612_1110/contact_relabel_normalcube_3eps_phase_progress.npz`
+- Dataset summary: 3 episodes, 1133 rows, episode ends `[289, 849, 1133]`,
+  phase counts `{0: 239, 1: 240, 2: 654}`, reset alphas all `0.0`.
+
+Command / Job:
+- command:
+  `PYTHONPATH=/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/diffusion_policy:/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart WANDB_MODE=offline HYDRA_FULL_ERROR=1 /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/venv/bin/python train.py --config-dir /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart/dextrah_lab/offline_dp_bc/config --config-name franka_cube_lowdim_dp obs_dim=25 policy.model.global_cond_dim=50 policy._target_=dextrah_lab.offline_dp_bc.weighted_diffusion_policy.WeightedDiffusionUnetLowdimPolicy +policy.action_loss_weights=[1,1,1,1,1,1,8] task.dataset_path=/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/combined_contact_relabel_normalcube_3eps_20260612_1110/contact_relabel_normalcube_3eps_phase_progress.npz task.dataset.val_ratio=0.0 task.dataset.action_normalizer=limits_clamp_constant pred_action_steps_only=true training.device=cuda:0 training.use_ema=false training.num_epochs=300 training.max_train_steps=null training.max_val_steps=null training.lr_warmup_steps=20 training.checkpoint_every=50 training.rollout_every=10 training.val_every=10 training.sample_every=10 policy.num_inference_steps=100 dataloader.batch_size=64 val_dataloader.batch_size=64 logging.mode=offline hydra.run.dir=/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_normalcube_3eps/phaseprogress_normalcube_3eps_noema_20260612_111400/official_dp_train`
+- pid: pending
+- run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_normalcube_3eps/phaseprogress_normalcube_3eps_noema_20260612_111400/official_dp_train`
+
+Result:
+- status: launching local GPU training
+
+Next:
+- Monitor loss/logs/checkpoint. If training completes and the exact one-demo
+  diagnostics identify a working eval mode, run offline coherence and stage the
+  checkpoint/dataset for l401 eval.
+
 ## 2026-06-12T03:15:00-07:00 - raw 32-demo label executability failure and eval phase decoder fix
 
 Goal:
@@ -11528,6 +11988,101 @@ Result:
   labels:
   - run:
     `franka_cube_dp_replay_curobo32_phaseprogress_ep0_exact_dataset_t_fix_video720_20260612_0248`
+
+## 2026-06-12T05:27:00-07:00 - one-demo exact x0 chunk1 pass and video confirmation launch
+
+Goal:
+- Evaluate the overfitted checkpoint on the exact object position from its one
+  demo and only scale after that pass is real.
+
+Hypothesis:
+- The strict epsilon checkpoint failed because it did not overfit the tiny
+  deterministic dataset tightly enough, and `ACTION_CHUNK_STEPS=8` compounds
+  stale future actions. The x0/sample-prediction one-demo checkpoint with
+  single-step closed-loop replanning should execute the exact reset.
+
+Change:
+- No source changes for this eval. Used the one-demo x0/sample checkpoint,
+  dataset phase/progress provider, exact dataset object reset, eight DDPM
+  samples with binary gripper voting, and `ACTION_CHUNK_STEPS=1`.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- implementation_commit: `dbfed79ba6ec80ed14891ab04b526d7189989d1a`
+- remote_commit/status:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart-gripvote-dbfed79`
+  at `dbfed79ba6ec80ed14891ab04b526d7189989d1a`
+
+Command / Job:
+- passed no-video job: `1028371`
+- run_name:
+  `franka_cube_dp_eval_normalcube_ep16_seed42_exact_x0pred_chunk1_avg8_gripvote_novideo_20260612_0506`
+- fetched run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_normalcube_ep16_seed42_exact_x0pred_chunk1_avg8_gripvote_novideo_20260612_0506`
+
+Result:
+- status: passed metric gate
+- metrics: final/window success `1.0/1.0`, final/max lift
+  `0.2394/0.2394 m`, final EE-to-cube `0.0393 m`, final gripper width
+  `0.0419 m`, steps `320`.
+- exact reset evidence: cube position, cube-minus-EE, and lowdim reset diffs
+  all `0.0`.
+- support report:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_normalcube_ep16_seed42_exact_x0pred_chunk1_avg8_gripvote_novideo_20260612_0506/support_report/closed_loop_support_report.md`
+
+Analysis:
+- This answers the user question directly: the earlier failed exact-reset
+  overfit was not the final x0/chunk1 run. With the corrected x0 objective and
+  single-step replanning, the exact one-demo object-position eval succeeds.
+- The support report remains conservative only because this was a no-video run;
+  the scalar metrics and reset telemetry are clean.
+
+Next:
+- Launched video confirmation job `1028376`, run
+  `franka_cube_dp_eval_normalcube_ep16_seed42_exact_x0pred_chunk1_avg8_gripvote_video320_20260612_052713`,
+  with the same checkpoint/dataset/reset and only `CAPTURE_VIDEO=True`,
+  `VIDEO_LENGTH=320`, and full policy tracing changed.
+- Train a 3-demo x0/sample-prediction checkpoint locally before evaluating
+  larger-scale environments. The existing 3-demo checkpoint is epsilon
+  prediction, so it is not the matched scale-up from the passing overfit.
+
+Follow-up launch:
+- local training session: `24812`
+- run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_normalcube_3eps/phaseprogress_normalcube_3eps_x0pred_noema_20260612_052755`
+- command:
+  `CUDA_VISIBLE_DEVICES=0 PYTHONPATH=$EXT/diffusion_policy:$DEX WANDB_MODE=offline HYDRA_FULL_ERROR=1 $EXT/venv/bin/python train.py --config-dir $DEX/dextrah_lab/offline_dp_bc/config --config-name franka_cube_lowdim_dp obs_dim=25 policy.model.global_cond_dim=50 policy._target_=dextrah_lab.offline_dp_bc.weighted_diffusion_policy.WeightedDiffusionUnetLowdimPolicy +policy.action_loss_weights=[1,1,1,1,1,1,8] policy.noise_scheduler.prediction_type=sample task.dataset_path=$EXT/artifacts/combined_contact_relabel_normalcube_3eps_20260612_1110/contact_relabel_normalcube_3eps_phase_progress.npz task.dataset.val_ratio=0.0 task.dataset.action_normalizer=limits_clamp_constant pred_action_steps_only=true training.device=cuda:0 training.use_ema=false training.num_epochs=1200 training.max_train_steps=null training.max_val_steps=null training.lr_warmup_steps=20 training.checkpoint_every=100 training.rollout_every=100 training.val_every=100 training.sample_every=100 policy.num_inference_steps=100 dataloader.batch_size=64 val_dataloader.batch_size=64 logging.mode=offline hydra.run.dir=<run_dir>/official_dp_train`
+- expected acceptance before cluster eval: final loss near the one-demo x0
+  scale, offline coherence pass on all 3 demos, and no EMA/train-eval mismatch.
+
+Follow-up result:
+- training status: passed
+- final metrics: epoch `1199`, global step `21599`, final train loss
+  `2.84e-05`, LR `0.0`, `train_action_mse_error=0.0`.
+- offline coherence: passed on all `1133` rows with model weights, no EMA.
+  All-phase MSE@0 `4.08e-06`, gripper sign `1.0`, pose cosine mean
+  `0.999951`, offset-0 fraction `0.645`.
+- report:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_normalcube_3eps/phaseprogress_normalcube_3eps_x0pred_noema_20260612_052755/offline_coherence_latest/offline_coherence_report.md`
+- staged checkpoint:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/phaseprogress_normalcube_3eps_x0pred_noema_20260612_052755/latest.ckpt`
+- staged dataset:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/phase_progress_normalcube_3eps_x0pred_noema_20260612_052755/contact_relabel_normalcube_3eps_phase_progress.npz`
+
+Scale-up launch:
+- Because `eval_franka_cube_dp_policy.py` accepts one
+  `PHASE_PROGRESS_EPISODE` / `DEMO_RESET_EPISODE` at a time, launched three
+  single-env exact-reset no-video probes, one per accepted demo episode, using
+  the same x0/chunk1/eight-sample/binary-gripper contract.
+- job `1028377`, ep `0`, `NUM_STEPS=320`, run
+  `franka_cube_dp_eval_normalcube_3eps_x0pred_exact_ep0_chunk1_avg8_gripvote_novideo_20260612_053339`
+- job `1028378`, ep `1`, `NUM_STEPS=620`, run
+  `franka_cube_dp_eval_normalcube_3eps_x0pred_exact_ep1_chunk1_avg8_gripvote_novideo_20260612_053339`
+- job `1028379`, ep `2`, `NUM_STEPS=320`, run
+  `franka_cube_dp_eval_normalcube_3eps_x0pred_exact_ep2_chunk1_avg8_gripvote_novideo_20260612_053339`
   - replay report:
     `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_replays/franka_cube_dp_replay_curobo32_phaseprogress_ep0_exact_dataset_t_fix_video720_20260612_0248/replay_report.md`
   - verdict:
@@ -12312,3 +12867,319 @@ Command / Job:
 
 Result:
 - status: launching
+## 2026-06-12T05:44:23-07:00 - launch one-action x0 DP ablation
+
+Goal:
+- Debug the brittle exact-reset BC behavior by removing the unused 8-step
+  action horizon from the DP output while preserving the established 25D
+  observation, x0/sample prediction objective, action normalizer, and chunk1
+  eval contract.
+
+Hypothesis:
+- The current checkpoint learns offline labels, but closed-loop chunk1 eval is
+  sensitive around the close boundary. Training `n_action_steps=1` with
+  `horizon=2,pad_before=1` makes the model predict only `a[t]` from
+  `[obs[t-1], obs[t]]`, reducing future close/lift leakage into the first
+  executed action.
+
+Change:
+- No source changes for this ablation. Use Hydra overrides on the existing
+  `franka_cube_lowdim_dp` config.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- implementation_commit: `dbfed79ba6ec80ed14891ab04b526d7189989d1a`
+- changed_files: worklog only
+
+Command / Job:
+- local GPU: RTX 6000 Ada, `cuda:0`
+- run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_normalcube_one_traj/phaseprogress_normalcube_ep16_seed42_x0pred_1act_noema_20260612_0544`
+- command:
+  `CUDA_VISIBLE_DEVICES=0 PYTHONPATH=$EXT/diffusion_policy:$DEX WANDB_MODE=offline HYDRA_FULL_ERROR=1 $EXT/venv/bin/python train.py --config-dir $DEX/dextrah_lab/offline_dp_bc/config --config-name franka_cube_lowdim_dp horizon=2 n_action_steps=1 obs_dim=25 policy.model.global_cond_dim=50 policy._target_=dextrah_lab.offline_dp_bc.weighted_diffusion_policy.WeightedDiffusionUnetLowdimPolicy +policy.action_loss_weights=[1,1,1,1,1,1,8] policy.noise_scheduler.prediction_type=sample task.dataset_path=$EXT/artifacts/official_dp_normalcube_one_traj/phaseprogress_normalcube_ep16_seed42_noema_20260612_032517/contact_relabel_normalcube_ep16_phase_progress.npz task.dataset.val_ratio=0.0 task.dataset.action_normalizer=limits_clamp_constant task.dataset.pad_after=0 pred_action_steps_only=true training.device=cuda:0 training.use_ema=false training.num_epochs=1200 training.max_train_steps=null training.max_val_steps=null training.lr_warmup_steps=20 training.checkpoint_every=100 training.rollout_every=100 training.val_every=100 training.sample_every=100 policy.num_inference_steps=100 dataloader.batch_size=64 val_dataloader.batch_size=64 logging.mode=offline hydra.run.dir=<run_dir>/official_dp_train`
+
+Acceptance:
+- Inspect training loss/MSE, run offline coherence against the one-demo
+  dataset, then stage and evaluate exact reset with `ACTION_CHUNK_STEPS=1`.
+
+Result:
+- First launch failed immediately before completing epoch 0:
+  `RuntimeError: Sizes of tensors must match ... Expected size 2 but got size 1`
+  inside official `ConditionalUnet1D`. The default three-level U-Net
+  downsamples along the predicted action horizon and cannot process a
+  length-1 `pred_action_steps_only` trajectory.
+
+Next:
+- Relaunch the same one-action ablation with a shallow official U-Net
+  `policy.model.down_dims=[128]` so no downsample/upsample path is required.
+
+Follow-up result:
+- Shallow local train completed successfully:
+  `epoch=1199`, `global_step=5999`, `train_action_mse_error=1e-05`,
+  `train_loss=0.00014`.
+- 100-step offline coherence passed on the one-demo dataset:
+  all-phase MSE@0 `1.265e-05`, gripper sign `1.0`, align-open offset0
+  fraction `0.831`, all-phase offset0 fraction `0.484`.
+- Staged checkpoint to l401:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/phaseprogress_normalcube_ep16_seed42_x0pred_1act_shallow_noema_20260612_0546/latest.ckpt`.
+- First sbatch submit command was malformed because the long `--export` list
+  was split over shell lines; no Slurm job was submitted from that failed
+  attempt.
+
+Closed-loop eval launch:
+- job_id: `1028382`
+- run:
+  `franka_cube_dp_eval_normalcube_ep16_seed42_exact_x0pred_1act_shallow_chunk1_avg8_gripvote_novideo_20260612_0549`
+- command:
+  `sbatch --parsable --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart-gripvote-dbfed79,RUN_NAME=franka_cube_dp_eval_normalcube_ep16_seed42_exact_x0pred_1act_shallow_chunk1_avg8_gripvote_novideo_20260612_0549,NUM_ENVS=1,NUM_STEPS=320,NUM_INFERENCE_STEPS=100,NUM_ACTION_SAMPLES=8,GRIPPER_SAMPLE_AGGREGATION=binary_vote,GRIPPER_CLOSE_THRESHOLD=0.5,GRIPPER_VOTE_THRESHOLD=0.5,ACTION_CHUNK_STEPS=1,CLIP_ACTIONS=1.0,SUCCESS_WINDOW=80,SUCCESS_TIMEOUT_OVERRIDE=999.0,CAPTURE_VIDEO=False,VIDEO_LENGTH=320,PRINT_INTERVAL=20,SEED=42,DEBUG_POLICY_TRACE_MAX_CALLS=320,DEBUG_POLICY_TRACE_ENV_INDEX=0,CHECKPOINT=/results/dp_bc/checkpoints/phaseprogress_normalcube_ep16_seed42_x0pred_1act_shallow_noema_20260612_0546/latest.ckpt,SUPPORT_DATASET=/results/dp_bc/phase_progress_normalcube_one/normalcube_ep16_seed42_phase_progress_20260612_032517.npz,PHASE_PROGRESS_DATASET=/results/dp_bc/phase_progress_normalcube_one/normalcube_ep16_seed42_phase_progress_20260612_032517.npz,PHASE_PROGRESS_EPISODE=0,PHASE_PROGRESS_START_STEP=0,PHASE_PROGRESS_MODE=dataset,ACTION_CORRECTION_MODE=disabled,DEMO_RESET_DATASET=/results/dp_bc/phase_progress_normalcube_one/normalcube_ep16_seed42_phase_progress_20260612_032517.npz,DEMO_RESET_EPISODE=0,DEMO_RESET_STEP=0,DEMO_RESET_JOINT_BLEND_ALPHA=0.0,DEMO_RESET_CUBE_POS_BLEND_ALPHA=1.0 cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- success condition: exact-reset scalar pass matching or exceeding the previous
+  one-demo no-video pass (`final/window success=1.0`, sustained lift) before
+  any scale-up.
+
+## 2026-06-12T12:53:49Z - exact video failure and support-expanded chunk1 ablation
+
+Goal:
+- Resolve whether the one-demo overfit actually works under the exact object
+  reset, and if not, identify the smallest next BC/debugging change.
+
+Hypothesis:
+- The inherited no-video exact-reset pass is brittle. A video-enabled repeat
+  with the same zero-diff object reset can expose the contact failure, and the
+  already-trained support-expanded checkpoint should be retested under the
+  now-working `ACTION_CHUNK_STEPS=1` contract before writing new code.
+
+Change:
+- No source changes. Fetched and inspected the video-enabled exact one-demo
+  run. Launch a no-video exact-reset eval for the support-expanded checkpoint
+  with `ACTION_CHUNK_STEPS=1`, `NUM_ACTION_SAMPLES=8`, binary gripper vote,
+  dataset phase/progress, and demo object reset.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- implementation_commit: `dbfed79ba6ec80ed14891ab04b526d7189989d1a`
+- changed_files: worklog only
+
+Evidence:
+- Video exact-reset repeat `1028376` failed despite reset diffs all zero:
+  final/window success `0/0`, max/final lift `0.01623/0 m`,
+  final gripper width `0.0002126 m`.
+- Support report verdict: policy leaves demo support and closes away from cube.
+  At first hard close step 84, live `cube_minus_ee` was
+  `[0.01546, -0.04966, 0.01423]`, EE/finger distances
+  `0.0539/0.0608 m`. The matching successful no-video pass closed earlier
+  around step 80 with live `cube_minus_ee`
+  `[-0.01088, -0.03516, 0.01037]`.
+- Shallow one-action eval `1028382` is trending failed: through step 200 it
+  remains on-table with no success/lift and delayed close.
+
+Command / Job:
+- support-expanded run:
+  `franka_cube_dp_eval_normalcube_ep16_seed42_exact_supportexp_x0pred_chunk1_avg8_gripvote_novideo_20260612_0554`
+- command:
+  `sbatch --parsable --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart-gripvote-dbfed79,RUN_NAME=franka_cube_dp_eval_normalcube_ep16_seed42_exact_supportexp_x0pred_chunk1_avg8_gripvote_novideo_20260612_0554,NUM_ENVS=1,NUM_STEPS=320,NUM_INFERENCE_STEPS=100,NUM_ACTION_SAMPLES=8,GRIPPER_SAMPLE_AGGREGATION=binary_vote,GRIPPER_CLOSE_THRESHOLD=0.5,GRIPPER_VOTE_THRESHOLD=0.5,ACTION_CHUNK_STEPS=1,CLIP_ACTIONS=1.0,SUCCESS_WINDOW=80,SUCCESS_TIMEOUT_OVERRIDE=999.0,CAPTURE_VIDEO=False,VIDEO_LENGTH=320,PRINT_INTERVAL=20,SEED=42,DEBUG_POLICY_TRACE_MAX_CALLS=320,DEBUG_POLICY_TRACE_ENV_INDEX=0,CHECKPOINT=/results/dp_bc/checkpoints/phaseprogress_normalcube_ep16_seed42_supportexp_balanced_x0pred_noema_20260612_0508/latest.ckpt,SUPPORT_DATASET=/results/dp_bc/phase_progress_normalcube_one/normalcube_ep16_seed42_phase_progress_20260612_032517.npz,PHASE_PROGRESS_DATASET=/results/dp_bc/phase_progress_normalcube_one/normalcube_ep16_seed42_phase_progress_20260612_032517.npz,PHASE_PROGRESS_EPISODE=0,PHASE_PROGRESS_START_STEP=0,PHASE_PROGRESS_MODE=dataset,ACTION_CORRECTION_MODE=disabled,DEMO_RESET_DATASET=/results/dp_bc/phase_progress_normalcube_one/normalcube_ep16_seed42_phase_progress_20260612_032517.npz,DEMO_RESET_EPISODE=0,DEMO_RESET_STEP=0,DEMO_RESET_JOINT_BLEND_ALPHA=0.0,DEMO_RESET_CUBE_POS_BLEND_ALPHA=1.0 cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- job_id: `1028384`
+
+Acceptance:
+- If the support-expanded chunk1 exact reset passes, confirm with video, then
+  train/evaluate the corresponding multi-demo setup. If it fails, patch the
+  dataset/policy/eval contract around close timing and live pose correction
+  rather than scaling.
+
+Follow-up diagnostic:
+- The earlier full-label oracle pass used a source-joint/pregrasp reset
+  (`source_joint_reset_available=True`, `joint_blend_alpha=0.75`), so it does
+  not validate the normal robot reset requested here.
+- Launch a normalcube exact-cube reset full-label oracle-control run with
+  `ACTION_CORRECTION_MODE=nearest_label_full_action` against the same
+  normalcube one-demo support dataset. This isolates the normalcube labels from
+  DP model error.
+- run:
+  `franka_cube_dp_eval_normalcube_ep16_seed42_exact_fullcorr_x0pred_chunk1_avg8_gripvote_novideo_20260612_0558`
+- command:
+  `sbatch --parsable --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart-gripvote-dbfed79,RUN_NAME=franka_cube_dp_eval_normalcube_ep16_seed42_exact_fullcorr_x0pred_chunk1_avg8_gripvote_novideo_20260612_0558,NUM_ENVS=1,NUM_STEPS=320,NUM_INFERENCE_STEPS=100,NUM_ACTION_SAMPLES=8,GRIPPER_SAMPLE_AGGREGATION=binary_vote,GRIPPER_CLOSE_THRESHOLD=0.5,GRIPPER_VOTE_THRESHOLD=0.5,ACTION_CHUNK_STEPS=1,CLIP_ACTIONS=1.0,SUCCESS_WINDOW=80,SUCCESS_TIMEOUT_OVERRIDE=999.0,CAPTURE_VIDEO=False,VIDEO_LENGTH=320,PRINT_INTERVAL=20,SEED=42,DEBUG_POLICY_TRACE_MAX_CALLS=80,DEBUG_POLICY_TRACE_ENV_INDEX=0,CHECKPOINT=/results/dp_bc/checkpoints/phaseprogress_normalcube_ep16_seed42_x0pred_noema_20260612_0459/latest.ckpt,SUPPORT_DATASET=/results/dp_bc/phase_progress_normalcube_one/normalcube_ep16_seed42_phase_progress_20260612_032517.npz,PHASE_PROGRESS_DATASET=/results/dp_bc/phase_progress_normalcube_one/normalcube_ep16_seed42_phase_progress_20260612_032517.npz,PHASE_PROGRESS_EPISODE=0,PHASE_PROGRESS_START_STEP=0,PHASE_PROGRESS_MODE=dataset,ACTION_CORRECTION_MODE=nearest_label_full_action,ACTION_CORRECTION_BLEND=1.0,DEMO_RESET_DATASET=/results/dp_bc/phase_progress_normalcube_one/normalcube_ep16_seed42_phase_progress_20260612_032517.npz,DEMO_RESET_EPISODE=0,DEMO_RESET_STEP=0,DEMO_RESET_JOINT_BLEND_ALPHA=0.0,DEMO_RESET_CUBE_POS_BLEND_ALPHA=1.0 cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- job_id: `1028385`
+
+## 2026-06-12T13:01:05Z - ordered-label oracle diagnostic for exact normal reset
+
+Goal:
+- Separate "nearest support row drift" from whether the exact one-demo labels
+  themselves execute from the normal robot reset and exact object pose.
+
+Change:
+- Added eval-only `ACTION_CORRECTION_MODE=dataset_step_full_action` in
+  `dextrah_lab/rl_games/eval_franka_cube_dp_policy.py`.
+- This mode replaces/blends all seven executed action dimensions with the
+  support label at `phase_progress_start_step + rollout_step` inside
+  `phase_progress_episode`, matching the forced-label replay semantics. It
+  does not change training or normal DP inference.
+- Syntax checked locally with:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/venv/bin/python -m py_compile dextrah_lab/rl_games/eval_franka_cube_dp_policy.py`
+- Copied the patched eval script to remote code checkout
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart-gripvote-dbfed79`.
+
+Evidence motivating this patch:
+- Existing forced-label replay
+  `franka_cube_dp_replay_normalcube_ep16_exact_forcedlabels_20260612_105805`
+  starts with zero reset diff and executes ordered dataset labels. It ends
+  near the cube (`final EE-cube 0.0281 m`, `final finger-cube 0.0550 m`) and
+  reports controller under-realization rather than wrong action direction.
+- `nearest_label_full_action` is still a nearest-neighbor controller. If the
+  live trace drifts off the support manifold, it can select labels from the
+  wrong part of the demo and obscure whether row-ordered labels are valid.
+
+Closed-loop ordered-label oracle launch:
+- job_id: `1028386`
+- run:
+  `franka_cube_dp_eval_normalcube_ep16_seed42_exact_datasetstep_fullcorr_x0pred_chunk1_novideo_20260612_060105`
+- command:
+  `sbatch --parsable --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart-gripvote-dbfed79,RUN_NAME=franka_cube_dp_eval_normalcube_ep16_seed42_exact_datasetstep_fullcorr_x0pred_chunk1_novideo_20260612_060105,NUM_ENVS=1,NUM_STEPS=320,NUM_INFERENCE_STEPS=100,NUM_ACTION_SAMPLES=1,GRIPPER_SAMPLE_AGGREGATION=binary_vote,GRIPPER_CLOSE_THRESHOLD=0.5,GRIPPER_VOTE_THRESHOLD=0.5,ACTION_CHUNK_STEPS=1,CLIP_ACTIONS=1.0,SUCCESS_WINDOW=80,SUCCESS_TIMEOUT_OVERRIDE=999.0,CAPTURE_VIDEO=False,VIDEO_LENGTH=320,PRINT_INTERVAL=20,SEED=42,DEBUG_POLICY_TRACE_MAX_CALLS=80,DEBUG_POLICY_TRACE_ENV_INDEX=0,CHECKPOINT=/results/dp_bc/checkpoints/phaseprogress_normalcube_ep16_seed42_x0pred_noema_20260612_0459/latest.ckpt,SUPPORT_DATASET=/results/dp_bc/phase_progress_normalcube_one/normalcube_ep16_seed42_phase_progress_20260612_032517.npz,PHASE_PROGRESS_DATASET=/results/dp_bc/phase_progress_normalcube_one/normalcube_ep16_seed42_phase_progress_20260612_032517.npz,PHASE_PROGRESS_EPISODE=0,PHASE_PROGRESS_START_STEP=0,PHASE_PROGRESS_MODE=dataset,ACTION_CORRECTION_MODE=dataset_step_full_action,ACTION_CORRECTION_BLEND=1.0,DEMO_RESET_DATASET=/results/dp_bc/phase_progress_normalcube_one/normalcube_ep16_seed42_phase_progress_20260612_032517.npz,DEMO_RESET_EPISODE=0,DEMO_RESET_STEP=0,DEMO_RESET_JOINT_BLEND_ALPHA=0.0,DEMO_RESET_CUBE_POS_BLEND_ALPHA=1.0 cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+
+Interpretation plan:
+- If ordered labels pass but learned DP fails, the issue is BC closed-loop
+  tracking/compounding error, so continue with better support/data/training
+  under the official epsilon/chunk8 contract.
+- If ordered labels fail, debug action conversion or regenerate normal-reset
+  contact-aware demos before scaling.
+
+## 2026-06-12T13:04:46Z - learned one-demo exact reset with heavier diffusion sampling
+
+Goal:
+- Test whether the learned one-demo x0 checkpoint is failing primarily from
+  diffusion sampling variance at contact.
+
+Rationale:
+- Offline coherence for
+  `phaseprogress_normalcube_ep16_seed42_x0pred_noema_20260612_0459/latest.ckpt`
+  passes on the train demo (`MSE@0 all ~= 2.25e-6`, gripper sign fraction
+  `1.0`), so the model has memorized the dataset under its own normalizer.
+- Ordered-label oracle `1028386` is lifting by step 280 on the exact object
+  reset, so labels and action execution are sufficient when row-ordered
+  actions are used directly.
+- The remaining learned-policy failure can plausibly be small stochastic
+  contact error compounded by closed-loop rollout.
+
+Closed-loop learned-policy launch:
+- job_id: `1028387`
+- run:
+  `franka_cube_dp_eval_normalcube_ep16_seed42_exact_x0pred_chunk1_avg64_gripvote_novideo_20260612_060446`
+- command:
+  `sbatch --parsable --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart-gripvote-dbfed79,RUN_NAME=franka_cube_dp_eval_normalcube_ep16_seed42_exact_x0pred_chunk1_avg64_gripvote_novideo_20260612_060446,NUM_ENVS=1,NUM_STEPS=320,NUM_INFERENCE_STEPS=100,NUM_ACTION_SAMPLES=64,GRIPPER_SAMPLE_AGGREGATION=binary_vote,GRIPPER_CLOSE_THRESHOLD=0.5,GRIPPER_VOTE_THRESHOLD=0.5,ACTION_CHUNK_STEPS=1,CLIP_ACTIONS=1.0,SUCCESS_WINDOW=80,SUCCESS_TIMEOUT_OVERRIDE=999.0,CAPTURE_VIDEO=False,VIDEO_LENGTH=320,PRINT_INTERVAL=20,SEED=42,DEBUG_POLICY_TRACE_MAX_CALLS=320,DEBUG_POLICY_TRACE_ENV_INDEX=0,CHECKPOINT=/results/dp_bc/checkpoints/phaseprogress_normalcube_ep16_seed42_x0pred_noema_20260612_0459/latest.ckpt,SUPPORT_DATASET=/results/dp_bc/phase_progress_normalcube_one/normalcube_ep16_seed42_phase_progress_20260612_032517.npz,PHASE_PROGRESS_DATASET=/results/dp_bc/phase_progress_normalcube_one/normalcube_ep16_seed42_phase_progress_20260612_032517.npz,PHASE_PROGRESS_EPISODE=0,PHASE_PROGRESS_START_STEP=0,PHASE_PROGRESS_MODE=dataset,ACTION_CORRECTION_MODE=disabled,DEMO_RESET_DATASET=/results/dp_bc/phase_progress_normalcube_one/normalcube_ep16_seed42_phase_progress_20260612_032517.npz,DEMO_RESET_EPISODE=0,DEMO_RESET_STEP=0,DEMO_RESET_JOINT_BLEND_ALPHA=0.0,DEMO_RESET_CUBE_POS_BLEND_ALPHA=1.0 cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+
+Acceptance:
+- A scalar pass here requires video confirmation before any scale-up claim.
+- If this still fails while `1028386` passes, continue with feedback-robust
+  support/data augmentation rather than more one-demo training epochs.
+
+Result update for ordered-label oracle `1028386`:
+- Fetched artifacts to:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_normalcube_ep16_seed42_exact_datasetstep_fullcorr_x0pred_chunk1_novideo_20260612_060105`.
+- Generated support report:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_normalcube_ep16_seed42_exact_datasetstep_fullcorr_x0pred_chunk1_novideo_20260612_060105/support_report/closed_loop_support_report.md`.
+- Metrics: final/window success `1.0/0.5375`, final/max lift
+  `0.1794/0.1794 m`, final reward `24.78`, final gripper width
+  `0.04434 m`, reset lowdim/cube diffs all `0`.
+- Support trace: phase switches stayed exactly on support at close/lift
+  (`support dist 0`), first hard close at step 84 with live
+  `cube_minus_ee [-0.009908, -0.02661, -0.0005183]`, and final
+  `cube_minus_ee [-0.008283, -0.02675, -0.001882]`.
+- Conclusion: exact object reset and normal-reset ordered labels are valid.
+  Learned-policy failures are closed-loop BC robustness, not basic reset,
+  action convention, or normalizer failure.
+
+## 2026-06-12T13:08:20Z - policy-trace recovery dataset and retrain
+
+Goal:
+- If the learned high-sampling one-demo eval still fails, train on actual
+  closed-loop failure states labeled by the ordered expert target, rather than
+  relying on random support perturbations.
+
+Change:
+- Added `dextrah_lab/offline_dp_bc/make_policy_recovery_dataset.py`.
+- The script reads failed eval `policy_trace.json` records, uses each 25D live
+  `lowdim_obs` as a supervised state, maps the trace step to the matching demo
+  row, and labels the state with a clipped residual action toward the demo row's
+  commanded target pose. This is a targeted DAgger-style recovery dataset for
+  the observed contact miss.
+- Syntax check:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/venv/bin/python -m py_compile dextrah_lab/offline_dp_bc/make_policy_recovery_dataset.py`
+
+Recovery dataset build:
+- base dataset:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_normalcube_one_traj/phaseprogress_normalcube_ep16_seed42_noema_20260612_032517/contact_relabel_normalcube_ep16_phase_progress.npz`
+- trace:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_normalcube_ep16_seed42_exact_x0pred_chunk1_avg8_gripvote_video320_20260612_052713/policy_trace.json`
+- output:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/policy_recovery/normalcube_ep16_x0fail_video_20260612_0607/normalcube_ep16_policy_recovery_x0fail_video.npz`
+- command:
+  `PYTHONPATH=$PWD /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/venv/bin/python -m dextrah_lab.offline_dp_bc.make_policy_recovery_dataset --base_dataset <base> --policy_trace <trace> --output <output> --demo_episode 0 --demo_start_step 0 --original_copies 4 --clip_actions 1.0 --label_mode residual_to_demo_target`
+- dataset summary: `1476` steps, `5` episodes (`4` original copies plus
+  `320` recovery records), obs dim `25`, pose clip fraction `0.0812`.
+
+Recovery training launch:
+- run:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_policy_recovery/normalcube_ep16_x0fail_video_recovery_x0pred_noema_20260612_060820`
+- command:
+  `CUDA_VISIBLE_DEVICES=0 PYTHONPATH=/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/diffusion_policy:/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart WANDB_MODE=offline HYDRA_FULL_ERROR=1 /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/venv/bin/python train.py --config-dir /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart/dextrah_lab/offline_dp_bc/config --config-name franka_cube_lowdim_dp obs_dim=25 policy.model.global_cond_dim=50 policy._target_=dextrah_lab.offline_dp_bc.weighted_diffusion_policy.WeightedDiffusionUnetLowdimPolicy +policy.action_loss_weights=[1,1,1,1,1,1,8] policy.noise_scheduler.prediction_type=sample task.dataset_path=<recovery_npz> task.dataset.val_ratio=0.0 task.dataset.action_normalizer=limits_clamp_constant pred_action_steps_only=true training.device=cuda:0 training.use_ema=false training.num_epochs=800 training.max_train_steps=null training.max_val_steps=null training.lr_warmup_steps=20 training.checkpoint_every=100 training.rollout_every=100 training.val_every=100 training.sample_every=100 policy.num_inference_steps=100 dataloader.batch_size=64 val_dataloader.batch_size=64 logging.mode=offline hydra.run.dir=<run>/official_dp_train`
+- status at logging time: running past epoch `100`.
+## 2026-06-12T15:20:53Z - timed-action recovery5 overfit
+
+Goal:
+- Make the exact one-demo overfit pass from the exact demo object position,
+  then use that working baseline before scaling to larger environment sets.
+
+Hypothesis:
+- Ordered expert labels already pass when injected directly on the exact
+  reset, so the next BC dataset should teach the diffusion policy to output
+  that same timestep-indexed action program for both demo states and failed
+  closed-loop states. This avoids brittle residual-to-pose labels that keep
+  chasing off-manifold geometry and delaying the gripper close.
+
+Change:
+- Built a policy recovery dataset with `label_mode=dataset_step_action`,
+  `original_copies=16`, and five failed exact-reset traces including the latest
+  contact-gated failure.
+- Dataset:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/policy_recovery/normalcube_ep16_timed_action_recovery5_20260612_082049/normalcube_ep16_timed_action_recovery5.npz`
+- Summary: `6224` rows, `21` episodes, action abs max `0.95000005`, pose clip
+  fraction `0`.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `dbfed79ba6ec80ed14891ab04b526d7189989d1a`
+- implementation_commit: pending
+- changed_files:
+  `dextrah_lab/offline_dp_bc/make_policy_recovery_dataset.py`,
+  `dextrah_lab/rl_games/eval_franka_cube_dp_policy.py`,
+  this worklog
+- remote_commit/status: remote eval code is staged at the prior deployed
+  worktree plus rsynced eval script; no new tracked code needed for this
+  timed-action dataset build.
+
+Command / Job:
+- build command:
+  `PYTHONPATH=$DEX $EXT/venv/bin/python -m dextrah_lab.offline_dp_bc.make_policy_recovery_dataset --base_dataset $BASE --policy_trace <5 traces> --output $OUT/normalcube_ep16_timed_action_recovery5.npz --demo_episode 0 --demo_start_step 0 --original_copies 16 --clip_actions 1.0 --label_mode dataset_step_action`
+- next command: local official-DP training on GPU 0.
+
+Result:
+- status: pending training
+
+Analysis:
+- Latest failed exact reset
+  `franka_cube_dp_eval_normalcube_ep16_seed42_exact_contactgate4_x0pred_chunk1_avg8_gripvote_novideo_20260612_075532`
+  closed at step `203`, after the hand had drifted to about `0.189 m` from
+  the cube. The closest approach was step `59` at EE distance `0.054 m` with
+  the gripper still open. This confirms the prior contact-gated labels were too
+  conservative and still did not keep pose on support.
+
+Next:
+- Train the timed-action recovery policy, run offline coherence, stage the
+  checkpoint to l401, then evaluate exact reset with no action correction.
