@@ -11224,3 +11224,118 @@ Next:
   the four-demo no-EMA checkpoint, phase/progress dataset mode, support trace,
   and video. Local Isaac runtime is unavailable in the default workstation
   Python, so use the existing l401 container wrapper after staging artifacts.
+
+## 2026-06-12T01:11:25-07:00 - no-EMA closed-loop DP evals
+
+Goal:
+- Test whether the four-demo no-EMA official-DP overfit that passes dense
+  offline coherence can act as a closed-loop BC warm start in the Franka cube
+  Isaac task without oracle action correction.
+
+Hypothesis:
+- If the policy I/O and training alignment are truly correct, the overfit
+  checkpoint should at least reproduce the matched episode-0 trajectory under
+  a demo reset. If dataset-clock phase conditioning fails but contact-gated
+  phase conditioning succeeds, the main train/eval mismatch is phase schedule.
+
+Change:
+- No new source change after commit `aeaf6e3`; staged the four-demo no-EMA
+  checkpoint to l401 and ran two bounded 260-step single-env evals with
+  correction disabled:
+  - dataset-clock phase/progress provider;
+  - contact-gated provider with close/lift thresholds.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `aeaf6e3f27cc97277a31205206b4a85268801c76`
+- implementation_commit: `aeaf6e3f27cc97277a31205206b4a85268801c76`
+- push/pull:
+  local branch pushed to GitHub; l401 GitHub fetch was blocked by SSH auth, so
+  the exact commit was pushed over SSH to the agent-owned remote source ref and
+  checked out in
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- remote_commit/status:
+  `aeaf6e3f27cc97277a31205206b4a85268801c76`
+- changed_files:
+  - `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+
+Command / Job:
+- dataset-clock job:
+  `1028270`
+- dataset-clock run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_phaseprogress_set4_noema_ep0_dataset_video260_20260612_010053`
+- contact-gated job:
+  `1028273`
+- contact-gated run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_phaseprogress_set4_noema_ep0_contactgated_video260_20260612_010608`
+- shared checkpoint:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/phaseprogress_set4_noema_20260612_005448/latest.ckpt`
+- shared reset:
+  accepted relabel episode `0`, row `0`, source trajectory frame `260`,
+  joint blend `0.75`, cube-position blend `1.0`
+- local fetched artifact roots:
+  - `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_noema_ep0_dataset_video260_20260612_010053`
+  - `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_noema_ep0_contactgated_video260_20260612_010608`
+
+Result:
+- status: failed closed-loop warm-start evals
+- dataset-clock eval:
+  - steps `260`, final/window success `0.0 / 0.0`, done count `0`
+  - reward mean/final `2.003 / 1.236`
+  - cube lift max/final `0.01683 / 0 m`
+  - EE-to-cube min/final `0.02605 / 0.1131 m`
+  - finger-center-to-cube min/final `0.05561 / 0.158 m`
+  - final gripper width `0.00132 m`
+  - first negative gripper command appeared at step `23` while nearest support
+    was still `align_open`; final support distance `5.072`
+- contact-gated eval:
+  - steps `260`, final/window success `0.0 / 0.0`, done count `0`
+  - reward mean/final `2.091 / 2.143`
+  - cube lift max/final `0.01683 / 0 m`
+  - EE-to-cube min/final `0.01603 / 0.01761 m`
+  - finger-center-to-cube min/final `0.05561 / 0.05640 m`
+  - final gripper width `0.06809 m`
+  - runtime phase stayed `align_open` for the whole rollout
+  - nearest-demo support distance start/final/delta:
+    `0.0137 / 0.8521 / 0.8384`
+- video validation:
+  both fetched videos are `1280x720`, `259` frames, `4.316667 s`, `60 FPS`.
+
+Key Evidence:
+- dataset-clock support report:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_noema_ep0_dataset_video260_20260612_010053/noema_dataset_support_report/closed_loop_support_report.md`
+- contact-gated support report:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_noema_ep0_contactgated_video260_20260612_010608/noema_contactgated_support_report/closed_loop_support_report.md`
+- contact-gated video:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_noema_ep0_contactgated_video260_20260612_010608/videos/franka-cube-dp-phaseprogress-noema-contactgated-step-0.mp4`
+- contact-gated contact sheet:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_noema_ep0_contactgated_video260_20260612_010608/noema_contactgated_contact_sheet.jpg`
+
+Analysis:
+- Exact official-DP architecture and lowdim I/O are now verified offline:
+  normalized obs `(B,2,25)` -> global condition `(B,50)`; model denoises
+  normalized actions `(B,8,7)` because `pred_action_steps_only=true`; first
+  returned action corresponds to label `a[t]` under `oa_step_convention=true`.
+- The dataset-clock eval demonstrates a real train/eval mismatch: phase
+  features advanced to close/lift before the live state reached close/lift
+  support, so the policy closed away from the cube.
+- The contact-gated eval removes that mismatch and still fails. The provider
+  correctly keeps runtime conditioning in `align_open`, but the learned
+  align/open action stream does not drive the fingers into a demonstrated
+  close-support state. The gripper remains open, cube lift stays zero, and
+  support distance steadily grows.
+- Therefore the current BC is a valid offline architecture/I/O sanity check,
+  not a usable closed-loop warm start. The remaining blocker is closed-loop
+  support/compounding error around the align-to-contact transition, not an
+  obvious tensor shape, sign, or normalization bug.
+
+Next:
+- Do not scale this checkpoint to RL warm start as-is.
+- The next bounded fix should add closed-loop support around the align/contact
+  transition: options are DAgger-style rollout relabeling, more robust
+  align/open controller distillation before the close phase, or a hybrid gate
+  that uses an oracle/contact controller only until the live state enters the
+  demonstrated close support, then hands off to DP.
