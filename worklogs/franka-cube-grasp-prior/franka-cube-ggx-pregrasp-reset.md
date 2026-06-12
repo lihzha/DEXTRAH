@@ -4701,3 +4701,54 @@ Analysis:
 Next:
 - No PPO/A100/full RL from this checkpoint without explicit approval.
 - Bounded next diagnostic should add or audit a hold phase after lift in the supervised label artifact, or compare actor actions against a teacher hold action after success to identify why it reopens.
+
+## 2026-06-12T05:13:06Z - Low-Z BC Hold-Phase Diagnostic Plan
+
+Goal:
+- Test whether the low-z BC actor failure after step ~145 is caused by missing hold-phase labels after the approach/close/lift horizon.
+
+Hypothesis:
+- The `1028144` actor can lift but reopens/repositions because the supervised dataset ended after approach/close/lift and did not train a hold continuation. Adding hold-phase labels with closed gripper and a small upward/hold action should suppress the post-lift open spike and improve final/held success.
+
+Change:
+- Add diagnostic-only hold phase arguments to `bc_franka_cube_pass7_actions.py` and the l401 wrapper:
+  - `--hold_steps`
+  - `--hold_action_z`
+  - `--track_exact_during_hold`
+- Hold label recipe will keep the gripper closed and use no exact tracking during hold by default for this attempt.
+- Do not change the main task reset, reward, action space, termination, PPO config, or prior reset semantics.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- worklog: `worklogs/franka-cube-grasp-prior/franka-cube-ggx-pregrasp-reset.md`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `63f920d9ec93120a3fc89711b62897e2be9bc66b`
+- implementation_commit: pending
+- changed_files:
+  - `dextrah_lab/rl_games/bc_franka_cube_pass7_actions.py`
+  - `cluster/sbatch_bc_franka_cube_pass7_actions_1gpu.sh`
+  - this worklog
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/bc_franka_cube_pass7_actions.py`
+- `bash -n cluster/sbatch_bc_franka_cube_pass7_actions_1gpu.sh`
+
+Command / Job Plan:
+- supervised run name: `franka_cube_ggx_lowz_bc_actor_hold_20260611_2214`
+- init checkpoint: `/results/diagnostics/franka_cube_ggx_lowz_bc_actor_recipe_20260611_2202/bc_pass7_action_warmstart.pth`
+- library: `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz`
+- label recipe:
+  - approach `16`, close `24`, lift `24`, hold `96`
+  - close width `0.010`
+  - lift action z `0.50`
+  - hold action z `0.10`
+  - track exact during lift `false`
+  - track exact during hold `false`
+- scale: `NUM_ENVS=64`, `NUM_RESETS=16`, actor scope, no PPO.
+
+Acceptance:
+- supervised gate remains passing: MSE `<=0.04`, gripper sign `>=0.95`, lift-z sign `>=0.90`, loadable checkpoint.
+- hold-phase action metrics show negative/closed gripper sign and non-pathological z action.
+- If supervised gate passes, run one small visual eval from the hold checkpoint with the same low-z reset/library and no action warmstart override.
+- Visual gate requires stable final/held success; transient lift alone is not enough.

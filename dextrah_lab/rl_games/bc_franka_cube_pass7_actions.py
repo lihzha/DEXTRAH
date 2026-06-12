@@ -44,12 +44,15 @@ parser.add_argument("--lift_z_sign_loss_weight", type=float, default=0.0)
 parser.add_argument("--approach_steps", type=int, default=16)
 parser.add_argument("--close_steps", type=int, default=12)
 parser.add_argument("--lift_steps", type=int, default=12)
+parser.add_argument("--hold_steps", type=int, default=0)
 parser.add_argument("--close_width", type=float, default=0.055)
 parser.add_argument("--lift_action_z", type=float, default=0.15)
+parser.add_argument("--hold_action_z", type=float, default=0.0)
 parser.add_argument("--oracle_gain", type=float, default=8.0)
 parser.add_argument("--oracle_max_position_action", type=float, default=1.0)
 parser.add_argument("--track_orientation", action=argparse.BooleanOptionalAction, default=True)
 parser.add_argument("--track_exact_during_lift", action=argparse.BooleanOptionalAction, default=True)
+parser.add_argument("--track_exact_during_hold", action=argparse.BooleanOptionalAction, default=True)
 parser.add_argument("--gate_val_mse", type=float, default=0.04)
 parser.add_argument("--gate_gripper_sign", type=float, default=0.95)
 parser.add_argument("--gate_lift_z_sign", type=float, default=0.90)
@@ -238,6 +241,14 @@ def _reference_action(task_env, phase: str) -> torch.Tensor:
             action[:, 6] = float(close_action)
         action[:, 2] = float(np.clip(args_cli.lift_action_z, -1.0, 1.0))
         return action
+    if phase == "hold":
+        if bool(args_cli.track_exact_during_hold):
+            action = _exact_tracking_action(task_env, close_action)
+        else:
+            action = torch.zeros(task_env.num_envs, int(task_env.cfg.action_space), device=task_env.device)
+            action[:, 6] = float(close_action)
+        action[:, 2] = float(np.clip(args_cli.hold_action_z, -1.0, 1.0))
+        return action
     raise ValueError(f"Unknown phase {phase!r}")
 
 
@@ -246,7 +257,9 @@ def _phase_for_step(step: int) -> str:
         return "approach"
     if step < int(args_cli.approach_steps) + int(args_cli.close_steps):
         return "close"
-    return "lift"
+    if step < int(args_cli.approach_steps) + int(args_cli.close_steps) + int(args_cli.lift_steps):
+        return "lift"
+    return "hold"
 
 
 def _create_player(agent_cfg: dict, env, checkpoint_path: str) -> BasePlayer:
@@ -384,7 +397,7 @@ def _prediction_metrics(
         summary[f"{split}_lift_z_mae"] = float(torch.mean((pred[lift_mask, 2] - target[lift_mask, 2]).abs()))
         summary[f"{split}_lift_z_negative_rate"] = float((pred[lift_mask, 2] < 0.0).float().mean())
     rows: list[dict[str, Any]] = []
-    phase_names = {0: "approach", 1: "close", 2: "lift"}
+    phase_names = {0: "approach", 1: "close", 2: "lift", 3: "hold"}
     for phase_id, phase_name in phase_names.items():
         mask = phase_ids_cpu == phase_id
         if not bool(mask.any()):
@@ -437,7 +450,7 @@ def _write_plots(output_dir: Path, losses: list[dict[str, float]], metric_rows: 
         plt.close(fig)
         artifacts["bc_loss_curves"] = str(path)
     if metric_rows:
-        phases = ["approach", "close", "lift"]
+        phases = ["approach", "close", "lift", "hold"]
         fig, axes = plt.subplots(2, 4, figsize=(16, 8))
         axes = axes.ravel()
         for dim, name in enumerate(ACTION_NAMES):
@@ -628,12 +641,15 @@ def main(env_cfg, agent_cfg: dict):
         "approach_steps": int(args_cli.approach_steps),
         "close_steps": int(args_cli.close_steps),
         "lift_steps": int(args_cli.lift_steps),
+        "hold_steps": int(args_cli.hold_steps),
         "close_width": float(args_cli.close_width),
         "lift_action_z": float(args_cli.lift_action_z),
+        "hold_action_z": float(args_cli.hold_action_z),
         "oracle_gain": float(args_cli.oracle_gain),
         "oracle_max_position_action": float(args_cli.oracle_max_position_action),
         "track_orientation": bool(args_cli.track_orientation),
         "track_exact_during_lift": bool(args_cli.track_exact_during_lift),
+        "track_exact_during_hold": bool(args_cli.track_exact_during_hold),
         "train_epochs": int(args_cli.train_epochs),
         "batch_size": int(args_cli.batch_size),
         "learning_rate": float(args_cli.learning_rate),
@@ -667,7 +683,12 @@ def main(env_cfg, agent_cfg: dict):
     player = _create_player(agent_cfg, env, init_checkpoint)
     player.model.train()
 
-    total_steps = int(args_cli.approach_steps) + int(args_cli.close_steps) + int(args_cli.lift_steps)
+    total_steps = (
+        int(args_cli.approach_steps)
+        + int(args_cli.close_steps)
+        + int(args_cli.lift_steps)
+        + int(args_cli.hold_steps)
+    )
     if total_steps <= 0:
         raise ValueError("At least one phase step is required.")
 
@@ -703,7 +724,7 @@ def main(env_cfg, agent_cfg: dict):
             obs_tensor = _obs_policy_tensor(obs).detach().clone()
             obs_batches.append(obs_tensor[valid].detach().clone())
             action_batches.append(reference[valid].detach().clone())
-            phase_id = {"approach": 0, "close": 1, "lift": 2}[phase]
+            phase_id = {"approach": 0, "close": 1, "lift": 2, "hold": 3}[phase]
             phase_batches.append(torch.full((int(valid.sum()),), phase_id, dtype=torch.long, device=task_env.device))
             reset_batches.append(torch.full((int(valid.sum()),), reset_index, dtype=torch.long, device=task_env.device))
             sample_batches.append(task_env.grasp_prior_reset_sample_index[valid].detach().clone())
@@ -744,6 +765,7 @@ def main(env_cfg, agent_cfg: dict):
             "approach": int((phase_all == 0).sum().detach().cpu()),
             "close": int((phase_all == 1).sum().detach().cpu()),
             "lift": int((phase_all == 2).sum().detach().cpu()),
+            "hold": int((phase_all == 3).sum().detach().cpu()),
         },
         "sample_histogram": {str(int(k)): int(v) for k, v in zip(*torch.unique(sample_all.detach().cpu(), return_counts=True), strict=True)},
         "obs_stats": _tensor_stats(obs_all),
