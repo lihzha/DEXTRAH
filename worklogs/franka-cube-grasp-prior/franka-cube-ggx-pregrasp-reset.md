@@ -2641,7 +2641,7 @@ Change:
 
 Version Control:
 - agent_id: `franka-cube-ggx-pregrasp-reset`
-- implementation_commit: `9dd24321a7af69903ce7393da0b5aa07652f48be` (worklog-only, amended commit retains this content)
+- implementation_commit: `192be6dc087398ad9136e64f86483bfdd4c2ae44` (worklog-only inspection commit)
 - changed_files: this worklog only
 
 Inputs:
@@ -2686,3 +2686,45 @@ Analysis:
 
 Next:
 - Recommended next bounded experiment is diagnostic-only: from the same prior reset distribution, compare ep10/ep45 policy actions against the successful assisted oracle trajectory and run a one-step/short-horizon action-response audit that measures reward-term deltas for hold/approach/close/lift actions. Do not change the main task reward/termination semantics quietly; any reward/action adjustment must be explicit and separated from the apple-to-apple variant.
+
+## 2026-06-12T01:08:00Z - plan: pass7 action/reward audit
+
+Goal:
+- Run the requested diagnostic-only action/reward audit from the same robust pass7 prior-reset distribution. Compare ep10/ep45 policy actions with assisted-oracle and scripted first-action rollouts without launching PPO or any A100 job.
+
+Plan:
+- Add a debug-only RL-Games audit script under `dextrah_lab/rl_games/` that loads the ep10/ep45 checkpoints, resets the Franka cube task with `grasp_prior_reset_enabled=True`, samples the robust pass7 library, and records policy/scripted actions, reward terms, distances, gripper width, z-action effects, done flags, and reset-quality metrics over a short horizon.
+- Add a minimal L401 wrapper under `cluster/` for a 1-GPU bounded audit job. The wrapper will echo commit/config/checkpoints/output paths and write artifacts under `/results/diagnostics/<run_name>`.
+- If practical, add only no-behavior-change helper access needed by the debug script; do not change reward, termination, observation, action, PPO, cube reset, or training defaults.
+- Local validation: `python3 -m py_compile` for the new/edited Python files and `bash -n` for the wrapper.
+- Commit and push the audit implementation/worklog, deploy the exact commit to the agent-owned L401 worktree, launch one bounded audit job, monitor to completion, fetch outputs, generate/open report/plots/contact sheet via `viz-open`, and update this worklog with job id, run dir, artifact URLs, and verdict.
+
+Acceptance / no-go:
+- No PPO relaunch and no A100 job.
+- The audit must show whether policy actions are immediately worse than no-op/hold/approach/close/lift candidates, and whether reward terms locally incentivize upward/open/away motion near the valid pregrasp reset.
+- Any reward/action adjustment hypothesis remains documented as a diagnostic recommendation only, not silently applied to the apple-to-apple task.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `192be6dc087398ad9136e64f86483bfdd4c2ae44`
+- implementation_commit: current commit after this entry; exact deployed commit recorded in the launch entry
+- changed_files:
+  - `dextrah_lab/rl_games/audit_franka_cube_grasp_prior_actions.py`
+  - `cluster/sbatch_audit_franka_cube_grasp_prior_actions_1gpu.sh`
+  - this worklog
+
+Implementation:
+- Added a diagnostic-only action/reward audit script. It loads policy checkpoints with the same RL-Games player path as eval, resets the `Dextrah-Franka-Cube-Grasp` task with the robust pass7 prior library, snapshots each reset state inside the audit script, and replays ep10/ep45 policies plus scripted candidates from the same reset state.
+- Scripted candidates: `script_noop`, `script_hold_open`, `script_approach_exact_open`, `script_close_light_pregrasp`, `script_lift_closed`, and `script_assisted_oracle_short`.
+- Recorded per-step actions, reward terms, reward, EE/finger/tip distances, gripper width, cube lift/xy, reset-prior success/quality, done flags, contact proxies if available, and controller tracking commanded-vs-realized deltas.
+- Added a minimal L401 wrapper that verifies the robust library/checkpoints, echoes config/provenance, runs only the audit script, and writes report/CSV/JSONL/PNG/contact-sheet artifacts under `/results/diagnostics/<run_name>`.
+- Important scope note: I initially considered adding `get_env_state` to the Franka cube env, but removed that before commit. The matched reset-state snapshot/restore now lives only inside the diagnostic script, so the main RL task reset/reward/termination/observation/action/checkpoint behavior is unchanged.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/audit_franka_cube_grasp_prior_actions.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py` passed.
+- `bash -n cluster/sbatch_audit_franka_cube_grasp_prior_actions_1gpu.sh cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh cluster/sbatch_eval_franka_cube_grasp_1gpu.sh` passed.
+
+Next:
+- Commit/push, deploy exact commit to the agent-owned L401 worktree, submit the bounded action/reward audit using the robust pass7 library and smoke ep10/ep45 checkpoints, monitor/fetch/inspect artifacts, open report/contact sheet/plots with `viz-open`, and record a clear verdict. No PPO or A100 launch.
