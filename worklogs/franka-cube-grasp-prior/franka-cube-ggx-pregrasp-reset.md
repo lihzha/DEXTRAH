@@ -5536,3 +5536,72 @@ Decision:
 
 Active jobs:
 - none expected after this audit; verify with `squeue` before handoff.
+
+## 2026-06-12T06:39:49Z - plan: non-apple-to-apple action-prior reward diagnostic
+
+Goal:
+- Run one explicitly labeled intervention diagnostic to test whether PPO can learn grasp/lift from the healthy low-z reset distribution when given dense first-contact action guidance, without overriding the policy action.
+
+Hypothesis:
+- The prior policy collapsed open/down because the apple-to-apple reward does not guide discovery from 3 cm pregrasp to exact/contact/light-close/lift. A diagnostic reward that softly rewards matching the validated assisted reference action sequence should shift the learned policy toward approach/light-close/lift if action discovery is the blocker.
+
+Planned intervention:
+- Add opt-in config fields, disabled by default:
+  - `grasp_prior_action_prior_reward_enabled=False`
+  - `grasp_prior_action_prior_reward_weight`
+  - `grasp_prior_action_prior_reward_sharpness`
+- Reuse the existing diagnostic reference sequence parameters (`grasp_prior_action_warmstart_*`) to compute the teacher action:
+  - approach: track exact GraspGenX EE target with open gripper;
+  - close: track exact target with `close_width=0.055`;
+  - lift: keep light-close target and `lift_action_z=0.50`.
+- Unlike `grasp_prior_action_warmstart_enabled`, this diagnostic adds reward only; it does not replace actions. It is therefore a policy-learning intervention, not an action override.
+- Log action-prior active rate, phase rates, teacher z/gripper action, policy-to-teacher L1 error, and reward.
+
+Files to edit:
+- `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env_cfg.py`
+- `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`
+- `cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`
+- `cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- owned worklog only.
+
+Validation before launch:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env_cfg.py`
+- `bash -n cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+
+Bounded job plan:
+- Launch one L401 1-GPU, 64-env, short PPO smoke with low-z prior reset enabled and `grasp_prior_action_prior_reward_enabled=True`.
+- Keep it clearly named `franka_cube_lowz_actionprior_reward_*`.
+- Use JSONL metrics and frequent checkpoints; no A100/full PPO.
+- Evaluate best/final checkpoint with the usual video/contact-sheet/metrics protocol only after training logs look finite and the action-prior branch is active.
+
+Acceptance / stop-go:
+- Required for any future scale-up proposal: learned-policy video, not scripted reference, must show real grasp/lift from the low-z reset distribution.
+- If success/lift remain zero or videos still show hover/open/down/off-target, classify the diagnostic as negative and do not scale.
+- This intervention is non-apple-to-apple and must stay separate from the main reset-prior comparison.
+
+## 2026-06-12T06:41:56Z - implementation: non-apple-to-apple action-prior reward
+
+Change:
+- Added opt-in diagnostic reward fields to `DextrahFrankaCubeGraspEnvCfg`, disabled by default.
+- Added an action-prior reward path to `DextrahFrankaCubeGraspEnv` that computes the same validated assisted approach/exact/light-close/lift teacher sequence used in diagnostics, but adds reward only and does not override actions.
+- Added logs for action-prior active/phase rates, policy-teacher action L1 error, teacher z/gripper actions, exact-EE error, and reward.
+- Added train/eval wrapper pass-through for the new env flags.
+- Added eval metric collection for action-prior diagnostic buffers.
+
+Version Control:
+- base_commit: `1a55a5abc6ae95a75a57e6e0ce4e83eba8f3de5d`
+- implementation_commit: pending
+- changed_files:
+  - `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env_cfg.py`
+  - `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`
+  - `dextrah_lab/rl_games/eval_rollout.py`
+  - `cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`
+  - `cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+  - owned worklog
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env_cfg.py dextrah_lab/rl_games/eval_rollout.py` passed.
+- `bash -n cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh && bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh` passed.
+
+Next:
+- Commit/push, deploy exact commit to the agent-owned l401 worktree, then launch one 64-env L401 PPO smoke with `GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED=True`.

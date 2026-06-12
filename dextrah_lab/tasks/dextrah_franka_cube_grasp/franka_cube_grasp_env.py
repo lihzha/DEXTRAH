@@ -133,6 +133,22 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             self.grasp_prior_action_warmstart_applied_gripper_action = torch.zeros(self.num_envs, device=self.device)
             self.grasp_prior_action_warmstart_action_delta_abs = torch.zeros(self.num_envs, device=self.device)
             self.grasp_prior_action_warmstart_exact_ee_error = torch.zeros(self.num_envs, device=self.device)
+        if not hasattr(self, "grasp_prior_action_prior_reward"):
+            action_dim = int(self.cfg.action_space)
+            self.grasp_prior_action_prior_active = torch.zeros(
+                self.num_envs, dtype=torch.bool, device=self.device
+            )
+            self.grasp_prior_action_prior_phase = torch.full(
+                (self.num_envs,), -1, dtype=torch.long, device=self.device
+            )
+            self.grasp_prior_action_prior_teacher_actions = torch.zeros(
+                self.num_envs, action_dim, device=self.device
+            )
+            self.grasp_prior_action_prior_delta_abs = torch.zeros(self.num_envs, device=self.device)
+            self.grasp_prior_action_prior_reward = torch.zeros(self.num_envs, device=self.device)
+            self.grasp_prior_action_prior_teacher_action_z = torch.zeros(self.num_envs, device=self.device)
+            self.grasp_prior_action_prior_teacher_gripper_action = torch.zeros(self.num_envs, device=self.device)
+            self.grasp_prior_action_prior_exact_ee_error = torch.zeros(self.num_envs, device=self.device)
 
     def _setup_grasp_prior_reset(self) -> None:
         self._grasp_prior_reset_enabled = bool(self.cfg.grasp_prior_reset_enabled)
@@ -556,6 +572,91 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         self._update_grasp_prior_action_warmstart_scalars(policy_actions, applied_actions)
         return applied_actions
 
+    def _grasp_prior_reference_actions(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        action_dim = int(self.cfg.action_space)
+        teacher_actions = torch.zeros(self.num_envs, action_dim, device=self.device)
+        active = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        phase = torch.full((self.num_envs,), -1, dtype=torch.long, device=self.device)
+        exact_ee_error = torch.zeros(self.num_envs, device=self.device)
+
+        if not getattr(self, "_grasp_prior_reset_enabled", False):
+            return teacher_actions, active, phase, exact_ee_error
+
+        approach_steps = max(int(self.cfg.grasp_prior_action_warmstart_approach_steps), 0)
+        close_steps = max(int(self.cfg.grasp_prior_action_warmstart_close_steps), 0)
+        lift_steps = max(int(self.cfg.grasp_prior_action_warmstart_lift_steps), 0)
+        total_steps = approach_steps + close_steps + lift_steps
+        if total_steps <= 0:
+            return teacher_actions, active, phase, exact_ee_error
+
+        step = self.episode_length_buf.to(device=self.device)
+        active = (
+            (step < total_steps)
+            & self.grasp_prior_reset_success
+            & self.grasp_prior_reset_quality_success
+        )
+        if not bool(active.any().item()):
+            return teacher_actions, active, phase, exact_ee_error
+
+        open_action = self._gripper_action_for_width(float(self.cfg.max_gripper_width))
+        close_action = self._gripper_action_for_width(float(self.cfg.grasp_prior_action_warmstart_close_width))
+        exact_open_action = self._grasp_prior_exact_tracking_action(open_action)
+        exact_ee_error = self.grasp_prior_action_warmstart_exact_ee_error.clone()
+        exact_close_action = self._grasp_prior_exact_tracking_action(close_action)
+        exact_ee_error = torch.maximum(exact_ee_error, self.grasp_prior_action_warmstart_exact_ee_error)
+        lift_action = exact_close_action.clone()
+        lift_action[:, 2] = float(self.cfg.grasp_prior_action_warmstart_lift_action_z)
+
+        approach = active & (step < approach_steps)
+        close = active & (step >= approach_steps) & (step < approach_steps + close_steps)
+        lift = active & (step >= approach_steps + close_steps)
+        if bool(approach.any().item()):
+            teacher_actions[approach] = exact_open_action[approach]
+            phase[approach] = 0
+        if bool(close.any().item()):
+            teacher_actions[close] = exact_close_action[close]
+            phase[close] = 1
+        if bool(lift.any().item()):
+            teacher_actions[lift] = lift_action[lift]
+            phase[lift] = 2
+        return teacher_actions, active, phase, exact_ee_error
+
+    def _compute_grasp_prior_action_prior_reward(self) -> torch.Tensor:
+        self._ensure_cube_buffers()
+        self.grasp_prior_action_prior_active[:] = False
+        self.grasp_prior_action_prior_phase[:] = -1
+        self.grasp_prior_action_prior_teacher_actions[:] = 0.0
+        self.grasp_prior_action_prior_delta_abs[:] = 0.0
+        self.grasp_prior_action_prior_reward[:] = 0.0
+        self.grasp_prior_action_prior_teacher_action_z[:] = 0.0
+        self.grasp_prior_action_prior_teacher_gripper_action[:] = 0.0
+        self.grasp_prior_action_prior_exact_ee_error[:] = 0.0
+
+        if not bool(self.cfg.grasp_prior_action_prior_reward_enabled):
+            return self.grasp_prior_action_prior_reward
+        if not getattr(self, "_grasp_prior_reset_enabled", False):
+            return self.grasp_prior_action_prior_reward
+
+        teacher_actions, active, phase, exact_ee_error = self._grasp_prior_reference_actions()
+        self.grasp_prior_action_prior_active[:] = active
+        self.grasp_prior_action_prior_phase[:] = phase
+        self.grasp_prior_action_prior_teacher_actions[:] = teacher_actions
+        self.grasp_prior_action_prior_teacher_action_z[:] = teacher_actions[:, 2]
+        self.grasp_prior_action_prior_teacher_gripper_action[:] = teacher_actions[:, 6]
+        self.grasp_prior_action_prior_exact_ee_error[:] = exact_ee_error
+
+        if bool(active.any().item()):
+            delta_abs = torch.mean(torch.abs(self.actions - teacher_actions), dim=-1)
+            self.grasp_prior_action_prior_delta_abs[:] = delta_abs
+            weight = max(float(self.cfg.grasp_prior_action_prior_reward_weight), 0.0)
+            sharpness = max(float(self.cfg.grasp_prior_action_prior_reward_sharpness), 0.0)
+            self.grasp_prior_action_prior_reward[:] = (
+                weight
+                * active.float()
+                * torch.exp(-sharpness * delta_abs)
+            )
+        return self.grasp_prior_action_prior_reward
+
     def _pre_physics_step(self, actions: torch.Tensor) -> None:
         applied_actions = self._apply_grasp_prior_action_warmstart(actions)
         super()._pre_physics_step(applied_actions)
@@ -755,6 +856,8 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             + gripper_close_reg
             + action_penalty
         )
+        action_prior_reward = self._compute_grasp_prior_action_prior_reward()
+        total_reward = total_reward + action_prior_reward
         log_terms = {
             "cube_approach_reward": approach_reward.mean(),
             "cube_enclosure_reward": enclosure_reward.mean(),
@@ -788,6 +891,21 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             "cube_gripper_action": self.actions[:, 6].mean(),
             "cube_gripper_close_action": torch.clamp(-self.actions[:, 6], 0.0, 1.0).mean(),
         }
+        if bool(self.cfg.grasp_prior_action_prior_reward_enabled):
+            action_prior_phase = self.grasp_prior_action_prior_phase
+            log_terms.update(
+                {
+                    "cube_action_prior_reward": action_prior_reward.mean(),
+                    "cube_action_prior_active_rate": self.grasp_prior_action_prior_active.float().mean(),
+                    "cube_action_prior_approach_rate": (action_prior_phase == 0).float().mean(),
+                    "cube_action_prior_close_rate": (action_prior_phase == 1).float().mean(),
+                    "cube_action_prior_lift_rate": (action_prior_phase == 2).float().mean(),
+                    "cube_action_prior_delta_abs": self.grasp_prior_action_prior_delta_abs.mean(),
+                    "cube_action_prior_teacher_z": self.grasp_prior_action_prior_teacher_action_z.mean(),
+                    "cube_action_prior_teacher_gripper": self.grasp_prior_action_prior_teacher_gripper_action.mean(),
+                    "cube_action_prior_exact_ee_error": self.grasp_prior_action_prior_exact_ee_error.mean(),
+                }
+            )
         if getattr(self, "_grasp_prior_reset_enabled", False):
             log_terms.update(
                 {

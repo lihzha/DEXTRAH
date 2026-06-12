@@ -94,6 +94,13 @@ class DextrahFrankaCubeGraspEnvCfg(DextrahFrankaStarKittingEnvCfg):
     grasp_prior_action_warmstart_gain = 8.0
     grasp_prior_action_warmstart_max_position_action = 1.0
     grasp_prior_action_warmstart_track_orientation = True
+    # Diagnostic-only reward intervention for reset-prior debugging.
+    # Disabled by default; enabling it makes the run non-apple-to-apple because
+    # the policy receives an additional teacher-action matching reward for the
+    # first post-reset approach/close/lift steps.
+    grasp_prior_action_prior_reward_enabled = False
+    grasp_prior_action_prior_reward_weight = 2.0
+    grasp_prior_action_prior_reward_sharpness = 2.0
 
     # KUKA-cube-shaped reward weights for franka_cube_grasp_rewards.compute_franka_cube_grasp_rewards.
     # Robot-specific differences are handled in the reward inputs: two Franka
