@@ -4259,3 +4259,29 @@ Analysis:
 - The visual mismatch is closed. The all-7 BC checkpoint makes partial teacher alpha `0.75` viable in 2/4 envs under this deterministic seed, while policy-only alpha `0.0` remains non-lifting.
 - This is real progress over the earlier PPO-only/teacher-force state, where alpha `0.75` did not lift. It is not a reason to scale PPO yet: learned policy-only control is still insufficient.
 - Next bounded trainability direction should be on-policy imitation / DAgger-style aggregation for states reached by alpha `0.0`, or a curriculum that gradually lowers teacher alpha only after targeted success-window videos remain plausible.
+
+## 2026-06-11T18:28:13-07:00 - BC-initialized PPO handoff smoke plan
+
+Goal:
+- Test the smallest safe learned handoff step after the targeted visual gate: resume PPO from the all-7 BC checkpoint with teacher-assisted rollouts and high raw-action alignment, then evaluate whether policy-only or lower-alpha behavior improves.
+
+Hypothesis:
+- The BC checkpoint already matches the reference action labels on held-out reference states, but policy-only alpha `0.0` fails because rollout states drift off the reference manifold. A short on-policy PPO continuation with teacher force `0.75 -> 0.5`, full-phase teacher availability, and raw-policy action-alignment reward may keep rollouts near successful reference states while updating the raw policy.
+
+Plan:
+- Use existing wrappers only; no baseline task or reset-prior files touched.
+- Commit/push this worklog update, then deploy exact commit `82b60d38849e06e76ca19ec543374504a6bfaff1` to the l401 agent worktree.
+- Launch one bounded one-GPU train smoke from `/results/bc/franka_cube_traj_tracking_bc_ref_all7_20260611_181620/nn/bc_reference_action_imitation.pth`.
+- Training config: `NUM_ENVS=128`, `HORIZON_LENGTH=32`, `MINIBATCH_SIZE=1024`, `CENTRAL_VALUE_MINIBATCH_SIZE=1024`, `MINI_EPOCHS=2`, `MAX_ITERATIONS=15`, `SAVE_FREQUENCY=1`, `DISTRIBUTED=False`, `MULTI_GPU=False`, `AUTO_RESUME=False`, `SELF_RELAUNCH=False`, `USE_CUDA_GRAPH=False`.
+- Teacher/action config: `TRAJECTORY_TRACKING_TEACHER_FORCE_ENABLED=True`, alpha start/end `0.75/0.5`, `TRAJECTORY_TRACKING_TEACHER_FORCE_PHASE_END=1.0`, `TRAJECTORY_TRACKING_TEACHER_FORCE_ANNEAL_STEPS=160`, `TRAJECTORY_TRACKING_ACTION_ALIGNMENT_WEIGHT=80.0`, phase start `0.0`, sharpness `1.0`, contact gate disabled, raw-policy comparison enabled.
+- After training, fetch logs/checkpoint metadata and run bounded 520-step video evals from the resulting checkpoint at alpha `0.0`, `0.5`, `0.75`, and `1.0` with `NUM_ENVS=4`, success termination suppressed, per-env metrics, targeted videos/contact sheets where needed, and action-semantics comparison.
+
+Validation:
+- Local cheap checks passed before launch: `bash -n cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`; `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py dextrah_lab/rl_games/analyze_traj_tracking_action_semantics.py`.
+
+Acceptance:
+- Train wrapper exits cleanly and writes an epoch-15 checkpoint without relying on episode-return suffixes.
+- Eval artifacts include report, metrics JSON/CSV, trace plot, contact sheet, full video, consistency JSON, and action-semantics tables.
+- Target unsafe remains `0`.
+- A pass requires alpha `0.0` or alpha `0.5` to show visible contact/lift improvement over the current alpha `0.0` failure, not just scheduler success.
+- If policy-only/low-alpha remains dead, stop PPO handoff tweaks and move to explicit on-policy dataset aggregation / DAgger-style BC from policy-reached states.
