@@ -5993,3 +5993,73 @@ Next:
 
 Correction:
 - `cluster/sbatch_train_teacher_8gpu.sh` was restored to `batch_singlenode,grizzly,polar,polar3,polar4,interactive_singlenode` before any RL launch.
+
+## 2026-06-12T00:55:51-07:00 - policy-only reset-prior A100 run and video evidence
+
+Goal:
+- Prove the reset-only grasp prior can train policy-only RL, without scripted action warmstart or action-prior reward.
+
+Preconditions:
+- Upstream/main Franka cube RL is treated as known-good; reset-prior changes are opt-in.
+- Reset validation job `1028251` used `CUBE_SPAWN_YAW_RANDOMIZATION_DEG=180` and passed all checks: reset attempt/success/farther/quality `1.0`, unit cube quaternions, no immediate done, and finger/table clearances positive.
+- Deployed exact remote code: `cd1d66e1041e93adf6cb199862b55b41a8c71097`.
+- Training config confirmed `grasp_prior_reset_enabled=True`, `grasp_prior_action_warmstart_enabled=False`, `grasp_prior_action_prior_reward_enabled=False`, and `cube_spawn_yaw_randomization_deg=0.0` for upstream parity.
+
+Command / Job:
+- A100 training job: `29003353`
+- run_name: `franka_cube_lowz_resetprior_policy8gpu_cd1d66e_20260612_004111`
+- wrapper: `cluster/sbatch_train_teacher_8gpu.sh`
+- scale: 8 GPUs, `2048` envs, `MAX_ITERATIONS=300`
+- reset library: `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz`
+- metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_lowz_resetprior_policy8gpu_cd1d66e_20260612_004111/metrics/direct_info_rank_0.jsonl`
+
+Evaluation:
+- ep25 eval job `1028255`: `franka_cube_lowz_policy8gpu_ep25_eval_20260612_004555`
+  - result: negative; video showed hand drift/no grasp, metrics had `success_rate_final=0`, `has_lifted_cube.max=0`, max lift about `0.0026 m`.
+- ep50 eval jobs `1028256`-`1028259`: four single-env deterministic policy-only videos.
+  - result: positive but somewhat marginal/side-loaded; every seed reached `has_lifted_cube=1` and max success, two of four ended with strict final success.
+  - local videos: `cluster_results/l401/franka_cube_lowz_policy8gpu_ep50_seed2026065*_eval_20260612_004937/videos/*.mp4`
+  - local contact sheets: `cluster_results/l401/franka_cube_lowz_policy8gpu_ep50_eval_contact_sheets/`
+- ep100 eval jobs `1028260`-`1028263`: four single-env deterministic policy-only videos.
+  - result: positive; every seed reached success by steps `42-50`, every seed ended with `success_rate_final=1.0`, `has_lifted_cube.final=1.0`, final lift height `0.1248-0.1366 m`, max lift `0.1376-0.1384 m`.
+  - visual inspection: all four contact sheets show actual cube lift/hold by the Franka gripper; no scripted action intervention was enabled.
+  - local videos: `cluster_results/l401/franka_cube_lowz_policy8gpu_ep100_seed2026070*_eval_20260612_005306/videos/*.mp4`
+  - local contact sheets: `cluster_results/l401/franka_cube_lowz_policy8gpu_ep100_eval_contact_sheets/`
+
+Reward-weight note:
+- The current branch kept upstream/main cube reward weights: `cube_approach_weight=2.0`, `cube_enclosure_weight=1.0`.
+- This is a valid ablation target because reset-prior starts near the cube, but live training logs at epoch `107+` show lift/success terms dominate after learning: approach+enclosure about `1.78`, lift+success about `17.7-18.0`.
+- Current evidence does not require immediate reward downweighting to achieve lift, but a cleaner-grasp ablation should reduce approach/enclosure if future videos show pressing/hovering or excessive side-loading.
+
+Current monitor:
+- A100 job `29003353` remains running and must still be monitored through terminal state and final metrics/artifacts.
+
+## 2026-06-12T01:11:39-07:00 - final A100 training result
+
+Result:
+- A100 job `29003353` completed `0:0` in `00:28:58`.
+- Stdout log fetched locally: `cluster_logs/a1001/dextrah/teacher_8gpu_29003353.out`.
+- Metrics/configs fetched locally without large checkpoint binaries:
+  - `cluster_results/a1001/franka_cube_lowz_resetprior_policy8gpu_cd1d66e_20260612_004111/metrics/direct_info_rank_0.jsonl`
+  - `cluster_results/a1001/franka_cube_lowz_resetprior_policy8gpu_cd1d66e_20260612_004111/params/env.yaml`
+  - `cluster_results/a1001/franka_cube_lowz_resetprior_policy8gpu_cd1d66e_20260612_004111/params/agent.yaml`
+- Remote checkpoints remain under `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_lowz_resetprior_policy8gpu_cd1d66e_20260612_004111/nn/`.
+
+Final metrics:
+- JSONL rows: `300`, first epoch `1`, last epoch `300`.
+- Bad scalar count: `0`.
+- Final epoch: success `0.812988`, lifted `0.880371`, lift height `0.131253 m`, gripper width `0.059897 m`.
+- Last 25-epoch means: success `0.859492`, lifted `0.934297`, lift height `0.133529 m`, gripper width `0.058876 m`.
+- Best observed scalar epochs:
+  - success max `0.885742` at epoch `249`
+  - lifted max `0.960449` at epoch `198`
+  - lift-height max `0.135939 m` at epoch `273`
+- Reset prior health stayed `1.0` for reset success and quality over the last 25 epochs and final epoch.
+
+Analysis:
+- The full-pose reset-prior implementation and policy-only training path are now validated by both metrics and videos.
+- The ep100 policy-only videos are the strongest visual evidence: four deterministic single-env videos all show actual grasp/lift/hold behavior and all end successful.
+- The reward-weight suspicion is still useful for a future cleanliness ablation, but this run does not need it to learn. Approach+enclosure shaping remained about `1.86` at the final epoch, while lift+success was about `17.78`; the late-policy behavior is not dominated by approach rewards.
+
+Cleanup / active jobs:
+- `squeue -u lzha` on both `a1001` and `l401` was empty after the training and eval jobs completed.
