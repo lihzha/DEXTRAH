@@ -106,6 +106,37 @@ parser.add_argument(
     default="",
     help="Action dimensions used for distillation. Defaults to --loss_dims when empty.",
 )
+parser.add_argument(
+    "--residual_adapter_enabled",
+    type=lambda value: str(value).strip().lower() in ("1", "true", "yes", "on"),
+    default=False,
+    help="Train a zero-initialized residual adapter on top of the frozen input actor instead of updating actor weights.",
+)
+parser.add_argument("--residual_hidden_dim", type=int, default=64, help="Hidden width for residual adapter; 0 uses linear.")
+parser.add_argument(
+    "--residual_max_action",
+    type=float,
+    default=0.5,
+    help="Maximum absolute residual action before final action clipping.",
+)
+parser.add_argument(
+    "--residual_preserve_sources",
+    type=str,
+    default="",
+    help="Source names/slugs/ids where residual output is penalized toward zero.",
+)
+parser.add_argument(
+    "--residual_preserve_weight",
+    type=float,
+    default=0.0,
+    help="MSE weight for residual-to-zero preservation on --residual_preserve_sources.",
+)
+parser.add_argument(
+    "--residual_l2_weight",
+    type=float,
+    default=0.0,
+    help="Global residual magnitude MSE penalty.",
+)
 parser.add_argument("--seed", type=int, default=42, help="Random seed for env and supervised split.")
 parser.add_argument(
     "--collection_action_source",
@@ -151,6 +182,8 @@ from isaaclab_tasks.utils.hydra import hydra_task_config
 import dextrah_lab.tasks.dextrah_kuka_allegro.gym_setup  # noqa: F401
 import dextrah_lab.tasks.dextrah_franka_cube_grasp.gym_setup  # noqa: F401
 import dextrah_lab.tasks.dextrah_franka_star_kitting.gym_setup  # noqa: F401
+
+from residual_action_adapter import ResidualActionAdapter
 
 
 ACTION_LABELS = ("x", "y", "z", "rx", "ry", "rz", "gripper")
@@ -431,6 +464,8 @@ def _draw_source_metric_plot(rows: list[dict[str, float | int | str]], path: Pat
         for key in all_keys
         if (key.startswith("val_source_") and key.endswith("_l2"))
         or (key.startswith("val_distill_source_") and key.endswith("_l2"))
+        or (key.startswith("val_residual_source_") and key.endswith("_l2"))
+        or (key.startswith("val_preserve_source_") and key.endswith("_l2"))
     )
     metric_keys = [key for idx, key in enumerate(metric_keys) if key in all_keys and key not in metric_keys[:idx]]
     if not metric_keys:
@@ -515,6 +550,14 @@ def _write_report(summary: dict[str, object], rows: list[dict[str, float | int |
         "| source | split | initial distill mse | final distill mse | initial distill l2 | final distill l2 | initial up abs | final up abs | initial close abs | final close abs |",
         "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
+    base_metric_lines = [
+        "| source | split | base mse | base l2 | base up abs | base close abs |",
+        "| --- | --- | ---: | ---: | ---: | ---: |",
+    ]
+    residual_metric_lines = [
+        "| source | split | initial residual l2 | final residual l2 | initial preserve l2 | final preserve l2 |",
+        "| --- | --- | ---: | ---: | ---: | ---: |",
+    ]
     if isinstance(source_rows, list):
         for source in source_rows:
             if not isinstance(source, dict):
@@ -540,6 +583,21 @@ def _write_report(summary: dict[str, object], rows: list[dict[str, float | int |
                         f"{first.get(distill_prefix + '_l2', 'n/a')} | {last.get(distill_prefix + '_l2', 'n/a')} | "
                         f"{first.get(distill_prefix + '_up_abs', 'n/a')} | {last.get(distill_prefix + '_up_abs', 'n/a')} | "
                         f"{first.get(distill_prefix + '_close_abs', 'n/a')} | {last.get(distill_prefix + '_close_abs', 'n/a')} |"
+                    )
+                base_prefix = f"{split}_base_source_{slug}"
+                if base_prefix + "_mse" in last:
+                    base_metric_lines.append(
+                        f"| {name} | {split} | "
+                        f"{last.get(base_prefix + '_mse', 'n/a')} | {last.get(base_prefix + '_l2', 'n/a')} | "
+                        f"{last.get(base_prefix + '_up_abs', 'n/a')} | {last.get(base_prefix + '_close_abs', 'n/a')} |"
+                    )
+                residual_prefix = f"{split}_residual_source_{slug}"
+                preserve_prefix = f"{split}_preserve_source_{slug}"
+                if residual_prefix + "_l2" in first or residual_prefix + "_l2" in last:
+                    residual_metric_lines.append(
+                        f"| {name} | {split} | "
+                        f"{first.get(residual_prefix + '_l2', 'n/a')} | {last.get(residual_prefix + '_l2', 'n/a')} | "
+                        f"{first.get(preserve_prefix + '_l2', 'n/a')} | {last.get(preserve_prefix + '_l2', 'n/a')} |"
                     )
     if "train_distill_mse" in first or "val_distill_mse" in first:
         distill_metric_lines.extend(
@@ -583,6 +641,10 @@ def _write_report(summary: dict[str, object], rows: list[dict[str, float | int |
         f"- distillation sources: `{summary.get('distill_sources')}`",
         f"- distillation dims: `{summary.get('distill_dims')}`",
         f"- distillation loss weight: `{summary.get('distill_loss_weight')}`",
+        f"- residual adapter enabled: `{summary.get('residual_adapter_enabled')}`",
+        f"- residual hidden dim / max action: `{summary.get('residual_hidden_dim')}` / `{summary.get('residual_max_action')}`",
+        f"- residual preserve sources: `{summary.get('residual_preserve_sources')}`",
+        f"- residual preserve/l2 weights: `{summary.get('residual_preserve_weight')}` / `{summary.get('residual_l2_weight')}`",
         f"- selected step/score: `{summary.get('selected_step')}` / `{summary.get('selected_score')}`",
         f"- early stop triggered: `{summary.get('early_stop_triggered')}`",
         f"- reference caveat: `curobo_validated={summary.get('curobo_validated')}`",
@@ -628,6 +690,18 @@ def _write_report(summary: dict[str, object], rows: list[dict[str, float | int |
         "## Distillation Metrics",
         "",
         *distill_metric_lines,
+        "",
+        "## Residual Adapter Metrics",
+        "",
+        "Base metrics are the frozen input actor against reference labels. Residual metrics are final-minus-base action magnitude; preserve metrics are final action error to the frozen base on preservation sources.",
+        "",
+        "### Frozen Base Label Error",
+        "",
+        *base_metric_lines,
+        "",
+        "### Residual Magnitude / Base Preservation",
+        "",
+        *residual_metric_lines,
         "",
         "## Artifacts",
         "",
@@ -904,6 +978,22 @@ def main(env_cfg, agent_cfg: dict):
     distill_dims = _parse_loss_dims(args_cli.distill_dims, action_dim) if args_cli.distill_dims.strip() else list(loss_dims)
     distill_dims_t = torch.tensor(distill_dims, dtype=torch.long, device=device)
     distill_enabled = args_cli.distill_loss_weight > 0.0 and bool(distill_source_ids)
+    residual_adapter_enabled = bool(args_cli.residual_adapter_enabled)
+    if args_cli.residual_hidden_dim < 0:
+        raise ValueError(f"--residual_hidden_dim must be non-negative, got {args_cli.residual_hidden_dim}")
+    if args_cli.residual_max_action < 0.0 or not math.isfinite(args_cli.residual_max_action):
+        raise ValueError(f"--residual_max_action must be finite and non-negative, got {args_cli.residual_max_action}")
+    if args_cli.residual_preserve_weight < 0.0 or not math.isfinite(args_cli.residual_preserve_weight):
+        raise ValueError(
+            f"--residual_preserve_weight must be finite and non-negative, got {args_cli.residual_preserve_weight}"
+        )
+    if args_cli.residual_l2_weight < 0.0 or not math.isfinite(args_cli.residual_l2_weight):
+        raise ValueError(f"--residual_l2_weight must be finite and non-negative, got {args_cli.residual_l2_weight}")
+    residual_preserve_source_ids = _resolve_source_ids(args_cli.residual_preserve_sources, source_names, source_slugs)
+    residual_preserve_source_names = [source_names[source_id] for source_id in residual_preserve_source_ids]
+    residual_preserve_source_slugs = [source_slugs[source_id] for source_id in residual_preserve_source_ids]
+    if residual_adapter_enabled and args_cli.residual_preserve_weight > 0.0 and not residual_preserve_source_ids:
+        raise ValueError("--residual_preserve_weight > 0 requires --residual_preserve_sources")
 
     model = agent.model
     distill_target_tensor: torch.Tensor | None = None
@@ -923,8 +1013,45 @@ def main(env_cfg, agent_cfg: dict):
                 sort_keys=True,
             )
         )
+    base_action_tensor: torch.Tensor | None = None
+    residual_adapter: ResidualActionAdapter | None = None
+    if residual_adapter_enabled:
+        model.eval()
+        for param in model.parameters():
+            param.requires_grad_(False)
+        with torch.no_grad():
+            base_action_tensor = _model_mus(model, obs_tensor, action_dim, is_train=False).detach().clamp(-1.0, 1.0)
+        residual_adapter = ResidualActionAdapter(
+            obs_dim=int(obs_tensor.shape[-1]),
+            action_dim=action_dim,
+            hidden_dim=int(args_cli.residual_hidden_dim),
+            max_action=float(args_cli.residual_max_action),
+        ).to(device=device)
+        print(
+            json.dumps(
+                {
+                    "residual_adapter_enabled": True,
+                    "residual_hidden_dim": int(args_cli.residual_hidden_dim),
+                    "residual_max_action": float(args_cli.residual_max_action),
+                    "residual_preserve_sources": residual_preserve_source_names,
+                    "residual_preserve_source_ids": residual_preserve_source_ids,
+                    "residual_preserve_weight": float(args_cli.residual_preserve_weight),
+                    "residual_l2_weight": float(args_cli.residual_l2_weight),
+                },
+                sort_keys=True,
+            )
+        )
     model.train()
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args_cli.learning_rate, weight_decay=args_cli.weight_decay)
+    if residual_adapter_enabled and residual_adapter is not None:
+        model.eval()
+        residual_adapter.train()
+        optimizer = torch.optim.AdamW(
+            residual_adapter.parameters(),
+            lr=args_cli.learning_rate,
+            weight_decay=args_cli.weight_decay,
+        )
+    else:
+        optimizer = torch.optim.AdamW(model.parameters(), lr=args_cli.learning_rate, weight_decay=args_cli.weight_decay)
     curve_rows: list[dict[str, float | int | str]] = []
 
     def source_subset_mask(batch_sources: torch.Tensor, selected_source_ids: list[int]) -> torch.Tensor:
@@ -933,17 +1060,40 @@ def main(env_cfg, agent_cfg: dict):
             mask = torch.logical_or(mask, batch_sources == int(source_id))
         return mask
 
+    def predict_actions(indices: torch.Tensor, *, is_train: bool) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor | None]:
+        if residual_adapter_enabled:
+            if residual_adapter is None or base_action_tensor is None:
+                raise RuntimeError("Residual adapter mode is enabled but adapter/base actions are missing.")
+            base = base_action_tensor[indices]
+            residual = residual_adapter(obs_tensor[indices])
+            return torch.clamp(base + residual, -1.0, 1.0), base, residual
+        pred = _model_mus(model, obs_tensor[indices], action_dim, is_train=is_train).clamp(-1.0, 1.0)
+        return pred, None, None
+
     def evaluate_split(step: int) -> dict[str, float | int | str]:
         model.eval()
+        if residual_adapter is not None:
+            residual_adapter.eval()
         with torch.no_grad():
-            train_pred = _model_mus(model, obs_tensor[train_idx], action_dim, is_train=False).clamp(-1.0, 1.0)
-            val_pred = _model_mus(model, obs_tensor[val_idx], action_dim, is_train=False).clamp(-1.0, 1.0)
-        model.train()
+            train_pred, train_base, train_residual = predict_actions(train_idx, is_train=False)
+            val_pred, val_base, val_residual = predict_actions(val_idx, is_train=False)
+        if residual_adapter is not None:
+            residual_adapter.train()
+        elif not residual_adapter_enabled:
+            model.train()
         train_target = reference_tensor[train_idx]
         val_target = reference_tensor[val_idx]
         row: dict[str, float | int | str] = {"step": int(step)}
         row.update(_error_stats(train_pred, train_target, loss_dims, "train"))
         row.update(_error_stats(val_pred, val_target, loss_dims, "val"))
+        if residual_adapter_enabled and train_base is not None and val_base is not None:
+            row.update(_error_stats(train_base, train_target, loss_dims, "train_base"))
+            row.update(_error_stats(val_base, val_target, loss_dims, "val_base"))
+        if residual_adapter_enabled and train_residual is not None and val_residual is not None:
+            train_zero = torch.zeros_like(train_residual)
+            val_zero = torch.zeros_like(val_residual)
+            row.update(_error_stats(train_residual, train_zero, loss_dims, "train_residual"))
+            row.update(_error_stats(val_residual, val_zero, loss_dims, "val_residual"))
         train_sources = source_id_tensor[train_idx]
         val_sources = source_id_tensor[val_idx]
         for source_id, source_slug in enumerate(source_slugs):
@@ -958,6 +1108,23 @@ def main(env_cfg, agent_cfg: dict):
                     )
                 )
                 row[f"train_source_{source_slug}_count"] = int(train_mask.sum().detach().cpu())
+                if residual_adapter_enabled and train_base is not None and train_residual is not None:
+                    row.update(
+                        _error_stats(
+                            train_base[train_mask],
+                            train_target[train_mask],
+                            loss_dims,
+                            f"train_base_source_{source_slug}",
+                        )
+                    )
+                    row.update(
+                        _error_stats(
+                            train_residual[train_mask],
+                            torch.zeros_like(train_residual[train_mask]),
+                            loss_dims,
+                            f"train_residual_source_{source_slug}",
+                        )
+                    )
             val_mask = val_sources == source_id
             if bool(val_mask.any()):
                 row.update(
@@ -969,6 +1136,70 @@ def main(env_cfg, agent_cfg: dict):
                     )
                 )
                 row[f"val_source_{source_slug}_count"] = int(val_mask.sum().detach().cpu())
+                if residual_adapter_enabled and val_base is not None and val_residual is not None:
+                    row.update(
+                        _error_stats(
+                            val_base[val_mask],
+                            val_target[val_mask],
+                            loss_dims,
+                            f"val_base_source_{source_slug}",
+                        )
+                    )
+                    row.update(
+                        _error_stats(
+                            val_residual[val_mask],
+                            torch.zeros_like(val_residual[val_mask]),
+                            loss_dims,
+                            f"val_residual_source_{source_slug}",
+                        )
+                    )
+        if residual_adapter_enabled and train_base is not None and val_base is not None:
+            train_preserve_mask = source_subset_mask(train_sources, residual_preserve_source_ids)
+            val_preserve_mask = source_subset_mask(val_sources, residual_preserve_source_ids)
+            if bool(train_preserve_mask.any()):
+                row.update(
+                    _error_stats(
+                        train_pred[train_preserve_mask],
+                        train_base[train_preserve_mask],
+                        loss_dims,
+                        "train_preserve",
+                    )
+                )
+                row["train_preserve_count"] = int(train_preserve_mask.sum().detach().cpu())
+            if bool(val_preserve_mask.any()):
+                row.update(
+                    _error_stats(
+                        val_pred[val_preserve_mask],
+                        val_base[val_preserve_mask],
+                        loss_dims,
+                        "val_preserve",
+                    )
+                )
+                row["val_preserve_count"] = int(val_preserve_mask.sum().detach().cpu())
+            for source_id in residual_preserve_source_ids:
+                source_slug = source_slugs[source_id]
+                train_mask = train_sources == source_id
+                if bool(train_mask.any()):
+                    row.update(
+                        _error_stats(
+                            train_pred[train_mask],
+                            train_base[train_mask],
+                            loss_dims,
+                            f"train_preserve_source_{source_slug}",
+                        )
+                    )
+                    row[f"train_preserve_source_{source_slug}_count"] = int(train_mask.sum().detach().cpu())
+                val_mask = val_sources == source_id
+                if bool(val_mask.any()):
+                    row.update(
+                        _error_stats(
+                            val_pred[val_mask],
+                            val_base[val_mask],
+                            loss_dims,
+                            f"val_preserve_source_{source_slug}",
+                        )
+                    )
+                    row[f"val_preserve_source_{source_slug}_count"] = int(val_mask.sum().detach().cpu())
         if distill_enabled and distill_target_tensor is not None:
             train_distill_target = distill_target_tensor[train_idx]
             val_distill_target = distill_target_tensor[val_idx]
@@ -1054,6 +1285,19 @@ def main(env_cfg, agent_cfg: dict):
             return per_sample_loss.mean()
         return torch.stack(weighted_losses).sum() / torch.stack(weights_used).sum().clamp_min(1.0e-8)
 
+    def residual_preservation_loss(residual: torch.Tensor | None, batch_sources: torch.Tensor) -> torch.Tensor:
+        if not residual_adapter_enabled or residual is None or args_cli.residual_preserve_weight <= 0.0:
+            return torch.zeros((), dtype=reference_tensor.dtype, device=device)
+        mask = source_subset_mask(batch_sources, residual_preserve_source_ids)
+        if not bool(mask.any()):
+            return torch.zeros((), dtype=reference_tensor.dtype, device=device)
+        return torch.mean(torch.square(residual[mask][:, dims_t]))
+
+    def residual_l2_loss(residual: torch.Tensor | None) -> torch.Tensor:
+        if not residual_adapter_enabled or residual is None or args_cli.residual_l2_weight <= 0.0:
+            return torch.zeros((), dtype=reference_tensor.dtype, device=device)
+        return torch.mean(torch.square(residual[:, dims_t]))
+
     def distillation_loss(pred: torch.Tensor, batch_indices: torch.Tensor) -> torch.Tensor:
         if not distill_enabled or distill_target_tensor is None:
             return pred.sum() * 0.0
@@ -1068,34 +1312,52 @@ def main(env_cfg, agent_cfg: dict):
     best_row = dict(curve_rows[0])
     best_score = float(best_row["selection_score"])
     best_step = 0
-    best_state = {key: value.detach().cpu().clone() for key, value in model.state_dict().items()}
+    if residual_adapter_enabled and residual_adapter is not None:
+        best_state = {key: value.detach().cpu().clone() for key, value in residual_adapter.state_dict().items()}
+    else:
+        best_state = {key: value.detach().cpu().clone() for key, value in model.state_dict().items()}
     evals_without_improvement = 0
     early_stop_triggered = False
     actual_train_steps = 0
     for step in range(1, args_cli.train_steps + 1):
         actual_train_steps = step
         choice = sample_train_batch()
-        pred = _model_mus(model, obs_tensor[choice], action_dim, is_train=True)
+        pred, _, residual = predict_actions(choice, is_train=True)
         target = reference_tensor[choice]
         label_loss = weighted_source_loss(pred, target, source_id_tensor[choice])
         distill_loss = distillation_loss(pred, choice)
-        loss = label_loss + float(args_cli.distill_loss_weight) * distill_loss
+        residual_preserve_loss = residual_preservation_loss(residual, source_id_tensor[choice])
+        residual_magnitude_loss = residual_l2_loss(residual)
+        loss = (
+            label_loss
+            + float(args_cli.distill_loss_weight) * distill_loss
+            + float(args_cli.residual_preserve_weight) * residual_preserve_loss
+            + float(args_cli.residual_l2_weight) * residual_magnitude_loss
+        )
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+        grad_params = residual_adapter.parameters() if residual_adapter_enabled and residual_adapter is not None else model.parameters()
+        torch.nn.utils.clip_grad_norm_(grad_params, max_norm=1.0)
         optimizer.step()
         if step == args_cli.train_steps or step % max(1, args_cli.eval_interval) == 0:
             row = evaluate_split(step)
             row["last_batch_loss"] = float(loss.detach().cpu())
             row["last_batch_label_loss"] = float(label_loss.detach().cpu())
             row["last_batch_distill_loss"] = float(distill_loss.detach().cpu())
+            row["last_batch_residual_preserve_loss"] = float(residual_preserve_loss.detach().cpu())
+            row["last_batch_residual_l2_loss"] = float(residual_magnitude_loss.detach().cpu())
             curve_rows.append(row)
             score = float(row["selection_score"])
             if score < best_score:
                 best_score = score
                 best_step = step
                 best_row = dict(row)
-                best_state = {key: value.detach().cpu().clone() for key, value in model.state_dict().items()}
+                if residual_adapter_enabled and residual_adapter is not None:
+                    best_state = {
+                        key: value.detach().cpu().clone() for key, value in residual_adapter.state_dict().items()
+                    }
+                else:
+                    best_state = {key: value.detach().cpu().clone() for key, value in model.state_dict().items()}
                 evals_without_improvement = 0
             else:
                 evals_without_improvement += 1
@@ -1116,9 +1378,31 @@ def main(env_cfg, agent_cfg: dict):
                 )
                 break
 
-    model.load_state_dict(best_state)
+    if residual_adapter_enabled and residual_adapter is not None:
+        residual_adapter.load_state_dict(best_state)
+    else:
+        model.load_state_dict(best_state)
     ckpt = torch_ext.load_checkpoint(resume_path)
     ckpt["model"] = model.state_dict()
+    if residual_adapter_enabled and residual_adapter is not None:
+        adapter_metadata = residual_adapter.metadata()
+        adapter_metadata.update(
+            {
+                "state_dict": {
+                    key: value.detach().cpu().clone() for key, value in residual_adapter.state_dict().items()
+                },
+                "base_checkpoint": str(resume_path),
+                "preserve_sources": residual_preserve_source_names,
+                "preserve_source_ids": residual_preserve_source_ids,
+                "preserve_source_slugs": residual_preserve_source_slugs,
+                "preserve_weight": float(args_cli.residual_preserve_weight),
+                "residual_l2_weight": float(args_cli.residual_l2_weight),
+                "train_sources": source_names,
+                "selected_step": int(best_step),
+                "selected_score": best_score,
+            }
+        )
+        ckpt["bc_residual_action_adapter"] = adapter_metadata
     if hasattr(model, "running_mean_std") and "running_mean_std" in ckpt:
         ckpt["running_mean_std"] = model.running_mean_std.state_dict()
     ckpt["bc_reference_action_imitation"] = {
@@ -1139,6 +1423,13 @@ def main(env_cfg, agent_cfg: dict):
         "distill_source_ids": distill_source_ids,
         "distill_dims": distill_dims,
         "distill_loss_weight": float(args_cli.distill_loss_weight),
+        "residual_adapter_enabled": bool(residual_adapter_enabled),
+        "residual_hidden_dim": int(args_cli.residual_hidden_dim),
+        "residual_max_action": float(args_cli.residual_max_action),
+        "residual_preserve_sources": residual_preserve_source_names,
+        "residual_preserve_source_ids": residual_preserve_source_ids,
+        "residual_preserve_weight": float(args_cli.residual_preserve_weight),
+        "residual_l2_weight": float(args_cli.residual_l2_weight),
         "best_step": int(best_step),
         "best_score": best_score,
     }
@@ -1185,6 +1476,14 @@ def main(env_cfg, agent_cfg: dict):
         "distill_source_slugs": distill_source_slugs,
         "distill_dims": distill_dims,
         "distill_loss_weight": float(args_cli.distill_loss_weight),
+        "residual_adapter_enabled": bool(residual_adapter_enabled),
+        "residual_hidden_dim": int(args_cli.residual_hidden_dim),
+        "residual_max_action": float(args_cli.residual_max_action),
+        "residual_preserve_sources": residual_preserve_source_names,
+        "residual_preserve_source_ids": residual_preserve_source_ids,
+        "residual_preserve_source_slugs": residual_preserve_source_slugs,
+        "residual_preserve_weight": float(args_cli.residual_preserve_weight),
+        "residual_l2_weight": float(args_cli.residual_l2_weight),
         "selected": best_row,
         "selected_step": int(best_step),
         "selected_score": best_score,

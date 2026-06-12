@@ -5268,3 +5268,58 @@ Analysis:
 
 Active Jobs:
 - No selector/video/PPO jobs launched for this attempt.
+
+## 2026-06-11T20:58:05-07:00 - frozen-base residual adapter bounded plan
+
+Goal:
+- Preserve tm0.25 behavior by construction while testing whether a small learned residual can fit lower-assistance alpha `0.10` states.
+- Keep this supervised-only unless the gate passes. No selector/video/PPO/RL scale-up from current B evidence.
+
+Hypothesis:
+- Previous full-actor BC, rehearsal, weighting, and additive distillation all updated the same actor parameters and either forgot tm0.25 behavior or underfit the current low-teacher source.
+- A frozen tm0.25 base actor plus a zero-initialized residual action adapter changes only the residual path. The base actor weights remain exactly unchanged in the checkpoint.
+- A strong residual-zero preservation term on tm0.25 rehearsal states can keep the residual near zero there, so tm0.25 behavior is preserved by construction plus an explicit supervised check, while the residual can still move lower-assistance current states toward reference labels.
+
+Planned Change:
+- Add a small reusable residual module under `dextrah_lab/rl_games/`, storing adapter architecture/state in checkpoint metadata rather than overwriting the base actor.
+- Extend `dextrah_lab/rl_games/bc_reference_action_imitation.py`:
+  - `--residual_adapter_enabled`
+  - `--residual_hidden_dim`
+  - `--residual_max_action`
+  - `--residual_preserve_sources`
+  - `--residual_preserve_weight`
+  - `--residual_l2_weight`
+  - train only adapter parameters when enabled; base model remains frozen.
+  - report base label error, final label error, residual magnitude, and base-preservation error per source.
+- Extend `dextrah_lab/rl_games/eval_rollout.py` to apply the residual adapter only when checkpoint metadata is present, and log base/residual/final action metrics. This is needed only if the supervised gate later passes.
+- Extend `cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh` to pass and echo residual flags.
+
+Planned Supervised Job If Validation Passes:
+- run name: `franka_cube_traj_tracking_bc_dagger_residual_tm025_tm010_all_<timestamp>`.
+- input checkpoint: tm0.25 BC checkpoint `/results/bc/franka_cube_traj_tracking_bc_dagger_tm025_all_20260611_185900/nn/bc_reference_action_imitation.pth`.
+- fresh collection: teacher_mix alpha `0.10`, `NUM_ENVS=8`, `COLLECTION_STEPS=520`.
+- rehearsal dataset: tm0.25 `reference_action_dataset.pt`.
+- objective:
+  - `SOURCE_BATCH_MODE=balanced`.
+  - reference-label loss only on fresh alpha `0.10`: `SOURCE_LOSS_WEIGHTS=current_teacher_mix_alpha0p10=1,tm025_rehearsal=0`.
+  - residual preservation on tm0.25: `RESIDUAL_PRESERVE_SOURCES=tm025_rehearsal`, `RESIDUAL_PRESERVE_WEIGHT=50`.
+  - small residual head: `RESIDUAL_HIDDEN_DIM=64`, `RESIDUAL_MAX_ACTION=0.5`.
+  - small residual L2 penalty: `RESIDUAL_L2_WEIGHT=0.001`.
+  - selection score: current-source label L2 plus tm0.25 label L2, e.g. `BEST_SCORE_WEIGHTS=val_source_current_teacher_mix_alpha0p10_l2=1,val_source_tm025_rehearsal_l2=3`.
+
+Supervised Gate:
+- tm0.25 rehearsal val L2 preferred `<=0.045`, hard ceiling `<=0.055`.
+- current alpha `0.10` source val L2 must improve materially vs latest distill `0.182791` and balanced `0.15143`; ideally approach `~0.079`.
+- global val L2 must not regress relative to `1028053` (`0.094008`) if considering selector rollout.
+- residual/base-preservation metrics must show tm0.25 residual magnitude near zero; otherwise stop at supervised artifacts.
+
+Validation Before Launch:
+- `python3 -m py_compile dextrah_lab/rl_games/bc_reference_action_imitation.py dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py dextrah_lab/rl_games/analyze_traj_tracking_action_semantics.py dextrah_lab/rl_games/residual_action_adapter.py`
+- `bash -n cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh`
+- `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- `git diff --check`
+- commit/push and deploy exact commit to the l401 agent-owned worktree via Git before Slurm launch.
+
+Notes:
+- Old `actionscale-rewinf-diag-video480-step-0.mp4` remains obsolete failed diagnostic evidence.
+- Compact trajectory reference remains `curobo_validated=false`.

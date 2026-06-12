@@ -148,6 +148,7 @@ simulation_app = app_launcher.app
 import gymnasium as gym
 import torch
 
+from rl_games.algos_torch import torch_ext
 from rl_games.common import env_configurations, vecenv
 from rl_games.common.player import BasePlayer
 from rl_games.torch_runner import Runner
@@ -165,6 +166,8 @@ from isaaclab_rl.rl_games import RlGamesGpuEnv, RlGamesVecEnvWrapper
 import dextrah_lab.tasks.dextrah_kuka_allegro.gym_setup  # noqa: F401
 import dextrah_lab.tasks.dextrah_franka_cube_grasp.gym_setup  # noqa: F401
 import dextrah_lab.tasks.dextrah_franka_star_kitting.gym_setup  # noqa: F401
+
+from residual_action_adapter import build_residual_adapter_from_metadata
 
 
 POLICY_ACTION_SOURCES = ("policy", "policy_reference_mix", "policy_reference_mix_hold")
@@ -700,11 +703,50 @@ def _hold_actions_from_source(task_env, base_actions: torch.Tensor) -> tuple[tor
     return applied_actions, metrics
 
 
-def _policy_actions(agent: BasePlayer | None, obs) -> torch.Tensor:
+def _policy_obs_tensor(agent: BasePlayer, obs) -> torch.Tensor:
+    obs_t = agent.obs_to_torch(obs)
+    if isinstance(obs_t, dict):
+        if "obs" in obs_t:
+            obs_t = obs_t["obs"]
+        elif "policy" in obs_t:
+            obs_t = obs_t["policy"]
+        else:
+            raise TypeError(f"Unsupported policy observation dict keys: {sorted(obs_t.keys())}")
+    if not isinstance(obs_t, torch.Tensor):
+        obs_t = torch.as_tensor(obs_t, device=agent.device, dtype=torch.float32)
+    return obs_t.detach().float()
+
+
+def _policy_action_components(
+    agent: BasePlayer | None,
+    obs,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
     if agent is None:
         raise ValueError("policy action source requires an RL-Games player.")
     obs_t = agent.obs_to_torch(obs)
-    return agent.get_action(obs_t, is_deterministic=args_cli.deterministic)
+    base_action = agent.get_action(obs_t, is_deterministic=args_cli.deterministic).detach().float()
+    residual_adapter = getattr(agent, "_bc_residual_action_adapter", None)
+    if residual_adapter is None:
+        return base_action, base_action, None
+    obs_tensor = _policy_obs_tensor(agent, obs)
+    residual = residual_adapter(obs_tensor).detach().float().to(device=base_action.device)
+    final_action = torch.clamp(base_action + residual, -1.0, 1.0)
+    return final_action, base_action, residual
+
+
+def _add_policy_component_metrics(
+    metrics: dict[str, float | None],
+    final_actions: torch.Tensor,
+    base_actions: torch.Tensor,
+    residual_actions: torch.Tensor | None,
+) -> None:
+    _add_action_signal_metrics(metrics, "raw_policy_action", final_actions)
+    if residual_actions is None:
+        return
+    metrics["residual_adapter_enabled"] = 1.0
+    _add_action_signal_metrics(metrics, "base_policy_action", base_actions)
+    _add_action_signal_metrics(metrics, "residual_policy_action", residual_actions)
+    _add_action_delta_metrics(metrics, "residual_final_base_action_error", final_actions, base_actions)
 
 
 def _actions_from_source(
@@ -715,8 +757,8 @@ def _actions_from_source(
 ) -> tuple[torch.Tensor, dict[str, float | None]]:
     metrics: dict[str, float | None] = {}
     if action_source == "policy":
-        raw_policy_actions = _policy_actions(agent, obs)
-        _add_action_signal_metrics(metrics, "raw_policy_action", raw_policy_actions)
+        raw_policy_actions, base_policy_actions, residual_policy_actions = _policy_action_components(agent, obs)
+        _add_policy_component_metrics(metrics, raw_policy_actions, base_policy_actions, residual_policy_actions)
         return raw_policy_actions, metrics
     if action_source == "zero":
         actions = _zero_actions(task_env)
@@ -732,12 +774,12 @@ def _actions_from_source(
         metrics.update(hold_metrics)
         return applied_actions, metrics
     if action_source == "policy_reference_mix":
-        raw_policy_actions = _policy_actions(agent, obs)
+        raw_policy_actions, base_policy_actions, residual_policy_actions = _policy_action_components(agent, obs)
         reference_actions = _reference_delta_actions(task_env)
         alpha = max(0.0, min(1.0, float(args_cli.reference_mix_alpha)))
         mixed_actions = torch.clamp((1.0 - alpha) * raw_policy_actions + alpha * reference_actions, -1.0, 1.0)
         metrics["reference_mix_alpha"] = alpha
-        _add_action_signal_metrics(metrics, "raw_policy_action", raw_policy_actions)
+        _add_policy_component_metrics(metrics, raw_policy_actions, base_policy_actions, residual_policy_actions)
         _add_action_signal_metrics(metrics, "reference_delta_action", reference_actions)
         _add_action_signal_metrics(metrics, "mixed_action", mixed_actions)
         _add_action_delta_metrics(metrics, "policy_reference_action_error", raw_policy_actions, reference_actions)
@@ -745,12 +787,12 @@ def _actions_from_source(
         _add_action_delta_metrics(metrics, "mixed_policy_action_error", mixed_actions, raw_policy_actions)
         return mixed_actions, metrics
     if action_source == "policy_reference_mix_hold":
-        raw_policy_actions = _policy_actions(agent, obs)
+        raw_policy_actions, base_policy_actions, residual_policy_actions = _policy_action_components(agent, obs)
         reference_actions = _reference_delta_actions(task_env)
         alpha = max(0.0, min(1.0, float(args_cli.reference_mix_alpha)))
         mixed_actions = torch.clamp((1.0 - alpha) * raw_policy_actions + alpha * reference_actions, -1.0, 1.0)
         metrics["reference_mix_alpha"] = alpha
-        _add_action_signal_metrics(metrics, "raw_policy_action", raw_policy_actions)
+        _add_policy_component_metrics(metrics, raw_policy_actions, base_policy_actions, residual_policy_actions)
         _add_action_signal_metrics(metrics, "reference_delta_action", reference_actions)
         _add_action_signal_metrics(metrics, "mixed_action", mixed_actions)
         _add_action_delta_metrics(metrics, "policy_reference_action_error", raw_policy_actions, reference_actions)
@@ -1007,6 +1049,7 @@ def main(env_cfg, agent_cfg: dict):
         gym_env = gym.wrappers.RecordVideo(gym_env, **video_kwargs)
 
     agent: BasePlayer | None = None
+    residual_adapter_summary: dict[str, object] | None = None
     if args_cli.action_source in POLICY_ACTION_SOURCES:
         rl_device = agent_cfg["params"]["config"]["device"]
         clip_obs = agent_cfg["params"]["env"].get("clip_observations", math.inf)
@@ -1024,6 +1067,19 @@ def main(env_cfg, agent_cfg: dict):
         agent = runner.create_player()
         agent.restore(resume_path)
         agent.reset()
+        ckpt = torch_ext.load_checkpoint(resume_path)
+        residual_metadata = ckpt.get("bc_residual_action_adapter") if isinstance(ckpt, dict) else None
+        if isinstance(residual_metadata, dict):
+            residual_adapter = build_residual_adapter_from_metadata(residual_metadata).to(device=agent.device)
+            residual_adapter.eval()
+            setattr(agent, "_bc_residual_action_adapter", residual_adapter)
+            residual_adapter_summary = {
+                key: value
+                for key, value in residual_metadata.items()
+                if key != "state_dict"
+            }
+            print("[INFO] Loaded BC residual action adapter:")
+            print(json.dumps(residual_adapter_summary, indent=2, sort_keys=True))
     else:
         env = gym_env
 
@@ -1228,6 +1284,7 @@ def main(env_cfg, agent_cfg: dict):
         "task": args_cli.task,
         "checkpoint": resume_path,
         "action_source": args_cli.action_source,
+        "residual_adapter": residual_adapter_summary,
         "action_source_notes": (
             "rl_games_policy"
             if args_cli.action_source == "policy"
