@@ -8471,3 +8471,54 @@ Next:
   either reduce the initial pose-action jump/clipping before testing alpha0.8,
   or implement a staged finger-center/contact alignment phase that drives the
   perturbed robot into the source-contact geometry before close/lift.
+
+## 2026-06-11T21:35:30-07:00 - alpha0.8 clipping bridge plan
+
+Goal:
+- Bridge the support-expansion controller gap without starting DP training.
+  First remove the alpha0.8 initial pose-action clipping in a principled,
+  auditable way; only after alpha0.8 passes both hard metrics and visual
+  inspection, retest alpha0.75.
+
+Hypothesis:
+- The alpha0.8 failure is not contact geometry; it visually lifts but fails the
+  hard gate because the first source-orientation correction saturates one
+  normalized rotation component. A controller-side pose-action scaling filter
+  should avoid per-component clipping while preserving the same relative EE
+  convention and gripper timing.
+- If alpha0.8 passes with no executed clipping, alpha0.75 can be retested with
+  the same filter. If alpha0.75 still closes/lifts away, the blocker is contact
+  alignment/support rather than the action-limit artifact.
+
+Planned change:
+- Add an explicit pose-action audit/filter to
+  `dextrah_lab/rl_games/contact_aware_franka_cube_rollout.py`:
+  - compute raw unclipped normalized 6D pose commands;
+  - support `--pose_action_filter clip|scale`;
+  - support `--pose_action_limit` for uniform pose-command scaling before the
+    final physical clip;
+  - log raw max action, filter scale, executed max action, and clip fraction.
+- Thread `POSE_ACTION_FILTER` and `POSE_ACTION_LIMIT` through
+  `cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh`.
+- Extend aggregate report rows with the new action audit fields.
+
+Validation before cluster:
+- `python3 -m py_compile dextrah_lab/rl_games/contact_aware_franka_cube_rollout.py dextrah_lab/offline_dp_bc/make_contact_relabel_set_report.py`
+- `bash -n cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh`
+- `git diff --check`
+
+Planned cluster run:
+- Commit/push/deploy exact commit to the agent-owned l401 worktree.
+- Launch one bounded relabel gate with `ORIENTATION_MODE=source`,
+  `POSE_ACTION_FILTER=scale`, `POSE_ACTION_LIMIT=0.95`, alphas `1.0`, `0.9`,
+  and `0.8`, video enabled, same episode `16`, source step `260`,
+  `center_high30`, `FINGER_GAIN=0.75`.
+- Do not include alpha0.75 in this first run. Retest alpha0.75 only if alpha0.8
+  passes hard gates and video inspection.
+
+Gate:
+- Exact/alpha0.9 behavior must remain coherent.
+- Alpha0.8 must have final/max lift above threshold, final EE/finger distances
+  within gate, `max_pose_action_clip_fraction=0`, and visually coherent contact
+  lift.
+- No DP fine-tune, RL, or broad training in this iteration.

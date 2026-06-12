@@ -120,18 +120,22 @@ def _report(summary: dict[str, Any], rollout_rows: list[dict[str, Any]], failure
         "",
         "## Rollouts",
         "",
-        "| rollout | pass | orientation | reset joint alpha | episode | step | final EE-cube | final finger-cube | final/max lift | max clip | failures | video |",
-        "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|---|",
+        "| rollout | pass | orientation | filter | reset joint alpha | episode | step | final EE-cube | final finger-cube | final/max lift | max clip | max raw | min scale | failures | video |",
+        "|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---|",
     ]
     for row in rollout_rows:
         lines.append(
             f"| {row['rollout_id']} | {row['gate_pass']} | "
             f"{row.get('orientation_mode', '')} | "
+            f"{row.get('pose_action_filter', '')} | "
             f"{float(row.get('reset_joint_blend_alpha', float('nan'))):.3f} | "
             f"{row['episode']} | {row['episode_step']} | "
             f"{float(row['final_ee_to_cube']):.4f} | {float(row['final_finger_center_to_cube']):.4f} | "
             f"{float(row['final_cube_lift_height']):.4f}/{float(row['max_cube_lift_height']):.4f} | "
-            f"{float(row['max_pose_action_clip_fraction']):.3f} | {row['failure_reasons']} | `{row['video']}` |"
+            f"{float(row['max_pose_action_clip_fraction']):.3f} | "
+            f"{float(row.get('max_raw_pose_action_max_abs', float('nan'))):.3f} | "
+            f"{float(row.get('min_pose_action_filter_scale', float('nan'))):.3f} | "
+            f"{row['failure_reasons']} | `{row['video']}` |"
         )
     if failure_rows:
         lines.extend(["", "## Failures", ""])
@@ -195,11 +199,14 @@ def main() -> None:
                 )
             )
             orientation_mode = str(payload.get("orientation_mode", one_summary.get("orientation_mode", "")))
+            pose_action_filter = str(payload.get("pose_action_filter", one_summary.get("pose_action_filter", "")))
             rollout_row = {
                 "rollout_id": rollout_id,
                 "rollout_dir": str(summary_path.parent),
                 "variant": variant,
                 "orientation_mode": orientation_mode,
+                "pose_action_filter": pose_action_filter,
+                "pose_action_limit": float(payload.get("pose_action_limit", one_summary.get("pose_action_limit", float("nan")))),
                 "reset_joint_blend_alpha": reset_joint_blend_alpha,
                 "reset_joint_l2_from_source": float(payload.get("reset_joint_l2_from_source", float("nan"))),
                 "reset_joint_l2_from_normal": float(payload.get("reset_joint_l2_from_normal", float("nan"))),
@@ -219,6 +226,14 @@ def main() -> None:
                 "max_cube_lift_height": float(payload.get("max_cube_lift_height", float("nan"))),
                 "final_gripper_width": float(payload.get("final_gripper_width", float("nan"))),
                 "max_pose_action_clip_fraction": float(payload.get("max_pose_action_clip_fraction", float("nan"))),
+                "max_raw_pose_action_max_abs": float(payload.get("max_raw_pose_action_max_abs", float("nan"))),
+                "max_executed_pose_action_max_abs": float(
+                    payload.get("max_executed_pose_action_max_abs", float("nan"))
+                ),
+                "max_raw_pose_action_would_clip_fraction": float(
+                    payload.get("max_raw_pose_action_would_clip_fraction", float("nan"))
+                ),
+                "min_pose_action_filter_scale": float(payload.get("min_pose_action_filter_scale", float("nan"))),
                 "terminated_next_step": bool(payload.get("terminated_next_step", False)),
                 "truncated_next_step": bool(payload.get("truncated_next_step", False)),
                 "skipped_post_reset_local_step": int(payload.get("skipped_post_reset_local_step", -1)),

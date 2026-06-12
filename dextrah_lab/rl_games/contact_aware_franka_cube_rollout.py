@@ -14,6 +14,7 @@ import csv
 import json
 import math
 import traceback
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -36,6 +37,23 @@ parser.add_argument("--lift_steps", default=120, type=int)
 parser.add_argument("--lift_height", default=0.14, type=float)
 parser.add_argument("--finger_gain", default=0.75, type=float)
 parser.add_argument("--clip_actions", default=1.0, type=float)
+parser.add_argument(
+    "--pose_action_filter",
+    choices=("clip", "scale"),
+    default="clip",
+    help=(
+        "How to handle raw normalized pose commands that exceed the action limit. "
+        "'clip' preserves the prior per-component saturation. 'scale' uniformly "
+        "scales the 6D pose command under --pose_action_limit before the final "
+        "physical clip, so action-limit artifacts are visible in audit fields."
+    ),
+)
+parser.add_argument(
+    "--pose_action_limit",
+    default=1.0,
+    type=float,
+    help="Normalized pose-action magnitude used by --pose_action_filter scale.",
+)
 parser.add_argument(
     "--orientation_mode",
     choices=("live", "source"),
@@ -266,23 +284,48 @@ def _action_to_finger_target(
     gripper_action: float,
     gain: float,
     clip: float,
-) -> np.ndarray:
+    pose_action_filter: str,
+    pose_action_limit: float,
+) -> tuple[np.ndarray, dict[str, float | str | list[float]]]:
     finger_error = np.asarray(target_finger_center, dtype=np.float32) - np.asarray(finger_center, dtype=np.float32)
     target_ee_pos = live_lowdim[:3] + float(gain) * finger_error
     ee_pos = np.stack((live_lowdim[:3], target_ee_pos), axis=0).astype(np.float32)
     target_quat = live_lowdim[3:7] if target_ee_quat is None else np.asarray(target_ee_quat, dtype=np.float32)
     ee_quat = np.stack((live_lowdim[3:7], target_quat), axis=0).astype(np.float32)
     grip = np.asarray([float(gripper_action), float(gripper_action)], dtype=np.float32)
-    action = derive_relative_ee_actions(
+    raw_convention = replace(DEFAULT_DEXTRAH_ACTION_CONVENTION, clip_actions=False)
+    raw_action = derive_relative_ee_actions(
         ee_pos,
         ee_quat,
         gripper_action=grip,
-        convention=DEFAULT_DEXTRAH_ACTION_CONVENTION,
+        convention=raw_convention,
         terminal_action="drop",
     )[0].astype(np.float32)
-    if math.isfinite(float(clip)) and float(clip) > 0:
-        action = np.clip(action, -float(clip), float(clip))
-    return action
+    action = raw_action.copy()
+    raw_pose = raw_action[:6].copy()
+    raw_pose_max = float(np.max(np.abs(raw_pose))) if raw_pose.size else 0.0
+    filter_scale = 1.0
+    limit = float(pose_action_limit)
+    if str(pose_action_filter) == "scale" and math.isfinite(limit) and limit > 0.0 and raw_pose_max > limit:
+        filter_scale = float(limit / max(raw_pose_max, 1.0e-12))
+        action[:6] = action[:6] * filter_scale
+    filtered_pose_max = float(np.max(np.abs(action[:6]))) if action[:6].size else 0.0
+    clip_value = float(clip)
+    if math.isfinite(clip_value) and clip_value > 0:
+        action = np.clip(action, -clip_value, clip_value)
+    executed_pose_max = float(np.max(np.abs(action[:6]))) if action[:6].size else 0.0
+    clip_threshold = clip_value if math.isfinite(clip_value) and clip_value > 0 else float("inf")
+    audit = {
+        "pose_action_filter": str(pose_action_filter),
+        "pose_action_limit": float(limit),
+        "raw_executed_action": raw_action.astype(float).tolist(),
+        "raw_pose_action_max_abs": raw_pose_max,
+        "filtered_pose_action_max_abs": filtered_pose_max,
+        "executed_pose_action_max_abs": executed_pose_max,
+        "pose_action_filter_scale": float(filter_scale),
+        "raw_pose_action_would_clip_fraction": float(np.count_nonzero(np.abs(raw_pose) >= clip_threshold - 1.0e-6) / 6.0),
+    }
+    return action, audit
 
 
 def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
@@ -297,7 +340,7 @@ def _plot(rows: list[dict[str, Any]], output_path: Path) -> None:
     if not rows:
         return
     variants = list(dict.fromkeys(str(row["variant"]) for row in rows))
-    fig, axes = plt.subplots(5, 1, figsize=(13, 16), sharex=True, constrained_layout=True)
+    fig, axes = plt.subplots(6, 1, figsize=(13, 18), sharex=True, constrained_layout=True)
     for variant in variants:
         vrows = [row for row in rows if row["variant"] == variant]
         x = [int(row["global_step"]) for row in vrows]
@@ -307,7 +350,20 @@ def _plot(rows: list[dict[str, Any]], output_path: Path) -> None:
         axes[2].plot(x, [row["gripper_width"] for row in vrows], label=f"{variant} width")
         axes[2].plot(x, [row["gripper_action"] for row in vrows], linestyle="--", label=f"{variant} action")
         axes[3].plot(x, [row["finger_error_norm"] for row in vrows], label=variant)
-        axes[4].plot(x, [row["pose_action_clip_fraction"] for row in vrows], label=variant)
+        axes[4].plot(x, [row["pose_action_clip_fraction"] for row in vrows], label=f"{variant} executed clip")
+        axes[4].plot(
+            x,
+            [row.get("raw_pose_action_would_clip_fraction", 0.0) for row in vrows],
+            linestyle="--",
+            label=f"{variant} raw would clip",
+        )
+        axes[5].plot(x, [row.get("raw_pose_action_max_abs", 0.0) for row in vrows], label=f"{variant} raw")
+        axes[5].plot(
+            x,
+            [row.get("executed_pose_action_max_abs", 0.0) for row in vrows],
+            linestyle="--",
+            label=f"{variant} executed",
+        )
     axes[0].set_title("EE/Finger-Center To Cube")
     axes[0].set_ylabel("m")
     axes[1].set_title("Cube Lift Height")
@@ -318,7 +374,9 @@ def _plot(rows: list[dict[str, Any]], output_path: Path) -> None:
     axes[3].set_ylabel("m")
     axes[4].set_title("Pose Action Clip Fraction")
     axes[4].set_ylabel("fraction")
-    axes[4].set_xlabel("global step")
+    axes[5].set_title("Pose Action Max Abs")
+    axes[5].set_ylabel("normalized")
+    axes[5].set_xlabel("global step")
     for ax in axes:
         ax.grid(True, alpha=0.25)
         ax.legend(fontsize=7, ncol=2)
@@ -342,19 +400,31 @@ def _build_report(summary: dict[str, Any]) -> str:
         "",
         summary["verdict"],
         "",
+        "## Controller / Action Audit",
+        "",
+        f"- action convention: DEXTRAH 7D relative EE pose + gripper, position scale `{DEFAULT_DEXTRAH_ACTION_CONVENTION.position_scale}`, rotation scale `{DEFAULT_DEXTRAH_ACTION_CONVENTION.rotation_scale}`, gripper `+1=open/-1=close`",
+        f"- pose action filter: `{summary['pose_action_filter']}`",
+        f"- pose action limit: `{summary['pose_action_limit']:.4f}`",
+        f"- final physical clip: `{summary['clip_actions']:.4f}`",
+        f"- EE orientation mode: `{summary['orientation_mode']}`",
+        f"- reset seed: `{summary['seed']}`",
+        f"- gripper timing: align/open `{summary['align_steps']}` steps, close `{summary['close_steps']}` steps, lift `{summary['lift_steps']}` steps",
+        "",
         "## Variant Summary",
         "",
-        "| variant | orientation | joint alpha | reset cube-minus-EE L2 | offset | steps | final EE-cube | min finger-cube | final finger-cube | max lift | final lift | final grip width | max clip | terminal next | skipped reset step | success-like |",
-        "|---|---|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---|",
+        "| variant | orientation | filter | joint alpha | reset cube-minus-EE L2 | offset | steps | final EE-cube | min finger-cube | final finger-cube | max lift | final lift | final grip width | max clip | max raw | min scale | terminal next | skipped reset step | success-like |",
+        "|---|---|---|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---|",
     ]
     for variant, payload in summary["variants"].items():
         lines.append(
-            f"| {variant} | {payload['orientation_mode']} | {payload['reset_joint_blend_alpha']:.3f} | "
-            f"{payload['reset_cube_minus_ee_l2_from_dataset']:.5f} | {payload['offset']} | {payload['steps']} | "
+            f"| {variant} | {payload['orientation_mode']} | {payload['pose_action_filter']} | "
+            f"{payload['reset_joint_blend_alpha']:.3f} | {payload['reset_cube_minus_ee_l2_from_dataset']:.5f} | "
+            f"{payload['offset']} | {payload['steps']} | "
             f"{payload['final_ee_to_cube']:.4f} | {payload['min_finger_center_to_cube']:.4f} | "
             f"{payload['final_finger_center_to_cube']:.4f} | {payload['max_cube_lift_height']:.4f} | "
             f"{payload['final_cube_lift_height']:.4f} | {payload['final_gripper_width']:.5f} | "
-            f"{payload['max_pose_action_clip_fraction']:.3f} | {payload['terminated_next_step']} | "
+            f"{payload['max_pose_action_clip_fraction']:.3f} | {payload['max_raw_pose_action_max_abs']:.3f} | "
+            f"{payload['min_pose_action_filter_scale']:.3f} | {payload['terminated_next_step']} | "
             f"{payload['skipped_post_reset_local_step']} | {payload['success_like']} |"
         )
     lines.extend(
@@ -453,7 +523,7 @@ def main() -> None:
                 cube_pos = task_env.cube_pos.detach().float().cpu().numpy()[0]
                 target_finger = initial_cube_pos + offset + lift_delta
                 target_ee_quat = source_ee_quat if args_cli.orientation_mode == "source" else None
-                action = _action_to_finger_target(
+                action, action_audit = _action_to_finger_target(
                     live_lowdim,
                     finger_center,
                     target_finger,
@@ -461,6 +531,8 @@ def main() -> None:
                     gripper_action=gripper,
                     gain=float(args_cli.finger_gain),
                     clip=float(args_cli.clip_actions),
+                    pose_action_filter=str(args_cli.pose_action_filter),
+                    pose_action_limit=float(args_cli.pose_action_limit),
                 )
                 clip_hits = np.abs(action[:6]) >= (float(args_cli.clip_actions) - 1.0e-6)
                 policy_obs, rewards, terminated, truncated = _policy_obs_from_step(
@@ -520,6 +592,7 @@ def main() -> None:
                     "gripper_width": float(after_lowdim[20]),
                     "gripper_action": float(action[6]),
                     "executed_action": action.astype(float).tolist(),
+                    **action_audit,
                     "pose_action_clip_fraction": float(np.count_nonzero(clip_hits) / 6.0),
                     "reward": float(rewards.detach().float().cpu()[0]),
                     "terminated_next_step": False,
@@ -540,6 +613,8 @@ def main() -> None:
                                 "cube_lift_height": row["cube_lift_height"],
                                 "gripper_width": row["gripper_width"],
                                 "clip_fraction": row["pose_action_clip_fraction"],
+                                "raw_pose_action_max_abs": row["raw_pose_action_max_abs"],
+                                "pose_action_filter_scale": row["pose_action_filter_scale"],
                             },
                             sort_keys=True,
                         ),
@@ -564,6 +639,16 @@ def main() -> None:
                 "final_cube_lift_height": final_lift,
                 "final_gripper_width": float(last["gripper_width"]),
                 "max_pose_action_clip_fraction": float(max(row["pose_action_clip_fraction"] for row in vrows)),
+                "max_raw_pose_action_max_abs": float(max(row["raw_pose_action_max_abs"] for row in vrows)),
+                "max_executed_pose_action_max_abs": float(
+                    max(row["executed_pose_action_max_abs"] for row in vrows)
+                ),
+                "max_raw_pose_action_would_clip_fraction": float(
+                    max(row["raw_pose_action_would_clip_fraction"] for row in vrows)
+                ),
+                "min_pose_action_filter_scale": float(min(row["pose_action_filter_scale"] for row in vrows)),
+                "pose_action_filter": str(args_cli.pose_action_filter),
+                "pose_action_limit": float(args_cli.pose_action_limit),
                 "terminated_next_step": bool(any(row.get("terminated_next_step", False) for row in vrows)),
                 "truncated_next_step": bool(any(row.get("truncated_next_step", False) for row in vrows)),
                 "skipped_post_reset_local_step": int(
@@ -602,6 +687,8 @@ def main() -> None:
         "lift_height": float(args_cli.lift_height),
         "finger_gain": float(args_cli.finger_gain),
         "clip_actions": float(args_cli.clip_actions),
+        "pose_action_filter": str(args_cli.pose_action_filter),
+        "pose_action_limit": float(args_cli.pose_action_limit),
         "orientation_mode": str(args_cli.orientation_mode),
         "reset_joint_blend_alpha": float(np.clip(float(args_cli.reset_joint_blend_alpha), 0.0, 1.0)),
         "variants": summaries,

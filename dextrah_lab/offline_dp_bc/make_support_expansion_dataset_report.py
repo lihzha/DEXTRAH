@@ -135,6 +135,7 @@ def _rollout_rows_from_summary(summary: dict[str, Any] | None) -> list[dict[str,
                 "rollout_id": row.get("rollout_id", ""),
                 "gate_pass": bool(row.get("gate_pass", False)),
                 "orientation_mode": row.get("orientation_mode", ""),
+                "pose_action_filter": row.get("pose_action_filter", ""),
                 "reset_joint_blend_alpha": _safe_float(row.get("reset_joint_blend_alpha")),
                 "steps": int(row.get("steps", 0) or 0),
                 "final_ee_to_cube": _safe_float(row.get("final_ee_to_cube")),
@@ -143,6 +144,8 @@ def _rollout_rows_from_summary(summary: dict[str, Any] | None) -> list[dict[str,
                 "max_cube_lift_height": _safe_float(row.get("max_cube_lift_height")),
                 "final_gripper_width": _safe_float(row.get("final_gripper_width")),
                 "max_pose_action_clip_fraction": _safe_float(row.get("max_pose_action_clip_fraction")),
+                "max_raw_pose_action_max_abs": _safe_float(row.get("max_raw_pose_action_max_abs")),
+                "min_pose_action_filter_scale": _safe_float(row.get("min_pose_action_filter_scale")),
                 "reset_cube_minus_ee_l2_from_dataset": _safe_float(row.get("reset_cube_minus_ee_l2_from_dataset")),
                 "failure_reasons": row.get("failure_reasons", ""),
                 "video": row.get("video", ""),
@@ -249,18 +252,21 @@ def _report(summary: dict[str, Any], episode_rows: list[dict[str, Any]], rollout
         "",
         "## Rollout Gate Rows",
         "",
-        "| rollout | pass | orientation | alpha | steps | final EE | final finger | final/max lift | clip | failures |",
-        "|---|---|---|---:|---:|---:|---:|---:|---:|---|",
+        "| rollout | pass | orientation | filter | alpha | steps | final EE | final finger | final/max lift | clip | max raw | min scale | failures |",
+        "|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     for row in rollout_rows:
         lines.append(
             f"| {row['rollout_id']} | {row['gate_pass']} | "
             f"{row.get('orientation_mode', '')} | "
+            f"{row.get('pose_action_filter', '')} | "
             f"{_fmt(row.get('reset_joint_blend_alpha'), 3)} | {row['steps']} | "
             f"{_fmt(row.get('final_ee_to_cube'))} | "
             f"{_fmt(row.get('final_finger_center_to_cube'))} | "
             f"{_fmt(row.get('final_cube_lift_height'))}/{_fmt(row.get('max_cube_lift_height'))} | "
             f"{_fmt(row.get('max_pose_action_clip_fraction'), 3)} | "
+            f"{_fmt(row.get('max_raw_pose_action_max_abs'), 3)} | "
+            f"{_fmt(row.get('min_pose_action_filter_scale'), 3)} | "
             f"{row.get('failure_reasons', '')} |"
         )
     lines.extend(
