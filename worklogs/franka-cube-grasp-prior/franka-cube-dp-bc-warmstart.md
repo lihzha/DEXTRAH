@@ -9362,3 +9362,43 @@ Acceptance:
 - If any rollout fails, do not train DP; fetch/report failure artifacts and
   treat support expansion as blocked at the relabel gate.
 - No closed-loop DP eval, broad DP training, or RL in this iteration.
+
+## 2026-06-11T22:23:41-07:00 - launch alpha0.75 support relabel set
+
+Goal:
+- Generate a tiny support-expanded alpha0.75 relabel set for the offline
+  official-DP action-semantics gate, using the same hard relabel gate and
+  left/right contact controller that passed `1028145`.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- implementation_commit: `dd6cfe0b2f97a1ab8f19ba8733aad6821c54efa6`
+- remote_commit/status:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+  detached clean at `dd6cfe0b2f97a1ab8f19ba8733aad6821c54efa6`.
+- push/deploy: pushed to origin and l401 transfer repo; remote worktree
+  checked out detached at the exact commit.
+
+Command / Job:
+- job_id: `1028152`
+- run_name:
+  `franka_cube_contact_relabel_lrcentering_ep8_16_24_30_a0p75_20260611_2224`
+- command:
+  `sbatch --parsable --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart,RUN_NAME=franka_cube_contact_relabel_lrcentering_ep8_16_24_30_a0p75_20260611_2224,DATASET=/results/dp_bc/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz,TRAJECTORY_ROOT=/results/dp_bc/curobo_plans,SPEC_COUNT=4,SPEC_0=8:260:/results/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed8/trajectory.json:0.75,SPEC_1=16:260:/results/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed16/trajectory.json:0.75,SPEC_2=24:260:/results/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed24/trajectory.json:0.75,SPEC_3=30:260:/results/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed30/trajectory.json:0.75,VARIANT=center_high30,ORIENTATION_MODE=source,POSE_ACTION_FILTER=scale,POSE_ACTION_LIMIT=0.95,ALIGN_STEPS=0,CONTACT_ALIGN_STEPS=160,CONTACT_ALIGN_REFERENCE=live_cube,CONTACT_ALIGN_THRESHOLD=0.055,CONTACT_GATE_MODE=left_right,FINGER_GATE_MAX_DISTANCE=0.075,FINGER_GATE_BALANCE_THRESHOLD=0.015,REQUIRE_CONTACT_GATE=True,LATERAL_CENTERING_GAIN=0.75,LATERAL_CENTERING_LIMIT=0.025,LATERAL_SEARCH_AMPLITUDE=0.004,LATERAL_SEARCH_PERIOD=32,CLOSE_STEPS=80,LIFT_STEPS=160,LIFT_HEIGHT=0.22,FINGER_GAIN=0.75,CLIP_ACTIONS=1.0,CAPTURE_VIDEO=True,VIDEO_LENGTH=400,VIDEO_NAME_PREFIX=franka-cube-contact-lrcentering-a0p75-set,PRINT_INTERVAL=40,SEED=42,GATE_MIN_LIFT=0.10,GATE_MAX_POSE_CLIP_FRACTION=0.0,GATE_MAX_FINAL_EE_TO_CUBE=0.05,GATE_MAX_FINAL_FINGER_TO_CUBE=0.08 cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh`
+- remote run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/contact_relabel_sets/franka_cube_contact_relabel_lrcentering_ep8_16_24_30_a0p75_20260611_2224`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/contact_aware_franka_cube_relabel_set_1028152.out`
+
+Expected artifacts:
+- `contact_relabel_set_report.md`, `contact_relabel_set_summary.json`,
+  `contact_relabel_set_rollouts.csv`, `contact_relabel_set_failures.csv`, and
+  `contact_relabel_set_accepted.npz` if all rollouts pass.
+- Per-rollout CSV/JSON/plot/report/video/contact-sheet artifacts for episodes
+  `8,16,24,30`.
+
+Next:
+- Monitor job `1028152`; fetch and inspect artifacts. If the relabel set
+  passes hard/visual gates, run a bounded local official-DP offline smoke on
+  the accepted multi-episode NPZ. If it fails, stop at relabel gate diagnostics.
