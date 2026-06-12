@@ -5657,3 +5657,79 @@ Next:
   rollouts across selected source episodes/starts/offsets, require stable
   close/lift videos and clean metrics, then export only passing controller
   rollouts as BC demonstrations.
+
+## 2026-06-11T17:44:39-07:00 - contact-aware relabel set gate plan
+
+Goal:
+- Expand the single passing contact-aware controller smoke into a small,
+  inspectable relabel rollout set gate without starting DP BC/RL training.
+
+Plan:
+- Inspect the framefixed 32-demo dataset and source trajectory layout to choose
+  a handful of source episodes/steps that can be reset from available cuRobo
+  source joints.
+- Add a bounded set-level runner/wrapper around the existing
+  `contact_aware_franka_cube_rollout.py` logic rather than changing the
+  official DP path. It should run one `center_high30`/high-lift rollout per
+  selected source episode/step, record per-rollout CSV/JSON/report/video, and
+  aggregate a set-level summary table.
+- Add hard gate filters before any relabeled data is considered usable:
+  pre-reset final/max lift above task threshold, no post-reset rows in the
+  behavior trace, max pose-action clip fraction within tolerance, final
+  EE-to-cube and finger-center-to-cube within plausible bounds, terminal metadata
+  present when success resets the env, and at least spot-check videos/contact
+  sheets for pass/failure modes.
+- Validate locally with `python3 -m py_compile`, wrapper `bash -n`, and
+  `git diff --check`; then commit/push and deploy the exact commit to the
+  agent-owned l401 worktree.
+- Launch a small 1-GPU l401 relabel-set smoke only after validation passes,
+  fetch all artifacts locally, run `viz-open` on the set report/plot and
+  representative pass/fail videos or contact sheets, update this worklog, and
+  only then decide whether a tiny official-DP smoke is justified.
+
+Owned files expected:
+- `dextrah_lab/rl_games/contact_aware_franka_cube_rollout.py`
+- A new set-level runner or wrapper under `dextrah_lab/rl_games/` if needed.
+- A matching bounded Slurm wrapper under `cluster/`.
+- This owned worklog.
+
+No-go:
+- No DP BC/RL training or scale-up until the set-level contact-aware relabel
+  gate passes with inspectable artifacts.
+
+## 2026-06-11T17:49:21-07:00 - contact-aware relabel set implementation
+
+Goal:
+- Implement the small set-level relabel gate planned above, while keeping the
+  single-rollout controller behavior unchanged.
+
+Change:
+- Add `lowdim_obs`, `source_row`, and `source_trajectory_json` columns to
+  `contact_aware_franka_cube_rollout.py` CSV rows so passing rollouts can be
+  exported as lowdim/action demonstrations later.
+- Add `dextrah_lab/offline_dp_bc/make_contact_relabel_set_report.py`, which
+  reads per-rollout summaries/CSVs, applies hard gates, writes
+  `contact_relabel_set_summary.json`,
+  `contact_relabel_set_rollouts.csv`,
+  `contact_relabel_set_failures.csv`,
+  `contact_relabel_set_report.md`, and
+  `contact_relabel_set_accepted.npz`.
+- Add `cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh`, a
+  bounded 1-GPU wrapper that runs multiple source episode/step rollouts inside
+  one allocation and then aggregates the set.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/contact_aware_franka_cube_rollout.py dextrah_lab/offline_dp_bc/make_contact_relabel_set_report.py`: passed.
+- `bash -n cluster/sbatch_contact_aware_franka_cube_rollout_1gpu.sh && bash -n cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh`: passed.
+- `git diff --check`: passed.
+- Local aggregator smoke on a copied pre-`lowdim_obs` artifact: passed
+  mechanically and correctly failed the relabel gate with
+  `missing_lowdim_obs_for_relabel_export`, confirming the hard filter is active.
+
+Next:
+- Commit/push this implementation, deploy the exact commit to the agent-owned
+  l401 worktree, stage the missing local cuRobo trajectory JSONs into the
+  agent/result artifact namespace on l401, and launch a small 4-rollout
+  relabel-set smoke for episodes `8,16,24,30` at step `260` with
+  `center_high30`, `LIFT_HEIGHT=0.22`, `ALIGN_STEPS=80`, `CLOSE_STEPS=80`,
+  `LIFT_STEPS=160`.
