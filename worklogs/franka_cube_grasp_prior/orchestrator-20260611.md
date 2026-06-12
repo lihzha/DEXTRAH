@@ -2986,3 +2986,74 @@ Worker steering:
 - C is patching `contact_aware_franka_cube_rollout.py` to exclude post-reset
   rows after `terminated/truncated`, mark terminal metadata, and relaunch the
   same one-variant high-lift smoke for clean report/CSV/plot/video.
+
+## 2026-06-11T18:41:00-07:00 - B action semantics, C clean smoke pass, A robust gate active
+
+Worker B action-semantics result:
+- B added `dextrah_lab/rl_games/analyze_traj_tracking_action_semantics.py` in
+  its worktree and generated an artifact-only comparison over the existing
+  teacher-force runs.
+- Report:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_action_semantics_20260611_173606/action_semantics_report.md`
+- Plot:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_action_semantics_20260611_173606/action_semantics_plot.png`
+- Key finding: scalar L2 understated the failed handoff. In the lift window,
+  alpha `0.75` phase `1.0` applied close/up/gripper roughly
+  `0.353/0.276/-0.353` versus reference `0.400/0.376/-0.400`, while full
+  alpha `1.0` matched those axes much more closely and succeeded in `3/4`
+  envs. Raw policy close/up/gripper remain weak, about `0.115/0.081/-0.114`
+  during the successful full-reference lift window.
+- Interpretation: B needs a direct trainability/imitation improvement for
+  close/up/gripper timing and residual pose action, not more schedule-only
+  evals.
+
+Worker B wide-camera artifact:
+- Job `1027923`, run
+  `franka_cube_traj_tracking_teacherforce_ref100_wide4env_20260611_173922`,
+  completed `0:0`.
+- It reproduces the prior pure-reference metrics: success final/max/ever
+  `0.75/0.75/3 of 4`, cube lift max `0.144406 m`, target unsafe max `0`,
+  target clearance min `0.065114 m`, applied/reference L2 mean `0.0140`.
+- Report:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_ref100_wide4env_20260611_173922_artifacts/report.md`
+- Contact sheet:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_ref100_wide4env_20260611_173922_artifacts/video_contact_sheet.png`
+- Visual caveat: the pulled-back camera shows all four envs but is not a strong
+  close-up grasp inspection artifact. It is useful context, while the scalar
+  trace/report remain the main evidence that full reference override is viable.
+
+Worker C clean post-reset result:
+- C patched the contact-aware rollout logger, committed/pushed its branch at
+  final handoff commit `67e175954a377a018a0c75f726e56780e0039d78`, and reran
+  clean job `1027922`.
+- Run:
+  `franka_cube_contact_rollout_ep24s260_high30_lift22_postresetfix_20260611_173835`.
+- Metrics: final/max lift `0.135498 m`, final EE-cube `0.007513 m`,
+  final finger-center-cube `0.037870 m`, final gripper width `0.049620 m`,
+  pose clip fraction `0.0`, success-like `true`.
+- Report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_rollouts/franka_cube_contact_rollout_ep24s260_high30_lift22_postresetfix_20260611_173835/contact_rollout_report.md`
+- Plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_rollouts/franka_cube_contact_rollout_ep24s260_high30_lift22_postresetfix_20260611_173835/contact_rollout_plot.png`
+- Video:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_rollouts/franka_cube_contact_rollout_ep24s260_high30_lift22_postresetfix_20260611_173835/videos/franka-cube-contact-rollout-high30-lift22-postresetfix-step-0.mp4`
+- Contact sheet:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_rollouts/franka_cube_contact_rollout_ep24s260_high30_lift22_postresetfix_20260611_173835/videos/franka-cube-contact-rollout-high30-lift22-postresetfix-step-0_sheet.jpg`
+- Visual/metric verdict: the single clean controller smoke passes the bounded
+  relabeler gate, but it is not enough to start full DP training.
+- C was assigned a small gated relabel-rollout set next, with strict filters and
+  pass/failure artifacts before any official Diffusion Policy BC smoke.
+
+Worker A robust passing-set gate:
+- A added a robust-library filter script in its worktree and generated:
+  - `franka_cube_ggx_grasps_robust_pass7_20260612.npz`
+  - `franka_cube_ggx_grasp_orig012_robust_fallback_20260612.npz`
+- The robust set contains original indices `[0, 1, 11, 12, 14, 24, 27]`.
+- A launched L401 job `1027924`, `ggx_robust_gate`, run
+  `franka_cube_ggx_robust_pass7_gate_20260612_0045`.
+- Gate settings: `NUM_RESETS=28`, same cube XY randomization `0.08`, same
+  orientation-tracked proportional-exact oracle, close width `0.055`, 3 cm
+  pregrasp offset via the existing task/library behavior.
+- Acceptance: all or near-all resets must pass reset/pregrasp quality and
+  oracle close/lift, with viewer-ready report/contact sheet/video, before A
+  launches any PPO smoke.
