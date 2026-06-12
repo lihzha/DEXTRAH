@@ -6,6 +6,45 @@
 - base_commit: 589dd81c9f9691fcda3a3d4b9ad714d90dae4794
 - created: 2026-06-11T18:39:11Z
 
+## 2026-06-12T10:49:00Z - policy-only eval videos validated
+
+Goal:
+- Validate that the reset-prior scalar success/lift curves correspond to actual learned policy grasp/lift behavior, without action warm-start or scripted assistance.
+
+Command / Job:
+- canceled L40 eval jobs due queue wait: `1028355`, `1028356`, `1028357`; all `CANCELLED`
+- replacement A100 eval jobs:
+  - prior seed2 epoch 100: job `29006309`, run `franka_cube_sweep_prior_seed2_ep100_policy_eval_a100_20260612_104036`, checkpoint `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_resetprior600_seed2_c7e66a0_20260612_092951/nn/last_dextrah_franka_cube_grasp_ep_100_rew_12968.223.pth`
+  - prior seed2 epoch 600: job `29006310`, run `franka_cube_sweep_prior_seed2_ep600_policy_eval_a100_20260612_104036`, checkpoint `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_resetprior600_seed2_c7e66a0_20260612_092951/nn/last_dextrah_franka_cube_grasp_ep_600_rew_14060.301.pth`
+  - no-prior seed2 epoch 600: job `29006311`, run `franka_cube_sweep_noprior_seed2_ep600_policy_eval_a100_20260612_104036`, checkpoint `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseclear600_seed2_noprior_c7e66a0_20260612_092951/nn/last_dextrah_franka_cube_grasp_ep_600_rew_13254.116.pth`
+- eval settings: `DETERMINISTIC=True`, `USE_CUDA_GRAPH=False`, `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`, `GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED=False`; prior evals used reset-prior distribution only.
+- local eval artifacts:
+  - `cluster_results/a1001/evals/franka_cube_sweep_prior_seed2_ep100_policy_eval_a100_20260612_104036/`
+  - `cluster_results/a1001/evals/franka_cube_sweep_prior_seed2_ep600_policy_eval_a100_20260612_104036/`
+  - `cluster_results/a1001/evals/franka_cube_sweep_noprior_seed2_ep600_policy_eval_a100_20260612_104036/`
+
+Result:
+- status: completed and inspected
+- A100 eval scheduler state: jobs `29006309`, `29006310`, `29006311` all `COMPLETED 0:0`
+- MP4 validation: each video is `1280x720`, `600` frames, `10.0s`; contact sheets are nonblank and visually legible.
+- prior seed2 epoch 100: success mean `0.836`, last-window success `0.880`, max lift `0.185 m`, first lift step `42`; contact sheet/video show the policy lifting and holding the cube.
+- prior seed2 epoch 600: success mean `0.860`, last-window success `0.910`, max lift `0.174 m`, first lift step `41`; contact sheet/video show the policy lifting and holding the cube.
+- no-prior seed2 epoch 600 reference: success mean `0.833`, last-window success `0.900`, max lift `0.175 m`, first lift step `60`; contact sheet/video show actual lift/hold behavior for the one no-prior seed that solved.
+- viewer URLs:
+  - reward PNG: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/a1001/franka_cube_seed_sweep600_c7e66a0_20260612_092951/reward_curve_comparison.png`
+  - loss PNG: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/a1001/franka_cube_seed_sweep600_c7e66a0_20260612_092951/loss_curve_comparison.png`
+  - prior ep100 video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/a1001/evals/franka_cube_sweep_prior_seed2_ep100_policy_eval_a100_20260612_104036/videos/prior-seed2-ep100-policy-step-0.mp4`
+  - prior ep600 video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/a1001/evals/franka_cube_sweep_prior_seed2_ep600_policy_eval_a100_20260612_104036/videos/prior-seed2-ep600-policy-step-0.mp4`
+  - no-prior ep600 video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/a1001/evals/franka_cube_sweep_noprior_seed2_ep600_policy_eval_a100_20260612_104036/videos/noprior-seed2-ep600-policy-step-0.mp4`
+
+Analysis:
+- The reset-prior approach demonstrates genuine learned policy-only lift behavior at epoch 100 for seed 2, well before the no-prior seed 2 reaches comparable behavior and while most no-prior seeds never solve by epoch 600.
+- The final-step success resets to zero in eval traces because the env resets after success near the end; mean/last-window metrics and the visible held segment are the relevant evidence.
+- Remaining caveat: the videos validate selected representative checkpoints, not every seed's final policy. Scalar evidence is strong across all reset-prior seeds.
+
+Next:
+- Finalize user-facing summary with scalar plots, threshold table, and video evidence. Optional follow-up would be a reward-weight ablation after this clean baseline-vs-prior comparison.
+
 ## 2026-06-12T10:38:57Z - 600-epoch seed sweep completed; scalar plots generated; eval videos queued
 
 Goal:
