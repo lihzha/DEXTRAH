@@ -46,6 +46,21 @@ parser.add_argument(
 )
 parser.add_argument("--dataset_path", type=str, default=None, help="Path to write the collected tensor dataset.")
 parser.add_argument("--seed", type=int, default=42, help="Random seed for env and supervised split.")
+parser.add_argument(
+    "--collection_action_source",
+    choices=("reference_delta", "policy", "teacher_mix"),
+    default="reference_delta",
+    help=(
+        "Action source used to step the rollout while collecting observations. "
+        "Labels are always compute_reference_delta_actions()."
+    ),
+)
+parser.add_argument(
+    "--collection_teacher_alpha",
+    type=float,
+    default=0.5,
+    help="Reference blend used when --collection_action_source=teacher_mix.",
+)
 parser.add_argument("--task", type=str, default=None, help="Gym task name.")
 parser.add_argument("--disable_fabric", action="store_true", default=False, help="Disable fabric and use USD I/O.")
 AppLauncher.add_app_launcher_args(parser)
@@ -248,6 +263,8 @@ def _write_report(summary: dict[str, object], rows: list[dict[str, float | int |
         f"- task: `{summary.get('task')}`",
         f"- input checkpoint: `{summary.get('input_checkpoint')}`",
         f"- output checkpoint: `{summary.get('output_checkpoint')}`",
+        f"- collection action source: `{summary.get('collection_action_source')}`",
+        f"- collection teacher alpha: `{summary.get('collection_teacher_alpha')}`",
         f"- samples: `{summary.get('num_samples')}` train / `{summary.get('num_train')}` held-out / `{summary.get('num_val')}`",
         f"- observation dim: `{summary.get('obs_dim')}`, action dim: `{summary.get('action_dim')}`",
         f"- loss dims: `{summary.get('loss_dims')}`",
@@ -334,9 +351,11 @@ def main(env_cfg, agent_cfg: dict):
 
     action_dim = int(getattr(task_env.cfg, "action_space", 0))
     loss_dims = _parse_loss_dims(args_cli.loss_dims, action_dim)
+    collection_teacher_alpha = min(max(float(args_cli.collection_teacher_alpha), 0.0), 1.0)
     obs_records: list[torch.Tensor] = []
     reference_records: list[torch.Tensor] = []
     raw_records: list[torch.Tensor] = []
+    applied_records: list[torch.Tensor] = []
     phase_records: list[torch.Tensor] = []
     lift_records: list[torch.Tensor] = []
     success_records: list[torch.Tensor] = []
@@ -356,16 +375,28 @@ def main(env_cfg, agent_cfg: dict):
                 obs_t = _obs_tensor(agent, obs)
                 raw_mus = _model_mus(agent.model, obs_t, action_dim, is_train=False).detach().clamp(-1.0, 1.0)
                 reference_actions = _reference_delta_actions(task_env)
+                if args_cli.collection_action_source == "reference_delta":
+                    applied_actions = reference_actions
+                elif args_cli.collection_action_source == "policy":
+                    applied_actions = raw_mus
+                else:
+                    applied_actions = torch.clamp(
+                        (1.0 - collection_teacher_alpha) * raw_mus
+                        + collection_teacher_alpha * reference_actions,
+                        -1.0,
+                        1.0,
+                    )
 
                 obs_records.append(obs_t.detach().cpu())
                 reference_records.append(reference_actions.detach().cpu())
                 raw_records.append(raw_mus.detach().cpu())
+                applied_records.append(applied_actions.detach().cpu())
                 phase_records.append(getattr(task_env, "traj_phase_progress", torch.zeros(task_env.num_envs, device=task_env.device)).detach().cpu())
                 lift_records.append(getattr(task_env, "cube_lift_height", torch.zeros(task_env.num_envs, device=task_env.device)).detach().cpu())
                 success_records.append(getattr(task_env, "in_success_region", torch.zeros(task_env.num_envs, dtype=torch.bool, device=task_env.device)).detach().float().cpu())
                 unsafe_records.append(getattr(task_env, "traj_target_safe_mask", torch.ones(task_env.num_envs, dtype=torch.bool, device=task_env.device)).detach().logical_not().float().cpu())
 
-                step_out = env.step(reference_actions)
+                step_out = env.step(applied_actions)
                 if len(step_out) == 5:
                     obs, _, dones, truncated, _ = step_out
                     dones = torch.logical_or(dones, truncated)
@@ -382,6 +413,7 @@ def main(env_cfg, agent_cfg: dict):
     obs_tensor = torch.cat(obs_records, dim=0).float()
     reference_tensor = torch.cat(reference_records, dim=0).float()
     raw_tensor = torch.cat(raw_records, dim=0).float()
+    applied_tensor = torch.cat(applied_records, dim=0).float()
     phase_tensor = torch.cat(phase_records, dim=0).float()
     lift_tensor = torch.cat(lift_records, dim=0).float()
     success_tensor = torch.cat(success_records, dim=0).float()
@@ -390,12 +422,15 @@ def main(env_cfg, agent_cfg: dict):
         "obs": obs_tensor,
         "reference_actions": reference_tensor,
         "raw_policy_actions_before": raw_tensor,
+        "applied_collection_actions": applied_tensor,
         "phase": phase_tensor,
         "cube_lift_height": lift_tensor,
         "success": success_tensor,
         "unsafe_target": unsafe_tensor,
         "loss_dims": torch.tensor(loss_dims, dtype=torch.long),
         "input_checkpoint": str(resume_path),
+        "collection_action_source": args_cli.collection_action_source,
+        "collection_teacher_alpha": collection_teacher_alpha,
     }
     dataset_path.parent.mkdir(parents=True, exist_ok=True)
     torch.save(dataset, dataset_path)
@@ -491,10 +526,13 @@ def main(env_cfg, agent_cfg: dict):
         "batch_size": int(batch_size),
         "learning_rate": float(args_cli.learning_rate),
         "validation_fraction": float(args_cli.validation_fraction),
+        "collection_action_source": args_cli.collection_action_source,
+        "collection_teacher_alpha": collection_teacher_alpha,
         "curobo_validated": bool(reference_summary.get("curobo_validated", False)) if isinstance(reference_summary, dict) else False,
         "reference_summary": reference_summary,
         "dataset_reference_stats": _action_stats(reference_tensor.cpu(), "reference"),
         "dataset_raw_policy_before_stats": _action_stats(raw_tensor.cpu(), "raw_before"),
+        "dataset_applied_collection_stats": _action_stats(applied_tensor.cpu(), "applied_collection"),
         "initial": curve_rows[0],
         "final": curve_rows[-1],
     }

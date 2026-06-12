@@ -4304,3 +4304,105 @@ Next:
 - Monitor job `1027954` through completion.
 - Fetch stdout/logs and checkpoint listing immediately after completion.
 - Do not launch eval until the smoke checkpoint and config are verified.
+
+## 2026-06-11T18:31:00-07:00 - BC-initialized PPO handoff smoke result and selector launch
+
+Train Result:
+- job_id: `1027954`
+- status: completed `0:0`, elapsed `00:00:52`, node `pool0-00030`.
+- local_run_dir: `cluster_results/l401/franka_cube_traj_tracking_bcinit_tfppo15_20260611_183000`
+- local_log: `cluster_results/l401/slurm_logs/teacher_8gpu_1027954.out`
+- restored checkpoint epoch: `10`.
+- completed epochs: `11/15`, `12/15`, `13/15`, `14/15`, `15/15`.
+- final checkpoint: `/results/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_bcinit_tfppo15_20260611_183000/nn/last_dextrah_franka_cube_traj_tracking_ep_15_rew_829.6681.pth`
+- note: reward suffix is not a behavior verdict; this is only a bounded continuation checkpoint for eval.
+
+Selector Eval Launch:
+- alpha `0.0`: job `1027959`, run `franka_cube_traj_tracking_bcinit_tfppo15_select_a000_520_20260611_183100`.
+- alpha `0.5`: job `1027960`, run `franka_cube_traj_tracking_bcinit_tfppo15_select_a050_520_20260611_183100`.
+- alpha `0.75`: job `1027961`, run `franka_cube_traj_tracking_bcinit_tfppo15_select_a075_520_20260611_183100`.
+- alpha `1.0`: job `1027962`, run `franka_cube_traj_tracking_bcinit_tfppo15_select_a100_520_20260611_183100`.
+- shared eval config: checkpoint above, `NUM_ENVS=4`, `NUM_STEPS=520`, no video, deterministic, success termination suppressed, seed `64`, target reference still `curobo_validated=false`, action-alignment weight `80.0`, teacher alpha fixed per run with phase end `1.0`.
+
+Next:
+- Fetch selector outputs when complete.
+- Use per-env success/lift fields to launch targeted viewer videos for alpha `0.0`, `0.5`, `0.75`, and `1.0`.
+
+## 2026-06-11T18:38:00-07:00 - BC-initialized PPO handoff eval result
+
+Result:
+- status: negative for learned handoff; no PPO scale-up.
+- train job: `1027954`, completed `0:0`, final checkpoint `/results/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_bcinit_tfppo15_20260611_183000/nn/last_dextrah_franka_cube_traj_tracking_ep_15_rew_829.6681.pth`.
+- selector jobs: alpha `0.0/0.5/0.75/1.0` jobs `1027959`/`1027960`/`1027961`/`1027962`, all completed `0:0`.
+- targeted viewer jobs: alpha `0.0/0.5/0.75/1.0` jobs `1027963`/`1027964`/`1027965`/`1027966`, all completed `0:0`.
+- comparison report: `cluster_results/l401/franka_cube_traj_tracking_bcinit_tfppo15_comparison_20260611_1838/report.md`
+- comparison report URL: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bcinit_tfppo15_comparison_20260611_1838/report.md`
+- comparison plot: `cluster_results/l401/franka_cube_traj_tracking_bcinit_tfppo15_comparison_20260611_1838/comparison_plot.png`
+- comparison plot URL: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bcinit_tfppo15_comparison_20260611_1838/comparison_plot.png`
+- action-semantics report: `cluster_results/l401/franka_cube_traj_tracking_bcinit_tfppo15_comparison_20260611_1838_action_semantics/action_semantics_report.md`
+- action-semantics plot: `cluster_results/l401/franka_cube_traj_tracking_bcinit_tfppo15_comparison_20260611_1838_action_semantics/action_semantics_plot.png`
+
+Viewer artifacts:
+- post-PPO alpha `0.0` env0 report/sheet/video: `cluster_results/l401/franka_cube_traj_tracking_bcinit_tfppo15_vis_a000_env0_520_20260611_183400_artifacts/report.md`, `cluster_results/l401/franka_cube_traj_tracking_bcinit_tfppo15_vis_a000_env0_520_20260611_183400_artifacts/video_contact_sheet.png`, `cluster_results/l401/franka_cube_traj_tracking_bcinit_tfppo15_vis_a000_env0_520_20260611_183400/videos/bcinit-tfppo15-a000-env0-step-0.mp4`.
+- post-PPO alpha `0.5` env0 report/sheet/video: `cluster_results/l401/franka_cube_traj_tracking_bcinit_tfppo15_vis_a050_env0_520_20260611_183400_artifacts/report.md`, `cluster_results/l401/franka_cube_traj_tracking_bcinit_tfppo15_vis_a050_env0_520_20260611_183400_artifacts/video_contact_sheet.png`, `cluster_results/l401/franka_cube_traj_tracking_bcinit_tfppo15_vis_a050_env0_520_20260611_183400/videos/bcinit-tfppo15-a050-env0-step-0.mp4`.
+- post-PPO alpha `0.75` env0 sheet URL: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bcinit_tfppo15_vis_a075_env0_520_20260611_183400_artifacts/video_contact_sheet.png`
+- post-PPO alpha `0.75` env0 video URL: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bcinit_tfppo15_vis_a075_env0_520_20260611_183400/videos/bcinit-tfppo15-a075-env0-step-0.mp4`
+- post-PPO alpha `1.0` env1 sheet URL: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bcinit_tfppo15_vis_a100_env1_520_20260611_183400_artifacts/video_contact_sheet.png`
+- post-PPO alpha `1.0` env1 video URL: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bcinit_tfppo15_vis_a100_env1_520_20260611_183400/videos/bcinit-tfppo15-a100-env1-step-0.mp4`
+
+Metrics:
+- pre-PPO BC alpha `0.75`: success `2/4`, final success `0.50`, max lift `0.0968 m`, raw/reference L2 mean `0.0519`, target unsafe max `0`.
+- post-PPO alpha `0.0`: success `0/4`, max lift `0.0 m`, raw/reference L2 mean `1.6138`, target unsafe max `0`.
+- post-PPO alpha `0.5`: success `0/4`, max lift `0.0009 m`, raw/reference L2 mean `0.4044`, target unsafe max `0`.
+- post-PPO alpha `0.75`: success `0/4`, max lift `0.0015 m`, raw/reference L2 mean `0.2528`, target unsafe max `0`.
+- post-PPO alpha `1.0`: success `3/4`, final success `0.75`, max lift `0.1444 m`, target unsafe max `0`.
+- MP4 validation: all four post-PPO videos are `1280x720`, `520` frames, `8.666667 s`, `60 fps`.
+
+Visual diagnosis:
+- Post-PPO alpha `0.75` approaches near the cube but ends above/away with no lift. It is a clear regression from the pre-PPO BC alpha `0.75` env2 success video.
+- Post-PPO full-teacher alpha `1.0` still visibly grasps/lifts in env1. That keeps the reference/controller path viable and isolates the failure to learned low-alpha handoff.
+
+Analysis:
+- No concrete wrapper/config bug was found. The run used the intended epoch-15 checkpoint, fixed alpha evals, success termination suppression, per-env camera targeting, and target unsafe stayed `0`.
+- The five PPO updates moved the policy away from the useful BC handoff manifold: alpha `0.75` dropped from `2/4` success to `0/4` even though alpha `1.0` remained `3/4`.
+- Per the acceptance plan, stop PPO schedule tweaking. The next bounded step is explicit on-policy dataset aggregation / DAgger-style BC from policy-reached states.
+- Reference caveat remains explicit: `curobo_validated=false`, source tag `graspgenx_curobo_60mm_export_pending_exact_validation`.
+
+## 2026-06-11T18:39:00-07:00 - on-policy DAgger-style BC plan
+
+Goal:
+- Test whether supervised action imitation can recover low-alpha/policy-only behavior when trained on states actually reached by the failing policy, rather than only states from a reference-delta rollout.
+
+Hypothesis:
+- The all-7 BC actor overfits reference-rollout observations well, but low-alpha rollouts visit off-reference states. Labeling policy-reached states with the current `compute_reference_delta_actions()` should reduce raw/reference error on the failure manifold more directly than PPO reward shaping.
+
+Implementation plan:
+- Extend `dextrah_lab/rl_games/bc_reference_action_imitation.py` with a diagnostic collection action source:
+  - `reference_delta` keeps the current behavior and remains default.
+  - `policy` steps raw policy actions while still labeling each observation with `compute_reference_delta_actions()`.
+  - `teacher_mix` steps `(1-alpha) * raw_policy + alpha * reference_delta` while labeling with reference actions.
+- Extend `cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh` to expose `COLLECTION_ACTION_SOURCE` and `COLLECTION_TEACHER_ALPHA`.
+- Keep the model/action parameterization unchanged: 72-D observation, 7-D action, no phase observations, baseline task untouched.
+- Cheap validation before launch: `python3 -m py_compile dextrah_lab/rl_games/bc_reference_action_imitation.py` and `bash -n cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh`.
+
+Bounded run plan:
+- First run a small on-policy dataset/BC smoke from the pre-PPO all-7 BC checkpoint, not from the regressed PPO checkpoint:
+  - `COLLECTION_ACTION_SOURCE=teacher_mix`, `COLLECTION_TEACHER_ALPHA=0.5`, `NUM_ENVS=8`, `COLLECTION_STEPS=520`, `TRAIN_STEPS=400`, all 7 dims, one L40S GPU.
+  - Optional follow-up only if the smoke lowers held-out error: repeat with `COLLECTION_ACTION_SOURCE=policy` to cover fully unassisted failure states.
+- Evaluate resulting checkpoint with alpha `0.0`, `0.5`, `0.75`, and `1.0`, `NUM_ENVS=4`, `NUM_STEPS=520`, success termination suppressed, per-env success/lift fields, targeted videos/contact sheets, trace plots, action-semantics comparison, and train/eval consistency JSON.
+
+Acceptance:
+- Held-out action error decreases on the on-policy/teacher-mix dataset.
+- Alpha `0.5` or alpha `0.75` shows visible contact/lift and nonzero final/ever success without target-safety regression.
+- No PPO or long training scale-up until low-alpha video/metrics improve.
+
+Implementation:
+- Added `--collection_action_source {reference_delta,policy,teacher_mix}` to `dextrah_lab/rl_games/bc_reference_action_imitation.py`.
+- Added `--collection_teacher_alpha` to blend raw policy and reference actions when collecting teacher-mix states.
+- Labels remain `compute_reference_delta_actions()` for all collection modes; only the rollout state distribution changes.
+- Dataset now records `applied_collection_actions`, `collection_action_source`, and `collection_teacher_alpha`.
+- Extended `cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh` with `COLLECTION_ACTION_SOURCE` and `COLLECTION_TEACHER_ALPHA`.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/bc_reference_action_imitation.py`: passed.
+- `bash -n cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh`: passed.
