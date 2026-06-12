@@ -2682,3 +2682,60 @@ Worker steering:
 - A was told to update its owned worklog with the artifact URLs and to keep the
   next step bounded, targeting reset-2-specific failure mode or alternate grasp
   robustness rather than approach duration.
+
+## 2026-06-11T17:42:10-07:00 - B alpha-0.75 phase-end diagnostic result
+
+Goal:
+- Test Worker B's hypothesis that the failed alpha-`0.75` eval was mainly due
+  to teacher forcing turning off at phase `0.67`.
+
+Job:
+- `1027907`: `tf_eval_p100`, completed `0:0`.
+- Run:
+  `franka_cube_traj_tracking_teacherforce_eval_a075_phase100_520_20260611_172322`.
+- Setting: same epoch-5 tiny PPO checkpoint, alpha amplitude `0.75`, phase end
+  `1.0`, no anneal, 4 envs, 520-step eval with video.
+
+Artifacts:
+- Report:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a075_phase100_520_20260611_172322_artifacts/report.md`
+- Contact sheet:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a075_phase100_520_20260611_172322_artifacts/video_contact_sheet.png`
+- Trace plot:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a075_phase100_520_20260611_172322_artifacts/trajectory_trace_plot.png`
+- Video:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a075_phase100_520_20260611_172322/videos/tf-eval-a075-phase100-520-step-0.mp4`
+
+Metrics:
+- Target unsafe max `0`; target clearance min `0.065114 m`.
+- Teacher alpha mean/final/active `0.75/0.75/1.0`, so the phase gate was
+  removed as intended.
+- Success ever/final/max `0`; cube lift max `0.000042 m`.
+- Raw-policy/reference L2 mean/final improved to `0.753/0.196`, and
+  applied/reference L2 mean improved to `0.186`, but this did not produce
+  grasp/lift.
+- Final EE-cube `0.235 m`, final finger-center-cube `0.272 m`, final gripper
+  width `0.0236 m`.
+
+Visual:
+- Contact sheet and trace show the hand reaches near the cube mid-rollout, then
+  moves away with no lift. Keeping teacher alpha active through the full
+  trajectory does not recover the lower-alpha handoff.
+
+Analysis:
+- The previous alpha-`0.75` failure was not mainly a phase-gate timing issue.
+  Even with alpha active for the whole rollout and lower raw/reference action
+  error, the policy/reference blend does not create a stable grasp.
+- Next B debugging should shift away from schedule-only evals and toward
+  action semantics: raw up action remains weak, close/lift timing may be wrong,
+  the reference up/close labels may not match contact, or stronger
+  imitation/BC pretraining may be needed before RL handoff.
+- The generated report currently marks `trajectory_tracking_teacher_force_phase_end`
+  as a real train/eval mismatch. This is an intentional eval-only diagnostic
+  override and B was instructed to patch/report it as expected, while preserving
+  the negative behavioral verdict.
+
+Worker steering:
+- B was told to update its owned worklog, mark phase-end as an expected
+  diagnostic override, avoid more schedule-only evals, and focus next on
+  raw-policy/reference action semantics or stronger imitation diagnostics.
