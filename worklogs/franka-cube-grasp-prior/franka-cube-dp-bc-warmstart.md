@@ -5411,3 +5411,107 @@ Relaunch Plan:
   `VARIANT_2=center_high30`.
 - If runtime passes, fetch report/JSON/CSV/plot/video and inspect whether any
   variant demonstrates stable close/lift. No DP BC/RL training.
+
+Command / Job:
+- validation:
+  - `python3 -m py_compile dextrah_lab/rl_games/contact_aware_franka_cube_rollout.py`: passed.
+  - `bash -n cluster/sbatch_contact_aware_franka_cube_rollout_1gpu.sh`: passed.
+  - `git diff --check`: passed.
+- implementation_commit: `06368f2fd12f0beecae8032ded9738e715b64d66`
+- pushed: yes.
+- remote deployment: Git bundle; remote worktree detached at
+  `06368f2fd12f0beecae8032ded9738e715b64d66`.
+- command:
+  `CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart RUN_NAME=franka_cube_contact_rollout_ep24s260_center3_fix_20260611_172940 DATASET=/results/dp_bc/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz TRAJECTORY_JSON=/results/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed24/trajectory.json EPISODE=24 EPISODE_STEP=260 VARIANT_COUNT=3 VARIANT_0=center VARIANT_1=center_high15 VARIANT_2=center_high30 ALIGN_STEPS=80 CLOSE_STEPS=80 LIFT_STEPS=120 LIFT_HEIGHT=0.14 FINGER_GAIN=0.75 CLIP_ACTIONS=1.0 CAPTURE_VIDEO=True VIDEO_LENGTH=280 VIDEO_NAME_PREFIX=franka-cube-contact-rollout PRINT_INTERVAL=40 SEED=42 sbatch --parsable cluster/sbatch_contact_aware_franka_cube_rollout_1gpu.sh`
+- job_id: `1027920`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/contact_rollouts/franka_cube_contact_rollout_ep24s260_center3_fix_20260611_172940`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/contact_aware_franka_cube_rollout_1027920.out`
+
+Acceptance:
+- Check that the log includes all three `--variant` args, then fetch and
+  inspect report/JSON/CSV/plot/video. A clean Slurm exit is not sufficient.
+
+Result:
+- status: completed `0:0`, failed strict relabeling gate but produced useful
+  contact-aware controller evidence.
+- Slurm: `COMPLETED 0:0`, elapsed `00:01:33`, node `pool0-00011`.
+- Remote run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/contact_rollouts/franka_cube_contact_rollout_ep24s260_center3_fix_20260611_172940`
+- Local artifact dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_rollouts/franka_cube_contact_rollout_ep24s260_center3_fix_20260611_172940`
+- Local log:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/contact_aware_franka_cube_rollout_1027920.out`
+- Viewer URLs:
+  - report:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_rollouts/franka_cube_contact_rollout_ep24s260_center3_fix_20260611_172940/contact_rollout_report.md`
+  - plot:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_rollouts/franka_cube_contact_rollout_ep24s260_center3_fix_20260611_172940/contact_rollout_plot.png`
+  - best video, `center_high30`:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_rollouts/franka_cube_contact_rollout_ep24s260_center3_fix_20260611_172940/videos/franka-cube-contact-rollout-step-560.mp4`
+  - best contact sheet:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_rollouts/franka_cube_contact_rollout_ep24s260_center3_fix_20260611_172940/videos/franka-cube-contact-rollout-step-560_sheet.jpg`
+
+Metrics:
+- `center`: final/max lift `0.08267 m`, min/final finger-center distance
+  `0.03835/0.04746 m`, final gripper width `0.05455 m`, max clip fraction
+  `0.16667`.
+- `center_high15`: final/max lift `0.09324 m`, min/final finger-center
+  `0.03792/0.04118 m`, final gripper width `0.05189 m`, no pose clipping.
+- `center_high30`: final/max lift `0.11268 m`, min/final finger-center
+  `0.03754/0.037998 m`, final gripper width `0.04867 m`, final EE-cube
+  `0.01174 m`, no pose clipping.
+- Videos are valid MP4s at `1280x720`, about `4.65 s`, `279-280` frames.
+
+Analysis:
+- The runtime patch worked: all three variants were passed through Slurm and
+  executed.
+- The contact-aware heuristic is qualitatively different from raw labels and
+  failed DP videos: it approaches the cube and lifts it rather than drifting
+  away.
+- It is still not BC-ready relabeled data. The script verdict remains
+  `No contact-aware rollout variant produced stable lift` because lift did not
+  cross the task success threshold, and the gripper remains around
+  `4.9-5.5 cm` wide. `center_high30` is the best bounded candidate, but needs
+  a higher/longer lift test and closer inspection of whether the cube is
+  actually grasped or being pushed/carried by incidental contact.
+
+Next:
+- Do not train DP BC/RL.
+- Run one narrow follow-up with only `center_high30`, higher lift target, and a
+  longer lift phase. Acceptance remains video/metric proof of stable close/lift
+  before any relabel dataset generation.
+
+## 2026-06-11T17:33:02-07:00 - contact rollout high-lift follow-up plan
+
+Goal:
+- Test whether the promising `center_high30` contact-aware target can clear the
+  success-height gate if commanded higher/longer, without action clipping or
+  obvious unstable contact.
+
+Hypothesis:
+- The previous `center_high30` run maintained finger-center distance around
+  `3.8 cm` and lifted to `11.3 cm` with no pose clipping. A larger lift target
+  and longer lift phase may reveal whether this is a stable grasp path or only
+  partial/incidental lift.
+
+Version Control:
+- implementation_commit: `06368f2fd12f0beecae8032ded9738e715b64d66`
+- changed source since commit: none
+- worklog result commit: pending
+
+Planned Command / Job:
+- run name:
+  `franka_cube_contact_rollout_ep24s260_high30_lift22_20260611_1733xx`
+- setting:
+  `VARIANT_COUNT=1`, `VARIANT_0=center_high30`, `ALIGN_STEPS=80`,
+  `CLOSE_STEPS=80`, `LIFT_STEPS=160`, `LIFT_HEIGHT=0.22`,
+  `FINGER_GAIN=0.75`, `CLIP_ACTIONS=1.0`, `CAPTURE_VIDEO=True`,
+  `VIDEO_LENGTH=320`.
+
+Acceptance:
+- Strict relabel gate only: stable visual close/lift, lift over task success
+  threshold, no significant pose clipping, and metrics/report/video fetched
+  locally. This still does not authorize DP BC training by itself; it only
+  identifies a candidate controller-rollout relabeler setting.
