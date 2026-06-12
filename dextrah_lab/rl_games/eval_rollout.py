@@ -24,6 +24,12 @@ parser.add_argument("--video_folder", type=str, default=None, help="Directory fo
 parser.add_argument("--video_name_prefix", type=str, default="cube-grasp-eval", help="Prefix for rollout video files.")
 parser.add_argument("--camera_eye", type=float, nargs=3, default=None, help="Viewport camera eye for video eval.")
 parser.add_argument("--camera_target", type=float, nargs=3, default=None, help="Viewport camera target for video eval.")
+parser.add_argument(
+    "--camera_env_index",
+    type=int,
+    default=0,
+    help="Vectorized environment index whose origin is used to offset the eval video camera.",
+)
 parser.add_argument("--num_steps", type=int, default=600, help="Number of policy steps to run.")
 parser.add_argument("--success_window", type=int, default=100, help="Trailing window for final success-rate average.")
 parser.add_argument("--print_interval", type=int, default=20, help="Print metrics every N steps.")
@@ -458,6 +464,18 @@ def _step_tensor_summary(values: torch.Tensor) -> dict[str, float | int | None]:
         "min": float(valid.min().cpu()),
         "max": float(valid.max().cpu()),
     }
+
+
+def _tensor_bool_list(values: torch.Tensor) -> list[bool]:
+    if not isinstance(values, torch.Tensor):
+        return []
+    return [bool(v) for v in values.detach().bool().cpu().tolist()]
+
+
+def _tensor_float_list(values: torch.Tensor) -> list[float]:
+    if not isinstance(values, torch.Tensor):
+        return []
+    return [float(v) for v in values.detach().float().cpu().tolist()]
 
 
 def _done_reason_snapshot(task_env, success_timeout_override: float | None = None) -> dict[str, torch.Tensor]:
@@ -901,14 +919,22 @@ def _configure_eval_camera(env_cfg, task_env=None) -> None:
 
     eye = _camera_tuple(args_cli.camera_eye) or tuple(env_cfg.viewer.eye)
     target = _camera_tuple(args_cli.camera_target) or tuple(env_cfg.viewer.lookat)
+    camera_env_index = max(0, int(args_cli.camera_env_index))
     if task_env is not None and hasattr(task_env, "scene") and len(task_env.scene.env_origins) > 0:
-        env_origin = task_env.scene.env_origins[0].detach().cpu().tolist()
+        origin_count = len(task_env.scene.env_origins)
+        if camera_env_index >= origin_count:
+            print(
+                f"[WARN] Requested camera_env_index={camera_env_index}, "
+                f"but only {origin_count} env origins exist; using env0."
+            )
+            camera_env_index = 0
+        env_origin = task_env.scene.env_origins[camera_env_index].detach().cpu().tolist()
         eye = tuple(eye[idx] + env_origin[idx] for idx in range(3))
         target = tuple(target[idx] + env_origin[idx] for idx in range(3))
     env_cfg.viewer.eye = eye
     env_cfg.viewer.lookat = target
     env_cfg.viewer.origin_type = "world"
-    print(f"[INFO] Eval video camera eye={eye} target={target}")
+    print(f"[INFO] Eval video camera_env_index={camera_env_index} eye={eye} target={target}")
 
     if task_env is not None and hasattr(task_env, "sim"):
         try:
@@ -1011,6 +1037,9 @@ def main(env_cfg, agent_cfg: dict):
     done_after_success_env = torch.zeros(task_env.num_envs, dtype=torch.bool, device=task_env.device)
     suppressed_success_done_ever_env = torch.zeros(task_env.num_envs, dtype=torch.bool, device=task_env.device)
     first_suppressed_success_done_step = torch.full((task_env.num_envs,), -1.0, device=task_env.device)
+    final_success_env = torch.zeros(task_env.num_envs, dtype=torch.bool, device=task_env.device)
+    final_lift_height_env = torch.zeros(task_env.num_envs, device=task_env.device)
+    max_lift_height_env = torch.zeros(task_env.num_envs, device=task_env.device)
     done_reason_counts = {
         "success_done": 0,
         "cube_out": 0,
@@ -1065,6 +1094,10 @@ def main(env_cfg, agent_cfg: dict):
                     if agent is not None and agent.is_rnn and agent.states is not None and dones_bool.any():
                         for state in agent.states:
                             state[:, dones_bool, :] = 0.0
+                lift_height_tensor = _env_tensor(task_env, "cube_lift_height")
+                final_success_env = success_tensor.detach().clone()
+                final_lift_height_env = lift_height_tensor.detach().clone()
+                max_lift_height_env = torch.maximum(max_lift_height_env, lift_height_tensor)
                 suppressed_success_done = None
                 if args_cli.suppress_success_termination:
                     suppressed_success_done = pre_step_done_reasons["success_done"]
@@ -1237,6 +1270,7 @@ def main(env_cfg, agent_cfg: dict):
         "num_steps_requested": args_cli.num_steps,
         "num_steps_completed": len(step_metrics),
         "deterministic": args_cli.deterministic,
+        "camera_env_index": int(args_cli.camera_env_index),
         "suppress_success_termination": bool(args_cli.suppress_success_termination),
         "success_termination_suppression_installed": bool(success_termination_suppression_installed),
         "done_count": done_count,
@@ -1246,11 +1280,19 @@ def main(env_cfg, agent_cfg: dict):
         "success_rate_last_window_mean": sum(success_values[-window:]) / window if success_values else None,
         "success_ever_count": int(success_ever_env.sum().detach().cpu()),
         "success_ever_rate": _mean_float(success_ever_env.float()),
+        "success_ever_by_env": _tensor_bool_list(success_ever_env),
+        "success_final_by_env": _tensor_bool_list(final_success_env),
         "first_success_step": first_success_summary,
+        "first_success_step_by_env": _tensor_float_list(first_success_step),
         "last_success_step": last_success_summary,
+        "last_success_step_by_env": _tensor_float_list(last_success_step),
+        "cube_lift_height_final_by_env": _tensor_float_list(final_lift_height_env),
+        "cube_lift_height_max_by_env": _tensor_float_list(max_lift_height_env),
         "done_ever_count": int(done_ever_env.sum().detach().cpu()),
         "done_ever_rate": _mean_float(done_ever_env.float()),
+        "done_ever_by_env": _tensor_bool_list(done_ever_env),
         "first_done_step": first_done_summary,
+        "first_done_step_by_env": _tensor_float_list(first_done_step),
         "done_after_success_count": int(done_after_success_env.sum().detach().cpu()),
         "done_after_success_rate": _mean_float(done_after_success_env.float()),
         "suppressed_success_done_count": int(suppressed_success_done_ever_env.sum().detach().cpu()),

@@ -4086,3 +4086,109 @@ Validation:
 Next:
 - Commit/push/deploy the wrapper fix and relaunch a bounded all-dimension BC diagnostic.
 - Use the resulting BC checkpoint only after confirming held-out all-dim errors decrease; then run alpha `0.0`, `0.75`, `1.0` video evals and action-semantics comparison.
+
+## 2026-06-11T18:16:20-07:00 - all-dimension BC diagnostic launch
+
+Goal:
+- Test whether explicit supervised actor imitation can reduce raw/reference action error over all seven action dimensions using teacher/reference rollouts from the actual trajectory-tracking env.
+
+Version Control:
+- implementation_commit: `70ec748f5f25ba80e7419be7364cab9972b5fc91`
+- branch: `codex/franka-cube-trajectory-tracking`
+- push: pushed to origin; deployed to l401 via git bundle because remote GitHub fetch is unavailable.
+- remote_commit/status: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking` detached at `70ec748f5f25ba80e7419be7364cab9972b5fc91`, clean.
+
+Command / Job:
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:35:00 --job-name=bc_ref_all7 --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_bc_ref_all7_20260611_181620,NUM_ENVS=8,COLLECTION_STEPS=520,TRAIN_STEPS=400,BATCH_SIZE=1024,LEARNING_RATE=0.0002,VALIDATION_FRACTION=0.2,EVAL_INTERVAL=25,SEED=64,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json,CHECKPOINT=/results/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_teacherforce_align80_ft10_20260611_175513/nn/last_dextrah_franka_cube_traj_tracking_ep_10_rew_9268.733.pth cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh`
+- job_id: `1027940`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/bc/franka_cube_traj_tracking_bc_ref_all7_20260611_181620`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bc_franka_cube_1027940.out`
+- expected_artifacts: `bc_metrics.json`, `bc_loss_curve.csv`, `bc_loss_plot.png`, `report.md`, `reference_action_dataset.pt`, `nn/bc_reference_action_imitation.pth`
+
+Acceptance:
+- Job exits cleanly and writes the exact `.pth` checkpoint path.
+- `loss_dims` resolves to all seven dims, not only dim `0`.
+- Held-out all-dim MSE/L2 and close/up/gripper abs errors decrease materially.
+- Only if this passes: run alpha `0.0`, `0.75`, `1.0` 520-step video evals from the BC checkpoint, then regenerate action-semantics artifacts.
+
+## 2026-06-11T18:18:40-07:00 - all-dimension BC diagnostic result
+
+Result:
+- job_id: `1027940`
+- status: completed `0:0`, elapsed `00:01:00`, node `pool0-00030`
+- local_run_dir: `cluster_results/l401/franka_cube_traj_tracking_bc_ref_all7_20260611_181620`
+- local_log: `cluster_results/l401/slurm_logs/bc_franka_cube_1027940.out`
+- report: `cluster_results/l401/franka_cube_traj_tracking_bc_ref_all7_20260611_181620/report.md`
+- metrics: `cluster_results/l401/franka_cube_traj_tracking_bc_ref_all7_20260611_181620/bc_metrics.json`
+- loss CSV: `cluster_results/l401/franka_cube_traj_tracking_bc_ref_all7_20260611_181620/bc_loss_curve.csv`
+- loss plot: `cluster_results/l401/franka_cube_traj_tracking_bc_ref_all7_20260611_181620/bc_loss_plot.png`
+- dataset: `cluster_results/l401/franka_cube_traj_tracking_bc_ref_all7_20260611_181620/reference_action_dataset.pt`
+- BC checkpoint: `/results/bc/franka_cube_traj_tracking_bc_ref_all7_20260611_181620/nn/bc_reference_action_imitation.pth`
+- local checkpoint copy: `cluster_results/l401/franka_cube_traj_tracking_bc_ref_all7_20260611_181620/nn/bc_reference_action_imitation.pth`
+- viewer report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_ref_all7_20260611_181620/report.md`
+- viewer plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_ref_all7_20260611_181620/bc_loss_plot.png`
+
+Dataset metadata:
+- samples: `4160` total, `3328` train, `832` held-out validation.
+- observation dim: `72`; action dim: `7`; `loss_dims=[0,1,2,3,4,5,6]`.
+- dataset file size: `1,501,627` bytes.
+- reference caveat: `curobo_validated=false`, source tag `graspgenx_curobo_60mm_export_pending_exact_validation`.
+
+Action-error table:
+
+| Split | Initial MSE | Final MSE | Initial L2 | Final L2 | Initial close abs | Final close abs | Initial up abs | Final up abs | Initial gripper abs | Final gripper abs |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| train | 0.142877 | 0.000163 | 0.885323 | 0.024477 | 0.099118 | 0.005470 | 0.242639 | 0.005768 | 0.536239 | 0.010539 |
+| held-out | 0.141185 | 0.000213 | 0.882957 | 0.026307 | 0.099468 | 0.005373 | 0.236709 | 0.006976 | 0.539630 | 0.011249 |
+
+Analysis:
+- The explicit supervised actor update can reduce raw/reference action error on held-out observations by more than an order of magnitude across all action dimensions. This proves the actor/checkpoint/model-output path is trainable for the reference labels under the same 72-D/7-D parameterization.
+- This is still only action-imitation loss evidence. It does not prove behavior until evaluated with videos and task metrics.
+- Acceptance gate for eval is met: all-dim held-out errors materially decreased, target reference remains marked `curobo_validated=false`, and the checkpoint exists at the exact wrapper-expected path.
+
+Next:
+- Launch alpha `0.0`, `0.75`, and `1.0` 520-step video evals from `/results/bc/franka_cube_traj_tracking_bc_ref_all7_20260611_181620/nn/bc_reference_action_imitation.pth`.
+- Fetch/open each eval report/contact sheet/video and regenerate action-semantics comparison before making any behavior claim.
+
+## 2026-06-11T18:19:50-07:00 - BC checkpoint eval sweep launch
+
+Goal:
+- Evaluate whether the explicit supervised BC checkpoint changes behavior, not just action MSE. Compare policy-only, partial-teacher, and full-teacher rollouts with the same 520-step video/action-semantics bundle as previous diagnostics.
+
+Common eval settings:
+- checkpoint: `/results/bc/franka_cube_traj_tracking_bc_ref_all7_20260611_181620/nn/bc_reference_action_imitation.pth`
+- task: `Dextrah-Franka-Cube-Grasp-Traj-Tracking`
+- `NUM_ENVS=4`, `NUM_STEPS=520`, `VIDEO_LENGTH=520`, video enabled, deterministic policy, success termination suppressed, seed `64`
+- reference: `/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json` (`curobo_validated=false`)
+- teacher force enabled for all evals; alpha fixed per run; phase end `1.0`; anneal steps `0`; raw-policy/reference comparison enabled.
+- action alignment config held at weight `80.0`, phase start `0.0`, sharpness `1.0`, contact gate disabled, to keep metric semantics consistent with align80/ft10 evals.
+
+Jobs:
+- alpha `0.0`: job_id `1027941`, run `franka_cube_traj_tracking_bc_ref_all7_eval_a000_phase100_520_20260611_181950`
+- alpha `0.75`: job_id `1027942`, run `franka_cube_traj_tracking_bc_ref_all7_eval_a075_phase100_520_20260611_181950`
+- alpha `1.0`: job_id `1027943`, run `franka_cube_traj_tracking_bc_ref_all7_eval_a100_phase100_520_20260611_181950`
+
+Acceptance:
+- Fetch/open report, trace plot, contact sheet, full video, metrics JSON/CSV, and consistency JSON for each run.
+- Validate MP4 metadata/frame count for all three videos.
+- Regenerate combined action-semantics report/plot across alpha `0.0/0.75/1.0`.
+- Explicitly check train/eval consistency: task, obs dim `72`, action dim/scaling, cube randomization `0.08`, reference path, teacher force alpha/phase, and checkpoint semantics.
+- No longer training unless alpha `0.0` or alpha `0.75` video/metrics show actual contact/lift with target unsafe max `0`.
+
+## 2026-06-11T18:16:18-07:00 - BC eval visual mismatch plan
+
+Goal:
+- Resolve the BC eval artifact mismatch before any more training: aggregate metrics show alpha `0.75` and `1.0` lift/succeed, but the single MP4/contact sheet is the default env0 camera and appears to show a failure.
+
+Plan:
+- Patch `dextrah_lab/rl_games/eval_rollout.py` to expose an eval-only `--camera_env_index` and to record per-env success/lift/done summaries in `metrics.json`.
+- Patch `cluster/sbatch_eval_franka_cube_grasp_1gpu.sh` to pass/log `CAMERA_ENV_INDEX`.
+- Run cheap validation: `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py` and `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`.
+- Commit/push/deploy the exact commit to the l401 agent worktree.
+- Rerun bounded 520-step video evals from the BC checkpoint with `NUM_ENVS=4`, success termination suppressed, and camera targeted to envs beyond env0. Minimum required viewer set: alpha `0.0` env0 failure, alpha `0.75` successful env, alpha `1.0` successful env.
+- Fetch/open reports, contact sheets, videos, trace plots, action-semantics summaries, and explicitly flag env0-only video as misleading in the final artifact report.
+
+Acceptance:
+- `metrics.json` identifies which envs succeeded/lifted.
+- At least one alpha `0.75` and one alpha `1.0` video/contact sheet visually show a successful env if the deterministic rerun reproduces the aggregate success.
+- Target unsafe remains `0`; baseline task remains untouched; reference remains `curobo_validated=false`.
