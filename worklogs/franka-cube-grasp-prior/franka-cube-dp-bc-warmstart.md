@@ -5515,3 +5515,14 @@ Acceptance:
   threshold, no significant pose clipping, and metrics/report/video fetched
   locally. This still does not authorize DP BC training by itself; it only
   identifies a candidate controller-rollout relabeler setting.
+
+Command / Job:
+- remote deployment: agent-owned l401 worktree detached at
+  `7b0da8b73c91e887c7936407448aa9f6d14c1a43`.
+- command:
+  `CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart RUN_NAME=franka_cube_contact_rollout_ep24s260_high30_lift22_20260611_173411 DATASET=/results/dp_bc/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz TRAJECTORY_JSON=/results/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed24/trajectory.json EPISODE=24 EPISODE_STEP=260 VARIANT_COUNT=1 VARIANT_0=center_high30 ALIGN_STEPS=80 CLOSE_STEPS=80 LIFT_STEPS=160 LIFT_HEIGHT=0.22 FINGER_GAIN=0.75 CLIP_ACTIONS=1.0 CAPTURE_VIDEO=True VIDEO_LENGTH=320 VIDEO_NAME_PREFIX=franka-cube-contact-rollout-high30-lift22 PRINT_INTERVAL=40 SEED=42 sbatch --parsable cluster/sbatch_contact_aware_franka_cube_rollout_1gpu.sh`
+- job_id: `1027921`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/contact_rollouts/franka_cube_contact_rollout_ep24s260_high30_lift22_20260611_173411`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/contact_aware_franka_cube_rollout_1027921.out`
