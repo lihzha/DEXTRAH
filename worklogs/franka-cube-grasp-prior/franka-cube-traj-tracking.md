@@ -5811,6 +5811,148 @@ Planned Bounded Probe If Validation Passes:
 Active Jobs:
 - none before implementation.
 
+## 2026-06-11T23:10:00-07:00 - gripper-alpha reference-mix diagnostic launch
+
+Implementation:
+- commit: `b0803018cce3a3b9eef6b460e31d53e21195947f` (`Add gripper alpha reference-mix diagnostic`), pushed.
+- changed files:
+  - `dextrah_lab/rl_games/eval_rollout.py`
+  - `cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+  - `dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py`
+  - this worklog.
+- local validation passed:
+  - `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py`
+  - `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+  - `git diff --check`
+- remote source: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking`, clean detached at `b0803018cce3a3b9eef6b460e31d53e21195947f`.
+- deploy note: the first l401 fetch via SSH failed with the known GitHub public-key issue; direct HTTPS fetch of `codex/franka-cube-trajectory-tracking` succeeded, then checkout detached to `b0803018`.
+
+Common Config:
+- checkpoint: `/results/bc/franka_cube_traj_tracking_bc_handoff_success_alpha0_20260611_223200/nn/bc_reference_action_imitation.pth`.
+- task: `Dextrah-Franka-Cube-Grasp-Traj-Tracking`.
+- action source: `policy_reference_mix`.
+- `REFERENCE_MIX_GRIPPER_ALPHA=1.0`, `SUPPRESS_SUCCESS_TERMINATION=True`, `NUM_ENVS=4`, `NUM_STEPS=520`, `CAPTURE_VIDEO=False`, `SEED=75`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`.
+- reference: `/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json` (`curobo_validated=false`).
+
+Jobs:
+- alpha0.10 pose/global mix with gripper alpha1.0: job `1028189`, run `franka_cube_traj_tracking_bc_handoff_noreset_gripref_a010_g100_520_20260611_231000`.
+- alpha0.15 pose/global mix with gripper alpha1.0: job `1028190`, run `franka_cube_traj_tracking_bc_handoff_noreset_gripref_a015_g100_520_20260611_231000`.
+- alpha0.20 pose/global mix with gripper alpha1.0: job `1028191`, run `franka_cube_traj_tracking_bc_handoff_noreset_gripref_a020_g100_520_20260611_231000`.
+
+Acceptance:
+- Fetch metrics/logs/reports first.
+- If the gripper override improves sustained no-reset success at a lower alpha, generate targeted video/contact-sheet artifacts for the lowest improved alpha and a representative failure.
+- Target unsafe must remain `0`; train/eval consistency must record the gripper override as an expected eval-only field.
+- No PPO/RL launch.
+
+Active Jobs:
+- `1028189`, `1028190`, `1028191`.
+
+## 2026-06-11T23:13:00-07:00 - gripper-alpha reference-mix metric result and targeted visual plan
+
+Jobs:
+- `1028189`, `1028190`, and `1028191` completed `0:0`.
+- local fetched runs:
+  - `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_gripref_a010_g100_520_20260611_231000`
+  - `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_gripref_a015_g100_520_20260611_231000`
+  - `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_gripref_a020_g100_520_20260611_231000`
+- local fetched logs:
+  - `cluster_results/l401/slurm_logs/eval_franka_cube_1028189.out`
+  - `cluster_results/l401/slurm_logs/eval_franka_cube_1028190.out`
+  - `cluster_results/l401/slurm_logs/eval_franka_cube_1028191.out`
+
+Artifacts:
+- alpha0.10 report: `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_gripref_a010_g100_520_20260611_231000_artifacts/report.md`
+- alpha0.15 report: `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_gripref_a015_g100_520_20260611_231000_artifacts/report.md`
+- alpha0.20 report: `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_gripref_a020_g100_520_20260611_231000_artifacts/report.md`
+- action-semantics report: `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_gripref_g100_20260611_2310_action_semantics/action_semantics_report.md`
+- action-semantics plot: `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_gripref_g100_20260611_2310_action_semantics/action_semantics_plot.png`
+
+Metrics:
+- alpha0.10 pose/global + gripper1.0 (`1028189`): final/ever success `2/4`, done count `0`, suppressed success-done `2/4`, target unsafe max `0`, clearance min `0.065114 m`, final lift by env `[0.00118, 0.21793, 0.0, 0.25804]` m. This improves alpha0.10 from `1/4` to `2/4` relative to the no-override boundary.
+- alpha0.15 pose/global + gripper1.0 (`1028190`): final/ever success `2/4`, done count `0`, suppressed success-done `2/4`, target unsafe max `0`, clearance min `0.065114 m`, final lift by env `[0.0, 0.24016, 0.0, 0.24414]` m. This matches the no-override `2/4` count.
+- alpha0.20 pose/global + gripper1.0 (`1028191`): final/ever success `2/4`, done count `0`, suppressed success-done `2/4`, target unsafe max `0`, clearance min `0.065114 m`, final lift by env `[0.06001, 0.22839, 0.0, 0.23163]` m. This regresses from no-override alpha0.20's `3/4`.
+- The override is wired: summaries report `reference_mix_alpha=0.10/0.15/0.20`, `reference_mix_gripper_alpha=1.0`, `reference_mix_gripper_alpha_override=true`, and mixed/reference gripper abs error `0.0`.
+
+Analysis:
+- Gripper-only reference override is not a clean fix. It helps one alpha0.10 env, but does not improve alpha0.15 and hurts alpha0.20 by losing env0 success.
+- This means missed closure is part of the boundary behavior but not the only bottleneck. Pose/contact timing and closure are coupled.
+- Target safety remains clean, so the diagnostic is valid as an assisted handoff probe, not a safety regression.
+
+Targeted Visual Plan:
+- Launch alpha0.10 gripper1.0 env1 video because env1 is the new success relative to the no-override alpha0.10 boundary.
+- Launch alpha0.20 gripper1.0 env0 video because env0 regressed from no-override success to a partial/failed final state.
+- No PPO/RL launch.
+
+Active Jobs:
+- none before targeted video launch.
+
+## 2026-06-11T23:15:00-07:00 - gripper-alpha targeted visual launch
+
+Version Control:
+- remote source remains clean detached at `b0803018cce3a3b9eef6b460e31d53e21195947f`.
+
+Common Config:
+- checkpoint: `/results/bc/franka_cube_traj_tracking_bc_handoff_success_alpha0_20260611_223200/nn/bc_reference_action_imitation.pth`.
+- task: `Dextrah-Franka-Cube-Grasp-Traj-Tracking`.
+- action source: `policy_reference_mix`.
+- `REFERENCE_MIX_GRIPPER_ALPHA=1.0`, `SUPPRESS_SUCCESS_TERMINATION=True`, `NUM_ENVS=4`, `NUM_STEPS=520`, `CAPTURE_VIDEO=True`, `VIDEO_LENGTH=520`, `SEED=75`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`.
+- reference: `/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json` (`curobo_validated=false`).
+
+Jobs:
+- alpha0.10 new-success visual: job `1028196`, run `franka_cube_traj_tracking_bc_handoff_noreset_gripref_vis_a010_env1newsucc_g100_520_20260611_231500`, `CAMERA_ENV_INDEX=1`.
+- alpha0.20 regression visual: job `1028197`, run `franka_cube_traj_tracking_bc_handoff_noreset_gripref_vis_a020_env0regress_g100_520_20260611_231500`, `CAMERA_ENV_INDEX=0`.
+
+Acceptance:
+- Fetch logs, metrics, traces, MP4s, reports, trace plots, contact sheets, and train/eval consistency sidecars.
+- Validate MP4 metadata.
+- Record visual diagnosis against the no-override boundary videos.
+- No PPO/RL launch.
+
+Active Jobs:
+- `1028196`, `1028197`.
+
+## 2026-06-11T23:20:00-07:00 - gripper-alpha targeted visual result
+
+Jobs:
+- `1028196` and `1028197` completed `0:0`.
+- local fetched runs:
+  - `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_gripref_vis_a010_env1newsucc_g100_520_20260611_231500`
+  - `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_gripref_vis_a020_env0regress_g100_520_20260611_231500`
+- local fetched logs:
+  - `cluster_results/l401/slurm_logs/eval_franka_cube_1028196.out`
+  - `cluster_results/l401/slurm_logs/eval_franka_cube_1028197.out`
+- MP4 validation: both videos are `1280x720`, `520` frames, `8.666667 s`.
+
+Viewer Artifacts:
+- combined gripper diagnostic report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_gripref_g100_20260611_2315/report.md`
+- combined gripper diagnostic plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_gripref_g100_20260611_2315/gripper_override_summary.png`
+- combined gripper summary JSON/CSV:
+  - `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_gripref_g100_20260611_2315/summary.json`
+  - `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_gripref_g100_20260611_2315/summary.csv`
+- action-semantics report: `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_gripref_g100_20260611_2310_action_semantics/action_semantics_report.md`
+- action-semantics plot: `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_gripref_g100_20260611_2310_action_semantics/action_semantics_plot.png`
+- alpha0.10 gripper1.0 env1 report: `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_gripref_vis_a010_env1newsucc_g100_520_20260611_231500_artifacts/report.md`
+- alpha0.10 gripper1.0 env1 contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_gripref_vis_a010_env1newsucc_g100_520_20260611_231500_artifacts/video_contact_sheet.png`
+- alpha0.10 gripper1.0 env1 video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_gripref_vis_a010_env1newsucc_g100_520_20260611_231500/videos/handoff-noreset-gripref-a010_env1newsucc-g100-step-0.mp4`
+- alpha0.20 gripper1.0 env0 report: `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_gripref_vis_a020_env0regress_g100_520_20260611_231500_artifacts/report.md`
+- alpha0.20 gripper1.0 env0 contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_gripref_vis_a020_env0regress_g100_520_20260611_231500_artifacts/video_contact_sheet.png`
+- alpha0.20 gripper1.0 env0 video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_gripref_vis_a020_env0regress_g100_520_20260611_231500/videos/handoff-noreset-gripref-a020_env0regress-g100-step-0.mp4`
+
+Metrics / Visual Diagnosis:
+- alpha0.10 gripper1.0 (`1028196`): final success `2/4`, success envs `[false, true, false, true]`, target unsafe max `0`, selected env1 final lift `0.21793 m`. Contact sheet shows a real held lift. This is a new success compared with no-override alpha0.10.
+- alpha0.20 gripper1.0 (`1028197`): final success `2/4`, success envs `[false, true, false, true]`, target unsafe max `0`, selected env0 final lift `0.06001 m` but `success=false`. Contact sheet shows a partial pickup/drag that does not stabilize into a success; this env was a no-override alpha0.20 success.
+- The override is correctly logged in each report: `reference_mix_alpha=0.10/0.20`, `reference_mix_gripper_alpha=1.0`, override `true`, and train/eval consistency `bc_metadata_partial_pass` with no mismatches.
+
+Verdict:
+- Gripper closure is a real factor but not sufficient. Increasing only gripper reference assistance can create one additional low-alpha success, but it also degrades another env at alpha0.20.
+- The boundary failure is a coupled pose/contact/closure timing issue. A clean handoff plan should not simply force the gripper schedule; it likely needs a phase/contact-aware grasp closure plus pose stabilization objective, or a formal low-alpha assisted controller gate.
+- This remains assisted `policy_reference_mix`; alpha0.0 policy-only remains failed. No PPO/RL scale-up.
+- Old `actionscale-rewinf-diag-video480-step-0.mp4` / job `1027753` remains obsolete failed diagnostic evidence.
+
+Active Jobs:
+- none (`squeue -u lzha` on l401 showed no active jobs after fetching artifacts).
+
 ## 2026-06-11T22:58:00-07:00 - no-reset boundary visual sweep plan
 
 Goal:
