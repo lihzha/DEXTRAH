@@ -7753,3 +7753,61 @@ Validation:
 Next:
 - Commit/push/deploy this provenance fix before the next eval/ablation launch.
 - Let seed 3 finish, then run pure-policy evals on the best checkpoints for seeds 1-5.
+
+## 2026-06-12T20:05:05Z - default tracking-loss sweep completed and base-closeness ablation launched
+
+Goal:
+- Evaluate the first clean RL+tracking-loss method over explicit base seeds `1..5`, then test whether base EE/finger/cube closeness shaping is masking the tracking term.
+
+Default Tracking-Loss Result:
+- implementation commit used for training: `b7e04f066e895f3572e993f675a1017bbc15cd90`
+- source worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-tracking-loss-seeds`
+- common config: `Dextrah-Franka-Cube-Grasp-Traj-Tracking`, `MAX_ITERATIONS=600`, `USE_CUDA_GRAPH=False`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`, reference `/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json`
+- training jobs all completed `COMPLETED 0:0`:
+  - seed 1 job `29017224`: final reward `2845.6494`, best reward `3223.9722`
+  - seed 2 job `29017225`: final reward `13037.167`, best reward `13478.595`
+  - seed 3 job `29017227`: final reward `11790.546`, best reward `12168.292`
+  - seed 4 job `29017228`: final reward `2431.5935`, best reward `2708.623`
+  - seed 5 job `29017229`: final reward `12797.634`, best reward `12860.89`
+
+Pure-Policy Eval:
+- eval source commit: `2de8b038cc5ddafaff73e35cea58e1f96cac84f8`
+- eval jobs all completed `COMPLETED 0:0`, `ACTION_SOURCE=policy`, deterministic, `NUM_ENVS=16`, `NUM_STEPS=720`, `VIDEO_LENGTH=240`.
+- jobs/runs:
+  - seed 1: job `29018848`, run `franka_cube_trackloss_default_eval_policy_seed1_2de8b03_20260612_1205`
+  - seed 2: job `29018849`, run `franka_cube_trackloss_default_eval_policy_seed2_2de8b03_20260612_1205`
+  - seed 3: job `29018850`, run `franka_cube_trackloss_default_eval_policy_seed3_2de8b03_20260612_1205`
+  - seed 4: job `29018851`, run `franka_cube_trackloss_default_eval_policy_seed4_2de8b03_20260612_1205`
+  - seed 5: job `29018853`, run `franka_cube_trackloss_default_eval_policy_seed5_2de8b03_20260612_1205`
+- eval success-rate final / last-window mean:
+  - seed 1: `0.0` / `0.0`
+  - seed 2: `1.0` / `0.64`
+  - seed 3: `0.875` / `0.585`
+  - seed 4: `0.0` / `0.0`
+  - seed 5: `0.875` / `0.430625`
+- videos fetched and probed locally under `/tmp/franka_trackloss_eval_policy_2de8b03`; all five are valid `1280x720`, `240` frames, `4.0` s. Contact sheet: `/tmp/franka_trackloss_eval_policy_2de8b03/contact_sheet.png`.
+
+Per-Term Analysis:
+- Event scalar summary fetched under `/tmp/franka_trackloss_events_by_seed`.
+- Last-20 training-window aggregate reward tracks success, but tracking reward alone does not:
+  - failed seed 1: aggregate reward `~2983`, success `~0.003`, tracking reward `~2.119`
+  - failed seed 4: aggregate reward `~2493`, success `~0.003`, tracking reward `~1.677`
+  - solved seed 2: aggregate reward `~13250`, success `~0.822`, tracking reward `~0.768`
+  - solved seed 3: aggregate reward `~10770`, success `~0.645`, tracking reward `~0.484`
+  - solved seed 5: aggregate reward `~12640`, success `~0.783`, tracking reward `~1.017`
+- Interpretation: the current tracking term can be earned by following task-space targets without completing a robust grasp/lift. Base lift/success terms dominate final aggregate reward once the task is solved.
+
+New Ablation:
+- Hypothesis: base approach/enclosure distance shaping may be too strong or may obscure the tracking-loss contribution.
+- Change from default tracking run: set `CUBE_APPROACH_WEIGHT=0.0` and `CUBE_ENCLOSURE_WEIGHT=0.0`; keep lift/success/action/tracking weights unchanged.
+- source commit: `2de8b038cc5ddafaff73e35cea58e1f96cac84f8`
+- jobs launched:
+  - seed 1: job `29018883`, run `franka_cube_trackloss_baseclose0_2de8b03_seed1_20260612_1310`
+  - seed 2: job `29018885`, run `franka_cube_trackloss_baseclose0_2de8b03_seed2_20260612_1310`
+  - seed 3: job `29018893`, run `franka_cube_trackloss_baseclose0_2de8b03_seed3_20260612_1310`
+  - seed 4: job `29018905`, run `franka_cube_trackloss_baseclose0_2de8b03_seed4_20260612_1310`
+  - seed 5: job `29018916`, run `franka_cube_trackloss_baseclose0_2de8b03_seed5_20260612_1310`
+
+Next:
+- Monitor `29018883,29018885,29018893,29018905,29018916`; verify full train commands include `env.cube_approach_weight=0.0` and `env.cube_enclosure_weight=0.0`.
+- Evaluate best checkpoints with pure-policy eval after training completes.
