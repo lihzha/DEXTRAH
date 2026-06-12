@@ -2130,3 +2130,155 @@ Planned Change:
 
 Next:
 - Finish patch, run local syntax checks, commit/push, deploy exact commit to the agent-owned l401 worktree, launch paired bounded fixed-vs-assisted diagnostics, fetch artifacts, build/open a report/contact sheet/video, and decide whether PPO needs curriculum/action bias or whether the action path/TCP convention is the remaining blocker.
+
+## 2026-06-12T00:00:18Z - launch fixed-vs-assisted action-tracking diagnostics
+
+Goal:
+- Compare the previous fixed-direction `env.step` oracle against a receding-horizon controller-assisted mode that recomputes the relative action from current measured EE pose to the exact GraspGenX target at every step.
+
+Hypothesis:
+- If proportional-assisted mode reaches the exact/contact/lift gate while fixed mode fails, the reset geometry is usable and PPO likely needs curriculum/reward/action bias for closing/lifting from pregrasp.
+- If proportional-assisted mode still fails to reach contact, the normal action path/TCP/controller semantics remain the blocker.
+
+Change:
+- Added diagnostic-only action-tracking fields and `ORACLE_APPROACH_MODE=proportional_exact`.
+- Main RL task/reset defaults remain unchanged; these flags only affect `diagnose_franka_cube_grasp_prior_reset.py`.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- implementation_commit: `0f5a4f11a819548d853427e1c5592223d6f625c7`
+- push/pull: pushed branch to origin; l401 GitHub SSH fetch still failed with `Permission denied (publickey)`, so deployed exact commit via Git bundle into the agent-owned remote worktree
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `0f5a4f11a819548d853427e1c5592223d6f625c7`, detached `HEAD`, clean
+- validation: `python3 -m py_compile dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py` passed locally and on l401 login; `bash -n cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh` passed locally and on l401 login
+- changed_files: `dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py`, `cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`, this worklog
+
+Command / Jobs:
+- common: `TASK=Dextrah-Franka-Cube-Grasp`, `NUM_ENVS=1`, `NUM_RESETS=3`, `SEED=20260624`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`, single-grasp library `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_orig006_single.npz`, `INCLUDE_ORACLE_CLOSE_LIFT_CHECK=1`, `ORACLE_APPROACH_STEPS=40`, `ORACLE_CLOSE_STEPS=60`, `ORACLE_LIFT_STEPS=80`, `ORACLE_HOLD_STEPS=20`, `ORACLE_CLOSE_WIDTH=0.035`, `ORACLE_LIFT_ACTION_Z=0.15`, `RENDER_ALL_RESETS=1`
+- fixed job: `1027891`, run `franka_cube_ggx_pregrasp_actiontrack_fixed_20260611_235922`, `ORACLE_APPROACH_MODE=fixed_direction`
+- assisted job: `1027892`, run `franka_cube_ggx_pregrasp_actiontrack_assisted_20260611_235922`, `ORACLE_APPROACH_MODE=proportional_exact`, `ORACLE_PROPORTIONAL_GAIN=1.0`, `ORACLE_MAX_POSITION_ACTION=1.0`, `ORACLE_TRACK_ORIENTATION=0`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/diagnose_franka_cube_prior_1027891.out`, `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/diagnose_franka_cube_prior_1027892.out`
+- run dirs: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pregrasp_actiontrack_fixed_20260611_235922`, `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pregrasp_actiontrack_assisted_20260611_235922`
+
+Result:
+- status: submitted
+
+Next:
+- Monitor jobs `1027891`/`1027892`; fetch logs/results; build/open viewer-ready fixed-vs-assisted action-tracking report, contact sheet/video, and metrics table; decide whether action tracking succeeds or remains blocked.
+
+## 2026-06-12T00:06:47Z - assisted robustness diagnostic plan
+
+Goal:
+- Build a tiny bounded robustness diagnostic for assisted pregrasp-to-contact before any PPO/A100 relaunch.
+
+Evidence From Action-Tracking Pair:
+- fixed action-space oracle job `1027891` remained dead: `oracle_success_rate=0.0`, `oracle_lift_gate_pass_rate=0.0`, max cube lift `0.0m`, min tip-center approximately `0.0573m`.
+- assisted proportional-exact job `1027892` partially worked: `oracle_success_rate=0.3333`, `oracle_lift_gate_pass_rate=0.3333`, one reset lifted `0.0328m`, aggregate max lift mean `0.01094m`, min post-to-exact EE mean `0.00815m`, min tip-center mean `0.03862m`.
+- local inspection bundle: `cluster_results/l401/franka_cube_ggx_pregrasp_actiontrack_pair_20260611_235922/inspection`
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_actiontrack_pair_20260611_235922/inspection/REPORT.md`
+- contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_actiontrack_pair_20260611_235922/inspection/action_tracking_contact_sheet.jpg`
+- assisted pass video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_actiontrack_pair_20260611_235922/inspection/assisted_reset0_pass_keyframes.mp4`
+
+Hypothesis:
+- The transform and randomized pregrasp are usable, but robust contact/lift through the normal `env.step` action path depends on receding-horizon target correction plus close width/orientation/control-settle details.
+- Light-close width `0.055m` matched the direct exact-pose diagnostic; using it in assisted `env.step` may prevent the miss/squeeze behavior seen with `0.035m`.
+- Optional orientation tracking or a slightly stronger proportional gain/action cap may reduce the approximately `1cm` residual seen in failed assisted resets.
+
+Planned Matrix:
+- `assist_w055`: proportional-exact, close width `0.055m`, no orientation tracking, gain `1.0`, max position action `1.0`.
+- `assist_w055_orient`: same as above with orientation tracking enabled.
+- `assist_w055_gain15`: close width `0.055m`, no orientation tracking, gain `1.5`, max position action `1.0`.
+- all variants use `NUM_ENVS=1`, `NUM_RESETS=3`, seed `20260624`, cube XY randomization `0.08`, single-grasp library `orig006`, `ORACLE_APPROACH_STEPS=60`, `ORACLE_CLOSE_STEPS=80`, `ORACLE_LIFT_STEPS=80`, `ORACLE_HOLD_STEPS=20`, render all resets.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- local_commit: `0f5a4f11a819548d853427e1c5592223d6f625c7`
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `0f5a4f11a819548d853427e1c5592223d6f625c7`, detached clean
+- changed_files_since_commit: this worklog only; diagnostic code already committed/pushed at `0f5a4f1`
+
+Next:
+- Launch three l401 bounded diagnostics, monitor to completion, fetch logs/results, build a compact table/contact sheet/trace plots, open them via `viz-open`, and record a pass/fail verdict. Acceptance remains robust contact/lift across all or near-all resets; no PPO/A100 until this gate is understood.
+
+## 2026-06-12T00:07:20Z - launch assisted robustness diagnostics
+
+Goal:
+- Test whether assisted proportional-exact `env.step` control becomes robust when using the direct-exact light-close width and small controller variants.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- implementation_commit: `0f5a4f11a819548d853427e1c5592223d6f625c7`
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `0f5a4f11a819548d853427e1c5592223d6f625c7`, detached clean
+
+Command / Jobs:
+- common: `TASK=Dextrah-Franka-Cube-Grasp`, `NUM_ENVS=1`, `NUM_RESETS=3`, `SEED=20260624`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`, single-grasp library `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_orig006_single.npz`, `INCLUDE_ORACLE_CLOSE_LIFT_CHECK=1`, `ORACLE_APPROACH_MODE=proportional_exact`, `ORACLE_APPROACH_STEPS=60`, `ORACLE_CLOSE_STEPS=80`, `ORACLE_LIFT_STEPS=80`, `ORACLE_HOLD_STEPS=20`, `ORACLE_CLOSE_WIDTH=0.055`, `ORACLE_LIFT_ACTION_Z=0.15`, `RENDER_ALL_RESETS=1`
+- `1027896`: run `franka_cube_ggx_pregrasp_assistrobust_20260611_170720_w055`, gain `1.0`, max position action `1.0`, orientation tracking off
+- `1027897`: run `franka_cube_ggx_pregrasp_assistrobust_20260611_170720_w055_orient`, gain `1.0`, max position action `1.0`, orientation tracking on
+- `1027898`: run `franka_cube_ggx_pregrasp_assistrobust_20260611_170720_w055_gain15`, gain `1.5`, max position action `1.0`, orientation tracking off
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/diagnose_franka_cube_prior_1027896.out`, `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/diagnose_franka_cube_prior_1027897.out`, `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/diagnose_franka_cube_prior_1027898.out`
+- run dirs: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pregrasp_assistrobust_20260611_170720_w055`, `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pregrasp_assistrobust_20260611_170720_w055_orient`, `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pregrasp_assistrobust_20260611_170720_w055_gain15`
+
+Result:
+- status: submitted
+
+Next:
+- Monitor jobs `1027896`/`1027897`/`1027898`, fetch outputs, inspect logs/metrics/videos, and make a compact comparison artifact bundle.
+
+## 2026-06-12T00:14:40Z - assisted robustness diagnostic result
+
+Goal:
+- Decide whether assisted proportional-exact `env.step` control is robust enough to unblock PPO.
+
+Result:
+- status: failed robustness gate; no PPO/A100 relaunch
+- jobs `1027896`, `1027897`, and `1027898` completed `0:0` on `pool0-00030`; result dirs and logs fetched locally.
+- inspection bundle: `cluster_results/l401/franka_cube_ggx_pregrasp_assistrobust_20260611_170720_inspection`
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_assistrobust_20260611_170720_inspection/REPORT.md`
+- contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_assistrobust_20260611_170720_inspection/assisted_robustness_contact_sheet.jpg`
+- trace plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_assistrobust_20260611_170720_inspection/assisted_robustness_traces.png`
+- metrics CSV: `cluster_results/l401/franka_cube_ggx_pregrasp_assistrobust_20260611_170720_inspection/assisted_robustness_metrics.csv`
+
+Metrics:
+
+| Variant | Job | Setting | Oracle Success | Lift Gate | Mean Max Lift | Mean Min Tip | Mean Min Exact EE | Verdict |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `w055` | `1027896` | gain `1.0`, orientation off, close `0.055m` | `0/3` | `0/3` | `0.0001m` | `0.0362m` | `0.0054m` | FAIL |
+| `w055_orient` | `1027897` | gain `1.0`, orientation on, close `0.055m` | `2/3` | `2/3` | `0.0232m` | `0.0350m` | `0.0045m` | FAIL |
+| `w055_gain15` | `1027898` | gain `1.5`, orientation off, close `0.055m` | `0/3` | `0/3` | `0.0000m` | `0.0350m` | `0.0041m` | FAIL |
+
+Analysis:
+- Orientation tracking is the only principled variant that improves contact/lift, with clean lifts on resets 0 and 1.
+- The same orientation-tracked variant still fails reset 2: max lift `0.0m`, min tip-center `0.0417m`, min post-to-exact EE `0.0131m`, final post-to-exact EE `0.0574m`.
+- Light close alone and higher positional gain without orientation are insufficient despite small positional residuals, so the remaining blocker is robust action-space TCP/orientation tracking and settle/contact timing, not the GraspGenX object transform or cube XY randomization.
+
+Next:
+- Patch diagnostic-only trace fields to record rotational target/realized errors and add an optional open-gripper exact-hold phase before close.
+- Run a tiny follow-up with orientation tracking plus longer approach/exact hold before close. Acceptance remains all or near-all contact/lift; no PPO/A100 until that gate passes.
+
+## 2026-06-12T00:17:00Z - diagnostic exact-hold/rotation-trace patch
+
+Goal:
+- Add the minimum instrumentation needed to explain why orientation-tracked reset 2 still misses under `env.step`.
+
+Change:
+- Added `--oracle_exact_hold_steps` to the diagnostic-only oracle sequence, inserted between approach-to-exact and light close.
+- Added per-step quaternion/rotation tracking fields: pre/target/post/controller quaternions and pre/target/post/controller-to-exact rotational error norms.
+- Updated the l401 diagnostic wrapper to echo/export/pass `ORACLE_EXACT_HOLD_STEPS`.
+- Main RL task/reset defaults are unchanged.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `0f5a4f11a819548d853427e1c5592223d6f625c7`
+- implementation_commit: pending
+- changed_files: `dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py`, `cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`, this worklog
+- validation: `python3 -m py_compile dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py` passed; `bash -n cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh` passed
+
+Next:
+- Commit/push the diagnostic patch, deploy exact commit to l401, run two bounded orientation-tracked follow-ups: baseline orientation with new rotation traces and orientation plus an open exact-hold/longer approach before close.

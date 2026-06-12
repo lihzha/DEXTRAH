@@ -38,6 +38,7 @@ parser.add_argument("--exact_close_approach_offset", type=float, default=0.0)
 parser.add_argument("--exact_close_lateral_offset", type=float, default=0.0)
 parser.add_argument("--include_oracle_close_lift_check", action="store_true", default=False)
 parser.add_argument("--oracle_approach_steps", type=int, default=16)
+parser.add_argument("--oracle_exact_hold_steps", type=int, default=0)
 parser.add_argument("--oracle_close_steps", type=int, default=50)
 parser.add_argument("--oracle_lift_steps", type=int, default=80)
 parser.add_argument("--oracle_hold_steps", type=int, default=30)
@@ -837,10 +838,16 @@ def _finalize_action_tracking(
         controller_quat_des_b,
     )
     pre_ee_pos_b = before["tracking_pre_ee_pos_b"]
+    pre_ee_quat_b = before["tracking_pre_ee_quat_b"]
     pre_ee_pos_w = before["tracking_pre_ee_pos_w"]
+    pre_ee_quat_w = before["tracking_pre_ee_quat_w"]
     command_delta_b = before["tracking_command_delta_b"]
     target_ee_pos_b = before["tracking_target_ee_pos_b"]
+    target_ee_quat_b = before["tracking_target_ee_quat_b"]
     target_ee_pos_w = before["tracking_target_ee_pos_w"]
+    target_ee_quat_w = before["tracking_target_ee_quat_w"]
+    exact_ee_pos_b = before["tracking_exact_ee_pos_b"]
+    exact_ee_quat_b = before["tracking_exact_ee_quat_b"]
     exact_ee_pos_w = before["tracking_exact_ee_pos_w"]
     pregrasp_ee_pos_w = before["tracking_pregrasp_ee_pos_w"]
     env_origin = before["tracking_env_origin"]
@@ -848,21 +855,60 @@ def _finalize_action_tracking(
     realized_delta_w = post_ee_pos_w - pre_ee_pos_w
     commanded_delta_norm = torch.norm(command_delta_b[:3])
     realized_delta_norm = torch.norm(realized_delta_b)
+    _, pre_to_exact_rot_b = math_utils.compute_pose_error(
+        pre_ee_pos_b.unsqueeze(0),
+        pre_ee_quat_b.unsqueeze(0),
+        exact_ee_pos_b.unsqueeze(0),
+        exact_ee_quat_b.unsqueeze(0),
+        rot_error_type="axis_angle",
+    )
+    _, target_to_exact_rot_b = math_utils.compute_pose_error(
+        target_ee_pos_b.unsqueeze(0),
+        target_ee_quat_b.unsqueeze(0),
+        exact_ee_pos_b.unsqueeze(0),
+        exact_ee_quat_b.unsqueeze(0),
+        rot_error_type="axis_angle",
+    )
+    _, post_to_exact_rot_b = math_utils.compute_pose_error(
+        post_ee_pos_b.unsqueeze(0),
+        post_ee_quat_b.unsqueeze(0),
+        exact_ee_pos_b.unsqueeze(0),
+        exact_ee_quat_b.unsqueeze(0),
+        rot_error_type="axis_angle",
+    )
+    _, post_to_target_rot_b = math_utils.compute_pose_error(
+        post_ee_pos_b.unsqueeze(0),
+        post_ee_quat_b.unsqueeze(0),
+        target_ee_pos_b.unsqueeze(0),
+        target_ee_quat_b.unsqueeze(0),
+        rot_error_type="axis_angle",
+    )
+    _, controller_to_exact_rot_b = math_utils.compute_pose_error(
+        controller_pos_des_b.unsqueeze(0),
+        controller_quat_des_b.unsqueeze(0),
+        exact_ee_pos_b.unsqueeze(0),
+        exact_ee_quat_b.unsqueeze(0),
+        rot_error_type="axis_angle",
+    )
     return {
         "tracking_pre_ee_pos_b": _tensor_list(pre_ee_pos_b),
         "tracking_pre_ee_pos_env": _tensor_list(pre_ee_pos_w - env_origin),
         "tracking_pre_ee_pos_w": _tensor_list(pre_ee_pos_w),
+        "tracking_pre_ee_quat_w_wxyz": _tensor_list(pre_ee_quat_w),
         "tracking_post_ee_pos_b": _tensor_list(post_ee_pos_b),
         "tracking_post_ee_pos_env": _tensor_list(post_ee_pos_w - env_origin),
         "tracking_post_ee_pos_w": _tensor_list(post_ee_pos_w),
+        "tracking_post_ee_quat_w_wxyz": _tensor_list(post_ee_quat_w),
         "tracking_command_delta_b": _tensor_list(command_delta_b),
         "tracking_commanded_delta_norm_m": _as_float(commanded_delta_norm),
         "tracking_target_ee_pos_b": _tensor_list(target_ee_pos_b),
         "tracking_target_ee_pos_env": _tensor_list(target_ee_pos_w - env_origin),
         "tracking_target_ee_pos_w": _tensor_list(target_ee_pos_w),
+        "tracking_target_ee_quat_w_wxyz": _tensor_list(target_ee_quat_w),
         "tracking_controller_ee_pos_des_b": _tensor_list(controller_pos_des_b),
         "tracking_controller_ee_pos_des_env": _tensor_list(controller_pos_des_w - env_origin),
         "tracking_controller_ee_pos_des_w": _tensor_list(controller_pos_des_w),
+        "tracking_controller_ee_quat_des_w_wxyz": _tensor_list(controller_quat_des_w),
         "tracking_realized_delta_b": _tensor_list(realized_delta_b),
         "tracking_realized_delta_w": _tensor_list(realized_delta_w),
         "tracking_realized_delta_norm_m": _as_float(realized_delta_norm),
@@ -877,6 +923,11 @@ def _finalize_action_tracking(
         "tracking_post_to_exact_ee_dist_m": _as_float(torch.norm(post_ee_pos_w - exact_ee_pos_w)),
         "tracking_pre_to_pregrasp_ee_dist_m": _as_float(torch.norm(pre_ee_pos_w - pregrasp_ee_pos_w)),
         "tracking_post_to_pregrasp_ee_dist_m": _as_float(torch.norm(post_ee_pos_w - pregrasp_ee_pos_w)),
+        "tracking_pre_to_exact_rot_error_rad": _as_float(torch.norm(pre_to_exact_rot_b[0])),
+        "tracking_target_to_exact_rot_error_rad": _as_float(torch.norm(target_to_exact_rot_b[0])),
+        "tracking_post_to_exact_rot_error_rad": _as_float(torch.norm(post_to_exact_rot_b[0])),
+        "tracking_post_to_command_target_rot_error_rad": _as_float(torch.norm(post_to_target_rot_b[0])),
+        "tracking_controller_to_exact_rot_error_rad": _as_float(torch.norm(controller_to_exact_rot_b[0])),
     }
 
 
@@ -1013,7 +1064,7 @@ def _oracle_frame_lines(sample: dict[str, object], record: dict[str, object], su
         f"cube_env={_fmt_vec(record['cube_pos_env'])} lift={record['cube_lift_height_m']:.4f} xy={record['cube_xy_error_m']:.4f}",
         f"tip_center_rel={_fmt_vec(tip_rel)} tip_dist={record['actual_tip_center_to_cube_dist_m']:.4f} tip_max={record['actual_tip_max_to_cube_dist_m']:.4f}",
         f"actual_EE_to_exact={record['actual_ee_to_exact_ee_dist_m']:.4f} actual_EE_to_pregrasp={record['actual_ee_to_pregrasp_ee_dist_m']:.4f}",
-        f"track post_to_exact={record.get('tracking_post_to_exact_ee_dist_m', 0.0):.4f} post_to_cmd_target={record.get('tracking_post_to_command_target_dist_m', 0.0):.4f} realized_delta={record.get('tracking_realized_delta_norm_m', 0.0):.4f}",
+        f"track post_to_exact={record.get('tracking_post_to_exact_ee_dist_m', 0.0):.4f} post_rot={record.get('tracking_post_to_exact_rot_error_rad', 0.0):.4f} post_to_cmd_target={record.get('tracking_post_to_command_target_dist_m', 0.0):.4f} realized_delta={record.get('tracking_realized_delta_norm_m', 0.0):.4f}",
         f"ee={record['ee_to_cube_dist_m']:.4f} finger_center={record['finger_center_to_cube_dist_m']:.4f} width={record['gripper_width_m']:.4f}",
         f"table_clearance tip={record['actual_tip_table_clearance_m']:.4f} body={record['finger_table_clearance_m']:.4f}",
         f"reward={record['reward']:.4f} success={record['success_rate']:.1f} lifted_flag={record['has_lifted_cube']:.1f} done={record['done']}",
@@ -1080,6 +1131,7 @@ def _run_oracle_close_lift_check(
     action_scale = task_env.action_scale.detach().clone()
     approach_mode = str(args_cli.oracle_approach_mode)
     approach_steps = max(int(args_cli.oracle_approach_steps), 0)
+    exact_hold_steps = max(int(args_cli.oracle_exact_hold_steps), 0)
     close_steps = max(int(args_cli.oracle_close_steps), 0)
     lift_steps = max(int(args_cli.oracle_lift_steps), 0)
     hold_steps = max(int(args_cli.oracle_hold_steps), 0)
@@ -1092,6 +1144,8 @@ def _run_oracle_close_lift_check(
     phase_specs: list[tuple[str, int]] = []
     if approach_steps > 0:
         phase_specs.append(("approach_to_exact", approach_steps))
+    if exact_hold_steps > 0:
+        phase_specs.append(("exact_hold_open", exact_hold_steps))
     if close_steps > 0:
         phase_specs.append(("light_close", close_steps))
     if lift_steps > 0:
@@ -1105,6 +1159,12 @@ def _run_oracle_close_lift_check(
                 return _bounded_exact_tracking_action(task_env, env_id, gripper_action=open_action)
             action = base_action.clone()
             action[:, 0:3] = approach_xyz_action
+            action[:, 6] = open_action
+            return action
+        if phase == "exact_hold_open":
+            if approach_mode == "proportional_exact":
+                return _bounded_exact_tracking_action(task_env, env_id, gripper_action=open_action)
+            action = base_action.clone()
             action[:, 6] = open_action
             return action
         if phase == "light_close":
@@ -1127,6 +1187,9 @@ def _run_oracle_close_lift_check(
     oracle_step = 0
     total_planned = sum(steps for _, steps in phase_specs)
     key_steps = {1, max(1, approach_steps), max(1, approach_steps + close_steps), max(1, total_planned)}
+    if exact_hold_steps > 0:
+        key_steps.add(max(1, approach_steps + exact_hold_steps))
+        key_steps.add(max(1, approach_steps + exact_hold_steps + close_steps))
     render_interval = max(int(args_cli.oracle_render_interval), 1)
     oracle_summary_seed = {
         "close_width_command_m": float(args_cli.oracle_close_width),
@@ -1223,6 +1286,7 @@ def _run_oracle_close_lift_check(
     result = {
         "enabled": True,
         "approach_steps": approach_steps,
+        "exact_hold_steps": exact_hold_steps,
         "close_steps": close_steps,
         "lift_steps": lift_steps,
         "hold_steps": hold_steps,
@@ -1304,6 +1368,7 @@ def _write_csv(path: Path, samples: list[dict[str, object]]) -> None:
     oracle_scalar_keys = [
         "enabled",
         "approach_steps",
+        "exact_hold_steps",
         "close_steps",
         "lift_steps",
         "hold_steps",
@@ -1675,6 +1740,7 @@ def main() -> None:
         "exact_close_approach_offset_m": float(args_cli.exact_close_approach_offset),
         "exact_close_lateral_offset_m": float(args_cli.exact_close_lateral_offset),
         "oracle_approach_steps": int(args_cli.oracle_approach_steps),
+        "oracle_exact_hold_steps": int(args_cli.oracle_exact_hold_steps),
         "oracle_close_steps": int(args_cli.oracle_close_steps),
         "oracle_lift_steps": int(args_cli.oracle_lift_steps),
         "oracle_hold_steps": int(args_cli.oracle_hold_steps),
