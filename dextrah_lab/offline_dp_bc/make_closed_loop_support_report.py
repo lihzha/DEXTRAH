@@ -80,6 +80,7 @@ def _read_support_csv(path: Path) -> list[dict[str, Any]]:
             row["history_step_gap"] = _int(row, "history_step_gap")
             row["live_cube_minus_ee_vec"] = _parse_list(row.get("live_cube_minus_ee"))
             row["nearest_demo_cube_minus_ee_vec"] = _parse_list(row.get("nearest_demo_cube_minus_ee"))
+            row["executed_action_vec"] = _parse_list(row.get("executed_action"))
             rows.append(row)
     return rows
 
@@ -214,6 +215,37 @@ def _plot(rows: list[dict[str, Any]], output_path: Path) -> None:
     axes[3].set_ylabel("cube - EE (m)")
     axes[3].grid(True, alpha=0.25)
     axes[3].legend(ncol=3, fontsize=8)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=180)
+    plt.close(fig)
+
+
+def _plot_actions(rows: list[dict[str, Any]], output_path: Path) -> None:
+    steps = np.asarray([_int(row, "step") for row in rows], dtype=float)
+    action = np.full((len(rows), 7), np.nan, dtype=float)
+    for idx, row in enumerate(rows):
+        vec = row.get("executed_action_vec") or []
+        if len(vec) >= 7:
+            action[idx] = np.asarray(vec[:7], dtype=float)
+    fig, axes = plt.subplots(2, 1, figsize=(13.5, 8.0), sharex=True, constrained_layout=True)
+    labels = ("dx", "dy", "dz", "droll", "dpitch", "dyaw")
+    for idx, label in enumerate(labels):
+        axes[0].plot(steps, action[:, idx], label=label)
+    axes[0].set_title("Executed Pose Action Components")
+    axes[0].set_ylabel("normalized action")
+    axes[0].grid(True, alpha=0.25)
+    axes[0].legend(ncol=3, fontsize=8)
+
+    axes[1].plot(steps, action[:, 6], label="gripper action")
+    axes[1].axhline(0.0, color="black", linewidth=0.8)
+    axes[1].axhline(-0.9, color="tab:red", linewidth=0.8, linestyle="--")
+    axes[1].axhline(0.9, color="tab:green", linewidth=0.8, linestyle="--")
+    axes[1].set_title("Executed Gripper Action")
+    axes[1].set_xlabel("env step")
+    axes[1].set_ylabel("-1 close / +1 open")
+    axes[1].grid(True, alpha=0.25)
+    axes[1].legend(fontsize=8)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=180)
@@ -391,8 +423,10 @@ def _build_report(args: argparse.Namespace, summary: dict[str, Any], baseline: d
             f"- Support trace CSV: `{Path(args.run_dir) / 'support_trace.csv'}`",
             f"- Policy trace: `{Path(args.run_dir) / 'policy_trace.json'}`",
             f"- Plot: `{summary['plot']}`",
+            f"- Action plot: `{summary['action_plot']}`",
             f"- Key rows CSV: `{summary['key_rows_csv']}`",
             f"- Summary JSON: `{summary['summary_json']}`",
+            f"- Eval config: `{Path(args.run_dir) / 'eval_config.json'}`",
             f"- Video: `{summary.get('video') or 'n/a'}`",
             f"- Contact sheet: `{summary.get('contact_sheet') or 'n/a'}`",
         ]
@@ -421,15 +455,18 @@ def build_report(args: argparse.Namespace) -> dict[str, Any]:
     key_rows = [_row_summary(name, row) for name, row in _event_rows(rows)]
     key_rows_csv = out_dir / "closed_loop_support_key_rows.csv"
     plot_path = out_dir / "closed_loop_support_trace.png"
+    action_plot_path = out_dir / "closed_loop_action_components.png"
     summary_json = out_dir / "closed_loop_support_summary.json"
     report_path = out_dir / "closed_loop_support_report.md"
     _write_csv(key_rows_csv, key_rows)
     _plot(rows, plot_path)
+    _plot_actions(rows, action_plot_path)
     contact_sheet = out_dir / "closed_loop_contact_sheet.jpg"
     if args.contact_sheet:
         contact_sheet = Path(args.contact_sheet).expanduser().resolve()
     summary["key_rows_csv"] = str(key_rows_csv)
     summary["plot"] = str(plot_path)
+    summary["action_plot"] = str(action_plot_path)
     summary["summary_json"] = str(summary_json)
     summary["report"] = str(report_path)
     summary["contact_sheet"] = str(contact_sheet if contact_sheet.exists() else "")
@@ -463,6 +500,7 @@ def main() -> None:
             {
                 "report": summary["report"],
                 "plot": summary["plot"],
+                "action_plot": summary["action_plot"],
                 "summary_json": summary["summary_json"],
                 "key_rows_csv": summary["key_rows_csv"],
                 "verdict": "failed_support_drift" if summary["distance_summary"]["cube_lift_max"] == 0.0 else "inspect",

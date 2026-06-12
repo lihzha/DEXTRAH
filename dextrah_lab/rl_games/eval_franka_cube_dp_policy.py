@@ -134,6 +134,7 @@ from dextrah_lab.offline_dp_bc.trajectory_conversion import PICK_AND_LIFT_PHASE_
 
 DEFAULT_CAMERA_EYE = (-0.10, -0.78, 1.42)
 DEFAULT_CAMERA_TARGET = (-0.41, -0.10, 0.82)
+CONTACT_RELABEL_PHASE_ORDER = ("align_open", "close_hold", "lift")
 
 
 def _mean_float(value: Any) -> float | None:
@@ -284,7 +285,12 @@ def _latest_video_files(video_folder: Path | None) -> list[str]:
     return [str(path) for path in sorted(video_folder.glob("*.mp4"))]
 
 
-def _phase_names() -> list[str]:
+def _phase_names_for_npz(data: Any, phase_ids: np.ndarray) -> list[str]:
+    """Decode phase ids for both original converted demos and relabel rollouts."""
+
+    unique = set(int(v) for v in np.unique(phase_ids))
+    if "rollout_ids" in data.files and unique and unique.issubset(set(range(len(CONTACT_RELABEL_PHASE_ORDER)))):
+        return list(CONTACT_RELABEL_PHASE_ORDER)
     # trajectory_to_episode writes phase ids from sorted(set(phases)).
     return sorted(PICK_AND_LIFT_PHASE_ORDER)
 
@@ -312,7 +318,7 @@ def _support_dataset_payload(path: Path | None) -> dict[str, Any] | None:
         "action": action,
         "phase_ids": phase_ids,
         "episode_ends": episode_ends,
-        "phase_names": _phase_names(),
+        "phase_names": _phase_names_for_npz(data, phase_ids),
         "feature_std": feature_std,
     }
 
@@ -332,7 +338,7 @@ def _demo_reset_payload(path: Path | None, episode: int, episode_step: int) -> d
     episode_end = int(episode_ends[episode_idx])
     local_step = int(np.clip(int(episode_step), 0, max(0, episode_end - episode_start - 1)))
     row_idx = int(episode_start + local_step)
-    phase_names = _phase_names()
+    phase_names = _phase_names_for_npz(data, phase_ids)
     phase_id = int(phase_ids[row_idx])
     return {
         "path": str(path),
@@ -509,6 +515,19 @@ def _json_safe(value: Any) -> Any:
     return value
 
 
+def _write_eval_config(path: Path, *, checkpoint: Path, output_dir: Path, metrics_path: Path) -> None:
+    config = {
+        "args": _json_safe(vars(args_cli)),
+        "checkpoint": str(checkpoint),
+        "output_dir": str(output_dir),
+        "metrics_path": str(metrics_path),
+        "diffusion_policy_root": args_cli.diffusion_policy_root,
+        "action_convention": "7D DEXTRAH relative EE pose plus gripper, +1 open / -1 close",
+        "no_learning": True,
+    }
+    path.write_text(json.dumps(config, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
 def _write_support_csv(path: Path, records: list[dict[str, Any]]) -> None:
     fieldnames = [
         "step",
@@ -639,12 +658,15 @@ def main() -> None:
         raise FileNotFoundError(checkpoint)
     if demo_reset_dataset_path is not None and not demo_reset_dataset_path.is_file():
         raise FileNotFoundError(demo_reset_dataset_path)
+    eval_config_path = output_dir / "eval_config.json"
+    _write_eval_config(eval_config_path, checkpoint=checkpoint, output_dir=output_dir, metrics_path=metrics_path)
     _stage(
         "start",
         output_dir=str(output_dir),
         metrics_path=str(metrics_path),
         checkpoint=str(checkpoint),
         checkpoint_size=checkpoint.stat().st_size,
+        eval_config_path=str(eval_config_path),
         num_envs=int(args_cli.num_envs),
         num_steps=int(args_cli.num_steps),
         debug_policy_trace_path=str(debug_trace_path) if debug_trace_path is not None else None,
@@ -852,6 +874,7 @@ def main() -> None:
         "final_gripper_width": final_gripper_width,
         "output_dir": str(output_dir),
         "metrics_path": str(metrics_path),
+        "eval_config_path": str(eval_config_path),
         "debug_policy_trace_path": str(debug_trace_path) if debug_trace_path is not None else None,
         "debug_policy_trace_records": len(policy_trace_records),
         "support_dataset": str(support_dataset_path) if support_dataset_path is not None else None,

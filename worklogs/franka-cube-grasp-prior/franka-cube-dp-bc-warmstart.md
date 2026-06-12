@@ -6559,6 +6559,71 @@ Next:
   support tracing, gripper/EE/cube plots, and contact sheet/video only if the
   no-video trace is sane.
 
+## 2026-06-11T18:44:04-07:00 - weighted checkpoint closed-loop trace plan
+
+Goal:
+- Run a bounded no-video DEXTRAH/Isaac closed-loop trace for the weighted
+  contact-aware DP checkpoint that passed offline gripper sign mechanics at
+  100 inference steps.
+
+Hypothesis:
+- If the remaining train/eval path is coherent, the trace should have finite
+  actions, history gap `1`, support phase progression from `align_open` toward
+  `close_hold/lift`, and gripper close timing that does not occur while the
+  end-effector/fingers are obviously far from the cube. Failure should identify
+  whether the issue is action timing, observation/history bridge, support drift,
+  chunking, or policy output.
+
+Change:
+- Patch planned/implemented before launch:
+  - Decode contact-aware relabel phases as `align_open`, `close_hold`, `lift`
+    in `eval_franka_cube_dp_policy.py`.
+  - Write `eval_config.json` beside metrics for closed-loop trace provenance.
+  - Add `closed_loop_action_components.png` to
+    `make_closed_loop_support_report.py`.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `4d51e503d87bf7e527ddd34ac192a4025dce7b3d`
+- implementation_commit: pending
+- changed_files:
+  `dextrah_lab/rl_games/eval_franka_cube_dp_policy.py`,
+  `dextrah_lab/offline_dp_bc/make_closed_loop_support_report.py`,
+  `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/eval_franka_cube_dp_policy.py dextrah_lab/offline_dp_bc/make_closed_loop_support_report.py`
+- `bash -n cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- `git diff --check`
+
+Command / Job:
+- planned run_name:
+  `franka_cube_dp_eval_weightedgrip8_inf100_trace96_chunk1_20260611_1844`
+- checkpoint:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/contact_relabel_official_dp_debug_pretrain100_weightedgrip8_20260611_1843/latest.ckpt`
+- support dataset:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/contact_relabel_set_ep8_16_24_30_s260_high30_defaultfix_20260611_175347/contact_relabel_set_accepted.npz`
+- expected settings:
+  `NUM_ENVS=1`, `NUM_STEPS=96`, `NUM_INFERENCE_STEPS=100`,
+  `ACTION_CHUNK_STEPS=1`, `CAPTURE_VIDEO=False`,
+  `DEBUG_POLICY_TRACE_MAX_CALLS=96`, `SUPPORT_DATASET=<accepted contact-aware NPZ>`.
+- expected artifacts: stdout log, `metrics.json`, `eval_config.json`,
+  `policy_trace.json`, `support_trace.json/csv`, local support report/plots.
+
+Acceptance:
+- Bounded trace completes requested steps with finite actions and clean env
+  close.
+- History gaps remain `1`.
+- Action schema remains 7D and gripper sign/timing is understandable.
+- If support/behavior fails, do not run video or scale; inspect traces and
+  patch the concrete mismatch.
+
+Result:
+- status: planned, pending commit/deploy/launch.
+
 ## 2026-06-11T18:42:00-07:00 - pred-action-steps-only bounded pretrain result and weighted-loss plan
 
 Goal:
