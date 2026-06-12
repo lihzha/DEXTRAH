@@ -136,6 +136,10 @@ def _rollout_rows_from_summary(summary: dict[str, Any] | None) -> list[dict[str,
                 "gate_pass": bool(row.get("gate_pass", False)),
                 "orientation_mode": row.get("orientation_mode", ""),
                 "pose_action_filter": row.get("pose_action_filter", ""),
+                "contact_align_reference": row.get("contact_align_reference", ""),
+                "contact_align_success": bool(row.get("contact_align_success", False)),
+                "pre_close_finger_center_to_cube": _safe_float(row.get("pre_close_finger_center_to_cube")),
+                "pre_close_ee_to_cube": _safe_float(row.get("pre_close_ee_to_cube")),
                 "reset_joint_blend_alpha": _safe_float(row.get("reset_joint_blend_alpha")),
                 "steps": int(row.get("steps", 0) or 0),
                 "final_ee_to_cube": _safe_float(row.get("final_ee_to_cube")),
@@ -252,14 +256,17 @@ def _report(summary: dict[str, Any], episode_rows: list[dict[str, Any]], rollout
         "",
         "## Rollout Gate Rows",
         "",
-        "| rollout | pass | orientation | filter | alpha | steps | final EE | final finger | final/max lift | clip | max raw | min scale | failures |",
-        "|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| rollout | pass | orientation | filter | contact ref | pre-close finger | contact-ok | alpha | steps | final EE | final finger | final/max lift | clip | max raw | min scale | failures |",
+        "|---|---|---|---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     for row in rollout_rows:
         lines.append(
             f"| {row['rollout_id']} | {row['gate_pass']} | "
             f"{row.get('orientation_mode', '')} | "
             f"{row.get('pose_action_filter', '')} | "
+            f"{row.get('contact_align_reference', '')} | "
+            f"{_fmt(row.get('pre_close_finger_center_to_cube'))} | "
+            f"{row.get('contact_align_success', '')} | "
             f"{_fmt(row.get('reset_joint_blend_alpha'), 3)} | {row['steps']} | "
             f"{_fmt(row.get('final_ee_to_cube'))} | "
             f"{_fmt(row.get('final_finger_center_to_cube'))} | "

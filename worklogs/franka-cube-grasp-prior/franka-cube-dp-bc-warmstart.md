@@ -8691,3 +8691,51 @@ Next:
   with open gripper, optionally using a slower or adaptive gain schedule, then
   close/lift only after the contact-alignment gate is met. Retest alpha0.75
   with the same hard metrics and video inspection.
+
+## 2026-06-11T21:49:45-07:00 - staged live-cube contact alignment plan
+
+Goal:
+- Add one narrow staged controller diagnostic for alpha0.75 before any DP/RL
+  work: after the pose-filtered open alignment, add an open-gripper
+  contact-alignment phase that tracks the *live* cube position before close/lift.
+
+Evidence motivating the change:
+- In the alpha0.75 pose-filter trace, the first open-alignment motion pushes the
+  cube laterally. The controller then converges to a stale target based on the
+  original cube pose:
+  - at pre-close step 79, finger-center-to-live-cube is about `0.0977 m`;
+  - finger error to the stale target is only about `0.0006 m`;
+  - target-minus-live-cube is about `[-0.0117, 0.0901, 0.035]`.
+- This explains why close/lift happens away from the cube despite zero executed
+  clipping.
+
+Planned change:
+- Add opt-in rollout args to `contact_aware_franka_cube_rollout.py`:
+  - `--contact_align_steps`
+  - `--contact_align_reference initial_cube|live_cube`
+  - `--contact_align_threshold`
+- Keep default behavior unchanged with `contact_align_steps=0`.
+- When enabled with `live_cube`, add a `contact_align_open` phase after
+  `align_open` that targets `live_cube_pos + offset` with open gripper and
+  records contact-alignment audit fields.
+- Freeze the live-cube contact anchor at the end of the contact-align phase for
+  close/lift, so the lift target is relative to the corrected contact geometry.
+- Thread the new env vars through
+  `cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh`.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/contact_aware_franka_cube_rollout.py`
+- `bash -n cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh`
+- `git diff --check`
+
+Planned first run:
+- alpha0.75 only.
+- Same source episode/step/variant/pose filter as `1028128`.
+- Add `CONTACT_ALIGN_STEPS=80`, `CONTACT_ALIGN_REFERENCE=live_cube`,
+  `CONTACT_ALIGN_THRESHOLD=0.06`, and `VIDEO_LENGTH=400`.
+
+Gate:
+- Alpha0.75 must pass hard metrics and video contact/lift with zero executed
+  clipping. If it fails, stop at diagnostics and recommend the next controller
+  design option. Alpha0.8 regression check only if alpha0.75 materially
+  improves.

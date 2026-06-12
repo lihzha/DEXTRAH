@@ -120,14 +120,18 @@ def _report(summary: dict[str, Any], rollout_rows: list[dict[str, Any]], failure
         "",
         "## Rollouts",
         "",
-        "| rollout | pass | orientation | filter | reset joint alpha | episode | step | final EE-cube | final finger-cube | final/max lift | max clip | max raw | min scale | failures | video |",
-        "|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---|",
+        "| rollout | pass | orientation | filter | contact ref | pre-close finger | pre-close EE | contact-ok | reset joint alpha | episode | step | final EE-cube | final finger-cube | final/max lift | max clip | max raw | min scale | failures | video |",
+        "|---|---|---|---|---|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---|",
     ]
     for row in rollout_rows:
         lines.append(
             f"| {row['rollout_id']} | {row['gate_pass']} | "
             f"{row.get('orientation_mode', '')} | "
             f"{row.get('pose_action_filter', '')} | "
+            f"{row.get('contact_align_reference', '')} | "
+            f"{float(row.get('pre_close_finger_center_to_cube', float('nan'))):.4f} | "
+            f"{float(row.get('pre_close_ee_to_cube', float('nan'))):.4f} | "
+            f"{row.get('contact_align_success', '')} | "
             f"{float(row.get('reset_joint_blend_alpha', float('nan'))):.3f} | "
             f"{row['episode']} | {row['episode_step']} | "
             f"{float(row['final_ee_to_cube']):.4f} | {float(row['final_finger_center_to_cube']):.4f} | "
@@ -207,6 +211,25 @@ def main() -> None:
                 "orientation_mode": orientation_mode,
                 "pose_action_filter": pose_action_filter,
                 "pose_action_limit": float(payload.get("pose_action_limit", one_summary.get("pose_action_limit", float("nan")))),
+                "contact_align_steps": int(payload.get("contact_align_steps", one_summary.get("contact_align_steps", 0))),
+                "contact_align_reference": str(
+                    payload.get("contact_align_reference", one_summary.get("contact_align_reference", ""))
+                ),
+                "contact_align_threshold": float(
+                    payload.get("contact_align_threshold", one_summary.get("contact_align_threshold", float("nan")))
+                ),
+                "contact_align_success": bool(payload.get("contact_align_success", False)),
+                "pre_close_local_step": int(payload.get("pre_close_local_step", -1)),
+                "pre_close_phase": str(payload.get("pre_close_phase", "")),
+                "pre_close_ee_to_cube": float(payload.get("pre_close_ee_to_cube", float("nan"))),
+                "pre_close_finger_center_to_cube": float(
+                    payload.get("pre_close_finger_center_to_cube", float("nan"))
+                ),
+                "pre_close_finger_error_norm": float(payload.get("pre_close_finger_error_norm", float("nan"))),
+                "pre_close_target_reference": str(payload.get("pre_close_target_reference", "")),
+                "pre_close_target_minus_cube_norm": float(
+                    payload.get("pre_close_target_minus_cube_norm", float("nan"))
+                ),
                 "reset_joint_blend_alpha": reset_joint_blend_alpha,
                 "reset_joint_l2_from_source": float(payload.get("reset_joint_l2_from_source", float("nan"))),
                 "reset_joint_l2_from_normal": float(payload.get("reset_joint_l2_from_normal", float("nan"))),
