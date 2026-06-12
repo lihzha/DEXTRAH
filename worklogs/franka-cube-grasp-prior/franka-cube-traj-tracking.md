@@ -4962,3 +4962,49 @@ Command / Job:
 Monitor Plan:
 - Inspect scheduler state and log, then fetch artifacts once complete.
 - Gate on supervised metrics before selector evals; do not launch videos or PPO/RL scale-up from scheduler success alone.
+
+## 2026-06-11T19:39:38-07:00 - mixed/rehearsal BC supervised result
+
+Result:
+- job `1028053` completed `0:0`, elapsed `00:01:12`, node `pool0-00006`.
+- fetched log and artifacts locally:
+  - run dir: `cluster_results/l401/franka_cube_traj_tracking_bc_dagger_rehearsal_tm025_tm010_all_20260611_193140`
+  - log: `cluster_results/l401/slurm_logs/bc_franka_cube_1028053.out`
+- generated/fetched artifacts:
+  - report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_rehearsal_tm025_tm010_all_20260611_193140/report.md`
+  - loss plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_rehearsal_tm025_tm010_all_20260611_193140/bc_loss_plot.png`
+  - metrics: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_rehearsal_tm025_tm010_all_20260611_193140/bc_metrics.json`
+  - checkpoint: `/results/bc/franka_cube_traj_tracking_bc_dagger_rehearsal_tm025_tm010_all_20260611_193140/nn/bc_reference_action_imitation.pth`
+  - combined dataset: `/results/bc/franka_cube_traj_tracking_bc_dagger_rehearsal_tm025_tm010_all_20260611_193140/reference_action_dataset.pt`
+
+Supervised Gate Metrics:
+- dataset: `8320` total samples = `4160` fresh `current_teacher_mix_alpha0p10` + `4160` `tm025_rehearsal`.
+- global val L2: `0.437874 -> 0.094008`.
+- global val MSE: `0.081238 -> 0.002044`.
+- global val close/up/gripper abs: `0.065633/0.139325/0.187060 -> 0.023542/0.018783/0.044337`.
+- fresh alpha `0.10` source val L2: `0.815697 -> 0.115862`.
+- fresh alpha `0.10` source val close/up/gripper abs: `0.121326/0.259713/0.350414 -> 0.032686/0.018308/0.060443`.
+- tm0.25 rehearsal val L2 degraded: `0.035676 -> 0.070744`.
+- tm0.25 rehearsal val close/up/gripper abs degraded: `0.006348/0.011170/0.013168 -> 0.013807/0.019289/0.027192`.
+- reference caveat remains: `curobo_validated=false`.
+
+Verdict:
+- supervised gate failed / ambiguous negative.
+- The combined loss improves from the mixed initial checkpoint, but the final global val L2 `0.094008` is worse than tm0.10 (`~0.079`) and much worse than tm0.25 (`~0.0368`).
+- The current low-teacher source remains worse than the previous tm0.10 held-out result, and the tm0.25 rehearsal source is clearly damaged.
+- This does not justify launching the broad alpha selector sweep as an improvement gate.
+- No selector jobs, videos, PPO, or RL scale-up launched from this checkpoint.
+
+Analysis:
+- Equal-size rehearsal alone was not enough to preserve tm0.25 successful-state behavior under 400 full-network AdamW updates at `1.5e-4`.
+- The optimization moved the policy toward the harder alpha `0.10` source but partially forgot the tm0.25 manifold that was producing the best low-alpha visual success.
+- A selector from this checkpoint would be diagnostic only, not a gate. I am not launching it automatically because the supervised metric gate is worse than both relevant baselines.
+
+Next Bounded Adjustment Proposal:
+- Keep tm0.25 as the current best checkpoint.
+- Next trainability experiment should be analysis/adjustment before eval scale:
+  - add source-balanced minibatches and/or explicit source loss weights favoring tm0.25 rehearsal;
+  - use lower learning rate or early stopping on tm0.25 rehearsal validation degradation;
+  - optionally freeze lower actor layers or run a shorter update budget to prevent forgetting;
+  - report per-source metrics as the primary gate before any selector eval.
+- Old `actionscale-rewinf-diag-video480-step-0.mp4` remains obsolete failed diagnostic evidence and should not be compared against the current best tm0.25/DAgger artifacts.
