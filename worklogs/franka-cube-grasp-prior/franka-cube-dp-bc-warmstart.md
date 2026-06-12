@@ -7571,3 +7571,46 @@ Status update:
   follow-up video confirmation job `1028059` also completed and is recorded
   above with mp4/contact-sheet/report links. No active C jobs remain from this
   diagnostic loop.
+
+## 2026-06-11T19:56:51-07:00 - normal-reset no-reset generalization trace plan
+
+Goal:
+- Move one bounded step from exact source-joint matched reset toward normal
+  task-reset behavior without training or RL scale-up.
+
+Hypothesis:
+- The weighted contact-aware DP checkpoint may rely strongly on exact
+  source-joint/contact-aware reset support. Running the same checkpoint from
+  the normal DEXTRAH task reset, while keeping the no-reset
+  `success_timeout_override=999.0`, separates policy/reset-distribution
+  behavior from the env's success auto-reset semantics.
+- If normal reset succeeds or nearly succeeds, the next issue is support
+  expansion/evaluation across resets. If it fails, the support trace, live
+  geometry, and policy trace should show whether the state leaves contact-aware
+  demo support before grasp/lift.
+
+Plan:
+- No code changes expected. Reuse corrected commit
+  `c67dde23bcda9d9facd2ed4b62fab958d1a7dc41`.
+- Deploy the exact commit to the l401 agent-owned worktree.
+- Launch one no-video normal-reset trace:
+  `NUM_ENVS=1`, `NUM_STEPS=260`, `ACTION_CHUNK_STEPS=1`,
+  `NUM_INFERENCE_STEPS=100`, `SUCCESS_TIMEOUT_OVERRIDE=999.0`,
+  `SUCCESS_WINDOW=80`, `DEBUG_POLICY_TRACE_MAX_CALLS=260`, same weighted
+  checkpoint and same accepted contact-aware support dataset, but no
+  `DEMO_RESET_*` arguments.
+- Fetch logs/metrics/traces and generate a support/action report plus
+  hold/normal-reset audit from the existing local artifact tooling.
+- Gate:
+  - If final/window success is coherent, run one video/contact-sheet
+    confirmation and keep the caveat that this is no-reset eval only.
+  - If failure is informative, run one short video/contact-sheet confirmation
+    to show normal-reset behavior and support drift.
+  - Do not launch DP BC training or RL.
+
+Acceptance:
+- Artifact bundle must include stdout, `eval_config.json`, `metrics.json`,
+  `policy_trace.json`, `support_trace.csv/json`, support/action plots,
+  `closed_loop_support_report.md`, and viewer links. Video/contact sheet is
+  required only after the trace identifies a clear pass/failure worth visual
+  confirmation.
