@@ -27,7 +27,7 @@ Version Control:
 - worklog: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/worklogs/franka-cube-grasp-prior/franka-cube-traj-tracking.md
 - branch: codex/franka-cube-trajectory-tracking
 - base_commit: 589dd81c9f9691fcda3a3d4b9ad714d90dae4794
-- implementation_commit: pending
+- implementation_commit: `7e6c38f76699c134ad2f0d71de871e1b5f10d659`
 - push/pull: n/a, local implementation checkpoint only unless requested by orchestrator
 - changed_files: pending
 - remote_commit/status: n/a, no cluster launch planned
@@ -65,7 +65,7 @@ Version Control:
 - worklog: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/worklogs/franka-cube-grasp-prior/franka-cube-traj-tracking.md
 - branch: codex/franka-cube-trajectory-tracking
 - base_commit: 589dd81c9f9691fcda3a3d4b9ad714d90dae4794
-- implementation_commit: pending
+- implementation_commit: `a0a2fdff4c97ca36abdd52fad3d2239991a98462`
 - push/pull: n/a, no cluster launch
 - changed_files: dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_reference.py; dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env_cfg.py; dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env.py; dextrah_lab/scene_scripts/make_franka_cube_traj_tracking_reference.py; dextrah_lab/tasks/dextrah_franka_cube_grasp/gym_setup.py; worklogs/franka-cube-grasp-prior/franka-cube-traj-tracking.md
 - remote_commit/status: n/a/local only
@@ -3242,3 +3242,69 @@ Analysis:
 
 Next:
 - Do not scale PPO from the current action-alignment checkpoint. Prepare a bounded curriculum/BC diagnostic: keep phase/reference observations disabled for apple-to-apple clarity unless explicitly documented, use fixed-window rollout metrics, and evaluate with videos after a tiny smoke. Candidate least-invasive next patch: add a configurable training-time reference-action imitation term or scripted teacher-forcing probability for the approach/pregrasp phase only, then run env smoke plus tiny PPO/eval; do not run a long job until the short eval video shows actual contact/lift.
+
+## 2026-06-11T17:14:00-07:00 - teacher-forced approach imitation diagnostic plan
+
+Goal:
+- Build the smallest artifact-backed trainability step after the alpha sweep: teach the PPO policy to match the `reference_delta` approach action under the actual Franka delta-IK controller instead of only rewarding imitation while the policy drifts.
+
+Hypothesis:
+- Prior action-alignment reward failed because the policy explored off-reference states and never learned the approach/closure profile. A bounded teacher-forced curriculum that applies `alpha * reference_delta + (1-alpha) * raw_policy_action` during approach/pregrasp, while computing imitation reward/error from the raw policy action, should keep rollouts on the successful reference manifold and provide a meaningful supervised-like signal. If this does not reduce raw policy-reference error or allow alpha below `1.0` in eval, the next blocker is action/obs normalization or reference phase/handoff conditions rather than PPO scale.
+
+Planned Change:
+- `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env_cfg.py`: add disabled-by-default teacher-forcing curriculum knobs: enable flag, alpha start/end, phase end, global-step anneal, raw-action imitation reward switch.
+- `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env.py`: override `_pre_physics_step` for the trajectory variant only. Store raw policy actions, reference actions, applied blended actions, teacher alpha, and action-error diagnostics. Use raw policy actions for action-alignment reward when teacher forcing is active so reward cannot be gamed by the applied blend.
+- `cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`, `cluster/sbatch_train_teacher_8gpu.sh`, `cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`: expose the new flags as logged Hydra overrides.
+- `dextrah_lab/rl_games/validate_franka_cube_grasp_env.py`, `dextrah_lab/rl_games/eval_rollout.py`, and `dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py`: include teacher-force metrics in smoke/eval/report artifacts.
+
+Validation Before Launch:
+- `python3 -m py_compile` on edited Python files.
+- `bash -n` on edited Slurm wrappers.
+- `git diff --check`.
+- Cluster env smoke only after commit/push/deploy: small `Dextrah-Franka-Cube-Grasp-Traj-Tracking` validation with teacher forcing enabled, no full training.
+
+Planned Bounded Run Sequence:
+1. Teacher-force env smoke: `NUM_ENVS=4`, short rollout, `alpha_start=1.0`, `alpha_end=1.0`, `phase_end=0.67`, same 60 mm unvalidated reference, action-alignment reward high enough to make raw-policy error visible. Acceptance: obs remains `[4,72]`, target unsafe `0`, teacher-force logs present/finite, applied-reference error near zero while raw-policy-reference error remains measurable, no reset pathology.
+2. If smoke passes, tiny PPO smoke only, then eval videos at alpha `1.0` and a reduced alpha candidate. Acceptance: raw policy-reference error decreases and alpha can drop below `1.0` without losing contact/lift. No large PPO scale-up.
+
+Version Control:
+- agent_id: franka-cube-traj-tracking
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking`
+- branch: `codex/franka-cube-trajectory-tracking`
+- base_commit: `9c79c59922f6ed9a68d03192ea4ba0897c71dcbf`
+- changed_files: pending
+
+## 2026-06-11T17:31:00-07:00 - teacher-forced approach imitation implementation checkpoint
+
+Goal:
+- Implement the disabled-by-default teacher-forced/action-imitation diagnostic and validate syntax/wrapper hygiene before l401 launch.
+
+Change:
+- Added trajectory-task-only teacher forcing knobs to `franka_cube_traj_tracking_env_cfg.py`.
+- Added `DextrahFrankaCubeTrajTrackingEnv._pre_physics_step()` blending for `alpha * reference_delta + (1-alpha) * raw_policy_action`, with raw/reference/applied action buffers and teacher-alpha diagnostics.
+- Changed trajectory action-alignment reward to compare against raw policy actions when configured, so teacher-forced applied actions cannot by themselves satisfy the imitation term.
+- Added smoke/eval/report metrics for teacher alpha, raw-policy/reference action error, env-applied/reference action error, env-applied/raw-policy action error, raw close/up, and applied close/up.
+- Exposed the flags through validation, eval, and PPO Slurm wrappers as logged overrides.
+
+Version Control:
+- agent_id: franka-cube-traj-tracking
+- base_commit: `9c79c59922f6ed9a68d03192ea4ba0897c71dcbf`
+- implementation_commit: pending
+- changed_files:
+  - `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env_cfg.py`
+  - `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env.py`
+  - `dextrah_lab/rl_games/validate_franka_cube_grasp_env.py`
+  - `dextrah_lab/rl_games/eval_rollout.py`
+  - `dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py`
+  - `cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`
+  - `cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+  - `cluster/sbatch_train_teacher_8gpu.sh`
+  - `worklogs/franka-cube-grasp-prior/franka-cube-traj-tracking.md`
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env_cfg.py dextrah_lab/rl_games/validate_franka_cube_grasp_env.py dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py` -> passed.
+- `bash -n cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh && bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh && bash -n cluster/sbatch_train_teacher_8gpu.sh` -> passed.
+- `git diff --check` -> passed.
+
+Next:
+- Commit/push this implementation, deploy the exact commit to the l401 agent-owned worktree, and launch the bounded teacher-force env smoke only. No PPO launch until that smoke has finite logs/artifacts and target safety remains clean.

@@ -147,6 +147,9 @@ def _draw_plot(steps: list[dict[str, object]], output_path: Path) -> None:
                 ("ref close", "reference_delta_action_close_mean", (215, 150, 55), 1.0),
                 ("mixed close", "mixed_action_close_mean", (40, 150, 150), 1.0),
                 ("hold close", "hold_applied_action_close_mean", (80, 80, 80), 1.0),
+                ("teacher alpha", "cube_traj_tracking_teacher_force_alpha", (20, 20, 20), 1.0),
+                ("raw-ref L2", "cube_traj_tracking_raw_policy_reference_action_error_l2", (200, 40, 85), 2.2),
+                ("applied-ref L2", "cube_traj_tracking_applied_reference_action_error_l2", (70, 125, 60), 2.2),
             ],
         ),
     ]
@@ -206,6 +209,12 @@ def _consistency(
         "trajectory_tracking_action_alignment_phase_start",
         "trajectory_tracking_action_alignment_sharpness",
         "trajectory_tracking_action_alignment_use_contact_gate",
+        "trajectory_tracking_teacher_force_enabled",
+        "trajectory_tracking_teacher_force_alpha_start",
+        "trajectory_tracking_teacher_force_alpha_end",
+        "trajectory_tracking_teacher_force_phase_end",
+        "trajectory_tracking_teacher_force_anneal_steps",
+        "trajectory_tracking_action_alignment_compare_raw_policy",
     ]
     rows = {}
     mismatches = []
@@ -386,6 +395,15 @@ def _write_success_diagnostics(
         "cube_traj_tracking_action_close",
         "cube_traj_tracking_action_up",
         "cube_traj_tracking_gripper_action",
+        "cube_traj_tracking_teacher_force_alpha",
+        "cube_traj_tracking_teacher_force_active_rate",
+        "cube_traj_tracking_raw_policy_reference_action_error_l2",
+        "cube_traj_tracking_applied_reference_action_error_l2",
+        "cube_traj_tracking_applied_policy_action_error_l2",
+        "cube_traj_tracking_raw_policy_action_close",
+        "cube_traj_tracking_raw_policy_action_up",
+        "cube_traj_tracking_applied_action_close",
+        "cube_traj_tracking_applied_action_up",
         "cube_traj_tracking_close_action_reward",
         "cube_traj_tracking_lift_action_reward",
         "cube_traj_tracking_target_table_clearance",
@@ -471,6 +489,30 @@ def main() -> None:
             summary, "cube_traj_tracking_action_alignment_utilization", "mean"
         ),
         "action_alignment_error_mean": _summary(summary, "cube_traj_tracking_action_alignment_error", "mean"),
+        "teacher_force_alpha_mean": _summary(summary, "cube_traj_tracking_teacher_force_alpha", "mean"),
+        "teacher_force_alpha_final": _summary(summary, "cube_traj_tracking_teacher_force_alpha", "final"),
+        "teacher_force_active_rate_mean": _summary(
+            summary, "cube_traj_tracking_teacher_force_active_rate", "mean"
+        ),
+        "teacher_force_active_rate_final": _summary(
+            summary, "cube_traj_tracking_teacher_force_active_rate", "final"
+        ),
+        "raw_policy_reference_action_error_l2_mean": _summary(
+            summary, "cube_traj_tracking_raw_policy_reference_action_error_l2", "mean"
+        ),
+        "raw_policy_reference_action_error_l2_final": _summary(
+            summary, "cube_traj_tracking_raw_policy_reference_action_error_l2", "final"
+        ),
+        "env_applied_reference_action_error_l2_mean": _summary(
+            summary, "cube_traj_tracking_applied_reference_action_error_l2", "mean"
+        ),
+        "env_applied_policy_action_error_l2_mean": _summary(
+            summary, "cube_traj_tracking_applied_policy_action_error_l2", "mean"
+        ),
+        "env_raw_policy_action_close_mean": _summary(summary, "cube_traj_tracking_raw_policy_action_close", "mean"),
+        "env_raw_policy_action_up_mean": _summary(summary, "cube_traj_tracking_raw_policy_action_up", "mean"),
+        "env_applied_action_close_mean": _summary(summary, "cube_traj_tracking_applied_action_close", "mean"),
+        "env_applied_action_up_mean": _summary(summary, "cube_traj_tracking_applied_action_up", "mean"),
         "reference_action_close_mean": _summary(summary, "cube_traj_tracking_reference_action_close", "mean"),
         "reference_action_up_mean": _summary(summary, "cube_traj_tracking_reference_action_up", "mean"),
         "raw_policy_action_close_mean": _summary(summary, "raw_policy_action_close_mean", "mean"),
@@ -543,6 +585,33 @@ def main() -> None:
                 ),
                 "action_alignment_error_mean": _window_metric(
                     summary, window_name, "cube_traj_tracking_action_alignment_error", "mean"
+                ),
+                "teacher_force_alpha_mean": _window_metric(
+                    summary, window_name, "cube_traj_tracking_teacher_force_alpha", "mean"
+                ),
+                "teacher_force_active_rate": _window_metric(
+                    summary, window_name, "cube_traj_tracking_teacher_force_active_rate", "mean"
+                ),
+                "env_raw_policy_reference_error_l2_mean": _window_metric(
+                    summary, window_name, "cube_traj_tracking_raw_policy_reference_action_error_l2", "mean"
+                ),
+                "env_applied_reference_error_l2_mean": _window_metric(
+                    summary, window_name, "cube_traj_tracking_applied_reference_action_error_l2", "mean"
+                ),
+                "env_applied_policy_error_l2_mean": _window_metric(
+                    summary, window_name, "cube_traj_tracking_applied_policy_action_error_l2", "mean"
+                ),
+                "env_raw_policy_close_mean": _window_metric(
+                    summary, window_name, "cube_traj_tracking_raw_policy_action_close", "mean"
+                ),
+                "env_raw_policy_up_mean": _window_metric(
+                    summary, window_name, "cube_traj_tracking_raw_policy_action_up", "mean"
+                ),
+                "env_applied_close_mean": _window_metric(
+                    summary, window_name, "cube_traj_tracking_applied_action_close", "mean"
+                ),
+                "env_applied_up_mean": _window_metric(
+                    summary, window_name, "cube_traj_tracking_applied_action_up", "mean"
                 ),
                 "raw_policy_close_mean": _window_metric(summary, window_name, "raw_policy_action_close_mean", "mean"),
                 "raw_policy_up_mean": _window_metric(summary, window_name, "raw_policy_action_up_mean", "mean"),
@@ -624,6 +693,12 @@ def main() -> None:
                     f"{_fmt(window['mixed_close_mean'], 4)}/{_fmt(window['mixed_up_mean'], 4)}",
                     f"{_fmt(window['hold_active_rate'], 4)}",
                     f"{_fmt(window['hold_applied_close_mean'], 4)}/{_fmt(window['hold_applied_up_mean'], 4)}",
+                    _fmt(window["teacher_force_alpha_mean"], 4),
+                    _fmt(window["env_raw_policy_reference_error_l2_mean"], 4),
+                    _fmt(window["env_applied_reference_error_l2_mean"], 4),
+                    _fmt(window["env_applied_policy_error_l2_mean"], 4),
+                    f"{_fmt(window['env_raw_policy_close_mean'], 4)}/{_fmt(window['env_raw_policy_up_mean'], 4)}",
+                    f"{_fmt(window['env_applied_close_mean'], 4)}/{_fmt(window['env_applied_up_mean'], 4)}",
                     _fmt(window["policy_reference_error_l2_mean"], 4),
                     _fmt(window["mixed_reference_error_l2_mean"], 4),
                     _fmt(window["applied_reference_error_l2_mean"], 4),
@@ -638,8 +713,8 @@ def main() -> None:
         )
     window_table = "\n".join(
         [
-            "| Window | Reward | EE-target | EE-cube | Finger-cube | Grip width | Close util | Lift util | Raw close/up | Ref close/up | Mixed close/up | Hold active | Hold applied close/up | Policy-ref L2 | Mixed-ref L2 | Applied-ref L2 | Align reward | Align err | Target clearance min | Lift max | Success |",
-            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+            "| Window | Reward | EE-target | EE-cube | Finger-cube | Grip width | Close util | Lift util | Raw close/up | Ref close/up | Mixed close/up | Hold active | Hold applied close/up | Teacher alpha | Env raw-ref L2 | Env applied-ref L2 | Env applied-policy L2 | Env raw close/up | Env applied close/up | Policy-ref L2 | Mixed-ref L2 | Applied-ref L2 | Align reward | Align err | Target clearance min | Lift max | Success |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
             *window_rows,
         ]
     )
@@ -673,6 +748,12 @@ def main() -> None:
 - close/lift utilization mean: {_fmt(compact['close_action_utilization_mean'])} / {_fmt(compact['lift_action_utilization_mean'])}
 - action-alignment reward mean/final: {_fmt(compact['action_alignment_reward_mean'])} / {_fmt(compact['action_alignment_reward_final'])}
 - action-alignment utilization/error mean: {_fmt(compact['action_alignment_utilization_mean'])} / {_fmt(compact['action_alignment_error_mean'])}
+- teacher-force alpha mean/final/active mean: {_fmt(compact['teacher_force_alpha_mean'])} / {_fmt(compact['teacher_force_alpha_final'])} / {_fmt(compact['teacher_force_active_rate_mean'])}
+- env raw-policy/ref L2 mean/final: {_fmt(compact['raw_policy_reference_action_error_l2_mean'])} / {_fmt(compact['raw_policy_reference_action_error_l2_final'])}
+- env applied/ref L2 mean: {_fmt(compact['env_applied_reference_action_error_l2_mean'])}
+- env applied/raw-policy L2 mean: {_fmt(compact['env_applied_policy_action_error_l2_mean'])}
+- env raw-policy close/up mean: {_fmt(compact['env_raw_policy_action_close_mean'])} / {_fmt(compact['env_raw_policy_action_up_mean'])}
+- env applied close/up mean: {_fmt(compact['env_applied_action_close_mean'])} / {_fmt(compact['env_applied_action_up_mean'])}
 - reference close/up action mean: {_fmt(compact['reference_action_close_mean'])} / {_fmt(compact['reference_action_up_mean'])}
 - raw policy close/up mean: {_fmt(compact['raw_policy_action_close_mean'])} / {_fmt(compact['raw_policy_action_up_mean'])}
 - reference-delta close/up mean: {_fmt(compact['reference_delta_action_close_mean'])} / {_fmt(compact['reference_delta_action_up_mean'])}

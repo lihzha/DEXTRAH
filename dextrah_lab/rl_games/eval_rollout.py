@@ -340,6 +340,15 @@ def _collect_task_metrics(task_env, actions: torch.Tensor | None = None) -> dict
             metrics["policy_action_gripper_mean"] = metrics.get("applied_action_gripper_mean")
             metrics["policy_action_close_mean"] = metrics.get("applied_action_close_mean")
             metrics["policy_action_up_mean"] = metrics.get("applied_action_up_mean")
+    raw_policy_actions = getattr(task_env, "traj_raw_policy_actions", None)
+    reference_actions = getattr(task_env, "traj_reference_actions", None)
+    env_applied_actions = getattr(task_env, "traj_applied_actions", None)
+    _add_action_signal_metrics(metrics, "env_raw_policy_action", raw_policy_actions)
+    _add_action_signal_metrics(metrics, "env_reference_action", reference_actions)
+    _add_action_signal_metrics(metrics, "env_applied_action", env_applied_actions)
+    _add_action_delta_metrics(metrics, "env_raw_policy_reference_action_error", raw_policy_actions, reference_actions)
+    _add_action_delta_metrics(metrics, "env_applied_reference_action_error", env_applied_actions, reference_actions)
+    _add_action_delta_metrics(metrics, "env_applied_policy_action_error", env_applied_actions, raw_policy_actions)
     return metrics
 
 
@@ -835,6 +844,12 @@ def _env_config_summary(env_cfg, task_env) -> dict[str, object]:
         "trajectory_tracking_action_alignment_include_xy",
         "trajectory_tracking_action_alignment_include_z",
         "trajectory_tracking_action_alignment_include_gripper",
+        "trajectory_tracking_teacher_force_enabled",
+        "trajectory_tracking_teacher_force_alpha_start",
+        "trajectory_tracking_teacher_force_alpha_end",
+        "trajectory_tracking_teacher_force_phase_end",
+        "trajectory_tracking_teacher_force_anneal_steps",
+        "trajectory_tracking_action_alignment_compare_raw_policy",
         "trajectory_tracking_min_target_table_clearance",
         "trajectory_tracking_follow_current_cube_pose",
     ]

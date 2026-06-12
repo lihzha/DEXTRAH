@@ -32,6 +32,12 @@ parser.add_argument("--trajectory_tracking_action_alignment_weight", type=float,
 parser.add_argument("--trajectory_tracking_action_alignment_phase_start", type=float, default=None)
 parser.add_argument("--trajectory_tracking_action_alignment_sharpness", type=float, default=None)
 parser.add_argument("--trajectory_tracking_action_alignment_use_contact_gate", type=str, default=None)
+parser.add_argument("--trajectory_tracking_teacher_force_enabled", type=str, default=None)
+parser.add_argument("--trajectory_tracking_teacher_force_alpha_start", type=float, default=None)
+parser.add_argument("--trajectory_tracking_teacher_force_alpha_end", type=float, default=None)
+parser.add_argument("--trajectory_tracking_teacher_force_phase_end", type=float, default=None)
+parser.add_argument("--trajectory_tracking_teacher_force_anneal_steps", type=float, default=None)
+parser.add_argument("--trajectory_tracking_action_alignment_compare_raw_policy", type=str, default=None)
 parser.add_argument("--camera_eye", type=float, nargs=3, default=None, help="Viewport camera eye for validation video.")
 parser.add_argument(
     "--camera_target", type=float, nargs=3, default=None, help="Viewport camera target for validation video."
@@ -624,6 +630,19 @@ def _run_short_rollout(env, task_env, checks: CheckRecorder, num_steps: int, pri
         "cube_traj_tracking_action_alignment_mse",
         "cube_traj_tracking_action_alignment_phase_gate",
         "cube_traj_tracking_action_alignment_contact_gate",
+        "cube_traj_tracking_teacher_force_alpha",
+        "cube_traj_tracking_teacher_force_active_rate",
+        "cube_traj_tracking_raw_policy_reference_action_error_l2",
+        "cube_traj_tracking_applied_reference_action_error_l2",
+        "cube_traj_tracking_applied_policy_action_error_l2",
+        "cube_traj_tracking_raw_policy_action_close",
+        "cube_traj_tracking_raw_policy_action_up",
+        "cube_traj_tracking_raw_policy_action_z",
+        "cube_traj_tracking_raw_policy_gripper_action",
+        "cube_traj_tracking_applied_action_close",
+        "cube_traj_tracking_applied_action_up",
+        "cube_traj_tracking_applied_action_z",
+        "cube_traj_tracking_applied_gripper_action",
         "cube_traj_tracking_closed_target_gate",
         "cube_traj_tracking_close_phase_gate",
         "cube_traj_tracking_lift_phase_gate",
@@ -665,6 +684,15 @@ def _run_short_rollout(env, task_env, checks: CheckRecorder, num_steps: int, pri
     tracking_action_alignment_error_values: list[float] = []
     tracking_action_alignment_phase_gate_values: list[float] = []
     tracking_action_alignment_contact_gate_values: list[float] = []
+    tracking_teacher_force_alpha_values: list[float] = []
+    tracking_teacher_force_active_values: list[float] = []
+    tracking_raw_policy_reference_error_values: list[float] = []
+    tracking_applied_reference_error_values: list[float] = []
+    tracking_applied_policy_error_values: list[float] = []
+    tracking_raw_policy_action_close_values: list[float] = []
+    tracking_raw_policy_action_up_values: list[float] = []
+    tracking_applied_action_close_values: list[float] = []
+    tracking_applied_action_up_values: list[float] = []
     tracking_contact_gate_values: list[float] = []
     tracking_contact_distance_gate_values: list[float] = []
     tracking_finger_balance_gate_values: list[float] = []
@@ -740,6 +768,24 @@ def _run_short_rollout(env, task_env, checks: CheckRecorder, num_steps: int, pri
                     tracking_action_alignment_phase_gate_values.append(_mean(value))
                 elif key == "cube_traj_tracking_action_alignment_contact_gate":
                     tracking_action_alignment_contact_gate_values.append(_mean(value))
+                elif key == "cube_traj_tracking_teacher_force_alpha":
+                    tracking_teacher_force_alpha_values.append(_mean(value))
+                elif key == "cube_traj_tracking_teacher_force_active_rate":
+                    tracking_teacher_force_active_values.append(_mean(value))
+                elif key == "cube_traj_tracking_raw_policy_reference_action_error_l2":
+                    tracking_raw_policy_reference_error_values.append(_mean(value))
+                elif key == "cube_traj_tracking_applied_reference_action_error_l2":
+                    tracking_applied_reference_error_values.append(_mean(value))
+                elif key == "cube_traj_tracking_applied_policy_action_error_l2":
+                    tracking_applied_policy_error_values.append(_mean(value))
+                elif key == "cube_traj_tracking_raw_policy_action_close":
+                    tracking_raw_policy_action_close_values.append(_mean(value))
+                elif key == "cube_traj_tracking_raw_policy_action_up":
+                    tracking_raw_policy_action_up_values.append(_mean(value))
+                elif key == "cube_traj_tracking_applied_action_close":
+                    tracking_applied_action_close_values.append(_mean(value))
+                elif key == "cube_traj_tracking_applied_action_up":
+                    tracking_applied_action_up_values.append(_mean(value))
                 elif key == "cube_traj_tracking_contact_gate":
                     tracking_contact_gate_values.append(_mean(value))
                 elif key == "cube_traj_tracking_contact_distance_gate":
@@ -868,6 +914,42 @@ def _run_short_rollout(env, task_env, checks: CheckRecorder, num_steps: int, pri
             / len(tracking_action_alignment_contact_gate_values)
             if tracking_action_alignment_contact_gate_values
             else None,
+            "tracking_teacher_force_alpha_mean": sum(tracking_teacher_force_alpha_values)
+            / len(tracking_teacher_force_alpha_values)
+            if tracking_teacher_force_alpha_values
+            else None,
+            "tracking_teacher_force_active_mean": sum(tracking_teacher_force_active_values)
+            / len(tracking_teacher_force_active_values)
+            if tracking_teacher_force_active_values
+            else None,
+            "tracking_raw_policy_reference_action_error_l2_mean": sum(tracking_raw_policy_reference_error_values)
+            / len(tracking_raw_policy_reference_error_values)
+            if tracking_raw_policy_reference_error_values
+            else None,
+            "tracking_applied_reference_action_error_l2_mean": sum(tracking_applied_reference_error_values)
+            / len(tracking_applied_reference_error_values)
+            if tracking_applied_reference_error_values
+            else None,
+            "tracking_applied_policy_action_error_l2_mean": sum(tracking_applied_policy_error_values)
+            / len(tracking_applied_policy_error_values)
+            if tracking_applied_policy_error_values
+            else None,
+            "tracking_raw_policy_action_close_mean": sum(tracking_raw_policy_action_close_values)
+            / len(tracking_raw_policy_action_close_values)
+            if tracking_raw_policy_action_close_values
+            else None,
+            "tracking_raw_policy_action_up_mean": sum(tracking_raw_policy_action_up_values)
+            / len(tracking_raw_policy_action_up_values)
+            if tracking_raw_policy_action_up_values
+            else None,
+            "tracking_applied_action_close_mean": sum(tracking_applied_action_close_values)
+            / len(tracking_applied_action_close_values)
+            if tracking_applied_action_close_values
+            else None,
+            "tracking_applied_action_up_mean": sum(tracking_applied_action_up_values)
+            / len(tracking_applied_action_up_values)
+            if tracking_applied_action_up_values
+            else None,
             "tracking_contact_gate_mean": sum(tracking_contact_gate_values) / len(tracking_contact_gate_values)
             if tracking_contact_gate_values
             else None,
@@ -962,6 +1044,10 @@ def main() -> None:
         "trajectory_tracking_action_alignment_weight": args_cli.trajectory_tracking_action_alignment_weight,
         "trajectory_tracking_action_alignment_phase_start": args_cli.trajectory_tracking_action_alignment_phase_start,
         "trajectory_tracking_action_alignment_sharpness": args_cli.trajectory_tracking_action_alignment_sharpness,
+        "trajectory_tracking_teacher_force_alpha_start": args_cli.trajectory_tracking_teacher_force_alpha_start,
+        "trajectory_tracking_teacher_force_alpha_end": args_cli.trajectory_tracking_teacher_force_alpha_end,
+        "trajectory_tracking_teacher_force_phase_end": args_cli.trajectory_tracking_teacher_force_phase_end,
+        "trajectory_tracking_teacher_force_anneal_steps": args_cli.trajectory_tracking_teacher_force_anneal_steps,
     }
     for name, value in trajectory_overrides.items():
         if value is not None:
@@ -976,6 +1062,22 @@ def main() -> None:
                 "without trajectory_tracking_action_alignment_use_contact_gate"
             )
         env_cfg.trajectory_tracking_action_alignment_use_contact_gate = bool(use_contact_gate)
+    teacher_force_enabled = _optional_bool(args_cli.trajectory_tracking_teacher_force_enabled)
+    if teacher_force_enabled is not None:
+        if not hasattr(env_cfg, "trajectory_tracking_teacher_force_enabled"):
+            raise ValueError(
+                "--trajectory_tracking_teacher_force_enabled was provided for a task config "
+                "without trajectory_tracking_teacher_force_enabled"
+            )
+        env_cfg.trajectory_tracking_teacher_force_enabled = bool(teacher_force_enabled)
+    compare_raw_policy = _optional_bool(args_cli.trajectory_tracking_action_alignment_compare_raw_policy)
+    if compare_raw_policy is not None:
+        if not hasattr(env_cfg, "trajectory_tracking_action_alignment_compare_raw_policy"):
+            raise ValueError(
+                "--trajectory_tracking_action_alignment_compare_raw_policy was provided for a task config "
+                "without trajectory_tracking_action_alignment_compare_raw_policy"
+            )
+        env_cfg.trajectory_tracking_action_alignment_compare_raw_policy = bool(compare_raw_policy)
     _configure_validation_camera(env_cfg)
 
     checks = CheckRecorder()

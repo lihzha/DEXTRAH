@@ -58,6 +58,16 @@ class DextrahFrankaCubeTrajTrackingEnvCfg(DextrahFrankaCubeGraspEnvCfg):
     trajectory_tracking_action_alignment_include_xy = True
     trajectory_tracking_action_alignment_include_z = True
     trajectory_tracking_action_alignment_include_gripper = True
+    # Diagnostic teacher-forcing curriculum.  When enabled, the env applies a
+    # blend of raw policy action and reference_delta action during the approach
+    # phase, while action-alignment reward can still score the raw policy
+    # action.  This is not enabled for the baseline or default tracking task.
+    trajectory_tracking_teacher_force_enabled = False
+    trajectory_tracking_teacher_force_alpha_start = 1.0
+    trajectory_tracking_teacher_force_alpha_end = 1.0
+    trajectory_tracking_teacher_force_phase_end = 0.67
+    trajectory_tracking_teacher_force_anneal_steps = 0
+    trajectory_tracking_action_alignment_compare_raw_policy = True
     # GraspGenX exports use zero as a close command.  In this DEXTRAH task the
     # tracked value is measured fingertip-body separation, so clamp close-phase
     # targets to the contact-width scale used by the cube reward checks.

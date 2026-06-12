@@ -126,6 +126,13 @@ class DextrahFrankaCubeTrajTrackingEnv(DextrahFrankaCubeGraspEnv):
         self.traj_target_safe_mask = torch.ones(self.num_envs, dtype=torch.bool, device=self.device)
         self.traj_reference_object_quat = torch.zeros(self.num_envs, 4, device=self.device)
         self.traj_reference_object_quat[:, 0] = 1.0
+        self.traj_raw_policy_actions = torch.zeros(
+            self.num_envs, int(self.cfg.action_space), dtype=torch.float32, device=self.device
+        )
+        self.traj_reference_actions = torch.zeros_like(self.traj_raw_policy_actions)
+        self.traj_applied_actions = torch.zeros_like(self.traj_raw_policy_actions)
+        self.traj_teacher_force_alpha = torch.zeros(self.num_envs, dtype=torch.float32, device=self.device)
+        self.traj_teacher_force_active = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         if hasattr(self, "cube_quat"):
             self.traj_reference_object_quat[:] = self.cube_quat / torch.clamp(
                 torch.norm(self.cube_quat, dim=-1, keepdim=True),
@@ -151,6 +158,35 @@ class DextrahFrankaCubeTrajTrackingEnv(DextrahFrankaCubeGraspEnv):
         if bool(self.cfg.trajectory_tracking_enabled):
             total_reward = total_reward + self._compute_trajectory_tracking_reward()
         return total_reward
+
+    def _pre_physics_step(self, actions):
+        if not bool(getattr(self, "_trajectory_tracking_initialized", False)) or not bool(
+            getattr(self.cfg, "trajectory_tracking_enabled", False)
+        ):
+            return super()._pre_physics_step(actions)
+
+        raw_actions = actions.clone().clamp(-1.0, 1.0)
+        self.traj_raw_policy_actions[:] = raw_actions
+
+        if bool(getattr(self.cfg, "trajectory_tracking_teacher_force_enabled", False)):
+            reference_actions = self.compute_reference_delta_actions().detach().clamp(-1.0, 1.0)
+            alpha = self._compute_teacher_force_alpha()
+            applied_actions = torch.clamp(
+                (1.0 - alpha).unsqueeze(-1) * raw_actions + alpha.unsqueeze(-1) * reference_actions,
+                -1.0,
+                1.0,
+            )
+            self.traj_reference_actions[:] = reference_actions
+            self.traj_teacher_force_alpha[:] = alpha
+            self.traj_teacher_force_active[:] = alpha > 1.0e-6
+            self.traj_applied_actions[:] = applied_actions
+            return super()._pre_physics_step(applied_actions)
+
+        self.traj_reference_actions.zero_()
+        self.traj_teacher_force_alpha.zero_()
+        self.traj_teacher_force_active.zero_()
+        self.traj_applied_actions[:] = raw_actions
+        return super()._pre_physics_step(raw_actions)
 
     def _compute_curriculum_scale(self) -> float:
         start_weight = float(self.cfg.trajectory_tracking_start_weight)
@@ -211,6 +247,25 @@ class DextrahFrankaCubeTrajTrackingEnv(DextrahFrankaCubeGraspEnv):
         self.traj_phase_progress[env_ids] = episode_time / max(self.traj_ref_duration, 1.0e-6)
         self.traj_target_table_clearance[env_ids] = target_pos[:, 2] - float(self.cfg.table_surface_z)
 
+    def _compute_teacher_force_alpha(self) -> torch.Tensor:
+        self._update_trajectory_tracking_targets()
+        phase_end = float(getattr(self.cfg, "trajectory_tracking_teacher_force_phase_end", 0.0))
+        active_phase = self.traj_phase_progress <= phase_end
+        start = float(getattr(self.cfg, "trajectory_tracking_teacher_force_alpha_start", 1.0))
+        end = float(getattr(self.cfg, "trajectory_tracking_teacher_force_alpha_end", start))
+        anneal_steps = float(getattr(self.cfg, "trajectory_tracking_teacher_force_anneal_steps", 0.0))
+        if anneal_steps > 0.0:
+            progress = min(max(float(getattr(self, "common_step_counter", 0)) / anneal_steps, 0.0), 1.0)
+            scheduled_alpha = start + progress * (end - start)
+        else:
+            scheduled_alpha = start
+        scheduled_alpha = min(max(scheduled_alpha, 0.0), 1.0)
+        return torch.where(
+            active_phase,
+            torch.full_like(self.traj_phase_progress, scheduled_alpha),
+            torch.zeros_like(self.traj_phase_progress),
+        )
+
     def compute_reference_delta_actions(self) -> torch.Tensor:
         """Map the current task-space reference target into the Franka action convention."""
 
@@ -244,6 +299,15 @@ class DextrahFrankaCubeTrajTrackingEnv(DextrahFrankaCubeGraspEnv):
         if bool(getattr(self.cfg, "trajectory_tracking_action_alignment_include_gripper", True)):
             dims.append(6)
         return [dim for dim in dims if dim < int(self.cfg.action_space)]
+
+    def _trajectory_tracking_alignment_actions(self) -> torch.Tensor:
+        if bool(getattr(self.cfg, "trajectory_tracking_action_alignment_compare_raw_policy", True)) and hasattr(
+            self, "traj_raw_policy_actions"
+        ):
+            raw_actions = self.traj_raw_policy_actions
+            if raw_actions.shape == self.actions.shape:
+                return raw_actions
+        return self.actions
 
     def _compute_trajectory_tracking_reward(self) -> torch.Tensor:
         self._update_trajectory_tracking_targets()
@@ -349,9 +413,12 @@ class DextrahFrankaCubeTrajTrackingEnv(DextrahFrankaCubeGraspEnv):
         )
 
         reference_actions = self.compute_reference_delta_actions()
+        if hasattr(self, "traj_reference_actions"):
+            self.traj_reference_actions[:] = reference_actions.detach()
         action_alignment_dims = self._trajectory_tracking_action_alignment_dims()
+        alignment_actions = self._trajectory_tracking_alignment_actions()
         if action_alignment_dims:
-            action_delta = self.actions[:, action_alignment_dims] - reference_actions[:, action_alignment_dims]
+            action_delta = alignment_actions[:, action_alignment_dims] - reference_actions[:, action_alignment_dims]
             action_alignment_mse = torch.mean(torch.square(action_delta), dim=-1)
         else:
             action_alignment_mse = torch.zeros(self.num_envs, device=self.device)
@@ -385,6 +452,20 @@ class DextrahFrankaCubeTrajTrackingEnv(DextrahFrankaCubeGraspEnv):
             action_alignment_reward / torch.clamp(action_alignment_reward_ceiling, min=1.0e-8),
             torch.zeros_like(action_alignment_reward),
         )
+        raw_policy_actions = getattr(self, "traj_raw_policy_actions", self.actions)
+        applied_actions = getattr(self, "traj_applied_actions", self.actions)
+        teacher_force_alpha = getattr(
+            self, "traj_teacher_force_alpha", torch.zeros(self.num_envs, device=self.device)
+        )
+        teacher_force_active = getattr(
+            self, "traj_teacher_force_active", torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        )
+        raw_reference_delta = raw_policy_actions - reference_actions
+        applied_reference_delta = applied_actions - reference_actions
+        applied_raw_delta = applied_actions - raw_policy_actions
+        raw_reference_l2 = torch.norm(raw_reference_delta, dim=-1)
+        applied_reference_l2 = torch.norm(applied_reference_delta, dim=-1)
+        applied_raw_l2 = torch.norm(applied_raw_delta, dim=-1)
 
         tracking_reward = (
             position_reward
@@ -415,6 +496,19 @@ class DextrahFrankaCubeTrajTrackingEnv(DextrahFrankaCubeGraspEnv):
                 "cube_traj_tracking_action_alignment_mse": action_alignment_mse.mean(),
                 "cube_traj_tracking_action_alignment_phase_gate": action_alignment_phase_gate.mean(),
                 "cube_traj_tracking_action_alignment_contact_gate": action_alignment_contact_gate.mean(),
+                "cube_traj_tracking_teacher_force_alpha": teacher_force_alpha.mean(),
+                "cube_traj_tracking_teacher_force_active_rate": teacher_force_active.float().mean(),
+                "cube_traj_tracking_raw_policy_reference_action_error_l2": raw_reference_l2.mean(),
+                "cube_traj_tracking_applied_reference_action_error_l2": applied_reference_l2.mean(),
+                "cube_traj_tracking_applied_policy_action_error_l2": applied_raw_l2.mean(),
+                "cube_traj_tracking_raw_policy_action_close": torch.clamp(-raw_policy_actions[:, 6], 0.0, 1.0).mean(),
+                "cube_traj_tracking_raw_policy_action_up": torch.clamp(raw_policy_actions[:, 2], 0.0, 1.0).mean(),
+                "cube_traj_tracking_raw_policy_action_z": raw_policy_actions[:, 2].mean(),
+                "cube_traj_tracking_raw_policy_gripper_action": raw_policy_actions[:, 6].mean(),
+                "cube_traj_tracking_applied_action_close": torch.clamp(-applied_actions[:, 6], 0.0, 1.0).mean(),
+                "cube_traj_tracking_applied_action_up": torch.clamp(applied_actions[:, 2], 0.0, 1.0).mean(),
+                "cube_traj_tracking_applied_action_z": applied_actions[:, 2].mean(),
+                "cube_traj_tracking_applied_gripper_action": applied_actions[:, 6].mean(),
                 "cube_traj_tracking_position_error": position_error.mean(),
                 "cube_traj_tracking_orientation_error": orientation_error.mean(),
                 "cube_traj_tracking_gripper_error": gripper_error.mean(),
