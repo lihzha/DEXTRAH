@@ -9988,3 +9988,181 @@ Next:
   relabel rollout, `ACTION_CHUNK_STEPS=1`, and support/policy tracing.
 - Inspect metrics/support/policy traces before deciding whether any short video
   is warranted.
+
+## 2026-06-11T23:03:44-07:00 - launch 25D phase-progress matched-reset trace
+
+Goal:
+- Run the first closed-loop mechanics trace for the 25D checkpoint only after
+  offline provider parity passed. This is no-video, single-env, matched-reset,
+  trace-first; no broad eval/RL.
+
+Version Control:
+- local implementation commit:
+  `f5a02fce81b2373cc29d6d183a186fd7f5147d9d`
+- pushed: yes, branch `codex/franka-cube-diffusion-policy-bc`.
+- l401 worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- l401 commit:
+  `f5a02fce81b2373cc29d6d183a186fd7f5147d9d`
+- deployment note:
+  remote SSH fetch from `origin` failed with public-key auth, so deployment used
+  Git HTTPS fetch from `https://github.com/lihzha/DEXTRAH.git` for the pushed
+  agent branch and then detached checkout to the exact commit. No source rsync.
+
+Artifacts staged on l401:
+- checkpoint:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/contact_relabel_lrcentering_a075_set4_phaseprogress_20260611_224001/latest.ckpt`
+- phase/progress dataset:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/phase_progress_set4/contact_relabel_set_phase_progress.npz`
+- accepted 21D reset dataset already present:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/contact_relabel_sets/franka_cube_contact_relabel_lrcentering_ep8_16_24_30_a0p75_20260611_2224/contact_relabel_set_accepted.npz`
+- source trajectory:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed8/trajectory.json`
+
+Command / Job:
+- job_id: `1028187`
+- run_name:
+  `franka_cube_dp_eval_phaseprogress_set4_ep0_trace128_no_video_20260611_230344`
+- command:
+  `sbatch --parsable --export=ALL,RUN_NAME=franka_cube_dp_eval_phaseprogress_set4_ep0_trace128_no_video_20260611_230344,NUM_ENVS=1,NUM_STEPS=128,NUM_INFERENCE_STEPS=100,ACTION_CHUNK_STEPS=1,CLIP_ACTIONS=1.0,SUCCESS_WINDOW=32,SUCCESS_TIMEOUT_OVERRIDE=999.0,CAPTURE_VIDEO=False,PRINT_INTERVAL=16,DEBUG_POLICY_TRACE_MAX_CALLS=24,DEBUG_POLICY_TRACE_ENV_INDEX=0,CHECKPOINT=/results/dp_bc/checkpoints/contact_relabel_lrcentering_a075_set4_phaseprogress_20260611_224001/latest.ckpt,SUPPORT_DATASET=/results/dp_bc/phase_progress_set4/contact_relabel_set_phase_progress.npz,PHASE_PROGRESS_DATASET=/results/dp_bc/phase_progress_set4/contact_relabel_set_phase_progress.npz,PHASE_PROGRESS_EPISODE=0,PHASE_PROGRESS_START_STEP=0,DEMO_RESET_DATASET=/results/contact_relabel_sets/franka_cube_contact_relabel_lrcentering_ep8_16_24_30_a0p75_20260611_2224/contact_relabel_set_accepted.npz,DEMO_RESET_EPISODE=0,DEMO_RESET_STEP=0,DEMO_RESET_SOURCE_TRAJECTORY_JSON=/results/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed8/trajectory.json,DEMO_RESET_SOURCE_FRAME=260,DEMO_RESET_JOINT_BLEND_ALPHA=0.75,DEMO_RESET_CUBE_POS_BLEND_ALPHA=1.0 cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- expected remote run dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_phaseprogress_set4_ep0_trace128_no_video_20260611_230344`
+- expected log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_dp_policy_1028187.out`
+
+Acceptance:
+- Scheduler completion is not enough.
+- Required artifacts: `metrics.json`, `policy_trace.json`,
+  `support_trace.json`, `support_trace.csv`, `eval_config.json`.
+- Inspect that policy trace obs dim is `25`, phase/progress features follow the
+  episode-0 schedule, action values are finite, env closes cleanly, and support
+  trace does not show an obvious train/eval feature mismatch.
+
+## 2026-06-11T23:04:30-07:00 - relaunch 25D trace with agent code mount
+
+Result:
+- job `1028187` failed before meaningful rollout.
+- failure evidence:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_dp_policy_1028187.out`
+  ended with:
+  `/isaac-sim/kit/python/bin/python3: can't open file '/code/dextrah_lab/rl_games/eval_franka_cube_dp_policy.py': [Errno 2] No such file or directory`
+- root cause:
+  the wrapper defaulted `CODE_NFS` to the canonical remote checkout
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/DEXTRAH`, not the C-owned detached
+  worktree. The container printed a different code commit
+  `378b722a82a42b293b7eea9f27629502cbf44d19`; no policy behavior was evaluated.
+
+Relaunch:
+- l401 source check:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+  is at `f5a02fce81b2373cc29d6d183a186fd7f5147d9d` and contains
+  `dextrah_lab/rl_games/eval_franka_cube_dp_policy.py`.
+- job_id: `1028188`
+- run_name:
+  `franka_cube_dp_eval_phaseprogress_set4_ep0_trace128_no_video_20260611_230430`
+- changed launch setting:
+  `CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- expected remote run dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_phaseprogress_set4_ep0_trace128_no_video_20260611_230430`
+- expected log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_dp_policy_1028188.out`
+
+Next:
+- Monitor `1028188`; fetch and inspect metrics/traces if it reaches the eval
+  wrapper. Do not launch video or broader eval until this trace is understood.
+
+## 2026-06-11T23:18:00-07:00 - inspect 25D phase-progress matched-reset trace 1028188
+
+Goal:
+- Inspect the first no-video Isaac trace for the 25D phase/progress official
+  DP checkpoint before any video, broader eval, BC scale-up, or RL handoff.
+
+Version Control:
+- launched implementation commit:
+  `f5a02fce81b2373cc29d6d183a186fd7f5147d9d`
+- local source after artifact/report patch: pending commit.
+- l401 job code path:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- l401 launch commit:
+  `f5a02fce81b2373cc29d6d183a186fd7f5147d9d`
+
+Command / Job:
+- job_id: `1028188`
+- scheduler state: `COMPLETED`, exit `0:0`, elapsed `00:01:46`,
+  node `pool0-00030`.
+- run_name:
+  `franka_cube_dp_eval_phaseprogress_set4_ep0_trace128_no_video_20260611_230430`
+- remote run dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_phaseprogress_set4_ep0_trace128_no_video_20260611_230430`
+- local artifact dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_trace128_no_video_20260611_230430`
+- stdout log:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_trace128_no_video_20260611_230430/eval_franka_cube_dp_policy_1028188.out`
+
+Artifacts:
+- metrics:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_trace128_no_video_20260611_230430/metrics.json`
+- policy trace:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_trace128_no_video_20260611_230430/policy_trace.json`
+- support trace JSON/CSV:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_trace128_no_video_20260611_230430/support_trace.json`
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_trace128_no_video_20260611_230430/support_trace.csv`
+- eval config:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_trace128_no_video_20260611_230430/eval_config.json`
+- generated report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_trace128_no_video_20260611_230430/closed_loop_support_report.md`
+- support plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_trace128_no_video_20260611_230430/closed_loop_support_trace.png`
+- phase/progress plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_trace128_no_video_20260611_230430/closed_loop_phase_progress.png`
+- action plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_trace128_no_video_20260611_230430/closed_loop_action_components.png`
+
+Result:
+- status: `failed closed-loop support gate`; no video was launched.
+- 25D runtime bridge mechanics passed the narrow wiring check:
+  - `policy_trace.json` has `lowdim_obs_dim=25`.
+  - `phase_progress_provider` loaded the expected dataset, episode `0`,
+    start step `0`, obs dim `25`, features
+    `phase_align_open`, `phase_close_hold`, `phase_lift`,
+    `episode_progress`.
+  - demo/source reset matched exactly:
+    `lowdim_l2_diff_env0=0`, `cube_minus_ee_l2_diff_env0=0`,
+    `joint_linf_diff_after_write_env0=0`.
+  - history gaps were `[0, 1]`, so the previous cadence bug did not recur.
+- behavior metrics:
+  - final/window success: `0.0/0.0`.
+  - `has_lifted_cube` max: `0`.
+  - cube lift max/final: `0.01697/0.0 m`.
+  - final gripper width: `0.00859 m`.
+  - EE-to-cube min/final: `0.02334/0.18490 m`.
+  - finger-center-to-cube min/final: `0.05560/0.17893 m`.
+  - support distance start/final: `0.03517/5.55853`.
+  - nearest phase counts: `align_open=72`, `close_hold=8`,
+    `lift=48`.
+- runtime feature schedule did switch as expected:
+  - align/open at step `1`, close/hold around step `22`, lift around
+    step `102`.
+  - Despite this, the nearest-demo support trace stayed/fell back to
+    `align_open` for much of the rollout and support distance grew sharply.
+
+Analysis:
+- This run rules out the simplest 25D bridge wiring failure: the official DP
+  checkpoint consumed 25D observations, the phase/progress provider matched the
+  generated NPZ schedule, and the env reset/history plumbing was exact.
+- The behavior remains a train/eval-support failure under closed loop. The
+  policy begins hard close at step `24`, while the live geometry is already
+  drifting out of the support manifold; by the end it is closed but far from
+  the cube. This should not be treated as BC/RL readiness.
+- Next diagnosis should be bounded and offline/trace-first: compare the 25D
+  policy's action predictions on exact dataset windows vs this live trace,
+  audit action normalization/sign/timing under the phase-progress checkpoint,
+  and check whether the deterministic phase schedule advances faster than live
+  contact dynamics. No video, broad eval, DP retrain, or RL launch is justified
+  from `1028188`.
+
+Next:
+- Commit the report-generator/worklog update.
+- Do not launch a video or broad evaluation from this checkpoint.
+- If continuing, run a bounded action/phase timing diagnostic from the fetched
+  trace and exact dataset windows before any new Isaac job.
