@@ -5605,3 +5605,136 @@ Validation:
 
 Next:
 - Commit/push, deploy exact commit to the agent-owned l401 worktree, then launch one 64-env L401 PPO smoke with `GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED=True`.
+
+## 2026-06-12T06:43:11Z - launch: action-prior reward PPO smoke
+
+Goal:
+- Test the non-apple-to-apple action-prior reward intervention on a bounded 64-env PPO smoke, then inspect metrics and video before any further training decision.
+
+Version Control:
+- local_commit / pushed branch: `9a35f7be1c5df09c7b9f525486368959ccc86c03`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: detached `9a35f7be1c5df09c7b9f525486368959ccc86c03`
+
+Command / Job:
+- job_id: `1028231`
+- run_name: `franka_cube_lowz_actionprior_r4s1_45_20260612_064303`
+- wrapper: `cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`
+- remote_run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_lowz_actionprior_r4s1_45_20260612_064303`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_smoke_1028231.out`
+- config summary:
+  - task: `Dextrah-Franka-Cube-Grasp`
+  - `NUM_ENVS=64`, `MAX_ITERATIONS=45`, `HORIZON_LENGTH=64`, `SAVE_FREQUENCY=5`
+  - `SEED=20260625`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`
+  - low-z library: `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz`
+  - `GRASP_PRIOR_RESET_ENABLED=True`
+  - `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`
+  - `GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED=True`, weight `4.0`, sharpness `1.0`
+  - reference sequence: approach `16`, light-close `24`, lift `40`, close width `0.055`, lift action z `0.50`, gain `8.0`, track orientation `True`
+
+Expected artifacts:
+- stdout log, `metrics/direct_info_rank_0.jsonl`, checkpoints under `nn/`, resolved config under the RL-Games run dir.
+- After training completes: parse JSONL for action-prior active/reward/delta, reset metrics, action z/gripper, lift/success; then run a video eval from best/final checkpoint if metrics are finite and the branch is active.
+
+Decision gate:
+- This is non-apple-to-apple. It cannot be used as the reset-prior comparison result.
+- Do not scale unless learned-policy eval video shows real grasp/lift. Scheduler success alone is insufficient.
+
+## 2026-06-12T06:45:39Z - monitor: action-prior reward PPO smoke complete
+
+Result:
+- job_id: `1028231`
+- scheduler: `COMPLETED 0:0`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_lowz_actionprior_r4s1_45_20260612_064303`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_smoke_1028231.out`
+- JSONL: 45 rows, no non-finite scalar values found.
+- Checkpoints: every 5 epochs through ep45; best logged checkpoint reward is ep10 `1009.47394`, final ep45 `696.23663`.
+
+Key metrics:
+- Reset branch remained healthy: `cube_grasp_prior_reset_success_rate=1.0`, `cube_grasp_prior_quality_success_rate=1.0` throughout.
+- Action-prior reward branch was active and logged: mean `cube_action_prior_reward=0.0830`, max `1.0587`; mean active rate `0.0590`, max `0.75`.
+- Behavioral training scalars are negative: `cube_success_rate` stayed `0.0`; `cube_has_lifted_rate` max `0.015625`; final `cube_lift_height=0.000006 m`.
+- Final action/geometry still look like open/no-contact: final `cube_gripper_action=0.9226`, `cube_gripper_width=0.0769 m`, `cube_action_z=-0.1577`, `cube_ee_to_cube_dist=0.2629 m`, `cube_finger_center_to_cube_dist=0.2726 m`.
+
+Analysis:
+- The intervention is wired and finite but did not produce meaningful learned lift in training scalars.
+- Because video evidence is mandatory for behavioral claims, the next step is a bounded eval from the best-reward checkpoint and final checkpoint before classifying this intervention.
+
+Next:
+- Launch two L401 eval jobs under the same low-z reset/action-prior diagnostic config:
+  - ep10 best checkpoint: `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_lowz_actionprior_r4s1_45_20260612_064303/nn/last_dextrah_franka_cube_grasp_ep_10_rew_1009.47394.pth`
+  - ep45 final checkpoint: `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_lowz_actionprior_r4s1_45_20260612_064303/nn/last_dextrah_franka_cube_grasp_ep_45_rew_696.23663.pth`
+- Fetch videos/metrics, create contact sheets/plots/report, open with `viz-open`, then decide whether this is a negative intervention.
+
+## 2026-06-12T06:46:00Z - launch: action-prior reward eval videos
+
+Goal:
+- Produce mandatory learned-policy video evidence for the non-apple-to-apple action-prior reward diagnostic.
+
+Command / Job:
+- job_id: `1028237`
+- run_name: `franka_cube_lowz_actionprior_eval_ep10_20260612_0646`
+- checkpoint: `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_lowz_actionprior_r4s1_45_20260612_064303/nn/last_dextrah_franka_cube_grasp_ep_10_rew_1009.47394.pth`
+- job_id: `1028238`
+- run_name: `franka_cube_lowz_actionprior_eval_ep45_20260612_0646`
+- checkpoint: `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_lowz_actionprior_r4s1_45_20260612_064303/nn/last_dextrah_franka_cube_grasp_ep_45_rew_696.23663.pth`
+- wrapper: `cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- common config:
+  - `NUM_ENVS=1`, `NUM_STEPS=600`, `VIDEO_LENGTH=600`, `CAPTURE_VIDEO=True`, deterministic eval
+  - `SEED=20260625`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`
+  - low-z library: `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz`
+  - `GRASP_PRIOR_RESET_ENABLED=True`
+  - `GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED=True`, weight `4.0`, sharpness `1.0`
+  - `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`
+
+Expected artifacts:
+- remote eval dirs under `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/<run_name>`
+- metrics JSON and labeled MP4 per checkpoint; fetch locally and build contact sheets/plots/report.
+
+## 2026-06-12T06:48:00Z - result: action-prior reward diagnostic evals
+
+Result:
+- eval job `1028237` (`ep10`) completed `0:0`.
+- eval job `1028238` (`ep45`) completed `0:0`.
+- fetched local training run: `cluster_results/l401/franka_cube_lowz_actionprior_r4s1_45_20260612_064303/`
+- fetched local evals:
+  - `cluster_results/l401/franka_cube_lowz_actionprior_eval_ep10_20260612_0646/`
+  - `cluster_results/l401/franka_cube_lowz_actionprior_eval_ep45_20260612_0646/`
+- fetched logs:
+  - `cluster_logs/l401/dextrah/franka_cube_smoke_1028231.out`
+  - `cluster_logs/l401/dextrah/eval_franka_cube_1028237.out`
+  - `cluster_logs/l401/dextrah/eval_franka_cube_1028238.out`
+
+Inspection artifacts:
+- report: http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_actionprior_r4s1_45_20260612_064303/inspection_20260612_0648/REPORT.md
+- summary JSON: `cluster_results/l401/franka_cube_lowz_actionprior_r4s1_45_20260612_064303/inspection_20260612_0648/summary.json`
+- ep10 contact sheet: http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_actionprior_r4s1_45_20260612_064303/inspection_20260612_0648/contact_sheet_ep10.jpg
+- ep45 contact sheet: http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_actionprior_r4s1_45_20260612_064303/inspection_20260612_0648/contact_sheet_ep45.jpg
+- ep10 video: http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_actionprior_eval_ep10_20260612_0646/videos/lowz-actionprior-step-0.mp4
+- ep45 video: http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_actionprior_eval_ep45_20260612_0646/videos/lowz-actionprior-step-0.mp4
+- training behavior plot: http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_actionprior_r4s1_45_20260612_064303/inspection_20260612_0648/training_behavior_curves.png
+- ep10 trace plot: http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_actionprior_r4s1_45_20260612_064303/inspection_20260612_0648/eval_ep10_behavior_trace.png
+- ep45 trace plot: http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_actionprior_r4s1_45_20260612_064303/inspection_20260612_0648/eval_ep45_behavior_trace.png
+
+Key evidence:
+- Training JSONL had 45 rows and no bad scalars.
+- Reset metrics remained healthy: reset success/quality `1.0`.
+- Action-prior branch was active: mean `cube_action_prior_reward=0.0830`, max `1.0587`; mean active rate `0.0590`, max `0.75`.
+- Training behavior did not pass: `cube_success_rate` max `0.0`, `cube_has_lifted_rate` max `0.015625`, final lift height `0.000006 m`.
+- ep10 eval: success max/final `0.0/0.0`, lifted max `0.0`, max lift height `0.0298 m` but no held/lifted flag, final EE/finger distance `0.2308/0.2066 m`, final width `0.0800 m`.
+- ep45 eval: success max/final `0.0/0.0`, lifted max `0.0`, max lift height `0.00088 m`, final EE/finger distance `0.0935/0.1277 m`, final width `0.0800 m`.
+- Visual verdict: ep10 makes early contact/perturbation but lets the cube go and moves away; ep45 stays open/off-contact. Neither video shows real grasp/lift.
+
+Decision:
+- Negative non-apple-to-apple intervention diagnostic.
+- Do not scale to A100/full PPO.
+- This does not invalidate the reset geometry/library; it confirms the learned-policy/reward-discovery blocker persists even with a sparse action-prior reward.
+
+Active jobs:
+- `squeue -u lzha` on l401 is empty after this fetch/inspection.
+
+Next candidate:
+- A stronger but still bounded non-apple-to-apple diagnostic is needed before any scale-up, likely either:
+  - staged/curriculum reward that keeps action-prior guidance active for full early episodes and decays only after contact/lift, or
+  - BC/actor initialization from the successful assisted low-z trajectory followed by an explicitly preservation-biased short PPO smoke.
+- Any next run must stay video-first and explicitly labeled as intervention, not the apple-to-apple reset-prior comparison.
