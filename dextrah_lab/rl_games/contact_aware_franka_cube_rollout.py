@@ -298,8 +298,8 @@ def _build_report(summary: dict[str, Any]) -> str:
         "",
         "## Variant Summary",
         "",
-        "| variant | offset | steps | final EE-cube | min finger-cube | final finger-cube | max lift | final lift | final grip width | max clip | success-like |",
-        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| variant | offset | steps | final EE-cube | min finger-cube | final finger-cube | max lift | final lift | final grip width | max clip | terminal next | skipped reset step | success-like |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---|",
     ]
     for variant, payload in summary["variants"].items():
         lines.append(
@@ -307,7 +307,8 @@ def _build_report(summary: dict[str, Any]) -> str:
             f"{payload['final_ee_to_cube']:.4f} | {payload['min_finger_center_to_cube']:.4f} | "
             f"{payload['final_finger_center_to_cube']:.4f} | {payload['max_cube_lift_height']:.4f} | "
             f"{payload['final_cube_lift_height']:.4f} | {payload['final_gripper_width']:.5f} | "
-            f"{payload['max_pose_action_clip_fraction']:.3f} | {payload['success_like']} |"
+            f"{payload['max_pose_action_clip_fraction']:.3f} | {payload['terminated_next_step']} | "
+            f"{payload['skipped_post_reset_local_step']} | {payload['success_like']} |"
         )
     lines.extend(
         [
@@ -417,6 +418,20 @@ def main() -> None:
                 )
                 after_lowdim = _lowdim_numpy_from_policy_obs(policy_obs)
                 task_env._compute_intermediate_values()
+                terminated_flag = bool(terminated.detach().cpu().numpy()[0]) if hasattr(terminated, "detach") else bool(terminated[0])
+                truncated_flag = bool(truncated.detach().cpu().numpy()[0]) if hasattr(truncated, "detach") else bool(truncated[0])
+                done_flag = terminated_flag or truncated_flag
+                if done_flag:
+                    if rows and rows[-1].get("variant") == variant_name:
+                        rows[-1]["terminated_next_step"] = terminated_flag
+                        rows[-1]["truncated_next_step"] = truncated_flag
+                        rows[-1]["terminal_reward_next"] = float(rewards.detach().float().cpu()[0])
+                        rows[-1]["skipped_post_reset_local_step"] = int(local_step)
+                        rows[-1]["skipped_post_reset_gripper_width"] = float(after_lowdim[20])
+                        rows[-1]["skipped_post_reset_cube_lift_height"] = float(
+                            task_env.cube_lift_height.detach().cpu()[0]
+                        )
+                    break
                 row = {
                     "variant": variant_name,
                     "variant_index": variant_idx,
@@ -441,6 +456,8 @@ def main() -> None:
                     "executed_action": action.astype(float).tolist(),
                     "pose_action_clip_fraction": float(np.count_nonzero(clip_hits) / 6.0),
                     "reward": float(rewards.detach().float().cpu()[0]),
+                    "terminated_next_step": False,
+                    "truncated_next_step": False,
                 }
                 rows.append(row)
                 if args_cli.print_interval > 0 and (
@@ -463,8 +480,6 @@ def main() -> None:
                         flush=True,
                     )
                 global_step += 1
-                if torch.logical_or(terminated, truncated).any():
-                    break
             vrows = [row for row in rows if row["variant"] == variant_name]
             last = vrows[-1]
             max_lift = float(max(row["cube_lift_height"] for row in vrows))
@@ -481,6 +496,14 @@ def main() -> None:
                 "final_cube_lift_height": final_lift,
                 "final_gripper_width": float(last["gripper_width"]),
                 "max_pose_action_clip_fraction": float(max(row["pose_action_clip_fraction"] for row in vrows)),
+                "terminated_next_step": bool(any(row.get("terminated_next_step", False) for row in vrows)),
+                "truncated_next_step": bool(any(row.get("truncated_next_step", False) for row in vrows)),
+                "skipped_post_reset_local_step": int(
+                    max(
+                        [row.get("skipped_post_reset_local_step", -1) for row in vrows],
+                        default=-1,
+                    )
+                ),
                 "success_like": success_like,
             }
     finally:

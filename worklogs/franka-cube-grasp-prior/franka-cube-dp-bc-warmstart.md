@@ -5526,3 +5526,71 @@ Command / Job:
   `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/contact_rollouts/franka_cube_contact_rollout_ep24s260_high30_lift22_20260611_173411`
 - log:
   `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/contact_aware_franka_cube_rollout_1027921.out`
+
+Result:
+- status: completed `0:0`, but artifact summary exposed post-reset row
+  contamination.
+- Remote run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/contact_rollouts/franka_cube_contact_rollout_ep24s260_high30_lift22_20260611_173411`
+- Local artifact dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_rollouts/franka_cube_contact_rollout_ep24s260_high30_lift22_20260611_173411`
+- Local log:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/contact_aware_franka_cube_rollout_1027921.out`
+- Viewer URLs:
+  - report:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_rollouts/franka_cube_contact_rollout_ep24s260_high30_lift22_20260611_173411/contact_rollout_report.md`
+  - plot:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_rollouts/franka_cube_contact_rollout_ep24s260_high30_lift22_20260611_173411/contact_rollout_plot.png`
+  - video:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_rollouts/franka_cube_contact_rollout_ep24s260_high30_lift22_20260611_173411/videos/franka-cube-contact-rollout-high30-lift22-step-0.mp4`
+  - contact sheet:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_rollouts/franka_cube_contact_rollout_ep24s260_high30_lift22_20260611_173411/videos/franka-cube-contact-rollout-high30-lift22-step-0_sheet.jpg`
+
+Metrics:
+- It reached `max_cube_lift_height=0.13550 m`, with pre-reset row
+  `local_step=280`, `ee_to_cube=0.00751 m`,
+  `finger_center_to_cube=0.03787 m`, `gripper_width=0.04962 m`, and no pose
+  clipping.
+- The final CSV/summary row is post-reset: `cube_lift_height=0`,
+  `ee_to_cube=0.19484 m`, `finger_center_to_cube=0.18519 m`,
+  `gripper_width=0.08 m`.
+- IsaacLab `DirectRLEnv.step()` resets terminated envs before returning
+  observations, so this row is not behavior evidence.
+
+Analysis:
+- The contact-aware high-lift controller appears to hit the success threshold,
+  but the artifact logger must exclude post-reset rows and mark terminal
+  success explicitly before this can be used as a relabeler gate.
+- The visual contact sheet shows the cube being carried upward, but this still
+  needs clean pre-reset metrics/video annotation before any dataset generation.
+
+Next:
+- Patch `contact_aware_franka_cube_rollout.py` to drop post-reset rows after
+  `terminated/truncated`, annotate the previous row with terminal metadata,
+  and summarize final pre-reset state. Relaunch the same high-lift smoke for
+  clean artifacts. No DP training.
+
+## 2026-06-11T17:37:36-07:00 - contact rollout post-reset logging fix
+
+Goal:
+- Fix the contact-aware rollout artifact semantics so success/reset does not
+  make the final metrics look like the hand drifted away.
+
+Change:
+- In `dextrah_lab/rl_games/contact_aware_franka_cube_rollout.py`, detect
+  `terminated/truncated` immediately after the env step.
+- Do not append the returned post-reset observation row. Instead, annotate the
+  previous pre-reset row with `terminated_next_step`, `truncated_next_step`,
+  `terminal_reward_next`, and the skipped post-reset step/width/lift.
+- Add terminal/skipped-reset fields to the report summary table.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/contact_aware_franka_cube_rollout.py`: passed.
+- `bash -n cluster/sbatch_contact_aware_franka_cube_rollout_1gpu.sh`: passed.
+- `git diff --check`: passed.
+
+Relaunch Plan:
+- Same one-variant high-lift smoke as job `1027921`, with run name
+  `franka_cube_contact_rollout_ep24s260_high30_lift22_postresetfix_<timestamp>`.
+- Acceptance remains clean report/JSON/CSV/plot/video with pre-reset final
+  metrics and visual stable lift.
