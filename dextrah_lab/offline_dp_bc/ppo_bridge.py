@@ -31,6 +31,15 @@ PHASE_PROGRESS_FEATURE_NAMES = (
     "episode_progress",
 )
 PHASE_PROGRESS_FEATURE_DIM = len(PHASE_PROGRESS_FEATURE_NAMES)
+PHASE_PROGRESS_SUPPORT_FEATURE_IDX = np.asarray(
+    [0, 1, 2, 7, 8, 9, 14, 15, 16, 17, 18, 19, 20],
+    dtype=np.int64,
+)
+CONTACT_PHASE_NAME_BY_ID = {
+    0: "align_open",
+    1: "close_hold",
+    2: "lift",
+}
 
 
 @dataclass(frozen=True)
@@ -263,6 +272,7 @@ class DatasetBackedPhaseProgressProvider:
 
     def summary(self) -> dict[str, Any]:
         return {
+            "mode": "dataset",
             "dataset_path": self.dataset_path,
             "episode_index": int(self.episode_index),
             "episode_start": int(self.episode_start),
@@ -273,13 +283,164 @@ class DatasetBackedPhaseProgressProvider:
         }
 
 
+class ContactGatedPhaseProgressProvider:
+    """Dataset-backed phase/progress provider with live-geometry gating.
+
+    The generated 25D dataset uses a deterministic episode clock. That is
+    useful offline but unsafe in closed loop: the policy can see close/lift
+    features before the live EE/cube state reaches close/lift support. This
+    provider keeps the dataset progress schedule but only allows close/lift
+    one-hot phases when the current 21D lowdim state is near that phase's
+    support in the selected relabel dataset episode.
+    """
+
+    def __init__(
+        self,
+        *,
+        dataset_path: str | Path,
+        episode_index: int = 0,
+        start_step: int = 0,
+        close_support_distance_threshold: float = 0.55,
+        lift_support_distance_threshold: float = 0.75,
+        lift_gripper_width_threshold: float = 0.025,
+    ) -> None:
+        dataset_path = Path(dataset_path).expanduser().resolve()
+        data = np.load(dataset_path, allow_pickle=False)
+        obs = np.asarray(data["obs"], dtype=np.float32)
+        episode_ends = np.asarray(data["episode_ends"], dtype=np.int64)
+        phase_ids = np.asarray(data["phase_ids"], dtype=np.int32)
+        if obs.ndim != 2 or obs.shape[1] < FRANKA_CUBE_PHASE_PROGRESS_OBS_DIM:
+            raise ValueError(
+                f"Expected phase/progress obs shape (N,{FRANKA_CUBE_PHASE_PROGRESS_OBS_DIM}) or wider, got {obs.shape}"
+            )
+        unique = set(int(v) for v in np.unique(phase_ids))
+        if not unique.issubset({0, 1, 2}):
+            raise ValueError(f"Contact-gated provider expects phase ids in {{0,1,2}}, got {sorted(unique)}")
+        if episode_ends.ndim != 1 or episode_ends.size == 0 or int(episode_ends[-1]) != int(obs.shape[0]):
+            raise ValueError("episode_ends must be cumulative exclusive ends ending at obs length")
+        episode_index = int(episode_index)
+        if episode_index < 0 or episode_index >= int(episode_ends.size):
+            raise ValueError(f"episode_index must be in [0,{episode_ends.size}), got {episode_index}")
+        episode_start = 0 if episode_index == 0 else int(episode_ends[episode_index - 1])
+        episode_end = int(episode_ends[episode_index])
+        start_step = int(start_step)
+        if start_step < 0 or start_step >= episode_end - episode_start:
+            raise ValueError(f"start_step must be in [0,{episode_end - episode_start}), got {start_step}")
+        if "phase_progress_features" in data.files:
+            names = tuple(str(v) for v in np.asarray(data["phase_progress_features"]).tolist())
+            if names != PHASE_PROGRESS_FEATURE_NAMES:
+                raise ValueError(f"Unexpected phase/progress feature names: {names}")
+        else:
+            names = PHASE_PROGRESS_FEATURE_NAMES
+
+        self.dataset_path = str(dataset_path)
+        self.episode_index = episode_index
+        self.episode_start = episode_start
+        self.episode_end = episode_end
+        self.start_step = start_step
+        self.feature_names = names
+        self.base_obs = obs[:, :FRANKA_CUBE_LOWDIM_OBS_DIM].astype(np.float32, copy=True)
+        self.features = obs[:, FRANKA_CUBE_LOWDIM_OBS_DIM:FRANKA_CUBE_PHASE_PROGRESS_OBS_DIM].astype(
+            np.float32, copy=True
+        )
+        self.phase_ids = phase_ids.astype(np.int32, copy=True)
+        self.close_support_distance_threshold = float(close_support_distance_threshold)
+        self.lift_support_distance_threshold = float(lift_support_distance_threshold)
+        self.lift_gripper_width_threshold = float(lift_gripper_width_threshold)
+
+        episode_rows = np.arange(episode_start, episode_end, dtype=np.int64)
+        support = self.base_obs[episode_rows][:, PHASE_PROGRESS_SUPPORT_FEATURE_IDX]
+        self._episode_rows = episode_rows
+        self._support_std = np.maximum(support.std(axis=0), 1.0e-4).astype(np.float32)
+        self._phase_bounds: dict[int, tuple[int, int]] = {}
+        for phase_id in (0, 1, 2):
+            phase_rows = episode_rows[self.phase_ids[episode_rows] == phase_id]
+            if phase_rows.size:
+                self._phase_bounds[phase_id] = (int(phase_rows[0]), int(phase_rows[-1]) + 1)
+
+    @property
+    def obs_dim(self) -> int:
+        return FRANKA_CUBE_PHASE_PROGRESS_OBS_DIM
+
+    def row_indices_for_step(self, step: int | np.ndarray, num_envs: int) -> np.ndarray:
+        if np.isscalar(step) or step is None:
+            step_values = np.full(num_envs, 0 if step is None else int(step), dtype=np.int64)
+        else:
+            step_values = np.asarray(step, dtype=np.int64)
+            if step_values.shape != (num_envs,):
+                raise ValueError(f"Expected step shape {(num_envs,)}, got {step_values.shape}")
+        rows = int(self.episode_start + self.start_step) + step_values
+        return np.clip(rows, int(self.episode_start), int(self.episode_end) - 1).astype(np.int64)
+
+    def _phase_min_distances(self, lowdim_obs: np.ndarray) -> np.ndarray:
+        query = lowdim_obs[PHASE_PROGRESS_SUPPORT_FEATURE_IDX].astype(np.float32)
+        distances = np.sqrt((((self.base_obs[:, PHASE_PROGRESS_SUPPORT_FEATURE_IDX] - query) / self._support_std) ** 2).mean(axis=1))
+        out = np.full(3, np.inf, dtype=np.float32)
+        for phase_id in (0, 1, 2):
+            rows = self._episode_rows[self.phase_ids[self._episode_rows] == phase_id]
+            if rows.size:
+                out[phase_id] = float(np.min(distances[rows]))
+        return out
+
+    def _features_for_phase(self, phase_id: int, schedule_row: int) -> np.ndarray:
+        start, end = self._phase_bounds.get(int(phase_id), (self.episode_start, self.episode_end))
+        progress_row = int(np.clip(schedule_row, start, end - 1))
+        feature = np.zeros(PHASE_PROGRESS_FEATURE_DIM, dtype=np.float32)
+        feature[int(phase_id)] = 1.0
+        feature[3] = float(self.features[progress_row, 3])
+        return feature
+
+    def augment_lowdim(self, lowdim_obs: np.ndarray, *, step: int | np.ndarray | None = None) -> np.ndarray:
+        lowdim_obs = np.asarray(lowdim_obs, dtype=np.float32)
+        if lowdim_obs.ndim != 2 or lowdim_obs.shape[1] != FRANKA_CUBE_LOWDIM_OBS_DIM:
+            raise ValueError(f"Expected lowdim obs (N,{FRANKA_CUBE_LOWDIM_OBS_DIM}), got {lowdim_obs.shape}")
+        rows = self.row_indices_for_step(0 if step is None else step, int(lowdim_obs.shape[0]))
+        features = np.zeros((lowdim_obs.shape[0], PHASE_PROGRESS_FEATURE_DIM), dtype=np.float32)
+        for env_idx, schedule_row in enumerate(rows):
+            schedule_phase = int(np.argmax(self.features[int(schedule_row), :3]))
+            phase_distances = self._phase_min_distances(lowdim_obs[env_idx])
+            close_allowed = bool(phase_distances[1] <= self.close_support_distance_threshold)
+            lift_allowed = bool(
+                close_allowed
+                and schedule_phase >= 2
+                and phase_distances[2] <= self.lift_support_distance_threshold
+                and float(lowdim_obs[env_idx, 20]) <= self.lift_gripper_width_threshold
+            )
+            if schedule_phase >= 2 and lift_allowed:
+                chosen_phase = 2
+            elif schedule_phase >= 1 and close_allowed:
+                chosen_phase = 1
+            else:
+                chosen_phase = 0
+            features[env_idx] = self._features_for_phase(chosen_phase, int(schedule_row))
+        return np.concatenate((lowdim_obs, features), axis=1).astype(np.float32)
+
+    def summary(self) -> dict[str, Any]:
+        return {
+            "mode": "contact_gated",
+            "dataset_path": self.dataset_path,
+            "episode_index": int(self.episode_index),
+            "episode_start": int(self.episode_start),
+            "episode_end": int(self.episode_end),
+            "start_step": int(self.start_step),
+            "feature_names": list(self.feature_names),
+            "obs_dim": int(self.obs_dim),
+            "close_support_distance_threshold": float(self.close_support_distance_threshold),
+            "lift_support_distance_threshold": float(self.lift_support_distance_threshold),
+            "lift_gripper_width_threshold": float(self.lift_gripper_width_threshold),
+            "phase_bounds": {
+                CONTACT_PHASE_NAME_BY_ID[int(k)]: [int(v[0]), int(v[1])] for k, v in self._phase_bounds.items()
+            },
+        }
+
+
 def predict_action_sequence_from_ppo_obs(
     policy: Any,
     ppo_obs: Any,
     history: LowdimObsHistory,
     *,
     step: int | np.ndarray | None = None,
-    phase_progress_provider: DatasetBackedPhaseProgressProvider | None = None,
+    phase_progress_provider: DatasetBackedPhaseProgressProvider | ContactGatedPhaseProgressProvider | None = None,
 ) -> Any:
     """Query an official lowdim DP policy for an action sequence.
 
@@ -313,7 +474,7 @@ def predict_action_from_ppo_obs(
     history: LowdimObsHistory,
     *,
     step: int | np.ndarray | None = None,
-    phase_progress_provider: DatasetBackedPhaseProgressProvider | None = None,
+    phase_progress_provider: DatasetBackedPhaseProgressProvider | ContactGatedPhaseProgressProvider | None = None,
 ) -> Any:
     """Query an official lowdim DP policy from a single-step 72D PPO obs.
 

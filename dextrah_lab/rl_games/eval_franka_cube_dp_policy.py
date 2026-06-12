@@ -105,6 +105,34 @@ parser.add_argument(
     help="Episode-local row used as phase/progress step zero.",
 )
 parser.add_argument(
+    "--phase_progress_mode",
+    choices=["dataset", "contact_gated"],
+    default="dataset",
+    help=(
+        "Runtime phase/progress strategy. 'dataset' replays the stored episode "
+        "clock. 'contact_gated' keeps align/open features until live lowdim "
+        "state is near close/lift support in the phase/progress dataset."
+    ),
+)
+parser.add_argument(
+    "--phase_close_support_distance_threshold",
+    type=float,
+    default=0.55,
+    help="Contact-gated mode: maximum scaled distance to close_hold support before close phase is allowed.",
+)
+parser.add_argument(
+    "--phase_lift_support_distance_threshold",
+    type=float,
+    default=0.75,
+    help="Contact-gated mode: maximum scaled distance to lift support before lift phase is allowed.",
+)
+parser.add_argument(
+    "--phase_lift_gripper_width_threshold",
+    type=float,
+    default=0.025,
+    help="Contact-gated mode: gripper width in meters below which lift phase is allowed.",
+)
+parser.add_argument(
     "--demo_reset_dataset",
     type=str,
     default=None,
@@ -190,6 +218,7 @@ from isaaclab_tasks.utils import parse_env_cfg
 import dextrah_lab.tasks.dextrah_franka_cube_grasp.gym_setup  # noqa: F401
 from dextrah_lab.offline_dp_bc.analyze_policy_trace import POSITION_FEATURE_IDX
 from dextrah_lab.offline_dp_bc.ppo_bridge import (
+    ContactGatedPhaseProgressProvider,
     DatasetBackedPhaseProgressProvider,
     FRANKA_CUBE_ACTION_DIM,
     FRANKA_CUBE_LOWDIM_OBS_DIM,
@@ -910,6 +939,10 @@ def main() -> None:
         phase_progress_dataset=str(phase_progress_dataset_path) if phase_progress_dataset_path is not None else None,
         phase_progress_episode=int(args_cli.phase_progress_episode),
         phase_progress_start_step=int(args_cli.phase_progress_start_step),
+        phase_progress_mode=str(args_cli.phase_progress_mode),
+        phase_close_support_distance_threshold=float(args_cli.phase_close_support_distance_threshold),
+        phase_lift_support_distance_threshold=float(args_cli.phase_lift_support_distance_threshold),
+        phase_lift_gripper_width_threshold=float(args_cli.phase_lift_gripper_width_threshold),
         demo_reset_dataset=str(demo_reset_dataset_path) if demo_reset_dataset_path is not None else None,
         demo_reset_episode=int(args_cli.demo_reset_episode),
         demo_reset_step=int(args_cli.demo_reset_step),
@@ -928,15 +961,25 @@ def main() -> None:
             obs_shape=list(support_dataset["obs"].shape),
             action_shape=list(support_dataset["action"].shape),
         )
-    phase_progress_provider = (
-        DatasetBackedPhaseProgressProvider.from_npz(
-            phase_progress_dataset_path,
-            episode_index=int(args_cli.phase_progress_episode),
-            start_step=int(args_cli.phase_progress_start_step),
-        )
-        if phase_progress_dataset_path is not None
-        else None
-    )
+    phase_progress_provider = None
+    if phase_progress_dataset_path is not None:
+        if args_cli.phase_progress_mode == "dataset":
+            phase_progress_provider = DatasetBackedPhaseProgressProvider.from_npz(
+                phase_progress_dataset_path,
+                episode_index=int(args_cli.phase_progress_episode),
+                start_step=int(args_cli.phase_progress_start_step),
+            )
+        elif args_cli.phase_progress_mode == "contact_gated":
+            phase_progress_provider = ContactGatedPhaseProgressProvider(
+                dataset_path=phase_progress_dataset_path,
+                episode_index=int(args_cli.phase_progress_episode),
+                start_step=int(args_cli.phase_progress_start_step),
+                close_support_distance_threshold=float(args_cli.phase_close_support_distance_threshold),
+                lift_support_distance_threshold=float(args_cli.phase_lift_support_distance_threshold),
+                lift_gripper_width_threshold=float(args_cli.phase_lift_gripper_width_threshold),
+            )
+        else:
+            raise ValueError(f"Unsupported phase_progress_mode: {args_cli.phase_progress_mode}")
     if phase_progress_provider is not None:
         _stage("phase_progress_provider_loaded", **phase_progress_provider.summary())
     demo_reset = _demo_reset_payload(

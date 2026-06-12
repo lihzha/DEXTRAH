@@ -10267,3 +10267,49 @@ Next:
   phase provider: keep `phase_align_open=1` until live support/contact geometry
   crosses a close-safe threshold, then advance to close_hold/lift. Validate
   offline logic first, then at most one tiny no-video matched-reset trace.
+
+## 2026-06-12T00:00:00-07:00 - plan video-backed gated phase diagnostic
+
+Goal:
+- Honor the artifact preference for videos on the next meaningful closed-loop
+  DP diagnostic while keeping the scope bounded and diagnostic-only.
+
+Hypothesis:
+- The 25D checkpoint failed because the deterministic dataset-clock phase
+  provider advanced to close/lift while live geometry was still align/open.
+  A geometry/contact-gated runtime provider should prevent premature phase
+  advance. The diagnostic may still fail, but the failure video will show
+  policy behavior rather than relabel-controller behavior.
+
+Planned Change:
+- Add an opt-in `contact_gated` mode for runtime phase/progress features.
+  Default `dataset` mode remains unchanged.
+- Gate close/hold until live lowdim geometry is near the cube:
+  `||cube_minus_ee||` and gripper width thresholds, with optional dataset-clock
+  lower bounds. Then gate lift until the gripper is closed enough.
+- Add trace/report fields so `policy_trace.json`, `support_trace.csv`, and
+  generated plots show runtime phase switches and gating state.
+- Update the l401 wrapper to pass the new options.
+
+Validation:
+- Local:
+  `python3 -m py_compile dextrah_lab/offline_dp_bc/ppo_bridge.py dextrah_lab/rl_games/eval_franka_cube_dp_policy.py`
+- Local:
+  `bash -n cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- Local:
+  `git diff --check`
+- Offline sanity:
+  instantiate the provider against the 25D NPZ and test feature outputs for
+  representative align/close/lift lowdim rows.
+
+Expected Cluster Job:
+- One L401 run only, if validation passes.
+- `NUM_ENVS=1`, short horizon, matched source-joint reset, `ACTION_CHUNK_STEPS=1`,
+  support/policy tracing, `CAPTURE_VIDEO=True`, short video/contact sheet.
+- No broad eval, no BC training, no RL.
+
+Acceptance:
+- Fetch and inspect metrics, support trace, policy trace, labeled video/contact
+  sheet, and plots before declaring anything.
+- If it fails, record whether the failure is phase-gating, action semantics,
+  history/normalizer, or policy support coverage.
