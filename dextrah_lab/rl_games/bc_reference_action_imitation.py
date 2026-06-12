@@ -234,6 +234,7 @@ ACTION_LABELS = ("x", "y", "z", "rx", "ry", "rz", "gripper")
 
 def _split_list(raw: str) -> list[str]:
     values: list[str] = []
+    raw = raw.replace("__COMMA__", ",")
     for token in raw.replace(":", ",").replace(";", ",").split(","):
         token = token.strip()
         if token:

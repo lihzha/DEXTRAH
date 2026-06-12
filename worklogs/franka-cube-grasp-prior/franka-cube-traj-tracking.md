@@ -5592,6 +5592,73 @@ Next:
 Active Jobs:
 - none.
 
+## 2026-06-11T21:58:10-07:00 - stage/alpha-conditioned assisted-manifold BC launch
+
+Goal:
+- Run the supervised-only stage/alpha-conditioned residual BC diagnostic on the verified alpha0.5/0.75/1.0 assisted manifold.
+
+Version Control:
+- agent_id: `franka-cube-traj-tracking`
+- local_commit: `e0db570315961f84e2ad49af917ff21191a9d3cc`
+- branch: `codex/franka-cube-trajectory-tracking`
+- push/pull: pushed to origin; l401 SSH Git auth failed as usual, HTTPS fetch succeeded.
+- remote_commit/status: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking` detached at `e0db570315961f84e2ad49af917ff21191a9d3cc`, clean.
+
+Command / Job:
+- job_id: `1028133`
+- job_name: `bc_stagealpha`
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:45:00 --job-name=bc_stagealpha --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_bc_stagealpha_tm025_a050_a075_a100_20260611_215726,CHECKPOINT=/results/bc/franka_cube_traj_tracking_bc_dagger_tm025_all_20260611_185900/nn/bc_reference_action_imitation.pth,NUM_ENVS=8,COLLECTION_STEPS=520,TRAIN_STEPS=600,BATCH_SIZE=1024,LEARNING_RATE=0.0001,VALIDATION_FRACTION=0.2,LOSS_DIMS=all,EVAL_INTERVAL=25,SEED=73,COLLECTION_ACTION_SOURCE=teacher_mix,COLLECTION_TEACHER_ALPHAS=0.50__COMMA__0.75__COMMA__1.00,SOURCE_BATCH_MODE=balanced,SOURCE_LOSS_WEIGHTS=current_teacher_mix_alpha0p50=1__COMMA__current_teacher_mix_alpha0p75=1__COMMA__current_teacher_mix_alpha1p00=1,BEST_SCORE_WEIGHTS=val_source_current_teacher_mix_alpha0p50_l2=1__COMMA__val_source_current_teacher_mix_alpha0p75_l2=1__COMMA__val_source_current_teacher_mix_alpha1p00_l2=1,RESIDUAL_ADAPTER_ENABLED=True,RESIDUAL_HIDDEN_DIM=256,RESIDUAL_MAX_ACTION=1.0,RESIDUAL_GATE_ENABLED=False,RESIDUAL_CONTEXT_FEATURES=phase__COMMA__teacher_alpha,RESIDUAL_L2_WEIGHT=0.0005,SOURCE_PROBE_STEPS=200,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/bc/franka_cube_traj_tracking_bc_stagealpha_tm025_a050_a075_a100_20260611_215726`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bc_franka_cube_1028133.out`
+- expected_artifacts: `bc_metrics.json`, `bc_loss_curve.csv`, `bc_loss_plot.png`, `bc_source_metric_plot.png`, `oracle_residual_*.csv`, `oracle_residual_*.png`, `reference_action_dataset.pt`, `nn/bc_reference_action_imitation.pth`, `report.md`
+
+Acceptance / Gate:
+- supervised only; no selector/videos/PPO until report and metrics are fetched and inspected.
+- target safety/reference audit must retain `curobo_validated=false` for the compact reference.
+- each alpha0.5/0.75/1.0 source should improve materially over frozen-base source L2; no rollout if source metrics are ambiguous or negative.
+
+Active Jobs:
+- `1028133` pending/running.
+
+## 2026-06-11T22:01:26-07:00 - stage/alpha-conditioned BC launch failure and parser fix
+
+Job:
+- job_id: `1028133`
+- scheduler state: `CANCELLED by 158351`, elapsed `00:02:21`, node `pool0-00015`.
+- remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bc_franka_cube_1028133.out`
+- local fetched log: `cluster_results/l401/slurm_logs/bc_franka_cube_1028133.out`
+- local failed-run log copy: `cluster_results/l401/franka_cube_traj_tracking_bc_stagealpha_tm025_a050_a075_a100_20260611_215726_failed/bc_franka_cube_1028133.out`
+- run_dir state: no `bc_metrics.json`, no dataset, and no report/checkpoint written.
+
+Failure Evidence:
+- The job registered `Dextrah-Franka-Cube-Grasp-Traj-Tracking` with observation/action spaces `(72,) / (7,)` and loaded the tm0.25 BC checkpoint path.
+- Immediately after `=> loading checkpoint ...`, Hydra printed `Error executing job with overrides` and no dataset/training artifacts appeared.
+- The echoed command passed list-valued args using Slurm-safe comma encoding:
+  - `--collection_teacher_alphas 0.50__COMMA__0.75__COMMA__1.00`
+  - `--residual_context_features phase__COMMA__teacher_alpha`
+  - source/best-score maps also used `__COMMA__`.
+
+Root Cause:
+- `bc_reference_action_imitation.py::_split_list()` did not decode `__COMMA__`.
+- Therefore `--collection_teacher_alphas` was parsed as one token and attempted as `float("0.50__COMMA__0.75__COMMA__1.00")` after checkpoint restore. This matches the failure location and explains why no collection/training artifacts exist.
+- `_parse_float_map()` already handled this encoding, so map args were not the issue.
+
+Fix:
+- Patched `_split_list()` to replace `__COMMA__` with literal commas before splitting.
+- This also fixes `--residual_context_features phase__COMMA__teacher_alpha`.
+
+Validation:
+- passed: `python3 -m py_compile dextrah_lab/rl_games/bc_reference_action_imitation.py dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/residual_action_adapter.py dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py dextrah_lab/rl_games/build_traj_tracking_handoff_comparison.py`
+- passed: `bash -n cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh && bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh && git diff --check`
+- passed local parser sanity: `0.50__COMMA__0.75__COMMA__1.00 -> [0.5, 0.75, 1.0]`; `phase__COMMA__teacher_alpha -> ['phase', 'teacher_alpha']`.
+
+Next:
+- Commit/push/deploy the parser fix and relaunch the same bounded supervised-only stage/alpha BC job under a new run name.
+- No selector/video/PPO/RL launch unless the supervised gate passes after fetching and inspecting the report/metrics/plots.
+
+Active Jobs:
+- none after canceling `1028133`.
+
 ## 2026-06-11T21:12:52-07:00 - residual oracle/capacity diagnostic plan
 
 Goal:
