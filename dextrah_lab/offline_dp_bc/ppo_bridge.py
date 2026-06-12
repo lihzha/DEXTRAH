@@ -441,6 +441,7 @@ def predict_action_sequence_from_ppo_obs(
     *,
     step: int | np.ndarray | None = None,
     phase_progress_provider: DatasetBackedPhaseProgressProvider | ContactGatedPhaseProgressProvider | None = None,
+    num_action_samples: int = 1,
 ) -> Any:
     """Query an official lowdim DP policy for an action sequence.
 
@@ -462,9 +463,17 @@ def predict_action_sequence_from_ppo_obs(
 
     device = next(policy.parameters()).device
     obs_tensor = torch.as_tensor(obs_seq, dtype=torch.float32, device=device)
+    sample_count = max(1, int(num_action_samples))
     with torch.no_grad():
-        result = policy.predict_action({"obs": obs_tensor})
-    action = result["action"]
+        if sample_count == 1:
+            result = policy.predict_action({"obs": obs_tensor})
+            action = result["action"]
+        else:
+            samples = []
+            for _ in range(sample_count):
+                result = policy.predict_action({"obs": obs_tensor})
+                samples.append(result["action"])
+            action = torch.stack(samples, dim=0).mean(dim=0)
     return action.detach().cpu().numpy()
 
 
@@ -475,6 +484,7 @@ def predict_action_from_ppo_obs(
     *,
     step: int | np.ndarray | None = None,
     phase_progress_provider: DatasetBackedPhaseProgressProvider | ContactGatedPhaseProgressProvider | None = None,
+    num_action_samples: int = 1,
 ) -> Any:
     """Query an official lowdim DP policy from a single-step 72D PPO obs.
 
@@ -490,4 +500,5 @@ def predict_action_from_ppo_obs(
         history,
         step=step,
         phase_progress_provider=phase_progress_provider,
+        num_action_samples=num_action_samples,
     )[:, 0]

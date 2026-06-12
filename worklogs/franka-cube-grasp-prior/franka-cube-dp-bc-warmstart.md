@@ -11339,3 +11339,120 @@ Next:
   align/open controller distillation before the close phase, or a hybrid gate
   that uses an oracle/contact controller only until the live state enters the
   demonstrated close support, then hands off to DP.
+
+## 2026-06-12T01:22:27-07:00 - launch one-demo overfit exact-reset eval
+
+Goal:
+- Evaluate the one-demo no-EMA overfit checkpoint on the exact object position
+  and reset state of that demo. If it succeeds, scale the same setup; if it
+  fails, debug the BC train/eval mismatch before any larger run.
+
+Hypothesis:
+- A one-demo checkpoint that passes dense offline coherence should reproduce
+  the memorized demo when the cube pose, phase/progress features, support
+  dataset, and reset row all come from the same episode. Failure here means the
+  remaining bug is in closed-loop state/reset/action execution rather than
+  dataset scale.
+
+Change:
+- No source changes before launch.
+- Staged one-demo artifacts to l401:
+  - checkpoint:
+    `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/phaseprogress_ep0_noema_20260612_005153/latest.ckpt`
+  - phase/support dataset:
+    `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/phase_progress_ep0_noema_20260612_005153/contact_relabel_set_phase_progress_ep0.npz`
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `76aa04259091cab2e32b5b03bf769125ceb67e9a`
+- implementation_commit: `76aa04259091cab2e32b5b03bf769125ceb67e9a`
+- remote_commit/status:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+  detached at `76aa04259091cab2e32b5b03bf769125ceb67e9a`
+- changed_files:
+  - `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+
+Command / Job:
+- planned command:
+  `RUN_NAME=franka_cube_dp_eval_phaseprogress_ep0_noema_exact_dataset_video260_<timestamp> CHECKPOINT=/results/dp_bc/checkpoints/phaseprogress_ep0_noema_20260612_005153/latest.ckpt SUPPORT_DATASET=/results/dp_bc/phase_progress_ep0_noema_20260612_005153/contact_relabel_set_phase_progress_ep0.npz PHASE_PROGRESS_DATASET=/results/dp_bc/phase_progress_ep0_noema_20260612_005153/contact_relabel_set_phase_progress_ep0.npz PHASE_PROGRESS_MODE=dataset PHASE_PROGRESS_EPISODE=0 PHASE_PROGRESS_START_STEP=0 DEMO_RESET_DATASET=/results/dp_bc/phase_progress_ep0_noema_20260612_005153/contact_relabel_set_phase_progress_ep0.npz DEMO_RESET_EPISODE=0 DEMO_RESET_STEP=0 DEMO_RESET_SOURCE_TRAJECTORY_JSON=/results/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed8/trajectory.json DEMO_RESET_SOURCE_FRAME=260 DEMO_RESET_JOINT_BLEND_ALPHA=0.75 DEMO_RESET_CUBE_POS_BLEND_ALPHA=1.0 NUM_ENVS=1 NUM_STEPS=260 NUM_INFERENCE_STEPS=100 ACTION_CHUNK_STEPS=1 ACTION_CORRECTION_MODE=disabled CAPTURE_VIDEO=True bash cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- acceptance:
+  exact reset reports `cube_pos_l2_diff_env0=0`, `cube_minus_ee_l2_diff_env0=0`;
+  final/window success should be nonzero and video should show grasp/lift.
+
+Result:
+- status: launching
+
+## 2026-06-12T01:38:00-07:00 - add DP action sample averaging
+
+Goal:
+- Reduce stochastic DDPM action error in closed-loop BC inference after the
+  one-demo chunk8 eval showed successful lift but lateral goal miss.
+
+Hypothesis:
+- The policy is close enough to grasp/lift when executing 8-step chunks, but
+  stochastic sample error in each denoised chunk shifts the carried cube in XY.
+  Averaging multiple sampled action sequences for the same observation history
+  should reduce this variance without oracle labels or changing the dataset.
+
+Change:
+- Added `num_action_samples` to `predict_action_sequence_from_ppo_obs`.
+- Added `--num_action_samples` to `eval_franka_cube_dp_policy.py` and recorded
+  it in run config/metrics.
+- Added `NUM_ACTION_SAMPLES` to
+  `cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `76aa04259091cab2e32b5b03bf769125ceb67e9a`
+- implementation_commit: pending
+- changed_files:
+  - `dextrah_lab/offline_dp_bc/ppo_bridge.py`
+  - `dextrah_lab/rl_games/eval_franka_cube_dp_policy.py`
+  - `cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+  - `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+
+Validation:
+- `python3 -m py_compile dextrah_lab/offline_dp_bc/ppo_bridge.py dextrah_lab/rl_games/eval_franka_cube_dp_policy.py`
+- `bash -n cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- `git diff --check`
+
+Next:
+- Commit, deploy to the agent-owned l401 worktree, then test one-demo exact
+  reset with `ACTION_CHUNK_STEPS=8` and `NUM_ACTION_SAMPLES=8`.
+
+Next:
+- Monitor job to completion, fetch metrics/log/video/support trace, inspect
+  video and support plots, then either scale or patch.
+
+## 2026-06-12T01:31:00-07:00 - launch one-demo action-chunk and oracle controls
+
+Goal:
+- Debug the failed one-demo exact-reset DP eval without changing source:
+  distinguish action-chunk/replanning error from bad reset/support labels.
+
+Hypothesis:
+- The one-demo checkpoint may fail with `ACTION_CHUNK_STEPS=1` because it was
+  trained to emit coherent 8-step chunks, and single-step closed-loop replanning
+  compounds small align/open errors immediately. If `ACTION_CHUNK_STEPS=8`
+  succeeds, chunking is the first BC fix. If full-label oracle correction fails
+  under the same one-demo support dataset, the reset/label control path is bad.
+
+Change:
+- No source changes. Launch two single-env exact-reset controls:
+  - one-demo DP with `ACTION_CHUNK_STEPS=8`, correction disabled;
+  - one-demo `nearest_label_full_action` oracle-control, to validate labels.
+
+Version Control:
+- implementation_commit: `76aa04259091cab2e32b5b03bf769125ceb67e9a`
+
+Command / Job:
+- pending job ids and run dirs will be recorded after submission.
+
+Result:
+- status: launching

@@ -33,6 +33,15 @@ parser.add_argument("--num_steps", type=int, default=240)
 parser.add_argument("--seed", type=int, default=42)
 parser.add_argument("--num_inference_steps", type=int, default=2)
 parser.add_argument(
+    "--num_action_samples",
+    type=int,
+    default=1,
+    help=(
+        "Number of stochastic DP action sequences to sample and average at each policy call. "
+        "Values >1 reduce DDPM sampling noise for BC diagnostics."
+    ),
+)
+parser.add_argument(
     "--action_chunk_steps",
     type=int,
     default=1,
@@ -1099,6 +1108,7 @@ def main() -> None:
         phase_progress_episode=int(args_cli.phase_progress_episode),
         phase_progress_start_step=int(args_cli.phase_progress_start_step),
         phase_progress_mode=str(args_cli.phase_progress_mode),
+        num_action_samples=max(1, int(args_cli.num_action_samples)),
         phase_close_support_distance_threshold=float(args_cli.phase_close_support_distance_threshold),
         phase_lift_support_distance_threshold=float(args_cli.phase_lift_support_distance_threshold),
         phase_lift_gripper_width_threshold=float(args_cli.phase_lift_gripper_width_threshold),
@@ -1273,6 +1283,7 @@ def main() -> None:
                         history,
                         step=step,
                         phase_progress_provider=phase_progress_provider,
+                        num_action_samples=max(1, int(args_cli.num_action_samples)),
                     )
                     if action_seq.ndim != 3 or action_seq.shape[0] != task_env.num_envs:
                         raise RuntimeError(f"Unexpected DP action sequence shape {action_seq.shape}")
@@ -1379,6 +1390,7 @@ def main() -> None:
         "ppo_bridge": "predict_action_sequence_from_ppo_obs",
         "phase_progress_provider": None if phase_progress_provider is None else phase_progress_provider.summary(),
         "action_chunk_steps": requested_action_chunk_steps,
+        "num_action_samples": max(1, int(args_cli.num_action_samples)),
         "no_learning": True,
         "num_envs": task_num_envs,
         "num_steps_requested": int(args_cli.num_steps),
