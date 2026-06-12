@@ -5759,3 +5759,157 @@ Validation:
 Acceptance:
 - First gate is wiring: train command and eval traces must show intended sequence params and teacher lift z `0.50`.
 - Behavioral gate remains learned-policy video showing real grasp/lift; otherwise classify as another negative intervention.
+
+## 2026-06-12T06:56:00Z - launch: corrected action-prior sequence smoke
+
+Change:
+- Committed wrapper fix `aec212660b3dafe1c7ef90869905ee79f52cef09` (`Pass action prior sequence overrides`).
+- l401 GitHub fetch was blocked by `Permission denied (publickey)`, so deployed the exact commit through a Git bundle from local `9a35f7b..aec2126`, fetched into the agent-owned remote worktree, and checked out detached `aec2126`. This preserved Git object deployment rather than copying source files.
+- Remote syntax checks passed for train/eval wrappers after checkout.
+
+Command / Job:
+- job_id: `1028245`
+- run_name: `franka_cube_lowz_actionprior_seqfix_r4s1_45_20260612_0655`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: detached `aec212660b3dafe1c7ef90869905ee79f52cef09`, clean
+- wrapper: `cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`
+- remote_run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_lowz_actionprior_seqfix_r4s1_45_20260612_0655`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_smoke_1028245.out`
+- config summary:
+  - `NUM_ENVS=64`, `MAX_ITERATIONS=45`, `HORIZON_LENGTH=64`, `SAVE_FREQUENCY=5`
+  - `SEED=20260625`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`
+  - low-z library: `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz`
+  - `GRASP_PRIOR_RESET_ENABLED=True`
+  - `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`
+  - `GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED=True`, weight `4.0`, sharpness `1.0`
+  - intended reward reference sequence: approach `16`, light-close `24`, lift `40`, close width `0.055`, lift action z `0.50`, gain `8.0`, track orientation `True`
+
+Immediate monitor gate:
+- Confirm stdout train command includes the warmstart sequence overrides even though action override is disabled.
+- Confirm JSONL action-prior metrics are finite and branch-active before deciding eval/video.
+
+## 2026-06-12T06:57:00Z - monitor/launch: corrected action-prior eval videos
+
+Training result:
+- job `1028245` completed `0:0`.
+- Wiring gate passed: stdout train command includes `env.grasp_prior_action_warmstart_close_steps=24`, `env.grasp_prior_action_warmstart_lift_steps=40`, and `env.grasp_prior_action_warmstart_lift_action_z=0.50` while `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`.
+- JSONL: 45 rows, no bad scalars.
+- Reset metrics healthy: reset success/quality `1.0`.
+- Action-prior branch stronger than the previous run: mean reward `0.2030`, max `1.6413`, mean active rate `0.1316`, max `1.0`.
+- Behavioral scalars remain negative: success max `0.0`, lifted max `0.0`, max lift height `0.00112 m`, final EE/finger distance `0.3818/0.3761 m`.
+
+Eval jobs:
+- job_id: `1028247`, run_name: `franka_cube_lowz_actionprior_seqfix_eval_ep10_20260612_0657`, checkpoint: `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_lowz_actionprior_seqfix_r4s1_45_20260612_0655/nn/last_dextrah_franka_cube_grasp_ep_10_rew_1059.3303.pth`
+- job_id: `1028248`, run_name: `franka_cube_lowz_actionprior_seqfix_eval_ep45_20260612_0657`, checkpoint: `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_lowz_actionprior_seqfix_r4s1_45_20260612_0655/nn/last_dextrah_franka_cube_grasp_ep_45_rew_735.89746.pth`
+- Eval config matches the corrected reward-only sequence settings and captures 600-step MP4 videos.
+
+## 2026-06-12T07:02:00Z - result: corrected action-prior sequence eval inspection
+
+Goal:
+- Inspect the corrected action-prior reward diagnostic after fixing wrapper sequence overrides.
+
+Result:
+- Jobs `1028247` and `1028248` completed `0:0`; l401 queue is empty.
+- Artifacts fetched locally under:
+  - `cluster_results/l401/franka_cube_lowz_actionprior_seqfix_r4s1_45_20260612_0655/`
+  - `cluster_results/l401/franka_cube_lowz_actionprior_seqfix_eval_ep10_20260612_0657/`
+  - `cluster_results/l401/franka_cube_lowz_actionprior_seqfix_eval_ep45_20260612_0657/`
+- Inspection bundle: `cluster_results/l401/franka_cube_lowz_actionprior_seqfix_r4s1_45_20260612_0655/inspection_20260612_0702/`
+
+Metrics:
+- Training JSONL: 45 rows, bad scalar count `0`.
+- Wiring gate passed: train/eval traces show intended sequence, including lift teacher z near `0.50`.
+- Reset success/quality remain `1.0/1.0`.
+- Training success/lift: success max/final `0.0/0.0`, lifted max/final `0.0/0.0`, max lift height `0.001123 m`, final EE/finger distance `0.3818/0.3761 m`.
+- Eval ep10: first done at step `599`, success/lift before done `0.0/0.0`, max lift `0.000644 m`, min EE/finger distance `0.0443/0.0856 m`.
+- Eval ep45: first done at step `599`, success/lift before done `0.0/0.0`, max lift `0.005404 m`, min EE/finger distance `0.0005/0.0386 m`.
+- Both eval final frames are reset-state artifacts after terminal reset; done-aware pre-reset metrics are the relevant behavioral gate.
+
+Visual verdict:
+- ep10 briefly starts near the cube but moves away without clamping/lifting.
+- ep45 reaches/perturbs the cube, then opens/off-target and moves away; no real grasp/lift.
+- This is a **negative non-apple-to-apple intervention diagnostic**, not a scale-up gate.
+
+Viewer URLs:
+- Report: http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_actionprior_seqfix_r4s1_45_20260612_0655/inspection_20260612_0702/REPORT.md
+- ep10 contact sheet: http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_actionprior_seqfix_r4s1_45_20260612_0655/inspection_20260612_0702/contact_sheet_ep10.jpg
+- ep45 contact sheet: http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_actionprior_seqfix_r4s1_45_20260612_0655/inspection_20260612_0702/contact_sheet_ep45.jpg
+- Training task curves: http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_actionprior_seqfix_r4s1_45_20260612_0655/inspection_20260612_0702/training_task_curves.png
+- Training action-prior curves: http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_actionprior_seqfix_r4s1_45_20260612_0655/inspection_20260612_0702/training_action_prior_curves.png
+- ep10 video: http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_actionprior_seqfix_eval_ep10_20260612_0657/videos/lowz-actionprior-seqfix-step-0.mp4
+- ep45 video: http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_actionprior_seqfix_eval_ep45_20260612_0657/videos/lowz-actionprior-seqfix-step-0.mp4
+
+Decision:
+- Do not launch A100/full PPO.
+- Reset geometry/library remains healthy; this diagnostic confirms reward-only action-prior guidance is too weak/sparse for PPO to discover the assisted close/lift behavior.
+- Next bounded intervention, if authorized, should be explicitly labeled non-apple-to-apple and stronger than reward-only guidance, e.g. staged teacher-preservation/curriculum through the early episode or BC/actor initialization plus preservation-biased short PPO, with video-first gates.
+
+## 2026-06-12T07:04:00Z - plan: staged action-prior preservation diagnostic
+
+Goal:
+- Test whether the prior action-reward failure is caused by the short/sparse guidance window rather than unusable reset geometry.
+
+Hypothesis:
+- The corrected reward-only run kept teacher guidance active for the reference approach/close/lift sequence, then became inactive.
+- Eval videos show the learned policy abandons contact and opens/moves away; a longer early-episode teacher-preservation reward may keep PPO near the successful assisted low-z close/lift trajectory long enough to learn usable contact behavior.
+
+Change:
+- No source changes.
+- Use existing opt-in diagnostic flags only.
+- Keep `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`; the environment will not override policy actions.
+- Enable action-prior reward with stronger/longer guidance:
+  - weight `8.0`
+  - sharpness `0.7`
+  - approach steps `16`
+  - close steps `24`
+  - lift steps `160`
+  - close width `0.055`
+  - lift action z `0.50`
+  - gain `8.0`
+  - orientation tracking `True`
+- This is explicitly **non-apple-to-apple intervention diagnostic**, not the final reset-prior comparison.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- local_commit: `aec212660b3dafe1c7ef90869905ee79f52cef09`
+- remote_commit/status: detached `aec212660b3dafe1c7ef90869905ee79f52cef09`, clean
+- source changes for launch: none
+- worklog update: pending commit after launch/result
+
+Command / Job:
+- wrapper: `cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`
+- run_name: `franka_cube_lowz_actionprior_hold_r8s07_45_20260612_0704`
+- scale: l401, 1 GPU, `64` envs, `45` iterations, save frequency `5`
+- reset/library: low-z no-offset library `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz`
+- expected artifacts: JSONL metrics, checkpoints, eval videos/contact sheets if metrics are sane enough to inspect learned behavior
+
+Acceptance:
+- Wiring gate: stdout must show action-prior reward enabled and the longer sequence overrides.
+- Metric gate: no bad scalars, reset success/quality `1.0`, action-prior active/reward nonzero, teacher z reaches `0.50`.
+- Behavioral gate before any scale-up: done-aware eval video from best/final checkpoint must show real grasp/lift, not just near-cube hover or reset artifact.
+- If negative, classify as intervention failure and do not launch A100/full PPO.
+
+## 2026-06-12T07:05:00Z - launch: staged action-prior preservation smoke
+
+Command / Job:
+- job_id: `1028249`
+- run_name: `franka_cube_lowz_actionprior_hold_r8s07_45_20260612_0704`
+- wrapper: `cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: detached `aec212660b3dafe1c7ef90869905ee79f52cef09`, clean
+- remote_run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_lowz_actionprior_hold_r8s07_45_20260612_0704`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_smoke_1028249.out`
+
+Config:
+- `NUM_ENVS=64`, `MAX_ITERATIONS=45`, `HORIZON_LENGTH=64`, `SAVE_FREQUENCY=5`
+- `SEED=20260625`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`
+- `GRASP_PRIOR_RESET_ENABLED=True`
+- low-z library: `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz`
+- `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`
+- `GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED=True`
+- action-prior reward weight/sharpness: `8.0` / `0.7`
+- reference sequence: approach `16`, close `24`, lift `160`, close width `0.055`, lift z `0.50`, gain `8.0`, track orientation `True`
+
+Immediate monitor:
+- Wait for stdout command/config echo, JSONL creation, and terminal Slurm state.
+- Evaluate best/final checkpoints only after metrics are inspected.
