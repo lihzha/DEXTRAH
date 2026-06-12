@@ -6,6 +6,48 @@
 - base_commit: 589dd81c9f9691fcda3a3d4b9ad714d90dae4794
 - created: 2026-06-11T18:39:11Z
 
+## 2026-06-12T08:30:17Z - own no-prior 8GPU baseline launch plan
+
+Goal:
+- Launch an apples-to-apples RL-from-scratch Franka cube baseline from this agent-owned reset-prior worktree, with the grasp-pose prior explicitly disabled.
+- Compare training speed against the successful policy-only reset-prior run `franka_cube_lowz_resetprior_policy8gpu_cd1d66e_20260612_004111`.
+
+Hypothesis:
+- If reset-prior is helping exploration, the reset-prior run should reach lift/success thresholds earlier than an otherwise matched no-prior PPO run, even with the same upstream approach/enclosure reward weights.
+
+Change:
+- No source behavior change for this attempt. Add this worklog entry, commit it, deploy the exact commit to the A100 agent-owned remote worktree, and launch with `GRASP_PRIOR_RESET_ENABLED=False`.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset
+- worklog: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/worklogs/franka-cube-grasp-prior/franka-cube-ggx-pregrasp-reset.md
+- branch: codex/franka-cube-ggx-pregrasp-reset
+- base_commit: a9fe56c8d3bef6466b3bfa627e5d129e9773ea59
+- implementation_commit: pending worklog-only commit
+- push/pull: pending deploy to A100 by Git bundle if remote GitHub fetch remains unavailable
+- changed_files: this owned worklog only
+- remote_commit/status: pending `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+
+Command / Job:
+- planned command: `sbatch --parsable --job-name=fcube_noprior_own8 --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,TASK=Dextrah-Franka-Cube-Grasp,FULL_EXPERIMENT_NAME=franka_cube_noprior_policy8gpu_own_20260612_0830,NUM_ENVS=2048,MAX_ITERATIONS=300,HORIZON_LENGTH=64,MINIBATCH_SIZE=32768,CENTRAL_VALUE_MINIBATCH_SIZE=32768,LEARNING_RATE=0.0002,CENTRAL_VALUE_LEARNING_RATE=0.0001,SAVE_FREQUENCY=25,AUTO_RESUME=False,GRASP_PRIOR_RESET_ENABLED=False,GRASP_PRIOR_LIBRARY_PATH=,DEXTRAH_RLGAMES_JSONL_METRICS=True cluster/sbatch_train_teacher_8gpu.sh`
+- job_id: pending
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_noprior_policy8gpu_own_20260612_0830`
+- logs: pending `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_<job_id>.out`
+- artifacts: JSONL metrics, resolved params, TensorBoard summaries, 25-epoch checkpoints
+
+Result:
+- status: planned
+- metrics/artifacts: pending
+- key evidence: preflight showed local branch at `a9fe56c`, only unrelated untracked `local_results/`; wrapper syntax passed; `GRASP_PRIOR_RESET_ENABLED` defaults false and will be explicitly exported false.
+
+Analysis:
+- The rejected external `franka_cube_baseline_A_repl8gpu_581890b_20260612_011911` run is not used for the comparison.
+- This run intentionally keeps upstream reward weights instead of tuning down approach/enclosure so that the primary comparison isolates reset-prior versus no-prior.
+
+Next:
+- Commit this worklog entry, deploy exact commit to A100, submit the no-prior job, monitor to completion, fetch metrics/configs/logs, and compute threshold/AUC comparison against the reset-prior run.
+
 ## 2026-06-11T18:42:25Z - pre-edit plan
 
 Goal:
