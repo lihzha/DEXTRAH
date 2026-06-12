@@ -66,6 +66,15 @@ parser.add_argument(
     help="For policy_reference_mix* action sources, fraction of reference_delta action in the pre-hold action.",
 )
 parser.add_argument(
+    "--reference_mix_gripper_alpha",
+    type=float,
+    default=None,
+    help=(
+        "Optional eval-only override for action dim6 under policy_reference_mix* action sources. "
+        "When unset, the gripper dimension uses --reference_mix_alpha like every other action dimension."
+    ),
+)
+parser.add_argument(
     "--hold_phase_start",
     type=float,
     default=0.42,
@@ -825,6 +834,11 @@ def _actions_from_source(
     if action_source == "policy_reference_mix":
         reference_actions = _reference_delta_actions(task_env)
         alpha = max(0.0, min(1.0, float(args_cli.reference_mix_alpha)))
+        gripper_alpha = (
+            alpha
+            if args_cli.reference_mix_gripper_alpha is None
+            else max(0.0, min(1.0, float(args_cli.reference_mix_gripper_alpha)))
+        )
         raw_policy_actions, base_policy_actions, residual_policy_actions, residual_gate = _policy_action_components(
             agent,
             task_env,
@@ -832,7 +846,14 @@ def _actions_from_source(
             teacher_alpha=alpha,
         )
         mixed_actions = torch.clamp((1.0 - alpha) * raw_policy_actions + alpha * reference_actions, -1.0, 1.0)
+        if mixed_actions.shape[-1] >= 7 and gripper_alpha != alpha:
+            mixed_actions[:, 6] = torch.clamp(
+                (1.0 - gripper_alpha) * raw_policy_actions[:, 6] + gripper_alpha * reference_actions[:, 6],
+                -1.0,
+                1.0,
+            )
         metrics["reference_mix_alpha"] = alpha
+        metrics["reference_mix_gripper_alpha"] = gripper_alpha
         _add_policy_component_metrics(metrics, raw_policy_actions, base_policy_actions, residual_policy_actions, residual_gate)
         _add_action_signal_metrics(metrics, "reference_delta_action", reference_actions)
         _add_action_signal_metrics(metrics, "mixed_action", mixed_actions)
@@ -843,6 +864,11 @@ def _actions_from_source(
     if action_source == "policy_reference_mix_hold":
         reference_actions = _reference_delta_actions(task_env)
         alpha = max(0.0, min(1.0, float(args_cli.reference_mix_alpha)))
+        gripper_alpha = (
+            alpha
+            if args_cli.reference_mix_gripper_alpha is None
+            else max(0.0, min(1.0, float(args_cli.reference_mix_gripper_alpha)))
+        )
         raw_policy_actions, base_policy_actions, residual_policy_actions, residual_gate = _policy_action_components(
             agent,
             task_env,
@@ -850,7 +876,14 @@ def _actions_from_source(
             teacher_alpha=alpha,
         )
         mixed_actions = torch.clamp((1.0 - alpha) * raw_policy_actions + alpha * reference_actions, -1.0, 1.0)
+        if mixed_actions.shape[-1] >= 7 and gripper_alpha != alpha:
+            mixed_actions[:, 6] = torch.clamp(
+                (1.0 - gripper_alpha) * raw_policy_actions[:, 6] + gripper_alpha * reference_actions[:, 6],
+                -1.0,
+                1.0,
+            )
         metrics["reference_mix_alpha"] = alpha
+        metrics["reference_mix_gripper_alpha"] = gripper_alpha
         _add_policy_component_metrics(metrics, raw_policy_actions, base_policy_actions, residual_policy_actions, residual_gate)
         _add_action_signal_metrics(metrics, "reference_delta_action", reference_actions)
         _add_action_signal_metrics(metrics, "mixed_action", mixed_actions)
@@ -1367,6 +1400,20 @@ def main(env_cfg, agent_cfg: dict):
         ),
         "reference_mix_alpha": (
             max(0.0, min(1.0, float(args_cli.reference_mix_alpha)))
+            if args_cli.action_source in MIX_ACTION_SOURCES
+            else None
+        ),
+        "reference_mix_gripper_alpha": (
+            (
+                max(0.0, min(1.0, float(args_cli.reference_mix_alpha)))
+                if args_cli.reference_mix_gripper_alpha is None
+                else max(0.0, min(1.0, float(args_cli.reference_mix_gripper_alpha)))
+            )
+            if args_cli.action_source in MIX_ACTION_SOURCES
+            else None
+        ),
+        "reference_mix_gripper_alpha_override": (
+            args_cli.reference_mix_gripper_alpha is not None
             if args_cli.action_source in MIX_ACTION_SOURCES
             else None
         ),

@@ -5779,6 +5779,38 @@ Verdict:
 Active Jobs:
 - none.
 
+## 2026-06-11T23:06:00-07:00 - gripper-alpha reference-mix diagnostic plan
+
+Goal:
+- Test whether the low-alpha no-reset failures are primarily weak or mistimed gripper closure/hold rather than pose/reference-transform failure.
+- Stay eval-only. No PPO/RL scale-up.
+
+Hypothesis:
+- Boundary videos show real held lifts in successful envs, while failures keep the cube on the table even as the hand follows the lift-away path.
+- If we keep the global pose/reference mix alpha low but increase only the gripper action's reference mix alpha, then a success-rate increase would implicate closure timing/hold as the bottleneck.
+- If gripper-only assistance does not improve alpha0.10/0.15/0.20, then the remaining blocker is likely pre-grasp pose/contact geometry or a coupled pose+closure timing issue.
+
+Planned Change:
+- Patch `dextrah_lab/rl_games/eval_rollout.py` with an optional `--reference_mix_gripper_alpha` argument for `policy_reference_mix*` action sources.
+- Patch `cluster/sbatch_eval_franka_cube_grasp_1gpu.sh` to pass `REFERENCE_MIX_GRIPPER_ALPHA` only when set.
+- Defaults preserve existing behavior exactly: if the gripper override is unset, all seven action dimensions still use `REFERENCE_MIX_ALPHA`.
+- Log effective `reference_mix_gripper_alpha` in per-step metrics and rollout summary.
+
+Validation Before Launch:
+- `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py`
+- `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- `git diff --check`
+- Commit/push and deploy exact commit to the l401 agent-owned worktree.
+
+Planned Bounded Probe If Validation Passes:
+- Same checkpoint/reference/seed/no-reset setup as the boundary sweep.
+- Start with gripper override `REFERENCE_MIX_GRIPPER_ALPHA=1.0` at global alphas `0.10/0.15/0.20`.
+- Metrics first; videos/contact sheets for the lowest-alpha improvement and a representative failure if any behavior changes.
+- Acceptance is improved sustained no-reset success without target-unsafe regression. This would still be assisted handoff, not policy-only.
+
+Active Jobs:
+- none before implementation.
+
 ## 2026-06-11T22:58:00-07:00 - no-reset boundary visual sweep plan
 
 Goal:
@@ -5817,6 +5849,97 @@ Acceptance:
 
 Active Jobs:
 - none before launch.
+
+## 2026-06-11T23:00:00-07:00 - no-reset boundary visual sweep launch
+
+Version Control:
+- local plan commit: `4243a0c` (`Plan no-reset boundary visual sweep`), pushed.
+- remote eval source: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking`, clean detached at `6a403ae2d7bfb39b5faa5b805fa97da8ebb4d4dc`.
+
+Common Config:
+- checkpoint: `/results/bc/franka_cube_traj_tracking_bc_handoff_success_alpha0_20260611_223200/nn/bc_reference_action_imitation.pth`.
+- task: `Dextrah-Franka-Cube-Grasp-Traj-Tracking`.
+- action source: `policy_reference_mix`.
+- `SUPPRESS_SUCCESS_TERMINATION=True`, `NUM_ENVS=4`, `NUM_STEPS=520`, `CAPTURE_VIDEO=True`, `VIDEO_LENGTH=520`, `SEED=75`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`.
+- reference: `/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json` (`curobo_validated=false`).
+
+Jobs:
+- alpha0.10 success-env visual: job `1028178`, run `franka_cube_traj_tracking_bc_handoff_noreset_vis_a010_env3succ_520_20260611_230000`, `REFERENCE_MIX_ALPHA=0.10`, `CAMERA_ENV_INDEX=3`.
+- alpha0.10 failure-env visual: job `1028179`, run `franka_cube_traj_tracking_bc_handoff_noreset_vis_a010_env0fail_520_20260611_230000`, `REFERENCE_MIX_ALPHA=0.10`, `CAMERA_ENV_INDEX=0`.
+- alpha0.15 success-env visual: job `1028180`, run `franka_cube_traj_tracking_bc_handoff_noreset_vis_a015_env1succ_520_20260611_230000`, `REFERENCE_MIX_ALPHA=0.15`, `CAMERA_ENV_INDEX=1`.
+- alpha0.15 failure-env visual: job `1028181`, run `franka_cube_traj_tracking_bc_handoff_noreset_vis_a015_env0fail_520_20260611_230000`, `REFERENCE_MIX_ALPHA=0.15`, `CAMERA_ENV_INDEX=0`.
+- alpha0.20 success-env visual: job `1028182`, run `franka_cube_traj_tracking_bc_handoff_noreset_vis_a020_env1succ_520_20260611_230000`, `REFERENCE_MIX_ALPHA=0.20`, `CAMERA_ENV_INDEX=1`.
+- alpha0.20 failure-env visual: job `1028183`, run `franka_cube_traj_tracking_bc_handoff_noreset_vis_a020_env2fail_520_20260611_230000`, `REFERENCE_MIX_ALPHA=0.20`, `CAMERA_ENV_INDEX=2`.
+
+Acceptance:
+- Fetch logs, metrics, traces, MP4s, reports, trace plots, contact sheets, and train/eval consistency sidecars.
+- Regenerate reports with `--train-bc-metrics` and explicitly list unverified train keys from old BC metadata.
+- Validate videos with `ffprobe`.
+- Produce a compact comparison report/table and `viz-open` URLs.
+- No PPO/RL launch.
+
+Active Jobs:
+- `1028178`, `1028179`, `1028180`, `1028181`, `1028182`, `1028183`.
+
+## 2026-06-11T23:03:00-07:00 - no-reset boundary visual sweep result
+
+Jobs:
+- `1028178`-`1028183` completed `0:0`.
+- local fetched runs:
+  - `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_vis_a010_env3succ_520_20260611_230000`
+  - `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_vis_a010_env0fail_520_20260611_230000`
+  - `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_vis_a015_env1succ_520_20260611_230000`
+  - `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_vis_a015_env0fail_520_20260611_230000`
+  - `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_vis_a020_env1succ_520_20260611_230000`
+  - `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_vis_a020_env2fail_520_20260611_230000`
+- local fetched logs:
+  - `cluster_results/l401/slurm_logs/eval_franka_cube_1028178.out`
+  - `cluster_results/l401/slurm_logs/eval_franka_cube_1028179.out`
+  - `cluster_results/l401/slurm_logs/eval_franka_cube_1028180.out`
+  - `cluster_results/l401/slurm_logs/eval_franka_cube_1028181.out`
+  - `cluster_results/l401/slurm_logs/eval_franka_cube_1028182.out`
+  - `cluster_results/l401/slurm_logs/eval_franka_cube_1028183.out`
+
+Validation:
+- `ffprobe` validated all six MP4s as `1280x720`, `520` frames, `8.666667 s`.
+- per-run reports regenerated with `--train-bc-metrics`.
+- train/eval consistency status is `bc_metadata_partial_pass`, `passed=true`, mismatch count `0` for all six.
+- old BC metrics still do not include the following train-side keys, which remain explicitly unverified rather than silently passing: cube spawn randomization, phase observations, close/lift reward weights, contact-gate parameters, reference late reweight parameters, action-alignment parameters, and teacher-force parameters.
+
+Viewer Artifacts:
+- combined report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_boundary_visual_20260611_2300/report.md`
+- comparison plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_boundary_visual_20260611_2300/boundary_success_lift_safety.png`
+- action-semantics report: `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_boundary_visual_20260611_2300/action_semantics/action_semantics_report.md`
+- action-semantics plot: `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_boundary_visual_20260611_2300/action_semantics/action_semantics_plot.png`
+- summary JSON/CSV:
+  - `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_boundary_visual_20260611_2300/summary.json`
+  - `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_boundary_visual_20260611_2300/summary.csv`
+- alpha0.10 success env3 video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_vis_a010_env3succ_520_20260611_230000/videos/handoff-noreset-a010_env3succ-step-0.mp4`
+- alpha0.10 success env3 sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_vis_a010_env3succ_520_20260611_230000_artifacts/video_contact_sheet.png`
+- alpha0.10 failure env0 video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_vis_a010_env0fail_520_20260611_230000/videos/handoff-noreset-a010_env0fail-step-0.mp4`
+- alpha0.10 failure env0 sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_vis_a010_env0fail_520_20260611_230000_artifacts/video_contact_sheet.png`
+- alpha0.15 success env1 video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_vis_a015_env1succ_520_20260611_230000/videos/handoff-noreset-a015_env1succ-step-0.mp4`
+- alpha0.15 success env1 sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_vis_a015_env1succ_520_20260611_230000_artifacts/video_contact_sheet.png`
+- alpha0.15 failure env0 video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_vis_a015_env0fail_520_20260611_230000/videos/handoff-noreset-a015_env0fail-step-0.mp4`
+- alpha0.15 failure env0 sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_vis_a015_env0fail_520_20260611_230000_artifacts/video_contact_sheet.png`
+- alpha0.20 success env1 video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_vis_a020_env1succ_520_20260611_230000/videos/handoff-noreset-a020_env1succ-step-0.mp4`
+- alpha0.20 success env1 sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_vis_a020_env1succ_520_20260611_230000_artifacts/video_contact_sheet.png`
+- alpha0.20 failure env2 video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_vis_a020_env2fail_520_20260611_230000/videos/handoff-noreset-a020_env2fail-step-0.mp4`
+- alpha0.20 failure env2 sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_vis_a020_env2fail_520_20260611_230000_artifacts/video_contact_sheet.png`
+
+Metrics / Visual Diagnosis:
+- alpha0.10: final/ever success `1/4`, done count `0`, suppressed success-done `1/4`, target unsafe max `0`, final lift by env `[0.00059, 0.00410, 0.0, 0.27511]` m. Env3 video is a real held lift; env0 video is a failure with the cube on the table.
+- alpha0.15: final/ever success `2/4`, done count `0`, suppressed success-done `2/4`, target unsafe max `0`, final lift by env `[0.0, 0.21644, 0.0, 0.24450]` m. Env1 video is a real held lift; env0 video fails on the table.
+- alpha0.20: final/ever success `3/4`, last-window success mean `0.6425`, done count `0`, suppressed success-done `3/4`, target unsafe max `0`, final lift by env `[0.17922, 0.23008, 0.0, 0.23151]` m. Env1 video is a real held lift; env2 video fails with the gripper rising while the cube remains on the table.
+- The failure cases do not look like the old drift-away/train-eval mismatch pattern. They look like weak or missed grasp closure/hold at the cube. The alpha0.20 env2 failure is the cleanest example: the arm follows the lift-away motion while the cube is left behind.
+
+Verdict:
+- Current best boundary result is assisted `policy_reference_mix`: alpha0.20 reaches `3/4` sustained no-reset success with clean target safety and visual confirmation; alpha0.10 and alpha0.15 show partial success but are below that gate.
+- This is not policy-only handoff. Alpha0.0 policy-only previously failed, and no PPO/RL scale-up is justified.
+- Next bounded development should focus on reducing/eliminating reference mix through grasp closure/hold improvements, or explicitly defining a low-alpha assisted handoff objective. A direct next diagnostic is to separate pose assistance from gripper/closure assistance with a per-dimension reference-mix probe.
+
+Active Jobs:
+- none.
 
 ## 2026-06-11T22:54:00-07:00 - no-reset lower-alpha threshold selector result and alpha0.20 visual plan
 

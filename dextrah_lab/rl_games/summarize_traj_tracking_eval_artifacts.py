@@ -554,6 +554,8 @@ def _expected_eval_overrides(summary: dict[str, object]) -> dict[str, object]:
         "action_source",
         "action_source_notes",
         "reference_mix_alpha",
+        "reference_mix_gripper_alpha",
+        "reference_mix_gripper_alpha_override",
         "hold_config",
         "checkpoint",
         "num_envs",
@@ -582,6 +584,8 @@ def _expected_env_override_keys(summary: dict[str, object], eval_env: dict[str, 
         )
     if summary.get("reference_mix_alpha") is not None:
         expected.append("reference_mix_alpha")
+    if summary.get("reference_mix_gripper_alpha") is not None:
+        expected.append("reference_mix_gripper_alpha")
     return expected
 
 
@@ -602,6 +606,8 @@ def _write_success_diagnostics(
     diagnostics = {
         "action_source": compact.get("action_source"),
         "reference_mix_alpha": compact.get("reference_mix_alpha"),
+        "reference_mix_gripper_alpha": compact.get("reference_mix_gripper_alpha"),
+        "reference_mix_gripper_alpha_override": compact.get("reference_mix_gripper_alpha_override"),
         "hold_config": compact.get("hold_config"),
         "suppress_success_termination": compact.get("suppress_success_termination"),
         "success_termination_suppression_installed": compact.get("success_termination_suppression_installed"),
@@ -753,6 +759,8 @@ def main() -> None:
         "action_source": summary.get("action_source"),
         "action_source_notes": summary.get("action_source_notes"),
         "reference_mix_alpha": summary.get("reference_mix_alpha"),
+        "reference_mix_gripper_alpha": summary.get("reference_mix_gripper_alpha"),
+        "reference_mix_gripper_alpha_override": summary.get("reference_mix_gripper_alpha_override"),
         "hold_config": summary.get("hold_config"),
         "hold_target_policy": (
             summary.get("hold_config", {}).get("target_policy")
@@ -1043,6 +1051,7 @@ def main() -> None:
 
 - action source: `{summary.get('action_source')}` ({summary.get('action_source_notes')})
 - reference mix alpha: {_fmt(summary.get('reference_mix_alpha'))}
+- reference mix gripper alpha: {_fmt(summary.get('reference_mix_gripper_alpha'))} (override={summary.get('reference_mix_gripper_alpha_override')})
 - hold config: `{summary.get('hold_config')}`
 - suppress success termination: `{summary.get('suppress_success_termination')}` (installed={summary.get('success_termination_suppression_installed')})
 - checkpoint: `{summary.get('checkpoint')}`
