@@ -4192,3 +4192,70 @@ Acceptance:
 - `metrics.json` identifies which envs succeeded/lifted.
 - At least one alpha `0.75` and one alpha `1.0` video/contact sheet visually show a successful env if the deterministic rerun reproduces the aggregate success.
 - Target unsafe remains `0`; baseline task remains untouched; reference remains `curobo_validated=false`.
+
+## 2026-06-11T18:20:33-07:00 - BC eval targeted visual launch
+
+Version Control:
+- implementation_commit: `61200b73caeece99b781fee66d2774145f125ac8`
+- branch: `codex/franka-cube-trajectory-tracking`
+- push: pushed to origin; l401 deployed via local git bundle because GitHub fetch is unavailable on the remote.
+- remote_commit/status: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking` detached at `61200b73caeece99b781fee66d2774145f125ac8`, clean.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/summarize_franka_cube_validation_artifacts.py dextrah_lab/rl_games/analyze_traj_tracking_action_semantics.py`: passed.
+- `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`: passed.
+
+Selector jobs:
+- alpha `0.75` selector: job `1027945`, run `franka_cube_traj_tracking_bc_ref_all7_eval_a075_envselect_520_20260611_181852`, no video.
+- alpha `1.0` selector: job `1027946`, run `franka_cube_traj_tracking_bc_ref_all7_eval_a100_envselect_520_20260611_181852`, no video.
+- selector result: alpha `0.75` succeeds in envs `2` and `3`; alpha `1.0` succeeds in envs `1`, `2`, and `3`; env0 remains a failure in both. Target unsafe max remained `0`.
+
+Viewer jobs:
+- alpha `0.0`, env0 failure video: job `1027947`, run `franka_cube_traj_tracking_bc_ref_all7_vis_a000_env0_520_20260611_182033`.
+- alpha `0.75`, env2 success video: job `1027948`, run `franka_cube_traj_tracking_bc_ref_all7_vis_a075_env2_520_20260611_182033`.
+- alpha `1.0`, env1 success video: job `1027949`, run `franka_cube_traj_tracking_bc_ref_all7_vis_a100_env1_520_20260611_182033`.
+
+Next:
+- Monitor viewer jobs to completion, fetch `metrics.json`, `trace.csv/jsonl`, mp4s, stdout logs.
+- Run artifact summarizer and action-semantics comparison; validate video frame counts.
+- `viz-open` the report/contact sheet/video/trace plot for each viewer run.
+- Explicitly mark the previous env0-only BC eval videos as misleading for aggregate success interpretation.
+
+## 2026-06-11T18:28:40-07:00 - BC targeted visual result
+
+Result:
+- status: passed visual-mismatch closure; no training launched.
+- jobs: `1027947`, `1027948`, `1027949` all completed `0:0`.
+- selector jobs: `1027945`/`1027946` completed `0:0` and produced per-env success/lift fields.
+- artifact report: `cluster_results/l401/franka_cube_traj_tracking_bc_ref_all7_targeted_visual_report_20260611_1828.md`
+- artifact report URL: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_ref_all7_targeted_visual_report_20260611_1828.md`
+
+Artifacts:
+- alpha `0.0` env0 failure report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_ref_all7_vis_a000_env0_520_20260611_182033_artifacts/report.md`
+- alpha `0.0` env0 failure sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_ref_all7_vis_a000_env0_520_20260611_182033_artifacts/video_contact_sheet.png`
+- alpha `0.0` env0 failure video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_ref_all7_vis_a000_env0_520_20260611_182033/videos/bc-ref-all7-a000-env0-step-0.mp4`
+- alpha `0.75` env2 success report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_ref_all7_vis_a075_env2_520_20260611_182033_artifacts/report.md`
+- alpha `0.75` env2 success sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_ref_all7_vis_a075_env2_520_20260611_182033_artifacts/video_contact_sheet.png`
+- alpha `0.75` env2 success video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_ref_all7_vis_a075_env2_520_20260611_182033/videos/bc-ref-all7-a075-env2-step-0.mp4`
+- alpha `1.0` env1 success report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_ref_all7_vis_a100_env1_520_20260611_182033_artifacts/report.md`
+- alpha `1.0` env1 success sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_ref_all7_vis_a100_env1_520_20260611_182033_artifacts/video_contact_sheet.png`
+- alpha `1.0` env1 success video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_ref_all7_vis_a100_env1_520_20260611_182033/videos/bc-ref-all7-a100-env1-step-0.mp4`
+- action-semantics report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_ref_all7_targeted_visual_action_semantics_20260611_1826/action_semantics_report.md`
+- action-semantics plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_ref_all7_targeted_visual_action_semantics_20260611_1826/action_semantics_plot.png`
+
+Metrics:
+- MP4 validation: all three videos are `1280x720`, `520` frames, `8.666667s`, `60 fps`.
+- alpha `0.0` env0: `success_ever_by_env=[false,false,false,false]`, final/max lift all `0.0`, target unsafe max `0.0`, target clearance min `0.065114 m`, raw/ref L2 mean/final `0.9755/1.1988`.
+- alpha `0.75` env2: `success_ever_by_env=[false,false,true,true]`, final success `0.5`, final lift by env `[0.0,0.0,0.19347,0.19387]`, target unsafe max `0.0`, target clearance min `0.065114 m`, raw/ref L2 mean/final `0.0519/0.0916`.
+- alpha `1.0` env1: `success_ever_by_env=[false,true,true,true]`, final success `0.75`, final lift by env `[0.0,0.19264,0.19255,0.19244]`, target unsafe max `0.0`, target clearance min `0.065114 m`, raw/ref L2 mean/final `0.0438/0.0788`.
+
+Visual diagnosis:
+- The old BC eval videos were default env0 views and are misleading for aggregate success: env0 fails even when other envs succeed.
+- The new alpha `0.75` env2 sheet/video visibly shows grasp/lift by the final frame.
+- The new alpha `1.0` env1 sheet/video visibly shows grasp/lift by the final frame.
+- The alpha `0.0` env0 policy-only sheet/video remains a clear no-lift failure.
+
+Analysis:
+- The visual mismatch is closed. The all-7 BC checkpoint makes partial teacher alpha `0.75` viable in 2/4 envs under this deterministic seed, while policy-only alpha `0.0` remains non-lifting.
+- This is real progress over the earlier PPO-only/teacher-force state, where alpha `0.75` did not lift. It is not a reason to scale PPO yet: learned policy-only control is still insufficient.
+- Next bounded trainability direction should be on-policy imitation / DAgger-style aggregation for states reached by alpha `0.0`, or a curriculum that gradually lowers teacher alpha only after targeted success-window videos remain plausible.
