@@ -4573,6 +4573,8 @@ Version Control:
 Validation:
 - `python3 -m py_compile dextrah_lab/rl_games/bc_franka_cube_pass7_actions.py`
 - `bash -n cluster/sbatch_bc_franka_cube_pass7_actions_1gpu.sh`
+- local result: both passed.
+- remote result at commit `698e44d4a9e5d2ca0c6c9665b956d80eadb32dff`: both passed.
 
 Command / Job Plan:
 - run name: `franka_cube_ggx_lowz_bc_actor_recipe_20260611_2202`
@@ -4588,3 +4590,74 @@ Acceptance:
 - dataset summary confirms reset-prior success/quality and low-z sample usage.
 - inspect/report artifacts: `REPORT.md`, `metrics.json`, `dataset_summary.json`, `bc_action_metrics.csv`, `bc_loss_curves.png`, `bc_action_phase_means.png`, `bc_z_sign_accuracy.png`.
 - Do not launch PPO/A100 from this result without an explicit follow-up gate.
+
+Version Control / Launch:
+- implementation_commit: `698e44d4a9e5d2ca0c6c9665b956d80eadb32dff` (`Match BC labels to no-offset lift recipe`)
+- push: branch `codex/franka-cube-ggx-pregrasp-reset` pushed.
+- remote deployment: GitHub fetch is blocked on l401 (`Permission denied (publickey)`), so the exact commit was deployed to the agent-owned worktree via a Git bundle and checked out detached.
+- remote status before launch: detached `698e44d4a9e5d2ca0c6c9665b956d80eadb32dff`, clean.
+- command: `sbatch --parsable --job-name=ggx_lowz_bc --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=698e44d4a9e5d2ca0c6c9665b956d80eadb32dff,RUN_NAME=franka_cube_ggx_lowz_bc_actor_recipe_20260611_2202,NUM_ENVS=64,NUM_RESETS=16,SEED=20260625,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz,INIT_CHECKPOINT=/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_robust_pass7_smoke45_20260612_0056/nn/last_dextrah_franka_cube_grasp_ep_45_rew_662.51086.pth,TRAIN_EPOCHS=40,BATCH_SIZE=2048,LEARNING_RATE=0.0003,TRAIN_SCOPE=actor,VALIDATION_FRACTION=0.25,PHASE_BALANCE_LOSS=True,LIFT_PHASE_LOSS_WEIGHT=2.0,LIFT_Z_MSE_WEIGHT=8.0,LIFT_Z_SIGN_LOSS_WEIGHT=0.05,APPROACH_STEPS=16,CLOSE_STEPS=24,LIFT_STEPS=24,CLOSE_WIDTH=0.010,LIFT_ACTION_Z=0.50,ORACLE_GAIN=8.0,ORACLE_MAX_POSITION_ACTION=1.0,TRACK_ORIENTATION=True,TRACK_EXACT_DURING_LIFT=False,GATE_VAL_MSE=0.04,GATE_GRIPPER_SIGN=0.95,GATE_LIFT_Z_SIGN=0.90,SAVE_BC_CHECKPOINT=True cluster/sbatch_bc_franka_cube_pass7_actions_1gpu.sh`
+- job_id: `1028137`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_lowz_bc_actor_recipe_20260611_2202`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bc_franka_cube_pass7_1028137.out`
+
+Result:
+- status: passed.
+- Slurm: job `1028137` completed `0:0`, elapsed `00:01:11`, node `pool0-00015`.
+- local artifacts: `cluster_results/l401/franka_cube_ggx_lowz_bc_actor_recipe_20260611_2202`.
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_bc_actor_recipe_20260611_2202/REPORT.md`
+- loss curves: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_bc_actor_recipe_20260611_2202/bc_loss_curves.png`
+- phase action means: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_bc_actor_recipe_20260611_2202/bc_action_phase_means.png`
+- z sign plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_bc_actor_recipe_20260611_2202/bc_z_sign_accuracy.png`
+- metrics:
+  - supervised gate: `PASS`
+  - validation MSE: `0.0034819694701582193`
+  - validation MAE: `0.02020249329507351`
+  - validation gripper sign accuracy: `0.99969482421875`
+  - validation lift-z sign accuracy: `1.0`
+  - validation z sign accuracy: `0.765380859375`
+  - checkpoint loadable: `true`
+- dataset:
+  - samples: `65536`
+  - phase counts: approach `16384`, close `24576`, lift `24576`
+  - reset valid counts: `64/64` for all `16` reset batches
+  - sample histogram: `{"0": 65536}` using the low-z single-candidate library
+- diagnostic checkpoint: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_lowz_bc_actor_recipe_20260611_2202/bc_pass7_action_warmstart.pth`
+
+Analysis:
+- Supervised fitting is no longer the blocker under the low-z no-offset library and the passing close/lift recipe.
+- The close-phase z sign remains low because the reference close action includes mixed vertical corrections while tracking exact pose; this is not part of the lift-z gate, which passes at `1.0`.
+- This is still a diagnostic actor initialization artifact, not an apple-to-apple PPO/RL result.
+
+Next:
+- Run a bounded visual eval from the diagnostic checkpoint before any PPO/A100.
+- Eval must use `Dextrah-Franka-Cube-Grasp`, low-z no-offset reset library, cube XY randomization `0.08`, deterministic policy, no environment action warmstart, and video/trace artifacts.
+- Acceptance: video/contact sheet and metrics show the BC actor itself grasps/lifts plausibly from the low-z prior reset. If it fails, the next blocker is closed-loop BC policy behavior, not supervised MSE.
+
+## 2026-06-12T05:10:00Z - Low-Z BC Actor Visual Eval Plan
+
+Goal:
+- Test whether the supervised low-z BC actor checkpoint can close-loop grasp/lift from the valid low-z no-offset pregrasp reset before PPO.
+
+Config Audit:
+- training label config from `1028137`: low-z library, seed `20260625`, cube XY randomization `0.08`, `track_exact_during_lift=false`, close target width `0.010`, lift action z `0.50`.
+- eval config: same low-z reset library, same task and cube XY randomization, deterministic policy action from checkpoint, no action warmstart override.
+- intended mismatch: eval does not inject teacher labels or scripted warmstart; it tests the BC actor alone.
+
+Command / Job Plan:
+- run name: `franka_cube_ggx_lowz_bc_actor_eval_20260611_2210`
+- checkpoint: `/results/diagnostics/franka_cube_ggx_lowz_bc_actor_recipe_20260611_2202/bc_pass7_action_warmstart.pth`
+- library: `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz`
+- scale: `NUM_ENVS=1`, `NUM_STEPS=180`, video length `180`, deterministic.
+- no PPO, no A100, no RL training.
+
+Expected Artifacts:
+- remote run dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_ggx_lowz_bc_actor_eval_20260611_2210`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_<job_id>.out`
+- `metrics.json`, `trace.csv`, `trace.jsonl`, video under `videos/`.
+- local inspection after fetch: report, contact sheet, trace plot, `viz-open` URLs.
+
+Acceptance:
+- reset-prior success/quality stays `1.0`.
+- video starts from the low-z open 3 cm pregrasp and shows physically plausible close/contact/lift from the BC actor alone.
+- metrics should show nonzero lift and decreasing/controlled finger/cube distance; if not, mark as closed-loop BC actor failure and do not launch PPO.
