@@ -25,7 +25,15 @@ from .analyze_policy_trace import POSITION_FEATURE_IDX
 from .trajectory_conversion import PICK_AND_LIFT_PHASE_ORDER
 
 
-def _phase_names() -> list[str]:
+ACTION_NAMES = ["dx", "dy", "dz", "droll", "dpitch", "dyaw", "gripper"]
+CONTACT_RELABEL_PHASE_ORDER = ("align_open", "close_hold", "lift")
+
+
+def _phase_names(phase_ids: np.ndarray | None = None) -> list[str]:
+    if phase_ids is not None:
+        unique = set(int(v) for v in np.unique(phase_ids))
+        if unique and unique.issubset(set(range(len(CONTACT_RELABEL_PHASE_ORDER)))):
+            return list(CONTACT_RELABEL_PHASE_ORDER)
     return sorted(PICK_AND_LIFT_PHASE_ORDER)
 
 
@@ -106,27 +114,36 @@ def _episode_reference_rows(
     *,
     episode_index: int,
 ) -> list[tuple[str, int]]:
-    names = _phase_names()
+    names = _phase_names(phase_ids)
     phase_to_id = {name: idx for idx, name in enumerate(names)}
     starts = _episode_starts(episode_ends)
     if episode_index < 0 or episode_index >= int(episode_ends.shape[0]):
         raise ValueError(f"episode_index must be in [0, {episode_ends.shape[0]}), got {episode_index}")
     ep_start = int(starts[episode_index])
     ep_end = int(episode_ends[episode_index])
-    refs: list[tuple[str, int | None]] = [
-        ("episode_start", ep_start),
-        (
-            "first_go_to_pregrasp",
-            _first_matching_row(phase_ids == phase_to_id["go_to_pre_grasp_pose"], ep_start, ep_end),
-        ),
-        (
-            "first_pregrasp_to_grasp",
-            _first_matching_row(phase_ids == phase_to_id["go_from_pre_grasp_to_grasp_pose"], ep_start, ep_end),
-        ),
-        ("first_negative_gripper", _first_matching_row(action[:, 6] < 0.0, ep_start, ep_end)),
-        ("first_hard_close", _first_matching_row(action[:, 6] <= -0.9, ep_start, ep_end)),
-        ("first_lift", _first_matching_row(phase_ids == phase_to_id["lift_object"], ep_start, ep_end)),
-    ]
+    if set(names) == set(CONTACT_RELABEL_PHASE_ORDER):
+        refs: list[tuple[str, int | None]] = [
+            ("episode_start", ep_start),
+            ("first_align_open", _first_matching_row(phase_ids == phase_to_id["align_open"], ep_start, ep_end)),
+            ("first_close_hold", _first_matching_row(phase_ids == phase_to_id["close_hold"], ep_start, ep_end)),
+            ("first_negative_gripper", _first_matching_row(action[:, 6] < 0.0, ep_start, ep_end)),
+            ("first_lift", _first_matching_row(phase_ids == phase_to_id["lift"], ep_start, ep_end)),
+        ]
+    else:
+        refs = [
+            ("episode_start", ep_start),
+            (
+                "first_go_to_pregrasp",
+                _first_matching_row(phase_ids == phase_to_id["go_to_pre_grasp_pose"], ep_start, ep_end),
+            ),
+            (
+                "first_pregrasp_to_grasp",
+                _first_matching_row(phase_ids == phase_to_id["go_from_pre_grasp_to_grasp_pose"], ep_start, ep_end),
+            ),
+            ("first_negative_gripper", _first_matching_row(action[:, 6] < 0.0, ep_start, ep_end)),
+            ("first_hard_close", _first_matching_row(action[:, 6] <= -0.9, ep_start, ep_end)),
+            ("first_lift", _first_matching_row(phase_ids == phase_to_id["lift_object"], ep_start, ep_end)),
+        ]
     out: list[tuple[str, int]] = []
     seen: set[int] = set()
     for label, idx in refs:
@@ -135,6 +152,47 @@ def _episode_reference_rows(
         out.append((label, int(idx)))
         seen.add(int(idx))
     return out
+
+
+def _spread_rows(candidates: np.ndarray, count: int) -> np.ndarray:
+    candidates = np.asarray(candidates, dtype=np.int64)
+    if candidates.size == 0 or count <= 0:
+        return np.empty((0,), dtype=np.int64)
+    if candidates.size <= count:
+        return candidates
+    take = np.linspace(0, candidates.size - 1, num=count, dtype=np.int64)
+    return candidates[take]
+
+
+def _selector_rows(
+    obs: np.ndarray,
+    action: np.ndarray,
+    phase_ids: np.ndarray,
+    *,
+    selector: str,
+    count: int,
+) -> np.ndarray:
+    names = _phase_names(phase_ids)
+    phase_to_id = {name: idx for idx, name in enumerate(names)}
+    if selector == "first":
+        candidates = np.arange(obs.shape[0], dtype=np.int64)
+    elif selector == "gripper_open":
+        candidates = np.flatnonzero(action[:, 6] > 0.5)
+    elif selector == "gripper_closed":
+        candidates = np.flatnonzero(action[:, 6] < -0.5)
+    elif selector == "lift_high":
+        closed = action[:, 6] < -0.5
+        lift_name = "lift" if "lift" in phase_to_id else "lift_object"
+        lift_phase = phase_ids == phase_to_id[lift_name]
+        candidates = np.flatnonzero(closed & lift_phase)
+        if candidates.size == 0:
+            candidates = np.flatnonzero(closed)
+        if candidates.size:
+            order = np.argsort(obs[candidates, 2], kind="stable")
+            candidates = candidates[order]
+    else:
+        raise ValueError(f"Unsupported row selector {selector!r}")
+    return _spread_rows(candidates, count)
 
 
 def _nearest_dataset_row(obs: np.ndarray, query_obs: np.ndarray) -> tuple[int, float]:
@@ -211,6 +269,133 @@ def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         writer.writerows(rows)
 
 
+def _phase_or_selector_groups(rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        if row["source"] == "selector":
+            key = f"selector:{row['selector']}"
+        elif row["source"] == "demo":
+            key = f"demo:{row['phase']}"
+        else:
+            key = str(row["source"])
+        groups.setdefault(key, []).append(row)
+    return groups
+
+
+def _write_channel_stats(path: Path, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    stat_rows: list[dict[str, Any]] = []
+    for group, group_rows in _phase_or_selector_groups(rows).items():
+        pred = np.asarray([row["pred_first_action"] for row in group_rows], dtype=float)
+        label = np.asarray([row["label_t_action"] for row in group_rows], dtype=float)
+        if pred.ndim != 2 or label.ndim != 2:
+            continue
+        for action_idx, name in enumerate(ACTION_NAMES):
+            diff = pred[:, action_idx] - label[:, action_idx]
+            stat_rows.append(
+                {
+                    "group": group,
+                    "action_index": action_idx,
+                    "action_name": name,
+                    "count": int(pred.shape[0]),
+                    "label_min": float(np.min(label[:, action_idx])),
+                    "label_mean": float(np.mean(label[:, action_idx])),
+                    "label_max": float(np.max(label[:, action_idx])),
+                    "pred_min": float(np.min(pred[:, action_idx])),
+                    "pred_mean": float(np.mean(pred[:, action_idx])),
+                    "pred_max": float(np.max(pred[:, action_idx])),
+                    "mae": float(np.mean(np.abs(diff))),
+                    "mse": float(np.mean(diff**2)),
+                    "sign_match_fraction": (
+                        float(np.mean(np.sign(pred[:, action_idx]) == np.sign(label[:, action_idx])))
+                        if action_idx == 6
+                        else None
+                    ),
+                }
+            )
+    _write_csv(path, stat_rows)
+    return stat_rows
+
+
+def _plot_gripper_distributions(rows: list[dict[str, Any]], output_path: Path) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    groups = _phase_or_selector_groups(rows)
+    labels = list(groups.keys())
+    x = np.arange(len(labels))
+    fig, axes = plt.subplots(2, 1, figsize=(max(11.0, len(labels) * 0.75), 8.0), constrained_layout=True)
+    pred_data = [np.asarray([r["pred_first_gripper"] for r in groups[label]], dtype=float) for label in labels]
+    label_data = [np.asarray([r["label_t_gripper"] for r in groups[label]], dtype=float) for label in labels]
+
+    axes[0].boxplot(label_data, positions=x - 0.18, widths=0.28, patch_artist=True)
+    axes[0].boxplot(pred_data, positions=x + 0.18, widths=0.28, patch_artist=True)
+    axes[0].axhline(0.0, color="black", linewidth=0.8)
+    axes[0].set_title("First Returned Gripper: Label vs Official DP Prediction")
+    axes[0].set_ylabel("-1 close / +1 open")
+    axes[0].set_xticks(x)
+    axes[0].set_xticklabels(labels, rotation=45, ha="right", fontsize=8)
+    axes[0].grid(True, alpha=0.25)
+    axes[0].text(0.01, 0.95, "left boxes: labels; right boxes: predictions", transform=axes[0].transAxes, fontsize=8)
+
+    sign_match = []
+    for label in labels:
+        pred = np.asarray([r["pred_first_gripper"] for r in groups[label]], dtype=float)
+        target = np.asarray([r["label_t_gripper"] for r in groups[label]], dtype=float)
+        sign_match.append(float(np.mean(np.sign(pred) == np.sign(target))))
+    axes[1].bar(x, sign_match, color="tab:green")
+    axes[1].set_ylim(0.0, 1.0)
+    axes[1].set_title("Gripper Sign Match Fraction")
+    axes[1].set_ylabel("fraction")
+    axes[1].set_xticks(x)
+    axes[1].set_xticklabels(labels, rotation=45, ha="right", fontsize=8)
+    axes[1].grid(True, alpha=0.25)
+    fig.savefig(output_path, dpi=180)
+    plt.close(fig)
+
+
+def _plot_per_channel_first_action(rows: list[dict[str, Any]], output_path: Path) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    pred = np.asarray([row["pred_first_action"] for row in rows], dtype=float)
+    label = np.asarray([row["label_t_action"] for row in rows], dtype=float)
+    fig, axes = plt.subplots(2, 4, figsize=(16.0, 7.0), constrained_layout=True)
+    for idx, ax in enumerate(axes.flat[: len(ACTION_NAMES)]):
+        ax.scatter(label[:, idx], pred[:, idx], s=18, alpha=0.7)
+        lo = float(min(np.min(label[:, idx]), np.min(pred[:, idx])))
+        hi = float(max(np.max(label[:, idx]), np.max(pred[:, idx])))
+        if abs(hi - lo) < 1.0e-6:
+            lo -= 1.0
+            hi += 1.0
+        ax.plot([lo, hi], [lo, hi], color="black", linewidth=0.8)
+        ax.axhline(0.0, color="gray", linewidth=0.5)
+        ax.axvline(0.0, color="gray", linewidth=0.5)
+        ax.set_title(f"a[{idx}] {ACTION_NAMES[idx]}")
+        ax.set_xlabel("label")
+        ax.set_ylabel("pred")
+        ax.grid(True, alpha=0.25)
+    axes.flat[-1].axis("off")
+    fig.savefig(output_path, dpi=180)
+    plt.close(fig)
+
+
+def _normalizer_summary(policy: Any) -> dict[str, Any]:
+    summary: dict[str, Any] = {}
+    normalizer = getattr(policy, "normalizer", None)
+    if normalizer is None:
+        return {"available": False}
+    summary["available"] = True
+    try:
+        action_norm = normalizer["action"]
+        params = action_norm.params_dict
+        summary["action_scale"] = params["scale"].detach().cpu().numpy().astype(float).tolist()
+        summary["action_offset"] = params["offset"].detach().cpu().numpy().astype(float).tolist()
+        input_stats = params["input_stats"]
+        summary["action_input_min"] = input_stats["min"].detach().cpu().numpy().astype(float).tolist()
+        summary["action_input_max"] = input_stats["max"].detach().cpu().numpy().astype(float).tolist()
+        summary["action_input_mean"] = input_stats["mean"].detach().cpu().numpy().astype(float).tolist()
+        summary["action_input_std"] = input_stats["std"].detach().cpu().numpy().astype(float).tolist()
+    except Exception as exc:  # pragma: no cover - depends on official normalizer internals.
+        summary["error"] = repr(exc)
+    return summary
+
+
 def _plot(rows: list[dict[str, Any]], output_path: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     labels = [row["sample"] for row in rows]
@@ -261,7 +446,7 @@ def diagnose(args: argparse.Namespace) -> dict[str, Any]:
     action = np.asarray(data["action"], dtype=np.float32)
     episode_ends = np.asarray(data["episode_ends"], dtype=np.int64)
     phase_ids = np.asarray(data["phase_ids"], dtype=np.int32)
-    names = _phase_names()
+    names = _phase_names(phase_ids)
 
     workspace = _load_workspace(checkpoint)
     policy, resolved_policy_source = _select_policy(workspace, str(args.policy_source))
@@ -281,17 +466,38 @@ def diagnose(args: argparse.Namespace) -> dict[str, Any]:
             {
                 "sample": f"demo_{label}",
                 "source": "demo",
+                "selector": None,
                 "row_idx": int(row_idx),
                 "obs_seq": _obs_history_for_row(obs, int(row_idx), episode_ends, n_obs_steps),
                 "trace_first_action": None,
                 "nearest_distance": 0.0,
             }
         )
+    for selector in args.row_selector:
+        for row_idx in _selector_rows(
+            obs,
+            action,
+            phase_ids,
+            selector=str(selector),
+            count=int(args.samples_per_selector),
+        ):
+            samples.append(
+                {
+                    "sample": f"selector_{selector}_{row_idx}",
+                    "source": "selector",
+                    "selector": str(selector),
+                    "row_idx": int(row_idx),
+                    "obs_seq": _obs_history_for_row(obs, int(row_idx), episode_ends, n_obs_steps),
+                    "trace_first_action": None,
+                    "nearest_distance": 0.0,
+                }
+            )
     for row_idx in args.row_index:
         samples.append(
             {
                 "sample": f"demo_row_{row_idx}",
                 "source": "demo",
+                "selector": None,
                 "row_idx": int(row_idx),
                 "obs_seq": _obs_history_for_row(obs, int(row_idx), episode_ends, n_obs_steps),
                 "trace_first_action": None,
@@ -307,6 +513,7 @@ def diagnose(args: argparse.Namespace) -> dict[str, Any]:
                 {
                     "sample": f"{trace_name}:{label}",
                     "source": "live",
+                    "selector": None,
                     "row_idx": int(nearest_idx),
                     "obs_seq": np.asarray(record["history_after_push"], dtype=np.float32),
                     "trace_first_action": np.asarray(record["first_action"], dtype=np.float32),
@@ -345,6 +552,7 @@ def diagnose(args: argparse.Namespace) -> dict[str, Any]:
         record: dict[str, Any] = {
             "sample": sample["sample"],
             "source": sample["source"],
+            "selector": sample.get("selector"),
             "row_idx": row_idx,
             "episode": ep_idx,
             "episode_step": local_idx,
@@ -366,6 +574,7 @@ def diagnose(args: argparse.Namespace) -> dict[str, Any]:
             "pred_first_gripper": float(returned[0, 6]),
             "label_t_action": label_t.astype(float).tolist(),
             "label_t_gripper": float(label_t[6]),
+            "label_sign_group": "open_label" if float(label_t[6]) > 0.0 else "closed_label",
             "label_t_plus_1_action": label_t_plus_1.astype(float).tolist(),
             "label_t_plus_1_gripper": float(label_t_plus_1[6]),
             "obs_current_cube_minus_ee": sample["obs_seq"][-1, 14:17].astype(float).tolist(),
@@ -381,6 +590,18 @@ def diagnose(args: argparse.Namespace) -> dict[str, Any]:
         rows.append(record)
 
     _write_csv(output_dir / "action_semantics_rows.csv", rows)
+    channel_stats = _write_channel_stats(output_dir / "action_semantics_channel_stats.csv", rows)
+    normalizer = _normalizer_summary(policy)
+    open_rows = [row for row in rows if row["label_t_gripper"] > 0.0]
+    closed_rows = [row for row in rows if row["label_t_gripper"] < 0.0]
+    open_match = float(np.mean([row["pred_first_gripper"] > 0.0 for row in open_rows])) if open_rows else None
+    closed_match = float(np.mean([row["pred_first_gripper"] < 0.0 for row in closed_rows])) if closed_rows else None
+    gripper_gate_pass = bool(
+        open_match is not None
+        and closed_match is not None
+        and open_match >= float(args.gripper_pass_fraction)
+        and closed_match >= float(args.gripper_pass_fraction)
+    )
     (output_dir / "action_semantics_summary.json").write_text(
         json.dumps(
             {
@@ -399,6 +620,13 @@ def diagnose(args: argparse.Namespace) -> dict[str, Any]:
                 "horizon": horizon,
                 "oa_step_convention": bool(getattr(policy, "oa_step_convention", False)),
                 "official_return_start_index": start_index,
+                "action_dim_6_convention": "+1 open, -1 close",
+                "normalizer": normalizer,
+                "gripper_open_sign_match_fraction": open_match,
+                "gripper_closed_sign_match_fraction": closed_match,
+                "gripper_pass_fraction": float(args.gripper_pass_fraction),
+                "gripper_gate_pass": gripper_gate_pass,
+                "channel_stats": channel_stats,
                 "rows": rows,
             },
             indent=2,
@@ -406,6 +634,8 @@ def diagnose(args: argparse.Namespace) -> dict[str, Any]:
         encoding="utf-8",
     )
     _plot(rows, output_dir / "action_semantics_offsets.png")
+    _plot_gripper_distributions(rows, output_dir / "gripper_label_vs_prediction.png")
+    _plot_per_channel_first_action(rows, output_dir / "per_channel_first_action_scatter.png")
     report_lines = [
         "# DP Action Semantics Diagnostic",
         "",
@@ -415,18 +645,50 @@ def diagnose(args: argparse.Namespace) -> dict[str, Any]:
         f"- Official returned action start index: `{start_index}` (`oa_step_convention={bool(getattr(policy, 'oa_step_convention', False))}`)",
         f"- `n_obs_steps={n_obs_steps}`, `n_action_steps={n_action_steps}`, `horizon={horizon}`",
         f"- Episode sampled for exact demo windows: `{args.episode_index}`",
+        "- DEXTRAH gripper convention: action dim 6 is `+1` open and `-1` close.",
+        f"- Checkpoint action normalizer input dim 6 min/max: `{normalizer.get('action_input_min', [None] * 7)[6]}` / `{normalizer.get('action_input_max', [None] * 7)[6]}`",
+        f"- Gripper sign match: open rows `{open_match}`, closed/lift rows `{closed_match}`, pass threshold `{args.gripper_pass_fraction}`.",
+        f"- Gripper gate: `{'pass' if gripper_gate_pass else 'fail'}`.",
         "",
         "## Rows",
         "",
-        "| sample | source | phase | row | best returned offset | returned MSE@0 | returned best MSE | first pred grip | label a[t] grip | nearest dist |",
-        "|---|---|---|---:|---:|---:|---:|---:|---:|---:|",
+        "| sample | source | selector | phase | row | best returned offset | returned MSE@0 | returned best MSE | first pred grip | label a[t] grip | nearest dist |",
+        "|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for row in rows:
         report_lines.append(
-            f"| {row['sample']} | {row['source']} | {row['phase']} | {row['row_idx']} | "
+            f"| {row['sample']} | {row['source']} | {row.get('selector')} | {row['phase']} | {row['row_idx']} | "
             f"{row['returned_best_offset']} | {row['returned_offset_0_mse_all']:.5f} | "
             f"{row['returned_best_mse_all']:.5f} | {row['pred_first_gripper']:.3f} | "
             f"{row['label_t_gripper']:.3f} | {row['nearest_distance']:.3f} |"
+        )
+    report_lines.extend(
+        [
+            "",
+            "## Channel Summary",
+            "",
+            "| group | channel | label min/mean/max | pred min/mean/max | MAE | sign match |",
+            "|---|---|---|---|---:|---:|",
+        ]
+    )
+    for stat in channel_stats:
+        if stat["action_name"] != "gripper" and not bool(args.report_all_channels):
+            continue
+        report_lines.append(
+            "| {group} | a[{idx}] {name} | {lmin:.3f}/{lmean:.3f}/{lmax:.3f} | "
+            "{pmin:.3f}/{pmean:.3f}/{pmax:.3f} | {mae:.4f} | {sign} |".format(
+                group=stat["group"],
+                idx=stat["action_index"],
+                name=stat["action_name"],
+                lmin=stat["label_min"],
+                lmean=stat["label_mean"],
+                lmax=stat["label_max"],
+                pmin=stat["pred_min"],
+                pmean=stat["pred_mean"],
+                pmax=stat["pred_max"],
+                mae=stat["mae"],
+                sign="" if stat["sign_match_fraction"] is None else f"{stat['sign_match_fraction']:.3f}",
+            )
         )
     report_lines.extend(
         [
@@ -440,8 +702,11 @@ def diagnose(args: argparse.Namespace) -> dict[str, Any]:
             "## Artifacts",
             "",
             f"- CSV: `{output_dir / 'action_semantics_rows.csv'}`",
+            f"- Channel CSV: `{output_dir / 'action_semantics_channel_stats.csv'}`",
             f"- JSON: `{output_dir / 'action_semantics_summary.json'}`",
             f"- Plot: `{output_dir / 'action_semantics_offsets.png'}`",
+            f"- Gripper plot: `{output_dir / 'gripper_label_vs_prediction.png'}`",
+            f"- Per-channel plot: `{output_dir / 'per_channel_first_action_scatter.png'}`",
         ]
     )
     (output_dir / "action_semantics_report.md").write_text("\n".join(report_lines) + "\n", encoding="utf-8")
@@ -449,8 +714,12 @@ def diagnose(args: argparse.Namespace) -> dict[str, Any]:
         "output_dir": str(output_dir),
         "rows": len(rows),
         "plot": str(output_dir / "action_semantics_offsets.png"),
+        "gripper_plot": str(output_dir / "gripper_label_vs_prediction.png"),
+        "per_channel_plot": str(output_dir / "per_channel_first_action_scatter.png"),
         "report": str(output_dir / "action_semantics_report.md"),
         "csv": str(output_dir / "action_semantics_rows.csv"),
+        "channel_csv": str(output_dir / "action_semantics_channel_stats.csv"),
+        "gripper_gate_pass": gripper_gate_pass,
     }
 
 
@@ -465,6 +734,25 @@ def main() -> None:
     parser.add_argument("--policy-source", choices=["auto", "ema", "model"], default="auto")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--episode-index", type=int, default=29)
+    parser.add_argument(
+        "--row-selector",
+        action="append",
+        choices=["first", "gripper_open", "gripper_closed", "lift_high"],
+        default=[],
+        help="Add evenly spread dataset rows from this selector. Can be repeated.",
+    )
+    parser.add_argument("--samples-per-selector", type=int, default=24)
+    parser.add_argument(
+        "--gripper-pass-fraction",
+        type=float,
+        default=0.95,
+        help="Required open/closed sign-match fraction for the offline gripper gate.",
+    )
+    parser.add_argument(
+        "--report-all-channels",
+        action="store_true",
+        help="Include all channel stats in the markdown report instead of only gripper rows.",
+    )
     parser.add_argument("--row-index", action="append", type=int, default=[])
     parser.add_argument("--trace", action="append", default=[])
     parser.add_argument("--max-live-records-per-trace", type=int, default=5)

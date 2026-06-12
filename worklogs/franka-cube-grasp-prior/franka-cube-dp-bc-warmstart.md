@@ -6306,3 +6306,125 @@ Next:
   for this staged contact-aware dataset, or train a separate binary gripper
   head/distillation target. Any option needs a new small smoke and action-range
   artifact before closed-loop DP eval.
+
+## 2026-06-11T18:27:42-07:00 - official DP gripper sign mismatch audit plan
+
+Goal:
+- Isolate the remaining contact-aware official-DP gripper sign incoherence
+  before any closed-loop eval, full BC, or RL handoff.
+
+Hypothesis:
+- The current `needs_review` verdict may be caused by either a real learned
+  gripper sign/conditioning failure or a row/window comparison bug in the
+  action-range smoke. The bounded next step is to query the official
+  `real-stanford/diffusion_policy` checkpoint offline on exact dataset windows,
+  compare predictions to labels under the policy's `oa_step_convention`, and
+  produce per-channel label-vs-predicted distributions by row selector/phase.
+
+Change:
+- Planned only before edits. Extend the existing offline official-DP action
+  semantics diagnostic rather than adding an overlapping reimplementation.
+- Required checks: DEXTRAH action dim 6 convention (`+1` open, `-1` close),
+  dataset open/closed/lift rows, checkpoint normalizer, bridge history/extract
+  path, predicted-vs-label action distributions, and temporal offsets
+  `t`, `t+1`, and future horizon labels.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- worklog:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart/worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `70ce1596b7e31695d32d4f9a52a5682e1a25e5fd`
+- implementation_commit: pending
+- changed_files: pending
+- official_diffusion_policy:
+  source `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/diffusion_policy`,
+  commit `5ba07ac6661db573af695b419a7947ecb704690f`,
+  remote `https://github.com/real-stanford/diffusion_policy`.
+
+Command / Job:
+- Planned local offline command only, no simulator rollout:
+  `diagnose_dp_action_semantics.py --checkpoint <latest.ckpt> --dataset <contact_relabel_set_accepted.npz> --output-dir <gripper_audit_run> ...`
+
+Result:
+- status: planned.
+
+Next:
+- Patch diagnostics, validate locally, run the bounded audit, inspect plots/CSV,
+  and only then decide whether a bounded training/loss/config fix is warranted.
+
+## 2026-06-11T18:40:00-07:00 - official DP gripper sign audit results
+
+Goal:
+- Verify gripper label convention, normalizer behavior, and row-conditioned
+  official-DP predictions before trying any bounded fix.
+
+Change:
+- Extended `dextrah_lab/offline_dp_bc/diagnose_dp_action_semantics.py` to:
+  sample bulk row selectors (`first`, `gripper_open`, `gripper_closed`,
+  `lift_high`), decode contact-aware relabel phases (`align_open`,
+  `close_hold`, `lift`), dump checkpoint action normalizer stats, and produce
+  per-channel label-vs-predicted CSV/PNG artifacts.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `70ce1596b7e31695d32d4f9a52a5682e1a25e5fd`
+- implementation_commit: pending
+- changed_files:
+  `dextrah_lab/offline_dp_bc/diagnose_dp_action_semantics.py`,
+  `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`.
+
+Command / Job:
+- command:
+  `PYTHONPATH=$DP:$DEX $VENV/bin/python -m dextrah_lab.offline_dp_bc.diagnose_dp_action_semantics --checkpoint $CKPT --dataset $DATASET --output-dir $OUT --diffusion-policy-root $DP --device cuda:0 --num-inference-steps 8 --policy-source auto --episode-index 2 --row-selector first --row-selector gripper_open --row-selector gripper_closed --row-selector lift_high --samples-per-selector 16 --gripper-pass-fraction 0.95 --report-all-channels`
+- job_id: `n/a`, local offline checkpoint query.
+- run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_gripper_audits/gripper_sign_audit_clampconst100_phasefix_20260611_1835`
+- logs:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_gripper_audits/gripper_sign_audit_clampconst100_phasefix_20260611_1835/logs/gripper_sign_audit.log`
+
+Result:
+- status: failed gripper gate, but diagnostic is coherent.
+- action dim 6 convention: dataset and DEXTRAH bridge use `+1` open,
+  `-1` close.
+- dataset labels: contact-aware NPZ phases are `align_open`, `close_hold`,
+  `lift`; phase 0 labels are all `+1`, phases 1/2 are all `-1`.
+- normalizer: checkpoint action dim 6 min/max is `-1/+1`, scale/offset is
+  `1/0`; no normalizer sign flip.
+- EMA checkpoint sign match: open rows `0.5909`, closed/lift rows `0.5556`;
+  gate threshold `0.95`, verdict `fail`.
+- Raw model check also failed: open `0.5294`, closed/lift `0.5294`.
+- Phase note: the earlier
+  `gripper_sign_audit_clampconst100_20260611_1829` artifact used stale
+  pick/lift phase decoding and should not be used for phase claims; the
+  phasefix artifact above supersedes it.
+
+Viewer URLs:
+- report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_gripper_audits/gripper_sign_audit_clampconst100_phasefix_20260611_1835/action_semantics_report.md`
+- gripper distribution plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_gripper_audits/gripper_sign_audit_clampconst100_phasefix_20260611_1835/gripper_label_vs_prediction.png`
+- per-channel scatter:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_gripper_audits/gripper_sign_audit_clampconst100_phasefix_20260611_1835/per_channel_first_action_scatter.png`
+- CSV:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_gripper_audits/gripper_sign_audit_clampconst100_phasefix_20260611_1835/action_semantics_rows.csv`
+- channel CSV:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_gripper_audits/gripper_sign_audit_clampconst100_phasefix_20260611_1835/action_semantics_channel_stats.csv`
+
+Analysis:
+- This rules out a DEXTRAH gripper sign flip and checkpoint normalizer flip.
+- The returned-action label alignment is still not strong: best-offset counts
+  are often `-2` or `+7`, and both EMA/raw models behave like a noisy,
+  partially fit distribution on gripper dim 6. The next bounded fix should
+  target official-DP training semantics before any simulator eval.
+
+Next:
+- Try one bounded official-DP pretrain with `pred_action_steps_only=true` so
+  the diffusion loss is applied to the same 8-step action window consumed by
+  the eval bridge. Do not run closed-loop DP eval unless row-conditioned
+  open/closed/lift gripper smokes pass.
