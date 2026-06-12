@@ -196,6 +196,67 @@ parser.add_argument(
         "phase, teacher_alpha. Only used with --residual_adapter_enabled."
     ),
 )
+parser.add_argument(
+    "--handoff_source_enabled",
+    type=lambda value: str(value).strip().lower() in ("1", "true", "yes", "on"),
+    default=False,
+    help=(
+        "Create an extra derived source by duplicating selected assisted samples with a new teacher_alpha "
+        "context, for supervised-only handoff/stabilization diagnostics."
+    ),
+)
+parser.add_argument(
+    "--handoff_source_sources",
+    type=str,
+    default="",
+    help=(
+        "Comma/colon-separated source names/slugs/ids to draw handoff samples from. "
+        "Defaults to all current/rehearsal sources when handoff is enabled."
+    ),
+)
+parser.add_argument("--handoff_source_name", type=str, default="policy0_success_handoff", help="Name for the derived handoff source.")
+parser.add_argument(
+    "--handoff_teacher_alpha",
+    type=float,
+    default=0.0,
+    help="Teacher-alpha context value assigned to duplicated handoff samples.",
+)
+parser.add_argument(
+    "--handoff_min_phase",
+    type=float,
+    default=0.55,
+    help="Minimum trajectory phase for derived handoff samples.",
+)
+parser.add_argument(
+    "--handoff_max_phase",
+    type=float,
+    default=1.01,
+    help="Maximum trajectory phase for derived handoff samples.",
+)
+parser.add_argument(
+    "--handoff_min_lift_height",
+    type=float,
+    default=0.02,
+    help="Minimum cube lift height for derived handoff samples when success is not already true.",
+)
+parser.add_argument(
+    "--handoff_require_success",
+    type=lambda value: str(value).strip().lower() in ("1", "true", "yes", "on"),
+    default=False,
+    help="If true, only duplicate samples where success is true; otherwise success OR min lift is accepted.",
+)
+parser.add_argument(
+    "--handoff_require_safe_target",
+    type=lambda value: str(value).strip().lower() in ("1", "true", "yes", "on"),
+    default=True,
+    help="Require unsafe_target <= 0.5 for derived handoff samples.",
+)
+parser.add_argument(
+    "--handoff_max_samples",
+    type=int,
+    default=0,
+    help="Optional maximum total derived handoff samples; 0 keeps all selected samples.",
+)
 parser.add_argument("--task", type=str, default=None, help="Gym task name.")
 parser.add_argument("--disable_fabric", action="store_true", default=False, help="Disable fabric and use USD I/O.")
 AppLauncher.add_app_launcher_args(parser)
@@ -872,6 +933,34 @@ def _write_report(summary: dict[str, object], rows: list[dict[str, float | int |
                         path=source.get("path", "n/a"),
                     )
                 )
+    handoff_source = summary.get("handoff_source", {})
+    handoff_lines = [f"- handoff source: `{handoff_source}`"]
+    if isinstance(handoff_source, dict) and handoff_source.get("enabled"):
+        handoff_lines = [
+            f"- enabled: `{handoff_source.get('enabled')}`",
+            f"- name / slug: `{handoff_source.get('name')}` / `{handoff_source.get('slug')}`",
+            f"- teacher alpha context: `{handoff_source.get('teacher_alpha')}`",
+            f"- selected samples: `{handoff_source.get('selected_total')}` "
+            f"(before cap `{handoff_source.get('selected_total_before_cap')}`)",
+            f"- selected sources: `{handoff_source.get('selected_sources')}`",
+            f"- filter: `{handoff_source.get('filter')}`",
+            f"- phase/lift/success/unsafe: `{handoff_source.get('phase_mean')}` / "
+            f"`{handoff_source.get('lift_mean')}` / `{handoff_source.get('success_rate')}` / "
+            f"`{handoff_source.get('unsafe_rate')}`",
+            "",
+            "| source | available | selected | success selected | lift selected |",
+            "| --- | ---: | ---: | ---: | ---: |",
+        ]
+        per_source_counts = handoff_source.get("per_source_counts", [])
+        if isinstance(per_source_counts, list):
+            for row in per_source_counts:
+                if not isinstance(row, dict):
+                    continue
+                handoff_lines.append(
+                    f"| {row.get('source', 'n/a')} | {row.get('available', 'n/a')} | "
+                    f"{row.get('selected', 'n/a')} | {row.get('success_selected', 'n/a')} | "
+                    f"{row.get('lift_selected', 'n/a')} |"
+                )
     source_metric_lines = [
         "| source | split | initial mse | final mse | initial l2 | final l2 | initial up abs | final up abs | initial close abs | final close abs |",
         "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
@@ -1043,6 +1132,10 @@ def _write_report(summary: dict[str, object], rows: list[dict[str, float | int |
         "## Dataset Sources",
         "",
         *source_lines,
+        "",
+        "## Derived Handoff Source",
+        "",
+        *handoff_lines,
         "",
         "## Loss",
         "",
@@ -1433,6 +1526,167 @@ def main(env_cfg, agent_cfg: dict):
             }
         )
 
+    handoff_source_summary: dict[str, object] = {"enabled": bool(args_cli.handoff_source_enabled)}
+    if args_cli.handoff_source_enabled:
+        if args_cli.handoff_max_samples < 0:
+            raise ValueError(f"--handoff_max_samples must be non-negative, got {args_cli.handoff_max_samples}")
+        if not (0.0 <= float(args_cli.handoff_teacher_alpha) <= 1.0):
+            raise ValueError(f"--handoff_teacher_alpha must be in [0, 1], got {args_cli.handoff_teacher_alpha}")
+        if float(args_cli.handoff_max_phase) < float(args_cli.handoff_min_phase):
+            raise ValueError(
+                f"--handoff_max_phase ({args_cli.handoff_max_phase}) must be >= --handoff_min_phase "
+                f"({args_cli.handoff_min_phase})"
+            )
+        if not source_names:
+            raise RuntimeError("Cannot derive a handoff source before any dataset sources are available.")
+        selected_source_ids = _resolve_source_ids(args_cli.handoff_source_sources, source_names, source_slugs)
+        if not selected_source_ids:
+            selected_source_ids = list(range(len(source_names)))
+        selected_chunks: dict[str, list[torch.Tensor]] = {
+            "obs": [],
+            "reference": [],
+            "raw": [],
+            "applied": [],
+            "phase": [],
+            "lift": [],
+            "success": [],
+            "unsafe": [],
+        }
+        per_source_counts: list[dict[str, object]] = []
+        for source_id in selected_source_ids:
+            source_count = int(obs_tensors[source_id].shape[0])
+            phase = phase_tensors[source_id].view(-1).float()
+            lift = lift_tensors[source_id].view(-1).float()
+            success = success_tensors[source_id].view(-1).float()
+            unsafe = unsafe_tensors[source_id].view(-1).float()
+            if phase.shape[0] != source_count:
+                raise ValueError(f"Handoff source {source_names[source_id]!r} phase count does not match obs count.")
+            mask = torch.isfinite(phase)
+            mask = torch.logical_and(mask, phase >= float(args_cli.handoff_min_phase))
+            mask = torch.logical_and(mask, phase <= float(args_cli.handoff_max_phase))
+            if bool(args_cli.handoff_require_safe_target):
+                mask = torch.logical_and(mask, torch.logical_or(~torch.isfinite(unsafe), unsafe <= 0.5))
+            success_mask = torch.logical_and(torch.isfinite(success), success >= 0.5)
+            if bool(args_cli.handoff_require_success):
+                mask = torch.logical_and(mask, success_mask)
+            elif float(args_cli.handoff_min_lift_height) > 0.0:
+                lift_mask = torch.logical_and(torch.isfinite(lift), lift >= float(args_cli.handoff_min_lift_height))
+                mask = torch.logical_and(mask, torch.logical_or(success_mask, lift_mask))
+            selected = torch.nonzero(mask, as_tuple=False).view(-1)
+            per_source_counts.append(
+                {
+                    "source_id": int(source_id),
+                    "source": source_names[source_id],
+                    "slug": source_slugs[source_id],
+                    "available": source_count,
+                    "selected": int(selected.numel()),
+                    "success_selected": int(success_mask[selected].sum().item()) if int(selected.numel()) else 0,
+                    "lift_selected": int(
+                        (torch.isfinite(lift[selected]) & (lift[selected] >= float(args_cli.handoff_min_lift_height)))
+                        .sum()
+                        .item()
+                    )
+                    if int(selected.numel())
+                    else 0,
+                }
+            )
+            if int(selected.numel()) == 0:
+                continue
+            selected_chunks["obs"].append(obs_tensors[source_id][selected])
+            selected_chunks["reference"].append(reference_tensors[source_id][selected])
+            selected_chunks["raw"].append(raw_tensors[source_id][selected])
+            selected_chunks["applied"].append(applied_tensors[source_id][selected])
+            selected_chunks["phase"].append(phase_tensors[source_id][selected])
+            selected_chunks["lift"].append(lift_tensors[source_id][selected])
+            selected_chunks["success"].append(success_tensors[source_id][selected])
+            selected_chunks["unsafe"].append(unsafe_tensors[source_id][selected])
+
+        total_selected = sum(int(chunk.shape[0]) for chunk in selected_chunks["obs"])
+        if total_selected <= 0:
+            raise RuntimeError(
+                "Derived handoff source selected zero samples. "
+                f"counts={per_source_counts}, min_phase={args_cli.handoff_min_phase}, "
+                f"min_lift={args_cli.handoff_min_lift_height}, require_success={args_cli.handoff_require_success}"
+            )
+        if args_cli.handoff_max_samples > 0 and total_selected > args_cli.handoff_max_samples:
+            handoff_generator = torch.Generator()
+            handoff_generator.manual_seed(args_cli.seed + 2003)
+            keep = torch.randperm(total_selected, generator=handoff_generator)[: args_cli.handoff_max_samples]
+        else:
+            keep = None
+
+        def concat_handoff(key: str) -> torch.Tensor:
+            value = torch.cat(selected_chunks[key], dim=0).float()
+            if keep is not None:
+                value = value[keep]
+            return value
+
+        handoff_obs = concat_handoff("obs")
+        handoff_reference = concat_handoff("reference")
+        handoff_raw = concat_handoff("raw")
+        handoff_applied = concat_handoff("applied")
+        handoff_phase = concat_handoff("phase")
+        handoff_lift = concat_handoff("lift")
+        handoff_success = concat_handoff("success")
+        handoff_unsafe = concat_handoff("unsafe")
+        source_name = args_cli.handoff_source_name.strip() or "policy0_success_handoff"
+        source_slug = _source_slug(source_name)
+        while source_slug in source_slugs:
+            source_slug = f"{source_slug}_{len(source_slugs)}"
+        source_id = len(source_names)
+        obs_tensors.append(handoff_obs)
+        reference_tensors.append(handoff_reference)
+        raw_tensors.append(handoff_raw)
+        applied_tensors.append(handoff_applied)
+        phase_tensors.append(handoff_phase)
+        teacher_alpha_tensors.append(
+            torch.full((handoff_obs.shape[0],), float(args_cli.handoff_teacher_alpha), dtype=torch.float32)
+        )
+        lift_tensors.append(handoff_lift)
+        success_tensors.append(handoff_success)
+        unsafe_tensors.append(handoff_unsafe)
+        source_names.append(source_name)
+        source_slugs.append(source_slug)
+        source_ids.append(torch.full((handoff_obs.shape[0],), source_id, dtype=torch.long))
+        handoff_source_summary = {
+            "enabled": True,
+            "source_id": int(source_id),
+            "name": source_name,
+            "slug": source_slug,
+            "teacher_alpha": float(args_cli.handoff_teacher_alpha),
+            "selected_total_before_cap": int(total_selected),
+            "selected_total": int(handoff_obs.shape[0]),
+            "selected_sources": [source_names[source_id] for source_id in selected_source_ids],
+            "selected_source_ids": [int(source_id) for source_id in selected_source_ids],
+            "per_source_counts": per_source_counts,
+            "filter": {
+                "min_phase": float(args_cli.handoff_min_phase),
+                "max_phase": float(args_cli.handoff_max_phase),
+                "min_lift_height": float(args_cli.handoff_min_lift_height),
+                "require_success": bool(args_cli.handoff_require_success),
+                "require_safe_target": bool(args_cli.handoff_require_safe_target),
+                "max_samples": int(args_cli.handoff_max_samples),
+            },
+            "phase_mean": _mean_float(handoff_phase),
+            "lift_mean": _mean_float(handoff_lift),
+            "success_rate": _mean_float((handoff_success >= 0.5).float()),
+            "unsafe_rate": _mean_float((handoff_unsafe > 0.5).float()),
+        }
+        source_metadata.append(
+            {
+                "id": source_id,
+                "name": source_name,
+                "slug": source_slug,
+                "path": "derived_handoff_source",
+                "num_samples": int(handoff_obs.shape[0]),
+                "collection_action_source": "derived_handoff",
+                "collection_teacher_alpha": float(args_cli.handoff_teacher_alpha),
+                "derived_from_sources": [source_names[source_id] for source_id in selected_source_ids],
+                "filter": handoff_source_summary["filter"],
+            }
+        )
+        print(json.dumps({"handoff_source": handoff_source_summary}, sort_keys=True))
+
     obs_tensor = torch.cat(obs_tensors, dim=0).float()
     reference_tensor = torch.cat(reference_tensors, dim=0).float()
     raw_tensor = torch.cat(raw_tensors, dim=0).float()
@@ -1456,6 +1710,7 @@ def main(env_cfg, agent_cfg: dict):
         "source_ids": source_id_tensor,
         "source_names": source_names,
         "source_metadata": source_metadata,
+        "handoff_source_summary": handoff_source_summary,
         "loss_dims": torch.tensor(loss_dims, dtype=torch.long),
         "input_checkpoint": str(resume_path),
         "collection_action_source": args_cli.collection_action_source,
@@ -2093,6 +2348,7 @@ def main(env_cfg, agent_cfg: dict):
         "collection_teacher_alphas": list(collection_teacher_alphas),
         "rehearsal_dataset_paths": rehearsal_paths,
         "dataset_sources": source_metadata,
+        "handoff_source": handoff_source_summary,
         "source_batch_mode": args_cli.source_batch_mode,
         "source_loss_weights": dict(zip(source_slugs, source_loss_weights, strict=True)),
         "best_score_weights": best_score_weights,

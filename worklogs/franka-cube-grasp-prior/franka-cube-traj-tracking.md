@@ -5540,6 +5540,84 @@ Verdict:
 Active Jobs:
 - none for Worker B after jobs `1028146`-`1028148` completed.
 
+## 2026-06-11T22:22:41-07:00 - policy-only stabilization handoff supervised plan
+
+Goal:
+- Stay supervised-only and test whether the successful assisted manifold can teach a policy-only/stabilization context without damaging alpha0.5/0.75/1.0 assisted behavior.
+
+Hypothesis:
+- The stage/alpha checkpoint improved alpha0.25 assisted behavior but still leaves alpha0 policy-only failed because context `teacher_alpha=0.0` was outside the supervised training support.
+- A small derived handoff source can duplicate successful/lifted alpha0.5/0.75 assisted states and relabel their residual context to `teacher_alpha=0.0`, while labels remain the reference_delta action. This directly tests whether the same actor parameterization can fit policy-only stabilization/hold actions on states known to be physically reachable.
+- If this supervised gate fails, the blocker is representation/source conflict rather than PPO exploration.
+
+Planned Change:
+- Extend `dextrah_lab/rl_games/bc_reference_action_imitation.py` with an optional derived handoff source:
+  - select source ids/names from an existing dataset, initially alpha0.5 and alpha0.75 assisted sources;
+  - filter by phase/lift/success window, initially `phase >= 0.55` and either success or lift over a small threshold;
+  - duplicate selected samples as a new source with `teacher_alpha=0.0`;
+  - record source/filter counts in `reference_action_dataset.pt`, `bc_metrics.json`, and `report.md`.
+- Extend `cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh` with matching environment variables and command arguments.
+- Keep the original baseline task and production `Dextrah-Franka-Cube-Grasp` untouched.
+
+Version Control:
+- agent_id: `franka-cube-traj-tracking`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking`
+- branch: `codex/franka-cube-trajectory-tracking`
+- base_commit: `a3a68c157cbf7308982fd3ac6d8922095fb3fdce`
+- implementation_commit: pending
+- owned worklog: `worklogs/franka-cube-grasp-prior/franka-cube-traj-tracking.md`
+
+Validation Before Launch:
+- `python3 -m py_compile dextrah_lab/rl_games/bc_reference_action_imitation.py dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/residual_action_adapter.py`
+- `bash -n cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh`
+- `git diff --check`
+
+Supervised Gate:
+- No selector/videos/PPO/RL until supervised metrics pass.
+- Preserve assisted alpha0.5/0.75/1.0 validation L2 near the stage/alpha checkpoint (`~0.0929/0.0820/0.0663`); hard fail if materially worse than the stage-alpha visual-gate source metrics without a compensating handoff improvement.
+- Derived alpha0 handoff source must reach low held-out action error and report enough selected samples to be meaningful; if sample count is tiny or labels conflict, stop with the report.
+- Global val L2 should not regress relative to stage/alpha supervised (`~0.0805`) if considering any rollout.
+
+If Supervised Gate Passes:
+- Run selector metrics only for alpha `0.0/0.25/0.5/0.75/1.0`.
+- Generate videos/contact sheets only for policy-only alpha0 failure/improvement, the lowest-alpha success/improvement, and alpha1 context.
+- No PPO/RL scale-up.
+
+## 2026-06-11T22:30:00-07:00 - policy-only stabilization handoff implementation checkpoint
+
+Change:
+- Added an optional derived handoff source to `dextrah_lab/rl_games/bc_reference_action_imitation.py`.
+- The derived source duplicates selected assisted samples, relabels their residual context to a configurable `HANDOFF_TEACHER_ALPHA` (planned `0.0`), and keeps the reference_delta action label.
+- Added report/metrics/dataset fields for selected source ids, per-source selected counts, filter settings, phase/lift/success/unsafe rates, and the derived source metadata.
+- Extended `cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh` to pass and echo:
+  - `HANDOFF_SOURCE_ENABLED`
+  - `HANDOFF_SOURCE_SOURCES`
+  - `HANDOFF_SOURCE_NAME`
+  - `HANDOFF_TEACHER_ALPHA`
+  - `HANDOFF_MIN_PHASE`
+  - `HANDOFF_MAX_PHASE`
+  - `HANDOFF_MIN_LIFT_HEIGHT`
+  - `HANDOFF_REQUIRE_SUCCESS`
+  - `HANDOFF_REQUIRE_SAFE_TARGET`
+  - `HANDOFF_MAX_SAMPLES`
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/bc_reference_action_imitation.py dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/residual_action_adapter.py` passed.
+- `bash -n cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh` passed.
+- `git diff --check` passed.
+
+Version Control:
+- implementation_commit: pending
+- changed_files:
+  - `dextrah_lab/rl_games/bc_reference_action_imitation.py`
+  - `cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh`
+  - `worklogs/franka-cube-grasp-prior/franka-cube-traj-tracking.md`
+
+Next:
+- Commit/push, deploy exact commit to l401, then launch one supervised-only handoff BC run.
+- Planned collection: fresh teacher_mix alphas `0.50/0.75/1.00`; derived alpha0 handoff source from alpha0.50/0.75 samples with `phase >= 0.55` and success or `cube_lift_height >= 0.02`.
+- No selector/video unless supervised gate passes.
+
 ## 2026-06-11T21:36:00-07:00 - trajectory-tracking handoff comparison plan
 
 Goal:
