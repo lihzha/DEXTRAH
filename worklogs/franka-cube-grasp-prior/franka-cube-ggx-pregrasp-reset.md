@@ -3542,3 +3542,46 @@ Next:
   - add phase-balanced or lift-z sign/weighted loss diagnostics to test whether the actor can preserve lift semantics;
   - add a dataset ambiguity report comparing observations near close/lift transitions to confirm whether phase is underdetermined by the current observation vector.
 - Any PPO smoke remains blocked until a supervised checkpoint passes the lift-z/action gate and is inspected.
+
+## 2026-06-11 19:57 PDT - plan: lift-z/action-phase ambiguity diagnostic
+
+Goal:
+- Diagnose and fix the supervised lift-z/action-phase failure from job `1028056` before any PPO/A100 work.
+
+Hypothesis:
+- The reset geometry and label collection are valid, but the first BC diagnostic optimized average action MSE with only the final `mu` layer trainable. That can compress mixed approach/close/lift vertical actions and degrade lift-positive action sign. A bounded diagnostic should test whether the same observation stream can learn robust lift z when:
+  - the actor body is allowed to adapt (`TRAIN_SCOPE=actor`), and
+  - lift-phase vertical action is explicitly weighted in the diagnostic loss.
+
+Planned change:
+- Extend `dextrah_lab/rl_games/bc_franka_cube_pass7_actions.py` with diagnostic-only options:
+  - phase-balanced sample loss;
+  - lift-phase full-action loss weighting;
+  - lift-phase z-dimension MSE weighting;
+  - lift-z sign auxiliary loss;
+  - per-phase z sign summaries and a z-sign plot so the failure is inspectable.
+- Extend `cluster/sbatch_bc_franka_cube_pass7_actions_1gpu.sh` to pass these options and echo them.
+- This does not change `Dextrah-Franka-Cube-Grasp`, reset behavior, rewards, PPO config, or any runtime task default. It only changes the supervised diagnostic script/wrapper.
+
+Validation before launch:
+- `python3 -m py_compile dextrah_lab/rl_games/bc_franka_cube_pass7_actions.py`
+- `bash -n cluster/sbatch_bc_franka_cube_pass7_actions_1gpu.sh`
+- `git diff --check`
+- commit/push, deploy exact commit to L401 agent worktree, and repeat syntax checks remotely.
+
+Planned L401 diagnostic job if checks pass:
+- supervised-only, no PPO:
+  - `TRAIN_SCOPE=actor`
+  - `PHASE_BALANCE_LOSS=True`
+  - `LIFT_PHASE_LOSS_WEIGHT=2.0`
+  - `LIFT_Z_MSE_WEIGHT=8.0`
+  - `LIFT_Z_SIGN_LOSS_WEIGHT=0.05`
+  - same pass7 library, same seed, same 64 envs, same `0.08` cube XY randomization, same assisted labels.
+
+Expected artifacts:
+- report, metrics JSON, action metrics CSV, loss CSV, phase action mean plot, z-sign plot, optional loadable BC checkpoint if the gate passes.
+
+Acceptance:
+- Supervised gate only: validation MSE remains practically low (`<=0.04`), gripper sign `>=0.95`, lift-z sign `>=0.90`, checkpoint loadable.
+- If the gate passes, stop at a concise gate report and propose a 64-env PPO smoke; do not auto-launch PPO.
+- If the gate fails, inspect per-phase z/sign plots and decide whether the issue is phase ambiguity, actor capacity/scope, or label conflict.

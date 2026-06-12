@@ -37,6 +37,10 @@ parser.add_argument("--batch_size", type=int, default=2048)
 parser.add_argument("--learning_rate", type=float, default=1.0e-3)
 parser.add_argument("--train_scope", choices=("mu", "actor", "all"), default="mu")
 parser.add_argument("--validation_fraction", type=float, default=0.25)
+parser.add_argument("--phase_balance_loss", action=argparse.BooleanOptionalAction, default=False)
+parser.add_argument("--lift_phase_loss_weight", type=float, default=1.0)
+parser.add_argument("--lift_z_mse_weight", type=float, default=1.0)
+parser.add_argument("--lift_z_sign_loss_weight", type=float, default=0.0)
 parser.add_argument("--approach_steps", type=int, default=16)
 parser.add_argument("--close_steps", type=int, default=12)
 parser.add_argument("--lift_steps", type=int, default=12)
@@ -311,6 +315,43 @@ def _split_indices(reset_ids: torch.Tensor, validation_fraction: float) -> tuple
     return all_indices[~val_mask], all_indices[val_mask]
 
 
+def _bc_loss(pred: torch.Tensor, target: torch.Tensor, phase_ids: torch.Tensor) -> tuple[torch.Tensor, dict[str, float]]:
+    mse = (pred - target).square()
+    sample_loss = mse.mean(dim=1)
+    lift_mask = phase_ids == 2
+    if float(args_cli.lift_z_mse_weight) != 1.0 and bool(lift_mask.any()):
+        weighted_mse = mse.clone()
+        weighted_mse[lift_mask, 2] = weighted_mse[lift_mask, 2] * float(args_cli.lift_z_mse_weight)
+        sample_loss = weighted_mse.mean(dim=1)
+    if float(args_cli.lift_phase_loss_weight) != 1.0 and bool(lift_mask.any()):
+        sample_loss = sample_loss.clone()
+        sample_loss[lift_mask] = sample_loss[lift_mask] * float(args_cli.lift_phase_loss_weight)
+    if bool(args_cli.phase_balance_loss):
+        weights = torch.ones_like(sample_loss)
+        active_phases = torch.unique(phase_ids)
+        for phase_id in active_phases:
+            mask = phase_ids == phase_id
+            if bool(mask.any()):
+                weights[mask] = float(phase_ids.numel()) / (float(active_phases.numel()) * float(mask.sum()))
+        sample_loss = sample_loss * weights
+    loss = sample_loss.mean()
+    lift_z_sign_loss = torch.zeros((), device=pred.device, dtype=pred.dtype)
+    if float(args_cli.lift_z_sign_loss_weight) > 0.0 and bool(lift_mask.any()):
+        target_sign = torch.sign(target[lift_mask, 2])
+        active = target_sign.abs() > 1.0e-6
+        if bool(active.any()):
+            margin = pred[lift_mask, 2][active] * target_sign[active]
+            lift_z_sign_loss = torch.nn.functional.softplus(-margin / 0.05).mean()
+            loss = loss + float(args_cli.lift_z_sign_loss_weight) * lift_z_sign_loss
+    diagnostics = {
+        "base_mse": float(torch.mean((pred - target).square()).detach()),
+        "weighted_mse_term": float(sample_loss.mean().detach()),
+        "lift_z_sign_loss": float(lift_z_sign_loss.detach()),
+        "total_loss": float(loss.detach()),
+    }
+    return loss, diagnostics
+
+
 def _prediction_metrics(
     pred: torch.Tensor,
     target: torch.Tensor,
@@ -335,12 +376,17 @@ def _prediction_metrics(
             ((pred[lift_mask, 2] >= 0.0) == (target[lift_mask, 2] >= 0.0)).float().mean()
         )
         summary[f"{split}_lift_z_mae"] = float(torch.mean((pred[lift_mask, 2] - target[lift_mask, 2]).abs()))
+        summary[f"{split}_lift_z_negative_rate"] = float((pred[lift_mask, 2] < 0.0).float().mean())
     rows: list[dict[str, Any]] = []
     phase_names = {0: "approach", 1: "close", 2: "lift"}
     for phase_id, phase_name in phase_names.items():
         mask = phase_ids_cpu == phase_id
         if not bool(mask.any()):
             continue
+        z_sign_accuracy = float(((pred[mask, 2] >= 0.0) == (target[mask, 2] >= 0.0)).float().mean())
+        summary[f"{split}_{phase_name}_z_sign_accuracy"] = z_sign_accuracy
+        summary[f"{split}_{phase_name}_z_negative_rate"] = float((pred[mask, 2] < 0.0).float().mean())
+        summary[f"{split}_{phase_name}_z_mae"] = float(torch.mean((pred[mask, 2] - target[mask, 2]).abs()))
         for dim, name in enumerate(ACTION_NAMES):
             dim_err = err[mask, dim]
             rows.append(
@@ -420,6 +466,32 @@ def _write_plots(output_dir: Path, losses: list[dict[str, float]], metric_rows: 
         fig.savefig(path, dpi=150)
         plt.close(fig)
         artifacts["bc_action_phase_means"] = str(path)
+        fig, ax = plt.subplots(figsize=(7, 4))
+        sign_rows = [
+            item
+            for item in metric_rows
+            if item.get("split") in {"initial_val", "val"} and int(item.get("action_dim")) == 2
+        ]
+        x_labels = []
+        heights = []
+        for split in ["initial_val", "val"]:
+            for phase in phases:
+                row = next((item for item in sign_rows if item.get("split") == split and item.get("phase") == phase), None)
+                x_labels.append(f"{split}\n{phase}")
+                heights.append(float(row["sign_accuracy"]) if row else math.nan)
+        ax.bar(np.arange(len(heights)), heights)
+        ax.axhline(float(args_cli.gate_lift_z_sign), color="tab:red", linestyle="--", linewidth=1, label="lift gate")
+        ax.set_ylim(0.0, 1.05)
+        ax.set_ylabel("z sign accuracy")
+        ax.set_xticks(np.arange(len(heights)))
+        ax.set_xticklabels(x_labels, rotation=30, ha="right")
+        ax.grid(True, axis="y", alpha=0.2)
+        ax.legend(loc="lower right")
+        fig.tight_layout()
+        path = output_dir / "bc_z_sign_accuracy.png"
+        fig.savefig(path, dpi=150)
+        plt.close(fig)
+        artifacts["bc_z_sign_accuracy"] = str(path)
     return artifacts
 
 
@@ -437,6 +509,10 @@ def _save_bc_checkpoint(init_checkpoint: str, player: BasePlayer, output_path: P
         "train_scope": args_cli.train_scope,
         "train_epochs": int(args_cli.train_epochs),
         "learning_rate": float(args_cli.learning_rate),
+        "phase_balance_loss": bool(args_cli.phase_balance_loss),
+        "lift_phase_loss_weight": float(args_cli.lift_phase_loss_weight),
+        "lift_z_mse_weight": float(args_cli.lift_z_mse_weight),
+        "lift_z_sign_loss_weight": float(args_cli.lift_z_sign_loss_weight),
         "note": "Diagnostic BC first-contact action warm-start; non-apple-to-apple.",
     }
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -478,6 +554,8 @@ def _write_report(
         f"- validation MAE: `{train_summary.get('val_mae')}`",
         f"- gripper sign accuracy: `{train_summary.get('val_gripper_sign_accuracy')}`",
         f"- lift z sign accuracy: `{train_summary.get('val_lift_z_sign_accuracy')}`",
+        f"- lift z negative prediction rate: `{train_summary.get('val_lift_z_negative_rate')}`",
+        f"- validation z sign accuracy: `{train_summary.get('val_z_sign_accuracy')}`",
         f"- saved BC checkpoint: `{train_summary.get('bc_checkpoint_path')}`",
         "",
         "## Config",
@@ -550,6 +628,10 @@ def main(env_cfg, agent_cfg: dict):
         "learning_rate": float(args_cli.learning_rate),
         "train_scope": str(args_cli.train_scope),
         "validation_fraction": float(args_cli.validation_fraction),
+        "phase_balance_loss": bool(args_cli.phase_balance_loss),
+        "lift_phase_loss_weight": float(args_cli.lift_phase_loss_weight),
+        "lift_z_mse_weight": float(args_cli.lift_z_mse_weight),
+        "lift_z_sign_loss_weight": float(args_cli.lift_z_sign_loss_weight),
         "output_dir": str(output_dir),
     }
     print("[INFO] BC pass7 diagnostic config:")
@@ -676,7 +758,7 @@ def main(env_cfg, agent_cfg: dict):
         for start in range(0, int(perm.numel()), batch_size):
             batch_idx = perm[start : start + batch_size]
             pred = _forward_mu(player, obs_all[batch_idx])
-            loss = torch.mean((pred - action_all[batch_idx]).square())
+            loss, train_loss_diag = _bc_loss(pred, action_all[batch_idx], phase_all[batch_idx])
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(trainable_params, 1.0)
@@ -686,8 +768,19 @@ def main(env_cfg, agent_cfg: dict):
         player.model.eval()
         with torch.inference_mode():
             val_pred = _forward_mu(player, obs_all[val_idx])
-            val_loss = float(torch.mean((val_pred - action_all[val_idx]).square()))
-        losses.append({"epoch": float(epoch), "train_loss": total_loss / max(total_count, 1), "val_loss": val_loss})
+            val_loss_tensor, val_loss_diag = _bc_loss(val_pred, action_all[val_idx], phase_all[val_idx])
+            val_loss = float(val_loss_tensor)
+        losses.append(
+            {
+                "epoch": float(epoch),
+                "train_loss": total_loss / max(total_count, 1),
+                "val_loss": val_loss,
+                "train_base_mse_last_batch": train_loss_diag["base_mse"],
+                "train_lift_z_sign_loss_last_batch": train_loss_diag["lift_z_sign_loss"],
+                "val_base_mse": val_loss_diag["base_mse"],
+                "val_lift_z_sign_loss": val_loss_diag["lift_z_sign_loss"],
+            }
+        )
 
     player.model.eval()
     with torch.inference_mode():
@@ -731,7 +824,12 @@ def main(env_cfg, agent_cfg: dict):
 
     _write_csv(output_dir / "bc_action_metrics.csv", metric_rows)
     with (output_dir / "bc_loss_history.csv").open("w", encoding="utf-8", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["epoch", "train_loss", "val_loss"])
+        fieldnames = sorted({key for row in losses for key in row.keys()})
+        for key in reversed(["epoch", "train_loss", "val_loss"]):
+            if key in fieldnames:
+                fieldnames.remove(key)
+                fieldnames.insert(0, key)
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(losses)
     artifacts = _write_plots(output_dir, losses, metric_rows)
