@@ -8739,3 +8739,94 @@ Gate:
   clipping. If it fails, stop at diagnostics and recommend the next controller
   design option. Alpha0.8 regression check only if alpha0.75 materially
   improves.
+
+## 2026-06-11T21:54:19-07:00 - launch staged contact alignment alpha0.75
+
+Goal:
+- Test whether a live-cube open-gripper contact-alignment phase before
+  close/lift recovers the alpha0.75 controller relabel gate without hiding the
+  failure behind action clipping.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- implementation_commit: `316700bc0b35b9e102eddd5d22875db47f12e913`
+- remote_commit: `316700bc0b35b9e102eddd5d22875db47f12e913`
+- changed_files:
+  - `dextrah_lab/rl_games/contact_aware_franka_cube_rollout.py`
+  - `cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh`
+  - `dextrah_lab/offline_dp_bc/make_contact_relabel_set_report.py`
+  - `dextrah_lab/offline_dp_bc/make_support_expansion_dataset_report.py`
+  - `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/contact_aware_franka_cube_rollout.py dextrah_lab/offline_dp_bc/make_contact_relabel_set_report.py dextrah_lab/offline_dp_bc/make_support_expansion_dataset_report.py` passed.
+- `bash -n cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh` passed.
+- `git diff --check` passed.
+
+Command / Job:
+- job_id: `1028129`
+- run_name:
+  `franka_cube_contact_relabel_contactalign80_live_ep16s260_a0p75_20260611_215208`
+- command:
+  `sbatch --parsable --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart,RUN_NAME=franka_cube_contact_relabel_contactalign80_live_ep16s260_a0p75_20260611_215208,DATASET=/results/dp_bc/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz,TRAJECTORY_ROOT=/results/dp_bc/curobo_plans,SPEC_COUNT=1,SPEC_0=16:260:/results/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed16/trajectory.json:0.75,VARIANT=center_high30,ORIENTATION_MODE=source,POSE_ACTION_FILTER=scale,POSE_ACTION_LIMIT=0.95,ALIGN_STEPS=80,CONTACT_ALIGN_STEPS=80,CONTACT_ALIGN_REFERENCE=live_cube,CONTACT_ALIGN_THRESHOLD=0.06,CLOSE_STEPS=80,LIFT_STEPS=160,LIFT_HEIGHT=0.22,FINGER_GAIN=0.75,CLIP_ACTIONS=1.0,CAPTURE_VIDEO=True,VIDEO_LENGTH=400,VIDEO_NAME_PREFIX=franka-cube-contact-align80,PRINT_INTERVAL=40,SEED=42,GATE_MIN_LIFT=0.10,GATE_MAX_POSE_CLIP_FRACTION=0.0,GATE_MAX_FINAL_EE_TO_CUBE=0.05,GATE_MAX_FINAL_FINGER_TO_CUBE=0.08 cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh`
+- remote run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/contact_relabel_sets/franka_cube_contact_relabel_contactalign80_live_ep16s260_a0p75_20260611_215208`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/contact_aware_franka_cube_relabel_set_1028129.out`
+
+Gate:
+- Acceptance requires final/max lift over threshold, zero executed clipping,
+  plausible final EE/finger distances, and video showing contact/lift.
+- If alpha0.75 fails, no DP fine-tune, RL, or broad dataset training.
+
+## 2026-06-11T21:57:38-07:00 - staged contact alignment alpha0.75 invalid run and gate patch
+
+Result:
+- job_id: `1028129`
+- run_name:
+  `franka_cube_contact_relabel_contactalign80_live_ep16s260_a0p75_20260611_215208`
+- scheduler status: `COMPLETED 0:0`
+- artifact status: fetched locally.
+- verdict: invalid as an alpha0.75 close/lift test, because the script treated
+  `contact_align_threshold` as an audit field only. It entered
+  `contact_align_open` and reduced finger-center-to-cube from about `0.0977 m`
+  to a minimum `0.0562 m`, but kept pushing through the fixed 80-step
+  contact-align window and terminated/reset at local step `99` before close or
+  lift rows were produced.
+
+Metrics / Evidence:
+- `steps=99`, `terminated_next_step=true`, `skipped_post_reset_local_step=99`.
+- `pre_close_phase=contact_align_open`, `pre_close_local_step=98`.
+- `pre_close_finger_center_to_cube=0.0650`, `min_finger_center_to_cube=0.0562`.
+- `final/max lift=0.0032/0.0143 m`; no close/lift gate claim.
+- `max_pose_action_clip_fraction=0.0`; `max_raw_pose_action_max_abs=1.283`.
+
+Artifacts:
+- aggregate report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_contactalign80_live_ep16s260_a0p75_20260611_215208/contact_relabel_set_report.md`
+- trace plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_contactalign80_live_ep16s260_a0p75_20260611_215208/rollouts/ep16s260_a0p75/contact_rollout_plot.png`
+- invalid-run contact sheet:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_contactalign80_live_ep16s260_a0p75_20260611_215208/rollouts/ep16s260_a0p75/contact_sheet_a0p75_contactalign80_invalid_1028129.jpg`
+- video:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_contactalign80_live_ep16s260_a0p75_20260611_215208/rollouts/ep16s260_a0p75/videos/franka-cube-contact-align80-ep16s260_a0p75-step-0.mp4`
+- stdout:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_contactalign80_live_ep16s260_a0p75_20260611_215208/logs/contact_aware_franka_cube_relabel_set_1028129.out`
+
+Patch:
+- Updated `contact_aware_franka_cube_rollout.py` so the optional
+  contact-align phase becomes an operational gate:
+  - if `finger_center_to_cube <= contact_align_threshold`, close/hold starts on
+    the next env step;
+  - the live cube anchor is frozen at that threshold crossing for close/lift;
+  - report/CSV now include trigger step and close-start step.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/contact_aware_franka_cube_rollout.py dextrah_lab/offline_dp_bc/make_contact_relabel_set_report.py dextrah_lab/offline_dp_bc/make_support_expansion_dataset_report.py` passed.
+- `bash -n cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh` passed.
+- `git diff --check` passed.
+
+Next:
+- Commit/deploy the gate patch and relaunch the same alpha0.75 bounded smoke.
+- Still no DP fine-tune, RL, or broad training.

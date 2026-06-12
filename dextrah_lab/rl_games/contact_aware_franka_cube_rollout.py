@@ -431,18 +431,21 @@ def _build_report(summary: dict[str, Any]) -> str:
         f"- gripper timing: align/open `{summary['align_steps']}` steps, contact-align/open `{summary['contact_align_steps']}` steps, close `{summary['close_steps']}` steps, lift `{summary['lift_steps']}` steps",
         f"- contact-align reference: `{summary['contact_align_reference']}`",
         f"- contact-align threshold: `{summary['contact_align_threshold']:.4f}` m",
+        "- contact-align behavior: when enabled, the rollout starts close/hold as soon as the threshold is reached and freezes the live contact anchor for close/lift.",
         "",
         "## Variant Summary",
         "",
-        "| variant | orientation | filter | joint alpha | reset cube-minus-EE L2 | pre-close finger | pre-close EE | contact-ok | offset | steps | final EE-cube | min finger-cube | final finger-cube | max lift | final lift | final grip width | max clip | max raw | min scale | terminal next | skipped reset step | success-like |",
-        "|---|---|---|---:|---:|---:|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---|",
+        "| variant | orientation | filter | joint alpha | reset cube-minus-EE L2 | pre-close step | pre-close finger | pre-close EE | contact-ok | close start | trigger step | offset | steps | final EE-cube | min finger-cube | final finger-cube | max lift | final lift | final grip width | max clip | max raw | min scale | terminal next | skipped reset step | success-like |",
+        "|---|---|---|---:|---:|---:|---:|---:|---|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---|",
     ]
     for variant, payload in summary["variants"].items():
         lines.append(
             f"| {variant} | {payload['orientation_mode']} | {payload['pose_action_filter']} | "
             f"{payload['reset_joint_blend_alpha']:.3f} | {payload['reset_cube_minus_ee_l2_from_dataset']:.5f} | "
+            f"{payload['pre_close_local_step']} | "
             f"{payload['pre_close_finger_center_to_cube']:.4f} | {payload['pre_close_ee_to_cube']:.4f} | "
-            f"{payload['contact_align_success']} | {payload['offset']} | {payload['steps']} | "
+            f"{payload['contact_align_success']} | {payload['close_start_local_step']} | "
+            f"{payload['contact_align_trigger_step']} | {payload['offset']} | {payload['steps']} | "
             f"{payload['final_ee_to_cube']:.4f} | {payload['min_finger_center_to_cube']:.4f} | "
             f"{payload['final_finger_center_to_cube']:.4f} | {payload['max_cube_lift_height']:.4f} | "
             f"{payload['final_cube_lift_height']:.4f} | {payload['final_gripper_width']:.5f} | "
@@ -531,7 +534,9 @@ def main() -> None:
             contact_anchor_cube_pos = initial_cube_pos.copy()
             align_end = int(args_cli.align_steps)
             contact_end = align_end + int(args_cli.contact_align_steps)
-            close_end = contact_end + int(args_cli.close_steps)
+            close_start_step: int | None = None
+            contact_align_trigger_step: int | None = None
+            pre_close_row: dict[str, Any] | None = None
             for local_step in range(steps_per_variant):
                 if local_step < align_end:
                     phase = "align_open"
@@ -539,28 +544,35 @@ def main() -> None:
                     lift_delta = np.zeros(3, dtype=np.float32)
                     target_reference = "initial_cube"
                     target_base = initial_cube_pos
-                elif local_step < contact_end:
-                    phase = "contact_align_open"
-                    gripper = 1.0
-                    lift_delta = np.zeros(3, dtype=np.float32)
-                    target_reference = str(args_cli.contact_align_reference)
-                    if args_cli.contact_align_reference == "live_cube":
-                        task_env._compute_intermediate_values()
-                        contact_anchor_cube_pos = task_env.cube_pos.detach().float().cpu().numpy()[0].copy()
-                    target_base = contact_anchor_cube_pos
-                elif local_step < close_end:
-                    phase = "close_hold"
-                    gripper = -1.0
-                    lift_delta = np.zeros(3, dtype=np.float32)
-                    target_reference = "contact_anchor"
-                    target_base = contact_anchor_cube_pos
                 else:
-                    phase = "lift"
-                    gripper = -1.0
-                    frac = (local_step - close_end + 1) / max(1, int(args_cli.lift_steps))
-                    lift_delta = np.asarray((0.0, 0.0, float(args_cli.lift_height) * min(1.0, frac)), dtype=np.float32)
-                    target_reference = "contact_anchor"
-                    target_base = contact_anchor_cube_pos
+                    if close_start_step is None and local_step >= contact_end:
+                        close_start_step = int(local_step)
+                    if close_start_step is None:
+                        phase = "contact_align_open"
+                        gripper = 1.0
+                        lift_delta = np.zeros(3, dtype=np.float32)
+                        target_reference = str(args_cli.contact_align_reference)
+                        if args_cli.contact_align_reference == "live_cube":
+                            task_env._compute_intermediate_values()
+                            contact_anchor_cube_pos = task_env.cube_pos.detach().float().cpu().numpy()[0].copy()
+                        target_base = contact_anchor_cube_pos
+                    elif local_step < close_start_step + int(args_cli.close_steps):
+                        phase = "close_hold"
+                        gripper = -1.0
+                        lift_delta = np.zeros(3, dtype=np.float32)
+                        target_reference = "contact_anchor"
+                        target_base = contact_anchor_cube_pos
+                    else:
+                        phase = "lift"
+                        gripper = -1.0
+                        frac = (local_step - (close_start_step + int(args_cli.close_steps)) + 1) / max(
+                            1, int(args_cli.lift_steps)
+                        )
+                        lift_delta = np.asarray(
+                            (0.0, 0.0, float(args_cli.lift_height) * min(1.0, frac)), dtype=np.float32
+                        )
+                        target_reference = "contact_anchor"
+                        target_base = contact_anchor_cube_pos
                 task_env._compute_intermediate_values()
                 live_lowdim = _lowdim_numpy_from_policy_obs(policy_obs)
                 finger_center = _finger_center(task_env)
@@ -624,6 +636,11 @@ def main() -> None:
                     "target_minus_cube": (target_finger - cube_pos).astype(float).tolist(),
                     "target_minus_cube_norm": float(np.linalg.norm(target_finger - cube_pos)),
                     "contact_align_threshold": float(args_cli.contact_align_threshold),
+                    "contact_align_triggered_close": False,
+                    "contact_align_trigger_step": -1,
+                    "close_start_local_step": (
+                        int(close_start_step) if close_start_step is not None else -1
+                    ),
                     "target_ee_quat": (
                         source_ee_quat.astype(float).tolist()
                         if args_cli.orientation_mode == "source"
@@ -647,6 +664,20 @@ def main() -> None:
                     "terminated_next_step": False,
                     "truncated_next_step": False,
                 }
+                if phase in ("align_open", "contact_align_open"):
+                    pre_close_row = row
+                if (
+                    phase == "contact_align_open"
+                    and close_start_step is None
+                    and row["finger_center_to_cube"] <= float(args_cli.contact_align_threshold)
+                ):
+                    task_env._compute_intermediate_values()
+                    contact_anchor_cube_pos = task_env.cube_pos.detach().float().cpu().numpy()[0].copy()
+                    contact_align_trigger_step = int(local_step)
+                    close_start_step = int(local_step + 1)
+                    row["contact_align_triggered_close"] = True
+                    row["contact_align_trigger_step"] = int(contact_align_trigger_step)
+                    row["close_start_local_step"] = int(close_start_step)
                 rows.append(row)
                 if args_cli.print_interval > 0 and (
                     local_step == 0 or (local_step + 1) % int(args_cli.print_interval) == 0
@@ -678,9 +709,10 @@ def main() -> None:
             pre_close_rows = [
                 row for row in vrows if row["phase"] in ("align_open", "contact_align_open")
             ]
-            pre_close = pre_close_rows[-1] if pre_close_rows else vrows[0]
+            pre_close = pre_close_row if pre_close_row is not None else (pre_close_rows[-1] if pre_close_rows else vrows[0])
             contact_align_success = bool(
-                float(pre_close["finger_center_to_cube"]) <= float(args_cli.contact_align_threshold)
+                contact_align_trigger_step is not None
+                or float(pre_close["finger_center_to_cube"]) <= float(args_cli.contact_align_threshold)
             )
             success_like = bool(max_lift >= float(task_env.cfg.cube_success_lift_height) and min_finger < 0.08)
             summaries[variant_name] = {
@@ -703,6 +735,12 @@ def main() -> None:
                 "contact_align_steps": int(args_cli.contact_align_steps),
                 "contact_align_reference": str(args_cli.contact_align_reference),
                 "contact_align_threshold": float(args_cli.contact_align_threshold),
+                "contact_align_trigger_step": (
+                    int(contact_align_trigger_step) if contact_align_trigger_step is not None else -1
+                ),
+                "close_start_local_step": (
+                    int(close_start_step) if close_start_step is not None else -1
+                ),
                 "max_cube_lift_height": max_lift,
                 "final_cube_lift_height": final_lift,
                 "final_gripper_width": float(last["gripper_width"]),
