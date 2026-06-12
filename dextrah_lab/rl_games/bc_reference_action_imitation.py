@@ -156,6 +156,7 @@ def _source_slug(raw: str) -> str:
 
 def _parse_float_map(raw: str) -> dict[str, float]:
     weights: dict[str, float] = {}
+    raw = raw.replace("__COMMA__", ",")
     if not raw.strip():
         return weights
     for token in raw.replace(";", ",").split(","):

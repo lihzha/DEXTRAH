@@ -5055,3 +5055,15 @@ Validation Before Launch:
 - `bash -n cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh`
 - `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
 - commit/push; deploy exact commit to l401 agent worktree using the agent-owned bare mirror if GitHub SSH auth is still blocked.
+
+## 2026-06-11T19:59:40-07:00 - source-balanced rehearsal BC launch correction
+
+Attempt:
+- implementation commit before correction: `fb8cda15e6e3f42349f0d50ad3a78d1335bc68fa`.
+- submitted job `1028065` with run name `franka_cube_traj_tracking_bc_dagger_rehearsal_balanced_tm025_tm010_all_20260611_195940`.
+- I immediately noticed the source-weight and best-score maps were passed through Slurm `--export` using `__COMMA__` placeholders, but the parser did not yet decode that placeholder.
+- Cancelled job `1028065` before it produced useful artifacts; Slurm state `CANCELLED`, elapsed `00:00:19`.
+
+Fix:
+- Update `_parse_float_map()` in `dextrah_lab/rl_games/bc_reference_action_imitation.py` to translate `__COMMA__` back to commas before parsing weight maps.
+- Relaunch only after local validation, commit/push, and exact l401 deployment.
