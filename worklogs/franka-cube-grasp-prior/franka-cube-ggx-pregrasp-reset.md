@@ -2867,3 +2867,72 @@ Validation:
 
 Next:
 - Commit/push/deploy the one-candidate filter, launch four one-candidate L401 jobs, monitor/fetch/aggregate artifacts, and open report/plots/contact sheets with `viz-open`. No PPO/A100.
+
+## 2026-06-12T01:42:00Z - launch one-candidate audit shards
+
+Goal:
+- Complete the minimal action/reward audit by running one candidate per process/job, avoiding the post-first-rollout crash seen in multi-candidate runs.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- local_commit: `267e034f25628d7eef782baa8f5b205c31bb6ff9`
+- push/pull: pushed branch; deployed exact commit to L401 Worker A worktree via Git bundle
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `267e034f25628d7eef782baa8f5b205c31bb6ff9`, detached clean
+- remote validation: `python3 -m py_compile dextrah_lab/rl_games/audit_franka_cube_grasp_prior_actions.py` passed; `bash -n cluster/sbatch_audit_franka_cube_grasp_prior_actions_1gpu.sh` passed
+
+Command / Jobs:
+- common config: `NUM_RESETS=1`, `HORIZON_STEPS=40`, `MATCH_RESET_STATE=False`, `RENDER=True`, robust pass7 library, ep10/ep45 checkpoints available, same seed/cube XY randomization.
+- `policy_ep10`: job `1027955`, run `franka_cube_ggx_pass7_action_audit_policy_ep10_20260612_0142`
+- `policy_ep45`: job `1027956`, run `franka_cube_ggx_pass7_action_audit_policy_ep45_20260612_0142`
+- `script_lift_closed`: job `1027957`, run `franka_cube_ggx_pass7_action_audit_script_lift_closed_20260612_0142`
+- `script_assisted_oracle_short`: job `1027958`, run `franka_cube_ggx_pass7_action_audit_script_assisted_oracle_short_20260612_0142`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/audit_franka_cube_prior_<job>.out`
+- run dirs: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/<run_name>`
+
+Expected artifacts per shard:
+- `metrics.json`, `REPORT.md`, `action_reward_trace.jsonl`, `action_reward_trace.csv`, `rollout_summary.csv`, `reset_samples.csv`, `action_reward_trace_plot.png`, `action_tracking_plot.png`, `action_audit_contact_sheet.jpg`, labeled frames.
+
+Next:
+- Monitor all four jobs to completion; fetch all logs/artifacts; aggregate CSV/JSON into one local report/plots/contact sheet; open with `viz-open`; record verdict. No PPO/A100.
+
+Result:
+- status: completed / diagnostic verdict recorded
+- scheduler:
+  - `1027955` `policy_ep10`: `COMPLETED 0:0`, `00:01:00`, `pool0-00030`
+  - `1027956` `policy_ep45`: `COMPLETED 0:0`, `00:01:01`, `pool0-00030`
+  - `1027957` `script_lift_closed`: `COMPLETED 0:0`, `00:01:00`, `pool0-00030`
+  - `1027958` `script_assisted_oracle_short`: `COMPLETED 0:0`, `00:00:55`, `pool0-00004`
+- fetched artifacts:
+  - `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_action_audit_policy_ep10_20260612_0142`
+  - `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_action_audit_policy_ep45_20260612_0142`
+  - `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_action_audit_script_lift_closed_20260612_0142`
+  - `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_action_audit_script_assisted_oracle_short_20260612_0142`
+- aggregate inspection bundle:
+  - path: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_action_audit_minimal_20260612_0142_inspection`
+  - report URL: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_action_audit_minimal_20260612_0142_inspection/REPORT.md`
+  - reward/action plot URL: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_action_audit_minimal_20260612_0142_inspection/aggregate_reward_distance_action.png`
+  - contact sheet URL: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_action_audit_minimal_20260612_0142_inspection/aggregate_contact_sheet.jpg`
+  - extra files: `SUMMARY.json`, `rollout_summary_aggregate.csv`, `action_reward_trace_aggregate.csv`, `reset_samples_aggregate.csv`, `aggregate_reward_terms.png`
+
+Metrics:
+
+| Candidate | Job | Reward mean | EE dist first->final m | Finger dist first->final m | Gripper width first->final m | z mean/final | grip mean/final | Max lift m | Reset quality |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `policy_ep10` | `1027955` | 2.255 | 0.051->0.054 | 0.088->0.095 | 0.078->0.043 | -0.156/-0.478 | -0.012/0.148 | 0.0013 | True |
+| `policy_ep45` | `1027956` | 1.544 | 0.055->0.363 | 0.092->0.348 | 0.080->0.080 | 0.760/1.000 | 1.000/1.000 | 0.0016 | True |
+| `script_lift_closed` | `1027957` | 2.185 | 0.053->0.072 | 0.090->0.113 | 0.076->0.055 | 0.150/0.150 | 0.375/0.375 | 0.0000 | True |
+| `script_assisted_oracle_short` | `1027958` | 2.485 | 0.052->0.028 | 0.089->0.066 | 0.080->0.062 | -0.127/0.150 | 0.688/0.375 | 0.0000 | True |
+
+Analysis:
+- The one-candidate process strategy resolved the audit infrastructure failure from `1027944`, `1027950`, `1027952`, and `1027953`; each shard exited cleanly and wrote complete JSON/CSV/plots/contact sheets.
+- Reset-prior behavior remains healthy in this audit: all shards use robust pass7 `sample_index=6`, report reset success/quality true, no immediate done, and the same valid pregrasp geometry.
+- The learned policy is the failing part. `policy_ep45` visibly and numerically moves open/up/away: final EE/finger distances grow to `0.363/0.348 m`, gripper stays fully open, and approach/enclosure reward terms collapse. `policy_ep10` stays near the cube and sometimes closes, but still does not lift.
+- `script_assisted_oracle_short` gives the strongest local reward and improves approach/enclosure distances, so the immediate reward trace does not indicate a local incentive to move away/open. The positive action-up term is visible, but the total reward is lower for the ep45 away/open rollout than for the assisted approach.
+- `script_lift_closed` shows that closing/lifting directly from the pregrasp is not enough; the action path needs approach-to-exact/contact before lift.
+
+Decision:
+- No PPO/A100 relaunch. The robust pass7 reset implementation is not the current blocker; learned policy/action distribution or train/eval action semantics around the reset state remain unresolved.
+
+Next:
+- Bounded diagnostic only: compare train/eval normalized action distributions, action scaling/sign conventions, and policy observation/state at reset; optionally run a diagnostic-only action prior/curriculum experiment separately from the apple-to-apple task. Do not change the main task reward/action/termination semantics silently.
