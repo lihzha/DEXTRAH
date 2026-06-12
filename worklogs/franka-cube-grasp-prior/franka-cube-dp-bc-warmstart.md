@@ -11043,3 +11043,46 @@ Decision:
   compare checkpoint outputs to these oracle labels over the accepted relabel
   windows and adjust the supervised gate/loss/data only if that offline gate
   explains how to make the checkpoint emit the coupled actions.
+
+## 2026-06-12T00:05:06-07:00 - plan offline pose+gripper+phase coherence gate
+
+Goal:
+- Run the bounded next diagnostic requested by the orchestrator: compare the
+  official Diffusion Policy checkpoint against the successful oracle/relabel
+  labels over accepted phase-progress windows, without any DP fine-tune,
+  Isaac closed-loop eval, broad training, or RL.
+
+Hypothesis:
+- The 260-step nearest-label full-action oracle succeeds because pose,
+  gripper, and phase/progress labels are coherent. The official DP checkpoint
+  may still fail closed-loop because its pose channels do not align with the
+  same phase-conditioned labels even when gripper sign is mostly correct.
+
+Planned Change:
+- Add a small offline report tool under
+  `dextrah_lab/offline_dp_bc/` that loads the official
+  `real-stanford/diffusion_policy` checkpoint, samples dense accepted relabel
+  windows by episode/phase, queries `policy.predict_action`, and writes:
+  - per-row CSV of label/predicted first action, temporal offset, phase
+    features, pose cosine/norm ratio, and gripper correctness;
+  - per-phase JSON/CSV summary;
+  - plots for pose cosine, gripper sign, action scatter, and phase timeline;
+  - markdown verdict that explicitly labels the previous full-action run as an
+    oracle/no-learning action replacement.
+
+Validation:
+- Local only:
+  `python3 -m py_compile dextrah_lab/offline_dp_bc/<new_script>.py`
+  and `git diff --check`.
+- Diagnostic command will use:
+  - dataset:
+    `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_lrcentering_a075_set4_phaseprogress_official_dp_smoke_20260611_224001/contact_relabel_set_phase_progress.npz`
+  - checkpoint:
+    `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_lrcentering_a075_set4_phaseprogress_official_dp_smoke_20260611_224001/official_dp_train/checkpoints/latest.ckpt`
+  - official DP root:
+    `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/diffusion_policy`
+
+Acceptance:
+- Produce viewer-ready report/plots via `viz-open`.
+- Gate remains offline only. If the checkpoint is incoherent, stop before
+  Isaac eval/RL and document the policy-output blocker.
