@@ -3656,3 +3656,43 @@ Analysis:
 Decision:
 - Do not auto-launch PPO. The supervised gate is now passed, so the next proposed step is a bounded 64-env L401 PPO smoke initialized from the diagnostic checkpoint, with the same pass7 reset-prior task and artifact cadence, if the orchestrator/user approves.
 - No A100/full PPO remains allowed from this result.
+
+## 2026-06-11 20:04 PDT - prelaunch plan: BC-initialized pass7 PPO smoke
+
+Goal:
+- Launch exactly one bounded 64-env L401 PPO smoke initialized from the passed supervised diagnostic checkpoint. This is a policy-initialization intervention, not an apple-to-apple reset-prior RL result.
+
+Checkpoint:
+- host path: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002/bc_pass7_action_warmstart.pth`
+- container path: `/results/diagnostics/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002/bc_pass7_action_warmstart.pth`
+- source diagnostic run: `franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002`
+- supervised gate evidence: `val_mse=0.0021404221`, `val_gripper_sign_accuracy=1.0`, `val_lift_z_sign_accuracy=1.0`, checkpoint loadable.
+
+Config diff vs baseline DEXTRAH Franka cube smoke:
+- task remains `Dextrah-Franka-Cube-Grasp`.
+- 1 GPU L401 smoke only: `NUM_ENVS=64`, `MAX_ITERATIONS=45`, `HORIZON_LENGTH=64`, `SAVE_FREQUENCY=5`, JSONL direct metrics enabled.
+- prior reset enabled: `GRASP_PRIOR_RESET_ENABLED=True`.
+- robust pass7 library: `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_robust_pass7_20260612.npz`.
+- cube XY randomization remains `0.08`.
+- action warm-start override remains disabled: `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`.
+- checkpoint initialization is the intervention: `CHECKPOINT=/results/diagnostics/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002/bc_pass7_action_warmstart.pth`.
+- no reward, observation, action-space, termination, PPO wrapper, or task semantics changes beyond the existing reset-prior branch and the BC-initialized policy weights.
+- no A100/full RL scale-up.
+
+Validation before launch:
+- `bash -n cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`: pass.
+- `python3 -m py_compile dextrah_lab/rl_games/train.py`: pass.
+- remote worktree currently detached at source commit `ec9e16c5f4e92e052e2a4e5d60cd467f28480fe3`; will deploy the latest worklog/source commit before launch so `CODE_COMMIT` is explicit.
+- checkpoint and pass7 library exist on L401.
+
+Planned command:
+- `sbatch --parsable --job-name=ggx_pass7_bcinit_smoke --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=<latest_commit>,TASK=Dextrah-Franka-Cube-Grasp,FULL_EXPERIMENT_NAME=franka_cube_ggx_pass7_bcinit_smoke45_20260611_2005,NUM_ENVS=64,MAX_ITERATIONS=45,HORIZON_LENGTH=64,MINIBATCH_SIZE=4096,CENTRAL_VALUE_MINIBATCH_SIZE=4096,SAVE_FREQUENCY=5,SEED=20260624,CUBE_SPAWN_XY_RANDOMIZATION=0.08,USE_CUDA_GRAPH=False,DEXTRAH_RLGAMES_JSONL_METRICS=True,AUTO_RESUME=False,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_robust_pass7_20260612.npz,GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False,CHECKPOINT=/results/diagnostics/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002/bc_pass7_action_warmstart.pth cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`
+
+Acceptance / inspection criteria:
+- Slurm job completes and writes checkpoints plus `metrics/direct_info_rank_0.jsonl`.
+- JSONL has finite scalars and no NaN/Inf/bad scalar signatures.
+- reset-prior success/quality metrics remain `1.0` or clearly sane; no immediate termination pathology.
+- action override metrics stay absent/zero; this smoke must test actor initialization, not env action override.
+- reward, lift height, success/lifted rates, distance/contact/action metrics are inspected from JSONL and stdout checkpoint rewards.
+- If early metrics show the policy still moves away/open/up or lift/success remain flat, do not scale; fetch artifacts and run a focused eval/video only if needed to understand behavior.
+- If metrics look promising, produce a concise gate report and propose next bounded eval; do not auto-launch A100 or full RL.
