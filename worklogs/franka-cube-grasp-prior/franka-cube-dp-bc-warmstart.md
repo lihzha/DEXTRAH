@@ -10313,3 +10313,104 @@ Acceptance:
   sheet, and plots before declaring anything.
 - If it fails, record whether the failure is phase-gating, action semantics,
   history/normalizer, or policy support coverage.
+
+## 2026-06-12T00:08:00-07:00 - launch contact-gated 25D DP video trace
+
+Goal:
+- Produce the next meaningful closed-loop DP diagnostic with video, metrics,
+  policy trace, and support trace, after adding the contact-gated phase provider.
+
+Version Control:
+- implementation_commit:
+  `223750e2b091fa4d9914d14f97811e0dd44de8e7`
+- local branch: `codex/franka-cube-diffusion-policy-bc`
+- remote l401 worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- remote commit: `223750e2b091fa4d9914d14f97811e0dd44de8e7`
+- push/pull: pushed to GitHub and fetched via HTTPS into the C-owned detached
+  l401 worktree.
+
+Command / Job:
+- job_id: `1028199`
+- run_name:
+  `franka_cube_dp_eval_phaseprogress_set4_ep0_contactgated_video128_20260612_0008`
+- command:
+  `sbatch --parsable --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart,RUN_NAME=franka_cube_dp_eval_phaseprogress_set4_ep0_contactgated_video128_20260612_0008,NUM_ENVS=1,NUM_STEPS=128,NUM_INFERENCE_STEPS=100,ACTION_CHUNK_STEPS=1,CLIP_ACTIONS=1.0,SUCCESS_WINDOW=32,SUCCESS_TIMEOUT_OVERRIDE=999.0,CAPTURE_VIDEO=True,VIDEO_LENGTH=128,VIDEO_NAME_PREFIX=franka-cube-dp-phaseprogress-contactgated,PRINT_INTERVAL=16,DEBUG_POLICY_TRACE_MAX_CALLS=48,DEBUG_POLICY_TRACE_ENV_INDEX=0,CHECKPOINT=/results/dp_bc/checkpoints/contact_relabel_lrcentering_a075_set4_phaseprogress_20260611_224001/latest.ckpt,SUPPORT_DATASET=/results/dp_bc/phase_progress_set4/contact_relabel_set_phase_progress.npz,PHASE_PROGRESS_DATASET=/results/dp_bc/phase_progress_set4/contact_relabel_set_phase_progress.npz,PHASE_PROGRESS_EPISODE=0,PHASE_PROGRESS_START_STEP=0,PHASE_PROGRESS_MODE=contact_gated,PHASE_CLOSE_SUPPORT_DISTANCE_THRESHOLD=0.55,PHASE_LIFT_SUPPORT_DISTANCE_THRESHOLD=0.75,PHASE_LIFT_GRIPPER_WIDTH_THRESHOLD=0.025,DEMO_RESET_DATASET=/results/contact_relabel_sets/franka_cube_contact_relabel_lrcentering_ep8_16_24_30_a0p75_20260611_2224/contact_relabel_set_accepted.npz,DEMO_RESET_EPISODE=0,DEMO_RESET_STEP=0,DEMO_RESET_SOURCE_TRAJECTORY_JSON=/results/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed8/trajectory.json,DEMO_RESET_SOURCE_FRAME=260,DEMO_RESET_JOINT_BLEND_ALPHA=0.75,DEMO_RESET_CUBE_POS_BLEND_ALPHA=1.0 cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- remote run dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_phaseprogress_set4_ep0_contactgated_video128_20260612_0008`
+- stdout log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_dp_policy_1028199.out`
+
+Acceptance:
+- Must fetch and inspect:
+  `metrics.json`, `policy_trace.json`, `support_trace.json/csv`,
+  `eval_config.json`, MP4 video, contact sheet, report, plots.
+- This is still a no-learning diagnostic; even a visually useful failure video
+  is not BC/RL scale-up evidence.
+
+## 2026-06-12T00:35:00-07:00 - result contact-gated 25D DP video trace
+
+Job:
+- job_id: `1028199`
+- status: completed `0:0`
+- run:
+  `franka_cube_dp_eval_phaseprogress_set4_ep0_contactgated_video128_20260612_0008`
+- remote run dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_phaseprogress_set4_ep0_contactgated_video128_20260612_0008`
+- local artifact dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_contactgated_video128_20260612_0008`
+- stdout:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_contactgated_video128_20260612_0008/eval_franka_cube_dp_policy_1028199.out`
+
+Viewer artifacts:
+- labeled DP policy MP4:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_contactgated_video128_20260612_0008/videos/franka-cube-dp-phaseprogress-contactgated-labeled-step-0.mp4`
+- contact sheet:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_contactgated_video128_20260612_0008/dp_contactgated_contact_sheet.jpg`
+- support report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_contactgated_video128_20260612_0008/closed_loop_support_report.md`
+- phase/progress plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_contactgated_video128_20260612_0008/closed_loop_phase_progress.png`
+- support trace plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_contactgated_video128_20260612_0008/closed_loop_support_trace.png`
+
+Metrics:
+- `final_success_rate=0.0`, `window_success_rate=0.0`
+- cube lift height `max=0.01697 m`, `final=0.0 m`
+- final gripper width `0.03655 m`
+- EE-to-cube distance `min=0.02031 m`, `final=0.11325 m`
+- finger-center-to-cube distance `min=0.05021 m`, `final=0.12189 m`
+- support distance `start=0.03517`, `final=3.449`
+- action gripper range `[-0.866, 1.0]`
+
+Trace/video interpretation:
+- The runtime provider stayed in `align_open` for the whole 128-step rollout;
+  it did not advance to close/lift because live support geometry never passed
+  the close gate.
+- Compared with the prior deterministic dataset-clock trace, this fixed the
+  premature phase switch mechanism but did not produce success. The policy
+  nudges the cube, loses local support, and ends away from the cube with no
+  stable lift.
+- The artifact is an actual DP-policy behavior video, not a contact-relabel
+  controller video.
+
+Offline action-semantics follow-up:
+- output dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/action_semantics/phaseprogress_contactgated_trace1028199_20260612_0022`
+- report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/action_semantics/phaseprogress_contactgated_trace1028199_20260612_0022/action_semantics_report.md`
+- gripper plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/action_semantics/phaseprogress_contactgated_trace1028199_20260612_0022/gripper_label_vs_prediction.png`
+- per-channel plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/action_semantics/phaseprogress_contactgated_trace1028199_20260612_0022/per_channel_first_action_scatter.png`
+- verdict: `gripper_gate_pass=true`, open sign match `1.0`,
+  closed/lift sign match `0.95`. This rules out a raw gripper sign flip for
+  this failure. The remaining issue is align/open closed-loop support drift
+  and insufficient contact/lift geometry before the gated phase can advance.
+
+Decision:
+- Do not launch broad DP eval, DP fine-tune, or RL from this checkpoint.
+- Next bounded work should target align/open support retention or a more
+  train/eval-consistent phase/support representation before any scale-up.
+- Active job check after fetch/report generation: no C eval job active in
+  `squeue`.
