@@ -37,6 +37,52 @@ def _load_train_env(path: Path | None) -> dict[str, object]:
         return result
 
 
+def _load_train_bc_metrics(path: Path | None) -> dict[str, object]:
+    """Load comparable train/eval metadata from a BC diagnostic report.
+
+    BC diagnostics do not write the full Hydra train environment YAML that PPO
+    runs have.  They do record the checkpoint, dims, collection policy, and
+    compact trajectory reference metadata, which is enough to turn an otherwise
+    opaque `train_config_unavailable` into a partial audit with explicit gaps.
+    """
+
+    if path is None or not path.exists():
+        return {}
+    data = json.loads(path.read_text())
+    reference = data.get("reference_summary", {})
+    reference = reference if isinstance(reference, dict) else {}
+    result: dict[str, object] = {
+        "__source": "bc_metrics",
+        "__bc_metrics_path": str(path),
+        "__bc_task": data.get("task"),
+        "__bc_input_checkpoint": data.get("input_checkpoint"),
+        "__bc_output_checkpoint": data.get("output_checkpoint"),
+        "__bc_collection_action_source": data.get("collection_action_source"),
+        "__bc_collection_teacher_alphas": data.get("collection_teacher_alphas")
+        or data.get("collection_teacher_alpha"),
+        "__bc_residual_adapter_enabled": data.get("residual_adapter_enabled"),
+        "__bc_residual_context_features": data.get("residual_context_features"),
+        "__bc_curobo_validated": data.get("curobo_validated"),
+        "__bc_reference_summary": reference,
+    }
+    obs_dim = data.get("obs_dim")
+    action_dim = data.get("action_dim")
+    if isinstance(obs_dim, (int, float)):
+        result["observation_space"] = int(obs_dim)
+        result["state_space"] = int(obs_dim)
+    if isinstance(action_dim, (int, float)):
+        result["action_space"] = int(action_dim)
+    if reference.get("source") is not None:
+        result["trajectory_tracking_reference_path"] = reference.get("source")
+    duration = reference.get("configured_runtime_duration_s") or reference.get("runtime_duration_s")
+    if duration is not None:
+        result["trajectory_tracking_reference_duration_s"] = duration
+    min_gripper_width = reference.get("min_target_gripper_width_m")
+    if min_gripper_width is not None:
+        result["trajectory_tracking_min_target_gripper_width"] = min_gripper_width
+    return result
+
+
 def _series(steps: list[dict[str, object]], key: str) -> list[float]:
     values: list[float] = []
     for item in steps:
@@ -361,7 +407,9 @@ def _consistency(
     mismatches = []
     missing_train_keys = []
     missing_eval_keys = []
+    unverified_train_keys = []
     expected_env_override_keys = set(_expected_env_override_keys(summary, eval_env))
+    train_source = train_env.get("__source") if train_env else None
     if not train_env:
         for key in keys:
             eval_value = eval_env.get(key)
@@ -378,14 +426,21 @@ def _consistency(
             "mismatches": [],
             "missing_train_keys": missing_train_keys,
             "missing_eval_keys": missing_eval_keys,
+            "unverified_train_keys": unverified_train_keys,
             "expected_eval_overrides": _expected_eval_overrides(summary),
             "passed": None,
             "status": "train_config_unavailable",
+            "train_source": None,
         }
+    extra_checks: dict[str, dict[str, object]] = {}
     for key in keys:
         train_value = train_env.get(key)
         eval_value = eval_env.get(key)
-        if train_value is None and eval_value is not None:
+        if train_source == "bc_metrics" and train_value is None and eval_value is not None:
+            status = "bc_metadata_unavailable"
+            match = None
+            unverified_train_keys.append(key)
+        elif train_value is None and eval_value is not None:
             status = "missing_train_key"
             match = None
             missing_train_keys.append(key)
@@ -406,16 +461,89 @@ def _consistency(
             if status == "mismatch":
                 mismatches.append(key)
         rows[key] = {"train": train_value, "eval": eval_value, "match": match, "status": status}
+    if train_source == "bc_metrics":
+        reference = train_env.get("__bc_reference_summary", {})
+        reference = reference if isinstance(reference, dict) else {}
+        eval_reference = summary.get("trajectory_tracking_reference", {})
+        eval_reference = eval_reference if isinstance(eval_reference, dict) else {}
+        extra_specs = {
+            "task": (train_env.get("__bc_task"), summary.get("task")),
+            "checkpoint": (train_env.get("__bc_output_checkpoint"), summary.get("checkpoint")),
+            "reference_curobo_validated": (
+                reference.get("curobo_validated"),
+                eval_reference.get("curobo_validated"),
+            ),
+            "reference_validation_passed": (
+                reference.get("validation_passed"),
+                eval_reference.get("validation_passed"),
+            ),
+            "reference_transform_policy": (
+                reference.get("transform_policy"),
+                eval_reference.get("transform_policy"),
+            ),
+            "reference_joint_trajectory_policy": (
+                reference.get("joint_trajectory_policy"),
+                eval_reference.get("joint_trajectory_policy"),
+            ),
+            "reference_gripper_schedule_policy": (
+                reference.get("gripper_schedule_policy"),
+                eval_reference.get("gripper_schedule_policy"),
+            ),
+            "reference_runtime_object_pose_policy": (
+                reference.get("runtime_object_pose_policy"),
+                eval_reference.get("runtime_object_pose_policy"),
+            ),
+            "reference_source_tag": (
+                reference.get("source_tag"),
+                eval_reference.get("source_tag"),
+            ),
+        }
+        for key, (train_value, eval_value) in extra_specs.items():
+            if isinstance(train_value, float) or isinstance(eval_value, float):
+                try:
+                    match = abs(float(train_value) - float(eval_value)) <= 1e-9
+                except (TypeError, ValueError):
+                    match = False
+            else:
+                match = train_value == eval_value
+            status = "match" if match else "mismatch"
+            if not match:
+                mismatches.append(key)
+            extra_checks[key] = {
+                "train": train_value,
+                "eval": eval_value,
+                "match": match,
+                "status": status,
+            }
     passed = len(mismatches) == 0 and len(missing_train_keys) == 0 and len(missing_eval_keys) == 0
+    if train_source == "bc_metrics":
+        status = "bc_metadata_partial_pass" if passed else "bc_metadata_partial_failed"
+    else:
+        status = "passed" if passed else "failed"
     return {
         "checks": rows,
+        "extra_checks": extra_checks,
         "mismatches": mismatches,
         "missing_train_keys": missing_train_keys,
         "missing_eval_keys": missing_eval_keys,
+        "unverified_train_keys": unverified_train_keys,
+        "bc_metadata": {
+            "metrics_path": train_env.get("__bc_metrics_path"),
+            "collection_action_source": train_env.get("__bc_collection_action_source"),
+            "collection_teacher_alphas": train_env.get("__bc_collection_teacher_alphas"),
+            "input_checkpoint": train_env.get("__bc_input_checkpoint"),
+            "output_checkpoint": train_env.get("__bc_output_checkpoint"),
+            "residual_adapter_enabled": train_env.get("__bc_residual_adapter_enabled"),
+            "residual_context_features": train_env.get("__bc_residual_context_features"),
+            "curobo_validated": train_env.get("__bc_curobo_validated"),
+        }
+        if train_source == "bc_metrics"
+        else {},
         "expected_eval_overrides": _expected_eval_overrides(summary),
         "expected_env_override_keys": sorted(expected_env_override_keys),
         "passed": passed,
-        "status": "passed" if passed else "failed",
+        "status": status,
+        "train_source": train_source or "train_env_yaml",
     }
 
 
@@ -590,6 +718,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--metrics", required=True, type=Path)
     parser.add_argument("--train-env-yaml", type=Path, default=None)
+    parser.add_argument("--train-bc-metrics", type=Path, default=None)
     parser.add_argument("--output-dir", required=True, type=Path)
     args = parser.parse_args()
 
@@ -612,6 +741,10 @@ def main() -> None:
             video_metadata = {"error": str(exc), "video": str(video_files[0])}
 
     train_env = _load_train_env(args.train_env_yaml)
+    train_bc_env = _load_train_bc_metrics(args.train_bc_metrics)
+    if train_bc_env:
+        for key, value in train_bc_env.items():
+            train_env.setdefault(key, value)
     eval_env = summary.get("env_config", {}) if isinstance(summary.get("env_config"), dict) else {}
     consistency = _consistency(train_env, eval_env, summary)
     (output_dir / "train_eval_consistency.json").write_text(json.dumps(consistency, indent=2, sort_keys=True) + "\n")
@@ -921,6 +1054,7 @@ def main() -> None:
 - target unsafe max: {_fmt(compact['target_unsafe_rate_max'])}
 - target clearance min: {_fmt(compact['target_clearance_min'])} m
 - train/eval consistency status: {consistency['status']} real_mismatches={consistency['mismatches']} missing_train_keys={consistency['missing_train_keys']} missing_eval_keys={consistency['missing_eval_keys']}
+- train/eval consistency source: {consistency['train_source']} unverified_train_keys={consistency.get('unverified_train_keys', [])}
 - expected eval-only overrides: `{consistency['expected_eval_overrides']}`
 - reference caveat: curobo_validated={compact['reference_curobo_validated']}, source_tag={compact['reference_source_tag']}
 

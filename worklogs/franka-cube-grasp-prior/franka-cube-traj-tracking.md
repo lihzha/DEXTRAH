@@ -5779,6 +5779,49 @@ Verdict:
 Active Jobs:
 - none.
 
+## 2026-06-11T23:08:00-07:00 - BC train/eval consistency audit fix plan
+
+Goal:
+- Replace the inconclusive `train_config_unavailable` consistency artifact for BC checkpoints with a partial but machine-readable train/eval audit from `bc_metrics.json`.
+
+Plan:
+- Patch `dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py` to accept `--train-bc-metrics`.
+- Derive comparable training metadata from the BC report: task, obs/action dims, output checkpoint, collection action source/teacher alphas, residual adapter metadata, compact reference source/duration/gripper policy/validation caveat.
+- Compare these fields against eval metadata and keep the existing expected eval overrides for selector alpha/video/num_steps.
+- Mark fields unavailable in old BC metrics, such as cube randomization and detailed reward weights, as `bc_metadata_unavailable` instead of hard failure; this documents the remaining gap without hiding it.
+- Regenerate the three current handoff visual reports and the combined report, re-open viewer URLs, and update this worklog. No new Slurm jobs or PPO/RL launch.
+
+Acceptance:
+- `train_eval_consistency.json` no longer reports global `train_config_unavailable`.
+- It must explicitly say what matched, what remains unverified, and that `curobo_validated=false` remains the reference status.
+
+## 2026-06-11T23:12:00-07:00 - BC train/eval consistency audit fix result
+
+Change:
+- patched `dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py` with `--train-bc-metrics`.
+- regenerated the three current handoff visual artifact directories using `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_success_alpha0_20260611_223200/bc_metrics.json`.
+- updated the combined report at `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_visual_gate_20260611_2240/report.md`.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py` passed.
+- `git diff --check` passed.
+
+Consistency Result:
+- alpha0.0 / alpha0.25 / alpha1.0 targeted reports now show `status=bc_metadata_partial_pass`, `passed=true`, `train_source=bc_metrics`.
+- no real mismatches, no missing train keys, no missing eval keys for comparable metadata.
+- matched fields include task, output checkpoint, obs/action dims `72/7`, compact reference path, runtime duration, minimum gripper width, reference `curobo_validated=false`, `validation_passed=true`, `transform_policy=transform_task_space_waypoints_by_cube_pose`, `joint_trajectory_policy=do_not_transform_joint_trajectories`, `runtime_object_pose_policy=reset_cube_pose`, and source tag.
+- remaining unverified keys are explicitly listed in each `train_eval_consistency.json`: cube randomization, phase observations, detailed reward/gate weights, and teacher-force env config were not recorded by older BC metrics. This is now documented rather than hidden as a global unavailable train config.
+
+Viewer Artifacts:
+- combined report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_visual_gate_20260611_2240/report.md`
+- alpha0.0 consistency: `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_vis_a000_env0_520_20260611_224000_artifacts/train_eval_consistency.json`
+- alpha0.25 consistency: `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_vis_a025_env1_520_20260611_224000_artifacts/train_eval_consistency.json`
+- alpha1.0 consistency: `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_vis_a100_env0_520_20260611_224000_artifacts/train_eval_consistency.json`
+
+Next:
+- Commit the audit-tooling/worklog update.
+- Run a bounded eval-only no-reset visual probe for alpha0.25 (and alpha1.0 context if needed) with `SUPPRESS_SUCCESS_TERMINATION=True` to determine whether the low-alpha handoff can maintain lift after the first success window. No PPO/RL.
+
 ## 2026-06-11T22:31:26-07:00 - handoff selector metrics launch plan
 
 Goal:
