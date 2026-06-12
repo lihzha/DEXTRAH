@@ -10414,3 +10414,123 @@ Decision:
   train/eval-consistent phase/support representation before any scale-up.
 - Active job check after fetch/report generation: no C eval job active in
   `squeue`.
+
+## 2026-06-12T00:52:00-07:00 - plan align/open support drift audit
+
+Goal:
+- Diagnose the remaining 25D closed-loop failure before any retrain, broad
+  eval, or RL. The target failure mode is align/open support drift before
+  contact-gated phase advancement.
+
+Hypothesis:
+- The policy is no longer closing from a bad phase clock, but its open/alignment
+  actions may still be off-support because of one of:
+  action magnitude/normalization, positional convention, history/state mismatch,
+  or insufficient corrective align/open data.
+
+Plan:
+- Start offline from the existing video-backed DP trace `1028199`.
+- Build a compact report/plot artifact that compares live align/open windows
+  against nearest accepted relabel dataset windows:
+  live vs nearest lowdim deltas, z-scores, cube-minus-EE/finger/EE geometry,
+  predicted action vs dataset action labels at nearest row and future offsets,
+  action direction relative to cube, gripper command, phase/progress, and
+  history step gaps.
+- Reuse the existing labeled MP4/contact sheet as the visual behavior artifact;
+  launch no new Isaac job unless the offline audit cannot distinguish action
+  semantics from support coverage.
+
+Validation:
+- Local syntax:
+  `python3 -m py_compile <new/changed diagnostic script>`
+- Local report generation against:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_contactgated_video128_20260612_0008`
+- Artifact inspection with `viz-open`.
+
+Acceptance:
+- Produce `report.md`, JSON/CSV, and at least one compact plot.
+- Explicitly classify the evidence among action normalization/magnitude,
+  positional convention, history/state mismatch, or insufficient corrective
+  data.
+- Do not launch DP fine-tune, broad eval, or RL.
+
+## 2026-06-12T01:12:00-07:00 - result align/open support drift audit
+
+Goal:
+- Diagnose why the 25D contact-gated DP policy drifts during align/open before
+  allowing close/lift.
+
+Change:
+- Added a bounded offline diagnostic:
+  `dextrah_lab/offline_dp_bc/diagnose_align_open_support_drift.py`.
+- It compares `support_trace.json`/`policy_trace.json` from the video-backed
+  run against the accepted 25D relabel dataset. It writes a report, CSV, JSON,
+  support/action plots, and a per-channel action scatter.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- base_commit: `6080f73908c726180452916617338dddaa9a3693`
+- implementation_commit: pending
+- changed_files:
+  - `dextrah_lab/offline_dp_bc/diagnose_align_open_support_drift.py`
+  - `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+
+Validation:
+- `PYTHONPATH=$PWD /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/venv/bin/python -m py_compile dextrah_lab/offline_dp_bc/diagnose_align_open_support_drift.py`
+  passed.
+- `bash -n cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh` passed.
+
+Command:
+- `PYTHONPATH=$PWD /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/venv/bin/python -m dextrah_lab.offline_dp_bc.diagnose_align_open_support_drift --dataset /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_lrcentering_a075_set4_phaseprogress_official_dp_smoke_20260611_224001/contact_relabel_set_phase_progress.npz --run-dir /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_contactgated_video128_20260612_0008 --output-dir /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_contactgated_video128_20260612_0008/align_open_support_drift --video /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_contactgated_video128_20260612_0008/videos/franka-cube-dp-phaseprogress-contactgated-labeled-step-0.mp4 --contact-sheet /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_contactgated_video128_20260612_0008/dp_contactgated_contact_sheet.jpg`
+
+Artifacts:
+- report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_contactgated_video128_20260612_0008/align_open_support_drift/align_open_support_drift_report.md`
+- support/action plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_contactgated_video128_20260612_0008/align_open_support_drift/align_open_support_drift.png`
+- per-channel action scatter:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_contactgated_video128_20260612_0008/align_open_support_drift/align_open_action_scatter.png`
+- CSV:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_contactgated_video128_20260612_0008/align_open_support_drift/align_open_support_drift_rows.csv`
+- JSON:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_contactgated_video128_20260612_0008/align_open_support_drift/align_open_support_drift_summary.json`
+- existing behavior video used as visual context:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_contactgated_video128_20260612_0008/videos/franka-cube-dp-phaseprogress-contactgated-labeled-step-0.mp4`
+
+Result:
+- runtime phase counts: `{'align_open': 128}`.
+- nearest dataset phase counts: `{'align_open': 45, 'close_hold': 14, 'lift': 69}`.
+- nearest support distance grows `0.0352 -> 3.4494`.
+- median command cosine toward live cube-minus-EE: `0.2011`.
+- median nearest-label cosine toward live cube-minus-EE: `0.8792`.
+- median actual EE-delta cosine toward live cube-minus-EE: `0.0911`.
+- median command xyz norm: `0.0372 m`.
+- median nearest-label xyz norm: `0.0149 m`.
+- median actual/command EE realization ratio: `0.0670`.
+- step 1 already shows a bad pose command on a near-exact state:
+  command cosine `-0.3823` while nearest label cosine is `0.9207`.
+
+Analysis:
+- History/state mismatch: unlikely. Support and policy history gaps are `[0,1]`.
+- Raw gripper sign: unlikely. The separate official-DP action semantics gate
+  passed for this checkpoint.
+- Action magnitude too small: unlikely. The DP command norm is larger than the
+  nearest-label norm on median.
+- Pose action convention/prediction: likely. The relabel dataset actions point
+  toward the cube, but the traced DP commands are weakly aligned or sometimes
+  anti-aligned; this appears even at the initial near-exact state.
+- Controller realization: possible secondary effect. Actual EE motion is much
+  smaller than command, but this follows from bad/off-support commands rather
+  than proving the controller bridge is the primary bug.
+- Corrective support coverage: likely. The four-episode set has little
+  recovery coverage after the cube/hand geometry is nudged out of the
+  align-open path.
+
+Decision:
+- No DP fine-tune, broad eval, or RL launch.
+- The next useful bounded gate should improve the pose-channel offline
+  action-semantics check for align/open rows before another Isaac run:
+  either deterministic/less stochastic DP sampling for exact align rows, a
+  stronger pose-channel loss/gate on the current set, or a tiny recovery
+  relabel set with an offline pose-action pass. A new video run should wait
+  until one of those gates passes.
