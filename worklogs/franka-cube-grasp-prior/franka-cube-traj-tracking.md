@@ -4821,3 +4821,60 @@ Next Bounded Adjustment Proposal:
 - Keep tm0.25 as the current best checkpoint.
 - Next candidate should preserve tm0.25 successful-state coverage while adding low-assistance exposure, e.g. mixed/rehearsal BC with a retained tm0.25 dataset plus a smaller low-alpha collection, rather than replacing the dataset entirely with tm0.10 states.
 - Hypothesis: tm0.10 collection over-weighted lower-assistance states that were harder/off-distribution and lost the useful tm0.25 successful grasp/lift manifold; rehearsal should reduce forgetting while still nudging policy-only behavior.
+
+## 2026-06-11T19:20:00-07:00 - teacher-mix DAgger tm0.10 targeted visual handoff
+
+Result:
+- targeted diagnostic video jobs `1028002`-`1028004` all completed `0:0`.
+- fetched all three run dirs, logs, metrics, traces, and videos locally under `cluster_results/l401/`.
+- MP4 metadata validated for all three videos: `1280x720`, `520` frames, `8.666667 s`.
+- generated per-run reports, trace plots, original contact sheets, and cleaner usable-frame contact sheets that skip the black frame `0`.
+- train/eval consistency passed for all three targeted videos.
+- target unsafe max remained `0` for all three targeted videos; target clearance min stayed `0.065114 m`.
+- generated final tm0.10 comparison report/CSV/plot against tm0.25, tm0.5, and the post-PPO `bcinit_tfppo15` selector context.
+
+Artifacts:
+- comparison report:
+  - `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm010_comparison_20260611_1915/report.md`
+- comparison plot:
+  - `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm010_comparison_20260611_1915/comparison_plot.png`
+- selector action-semantics report:
+  - `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm010_selector_action_semantics_20260611_1912/action_semantics_report.md`
+- selector action-semantics plot:
+  - `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm010_selector_action_semantics_20260611_1912/action_semantics_plot.png`
+
+Targeted Videos:
+- alpha `0.0`, job `1028002`, env0 failure:
+  - result: success `0/4`, max lift `0.0 m`, final EE/finger distances `0.389/0.427 m`.
+  - visual: cube remains on table; policy-only still drifts/fails and does not recover contact/lift.
+  - report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm010_vis_a000_env0_520_20260611_191500_artifacts/report.md`
+  - contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm010_vis_a000_env0_520_20260611_191500_artifacts/usable_frame_contact_sheet.png`
+  - video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm010_vis_a000_env0_520_20260611_191500/videos/dagger-tm010-a000-env0-step-0.mp4`
+- alpha `0.75`, job `1028003`, env1 lowest-alpha visible success:
+  - result: success `1/4`, final success `0.25`, mean lift max in the targeted video run `0.04434 m`; selector max lift for the same alpha was `0.17736 m`.
+  - visual: targeted env1 visibly contacts/lifts by the end, but the aggregate result is only `1/4`, so this is a regression versus tm0.25.
+  - report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm010_vis_a075_env1_520_20260611_191500_artifacts/report.md`
+  - contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm010_vis_a075_env1_520_20260611_191500_artifacts/usable_frame_contact_sheet.png`
+  - video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm010_vis_a075_env1_520_20260611_191500/videos/dagger-tm010-a075-env1-step-0.mp4`
+- alpha `1.0`, job `1028004`, env1 full-teacher context:
+  - result: success `3/4`, final success `0.75`, max lift `0.14441 m`.
+  - visual: teacher/reference path remains viable and visibly lifts/holds in the targeted successful env.
+  - report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm010_vis_a100_env1_520_20260611_191500_artifacts/report.md`
+  - contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm010_vis_a100_env1_520_20260611_191500_artifacts/usable_frame_contact_sheet.png`
+  - video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm010_vis_a100_env1_520_20260611_191500/videos/dagger-tm010-a100-env1-step-0.mp4`
+
+Verdict:
+- tm0.10 is not an improvement over tm0.25. It regresses low-teacher behavior from tm0.25's alpha `0.5`/`0.75` `3/4` final success to tm0.10's `0/4` and `1/4`.
+- The lower-alpha targeted visual does show a real env1 lift at alpha `0.75`, but the aggregate `1/4` result is not a scale-up gate.
+- Keep tm0.25 as the best Worker B checkpoint for teacher-assisted trajectory tracking.
+- Policy-only alpha `0.0` still fails, so no full PPO/RL scale-up.
+- Reference caveat remains explicit: compact task-space reference is still `curobo_validated=false` and should not be described as DEXTRAH-ready cuRobo-validated joint replay.
+
+Next Bounded Adjustment Proposal:
+- Do not continue pure lower-alpha replacement collection.
+- Proposed next small trainability step is mixed/rehearsal BC:
+  - keep tm0.25 successful-state coverage as a retained dataset component;
+  - add a smaller low-alpha (`0.10` or mixed `0.0/0.10/0.25`) collection component;
+  - train on the combined dataset with all seven action dims and explicit per-dataset loss/validation reporting;
+  - gate on selector alpha `0.0/0.25/0.5/0.75/1.0` before targeted videos.
+- Acceptance for the next step remains improvement in policy-only or lower-alpha success without target-unsafe regression, with viewer-ready reports, plots, videos/contact sheets, and train/eval consistency JSON.
