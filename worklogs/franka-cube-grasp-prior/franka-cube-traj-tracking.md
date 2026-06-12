@@ -3579,3 +3579,88 @@ Next:
   - inspect reference action components around the grasp/lift window where reference_delta succeeds under alpha `1.0`/offset hold but learned/alpha `0.75` fails;
   - check whether action normalization or gripper/up semantics make low L2 hide wrong close/up timing;
   - consider a small BC/action-imitation diagnostic over logged reference_delta actions before PPO, with artifacts proving raw close/up/gripper timing matches the reference and produces contact/lift.
+
+## 2026-06-11T17:28:48-07:00 - pure-reference teacher-force sanity diagnostic plan
+
+Goal:
+- Determine whether the teacher-force reference action path itself can produce stable grasp/lift/hold when the learned policy is fully overridden for the entire 520-step rollout.
+
+Hypothesis:
+- If `teacher_force_alpha=1.0` and `phase_end=1.0` succeeds robustly, the reference/action path is viable and the remaining blocker is raw-action learning/imitation.
+- If it still fails or moves away, the blocker is the teacher/reference action semantics, missing terminal hold, or the reference trajectory itself, not simply policy learning.
+
+Change:
+- No PPO and no source/runtime changes.
+- Eval-only run from the same epoch-5 checkpoint used by `1027901`, `1027902`, and `1027907`.
+- Set `TRAJECTORY_TRACKING_TEACHER_FORCE_ALPHA_START=1.0`, `TRAJECTORY_TRACKING_TEACHER_FORCE_ALPHA_END=1.0`, `TRAJECTORY_TRACKING_TEACHER_FORCE_PHASE_END=1.0`, `TRAJECTORY_TRACKING_TEACHER_FORCE_ANNEAL_STEPS=0`, `NUM_ENVS=4`, `NUM_STEPS=520`, video enabled.
+
+Version Control:
+- agent_id: `franka-cube-traj-tracking`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking`
+- branch: `codex/franka-cube-trajectory-tracking`
+- local_source_commit: `462b067cc78d1e766cf8cd0343fe746a368907ef`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking`
+- remote_runtime_commit: `858402985719ec3ceb79db696a555443f976c997`
+- remote_status: detached clean at `858402985719ec3ceb79db696a555443f976c997`
+- remote_commit_note: local commits after `8584029` only touch artifact summarizers and this worklog, not `dextrah_lab/tasks`, `eval_rollout.py`, or the eval wrapper, so launching from the existing remote runtime is valid for this eval.
+
+Command / Job:
+- command: `ssh l401 'cd /lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking && sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:30:00 --job-name=tf_eval_ref100 --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_teacherforce_eval_a100_phase100_520_20260611_172848,NUM_ENVS=4,NUM_STEPS=520,VIDEO_LENGTH=520,VIDEO_NAME_PREFIX=tf-eval-a100-phase100-520,CAPTURE_VIDEO=True,DETERMINISTIC=True,ACTION_SOURCE=policy,SUPPRESS_SUCCESS_TERMINATION=True,USE_CUDA_GRAPH=False,SEED=64,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_WEIGHT=15.0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_PHASE_START=0.0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_SHARPNESS=1.0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_USE_CONTACT_GATE=False,TRAJECTORY_TRACKING_TEACHER_FORCE_ENABLED=True,TRAJECTORY_TRACKING_TEACHER_FORCE_ALPHA_START=1.0,TRAJECTORY_TRACKING_TEACHER_FORCE_ALPHA_END=1.0,TRAJECTORY_TRACKING_TEACHER_FORCE_PHASE_END=1.0,TRAJECTORY_TRACKING_TEACHER_FORCE_ANNEAL_STEPS=0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_COMPARE_RAW_POLICY=True,CHECKPOINT=/results/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_teacherforce_rl5b_20260611_170913/nn/last_dextrah_franka_cube_traj_tracking_ep_5_rew_3560.5405.pth cluster/sbatch_eval_franka_cube_grasp_1gpu.sh'`
+- job_id: `1027919`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_traj_tracking_teacherforce_eval_a100_phase100_520_20260611_172848`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1027919.out`
+- expected artifacts: `metrics.json`, `trace.csv`, `trace.jsonl`, `videos/tf-eval-a100-phase100-520-step-0.mp4`; local report/contact sheet/plot after fetch.
+
+Acceptance:
+- Target unsafe max must remain `0`.
+- Produce report, summary JSON/CSV, success diagnostics, trace plot, contact sheet, full MP4, and `viz-open` URLs.
+- Compare directly with `1027907` and the earlier `alpha=1.0 phase=0.67` eval `1027902`.
+- If robust success/lift appears, proceed next to raw-action imitation/BC diagnostics. If not, inspect teacher/reference action semantics and terminal-hold/reference trajectory behavior before any PPO scale-up.
+
+## 2026-06-11T17:40:55-07:00 - pure-reference teacher-force sanity diagnostic result
+
+Goal:
+- Close out `1027919`, the pure-reference teacher-force eval with alpha `1.0` and phase end `1.0`, and determine whether the teacher/reference action path can produce stable grasp/lift/hold when the learned policy action is fully overridden.
+
+Command / Job:
+- job_id: `1027919`
+- status: completed `0:0` in `00:01:28`
+- run_name: `franka_cube_traj_tracking_teacherforce_eval_a100_phase100_520_20260611_172848`
+- remote_run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_traj_tracking_teacherforce_eval_a100_phase100_520_20260611_172848`
+- local_run_dir: `cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a100_phase100_520_20260611_172848`
+- local_artifact_dir: `cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a100_phase100_520_20260611_172848_artifacts`
+- logs: `cluster_results/l401/slurm_logs/eval_franka_cube_1027919.out`
+
+Result:
+- steps/video: 520/520 rollout steps; MP4 metadata `1280x720`, `520` frames, `8.666667 s`.
+- safety: target unsafe max `0`, target clearance min `0.065114 m`; train/eval consistency `passed` with no real mismatches.
+- teacher override: teacher alpha mean/final/active `1.0/1.0/1.0`; configured alpha start/end/phase_end `1.0/1.0/1.0`; applied/reference L2 mean `0.0140`.
+- success/lift: success mean/final/max `0.20625/0.75/0.75`; success ever `3/4`; first success step `378`; last success step `520`; suppressed success-done `3/4`; actual done count `0`.
+- behavior metrics: cube lift max `0.144406 m`; reward mean/final `13.6888/29.1143`; final EE-cube `0.08613 m`; final finger-center-cube `0.12805 m`; final gripper width `0.04758 m`.
+- action metrics: raw-policy/reference L2 mean/final `0.7224/0.3561`; raw policy close/up mean `0.0833/0.0665`; applied close/up mean `0.2218/0.2253`; reference close/up mean `0.2226/0.2234`.
+- reference caveat: compact reference remains `curobo_validated=false`, source tag `graspgenx_curobo_60mm_export_pending_exact_validation`.
+
+Visual / artifact note:
+- The captured video/contact sheet appears to show env 0, which is likely the single non-successful environment in this 4-env rollout; the aggregate trace/report show 3/4 envs successful through the final step. This should be called out when sharing the video so it is not misread as contradicting the scalar result.
+
+Artifacts:
+- report: `cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a100_phase100_520_20260611_172848_artifacts/report.md`
+- contact sheet: `cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a100_phase100_520_20260611_172848_artifacts/video_contact_sheet.png`
+- trace plot: `cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a100_phase100_520_20260611_172848_artifacts/trajectory_trace_plot.png`
+- metrics: `cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a100_phase100_520_20260611_172848/metrics.json`
+- trace CSV/JSONL: `cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a100_phase100_520_20260611_172848/trace.csv`, `cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a100_phase100_520_20260611_172848/trace.jsonl`
+- summary JSON/CSV: `cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a100_phase100_520_20260611_172848_artifacts/summary.json`, `cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a100_phase100_520_20260611_172848_artifacts/summary.csv`
+- success diagnostics: `cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a100_phase100_520_20260611_172848_artifacts/success_diagnostics.json`, `cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a100_phase100_520_20260611_172848_artifacts/success_diagnostics.csv`
+- consistency JSON: `cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a100_phase100_520_20260611_172848_artifacts/train_eval_consistency.json`
+- full video: `cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a100_phase100_520_20260611_172848/videos/tf-eval-a100-phase100-520-step-0.mp4`
+
+viz_urls:
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a100_phase100_520_20260611_172848_artifacts/report.md`
+- contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a100_phase100_520_20260611_172848_artifacts/video_contact_sheet.png`
+- trace plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a100_phase100_520_20260611_172848_artifacts/trajectory_trace_plot.png`
+- video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a100_phase100_520_20260611_172848/videos/tf-eval-a100-phase100-520-step-0.mp4`
+
+Interpretation:
+- Positive pure-reference sanity result. With alpha `1.0` held active through phase `1.0`, the teacher/reference action path can produce sustained lift/success in `3/4` envs while keeping target safety clean and without actual resets.
+- This separates the current blocker from basic reference transform/controller impossibility. The main blocker is learned raw-action imitation/handoff: alpha `0.75` phase `1.0` (`1027907`) lowered action error but still failed lift, while full override succeeds.
+- Do not scale PPO yet. Next bounded work should focus on why the policy does not reproduce the reference close/up/gripper timing strongly enough: inspect action normalization and per-dimension semantics, then run a small BC/action-imitation or stronger teacher-forced imitation diagnostic with frequent artifacts. If visual clarity is required before that, add or rerun a camera/env selection artifact so the recorded video follows a successful env rather than env 0.
