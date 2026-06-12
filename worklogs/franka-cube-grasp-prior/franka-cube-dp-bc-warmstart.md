@@ -13443,3 +13443,46 @@ Next:
   (`PHASE_CLOSE_SUPPORT_DISTANCE_THRESHOLD=0.10`) so close is not enabled just
   because a translated align row is near close-hold support under a loose
   normalized threshold.
+
+## 2026-06-12T10:58:00-07:00 - gripper timing ablations and phase guard
+
+Version Control:
+- provider-fix commit: `adab55c54ab2ad1f4d610d711c41a353aa3c1e6f`
+- pushed to `origin/codex/franka-cube-diffusion-policy-bc`
+- deployed to l401 worktree via full branch bundle because direct GitHub fetch
+  from l401 still fails with SSH auth.
+
+Closed-loop observations:
+- job `1028528`, translated checkpoint with all-row contact gate, close
+  threshold `0.10`, continuous mean gripper, was canceled after step `120`
+  because it still partially closed during approach and had zero success/lift.
+- job `1028530`, same but binary gripper threshold `-0.5`, was canceled after
+  step `160`: it stayed fully open through step `120`, then only closed late
+  around step `140`, still with zero success/lift.
+
+Analysis:
+- The translated pose policy reaches much better local support than the
+  original one-demo checkpoint, but the gripper head is not robust enough in
+  closed loop. Threshold `0.5` closes too early, threshold `-0.5` closes too
+  late, and continuous gripper partially closes during approach. This is a
+  train/eval mismatch for a binary gripper schedule, not a 6D pose-normalizer
+  issue: offline coherence passed and pose support distances are small early in
+  rollout.
+
+Change:
+- Added `--phase_gripper_guard current_phase_hard` to
+  `dextrah_lab/rl_games/eval_franka_cube_dp_policy.py` and wired
+  `PHASE_GRIPPER_GUARD` through
+  `cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`.
+- The guard leaves the learned DP pose action unchanged, but forces gripper
+  `+1` in runtime `align_open` and `-1` in runtime `close_hold`/`lift` based
+  on the same phase/progress features already given to the policy.
+
+Validation:
+- `py_compile` passed for `eval_franka_cube_dp_policy.py` and `ppo_bridge.py`.
+- `bash -n` passed for `cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`.
+
+Next:
+- Commit/deploy the phase guard.
+- Relaunch translated-checkpoint eval with all-row contact gate, close
+  threshold `0.10`, and `PHASE_GRIPPER_GUARD=current_phase_hard`.

@@ -165,6 +165,17 @@ parser.add_argument(
     help="Contact-gated mode: gripper width in meters below which lift phase is allowed.",
 )
 parser.add_argument(
+    "--phase_gripper_guard",
+    choices=["disabled", "current_phase_hard"],
+    default="disabled",
+    help=(
+        "Eval-time gripper guard for phase/progress-conditioned checkpoints. "
+        "'current_phase_hard' leaves pose dims unchanged but forces gripper "
+        "+1 in align_open and -1 in close_hold/lift according to runtime "
+        "phase features."
+    ),
+)
+parser.add_argument(
     "--action_correction_mode",
     choices=[
         "disabled",
@@ -901,6 +912,20 @@ def _apply_eval_action_correction(
     return corrected, records
 
 
+def _apply_phase_gripper_guard(action_np: np.ndarray, lowdim_obs: np.ndarray, *, mode: str) -> np.ndarray:
+    mode = str(mode)
+    guarded = np.asarray(action_np, dtype=np.float32).copy()
+    if mode == "disabled":
+        return guarded
+    if mode != "current_phase_hard":
+        raise ValueError(f"Unsupported phase_gripper_guard {mode!r}")
+    if lowdim_obs.ndim != 2 or lowdim_obs.shape[1] < FRANKA_CUBE_PHASE_PROGRESS_OBS_DIM:
+        raise RuntimeError(f"phase_gripper_guard={mode} requires 25D phase/progress observations")
+    phase_ids = np.argmax(lowdim_obs[:, FRANKA_CUBE_LOWDIM_OBS_DIM:FRANKA_CUBE_PHASE_PROGRESS_OBS_DIM - 1], axis=1)
+    guarded[:, 6] = np.where(phase_ids == 0, 1.0, -1.0).astype(np.float32)
+    return guarded
+
+
 def _phase_min_distances(support: dict[str, Any], lowdim_obs: np.ndarray) -> dict[str, float]:
     obs = support["obs"]
     phase_ids = support["phase_ids"]
@@ -1215,6 +1240,7 @@ def main() -> None:
         phase_close_support_distance_threshold=float(args_cli.phase_close_support_distance_threshold),
         phase_lift_support_distance_threshold=float(args_cli.phase_lift_support_distance_threshold),
         phase_lift_gripper_width_threshold=float(args_cli.phase_lift_gripper_width_threshold),
+        phase_gripper_guard=str(args_cli.phase_gripper_guard),
         action_correction_mode=str(args_cli.action_correction_mode),
         action_correction_blend=float(args_cli.action_correction_blend),
         demo_reset_dataset=str(demo_reset_dataset_path) if demo_reset_dataset_path is not None else None,
@@ -1410,10 +1436,14 @@ def main() -> None:
                     {"mode": str(args_cli.action_correction_mode), "applied": False, "runtime_phase": "unknown"}
                     for _ in range(task_env.num_envs)
                 ]
-                if args_cli.action_correction_mode != "disabled":
+                lowdim_before = None
+                if args_cli.action_correction_mode != "disabled" or args_cli.phase_gripper_guard != "disabled":
                     lowdim_before = extract_lowdim_obs_from_ppo_obs(policy_obs).detach().float().cpu().numpy()
                     if phase_progress_provider is not None:
                         lowdim_before = phase_progress_provider.augment_lowdim(lowdim_before, step=step)
+                if args_cli.action_correction_mode != "disabled":
+                    if lowdim_before is None:
+                        raise RuntimeError("action correction requires lowdim observations")
                     action_np, action_correction_records = _apply_eval_action_correction(
                         action_np,
                         lowdim_obs=lowdim_before,
@@ -1423,6 +1453,14 @@ def main() -> None:
                         step=step,
                         dataset_episode=int(args_cli.phase_progress_episode),
                         dataset_start_step=int(args_cli.phase_progress_start_step),
+                    )
+                if args_cli.phase_gripper_guard != "disabled":
+                    if lowdim_before is None:
+                        raise RuntimeError("phase gripper guard requires lowdim observations")
+                    action_np = _apply_phase_gripper_guard(
+                        action_np,
+                        lowdim_before,
+                        mode=str(args_cli.phase_gripper_guard),
                     )
                 clip = float(args_cli.clip_actions)
                 if math.isfinite(clip) and clip > 0.0:
@@ -1503,6 +1541,7 @@ def main() -> None:
         "gripper_sample_aggregation": str(args_cli.gripper_sample_aggregation),
         "gripper_close_threshold": float(args_cli.gripper_close_threshold),
         "gripper_vote_threshold": float(args_cli.gripper_vote_threshold),
+        "phase_gripper_guard": str(args_cli.phase_gripper_guard),
         "no_learning": True,
         "num_envs": task_num_envs,
         "num_steps_requested": int(args_cli.num_steps),
