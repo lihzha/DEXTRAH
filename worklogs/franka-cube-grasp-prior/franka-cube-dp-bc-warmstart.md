@@ -7369,6 +7369,80 @@ Acceptance:
   bounded issue is normal-reset generalization/support expansion, not hold
   retention under matched reset.
 
+## 2026-06-11T19:43:00-07:00 - no-reset hold video confirmation launch
+
+Version Control:
+- implementation_commit:
+  `a1340ba3aa4453689aa0f8a7251357d59c27e435`
+- runtime code change from `9a10582d857998055e2d0e0f9c571758c6d1cd9d`
+  is only worklog/result recording; eval code is unchanged.
+- remote_commit/status:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+  at `a1340ba3aa4453689aa0f8a7251357d59c27e435`, detached clean.
+
+Command / Job:
+- job_id: `1028059`
+- run_name:
+  `franka_cube_dp_eval_weightedgrip8_inf100_video260_noreset_chunk1_sourcejoint_ep1s0_20260611_194300`
+- command:
+  `sbatch --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart,RUN_NAME=franka_cube_dp_eval_weightedgrip8_inf100_video260_noreset_chunk1_sourcejoint_ep1s0_20260611_194300,NUM_ENVS=1,NUM_STEPS=260,NUM_INFERENCE_STEPS=100,ACTION_CHUNK_STEPS=1,CLIP_ACTIONS=1.0,SUCCESS_WINDOW=80,SUCCESS_TIMEOUT_OVERRIDE=999.0,CAPTURE_VIDEO=True,VIDEO_LENGTH=260,VIDEO_NAME_PREFIX=franka-cube-dp-weighted-sourcejoint-noreset,PRINT_INTERVAL=20,SEED=42,DEBUG_POLICY_TRACE_MAX_CALLS=260,DEBUG_POLICY_TRACE_ENV_INDEX=0,CHECKPOINT=/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/contact_relabel_official_dp_debug_pretrain100_weightedgrip8_20260611_1843/latest.ckpt,SUPPORT_DATASET=/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/contact_relabel_set_ep8_16_24_30_s260_high30_defaultfix_20260611_175347/contact_relabel_set_accepted.npz,DEMO_RESET_DATASET=/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/contact_relabel_set_ep8_16_24_30_s260_high30_defaultfix_20260611_175347/contact_relabel_set_accepted.npz,DEMO_RESET_EPISODE=1,DEMO_RESET_STEP=0,DEMO_RESET_SOURCE_TRAJECTORY_JSON=/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed16/trajectory.json,DEMO_RESET_SOURCE_FRAME=260,OFFICIAL_DP_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/external/real-stanford-diffusion_policy cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_weightedgrip8_inf100_video260_noreset_chunk1_sourcejoint_ep1s0_20260611_194300`
+- logs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_dp_policy_1028059.out`
+
+Acceptance:
+- Fetch video, metrics, traces, stdout. Generate support/action plots,
+  hold-retention audit, contact sheet, and report. Open video/contact
+  sheet/report with `viz-open`.
+
+Result:
+- status: completed and inspected; video confirms the matched source-joint
+  no-reset hold pass.
+- Slurm: `COMPLETED 0:0`, elapsed `00:03:13`.
+- local artifact dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_video260_noreset_chunk1_sourcejoint_ep1s0_20260611_194300`
+- fetched/generated artifacts:
+  `metrics.json`, `policy_trace.json`, `support_trace.csv/json`,
+  `eval_config.json`, stdout log, mp4, `video_ffprobe.json`,
+  `closed_loop_contact_sheet.jpg`, `closed_loop_support_report.md`,
+  `closed_loop_support_trace.png`, `closed_loop_action_components.png`,
+  `closed_loop_support_summary.json`, `closed_loop_support_key_rows.csv`,
+  `hold_retention_audit.png/csv/json`.
+- viewer URLs:
+  - video:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_video260_noreset_chunk1_sourcejoint_ep1s0_20260611_194300/videos/franka-cube-dp-weighted-sourcejoint-noreset-step-0.mp4`
+  - contact sheet:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_video260_noreset_chunk1_sourcejoint_ep1s0_20260611_194300/closed_loop_contact_sheet.jpg`
+  - report:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_video260_noreset_chunk1_sourcejoint_ep1s0_20260611_194300/closed_loop_support_report.md`
+  - hold retention plot:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_video260_noreset_chunk1_sourcejoint_ep1s0_20260611_194300/hold_retention_audit.png`
+- video metadata:
+  `1280x720`, `259` frames, `4.3167 s`, `60 fps`.
+- metrics:
+  `steps_completed=260`, `done_count=0`, `final_success_rate=1.0`,
+  `window_success_rate=1.0`, `first_success_step=172`,
+  `last_success_step=260`, `success_steps=89`, final/max lift
+  `0.2457067 m`, final EE-to-cube `0.00953 m`, final
+  finger-center-to-cube `0.04029 m`, final gripper width `0.04700 m`.
+- visual read:
+  Contact sheet starts from first usable rendered frame at step `2`; the cube
+  is grasped near the fingers, crosses success at step `172`, and remains
+  visually retained through final step `260` while lift increases from
+  `0.121 m` to `0.246 m`.
+
+Verdict:
+- The hold-stability/contact-retention blocker for exact source-joint matched
+  reset is cleared under the eval-only no-reset condition.
+- This supersedes the earlier apparent post-success drop: that video was
+  reset-contaminated by the normal `success_timeout=0.20` termination.
+- Caveat remains explicit: this is not normal-reset generalization and not a
+  broad BC/RL warm-start readiness claim. It depends on exact source-joint
+  matched reset and a success-timeout override. The next bounded work should
+  target normal-reset support/conditioning or a staged reset-to-contact
+  relabel/eval path, not more hold debugging under the matched reset.
+
 ## 2026-06-11T19:29:22-07:00 - hold-stability/contact-retention plan
 
 Goal:
@@ -7447,3 +7521,10 @@ Acceptance:
 
 Result:
 - status: running.
+
+Status update:
+- job `1028052` completed and was fetched/inspected. Detailed metrics and
+  viewer links are recorded in the no-reset hold pass result above. The
+  follow-up video confirmation job `1028059` also completed and is recorded
+  above with mp4/contact-sheet/report links. No active C jobs remain from this
+  diagnostic loop.
