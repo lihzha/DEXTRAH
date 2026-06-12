@@ -2936,3 +2936,47 @@ Decision:
 
 Next:
 - Bounded diagnostic only: compare train/eval normalized action distributions, action scaling/sign conventions, and policy observation/state at reset; optionally run a diagnostic-only action prior/curriculum experiment separately from the apple-to-apple task. Do not change the main task reward/action/termination semantics silently.
+
+## 2026-06-12T01:58:00Z - policy state/action semantics diagnostic plan
+
+Goal:
+- Diagnose why the valid robust pass7 reset leads the learned ep45 policy to command open/up/away behavior, without launching PPO/A100 or changing the apple-to-apple task semantics.
+
+Hypothesis:
+- The reset geometry is no longer the main blocker. The failure is likely in one of: policy action distribution learned by ep45, deterministic-vs-stochastic player behavior, action sign/scale interpretation, observation normalization/RMS mismatch around the reset state, or reset observations lying far outside the checkpoint's training observation RMS.
+
+Planned change:
+- Add a diagnostic-only script under `dextrah_lab/rl_games/` that:
+  - creates `Dextrah-Franka-Cube-Grasp` with robust pass7 prior reset enabled and the same cube XY randomization,
+  - collects raw and RL-Games-processed reset observations across a small env count,
+  - loads ep10/ep45 checkpoints and records deterministic plus repeated stochastic policy actions at reset,
+  - captures raw actor/model output dictionaries where RL-Games exposes them (`actions`, `mus`, `sigmas`, `values`, etc.),
+  - inspects checkpoint keys for observation RMS / running mean-std tensors and computes reset observation z-score summaries where possible,
+  - records env action scale, clip settings, action-space bounds, and gripper action sign/width relation,
+  - parses the pass7 training JSONL sidecar for training-time action/distance trends (`cube_action_z`, `cube_gripper_action`, `cube_action_up/down`, distances, width),
+  - writes `metrics.json`, CSVs, histograms/plots, and `REPORT.md`.
+- Add a minimal L401 wrapper for this diagnostic. Keep it one small job, no rendering unless later needed.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `356d86d66f2abd2909df34fe28ec9bf8e5548ff7`
+- changed_files_planned:
+  - `dextrah_lab/rl_games/audit_franka_cube_policy_state.py`
+  - `cluster/sbatch_audit_franka_cube_policy_state_1gpu.sh`
+  - `worklogs/franka-cube-grasp-prior/franka-cube-ggx-pregrasp-reset.md`
+
+Validation plan:
+- Local cheap checks: `python3 -m py_compile dextrah_lab/rl_games/audit_franka_cube_policy_state.py`, `bash -n cluster/sbatch_audit_franka_cube_policy_state_1gpu.sh`.
+- Deploy exact commit to the Worker A L401 worktree and run one bounded 1-GPU diagnostic with:
+  - `NUM_ENVS=64`, `NUM_RESETS=3`, pass7 robust library,
+  - checkpoints ep10 and ep45 from `franka_cube_ggx_robust_pass7_smoke45_20260612_0056`,
+  - training JSONL `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_robust_pass7_smoke45_20260612_0056/metrics/direct_info_rank_0.jsonl`.
+- Fetch results, inspect report/plots/CSVs, open with `viz-open`, and record a concrete verdict or negative result. No PPO/A100.
+
+Expected artifacts:
+- `metrics.json`, `REPORT.md`, `checkpoint_state_summary.json`, `reset_observation_dim_summary.csv`, `policy_action_dim_summary.csv`, `actor_output_samples.csv`, `training_action_epoch_summary.csv`, `action_histograms.png`, `observation_zscore_histograms.png`, `training_action_trends.png`.
+
+Next:
+- Implement the diagnostic-only script/wrapper, commit/push/deploy, run the bounded L401 job, and inspect artifacts before deciding the next bounded experiment.
