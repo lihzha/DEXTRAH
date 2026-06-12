@@ -5659,6 +5659,83 @@ Next:
 Active Jobs:
 - none after canceling `1028133`.
 
+## 2026-06-11T22:03:00-07:00 - stage/alpha-conditioned assisted-manifold BC relaunch
+
+Goal:
+- Relaunch the same supervised-only alpha0.5/0.75/1.0 assisted-manifold residual BC after fixing Slurm-safe list argument decoding.
+
+Version Control:
+- agent_id: `franka-cube-traj-tracking`
+- local_commit: `9a3d7387565f7f3ae10de2f280cb88268effac0a`
+- branch: `codex/franka-cube-trajectory-tracking`
+- push/pull: pushed to origin; deployed to l401 with HTTPS fetch because SSH GitHub auth fails on l401.
+- remote_commit/status: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking` detached at `9a3d7387565f7f3ae10de2f280cb88268effac0a`, clean.
+
+Command / Job:
+- job_id: `1028136`
+- job_name: `bc_stagealpha2`
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:45:00 --job-name=bc_stagealpha2 --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_bc_stagealpha_tm025_a050_a075_a100_fix_20260611_220300,CHECKPOINT=/results/bc/franka_cube_traj_tracking_bc_dagger_tm025_all_20260611_185900/nn/bc_reference_action_imitation.pth,NUM_ENVS=8,COLLECTION_STEPS=520,TRAIN_STEPS=600,BATCH_SIZE=1024,LEARNING_RATE=0.0001,VALIDATION_FRACTION=0.2,LOSS_DIMS=all,EVAL_INTERVAL=25,SEED=73,COLLECTION_ACTION_SOURCE=teacher_mix,COLLECTION_TEACHER_ALPHAS=0.50__COMMA__0.75__COMMA__1.00,SOURCE_BATCH_MODE=balanced,SOURCE_LOSS_WEIGHTS=current_teacher_mix_alpha0p50=1__COMMA__current_teacher_mix_alpha0p75=1__COMMA__current_teacher_mix_alpha1p00=1,BEST_SCORE_WEIGHTS=val_source_current_teacher_mix_alpha0p50_l2=1__COMMA__val_source_current_teacher_mix_alpha0p75_l2=1__COMMA__val_source_current_teacher_mix_alpha1p00_l2=1,RESIDUAL_ADAPTER_ENABLED=True,RESIDUAL_HIDDEN_DIM=256,RESIDUAL_MAX_ACTION=1.0,RESIDUAL_GATE_ENABLED=False,RESIDUAL_CONTEXT_FEATURES=phase__COMMA__teacher_alpha,RESIDUAL_L2_WEIGHT=0.0005,SOURCE_PROBE_STEPS=200,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/bc/franka_cube_traj_tracking_bc_stagealpha_tm025_a050_a075_a100_fix_20260611_220300`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bc_franka_cube_1028136.out`
+- expected_artifacts: `bc_metrics.json`, `bc_loss_curve.csv`, `bc_loss_plot.png`, `bc_source_metric_plot.png`, oracle residual CSV/plots, `reference_action_dataset.pt`, `nn/bc_reference_action_imitation.pth`, `report.md`
+
+Acceptance / Gate:
+- supervised report/metrics/plots only first.
+- No selector/video/PPO/RL unless the supervised source metrics pass after artifact inspection.
+- Compact reference caveat remains `curobo_validated=false`.
+
+Active Jobs:
+- `1028136` pending/running.
+
+## 2026-06-11T22:05:00-07:00 - stage/alpha-conditioned assisted-manifold BC supervised result
+
+Job:
+- job_id: `1028136`
+- scheduler state: `COMPLETED 0:0`, elapsed `00:01:26`, node `pool0-00030`.
+- remote run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/bc/franka_cube_traj_tracking_bc_stagealpha_tm025_a050_a075_a100_fix_20260611_220300`
+- remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bc_franka_cube_1028136.out`
+- local fetched run_dir: `cluster_results/l401/franka_cube_traj_tracking_bc_stagealpha_tm025_a050_a075_a100_fix_20260611_220300`
+- local fetched log: `cluster_results/l401/slurm_logs/bc_franka_cube_1028136.out`
+
+Artifacts:
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_stagealpha_tm025_a050_a075_a100_fix_20260611_220300/report.md`
+- source metric plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_stagealpha_tm025_a050_a075_a100_fix_20260611_220300/bc_source_metric_plot.png`
+- aggregate loss plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_stagealpha_tm025_a050_a075_a100_fix_20260611_220300/bc_loss_plot.png`
+- oracle residual plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_stagealpha_tm025_a050_a075_a100_fix_20260611_220300/oracle_residual_plot.png`
+- metrics: `cluster_results/l401/franka_cube_traj_tracking_bc_stagealpha_tm025_a050_a075_a100_fix_20260611_220300/bc_metrics.json`
+- checkpoint: `/results/bc/franka_cube_traj_tracking_bc_stagealpha_tm025_a050_a075_a100_fix_20260611_220300/nn/bc_reference_action_imitation.pth`
+- dataset: `/results/bc/franka_cube_traj_tracking_bc_stagealpha_tm025_a050_a075_a100_fix_20260611_220300/reference_action_dataset.pt`
+
+Configuration Evidence:
+- task registered with observation/action spaces `(72,) / (7,)`; baseline observation size is preserved.
+- collection teacher alphas: `[0.5, 0.75, 1.0]`; no alpha0.10 data in this run.
+- residual context features: `['phase', 'teacher_alpha']`.
+- residual adapter: enabled, frozen tm0.25 base, hidden dim `256`, max action `1.0`, no gate, residual L2 weight `0.0005`.
+- selected step/score: `600 / 0.08038045465946198`.
+- source separability probe val accuracy `0.6530` vs baseline `0.3353`, so phase/obs context contains some source signal.
+- compact trajectory reference remains `curobo_validated=false`.
+- log scan: completed `BC Diagnostic Done`, no traceback/Hydra/runtime error.
+
+Supervised Metrics:
+- global val L2: frozen base `0.147099` -> selected `0.080459`.
+- alpha0.50 val L2: frozen base `0.148781` -> selected `0.092877`; close/up/gripper abs `0.026820/0.026473/0.033492`.
+- alpha0.75 val L2: frozen base `0.143247` -> selected `0.081952`; close/up/gripper abs `0.021229/0.018453/0.035998`.
+- alpha1.00 val L2: frozen base `0.149302` -> selected `0.066312`; close/up/gripper abs `0.019375/0.015874/0.024634`.
+- oracle residual clipping rate was `0.0` for all three sources at residual max `1.0`.
+
+Verdict:
+- supervised gate passes for a bounded selector eval: all three assisted-manifold sources improve materially over frozen tm0.25 base action error, context metadata is present, and the reference caveat remains explicit.
+- This is not a policy-only success claim. It only authorizes metrics-only selector evals for alpha `0.0/0.25/0.5/0.75/1.0`; videos/contact sheets remain gated on selector metrics.
+- Old `actionscale-rewinf-diag-video480-step-0.mp4` / job `1027753` remains obsolete failed learned-policy evidence.
+
+Next:
+- Commit/push this supervised result worklog.
+- Launch selector evals from `/results/bc/franka_cube_traj_tracking_bc_stagealpha_tm025_a050_a075_a100_fix_20260611_220300/nn/bc_reference_action_imitation.pth` for alphas `0.0`, `0.25`, `0.5`, `0.75`, and `1.0`, no video initially.
+- Fetch metrics/traces/reports before deciding whether targeted videos are justified.
+
+Active Jobs:
+- none after `1028136`.
+
 ## 2026-06-11T21:12:52-07:00 - residual oracle/capacity diagnostic plan
 
 Goal:
