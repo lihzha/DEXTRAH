@@ -7002,7 +7002,84 @@ Acceptance:
   blocker and move to gripper/lift action audit or relabel support augmentation.
 
 Result:
-- status: planned, not launched yet.
+- status: launched as Slurm job `1027995`; monitoring.
+
+## 2026-06-11T19:13:34-07:00 - matched source-joint trace240 result
+
+Goal:
+- Inspect the longer-horizon matched-reset trace and decide whether the
+  current weighted checkpoint can cross the lift success threshold without
+  any training or relabel changes.
+
+Version Control:
+- implementation_commit: `10f7a0ac9dc0c7bf52debf5b993aec2af5ae9a2b`
+- remote_commit/status:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+  at `10f7a0ac9dc0c7bf52debf5b993aec2af5ae9a2b`, detached clean.
+
+Command / Job:
+- job_id: `1027995`
+- run_name:
+  `franka_cube_dp_eval_weightedgrip8_inf100_trace240_chunk1_sourcejoint_ep1s0_20260611_190846`
+- remote run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_weightedgrip8_inf100_trace240_chunk1_sourcejoint_ep1s0_20260611_190846`
+- local artifact dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_trace240_chunk1_sourcejoint_ep1s0_20260611_190846`
+- stdout:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_trace240_chunk1_sourcejoint_ep1s0_20260611_190846/logs/eval_franka_cube_dp_policy_1027995.out`
+
+Viewer URLs:
+- report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_trace240_chunk1_sourcejoint_ep1s0_20260611_190846/closed_loop_support_report.md`
+- support plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_trace240_chunk1_sourcejoint_ep1s0_20260611_190846/closed_loop_support_trace.png`
+- action plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_trace240_chunk1_sourcejoint_ep1s0_20260611_190846/closed_loop_action_components.png`
+- lift threshold audit:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_trace240_chunk1_sourcejoint_ep1s0_20260611_190846/lift_threshold_audit.png`
+- lift threshold CSV:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_trace240_chunk1_sourcejoint_ep1s0_20260611_190846/lift_threshold_audit.csv`
+
+Result:
+- status: transient matched-reset success; not durable task success; no
+  BC/RL scale-up.
+- Slurm: `COMPLETED 0:0`.
+- reset gate: exact. `source_joint_reset_available=true`,
+  `joint_linf_diff_after_write_env0=0`, `lowdim_l2_diff_env0=0`,
+  `cube_minus_ee_l2_diff_env0=0`.
+- official DP checkpoint:
+  `/results/dp_bc/contact_relabel_official_dp_debug_pretrain100_weightedgrip8_20260611_1843/latest.ckpt`,
+  official DP commit `5ba07ac6661db573af695b419a7947ecb704690f`.
+- steps/traces: `240`, `policy_trace_records=240`,
+  `support_trace_records=240`, history gaps `[0,1]`.
+- lift/success:
+  first success step `172`, last success step `183`, max lift
+  `0.13634 m` at step `183`, `success_steps=12`,
+  `window_success_rate=0.15`.
+- hold/loss:
+  by step `184`, metrics show cube lift reset to `0`, gripper width returns
+  open around `0.08 m`, EE-to-cube jumps to `0.184 m`, and reward later
+  returns to reset-like values. Final success/lift are `0/0`.
+- final metrics after the drop:
+  final gripper width `0.01185 m`, final EE-to-cube `0.1615 m`,
+  final finger-center-to-cube `0.1647 m`, final reward `1.677`.
+
+Analysis:
+- Horizon alone is enough for the current weighted checkpoint to cross the
+  environment success predicate under exact source-joint reset. This resolves
+  the earlier “cannot reach 0.12 m” question.
+- The behavior is not durable: it holds success only for about 12 env steps
+  before the cube is lost/reset. This is a hold-stability/grasp robustness
+  blocker, not a broad reset-drift or action-schema blocker.
+- Because the trace crosses success and then drops immediately, one short
+  matched-reset video is warranted to inspect the hold/loss event. The video
+  should stop near `190` steps to capture the success interval and immediate
+  loss without producing unnecessary video spam.
+
+Next:
+- Launch one bounded matched-reset `NUM_STEPS=190` video/contact-sheet run with
+  the same checkpoint/reset/settings. Acceptance is visual confirmation of the
+  transient lift and drop/reset timing. Do not train or scale RL.
 
 ## 2026-06-11T18:58:15-07:00 - matched source-joint trace160 result
 
