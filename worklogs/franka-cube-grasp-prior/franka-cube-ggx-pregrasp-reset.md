@@ -3773,3 +3773,221 @@ Validation:
 
 Next:
 - Commit/push the patch, deploy the exact commit to the agent-owned L401 worktree, sanitize the `1028066` checkpoint, then run a tiny epoch-start smoke to prove PPO starts at epoch 1 rather than resuming at epoch 45.
+
+## 2026-06-11 20:24 PDT - launch: sanitize passed BC checkpoint
+
+Goal:
+- Convert the passed supervised checkpoint from `1028066` into a policy-initialization artifact with epoch/frame counters reset and no DEXTRAH runtime/env restore state.
+
+Version Control:
+- local commit: `d541a7b2b48718c0f13fdf03837bbf97db6e6eaf`
+- pushed to GitHub branch: `codex/franka-cube-ggx-pregrasp-reset`
+- L401 GitHub fetch issue: remote `git fetch origin` failed with `Permission denied (publickey)`.
+- deployment fallback: pushed the committed Git object/branch to `l401:/lustre/fsw/portfolios/nvr/users/lzha/src/DEXTRAH` and checked out exact commit in the agent-owned worktree.
+- remote worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote commit: `d541a7b2b48718c0f13fdf03837bbf97db6e6eaf`
+- remote validation: `python3 -m py_compile ...` pass; smoke/BC wrapper `bash -n` pass.
+
+Command / Job:
+- input checkpoint: `/results/diagnostics/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002/bc_pass7_action_warmstart.pth`
+- output checkpoint: `/results/diagnostics/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002/bc_pass7_policy_init_epoch0.pth`
+- summary: `/results/diagnostics/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002/bc_pass7_policy_init_epoch0.sanitize_summary.json`
+- job_id: pending
+- log: pending
+
+Acceptance:
+- sanitizer exits `0:0`;
+- summary reports `checkpoint_semantics=policy_initialization`;
+- `epoch` reset from source value to `0`;
+- `dextrah_runtime_state` and `env_state` absent/removed;
+- converted checkpoint exists and is used for the tiny epoch-start smoke.
+
+Result:
+- job_id: `1028077`
+- status: `COMPLETED 0:0`, elapsed `00:00:24`, node `pool0-00006`.
+- output checkpoint exists: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002/bc_pass7_policy_init_epoch0.pth` (`7.2M`).
+- local summary: `cluster_results/l401/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002/bc_pass7_policy_init_epoch0.sanitize_summary.json`.
+- summary confirms `checkpoint_semantics=policy_initialization`.
+- summary reset fields: `epoch: 45`, `frame: 184320`.
+- summary removed fields: `dextrah_runtime_state` with nested env/runtime buffers and top-level `env_state`.
+- `optimizer` remains present (`stripped_optimizer=false`) for RL-Games load compatibility.
+
+Analysis:
+- The converted checkpoint is appropriate for an epoch-start load validation. The remaining risk is whether RL-Games accepts `set_epoch=False` plus the policy-initialization marker as intended inside the training restore path.
+
+## 2026-06-11 20:17 PDT - launch: tiny epoch-start validation
+
+Goal:
+- Prove the sanitized policy-initialization checkpoint starts PPO at epoch 1/2 and does not restore runtime state at epoch 45 before retrying the authorized 64-env smoke.
+
+Command / Job:
+- run_name: `franka_cube_ggx_pass7_bcinit_epochstart2_20260611_201648`
+- checkpoint: `/results/diagnostics/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002/bc_pass7_policy_init_epoch0.pth`
+- config: `Dextrah-Franka-Cube-Grasp`, `NUM_ENVS=16`, `MAX_ITERATIONS=2`, `HORIZON_LENGTH=16`, minibatches `256`, save frequency `1`, same pass7 prior library, cube XY randomization `0.08`, action warm-start disabled.
+- job_id: pending
+- run_dir: pending
+- log: pending
+
+Acceptance:
+- log contains `[DEXTRAH resume] loading policy initialization checkpoint ... without epoch/runtime restore`;
+- log must not contain `[DEXTRAH resume] restored runtime state ... at epoch 45`;
+- training starts at epoch `1/2` or `2/2`, not `46/2`;
+- JSONL has at least two epoch records with finite scalars;
+- reset-prior success/quality remains sane.
+
+Result:
+- job_id: `1028078`
+- status: `COMPLETED 0:0`, elapsed `00:00:48`, node `pool0-00006`.
+- remote run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pass7_bcinit_epochstart2_20260611_201648`
+- local run_dir: `cluster_results/l401/franka_cube_ggx_pass7_bcinit_epochstart2_20260611_201648`
+- remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_smoke_1028078.out`
+- local log: `cluster_logs/l401/slurm_logs/dextrah/franka_cube_smoke_1028078.out`
+- key log evidence: `[DEXTRAH resume] loading policy initialization checkpoint on rank 0 without epoch/runtime restore`.
+- key log evidence: epochs printed `epoch: 1/2 frames: 0` and `epoch: 2/2 frames: 256`.
+- no `[DEXTRAH resume] restored runtime state ... at epoch 45` line.
+- JSONL records: `2`, epochs `[1, 2]`, frames `[0, 256]`, bad scalar count `0`.
+- reset-prior metrics: `cube_grasp_prior_reset_success_rate=[1.0, 1.0]`, `cube_grasp_prior_quality_success_rate=[1.0, 1.0]`.
+- first two action/distance signals: `cube_action_z=[0.2922, 0.4209]`, `cube_gripper_action=[-0.1498, 0.0163]`, `cube_ee_to_cube_dist=[0.0649, 0.0915]`, `cube_finger_center_to_cube_dist=[0.1051, 0.1313]`.
+
+Analysis:
+- The resume-semantics bug is fixed for the sanitized checkpoint path. The max-epochs/no-termination warning and `rew_-inf` checkpoint are acceptable for this 2-epoch validation because the goal was epoch-start behavior only.
+- This unblocks retrying the one authorized 64-env L401 PPO smoke from `/results/diagnostics/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002/bc_pass7_policy_init_epoch0.pth`.
+
+## 2026-06-11 20:19 PDT - launch plan: sanitized BC-init 64-env PPO smoke retry
+
+Goal:
+- Retry the one bounded 64-env L401 PPO smoke from the sanitized policy-initialization checkpoint. This remains a policy-initialization intervention, not apple-to-apple reset-prior RL and not a scale-up gate by itself.
+
+Version Control:
+- implementation_commit: `d541a7b2b48718c0f13fdf03837bbf97db6e6eaf`
+- remote worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote commit: `d541a7b2b48718c0f13fdf03837bbf97db6e6eaf`
+- changed_files since commit: worklog only.
+
+Config diff vs baseline DEXTRAH Franka cube smoke:
+- task remains `Dextrah-Franka-Cube-Grasp`.
+- bounded L401 1-GPU smoke: `NUM_ENVS=64`, `MAX_ITERATIONS=45`, `HORIZON_LENGTH=64`, `SAVE_FREQUENCY=5`, JSONL direct metrics enabled.
+- prior reset enabled with robust pass7 library: `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_robust_pass7_20260612.npz`.
+- cube XY randomization remains `0.08`.
+- action warm-start override remains disabled: `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`.
+- checkpoint initialization intervention: `/results/diagnostics/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002/bc_pass7_policy_init_epoch0.pth`.
+- no reward, observation, action-space, termination, PPO wrapper, or task semantic changes beyond the existing reset-prior branch and BC-initialized policy weights.
+- no A100/full RL.
+
+Command / Job:
+- run_name: `franka_cube_ggx_pass7_bcinit_smoke45_retry_20260611_201902`
+- command: `sbatch --parsable --job-name=ggx_pass7_bcinit_retry --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=d541a7b2b48718c0f13fdf03837bbf97db6e6eaf,TASK=Dextrah-Franka-Cube-Grasp,FULL_EXPERIMENT_NAME=franka_cube_ggx_pass7_bcinit_smoke45_retry_20260611_201902,NUM_ENVS=64,MAX_ITERATIONS=45,HORIZON_LENGTH=64,MINIBATCH_SIZE=4096,CENTRAL_VALUE_MINIBATCH_SIZE=4096,SAVE_FREQUENCY=5,SEED=20260624,CUBE_SPAWN_XY_RANDOMIZATION=0.08,USE_CUDA_GRAPH=False,DEXTRAH_RLGAMES_JSONL_METRICS=True,AUTO_RESUME=False,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_robust_pass7_20260612.npz,GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False,CHECKPOINT=/results/diagnostics/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002/bc_pass7_policy_init_epoch0.pth cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`
+- job_id: `1028083`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pass7_bcinit_smoke45_retry_20260611_201902`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_smoke_1028083.out`
+
+Acceptance / inspection:
+- Log shows policy-initialization checkpoint load and no epoch-45 runtime restore.
+- JSONL metrics have many epoch records, finite values, and no NaN/Inf/bad signatures.
+- reset-prior success/quality remains sane.
+- action override/warm-start metrics stay absent/zero; this smoke tests actor initialization, not environment action overrides.
+- Inspect reward, lift height, success/lifted rates, EE/finger distance, contact/proxy/table-clearance metrics, and action/gripper distributions.
+- Generate a compact report/plots; generate video/contact sheet only if metrics need visual diagnosis or improve enough to justify an eval.
+- Do not launch A100/full RL from this smoke.
+
+## 2026-06-11 20:31 PDT - artifact and diagnostic plan: BC pre-vs-post PPO closed loop
+
+Goal:
+- Finish missing viewer-ready inspection artifacts for valid-but-negative PPO smoke `1028083`.
+- Diagnose whether the supervised BC/action-head policy already fails in closed loop before PPO updates, or whether PPO updates destroy/usefully change a potentially good BC actor.
+
+Hypothesis:
+- If the sanitized BC policy-init checkpoint fails before PPO, the next blocker is observation/action-label mismatch or closed-loop compounding error, not PPO.
+- If the sanitized BC policy-init checkpoint succeeds but the post-PPO ep45 checkpoint fails, the next bounded intervention should preserve the BC actor during PPO, e.g. lower LR/KL/entropy/action regularization, still only as an L401 diagnostic.
+
+Change:
+- No source-code change planned.
+- Locally generated missing `1028083` inspection PNGs from fetched `epoch_metrics.csv` using PIL because local `matplotlib` is unavailable:
+  - `cluster_results/l401/franka_cube_ggx_pass7_bcinit_smoke45_retry_20260611_201902/inspection/training_curves.png`
+  - `cluster_results/l401/franka_cube_ggx_pass7_bcinit_smoke45_retry_20260611_201902/inspection/failure_focus_curves.png`
+  - `cluster_results/l401/franka_cube_ggx_pass7_bcinit_smoke45_retry_20260611_201902/inspection/failure_summary_card.png`
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- worklog: `worklogs/franka-cube-grasp-prior/franka-cube-ggx-pregrasp-reset.md`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- implementation_commit: `d541a7b2b48718c0f13fdf03837bbf97db6e6eaf`
+- remote worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote commit: `d541a7b2b48718c0f13fdf03837bbf97db6e6eaf`
+- changed_files: worklog only; generated artifacts are under `cluster_results/` and are not intended for Git.
+
+Command / Job:
+- pre-PPO eval run_name: `franka_cube_ggx_pass7_bcinit_preppo_eval_20260611_2031`
+- pre-PPO checkpoint: `/results/diagnostics/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002/bc_pass7_policy_init_epoch0.pth`
+- post-PPO eval run_name: `franka_cube_ggx_pass7_bcinit_postppo_ep45_eval_20260611_2031`
+- post-PPO checkpoint: `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pass7_bcinit_smoke45_retry_20260611_201902/nn/last_dextrah_franka_cube_grasp_ep_45_rew_715.3215.pth`
+- common config: `TASK=Dextrah-Franka-Cube-Grasp`, `NUM_ENVS=1`, `NUM_STEPS=220`, `VIDEO_LENGTH=220`, deterministic eval, seed `20260624`, cube XY randomization `0.08`, `GRASP_PRIOR_RESET_ENABLED=True`, robust pass7 library `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_robust_pass7_20260612.npz`, `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`.
+- expected logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_<job>.out`
+- expected run dirs: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/<run_name>`
+
+Acceptance:
+- Each eval completes cleanly and writes `metrics.json`, rollout trace CSV/JSONL if available, and a short video.
+- Fetch artifacts locally under `cluster_results/l401/<run_name>`.
+- Generate contact sheets and a comparison report with `viz-open` URLs.
+- Required metrics: success/lift, lift height, EE/finger distances, action z/gripper components, reset-prior success/quality.
+- Verdict must explicitly classify:
+  - pre-PPO BC succeeds/fails closed loop;
+  - post-PPO ep45 improves/degrades/stays failed;
+  - whether next work should be PPO-preservation or observation/action-label mismatch.
+- No A100/full RL or additional PPO launch from this diagnostic.
+
+Result:
+- status: completed/diagnostic failure, both jobs `COMPLETED 0:0`.
+- pre-PPO eval job_id: `1028086`, elapsed `00:01:16`, node `pool0-00006`.
+- post-PPO eval job_id: `1028087`, elapsed `00:01:15`, node `pool0-00006`.
+- fetched pre-PPO run dir: `cluster_results/l401/franka_cube_ggx_pass7_bcinit_preppo_eval_20260611_2031`.
+- fetched post-PPO run dir: `cluster_results/l401/franka_cube_ggx_pass7_bcinit_postppo_ep45_eval_20260611_2031`.
+- fetched logs:
+  - `cluster_logs/l401/slurm_logs/dextrah/eval_franka_cube_1028086.out`
+  - `cluster_logs/l401/slurm_logs/dextrah/eval_franka_cube_1028087.out`
+- comparison bundle: `cluster_results/l401/franka_cube_ggx_pass7_bcinit_prepost_eval_20260611_2031_inspection`.
+- `1028083` missing inspection artifacts generated:
+  - `cluster_results/l401/franka_cube_ggx_pass7_bcinit_smoke45_retry_20260611_201902/inspection/training_curves.png`
+  - `cluster_results/l401/franka_cube_ggx_pass7_bcinit_smoke45_retry_20260611_201902/inspection/failure_focus_curves.png`
+  - `cluster_results/l401/franka_cube_ggx_pass7_bcinit_smoke45_retry_20260611_201902/inspection/failure_summary_card.png`
+- removed stale `plot_error.txt` after replacing it with PIL-generated PNGs.
+
+Metrics:
+- pre-PPO BC init:
+  - reset-prior success/quality: `1.0/1.0`, warm-start active `0.0`.
+  - success final/max: `0.0/0.0`.
+  - lift height final/max: `0.0/0.0 m`.
+  - EE distance first/final: `0.0514/0.3420 m`.
+  - finger-center distance first/final: `0.0886/0.3548 m`.
+  - z action first/final: `-1.000/1.000`; gripper action first/final: `0.886/0.305`; gripper width first/final: `0.0793/0.0497 m`.
+- post-PPO ep45:
+  - reset-prior success/quality: `1.0/1.0`, warm-start active `0.0`.
+  - success final/max: `0.0/0.0`.
+  - lift height final/max: `0.0/0.0 m`.
+  - EE distance first/final: `0.0539/0.2631 m`.
+  - finger-center distance first/final: `0.0908/0.2985 m`.
+  - z action first/final: `-0.151/1.000`; gripper action first/final: `-0.065/-0.387`; gripper width first/final: `0.0735/0.0170 m`.
+
+Artifact viewer URLs:
+- `1028083` report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_bcinit_smoke45_retry_20260611_201902/inspection/REPORT.md`
+- `1028083` failure plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_bcinit_smoke45_retry_20260611_201902/inspection/failure_focus_curves.png`
+- pre-vs-post report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_bcinit_prepost_eval_20260611_2031_inspection/REPORT.md`
+- trace curves: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_bcinit_prepost_eval_20260611_2031_inspection/prepost_trace_curves.png`
+- pre-PPO contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_bcinit_prepost_eval_20260611_2031_inspection/preppo_contact_sheet.jpg`
+- post-PPO contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_bcinit_prepost_eval_20260611_2031_inspection/postppo_contact_sheet.jpg`
+- side-by-side video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_bcinit_prepost_eval_20260611_2031_inspection/prepost_side_by_side.mp4`
+
+Visual inspection:
+- Pre-PPO contact sheet: first rendered frame starts close to the cube; by step ~40 the gripper is above/offset and by later frames the robot has drifted away with no lift.
+- Post-PPO contact sheet: starts close, then similarly moves away and never grasps/lifts.
+- First frame in both videos is black before the renderer settles, but later sampled frames are valid and informative; video metadata reports 219 frames, 1280x720, 3.65 s.
+
+Analysis:
+- The sanitized BC actor itself is not a stable closed-loop controller from the valid pass7 reset. PPO did not destroy a successful BC policy; both pre-PPO and post-PPO policies fail with no success/lift and increasing EE/finger distances.
+- The post-PPO actor slightly reduces final distance relative to pre-PPO on this fixed eval, but both are far from contact/lift and both saturate z upward over the rollout.
+- A PPO-preservation smoke is not justified from this evidence because there is no good pre-PPO behavior to preserve.
+
+Next:
+- Stay diagnostic-only; no A100/full RL and no additional PPO from this state.
+- Focus next on observation/action-label mismatch and closed-loop BC data semantics: compare labels against normalized observations at reset, phase conditioning, receding-horizon assisted labels, and whether the supervised dataset contains enough state-feedback corrections after the first few steps.
