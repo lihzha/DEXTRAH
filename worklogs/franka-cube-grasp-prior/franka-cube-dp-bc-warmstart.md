@@ -5300,3 +5300,50 @@ Planned Cluster Diagnostic:
   `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/contact_rollouts/$RUN_NAME`
 - local artifact namespace:
   `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_rollouts/$RUN_NAME`
+
+## 2026-06-11T17:26:15-07:00 - contact-aware rollout smoke launched
+
+Goal:
+- Run the first bounded contact-aware controller rollout smoke after the
+  raw-label blocker. This is a generator/relabeler gate, not DP BC/RL
+  training.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- local_commit: `70b7d250f75e3ef27494006de8208c0fee21e195`
+- pushed: yes, branch `codex/franka-cube-diffusion-policy-bc`
+- remote deployment: Git bundle because l401 GitHub fetch failed with
+  `Permission denied (publickey)`.
+- remote_commit:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+  detached at `70b7d250f75e3ef27494006de8208c0fee21e195`
+- changed_files:
+  `dextrah_lab/rl_games/contact_aware_franka_cube_rollout.py`,
+  `cluster/sbatch_contact_aware_franka_cube_rollout_1gpu.sh`, this worklog.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/contact_aware_franka_cube_rollout.py`: passed.
+- `bash -n cluster/sbatch_contact_aware_franka_cube_rollout_1gpu.sh`: passed.
+- `git diff --check`: passed.
+
+Command / Job:
+- command:
+  `CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart RUN_NAME=franka_cube_contact_rollout_ep24s260_center_sweep_20260611_172603 DATASET=/results/dp_bc/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz TRAJECTORY_JSON=/results/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed24/trajectory.json EPISODE=24 EPISODE_STEP=260 VARIANTS=center,center_high15,center_high30 ALIGN_STEPS=80 CLOSE_STEPS=80 LIFT_STEPS=120 LIFT_HEIGHT=0.14 FINGER_GAIN=0.75 CLIP_ACTIONS=1.0 CAPTURE_VIDEO=True VIDEO_LENGTH=280 VIDEO_NAME_PREFIX=franka-cube-contact-rollout PRINT_INTERVAL=40 SEED=42 sbatch --parsable cluster/sbatch_contact_aware_franka_cube_rollout_1gpu.sh`
+- job_id: `1027908`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/contact_rollouts/franka_cube_contact_rollout_ep24s260_center_sweep_20260611_172603`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/contact_aware_franka_cube_rollout_1027908.out`
+
+Expected Artifacts:
+- `contact_rollout_report.md`
+- `contact_rollout_summary.json`
+- `contact_rollout_steps.csv`
+- `contact_rollout_plot.png`
+- `videos/*.mp4`
+
+Acceptance:
+- Inspect report/JSON/CSV/plot/video after fetch. This only unlocks DP BC if
+  a variant visually and metrically shows stable close/lift without relying on
+  action clipping. Otherwise keep training blocked and patch the bounded
+  controller-rollout generator.
