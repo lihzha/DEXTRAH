@@ -2282,3 +2282,62 @@ Version Control:
 
 Next:
 - Commit/push the diagnostic patch, deploy exact commit to l401, run two bounded orientation-tracked follow-ups: baseline orientation with new rotation traces and orientation plus an open exact-hold/longer approach before close.
+
+## 2026-06-12T00:17:21Z - launch orientation/hold follow-up diagnostics
+
+Goal:
+- Determine whether the remaining `env.step` miss is due to rotational tracking/settle time by rerunning the best orientation-tracked variant with rotation traces and with an added open exact-hold before close.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- local_commit: `456c8a09c09e9bb3f86d09980a96b9582243d35c`
+- push/pull: pushed branch to origin; deployed exact commit to l401 agent-owned worktree via Git bundle because l401 GitHub SSH auth is unavailable
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `456c8a09c09e9bb3f86d09980a96b9582243d35c`, detached clean
+- validation: local and l401 `python3 -m py_compile dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py` passed; local and l401 `bash -n cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh` passed
+
+Command / Jobs:
+- common: `TASK=Dextrah-Franka-Cube-Grasp`, `NUM_ENVS=1`, `NUM_RESETS=3`, `SEED=20260624`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`, single-grasp library `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_orig006_single.npz`, `INCLUDE_ORACLE_CLOSE_LIFT_CHECK=1`, `ORACLE_APPROACH_MODE=proportional_exact`, `ORACLE_PROPORTIONAL_GAIN=1.0`, `ORACLE_MAX_POSITION_ACTION=1.0`, `ORACLE_TRACK_ORIENTATION=1`, `ORACLE_CLOSE_WIDTH=0.055`, `ORACLE_LIFT_ACTION_Z=0.15`, `RENDER_ALL_RESETS=1`
+- `1027904`: run `franka_cube_ggx_pregrasp_orienthold_20260611_171721_baseline_trace`, `ORACLE_APPROACH_STEPS=60`, `ORACLE_EXACT_HOLD_STEPS=0`, `ORACLE_CLOSE_STEPS=80`, `ORACLE_LIFT_STEPS=80`, `ORACLE_HOLD_STEPS=20`
+- `1027905`: run `franka_cube_ggx_pregrasp_orienthold_20260611_171721_hold60_approach120`, `ORACLE_APPROACH_STEPS=120`, `ORACLE_EXACT_HOLD_STEPS=60`, `ORACLE_CLOSE_STEPS=100`, `ORACLE_LIFT_STEPS=80`, `ORACLE_HOLD_STEPS=20`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/diagnose_franka_cube_prior_1027904.out`, `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/diagnose_franka_cube_prior_1027905.out`
+- run dirs: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pregrasp_orienthold_20260611_171721_baseline_trace`, `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pregrasp_orienthold_20260611_171721_hold60_approach120`
+
+Result:
+- status: submitted
+
+Next:
+- Monitor jobs `1027904`/`1027905`, fetch logs/results, build an orientation/hold comparison bundle with rotational-error traces and keyframes, then decide whether the diagnostic gate passes or the controller/action path needs more patching.
+
+## 2026-06-12T00:23:30Z - orientation/hold follow-up result
+
+Goal:
+- Close the loop on jobs `1027904`/`1027905` and document the inspected artifact bundle before the next bounded diagnostic.
+
+Result:
+- status: failed robustness gate; no PPO/A100 relaunch
+- jobs `1027904` and `1027905` completed `0:0` on `pool0-00030`; logs and result dirs are fetched locally.
+- local inspection bundle: `cluster_results/l401/franka_cube_ggx_pregrasp_orienthold_20260611_171721_inspection`
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_orienthold_20260611_171721_inspection/REPORT.md`
+- keyframe sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_orienthold_20260611_171721_inspection/orienthold_keyframe_sheet.jpg`
+- trace plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_orienthold_20260611_171721_inspection/orienthold_trace_plot.png`
+- keyframe slideshow: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_orienthold_20260611_171721_inspection/orienthold_keyframes.mp4`
+- local artifact files also include `orienthold_metrics.csv`, `per_reset_metrics.csv`, `rotation_summary.csv`, `summary_metrics.csv`, `SUMMARY.json`, and the earlier `orienthold_contact_sheet.jpg` / `orienthold_traces.png`.
+- active-job check: `squeue -u lzha` on l401 showed no active jobs at this checkpoint.
+
+Metrics:
+
+| Variant | Job | Setting | Oracle Success | Lift Gate | Mean Max Lift | Reset 2 Max Lift | Reset 2 Min Tip | Reset 2 Min Exact EE | Reset 2 Min Rot |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `baseline_trace` | `1027904` | approach `60`, exact hold `0`, close `80`, orientation on | `2/3` | `2/3` | `0.023154m` | `0.0m` | `0.0417m` | `0.0131m` | `0.0372rad` |
+| `hold60_approach120` | `1027905` | approach `120`, exact hold `60`, close `100`, orientation on | `2/3` | `2/3` | `0.022684m` | `0.0m` | `0.0417m` | `0.0131m` | `0.0372rad` |
+
+Analysis:
+- The longer approach and open exact-hold did not change the failing reset. Reset 2 remains stuck with approximately `1.31cm` minimum post-to-exact EE error and `0.0372rad` minimum post-to-exact rotation error.
+- Resets 0/1 reach near-zero position and rotation residuals and lift. Reset 2 is therefore not explained by insufficient approach duration or close-width timing.
+- The normal `env.step` trace for reset 2 shows the controller desired pose is exactly the GraspGenX exact target, but measured motion effectively stalls after the residual appears. This points to a reset/sample-specific action/controller feasibility issue, joint-limit/stall behavior, or the exact contact geometry of this sample under the normal action path.
+
+Next:
+- Keep debugging bounded and diagnostic-only.
+- Target the reset-2-specific failure mode: add/report per-step joint target, joint position, clamp/limit margin, and direct-IK-vs-controller-achieved diagnostics for the failing reset, and compare against passing resets 0/1.
+- If reset 2 is a sample/pose robustness issue rather than a controller bug, try an alternate precomputed grasp/sample or a stricter export/filter criterion; preserve the main RL task defaults and do not launch PPO/A100 until contact/lift is robust across all or near-all resets.
