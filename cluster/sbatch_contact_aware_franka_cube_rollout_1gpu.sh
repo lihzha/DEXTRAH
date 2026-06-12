@@ -31,6 +31,7 @@ SEED="${SEED:-42}"
 DATASET="${DATASET:?Set DATASET to a converted lowdim NPZ visible in the container.}"
 TRAJECTORY_JSON="${TRAJECTORY_JSON:?Set TRAJECTORY_JSON to the raw source trajectory JSON visible in the container.}"
 VARIANTS="${VARIANTS:-center,center_high15,center_high30}"
+VARIANT_COUNT="${VARIANT_COUNT:-0}"
 ALIGN_STEPS="${ALIGN_STEPS:-80}"
 CLOSE_STEPS="${CLOSE_STEPS:-80}"
 LIFT_STEPS="${LIFT_STEPS:-120}"
@@ -101,7 +102,7 @@ mkdir -p \
   "$CACHE_NFS/data" "$CACHE_NFS/documents"
 
 export TASK RUN_NAME EPISODE EPISODE_STEP SEED DATASET_ARG TRAJECTORY_JSON_ARG
-export VARIANTS ALIGN_STEPS CLOSE_STEPS LIFT_STEPS LIFT_HEIGHT FINGER_GAIN CLIP_ACTIONS PRINT_INTERVAL
+export VARIANTS VARIANT_COUNT ALIGN_STEPS CLOSE_STEPS LIFT_STEPS LIFT_HEIGHT FINGER_GAIN CLIP_ACTIONS PRINT_INTERVAL
 export CAPTURE_VIDEO VIDEO_LENGTH VIDEO_NAME_PREFIX RUN_DIR_CONTAINER ENV_NAME
 export CAMERA_EYE_X CAMERA_EYE_Y CAMERA_EYE_Z CAMERA_TARGET_X CAMERA_TARGET_Y CAMERA_TARGET_Z
 
@@ -115,6 +116,18 @@ echo "TASK=$TASK"
 echo "EPISODE=$EPISODE"
 echo "EPISODE_STEP=$EPISODE_STEP"
 echo "VARIANTS=$VARIANTS"
+echo "VARIANT_COUNT=$VARIANT_COUNT"
+if [ "$VARIANT_COUNT" -gt 0 ]; then
+  for ((i=0; i<VARIANT_COUNT; i++)); do
+    name="VARIANT_$i"
+    echo "$name=${!name:-}"
+    if [ -z "${!name:-}" ]; then
+      echo "Missing required $name while VARIANT_COUNT=$VARIANT_COUNT"
+      exit 2
+    fi
+    export "$name"
+  done
+fi
 echo "ALIGN_STEPS=$ALIGN_STEPS CLOSE_STEPS=$CLOSE_STEPS LIFT_STEPS=$LIFT_STEPS"
 echo "LIFT_HEIGHT=$LIFT_HEIGHT FINGER_GAIN=$FINGER_GAIN CLIP_ACTIONS=$CLIP_ACTIONS"
 echo "DATASET_ARG=$DATASET_ARG"
@@ -147,10 +160,22 @@ srun \
     nvidia-smi || true
 
     VARIANT_ARGS=()
-    IFS=, read -ra VARIANT_LIST <<< "$VARIANTS"
-    for variant in "${VARIANT_LIST[@]}"; do
-      VARIANT_ARGS+=(--variant "$variant")
-    done
+    if [ "${VARIANT_COUNT:-0}" -gt 0 ]; then
+      for ((i=0; i<VARIANT_COUNT; i++)); do
+        name="VARIANT_$i"
+        variant="${!name:-}"
+        if [ -z "$variant" ]; then
+          echo "Missing $name while VARIANT_COUNT=$VARIANT_COUNT"
+          exit 2
+        fi
+        VARIANT_ARGS+=(--variant "$variant")
+      done
+    else
+      IFS=, read -ra VARIANT_LIST <<< "$VARIANTS"
+      for variant in "${VARIANT_LIST[@]}"; do
+        VARIANT_ARGS+=(--variant "$variant")
+      done
+    fi
     VIDEO_ARGS=()
     if [ "$CAPTURE_VIDEO" = "True" ]; then
       VIDEO_ARGS=(--video --video_length "$VIDEO_LENGTH" --video_name_prefix "$VIDEO_NAME_PREFIX")

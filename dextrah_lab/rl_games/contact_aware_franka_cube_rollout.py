@@ -130,6 +130,19 @@ def _policy_obs_from_task_env(task_env: Any) -> torch.Tensor:
     return obs_dict["policy"] if isinstance(obs_dict, dict) else obs_dict
 
 
+def _lowdim_numpy_from_policy_obs(policy_obs: Any) -> np.ndarray:
+    lowdim = extract_lowdim_obs_from_ppo_obs(policy_obs)
+    if hasattr(lowdim, "detach"):
+        lowdim_np = lowdim.detach().float().cpu().numpy()
+    else:
+        lowdim_np = np.asarray(lowdim, dtype=np.float32)
+    if lowdim_np.ndim == 1:
+        return lowdim_np.astype(np.float32, copy=False)
+    if lowdim_np.ndim == 2 and lowdim_np.shape[0] >= 1:
+        return lowdim_np[0].astype(np.float32, copy=False)
+    raise ValueError(f"Expected lowdim obs shape (21,) or (N, 21), got {lowdim_np.shape}")
+
+
 def _map_source_joint_to_env(task_env: Any, raw_q: np.ndarray, env_ids: torch.Tensor) -> torch.Tensor:
     num_ids = int(env_ids.numel())
     raw_q_tensor = torch.as_tensor(raw_q, dtype=torch.float32, device=task_env.device).repeat(num_ids, 1)
@@ -386,7 +399,7 @@ def main() -> None:
                     frac = (local_step - int(args_cli.align_steps + args_cli.close_steps) + 1) / max(1, int(args_cli.lift_steps))
                     lift_delta = np.asarray((0.0, 0.0, float(args_cli.lift_height) * min(1.0, frac)), dtype=np.float32)
                 task_env._compute_intermediate_values()
-                live_lowdim = extract_lowdim_obs_from_ppo_obs(policy_obs).detach().float().cpu().numpy()[0]
+                live_lowdim = _lowdim_numpy_from_policy_obs(policy_obs)
                 finger_center = _finger_center(task_env)
                 cube_pos = task_env.cube_pos.detach().float().cpu().numpy()[0]
                 target_finger = initial_cube_pos + offset + lift_delta
@@ -402,7 +415,7 @@ def main() -> None:
                 policy_obs, rewards, terminated, truncated = _policy_obs_from_step(
                     gym_env.step(torch.as_tensor(action[None], dtype=torch.float32, device=task_env.device))
                 )
-                after_lowdim = extract_lowdim_obs_from_ppo_obs(policy_obs).detach().float().cpu().numpy()[0]
+                after_lowdim = _lowdim_numpy_from_policy_obs(policy_obs)
                 task_env._compute_intermediate_values()
                 row = {
                     "variant": variant_name,

@@ -5347,3 +5347,67 @@ Acceptance:
   a variant visually and metrically shows stable close/lift without relying on
   action clipping. Otherwise keep training blocked and patch the bounded
   controller-rollout generator.
+
+Result:
+- status: failed before meaningful rollout.
+- Slurm state: `FAILED 1:0`, elapsed `00:00:49`, node `pool0-00030`.
+- Log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/contact_aware_franka_cube_rollout_1027908.out`
+- Error:
+  `FRANKA_CUBE_CONTACT_ROLLOUT_FAILED AttributeError: 'numpy.ndarray' object has no attribute 'detach'`
+  at `contact_aware_franka_cube_rollout.py:389`.
+- Additional launch issue: the command line included only `--variant center`
+  because Slurm `--export` splits comma-separated values, so
+  `VARIANTS=center,center_high15,center_high30` was truncated.
+
+Analysis:
+- `_reset_to_source()` returns a NumPy 72D policy observation, while
+  `_policy_obs_from_step()` returns a torch tensor. The existing loop assumed
+  the lowdim extractor returned a torch tensor in both cases.
+- This run has no behavior evidence and should not be used for controller
+  rollout conclusions.
+
+Next:
+- Patch lowdim extraction to accept both torch tensors and NumPy arrays.
+- Patch the wrapper to accept robust repeated variants via
+  `VARIANT_COUNT`/`VARIANT_0..N`, then validate, commit, push, deploy exact
+  commit, and relaunch a bounded smoke.
+
+## 2026-06-11T17:28:24-07:00 - contact rollout runtime patch before relaunch
+
+Goal:
+- Fix the runtime type mismatch and Slurm variant export bug from job
+  `1027908` without changing the scope: still only a bounded contact-aware
+  relabel/generator smoke.
+
+Change:
+- Added `_lowdim_numpy_from_policy_obs()` in
+  `dextrah_lab/rl_games/contact_aware_franka_cube_rollout.py` so reset-time
+  NumPy observations and step-time torch observations both produce a 1D
+  lowdim NumPy vector.
+- Updated `cluster/sbatch_contact_aware_franka_cube_rollout_1gpu.sh` to support
+  `VARIANT_COUNT` and `VARIANT_0..N` in addition to the old comma-delimited
+  `VARIANTS` default, avoiding Slurm `--export` comma splitting.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `a392e55e9ccfaa9816edbca52b975a643d7fff5f`
+- implementation_commit: pending
+- changed_files:
+  `dextrah_lab/rl_games/contact_aware_franka_cube_rollout.py`,
+  `cluster/sbatch_contact_aware_franka_cube_rollout_1gpu.sh`, this worklog.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/contact_aware_franka_cube_rollout.py`
+- `bash -n cluster/sbatch_contact_aware_franka_cube_rollout_1gpu.sh`
+- `git diff --check`
+
+Relaunch Plan:
+- Launch the same bounded smoke, now with explicit repeated variants:
+  `VARIANT_COUNT=3`, `VARIANT_0=center`, `VARIANT_1=center_high15`,
+  `VARIANT_2=center_high30`.
+- If runtime passes, fetch report/JSON/CSV/plot/video and inspect whether any
+  variant demonstrates stable close/lift. No DP BC/RL training.
