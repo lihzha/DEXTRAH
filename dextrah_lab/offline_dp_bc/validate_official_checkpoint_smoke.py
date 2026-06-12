@@ -25,6 +25,8 @@ from .ppo_bridge import (
     predict_action_from_ppo_obs,
 )
 
+FRANKA_CUBE_GRIPPER_WIDTH_LOWDIM_INDEX = FRANKA_CUBE_LOWDIM_OBS_DIM - 1
+
 
 def _load_workspace(checkpoint: Path) -> Any:
     try:
@@ -94,11 +96,16 @@ def _select_rows(
     elif row_selector == "first":
         base = np.arange(min(batch_size, n_rows), dtype=np.int64)
     elif row_selector == "gripper_open":
-        base = np.argsort(-obs[:, -1], kind="stable")[:batch_size].astype(np.int64)
+        base = np.argsort(
+            -obs[:, FRANKA_CUBE_GRIPPER_WIDTH_LOWDIM_INDEX], kind="stable"
+        )[:batch_size].astype(np.int64)
     elif row_selector == "gripper_closed":
-        base = np.argsort(obs[:, -1], kind="stable")[:batch_size].astype(np.int64)
+        base = np.argsort(
+            obs[:, FRANKA_CUBE_GRIPPER_WIDTH_LOWDIM_INDEX], kind="stable"
+        )[:batch_size].astype(np.int64)
     elif row_selector == "lift_high":
-        closed = obs[:, -1] <= (float(np.min(obs[:, -1])) + 1.0e-6)
+        gripper_width = obs[:, FRANKA_CUBE_GRIPPER_WIDTH_LOWDIM_INDEX]
+        closed = gripper_width <= (float(np.min(gripper_width)) + 1.0e-6)
         if np.any(closed):
             candidate = np.nonzero(closed)[0]
             order = np.argsort(-obs[candidate, 2], kind="stable")
@@ -282,7 +289,7 @@ def main() -> None:
         "row_index": None if args.row_index is None else int(args.row_index),
         "selected_row_indices": row_indices.astype(int).tolist(),
         "selected_ee_z": lowdim_seq[:, -1, 2].astype(float).tolist(),
-        "selected_gripper_width": lowdim_seq[:, -1, -1].astype(float).tolist(),
+        "selected_gripper_width": lowdim_seq[:, -1, FRANKA_CUBE_GRIPPER_WIDTH_LOWDIM_INDEX].astype(float).tolist(),
         "direct_action_shape": list(direct_action.shape),
         "direct_action_min": np.min(direct_action[:, 0], axis=0).astype(float).tolist(),
         "direct_action_max": np.max(direct_action[:, 0], axis=0).astype(float).tolist(),

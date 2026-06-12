@@ -9755,3 +9755,112 @@ Next:
 - Run and monitor the local smoke. If this offline gate passes, report it as a
   diagnostic pass only and propose the next separate runtime-feature bridge
   gate; do not launch Isaac eval/RL from this artifact alone.
+
+## 2026-06-11T22:45:30-07:00 - phase-progress official DP offline smoke result
+
+Goal:
+- Finish the bounded 25D phase/progress official Diffusion Policy smoke on the
+  accepted 4-episode alpha0.75 contact relabel set and upload inspectable
+  artifacts.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base/local commit for run launch:
+  `9855352b4175eeed9e3cd81ce9aef24a031c5b24`
+- phase metadata diagnostic fix commit:
+  `44e049365675074cb09f62b13a6be44b705a1bea`
+- phase/progress tooling commit:
+  `d2426151e229ed81b72a3fb427cd5d6cdfbf9c4a`
+- result/source checkpoint commit before handoff hash finalization:
+  `3deb41a64045c5166cbf5a1212c7981ee8984408`
+- final branch tip:
+  reported in the Worker C handoff; embedding the current commit hash in the
+  same commit would change the hash.
+- official DP commit:
+  `5ba07ac6661db573af695b419a7947ecb704690f`
+- official DP remote:
+  `https://github.com/real-stanford/diffusion_policy`
+- changed_files for post-run source fix:
+  `dextrah_lab/offline_dp_bc/validate_official_checkpoint_smoke.py`, worklog.
+
+Command / Job:
+- job_id: `n/a`; local bounded official-DP smoke.
+- launch script:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_lrcentering_a075_set4_phaseprogress_official_dp_smoke_20260611_224001/launch_command.sh`
+- run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_lrcentering_a075_set4_phaseprogress_official_dp_smoke_20260611_224001`
+- dataset:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_lrcentering_a075_set4_phaseprogress_official_dp_smoke_20260611_224001/contact_relabel_set_phase_progress.npz`
+- checkpoint:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_lrcentering_a075_set4_phaseprogress_official_dp_smoke_20260611_224001/official_dp_train/checkpoints/latest.ckpt`
+
+Result:
+- status: `passed` as an offline-only action-semantics/debug-pretrain gate.
+- dataset shape:
+  - base accepted relabel NPZ: `obs (936,21)`, `action (936,7)`,
+    `episode_ends [240,480,706,936]`
+  - phase/progress NPZ: `obs (936,25)`, `action (936,7)`,
+    appended features
+    `phase_align_open`, `phase_close_hold`, `phase_lift`,
+    `episode_progress`
+  - phase counts: `align_open=69`, `close_hold=320`, `lift=547`
+- loss gate:
+  - train loss `2.12427 -> 0.124252`
+  - val loss `2.16282 -> 0.518714`
+  - train action MSE `0.470958 -> 0.0244009`
+- action semantics:
+  - pretrain verdict: `pass`
+  - `action_range_status=pass`
+  - `action_range_semantics=pass`
+  - `gripper_gate_pass=true`
+  - open sign match `0.96`
+  - closed/lift sign match `0.962963`
+  - rows audited: `79`
+- post-run source fix:
+  - `validate_official_checkpoint_smoke.py` now uses the fixed base lowdim
+    gripper-width index `20` for row selectors and selected gripper reporting.
+    This matters for augmented offline obs because column `-1` is now
+    `episode_progress`.
+  - Reran direct-only checkpoint action-range smokes and regenerated the
+    official DP pretrain report without retraining.
+- local process status:
+  no matching C-owned local official-DP, checkpoint-smoke, or action-semantics
+  process remains active after the artifact rerun.
+
+Viewer URLs:
+- official DP report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_lrcentering_a075_set4_phaseprogress_official_dp_smoke_20260611_224001/official_dp_pretrain_report.md`
+- phase/progress dataset report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_lrcentering_a075_set4_phaseprogress_official_dp_smoke_20260611_224001/phase_progress_dataset_report.md`
+- loss curves:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_lrcentering_a075_set4_phaseprogress_official_dp_smoke_20260611_224001/loss_curves.png`
+- gripper semantics plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_lrcentering_a075_set4_phaseprogress_official_dp_smoke_20260611_224001/action_semantics_100steps/gripper_label_vs_prediction.png`
+- per-channel action semantics plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_lrcentering_a075_set4_phaseprogress_official_dp_smoke_20260611_224001/action_semantics_100steps/per_channel_first_action_scatter.png`
+
+Analysis:
+- Explicit phase/progress features resolve the 21D smoke's close-boundary
+  gripper ambiguity in the offline checkpoint audit.
+- This is not Isaac closed-loop-ready. The 25D checkpoint consumes four
+  features that are not present in the current 72D PPO observation bridge:
+  contact phase one-hot plus episode progress. Running this checkpoint in Isaac
+  without a matching runtime feature provider would be another train/eval
+  mismatch.
+- Pose-channel prediction quality is still loose in the per-channel scatter,
+  so the pass should be treated as a gripper/action-semantics mechanics gate,
+  not a behavior-readiness claim.
+
+Next:
+- Stop before Isaac closed-loop eval/RL from this artifact alone.
+- Next bounded bridge plan:
+  1. Implement a runtime feature provider that appends the same four
+     phase/progress fields to live lowdim observations, driven either by the
+     relabel controller phase schedule or a separately validated deterministic
+     task-progress state machine.
+  2. Validate that provider offline by replaying accepted relabel traces and
+     checking exact feature parity with `contact_relabel_set_phase_progress.npz`.
+  3. Only after feature parity passes, run a tiny no-video matched-reset
+     closed-loop trace with the 25D checkpoint and inspect action/support
+     traces before any video, broader eval, BC scale-up, or RL handoff.
