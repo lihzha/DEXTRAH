@@ -2814,3 +2814,137 @@ Worker C:
   pass variants via `VARIANT_COUNT` / `VARIANT_0..N`.
 - Awaiting C validation/commit/deploy/relaunch of the bounded contact-aware
   smoke. No DP BC/RL training.
+
+## 2026-06-11T18:08:00-07:00 - B artifact provenance and current verdict
+
+User question:
+- The video named `actionscale-rewinf-diag-video480-step-0.mp4` is from Worker
+  B, but it belongs to B's older failed action-scale/reward-inference
+  diagnostic. It should not be treated as the current best B result.
+
+Current B result:
+- B completed pure-reference teacher-force sanity job `1027919`, run
+  `franka_cube_traj_tracking_teacherforce_eval_a100_phase100_520_20260611_172848`.
+- Worker B pushed branch `codex/franka-cube-trajectory-tracking` at
+  `d7503a9 Record pure reference teacher-force diagnostic`.
+
+Artifacts:
+- Report:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a100_phase100_520_20260611_172848_artifacts/report.md`
+- Trace plot:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a100_phase100_520_20260611_172848_artifacts/trajectory_trace_plot.png`
+- Contact sheet:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a100_phase100_520_20260611_172848_artifacts/video_contact_sheet.png`
+- Video:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a100_phase100_520_20260611_172848/videos/tf-eval-a100-phase100-520-step-0.mp4`
+
+Metrics:
+- 520/520 rollout steps; success final/max/ever `0.75/0.75/3 of 4 envs`.
+- Cube lift max `0.144406 m`.
+- Target unsafe max `0`; target clearance min `0.065114 m`.
+- Teacher alpha mean/final/active `1.0/1.0/1.0`.
+- Applied/reference L2 mean `0.0140`.
+- Train/eval consistency passed with no real mismatches.
+
+Visual caveat:
+- The recorded video/contact sheet appears to follow env 0, likely the single
+  non-success env. The aggregate scalar traces show 3/4 final success. B has
+  been asked to produce a successful-env or multi-env artifact so this is not
+  visually misleading.
+
+Analysis:
+- Positive reference-path sanity result. The transformed/reference action path
+  can grasp/lift under full teacher override.
+- B's current blocker is learned raw-action imitation/handoff. Alpha `0.75`
+  with phase end `1.0` still failed despite lower action L2, so the next B work
+  should focus on per-dimension close/up/gripper timing and a small
+  imitation/action-alignment diagnostic, not another schedule-only eval.
+
+Worker steering:
+- B was assigned a follow-up to produce clearer successful-reference artifacts,
+  then run an action-semantics/imitation diagnostic around grasp/lift. Smoke
+  scale only until artifacts prove learned no/full/partial-teacher behavior
+  actually grasps and lifts.
+
+## 2026-06-11T18:12:00-07:00 - A alternate-grasp sweep result
+
+Goal:
+- Determine whether the reset-prior action path is globally brittle or whether
+  the previous failure was specific to grasp candidate `orig006`.
+
+Jobs:
+- A's alternate single-grasp L401 sweep jobs `1027909` through `1027918`
+  completed `0:0`.
+- Candidates: `orig000`, `orig001`, `orig006`, `orig011`, `orig012`,
+  `orig014`, `orig015`, `orig023`, `orig024`, `orig027`.
+
+Artifacts:
+- Report:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_altgrasp_orient_20260612_0027_inspection/REPORT.md`
+- Keyframe sheet:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_altgrasp_orient_20260612_0027_inspection/altgrasp_keyframe_sheet.jpg`
+- Local bundle also includes `summary_metrics.csv` and `per_reset_metrics.csv`.
+
+Metrics:
+- Robust across 3/3 resets: `orig000`, `orig001`, `orig011`, `orig012`,
+  `orig014`, `orig024`, `orig027`.
+- Failed or brittle: `orig006` reached `2/3`, `orig015` reached `0/3`,
+  `orig023` reached `0/3`.
+- Best mean max lift among the passing candidates was `orig012` at about
+  `0.034 m`; passing candidates generally lift around `0.030-0.034 m`.
+
+Analysis:
+- The reset-prior issue is not a universal object-transform or action-path
+  bug. Several precomputed GraspGenX candidates pass the same randomized reset
+  diagnostic under the same DEXTRAH task geometry.
+- The next A path should stop overfitting to brittle `orig006`, use the passing
+  candidate set in the reset sampler, and run a small apple-to-apple reset-prior
+  PPO smoke before any larger A100 training.
+
+Worker steering:
+- A remains active. Next expected output is an updated worklog/artifact handoff
+  and a reset-prior smoke using a robust candidate such as `orig012` or a sampler
+  over the passing set. Keep original DEXTRAH reset behavior/config otherwise.
+
+## 2026-06-11T18:15:00-07:00 - C contact-aware rollout relaunch and high-lift follow-up
+
+Completed C relaunch:
+- Job `1027920`, run
+  `franka_cube_contact_rollout_ep24s260_center3_fix_20260611_172940`,
+  completed `0:0` after the NumPy/tensor and variant-export fixes.
+
+Artifacts:
+- Report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_rollouts/franka_cube_contact_rollout_ep24s260_center3_fix_20260611_172940/contact_rollout_report.md`
+- Plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_rollouts/franka_cube_contact_rollout_ep24s260_center3_fix_20260611_172940/contact_rollout_plot.png`
+- Best video:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_rollouts/franka_cube_contact_rollout_ep24s260_center3_fix_20260611_172940/videos/franka-cube-contact-rollout-step-560.mp4`
+- Best contact sheet:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_rollouts/franka_cube_contact_rollout_ep24s260_center3_fix_20260611_172940/videos/franka-cube-contact-rollout-step-560_sheet.jpg`
+
+Metrics:
+- `center`: final/max lift `0.08267 m`, min/final finger-center distance
+  `0.03835/0.04746 m`, final gripper width `0.05455 m`.
+- `center_high15`: final/max lift `0.09324 m`, min/final finger-center
+  `0.03792/0.04118 m`, final gripper width `0.05189 m`.
+- `center_high30`: final/max lift `0.11268 m`, min/final finger-center
+  `0.03754/0.037998 m`, final gripper width `0.04867 m`, final EE-cube
+  `0.01174 m`.
+
+Analysis:
+- C's contact-aware controller no longer drifts away like the earlier failed DP
+  videos; it approaches and lifts. It is still not BC-ready because the strict
+  stable-grasp relabel gate fails and the gripper remains around `4.9-5.5 cm`
+  open.
+
+Latest C follow-up:
+- Job `1027921`, run
+  `franka_cube_contact_rollout_ep24s260_high30_lift22_20260611_173411`,
+  completed at the scheduler level with exit `0:0`.
+- It tests only `center_high30` with longer lift (`160` steps) and higher lift
+  target (`0.22 m`).
+- Acceptance remains strict: the scheduler result is not sufficient. C still
+  needs to fetch metrics, report, video/contact sheet, inspect stable visual
+  close/lift, update the worklog, and only then decide whether relabel dataset
+  generation or DP BC can proceed.
