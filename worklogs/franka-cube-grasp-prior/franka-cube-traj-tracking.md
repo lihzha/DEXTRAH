@@ -5191,3 +5191,80 @@ Validation Before Launch:
 Notes:
 - Old `actionscale-rewinf-diag-video480-step-0.mp4` remains obsolete failed diagnostic evidence.
 - Compact trajectory reference remains `curobo_validated=false`.
+
+## 2026-06-11T20:34:21-07:00 - tm0.25 actor distillation supervised launch
+
+Implementation:
+- implementation commit: `1e618c1f0ae5a985880313ffc89e014c1b85a708` (`Add tm025 actor distillation BC diagnostic`), pushed to `origin/codex/franka-cube-trajectory-tracking`.
+- remote source: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking`, detached at `1e618c1f0ae5a985880313ffc89e014c1b85a708` via the agent-owned l401 bare Git mirror.
+- local validation passed:
+  - `python3 -m py_compile dextrah_lab/rl_games/bc_reference_action_imitation.py dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py dextrah_lab/rl_games/analyze_traj_tracking_action_semantics.py`
+  - `bash -n cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh`
+  - `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+  - `git diff --check`
+
+Command / Job:
+- job_id: `1028088`
+- run_name: `franka_cube_traj_tracking_bc_dagger_distill_tm025_tm010_all_20260611_203421`
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:45:00 --job-name=bc_distill --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_bc_dagger_distill_tm025_tm010_all_20260611_203421,NUM_ENVS=8,COLLECTION_STEPS=520,TRAIN_STEPS=400,BATCH_SIZE=1024,LEARNING_RATE=0.00005,VALIDATION_FRACTION=0.2,LOSS_DIMS=all,EVAL_INTERVAL=25,SEED=71,COLLECTION_ACTION_SOURCE=teacher_mix,COLLECTION_TEACHER_ALPHA=0.10,REHEARSAL_DATASET_PATHS=/results/bc/franka_cube_traj_tracking_bc_dagger_tm025_all_20260611_185900/reference_action_dataset.pt,REHEARSAL_DATASET_NAMES=tm025_rehearsal,SOURCE_BATCH_MODE=balanced,SOURCE_LOSS_WEIGHTS=current_teacher_mix_alpha0p10=1__COMMA__tm025_rehearsal=0,BEST_SCORE_WEIGHTS=val_source_current_teacher_mix_alpha0p10_l2=1__COMMA__val_source_tm025_rehearsal_l2=2,EARLY_STOP_PATIENCE=8,DISTILL_SOURCES=tm025_rehearsal,DISTILL_LOSS_WEIGHT=2.0,DISTILL_DIMS=all,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json,CHECKPOINT=/results/bc/franka_cube_traj_tracking_bc_dagger_tm025_all_20260611_185900/nn/bc_reference_action_imitation.pth cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/bc/franka_cube_traj_tracking_bc_dagger_distill_tm025_tm010_all_20260611_203421`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bc_franka_cube_1028088.out`
+
+Acceptance:
+- supervised-only gate. No selector/video/PPO launch unless this run materially improves per-source metrics.
+- preserve tm0.25 rehearsal val L2 `<=0.055` hard ceiling, preferred `<=0.045`.
+- current alpha `0.10` source val L2 must improve over latest balanced run `0.15143` and ideally approach/beat tm0.10 `~0.079`.
+- global val L2 should not regress relative to `1028053` (`0.094008`) if considering rollout.
+
+## 2026-06-11T20:36:10-07:00 - tm0.25 actor distillation supervised result
+
+Job:
+- job_id: `1028088`
+- scheduler state: `COMPLETED 0:0`, elapsed `00:01:01`, node `pool0-00006`.
+- remote run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/bc/franka_cube_traj_tracking_bc_dagger_distill_tm025_tm010_all_20260611_203421`
+- remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bc_franka_cube_1028088.out`
+- local fetched run_dir: `cluster_results/l401/franka_cube_traj_tracking_bc_dagger_distill_tm025_tm010_all_20260611_203421`
+- local fetched log: `cluster_results/l401/slurm_logs/bc_franka_cube_1028088.out`
+
+Artifacts:
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_distill_tm025_tm010_all_20260611_203421/report.md`
+- aggregate loss plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_distill_tm025_tm010_all_20260611_203421/bc_loss_plot.png`
+- source metric plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_distill_tm025_tm010_all_20260611_203421/bc_source_metric_plot.png`
+- metrics: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_distill_tm025_tm010_all_20260611_203421/bc_metrics.json`
+- checkpoint: `/results/bc/franka_cube_traj_tracking_bc_dagger_distill_tm025_tm010_all_20260611_203421/nn/bc_reference_action_imitation.pth`
+- dataset: `/results/bc/franka_cube_traj_tracking_bc_dagger_distill_tm025_tm010_all_20260611_203421/reference_action_dataset.pt`
+
+Configuration Evidence:
+- `source_batch_mode=balanced`.
+- reference-label source weights: `{'current_teacher_mix_alpha0p10': 1.0, 'tm025_rehearsal': 0.0}`.
+- best-score weights: `{'val_source_current_teacher_mix_alpha0p10_l2': 1.0, 'val_source_tm025_rehearsal_l2': 2.0}`.
+- distillation target: input checkpoint initial actor, i.e. the tm0.25 checkpoint for this launch.
+- distillation sources: `['tm025_rehearsal']`.
+- distillation loss weight: `2.0`.
+- distillation dims: all 7 action dims.
+- selected checkpoint step: `400`; `early_stop_triggered=False`.
+- reference caveat remains: compact reference is `curobo_validated=false`.
+
+Supervised Metrics:
+- initial/current source val L2: `0.676034`; selected/current source val L2: `0.182791`.
+- selected current alpha `0.10` source val L2 `0.182791` is worse than the latest balanced run (`0.15143`) and worse than 1028053 (`0.115862`), far from tm0.10 (`~0.079`).
+- selected current alpha `0.10` close/up/gripper abs: `0.047545/0.046967/0.091194`.
+- initial tm0.25 rehearsal val L2: `0.034867`; selected tm0.25 rehearsal val L2: `0.070334`.
+- selected tm0.25 rehearsal val L2 `0.070334` fails the hard preservation ceiling `<=0.055` and is only similar to the earlier failed 1028053 rehearsal damage (`0.070744`).
+- selected tm0.25 rehearsal close/up/gripper abs: `0.013872/0.018742/0.028762`.
+- selected global val L2: `0.126292`, worse than 1028053 (`0.094008`).
+- selected distillation val L2 to the frozen tm0.25 actor on tm0.25 rehearsal states: `0.058396`, so the regularizer did not preserve the initial actor closely enough at weight `2.0`.
+
+Verdict:
+- supervised gate failure.
+- No selector sweep, no videos, no PPO, and no RL scale-up launched from this checkpoint.
+
+Analysis:
+- The distillation implementation and artifact wiring worked: metrics include distillation source errors and `bc_source_metric_plot.png` shows current-source, tm0.25 reference, and tm0.25 distillation curves.
+- The actual optimization did not solve the source conflict. Label loss on fresh alpha `0.10` improved that source from its initial L2, but not enough; tm0.25 reference error and frozen-actor distillation error both drifted above the preservation gate.
+- Compared with the weighted balanced run, this traded off in the wrong direction: worse current-source performance (`0.182791` vs `0.151430`) and worse tm0.25 preservation (`0.070334` vs `0.058713`).
+- That suggests a simple additive distillation loss at weight `2.0` is not sufficient. The next attempt, if any, should not launch rollout first; it should either strengthen/diagnose preservation in supervised space only, or switch to a safer method such as freezing most actor layers, hard early stopping on tm0.25 validation ceiling, or a two-head/residual adapter approach that cannot overwrite the tm0.25 base behavior.
+- tm0.25 remains the best B checkpoint; old `actionscale-rewinf-diag-video480-step-0.mp4` remains obsolete failed diagnostic evidence.
+
+Active Jobs:
+- No selector/video/PPO jobs launched for this attempt.
