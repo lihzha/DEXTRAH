@@ -1,0 +1,54 @@
+{
+  "created_from": {
+    "baseline_eval_metrics": "/tmp/franka_compare_tracking_vs_baseline/evals/no_tracking_baseline_1024_metrics.json",
+    "tensorboard_root": "/tmp/franka_compare_tracking_vs_baseline",
+    "tracking_eval_root": "/tmp/franka_trackloss_eval_policy_2de8b03"
+  },
+  "outputs": [
+    "eval_success_comparison.svg",
+    "eval_success_summary.csv",
+    "reward_curve_comparison.svg",
+    "reward_terms_summary.csv",
+    "success_rate_curve_comparison.svg",
+    "training_curves.csv",
+    "training_summary.csv"
+  ],
+  "runs": [
+    {
+      "method": "no_tracking",
+      "run": "franka_cube_baseline_A_histseed_2557f3e_20260612_0922",
+      "seed": "1781139395",
+      "source": "/tmp/franka_compare_tracking_vs_baseline/baseline"
+    },
+    {
+      "method": "tracking_loss",
+      "run": "franka_cube_trackloss_default_b7e04f0_seed1_20260612_1042",
+      "seed": "1",
+      "source": "/tmp/franka_compare_tracking_vs_baseline/tracking/seed1"
+    },
+    {
+      "method": "tracking_loss",
+      "run": "franka_cube_trackloss_default_b7e04f0_seed2_20260612_1042",
+      "seed": "2",
+      "source": "/tmp/franka_compare_tracking_vs_baseline/tracking/seed2"
+    },
+    {
+      "method": "tracking_loss",
+      "run": "franka_cube_trackloss_default_b7e04f0_seed3_20260612_1042",
+      "seed": "3",
+      "source": "/tmp/franka_compare_tracking_vs_baseline/tracking/seed3"
+    },
+    {
+      "method": "tracking_loss",
+      "run": "franka_cube_trackloss_default_b7e04f0_seed4_20260612_1042",
+      "seed": "4",
+      "source": "/tmp/franka_compare_tracking_vs_baseline/tracking/seed4"
+    },
+    {
+      "method": "tracking_loss",
+      "run": "franka_cube_trackloss_default_b7e04f0_seed5_20260612_1042",
+      "seed": "5",
+      "source": "/tmp/franka_compare_tracking_vs_baseline/tracking/seed5"
+    }
+  ]
+}

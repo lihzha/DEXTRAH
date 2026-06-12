@@ -64,7 +64,7 @@ elif [ "$TASK" = "Dextrah-Franka-Star-Kitting" ]; then
   ENTROPY_COEF="${ENTROPY_COEF:-0.001}"
   E_CLIP="${E_CLIP:-0.2}"
   GRAD_NORM="${GRAD_NORM:-1.0}"
-elif [ "$TASK" = "Dextrah-Franka-Cube-Grasp" ]; then
+elif [ "$TASK" = "Dextrah-Franka-Cube-Grasp" ] || [ "$TASK" = "Dextrah-Franka-Cube-Grasp-Traj-Tracking" ]; then
   NUM_ENVS="${NUM_ENVS:-2048}"
   MINIBATCH_SIZE="${MINIBATCH_SIZE:-32768}"
   CENTRAL_VALUE_MINIBATCH_SIZE="${CENTRAL_VALUE_MINIBATCH_SIZE:-32768}"
@@ -104,6 +104,26 @@ CUBE_SPAWN_XY_RANDOMIZATION="${CUBE_SPAWN_XY_RANDOMIZATION:-0.08}"
 GRASP_PRIOR_RESET_ENABLED="${GRASP_PRIOR_RESET_ENABLED:-False}"
 GRASP_PRIOR_LIBRARY_PATH="${GRASP_PRIOR_LIBRARY_PATH:-}"
 DEXTRAH_RLGAMES_JSONL_METRICS="${DEXTRAH_RLGAMES_JSONL_METRICS:-False}"
+TRAJECTORY_TRACKING_REFERENCE_PATH="${TRAJECTORY_TRACKING_REFERENCE_PATH:-}"
+CUBE_APPROACH_WEIGHT="${CUBE_APPROACH_WEIGHT:-}"
+CUBE_ENCLOSURE_WEIGHT="${CUBE_ENCLOSURE_WEIGHT:-}"
+CUBE_LIFT_WEIGHT="${CUBE_LIFT_WEIGHT:-}"
+CUBE_HEIGHT_TRACKING_WEIGHT="${CUBE_HEIGHT_TRACKING_WEIGHT:-}"
+CUBE_XY_STABILITY_WEIGHT="${CUBE_XY_STABILITY_WEIGHT:-}"
+CUBE_SUCCESS_BONUS_WEIGHT="${CUBE_SUCCESS_BONUS_WEIGHT:-}"
+CUBE_CLOSE_ACTION_WEIGHT="${CUBE_CLOSE_ACTION_WEIGHT:-}"
+CUBE_LIFT_ACTION_WEIGHT="${CUBE_LIFT_ACTION_WEIGHT:-}"
+CUBE_DESCEND_ACTION_PENALTY_WEIGHT="${CUBE_DESCEND_ACTION_PENALTY_WEIGHT:-}"
+CUBE_TABLE_CLEARANCE_PENALTY_WEIGHT="${CUBE_TABLE_CLEARANCE_PENALTY_WEIGHT:-}"
+CUBE_GRIPPER_CLOSE_REG_WEIGHT="${CUBE_GRIPPER_CLOSE_REG_WEIGHT:-}"
+CUBE_ACTION_PENALTY_WEIGHT="${CUBE_ACTION_PENALTY_WEIGHT:-}"
+TRAJECTORY_TRACKING_POSITION_WEIGHT="${TRAJECTORY_TRACKING_POSITION_WEIGHT:-}"
+TRAJECTORY_TRACKING_ORIENTATION_WEIGHT="${TRAJECTORY_TRACKING_ORIENTATION_WEIGHT:-}"
+TRAJECTORY_TRACKING_GRIPPER_WEIGHT="${TRAJECTORY_TRACKING_GRIPPER_WEIGHT:-}"
+TRAJECTORY_TRACKING_CLOSE_ACTION_WEIGHT="${TRAJECTORY_TRACKING_CLOSE_ACTION_WEIGHT:-}"
+TRAJECTORY_TRACKING_LIFT_ACTION_WEIGHT="${TRAJECTORY_TRACKING_LIFT_ACTION_WEIGHT:-}"
+TRAJECTORY_TRACKING_START_WEIGHT="${TRAJECTORY_TRACKING_START_WEIGHT:-}"
+TRAJECTORY_TRACKING_END_WEIGHT="${TRAJECTORY_TRACKING_END_WEIGHT:-}"
 AUTO_RESUME="${AUTO_RESUME:-True}"
 CHECKPOINT="${CHECKPOINT:-}"
 FULL_EXPERIMENT_NAME="${FULL_EXPERIMENT_NAME:-}"
@@ -131,6 +151,10 @@ case "$GRASP_PRIOR_RESET_ENABLED" in
     fi
     ;;
 esac
+if [ "$TASK" = "Dextrah-Franka-Cube-Grasp-Traj-Tracking" ] && [ -z "$TRAJECTORY_TRACKING_REFERENCE_PATH" ]; then
+  echo "Set TRAJECTORY_TRACKING_REFERENCE_PATH for $TASK; production tracking RL must use an explicit reference."
+  exit 2
+fi
 
 time_left_to_seconds() {
   local raw="${1// /}"
@@ -275,6 +299,7 @@ echo "RESULTS_NFS=$RESULTS_NFS"
 echo "NPROC_PER_NODE=$NPROC_PER_NODE"
 echo "NUM_ENVS=$NUM_ENVS"
 echo "TASK=$TASK"
+echo "SEED=$SEED"
 echo "MASTER_PORT=$MASTER_PORT"
 echo "SEED=$SEED"
 echo "DISTRIBUTED=$DISTRIBUTED"
@@ -300,6 +325,26 @@ echo "CUBE_SPAWN_XY_RANDOMIZATION=$CUBE_SPAWN_XY_RANDOMIZATION"
 echo "GRASP_PRIOR_RESET_ENABLED=$GRASP_PRIOR_RESET_ENABLED"
 echo "GRASP_PRIOR_LIBRARY_PATH=$GRASP_PRIOR_LIBRARY_PATH"
 echo "DEXTRAH_RLGAMES_JSONL_METRICS=$DEXTRAH_RLGAMES_JSONL_METRICS"
+echo "TRAJECTORY_TRACKING_REFERENCE_PATH=$TRAJECTORY_TRACKING_REFERENCE_PATH"
+echo "CUBE_APPROACH_WEIGHT=$CUBE_APPROACH_WEIGHT"
+echo "CUBE_ENCLOSURE_WEIGHT=$CUBE_ENCLOSURE_WEIGHT"
+echo "CUBE_LIFT_WEIGHT=$CUBE_LIFT_WEIGHT"
+echo "CUBE_HEIGHT_TRACKING_WEIGHT=$CUBE_HEIGHT_TRACKING_WEIGHT"
+echo "CUBE_XY_STABILITY_WEIGHT=$CUBE_XY_STABILITY_WEIGHT"
+echo "CUBE_SUCCESS_BONUS_WEIGHT=$CUBE_SUCCESS_BONUS_WEIGHT"
+echo "CUBE_CLOSE_ACTION_WEIGHT=$CUBE_CLOSE_ACTION_WEIGHT"
+echo "CUBE_LIFT_ACTION_WEIGHT=$CUBE_LIFT_ACTION_WEIGHT"
+echo "CUBE_DESCEND_ACTION_PENALTY_WEIGHT=$CUBE_DESCEND_ACTION_PENALTY_WEIGHT"
+echo "CUBE_TABLE_CLEARANCE_PENALTY_WEIGHT=$CUBE_TABLE_CLEARANCE_PENALTY_WEIGHT"
+echo "CUBE_GRIPPER_CLOSE_REG_WEIGHT=$CUBE_GRIPPER_CLOSE_REG_WEIGHT"
+echo "CUBE_ACTION_PENALTY_WEIGHT=$CUBE_ACTION_PENALTY_WEIGHT"
+echo "TRAJECTORY_TRACKING_POSITION_WEIGHT=$TRAJECTORY_TRACKING_POSITION_WEIGHT"
+echo "TRAJECTORY_TRACKING_ORIENTATION_WEIGHT=$TRAJECTORY_TRACKING_ORIENTATION_WEIGHT"
+echo "TRAJECTORY_TRACKING_GRIPPER_WEIGHT=$TRAJECTORY_TRACKING_GRIPPER_WEIGHT"
+echo "TRAJECTORY_TRACKING_CLOSE_ACTION_WEIGHT=$TRAJECTORY_TRACKING_CLOSE_ACTION_WEIGHT"
+echo "TRAJECTORY_TRACKING_LIFT_ACTION_WEIGHT=$TRAJECTORY_TRACKING_LIFT_ACTION_WEIGHT"
+echo "TRAJECTORY_TRACKING_START_WEIGHT=$TRAJECTORY_TRACKING_START_WEIGHT"
+echo "TRAJECTORY_TRACKING_END_WEIGHT=$TRAJECTORY_TRACKING_END_WEIGHT"
 echo "SAVE_FREQUENCY=$SAVE_FREQUENCY"
 echo "AUTO_RESUME=$AUTO_RESUME"
 echo "CHECKPOINT=$CHECKPOINT"
@@ -338,6 +383,10 @@ srun \
 
     cd /code/dextrah_lab/rl_games
     echo \"CODE_COMMIT=${CODE_COMMIT:-unknown}\"
+    echo "code_git_head=$(git -C /code rev-parse HEAD 2>/dev/null || echo unknown)"
+    echo "code_git_status_short_start"
+    git -C /code status --short 2>/dev/null || true
+    echo "code_git_status_short_end"
 
     /isaac-sim/python.sh - <<'PY'
 import sys
@@ -380,6 +429,36 @@ PY
     esac
 
     TASK_OVERRIDES=()
+    append_env_override() {
+      local field=\"\$1\"
+      local value=\"\$2\"
+      if [ -n \"\$value\" ]; then
+        TASK_OVERRIDES+=(env.\"\$field\"=\"\$value\")
+      fi
+    }
+    append_franka_cube_reward_overrides() {
+      append_env_override cube_approach_weight '$CUBE_APPROACH_WEIGHT'
+      append_env_override cube_enclosure_weight '$CUBE_ENCLOSURE_WEIGHT'
+      append_env_override cube_lift_weight '$CUBE_LIFT_WEIGHT'
+      append_env_override cube_height_tracking_weight '$CUBE_HEIGHT_TRACKING_WEIGHT'
+      append_env_override cube_xy_stability_weight '$CUBE_XY_STABILITY_WEIGHT'
+      append_env_override cube_success_bonus_weight '$CUBE_SUCCESS_BONUS_WEIGHT'
+      append_env_override cube_close_action_weight '$CUBE_CLOSE_ACTION_WEIGHT'
+      append_env_override cube_lift_action_weight '$CUBE_LIFT_ACTION_WEIGHT'
+      append_env_override cube_descend_action_penalty_weight '$CUBE_DESCEND_ACTION_PENALTY_WEIGHT'
+      append_env_override cube_table_clearance_penalty_weight '$CUBE_TABLE_CLEARANCE_PENALTY_WEIGHT'
+      append_env_override cube_gripper_close_reg_weight '$CUBE_GRIPPER_CLOSE_REG_WEIGHT'
+      append_env_override cube_action_penalty_weight '$CUBE_ACTION_PENALTY_WEIGHT'
+    }
+    append_trajectory_tracking_reward_overrides() {
+      append_env_override trajectory_tracking_position_weight '$TRAJECTORY_TRACKING_POSITION_WEIGHT'
+      append_env_override trajectory_tracking_orientation_weight '$TRAJECTORY_TRACKING_ORIENTATION_WEIGHT'
+      append_env_override trajectory_tracking_gripper_weight '$TRAJECTORY_TRACKING_GRIPPER_WEIGHT'
+      append_env_override trajectory_tracking_close_action_weight '$TRAJECTORY_TRACKING_CLOSE_ACTION_WEIGHT'
+      append_env_override trajectory_tracking_lift_action_weight '$TRAJECTORY_TRACKING_LIFT_ACTION_WEIGHT'
+      append_env_override trajectory_tracking_start_weight '$TRAJECTORY_TRACKING_START_WEIGHT'
+      append_env_override trajectory_tracking_end_weight '$TRAJECTORY_TRACKING_END_WEIGHT'
+    }
     if [ '$TASK' = 'Dextrah-Cube-Grasp' ]; then
       TASK_OVERRIDES=(
         agent.wandb_activate=False
@@ -398,12 +477,21 @@ PY
         env.star_reset_near_hand_y='$STAR_RESET_NEAR_HAND_Y'
         env.star_reset_near_hand_xy_noise='$STAR_RESET_NEAR_HAND_XY_NOISE'
       )
-    elif [ '$TASK' = 'Dextrah-Franka-Cube-Grasp' ]; then
+    elif [ '$TASK' = 'Dextrah-Franka-Cube-Grasp' ] || [ '$TASK' = 'Dextrah-Franka-Cube-Grasp-Traj-Tracking' ]; then
       TASK_OVERRIDES=(
         agent.wandb_activate=False
         env.use_cuda_graph='$USE_CUDA_GRAPH'
         env.cube_spawn_xy_randomization='$CUBE_SPAWN_XY_RANDOMIZATION'
       )
+      append_franka_cube_reward_overrides
+      if [ -n '$TRAJECTORY_TRACKING_REFERENCE_PATH' ]; then
+        TASK_OVERRIDES+=(
+          env.trajectory_tracking_reference_path='$TRAJECTORY_TRACKING_REFERENCE_PATH'
+        )
+      fi
+      if [ '$TASK' = 'Dextrah-Franka-Cube-Grasp-Traj-Tracking' ]; then
+        append_trajectory_tracking_reward_overrides
+      fi
     else
       TASK_OVERRIDES=(
         agent.wandb_activate=False
