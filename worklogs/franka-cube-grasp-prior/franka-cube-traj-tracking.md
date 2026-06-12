@@ -7709,3 +7709,24 @@ Next:
 - Push the latest cleanup commit when GitHub SSH permits.
 - Deploy the latest commit to an agent-owned A100 worktree.
 - Run tracking-loss RL with explicit seeds `1,2,3,4,5` and matched config; do not use `--seed -1`.
+
+## 2026-06-12T10:42:00Z - default tracking-loss PPO 5-seed sweep launched
+
+Goal:
+- Run the first scaled clean RL-with-tracking-loss experiment with explicit seeds after baseline seed-control debugging.
+
+Preflight:
+- Commit: `b7e04f066e895f3572e993f675a1017bbc15cd90` in remote worktree `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-tracking-loss-seeds`.
+- Validation job `29017195`, run `franka_cube_trackloss_b7e04f0_preflight_20260612_1038`, passed.
+- Validation confirmed: explicit 60 mm reference path, reference validation passed, `trajectory_tracking_action_alignment_reward_mean=0`, teacher forcing inactive, unsafe target max `0`, and `curobo_validated=false` retained.
+
+Command / Jobs:
+- Common settings: `TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking`, `MAX_ITERATIONS=600`, `USE_CUDA_GRAPH=False`, `AUTO_RESUME=False`, `SELF_RELAUNCH=False`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`, reference `/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json`.
+- seed `1`: job `29017224`, run `franka_cube_trackloss_default_b7e04f0_seed1_20260612_1042`.
+- seed `2`: job `29017225`, run `franka_cube_trackloss_default_b7e04f0_seed2_20260612_1042`.
+- seed `3`: job `29017227`, run `franka_cube_trackloss_default_b7e04f0_seed3_20260612_1042`.
+- seed `4`: job `29017228`, run `franka_cube_trackloss_default_b7e04f0_seed4_20260612_1042`.
+- seed `5`: job `29017229`, run `franka_cube_trackloss_default_b7e04f0_seed5_20260612_1042`.
+
+Next:
+- Monitor launches, checkpoint rewards, tracking reward terms, and final checkpoints. Do not compare against baseline without accounting for seed sensitivity and per-term reward composition.
