@@ -355,15 +355,16 @@ def _checkpoint_tensor_summary(label: str, checkpoint_path: str, obs_dim: int) -
         lower = key.lower()
         if mean.ndim != 1 or mean.numel() != obs_dim:
             continue
-        if not (lower.endswith("running_mean") or lower.endswith("moving_mean") or "running_mean" in lower):
+        if lower.endswith("running_mean"):
+            suffix = "running_mean"
+            var_suffixes = ("running_var", "running_std")
+        elif lower.endswith("moving_mean"):
+            suffix = "moving_mean"
+            var_suffixes = ("moving_var", "moving_std")
+        else:
             continue
-        candidate_var_keys = [
-            key.replace("running_mean", "running_var"),
-            key.replace("running_mean", "running_std"),
-            key.replace("moving_mean", "moving_var"),
-            key.replace("mean", "var"),
-            key.replace("mean", "std"),
-        ]
+        prefix = key[: -len(suffix)]
+        candidate_var_keys = [prefix + var_suffix for var_suffix in var_suffixes]
         for var_key in candidate_var_keys:
             var = tensors.get(var_key)
             if isinstance(var, torch.Tensor) and var.shape == mean.shape:
@@ -650,14 +651,25 @@ def _write_report(
     if "ep45" in by_ckpt and 2 in by_ckpt["ep45"] and 6 in by_ckpt["ep45"]:
         z_mean = float(by_ckpt["ep45"][2]["mean"])
         g_mean = float(by_ckpt["ep45"][6]["mean"])
+        z_sat = float(by_ckpt["ep45"][2].get("sat_frac_abs_ge_0p95", math.nan))
+        g_sat = float(by_ckpt["ep45"][6].get("sat_frac_abs_ge_0p95", math.nan))
         if z_mean > 0.5 and g_mean > 0.5:
             lines.append(
                 "- The ep45 actor itself outputs the open/up bias at reset in deterministic mode. "
                 "This matches the training JSONL trend and is not caused by the rollout renderer or post-reset stepping logic."
             )
+        elif z_mean > 0.0 and g_mean > 0.8:
+            lines.append(
+                "- The ep45 actor is already strongly open at reset and has positive/up z action, "
+                f"but reset-only deterministic z is not saturated (z_mean=`{z_mean:.3f}`, z_sat=`{z_sat:.3f}`, "
+                f"gripper_mean=`{g_mean:.3f}`, gripper_sat=`{g_sat:.3f}`). "
+                "Together with the training JSONL/eval rollout z saturation, this points to learned policy state evolution "
+                "after reset rather than a simple action sign inversion."
+            )
         else:
             lines.append(
-                "- Ep45 deterministic reset actions are not strongly open/up in this diagnostic; investigate rollout-time state drift or stochastic/action-scaling effects next."
+                "- Ep45 deterministic reset actions are not strongly open/up in this reset-only diagnostic; "
+                "investigate rollout-time state drift, stochastic outputs, or action-scaling effects next."
             )
     else:
         lines.append("- Could not derive an ep45 deterministic reset-action verdict from the output tables.")

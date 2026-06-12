@@ -3056,3 +3056,76 @@ Validation:
 
 Next:
 - Commit/push, deploy exact commit to the agent-owned L401 worktree via Git bundle if direct fetch remains blocked, run remote syntax checks, relaunch the bounded policy-state diagnostic with a new run name, then fetch/open artifacts.
+
+## 2026-06-11 18:55 PDT - relaunch hardened policy state audit
+
+Goal:
+- Produce inspectable ep10/ep45 policy action-distribution and reset observation semantics artifacts for the robust pass7 reset after hardening the diagnostic.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- local_commit: `31329f9836ffc28515002f8cbb887850e68a250c`
+- push/pull: pushed to `origin/codex/franka-cube-ggx-pregrasp-reset`; L401 direct GitHub fetch remained blocked from earlier workflow, so deployed exact commit via Git bundle into the agent-owned remote worktree.
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `31329f9836ffc28515002f8cbb887850e68a250c`, detached clean
+- validation:
+  - local `python3 -m py_compile dextrah_lab/rl_games/audit_franka_cube_policy_state.py` passed
+  - local `bash -n cluster/sbatch_audit_franka_cube_policy_state_1gpu.sh` passed
+  - remote `python3 -m py_compile dextrah_lab/rl_games/audit_franka_cube_policy_state.py` passed
+  - remote `bash -n cluster/sbatch_audit_franka_cube_policy_state_1gpu.sh` passed
+
+Command / Job:
+- command: `sbatch --parsable --job-name=ggx_policy_state2 --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=31329f9836ffc28515002f8cbb887850e68a250c,TASK=Dextrah-Franka-Cube-Grasp,RUN_NAME=franka_cube_ggx_pass7_policy_state_20260612_0255,NUM_ENVS=64,NUM_RESETS=3,SEED=20260624,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_robust_pass7_20260612.npz,CHECKPOINTS="ep10=/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_robust_pass7_smoke45_20260612_0056/nn/last_dextrah_franka_cube_grasp_ep_10_rew_857.09937.pth;ep45=/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_robust_pass7_smoke45_20260612_0056/nn/last_dextrah_franka_cube_grasp_ep_45_rew_662.51086.pth",TRAINING_JSONL_PATH=/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_robust_pass7_smoke45_20260612_0056/metrics/direct_info_rank_0.jsonl,STOCHASTIC_SAMPLES=16,HISTOGRAM_BINS=41 cluster/sbatch_audit_franka_cube_policy_state_1gpu.sh`
+- job_id: `1027979`
+- run_name: `franka_cube_ggx_pass7_policy_state_20260612_0255`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pass7_policy_state_20260612_0255`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/audit_franka_cube_policy_state_1027979.out`
+
+Expected artifacts:
+- `metrics.json`, `REPORT.md`, `checkpoint_state_summary.json`, `reset_observation_dim_summary.csv`, `observation_zscore_summary.csv`, `policy_action_dim_summary.csv`, `policy_action_samples.csv`, `actor_output_dim_summary.csv`, `actor_output_samples.csv`, `checkpoint_tensor_summary.csv`, `training_action_epoch_summary.csv`, `action_histograms.png`, `observation_zscore_histograms.png`, `training_action_trends.png`; if the audit fails, `ERROR.md` and `error.json`.
+
+Next:
+- Monitor job `1027979` through terminal state, inspect logs/artifacts, fetch locally, open report/plots with `viz-open`, and decide whether the action/observation semantics explain the ep45 open/up/away policy. No PPO/A100.
+
+Result:
+- status: completed / artifacts fetched / replacement diagnostic needed for RMS section
+- scheduler: `1027979` `COMPLETED 0:0`, elapsed `00:00:49`, node `pool0-00030`
+- remote run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pass7_policy_state_20260612_0255`
+- local run_dir: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_policy_state_20260612_0255`
+- local log: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_logs/l401/slurm_logs/dextrah/audit_franka_cube_policy_state_1027979.out`
+- viewer URLs:
+  - report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_policy_state_20260612_0255/REPORT.md`
+  - action histograms: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_policy_state_20260612_0255/action_histograms.png`
+  - training trends: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_policy_state_20260612_0255/training_action_trends.png`
+  - observation z-score histogram: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_policy_state_20260612_0255/observation_zscore_histograms.png`
+
+Metrics / Evidence:
+- Reset/prior health remains good over 3 sampled reset batches: reset success mean `1.0`, reset quality mean `1.0`, open width mean `0.08 m`, projected exact tip-center mean about `0.027-0.028 m`, sample histogram covers all 7 pass7 grasps.
+- Ep10 deterministic reset actions: `x=-0.273`, `y=-0.152`, `z=-0.858`, `roll=-0.576`, `pitch=-0.340`, `yaw=-0.409`, `gripper=0.507`; ep10 is near/open-ish but downward/approach-biased.
+- Ep45 deterministic reset actions: `x=0.575`, `y=-0.797`, `z=0.312`, `roll=-1.000`, `pitch=0.598`, `yaw=0.621`, `gripper=0.991`; gripper is already strongly open and roll is saturated, but reset-only z is positive rather than saturated.
+- Ep45 stochastic reset action means remain open/up-ish: `z=0.188`, `gripper=0.743`, with high saturation fractions across several dimensions.
+- Training JSONL at epoch 45 is much more pathological than reset-only deterministic action: `cube_action_z=0.962`, `cube_gripper_action=0.746`, `cube_ee_to_cube_dist=0.677`, `cube_finger_center_to_cube_dist=0.667`, success/lift `0`.
+
+Analysis:
+- The action-sign audit confirms no sign inversion: positive z is upward and positive gripper opens. The ep45 actor already has a strong open-gripper bias at reset and some positive/up tendency, while training/eval rollouts saturate z upward after stepping.
+- The current `1027979` observation RMS/z-score section is invalid because the diagnostic paired `running_mean`/`running_var` tensors with themselves due a loose key-matching bug. The raw checkpoint tensor table exposed the intended keys (`model.running_mean_std.running_mean` and `model.running_mean_std.running_var`), so this is a diagnostic bug, not an env/task finding.
+
+Decision:
+- Do not use `1027979` z-score conclusions. Patch the RMS pairing and report wording, then rerun the same bounded diagnostic once. No PPO/A100.
+
+## 2026-06-11 19:03 PDT - fix policy state RMS pairing
+
+Goal:
+- Replace the flawed `1027979` observation normalization evidence with valid reset observation RMS/z-score artifacts while preserving the useful action-distribution audit.
+
+Change:
+- Tightened checkpoint RMS tensor pairing in `audit_franka_cube_policy_state.py` so only keys ending in `.running_mean` or `.moving_mean` are treated as means, and candidate variance/std keys are built from the exact suffix prefix. This prevents `running_mean` and `running_var` from being paired with themselves.
+- Updated the report verdict to distinguish strong open-gripper reset bias plus positive z from fully saturated reset z; this better matches the observed split between reset-only actions and rollout/training z saturation.
+
+Validation:
+- local `python3 -m py_compile dextrah_lab/rl_games/audit_franka_cube_policy_state.py` passed
+- local `bash -n cluster/sbatch_audit_franka_cube_policy_state_1gpu.sh` passed
+- local `git diff --check` passed
+
+Next:
+- Commit/push/deploy this diagnostic-only fix, rerun the bounded L401 audit, fetch/open artifacts, and record the final action/observation semantics verdict. No PPO/A100.
