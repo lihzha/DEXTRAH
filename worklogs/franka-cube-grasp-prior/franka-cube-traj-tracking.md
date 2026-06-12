@@ -3730,3 +3730,67 @@ Analysis:
 Next:
 - Produce the clearer pure-reference video artifact requested by the user. The existing `1027919` video appears to track env0, likely the one failing env, so try a wide-camera 4-env rerun under the same pure-reference alpha `1.0`/phase `1.0` settings.
 - Then run one bounded training/eval smoke with stronger action imitation/alignment if no new runtime patch is required, or patch the smallest diagnostic knob if needed.
+
+## 2026-06-11T17:39:22-07:00 - pure-reference wide-camera artifact launch
+
+Goal:
+- Produce a clearer visual artifact for the positive pure-reference result. The `1027919` metrics showed 3/4 final success, but the captured video appears to follow env0, likely the single failing env. This rerun uses the same pure-reference settings with a pulled-back camera intended to show multiple envs.
+
+Version Control:
+- local_commit: `a1c4c3df3b9e443600e14aca445ee29179c99e3a`
+- remote_runtime_commit: `858402985719ec3ceb79db696a555443f976c997`
+- remote_status: detached clean at `858402985719ec3ceb79db696a555443f976c997`
+- remote_commit_note: runtime files for eval remain identical to local; local commit only added artifact helper/worklog since the last runtime-affecting commit.
+
+Command / Job:
+- command: `ssh l401 'cd /lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking && sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:30:00 --job-name=tf_ref100_wide --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_teacherforce_ref100_wide4env_20260611_173922,NUM_ENVS=4,NUM_STEPS=520,VIDEO_LENGTH=520,VIDEO_NAME_PREFIX=tf-ref100-wide4env,CAPTURE_VIDEO=True,DETERMINISTIC=True,ACTION_SOURCE=policy,SUPPRESS_SUCCESS_TERMINATION=True,USE_CUDA_GRAPH=False,SEED=64,CUBE_SPAWN_XY_RANDOMIZATION=0.08,CAMERA_EYE_X=3.0,CAMERA_EYE_Y=-3.4,CAMERA_EYE_Z=2.8,CAMERA_TARGET_X=0.8,CAMERA_TARGET_Y=0.8,CAMERA_TARGET_Z=0.85,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_WEIGHT=15.0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_PHASE_START=0.0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_SHARPNESS=1.0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_USE_CONTACT_GATE=False,TRAJECTORY_TRACKING_TEACHER_FORCE_ENABLED=True,TRAJECTORY_TRACKING_TEACHER_FORCE_ALPHA_START=1.0,TRAJECTORY_TRACKING_TEACHER_FORCE_ALPHA_END=1.0,TRAJECTORY_TRACKING_TEACHER_FORCE_PHASE_END=1.0,TRAJECTORY_TRACKING_TEACHER_FORCE_ANNEAL_STEPS=0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_COMPARE_RAW_POLICY=True,CHECKPOINT=/results/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_teacherforce_rl5b_20260611_170913/nn/last_dextrah_franka_cube_traj_tracking_ep_5_rew_3560.5405.pth cluster/sbatch_eval_franka_cube_grasp_1gpu.sh'`
+- job_id: `1027923`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_traj_tracking_teacherforce_ref100_wide4env_20260611_173922`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1027923.out`
+
+Acceptance:
+- Same safety/behavior expectations as `1027919`: target unsafe max `0`, success/lift comparable if camera change does not alter physics.
+- Artifact acceptance: full MP4, contact sheet, trace plot, report, metrics, and `viz-open` URLs. If the camera still does not expose successful envs, record that limitation explicitly and use this run only as a broad-scene visual.
+
+## 2026-06-11T17:43:10-07:00 - pure-reference wide-camera artifact result
+
+Goal:
+- Close out the clearer visual artifact request for the positive pure-reference path.
+
+Command / Job:
+- job_id: `1027923`
+- status: completed `0:0` in `00:01:27`
+- run_name: `franka_cube_traj_tracking_teacherforce_ref100_wide4env_20260611_173922`
+- remote_run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_traj_tracking_teacherforce_ref100_wide4env_20260611_173922`
+- local_run_dir: `cluster_results/l401/franka_cube_traj_tracking_teacherforce_ref100_wide4env_20260611_173922`
+- local_artifact_dir: `cluster_results/l401/franka_cube_traj_tracking_teacherforce_ref100_wide4env_20260611_173922_artifacts`
+- logs: `cluster_results/l401/slurm_logs/eval_franka_cube_1027923.out`
+
+Result:
+- steps/video: 520/520 rollout steps; MP4 metadata `1280x720`, `520` frames, `8.666667 s`.
+- safety: target unsafe max `0`, target clearance min `0.065114 m`; train/eval consistency passed.
+- success/lift: success mean/final/max `0.20625/0.75/0.75`, success ever `3/4`, cube lift max `0.144406 m`.
+- action/reference: teacher alpha mean/final `1.0/1.0`, applied/reference L2 mean `0.0140`, raw-policy/reference L2 mean `0.7224`.
+- visual: wide contact sheet/video show multiple envs at once; final frame visibly resolves the earlier closeup ambiguity by showing lifted cubes in the multi-env scene while one cube remains on the table.
+- reference caveat remains: compact reference is `curobo_validated=false`, source tag `graspgenx_curobo_60mm_export_pending_exact_validation`.
+
+Artifacts:
+- report: `cluster_results/l401/franka_cube_traj_tracking_teacherforce_ref100_wide4env_20260611_173922_artifacts/report.md`
+- contact sheet: `cluster_results/l401/franka_cube_traj_tracking_teacherforce_ref100_wide4env_20260611_173922_artifacts/video_contact_sheet.png`
+- trace plot: `cluster_results/l401/franka_cube_traj_tracking_teacherforce_ref100_wide4env_20260611_173922_artifacts/trajectory_trace_plot.png`
+- metrics: `cluster_results/l401/franka_cube_traj_tracking_teacherforce_ref100_wide4env_20260611_173922/metrics.json`
+- trace CSV/JSONL: `cluster_results/l401/franka_cube_traj_tracking_teacherforce_ref100_wide4env_20260611_173922/trace.csv`, `cluster_results/l401/franka_cube_traj_tracking_teacherforce_ref100_wide4env_20260611_173922/trace.jsonl`
+- full video: `cluster_results/l401/franka_cube_traj_tracking_teacherforce_ref100_wide4env_20260611_173922/videos/tf-ref100-wide4env-step-0.mp4`
+
+viz_urls:
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_ref100_wide4env_20260611_173922_artifacts/report.md`
+- contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_ref100_wide4env_20260611_173922_artifacts/video_contact_sheet.png`
+- trace plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_ref100_wide4env_20260611_173922_artifacts/trajectory_trace_plot.png`
+- video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_ref100_wide4env_20260611_173922/videos/tf-ref100-wide4env-step-0.mp4`
+
+Analysis:
+- This artifact resolves the user-facing confusion from the old closeup videos: the reference path is visibly viable in multiple envs when fully applied.
+- The remaining trainability problem is still the learned raw policy's weak/incorrect action timing, especially close/up/gripper and residual pose components around lift.
+
+Next:
+- Launch only a smoke-scale trainability diagnostic. Use stronger existing action-alignment/teacher-force knobs first to avoid an unnecessary runtime patch: e.g. high action-alignment weight and full teacher force through the horizon for a tiny PPO run, then immediately evaluate with lower/no teacher to see whether raw close/up/gripper timing moves toward the reference.
