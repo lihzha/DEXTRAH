@@ -7842,3 +7842,16 @@ Local validation:
 - `bash -n cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`: pass.
 - `git diff --check`: pass.
 - `git diff --cached --check`: pass.
+
+Implementation commit:
+- `5edcf31f8b21d04a8dfcbe921c6ddcd586a854b1`
+- pushed branch: `codex/franka-cube-diffusion-policy-bc`
+
+Remote deploy:
+- l401 canonical SSH remote still fails:
+  `git@github.com: Permission denied (publickey)`.
+- HTTPS Git fetch from `https://github.com/lihzha/DEXTRAH.git` succeeded.
+- agent remote worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- remote_head:
+  `5edcf31f8b21d04a8dfcbe921c6ddcd586a854b1`
