@@ -9678,3 +9678,27 @@ Next:
 - Run one bounded official-DP smoke on the 25D phase/progress NPZ:
   dataset report, direct-only checkpoint range smokes, corrected action
   semantics report, and pretrain report. No closed-loop eval/RL.
+
+## 2026-06-11T22:39:03-07:00 - status before phase-progress official DP smoke
+
+Status:
+- The 21D set4 official-DP smoke completed and is `needs_review`; all artifacts
+  are local and viewer URLs are recorded above.
+- No C-owned local DP/training/diagnostic process is active at this moment.
+- No C-owned Slurm job is active from this smoke loop.
+
+Version Control:
+- phase metadata diagnostic fix commit:
+  `44e049365675074cb09f62b13a6be44b705a1bea`
+- 21D set4 launch/result worklog commit:
+  `4f3f6140f8bd3f0af1fc2a2bfb1e09307bff4248`
+- phase/progress offline tooling commit:
+  `d2426151e229ed81b72a3fb427cd5d6cdfbf9c4a`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- pushed: yes, through `d2426151e229ed81b72a3fb427cd5d6cdfbf9c4a`.
+
+Next:
+- Launch one offline-only 25D phase/progress official-DP smoke to test whether
+  explicit phase/progress conditioning resolves the close-boundary gripper
+  ambiguity. This diagnostic cannot be used for Isaac eval without a matching
+  runtime feature provider.
