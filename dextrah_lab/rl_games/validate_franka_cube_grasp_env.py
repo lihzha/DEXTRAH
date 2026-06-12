@@ -11,6 +11,28 @@ from datetime import datetime
 from isaaclab.app import AppLauncher
 
 
+REWARD_WEIGHT_FIELDS = (
+    "cube_approach_weight",
+    "cube_enclosure_weight",
+    "cube_lift_weight",
+    "cube_height_tracking_weight",
+    "cube_xy_stability_weight",
+    "cube_success_bonus_weight",
+    "cube_close_action_weight",
+    "cube_lift_action_weight",
+    "cube_descend_action_penalty_weight",
+    "cube_table_clearance_penalty_weight",
+    "cube_gripper_close_reg_weight",
+    "cube_action_penalty_weight",
+    "trajectory_tracking_position_weight",
+    "trajectory_tracking_orientation_weight",
+    "trajectory_tracking_gripper_weight",
+    "trajectory_tracking_close_action_weight",
+    "trajectory_tracking_lift_action_weight",
+    "trajectory_tracking_start_weight",
+    "trajectory_tracking_end_weight",
+)
+
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--task", type=str, default="Dextrah-Franka-Cube-Grasp")
 parser.add_argument("--num_envs", type=int, default=8)
@@ -46,6 +68,8 @@ parser.add_argument("--print_interval", type=int, default=30)
 parser.add_argument(
     "--disable_fabric", action="store_true", default=False, help="Disable fabric and use USD I/O operations."
 )
+for reward_weight_field in REWARD_WEIGHT_FIELDS:
+    parser.add_argument(f"--{reward_weight_field}", type=float, default=None)
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 
@@ -103,6 +127,32 @@ def _optional_bool(value: str | None) -> bool | None:
     if normalized in {"0", "false", "no", "off"}:
         return False
     raise ValueError(f"Expected boolean string, got {value!r}")
+
+
+def _collect_reward_weights(env_cfg) -> dict[str, float]:
+    return {
+        name: float(getattr(env_cfg, name))
+        for name in REWARD_WEIGHT_FIELDS
+        if hasattr(env_cfg, name)
+    }
+
+
+def _apply_optional_float_overrides(env_cfg, overrides: dict[str, float | None]) -> None:
+    for name, value in overrides.items():
+        if value is None:
+            continue
+        if not hasattr(env_cfg, name):
+            raise ValueError(f"--{name} was provided for a task config without {name}")
+        setattr(env_cfg, name, float(value))
+
+
+def _run_reward_weight_config_checks(env_cfg, checks: CheckRecorder) -> None:
+    reward_weights = _collect_reward_weights(env_cfg)
+    checks.check(
+        "reward_weight_config_finite",
+        all(torch.isfinite(torch.tensor(value)).item() for value in reward_weights.values()),
+        reward_weights=reward_weights,
+    )
 
 
 def _configure_validation_camera(env_cfg, task_env=None) -> None:
@@ -519,11 +569,13 @@ def _run_predicate_checks(task_env, checks: CheckRecorder) -> None:
     close_action_value = _mean(close_action_reward)
     table_clearance_penalty_value = _mean(table_clearance_penalty)
     gripper_close_reg_value = _mean(gripper_close_reg)
+    approach_required = float(getattr(task_env.cfg, "cube_approach_weight", 0.0)) > 0.0
+    enclosure_required = float(getattr(task_env.cfg, "cube_enclosure_weight", 0.0)) > 0.0
     checks.check(
         "reward_accepts_success_geometry_for_prelift_enclosure",
         (
-            approach_value > 0.10
-            and enclosure_value > 0.10
+            (not approach_required or approach_value > 0.10)
+            and (not enclosure_required or enclosure_value > 0.10)
             and close_action_value >= 0.0
             and table_clearance_penalty_value >= -0.001
             and gripper_close_reg_value > -0.001
@@ -539,6 +591,8 @@ def _run_predicate_checks(task_env, checks: CheckRecorder) -> None:
         hand_max_dist=_mean(task_env.hand_to_cube_max_dist),
         finger_center_dist=_mean(task_env.finger_center_to_cube_dist),
         ee_to_cube_dist=_mean(task_env.ee_to_cube_dist),
+        cube_approach_weight=float(getattr(task_env.cfg, "cube_approach_weight", 0.0)),
+        cube_enclosure_weight=float(getattr(task_env.cfg, "cube_enclosure_weight", 0.0)),
     )
 
     lifted_rewards = compute_franka_cube_grasp_rewards(
@@ -577,11 +631,13 @@ def _run_predicate_checks(task_env, checks: CheckRecorder) -> None:
     lift_value = _mean(lift_reward)
     success_bonus_value = _mean(success_bonus)
     lift_action_value = _mean(lift_action_reward)
+    lift_required = float(getattr(task_env.cfg, "cube_lift_weight", 0.0)) > 0.0
+    success_required = float(getattr(task_env.cfg, "cube_success_bonus_weight", 0.0)) > 0.0
     checks.check(
         "reward_accepts_success_geometry_for_lift",
         (
-            lift_value > 1.0
-            and success_bonus_value > 0.0
+            (not lift_required or lift_value > 1.0)
+            and (not success_required or success_bonus_value > 0.0)
             and lift_action_value >= 0.0
         ),
         lift_reward=lift_value,
@@ -593,6 +649,8 @@ def _run_predicate_checks(task_env, checks: CheckRecorder) -> None:
         hand_max_dist=_mean(task_env.hand_to_cube_max_dist),
         finger_center_dist=_mean(task_env.finger_center_to_cube_dist),
         ee_to_cube_dist=_mean(task_env.ee_to_cube_dist),
+        cube_lift_weight=float(getattr(task_env.cfg, "cube_lift_weight", 0.0)),
+        cube_success_bonus_weight=float(getattr(task_env.cfg, "cube_success_bonus_weight", 0.0)),
     )
     task_env.actions[:] = 0.0
 
@@ -1141,6 +1199,10 @@ def main() -> None:
             if not hasattr(env_cfg, name):
                 raise ValueError(f"--{name} was provided for a task config without {name}")
             setattr(env_cfg, name, float(value))
+    _apply_optional_float_overrides(
+        env_cfg,
+        {name: getattr(args_cli, name) for name in REWARD_WEIGHT_FIELDS},
+    )
     use_contact_gate = _optional_bool(args_cli.trajectory_tracking_action_alignment_use_contact_gate)
     if use_contact_gate is not None:
         if not hasattr(env_cfg, "trajectory_tracking_action_alignment_use_contact_gate"):
@@ -1171,6 +1233,7 @@ def main() -> None:
     _run_registration_checks(args_cli.task, checks)
     _run_reference_loader_checks(checks)
     _run_reward_checks(args_cli.device, checks)
+    _run_reward_weight_config_checks(env_cfg, checks)
     _run_tracking_config_checks(env_cfg, args_cli.task, checks)
 
     gym_env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)
@@ -1214,6 +1277,7 @@ def main() -> None:
         "video_enabled": args_cli.video,
         "video_folder": str(video_folder) if args_cli.video else None,
         "trajectory_tracking_reference_path": getattr(env_cfg, "trajectory_tracking_reference_path", None),
+        "reward_weights": _collect_reward_weights(env_cfg),
         "tracking_reference": tracking_reference_summary,
         "env_closed": env_closed,
     }

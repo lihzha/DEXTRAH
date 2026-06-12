@@ -7426,3 +7426,40 @@ Analysis:
 
 Next:
 - Run a one-GPU clean PPO probe long enough to produce non-empty scalar curves and early behavior signal before any 8-GPU scale-up. Suggested next run: `NUM_ENVS=256`, `HORIZON_LENGTH=64`, `MAX_ITERATIONS=25` or `50`, `SAVE_FREQUENCY=5`, no auto-resume, same reference path, then policy-only eval/video if reward curves are finite.
+## 2026-06-12T01:16:01-07:00 - reward ablation override plumbing
+
+Goal:
+- Make reward tuning experiments explicit and reproducible before running more RL.
+
+Hypothesis:
+- The current tracking reward may be redundant with, or dominated by, the baseline dense Franka cube closeness/shaping terms. To test that cleanly, each run must record exact active reward weights and allow turning off tracking state closeness, tracking action shaping, and selected baseline dense rewards without code edits between runs.
+
+Change:
+- Added explicit reward-weight override plumbing for Franka cube baseline weights and trajectory-tracking weights in train/eval/validation wrappers.
+- Added validator arguments and metrics for resolved reward weights.
+- Relaxed validator geometry-reward checks so intentional zero-weight ablations do not fail solely because a disabled reward term is zero.
+- Added reward-weight fields to eval `env_config` summaries.
+
+Version Control:
+- agent_id: franka-cube-traj-tracking
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking`
+- worklog: `worklogs/franka-cube-grasp-prior/franka-cube-traj-tracking.md`
+- branch: `codex/franka-cube-trajectory-tracking`
+- base_commit: `0cd14f545e023edfb70f22e71cc9956703cd6f0d`
+- implementation_commit: pending
+- changed_files: `cluster/sbatch_train_teacher_8gpu.sh`, `cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`, `cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`, `dextrah_lab/rl_games/validate_franka_cube_grasp_env.py`, `dextrah_lab/rl_games/eval_rollout.py`, `worklogs/franka-cube-grasp-prior/franka-cube-traj-tracking.md`
+
+Command / Job:
+- static_checks: `python3 -m py_compile dextrah_lab/rl_games/validate_franka_cube_grasp_env.py dextrah_lab/rl_games/eval_rollout.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env_cfg.py`
+- wrapper_checks: `bash -n cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- diff_check: `git diff --check`
+
+Result:
+- status: local static validation passed.
+- key evidence: py_compile, bash -n, and diff check exited cleanly.
+
+Analysis:
+- Existing cluster artifacts show plain no-tracking baselines and reset-prior variants separately. The 8-GPU run `franka_cube_lowz_resetprior_policy8gpu_cd1d66e_20260612_004111` completed 300 epochs with reward around `13500`, but came from a different worktree with reset-prior overrides, so it proves the train stack can succeed but should not be treated as no-prior A. The ablation comparison should start by replicating a plain `Dextrah-Franka-Cube-Grasp` A run from this branch, then compare matched tracking variants using resolved reward weights and per-term curves.
+
+Next:
+- Commit/push this plumbing, deploy exact commit to l401, run plain baseline A replication first, then run tracking reward preflights/probes with individual reward-term comparisons.
