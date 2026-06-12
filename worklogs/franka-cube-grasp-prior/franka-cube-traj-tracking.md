@@ -5779,6 +5779,107 @@ Verdict:
 Active Jobs:
 - none.
 
+## 2026-06-11T22:58:00-07:00 - no-reset boundary visual sweep plan
+
+Goal:
+- Produce inspectable video/contact-sheet evidence for the no-reset lower-alpha boundary cases requested by the orchestrator: alpha0.10, alpha0.15, and alpha0.20.
+- Keep this eval/video-only. No PPO/RL scale-up.
+
+Context:
+- Old `actionscale-rewinf-diag-video480-step-0.mp4` from job `1027753` remains obsolete failed diagnostic evidence.
+- Metric-only no-reset selector result:
+  - alpha0.10 (`1028173`): final/ever success `1/4`; success env3, failure envs0/1/2.
+  - alpha0.15 (`1028174`): final/ever success `2/4`; success envs1/3, failure envs0/2.
+  - alpha0.20 (`1028175`): final/ever success `3/4`; success envs0/1/3, failure env2.
+- Target unsafe max was `0` for all three selector jobs; compact reference remains `curobo_validated=false`.
+
+Planned Visual Jobs:
+- alpha0.10 success env: `REFERENCE_MIX_ALPHA=0.10`, `CAMERA_ENV_INDEX=3`.
+- alpha0.10 failure env: `REFERENCE_MIX_ALPHA=0.10`, `CAMERA_ENV_INDEX=0`.
+- alpha0.15 success env: `REFERENCE_MIX_ALPHA=0.15`, `CAMERA_ENV_INDEX=1`.
+- alpha0.15 failure env: `REFERENCE_MIX_ALPHA=0.15`, `CAMERA_ENV_INDEX=0`.
+- alpha0.20 success env: `REFERENCE_MIX_ALPHA=0.20`, `CAMERA_ENV_INDEX=1`.
+- alpha0.20 failure env: `REFERENCE_MIX_ALPHA=0.20`, `CAMERA_ENV_INDEX=2`.
+
+Common Config:
+- checkpoint: `/results/bc/franka_cube_traj_tracking_bc_handoff_success_alpha0_20260611_223200/nn/bc_reference_action_imitation.pth`.
+- task: `Dextrah-Franka-Cube-Grasp-Traj-Tracking`.
+- action source: `policy_reference_mix`.
+- `SUPPRESS_SUCCESS_TERMINATION=True`, `NUM_ENVS=4`, `NUM_STEPS=520`, `CAPTURE_VIDEO=True`, `VIDEO_LENGTH=520`, `SEED=75`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`.
+- reference: `/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json`.
+
+Acceptance:
+- Fetch logs, metrics, traces, MP4s, reports, trace plots, contact sheets, and train/eval consistency sidecars.
+- Regenerate reports using `--train-bc-metrics` and record unverified train keys from older BC metadata rather than treating them as hidden pass/fail.
+- Validate MP4 metadata with `ffprobe`.
+- Produce a compact comparison report/table after the six runs.
+- No PPO/RL launch; next development direction remains either reducing/eliminating reference mix or documenting a clean low-alpha assisted handoff plan.
+
+Active Jobs:
+- none before launch.
+
+## 2026-06-11T22:54:00-07:00 - no-reset lower-alpha threshold selector result and alpha0.20 visual plan
+
+Jobs:
+- `1028173`, `1028174`, and `1028175` completed `0:0`.
+- local fetched runs:
+  - `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_selector_a010_520_20260611_232200`
+  - `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_selector_a015_520_20260611_232200`
+  - `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_selector_a020_520_20260611_232200`
+- local fetched logs:
+  - `cluster_results/l401/slurm_logs/eval_franka_cube_1028173.out`
+  - `cluster_results/l401/slurm_logs/eval_franka_cube_1028174.out`
+  - `cluster_results/l401/slurm_logs/eval_franka_cube_1028175.out`
+
+Artifacts:
+- alpha0.10 report: `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_selector_a010_520_20260611_232200_artifacts/report.md`
+- alpha0.10 trace plot: `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_selector_a010_520_20260611_232200_artifacts/trajectory_trace_plot.png`
+- alpha0.15 report: `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_selector_a015_520_20260611_232200_artifacts/report.md`
+- alpha0.15 trace plot: `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_selector_a015_520_20260611_232200_artifacts/trajectory_trace_plot.png`
+- alpha0.20 report: `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_selector_a020_520_20260611_232200_artifacts/report.md`
+- alpha0.20 trace plot: `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_selector_a020_520_20260611_232200_artifacts/trajectory_trace_plot.png`
+
+Metrics:
+- alpha0.10 (`1028173`): final/ever success `1/4`, done count `0`, suppressed success-done `1/4`, target unsafe max `0`, clearance min `0.065114 m`, final lift by env `[0.00059, 0.00410, 0.0, 0.27511]` m, raw/applied reference-action L2 mean `0.7094`.
+- alpha0.15 (`1028174`): final/ever success `2/4`, done count `0`, suppressed success-done `2/4`, target unsafe max `0`, clearance min `0.065114 m`, final lift by env `[0.0, 0.21644, 0.0, 0.24450]` m, raw/applied reference-action L2 mean `0.4689`.
+- alpha0.20 (`1028175`): final/ever success `3/4`, last-window success mean `0.6425`, done count `0`, suppressed success-done `3/4`, target unsafe max `0`, clearance min `0.065114 m`, final lift by env `[0.17922, 0.23008, 0.0, 0.23151]` m, raw/applied reference-action L2 mean `0.3368`.
+
+Analysis:
+- The threshold sweep improves monotonically with assistance alpha. Alpha0.10 and alpha0.15 are below the current low-alpha handoff gate. Alpha0.20 matches alpha0.25's `3/4` sustained no-reset success count in metrics, with clean target safety.
+- This is still low-alpha assisted trajectory tracking, not policy-only. Policy-only alpha0.0 remains failed from the current targeted visual gate.
+- The compact reference caveat remains unchanged: `curobo_validated=false`.
+- Old `actionscale-rewinf-diag-video480-step-0.mp4` from job `1027753` remains obsolete failed diagnostic evidence.
+
+Next:
+- Launch exactly one targeted alpha0.20 no-reset video/contact-sheet eval with `CAMERA_ENV_INDEX=1`, because env1 succeeded with final lift `0.23008 m` in the metrics-only run.
+- Do not launch PPO/RL. If the alpha0.20 video visually confirms sustained lift and train/eval consistency remains clean, record alpha0.20 as the lowest current defensible assisted handoff gate.
+
+Active Jobs:
+- none before the alpha0.20 visual launch.
+
+## 2026-06-11T23:22:00-07:00 - no-reset lower-alpha threshold selector launch
+
+Goal:
+- Find whether assistance below alpha0.25 can sustain final success with success termination suppressed.
+
+Version Control:
+- local evidence commit: `793bf0c75577cfe28ef738b32830fa4ea9ecec5c` (`Record no-reset low-alpha handoff gate`), pushed.
+- remote eval source remains at `6a403ae2d7bfb39b5faa5b805fa97da8ebb4d4dc`; no new runtime source is needed for this eval-only sweep.
+
+Command / Jobs:
+- checkpoint: `/results/bc/franka_cube_traj_tracking_bc_handoff_success_alpha0_20260611_223200/nn/bc_reference_action_imitation.pth`
+- common eval config: `ACTION_SOURCE=policy_reference_mix`, `SUPPRESS_SUCCESS_TERMINATION=True`, `NUM_ENVS=4`, `NUM_STEPS=520`, `CAPTURE_VIDEO=False`, `SEED=75`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`.
+- alpha0.10: job_id `1028173`, run `franka_cube_traj_tracking_bc_handoff_noreset_selector_a010_520_20260611_232200`.
+- alpha0.15: job_id `1028174`, run `franka_cube_traj_tracking_bc_handoff_noreset_selector_a015_520_20260611_232200`.
+- alpha0.20: job_id `1028175`, run `franka_cube_traj_tracking_bc_handoff_noreset_selector_a020_520_20260611_232200`.
+
+Acceptance:
+- metrics/logs only first. If a lower alpha has sustained final success and target unsafe max `0`, generate targeted video/contact sheet.
+- If all fail below alpha0.25, keep alpha0.25 as the lowest current defensible assisted gate and do not launch PPO/RL.
+
+Active Jobs:
+- `1028173`, `1028174`, `1028175`.
+
 ## 2026-06-11T23:08:00-07:00 - BC train/eval consistency audit fix plan
 
 Goal:
