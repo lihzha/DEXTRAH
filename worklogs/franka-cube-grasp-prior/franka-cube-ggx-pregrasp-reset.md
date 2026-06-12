@@ -3585,3 +3585,74 @@ Acceptance:
 - Supervised gate only: validation MSE remains practically low (`<=0.04`), gripper sign `>=0.95`, lift-z sign `>=0.90`, checkpoint loadable.
 - If the gate passes, stop at a concise gate report and propose a 64-env PPO smoke; do not auto-launch PPO.
 - If the gate fails, inspect per-phase z/sign plots and decide whether the issue is phase ambiguity, actor capacity/scope, or label conflict.
+
+## 2026-06-11 20:02 PDT - launch: actor + lift-z-weighted BC diagnostic
+
+Goal:
+- Test whether actor-scope training plus lift-z-weighted diagnostic loss fixes the `1028056` lift-z sign failure.
+
+Change:
+- implementation_commit: `ec9e16c5f4e92e052e2a4e5d60cd467f28480fe3`
+- remote L401 worktree detached at `ec9e16c5f4e92e052e2a4e5d60cd467f28480fe3`
+- local checks: `python3 -m py_compile`, `bash -n`, `git diff --check` passed
+- remote checks: `python3 -m py_compile`, `bash -n` passed
+
+Command / Job:
+- command: `sbatch --parsable --job-name=ggx_pass7_bc_liftw --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=ec9e16c5f4e92e052e2a4e5d60cd467f28480fe3,RUN_NAME=franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002,NUM_ENVS=64,NUM_RESETS=16,SEED=20260624,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_robust_pass7_20260612.npz,INIT_CHECKPOINT=/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_robust_pass7_smoke45_20260612_0056/nn/last_dextrah_franka_cube_grasp_ep_45_rew_662.51086.pth,TRAIN_EPOCHS=40,BATCH_SIZE=2048,LEARNING_RATE=0.0003,TRAIN_SCOPE=actor,VALIDATION_FRACTION=0.25,PHASE_BALANCE_LOSS=True,LIFT_PHASE_LOSS_WEIGHT=2.0,LIFT_Z_MSE_WEIGHT=8.0,LIFT_Z_SIGN_LOSS_WEIGHT=0.05,APPROACH_STEPS=16,CLOSE_STEPS=12,LIFT_STEPS=12,CLOSE_WIDTH=0.055,LIFT_ACTION_Z=0.15,ORACLE_GAIN=8.0,ORACLE_MAX_POSITION_ACTION=1.0,TRACK_ORIENTATION=True,GATE_VAL_MSE=0.04,GATE_GRIPPER_SIGN=0.95,GATE_LIFT_Z_SIGN=0.90,SAVE_BC_CHECKPOINT=True cluster/sbatch_bc_franka_cube_pass7_actions_1gpu.sh`
+- job_id: `1028066`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bc_franka_cube_pass7_1028066.out`
+- expected artifacts: report, metrics JSON, action metrics CSV, loss CSV, phase action mean plot, z-sign plot, optional diagnostic checkpoint
+
+Acceptance:
+- Supervised-only. Do not launch PPO from this job automatically. Gate requires validation MSE `<=0.04`, gripper sign `>=0.95`, lift-z sign `>=0.90`, and loadable checkpoint.
+
+Result:
+- status: queued/running; monitoring in progress.
+
+## 2026-06-11 20:02 PDT - result: actor + lift-z-weighted BC diagnostic `1028066`
+
+Goal:
+- Inspect whether actor-scope training plus lift-z-weighted loss fixes the supervised lift-z sign failure from `1028056`.
+
+Command / Job:
+- job_id: `1028066`
+- Slurm result: `COMPLETED 0:0`, elapsed `00:01:04`, node `pool0-00006`
+- run_name: `franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002`
+- remote run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002`
+- local run_dir: `cluster_results/l401/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002`
+- remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bc_franka_cube_pass7_1028066.out`
+- local log: `cluster_logs/l401/slurm_logs/dextrah/bc_franka_cube_pass7_1028066.out`
+- implementation_commit: `ec9e16c5f4e92e052e2a4e5d60cd467f28480fe3`
+
+Artifacts:
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002/REPORT.md`
+- loss curves: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002/bc_loss_curves.png`
+- phase action means: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002/bc_action_phase_means.png`
+- z sign plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002/bc_z_sign_accuracy.png`
+- metrics JSON: `cluster_results/l401/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002/metrics.json`
+- action metrics CSV: `cluster_results/l401/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002/bc_action_metrics.csv`
+- diagnostic checkpoint: `cluster_results/l401/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002/bc_pass7_action_warmstart.pth`
+
+Metrics:
+- supervised gate: `PASS`.
+- validation MSE: `0.0021404221` vs threshold `<=0.04`.
+- validation MAE: `0.0196321942`.
+- validation gripper sign accuracy: `1.0` vs threshold `>=0.95`.
+- validation lift-z sign accuracy: `1.0` vs threshold `>=0.90`.
+- validation lift-z negative prediction rate: `0.0`.
+- validation lift-z MAE: `0.0177978743`.
+- checkpoint loadability: pass; loadability MSE `0.0021404219`, MAE `0.0196321961`.
+- trainable scope: `actor`, `465159` parameters (`actor_mlp.*` plus `mu.*`).
+- validation z sign across all phases remains only `0.8029296994`.
+- close-phase z sign remains weak: `0.3720703125`; this is visible in `bc_z_sign_accuracy.png`. The target close z labels are near/mixed around zero, so this is less directly tied to the lift gate but should be watched in any rollout.
+
+Analysis:
+- Actor-scope training plus lift-z weighting fixed the specific supervised lift gate that failed in `1028056`.
+- This supports the hypothesis that the previous failure was mostly optimization/scope/loss weighting, not reset geometry or checkpoint loading.
+- The result is still diagnostic, not an apple-to-apple RL result. It changes actor initialization using supervised labels and therefore should be treated as a policy-initialization intervention.
+- Remaining concern: all-phase z sign is not strong because close-phase z labels are mixed and near zero. The next rollout should inspect whether this causes hover/close timing issues even though lift-positive behavior is now robust in supervised validation.
+
+Decision:
+- Do not auto-launch PPO. The supervised gate is now passed, so the next proposed step is a bounded 64-env L401 PPO smoke initialized from the diagnostic checkpoint, with the same pass7 reset-prior task and artifact cadence, if the orchestrator/user approves.
+- No A100/full PPO remains allowed from this result.
