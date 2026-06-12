@@ -37,6 +37,12 @@ parser.add_argument(
     help="Policy checkpoint as label=/container/path/to/model.pth. May be repeated.",
 )
 parser.add_argument("--deterministic", action=argparse.BooleanOptionalAction, default=True)
+parser.add_argument(
+    "--candidates",
+    type=str,
+    default="all",
+    help="Comma-separated candidate names to run, or 'all'. Useful for one-candidate-per-job diagnostics.",
+)
 parser.add_argument("--render", action="store_true", default=False)
 parser.add_argument("--render_resets", type=int, default=1)
 parser.add_argument("--render_interval", type=int, default=10)
@@ -1259,6 +1265,7 @@ def main(env_cfg, agent_cfg: dict):
             "seed": args_cli.seed,
             "cube_spawn_xy_randomization": args_cli.cube_spawn_xy_randomization,
             "grasp_prior_library_path": args_cli.grasp_prior_library_path,
+            "candidates": args_cli.candidates,
             "checkpoints": checkpoints,
             "output_dir": str(output_dir),
         },
@@ -1291,6 +1298,12 @@ def main(env_cfg, agent_cfg: dict):
         "script_assisted_oracle_short",
     ]
     all_candidates = list(players.keys()) + scripted_candidates
+    if args_cli.candidates.strip().lower() != "all":
+        requested_candidates = [item.strip() for item in args_cli.candidates.split(",") if item.strip()]
+        unknown_candidates = sorted(set(requested_candidates) - set(all_candidates))
+        if unknown_candidates:
+            raise ValueError(f"Unknown candidates {unknown_candidates}; valid candidates are {all_candidates}")
+        all_candidates = requested_candidates
     render_candidates = {item.strip() for item in args_cli.render_candidates.split(",") if item.strip()}
     if "all" in render_candidates:
         render_candidates = set(all_candidates)
@@ -1437,6 +1450,7 @@ def main(env_cfg, agent_cfg: dict):
         "num_resets": int(args_cli.num_resets),
         "horizon_steps": int(args_cli.horizon_steps),
         "match_reset_state": bool(args_cli.match_reset_state),
+        "candidates": str(args_cli.candidates),
         "seed": int(args_cli.seed),
         "cube_spawn_xy_randomization": float(args_cli.cube_spawn_xy_randomization),
         "grasp_prior_library_path": str(args_cli.grasp_prior_library_path),

@@ -2820,3 +2820,50 @@ Validation:
 
 Next:
 - Commit/push/deploy this fresh-reset audit path and relaunch. Artifact/report must explicitly state that candidate rollouts are from the same prior reset distribution, not bit-identical restored states.
+
+## 2026-06-12T01:33:00Z - relaunch fresh-reset action/reward audit
+
+Goal:
+- Complete the action/reward audit without unstable post-rollout PhysX rewind: each candidate uses a fresh sample from the same robust pass7 prior reset distribution.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- local_commit: `f780ba9213bca99b6f17fd7e2e98861194a176a6`
+- push/pull: pushed branch; deployed exact commit to L401 Worker A worktree via Git bundle
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `f780ba9213bca99b6f17fd7e2e98861194a176a6`, detached clean
+- remote validation: `python3 -m py_compile dextrah_lab/rl_games/audit_franka_cube_grasp_prior_actions.py` passed; `bash -n cluster/sbatch_audit_franka_cube_grasp_prior_actions_1gpu.sh` passed
+
+Command / Job:
+- command: bounded L401 audit with `MATCH_RESET_STATE=False`, `NUM_RESETS=3`, `HORIZON_STEPS=40`, robust pass7 library, ep10/ep45 checkpoints, and all scripted candidates rendered for reset 0.
+- job_id: `1027952`
+- run_name: `franka_cube_ggx_pass7_action_reward_audit_fresh_20260612_0133`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pass7_action_reward_audit_fresh_20260612_0133`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/audit_franka_cube_prior_1027952.out`
+
+Expected artifacts:
+- `metrics.json`, `REPORT.md`, `action_reward_trace.jsonl`, `action_reward_trace.csv`, `rollout_summary.csv`, `reset_samples.csv`, `action_reward_trace_plot.png`, `action_tracking_plot.png`, `action_audit_contact_sheet.jpg`, labeled frames.
+
+Next:
+- Monitor to terminal state; fetch, inspect, generate/open viewer URLs, and record verdict. No PPO/A100.
+
+Result:
+- status: canceled / invalid post-rollout failure
+- scheduler: `1027952` canceled at `00:02:05`.
+- reason: render-enabled fresh-reset audit still completed only the first `policy_ep10` rollout, then hit `Error executing job with overrides` before the next candidate. This disproved the exact-state-restore hypothesis but did not isolate rendering.
+
+Follow-up:
+- Launched no-render same-process fresh-reset fallback `1027953`, run `franka_cube_ggx_pass7_action_reward_audit_norender_20260612_0137`, with `RENDER=False`, `MATCH_RESET_STATE=False`, same checkpoints/candidates/config.
+- `1027953` also completed only the first `policy_ep10` rollout, then hit the same `Error executing job with overrides`; canceled at `00:01:45`.
+- Conclusion: the crash is independent of video rendering and occurs on the post-first-rollout path before the next candidate/reset. The audit needs one candidate per process/job or a one-rollout mode.
+
+Patch:
+- Added `--candidates` to `dextrah_lab/rl_games/audit_franka_cube_grasp_prior_actions.py` and `CANDIDATES` to the L401 wrapper so one job can run exactly one candidate and exit cleanly after writing artifacts.
+- First fallback target is the orchestrator-requested minimal set only: `policy_ep10`, `policy_ep45`, `script_lift_closed`, `script_assisted_oracle_short`, one reset each. Aggregate the per-job JSON/CSV locally afterward.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/audit_franka_cube_grasp_prior_actions.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py` passed.
+- `bash -n cluster/sbatch_audit_franka_cube_grasp_prior_actions_1gpu.sh` passed.
+
+Next:
+- Commit/push/deploy the one-candidate filter, launch four one-candidate L401 jobs, monitor/fetch/aggregate artifacts, and open report/plots/contact sheets with `viz-open`. No PPO/A100.
