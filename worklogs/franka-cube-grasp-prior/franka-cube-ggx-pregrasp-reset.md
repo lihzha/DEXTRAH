@@ -5142,3 +5142,58 @@ Recommendation:
 - Do not launch A100/full RL from these smokes.
 - The low-z reset-prior path remains geometrically healthy, but 45-epoch from-scratch PPO does not exploit it; the matched baseline also fails.
 - The next apple-to-apple-safe option is a paired longer small PPO comparison only if the goal is to test insufficient horizon. Otherwise, any policy initialization, curriculum, or action-prior intervention should remain explicitly labeled non-apple-to-apple.
+
+## 2026-06-11 22:57 - paired longer small PPO horizon comparison plan
+
+Goal:
+- Test whether the negative 45-epoch low-z prior and prior-disabled PPO smokes are simply too short to learn the Franka cube grasp/lift behavior.
+
+Hypothesis:
+- If both variants remain at zero success/lift after a longer but still bounded 64-env run, the blocker is not just the 45-epoch horizon and A100/full RL remains unjustified.
+- If the low-z prior begins grasping/lifting while the matched baseline does not, the corrected prior may be useful after a modest horizon.
+- If baseline learns but low-z prior does not, the prior reset distribution is still harming early PPO despite valid reset geometry.
+
+Change:
+- No source or task changes.
+- Keep apple-to-apple settings from the 45-epoch pair: same `Dextrah-Franka-Cube-Grasp` task, same PPO wrapper/default overrides, same `NUM_ENVS=64`, `HORIZON_LENGTH=64`, minibatch `4096`, seed `20260625`, cube XY randomization `0.08`, JSONL metrics, no checkpoint, `AUTO_RESUME=False`, action warmstart disabled.
+- Increase only `MAX_ITERATIONS` from `45` to `200` and set `SAVE_FREQUENCY=25` for inspectable mid/best/final checkpoints.
+- The only task difference between variants remains:
+  - prior run: `GRASP_PRIOR_RESET_ENABLED=True`, low-z no-offset library `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz`
+  - baseline run: `GRASP_PRIOR_RESET_ENABLED=False`, no prior library.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- worklog: `worklogs/franka-cube-grasp-prior/franka-cube-ggx-pregrasp-reset.md`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `4bfeefd710ee930597f6d3d66b9404579e23f9cd`
+- implementation_commit: pending worklog-plan commit before launch
+- changed_files: owned worklog only
+
+Cheap Validation Plan:
+- `bash -n cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`
+- `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- verify remote agent worktree commit matches launch `CODE_COMMIT`
+- verify low-z prior library exists on remote
+- check l401 queue before launch; do not cancel unrelated jobs.
+
+Command / Job Plan:
+- prior run name: `franka_cube_ggx_lowz_prior_long200_20260611_2257`
+- baseline run name: `franka_cube_baseline_noprior_long200_20260611_2257`
+- expected remote run dirs:
+  - `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_lowz_prior_long200_20260611_2257`
+  - `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseline_noprior_long200_20260611_2257`
+- expected remote logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_smoke_<jobid>.out`
+- launch shape: two `sbatch` jobs on l401 `batch`, 1 GPU each, `--time=0-01:30:00`, same wrapper `cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`.
+
+Expected Artifacts:
+- training JSONL rank-0 metrics for both runs
+- checkpoints every 25 epochs plus final
+- stdout logs with checkpoint rewards
+- local paired training report/curves and checkpoint table
+- done-aware eval videos/contact sheets/trace plots for ep100, best-reward, and final checkpoints for both variants, unless best equals ep100/final.
+
+Stop / Go Criteria:
+- Stop and do not scale if either run has NaN/Inf, traceback, missing JSONL/checkpoints, bad reset-prior metrics, or videos show no grasp/lift despite scheduler success.
+- Do not launch A100/full RL unless this bounded pair has meaningful success/lift and eval videos show plausible grasp/lift behavior.
+- If both are still negative, document as a horizon-negative small-scale comparison and propose the next diagnostic instead of scaling.
