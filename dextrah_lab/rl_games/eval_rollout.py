@@ -717,9 +717,38 @@ def _policy_obs_tensor(agent: BasePlayer, obs) -> torch.Tensor:
     return obs_t.detach().float()
 
 
+def _residual_context_tensor(
+    residual_adapter,
+    task_env,
+    *,
+    device: torch.device,
+    batch_size: int,
+    teacher_alpha: float,
+) -> torch.Tensor | None:
+    context_dim = int(getattr(residual_adapter, "context_dim", 0))
+    if context_dim <= 0:
+        return None
+    features = list(getattr(residual_adapter, "context_features", ()) or ())
+    if len(features) != context_dim:
+        raise ValueError(f"Residual adapter context metadata mismatch: dim={context_dim}, features={features}")
+    values = []
+    for feature in features:
+        if feature == "phase":
+            phase = getattr(task_env, "traj_phase_progress", torch.zeros(batch_size, device=device))
+            values.append(phase.to(device=device, dtype=torch.float32).view(-1, 1).clamp(0.0, 1.0))
+        elif feature == "teacher_alpha":
+            values.append(torch.full((batch_size, 1), float(teacher_alpha), dtype=torch.float32, device=device))
+        else:
+            raise ValueError(f"Unsupported residual context feature {feature!r}")
+    return torch.cat(values, dim=-1)
+
+
 def _policy_action_components(
     agent: BasePlayer | None,
+    task_env,
     obs,
+    *,
+    teacher_alpha: float = 0.0,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None, torch.Tensor | None]:
     if agent is None:
         raise ValueError("policy action source requires an RL-Games player.")
@@ -729,10 +758,17 @@ def _policy_action_components(
     if residual_adapter is None:
         return base_action, base_action, None, None
     obs_tensor = _policy_obs_tensor(agent, obs)
-    residual = residual_adapter(obs_tensor).detach().float().to(device=base_action.device)
+    residual_context = _residual_context_tensor(
+        residual_adapter,
+        task_env,
+        device=base_action.device,
+        batch_size=obs_tensor.shape[0],
+        teacher_alpha=teacher_alpha,
+    )
+    residual = residual_adapter(obs_tensor, residual_context).detach().float().to(device=base_action.device)
     residual_gate = None
     if hasattr(residual_adapter, "gate_values"):
-        residual_gate = residual_adapter.gate_values(obs_tensor).detach().float().to(device=base_action.device)
+        residual_gate = residual_adapter.gate_values(obs_tensor, residual_context).detach().float().to(device=base_action.device)
     final_action = torch.clamp(base_action + residual, -1.0, 1.0)
     return final_action, base_action, residual, residual_gate
 
@@ -765,7 +801,12 @@ def _actions_from_source(
 ) -> tuple[torch.Tensor, dict[str, float | None]]:
     metrics: dict[str, float | None] = {}
     if action_source == "policy":
-        raw_policy_actions, base_policy_actions, residual_policy_actions, residual_gate = _policy_action_components(agent, obs)
+        raw_policy_actions, base_policy_actions, residual_policy_actions, residual_gate = _policy_action_components(
+            agent,
+            task_env,
+            obs,
+            teacher_alpha=float(args_cli.reference_mix_alpha),
+        )
         _add_policy_component_metrics(metrics, raw_policy_actions, base_policy_actions, residual_policy_actions, residual_gate)
         return raw_policy_actions, metrics
     if action_source == "zero":
@@ -782,9 +823,14 @@ def _actions_from_source(
         metrics.update(hold_metrics)
         return applied_actions, metrics
     if action_source == "policy_reference_mix":
-        raw_policy_actions, base_policy_actions, residual_policy_actions, residual_gate = _policy_action_components(agent, obs)
         reference_actions = _reference_delta_actions(task_env)
         alpha = max(0.0, min(1.0, float(args_cli.reference_mix_alpha)))
+        raw_policy_actions, base_policy_actions, residual_policy_actions, residual_gate = _policy_action_components(
+            agent,
+            task_env,
+            obs,
+            teacher_alpha=alpha,
+        )
         mixed_actions = torch.clamp((1.0 - alpha) * raw_policy_actions + alpha * reference_actions, -1.0, 1.0)
         metrics["reference_mix_alpha"] = alpha
         _add_policy_component_metrics(metrics, raw_policy_actions, base_policy_actions, residual_policy_actions, residual_gate)
@@ -795,9 +841,14 @@ def _actions_from_source(
         _add_action_delta_metrics(metrics, "mixed_policy_action_error", mixed_actions, raw_policy_actions)
         return mixed_actions, metrics
     if action_source == "policy_reference_mix_hold":
-        raw_policy_actions, base_policy_actions, residual_policy_actions, residual_gate = _policy_action_components(agent, obs)
         reference_actions = _reference_delta_actions(task_env)
         alpha = max(0.0, min(1.0, float(args_cli.reference_mix_alpha)))
+        raw_policy_actions, base_policy_actions, residual_policy_actions, residual_gate = _policy_action_components(
+            agent,
+            task_env,
+            obs,
+            teacher_alpha=alpha,
+        )
         mixed_actions = torch.clamp((1.0 - alpha) * raw_policy_actions + alpha * reference_actions, -1.0, 1.0)
         metrics["reference_mix_alpha"] = alpha
         _add_policy_component_metrics(metrics, raw_policy_actions, base_policy_actions, residual_policy_actions, residual_gate)

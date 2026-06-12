@@ -178,6 +178,24 @@ parser.add_argument(
     default=0.5,
     help="Reference blend used when --collection_action_source=teacher_mix.",
 )
+parser.add_argument(
+    "--collection_teacher_alphas",
+    type=str,
+    default="",
+    help=(
+        "Optional comma/colon-separated teacher alphas for multiple fresh collections. "
+        "When set, overrides --collection_teacher_alpha and creates one source per alpha."
+    ),
+)
+parser.add_argument(
+    "--residual_context_features",
+    type=str,
+    default="",
+    help=(
+        "Optional comma/colon-separated residual adapter context features. Supported: "
+        "phase, teacher_alpha. Only used with --residual_adapter_enabled."
+    ),
+)
 parser.add_argument("--task", type=str, default=None, help="Gym task name.")
 parser.add_argument("--disable_fabric", action="store_true", default=False, help="Disable fabric and use USD I/O.")
 AppLauncher.add_app_launcher_args(parser)
@@ -325,6 +343,40 @@ def _parse_loss_dims(raw: str, action_dim: int) -> list[int]:
     if not dims:
         raise ValueError("--loss_dims must include at least one dimension")
     return sorted(set(dims))
+
+
+def _parse_context_features(raw: str) -> list[str]:
+    allowed = {"phase", "teacher_alpha"}
+    features: list[str] = []
+    for value in _split_list(raw):
+        feature = value.strip().lower().replace("-", "_")
+        if feature in {"alpha", "assist_alpha", "collection_teacher_alpha"}:
+            feature = "teacher_alpha"
+        if feature not in allowed:
+            raise ValueError(f"Unsupported residual context feature {value!r}; allowed={sorted(allowed)}")
+        if feature not in features:
+            features.append(feature)
+    return features
+
+
+def _build_context_tensor(
+    features: list[str],
+    phase: torch.Tensor,
+    teacher_alpha: torch.Tensor,
+    *,
+    device: torch.device,
+) -> torch.Tensor | None:
+    if not features:
+        return None
+    values = []
+    for feature in features:
+        if feature == "phase":
+            values.append(phase.to(device=device, dtype=torch.float32).view(-1, 1).clamp(0.0, 1.0))
+        elif feature == "teacher_alpha":
+            values.append(teacher_alpha.to(device=device, dtype=torch.float32).view(-1, 1).clamp(0.0, 1.0))
+        else:
+            raise ValueError(f"Unsupported residual context feature {feature!r}")
+    return torch.cat(values, dim=-1)
 
 
 def _obs_tensor(agent: BasePlayer, obs) -> torch.Tensor:
@@ -966,6 +1018,7 @@ def _write_report(summary: dict[str, object], rows: list[dict[str, float | int |
         f"- output checkpoint: `{summary.get('output_checkpoint')}`",
         f"- collection action source: `{summary.get('collection_action_source')}`",
         f"- collection teacher alpha: `{summary.get('collection_teacher_alpha')}`",
+        f"- collection teacher alphas: `{summary.get('collection_teacher_alphas')}`",
         f"- samples: `{summary.get('num_samples')}` total / `{summary.get('num_train')}` train / `{summary.get('num_val')}` held-out",
         f"- observation dim: `{summary.get('obs_dim')}`, action dim: `{summary.get('action_dim')}`",
         f"- loss dims: `{summary.get('loss_dims')}`",
@@ -979,6 +1032,7 @@ def _write_report(summary: dict[str, object], rows: list[dict[str, float | int |
         f"- residual adapter enabled: `{summary.get('residual_adapter_enabled')}`",
         f"- residual hidden dim / max action: `{summary.get('residual_hidden_dim')}` / `{summary.get('residual_max_action')}`",
         f"- residual gate enabled / hidden dim / bias init: `{summary.get('residual_gate_enabled')}` / `{summary.get('residual_gate_hidden_dim')}` / `{summary.get('residual_gate_bias_init')}`",
+        f"- residual context features: `{summary.get('residual_context_features')}`",
         f"- residual preserve sources: `{summary.get('residual_preserve_sources')}`",
         f"- residual preserve/l2 weights: `{summary.get('residual_preserve_weight')}` / `{summary.get('residual_l2_weight')}`",
         f"- selected step/score: `{summary.get('selected_step')}` / `{summary.get('selected_score')}`",
@@ -1131,94 +1185,174 @@ def main(env_cfg, agent_cfg: dict):
 
     action_dim = int(getattr(task_env.cfg, "action_space", 0))
     loss_dims = _parse_loss_dims(args_cli.loss_dims, action_dim)
-    collection_teacher_alpha = min(max(float(args_cli.collection_teacher_alpha), 0.0), 1.0)
+    if args_cli.collection_teacher_alphas.strip():
+        collection_teacher_alphas = [
+            min(max(float(value), 0.0), 1.0) for value in _split_list(args_cli.collection_teacher_alphas)
+        ]
+    else:
+        collection_teacher_alphas = [min(max(float(args_cli.collection_teacher_alpha), 0.0), 1.0)]
+    if not collection_teacher_alphas:
+        raise ValueError("At least one collection teacher alpha is required")
     rehearsal_paths = _split_list(args_cli.rehearsal_dataset_paths)
     rehearsal_names = _split_list(args_cli.rehearsal_dataset_names)
     if rehearsal_names and len(rehearsal_names) != len(rehearsal_paths):
         raise ValueError(
             "--rehearsal_dataset_names must be empty or have the same number of entries as --rehearsal_dataset_paths"
         )
-    obs_records: list[torch.Tensor] = []
-    reference_records: list[torch.Tensor] = []
-    raw_records: list[torch.Tensor] = []
-    applied_records: list[torch.Tensor] = []
-    phase_records: list[torch.Tensor] = []
-    lift_records: list[torch.Tensor] = []
-    success_records: list[torch.Tensor] = []
-    unsafe_records: list[torch.Tensor] = []
+    fresh_sources: list[dict[str, object]] = []
 
     try:
-        obs = env.reset()
-        if isinstance(obs, tuple):
-            obs = obs[0]
-        if isinstance(obs, dict) and "obs" in obs:
-            obs = obs["obs"]
+        for source_alpha in collection_teacher_alphas:
+            obs_records: list[torch.Tensor] = []
+            reference_records: list[torch.Tensor] = []
+            raw_records: list[torch.Tensor] = []
+            applied_records: list[torch.Tensor] = []
+            phase_records: list[torch.Tensor] = []
+            lift_records: list[torch.Tensor] = []
+            success_records: list[torch.Tensor] = []
+            unsafe_records: list[torch.Tensor] = []
 
-        for step in range(args_cli.collection_steps):
-            if not simulation_app.is_running():
-                break
-            with torch.no_grad():
-                obs_t = _obs_tensor(agent, obs)
-                raw_mus = _model_mus(agent.model, obs_t, action_dim, is_train=False).detach().clamp(-1.0, 1.0)
-                reference_actions = _reference_delta_actions(task_env)
-                if args_cli.collection_action_source == "reference_delta":
-                    applied_actions = reference_actions
-                elif args_cli.collection_action_source == "policy":
-                    applied_actions = raw_mus
-                else:
-                    applied_actions = torch.clamp(
-                        (1.0 - collection_teacher_alpha) * raw_mus
-                        + collection_teacher_alpha * reference_actions,
-                        -1.0,
-                        1.0,
+            obs = env.reset()
+            if isinstance(obs, tuple):
+                obs = obs[0]
+            if isinstance(obs, dict) and "obs" in obs:
+                obs = obs["obs"]
+
+            for step in range(args_cli.collection_steps):
+                if not simulation_app.is_running():
+                    break
+                with torch.no_grad():
+                    obs_t = _obs_tensor(agent, obs)
+                    raw_mus = _model_mus(agent.model, obs_t, action_dim, is_train=False).detach().clamp(-1.0, 1.0)
+                    reference_actions = _reference_delta_actions(task_env)
+                    if args_cli.collection_action_source == "reference_delta":
+                        applied_actions = reference_actions
+                    elif args_cli.collection_action_source == "policy":
+                        applied_actions = raw_mus
+                    else:
+                        applied_actions = torch.clamp(
+                            (1.0 - source_alpha) * raw_mus
+                            + source_alpha * reference_actions,
+                            -1.0,
+                            1.0,
+                        )
+
+                    obs_records.append(obs_t.detach().cpu())
+                    reference_records.append(reference_actions.detach().cpu())
+                    raw_records.append(raw_mus.detach().cpu())
+                    applied_records.append(applied_actions.detach().cpu())
+                    phase_records.append(
+                        getattr(
+                            task_env,
+                            "traj_phase_progress",
+                            torch.zeros(task_env.num_envs, device=task_env.device),
+                        )
+                        .detach()
+                        .cpu()
+                    )
+                    lift_records.append(
+                        getattr(task_env, "cube_lift_height", torch.zeros(task_env.num_envs, device=task_env.device))
+                        .detach()
+                        .cpu()
+                    )
+                    success_records.append(
+                        getattr(
+                            task_env,
+                            "in_success_region",
+                            torch.zeros(task_env.num_envs, dtype=torch.bool, device=task_env.device),
+                        )
+                        .detach()
+                        .float()
+                        .cpu()
+                    )
+                    unsafe_records.append(
+                        getattr(
+                            task_env,
+                            "traj_target_safe_mask",
+                            torch.ones(task_env.num_envs, dtype=torch.bool, device=task_env.device),
+                        )
+                        .detach()
+                        .logical_not()
+                        .float()
+                        .cpu()
                     )
 
-                obs_records.append(obs_t.detach().cpu())
-                reference_records.append(reference_actions.detach().cpu())
-                raw_records.append(raw_mus.detach().cpu())
-                applied_records.append(applied_actions.detach().cpu())
-                phase_records.append(getattr(task_env, "traj_phase_progress", torch.zeros(task_env.num_envs, device=task_env.device)).detach().cpu())
-                lift_records.append(getattr(task_env, "cube_lift_height", torch.zeros(task_env.num_envs, device=task_env.device)).detach().cpu())
-                success_records.append(getattr(task_env, "in_success_region", torch.zeros(task_env.num_envs, dtype=torch.bool, device=task_env.device)).detach().float().cpu())
-                unsafe_records.append(getattr(task_env, "traj_target_safe_mask", torch.ones(task_env.num_envs, dtype=torch.bool, device=task_env.device)).detach().logical_not().float().cpu())
+                    step_out = env.step(applied_actions)
+                    if len(step_out) == 5:
+                        obs, _, dones, truncated, _ = step_out
+                        dones = torch.logical_or(dones, truncated)
+                    else:
+                        obs, _, dones, _ = step_out
+                    if isinstance(obs, dict) and "obs" in obs:
+                        obs = obs["obs"]
+                    if isinstance(dones, torch.Tensor) and bool(dones.any()) and agent.is_rnn and agent.states is not None:
+                        for state in agent.states:
+                            state[:, dones.bool(), :] = 0.0
 
-                step_out = env.step(applied_actions)
-                if len(step_out) == 5:
-                    obs, _, dones, truncated, _ = step_out
-                    dones = torch.logical_or(dones, truncated)
-                else:
-                    obs, _, dones, _ = step_out
-                if isinstance(obs, dict) and "obs" in obs:
-                    obs = obs["obs"]
-                if isinstance(dones, torch.Tensor) and bool(dones.any()) and agent.is_rnn and agent.states is not None:
-                    for state in agent.states:
-                        state[:, dones.bool(), :] = 0.0
+            if not obs_records:
+                raise RuntimeError(f"BC collection produced no samples for teacher alpha {source_alpha}")
+            fresh_sources.append(
+                {
+                    "teacher_alpha": source_alpha,
+                    "obs": torch.cat(obs_records, dim=0).float(),
+                    "reference": torch.cat(reference_records, dim=0).float(),
+                    "raw": torch.cat(raw_records, dim=0).float(),
+                    "applied": torch.cat(applied_records, dim=0).float(),
+                    "phase": torch.cat(phase_records, dim=0).float(),
+                    "lift": torch.cat(lift_records, dim=0).float(),
+                    "success": torch.cat(success_records, dim=0).float(),
+                    "unsafe": torch.cat(unsafe_records, dim=0).float(),
+                }
+            )
     finally:
         env.close()
 
-    current_source_name = f"current_{args_cli.collection_action_source}_alpha{collection_teacher_alpha:.2f}".replace(".", "p")
-    obs_tensors = [torch.cat(obs_records, dim=0).float()]
-    reference_tensors = [torch.cat(reference_records, dim=0).float()]
-    raw_tensors = [torch.cat(raw_records, dim=0).float()]
-    applied_tensors = [torch.cat(applied_records, dim=0).float()]
-    phase_tensors = [torch.cat(phase_records, dim=0).float()]
-    lift_tensors = [torch.cat(lift_records, dim=0).float()]
-    success_tensors = [torch.cat(success_records, dim=0).float()]
-    unsafe_tensors = [torch.cat(unsafe_records, dim=0).float()]
-    source_names = [current_source_name]
-    source_slugs = [_source_slug(current_source_name)]
-    source_ids = [torch.zeros(obs_tensors[0].shape[0], dtype=torch.long)]
-    source_metadata: list[dict[str, object]] = [
-        {
-            "id": 0,
-            "name": current_source_name,
-            "slug": source_slugs[0],
-            "path": "fresh_collection",
-            "num_samples": int(obs_tensors[0].shape[0]),
-            "collection_action_source": args_cli.collection_action_source,
-            "collection_teacher_alpha": collection_teacher_alpha,
-        }
-    ]
+    obs_tensors: list[torch.Tensor] = []
+    reference_tensors: list[torch.Tensor] = []
+    raw_tensors: list[torch.Tensor] = []
+    applied_tensors: list[torch.Tensor] = []
+    phase_tensors: list[torch.Tensor] = []
+    teacher_alpha_tensors: list[torch.Tensor] = []
+    lift_tensors: list[torch.Tensor] = []
+    success_tensors: list[torch.Tensor] = []
+    unsafe_tensors: list[torch.Tensor] = []
+    source_names: list[str] = []
+    source_slugs: list[str] = []
+    source_ids: list[torch.Tensor] = []
+    source_metadata: list[dict[str, object]] = []
+
+    for fresh in fresh_sources:
+        source_alpha = float(fresh["teacher_alpha"])
+        current_source_name = f"current_{args_cli.collection_action_source}_alpha{source_alpha:.2f}".replace(".", "p")
+        source_slug = _source_slug(current_source_name)
+        while source_slug in source_slugs:
+            source_slug = f"{source_slug}_{len(source_slugs)}"
+        source_id = len(source_names)
+        obs_loaded = fresh["obs"]
+        assert isinstance(obs_loaded, torch.Tensor)
+        obs_tensors.append(obs_loaded)
+        reference_tensors.append(fresh["reference"])  # type: ignore[arg-type]
+        raw_tensors.append(fresh["raw"])  # type: ignore[arg-type]
+        applied_tensors.append(fresh["applied"])  # type: ignore[arg-type]
+        phase_tensors.append(fresh["phase"])  # type: ignore[arg-type]
+        teacher_alpha_tensors.append(torch.full((obs_loaded.shape[0],), source_alpha, dtype=torch.float32))
+        lift_tensors.append(fresh["lift"])  # type: ignore[arg-type]
+        success_tensors.append(fresh["success"])  # type: ignore[arg-type]
+        unsafe_tensors.append(fresh["unsafe"])  # type: ignore[arg-type]
+        source_names.append(current_source_name)
+        source_slugs.append(source_slug)
+        source_ids.append(torch.full((obs_loaded.shape[0],), source_id, dtype=torch.long))
+        source_metadata.append(
+            {
+                "id": source_id,
+                "name": current_source_name,
+                "slug": source_slug,
+                "path": "fresh_collection",
+                "num_samples": int(obs_loaded.shape[0]),
+                "collection_action_source": args_cli.collection_action_source,
+                "collection_teacher_alpha": source_alpha,
+            }
+        )
 
     for dataset_idx, rehearsal_path_raw in enumerate(rehearsal_paths, start=1):
         rehearsal_path = Path(rehearsal_path_raw).expanduser()
@@ -1256,6 +1390,24 @@ def main(env_cfg, agent_cfg: dict):
             loaded.get("applied_collection_actions", torch.full_like(reference_loaded, float("nan"))).detach().float().cpu()
         )
         phase_tensors.append(loaded.get("phase", torch.full((obs_loaded.shape[0],), float("nan"))).detach().float().cpu())
+        loaded_teacher_alpha = loaded.get("teacher_alpha")
+        if isinstance(loaded_teacher_alpha, torch.Tensor):
+            teacher_alpha_loaded = loaded_teacher_alpha.detach().float().cpu().view(-1)
+            if teacher_alpha_loaded.shape[0] != obs_loaded.shape[0]:
+                raise ValueError(
+                    f"Rehearsal dataset {rehearsal_path} teacher_alpha count {teacher_alpha_loaded.shape[0]} "
+                    f"does not match sample count {obs_loaded.shape[0]}."
+                )
+        else:
+            raw_alpha = loaded.get("collection_teacher_alpha", float("nan"))
+            if isinstance(raw_alpha, list):
+                raw_alpha = float("nan")
+            try:
+                alpha_value = float(raw_alpha)
+            except (TypeError, ValueError):
+                alpha_value = float("nan")
+            teacher_alpha_loaded = torch.full((obs_loaded.shape[0],), alpha_value, dtype=torch.float32)
+        teacher_alpha_tensors.append(teacher_alpha_loaded)
         lift_tensors.append(
             loaded.get("cube_lift_height", torch.full((obs_loaded.shape[0],), float("nan"))).detach().float().cpu()
         )
@@ -1263,12 +1415,13 @@ def main(env_cfg, agent_cfg: dict):
         unsafe_tensors.append(
             loaded.get("unsafe_target", torch.full((obs_loaded.shape[0],), float("nan"))).detach().float().cpu()
         )
+        source_id = len(source_names)
         source_names.append(source_name)
         source_slugs.append(source_slug)
-        source_ids.append(torch.full((obs_loaded.shape[0],), dataset_idx, dtype=torch.long))
+        source_ids.append(torch.full((obs_loaded.shape[0],), source_id, dtype=torch.long))
         source_metadata.append(
             {
-                "id": dataset_idx,
+                "id": source_id,
                 "name": source_name,
                 "slug": source_slug,
                 "path": str(rehearsal_path),
@@ -1284,6 +1437,7 @@ def main(env_cfg, agent_cfg: dict):
     raw_tensor = torch.cat(raw_tensors, dim=0).float()
     applied_tensor = torch.cat(applied_tensors, dim=0).float()
     phase_tensor = torch.cat(phase_tensors, dim=0).float()
+    teacher_alpha_tensor = torch.cat(teacher_alpha_tensors, dim=0).float()
     lift_tensor = torch.cat(lift_tensors, dim=0).float()
     success_tensor = torch.cat(success_tensors, dim=0).float()
     unsafe_tensor = torch.cat(unsafe_tensors, dim=0).float()
@@ -1294,6 +1448,7 @@ def main(env_cfg, agent_cfg: dict):
         "raw_policy_actions_before": raw_tensor,
         "applied_collection_actions": applied_tensor,
         "phase": phase_tensor,
+        "teacher_alpha": teacher_alpha_tensor,
         "cube_lift_height": lift_tensor,
         "success": success_tensor,
         "unsafe_target": unsafe_tensor,
@@ -1303,7 +1458,8 @@ def main(env_cfg, agent_cfg: dict):
         "loss_dims": torch.tensor(loss_dims, dtype=torch.long),
         "input_checkpoint": str(resume_path),
         "collection_action_source": args_cli.collection_action_source,
-        "collection_teacher_alpha": collection_teacher_alpha,
+        "collection_teacher_alpha": collection_teacher_alphas[0] if len(collection_teacher_alphas) == 1 else list(collection_teacher_alphas),
+        "collection_teacher_alphas": list(collection_teacher_alphas),
     }
     dataset_path.parent.mkdir(parents=True, exist_ok=True)
     torch.save(dataset, dataset_path)
@@ -1311,6 +1467,8 @@ def main(env_cfg, agent_cfg: dict):
     device = torch.device(rl_device)
     obs_tensor = obs_tensor.to(device)
     reference_tensor = reference_tensor.to(device)
+    phase_tensor = phase_tensor.to(device)
+    teacher_alpha_tensor = teacher_alpha_tensor.to(device)
     source_id_tensor = source_id_tensor.to(device)
     num_samples = obs_tensor.shape[0]
     if num_samples < 2:
@@ -1341,6 +1499,15 @@ def main(env_cfg, agent_cfg: dict):
     distill_dims_t = torch.tensor(distill_dims, dtype=torch.long, device=device)
     distill_enabled = args_cli.distill_loss_weight > 0.0 and bool(distill_source_ids)
     residual_adapter_enabled = bool(args_cli.residual_adapter_enabled)
+    residual_context_features = _parse_context_features(args_cli.residual_context_features)
+    residual_context_tensor = _build_context_tensor(
+        residual_context_features,
+        phase_tensor,
+        teacher_alpha_tensor,
+        device=device,
+    )
+    if residual_context_features and not residual_adapter_enabled:
+        raise ValueError("--residual_context_features requires --residual_adapter_enabled")
     if args_cli.residual_hidden_dim < 0:
         raise ValueError(f"--residual_hidden_dim must be non-negative, got {args_cli.residual_hidden_dim}")
     if args_cli.residual_max_action < 0.0 or not math.isfinite(args_cli.residual_max_action):
@@ -1439,6 +1606,8 @@ def main(env_cfg, agent_cfg: dict):
             gate_enabled=bool(args_cli.residual_gate_enabled),
             gate_hidden_dim=int(residual_gate_hidden_dim),
             gate_bias_init=float(args_cli.residual_gate_bias_init),
+            context_dim=len(residual_context_features),
+            context_features=residual_context_features,
         ).to(device=device)
         print(
             json.dumps(
@@ -1449,6 +1618,7 @@ def main(env_cfg, agent_cfg: dict):
                     "residual_gate_enabled": bool(args_cli.residual_gate_enabled),
                     "residual_gate_hidden_dim": int(residual_gate_hidden_dim),
                     "residual_gate_bias_init": float(args_cli.residual_gate_bias_init),
+                    "residual_context_features": residual_context_features,
                     "residual_preserve_sources": residual_preserve_source_names,
                     "residual_preserve_source_ids": residual_preserve_source_ids,
                     "residual_preserve_weight": float(args_cli.residual_preserve_weight),
@@ -1484,8 +1654,13 @@ def main(env_cfg, agent_cfg: dict):
                 raise RuntimeError("Residual adapter mode is enabled but adapter/base actions are missing.")
             base = base_action_tensor[indices]
             obs_subset = obs_tensor[indices]
-            residual = residual_adapter(obs_subset)
-            gate = residual_adapter.gate_values(obs_subset) if bool(args_cli.residual_gate_enabled) else None
+            context_subset = residual_context_tensor[indices] if residual_context_tensor is not None else None
+            residual = residual_adapter(obs_subset, context_subset)
+            gate = (
+                residual_adapter.gate_values(obs_subset, context_subset)
+                if bool(args_cli.residual_gate_enabled)
+                else None
+            )
             return torch.clamp(base + residual, -1.0, 1.0), base, residual, gate
         pred = _model_mus(model, obs_tensor[indices], action_dim, is_train=is_train).clamp(-1.0, 1.0)
         return pred, None, None, None
@@ -1837,6 +2012,7 @@ def main(env_cfg, agent_cfg: dict):
                 "gate_enabled": bool(args_cli.residual_gate_enabled),
                 "gate_hidden_dim": int(residual_gate_hidden_dim),
                 "gate_bias_init": float(args_cli.residual_gate_bias_init),
+                "context_features": residual_context_features,
                 "train_sources": source_names,
                 "selected_step": int(best_step),
                 "selected_score": best_score,
@@ -1858,6 +2034,7 @@ def main(env_cfg, agent_cfg: dict):
         "source_batch_mode": args_cli.source_batch_mode,
         "source_loss_weights": source_loss_weights,
         "best_score_weights": best_score_weights,
+        "collection_teacher_alphas": list(collection_teacher_alphas),
         "distill_target": "input_checkpoint_initial_actor" if distill_enabled else "disabled",
         "distill_sources": distill_source_names,
         "distill_source_ids": distill_source_ids,
@@ -1869,6 +2046,7 @@ def main(env_cfg, agent_cfg: dict):
         "residual_gate_enabled": bool(args_cli.residual_gate_enabled),
         "residual_gate_hidden_dim": int(residual_gate_hidden_dim),
         "residual_gate_bias_init": float(args_cli.residual_gate_bias_init),
+        "residual_context_features": residual_context_features,
         "residual_preserve_sources": residual_preserve_source_names,
         "residual_preserve_source_ids": residual_preserve_source_ids,
         "residual_preserve_weight": float(args_cli.residual_preserve_weight),
@@ -1910,7 +2088,8 @@ def main(env_cfg, agent_cfg: dict):
         "learning_rate": float(args_cli.learning_rate),
         "validation_fraction": float(args_cli.validation_fraction),
         "collection_action_source": args_cli.collection_action_source,
-        "collection_teacher_alpha": collection_teacher_alpha,
+        "collection_teacher_alpha": collection_teacher_alphas[0] if len(collection_teacher_alphas) == 1 else list(collection_teacher_alphas),
+        "collection_teacher_alphas": list(collection_teacher_alphas),
         "rehearsal_dataset_paths": rehearsal_paths,
         "dataset_sources": source_metadata,
         "source_batch_mode": args_cli.source_batch_mode,
@@ -1928,6 +2107,7 @@ def main(env_cfg, agent_cfg: dict):
         "residual_gate_enabled": bool(args_cli.residual_gate_enabled),
         "residual_gate_hidden_dim": int(residual_gate_hidden_dim),
         "residual_gate_bias_init": float(args_cli.residual_gate_bias_init),
+        "residual_context_features": residual_context_features,
         "residual_preserve_sources": residual_preserve_source_names,
         "residual_preserve_source_ids": residual_preserve_source_ids,
         "residual_preserve_source_slugs": residual_preserve_source_slugs,

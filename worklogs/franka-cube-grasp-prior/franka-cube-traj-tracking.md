@@ -5501,6 +5501,97 @@ Verdict:
 Active Jobs:
 - none.
 
+## 2026-06-11T21:49:54-07:00 - stage/alpha-conditioned assisted-manifold BC plan
+
+Goal:
+- Target the verified assisted manifold instead of the failed alpha0.10 residual line.
+- Run a supervised-only diagnostic on alpha0.5, alpha0.75, and alpha1.0 teacher-assisted states collected from the tm0.25 checkpoint.
+- Do not launch PPO/RL scale-up. Only launch a tiny selector/video eval if the supervised gate clearly passes.
+
+Hypothesis:
+- tm0.25 alpha0.5/0.75/1.0 already lifts with reference assistance, so those states are on a usable manifold.
+- The previous residual attempts failed because they targeted alpha0.10/off-manifold states and lacked explicit stage/assistance context.
+- A frozen tm0.25 base actor plus a small residual adapter conditioned on trajectory phase and teacher-assist alpha can reduce raw/reference action error on the successful assisted manifold while preserving the original 72-D task observation and the original baseline task.
+
+Planned Change:
+- Extend `dextrah_lab/rl_games/residual_action_adapter.py` so residual adapters can optionally consume context features in addition to the 72-D observation.
+- Extend `dextrah_lab/rl_games/bc_reference_action_imitation.py` with:
+  - multi-alpha fresh collection, e.g. `--collection_teacher_alphas 0.5,0.75,1.0`;
+  - per-sample `teacher_alpha` metadata saved in `reference_action_dataset.pt`;
+  - residual context features `phase,teacher_alpha`;
+  - supervised per-source metrics for alpha0.5/0.75/1.0.
+- Extend `dextrah_lab/rl_games/eval_rollout.py` to supply the same residual context at eval time from `traj_phase_progress` and the eval `reference_mix_alpha` (or an explicit override).
+- Extend `cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh` to echo/pass the new knobs.
+
+Planned Supervised Job If Validation Passes:
+- run name: `franka_cube_traj_tracking_bc_stagealpha_tm025_a050_a075_a100_<timestamp>`.
+- input checkpoint: `/results/bc/franka_cube_traj_tracking_bc_dagger_tm025_all_20260611_185900/nn/bc_reference_action_imitation.pth`.
+- collection action source: `teacher_mix`.
+- collection alphas: `0.50,0.75,1.00`.
+- no alpha0.10 collection in this round.
+- `NUM_ENVS=8`, `COLLECTION_STEPS=520` per alpha, all 7 action dims.
+- residual adapter: enabled, frozen base, hidden `256`, max action `1.0`, context features `phase,teacher_alpha`.
+- source-balanced batches and equal source weights.
+
+Supervised Gate Before Any Eval:
+- Each alpha source should improve materially over its frozen-base raw/reference L2.
+- No alpha0.5/0.75/1.0 source may regress versus its frozen-base source L2.
+- Global val L2 should be clearly below the prior off-manifold residual attempts and ideally near or below the current tm0.25 assisted raw/ref selector errors.
+- Residual magnitude must be bounded and context metadata must be present in the checkpoint/report.
+- If the supervised gate fails, stop at report/metrics/plots and do not launch selector/videos/PPO.
+
+Validation Before Launch:
+- `python3 -m py_compile dextrah_lab/rl_games/bc_reference_action_imitation.py dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/residual_action_adapter.py dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py`
+- `bash -n cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh`
+- `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- `git diff --check`
+- commit/push and deploy exact commit to the l401 agent-owned worktree before Slurm launch.
+
+Artifact Contract:
+- supervised report, `bc_metrics.json`, `bc_loss_curve.csv`, `bc_loss_plot.png`, `bc_source_metric_plot.png`, oracle residual CSV/plot, and `viz-open` URLs after fetch.
+- train/eval audit must include checkpoint path, reference path, alpha/stage conditioning, object randomization, action scale, observation/action dims, and `curobo_validated=false`.
+- Old `actionscale-rewinf-diag-video480-step-0.mp4` remains obsolete failed evidence.
+
+Active Jobs:
+- none at plan time.
+
+## 2026-06-11T21:55:50-07:00 - stage/alpha-conditioned assisted-manifold implementation
+
+Goal:
+- Implement the supervised-only stage/alpha-conditioned handoff diagnostic planned above, without launching PPO/RL or selector evals.
+
+Change:
+- Added multi-alpha fresh collection to `dextrah_lab/rl_games/bc_reference_action_imitation.py` with per-sample `teacher_alpha` stored in `reference_action_dataset.pt`.
+- Added residual adapter context features (`phase`, `teacher_alpha`) for frozen-base residual BC; checkpoint/report metadata now records the context list and collection alpha list.
+- Updated `dextrah_lab/rl_games/eval_rollout.py` so residual adapters receive the same context at eval time from `traj_phase_progress` and the current `REFERENCE_MIX_ALPHA`.
+- Updated `dextrah_lab/rl_games/residual_action_adapter.py` to concatenate optional context with the 72-D policy observation while preserving old zero-context checkpoints.
+- Updated `cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh` to echo/pass `COLLECTION_TEACHER_ALPHAS` and `RESIDUAL_CONTEXT_FEATURES`.
+
+Version Control:
+- agent_id: `franka-cube-traj-tracking`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking`
+- branch: `codex/franka-cube-trajectory-tracking`
+- base_commit: `05c0872251e1c56581aba9b2e540ed093a75dfae`
+- implementation_commit: pending
+- changed_files: `cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh`, `dextrah_lab/rl_games/bc_reference_action_imitation.py`, `dextrah_lab/rl_games/eval_rollout.py`, `dextrah_lab/rl_games/residual_action_adapter.py`, `worklogs/franka-cube-grasp-prior/franka-cube-traj-tracking.md`
+
+Validation:
+- passed: `python3 -m py_compile dextrah_lab/rl_games/bc_reference_action_imitation.py dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/residual_action_adapter.py dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py dextrah_lab/rl_games/build_traj_tracking_handoff_comparison.py`
+- passed: `bash -n cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh`
+- passed: `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- passed: `git diff --check`
+
+Analysis:
+- The implementation is intentionally supervised-only. The selector/video gate remains blocked until a supervised l401 run proves each alpha0.5/0.75/1.0 source improves over its frozen tm0.25 base action error without target/reference/config drift.
+- Old `actionscale-rewinf-diag-video480-step-0.mp4` remains obsolete failed evidence from job `1027753`; current artifacts should refer to the tm0.25 assisted manifold and this new stage/alpha-conditioned diagnostic.
+
+Next:
+- Commit/push this implementation, deploy the exact commit to the l401 agent worktree, and launch one supervised l401 BC job on `COLLECTION_TEACHER_ALPHAS=0.50,0.75,1.00`.
+- No selector evals, videos, PPO, or RL scale-up unless the supervised gate passes.
+
+Active Jobs:
+- none.
+
 ## 2026-06-11T21:12:52-07:00 - residual oracle/capacity diagnostic plan
 
 Goal:
