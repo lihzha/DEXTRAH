@@ -7248,3 +7248,31 @@ Validation:
 
 Current Framing:
 - This remains assisted/handoff training. The current best videos are `policy_reference_mix_hold`, and alpha0.0 successes still use terminal hold after contact evidence. No policy-only RL success is claimed.
+
+Version Control / Deployment:
+- implementation_commit: `4cf2baeb5b36ed91e5b984b9b082c3f99f43878e` (`Add contact-hold BC collection source`).
+- pushed branch: `codex/franka-cube-trajectory-tracking`.
+- remote deploy: l401 GitHub fetch failed with `Permission denied (publickey)`, so the exact branch delta was deployed to the agent-owned worktree via a temporary Git bundle and fetched with Git.
+- remote worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking`.
+- remote commit/status: `4cf2baeb5b36ed91e5b984b9b082c3f99f43878e`, detached HEAD, clean.
+
+Planned Launch:
+- job_name: `bc_chold_handoff`.
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:45:00 --job-name=bc_chold_handoff --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_bc_contacthold_handoff_a000_a005_<timestamp>,CHECKPOINT=/results/bc/franka_cube_traj_tracking_bc_handoff_success_alpha0_20260611_223200/nn/bc_reference_action_imitation.pth,NUM_ENVS=4,COLLECTION_STEPS=520,TRAIN_STEPS=300,BATCH_SIZE=1024,LEARNING_RATE=0.0001,VALIDATION_FRACTION=0.2,LOSS_DIMS=all,EVAL_INTERVAL=25,SEED=77,COLLECTION_ACTION_SOURCE=policy_reference_mix_hold,COLLECTION_TEACHER_ALPHAS=0.00__COMMA__0.05,HOLD_TRIGGER_MODE=contact_after_phase_or_lift_success,HOLD_PHASE_START=0.67,HOLD_CONTACT_MAX_FINGER_DIST=0.08,HOLD_TRIGGER_LIFT_HEIGHT=0.02,HOLD_TARGET_POLICY=cube_current_plus_trigger_ee_offset,HOLD_LIFT_HEIGHT=0.03,HOLD_GRIPPER_ACTION=-0.4,HANDOFF_SOURCE_ENABLED=True,HANDOFF_SOURCE_SOURCES=current_policy_reference_mix_hold_alpha0p00__COMMA__current_policy_reference_mix_hold_alpha0p05,HANDOFF_SOURCE_NAME=contacthold_success_handoff_alpha0,HANDOFF_TEACHER_ALPHA=0.0,HANDOFF_MIN_PHASE=0.67,HANDOFF_MAX_PHASE=1.01,HANDOFF_MIN_LIFT_HEIGHT=0.02,HANDOFF_MAX_FINGER_DIST=0.08,HANDOFF_REQUIRE_HOLD_ACTIVE=True,HANDOFF_REQUIRE_SUCCESS=False,HANDOFF_REQUIRE_SAFE_TARGET=True,HANDOFF_MAX_SAMPLES=0,SOURCE_BATCH_MODE=balanced,SOURCE_LOSS_WEIGHTS=current_policy_reference_mix_hold_alpha0p00=1__COMMA__current_policy_reference_mix_hold_alpha0p05=1__COMMA__contacthold_success_handoff_alpha0=2,BEST_SCORE_WEIGHTS=val_source_current_policy_reference_mix_hold_alpha0p00_l2=1__COMMA__val_source_current_policy_reference_mix_hold_alpha0p05_l2=1__COMMA__val_source_contacthold_success_handoff_alpha0_l2=2,EARLY_STOP_PATIENCE=5,SOURCE_PROBE_STEPS=200,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh`.
+- acceptance: supervised artifacts only first; do not launch selector/video/PPO unless the report shows nonzero contact/hold handoff samples and coherent per-source validation.
+
+Launch:
+- job_id: `1028250`.
+- run_name: `franka_cube_traj_tracking_bc_contacthold_handoff_a000_a005_20260612_000700`.
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/bc/franka_cube_traj_tracking_bc_contacthold_handoff_a000_a005_20260612_000700`.
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bc_franka_cube_1028250.out`.
+- action source label: assisted `policy_reference_mix_hold` collection with alphas `0.0,0.05`; still not policy-only RL.
+- active_jobs: `1028250`.
+
+Shutdown Handoff Update:
+- User requested stop/development shutdown before further debugging or selector/video launch.
+- job `1028250` reached `COMPLETED 0:0` in `00:01:16` on `pool0-00030`; no active B Slurm jobs remain.
+- The log printed completed supervised metrics and `BC Diagnostic Done`, but the result directory has not been fetched/opened locally due shutdown.
+- Visible stdout metrics: derived `contacthold_success_handoff_alpha0` selected `94` train + `24` val samples; selected step `300`; selected score `0.1256902925670147`; handoff val L2 `0.0222403556`; alpha0.00 collection val L2 `0.2409972697`; alpha0.05 collection val L2 `0.2172831893`; global val L2 `0.2230899781`; reference remains `curobo_validated=false`.
+- Handoff file written at `worklogs/franka-cube-grasp-prior/HANDOFF_B.md`.
+- Do not claim policy-only RL success; this remains assisted/handoff BC and needs artifact fetch/full supervised review before any selector/video/PPO.
