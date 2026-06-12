@@ -7730,3 +7730,26 @@ Command / Jobs:
 
 Next:
 - Monitor launches, checkpoint rewards, tracking reward terms, and final checkpoints. Do not compare against baseline without accounting for seed sensitivity and per-term reward composition.
+
+## 2026-06-12T19:59:07Z - distributed seed/config provenance fix
+
+Goal:
+- Remove misleading saved-config seed values before launching evals and reward ablations.
+
+Finding:
+- Tracking jobs were launched with explicit base seeds `1,2,3,4,5`.
+- `train.py` intentionally adds `global_rank` to the base seed under `--distributed`, so the seed-2 job uses rank seeds `2..9`.
+- In distributed runs every rank was writing the same `params/env.yaml` and `params/agent.yaml`; the persisted YAML therefore reflected whichever rank wrote last, e.g. seed-2 could show `seed: 6`.
+- This was a provenance/logging bug, not evidence that the launched base seed was wrong. The Slurm command line remains the authoritative seed record for already-running jobs.
+
+Change:
+- `dextrah_lab/rl_games/train.py`: write `params/env.yaml`, `params/agent.yaml`, and matching pickle files only from rank 0 in distributed training.
+- `cluster/sbatch_train_teacher_8gpu.sh`: echo `/code` Git head and short status in the Slurm log before training.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/train.py`
+- `bash -n cluster/sbatch_train_teacher_8gpu.sh`
+
+Next:
+- Commit/push/deploy this provenance fix before the next eval/ablation launch.
+- Let seed 3 finish, then run pure-policy evals on the best checkpoints for seeds 1-5.

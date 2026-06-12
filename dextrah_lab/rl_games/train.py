@@ -233,11 +233,14 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         agent_cfg["params"]["load_path"] = resume_path
         print(f"[INFO]: Loading model checkpoint from: {agent_cfg['params']['load_path']}")
 
-    # dump the configuration into log-directory
-    dump_yaml(os.path.join(log_root_path, log_dir, "params", "env.yaml"), env_cfg)
-    dump_yaml(os.path.join(log_root_path, log_dir, "params", "agent.yaml"), agent_cfg)
-    dump_pickle(os.path.join(log_root_path, log_dir, "params", "env.pkl"), env_cfg)
-    dump_pickle(os.path.join(log_root_path, log_dir, "params", "agent.pkl"), agent_cfg)
+    # Dump rank-0 configs only.  In distributed runs each rank has a distinct
+    # seed/device; letting every rank write the same files makes the saved
+    # config nondeterministically reflect whichever rank wrote last.
+    if not args_cli.distributed or int(app_launcher.global_rank) == 0:
+        dump_yaml(os.path.join(log_root_path, log_dir, "params", "env.yaml"), env_cfg)
+        dump_yaml(os.path.join(log_root_path, log_dir, "params", "agent.yaml"), agent_cfg)
+        dump_pickle(os.path.join(log_root_path, log_dir, "params", "env.pkl"), env_cfg)
+        dump_pickle(os.path.join(log_root_path, log_dir, "params", "agent.pkl"), agent_cfg)
 
     # read configurations about the agent-training
     rl_device = agent_cfg["params"]["config"]["device"]

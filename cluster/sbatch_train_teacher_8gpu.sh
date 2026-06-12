@@ -357,6 +357,10 @@ srun \
     mkdir -p /results/logs
 
     cd /code/dextrah_lab/rl_games
+    echo "code_git_head=$(git -C /code rev-parse HEAD 2>/dev/null || echo unknown)"
+    echo "code_git_status_short_start"
+    git -C /code status --short 2>/dev/null || true
+    echo "code_git_status_short_end"
 
     /isaac-sim/python.sh - <<'PY'
 import sys
