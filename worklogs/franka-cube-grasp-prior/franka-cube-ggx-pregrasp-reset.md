@@ -5177,6 +5177,15 @@ Cheap Validation Plan:
 - verify low-z prior library exists on remote
 - check l401 queue before launch; do not cancel unrelated jobs.
 
+Cheap Validation Result:
+- local wrapper syntax passed:
+  - `bash -n cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`
+  - `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- l401 direct GitHub fetch was blocked by SSH auth, so the local branch tip was transferred as a Git bundle and fetched into the agent-owned remote worktree.
+- remote worktree updated to detached `cc712351d4326e6ad75f2493eba30b894f06df40`.
+- remote wrapper syntax passed for train/eval wrappers.
+- remote low-z library exists: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz` (`2.9K`).
+
 Command / Job Plan:
 - prior run name: `franka_cube_ggx_lowz_prior_long200_20260611_2257`
 - baseline run name: `franka_cube_baseline_noprior_long200_20260611_2257`
@@ -5185,6 +5194,14 @@ Command / Job Plan:
   - `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseline_noprior_long200_20260611_2257`
 - expected remote logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_smoke_<jobid>.out`
 - launch shape: two `sbatch` jobs on l401 `batch`, 1 GPU each, `--time=0-01:30:00`, same wrapper `cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`.
+
+Launch:
+- prior job: `1028185`
+- baseline job: `1028186`
+- remote source commit: `cc712351d4326e6ad75f2493eba30b894f06df40`
+- prior command shape: `MAX_ITERATIONS=200 SAVE_FREQUENCY=25 GRASP_PRIOR_RESET_ENABLED=True GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz FULL_EXPERIMENT_NAME=franka_cube_ggx_lowz_prior_long200_20260611_2257 sbatch cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`
+- baseline command shape: `MAX_ITERATIONS=200 SAVE_FREQUENCY=25 GRASP_PRIOR_RESET_ENABLED=False GRASP_PRIOR_LIBRARY_PATH= FULL_EXPERIMENT_NAME=franka_cube_baseline_noprior_long200_20260611_2257 sbatch cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`
+- common settings: `TASK=Dextrah-Franka-Cube-Grasp`, `NUM_ENVS=64`, `HORIZON_LENGTH=64`, `MINIBATCH_SIZE=4096`, `CENTRAL_VALUE_MINIBATCH_SIZE=4096`, `SEED=20260625`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`, `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`, `AUTO_RESUME=False`, `CHECKPOINT=`, `DEXTRAH_RLGAMES_JSONL_METRICS=True`.
 
 Expected Artifacts:
 - training JSONL rank-0 metrics for both runs
@@ -5197,3 +5214,95 @@ Stop / Go Criteria:
 - Stop and do not scale if either run has NaN/Inf, traceback, missing JSONL/checkpoints, bad reset-prior metrics, or videos show no grasp/lift despite scheduler success.
 - Do not launch A100/full RL unless this bounded pair has meaningful success/lift and eval videos show plausible grasp/lift behavior.
 - If both are still negative, document as a horizon-negative small-scale comparison and propose the next diagnostic instead of scaling.
+
+Training Result:
+- prior job `1028185` completed `0:0`, elapsed `00:06:14`, node `pool0-00015`.
+- baseline job `1028186` completed `0:0`, elapsed `00:05:22`, node `pool0-00030`.
+- local artifacts fetched:
+  - `cluster_results/l401/franka_cube_ggx_lowz_prior_long200_20260611_2257`
+  - `cluster_results/l401/franka_cube_baseline_noprior_long200_20260611_2257`
+  - `cluster_logs/l401/slurm_logs/dextrah/franka_cube_smoke_1028185.out`
+  - `cluster_logs/l401/slurm_logs/dextrah/franka_cube_smoke_1028186.out`
+- JSONL rows: prior `200`, baseline `200`; final epoch `200` for both.
+- bad scalar count: prior `0`, baseline `0`.
+- prior reset metrics: `cube_grasp_prior_reset_success_rate=1.0` and `cube_grasp_prior_quality_success_rate=1.0` for all epochs.
+- prior training metrics:
+  - success max/final: `0.0` / `0.0`
+  - lifted max/final: `0.015625` / `0.0`
+  - lift height max/final: `0.00306840892881155` / `0.0` m
+  - final EE/finger distances: `0.057262636721134186` / `0.0801062285900116` m
+  - final z/gripper action: `-0.45028549432754517` / `0.9981808662414551`
+  - final gripper width: `0.07923907786607742` m
+  - best stdout checkpoint reward: epoch `200`, reward `1340.6029`
+- baseline training metrics:
+  - success max/final: `0.0` / `0.0`
+  - lifted max/final: `0.015625` / `0.0`
+  - lift height max/final: `0.004728291183710098` / `0.0` m
+  - final EE/finger distances: `0.11809306591749191` / `0.12334349006414413` m
+  - final z/gripper action: `0.4195382595062256` / `-0.8863714933395386`
+  - final gripper width: `0.003754951525479555` m
+  - best stdout checkpoint reward: epoch `200`, reward `1249.834`
+
+Training Analysis:
+- Scheduler and scalar health are clean, but training behavior is still negative for both variants.
+- Prior reaches higher reward and better proximity/enclosure scalars, but keeps the gripper open at final epoch and never succeeds.
+- Baseline closes hard by final epoch but remains off-target and never succeeds.
+- Full/A100 RL remains blocked. Proceed only to the planned eval/video artifact phase.
+
+Eval Plan:
+- Best reward equals final epoch for both variants, so distinct checkpoints are ep100 and ep200/final.
+- Launch four bounded done-aware eval/video jobs:
+  - prior ep100: `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_lowz_prior_long200_20260611_2257/nn/last_dextrah_franka_cube_grasp_ep_100_rew_1003.2496.pth`
+  - prior ep200/final/best: `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_lowz_prior_long200_20260611_2257/nn/last_dextrah_franka_cube_grasp_ep_200_rew_1340.6029.pth`
+  - baseline ep100: `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseline_noprior_long200_20260611_2257/nn/last_dextrah_franka_cube_grasp_ep_100_rew_1005.2147.pth`
+  - baseline ep200/final/best: `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseline_noprior_long200_20260611_2257/nn/last_dextrah_franka_cube_grasp_ep_200_rew_1249.834.pth`
+- Same eval protocol as the 45-epoch pair: `NUM_ENVS=1`, `NUM_STEPS=240`, deterministic, video enabled, seed `20260625`, cube XY randomization `0.08`, no action warmstart, prior enabled only for prior evals.
+
+Eval Launch:
+- remote source commit: `cc712351d4326e6ad75f2493eba30b894f06df40`
+- prior ep100 run/job: `franka_cube_ggx_lowz_prior_long200_eval_ep100_20260611_2306` / `1028192`
+- prior ep200 run/job: `franka_cube_ggx_lowz_prior_long200_eval_ep200_20260611_2306` / `1028193`
+- baseline ep100 run/job: `franka_cube_baseline_noprior_long200_eval_ep100_20260611_2306` / `1028194`
+- baseline ep200 run/job: `franka_cube_baseline_noprior_long200_eval_ep200_20260611_2306` / `1028195`
+
+Eval / Artifact Result:
+- eval jobs:
+  - `1028192` prior ep100 completed `0:0`, elapsed `00:01:05`, node `pool0-00035`
+  - `1028193` prior ep200 completed `0:0`, elapsed `00:01:07`, node `pool0-00035`
+  - `1028194` baseline ep100 completed `0:0`, elapsed `00:01:04`, node `pool0-00030`
+  - `1028195` baseline ep200 completed `0:0`, elapsed `00:01:06`, node `pool0-00015`
+- fetched local eval artifacts:
+  - `cluster_results/l401/franka_cube_ggx_lowz_prior_long200_eval_ep100_20260611_2306`
+  - `cluster_results/l401/franka_cube_ggx_lowz_prior_long200_eval_ep200_20260611_2306`
+  - `cluster_results/l401/franka_cube_baseline_noprior_long200_eval_ep100_20260611_2306`
+  - `cluster_results/l401/franka_cube_baseline_noprior_long200_eval_ep200_20260611_2306`
+- paired inspection bundle:
+  - report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_prior_vs_baseline_long200_pair_20260611_2306/inspection/REPORT.md`
+  - paired contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_prior_vs_baseline_long200_pair_20260611_2306/inspection/paired_eval_contact_sheets.jpg`
+  - paired training curves: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_prior_vs_baseline_long200_pair_20260611_2306/inspection/paired_training_curves.png`
+  - paired summary JSON: `cluster_results/l401/franka_cube_lowz_prior_vs_baseline_long200_pair_20260611_2306/inspection/paired_summary.json`
+- eval video URLs:
+  - prior ep100: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_prior_long200_eval_ep100_20260611_2306/videos/lowz-prior-long200-ep100-step-0.mp4`
+  - prior ep200/final/best: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_prior_long200_eval_ep200_20260611_2306/videos/lowz-prior-long200-ep200-step-0.mp4`
+  - baseline ep100: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_baseline_noprior_long200_eval_ep100_20260611_2306/videos/baseline-long200-ep100-step-0.mp4`
+  - baseline ep200/final/best: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_baseline_noprior_long200_eval_ep200_20260611_2306/videos/baseline-long200-ep200-step-0.mp4`
+- eval metrics:
+  - prior ep100: success max `0.0`, lifted max `0.0`, lift max `0.0` m, final EE/finger `0.07360026240348816` / `0.10926209390163422` m, final width `0.07999938726425171` m, final z/gripper action `-1.0` / `1.0`
+  - prior ep200/final/best: success max `0.0`, lifted max `0.0`, lift max `0.0` m, final EE/finger `0.041994184255599976` / `0.0706566795706749` m, final width `0.07943950593471527` m, final z/gripper action `-0.6757971048355103` / `1.0`
+  - baseline ep100: success max `0.0`, lifted max `0.0`, lift max `0.006528258323669434` m, final EE/finger `0.18757465481758118` / `0.20044457912445068` m, final width `0.00023081203107722104` m, final z/gripper action `-0.6757807731628418` / `-0.9961653351783752`
+  - baseline ep200/final/best: success max `0.0`, lifted max `0.0`, lift max `0.0007391571998596191` m, final EE/finger `0.11121195554733276` / `0.1431511491537094` m, final width `0.00021178281167522073` m, final z/gripper action `0.45459312200546265` / `-1.0`
+- visual notes:
+  - Prior ep100/ep200 start from valid low-z pregrasp and stay near the cube, but keep the gripper open and hover/descend without grasping.
+  - Baseline ep100/ep200 close the gripper almost fully, but close off-target and never lift.
+  - The paired contact sheet confirms no plausible grasp/lift in any evaluated checkpoint.
+
+Final Analysis:
+- The 200-epoch paired small PPO test is a negative horizon test, not a scale-up gate.
+- Longer horizon improved reward and proximity/enclosure scalars, especially for the prior run, but did not produce task success.
+- The prior variant appears to reward-hack proximity/enclosure while maintaining an open gripper. The baseline learns close actions but not the correct contact pose.
+- Do not launch full/A100 RL.
+
+Next:
+- Stop same-config scale-up for now.
+- The next useful bounded loop should diagnose reward/action incentives at the ep200 policies, especially why open-gripper proximity/enclosure reward is competitive for the prior and why baseline closes off-target.
+- Any BC/policy-init/curriculum/action-prior experiment should remain explicitly non-apple-to-apple unless the user requests a separate intervention variant.
