@@ -5928,3 +5928,164 @@ Next:
   `contact_relabel_set_accepted.npz`: shape/normalizer check plus one-step or
   very-short debug train, then inspect predicted action ranges before any
   closed-loop DP eval.
+
+## 2026-06-11T18:00:23-07:00 - official DP contact-relabel smoke plan
+
+Goal:
+- Prove the accepted contact-aware relabel NPZ can be consumed by the official
+  `real-stanford/diffusion_policy` low-dimensional training workspace, without
+  launching full BC/RL.
+
+Hypothesis:
+- The existing `FrankaCubeLowdimDataset` adapter should work unchanged because
+  the accepted relabel set uses the same compact 21D observation and 7D
+  normalized DEXTRAH relative EE/gripper action schema as prior official-DP
+  debug datasets.
+
+Change:
+- Add a small report utility if needed to emit viewer-ready dataset shape,
+  episode ends, action/obs range, and official normalizer metadata for any
+  accepted contact-aware NPZ.
+- Do not alter the official-DP training workspace or env bridge semantics.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- worklog:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart/worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `a93e02674eab27bcb83930308a8b560fdb9d5837`
+- official_diffusion_policy:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/diffusion_policy`,
+  commit `5ba07ac6661db573af695b419a7947ecb704690f`,
+  remote `https://github.com/real-stanford/diffusion_policy`
+
+Command / Job:
+- dataset:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_set_ep8_16_24_30_s260_high30_defaultfix_20260611_175347/contact_relabel_set_accepted.npz`
+- intended local run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/<timestamp>`
+- validation commands:
+  `python3 -m py_compile ...`, official-DP adapter shape/normalizer report,
+  `validate_dataset_smoke.py`, and one official-DP `train.py` debug run with
+  `training.max_train_steps=1`, `training.max_val_steps=1`,
+  `training.num_epochs=1`, CPU device, and `num_inference_steps=2`.
+
+Acceptance:
+- The dataset report confirms `obs (1126, 21)`, `action (1126, 7)`, and
+  `episode_ends [282, 563, 844, 1126]`.
+- Official normalizer construction succeeds with identity action normalizer.
+- Official `train.py` builds the model/workspace and performs a one-step debug
+  update/validation without non-finite losses.
+- If a checkpoint is written, run the existing official checkpoint bridge smoke
+  and record predicted action ranges; otherwise record the exact blocker.
+
+Next:
+- Inspect logs/artifacts after the tiny run, open report/logs with `viz-open`,
+  then commit/push the report utility and worklog.
+
+## 2026-06-11T18:04:23-07:00 - official DP contact-relabel smoke result
+
+Goal:
+- Run the bounded official Diffusion Policy mechanics smoke on the accepted
+  contact-aware relabel set, using only shape/normalizer checks, a one-step
+  debug train, and predicted-action range sanity.
+
+Change:
+- Added reusable artifact helpers:
+  `dextrah_lab/offline_dp_bc/make_lowdim_dataset_report.py` and
+  `dextrah_lab/offline_dp_bc/make_official_dp_smoke_report.py`.
+- No training config semantics were changed. The official DP config remains
+  `dextrah_lab/offline_dp_bc/config/franka_cube_lowdim_dp.yaml`.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `a93e02674eab27bcb83930308a8b560fdb9d5837`
+- implementation_commit: pending
+- changed_files:
+  `dextrah_lab/offline_dp_bc/make_lowdim_dataset_report.py`,
+  `dextrah_lab/offline_dp_bc/make_official_dp_smoke_report.py`,
+  `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+- official_diffusion_policy:
+  source `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/diffusion_policy`,
+  commit `5ba07ac6661db573af695b419a7947ecb704690f`,
+  remote `https://github.com/real-stanford/diffusion_policy`.
+
+Command / Job:
+- job_id: `n/a` local bounded CPU smoke.
+- run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_official_dp_smoke_20260611_180153`
+- dataset:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_set_ep8_16_24_30_s260_high30_defaultfix_20260611_175347/contact_relabel_set_accepted.npz`
+- validation:
+  `python3 -m py_compile dextrah_lab/offline_dp_bc/make_lowdim_dataset_report.py dextrah_lab/offline_dp_bc/make_official_dp_smoke_report.py`,
+  `git diff --check`.
+- dataset report:
+  `PYTHONPATH=$DP:$DEX $VENV/bin/python -m dextrah_lab.offline_dp_bc.make_lowdim_dataset_report --dataset $DATASET --output-dir $OUT --horizon 16 --pad-before 1 --pad-after 7 --val-ratio 0.25`
+- adapter smoke:
+  `PYTHONPATH=$DP:$DEX $VENV/bin/python -m dextrah_lab.offline_dp_bc.validate_dataset_smoke --dataset $DATASET --horizon 16 --pad-before 1 --pad-after 7`
+- official train smoke:
+  `cd $DP && PYTHONPATH=$DP:$DEX $VENV/bin/python train.py --config-dir $DEX/dextrah_lab/offline_dp_bc/config --config-name franka_cube_lowdim_dp task.dataset_path=$DATASET task.dataset.val_ratio=0.25 training.device=cpu training.max_train_steps=1 training.max_val_steps=1 training.num_epochs=1 policy.num_inference_steps=2 dataloader.batch_size=8 val_dataloader.batch_size=8 hydra.run.dir=$OUT/official_dp_train`
+- checkpoint range sanity:
+  `PYTHONPATH=$DP:$DEX $VENV/bin/python -m dextrah_lab.offline_dp_bc.validate_official_checkpoint_smoke --checkpoint $OUT/official_dp_train/checkpoints/latest.ckpt --dataset $DATASET --device cpu --batch-size 4 --num-inference-steps 2 --row-selector first --warm-history-from-dataset`
+  and the same command with `--row-selector gripper_closed`.
+
+Result:
+- status: passed.
+- dataset adapter:
+  `obs (1126, 21)`, `action (1126, 7)`,
+  `episode_ends [282, 563, 844, 1126]`, train/val samples `844/282`.
+- normalizer:
+  official `LinearNormalizer`; obs uses limits fit; action normalizer is
+  identity with zero offset and unit scale.
+- action range:
+  pose action abs max `0.7517907`, pose exact-bound fraction `0.0`;
+  overall exact-bound fraction `0.142857` comes from the binary gripper channel
+  (`gripper_exact_bound_fraction=1.0`).
+- adapter smoke:
+  `FRANKA_CUBE_DP_BC_SMOKE_PASSED`, official DP dataset import `true`,
+  sample obs/action shapes `[16, 21]` and `[16, 7]`.
+- official one-step train:
+  model/workspace constructed with official
+  `TrainDiffusionUnetLowdimWorkspace`; checkpoint written at
+  `$OUT/official_dp_train/checkpoints/latest.ckpt`.
+- tiny train metrics:
+  `train_loss=1.1225613`, `val_loss=1.1745609`,
+  `train_action_mse_error=0.6494607`, `global_step=0`, `epoch=0`.
+- predicted-action sanity:
+  first and gripper-closed dataset windows both produced finite direct
+  `(4, 8, 7)` action chunks and bridge `(4, 7)` actions. The one-step debug
+  checkpoint touches normalized bounds in several dimensions, which is expected
+  for a mechanics-only smoke and is not a behavior claim.
+
+Viewer URLs:
+- official DP smoke report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_official_dp_smoke_20260611_180153/official_dp_smoke_report.md`
+- dataset/normalizer/action range report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_official_dp_smoke_20260611_180153/dataset_report.md`
+- resolved official DP config:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_official_dp_smoke_20260611_180153/official_dp_train/.hydra/config.yaml`
+- tiny train stdout:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_official_dp_smoke_20260611_180153/logs/official_dp_tiny_train.log`
+
+Analysis:
+- The accepted contact-aware relabel NPZ is consumable by the official
+  `real-stanford/diffusion_policy` lowdim training workspace with the existing
+  adapter. This clears only the official-DP mechanics gate requested by the
+  user.
+- The previous raw-label behavior claims remain invalid/stale. Closed-loop DP
+  eval is still gated on a real contact-aware BC checkpoint trained beyond this
+  one-step debug smoke, plus the same artifact-heavy eval checks used earlier:
+  video/contact sheet, support traces, action range, history cadence, and
+  train/eval schema audit.
+
+Next:
+- Commit/push this source/worklog checkpoint.
+- Before closed-loop DP eval, run a tiny contact-aware BC pretrain/debug job
+  with enough steps to reduce train/val action error while still bounded, then
+  inspect checkpoint action ranges. Do not proceed to RL warm-start or large
+  training until contact-aware DP closed-loop behavior is coherent.
