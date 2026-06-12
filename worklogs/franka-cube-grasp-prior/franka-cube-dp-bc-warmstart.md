@@ -8047,3 +8047,120 @@ Final bounded verdict:
 
 Active jobs:
 - none after `1028108`.
+
+## 2026-06-11T20:57:39-07:00 - support expansion around first failing reset plan
+
+Goal:
+- Run one bounded support-expansion experiment around the accepted source-contact
+  reset to test whether local support near the first failing perturbation
+  (`joint_blend_alpha=0.75`, source cube fixed) can recover alpha0.75 while
+  preserving the exact matched reset behavior.
+
+Hypothesis:
+- The current weighted DP checkpoint fails at alpha0.75 because the training
+  support contains only exact contact-aware source-joint rollouts. Adding a
+  small set of controller-generated relabel demonstrations from exact/0.9/0.75
+  robot-state blends may improve local closed-loop recovery around alpha0.75
+  without needing broad normal-reset data.
+
+Planned Change:
+- Add a relabel-only reset joint-blend option to
+  `dextrah_lab/rl_games/contact_aware_franka_cube_rollout.py`.
+- Thread the option through
+  `cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh` so each
+  rollout spec can carry `episode:step:trajectory:joint_blend_alpha`.
+- Keep this scoped to contact-aware relabel generation; it does not change the
+  DEXTRAH task, DP eval bridge, or RL code.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `57250c0fb861ff66e325e995e97376b03232f67f`
+- implementation_commit: pending
+- changed_files_planned:
+  - `dextrah_lab/rl_games/contact_aware_franka_cube_rollout.py`
+  - `cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh`
+  - `dextrah_lab/offline_dp_bc/make_contact_relabel_set_report.py`
+  - `dextrah_lab/offline_dp_bc/make_support_expansion_dataset_report.py`
+  - this worklog
+
+Validation Plan:
+- Local:
+  - `python3 -m py_compile dextrah_lab/rl_games/contact_aware_franka_cube_rollout.py`
+  - `python3 -m py_compile dextrah_lab/offline_dp_bc/make_contact_relabel_set_report.py dextrah_lab/offline_dp_bc/make_support_expansion_dataset_report.py`
+  - `bash -n cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh`
+  - `git diff --check`
+- Remote:
+  - push branch and deploy exact commit to the agent-owned l401 worktree.
+  - Launch one bounded relabel-set gate, not DP training:
+    - `SPEC_COUNT=3`
+    - specs for original cuRobo episode `16`, source step `260`, same source
+      trajectory JSON, with `joint_blend_alpha` values `1.0`, `0.9`, `0.75`.
+      The earlier DP eval name used relabeled episode `1`, step `0`; that maps
+      back to original episode `16`, step `260` in the accepted contact-aware
+      relabel set.
+    - source cube fixed by the contact-aware rollout reset.
+    - `VARIANT=center_high30`, short video enabled for inspectable rollouts.
+  - Generate an offline support-expansion dataset report comparing the
+    candidate NPZ against the previous accepted contact relabel NPZ: perturbation
+    distribution, action/phase coverage, and nearest-support distances.
+  - Fetch logs/artifacts, create/open viewer URLs, and inspect the relabel
+    gate before deciding whether any official-DP fine-tune smoke is allowed.
+
+Gate:
+- Relabel-set hard gate must pass for all generated rollouts:
+  final/max lift over threshold, no pose clipping, final EE/finger distance
+  plausible, no post-reset rows, and videos/contact sheets visually coherent.
+- Only if the relabel gate passes will I propose/run a short official-DP
+  fine-tune/debug pretrain using the expanded NPZ, with exact matched and
+  alpha0.75 eval gates afterward.
+- Normal reset eval remains context only; normal-reset recovery is not required
+  for this bounded gate.
+
+## 2026-06-11T21:03:17-07:00 - support expansion relabel implementation checkpoint
+
+Goal:
+- Prepare the bounded contact-aware relabel support-expansion sweep around the
+  accepted source-contact reset, with exact/0.9/0.75 source-joint blend specs
+  and artifact-ready metadata before any cluster launch.
+
+Change:
+- Added `--reset_joint_blend_alpha` to
+  `dextrah_lab/rl_games/contact_aware_franka_cube_rollout.py`, blending normal
+  task-reset joints toward source trajectory joints while keeping the cube reset
+  on the selected source row.
+- Logged reset alignment diagnostics per rollout row and summary: joint distance
+  from source/normal, lowdim distance from dataset, cube-minus-EE distance, and
+  applied/source/normal joint vectors.
+- Extended `cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh` to
+  parse `episode:step:trajectory:joint_blend_alpha` specs and create
+  alpha-suffixed rollout directories, avoiding collisions between perturbations.
+- Extended `make_contact_relabel_set_report.py` so reset alpha/diagnostics are
+  visible in the aggregate CSV/report and accepted NPZ sidecar metadata.
+- Added `make_support_expansion_dataset_report.py` for the required offline
+  candidate-dataset summary: perturbation distribution, phase/action coverage,
+  and nearest-support distances versus the previous accepted contact relabel
+  dataset.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- base_commit: `57250c0fb861ff66e325e995e97376b03232f67f`
+- implementation_commit: pending
+- changed_files:
+  - `cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh`
+  - `dextrah_lab/rl_games/contact_aware_franka_cube_rollout.py`
+  - `dextrah_lab/offline_dp_bc/make_contact_relabel_set_report.py`
+  - `dextrah_lab/offline_dp_bc/make_support_expansion_dataset_report.py`
+  - this worklog
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/contact_aware_franka_cube_rollout.py dextrah_lab/offline_dp_bc/make_contact_relabel_set_report.py dextrah_lab/offline_dp_bc/make_support_expansion_dataset_report.py` -> pass
+- `bash -n cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh` -> pass
+- `git diff --check` -> pass
+
+Next:
+- Commit/push, deploy the exact commit to the agent-owned l401 worktree, then
+  launch one bounded relabel-set gate for original cuRobo episode `16`, source
+  step `260`, trajectory seed16, joint blend alphas `1.0`, `0.9`, and `0.75`.

@@ -36,6 +36,16 @@ parser.add_argument("--lift_steps", default=120, type=int)
 parser.add_argument("--lift_height", default=0.14, type=float)
 parser.add_argument("--finger_gain", default=0.75, type=float)
 parser.add_argument("--clip_actions", default=1.0, type=float)
+parser.add_argument(
+    "--reset_joint_blend_alpha",
+    default=1.0,
+    type=float,
+    help=(
+        "Blend the post-task-reset robot joints toward the source trajectory joints before rollout. "
+        "1.0 uses exact source joints; 0.0 leaves the task reset robot joints. Cube/object reset still "
+        "uses the selected source row."
+    ),
+)
 parser.add_argument("--print_interval", default=40, type=int)
 parser.add_argument("--video", action="store_true", default=False)
 parser.add_argument("--video_length", default=280, type=int)
@@ -171,10 +181,14 @@ def _reset_to_source(
     row_idx: int,
     raw_q: np.ndarray,
     seed: int,
-) -> np.ndarray:
+) -> tuple[np.ndarray, dict[str, Any]]:
     _policy_obs_from_reset(gym_env.reset(seed=int(seed)))
     env_ids = torch.as_tensor(task_env._robot._ALL_INDICES, device=task_env.device, dtype=torch.long)
-    joint_pos = _map_source_joint_to_env(task_env, raw_q, env_ids)
+    normal_joint_pos = task_env._robot.data.joint_pos[env_ids].clone()
+    source_joint_pos = _map_source_joint_to_env(task_env, raw_q, env_ids)
+    alpha = float(np.clip(float(args_cli.reset_joint_blend_alpha), 0.0, 1.0))
+    joint_pos = normal_joint_pos + alpha * (source_joint_pos - normal_joint_pos)
+    joint_pos = torch.clamp(joint_pos, task_env.robot_dof_lower_limits, task_env.robot_dof_upper_limits)
     joint_vel = torch.zeros_like(joint_pos)
     task_env._robot.write_joint_state_to_sim(joint_pos, joint_vel, env_ids=env_ids)
     task_env._robot.set_joint_position_target(joint_pos, env_ids=env_ids)
@@ -203,7 +217,27 @@ def _reset_to_source(
     task_env.ik_controller.reset(env_ids)
     task_env.scene.write_data_to_sim()
     task_env.sim.forward()
-    return _policy_obs_from_task_env(task_env).detach().float().cpu().numpy()[0]
+    reset_policy_obs = _policy_obs_from_task_env(task_env).detach().float().cpu().numpy()[0]
+    reset_lowdim = _lowdim_numpy_from_policy_obs(reset_policy_obs[None])
+    target_lowdim = np.asarray(dataset_obs[row_idx], dtype=np.float32)
+    applied_joint_np = joint_pos.detach().float().cpu().numpy()[0]
+    source_joint_np = source_joint_pos.detach().float().cpu().numpy()[0]
+    normal_joint_np = normal_joint_pos.detach().float().cpu().numpy()[0]
+    reset_summary = {
+        "reset_joint_blend_alpha": alpha,
+        "reset_joint_l2_from_source": float(np.linalg.norm(applied_joint_np - source_joint_np)),
+        "reset_joint_linf_from_source": float(np.max(np.abs(applied_joint_np - source_joint_np))),
+        "reset_joint_l2_from_normal": float(np.linalg.norm(applied_joint_np - normal_joint_np)),
+        "reset_joint_linf_from_normal": float(np.max(np.abs(applied_joint_np - normal_joint_np))),
+        "reset_lowdim_l2_from_dataset": float(np.linalg.norm(reset_lowdim - target_lowdim)),
+        "reset_cube_minus_ee_l2_from_dataset": float(np.linalg.norm(reset_lowdim[14:17] - target_lowdim[14:17])),
+        "reset_cube_pos_l2_from_dataset": float(np.linalg.norm(reset_lowdim[7:10] - target_lowdim[7:10])),
+        "reset_ee_pos_l2_from_dataset": float(np.linalg.norm(reset_lowdim[:3] - target_lowdim[:3])),
+        "source_joint_position": source_joint_np.astype(float).tolist(),
+        "normal_reset_joint_position": normal_joint_np.astype(float).tolist(),
+        "applied_joint_position": applied_joint_np.astype(float).tolist(),
+    }
+    return reset_policy_obs, reset_summary
 
 
 def _finger_center(task_env: Any) -> np.ndarray:
@@ -298,12 +332,13 @@ def _build_report(summary: dict[str, Any]) -> str:
         "",
         "## Variant Summary",
         "",
-        "| variant | offset | steps | final EE-cube | min finger-cube | final finger-cube | max lift | final lift | final grip width | max clip | terminal next | skipped reset step | success-like |",
-        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---|",
+        "| variant | joint alpha | reset cube-minus-EE L2 | offset | steps | final EE-cube | min finger-cube | final finger-cube | max lift | final lift | final grip width | max clip | terminal next | skipped reset step | success-like |",
+        "|---|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---|",
     ]
     for variant, payload in summary["variants"].items():
         lines.append(
-            f"| {variant} | {payload['offset']} | {payload['steps']} | "
+            f"| {variant} | {payload['reset_joint_blend_alpha']:.3f} | "
+            f"{payload['reset_cube_minus_ee_l2_from_dataset']:.5f} | {payload['offset']} | {payload['steps']} | "
             f"{payload['final_ee_to_cube']:.4f} | {payload['min_finger_center_to_cube']:.4f} | "
             f"{payload['final_finger_center_to_cube']:.4f} | {payload['max_cube_lift_height']:.4f} | "
             f"{payload['final_cube_lift_height']:.4f} | {payload['final_gripper_width']:.5f} | "
@@ -373,7 +408,7 @@ def main() -> None:
     global_step = 0
     try:
         for variant_idx, (variant_name, offset) in enumerate(variants):
-            policy_obs = _reset_to_source(
+            policy_obs, reset_summary = _reset_to_source(
                 gym_env,
                 task_env,
                 dataset_obs=dataset_obs,
@@ -443,6 +478,13 @@ def main() -> None:
                     "episode_step": int(row_idx - episode_start),
                     "source_row": int(row_idx),
                     "source_trajectory_json": str(trajectory_path),
+                    "reset_joint_blend_alpha": float(reset_summary["reset_joint_blend_alpha"]),
+                    "reset_joint_l2_from_source": float(reset_summary["reset_joint_l2_from_source"]),
+                    "reset_joint_l2_from_normal": float(reset_summary["reset_joint_l2_from_normal"]),
+                    "reset_lowdim_l2_from_dataset": float(reset_summary["reset_lowdim_l2_from_dataset"]),
+                    "reset_cube_minus_ee_l2_from_dataset": float(
+                        reset_summary["reset_cube_minus_ee_l2_from_dataset"]
+                    ),
                     "lowdim_obs": live_lowdim.astype(float).tolist(),
                     "target_finger_center": target_finger.astype(float).tolist(),
                     "finger_center": finger_center.astype(float).tolist(),
@@ -491,6 +533,7 @@ def main() -> None:
             success_like = bool(max_lift >= float(task_env.cfg.cube_success_lift_height) and min_finger < 0.08)
             summaries[variant_name] = {
                 "offset": offset.astype(float).tolist(),
+                **reset_summary,
                 "steps": len(vrows),
                 "final_ee_to_cube": float(last["ee_to_cube"]),
                 "min_finger_center_to_cube": min_finger,
@@ -537,6 +580,7 @@ def main() -> None:
         "lift_height": float(args_cli.lift_height),
         "finger_gain": float(args_cli.finger_gain),
         "clip_actions": float(args_cli.clip_actions),
+        "reset_joint_blend_alpha": float(np.clip(float(args_cli.reset_joint_blend_alpha), 0.0, 1.0)),
         "variants": summaries,
         "verdict": verdict,
         "csv": str(csv_path),

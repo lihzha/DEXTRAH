@@ -120,12 +120,14 @@ def _report(summary: dict[str, Any], rollout_rows: list[dict[str, Any]], failure
         "",
         "## Rollouts",
         "",
-        "| rollout | pass | episode | step | final EE-cube | final finger-cube | final/max lift | max clip | failures | video |",
-        "|---|---|---:|---:|---:|---:|---:|---:|---|---|",
+        "| rollout | pass | reset joint alpha | episode | step | final EE-cube | final finger-cube | final/max lift | max clip | failures | video |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|---|---|",
     ]
     for row in rollout_rows:
         lines.append(
-            f"| {row['rollout_id']} | {row['gate_pass']} | {row['episode']} | {row['episode_step']} | "
+            f"| {row['rollout_id']} | {row['gate_pass']} | "
+            f"{float(row.get('reset_joint_blend_alpha', float('nan'))):.3f} | "
+            f"{row['episode']} | {row['episode_step']} | "
             f"{float(row['final_ee_to_cube']):.4f} | {float(row['final_finger_center_to_cube']):.4f} | "
             f"{float(row['final_cube_lift_height']):.4f}/{float(row['max_cube_lift_height']):.4f} | "
             f"{float(row['max_pose_action_clip_fraction']):.3f} | {row['failure_reasons']} | `{row['video']}` |"
@@ -167,6 +169,7 @@ def main() -> None:
     accepted_phase_ids: list[int] = []
     accepted_episode_ends: list[int] = []
     accepted_rollout_ids: list[str] = []
+    accepted_rollout_reset_joint_blend_alpha: list[float] = []
 
     for summary_path in summary_paths:
         one_summary = json.loads(summary_path.read_text(encoding="utf-8"))
@@ -184,10 +187,23 @@ def main() -> None:
             variant_rows = [row for row in rows if row.get("variant") == variant]
             failures = _gate_failures(payload, variant_rows)
             gate_pass = not failures
+            reset_joint_blend_alpha = float(
+                payload.get(
+                    "reset_joint_blend_alpha",
+                    one_summary.get("reset_joint_blend_alpha", float("nan")),
+                )
+            )
             rollout_row = {
                 "rollout_id": rollout_id,
                 "rollout_dir": str(summary_path.parent),
                 "variant": variant,
+                "reset_joint_blend_alpha": reset_joint_blend_alpha,
+                "reset_joint_l2_from_source": float(payload.get("reset_joint_l2_from_source", float("nan"))),
+                "reset_joint_l2_from_normal": float(payload.get("reset_joint_l2_from_normal", float("nan"))),
+                "reset_lowdim_l2_from_dataset": float(payload.get("reset_lowdim_l2_from_dataset", float("nan"))),
+                "reset_cube_minus_ee_l2_from_dataset": float(
+                    payload.get("reset_cube_minus_ee_l2_from_dataset", float("nan"))
+                ),
                 "episode": int(one_summary.get("episode", -1)),
                 "episode_step": int(one_summary.get("episode_step", -1)),
                 "steps": int(payload.get("steps", 0)),
@@ -217,6 +233,7 @@ def main() -> None:
             if len(accepted_obs) > rollout_start_count:
                 accepted_episode_ends.append(len(accepted_obs))
                 accepted_rollout_ids.append(rollout_id)
+                accepted_rollout_reset_joint_blend_alpha.append(reset_joint_blend_alpha)
 
     output_prefix = args.output_prefix
     rollout_csv = set_dir / f"{output_prefix}_rollouts.csv"
@@ -237,6 +254,7 @@ def main() -> None:
         episode_ends=episode_ends_arr,
         phase_ids=phase_arr,
         rollout_ids=np.asarray(accepted_rollout_ids),
+        rollout_reset_joint_blend_alpha=np.asarray(accepted_rollout_reset_joint_blend_alpha, dtype=np.float32),
     )
     all_pass = bool(rollout_rows) and not failure_rows
     verdict = (

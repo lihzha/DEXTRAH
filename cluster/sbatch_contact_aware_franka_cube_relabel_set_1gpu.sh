@@ -35,6 +35,7 @@ TRAJECTORY_JSON="${TRAJECTORY_JSON:-}"
 SPEC_COUNT="${SPEC_COUNT:-0}"
 EPISODE="${EPISODE:-24}"
 EPISODE_STEP="${EPISODE_STEP:-260}"
+RESET_JOINT_BLEND_ALPHA="${RESET_JOINT_BLEND_ALPHA:-1.0}"
 SEED="${SEED:-42}"
 VARIANT="${VARIANT:-center_high30}"
 ALIGN_STEPS="${ALIGN_STEPS:-80}"
@@ -82,8 +83,8 @@ container_path_from_host() {
 
 resolve_trajectory_for_host_check() {
   local spec="$1"
-  local ep step traj
-  IFS=: read -r ep step traj <<< "$spec"
+  local ep step traj alpha
+  IFS=: read -r ep step traj alpha <<< "$spec"
   if [ -z "${traj:-}" ]; then
     local template="$TRAJECTORY_TEMPLATE"
     template="$(printf '%s' "$template" | sed "s/{episode}/$ep/g; s/{seed}/$ep/g")"
@@ -149,6 +150,7 @@ mkdir -p \
   "$CACHE_NFS/data" "$CACHE_NFS/documents"
 
 export TASK RUN_NAME SEED DATASET_ARG TRAJECTORY_ROOT_ARG TRAJECTORY_TEMPLATE TRAJECTORY_JSON_ARG SPEC_COUNT
+export RESET_JOINT_BLEND_ALPHA
 export VARIANT ALIGN_STEPS CLOSE_STEPS LIFT_STEPS LIFT_HEIGHT FINGER_GAIN CLIP_ACTIONS PRINT_INTERVAL
 export CAPTURE_VIDEO VIDEO_LENGTH VIDEO_NAME_PREFIX RUN_DIR_CONTAINER ENV_NAME
 export CAMERA_EYE_X CAMERA_EYE_Y CAMERA_EYE_Z CAMERA_TARGET_X CAMERA_TARGET_Y CAMERA_TARGET_Z
@@ -166,6 +168,7 @@ for ((i=0; i<${#SPEC_LIST[@]}; i++)); do
   echo "SPEC_$i=${SPEC_LIST[$i]}"
 done
 echo "VARIANT=$VARIANT"
+echo "RESET_JOINT_BLEND_ALPHA=$RESET_JOINT_BLEND_ALPHA"
 echo "ALIGN_STEPS=$ALIGN_STEPS CLOSE_STEPS=$CLOSE_STEPS LIFT_STEPS=$LIFT_STEPS"
 echo "LIFT_HEIGHT=$LIFT_HEIGHT FINGER_GAIN=$FINGER_GAIN CLIP_ACTIONS=$CLIP_ACTIONS"
 echo "DATASET_ARG=$DATASET_ARG"
@@ -212,13 +215,17 @@ srun \
     fi
 
     for spec in "${SPEC_LIST[@]}"; do
-      IFS=: read -r ep step traj <<< "$spec"
+      IFS=: read -r ep step traj alpha <<< "$spec"
       if [ -z "${traj:-}" ]; then
         template="$TRAJECTORY_TEMPLATE"
         template="$(printf "%s" "$template" | sed "s/{episode}/$ep/g; s/{seed}/$ep/g")"
         traj="$TRAJECTORY_ROOT_ARG/$template"
       fi
-      rollout_id=$(printf "ep%02ds%03d" "$ep" "$step")
+      if [ -z "${alpha:-}" ]; then
+        alpha="$RESET_JOINT_BLEND_ALPHA"
+      fi
+      alpha_tag=$(printf "%s" "$alpha" | tr "." "p" | tr -c "A-Za-z0-9p_-" "_")
+      rollout_id=$(printf "ep%02ds%03d_a%s" "$ep" "$step" "$alpha_tag")
       rollout_dir="$RUN_DIR_CONTAINER/rollouts/$rollout_id"
       mkdir -p "$rollout_dir"
       CMD=(
@@ -237,6 +244,7 @@ srun \
         --lift_height "$LIFT_HEIGHT"
         --finger_gain "$FINGER_GAIN"
         --clip_actions "$CLIP_ACTIONS"
+        --reset_joint_blend_alpha "$alpha"
         --output_dir "$rollout_dir"
         --print_interval "$PRINT_INTERVAL"
         --camera_eye "$CAMERA_EYE_X" "$CAMERA_EYE_Y" "$CAMERA_EYE_Z"
