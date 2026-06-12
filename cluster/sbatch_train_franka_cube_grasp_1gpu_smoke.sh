@@ -3,12 +3,12 @@
 #SBATCH --ntasks=1
 #SBATCH --account=nvr_lpr_rvp
 #SBATCH --gpus-per-node=1
-#SBATCH --job-name=dextrah_franka_cube_eval
+#SBATCH --job-name=dextrah_franka_cube_smoke
 #SBATCH --partition=batch
-#SBATCH --time=0-01:00:00
+#SBATCH --time=0-01:30:00
 #SBATCH --mem=160G
 #SBATCH --cpus-per-task=16
-#SBATCH --output=/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_%j.out
+#SBATCH --output=/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_smoke_%j.out
 
 set -euo pipefail
 
@@ -23,17 +23,26 @@ RESULTS_NFS="${RESULTS_NFS:-$NFS_ROOT/results/dextrah}"
 CACHE_NFS="${CACHE_NFS:-$NFS_ROOT/isaac_cache}"
 
 TASK="${TASK:-Dextrah-Franka-Cube-Grasp}"
-SLURM_JOB_ID_SAFE="${SLURM_JOB_ID:-manual}"
-RUN_NAME="${RUN_NAME:-franka_cube_eval_${SLURM_JOB_ID_SAFE}_$(date +%Y%m%d_%H%M%S)}"
-NUM_ENVS="${NUM_ENVS:-1}"
-NUM_STEPS="${NUM_STEPS:-600}"
-VIDEO_LENGTH="${VIDEO_LENGTH:-600}"
-VIDEO_NAME_PREFIX="${VIDEO_NAME_PREFIX:-franka-cube-grasp-eval}"
-PRINT_INTERVAL="${PRINT_INTERVAL:-20}"
-CAPTURE_VIDEO="${CAPTURE_VIDEO:-True}"
-DETERMINISTIC="${DETERMINISTIC:-True}"
-USE_CUDA_GRAPH="${USE_CUDA_GRAPH:-False}"
-SEED="${SEED:-42}"
+RUN_NAME="${FULL_EXPERIMENT_NAME:-franka_cube_smoke_${SLURM_JOB_ID:-manual}_$(date +%Y%m%d_%H%M%S)}"
+CODE_COMMIT="${CODE_COMMIT:-}"
+NUM_ENVS="${NUM_ENVS:-64}"
+MAX_ITERATIONS="${MAX_ITERATIONS:-45}"
+HORIZON_LENGTH="${HORIZON_LENGTH:-64}"
+MINIBATCH_SIZE="${MINIBATCH_SIZE:-4096}"
+CENTRAL_VALUE_MINIBATCH_SIZE="${CENTRAL_VALUE_MINIBATCH_SIZE:-$MINIBATCH_SIZE}"
+LEARNING_RATE="${LEARNING_RATE:-0.0002}"
+CENTRAL_VALUE_LEARNING_RATE="${CENTRAL_VALUE_LEARNING_RATE:-0.0001}"
+MINI_EPOCHS="${MINI_EPOCHS:-4}"
+SAVE_FREQUENCY="${SAVE_FREQUENCY:-5}"
+GAMMA="${GAMMA:-0.995}"
+TAU="${TAU:-0.95}"
+KL_THRESHOLD="${KL_THRESHOLD:-0.012}"
+ENTROPY_COEF="${ENTROPY_COEF:-0.0005}"
+E_CLIP="${E_CLIP:-0.2}"
+GRAD_NORM="${GRAD_NORM:-1.0}"
+SIGMA_INIT_VAL="${SIGMA_INIT_VAL:-0}"
+USE_CUDA_GRAPH="${USE_CUDA_GRAPH:-True}"
+SEED="${SEED:--1}"
 CUBE_SPAWN_XY_RANDOMIZATION="${CUBE_SPAWN_XY_RANDOMIZATION:-0.08}"
 GRASP_PRIOR_RESET_ENABLED="${GRASP_PRIOR_RESET_ENABLED:-False}"
 GRASP_PRIOR_LIBRARY_PATH="${GRASP_PRIOR_LIBRARY_PATH:-}"
@@ -49,40 +58,26 @@ GRASP_PRIOR_ACTION_WARMSTART_TRACK_ORIENTATION="${GRASP_PRIOR_ACTION_WARMSTART_T
 GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED="${GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED:-False}"
 GRASP_PRIOR_ACTION_PRIOR_REWARD_WEIGHT="${GRASP_PRIOR_ACTION_PRIOR_REWARD_WEIGHT:-2.0}"
 GRASP_PRIOR_ACTION_PRIOR_REWARD_SHARPNESS="${GRASP_PRIOR_ACTION_PRIOR_REWARD_SHARPNESS:-2.0}"
-CAMERA_EYE_X="${CAMERA_EYE_X:--0.10}"
-CAMERA_EYE_Y="${CAMERA_EYE_Y:--0.78}"
-CAMERA_EYE_Z="${CAMERA_EYE_Z:-1.42}"
-CAMERA_TARGET_X="${CAMERA_TARGET_X:--0.41}"
-CAMERA_TARGET_Y="${CAMERA_TARGET_Y:--0.10}"
-CAMERA_TARGET_Z="${CAMERA_TARGET_Z:-0.82}"
-CHECKPOINT="${CHECKPOINT:?Set CHECKPOINT to a checkpoint path visible inside the container, e.g. /results/logs/rl_games/dextrah_franka_cube_grasp/<run>/nn/foo.pth}"
+DEXTRAH_RLGAMES_JSONL_METRICS="${DEXTRAH_RLGAMES_JSONL_METRICS:-True}"
+AUTO_RESUME="${AUTO_RESUME:-False}"
+CHECKPOINT="${CHECKPOINT:-}"
 
-RUN_DIR_HOST="$RESULTS_NFS/evals/$RUN_NAME"
-RUN_DIR_CONTAINER="/results/evals/$RUN_NAME"
-METRICS_CONTAINER="$RUN_DIR_CONTAINER/metrics.json"
-LOG_FILE="$NFS_ROOT/slurm_logs/dextrah/eval_franka_cube_${SLURM_JOB_ID_SAFE}.out"
+RUN_DIR_HOST="$RESULTS_NFS/logs/rl_games/dextrah_franka_cube_grasp/$RUN_NAME"
+LOG_FILE="$NFS_ROOT/slurm_logs/dextrah/franka_cube_smoke_${SLURM_JOB_ID:-0}.out"
 
-CHECKPOINT_ARG="$CHECKPOINT"
-CHECKPOINT_HOST="$CHECKPOINT"
-if [[ "$CHECKPOINT" == /results/* ]]; then
-  CHECKPOINT_HOST="$RESULTS_NFS/${CHECKPOINT#/results/}"
-elif [[ "$CHECKPOINT" == "$RESULTS_NFS"/* ]]; then
-  rel_checkpoint="${CHECKPOINT#$RESULTS_NFS/}"
-  CHECKPOINT_ARG="/results/$rel_checkpoint"
-fi
-
-if [ ! -f "$IMAGE" ]; then
-  echo "Missing Isaac Lab container image: $IMAGE"
+if [ "$TASK" != "Dextrah-Franka-Cube-Grasp" ]; then
+  echo "This smoke wrapper is only for TASK=Dextrah-Franka-Cube-Grasp" >&2
   exit 2
 fi
-if [ ! -d "$ENV_ROOT/$ENV_NAME/site" ]; then
-  echo "Missing DEXTRAH Python target: $ENV_ROOT/$ENV_NAME/site"
-  exit 2
-fi
-if [ ! -f "$CHECKPOINT_HOST" ]; then
-  echo "Missing checkpoint: $CHECKPOINT_HOST"
-  exit 2
-fi
+
+case "$GRASP_PRIOR_RESET_ENABLED" in
+  True|true|1|yes|Yes)
+    if [ -z "$GRASP_PRIOR_LIBRARY_PATH" ]; then
+      echo "GRASP_PRIOR_RESET_ENABLED=True requires GRASP_PRIOR_LIBRARY_PATH" >&2
+      exit 2
+    fi
+    ;;
+esac
 case "$GRASP_PRIOR_ACTION_WARMSTART_ENABLED" in
   True|true|1|yes|Yes)
     case "$GRASP_PRIOR_RESET_ENABLED" in
@@ -95,6 +90,25 @@ case "$GRASP_PRIOR_ACTION_WARMSTART_ENABLED" in
     ;;
 esac
 
+if [ ! -f "$IMAGE" ]; then
+  echo "Missing Isaac Lab container image: $IMAGE" >&2
+  exit 2
+fi
+if [ ! -d "$ENV_ROOT/$ENV_NAME/site" ]; then
+  echo "Missing DEXTRAH Python target: $ENV_ROOT/$ENV_NAME/site" >&2
+  exit 2
+fi
+
+if [ -n "$CODE_COMMIT" ]; then
+  actual_commit="$(git -C "$CODE_NFS" rev-parse HEAD)"
+  if [ "$actual_commit" != "$CODE_COMMIT" ]; then
+    echo "CODE_COMMIT mismatch: expected $CODE_COMMIT, found $actual_commit in $CODE_NFS" >&2
+    exit 2
+  fi
+elif git -C "$CODE_NFS" rev-parse HEAD >/dev/null 2>&1; then
+  CODE_COMMIT="$(git -C "$CODE_NFS" rev-parse HEAD)"
+fi
+
 mkdir -p \
   "$RUN_DIR_HOST" \
   "$NFS_ROOT/slurm_logs/dextrah" \
@@ -103,34 +117,34 @@ mkdir -p \
   "$CACHE_NFS/omni_logs" "$CACHE_NFS/carb_logs" \
   "$CACHE_NFS/data" "$CACHE_NFS/documents"
 
-export TASK RUN_NAME NUM_ENVS NUM_STEPS VIDEO_LENGTH VIDEO_NAME_PREFIX PRINT_INTERVAL CAPTURE_VIDEO DETERMINISTIC USE_CUDA_GRAPH SEED CUBE_SPAWN_XY_RANDOMIZATION
-export GRASP_PRIOR_RESET_ENABLED GRASP_PRIOR_LIBRARY_PATH
-export GRASP_PRIOR_ACTION_WARMSTART_ENABLED GRASP_PRIOR_ACTION_WARMSTART_APPROACH_STEPS
-export GRASP_PRIOR_ACTION_WARMSTART_CLOSE_STEPS GRASP_PRIOR_ACTION_WARMSTART_LIFT_STEPS
-export GRASP_PRIOR_ACTION_WARMSTART_CLOSE_WIDTH GRASP_PRIOR_ACTION_WARMSTART_LIFT_ACTION_Z
-export GRASP_PRIOR_ACTION_WARMSTART_GAIN GRASP_PRIOR_ACTION_WARMSTART_MAX_POSITION_ACTION
-export GRASP_PRIOR_ACTION_WARMSTART_TRACK_ORIENTATION
-export GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED GRASP_PRIOR_ACTION_PRIOR_REWARD_WEIGHT
-export GRASP_PRIOR_ACTION_PRIOR_REWARD_SHARPNESS
-export CAMERA_EYE_X CAMERA_EYE_Y CAMERA_EYE_Z CAMERA_TARGET_X CAMERA_TARGET_Y CAMERA_TARGET_Z
-export CHECKPOINT_ARG RUN_DIR_CONTAINER METRICS_CONTAINER ENV_NAME
-
-echo "Running DextrAH Franka cube-grasp checkpoint evaluation"
-echo "SLURM_JOB_ID=$SLURM_JOB_ID_SAFE"
+echo "Running DEXTRAH Franka cube reset-prior 1-GPU RL smoke"
+echo "SLURM_JOB_ID=${SLURM_JOB_ID:-unset}"
 echo "SLURM_JOB_NODELIST=${SLURM_JOB_NODELIST:-unset}"
 echo "IMAGE=$IMAGE"
 echo "CODE_NFS=$CODE_NFS"
+echo "CODE_COMMIT=${CODE_COMMIT:-unknown}"
 echo "FABRICS_NFS=$FABRICS_NFS"
 echo "ISAACLAB_NFS=$ISAACLAB_NFS"
 echo "RESULTS_NFS=$RESULTS_NFS"
-echo "TASK=$TASK"
 echo "RUN_NAME=$RUN_NAME"
+echo "RUN_DIR_HOST=$RUN_DIR_HOST"
+echo "TASK=$TASK"
 echo "NUM_ENVS=$NUM_ENVS"
-echo "NUM_STEPS=$NUM_STEPS"
-echo "VIDEO_LENGTH=$VIDEO_LENGTH"
-echo "VIDEO_NAME_PREFIX=$VIDEO_NAME_PREFIX"
-echo "CAPTURE_VIDEO=$CAPTURE_VIDEO"
-echo "DETERMINISTIC=$DETERMINISTIC"
+echo "MAX_ITERATIONS=$MAX_ITERATIONS"
+echo "HORIZON_LENGTH=$HORIZON_LENGTH"
+echo "MINIBATCH_SIZE=$MINIBATCH_SIZE"
+echo "CENTRAL_VALUE_MINIBATCH_SIZE=$CENTRAL_VALUE_MINIBATCH_SIZE"
+echo "SAVE_FREQUENCY=$SAVE_FREQUENCY"
+echo "LEARNING_RATE=$LEARNING_RATE"
+echo "CENTRAL_VALUE_LEARNING_RATE=$CENTRAL_VALUE_LEARNING_RATE"
+echo "MINI_EPOCHS=$MINI_EPOCHS"
+echo "GAMMA=$GAMMA"
+echo "TAU=$TAU"
+echo "KL_THRESHOLD=$KL_THRESHOLD"
+echo "ENTROPY_COEF=$ENTROPY_COEF"
+echo "E_CLIP=$E_CLIP"
+echo "GRAD_NORM=$GRAD_NORM"
+echo "SIGMA_INIT_VAL=$SIGMA_INIT_VAL"
 echo "USE_CUDA_GRAPH=$USE_CUDA_GRAPH"
 echo "SEED=$SEED"
 echo "CUBE_SPAWN_XY_RANDOMIZATION=$CUBE_SPAWN_XY_RANDOMIZATION"
@@ -148,12 +162,21 @@ echo "GRASP_PRIOR_ACTION_WARMSTART_TRACK_ORIENTATION=$GRASP_PRIOR_ACTION_WARMSTA
 echo "GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED=$GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED"
 echo "GRASP_PRIOR_ACTION_PRIOR_REWARD_WEIGHT=$GRASP_PRIOR_ACTION_PRIOR_REWARD_WEIGHT"
 echo "GRASP_PRIOR_ACTION_PRIOR_REWARD_SHARPNESS=$GRASP_PRIOR_ACTION_PRIOR_REWARD_SHARPNESS"
-echo "CAMERA_EYE=($CAMERA_EYE_X $CAMERA_EYE_Y $CAMERA_EYE_Z)"
-echo "CAMERA_TARGET=($CAMERA_TARGET_X $CAMERA_TARGET_Y $CAMERA_TARGET_Z)"
-echo "CHECKPOINT_ARG=$CHECKPOINT_ARG"
-echo "CHECKPOINT_HOST=$CHECKPOINT_HOST"
-echo "RUN_DIR_HOST=$RUN_DIR_HOST"
-echo "METRICS_CONTAINER=$METRICS_CONTAINER"
+echo "DEXTRAH_RLGAMES_JSONL_METRICS=$DEXTRAH_RLGAMES_JSONL_METRICS"
+echo "AUTO_RESUME=$AUTO_RESUME"
+echo "CHECKPOINT=$CHECKPOINT"
+
+export TASK RUN_NAME NUM_ENVS MAX_ITERATIONS HORIZON_LENGTH MINIBATCH_SIZE CENTRAL_VALUE_MINIBATCH_SIZE
+export LEARNING_RATE CENTRAL_VALUE_LEARNING_RATE MINI_EPOCHS SAVE_FREQUENCY GAMMA TAU KL_THRESHOLD
+export ENTROPY_COEF E_CLIP GRAD_NORM SIGMA_INIT_VAL USE_CUDA_GRAPH SEED CUBE_SPAWN_XY_RANDOMIZATION
+export GRASP_PRIOR_RESET_ENABLED GRASP_PRIOR_LIBRARY_PATH DEXTRAH_RLGAMES_JSONL_METRICS AUTO_RESUME CHECKPOINT ENV_NAME
+export GRASP_PRIOR_ACTION_WARMSTART_ENABLED GRASP_PRIOR_ACTION_WARMSTART_APPROACH_STEPS
+export GRASP_PRIOR_ACTION_WARMSTART_CLOSE_STEPS GRASP_PRIOR_ACTION_WARMSTART_LIFT_STEPS
+export GRASP_PRIOR_ACTION_WARMSTART_CLOSE_WIDTH GRASP_PRIOR_ACTION_WARMSTART_LIFT_ACTION_Z
+export GRASP_PRIOR_ACTION_WARMSTART_GAIN GRASP_PRIOR_ACTION_WARMSTART_MAX_POSITION_ACTION
+export GRASP_PRIOR_ACTION_WARMSTART_TRACK_ORIENTATION
+export GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED GRASP_PRIOR_ACTION_PRIOR_REWARD_WEIGHT
+export GRASP_PRIOR_ACTION_PRIOR_REWARD_SHARPNESS
 
 srun \
   --ntasks=1 \
@@ -164,7 +187,7 @@ srun \
   --container-writable \
   --export=ALL,PYTHONUNBUFFERED=1,HYDRA_FULL_ERROR=1,PYTHONFAULTHANDLER=1,TORCH_SHOW_CPP_STACKTRACES=1,ACCEPT_EULA=Y,PRIVACY_CONSENT=Y \
   bash -lc '
-    set -euo pipefail
+    set -euxo pipefail
     export SITE="/envs/$ENV_NAME/site"
     export PYTHONPATH="$SITE:/code:/fabrics/src"
     for d in /IsaacLab/source/*; do
@@ -173,25 +196,23 @@ srun \
       fi
     done
     export WANDB_MODE=offline
-    mkdir -p "$RUN_DIR_CONTAINER" /results/logs
+    export DEXTRAH_AUTO_RESUME="$AUTO_RESUME"
+    export DEXTRAH_RUN_NAME="$RUN_NAME"
+    export DEXTRAH_LOG_ROOT=/results/logs
+    export DEXTRAH_RLGAMES_JSONL_METRICS="$DEXTRAH_RLGAMES_JSONL_METRICS"
+    mkdir -p /isaac-sim/kit/data/Kit/Isaac-Sim/5.0/pip3-envs/default /results/logs
 
     cd /code
     echo "container_host=$(hostname)"
     echo "container_cuda_visible_devices=${CUDA_VISIBLE_DEVICES:-unset}"
     git rev-parse HEAD || true
-    echo "git_status_skipped=container_git_lfs_unavailable"
     nvidia-smi || true
 
     cd /code/dextrah_lab/rl_games
 
-    VIDEO_ARGS=()
-    if [ "$CAPTURE_VIDEO" = "True" ]; then
-      VIDEO_ARGS=(--video --video_length "$VIDEO_LENGTH" --video_name_prefix "$VIDEO_NAME_PREFIX")
-    fi
-
-    DETERMINISTIC_ARGS=(--deterministic)
-    if [ "$DETERMINISTIC" = "False" ]; then
-      DETERMINISTIC_ARGS=(--no-deterministic)
+    RESUME_ARGS=()
+    if [ -n "$CHECKPOINT" ]; then
+      RESUME_ARGS=(--checkpoint "$CHECKPOINT")
     fi
 
     TASK_OVERRIDES=(
@@ -199,16 +220,14 @@ srun \
       env.use_cuda_graph="$USE_CUDA_GRAPH"
       env.cube_spawn_xy_randomization="$CUBE_SPAWN_XY_RANDOMIZATION"
     )
-    if [ "$GRASP_PRIOR_RESET_ENABLED" = "True" ]; then
-      if [ -z "$GRASP_PRIOR_LIBRARY_PATH" ]; then
-        echo "GRASP_PRIOR_RESET_ENABLED=True requires GRASP_PRIOR_LIBRARY_PATH."
-        exit 2
-      fi
-      TASK_OVERRIDES+=(
-        env.grasp_prior_reset_enabled=True
-        env.grasp_prior_library_path="$GRASP_PRIOR_LIBRARY_PATH"
-      )
-    fi
+    case "$GRASP_PRIOR_RESET_ENABLED" in
+      True|true|1|yes|Yes)
+        TASK_OVERRIDES+=(
+          env.grasp_prior_reset_enabled=True
+          env.grasp_prior_library_path="$GRASP_PRIOR_LIBRARY_PATH"
+        )
+        ;;
+    esac
 
     append_grasp_prior_reference_sequence_overrides() {
       TASK_OVERRIDES+=(
@@ -245,38 +264,52 @@ srun \
         ;;
     esac
 
-    EVAL_ARGS=(
-      eval_rollout.py
+    TRAIN_ARGS=(
+      train.py
       --headless
       --task="$TASK"
-      --checkpoint "$CHECKPOINT_ARG"
-      --num_envs "$NUM_ENVS"
-      --num_steps "$NUM_STEPS"
       --seed "$SEED"
-      --output_dir "$RUN_DIR_CONTAINER"
-      --metrics_path "$METRICS_CONTAINER"
-      --print_interval "$PRINT_INTERVAL"
-      --camera_eye "$CAMERA_EYE_X" "$CAMERA_EYE_Y" "$CAMERA_EYE_Z"
-      --camera_target "$CAMERA_TARGET_X" "$CAMERA_TARGET_Y" "$CAMERA_TARGET_Z"
-      "${VIDEO_ARGS[@]}"
-      "${DETERMINISTIC_ARGS[@]}"
+      --num_envs "$NUM_ENVS"
+      --max_iterations "$MAX_ITERATIONS"
+      "${RESUME_ARGS[@]}"
+      agent.params.config.minibatch_size="$MINIBATCH_SIZE"
+      agent.params.config.central_value_config.minibatch_size="$CENTRAL_VALUE_MINIBATCH_SIZE"
+      agent.params.config.learning_rate="$LEARNING_RATE"
+      agent.params.config.central_value_config.learning_rate="$CENTRAL_VALUE_LEARNING_RATE"
+      agent.params.config.horizon_length="$HORIZON_LENGTH"
+      agent.params.config.mini_epochs="$MINI_EPOCHS"
+      agent.params.config.gamma="$GAMMA"
+      agent.params.config.tau="$TAU"
+      agent.params.config.kl_threshold="$KL_THRESHOLD"
+      agent.params.config.central_value_config.kl_threshold="$KL_THRESHOLD"
+      agent.params.config.entropy_coef="$ENTROPY_COEF"
+      agent.params.network.space.continuous.sigma_init.val="$SIGMA_INIT_VAL"
+      agent.params.config.e_clip="$E_CLIP"
+      agent.params.config.grad_norm="$GRAD_NORM"
+      agent.params.config.save_frequency="$SAVE_FREQUENCY"
+      agent.params.config.multi_gpu=False
       "${TASK_OVERRIDES[@]}"
     )
 
-    printf "eval_command="
-    printf "%q " /isaac-sim/python.sh "${EVAL_ARGS[@]}"
+    printf "train_command="
+    printf "%q " /isaac-sim/python.sh "${TRAIN_ARGS[@]}"
     printf "\n"
-    /isaac-sim/python.sh "${EVAL_ARGS[@]}"
+    /isaac-sim/python.sh "${TRAIN_ARGS[@]}"
   '
 
-if [ -f "$LOG_FILE" ] && grep -E "Traceback|RuntimeError:|Error executing job with overrides|ChildFailedError|Could not execute <function load" "$LOG_FILE" >/dev/null; then
-  echo "Detected eval error patterns in $LOG_FILE."
+if [ -f "$LOG_FILE" ] && grep -E "Traceback|RuntimeError:|Error executing job with overrides|ChildFailedError|Could not execute <function load|nan|NaN" "$LOG_FILE" >/dev/null; then
+  echo "Detected training error patterns in $LOG_FILE." >&2
   exit 1
 fi
 
-if [ ! -s "$RUN_DIR_HOST/metrics.json" ]; then
-  echo "Missing eval metrics JSON: $RUN_DIR_HOST/metrics.json"
+if [ ! -d "$RUN_DIR_HOST/nn" ] || ! find "$RUN_DIR_HOST/nn" -maxdepth 1 -type f -name "*.pth" | grep -q .; then
+  echo "Missing smoke checkpoint under $RUN_DIR_HOST/nn" >&2
   exit 1
 fi
 
-echo "Evaluation Done"
+if [ "$DEXTRAH_RLGAMES_JSONL_METRICS" = "True" ] && [ ! -s "$RUN_DIR_HOST/metrics/direct_info_rank_0.jsonl" ]; then
+  echo "Missing smoke JSONL metrics: $RUN_DIR_HOST/metrics/direct_info_rank_0.jsonl" >&2
+  exit 1
+fi
+
+echo "Franka cube reset-prior smoke training done"

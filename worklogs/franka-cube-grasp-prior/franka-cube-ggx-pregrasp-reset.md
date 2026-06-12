@@ -1,0 +1,6474 @@
+# Worklog - franka-cube-grasp-prior / franka-cube-ggx-pregrasp-reset
+
+- repo: /home/lzha/code/DEXTRAH
+- worktree: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset
+- branch: codex/franka-cube-ggx-pregrasp-reset
+- base_commit: 589dd81c9f9691fcda3a3d4b9ad714d90dae4794
+- created: 2026-06-11T18:39:11Z
+
+## 2026-06-12T18:35:01Z - seed 1781139395 prior rerun completed and eval video inspected
+
+Goal:
+- Finish the requested reset-prior rerun for seed `1781139395`.
+- Validate policy-only behavior with video before claiming grasp/lift.
+
+Command / Job:
+- training job: `29013387`, run `franka_cube_resetprior600_seed1781139395_c7e66a0_20260612_173151`
+- training config: `MAX_ITERATIONS=600`, `SEED=1781139395`, `NUM_ENVS=2048`, `USE_CUDA_GRAPH=False`, `AUTO_RESUME=False`, `SELF_RELAUNCH=False`, `GRASP_PRIOR_RESET_ENABLED=True`, `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`, `GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED=False`
+- final checkpoint: `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_resetprior600_seed1781139395_c7e66a0_20260612_173151/nn/last_dextrah_franka_cube_grasp_ep_600_rew_13152.836.pth`
+- eval job: `29014867`, run `franka_cube_prior_seed1781139395_ep600_policy_eval_a100_20260612_1836`
+- eval settings: deterministic policy-only, `NUM_ENVS=1`, `NUM_STEPS=600`, reset prior enabled, no action warm-start, no action-prior reward
+
+Result:
+- training scheduler state: `COMPLETED 0:0`, elapsed `00:55:19`
+- training JSONL: `600` rows, no bad scalars
+- final scalar metrics: success `0.81640625`, lifted `0.97021484375`, lift height `0.1253027319908142 m`, reset success/quality `1.0/1.0`
+- last-50 training means: success `0.861728515625`, lifted `0.9364453125`
+- best scalar success: `0.91796875` at epoch `450`
+- threshold: reset-prior seed `1781139395` first reached `success>=0.8` at epoch `65`; previous no-prior baseline seed `1781139395` reached it at sample `396`
+- eval scheduler state: `COMPLETED 0:0`
+- eval metrics: success mean `0.8566666666666667`, last-window success `0.9`, max success `1.0`, max lift height `0.14116722345352173 m`, first done step `599`
+- eval video validation: MP4 is `1280x720`, `600` frames, `10.0s`; labeled contact sheet shows actual policy-only cube lift/hold from step `40` through the held segment, with final zero due post-success reset
+
+Artifacts:
+- same-seed comparison plot: `cluster_results/a1001/franka_cube_seed_sweep600_c7e66a0_20260612_092951/success_rate_same_seed1781139395_comparison.png`
+- previous-baseline overlay plot: `cluster_results/a1001/franka_cube_seed_sweep600_c7e66a0_20260612_092951/success_rate_curve_comparison_with_previous_baseline.png`
+- training fetch: `cluster_results/a1001/franka_cube_resetprior600_seed1781139395_c7e66a0_20260612_173151/`
+- eval fetch: `cluster_results/a1001/evals/franka_cube_prior_seed1781139395_ep600_policy_eval_a100_20260612_1836/`
+- eval video: `cluster_results/a1001/evals/franka_cube_prior_seed1781139395_ep600_policy_eval_a100_20260612_1836/videos/prior-s178-ep600-policy-step-0.mp4`
+- labeled contact sheet: `cluster_results/a1001/evals/franka_cube_prior_seed1781139395_ep600_policy_eval_a100_20260612_1836/inspection/contact_sheet_labeled.jpg`
+
+Analysis:
+- The same-seed reset-prior rerun reaches high success much earlier than the previous no-prior baseline while using policy-only actions after reset.
+- The scalar success plateau below `1.0` is consistent with `cube_success_rate` being instantaneous success-region occupancy plus success-triggered resets, not an absorbing per-episode success metric. `has_lifted` and video evidence show the policy can lift/hold; final eval step zero is a post-success reset artifact.
+
+Next:
+- Check queues, commit this worklog update, and provide the user with the artifact links.
+
+## 2026-06-12T17:31:51Z - previous baseline success overlay and seed 1781139395 prior rerun
+
+Goal:
+- Add the previous successful no-prior baseline success-rate curve to the current success-rate comparison plot.
+- Rerun the reset-prior method with seed `1781139395` under the same known-good 600-epoch A100 config used for the seed `1..5` sweep.
+
+Change:
+- Generated `cluster_results/a1001/franka_cube_seed_sweep600_c7e66a0_20260612_092951/success_rate_curve_comparison_with_previous_baseline.png` and alias `success_rate_curve_comparison.png`.
+- Added source CSVs:
+  - `success_rate_plot_scalars_with_previous_baseline.csv`
+  - `success_rate_plot_means_with_previous_baseline.csv`
+- The previous baseline overlay uses raw data from `/home/lzha/code/DEXTRAH/handoffs/franka_cube_baseclear_ppo_20260610_1756/curves/success_rate_curve.csv`, not image digitization.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset
+- branch: codex/franka-cube-ggx-pregrasp-reset
+- local_head: f28cc18b7df63814d20366a75749acdefdb6ef4d
+- training_commit: c7e66a0a2168214e8a82f4412e9a79669d806750
+- remote_commit/status: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset` detached at `c7e66a0a2168214e8a82f4412e9a79669d806750`; wrapper `bash -n` passed; prior library exists with size `2874` bytes.
+
+Command / Job:
+- command: `sbatch --parsable --job-name=fc_prior_s178 --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=c7e66a0a2168214e8a82f4412e9a79669d806750,TASK=Dextrah-Franka-Cube-Grasp,FULL_EXPERIMENT_NAME=franka_cube_resetprior600_seed1781139395_c7e66a0_20260612_173151,NUM_ENVS=2048,MAX_ITERATIONS=600,SEED=1781139395,USE_CUDA_GRAPH=False,CUBE_SPAWN_XY_RANDOMIZATION=0.08,AUTO_RESUME=False,SELF_RELAUNCH=False,DEXTRAH_RLGAMES_JSONL_METRICS=True,HORIZON_LENGTH=64,MINIBATCH_SIZE=32768,CENTRAL_VALUE_MINIBATCH_SIZE=32768,LEARNING_RATE=0.0002,CENTRAL_VALUE_LEARNING_RATE=0.0001,MINI_EPOCHS=4,GAMMA=0.995,TAU=0.95,KL_THRESHOLD=0.012,ENTROPY_COEF=0.0005,E_CLIP=0.2,GRAD_NORM=1.0,SAVE_FREQUENCY=25,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz cluster/sbatch_train_teacher_8gpu.sh`
+- job_id: `29013387`
+- run_name: `franka_cube_resetprior600_seed1781139395_c7e66a0_20260612_173151`
+- remote_run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_resetprior600_seed1781139395_c7e66a0_20260612_173151`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29013387.out`
+
+Result:
+- plot status: generated and visually inspected; previous baseline final success `0.859970093`, first `success>=0.8` at sample `396`; current reset-prior five-seed mean final `0.8646484375`; current no-prior five-seed mean final `0.17939453125`.
+- training status: submitted; `squeue` initially reported `PENDING` on `interactive_singlenode`.
+
+Next:
+- Monitor job `29013387`, verify wrapper header/resolved config, fetch metrics/configs when complete, then run policy-only video validation before claiming actual grasp/lift behavior for seed `1781139395`.
+
+## 2026-06-12T10:49:00Z - policy-only eval videos validated
+
+Goal:
+- Validate that the reset-prior scalar success/lift curves correspond to actual learned policy grasp/lift behavior, without action warm-start or scripted assistance.
+
+Command / Job:
+- canceled L40 eval jobs due queue wait: `1028355`, `1028356`, `1028357`; all `CANCELLED`
+- replacement A100 eval jobs:
+  - prior seed2 epoch 100: job `29006309`, run `franka_cube_sweep_prior_seed2_ep100_policy_eval_a100_20260612_104036`, checkpoint `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_resetprior600_seed2_c7e66a0_20260612_092951/nn/last_dextrah_franka_cube_grasp_ep_100_rew_12968.223.pth`
+  - prior seed2 epoch 600: job `29006310`, run `franka_cube_sweep_prior_seed2_ep600_policy_eval_a100_20260612_104036`, checkpoint `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_resetprior600_seed2_c7e66a0_20260612_092951/nn/last_dextrah_franka_cube_grasp_ep_600_rew_14060.301.pth`
+  - no-prior seed2 epoch 600: job `29006311`, run `franka_cube_sweep_noprior_seed2_ep600_policy_eval_a100_20260612_104036`, checkpoint `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseclear600_seed2_noprior_c7e66a0_20260612_092951/nn/last_dextrah_franka_cube_grasp_ep_600_rew_13254.116.pth`
+- eval settings: `DETERMINISTIC=True`, `USE_CUDA_GRAPH=False`, `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`, `GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED=False`; prior evals used reset-prior distribution only.
+- local eval artifacts:
+  - `cluster_results/a1001/evals/franka_cube_sweep_prior_seed2_ep100_policy_eval_a100_20260612_104036/`
+  - `cluster_results/a1001/evals/franka_cube_sweep_prior_seed2_ep600_policy_eval_a100_20260612_104036/`
+  - `cluster_results/a1001/evals/franka_cube_sweep_noprior_seed2_ep600_policy_eval_a100_20260612_104036/`
+
+Result:
+- status: completed and inspected
+- A100 eval scheduler state: jobs `29006309`, `29006310`, `29006311` all `COMPLETED 0:0`
+- MP4 validation: each video is `1280x720`, `600` frames, `10.0s`; contact sheets are nonblank and visually legible.
+- prior seed2 epoch 100: success mean `0.836`, last-window success `0.880`, max lift `0.185 m`, first lift step `42`; contact sheet/video show the policy lifting and holding the cube.
+- prior seed2 epoch 600: success mean `0.860`, last-window success `0.910`, max lift `0.174 m`, first lift step `41`; contact sheet/video show the policy lifting and holding the cube.
+- no-prior seed2 epoch 600 reference: success mean `0.833`, last-window success `0.900`, max lift `0.175 m`, first lift step `60`; contact sheet/video show actual lift/hold behavior for the one no-prior seed that solved.
+- viewer URLs:
+  - reward PNG: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/a1001/franka_cube_seed_sweep600_c7e66a0_20260612_092951/reward_curve_comparison.png`
+  - loss PNG: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/a1001/franka_cube_seed_sweep600_c7e66a0_20260612_092951/loss_curve_comparison.png`
+  - prior ep100 video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/a1001/evals/franka_cube_sweep_prior_seed2_ep100_policy_eval_a100_20260612_104036/videos/prior-seed2-ep100-policy-step-0.mp4`
+  - prior ep600 video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/a1001/evals/franka_cube_sweep_prior_seed2_ep600_policy_eval_a100_20260612_104036/videos/prior-seed2-ep600-policy-step-0.mp4`
+  - no-prior ep600 video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/a1001/evals/franka_cube_sweep_noprior_seed2_ep600_policy_eval_a100_20260612_104036/videos/noprior-seed2-ep600-policy-step-0.mp4`
+
+Analysis:
+- The reset-prior approach demonstrates genuine learned policy-only lift behavior at epoch 100 for seed 2, well before the no-prior seed 2 reaches comparable behavior and while most no-prior seeds never solve by epoch 600.
+- The final-step success resets to zero in eval traces because the env resets after success near the end; mean/last-window metrics and the visible held segment are the relevant evidence.
+- Remaining caveat: the videos validate selected representative checkpoints, not every seed's final policy. Scalar evidence is strong across all reset-prior seeds.
+
+Next:
+- Finalize user-facing summary with scalar plots, threshold table, and video evidence. Optional follow-up would be a reward-weight ablation after this clean baseline-vs-prior comparison.
+
+## 2026-06-12T10:38:57Z - 600-epoch seed sweep completed; scalar plots generated; eval videos queued
+
+Goal:
+- Complete the requested 10-run comparison: five no-prior and five reset-prior Franka cube PPO runs with seeds `1..5`, all to 600 epochs, under the known-good base-clear config.
+- Generate reward and loss comparison PNGs and queue policy-only video validation before making any behavioral success claim.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset
+- branch: codex/franka-cube-ggx-pregrasp-reset
+- training_commit: c7e66a0a2168214e8a82f4412e9a79669d806750
+- current_worklog_commit: 325dcb4769978fcd8070ceaf072b5b9ef5240191
+- push/pull: branch pushed to `origin/codex/franka-cube-ggx-pregrasp-reset`; A100/L40 shared agent worktree detached at `c7e66a0a2168214e8a82f4412e9a79669d806750`
+
+Command / Job:
+- completed no-prior jobs: `29005567`, `29005568`, `29005569`, `29005571`, `29005573`; all `COMPLETED 0:0`
+- completed reset-prior jobs: `29005574`, `29005576`, `29005577`, `29005583`, `29005584`; all `COMPLETED 0:0`
+- local artifacts: `cluster_results/a1001/franka_cube_seed_sweep600_c7e66a0_20260612_092951/`
+- local logs: `cluster_logs/a1001/dextrah/teacher_8gpu_29005567.out`, `...29005568.out`, `...29005569.out`, `...29005571.out`, `...29005573.out`, `...29005574.out`, `...29005576.out`, `...29005577.out`, `...29005583.out`, `...29005584.out`
+- requested PNGs:
+  - `cluster_results/a1001/franka_cube_seed_sweep600_c7e66a0_20260612_092951/reward_curve_comparison.png`
+  - `cluster_results/a1001/franka_cube_seed_sweep600_c7e66a0_20260612_092951/loss_curve_comparison.png`
+- scalar tables:
+  - `cluster_results/a1001/franka_cube_seed_sweep600_c7e66a0_20260612_092951/summary_final.csv`
+  - `cluster_results/a1001/franka_cube_seed_sweep600_c7e66a0_20260612_092951/thresholds.csv`
+  - `cluster_results/a1001/franka_cube_seed_sweep600_c7e66a0_20260612_092951/REPORT.md`
+- policy-only eval/video jobs queued on `l401`:
+  - prior seed2 epoch 100: job `1028355`, run `franka_cube_sweep_prior_seed2_ep100_policy_eval_20260612_103325`
+  - prior seed2 epoch 600: job `1028356`, run `franka_cube_sweep_prior_seed2_ep600_policy_eval_20260612_103325`
+  - no-prior seed2 epoch 600: job `1028357`, run `franka_cube_sweep_noprior_seed2_ep600_policy_eval_20260612_103325`
+
+Result:
+- status: training complete; scalar artifacts complete; eval/video validation pending in Slurm `PENDING (Priority)` as of `2026-06-12T10:38:57Z`
+- final scalar means/std:
+  - no-prior: reward `4322 +/- 4504`, success `0.1794 +/- 0.3186`, lifted `0.2358 +/- 0.3431`, lift height `0.03838 +/- 0.05665 m`
+  - reset-prior: reward `1.38e+04 +/- 309.8`, success `0.8646 +/- 0.0266`, lifted `0.954 +/- 0.01178`, lift height `0.1461 +/- 0.01283 m`
+- seed-level no-prior outcome: seed 2 solved by scalar metrics, seed 4 partially improved, seeds 1/3/5 stayed near zero by epoch 600.
+- seed-level reset-prior outcome: all five seeds crossed high scalar lift/success early and finished high.
+- threshold examples: prior seeds reached `success>=0.8` at epochs `104, 85, 85, 76, 92`; no-prior reached `success>=0.8` only for seed 2 at epoch `290`.
+
+Analysis:
+- The new no-prior replication matches the successful launch envelope that was missing in the failed 300-epoch replication: 600 epochs, `USE_CUDA_GRAPH=False`, fixed seeds, `NUM_ENVS=2048` per rank, same PPO knobs, no auto-resume, and no self-relaunch.
+- Scalar curves strongly support better reset-prior sample efficiency and lower seed variance, but this is not yet a behavioral success claim.
+- Policy-only eval videos are required to verify actual grasp/lift motion because close-to-object resets can make scalar success misleading.
+
+Next:
+- Monitor eval jobs `1028355`, `1028356`, `1028357`; fetch `metrics.json`, traces, and MP4s; inspect the videos for actual policy-only grasp/lift behavior; then update plots/report/worklog with video evidence and viewer links.
+
+## 2026-06-12T09:16:59Z - 5x baseline and 5x reset-prior 600-epoch sweep
+
+Goal:
+- Compare reset-prior sample efficiency against the known-good Franka cube baseline using the successful base-clear launch config.
+- Run 10 total A100 8GPU jobs: baseline seeds `1,2,3,4,5` and reset-prior seeds `1,2,3,4,5`, all to 600 epochs.
+
+Hypothesis:
+- The earlier no-prior replication underperformed the provided baseline primarily because it did not match the successful launch envelope: it ran only 300 epochs and used `USE_CUDA_GRAPH=True`, while the provided run used 600 epochs and `USE_CUDA_GRAPH=False`.
+- If the reset-prior is genuinely helping, paired-seed reset-prior runs should reach lift/success earlier than matched no-prior runs under the 600-epoch base-clear config.
+
+Change:
+- Added `SEED="${SEED:--1}"` to `cluster/sbatch_train_teacher_8gpu.sh`, echo it in the launch log, and pass it through to `train.py --seed`.
+- This preserves previous wrapper behavior when `SEED` is unset, while allowing exact seeds `1..5` for the sweep.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset
+- worklog: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/worklogs/franka-cube-grasp-prior/franka-cube-ggx-pregrasp-reset.md
+- branch: codex/franka-cube-ggx-pregrasp-reset
+- base_commit: acbaf16ddf573f816f66e7ac9091ed5a77335197
+- implementation_commit: c7e66a0a2168214e8a82f4412e9a79669d806750
+- push/pull: local push to GitHub was bypassed because the local SSH agent hung; transferred a Git bundle from remote-known base `d2073d9318277d222ba7506e16d223035927109f` and fetched it into the A100 canonical repo and agent worktree
+- changed_files: `cluster/sbatch_train_teacher_8gpu.sh`, this owned worklog
+- remote_commit/status: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset` detached at `c7e66a0a2168214e8a82f4412e9a79669d806750`; wrapper `bash -n` passed
+
+Command / Job:
+- baseline jobs: `TASK=Dextrah-Franka-Cube-Grasp`, `GRASP_PRIOR_RESET_ENABLED=False`, `SEED=1..5`, `MAX_ITERATIONS=600`, `USE_CUDA_GRAPH=False`, `NUM_ENVS=2048`, `AUTO_RESUME=False`, `SELF_RELAUNCH=False`, PPO knobs matching `handoffs/franka_cube_baseclear_ppo_20260610_1756/config.json`.
+- reset-prior jobs: same as baseline, but `GRASP_PRIOR_RESET_ENABLED=True` and `GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz`.
+- job_id:
+  - no-prior seed 1: `29005567`, run `franka_cube_baseclear600_seed1_noprior_c7e66a0_20260612_092951`
+  - no-prior seed 2: `29005568`, run `franka_cube_baseclear600_seed2_noprior_c7e66a0_20260612_092951`
+  - no-prior seed 3: `29005569`, run `franka_cube_baseclear600_seed3_noprior_c7e66a0_20260612_092951`
+  - no-prior seed 4: `29005571`, run `franka_cube_baseclear600_seed4_noprior_c7e66a0_20260612_092951`
+  - no-prior seed 5: `29005573`, run `franka_cube_baseclear600_seed5_noprior_c7e66a0_20260612_092951`
+  - reset-prior seed 1: `29005574`, run `franka_cube_resetprior600_seed1_c7e66a0_20260612_092951`
+  - reset-prior seed 2: `29005576`, run `franka_cube_resetprior600_seed2_c7e66a0_20260612_092951`
+  - reset-prior seed 3: `29005577`, run `franka_cube_resetprior600_seed3_c7e66a0_20260612_092951`
+  - reset-prior seed 4: `29005583`, run `franka_cube_resetprior600_seed4_c7e66a0_20260612_092951`
+  - reset-prior seed 5: `29005584`, run `franka_cube_resetprior600_seed5_c7e66a0_20260612_092951`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/<run_name>`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_<job_id>.out`
+- artifacts: JSONL metrics, TensorBoard summaries, resolved configs, checkpoint rewards, and comparison plots/tables after completion
+
+Result:
+- status: launched and monitoring
+- metrics/artifacts: as of `2026-06-12T09:30:53Z`, all 10 jobs are `RUNNING`. Config comparison against the provided handoff found matching PPO/env scale knobs except the prior replication used 300 epochs and `USE_CUDA_GRAPH=True`; provided baseline used 600 epochs and `USE_CUDA_GRAPH=False`. Provided successful source commit `bdca4e1728ab8d37bac6e18836a3919f84aa6602` is an ancestor of this branch.
+- key evidence: `bash -n cluster/sbatch_train_teacher_8gpu.sh` passed after the seed hook. Each wrapper header confirms `CODE_COMMIT=c7e66a0a2168214e8a82f4412e9a79669d806750`, seed `1..5`, `NUM_ENVS=2048`, `HORIZON_LENGTH=64`, `MINIBATCH_SIZE=32768`, `CENTRAL_VALUE_MINIBATCH_SIZE=32768`, `LEARNING_RATE=0.0002`, `CENTRAL_VALUE_LEARNING_RATE=0.0001`, `GAMMA=0.995`, `TAU=0.95`, `KL_THRESHOLD=0.012`, `ENTROPY_COEF=0.0005`, `E_CLIP=0.2`, `GRAD_NORM=1.0`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`, `AUTO_RESUME=False`, `SELF_RELAUNCH=False`, and the expected prior flag/path. `USE_CUDA_GRAPH=False` was set explicitly in `sbatch --export` and will be rechecked from resolved run config.
+
+Analysis:
+- Use paired seeds `1..5` for both conditions, not the historical time-derived seed.
+- Keep reward weights unchanged for this sweep to isolate reset-prior vs no-prior under the known-good baseline config.
+
+Next:
+- Monitor wrapper logs and resolved configs; fetch JSONL/TensorBoard/config artifacts; generate reward/loss comparison PNGs and tables after completion; run/inspect policy-only videos before making any grasp/lift success claim.
+
+## 2026-06-12T08:59:06Z - reward and loss comparison PNGs
+
+Goal:
+- Log reward-curve and loss/optimizer-curve comparisons as PNG artifacts for the reset-prior vs no-prior Franka cube PPO runs.
+
+Change:
+- Fetched TensorBoard summary event files for both runs.
+- Parsed TensorBoard scalar `simple_value` events locally and rendered PNGs with Pillow because local Python does not have `matplotlib`.
+- Updated the generated comparison report with the PNG and plotted-scalar CSV filenames.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset
+- worklog: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/worklogs/franka-cube-grasp-prior/franka-cube-ggx-pregrasp-reset.md
+- branch: codex/franka-cube-ggx-pregrasp-reset
+- base_commit: 7e0cd0b6d15b8253624b8670a38f47299a8088c7
+- implementation_commit: pending worklog-only commit
+- push/pull: local artifact generation only; source commit pending
+- changed_files: this owned worklog; generated artifacts under `cluster_results/a1001/franka_cube_prior_vs_noprior_own_20260612_0853/`
+- remote_commit/status: n/a
+
+Command / Job:
+- command: local Python event/JSONL parser and Pillow plot renderer
+- job_id: n/a
+- run_dir: `cluster_results/a1001/franka_cube_prior_vs_noprior_own_20260612_0853/`
+- artifacts:
+  - `reward_curve_comparison.png`
+  - `loss_curve_comparison.png`
+  - `reward_plot_scalars.csv`
+  - `loss_plot_scalars.csv`
+
+Result:
+- status: completed
+- metrics/artifacts: reward PNG compares aggregate episode reward, shaped reward, approach reward, enclosure reward, lift reward, and success bonus. Loss PNG compares actor loss, critic loss, central value loss, entropy, KL, and learning rate.
+- key evidence: images were opened locally for visual inspection and are nonblank/legible. Viewer URLs:
+  - `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/a1001/franka_cube_prior_vs_noprior_own_20260612_0853/reward_curve_comparison.png`
+  - `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/a1001/franka_cube_prior_vs_noprior_own_20260612_0853/loss_curve_comparison.png`
+
+Analysis:
+- Reward plot shows reset-prior separates sharply from no-prior on aggregate/shaped rewards and lift/success reward terms, consistent with the task metrics comparison.
+- Loss/optimizer plot shows both runs have finite losses and sane entropy/KL/LR traces; no-prior failure is behavioral/exploration/reward-discovery rather than an obvious optimizer crash.
+
+Next:
+- Keep the PNG/CSV artifacts with the comparison report; repeat-seed or reward-weight ablation remains the next rigor step if needed.
+
+## 2026-06-12T08:30:17Z - own no-prior 8GPU baseline launch plan
+
+Goal:
+- Launch an apples-to-apples RL-from-scratch Franka cube baseline from this agent-owned reset-prior worktree, with the grasp-pose prior explicitly disabled.
+- Compare training speed against the successful policy-only reset-prior run `franka_cube_lowz_resetprior_policy8gpu_cd1d66e_20260612_004111`.
+
+Hypothesis:
+- If reset-prior is helping exploration, the reset-prior run should reach lift/success thresholds earlier than an otherwise matched no-prior PPO run, even with the same upstream approach/enclosure reward weights.
+
+Change:
+- No source behavior change for this attempt. Add this worklog entry, commit it, deploy the exact commit to the A100 agent-owned remote worktree, and launch with `GRASP_PRIOR_RESET_ENABLED=False`.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset
+- worklog: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/worklogs/franka-cube-grasp-prior/franka-cube-ggx-pregrasp-reset.md
+- branch: codex/franka-cube-ggx-pregrasp-reset
+- base_commit: a9fe56c8d3bef6466b3bfa627e5d129e9773ea59
+- implementation_commit: d2073d9318277d222ba7506e16d223035927109f
+- push/pull: pushed to `origin/codex/franka-cube-ggx-pregrasp-reset`; A100 successfully fetched the branch and detached the agent worktree at `d2073d9318277d222ba7506e16d223035927109f`
+- changed_files: this owned worklog only
+- remote_commit/status: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset` detached at `d2073d9318277d222ba7506e16d223035927109f`, clean
+
+Command / Job:
+- command: `sbatch --parsable --job-name=fcube_noprior_own8 --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=d2073d9318277d222ba7506e16d223035927109f,TASK=Dextrah-Franka-Cube-Grasp,FULL_EXPERIMENT_NAME=franka_cube_noprior_policy8gpu_own_20260612_0830,NUM_ENVS=2048,MAX_ITERATIONS=300,HORIZON_LENGTH=64,MINIBATCH_SIZE=32768,CENTRAL_VALUE_MINIBATCH_SIZE=32768,LEARNING_RATE=0.0002,CENTRAL_VALUE_LEARNING_RATE=0.0001,SAVE_FREQUENCY=25,AUTO_RESUME=False,GRASP_PRIOR_RESET_ENABLED=False,GRASP_PRIOR_LIBRARY_PATH=,DEXTRAH_RLGAMES_JSONL_METRICS=True,CUBE_SPAWN_XY_RANDOMIZATION=0.08 cluster/sbatch_train_teacher_8gpu.sh`
+- job_id: 29004372
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_noprior_policy8gpu_own_20260612_0830`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29004372.out`
+- artifacts: JSONL metrics, resolved params, TensorBoard summaries, 25-epoch checkpoints
+
+Result:
+- status: completed and inspected
+- metrics/artifacts: job `29004372` completed `0:0` in `00:18:35`; fetched local artifacts:
+  - `cluster_results/a1001/franka_cube_noprior_policy8gpu_own_20260612_0830/metrics/direct_info_rank_0.jsonl`
+  - `cluster_results/a1001/franka_cube_noprior_policy8gpu_own_20260612_0830/params/env.yaml`
+  - `cluster_results/a1001/franka_cube_noprior_policy8gpu_own_20260612_0830/params/agent.yaml`
+  - `cluster_logs/a1001/dextrah/teacher_8gpu_29004372.out`
+  - comparison report: `cluster_results/a1001/franka_cube_prior_vs_noprior_own_20260612_0853/REPORT.md`
+- key evidence: preflight showed local branch at `a9fe56c`, only unrelated untracked `local_results/`; wrapper syntax passed; `GRASP_PRIOR_RESET_ENABLED` defaults false and was explicitly exported false; remote run dir was absent before launch. Saved env config confirms `grasp_prior_reset_enabled: false`, `grasp_prior_library_path: ''`, `grasp_prior_action_warmstart_enabled: false`, `grasp_prior_action_prior_reward_enabled: false`, `num_envs: 2048`, `cube_spawn_yaw_randomization_deg: 0.0`, and upstream reward weights `approach=2.0`, `enclosure=1.0`, `lift=10.0`, `success_bonus=15.0`. JSONL has 300 rows and 0 bad scalars.
+
+Analysis:
+- The rejected external `franka_cube_baseline_A_repl8gpu_581890b_20260612_011911` run is not used for the comparison.
+- This run intentionally keeps upstream reward weights instead of tuning down approach/enclosure so that the primary comparison isolates reset-prior versus no-prior.
+- No-prior result: final train success `0.002441`, lifted `0.006836`, lift height `0.001381 m`; last-25 success `0.002383`, lifted `0.005352`; max success only `0.004883`.
+- Reset-prior result from `franka_cube_lowz_resetprior_policy8gpu_cd1d66e_20260612_004111`: final train success `0.812988`, lifted `0.880371`, lift height `0.131253 m`; last-25 success `0.859492`, lifted `0.934297`; max success `0.885742`.
+- Thresholds: reset-prior reached success `>=0.10` at epoch 45, success `>=0.50` at epoch 59, success `>=0.80` at epoch 76, lifted `>=0.80` at epoch 54, and lift height `>=0.12 m` at epoch 76. No-prior reached none of these thresholds through 300 epochs.
+- AUC mean over 300 epochs: reset-prior success `0.689831` vs no-prior `0.000929`; lifted `0.783079` vs `0.003841`; lift height `0.108301 m` vs `0.000489 m`.
+- Reset-prior has previously inspected policy-only eval videos at epoch 100 showing actual grasp/lift. No success claim is made for no-prior; it did not reach meaningful train success/lift and was not evaluated with success videos.
+
+Next:
+- If more rigor is needed, launch repeat seeds for both prior/no-prior or an approach/enclosure-weight ablation. The current single matched run already shows a large sample-efficiency gap, but it is still one seed per condition.
+
+## 2026-06-11T18:42:25Z - pre-edit plan
+
+Goal:
+- Implement variant 1 only: an optional, disabled-by-default GraspGenX object-local pregrasp reset for `Dextrah-Franka-Cube-Grasp`.
+
+Hypothesis:
+- The existing Franka cube task can remain apple-to-apple if the prior only changes robot joint reset state after the baseline cube pose is sampled and before normal RL step 0. A reset-only absolute differential IK loop can reuse the existing EE offset Jacobian path without putting cuRobo or planning into the PPO action path.
+
+Change:
+- Add optional prior config fields to `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env_cfg.py`, all disabled by default.
+- Add grasp-library loading, object-local grasp sampling, `T_world_object @ T_object_grasp @ T_grasp_tool` composition, 3 cm farther-from-cube pregrasp sign selection, reset-only IK, open gripper reset, target-buffer synchronization, and reset metrics to `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`.
+- Add a compact GraspGenX cube-library export script under `dextrah_lab/scene_scripts/`.
+- Extend bounded validation in `dextrah_lab/rl_games/validate_franka_cube_grasp_env.py` with optional prior-reset checks, keeping default validator behavior unchanged.
+- Do not edit PPO configs, training wrappers, observations/actions/rewards/terminations, trajectory tracking, or diffusion-policy BC files.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset
+- worklog: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/worklogs/franka-cube-grasp-prior/franka-cube-ggx-pregrasp-reset.md
+- branch: codex/franka-cube-ggx-pregrasp-reset
+- base_commit: 589dd81c9f9691fcda3a3d4b9ad714d90dae4794
+- implementation_commit: current HEAD after this checkpoint; exact deployed commit recorded in the launch entry
+- push/pull: n/a for local implementation checkpoint unless requested by orchestrator
+- changed_files: planned as above, plus this owned worklog
+- remote_commit/status: n/a/local env
+
+Command / Job:
+- command: `python3 -m compileall dextrah_lab/tasks/dextrah_franka_cube_grasp dextrah_lab/scene_scripts/export_franka_cube_graspgenx_library.py dextrah_lab/rl_games/validate_franka_cube_grasp_env.py`
+- command: bounded import/config checks with prior disabled and enabled using a synthetic compact library if Isaac Lab imports are available
+- command: optional bounded Isaac reset smoke via `python3 dextrah_lab/rl_games/validate_franka_cube_grasp_env.py --num_envs 8 --num_steps 4 --enable_grasp_prior_reset ... --headless` if the local Isaac runtime is usable
+- job_id: n/a
+- run_dir: local worktree
+- logs: command output in Codex transcript; no cluster logs expected
+- artifacts: compact synthetic or exported grasp library only if needed for validation, not committed unless intentionally small and source-owned
+
+Result:
+- status: in_progress
+- metrics/artifacts: pending
+- key evidence: pending
+
+Analysis:
+- Key risk is frame interpretation: GraspGenX outputs a grasp frame, the Franka config maps it to `panda_hand`, while DEXTRAH controls an EE frame offset from `panda_hand` by `ee_offset_pos`. Reset IK must command the offset EE frame derived from the target `panda_hand`, and must validate that the 3 cm pregrasp moves farther from the cube center.
+
+Next:
+- Patch config/env/scripts, run bounded checks, update this worklog with results, then commit only owned source files and this worklog.
+
+## 2026-06-11T18:49:23Z - implementation and bounded validation
+
+Goal:
+- Reach a coherent local checkpoint for the optional GraspGenX pregrasp reset without launching full training.
+
+Hypothesis:
+- The reset prior can be implemented as a disabled-by-default task option, and a local GraspGenX export smoke can validate the compact object-local library format even though local Isaac reset smoke depends on an unavailable Isaac Sim runtime.
+
+Change:
+- Added disabled-by-default prior fields to `franka_cube_grasp_env_cfg.py`.
+- Added compact `.npz`/`.json` library loading, object-local grasp sampling, `T_world_object @ T_object_grasp @ T_grasp_tool` composition, 3 cm farther-from-cube pregrasp sign selection, reset-only DLS IK, open-gripper target synchronization, fallback-to-baseline on failed prior resets, and prior reset metrics to `franka_cube_grasp_env.py`.
+- Extended `validate_franka_cube_grasp_env.py` with opt-in prior reset checks. Default validation behavior remains unchanged unless `--enable_grasp_prior_reset` is supplied.
+- Added `dextrah_lab/scene_scripts/export_franka_cube_graspgenx_library.py` for one-time centered 0.06 m cube GraspGenX library export. The first smoke found a cuRobo path-expansion dependency in GraspGenX `load_yaml`; the script now parses the Franka YAML directly so export does not require cuRobo.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset
+- worklog: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/worklogs/franka-cube-grasp-prior/franka-cube-ggx-pregrasp-reset.md
+- branch: codex/franka-cube-ggx-pregrasp-reset
+- base_commit: 589dd81c9f9691fcda3a3d4b9ad714d90dae4794
+- implementation_commit: committed in this checkpoint; exact pushed SHA will be recorded in the launch/result entry
+- push/pull: n/a/local checkpoint
+- changed_files: `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env_cfg.py`, `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`, `dextrah_lab/scene_scripts/export_franka_cube_graspgenx_library.py`, `dextrah_lab/rl_games/validate_franka_cube_grasp_env.py`, this owned worklog
+- remote_commit/status: n/a/local env
+
+Command / Job:
+- command: `python3 -m compileall dextrah_lab/tasks/dextrah_franka_cube_grasp dextrah_lab/scene_scripts/export_franka_cube_graspgenx_library.py dextrah_lab/rl_games/validate_franka_cube_grasp_env.py`
+- command: `cd /home/lzha/code/graspgenx && uv run python -c "import graspgenx; from graspgenx import get_checkpoints_version_dir, get_gripper_descriptions_assets; print(get_checkpoints_version_dir()); print(get_gripper_descriptions_assets())"`
+- command: `cd /home/lzha/code/graspgenx && uv run python scripts/list_grippers.py`
+- command: `cd /home/lzha/code/graspgenx && uv run python /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/dextrah_lab/scene_scripts/export_franka_cube_graspgenx_library.py --output /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/local_results/franka_cube_grasp_prior/franka_cube_ggx_grasps_smoke.npz --graspgenx_root /home/lzha/code/graspgenx --cube_size 0.06 --seed 0 --num_sample_points 1000 --num_grasps 64 --topk 32 --planner topdown --moe_obb_density dense`
+- command: `cd /home/lzha/code/graspgenx && uv run python - <<'PY' ... inspect smoke npz schema ... PY`
+- command: `TERM=xterm /home/lzha/code/IsaacLab-v2.2.1/isaaclab.sh -p -c "import isaaclab; print(isaaclab.__file__)"`
+- job_id: n/a
+- run_dir: local worktree and `/home/lzha/code/graspgenx`
+- logs: Codex transcript output
+- artifacts: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/local_results/franka_cube_grasp_prior/franka_cube_ggx_grasps_smoke.npz` (untracked validation artifact)
+
+Result:
+- status: partially passed; Isaac reset smoke blocked by local runtime
+- metrics/artifacts: compile passed; GraspGenX import resolved checkpoints at `/home/lzha/code/graspgenx/ext/graspgenx_checkpoints/release`; `scripts/list_grippers.py` found 58 grippers including `franka_panda`; export wrote 32 grasps with confidence range 0.6894338726997375 to 0.7567837238311768; library metadata records `cube_size_m=0.06`, `tool_frame=panda_hand`, `gripper_name=franka_panda`, `pregrasp_farther_fraction=1.0`; schema inspection confirmed `grasps_object` shape `(32, 4, 4)`, `confidence` shape `(32,)`, and `grasp_to_tool_transform` shape `(4, 4)`.
+- key evidence: IsaacLab local launcher failed with missing `/home/lzha/code/IsaacLab-v2.2.1/_isaac_sim/python.sh`; system Python also lacks `isaaclab`, `torch`, `trimesh`, and `graspgenx`, so a local Isaac reset smoke could not run here.
+
+Analysis:
+- The implementation preserves the baseline path by default: the new reset branch is gated by `grasp_prior_reset_enabled=False`, and no observation/action/reward term/termination/PPO/env-count/cube-spawn defaults were changed.
+- Cube reset pose code remains the original XY randomization, clamp, spawn height, and identity orientation. The prior is applied only after that sampled cube pose is written.
+- The reset prior composes the GraspGenX grasp frame through the stored Franka `T_grasp_tool`, treats the tool frame as `panda_hand`, then commands DEXTRAH's offset EE frame for IK. This explicitly handles the `panda_hand` versus `ee_offset_pos` frame difference.
+- No online cuRobo or planning was added to the PPO action path or reset path.
+
+Next:
+- Commit this coherent checkpoint.
+- The next validation step needs an Isaac Sim/Isaac Lab runtime: run `validate_franka_cube_grasp_env.py --headless --device cuda:0 --num_envs 8 --num_steps 4 --enable_grasp_prior_reset --grasp_prior_library_path <library.npz>` and inspect the prior reset metrics before any full training.
+
+## 2026-06-11T18:50:38Z - commit and handoff
+
+Goal:
+- Record the committed implementation checkpoint and branch handoff status.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset
+- worklog: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/worklogs/franka-cube-grasp-prior/franka-cube-ggx-pregrasp-reset.md
+- branch: codex/franka-cube-ggx-pregrasp-reset
+- base_commit: 589dd81c9f9691fcda3a3d4b9ad714d90dae4794
+- implementation_commit: ba066a2a771d1bf1017e61031ca70ceacaf29d8d
+- push/pull: pushed `codex/franka-cube-ggx-pregrasp-reset` to `origin`
+- changed_files: implementation source plus owned worklog committed in `ba066a2a771d1bf1017e61031ca70ceacaf29d8d`; this final handoff note is a worklog-only follow-up
+- remote_commit/status: origin branch updated to implementation commit before this worklog-only follow-up
+
+Result:
+- status: handoff_ready after committing this note
+- metrics/artifacts: no active local jobs or cluster jobs launched; untracked validation artifact remains at `local_results/franka_cube_grasp_prior/franka_cube_ggx_grasps_smoke.npz`
+
+Next:
+- Push this worklog-only follow-up commit and report final branch status to the orchestrator.
+
+## 2026-06-11T19:03:51Z - resumed l401 reset-prior smoke plan
+
+Goal:
+- Validate and debug the actual `Dextrah-Franka-Cube-Grasp` GraspGenX pregrasp reset path in an Isaac Lab runtime, not just local import/export checks.
+
+Hypothesis:
+- Local Isaac is blocked by missing runtime setup, so the fastest reproducible validation path is a small l401 Slurm/Pyxis job launched from an agent-owned remote worktree pinned to this branch commit, using the previously exported compact 0.06 m cube grasp library as an untracked artifact.
+
+Change:
+- Re-check local runtime paths and wrappers instead of assuming the earlier missing `_isaac_sim/python.sh` was the only blocker.
+- Add only opt-in prior-reset environment variables and argument forwarding to `cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`, preserving its current defaults when disabled.
+- Commit and push the wrapper/worklog change, deploy the exact commit to `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`, rsync only the untracked `.npz` library, then submit a small l401 validation with `GRASP_PRIOR_RESET_ENABLED=True`.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset
+- worklog: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/worklogs/franka-cube-grasp-prior/franka-cube-ggx-pregrasp-reset.md
+- branch: codex/franka-cube-ggx-pregrasp-reset
+- base_commit: 86ae7dfc5820e59ad310ef7c2ac1f64a49e0e399
+- implementation_commit: `09857defab0ff548eac0eae05e5b42b933884476`
+- push/pull: pending
+- changed_files: planned `cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`, this owned worklog
+- remote_commit/status: pending l401 agent-owned worktree
+
+Command / Job:
+- local runtime probes: `which python python3 conda micromamba mamba poetry uv`; `find /home/lzha/code/IsaacLab-v2.2.1 -maxdepth 3 \( -name python.sh -o -name _isaac_sim -o -name isaaclab.sh \) -print`; `python3 - <<'PY' ... importlib probes ... PY`; `TERM=xterm /home/lzha/code/IsaacLab-v2.2.1/isaaclab.sh -p -c "import isaaclab; print(isaaclab.__file__)"`
+- local wrapper checks after edit: `bash -n cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`; `python3 -m compileall dextrah_lab/rl_games/validate_franka_cube_grasp_env.py`
+- planned l401 job: `sbatch --partition=batch --export=ALL,CODE_NFS=<agent worktree>,RUN_NAME=<unique>,NUM_ENVS=8,NUM_STEPS=4,CAPTURE_VIDEO=False,PRINT_INTERVAL=1,SEED=0,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_smoke.npz,GRASP_PRIOR_RESET_CYCLES=3 cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`
+- job_id: pending
+- run_dir: pending `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/<run_name>`
+- logs: pending `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_cube_<job_id>.out`
+- artifacts: expected `metrics.json` plus fetched local copies under `cluster_results/l401/`
+
+Result:
+- status: in_progress
+- metrics/artifacts: local probes confirm GPU present but local Isaac unavailable: `isaaclab`, `isaacsim`, `isaaclab_tasks`, `torch`, `trimesh`, and `graspgenx` are absent from system Python; `isaaclab.sh` fails because `python` is not on PATH and `/home/lzha/code/IsaacLab-v2.2.1/_isaac_sim/python.sh` is missing.
+- key evidence: local GPU exists (`NVIDIA RTX 6000 Ada Generation` plus `NVIDIA T400`), so the blocker is software/runtime setup rather than hardware.
+
+Analysis:
+- The cluster route is appropriate because the DEXTRAH wrapper already mounts the known Isaac Lab image, IsaacLab source, FABRICS, venv target, and results/cache paths. The wrapper just needs disabled-by-default prior argument forwarding so the actual reset branch can be exercised by Slurm.
+
+Next:
+- Patch wrapper, run cheap checks, commit/push, deploy exact commit to l401, launch and actively monitor the bounded reset-prior smoke until metrics/logs are inspected or a hard external blocker is identified.
+
+## 2026-06-11T19:07:37Z - l401 reset smoke launch record
+
+Goal:
+- Run the smallest practical Isaac Lab validation that actually exercises `grasp_prior_reset_enabled=True` for `Dextrah-Franka-Cube-Grasp`.
+
+Hypothesis:
+- The DEXTRAH Isaac Lab container on l401 can load the pinned agent worktree and compact GraspGenX library, then the validator will report whether reset-time IK, pregrasp sign, table clearance, finite observations, and immediate dones are sane.
+
+Change:
+- Added disabled-by-default prior-reset argument forwarding to `cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh` in commit `9d5e98271c7aa6012900e161cd0a5f81b6273e12`.
+- Because l401 cannot fetch GitHub over SSH (`Permission denied (publickey)`), deployed tracked source as Git objects via a small bundle into the remote canonical repository and created the agent-owned detached worktree from that commit. No tracked source was rsynced.
+- Copied only the untracked compact grasp library artifact to the DEXTRAH results mount.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset
+- worklog: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/worklogs/franka-cube-grasp-prior/franka-cube-ggx-pregrasp-reset.md
+- branch: codex/franka-cube-ggx-pregrasp-reset
+- base_commit: 86ae7dfc5820e59ad310ef7c2ac1f64a49e0e399
+- implementation_commit: 9d5e98271c7aa6012900e161cd0a5f81b6273e12
+- push/pull: pushed to `origin/codex/franka-cube-ggx-pregrasp-reset`; l401 GitHub fetch blocked, so used Git bundle `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/.bundles/franka-cube-ggx-pregrasp-reset-9d5e982.bundle`
+- changed_files: `cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`, this owned worklog
+- remote_commit/status: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset` detached at `9d5e98271c7aa6012900e161cd0a5f81b6273e12`, clean
+
+Command / Job:
+- command: `bash -n cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`
+- command: `python3 -m compileall dextrah_lab/tasks/dextrah_franka_cube_grasp dextrah_lab/scene_scripts/export_franka_cube_graspgenx_library.py dextrah_lab/rl_games/validate_franka_cube_grasp_env.py`
+- command: `sbatch --partition=batch --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,RUN_NAME=franka_cube_ggx_pregrasp_reset_smoke_20260611_190737,NUM_ENVS=8,NUM_STEPS=4,CAPTURE_VIDEO=False,PRINT_INTERVAL=1,SEED=0,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_smoke.npz,GRASP_PRIOR_RESET_CYCLES=3 cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`
+- job_id: 1027681
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_cube_ggx_pregrasp_reset_smoke_20260611_190737`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_cube_1027681.out`
+- artifacts: `metrics.json`; compact library `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_smoke.npz` with SHA256 `028fe588421014832e95e65ff0451500ff1c497fd4ac6f98455ee0366ff25660`
+
+Result:
+- status: submitted
+- metrics/artifacts: pending
+- key evidence: pending
+
+Analysis:
+- Success requires more than Slurm completion: inspect the metrics JSON for prior reset attempt/success rates, pose errors, pregrasp-farther sign, table clearance, immediate done count, finite observation/reward checks, and the printed `validate_command` proving the prior arguments were active.
+
+Next:
+- Submit the l401 job, monitor queue and logs to completion, fetch/inspect artifacts, then patch and relaunch if the metrics show reset pathology.
+
+## 2026-06-11T19:09:43Z - l401 reset smoke result
+
+Goal:
+- Inspect the actual Isaac reset-prior smoke results for job `1027681` and decide whether the reset path is sane enough for a short RL smoke.
+
+Hypothesis:
+- If the prior reset path is wired correctly, every reset cycle should show attempted resets, high IK success, the pregrasp pose farther from the cube than the exact grasp pose, finite observations, safe finger/table clearance, and no immediate dones.
+
+Change:
+- No code changes after launch.
+- Fetched Slurm log and metrics locally for inspection.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset
+- worklog: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/worklogs/franka-cube-grasp-prior/franka-cube-ggx-pregrasp-reset.md
+- branch: codex/franka-cube-ggx-pregrasp-reset
+- implementation_commit: 9d5e98271c7aa6012900e161cd0a5f81b6273e12
+- remote_commit/status: l401 worktree detached at `9d5e98271c7aa6012900e161cd0a5f81b6273e12`
+
+Command / Job:
+- command: `ssh l401 'sacct -j 1027681 --format=JobID,JobName,State,ExitCode,Elapsed,NodeList -P'`
+- command: `rsync -av l401:/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_cube_ggx_pregrasp_reset_smoke_20260611_190737/ cluster_results/l401/franka_cube_ggx_pregrasp_reset_smoke_20260611_190737/`
+- command: `rsync -av l401:/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_cube_1027681.out cluster_logs/l401/dextrah/`
+- job_id: 1027681
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_cube_ggx_pregrasp_reset_smoke_20260611_190737`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_cube_1027681.out`; local copy `cluster_logs/l401/dextrah/validate_franka_cube_1027681.out`
+- artifacts: remote/local `metrics.json` under the run dir and `cluster_results/l401/franka_cube_ggx_pregrasp_reset_smoke_20260611_190737/metrics.json`
+
+Result:
+- status: passed
+- scheduler: `COMPLETED`, exit code `0:0`, elapsed `00:00:43`, node `pool0-00016`
+- metrics/artifacts: metrics `passed=True`, failed checks `[]`; log `validate_command` includes `--enable_grasp_prior_reset`, expected `--grasp_prior_library_path`, and `--grasp_prior_reset_cycles 3`
+- key evidence:
+  - prior cycles: 3 cycles x 8 envs
+  - attempt rate: 1.0 for every cycle
+  - IK/reset success rate: 1.0 for every cycle
+  - pregrasp farther rate: 1.0 for every cycle
+  - immediate done count: 0
+  - min finger/table clearance: 0.120101 m, above penetration margin -0.002 m and above the normal 0.025 m clearance check in the rollout reset
+  - max finger center distance: 0.107195 m
+  - target position error: per-cycle max values 0.006292 m, 0.001199 m, 0.017894 m; mean values 0.001145 m, 0.000150 m, 0.002353 m
+  - target rotation error: per-cycle max values 0.222254 rad, 0.000793 rad, 0.159875 rad; mean values 0.027893 rad, 0.000100 rad, 0.020036 rad
+  - pregrasp sign evidence: exact tool distance means 0.130382/0.130946/0.127957 m versus pregrasp tool distance means 0.160262/0.160722/0.157818 m
+  - rollout finite check passed for 4/4 steps with reward mean 2.135709 and done count 0
+
+Analysis:
+- The reset-prior branch is genuinely exercised and passes the requested smoke evidence: IK success/failure, target pose error, pregrasp-farther sign, finger/table clearance, immediate termination rate, finite observations/rewards, and prior-branch logging.
+- Warnings observed in the log are non-blocking for this run: the known Warp CUDA UUID warning appeared, and `git rev-parse HEAD` printed a worktree metadata warning inside the container because the `.git` file points outside the mounted worktree. The latter is worth cleaning up in wrappers before longer jobs so logs can record the commit without noise.
+- This smoke is metrics-only (`CAPTURE_VIDEO=False`), intentionally avoiding renderer/camera overhead for the first reset gate.
+
+Next:
+- Add minimal opt-in prior override support to the RL training wrapper and clean up commit logging for agent-owned worktrees.
+- Run a short RL smoke with the same task and prior enabled, using reduced envs/steps but preserving the default prior-disabled path and final-training defaults.
+
+## 2026-06-11T19:10:32Z - RL smoke wrapper patch plan
+
+Goal:
+- Prepare the existing DEXTRAH teacher-training wrapper for a short RL smoke and eventual apple-to-apple full training with the prior enabled.
+
+Hypothesis:
+- The training path can remain apple-to-apple if the wrapper only adds opt-in Hydra env overrides for `Dextrah-Franka-Cube-Grasp` and leaves all default task/PPO/env settings unchanged when `GRASP_PRIOR_RESET_ENABLED` is unset.
+
+Change:
+- Patch `cluster/sbatch_train_teacher_8gpu.sh` to add disabled-by-default `GRASP_PRIOR_RESET_ENABLED` and `GRASP_PRIOR_LIBRARY_PATH` env vars, echo them, validate that the prior is only used with `Dextrah-Franka-Cube-Grasp`, and append Hydra overrides `env.grasp_prior_reset_enabled=True` and `env.grasp_prior_library_path=<path>` only when requested.
+- Add a `CODE_COMMIT` echo path to training and validation wrappers so agent-owned Git worktrees that are mounted without their external `.git/worktrees` metadata can still log the pinned commit cleanly.
+- Do not change the default Franka cube PPO settings, default `NUM_ENVS=2048`, observation/action spaces, reward logic, termination logic, cube reset behavior, or the prior-disabled default path.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset
+- branch: codex/franka-cube-ggx-pregrasp-reset
+- base_commit: 9d5e98271c7aa6012900e161cd0a5f81b6273e12
+- implementation_commit: pending
+- changed_files: planned `cluster/sbatch_train_teacher_8gpu.sh`, `cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`, this owned worklog
+
+Command / Job:
+- local checks after edit: `bash -n cluster/sbatch_train_teacher_8gpu.sh`; `bash -n cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`; `python3 -m compileall dextrah_lab/tasks/dextrah_franka_cube_grasp dextrah_lab/rl_games/train.py dextrah_lab/rl_games/validate_franka_cube_grasp_env.py`
+- planned short RL smoke after commit/deploy: one L40S GPU, `TASK=Dextrah-Franka-Cube-Grasp`, reduced `NUM_ENVS` and `MAX_ITERATIONS`, `DISTRIBUTED=False`, prior enabled with the same compact library.
+
+Result:
+- status: planned
+
+Next:
+- Apply the wrapper patch, run cheap checks, commit/push, deploy exact commit to the l401 agent worktree, then launch/monitor a short RL smoke if checks pass.
+
+## 2026-06-11T19:12:22Z - short RL smoke launch record
+
+Goal:
+- Run a bounded one-GPU RL smoke with `Dextrah-Franka-Cube-Grasp` and the GraspGenX pregrasp reset prior enabled, after the reset-only validation passed.
+
+Hypothesis:
+- A two-iteration, reduced-env PPO smoke should prove that the prior-enabled reset path can run inside the normal RL training wrapper, write rl_games logs/checkpoints/configs, and expose reset-prior reward extras without NaNs or immediate training failures.
+
+Change:
+- Committed wrapper support for prior-enabled training in `4cdc8c19516fed4fae4355ab7fd3e9f3bba5c5fc`.
+- Deployed `4cdc8c19516fed4fae4355ab7fd3e9f3bba5c5fc` to the l401 agent-owned worktree using a Git bundle delta from `9d5e982`, because l401 GitHub SSH fetch remains blocked.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset
+- branch: codex/franka-cube-ggx-pregrasp-reset
+- implementation_commit: 4cdc8c19516fed4fae4355ab7fd3e9f3bba5c5fc
+- push/pull: pushed to `origin/codex/franka-cube-ggx-pregrasp-reset`; l401 updated through bundle `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/.bundles/franka-cube-ggx-pregrasp-reset-4cdc8c1.bundle`
+- remote_commit/status: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset` detached at `4cdc8c19516fed4fae4355ab7fd3e9f3bba5c5fc`, clean
+
+Command / Job:
+- command: `bash -n cluster/sbatch_train_teacher_8gpu.sh`
+- command: `bash -n cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`
+- command: `python3 -m compileall dextrah_lab/tasks/dextrah_franka_cube_grasp dextrah_lab/rl_games/train.py dextrah_lab/rl_games/validate_franka_cube_grasp_env.py`
+- command: `sbatch --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=128G --time=00:45:00 --job-name=ggx_rl_smoke --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=4cdc8c19516fed4fae4355ab7fd3e9f3bba5c5fc,TASK=Dextrah-Franka-Cube-Grasp,FULL_EXPERIMENT_NAME=franka_cube_ggx_pregrasp_rl_smoke_20260611_191222,NUM_ENVS=64,MAX_ITERATIONS=2,HORIZON_LENGTH=8,MINIBATCH_SIZE=512,CENTRAL_VALUE_MINIBATCH_SIZE=512,SAVE_FREQUENCY=1,DISTRIBUTED=False,MULTI_GPU=False,NPROC_PER_NODE=1,AUTO_RESUME=False,SELF_RELAUNCH=False,USE_CUDA_GRAPH=False,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_smoke.npz cluster/sbatch_train_teacher_8gpu.sh`
+- job_id: 1027683
+- run_dir: expected `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_rl_smoke_20260611_191222`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_1027683.out`
+- artifacts: expected `params/env.yaml`, `params/agent.yaml`, `summaries/`, `nn/` checkpoints
+
+Result:
+- status: submitted
+- metrics/artifacts: pending
+
+Analysis:
+- This is intentionally not the final apple-to-apple training scale. It reduces env count, horizon, and max iterations only to smoke the normal RL path with the prior enabled. Final training must return to the Franka cube wrapper defaults: 2048 envs, 8 GPUs, same PPO settings, and only prior/library overrides.
+
+Next:
+- Submit, monitor logs to completion, fetch and inspect rl_games configs, reward/reset metrics, summaries, and checkpoints. Patch/relaunch before any full-scale run if behavior is abnormal.
+
+## 2026-06-11T19:14:36Z - longer RL smoke launch record
+
+Goal:
+- Run a bounded one-GPU RL smoke that is long enough to produce episode/reset scalar summaries, after the two-epoch smoke proved training startup/checkpointing but ended before any environment terminated.
+
+Hypothesis:
+- With `HORIZON_LENGTH=16` and `MAX_ITERATIONS=45`, each env gets 720 policy steps, enough to cross the 600-step timeout implied by `episode_length_s=10.0` and `decimation=2`. This should produce TensorBoard scalars for rewards/extras, including the prior reset metrics, while remaining a small smoke rather than a production run.
+
+Change:
+- No source changes since commit `4cdc8c19516fed4fae4355ab7fd3e9f3bba5c5fc`.
+- First RL smoke `1027683` completed and wrote a checkpoint, but its TensorBoard event file was 0 bytes and rl_games warned that max epochs were reached before any environment terminated. It is useful execution evidence but not enough for reward/reset-metric inspection.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- implementation_commit: 4cdc8c19516fed4fae4355ab7fd3e9f3bba5c5fc
+- remote_commit/status: l401 worktree detached at `4cdc8c19516fed4fae4355ab7fd3e9f3bba5c5fc`
+
+Command / Job:
+- command: `sbatch --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=128G --time=01:00:00 --job-name=ggx_rl_smoke2 --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=4cdc8c19516fed4fae4355ab7fd3e9f3bba5c5fc,TASK=Dextrah-Franka-Cube-Grasp,FULL_EXPERIMENT_NAME=franka_cube_ggx_pregrasp_rl_smoke2_20260611_191436,NUM_ENVS=64,MAX_ITERATIONS=45,HORIZON_LENGTH=16,MINIBATCH_SIZE=1024,CENTRAL_VALUE_MINIBATCH_SIZE=1024,SAVE_FREQUENCY=15,DISTRIBUTED=False,MULTI_GPU=False,NPROC_PER_NODE=1,AUTO_RESUME=False,SELF_RELAUNCH=False,USE_CUDA_GRAPH=False,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_smoke.npz cluster/sbatch_train_teacher_8gpu.sh`
+- job_id: 1027685
+- run_dir: expected `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_rl_smoke2_20260611_191436`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_1027685.out`
+- artifacts: expected params, TensorBoard scalars, checkpoints, Slurm log
+
+Result:
+- status: submitted
+- metrics/artifacts: pending
+
+Analysis:
+- This is the current gate before final training: it must show prior-enabled config, finite scalar values, sane reset success/farther rates, no termination pathology, and at least one checkpoint. If it fails or produces abnormal metrics, patch/relaunch rather than scaling.
+
+Next:
+- Submit and actively monitor job; fetch and parse scalars/checkpoints/logs before deciding on full-scale training.
+
+## 2026-06-11T19:16:49Z - train scalar observability patch plan
+
+Goal:
+- Fix the RL smoke observability gap: the normal training stack completed and checkpointed, but TensorBoard events stayed empty, so reward terms and prior reset metrics could not be inspected from scalars.
+
+Hypothesis:
+- `dextrah_lab/rl_games/rl_games_utils.py` already contains `RLGPUAlgoObserver`, which logs `infos` scalars, episode cumulatives, and direct env extras through `writer.add_scalar`, but `train.py` currently does not install it. Adding this existing observer should produce the required scalar evidence without changing training behavior.
+
+Change:
+- Patch `dextrah_lab/rl_games/train.py` to import `RLGPUAlgoObserver` and include it in `observers = [IsaacAlgoObserver(), RLGPUAlgoObserver(), DextrahResumableAlgoObserver()]`.
+- Do not change PPO hyperparameters, task config defaults, reward code, termination logic, action/observation spaces, cube reset, or the prior reset mechanics.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- base_commit: 4cdc8c19516fed4fae4355ab7fd3e9f3bba5c5fc
+- implementation_commit: pending
+- changed_files: planned `dextrah_lab/rl_games/train.py`, this owned worklog
+
+Command / Job:
+- local checks after edit: `python3 -m compileall dextrah_lab/rl_games/train.py dextrah_lab/rl_games/rl_games_utils.py`; `bash -n cluster/sbatch_train_teacher_8gpu.sh`
+- planned relaunch: same bounded one-GPU prior-enabled RL smoke as `1027685`, new run namespace, then parse TensorBoard scalars and checkpoints.
+
+Result:
+- status: planned
+
+Next:
+- Patch, validate, commit/push/deploy exact commit, rerun the bounded RL smoke, and inspect scalar tags/values for finite rewards and prior reset metrics.
+
+## 2026-06-11T19:17:53Z - scalar-observer RL smoke relaunch record
+
+Goal:
+- Rerun the bounded prior-enabled RL smoke after enabling `RLGPUAlgoObserver`, so reward terms and prior reset metrics can be inspected as TensorBoard scalars.
+
+Hypothesis:
+- The same 64-env, 45-epoch smoke should still complete and checkpoint, but now the event file should contain scalar tags for direct env extras such as `cube_grasp_prior_reset_success_rate` plus episode/reward metrics.
+
+Change:
+- Commit `53e7011fd3794cfafe16459696e434eb1fd9e3b9` imports and installs `RLGPUAlgoObserver` in `train.py`.
+- Deployed exact commit to l401 agent worktree via Git bundle `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/.bundles/franka-cube-ggx-pregrasp-reset-53e7011.bundle`.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- implementation_commit: 53e7011fd3794cfafe16459696e434eb1fd9e3b9
+- remote_commit/status: l401 worktree detached at `53e7011fd3794cfafe16459696e434eb1fd9e3b9`
+
+Command / Job:
+- command: `python3 -m compileall dextrah_lab/rl_games/train.py dextrah_lab/rl_games/rl_games_utils.py`
+- command: `bash -n cluster/sbatch_train_teacher_8gpu.sh`
+- command: `sbatch --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=128G --time=01:00:00 --job-name=ggx_rl_scalar --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=53e7011fd3794cfafe16459696e434eb1fd9e3b9,TASK=Dextrah-Franka-Cube-Grasp,FULL_EXPERIMENT_NAME=franka_cube_ggx_pregrasp_rl_scalar_20260611_191753,NUM_ENVS=64,MAX_ITERATIONS=45,HORIZON_LENGTH=16,MINIBATCH_SIZE=1024,CENTRAL_VALUE_MINIBATCH_SIZE=1024,SAVE_FREQUENCY=15,DISTRIBUTED=False,MULTI_GPU=False,NPROC_PER_NODE=1,AUTO_RESUME=False,SELF_RELAUNCH=False,USE_CUDA_GRAPH=False,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_smoke.npz cluster/sbatch_train_teacher_8gpu.sh`
+- job_id: 1027687
+- run_dir: expected `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_rl_scalar_20260611_191753`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_1027687.out`
+- artifacts: expected params, non-empty TensorBoard event file with scalar tags, checkpoints, Slurm log
+
+Result:
+- status: submitted
+- metrics/artifacts: pending
+
+Analysis:
+- If this run still lacks scalar data, the next fallback should be a lightweight JSONL metrics sidecar from the observer, not full training.
+
+Next:
+- Submit, monitor, fetch artifacts, parse scalar tags/values, and only then decide whether final 8-GPU training is ready.
+
+## 2026-06-11T19:23:02Z - JSONL metric sidecar patch plan
+
+Goal:
+- Close the remaining RL-smoke evidence gap. The prior-enabled training path completes and checkpoints, but TensorBoard event files are still empty in the l401 Isaac runtime, so reward terms and reset-prior scalars cannot yet be inspected from the training artifact.
+
+Hypothesis:
+- A lightweight opt-in `AlgoObserver` can mirror direct env info/extras to rank-local JSONL files under the run directory. This is observability only: it does not alter actions, observations, rewards, terminations, PPO hyperparameters, reset mechanics, or default training behavior when the env var is not set.
+
+Change:
+- Add `DirectInfoJsonlObserver` to `dextrah_lab/rl_games/rl_games_utils.py`.
+- Install it in `dextrah_lab/rl_games/train.py`.
+- Add disabled-by-default `DEXTRAH_RLGAMES_JSONL_METRICS` forwarding to `cluster/sbatch_train_teacher_8gpu.sh`.
+- Rerun the same bounded one-GPU prior-enabled RL smoke with `DEXTRAH_RLGAMES_JSONL_METRICS=True`, then inspect the JSONL scalars for prior reset rates, pose/table metrics, reward terms, finite values, and training pathology before scaling up.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- base_commit: 53e7011fd3794cfafe16459696e434eb1fd9e3b9
+- implementation_commit: pending
+- changed_files: planned `dextrah_lab/rl_games/rl_games_utils.py`, `dextrah_lab/rl_games/train.py`, `cluster/sbatch_train_teacher_8gpu.sh`, this owned worklog
+
+Command / Job:
+- completed prior job: `1027687`
+- completed prior run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_rl_scalar_20260611_191753`
+- local checks after edit: `python3 -m compileall dextrah_lab/rl_games/train.py dextrah_lab/rl_games/rl_games_utils.py dextrah_lab/tasks/dextrah_franka_cube_grasp dextrah_lab/scene_scripts/export_franka_cube_graspgenx_library.py dextrah_lab/rl_games/validate_franka_cube_grasp_env.py`; `bash -n cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`
+- planned relaunch: same 64-env, 45-epoch prior-enabled smoke as `1027687`, with `DEXTRAH_RLGAMES_JSONL_METRICS=True`.
+
+Result:
+- status: patch_in_progress
+- metrics/artifacts from `1027687`: Slurm `COMPLETED` exit `0:0`; prior enabled in command and `params/env.yaml`; `cube_spawn_xy_randomization: 0.08`; checkpoints at epochs 15/30/45 with finite reward filenames `317.39478`, `569.0881`, and `581.206`; `summaries/events.out.tfevents...` remained `0 bytes`, so scalar inspection is still blocked.
+
+Analysis:
+- The scalar observer commit was not sufficient because the cluster TensorBoard writer still produced an empty file. JSONL sidecars are the minimal next step and are opt-in for smoke/final runs.
+
+Next:
+- Commit/push/deploy the JSONL observer patch, launch the short prior-enabled RL smoke with JSONL metrics enabled, inspect the resulting metric sidecar and checkpoints, then decide whether the full 8-GPU apple-to-apple training is ready.
+
+## 2026-06-11T19:24:30Z - JSONL RL smoke launch record
+
+Goal:
+- Run the bounded 64-env/45-epoch prior-enabled RL smoke with the opt-in JSONL direct metrics sidecar enabled.
+
+Hypothesis:
+- The same normal RL path that already completed and checkpointed will now additionally write `metrics/direct_info_rank_0.jsonl`, allowing inspection of reset-prior success/farther rates, pose/table metrics, reward terms, finite values, and any termination pathology before full-scale training.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- implementation_commit: c36d3f8bcd8237bcc127019aac35f0f7217f554f
+- push/pull: pushed to `origin/codex/franka-cube-ggx-pregrasp-reset`; l401 updated through Git bundle `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/.bundles/franka-cube-ggx-pregrasp-reset-c36d3f8.bundle`
+- remote_commit/status: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset` detached at `c36d3f8bcd8237bcc127019aac35f0f7217f554f`, clean before submission
+
+Command / Job:
+- command: `python3 -m compileall dextrah_lab/rl_games/train.py dextrah_lab/rl_games/rl_games_utils.py dextrah_lab/tasks/dextrah_franka_cube_grasp dextrah_lab/scene_scripts/export_franka_cube_graspgenx_library.py dextrah_lab/rl_games/validate_franka_cube_grasp_env.py`
+- command: `bash -n cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`
+- command: `sbatch --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=128G --time=01:00:00 --job-name=ggx_rl_jsonl --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=c36d3f8bcd8237bcc127019aac35f0f7217f554f,TASK=Dextrah-Franka-Cube-Grasp,FULL_EXPERIMENT_NAME=franka_cube_ggx_pregrasp_rl_jsonl_20260611_192430,NUM_ENVS=64,MAX_ITERATIONS=45,HORIZON_LENGTH=16,MINIBATCH_SIZE=1024,CENTRAL_VALUE_MINIBATCH_SIZE=1024,SAVE_FREQUENCY=15,DISTRIBUTED=False,MULTI_GPU=False,NPROC_PER_NODE=1,AUTO_RESUME=False,SELF_RELAUNCH=False,USE_CUDA_GRAPH=False,DEXTRAH_RLGAMES_JSONL_METRICS=True,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_smoke.npz cluster/sbatch_train_teacher_8gpu.sh`
+- job_id: 1027690
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_rl_jsonl_20260611_192430`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_1027690.out`
+- artifacts: expected params, `metrics/direct_info_rank_0.jsonl`, checkpoints, Slurm log
+
+Result:
+- status: running
+- metrics/artifacts: pending
+
+Next:
+- Monitor job 1027690 to completion, fetch logs/artifacts, parse `direct_info_rank_0.jsonl`, inspect configs/checkpoints, update this worklog with metrics, and only then decide on full 8-GPU launch.
+
+## 2026-06-11T19:26:31Z - JSONL RL smoke result and full-run plan
+
+Goal:
+- Decide whether the prior-enabled branch is ready for the final apple-to-apple 8-GPU Franka cube run.
+
+Result:
+- status: passed
+- job_id: 1027690
+- scheduler: `COMPLETED`, exit `0:0`, elapsed `00:01:08`, node `pool0-00016`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_rl_jsonl_20260611_192430`
+- local_artifacts: `cluster_results/l401/franka_cube_ggx_pregrasp_rl_jsonl_20260611_192430/`, `cluster_logs/l401/dextrah/teacher_8gpu_1027690.out`
+- checkpoints: `last_dextrah_franka_cube_grasp_ep_45_rew_736.6942.pth`, `last_dextrah_franka_cube_grasp_ep_45_rew__736.6942_.pth`, plus `dextrah_runtime_rank_0.pth`
+- JSONL sidecar: `metrics/direct_info_rank_0.jsonl`, 400920 bytes, 45 records, epochs 1-45, frames 0-45056, 162 scalar keys
+- scalar health: `bad_scalar_count=0`; no NaN/Inf in JSONL; Slurm log has no traceback/runtime/child-failure patterns and ends with `Training Done`
+- prior reset metrics: attempt/success/farther rates all `1.0` for all 45 records; reset position error mean/max `0.0002419/0.0004691 m`; reset rotation error mean/max `0.005852/0.008752 rad`; exact tool distance mean `0.129151 m`; pregrasp tool distance mean `0.158952 m`; prior finger-center distance mean `0.100986 m`; prior finger-table clearance min/mean `0.134568/0.134635 m`
+- reward/behavior scalars: approach reward mean `0.1891`; enclosure reward mean `0.1262`; lift reward mean/max `0.00289/0.04286`; xy stability reward mean/min `0.9452/0.8520`; action penalty mean `-0.00238`; success/lifted rates remained `0.0` in this short untrained smoke; table-clearance violation mean/max `0.00129/0.03552`
+- config evidence: `params/env.yaml` records `num_envs: 64`, `observation_space: 72`, `action_space: 7`, `cube_spawn_xy_randomization: 0.08`, `grasp_prior_reset_enabled: true`, `grasp_prior_pregrasp_offset: 0.03`; `params/agent.yaml` records the smoke-only overrides `max_epochs: 45`, `horizon_length: 16`, `minibatch_size: 1024`, `multi_gpu: false`
+
+Analysis:
+- The actual Isaac RL path uses the prior branch, produces sane reset metrics, finite reward/extras values, and checkpoints. The short smoke does not solve the task, but that is expected for a 45-epoch, 64-env random-start smoke. No reset pathology or immediate-failure signature appeared. The earlier reset validator remains the stronger immediate-done evidence: `passed=True`, immediate done count `0`, reset success/farther rates `1.0`, and positive table clearance.
+- The full run is now clear to launch with the wrapper defaults for `Dextrah-Franka-Cube-Grasp`: 2048 envs, 8 GPUs, default horizon/minibatch/lr/gamma/tau/save cadence/max epochs, default PPO wrapper/settings, and only the prior/library Hydra overrides. `DEXTRAH_RLGAMES_JSONL_METRICS=True` will be used for inspection only; it does not change the policy data path.
+
+Next:
+- Commit/push this worklog result.
+- Deploy the latest branch commit to the l401 agent worktree.
+- Launch final 8-GPU training with `TASK=Dextrah-Franka-Cube-Grasp`, default wrapper PPO/env settings, `GRASP_PRIOR_RESET_ENABLED=True`, `GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_smoke.npz`, and JSONL direct metrics enabled for artifact inspection.
+- Monitor through requeues if needed; inspect JSONL reset/reward metrics, checkpoints, logs, and any eval artifacts before considering the final run complete.
+
+## 2026-06-11T19:30:05Z - final 8-GPU training launch record
+
+Goal:
+- Launch the apple-to-apple GraspGenX pregrasp-reset variant at the required final scale: `Dextrah-Franka-Cube-Grasp`, 2048 envs, 8 GPUs, same PPO wrapper/settings, only prior reset plus library overrides, with JSONL direct metrics enabled for inspection.
+
+Change:
+- Committed and pushed worklog result as `99ea26d5b449581988594f40168806642c486326`.
+- Deployed the exact branch state to the NFS agent worktree; both l401 and a1001 see `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset` at `99ea26d5b449581988594f40168806642c486326`.
+- Attempted to submit from l401 first, but no job was created because l401 rejected the wrapper's default partition list: `invalid partition specified: batch_singlenode`. `sinfo` on l401 shows only `batch`/`batch_long` GPU partitions with `gpu:4`, so l401 cannot run the required single-node 8-GPU shape without changing the training geometry.
+- Switched final training to a1001, where `sinfo` shows valid 8-GPU partitions (`batch_singlenode`, `grizzly`, `polar`, `polar3`, `polar4`, etc.) and the same DEXTRAH container/env/worktree/results paths are visible.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- implementation_commit: 99ea26d5b449581988594f40168806642c486326
+- push/pull: pushed to `origin/codex/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: a1001 NFS worktree clean at `99ea26d5b449581988594f40168806642c486326`
+
+Command / Job:
+- failed l401 command: `sbatch --job-name=ggx_reset_8gpu --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=99ea26d5b449581988594f40168806642c486326,TASK=Dextrah-Franka-Cube-Grasp,FULL_EXPERIMENT_NAME=franka_cube_ggx_pregrasp_reset_8gpu_20260611_192735,AUTO_RESUME=True,SELF_RELAUNCH=True,DEXTRAH_RLGAMES_JSONL_METRICS=True,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_smoke.npz cluster/sbatch_train_teacher_8gpu.sh`
+- final a1001 command: `sbatch --job-name=ggx_reset_8gpu --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=99ea26d5b449581988594f40168806642c486326,TASK=Dextrah-Franka-Cube-Grasp,FULL_EXPERIMENT_NAME=franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005,AUTO_RESUME=True,SELF_RELAUNCH=True,DEXTRAH_RLGAMES_JSONL_METRICS=True,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_smoke.npz cluster/sbatch_train_teacher_8gpu.sh`
+- job_id: 28987954
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28987954.out`
+- expected artifacts: rank-local JSONL direct metrics, checkpoints under `nn/`, runtime sidecars, params, Slurm log
+
+Result:
+- status: submitted
+- metrics/artifacts: pending
+
+Next:
+- Monitor job `28987954` on a1001 through startup and any requeues. Confirm the log prints 8 GPUs, 2048 envs, distributed/multi-GPU defaults, prior enabled, and JSONL metrics enabled. Inspect rank-local metrics/checkpoints/logs, patch/relaunch if abnormal, and do not stop at scheduler completion.
+
+## 2026-06-11T19:33:41Z - final 8-GPU training monitor checkpoint
+
+Goal:
+- Record the first full-scale training health checkpoint while continuing to monitor job `28987954`.
+
+Result:
+- status: running_healthy
+- scheduler: `RUNNING`, elapsed about `00:04:52`, node `batch-block5-00308`
+- startup evidence: log prints `torch ... cuda_available True device_count 8`; distributed command uses `--nproc_per_node=8`; ranks `0-7` initialize with `world_size = 8`; each rank creates `Number of environments: 2048`
+- config evidence: wrapper logs `NUM_ENVS=2048`, `NPROC_PER_NODE=8`, `DISTRIBUTED=True`, `MULTI_GPU=True`, `HORIZON_LENGTH=64`, `MINIBATCH_SIZE=32768`, `SAVE_FREQUENCY=25`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`, `GRASP_PRIOR_RESET_ENABLED=True`, and JSONL metrics enabled
+- artifacts: rank-local metric files created; rank 0 is writing scalar records; all rank runtime sidecars written at epoch 25; TensorBoard event file is nonzero; first model checkpoint written at `nn/last_dextrah_franka_cube_grasp_ep_25_rew_1176.0144.pth`
+- current log progress: epoch `36/10000` visible in the live log; latest local snapshot has 33 rank-0 JSONL records through epoch 33
+- scalar health from local snapshot: `bad_scalar_count=0`; prior attempt/success/farther rates all `1.0`; reset pos error min/max/mean `0.0000974/0.0017676/0.001138 m`; reset rot error min/max/mean `0.002747/0.017189/0.010816 rad`; prior finger table clearance min/mean `0.134935/0.135270 m`; pregrasp distance remains larger than exact grasp distance; table-clearance violation mean `0.00000333`
+- behavior snapshot: approach reward increased to `0.907` by epoch 33; enclosure reward to `0.530`; lift reward remains small; success and lifted rates are still `0.0`, which is not yet abnormal this early in training
+- errors: no traceback/runtime/NCCL/child-failure signature observed in fetched log snapshot
+
+Analysis:
+- The reset-prior path remains stable at final scale and within configured IK tolerances. The run is not complete; continue monitoring checkpoint cadence, scalar health, requeue behavior, and eventual success/lift metrics.
+
+Next:
+- Keep monitoring job `28987954`; fetch and inspect later checkpoints/metrics; update this worklog after the next meaningful checkpoint or requeue event; do not mark complete until final training and artifact inspection are done.
+
+## 2026-06-11T19:37:01Z - final 8-GPU training monitor checkpoint
+
+Goal:
+- Record the next full-scale training health checkpoint while continuing to monitor job `28987954`.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- implementation_commit: 99ea26d5b449581988594f40168806642c486326 for the running job; latest branch/worklog commit before this entry is `81ca0f4d952d70459b2deecd23c2cdcd6726b737`
+- remote_commit/status: a1001 NFS worktree remains clean at `99ea26d5b449581988594f40168806642c486326`; later local commits are worklog-only monitor records
+
+Command / Job:
+- monitor command: `squeue -j 28987954 -o "%.18i %.24j %.10T %.10M %.9l %.12N %.18R"; sacct -j 28987954 --format=JobID,JobName%24,State,ExitCode,Elapsed,NodeList -P`
+- monitor command: parse `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005/metrics/direct_info_rank_0.jsonl`
+- job_id: 28987954
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28987954.out`
+
+Result:
+- status: running_healthy
+- scheduler: `RUNNING`, elapsed about `00:08:01`, node `batch-block5-00308`
+- log progress: epochs visible through `72/10000`; no traceback/runtime/NCCL/child-failure signatures in the inspected tail
+- checkpoints: `last_dextrah_franka_cube_grasp_ep_25_rew_1176.0144.pth` and `last_dextrah_franka_cube_grasp_ep_50_rew_1646.5193.pth`, both `140033037` bytes; rank runtime sidecars are present for ranks `0-7`
+- metric artifacts: TensorBoard event file is nonzero; JSONL files exist for ranks `0-7`, with rank 0 writing `656114` bytes and nonzero scalar records
+- JSONL scalar health: 72 records, last epoch `72`, `bad_scalar_count=0`
+- prior reset metrics: success/farther rates are `1.0` for all records; reset position error min/max/mean `0.0000974/0.0019149/0.001502 m`; reset rotation error min/max/mean `0.002747/0.019035/0.014168 rad`; finger-table clearance min/mean `0.134935/0.135155 m`
+- behavior/reward metrics: approach reward last/mean `0.97594/0.87968`; enclosure reward last/mean `0.56250/0.51335`; lift reward last/max/mean `0.00200/0.01889/0.00510`; success and lifted rates remain `0.0`; finger table-clearance violation max/mean `0.0000686/0.00000152`
+
+Analysis:
+- The final-scale reset-prior path remains active and numerically stable. Checkpoints and sidecars are advancing at the expected cadence. The task has not yet reached lift/success, but this is still early in a long run and not yet a failure signal given the increasing approach/enclosure rewards.
+
+Next:
+- Continue monitoring through the next checkpoint/requeue event. If success/lift metrics remain flat after substantially more training, inspect against the baseline learning curve before patching; preserve the apple-to-apple config unless there is a clear reset-prior defect.
+
+## 2026-06-11T19:44:38Z - final 8-GPU training monitor checkpoint
+
+Goal:
+- Record the epoch 100/125 checkpoint window and early behavior evidence for job `28987954`.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- implementation_commit: 99ea26d5b449581988594f40168806642c486326 for the running job; latest branch/worklog commit before this entry is `19eaf870d686e77289dd1853e2d60e8fb74734f5`
+- remote_commit/status: a1001 NFS worktree remains clean at `99ea26d5b449581988594f40168806642c486326`; later local commits are worklog-only monitor records
+
+Command / Job:
+- monitor command: six-sample local polling loop reading `squeue` and rank-0 JSONL from `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005/metrics/direct_info_rank_0.jsonl`
+- job_id: 28987954
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005`
+
+Result:
+- status: running_healthy
+- scheduler: `RUNNING`, elapsed about `00:14:47` at the last sample, node `batch-block5-00308`
+- JSONL scalar health: records advanced from epoch `90` to `146`; `bad_scalar_count=0` at every sample
+- checkpoints: epoch 100 checkpoint `last_dextrah_franka_cube_grasp_ep_100_rew_1739.3138.pth`; epoch 125 checkpoint `last_dextrah_franka_cube_grasp_ep_125_rew_1777.433.pth`; earlier epoch 25/50/75 checkpoints still present
+- prior reset metrics: success/farther rates remain `1.0`; latest reset position error `0.001653 m`; latest reset rotation error `0.017002 rad`; latest finger-table clearance `0.135049 m`
+- behavior/reward metrics: approach reward rose to `1.06079` by epoch 146; enclosure reward rose to `0.60161`; lift reward remains sparse but finite; `cube_has_lifted_rate` produced nonzero samples, including `0.0009765625` at epoch 124 and `0.00048828125` at epoch 146; `cube_success_rate` first showed a nonzero sample of `0.00048828125` at epoch 124, then returned to `0.0` in later samples
+
+Analysis:
+- The final run is still early but no longer completely flat on lift/success, and the primary reset-prior acceptance metrics continue to hold. The reward increase and occasional lift/success samples argue against an immediate reset-path regression. Continue monitoring instead of changing configuration.
+
+Next:
+- Continue monitoring toward the next checkpoints and wall-time/requeue boundary. Inspect whether lift/success become more frequent with training; if not, compare to baseline timing before any code/config intervention.
+
+## 2026-06-11T19:55:41Z - final 8-GPU training monitor checkpoint
+
+Goal:
+- Record the epoch 150-250 checkpoint window for job `28987954` and confirm the reset-prior path remains stable while training progresses.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- implementation_commit: 99ea26d5b449581988594f40168806642c486326 for the running job; latest branch/worklog commit before this entry is `6eea3ba0cffb86804a2259a9668e1d5cf54c7b67`
+- remote_commit/status: a1001 NFS worktree remains clean at `99ea26d5b449581988594f40168806642c486326`; later local commits are worklog-only monitor records
+
+Command / Job:
+- monitor command: ten-sample local polling loop reading `squeue` and rank-0 JSONL from `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005/metrics/direct_info_rank_0.jsonl`
+- job_id: 28987954
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005`
+
+Result:
+- status: running_healthy
+- scheduler: `RUNNING`, elapsed about `00:25:55` at the last sample, node `batch-block5-00308`
+- JSONL scalar health: records advanced from epoch `166` to `267`; `bad_scalar_count=0` at every sample
+- checkpoints: epoch 150 `rew_1823.7875`, epoch 175 `rew_1837.514`, epoch 200 `rew_1861.1962`, epoch 225 `rew_1870.5924`, epoch 250 `rew_1925.6487`
+- prior reset metrics: success/farther rates remain `1.0`; latest reset position error `0.001821 m`; latest reset rotation error `0.015713 rad`; latest finger-table clearance `0.135130 m`
+- behavior/reward metrics: approach reward reached `1.08332` at epoch 256 and was `1.08062` at epoch 267; enclosure reward reached `0.61189` at epoch 256 and was `0.61050` at epoch 267; lift remains sparse but produced repeated nonzero samples (`0.00048828125` at epochs 166/177/211/233/245/256); success remained mostly zero in this window
+
+Analysis:
+- The final-scale run continues to checkpoint at the expected cadence with no numerical or reset-prior pathology. The policy is clearly improving on approach/enclosure and has intermittent lift, but sustained success has not emerged yet. This remains a monitor condition, not a patch condition.
+
+Next:
+- Continue monitoring toward later checkpoints and the first wall-time/requeue boundary. Watch for sustained lift/success growth and verify requeue resumes from the latest checkpoint without losing reset metrics.
+
+## 2026-06-11T20:10:14Z - final 8-GPU training monitor checkpoint
+
+Goal:
+- Record the epoch 300-400 training window for job `28987954` using artifact-based liveness while Slurm CLI probes are slow.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- implementation_commit: 99ea26d5b449581988594f40168806642c486326 for the running job; latest branch/worklog commit before this entry is `ad584acd751f897c3a4ed1fe775db72f266ea887`
+- remote_commit/status: a1001 NFS worktree remains clean at `99ea26d5b449581988594f40168806642c486326`; later local commits are worklog-only monitor records
+
+Command / Job:
+- monitor command: six-sample artifact liveness loop reading rank-0 JSONL, checkpoint files, and Slurm log tail from `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005`
+- note: `squeue`/`sacct` probes on a1001 timed out during this window, but the JSONL/log/checkpoint artifacts continued advancing normally
+- job_id: 28987954
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005`
+
+Result:
+- status: running_healthy
+- JSONL scalar health: records advanced from epoch `305` to `415`; `bad_scalar_count=0` at every sample
+- checkpoints: epoch 300 `rew_1974.4305`, epoch 325 `rew_1987.0923`, epoch 350 `rew_2022.6237`, epoch 375 `rew_2001.7737`, epoch 400 `rew_2044.1816`
+- prior reset metrics: success/farther rates remain `1.0`; latest reset position error `0.001838 m`; latest reset rotation error `0.017492 rad`; latest finger-table clearance `0.135041 m`
+- behavior/reward metrics: approach reward rose to `1.12921` at epoch 415; enclosure reward rose to `0.63244`; lift reward reached `0.00904`; `cube_has_lifted_rate` reached `0.0014648438`; `cube_success_rate` remained `0.0` in the latest sample
+- log evidence: log tail reached epoch `415/10000` and continued printing normal fps/frames lines; a specific error-signature grep for traceback/runtime/child/CUDA/NCCL failure patterns returned no matches
+
+Analysis:
+- Training is still healthy and no reset-prior pathology has appeared. The best and interval checkpoints are advancing, reward terms trend upward, and lift is becoming more frequent. Sparse success is acceptable at this stage, but it remains the main behavior metric to watch.
+
+Next:
+- Continue artifact-based monitoring until Slurm CLI responsiveness returns. Record the next checkpoint window and verify eventual wall-time requeue/resume semantics.
+
+## 2026-06-11T20:23:17Z - final 8-GPU training monitor checkpoint
+
+Goal:
+- Record the epoch 425-550 monitor window for job `28987954`, including restored Slurm visibility, best-checkpoint updates, and rank-0 JSONL health.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- implementation_commit: 99ea26d5b449581988594f40168806642c486326 for the running job; latest branch/worklog commit before this entry is `651b7d6e6e813fce3f502a26f6929a90c228ef18`
+- remote_commit/status: a1001 NFS worktree remains clean at `99ea26d5b449581988594f40168806642c486326`; later local commits are worklog-only monitor records
+
+Command / Job:
+- monitor command: bounded `squeue`/`sacct` probes plus log-tail/error-signature probes for job `28987954`
+- monitor command: six-sample artifact loop reading rank-0 JSONL and checkpoints under `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005`
+- job_id: 28987954
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28987954.out`
+
+Result:
+- status: running_healthy
+- scheduler: `RUNNING` on `batch-block5-00308`; bounded `squeue` reported elapsed `00:45:17` and time remaining `3:04:43`; `sacct` reported job and batch step `RUNNING`, exit `0:0`
+- JSONL scalar health: records advanced from epoch `448` to `558`; `bad_scalar_count=0` at every sample
+- checkpoints: epoch 425 `rew_2057.8845`, epoch 450 `rew_2076.4912`, epoch 475 `rew_2083.0796`, epoch 500 `rew_2086.0613`, epoch 525 `rew_2070.765`, epoch 550 `rew_2110.0083`
+- best-checkpoint evidence: log saved best policy at epoch 402 with `rew_2084.8135` and again at epoch 466 with `rew_2116.91`
+- prior reset metrics: success/farther rates remain `1.0`; latest reset position error `0.001836 m`; latest reset rotation error `0.018304 rad`; latest finger-table clearance `0.134983 m`
+- behavior/reward metrics: latest approach reward `1.13741`; latest enclosure reward `0.63599`; latest lift reward `0.00306`; latest `cube_has_lifted_rate=0.00048828125`; latest `cube_success_rate=0.00048828125`
+- log/error evidence: log tail shows normal fps/frames, interval checkpoint, best checkpoint, and runtime-sidecar writes; targeted grep found no traceback/runtime/child/CUDA/NCCL failure signatures
+
+Analysis:
+- The final run remains healthy past the mid-500 epochs. Prior reset metrics continue to prove the branch is active and stable. Best reward is now above 2116, and both lift and success have appeared again in rank-0 metrics, so the behavior is not flatlined.
+
+Next:
+- Continue monitoring toward later checkpoints and wall-time/requeue. If the job requeues, verify it resumes in the same run dir from the latest checkpoint/runtime sidecars and that JSONL/checkpoint cadence continues without reset-metric regressions.
+
+## 2026-06-11T20:29:11Z - interim inspection artifact bundle
+
+Goal:
+- Produce inspectable user artifacts from existing run outputs only, without interrupting or slowing active job `28987954`.
+
+Command / Job:
+- source artifacts: copied rank-0 JSONL, Slurm stdout, params, checkpoint filename listing, and scheduler snapshot from the active run
+- local bundle: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/a1001/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005/inspection_20260611_202705`
+- generated files: `summary.json`, `training_curves.png`, `REPORT.md`, plus `raw/` copied text inputs
+- viewer: `viz-open /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/a1001/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005/inspection_20260611_202705/training_curves.png`
+- viewer_url: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/a1001/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005/inspection_20260611_202705/training_curves.png`
+
+Result:
+- status: produced
+- summary snapshot: rank-0 JSONL reached epoch `622`, frame `651165696`, with `622` records and `bad_scalar_count=0`
+- best reward: stdout best checkpoint reward `2128.5742` at epoch `595`
+- last interval checkpoint in the snapshot: `last_dextrah_franka_cube_grasp_ep_600_rew_2112.7615.pth`
+- prior reset metrics: success/farther rates stayed `1.0`; latest pos error `0.001877 m`; max pos error `0.002012 m`; latest rot error is recorded in `summary.json`; reset clearance remains positive
+- behavior metrics: latest success rate `0.0` with max `0.00048828125`; latest lifted rate `0.00048828125`, max `0.00244140625`; lift height is sparse but present; approach reward latest `1.13808`; enclosure reward latest `0.636284`
+- report: `REPORT.md` lists exact remote paths for the run dir, Slurm log, rank-0 JSONL, checkpoint dir, best checkpoint, and last checkpoint, plus healthy signals and watch items
+- visual inspection: `training_curves.png` renders reset success/farther, reset pose/clearance, success/lift/lift-height, reward terms, and checkpoint reward curves; the PNG is readable via the viewer URL above
+
+Analysis:
+- The bundle gives an inspectable, self-contained interim view without copying checkpoint weights or modifying the active run. It supports the same conclusion as the live monitor: reset-prior behavior is stable, no rank-0 bad scalars are present, checkpoints/best reward are advancing, and the main watch item is still sparse success frequency.
+
+Next:
+- Continue the active monitor loop on job `28987954`; do not treat this artifact bundle as completion. Update/refresh artifacts later if the orchestrator asks or if the run reaches a requeue/final boundary.
+
+## 2026-06-11T20:41:56Z - refreshed interim inspection artifact bundle
+
+Goal:
+- Refresh the inspectable artifact bundle after the next meaningful checkpoint window without interrupting active job `28987954`.
+
+Command / Job:
+- source artifacts: copied rank-0 JSONL, Slurm stdout, params, checkpoint filename listing, and scheduler snapshot from the active run
+- local bundle: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/a1001/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005/inspection_20260611_204031`
+- generated files: `summary.json`, `training_curves.png`, `REPORT.md`, plus `raw/` copied text inputs
+- viewer: `viz-open /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/a1001/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005/inspection_20260611_204031/training_curves.png`
+- viewer_url: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/a1001/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005/inspection_20260611_204031/training_curves.png`
+
+Result:
+- status: produced
+- scheduler snapshot: `RUNNING`, elapsed `01:11:56`, remaining `2:38:04`, node `batch-block5-00308`; `sacct` job and batch step are `RUNNING`, exit `0:0`
+- summary snapshot: rank-0 JSONL reached epoch `770`, frame `806354944`, with `770` records, `bad_scalar_count=0`, and `targeted_error_signature_count=0`
+- best reward: stdout best checkpoint reward `2186.5708` at epoch `748`
+- last interval checkpoint in the snapshot: `last_dextrah_franka_cube_grasp_ep_750_rew_2153.0076.pth`
+- prior reset metrics: success/farther rates stayed `1.0`; latest pos error `0.001906 m`, max pos error `0.002012 m`; latest rot error `0.017208 rad`, max rot error `0.020425 rad`; latest finger/table clearance `0.134984 m`
+- behavior metrics: latest success rate `0.0` with max `0.00048828125`; latest lifted rate `0.00146484375`, max `0.00244140625`; latest lift height `0.0003055 m`; latest lift reward `0.009072`; latest approach/enclosure rewards `1.13898` / `0.636892`
+- visual inspection: refreshed `training_curves.png` extends through epoch `770` and remains readable via the viewer URL above
+
+Analysis:
+- The refreshed bundle shows continued training progress after the previous artifact handoff. Reset-prior health remains stable, best reward improved from `2128.5742` to `2186.5708`, and lift frequency/height improved in the latest snapshot. Success is still sparse and remains the main behavior watch item, not an immediate reset-prior defect.
+
+Next:
+- Continue monitoring through wall-time/requeue. Refresh artifacts again after a requeue/resume event or another substantive checkpoint window if requested.
+
+## 2026-06-11T20:50:11Z - eval video artifact plan
+
+Goal:
+- Produce a bounded rollout video artifact from the current reset-prior best checkpoint without interrupting or slowing active 8-GPU training job `28987954`.
+
+Plan:
+- Make a minimal eval-wrapper change only: expose disabled-by-default `GRASP_PRIOR_RESET_ENABLED` and `GRASP_PRIOR_LIBRARY_PATH` through `cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`, mirroring the training wrapper override style.
+- Commit/push that wrapper/worklog change and deploy the exact commit to the agent-owned NFS worktree.
+- Launch a 1-GPU l401 eval/render job from the agent worktree with `TASK=Dextrah-Franka-Cube-Grasp`, `NUM_ENVS=1`, short `NUM_STEPS`/`VIDEO_LENGTH`, reset prior enabled, and checkpoint `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005/nn/dextrah_franka_cube_grasp.pth`.
+- Monitor eval scheduler/logs/metrics to completion; fetch metrics/video locally; run `viz-open`; record exact job id, checkpoint, metrics, video path, and viewer URL.
+- Continue training monitor separately; do not cancel or modify job `28987954`.
+
+Next:
+- Patch the eval wrapper, run local `bash -n`, commit/push/deploy, and submit the small l401 eval.
+
+## 2026-06-11T20:54:38Z - eval video artifact result
+
+Goal:
+- Produce and inspect a bounded rollout video artifact for the reset-prior run without interrupting active 8-GPU training job `28987954`.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- implementation_commit: `51cac4a7ced0d23ef967e806cfef3cfe872bb810`
+- changed_files: `cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`, owned worklog
+- push/pull: pushed to `origin/codex/franka-cube-ggx-pregrasp-reset`; deployed to l401 agent worktree via Git bundle
+- remote_commit/status: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset` detached at `51cac4a7ced0d23ef967e806cfef3cfe872bb810`
+
+Command / Job:
+- launch command: `sbatch --parsable --partition=batch --time=00:25:00 --job-name=ggx_eval_video --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,TASK=Dextrah-Franka-Cube-Grasp,RUN_NAME=franka_cube_ggx_pregrasp_reset_eval_ep875_20260611_205141,NUM_ENVS=1,NUM_STEPS=360,VIDEO_LENGTH=360,PRINT_INTERVAL=30,CAPTURE_VIDEO=True,DETERMINISTIC=True,USE_CUDA_GRAPH=False,SEED=20260611,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_smoke.npz,CHECKPOINT=/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005/nn/last_dextrah_franka_cube_grasp_ep_875_rew_2194.6606.pth,VIDEO_NAME_PREFIX=ggx-pregrasp-reset-ep875 cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- job_id: `1027734`
+- checkpoint: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005/nn/last_dextrah_franka_cube_grasp_ep_875_rew_2194.6606.pth`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_ggx_pregrasp_reset_eval_ep875_20260611_205141`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1027734.out`
+- local_artifacts: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_reset_eval_ep875_20260611_205141`
+
+Result:
+- status: completed
+- scheduler: `COMPLETED`, exit `0:0`, elapsed `00:01:11`, node `pool0-00016`
+- metrics: `num_envs=1`, `num_steps_completed=360`, `done_count=0`, `reward_mean=3.83645`, `reward_final=4.06477`, `success_rate_mean=0.0`, `success_rate_final=0.0`, `success_rate_last_window_mean=0.0`
+- task metrics: `cube_lift_height` and `has_lifted_cube` stayed `0.0` in this single deterministic rollout; `finger_table_clearance` mean/min/final `0.08445/0.07862/0.08454 m`; `finger_table_clearance_violation=0.0`; `ee_to_cube_dist` mean/final `0.06855/0.07057 m`; `finger_center_to_cube_dist` mean/final `0.06270/0.06196 m`
+- video: remote `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_ggx_pregrasp_reset_eval_ep875_20260611_205141/videos/ggx-pregrasp-reset-ep875-step-0.mp4`
+- video: local raw `cluster_results/l401/franka_cube_ggx_pregrasp_reset_eval_ep875_20260611_205141/videos/ggx-pregrasp-reset-ep875-step-0.mp4`
+- video: local trimmed preview `cluster_results/l401/franka_cube_ggx_pregrasp_reset_eval_ep875_20260611_205141/videos/ggx-pregrasp-reset-ep875-step-0-trimmed.mp4`
+- video validation: raw video H.264 `1280x720`, `359` frames, `5.983 s`, `60 fps`; trimmed preview H.264 `1280x720`, `353` frames, `5.883 s`, `60 fps`
+- visual inspection: first raw frame is black, likely a capture-start frame; middle/final sampled frames show the Franka hand at the cube with close but usable camera framing; trimmed preview skips the black opener
+- viewer_url: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_reset_eval_ep875_20260611_205141/videos/ggx-pregrasp-reset-ep875-step-0-trimmed.mp4`
+- errors: no traceback/runtime/child failure; log contains only the known non-fatal Warp CUDA driver-entry warning observed in successful Isaac runs
+- active training status during eval: job `28987954` continued running on a1001 and reached epoch `906` with `bad_scalars=0` and checkpoint `last_dextrah_franka_cube_grasp_ep_900_rew_2213.7234.pth`
+
+Analysis:
+- The video artifact was produced without touching the active 8-GPU training job. This single deterministic rollout did not lift or succeed, which is consistent with sparse success in rank-0 training metrics so far and should be treated as behavior evidence to watch, not a reset-prior runtime failure. The rollout remained finite, did not terminate early, kept table clearance positive, and produced an inspectable video.
+
+Next:
+- Continue monitoring the active training job through wall-time/requeue and later checkpoints. Consider a later multi-seed eval video after success frequency improves, but do not change training config for this artifact.
+
+## 2026-06-11T20:59:02Z - final 8-GPU training monitor checkpoint
+
+Goal:
+- Record the post-artifact training health window while continuing to monitor active job `28987954`.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- running_job_commit: `99ea26d5b449581988594f40168806642c486326`
+- latest_branch_commit_before_entry: `7878b1b`
+- note: code changes after the running job commit are wrapper/worklog only and do not mutate the active training process
+
+Command / Job:
+- monitor command: eight-sample loop reading bounded `squeue`, rank-0 JSONL, checkpoint files, best checkpoint size, and targeted log error signatures
+- job_id: `28987954`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28987954.out`
+
+Result:
+- status: running_healthy
+- scheduler latest: `RUNNING`, elapsed `01:28:09`, remaining `2:21:51`, node `batch-block5-00308`
+- JSONL scalar health: records advanced through epoch `952`; `bad_scalar_count=0`; targeted error signatures `0`
+- checkpoints observed in this window: epoch 775 `rew_2167.0908`, epoch 800 `rew_2172.8542`, epoch 825 `rew_2178.2688`, epoch 850 `rew_2183.0295`, epoch 875 `rew_2194.6606`, epoch 900 `rew_2213.7234`, epoch 925 `rew_2196.059`, epoch 950 `rew_2206.857`
+- prior reset metrics at latest sample: success/farther rates `1.0`; pos error `0.001854 m`; rot error `0.018178 rad`; finger-table clearance `0.134985 m`
+- behavior metrics at latest sample: approach reward `1.11909`; enclosure reward `0.627716`; lift reward `0.002958`; lift height `0.0001858 m`; lifted rate `0.00048828125`; success rate `0.0`
+- active job remained healthy while the separate l401 eval job ran and completed
+
+Analysis:
+- The active final training is still numerically stable and checkpointing. Interval reward improved above `2200`, reset metrics remain ideal, and lift remains present but sparse. Success frequency remains the main watch item; no reset-prior or runtime defect is indicated.
+
+Next:
+- Continue monitoring toward wall-time/requeue. Verify resume behavior if Slurm requeues, and inspect metrics/checkpoints after resume before any final report.
+
+## 2026-06-11T21:30:05Z - final 8-GPU training monitor checkpoint
+
+Goal:
+- Record the epoch 975-1250 checkpoint window while continuing active monitoring of final job `28987954`.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- running_job_commit: `99ea26d5b449581988594f40168806642c486326`
+- latest_branch_commit_before_entry: `fbe9782`
+- note: later branch commits are wrapper/worklog/artifact records only and do not mutate the active training process
+
+Command / Job:
+- monitor command: six-sample loop reading bounded `squeue`, rank-0 JSONL, tail-100 lift/success metrics, checkpoint files, and targeted log error signatures
+- job_id: `28987954`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28987954.out`
+
+Result:
+- status: running_healthy
+- scheduler latest: `RUNNING`, elapsed `01:56:17`, remaining `1:53:43`, node `batch-block5-00308`
+- JSONL scalar health: records advanced through epoch `1265`; `bad_scalar_count=0`; targeted error signatures `0`
+- checkpoints observed in this window: epoch 975 `rew_2226.7686`, epoch 1000 `rew_2209.9124`, epoch 1025 `rew_2199.798`, epoch 1050 `rew_2206.5005`, epoch 1075 `rew_2220.847`, epoch 1100 `rew_2195.5464`, epoch 1125 `rew_2223.8977`, epoch 1150 `rew_2230.6763`, epoch 1175 `rew_2247.8704`, epoch 1200 `rew_2227.9263`, epoch 1225 `rew_2223.4565`, epoch 1250 `rew_2250.487`
+- best-checkpoint note: orchestrator observed a stdout best reward `2276.3032` near epoch 1202; this is consistent with interval checkpointing continuing normally and will be included in the next artifact refresh from stdout
+- prior reset metrics at latest sample: success/farther rates `1.0`; pos error `0.001929 m`; rot error `0.019827 rad`; finger-table clearance `0.135199 m`
+- behavior metrics at latest sample: approach reward `1.11606`; enclosure reward `0.626357`; lift reward `0.0000656`; lift height `0.00000196 m`; lifted rate `0.0`; success rate `0.0`
+- tail-100 metrics at latest sample: success mean/max `0.0000146/0.000488`; lifted mean/max `0.000449/0.0014648`; lift-height mean/max `0.0001136/0.0003417 m`; lift-reward mean/max `0.003045/0.007978`
+
+Analysis:
+- The final job remains stable with ideal reset-prior metrics, no bad scalars, no log error signatures, and normal checkpoint cadence. Interval reward improved to `2250.487`, with stdout best reportedly higher. Lift/success remain sparse and are the main behavior watch item, but there is no reset-prior runtime defect.
+
+Next:
+- Refresh inspectable artifacts from current stdout/JSONL/checkpoints, then launch a bounded eval video from the next usable recent checkpoint without interrupting the active training job. Continue monitoring training through wall-time/requeue.
+
+## 2026-06-11T21:35:12Z - refreshed artifacts and second eval video
+
+Goal:
+- Produce the next inspectable artifact set and eval video from a newer usable checkpoint while keeping active training job `28987954` running.
+
+Command / Job:
+- artifact source: copied rank-0 JSONL, Slurm stdout, params, checkpoint filename listing, and scheduler snapshot from the active run
+- local artifact bundle: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/a1001/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005/inspection_20260611_213041`
+- plot viewer URL: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/a1001/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005/inspection_20260611_213041/training_curves.png`
+- eval launch command: `sbatch --parsable --partition=batch --time=00:25:00 --job-name=ggx_eval_video2 --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,TASK=Dextrah-Franka-Cube-Grasp,RUN_NAME=franka_cube_ggx_pregrasp_reset_eval_ep1325_20260611_213227,NUM_ENVS=1,NUM_STEPS=360,VIDEO_LENGTH=360,PRINT_INTERVAL=30,CAPTURE_VIDEO=True,DETERMINISTIC=True,USE_CUDA_GRAPH=False,SEED=20260612,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_smoke.npz,CHECKPOINT=/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005/nn/last_dextrah_franka_cube_grasp_ep_1325_rew_2241.5117.pth,VIDEO_NAME_PREFIX=ggx-pregrasp-reset-ep1325,CAMERA_EYE_X=-0.15,CAMERA_EYE_Y=-1.05,CAMERA_EYE_Z=1.55,CAMERA_TARGET_X=-0.41,CAMERA_TARGET_Y=-0.08,CAMERA_TARGET_Z=0.78 cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- eval job_id: `1027749`
+- eval run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_ggx_pregrasp_reset_eval_ep1325_20260611_213227`
+- eval log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1027749.out`
+- local eval artifacts: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_reset_eval_ep1325_20260611_213227`
+
+Result:
+- artifact status: produced
+- artifact snapshot: active job `RUNNING`, elapsed `02:02:07`, remaining `1:47:53`; rank-0 JSONL epoch `1328`, frame `1391460352`, `bad_scalar_count=0`, targeted log error signatures `0`
+- artifact best/checkpoint evidence: stdout best reward `2276.3032` at epoch `1202`; latest interval checkpoint in bundle `last_dextrah_franka_cube_grasp_ep_1325_rew_2241.5117.pth`; checkpoint list now verified numerically through epochs `975, 1000, 1025, 1050, 1075, 1100, 1125, 1150, 1175, 1200, 1225, 1250, 1275, 1300, 1325`
+- artifact reset metrics: success/farther rates `1.0`; latest pos error `0.001873 m`; latest rot error `0.017186 rad`; latest finger-table clearance `0.135052 m`
+- artifact behavior metrics: latest success rate `0.0`; latest lifted rate `0.00146484375`; latest lift height `0.000472 m`; latest lift reward `0.008748`; latest approach/enclosure `1.11228/0.624592`
+- eval status: `COMPLETED`, exit `0:0`, elapsed `00:01:10`, node `pool0-00016`
+- eval checkpoint: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005/nn/last_dextrah_franka_cube_grasp_ep_1325_rew_2241.5117.pth`
+- eval metrics: `num_envs=1`, `num_steps_completed=360`, `done_count=0`, `reward_mean=3.88144`, `reward_final=4.17788`, `success_rate_mean/final=0.0`, `cube_lift_height max=0.0`, `has_lifted_cube max=0.0`
+- eval clearance/contact metrics: finger-table clearance mean/min/final `0.08337/0.07290/0.08053 m`; `finger_table_clearance_violation=0.0`; `ee_to_cube_dist` mean/final `0.06826/0.06858 m`; `finger_center_to_cube_dist` mean/final `0.05806/0.05532 m`
+- eval video: raw H.264 `1280x720`, `359` frames, `5.983 s`, `60 fps`; trimmed preview H.264 `1280x720`, `353` frames, `5.883 s`, `60 fps`
+- eval video viewer URL: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_reset_eval_ep1325_20260611_213227/videos/ggx-pregrasp-reset-ep1325-step-0-trimmed.mp4`
+- visual inspection: wider camera view is better than the first eval; middle/final frames show the robot, gripper, and cube clearly; the rollout still does not lift in this single deterministic seed
+- active training during eval: job `28987954` remained `RUNNING` and reached epoch `1352`, with no bad scalars and interval checkpoint `last_dextrah_franka_cube_grasp_ep_1350_rew_2255.2527.pth`
+
+Analysis:
+- The refreshed artifact bundle and second eval video are inspectable and were produced without affecting active training. The single deterministic eval remains non-successful, matching sparse success in training metrics. The active training itself continues to show stable reset-prior metrics, no numerical issues, and improving checkpoint/best rewards.
+
+Next:
+- Continue monitoring active job `28987954` through wall-time/requeue. If later checkpoints show sustained success/lift improvement, produce another eval video from a newer checkpoint; otherwise keep the current videos as evidence of approach behavior and sparse lift.
+
+## 2026-06-11T21:42:12Z - reset-grasp geometry diagnostic plan
+
+Goal:
+- Resolve the user/orchestrator concern that the prior-enabled reset may be numerically tracking an end-effector target without placing the gripper in a physically graspable geometry around the cube.
+
+Hypothesis:
+- The existing `cube_grasp_prior_reset_success_rate` likely measures reset IK/target tracking only. A transform, tool-frame, approach-axis, gripper-open-width, or root-frame convention issue could still make the reset branch report success while fingertips are not positioned to enclose a 0.06 m cube.
+
+Change:
+- Planned before edits: add a reset-only diagnostic artifact path that records cube center, sampled exact grasp pose, 3 cm pregrasp target, offset direction, left/right fingertip centers, gripper center, gripper opening, fingertip/cube distances, table clearance, and a separate reset-grasp-quality verdict.
+- Planned before edits: generate labeled reset-only frames/video before policy actions, plus a policy rollout trace from the latest checkpoint with reset geometry metrics, action/gripper signals, cube lift, success/lift, and target pose error.
+- Planned before edits: audit training-vs-eval consistency for task config, prior library, reset path, cube randomization, robot/root conventions, action scaling, and checkpoint normalization.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- worklog: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/worklogs/franka-cube-grasp-prior/franka-cube-ggx-pregrasp-reset.md`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `efe5562769ae78ca5c31a5d92a638f6b3d717343`
+- implementation_commit: pending
+- push/pull: pending
+- changed_files: pending; expected owned source/wrapper/worklog only
+- remote_commit/status: pending after deploy
+
+Command / Job:
+- intended local checks: targeted `py_compile` plus `bash -n` on any changed wrapper
+- intended cluster jobs: bounded l401 reset-only diagnostic and latest-checkpoint eval artifact job, both in the agent-owned remote worktree
+- active training guardrail: do not interrupt job `28987954`; keep monitoring rank-0 JSONL, stdout, checkpoints, and reset/lift/success trends
+
+Result:
+- status: planned
+- current active training state at plan time: job `28987954` `RUNNING`, elapsed `02:13:09`, remaining `01:36:51`, node `batch-block5-00308`; stdout just wrote epoch `1450` checkpoint `last_dextrah_franka_cube_grasp_ep_1450_rew_2270.1106.pth`
+
+Analysis:
+- The scalar reset success/farther metrics remain useful for IK/path health, but they do not by themselves prove grasp-quality geometry. The next artifact must directly answer where the cube, target, pregrasp, fingertips, gripper center, and 3 cm approach offset are in the same frame, and whether the opening is compatible with a 0.06 m cube.
+
+Next:
+- Inspect current env/eval code, add explicit reset-grasp-quality instrumentation and artifact generation, commit/push/deploy, then run and inspect the bounded l401 diagnostic without touching active training.
+
+## 2026-06-11T21:48:20Z - reset-grasp diagnostic implementation checkpoint
+
+Goal:
+- Add instrumentation and artifact generation that directly answers the reset geometry questions before launching the l401 diagnostic.
+
+Change:
+- Added diagnostic-only reset buffers for cube world pose, exact tool pose, pregrasp tool pose, target EE pose, offset direction, fingertip positions, gripper width/margin, offset radial angle, projected exact finger-center distance, and reset-grasp-quality success.
+- Extended eval rollout trace output with JSONL/CSV step traces, prior reset-quality metrics, and action/gripper command fields.
+- Added a reset-only diagnostic script that renders labeled reset frames/video with colored markers and writes JSON/CSV geometry tables in world/env/root frames.
+- Added a minimal l401 Slurm wrapper for the reset diagnostic.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `efe5562769ae78ca5c31a5d92a638f6b3d717343`
+- implementation_commit: pending commit after this entry
+- push/pull: pending
+- changed_files: `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`, `dextrah_lab/rl_games/eval_rollout.py`, `dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py`, `cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`, this worklog
+- remote_commit/status: pending after deploy
+
+Command / Job:
+- local syntax: `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py`
+- wrapper syntax: `bash -n cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh cluster/sbatch_eval_franka_cube_grasp_1gpu.sh cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`
+- active training monitor: bounded A100 query of `squeue`, rank-0 JSONL, latest checkpoints, and log error signatures for job `28987954`
+
+Result:
+- status: local_checks_passed
+- syntax checks: passed
+- active training guardrail: job `28987954` still `RUNNING`, elapsed `02:19:39`, remaining `01:30:21`; rank-0 JSONL reached epoch `1522`, `bad_scalars=0`, targeted error signatures `0`
+- latest active training metrics: reset success/farther `1.0/1.0`; pos/rot error `0.001938 m/0.017254 rad`; finger-table clearance `0.134919 m`; lift reward `0.003508`; lift height `0.000115 m`; lifted rate `0.000488`; success rate `0.0`
+- latest checkpoints observed: epoch `1450` reward `2270.1106`, epoch `1475` reward `2271.4248`, epoch `1500` reward `2260.2036`
+
+Analysis:
+- The new diagnostics intentionally do not change observations, actions, rewards, terminations, PPO settings, cube reset randomization, or prior-disabled defaults. They add inspectable evidence for the frame/geometry concern that scalar IK success alone cannot resolve.
+
+Next:
+- Commit/push this diagnostic checkpoint, deploy the exact commit to the l401 agent worktree, run the bounded reset-only diagnostic and latest-checkpoint eval trace/video, fetch artifacts, open the most useful frames/video with `viz-open`, and inspect the geometry before making validity claims about the active training.
+
+## 2026-06-11T21:55:07Z - invalid reset geometry confirmed and A100 run canceled
+
+Goal:
+- Close the loop on reset diagnostic job `1027755`, preserve inspectable evidence, and stop the active A100 training run that used invalid reset geometry.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- diagnostic_commit: `17d5c5e6b68055540a6f020e2a5450afcda52311`
+- running_a100_job_commit: `99ea26d5b449581988594f40168806642c486326`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- changed_files: this worklog entry only
+
+Command / Job:
+- diagnostic job: `1027755`
+- diagnostic run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pregrasp_reset_geometry_20260611_214944`
+- diagnostic log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/diagnose_franka_cube_prior_1027755.out`
+- local artifact copy: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_reset_geometry_20260611_214944`
+- opened frame URL: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_reset_geometry_20260611_214944/frames/reset_000_last_side.png`
+- opened JSON URL: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_reset_geometry_20260611_214944/reset_geometry.json`
+- canceled A100 job: `28987954`
+- canceled A100 run_dir retained for traceability: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_reset_8gpu_20260611_193005`
+- canceled A100 log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_28987954.out`
+
+Result:
+- status: failed_reset_geometry
+- diagnostic job status: `COMPLETED`, exit `0:0`
+- reset scalar/quality mismatch: `reset_success_rate=1.0`, `reset_quality_success_rate=0.0`, `farther_rate=1.0`, `immediate_done_rate=0.0`, `all_scalars_finite=true`
+- reset 0 evidence: cube env pos `[-0.3749, -0.0861, 0.7810]`; exact tool relative to cube `[-0.0001, +0.0000, +0.1335]`; pregrasp relative to cube `[-0.0001, +0.0000, +0.1635]`; left/right finger body origins relative to cube `[-0.0371, -0.0068, +0.1031]` and `[+0.0417, +0.0070, +0.1027]`; gripper width `0.0800 m`; open-width margin over 0.06 m cube `0.0200 m`; projected exact finger-center distance `0.0729 m`
+- reset 1-4 evidence: projected exact finger-center distance stayed `0.0659-0.0739 m`; quality stayed false despite IK success
+- visual evidence: side-view labeled frame shows the gripper/finger body origins above the cube rather than an enclosing grasp-quality reset
+- A100 cancellation: `sacct` reports `28987954|ggx_reset_8gpu|CANCELLED by 158351|0:0|02:24:51`; `.batch` exited `FAILED|15:0` from cancellation; `squeue` still showed transient `COMPLETING` while the node drained
+
+Analysis:
+- The active 8-GPU run `28987954` is invalid for the apple-to-apple GraspGenX pregrasp-reset comparison. It trained with a reset branch that satisfied IK/farther/table-clearance scalars but did not produce grasp-quality geometry under the current diagnostic definition and visual inspection.
+- Do not report this as a successful RL result. The useful result is that reset-only diagnostics caught a geometry bug before accepting the training run.
+- Likely causes remain frame/convention-related: the GraspGenX `run_graspgen` poses appear to be `panda_hand` tool-frame poses with a high top-down tool origin; DEXTRAH reward/diagnostics were using finger body origins as fingertip centers; and the current reset target offsets along the top-down tool axis, yielding a hover-pregrasp rather than an enclosing geometry by the diagnostic.
+
+Next:
+- Verify `28987954` leaves `squeue` and no replacement/requeue appears; cancel any requeued replacement as invalidated by reset geometry.
+- Patch the reset geometry/debug path. Prioritize correct fingertip/contact-point measurement and the reset target frame/offset so reset-only diagnostics can distinguish valid top-down pregrasp from invalid hover geometry.
+- Rerun reset-only l401 diagnostics until numeric `reset_grasp_quality_success_rate` and labeled frames show a plausible pregrasp/grasp geometry. No A100 RL relaunch before that passes.
+
+## 2026-06-11T22:03:52Z - patch reset-prior quality geometry instrumentation
+
+Goal:
+- Fix the reset-only diagnostic blind spot before any RL relaunch by making grasp quality measure the frame the reset IK actually controls and by exposing numeric/visual evidence for tool, TCP, fingertip proxy, offset, and clearance geometry.
+
+Hypothesis:
+- The failed diagnostic used `panda_hand` and finger link body origins as grasp-quality contact proxies. DEXTRAH Franka controls `panda_hand + ee_offset_pos`; GraspGenX/Franka `panda_hand` top-down poses can therefore sit about 10 cm above the controlled TCP/fingertip plane. A diagnostic that reports both frames should tell whether the implementation is truly hovering or whether the prior geometry was mis-measured.
+
+Change:
+- Add reset-prior buffers and RL extras for exact/pregrasp DEXTRAH EE/TCP poses, projected exact/pregrasp TCP fingertip proxies, projected exact TCP/tip distances, and TCP-proxy table clearance.
+- Tighten the opt-in `grasp_prior_reset_quality_success` metric to require reset success, open width margin, outward pregrasp offset, projected exact TCP/tip proximity to the cube, and TCP-proxy table clearance.
+- Update `diagnose_franka_cube_grasp_prior_reset.py` to render and write both `panda_hand` tool poses and DEXTRAH TCP/tip-proxy poses in world/env/root frames, keeping old body-origin distances for reward-context comparison.
+- Update `eval_rollout.py` to include the new reset quality metrics in rollout traces.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- worklog: `worklogs/franka-cube-grasp-prior/franka-cube-ggx-pregrasp-reset.md`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `17d5c5e6b68055540a6f020e2a5450afcda52311`
+- implementation_commit: pending
+- changed_files: `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`, `dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py`, `dextrah_lab/rl_games/eval_rollout.py`, this worklog
+
+Command / Job:
+- cheap checks: `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py`
+- cheap checks: `bash -n cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`
+- cheap checks: `git diff --check`
+- scheduler guard: `ssh a1001 'squeue ...; sacct -j 28987954 ...'`
+
+Result:
+- status: local_checks_passed
+- A100 invalidated run state: no queued `28987954` requeue/replacement observed; `sacct` reports `28987954|ggx_reset_8gpu|CANCELLED by 158351|0:0|02:24:51`.
+- old diagnostic artifacts re-opened with `viz-open`: side frame `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_reset_geometry_20260611_214944/frames/reset_000_last_side.png`; JSON `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_reset_geometry_20260611_214944/reset_geometry.json`
+- local validation: `py_compile`, wrapper `bash -n`, and `git diff --check` passed.
+
+Analysis:
+- This is a bounded diagnostic/reset-quality patch, not an RL result. The old A100 run remains invalidated until a fresh l401 reset-only diagnostic shows plausible geometry under the new metrics and visual labels.
+- The patch intentionally keeps the prior disabled by default and does not change cube spawn randomization, observation/action spaces, reward terms, PPO settings, or default wrappers.
+
+Next:
+- Commit/push this checkpoint, deploy the exact commit to the agent-owned l401 worktree, run a fresh reset-only diagnostic, fetch artifacts, inspect the new TCP/tip-proxy tables and labeled frames, and only then decide whether the actual reset target needs a further transform/offset correction.
+
+## 2026-06-11T22:06:08Z - launch TCP-aware reset-only diagnostic
+
+Goal:
+- Validate the patched reset-quality geometry in a real Isaac Lab runtime without RL training.
+
+Hypothesis:
+- If the old failure was mostly a frame/diagnostic error, the new TCP/tip-proxy metrics should show reset quality success with low IK error, outward 3 cm pregrasp offset, open gripper width margin, positive TCP-proxy table clearance, no immediate terminations, and labeled frames that place the TCP/tip proxy plausibly around the cube.
+- If the physical reset is still wrong, the updated JSON/CSV/frames should localize whether the bug is the saved object-local pose, `grasp_to_tool_transform`, EE offset application, or offset direction.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- local_commit: `327593a806a7f945d0ba11226dcb974c09aa9216`
+- pushed: `origin/codex/franka-cube-ggx-pregrasp-reset`
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `327593a806a7f945d0ba11226dcb974c09aa9216`, detached `HEAD`
+- deploy_note: l401 GitHub fetch failed with `Permission denied (publickey)`; deployed with a Git bundle fetched into the agent-owned worktree, not by copying source files.
+
+Command / Job:
+- command: `sbatch --parsable --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=327593a806a7f945d0ba11226dcb974c09aa9216,TASK=Dextrah-Franka-Cube-Grasp,RUN_NAME=franka_cube_ggx_pregrasp_reset_geometry_tcp_20260611_150608,NUM_ENVS=1,NUM_RESETS=5,SEED=20260613,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_smoke.npz,DIAGNOSTIC_ENV_ID=0,RENDER_WIDTH=1280,RENDER_HEIGHT=720,VIDEO_FPS=6,CAMERA_EYE_X=-0.15,CAMERA_EYE_Y=-1.05,CAMERA_EYE_Z=1.55,CAMERA_TARGET_X=-0.41,CAMERA_TARGET_Y=-0.08,CAMERA_TARGET_Z=0.80 cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`
+- job_id: `1027761`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pregrasp_reset_geometry_tcp_20260611_150608`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/diagnose_franka_cube_prior_1027761.out`
+- expected_artifacts: `reset_geometry.json`, `reset_geometry.csv`, labeled frames under `frames/`, and optional `reset_geometry.mp4`
+
+Result:
+- status: submitted
+
+Analysis:
+- This is the required reset-only gate. No A100 RL relaunch is allowed unless this job’s metrics and frames pass visual/numeric inspection.
+
+Next:
+- Monitor `1027761` to terminal state, inspect log and reset metrics, fetch artifacts locally, open the most useful frame/report with `viz-open`, and patch again if quality or visuals remain wrong.
+
+## 2026-06-11T22:13:57Z - plan exact-grasp close visual gate
+
+Goal:
+- Add the bounded visual gate requested after the TCP-aware reset diagnostic: prove the reset prior as two separate phases before any A100 RL relaunch.
+
+Hypothesis:
+- The current reset/pregrasp phase is now numerically valid and visually matches the intended 3 cm open RL start state, but it does not by itself prove the corresponding GraspGenX exact grasp would enclose/contact the 0.06 m cube. A scripted exact-pose-and-close diagnostic should distinguish a valid pregrasp prior from a still-wrong tool/TCP transform.
+
+Change:
+- Extend `dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py` with an opt-in exact-close check that, after reset, solves/sets the robot to the exact transformed TCP pose, commands the gripper closed for a bounded number of sim steps, records TCP/tip-proxy/cube metrics, table clearance, immediate done, close command/width, and contact/proxy-contact flags, and renders side/top/oblique labeled frames for both phases.
+- Pass the exact-close diagnostic flags through `cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`.
+- Preserve task behavior: this is diagnostic-only; the environment reset path, cube randomization, obs/action/reward/PPO defaults, and prior-disabled default remain unchanged.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- worklog: `worklogs/franka-cube-grasp-prior/franka-cube-ggx-pregrasp-reset.md`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `327593a806a7f945d0ba11226dcb974c09aa9216`
+- implementation_commit: pending
+- changed_files: planned `dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py`, planned `cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`, this worklog
+
+Command / Job:
+- local checks after edit: `python3 -m py_compile dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py`; `bash -n cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`; `git diff --check`
+- l401 run after commit/deploy: bounded `NUM_ENVS=1`, `NUM_RESETS=3-5`, `INCLUDE_EXACT_CLOSE_CHECK=1`, no RL training
+- expected artifacts: `reset_geometry.json`, `reset_geometry.csv`, labeled pregrasp and exact-close PNGs, short MP4/contact sheet/report opened with `viz-open`
+
+Result:
+- status: planned
+
+Analysis:
+- The prior A100 run remains canceled/invalidated. Passing the TCP pregrasp diagnostic is necessary but not sufficient for relaunch; the new exact-close artifact must pass numerically and visually first.
+
+Next:
+- Implement the diagnostic-only exact-close phase, run cheap checks, commit/push/deploy exact commit to the l401 agent worktree, launch/monitor the bounded l401 diagnostic, fetch/open artifacts, and record a pass/fail verdict.
+
+## 2026-06-11T22:17:45Z - TCP-aware reset/pregrasp diagnostic inspected
+
+Goal:
+- Record the completed result of l401 job `1027761` after artifact inspection and clarify the current gate status.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- diagnostic_commit: `327593a806a7f945d0ba11226dcb974c09aa9216`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- changed_files: this worklog entry only
+
+Command / Job:
+- job_id: `1027761`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pregrasp_reset_geometry_tcp_20260611_150608`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/diagnose_franka_cube_prior_1027761.out`
+- local artifact bundle: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_reset_geometry_tcp_20260611_150608/inspection_bundle_20260611_1512`
+- opened contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_reset_geometry_tcp_20260611_150608/inspection_bundle_20260611_1512/contact_sheet.png`
+- opened report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_reset_geometry_tcp_20260611_150608/inspection_bundle_20260611_1512/REPORT.md`
+- opened video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_reset_geometry_tcp_20260611_150608/inspection_bundle_20260611_1512/reset_geometry_frames.mp4`
+
+Result:
+- status: pregrasp_gate_passed_exact_close_missing
+- slurm: `COMPLETED`, exit `0:0`, elapsed `00:00:49`
+- summary metrics: `reset_success_rate=1.0`, `reset_quality_success_rate=1.0`, `farther_rate=1.0`, `immediate_done_rate=0.0`, `all_scalars_finite=true`
+- TCP/tip metrics: `projected_exact_tip_center_dist_mean_m=0.030102`, `projected_exact_tip_max_dist_mean_m=0.050196`, `pregrasp_tip_table_clearance_mean_m=0.095032`, `projected_exact_tip_table_clearance_mean_m=0.065032`
+- reset 0 evidence: `panda_hand` exact/pregrasp relative to cube about `+0.1335/+0.1635 m` in z, but DEXTRAH TCP exact/pregrasp relative to cube about `+0.0301/+0.0601 m`; open gripper width `0.0800 m`; offset direction outward/upward; no immediate done.
+- visual verdict: side/oblique frames show the intended 3 cm open pregrasp RL start state, not a closed grasp. This is expected for reset but can look like "not grasping" without the second exact-close phase.
+
+Analysis:
+- The TCP-aware metric fixed the old diagnostic frame mistake. The reset/pregrasp path now passes as an RL start state, but it is still not sufficient evidence for A100 relaunch because it does not show the corresponding exact GraspGenX pose can enclose/contact the cube after closing.
+- Supersede the previous bundle wording that treated the open pregrasp visual alone as an RL gate failure. The current gate state is: pregrasp reset pass, exact-close proof missing.
+
+Next:
+- Complete and run the exact-grasp close visual gate before any RL relaunch.
+
+## 2026-06-11T22:18:28Z - launch exact-grasp close visual gate
+
+Goal:
+- Run the new two-phase reset/pregrasp plus exact-close diagnostic on l401 at the exact implementation commit.
+
+Hypothesis:
+- If the object-local GraspGenX pose and DEXTRAH TCP transform are correct, the phase-1 pregrasp frames will show the 3 cm open RL start state and the phase-2 exact-close frames/metrics will show a physically plausible cube enclosure/contact proxy with no immediate done.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- local_commit: `18fa0b11084500af3c7be022fe23629650b2dec3`
+- pushed: `origin/codex/franka-cube-ggx-pregrasp-reset`
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `18fa0b11084500af3c7be022fe23629650b2dec3`, detached `HEAD`
+- deploy_note: l401 GitHub fetch remains unavailable; deployed via Git bundle into the agent-owned worktree.
+- changed_files: `dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py`, `cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`, this worklog
+
+Command / Job:
+- command: `sbatch --parsable --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=18fa0b11084500af3c7be022fe23629650b2dec3,TASK=Dextrah-Franka-Cube-Grasp,RUN_NAME=franka_cube_ggx_pregrasp_exact_close_20260611_221828,NUM_ENVS=1,NUM_RESETS=5,SEED=20260614,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_smoke.npz,DIAGNOSTIC_ENV_ID=0,RENDER_WIDTH=1280,RENDER_HEIGHT=720,VIDEO_FPS=6,INCLUDE_EXACT_CLOSE_CHECK=1,EXACT_CLOSE_STEPS=100,EXACT_CLOSE_COMMAND_WIDTH=0.0,CAMERA_EYE_X=-0.15,CAMERA_EYE_Y=-1.05,CAMERA_EYE_Z=1.55,CAMERA_TARGET_X=-0.41,CAMERA_TARGET_Y=-0.08,CAMERA_TARGET_Z=0.80 cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`
+- job_id: `1027771`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pregrasp_exact_close_20260611_221828`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/diagnose_franka_cube_prior_1027771.out`
+- expected_artifacts: `reset_geometry.json`, `reset_geometry.csv`, phase-1 and phase-2 labeled frames, and optional MP4
+
+Result:
+- status: submitted
+
+Analysis:
+- This is a bounded l401 diagnostic only. A100 RL relaunch remains blocked until the JSON/CSV and labeled frames/video from this job are inspected and pass.
+
+Next:
+- Monitor `1027771` to terminal state, fetch artifacts locally, build/open a viewer-ready bundle with `viz-open`, and record the pass/fail verdict.
+
+## 2026-06-11T22:31:20Z - plan post exact-close failure diagnosis
+
+Goal:
+- Stay in bounded diagnostic mode after exact-close job `1027771` failed the aggregate gate, and determine whether the issue is the sampled grasp library distribution versus the reset/TCP transform.
+
+Hypothesis:
+- The pregrasp path now passes, and exact IK success was `1.0`, but only 2/5 sampled grasps produced plausible close/enclosure. The observed pass/fail split suggests some top-down library samples put the controlled TCP/fingertip proxy directly over the cube center and close through/push the cube, while samples with lateral TCP offset form a side-biased enclosure. Filtering the compact library to exact-close observed pass samples should make the bounded gate pass if library quality is the main issue.
+
+Change:
+- Produce a local inspectable report from job `1027771` grouping sampled grasp indices, object-local matrices, exact TCP pose, exact-close width/tip/cube-displacement metrics, and pass/fail verdict.
+- Patch the diagnostic renderer so future exact-close jobs can render every reset, or at least failed samples, rather than only reset 0.
+- Create an untracked filtered compact library from exact-close PASS sample indices and rerun the exact-close gate on l401 with `RENDER_ALL_RESETS=1`.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- worklog: `worklogs/franka-cube-grasp-prior/franka-cube-ggx-pregrasp-reset.md`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `18fa0b11084500af3c7be022fe23629650b2dec3`
+- implementation_commit: pending
+- changed_files: planned `dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py`, planned `cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`, this worklog; generated reports/libraries remain untracked artifacts
+
+Command / Job:
+- local analysis: use `/home/lzha/code/graspgenx/.venv/bin/python` for NPZ processing because system `python3` lacks numpy
+- local checks after patch: `python3 -m py_compile dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py`; `bash -n cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`; `git diff --check`
+- l401 rerun: bounded `NUM_ENVS=1`, `NUM_RESETS=5`, exact-close enabled, filtered library path, render all resets, no RL training
+
+Result:
+- status: planned
+
+Analysis:
+- A100 RL remains blocked. Scheduler success of `1027771` is not enough; the inspected metrics show aggregate exact-close failure.
+
+Next:
+- Generate and open the pass/fail report, patch render coverage, commit/push/deploy, stage the filtered library artifact to l401, rerun the exact-close gate, and inspect metrics plus visuals.
+
+## 2026-06-11T22:23:28Z - exact-close failure report and render coverage patch
+
+Goal:
+- Make exact-close job `1027771` inspectable by sampled grasp index and prevent future visual artifacts from showing only one favorable reset.
+
+Change:
+- Generated a local pass/fail report from `1027771`, including object-local matrices and exact TCP/close metrics for each sampled grasp.
+- Created an untracked filtered compact library containing only observed exact-close PASS sample indices `[6, 23]`.
+- Patched `diagnose_franka_cube_grasp_prior_reset.py` and `cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh` with diagnostic-only `render_all_resets` / `RENDER_ALL_RESETS` and `render_failed_exact_close` / `RENDER_FAILED_EXACT_CLOSE` controls.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- worklog: `worklogs/franka-cube-grasp-prior/franka-cube-ggx-pregrasp-reset.md`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `18fa0b11084500af3c7be022fe23629650b2dec3`
+- implementation_commit: pending
+- changed_files: `dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py`, `cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`, this worklog
+
+Command / Job:
+- source diagnostic job: `1027771`
+- source run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pregrasp_exact_close_20260611_221828`
+- source local copy: `cluster_results/l401/franka_cube_ggx_pregrasp_exact_close_20260611_221828`
+- local analysis command: `/home/lzha/code/graspgenx/.venv/bin/python - <<'PY' ...`
+- local checks: `python3 -m py_compile dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py`; `bash -n cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`; `git diff --check`
+- opened report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_exact_close_20260611_221828/analysis_20260611_222328/REPORT.md`
+- opened contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_exact_close_20260611_221828/analysis_20260611_222328/contact_sheet_1027771.png`
+- opened video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_exact_close_20260611_221828/analysis_20260611_222328/exact_close_1027771_frames.mp4`
+- report artifacts: `pass_fail_grasp_report.json`, `pass_fail_grasp_report.csv`, `library_geometry.csv`, `REPORT.md`, `contact_sheet_1027771.png`, `exact_close_1027771_frames.mp4`
+- filtered local library: `local_results/franka_cube_grasp_prior/franka_cube_ggx_grasps_exact_close_pass_1027771.npz`
+
+Result:
+- status: local_report_complete_patch_checks_passed
+- source metrics: `reset_success_rate=1.0`, `reset_quality_success_rate=1.0`, `exact_close_gate_pass=false`, `rl_relaunch_gate_verdict=FAIL`, `exact_close_enclosure_success_rate=0.4`, `exact_close_contact_proxy_success_rate=0.4`, `exact_close_tip_center_dist_mean_m=0.08219`, `exact_close_tip_max_dist_mean_m=0.08689`, `exact_close_cube_pos_delta_mean_m=0.03650`
+- observed PASS samples: `23` and `6`; both have exact TCP relative pose about `[+0.0199, +0.0000, +0.0201]`, observed close width `0.0526/0.0484 m`, tip center distance `0.0336/0.0342 m`, and cube displacement `0.0080/0.0129 m`.
+- observed FAIL samples: `4`, `19`, and `18`; all have nearly centerline exact TCP relative pose about `[-0.0001, +0.0000, +0.0301]`, close width collapsed to `0.0035/0.0002/0.0004 m`; sample `19` also displaced the cube by `0.1488 m`.
+- local checks passed.
+
+Analysis:
+- The exact-close failures are not IK failures (`exact_close_ik_success_rate=1.0`) and not immediate termination pathologies (`exact_close_immediate_done_rate=0.0`). The sampled compact library contains top-down centerline grasps that satisfy pregrasp/TCP proximity but do not reliably close around the cube.
+- Filtering to observed PASS samples is a narrow diagnostic test, not a final library policy. It should show whether library quality/filtering is sufficient to make the exact-close gate pass before designing a broader filter/export rule.
+
+Next:
+- Commit/push/deploy the render-coverage patch, stage the filtered library on l401, rerun the exact-close diagnostic with `RENDER_ALL_RESETS=1`, fetch/open artifacts, and decide whether the filtered library is enough or a better export-time filter is needed.
+
+## 2026-06-11T22:25:57Z - launch filtered-library all-reset exact-close gate
+
+Goal:
+- Test whether the observed exact-close PASS subset of the compact library is sufficient to pass the aggregate exact-close visual/numeric gate.
+
+Hypothesis:
+- If the root cause is low-quality centerline grasps in the original compact library, filtering to PASS samples `[6, 23]` from job `1027771` should raise exact-close enclosure/contact proxy rates to `1.0` over a bounded 5-reset l401 diagnostic.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- local_commit: `0e309eec605fefd70df099395a30c516a112f6b6`
+- pushed: `origin/codex/franka-cube-ggx-pregrasp-reset`
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `0e309eec605fefd70df099395a30c516a112f6b6`, detached `HEAD`
+- deploy_note: l401 worktree updated via Git bundle; filtered NPZ staged with rsync as an untracked artifact.
+- changed_files: `dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py`, `cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`, this worklog
+
+Command / Job:
+- command: `sbatch --parsable --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=0e309eec605fefd70df099395a30c516a112f6b6,TASK=Dextrah-Franka-Cube-Grasp,RUN_NAME=franka_cube_ggx_pregrasp_exact_close_filtered_20260611_222557,NUM_ENVS=1,NUM_RESETS=5,SEED=20260615,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_exact_close_pass_1027771.npz,DIAGNOSTIC_ENV_ID=0,RENDER_WIDTH=1280,RENDER_HEIGHT=720,VIDEO_FPS=6,INCLUDE_EXACT_CLOSE_CHECK=1,EXACT_CLOSE_STEPS=100,EXACT_CLOSE_COMMAND_WIDTH=0.0,RENDER_ALL_RESETS=1,RENDER_FAILED_EXACT_CLOSE=1,CAMERA_EYE_X=-0.15,CAMERA_EYE_Y=-1.05,CAMERA_EYE_Z=1.55,CAMERA_TARGET_X=-0.41,CAMERA_TARGET_Y=-0.08,CAMERA_TARGET_Z=0.80 cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`
+- job_id: `1027772`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pregrasp_exact_close_filtered_20260611_222557`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/diagnose_franka_cube_prior_1027772.out`
+- library: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_exact_close_pass_1027771.npz`
+- expected_artifacts: JSON/CSV, all-reset phase-1 and phase-2 labeled frames, local encoded video/contact sheet/report after fetch
+
+Result:
+- status: submitted
+
+Analysis:
+- This is still diagnostic-only. A successful filtered-library gate would prove the original library needed filtering, but it would not by itself justify A100 relaunch until the artifact bundle is inspected and a robust export/filter rule is decided.
+
+Next:
+- Monitor job `1027772`, fetch artifacts, inspect JSON/CSV and all-reset frames/video, then decide whether filtered-library behavior is reliable.
+
+## 2026-06-11T22:32:40Z - filtered-library exact-close gate failed
+
+Goal:
+- Inspect l401 job `1027772`, which tested the observed PASS-index filtered library with all-reset phase-1/phase-2 visual capture.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- local_commit: `0e309eec605fefd70df099395a30c516a112f6b6`
+- remote_commit/status: `0e309eec605fefd70df099395a30c516a112f6b6`, detached `HEAD`
+- changed_files: this worklog entry only
+
+Command / Job:
+- job_id: `1027772`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pregrasp_exact_close_filtered_20260611_222557`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/diagnose_franka_cube_prior_1027772.out`
+- local_artifacts: `cluster_results/l401/franka_cube_ggx_pregrasp_exact_close_filtered_20260611_222557`
+- opened report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_exact_close_filtered_20260611_222557/inspection_20260611_2228/REPORT.md`
+- opened contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_exact_close_filtered_20260611_222557/inspection_20260611_2228/all_reset_contact_sheet.png`
+- opened video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_exact_close_filtered_20260611_222557/inspection_20260611_2228/all_reset_exact_close_frames.mp4`
+
+Result:
+- status: failed_exact_close_gate
+- slurm: `COMPLETED`, exit `0:0`, elapsed `00:00:58`
+- pregrasp metrics: `reset_success_rate=1.0`, `reset_quality_success_rate=1.0`, `pregrasp_reset_gate_pass=true`, `immediate_done_rate=0.0`
+- exact-close metrics: `exact_close_gate_pass=false`, `rl_relaunch_gate_verdict=FAIL`, `exact_close_enclosure_success_rate=0.2`, `exact_close_contact_proxy_success_rate=0.2`, `exact_close_ik_success_rate=1.0`, `exact_close_immediate_done_rate=0.0`
+- aggregate geometry: `exact_close_observed_gripper_width_mean_m=0.02867`, `exact_close_tip_center_dist_mean_m=0.04447`, `exact_close_tip_max_dist_mean_m=0.04861`, `exact_close_cube_pos_delta_mean_m=0.01971`
+- reset-level verdicts: resets `0,1,2,4` failed; reset `3` passed. The failed resets often closed to widths `0.010-0.040 m` and moved the cube `0.013-0.028 m`.
+- visual inspection: all 30 frames were fetched; the contact sheet shows phase-2 exact close often pushes the cube sideways rather than settling into a reliable cube-width enclosure.
+
+Analysis:
+- Filtering to the two observed PASS sample indices from `1027771` is not robust under new cube XY randomization and physics/IK settling. The issue is therefore broader than the original sampled indices.
+- The pregrasp reset transform remains plausible; the failure is in exact-close robustness/contact under the sampled exact pose and close command.
+- A100 RL remains blocked.
+
+Next:
+- Move to same-grasp deterministic-vs-randomized diagnostics. Use a single object-local grasp entry so object-frame convention, TCP/tool offset, finger closing axis, and XY randomization effects can be inspected independently.
+
+## 2026-06-11T22:29:27Z - launch same-grasp deterministic/randomized diagnostics
+
+Goal:
+- Test one fixed object-local grasp entry across deterministic cube pose and RL-style randomized cube pose to separate object-frame/TCP convention from cube XY randomization and close-command mechanics.
+
+Hypothesis:
+- If the same grasp entry behaves differently under deterministic versus randomized cube XY, the issue may involve IK reachability/root-relative conventions or object transform handling. If both fail similarly, the exact-close pose or finger close mechanics are marginal even for the filtered grasp.
+
+Change:
+- Created untracked single-grasp library `franka_cube_ggx_grasp_orig006_single.npz` from original compact library index `6`.
+- The selected entry has DEXTRAH TCP relative pose approximately `[+0.0199, +0.0000, +0.0201]` and confidence `0.72356`.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- local_commit: `ebe8a5b81d6b3171d3bb3e3daca3e324a80b9c4e`
+- pushed: `origin/codex/franka-cube-ggx-pregrasp-reset`
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `ebe8a5b81d6b3171d3bb3e3daca3e324a80b9c4e`, detached `HEAD`
+- library: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_orig006_single.npz`
+
+Command / Job:
+- deterministic command: `sbatch --parsable --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=ebe8a5b81d6b3171d3bb3e3daca3e324a80b9c4e,TASK=Dextrah-Franka-Cube-Grasp,RUN_NAME=franka_cube_ggx_same_grasp_orig006_detxy_20260611_222927,NUM_ENVS=1,NUM_RESETS=3,SEED=20260616,CUBE_SPAWN_XY_RANDOMIZATION=0.0,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_orig006_single.npz,DIAGNOSTIC_ENV_ID=0,RENDER_WIDTH=1280,RENDER_HEIGHT=720,VIDEO_FPS=6,INCLUDE_EXACT_CLOSE_CHECK=1,EXACT_CLOSE_STEPS=100,EXACT_CLOSE_COMMAND_WIDTH=0.0,RENDER_ALL_RESETS=1,RENDER_FAILED_EXACT_CLOSE=1,CAMERA_EYE_X=-0.15,CAMERA_EYE_Y=-1.05,CAMERA_EYE_Z=1.55,CAMERA_TARGET_X=-0.41,CAMERA_TARGET_Y=-0.08,CAMERA_TARGET_Z=0.80 cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`
+- deterministic job_id: `1027775`
+- deterministic run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_same_grasp_orig006_detxy_20260611_222927`
+- deterministic log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/diagnose_franka_cube_prior_1027775.out`
+- randomized command: same as deterministic except `RUN_NAME=franka_cube_ggx_same_grasp_orig006_randxy_20260611_222927`, `NUM_RESETS=5`, `SEED=20260617`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`
+- randomized job_id: `1027776`
+- randomized run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_same_grasp_orig006_randxy_20260611_222927`
+- randomized log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/diagnose_franka_cube_prior_1027776.out`
+
+Result:
+- status: submitted
+
+Analysis:
+- Both jobs are bounded diagnostics only and use zero-width exact-close command to match the prior exact-close checks. A100 RL remains blocked.
+
+Next:
+- Monitor both jobs to terminal state, inspect logs/metrics and all-reset frames, fetch/open bundles with `viz-open`, and decide whether to patch the exact-close diagnostic/control or the export-time grasp filter.
+
+## 2026-06-11T22:34:41Z - launch same-grasp light-close diagnostics
+
+Goal:
+- Test whether the exact-close failures are caused by the diagnostic's zero-width close target pushing the cube, rather than object-frame/TCP transform or cube XY randomization.
+
+Hypothesis:
+- If a light close command near cube width (`0.055 m`) succeeds while the zero-width command fails, the exact GraspGenX pose may be geometrically plausible but the diagnostic/policy-equivalent close command is too aggressive for proving stable enclosure.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- local_commit: `ebe8a5b81d6b3171d3bb3e3daca3e324a80b9c4e`
+- remote_commit/status: `ebe8a5b81d6b3171d3bb3e3daca3e324a80b9c4e`, detached `HEAD`
+- library: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_orig006_single.npz`
+
+Command / Job:
+- deterministic command: same as job `1027775` except `RUN_NAME=franka_cube_ggx_same_grasp_orig006_detxy_lightclose_20260611_223441`, `SEED=20260618`, and `EXACT_CLOSE_COMMAND_WIDTH=0.055`
+- deterministic job_id: `1027781`
+- deterministic run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_same_grasp_orig006_detxy_lightclose_20260611_223441`
+- deterministic log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/diagnose_franka_cube_prior_1027781.out`
+- randomized command: same as job `1027776` except `RUN_NAME=franka_cube_ggx_same_grasp_orig006_randxy_lightclose_20260611_223441`, `SEED=20260619`, and `EXACT_CLOSE_COMMAND_WIDTH=0.055`
+- randomized job_id: `1027782`
+- randomized run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_same_grasp_orig006_randxy_lightclose_20260611_223441`
+- randomized log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/diagnose_franka_cube_prior_1027782.out`
+
+Result:
+- status: submitted
+
+Analysis:
+- This does not change the RL reset path and does not unblock A100. It is a diagnostic to understand whether the exact-close artifact should use a gentler close target or whether the exact pose itself remains bad.
+
+Next:
+- Monitor jobs `1027781` and `1027782`, fetch artifacts, inspect all-reset frames/metrics, and compare with zero-width jobs `1027775` and `1027776`.
+
+## 2026-06-11T22:42:55Z - same-grasp light-close diagnostics passed
+
+Goal:
+- Inspect jobs `1027781` and `1027782`, which repeated the same original grasp index `6` with a physically meaningful close target width of `0.055 m`.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- diagnostic_commit: `ebe8a5b81d6b3171d3bb3e3daca3e324a80b9c4e`
+- changed_files: this worklog entry only; exact-close offset-control code remains a pending diagnostic patch
+
+Command / Job:
+- deterministic job_id: `1027781`
+- deterministic run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_same_grasp_orig006_detxy_lightclose_20260611_223441`
+- deterministic local_artifacts: `cluster_results/l401/franka_cube_ggx_same_grasp_orig006_detxy_lightclose_20260611_223441`
+- deterministic report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_same_grasp_orig006_detxy_lightclose_20260611_223441/inspection_20260611_2242/REPORT.md`
+- deterministic sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_same_grasp_orig006_detxy_lightclose_20260611_223441/inspection_20260611_2242/contact_sheet.png`
+- randomized job_id: `1027782`
+- randomized run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_same_grasp_orig006_randxy_lightclose_20260611_223441`
+- randomized local_artifacts: `cluster_results/l401/franka_cube_ggx_same_grasp_orig006_randxy_lightclose_20260611_223441`
+- randomized report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_same_grasp_orig006_randxy_lightclose_20260611_223441/inspection_20260611_2242/REPORT.md`
+- randomized sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_same_grasp_orig006_randxy_lightclose_20260611_223441/inspection_20260611_2242/contact_sheet.png`
+- randomized video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_same_grasp_orig006_randxy_lightclose_20260611_223441/inspection_20260611_2242/frames.mp4`
+
+Result:
+- status: light_close_same_grasp_passed
+- deterministic XY: `reset_quality_success_rate=1.0`, `exact_close_enclosure_success_rate=1.0`, `exact_close_contact_proxy_success_rate=1.0`, `rl_relaunch_gate_verdict=PASS`, `exact_close_observed_gripper_width_mean_m≈0.0599`, `cube_delta_mean≈0.0063 m`
+- randomized XY: `reset_quality_success_rate=1.0`, `exact_close_enclosure_success_rate=1.0`, `exact_close_contact_proxy_success_rate=1.0`, `rl_relaunch_gate_verdict=PASS`, `exact_close_observed_gripper_width_mean_m≈0.0595`, `cube_delta_mean≈0.0067 m`
+- zero-width comparison: the same grasp failed `0/3` deterministic and `1/5` randomized under `EXACT_CLOSE_COMMAND_WIDTH=0.0`, with mean cube displacement about `0.022 m`.
+
+Analysis:
+- The fixed object-local grasp and TCP/tool transform are coherent: pregrasp passes and exact-close passes when the close target is physically near the 0.06 m cube width.
+- The previous exact-close failures were dominated by an over-aggressive zero-width close command that drove the fingers through/past the cube and displaced it. A zero-width command is a poor physical gate for "does this exact pose enclose/contact a 0.06 m cube?"
+- This does not yet authorize A100 RL because the broader library still needs to pass under RL-style randomization with a robust exact-close diagnostic and export-time geometry filter.
+
+Next:
+- Commit the pending diagnostic offset-control patch, deploy the exact commit, and run a bounded randomized exact-close gate using the broader geometry-filtered library with `EXACT_CLOSE_COMMAND_WIDTH=0.055`.
+
+## 2026-06-11T22:41:22Z - plan bounded reset-prior RL smoke after light-close gate update
+
+Goal:
+- Convert the latest diagnostic evidence into the current gate language and run only a bounded reset-prior RL smoke before any final-scale A100 relaunch.
+
+Hypothesis:
+- The reset/pregrasp transform is coherent because jobs `1027781` and `1027782` pass when the close check uses a cube-compatible light close width (`0.055 m`). The zero-width exact-close gate was measuring an overly destructive close command, not the RL start-state correctness.
+- A short one-GPU RL smoke should verify that training starts from the intended 3 cm open pregrasp path, metrics stay finite, checkpoints are written, and a first-checkpoint eval/video shows policy interaction with the cube rather than reset drift.
+
+Change:
+- Add an owned, minimal 1-GPU RL smoke wrapper for `Dextrah-Franka-Cube-Grasp` instead of modifying the final 8-GPU training wrapper.
+- Keep production defaults unchanged: the prior remains disabled by default, cube reset randomization/orientation/spawn height is unchanged, and final 8-GPU wrapper defaults are untouched.
+- Smoke-only expected config diffs versus final apple-to-apple training: one GPU, small env count, short max epochs, smaller minibatch for the small rollout batch, more frequent checkpointing, JSONL metrics enabled, and a single validated grasp library path.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `99175259b8bd6005ebcd3fe214d9ea968f4f12e4`
+- implementation_commit: pending
+- changed_files: planned `cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`, this worklog
+
+Command / Job:
+- local checks after edit: `bash -n cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`; `git diff --check`
+- planned l401 launch: 1 GPU, `NUM_ENVS=64`, `MAX_ITERATIONS=45`, `SAVE_FREQUENCY=5`, `DEXTRAH_RLGAMES_JSONL_METRICS=True`, `GRASP_PRIOR_RESET_ENABLED=True`, `GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_orig006_single.npz`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`
+- planned follow-up: fetch run dir/logs, inspect rank-0 JSONL and checkpoints, then run a bounded eval/video from the first usable checkpoint with the same prior-reset overrides.
+
+Result:
+- status: planned
+
+Analysis:
+- No A100 final RL is authorized by this entry. The smoke is intended to validate the open-pregrasp RL path and first-checkpoint behavior with viewer artifacts.
+
+Next:
+- Implement wrapper, commit/push/deploy exact commit, launch l401 smoke, monitor to terminal state, inspect metrics/checkpoints, and produce eval/contact-sheet artifacts before deciding the next step.
+
+## 2026-06-11T22:43:11Z - launch bounded reset-prior RL smoke
+
+Goal:
+- Run the first bounded RL smoke after the TCP/pregrasp plus light-close diagnostics passed, without launching final-scale A100 training.
+
+Hypothesis:
+- With the validated single-grasp library, short PPO training should start from the intended 3 cm open pregrasp reset path, keep reset metrics finite/sane, and write early checkpoints suitable for eval video inspection.
+
+Change:
+- Added and used `cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`.
+- Smoke-only config diffs versus final: l401 one GPU, `NUM_ENVS=64`, `MAX_ITERATIONS=45`, `MINIBATCH_SIZE=4096`, `CENTRAL_VALUE_MINIBATCH_SIZE=4096`, `SAVE_FREQUENCY=5`, fixed seed `20260620`, JSONL sidecar enabled, single validated grasp library.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- local_commit: `1d3a8e30d2410413a83c8e3e2d6224f4a95ae7fe`
+- pushed: `origin/codex/franka-cube-ggx-pregrasp-reset`
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `1d3a8e30d2410413a83c8e3e2d6224f4a95ae7fe`, detached `HEAD`
+- changed_files: `cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`, this worklog
+
+Command / Job:
+- command: `sbatch --parsable --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=1d3a8e30d2410413a83c8e3e2d6224f4a95ae7fe,TASK=Dextrah-Franka-Cube-Grasp,FULL_EXPERIMENT_NAME=franka_cube_ggx_pregrasp_smoke_1gpu_20260611_224311,NUM_ENVS=64,MAX_ITERATIONS=45,SAVE_FREQUENCY=5,HORIZON_LENGTH=64,MINIBATCH_SIZE=4096,CENTRAL_VALUE_MINIBATCH_SIZE=4096,SEED=20260620,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_orig006_single.npz,DEXTRAH_RLGAMES_JSONL_METRICS=True,AUTO_RESUME=False,USE_CUDA_GRAPH=True cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`
+- job_id: `1027808`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_smoke_1gpu_20260611_224311`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_smoke_1027808.out`
+- expected_artifacts: checkpoints under `nn/`, rank-0 JSONL under `metrics/direct_info_rank_0.jsonl`, env/agent YAML under `params/`
+
+Result:
+- status: submitted
+
+Analysis:
+- This run is only a bounded smoke. It does not authorize A100 final RL until metrics and a first-checkpoint eval/video are inspected.
+
+Next:
+- Monitor job `1027808`, inspect stdout/JSONL/checkpoints, fetch artifacts locally, then launch a bounded eval/video from the first usable checkpoint if the smoke is sane.
+
+## 2026-06-11T22:46:08Z - reset-prior RL smoke completed and eval launched
+
+Goal:
+- Inspect terminal smoke status and launch the first checkpoint eval/video artifact from the best early interval checkpoint.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- smoke_source_commit: `1d3a8e30d2410413a83c8e3e2d6224f4a95ae7fe`
+- worklog_commit_after_launch: `9217548c087b2a576aa724d23be5259ebe36ca48`
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `1d3a8e30d2410413a83c8e3e2d6224f4a95ae7fe`, detached `HEAD`
+
+Command / Job:
+- smoke_job_id: `1027808`
+- smoke_run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_smoke_1gpu_20260611_224311`
+- smoke_log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_smoke_1027808.out`
+- fetched_smoke_artifacts: `cluster_results/l401/franka_cube_ggx_pregrasp_smoke_1gpu_20260611_224311`
+- eval_command: `sbatch --parsable --partition=batch --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,TASK=Dextrah-Franka-Cube-Grasp,RUN_NAME=franka_cube_ggx_pregrasp_smoke_ep10_eval_20260611_224608,NUM_ENVS=1,NUM_STEPS=240,VIDEO_LENGTH=240,VIDEO_NAME_PREFIX=franka-cube-ggx-pregrasp-smoke-ep10,PRINT_INTERVAL=20,CAPTURE_VIDEO=True,DETERMINISTIC=True,USE_CUDA_GRAPH=False,SEED=20260621,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_orig006_single.npz,CHECKPOINT=/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_smoke_1gpu_20260611_224311/nn/last_dextrah_franka_cube_grasp_ep_10_rew_880.1311.pth,CAMERA_EYE_X=-0.15,CAMERA_EYE_Y=-1.05,CAMERA_EYE_Z=1.45,CAMERA_TARGET_X=-0.41,CAMERA_TARGET_Y=-0.08,CAMERA_TARGET_Z=0.80 cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- eval_job_id: `1027817`
+- eval_run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_ggx_pregrasp_smoke_ep10_eval_20260611_224608`
+- eval_log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1027817.out`
+
+Result:
+- smoke_status: `COMPLETED`, exit `0:0`, elapsed `00:01:57`
+- smoke_jsonl: `45` rank-0 records, `bad_scalar_count=0`, `world_size=1`
+- reset_prior_metrics: success/quality/farther rates all `1.0`; reset position error mean `0.00671 m`; reset rotation error mean `0.1003 rad`; pregrasp tip table clearance mean `0.08509 m`; projected exact tip center/max distances mean `0.02827/0.05767 m`
+- checkpoints: every 5 epochs through 45; best interval checkpoint by stdout reward is epoch 10, `last_dextrah_franka_cube_grasp_ep_10_rew_880.1311.pth`
+- policy smoke metrics: no success/lift yet (`cube_success_rate=0`, `cube_has_lifted_rate=0` throughout), and distance metrics worsened after early epochs. This is acceptable for reset-path smoke only, but blocks any final-scale claim until eval visuals are inspected.
+
+Analysis:
+- The RL training path can exercise the prior reset without immediate numerical/runtime failure.
+- The policy did not learn a lift in 45 tiny epochs and sometimes drifted away from the cube. This is a short-smoke limitation/diagnostic signal, not a successful training result.
+- Eval uses the same task, prior library, cube XY randomization, action scaling, and RL-Games checkpoint/normalization path. Eval sets `env.use_cuda_graph=False` for video/rendering; this is a render-path difference, not a reset/action/reward change.
+
+Next:
+- Monitor eval job `1027817`, fetch metrics/video/trace, create contact sheet/report/plot artifacts with `viz-open`, and inspect whether the first frame starts at the correct open pregrasp and whether policy actions interact with the cube or drift.
+
+## 2026-06-11T22:41:10Z - plan exact-close offset sweep controls
+
+Goal:
+- Add bounded diagnostic controls for exact-close approach/finger-axis offsets so the next l401 sweep can determine whether the transformed GraspGenX exact pose is marginal because of TCP depth, lateral finger-axis centering, or close command width.
+
+Hypothesis:
+- Same-grasp zero-width diagnostics failed in both deterministic and randomized cube placements, which argues against cube XY randomization as the primary bug. The failures may come from commanding the exact TCP slightly too high/deep/laterally biased relative to the cube or from using a zero-width close target. Adding controlled exact-close target offsets will let the next jobs compare pose geometry with frames rather than only filtering by previous pass/fail outcomes.
+
+Change:
+- Add diagnostic-only CLI/wrapper controls for exact-close target offsets:
+  - approach-axis offset along the already computed pregrasp/exact offset direction.
+  - lateral offset along the projected Franka finger closing axis.
+- Keep the environment reset path, prior library semantics, observations/actions/rewards/PPO defaults, and cube reset randomization unchanged.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `ebe8a5b81d6b3171d3bb3e3daca3e324a80b9c4e`
+- implementation_commit: pending
+- changed_files: planned `dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py`, planned `cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`, this worklog
+
+Command / Job:
+- local checks after edit: `python3 -m py_compile dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py`; `bash -n cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`; `git diff --check`
+- pending light-close jobs already launched: `1027781`, `1027782`
+- next jobs after patch: small same-grasp randomized sweep with all-reset frames, likely approach offsets `-0.005/0.0/+0.005 m` and lateral offsets around `-0.010/0.0/+0.010 m`, no A100
+
+Result:
+- status: planned
+
+Analysis:
+- A100 RL remains blocked. This is a diagnostic-only patch to localize transform/control margins.
+
+Next:
+- Implement offset controls, commit/push/deploy, inspect current light-close results when they complete, then launch the smallest offset sweep informed by those results.
+
+## 2026-06-11T22:51:05Z - bounded reset-prior RL smoke/eval inspected
+
+Goal:
+- Finish the requested bounded reset-prior RL smoke/eval loop, inspect viewer-ready artifacts, and decide whether this is enough to unblock final-scale A100 training.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- smoke_source_commit: `1d3a8e30d2410413a83c8e3e2d6224f4a95ae7fe`
+- current_worklog_commit_before_this_entry: `9217548c087b2a576aa724d23be5259ebe36ca48`
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `1d3a8e30d2410413a83c8e3e2d6224f4a95ae7fe`, detached `HEAD`
+
+Jobs / Paths:
+- smoke_job_id: `1027808`, status `COMPLETED`, exit `0:0`, elapsed `00:01:57`
+- eval_job_id: `1027817`, status `COMPLETED`, exit `0:0`, elapsed `00:01:08`
+- smoke_run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_smoke_1gpu_20260611_224311`
+- smoke_log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_smoke_1027808.out`
+- eval_run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_ggx_pregrasp_smoke_ep10_eval_20260611_224608`
+- eval_log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1027817.out`
+- eval_checkpoint: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_smoke_1gpu_20260611_224311/nn/last_dextrah_franka_cube_grasp_ep_10_rew_880.1311.pth`
+- local_inspection_dir: `cluster_results/l401/franka_cube_ggx_pregrasp_smoke_ep10_eval_20260611_224608/inspection_20260611_2248`
+
+Config Diff Versus Final Apple-to-Apple Training:
+- task unchanged: `Dextrah-Franka-Cube-Grasp`
+- prior reset enabled via override: `GRASP_PRIOR_RESET_ENABLED=True`
+- prior library: single validated grasp `franka_cube_ggx_grasp_orig006_single.npz`
+- cube XY randomization: `CUBE_SPAWN_XY_RANDOMIZATION=0.08`
+- smoke-only scale changes: l401 1 GPU, `NUM_ENVS=64`, `MAX_ITERATIONS=45`, `HORIZON_LENGTH=64`, `MINIBATCH_SIZE=4096`, `CENTRAL_VALUE_MINIBATCH_SIZE=4096`, `SAVE_FREQUENCY=5`, fixed seeds `20260620/20260621`
+- eval render-only difference: `USE_CUDA_GRAPH=False` for video capture; reset/action/reward/task config and RL-Games checkpoint normalization path match the smoke.
+
+Viewer Artifacts:
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_smoke_ep10_eval_20260611_224608/inspection_20260611_2248/REPORT.md`
+- contact_sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_smoke_ep10_eval_20260611_224608/inspection_20260611_2248/contact_sheet.png`
+- eval_geometry_trace: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_smoke_ep10_eval_20260611_224608/inspection_20260611_2248/eval_geometry_trace.png`
+- eval_video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_smoke_ep10_eval_20260611_224608/videos/franka-cube-ggx-pregrasp-smoke-ep10-step-0.mp4`
+
+Metrics:
+- smoke_jsonl: `45` rank-0 records, `bad_scalar_count=0`, `world_size=1`
+- reset metrics: prior attempted/success/farther/quality rates all `1.0`; reset position error mean `0.00671 m`; reset rotation error mean `0.1003 rad`; pregrasp tip table clearance mean `0.08509 m`
+- checkpoint: best early interval checkpoint epoch `10`, stdout reward `880.1311`
+- eval first/reset state: prior reset active, quality success `1.0`, open gripper width about `0.08 m`, positive table clearance, correct 3 cm open pregrasp start
+- eval best interaction: near/contact around steps `40-60`, max lift height about `0.01417 m` at step `56`
+- eval failure mode: no success or sustained lift; final ee-to-cube distance about `0.678 m`, final finger-center-to-cube distance about `0.685 m`
+
+Verdict:
+- reset/pregrasp gate: `PASS`
+- light-close feasibility gate remains the relevant exact-grasp sanity check; previous zero-width close gate should not be used as the relaunch criterion.
+- bounded RL smoke runtime/metrics/checkpoint gate: `PASS`
+- policy/eval artifact gate for scale-up: `FAIL`; the policy starts from the correct pregrasp and briefly interacts with the cube but drifts away without grasp/lift.
+- A100 final RL relaunch: `BLOCKED` from this checkpoint/artifact. No matching Worker A l401 or a1001 jobs remain active at this inspection point.
+
+Next:
+- Do not relaunch final-scale A100 from this result.
+- The next bounded iteration should either run a longer still-small reset-prior PPO smoke or a matched prior-disabled small baseline to determine whether the early drift is normal for this smoke horizon versus introduced by the reset prior. Any next launch should keep the same artifact cadence: JSONL scan, checkpoint list, fixed-seed eval video/contact sheet, and pass/fail interpretation before scale-up.
+
+## 2026-06-11T22:53:48Z - plan matched prior-disabled baseline smoke/eval
+
+Goal:
+- Run the matched small-scale baseline smoke/eval requested by the orchestrator so the prior-enabled early-learning artifact can be compared against a prior-disabled `Dextrah-Franka-Cube-Grasp` run.
+
+Hypothesis:
+- If the baseline also briefly interacts and then drifts, the prior-enabled epoch-10 behavior is likely normal for the tiny 64-env/45-epoch smoke horizon. If the baseline shows clearly better early grasp/lift behavior under the same scale/seeds, the prior-start state or policy distribution deserves further debugging before any A100 scale-up.
+
+Change:
+- No source-code change planned.
+- Use the existing 1-GPU smoke/eval wrappers from the same branch.
+- Keep task, env count, epoch count, save/eval workflow, cube XY randomization, and fixed seeds matched to the prior-enabled smoke.
+- Disable only the prior-reset override: `GRASP_PRIOR_RESET_ENABLED=False` and no `GRASP_PRIOR_LIBRARY_PATH`.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `cdaf066ce9e06eb38a1bf57be78bbdb6df22b4aa`
+- implementation_commit: pending worklog-only launch checkpoint
+- changed_files: this worklog only
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+
+Planned Command / Job:
+- smoke run name: `franka_cube_baseline_noprior_smoke_1gpu_20260611_2253`
+- eval run name: `franka_cube_baseline_noprior_smoke_ep_best_eval_20260611_2253`
+- launch shape: l401 `batch`, 1 GPU, `NUM_ENVS=64`, `MAX_ITERATIONS=45`, `HORIZON_LENGTH=64`, `MINIBATCH_SIZE=4096`, `CENTRAL_VALUE_MINIBATCH_SIZE=4096`, `SAVE_FREQUENCY=5`, `SEED=20260620`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`, `DEXTRAH_RLGAMES_JSONL_METRICS=True`, `AUTO_RESUME=False`, `USE_CUDA_GRAPH=True`, `GRASP_PRIOR_RESET_ENABLED=False`
+- eval shape: 1 env, 240 steps, deterministic, `SEED=20260621`, same cube XY randomization, `GRASP_PRIOR_RESET_ENABLED=False`, fixed camera matching the prior-enabled eval
+- expected artifacts: Slurm logs, `params/`, `metrics/direct_info_rank_0.jsonl`, checkpoint list, fixed-seed eval video, `metrics.json`, `trace.csv/jsonl`, contact sheet, reward/distance plots, geometry trace, report, viewer URLs
+
+Acceptance:
+- Do not launch A100.
+- Inspect stdout, JSONL sidecar, checkpoint rewards, bad scalar count, eval metrics, video/contact sheet, and plots.
+- Produce the same artifact bundle and pass/fail interpretation as the prior-enabled smoke.
+
+Result:
+- status: planned
+
+Next:
+- Commit/push this worklog plan, deploy the exact commit to the agent-owned l401 worktree, submit the baseline smoke, monitor to completion, inspect metrics/checkpoints, run eval from the best usable checkpoint, fetch artifacts, build/open the inspection bundle, update the worklog, and push the result.
+
+## 2026-06-11T22:55:07Z - launch matched prior-disabled baseline smoke
+
+Goal:
+- Execute the planned prior-disabled 64-env/45-epoch baseline smoke on l401 for direct comparison against the prior-enabled smoke.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- local_commit: `fae66c7446c3bf25a9e61d0878ca992e276de7e9`
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `fae66c7446c3bf25a9e61d0878ca992e276de7e9`, detached `HEAD`
+- changed_files: this worklog only
+
+Command / Job:
+- command: `sbatch --parsable --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=fae66c7446c3bf25a9e61d0878ca992e276de7e9,TASK=Dextrah-Franka-Cube-Grasp,FULL_EXPERIMENT_NAME=franka_cube_baseline_noprior_smoke_1gpu_20260611_2253,NUM_ENVS=64,MAX_ITERATIONS=45,SAVE_FREQUENCY=5,HORIZON_LENGTH=64,MINIBATCH_SIZE=4096,CENTRAL_VALUE_MINIBATCH_SIZE=4096,SEED=20260620,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_RESET_ENABLED=False,GRASP_PRIOR_LIBRARY_PATH=,DEXTRAH_RLGAMES_JSONL_METRICS=True,AUTO_RESUME=False,USE_CUDA_GRAPH=True cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`
+- job_id: `1027842`
+- node at first poll: `pool0-00016`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseline_noprior_smoke_1gpu_20260611_2253`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_smoke_1027842.out`
+- expected_artifacts: `params/`, `metrics/direct_info_rank_0.jsonl`, `nn/*.pth`
+
+Initial Evidence:
+- scheduler state at first poll: `RUNNING`
+- logged train command includes `env.cube_spawn_xy_randomization=0.08` and does not include `env.grasp_prior_reset_enabled=True` or any prior library path.
+- the wrapper validates `CODE_COMMIT` on the host before container launch; the container-side `git rev-parse` warning is a known NFS worktree metadata artifact and is not the source-of-truth commit check.
+
+Result:
+- status: running
+
+Next:
+- Continue monitoring job `1027842` through completion, inspect stdout/JSONL/checkpoints, choose the best usable checkpoint, run fixed-seed eval/video with prior disabled, fetch artifacts, and create/open the inspection bundle.
+
+## 2026-06-11T23:02:53Z - matched prior-disabled baseline smoke/eval inspected
+
+Goal:
+- Complete the matched prior-disabled baseline smoke/eval and compare its early-learning behavior against the prior-enabled smoke artifact.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- smoke_source_commit: `fae66c7446c3bf25a9e61d0878ca992e276de7e9`
+- worklog_commit_after_launch: `6c50304`
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `fae66c7446c3bf25a9e61d0878ca992e276de7e9`, detached `HEAD`
+- changed_files: this worklog only
+
+Jobs / Paths:
+- smoke_job_id: `1027842`, status `COMPLETED`, exit `0:0`, elapsed `00:01:46`, node `pool0-00016`
+- eval_job_id: `1027848`, status `COMPLETED`, exit `0:0`, elapsed `00:01:03`, node `pool0-00004`
+- smoke_run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseline_noprior_smoke_1gpu_20260611_2253`
+- smoke_log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_smoke_1027842.out`
+- eval_run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_baseline_noprior_smoke_ep10_eval_20260611_2258`
+- eval_log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1027848.out`
+- eval_checkpoint: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseline_noprior_smoke_1gpu_20260611_2253/nn/last_dextrah_franka_cube_grasp_ep_10_rew_678.5467.pth`
+- local_smoke_artifacts: `cluster_results/l401/franka_cube_baseline_noprior_smoke_1gpu_20260611_2253`
+- local_eval_artifacts: `cluster_results/l401/franka_cube_baseline_noprior_smoke_ep10_eval_20260611_2258`
+- local_inspection_dir: `cluster_results/l401/franka_cube_baseline_noprior_smoke_ep10_eval_20260611_2258/inspection_20260611_2300`
+
+Config Audit:
+- task unchanged: `Dextrah-Franka-Cube-Grasp`
+- prior reset disabled: `GRASP_PRIOR_RESET_ENABLED=False`
+- no prior library override
+- cube XY randomization: `CUBE_SPAWN_XY_RANDOMIZATION=0.08`
+- matched smoke scale: l401 1 GPU, `NUM_ENVS=64`, `MAX_ITERATIONS=45`, `HORIZON_LENGTH=64`, `MINIBATCH_SIZE=4096`, `CENTRAL_VALUE_MINIBATCH_SIZE=4096`, `SAVE_FREQUENCY=5`, train seed `20260620`
+- matched eval shape: 1 env, 240 steps, deterministic, eval seed `20260621`, same camera as prior-enabled eval, `USE_CUDA_GRAPH=False` for video capture only
+
+Viewer Artifacts:
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_baseline_noprior_smoke_ep10_eval_20260611_2258/inspection_20260611_2300/REPORT.md`
+- contact_sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_baseline_noprior_smoke_ep10_eval_20260611_2258/inspection_20260611_2300/contact_sheet.png`
+- eval_geometry_trace: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_baseline_noprior_smoke_ep10_eval_20260611_2258/inspection_20260611_2300/eval_geometry_trace.png`
+- eval_video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_baseline_noprior_smoke_ep10_eval_20260611_2258/videos/franka-cube-baseline-noprior-smoke-ep10-step-0.mp4`
+
+Metrics:
+- smoke_jsonl: `45` rank-0 records, `bad_scalar_count=0`, `world_size=1`, no `grasp_prior` scalar keys
+- checkpoints: every 5 epochs through 45; best interval checkpoint by stdout reward is epoch 10, `last_dextrah_franka_cube_grasp_ep_10_rew_678.5467.pth`
+- smoke success/lift: `cube_success_rate` max `0.0`; `cube_has_lifted_rate` max `0.015625`
+- smoke distance trend: `cube_ee_to_cube_dist` first/final `0.1541/0.3126 m`
+- eval prior audit: `grasp_prior_reset_attempted` max `0.0`
+- eval geometry: ee-to-cube min/final `0.1230/0.3129 m`; finger-center-to-cube min/final `0.1067/0.3321 m`
+- eval task outcome: max lift height `0.0 m`, success max `0.0`, final gripper width `0.0350 m`
+- video metadata: 1280x720, 239 frames, 3.983 s, 60 FPS
+
+Comparison Against Prior-Enabled Ep10 Eval:
+- prior-enabled: ee-to-cube min/final `0.0496/0.6780 m`, finger-center min/final `0.0870/0.6852 m`, max lift `0.0142 m`, success max `0.0`
+- prior-disabled baseline: ee-to-cube min/final `0.1230/0.3129 m`, finger-center min/final `0.1067/0.3321 m`, max lift `0.0 m`, success max `0.0`
+
+Visual Inspection:
+- The baseline contact sheet starts from the normal prior-disabled reset, not the 3 cm GraspGenX pregrasp.
+- The gripper is near the cube at the beginning and closes partially, but no lift or stable enclosure appears.
+- The baseline drifts less far than the prior-enabled eval by the final frame, but it also shows less useful cube motion and no lift.
+
+Verdict:
+- baseline smoke/eval runtime: `PASS`
+- baseline config audit: `PASS`
+- baseline policy artifact gate: `FAIL for task success`
+- A100 final RL relaunch: `STILL BLOCKED`
+- interpretation: this matched baseline does not show a better early policy than the prior-enabled variant. It supports running a paired longer small PPO smoke before any final-scale claim, rather than treating the prior-enabled 45-epoch eval drift as a reset-prior-specific bug.
+
+Active Job Check:
+- l401: no matching Worker A jobs active after `1027842`/`1027848` completed
+- a1001: no matching Worker A pregrasp/final jobs active
+
+Next:
+- Do not launch A100.
+- Recommended bounded next step: paired longer small PPO smoke for prior-enabled and prior-disabled variants, keeping the artifact cadence and matched seeds/config. A reasonable candidate is still one-GPU l401 with more epochs and/or 256 envs, but the exact scale should remain bounded and artifact-gated.
+
+## 2026-06-11T23:11:36Z - plan paired 200-epoch small PPO comparison
+
+Goal:
+- Run a bounded paired longer PPO comparison for reset-prior enabled versus prior-disabled baseline, using the same small l401 configuration and artifact cadence as the previous smoke/eval loop.
+
+Hypothesis:
+- The 45-epoch smoke was too short for either variant to show stable task success. A 200-epoch, 64-env, 1-GPU pair should reveal whether the reset-prior start helps early interaction/lift relative to the same baseline without changing the apple-to-apple task config.
+
+Change:
+- No source-code change planned.
+- Use existing owned wrappers: `cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh` and `cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`.
+- Keep task, seeds, env count, horizon/minibatch/PPO overrides, cube XY randomization, camera, eval steps, and JSONL sidecar matched.
+- Difference between pair: only `GRASP_PRIOR_RESET_ENABLED` plus the prior library path on the enabled variant.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `1287311ef37847090ffb6060a96ac6380374e24a`
+- implementation_commit: pending worklog-only plan checkpoint
+- changed_files: this worklog only
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+
+Planned Runs:
+- prior-enabled run name: `franka_cube_ggx_pregrasp_long200_1gpu_20260611_2311`
+- prior-disabled run name: `franka_cube_baseline_noprior_long200_1gpu_20260611_2311`
+- common train shape: l401 `batch`, 1 GPU, `NUM_ENVS=64`, `MAX_ITERATIONS=200`, `SAVE_FREQUENCY=25`, `HORIZON_LENGTH=64`, `MINIBATCH_SIZE=4096`, `CENTRAL_VALUE_MINIBATCH_SIZE=4096`, `SEED=20260620`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`, `DEXTRAH_RLGAMES_JSONL_METRICS=True`, `AUTO_RESUME=False`, `USE_CUDA_GRAPH=True`
+- prior-enabled extra: `GRASP_PRIOR_RESET_ENABLED=True`, `GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_orig006_single.npz`
+- prior-disabled extra: `GRASP_PRIOR_RESET_ENABLED=False`, no prior library override
+- eval checkpoints after training: epoch 100 mid checkpoint, best checkpoint by stdout reward, and final epoch 200 if distinct from best
+- common eval shape: 1 env, 240 steps, deterministic, `SEED=20260621`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`, matched camera from previous artifacts, `USE_CUDA_GRAPH=False` for video capture
+
+Acceptance:
+- Do not launch A100.
+- Inspect scheduler state, logs, JSONL sidecars, checkpoint lists, bad scalar counts, reward/lift/success/distance curves, and eval videos/contact sheets for both variants.
+- Produce viewer-ready artifacts for both variants and a paired comparison report.
+
+Result:
+- status: planned
+
+Next:
+- Commit/push this worklog plan, deploy the exact commit to the l401 agent worktree, launch both 200-epoch jobs, monitor to completion, then run the bounded eval set for each variant.
+
+## 2026-06-11T23:13:02Z - launch paired 200-epoch small PPO comparison
+
+Goal:
+- Launch the bounded paired 200-epoch small PPO comparison for reset-prior enabled versus prior-disabled baseline.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- local_commit: `1b8652d33ad56a5ae02a689fc31cd13b9219702d`
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `1b8652d33ad56a5ae02a689fc31cd13b9219702d`, detached `HEAD`
+- changed_files: this worklog only
+
+Command / Jobs:
+- common train config: `TASK=Dextrah-Franka-Cube-Grasp`, l401 `batch`, 1 GPU, `NUM_ENVS=64`, `MAX_ITERATIONS=200`, `SAVE_FREQUENCY=25`, `HORIZON_LENGTH=64`, `MINIBATCH_SIZE=4096`, `CENTRAL_VALUE_MINIBATCH_SIZE=4096`, `SEED=20260620`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`, `DEXTRAH_RLGAMES_JSONL_METRICS=True`, `AUTO_RESUME=False`, `USE_CUDA_GRAPH=True`
+- prior_job_id: `1027853`
+- prior_run: `franka_cube_ggx_pregrasp_long200_1gpu_20260611_2311`
+- prior_run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_long200_1gpu_20260611_2311`
+- prior_log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_smoke_1027853.out`
+- prior_extra: `GRASP_PRIOR_RESET_ENABLED=True`, `GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_orig006_single.npz`
+- baseline_job_id: `1027854`
+- baseline_run: `franka_cube_baseline_noprior_long200_1gpu_20260611_2311`
+- baseline_run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseline_noprior_long200_1gpu_20260611_2311`
+- baseline_log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_smoke_1027854.out`
+- baseline_extra: `GRASP_PRIOR_RESET_ENABLED=False`, no prior library override
+
+Result:
+- status: submitted
+
+Next:
+- Monitor `1027853` and `1027854` through completion, inspect JSONL sidecars/checkpoints/logs, then run deterministic eval videos for epoch 100, best, and final checkpoints as needed for both variants.
+
+## 2026-06-11T23:20:04Z - launch paired 200-epoch deterministic eval set
+
+Goal:
+- Evaluate mid and final/best checkpoints from the paired 200-epoch small PPO comparison with deterministic 1-env videos and geometry traces.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- train_source_commit: `1b8652d33ad56a5ae02a689fc31cd13b9219702d`
+- worklog_commit_after_train_launch: `5f70caf`
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `1b8652d33ad56a5ae02a689fc31cd13b9219702d`, detached `HEAD`
+
+Training Summary Before Eval:
+- prior_job_id: `1027853`, `COMPLETED 0:0`, 200 JSONL records, no bad scalars in initial parse, best/final interval reward `1094.3864`
+- baseline_job_id: `1027854`, `COMPLETED 0:0`, 200 JSONL records, no bad scalars in initial parse, final interval reward `861.7606`, best saved policy around epoch 133 reward `1039.6322`, best interval checkpoint epoch 175 reward `1023.7079`
+- both training runs: success max `0.0`; baseline lifted-rate max `0.015625`; prior lifted-rate max `0.0`
+
+Eval Jobs:
+- prior epoch 100: job `1027857`, run `franka_cube_ggx_pregrasp_long200_eval_ep100_20260611_2320`, checkpoint `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_long200_1gpu_20260611_2311/nn/last_dextrah_franka_cube_grasp_ep_100_rew_860.64087.pth`
+- prior final/best epoch 200: job `1027858`, run `franka_cube_ggx_pregrasp_long200_eval_ep200_20260611_2320`, checkpoint `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pregrasp_long200_1gpu_20260611_2311/nn/last_dextrah_franka_cube_grasp_ep_200_rew_1094.3864.pth`
+- baseline epoch 100: job `1027859`, run `franka_cube_baseline_noprior_long200_eval_ep100_20260611_2320`, checkpoint `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseline_noprior_long200_1gpu_20260611_2311/nn/last_dextrah_franka_cube_grasp_ep_100_rew_844.08435.pth`
+- baseline saved best: job `1027860`, run `franka_cube_baseline_noprior_long200_eval_best_20260611_2320`, checkpoint `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseline_noprior_long200_1gpu_20260611_2311/nn/dextrah_franka_cube_grasp.pth`
+- baseline final epoch 200: job `1027861`, run `franka_cube_baseline_noprior_long200_eval_ep200_20260611_2320`, checkpoint `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseline_noprior_long200_1gpu_20260611_2311/nn/last_dextrah_franka_cube_grasp_ep_200_rew_861.7606.pth`
+- common eval shape: l401 `batch`, 1 GPU, 1 env, 240 steps, deterministic, `SEED=20260621`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`, matched camera, `USE_CUDA_GRAPH=False` for video capture
+
+Result:
+- status: submitted
+
+Next:
+- Monitor eval jobs `1027857`-`1027861`, fetch `metrics.json`, `trace.csv/jsonl`, videos, and logs, then generate contact sheets, geometry/lift traces, reward/lift/success curves, and a paired comparison report with viewer URLs.
+
+## 2026-06-11T23:32:04Z - plan focused pregrasp usability diagnostics
+
+Goal:
+- Determine whether the validated 3 cm GraspGenX pregrasp reset is physically usable without learning, and whether the 200-epoch PPO miss is mainly an action/closure/reward-learning issue.
+
+Hypothesis:
+- The reset distribution is now geometrically coherent, but the policy is not learning a robust close/lift sequence from the open pregrasp. A debug-only scripted close/lift rollout using the same reset distribution should separate reset usability from PPO exploration/reward shaping.
+
+Change:
+- Add eval-only oracle diagnostics to `dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py`: after reset, drive the normal env action path through approach, close, lift, and hold phases; record action, gripper width, TCP/tip/cube geometry, rewards/dones, lift/success, contact proxies, and labeled frames/video.
+- Extend `cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh` with opt-in oracle env vars. Defaults remain disabled, so main training/eval configs are unchanged.
+- Generate a local artifact bundle from existing prior ep200 eval traces for PPO action/reward audit: gripper action/width, ee/finger distances, reward terms, lift/success, plus contact sheet/report.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `da5256466daa8e2ade0963fdb71e54efdff6750e`
+- implementation_commit: pending
+- changed_files: planned `dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py`, `cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`, this worklog
+
+Planned Jobs / Artifacts:
+- l401 bounded diagnostic job, 1 GPU, no PPO training, `NUM_ENVS=1`, `NUM_RESETS=5`, same `CUBE_SPAWN_XY_RANDOMIZATION=0.08`, same validated library `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_orig006_single.npz`.
+- Output under `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/<run_name>` and fetched to `cluster_results/l401/<run_name>`.
+- Required artifacts: `reset_geometry.json/csv`, `oracle_trace.csv/jsonl`, labeled pregrasp/oracle frames, oracle video/contact sheet, PPO action/reward audit plots, report opened with `viz-open`.
+
+Acceptance:
+- Do not launch A100 or longer final RL.
+- Treat scheduler success as insufficient; inspect metrics/video. If oracle cannot grasp/lift from reset, debug reset/control geometry. If oracle can but PPO does not, keep A100 blocked and diagnose action/reward learning.
+
+Result:
+- status: planned
+
+Next:
+- Implement debug-only oracle diagnostic, run local syntax checks, commit/push, deploy exact commit to the l401 agent worktree, launch the bounded diagnostic, fetch/open artifacts, and update this worklog with the job id and verdict.
+
+## 2026-06-11T23:37:22Z - launch oracle close/lift reset diagnostic
+
+Goal:
+- Run the bounded scripted close/lift diagnostic from the exact reset-prior distribution to test whether the open 3 cm pregrasp can be converted into a grasp/lift without learning.
+
+Change:
+- Implemented debug-only oracle diagnostics in `dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py`.
+- Extended `cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh` with opt-in oracle environment variables.
+- No main RL task defaults changed; oracle behavior is only active with `INCLUDE_ORACLE_CLOSE_LIFT_CHECK=1`.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- local_commit: `ee51e280e2abcfddbf70d65fcdf3289493b32aea`
+- push/pull: pushed local branch to origin; l401 GitHub SSH fetch failed with `Permission denied (publickey)`, so deployed the exact commit via a Git bundle fetched into the agent-owned l401 worktree
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `ee51e280e2abcfddbf70d65fcdf3289493b32aea`, detached `HEAD`
+- changed_files: `dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py`, `cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`, this worklog
+
+Validation Before Launch:
+- `python3 -m py_compile dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py`: passed
+- `bash -n cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`: passed
+
+Command / Job:
+- job_id: `1027869`
+- run_name: `franka_cube_ggx_pregrasp_oracle_close_lift_20260611_2338`
+- command: `sbatch --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=ee51e280e2abcfddbf70d65fcdf3289493b32aea,RUN_NAME=franka_cube_ggx_pregrasp_oracle_close_lift_20260611_2338,TASK=Dextrah-Franka-Cube-Grasp,NUM_ENVS=1,NUM_RESETS=5,SEED=20260622,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_orig006_single.npz,INCLUDE_EXACT_CLOSE_CHECK=0,INCLUDE_ORACLE_CLOSE_LIFT_CHECK=1,ORACLE_APPROACH_STEPS=16,ORACLE_CLOSE_STEPS=50,ORACLE_LIFT_STEPS=80,ORACLE_HOLD_STEPS=30,ORACLE_APPROACH_DISTANCE=0.030,ORACLE_CLOSE_WIDTH=0.055,ORACLE_LIFT_ACTION_Z=0.05,ORACLE_LIFT_SUCCESS_HEIGHT=0.020,ORACLE_RENDER_INTERVAL=20,RENDER_ALL_RESETS=1,RENDER_WIDTH=1280,RENDER_HEIGHT=720,VIDEO_FPS=6,CAMERA_EYE_X=-0.15,CAMERA_EYE_Y=-1.05,CAMERA_EYE_Z=1.55,CAMERA_TARGET_X=-0.41,CAMERA_TARGET_Y=-0.08,CAMERA_TARGET_Z=0.80 cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pregrasp_oracle_close_lift_20260611_2338`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/diagnose_franka_cube_prior_1027869.out`
+- expected artifacts: `reset_geometry.json`, `reset_geometry.csv`, `oracle_trace.jsonl`, `oracle_trace.csv`, labeled frames, `reset_geometry.mp4`
+
+Result:
+- status: submitted
+
+Next:
+- Monitor job `1027869`; fetch artifacts; build/open a viewer-ready report/contact sheet; inspect whether oracle close/lift succeeds from reset and whether PPO failure is action/reward learning rather than reset geometry.
+
+## 2026-06-11T23:42:11Z - oracle close/lift result and matrix plan
+
+Goal:
+- Interpret the first oracle close/lift diagnostic and define a bounded diagnostic matrix that distinguishes reset offset/control, gripper closure/contact, lift action, and fingertip/TCP proxy alignment causes.
+
+Result:
+- job `1027869` completed `0:0` on l401 `pool0-00016`.
+- local run dir: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_oracle_close_lift_20260611_2338`
+- local inspection bundle: `cluster_results/l401/franka_cube_ggx_pregrasp_oracle_close_lift_20260611_2338/inspection_20260611_2340`
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_oracle_close_lift_20260611_2338/inspection_20260611_2340/REPORT.md`
+- contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_oracle_close_lift_20260611_2338/inspection_20260611_2340/oracle_contact_sheet.png`
+- oracle trace curves: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_oracle_close_lift_20260611_2338/inspection_20260611_2340/oracle_trace_curves.png`
+- PPO ep200 action/reward audit: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_oracle_close_lift_20260611_2338/inspection_20260611_2340/ppo_ep200_action_reward_audit.png`
+- video: `cluster_results/l401/franka_cube_ggx_pregrasp_oracle_close_lift_20260611_2338/inspection_20260611_2340/oracle_close_lift_frames.mp4`, `1280x720`, `482` frames, `19.28s`
+- metrics: `reset_success_rate=1.0`, `reset_quality_success_rate=1.0`, `pregrasp_reset_gate_pass=True`, but `oracle_success_rate=0.0`, `oracle_lift_gate_pass_rate=0.0`, `oracle_max_cube_lift_height_mean_m=0.0`, `oracle_min_tip_center_dist_mean_m=0.0576`, `oracle_final_gripper_width_mean_m=0.0550`, `rl_relaunch_gate_verdict=FAIL`
+- prior ep200 PPO audit from existing eval: `success_max=0.0`, `lift_max_m=0.003682`, `ee_min_m=0.0251`, `finger_center_min_m=0.0554`, mean gripper action approximately `+0.9999`, final gripper width approximately `0.08m`
+
+Analysis:
+- Reset/pregrasp geometry is still passing, but the scripted action-space close/lift did not generate a grasp or any lift.
+- In reset 0, the approach action was a small negative root-frame z command intended to move from pregrasp to exact, but the actual TCP/tip distance stayed near `0.060m`; during lift, tip distance increased to about `0.073m`, meaning the lift moved the hand away without cube contact.
+- The PPO policy also mostly commands fully open gripper at ep200, so full-scale RL remains blocked even before considering reward.
+
+Next Matrix:
+- Keep main RL task unchanged and use only debug/eval flags.
+- Run a bounded l401 diagnostic matrix from commit `ee51e280e2abcfddbf70d65fcdf3289493b32aea`, `NUM_RESETS=3`, same single-grasp library, same cube XY randomization `0.08`.
+- Exact-close reference: `INCLUDE_EXACT_CLOSE_CHECK=1`, command width `0.055`, rendered resets, to confirm direct exact-pose light-close still works under the current commit.
+- Oracle action variants:
+  - `a00_w055_z005`: approach `0.00m`, close width `0.055m`, lift action z `0.05`
+  - `a01_w055_z005`: approach `0.01m`, close width `0.055m`, lift action z `0.05`
+  - `a03_w055_z005`: approach `0.03m`, close width `0.055m`, lift action z `0.05`
+  - `a03_w045_z005`: approach `0.03m`, close width `0.045m`, lift action z `0.05`
+  - `a03_w035_z005`: approach `0.03m`, close width `0.035m`, lift action z `0.05`
+  - `a03_w035_z015`: approach `0.03m`, close width `0.035m`, lift action z `0.15`
+  - `a-03_w035_z015`: reverse approach `-0.03m`, close width `0.035m`, lift action z `0.15`, to catch sign/frame errors
+- Acceptance: no PPO/A100. Fetch all artifacts, aggregate per-variant metrics/contact sheets/videos, inspect whether any variant obtains contact/lift and whether exact-close diverges from action-space approach.
+
+## 2026-06-11T23:44:06Z - launch reset-to-contact diagnostic matrix
+
+Goal:
+- Distinguish action-space approach sign/distance, gripper close width/contact, lift action magnitude, and exact-pose/proxy geometry causes for the failed oracle close/lift.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `ee51e280e2abcfddbf70d65fcdf3289493b32aea`, detached `HEAD`
+- source changes since commit: none for matrix; debug-only oracle/exact-close code from `ee51e28`
+
+Common Command / Config:
+- wrapper: `cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`
+- common export: `TASK=Dextrah-Franka-Cube-Grasp`, `NUM_ENVS=1`, `NUM_RESETS=3`, `SEED=20260623`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`, `GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_orig006_single.npz`, `RENDER_ALL_RESETS=1`, `RENDER_WIDTH=1280`, `RENDER_HEIGHT=720`, `VIDEO_FPS=6`
+- remote result namespace: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pregrasp_matrix_20260611_2344_*`
+- log namespace: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/diagnose_franka_cube_prior_<job>.out`
+
+Jobs:
+- `1027878`: `franka_cube_ggx_pregrasp_matrix_20260611_2344_exact_w055`, `INCLUDE_EXACT_CLOSE_CHECK=1`, `EXACT_CLOSE_COMMAND_WIDTH=0.055`
+- `1027879`: `franka_cube_ggx_pregrasp_matrix_20260611_2344_a00_w055_z005`, oracle approach `0.000m`, close width `0.055m`, lift z `0.05`
+- `1027880`: `franka_cube_ggx_pregrasp_matrix_20260611_2344_a01_w055_z005`, oracle approach `0.010m`, close width `0.055m`, lift z `0.05`
+- `1027881`: `franka_cube_ggx_pregrasp_matrix_20260611_2344_a03_w055_z005`, oracle approach `0.030m`, close width `0.055m`, lift z `0.05`
+- `1027882`: `franka_cube_ggx_pregrasp_matrix_20260611_2344_a03_w045_z005`, oracle approach `0.030m`, close width `0.045m`, lift z `0.05`
+- `1027883`: `franka_cube_ggx_pregrasp_matrix_20260611_2344_a03_w035_z005`, oracle approach `0.030m`, close width `0.035m`, lift z `0.05`
+- `1027884`: `franka_cube_ggx_pregrasp_matrix_20260611_2344_a03_w035_z015`, oracle approach `0.030m`, close width `0.035m`, lift z `0.15`
+- `1027885`: `franka_cube_ggx_pregrasp_matrix_20260611_2344_arev03_w035_z015`, oracle approach `-0.030m`, close width `0.035m`, lift z `0.15`
+
+Result:
+- status: submitted
+
+Next:
+- Monitor all matrix jobs to completion, fetch result/log dirs, aggregate per-variant exact-close/oracle metrics, build contact sheets/videos/plots, open with `viz-open`, and decide whether to patch action-space approach/control diagnostics or reset geometry.
+
+## 2026-06-12T00:02:10Z - action-tracking diagnostic plan
+
+Goal:
+- Patch and run a bounded diagnostic that explains why direct exact-pose light-close succeeds while normal `env.step` action-space oracle rollouts do not reach contact/lift.
+
+Evidence From Completed Matrix:
+- jobs `1027878` through `1027885` completed `0:0`; all artifacts fetched locally under `cluster_results/l401/franka_cube_ggx_pregrasp_matrix_20260611_2344_*`.
+- local inspection bundle: `cluster_results/l401/franka_cube_ggx_pregrasp_matrix_20260611_2344_inspection`
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_matrix_20260611_2344_inspection/REPORT.md`
+- contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_matrix_20260611_2344_inspection/matrix_contact_sheet.jpg`
+- trace plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_matrix_20260611_2344_inspection/oracle_trace_matrix.png`
+- key metrics: `exact_w055` direct exact IK close passed with exact-close enclosure/contact proxy success `1.0`; all seven `env.step` oracle variants failed with `oracle_success_rate=0.0`, `oracle_lift_gate_pass_rate=0.0`, max cube lift `0.0m`, and min actual tip-center distance approximately `0.0564-0.0571m`.
+- varied approach distance (`0/1/3cm`), approach sign (`+/-3cm`), close width (`0.055/0.045/0.035m`), and lift action (`0.05/0.15`) did not produce contact or lift.
+
+Analysis:
+- This points away from GraspGenX object transform or cube XY randomization as the primary blocker.
+- The next likely blocker is normal RL action-space tracking/TCP/controller semantics: the direct exact-close diagnostic sets an IK/joint target directly, while the oracle uses the task's `DifferentialIKController` through `env.step`.
+
+Planned Change:
+- Modify only `dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py` and `cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`.
+- Add per-step action-tracking trace fields: commanded relative action, controller target pose proxy from current EE plus scaled action, measured EE/TCP pose before/after `env.step`, cube pose, gripper width, tip/finger distances, and commanded-vs-realized delta.
+- Add a debug-only controller-assisted `oracle_approach_mode=proportional_exact` that recomputes the relative action from current measured EE pose to the exact GraspGenX EE target under the same task action limits.
+- Preserve defaults as `fixed_direction`; no main RL reset, reward, observation, action space, PPO config, or baseline defaults change.
+
+Next:
+- Finish patch, run local syntax checks, commit/push, deploy exact commit to the agent-owned l401 worktree, launch paired bounded fixed-vs-assisted diagnostics, fetch artifacts, build/open a report/contact sheet/video, and decide whether PPO needs curriculum/action bias or whether the action path/TCP convention is the remaining blocker.
+
+## 2026-06-12T00:00:18Z - launch fixed-vs-assisted action-tracking diagnostics
+
+Goal:
+- Compare the previous fixed-direction `env.step` oracle against a receding-horizon controller-assisted mode that recomputes the relative action from current measured EE pose to the exact GraspGenX target at every step.
+
+Hypothesis:
+- If proportional-assisted mode reaches the exact/contact/lift gate while fixed mode fails, the reset geometry is usable and PPO likely needs curriculum/reward/action bias for closing/lifting from pregrasp.
+- If proportional-assisted mode still fails to reach contact, the normal action path/TCP/controller semantics remain the blocker.
+
+Change:
+- Added diagnostic-only action-tracking fields and `ORACLE_APPROACH_MODE=proportional_exact`.
+- Main RL task/reset defaults remain unchanged; these flags only affect `diagnose_franka_cube_grasp_prior_reset.py`.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- implementation_commit: `0f5a4f11a819548d853427e1c5592223d6f625c7`
+- push/pull: pushed branch to origin; l401 GitHub SSH fetch still failed with `Permission denied (publickey)`, so deployed exact commit via Git bundle into the agent-owned remote worktree
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `0f5a4f11a819548d853427e1c5592223d6f625c7`, detached `HEAD`, clean
+- validation: `python3 -m py_compile dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py` passed locally and on l401 login; `bash -n cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh` passed locally and on l401 login
+- changed_files: `dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py`, `cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`, this worklog
+
+Command / Jobs:
+- common: `TASK=Dextrah-Franka-Cube-Grasp`, `NUM_ENVS=1`, `NUM_RESETS=3`, `SEED=20260624`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`, single-grasp library `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_orig006_single.npz`, `INCLUDE_ORACLE_CLOSE_LIFT_CHECK=1`, `ORACLE_APPROACH_STEPS=40`, `ORACLE_CLOSE_STEPS=60`, `ORACLE_LIFT_STEPS=80`, `ORACLE_HOLD_STEPS=20`, `ORACLE_CLOSE_WIDTH=0.035`, `ORACLE_LIFT_ACTION_Z=0.15`, `RENDER_ALL_RESETS=1`
+- fixed job: `1027891`, run `franka_cube_ggx_pregrasp_actiontrack_fixed_20260611_235922`, `ORACLE_APPROACH_MODE=fixed_direction`
+- assisted job: `1027892`, run `franka_cube_ggx_pregrasp_actiontrack_assisted_20260611_235922`, `ORACLE_APPROACH_MODE=proportional_exact`, `ORACLE_PROPORTIONAL_GAIN=1.0`, `ORACLE_MAX_POSITION_ACTION=1.0`, `ORACLE_TRACK_ORIENTATION=0`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/diagnose_franka_cube_prior_1027891.out`, `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/diagnose_franka_cube_prior_1027892.out`
+- run dirs: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pregrasp_actiontrack_fixed_20260611_235922`, `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pregrasp_actiontrack_assisted_20260611_235922`
+
+Result:
+- status: submitted
+
+Next:
+- Monitor jobs `1027891`/`1027892`; fetch logs/results; build/open viewer-ready fixed-vs-assisted action-tracking report, contact sheet/video, and metrics table; decide whether action tracking succeeds or remains blocked.
+
+## 2026-06-12T00:06:47Z - assisted robustness diagnostic plan
+
+Goal:
+- Build a tiny bounded robustness diagnostic for assisted pregrasp-to-contact before any PPO/A100 relaunch.
+
+Evidence From Action-Tracking Pair:
+- fixed action-space oracle job `1027891` remained dead: `oracle_success_rate=0.0`, `oracle_lift_gate_pass_rate=0.0`, max cube lift `0.0m`, min tip-center approximately `0.0573m`.
+- assisted proportional-exact job `1027892` partially worked: `oracle_success_rate=0.3333`, `oracle_lift_gate_pass_rate=0.3333`, one reset lifted `0.0328m`, aggregate max lift mean `0.01094m`, min post-to-exact EE mean `0.00815m`, min tip-center mean `0.03862m`.
+- local inspection bundle: `cluster_results/l401/franka_cube_ggx_pregrasp_actiontrack_pair_20260611_235922/inspection`
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_actiontrack_pair_20260611_235922/inspection/REPORT.md`
+- contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_actiontrack_pair_20260611_235922/inspection/action_tracking_contact_sheet.jpg`
+- assisted pass video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_actiontrack_pair_20260611_235922/inspection/assisted_reset0_pass_keyframes.mp4`
+
+Hypothesis:
+- The transform and randomized pregrasp are usable, but robust contact/lift through the normal `env.step` action path depends on receding-horizon target correction plus close width/orientation/control-settle details.
+- Light-close width `0.055m` matched the direct exact-pose diagnostic; using it in assisted `env.step` may prevent the miss/squeeze behavior seen with `0.035m`.
+- Optional orientation tracking or a slightly stronger proportional gain/action cap may reduce the approximately `1cm` residual seen in failed assisted resets.
+
+Planned Matrix:
+- `assist_w055`: proportional-exact, close width `0.055m`, no orientation tracking, gain `1.0`, max position action `1.0`.
+- `assist_w055_orient`: same as above with orientation tracking enabled.
+- `assist_w055_gain15`: close width `0.055m`, no orientation tracking, gain `1.5`, max position action `1.0`.
+- all variants use `NUM_ENVS=1`, `NUM_RESETS=3`, seed `20260624`, cube XY randomization `0.08`, single-grasp library `orig006`, `ORACLE_APPROACH_STEPS=60`, `ORACLE_CLOSE_STEPS=80`, `ORACLE_LIFT_STEPS=80`, `ORACLE_HOLD_STEPS=20`, render all resets.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- local_commit: `0f5a4f11a819548d853427e1c5592223d6f625c7`
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `0f5a4f11a819548d853427e1c5592223d6f625c7`, detached clean
+- changed_files_since_commit: this worklog only; diagnostic code already committed/pushed at `0f5a4f1`
+
+Next:
+- Launch three l401 bounded diagnostics, monitor to completion, fetch logs/results, build a compact table/contact sheet/trace plots, open them via `viz-open`, and record a pass/fail verdict. Acceptance remains robust contact/lift across all or near-all resets; no PPO/A100 until this gate is understood.
+
+## 2026-06-12T00:07:20Z - launch assisted robustness diagnostics
+
+Goal:
+- Test whether assisted proportional-exact `env.step` control becomes robust when using the direct-exact light-close width and small controller variants.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- implementation_commit: `0f5a4f11a819548d853427e1c5592223d6f625c7`
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `0f5a4f11a819548d853427e1c5592223d6f625c7`, detached clean
+
+Command / Jobs:
+- common: `TASK=Dextrah-Franka-Cube-Grasp`, `NUM_ENVS=1`, `NUM_RESETS=3`, `SEED=20260624`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`, single-grasp library `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_orig006_single.npz`, `INCLUDE_ORACLE_CLOSE_LIFT_CHECK=1`, `ORACLE_APPROACH_MODE=proportional_exact`, `ORACLE_APPROACH_STEPS=60`, `ORACLE_CLOSE_STEPS=80`, `ORACLE_LIFT_STEPS=80`, `ORACLE_HOLD_STEPS=20`, `ORACLE_CLOSE_WIDTH=0.055`, `ORACLE_LIFT_ACTION_Z=0.15`, `RENDER_ALL_RESETS=1`
+- `1027896`: run `franka_cube_ggx_pregrasp_assistrobust_20260611_170720_w055`, gain `1.0`, max position action `1.0`, orientation tracking off
+- `1027897`: run `franka_cube_ggx_pregrasp_assistrobust_20260611_170720_w055_orient`, gain `1.0`, max position action `1.0`, orientation tracking on
+- `1027898`: run `franka_cube_ggx_pregrasp_assistrobust_20260611_170720_w055_gain15`, gain `1.5`, max position action `1.0`, orientation tracking off
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/diagnose_franka_cube_prior_1027896.out`, `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/diagnose_franka_cube_prior_1027897.out`, `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/diagnose_franka_cube_prior_1027898.out`
+- run dirs: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pregrasp_assistrobust_20260611_170720_w055`, `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pregrasp_assistrobust_20260611_170720_w055_orient`, `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pregrasp_assistrobust_20260611_170720_w055_gain15`
+
+Result:
+- status: submitted
+
+Next:
+- Monitor jobs `1027896`/`1027897`/`1027898`, fetch outputs, inspect logs/metrics/videos, and make a compact comparison artifact bundle.
+
+## 2026-06-12T00:14:40Z - assisted robustness diagnostic result
+
+Goal:
+- Decide whether assisted proportional-exact `env.step` control is robust enough to unblock PPO.
+
+Result:
+- status: failed robustness gate; no PPO/A100 relaunch
+- jobs `1027896`, `1027897`, and `1027898` completed `0:0` on `pool0-00030`; result dirs and logs fetched locally.
+- inspection bundle: `cluster_results/l401/franka_cube_ggx_pregrasp_assistrobust_20260611_170720_inspection`
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_assistrobust_20260611_170720_inspection/REPORT.md`
+- contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_assistrobust_20260611_170720_inspection/assisted_robustness_contact_sheet.jpg`
+- trace plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_assistrobust_20260611_170720_inspection/assisted_robustness_traces.png`
+- metrics CSV: `cluster_results/l401/franka_cube_ggx_pregrasp_assistrobust_20260611_170720_inspection/assisted_robustness_metrics.csv`
+
+Metrics:
+
+| Variant | Job | Setting | Oracle Success | Lift Gate | Mean Max Lift | Mean Min Tip | Mean Min Exact EE | Verdict |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `w055` | `1027896` | gain `1.0`, orientation off, close `0.055m` | `0/3` | `0/3` | `0.0001m` | `0.0362m` | `0.0054m` | FAIL |
+| `w055_orient` | `1027897` | gain `1.0`, orientation on, close `0.055m` | `2/3` | `2/3` | `0.0232m` | `0.0350m` | `0.0045m` | FAIL |
+| `w055_gain15` | `1027898` | gain `1.5`, orientation off, close `0.055m` | `0/3` | `0/3` | `0.0000m` | `0.0350m` | `0.0041m` | FAIL |
+
+Analysis:
+- Orientation tracking is the only principled variant that improves contact/lift, with clean lifts on resets 0 and 1.
+- The same orientation-tracked variant still fails reset 2: max lift `0.0m`, min tip-center `0.0417m`, min post-to-exact EE `0.0131m`, final post-to-exact EE `0.0574m`.
+- Light close alone and higher positional gain without orientation are insufficient despite small positional residuals, so the remaining blocker is robust action-space TCP/orientation tracking and settle/contact timing, not the GraspGenX object transform or cube XY randomization.
+
+Next:
+- Patch diagnostic-only trace fields to record rotational target/realized errors and add an optional open-gripper exact-hold phase before close.
+- Run a tiny follow-up with orientation tracking plus longer approach/exact hold before close. Acceptance remains all or near-all contact/lift; no PPO/A100 until that gate passes.
+
+## 2026-06-12T00:17:00Z - diagnostic exact-hold/rotation-trace patch
+
+Goal:
+- Add the minimum instrumentation needed to explain why orientation-tracked reset 2 still misses under `env.step`.
+
+Change:
+- Added `--oracle_exact_hold_steps` to the diagnostic-only oracle sequence, inserted between approach-to-exact and light close.
+- Added per-step quaternion/rotation tracking fields: pre/target/post/controller quaternions and pre/target/post/controller-to-exact rotational error norms.
+- Updated the l401 diagnostic wrapper to echo/export/pass `ORACLE_EXACT_HOLD_STEPS`.
+- Main RL task/reset defaults are unchanged.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `0f5a4f11a819548d853427e1c5592223d6f625c7`
+- implementation_commit: pending
+- changed_files: `dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py`, `cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`, this worklog
+- validation: `python3 -m py_compile dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py` passed; `bash -n cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh` passed
+
+Next:
+- Commit/push the diagnostic patch, deploy exact commit to l401, run two bounded orientation-tracked follow-ups: baseline orientation with new rotation traces and orientation plus an open exact-hold/longer approach before close.
+
+## 2026-06-12T00:17:21Z - launch orientation/hold follow-up diagnostics
+
+Goal:
+- Determine whether the remaining `env.step` miss is due to rotational tracking/settle time by rerunning the best orientation-tracked variant with rotation traces and with an added open exact-hold before close.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- local_commit: `456c8a09c09e9bb3f86d09980a96b9582243d35c`
+- push/pull: pushed branch to origin; deployed exact commit to l401 agent-owned worktree via Git bundle because l401 GitHub SSH auth is unavailable
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `456c8a09c09e9bb3f86d09980a96b9582243d35c`, detached clean
+- validation: local and l401 `python3 -m py_compile dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py` passed; local and l401 `bash -n cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh` passed
+
+Command / Jobs:
+- common: `TASK=Dextrah-Franka-Cube-Grasp`, `NUM_ENVS=1`, `NUM_RESETS=3`, `SEED=20260624`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`, single-grasp library `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_orig006_single.npz`, `INCLUDE_ORACLE_CLOSE_LIFT_CHECK=1`, `ORACLE_APPROACH_MODE=proportional_exact`, `ORACLE_PROPORTIONAL_GAIN=1.0`, `ORACLE_MAX_POSITION_ACTION=1.0`, `ORACLE_TRACK_ORIENTATION=1`, `ORACLE_CLOSE_WIDTH=0.055`, `ORACLE_LIFT_ACTION_Z=0.15`, `RENDER_ALL_RESETS=1`
+- `1027904`: run `franka_cube_ggx_pregrasp_orienthold_20260611_171721_baseline_trace`, `ORACLE_APPROACH_STEPS=60`, `ORACLE_EXACT_HOLD_STEPS=0`, `ORACLE_CLOSE_STEPS=80`, `ORACLE_LIFT_STEPS=80`, `ORACLE_HOLD_STEPS=20`
+- `1027905`: run `franka_cube_ggx_pregrasp_orienthold_20260611_171721_hold60_approach120`, `ORACLE_APPROACH_STEPS=120`, `ORACLE_EXACT_HOLD_STEPS=60`, `ORACLE_CLOSE_STEPS=100`, `ORACLE_LIFT_STEPS=80`, `ORACLE_HOLD_STEPS=20`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/diagnose_franka_cube_prior_1027904.out`, `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/diagnose_franka_cube_prior_1027905.out`
+- run dirs: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pregrasp_orienthold_20260611_171721_baseline_trace`, `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pregrasp_orienthold_20260611_171721_hold60_approach120`
+
+Result:
+- status: submitted
+
+Next:
+- Monitor jobs `1027904`/`1027905`, fetch logs/results, build an orientation/hold comparison bundle with rotational-error traces and keyframes, then decide whether the diagnostic gate passes or the controller/action path needs more patching.
+
+## 2026-06-12T00:23:30Z - orientation/hold follow-up result
+
+Goal:
+- Close the loop on jobs `1027904`/`1027905` and document the inspected artifact bundle before the next bounded diagnostic.
+
+Result:
+- status: failed robustness gate; no PPO/A100 relaunch
+- jobs `1027904` and `1027905` completed `0:0` on `pool0-00030`; logs and result dirs are fetched locally.
+- local inspection bundle: `cluster_results/l401/franka_cube_ggx_pregrasp_orienthold_20260611_171721_inspection`
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_orienthold_20260611_171721_inspection/REPORT.md`
+- keyframe sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_orienthold_20260611_171721_inspection/orienthold_keyframe_sheet.jpg`
+- trace plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_orienthold_20260611_171721_inspection/orienthold_trace_plot.png`
+- keyframe slideshow: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_orienthold_20260611_171721_inspection/orienthold_keyframes.mp4`
+- local artifact files also include `orienthold_metrics.csv`, `per_reset_metrics.csv`, `rotation_summary.csv`, `summary_metrics.csv`, `SUMMARY.json`, and the earlier `orienthold_contact_sheet.jpg` / `orienthold_traces.png`.
+- active-job check: `squeue -u lzha` on l401 showed no active jobs at this checkpoint.
+
+Metrics:
+
+| Variant | Job | Setting | Oracle Success | Lift Gate | Mean Max Lift | Reset 2 Max Lift | Reset 2 Min Tip | Reset 2 Min Exact EE | Reset 2 Min Rot |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `baseline_trace` | `1027904` | approach `60`, exact hold `0`, close `80`, orientation on | `2/3` | `2/3` | `0.023154m` | `0.0m` | `0.0417m` | `0.0131m` | `0.0372rad` |
+| `hold60_approach120` | `1027905` | approach `120`, exact hold `60`, close `100`, orientation on | `2/3` | `2/3` | `0.022684m` | `0.0m` | `0.0417m` | `0.0131m` | `0.0372rad` |
+
+Analysis:
+- The longer approach and open exact-hold did not change the failing reset. Reset 2 remains stuck with approximately `1.31cm` minimum post-to-exact EE error and `0.0372rad` minimum post-to-exact rotation error.
+- Resets 0/1 reach near-zero position and rotation residuals and lift. Reset 2 is therefore not explained by insufficient approach duration or close-width timing.
+- The normal `env.step` trace for reset 2 shows the controller desired pose is exactly the GraspGenX exact target, but measured motion effectively stalls after the residual appears. This points to a reset/sample-specific action/controller feasibility issue, joint-limit/stall behavior, or the exact contact geometry of this sample under the normal action path.
+
+Next:
+- Keep debugging bounded and diagnostic-only.
+- Target the reset-2-specific failure mode: add/report per-step joint target, joint position, clamp/limit margin, and direct-IK-vs-controller-achieved diagnostics for the failing reset, and compare against passing resets 0/1.
+- If reset 2 is a sample/pose robustness issue rather than a controller bug, try an alternate precomputed grasp/sample or a stricter export/filter criterion; preserve the main RL task defaults and do not launch PPO/A100 until contact/lift is robust across all or near-all resets.
+
+## 2026-06-12T00:27:18Z - alternate-grasp robustness sweep plan
+
+Goal:
+- Determine whether the remaining reset-2 failure is specific to the current `orig006` grasp or a general action-controller path brittleness.
+
+Hypothesis:
+- The GraspGenX object/cube transform and 3 cm open pregrasp are now geometrically coherent, but individual topdown grasps can be brittle under the normal `env.step` controller. Evaluating a small library subset one grasp at a time should reveal whether another candidate produces robust contact/lift under the same reset randomization.
+
+Candidate Set:
+- Source library: `local_results/franka_cube_grasp_prior/franka_cube_ggx_grasps_geometry_filtered_v1.npz`.
+- Candidate original indices from metadata: `[0, 1, 6, 11, 12, 14, 15, 23, 24, 27]`.
+- Rationale: this is the existing compact GraspGenX library filtered for DEXTRAH TCP geometry around the 0.06 m cube, includes the brittle `orig006`, and is small enough for bounded L401 diagnostics.
+
+Planned Diagnostic:
+- Create one single-grasp `.npz` per candidate under the Worker A local/remote artifact namespace, preserving original-index metadata.
+- Launch one tiny L401 diagnostic per candidate with `NUM_ENVS=1`, `NUM_RESETS=3`, `SEED=20260624`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`, `INCLUDE_ORACLE_CLOSE_LIFT_CHECK=1`, `ORACLE_APPROACH_MODE=proportional_exact`, `ORACLE_TRACK_ORIENTATION=1`, `ORACLE_CLOSE_WIDTH=0.055`, `ORACLE_APPROACH_STEPS=60`, `ORACLE_EXACT_HOLD_STEPS=0`, `ORACLE_CLOSE_STEPS=80`, `ORACLE_LIFT_STEPS=80`, `ORACLE_HOLD_STEPS=20`, `ORACLE_LIFT_ACTION_Z=0.15`, `RENDER_ALL_RESETS=1`.
+- Produce a local inspection bundle with a per-grasp/per-reset table for success/lift gate, max lift, min tip distance, min/final exact EE error, rotation error, plus a keyframe sheet/video and trace plots.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- local_head: `ba88a6aea9bca5d4106f47a480fc634c5af5739b`
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_code_commit: `456c8a09c09e9bb3f86d09980a96b9582243d35c` (diagnostic code commit; local HEAD only adds worklog entries)
+- changed_files: this worklog only before launch; generated `.npz` candidate libraries and inspection artifacts remain untracked outputs.
+
+Acceptance:
+- No PPO/A100 launch unless at least one candidate is robust across all or near-all resets with visually plausible contact/lift and sane trace metrics.
+
+## 2026-06-12T00:30:00Z - launch alternate-grasp robustness sweep
+
+Goal:
+- Run the planned single-grasp L401 diagnostics for the 10 filtered candidates.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- local_head: `ba88a6aea9bca5d4106f47a480fc634c5af5739b` plus uncommitted worklog launch entry
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_code_commit: `456c8a09c09e9bb3f86d09980a96b9582243d35c`, detached clean
+- candidate_library_dir_local: `local_results/franka_cube_grasp_prior/alt_grasp_candidates_20260612_0027`
+- candidate_library_dir_remote_host: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/alt_grasp_candidates_20260612_0027`
+- candidate_library_dir_container: `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/alt_grasp_candidates_20260612_0027`
+
+Command / Jobs:
+- command shape: `sbatch --parsable --job-name=ggx_alt_<orig> --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=456c8a09c09e9bb3f86d09980a96b9582243d35c,TASK=Dextrah-Franka-Cube-Grasp,RUN_NAME=franka_cube_ggx_altgrasp_orient_20260612_0027_orig<orig>,NUM_ENVS=1,NUM_RESETS=3,SEED=20260624,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/alt_grasp_candidates_20260612_0027/franka_cube_ggx_grasp_orig<orig>_single.npz,INCLUDE_ORACLE_CLOSE_LIFT_CHECK=1,ORACLE_APPROACH_MODE=proportional_exact,ORACLE_PROPORTIONAL_GAIN=1.0,ORACLE_MAX_POSITION_ACTION=1.0,ORACLE_TRACK_ORIENTATION=1,ORACLE_CLOSE_WIDTH=0.055,ORACLE_APPROACH_STEPS=60,ORACLE_EXACT_HOLD_STEPS=0,ORACLE_CLOSE_STEPS=80,ORACLE_LIFT_STEPS=80,ORACLE_HOLD_STEPS=20,ORACLE_LIFT_ACTION_Z=0.15,ORACLE_LIFT_SUCCESS_HEIGHT=0.020,ORACLE_RENDER_INTERVAL=12,RENDER_ALL_RESETS=1,RENDER_WIDTH=960,RENDER_HEIGHT=540 cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`
+- `1027909`: `orig000`, run `franka_cube_ggx_altgrasp_orient_20260612_0027_orig000`
+- `1027910`: `orig001`, run `franka_cube_ggx_altgrasp_orient_20260612_0027_orig001`
+- `1027911`: `orig006`, run `franka_cube_ggx_altgrasp_orient_20260612_0027_orig006`
+- `1027912`: `orig011`, run `franka_cube_ggx_altgrasp_orient_20260612_0027_orig011`
+- `1027913`: `orig012`, run `franka_cube_ggx_altgrasp_orient_20260612_0027_orig012`
+- `1027914`: `orig014`, run `franka_cube_ggx_altgrasp_orient_20260612_0027_orig014`
+- `1027915`: `orig015`, run `franka_cube_ggx_altgrasp_orient_20260612_0027_orig015`
+- `1027916`: `orig023`, run `franka_cube_ggx_altgrasp_orient_20260612_0027_orig023`
+- `1027917`: `orig024`, run `franka_cube_ggx_altgrasp_orient_20260612_0027_orig024`
+- `1027918`: `orig027`, run `franka_cube_ggx_altgrasp_orient_20260612_0027_orig027`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/diagnose_franka_cube_prior_<job>.out`
+- run dirs: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_altgrasp_orient_20260612_0027_orig<orig>`
+
+Result:
+- status: submitted
+
+Next:
+- Monitor jobs to completion, fetch logs/results, build local comparison report/table/contact sheet/video/trace plots, open artifacts with `viz-open`, and decide whether any alternate grasp passes the robustness gate.
+
+## 2026-06-12T00:42:00Z - alternate-grasp robustness sweep result
+
+Goal:
+- Inspect jobs `1027909`-`1027918` end-to-end and determine whether alternate GraspGenX samples can robustly close/lift through the normal `env.step` action path.
+
+Result:
+- status: diagnostic pass for a candidate subset; no PPO/A100 launch yet
+- Slurm: all ten jobs completed `0:0`; no active sweep jobs remained in `squeue`.
+- log scan: each fetched stdout contained `Reset Diagnostic Done`; no `Traceback`, `RuntimeError`, `Detected diagnostic error`, or missing-metrics signatures.
+- fetched run dirs: `cluster_results/l401/franka_cube_ggx_altgrasp_orient_20260612_0027_orig{000,001,006,011,012,014,015,023,024,027}`.
+- inspection bundle: `cluster_results/l401/franka_cube_ggx_altgrasp_orient_20260612_0027_inspection`
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_altgrasp_orient_20260612_0027_inspection/REPORT.md`
+- full phase sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_altgrasp_orient_20260612_0027_inspection/altgrasp_phase_keyframe_sheet.jpg`
+- representative multiview sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_altgrasp_orient_20260612_0027_inspection/altgrasp_representative_multiview_sheet.jpg`
+- cropped focus sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_altgrasp_orient_20260612_0027_inspection/altgrasp_cropped_focus_sheet.jpg`
+- metric plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_altgrasp_orient_20260612_0027_inspection/altgrasp_metric_plot.png`
+- slideshow video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_altgrasp_orient_20260612_0027_inspection/altgrasp_keyframes.mp4`
+- tables: `per_reset_metrics.csv`, `summary_by_grasp.csv`, `SUMMARY.json` in the inspection bundle.
+
+Metrics:
+
+| Grasp | Job | Confidence | Oracle/Lift Pass | Mean Max Lift | Mean Min Tip | Mean Min Exact EE | Max Final EE | Mean Min Rot | Verdict |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `orig000` | `1027909` | `0.756784` | `3/3` | `0.0303m` | `0.0320m` | `0.00007m` | `0.0351m` | `0.0001rad` | PASS |
+| `orig001` | `1027910` | `0.740458` | `3/3` | `0.0308m` | `0.0319m` | `0.00010m` | `0.0356m` | `0.0001rad` | PASS |
+| `orig006` | `1027911` | `0.723561` | `2/3` | `0.0232m` | `0.0350m` | `0.00446m` | `0.0574m` | `0.0129rad` | FAIL |
+| `orig011` | `1027912` | `0.714510` | `3/3` | `0.0318m` | `0.0317m` | `0.00015m` | `0.0366m` | `0.0001rad` | PASS |
+| `orig012` | `1027913` | `0.712653` | `3/3` | `0.0342m` | `0.0319m` | `0.00012m` | `0.0392m` | `0.0003rad` | PASS |
+| `orig014` | `1027914` | `0.709132` | `3/3` | `0.0302m` | `0.0320m` | `0.00006m` | `0.0350m` | `0.0000rad` | PASS |
+| `orig015` | `1027915` | `0.708211` | `0/3` | `0.0000m` | `0.0422m` | `0.01249m` | `0.0603m` | `0.0214rad` | FAIL |
+| `orig023` | `1027916` | `0.696887` | `0/3` | `0.0000m` | `0.0428m` | `0.01301m` | `0.0615m` | `0.0024rad` | FAIL |
+| `orig024` | `1027917` | `0.695900` | `3/3` | `0.0302m` | `0.0320m` | `0.00008m` | `0.0350m` | `0.0001rad` | PASS |
+| `orig027` | `1027918` | `0.692052` | `3/3` | `0.0304m` | `0.0250m` | `0.00006m` | `0.0350m` | `0.0001rad` | PASS |
+
+Analysis:
+- The reset/pregrasp gate remains good: every candidate/reset reports `reset_success=True`, `reset_grasp_quality_success=True`, and no immediate done.
+- `orig006` reproduced the prior brittleness exactly: resets 0/1 pass, reset 2 fails with max lift `0`, min exact EE approximately `1.31cm`, final exact EE approximately `5.74cm`, and elevated rotation residual.
+- Multiple alternate geometry-filtered candidates pass all three randomized resets with small exact-EE/rotation residuals and about `3cm` max lift. This means the controller/action path is not generally dead; the current single-grasp choice was brittle.
+- `orig015` and `orig023` fail all three despite passing pregrasp metrics, so the existing geometry-filtered library is not sufficient as-is. A robust subset or deterministic robust-grasp option is needed before PPO scale-up.
+- The visual sheets confirm the same qualitative split, although the diagnostic source frames include black overlay panels; the cropped sheet reduces but does not fully remove that overlay.
+
+Next:
+- Do not launch A100.
+- Patch/export a robust candidate subset based on the passing candidates, or add a deterministic/filtered robust-grasp diagnostic path, then rerun the reset/pregrasp + oracle gate on that candidate set.
+- After the robust-library gate passes visually and numerically, run a bounded small PPO smoke/eval before any full-scale training.
+
+## 2026-06-12T00:38:05Z - robust passing-set library plan
+
+Goal:
+- Convert the alternate-grasp sweep result into a reproducible reset-prior library that samples only robust passing candidates, then validate that library before any PPO.
+
+Hypothesis:
+- The reset/action path is viable when the library excludes brittle samples. A compact library containing only `orig000`, `orig001`, `orig011`, `orig012`, `orig014`, `orig024`, and `orig027` should pass the same randomized reset/pregrasp + oracle close/lift diagnostic while preserving the task reset behavior and 3 cm pregrasp offset.
+
+Planned Change:
+- Add a small source-backed filter script under `dextrah_lab/scene_scripts/` that reads a compact Franka cube GraspGenX `.npz`, selects by original GraspGenX indices, and preserves metadata including the original-index list.
+- Generate an untracked artifact library from `franka_cube_ggx_grasps_geometry_filtered_v1.npz`:
+  - robust passing set: `[0, 1, 11, 12, 14, 24, 27]`
+  - fallback single candidate if needed: `orig012`
+- No main task code change is expected: `DextrahFrankaCubeGraspEnv` already samples uniformly from whatever compact library is supplied by `env.grasp_prior_library_path`.
+
+Validation Plan:
+- Local cheap checks: `python3 -m py_compile` for the new script and touched diagnostics/wrappers; inspect generated metadata and contents.
+- Deploy exact tracked commit to the l401 Worker A worktree using Git, rsync only the generated untracked `.npz` artifacts.
+- Run one bounded l401 reset/oracle diagnostic on the robust passing-set library with `NUM_RESETS` large enough to sample the set repeatedly but still tiny; include viewer-ready report/CSV/JSON/contact sheets/video.
+- Only if the robust-library gate passes visually and numerically, launch a bounded 1-GPU/64-env PPO smoke/eval with the robust library. No A100.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `e13e970e8b9b64f1b5cf57690772341c9754b890`
+- implementation_commit: pending
+- changed_files: planned `dextrah_lab/scene_scripts/filter_franka_cube_grasp_prior_library.py`, this worklog
+
+Acceptance:
+- Robust-library diagnostic must report reset/pregrasp quality and oracle close/lift pass for all or near-all resets and produce inspectable visual artifacts before any PPO smoke launch.
+
+## 2026-06-12T00:41:00Z - robust passing-set library export
+
+Goal:
+- Materialize the robust reset-prior library and fallback single-grasp artifact from the existing geometry-filtered compact library.
+
+Change:
+- Added `dextrah_lab/scene_scripts/filter_franka_cube_grasp_prior_library.py`.
+- Generated untracked artifact libraries:
+  - `local_results/franka_cube_grasp_prior/franka_cube_ggx_grasps_robust_pass7_20260612.npz`
+  - `local_results/franka_cube_grasp_prior/franka_cube_ggx_grasp_orig012_robust_fallback_20260612.npz`
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- base_commit: `e13e970e8b9b64f1b5cf57690772341c9754b890`
+- implementation_commit: pending
+- changed_files: `dextrah_lab/scene_scripts/filter_franka_cube_grasp_prior_library.py`, this worklog
+
+Command:
+- robust set: `uv run python dextrah_lab/scene_scripts/filter_franka_cube_grasp_prior_library.py --source local_results/franka_cube_grasp_prior/franka_cube_ggx_grasps_geometry_filtered_v1.npz --output local_results/franka_cube_grasp_prior/franka_cube_ggx_grasps_robust_pass7_20260612.npz --original_indices 0,1,11,12,14,24,27 --filter_name robust_pass7_20260612 --filter_criterion "passes Worker A alternate-grasp orientation-tracked oracle close/lift diagnostic on all 3 randomized resets" --validation_source cluster_results/l401/franka_cube_ggx_altgrasp_orient_20260612_0027_inspection/REPORT.md --fallback_original_index 12`
+- fallback: `uv run python dextrah_lab/scene_scripts/filter_franka_cube_grasp_prior_library.py --source local_results/franka_cube_grasp_prior/franka_cube_ggx_grasps_geometry_filtered_v1.npz --output local_results/franka_cube_grasp_prior/franka_cube_ggx_grasp_orig012_robust_fallback_20260612.npz --original_indices 12 --filter_name robust_fallback_orig012_20260612 --filter_criterion "single fallback candidate from Worker A robust passing set; orig012 passed all 3 randomized oracle close/lift resets" --validation_source cluster_results/l401/franka_cube_ggx_altgrasp_orient_20260612_0027_inspection/REPORT.md --fallback_original_index 12`
+
+Validation:
+- `python3 -m py_compile dextrah_lab/scene_scripts/filter_franka_cube_grasp_prior_library.py dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py` passed.
+- `bash -n cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh cluster/sbatch_eval_franka_cube_grasp_1gpu.sh` passed.
+- Robust set contents: shape `(7, 4, 4)`, confidences `[0.7567837, 0.7404581, 0.7145097, 0.7126525, 0.7091320, 0.6958998, 0.6920517]`, `filter_original_indices=[0, 1, 11, 12, 14, 24, 27]`, `fallback_original_index=12`, `tool_frame=panda_hand`, `cube_size_m=0.06`.
+- Fallback contents: shape `(1, 4, 4)`, `filter_original_indices=[12]`, `fallback_original_index=12`.
+
+Next:
+- Commit/push the filter script and worklog, deploy the exact commit to the Worker A l401 worktree, rsync only the generated untracked libraries, and launch the robust-library reset/oracle diagnostic.
+
+## 2026-06-12T00:45:00Z - launch robust passing-set reset/oracle gate
+
+Goal:
+- Validate that the full robust passing-set library samples only the intended candidates and remains robust under randomized cube resets before PPO.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- local_commit: `337ea054b3e89a67e5826e81f97b78e60c0ba2f8`
+- push/pull: pushed branch to origin; deployed exact commit to l401 Worker A worktree via Git bundle
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `337ea054b3e89a67e5826e81f97b78e60c0ba2f8`, detached clean
+- remote validation: `python3 -m py_compile` for filter/diagnostic scripts passed; `bash -n` for diagnostic/train/eval wrappers passed
+- remote robust library: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_robust_pass7_20260612.npz`
+- remote fallback library: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_orig012_robust_fallback_20260612.npz`
+
+Command / Job:
+- planned command: `sbatch --parsable --job-name=ggx_robust_gate --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=337ea054b3e89a67e5826e81f97b78e60c0ba2f8,TASK=Dextrah-Franka-Cube-Grasp,RUN_NAME=franka_cube_ggx_robust_pass7_gate_20260612_0045,NUM_ENVS=1,NUM_RESETS=28,SEED=20260624,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_robust_pass7_20260612.npz,INCLUDE_ORACLE_CLOSE_LIFT_CHECK=1,ORACLE_APPROACH_MODE=proportional_exact,ORACLE_PROPORTIONAL_GAIN=1.0,ORACLE_MAX_POSITION_ACTION=1.0,ORACLE_TRACK_ORIENTATION=1,ORACLE_CLOSE_WIDTH=0.055,ORACLE_APPROACH_STEPS=60,ORACLE_EXACT_HOLD_STEPS=0,ORACLE_CLOSE_STEPS=80,ORACLE_LIFT_STEPS=80,ORACLE_HOLD_STEPS=20,ORACLE_LIFT_ACTION_Z=0.15,ORACLE_LIFT_SUCCESS_HEIGHT=0.020,ORACLE_RENDER_INTERVAL=24,RENDER_ALL_RESETS=1,RENDER_WIDTH=960,RENDER_HEIGHT=540 cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`
+- job_id: `1027924`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_robust_pass7_gate_20260612_0045`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/diagnose_franka_cube_prior_<job>.out`
+
+Acceptance:
+- All or near-all resets should pass reset/pregrasp quality and oracle close/lift, with no immediate done/pathological terminations and finite metrics.
+- The sample-index histogram should contain only local indices `0..6` from the robust passing set and should cover all seven at least once if the L401 CUDA RNG follows the local torch seed check.
+- Fetch and open a viewer-ready report/contact sheet/video before launching any PPO smoke.
+
+Result:
+- status: passed as bounded robust-library gate
+- Slurm: `1027924` completed `0:0` on `pool0-00030` in `00:05:32`
+- fetched run dir: `cluster_results/l401/franka_cube_ggx_robust_pass7_gate_20260612_0045`
+- inspection bundle: `cluster_results/l401/franka_cube_ggx_robust_pass7_gate_20260612_0045_inspection`
+- summary: `reset_success_rate=1.0`, `reset_quality_success_rate=1.0`, `pregrasp_reset_gate_pass=True`, `oracle_success_rate=1.0`, `oracle_lift_gate_pass_rate=1.0`, `oracle_done_seen_rate=0.0`, `rl_relaunch_gate_verdict=PASS`
+- mean oracle lift: `0.03103 m`; mean min tip-center distance: `0.03024 m`; mean min post-to-exact EE error: `0.000119 m`
+- sampled original indices in this 28-reset run: `{0: 5, 1: 2, 11: 5, 14: 6, 24: 3, 27: 7}`. `orig012` was part of the robust exported library and previously passed the alternate-grasp sweep, but this random run did not sample local index 3.
+
+Artifacts:
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_robust_pass7_gate_20260612_0045_inspection/REPORT.md`
+- candidate sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_robust_pass7_gate_20260612_0045_inspection/robust_gate_candidate_sheet.jpg`
+- trace plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_robust_pass7_gate_20260612_0045_inspection/robust_gate_trace_plot.png`
+- oblique slideshow: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_robust_pass7_gate_20260612_0045_inspection/robust_gate_oblique_sequence.mp4`
+
+Analysis:
+- The filtered pass7 library behaves correctly for the sampled robust candidates in reset/pregrasp and diagnostic action-space close/lift. This does not validate learned PPO behavior; it only clears the pre-PPO gate.
+- The next run should remain small: 1 GPU, 64 envs, short epochs, JSONL metrics, frequent checkpointing, then immediate deterministic video eval of the checkpoint. No A100 scale-up from this result alone.
+
+Next:
+- Launch the bounded reset-prior PPO smoke with `GRASP_PRIOR_RESET_ENABLED=True` and the robust pass7 library, then fetch training metrics/checkpoints and run eval video/trace artifacts before any larger comparison.
+
+## 2026-06-12T00:56:00Z - launch robust pass7 PPO smoke45
+
+Goal:
+- Run the smallest useful learned-policy smoke after the robust reset/oracle gate: 1 GPU, 64 envs, 45 epochs, prior enabled with the robust pass7 library, JSONL metrics, and frequent checkpoints.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- local_commit: `9f76db3ee6320f030d958d8b9ff6c53d122fd6fb`
+- push/pull: pushed branch; deployed exact commit to l401 Worker A worktree using a Git bundle because l401 cannot fetch GitHub directly
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `9f76db3ee6320f030d958d8b9ff6c53d122fd6fb`, detached clean
+- remote validation: `python3 -m py_compile` for filter/diagnostic scripts and `bash -n` for train/eval wrappers passed
+
+Command / Job:
+- command: `sbatch --parsable --job-name=ggx_pass7_smoke45 --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=9f76db3ee6320f030d958d8b9ff6c53d122fd6fb,TASK=Dextrah-Franka-Cube-Grasp,FULL_EXPERIMENT_NAME=franka_cube_ggx_robust_pass7_smoke45_20260612_0056,RUN_NAME=franka_cube_ggx_robust_pass7_smoke45_20260612_0056,NUM_ENVS=64,MAX_ITERATIONS=45,SAVE_FREQUENCY=5,SEED=20260624,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_robust_pass7_20260612.npz,DEXTRAH_RLGAMES_JSONL_METRICS=True,AUTO_RESUME=False cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`
+- job_id: `1027931`
+- run_name: `franka_cube_ggx_robust_pass7_smoke45_20260612_0056`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_robust_pass7_smoke45_20260612_0056`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_smoke_1027931.out`
+
+Acceptance:
+- Training must produce finite rank-0 JSONL metrics, frequent checkpoints, and no abnormal termination signatures.
+- Eval must use the same task, seed style, cube XY randomization, prior-enabled reset path, and robust pass7 library.
+- Smoke is only useful if eval video/trace show the policy starts in the intended pregrasp and interacts with/lifts the cube plausibly. This remains not an A100/full-scale launch gate by itself.
+
+Monitor:
+- Training completed `0:0` in `00:01:55` on `pool0-00030`.
+- Checkpoints written every 5 epochs; best reward checkpoint from stdout is `ep10` with `rew_857.09937`, final `ep45` has `rew_662.51086`.
+- JSONL sidecar has 45 rank-0 records and no non-finite scalar values in local scan.
+- Training metrics are not yet policy-positive: `cube_success_rate=0`, `cube_has_lifted_rate=0`, max JSONL `cube_lift_height=0.000553 m`, and `cube_ee_to_cube_dist` grew from `0.0801 m` to `0.6773 m`.
+
+Eval Jobs:
+- best reward eval job: `1027934`, run `franka_cube_ggx_robust_pass7_smoke45_eval_ep10_20260612_0100`, checkpoint `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_robust_pass7_smoke45_20260612_0056/nn/last_dextrah_franka_cube_grasp_ep_10_rew_857.09937.pth`
+- final eval job: `1027935`, run `franka_cube_ggx_robust_pass7_smoke45_eval_ep45_20260612_0100`, checkpoint `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_robust_pass7_smoke45_20260612_0056/nn/last_dextrah_franka_cube_grasp_ep_45_rew_662.51086.pth`
+- shared eval config: `NUM_ENVS=1`, `NUM_STEPS=420`, `VIDEO_LENGTH=420`, deterministic, `SEED=20260624`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`, prior enabled with robust pass7 library.
+
+Result:
+- status: PPO smoke/eval failed the scale-up gate
+- training job `1027931` completed `0:0`; eval jobs `1027934` and `1027935` completed `0:0`.
+- fetched training run: `cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_20260612_0056`
+- fetched eval runs:
+  - `cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_eval_ep10_20260612_0100`
+  - `cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_eval_ep45_20260612_0100`
+- inspection bundle: `cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_20260612_0056_inspection`
+
+Metrics:
+- training JSONL: 45 records, bad scalar count `0`, reset success min `1.0`, reset quality min `1.0`.
+- training policy metrics: success max `0.0`, lifted max `0.0`, max lift height `0.000553 m`; EE-to-cube distance grew from `0.0801 m` to `0.6773 m`.
+- best-reward eval (`ep10`): success max `0.0`, lift max `0.000939 m`, EE min/final `0.0442/0.7005 m`, finger-center min/final `0.0858/0.6753 m`, final gripper width `0.0002 m`.
+- final eval (`ep45`): success max `0.0`, lift max `0.001618 m`, EE min/final `0.0548/0.6937 m`, finger-center min/final `0.0918/0.6809 m`, final gripper width `0.0800 m`.
+
+Artifacts:
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_20260612_0056_inspection/REPORT.md`
+- eval contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_20260612_0056_inspection/eval_contact_sheet.jpg`
+- training trace plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_20260612_0056_inspection/training_trace_plot.png`
+- eval trace plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_20260612_0056_inspection/eval_trace_plot.png`
+- ep10 video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_eval_ep10_20260612_0100/videos/pass7-smoke45-ep10-step-0.mp4`
+- ep45 video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_eval_ep45_20260612_0100/videos/pass7-smoke45-ep45-step-0.mp4`
+
+Analysis:
+- The robust pass7 reset/prior branch is not the current blocker: reset/prior metrics remain healthy in training and eval.
+- The learned policy is the blocker. Visuals show the robot begins near the robust pregrasp, then moves away. The best reward checkpoint closes the gripper away from the cube; the final checkpoint leaves it open and also drifts away.
+- This fails the user's scale-up gate: no A100/final apple-to-apple training should launch from this smoke.
+
+Next:
+- Stay bounded. The next useful loop is a policy/action/reward diagnosis for the prior-start training distribution: compare early policy actions against the successful assisted oracle trajectory, inspect action scale/sign and reward-term incentives near reset, and only run another small smoke if the diagnosis identifies a bounded config/code hypothesis that preserves the apple-to-apple task defaults or is clearly marked diagnostic-only.
+
+## 2026-06-12T01:17:00Z - enhanced smoke inspection and action diagnosis
+
+Goal:
+- Convert the negative robust pass7 PPO smoke into a proper inspectable artifact bundle and diagnose whether the failure is reset geometry or learned action/reward behavior.
+
+Change:
+- No source or task-config changes.
+- Generated local inspection artifacts from existing fetched outputs only.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- implementation_commit: `192be6dc087398ad9136e64f86483bfdd4c2ae44` (worklog-only inspection commit)
+- changed_files: this worklog only
+
+Inputs:
+- training job/run: `1027931`, `franka_cube_ggx_robust_pass7_smoke45_20260612_0056`
+- eval jobs/runs:
+  - `1027934`, `franka_cube_ggx_robust_pass7_smoke45_eval_ep10_20260612_0100`
+  - `1027935`, `franka_cube_ggx_robust_pass7_smoke45_eval_ep45_20260612_0100`
+- fetched local dirs:
+  - `cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_20260612_0056`
+  - `cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_eval_ep10_20260612_0100`
+  - `cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_eval_ep45_20260612_0100`
+
+Artifacts:
+- inspection dir: `cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_20260612_0056_inspection`
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_20260612_0056_inspection/REPORT.md`
+- contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_20260612_0056_inspection/eval_contact_sheet.jpg`
+- training trace: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_20260612_0056_inspection/training_trace_plot.png`
+- eval trace: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_20260612_0056_inspection/eval_trace_plot.png`
+- training reward/action trace: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_20260612_0056_inspection/training_reward_action_plot.png`
+- eval action trace: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_20260612_0056_inspection/eval_action_trace_plot.png`
+- summary JSON: `cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_20260612_0056_inspection/SUMMARY.json`
+- summary CSVs:
+  - `cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_20260612_0056_inspection/training_epoch_summary.csv`
+  - `cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_20260612_0056_inspection/eval_action_samples.csv`
+  - `cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_20260612_0056_inspection/action_diagnosis_summary.csv`
+
+Result:
+- status: negative PPO smoke, reset-prior implementation still OK under current diagnostics
+- reset/prior: training and eval reset-prior success/quality remain `1.0`; this does not look like the earlier transform/reset bug.
+- training: success max `0.0`, lifted max `0.0`, max lift `0.000553 m`, EE distance worsened from `0.0801 m` to `0.6773 m`.
+- eval ep10: success max `0.0`, lift max `0.000939 m`, EE final `0.7005 m`, finger-center final `0.6753 m`; final gripper width near zero but away from cube.
+- eval ep45: success max `0.0`, lift max `0.001618 m`, EE final `0.6937 m`, finger-center final `0.6809 m`; gripper remains open.
+- action diagnosis:
+  - env logging confirms `actions[:, 2]` is vertical z and `actions[:, 6]` is gripper; negative gripper closes, positive opens.
+  - ep45 is immediately biased open/up/away: first-20 mean z action `0.571`, first-20 mean gripper `1.000`, z saturation fraction `0.948`, gripper saturation fraction `1.000`.
+  - ep10 briefly stays closer, then saturates and closes away from the cube: final z action `1.000`, final gripper `-1.000`, final EE distance `0.700 m`.
+
+Analysis:
+- Current verdict: reset-prior implementation is OK enough for bounded PPO experiments; the robust pass7 library is sampled correctly and reset-quality metrics remain healthy.
+- Learned policy is not yet learning the grasp/lift behavior. This is likely an action/reward/optimization issue after valid reset rather than a GraspGenX transform issue.
+- Larger/A100 apple-to-apple training remains blocked.
+
+Next:
+- Recommended next bounded experiment is diagnostic-only: from the same prior reset distribution, compare ep10/ep45 policy actions against the successful assisted oracle trajectory and run a one-step/short-horizon action-response audit that measures reward-term deltas for hold/approach/close/lift actions. Do not change the main task reward/termination semantics quietly; any reward/action adjustment must be explicit and separated from the apple-to-apple variant.
+
+## 2026-06-12T01:08:00Z - plan: pass7 action/reward audit
+
+Goal:
+- Run the requested diagnostic-only action/reward audit from the same robust pass7 prior-reset distribution. Compare ep10/ep45 policy actions with assisted-oracle and scripted first-action rollouts without launching PPO or any A100 job.
+
+Plan:
+- Add a debug-only RL-Games audit script under `dextrah_lab/rl_games/` that loads the ep10/ep45 checkpoints, resets the Franka cube task with `grasp_prior_reset_enabled=True`, samples the robust pass7 library, and records policy/scripted actions, reward terms, distances, gripper width, z-action effects, done flags, and reset-quality metrics over a short horizon.
+- Add a minimal L401 wrapper under `cluster/` for a 1-GPU bounded audit job. The wrapper will echo commit/config/checkpoints/output paths and write artifacts under `/results/diagnostics/<run_name>`.
+- If practical, add only no-behavior-change helper access needed by the debug script; do not change reward, termination, observation, action, PPO, cube reset, or training defaults.
+- Local validation: `python3 -m py_compile` for the new/edited Python files and `bash -n` for the wrapper.
+- Commit and push the audit implementation/worklog, deploy the exact commit to the agent-owned L401 worktree, launch one bounded audit job, monitor to completion, fetch outputs, generate/open report/plots/contact sheet via `viz-open`, and update this worklog with job id, run dir, artifact URLs, and verdict.
+
+Acceptance / no-go:
+- No PPO relaunch and no A100 job.
+- The audit must show whether policy actions are immediately worse than no-op/hold/approach/close/lift candidates, and whether reward terms locally incentivize upward/open/away motion near the valid pregrasp reset.
+- Any reward/action adjustment hypothesis remains documented as a diagnostic recommendation only, not silently applied to the apple-to-apple task.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `192be6dc087398ad9136e64f86483bfdd4c2ae44`
+- implementation_commit: current commit after this entry; exact deployed commit recorded in the launch entry
+- changed_files:
+  - `dextrah_lab/rl_games/audit_franka_cube_grasp_prior_actions.py`
+  - `cluster/sbatch_audit_franka_cube_grasp_prior_actions_1gpu.sh`
+  - this worklog
+
+Implementation:
+- Added a diagnostic-only action/reward audit script. It loads policy checkpoints with the same RL-Games player path as eval, resets the `Dextrah-Franka-Cube-Grasp` task with the robust pass7 prior library, snapshots each reset state inside the audit script, and replays ep10/ep45 policies plus scripted candidates from the same reset state.
+- Scripted candidates: `script_noop`, `script_hold_open`, `script_approach_exact_open`, `script_close_light_pregrasp`, `script_lift_closed`, and `script_assisted_oracle_short`.
+- Recorded per-step actions, reward terms, reward, EE/finger/tip distances, gripper width, cube lift/xy, reset-prior success/quality, done flags, contact proxies if available, and controller tracking commanded-vs-realized deltas.
+- Added a minimal L401 wrapper that verifies the robust library/checkpoints, echoes config/provenance, runs only the audit script, and writes report/CSV/JSONL/PNG/contact-sheet artifacts under `/results/diagnostics/<run_name>`.
+- Important scope note: I initially considered adding `get_env_state` to the Franka cube env, but removed that before commit. The matched reset-state snapshot/restore now lives only inside the diagnostic script, so the main RL task reset/reward/termination/observation/action/checkpoint behavior is unchanged.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/audit_franka_cube_grasp_prior_actions.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py` passed.
+- `bash -n cluster/sbatch_audit_franka_cube_grasp_prior_actions_1gpu.sh cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh cluster/sbatch_eval_franka_cube_grasp_1gpu.sh` passed.
+
+Next:
+- Commit/push, deploy exact commit to the agent-owned L401 worktree, submit the bounded action/reward audit using the robust pass7 library and smoke ep10/ep45 checkpoints, monitor/fetch/inspect artifacts, open report/contact sheet/plots with `viz-open`, and record a clear verdict. No PPO or A100 launch.
+
+## 2026-06-12T01:20:00Z - launch pass7 action/reward audit
+
+Goal:
+- Run the diagnostic-only action/reward audit requested by the orchestrator: compare ep10/ep45 policy actions against no-op/hold/approach/close/lift/assisted candidates from matched robust pass7 reset states.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- local_commit: `cf0ca0fc8f5f265df6a0b4a38bcb056891fb9bc8`
+- push/pull: pushed branch; deployed exact commit to L401 Worker A worktree via Git bundle
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `cf0ca0fc8f5f265df6a0b4a38bcb056891fb9bc8`, detached clean
+- remote validation: `python3 -m py_compile dextrah_lab/rl_games/audit_franka_cube_grasp_prior_actions.py` passed; `bash -n cluster/sbatch_audit_franka_cube_grasp_prior_actions_1gpu.sh` passed
+
+Command / Job:
+- command: `sbatch --parsable --job-name=ggx_pass7_action_audit --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=cf0ca0fc8f5f265df6a0b4a38bcb056891fb9bc8,TASK=Dextrah-Franka-Cube-Grasp,RUN_NAME=franka_cube_ggx_pass7_action_reward_audit_20260612_0120,NUM_ENVS=1,NUM_RESETS=3,HORIZON_STEPS=40,SEED=20260624,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_robust_pass7_20260612.npz,CHECKPOINTS=ep10=/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_robust_pass7_smoke45_20260612_0056/nn/last_dextrah_franka_cube_grasp_ep_10_rew_857.09937.pth,ep45=/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_robust_pass7_smoke45_20260612_0056/nn/last_dextrah_franka_cube_grasp_ep_45_rew_662.51086.pth,DETERMINISTIC=True,RENDER=True,RENDER_RESETS=1,RENDER_INTERVAL=10,RENDER_CANDIDATES=policy_ep10,policy_ep45,script_noop,script_hold_open,script_approach_exact_open,script_close_light_pregrasp,script_lift_closed,script_assisted_oracle_short,ORACLE_PROPORTIONAL_GAIN=1.0,ORACLE_MAX_POSITION_ACTION=1.0,ORACLE_TRACK_ORIENTATION=1,CLOSE_WIDTH=0.055,LIFT_ACTION_Z=0.15,ASSISTED_APPROACH_STEPS=20,ASSISTED_CLOSE_STEPS=10 cluster/sbatch_audit_franka_cube_grasp_prior_actions_1gpu.sh`
+- job_id: `1027944`
+- run_name: `franka_cube_ggx_pass7_action_reward_audit_20260612_0120`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pass7_action_reward_audit_20260612_0120`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/audit_franka_cube_prior_1027944.out`
+
+Expected artifacts:
+- `metrics.json`, `REPORT.md`, `action_reward_trace.jsonl`, `action_reward_trace.csv`, `rollout_summary.csv`, `reset_samples.csv`, `action_reward_trace_plot.png`, `action_tracking_plot.png`, `action_audit_contact_sheet.jpg`, labeled frames.
+
+Acceptance:
+- Scheduler completion is not enough. Fetch and inspect the report/plots/contact sheet/CSV/JSON, open the important artifacts with `viz-open`, and record whether policy actions are worse than scripted alternatives and whether reward terms locally incentivize open/up/away behavior.
+- No PPO or A100 launch from this job alone.
+
+Result:
+- status: canceled / invalid launch
+- reason: Slurm `--export` split comma-separated values in `CHECKPOINTS` and `RENDER_CANDIDATES`; the job only received `policy_ep10` and only rendered `policy_ep10`, so it could not satisfy the requested ep10/ep45 plus scripted-candidate comparison.
+- scheduler: `1027944` canceled at `00:01:05`; this run is invalid and not used for conclusions.
+- partial evidence: it reached reset 0 and completed one `policy_ep10` rollout (`reward_mean=2.2549`, final EE `0.0542m`, final finger `0.0953m`, max lift `0.00131m`) before the canceled job began printing an exception without a useful traceback.
+
+Patch:
+- Updated `cluster/sbatch_audit_franka_cube_grasp_prior_actions_1gpu.sh` to support semicolon-delimited checkpoint/render-candidate values for Slurm export and convert render candidates back to comma-separated Python CLI form.
+- Added `TORCH_DISABLE_ADDR2LINE=1` to the Pyxis environment so any remaining exception reports a usable Python/C++ traceback instead of hanging in symbolization.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/audit_franka_cube_grasp_prior_actions.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py` passed.
+- `bash -n cluster/sbatch_audit_franka_cube_grasp_prior_actions_1gpu.sh` passed.
+
+Next:
+- Commit/push this wrapper fix, deploy the new exact commit, and relaunch the bounded audit with semicolon-delimited values. Continue diagnostic-only; no PPO/A100.
+
+## 2026-06-12T01:27:00Z - relaunch pass7 action/reward audit
+
+Goal:
+- Rerun the bounded action/reward audit with both checkpoints and all scripted candidates correctly passed through Slurm.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- local_commit: `84c96e78968d5443eeb36ef082502b0d1d9ea85a`
+- push/pull: pushed branch; deployed exact commit to L401 Worker A worktree via Git bundle
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `84c96e78968d5443eeb36ef082502b0d1d9ea85a`, detached clean
+- remote validation: `python3 -m py_compile dextrah_lab/rl_games/audit_franka_cube_grasp_prior_actions.py` passed; `bash -n cluster/sbatch_audit_franka_cube_grasp_prior_actions_1gpu.sh` passed
+
+Command / Job:
+- command: same bounded audit as `1027944`, but `CHECKPOINTS` and `RENDER_CANDIDATES` are semicolon-delimited in the quoted Slurm export string.
+- checkpoints:
+  - `ep10=/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_robust_pass7_smoke45_20260612_0056/nn/last_dextrah_franka_cube_grasp_ep_10_rew_857.09937.pth`
+  - `ep45=/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_robust_pass7_smoke45_20260612_0056/nn/last_dextrah_franka_cube_grasp_ep_45_rew_662.51086.pth`
+- candidates rendered for reset 0: `policy_ep10`, `policy_ep45`, `script_noop`, `script_hold_open`, `script_approach_exact_open`, `script_close_light_pregrasp`, `script_lift_closed`, `script_assisted_oracle_short`
+- job_id: `1027950`
+- run_name: `franka_cube_ggx_pass7_action_reward_audit_20260612_0127`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pass7_action_reward_audit_20260612_0127`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/audit_franka_cube_prior_1027950.out`
+
+Expected artifacts:
+- `metrics.json`, `REPORT.md`, `action_reward_trace.jsonl`, `action_reward_trace.csv`, `rollout_summary.csv`, `reset_samples.csv`, `action_reward_trace_plot.png`, `action_tracking_plot.png`, `action_audit_contact_sheet.jpg`, labeled frames.
+
+Next:
+- Monitor to terminal state; if it fails, inspect traceback and patch. If it succeeds, fetch all artifacts, generate/open viewer URLs, and write verdict. No PPO/A100.
+
+Result:
+- status: canceled / invalid matched-state restore attempt
+- scheduler: `1027950` canceled at `00:02:12`.
+- reason: corrected checkpoint/candidate export worked, but the run again completed only the first `policy_ep10` rollout and then hung/faulted while attempting to restore the exact same PhysX state for the next candidate. Even with `TORCH_DISABLE_ADDR2LINE=1`, the log only showed Hydra's `Error executing job with overrides` and no usable traceback before the process stalled.
+- conclusion: restoring exact in-process PhysX state after a rollout is not reliable enough for this audit path. This is a diagnostic infrastructure issue, not a reset-prior result.
+
+Patch:
+- Made matched reset-state replay optional in `audit_franka_cube_grasp_prior_actions.py` via `--match_reset_state/--no-match_reset_state`.
+- Default diagnostic mode is now `match_reset_state=False`: each policy/scripted candidate gets a fresh reset from the same robust pass7 prior distribution, with its sampled grasp/cube pose logged. This avoids the unstable post-rollout PhysX rewind while still comparing action/reward behavior under the same reset distribution.
+- Added `MATCH_RESET_STATE` to the L401 wrapper's echoed config and CLI args; relaunch will use `MATCH_RESET_STATE=False`.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/audit_franka_cube_grasp_prior_actions.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py` passed.
+- `bash -n cluster/sbatch_audit_franka_cube_grasp_prior_actions_1gpu.sh` passed.
+
+Next:
+- Commit/push/deploy this fresh-reset audit path and relaunch. Artifact/report must explicitly state that candidate rollouts are from the same prior reset distribution, not bit-identical restored states.
+
+## 2026-06-12T01:33:00Z - relaunch fresh-reset action/reward audit
+
+Goal:
+- Complete the action/reward audit without unstable post-rollout PhysX rewind: each candidate uses a fresh sample from the same robust pass7 prior reset distribution.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- local_commit: `f780ba9213bca99b6f17fd7e2e98861194a176a6`
+- push/pull: pushed branch; deployed exact commit to L401 Worker A worktree via Git bundle
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `f780ba9213bca99b6f17fd7e2e98861194a176a6`, detached clean
+- remote validation: `python3 -m py_compile dextrah_lab/rl_games/audit_franka_cube_grasp_prior_actions.py` passed; `bash -n cluster/sbatch_audit_franka_cube_grasp_prior_actions_1gpu.sh` passed
+
+Command / Job:
+- command: bounded L401 audit with `MATCH_RESET_STATE=False`, `NUM_RESETS=3`, `HORIZON_STEPS=40`, robust pass7 library, ep10/ep45 checkpoints, and all scripted candidates rendered for reset 0.
+- job_id: `1027952`
+- run_name: `franka_cube_ggx_pass7_action_reward_audit_fresh_20260612_0133`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pass7_action_reward_audit_fresh_20260612_0133`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/audit_franka_cube_prior_1027952.out`
+
+Expected artifacts:
+- `metrics.json`, `REPORT.md`, `action_reward_trace.jsonl`, `action_reward_trace.csv`, `rollout_summary.csv`, `reset_samples.csv`, `action_reward_trace_plot.png`, `action_tracking_plot.png`, `action_audit_contact_sheet.jpg`, labeled frames.
+
+Next:
+- Monitor to terminal state; fetch, inspect, generate/open viewer URLs, and record verdict. No PPO/A100.
+
+Result:
+- status: canceled / invalid post-rollout failure
+- scheduler: `1027952` canceled at `00:02:05`.
+- reason: render-enabled fresh-reset audit still completed only the first `policy_ep10` rollout, then hit `Error executing job with overrides` before the next candidate. This disproved the exact-state-restore hypothesis but did not isolate rendering.
+
+Follow-up:
+- Launched no-render same-process fresh-reset fallback `1027953`, run `franka_cube_ggx_pass7_action_reward_audit_norender_20260612_0137`, with `RENDER=False`, `MATCH_RESET_STATE=False`, same checkpoints/candidates/config.
+- `1027953` also completed only the first `policy_ep10` rollout, then hit the same `Error executing job with overrides`; canceled at `00:01:45`.
+- Conclusion: the crash is independent of video rendering and occurs on the post-first-rollout path before the next candidate/reset. The audit needs one candidate per process/job or a one-rollout mode.
+
+Patch:
+- Added `--candidates` to `dextrah_lab/rl_games/audit_franka_cube_grasp_prior_actions.py` and `CANDIDATES` to the L401 wrapper so one job can run exactly one candidate and exit cleanly after writing artifacts.
+- First fallback target is the orchestrator-requested minimal set only: `policy_ep10`, `policy_ep45`, `script_lift_closed`, `script_assisted_oracle_short`, one reset each. Aggregate the per-job JSON/CSV locally afterward.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/audit_franka_cube_grasp_prior_actions.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py` passed.
+- `bash -n cluster/sbatch_audit_franka_cube_grasp_prior_actions_1gpu.sh` passed.
+
+Next:
+- Commit/push/deploy the one-candidate filter, launch four one-candidate L401 jobs, monitor/fetch/aggregate artifacts, and open report/plots/contact sheets with `viz-open`. No PPO/A100.
+
+## 2026-06-12T01:42:00Z - launch one-candidate audit shards
+
+Goal:
+- Complete the minimal action/reward audit by running one candidate per process/job, avoiding the post-first-rollout crash seen in multi-candidate runs.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- local_commit: `267e034f25628d7eef782baa8f5b205c31bb6ff9`
+- push/pull: pushed branch; deployed exact commit to L401 Worker A worktree via Git bundle
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `267e034f25628d7eef782baa8f5b205c31bb6ff9`, detached clean
+- remote validation: `python3 -m py_compile dextrah_lab/rl_games/audit_franka_cube_grasp_prior_actions.py` passed; `bash -n cluster/sbatch_audit_franka_cube_grasp_prior_actions_1gpu.sh` passed
+
+Command / Jobs:
+- common config: `NUM_RESETS=1`, `HORIZON_STEPS=40`, `MATCH_RESET_STATE=False`, `RENDER=True`, robust pass7 library, ep10/ep45 checkpoints available, same seed/cube XY randomization.
+- `policy_ep10`: job `1027955`, run `franka_cube_ggx_pass7_action_audit_policy_ep10_20260612_0142`
+- `policy_ep45`: job `1027956`, run `franka_cube_ggx_pass7_action_audit_policy_ep45_20260612_0142`
+- `script_lift_closed`: job `1027957`, run `franka_cube_ggx_pass7_action_audit_script_lift_closed_20260612_0142`
+- `script_assisted_oracle_short`: job `1027958`, run `franka_cube_ggx_pass7_action_audit_script_assisted_oracle_short_20260612_0142`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/audit_franka_cube_prior_<job>.out`
+- run dirs: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/<run_name>`
+
+Expected artifacts per shard:
+- `metrics.json`, `REPORT.md`, `action_reward_trace.jsonl`, `action_reward_trace.csv`, `rollout_summary.csv`, `reset_samples.csv`, `action_reward_trace_plot.png`, `action_tracking_plot.png`, `action_audit_contact_sheet.jpg`, labeled frames.
+
+Next:
+- Monitor all four jobs to completion; fetch all logs/artifacts; aggregate CSV/JSON into one local report/plots/contact sheet; open with `viz-open`; record verdict. No PPO/A100.
+
+Result:
+- status: completed / diagnostic verdict recorded
+- scheduler:
+  - `1027955` `policy_ep10`: `COMPLETED 0:0`, `00:01:00`, `pool0-00030`
+  - `1027956` `policy_ep45`: `COMPLETED 0:0`, `00:01:01`, `pool0-00030`
+  - `1027957` `script_lift_closed`: `COMPLETED 0:0`, `00:01:00`, `pool0-00030`
+  - `1027958` `script_assisted_oracle_short`: `COMPLETED 0:0`, `00:00:55`, `pool0-00004`
+- fetched artifacts:
+  - `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_action_audit_policy_ep10_20260612_0142`
+  - `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_action_audit_policy_ep45_20260612_0142`
+  - `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_action_audit_script_lift_closed_20260612_0142`
+  - `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_action_audit_script_assisted_oracle_short_20260612_0142`
+- aggregate inspection bundle:
+  - path: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_action_audit_minimal_20260612_0142_inspection`
+  - report URL: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_action_audit_minimal_20260612_0142_inspection/REPORT.md`
+  - reward/action plot URL: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_action_audit_minimal_20260612_0142_inspection/aggregate_reward_distance_action.png`
+  - contact sheet URL: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_action_audit_minimal_20260612_0142_inspection/aggregate_contact_sheet.jpg`
+  - extra files: `SUMMARY.json`, `rollout_summary_aggregate.csv`, `action_reward_trace_aggregate.csv`, `reset_samples_aggregate.csv`, `aggregate_reward_terms.png`
+
+Metrics:
+
+| Candidate | Job | Reward mean | EE dist first->final m | Finger dist first->final m | Gripper width first->final m | z mean/final | grip mean/final | Max lift m | Reset quality |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `policy_ep10` | `1027955` | 2.255 | 0.051->0.054 | 0.088->0.095 | 0.078->0.043 | -0.156/-0.478 | -0.012/0.148 | 0.0013 | True |
+| `policy_ep45` | `1027956` | 1.544 | 0.055->0.363 | 0.092->0.348 | 0.080->0.080 | 0.760/1.000 | 1.000/1.000 | 0.0016 | True |
+| `script_lift_closed` | `1027957` | 2.185 | 0.053->0.072 | 0.090->0.113 | 0.076->0.055 | 0.150/0.150 | 0.375/0.375 | 0.0000 | True |
+| `script_assisted_oracle_short` | `1027958` | 2.485 | 0.052->0.028 | 0.089->0.066 | 0.080->0.062 | -0.127/0.150 | 0.688/0.375 | 0.0000 | True |
+
+Analysis:
+- The one-candidate process strategy resolved the audit infrastructure failure from `1027944`, `1027950`, `1027952`, and `1027953`; each shard exited cleanly and wrote complete JSON/CSV/plots/contact sheets.
+- Reset-prior behavior remains healthy in this audit: all shards use robust pass7 `sample_index=6`, report reset success/quality true, no immediate done, and the same valid pregrasp geometry.
+- The learned policy is the failing part. `policy_ep45` visibly and numerically moves open/up/away: final EE/finger distances grow to `0.363/0.348 m`, gripper stays fully open, and approach/enclosure reward terms collapse. `policy_ep10` stays near the cube and sometimes closes, but still does not lift.
+- `script_assisted_oracle_short` gives the strongest local reward and improves approach/enclosure distances, so the immediate reward trace does not indicate a local incentive to move away/open. The positive action-up term is visible, but the total reward is lower for the ep45 away/open rollout than for the assisted approach.
+- `script_lift_closed` shows that closing/lifting directly from the pregrasp is not enough; the action path needs approach-to-exact/contact before lift.
+
+Decision:
+- No PPO/A100 relaunch. The robust pass7 reset implementation is not the current blocker; learned policy/action distribution or train/eval action semantics around the reset state remain unresolved.
+
+Next:
+- Bounded diagnostic only: compare train/eval normalized action distributions, action scaling/sign conventions, and policy observation/state at reset; optionally run a diagnostic-only action prior/curriculum experiment separately from the apple-to-apple task. Do not change the main task reward/action/termination semantics silently.
+
+## 2026-06-12T01:58:00Z - policy state/action semantics diagnostic plan
+
+Goal:
+- Diagnose why the valid robust pass7 reset leads the learned ep45 policy to command open/up/away behavior, without launching PPO/A100 or changing the apple-to-apple task semantics.
+
+Hypothesis:
+- The reset geometry is no longer the main blocker. The failure is likely in one of: policy action distribution learned by ep45, deterministic-vs-stochastic player behavior, action sign/scale interpretation, observation normalization/RMS mismatch around the reset state, or reset observations lying far outside the checkpoint's training observation RMS.
+
+Planned change:
+- Add a diagnostic-only script under `dextrah_lab/rl_games/` that:
+  - creates `Dextrah-Franka-Cube-Grasp` with robust pass7 prior reset enabled and the same cube XY randomization,
+  - collects raw and RL-Games-processed reset observations across a small env count,
+  - loads ep10/ep45 checkpoints and records deterministic plus repeated stochastic policy actions at reset,
+  - captures raw actor/model output dictionaries where RL-Games exposes them (`actions`, `mus`, `sigmas`, `values`, etc.),
+  - inspects checkpoint keys for observation RMS / running mean-std tensors and computes reset observation z-score summaries where possible,
+  - records env action scale, clip settings, action-space bounds, and gripper action sign/width relation,
+  - parses the pass7 training JSONL sidecar for training-time action/distance trends (`cube_action_z`, `cube_gripper_action`, `cube_action_up/down`, distances, width),
+  - writes `metrics.json`, CSVs, histograms/plots, and `REPORT.md`.
+- Add a minimal L401 wrapper for this diagnostic. Keep it one small job, no rendering unless later needed.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `356d86d66f2abd2909df34fe28ec9bf8e5548ff7`
+- changed_files_planned:
+  - `dextrah_lab/rl_games/audit_franka_cube_policy_state.py`
+  - `cluster/sbatch_audit_franka_cube_policy_state_1gpu.sh`
+  - `worklogs/franka-cube-grasp-prior/franka-cube-ggx-pregrasp-reset.md`
+
+Validation plan:
+- Local cheap checks: `python3 -m py_compile dextrah_lab/rl_games/audit_franka_cube_policy_state.py`, `bash -n cluster/sbatch_audit_franka_cube_policy_state_1gpu.sh`.
+- Deploy exact commit to the Worker A L401 worktree and run one bounded 1-GPU diagnostic with:
+  - `NUM_ENVS=64`, `NUM_RESETS=3`, pass7 robust library,
+  - checkpoints ep10 and ep45 from `franka_cube_ggx_robust_pass7_smoke45_20260612_0056`,
+  - training JSONL `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_robust_pass7_smoke45_20260612_0056/metrics/direct_info_rank_0.jsonl`.
+- Fetch results, inspect report/plots/CSVs, open with `viz-open`, and record a concrete verdict or negative result. No PPO/A100.
+
+Expected artifacts:
+- `metrics.json`, `REPORT.md`, `checkpoint_state_summary.json`, `reset_observation_dim_summary.csv`, `policy_action_dim_summary.csv`, `actor_output_samples.csv`, `training_action_epoch_summary.csv`, `action_histograms.png`, `observation_zscore_histograms.png`, `training_action_trends.png`.
+
+Next:
+- Implement the diagnostic-only script/wrapper, commit/push/deploy, run the bounded L401 job, and inspect artifacts before deciding the next bounded experiment.
+
+## 2026-06-12T02:06:00Z - launch pass7 policy state audit
+
+Goal:
+- Run the bounded diagnostic-only policy state/action semantics audit for ep10/ep45 around valid robust pass7 reset states.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- local_commit: `ee009a1d6a9c84280a2499a3455a07bdfc7c0f53`
+- push/pull: pushed branch; L401 cannot fetch GitHub directly, so deployed exact commit to the agent-owned worktree via Git bundle.
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `ee009a1d6a9c84280a2499a3455a07bdfc7c0f53`, detached clean
+- validation:
+  - local `python3 -m py_compile dextrah_lab/rl_games/audit_franka_cube_policy_state.py` passed
+  - local `bash -n cluster/sbatch_audit_franka_cube_policy_state_1gpu.sh` passed
+  - remote `python3 -m py_compile dextrah_lab/rl_games/audit_franka_cube_policy_state.py` passed
+  - remote `bash -n cluster/sbatch_audit_franka_cube_policy_state_1gpu.sh` passed
+
+Command / Job:
+- command: `sbatch --parsable --job-name=ggx_policy_state --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=ee009a1d6a9c84280a2499a3455a07bdfc7c0f53,TASK=Dextrah-Franka-Cube-Grasp,RUN_NAME=franka_cube_ggx_pass7_policy_state_20260612_0206,NUM_ENVS=64,NUM_RESETS=3,SEED=20260624,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_robust_pass7_20260612.npz,CHECKPOINTS="ep10=/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_robust_pass7_smoke45_20260612_0056/nn/last_dextrah_franka_cube_grasp_ep_10_rew_857.09937.pth;ep45=/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_robust_pass7_smoke45_20260612_0056/nn/last_dextrah_franka_cube_grasp_ep_45_rew_662.51086.pth",TRAINING_JSONL_PATH=/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_robust_pass7_smoke45_20260612_0056/metrics/direct_info_rank_0.jsonl,STOCHASTIC_SAMPLES=16,HISTOGRAM_BINS=41 cluster/sbatch_audit_franka_cube_policy_state_1gpu.sh`
+- job_id: `1027978`
+- run_name: `franka_cube_ggx_pass7_policy_state_20260612_0206`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pass7_policy_state_20260612_0206`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/audit_franka_cube_policy_state_1027978.out`
+
+Expected artifacts:
+- `metrics.json`, `REPORT.md`, `checkpoint_state_summary.json`, `reset_observation_dim_summary.csv`, `observation_zscore_summary.csv`, `policy_action_dim_summary.csv`, `policy_action_samples.csv`, `actor_output_dim_summary.csv`, `actor_output_samples.csv`, `checkpoint_tensor_summary.csv`, `training_action_epoch_summary.csv`, `action_histograms.png`, `observation_zscore_histograms.png`, `training_action_trends.png`.
+
+Next:
+- Monitor job `1027978` to terminal state; inspect log, fetch artifacts, open report/plots with `viz-open`, and record the concrete bug/hypothesis or negative result. No PPO/A100.
+
+Result:
+- status: canceled / diagnostic infrastructure failure
+- scheduler: `1027978` reached Isaac runtime and loaded both ep10/ep45 checkpoints, then logged `Error executing job with overrides` and remained `RUNNING`; canceled at `00:02:26` elapsed.
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/audit_franka_cube_policy_state_1027978.out`
+- artifacts: no `metrics.json` or CSV artifacts were written in `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pass7_policy_state_20260612_0206`.
+
+Analysis:
+- This matches the earlier multi-rollout failure class: the script got through container/Isaac/env startup and checkpoint restore, but Hydra/Isaac did not surface a useful traceback before the process hung.
+- The next patch should reduce in-process player state and make failures inspectable: sample reset observations first, then create/evaluate one checkpoint player at a time, record per-stage action/model errors into CSV rows, use a PyTorch checkpoint-load fallback for normalization tensor inspection, and write `ERROR.md` / `error.json` if the top-level Hydra job still aborts.
+
+Next:
+- Patch the diagnostic only; do not change task/reward/reset semantics. Relaunch one bounded L401 policy-state diagnostic after local and remote syntax checks.
+
+## 2026-06-11 18:52:42 PDT - patch policy state audit failure isolation
+
+Goal:
+- Make the pass7 policy-state diagnostic complete or at least produce inspectable error artifacts instead of hanging after checkpoint load.
+
+Hypothesis:
+- Holding multiple RL-Games players in one process and/or an unhandled post-restore action/model/checkpoint-summary exception is triggering Hydra abort without durable artifacts. Sequential checkpoint evaluation plus explicit exception artifacts should make the failure diagnosable and likely avoid the stuck path.
+
+Change:
+- Updated `dextrah_lab/rl_games/audit_franka_cube_policy_state.py` to:
+  - sample all reset observation batches before loading checkpoint players,
+  - create/evaluate one checkpoint player at a time,
+  - wrap deterministic/stochastic action sampling and raw model output capture with per-stage error rows,
+  - load checkpoint tensors with a `weights_only=False` fallback for PyTorch 2.6-style checkpoints,
+  - write `ERROR.md` and `error.json` if the top-level audit still throws.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `ee009a1d6a9c84280a2499a3455a07bdfc7c0f53`
+- implementation_commit: pending
+- changed_files:
+  - `dextrah_lab/rl_games/audit_franka_cube_policy_state.py`
+  - `worklogs/franka-cube-grasp-prior/franka-cube-ggx-pregrasp-reset.md`
+
+Validation:
+- local `python3 -m py_compile dextrah_lab/rl_games/audit_franka_cube_policy_state.py` passed
+- local `bash -n cluster/sbatch_audit_franka_cube_policy_state_1gpu.sh` passed
+
+Next:
+- Commit/push, deploy exact commit to the agent-owned L401 worktree via Git bundle if direct fetch remains blocked, run remote syntax checks, relaunch the bounded policy-state diagnostic with a new run name, then fetch/open artifacts.
+
+## 2026-06-11 18:55 PDT - relaunch hardened policy state audit
+
+Goal:
+- Produce inspectable ep10/ep45 policy action-distribution and reset observation semantics artifacts for the robust pass7 reset after hardening the diagnostic.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- local_commit: `31329f9836ffc28515002f8cbb887850e68a250c`
+- push/pull: pushed to `origin/codex/franka-cube-ggx-pregrasp-reset`; L401 direct GitHub fetch remained blocked from earlier workflow, so deployed exact commit via Git bundle into the agent-owned remote worktree.
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `31329f9836ffc28515002f8cbb887850e68a250c`, detached clean
+- validation:
+  - local `python3 -m py_compile dextrah_lab/rl_games/audit_franka_cube_policy_state.py` passed
+  - local `bash -n cluster/sbatch_audit_franka_cube_policy_state_1gpu.sh` passed
+  - remote `python3 -m py_compile dextrah_lab/rl_games/audit_franka_cube_policy_state.py` passed
+  - remote `bash -n cluster/sbatch_audit_franka_cube_policy_state_1gpu.sh` passed
+
+Command / Job:
+- command: `sbatch --parsable --job-name=ggx_policy_state2 --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=31329f9836ffc28515002f8cbb887850e68a250c,TASK=Dextrah-Franka-Cube-Grasp,RUN_NAME=franka_cube_ggx_pass7_policy_state_20260612_0255,NUM_ENVS=64,NUM_RESETS=3,SEED=20260624,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_robust_pass7_20260612.npz,CHECKPOINTS="ep10=/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_robust_pass7_smoke45_20260612_0056/nn/last_dextrah_franka_cube_grasp_ep_10_rew_857.09937.pth;ep45=/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_robust_pass7_smoke45_20260612_0056/nn/last_dextrah_franka_cube_grasp_ep_45_rew_662.51086.pth",TRAINING_JSONL_PATH=/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_robust_pass7_smoke45_20260612_0056/metrics/direct_info_rank_0.jsonl,STOCHASTIC_SAMPLES=16,HISTOGRAM_BINS=41 cluster/sbatch_audit_franka_cube_policy_state_1gpu.sh`
+- job_id: `1027979`
+- run_name: `franka_cube_ggx_pass7_policy_state_20260612_0255`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pass7_policy_state_20260612_0255`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/audit_franka_cube_policy_state_1027979.out`
+
+Expected artifacts:
+- `metrics.json`, `REPORT.md`, `checkpoint_state_summary.json`, `reset_observation_dim_summary.csv`, `observation_zscore_summary.csv`, `policy_action_dim_summary.csv`, `policy_action_samples.csv`, `actor_output_dim_summary.csv`, `actor_output_samples.csv`, `checkpoint_tensor_summary.csv`, `training_action_epoch_summary.csv`, `action_histograms.png`, `observation_zscore_histograms.png`, `training_action_trends.png`; if the audit fails, `ERROR.md` and `error.json`.
+
+Next:
+- Monitor job `1027979` through terminal state, inspect logs/artifacts, fetch locally, open report/plots with `viz-open`, and decide whether the action/observation semantics explain the ep45 open/up/away policy. No PPO/A100.
+
+Result:
+- status: completed / artifacts fetched / replacement diagnostic needed for RMS section
+- scheduler: `1027979` `COMPLETED 0:0`, elapsed `00:00:49`, node `pool0-00030`
+- remote run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pass7_policy_state_20260612_0255`
+- local run_dir: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_policy_state_20260612_0255`
+- local log: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_logs/l401/slurm_logs/dextrah/audit_franka_cube_policy_state_1027979.out`
+- viewer URLs:
+  - report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_policy_state_20260612_0255/REPORT.md`
+  - action histograms: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_policy_state_20260612_0255/action_histograms.png`
+  - training trends: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_policy_state_20260612_0255/training_action_trends.png`
+  - observation z-score histogram: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_policy_state_20260612_0255/observation_zscore_histograms.png`
+
+Metrics / Evidence:
+- Reset/prior health remains good over 3 sampled reset batches: reset success mean `1.0`, reset quality mean `1.0`, open width mean `0.08 m`, projected exact tip-center mean about `0.027-0.028 m`, sample histogram covers all 7 pass7 grasps.
+- Ep10 deterministic reset actions: `x=-0.273`, `y=-0.152`, `z=-0.858`, `roll=-0.576`, `pitch=-0.340`, `yaw=-0.409`, `gripper=0.507`; ep10 is near/open-ish but downward/approach-biased.
+- Ep45 deterministic reset actions: `x=0.575`, `y=-0.797`, `z=0.312`, `roll=-1.000`, `pitch=0.598`, `yaw=0.621`, `gripper=0.991`; gripper is already strongly open and roll is saturated, but reset-only z is positive rather than saturated.
+- Ep45 stochastic reset action means remain open/up-ish: `z=0.188`, `gripper=0.743`, with high saturation fractions across several dimensions.
+- Training JSONL at epoch 45 is much more pathological than reset-only deterministic action: `cube_action_z=0.962`, `cube_gripper_action=0.746`, `cube_ee_to_cube_dist=0.677`, `cube_finger_center_to_cube_dist=0.667`, success/lift `0`.
+
+Analysis:
+- The action-sign audit confirms no sign inversion: positive z is upward and positive gripper opens. The ep45 actor already has a strong open-gripper bias at reset and some positive/up tendency, while training/eval rollouts saturate z upward after stepping.
+- The current `1027979` observation RMS/z-score section is invalid because the diagnostic paired `running_mean`/`running_var` tensors with themselves due a loose key-matching bug. The raw checkpoint tensor table exposed the intended keys (`model.running_mean_std.running_mean` and `model.running_mean_std.running_var`), so this is a diagnostic bug, not an env/task finding.
+
+Decision:
+- Do not use `1027979` z-score conclusions. Patch the RMS pairing and report wording, then rerun the same bounded diagnostic once. No PPO/A100.
+
+## 2026-06-11 19:03 PDT - fix policy state RMS pairing
+
+Goal:
+- Replace the flawed `1027979` observation normalization evidence with valid reset observation RMS/z-score artifacts while preserving the useful action-distribution audit.
+
+Change:
+- Tightened checkpoint RMS tensor pairing in `audit_franka_cube_policy_state.py` so only keys ending in `.running_mean` or `.moving_mean` are treated as means, and candidate variance/std keys are built from the exact suffix prefix. This prevents `running_mean` and `running_var` from being paired with themselves.
+- Updated the report verdict to distinguish strong open-gripper reset bias plus positive z from fully saturated reset z; this better matches the observed split between reset-only actions and rollout/training z saturation.
+
+Validation:
+- local `python3 -m py_compile dextrah_lab/rl_games/audit_franka_cube_policy_state.py` passed
+- local `bash -n cluster/sbatch_audit_franka_cube_policy_state_1gpu.sh` passed
+- local `git diff --check` passed
+
+Next:
+- Commit/push/deploy this diagnostic-only fix, rerun the bounded L401 audit, fetch/open artifacts, and record the final action/observation semantics verdict. No PPO/A100.
+
+## 2026-06-11 19:11 PDT - relaunch corrected policy state audit
+
+Goal:
+- Regenerate the pass7 policy-state audit with valid observation RMS/z-score pairing.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- local_commit: `0be8ca633d8e45baed7250c1726efa94dbf5495d`
+- push/pull: pushed to `origin/codex/franka-cube-ggx-pregrasp-reset`; deployed exact commit to L401 via Git bundle.
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `0be8ca633d8e45baed7250c1726efa94dbf5495d`, detached clean
+- validation:
+  - remote `python3 -m py_compile dextrah_lab/rl_games/audit_franka_cube_policy_state.py` passed
+  - remote `bash -n cluster/sbatch_audit_franka_cube_policy_state_1gpu.sh` passed
+
+Command / Job:
+- command: `sbatch --parsable --job-name=ggx_policy_state3 --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=0be8ca633d8e45baed7250c1726efa94dbf5495d,TASK=Dextrah-Franka-Cube-Grasp,RUN_NAME=franka_cube_ggx_pass7_policy_state_20260612_0311,NUM_ENVS=64,NUM_RESETS=3,SEED=20260624,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_robust_pass7_20260612.npz,CHECKPOINTS="ep10=/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_robust_pass7_smoke45_20260612_0056/nn/last_dextrah_franka_cube_grasp_ep_10_rew_857.09937.pth;ep45=/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_robust_pass7_smoke45_20260612_0056/nn/last_dextrah_franka_cube_grasp_ep_45_rew_662.51086.pth",TRAINING_JSONL_PATH=/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_robust_pass7_smoke45_20260612_0056/metrics/direct_info_rank_0.jsonl,STOCHASTIC_SAMPLES=16,HISTOGRAM_BINS=41 cluster/sbatch_audit_franka_cube_policy_state_1gpu.sh`
+- job_id: `1027982`
+- run_name: `franka_cube_ggx_pass7_policy_state_20260612_0311`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pass7_policy_state_20260612_0311`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/audit_franka_cube_policy_state_1027982.out`
+
+Expected artifacts:
+- `metrics.json`, `REPORT.md`, corrected `observation_zscore_summary.csv`, `observation_zscore_histograms.png`, action CSVs, training trends, checkpoint tensor summary.
+
+Next:
+- Monitor `1027982`, fetch/open artifacts, then update verdict/worklog and commit the final worklog entry. No PPO/A100.
+
+Result:
+- status: completed / diagnostic verdict recorded
+- scheduler: `1027982` `COMPLETED 0:0`, elapsed `00:00:51`, node `pool0-00030`
+- remote run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pass7_policy_state_20260612_0311`
+- local run_dir: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_policy_state_20260612_0311`
+- local log: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_logs/l401/slurm_logs/dextrah/audit_franka_cube_policy_state_1027982.out`
+- viewer URLs:
+  - report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_policy_state_20260612_0311/REPORT.md`
+  - action histograms: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_policy_state_20260612_0311/action_histograms.png`
+  - observation z-score histogram: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_policy_state_20260612_0311/observation_zscore_histograms.png`
+  - training action trends: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_policy_state_20260612_0311/training_action_trends.png`
+
+Metrics / Evidence:
+- Reset/prior health remains good over 3 reset batches with pass7 sampling: reset success mean `1.0`, reset quality mean `1.0`, EE-to-cube mean `0.052-0.053 m`, finger-center-to-cube mean `0.095-0.096 m`, gripper width mean `0.080 m`, all 7 pass7 grasps sampled.
+- Corrected observation RMS pairing is sane:
+  - ep10 actor RMS max abs-z p95 `3.017`, only 2 dimensions above 3 and none above 5; median per-dim p95 `0.364`.
+  - ep45 actor RMS max abs-z p95 `1.916`, no dimensions above 3; median per-dim p95 `0.403`.
+  - This argues against reset observations being out-of-distribution for the ep45 checkpoint.
+- Deterministic reset actions:
+  - ep10 mean `[x=-0.273, y=-0.152, z=-0.858, roll=-0.576, pitch=-0.340, yaw=-0.409, grip=0.507]`; z is downward/approach-biased, grip is partially open.
+  - ep45 mean `[x=0.575, y=-0.797, z=0.312, roll=-1.000, pitch=0.598, yaw=0.621, grip=0.991]`; gripper is almost fully open with `0.927` saturation, roll is saturated, z is positive/up but not saturated at reset.
+- Stochastic ep45 reset actions remain open/up-biased: z mean `0.188`, gripper mean `0.743`, gripper saturation `0.662`.
+- Training JSONL at epoch 45 confirms rollout collapse after stepping: `cube_action_z=0.962`, `cube_action_up=0.970`, `cube_gripper_action=0.746`, EE/finger distances `0.677/0.667 m`, success/lift `0`.
+
+Analysis:
+- Action sign/scale are consistent with the environment: positive z is upward and positive gripper opens. The ep45 bad behavior is not a sign inversion.
+- Corrected RMS/z-score evidence does not support an observation normalization mismatch at reset. Ep45 reset observations are within the learned observation RMS envelope.
+- The most concrete explanation is learned policy/action-distribution collapse under the short pass7 smoke: ep45 has already learned a near-open gripper and lateral/rotational bias at reset; after env stepping, this evolves into saturated upward/open/away actions, distance growth, and collapsed approach/enclosure rewards.
+- This points away from reset geometry and toward a separate diagnostic intervention: action prior / BC warm start / curriculum around first contact, or a paired reward/action-distribution experiment. That would be a new experiment and should not be reported as apple-to-apple reset-prior RL success.
+
+Decision:
+- No PPO/A100 relaunch. Current reset-prior implementation and pass7 geometry remain healthy, but the short PPO policy does not learn usable contact/lift; the next work should be a separately scoped action-prior/curriculum diagnostic, or an orchestrator-approved apple-to-apple longer small run only if the policy-distribution issue is addressed explicitly.
+
+Cleanup:
+- No Worker A Slurm jobs remain active from this diagnostic loop after `1027982`.
+
+## 2026-06-11 19:28 PDT - first-contact action warm-start diagnostic plan
+
+Goal:
+- Test whether the reset-prior PPO failure is primarily first-contact action-distribution collapse by adding one opt-in RL-side diagnostic intervention that supplies sane early contact actions after a valid pass7 reset.
+
+Hypothesis:
+- The corrected policy-state audit shows reset geometry and ep45 reset observation RMS are healthy, while the learned policy opens/up/away after stepping. If first-contact action distribution is the blocker, a short diagnostic action warm-start that moves from pregrasp toward the sampled exact pose, light-closes, then lifts should prevent immediate drift and improve early lift/contact metrics in a bounded smoke. If it does not, the blocker is not only the first-contact action distribution.
+
+Planned intervention:
+- Add disabled-by-default config fields to `DextrahFrankaCubeGraspEnvCfg`:
+  - `grasp_prior_action_warmstart_enabled=False`
+  - `grasp_prior_action_warmstart_approach_steps`, `close_steps`, `lift_steps`
+  - `grasp_prior_action_warmstart_close_width=0.055`
+  - `grasp_prior_action_warmstart_lift_action_z=0.15`
+  - `grasp_prior_action_warmstart_gain`, `max_position_action`, `track_orientation`
+- Override/extend `DextrahFrankaCubeGraspEnv._pre_physics_step()` so that, only when the diagnostic flag is enabled and a grasp-prior reset succeeded, the applied action for the first post-reset steps is:
+  - approach phase: proportional action from current EE pose to `grasp_prior_reset_exact_ee_*`, open gripper;
+  - close phase: same exact-pose tracking with light close width;
+  - lift phase: light close plus small positive z lift action.
+- Preserve transparency by logging both policy/raw action and applied/warm-start action metrics in `self.extras`, including warm-start active rate, phase rates, original policy z/gripper means, applied z/gripper means, and exact EE error. Observation/action space, rewards, terminations, and default task behavior remain unchanged unless the diagnostic flag is explicitly enabled.
+- Add minimal pass-through environment variables / Hydra overrides to the existing 1-GPU train and eval wrappers so the small smoke can enable this diagnostic without editing the standard PPO config.
+
+Files to edit:
+- `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env_cfg.py`
+- `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`
+- `cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`
+- `cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- `dextrah_lab/rl_games/eval_rollout.py` (only to collect the new diagnostic scalars in eval traces)
+- owned worklog only
+
+Validation commands before any job:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`
+- `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py`
+- `bash -n cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`
+- `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- `git diff --check`
+- remote repeat of the syntax checks after deploying the exact commit to the Worker A L401 worktree.
+
+Planned bounded jobs if checks pass:
+- One small L401 reset-prior PPO smoke, not A100/full PPO:
+  - task `Dextrah-Franka-Cube-Grasp`
+  - `NUM_ENVS=64`, short `MAX_ITERATIONS` comparable to prior smoke or less if queue pressure requires
+  - pass7 robust library, `GRASP_PRIOR_RESET_ENABLED=True`
+  - `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=True`
+  - JSONL metrics enabled
+- One deterministic eval/render from the smoke checkpoint with the same diagnostic flag enabled, small env count and video/contact-sheet artifacts.
+
+Expected artifacts:
+- training stdout/log, checkpoint list, `metrics/direct_info_rank_0.jsonl`
+- reward/action curves including `cube_action_*`, `cube_policy_action_*`, `cube_action_warmstart_*`, reset success/quality, EE/finger distances, lift/success terms
+- action histograms/table comparing policy action vs applied warm-start action
+- eval metrics JSON/CSV/JSONL and, if behavior improves, short video/contact sheet opened with `viz-open`
+
+Acceptance criteria:
+- The diagnostic must clearly mark itself as non-apple-to-apple due to action intervention.
+- Defaults must keep the standard reset-prior and baseline task behavior unchanged.
+- Smoke is useful only if JSONL confirms warm-start branch was actually active and applied actions differ from policy actions during the configured early steps.
+- Evidence threshold for "first-contact action distribution is likely the blocker": early eval/training traces show reduced EE/finger distance drift, more close/contact/lift than the pass7 no-warmstart smoke, or visibly plausible close/lift behavior.
+- Evidence threshold for negative result: warm-start branch active but distances/lift/contact still fail, implying a deeper controller/reward/physics issue.
+- No full PPO/A100 launch from this diagnostic.
+
+## 2026-06-11 19:35 PDT - first-contact action warm-start implementation checkpoint
+
+Goal:
+- Implement the planned opt-in action warm-start diagnostic and validate source/wrapper syntax before any cluster launch.
+
+Hypothesis:
+- A short scripted first-contact action can test whether the pass7 PPO failure is caused by immediate bad policy actions after an otherwise valid reset. This is a diagnostic intervention only, not an apple-to-apple training result.
+
+Change:
+- Added disabled-by-default `grasp_prior_action_warmstart_*` config fields.
+- Added `DextrahFrankaCubeGraspEnv._pre_physics_step()` warm-start interception when both grasp-prior reset and the diagnostic flag are enabled:
+  - approach/open to the sampled exact EE pose;
+  - light-close at the exact pose;
+  - short lift phase with light-close retained.
+- Added metrics for warm-start active/phase rates, policy z/gripper actions, applied z/gripper actions, exact EE tracking error, and mean absolute policy-vs-applied action delta.
+- Added train/eval wrapper environment variables and Hydra overrides for the diagnostic, with a guard that warm-start requires grasp-prior reset.
+- Extended eval rollout metric collection to include warm-start scalars.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- worklog: `worklogs/franka-cube-grasp-prior/franka-cube-ggx-pregrasp-reset.md`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `9601f57c2e2e27abcd7898d3f19f2293eb415e1d`
+- implementation_commit: pending
+- changed_files: `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env_cfg.py`, `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`, `dextrah_lab/rl_games/eval_rollout.py`, `cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`, `cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`, this worklog
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`: passed
+- `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py`: passed
+- `bash -n cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`: passed
+- `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`: passed
+- `git diff --check`: passed
+
+Analysis:
+- Defaults preserve the existing task behavior: the warm-start branch is disabled by default and also requires `GRASP_PRIOR_RESET_ENABLED=True`.
+- Enabled runs are intentionally non-apple-to-apple and will be labeled as diagnostic-only in artifacts and reports.
+
+Next:
+- Commit/push this checkpoint, deploy the exact commit to the agent-owned L401 worktree, repeat syntax checks remotely, then launch one small L401 smoke only if remote checks pass.
+
+## 2026-06-11 19:17 PDT - launch pass7 warm-start PPO smoke
+
+Goal:
+- Run one bounded L401 reset-prior PPO diagnostic smoke with the robust pass7 grasp library and first-contact action warm-start enabled.
+
+Hypothesis:
+- If the learned policy failure is mainly immediate open/up/away action collapse after a valid pregrasp reset, then forcing sane first-contact approach/light-close/lift actions for the first 40 post-reset steps should improve early contact/lift traces compared with the prior pass7 no-warmstart smoke.
+
+Change:
+- No additional code changes after commit `09857defab0ff548eac0eae05e5b42b933884476`.
+- This run is diagnostic-only and non-apple-to-apple because the environment applies scripted early actions instead of policy actions while `grasp_prior_action_warmstart_enabled=True`.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- local_commit: `09857defab0ff548eac0eae05e5b42b933884476`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- push/pull: pushed to `origin/codex/franka-cube-ggx-pregrasp-reset`; deployed to L401 by git bundle
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: detached `09857defab0ff548eac0eae05e5b42b933884476`, clean
+
+Validation:
+- local `py_compile` / wrapper `bash -n` / `git diff --check`: passed before commit
+- remote `py_compile` for env and eval rollout: passed
+- remote `bash -n` for train/eval wrappers: passed
+- remote `git diff --check`: passed
+
+Command / Job:
+- command: `sbatch --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=09857defab0ff548eac0eae05e5b42b933884476,FULL_EXPERIMENT_NAME=franka_cube_ggx_pass7_warmstart_smoke45_20260611_191642,NUM_ENVS=64,MAX_ITERATIONS=45,SAVE_FREQUENCY=5,HORIZON_LENGTH=64,SEED=20260624,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_robust_pass7_20260612.npz,GRASP_PRIOR_ACTION_WARMSTART_ENABLED=True,GRASP_PRIOR_ACTION_WARMSTART_APPROACH_STEPS=16,GRASP_PRIOR_ACTION_WARMSTART_CLOSE_STEPS=12,GRASP_PRIOR_ACTION_WARMSTART_LIFT_STEPS=12,GRASP_PRIOR_ACTION_WARMSTART_CLOSE_WIDTH=0.055,GRASP_PRIOR_ACTION_WARMSTART_LIFT_ACTION_Z=0.15,GRASP_PRIOR_ACTION_WARMSTART_GAIN=8.0,GRASP_PRIOR_ACTION_WARMSTART_MAX_POSITION_ACTION=1.0,GRASP_PRIOR_ACTION_WARMSTART_TRACK_ORIENTATION=True,DEXTRAH_RLGAMES_JSONL_METRICS=True,AUTO_RESUME=False cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`
+- job_id: `1028006`
+- run_name: `franka_cube_ggx_pass7_warmstart_smoke45_20260611_191642`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pass7_warmstart_smoke45_20260611_191642`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_smoke_1028006.out`
+- expected artifacts: rank-0 JSONL metrics sidecar, checkpoint files every 5 epochs, stdout config/logs, later fetched inspection plots/report and a small eval/contact-sheet if training produces usable checkpoint behavior.
+
+Acceptance:
+- JSONL must show `cube_action_warmstart_active_rate` and phase rates are nonzero during early episode windows.
+- Compare policy vs applied z/gripper actions and action-delta metrics to prove the diagnostic branch is active.
+- Inspect reward/lift/distance trends and checkpoints; scheduler success alone is insufficient.
+
+## 2026-06-11 19:23 PDT - pass7 warm-start smoke result
+
+Goal:
+- Inspect job `1028006` outputs and decide whether the first-contact action warm-start diagnostic unblocks further training or points to another bounded intervention.
+
+Result:
+- status: completed `0:0`, inspected metrics and fetched artifacts.
+- job_id: `1028006`
+- run_name: `franka_cube_ggx_pass7_warmstart_smoke45_20260611_191642`
+- remote_run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pass7_warmstart_smoke45_20260611_191642`
+- remote_log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_smoke_1028006.out`
+- local_bundle: `cluster_results/l401/franka_cube_ggx_pass7_warmstart_smoke45_20260611_191642`
+- implementation_commit_used_by_job: `09857defab0ff548eac0eae05e5b42b933884476`
+- worklog_launch_commit: `cbd227161ef3daa7885f25eb290617bfa034c7a6`
+- no broad eval/video launched after result check; this is a negative training-metric diagnostic.
+
+Artifacts:
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_warmstart_smoke45_20260611_191642/inspection/REPORT.md`
+- reward/action curves: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_warmstart_smoke45_20260611_191642/inspection/reward_action_curves.png`
+- action histograms: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_warmstart_smoke45_20260611_191642/inspection/action_histograms.png`
+- summary JSON: `cluster_results/l401/franka_cube_ggx_pass7_warmstart_smoke45_20260611_191642/inspection/summary.json`
+- epoch metrics CSV: `cluster_results/l401/franka_cube_ggx_pass7_warmstart_smoke45_20260611_191642/inspection/epoch_metrics.csv`
+- reset/action table CSV: `cluster_results/l401/franka_cube_ggx_pass7_warmstart_smoke45_20260611_191642/inspection/reset_action_table.csv`
+- checkpoint inventory: `cluster_results/l401/franka_cube_ggx_pass7_warmstart_smoke45_20260611_191642/checkpoints.txt`
+
+Metrics:
+- JSONL records: `45`; bad scalar count: `0`.
+- warm-start branch active: mean active rate `0.053819`, max `0.796875`, final `0.03125`.
+- action override real: mean policy-vs-applied action delta `0.035368`, max `0.539019`, final `0.023754`.
+- reset health remains good: reset success rate `1.0`, reset quality rate `1.0`.
+- learning behavior remains bad: `cube_success_rate max=0.0`, `cube_has_lifted_rate max=0.0`.
+- lift signal is only a small bump: `cube_lift_height max=0.003605 m`, final `0.0 m`.
+- final distances are far from a stable grasp: `cube_ee_to_cube_dist final=0.258207 m`, `cube_finger_center_to_cube_dist final=0.255103 m`.
+- best interval checkpoint by stdout filename: epoch 30, reward `709.9599`, path `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pass7_warmstart_smoke45_20260611_191642/nn/last_dextrah_franka_cube_grasp_ep_30_rew_709.9599.pth`.
+- final checkpoint: epoch 45, reward `639.62946`.
+
+Analysis:
+- This is a negative first-contact warm-start diagnostic, not a launch gate.
+- The intervention proved that the branch is wired correctly and can override early actions, but it did not produce sustained contact/lift or a useful policy after the forced action window.
+- The result suggests that replacing actions for the first steps is insufficient as a learning signal: the actor still does not learn a stable close/hold/lift distribution once control returns to the policy.
+- A broad eval/video is not justified by these training metrics. A single failure visualization could be made later only if needed to debug a specific post-window failure, but it is not needed to establish this diagnostic verdict.
+
+Next bounded change proposal:
+- Do not run more PPO/A100 from this checkpoint.
+- Prefer a diagnostic policy-initialization or imitation route over more action override:
+  - collect a small pass7 reset dataset of observation plus assisted-oracle/reference actions for approach, light-close, and lift phases;
+  - run a tiny diagnostic BC/action-head warm-start or action-regularization variant so the actor actually emits the first-contact action distribution, instead of only having the environment replace its actions;
+  - then run the same small 64-env L401 PPO smoke and inspect policy raw actions, lift/contact traces, and videos only if metrics improve.
+- Keep this explicitly non-apple-to-apple until it proves a useful hypothesis; the apple-to-apple reset-prior task defaults remain unchanged.
+
+## 2026-06-11 19:28 PDT - plan: pass7 BC/action-head diagnostic
+
+Goal:
+- Test whether a policy-initialization/imitation diagnostic can make the actor itself emit pass7 first-contact actions, without relying on environment action override and without changing the apple-to-apple task defaults.
+
+Hypothesis:
+- The warm-start override proved that scripted early actions can be applied, but PPO did not learn to emit or maintain them after the override window. A small supervised dataset from the valid pass7 reset distribution should tell us whether the current actor architecture/observation stream can imitate the assisted reference actions at reset and early contact. If supervised validation fails, PPO scale-up is not justified. If supervised validation passes and a BC-initialized checkpoint emits sane actions, only then a 64-env L401 PPO smoke is worth considering.
+
+Planned diagnostic:
+- Add a standalone script under `dextrah_lab/rl_games/` that:
+  - creates `Dextrah-Franka-Cube-Grasp` with robust pass7 `grasp_prior_reset_enabled=True`, same cube XY randomization `0.08`, and no task/reward/default changes;
+  - samples a tiny dataset from valid pass7 reset states using the same RL-Games observation wrapper used by train/eval;
+  - labels observations with the existing assisted reference action generator: exact-pose approach/open, exact-pose light-close (`width=0.055`), and short closed/lift action;
+  - splits train/validation by reset index/sample, trains only a diagnostic actor clone or action head with MSE/cosine/sign metrics, and writes a BC checkpoint only if validation passes;
+  - evaluates raw actor actions at held-out resets against labels and records action tables/histograms.
+- Add a small L401 wrapper under `cluster/` for the supervised diagnostic. It will not launch PPO; it only collects dataset + trains/evaluates BC and writes artifacts.
+- Do not launch A100 or broad PPO. A 64-env L401 PPO smoke is allowed only after supervised metrics show the actor actually emits close/approach/lift labels with bounded error.
+
+Files to edit:
+- `dextrah_lab/rl_games/bc_franka_cube_pass7_actions.py` (new diagnostic script)
+- `cluster/sbatch_bc_franka_cube_pass7_actions_1gpu.sh` (new bounded L401 wrapper)
+- owned worklog only
+
+Implementation notes:
+- Reuse action/geometry helpers from `audit_franka_cube_grasp_prior_actions.py` where practical, but keep the BC script self-contained enough to avoid fragile imports after Isaac launches.
+- Start from the existing failed pass7 no-warmstart checkpoint path only as an initialization/reference if checkpoint fine-tuning is reliable:
+  - `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_robust_pass7_smoke45_20260612_0056/nn/last_dextrah_franka_cube_grasp_ep_45_rew_662.51086.pth`
+- If direct checkpoint fine-tuning is too brittle, fall back to supervised action-head/actor-clone metrics and do not write a PPO-resumable checkpoint; record that as the bounded result rather than launching PPO.
+
+Validation before any job:
+- `python3 -m py_compile dextrah_lab/rl_games/bc_franka_cube_pass7_actions.py`
+- `bash -n cluster/sbatch_bc_franka_cube_pass7_actions_1gpu.sh`
+- `git diff --check`
+- Commit/push, deploy exact commit to the agent-owned L401 worktree, and repeat the syntax checks remotely.
+
+Planned job if checks pass:
+- L401 1-GPU supervised diagnostic only:
+  - `NUM_ENVS=64`, small reset count (for example `NUM_RESETS=16`), phases `approach,close,lift`, robust pass7 library
+  - no PPO training, no A100
+  - output under `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/<run>`
+
+Expected artifacts:
+- `dataset_summary.json`, `train_metrics.json`, `bc_action_metrics.csv`, `bc_action_histograms.png`, `bc_loss_curves.png`, `REPORT.md`
+- optional BC checkpoint only if validation passes and the checkpoint format is confirmed loadable by RL-Games
+- local fetched bundle with `viz-open` URLs for the report and plots
+
+Acceptance gate:
+- Supervised gate is pass only if validation action MSE is low enough to be practically meaningful, gripper-action sign matches close/open phases, z-action sign matches lift/approach phases, and held-out reset action histograms are close to the reference actions.
+- No PPO smoke will launch unless the supervised gate passes and the produced actor/checkpoint can be loaded and queried for sane raw actions.
+
+## 2026-06-11 19:35 PDT - implementation: pass7 BC/action-head diagnostic
+
+Goal:
+- Add and deploy a bounded supervised diagnostic that tests whether the policy actor can imitate pass7 first-contact reference actions from valid prior-reset observations.
+
+Change:
+- Added diagnostic script `dextrah_lab/rl_games/bc_franka_cube_pass7_actions.py`.
+- Added L401 wrapper `cluster/sbatch_bc_franka_cube_pass7_actions_1gpu.sh`.
+- The script samples pass7 prior reset observations, labels approach/light-close/lift reference actions, trains a small supervised actor update from an existing checkpoint, writes metrics/plots/report, and saves a BC checkpoint only if loadable.
+- Fixed a pre-launch review issue: validation/loadability observations are no longer normalized twice after the training tensor is already preprocessed.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `040e4b4fbc9c6f5b2d520dea049b3a5eee233cc8`
+- implementation_commit: `2b701ba1d02a62646448049c5db1e96b5cee1687`
+- push/pull: pushed to `origin/codex/franka-cube-ggx-pregrasp-reset`
+- changed_files: `dextrah_lab/rl_games/bc_franka_cube_pass7_actions.py`, `cluster/sbatch_bc_franka_cube_pass7_actions_1gpu.sh`, owned worklog
+- remote_commit/status: L401 agent worktree `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset` detached at `2b701ba1d02a62646448049c5db1e96b5cee1687`, clean except untracked/generated files if any.
+
+Validation:
+- local `python3 -m py_compile dextrah_lab/rl_games/bc_franka_cube_pass7_actions.py`: pass
+- local `bash -n cluster/sbatch_bc_franka_cube_pass7_actions_1gpu.sh`: pass
+- local `git diff --cached --check`: pass before commit
+- remote L401 `python3 -m py_compile .../bc_franka_cube_pass7_actions.py`: pass
+- remote L401 `bash -n .../sbatch_bc_franka_cube_pass7_actions_1gpu.sh`: pass
+
+Next:
+- Launch the supervised-only L401 diagnostic from the exact deployed commit. Do not launch PPO unless the supervised gate passes and artifacts are inspected.
+
+## 2026-06-11 19:36 PDT - launch: pass7 BC/action-head diagnostic
+
+Goal:
+- Run the supervised-only BC/action-head diagnostic on L401 from exact commit `2b701ba1d02a62646448049c5db1e96b5cee1687`.
+
+Command / Job:
+- command: `sbatch --parsable --job-name=ggx_pass7_bc --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=2b701ba1d02a62646448049c5db1e96b5cee1687,RUN_NAME=franka_cube_ggx_pass7_bc_20260611_1936,NUM_ENVS=64,NUM_RESETS=16,SEED=20260624,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_robust_pass7_20260612.npz,INIT_CHECKPOINT=/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_robust_pass7_smoke45_20260612_0056/nn/last_dextrah_franka_cube_grasp_ep_45_rew_662.51086.pth,TRAIN_EPOCHS=40,BATCH_SIZE=2048,LEARNING_RATE=0.001,TRAIN_SCOPE=mu,VALIDATION_FRACTION=0.25,APPROACH_STEPS=16,CLOSE_STEPS=12,LIFT_STEPS=12,CLOSE_WIDTH=0.055,LIFT_ACTION_Z=0.15,ORACLE_GAIN=8.0,ORACLE_MAX_POSITION_ACTION=1.0,TRACK_ORIENTATION=True,GATE_VAL_MSE=0.04,GATE_GRIPPER_SIGN=0.95,GATE_LIFT_Z_SIGN=0.90,SAVE_BC_CHECKPOINT=True cluster/sbatch_bc_franka_cube_pass7_actions_1gpu.sh`
+- job_id: `1028056`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pass7_bc_20260611_1936`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bc_franka_cube_pass7_1028056.out`
+- expected artifacts: `metrics.json`, `train_metrics.json`, `REPORT.md`, `dataset_summary.json`, `bc_action_metrics.csv`, `bc_loss_history.csv`, optional plots/checkpoint
+
+Acceptance:
+- This is diagnostic-only. Gate requires low validation MSE, gripper sign accuracy above `0.95`, lift-z sign accuracy above `0.90`, and a loadable checkpoint. No PPO launch unless these are inspected and pass.
+
+Result:
+- status: running/queued; monitoring in progress.
+
+## 2026-06-11 19:40 PDT - result: pass7 BC/action-head diagnostic `1028056`
+
+Goal:
+- Inspect the supervised-only BC/action-head diagnostic and decide whether it unblocks a 64-env PPO smoke.
+
+Command / Job:
+- job_id: `1028056`
+- Slurm result: `COMPLETED 0:0`, elapsed `00:01:00`, node `pool0-00006`
+- remote run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pass7_bc_20260611_1936`
+- local run_dir: `cluster_results/l401/franka_cube_ggx_pass7_bc_20260611_1936`
+- remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bc_franka_cube_pass7_1028056.out`
+- local log: `cluster_logs/l401/slurm_logs/dextrah/bc_franka_cube_pass7_1028056.out`
+- implementation_commit: `2b701ba1d02a62646448049c5db1e96b5cee1687`
+
+Artifacts:
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_bc_20260611_1936/REPORT.md`
+- loss curves: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_bc_20260611_1936/bc_loss_curves.png`
+- phase action means: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_bc_20260611_1936/bc_action_phase_means.png`
+- metrics JSON: `cluster_results/l401/franka_cube_ggx_pass7_bc_20260611_1936/metrics.json`
+- action metrics CSV: `cluster_results/l401/franka_cube_ggx_pass7_bc_20260611_1936/bc_action_metrics.csv`
+- dataset: `cluster_results/l401/franka_cube_ggx_pass7_bc_20260611_1936/bc_dataset.pt`
+- generated checkpoint artifact: `cluster_results/l401/franka_cube_ggx_pass7_bc_20260611_1936/bc_pass7_action_warmstart.pth` (diagnostic artifact only; do not use for PPO launch because gate failed)
+
+Metrics:
+- dataset samples: `40960`; phase counts approach/close/lift = `16384/12288/12288`; reset success/quality in dataset rows = `1.0`.
+- gate verdict: `FAIL`.
+- validation MSE: `0.0116626769` vs threshold `<0.04` (passes).
+- validation MAE: `0.0566123351`.
+- validation gripper sign accuracy: `1.0` vs threshold `>=0.95` (passes).
+- validation lift-z sign accuracy: `0.8580729365` vs threshold `>=0.90` (fails).
+- validation z sign accuracy across phases: `0.7244140506` (weak).
+- loadability check: checkpoint loads and reproduces validation MSE `0.0116626760`, but this does not override the failed action gate.
+- final linear layer only was trained: `a2c_network.mu.weight`, `a2c_network.mu.bias`, `903` parameters.
+
+Key per-phase evidence:
+- Lift phase target z is fixed positive `+0.15`, but validation predictions have mean `+0.1017`, min `-0.1955`, and lift-z sign accuracy `0.8581`.
+- Approach/close z labels are mixed and variable; the trained final layer improves global MSE but still compresses/aliases vertical actions across phases.
+- Initial policy had poor global MSE (`0.5650`) but high lift-z sign (`0.9840`); after final-layer BC, global MSE improves but lift sign degrades. This means the current supervised objective/parameter scope is optimizing average action fit at the expense of robust lift semantics.
+
+Analysis:
+- This is a supervised diagnostic failure/partial result, not a PPO launch gate.
+- The BC run proves the observation/checkpoint/loading path is functional and the actor can be modified, but the trained actor does not reliably emit the desired lift-positive action on held-out pass7 reset trajectories.
+- Likely contributors:
+  - final-layer-only training is too constrained for the mixed approach/close/lift mapping;
+  - the dataset asks a feed-forward state-only policy to output different phase actions from nearby states without an explicit phase/command signal;
+  - unweighted MSE is dominated by global action fit, so lift-phase sign robustness can degrade even while MSE improves.
+- This does not contradict the earlier pass7 reset/oracle geometry result; the reset geometry remains healthy. The failure remains on policy/action distribution.
+
+Decision:
+- Do not launch PPO/A100 from `franka_cube_ggx_pass7_bc_20260611_1936` or its generated checkpoint.
+
+Next:
+- Keep the next step supervised-only. Useful bounded follow-ups are:
+  - train a less constrained actor scope (`actor` or `all`) while tracking the same held-out lift-z gate;
+  - add phase-balanced or lift-z sign/weighted loss diagnostics to test whether the actor can preserve lift semantics;
+  - add a dataset ambiguity report comparing observations near close/lift transitions to confirm whether phase is underdetermined by the current observation vector.
+- Any PPO smoke remains blocked until a supervised checkpoint passes the lift-z/action gate and is inspected.
+
+## 2026-06-11 19:57 PDT - plan: lift-z/action-phase ambiguity diagnostic
+
+Goal:
+- Diagnose and fix the supervised lift-z/action-phase failure from job `1028056` before any PPO/A100 work.
+
+Hypothesis:
+- The reset geometry and label collection are valid, but the first BC diagnostic optimized average action MSE with only the final `mu` layer trainable. That can compress mixed approach/close/lift vertical actions and degrade lift-positive action sign. A bounded diagnostic should test whether the same observation stream can learn robust lift z when:
+  - the actor body is allowed to adapt (`TRAIN_SCOPE=actor`), and
+  - lift-phase vertical action is explicitly weighted in the diagnostic loss.
+
+Planned change:
+- Extend `dextrah_lab/rl_games/bc_franka_cube_pass7_actions.py` with diagnostic-only options:
+  - phase-balanced sample loss;
+  - lift-phase full-action loss weighting;
+  - lift-phase z-dimension MSE weighting;
+  - lift-z sign auxiliary loss;
+  - per-phase z sign summaries and a z-sign plot so the failure is inspectable.
+- Extend `cluster/sbatch_bc_franka_cube_pass7_actions_1gpu.sh` to pass these options and echo them.
+- This does not change `Dextrah-Franka-Cube-Grasp`, reset behavior, rewards, PPO config, or any runtime task default. It only changes the supervised diagnostic script/wrapper.
+
+Validation before launch:
+- `python3 -m py_compile dextrah_lab/rl_games/bc_franka_cube_pass7_actions.py`
+- `bash -n cluster/sbatch_bc_franka_cube_pass7_actions_1gpu.sh`
+- `git diff --check`
+- commit/push, deploy exact commit to L401 agent worktree, and repeat syntax checks remotely.
+
+Planned L401 diagnostic job if checks pass:
+- supervised-only, no PPO:
+  - `TRAIN_SCOPE=actor`
+  - `PHASE_BALANCE_LOSS=True`
+  - `LIFT_PHASE_LOSS_WEIGHT=2.0`
+  - `LIFT_Z_MSE_WEIGHT=8.0`
+  - `LIFT_Z_SIGN_LOSS_WEIGHT=0.05`
+  - same pass7 library, same seed, same 64 envs, same `0.08` cube XY randomization, same assisted labels.
+
+Expected artifacts:
+- report, metrics JSON, action metrics CSV, loss CSV, phase action mean plot, z-sign plot, optional loadable BC checkpoint if the gate passes.
+
+Acceptance:
+- Supervised gate only: validation MSE remains practically low (`<=0.04`), gripper sign `>=0.95`, lift-z sign `>=0.90`, checkpoint loadable.
+- If the gate passes, stop at a concise gate report and propose a 64-env PPO smoke; do not auto-launch PPO.
+- If the gate fails, inspect per-phase z/sign plots and decide whether the issue is phase ambiguity, actor capacity/scope, or label conflict.
+
+## 2026-06-11 20:02 PDT - launch: actor + lift-z-weighted BC diagnostic
+
+Goal:
+- Test whether actor-scope training plus lift-z-weighted diagnostic loss fixes the `1028056` lift-z sign failure.
+
+Change:
+- implementation_commit: `ec9e16c5f4e92e052e2a4e5d60cd467f28480fe3`
+- remote L401 worktree detached at `ec9e16c5f4e92e052e2a4e5d60cd467f28480fe3`
+- local checks: `python3 -m py_compile`, `bash -n`, `git diff --check` passed
+- remote checks: `python3 -m py_compile`, `bash -n` passed
+
+Command / Job:
+- command: `sbatch --parsable --job-name=ggx_pass7_bc_liftw --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=ec9e16c5f4e92e052e2a4e5d60cd467f28480fe3,RUN_NAME=franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002,NUM_ENVS=64,NUM_RESETS=16,SEED=20260624,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_robust_pass7_20260612.npz,INIT_CHECKPOINT=/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_robust_pass7_smoke45_20260612_0056/nn/last_dextrah_franka_cube_grasp_ep_45_rew_662.51086.pth,TRAIN_EPOCHS=40,BATCH_SIZE=2048,LEARNING_RATE=0.0003,TRAIN_SCOPE=actor,VALIDATION_FRACTION=0.25,PHASE_BALANCE_LOSS=True,LIFT_PHASE_LOSS_WEIGHT=2.0,LIFT_Z_MSE_WEIGHT=8.0,LIFT_Z_SIGN_LOSS_WEIGHT=0.05,APPROACH_STEPS=16,CLOSE_STEPS=12,LIFT_STEPS=12,CLOSE_WIDTH=0.055,LIFT_ACTION_Z=0.15,ORACLE_GAIN=8.0,ORACLE_MAX_POSITION_ACTION=1.0,TRACK_ORIENTATION=True,GATE_VAL_MSE=0.04,GATE_GRIPPER_SIGN=0.95,GATE_LIFT_Z_SIGN=0.90,SAVE_BC_CHECKPOINT=True cluster/sbatch_bc_franka_cube_pass7_actions_1gpu.sh`
+- job_id: `1028066`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bc_franka_cube_pass7_1028066.out`
+- expected artifacts: report, metrics JSON, action metrics CSV, loss CSV, phase action mean plot, z-sign plot, optional diagnostic checkpoint
+
+Acceptance:
+- Supervised-only. Do not launch PPO from this job automatically. Gate requires validation MSE `<=0.04`, gripper sign `>=0.95`, lift-z sign `>=0.90`, and loadable checkpoint.
+
+Result:
+- status: queued/running; monitoring in progress.
+
+## 2026-06-11 20:02 PDT - result: actor + lift-z-weighted BC diagnostic `1028066`
+
+Goal:
+- Inspect whether actor-scope training plus lift-z-weighted loss fixes the supervised lift-z sign failure from `1028056`.
+
+Command / Job:
+- job_id: `1028066`
+- Slurm result: `COMPLETED 0:0`, elapsed `00:01:04`, node `pool0-00006`
+- run_name: `franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002`
+- remote run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002`
+- local run_dir: `cluster_results/l401/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002`
+- remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bc_franka_cube_pass7_1028066.out`
+- local log: `cluster_logs/l401/slurm_logs/dextrah/bc_franka_cube_pass7_1028066.out`
+- implementation_commit: `ec9e16c5f4e92e052e2a4e5d60cd467f28480fe3`
+
+Artifacts:
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002/REPORT.md`
+- loss curves: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002/bc_loss_curves.png`
+- phase action means: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002/bc_action_phase_means.png`
+- z sign plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002/bc_z_sign_accuracy.png`
+- metrics JSON: `cluster_results/l401/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002/metrics.json`
+- action metrics CSV: `cluster_results/l401/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002/bc_action_metrics.csv`
+- diagnostic checkpoint: `cluster_results/l401/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002/bc_pass7_action_warmstart.pth`
+
+Metrics:
+- supervised gate: `PASS`.
+- validation MSE: `0.0021404221` vs threshold `<=0.04`.
+- validation MAE: `0.0196321942`.
+- validation gripper sign accuracy: `1.0` vs threshold `>=0.95`.
+- validation lift-z sign accuracy: `1.0` vs threshold `>=0.90`.
+- validation lift-z negative prediction rate: `0.0`.
+- validation lift-z MAE: `0.0177978743`.
+- checkpoint loadability: pass; loadability MSE `0.0021404219`, MAE `0.0196321961`.
+- trainable scope: `actor`, `465159` parameters (`actor_mlp.*` plus `mu.*`).
+- validation z sign across all phases remains only `0.8029296994`.
+- close-phase z sign remains weak: `0.3720703125`; this is visible in `bc_z_sign_accuracy.png`. The target close z labels are near/mixed around zero, so this is less directly tied to the lift gate but should be watched in any rollout.
+
+Analysis:
+- Actor-scope training plus lift-z weighting fixed the specific supervised lift gate that failed in `1028056`.
+- This supports the hypothesis that the previous failure was mostly optimization/scope/loss weighting, not reset geometry or checkpoint loading.
+- The result is still diagnostic, not an apple-to-apple RL result. It changes actor initialization using supervised labels and therefore should be treated as a policy-initialization intervention.
+- Remaining concern: all-phase z sign is not strong because close-phase z labels are mixed and near zero. The next rollout should inspect whether this causes hover/close timing issues even though lift-positive behavior is now robust in supervised validation.
+
+Decision:
+- Do not auto-launch PPO. The supervised gate is now passed, so the next proposed step is a bounded 64-env L401 PPO smoke initialized from the diagnostic checkpoint, with the same pass7 reset-prior task and artifact cadence, if the orchestrator/user approves.
+- No A100/full PPO remains allowed from this result.
+
+## 2026-06-11 20:04 PDT - prelaunch plan: BC-initialized pass7 PPO smoke
+
+Goal:
+- Launch exactly one bounded 64-env L401 PPO smoke initialized from the passed supervised diagnostic checkpoint. This is a policy-initialization intervention, not an apple-to-apple reset-prior RL result.
+
+Checkpoint:
+- host path: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002/bc_pass7_action_warmstart.pth`
+- container path: `/results/diagnostics/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002/bc_pass7_action_warmstart.pth`
+- source diagnostic run: `franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002`
+- supervised gate evidence: `val_mse=0.0021404221`, `val_gripper_sign_accuracy=1.0`, `val_lift_z_sign_accuracy=1.0`, checkpoint loadable.
+
+Config diff vs baseline DEXTRAH Franka cube smoke:
+- task remains `Dextrah-Franka-Cube-Grasp`.
+- 1 GPU L401 smoke only: `NUM_ENVS=64`, `MAX_ITERATIONS=45`, `HORIZON_LENGTH=64`, `SAVE_FREQUENCY=5`, JSONL direct metrics enabled.
+- prior reset enabled: `GRASP_PRIOR_RESET_ENABLED=True`.
+- robust pass7 library: `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_robust_pass7_20260612.npz`.
+- cube XY randomization remains `0.08`.
+- action warm-start override remains disabled: `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`.
+- checkpoint initialization is the intervention: `CHECKPOINT=/results/diagnostics/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002/bc_pass7_action_warmstart.pth`.
+- no reward, observation, action-space, termination, PPO wrapper, or task semantics changes beyond the existing reset-prior branch and the BC-initialized policy weights.
+- no A100/full RL scale-up.
+
+Validation before launch:
+- `bash -n cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`: pass.
+- `python3 -m py_compile dextrah_lab/rl_games/train.py`: pass.
+- remote worktree currently detached at source commit `ec9e16c5f4e92e052e2a4e5d60cd467f28480fe3`; will deploy the latest worklog/source commit before launch so `CODE_COMMIT` is explicit.
+- checkpoint and pass7 library exist on L401.
+
+Planned command:
+- `sbatch --parsable --job-name=ggx_pass7_bcinit_smoke --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=<latest_commit>,TASK=Dextrah-Franka-Cube-Grasp,FULL_EXPERIMENT_NAME=franka_cube_ggx_pass7_bcinit_smoke45_20260611_2005,NUM_ENVS=64,MAX_ITERATIONS=45,HORIZON_LENGTH=64,MINIBATCH_SIZE=4096,CENTRAL_VALUE_MINIBATCH_SIZE=4096,SAVE_FREQUENCY=5,SEED=20260624,CUBE_SPAWN_XY_RANDOMIZATION=0.08,USE_CUDA_GRAPH=False,DEXTRAH_RLGAMES_JSONL_METRICS=True,AUTO_RESUME=False,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_robust_pass7_20260612.npz,GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False,CHECKPOINT=/results/diagnostics/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002/bc_pass7_action_warmstart.pth cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`
+
+Acceptance / inspection criteria:
+- Slurm job completes and writes checkpoints plus `metrics/direct_info_rank_0.jsonl`.
+- JSONL has finite scalars and no NaN/Inf/bad scalar signatures.
+- reset-prior success/quality metrics remain `1.0` or clearly sane; no immediate termination pathology.
+- action override metrics stay absent/zero; this smoke must test actor initialization, not env action override.
+- reward, lift height, success/lifted rates, distance/contact/action metrics are inspected from JSONL and stdout checkpoint rewards.
+- If early metrics show the policy still moves away/open/up or lift/success remain flat, do not scale; fetch artifacts and run a focused eval/video only if needed to understand behavior.
+- If metrics look promising, produce a concise gate report and propose next bounded eval; do not auto-launch A100 or full RL.
+
+## 2026-06-11 20:06 PDT - launch: BC-initialized pass7 PPO smoke
+
+Goal:
+- Run the one authorized 64-env L401 PPO smoke from the BC-initialized pass7 checkpoint. This remains a policy-initialization intervention, not an apple-to-apple reset-prior RL result.
+
+Version Control:
+- local branch: `codex/franka-cube-ggx-pregrasp-reset`
+- local commit: `f60fa492b23e0ccfda2f3105cf1061271bd160de`
+- remote worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote commit: `f60fa492b23e0ccfda2f3105cf1061271bd160de`
+- remote validation: `bash -n cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh` pass; `python3 -m py_compile dextrah_lab/rl_games/train.py` pass
+
+Command / Job:
+- command: `sbatch --parsable --job-name=ggx_pass7_bcinit_smoke --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=f60fa492b23e0ccfda2f3105cf1061271bd160de,TASK=Dextrah-Franka-Cube-Grasp,FULL_EXPERIMENT_NAME=franka_cube_ggx_pass7_bcinit_smoke45_20260611_2005,NUM_ENVS=64,MAX_ITERATIONS=45,HORIZON_LENGTH=64,MINIBATCH_SIZE=4096,CENTRAL_VALUE_MINIBATCH_SIZE=4096,SAVE_FREQUENCY=5,SEED=20260624,CUBE_SPAWN_XY_RANDOMIZATION=0.08,USE_CUDA_GRAPH=False,DEXTRAH_RLGAMES_JSONL_METRICS=True,AUTO_RESUME=False,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_robust_pass7_20260612.npz,GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False,CHECKPOINT=/results/diagnostics/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002/bc_pass7_action_warmstart.pth cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`
+- job_id: `1028074`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pass7_bcinit_smoke45_20260611_2005`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_smoke_1028074.out`
+- expected artifacts: checkpoints under `nn/`, params under `params/`, JSONL metrics `metrics/direct_info_rank_0.jsonl`, stdout log.
+
+Result:
+- status: queued/running; monitoring in progress.
+
+## 2026-06-11 20:10 PDT - result: invalid BC-initialized smoke `1028074`
+
+Goal:
+- Inspect whether the authorized BC-initialized pass7 64-env PPO smoke actually trained from the supervised checkpoint.
+
+Command / Job:
+- job_id: `1028074`
+- run_name: `franka_cube_ggx_pass7_bcinit_smoke45_20260611_2005`
+- remote run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pass7_bcinit_smoke45_20260611_2005`
+- local run_dir: `cluster_results/l401/franka_cube_ggx_pass7_bcinit_smoke45_20260611_2005`
+- remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_smoke_1028074.out`
+- local log: `cluster_logs/l401/slurm_logs/dextrah/franka_cube_smoke_1028074.out`
+
+Result:
+- status: failed/invalid as a PPO smoke, despite Slurm `COMPLETED 0:0`.
+- JSONL sidecar has exactly `1` record.
+- stdout shows `[DEXTRAH resume] restored runtime state on rank 0 at epoch 45`.
+- stdout then shows `epoch: 46/45`, `WARNING: Max epochs reached before any env terminated at least once`, and saved `last_dextrah_franka_cube_grasp_ep_46_rew_-inf.pth`.
+- Reset-prior metrics in the single record remain sane (`cube_grasp_prior_reset_success_rate=1.0`, `cube_grasp_prior_quality_success_rate=1.0`), but this run did not perform a valid 45-iteration PPO update loop.
+
+Analysis:
+- The BC diagnostic checkpoint copied the source PPO checkpoint state wholesale and only replaced model weights. That preserved `epoch=45` and `dextrah_runtime_state`, so RL-Games treated it as a resume checkpoint instead of an initialization checkpoint.
+- `1028074` is a launch/resume semantics bug, not a training result and not evidence for or against the BC-initialized policy.
+
+Patch Plan:
+- Edit `dextrah_lab/rl_games/bc_franka_cube_pass7_actions.py` so saved BC diagnostic checkpoints are explicit policy-initialization artifacts:
+  - preserve model weights and observation/RMS fields needed for loading;
+  - reset `epoch`/frame-like counters to `0`;
+  - remove `dextrah_runtime_state` and `env_state`;
+  - mark the checkpoint as `policy_initialization` so the DEXTRAH resume observer suppresses epoch/runtime restore;
+  - keep optimizer fields by default for RL-Games checkpoint-load compatibility, with a standalone sanitizer flag available for strip-optimizer experiments if needed;
+  - record removed/reset fields in `dextrah_bc_diagnostic`.
+- Add a small local/container-safe sanitizer entry point if needed so the already-passed `1028066` artifact can be converted without rerunning supervised data collection.
+- Validate syntax locally, deploy the exact commit to the agent-owned L401 worktree, create/load a sanitized initialization checkpoint, and run a tiny epoch-start smoke before retrying the authorized 64-env smoke.
+- No A100/full RL; the next run is only an epoch-start validation.
+
+## 2026-06-11 20:18 PDT - patch: policy-initialization checkpoint semantics
+
+Goal:
+- Fix the launch/resume bug from `1028074` by making BC diagnostic checkpoints load as policy initialization, not as full PPO resume checkpoints.
+
+Change:
+- Added `dextrah_lab/rl_games/checkpoint_init.py` with shared checkpoint semantic/sanitization helpers.
+- Added `dextrah_lab/rl_games/sanitize_rlgames_init_checkpoint.py` to convert the already-passed `1028066` checkpoint without rerunning supervised data collection.
+- Updated `dextrah_lab/rl_games/bc_franka_cube_pass7_actions.py` so future saved BC checkpoints are marked `policy_initialization`, reset epoch/frame counters to `0`, remove DEXTRAH runtime/env resume state, and write a sanitize summary JSON.
+- Updated `dextrah_lab/rl_games/rl_games_utils.py` so `DextrahResumableAlgoObserver` suppresses epoch/runtime restore when loading a checkpoint marked `policy_initialization`. Regular resume checkpoints are unchanged.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/checkpoint_init.py dextrah_lab/rl_games/sanitize_rlgames_init_checkpoint.py dextrah_lab/rl_games/bc_franka_cube_pass7_actions.py dextrah_lab/rl_games/rl_games_utils.py dextrah_lab/rl_games/train.py`: pass.
+- `bash -n cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`: pass.
+- `bash -n cluster/sbatch_bc_franka_cube_pass7_actions_1gpu.sh`: pass.
+
+Next:
+- Commit/push the patch, deploy the exact commit to the agent-owned L401 worktree, sanitize the `1028066` checkpoint, then run a tiny epoch-start smoke to prove PPO starts at epoch 1 rather than resuming at epoch 45.
+
+## 2026-06-11 20:24 PDT - launch: sanitize passed BC checkpoint
+
+Goal:
+- Convert the passed supervised checkpoint from `1028066` into a policy-initialization artifact with epoch/frame counters reset and no DEXTRAH runtime/env restore state.
+
+Version Control:
+- local commit: `d541a7b2b48718c0f13fdf03837bbf97db6e6eaf`
+- pushed to GitHub branch: `codex/franka-cube-ggx-pregrasp-reset`
+- L401 GitHub fetch issue: remote `git fetch origin` failed with `Permission denied (publickey)`.
+- deployment fallback: pushed the committed Git object/branch to `l401:/lustre/fsw/portfolios/nvr/users/lzha/src/DEXTRAH` and checked out exact commit in the agent-owned worktree.
+- remote worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote commit: `d541a7b2b48718c0f13fdf03837bbf97db6e6eaf`
+- remote validation: `python3 -m py_compile ...` pass; smoke/BC wrapper `bash -n` pass.
+
+Command / Job:
+- input checkpoint: `/results/diagnostics/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002/bc_pass7_action_warmstart.pth`
+- output checkpoint: `/results/diagnostics/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002/bc_pass7_policy_init_epoch0.pth`
+- summary: `/results/diagnostics/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002/bc_pass7_policy_init_epoch0.sanitize_summary.json`
+- job_id: pending
+- log: pending
+
+Acceptance:
+- sanitizer exits `0:0`;
+- summary reports `checkpoint_semantics=policy_initialization`;
+- `epoch` reset from source value to `0`;
+- `dextrah_runtime_state` and `env_state` absent/removed;
+- converted checkpoint exists and is used for the tiny epoch-start smoke.
+
+Result:
+- job_id: `1028077`
+- status: `COMPLETED 0:0`, elapsed `00:00:24`, node `pool0-00006`.
+- output checkpoint exists: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002/bc_pass7_policy_init_epoch0.pth` (`7.2M`).
+- local summary: `cluster_results/l401/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002/bc_pass7_policy_init_epoch0.sanitize_summary.json`.
+- summary confirms `checkpoint_semantics=policy_initialization`.
+- summary reset fields: `epoch: 45`, `frame: 184320`.
+- summary removed fields: `dextrah_runtime_state` with nested env/runtime buffers and top-level `env_state`.
+- `optimizer` remains present (`stripped_optimizer=false`) for RL-Games load compatibility.
+
+Analysis:
+- The converted checkpoint is appropriate for an epoch-start load validation. The remaining risk is whether RL-Games accepts `set_epoch=False` plus the policy-initialization marker as intended inside the training restore path.
+
+## 2026-06-11 20:17 PDT - launch: tiny epoch-start validation
+
+Goal:
+- Prove the sanitized policy-initialization checkpoint starts PPO at epoch 1/2 and does not restore runtime state at epoch 45 before retrying the authorized 64-env smoke.
+
+Command / Job:
+- run_name: `franka_cube_ggx_pass7_bcinit_epochstart2_20260611_201648`
+- checkpoint: `/results/diagnostics/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002/bc_pass7_policy_init_epoch0.pth`
+- config: `Dextrah-Franka-Cube-Grasp`, `NUM_ENVS=16`, `MAX_ITERATIONS=2`, `HORIZON_LENGTH=16`, minibatches `256`, save frequency `1`, same pass7 prior library, cube XY randomization `0.08`, action warm-start disabled.
+- job_id: pending
+- run_dir: pending
+- log: pending
+
+Acceptance:
+- log contains `[DEXTRAH resume] loading policy initialization checkpoint ... without epoch/runtime restore`;
+- log must not contain `[DEXTRAH resume] restored runtime state ... at epoch 45`;
+- training starts at epoch `1/2` or `2/2`, not `46/2`;
+- JSONL has at least two epoch records with finite scalars;
+- reset-prior success/quality remains sane.
+
+Result:
+- job_id: `1028078`
+- status: `COMPLETED 0:0`, elapsed `00:00:48`, node `pool0-00006`.
+- remote run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pass7_bcinit_epochstart2_20260611_201648`
+- local run_dir: `cluster_results/l401/franka_cube_ggx_pass7_bcinit_epochstart2_20260611_201648`
+- remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_smoke_1028078.out`
+- local log: `cluster_logs/l401/slurm_logs/dextrah/franka_cube_smoke_1028078.out`
+- key log evidence: `[DEXTRAH resume] loading policy initialization checkpoint on rank 0 without epoch/runtime restore`.
+- key log evidence: epochs printed `epoch: 1/2 frames: 0` and `epoch: 2/2 frames: 256`.
+- no `[DEXTRAH resume] restored runtime state ... at epoch 45` line.
+- JSONL records: `2`, epochs `[1, 2]`, frames `[0, 256]`, bad scalar count `0`.
+- reset-prior metrics: `cube_grasp_prior_reset_success_rate=[1.0, 1.0]`, `cube_grasp_prior_quality_success_rate=[1.0, 1.0]`.
+- first two action/distance signals: `cube_action_z=[0.2922, 0.4209]`, `cube_gripper_action=[-0.1498, 0.0163]`, `cube_ee_to_cube_dist=[0.0649, 0.0915]`, `cube_finger_center_to_cube_dist=[0.1051, 0.1313]`.
+
+Analysis:
+- The resume-semantics bug is fixed for the sanitized checkpoint path. The max-epochs/no-termination warning and `rew_-inf` checkpoint are acceptable for this 2-epoch validation because the goal was epoch-start behavior only.
+- This unblocks retrying the one authorized 64-env L401 PPO smoke from `/results/diagnostics/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002/bc_pass7_policy_init_epoch0.pth`.
+
+## 2026-06-11 20:19 PDT - launch plan: sanitized BC-init 64-env PPO smoke retry
+
+Goal:
+- Retry the one bounded 64-env L401 PPO smoke from the sanitized policy-initialization checkpoint. This remains a policy-initialization intervention, not apple-to-apple reset-prior RL and not a scale-up gate by itself.
+
+Version Control:
+- implementation_commit: `d541a7b2b48718c0f13fdf03837bbf97db6e6eaf`
+- remote worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote commit: `d541a7b2b48718c0f13fdf03837bbf97db6e6eaf`
+- changed_files since commit: worklog only.
+
+Config diff vs baseline DEXTRAH Franka cube smoke:
+- task remains `Dextrah-Franka-Cube-Grasp`.
+- bounded L401 1-GPU smoke: `NUM_ENVS=64`, `MAX_ITERATIONS=45`, `HORIZON_LENGTH=64`, `SAVE_FREQUENCY=5`, JSONL direct metrics enabled.
+- prior reset enabled with robust pass7 library: `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_robust_pass7_20260612.npz`.
+- cube XY randomization remains `0.08`.
+- action warm-start override remains disabled: `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`.
+- checkpoint initialization intervention: `/results/diagnostics/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002/bc_pass7_policy_init_epoch0.pth`.
+- no reward, observation, action-space, termination, PPO wrapper, or task semantic changes beyond the existing reset-prior branch and BC-initialized policy weights.
+- no A100/full RL.
+
+Command / Job:
+- run_name: `franka_cube_ggx_pass7_bcinit_smoke45_retry_20260611_201902`
+- command: `sbatch --parsable --job-name=ggx_pass7_bcinit_retry --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=d541a7b2b48718c0f13fdf03837bbf97db6e6eaf,TASK=Dextrah-Franka-Cube-Grasp,FULL_EXPERIMENT_NAME=franka_cube_ggx_pass7_bcinit_smoke45_retry_20260611_201902,NUM_ENVS=64,MAX_ITERATIONS=45,HORIZON_LENGTH=64,MINIBATCH_SIZE=4096,CENTRAL_VALUE_MINIBATCH_SIZE=4096,SAVE_FREQUENCY=5,SEED=20260624,CUBE_SPAWN_XY_RANDOMIZATION=0.08,USE_CUDA_GRAPH=False,DEXTRAH_RLGAMES_JSONL_METRICS=True,AUTO_RESUME=False,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_robust_pass7_20260612.npz,GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False,CHECKPOINT=/results/diagnostics/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002/bc_pass7_policy_init_epoch0.pth cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`
+- job_id: `1028083`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pass7_bcinit_smoke45_retry_20260611_201902`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_smoke_1028083.out`
+
+Acceptance / inspection:
+- Log shows policy-initialization checkpoint load and no epoch-45 runtime restore.
+- JSONL metrics have many epoch records, finite values, and no NaN/Inf/bad signatures.
+- reset-prior success/quality remains sane.
+- action override/warm-start metrics stay absent/zero; this smoke tests actor initialization, not environment action overrides.
+- Inspect reward, lift height, success/lifted rates, EE/finger distance, contact/proxy/table-clearance metrics, and action/gripper distributions.
+- Generate a compact report/plots; generate video/contact sheet only if metrics need visual diagnosis or improve enough to justify an eval.
+- Do not launch A100/full RL from this smoke.
+
+## 2026-06-11 20:31 PDT - artifact and diagnostic plan: BC pre-vs-post PPO closed loop
+
+Goal:
+- Finish missing viewer-ready inspection artifacts for valid-but-negative PPO smoke `1028083`.
+- Diagnose whether the supervised BC/action-head policy already fails in closed loop before PPO updates, or whether PPO updates destroy/usefully change a potentially good BC actor.
+
+Hypothesis:
+- If the sanitized BC policy-init checkpoint fails before PPO, the next blocker is observation/action-label mismatch or closed-loop compounding error, not PPO.
+- If the sanitized BC policy-init checkpoint succeeds but the post-PPO ep45 checkpoint fails, the next bounded intervention should preserve the BC actor during PPO, e.g. lower LR/KL/entropy/action regularization, still only as an L401 diagnostic.
+
+Change:
+- No source-code change planned.
+- Locally generated missing `1028083` inspection PNGs from fetched `epoch_metrics.csv` using PIL because local `matplotlib` is unavailable:
+  - `cluster_results/l401/franka_cube_ggx_pass7_bcinit_smoke45_retry_20260611_201902/inspection/training_curves.png`
+  - `cluster_results/l401/franka_cube_ggx_pass7_bcinit_smoke45_retry_20260611_201902/inspection/failure_focus_curves.png`
+  - `cluster_results/l401/franka_cube_ggx_pass7_bcinit_smoke45_retry_20260611_201902/inspection/failure_summary_card.png`
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- worklog: `worklogs/franka-cube-grasp-prior/franka-cube-ggx-pregrasp-reset.md`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- implementation_commit: `d541a7b2b48718c0f13fdf03837bbf97db6e6eaf`
+- remote worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote commit: `d541a7b2b48718c0f13fdf03837bbf97db6e6eaf`
+- changed_files: worklog only; generated artifacts are under `cluster_results/` and are not intended for Git.
+
+Command / Job:
+- pre-PPO eval run_name: `franka_cube_ggx_pass7_bcinit_preppo_eval_20260611_2031`
+- pre-PPO checkpoint: `/results/diagnostics/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002/bc_pass7_policy_init_epoch0.pth`
+- post-PPO eval run_name: `franka_cube_ggx_pass7_bcinit_postppo_ep45_eval_20260611_2031`
+- post-PPO checkpoint: `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pass7_bcinit_smoke45_retry_20260611_201902/nn/last_dextrah_franka_cube_grasp_ep_45_rew_715.3215.pth`
+- common config: `TASK=Dextrah-Franka-Cube-Grasp`, `NUM_ENVS=1`, `NUM_STEPS=220`, `VIDEO_LENGTH=220`, deterministic eval, seed `20260624`, cube XY randomization `0.08`, `GRASP_PRIOR_RESET_ENABLED=True`, robust pass7 library `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_robust_pass7_20260612.npz`, `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`.
+- expected logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_<job>.out`
+- expected run dirs: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/<run_name>`
+
+Acceptance:
+- Each eval completes cleanly and writes `metrics.json`, rollout trace CSV/JSONL if available, and a short video.
+- Fetch artifacts locally under `cluster_results/l401/<run_name>`.
+- Generate contact sheets and a comparison report with `viz-open` URLs.
+- Required metrics: success/lift, lift height, EE/finger distances, action z/gripper components, reset-prior success/quality.
+- Verdict must explicitly classify:
+  - pre-PPO BC succeeds/fails closed loop;
+  - post-PPO ep45 improves/degrades/stays failed;
+  - whether next work should be PPO-preservation or observation/action-label mismatch.
+- No A100/full RL or additional PPO launch from this diagnostic.
+
+Result:
+- status: completed/diagnostic failure, both jobs `COMPLETED 0:0`.
+- pre-PPO eval job_id: `1028086`, elapsed `00:01:16`, node `pool0-00006`.
+- post-PPO eval job_id: `1028087`, elapsed `00:01:15`, node `pool0-00006`.
+- fetched pre-PPO run dir: `cluster_results/l401/franka_cube_ggx_pass7_bcinit_preppo_eval_20260611_2031`.
+- fetched post-PPO run dir: `cluster_results/l401/franka_cube_ggx_pass7_bcinit_postppo_ep45_eval_20260611_2031`.
+- fetched logs:
+  - `cluster_logs/l401/slurm_logs/dextrah/eval_franka_cube_1028086.out`
+  - `cluster_logs/l401/slurm_logs/dextrah/eval_franka_cube_1028087.out`
+- comparison bundle: `cluster_results/l401/franka_cube_ggx_pass7_bcinit_prepost_eval_20260611_2031_inspection`.
+- `1028083` missing inspection artifacts generated:
+  - `cluster_results/l401/franka_cube_ggx_pass7_bcinit_smoke45_retry_20260611_201902/inspection/training_curves.png`
+  - `cluster_results/l401/franka_cube_ggx_pass7_bcinit_smoke45_retry_20260611_201902/inspection/failure_focus_curves.png`
+  - `cluster_results/l401/franka_cube_ggx_pass7_bcinit_smoke45_retry_20260611_201902/inspection/failure_summary_card.png`
+- removed stale `plot_error.txt` after replacing it with PIL-generated PNGs.
+
+Metrics:
+- pre-PPO BC init:
+  - reset-prior success/quality: `1.0/1.0`, warm-start active `0.0`.
+  - success final/max: `0.0/0.0`.
+  - lift height final/max: `0.0/0.0 m`.
+  - EE distance first/final: `0.0514/0.3420 m`.
+  - finger-center distance first/final: `0.0886/0.3548 m`.
+  - z action first/final: `-1.000/1.000`; gripper action first/final: `0.886/0.305`; gripper width first/final: `0.0793/0.0497 m`.
+- post-PPO ep45:
+  - reset-prior success/quality: `1.0/1.0`, warm-start active `0.0`.
+  - success final/max: `0.0/0.0`.
+  - lift height final/max: `0.0/0.0 m`.
+  - EE distance first/final: `0.0539/0.2631 m`.
+  - finger-center distance first/final: `0.0908/0.2985 m`.
+  - z action first/final: `-0.151/1.000`; gripper action first/final: `-0.065/-0.387`; gripper width first/final: `0.0735/0.0170 m`.
+
+Artifact viewer URLs:
+- `1028083` report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_bcinit_smoke45_retry_20260611_201902/inspection/REPORT.md`
+- `1028083` failure plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_bcinit_smoke45_retry_20260611_201902/inspection/failure_focus_curves.png`
+- pre-vs-post report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_bcinit_prepost_eval_20260611_2031_inspection/REPORT.md`
+- trace curves: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_bcinit_prepost_eval_20260611_2031_inspection/prepost_trace_curves.png`
+- pre-PPO contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_bcinit_prepost_eval_20260611_2031_inspection/preppo_contact_sheet.jpg`
+- post-PPO contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_bcinit_prepost_eval_20260611_2031_inspection/postppo_contact_sheet.jpg`
+- side-by-side video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_bcinit_prepost_eval_20260611_2031_inspection/prepost_side_by_side.mp4`
+
+Visual inspection:
+- Pre-PPO contact sheet: first rendered frame starts close to the cube; by step ~40 the gripper is above/offset and by later frames the robot has drifted away with no lift.
+- Post-PPO contact sheet: starts close, then similarly moves away and never grasps/lifts.
+- First frame in both videos is black before the renderer settles, but later sampled frames are valid and informative; video metadata reports 219 frames, 1280x720, 3.65 s.
+
+Analysis:
+- The sanitized BC actor itself is not a stable closed-loop controller from the valid pass7 reset. PPO did not destroy a successful BC policy; both pre-PPO and post-PPO policies fail with no success/lift and increasing EE/finger distances.
+- The post-PPO actor slightly reduces final distance relative to pre-PPO on this fixed eval, but both are far from contact/lift and both saturate z upward over the rollout.
+- A PPO-preservation smoke is not justified from this evidence because there is no good pre-PPO behavior to preserve.
+
+Next:
+- Stay diagnostic-only; no A100/full RL and no additional PPO from this state.
+- Focus next on observation/action-label mismatch and closed-loop BC data semantics: compare labels against normalized observations at reset, phase conditioning, receding-horizon assisted labels, and whether the supervised dataset contains enough state-feedback corrections after the first few steps.
+
+## 2026-06-11 20:57 PDT - plan: BC label/observation semantics audit
+
+Goal:
+- Separate BC data/label semantics from policy fitting by testing whether the reference labels themselves grasp/lift when replayed from a valid pass7 reset, and by comparing the sanitized BC actor action to labels on the exact same live observations.
+
+Hypothesis:
+- If closed-loop reference labels pass but exact recorded label replay fails, the labels are only valid as receding-horizon corrective actions and the dataset needs closed-loop/action-state coverage rather than open-loop imitation.
+- If closed-loop and recorded replay both fail, the label action semantics, phase timing, sign convention, frame convention, or gripper/lift command are wrong.
+- If label replay succeeds but the BC actor differs strongly from labels on identical observations, the supervised policy/checkpoint normalization or fitting is the blocker.
+
+Change Plan:
+- Add diagnostic-only script `dextrah_lab/rl_games/audit_franka_cube_bc_label_semantics.py`.
+  - Reuse the same reference-action definitions as `bc_franka_cube_pass7_actions.py`: approach to exact pose, light-close width `0.055`, lift action z `0.15`, orientation tracking enabled, pass7 prior reset.
+  - For each reset: capture reset state, run a closed-loop label rollout while recording observations/actions and policy-vs-label deltas, restore the reset state and replay the exact recorded actions open-loop, and optionally replay the BC policy.
+  - Save action comparison CSV/JSONL, rollout traces, reset sample JSON, summary JSON, report, and contact sheets/videos or frame sheets for the first reset.
+- Add minimal wrapper `cluster/sbatch_audit_franka_cube_bc_label_semantics_1gpu.sh` using the same DEXTRAH Isaac/L401 container conventions.
+- No changes to task reward/reset/training/eval defaults.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `7e7f9e9d7c8ea0431285b9bffd05f3bf007ad029`
+- changed_files planned:
+  - `dextrah_lab/rl_games/audit_franka_cube_bc_label_semantics.py`
+  - `cluster/sbatch_audit_franka_cube_bc_label_semantics_1gpu.sh`
+  - this owned worklog
+
+Validation Before Launch:
+- `python3 -m py_compile dextrah_lab/rl_games/audit_franka_cube_bc_label_semantics.py`
+- `bash -n cluster/sbatch_audit_franka_cube_bc_label_semantics_1gpu.sh`
+- deploy exact committed source to the agent-owned L401 worktree before Slurm launch.
+
+Command / Job:
+- intended run_name: `franka_cube_ggx_pass7_bc_label_semantics_20260611_2057`
+- config: `Dextrah-Franka-Cube-Grasp`, `NUM_ENVS=1`, `NUM_RESETS=2`, pass7 prior library `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_robust_pass7_20260612.npz`, seed `20260624`, cube XY randomization `0.08`, reference approach/close/lift steps `16/12/12`, close width `0.055`, lift z `0.15`, oracle gain `8.0`, orientation tracking enabled.
+- policy checkpoint for policy-vs-label: `/results/diagnostics/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002/bc_pass7_policy_init_epoch0.pth`.
+- expected Slurm surface: L401 `batch`, 1 GPU, bounded diagnostic only.
+
+Acceptance:
+- Job writes metrics/report plus CSV/JSONL traces and render sheets; fetch locally under `cluster_results/l401/<run_name>`.
+- Report verdict must answer:
+  - closed-loop label rollout succeeds/fails;
+  - exact recorded action replay succeeds/fails;
+  - sanitized BC policy-vs-label mismatch magnitude/sign by phase/action dimension;
+  - likely root-cause category: label semantics, open-loop/non-corrective labels, checkpoint normalization/fitting, or unresolved.
+- Produce `viz-open` URLs for report and contact/trace artifacts.
+- No PPO, A100, or full training launch from this diagnostic.
+
+Pre-launch local validation:
+- `python3 -m py_compile dextrah_lab/rl_games/audit_franka_cube_bc_label_semantics.py` passed.
+- `bash -n cluster/sbatch_audit_franka_cube_bc_label_semantics_1gpu.sh` passed.
+
+Launch:
+- commit: `774360f5db6b6be0649cd46c521aecb8d90f07a1` (`Add BC label semantics audit`)
+- pushed branch: `codex/franka-cube-ggx-pregrasp-reset`
+- deployed L401 worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset` at exact commit `774360f5db6b6be0649cd46c521aecb8d90f07a1`
+- job id: `1028116`
+- run name: `franka_cube_ggx_pass7_bc_label_semantics_20260611_210537`
+- remote run dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pass7_bc_label_semantics_20260611_210537`
+- remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/audit_franka_cube_bc_label_1028116.out`
+- job state at launch check: `PENDING (Resources)`
+
+Result:
+- Slurm: `COMPLETED 0:0`, elapsed `00:01:10`, node `pool0-00034`.
+- Local fetched run dir: `cluster_results/l401/franka_cube_ggx_pass7_bc_label_semantics_20260611_210537/`
+- Local fetched log: `cluster_logs/l401/slurm_logs/dextrah/audit_franka_cube_bc_label_1028116.out`
+- Metrics:
+  - root cause category: `label_semantics_or_reference_control_failure`
+  - closed-loop label lift gate pass rate: `0.0`
+  - recorded label replay lift gate pass rate: `0.0`
+  - policy replay lift gate pass rate: `0.0`
+  - policy-vs-label mean absolute action error: `0.039851061923799794`
+  - policy-vs-label same-sign rate: `0.7517857142857143`
+  - reset 0, closed-loop label: final EE/cube `0.0249 m`, final finger-center/cube `0.0632 m`, final gripper width `0.06234 m`, max lift `0.0 m`.
+  - reset 1, closed-loop label: final EE/cube `0.0321 m`, final finger-center/cube `0.0729 m`, final gripper width `0.06232 m`, max lift `0.0 m`.
+  - reset 0, policy replay: final EE/cube `0.1122 m`, final finger-center/cube `0.1390 m`, final gripper width `0.00212 m`, max lift `0.0 m`.
+  - reset 1, policy replay: final EE/cube `0.0315 m`, final finger-center/cube `0.0710 m`, final gripper width `0.06115 m`, max lift `0.00377 m`.
+- Selected action/geometry trace from reset 0:
+  - closed-loop label step 20 close: `action_gripper=0.375`, width `0.06787 m`, finger-center/cube `0.06336 m`, lift `0.0`.
+  - closed-loop label step 40 lift: `action_z=0.15`, `action_gripper=0.375`, width `0.06234 m`, finger-center/cube `0.06316 m`, lift `0.0`.
+  - policy replay step 40: `action_z=1.0`, `action_gripper=-1.0`, width `0.00212 m`, finger-center/cube `0.13905 m`, lift `0.0`.
+- Policy-vs-label summary:
+  - approach z label/policy mean: `-0.4227/-0.3755`, MAE `0.1113`.
+  - close gripper label/policy mean: `0.375/0.4214`, MAE `0.0465`.
+  - lift z label/policy mean: `0.1500/0.1599`, MAE `0.0138`.
+  - lift gripper label/policy mean: `0.375/0.3743`, MAE `0.0125`.
+
+Viewer URLs:
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_bc_label_semantics_20260611_210537/REPORT.md`
+- trace plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_bc_label_semantics_20260611_210537/trace_plot.png`
+- closed-loop label contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_bc_label_semantics_20260611_210537/closed_loop_label_contact_sheet.jpg`
+- policy replay contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_bc_label_semantics_20260611_210537/policy_replay_contact_sheet.jpg`
+- recorded-label replay contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_bc_label_semantics_20260611_210537/recorded_label_replay_contact_sheet.jpg`
+
+Inspection Verdict:
+- Reset geometry remained healthy for both sampled resets (`reset_success=True`, `reset_quality_success=True`, no immediate done).
+- Direct closed-loop reference labels do not lift the cube. Exact recorded-label replay reproduces the same non-lifting behavior, so this is not primarily an open-loop replay instability.
+- The sanitized BC actor is close to the reference labels on the same observations; the failing teacher/reference behavior is the blocker. The policy is not failing because PPO destroyed a successful BC actor, and it is not a pure saved-checkpoint normalization mismatch.
+- The likely immediate label/control issue is that the "light close" label (`close_width=0.055`, action `+0.375`) settles at realized gripper width about `0.0623 m`, slightly above the `0.06 m` cube size, so the fingers stay near/around the cube but do not clamp or lift it.
+
+Next recommendation:
+- Stay diagnostic-only; no PPO/A100.
+- Build closed-loop corrective labels rather than more PPO from this BC checkpoint. The next bounded label-generation diagnostic should sweep/solve close-force/width and lift timing under the same pass7 reset distribution, using actual lift/contact success as the gate, before any new supervised checkpoint or PPO smoke.
+
+## 2026-06-11 21:17 PDT - plan: corrective label recipe sweep
+
+Goal:
+- Find a pass7-reset corrective label recipe that actually clamps and lifts the cube before any new BC/RL work.
+
+Hypothesis:
+- The current BC label recipe fails because `close_width=0.055` maps to `action_gripper=+0.375` and settles near `0.0623 m`, just above the `0.06 m` cube. Stronger close commands, including smaller target widths and negative gripper actions, may be required for real contact/lift under the DEXTRAH gripper convention.
+
+Change Plan:
+- Add diagnostic-only script `dextrah_lab/rl_games/sweep_franka_cube_bc_label_recipes.py`.
+  - Same task/reset path as prior diagnostics: `Dextrah-Franka-Cube-Grasp`, pass7 prior library, same cube XY randomization.
+  - Sweep a small set of close settings: baseline `width=0.055/action=+0.375`, tighter widths, and direct negative gripper actions.
+  - Sweep lift timing lightly: baseline `16/12/12`, longer settle, stronger lift z, and variants that keep exact-pose tracking during lift vs direct z lift.
+  - Gate with actual closed-loop rollout metrics: lift height, success/lift flags, finger/EE distance, realized gripper width, contact/proxy plausibility, action clipping, and immediate/done flags.
+  - Generate JSON/CSV sweep table, trace rows, plots, and contact sheets for baseline, first pass if any, and representative failure.
+- Add minimal L401 wrapper `cluster/sbatch_sweep_franka_cube_bc_label_recipes_1gpu.sh`.
+- Do not alter task reward/reset/PPO or train any BC/RL model.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `d7096a372f71638c5b4f78508e4ea23622baea43`
+- implementation_commit: pending
+- changed_files planned:
+  - `dextrah_lab/rl_games/sweep_franka_cube_bc_label_recipes.py`
+  - `cluster/sbatch_sweep_franka_cube_bc_label_recipes_1gpu.sh`
+  - this owned worklog
+
+Validation Before Launch:
+- `python3 -m py_compile dextrah_lab/rl_games/sweep_franka_cube_bc_label_recipes.py`
+- `bash -n cluster/sbatch_sweep_franka_cube_bc_label_recipes_1gpu.sh`
+- deploy exact committed source to the agent-owned L401 worktree before Slurm launch.
+
+Command / Job:
+- intended run name: `franka_cube_ggx_pass7_label_recipe_sweep_<timestamp>`
+- expected job surface: L401 `batch`, 1 GPU, bounded diagnostic only.
+- config: `NUM_ENVS=1`, `NUM_RESETS=2`, seed `20260624`, cube XY randomization `0.08`, pass7 library `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_robust_pass7_20260612.npz`.
+
+Acceptance:
+- At least one recipe must pass actual closed-loop lift/contact visually and metrically before any new supervised-data generation is proposed.
+- If no recipe passes, report exact failed settings and next bounded control hypothesis; no BC/PPO/A100.
+
+Pre-launch local validation:
+- `python3 -m py_compile dextrah_lab/rl_games/sweep_franka_cube_bc_label_recipes.py` passed.
+- `bash -n cluster/sbatch_sweep_franka_cube_bc_label_recipes_1gpu.sh` passed.
+
+Launch:
+- implementation_commit: `1dc53e7c6f956fd07583fda657a7b7b284136f74` (`Add corrective label recipe sweep`)
+- pushed branch: `codex/franka-cube-ggx-pregrasp-reset`
+- deployed L401 worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset` at exact commit `1dc53e7c6f956fd07583fda657a7b7b284136f74`
+- job id: `1028118`
+- run name: `franka_cube_ggx_pass7_label_recipe_sweep_20260611_211710`
+- remote run dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pass7_label_recipe_sweep_20260611_211710`
+- remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/sweep_franka_cube_bc_label_1028118.out`
+- job state at launch check: `RUNNING`, node `pool0-00015`
+
+Result:
+- Slurm: `COMPLETED 0:0`, elapsed `00:01:32`, node `pool0-00015`.
+- Local fetched run dir: `cluster_results/l401/franka_cube_ggx_pass7_label_recipe_sweep_20260611_211710/`
+- Local fetched log: `cluster_logs/l401/slurm_logs/dextrah/sweep_franka_cube_bc_label_1028118.out`
+- Verdict: no corrected label recipe found; no recipe passed closed-loop lift/contact.
+- Aggregate metrics:
+  - `baseline_w055_z015`: pass `0.0`, lift pass `0.0`, contact proxy `0.0`, max lift max `0.000054 m`, min gripper width mean `0.06379 m`.
+  - `w035_z030`: pass `0.0`, lift pass `0.0`, contact proxy `0.5`, max lift max `0.009802 m`, final lift mean `0.009699 m`, min gripper width mean `0.06107 m`.
+  - `act_neg050_close24_z030`: pass `0.0`, lift pass `0.0`, contact proxy `0.5`, max lift max `0.009951 m`, final lift mean `0.009495 m`, min gripper width mean `0.05919 m`.
+  - `act_neg100_z015`: pass `0.0`, lift pass `0.0`, contact proxy `0.5`, max lift max `0.006846 m`, min gripper width mean `0.02528 m`.
+- Visual inspection:
+  - Baseline remains near the cube but does not clamp; realized width remains above cube width.
+  - The best near-miss recipes lift the cube only to roughly the `0.01 m` gate and do not pass across both resets.
+  - Full close (`action_gripper=-1.0`) reduces width strongly but visually/metric-wise slips or disturbs contact rather than producing robust lift.
+
+Artifacts:
+- report: `cluster_results/l401/franka_cube_ggx_pass7_label_recipe_sweep_20260611_211710/REPORT.md`
+- summary: `cluster_results/l401/franka_cube_ggx_pass7_label_recipe_sweep_20260611_211710/summary.json`
+- aggregate CSV: `cluster_results/l401/franka_cube_ggx_pass7_label_recipe_sweep_20260611_211710/recipe_aggregate.csv`
+- per-reset CSV: `cluster_results/l401/franka_cube_ggx_pass7_label_recipe_sweep_20260611_211710/recipe_summary.csv`
+- trace plot: `cluster_results/l401/franka_cube_ggx_pass7_label_recipe_sweep_20260611_211710/trace_plot.png`
+- representative sheets: `baseline_w055_z015_contact_sheet.jpg`, `w035_z030_contact_sheet.jpg`, `act_neg050_close24_z030_contact_sheet.jpg`, `act_neg100_z015_contact_sheet.jpg`
+
+Analysis:
+- The gripper convention hypothesis is partly confirmed: negative gripper action closes the hand more than width-derived positive actions.
+- The failed gate is not just an open gripper; full close can over-close/slip and the moderate close recipes still hover around the threshold without reliable contact/lift.
+- Since `w035_z030` and `act_neg050_close24_z030` are near the lift threshold, the next bounded diagnostic should test stronger/longer upward action around those settings and a variant that disables exact-pose tracking during lift to determine whether the controller is fighting the lift.
+
+Next:
+- Launch a focused second sweep with no code changes and no PPO/A100:
+  - stronger lift variants around `close_width=0.035` and `action_gripper=-0.5`;
+  - longer close/lift settle;
+  - a `track_exact_during_lift=false` variant;
+  - keep `NUM_ENVS=1`, `NUM_RESETS=2`, pass7 library, cube XY randomization `0.08`.
+- Acceptance remains a real closed-loop lift/contact pass before any new BC/RL.
+
+## 2026-06-11 21:21 PDT - focused corrective label recipe sweep
+
+Goal:
+- Determine whether the near-pass close/lift labels from `1028118` can be made to reliably clamp and lift with stronger or longer lift commands, or whether the controller/label path remains insufficient.
+
+Hypothesis:
+- `w035_z030` and `act_neg050_close24_z030` were just below the `0.01 m` lift gate. A stronger upward command, longer lift duration, or disabling exact-pose tracking during the lift may cross the gate without changing the main task/reset semantics.
+
+Change:
+- No code changes. This is a recipe-only diagnostic relaunch using the existing committed sweep script and wrapper.
+- Recipes:
+  - `w035_z040`, `w035_z060`, `w035_close24_z050`, `w035_z050_free`
+  - `act_neg050_z050`, `act_neg050_close24_z050`, `act_neg050_z050_free`
+  - `act_neg100_z040`
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- local commit: `1dc53e7c6f956fd07583fda657a7b7b284136f74`
+- remote worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote commit/status: exact detached `1dc53e7c6f956fd07583fda657a7b7b284136f74`
+- changed_files: worklog only since source commit
+
+Command / Job:
+- command: `sbatch --export=ALL,CODE_NFS=<agent_worktree>,RUN_NAME=franka_cube_ggx_pass7_label_recipe_focus_20260611_212138,NUM_ENVS=1,NUM_RESETS=2,SEED=20260624,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_robust_pass7_20260612.npz,RENDER=True,RENDER_RESETS=1,RENDER_INTERVAL=10,TRACK_ORIENTATION=True,SUCCESS_LIFT_HEIGHT=0.01,RECIPES=<focused_recipe_set> cluster/sbatch_sweep_franka_cube_bc_label_recipes_1gpu.sh`
+- job_id: `1028120`
+- run name: `franka_cube_ggx_pass7_label_recipe_focus_20260611_212138`
+- remote run dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pass7_label_recipe_focus_20260611_212138`
+- remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/sweep_franka_cube_bc_label_1028120.out`
+
+Acceptance:
+- At least one recipe must pass actual closed-loop lift/contact visually and metrically before any new supervised-data generation is proposed.
+- If all recipes still fail, no BC/PPO/A100; report the control-label blocker and next bounded control hypothesis.
+
+Immediate issue:
+- Job `1028120` was canceled because Slurm `--export` treated commas inside `RECIPES` as variable separators. The wrapper log showed `RECIPES=w035_z040:close=0.035`, so it was not the intended multi-recipe focused sweep.
+- Relaunch will export `RECIPES` in the remote shell and submit with `--export=ALL` only.
+
+Corrected Relaunch:
+- job_id: `1028121`
+- run name: `franka_cube_ggx_pass7_label_recipe_focus2_20260611_212239`
+- remote run dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pass7_label_recipe_focus2_20260611_212239`
+- remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/sweep_franka_cube_bc_label_1028121.out`
+- submission fix: exported all recipe/config variables in the remote shell and used `sbatch --export=ALL`.
+
+Interim Result:
+- Slurm: `COMPLETED 0:0`, elapsed `00:01:22`, node `pool0-00015`.
+- Local fetched run dir: `cluster_results/l401/franka_cube_ggx_pass7_label_recipe_focus2_20260611_212239/`
+- Metrics:
+  - All strong-lift recipes have lift gate pass rate `1.0`, with max lift about `0.020-0.0345 m`.
+  - Full recipe pass rate is only `0.5` for all non-full-close strong-lift recipes because reset 1 fails the contact/enclosure proxy.
+  - Best aggregate by report: `w035_close24_z050`, pass rate `0.5`, lift pass `1.0`, contact proxy `0.5`, max lift `0.0345 m`, min width mean `0.0610 m`.
+  - `act_neg050_z050_free`: pass rate `0.5`, lift pass `1.0`, contact proxy `0.5`, max lift `0.0344 m`, min width mean `0.0592 m`.
+  - `act_neg100_z040`: pass `0.0`, lift pass `0.0`, width collapses to about `0.0046 m` and finger distance worsens.
+- Visual inspection:
+  - The rendered contact sheets only cover reset 0, which is the passing reset; they do not show reset 1, the failing contact-proxy case.
+  - Reset 0 frames show real cube lift for `w035_close24_z050` and `act_neg050_z050_free`.
+
+Analysis:
+- This run shows the label path can lift the cube from at least one sampled pass7 reset, so the old labels were underpowered.
+- It is still not enough to generate BC labels because the robust gate over the sampled reset distribution is not passed.
+- The next required artifact is reset-1 visual evidence. If reset 1 visibly lifts while the proxy fails, the proxy threshold may be too conservative for this grasp geometry; if it is visibly marginal, the label recipe remains invalid.
+
+Next:
+- Launch a final bounded visual gate sweep with `RENDER_RESETS=2`, limited recipes:
+  - `baseline_w055_z015`
+  - `w035_close24_z050`
+  - `act_neg050_z050_free`
+  - `act_neg100_z040`
+- No code changes, no BC/PPO/A100.
+
+Visual Gate Launch:
+- job_id: `1028125`
+- run name: `franka_cube_ggx_pass7_label_recipe_visualgate_20260611_212601`
+- remote run dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pass7_label_recipe_visualgate_20260611_212601`
+- remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/sweep_franka_cube_bc_label_1028125.out`
+- recipes: baseline, `w035_close24_z050`, `act_neg050_z050_free`, and `act_neg100_z040`
+- purpose: render both sampled resets, including the failing reset 1, before deciding whether the corrected label recipe is usable.
+
+Result:
+- Slurm: `COMPLETED 0:0`, elapsed `00:01:12`, node `pool0-00015`.
+- Local fetched run dir: `cluster_results/l401/franka_cube_ggx_pass7_label_recipe_visualgate_20260611_212601/`
+- Local fetched log: `cluster_logs/l401/slurm_logs/dextrah/sweep_franka_cube_bc_label_1028125.out`
+- Added local inspection note: `cluster_results/l401/franka_cube_ggx_pass7_label_recipe_visualgate_20260611_212601/INSPECTION_VERDICT.md`
+
+Metrics:
+- `act_neg050_z050_free`: pass rate `0.5`, lift pass `1.0`, contact proxy `0.5`, max lift max `0.0344 m`, final lift mean `0.0333 m`, min width mean `0.0592 m`.
+  - reset 0: pass `True`, max/final lift `0.0344 m`, width min `0.0577 m`, final finger-center `0.0637 m`.
+  - reset 1: pass `False`, lift pass `True`, contact proxy `False`, max/final lift `0.0323 m`, width min `0.0607 m`, final finger-center `0.0736 m`, final max-finger `0.0817 m`.
+- `w035_close24_z050`: pass rate `0.5`, lift pass `1.0`, contact proxy `0.5`, max lift max `0.0342 m`, final lift mean `0.0340 m`, min width mean `0.0611 m`.
+  - reset 0: pass `True`, max/final lift `0.0342 m`, width min `0.0596 m`, final finger-center `0.0637 m`.
+  - reset 1: pass `False`, lift pass `True`, contact proxy `False`, max/final lift `0.0338 m`, width min `0.0625 m`, final finger-center `0.0735 m`, final max-finger `0.0819 m`.
+- `baseline_w055_z015`: pass `0.0`, lift pass `0.0`, contact proxy `0.0`, max lift max `0.0001 m`.
+- `act_neg100_z040`: pass `0.0`, lift pass `0.0`, width collapses to `0.0046 m` mean and the cube slips/does not lift.
+
+Viewer URLs:
+- inspection verdict: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_label_recipe_visualgate_20260611_212601/INSPECTION_VERDICT.md`
+- generated report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_label_recipe_visualgate_20260611_212601/REPORT.md`
+- trace plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_label_recipe_visualgate_20260611_212601/trace_plot.png`
+- baseline sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_label_recipe_visualgate_20260611_212601/baseline_w055_z015_contact_sheet.jpg`
+- `act_neg050_z050_free` sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_label_recipe_visualgate_20260611_212601/act_neg050_z050_free_contact_sheet.jpg`
+- `w035_close24_z050` sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_label_recipe_visualgate_20260611_212601/w035_close24_z050_contact_sheet.jpg`
+- full-close failure sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_label_recipe_visualgate_20260611_212601/act_neg100_z040_contact_sheet.jpg`
+
+Inspection Verdict:
+- The corrected label recipe is a partial result, not a supervised-data gate pass.
+- Stronger close/lift labels clearly improve over baseline and lift the cube in both sampled resets.
+- Reset 1 remains marginal: the cube lifts, but contact/enclosure proxy fails and final finger distances are around `7.35 cm` center / `8.2 cm` max-finger. The visual frame shows lift but not a deep, robust clamp.
+- Do not train new BC/RL from this result.
+
+Next recommendation:
+- Stay diagnostic-only.
+- Either filter/generate labels only from action-space rollout samples that pass contact quality, or adjust the label generator to approach slightly deeper/laterally for the marginal reset-1 geometry and rerun the same visual gate.
+- No PPO/A100/full RL from the current label recipe.
+
+## 2026-06-11 21:34 PDT - plan: direct-reset corrective geometry gate
+
+Goal:
+- Turn the partial corrective label recipe into a pass-quality direct-reset/pregrasp diagnostic gate before any new BC/RL.
+
+Hypothesis:
+- Reset 1 fails contact/enclosure because the sampled exact target is higher/more marginal relative to the cube than reset 0. From `reset_samples.json`, reset 0 sample 6 has exact EE z about `1.01 cm` above cube center, while reset 1 sample 1 has exact EE z about `2.01 cm` above cube center. A small diagnostic target offset, especially lowering the exact tracking target by `5-15 mm`, may improve finger enclosure while preserving the actual reset/pregrasp state.
+
+Change Plan:
+- Keep main task/reset/PPO untouched.
+- Add diagnostic-only recipe fields to `dextrah_lab/rl_games/sweep_franka_cube_bc_label_recipes.py`:
+  - per-recipe target offset in robot-root frame (`offset_x`, `offset_y`, `offset_z`) applied only to the oracle exact-tracking action target;
+  - metadata in CSV/JSON/report/overlays so any deviation from the 3 cm reset prior is explicit.
+- Use the existing L401 wrapper by passing recipe overrides in `RECIPES`.
+- Compare reset 0 vs reset 1 with baseline strong-lift recipes and small downward/deeper offsets.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `be11052350866938dd5615cdb31decfc024a2a04`
+- implementation_commit: pending
+- changed_files planned:
+  - `dextrah_lab/rl_games/sweep_franka_cube_bc_label_recipes.py`
+  - this owned worklog
+
+Validation Before Launch:
+- `python3 -m py_compile dextrah_lab/rl_games/sweep_franka_cube_bc_label_recipes.py`
+- `bash -n cluster/sbatch_sweep_franka_cube_bc_label_recipes_1gpu.sh`
+- Commit/push, deploy exact commit to the agent-owned L401 worktree, then run a bounded L401 visual gate.
+
+Expected Job:
+- L401 `batch`, 1 GPU, no PPO/A100.
+- Use pass7 library and same cube XY randomization `0.08`.
+- Use `NUM_RESETS=4` if runtime remains small, `RENDER_RESETS=4`, and focused recipes:
+  - unshifted `act_neg050_z050_free` and `w035_close24_z050`;
+  - diagnostic downward offsets around `offset_z=-0.005`, `-0.010`, `-0.015`;
+  - one mild lateral/deeper candidate if metrics indicate asymmetry.
+
+Acceptance:
+- Lift pass across all sampled resets.
+- Contact/enclosure proxy pass clearly above previous `0.5`, ideally `1.0` on the small sampled gate.
+- Visual frames must show plausible enclosure without obvious slip/overclose.
+- If offsets are required, label the result diagnostic-only; no BC/RL launch until a final apple-to-apple-safe reset/sample strategy is defined.
+
+Implementation:
+- Added diagnostic-only per-recipe `offset_x`, `offset_y`, and `offset_z` fields to `sweep_franka_cube_bc_label_recipes.py`.
+- Offsets are applied only to the oracle exact-tracking action target in robot-root coordinates; the reset/pregrasp state remains unchanged.
+- Artifacts now record `target_offset_root_*` in summaries/reports and overlay the offset on frames.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/sweep_franka_cube_bc_label_recipes.py` passed.
+- `bash -n cluster/sbatch_sweep_franka_cube_bc_label_recipes_1gpu.sh` passed.
+
+Version Control:
+- implementation_commit: `4b8eb9f782371cc33a0e22e6b5c2ccf783e92e3c` (`Add diagnostic target offsets to label sweep`)
+- pushed branch: `codex/franka-cube-ggx-pregrasp-reset`
+- deploy note: L401 GitHub fetch failed with `Permission denied (publickey)`, so the exact commit was deployed to the agent-owned remote worktree through a Git bundle and checked out detached.
+- remote worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote commit/status: exact detached `4b8eb9f782371cc33a0e22e6b5c2ccf783e92e3c`, clean.
+
+Launch Plan:
+- Run name: `franka_cube_ggx_pass7_label_recipe_offsetgate_<timestamp>`
+- L401 `batch`, 1 GPU, no PPO/A100.
+- Config: `NUM_ENVS=1`, `NUM_RESETS=4`, `RENDER_RESETS=4`, seed `20260624`, cube XY randomization `0.08`, pass7 library.
+- Recipes:
+  - `baseline_w055_z015`
+  - `act_neg050_z050_free`
+  - `act_neg050_z050_free_zm005`
+  - `act_neg050_z050_free_zm010`
+  - `act_neg050_z050_free_zm015`
+  - `w035_close24_z050_zm010`
+  - `act_neg065_z050_free_zm010`
+  - `act_neg075_z050_free_zm010`
+
+Launch:
+- job_id: `1028126`
+- run name: `franka_cube_ggx_pass7_label_recipe_offsetgate_20260611_213713`
+- remote run dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pass7_label_recipe_offsetgate_20260611_213713`
+- remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/sweep_franka_cube_bc_label_1028126.out`
+
+Result:
+- Slurm: `COMPLETED 0:0`, elapsed `00:02:18`, node `pool0-00015`.
+- Local fetched run dir: `cluster_results/l401/franka_cube_ggx_pass7_label_recipe_offsetgate_20260611_213713/`
+- Local fetched log: `cluster_logs/l401/slurm_logs/dextrah/sweep_franka_cube_bc_label_1028126.out`
+- Added local inspection note: `cluster_results/l401/franka_cube_ggx_pass7_label_recipe_offsetgate_20260611_213713/INSPECTION_VERDICT.md`
+
+Metrics:
+- First passing recipe: `act_neg075_z050_free_zm010`.
+- Recipe settings: `action_gripper=-0.75`, `close_steps=24`, `lift_action_z=0.50`, `lift_steps=24`, `track_exact_during_lift=false`, diagnostic `offset_z=-0.010 m`.
+- Aggregate: pass rate `1.0`, lift pass `1.0`, contact proxy `1.0`, max lift max `0.03457 m`, final lift mean `0.03348 m`, min gripper width mean `0.05497 m`, final finger-center mean `0.06125 m`, terminated rate `0.0`.
+- Per reset:
+  - reset 0/sample 6: pass `true`, max/final lift `0.03376 m`, min width `0.05668 m`, final finger center `0.05413 m`, final max finger `0.06265 m`, table min `0.07853 m`.
+  - reset 1/sample 1: pass `true`, max/final lift `0.03155 m`, min width `0.05999 m`, final finger center `0.06340 m`, final max finger `0.07236 m`, table min `0.08850 m`.
+  - reset 2/sample 4: pass `true`, max/final lift `0.03405 m`, min width `0.05139 m`, final finger center `0.06379 m`, final max finger `0.06928 m`, table min `0.08866 m`.
+  - reset 3/sample 5: pass `true`, max/final lift `0.03457 m`, min width `0.05183 m`, final finger center `0.06367 m`, final max finger `0.07125 m`, table min `0.08898 m`.
+- Comparison:
+  - unshifted `act_neg050_z050_free`: pass rate `0.25`, lift pass `1.0`, contact proxy `0.25`; still marginal by contact geometry.
+  - `act_neg050_z050_free_zm010`, `act_neg065_z050_free_zm010`, and `w035_close24_z050_zm010`: pass rate `0.75`.
+  - baseline `baseline_w055_z015`: pass/lift/contact `0.0`, max lift max `0.00018 m`.
+
+Reset-geometry evidence:
+- Reset 0/sample 6 exact EE z above cube center was about `0.0101 m`; reset 1/sample 1 and sampled resets 2/3 were about `0.0201 m`.
+- The old marginal reset-1 geometry is consistent with an exact-target height mismatch; applying diagnostic `offset_z=-0.010 m` to the scripted exact-tracking target corrected all four sampled resets in this small gate.
+- The actual reset/pregrasp state was not changed: pass7 reset remained the 3 cm open pregrasp with the same cube XY randomization.
+
+Viewer URLs:
+- inspection verdict: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_label_recipe_offsetgate_20260611_213713/INSPECTION_VERDICT.md`
+- generated report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_label_recipe_offsetgate_20260611_213713/REPORT.md`
+- trace plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_label_recipe_offsetgate_20260611_213713/trace_plot.png`
+- passing contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_label_recipe_offsetgate_20260611_213713/act_neg075_z050_free_zm010_contact_sheet.jpg`
+- baseline failure sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_label_recipe_offsetgate_20260611_213713/baseline_w055_z015_contact_sheet.jpg`
+- unshifted strong-close marginal sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_label_recipe_offsetgate_20260611_213713/act_neg050_z050_free_contact_sheet.jpg`
+
+Inspection Verdict:
+- The bounded diagnostic direct-reset/pregrasp gate passed for `act_neg075_z050_free_zm010` over 4 rendered pass7 resets.
+- Visual inspection of the contact sheet and final frames shows the cube lifted and plausibly enclosed for all four resets, including the previously marginal reset 1.
+- This is a diagnostic-only corrective-label result because it uses a nonzero scripted target offset and stronger close command. It does not change the main reset prior, and it is not an A100/PPO launch gate by itself.
+- No BC, PPO, A100, or full RL was launched.
+
+Next:
+- If authorized, the next bounded step is supervised-data generation from this explicitly diagnostic recipe followed by a supervised-only label/action gate.
+- If strict apple-to-apple reset comparability forbids offset labels, use this evidence to define a final-safe grasp/sample filter that avoids high exact-target samples rather than changing the reset state.
+
+## 2026-06-11 21:50 PDT - plan: no-offset low-exact-z grasp filter gate
+
+Goal:
+- Convert the diagnostic `offset_z=-0.010 m` evidence into an apple-to-apple-safe grasp/sample strategy.
+- Preserve the actual reset behavior: pass7 3 cm open pregrasp, same DEXTRAH Franka cube reset, no scripted target offset in the validation gate.
+
+Hypothesis:
+- The offset diagnostic did not require changing reset semantics; it revealed that pass7 samples with the exact target about `2 cm` above the cube center are marginal for corrective close/lift labels, while the lower sample around `1 cm` above the cube center is robust.
+- The current pass7 library metadata confirms this split:
+  - original index `027` has object-local grasp z `0.11350 m`, which maps to exact EE z about `0.0101 m` above the cube center in reset diagnostics.
+  - the other robust pass7 samples have object-local grasp z `0.12350 m`, mapping to exact EE z about `0.0201 m` above cube center.
+- A final-safe sampler can therefore be a filtered library that only contains low exact-z candidates, instead of applying a target offset during labels or changing the reset state.
+
+Plan:
+- Extend or reuse `dextrah_lab/scene_scripts/filter_franka_cube_grasp_prior_library.py` to export a low-exact-z library from the geometry-filtered source with metadata documenting the rule.
+- Candidate final-safe filtered library:
+  - source: `franka_cube_ggx_grasps_geometry_filtered_v1.npz`
+  - keep: original index `027`
+  - rule: object-local grasp z <= `0.115 m` / exact EE z approximately <= `0.012 m` above cube center.
+- Run two bounded no-target-offset L401 visual/contact gates with the same close/lift recipe and same seed:
+  - filtered low-z library, no offsets;
+  - unfiltered robust pass7 library, no offsets, as the direct comparison.
+- Recipes:
+  - `baseline_w055_z015`
+  - `act_neg050_z050_free`
+  - `act_neg075_z050_free`
+- Gate config:
+  - `Dextrah-Franka-Cube-Grasp`, `NUM_ENVS=1`, `NUM_RESETS=8` if runtime remains small, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`, render all resets.
+  - `act_neg075_z050_free` must use no `offset_z`.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `0e7e78773cfbe6806dfc25d292997129673b1d45`
+- implementation_commit: pending
+- changed_files planned:
+  - `dextrah_lab/scene_scripts/filter_franka_cube_grasp_prior_library.py` if threshold filter support is needed;
+  - this owned worklog.
+
+Validation Before Launch:
+- `python3 -m py_compile dextrah_lab/scene_scripts/filter_franka_cube_grasp_prior_library.py dextrah_lab/rl_games/sweep_franka_cube_bc_label_recipes.py`
+- `bash -n cluster/sbatch_sweep_franka_cube_bc_label_recipes_1gpu.sh`
+- Commit/push, deploy exact commit to the agent-owned L401 worktree, then generate the filtered library and run the L401 gates.
+
+Acceptance:
+- Filtered low-z no-offset gate passes lift and contact/enclosure proxy across all sampled resets, with contact sheet frames showing real clamp/lift and no obvious slip/overclose.
+- The comparison unfiltered pass7 no-offset run should expose whether high-z samples remain marginal under the same recipe.
+- No BC, PPO, A100, or full RL launch from this task.
+
+Implementation:
+- Extended `filter_franka_cube_grasp_prior_library.py` with optional `--min_object_grasp_z` and `--max_object_grasp_z` filters.
+- Existing `--original_indices` behavior remains supported; threshold filters can be combined with explicit indices or used alone.
+- Output metadata now records the source z values, kept z values, and z range.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/scene_scripts/filter_franka_cube_grasp_prior_library.py dextrah_lab/rl_games/sweep_franka_cube_bc_label_recipes.py` passed.
+- `bash -n cluster/sbatch_sweep_franka_cube_bc_label_recipes_1gpu.sh` passed.
+
+Version Control:
+- implementation_commit: `0290386a95ca7c0cc18cca4ee364e84214cce5c2` (`Add low-z grasp library filter support`)
+- pushed branch: `codex/franka-cube-ggx-pregrasp-reset`
+- remote worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote commit/status: detached `0290386a95ca7c0cc18cca4ee364e84214cce5c2`, clean.
+- deploy note: remote GitHub fetch was unavailable in this worktree, so the exact commit was deployed through a Git bundle.
+
+Filtered Library Export:
+- command: `python3 dextrah_lab/scene_scripts/filter_franka_cube_grasp_prior_library.py --source /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_geometry_filtered_v1.npz --output /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz --max_object_grasp_z 0.115 --filter_name low_exact_z_orig027_20260612 --filter_criterion "final-safe no-target-offset low exact-z filter: keep object-local grasp z <= 0.115 m, derived from Worker A offset-gate 1028126" --validation_source "job 1028126 offset-gate showed high exact-z samples marginal; use low exact-z sample filter instead of target offset" --fallback_original_index 27`
+- output library: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz`
+- filter summary: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.filter_summary.jsonl`
+- result: kept original index `[27]`, local index `[9]`, confidence `0.6920517`, object-local grasp z `0.113501884 m`.
+
+No-Offset Gate Launch:
+- common config: `Dextrah-Franka-Cube-Grasp`, `NUM_ENVS=1`, `NUM_RESETS=8`, seed `20260625`, cube XY randomization `0.08`, render all 8 resets, no target offsets.
+- recipes:
+  - `baseline_w055_z015:close=0.055,lift_z=0.15,lift=12`
+  - `act_neg050_z050_free:close_action=-0.50,close_steps=24,lift_z=0.50,lift=24,track_exact_during_lift=false`
+  - `act_neg075_z050_free:close_action=-0.75,close_steps=24,lift_z=0.50,lift=24,track_exact_during_lift=false`
+- low-z filtered job:
+  - job_id: `1028130`
+  - run name: `franka_cube_ggx_lowz_nooffset_gate_20260611_2153`
+  - library: `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz`
+  - remote run dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_lowz_nooffset_gate_20260611_2153`
+  - remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/sweep_franka_cube_bc_label_1028130.out`
+- unfiltered pass7 comparison job:
+  - job_id: `1028131`
+  - run name: `franka_cube_ggx_pass7_nooffset_compare_20260611_2153`
+  - library: `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_robust_pass7_20260612.npz`
+  - remote run dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pass7_nooffset_compare_20260611_2153`
+  - remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/sweep_franka_cube_bc_label_1028131.out`
+
+No-Offset Gate Result:
+- job `1028130` completed `0:0`; artifacts fetched to `cluster_results/l401/franka_cube_ggx_lowz_nooffset_gate_20260611_2153`.
+- job `1028131` completed `0:0`; artifacts fetched to `cluster_results/l401/franka_cube_ggx_pass7_nooffset_compare_20260611_2153`.
+- inspection bundle: `cluster_results/l401/franka_cube_ggx_lowz_nooffset_filter_20260611_2153_inspection/REPORT.md`
+- viewer URLs:
+  - report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_nooffset_filter_20260611_2153_inspection/REPORT.md`
+  - low-z pass sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_nooffset_gate_20260611_2153/act_neg075_z050_free_contact_sheet.jpg`
+  - pass7 comparison sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_nooffset_compare_20260611_2153/act_neg075_z050_free_contact_sheet.jpg`
+  - low-z trace plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_nooffset_gate_20260611_2153/trace_plot.png`
+
+Metrics:
+- low-z filtered library, `act_neg075_z050_free`: pass rate `1.0`, lift gate `1.0`, contact proxy `1.0`, final lift mean `0.03418 m`, final gripper width mean `0.05350 m`, target offset norm `0.0`.
+- low-z filtered library, `act_neg050_z050_free`: pass rate `1.0`, lift gate `1.0`, contact proxy `1.0`, final lift mean `0.03392 m`, final gripper width mean `0.05778 m`, target offset norm `0.0`.
+- unfiltered robust pass7, `act_neg075_z050_free`: pass rate `0.125`, lift gate `1.0`, contact proxy `0.125`, final lift mean `0.03374 m`, target offset norm `0.0`.
+- unfiltered robust pass7 sampled local indices `[1,6,0,3,3,3,4,4]`, inferred original indices `[1,27,0,12,12,12,14,14]`; only local `6` / original `27` passed contact/enclosure.
+- reset sampling still uses the original cube XY randomization (`0.08`) and no runtime target offset. The low-z filter changes only which precomputed object-local grasp is eligible for reset sampling.
+
+Verdict:
+- PASS for this bounded final-safe no-offset reset/grasp-library gate.
+- The target-offset result from `1028126` has been converted into a sampler/library rule: keep the low exact-z GraspGenX sample (`orig027`, object-local grasp z `0.113501884 m`) instead of applying a runtime `offset_z`.
+- No BC, PPO, A100, or full RL was launched.
+- Caveat: the current safe library is a single robust sample. If diversity is required before training, generate/filter more low exact-z samples rather than reintroducing target offsets.
+
+## 2026-06-12T05:02:01Z - Low-Z No-Offset Supervised Label Gate Plan
+
+Goal:
+- Build a small supervised label/action artifact from the low-z no-offset recipe before any PPO.
+
+Hypothesis:
+- The previous BC/action-head attempts failed partly because the pass7 library mixed high-z samples and the label recipe did not come from the final-safe low-z no-offset gate.
+- A supervised diagnostic using the low-z `orig027` library plus the exact passing `act_neg075_z050_free` recipe should produce cleaner labels and a stronger action-head fit.
+
+Change:
+- Add a diagnostic-only `track_exact_during_lift` flag to `bc_franka_cube_pass7_actions.py` and its l401 wrapper so the BC labels can exactly match the passing gate recipe:
+  - approach: exact tracking, gripper open, `16` steps;
+  - close: exact tracking, gripper action equivalent to width `0.010 m` / action `-0.75`, `24` steps;
+  - lift: `z=+0.50`, gripper closed, no exact tracking during lift, `24` steps.
+- Do not change the main environment, reward, termination, PPO config, or reset behavior.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- worklog: `worklogs/franka-cube-grasp-prior/franka-cube-ggx-pregrasp-reset.md`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `1d84f37999f0e28e68f52a9d8e70eebd64adedab`
+- implementation_commit: pending
+- changed_files:
+  - `dextrah_lab/rl_games/bc_franka_cube_pass7_actions.py`
+  - `cluster/sbatch_bc_franka_cube_pass7_actions_1gpu.sh`
+  - this worklog
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/bc_franka_cube_pass7_actions.py`
+- `bash -n cluster/sbatch_bc_franka_cube_pass7_actions_1gpu.sh`
+- local result: both passed.
+- remote result at commit `93120745f109b5c742b0e60cadf64ca25aec684f`: both passed.
+- local result: both passed.
+- remote result at commit `698e44d4a9e5d2ca0c6c9665b956d80eadb32dff`: both passed.
+
+Command / Job Plan:
+- run name: `franka_cube_ggx_lowz_bc_actor_recipe_20260611_2202`
+- job name: `ggx_lowz_bc`
+- code: exact committed branch deployed to the agent-owned l401 worktree.
+- library: `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz`
+- init checkpoint: `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_robust_pass7_smoke45_20260612_0056/nn/last_dextrah_franka_cube_grasp_ep_45_rew_662.51086.pth`
+- scale: `NUM_ENVS=64`, `NUM_RESETS=16`, `TRAIN_EPOCHS=40`, `TRAIN_SCOPE=actor`, no PPO.
+- artifact paths expected under `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_lowz_bc_actor_recipe_20260611_2202`.
+
+Acceptance:
+- supervised gate passes: validation MSE `<=0.04`, gripper sign accuracy `>=0.95`, lift-z sign accuracy `>=0.90`, checkpoint loadable.
+- dataset summary confirms reset-prior success/quality and low-z sample usage.
+- inspect/report artifacts: `REPORT.md`, `metrics.json`, `dataset_summary.json`, `bc_action_metrics.csv`, `bc_loss_curves.png`, `bc_action_phase_means.png`, `bc_z_sign_accuracy.png`.
+- Do not launch PPO/A100 from this result without an explicit follow-up gate.
+
+Version Control / Launch:
+- implementation_commit: `698e44d4a9e5d2ca0c6c9665b956d80eadb32dff` (`Match BC labels to no-offset lift recipe`)
+- push: branch `codex/franka-cube-ggx-pregrasp-reset` pushed.
+- remote deployment: GitHub fetch is blocked on l401 (`Permission denied (publickey)`), so the exact commit was deployed to the agent-owned worktree via a Git bundle and checked out detached.
+- remote status before launch: detached `698e44d4a9e5d2ca0c6c9665b956d80eadb32dff`, clean.
+- command: `sbatch --parsable --job-name=ggx_lowz_bc --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=698e44d4a9e5d2ca0c6c9665b956d80eadb32dff,RUN_NAME=franka_cube_ggx_lowz_bc_actor_recipe_20260611_2202,NUM_ENVS=64,NUM_RESETS=16,SEED=20260625,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz,INIT_CHECKPOINT=/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_robust_pass7_smoke45_20260612_0056/nn/last_dextrah_franka_cube_grasp_ep_45_rew_662.51086.pth,TRAIN_EPOCHS=40,BATCH_SIZE=2048,LEARNING_RATE=0.0003,TRAIN_SCOPE=actor,VALIDATION_FRACTION=0.25,PHASE_BALANCE_LOSS=True,LIFT_PHASE_LOSS_WEIGHT=2.0,LIFT_Z_MSE_WEIGHT=8.0,LIFT_Z_SIGN_LOSS_WEIGHT=0.05,APPROACH_STEPS=16,CLOSE_STEPS=24,LIFT_STEPS=24,CLOSE_WIDTH=0.010,LIFT_ACTION_Z=0.50,ORACLE_GAIN=8.0,ORACLE_MAX_POSITION_ACTION=1.0,TRACK_ORIENTATION=True,TRACK_EXACT_DURING_LIFT=False,GATE_VAL_MSE=0.04,GATE_GRIPPER_SIGN=0.95,GATE_LIFT_Z_SIGN=0.90,SAVE_BC_CHECKPOINT=True cluster/sbatch_bc_franka_cube_pass7_actions_1gpu.sh`
+- job_id: `1028137`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_lowz_bc_actor_recipe_20260611_2202`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bc_franka_cube_pass7_1028137.out`
+
+Result:
+- status: passed.
+- Slurm: job `1028137` completed `0:0`, elapsed `00:01:11`, node `pool0-00015`.
+- local artifacts: `cluster_results/l401/franka_cube_ggx_lowz_bc_actor_recipe_20260611_2202`.
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_bc_actor_recipe_20260611_2202/REPORT.md`
+- loss curves: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_bc_actor_recipe_20260611_2202/bc_loss_curves.png`
+- phase action means: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_bc_actor_recipe_20260611_2202/bc_action_phase_means.png`
+- z sign plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_bc_actor_recipe_20260611_2202/bc_z_sign_accuracy.png`
+- metrics:
+  - supervised gate: `PASS`
+  - validation MSE: `0.0034819694701582193`
+  - validation MAE: `0.02020249329507351`
+  - validation gripper sign accuracy: `0.99969482421875`
+  - validation lift-z sign accuracy: `1.0`
+  - validation z sign accuracy: `0.765380859375`
+  - checkpoint loadable: `true`
+- dataset:
+  - samples: `65536`
+  - phase counts: approach `16384`, close `24576`, lift `24576`
+  - reset valid counts: `64/64` for all `16` reset batches
+  - sample histogram: `{"0": 65536}` using the low-z single-candidate library
+- diagnostic checkpoint: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_lowz_bc_actor_recipe_20260611_2202/bc_pass7_action_warmstart.pth`
+
+Analysis:
+- Supervised fitting is no longer the blocker under the low-z no-offset library and the passing close/lift recipe.
+- The close-phase z sign remains low because the reference close action includes mixed vertical corrections while tracking exact pose; this is not part of the lift-z gate, which passes at `1.0`.
+- This is still a diagnostic actor initialization artifact, not an apple-to-apple PPO/RL result.
+
+Next:
+- Run a bounded visual eval from the diagnostic checkpoint before any PPO/A100.
+- Eval must use `Dextrah-Franka-Cube-Grasp`, low-z no-offset reset library, cube XY randomization `0.08`, deterministic policy, no environment action warmstart, and video/trace artifacts.
+- Acceptance: video/contact sheet and metrics show the BC actor itself grasps/lifts plausibly from the low-z prior reset. If it fails, the next blocker is closed-loop BC policy behavior, not supervised MSE.
+
+## 2026-06-12T05:10:00Z - Low-Z BC Actor Visual Eval Plan
+
+Goal:
+- Test whether the supervised low-z BC actor checkpoint can close-loop grasp/lift from the valid low-z no-offset pregrasp reset before PPO.
+
+Config Audit:
+- training label config from `1028137`: low-z library, seed `20260625`, cube XY randomization `0.08`, `track_exact_during_lift=false`, close target width `0.010`, lift action z `0.50`.
+- eval config: same low-z reset library, same task and cube XY randomization, deterministic policy action from checkpoint, no action warmstart override.
+- intended mismatch: eval does not inject teacher labels or scripted warmstart; it tests the BC actor alone.
+
+Command / Job Plan:
+- run name: `franka_cube_ggx_lowz_bc_actor_eval_20260611_2210`
+- checkpoint: `/results/diagnostics/franka_cube_ggx_lowz_bc_actor_recipe_20260611_2202/bc_pass7_action_warmstart.pth`
+- library: `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz`
+- scale: `NUM_ENVS=1`, `NUM_STEPS=180`, video length `180`, deterministic.
+- no PPO, no A100, no RL training.
+
+Expected Artifacts:
+- remote run dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_ggx_lowz_bc_actor_eval_20260611_2210`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_<job_id>.out`
+- `metrics.json`, `trace.csv`, `trace.jsonl`, video under `videos/`.
+- local inspection after fetch: report, contact sheet, trace plot, `viz-open` URLs.
+
+Acceptance:
+- reset-prior success/quality stays `1.0`.
+- video starts from the low-z open 3 cm pregrasp and shows physically plausible close/contact/lift from the BC actor alone.
+- metrics should show nonzero lift and decreasing/controlled finger/cube distance; if not, mark as closed-loop BC actor failure and do not launch PPO.
+
+Launch:
+- branch/worklog commit before launch: `8d76542470a6127877dc75bf1cbc20caefed93e5` (`Record low-z BC supervised gate`)
+- remote worktree: detached `8d76542470a6127877dc75bf1cbc20caefed93e5`, clean.
+- command: `sbatch --parsable --partition=batch --time=0-00:30:00 --job-name=ggx_lowz_bc_eval --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,RUN_NAME=franka_cube_ggx_lowz_bc_actor_eval_20260611_2210,TASK=Dextrah-Franka-Cube-Grasp,NUM_ENVS=1,NUM_STEPS=180,VIDEO_LENGTH=180,VIDEO_NAME_PREFIX=lowz-bc-actor,PRINT_INTERVAL=20,CAPTURE_VIDEO=True,DETERMINISTIC=True,USE_CUDA_GRAPH=False,SEED=20260625,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz,GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False,CHECKPOINT=/results/diagnostics/franka_cube_ggx_lowz_bc_actor_recipe_20260611_2202/bc_pass7_action_warmstart.pth,CAMERA_EYE_X=-0.10,CAMERA_EYE_Y=-0.78,CAMERA_EYE_Z=1.42,CAMERA_TARGET_X=-0.41,CAMERA_TARGET_Y=-0.10,CAMERA_TARGET_Z=0.82 cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- job_id: `1028144`
+- remote run dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_ggx_lowz_bc_actor_eval_20260611_2210`
+- remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1028144.out`
+
+Result:
+- status: partial pass / no PPO gate.
+- Slurm: job `1028144` completed `0:0`, elapsed `00:01:06`, node `pool0-00001`.
+- local artifacts: `cluster_results/l401/franka_cube_ggx_lowz_bc_actor_eval_20260611_2210`.
+- inspection report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_bc_actor_eval_20260611_2210/inspection/REPORT.md`
+- video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_bc_actor_eval_20260611_2210/videos/lowz-bc-actor-step-0.mp4`
+- labeled contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_bc_actor_eval_20260611_2210/inspection/labeled_contact_sheet.jpg`
+- trace plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_bc_actor_eval_20260611_2210/inspection/trace_plot.png`
+- metrics:
+  - reset success/quality mean: `1.0 / 1.0`
+  - success max/final/mean: `1.0 / 0.0 / 0.0667`
+  - lifted max/final/mean: `1.0 / 0.0 / 0.0667`
+  - cube lift max/final: `0.12203 m / 0.01053 m`
+  - EE-to-cube min/final: `0.02593 m / 0.02838 m`
+  - finger-center min/final: `0.06374 m / 0.06460 m`
+  - gripper width min/final: `0.04624 m / 0.05660 m`
+  - reward max/final: `22.708 / 3.294`
+- visual notes:
+  - step 20 to 120: actor closes near the cube and lifts.
+  - step 131: cube is visibly lifted and success/lift gates are active.
+  - step 145: actor emits an open/reposition action (`gripper_action=+1.0`, width returns near `0.080 m`) and drops/loses the cube.
+  - step 160 to 179: actor remains near the cube but does not recover a stable hold.
+
+Analysis:
+- The BC actor no longer fails in closed loop immediately. It can produce a real transient grasp/lift from the low-z reset distribution.
+- The remaining blocker is hold stability/action phase continuation after lift, not reset geometry or supervised one-step action fitting.
+- This does not satisfy a conservative PPO launch gate because success is not held to the final step and the policy reopens after lift.
+
+Next:
+- No PPO/A100/full RL from this checkpoint without explicit approval.
+- Bounded next diagnostic should add or audit a hold phase after lift in the supervised label artifact, or compare actor actions against a teacher hold action after success to identify why it reopens.
+
+## 2026-06-12T05:13:06Z - Low-Z BC Hold-Phase Diagnostic Plan
+
+Goal:
+- Test whether the low-z BC actor failure after step ~145 is caused by missing hold-phase labels after the approach/close/lift horizon.
+
+Hypothesis:
+- The `1028144` actor can lift but reopens/repositions because the supervised dataset ended after approach/close/lift and did not train a hold continuation. Adding hold-phase labels with closed gripper and a small upward/hold action should suppress the post-lift open spike and improve final/held success.
+
+Change:
+- Add diagnostic-only hold phase arguments to `bc_franka_cube_pass7_actions.py` and the l401 wrapper:
+  - `--hold_steps`
+  - `--hold_action_z`
+  - `--track_exact_during_hold`
+- Hold label recipe will keep the gripper closed and use no exact tracking during hold by default for this attempt.
+- Do not change the main task reset, reward, action space, termination, PPO config, or prior reset semantics.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- worklog: `worklogs/franka-cube-grasp-prior/franka-cube-ggx-pregrasp-reset.md`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `63f920d9ec93120a3fc89711b62897e2be9bc66b`
+- implementation_commit: pending
+- changed_files:
+  - `dextrah_lab/rl_games/bc_franka_cube_pass7_actions.py`
+  - `cluster/sbatch_bc_franka_cube_pass7_actions_1gpu.sh`
+  - this worklog
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/bc_franka_cube_pass7_actions.py`
+- `bash -n cluster/sbatch_bc_franka_cube_pass7_actions_1gpu.sh`
+
+Command / Job Plan:
+- supervised run name: `franka_cube_ggx_lowz_bc_actor_hold_20260611_2214`
+- init checkpoint: `/results/diagnostics/franka_cube_ggx_lowz_bc_actor_recipe_20260611_2202/bc_pass7_action_warmstart.pth`
+- library: `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz`
+- label recipe:
+  - approach `16`, close `24`, lift `24`, hold `96`
+  - close width `0.010`
+  - lift action z `0.50`
+  - hold action z `0.10`
+  - track exact during lift `false`
+  - track exact during hold `false`
+- scale: `NUM_ENVS=64`, `NUM_RESETS=16`, actor scope, no PPO.
+
+Acceptance:
+- supervised gate remains passing: MSE `<=0.04`, gripper sign `>=0.95`, lift-z sign `>=0.90`, loadable checkpoint.
+- hold-phase action metrics show negative/closed gripper sign and non-pathological z action.
+- If supervised gate passes, run one small visual eval from the hold checkpoint with the same low-z reset/library and no action warmstart override.
+- Visual gate requires stable final/held success; transient lift alone is not enough.
+
+Implementation / Launch:
+- implementation_commit: `93120745f109b5c742b0e60cadf64ca25aec684f` (`Add hold phase to BC label diagnostic`)
+- push: branch `codex/franka-cube-ggx-pregrasp-reset` pushed.
+- remote deployment: exact commit deployed to agent-owned l401 worktree through Git bundle; remote status detached clean.
+- command: `sbatch --parsable --job-name=ggx_lowz_bc_hold --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=93120745f109b5c742b0e60cadf64ca25aec684f,RUN_NAME=franka_cube_ggx_lowz_bc_actor_hold_20260611_2214,NUM_ENVS=64,NUM_RESETS=16,SEED=20260625,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz,INIT_CHECKPOINT=/results/diagnostics/franka_cube_ggx_lowz_bc_actor_recipe_20260611_2202/bc_pass7_action_warmstart.pth,TRAIN_EPOCHS=40,BATCH_SIZE=2048,LEARNING_RATE=0.0003,TRAIN_SCOPE=actor,VALIDATION_FRACTION=0.25,PHASE_BALANCE_LOSS=True,LIFT_PHASE_LOSS_WEIGHT=2.0,LIFT_Z_MSE_WEIGHT=8.0,LIFT_Z_SIGN_LOSS_WEIGHT=0.05,APPROACH_STEPS=16,CLOSE_STEPS=24,LIFT_STEPS=24,HOLD_STEPS=96,CLOSE_WIDTH=0.010,LIFT_ACTION_Z=0.50,HOLD_ACTION_Z=0.10,ORACLE_GAIN=8.0,ORACLE_MAX_POSITION_ACTION=1.0,TRACK_ORIENTATION=True,TRACK_EXACT_DURING_LIFT=False,TRACK_EXACT_DURING_HOLD=False,GATE_VAL_MSE=0.04,GATE_GRIPPER_SIGN=0.95,GATE_LIFT_Z_SIGN=0.90,SAVE_BC_CHECKPOINT=True cluster/sbatch_bc_franka_cube_pass7_actions_1gpu.sh`
+- job_id: `1028150`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_lowz_bc_actor_hold_20260611_2214`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bc_franka_cube_pass7_1028150.out`
+
+Result:
+- status: supervised pass.
+- Slurm: job `1028150` completed `0:0`, elapsed `00:01:43`, node `pool0-00017`.
+- local artifacts: `cluster_results/l401/franka_cube_ggx_lowz_bc_actor_hold_20260611_2214`.
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_bc_actor_hold_20260611_2214/REPORT.md`
+- loss curves: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_bc_actor_hold_20260611_2214/bc_loss_curves.png`
+- phase action means: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_bc_actor_hold_20260611_2214/bc_action_phase_means.png`
+- z sign plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_bc_actor_hold_20260611_2214/bc_z_sign_accuracy.png`
+- metrics:
+  - supervised gate: `PASS`
+  - validation MSE: `0.0009264383115805686`
+  - validation gripper sign accuracy: `0.999926745891571`
+  - validation lift-z sign accuracy: `1.0`
+  - validation hold-z sign accuracy: `1.0`
+  - validation z sign accuracy: `0.948974609375`
+  - validation hold-z MAE: `0.012597617693245411`
+  - checkpoint loadable: `true`
+- dataset:
+  - samples: `163840`
+  - phase counts: approach `16384`, close `24576`, lift `24576`, hold `98304`
+  - sample histogram: `{"0": 163840}`
+  - valid resets: `64/64` for all `16` reset batches
+- checkpoint: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_lowz_bc_actor_hold_20260611_2214/bc_pass7_action_warmstart.pth`
+
+Analysis:
+- The hold-phase supervised fit is better than the no-hold checkpoint and explicitly trains closed-gripper hold behavior after lift.
+- This remains a diagnostic actor artifact, not a PPO or apple-to-apple RL result.
+
+Next:
+- Run a visual eval from the hold checkpoint under the same low-z no-offset reset/library, no action warmstart override.
+
+Visual Eval Launch:
+- run name: `franka_cube_ggx_lowz_bc_actor_hold_eval_20260611_2220`
+- checkpoint: `/results/diagnostics/franka_cube_ggx_lowz_bc_actor_hold_20260611_2214/bc_pass7_action_warmstart.pth`
+- library: `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz`
+- config: `Dextrah-Franka-Cube-Grasp`, `NUM_ENVS=1`, `NUM_STEPS=240`, `SEED=20260625`, cube XY randomization `0.08`, deterministic, `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`.
+- command: `sbatch --parsable --partition=batch --time=0-00:30:00 --job-name=ggx_lowz_hold_eval --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,RUN_NAME=franka_cube_ggx_lowz_bc_actor_hold_eval_20260611_2220,TASK=Dextrah-Franka-Cube-Grasp,NUM_ENVS=1,NUM_STEPS=240,VIDEO_LENGTH=240,VIDEO_NAME_PREFIX=lowz-bc-hold,PRINT_INTERVAL=20,CAPTURE_VIDEO=True,DETERMINISTIC=True,USE_CUDA_GRAPH=False,SEED=20260625,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz,GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False,CHECKPOINT=/results/diagnostics/franka_cube_ggx_lowz_bc_actor_hold_20260611_2214/bc_pass7_action_warmstart.pth,CAMERA_EYE_X=-0.10,CAMERA_EYE_Y=-0.78,CAMERA_EYE_Z=1.42,CAMERA_TARGET_X=-0.41,CAMERA_TARGET_Y=-0.10,CAMERA_TARGET_Z=0.82 cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- job_id: `1028151`
+- remote run dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_ggx_lowz_bc_actor_hold_eval_20260611_2220`
+- remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1028151.out`
+
+## 2026-06-11 22:32 - hold-eval termination-aware diagnostics
+
+Goal:
+- Resolve whether hold eval `1028151` represents a true post-lift drop or an episode termination/reset artifact after reaching success.
+
+Hypothesis:
+- The apparent final failure is caused by the evaluator continuing after an automatic task reset: trace step 172 reaches `success_rate=1`, step 183 reaches max lift, then step 184 resets cube lift to zero and gripper width to the open reset width.
+
+Change:
+- Add diagnostic-only per-step done counts and first-episode summaries to `dextrah_lab/rl_games/eval_rollout.py`.
+- This must not change environment reset behavior, reward, observations, actions, policy execution, or PPO/training configuration.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `93120745f109b5c742b0e60cadf64ca25aec684f`
+- implementation_commit: pending
+- changed_files:
+  - `dextrah_lab/rl_games/eval_rollout.py`
+  - this worklog
+
+Validation Plan:
+- `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py`
+- bounded L401 visual eval replay from the same hold checkpoint with the same low-z no-offset reset/library and `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`.
+
+Acceptance:
+- Metrics JSON includes `first_done_step`, `first_episode_summary`, and per-step `done_count_step`.
+- If the first episode succeeds and terminates while the final frame is from a second reset episode, classify final-success failure as an eval-summary artifact, not a physical drop.
+- Still do not launch PPO/A100/RL; this only clarifies the visual gate semantics.
+
+Implementation / Launch:
+- implementation_commit: `40ef5b9be6652baf7e731081b0387fe4c68dddf6` (`Add done-aware eval diagnostics`)
+- push: branch `codex/franka-cube-ggx-pregrasp-reset` pushed.
+- remote deployment: GitHub fetch on l401 still blocked by SSH auth, so a Git bundle was transferred and fetched into the agent-owned remote worktree; remote status detached at exact commit `40ef5b9be6652baf7e731081b0387fe4c68dddf6`.
+- validation:
+  - local `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py`: passed
+  - local `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`: passed
+  - remote same checks at commit `40ef5b9be6652baf7e731081b0387fe4c68dddf6`: passed
+- run name: `franka_cube_ggx_lowz_bc_actor_hold_eval_doneaware_20260611_2223`
+- checkpoint: `/results/diagnostics/franka_cube_ggx_lowz_bc_actor_hold_20260611_2214/bc_pass7_action_warmstart.pth`
+- library: `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz`
+- config: `Dextrah-Franka-Cube-Grasp`, `NUM_ENVS=1`, `NUM_STEPS=240`, `SEED=20260625`, cube XY randomization `0.08`, deterministic, `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`.
+- expected artifacts: `metrics.json`, `trace.csv`, `trace.jsonl`, video, labeled contact sheet, trace/action plot, inspection report with first-episode versus full-rollout verdict.
+- command: `sbatch --parsable --partition=batch --time=0-00:30:00 --job-name=ggx_lowz_hold_done --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,RUN_NAME=franka_cube_ggx_lowz_bc_actor_hold_eval_doneaware_20260611_2223,TASK=Dextrah-Franka-Cube-Grasp,NUM_ENVS=1,NUM_STEPS=240,VIDEO_LENGTH=240,VIDEO_NAME_PREFIX=lowz-bc-hold-doneaware,PRINT_INTERVAL=20,CAPTURE_VIDEO=True,DETERMINISTIC=True,USE_CUDA_GRAPH=False,SEED=20260625,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz,GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False,CHECKPOINT=/results/diagnostics/franka_cube_ggx_lowz_bc_actor_hold_20260611_2214/bc_pass7_action_warmstart.pth,CAMERA_EYE_X=-0.10,CAMERA_EYE_Y=-0.78,CAMERA_EYE_Z=1.42,CAMERA_TARGET_X=-0.41,CAMERA_TARGET_Y=-0.10,CAMERA_TARGET_Z=0.82 cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- job_id: `1028153`
+- remote run dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_ggx_lowz_bc_actor_hold_eval_doneaware_20260611_2223`
+- remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1028153.out`
+
+## 2026-06-11 22:37 - multi-episode done-aware eval gate plan
+
+Goal:
+- Estimate low-z reset + hold actor first-episode grasp/lift robustness across multiple reset samples before any PPO/RL discussion.
+
+Hypothesis:
+- Single-seed visual eval `1028153` is a real successful first episode, and the final-zero metric is due to evaluator continuation after done/reset.
+- A bounded multi-env or multi-reset eval needs per-episode outcome tracking from the state before automatic reset, not only full-rollout final scalars.
+
+Change:
+- Extend `dextrah_lab/rl_games/eval_rollout.py` with diagnostic-only episode outcome tracking:
+  - per-step done counts already added in `40ef5b9`;
+  - add per completed episode success/lift proxies from the pre-reset state;
+  - add aggregate completed-episode success/lift rates and max lift statistics.
+- Keep policy execution, task reset, reward, observation/action spaces, and PPO untouched.
+
+Command / Job Plan:
+- After syntax checks and commit/push/deploy, launch one bounded L401 statistical eval from the same checkpoint/library.
+- Proposed run: `NUM_ENVS=16`, `NUM_STEPS=260`, deterministic, low-z no-offset library, no action warmstart, video disabled for speed; use existing `1028153` video as the visual companion.
+- Expected artifacts: `metrics.json` with `episode_outcomes`, `trace.csv/jsonl`, local summary/report/plot and `viz-open` URLs.
+
+Acceptance:
+- Completed episode success/lift rates are high enough to justify a next comparison protocol discussion; exact threshold for this diagnostic is all or near-all completed episodes succeeding.
+- If episode outcomes are mixed or weak, stay in diagnostic mode; no PPO/A100/RL.
+
+Implementation / Launch:
+- implementation_commit: `e99b2b8d976c037a735f20303fd8cfce967a7f23` (`Track eval episode outcomes`)
+- push: branch `codex/franka-cube-ggx-pregrasp-reset` pushed.
+- remote deployment: Git bundle fetched into agent-owned l401 worktree; remote status detached at `e99b2b8d976c037a735f20303fd8cfce967a7f23`.
+- validation:
+  - local `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py`: passed
+  - local `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`: passed
+  - remote same checks at commit `e99b2b8d976c037a735f20303fd8cfce967a7f23`: passed
+- run name: `franka_cube_ggx_lowz_bc_actor_hold_eval_epoutcomes_20260611_2240`
+- config: `Dextrah-Franka-Cube-Grasp`, `NUM_ENVS=16`, `NUM_STEPS=260`, seed `20260625`, cube XY randomization `0.08`, deterministic, video disabled, low-z no-offset library, no action warmstart.
+- checkpoint: `/results/diagnostics/franka_cube_ggx_lowz_bc_actor_hold_20260611_2214/bc_pass7_action_warmstart.pth`
+- library: `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz`
+- command: `sbatch --parsable --partition=batch --time=0-00:30:00 --job-name=ggx_lowz_hold_stat --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,RUN_NAME=franka_cube_ggx_lowz_bc_actor_hold_eval_epoutcomes_20260611_2240,TASK=Dextrah-Franka-Cube-Grasp,NUM_ENVS=16,NUM_STEPS=260,VIDEO_LENGTH=1,VIDEO_NAME_PREFIX=lowz-bc-hold-epoutcomes,PRINT_INTERVAL=20,CAPTURE_VIDEO=False,DETERMINISTIC=True,USE_CUDA_GRAPH=False,SEED=20260625,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz,GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False,CHECKPOINT=/results/diagnostics/franka_cube_ggx_lowz_bc_actor_hold_20260611_2214/bc_pass7_action_warmstart.pth,CAMERA_EYE_X=-0.10,CAMERA_EYE_Y=-0.78,CAMERA_EYE_Z=1.42,CAMERA_TARGET_X=-0.41,CAMERA_TARGET_Y=-0.10,CAMERA_TARGET_Z=0.82 cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- job_id: `1028155`
+- remote run dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_ggx_lowz_bc_actor_hold_eval_epoutcomes_20260611_2240`
+- remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1028155.out`
+
+Result:
+- status: passed bounded statistical done-aware visual/metrics gate.
+- Slurm: job `1028155` completed `0:0`, elapsed `00:00:54`, node `pool0-00015`.
+- local artifacts:
+  - report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_bc_actor_hold_eval_epoutcomes_20260611_2240/inspection/REPORT.md`
+  - trace plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_bc_actor_hold_eval_epoutcomes_20260611_2240/inspection/trace_plot.png`
+  - summary JSON: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_bc_actor_hold_eval_epoutcomes_20260611_2240/inspection/summary.json`
+  - episode outcomes CSV: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_bc_actor_hold_eval_epoutcomes_20260611_2240/inspection/episode_outcomes.csv`
+- visual companion for the same low-z hold checkpoint/config family:
+  - report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_bc_actor_hold_eval_doneaware_20260611_2223/inspection/REPORT.md`
+  - window sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_bc_actor_hold_eval_doneaware_20260611_2223/doneaware_window_sheet.jpg`
+  - video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_bc_actor_hold_eval_doneaware_20260611_2223/videos/lowz-bc-hold-doneaware-step-0.mp4`
+- completed episode metrics:
+  - count: `23`
+  - success rate: `1.0`
+  - lifted rate: `1.0`
+  - terminal success mean: `1.0`
+  - max lift mean/min/max: `0.13644372121147488` / `0.1323542594909668` / `0.14802277088165283` m
+  - terminal lift mean: `0.13644372121147488` m
+  - reset prior success/quality mean: `1.0` / `1.0`
+
+Analysis:
+- Full-rollout final success `0.375` and step max success `0.5` are misleading for this vectorized eval because envs terminate/reset asynchronously after success.
+- The correct gate is the completed-episode table captured from the pre-reset terminal state. All `23` completed episodes succeeded and lifted before automatic reset.
+- This validates the low-z no-offset prior reset plus diagnostic hold actor as physically usable. It is not an apple-to-apple PPO result because the checkpoint is a supervised diagnostic policy.
+
+Next:
+- Launch only a bounded apple-to-apple RL smoke from scratch, not from the diagnostic BC checkpoint:
+  - same `Dextrah-Franka-Cube-Grasp` task;
+  - same 1-GPU smoke PPO wrapper/settings as prior small PPO smokes;
+  - `NUM_ENVS=64`, `MAX_ITERATIONS=45`, JSONL metrics enabled;
+  - same cube XY randomization `0.08`, no yaw/randomization changes;
+  - only intended task difference from baseline: `GRASP_PRIOR_RESET_ENABLED=True` with low-z library;
+  - `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`;
+  - `CHECKPOINT=` empty and `AUTO_RESUME=False` so training starts from scratch.
+- Gate: inspect JSONL reset metrics, reward/lift/success/contact/action curves, checkpoints, and then run a small done-aware eval/video from the best/last checkpoint. No full PPO/A100/final RL until the smoke/eval artifacts are inspected.
+
+## 2026-06-11 22:50 - low-z prior apple-to-apple 64-env PPO smoke plan
+
+Goal:
+- Test whether the corrected low-z no-offset reset-prior library improves a clean RL-from-scratch smoke under the standard small Franka cube PPO wrapper.
+
+Hypothesis:
+- The reset-prior geometry is now valid, but from-scratch PPO may still fail; the smoke should reveal whether policy learning begins to exploit the prior without any BC/policy-init/action-warmstart intervention.
+
+Change:
+- No source changes.
+- Use existing `cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh` from exact remote commit `e99b2b8d976c037a735f20303fd8cfce967a7f23`.
+- Do not use the supervised hold checkpoint. Do not enable the action warmstart override.
+
+Command / Job Plan:
+- run name: `franka_cube_ggx_lowz_prior_smoke45_20260611_2250`
+- task/config: `Dextrah-Franka-Cube-Grasp`, `NUM_ENVS=64`, `MAX_ITERATIONS=45`, `HORIZON_LENGTH=64`, `SAVE_FREQUENCY=5`, JSONL metrics enabled, cube XY randomization `0.08`, `SEED=20260625`.
+- prior: `GRASP_PRIOR_RESET_ENABLED=True`, library `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz`.
+- disabled interventions: `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`, `CHECKPOINT=`, `AUTO_RESUME=False`.
+
+Acceptance:
+- Job writes JSONL metrics and checkpoints without bad scalars/errors.
+- Reset prior success/quality remains `1.0`.
+- Training curves show non-pathological reward/action/lift behavior; success/lift need not be high in 45 epochs, but any scale-up requires a post-smoke done-aware eval/video from a checkpoint.
+- If metrics look negative or drifting, classify as a negative smoke and do not scale.
+
+Launch:
+- command: `sbatch --parsable --partition=batch --time=0-01:30:00 --job-name=ggx_lowz_rl45 --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=e99b2b8d976c037a735f20303fd8cfce967a7f23,FULL_EXPERIMENT_NAME=franka_cube_ggx_lowz_prior_smoke45_20260611_2250,TASK=Dextrah-Franka-Cube-Grasp,NUM_ENVS=64,MAX_ITERATIONS=45,HORIZON_LENGTH=64,MINIBATCH_SIZE=4096,CENTRAL_VALUE_MINIBATCH_SIZE=4096,SAVE_FREQUENCY=5,SEED=20260625,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz,GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False,AUTO_RESUME=False,CHECKPOINT=,DEXTRAH_RLGAMES_JSONL_METRICS=True cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`
+- job_id: `1028161`
+- remote run dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_lowz_prior_smoke45_20260611_2250`
+- remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_smoke_1028161.out`
+
+Monitor / Training Result:
+- Slurm: job `1028161` completed `0:0`, elapsed `00:01:58`, node `pool0-00015`.
+- local artifacts: `cluster_results/l401/franka_cube_ggx_lowz_prior_smoke45_20260611_2250`
+- JSONL records: `45`
+- bad scalar count: `0`
+- checkpoints: epochs `5,10,15,20,25,30,35,40,45`
+- best stdout checkpoint reward: epoch `10`, reward `972.3333`
+- reset metrics: `cube_grasp_prior_reset_success_rate` min `1.0`, `cube_grasp_prior_quality_success_rate` min `1.0`
+- training task metrics:
+  - `cube_success_rate` max/final: `0.0` / `0.0`
+  - `cube_has_lifted_rate` max/final: `0.0` / `0.0`
+  - `cube_lift_height` max/final: `0.0011379048228263855` / `0.00010715797543525696` m
+  - `cube_ee_to_cube_dist` min/final: `0.06627719104290009` / `0.12832897901535034` m
+  - `cube_finger_center_to_cube_dist` min/final: `0.1012701615691185` / `0.1396673619747162` m
+  - `cube_action_z` min/max/final: `-0.6175605654716492` / `0.14196854829788208` / `-0.5395358204841614`
+  - `cube_gripper_action` min/max/final: `-0.17855548858642578` / `0.9766067266464233` / `0.9416688680648804`
+
+Analysis:
+- Reset branch is healthy in training, but clean from-scratch PPO still does not learn grasp/lift in this short smoke.
+- Final policy trends open/down-away despite valid prior resets. This matches earlier policy-collapse symptoms and is not a reset geometry failure.
+- Do not scale from this smoke. Need visual evals from epoch 10 best-reward and epoch 45 final checkpoint to confirm behavior and produce artifact evidence.
+
+Eval Plan:
+- Launch two bounded done-aware eval/video jobs:
+  - best reward checkpoint epoch 10: `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_lowz_prior_smoke45_20260611_2250/nn/last_dextrah_franka_cube_grasp_ep_10_rew_972.3333.pth`
+  - final checkpoint epoch 45: `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_lowz_prior_smoke45_20260611_2250/nn/last_dextrah_franka_cube_grasp_ep_45_rew_781.67365.pth`
+- Same eval config: `NUM_ENVS=1`, `NUM_STEPS=240`, deterministic, low-z library, no action warmstart, video enabled.
+
+Eval Launch:
+- ep10 run: `franka_cube_ggx_lowz_prior_smoke45_eval_ep10_20260611_2253`, job `1028165`, log `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1028165.out`
+- ep45 run: `franka_cube_ggx_lowz_prior_smoke45_eval_ep45_20260611_2253`, job `1028166`, log `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1028166.out`
+- remote dirs:
+  - `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_ggx_lowz_prior_smoke45_eval_ep10_20260611_2253`
+  - `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_ggx_lowz_prior_smoke45_eval_ep45_20260611_2253`
+
+Eval / Artifact Result:
+- status: negative smoke confirmed; no scale-up gate.
+- eval jobs:
+  - `1028165` ep10 completed `0:0`, elapsed `00:01:06`, node `pool0-00015`
+  - `1028166` ep45 completed `0:0`, elapsed `00:01:05`, node `pool0-00030`
+- local inspection bundle:
+  - report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_prior_smoke45_20260611_2250/inspection/REPORT.md`
+  - training curves: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_prior_smoke45_20260611_2250/inspection/training_curves.png`
+  - training summary JSON: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_prior_smoke45_20260611_2250/inspection/training_summary.json`
+  - epoch metrics CSV: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_prior_smoke45_20260611_2250/inspection/epoch_metrics.csv`
+  - ep10 sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_prior_smoke45_eval_ep10_20260611_2253/inspection/contact_sheet.jpg`
+  - ep10 trace: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_prior_smoke45_eval_ep10_20260611_2253/inspection/trace_plot.png`
+  - ep10 video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_prior_smoke45_eval_ep10_20260611_2253/videos/lowz-prior-ep10-step-0.mp4`
+  - ep45 sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_prior_smoke45_eval_ep45_20260611_2253/inspection/contact_sheet.jpg`
+  - ep45 trace: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_prior_smoke45_eval_ep45_20260611_2253/inspection/trace_plot.png`
+  - ep45 video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_prior_smoke45_eval_ep45_20260611_2253/videos/lowz-prior-ep45-step-0.mp4`
+- eval metrics:
+  - ep10: success max `0.0`, lift max `0.006605327129364014` m, done count `0`, final EE/finger distances `0.4074215590953827` / `0.39844608306884766` m, final gripper action `0.2261914610862732`
+  - ep45: success max `0.0`, lift max `0.016963839530944824` m, done count `0`, final EE/finger distances `0.1035449430346489` / `0.11341996490955353` m, final gripper action `1.0`, final gripper width `0.07999639213085175` m
+- visual notes:
+  - ep10 briefly stays near the cube but then moves far away; no lift.
+  - ep45 contacts/bumps near the cube but keeps the gripper open and never grasps/lifts.
+
+Final Analysis:
+- Low-z no-offset reset geometry is validated, including the diagnostic hold actor gate, but the clean apple-to-apple PPO-from-scratch smoke remains negative.
+- Reset prior success/quality is not the blocker in this smoke; learning/action distribution is.
+- Do not launch A100/full RL from `1028161`.
+- Next bounded options:
+  - run a matched low-z prior-disabled baseline smoke/eval under the same seed to quantify whether low-z reset is better/worse than baseline at 45 epochs; or
+  - keep the next policy-improvement experiment explicitly labeled non-apple-to-apple, such as supervised policy initialization or a curriculum/preservation diagnostic.
+
+Cleanup / Active Jobs:
+- Worker A l401 jobs `1028161`, `1028165`, and `1028166` are complete.
+- `squeue -u lzha` showed no active jobs at the final check.
+
+## 2026-06-11 22:43 - matched prior-disabled smoke comparison plan
+
+Goal:
+- Diagnose whether the low-z prior smoke's open/down no-lift behavior is specific to the prior-start reset distribution or a general short-horizon PPO failure for this task/seed.
+
+Hypothesis:
+- If a matched prior-disabled 45-epoch smoke also fails with similar open/down or no-lift behavior, the next apple-to-apple-safe protocol should be a paired longer small-scale comparison rather than changing reset/reward/action semantics.
+- If the prior-disabled baseline learns better than low-z prior under the same settings, the reset-prior start distribution may be interacting badly with early policy exploration/reward terms.
+
+Change:
+- No source changes.
+- Use the same `cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh` wrapper and exact agent-owned remote source commit `e99b2b8d976c037a735f20303fd8cfce967a7f23`.
+- Matched settings to `1028161`: `Dextrah-Franka-Cube-Grasp`, `NUM_ENVS=64`, `MAX_ITERATIONS=45`, `HORIZON_LENGTH=64`, minibatch `4096`, seed `20260625`, cube XY randomization `0.08`, JSONL metrics enabled, no checkpoint, `AUTO_RESUME=False`.
+- Only changed setting: `GRASP_PRIOR_RESET_ENABLED=False` and no prior library override.
+
+Command / Job Plan:
+- run name: `franka_cube_baseline_noprior_smoke45_match_20260611_2243`
+- after completion, fetch JSONL/checkpoints/logs and run the same eval protocol on best-reward and final checkpoints with done-aware video/metrics.
+
+Acceptance:
+- Produce a paired report comparing baseline vs low-z prior smoke: reward/checkpoints, success/lift, gripper/action z, EE/finger distances, reset metrics when present, videos/contact sheets.
+- Do not scale or change task semantics based on scheduler success alone.
+- If both are negative, recommend next bounded protocol explicitly, likely a longer paired small PPO comparison or a non-apple-to-apple policy-init/curriculum diagnostic.
+
+Launch:
+- command: `sbatch --parsable --partition=batch --time=0-01:30:00 --job-name=baseline_rl45 --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=e99b2b8d976c037a735f20303fd8cfce967a7f23,FULL_EXPERIMENT_NAME=franka_cube_baseline_noprior_smoke45_match_20260611_2243,TASK=Dextrah-Franka-Cube-Grasp,NUM_ENVS=64,MAX_ITERATIONS=45,HORIZON_LENGTH=64,MINIBATCH_SIZE=4096,CENTRAL_VALUE_MINIBATCH_SIZE=4096,SAVE_FREQUENCY=5,SEED=20260625,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_RESET_ENABLED=False,GRASP_PRIOR_LIBRARY_PATH=,GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False,AUTO_RESUME=False,CHECKPOINT=,DEXTRAH_RLGAMES_JSONL_METRICS=True cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`
+- job_id: `1028168`
+- remote run dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseline_noprior_smoke45_match_20260611_2243`
+- remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_smoke_1028168.out`
+
+Monitor / Training Result:
+- Slurm: job `1028168` completed `0:0`, elapsed `00:01:49`, node `pool0-00015`.
+- local artifacts fetched:
+  - `cluster_results/l401/franka_cube_baseline_noprior_smoke45_match_20260611_2243`
+  - `cluster_logs/l401/slurm_logs/dextrah/franka_cube_smoke_1028168.out`
+- JSONL records: `45`
+- bad scalar count: `0`
+- checkpoints: epochs `5,10,15,20,25,30,35,40,45`
+- best stdout checkpoint reward: epoch `40`, reward `778.84607`
+- final stdout checkpoint: epoch `45`, reward `771.14764`
+- training task metrics:
+  - `cube_success_rate` max/final: `0.0` / `0.0`
+  - `cube_has_lifted_rate` max/final: `0.0` / `0.0`
+  - `cube_lift_height` max/final: `0.0009117634035646915` / `0.0008034342899918556` m
+  - `cube_ee_to_cube_dist` min/final: `0.1450027972459793` / `0.1450027972459793` m
+  - `cube_finger_center_to_cube_dist` min/final: `0.13499654829502106` / `0.1391720175743103` m
+  - `cube_action_z` min/max/final: `-0.31726112961769104` / `0.1722048670053482` / `0.044487178325653076`
+  - `cube_gripper_action` min/max/final: `-0.797150731086731` / `0.1967436671257019` / `-0.6017162799835205`
+  - `cube_gripper_width` min/max/final: `0.009510072879493237` / `0.04691086336970329` / `0.01498452015221119` m
+
+Analysis:
+- Training scalars are negative just like the low-z prior smoke: zero success/lift and sub-millimeter cube lift.
+- The baseline policy closes by epoch 45 while the low-z prior policy opened, but neither produces grasp/lift in this 45-epoch smoke.
+- The paired comparison remains incomplete until best/final checkpoint visual evals are inspected.
+
+Eval Launch Plan:
+- Launch two bounded done-aware eval/video jobs under the same eval protocol as the low-z prior run, with prior disabled:
+  - best reward checkpoint epoch 40: `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseline_noprior_smoke45_match_20260611_2243/nn/last_dextrah_franka_cube_grasp_ep_40_rew_778.84607.pth`
+  - final checkpoint epoch 45: `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseline_noprior_smoke45_match_20260611_2243/nn/last_dextrah_franka_cube_grasp_ep_45_rew_771.14764.pth`
+- Same eval settings as prior: `Dextrah-Franka-Cube-Grasp`, `NUM_ENVS=1`, `NUM_STEPS=240`, deterministic, video enabled, `SEED=20260625`, cube XY randomization `0.08`, `GRASP_PRIOR_RESET_ENABLED=False`.
+- Acceptance: fetch metrics/videos, generate contact sheets and plots, then produce a paired prior-vs-baseline report. Do not scale from scheduler success or reward logs.
+
+Eval Launch:
+- remote source commit: `e99b2b8d976c037a735f20303fd8cfce967a7f23`
+- ep40 run: `franka_cube_baseline_noprior_smoke45_eval_ep40_20260611_2248`, job `1028171`
+- ep45 run: `franka_cube_baseline_noprior_smoke45_eval_ep45_20260611_2248`, job `1028172`
+- remote eval dirs:
+  - `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_baseline_noprior_smoke45_eval_ep40_20260611_2248`
+  - `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_baseline_noprior_smoke45_eval_ep45_20260611_2248`
+- remote logs:
+  - `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1028171.out`
+  - `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1028172.out`
+
+Eval / Artifact Result:
+- status: matched baseline-vs-prior comparison complete; both 45-epoch from-scratch PPO smokes are negative.
+- baseline eval jobs:
+  - `1028171` ep40 completed `0:0`, elapsed `00:01:08`, node `pool0-00015`
+  - `1028172` ep45 completed `0:0`, elapsed `00:01:07`, node `pool0-00030`
+- fetched local eval artifacts:
+  - `cluster_results/l401/franka_cube_baseline_noprior_smoke45_eval_ep40_20260611_2248`
+  - `cluster_results/l401/franka_cube_baseline_noprior_smoke45_eval_ep45_20260611_2248`
+  - `cluster_logs/l401/slurm_logs/dextrah/eval_franka_cube_1028171.out`
+  - `cluster_logs/l401/slurm_logs/dextrah/eval_franka_cube_1028172.out`
+- paired inspection bundle:
+  - report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_prior_vs_baseline_smoke45_pair_20260611_2255/inspection/REPORT.md`
+  - paired contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_prior_vs_baseline_smoke45_pair_20260611_2255/inspection/paired_eval_contact_sheets.jpg`
+  - paired training curves: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_prior_vs_baseline_smoke45_pair_20260611_2255/inspection/paired_training_curves.png`
+  - paired summary JSON: `cluster_results/l401/franka_cube_lowz_prior_vs_baseline_smoke45_pair_20260611_2255/inspection/paired_summary.json`
+- baseline viewer URLs:
+  - ep40 contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_baseline_noprior_smoke45_eval_ep40_20260611_2248/inspection/contact_sheet.jpg`
+  - ep40 video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_baseline_noprior_smoke45_eval_ep40_20260611_2248/videos/baseline-ep40-step-0.mp4`
+  - ep45 contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_baseline_noprior_smoke45_eval_ep45_20260611_2248/inspection/contact_sheet.jpg`
+  - ep45 video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_baseline_noprior_smoke45_eval_ep45_20260611_2248/videos/baseline-ep45-step-0.mp4`
+- eval metrics:
+  - low-z prior ep10/best: success max `0.0`, lifted max `0.0`, lift max `0.006605327129364014` m, final EE/finger `0.4074215590953827` / `0.39844608306884766` m, final width `0.0497126430273056` m, final z/gripper action `-0.716343343257904` / `0.2261914610862732`
+  - low-z prior ep45/final: success max `0.0`, lifted max `0.0`, lift max `0.016963839530944824` m, final EE/finger `0.1035449430346489` / `0.11341996490955353` m, final width `0.07999639213085175` m, final z/gripper action `-0.7969554662704468` / `1.0`
+  - baseline ep40/best: success max `0.0`, lifted max `0.0`, lift max `0.015574634075164795` m, final EE/finger `0.4092308580875397` / `0.39623093605041504` m, final width `0.048680391162633896` m, final z/gripper action `-0.6635167598724365` / `0.28195053339004517`
+  - baseline ep45/final: success max `0.0`, lifted max `0.0`, lift max `0.0027227401733398438` m, final EE/finger `0.16663043200969696` / `0.17722748219966888` m, final width `0.00021146220387890935` m, final z/gripper action `0.40792134404182434` / `-1.0`
+- visual notes:
+  - Low-z prior ep10 starts at the intended pregrasp, then drifts far from the cube.
+  - Low-z prior ep45 stays closer but keeps the gripper open/hovers near the cube without grasping.
+  - Baseline ep40 also drifts far away.
+  - Baseline ep45 closes almost fully but off-target, so it clamps empty space and never lifts.
+
+Recommendation:
+- Do not launch A100/full RL from these smokes.
+- The low-z reset-prior path remains geometrically healthy, but 45-epoch from-scratch PPO does not exploit it; the matched baseline also fails.
+- The next apple-to-apple-safe option is a paired longer small PPO comparison only if the goal is to test insufficient horizon. Otherwise, any policy initialization, curriculum, or action-prior intervention should remain explicitly labeled non-apple-to-apple.
+
+## 2026-06-11 22:57 - paired longer small PPO horizon comparison plan
+
+Goal:
+- Test whether the negative 45-epoch low-z prior and prior-disabled PPO smokes are simply too short to learn the Franka cube grasp/lift behavior.
+
+Hypothesis:
+- If both variants remain at zero success/lift after a longer but still bounded 64-env run, the blocker is not just the 45-epoch horizon and A100/full RL remains unjustified.
+- If the low-z prior begins grasping/lifting while the matched baseline does not, the corrected prior may be useful after a modest horizon.
+- If baseline learns but low-z prior does not, the prior reset distribution is still harming early PPO despite valid reset geometry.
+
+Change:
+- No source or task changes.
+- Keep apple-to-apple settings from the 45-epoch pair: same `Dextrah-Franka-Cube-Grasp` task, same PPO wrapper/default overrides, same `NUM_ENVS=64`, `HORIZON_LENGTH=64`, minibatch `4096`, seed `20260625`, cube XY randomization `0.08`, JSONL metrics, no checkpoint, `AUTO_RESUME=False`, action warmstart disabled.
+- Increase only `MAX_ITERATIONS` from `45` to `200` and set `SAVE_FREQUENCY=25` for inspectable mid/best/final checkpoints.
+- The only task difference between variants remains:
+  - prior run: `GRASP_PRIOR_RESET_ENABLED=True`, low-z no-offset library `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz`
+  - baseline run: `GRASP_PRIOR_RESET_ENABLED=False`, no prior library.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- worklog: `worklogs/franka-cube-grasp-prior/franka-cube-ggx-pregrasp-reset.md`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `4bfeefd710ee930597f6d3d66b9404579e23f9cd`
+- implementation_commit: pending worklog-plan commit before launch
+- changed_files: owned worklog only
+
+Cheap Validation Plan:
+- `bash -n cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`
+- `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- verify remote agent worktree commit matches launch `CODE_COMMIT`
+- verify low-z prior library exists on remote
+- check l401 queue before launch; do not cancel unrelated jobs.
+
+Cheap Validation Result:
+- local wrapper syntax passed:
+  - `bash -n cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`
+  - `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- l401 direct GitHub fetch was blocked by SSH auth, so the local branch tip was transferred as a Git bundle and fetched into the agent-owned remote worktree.
+- remote worktree updated to detached `cc712351d4326e6ad75f2493eba30b894f06df40`.
+- remote wrapper syntax passed for train/eval wrappers.
+- remote low-z library exists: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz` (`2.9K`).
+
+Command / Job Plan:
+- prior run name: `franka_cube_ggx_lowz_prior_long200_20260611_2257`
+- baseline run name: `franka_cube_baseline_noprior_long200_20260611_2257`
+- expected remote run dirs:
+  - `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_lowz_prior_long200_20260611_2257`
+  - `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseline_noprior_long200_20260611_2257`
+- expected remote logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_smoke_<jobid>.out`
+- launch shape: two `sbatch` jobs on l401 `batch`, 1 GPU each, `--time=0-01:30:00`, same wrapper `cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`.
+
+Launch:
+- prior job: `1028185`
+- baseline job: `1028186`
+- remote source commit: `cc712351d4326e6ad75f2493eba30b894f06df40`
+- prior command shape: `MAX_ITERATIONS=200 SAVE_FREQUENCY=25 GRASP_PRIOR_RESET_ENABLED=True GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz FULL_EXPERIMENT_NAME=franka_cube_ggx_lowz_prior_long200_20260611_2257 sbatch cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`
+- baseline command shape: `MAX_ITERATIONS=200 SAVE_FREQUENCY=25 GRASP_PRIOR_RESET_ENABLED=False GRASP_PRIOR_LIBRARY_PATH= FULL_EXPERIMENT_NAME=franka_cube_baseline_noprior_long200_20260611_2257 sbatch cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`
+- common settings: `TASK=Dextrah-Franka-Cube-Grasp`, `NUM_ENVS=64`, `HORIZON_LENGTH=64`, `MINIBATCH_SIZE=4096`, `CENTRAL_VALUE_MINIBATCH_SIZE=4096`, `SEED=20260625`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`, `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`, `AUTO_RESUME=False`, `CHECKPOINT=`, `DEXTRAH_RLGAMES_JSONL_METRICS=True`.
+
+Expected Artifacts:
+- training JSONL rank-0 metrics for both runs
+- checkpoints every 25 epochs plus final
+- stdout logs with checkpoint rewards
+- local paired training report/curves and checkpoint table
+- done-aware eval videos/contact sheets/trace plots for ep100, best-reward, and final checkpoints for both variants, unless best equals ep100/final.
+
+Stop / Go Criteria:
+- Stop and do not scale if either run has NaN/Inf, traceback, missing JSONL/checkpoints, bad reset-prior metrics, or videos show no grasp/lift despite scheduler success.
+- Do not launch A100/full RL unless this bounded pair has meaningful success/lift and eval videos show plausible grasp/lift behavior.
+- If both are still negative, document as a horizon-negative small-scale comparison and propose the next diagnostic instead of scaling.
+
+Training Result:
+- prior job `1028185` completed `0:0`, elapsed `00:06:14`, node `pool0-00015`.
+- baseline job `1028186` completed `0:0`, elapsed `00:05:22`, node `pool0-00030`.
+- local artifacts fetched:
+  - `cluster_results/l401/franka_cube_ggx_lowz_prior_long200_20260611_2257`
+  - `cluster_results/l401/franka_cube_baseline_noprior_long200_20260611_2257`
+  - `cluster_logs/l401/slurm_logs/dextrah/franka_cube_smoke_1028185.out`
+  - `cluster_logs/l401/slurm_logs/dextrah/franka_cube_smoke_1028186.out`
+- JSONL rows: prior `200`, baseline `200`; final epoch `200` for both.
+- bad scalar count: prior `0`, baseline `0`.
+- prior reset metrics: `cube_grasp_prior_reset_success_rate=1.0` and `cube_grasp_prior_quality_success_rate=1.0` for all epochs.
+- prior training metrics:
+  - success max/final: `0.0` / `0.0`
+  - lifted max/final: `0.015625` / `0.0`
+  - lift height max/final: `0.00306840892881155` / `0.0` m
+  - final EE/finger distances: `0.057262636721134186` / `0.0801062285900116` m
+  - final z/gripper action: `-0.45028549432754517` / `0.9981808662414551`
+  - final gripper width: `0.07923907786607742` m
+  - best stdout checkpoint reward: epoch `200`, reward `1340.6029`
+- baseline training metrics:
+  - success max/final: `0.0` / `0.0`
+  - lifted max/final: `0.015625` / `0.0`
+  - lift height max/final: `0.004728291183710098` / `0.0` m
+  - final EE/finger distances: `0.11809306591749191` / `0.12334349006414413` m
+  - final z/gripper action: `0.4195382595062256` / `-0.8863714933395386`
+  - final gripper width: `0.003754951525479555` m
+  - best stdout checkpoint reward: epoch `200`, reward `1249.834`
+
+Training Analysis:
+- Scheduler and scalar health are clean, but training behavior is still negative for both variants.
+- Prior reaches higher reward and better proximity/enclosure scalars, but keeps the gripper open at final epoch and never succeeds.
+- Baseline closes hard by final epoch but remains off-target and never succeeds.
+- Full/A100 RL remains blocked. Proceed only to the planned eval/video artifact phase.
+
+Eval Plan:
+- Best reward equals final epoch for both variants, so distinct checkpoints are ep100 and ep200/final.
+- Launch four bounded done-aware eval/video jobs:
+  - prior ep100: `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_lowz_prior_long200_20260611_2257/nn/last_dextrah_franka_cube_grasp_ep_100_rew_1003.2496.pth`
+  - prior ep200/final/best: `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_lowz_prior_long200_20260611_2257/nn/last_dextrah_franka_cube_grasp_ep_200_rew_1340.6029.pth`
+  - baseline ep100: `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseline_noprior_long200_20260611_2257/nn/last_dextrah_franka_cube_grasp_ep_100_rew_1005.2147.pth`
+  - baseline ep200/final/best: `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseline_noprior_long200_20260611_2257/nn/last_dextrah_franka_cube_grasp_ep_200_rew_1249.834.pth`
+- Same eval protocol as the 45-epoch pair: `NUM_ENVS=1`, `NUM_STEPS=240`, deterministic, video enabled, seed `20260625`, cube XY randomization `0.08`, no action warmstart, prior enabled only for prior evals.
+
+Eval Launch:
+- remote source commit: `cc712351d4326e6ad75f2493eba30b894f06df40`
+- prior ep100 run/job: `franka_cube_ggx_lowz_prior_long200_eval_ep100_20260611_2306` / `1028192`
+- prior ep200 run/job: `franka_cube_ggx_lowz_prior_long200_eval_ep200_20260611_2306` / `1028193`
+- baseline ep100 run/job: `franka_cube_baseline_noprior_long200_eval_ep100_20260611_2306` / `1028194`
+- baseline ep200 run/job: `franka_cube_baseline_noprior_long200_eval_ep200_20260611_2306` / `1028195`
+
+Eval / Artifact Result:
+- eval jobs:
+  - `1028192` prior ep100 completed `0:0`, elapsed `00:01:05`, node `pool0-00035`
+  - `1028193` prior ep200 completed `0:0`, elapsed `00:01:07`, node `pool0-00035`
+  - `1028194` baseline ep100 completed `0:0`, elapsed `00:01:04`, node `pool0-00030`
+  - `1028195` baseline ep200 completed `0:0`, elapsed `00:01:06`, node `pool0-00015`
+- fetched local eval artifacts:
+  - `cluster_results/l401/franka_cube_ggx_lowz_prior_long200_eval_ep100_20260611_2306`
+  - `cluster_results/l401/franka_cube_ggx_lowz_prior_long200_eval_ep200_20260611_2306`
+  - `cluster_results/l401/franka_cube_baseline_noprior_long200_eval_ep100_20260611_2306`
+  - `cluster_results/l401/franka_cube_baseline_noprior_long200_eval_ep200_20260611_2306`
+- paired inspection bundle:
+  - report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_prior_vs_baseline_long200_pair_20260611_2306/inspection/REPORT.md`
+  - paired contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_prior_vs_baseline_long200_pair_20260611_2306/inspection/paired_eval_contact_sheets.jpg`
+  - paired training curves: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_prior_vs_baseline_long200_pair_20260611_2306/inspection/paired_training_curves.png`
+  - paired summary JSON: `cluster_results/l401/franka_cube_lowz_prior_vs_baseline_long200_pair_20260611_2306/inspection/paired_summary.json`
+- eval video URLs:
+  - prior ep100: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_prior_long200_eval_ep100_20260611_2306/videos/lowz-prior-long200-ep100-step-0.mp4`
+  - prior ep200/final/best: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_prior_long200_eval_ep200_20260611_2306/videos/lowz-prior-long200-ep200-step-0.mp4`
+  - baseline ep100: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_baseline_noprior_long200_eval_ep100_20260611_2306/videos/baseline-long200-ep100-step-0.mp4`
+  - baseline ep200/final/best: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_baseline_noprior_long200_eval_ep200_20260611_2306/videos/baseline-long200-ep200-step-0.mp4`
+- eval metrics:
+  - prior ep100: success max `0.0`, lifted max `0.0`, lift max `0.0` m, final EE/finger `0.07360026240348816` / `0.10926209390163422` m, final width `0.07999938726425171` m, final z/gripper action `-1.0` / `1.0`
+  - prior ep200/final/best: success max `0.0`, lifted max `0.0`, lift max `0.0` m, final EE/finger `0.041994184255599976` / `0.0706566795706749` m, final width `0.07943950593471527` m, final z/gripper action `-0.6757971048355103` / `1.0`
+  - baseline ep100: success max `0.0`, lifted max `0.0`, lift max `0.006528258323669434` m, final EE/finger `0.18757465481758118` / `0.20044457912445068` m, final width `0.00023081203107722104` m, final z/gripper action `-0.6757807731628418` / `-0.9961653351783752`
+  - baseline ep200/final/best: success max `0.0`, lifted max `0.0`, lift max `0.0007391571998596191` m, final EE/finger `0.11121195554733276` / `0.1431511491537094` m, final width `0.00021178281167522073` m, final z/gripper action `0.45459312200546265` / `-1.0`
+- visual notes:
+  - Prior ep100/ep200 start from valid low-z pregrasp and stay near the cube, but keep the gripper open and hover/descend without grasping.
+  - Baseline ep100/ep200 close the gripper almost fully, but close off-target and never lift.
+  - The paired contact sheet confirms no plausible grasp/lift in any evaluated checkpoint.
+
+Final Analysis:
+- The 200-epoch paired small PPO test is a negative horizon test, not a scale-up gate.
+- Longer horizon improved reward and proximity/enclosure scalars, especially for the prior run, but did not produce task success.
+- The prior variant appears to reward-hack proximity/enclosure while maintaining an open gripper. The baseline learns close actions but not the correct contact pose.
+- Do not launch full/A100 RL.
+
+Next:
+- Stop same-config scale-up for now.
+- The next useful bounded loop should diagnose reward/action incentives at the ep200 policies, especially why open-gripper proximity/enclosure reward is competitive for the prior and why baseline closes off-target.
+- Any BC/policy-init/curriculum/action-prior experiment should remain explicitly non-apple-to-apple unless the user requests a separate intervention variant.
+
+## 2026-06-12T06:15:04Z - plan: video-first ep200 reward/action audit
+
+Orchestrator note: future meaningful evals should include short labeled MP4s plus contact sheets, not metrics-only. Current long200 visual verdict remains negative: prior ep200 hovers/open near the cube; baseline ep200 closes off-target. No A100/full RL scale-up.
+
+Plan:
+- Run one bounded l401 diagnostic using the existing debug-only action/reward audit path, not a PPO/RL launch.
+- Compare the long200 ep200 prior policy and long200 ep200 baseline policy from the same valid low-z reset-prior distribution against scripted candidates: hold-open, close-at-pregrasp, lift-closed, and assisted close/lift.
+- Keep the main task semantics unchanged. This audit forces `grasp_prior_reset_enabled=True` only to put both policies into the same valid low-z pregrasp state for action/reward diagnosis; it is diagnostic-only, not an apple-to-apple baseline evaluation.
+- Use `NUM_ENVS=1`, `NUM_RESETS=2`, `HORIZON_STEPS=80`, deterministic actions, cube XY randomization `0.08`, low-z library `franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz`, and render reset 0 every 5 steps.
+- Use stronger diagnostic scripted close/lift settings (`CLOSE_WIDTH=0.035`, `LIFT_ACTION_Z=0.50`, `ASSISTED_APPROACH_STEPS=16`, `ASSISTED_CLOSE_STEPS=24`) so scripted rows act as a feasible reference rather than the old weak close/lift labels.
+
+Files/commands:
+- No source edits expected.
+- Syntax checks already passed:
+  - `bash -n cluster/sbatch_audit_franka_cube_grasp_prior_actions_1gpu.sh`
+  - `python3 -m py_compile dextrah_lab/rl_games/audit_franka_cube_grasp_prior_actions.py`
+- Submit via `cluster/sbatch_audit_franka_cube_grasp_prior_actions_1gpu.sh` from the agent-owned l401 worktree after deploying exact commit `dafed258885efd0f751a7991eaeb65efc65335e3`.
+
+Expected artifacts:
+- Remote run dir under `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_lowz_ep200_reward_action_audit_video_20260612_0615`.
+- `metrics.json`, `REPORT.md`, `action_reward_trace.csv/jsonl`, `rollout_summary.csv`, `reset_samples.csv`, reward/action plots, labeled frames, and `action_audit_contact_sheet.jpg`.
+- After fetch, encode short labeled MP4s from candidate frames where feasible and open report/contact sheet/videos with `viz-open`.
+
+Acceptance / decision:
+- This is a diagnosis gate only. It should explain whether the prior ep200 policy is locally rewarded while opening/hovering, whether baseline closes off-target from the same pregrasp, and whether scripted close/lift receives better local reward/contact/lift signals.
+- Do not launch PPO/A100 from this audit. Any reward/action intervention remains a separate explicit diagnostic variant.
+
+Launch:
+- exact local/remote commit: `1b3daa0b32797ca3d3b8c2806205e1f55a74ae8d`
+- job: `1028198`
+- run name: `franka_cube_lowz_ep200_reward_action_audit_video_20260612_0615`
+- remote run dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_lowz_ep200_reward_action_audit_video_20260612_0615`
+- remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/audit_franka_cube_prior_1028198.out`
+- checkpoints:
+  - prior ep200: `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_lowz_prior_long200_20260611_2257/nn/last_dextrah_franka_cube_grasp_ep_200_rew_1340.6029.pth`
+  - baseline ep200: `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseline_noprior_long200_20260611_2257/nn/last_dextrah_franka_cube_grasp_ep_200_rew_1249.834.pth`
+- candidates: `policy_prior_ep200`, `policy_baseline_ep200`, `script_hold_open`, `script_close_light_pregrasp`, `script_lift_closed`, `script_assisted_oracle_short`
+- diagnostic scripted settings: `CLOSE_WIDTH=0.035`, `LIFT_ACTION_Z=0.50`, `ORACLE_PROPORTIONAL_GAIN=8.0`, `ASSISTED_APPROACH_STEPS=16`, `ASSISTED_CLOSE_STEPS=24`
+
+Invalid multi-candidate result:
+- `1028198` was cancelled after the log showed the known multi-candidate post-rollout Hydra failure immediately after the first `policy_prior_ep200` rollout:
+  - first rollout summary before failure: `reward_mean=2.388908115029335`, `ee_final=0.04599807783961296`, `finger_final=0.0727139487862587`, `lift_max=0.0`, `done=False`
+  - failure signature: `Error executing job with overrides: [...]`
+- Partial labeled `policy_prior_ep200` frames exist in the remote run dir, but no complete `metrics.json`/report was written. Treat `1028198` as an invalid audit execution path, not a diagnostic result.
+- Next action: rerun one candidate per process/job and aggregate locally after fetch. This avoids the unstable multi-rollout teardown/rewind path and produces complete per-candidate video artifacts.
+
+One-candidate relaunch:
+- shared config: `NUM_ENVS=1`, `NUM_RESETS=2`, `HORIZON_STEPS=80`, `SEED=20260625`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`, deterministic, render reset 0 every 5 steps, low-z library, same diagnostic scripted close/lift settings as above.
+- jobs/runs:
+  - `1028206`: `policy_prior_ep200`, `franka_cube_lowz_ep200_audit_policy_prior_20260612_0620`
+  - `1028207`: `policy_baseline_ep200`, `franka_cube_lowz_ep200_audit_policy_baseline_20260612_0620`
+  - `1028208`: `script_hold_open`, `franka_cube_lowz_ep200_audit_script_hold_open_20260612_0620`
+  - `1028209`: `script_close_light_pregrasp`, `franka_cube_lowz_ep200_audit_script_close_pregrasp_20260612_0620`
+  - `1028210`: `script_lift_closed`, `franka_cube_lowz_ep200_audit_script_lift_closed_20260612_0620`
+  - `1028211`: `script_assisted_oracle_short`, `franka_cube_lowz_ep200_audit_script_assisted_20260612_0620`
+
+Invalid one-candidate/two-reset result:
+- `1028206`-`1028211` were cancelled. The jobs that reached a rollout still hit the same Hydra failure immediately after the first rollout because `NUM_RESETS=2` forced another reset/rollout pass before metrics were written.
+- partial log summaries before cancellation:
+  - `1028206` `policy_prior_ep200`: `reward_mean=2.388908115029335`, `ee_final=0.04599807783961296`, `finger_final=0.0727139487862587`, `lift_max=0.0`
+  - `1028207` `policy_baseline_ep200`: `reward_mean=2.2180310517549513`, `ee_final=0.09924537688493729`, `finger_final=0.12886179983615875`, `lift_max=0.003570556640625`
+  - `1028208` `script_hold_open`: `reward_mean=2.2642621636390685`, `ee_final=0.046382077038288116`, `finger_final=0.08859111368656158`, `lift_max=0.0`
+- These are context only, not complete artifacts. Relaunching the same candidate isolation with `NUM_RESETS=1` so each job can write report/metrics/video frames after a single rendered rollout.
+
+One-candidate/single-reset relaunch:
+- shared config: same as above, except `NUM_RESETS=1`.
+- jobs/runs:
+  - `1028212`: `policy_prior_ep200`, `franka_cube_lowz_ep200_audit1_policy_prior_20260612_0625`
+  - `1028213`: `policy_baseline_ep200`, `franka_cube_lowz_ep200_audit1_policy_baseline_20260612_0625`
+  - `1028214`: `script_hold_open`, `franka_cube_lowz_ep200_audit1_script_hold_open_20260612_0625`
+  - `1028215`: `script_close_light_pregrasp`, `franka_cube_lowz_ep200_audit1_script_close_pregrasp_20260612_0625`
+  - `1028216`: `script_lift_closed`, `franka_cube_lowz_ep200_audit1_script_lift_closed_20260612_0625`
+  - `1028217`: `script_assisted_oracle_short`, `franka_cube_lowz_ep200_audit1_script_assisted_20260612_0625`
+
+Single-reset audit result:
+- all six jobs completed `0:0`; each wrote `metrics.json`, `REPORT.md`, trace CSV/JSONL, per-run contact sheet, and labeled frames.
+- fetched local run dirs:
+  - `cluster_results/l401/franka_cube_lowz_ep200_audit1_policy_prior_20260612_0625`
+  - `cluster_results/l401/franka_cube_lowz_ep200_audit1_policy_baseline_20260612_0625`
+  - `cluster_results/l401/franka_cube_lowz_ep200_audit1_script_hold_open_20260612_0625`
+  - `cluster_results/l401/franka_cube_lowz_ep200_audit1_script_close_pregrasp_20260612_0625`
+  - `cluster_results/l401/franka_cube_lowz_ep200_audit1_script_lift_closed_20260612_0625`
+  - `cluster_results/l401/franka_cube_lowz_ep200_audit1_script_assisted_20260612_0625`
+- inspection bundle: `cluster_results/l401/franka_cube_lowz_ep200_reward_action_audit_video_20260612_0625/inspection`
+- viewer URLs:
+  - report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_ep200_reward_action_audit_video_20260612_0625/inspection/REPORT.md`
+  - combined contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_ep200_reward_action_audit_video_20260612_0625/inspection/combined_contact_sheet.jpg`
+  - summary table: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_ep200_reward_action_audit_video_20260612_0625/inspection/summary_table.png`
+  - prior ep200 video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_ep200_reward_action_audit_video_20260612_0625/inspection/videos/policy_prior_ep200.mp4`
+  - baseline ep200 video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_ep200_reward_action_audit_video_20260612_0625/inspection/videos/policy_baseline_ep200.mp4`
+  - hold-open video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_ep200_reward_action_audit_video_20260612_0625/inspection/videos/script_hold_open.mp4`
+  - close-at-pregrasp video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_ep200_reward_action_audit_video_20260612_0625/inspection/videos/script_close_light_pregrasp.mp4`
+  - lift-closed video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_ep200_reward_action_audit_video_20260612_0625/inspection/videos/script_lift_closed.mp4`
+  - assisted oracle video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_ep200_reward_action_audit_video_20260612_0625/inspection/videos/script_assisted_oracle_short.mp4`
+
+Metric summary:
+- `policy_prior_ep200`: reset quality true, reward mean/final `2.3889` / `2.4395`, final EE/finger `0.0460` / `0.0727` m, final width `0.0800` m, max lift `0.0000` m, mean z/gripper action `-0.4420` / `1.0000`.
+- `policy_baseline_ep200`: reset quality true, reward mean/final `2.2180` / `2.1255`, final EE/finger `0.0992` / `0.1289` m, final width `0.0002` m, max lift `0.0036` m, mean z/gripper action `-0.0737` / `-0.9750`.
+- `script_hold_open`: reward mean/final `2.2643` / `2.2638`, final width `0.0800` m, max lift `0.0000` m.
+- `script_close_light_pregrasp`: reward mean/final `2.3824` / `2.3874`, final width `0.0350` m, max lift `0.0000` m.
+- `script_lift_closed`: reward mean/final `1.8513` / `1.3752`, final EE/finger `0.1842` / `0.2289` m, max lift `0.0000` m; this is a negative reference because lifting from pregrasp without first approaching exact moves away.
+- `script_assisted_oracle_short`: reward mean/final `3.2268` / `5.1655`, final EE/finger `0.0257` / `0.0637` m, final width `0.0597` m, max lift `0.0612` m, mean z/gripper action `0.1444` / `0.1000`.
+
+Reward/action diagnosis:
+- Prior ep200 gets strong open-gripper/proximity-style scalar signals while never lifting: `reward_term_cube_gripper_action` mean/final `1.0`/`1.0`, `approach_reward` mean `0.8390`, `enclosure_reward` mean `0.4886`, `action_down` mean `0.5056`, lift max `0`.
+- Baseline ep200 gets close-action reward (`gripper_close_action` mean `0.9875`) but is off-target, with lower approach/enclosure and only a tiny incidental lift.
+- Assisted oracle reaches the exact/contact/lift sequence and the scalar logs recognize it: `lift_reward` mean/final `0.5266` / `2.2804`, reward final `5.1655`, max lift `6.12 cm`.
+- Visual verdict from the contact sheet/videos matches metrics: prior hovers/open near the cube, baseline closes off-target, assisted approach/close/lift is the only plausible grasp/lift behavior.
+
+Decision:
+- No PPO/A100/full-scale launch from this evidence.
+- The low-z reset/pregrasp remains valid; the blocker is learned action discovery/closed-loop policy behavior. The next bounded experiment, if authorized, should be explicitly non-apple-to-apple or curriculum-labeled: teach/preserve the assisted approach-close-lift sequence through a short action curriculum/action-prior diagnostic, or revise exploration/initialization, while keeping the original reset-prior branch clearly separate.
+
+## 2026-06-12T06:27:51Z - plan: gripper close/lift incentive diagnostics
+
+Goal:
+- Continue bounded debugging of why the learned low-z prior PPO policy keeps the Franka gripper open after a valid reset while preserving the apple-to-apple reset-prior branch as the end goal.
+
+Hypothesis:
+- The prior ep200 policy may prefer open/proximity behavior because immediate close/lift from the 3 cm pregrasp is weak or negative unless the controller first approaches the exact grasp. Closing is rewarded only through a small gated term (`cube_close_action_weight=0.3`), while lift-up action reward is gated by both near/enclosure and closed-gripper state.
+- The actor itself may already be deterministic-open at reset, or stochastic samples may still contain close/lift exploration that PPO failed to exploit.
+
+Plan:
+- Run a policy-state audit for low-z prior ep200 and matched baseline ep200:
+  - `NUM_ENVS=64`, `NUM_RESETS=3`, `STOCHASTIC_SAMPLES=32`, same low-z library, same cube XY randomization `0.08`.
+  - Outputs action histograms, deterministic/stochastic gripper/z action summaries, obs RMS/z-score sanity, and training JSONL action trends.
+  - No video expected for this one; it is distribution/normalization instrumentation.
+- Run a video-first close-width sweep from the same low-z reset distribution:
+  - new eval-only single-reset jobs for `script_close_light_pregrasp` at `CLOSE_WIDTH=0.060` and `0.000`, plus `script_assisted_oracle_short` at `CLOSE_WIDTH=0.055` and `0.000`.
+  - Combine with existing `CLOSE_WIDTH=0.035` artifacts from jobs `1028215` and `1028217` for the middle reference.
+  - Each meaningful sweep job writes labeled frames; after fetch, encode MP4s, contact sheets, reward/action plots, and a compact report.
+- Do not change task reward/reset/termination/action semantics. Do not launch PPO, A100, or full RL.
+
+Files/commands:
+- No source edits expected.
+- Local checks passed:
+  - `bash -n cluster/sbatch_audit_franka_cube_grasp_prior_actions_1gpu.sh`
+  - `bash -n cluster/sbatch_audit_franka_cube_policy_state_1gpu.sh`
+  - `python3 -m py_compile dextrah_lab/rl_games/audit_franka_cube_grasp_prior_actions.py dextrah_lab/rl_games/audit_franka_cube_policy_state.py`
+- Deploy exact commit `4ea93ac5048c6a5aab1d039f54bdfe6c96cf6967` to the agent-owned l401 worktree before submit.
+
+Acceptance / decision:
+- Video/report must answer whether closing at the 3 cm pregrasp is locally too weak/negative compared with staying open, and whether assisted approach-close-lift remains rewarded across close widths.
+- Policy-state report must answer whether prior ep200 deterministic/stochastic actions are saturated open/down at reset and whether observation normalization looks sane.
+- No scale-up gate unless a learned policy, not just a scripted reference, shows real grasp/lift in video.
+
+## 2026-06-12T06:31:03Z - launch: gripper close/lift incentive diagnostics
+
+Goal:
+- Execute the bounded eval-only diagnostics from the plan above: policy action-state audit for prior/baseline ep200, plus a video-first close-width sweep from the same low-z reset distribution.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- local_commit: `4a4dca9ef388df619806792da134c35cb331c56b`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: detached `4a4dca9ef388df619806792da134c35cb331c56b`, clean
+- push/pull: deployed by git bundle to agent-owned l401 worktree; branch push pending after result inspection/worklog update
+
+Command / Jobs:
+- shared low-z library: `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz`
+- shared reset config: `Dextrah-Franka-Cube-Grasp`, `cube_spawn_xy_randomization=0.08`, prior reset enabled for eval distribution, no reward/reset/task changes.
+- `1028218`: `franka_cube_lowz_ep200_policy_state_prior_20260612_063052`, wrapper `cluster/sbatch_audit_franka_cube_policy_state_1gpu.sh`, prior ep200 checkpoint plus prior training JSONL.
+- `1028219`: `franka_cube_lowz_ep200_policy_state_baseline_20260612_063052`, wrapper `cluster/sbatch_audit_franka_cube_policy_state_1gpu.sh`, baseline ep200 checkpoint plus baseline training JSONL.
+- `1028220`: `franka_cube_lowz_close_pregrasp_w060_20260612_063052`, candidate `script_close_light_pregrasp`, `CLOSE_WIDTH=0.060`, single reset/video.
+- `1028221`: `franka_cube_lowz_close_pregrasp_w000_20260612_063052`, candidate `script_close_light_pregrasp`, `CLOSE_WIDTH=0.000`, single reset/video.
+- `1028222`: `franka_cube_lowz_assisted_w055_20260612_063052`, candidate `script_assisted_oracle_short`, `CLOSE_WIDTH=0.055`, single reset/video.
+- `1028223`: `franka_cube_lowz_assisted_w000_20260612_063052`, candidate `script_assisted_oracle_short`, `CLOSE_WIDTH=0.000`, single reset/video.
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/audit_franka_cube_policy_state_<job>.out` and `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/audit_franka_cube_prior_<job>.out`
+- remote results: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/<run_name>`
+
+Expected artifacts:
+- policy-state jobs: `metrics.json`, action histograms, obs/RMS z-score plots, training trend plot/report.
+- close sweep jobs: `metrics.json`, `REPORT.md`, trace CSV/JSONL, labeled frames/contact sheet, MP4 after local fetch/encoding.
+
+Acceptance / decision:
+- Inspect logs/artifacts, not Slurm state alone.
+- Diagnose whether gripper close from 3 cm pregrasp is locally weak/negative and whether assisted approach-close-lift remains rewarded across close widths.
+- Diagnose whether prior ep200 deterministic/stochastic actions are saturated open/down with sane observation normalization.
+- No PPO/A100/full-scale launch from these diagnostics.
+
+## 2026-06-12T06:36:39Z - result: gripper close/lift incentive diagnostics
+
+Result:
+- status: completed / inspected
+- jobs: `1028218`-`1028223` completed `0:0`; logs contain expected command/config lines and metrics-write messages, with no traceback/Hydra/runtime error signatures.
+- fetched local dirs:
+  - `cluster_results/l401/franka_cube_lowz_ep200_policy_state_prior_20260612_063052`
+  - `cluster_results/l401/franka_cube_lowz_ep200_policy_state_baseline_20260612_063052`
+  - `cluster_results/l401/franka_cube_lowz_close_pregrasp_w060_20260612_063052`
+  - `cluster_results/l401/franka_cube_lowz_close_pregrasp_w000_20260612_063052`
+  - `cluster_results/l401/franka_cube_lowz_assisted_w055_20260612_063052`
+  - `cluster_results/l401/franka_cube_lowz_assisted_w000_20260612_063052`
+- inspection bundle: `cluster_results/l401/franka_cube_lowz_gripper_incentive_audit_20260612_063052/inspection`
+
+Viewer URLs:
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_gripper_incentive_audit_20260612_063052/inspection/REPORT.md`
+- combined contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_gripper_incentive_audit_20260612_063052/inspection/close_sweep_contact_sheet.jpg`
+- policy action summary: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_gripper_incentive_audit_20260612_063052/inspection/policy_action_summary.jpg`
+- assisted `w055` video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_gripper_incentive_audit_20260612_063052/inspection/assisted_w055.mp4`
+- close-at-pregrasp `w000` video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_gripper_incentive_audit_20260612_063052/inspection/close_pregrasp_w000.mp4`
+
+Key metrics:
+- policy state:
+  - prior ep200 deterministic reset action: `z=-0.896`, `gripper=+1.000`, gripper saturation `1.0`; stochastic reset samples still mostly open (`gripper` mean about `0.954`).
+  - baseline ep200 deterministic reset action: `z=+0.675`, `gripper=-1.000`; this matches the video behavior where baseline closes hard but off-target.
+  - prior observation RMS/z-score is sane: max abs z-score p95 `2.279`, `0` dims above `3`; baseline has max p95 `4.823`, `2` dims above `3`, `0` above `5`.
+- close/lift sweep:
+  - close-at-pregrasp `w060`: final reward `2.311`, max lift `0.0000 m`, final width `0.0600 m`.
+  - close-at-pregrasp `w035`: final reward `2.387`, max lift `0.0000 m`, final width `0.0350 m`.
+  - close-at-pregrasp `w000`: final reward `2.654`, max lift `0.0000 m`, final width `0.0002 m`.
+  - assisted `w055`: final reward `5.133`, max lift `0.0613 m`, final width `0.0623 m`.
+  - assisted `w035`: final reward `5.165`, max lift `0.0612 m`, final width `0.0597 m`.
+  - assisted `w000`: final reward `1.933`, max lift `0.0330 m`, final width `0.0007 m`.
+
+Analysis:
+- The user-visible reset/pregrasp geometry remains healthy, and assisted approach-to-exact plus light/medium close still produces real lift in video.
+- Closing directly at the 3 cm pregrasp does not lift at any tested width. Hard zero-width close receives the highest local scalar reward among pregrasp-only closes, but it is not a grasp/lift behavior.
+- The physically useful assisted light-close path can have nonnegative or mild gripper action and therefore receives little/no explicit close-action reward. Lift reward is strong after lift, but the current reward/action landscape does not guide discovery from open 3 cm pregrasp into the exact/contact/lift sequence.
+- The prior ep200 actor has collapsed to saturated open/down behavior at reset; this is not explained by reset-quality metrics or obvious observation-normalization mismatch.
+
+Decision:
+- No A100/full PPO scale-up is justified.
+- This is a learned closed-loop action-discovery/reward-incentive blocker, not a reset-transform/library blocker.
+- Next bounded work should be explicitly diagnostic/intervention-labeled: e.g. a tiny curriculum/action-prior experiment that teaches approach-to-exact then light close, or a reward-audit variant that gives prelift credit for physically useful light-close/enclosure. Such changes must remain separate from the apple-to-apple reset-prior baseline unless explicitly approved.
+
+Active jobs:
+- none expected after this audit; verify with `squeue` before handoff.
+
+## 2026-06-12T06:39:49Z - plan: non-apple-to-apple action-prior reward diagnostic
+
+Goal:
+- Run one explicitly labeled intervention diagnostic to test whether PPO can learn grasp/lift from the healthy low-z reset distribution when given dense first-contact action guidance, without overriding the policy action.
+
+Hypothesis:
+- The prior policy collapsed open/down because the apple-to-apple reward does not guide discovery from 3 cm pregrasp to exact/contact/light-close/lift. A diagnostic reward that softly rewards matching the validated assisted reference action sequence should shift the learned policy toward approach/light-close/lift if action discovery is the blocker.
+
+Planned intervention:
+- Add opt-in config fields, disabled by default:
+  - `grasp_prior_action_prior_reward_enabled=False`
+  - `grasp_prior_action_prior_reward_weight`
+  - `grasp_prior_action_prior_reward_sharpness`
+- Reuse the existing diagnostic reference sequence parameters (`grasp_prior_action_warmstart_*`) to compute the teacher action:
+  - approach: track exact GraspGenX EE target with open gripper;
+  - close: track exact target with `close_width=0.055`;
+  - lift: keep light-close target and `lift_action_z=0.50`.
+- Unlike `grasp_prior_action_warmstart_enabled`, this diagnostic adds reward only; it does not replace actions. It is therefore a policy-learning intervention, not an action override.
+- Log action-prior active rate, phase rates, teacher z/gripper action, policy-to-teacher L1 error, and reward.
+
+Files to edit:
+- `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env_cfg.py`
+- `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`
+- `cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`
+- `cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- owned worklog only.
+
+Validation before launch:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env_cfg.py`
+- `bash -n cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+
+Bounded job plan:
+- Launch one L401 1-GPU, 64-env, short PPO smoke with low-z prior reset enabled and `grasp_prior_action_prior_reward_enabled=True`.
+- Keep it clearly named `franka_cube_lowz_actionprior_reward_*`.
+- Use JSONL metrics and frequent checkpoints; no A100/full PPO.
+- Evaluate best/final checkpoint with the usual video/contact-sheet/metrics protocol only after training logs look finite and the action-prior branch is active.
+
+Acceptance / stop-go:
+- Required for any future scale-up proposal: learned-policy video, not scripted reference, must show real grasp/lift from the low-z reset distribution.
+- If success/lift remain zero or videos still show hover/open/down/off-target, classify the diagnostic as negative and do not scale.
+- This intervention is non-apple-to-apple and must stay separate from the main reset-prior comparison.
+
+## 2026-06-12T06:41:56Z - implementation: non-apple-to-apple action-prior reward
+
+Change:
+- Added opt-in diagnostic reward fields to `DextrahFrankaCubeGraspEnvCfg`, disabled by default.
+- Added an action-prior reward path to `DextrahFrankaCubeGraspEnv` that computes the same validated assisted approach/exact/light-close/lift teacher sequence used in diagnostics, but adds reward only and does not override actions.
+- Added logs for action-prior active/phase rates, policy-teacher action L1 error, teacher z/gripper actions, exact-EE error, and reward.
+- Added train/eval wrapper pass-through for the new env flags.
+- Added eval metric collection for action-prior diagnostic buffers.
+
+Version Control:
+- base_commit: `1a55a5abc6ae95a75a57e6e0ce4e83eba8f3de5d`
+- implementation_commit: pending
+- changed_files:
+  - `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env_cfg.py`
+  - `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`
+  - `dextrah_lab/rl_games/eval_rollout.py`
+  - `cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`
+  - `cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+  - owned worklog
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env_cfg.py dextrah_lab/rl_games/eval_rollout.py` passed.
+- `bash -n cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh && bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh` passed.
+
+Next:
+- Commit/push, deploy exact commit to the agent-owned l401 worktree, then launch one 64-env L401 PPO smoke with `GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED=True`.
+
+## 2026-06-12T06:43:11Z - launch: action-prior reward PPO smoke
+
+Goal:
+- Test the non-apple-to-apple action-prior reward intervention on a bounded 64-env PPO smoke, then inspect metrics and video before any further training decision.
+
+Version Control:
+- local_commit / pushed branch: `9a35f7be1c5df09c7b9f525486368959ccc86c03`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: detached `9a35f7be1c5df09c7b9f525486368959ccc86c03`
+
+Command / Job:
+- job_id: `1028231`
+- run_name: `franka_cube_lowz_actionprior_r4s1_45_20260612_064303`
+- wrapper: `cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`
+- remote_run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_lowz_actionprior_r4s1_45_20260612_064303`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_smoke_1028231.out`
+- config summary:
+  - task: `Dextrah-Franka-Cube-Grasp`
+  - `NUM_ENVS=64`, `MAX_ITERATIONS=45`, `HORIZON_LENGTH=64`, `SAVE_FREQUENCY=5`
+  - `SEED=20260625`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`
+  - low-z library: `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz`
+  - `GRASP_PRIOR_RESET_ENABLED=True`
+  - `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`
+  - `GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED=True`, weight `4.0`, sharpness `1.0`
+  - reference sequence: approach `16`, light-close `24`, lift `40`, close width `0.055`, lift action z `0.50`, gain `8.0`, track orientation `True`
+
+Expected artifacts:
+- stdout log, `metrics/direct_info_rank_0.jsonl`, checkpoints under `nn/`, resolved config under the RL-Games run dir.
+- After training completes: parse JSONL for action-prior active/reward/delta, reset metrics, action z/gripper, lift/success; then run a video eval from best/final checkpoint if metrics are finite and the branch is active.
+
+Decision gate:
+- This is non-apple-to-apple. It cannot be used as the reset-prior comparison result.
+- Do not scale unless learned-policy eval video shows real grasp/lift. Scheduler success alone is insufficient.
+
+## 2026-06-12T06:45:39Z - monitor: action-prior reward PPO smoke complete
+
+Result:
+- job_id: `1028231`
+- scheduler: `COMPLETED 0:0`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_lowz_actionprior_r4s1_45_20260612_064303`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_smoke_1028231.out`
+- JSONL: 45 rows, no non-finite scalar values found.
+- Checkpoints: every 5 epochs through ep45; best logged checkpoint reward is ep10 `1009.47394`, final ep45 `696.23663`.
+
+Key metrics:
+- Reset branch remained healthy: `cube_grasp_prior_reset_success_rate=1.0`, `cube_grasp_prior_quality_success_rate=1.0` throughout.
+- Action-prior reward branch was active and logged: mean `cube_action_prior_reward=0.0830`, max `1.0587`; mean active rate `0.0590`, max `0.75`.
+- Behavioral training scalars are negative: `cube_success_rate` stayed `0.0`; `cube_has_lifted_rate` max `0.015625`; final `cube_lift_height=0.000006 m`.
+- Final action/geometry still look like open/no-contact: final `cube_gripper_action=0.9226`, `cube_gripper_width=0.0769 m`, `cube_action_z=-0.1577`, `cube_ee_to_cube_dist=0.2629 m`, `cube_finger_center_to_cube_dist=0.2726 m`.
+
+Analysis:
+- The intervention is wired and finite but did not produce meaningful learned lift in training scalars.
+- Because video evidence is mandatory for behavioral claims, the next step is a bounded eval from the best-reward checkpoint and final checkpoint before classifying this intervention.
+
+Next:
+- Launch two L401 eval jobs under the same low-z reset/action-prior diagnostic config:
+  - ep10 best checkpoint: `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_lowz_actionprior_r4s1_45_20260612_064303/nn/last_dextrah_franka_cube_grasp_ep_10_rew_1009.47394.pth`
+  - ep45 final checkpoint: `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_lowz_actionprior_r4s1_45_20260612_064303/nn/last_dextrah_franka_cube_grasp_ep_45_rew_696.23663.pth`
+- Fetch videos/metrics, create contact sheets/plots/report, open with `viz-open`, then decide whether this is a negative intervention.
+
+## 2026-06-12T06:46:00Z - launch: action-prior reward eval videos
+
+Goal:
+- Produce mandatory learned-policy video evidence for the non-apple-to-apple action-prior reward diagnostic.
+
+Command / Job:
+- job_id: `1028237`
+- run_name: `franka_cube_lowz_actionprior_eval_ep10_20260612_0646`
+- checkpoint: `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_lowz_actionprior_r4s1_45_20260612_064303/nn/last_dextrah_franka_cube_grasp_ep_10_rew_1009.47394.pth`
+- job_id: `1028238`
+- run_name: `franka_cube_lowz_actionprior_eval_ep45_20260612_0646`
+- checkpoint: `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_lowz_actionprior_r4s1_45_20260612_064303/nn/last_dextrah_franka_cube_grasp_ep_45_rew_696.23663.pth`
+- wrapper: `cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- common config:
+  - `NUM_ENVS=1`, `NUM_STEPS=600`, `VIDEO_LENGTH=600`, `CAPTURE_VIDEO=True`, deterministic eval
+  - `SEED=20260625`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`
+  - low-z library: `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz`
+  - `GRASP_PRIOR_RESET_ENABLED=True`
+  - `GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED=True`, weight `4.0`, sharpness `1.0`
+  - `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`
+
+Expected artifacts:
+- remote eval dirs under `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/<run_name>`
+- metrics JSON and labeled MP4 per checkpoint; fetch locally and build contact sheets/plots/report.
+
+## 2026-06-12T06:48:00Z - result: action-prior reward diagnostic evals
+
+Result:
+- eval job `1028237` (`ep10`) completed `0:0`.
+- eval job `1028238` (`ep45`) completed `0:0`.
+- fetched local training run: `cluster_results/l401/franka_cube_lowz_actionprior_r4s1_45_20260612_064303/`
+- fetched local evals:
+  - `cluster_results/l401/franka_cube_lowz_actionprior_eval_ep10_20260612_0646/`
+  - `cluster_results/l401/franka_cube_lowz_actionprior_eval_ep45_20260612_0646/`
+- fetched logs:
+  - `cluster_logs/l401/dextrah/franka_cube_smoke_1028231.out`
+  - `cluster_logs/l401/dextrah/eval_franka_cube_1028237.out`
+  - `cluster_logs/l401/dextrah/eval_franka_cube_1028238.out`
+
+Inspection artifacts:
+- report: http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_actionprior_r4s1_45_20260612_064303/inspection_20260612_0648/REPORT.md
+- summary JSON: `cluster_results/l401/franka_cube_lowz_actionprior_r4s1_45_20260612_064303/inspection_20260612_0648/summary.json`
+- ep10 contact sheet: http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_actionprior_r4s1_45_20260612_064303/inspection_20260612_0648/contact_sheet_ep10.jpg
+- ep45 contact sheet: http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_actionprior_r4s1_45_20260612_064303/inspection_20260612_0648/contact_sheet_ep45.jpg
+- ep10 video: http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_actionprior_eval_ep10_20260612_0646/videos/lowz-actionprior-step-0.mp4
+- ep45 video: http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_actionprior_eval_ep45_20260612_0646/videos/lowz-actionprior-step-0.mp4
+- training behavior plot: http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_actionprior_r4s1_45_20260612_064303/inspection_20260612_0648/training_behavior_curves.png
+- ep10 trace plot: http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_actionprior_r4s1_45_20260612_064303/inspection_20260612_0648/eval_ep10_behavior_trace.png
+- ep45 trace plot: http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_actionprior_r4s1_45_20260612_064303/inspection_20260612_0648/eval_ep45_behavior_trace.png
+
+Key evidence:
+- Training JSONL had 45 rows and no bad scalars.
+- Reset metrics remained healthy: reset success/quality `1.0`.
+- Action-prior branch was active: mean `cube_action_prior_reward=0.0830`, max `1.0587`; mean active rate `0.0590`, max `0.75`.
+- Training behavior did not pass: `cube_success_rate` max `0.0`, `cube_has_lifted_rate` max `0.015625`, final lift height `0.000006 m`.
+- ep10 eval: success max/final `0.0/0.0`, lifted max `0.0`, max lift height `0.0298 m` but no held/lifted flag, final EE/finger distance `0.2308/0.2066 m`, final width `0.0800 m`.
+- ep45 eval: success max/final `0.0/0.0`, lifted max `0.0`, max lift height `0.00088 m`, final EE/finger distance `0.0935/0.1277 m`, final width `0.0800 m`.
+- Visual verdict: ep10 makes early contact/perturbation but lets the cube go and moves away; ep45 stays open/off-contact. Neither video shows real grasp/lift.
+
+Decision:
+- Negative non-apple-to-apple intervention diagnostic.
+- Do not scale to A100/full PPO.
+- This does not invalidate the reset geometry/library; it confirms the learned-policy/reward-discovery blocker persists even with a sparse action-prior reward.
+
+Active jobs:
+- `squeue -u lzha` on l401 is empty after this fetch/inspection.
+
+Next candidate:
+- A stronger but still bounded non-apple-to-apple diagnostic is needed before any scale-up, likely either:
+  - staged/curriculum reward that keeps action-prior guidance active for full early episodes and decays only after contact/lift, or
+  - BC/actor initialization from the successful assisted low-z trajectory followed by an explicitly preservation-biased short PPO smoke.
+- Any next run must stay video-first and explicitly labeled as intervention, not the apple-to-apple reset-prior comparison.
+
+## 2026-06-12T06:55:00Z - plan: fix action-prior reference sequence override
+
+Goal:
+- Correct the previous action-prior reward diagnostic wiring before trying any stronger intervention.
+
+Finding:
+- The train/eval wrappers export the intended reference sequence values (`close_steps=24`, `lift_steps=40`, `lift_action_z=0.50`) but only pass them into Hydra when `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=True`.
+- The reward-only run had `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`, so the action-prior reward used config defaults (`close_steps=12`, `lift_steps=12`, `lift_action_z=0.15`). The eval trace confirms `grasp_prior_action_prior_teacher_action_z=0.15` during lift phase.
+
+Change:
+- Patch only the train/eval wrappers so `GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED=True` also passes the reference sequence parameters, without enabling action override warm-start.
+- Main task defaults remain disabled/unmodified; this is still a non-apple-to-apple diagnostic path.
+
+Validation:
+- `bash -n cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- Relaunch one bounded 64-env, 45-epoch L401 smoke under a new run name with the same low-z library, reward weight/sharpness, and intended sequence (`close_steps=24`, `lift_steps=40`, `lift_action_z=0.50`).
+
+Acceptance:
+- First gate is wiring: train command and eval traces must show intended sequence params and teacher lift z `0.50`.
+- Behavioral gate remains learned-policy video showing real grasp/lift; otherwise classify as another negative intervention.
+
+## 2026-06-12T06:56:00Z - launch: corrected action-prior sequence smoke
+
+Change:
+- Committed wrapper fix `aec212660b3dafe1c7ef90869905ee79f52cef09` (`Pass action prior sequence overrides`).
+- l401 GitHub fetch was blocked by `Permission denied (publickey)`, so deployed the exact commit through a Git bundle from local `9a35f7b..aec2126`, fetched into the agent-owned remote worktree, and checked out detached `aec2126`. This preserved Git object deployment rather than copying source files.
+- Remote syntax checks passed for train/eval wrappers after checkout.
+
+Command / Job:
+- job_id: `1028245`
+- run_name: `franka_cube_lowz_actionprior_seqfix_r4s1_45_20260612_0655`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: detached `aec212660b3dafe1c7ef90869905ee79f52cef09`, clean
+- wrapper: `cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`
+- remote_run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_lowz_actionprior_seqfix_r4s1_45_20260612_0655`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_smoke_1028245.out`
+- config summary:
+  - `NUM_ENVS=64`, `MAX_ITERATIONS=45`, `HORIZON_LENGTH=64`, `SAVE_FREQUENCY=5`
+  - `SEED=20260625`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`
+  - low-z library: `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz`
+  - `GRASP_PRIOR_RESET_ENABLED=True`
+  - `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`
+  - `GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED=True`, weight `4.0`, sharpness `1.0`
+  - intended reward reference sequence: approach `16`, light-close `24`, lift `40`, close width `0.055`, lift action z `0.50`, gain `8.0`, track orientation `True`
+
+Immediate monitor gate:
+- Confirm stdout train command includes the warmstart sequence overrides even though action override is disabled.
+- Confirm JSONL action-prior metrics are finite and branch-active before deciding eval/video.
+
+## 2026-06-12T06:57:00Z - monitor/launch: corrected action-prior eval videos
+
+Training result:
+- job `1028245` completed `0:0`.
+- Wiring gate passed: stdout train command includes `env.grasp_prior_action_warmstart_close_steps=24`, `env.grasp_prior_action_warmstart_lift_steps=40`, and `env.grasp_prior_action_warmstart_lift_action_z=0.50` while `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`.
+- JSONL: 45 rows, no bad scalars.
+- Reset metrics healthy: reset success/quality `1.0`.
+- Action-prior branch stronger than the previous run: mean reward `0.2030`, max `1.6413`, mean active rate `0.1316`, max `1.0`.
+- Behavioral scalars remain negative: success max `0.0`, lifted max `0.0`, max lift height `0.00112 m`, final EE/finger distance `0.3818/0.3761 m`.
+
+Eval jobs:
+- job_id: `1028247`, run_name: `franka_cube_lowz_actionprior_seqfix_eval_ep10_20260612_0657`, checkpoint: `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_lowz_actionprior_seqfix_r4s1_45_20260612_0655/nn/last_dextrah_franka_cube_grasp_ep_10_rew_1059.3303.pth`
+- job_id: `1028248`, run_name: `franka_cube_lowz_actionprior_seqfix_eval_ep45_20260612_0657`, checkpoint: `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_lowz_actionprior_seqfix_r4s1_45_20260612_0655/nn/last_dextrah_franka_cube_grasp_ep_45_rew_735.89746.pth`
+- Eval config matches the corrected reward-only sequence settings and captures 600-step MP4 videos.
+
+## 2026-06-12T07:02:00Z - result: corrected action-prior sequence eval inspection
+
+Goal:
+- Inspect the corrected action-prior reward diagnostic after fixing wrapper sequence overrides.
+
+Result:
+- Jobs `1028247` and `1028248` completed `0:0`; l401 queue is empty.
+- Artifacts fetched locally under:
+  - `cluster_results/l401/franka_cube_lowz_actionprior_seqfix_r4s1_45_20260612_0655/`
+  - `cluster_results/l401/franka_cube_lowz_actionprior_seqfix_eval_ep10_20260612_0657/`
+  - `cluster_results/l401/franka_cube_lowz_actionprior_seqfix_eval_ep45_20260612_0657/`
+- Inspection bundle: `cluster_results/l401/franka_cube_lowz_actionprior_seqfix_r4s1_45_20260612_0655/inspection_20260612_0702/`
+
+Metrics:
+- Training JSONL: 45 rows, bad scalar count `0`.
+- Wiring gate passed: train/eval traces show intended sequence, including lift teacher z near `0.50`.
+- Reset success/quality remain `1.0/1.0`.
+- Training success/lift: success max/final `0.0/0.0`, lifted max/final `0.0/0.0`, max lift height `0.001123 m`, final EE/finger distance `0.3818/0.3761 m`.
+- Eval ep10: first done at step `599`, success/lift before done `0.0/0.0`, max lift `0.000644 m`, min EE/finger distance `0.0443/0.0856 m`.
+- Eval ep45: first done at step `599`, success/lift before done `0.0/0.0`, max lift `0.005404 m`, min EE/finger distance `0.0005/0.0386 m`.
+- Both eval final frames are reset-state artifacts after terminal reset; done-aware pre-reset metrics are the relevant behavioral gate.
+
+Visual verdict:
+- ep10 briefly starts near the cube but moves away without clamping/lifting.
+- ep45 reaches/perturbs the cube, then opens/off-target and moves away; no real grasp/lift.
+- This is a **negative non-apple-to-apple intervention diagnostic**, not a scale-up gate.
+
+Viewer URLs:
+- Report: http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_actionprior_seqfix_r4s1_45_20260612_0655/inspection_20260612_0702/REPORT.md
+- ep10 contact sheet: http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_actionprior_seqfix_r4s1_45_20260612_0655/inspection_20260612_0702/contact_sheet_ep10.jpg
+- ep45 contact sheet: http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_actionprior_seqfix_r4s1_45_20260612_0655/inspection_20260612_0702/contact_sheet_ep45.jpg
+- Training task curves: http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_actionprior_seqfix_r4s1_45_20260612_0655/inspection_20260612_0702/training_task_curves.png
+- Training action-prior curves: http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_actionprior_seqfix_r4s1_45_20260612_0655/inspection_20260612_0702/training_action_prior_curves.png
+- ep10 video: http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_actionprior_seqfix_eval_ep10_20260612_0657/videos/lowz-actionprior-seqfix-step-0.mp4
+- ep45 video: http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_actionprior_seqfix_eval_ep45_20260612_0657/videos/lowz-actionprior-seqfix-step-0.mp4
+
+Decision:
+- Do not launch A100/full PPO.
+- Reset geometry/library remains healthy; this diagnostic confirms reward-only action-prior guidance is too weak/sparse for PPO to discover the assisted close/lift behavior.
+- Next bounded intervention, if authorized, should be explicitly labeled non-apple-to-apple and stronger than reward-only guidance, e.g. staged teacher-preservation/curriculum through the early episode or BC/actor initialization plus preservation-biased short PPO, with video-first gates.
+
+## 2026-06-12T07:04:00Z - plan: staged action-prior preservation diagnostic
+
+Goal:
+- Test whether the prior action-reward failure is caused by the short/sparse guidance window rather than unusable reset geometry.
+
+Hypothesis:
+- The corrected reward-only run kept teacher guidance active for the reference approach/close/lift sequence, then became inactive.
+- Eval videos show the learned policy abandons contact and opens/moves away; a longer early-episode teacher-preservation reward may keep PPO near the successful assisted low-z close/lift trajectory long enough to learn usable contact behavior.
+
+Change:
+- No source changes.
+- Use existing opt-in diagnostic flags only.
+- Keep `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`; the environment will not override policy actions.
+- Enable action-prior reward with stronger/longer guidance:
+  - weight `8.0`
+  - sharpness `0.7`
+  - approach steps `16`
+  - close steps `24`
+  - lift steps `160`
+  - close width `0.055`
+  - lift action z `0.50`
+  - gain `8.0`
+  - orientation tracking `True`
+- This is explicitly **non-apple-to-apple intervention diagnostic**, not the final reset-prior comparison.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- local_commit: `aec212660b3dafe1c7ef90869905ee79f52cef09`
+- remote_commit/status: detached `aec212660b3dafe1c7ef90869905ee79f52cef09`, clean
+- source changes for launch: none
+- worklog update: pending commit after launch/result
+
+Command / Job:
+- wrapper: `cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`
+- run_name: `franka_cube_lowz_actionprior_hold_r8s07_45_20260612_0704`
+- scale: l401, 1 GPU, `64` envs, `45` iterations, save frequency `5`
+- reset/library: low-z no-offset library `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz`
+- expected artifacts: JSONL metrics, checkpoints, eval videos/contact sheets if metrics are sane enough to inspect learned behavior
+
+Acceptance:
+- Wiring gate: stdout must show action-prior reward enabled and the longer sequence overrides.
+- Metric gate: no bad scalars, reset success/quality `1.0`, action-prior active/reward nonzero, teacher z reaches `0.50`.
+- Behavioral gate before any scale-up: done-aware eval video from best/final checkpoint must show real grasp/lift, not just near-cube hover or reset artifact.
+- If negative, classify as intervention failure and do not launch A100/full PPO.
+
+## 2026-06-12T07:05:00Z - launch: staged action-prior preservation smoke
+
+Command / Job:
+- job_id: `1028249`
+- run_name: `franka_cube_lowz_actionprior_hold_r8s07_45_20260612_0704`
+- wrapper: `cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: detached `aec212660b3dafe1c7ef90869905ee79f52cef09`, clean
+- remote_run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_lowz_actionprior_hold_r8s07_45_20260612_0704`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_smoke_1028249.out`
+
+Config:
+- `NUM_ENVS=64`, `MAX_ITERATIONS=45`, `HORIZON_LENGTH=64`, `SAVE_FREQUENCY=5`
+- `SEED=20260625`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`
+- `GRASP_PRIOR_RESET_ENABLED=True`
+- low-z library: `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz`
+- `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`
+- `GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED=True`
+- action-prior reward weight/sharpness: `8.0` / `0.7`
+- reference sequence: approach `16`, close `24`, lift `160`, close width `0.055`, lift z `0.50`, gain `8.0`, track orientation `True`
+
+Immediate monitor:
+- Wait for stdout command/config echo, JSONL creation, and terminal Slurm state.
+- Evaluate best/final checkpoints only after metrics are inspected.
+
+## 2026-06-12T07:08:00Z - shutdown handoff status
+
+User requested stop/handoff-only mode.
+
+Status:
+- Wrote handoff file: `worklogs/franka-cube-grasp-prior/HANDOFF_A.md`.
+- Job `1028249` completed `0:0` after handoff drafting.
+- Log tail shows epoch `45/45`, final checkpoint `last_dextrah_franka_cube_grasp_ep_45_rew_1392.9783.pth`, and `Franka cube reset-prior smoke training done`.
+- I did not fetch or inspect `1028249` JSONL/artifacts/videos because the user requested shutdown/handoff-only mode.
+- l401 `squeue -u lzha` was empty after completion.
+
+Next:
+- New agent should fetch and inspect `1028249`; scheduler success alone is not a result.
+- Keep it labeled non-apple-to-apple intervention.
+
+## 2026-06-12T07:30:54Z - resumed audit and object-pose reset patch
+
+Goal:
+- Continue from `HANDOFF_A.md`, but independently audit the reset-prior implementation before any more policy-only RL.
+
+Hypothesis:
+- The reset metrics can be healthy while still missing a precondition: the current reset target composition used cube position only. The cube is identity-oriented today, so previous smokes did not expose this, but the stated approach requires transforming object-centered grasps by the full sampled object pose.
+
+Change:
+- Patched `franka_cube_grasp_env.py` so `_compose_grasp_prior_targets` takes the sampled cube quaternion and sets `T_world_object[:3,:3]` from it before composing `T_world_object @ T_object_grasp @ T_grasp_tool`.
+- Added disabled-by-default `cube_spawn_yaw_randomization_deg=0.0` and identity/yaw cube quaternion reset plumbing.
+- Added `grasp_prior_reset_cube_quat_w` and quaternion-norm logging/checks so validation proves the object pose used by the prior is well formed.
+- Extended `validate_franka_cube_grasp_env.py` and its l401 wrapper with `CUBE_SPAWN_YAW_RANDOMIZATION_DEG` for a reset smoke that exercises full-pose composition.
+- Inspected staged action-prior job `1028249` only as diagnostic evidence. It is non-apple-to-apple and not policy-only evidence.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset
+- branch: codex/franka-cube-ggx-pregrasp-reset
+- base_commit: c132cc2151e6fded3a85afa53569779d109f4843
+- implementation_commit: pending
+- changed_files: `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env_cfg.py`, `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`, `dextrah_lab/rl_games/validate_franka_cube_grasp_env.py`, `cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`, this worklog
+- remote_commit/status: pending deployment after commit
+
+Command / Job:
+- command: `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env_cfg.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py dextrah_lab/rl_games/validate_franka_cube_grasp_env.py`
+- command: `bash -n cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- command: `git diff --check`
+- inspected diagnostic run: `1028249`, local fetch `cluster_results/l401/franka_cube_lowz_actionprior_hold_r8s07_45_20260612_0704/`
+
+Result:
+- status: local_checks_passed
+- 1028249 metrics: 45 JSONL rows, bad scalar count `0`, reset attempt/success/farther/quality all `1.0`, reset pos/rot error mean `0.00331 m` / `0.00146 rad`, no lift/success, max lift height `0.00137 m`.
+- 1028249 action-prior behavior: active-rate mean `0.390`, reward mean `1.55`, teacher z reached `0.50`, but learned action z mean was negative `-0.204` and gripper action mean was opening-positive `0.311`; this is another negative non-policy-only diagnostic.
+
+Analysis:
+- The reset-only geometry remains plausible, but the implementation did not satisfy the full sampled-object-pose contract before this patch.
+- No policy-only success can be claimed. The next gate is a reset validation smoke with yaw randomization enabled, then a bounded policy-only PPO smoke only if reset checks pass.
+
+Next:
+- Commit the patch, deploy the exact commit to the l401 agent worktree, run the reset validation with `GRASP_PRIOR_RESET_ENABLED=True` and `CUBE_SPAWN_YAW_RANDOMIZATION_DEG=180`, inspect metrics/logs, and only then consider a policy-only training smoke.
+
+## 2026-06-12T07:40:43Z - l401 partition preflight fix
+
+Goal:
+- Submit the reset-only validation from the exact deployed worktree.
+
+Observation:
+- `sbatch` rejected `cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh` before launch because the wrapper listed stale partitions (`batch_singlenode,grizzly,polar,polar3,polar4,interactive_singlenode`).
+- `sinfo` on l401 reports valid GPU partitions `batch` and `batch_long`; the dedicated 1-GPU Franka cube smoke wrapper already uses `batch`.
+
+Change:
+- Updated the l401 Franka cube validation wrapper and l401 Franka cube eval wrapper to `#SBATCH --partition=batch`.
+- Temporarily changed the generic 8-GPU teacher wrapper too, but the next preflight found A100 is the correct 8-GPU policy-only route and requires the original A100 short partition list.
+
+Validation:
+- command: `bash -n cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh cluster/sbatch_eval_franka_cube_grasp_1gpu.sh cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`
+- command: `git diff --check`
+
+Next:
+- Commit/deploy this wrapper preflight fix, then resubmit the reset validation with exact `CODE_COMMIT`.
+
+Correction:
+- `cluster/sbatch_train_teacher_8gpu.sh` was restored to `batch_singlenode,grizzly,polar,polar3,polar4,interactive_singlenode` before any RL launch.
+
+## 2026-06-12T00:55:51-07:00 - policy-only reset-prior A100 run and video evidence
+
+Goal:
+- Prove the reset-only grasp prior can train policy-only RL, without scripted action warmstart or action-prior reward.
+
+Preconditions:
+- Upstream/main Franka cube RL is treated as known-good; reset-prior changes are opt-in.
+- Reset validation job `1028251` used `CUBE_SPAWN_YAW_RANDOMIZATION_DEG=180` and passed all checks: reset attempt/success/farther/quality `1.0`, unit cube quaternions, no immediate done, and finger/table clearances positive.
+- Deployed exact remote code: `cd1d66e1041e93adf6cb199862b55b41a8c71097`.
+- Training config confirmed `grasp_prior_reset_enabled=True`, `grasp_prior_action_warmstart_enabled=False`, `grasp_prior_action_prior_reward_enabled=False`, and `cube_spawn_yaw_randomization_deg=0.0` for upstream parity.
+
+Command / Job:
+- A100 training job: `29003353`
+- run_name: `franka_cube_lowz_resetprior_policy8gpu_cd1d66e_20260612_004111`
+- wrapper: `cluster/sbatch_train_teacher_8gpu.sh`
+- scale: 8 GPUs, `2048` envs, `MAX_ITERATIONS=300`
+- reset library: `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz`
+- metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_lowz_resetprior_policy8gpu_cd1d66e_20260612_004111/metrics/direct_info_rank_0.jsonl`
+
+Evaluation:
+- ep25 eval job `1028255`: `franka_cube_lowz_policy8gpu_ep25_eval_20260612_004555`
+  - result: negative; video showed hand drift/no grasp, metrics had `success_rate_final=0`, `has_lifted_cube.max=0`, max lift about `0.0026 m`.
+- ep50 eval jobs `1028256`-`1028259`: four single-env deterministic policy-only videos.
+  - result: positive but somewhat marginal/side-loaded; every seed reached `has_lifted_cube=1` and max success, two of four ended with strict final success.
+  - local videos: `cluster_results/l401/franka_cube_lowz_policy8gpu_ep50_seed2026065*_eval_20260612_004937/videos/*.mp4`
+  - local contact sheets: `cluster_results/l401/franka_cube_lowz_policy8gpu_ep50_eval_contact_sheets/`
+- ep100 eval jobs `1028260`-`1028263`: four single-env deterministic policy-only videos.
+  - result: positive; every seed reached success by steps `42-50`, every seed ended with `success_rate_final=1.0`, `has_lifted_cube.final=1.0`, final lift height `0.1248-0.1366 m`, max lift `0.1376-0.1384 m`.
+  - visual inspection: all four contact sheets show actual cube lift/hold by the Franka gripper; no scripted action intervention was enabled.
+  - local videos: `cluster_results/l401/franka_cube_lowz_policy8gpu_ep100_seed2026070*_eval_20260612_005306/videos/*.mp4`
+  - local contact sheets: `cluster_results/l401/franka_cube_lowz_policy8gpu_ep100_eval_contact_sheets/`
+
+Reward-weight note:
+- The current branch kept upstream/main cube reward weights: `cube_approach_weight=2.0`, `cube_enclosure_weight=1.0`.
+- This is a valid ablation target because reset-prior starts near the cube, but live training logs at epoch `107+` show lift/success terms dominate after learning: approach+enclosure about `1.78`, lift+success about `17.7-18.0`.
+- Current evidence does not require immediate reward downweighting to achieve lift, but a cleaner-grasp ablation should reduce approach/enclosure if future videos show pressing/hovering or excessive side-loading.
+
+Current monitor:
+- A100 job `29003353` remains running and must still be monitored through terminal state and final metrics/artifacts.
+
+## 2026-06-12T01:11:39-07:00 - final A100 training result
+
+Result:
+- A100 job `29003353` completed `0:0` in `00:28:58`.
+- Stdout log fetched locally: `cluster_logs/a1001/dextrah/teacher_8gpu_29003353.out`.
+- Metrics/configs fetched locally without large checkpoint binaries:
+  - `cluster_results/a1001/franka_cube_lowz_resetprior_policy8gpu_cd1d66e_20260612_004111/metrics/direct_info_rank_0.jsonl`
+  - `cluster_results/a1001/franka_cube_lowz_resetprior_policy8gpu_cd1d66e_20260612_004111/params/env.yaml`
+  - `cluster_results/a1001/franka_cube_lowz_resetprior_policy8gpu_cd1d66e_20260612_004111/params/agent.yaml`
+- Remote checkpoints remain under `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_lowz_resetprior_policy8gpu_cd1d66e_20260612_004111/nn/`.
+
+Final metrics:
+- JSONL rows: `300`, first epoch `1`, last epoch `300`.
+- Bad scalar count: `0`.
+- Final epoch: success `0.812988`, lifted `0.880371`, lift height `0.131253 m`, gripper width `0.059897 m`.
+- Last 25-epoch means: success `0.859492`, lifted `0.934297`, lift height `0.133529 m`, gripper width `0.058876 m`.
+- Best observed scalar epochs:
+  - success max `0.885742` at epoch `249`
+  - lifted max `0.960449` at epoch `198`
+  - lift-height max `0.135939 m` at epoch `273`
+- Reset prior health stayed `1.0` for reset success and quality over the last 25 epochs and final epoch.
+
+Analysis:
+- The full-pose reset-prior implementation and policy-only training path are now validated by both metrics and videos.
+- The ep100 policy-only videos are the strongest visual evidence: four deterministic single-env videos all show actual grasp/lift/hold behavior and all end successful.
+- The reward-weight suspicion is still useful for a future cleanliness ablation, but this run does not need it to learn. Approach+enclosure shaping remained about `1.86` at the final epoch, while lift+success was about `17.78`; the late-policy behavior is not dominated by approach rewards.
+
+Cleanup / active jobs:
+- `squeue -u lzha` on both `a1001` and `l401` was empty after the training and eval jobs completed.
+
+## 2026-06-12T12:17:44-07:00 - exact eval success-rate logging
+
+Goal:
+- Make eval success reporting unambiguous for policy videos and parallel env evals.
+
+Issue:
+- The per-step `success_rate` scalar is an occupancy measure: fraction of envs currently in `in_success_region` after a step.
+- In video evals with auto-reset, `success_rate_final` can be `0.0` immediately after a successful episode resets, even when the episode actually succeeded.
+- Parallel evals also need a denominator that counts each env's initial attempt exactly once, rather than depending on which envs finish before the horizon.
+
+Change:
+- Updated `dextrah_lab/rl_games/eval_rollout.py` to keep the old `success_rate_*` keys as occupancy aliases and add explicit `success_occupancy_*` fields.
+- Added per-env first-attempt accounting:
+  - completed attempts use the pre-reset terminal probe state;
+  - unfinished first attempts use horizon-end probe state;
+  - `eval_success_rate` is the mean first-attempt success rate over envs, based on per-env max `in_success_region`.
+- Added `first_attempt_summary`, `first_attempt_outcomes`, `horizon_episode_summary`, `horizon_episode_outcomes`, `completed_episode_success_rate`, and hold-timer audit fields based on `time_in_success_region`.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py`
+- `git diff --check`
+
+Notes:
+- Existing seed `1781139395` reset-prior eval already shows the old ambiguity: `completed_episode_summary.success_rate=1.0` and video shows lift/hold, while `success_rate_final=0.0` because the env reset after success.
+- Future eval JSON should use `eval_success_rate` for the headline attempt success number and `success_occupancy_*` only for the instantaneous occupancy curve.
+
+## 2026-06-12T12:28:45-07:00 - 12-model exact eval batch launch
+
+Goal:
+- Re-evaluate all previous Franka cube models with the corrected eval success logger and generate an eval success-rate comparison graph.
+
+Version Control:
+- agent_id: franka-cube-eval-success-rate
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- implementation_commit: `4b5e14079f82f957408da50dbdb1f9ae0e9b7133`
+- remote source: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-eval-success-rate`
+- remote commit transfer: Git bundle fetched into NFS repo because cluster GitHub auth could not fetch `origin`.
+
+Command / Job:
+- batch: `franka_cube_evalsuccess1024_4b5e140_20260612_122845`
+- host: l401 Slurm `batch`, one L40 GPU per eval job
+- wrapper: `cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- eval config: `NUM_ENVS=1024`, `NUM_STEPS=600`, `CAPTURE_VIDEO=False`, `DETERMINISTIC=True`, `USE_CUDA_GRAPH=False`
+- models: no-prior seeds `1,2,3,4,5`, reset-prior seeds `1,2,3,4,5`, previous same-seed no-prior `1781139395`, and same-seed reset-prior `1781139395`
+- prior evals use `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz`, with action warm-start and action-prior reward disabled.
+
+Expected artifacts:
+- remote eval dirs: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_evalsuccess1024_4b5e140_20260612_122845_*`
+- local summary/plots under `cluster_results/l401/franka_cube_evalsuccess1024_4b5e140_20260612_122845/`
+
+Status:
+- completed.
+
+Job IDs:
+- no-prior seed1: `1028598`
+- no-prior seed2: `1028599`
+- no-prior seed3: `1028600`
+- no-prior seed4: `1028601`
+- no-prior seed5: `1028602`
+- prior seed1: `1028603`
+- prior seed2: `1028604`
+- prior seed3: `1028605`
+- prior seed4: `1028606`
+- prior seed5: `1028607`
+- no-prior seed1781139395: `1028608`
+- prior seed1781139395: `1028609`
+
+Result:
+- All 12 jobs completed `0:0` on l401.
+- Every metrics JSON has `first_attempt_count=1024/1024`.
+- Local artifacts fetched to `cluster_results/l401/franka_cube_evalsuccess1024_4b5e140_20260612_122845/`.
+- Logs fetched to `cluster_logs/l401/dextrah/eval_franka_cube_1028598.out` through `eval_franka_cube_1028609.out`.
+
+Per-model `eval_success_rate`:
+- no-prior seeds 1-5: `0.003906`, `0.954102`, `0.001953`, `0.557617`, `0.006836`
+- prior seeds 1-5: `1.000000`, `1.000000`, `1.000000`, `1.000000`, `1.000000`
+- no-prior seed1781139395: `0.948242`
+- prior seed1781139395: `1.000000`
+
+Seeds 1-5 aggregate:
+- no-prior mean/std: `0.304883 +/- 0.434708`
+- prior mean/std: `1.000000 +/- 0.000000`
+
+Generated artifacts:
+- `cluster_results/l401/franka_cube_evalsuccess1024_4b5e140_20260612_122845/eval_success_rate_comparison.png`
+- `cluster_results/l401/franka_cube_evalsuccess1024_4b5e140_20260612_122845/eval_success_rate_mean_seeds1to5.png`
+- `cluster_results/l401/franka_cube_evalsuccess1024_4b5e140_20260612_122845/eval_success_rate_summary.csv`
+- `cluster_results/l401/franka_cube_evalsuccess1024_4b5e140_20260612_122845/eval_success_rate_group_summary.csv`
+- `cluster_results/l401/franka_cube_evalsuccess1024_4b5e140_20260612_122845/REPORT.md`
+
+Analysis:
+- Corrected first-attempt accounting removes the reset artifact: e.g. no-prior seed2 has `eval_success_rate=0.954102` while `success_occupancy_final=0.041016`.
+- Reset-prior models evaluate at `1.0` first-attempt success for all six evaluated seeds.
+- The stricter `eval_success_hold_rate` audit is also saved. It is lower for some no-prior models, especially seed1781139395 (`0.006836` hold rate despite `0.948242` first-attempt instantaneous success), so future reporting should state which definition is being plotted.
