@@ -5981,7 +5981,8 @@ Observation:
 - `sinfo` on l401 reports valid GPU partitions `batch` and `batch_long`; the dedicated 1-GPU Franka cube smoke wrapper already uses `batch`.
 
 Change:
-- Updated the Franka cube validation wrapper, Franka cube eval wrapper, and generic 8-GPU teacher wrapper to `#SBATCH --partition=batch`.
+- Updated the l401 Franka cube validation wrapper and l401 Franka cube eval wrapper to `#SBATCH --partition=batch`.
+- Temporarily changed the generic 8-GPU teacher wrapper too, but the next preflight found A100 is the correct 8-GPU policy-only route and requires the original A100 short partition list.
 
 Validation:
 - command: `bash -n cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh cluster/sbatch_eval_franka_cube_grasp_1gpu.sh cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`
@@ -5989,3 +5990,6 @@ Validation:
 
 Next:
 - Commit/deploy this wrapper preflight fix, then resubmit the reset validation with exact `CODE_COMMIT`.
+
+Correction:
+- `cluster/sbatch_train_teacher_8gpu.sh` was restored to `batch_singlenode,grizzly,polar,polar3,polar4,interactive_singlenode` before any RL launch.
