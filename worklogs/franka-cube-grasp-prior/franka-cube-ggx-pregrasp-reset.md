@@ -2562,3 +2562,127 @@ Analysis:
 
 Next:
 - Launch the bounded reset-prior PPO smoke with `GRASP_PRIOR_RESET_ENABLED=True` and the robust pass7 library, then fetch training metrics/checkpoints and run eval video/trace artifacts before any larger comparison.
+
+## 2026-06-12T00:56:00Z - launch robust pass7 PPO smoke45
+
+Goal:
+- Run the smallest useful learned-policy smoke after the robust reset/oracle gate: 1 GPU, 64 envs, 45 epochs, prior enabled with the robust pass7 library, JSONL metrics, and frequent checkpoints.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- local_commit: `9f76db3ee6320f030d958d8b9ff6c53d122fd6fb`
+- push/pull: pushed branch; deployed exact commit to l401 Worker A worktree using a Git bundle because l401 cannot fetch GitHub directly
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `9f76db3ee6320f030d958d8b9ff6c53d122fd6fb`, detached clean
+- remote validation: `python3 -m py_compile` for filter/diagnostic scripts and `bash -n` for train/eval wrappers passed
+
+Command / Job:
+- command: `sbatch --parsable --job-name=ggx_pass7_smoke45 --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=9f76db3ee6320f030d958d8b9ff6c53d122fd6fb,TASK=Dextrah-Franka-Cube-Grasp,FULL_EXPERIMENT_NAME=franka_cube_ggx_robust_pass7_smoke45_20260612_0056,RUN_NAME=franka_cube_ggx_robust_pass7_smoke45_20260612_0056,NUM_ENVS=64,MAX_ITERATIONS=45,SAVE_FREQUENCY=5,SEED=20260624,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_robust_pass7_20260612.npz,DEXTRAH_RLGAMES_JSONL_METRICS=True,AUTO_RESUME=False cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`
+- job_id: `1027931`
+- run_name: `franka_cube_ggx_robust_pass7_smoke45_20260612_0056`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_robust_pass7_smoke45_20260612_0056`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_smoke_1027931.out`
+
+Acceptance:
+- Training must produce finite rank-0 JSONL metrics, frequent checkpoints, and no abnormal termination signatures.
+- Eval must use the same task, seed style, cube XY randomization, prior-enabled reset path, and robust pass7 library.
+- Smoke is only useful if eval video/trace show the policy starts in the intended pregrasp and interacts with/lifts the cube plausibly. This remains not an A100/full-scale launch gate by itself.
+
+Monitor:
+- Training completed `0:0` in `00:01:55` on `pool0-00030`.
+- Checkpoints written every 5 epochs; best reward checkpoint from stdout is `ep10` with `rew_857.09937`, final `ep45` has `rew_662.51086`.
+- JSONL sidecar has 45 rank-0 records and no non-finite scalar values in local scan.
+- Training metrics are not yet policy-positive: `cube_success_rate=0`, `cube_has_lifted_rate=0`, max JSONL `cube_lift_height=0.000553 m`, and `cube_ee_to_cube_dist` grew from `0.0801 m` to `0.6773 m`.
+
+Eval Jobs:
+- best reward eval job: `1027934`, run `franka_cube_ggx_robust_pass7_smoke45_eval_ep10_20260612_0100`, checkpoint `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_robust_pass7_smoke45_20260612_0056/nn/last_dextrah_franka_cube_grasp_ep_10_rew_857.09937.pth`
+- final eval job: `1027935`, run `franka_cube_ggx_robust_pass7_smoke45_eval_ep45_20260612_0100`, checkpoint `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_robust_pass7_smoke45_20260612_0056/nn/last_dextrah_franka_cube_grasp_ep_45_rew_662.51086.pth`
+- shared eval config: `NUM_ENVS=1`, `NUM_STEPS=420`, `VIDEO_LENGTH=420`, deterministic, `SEED=20260624`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`, prior enabled with robust pass7 library.
+
+Result:
+- status: PPO smoke/eval failed the scale-up gate
+- training job `1027931` completed `0:0`; eval jobs `1027934` and `1027935` completed `0:0`.
+- fetched training run: `cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_20260612_0056`
+- fetched eval runs:
+  - `cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_eval_ep10_20260612_0100`
+  - `cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_eval_ep45_20260612_0100`
+- inspection bundle: `cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_20260612_0056_inspection`
+
+Metrics:
+- training JSONL: 45 records, bad scalar count `0`, reset success min `1.0`, reset quality min `1.0`.
+- training policy metrics: success max `0.0`, lifted max `0.0`, max lift height `0.000553 m`; EE-to-cube distance grew from `0.0801 m` to `0.6773 m`.
+- best-reward eval (`ep10`): success max `0.0`, lift max `0.000939 m`, EE min/final `0.0442/0.7005 m`, finger-center min/final `0.0858/0.6753 m`, final gripper width `0.0002 m`.
+- final eval (`ep45`): success max `0.0`, lift max `0.001618 m`, EE min/final `0.0548/0.6937 m`, finger-center min/final `0.0918/0.6809 m`, final gripper width `0.0800 m`.
+
+Artifacts:
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_20260612_0056_inspection/REPORT.md`
+- eval contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_20260612_0056_inspection/eval_contact_sheet.jpg`
+- training trace plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_20260612_0056_inspection/training_trace_plot.png`
+- eval trace plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_20260612_0056_inspection/eval_trace_plot.png`
+- ep10 video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_eval_ep10_20260612_0100/videos/pass7-smoke45-ep10-step-0.mp4`
+- ep45 video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_eval_ep45_20260612_0100/videos/pass7-smoke45-ep45-step-0.mp4`
+
+Analysis:
+- The robust pass7 reset/prior branch is not the current blocker: reset/prior metrics remain healthy in training and eval.
+- The learned policy is the blocker. Visuals show the robot begins near the robust pregrasp, then moves away. The best reward checkpoint closes the gripper away from the cube; the final checkpoint leaves it open and also drifts away.
+- This fails the user's scale-up gate: no A100/final apple-to-apple training should launch from this smoke.
+
+Next:
+- Stay bounded. The next useful loop is a policy/action/reward diagnosis for the prior-start training distribution: compare early policy actions against the successful assisted oracle trajectory, inspect action scale/sign and reward-term incentives near reset, and only run another small smoke if the diagnosis identifies a bounded config/code hypothesis that preserves the apple-to-apple task defaults or is clearly marked diagnostic-only.
+
+## 2026-06-12T01:17:00Z - enhanced smoke inspection and action diagnosis
+
+Goal:
+- Convert the negative robust pass7 PPO smoke into a proper inspectable artifact bundle and diagnose whether the failure is reset geometry or learned action/reward behavior.
+
+Change:
+- No source or task-config changes.
+- Generated local inspection artifacts from existing fetched outputs only.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- implementation_commit: `9dd24321a7af69903ce7393da0b5aa07652f48be` (worklog-only, amended commit retains this content)
+- changed_files: this worklog only
+
+Inputs:
+- training job/run: `1027931`, `franka_cube_ggx_robust_pass7_smoke45_20260612_0056`
+- eval jobs/runs:
+  - `1027934`, `franka_cube_ggx_robust_pass7_smoke45_eval_ep10_20260612_0100`
+  - `1027935`, `franka_cube_ggx_robust_pass7_smoke45_eval_ep45_20260612_0100`
+- fetched local dirs:
+  - `cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_20260612_0056`
+  - `cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_eval_ep10_20260612_0100`
+  - `cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_eval_ep45_20260612_0100`
+
+Artifacts:
+- inspection dir: `cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_20260612_0056_inspection`
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_20260612_0056_inspection/REPORT.md`
+- contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_20260612_0056_inspection/eval_contact_sheet.jpg`
+- training trace: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_20260612_0056_inspection/training_trace_plot.png`
+- eval trace: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_20260612_0056_inspection/eval_trace_plot.png`
+- training reward/action trace: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_20260612_0056_inspection/training_reward_action_plot.png`
+- eval action trace: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_20260612_0056_inspection/eval_action_trace_plot.png`
+- summary JSON: `cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_20260612_0056_inspection/SUMMARY.json`
+- summary CSVs:
+  - `cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_20260612_0056_inspection/training_epoch_summary.csv`
+  - `cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_20260612_0056_inspection/eval_action_samples.csv`
+  - `cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_20260612_0056_inspection/action_diagnosis_summary.csv`
+
+Result:
+- status: negative PPO smoke, reset-prior implementation still OK under current diagnostics
+- reset/prior: training and eval reset-prior success/quality remain `1.0`; this does not look like the earlier transform/reset bug.
+- training: success max `0.0`, lifted max `0.0`, max lift `0.000553 m`, EE distance worsened from `0.0801 m` to `0.6773 m`.
+- eval ep10: success max `0.0`, lift max `0.000939 m`, EE final `0.7005 m`, finger-center final `0.6753 m`; final gripper width near zero but away from cube.
+- eval ep45: success max `0.0`, lift max `0.001618 m`, EE final `0.6937 m`, finger-center final `0.6809 m`; gripper remains open.
+- action diagnosis:
+  - env logging confirms `actions[:, 2]` is vertical z and `actions[:, 6]` is gripper; negative gripper closes, positive opens.
+  - ep45 is immediately biased open/up/away: first-20 mean z action `0.571`, first-20 mean gripper `1.000`, z saturation fraction `0.948`, gripper saturation fraction `1.000`.
+  - ep10 briefly stays closer, then saturates and closes away from the cube: final z action `1.000`, final gripper `-1.000`, final EE distance `0.700 m`.
+
+Analysis:
+- Current verdict: reset-prior implementation is OK enough for bounded PPO experiments; the robust pass7 library is sampled correctly and reset-quality metrics remain healthy.
+- Learned policy is not yet learning the grasp/lift behavior. This is likely an action/reward/optimization issue after valid reset rather than a GraspGenX transform issue.
+- Larger/A100 apple-to-apple training remains blocked.
+
+Next:
+- Recommended next bounded experiment is diagnostic-only: from the same prior reset distribution, compare ep10/ep45 policy actions against the successful assisted oracle trajectory and run a one-step/short-horizon action-response audit that measures reward-term deltas for hold/approach/close/lift actions. Do not change the main task reward/termination semantics quietly; any reward/action adjustment must be explicit and separated from the apple-to-apple variant.
