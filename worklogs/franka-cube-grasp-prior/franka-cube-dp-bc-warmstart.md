@@ -10578,3 +10578,137 @@ Acceptance:
   relative to the uncorrected run; it is not a DP/BC/RL readiness claim.
 - If it fails, record whether nearest-label correction cannot overcome
   controller/contact dynamics or whether the correction is too narrow.
+
+## 2026-06-11T23:35:00-07:00 - launch eval-only align pose correction video
+
+Goal:
+- Run the bounded correction diagnostic from the previous plan with a short
+  labeled video and full traces.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- implementation_commit: `d0af26f4eeb3a5a7961832420d0b5b1210f6ab70`
+- remote worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- remote commit: `d0af26f4eeb3a5a7961832420d0b5b1210f6ab70`
+- changed_files:
+  - `dextrah_lab/rl_games/eval_franka_cube_dp_policy.py`
+  - `cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+  - `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+
+Validation:
+- `PYTHONPATH=$PWD /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/venv/bin/python -m py_compile dextrah_lab/rl_games/eval_franka_cube_dp_policy.py dextrah_lab/offline_dp_bc/diagnose_align_open_support_drift.py`
+  passed.
+- `bash -n cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh` passed.
+- `git diff --check` passed.
+
+Command / Job:
+- job_id: `1028230`
+- run_name:
+  `franka_cube_dp_eval_phaseprogress_set4_ep0_aligncorr_video128_20260611_233527`
+- command:
+  `sbatch --parsable --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart,RUN_NAME=franka_cube_dp_eval_phaseprogress_set4_ep0_aligncorr_video128_20260611_233527,NUM_ENVS=1,NUM_STEPS=128,NUM_INFERENCE_STEPS=100,ACTION_CHUNK_STEPS=1,CLIP_ACTIONS=1.0,SUCCESS_WINDOW=32,SUCCESS_TIMEOUT_OVERRIDE=999.0,CAPTURE_VIDEO=True,VIDEO_LENGTH=128,VIDEO_NAME_PREFIX=franka-cube-dp-phaseprogress-aligncorr,PRINT_INTERVAL=16,DEBUG_POLICY_TRACE_MAX_CALLS=48,DEBUG_POLICY_TRACE_ENV_INDEX=0,CHECKPOINT=/results/dp_bc/checkpoints/contact_relabel_lrcentering_a075_set4_phaseprogress_20260611_224001/latest.ckpt,SUPPORT_DATASET=/results/dp_bc/phase_progress_set4/contact_relabel_set_phase_progress.npz,PHASE_PROGRESS_DATASET=/results/dp_bc/phase_progress_set4/contact_relabel_set_phase_progress.npz,PHASE_PROGRESS_EPISODE=0,PHASE_PROGRESS_START_STEP=0,PHASE_PROGRESS_MODE=contact_gated,PHASE_CLOSE_SUPPORT_DISTANCE_THRESHOLD=0.55,PHASE_LIFT_SUPPORT_DISTANCE_THRESHOLD=0.75,PHASE_LIFT_GRIPPER_WIDTH_THRESHOLD=0.025,ACTION_CORRECTION_MODE=nearest_label_align_pose,ACTION_CORRECTION_BLEND=1.0,DEMO_RESET_DATASET=/results/contact_relabel_sets/franka_cube_contact_relabel_lrcentering_ep8_16_24_30_a0p75_20260611_2224/contact_relabel_set_accepted.npz,DEMO_RESET_EPISODE=0,DEMO_RESET_STEP=0,DEMO_RESET_SOURCE_TRAJECTORY_JSON=/results/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed8/trajectory.json,DEMO_RESET_SOURCE_FRAME=260,DEMO_RESET_JOINT_BLEND_ALPHA=0.75,DEMO_RESET_CUBE_POS_BLEND_ALPHA=1.0 cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- remote run dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_phaseprogress_set4_ep0_aligncorr_video128_20260611_233527`
+- stdout:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_dp_policy_1028230.out`
+
+Expected artifacts:
+- `metrics.json`, `eval_config.json`, `policy_trace.json`,
+  `support_trace.json/csv`, MP4 video.
+- After fetch: labeled MP4/contact sheet, closed-loop report/plots, and
+  updated align-open drift audit.
+
+Safety:
+- This is an eval-only action projection diagnostic. It is not a trained
+  official-DP policy result and does not authorize DP fine-tune, broad eval, or
+  RL.
+
+## 2026-06-11T23:41:30-07:00 - result eval-only align pose correction video
+
+Goal:
+- Inspect job `1028230` and decide whether nearest-label align/open pose
+  projection is a viable bounded correction gate for the 25D official-DP
+  support-drift failure.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- implementation_commit: `d0af26f4eeb3a5a7961832420d0b5b1210f6ab70`
+- official Diffusion Policy source:
+  `real-stanford/diffusion_policy` @
+  `5ba07ac6661db573af695b419a7947ecb704690f`
+- remote commit: `d0af26f4eeb3a5a7961832420d0b5b1210f6ab70`
+
+Result:
+- status: `failed gate`
+- job_id: `1028230`
+- run_name:
+  `franka_cube_dp_eval_phaseprogress_set4_ep0_aligncorr_video128_20260611_233527`
+- local artifact dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_aligncorr_video128_20260611_233527`
+- fetched artifacts: `metrics.json`, `eval_config.json`,
+  `policy_trace.json`, `support_trace.json/csv`, stdout log, MP4 video.
+- generated artifacts:
+  - `align_pose_correction_gate_report.md`
+  - `dp_aligncorr_contact_sheet.jpg`
+  - `closed_loop_support_report.md`
+  - `closed_loop_support_trace.png`
+  - `closed_loop_action_components.png`
+  - `closed_loop_phase_progress.png`
+  - `align_open_support_drift/align_open_support_drift_report.md`
+  - `align_open_support_drift/align_open_support_drift.png`
+  - `align_open_support_drift/align_open_action_scatter.png`
+
+Viewer URLs:
+- gate report:
+  http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_aligncorr_video128_20260611_233527/align_pose_correction_gate_report.md
+- video:
+  http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_aligncorr_video128_20260611_233527/videos/franka-cube-dp-phaseprogress-aligncorr-step-0.mp4
+- contact sheet:
+  http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_aligncorr_video128_20260611_233527/dp_aligncorr_contact_sheet.jpg
+- support trace plot:
+  http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_aligncorr_video128_20260611_233527/closed_loop_support_trace.png
+- action plot:
+  http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_aligncorr_video128_20260611_233527/closed_loop_action_components.png
+- align/open drift plot:
+  http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_aligncorr_video128_20260611_233527/align_open_support_drift/align_open_support_drift.png
+
+Metrics:
+- correction mode/blend: `nearest_label_align_pose` / `1.0`
+- action correction applied: `122/128` support trace records.
+- success/window success: `0.0 / 0.0`.
+- cube lift max/final: `0.016865 / 0.0 m`.
+- EE-to-cube min/final: `0.007137 / 0.014828 m`.
+- finger-center-to-cube min/final: `0.039348 / 0.039525 m`.
+- gripper width min/final: `0.060310 / 0.067237 m`.
+- nearest support distance start/final: `0.0 -> 1.068283`.
+- runtime phase counts from drift audit: `align_open=122`, `close_hold=6`.
+- nearest support phase counts: `align_open=21`, `close_hold=107`.
+- median command cosine toward live cube-minus-EE: `-0.0956`.
+- median nearest-label cosine toward live cube-minus-EE: `0.0625`.
+- median actual EE-delta cosine toward live cube-minus-EE: `-0.3237`.
+- median actual/command EE realization ratio: `0.0081`.
+
+Analysis:
+- The eval-only pose projection changed the failure mode but did not solve the
+  gate. The video/contact sheet now shows the hand visually near the cube
+  instead of drifting far away, and final EE-to-cube is small.
+- There is still no grasp/lift. The cube lift peak is only an initial reset
+  bounce and returns to zero; final success and window success remain zero.
+- The support distance still grows from the exact support row to about `1.07`.
+  The nearest-support phase becomes mostly `close_hold`, while runtime phase
+  features stay mostly `align_open`.
+- The gripper/phase stream is incoherent relative to the projected pose stream:
+  the gripper closes briefly around steps `23-24` but later remains too open
+  for retention (`0.067 m` final), and phase progression does not advance to a
+  durable lift behavior.
+- This rejects the hypothesis that pose-channel projection alone is enough.
+  The next useful fix is a coupled support/controller design, such as a tiny
+  recovery/contact-retention relabel set or a diagnostic that couples nearest
+  pose correction with a validated gripper/phase gate. It does not justify DP
+  fine-tune, broad eval, or RL.
+
+Decision:
+- Do not launch DP fine-tune, broad eval, or RL from this checkpoint.
+- Keep official-DP provenance and the eval-only correction code as a diagnostic
+  tool only.
