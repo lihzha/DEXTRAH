@@ -7942,3 +7942,30 @@ Analysis:
 
 Next:
 - Use the combined success plot as the primary figure when deciding whether tracking-loss reward tuning is worth continuing versus prioritizing grasp-pose-prior integration.
+
+## 2026-06-12T23:26:54Z - integrated trajectory-tracking branch into main
+
+Goal:
+- Merge `codex/franka-cube-trajectory-tracking` into `main` and remove the completed worktree.
+
+Change:
+- Resolved merge conflicts in the Franka cube training/eval/validation wrappers and rollout/validation scripts.
+- Kept main's first-attempt episode outcome definition for `eval_success_rate` and `eval_success_hold_rate`.
+- Removed the false `success_occupancy_final` summary field while retaining clearly labeled per-step occupancy diagnostics.
+- Left diagnostic action-source paths guarded by wrapper defaults, not used by standard launch defaults.
+
+Version Control:
+- feature_branch: `codex/franka-cube-trajectory-tracking`
+- feature_head: `059372b04320dc7774ba42d5916d3e5b7a53739e`
+- merge_commit: `8ad94557aec8e31534aba47cc2906898234d7a8b`
+- pushed_main: `origin/main`
+
+Validation:
+- `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh`
+- `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/validate_franka_cube_grasp_env.py dextrah_lab/rl_games/train.py dextrah_lab/rl_games/analyze_traj_tracking_action_semantics.py dextrah_lab/rl_games/bc_reference_action_imitation.py dextrah_lab/rl_games/build_traj_tracking_handoff_comparison.py dextrah_lab/rl_games/residual_action_adapter.py dextrah_lab/rl_games/summarize_franka_cube_validation_artifacts.py dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py dextrah_lab/scene_scripts/convert_graspgenx_cube_trajectory_reference.py dextrah_lab/scene_scripts/make_franka_cube_traj_tracking_reference.py dextrah_lab/scene_scripts/summarize_franka_cube_traj_tracking_artifacts.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env_cfg.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_reference.py`
+- `git diff --check HEAD^ HEAD`
+
+Cleanup:
+- Removed local worktrees `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking` and `/home/lzha/code/.codex-worktrees/DEXTRAH/integrate-franka-cube-traj-tracking-20260612`.
+- Deleted merged local branches `codex/franka-cube-trajectory-tracking` and `codex/integrate-franka-cube-traj-tracking-20260612`.
+- Checked a1001 and l401 queues; no active Slurm jobs for this user.
