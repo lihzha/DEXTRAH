@@ -4787,3 +4787,37 @@ Acceptance:
 - all five selectors complete with metrics/trace JSON/CSV, no NaNs/tracebacks, target unsafe max `0`.
 - compare success/lift/raw-reference error against tm0.25 and tm0.5.
 - if lower-alpha success improves and target safety holds, launch targeted videos for alpha `0.0` failure/improvement, lowest-alpha success, and alpha `1.0` context.
+
+## 2026-06-11T19:14:00-07:00 - teacher-mix DAgger tm0.10 selector result and minimal diagnostic video launch
+
+Selector Result:
+- all selector jobs completed `0:0`; fetched metrics/traces locally under `cluster_results/l401/`.
+- alpha `0.0`, job `1027997`: success `0/4`, final success `0.0`, max lift `0.0 m`, raw/reference L2 mean `1.7608`, target unsafe max `0`.
+- alpha `0.25`, job `1027998`: success `0/4`, final success `0.0`, max lift `0.0 m`, raw/reference L2 mean `1.2012`, target unsafe max `0`.
+- alpha `0.5`, job `1027999`: success `0/4`, final success `0.0`, max lift `0.00084 m`, raw/reference L2 mean `0.5770`, target unsafe max `0`.
+- alpha `0.75`, job `1028000`: success `1/4`, final success `0.25`, max lift `0.17736 m`, raw/reference L2 mean `0.5692`, target unsafe max `0`; successful env is env1.
+- alpha `1.0`, job `1028001`: success `3/4`, final success `0.75`, max lift `0.19264 m`, raw/reference L2 mean `0.5460`, target unsafe max `0`; successful envs are env1/env2/env3.
+- target clearance min stayed `0.065114 m` for all selector runs.
+- action-semantics artifacts:
+  - report: `cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm010_selector_action_semantics_20260611_1912/action_semantics_report.md`
+  - plot: `cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm010_selector_action_semantics_20260611_1912/action_semantics_plot.png`
+
+Comparison:
+- tm0.10 is worse than tm0.25 at low teacher assistance:
+  - tm0.25 alpha `0.5`/`0.75`: `3/4` and `3/4` final success.
+  - tm0.10 alpha `0.5`/`0.75`: `0/4` and `1/4` final success.
+- tm0.10 also underperforms tm0.5 at alpha `0.5`/`0.75` (`0/4` and `1/4` vs tm0.5 `1/4` and `1/4`), and only matches the `3/4` alpha `1.0` teacher ceiling.
+- The supervised tm0.10 loss improved strongly within-run, but final held-out L2 (`0.0791`) was worse than tm0.25 (`~0.0368`), and rollout behavior confirms that this matters.
+
+Decision:
+- tm0.10 is not an improvement gate and should not replace tm0.25.
+- Do not launch broad tm0.10 videos or any PPO/RL scale-up.
+- Minimal targeted diagnostic videos were launched only to make the regression inspectable:
+  - alpha `0.0` env0 failure: job `1028002`, run `franka_cube_traj_tracking_bc_dagger_tm010_vis_a000_env0_520_20260611_191500`.
+  - alpha `0.75` env1 lowest-alpha success: job `1028003`, run `franka_cube_traj_tracking_bc_dagger_tm010_vis_a075_env1_520_20260611_191500`.
+  - alpha `1.0` env1 teacher context: job `1028004`, run `franka_cube_traj_tracking_bc_dagger_tm010_vis_a100_env1_520_20260611_191500`.
+
+Next Bounded Adjustment Proposal:
+- Keep tm0.25 as the current best checkpoint.
+- Next candidate should preserve tm0.25 successful-state coverage while adding low-assistance exposure, e.g. mixed/rehearsal BC with a retained tm0.25 dataset plus a smaller low-alpha collection, rather than replacing the dataset entirely with tm0.10 states.
+- Hypothesis: tm0.10 collection over-weighted lower-assistance states that were harder/off-distribution and lost the useful tm0.25 successful grasp/lift manifold; rehearsal should reduce forgetting while still nudging policy-only behavior.
