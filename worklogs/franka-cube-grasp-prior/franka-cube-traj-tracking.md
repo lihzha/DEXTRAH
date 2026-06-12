@@ -4425,3 +4425,117 @@ Acceptance:
 - `bc_metrics.json`, `bc_loss_curve.csv`, `bc_loss_plot.png`, `report.md`, dataset, and checkpoint are written.
 - Report shows `collection_action_source=teacher_mix`, `collection_teacher_alpha=0.5`.
 - Held-out all-dim error decreases materially before any eval launch.
+
+## 2026-06-11T18:43:00-07:00 - teacher-mix DAgger BC relaunch
+
+Result:
+- job `1027967` was canceled deliberately before completion.
+- root cause: launch used `LOSS_DIMS=0,1,2,3,4,5,6` inside Slurm `--export`; Slurm split the comma-separated value and the wrapper received `LOSS_DIMS=0`.
+- interpretation: `1027967` is not a valid all-dimension DAgger BC run and must not be used as evidence.
+
+Relaunch:
+- job_id: `1027968`
+- run_name: `franka_cube_traj_tracking_bc_dagger_tm05_all_20260611_184300`
+- command change: `LOSS_DIMS=all` to avoid `--export` comma parsing.
+- wrapper echo verified: `LOSS_DIMS=all`, `COLLECTION_ACTION_SOURCE=teacher_mix`, `COLLECTION_TEACHER_ALPHA=0.5`.
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/bc/franka_cube_traj_tracking_bc_dagger_tm05_all_20260611_184300`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bc_franka_cube_1027968.out`
+
+## 2026-06-11T18:45:00-07:00 - teacher-mix DAgger BC result and selector launch
+
+BC Result:
+- job_id: `1027968`
+- status: completed `0:0`, elapsed `00:00:59`, node `pool0-00030`.
+- local_run_dir: `cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm05_all_20260611_184300`
+- local_log: `cluster_results/l401/slurm_logs/bc_franka_cube_1027968.out`
+- report URL: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm05_all_20260611_184300/report.md`
+- loss plot URL: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm05_all_20260611_184300/bc_loss_plot.png`
+- checkpoint: `/results/bc/franka_cube_traj_tracking_bc_dagger_tm05_all_20260611_184300/nn/bc_reference_action_imitation.pth`
+- collection: `teacher_mix`, teacher alpha `0.5`, labels still `compute_reference_delta_actions()`.
+- loss dims: all seven dims `[0,1,2,3,4,5,6]`.
+
+Supervised metrics:
+- validation MSE: `0.002193 -> 0.000102`.
+- validation L2: `0.109585 -> 0.019993`.
+- validation close/up/gripper abs: `0.03185/0.01306/0.05379 -> 0.00418/0.00539/0.00683`.
+- This passes the supervised gate and earns bounded eval, but it is not yet behavior evidence.
+
+Selector Eval Launch:
+- alpha `0.0`: job `1027969`, run `franka_cube_traj_tracking_bc_dagger_tm05_select_a000_520_20260611_184500`.
+- alpha `0.5`: job `1027970`, run `franka_cube_traj_tracking_bc_dagger_tm05_select_a050_520_20260611_184500`.
+- alpha `0.75`: job `1027971`, run `franka_cube_traj_tracking_bc_dagger_tm05_select_a075_520_20260611_184500`.
+- alpha `1.0`: job `1027972`, run `franka_cube_traj_tracking_bc_dagger_tm05_select_a100_520_20260611_184500`.
+- shared eval config: checkpoint above, `NUM_ENVS=4`, `NUM_STEPS=520`, no video, deterministic, success termination suppressed, seed `64`, target reference still `curobo_validated=false`, action-alignment weight `80.0`, fixed teacher alpha per run with phase end `1.0`.
+
+## 2026-06-11T18:48:00-07:00 - teacher-mix DAgger selector result and video launch
+
+Selector Result:
+- alpha `0.0`, job `1027969`: success `0/4`, final success `0.0`, max lift `0.01825 m`, raw/reference L2 mean `1.1102`, target unsafe max `0`.
+- alpha `0.5`, job `1027970`: success `1/4`, final success `0.25`, max lift `0.04931 m`, raw/reference L2 mean `0.1209`, target unsafe max `0`.
+- alpha `0.75`, job `1027971`: success `1/4`, final success `0.25`, max lift `0.04799 m`, raw/reference L2 mean `0.0850`, target unsafe max `0`.
+- alpha `1.0`, job `1027972`: success `3/4`, final success `0.75`, max lift `0.14441 m`, raw/reference L2 mean `0.0798`, target unsafe max `0`.
+
+Analysis:
+- This is the first low-alpha improvement after explicit on-policy/teacher-mix BC: alpha `0.5` and alpha `0.75` recover `1/4` final success where bcinit PPO had `0/4`.
+- Policy-only alpha `0.0` still fails, so this is not ready for RL/PPO scale-up.
+- Need targeted videos before claiming behavior improvement.
+
+Targeted Video Launch:
+- alpha `0.0`, env0 failure: job `1027973`, run `franka_cube_traj_tracking_bc_dagger_tm05_vis_a000_env0_520_20260611_184800`.
+- alpha `0.5`, env1 success: job `1027974`, run `franka_cube_traj_tracking_bc_dagger_tm05_vis_a050_env1_520_20260611_184800`.
+- alpha `0.75`, env2 success: job `1027975`, run `franka_cube_traj_tracking_bc_dagger_tm05_vis_a075_env2_520_20260611_184800`.
+- alpha `1.0`, env1 full-teacher reference: job `1027976`, run `franka_cube_traj_tracking_bc_dagger_tm05_vis_a100_env1_520_20260611_184800`.
+
+## 2026-06-11T18:55:00-07:00 - teacher-mix DAgger targeted visual result
+
+Jobs / Fetch:
+- jobs `1027973`, `1027974`, `1027975`, `1027976` all completed `0:0`.
+- fetched full run dirs, logs, metrics, trace CSV/JSONL, and videos under `cluster_results/l401/`.
+- video metadata for all four targeted MP4s: `1280x720`, `520` frames, `8.67 s`.
+
+Targeted Visual Artifacts:
+- combined report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm05_comparison_20260611_1850/report.md`
+- combined plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm05_comparison_20260611_1850/comparison_plot.png`
+- action-semantics report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm05_visual_action_semantics_20260611_1848/action_semantics_report.md`
+- action-semantics plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm05_visual_action_semantics_20260611_1848/action_semantics_plot.png`
+
+Per-run viewer URLs:
+- alpha `0.0` env0 failure sheet/video/report:
+  - `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm05_vis_a000_env0_520_20260611_184800_artifacts/video_contact_sheet.png`
+  - `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm05_vis_a000_env0_520_20260611_184800/videos/dagger-tm05-a000-env0-step-0.mp4`
+  - `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm05_vis_a000_env0_520_20260611_184800_artifacts/report.md`
+- alpha `0.5` env1 success sheet/video/report:
+  - `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm05_vis_a050_env1_520_20260611_184800_artifacts/video_contact_sheet.png`
+  - `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm05_vis_a050_env1_520_20260611_184800/videos/dagger-tm05-a050-env1-step-0.mp4`
+  - `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm05_vis_a050_env1_520_20260611_184800_artifacts/report.md`
+- alpha `0.75` env2 success sheet/video/report:
+  - `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm05_vis_a075_env2_520_20260611_184800_artifacts/video_contact_sheet.png`
+  - `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm05_vis_a075_env2_520_20260611_184800/videos/dagger-tm05-a075-env2-step-0.mp4`
+  - `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm05_vis_a075_env2_520_20260611_184800_artifacts/report.md`
+- alpha `1.0` env1 full-teacher context sheet/video/report:
+  - `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm05_vis_a100_env1_520_20260611_184800_artifacts/video_contact_sheet.png`
+  - `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm05_vis_a100_env1_520_20260611_184800/videos/dagger-tm05-a100-env1-step-0.mp4`
+  - `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm05_vis_a100_env1_520_20260611_184800_artifacts/report.md`
+
+Metrics / Interpretation:
+- DAgger alpha `0.0`: success `0/4`, max lift `0.01825 m`, target unsafe max `0`; contact sheet shows policy-only still moves away and leaves the cube on the table.
+- DAgger alpha `0.5`: success `1/4`, final success `0.25`, max lift `0.04931 m`, target unsafe max `0`; targeted env1 sheet/video visibly lifts the cube.
+- DAgger alpha `0.75`: success `1/4`, final success `0.25`, max lift `0.04799 m`, target unsafe max `0`; targeted env2 sheet/video visibly lifts the cube.
+- DAgger alpha `1.0`: success `3/4`, final success `0.75`, max lift `0.14441 m`, target unsafe max `0`; full-teacher reference ceiling remains stable.
+- Comparison against previous checkpoints:
+  - pre-PPO all-7 BC: alpha `0.75` was `2/4`, alpha `1.0` was `3/4`, alpha `0.0` failed.
+  - post-PPO `bcinit_tfppo15`: alpha `0.0`, `0.5`, and `0.75` all failed; only alpha `1.0` stayed `3/4`.
+  - teacher-mix DAgger BC partially recovers the low-alpha handoff: alpha `0.5` and `0.75` are now `1/4` with visible lift, but policy-only still fails.
+- Action semantics:
+  - alpha `0.0` still has large close/gripper/up errors in the close/lift/hold windows and no success.
+  - alpha `0.5` and `0.75` reduce close/up/gripper mismatch enough for one environment to lift.
+  - This supports continuing bounded DAgger/on-policy BC, not PPO schedule tweaking.
+
+Next bounded plan:
+- Do not launch full PPO/RL scale-up.
+- Run one more DAgger/on-policy BC iteration from the current `1027968` checkpoint:
+  - collect states with lower teacher support, preferably `COLLECTION_ACTION_SOURCE=teacher_mix`, `COLLECTION_TEACHER_ALPHA=0.25`, all seven dims, same `NUM_ENVS=8`, `COLLECTION_STEPS=520`, `TRAIN_STEPS=400`, one L40S GPU.
+  - labels remain `reference_delta`; target reference remains `curobo_validated=false`.
+  - acceptance before eval launch: held-out all-dim MSE/L2 and close/up/gripper abs decrease; checkpoint written at expected path.
+- If that supervised gate passes, run the same alpha selector/eval bundle for `0.0`, `0.5`, `0.75`, and `1.0`, followed by targeted videos for the lowest-alpha success plus alpha `0.0` failure and alpha `1.0` context.
+- Success criterion for considering any later PPO/RL handoff: low-alpha success rate improves beyond the current `1/4` without target-safety regression and with action semantics showing lower raw/reference error in close/lift/hold windows.
