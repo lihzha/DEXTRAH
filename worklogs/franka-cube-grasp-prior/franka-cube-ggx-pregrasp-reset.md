@@ -4303,3 +4303,48 @@ Next recommendation:
 - Stay diagnostic-only.
 - Either filter/generate labels only from action-space rollout samples that pass contact quality, or adjust the label generator to approach slightly deeper/laterally for the marginal reset-1 geometry and rerun the same visual gate.
 - No PPO/A100/full RL from the current label recipe.
+
+## 2026-06-11 21:34 PDT - plan: direct-reset corrective geometry gate
+
+Goal:
+- Turn the partial corrective label recipe into a pass-quality direct-reset/pregrasp diagnostic gate before any new BC/RL.
+
+Hypothesis:
+- Reset 1 fails contact/enclosure because the sampled exact target is higher/more marginal relative to the cube than reset 0. From `reset_samples.json`, reset 0 sample 6 has exact EE z about `1.01 cm` above cube center, while reset 1 sample 1 has exact EE z about `2.01 cm` above cube center. A small diagnostic target offset, especially lowering the exact tracking target by `5-15 mm`, may improve finger enclosure while preserving the actual reset/pregrasp state.
+
+Change Plan:
+- Keep main task/reset/PPO untouched.
+- Add diagnostic-only recipe fields to `dextrah_lab/rl_games/sweep_franka_cube_bc_label_recipes.py`:
+  - per-recipe target offset in robot-root frame (`offset_x`, `offset_y`, `offset_z`) applied only to the oracle exact-tracking action target;
+  - metadata in CSV/JSON/report/overlays so any deviation from the 3 cm reset prior is explicit.
+- Use the existing L401 wrapper by passing recipe overrides in `RECIPES`.
+- Compare reset 0 vs reset 1 with baseline strong-lift recipes and small downward/deeper offsets.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `be11052350866938dd5615cdb31decfc024a2a04`
+- implementation_commit: pending
+- changed_files planned:
+  - `dextrah_lab/rl_games/sweep_franka_cube_bc_label_recipes.py`
+  - this owned worklog
+
+Validation Before Launch:
+- `python3 -m py_compile dextrah_lab/rl_games/sweep_franka_cube_bc_label_recipes.py`
+- `bash -n cluster/sbatch_sweep_franka_cube_bc_label_recipes_1gpu.sh`
+- Commit/push, deploy exact commit to the agent-owned L401 worktree, then run a bounded L401 visual gate.
+
+Expected Job:
+- L401 `batch`, 1 GPU, no PPO/A100.
+- Use pass7 library and same cube XY randomization `0.08`.
+- Use `NUM_RESETS=4` if runtime remains small, `RENDER_RESETS=4`, and focused recipes:
+  - unshifted `act_neg050_z050_free` and `w035_close24_z050`;
+  - diagnostic downward offsets around `offset_z=-0.005`, `-0.010`, `-0.015`;
+  - one mild lateral/deeper candidate if metrics indicate asymmetry.
+
+Acceptance:
+- Lift pass across all sampled resets.
+- Contact/enclosure proxy pass clearly above previous `0.5`, ideally `1.0` on the small sampled gate.
+- Visual frames must show plausible enclosure without obvious slip/overclose.
+- If offsets are required, label the result diagnostic-only; no BC/RL launch until a final apple-to-apple-safe reset/sample strategy is defined.

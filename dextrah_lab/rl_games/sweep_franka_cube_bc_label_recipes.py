@@ -41,7 +41,15 @@ parser.add_argument("--render_resets", type=int, default=1)
 parser.add_argument("--render_interval", type=int, default=10)
 parser.add_argument("--camera_eye", type=float, nargs=3, default=(-0.10, -0.78, 1.42))
 parser.add_argument("--camera_target", type=float, nargs=3, default=(-0.41, -0.10, 0.82))
-parser.add_argument("--recipe", action="append", default=None, help="Override recipes as name:close=<width|action>,approach=N,close_steps=N,lift=N,lift_z=Z")
+parser.add_argument(
+    "--recipe",
+    action="append",
+    default=None,
+    help=(
+        "Override recipes as name:close=<width|action>,approach=N,close_steps=N,lift=N,lift_z=Z,"
+        "offset_z=M. Offsets are diagnostic-only robot-root-frame target offsets."
+    ),
+)
 parser.add_argument("--disable_fabric", action="store_true", default=False)
 AppLauncher.add_app_launcher_args(parser)
 args_cli, hydra_args = parser.parse_known_args()
@@ -85,6 +93,7 @@ class Recipe:
     lift_steps: int
     lift_action_z: float
     track_exact_during_lift: bool = True
+    target_offset_root: tuple[float, float, float] = (0.0, 0.0, 0.0)
 
     def close_action_value(self, max_gripper_width: float) -> float:
         if self.close_action is not None:
@@ -97,6 +106,10 @@ class Recipe:
         if self.close_action is not None:
             return f"action={self.close_action:+.3f}"
         return f"width={self.close_width:.3f}"
+
+    def target_offset_label(self) -> str:
+        ox, oy, oz = self.target_offset_root
+        return f"offset_root=({ox:+.3f},{oy:+.3f},{oz:+.3f})"
 
 
 class SweepVecEnvWrapper(RlGamesVecEnvWrapper):
@@ -148,6 +161,9 @@ def _parse_recipe(text: str) -> Recipe:
         close_width = float(values["width"])
     else:
         close_width = 0.055
+    offset_x = float(values.get("offset_x", values.get("target_offset_x", 0.0)))
+    offset_y = float(values.get("offset_y", values.get("target_offset_y", 0.0)))
+    offset_z = float(values.get("offset_z", values.get("target_offset_z", 0.0)))
     return Recipe(
         name=name.strip(),
         close_width=close_width,
@@ -157,6 +173,7 @@ def _parse_recipe(text: str) -> Recipe:
         lift_steps=int(values.get("lift", values.get("lift_steps", 12))),
         lift_action_z=float(values.get("lift_z", values.get("lift_action_z", 0.15))),
         track_exact_during_lift=values.get("track_exact_during_lift", "true").lower() not in ("0", "false", "no"),
+        target_offset_root=(offset_x, offset_y, offset_z),
     )
 
 
@@ -280,7 +297,7 @@ def _pos_in_root(task_env, env_id: int, pos_w: torch.Tensor) -> torch.Tensor:
     return pos_b[0]
 
 
-def _compute_exact_tracking_action(task_env, gripper_action: float) -> torch.Tensor:
+def _compute_exact_tracking_action(task_env, gripper_action: float, target_offset_root: tuple[float, float, float] = (0.0, 0.0, 0.0)) -> torch.Tensor:
     action = torch.zeros(task_env.num_envs, int(task_env.cfg.action_space), device=task_env.device)
     task_env._compute_intermediate_values(update_success_timer=False)
     current_ee_pos_b, current_ee_quat_b = task_env._compute_ee_frame_pose()
@@ -290,6 +307,8 @@ def _compute_exact_tracking_action(task_env, gripper_action: float) -> torch.Ten
         task_env.grasp_prior_reset_exact_ee_pos_w,
         task_env.grasp_prior_reset_exact_ee_quat_w,
     )
+    offset_b = torch.tensor(target_offset_root, dtype=exact_ee_pos_b.dtype, device=task_env.device).view(1, 3)
+    exact_ee_pos_b = exact_ee_pos_b + offset_b
     pos_action = float(args_cli.oracle_gain) * (exact_ee_pos_b - current_ee_pos_b) / torch.clamp(
         task_env.action_scale[:3], min=1.0e-6
     )
@@ -313,12 +332,12 @@ def _reference_action(task_env, recipe: Recipe, phase: str) -> torch.Tensor:
     open_action = _gripper_action_for_width(float(task_env.cfg.max_gripper_width), float(task_env.cfg.max_gripper_width))
     close_action = recipe.close_action_value(float(task_env.cfg.max_gripper_width))
     if phase == "approach":
-        return _compute_exact_tracking_action(task_env, open_action)
+        return _compute_exact_tracking_action(task_env, open_action, recipe.target_offset_root)
     if phase == "close":
-        return _compute_exact_tracking_action(task_env, close_action)
+        return _compute_exact_tracking_action(task_env, close_action, recipe.target_offset_root)
     if phase == "lift":
         if recipe.track_exact_during_lift:
-            action = _compute_exact_tracking_action(task_env, close_action)
+            action = _compute_exact_tracking_action(task_env, close_action, recipe.target_offset_root)
         else:
             action = torch.zeros(task_env.num_envs, int(task_env.cfg.action_space), device=task_env.device)
             action[:, 6] = close_action
@@ -616,6 +635,10 @@ def _summarize_trace(rows: list[dict[str, Any]], sample: dict[str, Any], recipe:
         "lift_steps": int(recipe.lift_steps),
         "lift_action_z": float(recipe.lift_action_z),
         "track_exact_during_lift": bool(recipe.track_exact_during_lift),
+        "target_offset_root_x_m": float(recipe.target_offset_root[0]),
+        "target_offset_root_y_m": float(recipe.target_offset_root[1]),
+        "target_offset_root_z_m": float(recipe.target_offset_root[2]),
+        "target_offset_root_norm_m": float(math.sqrt(sum(float(v) ** 2 for v in recipe.target_offset_root))),
         "reset_success": sample["reset_success"],
         "reset_quality_success": sample["reset_quality_success"],
         "immediate_done": sample["immediate_done"],
@@ -680,6 +703,7 @@ def _render_frame(gym_env, task_env, env_cfg, *, env_id: int, recipe: Recipe, re
         lines = [
             "reset/pregrasp before label action",
             f"recipe={recipe.name} {recipe.close_label()} lift_z={recipe.lift_action_z:+.2f}",
+            recipe.target_offset_label(),
             f"sample={sample['sample_index']} reset={sample['reset_success']} quality={sample['reset_quality_success']}",
             f"cube={_fmt_vec(sample['cube_pos_env'])} exact_ee={_fmt_vec(sample['exact_ee_pos_env'])}",
             f"pregrasp_ee={_fmt_vec(sample['pregrasp_ee_pos_env'])}",
@@ -688,6 +712,7 @@ def _render_frame(gym_env, task_env, env_cfg, *, env_id: int, recipe: Recipe, re
     else:
         lines = [
             f"phase={phase} reward={record['reward']:.3f} done={record['done']} contact={record.get('contact_flag')}",
+            recipe.target_offset_label(),
             f"action xyz=({record['action_x']:+.2f},{record['action_y']:+.2f},{record['action_z']:+.2f}) grip={record['action_gripper']:+.2f}",
             f"lift={record['cube_lift_height_m']:.4f} success={record['success_rate']:.1f} lifted={record['has_lifted_cube']:.1f}",
             f"ee={record['ee_to_cube_dist_m']:.4f} finger={record['finger_center_to_cube_dist_m']:.4f} maxfinger={record['max_finger_to_cube_dist_m']:.4f}",
@@ -827,6 +852,10 @@ def _aggregate_recipe_summaries(rows: list[dict[str, Any]]) -> list[dict[str, An
                 "close_action": float(subset[0].get("close_action", math.nan)),
                 "close_target_width_m": float(subset[0].get("close_target_width_m", math.nan)),
                 "lift_action_z": float(subset[0].get("lift_action_z", math.nan)),
+                "target_offset_root_x_m": float(subset[0].get("target_offset_root_x_m", math.nan)),
+                "target_offset_root_y_m": float(subset[0].get("target_offset_root_y_m", math.nan)),
+                "target_offset_root_z_m": float(subset[0].get("target_offset_root_z_m", math.nan)),
+                "target_offset_root_norm_m": float(subset[0].get("target_offset_root_norm_m", math.nan)),
                 "close_steps": int(subset[0].get("close_steps", 0)),
                 "lift_steps": int(subset[0].get("lift_steps", 0)),
             }
@@ -851,15 +880,16 @@ def _write_report(path: Path, payload: dict[str, Any]) -> None:
         "",
         "## Aggregate Recipe Table",
         "",
-        "| recipe | pass rate | lift pass | contact proxy | max lift max m | min width mean m | final finger mean m | close action | target width m |",
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| recipe | pass rate | lift pass | contact proxy | max lift max m | min width mean m | final finger mean m | close action | target width m | offset root z m |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for row in agg:
         lines.append(
             f"| `{row['recipe_name']}` | {float(row['pass_rate']):.3f} | {float(row['lift_gate_pass_rate']):.3f} | "
             f"{float(row['contact_proxy_success_rate']):.3f} | {float(row['max_lift_max_m']):.4f} | "
             f"{float(row['min_gripper_width_mean_m']):.4f} | {float(row['final_finger_center_mean_m']):.4f} | "
-            f"{float(row['close_action']):+.3f} | {float(row['close_target_width_m']):.4f} |"
+            f"{float(row['close_action']):+.3f} | {float(row['close_target_width_m']):.4f} | "
+            f"{float(row.get('target_offset_root_z_m', 0.0)):+.4f} |"
         )
     lines.extend(["", "## Key Artifacts", ""])
     for name, artifact_path in payload["key_artifacts"].items():
@@ -867,6 +897,7 @@ def _write_report(path: Path, payload: dict[str, Any]) -> None:
     lines.extend(["", "## Notes", ""])
     lines.append("- `contact_proxy_success` is a diagnostic proxy based on realized gripper width and finger-center distance; actual lift remains the hard gate.")
     lines.append("- Direct negative gripper actions are tested because this Franka action convention maps `-1` to fully closed and `+1` to open.")
+    lines.append("- Non-zero `offset_root_*` fields are diagnostic-only target offsets applied to the scripted oracle action target, not to the reset prior itself.")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
