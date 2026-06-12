@@ -7614,3 +7614,67 @@ Acceptance:
   `closed_loop_support_report.md`, and viewer links. Video/contact sheet is
   required only after the trace identifies a clear pass/failure worth visual
   confirmation.
+
+## 2026-06-11T20:00:00-07:00 - normal-reset no-reset trace launch
+
+Version Control:
+- implementation_commit:
+  `cb9689b8b4c70ab268a571f031bcecd0e92355b2`
+- remote_commit/status:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+  at `cb9689b8b4c70ab268a571f031bcecd0e92355b2`, detached clean.
+
+Command / Job:
+- job_id: `1028064`
+- run_name:
+  `franka_cube_dp_eval_weightedgrip8_inf100_trace260_noreset_normalreset_seed42_20260611_200000`
+- command:
+  `sbatch --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart,RUN_NAME=franka_cube_dp_eval_weightedgrip8_inf100_trace260_noreset_normalreset_seed42_20260611_200000,NUM_ENVS=1,NUM_STEPS=260,NUM_INFERENCE_STEPS=100,ACTION_CHUNK_STEPS=1,CLIP_ACTIONS=1.0,SUCCESS_WINDOW=80,SUCCESS_TIMEOUT_OVERRIDE=999.0,CAPTURE_VIDEO=False,VIDEO_LENGTH=260,VIDEO_NAME_PREFIX=franka-cube-dp-weighted-normalreset-noreset,PRINT_INTERVAL=20,SEED=42,DEBUG_POLICY_TRACE_MAX_CALLS=260,DEBUG_POLICY_TRACE_ENV_INDEX=0,CHECKPOINT=/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/contact_relabel_official_dp_debug_pretrain100_weightedgrip8_20260611_1843/latest.ckpt,SUPPORT_DATASET=/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/contact_relabel_set_ep8_16_24_30_s260_high30_defaultfix_20260611_175347/contact_relabel_set_accepted.npz,OFFICIAL_DP_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/external/real-stanford-diffusion_policy cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_weightedgrip8_inf100_trace260_noreset_normalreset_seed42_20260611_200000`
+- logs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_dp_policy_1028064.out`
+
+Acceptance:
+- Scheduler completion is not enough. Fetch and inspect metrics/logs/traces.
+- If the normal-reset trace is a clear pass or informative failure, launch one
+  video/contact-sheet confirmation only after this no-video result is
+  understood.
+
+Result:
+- status: running.
+
+Result update:
+- status: completed, informative failure.
+- fetched local artifact dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_trace260_noreset_normalreset_seed42_20260611_200000`
+- key metrics:
+  - `steps_completed=260`, `done_count=0`.
+  - `final_success_rate=0.0`, `window_success_rate=0.0`.
+  - `cube_lift_height max/final=0.0/0.0 m`.
+  - `EE-to-cube min/final=0.141864/0.145302 m`.
+  - `finger-center-to-cube min/final=0.110178/0.112240 m`.
+  - `final_gripper_width=0.021743 m`.
+  - support trace starts far outside the contact-aware demo manifold:
+    nearest-demo distance `29.566 -> 22.787`, with nearest phase
+    `align_open` for all 260 steps.
+- viewer links:
+  - report:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_trace260_noreset_normalreset_seed42_20260611_200000/closed_loop_support_report.md`
+  - support plot:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_trace260_noreset_normalreset_seed42_20260611_200000/closed_loop_support_trace.png`
+  - action plot:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_trace260_noreset_normalreset_seed42_20260611_200000/closed_loop_action_components.png`
+
+Analysis:
+- This confirms the intended contrast: exact source-joint matched reset with
+  success-timeout override can hold/lift, but normal task reset fails even with
+  the same no-reset timeout override. The policy closes away from the cube and
+  never reaches lift/contact support from the normal reset distribution.
+- This is not a DP BC/RL readiness signal. It points to normal-reset support
+  generalization / reset distribution conditioning as the next bounded issue.
+
+Next:
+- Launch exactly one video/contact-sheet confirmation for the same normal-reset
+  no-reset failure (`num_envs=1`, `num_steps=260`, same checkpoint/support
+  dataset, no `DEMO_RESET_*` arguments). No training or RL scale-up.
