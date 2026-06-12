@@ -27,7 +27,10 @@ TASK="${TASK:-Dextrah-Franka-Cube-Grasp}"
 RUN_NAME="${RUN_NAME:-franka_cube_contact_relabel_set_${SLURM_JOB_ID_SAFE}_$(date +%Y%m%d_%H%M%S)}"
 DATASET="${DATASET:?Set DATASET to a converted lowdim NPZ visible in the container.}"
 TRAJECTORY_ROOT="${TRAJECTORY_ROOT:-/results/dp_bc/curobo_plans}"
-TRAJECTORY_TEMPLATE="${TRAJECTORY_TEMPLATE:-cube_curobo_scale32_20260611_125957_seed{episode}/trajectory.json}"
+TRAJECTORY_TEMPLATE="${TRAJECTORY_TEMPLATE:-}"
+if [ -z "$TRAJECTORY_TEMPLATE" ]; then
+  TRAJECTORY_TEMPLATE='cube_curobo_scale32_20260611_125957_seed{episode}/trajectory.json'
+fi
 TRAJECTORY_JSON="${TRAJECTORY_JSON:-}"
 SPEC_COUNT="${SPEC_COUNT:-0}"
 EPISODE="${EPISODE:-24}"

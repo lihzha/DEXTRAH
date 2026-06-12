@@ -5805,3 +5805,30 @@ Command / Job:
   `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/contact_relabel_sets/franka_cube_contact_relabel_set_ep8_16_24_30_s260_high30_templatefix_20260611_175159`
 - log:
   `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/contact_aware_franka_cube_relabel_set_1027930.out`
+
+Result:
+- status: failed before simulation, `FAILED 2:0`, elapsed `00:00:04`.
+- log evidence remained:
+  `Missing trajectory JSON for spec 8:260: ...seed8/trajectory.json/trajectory.json}`.
+
+Analysis:
+- Remote wrapper contents had the `sed` substitution patch, so the remaining
+  source was the default assignment itself:
+  `TRAJECTORY_TEMPLATE="${TRAJECTORY_TEMPLATE:-...{episode}...}"`. Bash
+  parses the `}` in `{episode}` while expanding the default expression, before
+  the later `sed` replacement.
+
+Change:
+- Patch the wrapper to set `TRAJECTORY_TEMPLATE` in two steps: first read an
+  optional env value, then assign the literal default in a normal quoted string
+  when empty.
+
+Validation:
+- `bash -n cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh && git diff --check`: passed.
+- `python3 -m py_compile dextrah_lab/offline_dp_bc/make_contact_relabel_set_report.py dextrah_lab/rl_games/contact_aware_franka_cube_rollout.py`: passed.
+- Local shell substitution smoke produced
+  `cube_curobo_scale32_20260611_125957_seed8/trajectory.json`.
+
+Next:
+- Commit/push, deploy exact commit, and relaunch the same bounded 4-rollout
+  relabel-set gate.
