@@ -5419,3 +5419,36 @@ Reward/action diagnosis:
 Decision:
 - No PPO/A100/full-scale launch from this evidence.
 - The low-z reset/pregrasp remains valid; the blocker is learned action discovery/closed-loop policy behavior. The next bounded experiment, if authorized, should be explicitly non-apple-to-apple or curriculum-labeled: teach/preserve the assisted approach-close-lift sequence through a short action curriculum/action-prior diagnostic, or revise exploration/initialization, while keeping the original reset-prior branch clearly separate.
+
+## 2026-06-12T06:27:51Z - plan: gripper close/lift incentive diagnostics
+
+Goal:
+- Continue bounded debugging of why the learned low-z prior PPO policy keeps the Franka gripper open after a valid reset while preserving the apple-to-apple reset-prior branch as the end goal.
+
+Hypothesis:
+- The prior ep200 policy may prefer open/proximity behavior because immediate close/lift from the 3 cm pregrasp is weak or negative unless the controller first approaches the exact grasp. Closing is rewarded only through a small gated term (`cube_close_action_weight=0.3`), while lift-up action reward is gated by both near/enclosure and closed-gripper state.
+- The actor itself may already be deterministic-open at reset, or stochastic samples may still contain close/lift exploration that PPO failed to exploit.
+
+Plan:
+- Run a policy-state audit for low-z prior ep200 and matched baseline ep200:
+  - `NUM_ENVS=64`, `NUM_RESETS=3`, `STOCHASTIC_SAMPLES=32`, same low-z library, same cube XY randomization `0.08`.
+  - Outputs action histograms, deterministic/stochastic gripper/z action summaries, obs RMS/z-score sanity, and training JSONL action trends.
+  - No video expected for this one; it is distribution/normalization instrumentation.
+- Run a video-first close-width sweep from the same low-z reset distribution:
+  - new eval-only single-reset jobs for `script_close_light_pregrasp` at `CLOSE_WIDTH=0.060` and `0.000`, plus `script_assisted_oracle_short` at `CLOSE_WIDTH=0.055` and `0.000`.
+  - Combine with existing `CLOSE_WIDTH=0.035` artifacts from jobs `1028215` and `1028217` for the middle reference.
+  - Each meaningful sweep job writes labeled frames; after fetch, encode MP4s, contact sheets, reward/action plots, and a compact report.
+- Do not change task reward/reset/termination/action semantics. Do not launch PPO, A100, or full RL.
+
+Files/commands:
+- No source edits expected.
+- Local checks passed:
+  - `bash -n cluster/sbatch_audit_franka_cube_grasp_prior_actions_1gpu.sh`
+  - `bash -n cluster/sbatch_audit_franka_cube_policy_state_1gpu.sh`
+  - `python3 -m py_compile dextrah_lab/rl_games/audit_franka_cube_grasp_prior_actions.py dextrah_lab/rl_games/audit_franka_cube_policy_state.py`
+- Deploy exact commit `4ea93ac5048c6a5aab1d039f54bdfe6c96cf6967` to the agent-owned l401 worktree before submit.
+
+Acceptance / decision:
+- Video/report must answer whether closing at the 3 cm pregrasp is locally too weak/negative compared with staying open, and whether assisted approach-close-lift remains rewarded across close widths.
+- Policy-state report must answer whether prior ep200 deterministic/stochastic actions are saturated open/down at reset and whether observation normalization looks sane.
+- No scale-up gate unless a learned policy, not just a scripted reference, shows real grasp/lift in video.
