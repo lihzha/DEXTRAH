@@ -11485,6 +11485,90 @@ Next:
 - Run a longer four-demo exact reset horizon to verify the late success is a
   stable hold rather than a last-frame threshold crossing.
 
+## 2026-06-12T02:07:00-07:00 - set4 exact-reset BC scale checks pass
+
+Goal:
+- Confirm that the BC fix is not just a single-demo artifact by evaluating the
+  four-demo no-EMA checkpoint on each accepted set4 exact reset with the same
+  DP execution contract.
+
+Hypothesis:
+- If chunked execution, 8-sample averaging, exact source-joint reset, and the
+  phase/progress clock are the correct inference contract, then the set4
+  checkpoint should pass all four memorized exact trajectories over a longer
+  320-step horizon.
+
+Change:
+- No source changes after commit `d24e5f4a8f52ea0106f094b663c35e48fc8dc523`.
+- Ran no-learning Isaac evals only.
+
+Version Control:
+- implementation_commit: `d24e5f4a8f52ea0106f094b663c35e48fc8dc523`
+- remote_commit/status:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+  detached at `d24e5f4a8f52ea0106f094b663c35e48fc8dc523`
+- changed_files:
+  - `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+
+Command / Job:
+- one-demo replicated 16-env exact reset:
+  job `1028304`,
+  `franka_cube_dp_eval_phaseprogress_ep0_noema_exact_chunk8_avg8_16env_repl_20260612_014854`
+- set4 episode 0 exact reset, 320-step video:
+  job `1028303`,
+  `franka_cube_dp_eval_phaseprogress_set4_noema_ep0_exact_chunk8_avg8_video320_20260612_014854`
+- set4 episode 1 exact reset:
+  job `1028308`,
+  `franka_cube_dp_eval_phaseprogress_set4_noema_ep1_exact_chunk8_avg8_320_20260612_015449`
+- set4 episode 2 exact reset:
+  job `1028306`,
+  `franka_cube_dp_eval_phaseprogress_set4_noema_ep2_exact_chunk8_avg8_320_20260612_015449`
+- set4 episode 3 exact reset:
+  job `1028307`,
+  `franka_cube_dp_eval_phaseprogress_set4_noema_ep3_exact_chunk8_avg8_320_20260612_015449`
+
+Result:
+- status: BC exact-reset scale checks passed.
+- Aggregate metrics:
+
+| run | envs | steps | final/window | lift_final | xy_final | ee_final | done | reset_l2_all |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| one16 | 16 | 260 | 1/1 | 0.1850 | 0.0678 | 0.0126 | 0 | 6.755e-7 |
+| set4_ep0 | 1 | 320 | 1/1 | 0.2014 | 0.0552 | 0.0083 | 0 | 0 |
+| set4_ep1 | 1 | 320 | 1/1 | 0.2582 | 0.0755 | 0.0330 | 0 | 0 |
+| set4_ep2 | 1 | 320 | 1/1 | 0.2402 | 0.0078 | 0.0119 | 0 | 0 |
+| set4_ep3 | 1 | 320 | 1/1 | 0.2440 | 0.0118 | 0.0082 | 0 | 5.268e-9 |
+
+- All support reports returned:
+  `PASS (bounded): exact source-joint matched reset with success-timeout override retains and lifts the cube through the rollout horizon.`
+- The corrected 16-env check confirms that the previous 16-env failure was a
+  reset batching artifact: copying env0's applied joint blend produced
+  all-env reset lowdim max error `6.755e-7` and final/window success `1/1`.
+- The set4 320-step video for episode 0 shows a clean grasp, lift, and hold;
+  ffprobe reports `1280x720`, `319` frames, `5.316667 s`, `60 FPS`.
+
+Key Evidence:
+- set4 episode 0 video:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_noema_ep0_exact_chunk8_avg8_video320_20260612_014854/videos/franka-cube-dp-set4-noema-ep0-exact-chunk8-avg8-320-step-0.mp4`
+- set4 episode 0 support report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_noema_ep0_exact_chunk8_avg8_video320_20260612_014854/set4_320_support_report/closed_loop_support_report.md`
+
+Analysis:
+- The BC path now has a concrete working contract:
+  official DP `WeightedDiffusionUnetLowdimPolicy`, normalized obs
+  `(B,2,25)`, global condition `(B,50)`, normalized action chunks `(B,8,7)`,
+  `oa_step_convention=true`, `ACTION_CHUNK_STEPS=8`,
+  `NUM_ACTION_SAMPLES=8`, correction disabled.
+- Exact-reset BC works for the memorized one-demo and four-demo trajectories.
+  This is still a bounded exact-source-joint diagnostic, not a claim of normal
+  randomized-reset generalization.
+
+Next:
+- Use this checkpoint/inference contract for the BC warm-start path. Any
+  normal-reset or RL warm-start experiment should keep `ACTION_CHUNK_STEPS=8`
+  and `NUM_ACTION_SAMPLES=8`, and should not use the eval-only oracle
+  correction modes.
+
 ## 2026-06-12T01:38:00-07:00 - add DP action sample averaging
 
 Goal:
