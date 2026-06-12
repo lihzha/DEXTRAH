@@ -3129,3 +3129,67 @@ Validation:
 
 Next:
 - Commit/push/deploy this diagnostic-only fix, rerun the bounded L401 audit, fetch/open artifacts, and record the final action/observation semantics verdict. No PPO/A100.
+
+## 2026-06-11 19:11 PDT - relaunch corrected policy state audit
+
+Goal:
+- Regenerate the pass7 policy-state audit with valid observation RMS/z-score pairing.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- local_commit: `0be8ca633d8e45baed7250c1726efa94dbf5495d`
+- push/pull: pushed to `origin/codex/franka-cube-ggx-pregrasp-reset`; deployed exact commit to L401 via Git bundle.
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `0be8ca633d8e45baed7250c1726efa94dbf5495d`, detached clean
+- validation:
+  - remote `python3 -m py_compile dextrah_lab/rl_games/audit_franka_cube_policy_state.py` passed
+  - remote `bash -n cluster/sbatch_audit_franka_cube_policy_state_1gpu.sh` passed
+
+Command / Job:
+- command: `sbatch --parsable --job-name=ggx_policy_state3 --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=0be8ca633d8e45baed7250c1726efa94dbf5495d,TASK=Dextrah-Franka-Cube-Grasp,RUN_NAME=franka_cube_ggx_pass7_policy_state_20260612_0311,NUM_ENVS=64,NUM_RESETS=3,SEED=20260624,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_robust_pass7_20260612.npz,CHECKPOINTS="ep10=/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_robust_pass7_smoke45_20260612_0056/nn/last_dextrah_franka_cube_grasp_ep_10_rew_857.09937.pth;ep45=/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_robust_pass7_smoke45_20260612_0056/nn/last_dextrah_franka_cube_grasp_ep_45_rew_662.51086.pth",TRAINING_JSONL_PATH=/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_robust_pass7_smoke45_20260612_0056/metrics/direct_info_rank_0.jsonl,STOCHASTIC_SAMPLES=16,HISTOGRAM_BINS=41 cluster/sbatch_audit_franka_cube_policy_state_1gpu.sh`
+- job_id: `1027982`
+- run_name: `franka_cube_ggx_pass7_policy_state_20260612_0311`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pass7_policy_state_20260612_0311`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/audit_franka_cube_policy_state_1027982.out`
+
+Expected artifacts:
+- `metrics.json`, `REPORT.md`, corrected `observation_zscore_summary.csv`, `observation_zscore_histograms.png`, action CSVs, training trends, checkpoint tensor summary.
+
+Next:
+- Monitor `1027982`, fetch/open artifacts, then update verdict/worklog and commit the final worklog entry. No PPO/A100.
+
+Result:
+- status: completed / diagnostic verdict recorded
+- scheduler: `1027982` `COMPLETED 0:0`, elapsed `00:00:51`, node `pool0-00030`
+- remote run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pass7_policy_state_20260612_0311`
+- local run_dir: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_policy_state_20260612_0311`
+- local log: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_logs/l401/slurm_logs/dextrah/audit_franka_cube_policy_state_1027982.out`
+- viewer URLs:
+  - report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_policy_state_20260612_0311/REPORT.md`
+  - action histograms: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_policy_state_20260612_0311/action_histograms.png`
+  - observation z-score histogram: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_policy_state_20260612_0311/observation_zscore_histograms.png`
+  - training action trends: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_policy_state_20260612_0311/training_action_trends.png`
+
+Metrics / Evidence:
+- Reset/prior health remains good over 3 reset batches with pass7 sampling: reset success mean `1.0`, reset quality mean `1.0`, EE-to-cube mean `0.052-0.053 m`, finger-center-to-cube mean `0.095-0.096 m`, gripper width mean `0.080 m`, all 7 pass7 grasps sampled.
+- Corrected observation RMS pairing is sane:
+  - ep10 actor RMS max abs-z p95 `3.017`, only 2 dimensions above 3 and none above 5; median per-dim p95 `0.364`.
+  - ep45 actor RMS max abs-z p95 `1.916`, no dimensions above 3; median per-dim p95 `0.403`.
+  - This argues against reset observations being out-of-distribution for the ep45 checkpoint.
+- Deterministic reset actions:
+  - ep10 mean `[x=-0.273, y=-0.152, z=-0.858, roll=-0.576, pitch=-0.340, yaw=-0.409, grip=0.507]`; z is downward/approach-biased, grip is partially open.
+  - ep45 mean `[x=0.575, y=-0.797, z=0.312, roll=-1.000, pitch=0.598, yaw=0.621, grip=0.991]`; gripper is almost fully open with `0.927` saturation, roll is saturated, z is positive/up but not saturated at reset.
+- Stochastic ep45 reset actions remain open/up-biased: z mean `0.188`, gripper mean `0.743`, gripper saturation `0.662`.
+- Training JSONL at epoch 45 confirms rollout collapse after stepping: `cube_action_z=0.962`, `cube_action_up=0.970`, `cube_gripper_action=0.746`, EE/finger distances `0.677/0.667 m`, success/lift `0`.
+
+Analysis:
+- Action sign/scale are consistent with the environment: positive z is upward and positive gripper opens. The ep45 bad behavior is not a sign inversion.
+- Corrected RMS/z-score evidence does not support an observation normalization mismatch at reset. Ep45 reset observations are within the learned observation RMS envelope.
+- The most concrete explanation is learned policy/action-distribution collapse under the short pass7 smoke: ep45 has already learned a near-open gripper and lateral/rotational bias at reset; after env stepping, this evolves into saturated upward/open/away actions, distance growth, and collapsed approach/enclosure rewards.
+- This points away from reset geometry and toward a separate diagnostic intervention: action prior / BC warm start / curriculum around first contact, or a paired reward/action-distribution experiment. That would be a new experiment and should not be reported as apple-to-apple reset-prior RL success.
+
+Decision:
+- No PPO/A100 relaunch. Current reset-prior implementation and pass7 geometry remain healthy, but the short PPO policy does not learn usable contact/lift; the next work should be a separately scoped action-prior/curriculum diagnostic, or an orchestrator-approved apple-to-apple longer small run only if the policy-distribution issue is addressed explicitly.
+
+Cleanup:
+- No Worker A Slurm jobs remain active from this diagnostic loop after `1027982`.
