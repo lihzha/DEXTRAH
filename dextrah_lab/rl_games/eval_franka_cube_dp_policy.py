@@ -214,6 +214,17 @@ parser.add_argument(
         "orientation is normalized linearly between the two quaternions."
     ),
 )
+parser.add_argument(
+    "--demo_reset_replicate_env0_joint_blend",
+    action="store_true",
+    default=False,
+    help=(
+        "Eval-only diagnostic for batched exact-demo reset: after computing the "
+        "normal/source joint blend for env0, copy that applied joint state to "
+        "all envs. This avoids averaging over per-env random normal reset "
+        "joints when NUM_ENVS > 1."
+    ),
+)
 parser.add_argument("--video", action="store_true", default=False, help="Record rollout video.")
 parser.add_argument("--video_length", type=int, default=240)
 parser.add_argument("--video_folder", type=str, default=None)
@@ -597,6 +608,8 @@ def _apply_demo_reset(task_env: Any, demo_reset: dict[str, Any]) -> tuple[torch.
         normal_joint_pos = task_env._robot.data.joint_pos[env_ids].detach().clone()
         joint_pos = normal_joint_pos + joint_blend_alpha * (source_joint_pos - normal_joint_pos)
         joint_pos = torch.clamp(joint_pos, task_env.robot_dof_lower_limits, task_env.robot_dof_upper_limits)
+        if args_cli.demo_reset_replicate_env0_joint_blend and num_ids > 1:
+            joint_pos[:] = joint_pos[0].unsqueeze(0)
         joint_vel = torch.zeros_like(joint_pos)
         task_env._robot.write_joint_state_to_sim(joint_pos, joint_vel, env_ids=env_ids)
         task_env._robot.set_joint_position_target(joint_pos, env_ids=env_ids)
@@ -609,6 +622,7 @@ def _apply_demo_reset(task_env: Any, demo_reset: dict[str, Any]) -> tuple[torch.
                 "normal_joint_position_env0": normal_joint_pos[0].detach().float().cpu().numpy().astype(float).tolist(),
                 "source_joint_position_env0": source_joint_pos[0].detach().float().cpu().numpy().astype(float).tolist(),
                 "applied_joint_position_env0": joint_pos[0].detach().float().cpu().numpy().astype(float).tolist(),
+                "replicate_env0_joint_blend": bool(args_cli.demo_reset_replicate_env0_joint_blend),
                 "applied_joint_l2_from_source_env0": float(
                     torch.linalg.vector_norm((joint_pos[0] - source_joint_pos[0]).detach().float()).cpu()
                 ),
@@ -647,6 +661,7 @@ def _apply_demo_reset(task_env: Any, demo_reset: dict[str, Any]) -> tuple[torch.
     live_lowdim = extract_lowdim_obs_from_ppo_obs(policy_obs).detach().float().cpu().numpy()
     live0 = live_lowdim[0]
     diff = live0 - target_obs_base
+    diff_all = live_lowdim - target_obs_base.reshape(1, -1)
     if "applied_joint_position_env0" in robot_reset_summary:
         joint_after = task_env._robot.data.joint_pos[env_ids].detach().float().cpu().numpy()
         applied = np.asarray(robot_reset_summary["applied_joint_position_env0"], dtype=np.float32)
@@ -672,6 +687,9 @@ def _apply_demo_reset(task_env: Any, demo_reset: dict[str, Any]) -> tuple[torch.
         "lowdim_l2_diff_env0": float(np.linalg.norm(diff)),
         "cube_pos_l2_diff_env0": float(np.linalg.norm(diff[7:10])),
         "cube_minus_ee_l2_diff_env0": float(np.linalg.norm(diff[14:17])),
+        "lowdim_l2_diff_max_all_envs": float(np.linalg.norm(diff_all, axis=1).max()),
+        "cube_pos_l2_diff_max_all_envs": float(np.linalg.norm(diff_all[:, 7:10], axis=1).max()),
+        "cube_minus_ee_l2_diff_max_all_envs": float(np.linalg.norm(diff_all[:, 14:17], axis=1).max()),
         "cube_pos_l2_from_demo_env0": float(np.linalg.norm(live0[7:10] - target_obs_base[7:10])),
         "cube_pos_l2_from_normal_env0": float(np.linalg.norm(live0[7:10] - normal0[7:10])),
         "cube_minus_ee_l2_from_demo_env0": float(np.linalg.norm(live0[14:17] - target_obs_base[14:17])),

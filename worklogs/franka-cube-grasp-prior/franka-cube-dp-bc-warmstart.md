@@ -11385,6 +11385,106 @@ Command / Job:
 Result:
 - status: launching
 
+## 2026-06-12T01:55:00-07:00 - exact-reset overfit closed-loop pass and batched reset fix
+
+Goal:
+- Finish the requested one-demo exact-object-position overfit evaluation, then
+  continue to the next scale checks only if the overfit succeeds.
+
+Hypothesis:
+- If the one-demo checkpoint can pass under exact cube/source-joint reset with
+  the correct DP execution contract, then the remaining failures are control
+  path and scale-up issues rather than tensor shape, normalization, sign, or
+  reset-label bugs.
+
+Change:
+- Added an eval-only `--demo_reset_replicate_env0_joint_blend` flag and
+  `DEMO_RESET_REPLICATE_ENV0_JOINT_BLEND` Slurm wrapper variable.
+- Added all-env reset error diagnostics to the demo reset summary. This is for
+  batched exact-state diagnostics only; it does not change training or policy
+  inference.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `d1fb11d4d26c1f8edc509b41374233a58170ca8b`
+- implementation_commit: pending
+- changed_files:
+  - `dextrah_lab/rl_games/eval_franka_cube_dp_policy.py`
+  - `cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+  - `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+
+Command / Job:
+- one-demo chunk1 exact reset, correction disabled:
+  job `1028292`,
+  `franka_cube_dp_eval_phaseprogress_ep0_noema_exact_dataset_video260_20260612_012415`
+- one-demo chunk8 exact reset, correction disabled:
+  job `1028296`,
+  `franka_cube_dp_eval_phaseprogress_ep0_noema_exact_dataset_chunk8_video260_20260612_012955`
+- one-demo full-label oracle control:
+  job `1028297`,
+  `franka_cube_dp_eval_phaseprogress_ep0_noema_exact_fullcorr_video260_20260612_012955`
+- one-demo chunk8 + 8-sample averaged exact reset:
+  job `1028299`,
+  `franka_cube_dp_eval_phaseprogress_ep0_noema_exact_chunk8_avg8_video260_20260612_013632`
+- one-demo 16-env chunk8 + 8-sample averaged reset:
+  job `1028301`,
+  `franka_cube_dp_eval_phaseprogress_ep0_noema_exact_chunk8_avg8_16env_20260612_014101`
+- four-demo no-EMA checkpoint, episode-0 exact reset, chunk8 + 8-sample
+  averaged:
+  job `1028302`,
+  `franka_cube_dp_eval_phaseprogress_set4_noema_ep0_exact_chunk8_avg8_video260_20260612_014233`
+
+Result:
+- status: one-demo exact overfit passes with the corrected DP execution
+  contract; four-demo exact reset reaches success late; batched exact reset
+  needs the new env0 joint-blend replication option.
+- One-demo chunk1 failed despite exact reset:
+  final/window success `0 / 0`, final EE-to-cube `0.235 m`, final gripper
+  width `0.0114 m`. This showed per-step replanning is wrong for this DP
+  checkpoint.
+- One-demo chunk8 lifted but missed success:
+  final/window success `0 / 0`, final cube lift `0.192 m`, final cube XY error
+  `0.0968 m`.
+- Full-label oracle control passed under the same exact reset/support labels:
+  final/window success `1 / 1`, first success at step `229`. This validates
+  reset and labels.
+- One-demo chunk8 + 8 sampled action sequences averaged passed:
+  final/window success `1 / 1`, first success around step `216`, final cube
+  lift `0.1816 m`, final cube XY error `0.0668 m`, final EE-to-cube
+  `0.0114 m`, reset `lowdim_l2_diff_env0=0`.
+- The 16-env run did not represent 16 identical exact resets: env0 was exact,
+  but the source-joint blend was computed against each env's randomized normal
+  reset. It finished at final/window success `0.0625 / 0.1035` with mean final
+  EE-to-cube `0.173 m`, so a proper batched exact-state check needs the new
+  env0 joint-blend replication flag.
+- The four-demo no-EMA checkpoint with chunk8 + 8-sample averaging reached
+  final success on episode 0:
+  final/window success `1 / 0.125`, final cube lift `0.124 m`, final cube XY
+  error `0.0602 m`, final EE-to-cube `0.00824 m`. It is physically grasping
+  and lifting, but too late in a 260-step horizon for a robust warm-start
+  claim.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/eval_franka_cube_dp_policy.py`
+- `bash -n cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- `git diff --check`
+- fetched videos are `1280x720`, `259` frames, `4.316667 s`, `60 FPS`.
+- artifact viewer URLs:
+  - one-demo avg8 pass video:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_ep0_noema_exact_chunk8_avg8_video260_20260612_013632/videos/franka-cube-dp-ep0-noema-exact-chunk8-avg8-step-0.mp4`
+  - four-demo set4 avg8 video:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_noema_ep0_exact_chunk8_avg8_video260_20260612_014233/videos/franka-cube-dp-set4-noema-ep0-exact-chunk8-avg8-step-0.mp4`
+
+Next:
+- Commit and deploy the reset replication eval fix to l401.
+- Rerun the one-demo 16-env exact-state check with
+  `DEMO_RESET_REPLICATE_ENV0_JOINT_BLEND=True`.
+- Run a longer four-demo exact reset horizon to verify the late success is a
+  stable hold rather than a last-frame threshold crossing.
+
 ## 2026-06-12T01:38:00-07:00 - add DP action sample averaging
 
 Goal:
