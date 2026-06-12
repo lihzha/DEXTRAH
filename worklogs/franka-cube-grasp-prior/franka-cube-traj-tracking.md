@@ -5811,6 +5811,40 @@ Planned Bounded Probe If Validation Passes:
 Active Jobs:
 - none before implementation.
 
+## 2026-06-11T23:30:00-07:00 - z+gripper reference-mix video launch
+
+Implementation:
+- commit: `59bb44623f252257600a831e69ef4396813ab084` (`Add z and gripper mix diagnostic`), pushed.
+- remote source: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking`, clean detached at `59bb44623f252257600a831e69ef4396813ab084`.
+- local validation passed:
+  - `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py`
+  - `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+  - `git diff --check`
+
+Common Config:
+- checkpoint: `/results/bc/franka_cube_traj_tracking_bc_handoff_success_alpha0_20260611_223200/nn/bc_reference_action_imitation.pth`.
+- task: `Dextrah-Franka-Cube-Grasp-Traj-Tracking`.
+- action source: `policy_reference_mix`.
+- `REFERENCE_MIX_Z_ALPHA=1.0`, `REFERENCE_MIX_GRIPPER_ALPHA=1.0`, `SUPPRESS_SUCCESS_TERMINATION=True`, `NUM_ENVS=4`, `NUM_STEPS=520`, `CAPTURE_VIDEO=True`, `VIDEO_LENGTH=520`, `SEED=75`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`.
+- reference: `/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json` (`curobo_validated=false`).
+
+Jobs:
+- alpha0.10 previous-success env3: job `1028200`, run `franka_cube_traj_tracking_bc_handoff_noreset_zgripref_vis_a010_env3prevsucc_zg100_520_20260611_233000`.
+- alpha0.10 previous-failure env0: job `1028201`, run `franka_cube_traj_tracking_bc_handoff_noreset_zgripref_vis_a010_env0prevfail_zg100_520_20260611_233000`.
+- alpha0.15 previous-success env1: job `1028202`, run `franka_cube_traj_tracking_bc_handoff_noreset_zgripref_vis_a015_env1prevsucc_zg100_520_20260611_233000`.
+- alpha0.15 previous-failure env0: job `1028203`, run `franka_cube_traj_tracking_bc_handoff_noreset_zgripref_vis_a015_env0prevfail_zg100_520_20260611_233000`.
+- alpha0.20 previous-success env1: job `1028204`, run `franka_cube_traj_tracking_bc_handoff_noreset_zgripref_vis_a020_env1prevsucc_zg100_520_20260611_233000`.
+- alpha0.20 previous-failure env2: job `1028205`, run `franka_cube_traj_tracking_bc_handoff_noreset_zgripref_vis_a020_env2prevfail_zg100_520_20260611_233000`.
+
+Acceptance:
+- Fetch logs, metrics, traces, MP4s, reports, trace plots, contact sheets, and consistency JSON.
+- Validate MP4 metadata.
+- Compare against no-override and gripper-only boundary behavior.
+- No PPO/RL launch unless video and metrics establish a credible handoff target.
+
+Active Jobs:
+- `1028200`, `1028201`, `1028202`, `1028203`, `1028204`, `1028205`.
+
 ## 2026-06-11T23:10:00-07:00 - gripper-alpha reference-mix diagnostic launch
 
 Implementation:
@@ -6866,3 +6900,52 @@ Validation:
 
 Active Jobs:
 - none.
+
+## 2026-06-11T23:26:00-07:00 - z+gripper reference-mix tail handoff
+
+Status:
+- Bounded z+gripper diagnostic is complete and inspected; no PPO/RL scale-up launched.
+- Implementation commit remains `59bb44623f252257600a831e69ef4396813ab084` (`Add z and gripper mix diagnostic`), pushed before launch.
+- This tail entry mirrors the full result block above so the current Worker B state is visible from the end of the worklog.
+
+Jobs:
+- `1028200` alpha0.10 previous-success env3: completed `0:0`.
+- `1028201` alpha0.10 previous-failure env0: completed `0:0`.
+- `1028202` alpha0.15 previous-success env1: completed `0:0`.
+- `1028203` alpha0.15 previous-failure env0: completed `0:0`.
+- `1028204` alpha0.20 previous-success env1: completed `0:0`.
+- `1028205` alpha0.20 previous-failure env2: completed `0:0`.
+
+Artifacts:
+- combined report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_zgripref_zg100_20260611_2330/report.md`
+- summary plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_zgripref_zg100_20260611_2330/zgrip_override_summary.png`
+- action-semantics plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_zgripref_zg100_20260611_2330_action_semantics/action_semantics_plot.png`
+- alpha0.10 previous-success regression video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_zgripref_vis_a010_env3prevsucc_zg100_520_20260611_233000/videos/handoff-noreset-zgripref-a010_env3prevsucc-zg100-step-0.mp4`
+- alpha0.10 previous-success regression contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_zgripref_vis_a010_env3prevsucc_zg100_520_20260611_233000_artifacts/video_contact_sheet.png`
+- alpha0.10 previous-failure video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_zgripref_vis_a010_env0prevfail_zg100_520_20260611_233000/videos/handoff-noreset-zgripref-a010_env0prevfail-zg100-step-0.mp4`
+- alpha0.15 env1 success video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_zgripref_vis_a015_env1prevsucc_zg100_520_20260611_233000/videos/handoff-noreset-zgripref-a015_env1prevsucc-zg100-step-0.mp4`
+- alpha0.15 env1 success contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_zgripref_vis_a015_env1prevsucc_zg100_520_20260611_233000_artifacts/video_contact_sheet.png`
+- alpha0.20 env2 failure video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_zgripref_vis_a020_env2prevfail_zg100_520_20260611_233000/videos/handoff-noreset-zgripref-a020_env2prevfail-zg100-step-0.mp4`
+- alpha0.20 env2 failure contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_noreset_zgripref_vis_a020_env2prevfail_zg100_520_20260611_233000_artifacts/video_contact_sheet.png`
+
+Metrics:
+- action source: `policy_reference_mix`, not policy-only.
+- z and gripper override: `REFERENCE_MIX_Z_ALPHA=1.0`, `REFERENCE_MIX_GRIPPER_ALPHA=1.0`.
+- alpha0.10/0.15/0.20 final success: `1/4`, `1/4`, `1/4`.
+- compare against no-override alpha0.10/0.15/0.20: `1/4`, `2/4`, `3/4`.
+- compare against gripper-only override alpha0.10/0.15/0.20: `2/4`, `2/4`, `2/4`.
+- target unsafe max: `0` for all six runs.
+- train/eval consistency: `bc_metadata_partial_pass`, mismatch count `0` for all six runs.
+- compact reference remains `curobo_validated=false`.
+
+Visual Verdict:
+- alpha0.10 env3 regressed from a previous no-reset success: the gripper lifts out of contact and leaves the cube on the table by final frame.
+- alpha0.15 env1 still holds a real lift; this is the only preserved success pattern.
+- alpha0.20 env2 remains a miss: the gripper rises while the cube stays on the table.
+- This is a coupled pose/contact/closure timing failure, not the old drift-away train/eval mismatch.
+
+Decision:
+- z+gripper open-loop override is negative and should not be used as a handoff target.
+- preserve alpha0.20/no-reset as the best assisted gate for now.
+- next bounded direction should be contact-aware: trigger terminal hold or close+lift changes only after verified finger/cube contact or lift evidence.
+- no active B jobs after this handoff; old `actionscale-rewinf-diag-video480-step-0.mp4` / job `1027753` remains obsolete failed diagnostic evidence.
