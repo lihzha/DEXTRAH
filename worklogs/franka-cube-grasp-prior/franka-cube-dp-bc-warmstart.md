@@ -9310,3 +9310,55 @@ Analysis:
 
 Active jobs:
 - No C-owned Slurm jobs or local training processes remain from this smoke.
+
+## 2026-06-11T22:22:43-07:00 - plan alpha0.75 support relabel expansion
+
+Goal:
+- Improve the offline official-DP action-semantics gate before any Isaac DP
+  eval by expanding accepted alpha0.75 relabel support beyond the single
+  episode from `1028145`.
+
+Decision:
+- Choose support expansion, not phase/progress conditioning yet. The
+  single-episode official-DP smoke trains mechanically but has unstable
+  open/close-boundary action semantics. Changing the 21D observation schema or
+  adding a deterministic gripper wrapper now would create a new bridge before
+  verifying whether the issue is simply insufficient alpha0.75 support.
+
+Planned bounded relabel diagnostic:
+- Generate a tiny 4-rollout alpha0.75 relabel set using the same controller
+  settings that passed `1028145`:
+  - source episodes: `8, 16, 24, 30`
+  - source step: `260`
+  - reset joint blend alpha: `0.75`
+  - `ORIENTATION_MODE=source`
+  - `POSE_ACTION_FILTER=scale`, `POSE_ACTION_LIMIT=0.95`
+  - `ALIGN_STEPS=0`
+  - `CONTACT_ALIGN_STEPS=160`
+  - `CONTACT_ALIGN_REFERENCE=live_cube`
+  - `CONTACT_ALIGN_THRESHOLD=0.055`
+  - `CONTACT_GATE_MODE=left_right`
+  - `REQUIRE_CONTACT_GATE=True`
+  - `FINGER_GATE_MAX_DISTANCE=0.075`
+  - `FINGER_GATE_BALANCE_THRESHOLD=0.015`
+  - `LATERAL_CENTERING_GAIN=0.75`
+  - `LATERAL_CENTERING_LIMIT=0.025`
+  - `LATERAL_SEARCH_AMPLITUDE=0.004`
+  - `LATERAL_SEARCH_PERIOD=32`
+  - hard relabel gate unchanged:
+    `min_lift=0.10`, `max_pose_clip_fraction=0.0`,
+    `max_final_ee_to_cube=0.05`, `max_final_finger_to_cube=0.08`.
+
+Validation before launch:
+- `python3 -m py_compile dextrah_lab/rl_games/contact_aware_franka_cube_rollout.py dextrah_lab/offline_dp_bc/make_contact_relabel_set_report.py dextrah_lab/offline_dp_bc/make_lowdim_dataset_report.py dextrah_lab/offline_dp_bc/make_official_dp_pretrain_report.py dextrah_lab/offline_dp_bc/validate_official_checkpoint_smoke.py dextrah_lab/offline_dp_bc/diagnose_dp_action_semantics.py`: passed.
+- `bash -n cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh`: passed.
+- `git diff --check`: passed.
+
+Acceptance:
+- If all four alpha0.75 relabel rollouts pass the hard gate and visual contact
+  sheets look coherent, run one bounded local official-DP offline smoke on the
+  accepted NPZ with the existing official `real-stanford/diffusion_policy`
+  setup.
+- If any rollout fails, do not train DP; fetch/report failure artifacts and
+  treat support expansion as blocked at the relabel gate.
+- No closed-loop DP eval, broad DP training, or RL in this iteration.
