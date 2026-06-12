@@ -9211,3 +9211,102 @@ Acceptance:
 - Loss decreases on this tiny single-episode smoke.
 - Checkpoint action smokes are finite and have sensible gripper sign for
   open/closed/lift rows. Failure blocks closed-loop eval and any DP/RL scale-up.
+
+## 2026-06-11T22:19:40-07:00 - official DP alpha0.75 single-episode smoke result
+
+Goal:
+- Run the tiny official Diffusion Policy smoke authorized after `1028145`:
+  train only on the accepted single-episode alpha0.75 left/right-contact relabel
+  NPZ and inspect checkpoint action semantics before any closed-loop eval.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- implementation_commit: `f1c7bd440b470fe497ac2edfbb31b971ee710d1f`
+- changed_files: worklog only for this entry.
+- official_diffusion_policy:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/diffusion_policy`
+  at `5ba07ac6661db573af695b419a7947ecb704690f`, remote
+  `https://github.com/real-stanford/diffusion_policy`.
+
+Command / Job:
+- job_id: `n/a`, local RTX 6000 Ada official-DP smoke.
+- run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_lrcentering_a075_official_dp_smoke_20260611_2216`
+- launch command file:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_lrcentering_a075_official_dp_smoke_20260611_2216/launch_command.sh`
+- train command summary:
+  official `train.py`, `WeightedDiffusionUnetLowdimPolicy`,
+  `+policy.action_loss_weights=[1,1,1,1,1,1,8]`,
+  `pred_action_steps_only=true`,
+  `task.dataset.action_normalizer=limits_clamp_constant`,
+  `policy.num_inference_steps=100`,
+  `training.num_epochs=40`, `training.max_train_steps=10`,
+  `task.dataset.val_ratio=0.0`, batch size `16`.
+- accepted dataset:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_lrcentering_ep16s260_a0p75_20260611_221000/contact_relabel_set_accepted.npz`
+- checkpoint:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_lrcentering_a075_official_dp_smoke_20260611_2216/official_dp_train/checkpoints/latest.ckpt`
+
+Result:
+- status: `needs_review`; do not launch closed-loop DP eval, broad DP
+  training, or RL from this checkpoint.
+- dataset report passed:
+  - `obs (240, 21)`, `action (240, 7)`, `episode_ends [240]`
+  - train samples `240`, val samples `0`
+  - `val_ratio=0.0` because there is only one episode.
+- adapter smoke passed:
+  `FRANKA_CUBE_DP_BC_SMOKE_PASSED`, official DP dataset base imported.
+- official DP train completed and wrote `latest.ckpt`.
+- loss decreased on-train-distribution:
+  - train loss `2.1653 -> 0.5293`
+  - train action MSE `0.3951 -> 0.1329`
+  - validation loss is `nan`/absent because a held-out episode split is not
+    feasible for this single-episode smoke.
+- checkpoint action-range smokes:
+  - `gripper_closed`: pass, gripper predicted negative.
+  - `lift_high`: pass, gripper predicted negative.
+  - `first/open`: needs review; bridge first-action gripper includes negative
+    values despite open labels.
+  - `close_boundary` row index `22`: needs review; direct/bridge gripper
+    includes positive values despite close labels.
+- corrected gripper/action audit with `--episode-index 0`:
+  - `gripper_gate_pass=false`
+  - open sign match `0.70`, closed/lift sign match `0.96`, pass threshold
+    `0.90`.
+  - The per-channel scatter also shows broad pose prediction mismatch, not only
+    a clean gripper-only issue.
+
+Viewer URLs:
+- official DP pretrain report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_lrcentering_a075_official_dp_smoke_20260611_2216/official_dp_pretrain_report.md`
+- loss plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_lrcentering_a075_official_dp_smoke_20260611_2216/loss_curves.png`
+- gripper plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_lrcentering_a075_official_dp_smoke_20260611_2216/gripper_sign_audit_100steps/gripper_label_vs_prediction.png`
+- per-channel action scatter:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_lrcentering_a075_official_dp_smoke_20260611_2216/gripper_sign_audit_100steps/per_channel_first_action_scatter.png`
+- resolved Hydra config:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_lrcentering_a075_official_dp_smoke_20260611_2216/official_dp_train/.hydra/config.yaml`
+- train stdout:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_lrcentering_a075_official_dp_smoke_20260611_2216/logs/official_dp_tiny_train.log`
+- visual sanity source rollout video:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_lrcentering_ep16s260_a0p75_20260611_221000/rollouts/ep16s260_a0p75/videos/franka-cube-contact-lrcentering-ep16s260_a0p75-step-0.mp4`
+- visual sanity source contact sheet:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_lrcentering_ep16s260_a0p75_20260611_221000/rollouts/ep16s260_a0p75/contact_sheet_lrcentering_1028145.jpg`
+
+Analysis:
+- The official implementation consumes the accepted alpha0.75 relabel NPZ and
+  trains mechanically, so the official-DP data/config path remains valid.
+- This checkpoint is not closed-loop-eval ready. The single-episode dataset
+  overfits partly, but the first/open and close-boundary action semantics are
+  not stable enough; launching Isaac eval would likely produce another
+  ambiguous failure video rather than a useful BC readiness signal.
+- The result supports the next bounded direction only: either improve the
+  support-expanded relabel set beyond one episode around alpha0.75, or add
+  explicit phase/progress conditioning/deterministic gripper scheduling and
+  repeat the offline action-semantics gate. It does not authorize DP scale-up or
+  RL.
+
+Active jobs:
+- No C-owned Slurm jobs or local training processes remain from this smoke.
