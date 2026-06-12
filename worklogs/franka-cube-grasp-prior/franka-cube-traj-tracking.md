@@ -6999,7 +6999,8 @@ Validation:
 - summarizer regression on old z+gripper metrics wrote `/tmp/traj_contact_hold_summary_regression/{report.md,summary.json,train_eval_consistency.json,trajectory_trace_plot.png}` and reports missing trigger-mode fields as `n/a`.
 
 Version Control:
-- implementation_commit: pending.
+- implementation_commit: `d0098ae5f0979c5d127fd07cdc6969634c88c296` (`Add contact-aware hold trigger mode`), pushed to `origin/codex/franka-cube-trajectory-tracking`.
+- remote_commit/status: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking` detached clean at `d0098ae5f0979c5d127fd07cdc6969634c88c296`. Deployed with HTTPS fetch because l401 GitHub SSH auth remains unavailable.
 - changed_files:
   - `dextrah_lab/rl_games/eval_rollout.py`
   - `cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
