@@ -4878,3 +4878,55 @@ Next Bounded Adjustment Proposal:
   - train on the combined dataset with all seven action dims and explicit per-dataset loss/validation reporting;
   - gate on selector alpha `0.0/0.25/0.5/0.75/1.0` before targeted videos.
 - Acceptance for the next step remains improvement in policy-only or lower-alpha success without target-unsafe regression, with viewer-ready reports, plots, videos/contact sheets, and train/eval consistency JSON.
+
+## 2026-06-11T19:27:00-07:00 - mixed/rehearsal BC bounded plan
+
+Goal:
+- Preserve tm0.25's successful-state coverage while adding lower-teacher exposure, then test whether the combined dataset improves policy-only or lower-alpha selector behavior without target-safety regression.
+
+Hypothesis:
+- tm0.10 regressed because replacing the dataset with mostly harder/lower-teacher states lost the tm0.25 successful grasp/lift manifold.
+- A rehearsal run that combines retained tm0.25 samples with a fresh low-teacher (`teacher_mix`, alpha `0.10`) collection should reduce forgetting while still nudging the raw policy toward lower assistance.
+
+Planned Change:
+- Add minimal combined-dataset support to `dextrah_lab/rl_games/bc_reference_action_imitation.py`:
+  - load one or more `reference_action_dataset.pt` rehearsal files;
+  - concatenate their `obs` and `reference_actions` with the freshly collected dataset;
+  - preserve source labels (`current_alpha010`, `tm025_rehearsal`) for explicit per-dataset train/val metrics;
+  - save combined source metadata in `bc_metrics.json` and `reference_action_dataset.pt`.
+- Extend `cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh` with pass-through env vars for rehearsal dataset paths/names.
+- Keep all seven action dims (`LOSS_DIMS=all`).
+- Keep the compact task-space reference caveat explicit: `curobo_validated=false`, task-space waypoint transform, no joint-trajectory replay.
+- Keep old `actionscale-rewinf-diag-video480-step-0.mp4` labeled obsolete failed diagnostic; it is not current evidence.
+
+Version Control:
+- agent_id: `franka-cube-traj-tracking`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking`
+- branch: `codex/franka-cube-trajectory-tracking`
+- base_commit_before_plan: `8e17bbeedd006f08090b596bd10320098791496c`
+- changed_files_planned:
+  - `dextrah_lab/rl_games/bc_reference_action_imitation.py`
+  - `cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh`
+  - `worklogs/franka-cube-grasp-prior/franka-cube-traj-tracking.md`
+
+Validation Before Launch:
+- `python3 -m py_compile dextrah_lab/rl_games/bc_reference_action_imitation.py dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py dextrah_lab/rl_games/analyze_traj_tracking_action_semantics.py`
+- `bash -n cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh`
+- `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- commit and push before l401 launch; update agent-owned l401 worktree to the exact commit if remote Git auth allows. If remote fetch remains blocked, record that blocker and only use the already-deployed code if no source change is required; otherwise do not silently launch stale code.
+
+Planned Supervised Job:
+- run name: `franka_cube_traj_tracking_bc_dagger_rehearsal_tm025_tm010_all_<timestamp>`.
+- input checkpoint: `/results/bc/franka_cube_traj_tracking_bc_dagger_tm025_all_20260611_185900/nn/bc_reference_action_imitation.pth`.
+- fresh collection: `COLLECTION_ACTION_SOURCE=teacher_mix`, `COLLECTION_TEACHER_ALPHA=0.10`, `NUM_ENVS=8`, `COLLECTION_STEPS=520`.
+- rehearsal dataset: `/results/bc/franka_cube_traj_tracking_bc_dagger_tm025_all_20260611_185900/reference_action_dataset.pt`.
+- training: `TRAIN_STEPS=400`, `BATCH_SIZE=1024`, `LEARNING_RATE=0.00015`, `VALIDATION_FRACTION=0.2`, `LOSS_DIMS=all`.
+
+Supervised Gate:
+- Fetch/open `report.md`, `bc_metrics.json`, `bc_loss_curve.csv`, `bc_loss_plot.png`, combined dataset metadata, and checkpoint.
+- Required: no traceback/NaN; checkpoint exists; global held-out L2 improves materially; per-source validation metrics are reported for both current alpha `0.10` and tm0.25 rehearsal; close/up/gripper held-out errors remain in the tm0.25/tm0.10 range or better.
+
+Selector Gate If Supervised Passes:
+- Eval selector alphas `0.0`, `0.25`, `0.5`, `0.75`, `1.0`, metrics/traces first, no videos initially.
+- Acceptance: any improvement in policy-only or lower-alpha success over tm0.25/tm0.10 without target unsafe regression. If selector improves, launch targeted videos/contact sheets only for alpha `0.0` failure/improvement, lowest-alpha success, and alpha `1.0` context.
+- No full PPO/RL scale-up in this iteration.

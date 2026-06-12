@@ -45,6 +45,18 @@ parser.add_argument(
     help="Path to write the BC-updated RL-Games checkpoint. Defaults under output_dir/nn.",
 )
 parser.add_argument("--dataset_path", type=str, default=None, help="Path to write the collected tensor dataset.")
+parser.add_argument(
+    "--rehearsal_dataset_paths",
+    type=str,
+    default="",
+    help="Comma/colon-separated reference_action_dataset.pt files to concatenate with the fresh collection.",
+)
+parser.add_argument(
+    "--rehearsal_dataset_names",
+    type=str,
+    default="",
+    help="Optional comma/colon-separated source names matching --rehearsal_dataset_paths.",
+)
 parser.add_argument("--seed", type=int, default=42, help="Random seed for env and supervised split.")
 parser.add_argument(
     "--collection_action_source",
@@ -93,6 +105,25 @@ import dextrah_lab.tasks.dextrah_franka_star_kitting.gym_setup  # noqa: F401
 
 
 ACTION_LABELS = ("x", "y", "z", "rx", "ry", "rz", "gripper")
+
+
+def _split_list(raw: str) -> list[str]:
+    values: list[str] = []
+    for token in raw.replace(":", ",").replace(";", ",").split(","):
+        token = token.strip()
+        if token:
+            values.append(token)
+    return values
+
+
+def _source_slug(raw: str) -> str:
+    chars = []
+    for char in raw.lower():
+        if char.isalnum():
+            chars.append(char)
+        elif chars and chars[-1] != "_":
+            chars.append("_")
+    return "".join(chars).strip("_") or "source"
 
 
 def _parse_loss_dims(raw: str, action_dim: int) -> list[int]:
@@ -253,6 +284,44 @@ def _draw_loss_plot(rows: list[dict[str, float | int | str]], path: Path) -> Non
 def _write_report(summary: dict[str, object], rows: list[dict[str, float | int | str]], path: Path) -> None:
     first = rows[0] if rows else {}
     last = rows[-1] if rows else {}
+    source_rows = summary.get("dataset_sources", [])
+    source_lines = [
+        "| source | samples | collection action | teacher alpha | source path |",
+        "| --- | ---: | --- | ---: | --- |",
+    ]
+    if isinstance(source_rows, list):
+        for source in source_rows:
+            if isinstance(source, dict):
+                source_lines.append(
+                    "| {name} | {samples} | {action_source} | {teacher_alpha} | `{path}` |".format(
+                        name=source.get("name", "n/a"),
+                        samples=source.get("num_samples", "n/a"),
+                        action_source=source.get("collection_action_source", "n/a"),
+                        teacher_alpha=source.get("collection_teacher_alpha", "n/a"),
+                        path=source.get("path", "n/a"),
+                    )
+                )
+    source_metric_lines = [
+        "| source | split | initial mse | final mse | initial l2 | final l2 | initial up abs | final up abs | initial close abs | final close abs |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    if isinstance(source_rows, list):
+        for source in source_rows:
+            if not isinstance(source, dict):
+                continue
+            slug = source.get("slug")
+            name = source.get("name", "n/a")
+            if not isinstance(slug, str):
+                continue
+            for split in ("train", "val"):
+                prefix = f"{split}_source_{slug}"
+                source_metric_lines.append(
+                    f"| {name} | {split} | "
+                    f"{first.get(prefix + '_mse', 'n/a')} | {last.get(prefix + '_mse', 'n/a')} | "
+                    f"{first.get(prefix + '_l2', 'n/a')} | {last.get(prefix + '_l2', 'n/a')} | "
+                    f"{first.get(prefix + '_up_abs', 'n/a')} | {last.get(prefix + '_up_abs', 'n/a')} | "
+                    f"{first.get(prefix + '_close_abs', 'n/a')} | {last.get(prefix + '_close_abs', 'n/a')} |"
+                )
     lines = [
         "# Reference Action BC Diagnostic",
         "",
@@ -265,10 +334,14 @@ def _write_report(summary: dict[str, object], rows: list[dict[str, float | int |
         f"- output checkpoint: `{summary.get('output_checkpoint')}`",
         f"- collection action source: `{summary.get('collection_action_source')}`",
         f"- collection teacher alpha: `{summary.get('collection_teacher_alpha')}`",
-        f"- samples: `{summary.get('num_samples')}` train / `{summary.get('num_train')}` held-out / `{summary.get('num_val')}`",
+        f"- samples: `{summary.get('num_samples')}` total / `{summary.get('num_train')}` train / `{summary.get('num_val')}` held-out",
         f"- observation dim: `{summary.get('obs_dim')}`, action dim: `{summary.get('action_dim')}`",
         f"- loss dims: `{summary.get('loss_dims')}`",
         f"- reference caveat: `curobo_validated={summary.get('curobo_validated')}`",
+        "",
+        "## Dataset Sources",
+        "",
+        *source_lines,
         "",
         "## Loss",
         "",
@@ -287,6 +360,10 @@ def _write_report(summary: dict[str, object], rows: list[dict[str, float | int |
             f"{first.get('val_close_abs', 'n/a')} | {last.get('val_close_abs', 'n/a')} |"
         ),
         "",
+        "## Per-Source Loss",
+        "",
+        *source_metric_lines,
+        "",
         "## Artifacts",
         "",
         f"- metrics: `{summary.get('metrics_path')}`",
@@ -294,7 +371,7 @@ def _write_report(summary: dict[str, object], rows: list[dict[str, float | int |
         f"- plot: `{summary.get('plot_path')}`",
         f"- dataset: `{summary.get('dataset_path')}`",
         "",
-        "Next acceptance is not this loss alone: evaluate the output checkpoint at alpha `0.0`, `0.75`, and `1.0` with videos/action-semantics plots.",
+        "Next acceptance is not this loss alone: evaluate selector alphas `0.0`, `0.25`, `0.5`, `0.75`, and `1.0` with metrics first, then videos/action-semantics plots only if selector behavior improves.",
     ]
     path.write_text("\n".join(lines) + "\n")
 
@@ -352,6 +429,12 @@ def main(env_cfg, agent_cfg: dict):
     action_dim = int(getattr(task_env.cfg, "action_space", 0))
     loss_dims = _parse_loss_dims(args_cli.loss_dims, action_dim)
     collection_teacher_alpha = min(max(float(args_cli.collection_teacher_alpha), 0.0), 1.0)
+    rehearsal_paths = _split_list(args_cli.rehearsal_dataset_paths)
+    rehearsal_names = _split_list(args_cli.rehearsal_dataset_names)
+    if rehearsal_names and len(rehearsal_names) != len(rehearsal_paths):
+        raise ValueError(
+            "--rehearsal_dataset_names must be empty or have the same number of entries as --rehearsal_dataset_paths"
+        )
     obs_records: list[torch.Tensor] = []
     reference_records: list[torch.Tensor] = []
     raw_records: list[torch.Tensor] = []
@@ -410,14 +493,98 @@ def main(env_cfg, agent_cfg: dict):
     finally:
         env.close()
 
-    obs_tensor = torch.cat(obs_records, dim=0).float()
-    reference_tensor = torch.cat(reference_records, dim=0).float()
-    raw_tensor = torch.cat(raw_records, dim=0).float()
-    applied_tensor = torch.cat(applied_records, dim=0).float()
-    phase_tensor = torch.cat(phase_records, dim=0).float()
-    lift_tensor = torch.cat(lift_records, dim=0).float()
-    success_tensor = torch.cat(success_records, dim=0).float()
-    unsafe_tensor = torch.cat(unsafe_records, dim=0).float()
+    current_source_name = f"current_{args_cli.collection_action_source}_alpha{collection_teacher_alpha:.2f}".replace(".", "p")
+    obs_tensors = [torch.cat(obs_records, dim=0).float()]
+    reference_tensors = [torch.cat(reference_records, dim=0).float()]
+    raw_tensors = [torch.cat(raw_records, dim=0).float()]
+    applied_tensors = [torch.cat(applied_records, dim=0).float()]
+    phase_tensors = [torch.cat(phase_records, dim=0).float()]
+    lift_tensors = [torch.cat(lift_records, dim=0).float()]
+    success_tensors = [torch.cat(success_records, dim=0).float()]
+    unsafe_tensors = [torch.cat(unsafe_records, dim=0).float()]
+    source_names = [current_source_name]
+    source_slugs = [_source_slug(current_source_name)]
+    source_ids = [torch.zeros(obs_tensors[0].shape[0], dtype=torch.long)]
+    source_metadata: list[dict[str, object]] = [
+        {
+            "id": 0,
+            "name": current_source_name,
+            "slug": source_slugs[0],
+            "path": "fresh_collection",
+            "num_samples": int(obs_tensors[0].shape[0]),
+            "collection_action_source": args_cli.collection_action_source,
+            "collection_teacher_alpha": collection_teacher_alpha,
+        }
+    ]
+
+    for dataset_idx, rehearsal_path_raw in enumerate(rehearsal_paths, start=1):
+        rehearsal_path = Path(rehearsal_path_raw).expanduser()
+        loaded = torch.load(rehearsal_path, map_location="cpu")
+        if not isinstance(loaded, dict):
+            raise TypeError(f"Rehearsal dataset {rehearsal_path} is not a dict.")
+        if "obs" not in loaded or "reference_actions" not in loaded:
+            raise KeyError(f"Rehearsal dataset {rehearsal_path} must include 'obs' and 'reference_actions'.")
+        obs_loaded = loaded["obs"].detach().float().cpu()
+        reference_loaded = loaded["reference_actions"].detach().float().cpu()
+        if obs_loaded.ndim != 2 or reference_loaded.ndim != 2:
+            raise ValueError(f"Rehearsal dataset {rehearsal_path} tensors must be 2-D.")
+        if obs_loaded.shape[0] != reference_loaded.shape[0]:
+            raise ValueError(f"Rehearsal dataset {rehearsal_path} obs/reference sample counts differ.")
+        if obs_loaded.shape[-1] != obs_tensors[0].shape[-1]:
+            raise ValueError(
+                f"Rehearsal dataset {rehearsal_path} obs dim {obs_loaded.shape[-1]} "
+                f"does not match fresh obs dim {obs_tensors[0].shape[-1]}."
+            )
+        if reference_loaded.shape[-1] != reference_tensors[0].shape[-1]:
+            raise ValueError(
+                f"Rehearsal dataset {rehearsal_path} action dim {reference_loaded.shape[-1]} "
+                f"does not match fresh action dim {reference_tensors[0].shape[-1]}."
+            )
+        source_name = rehearsal_names[dataset_idx - 1] if rehearsal_names else f"rehearsal_{dataset_idx}"
+        source_slug = _source_slug(source_name)
+        while source_slug in source_slugs:
+            source_slug = f"{source_slug}_{dataset_idx}"
+        obs_tensors.append(obs_loaded)
+        reference_tensors.append(reference_loaded)
+        raw_tensors.append(
+            loaded.get("raw_policy_actions_before", torch.full_like(reference_loaded, float("nan"))).detach().float().cpu()
+        )
+        applied_tensors.append(
+            loaded.get("applied_collection_actions", torch.full_like(reference_loaded, float("nan"))).detach().float().cpu()
+        )
+        phase_tensors.append(loaded.get("phase", torch.full((obs_loaded.shape[0],), float("nan"))).detach().float().cpu())
+        lift_tensors.append(
+            loaded.get("cube_lift_height", torch.full((obs_loaded.shape[0],), float("nan"))).detach().float().cpu()
+        )
+        success_tensors.append(loaded.get("success", torch.full((obs_loaded.shape[0],), float("nan"))).detach().float().cpu())
+        unsafe_tensors.append(
+            loaded.get("unsafe_target", torch.full((obs_loaded.shape[0],), float("nan"))).detach().float().cpu()
+        )
+        source_names.append(source_name)
+        source_slugs.append(source_slug)
+        source_ids.append(torch.full((obs_loaded.shape[0],), dataset_idx, dtype=torch.long))
+        source_metadata.append(
+            {
+                "id": dataset_idx,
+                "name": source_name,
+                "slug": source_slug,
+                "path": str(rehearsal_path),
+                "num_samples": int(obs_loaded.shape[0]),
+                "collection_action_source": loaded.get("collection_action_source", "unknown"),
+                "collection_teacher_alpha": loaded.get("collection_teacher_alpha", "unknown"),
+                "input_checkpoint": loaded.get("input_checkpoint", "unknown"),
+            }
+        )
+
+    obs_tensor = torch.cat(obs_tensors, dim=0).float()
+    reference_tensor = torch.cat(reference_tensors, dim=0).float()
+    raw_tensor = torch.cat(raw_tensors, dim=0).float()
+    applied_tensor = torch.cat(applied_tensors, dim=0).float()
+    phase_tensor = torch.cat(phase_tensors, dim=0).float()
+    lift_tensor = torch.cat(lift_tensors, dim=0).float()
+    success_tensor = torch.cat(success_tensors, dim=0).float()
+    unsafe_tensor = torch.cat(unsafe_tensors, dim=0).float()
+    source_id_tensor = torch.cat(source_ids, dim=0)
     dataset = {
         "obs": obs_tensor,
         "reference_actions": reference_tensor,
@@ -427,6 +594,9 @@ def main(env_cfg, agent_cfg: dict):
         "cube_lift_height": lift_tensor,
         "success": success_tensor,
         "unsafe_target": unsafe_tensor,
+        "source_ids": source_id_tensor,
+        "source_names": source_names,
+        "source_metadata": source_metadata,
         "loss_dims": torch.tensor(loss_dims, dtype=torch.long),
         "input_checkpoint": str(resume_path),
         "collection_action_source": args_cli.collection_action_source,
@@ -438,6 +608,7 @@ def main(env_cfg, agent_cfg: dict):
     device = torch.device(rl_device)
     obs_tensor = obs_tensor.to(device)
     reference_tensor = reference_tensor.to(device)
+    source_id_tensor = source_id_tensor.to(device)
     num_samples = obs_tensor.shape[0]
     if num_samples < 2:
         raise RuntimeError("BC dataset collection produced fewer than two samples.")
@@ -466,6 +637,31 @@ def main(env_cfg, agent_cfg: dict):
         row: dict[str, float | int | str] = {"step": int(step)}
         row.update(_error_stats(train_pred, train_target, loss_dims, "train"))
         row.update(_error_stats(val_pred, val_target, loss_dims, "val"))
+        train_sources = source_id_tensor[train_idx]
+        val_sources = source_id_tensor[val_idx]
+        for source_id, source_slug in enumerate(source_slugs):
+            train_mask = train_sources == source_id
+            if bool(train_mask.any()):
+                row.update(
+                    _error_stats(
+                        train_pred[train_mask],
+                        train_target[train_mask],
+                        loss_dims,
+                        f"train_source_{source_slug}",
+                    )
+                )
+                row[f"train_source_{source_slug}_count"] = int(train_mask.sum().detach().cpu())
+            val_mask = val_sources == source_id
+            if bool(val_mask.any()):
+                row.update(
+                    _error_stats(
+                        val_pred[val_mask],
+                        val_target[val_mask],
+                        loss_dims,
+                        f"val_source_{source_slug}",
+                    )
+                )
+                row[f"val_source_{source_slug}_count"] = int(val_mask.sum().detach().cpu())
         return row
 
     curve_rows.append(evaluate_split(0))
@@ -528,6 +724,8 @@ def main(env_cfg, agent_cfg: dict):
         "validation_fraction": float(args_cli.validation_fraction),
         "collection_action_source": args_cli.collection_action_source,
         "collection_teacher_alpha": collection_teacher_alpha,
+        "rehearsal_dataset_paths": rehearsal_paths,
+        "dataset_sources": source_metadata,
         "curobo_validated": bool(reference_summary.get("curobo_validated", False)) if isinstance(reference_summary, dict) else False,
         "reference_summary": reference_summary,
         "dataset_reference_stats": _action_stats(reference_tensor.cpu(), "reference"),
