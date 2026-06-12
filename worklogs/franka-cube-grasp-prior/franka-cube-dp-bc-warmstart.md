@@ -6962,6 +6962,48 @@ Next:
   more accepted contact-aware relabel lift support with stronger close/hold
   before any new official DP training.
 
+## 2026-06-11T19:08:46-07:00 - matched source-joint trace240 launch plan
+
+Goal:
+- Run the cheapest bounded lift/gripper diagnostic after the matched-reset
+  video: extend only the matched source-joint rollout horizon, with no video
+  and no training, to test whether the current weighted checkpoint crosses the
+  `0.12 m` lift success threshold.
+
+Hypothesis:
+- In job `1027987`, lift was still increasing at step `160` and reached
+  `0.10099 m`; a modest `240`-step no-video trace should determine whether
+  the current policy simply needed more horizon or whether lift/gripper
+  geometry saturates below success.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- implementation_commit: pending worklog commit before launch
+- changed_files: owned worklog only
+
+Command / Job:
+- planned run_name:
+  `franka_cube_dp_eval_weightedgrip8_inf100_trace240_chunk1_sourcejoint_ep1s0_20260611_190846`
+- planned command:
+  `sbatch --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart,RUN_NAME=franka_cube_dp_eval_weightedgrip8_inf100_trace240_chunk1_sourcejoint_ep1s0_20260611_190846,NUM_ENVS=1,NUM_STEPS=240,NUM_INFERENCE_STEPS=100,ACTION_CHUNK_STEPS=1,CLIP_ACTIONS=1.0,SUCCESS_WINDOW=80,CAPTURE_VIDEO=False,VIDEO_LENGTH=240,PRINT_INTERVAL=20,SEED=42,DEBUG_POLICY_TRACE_MAX_CALLS=240,DEBUG_POLICY_TRACE_ENV_INDEX=0,CHECKPOINT=/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/contact_relabel_official_dp_debug_pretrain100_weightedgrip8_20260611_1843/latest.ckpt,SUPPORT_DATASET=/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/contact_relabel_set_ep8_16_24_30_s260_high30_defaultfix_20260611_175347/contact_relabel_set_accepted.npz,DEMO_RESET_DATASET=/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/contact_relabel_set_ep8_16_24_30_s260_high30_defaultfix_20260611_175347/contact_relabel_set_accepted.npz,DEMO_RESET_EPISODE=1,DEMO_RESET_STEP=0,DEMO_RESET_SOURCE_TRAJECTORY_JSON=/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed16/trajectory.json,DEMO_RESET_SOURCE_FRAME=260,OFFICIAL_DP_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/external/real-stanford-diffusion_policy cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- expected run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_weightedgrip8_inf100_trace240_chunk1_sourcejoint_ep1s0_20260611_190846`
+- expected logs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_dp_policy_<job_id>.out`
+
+Acceptance:
+- Fetch metrics/traces/logs and generate the support/action report. If max
+  lift crosses `0.12 m` or reaches near-threshold with coherent success-region
+  terms, run one short matching video/contact sheet. If lift saturates below
+  threshold or success remains false for concrete geometry reasons, record the
+  blocker and move to gripper/lift action audit or relabel support augmentation.
+
+Result:
+- status: planned, not launched yet.
+
 ## 2026-06-11T18:58:15-07:00 - matched source-joint trace160 result
 
 Goal:
