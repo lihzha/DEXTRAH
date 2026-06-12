@@ -3308,3 +3308,67 @@ Validation:
 
 Next:
 - Commit/push this implementation, deploy the exact commit to the l401 agent-owned worktree, and launch the bounded teacher-force env smoke only. No PPO launch until that smoke has finite logs/artifacts and target safety remains clean.
+
+## 2026-06-11T17:02:49-07:00 - teacher-force env smoke launch
+
+Goal:
+- Validate the new teacher-forcing/action-imitation wiring in a real DEXTRAH/Isaac runtime before any PPO run.
+
+Acceptance:
+- Task registers as `Dextrah-Franka-Cube-Grasp-Traj-Tracking`; reset obs remains `[4,72]`.
+- Rollout completes `240` steps with no early reset pathology and finite logs.
+- New teacher-force/action-error logs are present: teacher alpha/active rate, raw-policy/reference L2, applied/reference L2, applied/raw L2, raw close/up, applied close/up.
+- Target unsafe rate remains `0`; target clearance remains above the configured floor.
+- Reference caveat remains explicit: compact reference is 60 mm retry, `curobo_validated=false`.
+
+Version Control:
+- agent_id: franka-cube-traj-tracking
+- local_branch_head: `5c6e272bc8e5239f2d91d42396ff4b2d4202a00a`
+- pushed: yes, `origin/codex/franka-cube-trajectory-tracking`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking`
+- remote_commit/status: detached clean at `5c6e272bc8e5239f2d91d42396ff4b2d4202a00a`
+
+Command / Job:
+- command: `ssh l401 'cd /lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking && sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:30:00 --job-name=tf_env_smoke --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_teacherforce_env_smoke_20260611_170249,NUM_ENVS=4,NUM_STEPS=240,VIDEO_LENGTH=240,CAPTURE_VIDEO=True,PRINT_INTERVAL=60,SEED=64,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_WEIGHT=5.0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_PHASE_START=0.0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_SHARPNESS=1.0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_USE_CONTACT_GATE=False,TRAJECTORY_TRACKING_TEACHER_FORCE_ENABLED=True,TRAJECTORY_TRACKING_TEACHER_FORCE_ALPHA_START=1.0,TRAJECTORY_TRACKING_TEACHER_FORCE_ALPHA_END=1.0,TRAJECTORY_TRACKING_TEACHER_FORCE_PHASE_END=0.67,TRAJECTORY_TRACKING_TEACHER_FORCE_ANNEAL_STEPS=0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_COMPARE_RAW_POLICY=True cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh'`
+- job_id: `1027895`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_cube_traj_tracking_teacherforce_env_smoke_20260611_170249`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_cube_1027895.out`
+- expected artifacts: `metrics.json`, validation video under `videos/`, stdout log, local fetched report/contact sheet if the run completes.
+
+Result:
+- status: passed wiring/runtime smoke. Slurm `COMPLETED 0:0`, elapsed `00:01:05`, node `pool0-00030`.
+- local run dir: `cluster_results/l401/franka_cube_traj_tracking_teacherforce_env_smoke_20260611_170249`
+- local artifact dir: `cluster_results/l401/franka_cube_traj_tracking_teacherforce_env_smoke_20260611_170249_artifacts`
+- metrics: `passed=true`, `steps_completed=240`, `done_count=0`, `early_done_count=0`, `reward_mean=2.90757`, `reward_final=5.38198`, `final_success_rate=0`, `max_mean_lift=0.022727 m`, `final_gripper_width=0.048918 m`.
+- observation contract: reset observation shape `[4,72]`.
+- target safety: `tracking_unsafe_target_rate_max=0`, target clearance min `0.065114 m`.
+- teacher/action diagnostics: `missing_logs=[]`, `tracking_teacher_force_alpha_mean=1.0`, `tracking_teacher_force_active_mean=1.0`, raw-policy/reference L2 `1.41593`, applied/reference L2 `0.026128`, applied/policy L2 `1.42461`, raw close/up `0.33125/0.16458`, applied close/up `0.01395/0.22098`.
+- reference caveat: `curobo_validated=false`, source tag `graspgenx_curobo_60mm_export_pending_exact_validation`.
+- video metadata: `1280x720`, `239` frames, `3.983333 s`, `60/1` FPS.
+- visual diagnosis: contact sheet shows the reference-forced controller approaching and closing near the cube by the last frame; this 240-step validation does not demonstrate stable learned behavior or final success/lift and should only be treated as wiring evidence.
+
+Artifacts:
+- report: `cluster_results/l401/franka_cube_traj_tracking_teacherforce_env_smoke_20260611_170249_artifacts/report.md`
+- plot: `cluster_results/l401/franka_cube_traj_tracking_teacherforce_env_smoke_20260611_170249_artifacts/validation_trace_plot.png`
+- contact sheet: `cluster_results/l401/franka_cube_traj_tracking_teacherforce_env_smoke_20260611_170249_artifacts/video_contact_sheet.png`
+- video: `cluster_results/l401/franka_cube_traj_tracking_teacherforce_env_smoke_20260611_170249/videos/franka-cube-validate-step-0.mp4`
+- metrics: `cluster_results/l401/franka_cube_traj_tracking_teacherforce_env_smoke_20260611_170249/metrics.json`
+- trace CSV/JSONL: `cluster_results/l401/franka_cube_traj_tracking_teacherforce_env_smoke_20260611_170249_artifacts/validation_trace.csv`, `cluster_results/l401/franka_cube_traj_tracking_teacherforce_env_smoke_20260611_170249_artifacts/validation_trace.jsonl`
+- stdout log: `cluster_results/l401/slurm_logs/validate_franka_cube_1027895.out`
+
+viz_urls:
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_env_smoke_20260611_170249_artifacts/report.md`
+- plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_env_smoke_20260611_170249_artifacts/validation_trace_plot.png`
+- contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_env_smoke_20260611_170249_artifacts/video_contact_sheet.png`
+- video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_env_smoke_20260611_170249/videos/franka-cube-validate-step-0.mp4`
+
+Analysis:
+- The env smoke validates the new diagnostic wiring: task registration, obs size, target safety, teacher-force action application, raw-policy action-error logging, and video artifact generation all work in Isaac runtime.
+- The large raw-policy/reference error is expected because the validation actions are scripted zeros/close/up, not a trained policy. The applied/reference error being near zero confirms the env-level blend is actually applying reference_delta actions.
+- This is not evidence that PPO learned the behavior. The next bounded step can be a tiny teacher-forced PPO smoke with high raw-action imitation reward, followed by short fixed/random eval videos. Do not scale training unless raw-policy/reference error decreases and reduced-alpha eval preserves approach/contact.
+
+Implementation Follow-up:
+- `summarize_franka_cube_validation_artifacts.py` was patched after this run to discover local MP4s next to fetched metrics and emit a real `video_contact_sheet.png`; earlier output incorrectly claimed no video even though the MP4 existed.
+
+Next:
+- Commit/push the summarizer fix plus this worklog result. Then deploy the exact branch head and launch one tiny teacher-forced PPO smoke only, with artifact cadence preserved.

@@ -6,6 +6,8 @@ import argparse
 import csv
 import json
 import re
+import subprocess
+import tempfile
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
@@ -183,6 +185,93 @@ def _draw_no_video(output_path: Path, reason: str) -> None:
     image.save(output_path)
 
 
+def _discover_local_videos(metrics_path: Path) -> list[Path]:
+    video_dir = metrics_path.parent / "videos"
+    if not video_dir.exists():
+        return []
+    return sorted(video_dir.glob("*.mp4"))
+
+
+def _video_metadata(video_path: Path) -> dict[str, object]:
+    cmd = [
+        "ffprobe",
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-show_entries",
+        "stream=width,height,nb_frames,r_frame_rate,duration",
+        "-of",
+        "json",
+        str(video_path),
+    ]
+    try:
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        data = json.loads(result.stdout or "{}")
+        streams = data.get("streams") or []
+        return streams[0] if streams else {}
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def _draw_video_contact_sheet(video_path: Path, output_path: Path, run_name: str | None) -> dict[str, object]:
+    metadata = _video_metadata(video_path)
+    try:
+        duration = float(metadata.get("duration", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        duration = 0.0
+    sample_times = [0.10, duration * 0.50 if duration > 0.0 else 1.0, max(duration - 0.10, 0.10)]
+    labels = ["first usable", "middle", "last"]
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        frame_paths = []
+        for idx, timestamp in enumerate(sample_times):
+            frame_path = Path(tmpdir) / f"frame_{idx}.jpg"
+            cmd = [
+                "ffmpeg",
+                "-y",
+                "-v",
+                "error",
+                "-ss",
+                f"{timestamp:.3f}",
+                "-i",
+                str(video_path),
+                "-frames:v",
+                "1",
+                str(frame_path),
+            ]
+            subprocess.run(cmd, check=False)
+            if frame_path.exists():
+                frame_paths.append(frame_path)
+        frames = [Image.open(path).convert("RGB") for path in frame_paths]
+        if not frames:
+            _draw_no_video(output_path, f"Could not extract frames from {video_path}")
+            return metadata
+
+        thumb_w = 420
+        thumb_h = int(frames[0].height * thumb_w / max(frames[0].width, 1))
+        sheet_h = thumb_h + 120
+        image = Image.new("RGB", (thumb_w * len(frames), sheet_h), "white")
+        draw = ImageDraw.Draw(image)
+        try:
+            font_b = ImageFont.truetype("DejaVuSans-Bold.ttf", 20)
+            font = ImageFont.truetype("DejaVuSans.ttf", 16)
+        except Exception:
+            font = font_b = None
+        title = run_name or video_path.stem
+        draw.text((18, 16), title, fill=(20, 20, 20), font=font_b)
+        for idx, frame in enumerate(frames):
+            thumb = frame.resize((thumb_w, thumb_h))
+            x = idx * thumb_w
+            y = 70
+            image.paste(thumb, (x, y))
+            label = labels[idx] if idx < len(labels) else f"sample {idx}"
+            draw.text((x + 12, y + thumb_h + 12), f"{label} @ {sample_times[idx]:.2f}s", fill=(35, 35, 35), font=font)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        image.save(output_path)
+    return metadata
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--metrics", required=True, type=Path)
@@ -206,10 +295,17 @@ def main() -> None:
     if not isinstance(tracking, dict):
         tracking = {}
     _draw_plot(rows, tracking, output_dir / "validation_trace_plot.png")
-    _draw_no_video(
-        output_dir / "no_video_contact_sheet.png",
-        "This validation smoke was launched with CAPTURE_VIDEO=False before the updated artifact cadence.",
-    )
+    video_files = _discover_local_videos(args.metrics)
+    video_metadata = _video_metadata(video_files[0]) if video_files else {}
+    contact_sheet_path = output_dir / "video_contact_sheet.png"
+    if video_files:
+        video_metadata = _draw_video_contact_sheet(video_files[0], contact_sheet_path, args.run_name or config.get("RUN_NAME"))
+    else:
+        contact_sheet_path = output_dir / "no_video_contact_sheet.png"
+        _draw_no_video(
+            contact_sheet_path,
+            "No local MP4 was found next to metrics.json. Fetch the validation videos directory or relaunch with CAPTURE_VIDEO=True.",
+        )
 
     summary = {
         "job_id": args.job_id,
@@ -231,6 +327,9 @@ def main() -> None:
         "trace_points": len(rows),
         "video_enabled": metrics.get("video_enabled"),
         "video_folder": metrics.get("video_folder"),
+        "video_files": [str(path) for path in video_files],
+        "video_metadata": video_metadata,
+        "contact_sheet": str(contact_sheet_path),
     }
     (output_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
     (output_dir / "config.json").write_text(json.dumps(config, indent=2, sort_keys=True) + "\n")
@@ -254,7 +353,8 @@ def main() -> None:
 - target unsafe max: {_fmt(tracking.get('tracking_unsafe_target_rate_max'))}
 - target clearance min: {_fmt(tracking.get('tracking_target_table_clearance_min'))} m
 - reference caveat: curobo_validated={reference.get('curobo_validated')}, source_tag={reference.get('source_tag')}
-- visual artifact: no rollout video was captured for this smoke; see `no_video_contact_sheet.png`.
+- visual artifact: `{video_files[0] if video_files else 'n/a'}`; contact sheet `{contact_sheet_path}`.
+- video metadata: `{video_metadata}`
 
 ## Action Alignment
 
@@ -262,6 +362,12 @@ def main() -> None:
 - alignment ceiling mean: {_fmt(tracking.get('tracking_action_alignment_reward_ceiling_mean'))}
 - alignment utilization mean: {_fmt(tracking.get('tracking_action_alignment_utilization_mean'))}
 - alignment error mean: {_fmt(tracking.get('tracking_action_alignment_error_mean'))}
+- teacher-force alpha/active mean: {_fmt(tracking.get('tracking_teacher_force_alpha_mean'))} / {_fmt(tracking.get('tracking_teacher_force_active_mean'))}
+- raw-policy/ref L2 mean: {_fmt(tracking.get('tracking_raw_policy_reference_action_error_l2_mean'))}
+- applied/ref L2 mean: {_fmt(tracking.get('tracking_applied_reference_action_error_l2_mean'))}
+- applied/policy L2 mean: {_fmt(tracking.get('tracking_applied_policy_action_error_l2_mean'))}
+- raw policy close/up mean: {_fmt(tracking.get('tracking_raw_policy_action_close_mean'))} / {_fmt(tracking.get('tracking_raw_policy_action_up_mean'))}
+- applied close/up mean: {_fmt(tracking.get('tracking_applied_action_close_mean'))} / {_fmt(tracking.get('tracking_applied_action_up_mean'))}
 - policy close/up mean: {_fmt(tracking.get('tracking_action_close_mean'))} / {_fmt(tracking.get('tracking_action_up_mean'))}
 - reference close/up mean: {_fmt(tracking.get('tracking_reference_action_close_mean'))} / {_fmt(tracking.get('tracking_reference_action_up_mean'))}
 
@@ -272,7 +378,8 @@ def main() -> None:
 - trace csv: `{output_dir / 'validation_trace.csv'}`
 - trace jsonl: `{output_dir / 'validation_trace.jsonl'}`
 - plot: `{output_dir / 'validation_trace_plot.png'}`
-- no-video sheet: `{output_dir / 'no_video_contact_sheet.png'}`
+- contact sheet: `{contact_sheet_path}`
+- videos: `{[str(path) for path in video_files]}`
 - summary json: `{output_dir / 'summary.json'}`
 - config json: `{output_dir / 'config.json'}`
 """
