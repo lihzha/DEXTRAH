@@ -5607,3 +5607,53 @@ Command / Job:
   `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/contact_rollouts/franka_cube_contact_rollout_ep24s260_high30_lift22_postresetfix_20260611_173835`
 - log:
   `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/contact_aware_franka_cube_rollout_1027922.out`
+
+Result:
+- status: completed `0:0`; artifacts fetched and inspected.
+- Remote run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/contact_rollouts/franka_cube_contact_rollout_ep24s260_high30_lift22_postresetfix_20260611_173835`
+- Local artifact dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_rollouts/franka_cube_contact_rollout_ep24s260_high30_lift22_postresetfix_20260611_173835`
+- Local log:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/contact_aware_franka_cube_rollout_1027922.out`
+- Viewer URLs:
+  - report:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_rollouts/franka_cube_contact_rollout_ep24s260_high30_lift22_postresetfix_20260611_173835/contact_rollout_report.md`
+  - plot:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_rollouts/franka_cube_contact_rollout_ep24s260_high30_lift22_postresetfix_20260611_173835/contact_rollout_plot.png`
+  - video:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_rollouts/franka_cube_contact_rollout_ep24s260_high30_lift22_postresetfix_20260611_173835/videos/franka-cube-contact-rollout-high30-lift22-postresetfix-step-0.mp4`
+  - contact sheet:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_rollouts/franka_cube_contact_rollout_ep24s260_high30_lift22_postresetfix_20260611_173835/videos/franka-cube-contact-rollout-high30-lift22-postresetfix-step-0_sheet.jpg`
+
+Metrics:
+- `variant=center_high30`, `steps=281`.
+- `success_like=true`, `terminated_next_step=true`,
+  `truncated_next_step=false`, `skipped_post_reset_local_step=281`.
+- `final_cube_lift_height=max_cube_lift_height=0.135498 m`.
+- `final_ee_to_cube=0.007513 m`.
+- `min_finger_center_to_cube=0.037540 m`,
+  `final_finger_center_to_cube=0.037870 m`.
+- `final_gripper_width=0.049620 m`.
+- `max_pose_action_clip_fraction=0.0`.
+- Video validated with `ffprobe`: 1280x720, 60 FPS, 281 frames,
+  4.683 s.
+
+Analysis:
+- This post-reset-fixed artifact resolves the logging ambiguity from job
+  `1027921`: the final behavior row is pre-reset, not a reset observation.
+- The contact-aware live controller rollout is the first C-path artifact that
+  approaches the cube, closes, and lifts above the task success-height
+  threshold under the actual Isaac controller without pose-action clipping.
+- This does not unblock DP BC training yet. It only establishes a plausible
+  controller-rollout relabeler seed. Raw GraspGenX/cuRobo labels remain
+  invalid for behavior claims because source FK/lowdim agreement did not imply
+  contact geometry at the controlled fingers.
+
+Next:
+- Do not train DP/RL on raw labels.
+- Next bounded step should promote this from a single successful smoke to a
+  relabeling gate: generate or replay a small set of contact-aware controller
+  rollouts across selected source episodes/starts/offsets, require stable
+  close/lift videos and clean metrics, then export only passing controller
+  rollouts as BC demonstrations.
