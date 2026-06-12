@@ -5067,3 +5067,78 @@ Attempt:
 Fix:
 - Update `_parse_float_map()` in `dextrah_lab/rl_games/bc_reference_action_imitation.py` to translate `__COMMA__` back to commas before parsing weight maps.
 - Relaunch only after local validation, commit/push, and exact l401 deployment.
+
+Cancellation Root Cause:
+- Scheduler evidence: `sacct -j 1028065` reports `CANCELLED by 158351`, elapsed `00:00:19`, exit `0:0` for the job and `0:15` for the batch/step; `scontrol show job 1028065` reports `JobState=CANCELLED`, `Reason=None`, `ExitCode=0:15`.
+- Log evidence: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bc_franka_cube_1028065.out` reached Isaac startup and printed the full `bc_command`, then Slurm killed the step at `2026-06-11T20:00:00`. It did not reach dataset collection, parser output, metrics, report writing, or a Python traceback.
+- Interpretation: this was my manual cancellation after noticing the launch used `__COMMA__`-encoded maps before the parser supported that encoding. It was not a supervised result, not a scheduler/container failure, and not direct evidence that the parser failed at runtime.
+- Validation of the fix: local parser check on the exact exported strings now returns `{'current_teacher_mix_alpha0p10': 1.0, 'tm025_rehearsal': 3.0}` and `{'val_source_current_teacher_mix_alpha0p10_l2': 1.0, 'val_source_tm025_rehearsal_l2': 3.0}`; the completed relaunch metrics also contain these decoded maps.
+
+## 2026-06-11T20:01:12-07:00 - source-balanced rehearsal BC supervised launch
+
+Implementation:
+- implementation commit: `6054377cfbfd7c1de493e39892cdb1f1f4ed95b7` (`Handle Slurm weight map placeholders`), pushed to `origin/codex/franka-cube-trajectory-tracking`.
+- remote source: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking`, detached at `6054377cfbfd7c1de493e39892cdb1f1f4ed95b7` via the agent-owned l401 bare Git mirror.
+- local validation passed:
+  - `python3 -m py_compile dextrah_lab/rl_games/bc_reference_action_imitation.py dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py dextrah_lab/rl_games/analyze_traj_tracking_action_semantics.py`
+  - `bash -n cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh`
+  - `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+  - `git diff --check`
+
+Command / Job:
+- job_id: `1028067`
+- run_name: `franka_cube_traj_tracking_bc_dagger_rehearsal_balanced_tm025_tm010_all_20260611_200112`
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:45:00 --job-name=bc_bal_reh --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_bc_dagger_rehearsal_balanced_tm025_tm010_all_20260611_200112,NUM_ENVS=8,COLLECTION_STEPS=520,TRAIN_STEPS=400,BATCH_SIZE=1024,LEARNING_RATE=0.00005,VALIDATION_FRACTION=0.2,LOSS_DIMS=all,EVAL_INTERVAL=25,SEED=70,COLLECTION_ACTION_SOURCE=teacher_mix,COLLECTION_TEACHER_ALPHA=0.10,REHEARSAL_DATASET_PATHS=/results/bc/franka_cube_traj_tracking_bc_dagger_tm025_all_20260611_185900/reference_action_dataset.pt,REHEARSAL_DATASET_NAMES=tm025_rehearsal,SOURCE_BATCH_MODE=balanced,SOURCE_LOSS_WEIGHTS=current_teacher_mix_alpha0p10=1__COMMA__tm025_rehearsal=3,BEST_SCORE_WEIGHTS=val_source_current_teacher_mix_alpha0p10_l2=1__COMMA__val_source_tm025_rehearsal_l2=3,EARLY_STOP_PATIENCE=6,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json,CHECKPOINT=/results/bc/franka_cube_traj_tracking_bc_dagger_tm025_all_20260611_185900/nn/bc_reference_action_imitation.pth cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/bc/franka_cube_traj_tracking_bc_dagger_rehearsal_balanced_tm025_tm010_all_20260611_200112`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bc_franka_cube_1028067.out`
+
+Acceptance:
+- supervised-only gate. No selector/video/PPO launch unless this run materially improves per-source metrics.
+- preserve tm0.25 rehearsal val L2 near baseline while improving current alpha `0.10` source.
+
+## 2026-06-11T20:04:09-07:00 - source-balanced rehearsal BC supervised result
+
+Job:
+- job_id: `1028067`
+- scheduler state: `COMPLETED 0:0`, elapsed `00:01:00`, node `pool0-00006`.
+- remote run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/bc/franka_cube_traj_tracking_bc_dagger_rehearsal_balanced_tm025_tm010_all_20260611_200112`
+- remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bc_franka_cube_1028067.out`
+- local fetched run_dir: `cluster_results/l401/franka_cube_traj_tracking_bc_dagger_rehearsal_balanced_tm025_tm010_all_20260611_200112`
+- local fetched log: `cluster_results/l401/slurm_logs/bc_franka_cube_1028067.out`
+
+Artifacts:
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_rehearsal_balanced_tm025_tm010_all_20260611_200112/report.md`
+- loss plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_rehearsal_balanced_tm025_tm010_all_20260611_200112/bc_loss_plot.png`
+- metrics: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_rehearsal_balanced_tm025_tm010_all_20260611_200112/bc_metrics.json`
+- checkpoint: `/results/bc/franka_cube_traj_tracking_bc_dagger_rehearsal_balanced_tm025_tm010_all_20260611_200112/nn/bc_reference_action_imitation.pth`
+- dataset: `/results/bc/franka_cube_traj_tracking_bc_dagger_rehearsal_balanced_tm025_tm010_all_20260611_200112/reference_action_dataset.pt`
+
+Configuration Evidence:
+- `source_batch_mode=balanced`.
+- decoded `source_loss_weights={'current_teacher_mix_alpha0p10': 1.0, 'tm025_rehearsal': 3.0}`.
+- decoded `best_score_weights={'val_source_current_teacher_mix_alpha0p10_l2': 1.0, 'val_source_tm025_rehearsal_l2': 3.0}`.
+- selected checkpoint step: `400`.
+- selected score: `0.0818919986486435`.
+- `early_stop_triggered=False`.
+- reference caveat remains: compact reference is `curobo_validated=false`.
+
+Supervised Metrics:
+- global selected val L2: `0.104960`, worse than 1028053 (`0.094008`) and worse than tm0.10 (`~0.0791`) and tm0.25 (`~0.0368`).
+- global selected val MSE: `0.002995`.
+- current alpha `0.10` source val L2: `0.151430`, worse than 1028053 (`0.115862`).
+- current alpha `0.10` source close/up/gripper abs: `0.032906/0.024288/0.063323`.
+- tm0.25 rehearsal source val L2: `0.058713`, better than 1028053 (`0.070744`) but still above the maximum preservation gate (`<=0.055`) and preferred gate (`<=0.045`).
+- tm0.25 rehearsal source close/up/gripper abs: `0.009048/0.018056/0.021938`.
+
+Verdict:
+- supervised gate failure.
+- No selector sweep, no videos, no PPO, and no RL scale-up launched from this checkpoint.
+
+Analysis:
+- The weighted balanced objective did what its weights implied: it reduced tm0.25 forgetting compared with the unweighted 1028053 checkpoint (`0.058713` vs `0.070744` rehearsal L2), but only partially.
+- That preservation came at a larger cost to the fresh low-teacher source: current alpha `0.10` val L2 worsened from 1028053's `0.115862` to `0.151430`, and global val L2 worsened from `0.094008` to `0.104960`.
+- The likely tradeoff is conflicting source distributions. The tm0.25 policy manifold contains the current best teacher-assisted success behavior, while the alpha `0.10` collection exposes lower-assistance states where the input policy is farther from the reference. A 3x rehearsal weight and weighted validation score constrained updates enough to underfit the fresh alpha `0.10` labels without preserving tm0.25 below the evaluation gate.
+- This result argues against broad selector/video rollout from the balanced checkpoint. The next bounded iteration should be supervised-only analysis of source conflict or a more conservative preservation method, such as distillation/regularization to the tm0.25 actor on rehearsal states, freezing part of the actor, or a two-stage/early-stop rule that hard-stops when tm0.25 rehearsal exceeds the preservation ceiling.
+
+Active Jobs:
+- `squeue -u lzha` shows no active l401 jobs for this worker at the time of this entry.
