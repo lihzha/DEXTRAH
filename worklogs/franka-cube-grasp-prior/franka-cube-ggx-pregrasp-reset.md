@@ -4427,3 +4427,62 @@ Inspection Verdict:
 Next:
 - If authorized, the next bounded step is supervised-data generation from this explicitly diagnostic recipe followed by a supervised-only label/action gate.
 - If strict apple-to-apple reset comparability forbids offset labels, use this evidence to define a final-safe grasp/sample filter that avoids high exact-target samples rather than changing the reset state.
+
+## 2026-06-11 21:50 PDT - plan: no-offset low-exact-z grasp filter gate
+
+Goal:
+- Convert the diagnostic `offset_z=-0.010 m` evidence into an apple-to-apple-safe grasp/sample strategy.
+- Preserve the actual reset behavior: pass7 3 cm open pregrasp, same DEXTRAH Franka cube reset, no scripted target offset in the validation gate.
+
+Hypothesis:
+- The offset diagnostic did not require changing reset semantics; it revealed that pass7 samples with the exact target about `2 cm` above the cube center are marginal for corrective close/lift labels, while the lower sample around `1 cm` above the cube center is robust.
+- The current pass7 library metadata confirms this split:
+  - original index `027` has object-local grasp z `0.11350 m`, which maps to exact EE z about `0.0101 m` above the cube center in reset diagnostics.
+  - the other robust pass7 samples have object-local grasp z `0.12350 m`, mapping to exact EE z about `0.0201 m` above cube center.
+- A final-safe sampler can therefore be a filtered library that only contains low exact-z candidates, instead of applying a target offset during labels or changing the reset state.
+
+Plan:
+- Extend or reuse `dextrah_lab/scene_scripts/filter_franka_cube_grasp_prior_library.py` to export a low-exact-z library from the geometry-filtered source with metadata documenting the rule.
+- Candidate final-safe filtered library:
+  - source: `franka_cube_ggx_grasps_geometry_filtered_v1.npz`
+  - keep: original index `027`
+  - rule: object-local grasp z <= `0.115 m` / exact EE z approximately <= `0.012 m` above cube center.
+- Run two bounded no-target-offset L401 visual/contact gates with the same close/lift recipe and same seed:
+  - filtered low-z library, no offsets;
+  - unfiltered robust pass7 library, no offsets, as the direct comparison.
+- Recipes:
+  - `baseline_w055_z015`
+  - `act_neg050_z050_free`
+  - `act_neg075_z050_free`
+- Gate config:
+  - `Dextrah-Franka-Cube-Grasp`, `NUM_ENVS=1`, `NUM_RESETS=8` if runtime remains small, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`, render all resets.
+  - `act_neg075_z050_free` must use no `offset_z`.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `0e7e78773cfbe6806dfc25d292997129673b1d45`
+- implementation_commit: pending
+- changed_files planned:
+  - `dextrah_lab/scene_scripts/filter_franka_cube_grasp_prior_library.py` if threshold filter support is needed;
+  - this owned worklog.
+
+Validation Before Launch:
+- `python3 -m py_compile dextrah_lab/scene_scripts/filter_franka_cube_grasp_prior_library.py dextrah_lab/rl_games/sweep_franka_cube_bc_label_recipes.py`
+- `bash -n cluster/sbatch_sweep_franka_cube_bc_label_recipes_1gpu.sh`
+- Commit/push, deploy exact commit to the agent-owned L401 worktree, then generate the filtered library and run the L401 gates.
+
+Acceptance:
+- Filtered low-z no-offset gate passes lift and contact/enclosure proxy across all sampled resets, with contact sheet frames showing real clamp/lift and no obvious slip/overclose.
+- The comparison unfiltered pass7 no-offset run should expose whether high-z samples remain marginal under the same recipe.
+- No BC, PPO, A100, or full RL launch from this task.
+
+Implementation:
+- Extended `filter_franka_cube_grasp_prior_library.py` with optional `--min_object_grasp_z` and `--max_object_grasp_z` filters.
+- Existing `--original_indices` behavior remains supported; threshold filters can be combined with explicit indices or used alone.
+- Output metadata now records the source z values, kept z values, and z range.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/scene_scripts/filter_franka_cube_grasp_prior_library.py dextrah_lab/rl_games/sweep_franka_cube_bc_label_recipes.py` passed.
+- `bash -n cluster/sbatch_sweep_franka_cube_bc_label_recipes_1gpu.sh` passed.

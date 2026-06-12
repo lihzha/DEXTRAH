@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Filter a compact Franka cube GraspGenX reset-prior library by original index."""
+"""Filter a compact Franka cube GraspGenX reset-prior library."""
 
 from __future__ import annotations
 
@@ -55,8 +55,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--original_indices",
         type=_parse_indices,
-        required=True,
+        default=None,
         help="Comma-separated original GraspGenX indices to keep, e.g. 0,1,11,12.",
+    )
+    parser.add_argument(
+        "--min_object_grasp_z",
+        type=float,
+        default=None,
+        help="Keep grasps with object-local grasp z >= this value.",
+    )
+    parser.add_argument(
+        "--max_object_grasp_z",
+        type=float,
+        default=None,
+        help="Keep grasps with object-local grasp z <= this value.",
     )
     parser.add_argument("--filter_name", type=str, default="filtered_original_indices")
     parser.add_argument("--filter_criterion", type=str, default="manual original-index filter")
@@ -107,18 +119,35 @@ def main() -> None:
     if len(set(source_original_indices)) != len(source_original_indices):
         raise ValueError(f"source original indices contain duplicates: {source_original_indices}")
 
-    requested = [int(index) for index in args.original_indices]
-    if len(set(requested)) != len(requested):
-        raise ValueError(f"requested original indices contain duplicates: {requested}")
-
     original_to_local = {original: local for local, original in enumerate(source_original_indices)}
-    missing_requested = [index for index in requested if index not in original_to_local]
-    if missing_requested:
+    if args.original_indices is not None:
+        requested = [int(index) for index in args.original_indices]
+        if len(set(requested)) != len(requested):
+            raise ValueError(f"requested original indices contain duplicates: {requested}")
+        missing_requested = [index for index in requested if index not in original_to_local]
+        if missing_requested:
+            raise ValueError(
+                f"Requested original indices not present in {source}: {missing_requested}; "
+                f"available={source_original_indices}"
+            )
+        keep_local = [original_to_local[index] for index in requested]
+    else:
+        requested = list(source_original_indices)
+        keep_local = list(range(grasps_object.shape[0]))
+
+    object_grasp_z = grasps_object[:, 2, 3].astype(float)
+    if args.min_object_grasp_z is not None:
+        keep_local = [index for index in keep_local if object_grasp_z[index] >= float(args.min_object_grasp_z)]
+    if args.max_object_grasp_z is not None:
+        keep_local = [index for index in keep_local if object_grasp_z[index] <= float(args.max_object_grasp_z)]
+    if args.original_indices is None and args.min_object_grasp_z is None and args.max_object_grasp_z is None:
+        raise ValueError("Specify --original_indices and/or an object-grasp-z filter.")
+    if not keep_local:
         raise ValueError(
-            f"Requested original indices not present in {source}: {missing_requested}; "
-            f"available={source_original_indices}"
+            "Filter removed all grasps; "
+            f"available original_indices={source_original_indices}, object_grasp_z={object_grasp_z.tolist()}"
         )
-    keep_local = [original_to_local[index] for index in requested]
+    requested = [source_original_indices[index] for index in keep_local]
 
     output_metadata = dict(metadata)
     output_metadata.update(
@@ -133,6 +162,15 @@ def main() -> None:
             "num_grasps_original": int(grasps_object.shape[0]),
         }
     )
+    if args.min_object_grasp_z is not None or args.max_object_grasp_z is not None:
+        output_metadata["filter_object_grasp_z_range_m"] = {
+            "min": None if args.min_object_grasp_z is None else float(args.min_object_grasp_z),
+            "max": None if args.max_object_grasp_z is None else float(args.max_object_grasp_z),
+        }
+        output_metadata["filter_source_object_grasp_z_m"] = [
+            float(object_grasp_z[index]) for index in range(grasps_object.shape[0])
+        ]
+        output_metadata["filter_kept_object_grasp_z_m"] = [float(object_grasp_z[index]) for index in keep_local]
     if args.validation_source:
         output_metadata["filter_validation_source"] = str(args.validation_source)
     if args.fallback_original_index is not None:
