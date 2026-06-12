@@ -6428,3 +6428,103 @@ Next:
   the diffusion loss is applied to the same 8-step action window consumed by
   the eval bridge. Do not run closed-loop DP eval unless row-conditioned
   open/closed/lift gripper smokes pass.
+
+## 2026-06-11T18:41:00-07:00 - pred-action-steps-only bounded pretrain launch
+
+Goal:
+- Test whether applying official-DP loss only to the returned 8-step action
+  window fixes contact-aware gripper sign predictions.
+
+Hypothesis:
+- The previous checkpoint trained the full 16-step trajectory while eval uses
+  only the `oa_step_convention` returned action window. With the tiny
+  contact-aware dataset and abrupt open/close phase transitions, unused horizon
+  loss may be diluting the gripper schedule. `pred_action_steps_only=true`
+  should align training loss with eval/bridge consumption.
+
+Change:
+- Config-only bounded attempt from official
+  `real-stanford/diffusion_policy`; no DEXTRAH source edits after commit
+  `5d845f7`.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- implementation_commit: `5d845f74f8d55a93065b810a8ada01215acda0a0`
+- push/pull: pushed to `origin/codex/franka-cube-diffusion-policy-bc`
+- changed_files: worklog launch entry pending
+- official_diffusion_policy:
+  source `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/diffusion_policy`,
+  commit `5ba07ac6661db573af695b419a7947ecb704690f`,
+  remote `https://github.com/real-stanford/diffusion_policy`.
+
+Command / Job:
+- job_id: `n/a`, local RTX 6000 debug pretrain.
+- dataset:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_set_ep8_16_24_30_s260_high30_defaultfix_20260611_175347/contact_relabel_set_accepted.npz`
+- planned run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_pretrain/contact_relabel_official_dp_debug_pretrain100_predsteps_20260611_1841`
+- train command:
+  `PYTHONPATH=$DP:$DEX $VENV/bin/python train.py --config-dir $DEX/dextrah_lab/offline_dp_bc/config --config-name franka_cube_lowdim_dp task.dataset_path=$DATASET task.dataset.val_ratio=0.25 task.dataset.action_normalizer=limits_clamp_constant pred_action_steps_only=true training.device=cuda:0 training.num_epochs=100 training.max_train_steps=20 training.max_val_steps=4 training.lr_warmup_steps=10 training.checkpoint_every=10 policy.num_inference_steps=8 dataloader.batch_size=32 val_dataloader.batch_size=32 hydra.run.dir=$RUN/official_dp_train`
+
+Acceptance:
+- finite train/val losses with reduction;
+- generated report, loss CSV/PNG, resolved config, stdout, checkpoint path;
+- checkpoint smokes for `gripper_open`, `gripper_closed`, and `lift_high`;
+- corrected action-semantics diagnostic must pass or clearly improve gripper
+  sign for open rows and closed/lift rows. No closed-loop eval on failure.
+
+Result:
+- status: launching.
+
+## 2026-06-11T18:42:00-07:00 - pred-action-steps-only bounded pretrain result and weighted-loss plan
+
+Goal:
+- Inspect the `pred_action_steps_only=true` bounded official-DP run and decide
+  whether it clears the gripper-sign gate.
+
+Result:
+- status: failed gripper gate; no closed-loop eval authorized.
+- run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_pretrain/contact_relabel_official_dp_debug_pretrain100_predsteps_20260611_1841`
+- checkpoint:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_pretrain/contact_relabel_official_dp_debug_pretrain100_predsteps_20260611_1841/official_dp_train/checkpoints/latest.ckpt`
+- train/val loss:
+  train `1.04719 -> 0.01737`, val `1.02318 -> 0.07671`;
+  `train_action_mse_error=0.19694`.
+- official-DP config mechanics: passed finite train and checkpoint creation.
+- checkpoint action-range report verdict: `needs_review`.
+- corrected action semantics audit:
+  open sign match `0.4091`, closed/lift sign match `0.5778`,
+  gripper gate `fail`.
+
+Viewer URLs:
+- pretrain report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_pretrain/contact_relabel_official_dp_debug_pretrain100_predsteps_20260611_1841/official_dp_pretrain_report.md`
+- loss plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_pretrain/contact_relabel_official_dp_debug_pretrain100_predsteps_20260611_1841/loss_curves.png`
+- gripper plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_pretrain/contact_relabel_official_dp_debug_pretrain100_predsteps_20260611_1841/gripper_sign_audit/gripper_label_vs_prediction.png`
+- per-channel plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_pretrain/contact_relabel_official_dp_debug_pretrain100_predsteps_20260611_1841/gripper_sign_audit/per_channel_first_action_scatter.png`
+- train stdout:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_pretrain/contact_relabel_official_dp_debug_pretrain100_predsteps_20260611_1841/logs/official_dp_debug_pretrain.log`
+- resolved config:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_pretrain/contact_relabel_official_dp_debug_pretrain100_predsteps_20260611_1841/official_dp_train/.hydra/config.yaml`
+
+Analysis:
+- This rejects the hypothesis that full-horizon loss alone caused the
+  gripper-sign incoherence. Gripper predictions remain noisy/saturated and
+  often wrong even when training only the returned action window.
+- The next conservative fix should keep the 21D lowdim bridge schema intact:
+  add a small official-DP subclass that preserves the official sampler/model
+  and applies a heavier per-channel denoising loss weight on action dim 6.
+
+Next:
+- Validate and commit `WeightedDiffusionUnetLowdimPolicy`, then run one
+  bounded local official-DP pretrain with
+  `policy._target_=dextrah_lab.offline_dp_bc.weighted_diffusion_policy.WeightedDiffusionUnetLowdimPolicy`,
+  `pred_action_steps_only=true`, and gripper loss weight `8`. Stop after
+  checkpoint smokes and action-semantics artifacts.
