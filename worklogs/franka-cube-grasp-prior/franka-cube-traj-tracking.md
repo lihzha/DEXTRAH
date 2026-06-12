@@ -5412,6 +5412,47 @@ Analysis:
 Active Jobs:
 - No selector/video/PPO jobs launched for this attempt.
 
+## 2026-06-11T22:12:48-07:00 - stage/alpha-conditioned selector metrics result and visual gate plan
+
+Job Results:
+- selector jobs `1028138`, `1028139`, `1028140`, `1028141`, and `1028142` all completed `0:0`; fetched metrics/traces/logs locally.
+- local selector dirs:
+  - alpha0.00: `cluster_results/l401/franka_cube_traj_tracking_bc_stagealpha_selector_a000_520_20260611_220700`
+  - alpha0.25: `cluster_results/l401/franka_cube_traj_tracking_bc_stagealpha_selector_a025_520_20260611_220700`
+  - alpha0.50: `cluster_results/l401/franka_cube_traj_tracking_bc_stagealpha_selector_a050_520_20260611_220700`
+  - alpha0.75: `cluster_results/l401/franka_cube_traj_tracking_bc_stagealpha_selector_a075_520_20260611_220700`
+  - alpha1.00: `cluster_results/l401/franka_cube_traj_tracking_bc_stagealpha_selector_a100_520_20260611_220700`
+- logs: `cluster_results/l401/slurm_logs/eval_franka_cube_1028138.out` through `cluster_results/l401/slurm_logs/eval_franka_cube_1028142.out`.
+
+Artifacts:
+- selector summary report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_stagealpha_selector_summary_20260611_2207/report.md`
+- selector summary plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_stagealpha_selector_summary_20260611_2207/selector_summary_plot.png`
+- selector summary CSV/JSON: `cluster_results/l401/franka_cube_traj_tracking_bc_stagealpha_selector_summary_20260611_2207/summary.csv`, `cluster_results/l401/franka_cube_traj_tracking_bc_stagealpha_selector_summary_20260611_2207/summary.json`
+- action-semantics report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_stagealpha_selector_action_semantics_20260611_2207/action_semantics_report.md`
+- action-semantics plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_stagealpha_selector_action_semantics_20260611_2207/action_semantics_plot.png`
+
+Metrics:
+- alpha0.00: success ever `0/4`, final success `0.0`, max success `0.0`, max lift `0.015447 m`, target unsafe max `0`, clearance min `0.065114 m`, raw/ref L2 mean `1.572714`.
+- alpha0.25: success ever `3/4`, final success `0.0`, max success `0.5`, max lift `0.082562 m`, target unsafe max `0`, clearance min `0.065114 m`, raw/ref L2 mean `0.273926`; successful envs `1/2/3`, last success steps `453/386/390`.
+- alpha0.50: success ever `3/4`, final success `0.0`, max success `0.75`, max lift `0.099041 m`, target unsafe max `0`, clearance min `0.065114 m`, raw/ref L2 mean `0.074226`; successful envs `1/2/3`.
+- alpha0.75: success ever `3/4`, final success `0.0`, max success `0.75`, max lift `0.100324 m`, target unsafe max `0`, clearance min `0.065114 m`, raw/ref L2 mean `0.034299`; successful envs `1/2/3`.
+- alpha1.00: success ever `3/4`, final success `0.0`, max success `0.75`, max lift `0.101156 m`, target unsafe max `0`, clearance min `0.065114 m`, raw/ref L2 mean `0.020483`; successful envs `1/2/3`.
+- Assisted final success is `0` because success triggers done/reset in the normal eval; this is a transient-lift/success result, not a final-hold success claim.
+
+Verdict:
+- The supervised stage/alpha checkpoint improves lower-assisted selector behavior: alpha `0.25` reaches transient success in `3/4` envs with target unsafe max `0`.
+- Policy-only alpha `0.0` remains failed (`0/4`), so this is not a PPO/RL scale-up gate.
+- The next bounded gate is visual sanity only: alpha `0.0` failure, alpha `0.25` lowest-alpha transient success, and alpha `1.0` context. Videos should target successful envs for assisted alphas because env0-only videos are known to be misleading.
+- Old `actionscale-rewinf-diag-video480-step-0.mp4` / job `1027753` remains obsolete failed diagnostic evidence.
+
+Next:
+- Launch three short labeled video evals from the same stage/alpha checkpoint:
+  - alpha0.00, env0 failure.
+  - alpha0.25, env2 transient success window.
+  - alpha1.00, env1 teacher-assisted context.
+- Fetch videos/logs/metrics, validate mp4 metadata, generate reports/contact sheets, and record `viz-open` URLs before any further decision.
+- No PPO/RL scale-up.
+
 ## 2026-06-11T21:36:00-07:00 - trajectory-tracking handoff comparison plan
 
 Goal:
@@ -5735,6 +5776,42 @@ Next:
 
 Active Jobs:
 - none after `1028136`.
+
+## 2026-06-11T22:07:00-07:00 - stage/alpha-conditioned selector metrics launch
+
+Goal:
+- Run metrics-only selector evals from the supervised-passing stage/alpha checkpoint before any video generation.
+
+Version Control:
+- local_commit: `782f9a55e529264804135ce86736cfd941034da5`
+- remote_commit/status: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking` detached at `782f9a55e529264804135ce86736cfd941034da5`, clean.
+
+Common Config:
+- checkpoint: `/results/bc/franka_cube_traj_tracking_bc_stagealpha_tm025_a050_a075_a100_fix_20260611_220300/nn/bc_reference_action_imitation.pth`
+- task: `Dextrah-Franka-Cube-Grasp-Traj-Tracking`
+- action_source: `policy_reference_mix`
+- num_envs/steps: `4 / 520`
+- capture_video: `False`
+- seed: `73`
+- cube randomization: `0.08`
+- reference: `/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json`
+- reference caveat: `curobo_validated=false`
+
+Jobs:
+- alpha0.00: job `1028138`, run `franka_cube_traj_tracking_bc_stagealpha_selector_a000_520_20260611_220700`
+- alpha0.25: job `1028139`, run `franka_cube_traj_tracking_bc_stagealpha_selector_a025_520_20260611_220700`
+- alpha0.50: job `1028140`, run `franka_cube_traj_tracking_bc_stagealpha_selector_a050_520_20260611_220700`
+- alpha0.75: job `1028141`, run `franka_cube_traj_tracking_bc_stagealpha_selector_a075_520_20260611_220700`
+- alpha1.00: job `1028142`, run `franka_cube_traj_tracking_bc_stagealpha_selector_a100_520_20260611_220700`
+
+Acceptance:
+- Fetch and inspect `metrics.json`, trace CSV/JSONL, logs, and train/eval consistency before deciding on videos.
+- Target unsafe must remain `0`.
+- Videos/contact sheets are only justified for policy-only failure/improvement, lowest-alpha success/improvement, and alpha1 context after metrics identify the relevant cases.
+- No PPO/RL scale-up.
+
+Active Jobs:
+- `1028138`, `1028139`, `1028140`, `1028141`, `1028142`.
 
 ## 2026-06-11T21:12:52-07:00 - residual oracle/capacity diagnostic plan
 
