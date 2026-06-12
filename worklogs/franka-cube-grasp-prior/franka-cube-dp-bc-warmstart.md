@@ -10772,3 +10772,124 @@ Local Validation:
   passed.
 - `bash -n cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh` passed.
 - `git diff --check` passed.
+
+## 2026-06-11T23:47:12-07:00 - launch coherent nearest-label full-action correction video
+
+Goal:
+- Test the coherent eval-only correction mode with pose and gripper actions
+  taken from the same nearest accepted relabel row.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- implementation_commit: `5b37dc2444813026ef62a308b6000c5683477210`
+- local branch: `codex/franka-cube-diffusion-policy-bc`
+- remote worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- remote commit: `5b37dc2444813026ef62a308b6000c5683477210`
+- remote update note: l401 SSH fetch from GitHub failed with
+  `Permission denied (publickey)`, so this run used a one-off HTTPS fetch from
+  `https://github.com/lihzha/DEXTRAH.git` to materialize the exact pushed
+  commit.
+
+Command / Job:
+- job_id: `1028239`
+- run_name:
+  `franka_cube_dp_eval_phaseprogress_set4_ep0_fullcorr_video220_20260611_234712`
+- command:
+  `sbatch --parsable --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart,RUN_NAME=franka_cube_dp_eval_phaseprogress_set4_ep0_fullcorr_video220_20260611_234712,NUM_ENVS=1,NUM_STEPS=220,NUM_INFERENCE_STEPS=100,ACTION_CHUNK_STEPS=1,CLIP_ACTIONS=1.0,SUCCESS_WINDOW=32,SUCCESS_TIMEOUT_OVERRIDE=999.0,CAPTURE_VIDEO=True,VIDEO_LENGTH=220,VIDEO_NAME_PREFIX=franka-cube-dp-phaseprogress-fullcorr,PRINT_INTERVAL=20,DEBUG_POLICY_TRACE_MAX_CALLS=64,DEBUG_POLICY_TRACE_ENV_INDEX=0,CHECKPOINT=/results/dp_bc/checkpoints/contact_relabel_lrcentering_a075_set4_phaseprogress_20260611_224001/latest.ckpt,SUPPORT_DATASET=/results/dp_bc/phase_progress_set4/contact_relabel_set_phase_progress.npz,PHASE_PROGRESS_DATASET=/results/dp_bc/phase_progress_set4/contact_relabel_set_phase_progress.npz,PHASE_PROGRESS_EPISODE=0,PHASE_PROGRESS_START_STEP=0,PHASE_PROGRESS_MODE=contact_gated,PHASE_CLOSE_SUPPORT_DISTANCE_THRESHOLD=0.55,PHASE_LIFT_SUPPORT_DISTANCE_THRESHOLD=0.75,PHASE_LIFT_GRIPPER_WIDTH_THRESHOLD=0.025,ACTION_CORRECTION_MODE=nearest_label_full_action,ACTION_CORRECTION_BLEND=1.0,DEMO_RESET_DATASET=/results/contact_relabel_sets/franka_cube_contact_relabel_lrcentering_ep8_16_24_30_a0p75_20260611_2224/contact_relabel_set_accepted.npz,DEMO_RESET_EPISODE=0,DEMO_RESET_STEP=0,DEMO_RESET_SOURCE_TRAJECTORY_JSON=/results/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed8/trajectory.json,DEMO_RESET_SOURCE_FRAME=260,DEMO_RESET_JOINT_BLEND_ALPHA=0.75,DEMO_RESET_CUBE_POS_BLEND_ALPHA=1.0 cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- remote run dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_phaseprogress_set4_ep0_fullcorr_video220_20260611_234712`
+- stdout:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_dp_policy_1028239.out`
+
+Expected artifacts:
+- `metrics.json`, `eval_config.json`, `policy_trace.json`,
+  `support_trace.json/csv`, MP4 video.
+- After fetch: contact sheet, closed-loop report/plots, align-open/action
+  coherence diagnostic, and explicit gate report.
+
+Safety:
+- This is still a no-learning eval-only oracle/correction diagnostic. It does
+  not authorize DP fine-tune, broad eval, or RL.
+
+## 2026-06-11T23:55:00-07:00 - result coherent nearest-label full-action correction video
+
+Goal:
+- Inspect job `1028239` and decide whether coherent nearest-label pose+gripper
+  correction closes the support-drift gap enough to justify any next DP step.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- implementation_commit: `5b37dc2444813026ef62a308b6000c5683477210`
+- official Diffusion Policy source:
+  `real-stanford/diffusion_policy` @
+  `5ba07ac6661db573af695b419a7947ecb704690f`
+- remote commit: `5b37dc2444813026ef62a308b6000c5683477210`
+
+Result:
+- status: `partial pass for controller/relabel support; failed task/policy readiness`
+- job_id: `1028239`
+- run_name:
+  `franka_cube_dp_eval_phaseprogress_set4_ep0_fullcorr_video220_20260611_234712`
+- local artifact dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_fullcorr_video220_20260611_234712`
+- fetched artifacts: `metrics.json`, `eval_config.json`,
+  `policy_trace.json`, `support_trace.json/csv`, stdout log, MP4 video.
+- generated artifacts:
+  - `coherent_full_action_gate_report.md`
+  - `dp_fullcorr_contact_sheet.jpg`
+  - `closed_loop_support_report.md`
+  - `closed_loop_support_trace.png`
+  - `closed_loop_action_components.png`
+  - `closed_loop_phase_progress.png`
+  - `align_open_support_drift/align_open_support_drift_report.md`
+  - `align_open_support_drift/align_open_support_drift.png`
+  - `align_open_support_drift/align_open_action_scatter.png`
+
+Viewer URLs:
+- gate report:
+  http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_fullcorr_video220_20260611_234712/coherent_full_action_gate_report.md
+- video:
+  http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_fullcorr_video220_20260611_234712/videos/franka-cube-dp-phaseprogress-fullcorr-step-0.mp4
+- contact sheet:
+  http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_fullcorr_video220_20260611_234712/dp_fullcorr_contact_sheet.jpg
+- support trace plot:
+  http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_fullcorr_video220_20260611_234712/closed_loop_support_trace.png
+
+Metrics:
+- correction mode/blend: `nearest_label_full_action` / `1.0`.
+- action correction applied: `220/220` support trace records.
+- support distance start/final: `0.0 / 0.0`.
+- nearest phase counts: `align_open=21`, `close_hold=80`, `lift=119`.
+- correction nearest phase counts: `align_open=22`, `close_hold=80`,
+  `lift=118`.
+- first negative/hard close label step: `23 / 23`.
+- first correction lift phase step: `103`.
+- first cube lift over `0.05 m`: step `177`.
+- first cube lift over `0.10 m`: step `214`.
+- success/window success: `0.0 / 0.0`.
+- cube lift max/final: `0.108491 / 0.108491 m`.
+- EE-to-cube min/final: `0.006990 / 0.007417 m`.
+- finger-center-to-cube min/final: `0.051527 / 0.051879 m`.
+- gripper width min/final: `0.051343 / 0.052106 m`.
+
+Analysis:
+- This rejects a pure controller/action-scale blocker for the accepted relabel
+  set. When pose and gripper come coherently from nearest accepted labels, the
+  rollout no longer drifts away and does lift the cube.
+- It also explains the previous pose-only correction failure: leaving the DP
+  gripper/runtime phase stream untouched creates an incoherent state/action
+  mix, while nearest-label full actions stay on support.
+- The hard task gate still fails at 220 steps. Lift is still rising but remains
+  below the task success threshold (`0.108 m < 0.12 m`), and gripper width is
+  still about `5.2 cm`.
+- This is an oracle/eval-only action replacement, not a trained policy result.
+  It does not prove the official DP checkpoint can emit the coherent actions.
+
+Decision:
+- No DP fine-tune, broad eval, or RL from this artifact.
+- The next bounded choice is either:
+  - a 260-step no-learning full-action oracle check to separate horizon
+    sensitivity from relabel/controller limits; or
+  - an offline official-DP pose+gripper coherence gate that directly penalizes
+    the observed mismatch before any more Isaac eval.
