@@ -8184,3 +8184,101 @@ Next:
 - Launch the bounded relabel-set gate from the deployed l401 worktree with
   original episode `16`, source step `260`, trajectory seed16, and joint blend
   alphas `1.0`, `0.9`, `0.75`.
+
+## 2026-06-11T21:08:23-07:00 - support expansion relabel gate launch
+
+Goal:
+- Generate a tiny contact-aware support-expanded relabel candidate around the
+  accepted source-contact reset and the first-failing `alpha=0.75` perturbation.
+
+Command / Job:
+- job_id: `1028115`
+- run_name:
+  `franka_cube_contact_relabel_supportexp_ep16s260_a1_a0p9_a0p75_20260611_210823`
+- remote_worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- remote_commit: `37b6f60d74f79c6e7ec507adccb74309ce8a69ec`
+- command:
+  `sbatch --parsable --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart,RUN_NAME=franka_cube_contact_relabel_supportexp_ep16s260_a1_a0p9_a0p75_20260611_210823,DATASET=/results/dp_bc/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz,TRAJECTORY_ROOT=/results/dp_bc/curobo_plans,SPEC_COUNT=3,SPEC_0=16:260:/results/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed16/trajectory.json:1.0,SPEC_1=16:260:/results/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed16/trajectory.json:0.9,SPEC_2=16:260:/results/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed16/trajectory.json:0.75,VARIANT=center_high30,ALIGN_STEPS=80,CLOSE_STEPS=80,LIFT_STEPS=160,LIFT_HEIGHT=0.22,FINGER_GAIN=0.75,CLIP_ACTIONS=1.0,CAPTURE_VIDEO=True,VIDEO_LENGTH=320,VIDEO_NAME_PREFIX=franka-cube-contact-supportexp,PRINT_INTERVAL=80,SEED=42,GATE_MIN_LIFT=0.10,GATE_MAX_POSE_CLIP_FRACTION=0.0,GATE_MAX_FINAL_EE_TO_CUBE=0.05,GATE_MAX_FINAL_FINGER_TO_CUBE=0.08 cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh`
+- expected run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/contact_relabel_sets/franka_cube_contact_relabel_supportexp_ep16s260_a1_a0p9_a0p75_20260611_210823`
+- expected log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/contact_aware_franka_cube_relabel_set_1028115.out`
+
+Gate:
+- All three controller rollouts must pass the hard relabel gate with final/max
+  lift above threshold, no pose-action clipping, final EE/finger distances in
+  range, and videos/contact sheets visually coherent before any DP fine-tune is
+  considered.
+
+## 2026-06-11T21:15:46-07:00 - support expansion relabel gate result
+
+Result:
+- job_id: `1028115`
+- scheduler: `COMPLETED 0:0`, elapsed `00:02:17`, node `pool0-00030`.
+- remote run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/contact_relabel_sets/franka_cube_contact_relabel_supportexp_ep16s260_a1_a0p9_a0p75_20260611_210823`
+- local artifact dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_supportexp_ep16s260_a1_a0p9_a0p75_20260611_210823`
+- stdout log:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_supportexp_ep16s260_a1_a0p9_a0p75_20260611_210823/logs/contact_aware_franka_cube_relabel_set_1028115.out`
+- gate verdict:
+  `FAIL: at least one contact-aware rollout failed the hard relabel gate; do not train DP on this set.`
+
+Rollout Metrics:
+
+| rollout | alpha | gate | final EE-cube | final finger-cube | final/max lift | max clip | failure |
+|---|---:|---|---:|---:|---:|---:|---|
+| `ep16s260_a1p0_center_high30` | 1.00 | pass | `0.00727` | `0.03803` | `0.13545/0.13545` | `0.000` | |
+| `ep16s260_a0p9_center_high30` | 0.90 | pass | `0.00694` | `0.04038` | `0.13631/0.13631` | `0.000` | |
+| `ep16s260_a0p75_center_high30` | 0.75 | fail | `0.21257` | `0.24359` | `0.00000/0.01554` | `0.000` | `success_like_false;max_lift_below_threshold;final_lift_below_threshold;final_ee_to_cube_too_large;final_finger_to_cube_too_large` |
+
+Artifact URLs:
+- relabel gate report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_supportexp_ep16s260_a1_a0p9_a0p75_20260611_210823/contact_relabel_set_report.md`
+- support-expansion report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_supportexp_ep16s260_a1_a0p9_a0p75_20260611_210823/support_expansion_report/support_expansion_report.md`
+- support-expansion plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_supportexp_ep16s260_a1_a0p9_a0p75_20260611_210823/support_expansion_report/support_expansion_plot.png`
+- exact matched contact sheet:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_supportexp_ep16s260_a1_a0p9_a0p75_20260611_210823/rollouts/ep16s260_a1p0/contact_sheet_a1p0.jpg`
+- alpha0.9 contact sheet:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_supportexp_ep16s260_a1_a0p9_a0p75_20260611_210823/rollouts/ep16s260_a0p9/contact_sheet_a0p9.jpg`
+- alpha0.75 failure contact sheet:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_supportexp_ep16s260_a1_a0p9_a0p75_20260611_210823/rollouts/ep16s260_a0p75/contact_sheet_a0p75.jpg`
+- alpha0.75 failure video:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_supportexp_ep16s260_a1_a0p9_a0p75_20260611_210823/rollouts/ep16s260_a0p75/videos/franka-cube-contact-supportexp-ep16s260_a0p75-step-0.mp4`
+- exact matched pass video:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_supportexp_ep16s260_a1_a0p9_a0p75_20260611_210823/rollouts/ep16s260_a1p0/videos/franka-cube-contact-supportexp-ep16s260_a1p0-step-0.mp4`
+
+Support Dataset Summary:
+- Accepted candidate NPZ exists but contains only the passing alpha `1.0` and
+  `0.9` rollouts: obs/action shape `[565, 21]` / `[565, 7]`, episode ends
+  `[284, 565]`.
+- Alpha `0.75` is intentionally excluded from the accepted NPZ because it
+  failed the hard gate.
+- Candidate-vs-baseline nearest-support distance p50/p95/max:
+  `2.4024 / 7.5301 / 7.6219`. The high distances mostly come from the alpha
+  `0.9` perturbation, while the exact alpha `1.0` rollout stays near prior
+  support.
+
+Analysis:
+- Local contact-aware relabeling does not yet recover the first-failing
+  `alpha=0.75` support gap. The failure is visible and metric-backed: the hand
+  closes/lifts away from the cube, with final finger-center distance `0.244 m`
+  and no lift.
+- This is still a reset/support-coverage problem, but the current simple
+  center-high30 controller relabeler only bridges to `alpha=0.9`; it does not
+  generate a valid alpha0.75 demonstration.
+- Because the bounded relabel gate failed, I did not run official DP fine-tune
+  or any RL/scale-up.
+
+Next:
+- A reasonable next bounded diagnostic is to generate intermediate controller
+  relabel attempts around `alpha=0.85` and/or use a staged two-phase alignment
+  that first recovers finger-center geometry before close/lift, then re-test
+  alpha0.75. Do not train DP until a controller relabel artifact for alpha0.75
+  itself passes the same visual/metric gate.
+
+Active Jobs:
+- none after `1028115`.
