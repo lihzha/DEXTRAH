@@ -2728,3 +2728,30 @@ Validation:
 
 Next:
 - Commit/push, deploy exact commit to the agent-owned L401 worktree, submit the bounded action/reward audit using the robust pass7 library and smoke ep10/ep45 checkpoints, monitor/fetch/inspect artifacts, open report/contact sheet/plots with `viz-open`, and record a clear verdict. No PPO or A100 launch.
+
+## 2026-06-12T01:20:00Z - launch pass7 action/reward audit
+
+Goal:
+- Run the diagnostic-only action/reward audit requested by the orchestrator: compare ep10/ep45 policy actions against no-op/hold/approach/close/lift/assisted candidates from matched robust pass7 reset states.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- local_commit: `cf0ca0fc8f5f265df6a0b4a38bcb056891fb9bc8`
+- push/pull: pushed branch; deployed exact commit to L401 Worker A worktree via Git bundle
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `cf0ca0fc8f5f265df6a0b4a38bcb056891fb9bc8`, detached clean
+- remote validation: `python3 -m py_compile dextrah_lab/rl_games/audit_franka_cube_grasp_prior_actions.py` passed; `bash -n cluster/sbatch_audit_franka_cube_grasp_prior_actions_1gpu.sh` passed
+
+Command / Job:
+- command: `sbatch --parsable --job-name=ggx_pass7_action_audit --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=cf0ca0fc8f5f265df6a0b4a38bcb056891fb9bc8,TASK=Dextrah-Franka-Cube-Grasp,RUN_NAME=franka_cube_ggx_pass7_action_reward_audit_20260612_0120,NUM_ENVS=1,NUM_RESETS=3,HORIZON_STEPS=40,SEED=20260624,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_robust_pass7_20260612.npz,CHECKPOINTS=ep10=/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_robust_pass7_smoke45_20260612_0056/nn/last_dextrah_franka_cube_grasp_ep_10_rew_857.09937.pth,ep45=/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_robust_pass7_smoke45_20260612_0056/nn/last_dextrah_franka_cube_grasp_ep_45_rew_662.51086.pth,DETERMINISTIC=True,RENDER=True,RENDER_RESETS=1,RENDER_INTERVAL=10,RENDER_CANDIDATES=policy_ep10,policy_ep45,script_noop,script_hold_open,script_approach_exact_open,script_close_light_pregrasp,script_lift_closed,script_assisted_oracle_short,ORACLE_PROPORTIONAL_GAIN=1.0,ORACLE_MAX_POSITION_ACTION=1.0,ORACLE_TRACK_ORIENTATION=1,CLOSE_WIDTH=0.055,LIFT_ACTION_Z=0.15,ASSISTED_APPROACH_STEPS=20,ASSISTED_CLOSE_STEPS=10 cluster/sbatch_audit_franka_cube_grasp_prior_actions_1gpu.sh`
+- job_id: `1027944`
+- run_name: `franka_cube_ggx_pass7_action_reward_audit_20260612_0120`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pass7_action_reward_audit_20260612_0120`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/audit_franka_cube_prior_1027944.out`
+
+Expected artifacts:
+- `metrics.json`, `REPORT.md`, `action_reward_trace.jsonl`, `action_reward_trace.csv`, `rollout_summary.csv`, `reset_samples.csv`, `action_reward_trace_plot.png`, `action_tracking_plot.png`, `action_audit_contact_sheet.jpg`, labeled frames.
+
+Acceptance:
+- Scheduler completion is not enough. Fetch and inspect the report/plots/contact sheet/CSV/JSON, open the important artifacts with `viz-open`, and record whether policy actions are worse than scripted alternatives and whether reward terms locally incentivize open/up/away behavior.
+- No PPO or A100 launch from this job alone.
