@@ -11385,6 +11385,109 @@ Command / Job:
 Result:
 - status: launching
 
+## 2026-06-12T02:41:25-07:00 - 32-demo full-pick exact reset failed
+
+Goal:
+- Evaluate the 32-demo full-pick/lift phase-progress BC checkpoint on episode
+  0 with exact cube pose and exact source robot joints.
+
+Hypothesis:
+- If the checkpoint really overfits the offline GraspGenX/CuRobo/oracle
+  labels, an exact source-state reset with dataset-clock phase/progress should
+  lift the cube before any normal-reset scale-up.
+
+Change:
+- No new source changes after commit `07127c1cc7e7bee831fdafd7a5fe598b23157929`.
+- Ran with correction disabled, `ACTION_CHUNK_STEPS=8`,
+  `NUM_ACTION_SAMPLES=8`, `NUM_INFERENCE_STEPS=100`, and exact source reset
+  from episode 0 / frame 0.
+
+Command / Job:
+- job_id: `1028337`
+- run:
+  `franka_cube_dp_eval_curobo32_phaseprogress_ep0_exact_dataset_chunk8_avg8_video720_20260612_023101`
+- remote run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_curobo32_phaseprogress_ep0_exact_dataset_chunk8_avg8_video720_20260612_023101`
+- local run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_curobo32_phaseprogress_ep0_exact_dataset_chunk8_avg8_video720_20260612_023101`
+
+Result:
+- status: failed
+- reset evidence:
+  - cube position L2 diff: `0`
+  - cube-minus-EE L2 diff: `3.03e-7`
+  - lowdim L2/Linf diff: `7.97e-7` / `5.67e-7`
+  - source joint write diff: `0`
+- closed-loop metrics:
+  - final/window success: `0 / 0`
+  - max/final lift: `0.00198 / 0.00198 m`
+  - final EE-to-cube: `0.1227 m`
+  - final finger-center-to-cube: `0.1279 m`
+  - final gripper width: `0.0277 m`
+- support report verdict:
+  `FAIL: closed-loop policy still leaves demonstration support and closes away from the cube.`
+- artifacts:
+  - report:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_curobo32_phaseprogress_ep0_exact_dataset_chunk8_avg8_video720_20260612_023101/curobo32_phaseprogress_exact_support_report/closed_loop_support_report.md`
+  - video:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_curobo32_phaseprogress_ep0_exact_dataset_chunk8_avg8_video720_20260612_023101/videos/franka-cube-dp-curobo32-phaseprogress-ep0-exact-chunk8-avg8-step-0.mp4`
+
+Analysis:
+- This is not a normal-reset generalization failure. The exact source reset is
+  verified and the policy still misses contact/lift.
+- Runtime phase/progress features are correct, but the support-report phase
+  name decoder is misleading for collapsed full-pick phase ids; it prints phase
+  id `0` as `close_fingers` even though the runtime feature vector is
+  `phase_align_open`.
+- Next split must separate source label executability from diffusion-policy
+  prediction drift.
+
+Next:
+- Launch dataset-label replay from the same exact reset/start row.
+- Launch shorter exact segment resets at the close and lift boundaries.
+
+## 2026-06-12T02:42:00-07:00 - launch exact replay and segment diagnostics
+
+Goal:
+- Determine whether the 32-demo full-pick failure is caused by non-executable
+  labels/controller semantics or by the diffusion policy failing to emit the
+  right actions.
+
+Hypothesis:
+- `dataset_t` replay from exact episode 0 should succeed if the full-pick
+  labels are directly executable under the current evaluator.
+- Exact reset at source step `302` isolates close/hold-to-lift behavior.
+- Exact reset at source step `422` isolates lift behavior after starting from
+  the demo's closed-grasp state.
+
+Command / Job:
+- replay job_id: `1028342`
+  - run:
+    `franka_cube_dp_replay_curobo32_phaseprogress_ep0_exact_dataset_t_video720_20260612_0242`
+  - wrapper: `cluster/sbatch_replay_franka_cube_dp_actions_1gpu.sh`
+  - key settings: `MODES=dataset_t`, `STEPS=720`, exact demo reset episode
+    0/step 0, source trajectory JSON episode 0, fixed dataset start episode
+    0/step 0, video enabled.
+- close-boundary DP job_id: `1028343`
+  - run:
+    `franka_cube_dp_eval_curobo32_phaseprogress_ep0_close302_exact_chunk8_avg8_video420_20260612_0242`
+  - key settings: reset episode 0/step 302, source frame 302,
+    `PHASE_PROGRESS_START_STEP=302`, `NUM_STEPS=420`, correction disabled,
+    chunk8, 8 action samples.
+- lift-boundary DP job_id: `1028344`
+  - run:
+    `franka_cube_dp_eval_curobo32_phaseprogress_ep0_lift422_exact_chunk8_avg8_video300_20260612_0242`
+  - key settings: reset episode 0/step 422, source frame 422,
+    `PHASE_PROGRESS_START_STEP=422`, `NUM_STEPS=300`, correction disabled,
+    chunk8, 8 action samples.
+
+Result:
+- status: submitted; monitoring required.
+
+Next:
+- Poll logs to completion, fetch artifacts, inspect replay report/support
+  reports/videos, then patch or relaunch based on which split fails.
+
 ## 2026-06-12T02:40:00-07:00 - broaden BC support with 32-demo phase/progress training
 
 Goal:

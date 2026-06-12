@@ -166,6 +166,7 @@ from dextrah_lab.offline_dp_bc.action_conversion import (
 from dextrah_lab.offline_dp_bc.analyze_policy_trace import POSITION_FEATURE_IDX
 from dextrah_lab.offline_dp_bc.ppo_bridge import (
     FRANKA_CUBE_ACTION_DIM,
+    FRANKA_CUBE_LOWDIM_OBS_DIM,
     FRANKA_CUBE_PPO_OBS_DIM,
     LowdimObsHistory,
     extract_lowdim_obs_from_ppo_obs,
@@ -178,9 +179,23 @@ from dextrah_lab.offline_dp_bc.trajectory_conversion import write_demo_dataset
 DEFAULT_CAMERA_EYE = (-0.10, -0.78, 1.42)
 DEFAULT_CAMERA_TARGET = (-0.41, -0.10, 0.82)
 RESIDUAL_TARGET_ACTION_CONVENTION = replace(DEFAULT_DEXTRAH_ACTION_CONVENTION, clip_actions=False)
+CONTACT_RELABEL_PHASE_ORDER = ("align_open", "close_hold", "lift")
 
 
-def _phase_names() -> list[str]:
+def _phase_names(data: Any | None = None, phase_ids: np.ndarray | None = None, obs: np.ndarray | None = None) -> list[str]:
+    if phase_ids is not None:
+        unique = set(int(v) for v in np.unique(phase_ids))
+    else:
+        unique = set()
+    data_files = set(getattr(data, "files", ())) if data is not None else set()
+    has_phase_progress = (
+        "phase_progress_features" in data_files
+        or (obs is not None and int(obs.shape[-1]) > FRANKA_CUBE_LOWDIM_OBS_DIM)
+    )
+    if has_phase_progress and unique and unique.issubset({-1, 0, 1, 2}):
+        return list(CONTACT_RELABEL_PHASE_ORDER)
+    if "rollout_ids" in data_files and unique and unique.issubset({-1, 0, 1, 2}):
+        return list(CONTACT_RELABEL_PHASE_ORDER)
     return sorted(PICK_AND_LIFT_PHASE_ORDER)
 
 
@@ -258,15 +273,17 @@ def _demo_reset_payload(
         return None
     data = np.load(path, allow_pickle=False)
     obs = np.asarray(data["obs"], dtype=np.float32)
+    lowdim_obs = obs[:, :FRANKA_CUBE_LOWDIM_OBS_DIM]
     action = np.asarray(data["action"], dtype=np.float32)
     phase_ids = np.asarray(data["phase_ids"], dtype=np.int32)
     episode_ends = np.asarray(data["episode_ends"], dtype=np.int64)
     row_idx = _row_for_episode_step(episode_ends, episode, episode_step)
     ep_idx, start, end = _episode_for_row(row_idx, episode_ends)
-    phase_names = _phase_names()
+    phase_names = _phase_names(data, phase_ids, obs)
     return {
         "path": str(path),
-        "obs": obs,
+        "obs": lowdim_obs,
+        "raw_obs_dim": int(obs.shape[1]),
         "action": action,
         "phase_ids": phase_ids,
         "episode_ends": episode_ends,
@@ -277,7 +294,7 @@ def _demo_reset_payload(
         "episode_step": int(row_idx - start),
         "row": int(row_idx),
         "phase": _phase_name_for_row(phase_ids, phase_names, row_idx),
-        "target_obs": obs[row_idx].copy(),
+        "target_obs": lowdim_obs[row_idx].copy(),
         "target_action": action[row_idx].copy(),
         "source_trajectory": _trajectory_joint_payload(trajectory_json, int(row_idx - start)),
     }
@@ -746,11 +763,12 @@ def main() -> None:
     dataset_path = Path(args_cli.dataset).expanduser().resolve()
     checkpoint_path = Path(args_cli.checkpoint).expanduser().resolve()
     data = np.load(dataset_path, allow_pickle=False)
-    dataset_obs = np.asarray(data["obs"], dtype=np.float32)
+    dataset_obs_full = np.asarray(data["obs"], dtype=np.float32)
+    dataset_obs = dataset_obs_full[:, :FRANKA_CUBE_LOWDIM_OBS_DIM]
     dataset_action = np.asarray(data["action"], dtype=np.float32)
     episode_ends = np.asarray(data["episode_ends"], dtype=np.int64)
     phase_ids = np.asarray(data["phase_ids"], dtype=np.int32)
-    phase_names = _phase_names()
+    phase_names = _phase_names(data, phase_ids, dataset_obs_full)
     demo_reset_dataset_path = (
         Path(args_cli.demo_reset_dataset).expanduser().resolve() if args_cli.demo_reset_dataset else None
     )
@@ -811,12 +829,16 @@ def main() -> None:
     )
     env_cfg.seed = int(args_cli.seed)
     _configure_eval_camera(env_cfg)
-    workspace, policy = _load_policy(
-        checkpoint_path,
-        str(args_cli.device),
-        int(args_cli.num_inference_steps),
-        args_cli.diffusion_policy_root,
-    )
+    needs_policy = any(mode == "dp_replan" for mode in modes)
+    workspace = None
+    policy = None
+    if needs_policy:
+        workspace, policy = _load_policy(
+            checkpoint_path,
+            str(args_cli.device),
+            int(args_cli.num_inference_steps),
+            args_cli.diffusion_policy_root,
+        )
 
     gym_env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)
     task_env = gym_env.unwrapped
@@ -872,7 +894,8 @@ def main() -> None:
                 policy_obs, demo_reset_summary = _apply_demo_reset(task_env, demo_reset)
             if policy_obs.shape[-1] != FRANKA_CUBE_PPO_OBS_DIM:
                 raise RuntimeError(f"Expected PPO obs dim {FRANKA_CUBE_PPO_OBS_DIM}, got {tuple(policy_obs.shape)}")
-            history = LowdimObsHistory(num_envs=task_env.num_envs, n_obs_steps=int(policy.n_obs_steps))
+            policy_n_obs_steps = int(getattr(policy, "n_obs_steps", 2)) if policy is not None else 2
+            history = LowdimObsHistory(num_envs=task_env.num_envs, n_obs_steps=policy_n_obs_steps)
             nearest_rows: np.ndarray | None = None
             mode_distances: list[float] = []
             mode_cosines: list[float] = []
@@ -916,12 +939,21 @@ def main() -> None:
                     _nearest_dataset_row(dataset_obs, lowdim[env_idx])[0] for env_idx in range(lowdim.shape[0])
                 ]
                 with torch.inference_mode():
-                    if repeat_index == 0 or held_dp_action is None:
-                        dp_seq = predict_action_sequence_from_ppo_obs(policy, policy_obs, history, step=step)
-                        held_dp_action = dp_seq[:, 0].copy()
+                    if mode == "dp_replan":
+                        if policy is None:
+                            raise RuntimeError("dp_replan mode requires a loaded Diffusion Policy checkpoint")
+                        if repeat_index == 0 or held_dp_action is None:
+                            dp_seq = predict_action_sequence_from_ppo_obs(policy, policy_obs, history, step=step)
+                            held_dp_action = dp_seq[:, 0].copy()
+                        else:
+                            history.push(lowdim.astype(np.float32, copy=False), step=step)
+                            dp_seq = np.repeat(held_dp_action[:, None, :], repeats=1, axis=1)
                     else:
-                        history.push(lowdim.astype(np.float32, copy=False), step=step)
-                        dp_seq = np.repeat(held_dp_action[:, None, :], repeats=1, axis=1)
+                        dp_seq = np.full(
+                            (task_env.num_envs, 1, FRANKA_CUBE_ACTION_DIM),
+                            np.nan,
+                            dtype=np.float32,
+                        )
 
                 exec_actions = np.zeros((task_env.num_envs, FRANKA_CUBE_ACTION_DIM), dtype=np.float32)
                 labels_t = np.zeros_like(exec_actions)
@@ -1482,8 +1514,8 @@ def main() -> None:
     summary = {
         "dataset": str(dataset_path),
         "checkpoint": str(checkpoint_path),
-        "official_workspace": workspace.__class__.__name__,
-        "policy_class": policy.__class__.__name__,
+        "official_workspace": workspace.__class__.__name__ if workspace is not None else "not_loaded_for_label_replay",
+        "policy_class": policy.__class__.__name__ if policy is not None else "not_loaded_for_label_replay",
         "num_inference_steps": int(args_cli.num_inference_steps),
         "pose_action_multiplier": pose_action_multiplier,
         "action_repeat": action_repeat,
