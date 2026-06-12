@@ -11086,3 +11086,141 @@ Acceptance:
 - Produce viewer-ready report/plots via `viz-open`.
 - Gate remains offline only. If the checkpoint is incoherent, stop before
   Isaac eval/RL and document the policy-output blocker.
+
+## 2026-06-12T00:50:18-07:00 - exhaustive offline coherence gate
+
+Goal:
+- Replace the sampled action-semantics report with an all-window offline gate
+  over the latest 25D phase/progress checkpoint and accepted relabel dataset.
+
+Hypothesis:
+- If the DP checkpoint is policy-ready, querying it on every dataset history
+  should return first actions aligned with label `a[t]`, with coherent pose
+  direction/norm, high gripper sign match, and best temporal offset 0 across
+  `align_open`, `close_hold`, and `lift`.
+
+Change:
+- Added `dextrah_lab/offline_dp_bc/diagnose_dp_offline_coherence.py`.
+- The script loads the official DP checkpoint, scores all rows, writes
+  per-row CSV plus per-phase CSV/JSON/Markdown summaries, and stays offline.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `cff80096de7037c78b7e6e12b60c0f371a43f9d4`
+- implementation_commit: pending
+- changed_files:
+  - `dextrah_lab/offline_dp_bc/diagnose_dp_offline_coherence.py`
+  - `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+- remote_commit/status: n/a, local offline diagnostic only
+
+Command / Job:
+- command:
+  `PYTHONPATH=$DP:$DEX CUDA_VISIBLE_DEVICES=0 $VENV -m dextrah_lab.offline_dp_bc.diagnose_dp_offline_coherence --checkpoint $EXT/artifacts/official_dp_contact_relabel_smoke/contact_relabel_lrcentering_a075_set4_phaseprogress_official_dp_smoke_20260611_224001/official_dp_train/checkpoints/latest.ckpt --dataset $EXT/artifacts/official_dp_contact_relabel_smoke/contact_relabel_lrcentering_a075_set4_phaseprogress_official_dp_smoke_20260611_224001/contact_relabel_set_phase_progress.npz --output-dir $EXT/artifacts/offline_coherence/phaseprogress_allwindows_20260612_005018_gatefix --diffusion-policy-root $DP --device cuda:0 --num-inference-steps 100 --batch-size 64 --policy-source auto --seed 42`
+- job_id: n/a local GPU inference
+- run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/offline_coherence/phaseprogress_allwindows_20260612_005018_gatefix`
+- artifacts:
+  - `offline_coherence_report.md`
+  - `offline_coherence_phase_summary.csv`
+  - `offline_coherence_rows.csv`
+  - `offline_coherence_summary.json`
+
+Result:
+- status: failed offline policy-readiness gate
+- rows scored: `936`
+- overall best offset 0 fraction: `0.0288`
+- overall gripper sign match: `0.9947`
+- overall pose cosine mean: `0.3228`
+- lift pose cosine mean: `0.1000`
+- lift best offsets: `-2=388`, `0=4`, `7=117`
+
+Analysis:
+- The checkpoint I/O is internally coherent, and gripper sign is mostly
+  correct. The failure is policy action coherence: predictions generally do
+  not align with current-row labels, and lift pose direction is often wrong.
+- This explains why closed-loop DP support drifts while full-action nearest
+  label replacement can succeed: the relabel/controller path is viable, but
+  the learned denoising policy has not fit coupled pose+gripper+phase actions.
+
+Next:
+- Overfit a single accepted phase/progress trajectory locally with the same
+  official DP architecture. If one-trajectory overfit cannot pass the same
+  offline gate, debug training/normalization/model sampling before any Isaac
+  eval or RL handoff.
+
+## 2026-06-12T00:58:13-07:00 - no-EMA overfit sanity checks
+
+Goal:
+- Test whether the official Diffusion Policy architecture and DEXTRAH lowdim
+  I/O can actually fit the accepted CuRobo/oracle labels when optimization
+  pressure is sufficient.
+
+Hypothesis:
+- If one-demo and four-demo no-EMA overfits pass dense offline coherence, the
+  major remaining issue is not observation/action dimensions, normalization,
+  action sign, or `pred_action_steps_only`; it is checkpoint quality and then
+  closed-loop simulator distribution shift.
+
+Change:
+- Created an explicit one-episode dataset from episode 0:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_one_traj_overfit/phaseprogress_ep0_noema_20260612_005153/contact_relabel_set_phase_progress_ep0.npz`.
+- Trained no-EMA official DP overfits with the same 25D phase/progress obs,
+  7D relative EE+gripper actions, `horizon=16`, `n_obs_steps=2`,
+  `n_action_steps=8`, and `oa_step_convention=true`.
+- Reused `diagnose_dp_offline_coherence.py` on every available row.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `cff80096de7037c78b7e6e12b60c0f371a43f9d4`
+- implementation_commit: pending
+- changed_files:
+  - `dextrah_lab/offline_dp_bc/diagnose_dp_offline_coherence.py`
+  - `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+- remote_commit/status: n/a, local training and offline diagnostics
+
+Command / Job:
+- one-demo train run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_one_traj_overfit/phaseprogress_ep0_noema_20260612_005153`
+- four-demo train run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_set4_overfit/phaseprogress_set4_noema_20260612_005448`
+- coherence command template:
+  `PYTHONPATH=$DP:$DEX CUDA_VISIBLE_DEVICES=0 $VENV -m dextrah_lab.offline_dp_bc.diagnose_dp_offline_coherence --checkpoint <run>/official_dp_train/checkpoints/latest.ckpt --dataset <dataset>.npz --output-dir <run>/offline_coherence_latest_gatefix --diffusion-policy-root $DP --device cuda:0 --num-inference-steps 100 --batch-size 64 --policy-source auto --seed 42`
+- job_id: n/a local GPU training/inference
+
+Result:
+- status: passed offline overfit sanity checks
+- one-demo final train metrics: epoch `299`, global_step `1199`,
+  `train_action_mse_error=0.0018`, `train_loss=0.03862`
+- one-demo coherence: pass over `240` rows; all-phase pose cosine mean
+  `0.997`, gripper sign `1.0`, MSE@0 all `0.00273`
+- four-demo final train metrics: epoch `299`, global_step `4499`,
+  `train_action_mse_error=0.00008`, `train_loss=0.00986`
+- four-demo coherence: pass over `936` rows; all-phase pose cosine mean
+  `0.9979`, pose norm median `0.9961`, gripper sign `1.0`,
+  MSE@0 all `0.00150`, max pose first-action MAE `0.0118`
+- four-demo align/open is also coherent: count `69`, offset0 fraction
+  `0.580`, pose cosine mean `0.9962`, gripper sign `1.0`,
+  MSE@0 all `0.0191`
+
+Analysis:
+- The exact architecture and policy I/O are now verified offline. The model
+  sees normalized obs `(B,2,25)`, flattens to global condition `(B,50)`, and
+  denoises normalized actions `(B,8,7)` because
+  `pred_action_steps_only=true`. Training labels are rows `1:9` under
+  `oa_step_convention=true`, so the first eval action corresponds to dataset
+  label `a[t]`.
+- The inherited checkpoint failed because it did not fit the coupled
+  pose+gripper+phase labels, not because the bridge has an obvious
+  dimensional, sign, or normalization mismatch.
+
+Next:
+- Run a bounded closed-loop Isaac evaluation with correction disabled using
+  the four-demo no-EMA checkpoint, phase/progress dataset mode, support trace,
+  and video. Local Isaac runtime is unavailable in the default workstation
+  Python, so use the existing l401 container wrapper after staging artifacts.
