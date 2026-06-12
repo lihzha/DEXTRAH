@@ -31,6 +31,7 @@ SLURM_JOB_ID_SAFE="${SLURM_JOB_ID:-0}"
 JOB_ID_SUFFIX="${SLURM_JOB_ID_SAFE: -4}"
 MASTER_PORT="${MASTER_PORT:-$((10000 + 10#$JOB_ID_SUFFIX))}"
 MAX_ITERATIONS="${MAX_ITERATIONS:-}"
+SEED="${SEED:--1}"
 DISTRIBUTED="${DISTRIBUTED:-True}"
 MULTI_GPU="${MULTI_GPU:-True}"
 if [ "$TASK" = "Dextrah-Cube-Grasp" ]; then
@@ -275,6 +276,7 @@ echo "NPROC_PER_NODE=$NPROC_PER_NODE"
 echo "NUM_ENVS=$NUM_ENVS"
 echo "TASK=$TASK"
 echo "MASTER_PORT=$MASTER_PORT"
+echo "SEED=$SEED"
 echo "DISTRIBUTED=$DISTRIBUTED"
 echo "MULTI_GPU=$MULTI_GPU"
 echo "LEARNING_RATE=$LEARNING_RATE"
@@ -419,7 +421,7 @@ PY
       train.py \
         --headless \
         --task='$TASK' \
-        --seed -1 \
+        --seed '$SEED' \
         \"\${DISTRIBUTED_ARGS[@]}\" \
         \"\${RESUME_ARGS[@]}\" \
         --num_envs '$NUM_ENVS' \

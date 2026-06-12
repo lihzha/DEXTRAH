@@ -6,6 +6,51 @@
 - base_commit: 589dd81c9f9691fcda3a3d4b9ad714d90dae4794
 - created: 2026-06-11T18:39:11Z
 
+## 2026-06-12T09:16:59Z - 5x baseline and 5x reset-prior 600-epoch sweep
+
+Goal:
+- Compare reset-prior sample efficiency against the known-good Franka cube baseline using the successful base-clear launch config.
+- Run 10 total A100 8GPU jobs: baseline seeds `1,2,3,4,5` and reset-prior seeds `1,2,3,4,5`, all to 600 epochs.
+
+Hypothesis:
+- The earlier no-prior replication underperformed the provided baseline primarily because it did not match the successful launch envelope: it ran only 300 epochs and used `USE_CUDA_GRAPH=True`, while the provided run used 600 epochs and `USE_CUDA_GRAPH=False`.
+- If the reset-prior is genuinely helping, paired-seed reset-prior runs should reach lift/success earlier than matched no-prior runs under the 600-epoch base-clear config.
+
+Change:
+- Added `SEED="${SEED:--1}"` to `cluster/sbatch_train_teacher_8gpu.sh`, echo it in the launch log, and pass it through to `train.py --seed`.
+- This preserves previous wrapper behavior when `SEED` is unset, while allowing exact seeds `1..5` for the sweep.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset
+- worklog: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/worklogs/franka-cube-grasp-prior/franka-cube-ggx-pregrasp-reset.md
+- branch: codex/franka-cube-ggx-pregrasp-reset
+- base_commit: acbaf16ddf573f816f66e7ac9091ed5a77335197
+- implementation_commit: pending
+- push/pull: pending
+- changed_files: `cluster/sbatch_train_teacher_8gpu.sh`, this owned worklog
+- remote_commit/status: pending A100 agent worktree update
+
+Command / Job:
+- planned baseline jobs: `TASK=Dextrah-Franka-Cube-Grasp`, `GRASP_PRIOR_RESET_ENABLED=False`, `SEED=1..5`, `MAX_ITERATIONS=600`, `USE_CUDA_GRAPH=False`, `NUM_ENVS=2048`, `AUTO_RESUME=False`, `SELF_RELAUNCH=False`, PPO knobs matching `handoffs/franka_cube_baseclear_ppo_20260610_1756/config.json`.
+- planned reset-prior jobs: same as baseline, but `GRASP_PRIOR_RESET_ENABLED=True` and `GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz`.
+- job_id: pending
+- run_dir: pending under `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/`
+- logs: pending `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_<job_id>.out`
+- artifacts: JSONL metrics, TensorBoard summaries, resolved configs, checkpoint rewards, and comparison plots/tables after completion
+
+Result:
+- status: in_progress
+- metrics/artifacts: config comparison against the provided handoff found matching PPO/env scale knobs except the prior replication used 300 epochs and `USE_CUDA_GRAPH=True`; provided baseline used 600 epochs and `USE_CUDA_GRAPH=False`. Provided successful source commit `bdca4e1728ab8d37bac6e18836a3919f84aa6602` is an ancestor of this branch.
+- key evidence: `bash -n cluster/sbatch_train_teacher_8gpu.sh` passed after the seed hook.
+
+Analysis:
+- Use paired seeds `1..5` for both conditions, not the historical time-derived seed.
+- Keep reward weights unchanged for this sweep to isolate reset-prior vs no-prior under the known-good baseline config.
+
+Next:
+- Commit and push the seed hook/worklog; deploy the exact commit to the A100 agent worktree; submit all 10 runs; monitor until completed, failed, or externally blocked; fetch and compare curves/artifacts.
+
 ## 2026-06-12T08:59:06Z - reward and loss comparison PNGs
 
 Goal:
