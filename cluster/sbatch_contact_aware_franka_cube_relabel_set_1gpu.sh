@@ -83,8 +83,7 @@ resolve_trajectory_for_host_check() {
   IFS=: read -r ep step traj <<< "$spec"
   if [ -z "${traj:-}" ]; then
     local template="$TRAJECTORY_TEMPLATE"
-    template="${template//\{episode\}/$ep}"
-    template="${template//\{seed\}/$ep}"
+    template="$(printf '%s' "$template" | sed "s/{episode}/$ep/g; s/{seed}/$ep/g")"
     traj="$TRAJECTORY_ROOT/$template"
   fi
   host_path_from_container "$traj"
@@ -213,8 +212,7 @@ srun \
       IFS=: read -r ep step traj <<< "$spec"
       if [ -z "${traj:-}" ]; then
         template="$TRAJECTORY_TEMPLATE"
-        template="${template//\{episode\}/$ep}"
-        template="${template//\{seed\}/$ep}"
+        template="$(printf "%s" "$template" | sed "s/{episode}/$ep/g; s/{seed}/$ep/g")"
         traj="$TRAJECTORY_ROOT_ARG/$template"
       fi
       rollout_id=$(printf "ep%02ds%03d" "$ep" "$step")

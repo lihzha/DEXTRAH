@@ -5759,3 +5759,28 @@ Command / Job:
   `contact_relabel_set_report.md`,
   `contact_relabel_set_accepted.npz`, plus per-rollout CSV/JSON/plot/report
   and videos/contact sheets after fetch.
+
+Result:
+- status: failed before simulation, `FAILED 2:0`, elapsed `00:00:04`.
+- log evidence:
+  `Missing trajectory JSON for spec 8:260: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed8/trajectory.json/trajectory.json}`.
+
+Analysis:
+- The shell placeholder substitution for `{episode}`/`{seed}` in the relabel
+  set wrapper was malformed because the closing brace terminated the shell
+  parameter expansion. This produced an invalid trajectory path before entering
+  the container.
+- This failure happened before any rollout, so it is not behavior evidence.
+
+Change:
+- Patch `cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh` to
+  substitute `{episode}` and `{seed}` with `sed` in both host preflight and
+  container command construction.
+
+Validation:
+- `bash -n cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh && git diff --check`: passed.
+- `python3 -m py_compile dextrah_lab/offline_dp_bc/make_contact_relabel_set_report.py dextrah_lab/rl_games/contact_aware_franka_cube_rollout.py`: passed.
+
+Next:
+- Commit/push, deploy the exact patch commit, and relaunch the same bounded
+  4-rollout relabel-set gate.
