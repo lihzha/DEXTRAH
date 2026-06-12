@@ -33,6 +33,7 @@ MASTER_PORT="${MASTER_PORT:-$((10000 + 10#$JOB_ID_SUFFIX))}"
 MAX_ITERATIONS="${MAX_ITERATIONS:-}"
 DISTRIBUTED="${DISTRIBUTED:-True}"
 MULTI_GPU="${MULTI_GPU:-True}"
+SEED="${SEED:--1}"
 if [ "$TASK" = "Dextrah-Cube-Grasp" ]; then
   NUM_ENVS="${NUM_ENVS:-4096}"
   MINIBATCH_SIZE="${MINIBATCH_SIZE:-32768}"
@@ -278,6 +279,7 @@ echo "RESULTS_NFS=$RESULTS_NFS"
 echo "NPROC_PER_NODE=$NPROC_PER_NODE"
 echo "NUM_ENVS=$NUM_ENVS"
 echo "TASK=$TASK"
+echo "SEED=$SEED"
 echo "MASTER_PORT=$MASTER_PORT"
 echo "DISTRIBUTED=$DISTRIBUTED"
 echo "MULTI_GPU=$MULTI_GPU"
@@ -467,7 +469,7 @@ PY
       train.py \
         --headless \
         --task='$TASK' \
-        --seed -1 \
+        --seed '$SEED' \
         \"\${DISTRIBUTED_ARGS[@]}\" \
         \"\${RESUME_ARGS[@]}\" \
         --num_envs '$NUM_ENVS' \

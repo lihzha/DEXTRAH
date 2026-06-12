@@ -7463,3 +7463,156 @@ Analysis:
 
 Next:
 - Commit/push this plumbing, deploy exact commit to l401, run plain baseline A replication first, then run tracking reward preflights/probes with individual reward-term comparisons.
+
+## 2026-06-12T08:30:07Z - baseline A replication and tracking preflight
+
+Goal:
+- Prove the current branch still runs upstream-style Franka cube PPO before attributing failures to trajectory tracking, and validate the clean 60 mm tracking reference path before any tracking RL scale-up.
+
+Hypothesis:
+- Because the base Franka cube env/reward files are unchanged relative to `main`, plain `Dextrah-Franka-Cube-Grasp` should learn if the wrapper/deployment/config are correct. Tracking should remain reward-only, with action-alignment and teacher forcing disabled by default.
+
+Version Control:
+- agent_id: franka-cube-traj-tracking
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking`
+- branch: `codex/franka-cube-trajectory-tracking`
+- implementation_commit: `581890b1c4bb0209e70e657f962d1d19e3455015`
+- remote_commit/status: l401 worktree detached at `581890b1c4bb0209e70e657f962d1d19e3455015`
+
+Command / Job:
+- baseline validation job: `1028286`, l401 `batch`, run `franka_cube_baseline_A_validate_581890b_20260612_011753`
+- baseline validation metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_cube_baseline_A_validate_581890b_20260612_011753/metrics.json`
+- baseline A replication job: `29004014`, a1001 `interactive_singlenode`, run `franka_cube_baseline_A_repl8gpu_581890b_20260612_011911`
+- baseline A run dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseline_A_repl8gpu_581890b_20260612_011911`
+- tracking preflight job: `1028295`, l401 `batch`, run `franka_cube_tracking_60mm_preflight_581890b_20260612_0129`
+- tracking preflight metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_cube_tracking_60mm_preflight_581890b_20260612_0129/metrics.json`
+
+Result:
+- baseline validation passed on l401 with default cube rewards and no tracking reference.
+- tracking 60 mm preflight passed with explicit reference `/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json`.
+- tracking preflight metrics:
+  - `passed=true`, `steps_completed=520`, `done_count=0`.
+  - rollout reward mean/final `1.78505 / 1.00897`.
+  - tracking reward mean/final `0.35126 / 0.06996`.
+  - action-alignment reward mean and ceiling mean `0.0 / 0.0`.
+  - teacher-force alpha/active mean `0.0 / 0.0`.
+  - unsafe target rate max `0.0`; target clearance min `0.065114 m`.
+  - phase progress max/final `1.0 / 1.0`; curriculum min/max `1.0 / 1.0`.
+  - source duration `22.033333 s`, runtime duration `8.0 s`, retime policy `normalize_to_configured_runtime_duration`.
+- active baseline A replication status at this note:
+  - job `29004014` still running.
+  - reached about epoch `169/300`.
+  - checkpoints observed: epoch 25 reward `915.3153`, 50 `1488.1699`, 75 `1509.2474`, 100 `1583.0918`, 125 `1587.0731`, 150 `1506.844`.
+  - best checkpoint suffix reached at least `1658.4258` by epoch 159.
+
+Analysis:
+- The current branch adds a separate tracking task registration and does not diff the base Franka cube env/reward/config files relative to `main`; a plain-baseline regression would likely be wrapper/config/run-setting related.
+- The 60 mm reference matches the cube size/table height and passes compact-reference validation. It remains marked `curobo_validated=false`, so experiment notes should preserve that caveat unless the compact reference is regenerated/marked from validated provenance.
+- Tracking preflight confirms clean RL preconditions: no teacher forcing, no action-alignment reward, no unsafe targets, no phase-observation change, constant tracking curriculum.
+- The tracking term is modest under the scripted rollout compared with total reward, supporting the user's suspicion that default dense cube rewards may dominate. Matched reward ablations should compare default dense reward, tracking-only/mostly tracking, and reduced baseline closeness.
+
+Next:
+- Monitor job `29004014` to completion, inspect final logs/checkpoints/configs, then run policy eval/term extraction on the baseline checkpoint.
+- After A is understood, launch matched tracking/reward ablation probes with explicit resolved weights and per-term metrics.
+
+## 2026-06-12T08:38:33Z - baseline A replication completed but non-matching
+
+Goal:
+- Finish the first branch-local 8-GPU baseline A replication and decide whether the branch/env preconditions are trustworthy enough for tracking ablations.
+
+Hypothesis:
+- If the current branch and wrapper are equivalent to known-good upstream A, plain `Dextrah-Franka-Cube-Grasp` should show the same late reward transition near epochs 275-300.
+
+Version Control:
+- agent_id: franka-cube-traj-tracking
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking`
+- branch: `codex/franka-cube-trajectory-tracking`
+- implementation_commit: `581890b1c4bb0209e70e657f962d1d19e3455015`
+- remote_commit/status: a1001/l401 worktree detached at `581890b1c4bb0209e70e657f962d1d19e3455015`
+
+Command / Job:
+- job: `29004014`, a1001 `interactive_singlenode`, run `franka_cube_baseline_A_repl8gpu_581890b_20260612_011911`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29004014.out`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseline_A_repl8gpu_581890b_20260612_011911`
+- command essentials: `TASK=Dextrah-Franka-Cube-Grasp`, `MAX_ITERATIONS=300`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`, `AUTO_RESUME=False`, `env.use_cuda_graph=True`
+
+Result:
+- status: completed cleanly, but non-matching relative to historical A.
+- scheduler: `COMPLETED`, exit `0:0`, elapsed `00:16:48`.
+- final checkpoint: `last_dextrah_franka_cube_grasp_ep_300_rew_1639.0187.pth`.
+- best checkpoint: `dextrah_franka_cube_grasp.pth`, best reward `1775.1749`.
+- key checkpoints: epoch 250 `1659.0822`, epoch 275 `1632.1989`, epoch 300 `1639.0187`.
+- historical A comparison: job `28957528` used `MAX_ITERATIONS=600`, `env.use_cuda_graph=False`; historical rewards were epoch 250 `1738.1412`, epoch 275 `3275.8337`, epoch 300 `7956.269`, and best around `13224.685`.
+- saved reward/env settings match historical A for the checked fields: `num_envs=2048`, `cube_spawn_xy_randomization=0.08`, and all cube reward weights.
+
+Analysis:
+- This does not prove a base-env bug in the tracking branch. The base task ran stably and only diverged from historical A after the known-good run's late transition window.
+- The concrete config mismatch is now identified: the failed replication was not exact because it used `env.use_cuda_graph=True` and stopped at 300 epochs, while known-good historical A used `env.use_cuda_graph=False` and 600 epochs.
+- Do not launch tracking ablations from this evidence yet. First run exact historical-A settings from the current commit so the baseline precondition is actually tested.
+
+Next:
+- Launch exact A replication on A100 with `USE_CUDA_GRAPH=False`, `MAX_ITERATIONS=600`, `AUTO_RESUME=False`, same reward/spawn settings, and monitor through at least the epoch-300 transition window and completion.
+
+## 2026-06-12T08:40:00Z - exact historical A rerun launched
+
+Goal:
+- Test the current commit with the exact known-good baseline settings before any tracking or reward-ablation RL launch.
+
+Hypothesis:
+- The previous non-matching run may be explained by runtime/config drift (`env.use_cuda_graph=True`, 300 epochs). Matching historical A should reproduce the late reward transition if the branch and base task are correct.
+
+Version Control:
+- agent_id: franka-cube-traj-tracking
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking`
+- branch: `codex/franka-cube-trajectory-tracking`
+- implementation_commit: `581890b1c4bb0209e70e657f962d1d19e3455015`
+- remote_commit/status: a1001 worktree detached at `581890b1c4bb0209e70e657f962d1d19e3455015`
+
+Command / Job:
+- job: `29004556`, a1001, run `franka_cube_baseline_A_exact600_581890b_20260612_0840`
+- command:
+  `cd /lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking && sbatch --parsable --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp,FULL_EXPERIMENT_NAME=franka_cube_baseline_A_exact600_581890b_20260612_0840,MAX_ITERATIONS=600,AUTO_RESUME=False,SELF_RELAUNCH=False,USE_CUDA_GRAPH=False,CUBE_SPAWN_XY_RANDOMIZATION=0.08 cluster/sbatch_train_teacher_8gpu.sh`
+- expected log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29004556.out`
+- expected run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseline_A_exact600_581890b_20260612_0840`
+
+Result:
+- status: launched; monitor pending.
+
+Next:
+- Verify the wrapper command echoes `--max_iterations 600` and `env.use_cuda_graph=False`, then monitor reward checkpoints against historical A at epochs 250, 275, 300, and completion.
+
+## 2026-06-12T09:18:00Z - add explicit train seed override
+
+Goal:
+- Remove the last known hidden mismatch between historical A and branch-local baseline reruns.
+
+Hypothesis:
+- Historical A's success may be seed-sensitive. The wrapper hardcoded `--seed -1`, so even with matching visible hyperparameters it could not reproduce the historical seed sequence.
+
+Change:
+- Added `SEED="${SEED:--1}"` to `cluster/sbatch_train_teacher_8gpu.sh`.
+- Echo `SEED` in wrapper logs.
+- Pass `--seed '$SEED'` to `train.py`.
+- Default remains `-1`, preserving current behavior unless `SEED` is explicitly set.
+
+Version Control:
+- agent_id: franka-cube-traj-tracking
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking`
+- branch: `codex/franka-cube-trajectory-tracking`
+- base_commit: `581890b1c4bb0209e70e657f962d1d19e3455015`
+- implementation_commit: pending
+- changed_files: `cluster/sbatch_train_teacher_8gpu.sh`, `worklogs/franka-cube-grasp-prior/franka-cube-traj-tracking.md`
+
+Command / Job:
+- check: `bash -n cluster/sbatch_train_teacher_8gpu.sh`
+- check: `git diff --check`
+
+Result:
+- status: local wrapper checks passed.
+
+Analysis:
+- Saved `params/env.yaml` and `params/agent.yaml` comparison between historical A and exact600 `581890b` run shows only seed, rank device, and experiment name differences for persisted config.
+- Historical A used seed sequence starting at `1781139395`; exact600 `581890b` used seed sequence around `1781253651` because `--seed -1` is time-derived.
+
+Next:
+- Commit/push/deploy this seed override, then launch a historical-seed baseline rerun with `SEED=1781139395`, `USE_CUDA_GRAPH=False`, `MAX_ITERATIONS=600`.
