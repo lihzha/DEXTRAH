@@ -4681,3 +4681,47 @@ Verdict:
 - It improves low-alpha assisted behavior from tm0.5's `1/4` at alpha `0.5`/`0.75` to `3/4` at alpha `0.5`/`0.75`, and the targeted videos verify the lift is visually real rather than hidden in an unrecorded env.
 - Policy-only alpha `0.0` still fails (`0/4`, no lift), so this is not a full PPO/RL scale-up gate.
 - Reference caveat remains explicit: the compact task-space reference is still `curobo_validated=false` and should not be presented as a DEXTRAH-ready cuRobo-validated joint replay.
+
+## 2026-06-11T19:08:28-07:00 - teacher-mix DAgger tm0.10 bounded plan
+
+Goal:
+- Reduce teacher reliance toward policy-only while preserving the tm0.25 visual success/safety result.
+- First gate is supervised action-imitation only; do not launch selector/video jobs unless held-out action errors improve and the checkpoint is written.
+
+Hypothesis:
+- tm0.25 DAgger succeeded at alpha `0.5`/`0.75` because collecting from low-teacher policy-reached states made the raw policy more reference-like near the grasp/lift window.
+- A smaller teacher-mix collection alpha `0.10` should expose more low-assistance states than tm0.25 while still preventing fully dead policy-only rollouts from dominating the dataset.
+- Pure policy collection is not the first diagnostic because alpha `0.0` still has `0/4` success and no lift; collecting entirely from that regime risks mostly off-trajectory/no-contact states before we know whether lower-but-nonzero teacher support can keep useful contact/lift supervision.
+
+Planned Change:
+- No source changes for this step.
+- Run one bounded BC/DAgger collection/training job from the tm0.25 checkpoint:
+  - `COLLECTION_ACTION_SOURCE=teacher_mix`
+  - `COLLECTION_TEACHER_ALPHA=0.10`
+  - labels remain `reference_delta`
+  - `LOSS_DIMS=all`
+  - `NUM_ENVS=8`, `COLLECTION_STEPS=520`, `TRAIN_STEPS=400`, `BATCH_SIZE=1024`, `LEARNING_RATE=0.00015`
+  - target reference remains `curobo_validated=false`.
+
+Version Control:
+- agent_id: `franka-cube-traj-tracking`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking`
+- branch: `codex/franka-cube-trajectory-tracking`
+- local_head_before_plan: `83867d1455467cb071dd6259c57b9d199bd13b11`
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking`
+- remote_code_commit: `114b86d7019b5ac59ecfbd8306798a5ce6ea0e39`
+- note: remote code remains at the latest code-bearing commit used for tm0.25; local commits after `114b86d` are worklog-only. Previous l401 `git fetch origin` failed with `Permission denied (publickey)`, so no source-code redeploy is required for this no-code-change job.
+
+Validation Before Launch:
+- `bash -n cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh`
+- `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py dextrah_lab/rl_games/analyze_traj_tracking_action_semantics.py`
+
+Supervised Gate:
+- Fetch `report.md`, `bc_metrics.json`, `bc_loss_curve.csv`, `bc_loss_plot.png`, dataset metadata, and checkpoint.
+- Pass condition: validation MSE/L2 and close/up/gripper abs errors decrease materially; no NaNs/tracebacks; checkpoint exists at `/results/bc/<run>/nn/bc_reference_action_imitation.pth`.
+- If the gate passes, launch selector evals alpha `0.0`, `0.25`, `0.5`, `0.75`, `1.0` with metrics/traces first.
+- If selector improves policy-only or lower-alpha behavior without target-unsafe regression, launch targeted videos/contact sheets for alpha `0.0` failure or improvement, lowest-alpha success, and alpha `1.0` context.
+
+No-Scale Rule:
+- No full PPO/RL scale-up in this iteration. Acceptance is any improvement in policy-only or lower-alpha success without target-unsafe regression, documented with metrics and visual artifacts.
