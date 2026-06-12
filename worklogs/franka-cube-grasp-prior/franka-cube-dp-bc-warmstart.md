@@ -6118,7 +6118,7 @@ Version Control:
   `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
 - branch: `codex/franka-cube-diffusion-policy-bc`
 - base_commit: `cb6501561424151b295e88b7f3c9b04a9b4b577d`
-- implementation_commit: pending
+- implementation_commit: `b9ca64573a3a0e01ad7c0584d5a88da1ae69e0b1`
 - official_diffusion_policy:
   source `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/diffusion_policy`,
   commit `5ba07ac6661db573af695b419a7947ecb704690f`,
