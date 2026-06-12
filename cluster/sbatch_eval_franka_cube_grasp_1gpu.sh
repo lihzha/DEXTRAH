@@ -209,19 +209,26 @@ srun \
         env.grasp_prior_library_path="$GRASP_PRIOR_LIBRARY_PATH"
       )
     fi
+
+    append_grasp_prior_reference_sequence_overrides() {
+      TASK_OVERRIDES+=(
+        env.grasp_prior_action_warmstart_approach_steps="$GRASP_PRIOR_ACTION_WARMSTART_APPROACH_STEPS"
+        env.grasp_prior_action_warmstart_close_steps="$GRASP_PRIOR_ACTION_WARMSTART_CLOSE_STEPS"
+        env.grasp_prior_action_warmstart_lift_steps="$GRASP_PRIOR_ACTION_WARMSTART_LIFT_STEPS"
+        env.grasp_prior_action_warmstart_close_width="$GRASP_PRIOR_ACTION_WARMSTART_CLOSE_WIDTH"
+        env.grasp_prior_action_warmstart_lift_action_z="$GRASP_PRIOR_ACTION_WARMSTART_LIFT_ACTION_Z"
+        env.grasp_prior_action_warmstart_gain="$GRASP_PRIOR_ACTION_WARMSTART_GAIN"
+        env.grasp_prior_action_warmstart_max_position_action="$GRASP_PRIOR_ACTION_WARMSTART_MAX_POSITION_ACTION"
+        env.grasp_prior_action_warmstart_track_orientation="$GRASP_PRIOR_ACTION_WARMSTART_TRACK_ORIENTATION"
+      )
+    }
+
     case "$GRASP_PRIOR_ACTION_WARMSTART_ENABLED" in
       True|true|1|yes|Yes)
         TASK_OVERRIDES+=(
           env.grasp_prior_action_warmstart_enabled=True
-          env.grasp_prior_action_warmstart_approach_steps="$GRASP_PRIOR_ACTION_WARMSTART_APPROACH_STEPS"
-          env.grasp_prior_action_warmstart_close_steps="$GRASP_PRIOR_ACTION_WARMSTART_CLOSE_STEPS"
-          env.grasp_prior_action_warmstart_lift_steps="$GRASP_PRIOR_ACTION_WARMSTART_LIFT_STEPS"
-          env.grasp_prior_action_warmstart_close_width="$GRASP_PRIOR_ACTION_WARMSTART_CLOSE_WIDTH"
-          env.grasp_prior_action_warmstart_lift_action_z="$GRASP_PRIOR_ACTION_WARMSTART_LIFT_ACTION_Z"
-          env.grasp_prior_action_warmstart_gain="$GRASP_PRIOR_ACTION_WARMSTART_GAIN"
-          env.grasp_prior_action_warmstart_max_position_action="$GRASP_PRIOR_ACTION_WARMSTART_MAX_POSITION_ACTION"
-          env.grasp_prior_action_warmstart_track_orientation="$GRASP_PRIOR_ACTION_WARMSTART_TRACK_ORIENTATION"
         )
+        append_grasp_prior_reference_sequence_overrides
         ;;
     esac
     case "$GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED" in
@@ -231,6 +238,10 @@ srun \
           env.grasp_prior_action_prior_reward_weight="$GRASP_PRIOR_ACTION_PRIOR_REWARD_WEIGHT"
           env.grasp_prior_action_prior_reward_sharpness="$GRASP_PRIOR_ACTION_PRIOR_REWARD_SHARPNESS"
         )
+        case "$GRASP_PRIOR_ACTION_WARMSTART_ENABLED" in
+          True|true|1|yes|Yes) ;;
+          *) append_grasp_prior_reference_sequence_overrides ;;
+        esac
         ;;
     esac
 

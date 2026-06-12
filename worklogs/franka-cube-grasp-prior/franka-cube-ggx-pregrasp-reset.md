@@ -5738,3 +5738,24 @@ Next candidate:
   - staged/curriculum reward that keeps action-prior guidance active for full early episodes and decays only after contact/lift, or
   - BC/actor initialization from the successful assisted low-z trajectory followed by an explicitly preservation-biased short PPO smoke.
 - Any next run must stay video-first and explicitly labeled as intervention, not the apple-to-apple reset-prior comparison.
+
+## 2026-06-12T06:55:00Z - plan: fix action-prior reference sequence override
+
+Goal:
+- Correct the previous action-prior reward diagnostic wiring before trying any stronger intervention.
+
+Finding:
+- The train/eval wrappers export the intended reference sequence values (`close_steps=24`, `lift_steps=40`, `lift_action_z=0.50`) but only pass them into Hydra when `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=True`.
+- The reward-only run had `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`, so the action-prior reward used config defaults (`close_steps=12`, `lift_steps=12`, `lift_action_z=0.15`). The eval trace confirms `grasp_prior_action_prior_teacher_action_z=0.15` during lift phase.
+
+Change:
+- Patch only the train/eval wrappers so `GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED=True` also passes the reference sequence parameters, without enabling action override warm-start.
+- Main task defaults remain disabled/unmodified; this is still a non-apple-to-apple diagnostic path.
+
+Validation:
+- `bash -n cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- Relaunch one bounded 64-env, 45-epoch L401 smoke under a new run name with the same low-z library, reward weight/sharpness, and intended sequence (`close_steps=24`, `lift_steps=40`, `lift_action_z=0.50`).
+
+Acceptance:
+- First gate is wiring: train command and eval traces must show intended sequence params and teacher lift z `0.50`.
+- Behavioral gate remains learned-policy video showing real grasp/lift; otherwise classify as another negative intervention.
