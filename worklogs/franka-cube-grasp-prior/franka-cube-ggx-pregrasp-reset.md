@@ -4878,3 +4878,158 @@ Command / Job Plan:
 Acceptance:
 - Completed episode success/lift rates are high enough to justify a next comparison protocol discussion; exact threshold for this diagnostic is all or near-all completed episodes succeeding.
 - If episode outcomes are mixed or weak, stay in diagnostic mode; no PPO/A100/RL.
+
+Implementation / Launch:
+- implementation_commit: `e99b2b8d976c037a735f20303fd8cfce967a7f23` (`Track eval episode outcomes`)
+- push: branch `codex/franka-cube-ggx-pregrasp-reset` pushed.
+- remote deployment: Git bundle fetched into agent-owned l401 worktree; remote status detached at `e99b2b8d976c037a735f20303fd8cfce967a7f23`.
+- validation:
+  - local `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py`: passed
+  - local `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`: passed
+  - remote same checks at commit `e99b2b8d976c037a735f20303fd8cfce967a7f23`: passed
+- run name: `franka_cube_ggx_lowz_bc_actor_hold_eval_epoutcomes_20260611_2240`
+- config: `Dextrah-Franka-Cube-Grasp`, `NUM_ENVS=16`, `NUM_STEPS=260`, seed `20260625`, cube XY randomization `0.08`, deterministic, video disabled, low-z no-offset library, no action warmstart.
+- checkpoint: `/results/diagnostics/franka_cube_ggx_lowz_bc_actor_hold_20260611_2214/bc_pass7_action_warmstart.pth`
+- library: `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz`
+- command: `sbatch --parsable --partition=batch --time=0-00:30:00 --job-name=ggx_lowz_hold_stat --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,RUN_NAME=franka_cube_ggx_lowz_bc_actor_hold_eval_epoutcomes_20260611_2240,TASK=Dextrah-Franka-Cube-Grasp,NUM_ENVS=16,NUM_STEPS=260,VIDEO_LENGTH=1,VIDEO_NAME_PREFIX=lowz-bc-hold-epoutcomes,PRINT_INTERVAL=20,CAPTURE_VIDEO=False,DETERMINISTIC=True,USE_CUDA_GRAPH=False,SEED=20260625,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz,GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False,CHECKPOINT=/results/diagnostics/franka_cube_ggx_lowz_bc_actor_hold_20260611_2214/bc_pass7_action_warmstart.pth,CAMERA_EYE_X=-0.10,CAMERA_EYE_Y=-0.78,CAMERA_EYE_Z=1.42,CAMERA_TARGET_X=-0.41,CAMERA_TARGET_Y=-0.10,CAMERA_TARGET_Z=0.82 cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- job_id: `1028155`
+- remote run dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_ggx_lowz_bc_actor_hold_eval_epoutcomes_20260611_2240`
+- remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1028155.out`
+
+Result:
+- status: passed bounded statistical done-aware visual/metrics gate.
+- Slurm: job `1028155` completed `0:0`, elapsed `00:00:54`, node `pool0-00015`.
+- local artifacts:
+  - report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_bc_actor_hold_eval_epoutcomes_20260611_2240/inspection/REPORT.md`
+  - trace plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_bc_actor_hold_eval_epoutcomes_20260611_2240/inspection/trace_plot.png`
+  - summary JSON: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_bc_actor_hold_eval_epoutcomes_20260611_2240/inspection/summary.json`
+  - episode outcomes CSV: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_bc_actor_hold_eval_epoutcomes_20260611_2240/inspection/episode_outcomes.csv`
+- visual companion for the same low-z hold checkpoint/config family:
+  - report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_bc_actor_hold_eval_doneaware_20260611_2223/inspection/REPORT.md`
+  - window sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_bc_actor_hold_eval_doneaware_20260611_2223/doneaware_window_sheet.jpg`
+  - video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_bc_actor_hold_eval_doneaware_20260611_2223/videos/lowz-bc-hold-doneaware-step-0.mp4`
+- completed episode metrics:
+  - count: `23`
+  - success rate: `1.0`
+  - lifted rate: `1.0`
+  - terminal success mean: `1.0`
+  - max lift mean/min/max: `0.13644372121147488` / `0.1323542594909668` / `0.14802277088165283` m
+  - terminal lift mean: `0.13644372121147488` m
+  - reset prior success/quality mean: `1.0` / `1.0`
+
+Analysis:
+- Full-rollout final success `0.375` and step max success `0.5` are misleading for this vectorized eval because envs terminate/reset asynchronously after success.
+- The correct gate is the completed-episode table captured from the pre-reset terminal state. All `23` completed episodes succeeded and lifted before automatic reset.
+- This validates the low-z no-offset prior reset plus diagnostic hold actor as physically usable. It is not an apple-to-apple PPO result because the checkpoint is a supervised diagnostic policy.
+
+Next:
+- Launch only a bounded apple-to-apple RL smoke from scratch, not from the diagnostic BC checkpoint:
+  - same `Dextrah-Franka-Cube-Grasp` task;
+  - same 1-GPU smoke PPO wrapper/settings as prior small PPO smokes;
+  - `NUM_ENVS=64`, `MAX_ITERATIONS=45`, JSONL metrics enabled;
+  - same cube XY randomization `0.08`, no yaw/randomization changes;
+  - only intended task difference from baseline: `GRASP_PRIOR_RESET_ENABLED=True` with low-z library;
+  - `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`;
+  - `CHECKPOINT=` empty and `AUTO_RESUME=False` so training starts from scratch.
+- Gate: inspect JSONL reset metrics, reward/lift/success/contact/action curves, checkpoints, and then run a small done-aware eval/video from the best/last checkpoint. No full PPO/A100/final RL until the smoke/eval artifacts are inspected.
+
+## 2026-06-11 22:50 - low-z prior apple-to-apple 64-env PPO smoke plan
+
+Goal:
+- Test whether the corrected low-z no-offset reset-prior library improves a clean RL-from-scratch smoke under the standard small Franka cube PPO wrapper.
+
+Hypothesis:
+- The reset-prior geometry is now valid, but from-scratch PPO may still fail; the smoke should reveal whether policy learning begins to exploit the prior without any BC/policy-init/action-warmstart intervention.
+
+Change:
+- No source changes.
+- Use existing `cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh` from exact remote commit `e99b2b8d976c037a735f20303fd8cfce967a7f23`.
+- Do not use the supervised hold checkpoint. Do not enable the action warmstart override.
+
+Command / Job Plan:
+- run name: `franka_cube_ggx_lowz_prior_smoke45_20260611_2250`
+- task/config: `Dextrah-Franka-Cube-Grasp`, `NUM_ENVS=64`, `MAX_ITERATIONS=45`, `HORIZON_LENGTH=64`, `SAVE_FREQUENCY=5`, JSONL metrics enabled, cube XY randomization `0.08`, `SEED=20260625`.
+- prior: `GRASP_PRIOR_RESET_ENABLED=True`, library `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz`.
+- disabled interventions: `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`, `CHECKPOINT=`, `AUTO_RESUME=False`.
+
+Acceptance:
+- Job writes JSONL metrics and checkpoints without bad scalars/errors.
+- Reset prior success/quality remains `1.0`.
+- Training curves show non-pathological reward/action/lift behavior; success/lift need not be high in 45 epochs, but any scale-up requires a post-smoke done-aware eval/video from a checkpoint.
+- If metrics look negative or drifting, classify as a negative smoke and do not scale.
+
+Launch:
+- command: `sbatch --parsable --partition=batch --time=0-01:30:00 --job-name=ggx_lowz_rl45 --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=e99b2b8d976c037a735f20303fd8cfce967a7f23,FULL_EXPERIMENT_NAME=franka_cube_ggx_lowz_prior_smoke45_20260611_2250,TASK=Dextrah-Franka-Cube-Grasp,NUM_ENVS=64,MAX_ITERATIONS=45,HORIZON_LENGTH=64,MINIBATCH_SIZE=4096,CENTRAL_VALUE_MINIBATCH_SIZE=4096,SAVE_FREQUENCY=5,SEED=20260625,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz,GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False,AUTO_RESUME=False,CHECKPOINT=,DEXTRAH_RLGAMES_JSONL_METRICS=True cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`
+- job_id: `1028161`
+- remote run dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_lowz_prior_smoke45_20260611_2250`
+- remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_smoke_1028161.out`
+
+Monitor / Training Result:
+- Slurm: job `1028161` completed `0:0`, elapsed `00:01:58`, node `pool0-00015`.
+- local artifacts: `cluster_results/l401/franka_cube_ggx_lowz_prior_smoke45_20260611_2250`
+- JSONL records: `45`
+- bad scalar count: `0`
+- checkpoints: epochs `5,10,15,20,25,30,35,40,45`
+- best stdout checkpoint reward: epoch `10`, reward `972.3333`
+- reset metrics: `cube_grasp_prior_reset_success_rate` min `1.0`, `cube_grasp_prior_quality_success_rate` min `1.0`
+- training task metrics:
+  - `cube_success_rate` max/final: `0.0` / `0.0`
+  - `cube_has_lifted_rate` max/final: `0.0` / `0.0`
+  - `cube_lift_height` max/final: `0.0011379048228263855` / `0.00010715797543525696` m
+  - `cube_ee_to_cube_dist` min/final: `0.06627719104290009` / `0.12832897901535034` m
+  - `cube_finger_center_to_cube_dist` min/final: `0.1012701615691185` / `0.1396673619747162` m
+  - `cube_action_z` min/max/final: `-0.6175605654716492` / `0.14196854829788208` / `-0.5395358204841614`
+  - `cube_gripper_action` min/max/final: `-0.17855548858642578` / `0.9766067266464233` / `0.9416688680648804`
+
+Analysis:
+- Reset branch is healthy in training, but clean from-scratch PPO still does not learn grasp/lift in this short smoke.
+- Final policy trends open/down-away despite valid prior resets. This matches earlier policy-collapse symptoms and is not a reset geometry failure.
+- Do not scale from this smoke. Need visual evals from epoch 10 best-reward and epoch 45 final checkpoint to confirm behavior and produce artifact evidence.
+
+Eval Plan:
+- Launch two bounded done-aware eval/video jobs:
+  - best reward checkpoint epoch 10: `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_lowz_prior_smoke45_20260611_2250/nn/last_dextrah_franka_cube_grasp_ep_10_rew_972.3333.pth`
+  - final checkpoint epoch 45: `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_lowz_prior_smoke45_20260611_2250/nn/last_dextrah_franka_cube_grasp_ep_45_rew_781.67365.pth`
+- Same eval config: `NUM_ENVS=1`, `NUM_STEPS=240`, deterministic, low-z library, no action warmstart, video enabled.
+
+Eval Launch:
+- ep10 run: `franka_cube_ggx_lowz_prior_smoke45_eval_ep10_20260611_2253`, job `1028165`, log `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1028165.out`
+- ep45 run: `franka_cube_ggx_lowz_prior_smoke45_eval_ep45_20260611_2253`, job `1028166`, log `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1028166.out`
+- remote dirs:
+  - `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_ggx_lowz_prior_smoke45_eval_ep10_20260611_2253`
+  - `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_ggx_lowz_prior_smoke45_eval_ep45_20260611_2253`
+
+Eval / Artifact Result:
+- status: negative smoke confirmed; no scale-up gate.
+- eval jobs:
+  - `1028165` ep10 completed `0:0`, elapsed `00:01:06`, node `pool0-00015`
+  - `1028166` ep45 completed `0:0`, elapsed `00:01:05`, node `pool0-00030`
+- local inspection bundle:
+  - report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_prior_smoke45_20260611_2250/inspection/REPORT.md`
+  - training curves: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_prior_smoke45_20260611_2250/inspection/training_curves.png`
+  - training summary JSON: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_prior_smoke45_20260611_2250/inspection/training_summary.json`
+  - epoch metrics CSV: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_prior_smoke45_20260611_2250/inspection/epoch_metrics.csv`
+  - ep10 sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_prior_smoke45_eval_ep10_20260611_2253/inspection/contact_sheet.jpg`
+  - ep10 trace: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_prior_smoke45_eval_ep10_20260611_2253/inspection/trace_plot.png`
+  - ep10 video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_prior_smoke45_eval_ep10_20260611_2253/videos/lowz-prior-ep10-step-0.mp4`
+  - ep45 sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_prior_smoke45_eval_ep45_20260611_2253/inspection/contact_sheet.jpg`
+  - ep45 trace: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_prior_smoke45_eval_ep45_20260611_2253/inspection/trace_plot.png`
+  - ep45 video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_prior_smoke45_eval_ep45_20260611_2253/videos/lowz-prior-ep45-step-0.mp4`
+- eval metrics:
+  - ep10: success max `0.0`, lift max `0.006605327129364014` m, done count `0`, final EE/finger distances `0.4074215590953827` / `0.39844608306884766` m, final gripper action `0.2261914610862732`
+  - ep45: success max `0.0`, lift max `0.016963839530944824` m, done count `0`, final EE/finger distances `0.1035449430346489` / `0.11341996490955353` m, final gripper action `1.0`, final gripper width `0.07999639213085175` m
+- visual notes:
+  - ep10 briefly stays near the cube but then moves far away; no lift.
+  - ep45 contacts/bumps near the cube but keeps the gripper open and never grasps/lifts.
+
+Final Analysis:
+- Low-z no-offset reset geometry is validated, including the diagnostic hold actor gate, but the clean apple-to-apple PPO-from-scratch smoke remains negative.
+- Reset prior success/quality is not the blocker in this smoke; learning/action distribution is.
+- Do not launch A100/full RL from `1028161`.
+- Next bounded options:
+  - run a matched low-z prior-disabled baseline smoke/eval under the same seed to quantify whether low-z reset is better/worse than baseline at 45 epochs; or
+  - keep the next policy-improvement experiment explicitly labeled non-apple-to-apple, such as supervised policy initialization or a curriculum/preservation diagnostic.
+
+Cleanup / Active Jobs:
+- Worker A l401 jobs `1028161`, `1028165`, and `1028166` are complete.
+- `squeue -u lzha` showed no active jobs at the final check.
