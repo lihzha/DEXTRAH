@@ -4406,3 +4406,22 @@ Implementation:
 Validation:
 - `python3 -m py_compile dextrah_lab/rl_games/bc_reference_action_imitation.py`: passed.
 - `bash -n cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh`: passed.
+
+## 2026-06-11T18:42:00-07:00 - teacher-mix DAgger BC launch
+
+Version Control:
+- implementation_commit: `114b86d7019b5ac59ecfbd8306798a5ce6ea0e39`
+- branch: `codex/franka-cube-trajectory-tracking`
+- push: pushed to origin.
+- remote_commit/status: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking` detached at `114b86d7019b5ac59ecfbd8306798a5ce6ea0e39`, clean after git-bundle deploy.
+
+Command / Job:
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:35:00 --job-name=bc_dagger_tm05 --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_bc_dagger_tm05_20260611_184200,NUM_ENVS=8,COLLECTION_STEPS=520,TRAIN_STEPS=400,BATCH_SIZE=1024,LEARNING_RATE=0.00015,VALIDATION_FRACTION=0.2,LOSS_DIMS=0,1,2,3,4,5,6,EVAL_INTERVAL=25,SEED=65,COLLECTION_ACTION_SOURCE=teacher_mix,COLLECTION_TEACHER_ALPHA=0.5,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json,CHECKPOINT=/results/bc/franka_cube_traj_tracking_bc_ref_all7_20260611_181620/nn/bc_reference_action_imitation.pth cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh`
+- job_id: `1027967`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/bc/franka_cube_traj_tracking_bc_dagger_tm05_20260611_184200`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bc_franka_cube_1027967.out`
+
+Acceptance:
+- `bc_metrics.json`, `bc_loss_curve.csv`, `bc_loss_plot.png`, `report.md`, dataset, and checkpoint are written.
+- Report shows `collection_action_source=teacher_mix`, `collection_teacher_alpha=0.5`.
+- Held-out all-dim error decreases materially before any eval launch.
