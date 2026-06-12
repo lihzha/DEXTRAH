@@ -4486,3 +4486,58 @@ Implementation:
 Validation:
 - `python3 -m py_compile dextrah_lab/scene_scripts/filter_franka_cube_grasp_prior_library.py dextrah_lab/rl_games/sweep_franka_cube_bc_label_recipes.py` passed.
 - `bash -n cluster/sbatch_sweep_franka_cube_bc_label_recipes_1gpu.sh` passed.
+
+Version Control:
+- implementation_commit: `0290386a95ca7c0cc18cca4ee364e84214cce5c2` (`Add low-z grasp library filter support`)
+- pushed branch: `codex/franka-cube-ggx-pregrasp-reset`
+- remote worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote commit/status: detached `0290386a95ca7c0cc18cca4ee364e84214cce5c2`, clean.
+- deploy note: remote GitHub fetch was unavailable in this worktree, so the exact commit was deployed through a Git bundle.
+
+Filtered Library Export:
+- command: `python3 dextrah_lab/scene_scripts/filter_franka_cube_grasp_prior_library.py --source /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_geometry_filtered_v1.npz --output /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz --max_object_grasp_z 0.115 --filter_name low_exact_z_orig027_20260612 --filter_criterion "final-safe no-target-offset low exact-z filter: keep object-local grasp z <= 0.115 m, derived from Worker A offset-gate 1028126" --validation_source "job 1028126 offset-gate showed high exact-z samples marginal; use low exact-z sample filter instead of target offset" --fallback_original_index 27`
+- output library: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz`
+- filter summary: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.filter_summary.jsonl`
+- result: kept original index `[27]`, local index `[9]`, confidence `0.6920517`, object-local grasp z `0.113501884 m`.
+
+No-Offset Gate Launch:
+- common config: `Dextrah-Franka-Cube-Grasp`, `NUM_ENVS=1`, `NUM_RESETS=8`, seed `20260625`, cube XY randomization `0.08`, render all 8 resets, no target offsets.
+- recipes:
+  - `baseline_w055_z015:close=0.055,lift_z=0.15,lift=12`
+  - `act_neg050_z050_free:close_action=-0.50,close_steps=24,lift_z=0.50,lift=24,track_exact_during_lift=false`
+  - `act_neg075_z050_free:close_action=-0.75,close_steps=24,lift_z=0.50,lift=24,track_exact_during_lift=false`
+- low-z filtered job:
+  - job_id: `1028130`
+  - run name: `franka_cube_ggx_lowz_nooffset_gate_20260611_2153`
+  - library: `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz`
+  - remote run dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_lowz_nooffset_gate_20260611_2153`
+  - remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/sweep_franka_cube_bc_label_1028130.out`
+- unfiltered pass7 comparison job:
+  - job_id: `1028131`
+  - run name: `franka_cube_ggx_pass7_nooffset_compare_20260611_2153`
+  - library: `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_robust_pass7_20260612.npz`
+  - remote run dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pass7_nooffset_compare_20260611_2153`
+  - remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/sweep_franka_cube_bc_label_1028131.out`
+
+No-Offset Gate Result:
+- job `1028130` completed `0:0`; artifacts fetched to `cluster_results/l401/franka_cube_ggx_lowz_nooffset_gate_20260611_2153`.
+- job `1028131` completed `0:0`; artifacts fetched to `cluster_results/l401/franka_cube_ggx_pass7_nooffset_compare_20260611_2153`.
+- inspection bundle: `cluster_results/l401/franka_cube_ggx_lowz_nooffset_filter_20260611_2153_inspection/REPORT.md`
+- viewer URLs:
+  - report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_nooffset_filter_20260611_2153_inspection/REPORT.md`
+  - low-z pass sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_nooffset_gate_20260611_2153/act_neg075_z050_free_contact_sheet.jpg`
+  - pass7 comparison sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_nooffset_compare_20260611_2153/act_neg075_z050_free_contact_sheet.jpg`
+  - low-z trace plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_lowz_nooffset_gate_20260611_2153/trace_plot.png`
+
+Metrics:
+- low-z filtered library, `act_neg075_z050_free`: pass rate `1.0`, lift gate `1.0`, contact proxy `1.0`, final lift mean `0.03418 m`, final gripper width mean `0.05350 m`, target offset norm `0.0`.
+- low-z filtered library, `act_neg050_z050_free`: pass rate `1.0`, lift gate `1.0`, contact proxy `1.0`, final lift mean `0.03392 m`, final gripper width mean `0.05778 m`, target offset norm `0.0`.
+- unfiltered robust pass7, `act_neg075_z050_free`: pass rate `0.125`, lift gate `1.0`, contact proxy `0.125`, final lift mean `0.03374 m`, target offset norm `0.0`.
+- unfiltered robust pass7 sampled local indices `[1,6,0,3,3,3,4,4]`, inferred original indices `[1,27,0,12,12,12,14,14]`; only local `6` / original `27` passed contact/enclosure.
+- reset sampling still uses the original cube XY randomization (`0.08`) and no runtime target offset. The low-z filter changes only which precomputed object-local grasp is eligible for reset sampling.
+
+Verdict:
+- PASS for this bounded final-safe no-offset reset/grasp-library gate.
+- The target-offset result from `1028126` has been converted into a sampler/library rule: keep the low exact-z GraspGenX sample (`orig027`, object-local grasp z `0.113501884 m`) instead of applying a runtime `offset_z`.
+- No BC, PPO, A100, or full RL was launched.
+- Caveat: the current safe library is a single robust sample. If diversity is required before training, generate/filter more low exact-z samples rather than reintroducing target offsets.
