@@ -437,11 +437,18 @@ def _latest_video_files(video_folder: Path | None) -> list[str]:
     return [str(path) for path in sorted(video_folder.glob("*.mp4"))]
 
 
-def _phase_names_for_npz(data: Any, phase_ids: np.ndarray) -> list[str]:
+def _phase_names_for_npz(data: Any, phase_ids: np.ndarray, obs: np.ndarray | None = None) -> list[str]:
     """Decode phase ids for both original converted demos and relabel rollouts."""
 
     unique = set(int(v) for v in np.unique(phase_ids))
-    if "rollout_ids" in data.files and unique and unique.issubset({-1, 0, 1, 2}):
+    data_files = set(getattr(data, "files", ()))
+    has_phase_progress = (
+        "phase_progress_features" in data_files
+        or (obs is not None and int(obs.shape[-1]) > FRANKA_CUBE_LOWDIM_OBS_DIM)
+    )
+    if has_phase_progress and unique and unique.issubset({-1, 0, 1, 2}):
+        return list(CONTACT_RELABEL_PHASE_ORDER)
+    if "rollout_ids" in data_files and unique and unique.issubset({-1, 0, 1, 2}):
         return list(CONTACT_RELABEL_PHASE_ORDER)
     # trajectory_to_episode writes phase ids from sorted(set(phases)).
     return sorted(PICK_AND_LIFT_PHASE_ORDER)
@@ -476,7 +483,7 @@ def _support_dataset_payload(path: Path | None) -> dict[str, Any] | None:
         "action": action,
         "phase_ids": phase_ids,
         "episode_ends": episode_ends,
-        "phase_names": _phase_names_for_npz(data, phase_ids),
+        "phase_names": _phase_names_for_npz(data, phase_ids, obs),
         "feature_std": feature_std,
     }
 
@@ -503,7 +510,7 @@ def _demo_reset_payload(
     episode_end = int(episode_ends[episode_idx])
     local_step = int(np.clip(int(episode_step), 0, max(0, episode_end - episode_start - 1)))
     row_idx = int(episode_start + local_step)
-    phase_names = _phase_names_for_npz(data, phase_ids)
+    phase_names = _phase_names_for_npz(data, phase_ids, obs)
     phase_id = int(phase_ids[row_idx])
     payload: dict[str, Any] = {
         "path": str(path),

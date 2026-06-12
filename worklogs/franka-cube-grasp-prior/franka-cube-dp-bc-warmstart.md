@@ -11385,6 +11385,48 @@ Command / Job:
 Result:
 - status: launching
 
+## 2026-06-12T03:15:00-07:00 - raw 32-demo label executability failure and eval phase decoder fix
+
+Goal:
+- Continue the exact-reset BC debugging after the one-demo/set4 overfit passed
+  with the correct chunked DP execution contract, and avoid misleading phase
+  names in 25D support reports.
+
+Result:
+- The 32-demo full-pick/lift phase-progress checkpoint failed from exact
+  source reset, including close-boundary and lift-boundary segment resets.
+- The fixed exact dataset-label replay also failed to execute the raw full-pick
+  labels:
+  - run:
+    `franka_cube_dp_replay_curobo32_phaseprogress_ep0_exact_dataset_t_fix_video720_20260612_0248`
+  - replay report:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_replays/franka_cube_dp_replay_curobo32_phaseprogress_ep0_exact_dataset_t_fix_video720_20260612_0248/replay_report.md`
+  - verdict:
+    controller follows the expected dataset action direction but strongly
+    under-realizes the one-step delta magnitude; the replay closes far from the
+    cube and does not lift.
+- Conclusion: do not train further on the raw full-pick CuRobo labels as direct
+  BC actions. The executable contact-aware relabel sets remain the right data
+  source until the raw-label controller/action convention is redesigned.
+
+Change:
+- Updated `eval_franka_cube_dp_policy.py` so 25D phase/progress NPZs with
+  collapsed phase IDs decode as `align_open`, `close_hold`, `lift`, matching
+  replay diagnostics.
+- This only fixes support/demo-reset diagnostics; it does not change policy
+  inference or controller behavior.
+
+Validation:
+- `PYTHONPATH=$PWD /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/venv/bin/python -m py_compile dextrah_lab/rl_games/eval_franka_cube_dp_policy.py dextrah_lab/rl_games/replay_franka_cube_dataset_actions.py`
+- `bash -n cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh cluster/sbatch_replay_franka_cube_dp_actions_1gpu.sh`
+- `git diff --check`
+
+Next:
+- Commit/push/deploy the diagnostic fix.
+- Continue with executable contact-aware alpha0.75 relabel data; for normal
+  reset, the remaining issue is support coverage from normal reset into the
+  demonstrated close/lift basin, not the DP tensor I/O.
+
 ## 2026-06-12T02:41:25-07:00 - 32-demo full-pick exact reset failed
 
 Goal:
@@ -11487,6 +11529,49 @@ Result:
 Next:
 - Poll logs to completion, fetch artifacts, inspect replay report/support
   reports/videos, then patch or relaunch based on which split fails.
+
+## 2026-06-12T02:48:00-07:00 - fix and relaunch 25D replay diagnostic
+
+Goal:
+- Make the dataset-action replay diagnostic compatible with 25D
+  phase/progress datasets so it can answer whether labels are executable.
+
+Hypothesis:
+- Replay crash `1028342` is a diagnostic bug: the live env exposes 21D lowdim,
+  while the dataset rows include 4 extra phase/progress features.
+
+Change:
+- `replay_franka_cube_dataset_actions.py` now uses the first 21 lowdim
+  dimensions for reset, nearest-row, and controller-target math when the input
+  dataset has phase/progress features.
+- Pure label replay no longer loads or queries the DP checkpoint unless
+  `dp_replan` mode is requested.
+- Phase names for collapsed 3-phase phase/progress datasets decode as
+  `align_open`, `close_hold`, `lift`.
+
+Version Control:
+- implementation_commit: `9bbe4b2ba9bb2c4d2dfc036dcdca13444631878d`
+- push/pull:
+  - pushed to GitHub branch `codex/franka-cube-diffusion-policy-bc`
+  - pushed directly to `/lustre/fsw/portfolios/nvr/users/lzha/src/DEXTRAH`
+    because l401 cannot fetch GitHub SSH
+  - l401 agent worktree detached at `9bbe4b2ba9bb2c4d2dfc036dcdca13444631878d`
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/replay_franka_cube_dataset_actions.py`
+- `bash -n cluster/sbatch_replay_franka_cube_dp_actions_1gpu.sh`
+- `git diff --check`
+
+Result:
+- original replay job `1028342` failed with:
+  `ValueError: operands could not be broadcast together with shapes (21,) (25,)`.
+- relaunched fixed replay:
+  - job_id: `1028346`
+  - run:
+    `franka_cube_dp_replay_curobo32_phaseprogress_ep0_exact_dataset_t_fix_video720_20260612_0248`
+
+Next:
+- Monitor `1028346` plus segment jobs `1028343` and `1028344`.
 
 ## 2026-06-12T02:40:00-07:00 - broaden BC support with 32-demo phase/progress training
 
