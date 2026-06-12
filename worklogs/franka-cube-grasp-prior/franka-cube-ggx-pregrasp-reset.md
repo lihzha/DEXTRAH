@@ -5452,3 +5452,87 @@ Acceptance / decision:
 - Video/report must answer whether closing at the 3 cm pregrasp is locally too weak/negative compared with staying open, and whether assisted approach-close-lift remains rewarded across close widths.
 - Policy-state report must answer whether prior ep200 deterministic/stochastic actions are saturated open/down at reset and whether observation normalization looks sane.
 - No scale-up gate unless a learned policy, not just a scripted reference, shows real grasp/lift in video.
+
+## 2026-06-12T06:31:03Z - launch: gripper close/lift incentive diagnostics
+
+Goal:
+- Execute the bounded eval-only diagnostics from the plan above: policy action-state audit for prior/baseline ep200, plus a video-first close-width sweep from the same low-z reset distribution.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- local_commit: `4a4dca9ef388df619806792da134c35cb331c56b`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: detached `4a4dca9ef388df619806792da134c35cb331c56b`, clean
+- push/pull: deployed by git bundle to agent-owned l401 worktree; branch push pending after result inspection/worklog update
+
+Command / Jobs:
+- shared low-z library: `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz`
+- shared reset config: `Dextrah-Franka-Cube-Grasp`, `cube_spawn_xy_randomization=0.08`, prior reset enabled for eval distribution, no reward/reset/task changes.
+- `1028218`: `franka_cube_lowz_ep200_policy_state_prior_20260612_063052`, wrapper `cluster/sbatch_audit_franka_cube_policy_state_1gpu.sh`, prior ep200 checkpoint plus prior training JSONL.
+- `1028219`: `franka_cube_lowz_ep200_policy_state_baseline_20260612_063052`, wrapper `cluster/sbatch_audit_franka_cube_policy_state_1gpu.sh`, baseline ep200 checkpoint plus baseline training JSONL.
+- `1028220`: `franka_cube_lowz_close_pregrasp_w060_20260612_063052`, candidate `script_close_light_pregrasp`, `CLOSE_WIDTH=0.060`, single reset/video.
+- `1028221`: `franka_cube_lowz_close_pregrasp_w000_20260612_063052`, candidate `script_close_light_pregrasp`, `CLOSE_WIDTH=0.000`, single reset/video.
+- `1028222`: `franka_cube_lowz_assisted_w055_20260612_063052`, candidate `script_assisted_oracle_short`, `CLOSE_WIDTH=0.055`, single reset/video.
+- `1028223`: `franka_cube_lowz_assisted_w000_20260612_063052`, candidate `script_assisted_oracle_short`, `CLOSE_WIDTH=0.000`, single reset/video.
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/audit_franka_cube_policy_state_<job>.out` and `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/audit_franka_cube_prior_<job>.out`
+- remote results: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/<run_name>`
+
+Expected artifacts:
+- policy-state jobs: `metrics.json`, action histograms, obs/RMS z-score plots, training trend plot/report.
+- close sweep jobs: `metrics.json`, `REPORT.md`, trace CSV/JSONL, labeled frames/contact sheet, MP4 after local fetch/encoding.
+
+Acceptance / decision:
+- Inspect logs/artifacts, not Slurm state alone.
+- Diagnose whether gripper close from 3 cm pregrasp is locally weak/negative and whether assisted approach-close-lift remains rewarded across close widths.
+- Diagnose whether prior ep200 deterministic/stochastic actions are saturated open/down with sane observation normalization.
+- No PPO/A100/full-scale launch from these diagnostics.
+
+## 2026-06-12T06:36:39Z - result: gripper close/lift incentive diagnostics
+
+Result:
+- status: completed / inspected
+- jobs: `1028218`-`1028223` completed `0:0`; logs contain expected command/config lines and metrics-write messages, with no traceback/Hydra/runtime error signatures.
+- fetched local dirs:
+  - `cluster_results/l401/franka_cube_lowz_ep200_policy_state_prior_20260612_063052`
+  - `cluster_results/l401/franka_cube_lowz_ep200_policy_state_baseline_20260612_063052`
+  - `cluster_results/l401/franka_cube_lowz_close_pregrasp_w060_20260612_063052`
+  - `cluster_results/l401/franka_cube_lowz_close_pregrasp_w000_20260612_063052`
+  - `cluster_results/l401/franka_cube_lowz_assisted_w055_20260612_063052`
+  - `cluster_results/l401/franka_cube_lowz_assisted_w000_20260612_063052`
+- inspection bundle: `cluster_results/l401/franka_cube_lowz_gripper_incentive_audit_20260612_063052/inspection`
+
+Viewer URLs:
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_gripper_incentive_audit_20260612_063052/inspection/REPORT.md`
+- combined contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_gripper_incentive_audit_20260612_063052/inspection/close_sweep_contact_sheet.jpg`
+- policy action summary: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_gripper_incentive_audit_20260612_063052/inspection/policy_action_summary.jpg`
+- assisted `w055` video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_gripper_incentive_audit_20260612_063052/inspection/assisted_w055.mp4`
+- close-at-pregrasp `w000` video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_gripper_incentive_audit_20260612_063052/inspection/close_pregrasp_w000.mp4`
+
+Key metrics:
+- policy state:
+  - prior ep200 deterministic reset action: `z=-0.896`, `gripper=+1.000`, gripper saturation `1.0`; stochastic reset samples still mostly open (`gripper` mean about `0.954`).
+  - baseline ep200 deterministic reset action: `z=+0.675`, `gripper=-1.000`; this matches the video behavior where baseline closes hard but off-target.
+  - prior observation RMS/z-score is sane: max abs z-score p95 `2.279`, `0` dims above `3`; baseline has max p95 `4.823`, `2` dims above `3`, `0` above `5`.
+- close/lift sweep:
+  - close-at-pregrasp `w060`: final reward `2.311`, max lift `0.0000 m`, final width `0.0600 m`.
+  - close-at-pregrasp `w035`: final reward `2.387`, max lift `0.0000 m`, final width `0.0350 m`.
+  - close-at-pregrasp `w000`: final reward `2.654`, max lift `0.0000 m`, final width `0.0002 m`.
+  - assisted `w055`: final reward `5.133`, max lift `0.0613 m`, final width `0.0623 m`.
+  - assisted `w035`: final reward `5.165`, max lift `0.0612 m`, final width `0.0597 m`.
+  - assisted `w000`: final reward `1.933`, max lift `0.0330 m`, final width `0.0007 m`.
+
+Analysis:
+- The user-visible reset/pregrasp geometry remains healthy, and assisted approach-to-exact plus light/medium close still produces real lift in video.
+- Closing directly at the 3 cm pregrasp does not lift at any tested width. Hard zero-width close receives the highest local scalar reward among pregrasp-only closes, but it is not a grasp/lift behavior.
+- The physically useful assisted light-close path can have nonnegative or mild gripper action and therefore receives little/no explicit close-action reward. Lift reward is strong after lift, but the current reward/action landscape does not guide discovery from open 3 cm pregrasp into the exact/contact/lift sequence.
+- The prior ep200 actor has collapsed to saturated open/down behavior at reset; this is not explained by reset-quality metrics or obvious observation-normalization mismatch.
+
+Decision:
+- No A100/full PPO scale-up is justified.
+- This is a learned closed-loop action-discovery/reward-incentive blocker, not a reset-transform/library blocker.
+- Next bounded work should be explicitly diagnostic/intervention-labeled: e.g. a tiny curriculum/action-prior experiment that teaches approach-to-exact then light close, or a reward-audit variant that gives prelift credit for physically useful light-close/enclosure. Such changes must remain separate from the apple-to-apple reset-prior baseline unless explicitly approved.
+
+Active jobs:
+- none expected after this audit; verify with `squeue` before handoff.
