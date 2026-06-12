@@ -5333,3 +5333,89 @@ Expected artifacts:
 Acceptance / decision:
 - This is a diagnosis gate only. It should explain whether the prior ep200 policy is locally rewarded while opening/hovering, whether baseline closes off-target from the same pregrasp, and whether scripted close/lift receives better local reward/contact/lift signals.
 - Do not launch PPO/A100 from this audit. Any reward/action intervention remains a separate explicit diagnostic variant.
+
+Launch:
+- exact local/remote commit: `1b3daa0b32797ca3d3b8c2806205e1f55a74ae8d`
+- job: `1028198`
+- run name: `franka_cube_lowz_ep200_reward_action_audit_video_20260612_0615`
+- remote run dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_lowz_ep200_reward_action_audit_video_20260612_0615`
+- remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/audit_franka_cube_prior_1028198.out`
+- checkpoints:
+  - prior ep200: `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_lowz_prior_long200_20260611_2257/nn/last_dextrah_franka_cube_grasp_ep_200_rew_1340.6029.pth`
+  - baseline ep200: `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseline_noprior_long200_20260611_2257/nn/last_dextrah_franka_cube_grasp_ep_200_rew_1249.834.pth`
+- candidates: `policy_prior_ep200`, `policy_baseline_ep200`, `script_hold_open`, `script_close_light_pregrasp`, `script_lift_closed`, `script_assisted_oracle_short`
+- diagnostic scripted settings: `CLOSE_WIDTH=0.035`, `LIFT_ACTION_Z=0.50`, `ORACLE_PROPORTIONAL_GAIN=8.0`, `ASSISTED_APPROACH_STEPS=16`, `ASSISTED_CLOSE_STEPS=24`
+
+Invalid multi-candidate result:
+- `1028198` was cancelled after the log showed the known multi-candidate post-rollout Hydra failure immediately after the first `policy_prior_ep200` rollout:
+  - first rollout summary before failure: `reward_mean=2.388908115029335`, `ee_final=0.04599807783961296`, `finger_final=0.0727139487862587`, `lift_max=0.0`, `done=False`
+  - failure signature: `Error executing job with overrides: [...]`
+- Partial labeled `policy_prior_ep200` frames exist in the remote run dir, but no complete `metrics.json`/report was written. Treat `1028198` as an invalid audit execution path, not a diagnostic result.
+- Next action: rerun one candidate per process/job and aggregate locally after fetch. This avoids the unstable multi-rollout teardown/rewind path and produces complete per-candidate video artifacts.
+
+One-candidate relaunch:
+- shared config: `NUM_ENVS=1`, `NUM_RESETS=2`, `HORIZON_STEPS=80`, `SEED=20260625`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`, deterministic, render reset 0 every 5 steps, low-z library, same diagnostic scripted close/lift settings as above.
+- jobs/runs:
+  - `1028206`: `policy_prior_ep200`, `franka_cube_lowz_ep200_audit_policy_prior_20260612_0620`
+  - `1028207`: `policy_baseline_ep200`, `franka_cube_lowz_ep200_audit_policy_baseline_20260612_0620`
+  - `1028208`: `script_hold_open`, `franka_cube_lowz_ep200_audit_script_hold_open_20260612_0620`
+  - `1028209`: `script_close_light_pregrasp`, `franka_cube_lowz_ep200_audit_script_close_pregrasp_20260612_0620`
+  - `1028210`: `script_lift_closed`, `franka_cube_lowz_ep200_audit_script_lift_closed_20260612_0620`
+  - `1028211`: `script_assisted_oracle_short`, `franka_cube_lowz_ep200_audit_script_assisted_20260612_0620`
+
+Invalid one-candidate/two-reset result:
+- `1028206`-`1028211` were cancelled. The jobs that reached a rollout still hit the same Hydra failure immediately after the first rollout because `NUM_RESETS=2` forced another reset/rollout pass before metrics were written.
+- partial log summaries before cancellation:
+  - `1028206` `policy_prior_ep200`: `reward_mean=2.388908115029335`, `ee_final=0.04599807783961296`, `finger_final=0.0727139487862587`, `lift_max=0.0`
+  - `1028207` `policy_baseline_ep200`: `reward_mean=2.2180310517549513`, `ee_final=0.09924537688493729`, `finger_final=0.12886179983615875`, `lift_max=0.003570556640625`
+  - `1028208` `script_hold_open`: `reward_mean=2.2642621636390685`, `ee_final=0.046382077038288116`, `finger_final=0.08859111368656158`, `lift_max=0.0`
+- These are context only, not complete artifacts. Relaunching the same candidate isolation with `NUM_RESETS=1` so each job can write report/metrics/video frames after a single rendered rollout.
+
+One-candidate/single-reset relaunch:
+- shared config: same as above, except `NUM_RESETS=1`.
+- jobs/runs:
+  - `1028212`: `policy_prior_ep200`, `franka_cube_lowz_ep200_audit1_policy_prior_20260612_0625`
+  - `1028213`: `policy_baseline_ep200`, `franka_cube_lowz_ep200_audit1_policy_baseline_20260612_0625`
+  - `1028214`: `script_hold_open`, `franka_cube_lowz_ep200_audit1_script_hold_open_20260612_0625`
+  - `1028215`: `script_close_light_pregrasp`, `franka_cube_lowz_ep200_audit1_script_close_pregrasp_20260612_0625`
+  - `1028216`: `script_lift_closed`, `franka_cube_lowz_ep200_audit1_script_lift_closed_20260612_0625`
+  - `1028217`: `script_assisted_oracle_short`, `franka_cube_lowz_ep200_audit1_script_assisted_20260612_0625`
+
+Single-reset audit result:
+- all six jobs completed `0:0`; each wrote `metrics.json`, `REPORT.md`, trace CSV/JSONL, per-run contact sheet, and labeled frames.
+- fetched local run dirs:
+  - `cluster_results/l401/franka_cube_lowz_ep200_audit1_policy_prior_20260612_0625`
+  - `cluster_results/l401/franka_cube_lowz_ep200_audit1_policy_baseline_20260612_0625`
+  - `cluster_results/l401/franka_cube_lowz_ep200_audit1_script_hold_open_20260612_0625`
+  - `cluster_results/l401/franka_cube_lowz_ep200_audit1_script_close_pregrasp_20260612_0625`
+  - `cluster_results/l401/franka_cube_lowz_ep200_audit1_script_lift_closed_20260612_0625`
+  - `cluster_results/l401/franka_cube_lowz_ep200_audit1_script_assisted_20260612_0625`
+- inspection bundle: `cluster_results/l401/franka_cube_lowz_ep200_reward_action_audit_video_20260612_0625/inspection`
+- viewer URLs:
+  - report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_ep200_reward_action_audit_video_20260612_0625/inspection/REPORT.md`
+  - combined contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_ep200_reward_action_audit_video_20260612_0625/inspection/combined_contact_sheet.jpg`
+  - summary table: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_ep200_reward_action_audit_video_20260612_0625/inspection/summary_table.png`
+  - prior ep200 video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_ep200_reward_action_audit_video_20260612_0625/inspection/videos/policy_prior_ep200.mp4`
+  - baseline ep200 video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_ep200_reward_action_audit_video_20260612_0625/inspection/videos/policy_baseline_ep200.mp4`
+  - hold-open video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_ep200_reward_action_audit_video_20260612_0625/inspection/videos/script_hold_open.mp4`
+  - close-at-pregrasp video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_ep200_reward_action_audit_video_20260612_0625/inspection/videos/script_close_light_pregrasp.mp4`
+  - lift-closed video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_ep200_reward_action_audit_video_20260612_0625/inspection/videos/script_lift_closed.mp4`
+  - assisted oracle video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_lowz_ep200_reward_action_audit_video_20260612_0625/inspection/videos/script_assisted_oracle_short.mp4`
+
+Metric summary:
+- `policy_prior_ep200`: reset quality true, reward mean/final `2.3889` / `2.4395`, final EE/finger `0.0460` / `0.0727` m, final width `0.0800` m, max lift `0.0000` m, mean z/gripper action `-0.4420` / `1.0000`.
+- `policy_baseline_ep200`: reset quality true, reward mean/final `2.2180` / `2.1255`, final EE/finger `0.0992` / `0.1289` m, final width `0.0002` m, max lift `0.0036` m, mean z/gripper action `-0.0737` / `-0.9750`.
+- `script_hold_open`: reward mean/final `2.2643` / `2.2638`, final width `0.0800` m, max lift `0.0000` m.
+- `script_close_light_pregrasp`: reward mean/final `2.3824` / `2.3874`, final width `0.0350` m, max lift `0.0000` m.
+- `script_lift_closed`: reward mean/final `1.8513` / `1.3752`, final EE/finger `0.1842` / `0.2289` m, max lift `0.0000` m; this is a negative reference because lifting from pregrasp without first approaching exact moves away.
+- `script_assisted_oracle_short`: reward mean/final `3.2268` / `5.1655`, final EE/finger `0.0257` / `0.0637` m, final width `0.0597` m, max lift `0.0612` m, mean z/gripper action `0.1444` / `0.1000`.
+
+Reward/action diagnosis:
+- Prior ep200 gets strong open-gripper/proximity-style scalar signals while never lifting: `reward_term_cube_gripper_action` mean/final `1.0`/`1.0`, `approach_reward` mean `0.8390`, `enclosure_reward` mean `0.4886`, `action_down` mean `0.5056`, lift max `0`.
+- Baseline ep200 gets close-action reward (`gripper_close_action` mean `0.9875`) but is off-target, with lower approach/enclosure and only a tiny incidental lift.
+- Assisted oracle reaches the exact/contact/lift sequence and the scalar logs recognize it: `lift_reward` mean/final `0.5266` / `2.2804`, reward final `5.1655`, max lift `6.12 cm`.
+- Visual verdict from the contact sheet/videos matches metrics: prior hovers/open near the cube, baseline closes off-target, assisted approach/close/lift is the only plausible grasp/lift behavior.
+
+Decision:
+- No PPO/A100/full-scale launch from this evidence.
+- The low-z reset/pregrasp remains valid; the blocker is learned action discovery/closed-loop policy behavior. The next bounded experiment, if authorized, should be explicitly non-apple-to-apple or curriculum-labeled: teach/preserve the assisted approach-close-lift sequence through a short action curriculum/action-prior diagnostic, or revise exploration/initialization, while keeping the original reset-prior branch clearly separate.
