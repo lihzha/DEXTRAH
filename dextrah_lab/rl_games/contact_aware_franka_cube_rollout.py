@@ -37,6 +37,16 @@ parser.add_argument("--lift_height", default=0.14, type=float)
 parser.add_argument("--finger_gain", default=0.75, type=float)
 parser.add_argument("--clip_actions", default=1.0, type=float)
 parser.add_argument(
+    "--orientation_mode",
+    choices=("live", "source"),
+    default="live",
+    help=(
+        "Target EE orientation while translating the measured finger center. "
+        "'live' preserves the current reset orientation; 'source' drives back to "
+        "the selected source/dataset row orientation."
+    ),
+)
+parser.add_argument(
     "--reset_joint_blend_alpha",
     default=1.0,
     type=float,
@@ -252,6 +262,7 @@ def _action_to_finger_target(
     finger_center: np.ndarray,
     target_finger_center: np.ndarray,
     *,
+    target_ee_quat: np.ndarray | None,
     gripper_action: float,
     gain: float,
     clip: float,
@@ -259,7 +270,8 @@ def _action_to_finger_target(
     finger_error = np.asarray(target_finger_center, dtype=np.float32) - np.asarray(finger_center, dtype=np.float32)
     target_ee_pos = live_lowdim[:3] + float(gain) * finger_error
     ee_pos = np.stack((live_lowdim[:3], target_ee_pos), axis=0).astype(np.float32)
-    ee_quat = np.stack((live_lowdim[3:7], live_lowdim[3:7]), axis=0).astype(np.float32)
+    target_quat = live_lowdim[3:7] if target_ee_quat is None else np.asarray(target_ee_quat, dtype=np.float32)
+    ee_quat = np.stack((live_lowdim[3:7], target_quat), axis=0).astype(np.float32)
     grip = np.asarray([float(gripper_action), float(gripper_action)], dtype=np.float32)
     action = derive_relative_ee_actions(
         ee_pos,
@@ -332,12 +344,12 @@ def _build_report(summary: dict[str, Any]) -> str:
         "",
         "## Variant Summary",
         "",
-        "| variant | joint alpha | reset cube-minus-EE L2 | offset | steps | final EE-cube | min finger-cube | final finger-cube | max lift | final lift | final grip width | max clip | terminal next | skipped reset step | success-like |",
-        "|---|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---|",
+        "| variant | orientation | joint alpha | reset cube-minus-EE L2 | offset | steps | final EE-cube | min finger-cube | final finger-cube | max lift | final lift | final grip width | max clip | terminal next | skipped reset step | success-like |",
+        "|---|---|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---|",
     ]
     for variant, payload in summary["variants"].items():
         lines.append(
-            f"| {variant} | {payload['reset_joint_blend_alpha']:.3f} | "
+            f"| {variant} | {payload['orientation_mode']} | {payload['reset_joint_blend_alpha']:.3f} | "
             f"{payload['reset_cube_minus_ee_l2_from_dataset']:.5f} | {payload['offset']} | {payload['steps']} | "
             f"{payload['final_ee_to_cube']:.4f} | {payload['min_finger_center_to_cube']:.4f} | "
             f"{payload['final_finger_center_to_cube']:.4f} | {payload['max_cube_lift_height']:.4f} | "
@@ -372,6 +384,7 @@ def main() -> None:
     episode_idx, episode_start, _episode_end = _episode_for_row(row_idx, episode_ends)
     frames = json.loads(trajectory_path.read_text(encoding="utf-8"))["frames"]
     raw_q = np.asarray(frames[int(row_idx - episode_start)]["joint_position"], dtype=np.float32)
+    source_ee_quat = np.asarray(dataset_obs[row_idx, 3:7], dtype=np.float32)
     variants = [_parse_variant(v) for v in (args_cli.variant or ["center", "center_high15", "center_high30"])]
 
     env_cfg = parse_env_cfg(
@@ -439,10 +452,12 @@ def main() -> None:
                 finger_center = _finger_center(task_env)
                 cube_pos = task_env.cube_pos.detach().float().cpu().numpy()[0]
                 target_finger = initial_cube_pos + offset + lift_delta
+                target_ee_quat = source_ee_quat if args_cli.orientation_mode == "source" else None
                 action = _action_to_finger_target(
                     live_lowdim,
                     finger_center,
                     target_finger,
+                    target_ee_quat=target_ee_quat,
                     gripper_action=gripper,
                     gain=float(args_cli.finger_gain),
                     clip=float(args_cli.clip_actions),
@@ -478,6 +493,7 @@ def main() -> None:
                     "episode_step": int(row_idx - episode_start),
                     "source_row": int(row_idx),
                     "source_trajectory_json": str(trajectory_path),
+                    "orientation_mode": str(args_cli.orientation_mode),
                     "reset_joint_blend_alpha": float(reset_summary["reset_joint_blend_alpha"]),
                     "reset_joint_l2_from_source": float(reset_summary["reset_joint_l2_from_source"]),
                     "reset_joint_l2_from_normal": float(reset_summary["reset_joint_l2_from_normal"]),
@@ -487,6 +503,11 @@ def main() -> None:
                     ),
                     "lowdim_obs": live_lowdim.astype(float).tolist(),
                     "target_finger_center": target_finger.astype(float).tolist(),
+                    "target_ee_quat": (
+                        source_ee_quat.astype(float).tolist()
+                        if args_cli.orientation_mode == "source"
+                        else live_lowdim[3:7].astype(float).tolist()
+                    ),
                     "finger_center": finger_center.astype(float).tolist(),
                     "finger_error_norm": float(np.linalg.norm(target_finger - finger_center)),
                     "cube_pos": cube_pos.astype(float).tolist(),
@@ -533,6 +554,7 @@ def main() -> None:
             success_like = bool(max_lift >= float(task_env.cfg.cube_success_lift_height) and min_finger < 0.08)
             summaries[variant_name] = {
                 "offset": offset.astype(float).tolist(),
+                "orientation_mode": str(args_cli.orientation_mode),
                 **reset_summary,
                 "steps": len(vrows),
                 "final_ee_to_cube": float(last["ee_to_cube"]),
@@ -580,6 +602,7 @@ def main() -> None:
         "lift_height": float(args_cli.lift_height),
         "finger_gain": float(args_cli.finger_gain),
         "clip_actions": float(args_cli.clip_actions),
+        "orientation_mode": str(args_cli.orientation_mode),
         "reset_joint_blend_alpha": float(np.clip(float(args_cli.reset_joint_blend_alpha), 0.0, 1.0)),
         "variants": summaries,
         "verdict": verdict,

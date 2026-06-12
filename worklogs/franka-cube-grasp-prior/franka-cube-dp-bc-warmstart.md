@@ -8282,3 +8282,82 @@ Next:
 
 Active Jobs:
 - none after `1028115`.
+
+## 2026-06-11T21:12:41-07:00 - alpha0.75 controller bridge diagnostic plan
+
+Goal:
+- Run one bounded controller-relabel bridge diagnostic to test whether the
+  relabel controller can recover the first failing `joint_blend_alpha=0.75`
+  before any DP fine-tune or RL work.
+
+Hypothesis:
+- The default contact-aware relabeler preserves the live reset EE orientation.
+  At alpha0.75 the robot/wrist starts far enough from the source contact frame
+  that finger-center translation alone closes/lifts away from the cube. Driving
+  the EE orientation back to the source row during the finger-center alignment
+  phase may restore contact geometry while preserving exact and alpha0.9
+  behavior.
+
+Planned Change:
+- Add a narrow `--orientation_mode {live,source}` option to
+  `dextrah_lab/rl_games/contact_aware_franka_cube_rollout.py`.
+  - `live` is the current/default behavior.
+  - `source` uses the selected dataset/source-row EE quaternion as the target
+    orientation when deriving the relative EE action.
+- Thread `ORIENTATION_MODE` through
+  `cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh`.
+- Record orientation mode in per-row rollout CSVs, per-rollout summaries, and
+  aggregate relabel reports.
+
+Validation Plan:
+- Local:
+  - `python3 -m py_compile dextrah_lab/rl_games/contact_aware_franka_cube_rollout.py dextrah_lab/offline_dp_bc/make_contact_relabel_set_report.py dextrah_lab/offline_dp_bc/make_support_expansion_dataset_report.py`
+  - `bash -n cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh`
+  - `git diff --check`
+- Cluster:
+  - Commit/push/deploy exact commit to the agent-owned l401 worktree.
+  - Launch one bounded relabel-set gate using original episode `16`, source
+    step `260`, trajectory seed16, `ORIENTATION_MODE=source`, and alphas
+    `1.0`, `0.9`, `0.85`, `0.8`, `0.75`.
+  - Keep `VARIANT=center_high30`, `FINGER_GAIN=0.75`, no DP training.
+
+Gate:
+- Exact and alpha0.9 must remain visually/metric coherent.
+- A candidate alpha0.75 rollout must pass the same hard relabel gate: final/max
+  lift above threshold, no pose-action clipping, plausible final EE/finger
+  distances, and video/contact sheet visually coherent.
+- If alpha0.75 fails again, stop at artifact/reporting; do not launch DP
+  fine-tune or RL.
+
+## 2026-06-11T21:17:22-07:00 - source-orientation bridge implementation checkpoint
+
+Change:
+- Implemented `--orientation_mode {live,source}` in
+  `contact_aware_franka_cube_rollout.py`.
+  - `live` preserves previous behavior.
+  - `source` targets the selected source/dataset row EE quaternion while the
+    controller translates the measured finger center to the cube/contact target.
+- Threaded `ORIENTATION_MODE` through
+  `cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh`.
+- Added `orientation_mode` metadata to per-row CSVs, per-rollout summaries,
+  aggregate relabel reports, and support-expansion reports.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- base_commit: `b044e200032061123918bf3dcb75b8159ade3a4f`
+- implementation_commit: pending
+- changed_files:
+  - `dextrah_lab/rl_games/contact_aware_franka_cube_rollout.py`
+  - `cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh`
+  - `dextrah_lab/offline_dp_bc/make_contact_relabel_set_report.py`
+  - `dextrah_lab/offline_dp_bc/make_support_expansion_dataset_report.py`
+  - this worklog
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/contact_aware_franka_cube_rollout.py dextrah_lab/offline_dp_bc/make_contact_relabel_set_report.py dextrah_lab/offline_dp_bc/make_support_expansion_dataset_report.py` -> pass
+- `bash -n cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh` -> pass
+- `git diff --check` -> pass
+
+Next:
+- Commit/push/deploy, then launch one bounded relabel-set gate using
+  `ORIENTATION_MODE=source` and alphas `1.0`, `0.9`, `0.85`, `0.8`, `0.75`.

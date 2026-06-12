@@ -120,12 +120,13 @@ def _report(summary: dict[str, Any], rollout_rows: list[dict[str, Any]], failure
         "",
         "## Rollouts",
         "",
-        "| rollout | pass | reset joint alpha | episode | step | final EE-cube | final finger-cube | final/max lift | max clip | failures | video |",
-        "|---|---|---:|---:|---:|---:|---:|---:|---:|---|---|",
+        "| rollout | pass | orientation | reset joint alpha | episode | step | final EE-cube | final finger-cube | final/max lift | max clip | failures | video |",
+        "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|---|",
     ]
     for row in rollout_rows:
         lines.append(
             f"| {row['rollout_id']} | {row['gate_pass']} | "
+            f"{row.get('orientation_mode', '')} | "
             f"{float(row.get('reset_joint_blend_alpha', float('nan'))):.3f} | "
             f"{row['episode']} | {row['episode_step']} | "
             f"{float(row['final_ee_to_cube']):.4f} | {float(row['final_finger_center_to_cube']):.4f} | "
@@ -193,10 +194,12 @@ def main() -> None:
                     one_summary.get("reset_joint_blend_alpha", float("nan")),
                 )
             )
+            orientation_mode = str(payload.get("orientation_mode", one_summary.get("orientation_mode", "")))
             rollout_row = {
                 "rollout_id": rollout_id,
                 "rollout_dir": str(summary_path.parent),
                 "variant": variant,
+                "orientation_mode": orientation_mode,
                 "reset_joint_blend_alpha": reset_joint_blend_alpha,
                 "reset_joint_l2_from_source": float(payload.get("reset_joint_l2_from_source", float("nan"))),
                 "reset_joint_l2_from_normal": float(payload.get("reset_joint_l2_from_normal", float("nan"))),
