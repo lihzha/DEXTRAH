@@ -4348,3 +4348,82 @@ Acceptance:
 - Contact/enclosure proxy pass clearly above previous `0.5`, ideally `1.0` on the small sampled gate.
 - Visual frames must show plausible enclosure without obvious slip/overclose.
 - If offsets are required, label the result diagnostic-only; no BC/RL launch until a final apple-to-apple-safe reset/sample strategy is defined.
+
+Implementation:
+- Added diagnostic-only per-recipe `offset_x`, `offset_y`, and `offset_z` fields to `sweep_franka_cube_bc_label_recipes.py`.
+- Offsets are applied only to the oracle exact-tracking action target in robot-root coordinates; the reset/pregrasp state remains unchanged.
+- Artifacts now record `target_offset_root_*` in summaries/reports and overlay the offset on frames.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/sweep_franka_cube_bc_label_recipes.py` passed.
+- `bash -n cluster/sbatch_sweep_franka_cube_bc_label_recipes_1gpu.sh` passed.
+
+Version Control:
+- implementation_commit: `4b8eb9f782371cc33a0e22e6b5c2ccf783e92e3c` (`Add diagnostic target offsets to label sweep`)
+- pushed branch: `codex/franka-cube-ggx-pregrasp-reset`
+- deploy note: L401 GitHub fetch failed with `Permission denied (publickey)`, so the exact commit was deployed to the agent-owned remote worktree through a Git bundle and checked out detached.
+- remote worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote commit/status: exact detached `4b8eb9f782371cc33a0e22e6b5c2ccf783e92e3c`, clean.
+
+Launch Plan:
+- Run name: `franka_cube_ggx_pass7_label_recipe_offsetgate_<timestamp>`
+- L401 `batch`, 1 GPU, no PPO/A100.
+- Config: `NUM_ENVS=1`, `NUM_RESETS=4`, `RENDER_RESETS=4`, seed `20260624`, cube XY randomization `0.08`, pass7 library.
+- Recipes:
+  - `baseline_w055_z015`
+  - `act_neg050_z050_free`
+  - `act_neg050_z050_free_zm005`
+  - `act_neg050_z050_free_zm010`
+  - `act_neg050_z050_free_zm015`
+  - `w035_close24_z050_zm010`
+  - `act_neg065_z050_free_zm010`
+  - `act_neg075_z050_free_zm010`
+
+Launch:
+- job_id: `1028126`
+- run name: `franka_cube_ggx_pass7_label_recipe_offsetgate_20260611_213713`
+- remote run dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pass7_label_recipe_offsetgate_20260611_213713`
+- remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/sweep_franka_cube_bc_label_1028126.out`
+
+Result:
+- Slurm: `COMPLETED 0:0`, elapsed `00:02:18`, node `pool0-00015`.
+- Local fetched run dir: `cluster_results/l401/franka_cube_ggx_pass7_label_recipe_offsetgate_20260611_213713/`
+- Local fetched log: `cluster_logs/l401/slurm_logs/dextrah/sweep_franka_cube_bc_label_1028126.out`
+- Added local inspection note: `cluster_results/l401/franka_cube_ggx_pass7_label_recipe_offsetgate_20260611_213713/INSPECTION_VERDICT.md`
+
+Metrics:
+- First passing recipe: `act_neg075_z050_free_zm010`.
+- Recipe settings: `action_gripper=-0.75`, `close_steps=24`, `lift_action_z=0.50`, `lift_steps=24`, `track_exact_during_lift=false`, diagnostic `offset_z=-0.010 m`.
+- Aggregate: pass rate `1.0`, lift pass `1.0`, contact proxy `1.0`, max lift max `0.03457 m`, final lift mean `0.03348 m`, min gripper width mean `0.05497 m`, final finger-center mean `0.06125 m`, terminated rate `0.0`.
+- Per reset:
+  - reset 0/sample 6: pass `true`, max/final lift `0.03376 m`, min width `0.05668 m`, final finger center `0.05413 m`, final max finger `0.06265 m`, table min `0.07853 m`.
+  - reset 1/sample 1: pass `true`, max/final lift `0.03155 m`, min width `0.05999 m`, final finger center `0.06340 m`, final max finger `0.07236 m`, table min `0.08850 m`.
+  - reset 2/sample 4: pass `true`, max/final lift `0.03405 m`, min width `0.05139 m`, final finger center `0.06379 m`, final max finger `0.06928 m`, table min `0.08866 m`.
+  - reset 3/sample 5: pass `true`, max/final lift `0.03457 m`, min width `0.05183 m`, final finger center `0.06367 m`, final max finger `0.07125 m`, table min `0.08898 m`.
+- Comparison:
+  - unshifted `act_neg050_z050_free`: pass rate `0.25`, lift pass `1.0`, contact proxy `0.25`; still marginal by contact geometry.
+  - `act_neg050_z050_free_zm010`, `act_neg065_z050_free_zm010`, and `w035_close24_z050_zm010`: pass rate `0.75`.
+  - baseline `baseline_w055_z015`: pass/lift/contact `0.0`, max lift max `0.00018 m`.
+
+Reset-geometry evidence:
+- Reset 0/sample 6 exact EE z above cube center was about `0.0101 m`; reset 1/sample 1 and sampled resets 2/3 were about `0.0201 m`.
+- The old marginal reset-1 geometry is consistent with an exact-target height mismatch; applying diagnostic `offset_z=-0.010 m` to the scripted exact-tracking target corrected all four sampled resets in this small gate.
+- The actual reset/pregrasp state was not changed: pass7 reset remained the 3 cm open pregrasp with the same cube XY randomization.
+
+Viewer URLs:
+- inspection verdict: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_label_recipe_offsetgate_20260611_213713/INSPECTION_VERDICT.md`
+- generated report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_label_recipe_offsetgate_20260611_213713/REPORT.md`
+- trace plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_label_recipe_offsetgate_20260611_213713/trace_plot.png`
+- passing contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_label_recipe_offsetgate_20260611_213713/act_neg075_z050_free_zm010_contact_sheet.jpg`
+- baseline failure sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_label_recipe_offsetgate_20260611_213713/baseline_w055_z015_contact_sheet.jpg`
+- unshifted strong-close marginal sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_label_recipe_offsetgate_20260611_213713/act_neg050_z050_free_contact_sheet.jpg`
+
+Inspection Verdict:
+- The bounded diagnostic direct-reset/pregrasp gate passed for `act_neg075_z050_free_zm010` over 4 rendered pass7 resets.
+- Visual inspection of the contact sheet and final frames shows the cube lifted and plausibly enclosed for all four resets, including the previously marginal reset 1.
+- This is a diagnostic-only corrective-label result because it uses a nonzero scripted target offset and stronger close command. It does not change the main reset prior, and it is not an A100/PPO launch gate by itself.
+- No BC, PPO, A100, or full RL was launched.
+
+Next:
+- If authorized, the next bounded step is supervised-data generation from this explicitly diagnostic recipe followed by a supervised-only label/action gate.
+- If strict apple-to-apple reset comparability forbids offset labels, use this evidence to define a final-safe grasp/sample filter that avoids high exact-target samples rather than changing the reset state.
