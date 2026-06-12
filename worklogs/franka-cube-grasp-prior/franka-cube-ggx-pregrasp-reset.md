@@ -24,29 +24,39 @@ Version Control:
 - worklog: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/worklogs/franka-cube-grasp-prior/franka-cube-ggx-pregrasp-reset.md
 - branch: codex/franka-cube-ggx-pregrasp-reset
 - base_commit: a9fe56c8d3bef6466b3bfa627e5d129e9773ea59
-- implementation_commit: pending worklog-only commit
-- push/pull: pending deploy to A100 by Git bundle if remote GitHub fetch remains unavailable
+- implementation_commit: d2073d9318277d222ba7506e16d223035927109f
+- push/pull: pushed to `origin/codex/franka-cube-ggx-pregrasp-reset`; A100 successfully fetched the branch and detached the agent worktree at `d2073d9318277d222ba7506e16d223035927109f`
 - changed_files: this owned worklog only
-- remote_commit/status: pending `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset` detached at `d2073d9318277d222ba7506e16d223035927109f`, clean
 
 Command / Job:
-- planned command: `sbatch --parsable --job-name=fcube_noprior_own8 --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,TASK=Dextrah-Franka-Cube-Grasp,FULL_EXPERIMENT_NAME=franka_cube_noprior_policy8gpu_own_20260612_0830,NUM_ENVS=2048,MAX_ITERATIONS=300,HORIZON_LENGTH=64,MINIBATCH_SIZE=32768,CENTRAL_VALUE_MINIBATCH_SIZE=32768,LEARNING_RATE=0.0002,CENTRAL_VALUE_LEARNING_RATE=0.0001,SAVE_FREQUENCY=25,AUTO_RESUME=False,GRASP_PRIOR_RESET_ENABLED=False,GRASP_PRIOR_LIBRARY_PATH=,DEXTRAH_RLGAMES_JSONL_METRICS=True cluster/sbatch_train_teacher_8gpu.sh`
-- job_id: pending
+- command: `sbatch --parsable --job-name=fcube_noprior_own8 --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=d2073d9318277d222ba7506e16d223035927109f,TASK=Dextrah-Franka-Cube-Grasp,FULL_EXPERIMENT_NAME=franka_cube_noprior_policy8gpu_own_20260612_0830,NUM_ENVS=2048,MAX_ITERATIONS=300,HORIZON_LENGTH=64,MINIBATCH_SIZE=32768,CENTRAL_VALUE_MINIBATCH_SIZE=32768,LEARNING_RATE=0.0002,CENTRAL_VALUE_LEARNING_RATE=0.0001,SAVE_FREQUENCY=25,AUTO_RESUME=False,GRASP_PRIOR_RESET_ENABLED=False,GRASP_PRIOR_LIBRARY_PATH=,DEXTRAH_RLGAMES_JSONL_METRICS=True,CUBE_SPAWN_XY_RANDOMIZATION=0.08 cluster/sbatch_train_teacher_8gpu.sh`
+- job_id: 29004372
 - run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_noprior_policy8gpu_own_20260612_0830`
-- logs: pending `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_<job_id>.out`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29004372.out`
 - artifacts: JSONL metrics, resolved params, TensorBoard summaries, 25-epoch checkpoints
 
 Result:
-- status: planned
-- metrics/artifacts: pending
-- key evidence: preflight showed local branch at `a9fe56c`, only unrelated untracked `local_results/`; wrapper syntax passed; `GRASP_PRIOR_RESET_ENABLED` defaults false and will be explicitly exported false.
+- status: completed and inspected
+- metrics/artifacts: job `29004372` completed `0:0` in `00:18:35`; fetched local artifacts:
+  - `cluster_results/a1001/franka_cube_noprior_policy8gpu_own_20260612_0830/metrics/direct_info_rank_0.jsonl`
+  - `cluster_results/a1001/franka_cube_noprior_policy8gpu_own_20260612_0830/params/env.yaml`
+  - `cluster_results/a1001/franka_cube_noprior_policy8gpu_own_20260612_0830/params/agent.yaml`
+  - `cluster_logs/a1001/dextrah/teacher_8gpu_29004372.out`
+  - comparison report: `cluster_results/a1001/franka_cube_prior_vs_noprior_own_20260612_0853/REPORT.md`
+- key evidence: preflight showed local branch at `a9fe56c`, only unrelated untracked `local_results/`; wrapper syntax passed; `GRASP_PRIOR_RESET_ENABLED` defaults false and was explicitly exported false; remote run dir was absent before launch. Saved env config confirms `grasp_prior_reset_enabled: false`, `grasp_prior_library_path: ''`, `grasp_prior_action_warmstart_enabled: false`, `grasp_prior_action_prior_reward_enabled: false`, `num_envs: 2048`, `cube_spawn_yaw_randomization_deg: 0.0`, and upstream reward weights `approach=2.0`, `enclosure=1.0`, `lift=10.0`, `success_bonus=15.0`. JSONL has 300 rows and 0 bad scalars.
 
 Analysis:
 - The rejected external `franka_cube_baseline_A_repl8gpu_581890b_20260612_011911` run is not used for the comparison.
 - This run intentionally keeps upstream reward weights instead of tuning down approach/enclosure so that the primary comparison isolates reset-prior versus no-prior.
+- No-prior result: final train success `0.002441`, lifted `0.006836`, lift height `0.001381 m`; last-25 success `0.002383`, lifted `0.005352`; max success only `0.004883`.
+- Reset-prior result from `franka_cube_lowz_resetprior_policy8gpu_cd1d66e_20260612_004111`: final train success `0.812988`, lifted `0.880371`, lift height `0.131253 m`; last-25 success `0.859492`, lifted `0.934297`; max success `0.885742`.
+- Thresholds: reset-prior reached success `>=0.10` at epoch 45, success `>=0.50` at epoch 59, success `>=0.80` at epoch 76, lifted `>=0.80` at epoch 54, and lift height `>=0.12 m` at epoch 76. No-prior reached none of these thresholds through 300 epochs.
+- AUC mean over 300 epochs: reset-prior success `0.689831` vs no-prior `0.000929`; lifted `0.783079` vs `0.003841`; lift height `0.108301 m` vs `0.000489 m`.
+- Reset-prior has previously inspected policy-only eval videos at epoch 100 showing actual grasp/lift. No success claim is made for no-prior; it did not reach meaningful train success/lift and was not evaluated with success videos.
 
 Next:
-- Commit this worklog entry, deploy exact commit to A100, submit the no-prior job, monitor to completion, fetch metrics/configs/logs, and compute threshold/AUC comparison against the reset-prior run.
+- If more rigor is needed, launch repeat seeds for both prior/no-prior or an approach/enclosure-weight ablation. The current single matched run already shows a large sample-efficiency gap, but it is still one seed per condition.
 
 ## 2026-06-11T18:42:25Z - pre-edit plan
 
