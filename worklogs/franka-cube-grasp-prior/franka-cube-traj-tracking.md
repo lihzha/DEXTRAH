@@ -3664,3 +3664,69 @@ Interpretation:
 - Positive pure-reference sanity result. With alpha `1.0` held active through phase `1.0`, the teacher/reference action path can produce sustained lift/success in `3/4` envs while keeping target safety clean and without actual resets.
 - This separates the current blocker from basic reference transform/controller impossibility. The main blocker is learned raw-action imitation/handoff: alpha `0.75` phase `1.0` (`1027907`) lowered action error but still failed lift, while full override succeeds.
 - Do not scale PPO yet. Next bounded work should focus on why the policy does not reproduce the reference close/up/gripper timing strongly enough: inspect action normalization and per-dimension semantics, then run a small BC/action-imitation or stronger teacher-forced imitation diagnostic with frequent artifacts. If visual clarity is required before that, add or rerun a camera/env selection artifact so the recorded video follows a successful env rather than env 0.
+
+## 2026-06-11T17:36:06-07:00 - action-semantics and clearer-reference-artifact plan
+
+Goal:
+- Continue from the positive pure-reference diagnostic `1027919` without PPO scale-up.
+- Produce clearer inspectable evidence for the user and diagnose why alpha `0.75`/learned handoff fails while alpha `1.0` full override succeeds.
+
+Planned files / edits:
+- Add a local artifact helper under `dextrah_lab/rl_games/` to compare trajectory-tracking action semantics from existing `metrics.json` files:
+  - raw policy vs reference vs applied action per dimension;
+  - close/up/gripper timing through approach/grasp/lift windows;
+  - phase, lift, success, EE/finger distances, target safety;
+  - report/CSV/PNG output suitable for `viz-open`.
+- Update this owned worklog with artifact paths, URLs, commands, and interpretation.
+- Avoid touching the baseline `Dextrah-Franka-Cube-Grasp` task.
+
+Validation / artifacts:
+- First use existing fetched runs:
+  - positive full-reference run `1027919`;
+  - negative lower-alpha schedule run `1027907`;
+  - earlier alpha `1.0` phase `0.67` run `1027902` if the local metrics are present.
+- Generate a comparison report and plot that make the action timing mismatch visible without relying only on L2.
+- For clearer video evidence, test whether a wide 4-env camera can show all envs in a cheap pure-reference rerun; if not, record the limitation and launch only a small single-env/seed pure-reference replay to capture a visibly successful env0 rollout.
+
+Bounded trainability step:
+- After the action-semantics comparison, make at most one small trainability change/launch:
+  - prefer a stronger imitation/action-alignment smoke using existing env knobs if that is enough;
+  - otherwise patch a minimal diagnostic knob or script, commit/push, and only then launch smoke-scale jobs.
+- Acceptance before any further PPO scale-up: target unsafe remains `0`; raw close/up/gripper timing moves toward reference; short eval video/contact sheet shows approach/contact/lift rather than drift.
+
+## 2026-06-11T17:39:22-07:00 - action-semantics artifact result
+
+Goal:
+- Compare the failed alpha `0.75` handoff runs against the positive alpha `1.0` full-reference run by action component and phase window, not only L2.
+
+Change:
+- Added local helper: `dextrah_lab/rl_games/analyze_traj_tracking_action_semantics.py`.
+- This does not change the env or baseline task; it consumes existing fetched `metrics.json` files and writes report/CSV/PNG artifacts.
+
+Command:
+- `python3 dextrah_lab/rl_games/analyze_traj_tracking_action_semantics.py --run alpha075_phase067=cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a075_520_20260611_171100/metrics.json --run alpha100_phase067=cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a100_520_20260611_171100/metrics.json --run alpha075_phase100=cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a075_phase100_520_20260611_172322/metrics.json --run alpha100_phase100=cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a100_phase100_520_20260611_172848/metrics.json --output-dir cluster_results/l401/franka_cube_traj_tracking_teacherforce_action_semantics_20260611_173606`
+- validation: `python3 -m py_compile dextrah_lab/rl_games/analyze_traj_tracking_action_semantics.py`
+
+Artifacts:
+- report: `cluster_results/l401/franka_cube_traj_tracking_teacherforce_action_semantics_20260611_173606/action_semantics_report.md`
+- plot: `cluster_results/l401/franka_cube_traj_tracking_teacherforce_action_semantics_20260611_173606/action_semantics_plot.png`
+- CSV: `cluster_results/l401/franka_cube_traj_tracking_teacherforce_action_semantics_20260611_173606/action_semantics_windows.csv`
+- summary JSON: `cluster_results/l401/franka_cube_traj_tracking_teacherforce_action_semantics_20260611_173606/action_semantics_summary.json`
+
+viz_urls:
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_action_semantics_20260611_173606/action_semantics_report.md`
+- plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_action_semantics_20260611_173606/action_semantics_plot.png`
+
+Key comparison:
+- `alpha075_phase100` still fails despite lower applied/reference L2 (`0.134` in lift window, `0.075` in hold window) because partial teacher blend leaves residual raw-policy pose/gripper terms that prevent contact/lift.
+- In the lift window, `alpha075_phase100` applies close/up/gripper roughly `0.353/0.276/-0.353` versus reference `0.400/0.376/-0.400`, with residual rotation action dimensions around `0.003/-0.024/0.031`; final EE/finger distances are `0.164/0.202 m` and lift is effectively zero.
+- In the same lift window, `alpha100_phase100` applies close/up/gripper `0.400/0.340/-0.400` nearly exactly on reference, with zeroed rotation dimensions; it reaches success `0.75` and max lift `0.096 m` within that window, then `0.144 m` by final.
+- Raw policy remains weak on the important axes: for `alpha100_phase100` lift window raw close/up/gripper are only `0.115/0.081/-0.114` while reference is `0.400/0.343/-0.400`.
+
+Analysis:
+- The failed handoff is not primarily a phase-schedule problem after `1027907`; it is action imitation strength/semantics. A scalar L2 can look acceptable while close/up/gripper and residual pose components are still not sufficient for stable contact.
+- The next trainability diagnostic should directly make raw close/up/gripper and task-space delta action match the reference around the close/lift window. Do not run another schedule-only eval or a long PPO scale-up.
+
+Next:
+- Produce the clearer pure-reference video artifact requested by the user. The existing `1027919` video appears to track env0, likely the one failing env, so try a wide-camera 4-env rerun under the same pure-reference alpha `1.0`/phase `1.0` settings.
+- Then run one bounded training/eval smoke with stronger action imitation/alignment if no new runtime patch is required, or patch the smallest diagnostic knob if needed.
