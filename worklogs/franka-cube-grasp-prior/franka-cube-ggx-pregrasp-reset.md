@@ -4044,3 +4044,55 @@ Acceptance:
 Pre-launch local validation:
 - `python3 -m py_compile dextrah_lab/rl_games/audit_franka_cube_bc_label_semantics.py` passed.
 - `bash -n cluster/sbatch_audit_franka_cube_bc_label_semantics_1gpu.sh` passed.
+
+Launch:
+- commit: `774360f5db6b6be0649cd46c521aecb8d90f07a1` (`Add BC label semantics audit`)
+- pushed branch: `codex/franka-cube-ggx-pregrasp-reset`
+- deployed L401 worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset` at exact commit `774360f5db6b6be0649cd46c521aecb8d90f07a1`
+- job id: `1028116`
+- run name: `franka_cube_ggx_pass7_bc_label_semantics_20260611_210537`
+- remote run dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pass7_bc_label_semantics_20260611_210537`
+- remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/audit_franka_cube_bc_label_1028116.out`
+- job state at launch check: `PENDING (Resources)`
+
+Result:
+- Slurm: `COMPLETED 0:0`, elapsed `00:01:10`, node `pool0-00034`.
+- Local fetched run dir: `cluster_results/l401/franka_cube_ggx_pass7_bc_label_semantics_20260611_210537/`
+- Local fetched log: `cluster_logs/l401/slurm_logs/dextrah/audit_franka_cube_bc_label_1028116.out`
+- Metrics:
+  - root cause category: `label_semantics_or_reference_control_failure`
+  - closed-loop label lift gate pass rate: `0.0`
+  - recorded label replay lift gate pass rate: `0.0`
+  - policy replay lift gate pass rate: `0.0`
+  - policy-vs-label mean absolute action error: `0.039851061923799794`
+  - policy-vs-label same-sign rate: `0.7517857142857143`
+  - reset 0, closed-loop label: final EE/cube `0.0249 m`, final finger-center/cube `0.0632 m`, final gripper width `0.06234 m`, max lift `0.0 m`.
+  - reset 1, closed-loop label: final EE/cube `0.0321 m`, final finger-center/cube `0.0729 m`, final gripper width `0.06232 m`, max lift `0.0 m`.
+  - reset 0, policy replay: final EE/cube `0.1122 m`, final finger-center/cube `0.1390 m`, final gripper width `0.00212 m`, max lift `0.0 m`.
+  - reset 1, policy replay: final EE/cube `0.0315 m`, final finger-center/cube `0.0710 m`, final gripper width `0.06115 m`, max lift `0.00377 m`.
+- Selected action/geometry trace from reset 0:
+  - closed-loop label step 20 close: `action_gripper=0.375`, width `0.06787 m`, finger-center/cube `0.06336 m`, lift `0.0`.
+  - closed-loop label step 40 lift: `action_z=0.15`, `action_gripper=0.375`, width `0.06234 m`, finger-center/cube `0.06316 m`, lift `0.0`.
+  - policy replay step 40: `action_z=1.0`, `action_gripper=-1.0`, width `0.00212 m`, finger-center/cube `0.13905 m`, lift `0.0`.
+- Policy-vs-label summary:
+  - approach z label/policy mean: `-0.4227/-0.3755`, MAE `0.1113`.
+  - close gripper label/policy mean: `0.375/0.4214`, MAE `0.0465`.
+  - lift z label/policy mean: `0.1500/0.1599`, MAE `0.0138`.
+  - lift gripper label/policy mean: `0.375/0.3743`, MAE `0.0125`.
+
+Viewer URLs:
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_bc_label_semantics_20260611_210537/REPORT.md`
+- trace plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_bc_label_semantics_20260611_210537/trace_plot.png`
+- closed-loop label contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_bc_label_semantics_20260611_210537/closed_loop_label_contact_sheet.jpg`
+- policy replay contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_bc_label_semantics_20260611_210537/policy_replay_contact_sheet.jpg`
+- recorded-label replay contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_bc_label_semantics_20260611_210537/recorded_label_replay_contact_sheet.jpg`
+
+Inspection Verdict:
+- Reset geometry remained healthy for both sampled resets (`reset_success=True`, `reset_quality_success=True`, no immediate done).
+- Direct closed-loop reference labels do not lift the cube. Exact recorded-label replay reproduces the same non-lifting behavior, so this is not primarily an open-loop replay instability.
+- The sanitized BC actor is close to the reference labels on the same observations; the failing teacher/reference behavior is the blocker. The policy is not failing because PPO destroyed a successful BC actor, and it is not a pure saved-checkpoint normalization mismatch.
+- The likely immediate label/control issue is that the "light close" label (`close_width=0.055`, action `+0.375`) settles at realized gripper width about `0.0623 m`, slightly above the `0.06 m` cube size, so the fingers stay near/around the cube but do not clamp or lift it.
+
+Next recommendation:
+- Stay diagnostic-only; no PPO/A100.
+- Build closed-loop corrective labels rather than more PPO from this BC checkpoint. The next bounded label-generation diagnostic should sweep/solve close-force/width and lift timing under the same pass7 reset distribution, using actual lift/contact success as the gate, before any new supervised checkpoint or PPO smoke.
