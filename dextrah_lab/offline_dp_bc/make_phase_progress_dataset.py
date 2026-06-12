@@ -177,7 +177,11 @@ def main() -> None:
         "source_npz": np.asarray(str(input_path)),
         "source_phase_mode": np.asarray(resolved_phase_mode),
     }
-    for key in ("rollout_ids", "rollout_reset_joint_blend_alpha"):
+    for key in (
+        "rollout_ids",
+        "rollout_reset_joint_blend_alpha",
+        "rollout_reset_cube_pos_blend_alpha",
+    ):
         if key in data.files:
             save_kwargs[key] = data[key]
     np.savez_compressed(output_path, **save_kwargs)

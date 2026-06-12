@@ -121,8 +121,8 @@ def _report(summary: dict[str, Any], rollout_rows: list[dict[str, Any]], failure
         "",
         "## Rollouts",
         "",
-        "| rollout | pass | orientation | filter | contact ref | pre-close finger | pre-close EE | contact-ok | reset joint alpha | episode | step | final EE-cube | final finger-cube | final/max lift | max clip | max raw | min scale | failures | video |",
-        "|---|---|---|---|---|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---|",
+        "| rollout | pass | orientation | filter | contact ref | pre-close finger | pre-close EE | contact-ok | reset joint alpha | reset cube alpha | episode | step | final EE-cube | final finger-cube | final/max lift | max clip | max raw | min scale | failures | video |",
+        "|---|---|---|---|---|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---|",
     ]
     for row in rollout_rows:
         lines.append(
@@ -134,6 +134,7 @@ def _report(summary: dict[str, Any], rollout_rows: list[dict[str, Any]], failure
             f"{float(row.get('pre_close_ee_to_cube', float('nan'))):.4f} | "
             f"{row.get('contact_align_success', '')} | "
             f"{float(row.get('reset_joint_blend_alpha', float('nan'))):.3f} | "
+            f"{float(row.get('reset_cube_pos_blend_alpha', float('nan'))):.3f} | "
             f"{row['episode']} | {row['episode_step']} | "
             f"{float(row['final_ee_to_cube']):.4f} | {float(row['final_finger_center_to_cube']):.4f} | "
             f"{float(row['final_cube_lift_height']):.4f}/{float(row['max_cube_lift_height']):.4f} | "
@@ -180,6 +181,7 @@ def main() -> None:
     accepted_episode_ends: list[int] = []
     accepted_rollout_ids: list[str] = []
     accepted_rollout_reset_joint_blend_alpha: list[float] = []
+    accepted_rollout_reset_cube_pos_blend_alpha: list[float] = []
 
     for summary_path in summary_paths:
         one_summary = json.loads(summary_path.read_text(encoding="utf-8"))
@@ -201,6 +203,12 @@ def main() -> None:
                 payload.get(
                     "reset_joint_blend_alpha",
                     one_summary.get("reset_joint_blend_alpha", float("nan")),
+                )
+            )
+            reset_cube_pos_blend_alpha = float(
+                payload.get(
+                    "reset_cube_pos_blend_alpha",
+                    one_summary.get("reset_cube_pos_blend_alpha", 1.0),
                 )
             )
             orientation_mode = str(payload.get("orientation_mode", one_summary.get("orientation_mode", "")))
@@ -232,6 +240,7 @@ def main() -> None:
                     payload.get("pre_close_target_minus_cube_norm", float("nan"))
                 ),
                 "reset_joint_blend_alpha": reset_joint_blend_alpha,
+                "reset_cube_pos_blend_alpha": reset_cube_pos_blend_alpha,
                 "reset_joint_l2_from_source": float(payload.get("reset_joint_l2_from_source", float("nan"))),
                 "reset_joint_l2_from_normal": float(payload.get("reset_joint_l2_from_normal", float("nan"))),
                 "reset_lowdim_l2_from_dataset": float(payload.get("reset_lowdim_l2_from_dataset", float("nan"))),
@@ -276,6 +285,7 @@ def main() -> None:
                 accepted_episode_ends.append(len(accepted_obs))
                 accepted_rollout_ids.append(rollout_id)
                 accepted_rollout_reset_joint_blend_alpha.append(reset_joint_blend_alpha)
+                accepted_rollout_reset_cube_pos_blend_alpha.append(reset_cube_pos_blend_alpha)
 
     output_prefix = args.output_prefix
     rollout_csv = set_dir / f"{output_prefix}_rollouts.csv"
@@ -297,6 +307,7 @@ def main() -> None:
         phase_ids=phase_arr,
         rollout_ids=np.asarray(accepted_rollout_ids),
         rollout_reset_joint_blend_alpha=np.asarray(accepted_rollout_reset_joint_blend_alpha, dtype=np.float32),
+        rollout_reset_cube_pos_blend_alpha=np.asarray(accepted_rollout_reset_cube_pos_blend_alpha, dtype=np.float32),
     )
     all_pass = bool(rollout_rows) and not failure_rows
     verdict = (

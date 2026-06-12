@@ -11427,6 +11427,76 @@ Next:
   reset, the remaining issue is support coverage from normal reset into the
   demonstrated close/lift basin, not the DP tensor I/O.
 
+## 2026-06-12T02:56:43-07:00 - launch alpha ladder contact relabel gate
+
+Goal:
+- Test whether the later left/right contact gate plus lateral-centering
+  relabel controller can bridge from the passing `alpha=0.75` reset toward the
+  normal robot reset (`alpha=0.0`) before any new BC training.
+
+Command / Job:
+- job_id: `1028348`
+- run:
+  `franka_cube_contact_relabel_lrcentering_ep16_alpha_ladder_20260612_025643`
+- source:
+  l401 worktree detached at `13d4555a1b2eb1381bb7115985990b6866f836a2`
+- specs:
+  ep16/source step 260 with joint-blend alphas
+  `0.75, 0.60, 0.50, 0.40, 0.25, 0.00`
+- controller settings:
+  `ORIENTATION_MODE=source`, `POSE_ACTION_FILTER=scale`,
+  `POSE_ACTION_LIMIT=0.95`, `ALIGN_STEPS=0`,
+  `CONTACT_ALIGN_STEPS=240`, `CONTACT_ALIGN_REFERENCE=live_cube`,
+  `CONTACT_GATE_MODE=left_right`, `REQUIRE_CONTACT_GATE=True`,
+  `LATERAL_CENTERING_GAIN=1.0`, `LATERAL_CENTERING_LIMIT=0.035`,
+  `LATERAL_SEARCH_AMPLITUDE=0.006`, `CLOSE_STEPS=80`,
+  `LIFT_STEPS=160`.
+
+Acceptance:
+- Fetch and inspect `contact_relabel_set_report.md`,
+  `contact_relabel_set_summary.json`, videos/contact sheets, and failures.
+- If lower alphas pass, expand accepted alphas across seeds `8,16,24,30` and
+  train a new no-EMA phase/progress BC on the accepted alpha-mix dataset.
+- If the ladder fails above `alpha=0.0`, do not train; use the first failing
+  alpha to redesign the relabel controller or reset bridge.
+
+Result:
+- Canceled before allocation:
+  `1028348|CANCELLED by 158351|0:0|00:00:00|None assigned`.
+- Reason: existing normal-reset trace starts around
+  `||cube_minus_ee||=0.231 m`, while the alpha ladder would still reset the
+  cube to a source row and only blend robot joints. Even `alpha=0.0` would not
+  be a true normal-reset relabel target.
+
+## 2026-06-12T03:03:00-07:00 - add normal-cube relabel reset option
+
+Goal:
+- Generate executable contact-aware BC labels from actual task-reset cube
+  geometry instead of only source-row cube geometry.
+
+Change:
+- Added `--reset_cube_pos_blend_alpha` to
+  `contact_aware_franka_cube_rollout.py`.
+  - `1.0`: old behavior, reset cube to selected source row.
+  - `0.0`: keep the task-reset cube pose and collect live lowdim/action rows
+    under the contact-aware controller.
+- Threaded `RESET_CUBE_POS_BLEND_ALPHA` through
+  `cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh`.
+- Preserved `rollout_reset_cube_pos_blend_alpha` in accepted relabel NPZs and
+  phase/progress NPZs.
+
+Validation:
+- `PYTHONPATH=$PWD /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/venv/bin/python -m py_compile dextrah_lab/rl_games/contact_aware_franka_cube_rollout.py dextrah_lab/offline_dp_bc/make_contact_relabel_set_report.py dextrah_lab/offline_dp_bc/make_phase_progress_dataset.py`
+- `bash -n cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh`
+- `git diff --check`
+
+Next:
+- Commit/push/deploy this reset option.
+- Launch a true normal-cube relabel gate with `RESET_JOINT_BLEND_ALPHA=0.0`
+  and `RESET_CUBE_POS_BLEND_ALPHA=0.0` using the left/right contact gate and
+  lateral-centering controller. If it passes, expand across seeds/resets and
+  retrain no-EMA phase/progress BC.
+
 ## 2026-06-12T02:41:25-07:00 - 32-demo full-pick exact reset failed
 
 Goal:
