@@ -2755,3 +2755,20 @@ Expected artifacts:
 Acceptance:
 - Scheduler completion is not enough. Fetch and inspect the report/plots/contact sheet/CSV/JSON, open the important artifacts with `viz-open`, and record whether policy actions are worse than scripted alternatives and whether reward terms locally incentivize open/up/away behavior.
 - No PPO or A100 launch from this job alone.
+
+Result:
+- status: canceled / invalid launch
+- reason: Slurm `--export` split comma-separated values in `CHECKPOINTS` and `RENDER_CANDIDATES`; the job only received `policy_ep10` and only rendered `policy_ep10`, so it could not satisfy the requested ep10/ep45 plus scripted-candidate comparison.
+- scheduler: `1027944` canceled at `00:01:05`; this run is invalid and not used for conclusions.
+- partial evidence: it reached reset 0 and completed one `policy_ep10` rollout (`reward_mean=2.2549`, final EE `0.0542m`, final finger `0.0953m`, max lift `0.00131m`) before the canceled job began printing an exception without a useful traceback.
+
+Patch:
+- Updated `cluster/sbatch_audit_franka_cube_grasp_prior_actions_1gpu.sh` to support semicolon-delimited checkpoint/render-candidate values for Slurm export and convert render candidates back to comma-separated Python CLI form.
+- Added `TORCH_DISABLE_ADDR2LINE=1` to the Pyxis environment so any remaining exception reports a usable Python/C++ traceback instead of hanging in symbolization.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/audit_franka_cube_grasp_prior_actions.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py` passed.
+- `bash -n cluster/sbatch_audit_franka_cube_grasp_prior_actions_1gpu.sh` passed.
+
+Next:
+- Commit/push this wrapper fix, deploy the new exact commit, and relaunch the bounded audit with semicolon-delimited values. Continue diagnostic-only; no PPO/A100.
