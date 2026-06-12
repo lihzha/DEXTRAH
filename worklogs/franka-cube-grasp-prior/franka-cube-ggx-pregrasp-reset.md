@@ -2341,3 +2341,114 @@ Next:
 - Keep debugging bounded and diagnostic-only.
 - Target the reset-2-specific failure mode: add/report per-step joint target, joint position, clamp/limit margin, and direct-IK-vs-controller-achieved diagnostics for the failing reset, and compare against passing resets 0/1.
 - If reset 2 is a sample/pose robustness issue rather than a controller bug, try an alternate precomputed grasp/sample or a stricter export/filter criterion; preserve the main RL task defaults and do not launch PPO/A100 until contact/lift is robust across all or near-all resets.
+
+## 2026-06-12T00:27:18Z - alternate-grasp robustness sweep plan
+
+Goal:
+- Determine whether the remaining reset-2 failure is specific to the current `orig006` grasp or a general action-controller path brittleness.
+
+Hypothesis:
+- The GraspGenX object/cube transform and 3 cm open pregrasp are now geometrically coherent, but individual topdown grasps can be brittle under the normal `env.step` controller. Evaluating a small library subset one grasp at a time should reveal whether another candidate produces robust contact/lift under the same reset randomization.
+
+Candidate Set:
+- Source library: `local_results/franka_cube_grasp_prior/franka_cube_ggx_grasps_geometry_filtered_v1.npz`.
+- Candidate original indices from metadata: `[0, 1, 6, 11, 12, 14, 15, 23, 24, 27]`.
+- Rationale: this is the existing compact GraspGenX library filtered for DEXTRAH TCP geometry around the 0.06 m cube, includes the brittle `orig006`, and is small enough for bounded L401 diagnostics.
+
+Planned Diagnostic:
+- Create one single-grasp `.npz` per candidate under the Worker A local/remote artifact namespace, preserving original-index metadata.
+- Launch one tiny L401 diagnostic per candidate with `NUM_ENVS=1`, `NUM_RESETS=3`, `SEED=20260624`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`, `INCLUDE_ORACLE_CLOSE_LIFT_CHECK=1`, `ORACLE_APPROACH_MODE=proportional_exact`, `ORACLE_TRACK_ORIENTATION=1`, `ORACLE_CLOSE_WIDTH=0.055`, `ORACLE_APPROACH_STEPS=60`, `ORACLE_EXACT_HOLD_STEPS=0`, `ORACLE_CLOSE_STEPS=80`, `ORACLE_LIFT_STEPS=80`, `ORACLE_HOLD_STEPS=20`, `ORACLE_LIFT_ACTION_Z=0.15`, `RENDER_ALL_RESETS=1`.
+- Produce a local inspection bundle with a per-grasp/per-reset table for success/lift gate, max lift, min tip distance, min/final exact EE error, rotation error, plus a keyframe sheet/video and trace plots.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- local_head: `ba88a6aea9bca5d4106f47a480fc634c5af5739b`
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_code_commit: `456c8a09c09e9bb3f86d09980a96b9582243d35c` (diagnostic code commit; local HEAD only adds worklog entries)
+- changed_files: this worklog only before launch; generated `.npz` candidate libraries and inspection artifacts remain untracked outputs.
+
+Acceptance:
+- No PPO/A100 launch unless at least one candidate is robust across all or near-all resets with visually plausible contact/lift and sane trace metrics.
+
+## 2026-06-12T00:30:00Z - launch alternate-grasp robustness sweep
+
+Goal:
+- Run the planned single-grasp L401 diagnostics for the 10 filtered candidates.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- local_head: `ba88a6aea9bca5d4106f47a480fc634c5af5739b` plus uncommitted worklog launch entry
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_code_commit: `456c8a09c09e9bb3f86d09980a96b9582243d35c`, detached clean
+- candidate_library_dir_local: `local_results/franka_cube_grasp_prior/alt_grasp_candidates_20260612_0027`
+- candidate_library_dir_remote_host: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/alt_grasp_candidates_20260612_0027`
+- candidate_library_dir_container: `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/alt_grasp_candidates_20260612_0027`
+
+Command / Jobs:
+- command shape: `sbatch --parsable --job-name=ggx_alt_<orig> --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=456c8a09c09e9bb3f86d09980a96b9582243d35c,TASK=Dextrah-Franka-Cube-Grasp,RUN_NAME=franka_cube_ggx_altgrasp_orient_20260612_0027_orig<orig>,NUM_ENVS=1,NUM_RESETS=3,SEED=20260624,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/alt_grasp_candidates_20260612_0027/franka_cube_ggx_grasp_orig<orig>_single.npz,INCLUDE_ORACLE_CLOSE_LIFT_CHECK=1,ORACLE_APPROACH_MODE=proportional_exact,ORACLE_PROPORTIONAL_GAIN=1.0,ORACLE_MAX_POSITION_ACTION=1.0,ORACLE_TRACK_ORIENTATION=1,ORACLE_CLOSE_WIDTH=0.055,ORACLE_APPROACH_STEPS=60,ORACLE_EXACT_HOLD_STEPS=0,ORACLE_CLOSE_STEPS=80,ORACLE_LIFT_STEPS=80,ORACLE_HOLD_STEPS=20,ORACLE_LIFT_ACTION_Z=0.15,ORACLE_LIFT_SUCCESS_HEIGHT=0.020,ORACLE_RENDER_INTERVAL=12,RENDER_ALL_RESETS=1,RENDER_WIDTH=960,RENDER_HEIGHT=540 cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`
+- `1027909`: `orig000`, run `franka_cube_ggx_altgrasp_orient_20260612_0027_orig000`
+- `1027910`: `orig001`, run `franka_cube_ggx_altgrasp_orient_20260612_0027_orig001`
+- `1027911`: `orig006`, run `franka_cube_ggx_altgrasp_orient_20260612_0027_orig006`
+- `1027912`: `orig011`, run `franka_cube_ggx_altgrasp_orient_20260612_0027_orig011`
+- `1027913`: `orig012`, run `franka_cube_ggx_altgrasp_orient_20260612_0027_orig012`
+- `1027914`: `orig014`, run `franka_cube_ggx_altgrasp_orient_20260612_0027_orig014`
+- `1027915`: `orig015`, run `franka_cube_ggx_altgrasp_orient_20260612_0027_orig015`
+- `1027916`: `orig023`, run `franka_cube_ggx_altgrasp_orient_20260612_0027_orig023`
+- `1027917`: `orig024`, run `franka_cube_ggx_altgrasp_orient_20260612_0027_orig024`
+- `1027918`: `orig027`, run `franka_cube_ggx_altgrasp_orient_20260612_0027_orig027`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/diagnose_franka_cube_prior_<job>.out`
+- run dirs: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_altgrasp_orient_20260612_0027_orig<orig>`
+
+Result:
+- status: submitted
+
+Next:
+- Monitor jobs to completion, fetch logs/results, build local comparison report/table/contact sheet/video/trace plots, open artifacts with `viz-open`, and decide whether any alternate grasp passes the robustness gate.
+
+## 2026-06-12T00:42:00Z - alternate-grasp robustness sweep result
+
+Goal:
+- Inspect jobs `1027909`-`1027918` end-to-end and determine whether alternate GraspGenX samples can robustly close/lift through the normal `env.step` action path.
+
+Result:
+- status: diagnostic pass for a candidate subset; no PPO/A100 launch yet
+- Slurm: all ten jobs completed `0:0`; no active sweep jobs remained in `squeue`.
+- log scan: each fetched stdout contained `Reset Diagnostic Done`; no `Traceback`, `RuntimeError`, `Detected diagnostic error`, or missing-metrics signatures.
+- fetched run dirs: `cluster_results/l401/franka_cube_ggx_altgrasp_orient_20260612_0027_orig{000,001,006,011,012,014,015,023,024,027}`.
+- inspection bundle: `cluster_results/l401/franka_cube_ggx_altgrasp_orient_20260612_0027_inspection`
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_altgrasp_orient_20260612_0027_inspection/REPORT.md`
+- full phase sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_altgrasp_orient_20260612_0027_inspection/altgrasp_phase_keyframe_sheet.jpg`
+- representative multiview sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_altgrasp_orient_20260612_0027_inspection/altgrasp_representative_multiview_sheet.jpg`
+- cropped focus sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_altgrasp_orient_20260612_0027_inspection/altgrasp_cropped_focus_sheet.jpg`
+- metric plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_altgrasp_orient_20260612_0027_inspection/altgrasp_metric_plot.png`
+- slideshow video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_altgrasp_orient_20260612_0027_inspection/altgrasp_keyframes.mp4`
+- tables: `per_reset_metrics.csv`, `summary_by_grasp.csv`, `SUMMARY.json` in the inspection bundle.
+
+Metrics:
+
+| Grasp | Job | Confidence | Oracle/Lift Pass | Mean Max Lift | Mean Min Tip | Mean Min Exact EE | Max Final EE | Mean Min Rot | Verdict |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `orig000` | `1027909` | `0.756784` | `3/3` | `0.0303m` | `0.0320m` | `0.00007m` | `0.0351m` | `0.0001rad` | PASS |
+| `orig001` | `1027910` | `0.740458` | `3/3` | `0.0308m` | `0.0319m` | `0.00010m` | `0.0356m` | `0.0001rad` | PASS |
+| `orig006` | `1027911` | `0.723561` | `2/3` | `0.0232m` | `0.0350m` | `0.00446m` | `0.0574m` | `0.0129rad` | FAIL |
+| `orig011` | `1027912` | `0.714510` | `3/3` | `0.0318m` | `0.0317m` | `0.00015m` | `0.0366m` | `0.0001rad` | PASS |
+| `orig012` | `1027913` | `0.712653` | `3/3` | `0.0342m` | `0.0319m` | `0.00012m` | `0.0392m` | `0.0003rad` | PASS |
+| `orig014` | `1027914` | `0.709132` | `3/3` | `0.0302m` | `0.0320m` | `0.00006m` | `0.0350m` | `0.0000rad` | PASS |
+| `orig015` | `1027915` | `0.708211` | `0/3` | `0.0000m` | `0.0422m` | `0.01249m` | `0.0603m` | `0.0214rad` | FAIL |
+| `orig023` | `1027916` | `0.696887` | `0/3` | `0.0000m` | `0.0428m` | `0.01301m` | `0.0615m` | `0.0024rad` | FAIL |
+| `orig024` | `1027917` | `0.695900` | `3/3` | `0.0302m` | `0.0320m` | `0.00008m` | `0.0350m` | `0.0001rad` | PASS |
+| `orig027` | `1027918` | `0.692052` | `3/3` | `0.0304m` | `0.0250m` | `0.00006m` | `0.0350m` | `0.0001rad` | PASS |
+
+Analysis:
+- The reset/pregrasp gate remains good: every candidate/reset reports `reset_success=True`, `reset_grasp_quality_success=True`, and no immediate done.
+- `orig006` reproduced the prior brittleness exactly: resets 0/1 pass, reset 2 fails with max lift `0`, min exact EE approximately `1.31cm`, final exact EE approximately `5.74cm`, and elevated rotation residual.
+- Multiple alternate geometry-filtered candidates pass all three randomized resets with small exact-EE/rotation residuals and about `3cm` max lift. This means the controller/action path is not generally dead; the current single-grasp choice was brittle.
+- `orig015` and `orig023` fail all three despite passing pregrasp metrics, so the existing geometry-filtered library is not sufficient as-is. A robust subset or deterministic robust-grasp option is needed before PPO scale-up.
+- The visual sheets confirm the same qualitative split, although the diagnostic source frames include black overlay panels; the cropped sheet reduces but does not fully remove that overlay.
+
+Next:
+- Do not launch A100.
+- Patch/export a robust candidate subset based on the passing candidates, or add a deterministic/filtered robust-grasp diagnostic path, then rerun the reset/pregrasp + oracle gate on that candidate set.
+- After the robust-library gate passes visually and numerically, run a bounded small PPO smoke/eval before any full-scale training.
