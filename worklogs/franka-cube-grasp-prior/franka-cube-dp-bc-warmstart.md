@@ -6090,3 +6090,219 @@ Next:
   with enough steps to reduce train/val action error while still bounded, then
   inspect checkpoint action ranges. Do not proceed to RL warm-start or large
   training until contact-aware DP closed-loop behavior is coherent.
+
+## 2026-06-11T18:07:05-07:00 - official DP contact-aware debug pretrain plan
+
+Goal:
+- Run a bounded contact-aware BC debug pretrain from the official
+  `real-stanford/diffusion_policy` workspace on the accepted relabel NPZ, with
+  enough optimizer steps to inspect train/val loss reduction and checkpoint
+  action ranges.
+
+Hypothesis:
+- A short local RTX 6000 run with the accepted contact-aware dataset should
+  reduce training loss and produce finite action chunks. This is a necessary
+  checkpoint before proposing any closed-loop DP eval, but it is not full BC
+  readiness.
+
+Change:
+- Add a report utility for bounded official-DP pretrains that parses
+  `logs.json.txt`, writes a loss CSV/table, plots train/val/action-MSE curves,
+  and summarizes checkpoint action-range smoke logs.
+- Do not modify the official DP implementation or the existing training config
+  semantics.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `cb6501561424151b295e88b7f3c9b04a9b4b577d`
+- implementation_commit: pending
+- official_diffusion_policy:
+  source `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/diffusion_policy`,
+  commit `5ba07ac6661db573af695b419a7947ecb704690f`,
+  remote `https://github.com/real-stanford/diffusion_policy`
+
+Command / Job:
+- job_id: `n/a` planned local GPU debug run.
+- dataset:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_set_ep8_16_24_30_s260_high30_defaultfix_20260611_175347/contact_relabel_set_accepted.npz`
+- planned run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_pretrain/<timestamp>`
+- planned official DP command:
+  `cd $DP && CUDA_VISIBLE_DEVICES=0 PYTHONPATH=$DP:$DEX $VENV/bin/python train.py --config-dir $DEX/dextrah_lab/offline_dp_bc/config --config-name franka_cube_lowdim_dp task.dataset_path=$DATASET task.dataset.val_ratio=0.25 training.device=cuda:0 training.num_epochs=8 training.max_train_steps=12 training.max_val_steps=4 training.lr_warmup_steps=5 policy.num_inference_steps=8 dataloader.batch_size=32 val_dataloader.batch_size=32 hydra.run.dir=$OUT/official_dp_train`
+
+Acceptance:
+- Training completes without NaNs/divergence and writes a checkpoint.
+- `logs.json.txt` contains multiple epochs with lower final train loss than the
+  initial epoch, and validation loss is finite/non-explosive.
+- Checkpoint bridge smokes for open/closed/lift-high rows produce finite action
+  ranges. Range saturation is acceptable only as a debug signal; any severe
+  unexpected z/gripper behavior blocks closed-loop eval proposal.
+
+Next:
+- Validate the report utility locally, launch the bounded local GPU run,
+  inspect logs/curves/checkpoint ranges, open artifacts with `viz-open`, then
+  update/commit/push the worklog and report code.
+
+## 2026-06-11T18:13:31-07:00 - official DP debug pretrain identity-normalizer finding
+
+Goal:
+- Inspect whether a bounded contact-aware official-DP debug pretrain is
+  coherent enough to propose closed-loop DP eval.
+
+Command / Job:
+- job_id: `n/a` local RTX 6000 runs.
+- run_dirs:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_pretrain/contact_relabel_official_dp_debug_pretrain_20260611_180838`
+  and
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_pretrain/contact_relabel_official_dp_debug_pretrain40_20260611_181130`
+- training commands:
+  official `train.py` with the accepted contact-aware NPZ, first
+  `num_epochs=8 max_train_steps=12`, then bounded longer
+  `num_epochs=40 max_train_steps=20`, both using the existing
+  `task.dataset.action_normalizer=identity`.
+
+Result:
+- 8-epoch run:
+  train loss reduced `1.05396 -> 0.599753`, val loss `1.03991 -> 0.649757`.
+  Enhanced action-range smoke showed direct and bridge pose actions still
+  touching normalized bounds while label ranges were narrow.
+- 40-epoch run:
+  train loss reduced to `0.03293`, val loss to `0.05811`,
+  train_action_mse_error to `0.57264`.
+  EMA, raw-model, and 25-step inference action smokes all still sampled broad
+  pose ranges. Example: first/open label first action had `dz` in
+  `[-0.585, -0.419]` and gripper `+1`, while policy chunks still touched
+  `[-1, 1]` in pose dimensions; closed/lift labels had `dz ~= +0.407` and
+  gripper `-1`, but sampled chunks still spanned clip bounds.
+
+Analysis:
+- This is not closed-loop eval ready. Loss reduction alone is insufficient.
+- Raw vs EMA did not explain the broad samples, and increasing inference steps
+  from 8 to 25 did not fix it.
+- The likely config issue is the DP internal action normalizer. The adapter
+  used identity because DEXTRAH actions are already normalized controller
+  commands, but official DP sampling with a clipped DDPM scheduler can still
+  explore the full `[-1, 1]` controller range. For this tiny contact-aware
+  dataset, `action_normalizer=limits` should train/sample in normalized dataset
+  coordinates and unnormalize back to the dataset's actual action support.
+
+Next:
+- Run one bounded limits-normalizer diagnostic with the same accepted NPZ and
+  short local GPU budget. Do not run closed-loop DP eval, full BC, or RL.
+
+## 2026-06-11T18:19:01-07:00 - official DP contact-aware debug pretrain artifacts
+
+Goal:
+- Produce the requested bounded official-DP debug pretrain artifacts and decide
+  whether checkpoint evidence is coherent enough to propose closed-loop DP eval.
+
+Change:
+- Added `limits_clamp_constant` action normalization in
+  `dextrah_lab/offline_dp_bc/dp_dataset.py`: ordinary action dimensions use
+  limits normalization, while near-constant action dimensions unnormalize
+  clipped samples to `mean +/- 5e-5` instead of full `[-1, 1]` controller
+  commands. This keeps zero-rotation contact-aware labels near zero while
+  preserving DEXTRAH's 7D action schema.
+- Enhanced `validate_official_checkpoint_smoke.py` with selected dataset label
+  action ranges, full-chunk ranges, and `--policy-source {auto,ema,raw}`.
+- Added `make_official_dp_pretrain_report.py` for loss CSV/PNG and
+  action-range report generation.
+- Updated `make_lowdim_dataset_report.py` to record the action normalizer used.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `cb6501561424151b295e88b7f3c9b04a9b4b577d`
+- implementation_commit: pending
+- changed_files:
+  `dextrah_lab/offline_dp_bc/dp_dataset.py`,
+  `dextrah_lab/offline_dp_bc/make_lowdim_dataset_report.py`,
+  `dextrah_lab/offline_dp_bc/make_official_dp_pretrain_report.py`,
+  `dextrah_lab/offline_dp_bc/validate_official_checkpoint_smoke.py`,
+  `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`.
+- official_diffusion_policy:
+  source `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/diffusion_policy`,
+  commit `5ba07ac6661db573af695b419a7947ecb704690f`,
+  remote `https://github.com/real-stanford/diffusion_policy`.
+
+Command / Job:
+- job_id: `n/a`, local RTX 6000 debug pretrains.
+- accepted dataset:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_set_ep8_16_24_30_s260_high30_defaultfix_20260611_175347/contact_relabel_set_accepted.npz`
+- final selected run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_pretrain/contact_relabel_official_dp_debug_pretrain100_clampconst_20260611_181656`
+- final train command:
+  `cd $DP && CUDA_VISIBLE_DEVICES=0 PYTHONPATH=$DP:$DEX $VENV/bin/python train.py --config-dir $DEX/dextrah_lab/offline_dp_bc/config --config-name franka_cube_lowdim_dp task.dataset_path=$DATASET task.dataset.val_ratio=0.25 task.dataset.action_normalizer=limits_clamp_constant training.device=cuda:0 training.num_epochs=100 training.max_train_steps=20 training.max_val_steps=4 training.lr_warmup_steps=10 training.checkpoint_every=10 policy.num_inference_steps=8 dataloader.batch_size=32 val_dataloader.batch_size=32 hydra.run.dir=$OUT/official_dp_train`
+- checkpoint smokes:
+  `validate_official_checkpoint_smoke.py` on `first`,
+  `gripper_closed`, and `lift_high` rows with
+  `--num-inference-steps 8 --warm-history-from-dataset`.
+
+Intermediate Results:
+- Identity action normalizer:
+  40-epoch bounded run reached train loss `0.03293`, val loss `0.05811`, but
+  EMA/raw/25-step action smokes still sampled broad pose ranges; not eval-ready.
+- Official `limits` action normalizer:
+  controlled xyz action range but let near-zero rotation channels unnormalize
+  to full `[-1, 1]`; not eval-ready.
+- `limits_clamp_constant` action normalizer:
+  fixed pose/rotation range coherence. 40-epoch run reached
+  train_action_mse_error `0.21911`; 100-epoch run reached `0.21772`.
+
+Final Result:
+- status: diagnostic complete, checkpoint verdict `needs_review`.
+- final checkpoint:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_pretrain/contact_relabel_official_dp_debug_pretrain100_clampconst_20260611_181656/official_dp_train/checkpoints/latest.ckpt`
+- loss reduction:
+  train loss `1.04153 -> 0.01449`, val loss `1.02373 -> 0.08477`.
+- action-MSE:
+  `0.28863 -> 0.21772`; improved but plateaued above a comfortable eval gate.
+- action-range smokes:
+  pose/rotation ranges are now bounded by dataset support and constant rotations
+  stay near `+/-5e-5`, but gripper sign remains mixed. Open rows have label
+  gripper `+1` while predicted direct/bridge first actions include negative
+  gripper. Closed/lift rows have label gripper `-1` while predicted first
+  action max remains positive (`~0.74` bridge in the final run).
+- decision:
+  Do not launch closed-loop DP eval, full BC, or RL warm-start from this
+  checkpoint. The next fix should target gripper conditioning/loss/schedule
+  before simulator eval.
+
+Viewer URLs:
+- pretrain report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_pretrain/contact_relabel_official_dp_debug_pretrain100_clampconst_20260611_181656/official_dp_pretrain_report.md`
+- loss plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_pretrain/contact_relabel_official_dp_debug_pretrain100_clampconst_20260611_181656/loss_curves.png`
+- parsed loss CSV:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_pretrain/contact_relabel_official_dp_debug_pretrain100_clampconst_20260611_181656/loss_history.csv`
+- resolved Hydra config:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_pretrain/contact_relabel_official_dp_debug_pretrain100_clampconst_20260611_181656/official_dp_train/.hydra/config.yaml`
+- train stdout:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_pretrain/contact_relabel_official_dp_debug_pretrain100_clampconst_20260611_181656/logs/official_dp_debug_pretrain.log`
+- action-range smoke logs:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_pretrain/contact_relabel_official_dp_debug_pretrain100_clampconst_20260611_181656/logs/checkpoint_action_range_first.log`,
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_pretrain/contact_relabel_official_dp_debug_pretrain100_clampconst_20260611_181656/logs/checkpoint_action_range_gripper_closed.log`,
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_pretrain/contact_relabel_official_dp_debug_pretrain100_clampconst_20260611_181656/logs/checkpoint_action_range_lift_high.log`
+- summary JSON:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_pretrain/contact_relabel_official_dp_debug_pretrain100_clampconst_20260611_181656/official_dp_pretrain_summary.json`
+
+Analysis:
+- The official-DP mechanics and loss gates are now proven on contact-aware
+  relabel data, and the custom action normalizer resolves the translation and
+  constant-rotation range bug introduced by raw identity/limits normalization.
+- BC readiness is still blocked by gripper sign uncertainty. Since close/lift
+  success depends on gripper timing, closed-loop eval would likely produce
+  another ambiguous or misleading video until gripper behavior is fixed.
+
+Next:
+- Keep the checkpoint/artifacts as a diagnostic baseline only.
+- Next bounded fix options: add an explicit gripper-phase/timestep conditioning
+  feature to the 21D lowdim obs, use a deterministic gripper schedule wrapper
+  for this staged contact-aware dataset, or train a separate binary gripper
+  head/distillation target. Any option needs a new small smoke and action-range
+  artifact before closed-loop DP eval.

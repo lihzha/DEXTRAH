@@ -41,6 +41,39 @@ def dataset_statistics(dataset_path: str | Path) -> dict[str, Any]:
     }
 
 
+def _create_limits_clamp_constant_action_normalizer(
+    action: np.ndarray,
+    *,
+    range_eps: float = 1.0e-4,
+):
+    """Create a limits normalizer that keeps near-constant action dims near their mean.
+
+    Official ``SingleFieldLinearNormalizer`` maps near-constant dimensions with
+    unit scale. That is fine for observations, but for Diffusion Policy actions
+    it lets sampled normalized noise unnormalize to large controller commands in
+    dimensions whose labels are effectively zero. This variant keeps ordinary
+    dimensions identical to limits normalization and maps clipped normalized
+    samples in near-constant dimensions back to ``mean +/- range_eps / 2``.
+    """
+
+    stat = array_to_stats(action)
+    input_min = stat["min"].astype(np.float32, copy=True)
+    input_max = stat["max"].astype(np.float32, copy=True)
+    input_mean = stat["mean"].astype(np.float32, copy=True)
+    input_range = input_max - input_min
+    small_range = input_range < float(range_eps)
+    effective_range = input_range.copy()
+    effective_range[small_range] = float(range_eps)
+    scale = (2.0 / effective_range).astype(np.float32)
+    offset = (-1.0 - scale * input_min).astype(np.float32)
+    offset[small_range] = (-scale[small_range] * input_mean[small_range]).astype(np.float32)
+    return SingleFieldLinearNormalizer.create_manual(
+        scale=scale,
+        offset=offset,
+        input_stats_dict=stat,
+    )
+
+
 class FrankaCubeLowdimDataset(BaseLowdimDataset):
     """NPZ-backed low-dimensional dataset for official Diffusion Policy.
 
@@ -158,6 +191,8 @@ class FrankaCubeLowdimDataset(BaseLowdimDataset):
                 output_max=1.0,
                 output_min=-1.0,
             )
+        elif self.action_normalizer == "limits_clamp_constant":
+            normalizer["action"] = _create_limits_clamp_constant_action_normalizer(self.action)
         else:
             raise ValueError(f"Unsupported action_normalizer {self.action_normalizer!r}")
         return normalizer

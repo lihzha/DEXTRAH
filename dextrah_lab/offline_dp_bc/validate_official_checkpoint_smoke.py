@@ -63,6 +63,21 @@ def _history_indices_for_row(
     return np.clip(frame_ids, ep_start, ep_end - 1)
 
 
+def _future_indices_for_row(
+    row_idx: int,
+    *,
+    episode_ends: np.ndarray,
+    n_action_steps: int,
+) -> np.ndarray:
+    ep_idx = int(np.searchsorted(episode_ends, row_idx, side="right"))
+    if ep_idx >= episode_ends.shape[0]:
+        ep_idx = int(episode_ends.shape[0] - 1)
+    ep_end = int(episode_ends[ep_idx])
+    row_idx = min(int(row_idx), ep_end - 1)
+    frame_ids = np.arange(row_idx, row_idx + n_action_steps, dtype=np.int64)
+    return np.clip(frame_ids, row_idx, ep_end - 1)
+
+
 def _select_rows(
     obs: np.ndarray,
     episode_ends: np.ndarray,
@@ -106,15 +121,21 @@ def _dataset_lowdim_window(
     dataset_path: Path,
     batch_size: int,
     n_obs_steps: int,
+    n_action_steps: int,
     *,
     row_selector: str,
     row_index: int | None,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     data = np.load(dataset_path, allow_pickle=False)
     obs = np.asarray(data["obs"], dtype=np.float32)
+    action = np.asarray(data["action"], dtype=np.float32)
     episode_ends = np.asarray(data["episode_ends"], dtype=np.int64)
     if obs.ndim != 2 or obs.shape[1] != FRANKA_CUBE_LOWDIM_OBS_DIM:
         raise ValueError(f"Expected obs shape (N, {FRANKA_CUBE_LOWDIM_OBS_DIM}), got {obs.shape}")
+    if action.ndim != 2 or action.shape[1] != FRANKA_CUBE_ACTION_DIM:
+        raise ValueError(f"Expected action shape (N, {FRANKA_CUBE_ACTION_DIM}), got {action.shape}")
+    if obs.shape[0] != action.shape[0]:
+        raise ValueError(f"obs/action length mismatch: {obs.shape[0]} vs {action.shape[0]}")
     if obs.shape[0] < 1:
         raise ValueError("Dataset has no observations")
     if episode_ends.ndim != 1 or episode_ends[-1] != obs.shape[0]:
@@ -138,7 +159,17 @@ def _dataset_lowdim_window(
         ]
         for row_idx in row_indices
     ]
-    return np.stack(windows, axis=0).astype(np.float32), row_indices
+    action_windows = [
+        action[
+            _future_indices_for_row(
+                int(row_idx),
+                episode_ends=episode_ends,
+                n_action_steps=n_action_steps,
+            )
+        ]
+        for row_idx in row_indices
+    ]
+    return np.stack(windows, axis=0).astype(np.float32), np.stack(action_windows, axis=0).astype(np.float32), row_indices
 
 
 def main() -> None:
@@ -160,6 +191,12 @@ def main() -> None:
         action="store_true",
         help="Prime the PPO bridge history with the selected dataset window before querying the final row.",
     )
+    parser.add_argument(
+        "--policy-source",
+        choices=("auto", "ema", "raw"),
+        default="auto",
+        help="Which checkpoint policy to query. auto prefers EMA when present, matching prior behavior.",
+    )
     args = parser.parse_args()
 
     checkpoint = Path(args.checkpoint).expanduser().resolve()
@@ -170,16 +207,28 @@ def main() -> None:
         raise FileNotFoundError(dataset_path)
 
     workspace = _load_workspace(checkpoint)
-    policy = workspace.ema_model if getattr(workspace, "ema_model", None) is not None else workspace.model
+    if args.policy_source == "raw":
+        policy = workspace.model
+        policy_source = "raw"
+    elif args.policy_source == "ema":
+        policy = getattr(workspace, "ema_model", None)
+        if policy is None:
+            raise RuntimeError("Checkpoint has no ema_model")
+        policy_source = "ema"
+    else:
+        policy = workspace.ema_model if getattr(workspace, "ema_model", None) is not None else workspace.model
+        policy_source = "ema" if getattr(workspace, "ema_model", None) is not None else "raw"
     policy.num_inference_steps = int(args.num_inference_steps)
     policy.to(torch.device(args.device))
     policy.eval()
 
     n_obs_steps = int(policy.n_obs_steps)
-    lowdim_seq, row_indices = _dataset_lowdim_window(
+    n_action_steps = int(policy.n_action_steps)
+    lowdim_seq, label_action_seq, row_indices = _dataset_lowdim_window(
         dataset_path,
         int(args.batch_size),
         n_obs_steps,
+        n_action_steps,
         row_selector=str(args.row_selector),
         row_index=args.row_index,
     )
@@ -218,14 +267,24 @@ def main() -> None:
         "direct_action_shape": list(direct_action.shape),
         "direct_action_min": np.min(direct_action[:, 0], axis=0).astype(float).tolist(),
         "direct_action_max": np.max(direct_action[:, 0], axis=0).astype(float).tolist(),
+        "direct_action_chunk_min": np.min(direct_action.reshape(-1, direct_action.shape[-1]), axis=0).astype(float).tolist(),
+        "direct_action_chunk_max": np.max(direct_action.reshape(-1, direct_action.shape[-1]), axis=0).astype(float).tolist(),
         "bridge_action_shape": list(bridge_action.shape),
         "bridge_action_min": np.min(bridge_action, axis=0).astype(float).tolist(),
         "bridge_action_max": np.max(bridge_action, axis=0).astype(float).tolist(),
+        "label_action_shape": list(label_action_seq.shape),
+        "label_action_min": np.min(label_action_seq[:, 0], axis=0).astype(float).tolist(),
+        "label_action_max": np.max(label_action_seq[:, 0], axis=0).astype(float).tolist(),
+        "label_action_chunk_min": np.min(label_action_seq.reshape(-1, label_action_seq.shape[-1]), axis=0).astype(float).tolist(),
+        "label_action_chunk_max": np.max(label_action_seq.reshape(-1, label_action_seq.shape[-1]), axis=0).astype(float).tolist(),
+        "selected_label_dz_first": label_action_seq[:, 0, 2].astype(float).tolist(),
+        "selected_label_gripper_first": label_action_seq[:, 0, -1].astype(float).tolist(),
         "roundtrip_ee_pos": roundtrip[0].astype(float).tolist(),
         "num_inference_steps": int(policy.num_inference_steps),
         "warm_history_from_dataset": bool(args.warm_history_from_dataset),
         "official_workspace": workspace.__class__.__name__,
         "policy_class": policy.__class__.__name__,
+        "policy_source": policy_source,
         "ppo_bridge": "eval_wrapper_or_distillation_only_not_rl_games_weight_init",
         "ppo_obs_dim": FRANKA_CUBE_PPO_OBS_DIM,
     }

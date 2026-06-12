@@ -175,6 +175,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pad-before", type=int, default=1)
     parser.add_argument("--pad-after", type=int, default=7)
     parser.add_argument("--val-ratio", type=float, default=0.25)
+    parser.add_argument(
+        "--action-normalizer",
+        choices=("identity", "limits", "limits_clamp_constant"),
+        default="identity",
+    )
     parser.add_argument("--expected-obs-dim", type=int, default=21)
     parser.add_argument("--expected-action-dim", type=int, default=7)
     parser.add_argument(
@@ -217,6 +222,7 @@ def main() -> None:
         pad_before=int(args.pad_before),
         pad_after=int(args.pad_after),
         val_ratio=float(args.val_ratio),
+        action_normalizer=str(args.action_normalizer),
     )
     val_dataset = dataset.get_validation_dataset()
     sample = dataset[0]
@@ -238,6 +244,7 @@ def main() -> None:
         "pad_before": int(args.pad_before),
         "pad_after": int(args.pad_after),
         "val_ratio": float(args.val_ratio),
+        "action_normalizer": str(args.action_normalizer),
         "sample_obs_shape": list(sample["obs"].shape),
         "sample_action_shape": list(sample["action"].shape),
         "validation_errors": validation_errors,
@@ -272,6 +279,7 @@ def main() -> None:
         f"- episode ends: `{episode_ends.astype(int).tolist()}`",
         f"- episode lengths: `{episode_lengths}`",
         f"- train/val samples: `{len(dataset)}` / `{len(val_dataset)}`",
+        f"- action normalizer: `{args.action_normalizer}`",
         f"- official DP dataset base: `{summary['official_diffusion_policy_dataset_base']}`",
         f"- action abs max: `{summary['action_abs_max']:.6g}`",
         f"- action clip fraction abs>=1: `{summary['action_clip_fraction_abs_ge_1']:.6g}`",
@@ -307,7 +315,7 @@ def main() -> None:
             "## Normalizer",
             "",
             "- obs normalizer: official `LinearNormalizer` limits fit.",
-            "- action normalizer: identity; action offset is zero and action scale is one.",
+            f"- action normalizer: `{args.action_normalizer}`.",
             f"- normalizer fields: `{sorted(normalizer['fields'].keys())}`",
             "",
             "## Output Files",
