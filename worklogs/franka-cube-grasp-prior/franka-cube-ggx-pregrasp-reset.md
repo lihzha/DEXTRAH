@@ -6,6 +6,80 @@
 - base_commit: 589dd81c9f9691fcda3a3d4b9ad714d90dae4794
 - created: 2026-06-11T18:39:11Z
 
+## 2026-06-12T18:35:01Z - seed 1781139395 prior rerun completed and eval video inspected
+
+Goal:
+- Finish the requested reset-prior rerun for seed `1781139395`.
+- Validate policy-only behavior with video before claiming grasp/lift.
+
+Command / Job:
+- training job: `29013387`, run `franka_cube_resetprior600_seed1781139395_c7e66a0_20260612_173151`
+- training config: `MAX_ITERATIONS=600`, `SEED=1781139395`, `NUM_ENVS=2048`, `USE_CUDA_GRAPH=False`, `AUTO_RESUME=False`, `SELF_RELAUNCH=False`, `GRASP_PRIOR_RESET_ENABLED=True`, `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`, `GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED=False`
+- final checkpoint: `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_resetprior600_seed1781139395_c7e66a0_20260612_173151/nn/last_dextrah_franka_cube_grasp_ep_600_rew_13152.836.pth`
+- eval job: `29014867`, run `franka_cube_prior_seed1781139395_ep600_policy_eval_a100_20260612_1836`
+- eval settings: deterministic policy-only, `NUM_ENVS=1`, `NUM_STEPS=600`, reset prior enabled, no action warm-start, no action-prior reward
+
+Result:
+- training scheduler state: `COMPLETED 0:0`, elapsed `00:55:19`
+- training JSONL: `600` rows, no bad scalars
+- final scalar metrics: success `0.81640625`, lifted `0.97021484375`, lift height `0.1253027319908142 m`, reset success/quality `1.0/1.0`
+- last-50 training means: success `0.861728515625`, lifted `0.9364453125`
+- best scalar success: `0.91796875` at epoch `450`
+- threshold: reset-prior seed `1781139395` first reached `success>=0.8` at epoch `65`; previous no-prior baseline seed `1781139395` reached it at sample `396`
+- eval scheduler state: `COMPLETED 0:0`
+- eval metrics: success mean `0.8566666666666667`, last-window success `0.9`, max success `1.0`, max lift height `0.14116722345352173 m`, first done step `599`
+- eval video validation: MP4 is `1280x720`, `600` frames, `10.0s`; labeled contact sheet shows actual policy-only cube lift/hold from step `40` through the held segment, with final zero due post-success reset
+
+Artifacts:
+- same-seed comparison plot: `cluster_results/a1001/franka_cube_seed_sweep600_c7e66a0_20260612_092951/success_rate_same_seed1781139395_comparison.png`
+- previous-baseline overlay plot: `cluster_results/a1001/franka_cube_seed_sweep600_c7e66a0_20260612_092951/success_rate_curve_comparison_with_previous_baseline.png`
+- training fetch: `cluster_results/a1001/franka_cube_resetprior600_seed1781139395_c7e66a0_20260612_173151/`
+- eval fetch: `cluster_results/a1001/evals/franka_cube_prior_seed1781139395_ep600_policy_eval_a100_20260612_1836/`
+- eval video: `cluster_results/a1001/evals/franka_cube_prior_seed1781139395_ep600_policy_eval_a100_20260612_1836/videos/prior-s178-ep600-policy-step-0.mp4`
+- labeled contact sheet: `cluster_results/a1001/evals/franka_cube_prior_seed1781139395_ep600_policy_eval_a100_20260612_1836/inspection/contact_sheet_labeled.jpg`
+
+Analysis:
+- The same-seed reset-prior rerun reaches high success much earlier than the previous no-prior baseline while using policy-only actions after reset.
+- The scalar success plateau below `1.0` is consistent with `cube_success_rate` being instantaneous success-region occupancy plus success-triggered resets, not an absorbing per-episode success metric. `has_lifted` and video evidence show the policy can lift/hold; final eval step zero is a post-success reset artifact.
+
+Next:
+- Check queues, commit this worklog update, and provide the user with the artifact links.
+
+## 2026-06-12T17:31:51Z - previous baseline success overlay and seed 1781139395 prior rerun
+
+Goal:
+- Add the previous successful no-prior baseline success-rate curve to the current success-rate comparison plot.
+- Rerun the reset-prior method with seed `1781139395` under the same known-good 600-epoch A100 config used for the seed `1..5` sweep.
+
+Change:
+- Generated `cluster_results/a1001/franka_cube_seed_sweep600_c7e66a0_20260612_092951/success_rate_curve_comparison_with_previous_baseline.png` and alias `success_rate_curve_comparison.png`.
+- Added source CSVs:
+  - `success_rate_plot_scalars_with_previous_baseline.csv`
+  - `success_rate_plot_means_with_previous_baseline.csv`
+- The previous baseline overlay uses raw data from `/home/lzha/code/DEXTRAH/handoffs/franka_cube_baseclear_ppo_20260610_1756/curves/success_rate_curve.csv`, not image digitization.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset
+- branch: codex/franka-cube-ggx-pregrasp-reset
+- local_head: f28cc18b7df63814d20366a75749acdefdb6ef4d
+- training_commit: c7e66a0a2168214e8a82f4412e9a79669d806750
+- remote_commit/status: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset` detached at `c7e66a0a2168214e8a82f4412e9a79669d806750`; wrapper `bash -n` passed; prior library exists with size `2874` bytes.
+
+Command / Job:
+- command: `sbatch --parsable --job-name=fc_prior_s178 --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=c7e66a0a2168214e8a82f4412e9a79669d806750,TASK=Dextrah-Franka-Cube-Grasp,FULL_EXPERIMENT_NAME=franka_cube_resetprior600_seed1781139395_c7e66a0_20260612_173151,NUM_ENVS=2048,MAX_ITERATIONS=600,SEED=1781139395,USE_CUDA_GRAPH=False,CUBE_SPAWN_XY_RANDOMIZATION=0.08,AUTO_RESUME=False,SELF_RELAUNCH=False,DEXTRAH_RLGAMES_JSONL_METRICS=True,HORIZON_LENGTH=64,MINIBATCH_SIZE=32768,CENTRAL_VALUE_MINIBATCH_SIZE=32768,LEARNING_RATE=0.0002,CENTRAL_VALUE_LEARNING_RATE=0.0001,MINI_EPOCHS=4,GAMMA=0.995,TAU=0.95,KL_THRESHOLD=0.012,ENTROPY_COEF=0.0005,E_CLIP=0.2,GRAD_NORM=1.0,SAVE_FREQUENCY=25,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_low_exact_z_orig027_20260612.npz cluster/sbatch_train_teacher_8gpu.sh`
+- job_id: `29013387`
+- run_name: `franka_cube_resetprior600_seed1781139395_c7e66a0_20260612_173151`
+- remote_run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_resetprior600_seed1781139395_c7e66a0_20260612_173151`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29013387.out`
+
+Result:
+- plot status: generated and visually inspected; previous baseline final success `0.859970093`, first `success>=0.8` at sample `396`; current reset-prior five-seed mean final `0.8646484375`; current no-prior five-seed mean final `0.17939453125`.
+- training status: submitted; `squeue` initially reported `PENDING` on `interactive_singlenode`.
+
+Next:
+- Monitor job `29013387`, verify wrapper header/resolved config, fetch metrics/configs when complete, then run policy-only video validation before claiming actual grasp/lift behavior for seed `1781139395`.
+
 ## 2026-06-12T10:49:00Z - policy-only eval videos validated
 
 Goal:
