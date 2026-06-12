@@ -72,7 +72,7 @@ Version Control:
 - worklog: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/worklogs/franka-cube-grasp-prior/franka-cube-ggx-pregrasp-reset.md
 - branch: codex/franka-cube-ggx-pregrasp-reset
 - base_commit: 589dd81c9f9691fcda3a3d4b9ad714d90dae4794
-- implementation_commit: pending
+- implementation_commit: committed in this checkpoint; exact pushed SHA will be recorded in the launch/result entry
 - push/pull: n/a/local checkpoint
 - changed_files: `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env_cfg.py`, `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`, `dextrah_lab/scene_scripts/export_franka_cube_graspgenx_library.py`, `dextrah_lab/rl_games/validate_franka_cube_grasp_env.py`, this owned worklog
 - remote_commit/status: n/a/local env
@@ -3193,3 +3193,105 @@ Decision:
 
 Cleanup:
 - No Worker A Slurm jobs remain active from this diagnostic loop after `1027982`.
+
+## 2026-06-11 19:28 PDT - first-contact action warm-start diagnostic plan
+
+Goal:
+- Test whether the reset-prior PPO failure is primarily first-contact action-distribution collapse by adding one opt-in RL-side diagnostic intervention that supplies sane early contact actions after a valid pass7 reset.
+
+Hypothesis:
+- The corrected policy-state audit shows reset geometry and ep45 reset observation RMS are healthy, while the learned policy opens/up/away after stepping. If first-contact action distribution is the blocker, a short diagnostic action warm-start that moves from pregrasp toward the sampled exact pose, light-closes, then lifts should prevent immediate drift and improve early lift/contact metrics in a bounded smoke. If it does not, the blocker is not only the first-contact action distribution.
+
+Planned intervention:
+- Add disabled-by-default config fields to `DextrahFrankaCubeGraspEnvCfg`:
+  - `grasp_prior_action_warmstart_enabled=False`
+  - `grasp_prior_action_warmstart_approach_steps`, `close_steps`, `lift_steps`
+  - `grasp_prior_action_warmstart_close_width=0.055`
+  - `grasp_prior_action_warmstart_lift_action_z=0.15`
+  - `grasp_prior_action_warmstart_gain`, `max_position_action`, `track_orientation`
+- Override/extend `DextrahFrankaCubeGraspEnv._pre_physics_step()` so that, only when the diagnostic flag is enabled and a grasp-prior reset succeeded, the applied action for the first post-reset steps is:
+  - approach phase: proportional action from current EE pose to `grasp_prior_reset_exact_ee_*`, open gripper;
+  - close phase: same exact-pose tracking with light close width;
+  - lift phase: light close plus small positive z lift action.
+- Preserve transparency by logging both policy/raw action and applied/warm-start action metrics in `self.extras`, including warm-start active rate, phase rates, original policy z/gripper means, applied z/gripper means, and exact EE error. Observation/action space, rewards, terminations, and default task behavior remain unchanged unless the diagnostic flag is explicitly enabled.
+- Add minimal pass-through environment variables / Hydra overrides to the existing 1-GPU train and eval wrappers so the small smoke can enable this diagnostic without editing the standard PPO config.
+
+Files to edit:
+- `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env_cfg.py`
+- `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`
+- `cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`
+- `cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- `dextrah_lab/rl_games/eval_rollout.py` (only to collect the new diagnostic scalars in eval traces)
+- owned worklog only
+
+Validation commands before any job:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`
+- `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py`
+- `bash -n cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`
+- `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- `git diff --check`
+- remote repeat of the syntax checks after deploying the exact commit to the Worker A L401 worktree.
+
+Planned bounded jobs if checks pass:
+- One small L401 reset-prior PPO smoke, not A100/full PPO:
+  - task `Dextrah-Franka-Cube-Grasp`
+  - `NUM_ENVS=64`, short `MAX_ITERATIONS` comparable to prior smoke or less if queue pressure requires
+  - pass7 robust library, `GRASP_PRIOR_RESET_ENABLED=True`
+  - `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=True`
+  - JSONL metrics enabled
+- One deterministic eval/render from the smoke checkpoint with the same diagnostic flag enabled, small env count and video/contact-sheet artifacts.
+
+Expected artifacts:
+- training stdout/log, checkpoint list, `metrics/direct_info_rank_0.jsonl`
+- reward/action curves including `cube_action_*`, `cube_policy_action_*`, `cube_action_warmstart_*`, reset success/quality, EE/finger distances, lift/success terms
+- action histograms/table comparing policy action vs applied warm-start action
+- eval metrics JSON/CSV/JSONL and, if behavior improves, short video/contact sheet opened with `viz-open`
+
+Acceptance criteria:
+- The diagnostic must clearly mark itself as non-apple-to-apple due to action intervention.
+- Defaults must keep the standard reset-prior and baseline task behavior unchanged.
+- Smoke is useful only if JSONL confirms warm-start branch was actually active and applied actions differ from policy actions during the configured early steps.
+- Evidence threshold for "first-contact action distribution is likely the blocker": early eval/training traces show reduced EE/finger distance drift, more close/contact/lift than the pass7 no-warmstart smoke, or visibly plausible close/lift behavior.
+- Evidence threshold for negative result: warm-start branch active but distances/lift/contact still fail, implying a deeper controller/reward/physics issue.
+- No full PPO/A100 launch from this diagnostic.
+
+## 2026-06-11 19:35 PDT - first-contact action warm-start implementation checkpoint
+
+Goal:
+- Implement the planned opt-in action warm-start diagnostic and validate source/wrapper syntax before any cluster launch.
+
+Hypothesis:
+- A short scripted first-contact action can test whether the pass7 PPO failure is caused by immediate bad policy actions after an otherwise valid reset. This is a diagnostic intervention only, not an apple-to-apple training result.
+
+Change:
+- Added disabled-by-default `grasp_prior_action_warmstart_*` config fields.
+- Added `DextrahFrankaCubeGraspEnv._pre_physics_step()` warm-start interception when both grasp-prior reset and the diagnostic flag are enabled:
+  - approach/open to the sampled exact EE pose;
+  - light-close at the exact pose;
+  - short lift phase with light-close retained.
+- Added metrics for warm-start active/phase rates, policy z/gripper actions, applied z/gripper actions, exact EE tracking error, and mean absolute policy-vs-applied action delta.
+- Added train/eval wrapper environment variables and Hydra overrides for the diagnostic, with a guard that warm-start requires grasp-prior reset.
+- Extended eval rollout metric collection to include warm-start scalars.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- worklog: `worklogs/franka-cube-grasp-prior/franka-cube-ggx-pregrasp-reset.md`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `9601f57c2e2e27abcd7898d3f19f2293eb415e1d`
+- implementation_commit: pending
+- changed_files: `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env_cfg.py`, `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`, `dextrah_lab/rl_games/eval_rollout.py`, `cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`, `cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`, this worklog
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`: passed
+- `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py`: passed
+- `bash -n cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`: passed
+- `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`: passed
+- `git diff --check`: passed
+
+Analysis:
+- Defaults preserve the existing task behavior: the warm-start branch is disabled by default and also requires `GRASP_PRIOR_RESET_ENABLED=True`.
+- Enabled runs are intentionally non-apple-to-apple and will be labeled as diagnostic-only in artifacts and reports.
+
+Next:
+- Commit/push this checkpoint, deploy the exact commit to the agent-owned L401 worktree, repeat syntax checks remotely, then launch one small L401 smoke only if remote checks pass.

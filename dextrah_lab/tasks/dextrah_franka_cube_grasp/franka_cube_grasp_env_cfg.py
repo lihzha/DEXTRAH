@@ -81,6 +81,20 @@ class DextrahFrankaCubeGraspEnvCfg(DextrahFrankaStarKittingEnvCfg):
     grasp_prior_reset_ik_rot_tolerance = 0.35
     grasp_prior_fallback_to_default_on_ik_failure = True
 
+    # Diagnostic-only early action intervention for reset-prior debugging.
+    # Disabled by default; enabling it makes the run non-apple-to-apple because
+    # the env applies a scripted first-contact action instead of the policy
+    # action for the first few post-reset steps.
+    grasp_prior_action_warmstart_enabled = False
+    grasp_prior_action_warmstart_approach_steps = 16
+    grasp_prior_action_warmstart_close_steps = 12
+    grasp_prior_action_warmstart_lift_steps = 12
+    grasp_prior_action_warmstart_close_width = 0.055
+    grasp_prior_action_warmstart_lift_action_z = 0.15
+    grasp_prior_action_warmstart_gain = 8.0
+    grasp_prior_action_warmstart_max_position_action = 1.0
+    grasp_prior_action_warmstart_track_orientation = True
+
     # KUKA-cube-shaped reward weights for franka_cube_grasp_rewards.compute_franka_cube_grasp_rewards.
     # Robot-specific differences are handled in the reward inputs: two Franka
     # finger distances replace the DEXTRAH multi-finger hand distances, and the

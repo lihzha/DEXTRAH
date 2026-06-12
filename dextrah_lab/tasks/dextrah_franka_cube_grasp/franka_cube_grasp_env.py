@@ -113,6 +113,26 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             self.grasp_prior_reset_pregrasp_tip_table_clearance = torch.zeros(self.num_envs, device=self.device)
             self.grasp_prior_reset_projected_exact_tip_table_clearance = torch.zeros(self.num_envs, device=self.device)
             self.grasp_prior_reset_quality_success = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        if not hasattr(self, "grasp_prior_action_warmstart_active"):
+            action_dim = int(self.cfg.action_space)
+            self.grasp_prior_action_warmstart_active = torch.zeros(
+                self.num_envs, dtype=torch.bool, device=self.device
+            )
+            self.grasp_prior_action_warmstart_phase = torch.full(
+                (self.num_envs,), -1, dtype=torch.long, device=self.device
+            )
+            self.grasp_prior_action_warmstart_policy_actions = torch.zeros(
+                self.num_envs, action_dim, device=self.device
+            )
+            self.grasp_prior_action_warmstart_applied_actions = torch.zeros(
+                self.num_envs, action_dim, device=self.device
+            )
+            self.grasp_prior_action_warmstart_policy_action_z = torch.zeros(self.num_envs, device=self.device)
+            self.grasp_prior_action_warmstart_policy_gripper_action = torch.zeros(self.num_envs, device=self.device)
+            self.grasp_prior_action_warmstart_applied_action_z = torch.zeros(self.num_envs, device=self.device)
+            self.grasp_prior_action_warmstart_applied_gripper_action = torch.zeros(self.num_envs, device=self.device)
+            self.grasp_prior_action_warmstart_action_delta_abs = torch.zeros(self.num_envs, device=self.device)
+            self.grasp_prior_action_warmstart_exact_ee_error = torch.zeros(self.num_envs, device=self.device)
 
     def _setup_grasp_prior_reset(self) -> None:
         self._grasp_prior_reset_enabled = bool(self.cfg.grasp_prior_reset_enabled)
@@ -427,6 +447,119 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         )
         return solved_joint_pos, success, pos_error_norm, rot_error_norm
 
+    def _gripper_action_for_width(self, width: float) -> float:
+        max_width = float(self.cfg.max_gripper_width)
+        if max_width <= 1.0e-6:
+            return -1.0
+        value = 2.0 * float(width) / max_width - 1.0
+        return max(-1.0, min(1.0, value))
+
+    def _grasp_prior_exact_tracking_action(self, gripper_action: float) -> torch.Tensor:
+        action = torch.zeros(self.num_envs, int(self.cfg.action_space), device=self.device)
+        self._compute_intermediate_values(update_success_timer=False)
+        current_ee_pos_b, current_ee_quat_b = self._compute_ee_frame_pose()
+        exact_ee_pos_b, exact_ee_quat_b = math_utils.subtract_frame_transforms(
+            self._robot.data.root_pos_w,
+            self._robot.data.root_quat_w,
+            self.grasp_prior_reset_exact_ee_pos_w,
+            self.grasp_prior_reset_exact_ee_quat_w,
+        )
+        gain = float(self.cfg.grasp_prior_action_warmstart_gain)
+        max_position_action = max(float(self.cfg.grasp_prior_action_warmstart_max_position_action), 0.0)
+        pos_action = gain * (exact_ee_pos_b - current_ee_pos_b) / torch.clamp(self.action_scale[:3], min=1.0e-6)
+        action[:, :3] = torch.clamp(pos_action, min=-max_position_action, max=max_position_action)
+        if bool(self.cfg.grasp_prior_action_warmstart_track_orientation):
+            _, rot_error_b = math_utils.compute_pose_error(
+                current_ee_pos_b,
+                current_ee_quat_b,
+                exact_ee_pos_b,
+                exact_ee_quat_b,
+                rot_error_type="axis_angle",
+            )
+            rot_action = gain * rot_error_b / torch.clamp(self.action_scale[3:6], min=1.0e-6)
+            action[:, 3:6] = torch.clamp(rot_action, min=-1.0, max=1.0)
+        action[:, 6] = gripper_action
+        self.grasp_prior_action_warmstart_exact_ee_error[:] = torch.norm(
+            exact_ee_pos_b - current_ee_pos_b, dim=-1
+        )
+        return action
+
+    def _update_grasp_prior_action_warmstart_scalars(
+        self,
+        policy_actions: torch.Tensor,
+        applied_actions: torch.Tensor,
+    ) -> None:
+        self.grasp_prior_action_warmstart_policy_action_z[:] = policy_actions[:, 2]
+        self.grasp_prior_action_warmstart_policy_gripper_action[:] = policy_actions[:, 6]
+        self.grasp_prior_action_warmstart_applied_action_z[:] = applied_actions[:, 2]
+        self.grasp_prior_action_warmstart_applied_gripper_action[:] = applied_actions[:, 6]
+        self.grasp_prior_action_warmstart_action_delta_abs[:] = torch.mean(
+            torch.abs(applied_actions - policy_actions), dim=-1
+        )
+
+    def _apply_grasp_prior_action_warmstart(self, policy_actions: torch.Tensor) -> torch.Tensor:
+        self._ensure_cube_buffers()
+        policy_actions = policy_actions.clone().clamp(-1.0, 1.0)
+        applied_actions = policy_actions.clone()
+        self.grasp_prior_action_warmstart_policy_actions[:] = policy_actions
+        self.grasp_prior_action_warmstart_phase[:] = -1
+        self.grasp_prior_action_warmstart_active[:] = False
+        self.grasp_prior_action_warmstart_exact_ee_error[:] = 0.0
+
+        if not bool(self.cfg.grasp_prior_action_warmstart_enabled):
+            self.grasp_prior_action_warmstart_applied_actions[:] = applied_actions
+            self._update_grasp_prior_action_warmstart_scalars(policy_actions, applied_actions)
+            return applied_actions
+        if not getattr(self, "_grasp_prior_reset_enabled", False):
+            self.grasp_prior_action_warmstart_applied_actions[:] = applied_actions
+            self._update_grasp_prior_action_warmstart_scalars(policy_actions, applied_actions)
+            return applied_actions
+
+        approach_steps = max(int(self.cfg.grasp_prior_action_warmstart_approach_steps), 0)
+        close_steps = max(int(self.cfg.grasp_prior_action_warmstart_close_steps), 0)
+        lift_steps = max(int(self.cfg.grasp_prior_action_warmstart_lift_steps), 0)
+        total_steps = approach_steps + close_steps + lift_steps
+        if total_steps <= 0:
+            self.grasp_prior_action_warmstart_applied_actions[:] = applied_actions
+            self._update_grasp_prior_action_warmstart_scalars(policy_actions, applied_actions)
+            return applied_actions
+
+        step = self.episode_length_buf.to(device=self.device)
+        active = (
+            (step < total_steps)
+            & self.grasp_prior_reset_success
+            & self.grasp_prior_reset_quality_success
+        )
+        if bool(active.any().item()):
+            open_action = self._gripper_action_for_width(float(self.cfg.max_gripper_width))
+            close_action = self._gripper_action_for_width(float(self.cfg.grasp_prior_action_warmstart_close_width))
+            exact_open_action = self._grasp_prior_exact_tracking_action(open_action)
+            exact_close_action = self._grasp_prior_exact_tracking_action(close_action)
+            lift_action = exact_close_action.clone()
+            lift_action[:, 2] = float(self.cfg.grasp_prior_action_warmstart_lift_action_z)
+
+            approach = active & (step < approach_steps)
+            close = active & (step >= approach_steps) & (step < approach_steps + close_steps)
+            lift = active & (step >= approach_steps + close_steps)
+            if bool(approach.any().item()):
+                applied_actions[approach] = exact_open_action[approach]
+                self.grasp_prior_action_warmstart_phase[approach] = 0
+            if bool(close.any().item()):
+                applied_actions[close] = exact_close_action[close]
+                self.grasp_prior_action_warmstart_phase[close] = 1
+            if bool(lift.any().item()):
+                applied_actions[lift] = lift_action[lift]
+                self.grasp_prior_action_warmstart_phase[lift] = 2
+            self.grasp_prior_action_warmstart_active[:] = active
+
+        self.grasp_prior_action_warmstart_applied_actions[:] = applied_actions
+        self._update_grasp_prior_action_warmstart_scalars(policy_actions, applied_actions)
+        return applied_actions
+
+    def _pre_physics_step(self, actions: torch.Tensor) -> None:
+        applied_actions = self._apply_grasp_prior_action_warmstart(actions)
+        super()._pre_physics_step(applied_actions)
+
     def _apply_grasp_prior_reset(
         self,
         env_ids: torch.Tensor,
@@ -678,6 +811,22 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
                     "cube_grasp_prior_pregrasp_tip_table_clearance": self.grasp_prior_reset_pregrasp_tip_table_clearance.mean(),
                     "cube_grasp_prior_projected_exact_tip_table_clearance": self.grasp_prior_reset_projected_exact_tip_table_clearance.mean(),
                     "cube_grasp_prior_quality_success_rate": self.grasp_prior_reset_quality_success.float().mean(),
+                }
+            )
+        if bool(self.cfg.grasp_prior_action_warmstart_enabled):
+            phase = self.grasp_prior_action_warmstart_phase
+            log_terms.update(
+                {
+                    "cube_action_warmstart_active_rate": self.grasp_prior_action_warmstart_active.float().mean(),
+                    "cube_action_warmstart_approach_rate": (phase == 0).float().mean(),
+                    "cube_action_warmstart_close_rate": (phase == 1).float().mean(),
+                    "cube_action_warmstart_lift_rate": (phase == 2).float().mean(),
+                    "cube_action_warmstart_exact_ee_error": self.grasp_prior_action_warmstart_exact_ee_error.mean(),
+                    "cube_action_warmstart_delta_abs": self.grasp_prior_action_warmstart_action_delta_abs.mean(),
+                    "cube_policy_action_z": self.grasp_prior_action_warmstart_policy_action_z.mean(),
+                    "cube_policy_gripper_action": self.grasp_prior_action_warmstart_policy_gripper_action.mean(),
+                    "cube_applied_action_z": self.grasp_prior_action_warmstart_applied_action_z.mean(),
+                    "cube_applied_gripper_action": self.grasp_prior_action_warmstart_applied_gripper_action.mean(),
                 }
             )
         self.extras["log"] = log_terms
