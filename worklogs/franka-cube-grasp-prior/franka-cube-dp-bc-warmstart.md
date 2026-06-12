@@ -7759,3 +7759,86 @@ Analysis:
 
 Active jobs:
 - No active C Slurm jobs remain after `1028073`.
+
+## 2026-06-11T20:32:03-07:00 - reset-support perturbation sweep plan
+
+Goal:
+- Bound normal-reset generalization failure by measuring policy support around
+  the accepted contact-aware demo reset, without BC/RL scale-up.
+
+Hypothesis:
+- The weighted DP checkpoint is coherent on exact source-joint/contact-aware
+  support but fails as the reset state moves toward the normal DEXTRAH reset.
+  A staged reset perturbation/blend sweep should reveal whether breakage
+  correlates with nearest-demo support distance, reset geometry, or a remaining
+  observation/action implementation mismatch.
+
+Planned Change:
+- Add eval-only reset blend controls to
+  `dextrah_lab/rl_games/eval_franka_cube_dp_policy.py`:
+  `--demo_reset_joint_blend_alpha` for interpolating from normal reset joints
+  to source trajectory joints, and `--demo_reset_cube_pos_blend_alpha` for
+  interpolating from normal reset cube position to selected demo cube position.
+- Add matching environment variable plumbing to
+  `cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`.
+- Add an offline sweep summarizer under
+  `dextrah_lab/offline_dp_bc/` to produce the required JSON/CSV table,
+  support-distance-vs-success/lift plot, and markdown verdict from fetched run
+  dirs.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `77d562ff1d45810ab4c1c727a482aa59a2701228`
+- implementation_commit: pending
+- changed_files_planned:
+  - `dextrah_lab/rl_games/eval_franka_cube_dp_policy.py`
+  - `cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+  - `dextrah_lab/offline_dp_bc/make_reset_support_sweep_report.py`
+  - this worklog
+
+Validation Plan:
+- Local:
+  - `python3 -m py_compile dextrah_lab/rl_games/eval_franka_cube_dp_policy.py dextrah_lab/offline_dp_bc/make_reset_support_sweep_report.py`
+  - `bash -n cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+  - `git diff --check`
+- Remote:
+  - push branch and deploy exact commit to the agent-owned l401 worktree via
+    Git. If l401 still cannot fetch from GitHub, record that external blocker
+    precisely before any source-dependent cluster launch.
+
+Planned Jobs:
+- Bounded no-video L401 trace sweep, `NUM_ENVS=1`, `NUM_STEPS=260`,
+  `NUM_INFERENCE_STEPS=100`, `ACTION_CHUNK_STEPS=1`,
+  `SUCCESS_TIMEOUT_OVERRIDE=999.0`, support tracing enabled, using the accepted
+  contact-aware NPZ and weighted checkpoint.
+- Initial sweep settings:
+  - exact matched context is reused from `1028052`/`1028059`.
+  - normal-reset context is reused from `1028064`/`1028073`.
+  - new source-cube / joint-blend trace runs for alpha values
+    `0.75`, `0.50`, `0.25`, and `0.00` if the source patch deploys cleanly.
+- After trace inspection, launch at most one short video/contact-sheet
+  confirmation for the first failing perturbation not already covered by the
+  matched/normal context videos.
+
+Acceptance:
+- Produce a sweep table/JSON with perturbation setting, job id/run dir, success
+  and window success, max/final lift, EE/finger distances, gripper width,
+  nearest-demo support distance/phase, and failure reason.
+- Produce an inspectable plot showing support distance versus success/lift and
+  link matched-pass, first-failing, and normal-reset videos/contact sheets.
+- Verdict must state whether evidence points to reset support coverage,
+  observation normalization, action chunking, or another bug. No DP BC/RL
+  scale-up is allowed from this step.
+
+Implementation update:
+- Added eval-only reset blend arguments and Slurm env plumbing.
+- Added `dextrah_lab/offline_dp_bc/make_reset_support_sweep_report.py`.
+
+Local validation:
+- `python3 -m py_compile dextrah_lab/rl_games/eval_franka_cube_dp_policy.py dextrah_lab/offline_dp_bc/make_reset_support_sweep_report.py`: pass.
+- `bash -n cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`: pass.
+- `git diff --check`: pass.
+- `git diff --cached --check`: pass.

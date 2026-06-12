@@ -117,6 +117,26 @@ parser.add_argument(
     default=None,
     help="Frame index inside --demo_reset_source_trajectory_json to use for robot joint reset.",
 )
+parser.add_argument(
+    "--demo_reset_joint_blend_alpha",
+    type=float,
+    default=1.0,
+    help=(
+        "Eval-only diagnostic blend from the environment's normal post-reset "
+        "Franka joint state (0.0) to the selected source trajectory joint state "
+        "(1.0). Requires --demo_reset_source_trajectory_json."
+    ),
+)
+parser.add_argument(
+    "--demo_reset_cube_pos_blend_alpha",
+    type=float,
+    default=1.0,
+    help=(
+        "Eval-only diagnostic blend from the environment's normal post-reset "
+        "cube position (0.0) to the selected demo cube position (1.0). Cube "
+        "orientation is normalized linearly between the two quaternions."
+    ),
+)
 parser.add_argument("--video", action="store_true", default=False, help="Record rollout video.")
 parser.add_argument("--video_length", type=int, default=240)
 parser.add_argument("--video_folder", type=str, default=None)
@@ -453,14 +473,28 @@ def _apply_demo_reset(task_env: Any, demo_reset: dict[str, Any]) -> tuple[torch.
     env_ids = torch.as_tensor(env_ids, device=task_env.device, dtype=torch.long)
     num_ids = int(env_ids.numel())
     target_obs = np.asarray(demo_reset["target_obs"], dtype=np.float32)
+    joint_blend_alpha = float(np.clip(float(args_cli.demo_reset_joint_blend_alpha), 0.0, 1.0))
+    cube_pos_blend_alpha = float(np.clip(float(args_cli.demo_reset_cube_pos_blend_alpha), 0.0, 1.0))
+    normal_policy_obs = _reset_policy_obs_from_task_env(task_env)
+    normal_lowdim = extract_lowdim_obs_from_ppo_obs(normal_policy_obs).detach().float().cpu().numpy()
+    normal0 = normal_lowdim[0]
     robot_reset_summary: dict[str, Any] = {
         "source_joint_reset_available": "source_joint_position" in demo_reset,
         "source_trajectory_json": demo_reset.get("source_trajectory_json"),
         "source_frame": demo_reset.get("source_frame"),
+        "joint_blend_alpha": joint_blend_alpha,
+        "cube_pos_blend_alpha": cube_pos_blend_alpha,
+        "normal_lowdim_before_reset_env0": normal0.astype(float).tolist(),
+        "normal_cube_pos_before_reset_env0": normal0[7:10].astype(float).tolist(),
+        "normal_cube_minus_ee_before_reset_env0": normal0[14:17].astype(float).tolist(),
+        "normal_gripper_width_before_reset_env0": float(normal0[20]),
     }
     if "source_joint_position" in demo_reset:
         raw_q = np.asarray(demo_reset["source_joint_position"], dtype=np.float32)
-        joint_pos = _map_source_joint_to_env(task_env, raw_q, env_ids)
+        source_joint_pos = _map_source_joint_to_env(task_env, raw_q, env_ids)
+        normal_joint_pos = task_env._robot.data.joint_pos[env_ids].detach().clone()
+        joint_pos = normal_joint_pos + joint_blend_alpha * (source_joint_pos - normal_joint_pos)
+        joint_pos = torch.clamp(joint_pos, task_env.robot_dof_lower_limits, task_env.robot_dof_upper_limits)
         joint_vel = torch.zeros_like(joint_pos)
         task_env._robot.write_joint_state_to_sim(joint_pos, joint_vel, env_ids=env_ids)
         task_env._robot.set_joint_position_target(joint_pos, env_ids=env_ids)
@@ -470,12 +504,27 @@ def _apply_demo_reset(task_env: Any, demo_reset: dict[str, Any]) -> tuple[torch.
         robot_reset_summary.update(
             {
                 "source_joint_position_raw_dim": int(raw_q.shape[0]),
+                "normal_joint_position_env0": normal_joint_pos[0].detach().float().cpu().numpy().astype(float).tolist(),
+                "source_joint_position_env0": source_joint_pos[0].detach().float().cpu().numpy().astype(float).tolist(),
                 "applied_joint_position_env0": joint_pos[0].detach().float().cpu().numpy().astype(float).tolist(),
+                "applied_joint_l2_from_source_env0": float(
+                    torch.linalg.vector_norm((joint_pos[0] - source_joint_pos[0]).detach().float()).cpu()
+                ),
+                "applied_joint_l2_from_normal_env0": float(
+                    torch.linalg.vector_norm((joint_pos[0] - normal_joint_pos[0]).detach().float()).cpu()
+                ),
             }
         )
 
-    target_cube_pos = torch.as_tensor(target_obs[7:10], dtype=torch.float32, device=task_env.device).repeat(num_ids, 1)
-    target_cube_quat = torch.as_tensor(target_obs[10:14], dtype=torch.float32, device=task_env.device).repeat(num_ids, 1)
+    source_cube_pos = torch.as_tensor(target_obs[7:10], dtype=torch.float32, device=task_env.device).repeat(num_ids, 1)
+    source_cube_quat = torch.as_tensor(target_obs[10:14], dtype=torch.float32, device=task_env.device).repeat(num_ids, 1)
+    normal_cube_pos = torch.as_tensor(normal_lowdim[:, 7:10], dtype=torch.float32, device=task_env.device)
+    normal_cube_quat = torch.as_tensor(normal_lowdim[:, 10:14], dtype=torch.float32, device=task_env.device)
+    target_cube_pos = normal_cube_pos + cube_pos_blend_alpha * (source_cube_pos - normal_cube_pos)
+    quat_dot = torch.sum(normal_cube_quat * source_cube_quat, dim=1, keepdim=True)
+    source_cube_quat = torch.where(quat_dot < 0.0, -source_cube_quat, source_cube_quat)
+    target_cube_quat = normal_cube_quat + cube_pos_blend_alpha * (source_cube_quat - normal_cube_quat)
+    target_cube_quat = torch.nn.functional.normalize(target_cube_quat, dim=1)
     object_state = torch.zeros(num_ids, 13, device=task_env.device)
     object_state[:, 0:3] = target_cube_pos + task_env.scene.env_origins[env_ids]
     object_state[:, 3:7] = target_cube_quat
@@ -506,10 +555,14 @@ def _apply_demo_reset(task_env: Any, demo_reset: dict[str, Any]) -> tuple[torch.
         "episode_step": int(demo_reset["episode_step"]),
         "row": int(demo_reset["row"]),
         "phase": str(demo_reset["phase"]),
+        "joint_blend_alpha": joint_blend_alpha,
+        "cube_pos_blend_alpha": cube_pos_blend_alpha,
         "target_cube_pos": target_obs[7:10].astype(float).tolist(),
         "target_cube_quat": target_obs[10:14].astype(float).tolist(),
         "target_cube_minus_ee": target_obs[14:17].astype(float).tolist(),
         "target_gripper_width": float(target_obs[20]),
+        "applied_cube_pos_env0": target_cube_pos[0].detach().float().cpu().numpy().astype(float).tolist(),
+        "applied_cube_quat_env0": target_cube_quat[0].detach().float().cpu().numpy().astype(float).tolist(),
         "live_lowdim_after_reset_env0": live0.astype(float).tolist(),
         "live_cube_pos_after_reset_env0": live0[7:10].astype(float).tolist(),
         "live_cube_minus_ee_after_reset_env0": live0[14:17].astype(float).tolist(),
@@ -517,6 +570,10 @@ def _apply_demo_reset(task_env: Any, demo_reset: dict[str, Any]) -> tuple[torch.
         "lowdim_l2_diff_env0": float(np.linalg.norm(diff)),
         "cube_pos_l2_diff_env0": float(np.linalg.norm(diff[7:10])),
         "cube_minus_ee_l2_diff_env0": float(np.linalg.norm(diff[14:17])),
+        "cube_pos_l2_from_demo_env0": float(np.linalg.norm(live0[7:10] - target_obs[7:10])),
+        "cube_pos_l2_from_normal_env0": float(np.linalg.norm(live0[7:10] - normal0[7:10])),
+        "cube_minus_ee_l2_from_demo_env0": float(np.linalg.norm(live0[14:17] - target_obs[14:17])),
+        "cube_minus_ee_l2_from_normal_env0": float(np.linalg.norm(live0[14:17] - normal0[14:17])),
     }
     summary.update(robot_reset_summary)
     return policy_obs, summary
@@ -788,6 +845,8 @@ def main() -> None:
             str(demo_reset_source_trajectory_path) if demo_reset_source_trajectory_path is not None else None
         ),
         demo_reset_source_frame=args_cli.demo_reset_source_frame,
+        demo_reset_joint_blend_alpha=float(args_cli.demo_reset_joint_blend_alpha),
+        demo_reset_cube_pos_blend_alpha=float(args_cli.demo_reset_cube_pos_blend_alpha),
     )
     support_dataset = _support_dataset_payload(support_dataset_path)
     if support_dataset is not None:
@@ -815,6 +874,8 @@ def main() -> None:
             source_trajectory_json=demo_reset.get("source_trajectory_json"),
             source_frame=demo_reset.get("source_frame"),
             source_joint_reset_available="source_joint_position" in demo_reset,
+            joint_blend_alpha=float(args_cli.demo_reset_joint_blend_alpha),
+            cube_pos_blend_alpha=float(args_cli.demo_reset_cube_pos_blend_alpha),
         )
 
     env_cfg = parse_env_cfg(
