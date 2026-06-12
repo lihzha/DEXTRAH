@@ -7086,3 +7086,33 @@ Next:
 - Treat contact-aware hold as the best current handoff target for B. The next bounded step should be supervised/trainability work that learns the contact-conditioned terminal hold or reduces assistance from this improved assisted manifold, with visual alpha0/low-alpha gates before any PPO/RL scale-up.
 - Old `actionscale-rewinf-diag-video480-step-0.mp4` / job `1027753` remains obsolete failed diagnostic evidence.
 - Active jobs after result fetch: none.
+
+## 2026-06-11T23:43:35-07:00 - lower-alpha contact-aware hold selector plan
+
+Goal:
+- Reduce assistance below the current alpha0.10 contact-aware hold boundary without changing training or launching PPO/RL.
+- Identify whether `policy_reference_mix_hold` with verified contact/lift-triggered terminal hold can succeed at alpha0.075, alpha0.05, alpha0.025, or alpha0.0.
+
+Hypothesis:
+- Contact-aware hold fixed the low-alpha boundary by avoiding phase-only free-space hold. If the learned policy can get close enough for contact/lift evidence with less reference assistance, lower alphas should still trigger terminal hold and sustain lift.
+- If alpha0.0/0.025/0.05 fail while alpha0.075 or 0.10 works, the next trainability target is not a new open-loop override; it is learning the approach/contact prefix before the contact-aware terminal handoff.
+
+Planned Probe:
+- First run a metrics-only selector sweep for `REFERENCE_MIX_ALPHA=0.0,0.025,0.05,0.075,0.10`, no video, same seed/config as the accepted contact-aware run.
+- Common config:
+  - task: `Dextrah-Franka-Cube-Grasp-Traj-Tracking`.
+  - action source: `policy_reference_mix_hold`.
+  - checkpoint: `/results/bc/franka_cube_traj_tracking_bc_handoff_success_alpha0_20260611_223200/nn/bc_reference_action_imitation.pth`.
+  - reference: `/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json` (`curobo_validated=false`).
+  - `HOLD_TRIGGER_MODE=contact_after_phase_or_lift_success`, `HOLD_PHASE_START=0.67`, `HOLD_CONTACT_MAX_FINGER_DIST=0.08`, `HOLD_TRIGGER_LIFT_HEIGHT=0.02`, `HOLD_TARGET_POLICY=cube_current_plus_trigger_ee_offset`, `HOLD_LIFT_HEIGHT=0.03`, `HOLD_GRIPPER_ACTION=-0.4`.
+  - `SUPPRESS_SUCCESS_TERMINATION=True`, `NUM_ENVS=4`, `NUM_STEPS=520`, `CAPTURE_VIDEO=False`, `SEED=75`, `CUBE_SPAWN_XY_RANDOMIZATION=0.08`.
+- If selector metrics identify a lower-alpha success/improvement, launch targeted videos/contact sheets for:
+  - lowest-alpha success camera env(s),
+  - alpha0.0 or nearest failed alpha control,
+  - alpha0.10 context only if needed.
+
+Acceptance:
+- Selector produces metrics/trace/report/plot/consistency JSON for every alpha.
+- Target unsafe max remains `0`; done count remains `0` under no-reset mode.
+- Any new claimed lower-alpha boundary must have a short labeled MP4/contact sheet before it is treated as real.
+- No PPO/RL scale-up from selector metrics alone.
