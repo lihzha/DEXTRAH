@@ -82,6 +82,7 @@ import isaaclab_tasks  # noqa: F401
 import dextrah_lab.tasks.dextrah_franka_cube_grasp.gym_setup  # noqa: F401
 import dextrah_lab.tasks.dextrah_franka_star_kitting.gym_setup  # noqa: F401
 import dextrah_lab.tasks.dextrah_kuka_allegro.gym_setup  # noqa: F401
+from checkpoint_init import sanitize_rlgames_checkpoint_for_initialization
 
 
 ACTION_NAMES = ("x", "y", "z", "roll", "pitch", "yaw", "gripper")
@@ -504,19 +505,23 @@ def _save_bc_checkpoint(init_checkpoint: str, player: BasePlayer, output_path: P
         raise RuntimeError(f"Expected dict checkpoint, got {type(state).__name__}")
     state = copy.deepcopy(state)
     state["model"] = {key: value.detach().cpu() for key, value in player.model.state_dict().items()}
-    state["dextrah_bc_diagnostic"] = {
-        "source_checkpoint": init_checkpoint,
-        "train_scope": args_cli.train_scope,
-        "train_epochs": int(args_cli.train_epochs),
-        "learning_rate": float(args_cli.learning_rate),
-        "phase_balance_loss": bool(args_cli.phase_balance_loss),
-        "lift_phase_loss_weight": float(args_cli.lift_phase_loss_weight),
-        "lift_z_mse_weight": float(args_cli.lift_z_mse_weight),
-        "lift_z_sign_loss_weight": float(args_cli.lift_z_sign_loss_weight),
-        "note": "Diagnostic BC first-contact action warm-start; non-apple-to-apple.",
-    }
+    state, sanitize_summary = sanitize_rlgames_checkpoint_for_initialization(
+        state,
+        source_checkpoint=init_checkpoint,
+        metadata={
+            "train_scope": args_cli.train_scope,
+            "train_epochs": int(args_cli.train_epochs),
+            "learning_rate": float(args_cli.learning_rate),
+            "phase_balance_loss": bool(args_cli.phase_balance_loss),
+            "lift_phase_loss_weight": float(args_cli.lift_phase_loss_weight),
+            "lift_z_mse_weight": float(args_cli.lift_z_mse_weight),
+            "lift_z_sign_loss_weight": float(args_cli.lift_z_sign_loss_weight),
+            "note": "Diagnostic BC first-contact action warm-start; non-apple-to-apple.",
+        },
+    )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     torch.save(state, output_path)
+    _write_json(output_path.with_suffix(".sanitize_summary.json"), sanitize_summary)
 
 
 def _loadability_check(agent_cfg: dict, env, checkpoint_path: str, obs: torch.Tensor, target: torch.Tensor) -> dict[str, Any]:

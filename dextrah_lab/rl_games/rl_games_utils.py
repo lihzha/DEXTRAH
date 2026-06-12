@@ -37,6 +37,8 @@ import torch
 from rl_games.common import env_configurations, vecenv
 from rl_games.common.algo_observer import AlgoObserver
 
+from checkpoint_init import is_policy_initialization_checkpoint
+
 # from isaacgymenvs.tasks import isaacgym_task_map
 # from isaacgymenvs.utils.utils import set_seed, flatten_dict
 
@@ -461,10 +463,22 @@ class DextrahResumableAlgoObserver(AlgoObserver):
             return state
 
         def set_full_state_weights_deferred(weights, set_epoch=True):
-            checkpoint_epoch = self._as_int(weights.get("epoch"))
-            runtime_state = weights.get("dextrah_runtime_state")
-            env_state = weights.get("env_state")
-            runtime_state = self._load_rank_runtime_sidecar(weights, checkpoint_epoch) or runtime_state
+            is_init_checkpoint = is_policy_initialization_checkpoint(weights)
+            if is_init_checkpoint:
+                set_epoch = False
+                checkpoint_epoch = None
+                runtime_state = None
+                env_state = None
+                algo._dextrah_pending_runtime_state = None
+                print(
+                    f"[DEXTRAH resume] loading policy initialization checkpoint on rank {self._rank()} "
+                    "without epoch/runtime restore"
+                )
+            else:
+                checkpoint_epoch = self._as_int(weights.get("epoch"))
+                runtime_state = weights.get("dextrah_runtime_state")
+                env_state = weights.get("env_state")
+                runtime_state = self._load_rank_runtime_sidecar(weights, checkpoint_epoch) or runtime_state
             if runtime_state is not None and not self._runtime_state_matches_checkpoint(
                 runtime_state, checkpoint_epoch, "checkpoint"
             ):
