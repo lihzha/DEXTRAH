@@ -3384,3 +3384,53 @@ Next bounded change proposal:
   - run a tiny diagnostic BC/action-head warm-start or action-regularization variant so the actor actually emits the first-contact action distribution, instead of only having the environment replace its actions;
   - then run the same small 64-env L401 PPO smoke and inspect policy raw actions, lift/contact traces, and videos only if metrics improve.
 - Keep this explicitly non-apple-to-apple until it proves a useful hypothesis; the apple-to-apple reset-prior task defaults remain unchanged.
+
+## 2026-06-11 19:28 PDT - plan: pass7 BC/action-head diagnostic
+
+Goal:
+- Test whether a policy-initialization/imitation diagnostic can make the actor itself emit pass7 first-contact actions, without relying on environment action override and without changing the apple-to-apple task defaults.
+
+Hypothesis:
+- The warm-start override proved that scripted early actions can be applied, but PPO did not learn to emit or maintain them after the override window. A small supervised dataset from the valid pass7 reset distribution should tell us whether the current actor architecture/observation stream can imitate the assisted reference actions at reset and early contact. If supervised validation fails, PPO scale-up is not justified. If supervised validation passes and a BC-initialized checkpoint emits sane actions, only then a 64-env L401 PPO smoke is worth considering.
+
+Planned diagnostic:
+- Add a standalone script under `dextrah_lab/rl_games/` that:
+  - creates `Dextrah-Franka-Cube-Grasp` with robust pass7 `grasp_prior_reset_enabled=True`, same cube XY randomization `0.08`, and no task/reward/default changes;
+  - samples a tiny dataset from valid pass7 reset states using the same RL-Games observation wrapper used by train/eval;
+  - labels observations with the existing assisted reference action generator: exact-pose approach/open, exact-pose light-close (`width=0.055`), and short closed/lift action;
+  - splits train/validation by reset index/sample, trains only a diagnostic actor clone or action head with MSE/cosine/sign metrics, and writes a BC checkpoint only if validation passes;
+  - evaluates raw actor actions at held-out resets against labels and records action tables/histograms.
+- Add a small L401 wrapper under `cluster/` for the supervised diagnostic. It will not launch PPO; it only collects dataset + trains/evaluates BC and writes artifacts.
+- Do not launch A100 or broad PPO. A 64-env L401 PPO smoke is allowed only after supervised metrics show the actor actually emits close/approach/lift labels with bounded error.
+
+Files to edit:
+- `dextrah_lab/rl_games/bc_franka_cube_pass7_actions.py` (new diagnostic script)
+- `cluster/sbatch_bc_franka_cube_pass7_actions_1gpu.sh` (new bounded L401 wrapper)
+- owned worklog only
+
+Implementation notes:
+- Reuse action/geometry helpers from `audit_franka_cube_grasp_prior_actions.py` where practical, but keep the BC script self-contained enough to avoid fragile imports after Isaac launches.
+- Start from the existing failed pass7 no-warmstart checkpoint path only as an initialization/reference if checkpoint fine-tuning is reliable:
+  - `/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_robust_pass7_smoke45_20260612_0056/nn/last_dextrah_franka_cube_grasp_ep_45_rew_662.51086.pth`
+- If direct checkpoint fine-tuning is too brittle, fall back to supervised action-head/actor-clone metrics and do not write a PPO-resumable checkpoint; record that as the bounded result rather than launching PPO.
+
+Validation before any job:
+- `python3 -m py_compile dextrah_lab/rl_games/bc_franka_cube_pass7_actions.py`
+- `bash -n cluster/sbatch_bc_franka_cube_pass7_actions_1gpu.sh`
+- `git diff --check`
+- Commit/push, deploy exact commit to the agent-owned L401 worktree, and repeat the syntax checks remotely.
+
+Planned job if checks pass:
+- L401 1-GPU supervised diagnostic only:
+  - `NUM_ENVS=64`, small reset count (for example `NUM_RESETS=16`), phases `approach,close,lift`, robust pass7 library
+  - no PPO training, no A100
+  - output under `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/<run>`
+
+Expected artifacts:
+- `dataset_summary.json`, `train_metrics.json`, `bc_action_metrics.csv`, `bc_action_histograms.png`, `bc_loss_curves.png`, `REPORT.md`
+- optional BC checkpoint only if validation passes and the checkpoint format is confirmed loadable by RL-Games
+- local fetched bundle with `viz-open` URLs for the report and plots
+
+Acceptance gate:
+- Supervised gate is pass only if validation action MSE is low enough to be practically meaningful, gripper-action sign matches close/open phases, z-action sign matches lift/approach phases, and held-out reset action histograms are close to the reference actions.
+- No PPO smoke will launch unless the supervised gate passes and the produced actor/checkpoint can be loaded and queried for sane raw actions.
