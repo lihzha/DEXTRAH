@@ -2554,3 +2554,79 @@ Queue state:
 
 - `l401` queue empty after the above jobs completed.
 - `a1001` queue was empty during the previous check.
+
+## 2026-06-11T17:19:01-07:00 - B teacher-force eval verdict and worker steering
+
+Goal:
+- Answer the user question about B's `actionscale-rewinf-diag-video480-step-0.mp4`
+  artifact and keep the workers aligned on artifact quality.
+
+Worker B status:
+
+- The file `actionscale-rewinf-diag-video480-step-0.mp4` is from Worker B's
+  earlier action-scale/reward-inference diagnostic. It is an obsolete failed
+  artifact and should not be treated as B's current best evidence.
+- Current B evidence is the teacher-force path:
+  - Env smoke `1027895` validated task registration, target safety, and
+    teacher-force action application.
+  - Tiny teacher-force PPO `1027900` completed, but the checkpoint reward
+    suffix is not a success signal.
+  - Eval alpha `1.0`, run
+    `franka_cube_traj_tracking_teacherforce_eval_a100_520_20260611_171100`:
+    train/eval consistency passed, target unsafe max `0`, success final/max
+    `0.25`, max/final lift about `0.060 m`, raw-policy/reference L2 mean
+    `1.019`, applied/reference L2 mean `0.348`. Video shows approach and a
+    transient lift, but it does not prove a robust learned handoff.
+  - Eval alpha `0.75`, run
+    `franka_cube_traj_tracking_teacherforce_eval_a075_520_20260611_171100`:
+    train/eval consistency passed, target unsafe max `0`, success `0`, max lift
+    about `0.00004 m`, raw-policy/reference L2 mean `1.046`. Video reaches or
+    contacts near the cube but does not lift.
+
+Worker B artifacts:
+
+- Alpha `1.0` report:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a100_520_20260611_171100_artifacts/report.md`
+- Alpha `1.0` video:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a100_520_20260611_171100/videos/tf-eval-a100-520-step-0.mp4`
+- Alpha `0.75` report:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a075_520_20260611_171100_artifacts/report.md`
+- Alpha `0.75` video:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a075_520_20260611_171100/videos/tf-eval-a075-520-step-0.mp4`
+
+Analysis:
+- B is past the old drift-away failure under full teacher forcing, and
+  train/eval consistency is no longer the first suspect for the latest videos.
+- B is still not ready for final-scale PPO. The learned raw policy remains too
+  far from the reference actions, and the lower-alpha handoff fails the lift
+  gate.
+- The reported teacher-force alpha schedule needs scrutiny: the nominal
+  alpha-`1.0` eval reports alpha mean/final `0.7067/0.5`, and alpha-`0.75`
+  reports final alpha `0.0`. If this is phase gating it must be made explicit;
+  if unintended, it needs a patch before further scale-up.
+
+Worker C update:
+- Target-frame audit `1027903` passed as a diagnostic but failed the DP
+  readiness gate. Converted lowdim EE targets and env FK agree, which rejects a
+  converter/FK mismatch, but source-row finger-center distances remain about
+  `6.8 cm` from the cube. Raw cuRobo/GraspGenX labels should not be used for
+  DP BC/RL training as-is.
+- Next for C is a contact-aware controller-rollout relabeler/generator or a
+  corrected GraspGenX/cuRobo EE/TCP/grasp frame, with a stable close/lift
+  Isaac diagnostic before DP training resumes.
+
+Worker A update:
+- L401 jobs `1027904` and `1027905` are running as follow-up reset-prior
+  diagnostics. These are expected to test orientation/exact-hold or related
+  robustness gates. No PPO/A100 reset-prior launch should happen until the
+  diagnostic videos/metrics show robust contact/lift across all or near-all
+  resets.
+
+Worker steering sent:
+- B: label the old `actionscale-rewinf` video as obsolete, update worklog with
+  teacher-force eval verdicts and artifact URLs, debug raw-policy/reference
+  error and teacher-alpha schedule before any scale-up.
+- A: monitor `1027904`/`1027905`, fetch artifacts, produce report/contact
+  sheets/trace plots, and continue bounded diagnostics only if inconclusive.
+- C: do not train DP on raw labels; document the blocker and move only toward a
+  contact-aware relabel/generator diagnostic with artifact cadence.
