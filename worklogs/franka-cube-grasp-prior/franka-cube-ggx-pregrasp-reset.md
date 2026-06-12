@@ -5928,3 +5928,45 @@ Status:
 Next:
 - New agent should fetch and inspect `1028249`; scheduler success alone is not a result.
 - Keep it labeled non-apple-to-apple intervention.
+
+## 2026-06-12T07:30:54Z - resumed audit and object-pose reset patch
+
+Goal:
+- Continue from `HANDOFF_A.md`, but independently audit the reset-prior implementation before any more policy-only RL.
+
+Hypothesis:
+- The reset metrics can be healthy while still missing a precondition: the current reset target composition used cube position only. The cube is identity-oriented today, so previous smokes did not expose this, but the stated approach requires transforming object-centered grasps by the full sampled object pose.
+
+Change:
+- Patched `franka_cube_grasp_env.py` so `_compose_grasp_prior_targets` takes the sampled cube quaternion and sets `T_world_object[:3,:3]` from it before composing `T_world_object @ T_object_grasp @ T_grasp_tool`.
+- Added disabled-by-default `cube_spawn_yaw_randomization_deg=0.0` and identity/yaw cube quaternion reset plumbing.
+- Added `grasp_prior_reset_cube_quat_w` and quaternion-norm logging/checks so validation proves the object pose used by the prior is well formed.
+- Extended `validate_franka_cube_grasp_env.py` and its l401 wrapper with `CUBE_SPAWN_YAW_RANDOMIZATION_DEG` for a reset smoke that exercises full-pose composition.
+- Inspected staged action-prior job `1028249` only as diagnostic evidence. It is non-apple-to-apple and not policy-only evidence.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset
+- branch: codex/franka-cube-ggx-pregrasp-reset
+- base_commit: c132cc2151e6fded3a85afa53569779d109f4843
+- implementation_commit: pending
+- changed_files: `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env_cfg.py`, `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`, `dextrah_lab/rl_games/validate_franka_cube_grasp_env.py`, `cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`, this worklog
+- remote_commit/status: pending deployment after commit
+
+Command / Job:
+- command: `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env_cfg.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py dextrah_lab/rl_games/validate_franka_cube_grasp_env.py`
+- command: `bash -n cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- command: `git diff --check`
+- inspected diagnostic run: `1028249`, local fetch `cluster_results/l401/franka_cube_lowz_actionprior_hold_r8s07_45_20260612_0704/`
+
+Result:
+- status: local_checks_passed
+- 1028249 metrics: 45 JSONL rows, bad scalar count `0`, reset attempt/success/farther/quality all `1.0`, reset pos/rot error mean `0.00331 m` / `0.00146 rad`, no lift/success, max lift height `0.00137 m`.
+- 1028249 action-prior behavior: active-rate mean `0.390`, reward mean `1.55`, teacher z reached `0.50`, but learned action z mean was negative `-0.204` and gripper action mean was opening-positive `0.311`; this is another negative non-policy-only diagnostic.
+
+Analysis:
+- The reset-only geometry remains plausible, but the implementation did not satisfy the full sampled-object-pose contract before this patch.
+- No policy-only success can be claimed. The next gate is a reset validation smoke with yaw randomization enabled, then a bounded policy-only PPO smoke only if reset checks pass.
+
+Next:
+- Commit the patch, deploy the exact commit to the l401 agent worktree, run the reset validation with `GRASP_PRIOR_RESET_ENABLED=True` and `CUBE_SPAWN_YAW_RANDOMIZATION_DEG=180`, inspect metrics/logs, and only then consider a policy-only training smoke.

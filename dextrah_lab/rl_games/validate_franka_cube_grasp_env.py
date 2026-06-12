@@ -22,6 +22,7 @@ parser.add_argument("--video", action="store_true", default=False)
 parser.add_argument("--video_length", type=int, default=120)
 parser.add_argument("--video_folder", type=str, default=None)
 parser.add_argument("--cube_spawn_xy_randomization", type=float, default=0.08)
+parser.add_argument("--cube_spawn_yaw_randomization_deg", type=float, default=0.0)
 parser.add_argument("--enable_grasp_prior_reset", action="store_true", default=False)
 parser.add_argument("--grasp_prior_library_path", type=str, default=None)
 parser.add_argument("--grasp_prior_reset_cycles", type=int, default=4)
@@ -466,6 +467,13 @@ def _run_grasp_prior_reset_checks(env, task_env, checks: CheckRecorder, reset_cy
                 "rot_error_max": float(task_env.grasp_prior_reset_rot_error.detach().max().cpu()),
                 "exact_tool_dist_mean": _mean(task_env.grasp_prior_reset_exact_tool_dist),
                 "pregrasp_tool_dist_mean": _mean(task_env.grasp_prior_reset_pregrasp_tool_dist),
+                "cube_quat_norm_mean": _mean(torch.norm(task_env.grasp_prior_reset_cube_quat_w, dim=-1)),
+                "cube_quat_norm_min": float(
+                    torch.norm(task_env.grasp_prior_reset_cube_quat_w, dim=-1).detach().min().cpu()
+                ),
+                "cube_quat_norm_max": float(
+                    torch.norm(task_env.grasp_prior_reset_cube_quat_w, dim=-1).detach().max().cpu()
+                ),
                 "finger_center_dist_mean": _mean(task_env.finger_center_to_cube_dist),
                 "finger_center_dist_max": float(task_env.finger_center_to_cube_dist.detach().max().cpu()),
                 "finger_table_clearance_min": float(task_env.finger_table_clearance.detach().min().cpu()),
@@ -520,11 +528,20 @@ def _run_grasp_prior_reset_checks(env, task_env, checks: CheckRecorder, reset_cy
         min_exact_tool_dist_mean=min(exact_dist_means),
         min_pregrasp_tool_dist_mean=min(pregrasp_dist_means),
     )
+    quat_norm_mins = [float(item["cube_quat_norm_min"]) for item in cycle_summaries]
+    quat_norm_maxes = [float(item["cube_quat_norm_max"]) for item in cycle_summaries]
+    checks.check(
+        "grasp_prior_reset_object_quaternion_unit",
+        min(quat_norm_mins) >= 0.999 and max(quat_norm_maxes) <= 1.001,
+        min_cube_quat_norm=min(quat_norm_mins),
+        max_cube_quat_norm=max(quat_norm_maxes),
+    )
     return {
         "cycles": cycles,
         "immediate_done_count": immediate_done_count,
         "mean_success_rate": sum(success_rates) / len(success_rates),
         "mean_farther_rate": sum(farther_rates) / len(farther_rates),
+        "cube_spawn_yaw_randomization_deg": float(getattr(task_env.cfg, "cube_spawn_yaw_randomization_deg", 0.0)),
         "min_finger_table_clearance": min(clearance_mins),
         "max_finger_center_dist": max(finger_center_maxes),
         "cycles_detail": cycle_summaries,
@@ -642,6 +659,7 @@ def main() -> None:
     )
     env_cfg.seed = args_cli.seed
     env_cfg.cube_spawn_xy_randomization = args_cli.cube_spawn_xy_randomization
+    env_cfg.cube_spawn_yaw_randomization_deg = args_cli.cube_spawn_yaw_randomization_deg
     if args_cli.enable_grasp_prior_reset:
         if not args_cli.grasp_prior_library_path:
             raise ValueError("--enable_grasp_prior_reset requires --grasp_prior_library_path")

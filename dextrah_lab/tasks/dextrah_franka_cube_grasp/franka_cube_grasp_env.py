@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 import json
+import math
 from pathlib import Path
 
 import torch
@@ -19,6 +20,13 @@ from dextrah_lab.tasks.dextrah_franka_star_kitting.franka_star_kitting_env impor
 
 from .franka_cube_grasp_env_cfg import DextrahFrankaCubeGraspEnvCfg
 from .franka_cube_grasp_rewards import compute_franka_cube_grasp_rewards
+
+
+def _yaw_quat_wxyz(yaw_rad: torch.Tensor) -> torch.Tensor:
+    quat = torch.zeros(yaw_rad.shape[0], 4, device=yaw_rad.device)
+    quat[:, 0] = torch.cos(0.5 * yaw_rad)
+    quat[:, 3] = torch.sin(0.5 * yaw_rad)
+    return quat
 
 
 class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
@@ -82,6 +90,7 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             self.grasp_prior_reset_finger_center_dist = torch.zeros(self.num_envs, device=self.device)
             self.grasp_prior_reset_finger_table_clearance = torch.zeros(self.num_envs, device=self.device)
             self.grasp_prior_reset_cube_pos_w = torch.zeros(self.num_envs, 3, device=self.device)
+            self.grasp_prior_reset_cube_quat_w = torch.zeros(self.num_envs, 4, device=self.device)
             self.grasp_prior_reset_exact_tool_pos_w = torch.zeros(self.num_envs, 3, device=self.device)
             self.grasp_prior_reset_pregrasp_tool_pos_w = torch.zeros(self.num_envs, 3, device=self.device)
             self.grasp_prior_reset_exact_ee_pos_w = torch.zeros(self.num_envs, 3, device=self.device)
@@ -262,6 +271,7 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         self.grasp_prior_reset_finger_center_dist[env_ids] = 0.0
         self.grasp_prior_reset_finger_table_clearance[env_ids] = 0.0
         self.grasp_prior_reset_cube_pos_w[env_ids] = 0.0
+        self.grasp_prior_reset_cube_quat_w[env_ids] = 0.0
         self.grasp_prior_reset_exact_tool_pos_w[env_ids] = 0.0
         self.grasp_prior_reset_pregrasp_tool_pos_w[env_ids] = 0.0
         self.grasp_prior_reset_exact_ee_pos_w[env_ids] = 0.0
@@ -308,7 +318,12 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         self.sim.forward()
         self.scene.update(dt=0.0)
 
-    def _compose_grasp_prior_targets(self, env_ids: torch.Tensor, cube_pos: torch.Tensor) -> dict[str, torch.Tensor]:
+    def _compose_grasp_prior_targets(
+        self,
+        env_ids: torch.Tensor,
+        cube_pos: torch.Tensor,
+        cube_quat: torch.Tensor,
+    ) -> dict[str, torch.Tensor]:
         if self._grasp_prior_grasps_object is None:
             raise RuntimeError("Grasp prior reset is enabled but no grasp library is loaded")
 
@@ -321,6 +336,7 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         object_grasp_t = self._grasp_prior_grasps_object[sample_indices]
         world_object_t = torch.eye(4, device=self.device).repeat(num_ids, 1, 1)
         cube_pos_w = cube_pos + self.scene.env_origins[env_ids]
+        world_object_t[:, :3, :3] = math_utils.matrix_from_quat(cube_quat)
         world_object_t[:, :3, 3] = cube_pos_w
         world_grasp_t = torch.bmm(world_object_t, object_grasp_t)
         world_tool_t = torch.bmm(
@@ -373,6 +389,7 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             "target_ee_pos_b": target_ee_pos_b,
             "target_ee_quat_b": target_ee_quat_b,
             "cube_pos_w": cube_pos_w,
+            "cube_quat_w": cube_quat,
             "exact_tool_pos_w": exact_tool_pos_w,
             "exact_tool_quat_w": tool_quat_w,
             "pregrasp_tool_pos_w": pregrasp_tool_pos_w,
@@ -667,8 +684,9 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         baseline_joint_pos: torch.Tensor,
         joint_vel: torch.Tensor,
         cube_pos: torch.Tensor,
+        cube_quat: torch.Tensor,
     ) -> None:
-        targets = self._compose_grasp_prior_targets(env_ids, cube_pos)
+        targets = self._compose_grasp_prior_targets(env_ids, cube_pos, cube_quat)
         solved_joint_pos, ik_success, pos_error_norm, rot_error_norm = self._solve_reset_ik(
             env_ids,
             baseline_joint_pos,
@@ -702,6 +720,7 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         self.grasp_prior_reset_finger_center_dist[env_ids] = self.finger_center_to_cube_dist[env_ids]
         self.grasp_prior_reset_finger_table_clearance[env_ids] = self.finger_table_clearance[env_ids]
         self.grasp_prior_reset_cube_pos_w[env_ids] = targets["cube_pos_w"]
+        self.grasp_prior_reset_cube_quat_w[env_ids] = targets["cube_quat_w"]
         self.grasp_prior_reset_exact_tool_pos_w[env_ids] = targets["exact_tool_pos_w"]
         self.grasp_prior_reset_pregrasp_tool_pos_w[env_ids] = targets["pregrasp_tool_pos_w"]
         self.grasp_prior_reset_exact_ee_pos_w[env_ids] = targets["exact_ee_pos_w"]
@@ -920,6 +939,10 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
                     "cube_grasp_prior_pregrasp_ee_dist": self.grasp_prior_reset_pregrasp_ee_dist.mean(),
                     "cube_grasp_prior_finger_center_dist": self.grasp_prior_reset_finger_center_dist.mean(),
                     "cube_grasp_prior_finger_table_clearance": self.grasp_prior_reset_finger_table_clearance.mean(),
+                    "cube_grasp_prior_cube_quat_norm": torch.norm(
+                        self.grasp_prior_reset_cube_quat_w,
+                        dim=-1,
+                    ).mean(),
                     "cube_grasp_prior_open_width_margin": self.grasp_prior_reset_open_width_margin.mean(),
                     "cube_grasp_prior_offset_radial_dot": self.grasp_prior_reset_offset_radial_dot.mean(),
                     "cube_grasp_prior_offset_radial_angle": self.grasp_prior_reset_offset_radial_angle.mean(),
@@ -993,9 +1016,16 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         cube_pos = torch.zeros(num_ids, 3, device=self.device)
         cube_pos[:, 0:2] = spawn_xy
         cube_pos[:, 2] = float(self.cfg.cube_spawn_z)
+        yaw_randomization = math.radians(float(self.cfg.cube_spawn_yaw_randomization_deg))
+        if yaw_randomization > 0.0:
+            yaw = yaw_randomization * (2.0 * torch.rand(num_ids, device=self.device) - 1.0)
+            cube_quat = _yaw_quat_wxyz(yaw)
+        else:
+            cube_quat = torch.zeros(num_ids, 4, device=self.device)
+            cube_quat[:, 0] = 1.0
         object_state = torch.zeros(num_ids, 13, device=self.device)
         object_state[:, 0:3] = cube_pos + self.scene.env_origins[env_ids]
-        object_state[:, 3] = 1.0
+        object_state[:, 3:7] = cube_quat
         self._cube.write_root_state_to_sim(object_state, env_ids=env_ids)
 
         self.cube_initial_pos[env_ids] = cube_pos
@@ -1005,7 +1035,7 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         self.in_success_region[env_ids] = False
         self.time_in_success_region[env_ids] = 0.0
         if getattr(self, "_grasp_prior_reset_enabled", False):
-            self._apply_grasp_prior_reset(env_ids, joint_pos, joint_vel, cube_pos)
+            self._apply_grasp_prior_reset(env_ids, joint_pos, joint_vel, cube_pos, cube_quat)
         self.actions[env_ids] = 0.0
         self.ik_controller.reset(env_ids)
 

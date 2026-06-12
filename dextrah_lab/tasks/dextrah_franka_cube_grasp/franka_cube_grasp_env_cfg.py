@@ -32,6 +32,7 @@ class DextrahFrankaCubeGraspEnvCfg(DextrahFrankaStarKittingEnvCfg):
     pickup_x = -0.36
     pickup_y = -0.12
     cube_spawn_xy_randomization = 0.08
+    cube_spawn_yaw_randomization_deg = 0.0
 
     # cube geometry and lift target match the KUKA/Allegro cube task.
     cube_size = 0.06
