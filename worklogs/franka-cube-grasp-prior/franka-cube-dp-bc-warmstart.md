@@ -8361,3 +8361,113 @@ Validation:
 Next:
 - Commit/push/deploy, then launch one bounded relabel-set gate using
   `ORIENTATION_MODE=source` and alphas `1.0`, `0.9`, `0.85`, `0.8`, `0.75`.
+
+## 2026-06-11T21:19:00-07:00 - source-orientation bridge relabel gate launch
+
+Goal:
+- Test whether source-row EE orientation targeting can recover alpha0.75 while
+  preserving exact/alpha0.9 controller relabel behavior.
+
+Version Control:
+- implementation_commit: `6f11d30e4ab921281e92e0171e56bfec2c8bf102`
+- push: pushed to `origin/codex/franka-cube-diffusion-policy-bc`
+- remote_worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- remote_commit: `6f11d30e4ab921281e92e0171e56bfec2c8bf102`
+- remote_status: clean detached HEAD
+
+Command / Job:
+- job_id: `1028117`
+- run_name:
+  `franka_cube_contact_relabel_bridge_sourcequat_ep16s260_a1_a0p9_a0p85_a0p8_a0p75_20260611_211900`
+- command:
+  `sbatch --parsable --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart,RUN_NAME=franka_cube_contact_relabel_bridge_sourcequat_ep16s260_a1_a0p9_a0p85_a0p8_a0p75_20260611_211900,DATASET=/results/dp_bc/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz,TRAJECTORY_ROOT=/results/dp_bc/curobo_plans,SPEC_COUNT=5,SPEC_0=16:260:/results/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed16/trajectory.json:1.0,SPEC_1=16:260:/results/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed16/trajectory.json:0.9,SPEC_2=16:260:/results/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed16/trajectory.json:0.85,SPEC_3=16:260:/results/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed16/trajectory.json:0.8,SPEC_4=16:260:/results/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed16/trajectory.json:0.75,VARIANT=center_high30,ORIENTATION_MODE=source,ALIGN_STEPS=80,CLOSE_STEPS=80,LIFT_STEPS=160,LIFT_HEIGHT=0.22,FINGER_GAIN=0.75,CLIP_ACTIONS=1.0,CAPTURE_VIDEO=True,VIDEO_LENGTH=320,VIDEO_NAME_PREFIX=franka-cube-contact-sourcequat,PRINT_INTERVAL=80,SEED=42,GATE_MIN_LIFT=0.10,GATE_MAX_POSE_CLIP_FRACTION=0.0,GATE_MAX_FINAL_EE_TO_CUBE=0.05,GATE_MAX_FINAL_FINGER_TO_CUBE=0.08 cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh`
+- expected run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/contact_relabel_sets/franka_cube_contact_relabel_bridge_sourcequat_ep16s260_a1_a0p9_a0p85_a0p8_a0p75_20260611_211900`
+- expected log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/contact_aware_franka_cube_relabel_set_1028117.out`
+
+Gate:
+- Same hard relabel gate as prior run. No DP fine-tune or RL will be launched
+  unless alpha0.75 passes visually and metrically.
+
+## 2026-06-11T21:20:05-07:00 - source-orientation bridge relabel gate result
+
+Goal:
+- Bound the alpha0.75 controller-relabel failure before any DP fine-tune by
+  testing source-row EE orientation targeting at alphas `1.0`, `0.9`, `0.85`,
+  `0.8`, and `0.75`.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- implementation_commit: `6f11d30e4ab921281e92e0171e56bfec2c8bf102`
+- remote_commit: `6f11d30e4ab921281e92e0171e56bfec2c8bf102`
+- changed_files:
+  - `dextrah_lab/rl_games/contact_aware_franka_cube_rollout.py`
+  - `cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh`
+  - `dextrah_lab/offline_dp_bc/make_contact_relabel_set_report.py`
+  - `dextrah_lab/offline_dp_bc/make_support_expansion_dataset_report.py`
+  - this worklog
+
+Command / Job:
+- job_id: `1028117`
+- scheduler_status: `COMPLETED 0:0`
+- run_name:
+  `franka_cube_contact_relabel_bridge_sourcequat_ep16s260_a1_a0p9_a0p85_a0p8_a0p75_20260611_211900`
+- remote run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/contact_relabel_sets/franka_cube_contact_relabel_bridge_sourcequat_ep16s260_a1_a0p9_a0p85_a0p8_a0p75_20260611_211900`
+- local artifact dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_bridge_sourcequat_ep16s260_a1_a0p9_a0p85_a0p8_a0p75_20260611_211900`
+- stdout:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_bridge_sourcequat_ep16s260_a1_a0p9_a0p85_a0p8_a0p75_20260611_211900/logs/contact_aware_franka_cube_relabel_set_1028117.out`
+
+Result:
+- status: `failed hard gate`
+- aggregate verdict:
+  `FAIL: at least one contact-aware rollout failed the hard relabel gate; do not train DP on this set.`
+- metrics:
+
+| alpha | hard gate | final EE-cube | final finger-cube | final/max lift | max clip | note |
+| ---: | --- | ---: | ---: | ---: | ---: | --- |
+| 1.00 | pass | 0.0077 | 0.0377 | 0.1360/0.1360 | 0.000 | exact source-joint context preserved |
+| 0.90 | pass | 0.0094 | 0.0382 | 0.1353/0.1353 | 0.000 | prior accepted support point preserved |
+| 0.85 | pass | 0.0148 | 0.0408 | 0.1353/0.1353 | 0.000 | first clean bridge pass |
+| 0.80 | fail | 0.0184 | 0.0417 | 0.1355/0.1355 | 0.167 | visually lifts, but disqualified by pose-action clipping |
+| 0.75 | fail | 0.1936 | 0.2376 | 0.0000/0.0142 | 0.167 | closes/lifts away from cube |
+
+Artifacts:
+- contact relabel report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_bridge_sourcequat_ep16s260_a1_a0p9_a0p85_a0p8_a0p75_20260611_211900/contact_relabel_set_report.md`
+- support expansion report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_bridge_sourcequat_ep16s260_a1_a0p9_a0p85_a0p8_a0p75_20260611_211900/support_expansion_report/support_expansion_report.md`
+- support plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_bridge_sourcequat_ep16s260_a1_a0p9_a0p85_a0p8_a0p75_20260611_211900/support_expansion_report/support_expansion_plot.png`
+- alpha0.9 pass sheet:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_bridge_sourcequat_ep16s260_a1_a0p9_a0p85_a0p8_a0p75_20260611_211900/rollouts/ep16s260_a0p9/contact_sheet_a0p9.jpg`
+- alpha0.85 first clean bridge pass sheet:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_bridge_sourcequat_ep16s260_a1_a0p9_a0p85_a0p8_a0p75_20260611_211900/rollouts/ep16s260_a0p85/contact_sheet_a0p85.jpg`
+- alpha0.8 clipped near-pass sheet:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_bridge_sourcequat_ep16s260_a1_a0p9_a0p85_a0p8_a0p75_20260611_211900/rollouts/ep16s260_a0p8/contact_sheet_a0p8.jpg`
+- alpha0.75 failure sheet:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_bridge_sourcequat_ep16s260_a1_a0p9_a0p85_a0p8_a0p75_20260611_211900/rollouts/ep16s260_a0p75/contact_sheet_a0p75.jpg`
+- alpha0.85 video:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_bridge_sourcequat_ep16s260_a1_a0p9_a0p85_a0p8_a0p75_20260611_211900/rollouts/ep16s260_a0p85/videos/franka-cube-contact-sourcequat-ep16s260_a0p85-step-0.mp4`
+- alpha0.75 video:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_bridge_sourcequat_ep16s260_a1_a0p9_a0p85_a0p8_a0p75_20260611_211900/rollouts/ep16s260_a0p75/videos/franka-cube-contact-sourcequat-ep16s260_a0p75-step-0.mp4`
+
+Analysis:
+- Source-row orientation targeting is useful but insufficient. It preserves
+  exact and alpha0.9, adds a clean alpha0.85 pass, and produces an alpha0.8
+  visual lift, but alpha0.8 clips on the initial pose action and alpha0.75
+  remains a clear failure.
+- The alpha0.75 contact sheet shows the same qualitative issue as before:
+  gripper closure/lift occurs while the fingers are offset from the cube, then
+  the hand lifts away. This keeps the controller relabel gate closed.
+- Because alpha0.75 did not pass the hard relabel gate, no official DP
+  fine-tune/debug pretrain or RL handoff is authorized from this result.
+
+Next:
+- The next bounded controller diagnostic should target the alpha0.8/0.75 gap:
+  either reduce the initial pose-action jump/clipping before testing alpha0.8,
+  or implement a staged finger-center/contact alignment phase that drives the
+  perturbed robot into the source-contact geometry before close/lift.
