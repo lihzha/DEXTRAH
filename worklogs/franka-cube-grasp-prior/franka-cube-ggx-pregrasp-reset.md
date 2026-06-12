@@ -5970,3 +5970,22 @@ Analysis:
 
 Next:
 - Commit the patch, deploy the exact commit to the l401 agent worktree, run the reset validation with `GRASP_PRIOR_RESET_ENABLED=True` and `CUBE_SPAWN_YAW_RANDOMIZATION_DEG=180`, inspect metrics/logs, and only then consider a policy-only training smoke.
+
+## 2026-06-12T07:40:43Z - l401 partition preflight fix
+
+Goal:
+- Submit the reset-only validation from the exact deployed worktree.
+
+Observation:
+- `sbatch` rejected `cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh` before launch because the wrapper listed stale partitions (`batch_singlenode,grizzly,polar,polar3,polar4,interactive_singlenode`).
+- `sinfo` on l401 reports valid GPU partitions `batch` and `batch_long`; the dedicated 1-GPU Franka cube smoke wrapper already uses `batch`.
+
+Change:
+- Updated the Franka cube validation wrapper, Franka cube eval wrapper, and generic 8-GPU teacher wrapper to `#SBATCH --partition=batch`.
+
+Validation:
+- command: `bash -n cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh cluster/sbatch_eval_franka_cube_grasp_1gpu.sh cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`
+- command: `git diff --check`
+
+Next:
+- Commit/deploy this wrapper preflight fix, then resubmit the reset validation with exact `CODE_COMMIT`.

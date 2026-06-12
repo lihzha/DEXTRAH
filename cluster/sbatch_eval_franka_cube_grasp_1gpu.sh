@@ -4,7 +4,7 @@
 #SBATCH --account=nvr_lpr_rvp
 #SBATCH --gpus-per-node=1
 #SBATCH --job-name=dextrah_franka_cube_eval
-#SBATCH --partition=batch_singlenode,grizzly,polar,polar3,polar4,interactive_singlenode
+#SBATCH --partition=batch
 #SBATCH --time=0-01:00:00
 #SBATCH --mem=160G
 #SBATCH --cpus-per-task=16
