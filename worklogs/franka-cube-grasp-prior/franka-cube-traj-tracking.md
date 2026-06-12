@@ -7616,3 +7616,33 @@ Analysis:
 
 Next:
 - Commit/push/deploy this seed override, then launch a historical-seed baseline rerun with `SEED=1781139395`, `USE_CUDA_GRAPH=False`, `MAX_ITERATIONS=600`.
+
+## 2026-06-12T09:22:00Z - historical-seed baseline launched
+
+Goal:
+- Test whether the known-good historical A learning transition depends on the original time-derived seed.
+
+Hypothesis:
+- If the branch-local exact600 run is flat because of seed sensitivity rather than code/config drift, rerunning with historical seed `1781139395` should recover the known-good transition window.
+
+Version Control:
+- agent_id: franka-cube-traj-tracking
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking`
+- branch: `codex/franka-cube-trajectory-tracking`
+- implementation_commit: `2557f3e397320dc1070ec1c2ece6713d502cafce`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking-seed`
+- remote_commit/status: detached at `2557f3e397320dc1070ec1c2ece6713d502cafce`
+
+Command / Job:
+- job: `29005171`, a1001, run `franka_cube_baseline_A_histseed_2557f3e_20260612_0922`
+- command:
+  `cd /lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking-seed && sbatch --parsable --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking-seed,TASK=Dextrah-Franka-Cube-Grasp,FULL_EXPERIMENT_NAME=franka_cube_baseline_A_histseed_2557f3e_20260612_0922,MAX_ITERATIONS=600,AUTO_RESUME=False,SELF_RELAUNCH=False,USE_CUDA_GRAPH=False,SEED=1781139395,CUBE_SPAWN_XY_RANDOMIZATION=0.08 cluster/sbatch_train_teacher_8gpu.sh`
+- expected log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29005171.out`
+- expected run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseline_A_histseed_2557f3e_20260612_0922`
+
+Result:
+- status: launched and wrapper command verified.
+- key evidence: log echoed `SEED=1781139395` and train command includes `--seed 1781139395`, `--max_iterations 600`, `env.use_cuda_graph=False`, `env.cube_spawn_xy_randomization=0.08`.
+
+Next:
+- Compare checkpoints to historical A. Decisive windows: epoch 25/50 for early sanity and 250/275/300 for the historical transition.
