@@ -9054,3 +9054,48 @@ Recommendation:
   grasp-specific closed-loop controller that searches for balanced finger
   placement before closing. Only after that controller passes the same
   alpha0.75 hard relabel gate should official DP training resume.
+
+## 2026-06-11T22:08:16-07:00 - plan left/right contact gate alpha0.75 diagnostic
+
+Goal:
+- Implement one narrow controller/relabel diagnostic for alpha0.75: require
+  left/right finger geometry before close and use live-cube lateral centering
+  during open-gripper contact alignment.
+
+Planned change:
+- Edit only the owned contact-aware rollout/controller path and this worklog:
+  - `dextrah_lab/rl_games/contact_aware_franka_cube_rollout.py`
+  - `cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh`
+  - `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+- Add opt-in args/env vars with defaults preserving previous behavior:
+  - `contact_gate_mode=center|left_right`
+  - `finger_gate_max_distance`
+  - `finger_gate_balance_threshold`
+  - `require_contact_gate`
+  - `lateral_centering_gain`
+  - `lateral_centering_limit`
+  - `lateral_search_amplitude`
+  - `lateral_search_period`
+- During `contact_align_open`, compute left/right finger distances and an
+  XY-axis lateral correction from live finger geometry. Freeze the corrected
+  target offset only when the gate passes.
+- In `left_right` mode, close can start only when the scalar center threshold,
+  both left/right distance bounds, and balance threshold pass. The hard relabel
+  gate remains unchanged.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/contact_aware_franka_cube_rollout.py`
+- `bash -n cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh`
+- `git diff --check`
+
+Planned bounded launch:
+- One alpha0.75 run only, no DP/RL:
+  - `ALIGN_STEPS=0`
+  - `CONTACT_ALIGN_STEPS=160`
+  - `CONTACT_GATE_MODE=left_right`
+  - `REQUIRE_CONTACT_GATE=True`
+  - `LATERAL_CENTERING_GAIN=0.75`
+  - `LATERAL_CENTERING_LIMIT=0.025`
+  - `FINGER_GATE_MAX_DISTANCE=0.075`
+  - `FINGER_GATE_BALANCE_THRESHOLD=0.015`
+- Acceptance remains the same hard relabel gate plus video/trace inspection.

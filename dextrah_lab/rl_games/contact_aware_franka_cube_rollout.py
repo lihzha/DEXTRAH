@@ -49,6 +49,57 @@ parser.add_argument(
     type=float,
     help="Finger-center-to-cube threshold used for contact-alignment audit only.",
 )
+parser.add_argument(
+    "--contact_gate_mode",
+    choices=("center", "left_right"),
+    default="center",
+    help=(
+        "Pre-close gate. 'center' preserves the previous finger-center distance gate. "
+        "'left_right' additionally requires both finger distances and left/right balance."
+    ),
+)
+parser.add_argument(
+    "--finger_gate_max_distance",
+    default=0.08,
+    type=float,
+    help="Maximum left/right finger-to-cube distance for --contact_gate_mode left_right.",
+)
+parser.add_argument(
+    "--finger_gate_balance_threshold",
+    default=0.02,
+    type=float,
+    help="Maximum absolute left-minus-right finger distance for --contact_gate_mode left_right.",
+)
+parser.add_argument(
+    "--require_contact_gate",
+    action="store_true",
+    default=False,
+    help="If set, do not fall back to close/hold when the contact-align step budget expires.",
+)
+parser.add_argument(
+    "--lateral_centering_gain",
+    default=0.0,
+    type=float,
+    help="Opt-in gain for live-cube lateral centering along the finger axis during contact-align.",
+)
+parser.add_argument(
+    "--lateral_centering_limit",
+    default=0.0,
+    type=float,
+    help="Maximum norm of the lateral centering correction in meters; <=0 disables limiting.",
+)
+parser.add_argument(
+    "--lateral_search_amplitude",
+    default=0.0,
+    type=float,
+    help="Optional sinusoidal search amplitude along the finger axis during contact-align.",
+)
+parser.add_argument(
+    "--lateral_search_period",
+    default=32,
+    type=int,
+    help="Period in env steps for --lateral_search_amplitude.",
+)
 parser.add_argument("--close_steps", default=80, type=int)
 parser.add_argument("--lift_steps", default=120, type=int)
 parser.add_argument("--lift_height", default=0.14, type=float)
@@ -292,6 +343,74 @@ def _finger_center(task_env: Any) -> np.ndarray:
     return 0.5 * (left + right)
 
 
+def _finger_geometry(task_env: Any, cube_pos: np.ndarray) -> dict[str, Any]:
+    task_env._compute_intermediate_values()
+    left = task_env.left_finger_pos.detach().float().cpu().numpy()[0].astype(np.float32)
+    right = task_env.right_finger_pos.detach().float().cpu().numpy()[0].astype(np.float32)
+    center = 0.5 * (left + right)
+    cube = np.asarray(cube_pos, dtype=np.float32)
+    axis = left - right
+    axis[2] = 0.0
+    axis_norm = float(np.linalg.norm(axis))
+    if axis_norm < 1.0e-6:
+        axis = np.asarray((1.0, 0.0, 0.0), dtype=np.float32)
+    else:
+        axis = (axis / axis_norm).astype(np.float32)
+    lateral_signed = float(np.dot(cube - center, axis))
+    left_dist = float(np.linalg.norm(left - cube))
+    right_dist = float(np.linalg.norm(right - cube))
+    return {
+        "left": left,
+        "right": right,
+        "center": center,
+        "axis": axis,
+        "lateral_signed": lateral_signed,
+        "left_dist": left_dist,
+        "right_dist": right_dist,
+        "balance_abs": float(abs(left_dist - right_dist)),
+    }
+
+
+def _lateral_contact_adjust(geometry: dict[str, Any], contact_step: int) -> tuple[np.ndarray, dict[str, float | list[float]]]:
+    axis = np.asarray(geometry["axis"], dtype=np.float32)
+    correction = np.zeros(3, dtype=np.float32)
+    gain = float(args_cli.lateral_centering_gain)
+    if math.isfinite(gain) and gain != 0.0:
+        correction += gain * float(geometry["lateral_signed"]) * axis
+    amplitude = float(args_cli.lateral_search_amplitude)
+    if math.isfinite(amplitude) and amplitude != 0.0:
+        period = max(1, int(args_cli.lateral_search_period))
+        phase = 2.0 * math.pi * (float(contact_step) / float(period))
+        correction += float(amplitude * math.sin(phase)) * axis
+    correction[2] = 0.0
+    raw = correction.copy()
+    limit = float(args_cli.lateral_centering_limit)
+    norm = float(np.linalg.norm(correction))
+    scale = 1.0
+    if math.isfinite(limit) and limit > 0.0 and norm > limit:
+        scale = float(limit / max(norm, 1.0e-12))
+        correction *= scale
+        norm = float(np.linalg.norm(correction))
+    return correction.astype(np.float32), {
+        "lateral_axis": axis.astype(float).tolist(),
+        "lateral_signed_error": float(geometry["lateral_signed"]),
+        "lateral_centering_raw": raw.astype(float).tolist(),
+        "lateral_centering_correction": correction.astype(float).tolist(),
+        "lateral_centering_norm": norm,
+        "lateral_centering_scale": float(scale),
+    }
+
+
+def _contact_gate_ok(row: dict[str, Any]) -> bool:
+    center_ok = float(row["finger_center_to_cube"]) <= float(args_cli.contact_align_threshold)
+    if str(args_cli.contact_gate_mode) == "center":
+        return bool(center_ok)
+    left_ok = float(row["left_finger_to_cube"]) <= float(args_cli.finger_gate_max_distance)
+    right_ok = float(row["right_finger_to_cube"]) <= float(args_cli.finger_gate_max_distance)
+    balance_ok = float(row["finger_distance_balance_abs"]) <= float(args_cli.finger_gate_balance_threshold)
+    return bool(center_ok and left_ok and right_ok and balance_ok)
+
+
 def _action_to_finger_target(
     live_lowdim: np.ndarray,
     finger_center: np.ndarray,
@@ -357,7 +476,7 @@ def _plot(rows: list[dict[str, Any]], output_path: Path) -> None:
     if not rows:
         return
     variants = list(dict.fromkeys(str(row["variant"]) for row in rows))
-    fig, axes = plt.subplots(7, 1, figsize=(13, 20), sharex=True, constrained_layout=True)
+    fig, axes = plt.subplots(9, 1, figsize=(13, 25), sharex=True, constrained_layout=True)
     for variant in variants:
         vrows = [row for row in rows if row["variant"] == variant]
         x = [int(row["global_step"]) for row in vrows]
@@ -382,6 +501,11 @@ def _plot(rows: list[dict[str, Any]], output_path: Path) -> None:
             label=f"{variant} executed",
         )
         axes[6].plot(x, [row.get("target_minus_cube_norm", 0.0) for row in vrows], label=variant)
+        axes[7].plot(x, [row.get("left_finger_to_cube", 0.0) for row in vrows], label=f"{variant} left")
+        axes[7].plot(x, [row.get("right_finger_to_cube", 0.0) for row in vrows], linestyle="--", label=f"{variant} right")
+        axes[7].plot(x, [row.get("finger_distance_balance_abs", 0.0) for row in vrows], linestyle=":", label=f"{variant} balance")
+        axes[8].plot(x, [row.get("lateral_centering_norm", 0.0) for row in vrows], label=f"{variant} correction")
+        axes[8].plot(x, [row.get("lateral_signed_error", 0.0) for row in vrows], linestyle="--", label=f"{variant} signed")
     axes[0].set_title("EE/Finger-Center To Cube")
     axes[0].set_ylabel("m")
     axes[1].set_title("Cube Lift Height")
@@ -396,7 +520,11 @@ def _plot(rows: list[dict[str, Any]], output_path: Path) -> None:
     axes[5].set_ylabel("normalized")
     axes[6].set_title("Target Anchor Offset From Live Cube")
     axes[6].set_ylabel("m")
-    axes[6].set_xlabel("global step")
+    axes[7].set_title("Left/Right Finger Geometry")
+    axes[7].set_ylabel("m")
+    axes[8].set_title("Lateral Centering")
+    axes[8].set_ylabel("m")
+    axes[8].set_xlabel("global step")
     for ax in axes:
         ax.grid(True, alpha=0.25)
         ax.legend(fontsize=7, ncol=2)
@@ -431,19 +559,25 @@ def _build_report(summary: dict[str, Any]) -> str:
         f"- gripper timing: align/open `{summary['align_steps']}` steps, contact-align/open `{summary['contact_align_steps']}` steps, close `{summary['close_steps']}` steps, lift `{summary['lift_steps']}` steps",
         f"- contact-align reference: `{summary['contact_align_reference']}`",
         f"- contact-align threshold: `{summary['contact_align_threshold']:.4f}` m",
+        f"- contact gate mode: `{summary['contact_gate_mode']}`",
+        f"- require contact gate: `{summary['require_contact_gate']}`",
+        f"- left/right finger gate: max distance `{summary['finger_gate_max_distance']:.4f}` m, balance `{summary['finger_gate_balance_threshold']:.4f}` m",
+        f"- lateral centering: gain `{summary['lateral_centering_gain']:.4f}`, limit `{summary['lateral_centering_limit']:.4f}` m, search amplitude `{summary['lateral_search_amplitude']:.4f}` m, period `{summary['lateral_search_period']}`",
         "- contact-align behavior: when enabled, the rollout starts close/hold as soon as the threshold is reached and freezes the live contact anchor for close/lift.",
         "",
         "## Variant Summary",
         "",
-        "| variant | orientation | filter | joint alpha | reset cube-minus-EE L2 | pre-close step | pre-close finger | pre-close EE | contact-ok | close start | trigger step | offset | steps | final EE-cube | min finger-cube | final finger-cube | max lift | final lift | final grip width | max clip | max raw | min scale | terminal next | skipped reset step | success-like |",
-        "|---|---|---|---:|---:|---:|---:|---:|---|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---|",
+        "| variant | orientation | filter | joint alpha | reset cube-minus-EE L2 | pre-close step | pre-close finger | pre-close left/right/bal | pre-close EE | contact-ok | close start | trigger step | offset | steps | final EE-cube | min finger-cube | final finger-cube | max lift | final lift | final grip width | max clip | max raw | min scale | terminal next | skipped reset step | success-like |",
+        "|---|---|---|---:|---:|---:|---:|---|---:|---|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---|",
     ]
     for variant, payload in summary["variants"].items():
         lines.append(
             f"| {variant} | {payload['orientation_mode']} | {payload['pose_action_filter']} | "
             f"{payload['reset_joint_blend_alpha']:.3f} | {payload['reset_cube_minus_ee_l2_from_dataset']:.5f} | "
             f"{payload['pre_close_local_step']} | "
-            f"{payload['pre_close_finger_center_to_cube']:.4f} | {payload['pre_close_ee_to_cube']:.4f} | "
+            f"{payload['pre_close_finger_center_to_cube']:.4f} | "
+            f"{payload['pre_close_left_finger_to_cube']:.4f}/{payload['pre_close_right_finger_to_cube']:.4f}/{payload['pre_close_finger_distance_balance_abs']:.4f} | "
+            f"{payload['pre_close_ee_to_cube']:.4f} | "
             f"{payload['contact_align_success']} | {payload['close_start_local_step']} | "
             f"{payload['contact_align_trigger_step']} | {payload['offset']} | {payload['steps']} | "
             f"{payload['final_ee_to_cube']:.4f} | {payload['min_finger_center_to_cube']:.4f} | "
@@ -537,6 +671,7 @@ def main() -> None:
             close_start_step: int | None = None
             contact_align_trigger_step: int | None = None
             pre_close_row: dict[str, Any] | None = None
+            contact_target_offset = offset.copy()
             for local_step in range(steps_per_variant):
                 if local_step < align_end:
                     phase = "align_open"
@@ -545,7 +680,11 @@ def main() -> None:
                     target_reference = "initial_cube"
                     target_base = initial_cube_pos
                 else:
-                    if close_start_step is None and local_step >= contact_end:
+                    if (
+                        close_start_step is None
+                        and local_step >= contact_end
+                        and not bool(args_cli.require_contact_gate)
+                    ):
                         close_start_step = int(local_step)
                     if close_start_step is None:
                         phase = "contact_align_open"
@@ -575,9 +714,27 @@ def main() -> None:
                         target_base = contact_anchor_cube_pos
                 task_env._compute_intermediate_values()
                 live_lowdim = _lowdim_numpy_from_policy_obs(policy_obs)
-                finger_center = _finger_center(task_env)
                 cube_pos = task_env.cube_pos.detach().float().cpu().numpy()[0]
-                target_finger = target_base + offset + lift_delta
+                finger_geom = _finger_geometry(task_env, cube_pos)
+                finger_center = np.asarray(finger_geom["center"], dtype=np.float32)
+                contact_step = max(0, local_step - align_end)
+                lateral_adjust = np.zeros(3, dtype=np.float32)
+                lateral_audit: dict[str, float | list[float]] = {
+                    "lateral_axis": np.asarray(finger_geom["axis"], dtype=np.float32).astype(float).tolist(),
+                    "lateral_signed_error": float(finger_geom["lateral_signed"]),
+                    "lateral_centering_raw": [0.0, 0.0, 0.0],
+                    "lateral_centering_correction": [0.0, 0.0, 0.0],
+                    "lateral_centering_norm": 0.0,
+                    "lateral_centering_scale": 1.0,
+                }
+                if phase == "contact_align_open":
+                    lateral_adjust, lateral_audit = _lateral_contact_adjust(finger_geom, contact_step)
+                    target_offset = (offset + lateral_adjust).astype(np.float32)
+                elif phase in ("close_hold", "lift"):
+                    target_offset = contact_target_offset.astype(np.float32)
+                else:
+                    target_offset = offset.astype(np.float32)
+                target_finger = target_base + target_offset + lift_delta
                 target_ee_quat = source_ee_quat if args_cli.orientation_mode == "source" else None
                 action, action_audit = _action_to_finger_target(
                     live_lowdim,
@@ -633,6 +790,7 @@ def main() -> None:
                     "target_finger_center": target_finger.astype(float).tolist(),
                     "target_reference": target_reference,
                     "contact_anchor_cube_pos": contact_anchor_cube_pos.astype(float).tolist(),
+                    "target_offset": target_offset.astype(float).tolist(),
                     "target_minus_cube": (target_finger - cube_pos).astype(float).tolist(),
                     "target_minus_cube_norm": float(np.linalg.norm(target_finger - cube_pos)),
                     "contact_align_threshold": float(args_cli.contact_align_threshold),
@@ -641,23 +799,37 @@ def main() -> None:
                     "close_start_local_step": (
                         int(close_start_step) if close_start_step is not None else -1
                     ),
+                    "contact_gate_mode": str(args_cli.contact_gate_mode),
+                    "require_contact_gate": bool(args_cli.require_contact_gate),
+                    "finger_gate_max_distance": float(args_cli.finger_gate_max_distance),
+                    "finger_gate_balance_threshold": float(args_cli.finger_gate_balance_threshold),
                     "target_ee_quat": (
                         source_ee_quat.astype(float).tolist()
                         if args_cli.orientation_mode == "source"
                         else live_lowdim[3:7].astype(float).tolist()
                     ),
                     "finger_center": finger_center.astype(float).tolist(),
+                    "left_finger": np.asarray(finger_geom["left"], dtype=np.float32).astype(float).tolist(),
+                    "right_finger": np.asarray(finger_geom["right"], dtype=np.float32).astype(float).tolist(),
+                    "finger_axis": np.asarray(finger_geom["axis"], dtype=np.float32).astype(float).tolist(),
                     "finger_error_norm": float(np.linalg.norm(target_finger - finger_center)),
                     "cube_pos": cube_pos.astype(float).tolist(),
                     "ee_to_cube": float(task_env.ee_to_cube_dist.detach().cpu()[0]),
                     "finger_center_to_cube": float(task_env.finger_center_to_cube_dist.detach().cpu()[0]),
                     "left_finger_to_cube": float(task_env.left_finger_to_cube_dist.detach().cpu()[0]),
                     "right_finger_to_cube": float(task_env.right_finger_to_cube_dist.detach().cpu()[0]),
+                    "finger_distance_balance_abs": float(
+                        abs(
+                            float(task_env.left_finger_to_cube_dist.detach().cpu()[0])
+                            - float(task_env.right_finger_to_cube_dist.detach().cpu()[0])
+                        )
+                    ),
                     "cube_lift_height": float(task_env.cube_lift_height.detach().cpu()[0]),
                     "cube_xy_error": float(task_env.cube_xy_error.detach().cpu()[0]),
                     "gripper_width": float(after_lowdim[20]),
                     "gripper_action": float(action[6]),
                     "executed_action": action.astype(float).tolist(),
+                    **lateral_audit,
                     **action_audit,
                     "pose_action_clip_fraction": float(np.count_nonzero(clip_hits) / 6.0),
                     "reward": float(rewards.detach().float().cpu()[0]),
@@ -669,10 +841,11 @@ def main() -> None:
                 if (
                     phase == "contact_align_open"
                     and close_start_step is None
-                    and row["finger_center_to_cube"] <= float(args_cli.contact_align_threshold)
+                    and _contact_gate_ok(row)
                 ):
                     task_env._compute_intermediate_values()
                     contact_anchor_cube_pos = task_env.cube_pos.detach().float().cpu().numpy()[0].copy()
+                    contact_target_offset = target_offset.copy()
                     contact_align_trigger_step = int(local_step)
                     close_start_step = int(local_step + 1)
                     row["contact_align_triggered_close"] = True
@@ -690,9 +863,13 @@ def main() -> None:
                                 "local_step": local_step + 1,
                                 "phase": phase,
                                 "finger_center_to_cube": row["finger_center_to_cube"],
+                                "left_finger_to_cube": row["left_finger_to_cube"],
+                                "right_finger_to_cube": row["right_finger_to_cube"],
+                                "finger_balance": row["finger_distance_balance_abs"],
                                 "cube_lift_height": row["cube_lift_height"],
                                 "gripper_width": row["gripper_width"],
                                 "clip_fraction": row["pose_action_clip_fraction"],
+                                "contact_gate_ok": _contact_gate_ok(row),
                                 "raw_pose_action_max_abs": row["raw_pose_action_max_abs"],
                                 "pose_action_filter_scale": row["pose_action_filter_scale"],
                             },
@@ -712,7 +889,7 @@ def main() -> None:
             pre_close = pre_close_row if pre_close_row is not None else (pre_close_rows[-1] if pre_close_rows else vrows[0])
             contact_align_success = bool(
                 contact_align_trigger_step is not None
-                or float(pre_close["finger_center_to_cube"]) <= float(args_cli.contact_align_threshold)
+                or _contact_gate_ok(pre_close)
             )
             success_like = bool(max_lift >= float(task_env.cfg.cube_success_lift_height) and min_finger < 0.08)
             summaries[variant_name] = {
@@ -727,14 +904,24 @@ def main() -> None:
                 "pre_close_phase": str(pre_close["phase"]),
                 "pre_close_ee_to_cube": float(pre_close["ee_to_cube"]),
                 "pre_close_finger_center_to_cube": float(pre_close["finger_center_to_cube"]),
+                "pre_close_left_finger_to_cube": float(pre_close["left_finger_to_cube"]),
+                "pre_close_right_finger_to_cube": float(pre_close["right_finger_to_cube"]),
+                "pre_close_finger_distance_balance_abs": float(pre_close["finger_distance_balance_abs"]),
                 "pre_close_finger_error_norm": float(pre_close["finger_error_norm"]),
                 "pre_close_gripper_width": float(pre_close["gripper_width"]),
                 "pre_close_target_reference": str(pre_close["target_reference"]),
                 "pre_close_target_minus_cube_norm": float(pre_close["target_minus_cube_norm"]),
+                "pre_close_target_offset": pre_close["target_offset"],
+                "pre_close_lateral_centering_norm": float(pre_close["lateral_centering_norm"]),
+                "pre_close_lateral_signed_error": float(pre_close["lateral_signed_error"]),
                 "contact_align_success": contact_align_success,
                 "contact_align_steps": int(args_cli.contact_align_steps),
                 "contact_align_reference": str(args_cli.contact_align_reference),
                 "contact_align_threshold": float(args_cli.contact_align_threshold),
+                "contact_gate_mode": str(args_cli.contact_gate_mode),
+                "require_contact_gate": bool(args_cli.require_contact_gate),
+                "finger_gate_max_distance": float(args_cli.finger_gate_max_distance),
+                "finger_gate_balance_threshold": float(args_cli.finger_gate_balance_threshold),
                 "contact_align_trigger_step": (
                     int(contact_align_trigger_step) if contact_align_trigger_step is not None else -1
                 ),
@@ -791,6 +978,14 @@ def main() -> None:
         "contact_align_steps": int(args_cli.contact_align_steps),
         "contact_align_reference": str(args_cli.contact_align_reference),
         "contact_align_threshold": float(args_cli.contact_align_threshold),
+        "contact_gate_mode": str(args_cli.contact_gate_mode),
+        "require_contact_gate": bool(args_cli.require_contact_gate),
+        "finger_gate_max_distance": float(args_cli.finger_gate_max_distance),
+        "finger_gate_balance_threshold": float(args_cli.finger_gate_balance_threshold),
+        "lateral_centering_gain": float(args_cli.lateral_centering_gain),
+        "lateral_centering_limit": float(args_cli.lateral_centering_limit),
+        "lateral_search_amplitude": float(args_cli.lateral_search_amplitude),
+        "lateral_search_period": int(args_cli.lateral_search_period),
         "close_steps": int(args_cli.close_steps),
         "lift_steps": int(args_cli.lift_steps),
         "lift_height": float(args_cli.lift_height),
