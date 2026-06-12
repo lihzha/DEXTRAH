@@ -5153,3 +5153,12 @@ Acceptance:
   one-step commands do not improve that, conclude raw cuRobo labels need a
   contact-aware controller-rollout relabeler or different controller/grasp
   target before any DP BC/RL training.
+
+Command / Job:
+- command:
+  `CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart RUN_NAME=franka_cube_target_frame_audit_ep24_close_lift_20260611_171200 DATASET=/results/dp_bc/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz TRAJECTORY_JSON=/results/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed24/trajectory.json REPLAY_CSV=/results/replays/franka_cube_dp_replay_sourcejoint_controllerhold_ep24s260_mh2_340_20260611_165939/replay_steps.csv EPISODE=24 EPISODE_STEPS=260,282,297,310,312,402,450,487 REFERENCE_VIDEO=/results/replays/franka_cube_dp_replay_sourcejoint_controllerhold_ep24s260_mh2_340_20260611_165939/videos/franka-cube-dp-replay-controllerhold-step-0.mp4 REFERENCE_CONTACT_SHEET=/results/replays/franka_cube_dp_replay_sourcejoint_controllerhold_ep24s260_mh2_340_20260611_165939/videos/franka-cube-dp-replay-controllerhold-step-0_sheet.jpg SEED=42 sbatch --parsable cluster/sbatch_audit_franka_cube_target_frames_1gpu.sh`
+- job_id: `1027903`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/target_frame_audits/franka_cube_target_frame_audit_ep24_close_lift_20260611_171200`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/audit_franka_cube_target_frames_1027903.out`
