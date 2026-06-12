@@ -11385,6 +11385,112 @@ Command / Job:
 Result:
 - status: launching
 
+## 2026-06-12T02:40:00-07:00 - broaden BC support with 32-demo phase/progress training
+
+Goal:
+- Continue from the one-demo/four-demo exact-reset pass by testing whether the
+  working Diffusion Policy I/O can become useful under normal resets with
+  broader GraspGenX/CuRobo support.
+
+Hypothesis:
+- The four-demo phase/progress checkpoint works on exact resets but fails
+  normal resets because its support is too narrow. The older 32-demo 21D
+  checkpoint has broader reset coverage but failed closed-loop with noisy
+  actions and no phase/progress conditioning. A 32-demo checkpoint using the
+  verified 25D phase/progress I/O should preserve the exact-reset contract
+  while covering more cube/reset states.
+
+Change:
+- Extended `make_phase_progress_dataset.py` with
+  `--phase-mode pick_lift_to_contact`, mapping the sorted full-pick/lift phase
+  IDs by phase name into the same three runtime phases used by the existing
+  providers:
+  - align/open: pregrasp, hold-pregrasp, pregrasp-to-grasp, hold-grasp
+  - close/hold: close-fingers, hold-after-close
+  - lift: lift-object, hold-after-lift
+- Preserved the original full-pick/lift phase IDs as `source_phase_ids` in the
+  generated NPZ.
+- Fixed a false negative in `diagnose_dp_offline_coherence.py`: phases whose
+  correct pose command is near zero may now pass by low absolute pose error
+  instead of invalid direction/norm-ratio checks.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `9a0ab91ae99b0c3075953ae05269b0e94e64d35a`
+- implementation_commit: pending
+- changed_files:
+  - `dextrah_lab/offline_dp_bc/make_phase_progress_dataset.py`
+  - `dextrah_lab/offline_dp_bc/diagnose_dp_offline_coherence.py`
+  - `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+
+Prior normal-reset results:
+- job `1028333`, single-env video confirmation of the four-demo checkpoint:
+  `franka_cube_dp_eval_phaseprogress_set4_noema_normalreset_contactgated_chunk8_avg8_video320_20260612_021036`
+  - status: failed
+  - final/window success `0/0`, `done_count=1`
+  - max/final lift `0.0100/0.0 m`
+  - min/final EE-to-cube `0.0724/0.1387 m`
+  - min/final finger-center-to-cube `0.0825/0.1367 m`
+  - final gripper width `0.00328 m`
+  - support report:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_noema_normalreset_contactgated_chunk8_avg8_video320_20260612_021036/normalreset_video_support_report/closed_loop_support_report.md`
+  - video:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_noema_normalreset_contactgated_chunk8_avg8_video320_20260612_021036/videos/franka-cube-dp-set4-noema-normalreset-chunk8-avg8-step-0.mp4`
+- job `1028334`, 16-env normal-reset probe of the older 32-demo 21D
+  full-pick/lift checkpoint:
+  `franka_cube_dp_eval_curobo32_framefix_overfit2k_normalreset_chunk8_avg8_16env_20260612_021330`
+  - status: failed
+  - final/window success `0/0`, `done_count=2`
+  - max/final lift `0.00105/0.0 m`
+  - min/final EE-to-cube `0.1084/0.1098 m`
+  - min/final finger-center-to-cube `0.1339/0.1446 m`
+  - actions saturated/noisy, with no lift
+  - support report:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_curobo32_framefix_overfit2k_normalreset_chunk8_avg8_16env_20260612_021330/curobo32_framefix_support_report/closed_loop_support_report.md`
+
+Dataset / Training:
+- generated 32-demo 25D phase/progress dataset:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_curobo32_phaseprogress/full_pick_lift_framefix_phaseprogress_20260612_022104/franka_cube_curobo32_full_pick_lift_framefix_phaseprogress.npz`
+- dataset shape: obs `(22484,25)`, action `(22484,7)`, episodes `32`
+- collapsed phase counts: align/open `9044`, close/hold `3840`, lift `9600`
+- dataset report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_curobo32_phaseprogress/full_pick_lift_framefix_phaseprogress_20260612_022104/dataset_report/dataset_report.md`
+- trained no-EMA weighted official DP:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_curobo32_phaseprogress/curobo32_phaseprogress_noema_10k_20260612_022223`
+- training settings: `obs_dim=25`, `global_cond_dim=50`,
+  `WeightedDiffusionUnetLowdimPolicy`, gripper loss weight `8`,
+  `pred_action_steps_only=true`, `num_inference_steps=100`,
+  `training.use_ema=false`, `batch_size=128`, about `10k` optimizer steps.
+- final train loss around `0.0069`.
+
+Offline gate:
+- corrected coherence report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_curobo32_phaseprogress/curobo32_phaseprogress_noema_10k_20260612_022223/offline_coherence_nearzero_gatefix/offline_coherence_report.md`
+- status: pass over all `22484` rows.
+- all-phase metrics: pose cosine mean `0.8488`, gripper sign `0.9997`,
+  MSE@0 all `0.000108`, max first-action pose MAE `0.00442`.
+- close/hold passed by near-zero pose absolute-error criteria:
+  label pose norm median `6.39e-17`, pose MSE `1.64e-6`, max pose MAE
+  `0.00290`, gripper sign `0.9984`.
+
+Staged l401 artifacts:
+- checkpoint:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/curobo32_phaseprogress_noema_10k_20260612_022223/latest.ckpt`
+- phase/support dataset:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/phase_progress_curobo32/full_pick_lift_framefix_phaseprogress_20260612_022104.npz`
+- exact episode-0 source trajectory:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/curobo_plans/cube_curobo_batch_20260611_122807_seed0/trajectory.json`
+
+Next:
+- Commit/push source changes, update the l401 source checkout, then run an
+  exact-reset video eval on episode 0 of the 32-demo phase/progress dataset
+  with correction disabled, `ACTION_CHUNK_STEPS=8`, and `NUM_ACTION_SAMPLES=8`.
+- If exact reset passes, run normal-reset 16-env and video probes with the same
+  checkpoint/dataset.
+
 ## 2026-06-12T01:55:00-07:00 - exact-reset overfit closed-loop pass and batched reset fix
 
 Goal:
@@ -11568,6 +11674,89 @@ Next:
   normal-reset or RL warm-start experiment should keep `ACTION_CHUNK_STEPS=8`
   and `NUM_ACTION_SAMPLES=8`, and should not use the eval-only oracle
   correction modes.
+
+## 2026-06-12T02:03:38-07:00 - launch no-EMA normal-reset scale probe
+
+Goal:
+- Move beyond exact memorized reset replay by evaluating the current four-demo
+  no-EMA BC checkpoint from the normal DEXTRAH reset distribution.
+
+Hypothesis:
+- The exact-reset pass establishes the DP architecture/I/O and execution
+  contract. If the BC is useful as a warm start beyond memorization, the same
+  checkpoint should show nonzero contact/lift/success on a 16-env normal-reset
+  probe when using the fixed inference contract:
+  `ACTION_CHUNK_STEPS=8`, `NUM_ACTION_SAMPLES=8`, `NUM_INFERENCE_STEPS=100`,
+  contact-gated phase/progress, and correction disabled.
+
+Change:
+- No source changes after `9a0ab91ae99b0c3075953ae05269b0e94e64d35a`.
+- Launch one no-video 16-env Isaac eval first. If it fails or is ambiguous,
+  fetch metrics/support traces and run one single-env video confirmation.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- implementation_commit: `9a0ab91ae99b0c3075953ae05269b0e94e64d35a`
+- remote_commit/status:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+  detached at `9a0ab91ae99b0c3075953ae05269b0e94e64d35a`
+- changed_files: worklog pending after launch/result
+
+Command / Job:
+- planned run name:
+  `franka_cube_dp_eval_phaseprogress_set4_noema_normalreset_contactgated_chunk8_avg8_16env_20260612_020338`
+- planned command:
+  `sbatch --parsable --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart,RUN_NAME=franka_cube_dp_eval_phaseprogress_set4_noema_normalreset_contactgated_chunk8_avg8_16env_20260612_020338,NUM_ENVS=16,NUM_STEPS=320,NUM_INFERENCE_STEPS=100,NUM_ACTION_SAMPLES=8,ACTION_CHUNK_STEPS=8,CLIP_ACTIONS=1.0,SUCCESS_WINDOW=80,SUCCESS_TIMEOUT_OVERRIDE=999.0,CAPTURE_VIDEO=False,VIDEO_LENGTH=320,PRINT_INTERVAL=32,SEED=42,DEBUG_POLICY_TRACE_MAX_CALLS=40,DEBUG_POLICY_TRACE_ENV_INDEX=0,CHECKPOINT=/results/dp_bc/checkpoints/phaseprogress_set4_noema_20260612_005448/latest.ckpt,SUPPORT_DATASET=/results/dp_bc/phase_progress_set4/contact_relabel_set_phase_progress.npz,PHASE_PROGRESS_DATASET=/results/dp_bc/phase_progress_set4/contact_relabel_set_phase_progress.npz,PHASE_PROGRESS_EPISODE=0,PHASE_PROGRESS_START_STEP=0,PHASE_PROGRESS_MODE=contact_gated,PHASE_CLOSE_SUPPORT_DISTANCE_THRESHOLD=0.55,PHASE_LIFT_SUPPORT_DISTANCE_THRESHOLD=0.75,PHASE_LIFT_GRIPPER_WIDTH_THRESHOLD=0.025,ACTION_CORRECTION_MODE=disabled cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_phaseprogress_set4_noema_normalreset_contactgated_chunk8_avg8_16env_20260612_020338`
+
+Acceptance:
+- Scheduler completion is not enough. Fetch logs, metrics, support trace, and
+  config locally; inspect final/window success, lift, EE/finger distances,
+  done count, and env0 support drift.
+- If successful, continue to broader environments. If failed, debug whether the
+  remaining blocker is normal-reset support coverage, phase gating, or another
+  train/eval mismatch.
+
+Result:
+- 16-env probe job `1028310` completed `COMPLETED|0:0` in `00:04:04` on
+  `pool0-00014`.
+- local artifact dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_noema_normalreset_contactgated_chunk8_avg8_16env_20260612_020338`
+- support report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_noema_normalreset_contactgated_chunk8_avg8_16env_20260612_020338/normalreset_16env_support_report/closed_loop_support_report.md`
+- status: failed as normal-reset BC warm start.
+- metrics:
+  - `steps_completed=320`, `num_envs=16`, `done_count=18`.
+  - final/window success `0.0/0.0`, `has_lifted_cube.max=0.0`.
+  - max/final lift `0.00367/0.00070 m`.
+  - min/final EE-to-cube `0.0976/0.1075 m`.
+  - min/final finger-center-to-cube `0.1023/0.1058 m`.
+  - env0 nearest-demo support distance `8.962 -> 2.862`; runtime phase stayed
+    `align_open` for all `320` records.
+- report verdict:
+  `FAIL: closed-loop policy still leaves demonstration support and closes away from the cube.`
+
+Analysis:
+- The current DP execution contract is no longer the immediate blocker. With
+  the exact same checkpoint, chunking, sample averaging, bridge, and normalizer,
+  exact set4 reset passes but normal reset starts far outside the four-demo
+  relabel support and never reaches close/lift support.
+- The 16-env metrics are aggregated across env resets, so a single-env video is
+  needed to make the failure visually unambiguous before choosing the next
+  support-expansion/training run.
+
+Follow-up launch:
+- job_id: `1028333`
+- run:
+  `franka_cube_dp_eval_phaseprogress_set4_noema_normalreset_contactgated_chunk8_avg8_video320_20260612_021036`
+- command:
+  `sbatch --parsable --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart,RUN_NAME=franka_cube_dp_eval_phaseprogress_set4_noema_normalreset_contactgated_chunk8_avg8_video320_20260612_021036,NUM_ENVS=1,NUM_STEPS=320,NUM_INFERENCE_STEPS=100,NUM_ACTION_SAMPLES=8,ACTION_CHUNK_STEPS=8,CLIP_ACTIONS=1.0,SUCCESS_WINDOW=80,SUCCESS_TIMEOUT_OVERRIDE=999.0,CAPTURE_VIDEO=True,VIDEO_LENGTH=320,VIDEO_NAME_PREFIX=franka-cube-dp-set4-noema-normalreset-chunk8-avg8,PRINT_INTERVAL=32,SEED=42,DEBUG_POLICY_TRACE_MAX_CALLS=40,DEBUG_POLICY_TRACE_ENV_INDEX=0,CHECKPOINT=/results/dp_bc/checkpoints/phaseprogress_set4_noema_20260612_005448/latest.ckpt,SUPPORT_DATASET=/results/dp_bc/phase_progress_set4/contact_relabel_set_phase_progress.npz,PHASE_PROGRESS_DATASET=/results/dp_bc/phase_progress_set4/contact_relabel_set_phase_progress.npz,PHASE_PROGRESS_EPISODE=0,PHASE_PROGRESS_START_STEP=0,PHASE_PROGRESS_MODE=contact_gated,PHASE_CLOSE_SUPPORT_DISTANCE_THRESHOLD=0.55,PHASE_LIFT_SUPPORT_DISTANCE_THRESHOLD=0.75,PHASE_LIFT_GRIPPER_WIDTH_THRESHOLD=0.025,ACTION_CORRECTION_MODE=disabled cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- status: pending/running; fetch metrics, video, support report, and inspect
+  before any training or RL scale-up.
 
 ## 2026-06-12T01:38:00-07:00 - add DP action sample averaging
 

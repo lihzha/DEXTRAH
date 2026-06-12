@@ -146,7 +146,19 @@ def _summarize_group(rows: list[dict[str, Any]]) -> dict[str, Any]:
     xyz_norm_ratios = [float(row["first_xyz_norm_ratio"]) for row in rows]
     first_mse_all = [float(row["offset0_sequence_mse_all"]) for row in rows]
     first_mse_pose = [float(row["offset0_sequence_mse_pose"]) for row in rows]
+    label_pose_norms = [
+        float(
+            np.linalg.norm(
+                [
+                    float(row[f"label_first_{name}"])
+                    for name in ("dx", "dy", "dz", "droll", "dpitch", "dyaw")
+                ]
+            )
+        )
+        for row in rows
+    ]
     offset0_mse_all_mean = _safe_mean(first_mse_all)
+    offset0_mse_pose_mean = _safe_mean(first_mse_pose)
     max_pose_first_mae = float(max(per_channel_mae[:6]))
 
     # These thresholds are deliberately coarse. The point is to prevent
@@ -156,17 +168,30 @@ def _summarize_group(rows: list[dict[str, Any]]) -> dict[str, Any]:
     pose_cosine_mean = _safe_mean(pose_cosines)
     xyz_cosine_mean = _safe_mean(xyz_cosines)
     pose_norm_median = _safe_median(pose_norm_ratios)
+    label_pose_norm_median = _safe_median(label_pose_norms)
     offset_or_absolute_error_pass = bool(
         best_offset_zero_fraction >= 0.50
         or (offset0_mse_all_mean is not None and offset0_mse_all_mean <= 0.035 and max_pose_first_mae <= 0.20)
     )
+    pose_direction_pass = bool(
+        (
+            pose_cosine_mean is not None
+            and pose_cosine_mean >= 0.35
+            and pose_norm_median is not None
+            and 0.25 <= pose_norm_median <= 4.0
+        )
+        or (
+            label_pose_norm_median is not None
+            and label_pose_norm_median <= 0.01
+            and offset0_mse_pose_mean is not None
+            and offset0_mse_pose_mean <= 1.0e-4
+            and max_pose_first_mae <= 0.02
+        )
+    )
     coherent = bool(
         gripper_sign_fraction >= 0.90
         and offset_or_absolute_error_pass
-        and pose_cosine_mean is not None
-        and pose_cosine_mean >= 0.35
-        and pose_norm_median is not None
-        and 0.25 <= pose_norm_median <= 4.0
+        and pose_direction_pass
     )
 
     return {
@@ -183,11 +208,13 @@ def _summarize_group(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "first_xyz_cosine_median": _safe_median(xyz_cosines),
         "first_pose_norm_ratio_mean": _safe_mean(pose_norm_ratios),
         "first_pose_norm_ratio_median": pose_norm_median,
+        "label_first_pose_norm_median": label_pose_norm_median,
         "first_xyz_norm_ratio_mean": _safe_mean(xyz_norm_ratios),
         "first_xyz_norm_ratio_median": _safe_median(xyz_norm_ratios),
         "offset0_sequence_mse_all_mean": offset0_mse_all_mean,
-        "offset0_sequence_mse_pose_mean": _safe_mean(first_mse_pose),
+        "offset0_sequence_mse_pose_mean": offset0_mse_pose_mean,
         "max_pose_first_mae": max_pose_first_mae,
+        "pose_direction_pass": pose_direction_pass,
         "per_channel_first_mae": {name: per_channel_mae[idx] for idx, name in enumerate(ACTION_NAMES)},
         "per_channel_first_rmse": {name: per_channel_rmse[idx] for idx, name in enumerate(ACTION_NAMES)},
     }
@@ -218,10 +245,12 @@ def _write_phase_csv(path: Path, summary: dict[str, Any], phase_order: list[str]
             "first_pose_cosine_median": item.get("first_pose_cosine_median"),
             "first_xyz_cosine_mean": item.get("first_xyz_cosine_mean"),
             "first_pose_norm_ratio_median": item.get("first_pose_norm_ratio_median"),
+            "label_first_pose_norm_median": item.get("label_first_pose_norm_median"),
             "offset0_sequence_mse_all_mean": item.get("offset0_sequence_mse_all_mean"),
             "offset0_sequence_mse_pose_mean": item.get("offset0_sequence_mse_pose_mean"),
             "max_pose_first_mae": item.get("max_pose_first_mae"),
             "offset_or_absolute_error_pass": item.get("offset_or_absolute_error_pass"),
+            "pose_direction_pass": item.get("pose_direction_pass"),
             "best_offset_counts": json.dumps(item.get("best_offset_counts", {}), sort_keys=True),
         }
         for name, value in item.get("per_channel_first_mae", {}).items():
@@ -276,6 +305,7 @@ def _markdown(summary: dict[str, Any], phase_order: list[str]) -> str:
             "- best offset 0 fraction >= 0.50, or offset-0 sequence MSE <= 0.035 with max pose-channel first-action MAE <= 0.20",
             "- mean 6D pose direction cosine >= 0.35",
             "- median 6D pose norm ratio in [0.25, 4.0]",
+            "- near-zero pose phases may pass on absolute pose error: label pose norm median <= 0.01, sequence pose MSE <= 1e-4, max first-action pose MAE <= 0.02",
             "",
             "## Artifacts",
             "",
