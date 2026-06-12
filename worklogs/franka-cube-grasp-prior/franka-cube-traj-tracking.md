@@ -7646,3 +7646,66 @@ Result:
 
 Next:
 - Compare checkpoints to historical A. Decisive windows: epoch 25/50 for early sanity and 250/275/300 for the historical transition.
+
+## 2026-06-12T09:56:00Z - unseeded exact600 control completed
+
+Goal:
+- Determine whether matching visible PPO/env hyperparameters is sufficient to reproduce historical A.
+
+Result:
+- job `29004556`, run `franka_cube_baseline_A_exact600_581890b_20260612_0840`, completed cleanly: `COMPLETED`, exit `0:0`, elapsed `00:32:47`.
+- Final checkpoint: `last_dextrah_franka_cube_grasp_ep_600_rew_2298.376.pth`.
+- Best observed reward: `2364.3098`.
+- It did not reproduce the handoff curve: no breakout by epoch 600.
+
+Analysis:
+- Saved `params/env.yaml` and `params/agent.yaml` match historical A after normalizing run name, node/time, rank device, and seed, so this run is a negative control for seed sensitivity.
+- The historical-seed rerun `29005171` uses the same resolved config plus explicit `SEED=1781139395`; it has matched historical checkpoint rewards exactly through epoch 225 so far.
+- Conclusion so far: the concrete bug was the training wrapper's inability to pin the seed because it hardcoded `--seed -1`. `--seed -1` resolves to a fresh time/random-derived seed, so a nominal replication was not replaying the same stochastic experiment.
+
+Next:
+- Keep monitoring `29005171` through the historical breakout window at epochs 250, 275, and 300.
+- For final tracking/ablation experiments, never use `--seed -1`; launch explicit parallel seeds `1,2,3,4,5` with identical resolved config per method.
+
+## 2026-06-12T10:08:00Z - keep action-reference diagnostics disabled by default
+
+Goal:
+- Make the default trajectory-tracking RL path clearly state/task-space reward-only, without action-imitation diagnostics doing extra work or producing misleading logs.
+
+Change:
+- In `DextrahFrankaCubeTrajTrackingEnv._compute_trajectory_tracking_reward`, skip `compute_reference_delta_actions()` unless `trajectory_tracking_action_alignment_weight != 0` or teacher forcing is enabled.
+- When reference-action diagnostics are disabled, log neutral zero policy/reference action errors instead of measuring distance to a zero action placeholder.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env.py`
+- `bash -n cluster/sbatch_train_teacher_8gpu.sh`
+- `git diff --check`
+
+Analysis:
+- `trajectory_tracking_action_alignment_weight` was already `0.0` and teacher forcing was already disabled by default. This change makes the default implementation align with that intent and removes accidental action-imitation-style bookkeeping from clean tracking-loss RL runs.
+
+## 2026-06-12T10:35:00Z - historical-seed baseline completed
+
+Goal:
+- Finish the exact historical-seed baseline replication and close the base-env precondition before tracking-loss RL.
+
+Result:
+- job `29005171`, run `franka_cube_baseline_A_histseed_2557f3e_20260612_0922`, completed cleanly: `COMPLETED`, exit `0:0`, elapsed `00:32:04`.
+- Final checkpoint: `last_dextrah_franka_cube_grasp_ep_600_rew_13045.947.pth`.
+- Best checkpoint reward: `13224.685`.
+- Checkpoint rewards match the handoff config exactly, including the transition window:
+  - epoch 250 `1738.1412`
+  - epoch 275 `3275.8337`
+  - epoch 300 `7956.269`
+  - epoch 325 `10704.136`
+  - epoch 600 `13045.947`
+
+Analysis:
+- The baseline reproduction bug is fixed: the wrapper now supports explicit `SEED`, and pinning the historical seed reproduces the known-good curve exactly.
+- The previous exact600 no-seed control had the same visible config but a different generated seed and failed to break out by epoch 600, confirming seed sensitivity.
+- This validates the base Franka cube env and PPO preconditions for subsequent tracking-loss and reward-weight ablations.
+
+Next:
+- Push the latest cleanup commit when GitHub SSH permits.
+- Deploy the latest commit to an agent-owned A100 worktree.
+- Run tracking-loss RL with explicit seeds `1,2,3,4,5` and matched config; do not use `--seed -1`.

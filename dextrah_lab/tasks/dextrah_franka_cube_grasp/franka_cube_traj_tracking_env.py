@@ -412,20 +412,32 @@ class DextrahFrankaCubeTrajTrackingEnv(DextrahFrankaCubeGraspEnv):
             torch.zeros_like(lift_action_reward),
         )
 
-        reference_actions = self.compute_reference_delta_actions()
-        if hasattr(self, "traj_reference_actions"):
-            self.traj_reference_actions[:] = reference_actions.detach()
-        action_alignment_dims = self._trajectory_tracking_action_alignment_dims()
-        alignment_actions = self._trajectory_tracking_alignment_actions()
-        if action_alignment_dims:
-            action_delta = alignment_actions[:, action_alignment_dims] - reference_actions[:, action_alignment_dims]
-            action_alignment_mse = torch.mean(torch.square(action_delta), dim=-1)
-        else:
-            action_alignment_mse = torch.zeros(self.num_envs, device=self.device)
-        action_alignment_error = torch.sqrt(torch.clamp(action_alignment_mse, min=0.0))
-        action_alignment_similarity = torch.exp(
-            -float(getattr(self.cfg, "trajectory_tracking_action_alignment_sharpness", 1.0)) * action_alignment_mse
+        action_alignment_weight = float(getattr(self.cfg, "trajectory_tracking_action_alignment_weight", 0.0))
+        action_alignment_enabled = abs(action_alignment_weight) > 1.0e-8
+        reference_action_diagnostics_enabled = action_alignment_enabled or bool(
+            getattr(self.cfg, "trajectory_tracking_teacher_force_enabled", False)
         )
+        reference_actions = getattr(
+            self,
+            "traj_reference_actions",
+            torch.zeros_like(self.actions),
+        )
+        action_alignment_mse = torch.zeros(self.num_envs, device=self.device)
+        action_alignment_error = torch.zeros_like(action_alignment_mse)
+        action_alignment_similarity = torch.zeros_like(action_alignment_mse)
+        if action_alignment_enabled:
+            reference_actions = self.compute_reference_delta_actions()
+            if hasattr(self, "traj_reference_actions"):
+                self.traj_reference_actions[:] = reference_actions.detach()
+            action_alignment_dims = self._trajectory_tracking_action_alignment_dims()
+            alignment_actions = self._trajectory_tracking_alignment_actions()
+            if action_alignment_dims:
+                action_delta = alignment_actions[:, action_alignment_dims] - reference_actions[:, action_alignment_dims]
+                action_alignment_mse = torch.mean(torch.square(action_delta), dim=-1)
+            action_alignment_error = torch.sqrt(torch.clamp(action_alignment_mse, min=0.0))
+            action_alignment_similarity = torch.exp(
+                -float(getattr(self.cfg, "trajectory_tracking_action_alignment_sharpness", 1.0)) * action_alignment_mse
+            )
         action_alignment_phase_start = float(
             getattr(self.cfg, "trajectory_tracking_action_alignment_phase_start", 0.0)
         )
@@ -441,7 +453,7 @@ class DextrahFrankaCubeTrajTrackingEnv(DextrahFrankaCubeGraspEnv):
             else torch.ones_like(contact_gate)
         )
         action_alignment_reward_ceiling = (
-            float(getattr(self.cfg, "trajectory_tracking_action_alignment_weight", 0.0))
+            action_alignment_weight
             * effective_phase_weight
             * action_alignment_phase_gate
             * action_alignment_contact_gate
@@ -460,8 +472,12 @@ class DextrahFrankaCubeTrajTrackingEnv(DextrahFrankaCubeGraspEnv):
         teacher_force_active = getattr(
             self, "traj_teacher_force_active", torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         )
-        raw_reference_delta = raw_policy_actions - reference_actions
-        applied_reference_delta = applied_actions - reference_actions
+        if reference_action_diagnostics_enabled:
+            raw_reference_delta = raw_policy_actions - reference_actions
+            applied_reference_delta = applied_actions - reference_actions
+        else:
+            raw_reference_delta = torch.zeros_like(raw_policy_actions)
+            applied_reference_delta = torch.zeros_like(applied_actions)
         applied_raw_delta = applied_actions - raw_policy_actions
         raw_reference_l2 = torch.norm(raw_reference_delta, dim=-1)
         applied_reference_l2 = torch.norm(applied_reference_delta, dim=-1)
