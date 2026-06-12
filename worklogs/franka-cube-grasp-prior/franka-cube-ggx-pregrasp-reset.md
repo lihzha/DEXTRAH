@@ -2452,3 +2452,65 @@ Next:
 - Do not launch A100.
 - Patch/export a robust candidate subset based on the passing candidates, or add a deterministic/filtered robust-grasp diagnostic path, then rerun the reset/pregrasp + oracle gate on that candidate set.
 - After the robust-library gate passes visually and numerically, run a bounded small PPO smoke/eval before any full-scale training.
+
+## 2026-06-12T00:38:05Z - robust passing-set library plan
+
+Goal:
+- Convert the alternate-grasp sweep result into a reproducible reset-prior library that samples only robust passing candidates, then validate that library before any PPO.
+
+Hypothesis:
+- The reset/action path is viable when the library excludes brittle samples. A compact library containing only `orig000`, `orig001`, `orig011`, `orig012`, `orig014`, `orig024`, and `orig027` should pass the same randomized reset/pregrasp + oracle close/lift diagnostic while preserving the task reset behavior and 3 cm pregrasp offset.
+
+Planned Change:
+- Add a small source-backed filter script under `dextrah_lab/scene_scripts/` that reads a compact Franka cube GraspGenX `.npz`, selects by original GraspGenX indices, and preserves metadata including the original-index list.
+- Generate an untracked artifact library from `franka_cube_ggx_grasps_geometry_filtered_v1.npz`:
+  - robust passing set: `[0, 1, 11, 12, 14, 24, 27]`
+  - fallback single candidate if needed: `orig012`
+- No main task code change is expected: `DextrahFrankaCubeGraspEnv` already samples uniformly from whatever compact library is supplied by `env.grasp_prior_library_path`.
+
+Validation Plan:
+- Local cheap checks: `python3 -m py_compile` for the new script and touched diagnostics/wrappers; inspect generated metadata and contents.
+- Deploy exact tracked commit to the l401 Worker A worktree using Git, rsync only the generated untracked `.npz` artifacts.
+- Run one bounded l401 reset/oracle diagnostic on the robust passing-set library with `NUM_RESETS` large enough to sample the set repeatedly but still tiny; include viewer-ready report/CSV/JSON/contact sheets/video.
+- Only if the robust-library gate passes visually and numerically, launch a bounded 1-GPU/64-env PPO smoke/eval with the robust library. No A100.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `e13e970e8b9b64f1b5cf57690772341c9754b890`
+- implementation_commit: pending
+- changed_files: planned `dextrah_lab/scene_scripts/filter_franka_cube_grasp_prior_library.py`, this worklog
+
+Acceptance:
+- Robust-library diagnostic must report reset/pregrasp quality and oracle close/lift pass for all or near-all resets and produce inspectable visual artifacts before any PPO smoke launch.
+
+## 2026-06-12T00:41:00Z - robust passing-set library export
+
+Goal:
+- Materialize the robust reset-prior library and fallback single-grasp artifact from the existing geometry-filtered compact library.
+
+Change:
+- Added `dextrah_lab/scene_scripts/filter_franka_cube_grasp_prior_library.py`.
+- Generated untracked artifact libraries:
+  - `local_results/franka_cube_grasp_prior/franka_cube_ggx_grasps_robust_pass7_20260612.npz`
+  - `local_results/franka_cube_grasp_prior/franka_cube_ggx_grasp_orig012_robust_fallback_20260612.npz`
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- base_commit: `e13e970e8b9b64f1b5cf57690772341c9754b890`
+- implementation_commit: pending
+- changed_files: `dextrah_lab/scene_scripts/filter_franka_cube_grasp_prior_library.py`, this worklog
+
+Command:
+- robust set: `uv run python dextrah_lab/scene_scripts/filter_franka_cube_grasp_prior_library.py --source local_results/franka_cube_grasp_prior/franka_cube_ggx_grasps_geometry_filtered_v1.npz --output local_results/franka_cube_grasp_prior/franka_cube_ggx_grasps_robust_pass7_20260612.npz --original_indices 0,1,11,12,14,24,27 --filter_name robust_pass7_20260612 --filter_criterion "passes Worker A alternate-grasp orientation-tracked oracle close/lift diagnostic on all 3 randomized resets" --validation_source cluster_results/l401/franka_cube_ggx_altgrasp_orient_20260612_0027_inspection/REPORT.md --fallback_original_index 12`
+- fallback: `uv run python dextrah_lab/scene_scripts/filter_franka_cube_grasp_prior_library.py --source local_results/franka_cube_grasp_prior/franka_cube_ggx_grasps_geometry_filtered_v1.npz --output local_results/franka_cube_grasp_prior/franka_cube_ggx_grasp_orig012_robust_fallback_20260612.npz --original_indices 12 --filter_name robust_fallback_orig012_20260612 --filter_criterion "single fallback candidate from Worker A robust passing set; orig012 passed all 3 randomized oracle close/lift resets" --validation_source cluster_results/l401/franka_cube_ggx_altgrasp_orient_20260612_0027_inspection/REPORT.md --fallback_original_index 12`
+
+Validation:
+- `python3 -m py_compile dextrah_lab/scene_scripts/filter_franka_cube_grasp_prior_library.py dextrah_lab/rl_games/diagnose_franka_cube_grasp_prior_reset.py` passed.
+- `bash -n cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh cluster/sbatch_eval_franka_cube_grasp_1gpu.sh` passed.
+- Robust set contents: shape `(7, 4, 4)`, confidences `[0.7567837, 0.7404581, 0.7145097, 0.7126525, 0.7091320, 0.6958998, 0.6920517]`, `filter_original_indices=[0, 1, 11, 12, 14, 24, 27]`, `fallback_original_index=12`, `tool_frame=panda_hand`, `cube_size_m=0.06`.
+- Fallback contents: shape `(1, 4, 4)`, `filter_original_indices=[12]`, `fallback_original_index=12`.
+
+Next:
+- Commit/push the filter script and worklog, deploy the exact commit to the Worker A l401 worktree, rsync only the generated untracked libraries, and launch the robust-library reset/oracle diagnostic.
