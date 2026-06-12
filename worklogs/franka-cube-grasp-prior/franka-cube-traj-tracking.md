@@ -3794,3 +3794,58 @@ Analysis:
 
 Next:
 - Launch only a smoke-scale trainability diagnostic. Use stronger existing action-alignment/teacher-force knobs first to avoid an unnecessary runtime patch: e.g. high action-alignment weight and full teacher force through the horizon for a tiny PPO run, then immediately evaluate with lower/no teacher to see whether raw close/up/gripper timing moves toward the reference.
+
+## 2026-06-11T17:45:00-07:00 - high-alignment full-teacher PPO smoke launch plan
+
+Goal:
+- Test whether the raw policy can be pushed closer to the reference action profile with a stronger action-imitation reward when the stable reference path is fully applied.
+
+Hypothesis:
+- If weak raw close/up/gripper timing is the bottleneck, a short fine-tune from the previous teacher-force epoch-5 checkpoint with high action-alignment weight and full teacher force should reduce raw-policy/reference action error quickly.
+- If raw error and partial-teacher behavior do not improve, the next issue is likely action normalization/optimization, not reference feasibility or schedule.
+
+Change:
+- No source/runtime changes.
+- Tiny PPO fine-tune from `franka_cube_traj_tracking_teacherforce_rl5b_20260611_170913` epoch-5 checkpoint.
+- Increase `trajectory_tracking_action_alignment_weight` from `15.0` to `80.0`.
+- Keep teacher force fully active through the full horizon: alpha start/end `1.0/1.0`, phase end `1.0`, anneal steps `0`.
+
+Version Control:
+- local_commit: `acc94c7c3ca6a9c72062575cdcb3da1af21b67c0`
+- remote_runtime_commit: `858402985719ec3ceb79db696a555443f976c997`
+- remote_status: detached clean; runtime source compatible with local for this no-code-change smoke.
+
+Acceptance:
+- Training job exits cleanly with checkpoints and no NaN/traceback.
+- Immediate eval artifacts after training must include at least:
+  - policy-only / alpha `0.0` instrumentation;
+  - partial teacher alpha `0.75`, phase `1.0`;
+  - full teacher alpha `1.0`, phase `1.0`.
+- Compare raw/ref close/up/gripper and L2 against the previous `1027907`/`1027919` action-semantics bundle. Do not scale PPO unless partial/no-teacher videos show plausible approach/contact/lift and target unsafe remains `0`.
+
+Command / Job:
+- command: `ssh l401 'cd /lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking && sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:45:00 --job-name=tf_align80_ft5 --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,FULL_EXPERIMENT_NAME=franka_cube_traj_tracking_teacherforce_align80_ft5_20260611_174500,NUM_ENVS=128,MAX_ITERATIONS=5,HORIZON_LENGTH=120,MINI_EPOCHS=4,MINIBATCH_SIZE=3840,CENTRAL_VALUE_MINIBATCH_SIZE=3840,DISTRIBUTED=False,MULTI_GPU=False,NPROC_PER_NODE=1,AUTO_RESUME=False,SELF_RELAUNCH=False,REQUEUE_ON_EARLY_TERM=False,SAVE_FREQUENCY=1,USE_CUDA_GRAPH=False,CUBE_SPAWN_XY_RANDOMIZATION=0.08,CHECKPOINT=/results/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_teacherforce_rl5b_20260611_170913/nn/last_dextrah_franka_cube_traj_tracking_ep_5_rew_3560.5405.pth,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_WEIGHT=80.0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_PHASE_START=0.0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_SHARPNESS=1.0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_USE_CONTACT_GATE=False,TRAJECTORY_TRACKING_TEACHER_FORCE_ENABLED=True,TRAJECTORY_TRACKING_TEACHER_FORCE_ALPHA_START=1.0,TRAJECTORY_TRACKING_TEACHER_FORCE_ALPHA_END=1.0,TRAJECTORY_TRACKING_TEACHER_FORCE_PHASE_END=1.0,TRAJECTORY_TRACKING_TEACHER_FORCE_ANNEAL_STEPS=0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_COMPARE_RAW_POLICY=True cluster/sbatch_train_teacher_8gpu.sh'`
+- job_id: `1027925`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_teacherforce_align80_ft5_20260611_174500`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_1027925.out`
+
+## 2026-06-11T17:48:20-07:00 - high-alignment full-teacher PPO smoke result
+
+Goal:
+- Close out job `1027925` before launching eval artifacts from its checkpoint.
+
+Result:
+- job_id: `1027925`
+- status: completed `0:0`, elapsed `00:00:51`, node `pool0-00030`
+- local_run_dir: `cluster_results/l401/franka_cube_traj_tracking_teacherforce_align80_ft5_20260611_174500`
+- local_log: `cluster_results/l401/slurm_logs/teacher_8gpu_1027925.out`
+- checkpoint: `/results/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_teacherforce_align80_ft5_20260611_174500/nn/last_dextrah_franka_cube_traj_tracking_ep_6_rew_464.60687.pth`
+- train env: observation space `72`, action space `7`, `trajectory_tracking_action_alignment_weight=80.0`, teacher force alpha start/end `1.0/1.0`, phase end `1.0`, anneal steps `0`, reference path `/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json`.
+
+Important nuance:
+- This is not a five-new-epoch run. RL-Games restored the prior runtime state at epoch `5`; with `max_iterations=5`, the run advanced only one rollout/update and stopped at `epoch 6/5`.
+- Treat this checkpoint as a tiny high-alignment diagnostic, not a clean training pass or a scale-up signal. The reward suffix `464.60687` is not by itself a behavior verdict.
+
+Next:
+- Launch bounded 520-step video evals from this epoch-6 checkpoint at teacher alpha `0.0`, `0.75`, and `1.0`, all with phase end `1.0` and no alpha anneal.
+- Acceptance remains visual and metric based: target unsafe max `0`; no reset pathology; report raw/reference/applied action components; policy-only or partial-teacher behavior must approach/contact/lift before any longer PPO.
