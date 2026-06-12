@@ -65,7 +65,7 @@ Version Control:
 - worklog: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/worklogs/franka-cube-grasp-prior/franka-cube-traj-tracking.md
 - branch: codex/franka-cube-trajectory-tracking
 - base_commit: 589dd81c9f9691fcda3a3d4b9ad714d90dae4794
-- implementation_commit: `a0a2fdff4c97ca36abdd52fad3d2239991a98462`
+- implementation_commit: `9a8f697ef718f1d1fedfa1b9b51af6b8f54f5c2b` (source checkpoint; following worklog-only commit records this hash)
 - push/pull: n/a, no cluster launch
 - changed_files: dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_reference.py; dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env_cfg.py; dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env.py; dextrah_lab/scene_scripts/make_franka_cube_traj_tracking_reference.py; dextrah_lab/tasks/dextrah_franka_cube_grasp/gym_setup.py; worklogs/franka-cube-grasp-prior/franka-cube-traj-tracking.md
 - remote_commit/status: n/a/local only
