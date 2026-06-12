@@ -5453,6 +5453,93 @@ Next:
 - Fetch videos/logs/metrics, validate mp4 metadata, generate reports/contact sheets, and record `viz-open` URLs before any further decision.
 - No PPO/RL scale-up.
 
+## 2026-06-11T22:14:00-07:00 - stage/alpha-conditioned targeted visual gate launch
+
+Goal:
+- Produce minimal visual sanity artifacts for the selector result: policy-only failure, lowest-alpha transient success, and alpha1 context.
+
+Version Control:
+- local_commit: `986b584cd0052de6308d750c7c202bf2a1a0ebc0`
+- remote_commit/status: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking` detached at `986b584cd0052de6308d750c7c202bf2a1a0ebc0`, clean.
+
+Common Config:
+- checkpoint: `/results/bc/franka_cube_traj_tracking_bc_stagealpha_tm025_a050_a075_a100_fix_20260611_220300/nn/bc_reference_action_imitation.pth`
+- task/action source: `Dextrah-Franka-Cube-Grasp-Traj-Tracking` / `policy_reference_mix`
+- num_envs/steps: `4 / 520`
+- capture_video/video_length: `True / 520`
+- seed: `73`
+- cube randomization: `0.08`
+- reference: `/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json`
+- reference caveat: `curobo_validated=false`
+
+Jobs:
+- alpha0.00 failure: job `1028146`, run `franka_cube_traj_tracking_bc_stagealpha_vis_a000_env0_520_20260611_221400`, `CAMERA_ENV_INDEX=0`, `VIDEO_NAME_PREFIX=stg-a000-env0`.
+- alpha0.25 lowest-alpha success candidate: job `1028147`, run `franka_cube_traj_tracking_bc_stagealpha_vis_a025_env2_520_20260611_221400`, `CAMERA_ENV_INDEX=2`, `VIDEO_NAME_PREFIX=stg-a025-env2`.
+- alpha1.00 context: job `1028148`, run `franka_cube_traj_tracking_bc_stagealpha_vis_a100_env1_520_20260611_221400`, `CAMERA_ENV_INDEX=1`, `VIDEO_NAME_PREFIX=stg-a100-env1`.
+
+Acceptance:
+- Fetch logs/run dirs and inspect `metrics.json`, trace CSV/JSONL, train/eval consistency, video metadata/frame counts, contact sheets, and reports.
+- Confirm target unsafe max stays `0`.
+- Confirm whether alpha0.25 env2 visually shows the transient lift implied by selector metrics.
+- No PPO/RL scale-up.
+
+Active Jobs:
+- `1028146`, `1028147`, `1028148`.
+
+## 2026-06-11T22:20:00-07:00 - stage/alpha-conditioned targeted visual gate result
+
+Job Results:
+- alpha0.00 failure video job `1028146`: `COMPLETED 0:0`, elapsed `00:01:29`, node `pool0-00015`.
+- alpha0.25 lowest-alpha success video job `1028147`: `COMPLETED 0:0`, elapsed `00:01:30`, node `pool0-00030`.
+- alpha1.00 context video job `1028148`: `COMPLETED 0:0`, elapsed `00:01:40`, node `pool0-00017`.
+- fetched run dirs and logs locally:
+  - `cluster_results/l401/franka_cube_traj_tracking_bc_stagealpha_vis_a000_env0_520_20260611_221400`
+  - `cluster_results/l401/franka_cube_traj_tracking_bc_stagealpha_vis_a025_env2_520_20260611_221400`
+  - `cluster_results/l401/franka_cube_traj_tracking_bc_stagealpha_vis_a100_env1_520_20260611_221400`
+  - `cluster_results/l401/slurm_logs/eval_franka_cube_1028146.out`
+  - `cluster_results/l401/slurm_logs/eval_franka_cube_1028147.out`
+  - `cluster_results/l401/slurm_logs/eval_franka_cube_1028148.out`
+
+Artifact Bundle:
+- combined visual-gate report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_stagealpha_visual_gate_20260611_2214/report.md`
+- combined visual-gate CSV: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_stagealpha_visual_gate_20260611_2214/summary.csv`
+- alpha0.00 report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_stagealpha_vis_a000_env0_520_20260611_221400_artifacts/report.md`
+- alpha0.00 contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_stagealpha_vis_a000_env0_520_20260611_221400_artifacts/video_contact_sheet.png`
+- alpha0.00 video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_stagealpha_vis_a000_env0_520_20260611_221400/videos/stg-a000-env0-step-0.mp4`
+- alpha0.25 report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_stagealpha_vis_a025_env2_520_20260611_221400_artifacts/report.md`
+- alpha0.25 default contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_stagealpha_vis_a025_env2_520_20260611_221400_artifacts/video_contact_sheet.png`
+- alpha0.25 success-window contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_stagealpha_vis_a025_env2_520_20260611_221400_artifacts/success_window_contact_sheet.png`
+- alpha0.25 video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_stagealpha_vis_a025_env2_520_20260611_221400/videos/stg-a025-env2-step-0.mp4`
+- alpha1.00 report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_stagealpha_vis_a100_env1_520_20260611_221400_artifacts/report.md`
+- alpha1.00 default contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_stagealpha_vis_a100_env1_520_20260611_221400_artifacts/video_contact_sheet.png`
+- alpha1.00 success-window contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_stagealpha_vis_a100_env1_520_20260611_221400_artifacts/success_window_contact_sheet.png`
+- alpha1.00 video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_stagealpha_vis_a100_env1_520_20260611_221400/videos/stg-a100-env1-step-0.mp4`
+
+Validation:
+- `ffprobe` verified all three MP4s are `1280x720`, `520` frames, `8.666667s`, `60/1`.
+- summarizer generated per-run `report.md`, `summary.json/csv`, `success_diagnostics.json/csv`, `success_window_trace.csv`, `train_eval_consistency.json`, `trajectory_trace_plot.png`, and `video_contact_sheet.png`.
+- train/eval consistency artifact status is `train_config_unavailable` because no training env YAML was supplied for BC checkpoints; expected eval overrides are recorded, and real mismatch list is empty.
+- reference caveat remains explicit: `curobo_validated=false`, `source_tag=graspgenx_curobo_60mm_export_pending_exact_validation`.
+
+Metrics:
+- alpha0.00 env0: success ever `0/4`, final success `0`, max success `0`, max lift `0.015447 m`, target unsafe max `0`, clearance min `0.065114 m`, final EE/finger distances `0.179766/0.209505 m`, raw/ref L2 mean `1.572714`.
+- alpha0.25 env2: success ever `3/4`, final success `0`, max success `0.5`, max lift `0.082562 m`, target unsafe max `0`, clearance min `0.065114 m`, final EE/finger distances `0.144186/0.184688 m`, raw/ref L2 mean `0.273926`, done-after-success count `3`.
+- alpha1.00 env1: success ever `3/4`, final success `0`, max success `0.75`, max lift `0.101156 m`, target unsafe max `0`, clearance min `0.065114 m`, final EE/finger distances `0.136633/0.177053 m`, raw/ref L2 mean `0.020483`, done-after-success count `3`.
+
+Visual Diagnosis:
+- alpha0.00 video/contact sheet shows the policy-only hand moves away/around the cube and never lifts. This remains the policy-only failure mode.
+- alpha0.25 env2 success-window contact sheet visually confirms a real transient lift during the metric success window (`first_success_step=374`, `last_success_step=386` for camera env2), followed by cube back on the table after success termination/reset.
+- alpha1.00 success-window contact sheet visually confirms the teacher/reference context also lifts during the success window (`first_success_step=381`, `last_success_step=393` for camera env1), then resets/drops by final frame.
+
+Verdict:
+- Stage/alpha-conditioned BC improves the assisted trajectory-tracking handoff: the lowest tested assisted alpha with visual success is now `0.25`, compared with tm0.25 DAgger's best verified low-alpha result at alpha `0.5`.
+- This is positive for teacher-assisted trajectory tracking only. Policy-only alpha `0.0` remains failed, and final success is zero in assisted runs because normal success termination/reset occurs after transient lift.
+- This is not a PPO/RL/full-scale gate. Next work should remain bounded and should either pursue no-reset/stability analysis for alpha0.25 or supervised policy-only improvement; do not launch PPO/RL scale-up from this evidence.
+- Old `actionscale-rewinf-diag-video480-step-0.mp4` / job `1027753` remains obsolete failed diagnostic evidence.
+
+Active Jobs:
+- none for Worker B after jobs `1028146`-`1028148` completed.
+
 ## 2026-06-11T21:36:00-07:00 - trajectory-tracking handoff comparison plan
 
 Goal:
