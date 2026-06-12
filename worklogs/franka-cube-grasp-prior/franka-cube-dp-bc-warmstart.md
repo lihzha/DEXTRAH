@@ -6897,7 +6897,70 @@ Acceptance:
   away from the cube, policy output/conditioning remains the blocker.
 
 Result:
-- status: running.
+- status: completed and inspected; no DP/RL scale-up.
+- Slurm: `COMPLETED 0:0`, elapsed `00:02:21`.
+- local artifact dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_video160_chunk1_sourcejoint_ep1s0_20260611_185939`
+- fetched artifacts:
+  `metrics.json`, `policy_trace.json`, `support_trace.csv/json`,
+  `eval_config.json`, stdout log, mp4, labeled contact sheet,
+  `closed_loop_support_report.md`, `closed_loop_support_trace.png`,
+  `closed_loop_action_components.png`,
+  `closed_loop_support_summary.json`, `closed_loop_support_key_rows.csv`.
+- viewer URLs:
+  - report:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_video160_chunk1_sourcejoint_ep1s0_20260611_185939/closed_loop_support_report.md`
+  - support plot:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_video160_chunk1_sourcejoint_ep1s0_20260611_185939/closed_loop_support_trace.png`
+  - action plot:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_video160_chunk1_sourcejoint_ep1s0_20260611_185939/closed_loop_action_components.png`
+  - contact sheet:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_video160_chunk1_sourcejoint_ep1s0_20260611_185939/closed_loop_contact_sheet.jpg`
+  - video:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_video160_chunk1_sourcejoint_ep1s0_20260611_185939/videos/franka-cube-dp-weighted-sourcejoint-step-0.mp4`
+- video metadata: `1280x720`, `159` frames, `2.65 s`, `60 fps`.
+- reset gate: exact again. `source_joint_reset_available=true`,
+  `joint_linf_diff_after_write_env0=0`, `lowdim_l2_diff_env0=0`,
+  `cube_minus_ee_l2_diff_env0=0`.
+- final metrics:
+  success/window success `0/0`, reward mean/final `4.284/8.158`,
+  cube lift max/final `0.10099 m`, final EE-to-cube `0.00976 m`,
+  final finger-center-to-cube `0.04032 m`, final gripper width
+  `0.04650 m`, final cube goal height error `0.05901 m`.
+- support/action trace:
+  history gaps `[0,1]`; nearest phases `align_open=28`,
+  `close_hold=65`, `lift=67`; support distance start/final
+  `0.04035/1.395`. First negative gripper at step `27`; first hard
+  close at step `29`, with EE-to-cube already around `6.7 mm`.
+- visual inspection:
+  the labeled contact sheet and mp4 show the hand starts near/contacting the
+  cube, closes/lifts it, and holds it near the gripper. This is not the old
+  drift-away/ignore-cube failure mode.
+
+Analysis:
+- The matched source-joint reset resolves the earlier closed-loop support
+  mismatch for this checkpoint: reset lowdim, cube pose, and source joints all
+  match, and the policy reaches/lifts the cube.
+- The run still fails the task success gate. The cube success predicate in
+  `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`
+  requires `cube_lift_height >= cube_success_lift_height`; the configured
+  threshold is `0.12 m`, while this bounded run reaches `0.10099 m`.
+  XY and hand-distance terms are already within tolerance, so the immediate
+  measured blocker is insufficient lift height.
+- The gripper remains partly open at about `4.65 cm`. It is not directly part
+  of the success predicate, but it likely limits lift robustness and should be
+  audited before any closed-loop scale-up.
+- This result justifies more contact-aware relabel/policy debugging, not
+  full DP BC or RL warm-start. The next bounded path should target lift-height
+  and gripper closure/hold under matched reset, then re-test normal-reset
+  support only after the matched-reset policy reliably reaches success.
+
+Next:
+- Do not scale RL or full BC. Candidate bounded diagnostics are: extend the
+  matched-reset horizon modestly to see whether it crosses `0.12 m`, inspect
+  weighted-checkpoint gripper/lift action over the final lift rows, and/or add
+  more accepted contact-aware relabel lift support with stronger close/hold
+  before any new official DP training.
 
 ## 2026-06-11T18:58:15-07:00 - matched source-joint trace160 result
 
@@ -6981,3 +7044,35 @@ Next:
   `NUM_STEPS=160`, fetch video plus metrics/traces, generate contact sheet if
   possible, then decide whether to patch for longer lift horizon, gripper
   schedule/weighting, or a larger contact-aware relabel set.
+
+## 2026-06-11T18:59:39-07:00 - matched source-joint video160 launch
+
+Goal:
+- Produce exactly one viewer-ready video for the coherent matched source-joint
+  trace to verify visually whether the policy really contacts/lifts the cube
+  or whether metrics are misleading.
+
+Version Control:
+- implementation_commit: `bfcfa3ff01333646f1ed3d44934952aa7f7b5c0b`
+- remote_commit/status:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+  at `bfcfa3ff01333646f1ed3d44934952aa7f7b5c0b`, detached clean.
+
+Command / Job:
+- job_id: `1027987`
+- run_name:
+  `franka_cube_dp_eval_weightedgrip8_inf100_video160_chunk1_sourcejoint_ep1s0_20260611_185939`
+- command:
+  `sbatch --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart,RUN_NAME=franka_cube_dp_eval_weightedgrip8_inf100_video160_chunk1_sourcejoint_ep1s0_20260611_185939,NUM_ENVS=1,NUM_STEPS=160,NUM_INFERENCE_STEPS=100,ACTION_CHUNK_STEPS=1,CLIP_ACTIONS=1.0,SUCCESS_WINDOW=160,CAPTURE_VIDEO=True,VIDEO_LENGTH=160,VIDEO_NAME_PREFIX=franka-cube-dp-weighted-sourcejoint,PRINT_INTERVAL=20,SEED=42,DEBUG_POLICY_TRACE_MAX_CALLS=160,DEBUG_POLICY_TRACE_ENV_INDEX=0,CHECKPOINT=/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/contact_relabel_official_dp_debug_pretrain100_weightedgrip8_20260611_1843/latest.ckpt,SUPPORT_DATASET=/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/contact_relabel_set_ep8_16_24_30_s260_high30_defaultfix_20260611_175347/contact_relabel_set_accepted.npz,DEMO_RESET_DATASET=/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/contact_relabel_set_ep8_16_24_30_s260_high30_defaultfix_20260611_175347/contact_relabel_set_accepted.npz,DEMO_RESET_EPISODE=1,DEMO_RESET_STEP=0,DEMO_RESET_SOURCE_TRAJECTORY_JSON=/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed16/trajectory.json,DEMO_RESET_SOURCE_FRAME=260,OFFICIAL_DP_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/external/real-stanford-diffusion_policy cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_weightedgrip8_inf100_video160_chunk1_sourcejoint_ep1s0_20260611_185939`
+- logs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_dp_policy_1027987.out`
+
+Acceptance:
+- Same metrics as trace160 plus an inspectable mp4/contact sheet. If the video
+  confirms contact/lift, the next blocker is lift height/gripper geometry, not
+  reset drift. If video contradicts metrics, debug visualization/metrics.
+
+Result:
+- status: running.
