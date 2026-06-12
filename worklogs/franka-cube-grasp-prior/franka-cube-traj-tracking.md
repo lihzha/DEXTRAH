@@ -5192,6 +5192,75 @@ Notes:
 - Old `actionscale-rewinf-diag-video480-step-0.mp4` remains obsolete failed diagnostic evidence.
 - Compact trajectory reference remains `curobo_validated=false`.
 
+## 2026-06-11T21:20:00-07:00 - residual oracle analysis launch
+
+Implementation:
+- implementation commit: `f3e0618403da29559892aa5582045a04c68d7c6d` (`Add residual oracle gating diagnostics`), pushed to `origin/codex/franka-cube-trajectory-tracking`.
+- remote source: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking`, detached at `f3e0618403da29559892aa5582045a04c68d7c6d`.
+- remote deployment used the agent-owned bare Git mirror `/lustre/fsw/portfolios/nvr/users/lzha/src/git/DEXTRAH-franka-cube-traj-tracking.git` because l401 GitHub SSH fetch is unavailable.
+- local validation passed:
+  - `python3 -m py_compile dextrah_lab/rl_games/bc_reference_action_imitation.py dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py dextrah_lab/rl_games/analyze_traj_tracking_action_semantics.py dextrah_lab/rl_games/residual_action_adapter.py`
+  - `bash -n cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh`
+  - `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+  - `git diff --check`
+
+Command / Job:
+- job_id: `1028119`
+- run_name: `franka_cube_traj_tracking_bc_residual_oracle_tm025_tm010_20260611_212000`
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:30:00 --job-name=bc_oracle --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_bc_residual_oracle_tm025_tm010_20260611_212000,NUM_ENVS=8,COLLECTION_STEPS=520,TRAIN_STEPS=0,BATCH_SIZE=1024,LEARNING_RATE=0.00005,VALIDATION_FRACTION=0.2,LOSS_DIMS=all,EVAL_INTERVAL=1,SEED=73,COLLECTION_ACTION_SOURCE=teacher_mix,COLLECTION_TEACHER_ALPHA=0.10,REHEARSAL_DATASET_PATHS=/results/bc/franka_cube_traj_tracking_bc_dagger_tm025_all_20260611_185900/reference_action_dataset.pt,REHEARSAL_DATASET_NAMES=tm025_rehearsal,SOURCE_BATCH_MODE=balanced,SOURCE_LOSS_WEIGHTS=current_teacher_mix_alpha0p10=1__COMMA__tm025_rehearsal=0,BEST_SCORE_WEIGHTS=val_source_current_teacher_mix_alpha0p10_l2=1__COMMA__val_source_tm025_rehearsal_l2=3,EARLY_STOP_PATIENCE=0,RESIDUAL_ADAPTER_ENABLED=True,RESIDUAL_HIDDEN_DIM=64,RESIDUAL_MAX_ACTION=0.5,RESIDUAL_PRESERVE_SOURCES=tm025_rehearsal,RESIDUAL_PRESERVE_WEIGHT=50,RESIDUAL_L2_WEIGHT=0.001,RESIDUAL_GATE_ENABLED=False,SOURCE_PROBE_STEPS=200,SOURCE_PROBE_LR=0.01,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json,CHECKPOINT=/results/bc/franka_cube_traj_tracking_bc_dagger_tm025_all_20260611_185900/nn/bc_reference_action_imitation.pth cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh`
+- remote run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/bc/franka_cube_traj_tracking_bc_residual_oracle_tm025_tm010_20260611_212000`
+- remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bc_franka_cube_1028119.out`
+
+Acceptance:
+- analysis-only; `TRAIN_STEPS=0`.
+- Required artifacts: `report.md`, `bc_metrics.json`, `bc_loss_curve.csv`, `oracle_residual_source.csv`, `oracle_residual_dim.csv`, `oracle_residual_plot.png`, `bc_source_metric_plot.png`.
+- No selector/video/PPO/RL launch from this job.
+
+## 2026-06-11T21:22:05-07:00 - residual oracle analysis result
+
+Job:
+- job_id: `1028119`
+- scheduler state: `COMPLETED 0:0`, elapsed `00:01:00`, node `pool0-00015`.
+- remote run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/bc/franka_cube_traj_tracking_bc_residual_oracle_tm025_tm010_20260611_212000`
+- remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bc_franka_cube_1028119.out`
+- local fetched run_dir: `cluster_results/l401/franka_cube_traj_tracking_bc_residual_oracle_tm025_tm010_20260611_212000`
+- local fetched log: `cluster_results/l401/slurm_logs/bc_franka_cube_1028119.out`
+
+Artifacts:
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_residual_oracle_tm025_tm010_20260611_212000/report.md`
+- oracle residual plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_residual_oracle_tm025_tm010_20260611_212000/oracle_residual_plot.png`
+- oracle source CSV: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_residual_oracle_tm025_tm010_20260611_212000/oracle_residual_source.csv`
+- oracle dim CSV: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_residual_oracle_tm025_tm010_20260611_212000/oracle_residual_dim.csv`
+- metrics: `cluster_results/l401/franka_cube_traj_tracking_bc_residual_oracle_tm025_tm010_20260611_212000/bc_metrics.json`
+- source plot: `cluster_results/l401/franka_cube_traj_tracking_bc_residual_oracle_tm025_tm010_20260611_212000/bc_source_metric_plot.png`
+
+Oracle / Source-Probe Evidence:
+- `TRAIN_STEPS=0`; selected step `0`.
+- frozen-base current alpha `0.10` val L2: `0.566324`.
+- frozen-base tm0.25 rehearsal val L2: `0.035376`.
+- current alpha `0.10` oracle residual validation L2: mean `0.566324`, p95 `1.407616`, p99 `1.615753`, max `1.687153`.
+- current alpha `0.10` residual clipping at `RESIDUAL_MAX_ACTION=0.5`: dim rate `0.076884`, sample rate `0.439141`.
+- clipped-oracle achievable current alpha `0.10` val L2 with max `0.5`: `0.184034`, so max-action clipping alone explains part but not all of the gap to the `~0.079` target.
+- dominant current-source dimensions: z abs p95 `1.148`, z clip rate `0.3508`; gripper abs p95 `1.156`, gripper clip rate `0.1778`.
+- tm0.25 oracle residual validation L2: mean `0.035376`, p95 `0.081654`, p99 `0.113546`, max `0.220493`; clip rate `0`.
+- source separability probe over observations: val accuracy `0.691106` vs val baseline `0.503606`; this is moderate but not perfect separability.
+
+Decision:
+- Oracle stats justify one bounded supervised-only gated/capacity residual attempt:
+  - raise `RESIDUAL_MAX_ACTION` to `1.5` because current z/gripper p95 requirements exceed `0.5`;
+  - increase residual head capacity;
+  - enable observation gate because the source probe has nontrivial source signal;
+  - preserve tm0.25 with residual-to-zero on tm0.25 rehearsal.
+- This still does not authorize selector rollout, videos, PPO, or RL. A follow-up supervised job must pass gates first.
+
+Planned Follow-Up:
+- run name: `franka_cube_traj_tracking_bc_residual_gated_m15_tm025_tm010_<timestamp>`.
+- use same fresh alpha `0.10` collection and tm0.25 rehearsal dataset.
+- `RESIDUAL_ADAPTER_ENABLED=True`, `RESIDUAL_HIDDEN_DIM=256`, `RESIDUAL_MAX_ACTION=1.5`.
+- `RESIDUAL_GATE_ENABLED=True`, `RESIDUAL_GATE_HIDDEN_DIM=128`, `RESIDUAL_GATE_BIAS_INIT=0.0`.
+- keep base actor frozen and tm0.25 preserve source `tm025_rehearsal`.
+- supervised gates remain: tm0.25 val L2 preferred `<=0.045`, hard `<=0.055`; current alpha `0.10` val L2 materially better than `0.15143` and ideally near `~0.079`; no rollout unless gates pass.
+
 ## 2026-06-11T20:34:21-07:00 - tm0.25 actor distillation supervised launch
 
 Implementation:
