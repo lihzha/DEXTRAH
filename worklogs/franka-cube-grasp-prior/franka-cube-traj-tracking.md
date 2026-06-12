@@ -3948,3 +3948,76 @@ Plan:
 Acceptance:
 - Training must complete without traceback/NaN and produce checkpoints beyond epoch 6.
 - Eval acceptance remains metric/video based: target unsafe max `0`, no reset pathology, raw/ref action component plots show improvement, and alpha `0.75` must achieve actual lift before considering any longer training.
+
+Command / Job:
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:45:00 --job-name=tf_align80_ft10 --export=ALL,...,FULL_EXPERIMENT_NAME=franka_cube_traj_tracking_teacherforce_align80_ft10_20260611_175513,NUM_ENVS=128,MAX_ITERATIONS=10,HORIZON_LENGTH=120,MINIBATCH_SIZE=3840,CENTRAL_VALUE_MINIBATCH_SIZE=3840,CHECKPOINT=/results/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_teacherforce_rl5b_20260611_170913/nn/last_dextrah_franka_cube_traj_tracking_ep_5_rew_3560.5405.pth,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_WEIGHT=80.0,TRAJECTORY_TRACKING_TEACHER_FORCE_ALPHA_START=1.0,TRAJECTORY_TRACKING_TEACHER_FORCE_ALPHA_END=1.0,TRAJECTORY_TRACKING_TEACHER_FORCE_PHASE_END=1.0 cluster/sbatch_train_teacher_8gpu.sh`
+- job_id: `1027933`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_teacherforce_align80_ft10_20260611_175513`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_1027933.out`
+- code_commit: `2cb0fc6f8650392a3ee00d266ba134c709c0dca5`
+
+## 2026-06-11T17:57:06-07:00 - corrected high-alignment eval sweep launch
+
+Training result:
+- job_id: `1027933`
+- status: completed `0:0`, elapsed `00:01:05`, node `pool0-00030`
+- local_run_dir: `cluster_results/l401/franka_cube_traj_tracking_teacherforce_align80_ft10_20260611_175513`
+- local_log: `cluster_results/l401/slurm_logs/teacher_8gpu_1027933.out`
+- checkpoint: `/results/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_teacherforce_align80_ft10_20260611_175513/nn/last_dextrah_franka_cube_traj_tracking_ep_10_rew_9268.733.pth`
+- training advanced as intended: restored epoch `5`, then saved checkpoints for epochs `6`, `7`, `8`, `9`, and `10`.
+- reward suffix note: epoch 6-8 suffix was `15.325785`, epoch 9 `7552.5454`, epoch 10 `9268.733`; behavior verdict still requires eval videos/metrics.
+
+Common eval settings:
+- checkpoint: `/results/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_teacherforce_align80_ft10_20260611_175513/nn/last_dextrah_franka_cube_traj_tracking_ep_10_rew_9268.733.pth`
+- `NUM_ENVS=4`, `NUM_STEPS=520`, video enabled, success termination suppressed, seed `64`
+- teacher force enabled; alpha fixed per run; phase end `1.0`; no anneal; action alignment compare raw policy enabled.
+- reference caveat remains `curobo_validated=false`.
+
+Jobs:
+- alpha `0.0`: job_id `1027936`, run `franka_cube_traj_tracking_align80ft10_eval_a000_phase100_520_20260611_175706`
+- alpha `0.75`: job_id `1027937`, run `franka_cube_traj_tracking_align80ft10_eval_a075_phase100_520_20260611_175706`
+- alpha `1.0`: job_id `1027938`, run `franka_cube_traj_tracking_align80ft10_eval_a100_phase100_520_20260611_175706`
+
+Acceptance:
+- Fetch logs/runs, validate video frame counts, run summarizer, open reports/video sheets/plots with `viz-open`, and regenerate combined action-semantics comparison against pre-finetune and epoch-6 align80 artifacts.
+- If alpha `0.0` and `0.75` still do not lift, stop PPO schedule tweaks and switch to explicit supervised action-imitation/BC diagnostic.
+
+## 2026-06-11T18:06:30-07:00 - corrected high-alignment ft10 eval verdict and BC pivot
+
+Goal:
+- Close the corrected high-alignment continuation loop and decide whether additional PPO schedule/reward tweaks are justified.
+
+Result:
+- training job `1027933` completed and advanced the intended resumed updates from epoch `5` through epoch `10`.
+- eval alpha `0.0`, job `1027936`, run `franka_cube_traj_tracking_align80ft10_eval_a000_phase100_520_20260611_175706`
+  - status: completed `0:0`; video metadata valid (`1280x720`, `520` frames).
+  - metrics: success mean/final/max `0/0/0`; lift max `0.002424 m`; target unsafe max `0`; target clearance min `0.065114 m`; raw/reference L2 mean/final `1.8834/1.8332`; final EE/finger-center distances `0.2879/0.3175 m`.
+  - artifacts: `cluster_results/l401/franka_cube_traj_tracking_align80ft10_eval_a000_phase100_520_20260611_175706_artifacts/report.md`, `cluster_results/l401/franka_cube_traj_tracking_align80ft10_eval_a000_phase100_520_20260611_175706_artifacts/video_contact_sheet.png`, `cluster_results/l401/franka_cube_traj_tracking_align80ft10_eval_a000_phase100_520_20260611_175706/videos/al80ft10_a000-step-0.mp4`.
+  - viewer contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_align80ft10_eval_a000_phase100_520_20260611_175706_artifacts/video_contact_sheet.png`
+- eval alpha `0.75`, job `1027937`, run `franka_cube_traj_tracking_align80ft10_eval_a075_phase100_520_20260611_175706`
+  - status: completed `0:0`; video metadata valid (`1280x720`, `520` frames).
+  - metrics: success mean/final/max `0/0/0`; lift max `0.000615 m`; target unsafe max `0`; target clearance min `0.065114 m`; raw/reference L2 mean/final `0.8396/0.4410`; applied/reference L2 mean `0.2064`; final EE/finger-center distances `0.2335/0.2640 m`.
+  - artifacts: `cluster_results/l401/franka_cube_traj_tracking_align80ft10_eval_a075_phase100_520_20260611_175706_artifacts/report.md`, `cluster_results/l401/franka_cube_traj_tracking_align80ft10_eval_a075_phase100_520_20260611_175706_artifacts/video_contact_sheet.png`, `cluster_results/l401/franka_cube_traj_tracking_align80ft10_eval_a075_phase100_520_20260611_175706/videos/al80ft10_a075-step-0.mp4`.
+  - viewer contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_align80ft10_eval_a075_phase100_520_20260611_175706_artifacts/video_contact_sheet.png`
+- eval alpha `1.0`, job `1027938`, run `franka_cube_traj_tracking_align80ft10_eval_a100_phase100_520_20260611_175706`
+  - status: completed `0:0`; video metadata valid (`1280x720`, `520` frames).
+  - metrics: success mean/final/max `0.20625/0.75/0.75`; success ever `3/4`; lift max `0.144406 m`; target unsafe max `0`; target clearance min `0.065114 m`; applied/reference L2 mean `0.0140`; final EE/finger-center distances `0.0861/0.1280 m`.
+  - artifacts: `cluster_results/l401/franka_cube_traj_tracking_align80ft10_eval_a100_phase100_520_20260611_175706_artifacts/report.md`, `cluster_results/l401/franka_cube_traj_tracking_align80ft10_eval_a100_phase100_520_20260611_175706_artifacts/video_contact_sheet.png`, `cluster_results/l401/franka_cube_traj_tracking_align80ft10_eval_a100_phase100_520_20260611_175706/videos/al80ft10_a100-step-0.mp4`.
+  - viewer contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_align80ft10_eval_a100_phase100_520_20260611_175706_artifacts/video_contact_sheet.png`
+- combined action-semantics artifacts:
+  - report: `cluster_results/l401/franka_cube_traj_tracking_align80ft10_action_semantics_20260611_180016/action_semantics_report.md`
+  - plot: `cluster_results/l401/franka_cube_traj_tracking_align80ft10_action_semantics_20260611_180016/action_semantics_plot.png`
+  - CSV: `cluster_results/l401/franka_cube_traj_tracking_align80ft10_action_semantics_20260611_180016/action_semantics_windows.csv`
+  - viewer report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_align80ft10_action_semantics_20260611_180016/action_semantics_report.md`
+  - viewer plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_align80ft10_action_semantics_20260611_180016/action_semantics_plot.png`
+
+Analysis:
+- Corrected several-update PPO/high-alignment still leaves alpha `0.0` and alpha `0.75` with no lift, while alpha `1.0` full teacher remains successful. This cleanly preserves the prior conclusion: reference feasibility and target safety are good, but raw-policy imitation/handoff is not solved by PPO reward shaping.
+- Per-dimension action semantics show the policy learned some close/gripper behavior but still misses the lift/hold profile. In the alpha `0.75` lift window, raw close/up/gripper were about `0.486 / 0.117 / -0.486` versus reference `0.400 / 0.338 / -0.400`; the applied blend was closer (`0.421 / 0.272 / -0.421`) but still produced no lift. In the full-teacher hold window the raw policy regressed to weak/incorrect hold actions, including gripper opening, while the applied reference override succeeded.
+- This is a negative verdict for PPO schedule/teacher-force tweaking. No scale-up.
+
+Next:
+- Implement a bounded explicit supervised action-imitation/BC diagnostic for the same 72-D observation and 7-D action parameterization.
+- First source change: add an eval/export route that records policy observations, reference_delta labels, raw policy actions, applied actions, phase/progress, lift/success, and safety metadata from a full-reference/teacher rollout.
+- Second source change, if checkpoint/model access is feasible in the Isaac container: add a tiny actor overfit script that loads the same RL-Games checkpoint, minimizes MSE from raw actor output to reference labels on the exported batch, writes train/held-out action-error curves, and saves a normal RL-Games-compatible checkpoint.
+- Acceptance for the BC diagnostic: prove raw/reference MSE drops on a held-out batch, then evaluate the resulting checkpoint with alpha `0.0`, `0.75`, and `1.0` using the existing video/report/action-semantics artifact bundle. If alpha `0.0`/`0.75` still fail, debug action normalization/model-output semantics before any further RL.
