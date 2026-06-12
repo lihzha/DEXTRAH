@@ -11497,6 +11497,37 @@ Next:
   lateral-centering controller. If it passes, expand across seeds/resets and
   retrain no-EMA phase/progress BC.
 
+## 2026-06-12T03:03:46-07:00 - launch true normal-cube relabel gate
+
+Goal:
+- Check whether the contact-aware controller can produce an executable
+  close/lift demonstration from the actual normal task reset state before
+  adding any new BC training data.
+
+Command / Job:
+- job_id: `1028349`
+- run:
+  `franka_cube_contact_relabel_normalcube_ep16_seed42_20260612_030346`
+- source:
+  l401 worktree detached at `9c7d8b56b034243aa42e93508e4ebc6cf3d0ab4a`
+- reset:
+  `RESET_JOINT_BLEND_ALPHA=0.0`, `RESET_CUBE_POS_BLEND_ALPHA=0.0`,
+  task reset seed `42`, source episode `16` only for reference orientation.
+- controller:
+  `ORIENTATION_MODE=source`, `POSE_ACTION_FILTER=scale`,
+  `POSE_ACTION_LIMIT=0.95`, `CONTACT_ALIGN_STEPS=320`,
+  `CONTACT_ALIGN_REFERENCE=live_cube`, `CONTACT_GATE_MODE=left_right`,
+  `REQUIRE_CONTACT_GATE=True`, `LATERAL_CENTERING_GAIN=1.0`,
+  `LATERAL_CENTERING_LIMIT=0.045`, `LATERAL_SEARCH_AMPLITUDE=0.008`,
+  `CLOSE_STEPS=80`, `LIFT_STEPS=160`, video enabled.
+
+Acceptance:
+- Fetch and inspect aggregate report, rollout report, summary, video, and
+  contact sheet.
+- If the hard gate passes visually and metrically, expand normal-cube relabels
+  across seeds and train a new no-EMA phase/progress BC.
+- If it fails, debug the normal-reset relabel controller before any BC training.
+
 ## 2026-06-12T02:41:25-07:00 - 32-demo full-pick exact reset failed
 
 Goal:
