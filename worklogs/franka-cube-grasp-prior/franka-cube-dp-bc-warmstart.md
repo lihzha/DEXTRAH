@@ -9099,3 +9099,115 @@ Planned bounded launch:
   - `FINGER_GATE_MAX_DISTANCE=0.075`
   - `FINGER_GATE_BALANCE_THRESHOLD=0.015`
 - Acceptance remains the same hard relabel gate plus video/trace inspection.
+
+## 2026-06-11T22:12:17-07:00 - launch left/right contact gate alpha0.75
+
+Goal:
+- Test whether explicit left/right finger geometry plus live-cube lateral
+  centering/search can recover alpha0.75 before close/lift.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- implementation_commit: `c68df5c88df843fd8d9d7c3fe92fc6ca162024ee`
+- remote_commit: `c68df5c88df843fd8d9d7c3fe92fc6ca162024ee`
+- push/deploy: pushed to origin and l401 transfer repo; remote worktree
+  checked out detached at the same commit.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/contact_aware_franka_cube_rollout.py` passed.
+- `bash -n cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh` passed.
+- `git diff --check` passed.
+
+Command / Job:
+- job_id: `1028145`
+- run_name:
+  `franka_cube_contact_relabel_lrcentering_ep16s260_a0p75_20260611_221000`
+- command:
+  `sbatch --parsable --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart,RUN_NAME=franka_cube_contact_relabel_lrcentering_ep16s260_a0p75_20260611_221000,DATASET=/results/dp_bc/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz,TRAJECTORY_ROOT=/results/dp_bc/curobo_plans,SPEC_COUNT=1,SPEC_0=16:260:/results/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed16/trajectory.json:0.75,VARIANT=center_high30,ORIENTATION_MODE=source,POSE_ACTION_FILTER=scale,POSE_ACTION_LIMIT=0.95,ALIGN_STEPS=0,CONTACT_ALIGN_STEPS=160,CONTACT_ALIGN_REFERENCE=live_cube,CONTACT_ALIGN_THRESHOLD=0.055,CONTACT_GATE_MODE=left_right,FINGER_GATE_MAX_DISTANCE=0.075,FINGER_GATE_BALANCE_THRESHOLD=0.015,REQUIRE_CONTACT_GATE=True,LATERAL_CENTERING_GAIN=0.75,LATERAL_CENTERING_LIMIT=0.025,LATERAL_SEARCH_AMPLITUDE=0.004,LATERAL_SEARCH_PERIOD=32,CLOSE_STEPS=80,LIFT_STEPS=160,LIFT_HEIGHT=0.22,FINGER_GAIN=0.75,CLIP_ACTIONS=1.0,CAPTURE_VIDEO=True,VIDEO_LENGTH=400,VIDEO_NAME_PREFIX=franka-cube-contact-lrcentering,PRINT_INTERVAL=20,SEED=42,GATE_MIN_LIFT=0.10,GATE_MAX_POSE_CLIP_FRACTION=0.0,GATE_MAX_FINAL_EE_TO_CUBE=0.05,GATE_MAX_FINAL_FINGER_TO_CUBE=0.08 cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh`
+- remote run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/contact_relabel_sets/franka_cube_contact_relabel_lrcentering_ep16s260_a0p75_20260611_221000`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/contact_aware_franka_cube_relabel_set_1028145.out`
+
+Gate:
+- Same hard relabel gate: final/max lift, zero executed clipping, final
+  EE/finger distances, and visual contact/lift. If this fails, no DP/RL.
+
+## 2026-06-11T22:15:49-07:00 - left/right contact gate alpha0.75 result and official-DP smoke plan
+
+Goal:
+- Record the accepted alpha0.75 left/right contact-gate diagnostic and move
+  one bounded step to an official Diffusion Policy smoke on its accepted relabel
+  NPZ.
+
+Result:
+- job_id: `1028145`
+- run_name:
+  `franka_cube_contact_relabel_lrcentering_ep16s260_a0p75_20260611_221000`
+- scheduler status: `COMPLETED 0:0`.
+- local artifact dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_lrcentering_ep16s260_a0p75_20260611_221000`
+- accepted relabel NPZ:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_lrcentering_ep16s260_a0p75_20260611_221000/contact_relabel_set_accepted.npz`
+- accepted NPZ shape: `obs (240, 21)`, `action (240, 7)`,
+  `episode_ends [240]`.
+- phase counts: `-1: 22`, `1: 80`, `2: 138`.
+- hard-gate metrics:
+  - `final/max lift=0.1356/0.1356 m`
+  - `final EE-to-cube=0.0298 m`
+  - `final finger-center-to-cube=0.0581 m`
+  - `max_pose_action_clip_fraction=0.0`
+  - `final_gripper_width=0.04174 m`
+- report says:
+  `PASS: all contact-aware rollouts satisfied the hard relabel gate; this only permits a tiny official-DP smoke proposal.`
+- visual contact sheet was inspected. It is plausible enough for the next
+  bounded official-DP smoke, but this is still a single-episode relabel
+  artifact and not BC/RL readiness.
+
+Viewer URLs:
+- relabel report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_lrcentering_ep16s260_a0p75_20260611_221000/contact_relabel_set_report.md`
+- trace plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_lrcentering_ep16s260_a0p75_20260611_221000/rollouts/ep16s260_a0p75/contact_rollout_plot.png`
+- contact sheet:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_lrcentering_ep16s260_a0p75_20260611_221000/rollouts/ep16s260_a0p75/contact_sheet_lrcentering_1028145.jpg`
+- video:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_lrcentering_ep16s260_a0p75_20260611_221000/rollouts/ep16s260_a0p75/videos/franka-cube-contact-lrcentering-ep16s260_a0p75-step-0.mp4`
+
+Official DP smoke plan:
+- Use the official `real-stanford/diffusion_policy` checkout already
+  established for this branch:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/diffusion_policy`
+  at commit `5ba07ac6661db573af695b419a7947ecb704690f`, remote
+  `https://github.com/real-stanford/diffusion_policy`.
+- Run locally in the established official-DP venv:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/venv`.
+- Because this accepted NPZ has only one episode, a meaningful held-out episode
+  split is not feasible. Set `task.dataset.val_ratio=0.0` and treat validation
+  metrics as train-distribution mechanics only. Use checkpoint action smokes as
+  the replay-style offline artifact.
+- Train command scope:
+  - official `train.py`;
+  - `policy._target_=dextrah_lab.offline_dp_bc.weighted_diffusion_policy.WeightedDiffusionUnetLowdimPolicy`;
+  - `+policy.action_loss_weights=[1,1,1,1,1,1,8]`;
+  - `pred_action_steps_only=true`;
+  - `task.dataset.action_normalizer=limits_clamp_constant`;
+  - `policy.num_inference_steps=100`;
+  - tiny local run: `training.num_epochs=40`, `training.max_train_steps=10`,
+    `training.max_val_steps=1`, batch size `16`.
+- Required artifacts:
+  - resolved Hydra config;
+  - `logs.json.txt` and parsed loss table/plot;
+  - checkpoint path;
+  - checkpoint action-range smokes for `first`, `gripper_closed`,
+    `lift_high`, and the explicit close-boundary row if feasible;
+  - gripper/action semantics plot/report;
+  - relabel contact sheet/video links as visual sanity context.
+
+Acceptance:
+- Official-DP config/model/training runs without non-finite losses and writes a
+  checkpoint.
+- Loss decreases on this tiny single-episode smoke.
+- Checkpoint action smokes are finite and have sensible gripper sign for
+  open/closed/lift rows. Failure blocks closed-loop eval and any DP/RL scale-up.
