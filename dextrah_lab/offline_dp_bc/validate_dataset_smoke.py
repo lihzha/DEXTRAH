@@ -55,6 +55,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--horizon", type=int, default=8)
     parser.add_argument("--pad-before", type=int, default=1)
     parser.add_argument("--pad-after", type=int, default=3)
+    parser.add_argument("--expected-obs-dim", type=int, default=21)
+    parser.add_argument(
+        "--action-normalizer",
+        choices=("identity", "limits", "limits_clamp_constant"),
+        default="identity",
+    )
+    parser.add_argument("--val-ratio", type=float, default=0.5)
     return parser.parse_args()
 
 
@@ -82,14 +89,15 @@ def main() -> None:
         horizon=args.horizon,
         pad_before=args.pad_before,
         pad_after=args.pad_after,
-        val_ratio=0.5,
+        val_ratio=float(args.val_ratio),
+        action_normalizer=str(args.action_normalizer),
     )
     if len(dataset) == 0:
         raise RuntimeError("Dataset has zero train samples")
     sample = dataset[0]
     obs = sample["obs"].numpy()
     action = sample["action"].numpy()
-    if obs.shape != (args.horizon, 21):
+    if obs.shape != (args.horizon, int(args.expected_obs_dim)):
         raise RuntimeError(f"Unexpected obs sample shape {obs.shape}")
     if action.shape != (args.horizon, 7):
         raise RuntimeError(f"Unexpected action sample shape {action.shape}")

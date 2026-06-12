@@ -9589,3 +9589,92 @@ Expected artifacts:
 Next:
 - Run and monitor the local smoke. If the offline gate is `needs_review`, do
   not launch Isaac eval; analyze and patch the offline semantics path instead.
+
+## 2026-06-11T22:38:05-07:00 - official DP alpha0.75 set4 smoke result and phase-progress plan
+
+Goal:
+- Inspect the bounded official-DP smoke on the 4-episode alpha0.75 contact
+  relabel set and decide whether the checkpoint is eligible for closed-loop
+  eval.
+
+Result:
+- status: `needs_review`; no closed-loop DP eval, RL, or broad training is
+  allowed from this checkpoint.
+- run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_lrcentering_a075_set4_official_dp_smoke_20260611_223202`
+- dataset:
+  `obs (936,21)`, `action (936,7)`, `episode_ends [240,480,706,936]`,
+  `val_ratio=0.25`, `limits_clamp_constant` action normalizer.
+- official DP:
+  `real-stanford/diffusion_policy` at
+  `5ba07ac6661db573af695b419a7947ecb704690f`.
+- loss gate:
+  - train loss `2.10234 -> 0.126737`
+  - val loss `2.11187 -> 0.590239`
+  - train action MSE `0.461013 -> 0.032911`
+  - checkpoint written:
+    `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_lrcentering_a075_set4_official_dp_smoke_20260611_223202/official_dp_train/checkpoints/latest.ckpt`
+- action/gripper gate:
+  - `action_range_status=pass`
+  - `action_range_semantics=needs_review`
+  - corrected 100-step action-semantics audit:
+    `gripper_gate_pass=false`
+  - open sign match `0.80`
+  - closed/lift sign match `0.944444`
+  - closed/lift selector rows mostly pass, but exact close-boundary rows are
+    unstable:
+    row `22` and row `490` can predict positive/open gripper despite
+    `label=-1`.
+
+Viewer URLs:
+- official DP report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_lrcentering_a075_set4_official_dp_smoke_20260611_223202/official_dp_pretrain_report.md`
+- loss plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_lrcentering_a075_set4_official_dp_smoke_20260611_223202/loss_curves.png`
+- gripper semantics plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_lrcentering_a075_set4_official_dp_smoke_20260611_223202/action_semantics_100steps/gripper_label_vs_prediction.png`
+- per-channel action plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_lrcentering_a075_set4_official_dp_smoke_20260611_223202/action_semantics_100steps/per_channel_first_action_scatter.png`
+- source relabel contact sheet:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_lrcentering_ep8_16_24_30_a0p75_20260611_2224/contact_sheet_2x2.jpg`
+
+Analysis:
+- Support expansion alone improved the dataset size and validation loss, but it
+  did not solve the close-boundary/open ambiguity.
+- The key ambiguity is structural: at first close, the current lowdim state can
+  still have open gripper width, while the correct action should switch to
+  close. The 21D state does not encode contact-controller phase or progress, so
+  the policy has to infer a time switch from a small support set.
+- The next bounded route is an offline-only phase/progress-conditioned smoke:
+  append contact phase one-hot plus episode progress to the accepted NPZ and
+  test whether official DP action semantics become coherent. This is not a
+  closed-loop eval-ready bridge; a runtime eval would need a matching feature
+  provider or deterministic schedule.
+
+Change for next attempt:
+- Add `make_phase_progress_dataset.py` to create a 25D offline diagnostic NPZ
+  from the accepted contact relabel set.
+- Update existing dataset/checkpoint/report utilities so they accept augmented
+  observation dimensions and direct-only checkpoint smokes without PPO bridge
+  validation.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/offline_dp_bc/make_phase_progress_dataset.py dextrah_lab/offline_dp_bc/make_lowdim_dataset_report.py dextrah_lab/offline_dp_bc/validate_dataset_smoke.py dextrah_lab/offline_dp_bc/validate_official_checkpoint_smoke.py dextrah_lab/offline_dp_bc/make_official_dp_pretrain_report.py dextrah_lab/offline_dp_bc/diagnose_dp_action_semantics.py`: passed.
+- `git diff --check`: passed.
+
+Version Control:
+- base_commit: `4f3f6140f8bd3f0af1fc2a2bfb1e09307bff4248`
+- implementation_commit: `pending`
+- changed_files:
+  `dextrah_lab/offline_dp_bc/make_phase_progress_dataset.py`,
+  `dextrah_lab/offline_dp_bc/make_lowdim_dataset_report.py`,
+  `dextrah_lab/offline_dp_bc/validate_dataset_smoke.py`,
+  `dextrah_lab/offline_dp_bc/validate_official_checkpoint_smoke.py`,
+  `dextrah_lab/offline_dp_bc/make_official_dp_pretrain_report.py`,
+  worklog.
+
+Next:
+- Commit and push the phase/progress offline tooling.
+- Run one bounded official-DP smoke on the 25D phase/progress NPZ:
+  dataset report, direct-only checkpoint range smokes, corrected action
+  semantics report, and pretrain report. No closed-loop eval/RL.

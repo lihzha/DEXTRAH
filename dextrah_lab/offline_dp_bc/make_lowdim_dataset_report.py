@@ -48,6 +48,12 @@ ACTION_FIELD_NAMES = [
 ]
 
 
+def _field_names(base_names: list[str], dim: int, prefix: str) -> list[str]:
+    if dim <= len(base_names):
+        return base_names[:dim]
+    return base_names + [f"{prefix}_{idx}" for idx in range(len(base_names), dim)]
+
+
 def _to_builtin(value: Any) -> Any:
     if hasattr(value, "detach"):
         value = value.detach().cpu().numpy()
@@ -226,8 +232,13 @@ def main() -> None:
     )
     val_dataset = dataset.get_validation_dataset()
     sample = dataset[0]
-    obs_stats = _vector_stats(obs, OBS_FIELD_NAMES)
-    action_stats = _vector_stats(action, ACTION_FIELD_NAMES)
+    obs_base_names = OBS_FIELD_NAMES
+    if obs.shape[1] > len(OBS_FIELD_NAMES) and "phase_progress_features" in data.files:
+        obs_base_names = OBS_FIELD_NAMES + [str(v) for v in np.asarray(data["phase_progress_features"]).tolist()]
+    obs_names = _field_names(obs_base_names, int(obs.shape[1]), "obs_extra")
+    action_names = _field_names(ACTION_FIELD_NAMES, int(action.shape[1]), "action_extra")
+    obs_stats = _vector_stats(obs, obs_names)
+    action_stats = _vector_stats(action, action_names)
     normalizer = _normalizer_summary(dataset)
 
     summary = {

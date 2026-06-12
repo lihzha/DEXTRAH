@@ -125,13 +125,14 @@ def _dataset_lowdim_window(
     *,
     row_selector: str,
     row_index: int | None,
+    expected_obs_dim: int,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     data = np.load(dataset_path, allow_pickle=False)
     obs = np.asarray(data["obs"], dtype=np.float32)
     action = np.asarray(data["action"], dtype=np.float32)
     episode_ends = np.asarray(data["episode_ends"], dtype=np.int64)
-    if obs.ndim != 2 or obs.shape[1] != FRANKA_CUBE_LOWDIM_OBS_DIM:
-        raise ValueError(f"Expected obs shape (N, {FRANKA_CUBE_LOWDIM_OBS_DIM}), got {obs.shape}")
+    if obs.ndim != 2 or obs.shape[1] != int(expected_obs_dim):
+        raise ValueError(f"Expected obs shape (N, {expected_obs_dim}), got {obs.shape}")
     if action.ndim != 2 or action.shape[1] != FRANKA_CUBE_ACTION_DIM:
         raise ValueError(f"Expected action shape (N, {FRANKA_CUBE_ACTION_DIM}), got {action.shape}")
     if obs.shape[0] != action.shape[0]:
@@ -186,6 +187,12 @@ def main() -> None:
         help="Dataset rows used to build the lowdim observation window.",
     )
     parser.add_argument("--row-index", type=int, default=None, help="Explicit dataset row start index")
+    parser.add_argument("--expected-obs-dim", type=int, default=FRANKA_CUBE_LOWDIM_OBS_DIM)
+    parser.add_argument(
+        "--direct-only",
+        action="store_true",
+        help="Skip PPO bridge checks. Use for offline augmented-observation diagnostics.",
+    )
     parser.add_argument(
         "--warm-history-from-dataset",
         action="store_true",
@@ -231,24 +238,36 @@ def main() -> None:
         n_action_steps,
         row_selector=str(args.row_selector),
         row_index=args.row_index,
+        expected_obs_dim=int(args.expected_obs_dim),
     )
-    ppo_obs = embed_lowdim_obs_in_ppo_obs(lowdim_seq[:, -1])
-    roundtrip = np.asarray(ppo_obs[..., 18:21])
-    history = LowdimObsHistory(num_envs=lowdim_seq.shape[0], n_obs_steps=n_obs_steps)
-    if args.warm_history_from_dataset:
-        for obs_t in range(max(0, n_obs_steps - 1)):
-            history.push(lowdim_seq[:, obs_t])
 
     with torch.no_grad():
         direct = policy.predict_action({"obs": torch.as_tensor(lowdim_seq, dtype=torch.float32, device=args.device)})
-        bridge_action = predict_action_from_ppo_obs(policy, ppo_obs, history)
+        bridge_action = None
+        ppo_obs = None
+        roundtrip = None
+        if not bool(args.direct_only):
+            if int(args.expected_obs_dim) != FRANKA_CUBE_LOWDIM_OBS_DIM:
+                raise ValueError(
+                    "PPO bridge validation only supports the 21D lowdim observation. "
+                    "Pass --direct-only for augmented offline diagnostics."
+                )
+            ppo_obs = embed_lowdim_obs_in_ppo_obs(lowdim_seq[:, -1])
+            roundtrip = np.asarray(ppo_obs[..., 18:21])
+            history = LowdimObsHistory(num_envs=lowdim_seq.shape[0], n_obs_steps=n_obs_steps)
+            if args.warm_history_from_dataset:
+                for obs_t in range(max(0, n_obs_steps - 1)):
+                    history.push(lowdim_seq[:, obs_t])
+            bridge_action = predict_action_from_ppo_obs(policy, ppo_obs, history)
 
     direct_action = direct["action"].detach().cpu().numpy()
     if direct_action.shape[-1] != FRANKA_CUBE_ACTION_DIM:
         raise RuntimeError(f"Official policy produced action shape {direct_action.shape}")
-    if bridge_action.shape != (lowdim_seq.shape[0], FRANKA_CUBE_ACTION_DIM):
+    if bridge_action is not None and bridge_action.shape != (lowdim_seq.shape[0], FRANKA_CUBE_ACTION_DIM):
         raise RuntimeError(f"Bridge action shape mismatch: {bridge_action.shape}")
-    if not np.isfinite(direct_action).all() or not np.isfinite(bridge_action).all():
+    if not np.isfinite(direct_action).all() or (
+        bridge_action is not None and not np.isfinite(bridge_action).all()
+    ):
         raise RuntimeError("Official policy produced non-finite actions")
 
     stats = dataset_statistics(dataset_path)
@@ -257,7 +276,7 @@ def main() -> None:
         "dataset": str(dataset_path),
         "dataset_steps": int(stats["num_steps"]),
         "dataset_episodes": int(stats["num_episodes"]),
-        "ppo_obs_shape": list(ppo_obs.shape),
+        "ppo_obs_shape": None if ppo_obs is None else list(ppo_obs.shape),
         "lowdim_seq_shape": list(lowdim_seq.shape),
         "row_selector": str(args.row_selector),
         "row_index": None if args.row_index is None else int(args.row_index),
@@ -269,9 +288,9 @@ def main() -> None:
         "direct_action_max": np.max(direct_action[:, 0], axis=0).astype(float).tolist(),
         "direct_action_chunk_min": np.min(direct_action.reshape(-1, direct_action.shape[-1]), axis=0).astype(float).tolist(),
         "direct_action_chunk_max": np.max(direct_action.reshape(-1, direct_action.shape[-1]), axis=0).astype(float).tolist(),
-        "bridge_action_shape": list(bridge_action.shape),
-        "bridge_action_min": np.min(bridge_action, axis=0).astype(float).tolist(),
-        "bridge_action_max": np.max(bridge_action, axis=0).astype(float).tolist(),
+        "bridge_action_shape": None if bridge_action is None else list(bridge_action.shape),
+        "bridge_action_min": None if bridge_action is None else np.min(bridge_action, axis=0).astype(float).tolist(),
+        "bridge_action_max": None if bridge_action is None else np.max(bridge_action, axis=0).astype(float).tolist(),
         "label_action_shape": list(label_action_seq.shape),
         "label_action_min": np.min(label_action_seq[:, 0], axis=0).astype(float).tolist(),
         "label_action_max": np.max(label_action_seq[:, 0], axis=0).astype(float).tolist(),
@@ -279,9 +298,10 @@ def main() -> None:
         "label_action_chunk_max": np.max(label_action_seq.reshape(-1, label_action_seq.shape[-1]), axis=0).astype(float).tolist(),
         "selected_label_dz_first": label_action_seq[:, 0, 2].astype(float).tolist(),
         "selected_label_gripper_first": label_action_seq[:, 0, -1].astype(float).tolist(),
-        "roundtrip_ee_pos": roundtrip[0].astype(float).tolist(),
+        "roundtrip_ee_pos": None if roundtrip is None else roundtrip[0].astype(float).tolist(),
         "num_inference_steps": int(policy.num_inference_steps),
         "warm_history_from_dataset": bool(args.warm_history_from_dataset),
+        "direct_only": bool(args.direct_only),
         "official_workspace": workspace.__class__.__name__,
         "policy_class": policy.__class__.__name__,
         "policy_source": policy_source,

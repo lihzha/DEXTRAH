@@ -131,28 +131,31 @@ def _action_range_rows(log_dir: Path, selectors: list[str]) -> list[dict[str, An
             continue
         direct_chunk_min = payload.get("direct_action_chunk_min")
         direct_chunk_max = payload.get("direct_action_chunk_max")
-        bridge_min = payload["bridge_action_min"]
-        bridge_max = payload["bridge_action_max"]
+        bridge_min = payload.get("bridge_action_min")
+        bridge_max = payload.get("bridge_action_max")
         label_min = payload.get("label_action_min")
         label_max = payload.get("label_action_max")
         pose_touches_bounds = False
         if direct_chunk_min is not None and direct_chunk_max is not None:
             pose_touches_bounds = pose_touches_bounds or min(direct_chunk_min[:6]) <= -0.99
             pose_touches_bounds = pose_touches_bounds or max(direct_chunk_max[:6]) >= 0.99
-        pose_touches_bounds = pose_touches_bounds or min(bridge_min[:6]) <= -0.99
-        pose_touches_bounds = pose_touches_bounds or max(bridge_max[:6]) >= 0.99
+        if bridge_min is not None and bridge_max is not None:
+            pose_touches_bounds = pose_touches_bounds or min(bridge_min[:6]) <= -0.99
+            pose_touches_bounds = pose_touches_bounds or max(bridge_max[:6]) >= 0.99
         gripper_sign_status = "unknown"
         if label_min is not None and label_max is not None:
             label_gripper_min = float(label_min[-1])
             label_gripper_max = float(label_max[-1])
             direct_gripper_min = float(payload["direct_action_min"][-1])
             direct_gripper_max = float(payload["direct_action_max"][-1])
-            bridge_gripper_min = float(bridge_min[-1])
-            bridge_gripper_max = float(bridge_max[-1])
+            bridge_gripper_min = None if bridge_min is None else float(bridge_min[-1])
+            bridge_gripper_max = None if bridge_max is None else float(bridge_max[-1])
             if label_gripper_min > 0.0 and label_gripper_max > 0.0:
-                gripper_sign_status = "pass" if direct_gripper_min > 0.0 and bridge_gripper_min > 0.0 else "needs_review"
+                bridge_ok = True if bridge_gripper_min is None else bridge_gripper_min > 0.0
+                gripper_sign_status = "pass" if direct_gripper_min > 0.0 and bridge_ok else "needs_review"
             elif label_gripper_min < 0.0 and label_gripper_max < 0.0:
-                gripper_sign_status = "pass" if direct_gripper_max < 0.0 and bridge_gripper_max < 0.0 else "needs_review"
+                bridge_ok = True if bridge_gripper_max is None else bridge_gripper_max < 0.0
+                gripper_sign_status = "pass" if direct_gripper_max < 0.0 and bridge_ok else "needs_review"
             else:
                 gripper_sign_status = "mixed_label"
         range_status = "needs_review" if pose_touches_bounds or gripper_sign_status == "needs_review" else "pass"
@@ -168,6 +171,7 @@ def _action_range_rows(log_dir: Path, selectors: list[str]) -> list[dict[str, An
                 "selected_gripper_width": payload["selected_gripper_width"],
                 "direct_action_shape": payload["direct_action_shape"],
                 "bridge_action_shape": payload["bridge_action_shape"],
+                "direct_only": payload.get("direct_only", False),
                 "label_action_shape": payload.get("label_action_shape"),
                 "direct_min": payload["direct_action_min"],
                 "direct_max": payload["direct_action_max"],
