@@ -10893,3 +10893,153 @@ Decision:
     sensitivity from relabel/controller limits; or
   - an offline official-DP pose+gripper coherence gate that directly penalizes
     the observed mismatch before any more Isaac eval.
+
+## 2026-06-11T23:54:46-07:00 - plan 260-step full-action oracle horizon check
+
+Goal:
+- Run one bounded no-learning diagnostic to determine whether the coherent
+  nearest-label full-action oracle crosses the hard lift/success threshold with
+  a slightly longer horizon.
+
+Hypothesis:
+- The 220-step run was still lifting at the final frame (`0.10849 m`), so a
+  260-step oracle run may cross the `0.12 m` success threshold. If it does, the
+  accepted relabel/controller path is horizon-sensitive but viable under
+  oracle coherent actions. If it does not, the current relabel support still
+  needs lift/hold/gripper redesign before any DP training.
+
+Change:
+- No source-code change from commit
+  `f935ebde8385767941ebc1654cfa257eb5a44387`.
+- Use `ACTION_CORRECTION_MODE=nearest_label_full_action`,
+  `NUM_STEPS=260`, `VIDEO_LENGTH=260`, and otherwise match job `1028239`.
+
+Validation:
+- Existing local validation for commit `5b37dc2` covered the code path:
+  `py_compile`, `bash -n`, and `git diff --check` passed.
+- Current worktree is clean at `f935ebde8385767941ebc1654cfa257eb5a44387`.
+
+Acceptance:
+- Fetch and inspect metrics, support trace, policy trace, MP4/contact sheet,
+  and plots.
+- This is still an oracle/no-learning diagnostic. Even if it reaches success,
+  it does not authorize DP fine-tune, broad eval, or RL without a separate
+  official-DP output-coherence gate.
+
+## 2026-06-11T23:55:28-07:00 - launch 260-step full-action oracle horizon check
+
+Goal:
+- Run the bounded 260-step horizon check from the previous plan.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- implementation_commit: `f935ebde8385767941ebc1654cfa257eb5a44387`
+- local branch: `codex/franka-cube-diffusion-policy-bc`
+- remote worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- remote commit: `f935ebde8385767941ebc1654cfa257eb5a44387`
+- remote update note: used HTTPS fetch from
+  `https://github.com/lihzha/DEXTRAH.git` because l401 SSH fetch still lacks
+  the GitHub key.
+
+Command / Job:
+- job_id: `1028246`
+- run_name:
+  `franka_cube_dp_eval_phaseprogress_set4_ep0_fullcorr_video260_20260611_235528`
+- command:
+  `sbatch --parsable --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart,RUN_NAME=franka_cube_dp_eval_phaseprogress_set4_ep0_fullcorr_video260_20260611_235528,NUM_ENVS=1,NUM_STEPS=260,NUM_INFERENCE_STEPS=100,ACTION_CHUNK_STEPS=1,CLIP_ACTIONS=1.0,SUCCESS_WINDOW=32,SUCCESS_TIMEOUT_OVERRIDE=999.0,CAPTURE_VIDEO=True,VIDEO_LENGTH=260,VIDEO_NAME_PREFIX=franka-cube-dp-phaseprogress-fullcorr260,PRINT_INTERVAL=20,DEBUG_POLICY_TRACE_MAX_CALLS=80,DEBUG_POLICY_TRACE_ENV_INDEX=0,CHECKPOINT=/results/dp_bc/checkpoints/contact_relabel_lrcentering_a075_set4_phaseprogress_20260611_224001/latest.ckpt,SUPPORT_DATASET=/results/dp_bc/phase_progress_set4/contact_relabel_set_phase_progress.npz,PHASE_PROGRESS_DATASET=/results/dp_bc/phase_progress_set4/contact_relabel_set_phase_progress.npz,PHASE_PROGRESS_EPISODE=0,PHASE_PROGRESS_START_STEP=0,PHASE_PROGRESS_MODE=contact_gated,PHASE_CLOSE_SUPPORT_DISTANCE_THRESHOLD=0.55,PHASE_LIFT_SUPPORT_DISTANCE_THRESHOLD=0.75,PHASE_LIFT_GRIPPER_WIDTH_THRESHOLD=0.025,ACTION_CORRECTION_MODE=nearest_label_full_action,ACTION_CORRECTION_BLEND=1.0,DEMO_RESET_DATASET=/results/contact_relabel_sets/franka_cube_contact_relabel_lrcentering_ep8_16_24_30_a0p75_20260611_2224/contact_relabel_set_accepted.npz,DEMO_RESET_EPISODE=0,DEMO_RESET_STEP=0,DEMO_RESET_SOURCE_TRAJECTORY_JSON=/results/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed8/trajectory.json,DEMO_RESET_SOURCE_FRAME=260,DEMO_RESET_JOINT_BLEND_ALPHA=0.75,DEMO_RESET_CUBE_POS_BLEND_ALPHA=1.0 cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- remote run dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_phaseprogress_set4_ep0_fullcorr_video260_20260611_235528`
+- stdout:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_dp_policy_1028246.out`
+
+Expected artifacts:
+- `metrics.json`, `eval_config.json`, `policy_trace.json`,
+  `support_trace.json/csv`, MP4 video.
+- After fetch: contact sheet, closed-loop report/plots, align-open/action
+  coherence diagnostic, and explicit horizon gate report.
+
+Safety:
+- This is a no-learning oracle correction diagnostic only. It does not
+  authorize DP fine-tune, broad eval, or RL.
+
+## 2026-06-12T00:02:00-07:00 - result 260-step full-action oracle horizon check
+
+Goal:
+- Inspect job `1028246` and decide whether the coherent nearest-label
+  full-action oracle crosses the hard success threshold when allowed 260
+  env steps.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- implementation_commit: `f935ebde8385767941ebc1654cfa257eb5a44387`
+- official Diffusion Policy source:
+  `real-stanford/diffusion_policy` @
+  `5ba07ac6661db573af695b419a7947ecb704690f`
+- remote commit: `f935ebde8385767941ebc1654cfa257eb5a44387`
+
+Result:
+- status: `bounded oracle pass; not policy readiness`
+- job_id: `1028246`
+- run_name:
+  `franka_cube_dp_eval_phaseprogress_set4_ep0_fullcorr_video260_20260611_235528`
+- local artifact dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_fullcorr_video260_20260611_235528`
+- fetched artifacts: `metrics.json`, `eval_config.json`,
+  `policy_trace.json`, `support_trace.json/csv`, stdout log, MP4 video.
+- generated artifacts:
+  - `full_action_oracle_horizon260_report.md`
+  - `dp_fullcorr260_contact_sheet.jpg`
+  - `closed_loop_support_report.md`
+  - `closed_loop_support_trace.png`
+  - `closed_loop_action_components.png`
+  - `closed_loop_phase_progress.png`
+  - `align_open_support_drift/align_open_support_drift_report.md`
+  - `align_open_support_drift/align_open_support_drift.png`
+  - `align_open_support_drift/align_open_action_scatter.png`
+
+Viewer URLs:
+- horizon report:
+  http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_fullcorr_video260_20260611_235528/full_action_oracle_horizon260_report.md
+- video:
+  http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_fullcorr_video260_20260611_235528/videos/franka-cube-dp-phaseprogress-fullcorr260-step-0.mp4
+- contact sheet:
+  http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_fullcorr_video260_20260611_235528/dp_fullcorr260_contact_sheet.jpg
+- support trace plot:
+  http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_phaseprogress_set4_ep0_fullcorr_video260_20260611_235528/closed_loop_support_trace.png
+
+Metrics:
+- correction mode/blend: `nearest_label_full_action` / `1.0`.
+- action correction applied: `260/260` support trace records.
+- success/window success: `1.0 / 1.0`.
+- cube lift max/final: `0.164543 / 0.164543 m`.
+- EE-to-cube min/final: `0.006990 / 0.007434 m`.
+- finger-center-to-cube min/final: `0.051527 / 0.051892 m`.
+- gripper width min/final: `0.051343 / 0.051849 m`.
+- first close label step: `23`.
+- first lift phase label step: `103`.
+- first cube lift over `0.05 / 0.10 / 0.12 m`: `177 / 214 / 229`.
+- first `has_lifted_cube` and `in_success_region`: step `229`.
+- nearest phase counts: `align_open=21`, `close_hold=80`, `lift=159`.
+- final support distance: `0.3302`, expected because the 260-step rollout
+  extends beyond the 240-row relabel episode.
+
+Analysis:
+- Extending the coherent oracle correction from 220 to 260 steps separates
+  horizon sensitivity from controller/relabel viability: 220 ended below
+  threshold, while 260 crosses and retains success under the timeout override.
+- This validates the accepted relabel/controller path for the matched
+  source-joint alpha0.75 reset and horizon.
+- It does not validate the official DP checkpoint. The checkpoint was loaded
+  and traced for provenance, but executed actions were still nearest-label
+  oracle replacements.
+- Policy-facing blocker remains: official DP must learn/emit coherent
+  pose+gripper+phase actions, especially the coupled lift/close stream, before
+  any Isaac closed-loop policy eval or RL handoff.
+
+Decision:
+- No DP fine-tune, broad eval, or RL from this artifact alone.
+- Next bounded work should be offline official-DP pose+gripper coherence:
+  compare checkpoint outputs to these oracle labels over the accepted relabel
+  windows and adjust the supervised gate/loss/data only if that offline gate
+  explains how to make the checkpoint emit the coupled actions.
