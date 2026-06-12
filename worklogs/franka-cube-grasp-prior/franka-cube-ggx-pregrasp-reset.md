@@ -2514,3 +2514,51 @@ Validation:
 
 Next:
 - Commit/push the filter script and worklog, deploy the exact commit to the Worker A l401 worktree, rsync only the generated untracked libraries, and launch the robust-library reset/oracle diagnostic.
+
+## 2026-06-12T00:45:00Z - launch robust passing-set reset/oracle gate
+
+Goal:
+- Validate that the full robust passing-set library samples only the intended candidates and remains robust under randomized cube resets before PPO.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- local_commit: `337ea054b3e89a67e5826e81f97b78e60c0ba2f8`
+- push/pull: pushed branch to origin; deployed exact commit to l401 Worker A worktree via Git bundle
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `337ea054b3e89a67e5826e81f97b78e60c0ba2f8`, detached clean
+- remote validation: `python3 -m py_compile` for filter/diagnostic scripts passed; `bash -n` for diagnostic/train/eval wrappers passed
+- remote robust library: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_robust_pass7_20260612.npz`
+- remote fallback library: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasp_orig012_robust_fallback_20260612.npz`
+
+Command / Job:
+- planned command: `sbatch --parsable --job-name=ggx_robust_gate --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=337ea054b3e89a67e5826e81f97b78e60c0ba2f8,TASK=Dextrah-Franka-Cube-Grasp,RUN_NAME=franka_cube_ggx_robust_pass7_gate_20260612_0045,NUM_ENVS=1,NUM_RESETS=28,SEED=20260624,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_robust_pass7_20260612.npz,INCLUDE_ORACLE_CLOSE_LIFT_CHECK=1,ORACLE_APPROACH_MODE=proportional_exact,ORACLE_PROPORTIONAL_GAIN=1.0,ORACLE_MAX_POSITION_ACTION=1.0,ORACLE_TRACK_ORIENTATION=1,ORACLE_CLOSE_WIDTH=0.055,ORACLE_APPROACH_STEPS=60,ORACLE_EXACT_HOLD_STEPS=0,ORACLE_CLOSE_STEPS=80,ORACLE_LIFT_STEPS=80,ORACLE_HOLD_STEPS=20,ORACLE_LIFT_ACTION_Z=0.15,ORACLE_LIFT_SUCCESS_HEIGHT=0.020,ORACLE_RENDER_INTERVAL=24,RENDER_ALL_RESETS=1,RENDER_WIDTH=960,RENDER_HEIGHT=540 cluster/sbatch_diagnose_franka_cube_grasp_prior_1gpu.sh`
+- job_id: `1027924`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_robust_pass7_gate_20260612_0045`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/diagnose_franka_cube_prior_<job>.out`
+
+Acceptance:
+- All or near-all resets should pass reset/pregrasp quality and oracle close/lift, with no immediate done/pathological terminations and finite metrics.
+- The sample-index histogram should contain only local indices `0..6` from the robust passing set and should cover all seven at least once if the L401 CUDA RNG follows the local torch seed check.
+- Fetch and open a viewer-ready report/contact sheet/video before launching any PPO smoke.
+
+Result:
+- status: passed as bounded robust-library gate
+- Slurm: `1027924` completed `0:0` on `pool0-00030` in `00:05:32`
+- fetched run dir: `cluster_results/l401/franka_cube_ggx_robust_pass7_gate_20260612_0045`
+- inspection bundle: `cluster_results/l401/franka_cube_ggx_robust_pass7_gate_20260612_0045_inspection`
+- summary: `reset_success_rate=1.0`, `reset_quality_success_rate=1.0`, `pregrasp_reset_gate_pass=True`, `oracle_success_rate=1.0`, `oracle_lift_gate_pass_rate=1.0`, `oracle_done_seen_rate=0.0`, `rl_relaunch_gate_verdict=PASS`
+- mean oracle lift: `0.03103 m`; mean min tip-center distance: `0.03024 m`; mean min post-to-exact EE error: `0.000119 m`
+- sampled original indices in this 28-reset run: `{0: 5, 1: 2, 11: 5, 14: 6, 24: 3, 27: 7}`. `orig012` was part of the robust exported library and previously passed the alternate-grasp sweep, but this random run did not sample local index 3.
+
+Artifacts:
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_robust_pass7_gate_20260612_0045_inspection/REPORT.md`
+- candidate sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_robust_pass7_gate_20260612_0045_inspection/robust_gate_candidate_sheet.jpg`
+- trace plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_robust_pass7_gate_20260612_0045_inspection/robust_gate_trace_plot.png`
+- oblique slideshow: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_robust_pass7_gate_20260612_0045_inspection/robust_gate_oblique_sequence.mp4`
+
+Analysis:
+- The filtered pass7 library behaves correctly for the sampled robust candidates in reset/pregrasp and diagnostic action-space close/lift. This does not validate learned PPO behavior; it only clears the pre-PPO gate.
+- The next run should remain small: 1 GPU, 64 envs, short epochs, JSONL metrics, frequent checkpointing, then immediate deterministic video eval of the checkpoint. No A100 scale-up from this result alone.
+
+Next:
+- Launch the bounded reset-prior PPO smoke with `GRASP_PRIOR_RESET_ENABLED=True` and the robust pass7 library, then fetch training metrics/checkpoints and run eval video/trace artifacts before any larger comparison.
