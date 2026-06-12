@@ -3295,3 +3295,42 @@ Analysis:
 
 Next:
 - Commit/push this checkpoint, deploy the exact commit to the agent-owned L401 worktree, repeat syntax checks remotely, then launch one small L401 smoke only if remote checks pass.
+
+## 2026-06-11 19:17 PDT - launch pass7 warm-start PPO smoke
+
+Goal:
+- Run one bounded L401 reset-prior PPO diagnostic smoke with the robust pass7 grasp library and first-contact action warm-start enabled.
+
+Hypothesis:
+- If the learned policy failure is mainly immediate open/up/away action collapse after a valid pregrasp reset, then forcing sane first-contact approach/light-close/lift actions for the first 40 post-reset steps should improve early contact/lift traces compared with the prior pass7 no-warmstart smoke.
+
+Change:
+- No additional code changes after commit `09857defab0ff548eac0eae05e5b42b933884476`.
+- This run is diagnostic-only and non-apple-to-apple because the environment applies scripted early actions instead of policy actions while `grasp_prior_action_warmstart_enabled=True`.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- local_commit: `09857defab0ff548eac0eae05e5b42b933884476`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- push/pull: pushed to `origin/codex/franka-cube-ggx-pregrasp-reset`; deployed to L401 by git bundle
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: detached `09857defab0ff548eac0eae05e5b42b933884476`, clean
+
+Validation:
+- local `py_compile` / wrapper `bash -n` / `git diff --check`: passed before commit
+- remote `py_compile` for env and eval rollout: passed
+- remote `bash -n` for train/eval wrappers: passed
+- remote `git diff --check`: passed
+
+Command / Job:
+- command: `sbatch --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=09857defab0ff548eac0eae05e5b42b933884476,FULL_EXPERIMENT_NAME=franka_cube_ggx_pass7_warmstart_smoke45_20260611_191642,NUM_ENVS=64,MAX_ITERATIONS=45,SAVE_FREQUENCY=5,HORIZON_LENGTH=64,SEED=20260624,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_robust_pass7_20260612.npz,GRASP_PRIOR_ACTION_WARMSTART_ENABLED=True,GRASP_PRIOR_ACTION_WARMSTART_APPROACH_STEPS=16,GRASP_PRIOR_ACTION_WARMSTART_CLOSE_STEPS=12,GRASP_PRIOR_ACTION_WARMSTART_LIFT_STEPS=12,GRASP_PRIOR_ACTION_WARMSTART_CLOSE_WIDTH=0.055,GRASP_PRIOR_ACTION_WARMSTART_LIFT_ACTION_Z=0.15,GRASP_PRIOR_ACTION_WARMSTART_GAIN=8.0,GRASP_PRIOR_ACTION_WARMSTART_MAX_POSITION_ACTION=1.0,GRASP_PRIOR_ACTION_WARMSTART_TRACK_ORIENTATION=True,DEXTRAH_RLGAMES_JSONL_METRICS=True,AUTO_RESUME=False cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh`
+- job_id: `1028006`
+- run_name: `franka_cube_ggx_pass7_warmstart_smoke45_20260611_191642`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pass7_warmstart_smoke45_20260611_191642`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_smoke_1028006.out`
+- expected artifacts: rank-0 JSONL metrics sidecar, checkpoint files every 5 epochs, stdout config/logs, later fetched inspection plots/report and a small eval/contact-sheet if training produces usable checkpoint behavior.
+
+Acceptance:
+- JSONL must show `cube_action_warmstart_active_rate` and phase rates are nonzero during early episode windows.
+- Compare policy vs applied z/gripper actions and action-delta metrics to prove the diagnostic branch is active.
+- Inspect reward/lift/distance trends and checkpoints; scheduler success alone is insufficient.
