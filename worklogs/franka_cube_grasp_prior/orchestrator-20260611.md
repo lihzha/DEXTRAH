@@ -3214,3 +3214,79 @@ A verdict:
   learned policy immediately drives away and does not lift. A was told to
   generate a proper report/contact-sheet/trace bundle and diagnose early action
   behavior before any longer or larger training.
+
+## 2026-06-11T19:22:00-07:00 - C official-DP mechanics pass and A action diagnosis
+
+Worker C official Diffusion Policy smoke:
+- C started from the official `real-stanford/diffusion_policy` implementation
+  at commit `5ba07ac6661db573af695b419a7947ecb704690f`.
+- It added reusable report helpers:
+  `dextrah_lab/offline_dp_bc/make_lowdim_dataset_report.py` and
+  `dextrah_lab/offline_dp_bc/make_official_dp_smoke_report.py`.
+- Local bounded CPU mechanics smoke passed using the accepted contact-aware
+  relabel set.
+
+C mechanics results:
+- Dataset: `obs (1126, 21)`, `action (1126, 7)`,
+  `episode_ends [282, 563, 844, 1126]`, train/val samples `844/282`.
+- Official normalizer construction succeeded with the existing adapter;
+  observation limits were fit and action normalizer stayed identity.
+- Official `TrainDiffusionUnetLowdimWorkspace` built and performed a one-step
+  debug train/validation run on CPU.
+- Tiny train metrics: `train_loss=1.1225613`, `val_loss=1.1745609`,
+  `train_action_mse_error=0.6494607`, `global_step=0`, `epoch=0`.
+- Checkpoint action-range sanity was finite for both first-window and
+  gripper-closed windows. This is a mechanics-only pass, not a closed-loop
+  behavior claim.
+
+C artifacts:
+- Official DP smoke report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_official_dp_smoke_20260611_180153/official_dp_smoke_report.md`
+- Dataset/normalizer/action range report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_official_dp_smoke_20260611_180153/dataset_report.md`
+- Resolved config:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_official_dp_smoke_20260611_180153/official_dp_train/.hydra/config.yaml`
+- Tiny train stdout:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_official_dp_smoke_20260611_180153/logs/official_dp_tiny_train.log`
+
+C verdict:
+- The accepted contact-aware relabel NPZ is consumable by the official
+  Diffusion Policy lowdim workspace. Next C step should be a tiny
+  contact-aware BC pretrain/debug run long enough to reduce train/val action
+  error and inspect checkpoint action ranges. No closed-loop DP eval or RL
+  warm-start yet.
+
+Worker A enhanced reset-prior smoke inspection:
+- A generated a proper inspection bundle from training job `1027931` and eval
+  jobs `1027934`/`1027935`.
+- Inspection report:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_20260612_0056_inspection/REPORT.md`
+- Eval contact sheet:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_20260612_0056_inspection/eval_contact_sheet.jpg`
+- Training trace:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_20260612_0056_inspection/training_trace_plot.png`
+- Eval trace:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_20260612_0056_inspection/eval_trace_plot.png`
+- Training reward/action trace:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_20260612_0056_inspection/training_reward_action_plot.png`
+- Eval action trace:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_20260612_0056_inspection/eval_action_trace_plot.png`
+
+A diagnosis:
+- Reset-prior success/quality remain `1.0` in training and eval, so this is not
+  a repeat of the transform/reset bug.
+- The policy fails after reset. Training success/lift stay `0`, max training
+  lift is only `0.000553 m`, and EE-cube distance grows from `0.0801 m` to
+  `0.6773 m`.
+- Ep45 immediately biases open/up/away: first-20 z action mean `0.571`,
+  first-20 gripper mean `1.000`, z saturation fraction `0.948`, gripper
+  saturation fraction `1.000`.
+- A was assigned a diagnostic-only action/reward audit from the same prior reset
+  distribution, comparing learned policy actions to successful assisted/oracle
+  hold/approach/close/lift actions. No more PPO or A100 until this explains the
+  bad incentives/action behavior.
+
+Worker B current state:
+- B's worktree now contains `dextrah_lab/rl_games/bc_reference_action_imitation.py`
+  as an uncommitted working file. This matches the pivot from PPO schedule
+  tweaks to explicit supervised action imitation.
