@@ -181,6 +181,7 @@ parser.add_argument(
         "disabled",
         "nearest_label_align_pose",
         "nearest_label_full_action",
+        "nearest_label_runtime_phase_full_action",
         "dataset_step_full_action",
     ],
     default="disabled",
@@ -190,7 +191,9 @@ parser.add_argument(
         "dataset label while runtime phase is align_open; gripper is left as "
         "the DP output. 'nearest_label_full_action' replaces/blends all seven "
         "action dims with the nearest support label, coupling pose and gripper "
-        "to the same relabel row. 'dataset_step_full_action' replaces/blends "
+        "to the same relabel row. 'nearest_label_runtime_phase_full_action' "
+        "does the same replacement but searches only support rows matching the "
+        "current runtime phase. 'dataset_step_full_action' replaces/blends "
         "all seven action dims with the support label at "
         "phase_progress_start_step + rollout_step inside phase_progress_episode. "
         "These modes are not trained policy results."
@@ -851,6 +854,31 @@ def _apply_eval_action_correction(
             )
         elif mode == "nearest_label_full_action":
             nearest_idx, nearest_distance = _nearest_support_row(support, lowdim_obs[env_idx])
+            label = np.asarray(support["action"][nearest_idx], dtype=np.float32)
+            corrected[env_idx, :] = (1.0 - blend) * corrected[env_idx, :] + blend * label
+            phase_id = int(support["phase_ids"][nearest_idx])
+            nearest_obs = np.asarray(support["obs"][nearest_idx], dtype=np.float32)
+            record.update(
+                {
+                    "applied": True,
+                    "nearest_demo_row": int(nearest_idx),
+                    "nearest_demo_phase": _phase_name_from_id(support["phase_names"], phase_id),
+                    "nearest_demo_distance": float(nearest_distance),
+                    "nearest_demo_phase_progress": (
+                        nearest_obs[21:25].astype(float).tolist() if nearest_obs.shape[0] >= 25 else None
+                    ),
+                    "label_action": label.astype(float).tolist(),
+                    "pose_l2_before": float(np.linalg.norm(original[:6] - label[:6])),
+                    "pose_l2_after": float(np.linalg.norm(corrected[env_idx, :6] - label[:6])),
+                    "action_l2_before": float(np.linalg.norm(original - label)),
+                    "action_l2_after": float(np.linalg.norm(corrected[env_idx] - label)),
+                    "gripper_before": float(original[6]),
+                    "gripper_after": float(corrected[env_idx, 6]),
+                    "gripper_label": float(label[6]),
+                }
+            )
+        elif mode == "nearest_label_runtime_phase_full_action":
+            nearest_idx, nearest_distance = _nearest_support_row_for_phase(support, lowdim_obs[env_idx], runtime_phase)
             label = np.asarray(support["action"][nearest_idx], dtype=np.float32)
             corrected[env_idx, :] = (1.0 - blend) * corrected[env_idx, :] + blend * label
             phase_id = int(support["phase_ids"][nearest_idx])

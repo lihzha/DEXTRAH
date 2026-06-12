@@ -13492,3 +13492,47 @@ Update:
   `NameError: FRANKA_CUBE_PHASE_PROGRESS_OBS_DIM` because the eval file used
   that ppo-bridge constant without importing it.
 - Fixed the import and will redeploy/relaunch.
+
+## 2026-06-12T11:16:15-07:00 - translated scale-up still fails; add phase-filtered label oracle
+
+Version Control:
+- base/implementation commit for completed eval: `e729855407b61e97d5dee5762c44ed1f282d3b42`
+- remote worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart-gripvote-dbfed79`
+- local worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+
+Closed-loop result:
+- job `1028535`,
+  `franka_cube_dp_eval_normalcube_32env_seed42_recovery8_curobo32translated_latest_x0pred_allrows_contactgate030_phasegrip_novideo_20260612_110501`,
+  used the translated checkpoint, all-row contact gate at `0.30`, and
+  `PHASE_GRIPPER_GUARD=current_phase_hard`.
+- It failed scale-up: final success `0.0`, window success `0.040625`,
+  max/final lift `0.01179/0.006055 m`, and final gripper width
+  `0.07965 m`.
+- Support report:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_normalcube_32env_seed42_recovery8_curobo32translated_latest_x0pred_allrows_contactgate030_phasegrip_novideo_20260612_110501/support_report/closed_loop_support_report.md`
+
+Analysis:
+- The exact one-demo overfit remains successful, but random-reset scale-up is
+  not solved by the translated checkpoint plus gripper guard.
+- The report shows the policy leaves support after close/lift and closes away
+  from robust cube contact. This points at pose/contact support quality rather
+  than only gripper aggregation.
+- A first `nearest_label_full_action` feasibility run, job `1028539`, was
+  canceled after step `60`: all-phase nearest support selected close labels
+  at step `1` for some envs, so it is not a clean oracle/data feasibility
+  test.
+
+Change:
+- Added eval-only `nearest_label_runtime_phase_full_action`.
+- It replaces all seven action dims with a nearest support label constrained to
+  the current runtime phase (`align_open`, `close_hold`, or `lift`), avoiding
+  the early all-phase close-label contamination.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/eval_franka_cube_dp_policy.py`
+- `bash -n cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+
+Next:
+- Commit/deploy the phase-filtered label-oracle mode.
+- Launch the same 32-env translated-support diagnostic with
+  `ACTION_CORRECTION_MODE=nearest_label_runtime_phase_full_action`.
