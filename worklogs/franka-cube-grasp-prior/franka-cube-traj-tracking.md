@@ -5412,6 +5412,95 @@ Analysis:
 Active Jobs:
 - No selector/video/PPO jobs launched for this attempt.
 
+## 2026-06-11T21:36:00-07:00 - trajectory-tracking handoff comparison plan
+
+Goal:
+- Produce a small inspectable handoff diagnostic that answers what is currently usable for RL from the trajectory-tracking branch.
+- Treat tm0.25 DAgger as the current best B checkpoint and the low-assistance residual line as failed unless later supervised evidence changes that.
+
+Hypothesis:
+- Existing fetched artifacts are sufficient for a handoff comparison without launching new Slurm jobs:
+  - tm0.25 teacher-assisted behavior has selector metrics and targeted videos (`1027988`-`1027991`).
+  - pure teacher/reference-force alpha `1.0`, phase end `1.0` has a successful reference feasibility video (`1027919`).
+  - gated residual max-1.5 (`1028122`) is a supervised negative/control and should not be rolled out because it failed the supervised gate.
+- A consolidated audit will make the usable path explicit: reference and teacher-assisted trajectory tracking are viable; policy-only and the latest residual handoff are not.
+
+Planned Change:
+- Add a small local report generator under `dextrah_lab/rl_games/` if the existing summarizers cannot produce a cross-run comparison directly.
+- Generate a local artifact bundle under `cluster_results/l401/franka_cube_traj_tracking_handoff_comparison_<timestamp>/` with:
+  - `report.md` comparing tm0.25, pure teacher/reference, and gated residual negative/control.
+  - `summary.json` and `summary.csv` with success/lift/safety/action-error/supervised-gate metrics.
+  - train/eval match audit fields: checkpoint path, reference path, teacher alpha/mix settings, object randomization, action scale, reward/log terms, observation/action dims, and `curobo_validated=false`.
+  - links to existing trace plots, contact sheets, videos, source plots, and action-semantics plots.
+- Run `viz-open` on the final report and the most important visual artifacts, then record URLs in this worklog.
+
+Validation:
+- Local only unless an artifact is missing:
+  - parse existing `metrics.json`, `bc_metrics.json`, and generated reports.
+  - verify referenced videos/contact sheets/plots exist.
+  - `python3 -m py_compile` for any new report generator.
+  - `git diff --check`.
+
+Acceptance:
+- No new PPO/RL scale-up and no rollout from the failed residual checkpoint.
+- The final report must explicitly mark `actionscale-rewinf-diag-video480-step-0.mp4` / job `1027753` as obsolete failed diagnostic evidence.
+- If no candidate is usable for policy-only RL handoff, propose the next supervised-only fix with supporting evidence.
+
+Active Jobs:
+- none at plan time.
+
+## 2026-06-11T21:39:59-07:00 - trajectory-tracking handoff comparison result
+
+Implementation:
+- Added local artifact-only utility: `dextrah_lab/rl_games/build_traj_tracking_handoff_comparison.py`.
+- No Slurm job, rollout, PPO, or RL scale-up was launched for this diagnostic.
+- Generated local bundle: `cluster_results/l401/franka_cube_traj_tracking_handoff_comparison_20260611_2140`.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/build_traj_tracking_handoff_comparison.py` passed.
+- `git diff --check` passed.
+- Verified all five referenced videos with `ffprobe`: `1280x720`, `520` frames, `8.666667s`.
+
+Artifacts:
+- comparison report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_handoff_comparison_20260611_2140/report.md`
+- success/lift plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_handoff_comparison_20260611_2140/handoff_success_lift_plot.png`
+- summary JSON: `cluster_results/l401/franka_cube_traj_tracking_handoff_comparison_20260611_2140/summary.json`
+- summary CSV: `cluster_results/l401/franka_cube_traj_tracking_handoff_comparison_20260611_2140/summary.csv`
+- tm0.25 alpha0.0 failure contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm025_vis_a000_env0_520_20260611_190600_artifacts/video_contact_sheet.png`
+- tm0.25 alpha0.0 failure video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm025_vis_a000_env0_520_20260611_190600/videos/dagger-tm025-a000-env0-step-0.mp4`
+- tm0.25 alpha0.5 lowest verified success contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm025_vis_a050_env0_520_20260611_190600_artifacts/video_contact_sheet.png`
+- tm0.25 alpha0.5 lowest verified success video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm025_vis_a050_env0_520_20260611_190600/videos/dagger-tm025-a050-env0-step-0.mp4`
+- tm0.25 alpha0.75 success contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm025_vis_a075_env0_520_20260611_190600_artifacts/video_contact_sheet.png`
+- tm0.25 alpha0.75 success video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm025_vis_a075_env0_520_20260611_190600/videos/dagger-tm025-a075-env0-step-0.mp4`
+- tm0.25 alpha1.0 context contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm025_vis_a100_env1_520_20260611_190600_artifacts/video_contact_sheet.png`
+- tm0.25 alpha1.0 context video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm025_vis_a100_env1_520_20260611_190600/videos/dagger-tm025-a100-env1-step-0.mp4`
+- pure reference/teacher-force contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a100_phase100_520_20260611_172848_artifacts/video_contact_sheet.png`
+- pure reference/teacher-force video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a100_phase100_520_20260611_172848/videos/tf-eval-a100-phase100-520-step-0.mp4`
+- tm0.25 action-semantics plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm025_visual_action_semantics_20260611_1906/action_semantics_plot.png`
+- gated residual source plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_residual_gated_m15_tm025_tm010_20260611_212500/bc_source_metric_plot.png`
+
+Key Metrics:
+- tm0.25 alpha0.0 policy-only: `0/4` final/ever success, max lift `0.0000 m`, target unsafe max `0`, final EE/finger distances `0.3135/0.3075 m`. Not usable for RL handoff.
+- tm0.25 alpha0.5 teacher-assisted: `3/4` final/ever success, max lift `0.14125 m`, target unsafe max `0`, raw/ref L2 mean `0.2444`, applied/ref L2 mean `0.1247`. Lowest verified assisted success.
+- tm0.25 alpha0.75 teacher-assisted: `3/4` final/ever success, max lift `0.14349 m`, target unsafe max `0`.
+- tm0.25 alpha1.0 full teacher context: `3/4` final/ever success, max lift `0.14441 m`, target unsafe max `0`.
+- pure reference/teacher-force alpha1.0 phase1.0: `3/4` final/ever success, max lift `0.14441 m`, target unsafe max `0`; confirms reference path/controller feasibility.
+- gated residual max1.5 negative/control (`1028122`): tm0.25 val L2 `0.0398` preserved, current alpha0.10 val L2 `0.3885`, global val L2 `0.2133`; supervised gate failed, so no rollout/video/PPO was launched.
+
+Train/Eval Audit:
+- tm0.25 evals use checkpoint `/results/bc/franka_cube_traj_tracking_bc_dagger_tm025_all_20260611_185900/nn/bc_reference_action_imitation.pth`, task `Dextrah-Franka-Cube-Grasp-Traj-Tracking`, observation/action dims `72/7`, cube spawn randomization `0.08`, action alignment weight `80`, close/lift weights `2.5/4.0`, and train/eval consistency sidecars pass.
+- pure reference/teacher-force eval uses checkpoint `/results/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_teacherforce_rl5b_20260611_170913/nn/last_dextrah_franka_cube_traj_tracking_ep_5_rew_3560.5405.pth`, same task/dims/randomization, alpha `1.0`, phase end `1.0`, and consistency sidecar passes.
+- compact reference remains `/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json` with `curobo_validated=false`, task-space waypoint transform by cube pose, no joint-trajectory blind transform, and target-unsafe weight zeroed below the table-clearance threshold.
+
+Verdict:
+- Current usable B evidence is teacher-assisted trajectory tracking, not policy-only RL handoff.
+- No candidate is ready for PPO/RL scale-up because alpha0 policy-only remains `0/4`, while the latest residual handoff is supervised-negative.
+- Next supervised-only fix should target the visually successful tm0.25 alpha0.5/0.75 manifold rather than lower-teacher alpha0.10 off-manifold states; a stage-conditioned handoff or separate policy-only hold/stabilization head is the safest next direction.
+- Old `actionscale-rewinf-diag-video480-step-0.mp4` / job `1027753` is explicitly obsolete failed learned-policy evidence and is not a current handoff candidate.
+
+Active Jobs:
+- none.
+
 ## 2026-06-11T21:12:52-07:00 - residual oracle/capacity diagnostic plan
 
 Goal:
@@ -5595,3 +5684,36 @@ Analysis:
 
 Active Jobs:
 - No selector/video/PPO jobs launched for this attempt.
+
+## 2026-06-11T21:42:53-07:00 - current handoff comparison tail marker
+
+Status:
+- Handoff comparison bundle generated locally from already completed/fetched artifacts; no new Slurm job, rollout, PPO, or RL scale-up launched.
+- Source helper added: `dextrah_lab/rl_games/build_traj_tracking_handoff_comparison.py`.
+- Bundle: `cluster_results/l401/franka_cube_traj_tracking_handoff_comparison_20260611_2140`.
+
+Viewer Artifacts:
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_handoff_comparison_20260611_2140/report.md`
+- success/lift plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_handoff_comparison_20260611_2140/handoff_success_lift_plot.png`
+- alpha0.0 failure video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm025_vis_a000_env0_520_20260611_190600/videos/dagger-tm025-a000-env0-step-0.mp4`
+- alpha0.5 lowest verified success video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm025_vis_a050_env0_520_20260611_190600/videos/dagger-tm025-a050-env0-step-0.mp4`
+- alpha0.75 success video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm025_vis_a075_env0_520_20260611_190600/videos/dagger-tm025-a075-env0-step-0.mp4`
+- alpha1.0 teacher context video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm025_vis_a100_env1_520_20260611_190600/videos/dagger-tm025-a100-env1-step-0.mp4`
+- pure reference/teacher-force video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a100_phase100_520_20260611_172848/videos/tf-eval-a100-phase100-520-step-0.mp4`
+- action-semantics plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_dagger_tm025_visual_action_semantics_20260611_1906/action_semantics_plot.png`
+- residual negative/control plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_residual_gated_m15_tm025_tm010_20260611_212500/bc_source_metric_plot.png`
+
+Verdict:
+- tm0.25 remains the best B checkpoint for teacher-assisted trajectory tracking: alpha0.5/0.75/1.0 are `3/4` with target unsafe max `0` and validated videos.
+- Policy-only alpha0.0 remains `0/4` and is not usable for RL handoff.
+- Pure reference/teacher-force alpha1.0 phase1.0 is `3/4`, so reference/controller feasibility is not the blocker.
+- Latest gated residual max1.5 is supervised-negative (`tm0.25 L2 0.0398`, current alpha0.10 L2 0.3885); it was not rolled out.
+- Old `actionscale-rewinf-diag-video480-step-0.mp4` / job `1027753` remains obsolete failed learned-policy evidence.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/build_traj_tracking_handoff_comparison.py` passed.
+- `git diff --check` passed.
+- Referenced videos verified with `ffprobe`: all five are `1280x720`, `520` frames, `8.666667s`.
+
+Active Jobs:
+- none.
