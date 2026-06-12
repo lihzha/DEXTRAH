@@ -2948,3 +2948,41 @@ Latest C follow-up:
   needs to fetch metrics, report, video/contact sheet, inspect stable visual
   close/lift, update the worklog, and only then decide whether relabel dataset
   generation or DP BC can proceed.
+
+## 2026-06-11T18:24:00-07:00 - C high-lift artifact bug before relabeling
+
+Goal:
+- Inspect C's high-lift contact-aware rollout follow-up `1027921`.
+
+Artifacts:
+- Report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_rollouts/franka_cube_contact_rollout_ep24s260_high30_lift22_20260611_173411/contact_rollout_report.md`
+- Plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_rollouts/franka_cube_contact_rollout_ep24s260_high30_lift22_20260611_173411/contact_rollout_plot.png`
+- Video:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_rollouts/franka_cube_contact_rollout_ep24s260_high30_lift22_20260611_173411/videos/franka-cube-contact-rollout-high30-lift22-step-0.mp4`
+- Contact sheet:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_rollouts/franka_cube_contact_rollout_ep24s260_high30_lift22_20260611_173411/videos/franka-cube-contact-rollout-high30-lift22-step-0_sheet.jpg`
+
+Metrics:
+- Pre-reset peak lift reached `0.13550 m`.
+- The likely terminal/pre-reset row was around `local_step=280`, with
+  `ee_to_cube=0.00751 m`, `finger_center_to_cube=0.03787 m`,
+  `gripper_width=0.04962 m`, and no pose clipping.
+- The final CSV/report row is post-reset: lift `0`, EE-cube `0.19484 m`,
+  finger-center-cube `0.18519 m`, gripper width `0.08 m`.
+
+Analysis:
+- This is not the same drift-away failure as C's earlier videos. The controller
+  appears to lift the cube, but the artifact logger is mixing in Isaac Lab's
+  post-termination reset observation as the final row.
+- C must patch the logger to skip post-reset observations and annotate terminal
+  metadata on the previous pre-reset row before this can be used as a relabeler
+  gate.
+- No DP dataset generation or DP BC/RL training should start from these
+  contaminated artifacts.
+
+Worker steering:
+- C is patching `contact_aware_franka_cube_rollout.py` to exclude post-reset
+  rows after `terminated/truncated`, mark terminal metadata, and relaunch the
+  same one-variant high-lift smoke for clean report/CSV/plot/video.
