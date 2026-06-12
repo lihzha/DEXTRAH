@@ -5008,3 +5008,50 @@ Next Bounded Adjustment Proposal:
   - optionally freeze lower actor layers or run a shorter update budget to prevent forgetting;
   - report per-source metrics as the primary gate before any selector eval.
 - Old `actionscale-rewinf-diag-video480-step-0.mp4` remains obsolete failed diagnostic evidence and should not be compared against the current best tm0.25/DAgger artifacts.
+
+## 2026-06-11T19:48:00-07:00 - source-balanced rehearsal BC bounded plan
+
+Goal:
+- Address the `1028053` failure mode before any rollout: improve the fresh alpha `0.10` source while preserving tm0.25 rehearsal validation near its initialization baseline.
+
+Hypothesis:
+- `1028053` used equal-size rehearsal but unconstrained random minibatches and a single unweighted MSE objective for 400 full-network updates at `1.5e-4`.
+- This optimized toward the harder alpha `0.10` states and partially forgot the tm0.25 source.
+- Source-balanced minibatches, rehearsal-favoring source weights, a lower learning rate, and best-checkpoint selection by a source-aware validation score should reduce forgetting while still improving the current alpha `0.10` source.
+
+Planned Change:
+- Extend `dextrah_lab/rl_games/bc_reference_action_imitation.py` with supervised-only controls:
+  - `--source_batch_mode=random|balanced`, where balanced samples each source every minibatch.
+  - `--source_loss_weights` to weight per-source MSE terms, e.g. `current_teacher_mix_alpha0p10=1,tm025_rehearsal=3`.
+  - `--best_score_weights` to choose the saved checkpoint by a weighted validation score, e.g. `val_source_current_teacher_mix_alpha0p10_l2=1,val_source_tm025_rehearsal_l2=3`.
+  - `--early_stop_patience` to stop if the weighted score does not improve.
+  - save/report the selected best step and score, not just the final step.
+- Extend `cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh` to pass the new knobs.
+- Keep all seven action dims and the same compact reference (`curobo_validated=false`).
+
+Planned Job If Validation Passes:
+- run name: `franka_cube_traj_tracking_bc_dagger_rehearsal_balanced_tm025_tm010_all_<timestamp>`.
+- input checkpoint: tm0.25 BC checkpoint.
+- fresh collection: teacher_mix alpha `0.10`, `NUM_ENVS=8`, `COLLECTION_STEPS=520`.
+- rehearsal dataset: tm0.25 `reference_action_dataset.pt`.
+- training: all seven dims, `TRAIN_STEPS=400`, `BATCH_SIZE=1024`, lower `LEARNING_RATE=0.00005`.
+- source controls:
+  - `SOURCE_BATCH_MODE=balanced`
+  - `SOURCE_LOSS_WEIGHTS=current_teacher_mix_alpha0p10=1,tm025_rehearsal=3`
+  - `BEST_SCORE_WEIGHTS=val_source_current_teacher_mix_alpha0p10_l2=1,val_source_tm025_rehearsal_l2=3`
+  - `EARLY_STOP_PATIENCE=6`
+
+Supervised Gate:
+- no selector sweep unless this gate improves materially.
+- Required evidence:
+  - checkpoint/report/metrics exist and no NaNs/tracebacks.
+  - tm0.25 rehearsal val L2 remains near baseline (`~0.0357`), target ceiling `<=0.045` preferred and `<=0.055` maximum for considering eval.
+  - current alpha `0.10` source val L2 improves materially relative to its initial `~0.816` and ideally beats/approaches tm0.10 final (`~0.079`); if not, report the tradeoff instead of launching selectors.
+  - global val L2 must not be worse than `1028053` (`0.094`) if considering any selector.
+- No PPO/RL scale-up.
+
+Validation Before Launch:
+- `python3 -m py_compile dextrah_lab/rl_games/bc_reference_action_imitation.py dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py dextrah_lab/rl_games/analyze_traj_tracking_action_semantics.py`
+- `bash -n cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh`
+- `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- commit/push; deploy exact commit to l401 agent worktree using the agent-owned bare mirror if GitHub SSH auth is still blocked.

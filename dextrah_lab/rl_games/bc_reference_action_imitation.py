@@ -57,6 +57,34 @@ parser.add_argument(
     default="",
     help="Optional comma/colon-separated source names matching --rehearsal_dataset_paths.",
 )
+parser.add_argument(
+    "--source_batch_mode",
+    choices=("random", "balanced"),
+    default="random",
+    help="Supervised batch sampling mode. 'balanced' draws from each dataset source every minibatch.",
+)
+parser.add_argument(
+    "--source_loss_weights",
+    type=str,
+    default="",
+    help="Optional comma-separated source weights, e.g. current_teacher_mix_alpha0p10=1,tm025_rehearsal=3.",
+)
+parser.add_argument(
+    "--best_score_weights",
+    type=str,
+    default="",
+    help=(
+        "Optional comma-separated validation metric weights used to choose the saved checkpoint, "
+        "e.g. val_source_current_teacher_mix_alpha0p10_l2=1,val_source_tm025_rehearsal_l2=3. "
+        "Defaults to val_l2=1."
+    ),
+)
+parser.add_argument(
+    "--early_stop_patience",
+    type=int,
+    default=0,
+    help="Stop after this many eval intervals without best-score improvement. 0 disables early stopping.",
+)
 parser.add_argument("--seed", type=int, default=42, help="Random seed for env and supervised split.")
 parser.add_argument(
     "--collection_action_source",
@@ -124,6 +152,60 @@ def _source_slug(raw: str) -> str:
         elif chars and chars[-1] != "_":
             chars.append("_")
     return "".join(chars).strip("_") or "source"
+
+
+def _parse_float_map(raw: str) -> dict[str, float]:
+    weights: dict[str, float] = {}
+    if not raw.strip():
+        return weights
+    for token in raw.replace(";", ",").split(","):
+        token = token.strip()
+        if not token:
+            continue
+        if "=" not in token:
+            raise ValueError(f"Expected key=value in weight map entry: {token!r}")
+        key, value = token.split("=", 1)
+        key = key.strip()
+        if not key:
+            raise ValueError(f"Empty key in weight map entry: {token!r}")
+        weight = float(value)
+        if not math.isfinite(weight) or weight < 0.0:
+            raise ValueError(f"Weight for {key!r} must be finite and non-negative, got {weight}")
+        weights[key] = weight
+    return weights
+
+
+def _resolve_source_weights(raw: str, source_names: list[str], source_slugs: list[str]) -> list[float]:
+    parsed = _parse_float_map(raw)
+    if not parsed:
+        return [1.0 for _ in source_slugs]
+    source_keys: dict[str, int] = {}
+    for idx, (name, slug) in enumerate(zip(source_names, source_slugs, strict=True)):
+        source_keys[name] = idx
+        source_keys[slug] = idx
+        source_keys[str(idx)] = idx
+    weights = [1.0 for _ in source_slugs]
+    for key, value in parsed.items():
+        if key not in source_keys:
+            raise ValueError(f"Unknown source weight key {key!r}; valid keys include {sorted(source_keys)}")
+        weights[source_keys[key]] = value
+    return weights
+
+
+def _score_row(row: dict[str, float | int | str], weights: dict[str, float]) -> float:
+    score = 0.0
+    total_weight = 0.0
+    for key, weight in weights.items():
+        if key not in row:
+            raise KeyError(f"Best-score metric {key!r} not found in row. Available keys include {sorted(row)[:20]}...")
+        value = row[key]
+        if not isinstance(value, (float, int)):
+            raise TypeError(f"Best-score metric {key!r} must be numeric, got {type(value).__name__}")
+        score += weight * float(value)
+        total_weight += weight
+    if total_weight <= 0.0:
+        raise ValueError("--best_score_weights must include at least one positive weight")
+    return score / total_weight
 
 
 def _parse_loss_dims(raw: str, action_dim: int) -> list[int]:
@@ -284,6 +366,9 @@ def _draw_loss_plot(rows: list[dict[str, float | int | str]], path: Path) -> Non
 def _write_report(summary: dict[str, object], rows: list[dict[str, float | int | str]], path: Path) -> None:
     first = rows[0] if rows else {}
     last = rows[-1] if rows else {}
+    selected = summary.get("selected", last)
+    if not isinstance(selected, dict):
+        selected = last
     source_rows = summary.get("dataset_sources", [])
     source_lines = [
         "| source | samples | collection action | teacher alpha | source path |",
@@ -337,6 +422,11 @@ def _write_report(summary: dict[str, object], rows: list[dict[str, float | int |
         f"- samples: `{summary.get('num_samples')}` total / `{summary.get('num_train')}` train / `{summary.get('num_val')}` held-out",
         f"- observation dim: `{summary.get('obs_dim')}`, action dim: `{summary.get('action_dim')}`",
         f"- loss dims: `{summary.get('loss_dims')}`",
+        f"- source batch mode: `{summary.get('source_batch_mode')}`",
+        f"- source loss weights: `{summary.get('source_loss_weights')}`",
+        f"- best score weights: `{summary.get('best_score_weights')}`",
+        f"- selected step/score: `{summary.get('selected_step')}` / `{summary.get('selected_score')}`",
+        f"- early stop triggered: `{summary.get('early_stop_triggered')}`",
         f"- reference caveat: `curobo_validated={summary.get('curobo_validated')}`",
         "",
         "## Dataset Sources",
@@ -358,6 +448,19 @@ def _write_report(summary: dict[str, object], rows: list[dict[str, float | int |
             f"{first.get('val_l2', 'n/a')} | {last.get('val_l2', 'n/a')} | "
             f"{first.get('val_up_abs', 'n/a')} | {last.get('val_up_abs', 'n/a')} | "
             f"{first.get('val_close_abs', 'n/a')} | {last.get('val_close_abs', 'n/a')} |"
+        ),
+        "",
+        "## Selected Checkpoint",
+        "",
+        "| split | selected mse | selected l2 | selected up abs | selected close abs |",
+        "| --- | ---: | ---: | ---: | ---: |",
+        (
+            f"| train | {selected.get('train_mse', 'n/a')} | {selected.get('train_l2', 'n/a')} | "
+            f"{selected.get('train_up_abs', 'n/a')} | {selected.get('train_close_abs', 'n/a')} |"
+        ),
+        (
+            f"| val | {selected.get('val_mse', 'n/a')} | {selected.get('val_l2', 'n/a')} | "
+            f"{selected.get('val_up_abs', 'n/a')} | {selected.get('val_close_abs', 'n/a')} |"
         ),
         "",
         "## Per-Source Loss",
@@ -620,6 +723,13 @@ def main(env_cfg, agent_cfg: dict):
     train_idx = perm[val_count:]
     batch_size = max(1, min(args_cli.batch_size, int(train_idx.numel())))
     dims_t = torch.tensor(loss_dims, dtype=torch.long, device=device)
+    train_idx_by_source = [train_idx[source_id_tensor[train_idx] == source_id] for source_id in range(len(source_slugs))]
+    active_train_sources = [source_id for source_id, indices in enumerate(train_idx_by_source) if int(indices.numel()) > 0]
+    if args_cli.source_batch_mode == "balanced" and not active_train_sources:
+        raise RuntimeError("Balanced source batching requested but no train source indices are available.")
+    source_loss_weights = _resolve_source_weights(args_cli.source_loss_weights, source_names, source_slugs)
+    source_loss_weights_t = torch.tensor(source_loss_weights, dtype=torch.float32, device=device)
+    best_score_weights = _parse_float_map(args_cli.best_score_weights) or {"val_l2": 1.0}
 
     model = agent.model
     model.train()
@@ -662,14 +772,56 @@ def main(env_cfg, agent_cfg: dict):
                     )
                 )
                 row[f"val_source_{source_slug}_count"] = int(val_mask.sum().detach().cpu())
+        row["selection_score"] = _score_row(row, best_score_weights)
         return row
 
+    def sample_train_batch() -> torch.Tensor:
+        if args_cli.source_batch_mode == "random":
+            return train_idx[torch.randint(0, int(train_idx.numel()), (batch_size,), generator=generator, device=device)]
+        per_source = max(1, batch_size // max(1, len(active_train_sources)))
+        remainder = max(0, batch_size - per_source * len(active_train_sources))
+        choices = []
+        for source_pos, source_id in enumerate(active_train_sources):
+            count = per_source + (1 if source_pos < remainder else 0)
+            indices = train_idx_by_source[source_id]
+            local = torch.randint(0, int(indices.numel()), (count,), generator=generator, device=device)
+            choices.append(indices[local])
+        choice = torch.cat(choices, dim=0)
+        if int(choice.numel()) > batch_size:
+            choice = choice[:batch_size]
+        shuffle = torch.randperm(int(choice.numel()), generator=generator, device=device)
+        return choice[shuffle]
+
+    def weighted_source_loss(pred: torch.Tensor, target: torch.Tensor, batch_sources: torch.Tensor) -> torch.Tensor:
+        per_sample_loss = torch.mean(torch.square(pred[:, dims_t] - target[:, dims_t]), dim=-1)
+        weighted_losses = []
+        weights_used = []
+        for source_id in torch.unique(batch_sources).detach().cpu().tolist():
+            source_id_int = int(source_id)
+            mask = batch_sources == source_id_int
+            if bool(mask.any()):
+                weight = source_loss_weights_t[source_id_int]
+                if float(weight.detach().cpu()) > 0.0:
+                    weighted_losses.append(weight * per_sample_loss[mask].mean())
+                    weights_used.append(weight)
+        if not weighted_losses:
+            return per_sample_loss.mean()
+        return torch.stack(weighted_losses).sum() / torch.stack(weights_used).sum().clamp_min(1.0e-8)
+
     curve_rows.append(evaluate_split(0))
+    best_row = dict(curve_rows[0])
+    best_score = float(best_row["selection_score"])
+    best_step = 0
+    best_state = {key: value.detach().cpu().clone() for key, value in model.state_dict().items()}
+    evals_without_improvement = 0
+    early_stop_triggered = False
+    actual_train_steps = 0
     for step in range(1, args_cli.train_steps + 1):
-        choice = train_idx[torch.randint(0, int(train_idx.numel()), (batch_size,), generator=generator, device=device)]
+        actual_train_steps = step
+        choice = sample_train_batch()
         pred = _model_mus(model, obs_tensor[choice], action_dim, is_train=True)
         target = reference_tensor[choice]
-        loss = torch.mean(torch.square(pred[:, dims_t] - target[:, dims_t]))
+        loss = weighted_source_loss(pred, target, source_id_tensor[choice])
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
@@ -678,8 +830,33 @@ def main(env_cfg, agent_cfg: dict):
             row = evaluate_split(step)
             row["last_batch_loss"] = float(loss.detach().cpu())
             curve_rows.append(row)
+            score = float(row["selection_score"])
+            if score < best_score:
+                best_score = score
+                best_step = step
+                best_row = dict(row)
+                best_state = {key: value.detach().cpu().clone() for key, value in model.state_dict().items()}
+                evals_without_improvement = 0
+            else:
+                evals_without_improvement += 1
             print(json.dumps(row, sort_keys=True))
+            if args_cli.early_stop_patience > 0 and evals_without_improvement >= args_cli.early_stop_patience:
+                early_stop_triggered = True
+                print(
+                    json.dumps(
+                        {
+                            "early_stop_triggered": True,
+                            "step": int(step),
+                            "best_step": int(best_step),
+                            "best_score": best_score,
+                            "evals_without_improvement": int(evals_without_improvement),
+                        },
+                        sort_keys=True,
+                    )
+                )
+                break
 
+    model.load_state_dict(best_state)
     ckpt = torch_ext.load_checkpoint(resume_path)
     ckpt["model"] = model.state_dict()
     if hasattr(model, "running_mean_std") and "running_mean_std" in ckpt:
@@ -691,8 +868,14 @@ def main(env_cfg, agent_cfg: dict):
         "num_val": int(val_idx.numel()),
         "loss_dims": loss_dims,
         "train_steps": int(args_cli.train_steps),
+        "actual_train_steps": int(actual_train_steps),
         "learning_rate": float(args_cli.learning_rate),
         "dataset_path": str(dataset_path),
+        "source_batch_mode": args_cli.source_batch_mode,
+        "source_loss_weights": source_loss_weights,
+        "best_score_weights": best_score_weights,
+        "best_step": int(best_step),
+        "best_score": best_score,
     }
     torch.save(ckpt, checkpoint_out)
 
@@ -719,6 +902,7 @@ def main(env_cfg, agent_cfg: dict):
         "collection_steps": int(args_cli.collection_steps),
         "num_envs": int(args_cli.num_envs),
         "train_steps": int(args_cli.train_steps),
+        "actual_train_steps": int(actual_train_steps),
         "batch_size": int(batch_size),
         "learning_rate": float(args_cli.learning_rate),
         "validation_fraction": float(args_cli.validation_fraction),
@@ -726,6 +910,13 @@ def main(env_cfg, agent_cfg: dict):
         "collection_teacher_alpha": collection_teacher_alpha,
         "rehearsal_dataset_paths": rehearsal_paths,
         "dataset_sources": source_metadata,
+        "source_batch_mode": args_cli.source_batch_mode,
+        "source_loss_weights": dict(zip(source_slugs, source_loss_weights, strict=True)),
+        "best_score_weights": best_score_weights,
+        "selected": best_row,
+        "selected_step": int(best_step),
+        "selected_score": best_score,
+        "early_stop_triggered": bool(early_stop_triggered),
         "curobo_validated": bool(reference_summary.get("curobo_validated", False)) if isinstance(reference_summary, dict) else False,
         "reference_summary": reference_summary,
         "dataset_reference_stats": _action_stats(reference_tensor.cpu(), "reference"),
