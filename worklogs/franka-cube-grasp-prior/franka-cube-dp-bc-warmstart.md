@@ -8164,3 +8164,23 @@ Next:
 - Commit/push, deploy the exact commit to the agent-owned l401 worktree, then
   launch one bounded relabel-set gate for original cuRobo episode `16`, source
   step `260`, trajectory seed16, joint blend alphas `1.0`, `0.9`, and `0.75`.
+
+## 2026-06-11T21:07:28-07:00 - support expansion relabel deploy boundary
+
+Version Control:
+- implementation_commit: `527660b2bcd26272bdb722b064f59f7615d7d6d2`
+- push: pushed to `origin/codex/franka-cube-diffusion-policy-bc`
+- remote_worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- remote_commit: `527660b2bcd26272bdb722b064f59f7615d7d6d2`
+- remote_status: clean detached HEAD
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/contact_aware_franka_cube_rollout.py dextrah_lab/offline_dp_bc/make_contact_relabel_set_report.py dextrah_lab/offline_dp_bc/make_support_expansion_dataset_report.py` -> pass
+- `bash -n cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh` -> pass
+- `git diff --check` -> pass
+
+Next:
+- Launch the bounded relabel-set gate from the deployed l401 worktree with
+  original episode `16`, source step `260`, trajectory seed16, and joint blend
+  alphas `1.0`, `0.9`, `0.75`.
