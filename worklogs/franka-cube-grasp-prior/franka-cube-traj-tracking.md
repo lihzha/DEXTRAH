@@ -5142,3 +5142,52 @@ Analysis:
 
 Active Jobs:
 - `squeue -u lzha` shows no active l401 jobs for this worker at the time of this entry.
+
+## 2026-06-11T20:30:14-07:00 - tm0.25 actor distillation bounded plan
+
+Goal:
+- Make one more bounded learned-handoff attempt that explicitly preserves tm0.25 behavior while fitting lower-teacher alpha `0.10` labels.
+- Keep this supervised-only until metrics pass. No selector/video/PPO/RL launch from this attempt unless the supervised gate materially improves.
+
+Hypothesis:
+- Dataset mixing and source-weighting failed because tm0.25 rehearsal labels and low-teacher alpha `0.10` labels compete in the same reference-label MSE objective.
+- The actual behavior to preserve is the tm0.25 actor manifold on tm0.25 successful-state observations, not just the reference labels in that dataset.
+- A frozen-initial-actor distillation loss on tm0.25 rehearsal observations should preserve the current best teacher-assisted behavior more directly while allowing the label loss to focus on fresh lower-teacher alpha `0.10` observations.
+
+Planned Change:
+- Extend `dextrah_lab/rl_games/bc_reference_action_imitation.py` with diagnostic-only actor distillation controls:
+  - `--distill_sources` selecting source names/slugs/ids to regularize, e.g. `tm025_rehearsal`.
+  - `--distill_loss_weight` controlling an extra MSE loss to frozen initial actor outputs on those source observations.
+  - `--distill_dims`, defaulting to the supervised action dims.
+  - report distillation train/val errors and per-source distillation metrics in `bc_metrics.json`, `bc_loss_curve.csv`, `bc_loss_plot.png`, and `report.md`.
+- Extend `cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh` to pass and echo the new knobs.
+- The distillation target for this run is the input checkpoint loaded at startup, which will be the tm0.25 checkpoint.
+
+Planned Job If Validation Passes:
+- run name: `franka_cube_traj_tracking_bc_dagger_distill_tm025_tm010_all_<timestamp>`.
+- input checkpoint: `/results/bc/franka_cube_traj_tracking_bc_dagger_tm025_all_20260611_185900/nn/bc_reference_action_imitation.pth`.
+- fresh collection: teacher_mix alpha `0.10`, `NUM_ENVS=8`, `COLLECTION_STEPS=520`.
+- rehearsal dataset: tm0.25 `reference_action_dataset.pt`.
+- training: all seven dims, `TRAIN_STEPS=400`, `BATCH_SIZE=1024`, `LEARNING_RATE=0.00005`.
+- objective:
+  - `SOURCE_BATCH_MODE=balanced`.
+  - reference-label loss only on fresh alpha `0.10`: `SOURCE_LOSS_WEIGHTS=current_teacher_mix_alpha0p10=1,tm025_rehearsal=0`.
+  - actor distillation on tm0.25 source: `DISTILL_SOURCES=tm025_rehearsal`, `DISTILL_LOSS_WEIGHT=2.0`, `DISTILL_DIMS=all`.
+  - checkpoint selection still uses supervised gate-oriented metrics: `BEST_SCORE_WEIGHTS=val_source_current_teacher_mix_alpha0p10_l2=1,val_source_tm025_rehearsal_l2=2`.
+
+Supervised Gate:
+- Preserve tm0.25 rehearsal val L2 near baseline: preferred `<=0.045`, hard ceiling `<=0.055`.
+- Current alpha `0.10` source val L2 must improve materially relative to latest balanced run (`0.15143`) and ideally approach/beat previous tm0.10 (`~0.079`).
+- Global val L2 should not regress relative to `1028053` (`0.094008`) if considering any rollout.
+- If these fail, stop at report/metrics and do not launch selectors or videos.
+
+Validation Before Launch:
+- `python3 -m py_compile dextrah_lab/rl_games/bc_reference_action_imitation.py dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py dextrah_lab/rl_games/analyze_traj_tracking_action_semantics.py`
+- `bash -n cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh`
+- `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- `git diff --check`
+- commit/push and deploy exact commit to the l401 agent-owned worktree via Git before any Slurm launch.
+
+Notes:
+- Old `actionscale-rewinf-diag-video480-step-0.mp4` remains obsolete failed diagnostic evidence.
+- Compact trajectory reference remains `curobo_validated=false`.

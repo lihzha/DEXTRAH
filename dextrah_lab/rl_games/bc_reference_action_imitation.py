@@ -85,6 +85,27 @@ parser.add_argument(
     default=0,
     help="Stop after this many eval intervals without best-score improvement. 0 disables early stopping.",
 )
+parser.add_argument(
+    "--distill_sources",
+    type=str,
+    default="",
+    help=(
+        "Optional comma/colon-separated source names/slugs/ids to regularize toward the frozen initial actor. "
+        "Disabled when empty."
+    ),
+)
+parser.add_argument(
+    "--distill_loss_weight",
+    type=float,
+    default=0.0,
+    help="MSE weight for frozen-initial-actor distillation on --distill_sources.",
+)
+parser.add_argument(
+    "--distill_dims",
+    type=str,
+    default="",
+    help="Action dimensions used for distillation. Defaults to --loss_dims when empty.",
+)
 parser.add_argument("--seed", type=int, default=42, help="Random seed for env and supervised split.")
 parser.add_argument(
     "--collection_action_source",
@@ -191,6 +212,27 @@ def _resolve_source_weights(raw: str, source_names: list[str], source_slugs: lis
             raise ValueError(f"Unknown source weight key {key!r}; valid keys include {sorted(source_keys)}")
         weights[source_keys[key]] = value
     return weights
+
+
+def _resolve_source_ids(raw: str, source_names: list[str], source_slugs: list[str]) -> list[int]:
+    values = _split_list(raw)
+    if not values:
+        return []
+    if any(value in ("*", "all") for value in values):
+        return list(range(len(source_slugs)))
+    source_keys: dict[str, int] = {}
+    for idx, (name, slug) in enumerate(zip(source_names, source_slugs, strict=True)):
+        source_keys[name] = idx
+        source_keys[slug] = idx
+        source_keys[str(idx)] = idx
+    source_ids: list[int] = []
+    for value in values:
+        if value not in source_keys:
+            raise ValueError(f"Unknown source selector {value!r}; valid keys include {sorted(source_keys)}")
+        source_id = source_keys[value]
+        if source_id not in source_ids:
+            source_ids.append(source_id)
+    return source_ids
 
 
 def _score_row(row: dict[str, float | int | str], weights: dict[str, float]) -> float:
@@ -364,6 +406,84 @@ def _draw_loss_plot(rows: list[dict[str, float | int | str]], path: Path) -> Non
     image.save(path)
 
 
+def _draw_source_metric_plot(rows: list[dict[str, float | int | str]], path: Path) -> None:
+    from PIL import Image, ImageDraw, ImageFont
+
+    width, height = 1320, 720
+    margin_left, margin_right = 96, 42
+    margin_top, margin_bottom = 92, 96
+    plot_x0, plot_y0 = margin_left, margin_top
+    plot_x1, plot_y1 = width - margin_right, height - margin_bottom
+    image = Image.new("RGB", (width, height), "white")
+    draw = ImageDraw.Draw(image)
+    try:
+        font_title = ImageFont.truetype("DejaVuSans-Bold.ttf", 24)
+        font = ImageFont.truetype("DejaVuSans.ttf", 14)
+        font_small = ImageFont.truetype("DejaVuSans.ttf", 12)
+    except Exception:
+        font_title = font = font_small = None
+    draw.text((42, 26), "BC Source Validation Metrics", fill=(20, 20, 20), font=font_title)
+
+    all_keys = sorted({key for row in rows for key in row})
+    metric_keys = ["val_l2", "selection_score"]
+    metric_keys.extend(
+        key
+        for key in all_keys
+        if (key.startswith("val_source_") and key.endswith("_l2"))
+        or (key.startswith("val_distill_source_") and key.endswith("_l2"))
+    )
+    metric_keys = [key for idx, key in enumerate(metric_keys) if key in all_keys and key not in metric_keys[:idx]]
+    if not metric_keys:
+        metric_keys = ["val_l2"] if "val_l2" in all_keys else []
+
+    values = [
+        float(row[key])
+        for row in rows
+        for key in metric_keys
+        if isinstance(row.get(key), (float, int))
+    ]
+    max_value = max(values) if values else 1.0
+    max_value = max(max_value, 1.0e-6)
+    for frac in (0.0, 0.25, 0.5, 0.75, 1.0):
+        y = plot_y1 - frac * (plot_y1 - plot_y0)
+        draw.line((plot_x0, y, plot_x1, y), fill=(235, 235, 235), width=1)
+        draw.text((34, y - 8), f"{frac * max_value:.3f}", fill=(80, 80, 80), font=font_small)
+    draw.rectangle((plot_x0, plot_y0, plot_x1, plot_y1), outline=(205, 205, 205), width=1)
+
+    palette = [
+        (45, 120, 195),
+        (210, 95, 45),
+        (60, 155, 105),
+        (145, 95, 180),
+        (205, 145, 45),
+        (65, 155, 170),
+        (180, 70, 115),
+        (110, 110, 110),
+    ]
+    legend_x, legend_y = plot_x0, plot_y1 + 22
+    for idx, key in enumerate(metric_keys[:8]):
+        color = palette[idx % len(palette)]
+        points = []
+        for row_idx, row in enumerate(rows):
+            value = row.get(key)
+            if not isinstance(value, (float, int)):
+                continue
+            x = plot_x0 + row_idx * (plot_x1 - plot_x0) / max(len(rows) - 1, 1)
+            y = plot_y1 - max(0.0, min(1.0, float(value) / max_value)) * (plot_y1 - plot_y0)
+            points.append((x, y))
+        if len(points) > 1:
+            draw.line(points, fill=color, width=3)
+        elif len(points) == 1:
+            x, y = points[0]
+            draw.ellipse((x - 3, y - 3, x + 3, y + 3), fill=color)
+        lx = legend_x + (idx % 4) * 300
+        ly = legend_y + (idx // 4) * 24
+        draw.rectangle((lx, ly, lx + 14, ly + 14), fill=color)
+        draw.text((lx + 20, ly - 2), key[:38], fill=(35, 35, 35), font=font_small)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    image.save(path)
+
+
 def _write_report(summary: dict[str, object], rows: list[dict[str, float | int | str]], path: Path) -> None:
     first = rows[0] if rows else {}
     last = rows[-1] if rows else {}
@@ -391,6 +511,10 @@ def _write_report(summary: dict[str, object], rows: list[dict[str, float | int |
         "| source | split | initial mse | final mse | initial l2 | final l2 | initial up abs | final up abs | initial close abs | final close abs |",
         "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
+    distill_metric_lines = [
+        "| source | split | initial distill mse | final distill mse | initial distill l2 | final distill l2 | initial up abs | final up abs | initial close abs | final close abs |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ]
     if isinstance(source_rows, list):
         for source in source_rows:
             if not isinstance(source, dict):
@@ -408,6 +532,35 @@ def _write_report(summary: dict[str, object], rows: list[dict[str, float | int |
                     f"{first.get(prefix + '_up_abs', 'n/a')} | {last.get(prefix + '_up_abs', 'n/a')} | "
                     f"{first.get(prefix + '_close_abs', 'n/a')} | {last.get(prefix + '_close_abs', 'n/a')} |"
                 )
+                distill_prefix = f"{split}_distill_source_{slug}"
+                if distill_prefix + "_mse" in first or distill_prefix + "_mse" in last:
+                    distill_metric_lines.append(
+                        f"| {name} | {split} | "
+                        f"{first.get(distill_prefix + '_mse', 'n/a')} | {last.get(distill_prefix + '_mse', 'n/a')} | "
+                        f"{first.get(distill_prefix + '_l2', 'n/a')} | {last.get(distill_prefix + '_l2', 'n/a')} | "
+                        f"{first.get(distill_prefix + '_up_abs', 'n/a')} | {last.get(distill_prefix + '_up_abs', 'n/a')} | "
+                        f"{first.get(distill_prefix + '_close_abs', 'n/a')} | {last.get(distill_prefix + '_close_abs', 'n/a')} |"
+                    )
+    if "train_distill_mse" in first or "val_distill_mse" in first:
+        distill_metric_lines.extend(
+            [
+                "",
+                "| aggregate | split | initial distill mse | final distill mse | initial distill l2 | final distill l2 | initial up abs | final up abs | initial close abs | final close abs |",
+                "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+                (
+                    f"| selected sources | train | {first.get('train_distill_mse', 'n/a')} | {last.get('train_distill_mse', 'n/a')} | "
+                    f"{first.get('train_distill_l2', 'n/a')} | {last.get('train_distill_l2', 'n/a')} | "
+                    f"{first.get('train_distill_up_abs', 'n/a')} | {last.get('train_distill_up_abs', 'n/a')} | "
+                    f"{first.get('train_distill_close_abs', 'n/a')} | {last.get('train_distill_close_abs', 'n/a')} |"
+                ),
+                (
+                    f"| selected sources | val | {first.get('val_distill_mse', 'n/a')} | {last.get('val_distill_mse', 'n/a')} | "
+                    f"{first.get('val_distill_l2', 'n/a')} | {last.get('val_distill_l2', 'n/a')} | "
+                    f"{first.get('val_distill_up_abs', 'n/a')} | {last.get('val_distill_up_abs', 'n/a')} | "
+                    f"{first.get('val_distill_close_abs', 'n/a')} | {last.get('val_distill_close_abs', 'n/a')} |"
+                ),
+            ]
+        )
     lines = [
         "# Reference Action BC Diagnostic",
         "",
@@ -426,6 +579,10 @@ def _write_report(summary: dict[str, object], rows: list[dict[str, float | int |
         f"- source batch mode: `{summary.get('source_batch_mode')}`",
         f"- source loss weights: `{summary.get('source_loss_weights')}`",
         f"- best score weights: `{summary.get('best_score_weights')}`",
+        f"- distillation target: `{summary.get('distill_target')}`",
+        f"- distillation sources: `{summary.get('distill_sources')}`",
+        f"- distillation dims: `{summary.get('distill_dims')}`",
+        f"- distillation loss weight: `{summary.get('distill_loss_weight')}`",
         f"- selected step/score: `{summary.get('selected_step')}` / `{summary.get('selected_score')}`",
         f"- early stop triggered: `{summary.get('early_stop_triggered')}`",
         f"- reference caveat: `curobo_validated={summary.get('curobo_validated')}`",
@@ -468,11 +625,16 @@ def _write_report(summary: dict[str, object], rows: list[dict[str, float | int |
         "",
         *source_metric_lines,
         "",
+        "## Distillation Metrics",
+        "",
+        *distill_metric_lines,
+        "",
         "## Artifacts",
         "",
         f"- metrics: `{summary.get('metrics_path')}`",
         f"- curve CSV: `{summary.get('curve_csv_path')}`",
         f"- plot: `{summary.get('plot_path')}`",
+        f"- source metric plot: `{summary.get('source_plot_path')}`",
         f"- dataset: `{summary.get('dataset_path')}`",
         "",
         "Next acceptance is not this loss alone: evaluate selector alphas `0.0`, `0.25`, `0.5`, `0.75`, and `1.0` with metrics first, then videos/action-semantics plots only if selector behavior improves.",
@@ -497,6 +659,7 @@ def main(env_cfg, agent_cfg: dict):
     curve_csv_path = output_dir / "bc_loss_curve.csv"
     metrics_path = output_dir / "bc_metrics.json"
     plot_path = output_dir / "bc_loss_plot.png"
+    source_plot_path = output_dir / "bc_source_metric_plot.png"
     report_path = output_dir / "report.md"
 
     env_cfg.scene.num_envs = args_cli.num_envs if args_cli.num_envs is not None else env_cfg.scene.num_envs
@@ -731,11 +894,44 @@ def main(env_cfg, agent_cfg: dict):
     source_loss_weights = _resolve_source_weights(args_cli.source_loss_weights, source_names, source_slugs)
     source_loss_weights_t = torch.tensor(source_loss_weights, dtype=torch.float32, device=device)
     best_score_weights = _parse_float_map(args_cli.best_score_weights) or {"val_l2": 1.0}
+    if args_cli.distill_loss_weight < 0.0 or not math.isfinite(args_cli.distill_loss_weight):
+        raise ValueError(f"--distill_loss_weight must be finite and non-negative, got {args_cli.distill_loss_weight}")
+    distill_source_ids = _resolve_source_ids(args_cli.distill_sources, source_names, source_slugs)
+    distill_source_names = [source_names[source_id] for source_id in distill_source_ids]
+    distill_source_slugs = [source_slugs[source_id] for source_id in distill_source_ids]
+    if args_cli.distill_loss_weight > 0.0 and not distill_source_ids:
+        raise ValueError("--distill_loss_weight > 0 requires at least one --distill_sources entry")
+    distill_dims = _parse_loss_dims(args_cli.distill_dims, action_dim) if args_cli.distill_dims.strip() else list(loss_dims)
+    distill_dims_t = torch.tensor(distill_dims, dtype=torch.long, device=device)
+    distill_enabled = args_cli.distill_loss_weight > 0.0 and bool(distill_source_ids)
 
     model = agent.model
+    distill_target_tensor: torch.Tensor | None = None
+    if distill_enabled:
+        model.eval()
+        with torch.no_grad():
+            distill_target_tensor = _model_mus(model, obs_tensor, action_dim, is_train=False).detach().clamp(-1.0, 1.0)
+        print(
+            json.dumps(
+                {
+                    "distill_target": "input_checkpoint_initial_actor",
+                    "distill_sources": distill_source_names,
+                    "distill_source_ids": distill_source_ids,
+                    "distill_dims": distill_dims,
+                    "distill_loss_weight": float(args_cli.distill_loss_weight),
+                },
+                sort_keys=True,
+            )
+        )
     model.train()
     optimizer = torch.optim.AdamW(model.parameters(), lr=args_cli.learning_rate, weight_decay=args_cli.weight_decay)
     curve_rows: list[dict[str, float | int | str]] = []
+
+    def source_subset_mask(batch_sources: torch.Tensor, selected_source_ids: list[int]) -> torch.Tensor:
+        mask = torch.zeros(batch_sources.shape, dtype=torch.bool, device=batch_sources.device)
+        for source_id in selected_source_ids:
+            mask = torch.logical_or(mask, batch_sources == int(source_id))
+        return mask
 
     def evaluate_split(step: int) -> dict[str, float | int | str]:
         model.eval()
@@ -773,6 +969,55 @@ def main(env_cfg, agent_cfg: dict):
                     )
                 )
                 row[f"val_source_{source_slug}_count"] = int(val_mask.sum().detach().cpu())
+        if distill_enabled and distill_target_tensor is not None:
+            train_distill_target = distill_target_tensor[train_idx]
+            val_distill_target = distill_target_tensor[val_idx]
+            train_distill_mask = source_subset_mask(train_sources, distill_source_ids)
+            val_distill_mask = source_subset_mask(val_sources, distill_source_ids)
+            if bool(train_distill_mask.any()):
+                row.update(
+                    _error_stats(
+                        train_pred[train_distill_mask],
+                        train_distill_target[train_distill_mask],
+                        distill_dims,
+                        "train_distill",
+                    )
+                )
+                row["train_distill_count"] = int(train_distill_mask.sum().detach().cpu())
+            if bool(val_distill_mask.any()):
+                row.update(
+                    _error_stats(
+                        val_pred[val_distill_mask],
+                        val_distill_target[val_distill_mask],
+                        distill_dims,
+                        "val_distill",
+                    )
+                )
+                row["val_distill_count"] = int(val_distill_mask.sum().detach().cpu())
+            for source_id in distill_source_ids:
+                source_slug = source_slugs[source_id]
+                train_mask = train_sources == source_id
+                if bool(train_mask.any()):
+                    row.update(
+                        _error_stats(
+                            train_pred[train_mask],
+                            train_distill_target[train_mask],
+                            distill_dims,
+                            f"train_distill_source_{source_slug}",
+                        )
+                    )
+                    row[f"train_distill_source_{source_slug}_count"] = int(train_mask.sum().detach().cpu())
+                val_mask = val_sources == source_id
+                if bool(val_mask.any()):
+                    row.update(
+                        _error_stats(
+                            val_pred[val_mask],
+                            val_distill_target[val_mask],
+                            distill_dims,
+                            f"val_distill_source_{source_slug}",
+                        )
+                    )
+                    row[f"val_distill_source_{source_slug}_count"] = int(val_mask.sum().detach().cpu())
         row["selection_score"] = _score_row(row, best_score_weights)
         return row
 
@@ -809,6 +1054,16 @@ def main(env_cfg, agent_cfg: dict):
             return per_sample_loss.mean()
         return torch.stack(weighted_losses).sum() / torch.stack(weights_used).sum().clamp_min(1.0e-8)
 
+    def distillation_loss(pred: torch.Tensor, batch_indices: torch.Tensor) -> torch.Tensor:
+        if not distill_enabled or distill_target_tensor is None:
+            return pred.sum() * 0.0
+        batch_sources = source_id_tensor[batch_indices]
+        mask = source_subset_mask(batch_sources, distill_source_ids)
+        if not bool(mask.any()):
+            return pred.sum() * 0.0
+        target = distill_target_tensor[batch_indices]
+        return torch.mean(torch.square(pred[mask][:, distill_dims_t] - target[mask][:, distill_dims_t]))
+
     curve_rows.append(evaluate_split(0))
     best_row = dict(curve_rows[0])
     best_score = float(best_row["selection_score"])
@@ -822,7 +1077,9 @@ def main(env_cfg, agent_cfg: dict):
         choice = sample_train_batch()
         pred = _model_mus(model, obs_tensor[choice], action_dim, is_train=True)
         target = reference_tensor[choice]
-        loss = weighted_source_loss(pred, target, source_id_tensor[choice])
+        label_loss = weighted_source_loss(pred, target, source_id_tensor[choice])
+        distill_loss = distillation_loss(pred, choice)
+        loss = label_loss + float(args_cli.distill_loss_weight) * distill_loss
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
@@ -830,6 +1087,8 @@ def main(env_cfg, agent_cfg: dict):
         if step == args_cli.train_steps or step % max(1, args_cli.eval_interval) == 0:
             row = evaluate_split(step)
             row["last_batch_loss"] = float(loss.detach().cpu())
+            row["last_batch_label_loss"] = float(label_loss.detach().cpu())
+            row["last_batch_distill_loss"] = float(distill_loss.detach().cpu())
             curve_rows.append(row)
             score = float(row["selection_score"])
             if score < best_score:
@@ -875,6 +1134,11 @@ def main(env_cfg, agent_cfg: dict):
         "source_batch_mode": args_cli.source_batch_mode,
         "source_loss_weights": source_loss_weights,
         "best_score_weights": best_score_weights,
+        "distill_target": "input_checkpoint_initial_actor" if distill_enabled else "disabled",
+        "distill_sources": distill_source_names,
+        "distill_source_ids": distill_source_ids,
+        "distill_dims": distill_dims,
+        "distill_loss_weight": float(args_cli.distill_loss_weight),
         "best_step": int(best_step),
         "best_score": best_score,
     }
@@ -893,6 +1157,7 @@ def main(env_cfg, agent_cfg: dict):
         "metrics_path": str(metrics_path),
         "curve_csv_path": str(curve_csv_path),
         "plot_path": str(plot_path),
+        "source_plot_path": str(source_plot_path),
         "report_path": str(report_path),
         "num_samples": int(num_samples),
         "num_train": int(train_idx.numel()),
@@ -914,6 +1179,12 @@ def main(env_cfg, agent_cfg: dict):
         "source_batch_mode": args_cli.source_batch_mode,
         "source_loss_weights": dict(zip(source_slugs, source_loss_weights, strict=True)),
         "best_score_weights": best_score_weights,
+        "distill_target": "input_checkpoint_initial_actor" if distill_enabled else "disabled",
+        "distill_sources": distill_source_names,
+        "distill_source_ids": distill_source_ids,
+        "distill_source_slugs": distill_source_slugs,
+        "distill_dims": distill_dims,
+        "distill_loss_weight": float(args_cli.distill_loss_weight),
         "selected": best_row,
         "selected_step": int(best_step),
         "selected_score": best_score,
@@ -928,6 +1199,7 @@ def main(env_cfg, agent_cfg: dict):
     }
     _write_csv(curve_rows, curve_csv_path)
     _draw_loss_plot(curve_rows, plot_path)
+    _draw_source_metric_plot(curve_rows, source_plot_path)
     metrics_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
     _write_report(summary, curve_rows, report_path)
     print("[INFO] BC diagnostic summary:")
