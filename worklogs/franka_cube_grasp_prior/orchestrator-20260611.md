@@ -3130,3 +3130,87 @@ Analysis:
   still fails, the next B step should be explicit supervised action imitation
   for the same policy/action parameterization rather than more PPO schedule
   tweaks.
+
+## 2026-06-11T19:10:00-07:00 - C relabel set pass, A/B learned-policy smokes still negative
+
+Worker C contact-aware relabel set:
+- C fixed two shell-template bugs in
+  `cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh`. Jobs
+  `1027929` and `1027930` failed before simulation because `{episode}` template
+  expansion created invalid trajectory paths; these are not behavior failures.
+- Relaunch job `1027932`, run
+  `franka_cube_contact_relabel_set_ep8_16_24_30_s260_high30_defaultfix_20260611_175347`,
+  completed `0:0`.
+- Gate verdict: `PASS`, 4 rollouts accepted, 0 failures.
+- Accepted dataset: `contact_relabel_set_accepted.npz`, with `obs (1126, 21)`,
+  `action (1126, 7)`, and `episode_ends [282, 563, 844, 1126]`.
+- Hard filters: min lift `0.10 m`, max pose clipping `0.0`, max final EE-cube
+  `0.05 m`, max final finger-cube `0.08 m`, success-like required.
+
+Artifacts:
+- Set report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_set_ep8_16_24_30_s260_high30_defaultfix_20260611_175347/contact_relabel_set_report.md`
+- Set summary:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_set_ep8_16_24_30_s260_high30_defaultfix_20260611_175347/contact_relabel_set_summary.json`
+- Representative pass video:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_set_ep8_16_24_30_s260_high30_defaultfix_20260611_175347/rollouts/ep08s260/videos/franka-cube-contact-relabel-ep08s260-step-0.mp4`
+- Representative pass contact sheet:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_set_ep8_16_24_30_s260_high30_defaultfix_20260611_175347/rollouts/ep08s260/videos/franka-cube-contact-relabel-ep08s260-step-0_sheet.jpg`
+
+Worker C steering:
+- C was told to move to a tiny official `real-stanford/diffusion_policy` smoke
+  using the accepted NPZ: dataset adapter, normalizer/action-range check, and a
+  very short debug train only. No full DP BC or closed-loop DP/RL.
+
+Worker B corrected high-alignment continuation:
+- Training job `1027933`, run
+  `franka_cube_traj_tracking_teacherforce_align80_ft10_20260611_175513`,
+  completed `0:0`. It correctly advanced from epoch 5 through epoch 10 and
+  produced checkpoint
+  `/results/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_teacherforce_align80_ft10_20260611_175513/nn/last_dextrah_franka_cube_traj_tracking_ep_10_rew_9268.733.pth`.
+- Eval jobs `1027936` alpha `0.0`, `1027937` alpha `0.75`, and `1027938`
+  alpha `1.0` all completed `0:0`.
+
+B metrics:
+- Alpha `0.0`: success `0`, lift max `0.002424 m`, target unsafe `0`, raw/ref
+  L2 mean `1.8834`, raw close/up mean `0.4518/0.0308`.
+- Alpha `0.75`: success `0`, lift max `0.000615 m`, target unsafe `0`,
+  raw/ref L2 mean `0.8396`, applied/ref L2 mean `0.2064`, raw close/up mean
+  `0.2876/0.0505`.
+- Alpha `1.0`: success final/max `0.75/0.75`, lift max `0.144406 m`, target
+  unsafe `0`; full teacher remains viable.
+- Action-semantics report:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_align80ft10_action_semantics_20260611_180016/action_semantics_report.md`
+- Action-semantics plot:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_align80ft10_action_semantics_20260611_180016/action_semantics_plot.png`
+
+B verdict:
+- Corrected high-alignment PPO still did not recover policy-only or partial
+  teacher behavior. B was told to stop PPO schedule/teacher-force tweaks and
+  move to explicit supervised action-imitation/BC for the same policy/action
+  parameterization.
+
+Worker A robust pass7 PPO smoke:
+- Training job `1027931`, run
+  `franka_cube_ggx_robust_pass7_smoke45_20260612_0056`, completed `0:0`.
+- Training produced checkpoints, but training metrics are not policy-positive:
+  `cube_success_rate=0`, `cube_has_lifted_rate=0`, max JSONL cube lift about
+  `0.000553 m`, and EE-cube distance worsened.
+- Eval job `1027934` ep10 and `1027935` ep45 completed `0:0`.
+
+A eval metrics:
+- Ep10: success `0`, lift `0`, final EE-cube about `0.700 m`, final
+  finger-cube about `0.675 m`, reset-prior success/quality metrics remain
+  `1.0`.
+- Ep45: success `0`, lift `0`, final EE-cube about `0.694 m`, final
+  finger-cube about `0.681 m`, reset-prior success/quality metrics remain
+  `1.0`.
+- Videos:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_eval_ep10_20260612_0100/videos/pass7-smoke45-ep10-step-0.mp4`
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_robust_pass7_smoke45_eval_ep45_20260612_0100/videos/pass7-smoke45-ep45-step-0.mp4`
+
+A verdict:
+- Reset-prior implementation still looks active and valid at reset, but the
+  learned policy immediately drives away and does not lift. A was told to
+  generate a proper report/contact-sheet/trace bundle and diagnose early action
+  behavior before any longer or larger training.
