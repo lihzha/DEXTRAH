@@ -6,6 +6,54 @@
 - base_commit: 589dd81c9f9691fcda3a3d4b9ad714d90dae4794
 - created: 2026-06-11T18:39:11Z
 
+## 2026-06-12T10:38:57Z - 600-epoch seed sweep completed; scalar plots generated; eval videos queued
+
+Goal:
+- Complete the requested 10-run comparison: five no-prior and five reset-prior Franka cube PPO runs with seeds `1..5`, all to 600 epochs, under the known-good base-clear config.
+- Generate reward and loss comparison PNGs and queue policy-only video validation before making any behavioral success claim.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset
+- branch: codex/franka-cube-ggx-pregrasp-reset
+- training_commit: c7e66a0a2168214e8a82f4412e9a79669d806750
+- current_worklog_commit: 325dcb4769978fcd8070ceaf072b5b9ef5240191
+- push/pull: branch pushed to `origin/codex/franka-cube-ggx-pregrasp-reset`; A100/L40 shared agent worktree detached at `c7e66a0a2168214e8a82f4412e9a79669d806750`
+
+Command / Job:
+- completed no-prior jobs: `29005567`, `29005568`, `29005569`, `29005571`, `29005573`; all `COMPLETED 0:0`
+- completed reset-prior jobs: `29005574`, `29005576`, `29005577`, `29005583`, `29005584`; all `COMPLETED 0:0`
+- local artifacts: `cluster_results/a1001/franka_cube_seed_sweep600_c7e66a0_20260612_092951/`
+- local logs: `cluster_logs/a1001/dextrah/teacher_8gpu_29005567.out`, `...29005568.out`, `...29005569.out`, `...29005571.out`, `...29005573.out`, `...29005574.out`, `...29005576.out`, `...29005577.out`, `...29005583.out`, `...29005584.out`
+- requested PNGs:
+  - `cluster_results/a1001/franka_cube_seed_sweep600_c7e66a0_20260612_092951/reward_curve_comparison.png`
+  - `cluster_results/a1001/franka_cube_seed_sweep600_c7e66a0_20260612_092951/loss_curve_comparison.png`
+- scalar tables:
+  - `cluster_results/a1001/franka_cube_seed_sweep600_c7e66a0_20260612_092951/summary_final.csv`
+  - `cluster_results/a1001/franka_cube_seed_sweep600_c7e66a0_20260612_092951/thresholds.csv`
+  - `cluster_results/a1001/franka_cube_seed_sweep600_c7e66a0_20260612_092951/REPORT.md`
+- policy-only eval/video jobs queued on `l401`:
+  - prior seed2 epoch 100: job `1028355`, run `franka_cube_sweep_prior_seed2_ep100_policy_eval_20260612_103325`
+  - prior seed2 epoch 600: job `1028356`, run `franka_cube_sweep_prior_seed2_ep600_policy_eval_20260612_103325`
+  - no-prior seed2 epoch 600: job `1028357`, run `franka_cube_sweep_noprior_seed2_ep600_policy_eval_20260612_103325`
+
+Result:
+- status: training complete; scalar artifacts complete; eval/video validation pending in Slurm `PENDING (Priority)` as of `2026-06-12T10:38:57Z`
+- final scalar means/std:
+  - no-prior: reward `4322 +/- 4504`, success `0.1794 +/- 0.3186`, lifted `0.2358 +/- 0.3431`, lift height `0.03838 +/- 0.05665 m`
+  - reset-prior: reward `1.38e+04 +/- 309.8`, success `0.8646 +/- 0.0266`, lifted `0.954 +/- 0.01178`, lift height `0.1461 +/- 0.01283 m`
+- seed-level no-prior outcome: seed 2 solved by scalar metrics, seed 4 partially improved, seeds 1/3/5 stayed near zero by epoch 600.
+- seed-level reset-prior outcome: all five seeds crossed high scalar lift/success early and finished high.
+- threshold examples: prior seeds reached `success>=0.8` at epochs `104, 85, 85, 76, 92`; no-prior reached `success>=0.8` only for seed 2 at epoch `290`.
+
+Analysis:
+- The new no-prior replication matches the successful launch envelope that was missing in the failed 300-epoch replication: 600 epochs, `USE_CUDA_GRAPH=False`, fixed seeds, `NUM_ENVS=2048` per rank, same PPO knobs, no auto-resume, and no self-relaunch.
+- Scalar curves strongly support better reset-prior sample efficiency and lower seed variance, but this is not yet a behavioral success claim.
+- Policy-only eval videos are required to verify actual grasp/lift motion because close-to-object resets can make scalar success misleading.
+
+Next:
+- Monitor eval jobs `1028355`, `1028356`, `1028357`; fetch `metrics.json`, traces, and MP4s; inspect the videos for actual policy-only grasp/lift behavior; then update plots/report/worklog with video evidence and viewer links.
+
 ## 2026-06-12T09:16:59Z - 5x baseline and 5x reset-prior 600-epoch sweep
 
 Goal:
