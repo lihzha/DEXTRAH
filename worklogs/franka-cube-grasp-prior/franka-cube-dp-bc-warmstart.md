@@ -7678,3 +7678,84 @@ Next:
 - Launch exactly one video/contact-sheet confirmation for the same normal-reset
   no-reset failure (`num_envs=1`, `num_steps=260`, same checkpoint/support
   dataset, no `DEMO_RESET_*` arguments). No training or RL scale-up.
+
+## 2026-06-11T20:07:20-07:00 - normal-reset no-reset video confirmation launch
+
+Goal:
+- Produce the single requested visual confirmation for the normal-reset
+  no-reset failure found in job `1028064`.
+
+Version Control:
+- local_worklog_commit:
+  `ff4bd75524f445574d72877733b5b2e01117393a`
+- runtime_remote_commit:
+  `cb9689b8b4c70ab268a571f031bcecd0e92355b2`
+- remote_commit_note:
+  l401 could not fetch from GitHub (`git@github.com: Permission denied
+  (publickey)`). The only diff from `cb9689b` to `ff4bd75` is this owned
+  worklog, so the launched runtime source is unchanged from the no-video trace.
+
+Command / Job:
+- job_id: `1028073`
+- run_name:
+  `franka_cube_dp_eval_weightedgrip8_inf100_video260_noreset_normalreset_seed42_20260611_200720`
+- command:
+  `sbatch --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart,RUN_NAME=franka_cube_dp_eval_weightedgrip8_inf100_video260_noreset_normalreset_seed42_20260611_200720,NUM_ENVS=1,NUM_STEPS=260,NUM_INFERENCE_STEPS=100,ACTION_CHUNK_STEPS=1,CLIP_ACTIONS=1.0,SUCCESS_WINDOW=80,SUCCESS_TIMEOUT_OVERRIDE=999.0,CAPTURE_VIDEO=True,VIDEO_LENGTH=260,VIDEO_NAME_PREFIX=franka-cube-dp-weighted-normalreset-noreset,PRINT_INTERVAL=20,SEED=42,DEBUG_POLICY_TRACE_MAX_CALLS=260,DEBUG_POLICY_TRACE_ENV_INDEX=0,CHECKPOINT=/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/contact_relabel_official_dp_debug_pretrain100_weightedgrip8_20260611_1843/latest.ckpt,SUPPORT_DATASET=/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/contact_relabel_set_ep8_16_24_30_s260_high30_defaultfix_20260611_175347/contact_relabel_set_accepted.npz,OFFICIAL_DP_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/external/real-stanford-diffusion_policy cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_weightedgrip8_inf100_video260_noreset_normalreset_seed42_20260611_200720`
+- logs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_dp_policy_1028073.out`
+
+Acceptance:
+- Fetch metrics/logs/traces/video locally, generate report/plots/contact sheet,
+  and visually confirm normal-reset closes away from the cube. No training/RL.
+
+Result:
+- status: running.
+
+Result update:
+- scheduler: `COMPLETED 0:0`, elapsed `00:03:12`.
+- fetched local artifact dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_video260_noreset_normalreset_seed42_20260611_200720`
+- final metrics:
+  - `steps_completed=260`, `done_count=0`.
+  - `final_success_rate=0.0`, `window_success_rate=0.0`.
+  - `cube_lift_height max/final=0.0/0.0 m`.
+  - `EE-to-cube min/final=0.141898/0.145352 m`.
+  - `finger-center-to-cube min/final=0.110207/0.112289 m`.
+  - `final_gripper_width=0.021748 m`.
+  - nearest-demo support remains far outside the contact-aware dataset:
+    starts `29.46` at step 2 and ends `16.58` at step 260.
+- visual check:
+  - Contact sheet confirms the hand closes beside/away from the cube and never
+    lifts it. The trace labels transition to nearest phase `close_hold`, but
+    live geometry is still far from the nearest demo close geometry.
+- viewer links:
+  - video:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_video260_noreset_normalreset_seed42_20260611_200720/videos/franka-cube-dp-weighted-normalreset-noreset-step-0.mp4`
+  - contact sheet:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_video260_noreset_normalreset_seed42_20260611_200720/closed_loop_contact_sheet.jpg`
+  - report:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_video260_noreset_normalreset_seed42_20260611_200720/closed_loop_support_report.md`
+  - support plot:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_video260_noreset_normalreset_seed42_20260611_200720/closed_loop_support_trace.png`
+  - action plot:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_video260_noreset_normalreset_seed42_20260611_200720/closed_loop_action_components.png`
+
+Analysis:
+- The contrast is now video-backed:
+  - exact source-joint matched reset + success-timeout override:
+    `final/window success=1.0/1.0`, final lift `0.2457 m`, final EE-cube
+    `0.00953 m`.
+  - normal reset + same success-timeout override:
+    `final/window success=0.0/0.0`, max lift `0.0 m`, final EE-cube
+    `0.14535 m`, final finger-center-cube `0.11229 m`.
+- This separates the solved matched-reset hold-retention case from normal-reset
+  generalization. The checkpoint can act coherently on exact contact-aware
+  support but fails from the normal DEXTRAH reset distribution.
+- No DP BC/RL scale-up is justified. The next bounded question is reset/support
+  coverage: staged perturbations around accepted demo resets or a small
+  normal-reset relabel/eval support expansion, with the same artifact cadence.
+
+Active jobs:
+- No active C Slurm jobs remain after `1028073`.
