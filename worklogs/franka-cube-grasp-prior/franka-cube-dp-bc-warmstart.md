@@ -7855,3 +7855,102 @@ Remote deploy:
   `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
 - remote_head:
   `5edcf31f8b21d04a8dfcbe921c6ddcd586a854b1`
+
+Launch:
+- type: no-video reset-support trace sweep.
+- runtime_remote_commit:
+  `5edcf31f8b21d04a8dfcbe921c6ddcd586a854b1`
+- local_worklog_commit_before_launch:
+  `9be8dca9b5e62a30fb9cbdfc69da3390fdff1895`
+- common command shape:
+  `sbatch --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart,RUN_NAME=<run>,NUM_ENVS=1,NUM_STEPS=260,NUM_INFERENCE_STEPS=100,ACTION_CHUNK_STEPS=1,CLIP_ACTIONS=1.0,SUCCESS_WINDOW=80,SUCCESS_TIMEOUT_OVERRIDE=999.0,CAPTURE_VIDEO=False,VIDEO_LENGTH=260,PRINT_INTERVAL=20,SEED=42,DEBUG_POLICY_TRACE_MAX_CALLS=260,DEBUG_POLICY_TRACE_ENV_INDEX=0,CHECKPOINT=/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/contact_relabel_official_dp_debug_pretrain100_weightedgrip8_20260611_1843/latest.ckpt,SUPPORT_DATASET=/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/contact_relabel_set_ep8_16_24_30_s260_high30_defaultfix_20260611_175347/contact_relabel_set_accepted.npz,DEMO_RESET_DATASET=/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/contact_relabel_set_ep8_16_24_30_s260_high30_defaultfix_20260611_175347/contact_relabel_set_accepted.npz,DEMO_RESET_EPISODE=1,DEMO_RESET_STEP=0,DEMO_RESET_SOURCE_TRAJECTORY_JSON=/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed16/trajectory.json,DEMO_RESET_SOURCE_FRAME=260,DEMO_RESET_CUBE_POS_BLEND_ALPHA=1.0,DEMO_RESET_JOINT_BLEND_ALPHA=<alpha>,OFFICIAL_DP_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/external/real-stanford-diffusion_policy cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- jobs:
+  - `1028089`: `alpha=0.75`,
+    run `franka_cube_dp_eval_reset_support_jointblend_0p75_trace260_20260611_203638`
+  - `1028090`: `alpha=0.50`,
+    run `franka_cube_dp_eval_reset_support_jointblend_0p50_trace260_20260611_203638`
+  - `1028091`: `alpha=0.25`,
+    run `franka_cube_dp_eval_reset_support_jointblend_0p25_trace260_20260611_203638`
+  - `1028092`: `alpha=0.00`,
+    run `franka_cube_dp_eval_reset_support_jointblend_0p00_trace260_20260611_203638`
+- run dirs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/<run>`
+- logs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_dp_policy_<job>.out`
+
+Acceptance before any follow-up:
+- Inspect scheduler state, stdout, metrics, support traces, and generated
+  per-run plots.
+- Build the reset-support sweep bundle locally.
+- Launch at most one video for the first failing perturbation if the trace
+  makes it useful.
+
+Active jobs:
+- `1028089`, `1028090`, `1028091`, `1028092` submitted.
+
+Result:
+- scheduler status:
+  - `1028089`, `1028090`, `1028091`, `1028092`: `COMPLETED|0:0`.
+- fetched local run dirs:
+  - `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_reset_support_jointblend_0p75_trace260_20260611_203638`
+  - `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_reset_support_jointblend_0p50_trace260_20260611_203638`
+  - `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_reset_support_jointblend_0p25_trace260_20260611_203638`
+  - `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_reset_support_jointblend_0p00_trace260_20260611_203638`
+- generated per-run reports:
+  - `closed_loop_support_report.md`
+  - `closed_loop_support_trace.png`
+  - `closed_loop_action_components.png`
+  - `closed_loop_support_summary.json`
+- combined sweep artifact bundle:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/reset_support_sweep_jointblend_20260611_203638`
+- combined report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/reset_support_sweep_jointblend_20260611_203638/reset_support_sweep_report.md`
+- combined plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/reset_support_sweep_jointblend_20260611_203638/reset_support_sweep_plot.png`
+
+Metrics:
+- matched source-joint context video `1028059`:
+  `window_success=1.0`, `max/final_lift=0.2457067/0.2457067 m`,
+  `final_ee_to_cube=0.00953 m`, `final_support_distance=2.0036`,
+  final phase `lift`.
+- normal reset context video `1028073`:
+  `window_success=0.0`, `max/final_lift=0.0/0.0 m`,
+  `final_ee_to_cube=0.14535 m`, `final_support_distance=16.5813`,
+  final phase `close_hold`.
+- joint blend `0.75`, job `1028089`:
+  `cube_minus_ee_l2_from_demo_at_reset=0.03944 m`,
+  `window_success=0.0`, `max/final_lift=0.01575/0.0 m`,
+  `final_ee_to_cube=0.30212 m`, `final_finger_center_to_cube=0.34577 m`,
+  `support_distance_start/final=4.7635/20.5594`, final phase `align_open`.
+- joint blend `0.50`, job `1028090`:
+  `cube_minus_ee_l2_from_demo_at_reset=0.08035 m`,
+  `window_success=0.0`, `max/final_lift=0.01499/0.0 m`,
+  `final_ee_to_cube=0.35229 m`, `support_distance_start/final=10.7178/23.8308`.
+- joint blend `0.25`, job `1028091`:
+  `cube_minus_ee_l2_from_demo_at_reset=0.12239 m`,
+  `window_success=0.0`, `max/final_lift=0.0/0.0 m`,
+  `final_ee_to_cube=0.11183 m`, `support_distance_start/final=13.8690/12.9817`.
+- joint blend `0.00`, job `1028092`:
+  `cube_minus_ee_l2_from_demo_at_reset=0.16520 m`,
+  `window_success=0.0`, `max/final_lift=0.0/0.0 m`,
+  `final_ee_to_cube=0.15057 m`, `support_distance_start/final=19.3631/17.5813`.
+
+Analysis:
+- The first tested perturbation from exact matched source support (`joint_blend_alpha=0.75`,
+  source cube/object fixed) already fails. It starts close in metric space
+  (`~3.94 cm` cube-minus-EE from the accepted reset) but quickly leaves support
+  and ends far away from the cube.
+- This points primarily to a narrow reset/support basin and weak closed-loop
+  recovery, not action chunking: the same checkpoint, normalizer, bridge, and
+  `ACTION_CHUNK_STEPS=1` pass under exact source-joint matched reset.
+- The observation/action implementation is not cleared globally, but the
+  matched-reset pass makes a pure gripper sign, action frame, or chunking bug
+  less likely for this failure mode.
+
+Next:
+- Launch exactly one bounded video/contact-sheet confirmation for the first
+  failing perturbation (`joint_blend_alpha=0.75`, source cube/object fixed).
+- Do not run BC/RL scale-up. If the video confirms the trace, the next
+  proposed experiment should be small support-expansion relabel/eval around the
+  accepted source-joint/contact reset, with a supervised/eval gate before any
+  DP training.
