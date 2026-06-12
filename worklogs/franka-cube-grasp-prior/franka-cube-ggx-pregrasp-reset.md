@@ -4143,3 +4143,163 @@ Acceptance:
 Pre-launch local validation:
 - `python3 -m py_compile dextrah_lab/rl_games/sweep_franka_cube_bc_label_recipes.py` passed.
 - `bash -n cluster/sbatch_sweep_franka_cube_bc_label_recipes_1gpu.sh` passed.
+
+Launch:
+- implementation_commit: `1dc53e7c6f956fd07583fda657a7b7b284136f74` (`Add corrective label recipe sweep`)
+- pushed branch: `codex/franka-cube-ggx-pregrasp-reset`
+- deployed L401 worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset` at exact commit `1dc53e7c6f956fd07583fda657a7b7b284136f74`
+- job id: `1028118`
+- run name: `franka_cube_ggx_pass7_label_recipe_sweep_20260611_211710`
+- remote run dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pass7_label_recipe_sweep_20260611_211710`
+- remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/sweep_franka_cube_bc_label_1028118.out`
+- job state at launch check: `RUNNING`, node `pool0-00015`
+
+Result:
+- Slurm: `COMPLETED 0:0`, elapsed `00:01:32`, node `pool0-00015`.
+- Local fetched run dir: `cluster_results/l401/franka_cube_ggx_pass7_label_recipe_sweep_20260611_211710/`
+- Local fetched log: `cluster_logs/l401/slurm_logs/dextrah/sweep_franka_cube_bc_label_1028118.out`
+- Verdict: no corrected label recipe found; no recipe passed closed-loop lift/contact.
+- Aggregate metrics:
+  - `baseline_w055_z015`: pass `0.0`, lift pass `0.0`, contact proxy `0.0`, max lift max `0.000054 m`, min gripper width mean `0.06379 m`.
+  - `w035_z030`: pass `0.0`, lift pass `0.0`, contact proxy `0.5`, max lift max `0.009802 m`, final lift mean `0.009699 m`, min gripper width mean `0.06107 m`.
+  - `act_neg050_close24_z030`: pass `0.0`, lift pass `0.0`, contact proxy `0.5`, max lift max `0.009951 m`, final lift mean `0.009495 m`, min gripper width mean `0.05919 m`.
+  - `act_neg100_z015`: pass `0.0`, lift pass `0.0`, contact proxy `0.5`, max lift max `0.006846 m`, min gripper width mean `0.02528 m`.
+- Visual inspection:
+  - Baseline remains near the cube but does not clamp; realized width remains above cube width.
+  - The best near-miss recipes lift the cube only to roughly the `0.01 m` gate and do not pass across both resets.
+  - Full close (`action_gripper=-1.0`) reduces width strongly but visually/metric-wise slips or disturbs contact rather than producing robust lift.
+
+Artifacts:
+- report: `cluster_results/l401/franka_cube_ggx_pass7_label_recipe_sweep_20260611_211710/REPORT.md`
+- summary: `cluster_results/l401/franka_cube_ggx_pass7_label_recipe_sweep_20260611_211710/summary.json`
+- aggregate CSV: `cluster_results/l401/franka_cube_ggx_pass7_label_recipe_sweep_20260611_211710/recipe_aggregate.csv`
+- per-reset CSV: `cluster_results/l401/franka_cube_ggx_pass7_label_recipe_sweep_20260611_211710/recipe_summary.csv`
+- trace plot: `cluster_results/l401/franka_cube_ggx_pass7_label_recipe_sweep_20260611_211710/trace_plot.png`
+- representative sheets: `baseline_w055_z015_contact_sheet.jpg`, `w035_z030_contact_sheet.jpg`, `act_neg050_close24_z030_contact_sheet.jpg`, `act_neg100_z015_contact_sheet.jpg`
+
+Analysis:
+- The gripper convention hypothesis is partly confirmed: negative gripper action closes the hand more than width-derived positive actions.
+- The failed gate is not just an open gripper; full close can over-close/slip and the moderate close recipes still hover around the threshold without reliable contact/lift.
+- Since `w035_z030` and `act_neg050_close24_z030` are near the lift threshold, the next bounded diagnostic should test stronger/longer upward action around those settings and a variant that disables exact-pose tracking during lift to determine whether the controller is fighting the lift.
+
+Next:
+- Launch a focused second sweep with no code changes and no PPO/A100:
+  - stronger lift variants around `close_width=0.035` and `action_gripper=-0.5`;
+  - longer close/lift settle;
+  - a `track_exact_during_lift=false` variant;
+  - keep `NUM_ENVS=1`, `NUM_RESETS=2`, pass7 library, cube XY randomization `0.08`.
+- Acceptance remains a real closed-loop lift/contact pass before any new BC/RL.
+
+## 2026-06-11 21:21 PDT - focused corrective label recipe sweep
+
+Goal:
+- Determine whether the near-pass close/lift labels from `1028118` can be made to reliably clamp and lift with stronger or longer lift commands, or whether the controller/label path remains insufficient.
+
+Hypothesis:
+- `w035_z030` and `act_neg050_close24_z030` were just below the `0.01 m` lift gate. A stronger upward command, longer lift duration, or disabling exact-pose tracking during the lift may cross the gate without changing the main task/reset semantics.
+
+Change:
+- No code changes. This is a recipe-only diagnostic relaunch using the existing committed sweep script and wrapper.
+- Recipes:
+  - `w035_z040`, `w035_z060`, `w035_close24_z050`, `w035_z050_free`
+  - `act_neg050_z050`, `act_neg050_close24_z050`, `act_neg050_z050_free`
+  - `act_neg100_z040`
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- local commit: `1dc53e7c6f956fd07583fda657a7b7b284136f74`
+- remote worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote commit/status: exact detached `1dc53e7c6f956fd07583fda657a7b7b284136f74`
+- changed_files: worklog only since source commit
+
+Command / Job:
+- command: `sbatch --export=ALL,CODE_NFS=<agent_worktree>,RUN_NAME=franka_cube_ggx_pass7_label_recipe_focus_20260611_212138,NUM_ENVS=1,NUM_RESETS=2,SEED=20260624,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_robust_pass7_20260612.npz,RENDER=True,RENDER_RESETS=1,RENDER_INTERVAL=10,TRACK_ORIENTATION=True,SUCCESS_LIFT_HEIGHT=0.01,RECIPES=<focused_recipe_set> cluster/sbatch_sweep_franka_cube_bc_label_recipes_1gpu.sh`
+- job_id: `1028120`
+- run name: `franka_cube_ggx_pass7_label_recipe_focus_20260611_212138`
+- remote run dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pass7_label_recipe_focus_20260611_212138`
+- remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/sweep_franka_cube_bc_label_1028120.out`
+
+Acceptance:
+- At least one recipe must pass actual closed-loop lift/contact visually and metrically before any new supervised-data generation is proposed.
+- If all recipes still fail, no BC/PPO/A100; report the control-label blocker and next bounded control hypothesis.
+
+Immediate issue:
+- Job `1028120` was canceled because Slurm `--export` treated commas inside `RECIPES` as variable separators. The wrapper log showed `RECIPES=w035_z040:close=0.035`, so it was not the intended multi-recipe focused sweep.
+- Relaunch will export `RECIPES` in the remote shell and submit with `--export=ALL` only.
+
+Corrected Relaunch:
+- job_id: `1028121`
+- run name: `franka_cube_ggx_pass7_label_recipe_focus2_20260611_212239`
+- remote run dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pass7_label_recipe_focus2_20260611_212239`
+- remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/sweep_franka_cube_bc_label_1028121.out`
+- submission fix: exported all recipe/config variables in the remote shell and used `sbatch --export=ALL`.
+
+Interim Result:
+- Slurm: `COMPLETED 0:0`, elapsed `00:01:22`, node `pool0-00015`.
+- Local fetched run dir: `cluster_results/l401/franka_cube_ggx_pass7_label_recipe_focus2_20260611_212239/`
+- Metrics:
+  - All strong-lift recipes have lift gate pass rate `1.0`, with max lift about `0.020-0.0345 m`.
+  - Full recipe pass rate is only `0.5` for all non-full-close strong-lift recipes because reset 1 fails the contact/enclosure proxy.
+  - Best aggregate by report: `w035_close24_z050`, pass rate `0.5`, lift pass `1.0`, contact proxy `0.5`, max lift `0.0345 m`, min width mean `0.0610 m`.
+  - `act_neg050_z050_free`: pass rate `0.5`, lift pass `1.0`, contact proxy `0.5`, max lift `0.0344 m`, min width mean `0.0592 m`.
+  - `act_neg100_z040`: pass `0.0`, lift pass `0.0`, width collapses to about `0.0046 m` and finger distance worsens.
+- Visual inspection:
+  - The rendered contact sheets only cover reset 0, which is the passing reset; they do not show reset 1, the failing contact-proxy case.
+  - Reset 0 frames show real cube lift for `w035_close24_z050` and `act_neg050_z050_free`.
+
+Analysis:
+- This run shows the label path can lift the cube from at least one sampled pass7 reset, so the old labels were underpowered.
+- It is still not enough to generate BC labels because the robust gate over the sampled reset distribution is not passed.
+- The next required artifact is reset-1 visual evidence. If reset 1 visibly lifts while the proxy fails, the proxy threshold may be too conservative for this grasp geometry; if it is visibly marginal, the label recipe remains invalid.
+
+Next:
+- Launch a final bounded visual gate sweep with `RENDER_RESETS=2`, limited recipes:
+  - `baseline_w055_z015`
+  - `w035_close24_z050`
+  - `act_neg050_z050_free`
+  - `act_neg100_z040`
+- No code changes, no BC/PPO/A100.
+
+Visual Gate Launch:
+- job_id: `1028125`
+- run name: `franka_cube_ggx_pass7_label_recipe_visualgate_20260611_212601`
+- remote run dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pass7_label_recipe_visualgate_20260611_212601`
+- remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/sweep_franka_cube_bc_label_1028125.out`
+- recipes: baseline, `w035_close24_z050`, `act_neg050_z050_free`, and `act_neg100_z040`
+- purpose: render both sampled resets, including the failing reset 1, before deciding whether the corrected label recipe is usable.
+
+Result:
+- Slurm: `COMPLETED 0:0`, elapsed `00:01:12`, node `pool0-00015`.
+- Local fetched run dir: `cluster_results/l401/franka_cube_ggx_pass7_label_recipe_visualgate_20260611_212601/`
+- Local fetched log: `cluster_logs/l401/slurm_logs/dextrah/sweep_franka_cube_bc_label_1028125.out`
+- Added local inspection note: `cluster_results/l401/franka_cube_ggx_pass7_label_recipe_visualgate_20260611_212601/INSPECTION_VERDICT.md`
+
+Metrics:
+- `act_neg050_z050_free`: pass rate `0.5`, lift pass `1.0`, contact proxy `0.5`, max lift max `0.0344 m`, final lift mean `0.0333 m`, min width mean `0.0592 m`.
+  - reset 0: pass `True`, max/final lift `0.0344 m`, width min `0.0577 m`, final finger-center `0.0637 m`.
+  - reset 1: pass `False`, lift pass `True`, contact proxy `False`, max/final lift `0.0323 m`, width min `0.0607 m`, final finger-center `0.0736 m`, final max-finger `0.0817 m`.
+- `w035_close24_z050`: pass rate `0.5`, lift pass `1.0`, contact proxy `0.5`, max lift max `0.0342 m`, final lift mean `0.0340 m`, min width mean `0.0611 m`.
+  - reset 0: pass `True`, max/final lift `0.0342 m`, width min `0.0596 m`, final finger-center `0.0637 m`.
+  - reset 1: pass `False`, lift pass `True`, contact proxy `False`, max/final lift `0.0338 m`, width min `0.0625 m`, final finger-center `0.0735 m`, final max-finger `0.0819 m`.
+- `baseline_w055_z015`: pass `0.0`, lift pass `0.0`, contact proxy `0.0`, max lift max `0.0001 m`.
+- `act_neg100_z040`: pass `0.0`, lift pass `0.0`, width collapses to `0.0046 m` mean and the cube slips/does not lift.
+
+Viewer URLs:
+- inspection verdict: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_label_recipe_visualgate_20260611_212601/INSPECTION_VERDICT.md`
+- generated report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_label_recipe_visualgate_20260611_212601/REPORT.md`
+- trace plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_label_recipe_visualgate_20260611_212601/trace_plot.png`
+- baseline sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_label_recipe_visualgate_20260611_212601/baseline_w055_z015_contact_sheet.jpg`
+- `act_neg050_z050_free` sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_label_recipe_visualgate_20260611_212601/act_neg050_z050_free_contact_sheet.jpg`
+- `w035_close24_z050` sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_label_recipe_visualgate_20260611_212601/w035_close24_z050_contact_sheet.jpg`
+- full-close failure sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_label_recipe_visualgate_20260611_212601/act_neg100_z040_contact_sheet.jpg`
+
+Inspection Verdict:
+- The corrected label recipe is a partial result, not a supervised-data gate pass.
+- Stronger close/lift labels clearly improve over baseline and lift the cube in both sampled resets.
+- Reset 1 remains marginal: the cube lifts, but contact/enclosure proxy fails and final finger distances are around `7.35 cm` center / `8.2 cm` max-finger. The visual frame shows lift but not a deep, robust clamp.
+- Do not train new BC/RL from this result.
+
+Next recommendation:
+- Stay diagnostic-only.
+- Either filter/generate labels only from action-space rollout samples that pass contact quality, or adjust the label generator to approach slightly deeper/laterally for the marginal reset-1 geometry and rerun the same visual gate.
+- No PPO/A100/full RL from the current label recipe.
