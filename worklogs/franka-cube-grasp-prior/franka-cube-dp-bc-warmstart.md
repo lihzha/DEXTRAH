@@ -5733,3 +5733,29 @@ Next:
   relabel-set smoke for episodes `8,16,24,30` at step `260` with
   `center_high30`, `LIFT_HEIGHT=0.22`, `ALIGN_STEPS=80`, `CLOSE_STEPS=80`,
   `LIFT_STEPS=160`.
+
+Command / Job:
+- implementation_commit: `55753745fbc2bbdb75402615d2cbb9cf43765915`
+- push: pushed to `origin/codex/franka-cube-diffusion-policy-bc`.
+- remote deployment: agent-owned l401 worktree detached at
+  `55753745fbc2bbdb75402615d2cbb9cf43765915`. Initial SSH fetch failed due
+  missing GitHub SSH key on l401; read-only HTTPS fetch succeeded and was used
+  for deployment. No tracked source was rsynced.
+- staged artifacts: copied missing local cuRobo trajectory JSONs for seeds
+  `8`, `16`, and `30` into
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/curobo_plans/`;
+  seed `24` was already present.
+- command:
+  `CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart RUN_NAME=franka_cube_contact_relabel_set_ep8_16_24_30_s260_high30_20260611_175034 DATASET=/results/dp_bc/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz TRAJECTORY_ROOT=/results/dp_bc/curobo_plans TRAJECTORY_TEMPLATE=cube_curobo_scale32_20260611_125957_seed{episode}/trajectory.json SPEC_COUNT=4 SPEC_0=8:260 SPEC_1=16:260 SPEC_2=24:260 SPEC_3=30:260 VARIANT=center_high30 ALIGN_STEPS=80 CLOSE_STEPS=80 LIFT_STEPS=160 LIFT_HEIGHT=0.22 FINGER_GAIN=0.75 CLIP_ACTIONS=1.0 CAPTURE_VIDEO=True VIDEO_LENGTH=320 VIDEO_NAME_PREFIX=franka-cube-contact-relabel PRINT_INTERVAL=80 SEED=42 GATE_MIN_LIFT=0.10 GATE_MAX_POSE_CLIP_FRACTION=0.0 GATE_MAX_FINAL_EE_TO_CUBE=0.05 GATE_MAX_FINAL_FINGER_TO_CUBE=0.08 sbatch --export=ALL --parsable cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh`
+- job_id: `1027929`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/contact_relabel_sets/franka_cube_contact_relabel_set_ep8_16_24_30_s260_high30_20260611_175034`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/contact_aware_franka_cube_relabel_set_1027929.out`
+- expected artifacts:
+  set-level `contact_relabel_set_summary.json`,
+  `contact_relabel_set_rollouts.csv`,
+  `contact_relabel_set_failures.csv`,
+  `contact_relabel_set_report.md`,
+  `contact_relabel_set_accepted.npz`, plus per-rollout CSV/JSON/plot/report
+  and videos/contact sheets after fetch.
