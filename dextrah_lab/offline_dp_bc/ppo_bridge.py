@@ -14,6 +14,7 @@ and observation histories differ. The bridge here supports two safer paths:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -21,7 +22,15 @@ import numpy as np
 
 FRANKA_CUBE_PPO_OBS_DIM = 72
 FRANKA_CUBE_LOWDIM_OBS_DIM = 21
+FRANKA_CUBE_PHASE_PROGRESS_OBS_DIM = 25
 FRANKA_CUBE_ACTION_DIM = 7
+PHASE_PROGRESS_FEATURE_NAMES = (
+    "phase_align_open",
+    "phase_close_hold",
+    "phase_lift",
+    "episode_progress",
+)
+PHASE_PROGRESS_FEATURE_DIM = len(PHASE_PROGRESS_FEATURE_NAMES)
 
 
 @dataclass(frozen=True)
@@ -172,12 +181,105 @@ class LowdimObsHistory:
         return self._history.copy()
 
 
+@dataclass(frozen=True)
+class DatasetBackedPhaseProgressProvider:
+    """Append offline phase/progress features from a generated 25D NPZ.
+
+    This is a narrow bridge for the phase/progress diagnostic checkpoint. It
+    uses an accepted relabel episode's stored feature columns as a deterministic
+    runtime schedule. It does not infer task phase from arbitrary live state.
+    """
+
+    dataset_path: str
+    episode_index: int
+    episode_start: int
+    episode_end: int
+    start_step: int
+    features: np.ndarray
+    feature_names: tuple[str, ...] = PHASE_PROGRESS_FEATURE_NAMES
+
+    @classmethod
+    def from_npz(cls, path: str | Path, *, episode_index: int = 0, start_step: int = 0) -> "DatasetBackedPhaseProgressProvider":
+        dataset_path = Path(path).expanduser().resolve()
+        data = np.load(dataset_path, allow_pickle=False)
+        obs = np.asarray(data["obs"], dtype=np.float32)
+        episode_ends = np.asarray(data["episode_ends"], dtype=np.int64)
+        if obs.ndim != 2 or obs.shape[1] < FRANKA_CUBE_PHASE_PROGRESS_OBS_DIM:
+            raise ValueError(
+                f"Expected phase/progress obs shape (N,{FRANKA_CUBE_PHASE_PROGRESS_OBS_DIM}) or wider, got {obs.shape}"
+            )
+        if episode_ends.ndim != 1 or episode_ends.size == 0 or int(episode_ends[-1]) != int(obs.shape[0]):
+            raise ValueError("episode_ends must be cumulative exclusive ends ending at obs length")
+        episode_index = int(episode_index)
+        if episode_index < 0 or episode_index >= int(episode_ends.size):
+            raise ValueError(f"episode_index must be in [0,{episode_ends.size}), got {episode_index}")
+        episode_start = 0 if episode_index == 0 else int(episode_ends[episode_index - 1])
+        episode_end = int(episode_ends[episode_index])
+        start_step = int(start_step)
+        if start_step < 0 or start_step >= episode_end - episode_start:
+            raise ValueError(
+                f"start_step must be in [0,{episode_end - episode_start}), got {start_step}"
+            )
+        if "phase_progress_features" in data.files:
+            names = tuple(str(v) for v in np.asarray(data["phase_progress_features"]).tolist())
+            if names != PHASE_PROGRESS_FEATURE_NAMES:
+                raise ValueError(f"Unexpected phase/progress feature names: {names}")
+        else:
+            names = PHASE_PROGRESS_FEATURE_NAMES
+        features = obs[:, FRANKA_CUBE_LOWDIM_OBS_DIM:FRANKA_CUBE_PHASE_PROGRESS_OBS_DIM].astype(np.float32, copy=True)
+        return cls(
+            dataset_path=str(dataset_path),
+            episode_index=episode_index,
+            episode_start=episode_start,
+            episode_end=episode_end,
+            start_step=start_step,
+            features=features,
+            feature_names=names,
+        )
+
+    @property
+    def obs_dim(self) -> int:
+        return FRANKA_CUBE_PHASE_PROGRESS_OBS_DIM
+
+    def row_indices_for_step(self, step: int | np.ndarray, num_envs: int) -> np.ndarray:
+        if np.isscalar(step) or step is None:
+            step_values = np.full(num_envs, 0 if step is None else int(step), dtype=np.int64)
+        else:
+            step_values = np.asarray(step, dtype=np.int64)
+            if step_values.shape != (num_envs,):
+                raise ValueError(f"Expected step shape {(num_envs,)}, got {step_values.shape}")
+        rows = int(self.episode_start + self.start_step) + step_values
+        return np.clip(rows, int(self.episode_start), int(self.episode_end) - 1).astype(np.int64)
+
+    def features_for_step(self, step: int | np.ndarray, num_envs: int) -> np.ndarray:
+        return self.features[self.row_indices_for_step(step, num_envs)].astype(np.float32, copy=True)
+
+    def augment_lowdim(self, lowdim_obs: np.ndarray, *, step: int | np.ndarray | None = None) -> np.ndarray:
+        lowdim_obs = np.asarray(lowdim_obs, dtype=np.float32)
+        if lowdim_obs.ndim != 2 or lowdim_obs.shape[1] != FRANKA_CUBE_LOWDIM_OBS_DIM:
+            raise ValueError(f"Expected lowdim obs (N,{FRANKA_CUBE_LOWDIM_OBS_DIM}), got {lowdim_obs.shape}")
+        features = self.features_for_step(0 if step is None else step, int(lowdim_obs.shape[0]))
+        return np.concatenate((lowdim_obs, features), axis=1).astype(np.float32)
+
+    def summary(self) -> dict[str, Any]:
+        return {
+            "dataset_path": self.dataset_path,
+            "episode_index": int(self.episode_index),
+            "episode_start": int(self.episode_start),
+            "episode_end": int(self.episode_end),
+            "start_step": int(self.start_step),
+            "feature_names": list(self.feature_names),
+            "obs_dim": int(self.obs_dim),
+        }
+
+
 def predict_action_sequence_from_ppo_obs(
     policy: Any,
     ppo_obs: Any,
     history: LowdimObsHistory,
     *,
     step: int | np.ndarray | None = None,
+    phase_progress_provider: DatasetBackedPhaseProgressProvider | None = None,
 ) -> Any:
     """Query an official lowdim DP policy for an action sequence.
 
@@ -188,7 +290,10 @@ def predict_action_sequence_from_ppo_obs(
     """
 
     lowdim = extract_lowdim_obs_from_ppo_obs(ppo_obs)
-    obs_seq = history.push(_as_numpy(lowdim).astype(np.float32, copy=False), step=step)
+    lowdim_np = _as_numpy(lowdim).astype(np.float32, copy=False)
+    if phase_progress_provider is not None:
+        lowdim_np = phase_progress_provider.augment_lowdim(lowdim_np, step=step)
+    obs_seq = history.push(lowdim_np, step=step)
     try:
         import torch
     except Exception as exc:  # pragma: no cover
@@ -208,6 +313,7 @@ def predict_action_from_ppo_obs(
     history: LowdimObsHistory,
     *,
     step: int | np.ndarray | None = None,
+    phase_progress_provider: DatasetBackedPhaseProgressProvider | None = None,
 ) -> Any:
     """Query an official lowdim DP policy from a single-step 72D PPO obs.
 
@@ -217,4 +323,10 @@ def predict_action_from_ppo_obs(
     execute Diffusion Policy action chunks.
     """
 
-    return predict_action_sequence_from_ppo_obs(policy, ppo_obs, history, step=step)[:, 0]
+    return predict_action_sequence_from_ppo_obs(
+        policy,
+        ppo_obs,
+        history,
+        step=step,
+        phase_progress_provider=phase_progress_provider,
+    )[:, 0]

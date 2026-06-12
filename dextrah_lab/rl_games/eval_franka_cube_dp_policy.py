@@ -84,6 +84,27 @@ parser.add_argument(
     help="Optional JSON/CSV prefix for nearest-demo support trace. Defaults under output_dir when --support_dataset is set.",
 )
 parser.add_argument(
+    "--phase_progress_dataset",
+    type=str,
+    default=None,
+    help=(
+        "Optional 25D phase/progress NPZ used as a dataset-backed runtime "
+        "feature schedule. Required for phase/progress-conditioned checkpoints."
+    ),
+)
+parser.add_argument(
+    "--phase_progress_episode",
+    type=int,
+    default=0,
+    help="Episode index inside --phase_progress_dataset used for runtime phase/progress features.",
+)
+parser.add_argument(
+    "--phase_progress_start_step",
+    type=int,
+    default=0,
+    help="Episode-local row used as phase/progress step zero.",
+)
+parser.add_argument(
     "--demo_reset_dataset",
     type=str,
     default=None,
@@ -169,8 +190,11 @@ from isaaclab_tasks.utils import parse_env_cfg
 import dextrah_lab.tasks.dextrah_franka_cube_grasp.gym_setup  # noqa: F401
 from dextrah_lab.offline_dp_bc.analyze_policy_trace import POSITION_FEATURE_IDX
 from dextrah_lab.offline_dp_bc.ppo_bridge import (
+    DatasetBackedPhaseProgressProvider,
     FRANKA_CUBE_ACTION_DIM,
+    FRANKA_CUBE_LOWDIM_OBS_DIM,
     FRANKA_CUBE_PPO_OBS_DIM,
+    PHASE_PROGRESS_FEATURE_NAMES,
     LowdimObsHistory,
     extract_lowdim_obs_from_ppo_obs,
     predict_action_sequence_from_ppo_obs,
@@ -309,6 +333,20 @@ def _load_policy(checkpoint: Path, device: str, num_inference_steps: int, diffus
     return workspace, policy
 
 
+def _policy_global_obs_dim(policy: Any) -> int | None:
+    global_cond_dim = getattr(getattr(policy, "model", None), "global_cond_dim", None)
+    if global_cond_dim is None:
+        global_cond_dim = getattr(policy, "global_cond_dim", None)
+    if global_cond_dim is None:
+        return None
+    n_obs_steps = int(getattr(policy, "n_obs_steps", 0))
+    if n_obs_steps <= 0:
+        return None
+    if int(global_cond_dim) % n_obs_steps != 0:
+        return None
+    return int(global_cond_dim) // n_obs_steps
+
+
 def _policy_obs_from_reset(reset_out: Any) -> torch.Tensor:
     obs = reset_out[0] if isinstance(reset_out, tuple) else reset_out
     return obs["policy"] if isinstance(obs, dict) else obs
@@ -335,10 +373,16 @@ def _phase_names_for_npz(data: Any, phase_ids: np.ndarray) -> list[str]:
     """Decode phase ids for both original converted demos and relabel rollouts."""
 
     unique = set(int(v) for v in np.unique(phase_ids))
-    if "rollout_ids" in data.files and unique and unique.issubset(set(range(len(CONTACT_RELABEL_PHASE_ORDER)))):
+    if "rollout_ids" in data.files and unique and unique.issubset({-1, 0, 1, 2}):
         return list(CONTACT_RELABEL_PHASE_ORDER)
     # trajectory_to_episode writes phase ids from sorted(set(phases)).
     return sorted(PICK_AND_LIFT_PHASE_ORDER)
+
+
+def _phase_name_from_id(phase_names: list[str], phase_id: int) -> str:
+    if phase_names == list(CONTACT_RELABEL_PHASE_ORDER) and int(phase_id) < 0:
+        phase_id = 0
+    return str(phase_names[int(phase_id)])
 
 
 def _episode_for_row(row_idx: int, episode_ends: np.ndarray) -> tuple[int, int, int]:
@@ -405,7 +449,7 @@ def _demo_reset_payload(
         "episode_end": episode_end,
         "episode_step": local_step,
         "row": row_idx,
-        "phase": str(phase_names[phase_id]),
+        "phase": _phase_name_from_id(phase_names, phase_id),
         "target_obs": obs[row_idx].copy(),
         "target_action": action[row_idx].copy(),
     }
@@ -473,6 +517,7 @@ def _apply_demo_reset(task_env: Any, demo_reset: dict[str, Any]) -> tuple[torch.
     env_ids = torch.as_tensor(env_ids, device=task_env.device, dtype=torch.long)
     num_ids = int(env_ids.numel())
     target_obs = np.asarray(demo_reset["target_obs"], dtype=np.float32)
+    target_obs_base = target_obs[:FRANKA_CUBE_LOWDIM_OBS_DIM]
     joint_blend_alpha = float(np.clip(float(args_cli.demo_reset_joint_blend_alpha), 0.0, 1.0))
     cube_pos_blend_alpha = float(np.clip(float(args_cli.demo_reset_cube_pos_blend_alpha), 0.0, 1.0))
     normal_policy_obs = _reset_policy_obs_from_task_env(task_env)
@@ -516,8 +561,8 @@ def _apply_demo_reset(task_env: Any, demo_reset: dict[str, Any]) -> tuple[torch.
             }
         )
 
-    source_cube_pos = torch.as_tensor(target_obs[7:10], dtype=torch.float32, device=task_env.device).repeat(num_ids, 1)
-    source_cube_quat = torch.as_tensor(target_obs[10:14], dtype=torch.float32, device=task_env.device).repeat(num_ids, 1)
+    source_cube_pos = torch.as_tensor(target_obs_base[7:10], dtype=torch.float32, device=task_env.device).repeat(num_ids, 1)
+    source_cube_quat = torch.as_tensor(target_obs_base[10:14], dtype=torch.float32, device=task_env.device).repeat(num_ids, 1)
     normal_cube_pos = torch.as_tensor(normal_lowdim[:, 7:10], dtype=torch.float32, device=task_env.device)
     normal_cube_quat = torch.as_tensor(normal_lowdim[:, 10:14], dtype=torch.float32, device=task_env.device)
     target_cube_pos = normal_cube_pos + cube_pos_blend_alpha * (source_cube_pos - normal_cube_pos)
@@ -544,7 +589,7 @@ def _apply_demo_reset(task_env: Any, demo_reset: dict[str, Any]) -> tuple[torch.
     policy_obs = _reset_policy_obs_from_task_env(task_env)
     live_lowdim = extract_lowdim_obs_from_ppo_obs(policy_obs).detach().float().cpu().numpy()
     live0 = live_lowdim[0]
-    diff = live0 - target_obs
+    diff = live0 - target_obs_base
     if "applied_joint_position_env0" in robot_reset_summary:
         joint_after = task_env._robot.data.joint_pos[env_ids].detach().float().cpu().numpy()
         applied = np.asarray(robot_reset_summary["applied_joint_position_env0"], dtype=np.float32)
@@ -557,10 +602,10 @@ def _apply_demo_reset(task_env: Any, demo_reset: dict[str, Any]) -> tuple[torch.
         "phase": str(demo_reset["phase"]),
         "joint_blend_alpha": joint_blend_alpha,
         "cube_pos_blend_alpha": cube_pos_blend_alpha,
-        "target_cube_pos": target_obs[7:10].astype(float).tolist(),
-        "target_cube_quat": target_obs[10:14].astype(float).tolist(),
-        "target_cube_minus_ee": target_obs[14:17].astype(float).tolist(),
-        "target_gripper_width": float(target_obs[20]),
+        "target_cube_pos": target_obs_base[7:10].astype(float).tolist(),
+        "target_cube_quat": target_obs_base[10:14].astype(float).tolist(),
+        "target_cube_minus_ee": target_obs_base[14:17].astype(float).tolist(),
+        "target_gripper_width": float(target_obs_base[20]),
         "applied_cube_pos_env0": target_cube_pos[0].detach().float().cpu().numpy().astype(float).tolist(),
         "applied_cube_quat_env0": target_cube_quat[0].detach().float().cpu().numpy().astype(float).tolist(),
         "live_lowdim_after_reset_env0": live0.astype(float).tolist(),
@@ -570,9 +615,9 @@ def _apply_demo_reset(task_env: Any, demo_reset: dict[str, Any]) -> tuple[torch.
         "lowdim_l2_diff_env0": float(np.linalg.norm(diff)),
         "cube_pos_l2_diff_env0": float(np.linalg.norm(diff[7:10])),
         "cube_minus_ee_l2_diff_env0": float(np.linalg.norm(diff[14:17])),
-        "cube_pos_l2_from_demo_env0": float(np.linalg.norm(live0[7:10] - target_obs[7:10])),
+        "cube_pos_l2_from_demo_env0": float(np.linalg.norm(live0[7:10] - target_obs_base[7:10])),
         "cube_pos_l2_from_normal_env0": float(np.linalg.norm(live0[7:10] - normal0[7:10])),
-        "cube_minus_ee_l2_from_demo_env0": float(np.linalg.norm(live0[14:17] - target_obs[14:17])),
+        "cube_minus_ee_l2_from_demo_env0": float(np.linalg.norm(live0[14:17] - target_obs_base[14:17])),
         "cube_minus_ee_l2_from_normal_env0": float(np.linalg.norm(live0[14:17] - normal0[14:17])),
     }
     summary.update(robot_reset_summary)
@@ -594,7 +639,10 @@ def _phase_min_distances(support: dict[str, Any], lowdim_obs: np.ndarray) -> dic
     distances = np.sqrt((((obs[:, POSITION_FEATURE_IDX] - lowdim_obs[POSITION_FEATURE_IDX]) / feature_std) ** 2).mean(axis=1))
     out: dict[str, float] = {}
     for phase_id, phase_name in enumerate(support["phase_names"]):
-        mask = phase_ids == phase_id
+        if support["phase_names"] == list(CONTACT_RELABEL_PHASE_ORDER) and phase_id == 0:
+            mask = np.logical_or(phase_ids == phase_id, phase_ids < 0)
+        else:
+            mask = phase_ids == phase_id
         if np.any(mask):
             out[str(phase_name)] = float(np.min(distances[mask]))
     return out
@@ -622,7 +670,7 @@ def _collect_support_record(
     nearest_idx, nearest_distance = _nearest_support_row(support, lowdim_obs)
     episode_idx, episode_start, _episode_end = _episode_for_row(nearest_idx, support["episode_ends"])
     phase_id = int(support["phase_ids"][nearest_idx])
-    phase_name = str(support["phase_names"][phase_id])
+    phase_name = _phase_name_from_id(support["phase_names"], phase_id)
     nearest_obs = support["obs"][nearest_idx]
     nearest_action = support["action"][nearest_idx]
     phase_distances = _phase_min_distances(support, lowdim_obs)
@@ -640,6 +688,16 @@ def _collect_support_record(
         "nearest_demo_distance": float(nearest_distance),
         "nearest_demo_action_gripper": float(nearest_action[6]),
         "nearest_demo_gripper_width": float(nearest_obs[20]),
+        "live_phase_progress": (
+            np.asarray(lowdim_obs[21:25], dtype=np.float32).astype(float).tolist()
+            if lowdim_obs.shape[0] >= 25
+            else None
+        ),
+        "nearest_demo_phase_progress": (
+            np.asarray(nearest_obs[21:25], dtype=np.float32).astype(float).tolist()
+            if nearest_obs.shape[0] >= 25
+            else None
+        ),
         "nearest_demo_cube_minus_ee": nearest_cme.astype(float).tolist(),
         "live_cube_minus_ee": live_cme.astype(float).tolist(),
         "live_to_nearest_demo_cube_minus_ee_norm": float(np.linalg.norm(live_cme - nearest_cme)),
@@ -697,6 +755,8 @@ def _write_support_csv(path: Path, records: list[dict[str, Any]]) -> None:
         "nearest_demo_distance",
         "nearest_demo_action_gripper",
         "nearest_demo_gripper_width",
+        "live_phase_progress",
+        "nearest_demo_phase_progress",
         "live_to_nearest_demo_cube_minus_ee_norm",
         "live_gripper_width",
         "ee_to_cube_dist",
@@ -725,7 +785,7 @@ def _write_support_csv(path: Path, records: list[dict[str, Any]]) -> None:
 
 
 def _lowdim_components(lowdim_obs: np.ndarray) -> dict[str, Any]:
-    return {
+    components = {
         "ee_pos": lowdim_obs[0:3].astype(float).tolist(),
         "ee_quat": lowdim_obs[3:7].astype(float).tolist(),
         "cube_pos": lowdim_obs[7:10].astype(float).tolist(),
@@ -734,6 +794,11 @@ def _lowdim_components(lowdim_obs: np.ndarray) -> dict[str, Any]:
         "cube_goal_delta": lowdim_obs[17:20].astype(float).tolist(),
         "gripper_width": float(lowdim_obs[20]),
     }
+    if lowdim_obs.shape[0] >= 25:
+        components["phase_progress"] = {
+            name: float(lowdim_obs[21 + idx]) for idx, name in enumerate(PHASE_PROGRESS_FEATURE_NAMES)
+        }
+    return components
 
 
 def _trace_policy_call(
@@ -742,7 +807,6 @@ def _trace_policy_call(
     max_calls: int,
     step: int,
     env_index: int,
-    policy_obs: torch.Tensor,
     history: LowdimObsHistory,
     action_seq: np.ndarray,
     chunk_steps: int,
@@ -750,8 +814,7 @@ def _trace_policy_call(
     if max_calls <= 0 or len(trace_records) >= max_calls:
         return
     env_index = min(max(0, int(env_index)), int(action_seq.shape[0]) - 1)
-    lowdim = extract_lowdim_obs_from_ppo_obs(policy_obs)
-    lowdim_np = lowdim.detach().float().cpu().numpy()
+    lowdim_np = np.asarray(history._history[:, -1], dtype=np.float32)
     action_chunk = np.asarray(action_seq[env_index, :chunk_steps], dtype=np.float32)
     history_steps = getattr(history, "_step_history", None)
     if history_steps is not None:
@@ -767,6 +830,7 @@ def _trace_policy_call(
             "policy_call_index": len(trace_records),
             "step": int(step),
             "env_index": int(env_index),
+            "lowdim_obs_dim": int(lowdim_np.shape[1]),
             "lowdim_obs": lowdim_np[env_index].astype(float).tolist(),
             "lowdim_components": _lowdim_components(lowdim_np[env_index]),
             "history_after_push": history._history[env_index].astype(float).tolist(),
@@ -798,6 +862,9 @@ def main() -> None:
     if debug_trace_path is not None:
         debug_trace_path.parent.mkdir(parents=True, exist_ok=True)
     support_dataset_path = Path(args_cli.support_dataset).expanduser().resolve() if args_cli.support_dataset else None
+    phase_progress_dataset_path = (
+        Path(args_cli.phase_progress_dataset).expanduser().resolve() if args_cli.phase_progress_dataset else None
+    )
     support_trace_path = (
         Path(args_cli.support_trace_path).expanduser().resolve()
         if args_cli.support_trace_path
@@ -819,6 +886,8 @@ def main() -> None:
     checkpoint = Path(args_cli.checkpoint).expanduser().resolve()
     if not checkpoint.is_file():
         raise FileNotFoundError(checkpoint)
+    if phase_progress_dataset_path is not None and not phase_progress_dataset_path.is_file():
+        raise FileNotFoundError(phase_progress_dataset_path)
     if demo_reset_dataset_path is not None and not demo_reset_dataset_path.is_file():
         raise FileNotFoundError(demo_reset_dataset_path)
     if demo_reset_source_trajectory_path is not None and not demo_reset_source_trajectory_path.is_file():
@@ -838,6 +907,9 @@ def main() -> None:
         debug_policy_trace_max_calls=debug_trace_max_calls,
         support_dataset=str(support_dataset_path) if support_dataset_path is not None else None,
         support_trace_path=str(support_trace_path) if support_trace_path is not None else None,
+        phase_progress_dataset=str(phase_progress_dataset_path) if phase_progress_dataset_path is not None else None,
+        phase_progress_episode=int(args_cli.phase_progress_episode),
+        phase_progress_start_step=int(args_cli.phase_progress_start_step),
         demo_reset_dataset=str(demo_reset_dataset_path) if demo_reset_dataset_path is not None else None,
         demo_reset_episode=int(args_cli.demo_reset_episode),
         demo_reset_step=int(args_cli.demo_reset_step),
@@ -856,6 +928,17 @@ def main() -> None:
             obs_shape=list(support_dataset["obs"].shape),
             action_shape=list(support_dataset["action"].shape),
         )
+    phase_progress_provider = (
+        DatasetBackedPhaseProgressProvider.from_npz(
+            phase_progress_dataset_path,
+            episode_index=int(args_cli.phase_progress_episode),
+            start_step=int(args_cli.phase_progress_start_step),
+        )
+        if phase_progress_dataset_path is not None
+        else None
+    )
+    if phase_progress_provider is not None:
+        _stage("phase_progress_provider_loaded", **phase_progress_provider.summary())
     demo_reset = _demo_reset_payload(
         demo_reset_dataset_path,
         int(args_cli.demo_reset_episode),
@@ -909,6 +992,19 @@ def main() -> None:
         args_cli.diffusion_policy_root,
     )
     n_obs_steps = int(policy.n_obs_steps)
+    expected_obs_dim = _policy_global_obs_dim(policy)
+    if phase_progress_provider is None:
+        if expected_obs_dim is not None and expected_obs_dim != FRANKA_CUBE_LOWDIM_OBS_DIM:
+            raise RuntimeError(
+                f"Checkpoint appears to expect obs_dim={expected_obs_dim}, but no --phase_progress_dataset was provided."
+            )
+        history_obs_dim = FRANKA_CUBE_LOWDIM_OBS_DIM
+    else:
+        history_obs_dim = int(phase_progress_provider.obs_dim)
+        if expected_obs_dim is not None and expected_obs_dim != history_obs_dim:
+            raise RuntimeError(
+                f"Phase/progress provider produces obs_dim={history_obs_dim}, checkpoint expects {expected_obs_dim}."
+            )
 
     _stage("gym_make_start", task=args_cli.task)
     gym_env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)
@@ -927,7 +1023,7 @@ def main() -> None:
             disable_logger=True,
         )
 
-    history = LowdimObsHistory(num_envs=task_env.num_envs, n_obs_steps=n_obs_steps)
+    history = LowdimObsHistory(num_envs=task_env.num_envs, n_obs_steps=n_obs_steps, obs_dim=history_obs_dim)
     requested_action_chunk_steps = max(1, int(args_cli.action_chunk_steps))
     action_queue = np.empty((task_env.num_envs, 0, FRANKA_CUBE_ACTION_DIM), dtype=np.float32)
     step_metrics: list[dict[str, float | int | None]] = []
@@ -965,7 +1061,13 @@ def main() -> None:
 
             with torch.inference_mode():
                 if action_queue.shape[1] == 0:
-                    action_seq = predict_action_sequence_from_ppo_obs(policy, policy_obs, history, step=step)
+                    action_seq = predict_action_sequence_from_ppo_obs(
+                        policy,
+                        policy_obs,
+                        history,
+                        step=step,
+                        phase_progress_provider=phase_progress_provider,
+                    )
                     if action_seq.ndim != 3 or action_seq.shape[0] != task_env.num_envs:
                         raise RuntimeError(f"Unexpected DP action sequence shape {action_seq.shape}")
                     chunk_steps = min(requested_action_chunk_steps, int(action_seq.shape[1]))
@@ -975,7 +1077,6 @@ def main() -> None:
                         max_calls=debug_trace_max_calls,
                         step=step,
                         env_index=int(args_cli.debug_policy_trace_env_index),
-                        policy_obs=policy_obs,
                         history=history,
                         action_seq=action_seq,
                         chunk_steps=chunk_steps,
@@ -997,12 +1098,17 @@ def main() -> None:
                     done_count += int(done_env_ids.shape[0])
                 elif action_queue.shape[1] > 0:
                     lowdim = extract_lowdim_obs_from_ppo_obs(policy_obs)
-                    history.push(lowdim.detach().float().cpu().numpy(), step=step + 1)
+                    lowdim_np = lowdim.detach().float().cpu().numpy()
+                    if phase_progress_provider is not None:
+                        lowdim_np = phase_progress_provider.augment_lowdim(lowdim_np, step=step + 1)
+                    history.push(lowdim_np, step=step + 1)
 
             reward_mean = _mean_float(rewards)
             task_metrics = _collect_task_metrics(task_env)
             if support_dataset is not None:
                 lowdim_after = extract_lowdim_obs_from_ppo_obs(policy_obs).detach().float().cpu().numpy()
+                if phase_progress_provider is not None:
+                    lowdim_after = phase_progress_provider.augment_lowdim(lowdim_after, step=step + 1)
                 env_index = min(max(0, int(args_cli.debug_policy_trace_env_index)), int(lowdim_after.shape[0]) - 1)
                 support_trace_records.append(
                     _collect_support_record(
@@ -1049,6 +1155,7 @@ def main() -> None:
         "official_workspace": workspace.__class__.__name__,
         "policy_class": policy.__class__.__name__,
         "ppo_bridge": "predict_action_sequence_from_ppo_obs",
+        "phase_progress_provider": None if phase_progress_provider is None else phase_progress_provider.summary(),
         "action_chunk_steps": requested_action_chunk_steps,
         "no_learning": True,
         "num_envs": task_num_envs,

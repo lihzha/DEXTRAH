@@ -9864,3 +9864,127 @@ Next:
   3. Only after feature parity passes, run a tiny no-video matched-reset
      closed-loop trace with the 25D checkpoint and inspect action/support
      traces before any video, broader eval, BC scale-up, or RL handoff.
+
+## 2026-06-11T22:56:34-07:00 - plan runtime phase-progress bridge
+
+Goal:
+- Move one safe step beyond the offline-only 25D DP smoke by implementing a
+  runtime feature provider for `phase_align_open`, `phase_close_hold`,
+  `phase_lift`, and `episode_progress` without changing the existing 21D eval
+  path.
+
+Hypothesis:
+- The 25D checkpoint only becomes eligible for a bounded closed-loop trace if
+  live observations append the same four features used in
+  `contact_relabel_set_phase_progress.npz`.
+- A deterministic schedule derived from the accepted contact-relabel phase
+  counts is the smallest safe bridge for the first matched-reset trace. It is
+  not a general policy-state estimator; it is a parity-preserving diagnostic.
+
+Planned edits:
+- Add phase/progress provider helpers in `dextrah_lab/offline_dp_bc/ppo_bridge.py`
+  or a nearby offline-DP bridge module:
+  - constants for the four feature names and 25D obs dim.
+  - deterministic schedule/provider that maps per-env step to phase one-hot and
+    normalized episode progress.
+  - augmented extraction/action-query helpers that preserve existing 21D
+    behavior when no provider is supplied.
+- Add an offline parity checker, likely
+  `dextrah_lab/offline_dp_bc/validate_phase_progress_runtime_provider.py`,
+  which compares provider-generated features against the generated 25D NPZ for
+  all accepted set4 rows and writes report/JSON/CSV artifacts.
+- Wire `dextrah_lab/rl_games/eval_franka_cube_dp_policy.py` behind explicit
+  CLI flags so 25D checkpoints require a provider and 21D checkpoints remain
+  unchanged.
+- Extend `cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh` only if needed to
+  pass provider flags to l401.
+
+Validation before any cluster eval:
+- `python3 -m py_compile` for changed Python modules.
+- `bash -n` for any changed wrapper.
+- `git diff --check`.
+- Run the offline parity checker locally on:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_lrcentering_a075_set4_phaseprogress_official_dp_smoke_20260611_224001/contact_relabel_set_phase_progress.npz`
+  and require exact/near-exact feature parity.
+
+Bounded launch gate:
+- Only if parity passes, commit/push/deploy exact commit to the C-owned l401
+  worktree and launch one no-video matched source-joint trace:
+  `num_envs=1`, short horizon, `ACTION_CHUNK_STEPS=1`,
+  `DEBUG_POLICY_TRACE_MAX_CALLS` enabled, no broad video/RL.
+- Inspect metrics/support/policy trace before deciding whether a short video is
+  warranted.
+
+Version Control:
+- base_commit: `3fe930293fa855b75d2d76cda217fa183f1cf434`
+- implementation_commit: `pending`
+- active local/cluster jobs at plan time: none known.
+
+## 2026-06-11T23:00:00-07:00 - runtime phase-progress provider parity pass
+
+Goal:
+- Implement the smallest runtime bridge for the 25D phase/progress checkpoint
+  and validate that it reproduces the generated offline feature columns before
+  any Isaac trace.
+
+Change:
+- Added a dataset-backed phase/progress provider in
+  `dextrah_lab/offline_dp_bc/ppo_bridge.py`.
+  - It appends `phase_align_open`, `phase_close_hold`, `phase_lift`, and
+    `episode_progress` to the extracted 21D lowdim observation.
+  - It is explicit and dataset-backed: the first matched-reset trace will use
+    the selected accepted relabel episode's stored phase/progress schedule.
+  - Existing 21D bridge behavior remains unchanged when no provider is passed.
+- Added
+  `dextrah_lab/offline_dp_bc/validate_phase_progress_runtime_provider.py`.
+  - It compares provider output row-for-row against the generated 25D NPZ and
+    writes report/JSON/CSV artifacts.
+- Updated `dextrah_lab/rl_games/eval_franka_cube_dp_policy.py`.
+  - New explicit flags:
+    `--phase_progress_dataset`, `--phase_progress_episode`,
+    `--phase_progress_start_step`.
+  - 25D checkpoints now fail early without a provider instead of silently
+    feeding 21D obs.
+  - Policy/support traces include `lowdim_obs_dim` and phase/progress values.
+  - Demo reset now tolerates 25D datasets by using only the base 21D fields for
+    cube/robot reset comparisons.
+- Updated `cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh` to pass the new
+  provider flags through l401.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/offline_dp_bc/ppo_bridge.py dextrah_lab/offline_dp_bc/validate_phase_progress_runtime_provider.py dextrah_lab/rl_games/eval_franka_cube_dp_policy.py`: passed.
+- `bash -n cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`: passed.
+- `git diff --check`: passed.
+- Offline parity command:
+  `PYTHONPATH=$DEX $VENV -m dextrah_lab.offline_dp_bc.validate_phase_progress_runtime_provider --dataset $RUN/contact_relabel_set_phase_progress.npz --output-dir /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/phase_progress_runtime_provider/parity_set4_20260611_2300 --atol 1e-7`
+
+Result:
+- status: `passed`; no training and no Isaac rollout was run in this step.
+- parity artifact dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/phase_progress_runtime_provider/parity_set4_20260611_2300`
+- checked rows: `936`
+- max abs feature error: `0.0`
+- episode schedules in the accepted set:
+  - episode 0: length `240`, phase changes at local steps `[0,22,102]`
+  - episode 1: length `240`, phase changes at local steps `[0,22,102]`
+  - episode 2: length `226`, phase changes at local steps `[0,10,90]`
+  - episode 3: length `230`, phase changes at local steps `[0,15,95]`
+
+Viewer URL:
+- parity report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/phase_progress_runtime_provider/parity_set4_20260611_2300/phase_progress_runtime_provider_parity.md`
+
+Analysis:
+- The parity result proves the runtime provider can reproduce the 25D training
+  features for accepted relabel episodes.
+- This is still a deterministic schedule, not a general phase estimator. It is
+  appropriate only for the next bounded matched-reset trace; normal-reset
+  generalization and RL remain out of scope.
+
+Next:
+- Commit/push/deploy this bridge to the C-owned l401 worktree.
+- Launch one tiny no-video matched-reset trace using the 25D checkpoint,
+  episode 0 schedule, source-joint reset for the corresponding accepted
+  relabel rollout, `ACTION_CHUNK_STEPS=1`, and support/policy tracing.
+- Inspect metrics/support/policy traces before deciding whether any short video
+  is warranted.
