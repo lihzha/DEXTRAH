@@ -5269,6 +5269,52 @@ Analysis:
 Active Jobs:
 - No selector/video/PPO jobs launched for this attempt.
 
+## 2026-06-11T21:12:52-07:00 - residual oracle/capacity diagnostic plan
+
+Goal:
+- Explain why the frozen-base residual adapter preserved tm0.25 but could not fit current alpha `0.10` labels.
+- Stay supervised-only. No selector rollout, videos, PPO, RL, or scale-up unless supervised gates pass.
+
+Hypothesis:
+- The previous residual adapter failed either because the required label-minus-base residual on current alpha `0.10` states is too large for `RESIDUAL_MAX_ACTION=0.5`, because the shared residual cannot separate current alpha `0.10` states from tm0.25 rehearsal states while preserving tm0.25, or because the preservation/gating objective keeps the residual near zero globally.
+- Measuring the oracle residual distribution first should decide whether increasing residual max/capacity is justified before another training run.
+
+Planned Change:
+- Extend `dextrah_lab/rl_games/bc_reference_action_imitation.py` to compute and report oracle residual statistics:
+  - oracle residual = `reference_action - frozen_base_action`.
+  - per-source train/val L2, per-dimension mean/std/abs mean, percentiles, and `RESIDUAL_MAX_ACTION` saturation rate.
+  - source-conditioned residual norms for current alpha `0.10` and tm0.25 rehearsal.
+  - a small source-separability probe over observations, if feasible, so residual gating has an empirical basis.
+- Extend `dextrah_lab/rl_games/residual_action_adapter.py` with optional observation-gated residual capacity while keeping the base actor frozen.
+- Extend `cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh` to pass new residual gating/oracle knobs.
+
+Planned Analysis Job If Validation Passes:
+- run name: `franka_cube_traj_tracking_bc_residual_oracle_tm025_tm010_<timestamp>`.
+- input checkpoint: tm0.25 BC checkpoint `/results/bc/franka_cube_traj_tracking_bc_dagger_tm025_all_20260611_185900/nn/bc_reference_action_imitation.pth`.
+- fresh collection: teacher_mix alpha `0.10`, `NUM_ENVS=8`, `COLLECTION_STEPS=520`.
+- rehearsal dataset: tm0.25 `reference_action_dataset.pt`.
+- `TRAIN_STEPS=0`; this is analysis-only and will not be used for selector rollout.
+- residual adapter enabled only to define the frozen-base/oracle context; no residual training in this first job.
+
+Decision Gate For Any Follow-Up Training:
+- tm0.25 rehearsal val L2 must remain preferred `<=0.045`, hard ceiling `<=0.055`.
+- current alpha `0.10` val L2 must improve materially over residual `0.6875`, balanced `0.15143`, and ideally approach `~0.079`.
+- residual magnitude on tm0.25 must stay near zero; base actor must remain frozen.
+- If oracle stats show heavy residual clipping at `0.5`, a bounded follow-up can increase `RESIDUAL_MAX_ACTION`.
+- If oracle stats show source separability/gating signal, a bounded follow-up can enable observation-gated residual.
+- If neither condition holds, stop at analysis artifacts and do not launch training.
+
+Validation Before Launch:
+- `python3 -m py_compile dextrah_lab/rl_games/bc_reference_action_imitation.py dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/summarize_traj_tracking_eval_artifacts.py dextrah_lab/rl_games/analyze_traj_tracking_action_semantics.py dextrah_lab/rl_games/residual_action_adapter.py`
+- `bash -n cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh`
+- `bash -n cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- `git diff --check`
+- commit/push and deploy exact commit to the l401 agent-owned worktree via Git before Slurm launch.
+
+Notes:
+- Old `actionscale-rewinf-diag-video480-step-0.mp4` remains obsolete failed diagnostic evidence.
+- Compact trajectory reference remains `curobo_validated=false`.
+
 ## 2026-06-11T20:58:05-07:00 - frozen-base residual adapter bounded plan
 
 Goal:

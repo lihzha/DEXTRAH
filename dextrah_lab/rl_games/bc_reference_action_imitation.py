@@ -137,6 +137,31 @@ parser.add_argument(
     default=0.0,
     help="Global residual magnitude MSE penalty.",
 )
+parser.add_argument(
+    "--residual_gate_enabled",
+    type=lambda value: str(value).strip().lower() in ("1", "true", "yes", "on"),
+    default=False,
+    help="Enable an observation-conditioned scalar gate multiplying the residual adapter output.",
+)
+parser.add_argument(
+    "--residual_gate_hidden_dim",
+    type=int,
+    default=-1,
+    help="Hidden width for residual gate; -1 reuses --residual_hidden_dim and 0 uses linear.",
+)
+parser.add_argument(
+    "--residual_gate_bias_init",
+    type=float,
+    default=0.0,
+    help="Initial bias for the residual gate sigmoid. 0.0 starts at gate=0.5.",
+)
+parser.add_argument(
+    "--source_probe_steps",
+    type=int,
+    default=200,
+    help="Tiny linear source-classifier probe steps for obs separability; 0 disables.",
+)
+parser.add_argument("--source_probe_lr", type=float, default=1.0e-2, help="Learning rate for the source probe.")
 parser.add_argument("--seed", type=int, default=42, help="Random seed for env and supervised split.")
 parser.add_argument(
     "--collection_action_source",
@@ -375,6 +400,165 @@ def _error_stats(pred: torch.Tensor, target: torch.Tensor, dims: list[int], pref
     return out
 
 
+def _quantile_float(values: torch.Tensor, q: float) -> float:
+    values = values.detach().float().reshape(-1)
+    values = values[torch.isfinite(values)]
+    if int(values.numel()) == 0:
+        return float("nan")
+    return float(torch.quantile(values, float(q), interpolation="linear").cpu())
+
+
+def _source_subset(values: torch.Tensor, source_ids: torch.Tensor, source_id: int, indices: torch.Tensor) -> torch.Tensor:
+    local_source_ids = source_ids[indices]
+    mask = local_source_ids == int(source_id)
+    if not bool(mask.any()):
+        return values[indices][:0]
+    return values[indices][mask]
+
+
+def _oracle_residual_stats(
+    *,
+    base_actions: torch.Tensor,
+    target_actions: torch.Tensor,
+    source_ids: torch.Tensor,
+    train_idx: torch.Tensor,
+    val_idx: torch.Tensor,
+    source_names: list[str],
+    source_slugs: list[str],
+    dims: list[int],
+    residual_max_action: float,
+) -> dict[str, object]:
+    oracle = target_actions.detach().float() - base_actions.detach().float()
+    max_action = float(residual_max_action)
+    clipped_oracle = torch.clamp(oracle, -max_action, max_action) if max_action >= 0.0 else oracle
+    clipped_pred = torch.clamp(base_actions.detach().float() + clipped_oracle, -1.0, 1.0)
+    dims_t = torch.tensor(dims, dtype=torch.long, device=oracle.device)
+    split_indices = {"train": train_idx, "val": val_idx}
+    source_rows: list[dict[str, object]] = []
+    dim_rows: list[dict[str, object]] = []
+    for source_id, (source_name, source_slug) in enumerate(zip(source_names, source_slugs, strict=True)):
+        for split, indices in split_indices.items():
+            residual_subset = _source_subset(oracle, source_ids, source_id, indices)
+            base_subset = _source_subset(base_actions, source_ids, source_id, indices)
+            target_subset = _source_subset(target_actions, source_ids, source_id, indices)
+            clipped_pred_subset = _source_subset(clipped_pred, source_ids, source_id, indices)
+            if int(residual_subset.numel()) == 0:
+                continue
+            residual_dims = residual_subset[:, dims_t]
+            abs_residual_dims = torch.abs(residual_dims)
+            residual_l2 = torch.norm(residual_dims, dim=-1)
+            clipped_error_l2 = torch.norm(
+                clipped_pred_subset[:, dims_t] - target_subset[:, dims_t],
+                dim=-1,
+            )
+            source_rows.append(
+                {
+                    "source": source_name,
+                    "slug": source_slug,
+                    "split": split,
+                    "count": int(residual_subset.shape[0]),
+                    "oracle_l2_mean": _mean_float(residual_l2),
+                    "oracle_l2_p50": _quantile_float(residual_l2, 0.50),
+                    "oracle_l2_p75": _quantile_float(residual_l2, 0.75),
+                    "oracle_l2_p90": _quantile_float(residual_l2, 0.90),
+                    "oracle_l2_p95": _quantile_float(residual_l2, 0.95),
+                    "oracle_l2_p99": _quantile_float(residual_l2, 0.99),
+                    "oracle_l2_max": float(torch.max(residual_l2).detach().cpu()),
+                    "oracle_abs_mean": _mean_float(abs_residual_dims),
+                    "clip_dim_rate": _mean_float((abs_residual_dims > max_action).float()) if max_action >= 0.0 else 0.0,
+                    "clip_sample_rate": _mean_float((torch.max(abs_residual_dims, dim=-1).values > max_action).float())
+                    if max_action >= 0.0
+                    else 0.0,
+                    "clipped_achievable_l2_mean": _mean_float(clipped_error_l2),
+                    "base_l2_mean": _mean_float(torch.norm(base_subset[:, dims_t] - target_subset[:, dims_t], dim=-1)),
+                    "residual_max_action": max_action,
+                }
+            )
+            for dim in dims:
+                label = ACTION_LABELS[dim] if dim < len(ACTION_LABELS) else f"dim{dim}"
+                values = residual_subset[:, dim]
+                abs_values = torch.abs(values)
+                dim_rows.append(
+                    {
+                        "source": source_name,
+                        "slug": source_slug,
+                        "split": split,
+                        "dim": int(dim),
+                        "label": label,
+                        "count": int(values.shape[0]),
+                        "mean": _mean_float(values),
+                        "std": float(values.std(unbiased=False).detach().cpu()),
+                        "abs_mean": _mean_float(abs_values),
+                        "abs_p50": _quantile_float(abs_values, 0.50),
+                        "abs_p75": _quantile_float(abs_values, 0.75),
+                        "abs_p90": _quantile_float(abs_values, 0.90),
+                        "abs_p95": _quantile_float(abs_values, 0.95),
+                        "abs_p99": _quantile_float(abs_values, 0.99),
+                        "abs_max": float(torch.max(abs_values).detach().cpu()),
+                        "clip_rate": _mean_float((abs_values > max_action).float()) if max_action >= 0.0 else 0.0,
+                    }
+                )
+    return {
+        "definition": "reference_action - frozen_base_action",
+        "residual_max_action": max_action,
+        "source_rows": source_rows,
+        "dim_rows": dim_rows,
+    }
+
+
+def _run_source_probe(
+    *,
+    obs: torch.Tensor,
+    source_ids: torch.Tensor,
+    train_idx: torch.Tensor,
+    val_idx: torch.Tensor,
+    num_sources: int,
+    steps: int,
+    learning_rate: float,
+    batch_size: int,
+    generator: torch.Generator,
+) -> dict[str, object]:
+    if steps <= 0 or num_sources < 2:
+        return {"enabled": False, "reason": "disabled_or_single_source"}
+    probe = torch.nn.Linear(obs.shape[-1], num_sources, device=obs.device)
+    optimizer = torch.optim.AdamW(probe.parameters(), lr=float(learning_rate))
+    train_batch_size = max(1, min(int(batch_size), int(train_idx.numel())))
+    for _ in range(int(steps)):
+        choice = train_idx[torch.randint(0, int(train_idx.numel()), (train_batch_size,), generator=generator, device=obs.device)]
+        logits = probe(obs[choice].detach())
+        loss = torch.nn.functional.cross_entropy(logits, source_ids[choice].long())
+        optimizer.zero_grad(set_to_none=True)
+        loss.backward()
+        optimizer.step()
+    with torch.no_grad():
+        train_logits = probe(obs[train_idx].detach())
+        val_logits = probe(obs[val_idx].detach())
+        train_pred = torch.argmax(train_logits, dim=-1)
+        val_pred = torch.argmax(val_logits, dim=-1)
+        train_target = source_ids[train_idx].long()
+        val_target = source_ids[val_idx].long()
+        train_counts = torch.bincount(train_target, minlength=num_sources).float()
+        val_counts = torch.bincount(val_target, minlength=num_sources).float()
+        train_baseline = float((torch.max(train_counts) / train_counts.sum().clamp_min(1.0)).detach().cpu())
+        val_baseline = float((torch.max(val_counts) / val_counts.sum().clamp_min(1.0)).detach().cpu())
+        train_accuracy = _mean_float((train_pred == train_target).float())
+        val_accuracy = _mean_float((val_pred == val_target).float())
+        train_loss = float(torch.nn.functional.cross_entropy(train_logits, train_target).detach().cpu())
+        val_loss = float(torch.nn.functional.cross_entropy(val_logits, val_target).detach().cpu())
+    return {
+        "enabled": True,
+        "steps": int(steps),
+        "learning_rate": float(learning_rate),
+        "train_accuracy": train_accuracy,
+        "val_accuracy": val_accuracy,
+        "train_baseline_accuracy": train_baseline,
+        "val_baseline_accuracy": val_baseline,
+        "train_loss": train_loss,
+        "val_loss": val_loss,
+        "num_sources": int(num_sources),
+    }
+
+
 def _write_csv(rows: list[dict[str, float | int | str]], path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = sorted({key for row in rows for key in row})
@@ -466,6 +650,7 @@ def _draw_source_metric_plot(rows: list[dict[str, float | int | str]], path: Pat
         or (key.startswith("val_distill_source_") and key.endswith("_l2"))
         or (key.startswith("val_residual_source_") and key.endswith("_l2"))
         or (key.startswith("val_preserve_source_") and key.endswith("_l2"))
+        or (key.startswith("val_gate_source_") and key.endswith("_mean"))
     )
     metric_keys = [key for idx, key in enumerate(metric_keys) if key in all_keys and key not in metric_keys[:idx]]
     if not metric_keys:
@@ -519,6 +704,98 @@ def _draw_source_metric_plot(rows: list[dict[str, float | int | str]], path: Pat
     image.save(path)
 
 
+def _draw_oracle_residual_plot(oracle_stats: dict[str, object], path: Path) -> None:
+    from PIL import Image, ImageDraw, ImageFont
+
+    dim_rows = oracle_stats.get("dim_rows", [])
+    source_rows = oracle_stats.get("source_rows", [])
+    if not isinstance(dim_rows, list):
+        dim_rows = []
+    if not isinstance(source_rows, list):
+        source_rows = []
+    val_dim_rows = [row for row in dim_rows if isinstance(row, dict) and row.get("split") == "val"]
+    val_source_rows = [row for row in source_rows if isinstance(row, dict) and row.get("split") == "val"]
+
+    width, height = 1320, 780
+    image = Image.new("RGB", (width, height), "white")
+    draw = ImageDraw.Draw(image)
+    try:
+        font_title = ImageFont.truetype("DejaVuSans-Bold.ttf", 24)
+        font = ImageFont.truetype("DejaVuSans.ttf", 14)
+        font_small = ImageFont.truetype("DejaVuSans.ttf", 11)
+    except Exception:
+        font_title = font = font_small = None
+
+    draw.text((42, 26), "Oracle Required Residuals (validation split)", fill=(20, 20, 20), font=font_title)
+    max_action = float(oracle_stats.get("residual_max_action", 0.0) or 0.0)
+    labels = [ACTION_LABELS[idx] if idx < len(ACTION_LABELS) else f"dim{idx}" for idx in range(7)]
+    sources = []
+    for row in val_dim_rows:
+        source = row.get("source")
+        if isinstance(source, str) and source not in sources:
+            sources.append(source)
+    palette = [(45, 120, 195), (210, 95, 45), (60, 155, 105), (145, 95, 180)]
+    x0, y0, x1, y1 = 72, 108, 1264, 438
+    draw.rectangle((x0, y0, x1, y1), outline=(210, 210, 210), width=1)
+    max_value = max(
+        [float(row.get("abs_p95", 0.0) or 0.0) for row in val_dim_rows] + [max_action, 1.0e-6]
+    )
+    for frac in (0.0, 0.25, 0.5, 0.75, 1.0):
+        y = y1 - frac * (y1 - y0)
+        draw.line((x0, y, x1, y), fill=(238, 238, 238), width=1)
+        draw.text((24, y - 8), f"{frac * max_value:.2f}", fill=(80, 80, 80), font=font_small)
+    if max_action > 0:
+        y = y1 - min(1.0, max_action / max_value) * (y1 - y0)
+        draw.line((x0, y, x1, y), fill=(200, 35, 35), width=2)
+        draw.text((x1 - 150, y - 18), f"max={max_action:.2f}", fill=(160, 35, 35), font=font_small)
+    group_width = (x1 - x0) / max(len(labels), 1)
+    bar_width = group_width / max(len(sources) + 1, 2)
+    for dim, label in enumerate(labels):
+        cx = x0 + dim * group_width
+        draw.text((cx + 8, y1 + 8), label, fill=(35, 35, 35), font=font_small)
+        for source_idx, source in enumerate(sources):
+            row = next(
+                (
+                    item
+                    for item in val_dim_rows
+                    if isinstance(item, dict) and item.get("source") == source and int(item.get("dim", -1)) == dim
+                ),
+                None,
+            )
+            if row is None:
+                continue
+            value = float(row.get("abs_p95", 0.0) or 0.0)
+            bx0 = cx + 8 + source_idx * bar_width
+            bx1 = bx0 + max(4, bar_width - 4)
+            by0 = y1 - min(1.0, value / max_value) * (y1 - y0)
+            draw.rectangle((bx0, by0, bx1, y1), fill=palette[source_idx % len(palette)])
+    for idx, source in enumerate(sources[:4]):
+        lx = x0 + idx * 280
+        ly = y1 + 42
+        draw.rectangle((lx, ly, lx + 14, ly + 14), fill=palette[idx % len(palette)])
+        draw.text((lx + 20, ly - 2), f"{source[:28]} p95 abs", fill=(35, 35, 35), font=font_small)
+
+    table_y = 528
+    draw.text((72, table_y - 32), "Validation source summary", fill=(20, 20, 20), font=font)
+    header = "source                         l2_mean  l2_p95  clip_dim  clip_sample  clipped_l2"
+    draw.text((72, table_y), header, fill=(45, 45, 45), font=font_small)
+    for row_idx, row in enumerate(val_source_rows[:8]):
+        y = table_y + 24 + row_idx * 24
+        source = str(row.get("source", "n/a"))[:28]
+        text = (
+            f"{source:<28} "
+            f"{float(row.get('oracle_l2_mean', float('nan'))):>7.3f} "
+            f"{float(row.get('oracle_l2_p95', float('nan'))):>7.3f} "
+            f"{float(row.get('clip_dim_rate', float('nan'))):>8.3f} "
+            f"{float(row.get('clip_sample_rate', float('nan'))):>11.3f} "
+            f"{float(row.get('clipped_achievable_l2_mean', float('nan'))):>10.3f}"
+        )
+        draw.text((72, y), text, fill=(35, 35, 35), font=font_small)
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    image.save(path)
+
+
 def _write_report(summary: dict[str, object], rows: list[dict[str, float | int | str]], path: Path) -> None:
     first = rows[0] if rows else {}
     last = rows[-1] if rows else {}
@@ -558,6 +835,56 @@ def _write_report(summary: dict[str, object], rows: list[dict[str, float | int |
         "| source | split | initial residual l2 | final residual l2 | initial preserve l2 | final preserve l2 |",
         "| --- | --- | ---: | ---: | ---: | ---: |",
     ]
+    gate_metric_lines = [
+        "| source | split | initial gate mean | final gate mean | initial gate min | final gate min | initial gate max | final gate max |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    oracle_stats = summary.get("oracle_residual_stats", {})
+    oracle_source_lines = [
+        "| source | split | count | oracle L2 mean | L2 p95 | L2 p99 | clip dim rate | clip sample rate | clipped achievable L2 |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    oracle_dim_lines = [
+        "| source | split | dim | abs mean | abs p50 | abs p90 | abs p95 | abs p99 | abs max | clip rate |",
+        "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    if isinstance(oracle_stats, dict):
+        oracle_source_rows = oracle_stats.get("source_rows", [])
+        if isinstance(oracle_source_rows, list):
+            for row in oracle_source_rows:
+                if not isinstance(row, dict):
+                    continue
+                oracle_source_lines.append(
+                    f"| {row.get('source', 'n/a')} | {row.get('split', 'n/a')} | {row.get('count', 'n/a')} | "
+                    f"{row.get('oracle_l2_mean', 'n/a')} | {row.get('oracle_l2_p95', 'n/a')} | "
+                    f"{row.get('oracle_l2_p99', 'n/a')} | {row.get('clip_dim_rate', 'n/a')} | "
+                    f"{row.get('clip_sample_rate', 'n/a')} | {row.get('clipped_achievable_l2_mean', 'n/a')} |"
+                )
+        dim_rows = oracle_stats.get("dim_rows", [])
+        if isinstance(dim_rows, list):
+            for row in dim_rows:
+                if not isinstance(row, dict):
+                    continue
+                oracle_dim_lines.append(
+                    f"| {row.get('source', 'n/a')} | {row.get('split', 'n/a')} | {row.get('label', row.get('dim', 'n/a'))} | "
+                    f"{row.get('abs_mean', 'n/a')} | {row.get('abs_p50', 'n/a')} | {row.get('abs_p90', 'n/a')} | "
+                    f"{row.get('abs_p95', 'n/a')} | {row.get('abs_p99', 'n/a')} | {row.get('abs_max', 'n/a')} | "
+                    f"{row.get('clip_rate', 'n/a')} |"
+                )
+    source_probe = summary.get("source_probe", {})
+    if isinstance(source_probe, dict) and source_probe.get("enabled"):
+        source_probe_lines = [
+            "| probe | steps | train acc | val acc | train baseline | val baseline | train loss | val loss |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+            (
+                f"| linear obs source classifier | {source_probe.get('steps', 'n/a')} | "
+                f"{source_probe.get('train_accuracy', 'n/a')} | {source_probe.get('val_accuracy', 'n/a')} | "
+                f"{source_probe.get('train_baseline_accuracy', 'n/a')} | {source_probe.get('val_baseline_accuracy', 'n/a')} | "
+                f"{source_probe.get('train_loss', 'n/a')} | {source_probe.get('val_loss', 'n/a')} |"
+            ),
+        ]
+    else:
+        source_probe_lines = [f"- source probe: `{source_probe}`"]
     if isinstance(source_rows, list):
         for source in source_rows:
             if not isinstance(source, dict):
@@ -598,6 +925,14 @@ def _write_report(summary: dict[str, object], rows: list[dict[str, float | int |
                         f"| {name} | {split} | "
                         f"{first.get(residual_prefix + '_l2', 'n/a')} | {last.get(residual_prefix + '_l2', 'n/a')} | "
                         f"{first.get(preserve_prefix + '_l2', 'n/a')} | {last.get(preserve_prefix + '_l2', 'n/a')} |"
+                    )
+                gate_prefix = f"{split}_gate_source_{slug}"
+                if gate_prefix + "_mean" in first or gate_prefix + "_mean" in last:
+                    gate_metric_lines.append(
+                        f"| {name} | {split} | "
+                        f"{first.get(gate_prefix + '_mean', 'n/a')} | {last.get(gate_prefix + '_mean', 'n/a')} | "
+                        f"{first.get(gate_prefix + '_min', 'n/a')} | {last.get(gate_prefix + '_min', 'n/a')} | "
+                        f"{first.get(gate_prefix + '_max', 'n/a')} | {last.get(gate_prefix + '_max', 'n/a')} |"
                     )
     if "train_distill_mse" in first or "val_distill_mse" in first:
         distill_metric_lines.extend(
@@ -643,6 +978,7 @@ def _write_report(summary: dict[str, object], rows: list[dict[str, float | int |
         f"- distillation loss weight: `{summary.get('distill_loss_weight')}`",
         f"- residual adapter enabled: `{summary.get('residual_adapter_enabled')}`",
         f"- residual hidden dim / max action: `{summary.get('residual_hidden_dim')}` / `{summary.get('residual_max_action')}`",
+        f"- residual gate enabled / hidden dim / bias init: `{summary.get('residual_gate_enabled')}` / `{summary.get('residual_gate_hidden_dim')}` / `{summary.get('residual_gate_bias_init')}`",
         f"- residual preserve sources: `{summary.get('residual_preserve_sources')}`",
         f"- residual preserve/l2 weights: `{summary.get('residual_preserve_weight')}` / `{summary.get('residual_l2_weight')}`",
         f"- selected step/score: `{summary.get('selected_step')}` / `{summary.get('selected_score')}`",
@@ -703,12 +1039,35 @@ def _write_report(summary: dict[str, object], rows: list[dict[str, float | int |
         "",
         *residual_metric_lines,
         "",
+        "### Residual Gate",
+        "",
+        *gate_metric_lines,
+        "",
+        "## Oracle Required Residuals",
+        "",
+        "Oracle residual is `reference_action - frozen_base_action` before residual clipping. The clipped-achievable L2 column shows the remaining label error if only `RESIDUAL_MAX_ACTION` clipping limited the oracle residual.",
+        "",
+        "### Source Summary",
+        "",
+        *oracle_source_lines,
+        "",
+        "### Per-Dimension Absolute Residual Percentiles",
+        "",
+        *oracle_dim_lines,
+        "",
+        "## Source Separability Probe",
+        "",
+        *source_probe_lines,
+        "",
         "## Artifacts",
         "",
         f"- metrics: `{summary.get('metrics_path')}`",
         f"- curve CSV: `{summary.get('curve_csv_path')}`",
         f"- plot: `{summary.get('plot_path')}`",
         f"- source metric plot: `{summary.get('source_plot_path')}`",
+        f"- oracle residual plot: `{summary.get('oracle_plot_path')}`",
+        f"- oracle source CSV: `{summary.get('oracle_source_csv_path')}`",
+        f"- oracle dim CSV: `{summary.get('oracle_dim_csv_path')}`",
         f"- dataset: `{summary.get('dataset_path')}`",
         "",
         "Next acceptance is not this loss alone: evaluate selector alphas `0.0`, `0.25`, `0.5`, `0.75`, and `1.0` with metrics first, then videos/action-semantics plots only if selector behavior improves.",
@@ -734,6 +1093,9 @@ def main(env_cfg, agent_cfg: dict):
     metrics_path = output_dir / "bc_metrics.json"
     plot_path = output_dir / "bc_loss_plot.png"
     source_plot_path = output_dir / "bc_source_metric_plot.png"
+    oracle_plot_path = output_dir / "oracle_residual_plot.png"
+    oracle_source_csv_path = output_dir / "oracle_residual_source.csv"
+    oracle_dim_csv_path = output_dir / "oracle_residual_dim.csv"
     report_path = output_dir / "report.md"
 
     env_cfg.scene.num_envs = args_cli.num_envs if args_cli.num_envs is not None else env_cfg.scene.num_envs
@@ -989,6 +1351,21 @@ def main(env_cfg, agent_cfg: dict):
         )
     if args_cli.residual_l2_weight < 0.0 or not math.isfinite(args_cli.residual_l2_weight):
         raise ValueError(f"--residual_l2_weight must be finite and non-negative, got {args_cli.residual_l2_weight}")
+    if args_cli.residual_gate_enabled and not residual_adapter_enabled:
+        raise ValueError("--residual_gate_enabled requires --residual_adapter_enabled")
+    if args_cli.residual_gate_hidden_dim < -1:
+        raise ValueError(f"--residual_gate_hidden_dim must be -1 or non-negative, got {args_cli.residual_gate_hidden_dim}")
+    residual_gate_hidden_dim = (
+        int(args_cli.residual_hidden_dim)
+        if int(args_cli.residual_gate_hidden_dim) < 0
+        else int(args_cli.residual_gate_hidden_dim)
+    )
+    if not math.isfinite(float(args_cli.residual_gate_bias_init)):
+        raise ValueError(f"--residual_gate_bias_init must be finite, got {args_cli.residual_gate_bias_init}")
+    if args_cli.source_probe_steps < 0:
+        raise ValueError(f"--source_probe_steps must be non-negative, got {args_cli.source_probe_steps}")
+    if args_cli.source_probe_steps > 0 and (args_cli.source_probe_lr <= 0.0 or not math.isfinite(args_cli.source_probe_lr)):
+        raise ValueError(f"--source_probe_lr must be positive and finite, got {args_cli.source_probe_lr}")
     residual_preserve_source_ids = _resolve_source_ids(args_cli.residual_preserve_sources, source_names, source_slugs)
     residual_preserve_source_names = [source_names[source_id] for source_id in residual_preserve_source_ids]
     residual_preserve_source_slugs = [source_slugs[source_id] for source_id in residual_preserve_source_ids]
@@ -996,11 +1373,45 @@ def main(env_cfg, agent_cfg: dict):
         raise ValueError("--residual_preserve_weight > 0 requires --residual_preserve_sources")
 
     model = agent.model
+    model.eval()
+    with torch.no_grad():
+        initial_action_tensor = _model_mus(model, obs_tensor, action_dim, is_train=False).detach().clamp(-1.0, 1.0)
+    oracle_residual_stats = _oracle_residual_stats(
+        base_actions=initial_action_tensor,
+        target_actions=reference_tensor,
+        source_ids=source_id_tensor,
+        train_idx=train_idx,
+        val_idx=val_idx,
+        source_names=source_names,
+        source_slugs=source_slugs,
+        dims=loss_dims,
+        residual_max_action=float(args_cli.residual_max_action),
+    )
+    probe_generator = torch.Generator(device=device)
+    probe_generator.manual_seed(args_cli.seed + 1009)
+    source_probe_summary = _run_source_probe(
+        obs=obs_tensor,
+        source_ids=source_id_tensor,
+        train_idx=train_idx,
+        val_idx=val_idx,
+        num_sources=len(source_slugs),
+        steps=int(args_cli.source_probe_steps),
+        learning_rate=float(args_cli.source_probe_lr),
+        batch_size=batch_size,
+        generator=probe_generator,
+    )
+    print(
+        json.dumps(
+            {
+                "oracle_residual_source_rows": oracle_residual_stats.get("source_rows", []),
+                "source_probe": source_probe_summary,
+            },
+            sort_keys=True,
+        )
+    )
     distill_target_tensor: torch.Tensor | None = None
     if distill_enabled:
-        model.eval()
-        with torch.no_grad():
-            distill_target_tensor = _model_mus(model, obs_tensor, action_dim, is_train=False).detach().clamp(-1.0, 1.0)
+        distill_target_tensor = initial_action_tensor
         print(
             json.dumps(
                 {
@@ -1019,13 +1430,15 @@ def main(env_cfg, agent_cfg: dict):
         model.eval()
         for param in model.parameters():
             param.requires_grad_(False)
-        with torch.no_grad():
-            base_action_tensor = _model_mus(model, obs_tensor, action_dim, is_train=False).detach().clamp(-1.0, 1.0)
+        base_action_tensor = initial_action_tensor
         residual_adapter = ResidualActionAdapter(
             obs_dim=int(obs_tensor.shape[-1]),
             action_dim=action_dim,
             hidden_dim=int(args_cli.residual_hidden_dim),
             max_action=float(args_cli.residual_max_action),
+            gate_enabled=bool(args_cli.residual_gate_enabled),
+            gate_hidden_dim=int(residual_gate_hidden_dim),
+            gate_bias_init=float(args_cli.residual_gate_bias_init),
         ).to(device=device)
         print(
             json.dumps(
@@ -1033,6 +1446,9 @@ def main(env_cfg, agent_cfg: dict):
                     "residual_adapter_enabled": True,
                     "residual_hidden_dim": int(args_cli.residual_hidden_dim),
                     "residual_max_action": float(args_cli.residual_max_action),
+                    "residual_gate_enabled": bool(args_cli.residual_gate_enabled),
+                    "residual_gate_hidden_dim": int(residual_gate_hidden_dim),
+                    "residual_gate_bias_init": float(args_cli.residual_gate_bias_init),
                     "residual_preserve_sources": residual_preserve_source_names,
                     "residual_preserve_source_ids": residual_preserve_source_ids,
                     "residual_preserve_weight": float(args_cli.residual_preserve_weight),
@@ -1060,23 +1476,27 @@ def main(env_cfg, agent_cfg: dict):
             mask = torch.logical_or(mask, batch_sources == int(source_id))
         return mask
 
-    def predict_actions(indices: torch.Tensor, *, is_train: bool) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor | None]:
+    def predict_actions(
+        indices: torch.Tensor, *, is_train: bool
+    ) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor | None, torch.Tensor | None]:
         if residual_adapter_enabled:
             if residual_adapter is None or base_action_tensor is None:
                 raise RuntimeError("Residual adapter mode is enabled but adapter/base actions are missing.")
             base = base_action_tensor[indices]
-            residual = residual_adapter(obs_tensor[indices])
-            return torch.clamp(base + residual, -1.0, 1.0), base, residual
+            obs_subset = obs_tensor[indices]
+            residual = residual_adapter(obs_subset)
+            gate = residual_adapter.gate_values(obs_subset) if bool(args_cli.residual_gate_enabled) else None
+            return torch.clamp(base + residual, -1.0, 1.0), base, residual, gate
         pred = _model_mus(model, obs_tensor[indices], action_dim, is_train=is_train).clamp(-1.0, 1.0)
-        return pred, None, None
+        return pred, None, None, None
 
     def evaluate_split(step: int) -> dict[str, float | int | str]:
         model.eval()
         if residual_adapter is not None:
             residual_adapter.eval()
         with torch.no_grad():
-            train_pred, train_base, train_residual = predict_actions(train_idx, is_train=False)
-            val_pred, val_base, val_residual = predict_actions(val_idx, is_train=False)
+            train_pred, train_base, train_residual, train_gate = predict_actions(train_idx, is_train=False)
+            val_pred, val_base, val_residual, val_gate = predict_actions(val_idx, is_train=False)
         if residual_adapter is not None:
             residual_adapter.train()
         elif not residual_adapter_enabled:
@@ -1094,6 +1514,13 @@ def main(env_cfg, agent_cfg: dict):
             val_zero = torch.zeros_like(val_residual)
             row.update(_error_stats(train_residual, train_zero, loss_dims, "train_residual"))
             row.update(_error_stats(val_residual, val_zero, loss_dims, "val_residual"))
+        if residual_adapter_enabled and train_gate is not None and val_gate is not None:
+            row["train_gate_mean"] = _mean_float(train_gate)
+            row["train_gate_min"] = float(torch.min(train_gate).detach().cpu())
+            row["train_gate_max"] = float(torch.max(train_gate).detach().cpu())
+            row["val_gate_mean"] = _mean_float(val_gate)
+            row["val_gate_min"] = float(torch.min(val_gate).detach().cpu())
+            row["val_gate_max"] = float(torch.max(val_gate).detach().cpu())
         train_sources = source_id_tensor[train_idx]
         val_sources = source_id_tensor[val_idx]
         for source_id, source_slug in enumerate(source_slugs):
@@ -1125,6 +1552,11 @@ def main(env_cfg, agent_cfg: dict):
                             f"train_residual_source_{source_slug}",
                         )
                     )
+                    if train_gate is not None:
+                        gate_subset = train_gate[train_mask]
+                        row[f"train_gate_source_{source_slug}_mean"] = _mean_float(gate_subset)
+                        row[f"train_gate_source_{source_slug}_min"] = float(torch.min(gate_subset).detach().cpu())
+                        row[f"train_gate_source_{source_slug}_max"] = float(torch.max(gate_subset).detach().cpu())
             val_mask = val_sources == source_id
             if bool(val_mask.any()):
                 row.update(
@@ -1153,6 +1585,11 @@ def main(env_cfg, agent_cfg: dict):
                             f"val_residual_source_{source_slug}",
                         )
                     )
+                    if val_gate is not None:
+                        gate_subset = val_gate[val_mask]
+                        row[f"val_gate_source_{source_slug}_mean"] = _mean_float(gate_subset)
+                        row[f"val_gate_source_{source_slug}_min"] = float(torch.min(gate_subset).detach().cpu())
+                        row[f"val_gate_source_{source_slug}_max"] = float(torch.max(gate_subset).detach().cpu())
         if residual_adapter_enabled and train_base is not None and val_base is not None:
             train_preserve_mask = source_subset_mask(train_sources, residual_preserve_source_ids)
             val_preserve_mask = source_subset_mask(val_sources, residual_preserve_source_ids)
@@ -1322,7 +1759,7 @@ def main(env_cfg, agent_cfg: dict):
     for step in range(1, args_cli.train_steps + 1):
         actual_train_steps = step
         choice = sample_train_batch()
-        pred, _, residual = predict_actions(choice, is_train=True)
+        pred, _, residual, _ = predict_actions(choice, is_train=True)
         target = reference_tensor[choice]
         label_loss = weighted_source_loss(pred, target, source_id_tensor[choice])
         distill_loss = distillation_loss(pred, choice)
@@ -1397,6 +1834,9 @@ def main(env_cfg, agent_cfg: dict):
                 "preserve_source_slugs": residual_preserve_source_slugs,
                 "preserve_weight": float(args_cli.residual_preserve_weight),
                 "residual_l2_weight": float(args_cli.residual_l2_weight),
+                "gate_enabled": bool(args_cli.residual_gate_enabled),
+                "gate_hidden_dim": int(residual_gate_hidden_dim),
+                "gate_bias_init": float(args_cli.residual_gate_bias_init),
                 "train_sources": source_names,
                 "selected_step": int(best_step),
                 "selected_score": best_score,
@@ -1426,6 +1866,9 @@ def main(env_cfg, agent_cfg: dict):
         "residual_adapter_enabled": bool(residual_adapter_enabled),
         "residual_hidden_dim": int(args_cli.residual_hidden_dim),
         "residual_max_action": float(args_cli.residual_max_action),
+        "residual_gate_enabled": bool(args_cli.residual_gate_enabled),
+        "residual_gate_hidden_dim": int(residual_gate_hidden_dim),
+        "residual_gate_bias_init": float(args_cli.residual_gate_bias_init),
         "residual_preserve_sources": residual_preserve_source_names,
         "residual_preserve_source_ids": residual_preserve_source_ids,
         "residual_preserve_weight": float(args_cli.residual_preserve_weight),
@@ -1449,6 +1892,9 @@ def main(env_cfg, agent_cfg: dict):
         "curve_csv_path": str(curve_csv_path),
         "plot_path": str(plot_path),
         "source_plot_path": str(source_plot_path),
+        "oracle_plot_path": str(oracle_plot_path),
+        "oracle_source_csv_path": str(oracle_source_csv_path),
+        "oracle_dim_csv_path": str(oracle_dim_csv_path),
         "report_path": str(report_path),
         "num_samples": int(num_samples),
         "num_train": int(train_idx.numel()),
@@ -1479,11 +1925,16 @@ def main(env_cfg, agent_cfg: dict):
         "residual_adapter_enabled": bool(residual_adapter_enabled),
         "residual_hidden_dim": int(args_cli.residual_hidden_dim),
         "residual_max_action": float(args_cli.residual_max_action),
+        "residual_gate_enabled": bool(args_cli.residual_gate_enabled),
+        "residual_gate_hidden_dim": int(residual_gate_hidden_dim),
+        "residual_gate_bias_init": float(args_cli.residual_gate_bias_init),
         "residual_preserve_sources": residual_preserve_source_names,
         "residual_preserve_source_ids": residual_preserve_source_ids,
         "residual_preserve_source_slugs": residual_preserve_source_slugs,
         "residual_preserve_weight": float(args_cli.residual_preserve_weight),
         "residual_l2_weight": float(args_cli.residual_l2_weight),
+        "oracle_residual_stats": oracle_residual_stats,
+        "source_probe": source_probe_summary,
         "selected": best_row,
         "selected_step": int(best_step),
         "selected_score": best_score,
@@ -1497,8 +1948,15 @@ def main(env_cfg, agent_cfg: dict):
         "final": curve_rows[-1],
     }
     _write_csv(curve_rows, curve_csv_path)
+    oracle_source_rows = oracle_residual_stats.get("source_rows", [])
+    if isinstance(oracle_source_rows, list):
+        _write_csv(oracle_source_rows, oracle_source_csv_path)
+    oracle_dim_rows = oracle_residual_stats.get("dim_rows", [])
+    if isinstance(oracle_dim_rows, list):
+        _write_csv(oracle_dim_rows, oracle_dim_csv_path)
     _draw_loss_plot(curve_rows, plot_path)
     _draw_source_metric_plot(curve_rows, source_plot_path)
+    _draw_oracle_residual_plot(oracle_residual_stats, oracle_plot_path)
     metrics_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
     _write_report(summary, curve_rows, report_path)
     print("[INFO] BC diagnostic summary:")

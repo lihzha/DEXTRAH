@@ -10,7 +10,16 @@ import torch
 class ResidualActionAdapter(torch.nn.Module):
     """Zero-initialized residual action head added on top of a frozen actor."""
 
-    def __init__(self, obs_dim: int, action_dim: int, hidden_dim: int = 64, max_action: float = 0.5):
+    def __init__(
+        self,
+        obs_dim: int,
+        action_dim: int,
+        hidden_dim: int = 64,
+        max_action: float = 0.5,
+        gate_enabled: bool = False,
+        gate_hidden_dim: int | None = None,
+        gate_bias_init: float = 0.0,
+    ):
         super().__init__()
         if obs_dim <= 0:
             raise ValueError(f"obs_dim must be positive, got {obs_dim}")
@@ -24,6 +33,11 @@ class ResidualActionAdapter(torch.nn.Module):
         self.action_dim = int(action_dim)
         self.hidden_dim = int(hidden_dim)
         self.max_action = float(max_action)
+        self.gate_enabled = bool(gate_enabled)
+        self.gate_hidden_dim = int(self.hidden_dim if gate_hidden_dim is None else gate_hidden_dim)
+        self.gate_bias_init = float(gate_bias_init)
+        if self.gate_hidden_dim < 0:
+            raise ValueError(f"gate_hidden_dim must be non-negative, got {self.gate_hidden_dim}")
         if self.hidden_dim > 0:
             self.net = torch.nn.Sequential(
                 torch.nn.Linear(self.obs_dim, self.hidden_dim),
@@ -37,10 +51,35 @@ class ResidualActionAdapter(torch.nn.Module):
         if isinstance(final_layer, torch.nn.Linear):
             torch.nn.init.zeros_(final_layer.weight)
             torch.nn.init.zeros_(final_layer.bias)
+        if self.gate_enabled:
+            if self.gate_hidden_dim > 0:
+                self.gate_net = torch.nn.Sequential(
+                    torch.nn.Linear(self.obs_dim, self.gate_hidden_dim),
+                    torch.nn.Tanh(),
+                    torch.nn.Linear(self.gate_hidden_dim, 1),
+                )
+                gate_final_layer = self.gate_net[-1]
+            else:
+                self.gate_net = torch.nn.Linear(self.obs_dim, 1)
+                gate_final_layer = self.gate_net
+            if isinstance(gate_final_layer, torch.nn.Linear):
+                torch.nn.init.zeros_(gate_final_layer.weight)
+                torch.nn.init.constant_(gate_final_layer.bias, self.gate_bias_init)
+        else:
+            self.gate_net = None
+
+    def gate_values(self, obs: torch.Tensor) -> torch.Tensor:
+        obs = obs.float()
+        if self.gate_net is None:
+            return torch.ones(obs.shape[0], 1, dtype=obs.dtype, device=obs.device)
+        return torch.sigmoid(self.gate_net(obs))
 
     def forward(self, obs: torch.Tensor) -> torch.Tensor:
         obs = obs.float()
-        return self.max_action * torch.tanh(self.net(obs))
+        residual = self.max_action * torch.tanh(self.net(obs))
+        if self.gate_net is not None:
+            residual = residual * self.gate_values(obs)
+        return residual
 
     def metadata(self) -> dict[str, int | float | str]:
         return {
@@ -49,6 +88,9 @@ class ResidualActionAdapter(torch.nn.Module):
             "action_dim": self.action_dim,
             "hidden_dim": self.hidden_dim,
             "max_action": self.max_action,
+            "gate_enabled": self.gate_enabled,
+            "gate_hidden_dim": self.gate_hidden_dim,
+            "gate_bias_init": self.gate_bias_init,
         }
 
 
@@ -58,6 +100,9 @@ def build_residual_adapter_from_metadata(metadata: Mapping[str, object]) -> Resi
         action_dim=int(metadata["action_dim"]),
         hidden_dim=int(metadata.get("hidden_dim", 64)),
         max_action=float(metadata.get("max_action", 0.5)),
+        gate_enabled=bool(metadata.get("gate_enabled", False)),
+        gate_hidden_dim=int(metadata.get("gate_hidden_dim", metadata.get("hidden_dim", 64))),
+        gate_bias_init=float(metadata.get("gate_bias_init", 0.0)),
     )
     raw_state = metadata.get("state_dict")
     if raw_state is None:
