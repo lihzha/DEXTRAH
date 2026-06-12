@@ -3434,3 +3434,111 @@ Expected artifacts:
 Acceptance gate:
 - Supervised gate is pass only if validation action MSE is low enough to be practically meaningful, gripper-action sign matches close/open phases, z-action sign matches lift/approach phases, and held-out reset action histograms are close to the reference actions.
 - No PPO smoke will launch unless the supervised gate passes and the produced actor/checkpoint can be loaded and queried for sane raw actions.
+
+## 2026-06-11 19:35 PDT - implementation: pass7 BC/action-head diagnostic
+
+Goal:
+- Add and deploy a bounded supervised diagnostic that tests whether the policy actor can imitate pass7 first-contact reference actions from valid prior-reset observations.
+
+Change:
+- Added diagnostic script `dextrah_lab/rl_games/bc_franka_cube_pass7_actions.py`.
+- Added L401 wrapper `cluster/sbatch_bc_franka_cube_pass7_actions_1gpu.sh`.
+- The script samples pass7 prior reset observations, labels approach/light-close/lift reference actions, trains a small supervised actor update from an existing checkpoint, writes metrics/plots/report, and saves a BC checkpoint only if loadable.
+- Fixed a pre-launch review issue: validation/loadability observations are no longer normalized twice after the training tensor is already preprocessed.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `040e4b4fbc9c6f5b2d520dea049b3a5eee233cc8`
+- implementation_commit: `2b701ba1d02a62646448049c5db1e96b5cee1687`
+- push/pull: pushed to `origin/codex/franka-cube-ggx-pregrasp-reset`
+- changed_files: `dextrah_lab/rl_games/bc_franka_cube_pass7_actions.py`, `cluster/sbatch_bc_franka_cube_pass7_actions_1gpu.sh`, owned worklog
+- remote_commit/status: L401 agent worktree `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset` detached at `2b701ba1d02a62646448049c5db1e96b5cee1687`, clean except untracked/generated files if any.
+
+Validation:
+- local `python3 -m py_compile dextrah_lab/rl_games/bc_franka_cube_pass7_actions.py`: pass
+- local `bash -n cluster/sbatch_bc_franka_cube_pass7_actions_1gpu.sh`: pass
+- local `git diff --cached --check`: pass before commit
+- remote L401 `python3 -m py_compile .../bc_franka_cube_pass7_actions.py`: pass
+- remote L401 `bash -n .../sbatch_bc_franka_cube_pass7_actions_1gpu.sh`: pass
+
+Next:
+- Launch the supervised-only L401 diagnostic from the exact deployed commit. Do not launch PPO unless the supervised gate passes and artifacts are inspected.
+
+## 2026-06-11 19:36 PDT - launch: pass7 BC/action-head diagnostic
+
+Goal:
+- Run the supervised-only BC/action-head diagnostic on L401 from exact commit `2b701ba1d02a62646448049c5db1e96b5cee1687`.
+
+Command / Job:
+- command: `sbatch --parsable --job-name=ggx_pass7_bc --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=2b701ba1d02a62646448049c5db1e96b5cee1687,RUN_NAME=franka_cube_ggx_pass7_bc_20260611_1936,NUM_ENVS=64,NUM_RESETS=16,SEED=20260624,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_robust_pass7_20260612.npz,INIT_CHECKPOINT=/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_robust_pass7_smoke45_20260612_0056/nn/last_dextrah_franka_cube_grasp_ep_45_rew_662.51086.pth,TRAIN_EPOCHS=40,BATCH_SIZE=2048,LEARNING_RATE=0.001,TRAIN_SCOPE=mu,VALIDATION_FRACTION=0.25,APPROACH_STEPS=16,CLOSE_STEPS=12,LIFT_STEPS=12,CLOSE_WIDTH=0.055,LIFT_ACTION_Z=0.15,ORACLE_GAIN=8.0,ORACLE_MAX_POSITION_ACTION=1.0,TRACK_ORIENTATION=True,GATE_VAL_MSE=0.04,GATE_GRIPPER_SIGN=0.95,GATE_LIFT_Z_SIGN=0.90,SAVE_BC_CHECKPOINT=True cluster/sbatch_bc_franka_cube_pass7_actions_1gpu.sh`
+- job_id: `1028056`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pass7_bc_20260611_1936`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bc_franka_cube_pass7_1028056.out`
+- expected artifacts: `metrics.json`, `train_metrics.json`, `REPORT.md`, `dataset_summary.json`, `bc_action_metrics.csv`, `bc_loss_history.csv`, optional plots/checkpoint
+
+Acceptance:
+- This is diagnostic-only. Gate requires low validation MSE, gripper sign accuracy above `0.95`, lift-z sign accuracy above `0.90`, and a loadable checkpoint. No PPO launch unless these are inspected and pass.
+
+Result:
+- status: running/queued; monitoring in progress.
+
+## 2026-06-11 19:40 PDT - result: pass7 BC/action-head diagnostic `1028056`
+
+Goal:
+- Inspect the supervised-only BC/action-head diagnostic and decide whether it unblocks a 64-env PPO smoke.
+
+Command / Job:
+- job_id: `1028056`
+- Slurm result: `COMPLETED 0:0`, elapsed `00:01:00`, node `pool0-00006`
+- remote run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pass7_bc_20260611_1936`
+- local run_dir: `cluster_results/l401/franka_cube_ggx_pass7_bc_20260611_1936`
+- remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bc_franka_cube_pass7_1028056.out`
+- local log: `cluster_logs/l401/slurm_logs/dextrah/bc_franka_cube_pass7_1028056.out`
+- implementation_commit: `2b701ba1d02a62646448049c5db1e96b5cee1687`
+
+Artifacts:
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_bc_20260611_1936/REPORT.md`
+- loss curves: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_bc_20260611_1936/bc_loss_curves.png`
+- phase action means: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_bc_20260611_1936/bc_action_phase_means.png`
+- metrics JSON: `cluster_results/l401/franka_cube_ggx_pass7_bc_20260611_1936/metrics.json`
+- action metrics CSV: `cluster_results/l401/franka_cube_ggx_pass7_bc_20260611_1936/bc_action_metrics.csv`
+- dataset: `cluster_results/l401/franka_cube_ggx_pass7_bc_20260611_1936/bc_dataset.pt`
+- generated checkpoint artifact: `cluster_results/l401/franka_cube_ggx_pass7_bc_20260611_1936/bc_pass7_action_warmstart.pth` (diagnostic artifact only; do not use for PPO launch because gate failed)
+
+Metrics:
+- dataset samples: `40960`; phase counts approach/close/lift = `16384/12288/12288`; reset success/quality in dataset rows = `1.0`.
+- gate verdict: `FAIL`.
+- validation MSE: `0.0116626769` vs threshold `<0.04` (passes).
+- validation MAE: `0.0566123351`.
+- validation gripper sign accuracy: `1.0` vs threshold `>=0.95` (passes).
+- validation lift-z sign accuracy: `0.8580729365` vs threshold `>=0.90` (fails).
+- validation z sign accuracy across phases: `0.7244140506` (weak).
+- loadability check: checkpoint loads and reproduces validation MSE `0.0116626760`, but this does not override the failed action gate.
+- final linear layer only was trained: `a2c_network.mu.weight`, `a2c_network.mu.bias`, `903` parameters.
+
+Key per-phase evidence:
+- Lift phase target z is fixed positive `+0.15`, but validation predictions have mean `+0.1017`, min `-0.1955`, and lift-z sign accuracy `0.8581`.
+- Approach/close z labels are mixed and variable; the trained final layer improves global MSE but still compresses/aliases vertical actions across phases.
+- Initial policy had poor global MSE (`0.5650`) but high lift-z sign (`0.9840`); after final-layer BC, global MSE improves but lift sign degrades. This means the current supervised objective/parameter scope is optimizing average action fit at the expense of robust lift semantics.
+
+Analysis:
+- This is a supervised diagnostic failure/partial result, not a PPO launch gate.
+- The BC run proves the observation/checkpoint/loading path is functional and the actor can be modified, but the trained actor does not reliably emit the desired lift-positive action on held-out pass7 reset trajectories.
+- Likely contributors:
+  - final-layer-only training is too constrained for the mixed approach/close/lift mapping;
+  - the dataset asks a feed-forward state-only policy to output different phase actions from nearby states without an explicit phase/command signal;
+  - unweighted MSE is dominated by global action fit, so lift-phase sign robustness can degrade even while MSE improves.
+- This does not contradict the earlier pass7 reset/oracle geometry result; the reset geometry remains healthy. The failure remains on policy/action distribution.
+
+Decision:
+- Do not launch PPO/A100 from `franka_cube_ggx_pass7_bc_20260611_1936` or its generated checkpoint.
+
+Next:
+- Keep the next step supervised-only. Useful bounded follow-ups are:
+  - train a less constrained actor scope (`actor` or `all`) while tracking the same held-out lift-z gate;
+  - add phase-balanced or lift-z sign/weighted loss diagnostics to test whether the actor can preserve lift semantics;
+  - add a dataset ambiguity report comparing observations near close/lift transitions to confirm whether phase is underdetermined by the current observation vector.
+- Any PPO smoke remains blocked until a supervised checkpoint passes the lift-z/action gate and is inspected.
