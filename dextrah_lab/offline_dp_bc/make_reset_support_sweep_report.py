@@ -318,7 +318,14 @@ def main() -> None:
         manifest = {"runs": manifest}
     manifest["manifest_path"] = str(manifest_path)
     rows = [_summarize_run(entry) for entry in manifest.get("runs", [])]
-    rows.sort(key=lambda row: (-1.0 if row.get("joint_blend_alpha") is None else -float(row["joint_blend_alpha"]), row["label"]))
+
+    def _sort_key(row: dict[str, Any]) -> tuple[int, float, str]:
+        alpha = row.get("joint_blend_alpha")
+        if alpha is None:
+            return (1, 0.0, str(row["label"]))
+        return (0, -float(alpha), str(row["label"]))
+
+    rows.sort(key=_sort_key)
 
     json_path = output_dir / "reset_support_sweep_summary.json"
     csv_path = output_dir / "reset_support_sweep_table.csv"

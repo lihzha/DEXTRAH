@@ -315,7 +315,16 @@ def _verdict_and_note(
         and success_timeout_override is not None
         and bool(demo_reset.get("source_joint_reset_available"))
     )
-    failed_drift = distances["cube_lift_max"] == 0.0 and distances["finger_center_to_cube_final"] > 0.05
+    failed_drift = (
+        final_success < 0.5
+        and window_success < 0.5
+        and distances["cube_lift_final"] < 0.12
+        and (
+            distances["finger_center_to_cube_final"] > 0.06
+            or distances["ee_to_cube_final"] > 0.08
+            or distances["support_distance_final"] > 5.0
+        )
+    )
     if matched_noreset_pass:
         verdict = (
             "PASS (bounded): exact source-joint matched reset with success-timeout override "

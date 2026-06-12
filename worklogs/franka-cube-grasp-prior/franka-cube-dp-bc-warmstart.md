@@ -7954,3 +7954,96 @@ Next:
   proposed experiment should be small support-expansion relabel/eval around the
   accepted source-joint/contact reset, with a supervised/eval gate before any
   DP training.
+
+Follow-up launch:
+- commit_before_launch:
+  `f5662bbd2c81f86830c42d98065273ad613c45de`
+- runtime_remote_commit:
+  `5edcf31f8b21d04a8dfcbe921c6ddcd586a854b1`
+- job_id: `1028108`
+- run:
+  `franka_cube_dp_eval_reset_support_jointblend_0p75_video260_20260611_204424`
+- command:
+  `sbatch --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart,RUN_NAME=franka_cube_dp_eval_reset_support_jointblend_0p75_video260_20260611_204424,NUM_ENVS=1,NUM_STEPS=260,NUM_INFERENCE_STEPS=100,ACTION_CHUNK_STEPS=1,CLIP_ACTIONS=1.0,SUCCESS_WINDOW=80,SUCCESS_TIMEOUT_OVERRIDE=999.0,CAPTURE_VIDEO=True,VIDEO_LENGTH=260,VIDEO_NAME_PREFIX=franka-cube-dp-reset-support-jointblend-0p75,PRINT_INTERVAL=20,SEED=42,DEBUG_POLICY_TRACE_MAX_CALLS=260,DEBUG_POLICY_TRACE_ENV_INDEX=0,CHECKPOINT=/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/contact_relabel_official_dp_debug_pretrain100_weightedgrip8_20260611_1843/latest.ckpt,SUPPORT_DATASET=/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/contact_relabel_set_ep8_16_24_30_s260_high30_defaultfix_20260611_175347/contact_relabel_set_accepted.npz,DEMO_RESET_DATASET=/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/contact_relabel_set_ep8_16_24_30_s260_high30_defaultfix_20260611_175347/contact_relabel_set_accepted.npz,DEMO_RESET_EPISODE=1,DEMO_RESET_STEP=0,DEMO_RESET_SOURCE_TRAJECTORY_JSON=/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed16/trajectory.json,DEMO_RESET_SOURCE_FRAME=260,DEMO_RESET_CUBE_POS_BLEND_ALPHA=1.0,DEMO_RESET_JOINT_BLEND_ALPHA=0.75,OFFICIAL_DP_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/external/real-stanford-diffusion_policy cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_reset_support_jointblend_0p75_video260_20260611_204424`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_dp_policy_1028108.out`
+- acceptance:
+  fetch video, metrics, support/action traces, contact sheet, report, and update
+  the combined sweep bundle with this video URL if runtime confirms the trace
+  failure.
+
+Follow-up result:
+- scheduler status:
+  `1028108 COMPLETED|0:0`, elapsed `00:03:21`, node `pool0-00010`.
+- fetched local run dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_reset_support_jointblend_0p75_video260_20260611_204424`
+- stdout:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_reset_support_jointblend_0p75_video260_20260611_204424/logs/eval_franka_cube_dp_policy_1028108.out`
+- report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_reset_support_jointblend_0p75_video260_20260611_204424/closed_loop_support_report.md`
+- support plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_reset_support_jointblend_0p75_video260_20260611_204424/closed_loop_support_trace.png`
+- action plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_reset_support_jointblend_0p75_video260_20260611_204424/closed_loop_action_components.png`
+- video:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_reset_support_jointblend_0p75_video260_20260611_204424/videos/franka-cube-dp-reset-support-jointblend-0p75-step-0.mp4`
+- contact sheet:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_reset_support_jointblend_0p75_video260_20260611_204424/closed_loop_contact_sheet.jpg`
+
+Metrics:
+- reset:
+  `joint_blend_alpha=0.75`, `cube_pos_blend_alpha=1.0`,
+  `cube_minus_ee_l2_from_demo_at_reset=0.039436 m`.
+- final/window success: `0.0/0.0`.
+- max/final lift: `0.0157515/0.0 m`; the only lift blip is at step `1`.
+- min/final EE-to-cube: `0.02230/0.30220 m`.
+- min/final finger-center-to-cube: `0.05382/0.34586 m`.
+- final gripper width: `0.03671 m`.
+- support distance start/min/final:
+  `4.7635/4.7635/20.4686`, final nearest phase `align_open`.
+- report verdict:
+  `FAIL: closed-loop policy still leaves demonstration support and closes away from the cube.`
+
+Artifact updates:
+- Rebuilt contact sheet from first-usable/mid/late frames
+  `20, 60, 100, 140, 180, 220, 258`.
+- Rebuilt combined sweep bundle:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/reset_support_sweep_jointblend_20260611_203638`
+- combined report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/reset_support_sweep_jointblend_20260611_203638/reset_support_sweep_report.md`
+- combined plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/reset_support_sweep_jointblend_20260611_203638/reset_support_sweep_plot.png`
+- combined table:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/reset_support_sweep_jointblend_20260611_203638/reset_support_sweep_table.csv`
+- combined summary:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/reset_support_sweep_jointblend_20260611_203638/reset_support_sweep_summary.json`
+
+Source/tooling fix:
+- Tightened `make_closed_loop_support_report.py` failure verdicts so
+  no-success, low-final-lift rollouts with large final contact/support distance
+  do not report as inconclusive.
+- Updated `make_reset_support_sweep_report.py` sort order so the sweep reads
+  exact matched reset, decreasing joint blend, then normal-reset context.
+- validation:
+  - `python3 -m py_compile dextrah_lab/offline_dp_bc/make_closed_loop_support_report.py dextrah_lab/offline_dp_bc/make_reset_support_sweep_report.py`
+  - `git diff --check`
+
+Final bounded verdict:
+- This reset-support sweep supports reset/support coverage as the dominant
+  current blocker. The weighted DP checkpoint can retain/lift under exact
+  source-joint matched reset, but a `25%` interpolation from source joints
+  toward the normal robot reset already breaks the policy despite the cube
+  being fixed to the accepted demo pose.
+- This is not explained by action chunking, since all runs use
+  `ACTION_CHUNK_STEPS=1` and the exact matched reset passes with the same
+  observation bridge, normalizer, gripper convention, and checkpoint.
+- Do not scale DP BC/RL. The next bounded experiment should be a small
+  support-expansion controller relabel/eval around accepted demo resets
+  (robot joint/contact perturbations and possibly cube pose perturbations),
+  gated first by controller-rollout success and then by the same official-DP
+  offline/eval artifact contract.
+
+Active jobs:
+- none after `1028108`.
