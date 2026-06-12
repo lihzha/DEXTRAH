@@ -2630,3 +2630,55 @@ Worker steering sent:
   sheets/trace plots, and continue bounded diagnostics only if inconclusive.
 - C: do not train DP on raw labels; document the blocker and move only toward a
   contact-aware relabel/generator diagnostic with artifact cadence.
+
+## 2026-06-11T17:31:30-07:00 - A orientation/hold diagnostic result
+
+Goal:
+- Inspect Worker A's follow-up reset-prior jobs `1027904` and `1027905` instead
+  of relying on Slurm completion.
+
+Jobs:
+- `1027904`: `franka_cube_ggx_pregrasp_orienthold_20260611_171721_baseline_trace`,
+  completed `0:0`.
+- `1027905`: `franka_cube_ggx_pregrasp_orienthold_20260611_171721_hold60_approach120`,
+  completed `0:0`.
+
+Artifacts:
+- Report:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_orienthold_20260611_171721_inspection/REPORT.md`
+- Keyframe sheet:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_orienthold_20260611_171721_inspection/orienthold_keyframe_sheet.jpg`
+- Trace plot:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_orienthold_20260611_171721_inspection/orienthold_trace_plot.png`
+- Keyframe slideshow:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_orienthold_20260611_171721_inspection/orienthold_keyframes.mp4`
+
+Metrics:
+
+| Variant | Success | Lift Gate | Mean Max Lift | Mean Min Tip | Mean Min Exact EE | Final Exact EE | Verdict |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `baseline_trace` | `2/3` | `2/3` | `0.023154` | `0.0350` | `0.0045` | `0.0455` | `FAIL` |
+| `hold60_approach120` | `2/3` | `2/3` | `0.022684` | `0.0348` | `0.0044` | `0.0450` | `FAIL` |
+
+Reset-specific evidence:
+- Both variants lift resets `0` and `1`, then fail reset `2` with max lift `0`.
+- Baseline reset `2`: min tip-center `0.0417 m`, min exact-EE error
+  `0.0131 m`, final exact-EE error `0.0574 m`, final tip-center `0.0851 m`.
+- Hold/long-approach reset `2`: min tip-center `0.0417 m`, min exact-EE error
+  `0.0131 m`, final exact-EE error `0.0572 m`, final tip-center `0.0844 m`.
+- Rotation traces show resets `0`/`1` can reach near-zero post-to-exact rotation
+  error, while reset `2` minimum stays about `0.0372 rad` in both variants.
+
+Analysis:
+- The added 60-step exact-hold and longer approach do not improve robustness.
+  The reset-2 failure is essentially unchanged.
+- This rules out simple approach duration/open-settle time as the blocker.
+  Remaining suspects are reset-2-specific pose/grasp robustness, action-space
+  contact geometry, contact timing after close, or the single grasp sample
+  being brittle under cube randomization.
+- No reset-prior PPO/A100 launch should happen from this state.
+
+Worker steering:
+- A was told to update its owned worklog with the artifact URLs and to keep the
+  next step bounded, targeting reset-2-specific failure mode or alternate grasp
+  robustness rather than approach duration.
