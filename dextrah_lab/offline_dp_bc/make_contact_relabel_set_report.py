@@ -33,6 +33,7 @@ args = parser.parse_args()
 
 PHASE_IDS = {
     "align_open": 0,
+    "contact_align_open": 0,
     "close_hold": 1,
     "lift": 2,
 }

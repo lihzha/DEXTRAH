@@ -27,14 +27,33 @@ from .trajectory_conversion import PICK_AND_LIFT_PHASE_ORDER
 
 ACTION_NAMES = ["dx", "dy", "dz", "droll", "dpitch", "dyaw", "gripper"]
 CONTACT_RELABEL_PHASE_ORDER = ("align_open", "close_hold", "lift")
+CONTACT_RELABEL_PHASE_NAME_BY_ID = {
+    -1: "align_open",
+    0: "align_open",
+    1: "close_hold",
+    2: "lift",
+}
+
+
+def _is_contact_relabel_phase_ids(phase_ids: np.ndarray | None) -> bool:
+    if phase_ids is None:
+        return False
+    unique = set(int(v) for v in np.unique(phase_ids))
+    return bool(unique) and unique.issubset(set(CONTACT_RELABEL_PHASE_NAME_BY_ID))
 
 
 def _phase_names(phase_ids: np.ndarray | None = None) -> list[str]:
-    if phase_ids is not None:
-        unique = set(int(v) for v in np.unique(phase_ids))
-        if unique and unique.issubset(set(range(len(CONTACT_RELABEL_PHASE_ORDER)))):
-            return list(CONTACT_RELABEL_PHASE_ORDER)
+    if _is_contact_relabel_phase_ids(phase_ids):
+        return list(CONTACT_RELABEL_PHASE_ORDER)
     return sorted(PICK_AND_LIFT_PHASE_ORDER)
+
+
+def _phase_name_for_id(phase_id: int, names: list[str], phase_ids: np.ndarray | None = None) -> str:
+    if _is_contact_relabel_phase_ids(phase_ids):
+        return CONTACT_RELABEL_PHASE_NAME_BY_ID.get(int(phase_id), f"unknown_{int(phase_id)}")
+    if 0 <= int(phase_id) < len(names):
+        return names[int(phase_id)]
+    return f"unknown_{int(phase_id)}"
 
 
 def _load_workspace(checkpoint: Path) -> Any:
@@ -115,21 +134,24 @@ def _episode_reference_rows(
     episode_index: int,
 ) -> list[tuple[str, int]]:
     names = _phase_names(phase_ids)
-    phase_to_id = {name: idx for idx, name in enumerate(names)}
     starts = _episode_starts(episode_ends)
     if episode_index < 0 or episode_index >= int(episode_ends.shape[0]):
         raise ValueError(f"episode_index must be in [0, {episode_ends.shape[0]}), got {episode_index}")
     ep_start = int(starts[episode_index])
     ep_end = int(episode_ends[episode_index])
-    if set(names) == set(CONTACT_RELABEL_PHASE_ORDER):
+    if _is_contact_relabel_phase_ids(phase_ids):
         refs: list[tuple[str, int | None]] = [
             ("episode_start", ep_start),
-            ("first_align_open", _first_matching_row(phase_ids == phase_to_id["align_open"], ep_start, ep_end)),
-            ("first_close_hold", _first_matching_row(phase_ids == phase_to_id["close_hold"], ep_start, ep_end)),
+            (
+                "first_align_open",
+                _first_matching_row(np.isin(phase_ids, (-1, 0)), ep_start, ep_end),
+            ),
+            ("first_close_hold", _first_matching_row(phase_ids == 1, ep_start, ep_end)),
             ("first_negative_gripper", _first_matching_row(action[:, 6] < 0.0, ep_start, ep_end)),
-            ("first_lift", _first_matching_row(phase_ids == phase_to_id["lift"], ep_start, ep_end)),
+            ("first_lift", _first_matching_row(phase_ids == 2, ep_start, ep_end)),
         ]
     else:
+        phase_to_id = {name: idx for idx, name in enumerate(names)}
         refs = [
             ("episode_start", ep_start),
             (
@@ -173,7 +195,6 @@ def _selector_rows(
     count: int,
 ) -> np.ndarray:
     names = _phase_names(phase_ids)
-    phase_to_id = {name: idx for idx, name in enumerate(names)}
     if selector == "first":
         candidates = np.arange(obs.shape[0], dtype=np.int64)
     elif selector == "gripper_open":
@@ -182,8 +203,12 @@ def _selector_rows(
         candidates = np.flatnonzero(action[:, 6] < -0.5)
     elif selector == "lift_high":
         closed = action[:, 6] < -0.5
-        lift_name = "lift" if "lift" in phase_to_id else "lift_object"
-        lift_phase = phase_ids == phase_to_id[lift_name]
+        if _is_contact_relabel_phase_ids(phase_ids):
+            lift_phase = phase_ids == 2
+        else:
+            phase_to_id = {name: idx for idx, name in enumerate(names)}
+            lift_name = "lift" if "lift" in phase_to_id else "lift_object"
+            lift_phase = phase_ids == phase_to_id[lift_name]
         candidates = np.flatnonzero(closed & lift_phase)
         if candidates.size == 0:
             candidates = np.flatnonzero(closed)
@@ -556,7 +581,7 @@ def diagnose(args: argparse.Namespace) -> dict[str, Any]:
             "row_idx": row_idx,
             "episode": ep_idx,
             "episode_step": local_idx,
-            "phase": names[phase_id],
+            "phase": _phase_name_for_id(phase_id, names, phase_ids),
             "nearest_distance": float(sample["nearest_distance"]),
             "trace_step": sample.get("trace_step"),
             "trace_policy_call_index": sample.get("trace_policy_call_index"),

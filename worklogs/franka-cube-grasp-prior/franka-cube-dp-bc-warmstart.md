@@ -9491,3 +9491,44 @@ Next:
   gripper-loss train, checkpoint action-range smokes, gripper/action semantics
   plots, and report. No Isaac closed-loop eval unless that offline gate passes
   in a later reviewed step.
+
+## 2026-06-11T22:30:29-07:00 - phase metadata diagnostic fix before DP smoke
+
+Goal:
+- Keep the offline action-semantics gate accurate for contact-aware relabel
+  datasets before running the 4-episode official-DP smoke.
+
+Issue:
+- The accepted relabel set from `1028152` contains `phase_ids` of `-1`, `1`,
+  and `2`. The `-1` rows are the open/contact-alignment rows because the
+  rollout step phase is named `contact_align_open`, while the relabel set
+  report only mapped `align_open` to phase id `0`.
+- Training does not use `phase_ids`, but the action-semantics diagnostic did:
+  it would label `-1` rows as the last raw phase and could select the wrong
+  demo reference windows.
+
+Change:
+- `dextrah_lab/offline_dp_bc/make_contact_relabel_set_report.py`: map
+  `contact_align_open` to contact relabel phase `0` for future relabel sets.
+- `dextrah_lab/offline_dp_bc/diagnose_dp_action_semantics.py`: treat contact
+  relabel phase ids in `{-1,0,1,2}` as contact data, with `-1` and `0` both
+  mapped to `align_open`, and select first close/lift rows from ids `1/2`.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/offline_dp_bc/diagnose_dp_action_semantics.py dextrah_lab/offline_dp_bc/make_contact_relabel_set_report.py dextrah_lab/offline_dp_bc/make_lowdim_dataset_report.py dextrah_lab/offline_dp_bc/make_official_dp_pretrain_report.py dextrah_lab/offline_dp_bc/validate_official_checkpoint_smoke.py`: passed.
+- `git diff --check`: passed.
+
+Version Control:
+- base_commit: `526bf48b9b8457ab57af9585bd4258ae6e766af7`
+- implementation_commit: `pending`
+- changed_files:
+  `dextrah_lab/offline_dp_bc/diagnose_dp_action_semantics.py`,
+  `dextrah_lab/offline_dp_bc/make_contact_relabel_set_report.py`,
+  worklog.
+
+Next:
+- Commit and push this diagnostic fix.
+- Run the bounded local official-DP offline smoke on the accepted `1028152`
+  NPZ with `val_ratio=0.25`, weighted gripper loss, resolved config/log/loss
+  artifacts, checkpoint action smokes, and the corrected action-semantics
+  report. No Isaac closed-loop eval or RL.
