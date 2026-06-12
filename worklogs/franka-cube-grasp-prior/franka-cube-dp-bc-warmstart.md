@@ -13170,7 +13170,83 @@ Command / Job:
 - next command: local official-DP training on GPU 0.
 
 Result:
-- status: pending training
+- Training completed locally for `200` epochs in:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_normalcube_valid_ep0_recovery/valid_ep0_residual_recovery2_x0pred_noema_200ep_20260612_1212/official_dp_train`
+- W&B summary: `train_action_mse_error=4e-05`, `train_loss=0.00012`.
+- Offline coherence passed all `2594` rows:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_normalcube_valid_ep0_recovery/valid_ep0_residual_recovery2_x0pred_noema_200ep_20260612_1212/offline_coherence_latest/offline_coherence_report.md`
+  with gripper sign match `1.0`, overall offset-0 fraction `0.591`, and
+  overall MSE@0 all `5.55e-05`.
+- Staged remote dataset:
+  `/results/dp_bc/policy_recovery/valid_ep0_residual_recovery2_20260612_121134/valid_ep0_residual_recovery2.npz`
+- Staged remote checkpoint:
+  `/results/dp_bc/checkpoints/valid_ep0_residual_recovery2_x0pred_noema_200ep_20260612_1212/latest.ckpt`
+- Launched exact eval job `1028567`:
+  `franka_cube_dp_eval_valid_ep0_residual_recovery2_epoch200_exact_chunk1_sample1_mean_novideo_20260612_121441`
+
+Next:
+- Monitor `1028567`, fetch metrics/support trace, and only scale if exact
+  reset succeeds.
+
+Update:
+- Exact eval `1028567` is a partial behavioral success but still task failure:
+  final/window success `0/0`, final/max lift `0.1655/0.1655 m`, final reward
+  `10.25`, final gripper width `0.0449 m`, final EE-to-cube `0.0284 m`.
+- Failure reason is cube XY drift, not lost grasp: final cube XY error is
+  `0.1049 m`, above the environment success tolerance `0.08 m`; the live
+  cube-minus-EE remains stable during lift, so the policy is holding the cube
+  while dragging it diagonally.
+- The base labels at lift stay around `0.063 m` XY goal error, within the
+  success tolerance, while recovery2 closed-loop lift actions produce too much
+  lateral motion.
+
+Analysis:
+- The recovery2 dataset truncated recovery traces at step `140`, which fixed
+  contact/lift onset but gave no supervised examples for correcting lateral
+  drift during the lifted phase. The next dataset needs the full lifted failure
+  trace from `1028567` labeled back toward the demo target.
+
+Next:
+- Build `valid_ep0_residual_recovery3` with full traces through lift
+  (`max_trace_step=320`) from `1028565`, `1028566`, and `1028567`, retrain,
+  and re-evaluate exact reset.
+
+## 2026-06-12T12:19:41-07:00 - valid ep0 residual recovery3 train/eval
+
+Goal:
+- Fix the recovery2 exact-reset XY drift while preserving its stable grasp and
+  lift.
+
+Change:
+- Built generated dataset:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/policy_recovery/valid_ep0_residual_recovery3_20260612_121941/valid_ep0_residual_recovery3.npz`
+- Build command used `label_mode=residual_to_demo_target`,
+  `original_copies=8`, and `max_trace_step=320`, with full traces from
+  `1028565`, `1028566`, and `1028567`.
+- Summary: `3272` rows, `11` episodes, pose clip fraction `0.0177`. The
+  recovery2 lifted-drift trace has mean nearest support distance `0.44`; the
+  two older miss traces are much farther off-support late in rollout.
+
+Command / Job:
+- next command: local official-DP x0/no-EMA 200-epoch training on recovery3.
+
+Result:
+- Training completed locally for `200` epochs in:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_normalcube_valid_ep0_recovery/valid_ep0_residual_recovery3_x0pred_noema_200ep_20260612_1220/official_dp_train`
+- W&B summary: `train_action_mse_error=5e-05`, `train_loss=0.00027`.
+- Offline coherence passed all `3272` rows:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_normalcube_valid_ep0_recovery/valid_ep0_residual_recovery3_x0pred_noema_200ep_20260612_1220/offline_coherence_latest/offline_coherence_report.md`
+- Staged remote dataset:
+  `/results/dp_bc/policy_recovery/valid_ep0_residual_recovery3_20260612_121941/valid_ep0_residual_recovery3.npz`
+- Staged remote checkpoint:
+  `/results/dp_bc/checkpoints/valid_ep0_residual_recovery3_x0pred_noema_200ep_20260612_1220/latest.ckpt`
+- Launched exact eval job `1028597`:
+  `franka_cube_dp_eval_valid_ep0_residual_recovery3_epoch200_exact_chunk1_sample1_mean_novideo_20260612_122307`
+
+Next:
+- Monitor `1028597`; if exact reset succeeds, run video confirmation and then
+  small multi-env scale-up. If it fails, use the support trace to decide
+  whether full off-support traces hurt and build a narrower recovery3b.
 
 Analysis:
 - Latest failed exact reset
@@ -13536,3 +13612,515 @@ Next:
 - Commit/deploy the phase-filtered label-oracle mode.
 - Launch the same 32-env translated-support diagnostic with
   `ACTION_CORRECTION_MODE=nearest_label_runtime_phase_full_action`.
+
+## 2026-06-12T11:35:55-07:00 - accepted lr-centering set x0 overfit
+
+Goal:
+- Continue from the exact one-demo pass toward a usable BC warm start on
+  multiple object positions.
+
+Hypothesis:
+- Static cube translation is not a physically valid oracle; phase-filtered
+  nearest-label and controller-target replays both failed to grasp. The next
+  tractable dataset is the physically accepted left/right-centering contact
+  relabel set with four cube starts. The existing smoke run trained only 60
+  epochs and had high action error, so it did not test whether the x0/no-EMA
+  official-DP contract can overfit that accepted set.
+
+Change:
+- No source change for this attempt.
+- Train a stronger local official-DP x0/no-EMA checkpoint on:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_lrcentering_a075_set4_phaseprogress_official_dp_smoke_20260611_224001/contact_relabel_set_phase_progress.npz`
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `1ace335af3351cf02805e13b35d7ef2de7b291fa`
+- implementation_commit: n/a for training-only attempt
+- changed_files: this worklog
+
+Command / Job:
+- command: pending local GPU training command under
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_lrcentering4`
+- job_id: local PID/session pending
+- acceptance: exact-reset eval must pass on the four accepted episodes before
+  any random-reset scale-up claim.
+
+Result:
+- status: failed for task-relevant normal reset; useful as an OOD diagnostic
+- Training completed locally on
+  `lrcentering4_x0pred_noema_20260612_1136/official_dp_train` with final
+  action error near zero and offline coherence passing all 936 rows.
+- Exact-cube eval jobs `1028549`-`1028552` failed on all four episodes.
+  Reset summaries showed large live-to-demo lowdim deltas because this set was
+  collected with `rollout_reset_joint_blend_alpha=0.75`, while eval used the
+  normal Franka reset and only copied cube pose.
+
+Analysis:
+- The failure does not contradict the successful one-demo exact overfit. It
+  shows the lr-centering accepted relabel set is a blended-robot-state
+  distribution, not a clean normal-reset dataset for the Franka cube task.
+
+Next:
+- Return to the normal-reset accepted 3-episode set and separate learned-policy
+  error from action-label feasibility with dataset-step full-action replay.
+
+## 2026-06-12T11:50:33-07:00 - normal-reset 3eps exact policy vs label oracle
+
+Goal:
+- Debug the task-relevant normal-reset accepted dataset before any larger scale
+  claim.
+
+Hypothesis:
+- The old normalcube 3eps eval used 8 action samples plus binary gripper vote,
+  which is not the cleanest test of the overfitted x0/no-EMA policy. A
+  single-sample continuous-gripper eval may pass if the issue was gripper
+  aggregation. If it still fails, dataset-step full-action replay will show
+  whether the relabeled actions themselves are viable from the exact demo cube
+  pose.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- implementation_commit: `1ace335af3351cf02805e13b35d7ef2de7b291fa`
+- remote_commit/status:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart-gripvote-dbfed79`
+  at `1ace335af3351cf02805e13b35d7ef2de7b291fa`, detached clean
+- changed_files: this worklog only
+
+Command / Job:
+- dataset:
+  `/results/dp_bc/phase_progress_normalcube_3eps_x0pred_noema_20260612_052755/contact_relabel_normalcube_3eps_phase_progress.npz`
+- checkpoint:
+  `/results/dp_bc/checkpoints/phaseprogress_normalcube_3eps_x0pred_noema_20260612_052755/latest.ckpt`
+- commands:
+  `sbatch --export=ALL,CODE_NFS=...,RUN_NAME=...,CHECKPOINT=...,NUM_ENVS=1,NUM_STEPS=600,NUM_INFERENCE_STEPS=100,NUM_ACTION_SAMPLES=1,GRIPPER_SAMPLE_AGGREGATION=mean,ACTION_CHUNK_STEPS=1,SUPPORT_DATASET=...,PHASE_PROGRESS_DATASET=...,PHASE_PROGRESS_EPISODE=<0|1|2>,PHASE_PROGRESS_MODE=dataset,ACTION_CORRECTION_MODE=<disabled|dataset_step_full_action>,DEMO_RESET_DATASET=...,DEMO_RESET_EPISODE=<0|1|2>,DEMO_RESET_STEP=0,DEMO_RESET_CUBE_POS_BLEND_ALPHA=1.0,SEED=42,CAPTURE_VIDEO=False cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- learned-policy jobs/runs:
+  - `1028553`,
+    `franka_cube_dp_eval_normalcube_3eps_latest_exact_ep0_chunk1_sample1_mean_novideo_20260612_1151`
+  - `1028554`,
+    `franka_cube_dp_eval_normalcube_3eps_latest_exact_ep1_chunk1_sample1_mean_novideo_20260612_1151`
+  - `1028555`,
+    `franka_cube_dp_eval_normalcube_3eps_latest_exact_ep2_chunk1_sample1_mean_novideo_20260612_1151`
+- dataset-step replay jobs/runs:
+  - `1028556`,
+    `franka_cube_dp_eval_normalcube_3eps_dataset_step_exact_ep0_chunk1_novideo_20260612_1151`
+  - `1028557`,
+    `franka_cube_dp_eval_normalcube_3eps_dataset_step_exact_ep1_chunk1_novideo_20260612_1151`
+  - `1028558`,
+    `franka_cube_dp_eval_normalcube_3eps_dataset_step_exact_ep2_chunk1_novideo_20260612_1151`
+- acceptance: exact learned policy success/lift on each demo; if learned policy
+  fails but dataset-step replay passes, debug inference/model. If dataset-step
+  replay fails, debug relabel/control/data quality before training more.
+
+Update:
+- Canceled diffusion-based oracle eval jobs `1028556`-`1028558` shortly after
+  launch. They still perform DP forward passes even though the actions are
+  overwritten, so they are the wrong expensive way to test label feasibility.
+- Launched direct dataset-action replay jobs instead:
+  - `1028559`,
+    `franka_cube_replay_normalcube_3eps_dataset_t_exact_ep0_novideo_20260612_1158`,
+    `STEPS=320`
+  - `1028560`,
+    `franka_cube_replay_normalcube_3eps_dataset_t_exact_ep1_novideo_20260612_1158`,
+    `STEPS=580`
+  - `1028561`,
+    `franka_cube_replay_normalcube_3eps_dataset_t_exact_ep2_novideo_20260612_1158`,
+    `STEPS=320`
+
+Result:
+- Direct `dataset_t` replay jobs `1028559`-`1028561` completed cleanly.
+- Episode 0 is a valid exact normal-reset label stream: reset diff is zero,
+  max lift `0.1363 m`, max reward `23.79`, min EE-to-cube `0.0273 m`.
+- Episodes 1/2 are not valid closed-loop labels from the eval reset: both have
+  exact reset EE/cube-minus-EE mismatch around `0.0276 m`, never lift, and
+  drift out of support during lift (`nearest_live_distance` grows to `14.0`
+  and `10.8` respectively).
+- Learned-policy jobs `1028553`-`1028555` are still running, but by step `440`
+  all have zero success/lift and reward is decaying; episode 0 also fails even
+  though direct label replay can lift.
+
+Analysis:
+- The 3-episode normal-reset dataset is mixed quality. Training on all three
+  episodes contaminates the policy with two label streams that cannot execute
+  from the exact reset condition. The next training test should filter to the
+  replay-valid episode before collecting or scaling more data.
+
+Next:
+- Train the same official-DP x0/no-EMA architecture on only the valid normal
+  reset episode 0, then evaluate exact episode 0.
+
+## 2026-06-12T11:56:50-07:00 - valid normal-reset ep0 filtered overfit
+
+Goal:
+- Check whether the official-DP BC can exactly overfit the valid normal-reset
+  label stream when invalid episodes are removed.
+
+Hypothesis:
+- The 3eps checkpoint fails partly because two episodes are bad labels. A
+  filtered one-episode checkpoint should at least recover the valid direct
+  replay behavior before we scale with more accepted data.
+
+Change:
+- Created filtered artifact dataset:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/filtered_normalcube_valid_ep0_20260612_1202/contact_relabel_normalcube_valid_ep0_phase_progress.npz`
+- The dataset keeps only episode 0 from the 3eps normal-reset set: 289 rows,
+  phases `{0:83, 1:80, 2:126}`, `rollout_reset_joint_blend_alpha=0`,
+  `rollout_reset_cube_pos_blend_alpha=0`.
+- Phase-progress provider parity passed.
+
+Version Control:
+- implementation_commit: `1ace335af3351cf02805e13b35d7ef2de7b291fa`
+- changed_files: worklog only; dataset/checkpoints are generated artifacts
+
+Command / Job:
+- command:
+  `CUDA_VISIBLE_DEVICES=0 PYTHONPATH=$EXT/diffusion_policy:$DEX WANDB_MODE=offline HYDRA_FULL_ERROR=1 $EXT/venv/bin/python train.py --config-dir $DEX/dextrah_lab/offline_dp_bc/config --config-name franka_cube_lowdim_dp obs_dim=25 policy.model.global_cond_dim=50 policy._target_=dextrah_lab.offline_dp_bc.weighted_diffusion_policy.WeightedDiffusionUnetLowdimPolicy +policy.action_loss_weights=[1,1,1,1,1,1,8] policy.noise_scheduler.prediction_type=sample task.dataset_path=<filtered_ep0.npz> task.dataset.val_ratio=0.0 task.dataset.action_normalizer=limits_clamp_constant pred_action_steps_only=true training.device=cuda:0 training.use_ema=false training.num_epochs=800 training.max_train_steps=null training.max_val_steps=null training.lr_warmup_steps=20 training.checkpoint_every=100 training.rollout_every=100 training.val_every=100 training.sample_every=100 policy.num_inference_steps=100 dataloader.batch_size=64 val_dataloader.batch_size=64 logging.mode=offline hydra.run.dir=$EXT/artifacts/official_dp_normalcube_valid_ep0/valid_ep0_x0pred_noema_20260612_1157/official_dp_train`
+- local run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_normalcube_valid_ep0/valid_ep0_x0pred_noema_20260612_1157/official_dp_train`
+- staged remote dataset:
+  `/results/dp_bc/filtered_normalcube_valid_ep0_20260612_1202/contact_relabel_normalcube_valid_ep0_phase_progress.npz`
+- staged remote checkpoint:
+  `/results/dp_bc/checkpoints/valid_ep0_x0pred_noema_20260612_1157/latest.ckpt`
+- exact eval job:
+  `1028562`,
+  `franka_cube_dp_eval_valid_ep0_latest_exact_chunk1_sample1_mean_novideo_20260612_1204`
+- acceptance: offline coherence pass and exact episode-0 eval must reach
+  positive lift/success; otherwise debug model/inference on a label stream that
+  is known to replay successfully.
+
+Result:
+- Training completed; W&B summary `train_action_mse_error=2e-05`,
+  `train_loss=0.00017`.
+- Offline coherence passed all 289 rows:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_normalcube_valid_ep0/valid_ep0_x0pred_noema_20260612_1157/offline_coherence_latest/offline_coherence_report.md`
+- Exact eval `1028562` is running.
+
+Update:
+- Fetched exact evals `1028562` and `1028563`.
+- Both failed despite the filtered one-demo label stream replaying successfully:
+  chunk1/sample1 and chunk8/sample1 both ended with final/window success `0/0`;
+  final gripper width was near closed (`0.00021 m` for chunk1,
+  `0.00276 m` for chunk8), reward decayed to about `0.66`, and support traces
+  show the policy leaving the valid label manifold before lift.
+
+Analysis:
+- The current exact failure is not a reset mismatch: the filtered ep0 dataset
+  has exact cube/robot reset compatibility and direct dataset-action replay
+  lifts. The model's in-dataset offline coherence is also strong, so the
+  remaining failure is closed-loop robustness around approach/contact and
+  gripper timing.
+
+Next:
+- Launch two focused exact-reset evals on the same checkpoint/dataset:
+  one with `PHASE_GRIPPER_GUARD=current_phase_hard` to test whether partial
+  early closing is the dominant failure, and one unguarded full-trace run with
+  `DEBUG_POLICY_TRACE_MAX_CALLS=400` so a targeted recovery dataset can be
+  built from the actual off-support states if the guard is insufficient.
+
+## 2026-06-12T12:06:15-07:00 - valid ep0 exact guard and full-trace probes
+
+Goal:
+- Debug the remaining one-demo exact-reset failure before any larger scale
+  claim.
+
+Hypothesis:
+- If the hard phase gripper guard passes, the pose policy is mostly usable and
+  the learned gripper head/postprocessing is the main issue. If it still fails,
+  the full policy trace will provide closed-loop states for the next
+  recovery/DAgger dataset.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- implementation_commit: `1ace335af3351cf02805e13b35d7ef2de7b291fa`
+- changed_files: this worklog only
+
+Command / Job:
+- dataset:
+  `/results/dp_bc/filtered_normalcube_valid_ep0_20260612_1202/contact_relabel_normalcube_valid_ep0_phase_progress.npz`
+- checkpoint:
+  `/results/dp_bc/checkpoints/valid_ep0_x0pred_noema_20260612_1157/latest.ckpt`
+- planned jobs:
+  `PHASE_GRIPPER_GUARD=current_phase_hard` exact eval and unguarded
+  full-policy-trace exact eval, both with `NUM_ENVS=1`, `NUM_STEPS=320`,
+  `NUM_INFERENCE_STEPS=100`, `NUM_ACTION_SAMPLES=1`, `ACTION_CHUNK_STEPS=1`,
+  exact demo reset episode `0`, seed `42`, and no video.
+- launched jobs:
+  - `1028565`,
+    `franka_cube_dp_eval_valid_ep0_latest_exact_chunk1_sample1_mean_phasegrip_traceall_novideo_20260612_120637`
+  - `1028566`,
+    `franka_cube_dp_eval_valid_ep0_latest_exact_chunk1_sample1_mean_traceall_novideo_20260612_120637`
+
+Result:
+- status: failed; useful trace capture
+- `1028565` (`PHASE_GRIPPER_GUARD=current_phase_hard`) completed with
+  final/window success `0/0`, max lift `0.01325 m` at step `89`, reward max
+  `2.81`, min EE-to-cube `0.0332 m`, min finger-center-to-cube `0.0623 m`,
+  and final cube XY drift `0.0878 m`.
+- `1028566` (unguarded) completed with final/window success `0/0`, max lift
+  `0.01655 m` at step `87`, reward max `3.07`, min EE-to-cube `0.0383 m`,
+  min finger-center-to-cube `0.0525 m`, and final cube XY drift `0.0751 m`.
+- Both wrote full `320`-call `policy_trace.json` files and support reports.
+  The support report verdict for both is: closed-loop policy leaves
+  demonstration support and closes away from the cube.
+
+Analysis:
+- The hard gripper guard improves the gripper phase but does not solve the
+  exact demo. The model reaches the cube region, then the fingers/cube geometry
+  diverges from the successful label replay and the policy pushes the cube
+  laterally instead of lifting it.
+- The earlier successful one-demo recovery8 artifact used
+  `label_mode=residual_to_demo_target`, `original_copies=8`, and
+  `max_trace_step=140`, not a pure timed-action label. Reuse that recipe on
+  the current valid normal-reset ep0 dataset.
+
+Next:
+- Build `valid_ep0_residual_recovery2` from the two full failed traces with
+  `residual_to_demo_target`, `original_copies=8`, `max_trace_step=140`; train a
+  x0/no-EMA official-DP checkpoint and evaluate exact reset before scaling.
+
+## 2026-06-12T12:11:34-07:00 - valid ep0 residual recovery2 train/eval
+
+Goal:
+- Make the valid normal-reset one-demo BC pass exact reset without eval action
+  correction.
+
+Hypothesis:
+- The exact-pass recovery8 recipe should transfer to the valid ep0 dataset:
+  residual labels toward the demo action target on observed failed closed-loop
+  states should teach local recovery better than timed-action labels.
+
+Change:
+- Built generated dataset:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/policy_recovery/valid_ep0_residual_recovery2_20260612_121134/valid_ep0_residual_recovery2.npz`
+- Build command used `label_mode=residual_to_demo_target`,
+  `original_copies=8`, `max_trace_step=140`, and the full trace artifacts from
+  jobs `1028565`/`1028566`.
+- Summary: `2594` rows, `10` episodes, `25` obs dims, first close demo step
+  `83`, pose clip fraction `0.0135`.
+
+Version Control:
+- implementation_commit: `1ace335af3351cf02805e13b35d7ef2de7b291fa`
+- changed_files: worklog only; dataset is generated
+
+Command / Job:
+- next command: local official-DP x0/no-EMA training for `200` epochs with
+  the same 25D obs / 7D action contract, action normalizer
+  `limits_clamp_constant`, gripper loss weight `8`, and `100` eval denoising
+  steps.
+
+Result:
+- status: pending training
+
+## 2026-06-12T12:31:55-07:00 - valid ep0 residual recovery3b train/eval
+
+Goal:
+- Preserve the recovery2 grasp/lift behavior while reducing the XY/support
+  drift that kept it outside the task success tolerance.
+
+Diagnosis Since Recovery2:
+- `valid_ep0_residual_recovery2` trained and passed offline coherence, then
+  exact-reset eval `1028567`
+  (`franka_cube_dp_eval_valid_ep0_residual_recovery2_epoch200_exact_chunk1_sample1_mean_novideo_20260612_121441`)
+  grasped and lifted but failed success: final/window success `0/0`,
+  final/max lift `0.1655/0.1655 m`, reward final `10.25`, final gripper width
+  `0.0449 m`, final EE-to-cube `0.0284 m`, but final cube XY drift
+  `0.1049 m` was above `cube_success_xy_tol=0.08`.
+- `valid_ep0_residual_recovery3` included the full late portions of the two
+  no-lift failed traces plus the recovery2 trace. It trained/offline-checked,
+  then exact-reset eval `1028597`
+  (`franka_cube_dp_eval_valid_ep0_residual_recovery3_epoch200_exact_chunk1_sample1_mean_novideo_20260612_122307`)
+  regressed: final/window success `0/0`, max lift `0.0122 m`, final lift `0`,
+  final gripper width `0.000212 m`, and support report verdict was still
+  "closes away from the cube".
+
+Change:
+- Built generated dataset:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/policy_recovery/valid_ep0_residual_recovery3b_20260612_122835/valid_ep0_residual_recovery3b.npz`
+- Recipe:
+  `label_mode=residual_to_demo_target`, `original_copies=8`, two failed
+  valid-ep0 traces trimmed to steps `<=140`, and the full recovery2 lift trace.
+- Summary: `2914` rows, `11` episodes, first close demo step `83`, pose clip
+  fraction `0.0120`.
+
+Training / Offline Gate:
+- Local official-DP train dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_normalcube_valid_ep0_recovery/valid_ep0_residual_recovery3b_x0pred_noema_200ep_20260612_122851/official_dp_train`
+- Training completed with W&B summary `train_action_mse_error=4e-05`,
+  `train_loss=9e-05`.
+- Offline coherence passed all `2914` rows:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_normalcube_valid_ep0_recovery/valid_ep0_residual_recovery3b_x0pred_noema_200ep_20260612_122851/official_dp_train/offline_coherence_latest/offline_coherence_report.md`
+  Overall offset-0 fraction `0.569`, gripper sign `1.000`, MSE@0 all
+  `4.25e-05`.
+
+Staged Remote:
+- dataset:
+  `/results/dp_bc/policy_recovery/valid_ep0_residual_recovery3b_20260612_122835/valid_ep0_residual_recovery3b.npz`
+- checkpoint:
+  `/results/dp_bc/checkpoints/valid_ep0_residual_recovery3b_x0pred_noema_200ep_20260612_122851/latest.ckpt`
+
+Exact Eval:
+- launched job `1028610`,
+  `franka_cube_dp_eval_valid_ep0_residual_recovery3b_epoch200_exact_chunk1_sample1_mean_novideo_20260612_123155`
+- Eval settings: `NUM_ENVS=1`, `NUM_STEPS=320`,
+  `NUM_INFERENCE_STEPS=100`, `NUM_ACTION_SAMPLES=1`,
+  `GRIPPER_SAMPLE_AGGREGATION=mean`, `ACTION_CHUNK_STEPS=1`,
+  `PHASE_PROGRESS_MODE=dataset`, action correction disabled, exact demo reset
+  episode `0`, step `0`, seed `42`, no video, full `320`-call policy trace.
+
+Status:
+- l401 job `1028610` is pending/running at this handoff point; do not scale up
+  until this exact one-demo eval has been fetched and inspected.
+
+## 2026-06-12T12:43:00-07:00 - curobo32 dataset inspection and random replay videos
+
+Goal:
+- Stop the one-demo/low-data debugging loop and inspect whether the current
+  32-episode offline CuRobo dataset is visually and dynamically correct before
+  training at current quantity or scaling to 200 episodes.
+
+User Redirect:
+- Cancelled exact eval job `1028610` per user request.
+- Switched to dataset inspection and three random trajectory videos.
+
+Dataset Selected:
+- Current-quantity candidate:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_curobo32_phaseprogress/full_pick_lift_framefix_phaseprogress_20260612_022104/franka_cube_curobo32_full_pick_lift_framefix_phaseprogress.npz`
+- Remote path:
+  `/results/dp_bc/phase_progress_curobo32/full_pick_lift_framefix_phaseprogress_20260612_022104.npz`
+- Shape: `obs=(22484, 25)`, `action=(22484, 7)`,
+  `episode_ends=(32,)`; episode lengths min/median/max `702/702/722`.
+- Phase/progress features:
+  `phase_align_open`, `phase_close_hold`, `phase_lift`, `episode_progress`.
+- Phase counts: align/open `9044`, close/hold `3840`, lift `9600`.
+- Action ranges are finite and within `[-1, 1]`; gripper convention remains
+  `+1=open`, `-1=close`.
+
+Random Episodes:
+- Deterministic RNG seed `42` selected episodes `2`, `20`, `23`.
+- NPZ-internal summaries for all three say the cube should lift by about
+  `0.20 m` with near-zero final XY drift. The source trajectories used for
+  exact robot reset were staged to l401:
+  - ep2:
+    `/results/dp_bc/curobo_plans/cube_curobo_batch_20260611_122807_seed2/trajectory.json`
+  - ep20:
+    `/results/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed20/trajectory.json`
+  - ep23:
+    `/results/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed23/trajectory.json`
+
+Replay Jobs:
+- `1028611`, ep2:
+  `franka_cube_dataset_replay_curobo32_ep2_dataset_t_video702_20260612_123658`
+- `1028612`, ep20:
+  `franka_cube_dataset_replay_curobo32_ep20_dataset_t_video702_20260612_123658`
+- `1028613`, ep23:
+  `franka_cube_dataset_replay_curobo32_ep23_dataset_t_video702_20260612_123658`
+- Replay settings: one env, `MODES=dataset_t`, full source joint reset from
+  raw trajectory frame `0`, matching cube reset from the NPZ, exact dataset
+  start episode/step `0`, `POSE_ACTION_MULTIPLIER=1`, `ACTION_REPEAT=1`,
+  video enabled.
+
+Videos:
+- ep2:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/dataset_inspection/curobo32_random_replays_20260612_123658/franka_cube_dataset_replay_curobo32_ep2_dataset_t_video702_20260612_123658/videos/franka-cube-dataset-curobo32-ep2-step-0.mp4`
+- ep20:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/dataset_inspection/curobo32_random_replays_20260612_123658/franka_cube_dataset_replay_curobo32_ep20_dataset_t_video702_20260612_123658/videos/franka-cube-dataset-curobo32-ep20-step-0.mp4`
+- ep23:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/dataset_inspection/curobo32_random_replays_20260612_123658/franka_cube_dataset_replay_curobo32_ep23_dataset_t_video702_20260612_123658/videos/franka-cube-dataset-curobo32-ep23-step-0.mp4`
+
+Result:
+- Direct dataset-action replay is not correct.
+- All three videos show little/no visible approach, grasp, or lift.
+- Replay metrics confirm the visual failure:
+  - ep2 final EE-to-cube `0.1948 m`, final nearest live phase `align_open`,
+    final nearest-live distance `0.614`, min EE-to-cube `0.157`.
+  - ep20 final EE-to-cube `0.1948 m`, final nearest live phase `align_open`,
+    final nearest-live distance `21.09` (support metric appears dominated by
+    a large feature mismatch), min EE-to-cube `0.132`.
+  - ep23 final EE-to-cube `0.1948 m`, final nearest live phase `align_open`,
+    final nearest-live distance `0.592`, min EE-to-cube `0.1948`.
+- The NPZ itself expects contact/lift: e.g. ep2 cube-minus-EE norm falls to
+  `0.041 m` by dataset step `192`, `0.028 m` by step `256`, and cube z reaches
+  `0.981 m` during lift. Live replay does not realize that path.
+
+Offline Action Audit:
+- Ran `audit_dataset_action_semantics.py` for ep2/20/23.
+- One-step action-to-next-EE reconstruction error is near numerical zero for
+  all three episodes, so the NPZ labels are internally self-consistent under
+  the conversion code.
+- This points to a simulator executability / controller realization mismatch:
+  the raw CuRobo one-frame EE deltas are too small or temporally mismatched for
+  the live DEXTRAH IK/PD stack, even with source joint reset.
+
+Next:
+- Do not train current quantity or 200 episodes on this raw action stream yet.
+- Diagnostic job `1028615`:
+  `franka_cube_dataset_replay_curobo32_ep2_dataset_t_posemult10_novideo_20260612_124131`,
+  a no-video ep2 replay with `POSE_ACTION_MULTIPLIER=10`, tests whether the
+  failure is mainly controller realization scale.
+- Update: `1028615` was still pending with a much later estimated start and
+  was cancelled after the requested three videos and dataset-inspection result
+  were available. No active jobs remain from this loop.
+
+## 2026-06-12T12:48:13-07:00 - curobo32 contact-aware relabel prep
+
+Goal:
+- Replace the non-executable raw CuRobo finite-difference action stream with
+  live-controller-executed labels, then train/evaluate DP on accepted data.
+
+Hypothesis:
+- The passing four-demo `lrcentering` relabel recipe can scale to the current
+  32 CuRobo episodes if every rollout uses the correct source trajectory JSON
+  and records executed DEXTRAH actions from the live controller. The raw
+  CuRobo NPZ remains useful for reset/source metadata, but not for BC labels.
+
+Change:
+- Added helper `dextrah_lab/offline_dp_bc/make_contact_relabel_specs.py`.
+- Generated local spec artifacts:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_specs/curobo32_20260612/curobo32_relabel_specs.env`
+  and
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_specs/curobo32_20260612/curobo32_relabel_specs.json`.
+- Spec manifest contains `32` entries. Episodes `0-7` map to
+  `cube_curobo_batch_20260611_122807_seed*`; episodes `8-31` map to
+  `cube_curobo_scale32_20260611_125957_seed*`.
+
+Version Control:
+- agent_id: `franka-cube-bc-relabel32`
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `1ace335af3351cf02805e13b35d7ef2de7b291fa`
+- implementation_commit: `c54e71c3007e4609af983630edd68de1ff0042fd`
+- changed_files:
+  `dextrah_lab/offline_dp_bc/make_contact_relabel_specs.py`,
+  `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+- unrelated dirty files ignored:
+  `dextrah_lab/offline_dp_bc/make_support_expansion_dataset.py`
+
+Validation:
+- `python3 -m py_compile dextrah_lab/offline_dp_bc/make_contact_relabel_specs.py`
+- `bash -n cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh`
+- Remote file checks passed for the phase-progress dataset and representative
+  source trajectories `seed0` and `seed31`.
+
+Planned Job:
+- Relabel all 32 episodes with the last passing recipe:
+  `ORIENTATION_MODE=source`, `POSE_ACTION_FILTER=scale`,
+  `POSE_ACTION_LIMIT=0.95`, `CONTACT_ALIGN_STEPS=160`,
+  `CONTACT_ALIGN_REFERENCE=live_cube`, `CONTACT_ALIGN_THRESHOLD=0.055`,
+  `RESET_JOINT_BLEND_ALPHA=0.75`, `VARIANT=center_high30`.
+- Acceptance gate: every accepted rollout must satisfy min final/max lift
+  `>=0.10 m`, final EE-to-cube `<=0.05 m`, final finger-center-to-cube
+  `<=0.08 m`, and executed pose clip fraction `0`.
+
+Next:
+- Commit/deploy this helper and launch the 32-episode relabel job from an
+  agent-owned l401 worktree, then fetch and inspect the gate report, videos,
+  and accepted NPZ before any DP training.
