@@ -303,6 +303,7 @@ from dextrah_lab.offline_dp_bc.ppo_bridge import (
     DatasetBackedPhaseProgressProvider,
     FRANKA_CUBE_ACTION_DIM,
     FRANKA_CUBE_LOWDIM_OBS_DIM,
+    FRANKA_CUBE_PHASE_PROGRESS_OBS_DIM,
     FRANKA_CUBE_PPO_OBS_DIM,
     PHASE_PROGRESS_FEATURE_NAMES,
     LowdimObsHistory,

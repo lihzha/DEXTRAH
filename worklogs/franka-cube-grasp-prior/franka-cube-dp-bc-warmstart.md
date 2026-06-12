@@ -13486,3 +13486,9 @@ Next:
 - Commit/deploy the phase guard.
 - Relaunch translated-checkpoint eval with all-row contact gate, close
   threshold `0.10`, and `PHASE_GRIPPER_GUARD=current_phase_hard`.
+
+Update:
+- First phase-guarded launch job `1028532` failed immediately with
+  `NameError: FRANKA_CUBE_PHASE_PROGRESS_OBS_DIM` because the eval file used
+  that ppo-bridge constant without importing it.
+- Fixed the import and will redeploy/relaunch.
