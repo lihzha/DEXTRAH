@@ -52,7 +52,7 @@
   - Local fetch: `cluster_results/l401/franka_cube_lowz_actionprior_seqfix_eval_ep45_20260612_0657/`
   - Result: no success/lift; reaches/perturbs cube, then opens/off-target and moves away.
 
-### Active / Needs Monitoring
+### Completed But Uninspected
 
 - Training job: `1028249`
   - Run: `franka_cube_lowz_actionprior_hold_r8s07_45_20260612_0704`
@@ -60,8 +60,8 @@
   - Log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_smoke_1028249.out`
   - Run dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_lowz_actionprior_hold_r8s07_45_20260612_0704`
   - Config: 64 envs, 45 epochs, low-z prior library, `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`, action-prior reward enabled, weight `8.0`, sharpness `0.7`, lift window `160`, lift action z `0.50`.
-  - Last observed state: Slurm `RUNNING` at about 2 minutes elapsed; stdout reached epoch `41/45` and checkpoint `ep_40_rew_1430.2056`.
-  - This job still needs monitoring, JSONL parsing, artifact fetch, and video eval if the metrics justify it.
+  - Final observed state: Slurm `COMPLETED 0:0`, stdout reached epoch `45/45`, final checkpoint `last_dextrah_franka_cube_grasp_ep_45_rew_1392.9783.pth`.
+  - This job still needs JSONL parsing, artifact fetch, and video eval if the metrics justify it. I did not inspect the metrics or artifacts because shutdown/handoff mode was requested.
 
 ## Latest Inspectable Artifacts
 
@@ -97,17 +97,16 @@ Generated artifacts, checkpoints, videos, logs, and `local_results/` are not com
 
 ## Recommended Next Step
 
-1. Monitor job `1028249` to terminal state.
-2. Fetch its run dir and log.
-3. Parse `metrics/direct_info_rank_0.jsonl` for bad scalars, reset success/quality, action-prior active/reward, success/lift, gripper width/action, and EE/finger distances.
-4. If metrics are at least sane, run video-first eval for best-reward and final checkpoint, then generate contact sheets/report.
-5. Treat `1028249` as **non-apple-to-apple intervention**. Even if it succeeds, it is not the final reset-prior comparison.
+1. Fetch `1028249` run dir and log.
+2. Parse `metrics/direct_info_rank_0.jsonl` for bad scalars, reset success/quality, action-prior active/reward, success/lift, gripper width/action, and EE/finger distances.
+3. If metrics are at least sane, run video-first eval for best-reward and final checkpoint, then generate contact sheets/report.
+4. Treat `1028249` as **non-apple-to-apple intervention**. Even if it succeeds, it is not the final reset-prior comparison.
 
 Do not scale A100/full PPO and do not claim apple-to-apple success until a bounded learned-policy eval video shows real grasp/lift under the intended comparison protocol.
 
 ## Blockers / Risks
 
-- Job `1028249` was active at handoff and uninspected.
+- Job `1028249` completed cleanly but is uninspected; scheduler success is not a result.
 - l401 remote could not fetch GitHub earlier due `Permission denied (publickey)`; I deployed commit `aec2126` to the remote worktree via a Git bundle and detached checkout.
 - Reward-only/action-prior interventions are diagnostic and change behavior beyond the apple-to-apple reset-prior variant.
 - Recent videos show learned policies can score reward while hovering/opening or perturbing without actual grasp/lift; video evidence is mandatory.

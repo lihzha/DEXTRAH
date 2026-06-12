@@ -5913,3 +5913,18 @@ Config:
 Immediate monitor:
 - Wait for stdout command/config echo, JSONL creation, and terminal Slurm state.
 - Evaluate best/final checkpoints only after metrics are inspected.
+
+## 2026-06-12T07:08:00Z - shutdown handoff status
+
+User requested stop/handoff-only mode.
+
+Status:
+- Wrote handoff file: `worklogs/franka-cube-grasp-prior/HANDOFF_A.md`.
+- Job `1028249` completed `0:0` after handoff drafting.
+- Log tail shows epoch `45/45`, final checkpoint `last_dextrah_franka_cube_grasp_ep_45_rew_1392.9783.pth`, and `Franka cube reset-prior smoke training done`.
+- I did not fetch or inspect `1028249` JSONL/artifacts/videos because the user requested shutdown/handoff-only mode.
+- l401 `squeue -u lzha` was empty after completion.
+
+Next:
+- New agent should fetch and inspect `1028249`; scheduler success alone is not a result.
+- Keep it labeled non-apple-to-apple intervention.
