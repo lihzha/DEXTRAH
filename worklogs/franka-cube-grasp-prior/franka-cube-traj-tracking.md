@@ -7811,3 +7811,37 @@ New Ablation:
 Next:
 - Monitor `29018883,29018885,29018893,29018905,29018916`; verify full train commands include `env.cube_approach_weight=0.0` and `env.cube_enclosure_weight=0.0`.
 - Evaluate best checkpoints with pure-policy eval after training completes.
+
+## 2026-06-12T20:48:48Z - base-closeness-off ablation completed
+
+Goal:
+- Test whether disabling base EE/finger/cube closeness rewards lets the trajectory-tracking term matter more for RL.
+
+Result:
+- All five training jobs completed cleanly with `COMPLETED 0:0`.
+- Full train commands verified: explicit base seeds `1..5`, `env.cube_approach_weight=0.0`, `env.cube_enclosure_weight=0.0`, same reference path, same PPO settings as default tracking.
+- Final / best rewards:
+  - seed 1 job `29018883`: final `1490.731`, best `1783.6609`
+  - seed 2 job `29018885`: final `1792.3971`, best `2135.4285`
+  - seed 3 job `29018893`: final `1903.5316`, best `2092.6956`
+  - seed 4 job `29018905`: final `1456.6378`, best `1747.2065`
+  - seed 5 job `29018916`: final `1795.5365`, best `1842.2112`
+- Last-20 training event summaries:
+  - aggregate reward range `~1491..1970`
+  - success rate range `~0.00004..0.0031`
+  - cube lift height range `~0.00047..0.00203 m`
+  - approach/enclosure rewards are exactly `0`
+  - tracking reward remains nonzero, `~1.50..1.97`
+- Negative-control eval:
+  - job `29019487`, run `franka_cube_trackloss_baseclose0_eval_policy_seed2_2de8b03_20260612_1350`
+  - `ACTION_SOURCE=policy`, deterministic, seed `2`, best no-closeness checkpoint.
+  - completed `COMPLETED 0:0`; metrics: final success `0.0`, last-window success `0.0`, max success `0.0`.
+  - video fetched to `/tmp/franka_trackloss_baseclose0_eval_seed2`; video is valid `1280x720`, `240` frames, `4.0` s. Contact sheet confirms approach/near-cube behavior without stable grasp/lift.
+
+Analysis:
+- The user's suspicion was worth testing, but full removal of base approach/enclosure shaping is too severe.
+- The ablation did not improve tracking-loss learning; it made every seed worse than the default tracking-loss sweep, including worse than the default failed seeds.
+- Tracking reward can still be collected while lift/success remains near zero, so the better next tuning direction is likely partial reduction of approach/enclosure or contact/lift-gated tracking terms, not fully disabling closeness.
+
+Next:
+- Recommended next reward tuning: run a partial-closeness ablation (`cube_approach_weight`/`cube_enclosure_weight` at `0.5x` or `0.25x`) or modify tracking reward so position/gripper tracking receives late-phase weight only after contact/lift gates.
