@@ -9402,3 +9402,92 @@ Next:
 - Monitor job `1028152`; fetch and inspect artifacts. If the relabel set
   passes hard/visual gates, run a bounded local official-DP offline smoke on
   the accepted multi-episode NPZ. If it fails, stop at relabel gate diagnostics.
+
+## 2026-06-11T22:27:32-07:00 - alpha0.75 support relabel set result
+
+Goal:
+- Complete artifact inspection for the tiny 4-rollout alpha0.75 support
+  relabel set before deciding whether any official-DP smoke is permitted.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- launched_remote_commit:
+  `dd6cfe0b2f97a1ab8f19ba8733aad6821c54efa6`
+- local_result_commit: `pending`
+- changed_files: worklog only for this result entry.
+
+Command / Job:
+- job_id: `1028152`
+- run_name:
+  `franka_cube_contact_relabel_lrcentering_ep8_16_24_30_a0p75_20260611_2224`
+- remote run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/contact_relabel_sets/franka_cube_contact_relabel_lrcentering_ep8_16_24_30_a0p75_20260611_2224`
+- local artifact dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_lrcentering_ep8_16_24_30_a0p75_20260611_2224`
+- stdout log:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_lrcentering_ep8_16_24_30_a0p75_20260611_2224/logs/contact_aware_franka_cube_relabel_set_1028152.out`
+
+Result:
+- status: `passed relabel gate`; this only permits a tiny offline official-DP
+  smoke, not closed-loop DP eval, broad DP training, or RL.
+- aggregate summary:
+  - accepted episodes: `4`
+  - accepted transitions: `936`
+  - accepted NPZ:
+    `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_lrcentering_ep8_16_24_30_a0p75_20260611_2224/contact_relabel_set_accepted.npz`
+  - failure count: `0`
+  - hard gate: min lift `0.10`, max executed pose clip fraction `0.0`,
+    max final EE-to-cube `0.05`, max final finger-center-to-cube `0.08`.
+- per-rollout gate metrics:
+  - ep08: final/max lift `0.136285`, final EE `0.007423`,
+    final finger `0.051884`, executed clip fraction `0.0`.
+  - ep16: final/max lift `0.135575`, final EE `0.029782`,
+    final finger `0.058112`, executed clip fraction `0.0`.
+  - ep24: final/max lift `0.136432`, final EE `0.011587`,
+    final finger `0.053011`, executed clip fraction `0.0`.
+  - ep30: final/max lift `0.135385`, final EE `0.007417`,
+    final finger `0.052361`, executed clip fraction `0.0`.
+- controller caveat:
+  ep16 and ep30 used pose-action scaling in early alignment
+  (`min_pose_action_filter_scale` `0.740` and `0.694`) because raw pose actions
+  would have exceeded the relabel action limit, but executed clipping remained
+  zero by design.
+- visual inspection:
+  Generated local contact sheets for all four rollouts and inspected them.
+  They show the gripper reaches the cube, closes around it, and lifts without
+  the previous alpha0.75 lateral drift-away failure.
+
+Viewer URLs:
+- set report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_lrcentering_ep8_16_24_30_a0p75_20260611_2224/contact_relabel_set_report.md`
+- set summary:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_lrcentering_ep8_16_24_30_a0p75_20260611_2224/contact_relabel_set_summary.json`
+- ep08 contact sheet:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_lrcentering_ep8_16_24_30_a0p75_20260611_2224/rollouts/ep08s260_a0p75/contact_sheet.jpg`
+- ep16 contact sheet:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_lrcentering_ep8_16_24_30_a0p75_20260611_2224/rollouts/ep16s260_a0p75/contact_sheet.jpg`
+- ep24 contact sheet:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_lrcentering_ep8_16_24_30_a0p75_20260611_2224/rollouts/ep24s260_a0p75/contact_sheet.jpg`
+- ep30 contact sheet:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_lrcentering_ep8_16_24_30_a0p75_20260611_2224/rollouts/ep30s260_a0p75/contact_sheet.jpg`
+
+Analysis:
+- The left/right finger geometry gate plus live-cube lateral centering
+  recovered alpha0.75 for this small support-expanded set under the hard
+  relabel gate.
+- This result only validates the relabel generator for four source-contact
+  perturbation rollouts. It does not prove normal-reset generalization and does
+  not authorize closed-loop DP eval or RL.
+- Because the prior single-episode official-DP smoke had unstable
+  open/close-boundary gripper semantics, the next bounded step is a tiny
+  official-DP offline smoke on this 4-episode accepted NPZ with a held-out
+  split and the same action-semantics gate.
+
+Next:
+- Commit this worklog boundary.
+- Run one bounded local official `real-stanford/diffusion_policy` smoke on the
+  accepted 4-episode alpha0.75 NPZ: dataset/normalizer check, short weighted
+  gripper-loss train, checkpoint action-range smokes, gripper/action semantics
+  plots, and report. No Isaac closed-loop eval unless that offline gate passes
+  in a later reviewed step.
