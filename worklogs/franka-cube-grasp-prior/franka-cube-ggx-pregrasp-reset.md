@@ -146,7 +146,7 @@ Version Control:
 - worklog: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/worklogs/franka-cube-grasp-prior/franka-cube-ggx-pregrasp-reset.md
 - branch: codex/franka-cube-ggx-pregrasp-reset
 - base_commit: 86ae7dfc5820e59ad310ef7c2ac1f64a49e0e399
-- implementation_commit: pending
+- implementation_commit: `09857defab0ff548eac0eae05e5b42b933884476`
 - push/pull: pending
 - changed_files: planned `cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`, this owned worklog
 - remote_commit/status: pending l401 agent-owned worktree
@@ -3334,3 +3334,53 @@ Acceptance:
 - JSONL must show `cube_action_warmstart_active_rate` and phase rates are nonzero during early episode windows.
 - Compare policy vs applied z/gripper actions and action-delta metrics to prove the diagnostic branch is active.
 - Inspect reward/lift/distance trends and checkpoints; scheduler success alone is insufficient.
+
+## 2026-06-11 19:23 PDT - pass7 warm-start smoke result
+
+Goal:
+- Inspect job `1028006` outputs and decide whether the first-contact action warm-start diagnostic unblocks further training or points to another bounded intervention.
+
+Result:
+- status: completed `0:0`, inspected metrics and fetched artifacts.
+- job_id: `1028006`
+- run_name: `franka_cube_ggx_pass7_warmstart_smoke45_20260611_191642`
+- remote_run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pass7_warmstart_smoke45_20260611_191642`
+- remote_log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_smoke_1028006.out`
+- local_bundle: `cluster_results/l401/franka_cube_ggx_pass7_warmstart_smoke45_20260611_191642`
+- implementation_commit_used_by_job: `09857defab0ff548eac0eae05e5b42b933884476`
+- worklog_launch_commit: `cbd227161ef3daa7885f25eb290617bfa034c7a6`
+- no broad eval/video launched after result check; this is a negative training-metric diagnostic.
+
+Artifacts:
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_warmstart_smoke45_20260611_191642/inspection/REPORT.md`
+- reward/action curves: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_warmstart_smoke45_20260611_191642/inspection/reward_action_curves.png`
+- action histograms: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pass7_warmstart_smoke45_20260611_191642/inspection/action_histograms.png`
+- summary JSON: `cluster_results/l401/franka_cube_ggx_pass7_warmstart_smoke45_20260611_191642/inspection/summary.json`
+- epoch metrics CSV: `cluster_results/l401/franka_cube_ggx_pass7_warmstart_smoke45_20260611_191642/inspection/epoch_metrics.csv`
+- reset/action table CSV: `cluster_results/l401/franka_cube_ggx_pass7_warmstart_smoke45_20260611_191642/inspection/reset_action_table.csv`
+- checkpoint inventory: `cluster_results/l401/franka_cube_ggx_pass7_warmstart_smoke45_20260611_191642/checkpoints.txt`
+
+Metrics:
+- JSONL records: `45`; bad scalar count: `0`.
+- warm-start branch active: mean active rate `0.053819`, max `0.796875`, final `0.03125`.
+- action override real: mean policy-vs-applied action delta `0.035368`, max `0.539019`, final `0.023754`.
+- reset health remains good: reset success rate `1.0`, reset quality rate `1.0`.
+- learning behavior remains bad: `cube_success_rate max=0.0`, `cube_has_lifted_rate max=0.0`.
+- lift signal is only a small bump: `cube_lift_height max=0.003605 m`, final `0.0 m`.
+- final distances are far from a stable grasp: `cube_ee_to_cube_dist final=0.258207 m`, `cube_finger_center_to_cube_dist final=0.255103 m`.
+- best interval checkpoint by stdout filename: epoch 30, reward `709.9599`, path `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_pass7_warmstart_smoke45_20260611_191642/nn/last_dextrah_franka_cube_grasp_ep_30_rew_709.9599.pth`.
+- final checkpoint: epoch 45, reward `639.62946`.
+
+Analysis:
+- This is a negative first-contact warm-start diagnostic, not a launch gate.
+- The intervention proved that the branch is wired correctly and can override early actions, but it did not produce sustained contact/lift or a useful policy after the forced action window.
+- The result suggests that replacing actions for the first steps is insufficient as a learning signal: the actor still does not learn a stable close/hold/lift distribution once control returns to the policy.
+- A broad eval/video is not justified by these training metrics. A single failure visualization could be made later only if needed to debug a specific post-window failure, but it is not needed to establish this diagnostic verdict.
+
+Next bounded change proposal:
+- Do not run more PPO/A100 from this checkpoint.
+- Prefer a diagnostic policy-initialization or imitation route over more action override:
+  - collect a small pass7 reset dataset of observation plus assisted-oracle/reference actions for approach, light-close, and lift phases;
+  - run a tiny diagnostic BC/action-head warm-start or action-regularization variant so the actor actually emits the first-contact action distribution, instead of only having the environment replace its actions;
+  - then run the same small 64-env L401 PPO smoke and inspect policy raw actions, lift/contact traces, and videos only if metrics improve.
+- Keep this explicitly non-apple-to-apple until it proves a useful hypothesis; the apple-to-apple reset-prior task defaults remain unchanged.
