@@ -5854,3 +5854,77 @@ Command / Job:
   `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/contact_relabel_sets/franka_cube_contact_relabel_set_ep8_16_24_30_s260_high30_defaultfix_20260611_175347`
 - log:
   `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/contact_aware_franka_cube_relabel_set_1027932.out`
+
+Result:
+- status: completed `0:0`, elapsed `00:02:47`; artifacts fetched locally and
+  inspected.
+- remote run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/contact_relabel_sets/franka_cube_contact_relabel_set_ep8_16_24_30_s260_high30_defaultfix_20260611_175347`
+- local artifact dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_set_ep8_16_24_30_s260_high30_defaultfix_20260611_175347`
+- local log:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/contact_aware_franka_cube_relabel_set_1027932.out`
+
+Set-Level Gate:
+- verdict:
+  `PASS: all contact-aware rollouts satisfied the hard relabel gate; this only permits a tiny official-DP smoke proposal.`
+- rollouts: `4`, pass: `4`, failure: `0`.
+- accepted relabel dataset:
+  `contact_relabel_set_accepted.npz`, with `obs (1126, 21)`,
+  `action (1126, 7)`, `episode_ends [282, 563, 844, 1126]`,
+  `phase_ids (1126,)`, `rollout_ids (4,)`.
+- hard filters:
+  `min_lift=0.10 m`, `max_pose_action_clip_fraction=0.0`,
+  `max_final_ee_to_cube=0.05 m`,
+  `max_final_finger_to_cube=0.08 m`, `require_success_like=true`.
+
+Per-Rollout Metrics:
+- `ep08s260_center_high30`: final EE-cube `0.00745 m`,
+  final finger-cube `0.03788 m`, final/max lift `0.13621 m`,
+  max pose clip `0.0`.
+- `ep16s260_center_high30`: final EE-cube `0.00728 m`,
+  final finger-cube `0.03802 m`, final/max lift `0.13542 m`,
+  max pose clip `0.0`.
+- `ep24s260_center_high30`: final EE-cube `0.00751 m`,
+  final finger-cube `0.03787 m`, final/max lift `0.13550 m`,
+  max pose clip `0.0`.
+- `ep30s260_center_high30`: final EE-cube `0.00772 m`,
+  final finger-cube `0.03811 m`, final/max lift `0.13642 m`,
+  max pose clip `0.0`.
+
+Viewer URLs:
+- set report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_set_ep8_16_24_30_s260_high30_defaultfix_20260611_175347/contact_relabel_set_report.md`
+- set summary JSON:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_set_ep8_16_24_30_s260_high30_defaultfix_20260611_175347/contact_relabel_set_summary.json`
+- representative pass video:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_set_ep8_16_24_30_s260_high30_defaultfix_20260611_175347/rollouts/ep08s260/videos/franka-cube-contact-relabel-ep08s260-step-0.mp4`
+- representative pass contact sheet:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_set_ep8_16_24_30_s260_high30_defaultfix_20260611_175347/rollouts/ep08s260/videos/franka-cube-contact-relabel-ep08s260-step-0_sheet.jpg`
+- last-rollout contact sheet:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_set_ep8_16_24_30_s260_high30_defaultfix_20260611_175347/rollouts/ep30s260/videos/franka-cube-contact-relabel-ep30s260-step-0_sheet.jpg`
+- episode 24 trace plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_set_ep8_16_24_30_s260_high30_defaultfix_20260611_175347/rollouts/ep24s260/contact_rollout_plot.png`
+
+Visual Inspection:
+- Contact sheets for episodes `8` and `30` show approach, close, and stable
+  cube lift. This is qualitatively different from the stale raw-label/DP eval
+  drift-away videos.
+- No failure-mode video exists for this set because all four rollouts passed
+  the hard gate; `contact_relabel_set_failures.csv` is empty.
+
+Analysis:
+- The controller-rollout relabeler is now validated on a small, inspectable
+  four-episode set. This resolves the immediate relabeler gate requested after
+  raw GraspGenX/cuRobo labels were found not to be BC-ready.
+- This is still not full BC readiness. It is a small contact-aware dataset
+  candidate suitable for the next bounded step: a tiny official Diffusion Policy
+  smoke using the official `real-stanford/diffusion_policy` implementation and
+  this accepted NPZ, with no BC/RL scale-up.
+
+Next:
+- Do not launch full BC/RL.
+- Next practical C step is a tiny official-DP config/dataset smoke on
+  `contact_relabel_set_accepted.npz`: shape/normalizer check plus one-step or
+  very-short debug train, then inspect predicted action ranges before any
+  closed-loop DP eval.
