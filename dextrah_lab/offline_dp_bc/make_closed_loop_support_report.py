@@ -340,6 +340,9 @@ def _build_report(args: argparse.Namespace, summary: dict[str, Any], baseline: d
             [
                 f"- episode/step/phase: `{demo_reset.get('episode')}` / `{demo_reset.get('episode_step')}` / `{demo_reset.get('phase')}`",
                 f"- row: `{demo_reset.get('row')}`",
+                f"- source joint reset available: `{demo_reset.get('source_joint_reset_available')}`",
+                f"- source trajectory/frame: `{demo_reset.get('source_trajectory_json')}` / `{demo_reset.get('source_frame')}`",
+                f"- joint write Linf diff: `{_fmt(demo_reset.get('joint_linf_diff_after_write_env0'))}`",
                 f"- cube position L2 diff after reset: `{_fmt(demo_reset.get('cube_pos_l2_diff_env0'))}`",
                 f"- cube-minus-EE L2 diff after reset: `{_fmt(demo_reset.get('cube_minus_ee_l2_diff_env0'))}`",
                 f"- lowdim L2/Linf diff after reset: `{_fmt(demo_reset.get('lowdim_l2_diff_env0'))}` / `{_fmt(demo_reset.get('lowdim_linf_diff_env0'))}`",

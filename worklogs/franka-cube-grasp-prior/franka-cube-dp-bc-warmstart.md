@@ -6709,3 +6709,151 @@ Acceptance:
 
 Result:
 - status: launching.
+
+## 2026-06-11T18:47:32-07:00 - weighted checkpoint closed-loop trace launch
+
+Goal:
+- Run the first bounded DEXTRAH/Isaac closed-loop trace for the weighted
+  contact-aware official-DP checkpoint after the offline 100-step gripper-sign
+  gate passed. This is trace-only: no video, no full BC, no RL.
+
+Hypothesis:
+- If the weighted checkpoint and PPO-observation bridge are mechanically
+  coherent in Isaac, a 96-step `ACTION_CHUNK_STEPS=1` trace should stay finite,
+  show correct 21D lowdim/support-trace decoding, and expose whether gripper
+  timing or EE/cube geometry fails before a video launch.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- implementation_commit: `eeac1dfeaa29c0ea1a8b126a719065efeddf37e3`
+- official_dp_commit: `5ba07ac6661db573af695b419a7947ecb704690f`
+- push/pull: pushed local branch; l401 GitHub SSH fetch was externally blocked
+  by `Permission denied (publickey)`, so the exact commit was deployed to the
+  agent-owned l401 worktree via `git bundle` and checked out detached.
+- remote_commit/status:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+  at `eeac1dfeaa29c0ea1a8b126a719065efeddf37e3`, detached clean.
+
+Command / Job:
+- job_id: `1027977`
+- run_name:
+  `franka_cube_dp_eval_weightedgrip8_inf100_trace96_chunk1_20260611_184732`
+- command:
+  `sbatch --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart,RUN_NAME=franka_cube_dp_eval_weightedgrip8_inf100_trace96_chunk1_20260611_184732,NUM_ENVS=1,NUM_STEPS=96,NUM_INFERENCE_STEPS=100,ACTION_CHUNK_STEPS=1,CLIP_ACTIONS=1.0,SUCCESS_WINDOW=96,CAPTURE_VIDEO=False,VIDEO_LENGTH=96,PRINT_INTERVAL=12,SEED=42,DEBUG_POLICY_TRACE_MAX_CALLS=96,DEBUG_POLICY_TRACE_ENV_INDEX=0,CHECKPOINT=/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/contact_relabel_official_dp_debug_pretrain100_weightedgrip8_20260611_1843/latest.ckpt,SUPPORT_DATASET=/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/contact_relabel_set_ep8_16_24_30_s260_high30_defaultfix_20260611_175347/contact_relabel_set_accepted.npz,OFFICIAL_DP_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/external/real-stanford-diffusion_policy cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_weightedgrip8_inf100_trace96_chunk1_20260611_184732`
+- logs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_dp_policy_1027977.out`
+- checkpoint:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/contact_relabel_official_dp_debug_pretrain100_weightedgrip8_20260611_1843/latest.ckpt`
+- support_dataset:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/contact_relabel_set_ep8_16_24_30_s260_high30_defaultfix_20260611_175347/contact_relabel_set_accepted.npz`
+
+Acceptance:
+- Finite sim and traces, `eval_config.json` present, no obvious
+  action-schema/normalizer/history mismatch, support/action traces inspectable.
+  A video launch is not allowed unless this no-video trace is coherent.
+
+Result:
+- status: running on `pool0-00004` as of initial log poll.
+
+## 2026-06-11T18:53:20-07:00 - weighted trace96 result and source-joint reset patch
+
+Goal:
+- Inspect the first weighted-checkpoint closed-loop no-video trace and decide
+  whether it is sane enough for video or needs a narrower train/eval-support
+  diagnostic.
+
+Version Control:
+- base_commit: `eeac1dfeaa29c0ea1a8b126a719065efeddf37e3`
+- implementation_commit: pending
+- changed_files:
+  `dextrah_lab/rl_games/eval_franka_cube_dp_policy.py`,
+  `cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`,
+  `dextrah_lab/offline_dp_bc/make_closed_loop_support_report.py`,
+  this worklog.
+
+Command / Job:
+- completed job_id: `1027977`
+- run_name:
+  `franka_cube_dp_eval_weightedgrip8_inf100_trace96_chunk1_20260611_184732`
+- remote run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_dp_eval_weightedgrip8_inf100_trace96_chunk1_20260611_184732`
+- local artifact dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_trace96_chunk1_20260611_184732`
+- stdout:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_trace96_chunk1_20260611_184732/logs/eval_franka_cube_dp_policy_1027977.out`
+
+Artifacts:
+- report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_trace96_chunk1_20260611_184732/closed_loop_support_report.md`
+- support plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_trace96_chunk1_20260611_184732/closed_loop_support_trace.png`
+- action plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_trace96_chunk1_20260611_184732/closed_loop_action_components.png`
+- metrics/config/traces:
+  `metrics.json`, `policy_trace.json`, `support_trace.csv/json`,
+  `eval_config.json` in the same local artifact dir.
+
+Result:
+- status: failed support-drift gate; no video launch and no scale-up.
+- Slurm: `COMPLETED 0:0`.
+- official DP checkpoint loaded as
+  `WeightedDiffusionUnetLowdimPolicy`, `num_inference_steps=100`,
+  `action_chunk_steps=1`, `debug_policy_trace_records=96`.
+- metrics:
+  success/window success `0/0`, cube lift max `0`, reward mean/final
+  `1.540/1.790`, final gripper width `0.01538 m`,
+  final/min EE-to-cube `0.178/0.178 m`, final/min finger-center-to-cube
+  `0.1577/0.1577 m`.
+- action range:
+  xyz min/max `[-0.00956,-0.01684,-0.73772]` /
+  `[-0.00956,0.24866,0.33659]`, gripper `[-1.0,0.62325]`.
+- support trace:
+  nearest phase `align_open` for all 96 steps, nearest row episode/step
+  `1/0`, history gaps `[0,1]`, support distance start/final
+  `29.57/20.85`.
+- event timing:
+  first negative gripper at step `1`; first hard close at step `5`, while
+  EE-to-cube was still `0.231 m` and finger-center-to-cube `0.218 m`.
+- live-vs-demo geometry:
+  live cube-minus-EE at start/final
+  `[0.1456,-0.1812,0.0178]` / `[0.1428,-0.1047,0.0186]`;
+  nearest relabel row cube-minus-EE
+  `[0.000018,-0.01989,-0.02012]`.
+
+Analysis:
+- The policy/bridge mechanics are finite, and the observation history cadence
+  remains fixed. The failure is not chunking.
+- The relabel dataset begins from a contact-aware source-joint/finger-center
+  state near the cube; the normal task reset starts far outside that support.
+  This means a cube-only reset or normal reset cannot evaluate whether the
+  weighted checkpoint is a coherent relabel prior.
+- Existing `--demo_reset_dataset` only writes cube pose/goal. That is
+  insufficient for the contact-aware set because the accepted NPZ intentionally
+  dropped source robot joint metadata.
+
+Change:
+- Added optional `--demo_reset_source_trajectory_json` and
+  `--demo_reset_source_frame` to `eval_franka_cube_dp_policy.py`.
+- When supplied with `--demo_reset_dataset`, the evaluator now writes the raw
+  source `joint_position` to the Franka articulation and controller targets,
+  matching the contact-aware relabel rollout reset path.
+- Added matching Slurm wrapper environment variables and report fields for
+  source-joint reset availability/frame and joint write Linf diff.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/eval_franka_cube_dp_policy.py dextrah_lab/offline_dp_bc/make_closed_loop_support_report.py`
+- `bash -n cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`
+- `git diff --check`
+- all passed.
+
+Next:
+- Commit/push/deploy this patch, then run a bounded no-video matched reset
+  trace using accepted contact episode `1` step `0` with source trajectory
+  `/results/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed16/trajectory.json`
+  and source frame `260`. Acceptance is improved reset lowdim diff/support
+  distance and coherent gripper timing; if that still hard-closes away from
+  the cube, the next issue is policy output/conditioning, not reset.

@@ -91,6 +91,22 @@ parser.add_argument(
     default=0,
     help="Episode-local row for --demo_reset_dataset. Default 0 matches the padded-history train reset.",
 )
+parser.add_argument(
+    "--demo_reset_source_trajectory_json",
+    type=str,
+    default=None,
+    help=(
+        "Optional raw source trajectory JSON whose joint_position frame should be "
+        "written during demo reset. This is used to match contact-aware relabel "
+        "rollout robot state; without it demo reset only overwrites cube state."
+    ),
+)
+parser.add_argument(
+    "--demo_reset_source_frame",
+    type=int,
+    default=None,
+    help="Frame index inside --demo_reset_source_trajectory_json to use for robot joint reset.",
+)
 parser.add_argument("--video", action="store_true", default=False, help="Record rollout video.")
 parser.add_argument("--video_length", type=int, default=240)
 parser.add_argument("--video_folder", type=str, default=None)
@@ -323,7 +339,14 @@ def _support_dataset_payload(path: Path | None) -> dict[str, Any] | None:
     }
 
 
-def _demo_reset_payload(path: Path | None, episode: int, episode_step: int) -> dict[str, Any] | None:
+def _demo_reset_payload(
+    path: Path | None,
+    episode: int,
+    episode_step: int,
+    *,
+    source_trajectory_json: Path | None = None,
+    source_frame: int | None = None,
+) -> dict[str, Any] | None:
     if path is None:
         return None
     data = np.load(path, allow_pickle=False)
@@ -340,7 +363,7 @@ def _demo_reset_payload(path: Path | None, episode: int, episode_step: int) -> d
     row_idx = int(episode_start + local_step)
     phase_names = _phase_names_for_npz(data, phase_ids)
     phase_id = int(phase_ids[row_idx])
-    return {
+    payload: dict[str, Any] = {
         "path": str(path),
         "obs": obs,
         "action": action,
@@ -356,6 +379,49 @@ def _demo_reset_payload(path: Path | None, episode: int, episode_step: int) -> d
         "target_obs": obs[row_idx].copy(),
         "target_action": action[row_idx].copy(),
     }
+    if source_trajectory_json is not None:
+        source = json.loads(source_trajectory_json.read_text(encoding="utf-8"))
+        frames = source.get("frames")
+        if not isinstance(frames, list) or not frames:
+            raise ValueError(f"Source trajectory has no frames: {source_trajectory_json}")
+        frame_idx = int(source_frame if source_frame is not None else local_step)
+        frame_idx = int(np.clip(frame_idx, 0, len(frames) - 1))
+        frame = frames[frame_idx]
+        if not isinstance(frame, dict) or "joint_position" not in frame:
+            raise ValueError(f"Source trajectory frame {frame_idx} has no joint_position: {source_trajectory_json}")
+        raw_q = np.asarray(frame["joint_position"], dtype=np.float32)
+        if raw_q.ndim != 1:
+            raise ValueError(f"Source trajectory joint_position must be 1D, got {raw_q.shape}")
+        payload.update(
+            {
+                "source_trajectory_json": str(source_trajectory_json),
+                "source_frame": int(frame_idx),
+                "source_joint_position": raw_q.copy(),
+            }
+        )
+    return payload
+
+
+def _map_source_joint_to_env(task_env: Any, raw_q: np.ndarray, env_ids: torch.Tensor) -> torch.Tensor:
+    num_ids = int(env_ids.numel())
+    raw_q_tensor = torch.as_tensor(raw_q, dtype=torch.float32, device=task_env.device).repeat(num_ids, 1)
+    joint_pos = task_env._robot.data.default_joint_pos[env_ids].clone()
+    arm_count = len(task_env.arm_joint_ids)
+    finger_count = len(task_env.finger_joint_ids)
+    if raw_q_tensor.shape[1] == joint_pos.shape[1]:
+        joint_pos[:] = raw_q_tensor
+    elif raw_q_tensor.shape[1] == arm_count + finger_count:
+        joint_pos[:, task_env.arm_joint_ids] = raw_q_tensor[:, :arm_count]
+        joint_pos[:, task_env.finger_joint_ids] = raw_q_tensor[:, arm_count : arm_count + finger_count]
+    elif raw_q_tensor.shape[1] == arm_count + 1:
+        joint_pos[:, task_env.arm_joint_ids] = raw_q_tensor[:, :arm_count]
+        joint_pos[:, task_env.finger_joint_ids] = raw_q_tensor[:, arm_count : arm_count + 1].repeat(1, finger_count)
+    else:
+        raise ValueError(
+            f"Cannot map source joint_position dim {raw_q_tensor.shape[1]} to "
+            f"{joint_pos.shape[1]} env joints ({arm_count} arm, {finger_count} fingers)"
+        )
+    return torch.clamp(joint_pos, task_env.robot_dof_lower_limits, task_env.robot_dof_upper_limits)
 
 
 def _reset_policy_obs_from_task_env(task_env: Any) -> torch.Tensor:
@@ -366,18 +432,38 @@ def _reset_policy_obs_from_task_env(task_env: Any) -> torch.Tensor:
 
 
 def _apply_demo_reset(task_env: Any, demo_reset: dict[str, Any]) -> tuple[torch.Tensor, dict[str, Any]]:
-    """Overwrite the reset cube pose/goal from a converted demo row.
+    """Overwrite reset state from a converted demo row.
 
-    The current first diagnostic deliberately keeps the robot at the task's
-    normal reset joint pose. For demo row 0 this matches the converter's
-    padded-history initial state while letting us isolate object/reset
-    conditioning from policy semantics.
+    By default this only writes cube pose/goal. If ``source_joint_position`` is
+    present, the Franka articulation and controller targets are also reset to
+    the raw source trajectory joint state used by the contact-aware relabeler.
     """
 
     env_ids = task_env._robot._ALL_INDICES
     env_ids = torch.as_tensor(env_ids, device=task_env.device, dtype=torch.long)
     num_ids = int(env_ids.numel())
     target_obs = np.asarray(demo_reset["target_obs"], dtype=np.float32)
+    robot_reset_summary: dict[str, Any] = {
+        "source_joint_reset_available": "source_joint_position" in demo_reset,
+        "source_trajectory_json": demo_reset.get("source_trajectory_json"),
+        "source_frame": demo_reset.get("source_frame"),
+    }
+    if "source_joint_position" in demo_reset:
+        raw_q = np.asarray(demo_reset["source_joint_position"], dtype=np.float32)
+        joint_pos = _map_source_joint_to_env(task_env, raw_q, env_ids)
+        joint_vel = torch.zeros_like(joint_pos)
+        task_env._robot.write_joint_state_to_sim(joint_pos, joint_vel, env_ids=env_ids)
+        task_env._robot.set_joint_position_target(joint_pos, env_ids=env_ids)
+        task_env.robot_dof_targets[env_ids] = joint_pos
+        task_env.arm_joint_pos_target[env_ids] = joint_pos[:, task_env.arm_joint_ids]
+        task_env.finger_joint_pos_target[env_ids] = joint_pos[:, task_env.finger_joint_ids]
+        robot_reset_summary.update(
+            {
+                "source_joint_position_raw_dim": int(raw_q.shape[0]),
+                "applied_joint_position_env0": joint_pos[0].detach().float().cpu().numpy().astype(float).tolist(),
+            }
+        )
+
     target_cube_pos = torch.as_tensor(target_obs[7:10], dtype=torch.float32, device=task_env.device).repeat(num_ids, 1)
     target_cube_quat = torch.as_tensor(target_obs[10:14], dtype=torch.float32, device=task_env.device).repeat(num_ids, 1)
     object_state = torch.zeros(num_ids, 13, device=task_env.device)
@@ -400,6 +486,10 @@ def _apply_demo_reset(task_env: Any, demo_reset: dict[str, Any]) -> tuple[torch.
     live_lowdim = extract_lowdim_obs_from_ppo_obs(policy_obs).detach().float().cpu().numpy()
     live0 = live_lowdim[0]
     diff = live0 - target_obs
+    if "applied_joint_position_env0" in robot_reset_summary:
+        joint_after = task_env._robot.data.joint_pos[env_ids].detach().float().cpu().numpy()
+        applied = np.asarray(robot_reset_summary["applied_joint_position_env0"], dtype=np.float32)
+        robot_reset_summary["joint_linf_diff_after_write_env0"] = float(np.max(np.abs(joint_after[0] - applied)))
     summary = {
         "dataset": str(demo_reset["path"]),
         "episode": int(demo_reset["episode"]),
@@ -418,6 +508,7 @@ def _apply_demo_reset(task_env: Any, demo_reset: dict[str, Any]) -> tuple[torch.
         "cube_pos_l2_diff_env0": float(np.linalg.norm(diff[7:10])),
         "cube_minus_ee_l2_diff_env0": float(np.linalg.norm(diff[14:17])),
     }
+    summary.update(robot_reset_summary)
     return policy_obs, summary
 
 
@@ -651,6 +742,11 @@ def main() -> None:
     demo_reset_dataset_path = (
         Path(args_cli.demo_reset_dataset).expanduser().resolve() if args_cli.demo_reset_dataset else None
     )
+    demo_reset_source_trajectory_path = (
+        Path(args_cli.demo_reset_source_trajectory_json).expanduser().resolve()
+        if args_cli.demo_reset_source_trajectory_json
+        else None
+    )
     video_folder = Path(args_cli.video_folder).expanduser().resolve() if args_cli.video_folder else output_dir / "videos"
 
     checkpoint = Path(args_cli.checkpoint).expanduser().resolve()
@@ -658,6 +754,8 @@ def main() -> None:
         raise FileNotFoundError(checkpoint)
     if demo_reset_dataset_path is not None and not demo_reset_dataset_path.is_file():
         raise FileNotFoundError(demo_reset_dataset_path)
+    if demo_reset_source_trajectory_path is not None and not demo_reset_source_trajectory_path.is_file():
+        raise FileNotFoundError(demo_reset_source_trajectory_path)
     eval_config_path = output_dir / "eval_config.json"
     _write_eval_config(eval_config_path, checkpoint=checkpoint, output_dir=output_dir, metrics_path=metrics_path)
     _stage(
@@ -676,6 +774,10 @@ def main() -> None:
         demo_reset_dataset=str(demo_reset_dataset_path) if demo_reset_dataset_path is not None else None,
         demo_reset_episode=int(args_cli.demo_reset_episode),
         demo_reset_step=int(args_cli.demo_reset_step),
+        demo_reset_source_trajectory_json=(
+            str(demo_reset_source_trajectory_path) if demo_reset_source_trajectory_path is not None else None
+        ),
+        demo_reset_source_frame=args_cli.demo_reset_source_frame,
     )
     support_dataset = _support_dataset_payload(support_dataset_path)
     if support_dataset is not None:
@@ -689,6 +791,8 @@ def main() -> None:
         demo_reset_dataset_path,
         int(args_cli.demo_reset_episode),
         int(args_cli.demo_reset_step),
+        source_trajectory_json=demo_reset_source_trajectory_path,
+        source_frame=args_cli.demo_reset_source_frame,
     )
     if demo_reset is not None:
         _stage(
@@ -698,6 +802,9 @@ def main() -> None:
             episode_step=int(demo_reset["episode_step"]),
             row=int(demo_reset["row"]),
             phase=str(demo_reset["phase"]),
+            source_trajectory_json=demo_reset.get("source_trajectory_json"),
+            source_frame=demo_reset.get("source_frame"),
+            source_joint_reset_available="source_joint_position" in demo_reset,
         )
 
     env_cfg = parse_env_cfg(
