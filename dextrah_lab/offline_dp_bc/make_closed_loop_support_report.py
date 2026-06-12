@@ -265,6 +265,8 @@ def _compact_summary(metrics: dict[str, Any], rows: list[dict[str, Any]]) -> dic
             "reward_final": metrics.get("reward_final"),
             "final_success_rate": metrics.get("final_success_rate"),
             "window_success_rate": metrics.get("window_success_rate"),
+            "done_count": metrics.get("done_count"),
+            "success_timeout_override": metrics.get("success_timeout_override"),
             "final_gripper_width": metrics.get("final_gripper_width"),
             "debug_policy_trace_records": metrics.get("debug_policy_trace_records"),
             "support_trace_records": metrics.get("support_trace_records"),
@@ -275,6 +277,7 @@ def _compact_summary(metrics: dict[str, Any], rows: list[dict[str, Any]]) -> dic
             "finger_center_to_cube_min": _float(_min_row(rows, "finger_center_to_cube_dist") or {}, "finger_center_to_cube_dist"),
             "finger_center_to_cube_final": _float(final, "finger_center_to_cube_dist"),
             "cube_lift_max": max((_float(row, "cube_lift_height") for row in rows), default=None),
+            "cube_lift_final": _float(final, "cube_lift_height"),
             "support_distance_start": _float(first, "nearest_demo_distance"),
             "support_distance_final": _float(final, "nearest_demo_distance"),
             "support_distance_delta": support_delta,
@@ -295,14 +298,61 @@ def _baseline_summary(run_dir: Path | None) -> dict[str, Any] | None:
     return _compact_summary(_load_metrics(metrics_path), _read_support_csv(support_path))
 
 
+def _verdict_and_note(
+    metrics: dict[str, Any],
+    distances: dict[str, Any],
+    demo_reset: dict[str, Any],
+) -> tuple[str, str]:
+    success_timeout_override = metrics.get("success_timeout_override")
+    final_success = _float(metrics, "final_success_rate")
+    window_success = _float(metrics, "window_success_rate")
+    done_count = _float(metrics, "done_count")
+    matched_noreset_pass = (
+        final_success >= 1.0
+        and window_success >= 1.0
+        and done_count == 0.0
+        and distances["cube_lift_final"] >= 0.12
+        and success_timeout_override is not None
+        and bool(demo_reset.get("source_joint_reset_available"))
+    )
+    failed_drift = distances["cube_lift_max"] == 0.0 and distances["finger_center_to_cube_final"] > 0.05
+    if matched_noreset_pass:
+        verdict = (
+            "PASS (bounded): exact source-joint matched reset with success-timeout override "
+            "retains and lifts the cube through the rollout horizon."
+        )
+        diagnostic_note = (
+            "This is a no-learning diagnostic under exact source-joint matched reset with "
+            "an eval-only success-timeout override. It clears the narrow hold-retention "
+            "question for this setup, but it is not normal-reset generalization and is not "
+            "BC/RL scale-up readiness evidence."
+        )
+    elif failed_drift:
+        verdict = "FAIL: closed-loop policy still leaves demonstration support and closes away from the cube."
+        diagnostic_note = (
+            "This is a no-learning diagnostic. It must not be used as BC/RL scale-up evidence "
+            "while the video shows the hand closing away from the cube."
+        )
+    else:
+        verdict = "INCONCLUSIVE: inspect video and support trace before using this checkpoint."
+        diagnostic_note = (
+            "This is a no-learning diagnostic. Do not use it as BC/RL scale-up evidence until "
+            "the visual behavior, reset condition, and support traces are explicitly validated."
+        )
+    return verdict, diagnostic_note
+
+
 def _build_report(args: argparse.Namespace, summary: dict[str, Any], baseline: dict[str, Any] | None) -> str:
     metrics = summary["metrics"]
     distances = summary["distance_summary"]
     demo_reset = summary.get("demo_reset") or {}
-    verdict = (
-        "FAIL: closed-loop policy still leaves demonstration support and closes away from the cube."
-        if distances["cube_lift_max"] == 0.0 and distances["finger_center_to_cube_final"] > 0.05
-        else "INCONCLUSIVE: inspect video and support trace before using this checkpoint."
+    verdict = str(summary.get("verdict", "INCONCLUSIVE: inspect video and support trace before using this checkpoint."))
+    diagnostic_note = str(
+        summary.get(
+            "diagnostic_note",
+            "This is a no-learning diagnostic. Do not use it as BC/RL scale-up evidence until "
+            "the visual behavior, reset condition, and support traces are explicitly validated.",
+        )
     )
     lines = [
         "# Franka Cube DP Closed-Loop Support Report",
@@ -316,7 +366,7 @@ def _build_report(args: argparse.Namespace, summary: dict[str, Any], baseline: d
         "",
         verdict,
         "",
-        "This is a no-learning diagnostic. It must not be used as BC/RL scale-up evidence while the video shows the hand closing away from the cube.",
+        diagnostic_note,
         "",
         "## Key Metrics",
         "",
@@ -325,9 +375,11 @@ def _build_report(args: argparse.Namespace, summary: dict[str, Any], baseline: d
         f"| steps | {_fmt(summary['steps'], 0)} |",
         f"| reward mean/final | {_fmt(metrics.get('reward_mean'))} / {_fmt(metrics.get('reward_final'))} |",
         f"| success/window success | {_fmt(metrics.get('final_success_rate'))} / {_fmt(metrics.get('window_success_rate'))} |",
+        f"| done count | {_fmt(metrics.get('done_count'), 0)} |",
+        f"| success timeout override | {metrics.get('success_timeout_override') or 'n/a'} |",
         f"| EE-to-cube min/final | {_fmt(distances['ee_to_cube_min'])} / {_fmt(distances['ee_to_cube_final'])} m |",
         f"| finger-center-to-cube min/final | {_fmt(distances['finger_center_to_cube_min'])} / {_fmt(distances['finger_center_to_cube_final'])} m |",
-        f"| cube lift max | {_fmt(distances['cube_lift_max'])} m |",
+        f"| cube lift max/final | {_fmt(distances['cube_lift_max'])} / {_fmt(distances['cube_lift_final'])} m |",
         f"| final gripper width | {_fmt(metrics.get('final_gripper_width'))} m |",
         f"| nearest-demo distance start/final/delta | {_fmt(distances['support_distance_start'])} / {_fmt(distances['support_distance_final'])} / {_fmt(distances['support_distance_delta'])} |",
         f"| history gap unique | {summary['history_gap_unique']} |",
@@ -455,6 +507,13 @@ def build_report(args: argparse.Namespace) -> dict[str, Any]:
             "video": str(next((run_dir / "videos").glob("*.mp4"), "")) if (run_dir / "videos").is_dir() else "",
         }
     )
+    verdict, diagnostic_note = _verdict_and_note(
+        summary["metrics"],
+        summary["distance_summary"],
+        summary.get("demo_reset") or {},
+    )
+    summary["verdict"] = verdict
+    summary["diagnostic_note"] = diagnostic_note
     key_rows = [_row_summary(name, row) for name, row in _event_rows(rows)]
     key_rows_csv = out_dir / "closed_loop_support_key_rows.csv"
     plot_path = out_dir / "closed_loop_support_trace.png"
@@ -506,7 +565,7 @@ def main() -> None:
                 "action_plot": summary["action_plot"],
                 "summary_json": summary["summary_json"],
                 "key_rows_csv": summary["key_rows_csv"],
-                "verdict": "failed_support_drift" if summary["distance_summary"]["cube_lift_max"] == 0.0 else "inspect",
+                "verdict": summary.get("verdict", "inspect"),
             },
             sort_keys=True,
         )

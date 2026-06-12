@@ -7443,6 +7443,49 @@ Verdict:
   target normal-reset support/conditioning or a staged reset-to-contact
   relabel/eval path, not more hold debugging under the matched reset.
 
+## 2026-06-11T19:52:50-07:00 - closed-loop report verdict correction plan
+
+Goal:
+- Fix stale `closed_loop_support_report.md` verdict text for the no-reset
+  matched source-joint hold-pass artifacts. The generated report currently
+  still says `INCONCLUSIVE` and references the old drift-away failure, which
+  conflicts with the metrics/contact sheet and worklog.
+
+Plan:
+- Patch `dextrah_lab/offline_dp_bc/make_closed_loop_support_report.py` so it
+  emits a bounded pass verdict when final/window success are `1`, `done_count`
+  is `0`, lift is above threshold, and a success-timeout override is present.
+- Preserve the caveat that this is a no-learning diagnostic under exact
+  source-joint matched reset with success-timeout override, not normal-reset
+  generalization or BC/RL scale-up readiness.
+- Regenerate the local trace/video reports for jobs `1028052` and `1028059`
+  from the existing fetched artifacts. No new eval/training job.
+- Validate with `python3 -m py_compile`, `git diff --check`, grep the reports
+  for stale text, then commit/push code and worklog.
+
+Result:
+- status: completed; stale report verdict corrected in generator and local
+  artifact bundles.
+- changed file:
+  `dextrah_lab/offline_dp_bc/make_closed_loop_support_report.py`.
+- regenerated local reports:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_trace260_noreset_chunk1_sourcejoint_ep1s0_20260611_193200/closed_loop_support_report.md`
+  and
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_video260_noreset_chunk1_sourcejoint_ep1s0_20260611_194300/closed_loop_support_report.md`.
+- corrected viewer URL:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_dp_eval_weightedgrip8_inf100_video260_noreset_chunk1_sourcejoint_ep1s0_20260611_194300/closed_loop_support_report.md`
+- corrected verdict now reads:
+  `PASS (bounded): exact source-joint matched reset with success-timeout
+  override retains and lifts the cube through the rollout horizon.`
+- caveat remains in the report:
+  no-learning diagnostic, exact source-joint matched reset, eval-only
+  success-timeout override, not normal-reset generalization and not BC/RL
+  scale-up readiness evidence.
+- validation:
+  `python3 -m py_compile dextrah_lab/offline_dp_bc/make_closed_loop_support_report.py`,
+  `git diff --check`, and `rg` checks for stale `INCONCLUSIVE` /
+  `closing away` text in both regenerated reports passed.
+
 ## 2026-06-11T19:29:22-07:00 - hold-stability/contact-retention plan
 
 Goal:
