@@ -2469,3 +2469,88 @@ Next orchestrator actions:
   curriculum artifacts before any large PPO.
 - Send Worker C a targeted request to resolve controller realization and
   close-phase replay before more DP training.
+
+## 2026-06-12 Monitor Check 00:05 UTC
+
+Worker A action-tracking diagnostics:
+
+- Jobs:
+  - fixed `env.step` oracle: `1027891`, completed `0:0`, run
+    `franka_cube_ggx_pregrasp_actiontrack_fixed_20260611_235922`.
+  - proportional assisted oracle: `1027892`, completed `0:0`, run
+    `franka_cube_ggx_pregrasp_actiontrack_assisted_20260611_235922`.
+- Comparison sheet:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/l401/franka_cube_ggx_pregrasp_actiontrack_comparison_sheet.jpg`
+- Metrics:
+
+| mode | success rate | lift gate | max lift mean m | min tip-center m | min exact EE dist m | final exact EE dist m | final width m | verdict |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| fixed_direction | 0.000 | 0.000 | 0.000000 | 0.0573 | 0.0276 | 0.0698 | 0.0350 | fail |
+| proportional_exact | 0.333 | 0.333 | 0.010937 | 0.0386 | 0.0081 | 0.0499 | 0.0413 | partial |
+
+- Interpretation: receding-horizon assisted action tracking partially recovers
+  contact/lift in 1 of 3 resets, while fixed action-space replay remains dead.
+  This supports the hypothesis that reset geometry is usable but the
+  policy/script needs a closed-loop controller or curriculum from pregrasp to
+  contact. It is not enough for final PPO relaunch: success is only `1/3`,
+  mean lift is about `1.1 cm`, and visual lift is marginal.
+- Next for A: run a small assisted-parameter diagnostic, not PPO. Try
+  proportional gain/max action/orientation tracking variants or exact-pose
+  settle duration, and report whether success becomes robust across all resets.
+
+Worker C controller-target-hold replay:
+
+- Job `1027893`, completed `0:0`, run
+  `franka_cube_dp_replay_sourcejoint_controllerhold_ep24s260_mh2_340_20260611_165939`.
+- Report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_controllerhold_ep24s260_mh2_340_20260611_165939/replay_report.md`
+- Contact sheet:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_controllerhold_ep24s260_mh2_340_20260611_165939/videos/franka-cube-dp-replay-controllerhold-step-0_sheet.jpg`
+- Metrics:
+  - final EE-cube `0.0808 m`; min EE-cube `0.0299 m`.
+  - final finger-cube `0.1247 m`; min finger-cube `0.0701 m`.
+  - final gripper width `0.000565 m`; first close step `36`, hard-close
+    step `49`, target lift step `226`.
+  - median XYZ realization ratio `0.00023`; mean direction cosine `-0.0787`;
+    clip fraction `0`.
+- Interpretation: this reaches the close phase and physically closes the
+  gripper, but the absolute-pose-to-relative target-hold replay does not follow
+  teacher geometry through close/lift. It ends farther from the cube and the
+  direction cosine is negative. DP/BC remains blocked; raw cuRobo waypoint
+  deltas are not yet valid policy labels under this controller.
+- Next for C: diagnose target-frame/source-row semantics and controller
+  capability before training. Compare absolute source EE target, live FK source
+  target, and task TCP frame; consider controller-rollout relabeling only if a
+  replay can stay near teacher geometry through close/lift.
+
+Worker B teacher-force env smoke:
+
+- Job `1027895`, completed `0:0`, run
+  `franka_cube_traj_tracking_teacherforce_env_smoke_20260611_170249`.
+- Report:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_env_smoke_20260611_170249_artifacts/report.md`
+- Video sheet:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_env_smoke_20260611_170249/videos/franka-cube-validate-step-0_sheet.jpg`
+- Video:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_env_smoke_20260611_170249/videos/franka-cube-validate-step-0.mp4`
+- Metrics:
+  - validation passed, `steps_completed=240`, `done_count=0`,
+    `early_done_count=0`, `target_unsafe_rate_max=0`.
+  - `tracking_teacher_force_active_mean=1.0`,
+    `tracking_teacher_force_alpha_mean=1.0`.
+  - applied/reference action error `0.0261`, raw-policy/reference error
+    `1.416`, applied/raw error `1.425`.
+  - max mean lift `0.0227 m`, final success `0`, final gripper width
+    `0.0489 m`.
+- Interpretation: teacher-forced action application is wired and target-safe,
+  and the video no longer has the older drift-away behavior. This is not yet a
+  learned-policy result because alpha is `1.0`; raw policy action remains far
+  from reference.
+- Next for B: tiny PPO/anneal diagnostic only, with eval videos at alpha `1.0`
+  and a lower alpha. Acceptance is reduced raw-policy/reference error and
+  contact/lift under lower teacher alpha; no final-scale PPO yet.
+
+Queue state:
+
+- `l401` queue empty after the above jobs completed.
+- `a1001` queue was empty during the previous check.
