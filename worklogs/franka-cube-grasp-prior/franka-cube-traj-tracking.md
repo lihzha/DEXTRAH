@@ -4021,3 +4021,68 @@ Next:
 - First source change: add an eval/export route that records policy observations, reference_delta labels, raw policy actions, applied actions, phase/progress, lift/success, and safety metadata from a full-reference/teacher rollout.
 - Second source change, if checkpoint/model access is feasible in the Isaac container: add a tiny actor overfit script that loads the same RL-Games checkpoint, minimizes MSE from raw actor output to reference labels on the exported batch, writes train/held-out action-error curves, and saves a normal RL-Games-compatible checkpoint.
 - Acceptance for the BC diagnostic: prove raw/reference MSE drops on a held-out batch, then evaluate the resulting checkpoint with alpha `0.0`, `0.75`, and `1.0` using the existing video/report/action-semantics artifact bundle. If alpha `0.0`/`0.75` still fail, debug action normalization/model-output semantics before any further RL.
+
+## 2026-06-11T18:11:50-07:00 - BC reference-action imitation runtime smoke launch
+
+Goal:
+- Validate the new supervised reference-action imitation/export path inside the Isaac/RL-Games container before running a fuller BC diagnostic.
+
+Change:
+- Added `dextrah_lab/rl_games/bc_reference_action_imitation.py`, a diagnostic-only script that collects policy observations while stepping `reference_delta`, labels them with the same 7-D reference action interface, optimizes the loaded RL-Games actor by supervised MSE, writes loss artifacts, and saves an RL-Games-compatible checkpoint.
+- Added `cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh` to run the diagnostic on l401 with the same container/mount patterns as eval.
+
+Version Control:
+- implementation_commit: `802959fab452995dd4fabb3439de55bbbc7285b4`
+- branch: `codex/franka-cube-trajectory-tracking`
+- push: pushed to origin; l401 GitHub fetch still unavailable, so deployed via local git bundle.
+- remote_commit/status: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking` detached at `802959fab452995dd4fabb3439de55bbbc7285b4`, clean.
+- changed_files: `dextrah_lab/rl_games/bc_reference_action_imitation.py`, `cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh`, this worklog.
+
+Validation Before Launch:
+- `python3 -m py_compile dextrah_lab/rl_games/bc_reference_action_imitation.py dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/analyze_traj_tracking_action_semantics.py` passed locally.
+- `bash -n cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh cluster/sbatch_eval_franka_cube_grasp_1gpu.sh cluster/sbatch_train_teacher_8gpu.sh` passed locally.
+
+Command / Job:
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:25:00 --job-name=bc_ref_smoke --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_bc_ref_smoke_20260611_181150,NUM_ENVS=4,COLLECTION_STEPS=80,TRAIN_STEPS=20,BATCH_SIZE=128,LEARNING_RATE=0.0003,VALIDATION_FRACTION=0.25,LOSS_DIMS=0,1,2,3,4,5,6,EVAL_INTERVAL=5,SEED=64,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json,CHECKPOINT=/results/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_teacherforce_align80_ft10_20260611_175513/nn/last_dextrah_franka_cube_traj_tracking_ep_10_rew_9268.733.pth cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh`
+- job_id: `1027939`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/bc/franka_cube_traj_tracking_bc_ref_smoke_20260611_181150`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bc_franka_cube_1027939.out`
+- expected_artifacts: `bc_metrics.json`, `bc_loss_curve.csv`, `bc_loss_plot.png`, `report.md`, `reference_action_dataset.pt`, `nn/bc_reference_action_imitation.pth`
+
+Acceptance:
+- Container/job exits cleanly and writes metrics plus checkpoint.
+- Train/held-out raw/reference MSE decreases over the tiny smoke. This validates wiring only; it is not a behavior claim.
+- If it passes, launch the fuller bounded BC diagnostic and then alpha `0.0/0.75/1.0` video evals from the BC checkpoint.
+
+## 2026-06-11T18:14:20-07:00 - BC runtime smoke result and wrapper fix
+
+Result:
+- job_id: `1027939`
+- status: failed `1:0`, elapsed `00:00:49`, node `pool0-00030`
+- local_run_dir: `cluster_results/l401/franka_cube_traj_tracking_bc_ref_smoke_20260611_181150`
+- local_log: `cluster_results/l401/slurm_logs/bc_franka_cube_1027939.out`
+- viewer report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_ref_smoke_20260611_181150/report.md`
+- viewer plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_ref_smoke_20260611_181150/bc_loss_plot.png`
+
+Metrics / Artifacts:
+- The BC collection/training code ran and wrote `bc_metrics.json`, `bc_loss_curve.csv`, `bc_loss_plot.png`, `report.md`, `reference_action_dataset.pt`, and a checkpoint payload.
+- Smoke dataset: `320` samples (`240` train / `80` validation), observation dim `72`, action dim `7`, `curobo_validated=false`.
+- Because Slurm `--export` split comma-separated `LOSS_DIMS`, this smoke trained only dimension `0` (`loss_dims=[0]`), not all seven action dimensions.
+- Even with that launch mistake, the actor API is trainable on the batch: held-out x-dim MSE dropped from `0.272798` to `0.008420`; held-out x abs dropped from `0.4001` to `0.0584`.
+
+Root Cause:
+- Wrapper failure was post-run artifact validation, not a model/env error. `torch_ext.save_checkpoint("/.../bc_reference_action_imitation.pth", ...)` wrote `bc_reference_action_imitation.pth.pth`, while the wrapper checked for `bc_reference_action_imitation.pth`.
+- The all-dimension loss string cannot be passed as `LOSS_DIMS=0,1,2,3,4,5,6` through `sbatch --export` because commas delimit variables.
+
+Patch:
+- Change the BC script to accept `--loss_dims all` (also supports colon/space-separated indices).
+- Save the BC checkpoint with `torch.save` to the exact requested `.pth` path.
+- Change the wrapper default to `LOSS_DIMS=all`.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/bc_reference_action_imitation.py` passed after the patch.
+- `bash -n cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh` passed after the patch.
+
+Next:
+- Commit/push/deploy the wrapper fix and relaunch a bounded all-dimension BC diagnostic.
+- Use the resulting BC checkpoint only after confirming held-out all-dim errors decrease; then run alpha `0.0`, `0.75`, `1.0` video evals and action-semantics comparison.

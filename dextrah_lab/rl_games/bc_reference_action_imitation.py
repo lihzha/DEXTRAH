@@ -32,8 +32,8 @@ parser.add_argument("--validation_fraction", type=float, default=0.20, help="Hel
 parser.add_argument(
     "--loss_dims",
     type=str,
-    default="0,1,2,3,4,5,6",
-    help="Comma-separated action dimensions used in the supervised loss.",
+    default="all",
+    help="Action dimensions used in the supervised loss: 'all' or comma/colon/space-separated indices.",
 )
 parser.add_argument("--eval_interval", type=int, default=25, help="How often to log train/validation losses.")
 parser.add_argument("--output_dir", type=str, default=None, help="Directory for BC diagnostic artifacts.")
@@ -81,8 +81,11 @@ ACTION_LABELS = ("x", "y", "z", "rx", "ry", "rz", "gripper")
 
 
 def _parse_loss_dims(raw: str, action_dim: int) -> list[int]:
+    if raw.strip().lower() in ("all", "*"):
+        return list(range(action_dim))
     dims: list[int] = []
-    for token in raw.split(","):
+    normalized = raw.replace(":", ",").replace(";", ",").replace(" ", ",")
+    for token in normalized.split(","):
         token = token.strip()
         if not token:
             continue
@@ -460,7 +463,7 @@ def main(env_cfg, agent_cfg: dict):
         "learning_rate": float(args_cli.learning_rate),
         "dataset_path": str(dataset_path),
     }
-    torch_ext.save_checkpoint(str(checkpoint_out), ckpt)
+    torch.save(ckpt, checkpoint_out)
 
     reference_summary = (
         task_env.trajectory_tracking_reference_summary()
