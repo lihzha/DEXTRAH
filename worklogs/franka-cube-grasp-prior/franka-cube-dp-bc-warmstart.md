@@ -5162,3 +5162,64 @@ Command / Job:
   `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/target_frame_audits/franka_cube_target_frame_audit_ep24_close_lift_20260611_171200`
 - log:
   `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/audit_franka_cube_target_frames_1027903.out`
+
+Result:
+- status: passed diagnostic, failed BC-readiness gate.
+- Job `1027903` completed with `FRANKA_CUBE_TARGET_FRAME_AUDIT_DONE` and
+  `TARGET_FRAME_AUDIT_DONE`.
+- Remote run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/target_frame_audits/franka_cube_target_frame_audit_ep24_close_lift_20260611_171200`
+- Local artifact dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/target_frame_audits/franka_cube_target_frame_audit_ep24_close_lift_20260611_171200`
+- Local log:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/logs/audit_franka_cube_target_frames_1027903.out`
+- Viewer URLs:
+  - report:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/target_frame_audits/franka_cube_target_frame_audit_ep24_close_lift_20260611_171200/target_frame_report.md`
+  - state plot:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/target_frame_audits/franka_cube_target_frame_audit_ep24_close_lift_20260611_171200/target_frame_state_plot.png`
+  - one-step plot:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/target_frame_audits/franka_cube_target_frame_audit_ep24_close_lift_20260611_171200/target_frame_one_step_plot.png`
+  - reference video:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_controllerhold_ep24s260_mh2_340_20260611_165939/videos/franka-cube-dp-replay-controllerhold-step-0.mp4`
+  - reference contact sheet:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/replays/franka_cube_dp_replay_sourcejoint_controllerhold_ep24s260_mh2_340_20260611_165939/videos/franka-cube-dp-replay-controllerhold-step-0_sheet.jpg`
+
+Metrics:
+- `max_dataset_vs_fk_ee_pos_l2=2.27e-7 m`: converted lowdim EE target and
+  env FK from the raw source joints agree. This rejects a converter/FK
+  frame mismatch.
+- `min_fk_finger_center_to_cube=0.0682 m`: even the source joint state places
+  the finger center about `6.8 cm` from the cube while the controlled EE/TCP is
+  only `2.85 cm` from the cube.
+- Source-state table:
+  - step `260` hold-at-grasp: FK EE-cube `0.02846 m`, FK finger-center-cube
+    `0.06816 m`.
+  - step `310` hard-close: FK EE-cube `0.02846 m`, FK finger-center-cube
+    `0.06816 m`, left/right finger distances about `0.06824/0.06810 m`.
+  - step `402` lift target: FK EE-cube `0.02845 m`, FK finger-center-cube
+    `0.06816 m`.
+- One-step commands from source lowdim and source-joint FK targets are
+  effectively identical. During lift rows, one-step target error can be small
+  (`~0.0013-0.0064 m`) while finger-center distance remains around
+  `0.079-0.085 m`.
+
+Analysis:
+- The target-frame audit answers the orchestrator's question: the target row is
+  expressed in the same EE/TCP frame the env action controls, but that control
+  point is not the physical grasp/contact point for the cube in this generated
+  demonstration.
+- Raw cuRobo labels therefore cannot be used as a DP BC warm-start dataset for
+  the DEXTRAH Franka cube task as-is. The failure is upstream of DP: source
+  grasp/contact geometry or TCP definition is incompatible with the env reward
+  and contact geometry.
+- Scaling, action repeat, residual targets, exact source joint reset, and
+  source-FK target definitions have all failed to produce stable close/lift.
+
+Next:
+- Do not train DP BC/RL on these raw labels.
+- Next useful bounded implementation is a contact-aware controller-rollout
+  relabeler/generator that targets finger-center/cube geometry in the live
+  DEXTRAH env, or a correction to the GraspGenX/cuRobo EE/TCP/grasp frame
+  before conversion. The generated rollout must demonstrate stable close/lift
+  in Isaac before official DP training resumes.
