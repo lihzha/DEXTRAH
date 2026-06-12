@@ -6,6 +6,51 @@
 - base_commit: 589dd81c9f9691fcda3a3d4b9ad714d90dae4794
 - created: 2026-06-11T18:39:11Z
 
+## 2026-06-12T08:59:06Z - reward and loss comparison PNGs
+
+Goal:
+- Log reward-curve and loss/optimizer-curve comparisons as PNG artifacts for the reset-prior vs no-prior Franka cube PPO runs.
+
+Change:
+- Fetched TensorBoard summary event files for both runs.
+- Parsed TensorBoard scalar `simple_value` events locally and rendered PNGs with Pillow because local Python does not have `matplotlib`.
+- Updated the generated comparison report with the PNG and plotted-scalar CSV filenames.
+
+Version Control:
+- agent_id: franka-cube-ggx-pregrasp-reset
+- worktree: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset
+- worklog: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/worklogs/franka-cube-grasp-prior/franka-cube-ggx-pregrasp-reset.md
+- branch: codex/franka-cube-ggx-pregrasp-reset
+- base_commit: 7e0cd0b6d15b8253624b8670a38f47299a8088c7
+- implementation_commit: pending worklog-only commit
+- push/pull: local artifact generation only; source commit pending
+- changed_files: this owned worklog; generated artifacts under `cluster_results/a1001/franka_cube_prior_vs_noprior_own_20260612_0853/`
+- remote_commit/status: n/a
+
+Command / Job:
+- command: local Python event/JSONL parser and Pillow plot renderer
+- job_id: n/a
+- run_dir: `cluster_results/a1001/franka_cube_prior_vs_noprior_own_20260612_0853/`
+- artifacts:
+  - `reward_curve_comparison.png`
+  - `loss_curve_comparison.png`
+  - `reward_plot_scalars.csv`
+  - `loss_plot_scalars.csv`
+
+Result:
+- status: completed
+- metrics/artifacts: reward PNG compares aggregate episode reward, shaped reward, approach reward, enclosure reward, lift reward, and success bonus. Loss PNG compares actor loss, critic loss, central value loss, entropy, KL, and learning rate.
+- key evidence: images were opened locally for visual inspection and are nonblank/legible. Viewer URLs:
+  - `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/a1001/franka_cube_prior_vs_noprior_own_20260612_0853/reward_curve_comparison.png`
+  - `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset/cluster_results/a1001/franka_cube_prior_vs_noprior_own_20260612_0853/loss_curve_comparison.png`
+
+Analysis:
+- Reward plot shows reset-prior separates sharply from no-prior on aggregate/shaped rewards and lift/success reward terms, consistent with the task metrics comparison.
+- Loss/optimizer plot shows both runs have finite losses and sane entropy/KL/LR traces; no-prior failure is behavioral/exploration/reward-discovery rather than an obvious optimizer crash.
+
+Next:
+- Keep the PNG/CSV artifacts with the comparison report; repeat-seed or reward-weight ablation remains the next rigor step if needed.
+
 ## 2026-06-12T08:30:17Z - own no-prior 8GPU baseline launch plan
 
 Goal:
