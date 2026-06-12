@@ -133,6 +133,23 @@ parser.add_argument(
     help="Contact-gated mode: gripper width in meters below which lift phase is allowed.",
 )
 parser.add_argument(
+    "--action_correction_mode",
+    choices=["disabled", "nearest_label_align_pose"],
+    default="disabled",
+    help=(
+        "Eval-only diagnostic action correction. 'nearest_label_align_pose' "
+        "replaces/blends pose dims 0:6 with the nearest align_open support "
+        "dataset label while runtime phase is align_open; gripper is left as "
+        "the DP output. This is not a trained policy result."
+    ),
+)
+parser.add_argument(
+    "--action_correction_blend",
+    type=float,
+    default=1.0,
+    help="Blend factor for eval-only action correction pose dims. 1.0 fully uses the support label pose.",
+)
+parser.add_argument(
     "--demo_reset_dataset",
     type=str,
     default=None,
@@ -661,6 +678,90 @@ def _nearest_support_row(support: dict[str, Any], lowdim_obs: np.ndarray) -> tup
     return idx, float(distances[idx])
 
 
+def _nearest_support_row_for_phase(
+    support: dict[str, Any],
+    lowdim_obs: np.ndarray,
+    phase_name: str,
+) -> tuple[int, float]:
+    obs = support["obs"]
+    phase_ids = support["phase_ids"]
+    feature_std = support["feature_std"]
+    distances = np.sqrt((((obs[:, POSITION_FEATURE_IDX] - lowdim_obs[POSITION_FEATURE_IDX]) / feature_std) ** 2).mean(axis=1))
+    if support["phase_names"] == list(CONTACT_RELABEL_PHASE_ORDER) and phase_name == "align_open":
+        mask = np.logical_or(phase_ids == 0, phase_ids < 0)
+    else:
+        try:
+            phase_id = list(support["phase_names"]).index(str(phase_name))
+            mask = phase_ids == phase_id
+        except ValueError:
+            mask = np.ones_like(phase_ids, dtype=bool)
+    if np.any(mask):
+        masked_distances = np.where(mask, distances, np.inf)
+        idx = int(np.argmin(masked_distances))
+    else:
+        idx = int(np.argmin(distances))
+    return idx, float(distances[idx])
+
+
+def _runtime_phase_name(lowdim_obs: np.ndarray) -> str:
+    if lowdim_obs.shape[0] < FRANKA_CUBE_LOWDIM_OBS_DIM + 3:
+        return "unknown"
+    phase_idx = int(np.argmax(lowdim_obs[21:24]))
+    return ("align_open", "close_hold", "lift")[phase_idx]
+
+
+def _apply_eval_action_correction(
+    action_np: np.ndarray,
+    *,
+    lowdim_obs: np.ndarray,
+    support: dict[str, Any] | None,
+    mode: str,
+    blend: float,
+) -> tuple[np.ndarray, list[dict[str, Any]]]:
+    """Apply opt-in eval-only action corrections for diagnostics."""
+
+    mode = str(mode)
+    blend = float(np.clip(float(blend), 0.0, 1.0))
+    corrected = np.asarray(action_np, dtype=np.float32).copy()
+    records: list[dict[str, Any]] = []
+    if mode == "disabled":
+        for env_idx in range(corrected.shape[0]):
+            records.append({"mode": mode, "applied": False, "runtime_phase": _runtime_phase_name(lowdim_obs[env_idx])})
+        return corrected, records
+    if support is None:
+        raise RuntimeError(f"action_correction_mode={mode} requires --support_dataset")
+
+    for env_idx in range(corrected.shape[0]):
+        runtime_phase = _runtime_phase_name(lowdim_obs[env_idx])
+        original = corrected[env_idx].copy()
+        record: dict[str, Any] = {
+            "mode": mode,
+            "applied": False,
+            "runtime_phase": runtime_phase,
+            "blend": blend,
+            "original_action": original.astype(float).tolist(),
+        }
+        if mode == "nearest_label_align_pose" and runtime_phase == "align_open":
+            nearest_idx, nearest_distance = _nearest_support_row_for_phase(support, lowdim_obs[env_idx], "align_open")
+            label = np.asarray(support["action"][nearest_idx], dtype=np.float32)
+            corrected[env_idx, :6] = (1.0 - blend) * corrected[env_idx, :6] + blend * label[:6]
+            phase_id = int(support["phase_ids"][nearest_idx])
+            record.update(
+                {
+                    "applied": True,
+                    "nearest_demo_row": int(nearest_idx),
+                    "nearest_demo_phase": _phase_name_from_id(support["phase_names"], phase_id),
+                    "nearest_demo_distance": float(nearest_distance),
+                    "label_action": label.astype(float).tolist(),
+                    "pose_l2_before": float(np.linalg.norm(original[:6] - label[:6])),
+                    "pose_l2_after": float(np.linalg.norm(corrected[env_idx, :6] - label[:6])),
+                }
+            )
+        record["corrected_action"] = corrected[env_idx].astype(float).tolist()
+        records.append(record)
+    return corrected, records
+
+
 def _phase_min_distances(support: dict[str, Any], lowdim_obs: np.ndarray) -> dict[str, float]:
     obs = support["obs"]
     phase_ids = support["phase_ids"]
@@ -695,6 +796,7 @@ def _collect_support_record(
     task_metrics: dict[str, float | None],
     history: LowdimObsHistory,
     action_queue_len_after_pop: int,
+    action_correction: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     nearest_idx, nearest_distance = _nearest_support_row(support, lowdim_obs)
     episode_idx, episode_start, _episode_end = _episode_for_row(nearest_idx, support["episode_ends"])
@@ -707,7 +809,7 @@ def _collect_support_record(
     live_cme = np.asarray(lowdim_obs[14:17], dtype=np.float32)
     nearest_cme = np.asarray(nearest_obs[14:17], dtype=np.float32)
     action = np.asarray(action, dtype=np.float32) if action is not None else np.full(FRANKA_CUBE_ACTION_DIM, np.nan, dtype=np.float32)
-    return {
+    record = {
         "step": int(step),
         "env_index": int(env_index),
         "nearest_demo_row": int(nearest_idx),
@@ -744,6 +846,17 @@ def _collect_support_record(
         "action_queue_len_after_pop": int(action_queue_len_after_pop),
         "phase_min_distances": phase_distances,
     }
+    if action_correction is not None:
+        record["action_correction"] = action_correction
+        record["action_correction_mode"] = action_correction.get("mode")
+        record["action_correction_applied"] = bool(action_correction.get("applied", False))
+        record["action_correction_runtime_phase"] = action_correction.get("runtime_phase")
+        record["action_correction_nearest_demo_row"] = action_correction.get("nearest_demo_row")
+        record["action_correction_nearest_demo_phase"] = action_correction.get("nearest_demo_phase")
+        record["action_correction_nearest_demo_distance"] = action_correction.get("nearest_demo_distance")
+        record["action_correction_pose_l2_before"] = action_correction.get("pose_l2_before")
+        record["action_correction_pose_l2_after"] = action_correction.get("pose_l2_after")
+    return record
 
 
 def _json_safe(value: Any) -> Any:
@@ -800,6 +913,15 @@ def _write_support_csv(path: Path, records: list[dict[str, Any]]) -> None:
         "executed_action",
         "history_steps",
         "phase_min_distances",
+        "action_correction_mode",
+        "action_correction_applied",
+        "action_correction_runtime_phase",
+        "action_correction_nearest_demo_row",
+        "action_correction_nearest_demo_phase",
+        "action_correction_nearest_demo_distance",
+        "action_correction_pose_l2_before",
+        "action_correction_pose_l2_after",
+        "action_correction",
     ]
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="") as f:
@@ -943,6 +1065,8 @@ def main() -> None:
         phase_close_support_distance_threshold=float(args_cli.phase_close_support_distance_threshold),
         phase_lift_support_distance_threshold=float(args_cli.phase_lift_support_distance_threshold),
         phase_lift_gripper_width_threshold=float(args_cli.phase_lift_gripper_width_threshold),
+        action_correction_mode=str(args_cli.action_correction_mode),
+        action_correction_blend=float(args_cli.action_correction_blend),
         demo_reset_dataset=str(demo_reset_dataset_path) if demo_reset_dataset_path is not None else None,
         demo_reset_episode=int(args_cli.demo_reset_episode),
         demo_reset_step=int(args_cli.demo_reset_step),
@@ -954,6 +1078,8 @@ def main() -> None:
         demo_reset_cube_pos_blend_alpha=float(args_cli.demo_reset_cube_pos_blend_alpha),
     )
     support_dataset = _support_dataset_payload(support_dataset_path)
+    if args_cli.action_correction_mode != "disabled" and support_dataset is None:
+        raise RuntimeError("--action_correction_mode requires --support_dataset")
     if support_dataset is not None:
         _stage(
             "support_dataset_loaded",
@@ -1126,6 +1252,21 @@ def main() -> None:
                     )
                 action_np = action_queue[:, 0]
                 action_queue = action_queue[:, 1:]
+                action_correction_records = [
+                    {"mode": str(args_cli.action_correction_mode), "applied": False, "runtime_phase": "unknown"}
+                    for _ in range(task_env.num_envs)
+                ]
+                if args_cli.action_correction_mode != "disabled":
+                    lowdim_before = extract_lowdim_obs_from_ppo_obs(policy_obs).detach().float().cpu().numpy()
+                    if phase_progress_provider is not None:
+                        lowdim_before = phase_progress_provider.augment_lowdim(lowdim_before, step=step)
+                    action_np, action_correction_records = _apply_eval_action_correction(
+                        action_np,
+                        lowdim_obs=lowdim_before,
+                        support=support_dataset,
+                        mode=str(args_cli.action_correction_mode),
+                        blend=float(args_cli.action_correction_blend),
+                    )
                 clip = float(args_cli.clip_actions)
                 if math.isfinite(clip) and clip > 0.0:
                     action_np = np.clip(action_np, -clip, clip)
@@ -1164,6 +1305,7 @@ def main() -> None:
                         task_metrics=task_metrics,
                         history=history,
                         action_queue_len_after_pop=action_queue.shape[1],
+                        action_correction=action_correction_records[env_index],
                     )
                 )
             step_record = {
@@ -1221,6 +1363,8 @@ def main() -> None:
         "debug_policy_trace_path": str(debug_trace_path) if debug_trace_path is not None else None,
         "debug_policy_trace_records": len(policy_trace_records),
         "support_dataset": str(support_dataset_path) if support_dataset_path is not None else None,
+        "action_correction_mode": str(args_cli.action_correction_mode),
+        "action_correction_blend": float(args_cli.action_correction_blend),
         "support_trace_path": str(support_trace_path) if support_trace_path is not None else None,
         "support_trace_csv_path": str(support_trace_csv_path) if support_trace_csv_path is not None else None,
         "support_trace_records": len(support_trace_records),
@@ -1280,6 +1424,11 @@ def main() -> None:
                 phase: sum(1 for record in support_trace_records if record["nearest_demo_phase"] == phase)
                 for phase in sorted({str(record["nearest_demo_phase"]) for record in support_trace_records})
             },
+            "action_correction_mode": str(args_cli.action_correction_mode),
+            "action_correction_blend": float(args_cli.action_correction_blend),
+            "action_correction_applied_count": sum(
+                1 for record in support_trace_records if bool(record.get("action_correction_applied", False))
+            ),
         }
         support_trace_path.write_text(
             json.dumps(

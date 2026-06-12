@@ -10534,3 +10534,47 @@ Decision:
   stronger pose-channel loss/gate on the current set, or a tiny recovery
   relabel set with an offline pose-action pass. A new video run should wait
   until one of those gates passes.
+
+## 2026-06-12T01:30:00-07:00 - plan eval-only pose action projection diagnostic
+
+Goal:
+- Test one bounded correction strategy for pose-channel support drift before
+  any retrain, broad eval, or RL.
+
+Hypothesis:
+- If replacing only the align/open pose channels with the nearest accepted
+  relabel dataset action stabilizes contact/lift under the same official-DP
+  checkpoint, then the blocker is the learned pose output/support coverage,
+  not the observation bridge, gripper convention, or action magnitude.
+
+Planned Change:
+- Add an opt-in eval-only action correction mode to
+  `eval_franka_cube_dp_policy.py` and the l401 wrapper.
+- Mode: `nearest_label_align_pose`.
+  - active only when runtime phase is `align_open`;
+  - uses the already supplied support dataset nearest row;
+  - replaces or blends only action dims `0:6` with the nearest dataset label;
+  - leaves the DP gripper command unchanged;
+  - records correction metadata in `support_trace.json/csv`.
+- Default remains disabled.
+
+Validation:
+- local `py_compile` for touched Python files.
+- local `bash -n` for `cluster/sbatch_eval_franka_cube_dp_policy_1gpu.sh`.
+- local offline sanity for the correction helper against the 1028199 trace.
+- `git diff --check`.
+
+Cluster Gate:
+- If local checks pass, commit/push/deploy exact commit to the C-owned l401
+  worktree and launch one bounded matched-reset video trace:
+  `NUM_ENVS=1`, `NUM_STEPS=128`, `ACTION_CHUNK_STEPS=1`,
+  `PHASE_PROGRESS_MODE=contact_gated`, `ACTION_CORRECTION_MODE=nearest_label_align_pose`,
+  `CAPTURE_VIDEO=True`.
+
+Acceptance:
+- Fetch and inspect metrics, support trace, policy trace, labeled MP4/contact
+  sheet, and plots.
+- Passing the diagnostic means reduced support drift and coherent contact/lift
+  relative to the uncorrected run; it is not a DP/BC/RL readiness claim.
+- If it fails, record whether nearest-label correction cannot overcome
+  controller/contact dynamics or whether the correction is too narrow.
