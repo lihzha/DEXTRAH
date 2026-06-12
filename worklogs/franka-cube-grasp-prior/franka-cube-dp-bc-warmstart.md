@@ -9702,3 +9702,56 @@ Next:
   explicit phase/progress conditioning resolves the close-boundary gripper
   ambiguity. This diagnostic cannot be used for Isaac eval without a matching
   runtime feature provider.
+
+## 2026-06-11T22:40:10-07:00 - launch phase-progress official DP offline smoke
+
+Goal:
+- Run one bounded official-DP offline diagnostic with explicit phase/progress
+  conditioning to test whether the 21D checkpoint's close-boundary gripper
+  ambiguity is due to missing switch-state information.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- dextrah_commit: `9855352b4175eeed9e3cd81ce9aef24a031c5b24`
+- official_dp_commit: `5ba07ac6661db573af695b419a7947ecb704690f`
+- official_dp_remote: `https://github.com/real-stanford/diffusion_policy`
+
+Command / Job:
+- job_id: `n/a`, local bounded official-DP smoke.
+- run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_lrcentering_a075_set4_phaseprogress_official_dp_smoke_20260611_224001`
+- launch script:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_lrcentering_a075_set4_phaseprogress_official_dp_smoke_20260611_224001/launch_command.sh`
+- launch command:
+  `bash /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_lrcentering_a075_set4_phaseprogress_official_dp_smoke_20260611_224001/launch_command.sh`
+- base dataset:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_lrcentering_ep8_16_24_30_a0p75_20260611_2224/contact_relabel_set_accepted.npz`
+- generated dataset:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_contact_relabel_smoke/contact_relabel_lrcentering_a075_set4_phaseprogress_official_dp_smoke_20260611_224001/contact_relabel_set_phase_progress.npz`
+
+Smoke bounds:
+- offline only; no Isaac closed-loop eval and no RL.
+- appends four diagnostic observation features to the 21D state:
+  `phase_align_open`, `phase_close_hold`, `phase_lift`, `episode_progress`.
+- official DP config:
+  `obs_dim=25`, `policy.model.global_cond_dim=50`,
+  weighted gripper loss `[1,1,1,1,1,1,8]`,
+  `val_ratio=0.25`, `limits_clamp_constant`, `num_epochs=60`,
+  `max_train_steps=10`, `max_val_steps=2`.
+- checkpoint smokes are `direct-only`; the 25D dataset does not have a PPO
+  bridge/runtime feature provider.
+
+Expected artifacts:
+- phase/progress dataset report and summary.
+- dataset report/summary/range CSVs.
+- resolved Hydra config, train stdout, `logs.json.txt`, loss CSV/plot.
+- checkpoint `official_dp_train/checkpoints/latest.ckpt`.
+- direct-only checkpoint action-range logs.
+- corrected action-semantics CSV/JSON/plots/report.
+- official DP pretrain report/summary.
+
+Next:
+- Run and monitor the local smoke. If this offline gate passes, report it as a
+  diagnostic pass only and propose the next separate runtime-feature bridge
+  gate; do not launch Isaac eval/RL from this artifact alone.
