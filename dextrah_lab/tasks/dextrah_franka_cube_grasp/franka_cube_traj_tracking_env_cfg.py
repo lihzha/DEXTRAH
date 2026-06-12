@@ -32,10 +32,6 @@ class DextrahFrankaCubeTrajTrackingEnvCfg(DextrahFrankaCubeGraspEnvCfg):
     # Phase-gated proximity/contact shaping for the tracking variant.  These
     # action bonuses are intentionally separate from the baseline cube reward.
     # The gate is broad enough to provide a learning signal before hard contact.
-    # Diagnostic scale: the previous relaxed-gate smoke produced nonzero but
-    # negligible close/lift terms (~1e-3).  Keep this variant separate from the
-    # baseline while testing whether action incentives can overcome reference
-    # attraction during close/lift phases.
     trajectory_tracking_close_action_weight = 2.5
     trajectory_tracking_close_action_phase_start = 0.45
     trajectory_tracking_lift_action_weight = 4.0
@@ -48,10 +44,10 @@ class DextrahFrankaCubeTrajTrackingEnvCfg(DextrahFrankaCubeGraspEnvCfg):
     # safe phase weight.
     trajectory_tracking_reference_reweight_phase_start = 0.55
     trajectory_tracking_reference_late_weight_scale = 0.35
-    # Diagnostic action-prior term: reward policy actions for matching the
-    # same position-only reference_delta action used by the scripted sanity
-    # eval.  This is intentionally reward-only and does not change observations.
-    trajectory_tracking_action_alignment_weight = 1.5
+    # Diagnostic action-prior term.  Keep disabled for clean tracking-loss RL:
+    # production runs should use task-space tracking rewards, not reference
+    # action imitation or rollout-time action mixing.
+    trajectory_tracking_action_alignment_weight = 0.0
     trajectory_tracking_action_alignment_phase_start = 0.0
     trajectory_tracking_action_alignment_sharpness = 1.0
     trajectory_tracking_action_alignment_use_contact_gate = False
@@ -73,11 +69,12 @@ class DextrahFrankaCubeTrajTrackingEnvCfg(DextrahFrankaCubeGraspEnvCfg):
     # targets to the contact-width scale used by the cube reward checks.
     trajectory_tracking_min_target_gripper_width = 0.024
 
-    # Global training-step curriculum for fading the shaping term.  Set
-    # end_weight equal to start_weight to keep it constant.
+    # Global training-step curriculum for the shaping term.  Keep it constant
+    # for the tracking-loss approach; fading to zero turns the task back into
+    # the baseline cube objective midway through training.
     trajectory_tracking_curriculum_steps = 200000
     trajectory_tracking_start_weight = 1.0
-    trajectory_tracking_end_weight = 0.0
+    trajectory_tracking_end_weight = 1.0
 
     # Safety/logging gates for transformed task-space targets.  By default the
     # curriculum tracks the reset-pose task-space reference instead of following

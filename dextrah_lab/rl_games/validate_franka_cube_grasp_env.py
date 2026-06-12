@@ -325,6 +325,43 @@ def _run_reference_loader_checks(checks: CheckRecorder) -> None:
     )
 
 
+def _run_tracking_config_checks(env_cfg, task: str, checks: CheckRecorder) -> None:
+    tracking_enabled = bool(getattr(env_cfg, "trajectory_tracking_enabled", False))
+    if not tracking_enabled:
+        checks.check(
+            "trajectory_tracking_clean_rl_config",
+            "Traj-Tracking" not in task,
+            task=task,
+            trajectory_tracking_enabled=tracking_enabled,
+        )
+        return
+
+    reference_path = str(getattr(env_cfg, "trajectory_tracking_reference_path", "") or "")
+    action_alignment_weight = float(getattr(env_cfg, "trajectory_tracking_action_alignment_weight", 0.0))
+    teacher_force_enabled = bool(getattr(env_cfg, "trajectory_tracking_teacher_force_enabled", False))
+    start_weight = float(getattr(env_cfg, "trajectory_tracking_start_weight", 1.0))
+    end_weight = float(getattr(env_cfg, "trajectory_tracking_end_weight", start_weight))
+    phase_observations = bool(getattr(env_cfg, "trajectory_tracking_phase_observations", False))
+    checks.check(
+        "trajectory_tracking_reference_path_configured",
+        bool(reference_path),
+        task=task,
+        trajectory_tracking_reference_path=reference_path,
+    )
+    checks.check(
+        "trajectory_tracking_clean_rl_config",
+        action_alignment_weight == 0.0
+        and not teacher_force_enabled
+        and abs(start_weight - end_weight) <= 1.0e-9
+        and not phase_observations,
+        action_alignment_weight=action_alignment_weight,
+        teacher_force_enabled=teacher_force_enabled,
+        start_weight=start_weight,
+        end_weight=end_weight,
+        phase_observations=phase_observations,
+    )
+
+
 def _run_tracking_reset_checks(task_env, checks: CheckRecorder) -> dict[str, object]:
     if not bool(getattr(task_env.cfg, "trajectory_tracking_enabled", False)):
         return {"enabled": False}
@@ -660,6 +697,8 @@ def _run_short_rollout(env, task_env, checks: CheckRecorder, num_steps: int, pri
         "cube_traj_tracking_effective_phase_weight",
         "cube_traj_tracking_reference_reweight",
         "cube_traj_tracking_tracking_term_weight",
+        "cube_traj_tracking_phase_progress",
+        "cube_traj_tracking_curriculum_scale",
         "cube_traj_tracking_target_table_clearance",
         "cube_traj_tracking_target_table_clearance_min",
         "cube_traj_tracking_safe_target_rate",
@@ -698,6 +737,8 @@ def _run_short_rollout(env, task_env, checks: CheckRecorder, num_steps: int, pri
     tracking_finger_balance_gate_values: list[float] = []
     tracking_reference_reweight_values: list[float] = []
     tracking_term_weight_values: list[float] = []
+    tracking_phase_progress_values: list[float] = []
+    tracking_curriculum_scale_values: list[float] = []
     tracking_action_close_values: list[float] = []
     tracking_action_up_values: list[float] = []
     tracking_reference_action_close_values: list[float] = []
@@ -796,6 +837,10 @@ def _run_short_rollout(env, task_env, checks: CheckRecorder, num_steps: int, pri
                     tracking_reference_reweight_values.append(_mean(value))
                 elif key == "cube_traj_tracking_tracking_term_weight":
                     tracking_term_weight_values.append(_mean(value))
+                elif key == "cube_traj_tracking_phase_progress":
+                    tracking_phase_progress_values.append(_mean(value))
+                elif key == "cube_traj_tracking_curriculum_scale":
+                    tracking_curriculum_scale_values.append(_mean(value))
                 elif key == "cube_traj_tracking_action_close":
                     tracking_action_close_values.append(_mean(value))
                 elif key == "cube_traj_tracking_action_up":
@@ -968,6 +1013,16 @@ def _run_short_rollout(env, task_env, checks: CheckRecorder, num_steps: int, pri
             "tracking_term_weight_mean": sum(tracking_term_weight_values) / len(tracking_term_weight_values)
             if tracking_term_weight_values
             else None,
+            "tracking_phase_progress_final": tracking_phase_progress_values[-1]
+            if tracking_phase_progress_values
+            else None,
+            "tracking_phase_progress_max": max(tracking_phase_progress_values) if tracking_phase_progress_values else None,
+            "tracking_curriculum_scale_min": min(tracking_curriculum_scale_values)
+            if tracking_curriculum_scale_values
+            else None,
+            "tracking_curriculum_scale_max": max(tracking_curriculum_scale_values)
+            if tracking_curriculum_scale_values
+            else None,
             "tracking_action_close_mean": sum(tracking_action_close_values) / len(tracking_action_close_values)
             if tracking_action_close_values
             else None,
@@ -997,6 +1052,38 @@ def _run_short_rollout(env, task_env, checks: CheckRecorder, num_steps: int, pri
         checks.check(
             "trajectory_tracking_runtime_targets_safe",
             bool(tracking_unsafe_values) and max(tracking_unsafe_values) <= 0.0,
+            **tracking_summary,
+        )
+        reference_duration_s = float(getattr(task_env, "traj_ref_duration", 0.0) or 0.0)
+        rollout_duration_s = float(num_steps) * float(getattr(task_env, "dt", 0.0) or 0.0)
+        should_reach_reference_end = reference_duration_s > 0.0 and rollout_duration_s + 1.0e-6 >= reference_duration_s
+        phase_reached_end = bool(tracking_phase_progress_values) and max(tracking_phase_progress_values) >= 0.99
+        checks.check(
+            "trajectory_tracking_phase_reaches_reference_end",
+            (not should_reach_reference_end) or phase_reached_end,
+            reference_duration_s=reference_duration_s,
+            rollout_duration_s=rollout_duration_s,
+            should_reach_reference_end=should_reach_reference_end,
+            **tracking_summary,
+        )
+        checks.check(
+            "trajectory_tracking_action_alignment_disabled",
+            bool(tracking_action_alignment_reward_ceiling_values)
+            and max(tracking_action_alignment_reward_ceiling_values) <= 0.0,
+            **tracking_summary,
+        )
+        checks.check(
+            "trajectory_tracking_teacher_force_disabled",
+            bool(tracking_teacher_force_active_values)
+            and max(tracking_teacher_force_active_values) <= 0.0
+            and bool(tracking_teacher_force_alpha_values)
+            and max(tracking_teacher_force_alpha_values) <= 0.0,
+            **tracking_summary,
+        )
+        checks.check(
+            "trajectory_tracking_curriculum_constant",
+            bool(tracking_curriculum_scale_values)
+            and max(tracking_curriculum_scale_values) == min(tracking_curriculum_scale_values),
             **tracking_summary,
         )
     return {
@@ -1084,6 +1171,7 @@ def main() -> None:
     _run_registration_checks(args_cli.task, checks)
     _run_reference_loader_checks(checks)
     _run_reward_checks(args_cli.device, checks)
+    _run_tracking_config_checks(env_cfg, args_cli.task, checks)
 
     gym_env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)
     task_env = gym_env.unwrapped

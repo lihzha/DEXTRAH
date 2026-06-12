@@ -7276,3 +7276,45 @@ Shutdown Handoff Update:
 - Visible stdout metrics: derived `contacthold_success_handoff_alpha0` selected `94` train + `24` val samples; selected step `300`; selected score `0.1256902925670147`; handoff val L2 `0.0222403556`; alpha0.00 collection val L2 `0.2409972697`; alpha0.05 collection val L2 `0.2172831893`; global val L2 `0.2230899781`; reference remains `curobo_validated=false`.
 - Handoff file written at `worklogs/franka-cube-grasp-prior/HANDOFF_B.md`.
 - Do not claim policy-only RL success; this remains assisted/handoff BC and needs artifact fetch/full supervised review before any selector/video/PPO.
+
+## 2026-06-12T00:40:14-07:00 - clean tracking-loss RL preflight fix
+
+Goal:
+- Convert the trajectory-tracking branch back to a clean RL-with-tracking-loss path before any PPO launch.
+- Find or rule out branch-specific bugs instead of trusting the handoff diagnostics.
+
+Hypothesis:
+- The previous tracking branch was not a clean tracking-loss RL setup because the default tracking env rewarded reference-action imitation (`trajectory_tracking_action_alignment_weight=1.5`) and wrappers exposed teacher-force/action-alignment overrides.
+- The tracking shaping also faded from `1.0` to `0.0`, which can remove the reference objective during training. Upstream Franka cube PPO is known good, so the safest first fix is to keep upstream PPO/task plumbing and make reference use strictly task-space reward shaping.
+
+Change:
+- Disabled the default action-alignment reward by setting `trajectory_tracking_action_alignment_weight=0.0`.
+- Kept tracking loss constant by setting `trajectory_tracking_end_weight=1.0`.
+- Removed teacher-force/action-alignment override plumbing from production train/validate/eval wrappers.
+- Made tracking train wrapper require an explicit `TRAJECTORY_TRACKING_REFERENCE_PATH`.
+- Added validation checks for clean tracking config, explicit reference path, end-of-reference phase progress, disabled action-alignment reward, disabled teacher forcing, constant curriculum, and safe runtime targets.
+- Guarded `policy_reference_mix`, `policy_reference_mix_hold`, and `reference_delta_hold` eval modes behind `ALLOW_DIAGNOSTIC_ACTION_SOURCES=True`; guarded assisted BC collection the same way for `policy_reference_mix_hold`.
+
+Version Control:
+- agent_id: `franka-cube-traj-tracking`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-traj-tracking`
+- branch: `codex/franka-cube-trajectory-tracking`
+- base_commit: `03d4dae`
+- implementation_commit: pending
+- changed_files:
+  - `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env_cfg.py`
+  - `dextrah_lab/rl_games/validate_franka_cube_grasp_env.py`
+  - `cluster/sbatch_train_teacher_8gpu.sh`
+  - `cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`
+  - `cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+  - `cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh`
+  - `worklogs/franka-cube-grasp-prior/franka-cube-traj-tracking.md`
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_traj_tracking_env_cfg.py dextrah_lab/rl_games/validate_franka_cube_grasp_env.py dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/bc_reference_action_imitation.py` passed.
+- `bash -n cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh cluster/sbatch_eval_franka_cube_grasp_1gpu.sh cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh` passed.
+- `git diff --check` passed.
+
+Next:
+- Commit/push/deploy exact source commit to the l401 agent worktree.
+- Run validation smoke with actual 60 mm GraspGenX/cuRobo compact reference for 480 steps, no video first. RL launch remains blocked until that validation proves all clean preconditions.
