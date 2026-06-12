@@ -42,6 +42,29 @@ parser.add_argument(
     ),
 )
 parser.add_argument(
+    "--gripper_sample_aggregation",
+    choices=["mean", "binary_vote"],
+    default="mean",
+    help=(
+        "How to combine gripper channels when --num_action_samples > 1. "
+        "'mean' preserves the original arithmetic average. 'binary_vote' "
+        "averages pose channels but emits +1 open or -1 close by voting over "
+        "sampled gripper values."
+    ),
+)
+parser.add_argument(
+    "--gripper_close_threshold",
+    type=float,
+    default=0.5,
+    help="binary_vote mode: a sampled gripper value below this threshold votes close.",
+)
+parser.add_argument(
+    "--gripper_vote_threshold",
+    type=float,
+    default=0.5,
+    help="binary_vote mode: close fraction required to emit -1 close.",
+)
+parser.add_argument(
     "--action_chunk_steps",
     type=int,
     default=1,
@@ -1309,6 +1332,9 @@ def main() -> None:
                         step=step,
                         phase_progress_provider=phase_progress_provider,
                         num_action_samples=max(1, int(args_cli.num_action_samples)),
+                        gripper_sample_aggregation=str(args_cli.gripper_sample_aggregation),
+                        gripper_close_threshold=float(args_cli.gripper_close_threshold),
+                        gripper_vote_threshold=float(args_cli.gripper_vote_threshold),
                     )
                     if action_seq.ndim != 3 or action_seq.shape[0] != task_env.num_envs:
                         raise RuntimeError(f"Unexpected DP action sequence shape {action_seq.shape}")
@@ -1416,6 +1442,9 @@ def main() -> None:
         "phase_progress_provider": None if phase_progress_provider is None else phase_progress_provider.summary(),
         "action_chunk_steps": requested_action_chunk_steps,
         "num_action_samples": max(1, int(args_cli.num_action_samples)),
+        "gripper_sample_aggregation": str(args_cli.gripper_sample_aggregation),
+        "gripper_close_threshold": float(args_cli.gripper_close_threshold),
+        "gripper_vote_threshold": float(args_cli.gripper_vote_threshold),
         "no_learning": True,
         "num_envs": task_num_envs,
         "num_steps_requested": int(args_cli.num_steps),

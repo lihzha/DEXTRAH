@@ -442,6 +442,9 @@ def predict_action_sequence_from_ppo_obs(
     step: int | np.ndarray | None = None,
     phase_progress_provider: DatasetBackedPhaseProgressProvider | ContactGatedPhaseProgressProvider | None = None,
     num_action_samples: int = 1,
+    gripper_sample_aggregation: str = "mean",
+    gripper_close_threshold: float = 0.5,
+    gripper_vote_threshold: float = 0.5,
 ) -> Any:
     """Query an official lowdim DP policy for an action sequence.
 
@@ -464,8 +467,15 @@ def predict_action_sequence_from_ppo_obs(
     device = next(policy.parameters()).device
     obs_tensor = torch.as_tensor(obs_seq, dtype=torch.float32, device=device)
     sample_count = max(1, int(num_action_samples))
+    gripper_mode = str(gripper_sample_aggregation)
+    if gripper_mode not in {"mean", "binary_vote"}:
+        raise ValueError(f"Unsupported gripper_sample_aggregation {gripper_mode!r}")
+    close_threshold = float(gripper_close_threshold)
+    vote_threshold = float(gripper_vote_threshold)
+    if not 0.0 <= vote_threshold <= 1.0:
+        raise ValueError(f"gripper_vote_threshold must be in [0, 1], got {vote_threshold}")
     with torch.no_grad():
-        if sample_count == 1:
+        if sample_count == 1 and gripper_mode == "mean":
             result = policy.predict_action({"obs": obs_tensor})
             action = result["action"]
         else:
@@ -473,7 +483,16 @@ def predict_action_sequence_from_ppo_obs(
             for _ in range(sample_count):
                 result = policy.predict_action({"obs": obs_tensor})
                 samples.append(result["action"])
-            action = torch.stack(samples, dim=0).mean(dim=0)
+            stacked = torch.stack(samples, dim=0)
+            action = stacked.mean(dim=0)
+            if gripper_mode == "binary_vote":
+                close_votes = stacked[..., 6] < close_threshold
+                close_fraction = close_votes.to(dtype=action.dtype).mean(dim=0)
+                action[..., 6] = torch.where(
+                    close_fraction >= vote_threshold,
+                    torch.full_like(action[..., 6], -1.0),
+                    torch.full_like(action[..., 6], 1.0),
+                )
     return action.detach().cpu().numpy()
 
 
@@ -485,6 +504,9 @@ def predict_action_from_ppo_obs(
     step: int | np.ndarray | None = None,
     phase_progress_provider: DatasetBackedPhaseProgressProvider | ContactGatedPhaseProgressProvider | None = None,
     num_action_samples: int = 1,
+    gripper_sample_aggregation: str = "mean",
+    gripper_close_threshold: float = 0.5,
+    gripper_vote_threshold: float = 0.5,
 ) -> Any:
     """Query an official lowdim DP policy from a single-step 72D PPO obs.
 
@@ -501,4 +523,7 @@ def predict_action_from_ppo_obs(
         step=step,
         phase_progress_provider=phase_progress_provider,
         num_action_samples=num_action_samples,
+        gripper_sample_aggregation=gripper_sample_aggregation,
+        gripper_close_threshold=gripper_close_threshold,
+        gripper_vote_threshold=gripper_vote_threshold,
     )[:, 0]
