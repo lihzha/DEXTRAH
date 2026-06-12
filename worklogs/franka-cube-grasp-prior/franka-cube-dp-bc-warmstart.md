@@ -8911,3 +8911,99 @@ Next bounded diagnostic:
   recover alpha0.75 when the damaging source-target align phase is removed.
 - If this still fails, stop at diagnostics and recommend a different
   controller design rather than DP/RL scale-up.
+
+## 2026-06-11T22:02:09-07:00 - launch no-align contact-gated alpha0.75 diagnostic
+
+Goal:
+- Directly test whether alpha0.75 can close/lift from the current live contact
+  neighborhood if the damaging fixed source-target `align_open` phase is
+  removed.
+
+Version Control:
+- implementation_commit: `978714903f24296b0c09252e7c2586237465b649`
+- remote_commit: `978714903f24296b0c09252e7c2586237465b649`
+- push/deploy: pushed to origin and l401 transfer repo; remote worktree
+  checked out detached at this commit.
+
+Command / Job:
+- job_id: `1028135`
+- run_name:
+  `franka_cube_contact_relabel_noalign_gateclose_ep16s260_a0p75_20260611_220150`
+- command:
+  `sbatch --parsable --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart,RUN_NAME=franka_cube_contact_relabel_noalign_gateclose_ep16s260_a0p75_20260611_220150,DATASET=/results/dp_bc/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz,TRAJECTORY_ROOT=/results/dp_bc/curobo_plans,SPEC_COUNT=1,SPEC_0=16:260:/results/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed16/trajectory.json:0.75,VARIANT=center_high30,ORIENTATION_MODE=source,POSE_ACTION_FILTER=scale,POSE_ACTION_LIMIT=0.95,ALIGN_STEPS=0,CONTACT_ALIGN_STEPS=80,CONTACT_ALIGN_REFERENCE=live_cube,CONTACT_ALIGN_THRESHOLD=0.06,CLOSE_STEPS=80,LIFT_STEPS=160,LIFT_HEIGHT=0.22,FINGER_GAIN=0.75,CLIP_ACTIONS=1.0,CAPTURE_VIDEO=True,VIDEO_LENGTH=320,VIDEO_NAME_PREFIX=franka-cube-contact-noalign-gateclose,PRINT_INTERVAL=20,SEED=42,GATE_MIN_LIFT=0.10,GATE_MAX_POSE_CLIP_FRACTION=0.0,GATE_MAX_FINAL_EE_TO_CUBE=0.05,GATE_MAX_FINAL_FINGER_TO_CUBE=0.08 cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh`
+- remote run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/contact_relabel_sets/franka_cube_contact_relabel_noalign_gateclose_ep16s260_a0p75_20260611_220150`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/contact_aware_franka_cube_relabel_set_1028135.out`
+
+Gate:
+- Pass requires alpha0.75 final/max lift, zero executed clipping, final
+  EE/finger distances inside the hard gate, and video contact/lift.
+- Failure means the next path is a different contact controller design, not DP
+  fine-tune or RL.
+
+## 2026-06-11T22:04:21-07:00 - no-align contact-gated alpha0.75 result
+
+Result:
+- job_id: `1028135`
+- run_name:
+  `franka_cube_contact_relabel_noalign_gateclose_ep16s260_a0p75_20260611_220150`
+- scheduler status: `COMPLETED 0:0`
+- artifact status: fetched locally; report, plot, contact sheet, and video
+  opened with `viz-open`; contact sheet inspected.
+- verdict: hard-gate failure; do not train DP or launch RL.
+
+Metrics / Evidence:
+- The contact gate triggered immediately:
+  - `contact_align_trigger_step=0`
+  - `close_start_local_step=1`
+  - `pre_close_finger_center_to_cube=0.0562 m`
+  - `pre_close_ee_to_cube=0.0243 m`
+- Gripper closed fully, but the cube was not grasped:
+  - `final_gripper_width=0.000212 m`
+  - `final/max lift=0.0000/0.0143 m`
+  - `final EE-to-cube=0.2246 m`
+  - `final finger-center-to-cube=0.2695 m`
+  - `max_pose_action_clip_fraction=0.0`
+- Early close rows show why scalar finger-center distance is insufficient:
+  - step 0: finger `0.0562`, left `0.0810`, right `0.0533`, EE `0.0243`
+  - step 1 after close starts: finger `0.0635`, left `0.0776`, right `0.0685`
+  - by lift, finger distance grows monotonically and cube lift stays zero.
+- Visual contact sheet shows the hand closes/lifts beside/above the cube rather
+  than enclosing it.
+
+Artifact URLs:
+- report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_noalign_gateclose_ep16s260_a0p75_20260611_220150/contact_relabel_set_report.md`
+- trace plot:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_noalign_gateclose_ep16s260_a0p75_20260611_220150/rollouts/ep16s260_a0p75/contact_rollout_plot.png`
+- contact sheet:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_noalign_gateclose_ep16s260_a0p75_20260611_220150/rollouts/ep16s260_a0p75/contact_sheet_a0p75_noalign_1028135.jpg`
+- video:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_noalign_gateclose_ep16s260_a0p75_20260611_220150/rollouts/ep16s260_a0p75/videos/franka-cube-contact-noalign-gateclose-ep16s260_a0p75-step-0.mp4`
+- stdout:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_noalign_gateclose_ep16s260_a0p75_20260611_220150/logs/contact_aware_franka_cube_relabel_set_1028135.out`
+
+Analysis:
+- Removing the source-target align phase is not sufficient. The controller can
+  enter close/lift with zero clipping, but the gripper does not enclose the cube
+  at alpha0.75.
+- The hard failure is now sharper: alpha0.75 needs a contact controller that
+  reasons about left/right finger placement or a lateral centering sweep, not
+  only finger-center-to-cube scalar distance. The current scalar threshold can
+  be satisfied while the fingers are arranged in a non-grasping geometry.
+
+Next design option:
+- Add a bounded left/right finger geometry gate before close:
+  - require both left/right finger distances to be plausible and balanced
+    before close;
+  - add an open-gripper lateral centering/search phase around the live cube
+    rather than a fixed high30 offset;
+  - keep the hard relabel gate unchanged and test alpha0.75 first.
+- No DP fine-tune, RL, or broad dataset training should start until that
+  controller relabel gate passes.
+
+Active jobs:
+- No C-owned l401 jobs remain. `squeue` shows unrelated job `1028137`
+  (`ggx_lowz_bc`) running under the user account; not launched or owned by this
+  Worker C run.
