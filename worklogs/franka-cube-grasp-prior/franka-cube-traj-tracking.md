@@ -7845,3 +7845,44 @@ Analysis:
 
 Next:
 - Recommended next reward tuning: run a partial-closeness ablation (`cube_approach_weight`/`cube_enclosure_weight` at `0.5x` or `0.25x`) or modify tracking reward so position/gripper tracking receives late-phase weight only after contact/lift gates.
+
+## 2026-06-12T21:07:56Z - logged tracking-vs-baseline reward and success comparison
+
+Goal:
+- Create durable reward-curve and success-rate comparison artifacts for the known-good no-tracking baseline and the current RL+tracking-loss method.
+
+Inputs:
+- no-tracking baseline training: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_baseline_A_histseed_2557f3e_20260612_0922`
+- no-tracking baseline eval metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_evalsuccess1024_4b5e140_20260612_122845_noprior_seed1781139395/metrics.json`
+- tracking-loss training seeds 1-5: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_trackloss_default_b7e04f0_seed*_20260612_1042`
+- tracking-loss pure-policy eval metrics: `/tmp/franka_trackloss_eval_policy_2de8b03/seed*/metrics.json`
+
+Artifacts:
+- comparison directory: `worklogs/franka-cube-grasp-prior/reward_success_comparison_20260612`
+- plots: `reward_curve_comparison.svg`, `success_rate_curve_comparison.svg`, `eval_success_comparison.svg`
+- tables: `training_curves.csv`, `training_summary.csv`, `reward_terms_summary.csv`, `eval_success_summary.csv`
+- manifest/readme: `manifest.json`, `README.md`
+
+Result:
+- Training aggregate reward and success:
+
+| Method | Final reward | Last-20 reward | Final train success | Last-20 train success |
+| --- | ---: | ---: | ---: | ---: |
+| no tracking baseline, seed `1781139395` | `13044.795` | `13067.345` | `0.819` | `0.828` |
+| tracking-loss mean, seeds `1..5` | `8515.849 +/- 4789.768` | `8427.648 +/- 4719.371` | `0.474 +/- 0.385` | `0.451 +/- 0.370` |
+
+- Existing eval success:
+
+| Method | Eval success definition | Success |
+| --- | --- | ---: |
+| no tracking baseline | `eval_success_rate` over 1024-env first-attempt eval | `0.948242` |
+| tracking-loss mean | mean per-seed `success_ever_rate` over five 16-env evals | `0.600000` |
+
+Analysis:
+- This is now logged as data, not just a narrative comparison.
+- The no-tracking baseline still looks materially stronger than the current tracking-loss method in both training success and existing eval success.
+- Reward is not a perfectly clean outcome comparison because tracking adds reward terms; success-rate curves and eval success are the better behavioral comparisons.
+- Eval definitions are not identical because they reuse the existing artifacts: baseline has a 1024-env eval, tracking has five 16-env evals. `eval_success_summary.csv` records the exact definitions and occupancy metrics.
+
+Next:
+- Use these artifacts as the comparison baseline for the next reward-tuning sweep, especially partial base-closeness reductions or better contact/lift-gated tracking terms.
