@@ -5618,6 +5618,78 @@ Next:
 - Planned collection: fresh teacher_mix alphas `0.50/0.75/1.00`; derived alpha0 handoff source from alpha0.50/0.75 samples with `phase >= 0.55` and success or `cube_lift_height >= 0.02`.
 - No selector/video unless supervised gate passes.
 
+## 2026-06-11T22:32:00-07:00 - policy-only stabilization handoff supervised launch
+
+Version Control:
+- implementation_commit: `6a403ae2d7bfb39b5faa5b805fa97da8ebb4d4dc` (`Add supervised handoff source diagnostic`), pushed to `origin/codex/franka-cube-trajectory-tracking`.
+- remote source: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking`, detached at `6a403ae2d7bfb39b5faa5b805fa97da8ebb4d4dc`, clean.
+
+Command / Job:
+- job_id: `1028154`
+- job_name: `bc_handoff0`
+- run_name: `franka_cube_traj_tracking_bc_handoff_success_alpha0_20260611_223200`
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:45:00 --job-name=bc_handoff0 --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_bc_handoff_success_alpha0_20260611_223200,CHECKPOINT=/results/bc/franka_cube_traj_tracking_bc_dagger_tm025_all_20260611_185900/nn/bc_reference_action_imitation.pth,NUM_ENVS=8,COLLECTION_STEPS=520,TRAIN_STEPS=700,BATCH_SIZE=1024,LEARNING_RATE=0.0001,VALIDATION_FRACTION=0.2,LOSS_DIMS=all,EVAL_INTERVAL=25,SEED=74,COLLECTION_ACTION_SOURCE=teacher_mix,COLLECTION_TEACHER_ALPHAS=0.50__COMMA__0.75__COMMA__1.00,SOURCE_BATCH_MODE=balanced,SOURCE_LOSS_WEIGHTS=current_teacher_mix_alpha0p50=1__COMMA__current_teacher_mix_alpha0p75=1__COMMA__current_teacher_mix_alpha1p00=1__COMMA__policy0_success_handoff=1,BEST_SCORE_WEIGHTS=val_source_current_teacher_mix_alpha0p50_l2=1__COMMA__val_source_current_teacher_mix_alpha0p75_l2=1__COMMA__val_source_current_teacher_mix_alpha1p00_l2=1__COMMA__val_source_policy0_success_handoff_l2=1,RESIDUAL_ADAPTER_ENABLED=True,RESIDUAL_HIDDEN_DIM=256,RESIDUAL_MAX_ACTION=1.0,RESIDUAL_GATE_ENABLED=False,RESIDUAL_CONTEXT_FEATURES=phase__COMMA__teacher_alpha,RESIDUAL_L2_WEIGHT=0.0005,SOURCE_PROBE_STEPS=200,HANDOFF_SOURCE_ENABLED=True,HANDOFF_SOURCE_SOURCES=current_teacher_mix_alpha0p50__COMMA__current_teacher_mix_alpha0p75,HANDOFF_SOURCE_NAME=policy0_success_handoff,HANDOFF_TEACHER_ALPHA=0.0,HANDOFF_MIN_PHASE=0.55,HANDOFF_MAX_PHASE=1.0,HANDOFF_MIN_LIFT_HEIGHT=0.02,HANDOFF_REQUIRE_SUCCESS=False,HANDOFF_REQUIRE_SAFE_TARGET=True,HANDOFF_MAX_SAMPLES=0,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh`
+- remote run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/bc/franka_cube_traj_tracking_bc_handoff_success_alpha0_20260611_223200`
+- remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bc_franka_cube_1028154.out`
+
+Acceptance:
+- Supervised-only gate. No selector/video/PPO/RL until metrics and report are fetched and inspected.
+- Verify the derived handoff source selected a meaningful number of samples from alpha0.5/0.75 and records safe target rate.
+- Assisted alpha0.5/0.75/1.0 val L2 should remain near the stage/alpha checkpoint (`~0.0929/0.0820/0.0663`).
+- Policy0 handoff source val L2 must be low enough to justify a tiny visual/selector probe; otherwise stop at the supervised report.
+- Global val L2 should not regress materially relative to stage/alpha supervised (`~0.0805`) if considering rollout.
+- Reference caveat remains `curobo_validated=false`.
+
+Active Jobs:
+- `1028154`.
+
+## 2026-06-11T22:35:00-07:00 - policy-only stabilization handoff supervised result
+
+Job:
+- job_id: `1028154`
+- scheduler state: `COMPLETED 0:0`, elapsed `00:01:26`, node `pool0-00030`.
+- remote run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/bc/franka_cube_traj_tracking_bc_handoff_success_alpha0_20260611_223200`
+- remote log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bc_franka_cube_1028154.out`
+- local fetched run_dir: `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_success_alpha0_20260611_223200`
+- local fetched log: `cluster_results/l401/slurm_logs/bc_franka_cube_1028154.out`
+
+Artifacts:
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_success_alpha0_20260611_223200/report.md`
+- source metric plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_success_alpha0_20260611_223200/bc_source_metric_plot.png`
+- aggregate loss plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_success_alpha0_20260611_223200/bc_loss_plot.png`
+- oracle residual plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_success_alpha0_20260611_223200/oracle_residual_plot.png`
+- metrics: `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_success_alpha0_20260611_223200/bc_metrics.json`
+- checkpoint: `/results/bc/franka_cube_traj_tracking_bc_handoff_success_alpha0_20260611_223200/nn/bc_reference_action_imitation.pth`
+- dataset: `/results/bc/franka_cube_traj_tracking_bc_handoff_success_alpha0_20260611_223200/reference_action_dataset.pt`
+
+Derived Handoff Source:
+- enabled: `true`.
+- name/slug: `policy0_success_handoff`.
+- selected samples: `507` total, all target-safe (`unsafe_rate=0`).
+- selected from alpha0.5 and alpha0.75 assisted fresh sources:
+  - alpha0.5: `73/4160` samples selected, `12` success samples, `73` lift-threshold samples.
+  - alpha0.75: `434/4160` samples selected, `60` success samples, `434` lift-threshold samples.
+- filter: `phase >= 0.55`, `phase <= 1.0`, success OR `cube_lift_height >= 0.02`, safe target required.
+- handoff source mean phase/lift/success-rate: `0.7321 / 0.0753 m / 0.1420`.
+
+Supervised Metrics:
+- selected step/score: `700 / 0.066359`.
+- global val L2: `0.117003 -> 0.073941`; this is better than the stage/alpha supervised reference value (`~0.08046`).
+- alpha0.5 val L2: `0.149997 -> 0.092610`; essentially matches/preserves the stage/alpha checkpoint (`~0.09288`).
+- alpha0.75 val L2: `0.115956 -> 0.074349`; improves over stage/alpha (`~0.08195`).
+- alpha1.0 val L2: `0.078938 -> 0.057882`; improves over stage/alpha (`~0.06631`).
+- derived policy0 handoff val L2: `0.147575 -> 0.040597`; up abs `0.097305 -> 0.027700`; close/gripper abs `0.039961 -> 0.019338`.
+- source separability probe val accuracy: `0.5237` vs baseline `0.3281`, so the residual context/obs can separate sources better than chance.
+- reference caveat remains `curobo_validated=false`.
+
+Verdict:
+- Supervised gate passes for a metrics-only selector sweep.
+- This is not yet a policy-only rollout success claim; the derived alpha0 handoff source only covers lifted/success-window states, so selector eval is required to see whether alpha0 or low-alpha rollout behavior improves.
+- No videos/PPO/RL scale-up yet. Launch selector metrics for alpha `0.0/0.25/0.5/0.75/1.0`; only if behavior improves, generate targeted videos/contact sheets.
+
+Next:
+- Launch metrics-only selector evals from `/results/bc/franka_cube_traj_tracking_bc_handoff_success_alpha0_20260611_223200/nn/bc_reference_action_imitation.pth`.
+
 ## 2026-06-11T21:36:00-07:00 - trajectory-tracking handoff comparison plan
 
 Goal:
