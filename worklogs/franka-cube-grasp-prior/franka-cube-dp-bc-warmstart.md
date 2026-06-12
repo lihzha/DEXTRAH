@@ -12092,6 +12092,71 @@ Next:
 - Monitor job to completion, fetch metrics/log/video/support trace, inspect
   video and support plots, then either scale or patch.
 
+## 2026-06-12T03:28:03-07:00 - normal-reset one-demo overfit and scale relabel launch
+
+Goal:
+- Continue the BC warm-start loop from the exact-reset overfit: validate a
+  true normal-reset relabel demo, overfit official DP to that demo, launch its
+  exact-state eval, and scale the relabel data only after the relabel gate
+  itself passed.
+
+Result so far:
+- True normal-reset contact-aware relabel job `1028349` passed the hard gate:
+  `reset_joint_blend_alpha=0.0`, `reset_cube_pos_blend_alpha=0.0`,
+  final/max lift `0.1363/0.1363 m`, final EE-to-cube `0.0281 m`,
+  final finger-center-to-cube `0.0550 m`, zero executed pose clipping.
+- Visual artifact inspected via `viz-open` and contact sheet; rollout shows
+  normal reset approach, centered grasp, close, and lift.
+- Created 25D one-demo phase/progress dataset:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_normalcube_one_traj/phaseprogress_normalcube_ep16_seed42_noema_20260612_032517/contact_relabel_normalcube_ep16_phase_progress.npz`
+  with `obs=(289,25)`, `action=(289,7)`, phase counts
+  `{0: 83, 1: 80, 2: 126}`.
+- Trained no-EMA official DP one-demo overfit using the known-good contract:
+  `WeightedDiffusionUnetLowdimPolicy`, `pred_action_steps_only=true`,
+  `obs_dim=25`, `global_cond_dim=50`, gripper loss weight `8`,
+  `action_normalizer=limits_clamp_constant`, `num_inference_steps=100`.
+- Final local train metrics: epoch `299`, global step `1499`,
+  `train_action_mse_error=0.00183`, `train_loss=0.04519`.
+- Offline coherence passed all `289` rows:
+  all-phase pose cosine mean `0.9894`, pose norm ratio median `0.9793`,
+  gripper sign match `1.0`, offset-0 sequence MSE all `0.00181`.
+- Added and smoke-tested
+  `dextrah_lab/offline_dp_bc/combine_contact_relabel_sets.py` for combining
+  accepted relabel NPZs while preserving per-episode reset metadata.
+
+Artifacts:
+- Normal relabel report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_normalcube_ep16_seed42_20260612_030346/contact_relabel_set_report.md`
+- Normal relabel video:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_normalcube_ep16_seed42_20260612_030346/rollouts/ep16s260_a0p0/videos/franka-cube-contact-normalcube-ep16s260_a0p0-step-0.mp4`
+- Offline coherence report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_normalcube_one_traj/phaseprogress_normalcube_ep16_seed42_noema_20260612_032517/offline_coherence_latest/offline_coherence_report.md`
+
+Staged l401 artifacts:
+- checkpoint:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/phaseprogress_normalcube_ep16_seed42_noema_20260612_032517/latest.ckpt`
+- phase/support dataset:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/phase_progress_normalcube_one/normalcube_ep16_seed42_phase_progress_20260612_032517.npz`
+
+Submitted jobs:
+- Exact normal-demo DP eval job `1028354`, run
+  `franka_cube_dp_eval_normalcube_ep16_seed42_exact_chunk8_avg8_video320_20260612_032738`.
+  Uses `ACTION_CHUNK_STEPS=8`, `NUM_ACTION_SAMPLES=8`,
+  `ACTION_CORRECTION_MODE=disabled`, dataset phase/progress provider, and
+  demo reset with `DEMO_RESET_JOINT_BLEND_ALPHA=0.0`,
+  `DEMO_RESET_CUBE_POS_BLEND_ALPHA=1.0`.
+- Scale relabel jobs `1028350`-`1028353`: seeds `43`, `44`, `45`, `46`, each
+  with source episodes `8,16,24,30` at frame `260`, true normal robot/cube
+  reset, source orientation, live-cube contact alignment, left/right contact
+  gate, and the same hard relabel acceptance thresholds.
+
+Next:
+- Monitor jobs to completion. For `1028354`, fetch metrics/log/video/support
+  trace and inspect video before deciding pass/fail. For `1028350`-`1028353`,
+  fetch every relabel set, inspect summaries/videos, combine accepted NPZs,
+  convert to 25D phase/progress, train a no-EMA scaled DP checkpoint, then run
+  exact and normal-reset evals with the fixed chunk8/avg8 policy contract.
+
 ## 2026-06-12T01:31:00-07:00 - launch one-demo action-chunk and oracle controls
 
 Goal:
