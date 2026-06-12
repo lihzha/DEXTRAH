@@ -7315,6 +7315,114 @@ Validation:
 - `bash -n cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh cluster/sbatch_eval_franka_cube_grasp_1gpu.sh cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh` passed.
 - `git diff --check` passed.
 
+Version Control Update:
+- implementation_commit: `01650b275c7d69bd8e3d4e10e1f33fc1c70ef2d0` (`Clean trajectory tracking RL preflight`).
+- push: pushed to `origin/codex/franka-cube-trajectory-tracking`.
+- remote worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking`, detached clean at `01650b275c7d69bd8e3d4e10e1f33fc1c70ef2d0`.
+- remote deploy: used HTTPS fetch on l401 because GitHub SSH auth is still unavailable there.
+
+Command / Job:
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=128G --time=0-00:45:00 --job-name=traj_preflight --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_clean_preflight_20260612_004500,NUM_ENVS=4,NUM_STEPS=480,CAPTURE_VIDEO=False,VIDEO_LENGTH=480,PRINT_INTERVAL=120,SEED=42,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`
+- job_id: `1028252`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_cube_traj_tracking_clean_preflight_20260612_004500`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_cube_1028252.out`
+- acceptance: validation metrics must pass; specific required checks include clean tracking config, explicit reference path, retimed phase reaches reference end, safe targets, action-alignment reward disabled, teacher forcing disabled, and constant curriculum.
+
 Next:
-- Commit/push/deploy exact source commit to the l401 agent worktree.
-- Run validation smoke with actual 60 mm GraspGenX/cuRobo compact reference for 480 steps, no video first. RL launch remains blocked until that validation proves all clean preconditions.
+- Monitor job `1028252`, fetch metrics/logs, inspect pass/fail records, and only then decide whether a tiny PPO smoke is warranted.
+
+Validation Result:
+- job `1028252` completed and printed `Validation Done`.
+- fetched local metrics: `cluster_results/l401/franka_cube_traj_tracking_clean_preflight_20260612_004500/metrics.json`.
+- fetched local log: `cluster_logs/l401/slurm_logs/dextrah/validate_franka_cube_1028252.out`.
+- status: passed, failed checks `[]`.
+- clean preconditions passed:
+  - explicit reference path configured: true.
+  - clean tracking config: true.
+  - runtime duration within episode: true.
+  - gripper width policy: true, runtime min width `0.024 m`.
+  - targets clear table: true, min batch target clearance `0.065114 m`.
+  - runtime target unsafe rate max `0.0`.
+  - phase reaches reference end: true, final/max phase `1.0/1.0`.
+  - action-alignment disabled: true, reward ceiling mean `0.0`.
+  - teacher forcing disabled: true, alpha mean `0.0`.
+  - curriculum constant: true, min/max `1.0/1.0`.
+- reference summary: `graspgenx_source=true`, planner `graspgenx_curobo_trajectory_json`, source duration `22.033333 s`, runtime duration `8.0 s`, `curobo_validated=false`, validation records passed.
+- analysis: environment/task preconditions for clean tracking-loss RL are now correct enough for a tiny PPO smoke. Exact CuRobo collision-validation provenance is still caveated by the reference metadata and should stay explicit.
+
+## 2026-06-12T00:52:00-07:00 - clean PPO smoke launch
+
+Goal:
+- Verify that the clean tracking-loss RL task launches under PPO with upstream Franka cube hyperparameters scaled down for a one-GPU smoke, without action mixing, teacher forcing, or action-alignment rewards.
+
+Command / Job:
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:45:00 --job-name=traj_rl_smoke --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,FULL_EXPERIMENT_NAME=franka_cube_traj_tracking_clean_ppo_smoke_20260612_005200,NUM_ENVS=16,MAX_ITERATIONS=5,HORIZON_LENGTH=32,MINIBATCH_SIZE=512,CENTRAL_VALUE_MINIBATCH_SIZE=512,MINI_EPOCHS=2,SAVE_FREQUENCY=1,DISTRIBUTED=False,MULTI_GPU=False,NPROC_PER_NODE=1,AUTO_RESUME=False,SELF_RELAUNCH=False,USE_CUDA_GRAPH=False,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json cluster/sbatch_train_teacher_8gpu.sh`
+- job_id: `1028253`
+- source_commit: remote worktree detached at `01650b275c7d69bd8e3d4e10e1f33fc1c70ef2d0`.
+- expected run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_clean_ppo_smoke_20260612_005200`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_1028253.out`
+- acceptance: training exits cleanly, writes resolved config and checkpoints, reward terms are finite, `cube_traj_tracking_action_alignment_reward` is zero, teacher force logs remain zero, and no auto-resume/requeue occurs.
+
+Next:
+- Monitor `1028253`; fetch log/run artifacts; inspect reward/checkpoint/config before any larger PPO run.
+
+PPO Smoke Result:
+- job `1028253` completed and printed `Training Done`.
+- fetched local run dir: `cluster_results/l401/franka_cube_traj_tracking_clean_ppo_smoke_20260612_005200/`.
+- fetched local log: `cluster_logs/l401/slurm_logs/dextrah/teacher_8gpu_1028253.out`.
+- resolved env config confirms clean settings:
+  - `num_envs=16`, `observation_space=72`, `action_space=7`, `use_cuda_graph=false`.
+  - `trajectory_tracking_reference_path=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json`.
+  - `trajectory_tracking_action_alignment_weight=0.0`.
+  - `trajectory_tracking_teacher_force_enabled=false`.
+  - `trajectory_tracking_start_weight=1.0`, `trajectory_tracking_end_weight=1.0`.
+  - `trajectory_tracking_reference_duration_s=8.0`, `trajectory_tracking_min_target_gripper_width=0.024`.
+- resolved agent config confirms smoke overrides: `max_epochs=5`, `horizon_length=32`, `minibatch_size=512`, `multi_gpu=false`, `full_experiment_name=franka_cube_traj_tracking_clean_ppo_smoke_20260612_005200`.
+- checkpoint written: `nn/last_dextrah_franka_cube_traj_tracking_ep_5_rew_-inf.pth` (`~8.0 MB`) plus runtime sidecar.
+- stdout reached epochs 1/5 through 5/5 with finite FPS and no traceback/runtime error. The `rew_-inf` checkpoint suffix is expected because no env terminated during the intentionally tiny 5-epoch run.
+- TensorBoard event file was zero bytes, so reward-term inspection from this smoke is limited to stdout and dumped configs.
+
+## 2026-06-12T00:57:00-07:00 - clean policy-only eval smoke launch
+
+Goal:
+- Verify the tiny PPO checkpoint loads and rolls out with `ACTION_SOURCE=policy`, without `policy_reference_mix`, terminal hold, teacher forcing, or action-alignment overrides.
+
+Command / Job:
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:45:00 --job-name=traj_eval_smoke --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_clean_ppo_eval_smoke_20260612_005700,NUM_ENVS=4,NUM_STEPS=240,CAPTURE_VIDEO=False,VIDEO_LENGTH=240,PRINT_INTERVAL=60,ACTION_SOURCE=policy,DETERMINISTIC=True,USE_CUDA_GRAPH=False,SEED=43,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json,CHECKPOINT=/results/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_clean_ppo_smoke_20260612_005200/nn/last_dextrah_franka_cube_traj_tracking_ep_5_rew_-inf.pth cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- job_id: `1028254`
+- expected run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_traj_tracking_clean_ppo_eval_smoke_20260612_005700`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1028254.out`
+- acceptance: eval exits cleanly, writes metrics/trace, `action_source=policy`, finite rewards/metrics, zero target-unsafe, no mixed/hold metrics except absent/none.
+
+Next:
+- Monitor `1028254`, fetch metrics/logs, inspect rollout summary, and then decide whether a longer one-GPU PPO run is justified.
+
+Eval Smoke Result:
+- job `1028254` completed and printed `Evaluation Done`.
+- fetched local run dir: `cluster_results/l401/franka_cube_traj_tracking_clean_ppo_eval_smoke_20260612_005700/`.
+- fetched local log: `cluster_logs/l401/slurm_logs/dextrah/eval_franka_cube_1028254.out`.
+- checkpoint loaded successfully from the clean PPO smoke.
+- metrics summary:
+  - task `Dextrah-Franka-Cube-Grasp-Traj-Tracking`.
+  - action source `policy` / notes `rl_games_policy`; `ALLOW_DIAGNOSTIC_ACTION_SOURCES=False`.
+  - `num_steps_completed=240`, `num_steps_requested=240`, `num_envs=4`.
+  - reward mean/final `1.57045` / `1.54220`.
+  - final and ever success rates `0.0`; done count `0`. This is expected for a 5-epoch checkpoint and is not a success claim.
+  - trace rows `240`; no non-finite rows.
+  - tracking reward mean/final `0.07618` / `0.11128`.
+  - position error mean/final `0.24787 m` / `0.19742 m`.
+  - target unsafe rate mean/final/max `0.0`.
+  - action-alignment reward and ceiling mean/final/max `0.0`.
+  - teacher-force alpha and active-rate mean/final/max `0.0`.
+  - curriculum scale mean/final/min/max `1.0`.
+  - phase reached `0.5` over the 240-step half-reference eval, as expected for an 8 s reference at 60 Hz.
+  - target table clearance min over trace `0.065114 m`.
+- reference metadata in eval still reports `graspgenx_source=true`, runtime duration `8.0 s`, min runtime gripper width `0.024 m`, validation records passed, and `curobo_validated=false`.
+
+Analysis:
+- Confirmed the earlier branch bug: default tracking training was contaminated by a reference-action imitation reward and wrapper-accessible teacher-force/action-alignment controls; tracking loss also faded out. Those are now disabled/guarded for the clean route.
+- Clean environment validation, tiny PPO launch, checkpoint save, and policy-only eval all pass. This proves the preconditions and execution path are correct enough for a longer one-GPU PPO probe.
+- It does not prove task learning yet. The 5-epoch smoke is too short and no env terminated, so the next useful training run should be a bounded longer clean PPO run with full reward-term curves.
+
+Next:
+- Run a one-GPU clean PPO probe long enough to produce non-empty scalar curves and early behavior signal before any 8-GPU scale-up. Suggested next run: `NUM_ENVS=256`, `HORIZON_LENGTH=64`, `MAX_ITERATIONS=25` or `50`, `SAVE_FREQUENCY=5`, no auto-resume, same reference path, then policy-only eval/video if reward curves are finite.
