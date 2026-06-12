@@ -2980,3 +2980,79 @@ Expected artifacts:
 
 Next:
 - Implement the diagnostic-only script/wrapper, commit/push/deploy, run the bounded L401 job, and inspect artifacts before deciding the next bounded experiment.
+
+## 2026-06-12T02:06:00Z - launch pass7 policy state audit
+
+Goal:
+- Run the bounded diagnostic-only policy state/action semantics audit for ep10/ep45 around valid robust pass7 reset states.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- local_commit: `ee009a1d6a9c84280a2499a3455a07bdfc7c0f53`
+- push/pull: pushed branch; L401 cannot fetch GitHub directly, so deployed exact commit to the agent-owned worktree via Git bundle.
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- remote_commit/status: `ee009a1d6a9c84280a2499a3455a07bdfc7c0f53`, detached clean
+- validation:
+  - local `python3 -m py_compile dextrah_lab/rl_games/audit_franka_cube_policy_state.py` passed
+  - local `bash -n cluster/sbatch_audit_franka_cube_policy_state_1gpu.sh` passed
+  - remote `python3 -m py_compile dextrah_lab/rl_games/audit_franka_cube_policy_state.py` passed
+  - remote `bash -n cluster/sbatch_audit_franka_cube_policy_state_1gpu.sh` passed
+
+Command / Job:
+- command: `sbatch --parsable --job-name=ggx_policy_state --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset,CODE_COMMIT=ee009a1d6a9c84280a2499a3455a07bdfc7c0f53,TASK=Dextrah-Franka-Cube-Grasp,RUN_NAME=franka_cube_ggx_pass7_policy_state_20260612_0206,NUM_ENVS=64,NUM_RESETS=3,SEED=20260624,CUBE_SPAWN_XY_RANDOMIZATION=0.08,GRASP_PRIOR_LIBRARY_PATH=/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_robust_pass7_20260612.npz,CHECKPOINTS="ep10=/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_robust_pass7_smoke45_20260612_0056/nn/last_dextrah_franka_cube_grasp_ep_10_rew_857.09937.pth;ep45=/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_robust_pass7_smoke45_20260612_0056/nn/last_dextrah_franka_cube_grasp_ep_45_rew_662.51086.pth",TRAINING_JSONL_PATH=/results/logs/rl_games/dextrah_franka_cube_grasp/franka_cube_ggx_robust_pass7_smoke45_20260612_0056/metrics/direct_info_rank_0.jsonl,STOCHASTIC_SAMPLES=16,HISTOGRAM_BINS=41 cluster/sbatch_audit_franka_cube_policy_state_1gpu.sh`
+- job_id: `1027978`
+- run_name: `franka_cube_ggx_pass7_policy_state_20260612_0206`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pass7_policy_state_20260612_0206`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/audit_franka_cube_policy_state_1027978.out`
+
+Expected artifacts:
+- `metrics.json`, `REPORT.md`, `checkpoint_state_summary.json`, `reset_observation_dim_summary.csv`, `observation_zscore_summary.csv`, `policy_action_dim_summary.csv`, `policy_action_samples.csv`, `actor_output_dim_summary.csv`, `actor_output_samples.csv`, `checkpoint_tensor_summary.csv`, `training_action_epoch_summary.csv`, `action_histograms.png`, `observation_zscore_histograms.png`, `training_action_trends.png`.
+
+Next:
+- Monitor job `1027978` to terminal state; inspect log, fetch artifacts, open report/plots with `viz-open`, and record the concrete bug/hypothesis or negative result. No PPO/A100.
+
+Result:
+- status: canceled / diagnostic infrastructure failure
+- scheduler: `1027978` reached Isaac runtime and loaded both ep10/ep45 checkpoints, then logged `Error executing job with overrides` and remained `RUNNING`; canceled at `00:02:26` elapsed.
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/audit_franka_cube_policy_state_1027978.out`
+- artifacts: no `metrics.json` or CSV artifacts were written in `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/diagnostics/franka_cube_ggx_pass7_policy_state_20260612_0206`.
+
+Analysis:
+- This matches the earlier multi-rollout failure class: the script got through container/Isaac/env startup and checkpoint restore, but Hydra/Isaac did not surface a useful traceback before the process hung.
+- The next patch should reduce in-process player state and make failures inspectable: sample reset observations first, then create/evaluate one checkpoint player at a time, record per-stage action/model errors into CSV rows, use a PyTorch checkpoint-load fallback for normalization tensor inspection, and write `ERROR.md` / `error.json` if the top-level Hydra job still aborts.
+
+Next:
+- Patch the diagnostic only; do not change task/reward/reset semantics. Relaunch one bounded L401 policy-state diagnostic after local and remote syntax checks.
+
+## 2026-06-11 18:52:42 PDT - patch policy state audit failure isolation
+
+Goal:
+- Make the pass7 policy-state diagnostic complete or at least produce inspectable error artifacts instead of hanging after checkpoint load.
+
+Hypothesis:
+- Holding multiple RL-Games players in one process and/or an unhandled post-restore action/model/checkpoint-summary exception is triggering Hydra abort without durable artifacts. Sequential checkpoint evaluation plus explicit exception artifacts should make the failure diagnosable and likely avoid the stuck path.
+
+Change:
+- Updated `dextrah_lab/rl_games/audit_franka_cube_policy_state.py` to:
+  - sample all reset observation batches before loading checkpoint players,
+  - create/evaluate one checkpoint player at a time,
+  - wrap deterministic/stochastic action sampling and raw model output capture with per-stage error rows,
+  - load checkpoint tensors with a `weights_only=False` fallback for PyTorch 2.6-style checkpoints,
+  - write `ERROR.md` and `error.json` if the top-level audit still throws.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `ee009a1d6a9c84280a2499a3455a07bdfc7c0f53`
+- implementation_commit: pending
+- changed_files:
+  - `dextrah_lab/rl_games/audit_franka_cube_policy_state.py`
+  - `worklogs/franka-cube-grasp-prior/franka-cube-ggx-pregrasp-reset.md`
+
+Validation:
+- local `python3 -m py_compile dextrah_lab/rl_games/audit_franka_cube_policy_state.py` passed
+- local `bash -n cluster/sbatch_audit_franka_cube_policy_state_1gpu.sh` passed
+
+Next:
+- Commit/push, deploy exact commit to the agent-owned L401 worktree via Git bundle if direct fetch remains blocked, run remote syntax checks, relaunch the bounded policy-state diagnostic with a new run name, then fetch/open artifacts.

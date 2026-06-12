@@ -14,6 +14,7 @@ import csv
 import json
 import math
 import sys
+import traceback
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -331,7 +332,10 @@ def _flatten_checkpoint_tensors(value: Any, prefix: str = "") -> dict[str, torch
 
 
 def _checkpoint_tensor_summary(label: str, checkpoint_path: str, obs_dim: int) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, torch.Tensor]]]:
-    state = torch.load(checkpoint_path, map_location="cpu")
+    try:
+        state = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    except TypeError:
+        state = torch.load(checkpoint_path, map_location="cpu")
     tensors = _flatten_checkpoint_tensors(state)
     interesting_rows: list[dict[str, Any]] = []
     rms_pairs: list[dict[str, torch.Tensor]] = []
@@ -375,6 +379,39 @@ def _checkpoint_tensor_summary(label: str, checkpoint_path: str, obs_dim: int) -
         "obs_rms_pairs": [{"mean_key": p["mean_key"], "var_key": p["var_key"]} for p in rms_pairs],
     }
     return summary, interesting_rows, rms_pairs
+
+
+def _error_row(label: str, mode: str, reset_index: int | str, exc: Exception) -> dict[str, Any]:
+    return {
+        "checkpoint": label,
+        "mode": mode,
+        "reset_index": reset_index,
+        "key": "error",
+        "error_type": type(exc).__name__,
+        "error": str(exc),
+    }
+
+
+def _write_exception_artifact(output_dir: Path, exc: BaseException) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    trace = traceback.format_exc()
+    (output_dir / "ERROR.md").write_text(
+        "# Policy State Audit Error\n\n"
+        f"- error_type: `{type(exc).__name__}`\n"
+        f"- error: `{exc}`\n\n"
+        "```text\n"
+        f"{trace}"
+        "```\n",
+        encoding="utf-8",
+    )
+    _write_json(
+        output_dir / "error.json",
+        {
+            "error_type": type(exc).__name__,
+            "error": str(exc),
+            "traceback": trace,
+        },
+    )
 
 
 def _reset_sample_summary(task_env, reset_index: int) -> dict[str, Any]:
@@ -682,8 +719,6 @@ def main(env_cfg, agent_cfg: dict):
     )
     env_configurations.register("rlgpu", {"vecenv_type": "DextrahPolicyStateAuditWrapper", "env_creator": lambda **kwargs: env})
 
-    players = {label: _create_player(agent_cfg, env, label, path) for label, path in checkpoints.items()}
-
     processed_obs_batches: list[torch.Tensor] = []
     raw_obs_batches: list[torch.Tensor] = []
     reset_rows: list[dict[str, Any]] = []
@@ -695,6 +730,7 @@ def main(env_cfg, agent_cfg: dict):
     actor_output_samples: list[dict[str, Any]] = []
 
     for reset_index in range(int(args_cli.num_resets)):
+        print(f"[INFO] Sampling reset observation batch {reset_index}", flush=True)
         obs = env.reset()
         obs = _obs_policy_tensor(obs)
         raw_obs = task_env._get_observations()["policy"]
@@ -704,10 +740,38 @@ def main(env_cfg, agent_cfg: dict):
         observation_rows.extend(_dim_summary(obs, source="rlgames_processed_obs", reset_index=reset_index))
         observation_rows.extend(_dim_summary(raw_obs, source="task_policy_obs", reset_index=reset_index))
 
-        for label, player in players.items():
-            obs_t = _prepare_player(player, obs)
-            with torch.inference_mode():
-                deterministic_actions = player.get_action(obs_t, is_deterministic=True).detach().clone()
+    all_processed_obs = torch.cat(processed_obs_batches, dim=0)
+    all_raw_obs = torch.cat(raw_obs_batches, dim=0)
+    obs_dim = int(all_processed_obs.shape[-1])
+    observation_rows.extend(_dim_summary(all_processed_obs, source="rlgames_processed_obs_all", reset_index="all"))
+    observation_rows.extend(_dim_summary(all_raw_obs, source="task_policy_obs_all", reset_index="all"))
+
+    checkpoint_summaries: dict[str, Any] = {}
+    checkpoint_tensor_rows: list[dict[str, Any]] = []
+    zscore_rows: list[dict[str, Any]] = []
+
+    for label, checkpoint_path in checkpoints.items():
+        print(f"[INFO] Evaluating reset actions for {label}", flush=True)
+        try:
+            player = _create_player(agent_cfg, env, label, checkpoint_path)
+        except Exception as exc:
+            print(f"[ERROR] Failed to create player for {label}: {type(exc).__name__}: {exc}", flush=True)
+            actor_output_summary.append(_error_row(label, "create_player", "all", exc))
+            continue
+
+        for reset_index, obs in enumerate(processed_obs_batches):
+            try:
+                obs_t = _prepare_player(player, obs)
+                with torch.inference_mode():
+                    deterministic_actions = player.get_action(obs_t, is_deterministic=True).detach().clone()
+            except Exception as exc:
+                print(
+                    f"[ERROR] Deterministic action failed for {label} reset {reset_index}: {type(exc).__name__}: {exc}",
+                    flush=True,
+                )
+                actor_output_summary.append(_error_row(label, "deterministic_action", reset_index, exc))
+                continue
+
             action_summary.extend(
                 _action_summary_rows(
                     deterministic_actions,
@@ -741,9 +805,18 @@ def main(env_cfg, agent_cfg: dict):
 
             stochastic_actions = []
             for sample_idx in range(max(int(args_cli.stochastic_samples), 0)):
-                obs_t = _prepare_player(player, obs)
-                with torch.inference_mode():
-                    action = player.get_action(obs_t, is_deterministic=False).detach().clone()
+                try:
+                    obs_t = _prepare_player(player, obs)
+                    with torch.inference_mode():
+                        action = player.get_action(obs_t, is_deterministic=False).detach().clone()
+                except Exception as exc:
+                    print(
+                        f"[ERROR] Stochastic action failed for {label} reset {reset_index} sample {sample_idx}: "
+                        f"{type(exc).__name__}: {exc}",
+                        flush=True,
+                    )
+                    actor_output_summary.append(_error_row(label, f"stochastic_action_{sample_idx}", reset_index, exc))
+                    break
                 stochastic_actions.append(action)
                 if sample_idx < 2:
                     action_samples.extend(
@@ -767,8 +840,12 @@ def main(env_cfg, agent_cfg: dict):
                     )
                 )
 
-            obs_t = _prepare_player(player, obs)
-            raw_outputs, model_error = _raw_model_outputs(player, obs_t)
+            try:
+                obs_t = _prepare_player(player, obs)
+                raw_outputs, model_error = _raw_model_outputs(player, obs_t)
+            except Exception as exc:
+                raw_outputs = {}
+                model_error = f"{type(exc).__name__}: {exc}"
             if model_error is not None:
                 actor_output_summary.append(
                     {
@@ -803,18 +880,24 @@ def main(env_cfg, agent_cfg: dict):
                             **_tensor_stats(value),
                         }
                     )
+        del player
 
-    all_processed_obs = torch.cat(processed_obs_batches, dim=0)
-    all_raw_obs = torch.cat(raw_obs_batches, dim=0)
-    obs_dim = int(all_processed_obs.shape[-1])
-    observation_rows.extend(_dim_summary(all_processed_obs, source="rlgames_processed_obs_all", reset_index="all"))
-    observation_rows.extend(_dim_summary(all_raw_obs, source="task_policy_obs_all", reset_index="all"))
-
-    checkpoint_summaries: dict[str, Any] = {}
-    checkpoint_tensor_rows: list[dict[str, Any]] = []
-    zscore_rows: list[dict[str, Any]] = []
     for label, path in checkpoints.items():
-        summary, tensor_rows, rms_pairs = _checkpoint_tensor_summary(label, path, obs_dim)
+        print(f"[INFO] Summarizing checkpoint tensors for {label}", flush=True)
+        try:
+            summary, tensor_rows, rms_pairs = _checkpoint_tensor_summary(label, path, obs_dim)
+        except Exception as exc:
+            print(f"[ERROR] Checkpoint tensor summary failed for {label}: {type(exc).__name__}: {exc}", flush=True)
+            summary = {
+                "checkpoint": label,
+                "path": path,
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+                "obs_rms_pair_count": 0,
+                "interesting_tensor_count": 0,
+            }
+            tensor_rows = [_error_row(label, "checkpoint_tensor_summary", "all", exc)]
+            rms_pairs = []
         checkpoint_summaries[label] = summary
         checkpoint_tensor_rows.extend(tensor_rows)
         for pair in rms_pairs:
@@ -923,5 +1006,9 @@ def main(env_cfg, agent_cfg: dict):
 if __name__ == "__main__":
     try:
         main()
+    except Exception as exc:
+        output_dir = Path(args_cli.output_dir or datetime.now().strftime("policy_state_audit_%Y%m%d_%H%M%S")).expanduser().resolve()
+        _write_exception_artifact(output_dir, exc)
+        raise
     finally:
         simulation_app.close()
