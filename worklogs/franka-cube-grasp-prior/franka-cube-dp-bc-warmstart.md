@@ -13183,3 +13183,113 @@ Analysis:
 Next:
 - Train the timed-action recovery policy, run offline coherence, stage the
   checkpoint to l401, then evaluate exact reset with no action correction.
+
+## 2026-06-12T16:10:00Z - exact-reset recovery5 diagnostics and recovery6 dataset
+
+Goal:
+- Evaluate the overfitted one-demo checkpoint on the exact object position of
+  that demo, then debug until BC succeeds.
+
+Result:
+- `normalcube_ep16_timed_action_recovery5_x0pred_noema_20260612_082120`
+  still fails exact reset without eval action correction.
+- `1028507`
+  (`franka_cube_dp_eval_normalcube_ep16_seed42_exact_timedrec5_x0pred_chunk1_sample1_gripvote_novideo_20260612_0900`):
+  final/window success `0/0`, max lift `0.00653 m`, EE-to-cube min/final
+  `0.0558/0.2145 m`, finger-center min/final `0.0674/0.2571 m`.
+- `1028508`
+  (`franka_cube_dp_eval_normalcube_ep16_seed42_exact_timedrec5_x0pred_chunk8_sample1_gripvote_novideo_20260612_0900`):
+  final/window success `0/0`, max lift `0.00629 m`, EE-to-cube min/final
+  `0.0504/0.2089 m`, finger-center min/final `0.0647/0.2531 m`.
+- The earlier avg8/chunk1 job `1028506` was clearly failed by step `300`
+  and was cancelled to free the cluster slot for the chunk8 diagnostic.
+
+Trace analysis:
+- The successful dataset-step oracle run
+  `franka_cube_dp_eval_normalcube_ep16_seed42_exact_datasetstep_fullcorr_x0pred_chunk1_novideo_20260612_060105`
+  closes at step `84` with live cube-minus-EE about
+  `[-0.0099, -0.0266, -0.0005]`, EE distance `0.0284 m`, and later lifts
+  to `0.179 m`.
+- The learned recovery5 chunk1/sample1 run closes at step `84` with
+  cube-minus-EE about `[-0.0477, -0.0451, 0.0099]`, EE distance `0.0664 m`,
+  and then pushes/drifts the cube away.
+- Offline dataset-state inference is still coherent; one-sample and avg8
+  predictions both match labels near 1e-3 on in-dataset histories. The failure
+  is therefore closed-loop state dependence: when the live state leaves demo
+  support near the end of align/open, the learned policy emits off-label pose
+  corrections instead of the timed oracle action program.
+
+Recovery6 dataset:
+- Built
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/policy_recovery/normalcube_ep16_timed_action_recovery6_20260612_0910/normalcube_ep16_timed_action_recovery6.npz`
+  using `label_mode=dataset_step_action`, the previous five failed traces,
+  and the new chunk1/chunk8 failure traces above.
+- Reduced `original_copies` from `16` to `8` so recovery states have comparable
+  weight to exact-demo states.
+- Summary: `4272` rows, `15` episodes, action abs max `0.95000005`, pose clip
+  fraction `0`.
+
+Next:
+- Train an official-DP x0/no-EMA checkpoint on recovery6, run offline
+  coherence, stage it to l401, and evaluate exact reset again.
+
+## 2026-06-12T10:45:00-07:00 - recovery8 exact pass and 32-env contact-gate fix
+
+Goal:
+- Keep pushing until the BC warm start works: first prove the one-demo
+  overfit on the exact object pose, then scale to randomized resets and patch
+  the failure rather than treating the exact pass as sufficient.
+
+Result:
+- Exact one-demo eval passed with checkpoint
+  `normalcube_ep16_trunc140_residual_recovery8_x0pred_noema_20260612_095835/epoch200_snapshot.ckpt`.
+- No-video run
+  `franka_cube_dp_eval_normalcube_ep16_seed42_exact_trunc140_residual8_epoch200_x0pred_chunk1_sample1_gripvote_novideo_20260612_100232`
+  / job `1028520`: final/window success `1.0/0.575`, final/max lift
+  `0.1782/0.1782 m`, first hard close step `84`, reset cube/lowdim diffs
+  exactly zero.
+- Video run
+  `franka_cube_dp_eval_normalcube_ep16_seed42_exact_trunc140_residual8_epoch200_x0pred_chunk1_sample1_gripvote_video_20260612_100733`
+  / job `1028521`: final/window success `1.0/0.825`, final/max lift
+  `0.2078/0.2078 m`; contact sheet/video inspection shows a clean grasp and
+  lift.
+- First scale probe
+  `franka_cube_dp_eval_normalcube_32env_seed42_randomreset_trunc140_residual8_epoch200_x0pred_chunk1_sample1_gripvote_novideo_20260612_101226`
+  / job `1028523` only reached final/window success `0.03125/0.01914`.
+  Env0 followed the exact trajectory until approach, then closed about
+  `3 cm` farther off laterally; the gripper collapsed to near zero width and
+  missed the cube.
+
+Analysis:
+- The exact overfit failure is solved for the epoch-200 recovery8 checkpoint.
+  The random-reset failure is now a closed-loop support/gating problem, not an
+  object reset mismatch.
+- Existing `ContactGatedPhaseProgressProvider` had a bad lift gate: it
+  required the live lifted state to remain close to close-hold support and
+  required gripper width below `0.025 m`. The successful grasp holds the cube
+  around `0.04-0.05 m`, and lifted states should move away from close-hold
+  support. That made the contact-gated mode unusable for a successful lift.
+
+Change:
+- Patched `dextrah_lab/offline_dp_bc/ppo_bridge.py` so lift gating depends on
+  lifted-state support plus the gripper-width threshold, not on remaining close
+  to close-hold support.
+- Kept the earlier `make_policy_recovery_dataset.py` trace-step filters
+  (`--min_trace_step`, `--max_trace_step`) because they are useful for the next
+  DAgger/recovery dataset if contact gating alone is not enough.
+
+Validation:
+- command:
+  `PYTHONPATH=$DEX $EXT/venv/bin/python -m py_compile dextrah_lab/offline_dp_bc/ppo_bridge.py dextrah_lab/offline_dp_bc/make_policy_recovery_dataset.py dextrah_lab/offline_dp_bc/make_support_expansion_dataset.py`
+- provider smoke:
+  `ContactGatedPhaseProgressProvider(... close_support_distance_threshold=0.30, lift_gripper_width_threshold=0.06).summary()`
+  returns valid phase bounds for the recovery8 dataset.
+
+Next:
+- Commit and deploy this patch to the l401 agent worktree.
+- Relaunch a 32-env no-video eval with `PHASE_PROGRESS_MODE=contact_gated`,
+  `PHASE_CLOSE_SUPPORT_DISTANCE_THRESHOLD=0.30`,
+  `PHASE_LIFT_GRIPPER_WIDTH_THRESHOLD=0.06`, and the recovery8 epoch-200
+  checkpoint. If it still fails, build a broader residual recovery dataset
+  using the random-reset failure traces and the accepted multi-pose contact
+  relabel data.

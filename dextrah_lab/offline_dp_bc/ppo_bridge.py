@@ -401,8 +401,7 @@ class ContactGatedPhaseProgressProvider:
             phase_distances = self._phase_min_distances(lowdim_obs[env_idx])
             close_allowed = bool(phase_distances[1] <= self.close_support_distance_threshold)
             lift_allowed = bool(
-                close_allowed
-                and schedule_phase >= 2
+                schedule_phase >= 2
                 and phase_distances[2] <= self.lift_support_distance_threshold
                 and float(lowdim_obs[env_idx, 20]) <= self.lift_gripper_width_threshold
             )

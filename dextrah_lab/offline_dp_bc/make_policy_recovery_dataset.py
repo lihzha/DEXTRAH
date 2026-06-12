@@ -121,6 +121,8 @@ def build_policy_recovery_dataset(
     clip_actions: float | None,
     label_mode: str,
     contact_gate_cme_norm: float,
+    min_trace_step: int | None,
+    max_trace_step: int | None,
 ) -> dict[str, Any]:
     data = np.load(base_dataset, allow_pickle=False)
     base_obs = np.asarray(data["obs"], dtype=np.float32)
@@ -183,6 +185,7 @@ def build_policy_recovery_dataset(
         rec_demo_rows: list[int] = []
         rec_demo_steps: list[int] = []
         skipped = 0
+        skipped_by_step_filter = 0
         for record in records:
             if "lowdim_obs" not in record:
                 skipped += 1
@@ -196,6 +199,12 @@ def build_policy_recovery_dataset(
                     f"{trace_path}: live obs dim {live_obs.shape[0]} does not match base obs dim {base_obs.shape[1]}"
                 )
             rollout_step = int(record.get("step", len(rec_obs)))
+            if min_trace_step is not None and rollout_step < int(min_trace_step):
+                skipped_by_step_filter += 1
+                continue
+            if max_trace_step is not None and rollout_step > int(max_trace_step):
+                skipped_by_step_filter += 1
+                continue
             time_demo_row, time_demo_start, time_demo_end = _row_for_step(
                 base_episode_ends,
                 int(demo_episode),
@@ -266,6 +275,7 @@ def build_policy_recovery_dataset(
                 "rollout_id": rollout_id,
                 "records": int(obs_i.shape[0]),
                 "skipped": int(skipped),
+                "skipped_by_step_filter": int(skipped_by_step_filter),
                 "trace_step_min": int(np.min(rec_trace_steps)),
                 "trace_step_max": int(np.max(rec_trace_steps)),
                 "demo_row_min": int(np.min(rec_demo_rows)),
@@ -324,6 +334,8 @@ def build_policy_recovery_dataset(
         "label_mode": label_mode,
         "clip_actions": None if clip_actions is None else float(clip_actions),
         "contact_gate_cme_norm": float(contact_gate_cme_norm),
+        "min_trace_step": None if min_trace_step is None else int(min_trace_step),
+        "max_trace_step": None if max_trace_step is None else int(max_trace_step),
         "first_close_demo_row": int(first_close_row),
         "first_close_demo_step": int(first_close_local),
         "preclose_demo_row": int(preclose_row),
@@ -372,6 +384,18 @@ def main() -> None:
             "use the pre-close pose target until ||cube_minus_ee|| is below this value."
         ),
     )
+    parser.add_argument(
+        "--min_trace_step",
+        type=int,
+        default=None,
+        help="Optional inclusive minimum rollout step to keep from each failed policy trace.",
+    )
+    parser.add_argument(
+        "--max_trace_step",
+        type=int,
+        default=None,
+        help="Optional inclusive maximum rollout step to keep from each failed policy trace.",
+    )
     args = parser.parse_args()
     summary = build_policy_recovery_dataset(
         base_dataset=args.base_dataset.expanduser().resolve(),
@@ -383,6 +407,8 @@ def main() -> None:
         clip_actions=None if float(args.clip_actions) <= 0.0 else float(args.clip_actions),
         label_mode=str(args.label_mode),
         contact_gate_cme_norm=float(args.contact_gate_cme_norm),
+        min_trace_step=args.min_trace_step,
+        max_trace_step=args.max_trace_step,
     )
     print(json.dumps(summary, indent=2, sort_keys=True))
 
