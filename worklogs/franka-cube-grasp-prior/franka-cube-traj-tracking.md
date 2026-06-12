@@ -3495,3 +3495,87 @@ Analysis:
 Next:
 - Commit/push the summarizer/report/worklog update.
 - Run one bounded eval-only schedule diagnostic from the same epoch-5 checkpoint with `TRAJECTORY_TRACKING_TEACHER_FORCE_ALPHA_START=0.75`, `TRAJECTORY_TRACKING_TEACHER_FORCE_ALPHA_END=0.75`, and `TRAJECTORY_TRACKING_TEACHER_FORCE_PHASE_END=1.0`. This keeps the same lower alpha active for the whole trajectory to test whether the previous alpha `0.75` failure was mainly the phase gate/handoff turning off too early. Acceptance: target unsafe remains `0`, artifacts generated, and lift/success/contact behavior improves relative to `1027901`; if not, focus next on raw-policy/reference error or action normalization rather than schedule.
+
+## 2026-06-11T17:23:22-07:00 - teacher-force phase-end diagnostic launch
+
+Goal:
+- Test whether the lower-alpha teacher-force failure in `1027901` was caused by the phase gate turning teacher application off at phase `0.67`, rather than raw policy/reference error alone.
+
+Change:
+- No new training. Eval-only diagnostic from the same epoch-5 checkpoint.
+- Keep alpha amplitude fixed at `0.75`, but extend `trajectory_tracking_teacher_force_phase_end` from `0.67` to `1.0` so the lower teacher blend remains active through the whole 520-step rollout.
+
+Version Control:
+- local_source_commit: `25e97a2f42e460ff296fff6e22979f4780501a15` (`Clarify teacher-force eval artifacts`)
+- pushed: yes
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking`
+- remote_runtime_commit: `858402985719ec3ceb79db696a555443f976c997`
+- remote_status: detached clean at `858402985719ec3ceb79db696a555443f976c997`
+- remote_fetch_note: updating l401 to `25e97a2` failed due GitHub SSH auth (`Permission denied (publickey)`). This is acceptable for this eval-only launch because the only diff from `8584029` to `25e97a2` is the local artifact summarizer and this worklog; env/eval runtime files are identical.
+
+Command / Job:
+- command: `ssh l401 'cd /lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking && sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:30:00 --job-name=tf_eval_p100 --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_teacherforce_eval_a075_phase100_520_20260611_172322,NUM_ENVS=4,NUM_STEPS=520,VIDEO_LENGTH=520,VIDEO_NAME_PREFIX=tf-eval-a075-phase100-520,CAPTURE_VIDEO=True,DETERMINISTIC=True,ACTION_SOURCE=policy,SUPPRESS_SUCCESS_TERMINATION=True,USE_CUDA_GRAPH=False,SEED=64,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_WEIGHT=15.0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_PHASE_START=0.0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_SHARPNESS=1.0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_USE_CONTACT_GATE=False,TRAJECTORY_TRACKING_TEACHER_FORCE_ENABLED=True,TRAJECTORY_TRACKING_TEACHER_FORCE_ALPHA_START=0.75,TRAJECTORY_TRACKING_TEACHER_FORCE_ALPHA_END=0.75,TRAJECTORY_TRACKING_TEACHER_FORCE_PHASE_END=1.0,TRAJECTORY_TRACKING_TEACHER_FORCE_ANNEAL_STEPS=0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_COMPARE_RAW_POLICY=True,CHECKPOINT=/results/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_teacherforce_rl5b_20260611_170913/nn/last_dextrah_franka_cube_traj_tracking_ep_5_rew_3560.5405.pth cluster/sbatch_eval_franka_cube_grasp_1gpu.sh'`
+- job_id: `1027907`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_traj_tracking_teacherforce_eval_a075_phase100_520_20260611_172322`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_1027907.out`
+- expected artifacts: remote `metrics.json`, `trace.csv/jsonl`, `videos/tf-eval-a075-phase100-520-step-0.mp4`; local report/contact sheet/plot after fetch.
+
+Acceptance:
+- Target unsafe max remains `0`.
+- Train/eval consistency has no real mismatches after expected alpha/phase eval overrides.
+- If lift/success improves versus `1027901`, the previous lower-alpha failure is primarily schedule/handoff timing.
+- If lift/success remains poor, next debugging should focus on raw-policy/reference action error, action normalization, or stronger imitation rather than only phase schedule.
+
+## 2026-06-11T17:35:30-07:00 - teacher-force phase-end diagnostic result
+
+Goal:
+- Close out schedule-only diagnostic `1027907` and decide whether phase gating was the main blocker for the alpha `0.75` teacher-force handoff.
+
+Command / Job:
+- job_id: `1027907`
+- run_name: `franka_cube_traj_tracking_teacherforce_eval_a075_phase100_520_20260611_172322`
+- remote_run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_traj_tracking_teacherforce_eval_a075_phase100_520_20260611_172322`
+- local_run_dir: `cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a075_phase100_520_20260611_172322`
+- local_artifact_dir: `cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a075_phase100_520_20260611_172322_artifacts`
+- logs: `cluster_results/l401/slurm_logs/eval_franka_cube_1027907.out`
+
+Result:
+- status: completed `0:0`, 520/520 steps, no done events.
+- target safety: unsafe target max `0`, target clearance min `0.065114 m`.
+- teacher schedule: alpha mean/final/active `0.75/0.75/1.0`, confirming the phase gate was removed as intended.
+- success/lift: success ever/final/max `0/0/0`, cube lift max `0.000042 m`, final lift `0`.
+- behavior metrics: reward mean/final `8.5433/12.1490`, final EE-cube `0.2351 m`, final finger-center-cube `0.2724 m`, final gripper width `0.0236 m`.
+- action metrics: raw-policy/reference L2 mean/final improved to `0.7531/0.1956`; applied/reference L2 mean `0.1863`; raw close/up mean `0.1891/0.00819`; applied close/up mean `0.2081/0.1949`.
+- visual: contact sheet/video show reach/contact-ish behavior mid-rollout, then the gripper moves up/away by final frame without grasp or lift.
+- consistency: artifact report now treats `trajectory_tracking_teacher_force_phase_end=1.0` as an expected eval-only override; real mismatches `[]`.
+
+Comparison to `1027901`:
+- `1027901` alpha `0.75`, phase end `0.67`: success/lift `0`, final EE-cube `0.0968 m`, final finger-cube `0.1282 m`, raw/ref L2 mean/final `1.0464/1.5687`, applied/ref L2 `0.5988`.
+- `1027907` alpha `0.75`, phase end `1.0`: success/lift still `0`, final EE-cube and finger-cube worse (`0.2351/0.2724 m`), but raw/ref and applied/ref action errors substantially lower.
+- Interpretation: the phase gate was not the main blocker. Lower action error against the current reference action profile is not sufficient for grasp/lift; this points to action semantics/timing, especially up/close/reference action meaning around the grasp/lift window, or the need for a stronger imitation/BC diagnostic rather than more schedule-only evals.
+
+Artifacts:
+- report: `cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a075_phase100_520_20260611_172322_artifacts/report.md`
+- contact sheet: `cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a075_phase100_520_20260611_172322_artifacts/video_contact_sheet.png`
+- trace plot: `cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a075_phase100_520_20260611_172322_artifacts/trajectory_trace_plot.png`
+- metrics: `cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a075_phase100_520_20260611_172322/metrics.json`
+- summary JSON/CSV: `cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a075_phase100_520_20260611_172322_artifacts/summary.json`, `cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a075_phase100_520_20260611_172322_artifacts/summary.csv`
+- consistency JSON: `cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a075_phase100_520_20260611_172322_artifacts/train_eval_consistency.json`
+- full video: `cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a075_phase100_520_20260611_172322/videos/tf-eval-a075-phase100-520-step-0.mp4`
+
+viz_urls:
+- report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a075_phase100_520_20260611_172322_artifacts/report.md`
+- contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a075_phase100_520_20260611_172322_artifacts/video_contact_sheet.png`
+- trace plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a075_phase100_520_20260611_172322_artifacts/trajectory_trace_plot.png`
+- video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a075_phase100_520_20260611_172322/videos/tf-eval-a075-phase100-520-step-0.mp4`
+
+Analysis:
+- Negative schedule diagnostic: removing the phase gate did not recover lift/success.
+- The raw/reference L2 improvement is real but misleading as a grasp success proxy, because the final frame still moves away and the cube never lifts.
+- Do not launch more schedule-only evals and do not scale PPO.
+
+Next:
+- Focus the next bounded work on reference/action semantics and trainability:
+  - inspect reference action components around the grasp/lift window where reference_delta succeeds under alpha `1.0`/offset hold but learned/alpha `0.75` fails;
+  - check whether action normalization or gripper/up semantics make low L2 hide wrong close/up timing;
+  - consider a small BC/action-imitation diagnostic over logged reference_delta actions before PPO, with artifacts proving raw close/up/gripper timing matches the reference and produces contact/lift.

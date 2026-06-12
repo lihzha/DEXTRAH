@@ -448,6 +448,7 @@ def _expected_env_override_keys(summary: dict[str, object], eval_env: dict[str, 
             [
                 "trajectory_tracking_teacher_force_alpha_start",
                 "trajectory_tracking_teacher_force_alpha_end",
+                "trajectory_tracking_teacher_force_phase_end",
                 "trajectory_tracking_teacher_force_anneal_steps",
             ]
         )
