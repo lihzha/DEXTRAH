@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import subprocess
+import tempfile
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
@@ -84,6 +86,145 @@ def _fmt(value: object, digits: int = 6) -> str:
             return f"{value:.4f}"
         return f"{value:.{digits}f}"
     return str(value)
+
+
+def _local_video_files(metrics_path: Path, summary: dict[str, object]) -> list[Path]:
+    """Resolve eval videos after a remote `/results` run has been fetched locally."""
+
+    candidates: list[Path] = []
+    for raw_path in summary.get("video_files") or []:
+        if not isinstance(raw_path, str):
+            continue
+        path = Path(raw_path)
+        if path.exists():
+            candidates.append(path)
+            continue
+        fetched = metrics_path.parent / "videos" / path.name
+        if fetched.exists():
+            candidates.append(fetched)
+    for path in sorted((metrics_path.parent / "videos").glob("*.mp4")):
+        if path not in candidates:
+            candidates.append(path)
+    return candidates
+
+
+def _local_sidecar_file(metrics_path: Path, remote_path: object, default_name: str) -> Path | None:
+    if isinstance(remote_path, str):
+        path = Path(remote_path)
+        if path.exists():
+            return path
+        fetched = metrics_path.parent / path.name
+        if fetched.exists():
+            return fetched
+    fetched = metrics_path.parent / default_name
+    return fetched if fetched.exists() else None
+
+
+def _video_metadata(video_path: Path) -> dict[str, object]:
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=width,height,nb_frames,duration,r_frame_rate",
+                "-of",
+                "json",
+                str(video_path),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        payload = json.loads(result.stdout)
+        streams = payload.get("streams", [])
+        return streams[0] if streams else {}
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def _frame_count(metadata: dict[str, object]) -> int:
+    nb_frames = metadata.get("nb_frames")
+    try:
+        if nb_frames not in (None, "N/A"):
+            return int(nb_frames)
+    except (TypeError, ValueError):
+        pass
+    try:
+        duration = float(metadata.get("duration") or 0.0)
+        rate_raw = str(metadata.get("r_frame_rate") or "0/1")
+        num, den = rate_raw.split("/", 1)
+        rate = float(num) / max(float(den), 1.0)
+        return int(round(duration * rate))
+    except Exception:
+        return 0
+
+
+def _draw_video_contact_sheet(video_path: Path, output_path: Path, run_name: str | None) -> dict[str, object]:
+    metadata = _video_metadata(video_path)
+    frame_count = _frame_count(metadata)
+    if frame_count <= 0:
+        raise RuntimeError(f"Could not determine frame count for {video_path}")
+    frame_indices = sorted({0, frame_count // 3, (2 * frame_count) // 3, frame_count - 1})
+
+    with tempfile.TemporaryDirectory() as tmp_raw:
+        tmp_dir = Path(tmp_raw)
+        selector = "+".join(f"eq(n\\,{idx})" for idx in frame_indices)
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-loglevel",
+                "error",
+                "-i",
+                str(video_path),
+                "-vf",
+                f"select='{selector}'",
+                "-vsync",
+                "0",
+                str(tmp_dir / "frame_%03d.jpg"),
+            ],
+            check=True,
+        )
+        frame_paths = sorted(tmp_dir.glob("frame_*.jpg"))
+        if not frame_paths:
+            raise RuntimeError(f"No frames extracted from {video_path}")
+
+        try:
+            font = ImageFont.truetype("DejaVuSans.ttf", 18)
+            font_b = ImageFont.truetype("DejaVuSans-Bold.ttf", 21)
+        except Exception:
+            font = font_b = None
+
+        thumb_w = 360
+        thumbs = []
+        for idx, frame_path in enumerate(frame_paths):
+            image = Image.open(frame_path).convert("RGB")
+            scale = thumb_w / image.width
+            thumb_h = int(round(image.height * scale))
+            image = image.resize((thumb_w, thumb_h), Image.Resampling.LANCZOS)
+            thumbs.append((image, frame_indices[min(idx, len(frame_indices) - 1)]))
+
+        label_h = 58
+        width = thumb_w * len(thumbs)
+        height = max(image.height for image, _ in thumbs) + label_h
+        sheet = Image.new("RGB", (width, height), "white")
+        draw = ImageDraw.Draw(sheet)
+        title = run_name or video_path.parent.parent.name
+        draw.text((12, 8), title, fill=(20, 20, 20), font=font_b)
+        for col, (image, frame_idx) in enumerate(thumbs):
+            x = col * thumb_w
+            sheet.paste(image, (x, label_h))
+            draw.text((x + 12, 34), f"frame {frame_idx}/{frame_count - 1}", fill=(40, 40, 40), font=font)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        sheet.save(output_path)
+
+    metadata["frame_count_resolved"] = frame_count
+    metadata["contact_sheet_frames"] = frame_indices
+    return metadata
 
 
 def _draw_plot(steps: list[dict[str, object]], output_path: Path) -> None:
@@ -220,6 +361,7 @@ def _consistency(
     mismatches = []
     missing_train_keys = []
     missing_eval_keys = []
+    expected_env_override_keys = set(_expected_env_override_keys(summary, eval_env))
     if not train_env:
         for key in keys:
             eval_value = eval_env.get(key)
@@ -253,7 +395,13 @@ def _consistency(
             missing_eval_keys.append(key)
         else:
             match = train_value == eval_value
-            status = "match" if match else "mismatch"
+            if match:
+                status = "match"
+            elif key in expected_env_override_keys:
+                status = "expected_eval_override"
+                match = None
+            else:
+                status = "mismatch"
         if not match:
             if status == "mismatch":
                 mismatches.append(key)
@@ -265,6 +413,7 @@ def _consistency(
         "missing_train_keys": missing_train_keys,
         "missing_eval_keys": missing_eval_keys,
         "expected_eval_overrides": _expected_eval_overrides(summary),
+        "expected_env_override_keys": sorted(expected_env_override_keys),
         "passed": passed,
         "status": "passed" if passed else "failed",
     }
@@ -288,6 +437,23 @@ def _expected_eval_overrides(summary: dict[str, object]) -> dict[str, object]:
         "video_folder",
     ]
     return {key: summary.get(key) for key in keys if summary.get(key) is not None}
+
+
+def _expected_env_override_keys(summary: dict[str, object], eval_env: dict[str, object]) -> list[str]:
+    """Env config fields intentionally changed for a fixed diagnostic eval."""
+
+    expected: list[str] = []
+    if bool(eval_env.get("trajectory_tracking_teacher_force_enabled")):
+        expected.extend(
+            [
+                "trajectory_tracking_teacher_force_alpha_start",
+                "trajectory_tracking_teacher_force_alpha_end",
+                "trajectory_tracking_teacher_force_anneal_steps",
+            ]
+        )
+    if summary.get("reference_mix_alpha") is not None:
+        expected.append("reference_mix_alpha")
+    return expected
 
 
 def _step_summary_value(summary: dict[str, object], key: str, field: str) -> float | None:
@@ -434,6 +600,15 @@ def main() -> None:
 
     plot_path = output_dir / "trajectory_trace_plot.png"
     _draw_plot(steps, plot_path)
+    video_files = _local_video_files(args.metrics, summary)
+    contact_sheet_path: Path | None = None
+    video_metadata: dict[str, object] = {}
+    if video_files:
+        contact_sheet_path = output_dir / "video_contact_sheet.png"
+        try:
+            video_metadata = _draw_video_contact_sheet(video_files[0], contact_sheet_path, output_dir.name)
+        except Exception as exc:
+            video_metadata = {"error": str(exc), "video": str(video_files[0])}
 
     train_env = _load_train_env(args.train_env_yaml)
     eval_env = summary.get("env_config", {}) if isinstance(summary.get("env_config"), dict) else {}
@@ -491,6 +666,9 @@ def main() -> None:
         "action_alignment_error_mean": _summary(summary, "cube_traj_tracking_action_alignment_error", "mean"),
         "teacher_force_alpha_mean": _summary(summary, "cube_traj_tracking_teacher_force_alpha", "mean"),
         "teacher_force_alpha_final": _summary(summary, "cube_traj_tracking_teacher_force_alpha", "final"),
+        "teacher_force_phase_end": eval_env.get("trajectory_tracking_teacher_force_phase_end"),
+        "teacher_force_configured_alpha_start": eval_env.get("trajectory_tracking_teacher_force_alpha_start"),
+        "teacher_force_configured_alpha_end": eval_env.get("trajectory_tracking_teacher_force_alpha_end"),
         "teacher_force_active_rate_mean": _summary(
             summary, "cube_traj_tracking_teacher_force_active_rate", "mean"
         ),
@@ -654,7 +832,15 @@ def main() -> None:
         "success_termination_suppression_installed": summary.get("success_termination_suppression_installed"),
         "trace_csv_path": summary.get("trace_csv_path"),
         "trace_jsonl_path": summary.get("trace_jsonl_path"),
-        "video_files": summary.get("video_files"),
+        "local_trace_csv_path": str(
+            _local_sidecar_file(args.metrics, summary.get("trace_csv_path"), "trace.csv") or ""
+        ),
+        "local_trace_jsonl_path": str(
+            _local_sidecar_file(args.metrics, summary.get("trace_jsonl_path"), "trace.jsonl") or ""
+        ),
+        "video_files": [str(path) for path in video_files],
+        "video_contact_sheet": str(contact_sheet_path) if contact_sheet_path else None,
+        "video_metadata": video_metadata,
     }
     diagnostics_json_path, diagnostics_csv_path, window_trace_path = _write_success_diagnostics(
         output_dir, compact, summary, steps
@@ -749,6 +935,8 @@ def main() -> None:
 - action-alignment reward mean/final: {_fmt(compact['action_alignment_reward_mean'])} / {_fmt(compact['action_alignment_reward_final'])}
 - action-alignment utilization/error mean: {_fmt(compact['action_alignment_utilization_mean'])} / {_fmt(compact['action_alignment_error_mean'])}
 - teacher-force alpha mean/final/active mean: {_fmt(compact['teacher_force_alpha_mean'])} / {_fmt(compact['teacher_force_alpha_final'])} / {_fmt(compact['teacher_force_active_rate_mean'])}
+- teacher-force configured alpha start/end and phase_end: {_fmt(compact['teacher_force_configured_alpha_start'])} / {_fmt(compact['teacher_force_configured_alpha_end'])} / {_fmt(compact['teacher_force_phase_end'])}
+- teacher-force alpha note: reported alpha is the applied blend coefficient after phase gating. The configured alpha is only used while `traj_phase_progress <= phase_end`; after that it is zero. If environments reset during a no-reset/suppressed-success diagnostic, their phase restarts and they can contribute nonzero final alpha.
 - env raw-policy/ref L2 mean/final: {_fmt(compact['raw_policy_reference_action_error_l2_mean'])} / {_fmt(compact['raw_policy_reference_action_error_l2_final'])}
 - env applied/ref L2 mean: {_fmt(compact['env_applied_reference_action_error_l2_mean'])}
 - env applied/raw-policy L2 mean: {_fmt(compact['env_applied_policy_action_error_l2_mean'])}
@@ -792,6 +980,7 @@ def main() -> None:
 ## Files
 
 - plot: `{plot_path}`
+- video_contact_sheet: `{contact_sheet_path}`
 - summary_json: `{output_dir / 'summary.json'}`
 - summary_csv: `{csv_path}`
 - success_diagnostics_json: `{diagnostics_json_path}`
@@ -800,7 +989,10 @@ def main() -> None:
 - consistency_json: `{output_dir / 'train_eval_consistency.json'}`
 - trace_csv: `{summary.get('trace_csv_path')}`
 - trace_jsonl: `{summary.get('trace_jsonl_path')}`
-- videos: `{summary.get('video_files')}`
+- local_trace_csv: `{compact['local_trace_csv_path']}`
+- local_trace_jsonl: `{compact['local_trace_jsonl_path']}`
+- videos: `{[str(path) for path in video_files]}`
+- video_metadata: `{video_metadata}`
 """
     (output_dir / "report.md").write_text(report)
     print(output_dir)

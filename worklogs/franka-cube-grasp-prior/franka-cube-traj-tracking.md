@@ -3372,3 +3372,126 @@ Implementation Follow-up:
 
 Next:
 - Commit/push the summarizer fix plus this worklog result. Then deploy the exact branch head and launch one tiny teacher-forced PPO smoke only, with artifact cadence preserved.
+
+## 2026-06-11T17:07:40-07:00 - tiny teacher-force PPO anneal smoke launch
+
+Goal:
+- Test whether PPO can quickly reduce raw-policy/reference action error when the env applies a reference-dominated teacher-force blend during approach/pregrasp.
+
+Hypothesis:
+- With `trajectory_tracking_teacher_force_enabled=True`, alpha annealed `1.0 -> 0.75`, phase end `0.67`, raw-policy comparison enabled, and stronger action-alignment reward, the policy gets an immediate action-dependent imitation signal while rollouts remain near the reference manifold. If raw-policy/reference error does not move after this tiny smoke/eval, the next blocker is likely observation/action normalization or reward wiring, not training scale.
+
+Acceptance:
+- This is wiring/trainability only; no long PPO and no success claim from checkpoint suffix.
+- Training completes without traceback/NaN and writes checkpoints.
+- Follow-up fixed/random eval videos from the epoch-5 checkpoint include teacher-force/action-error traces.
+- Pass condition for proceeding beyond this diagnostic: eval raw-policy/reference L2 decreases versus validation baseline `1.416`, and at least alpha `1.0` plus one lower alpha shows approach/contact/lift without drift. Otherwise stop and debug.
+
+Version Control:
+- local_branch_head: `858402985719ec3ceb79db696a555443f976c997`
+- pushed: yes
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking`
+- remote_commit/status: detached clean at `858402985719ec3ceb79db696a555443f976c997`
+
+Command / Job:
+- command: `ssh l401 'cd /lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking && sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:45:00 --job-name=tf_rl5 --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,FULL_EXPERIMENT_NAME=franka_cube_traj_tracking_teacherforce_rl5_20260611_170740,NUM_ENVS=128,MAX_ITERATIONS=5,HORIZON_LENGTH=120,MINI_EPOCHS=4,MINIBATCH_SIZE=4096,CENTRAL_VALUE_MINIBATCH_SIZE=4096,DISTRIBUTED=False,MULTI_GPU=False,NPROC_PER_NODE=1,AUTO_RESUME=False,SELF_RELAUNCH=False,REQUEUE_ON_EARLY_TERM=False,SAVE_FREQUENCY=1,USE_CUDA_GRAPH=False,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_WEIGHT=15.0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_PHASE_START=0.0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_SHARPNESS=1.0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_USE_CONTACT_GATE=False,TRAJECTORY_TRACKING_TEACHER_FORCE_ENABLED=True,TRAJECTORY_TRACKING_TEACHER_FORCE_ALPHA_START=1.0,TRAJECTORY_TRACKING_TEACHER_FORCE_ALPHA_END=0.75,TRAJECTORY_TRACKING_TEACHER_FORCE_PHASE_END=0.67,TRAJECTORY_TRACKING_TEACHER_FORCE_ANNEAL_STEPS=600,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_COMPARE_RAW_POLICY=True cluster/sbatch_train_teacher_8gpu.sh'`
+- job_id: `1027899`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_teacherforce_rl5_20260611_170740`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_1027899.out`
+
+Result:
+- status: failed before PPO updates. Slurm `FAILED 1:0`, elapsed `00:00:51`, node `pool0-00037`.
+- root cause: RL-Games assertion `assert(self.batch_size % self.minibatch_size == 0)`. With `NUM_ENVS=128` and `HORIZON_LENGTH=120`, batch size is `15360`; requested minibatch `4096` does not divide it.
+- useful artifacts: params were written under the run dir, but no checkpoint or training curve was produced.
+
+Next:
+- Relaunch same bounded diagnostic with only minibatch sizes corrected to `3840` (`15360 / 3840 = 4`). Keep `MAX_ITERATIONS=5`, `NUM_ENVS=128`, `HORIZON_LENGTH=120`, teacher forcing, and action-alignment settings unchanged.
+
+## 2026-06-11T17:09:13-07:00 - tiny teacher-force PPO anneal smoke relaunch
+
+Goal:
+- Rerun the same tiny teacher-force PPO diagnostic after fixing the RL-Games minibatch divisibility issue.
+
+Command / Job:
+- command: `ssh l401 'cd /lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking && sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:45:00 --job-name=tf_rl5b --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,FULL_EXPERIMENT_NAME=franka_cube_traj_tracking_teacherforce_rl5b_20260611_170913,NUM_ENVS=128,MAX_ITERATIONS=5,HORIZON_LENGTH=120,MINI_EPOCHS=4,MINIBATCH_SIZE=3840,CENTRAL_VALUE_MINIBATCH_SIZE=3840,DISTRIBUTED=False,MULTI_GPU=False,NPROC_PER_NODE=1,AUTO_RESUME=False,SELF_RELAUNCH=False,REQUEUE_ON_EARLY_TERM=False,SAVE_FREQUENCY=1,USE_CUDA_GRAPH=False,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_WEIGHT=15.0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_PHASE_START=0.0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_SHARPNESS=1.0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_USE_CONTACT_GATE=False,TRAJECTORY_TRACKING_TEACHER_FORCE_ENABLED=True,TRAJECTORY_TRACKING_TEACHER_FORCE_ALPHA_START=1.0,TRAJECTORY_TRACKING_TEACHER_FORCE_ALPHA_END=0.75,TRAJECTORY_TRACKING_TEACHER_FORCE_PHASE_END=0.67,TRAJECTORY_TRACKING_TEACHER_FORCE_ANNEAL_STEPS=600,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_COMPARE_RAW_POLICY=True cluster/sbatch_train_teacher_8gpu.sh'`
+- job_id: `1027900`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_teacherforce_rl5b_20260611_170913`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_1027900.out`
+
+Result:
+- status: completed `0:0`, elapsed `00:01:05`, node `pool0-00030`.
+- training startup: actor/critic `build mlp: 72`, observation size remained baseline `[72]`; no traceback/NaN in stdout.
+- checkpoints written:
+  - `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_teacherforce_rl5b_20260611_170913/nn/last_dextrah_franka_cube_traj_tracking_ep_1_rew_18.131819.pth`
+  - `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_teacherforce_rl5b_20260611_170913/nn/last_dextrah_franka_cube_traj_tracking_ep_2_rew_18.131819.pth`
+  - `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_teacherforce_rl5b_20260611_170913/nn/last_dextrah_franka_cube_traj_tracking_ep_3_rew_18.131819.pth`
+  - `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_teacherforce_rl5b_20260611_170913/nn/last_dextrah_franka_cube_traj_tracking_ep_4_rew_18.131819.pth`
+  - `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_teacherforce_rl5b_20260611_170913/nn/last_dextrah_franka_cube_traj_tracking_ep_5_rew_3560.5405.pth`
+- interpretation: training smoke wiring passed. The epoch-5 reward suffix is finite/high but not a policy success signal; must inspect fixed rollout metrics/video next.
+
+Next:
+- Launch short `ACTION_SOURCE=policy` video evals from epoch-5 checkpoint with env teacher-force alpha fixed at `1.0` and `0.75`. Acceptance: raw-policy/reference L2 decreases versus validation baseline `1.416`, target unsafe remains `0`, and videos show approach/contact/lift rather than drift.
+
+## 2026-06-11T17:11:00-07:00 - teacher-force PPO eval launch
+
+Goal:
+- Evaluate whether the tiny teacher-forced PPO checkpoint learned reference-like raw actions, first under full teacher application (`alpha=1.0`) and then under a reduced teacher blend (`alpha=0.75`).
+
+Command / Jobs:
+- alpha `1.0` command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:30:00 --job-name=tf_eval_a100 --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,RUN_NAME=franka_cube_traj_tracking_teacherforce_eval_a100_520_20260611_171100,NUM_ENVS=4,NUM_STEPS=520,VIDEO_LENGTH=520,VIDEO_NAME_PREFIX=tf-eval-a100-520,CAPTURE_VIDEO=True,DETERMINISTIC=True,ACTION_SOURCE=policy,SUPPRESS_SUCCESS_TERMINATION=True,USE_CUDA_GRAPH=False,SEED=64,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_WEIGHT=15.0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_PHASE_START=0.0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_SHARPNESS=1.0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_USE_CONTACT_GATE=False,TRAJECTORY_TRACKING_TEACHER_FORCE_ENABLED=True,TRAJECTORY_TRACKING_TEACHER_FORCE_ALPHA_START=1.0,TRAJECTORY_TRACKING_TEACHER_FORCE_ALPHA_END=1.0,TRAJECTORY_TRACKING_TEACHER_FORCE_PHASE_END=0.67,TRAJECTORY_TRACKING_TEACHER_FORCE_ANNEAL_STEPS=0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_COMPARE_RAW_POLICY=True,CHECKPOINT=/results/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_teacherforce_rl5b_20260611_170913/nn/last_dextrah_franka_cube_traj_tracking_ep_5_rew_3560.5405.pth cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- alpha `0.75` command: same as above with `RUN_NAME=franka_cube_traj_tracking_teacherforce_eval_a075_520_20260611_171100`, `VIDEO_NAME_PREFIX=tf-eval-a075-520`, and `TRAJECTORY_TRACKING_TEACHER_FORCE_ALPHA_START=0.75`, `TRAJECTORY_TRACKING_TEACHER_FORCE_ALPHA_END=0.75`.
+- job_ids: alpha `1.0` -> `1027902`; alpha `0.75` -> `1027901`
+- run_dirs:
+  - `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_traj_tracking_teacherforce_eval_a100_520_20260611_171100`
+  - `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_traj_tracking_teacherforce_eval_a075_520_20260611_171100`
+
+## 2026-06-11T17:33:00-07:00 - teacher-force eval artifact verdict and alpha-gate diagnosis
+
+Goal:
+- Close out the two teacher-force evals with inspectable artifacts and prevent confusion with the older `actionscale-rewinf` drift-away video.
+
+Result:
+- `1027902` / `franka_cube_traj_tracking_teacherforce_eval_a100_520_20260611_171100`: completed `0:0`, 520/520 steps, target unsafe max `0`, target clearance min `0.065114 m`, raw-policy/reference L2 mean/final `1.0188/1.1534` vs teacher-force env-smoke baseline `1.416`, applied/reference L2 mean `0.3483`, reward mean/final `7.8834/12.9059`, success ever/final/max `1/0.25/0.25`, max/final lift `0.059976/0.059976 m`, final EE-cube `0.09645 m`, final finger-center-cube `0.13766 m`, done count `2` with unclassified resets before success. Visual: approach and some lift signal in one env, but not robust; the sheet/video still end with the visible env away from the cube. This is partial teacher-assisted behavior, not learned handoff success.
+- `1027901` / `franka_cube_traj_tracking_teacherforce_eval_a075_520_20260611_171100`: completed `0:0`, 520/520 steps, target unsafe max `0`, target clearance min `0.065114 m`, raw-policy/reference L2 mean/final `1.0464/1.5687`, applied/reference L2 mean `0.5988`, reward mean/final `7.7163/8.3491`, success/lift essentially zero (`success_ever=0`, max lift `0.000042 m`), final EE-cube `0.09681 m`, final finger-center-cube `0.12821 m`. Visual: reaches/contact-ish near the cube but does not lift and ends without grasp.
+- Train/eval consistency reports pass after separating expected eval-only overrides from true mismatches. The fixed eval alpha values and zero anneal are now marked as intentional diagnostic overrides, not production train/eval mismatches.
+- The old `actionscale-rewinf-diag-video480-step-0.mp4` belongs to job `1027753`, an obsolete failed action-scale/reward-inference learned-policy diagnostic. It is now labeled with `OBSOLETE_FAILED_DIAGNOSTIC.md` and should only be used as evidence of the old drift-away failure mode.
+
+Alpha Schedule Analysis:
+- No code bug found in the alpha reports. `_compute_teacher_force_alpha()` uses the configured alpha as an amplitude only while `traj_phase_progress <= trajectory_tracking_teacher_force_phase_end`; after that it returns zero.
+- Therefore alpha `1.0` with `phase_end=0.67` can report mean/final `0.7067/0.5` when two envs reset around steps 418/440 and restart into the active teacher phase by the final frame.
+- Alpha `0.75` with no resets reports mean/final `0.4644/0.0` because `0.75 * active_rate(0.6192) ~= 0.4644`, and all envs are beyond the teacher phase by the final step.
+- Artifact reports now include this phase-gating note plus local trace/video/contact-sheet paths.
+
+Artifacts:
+- combined report: `cluster_results/l401/franka_cube_traj_tracking_teacherforce_comparison_20260611_171100/comparison_report.md`
+- combined plot: `cluster_results/l401/franka_cube_traj_tracking_teacherforce_comparison_20260611_171100/teacherforce_comparison_plot.png`
+- combined CSV/JSON: `cluster_results/l401/franka_cube_traj_tracking_teacherforce_comparison_20260611_171100/summary.csv`, `cluster_results/l401/franka_cube_traj_tracking_teacherforce_comparison_20260611_171100/summary.json`
+- alpha `1.0` report/contact/video:
+  - `cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a100_520_20260611_171100_artifacts/report.md`
+  - `cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a100_520_20260611_171100_artifacts/video_contact_sheet.png`
+  - `cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a100_520_20260611_171100/videos/tf-eval-a100-520-step-0.mp4`
+- alpha `0.75` report/contact/video:
+  - `cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a075_520_20260611_171100_artifacts/report.md`
+  - `cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a075_520_20260611_171100_artifacts/video_contact_sheet.png`
+  - `cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a075_520_20260611_171100/videos/tf-eval-a075-520-step-0.mp4`
+- obsolete old-diagnostic marker: `cluster_results/l401/franka_cube_traj_tracking_actionscale_rewinf_diag_artifacts_20260611_144318/OBSOLETE_FAILED_DIAGNOSTIC.md`
+
+viz_urls:
+- combined report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_comparison_20260611_171100/comparison_report.md`
+- combined plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_comparison_20260611_171100/teacherforce_comparison_plot.png`
+- alpha `1.0` report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a100_520_20260611_171100_artifacts/report.md`
+- alpha `1.0` contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a100_520_20260611_171100_artifacts/video_contact_sheet.png`
+- alpha `1.0` video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a100_520_20260611_171100/videos/tf-eval-a100-520-step-0.mp4`
+- alpha `0.75` report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a075_520_20260611_171100_artifacts/report.md`
+- alpha `0.75` contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a075_520_20260611_171100_artifacts/video_contact_sheet.png`
+- alpha `0.75` video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_teacherforce_eval_a075_520_20260611_171100/videos/tf-eval-a075-520-step-0.mp4`
+- obsolete marker: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_actionscale_rewinf_diag_artifacts_20260611_144318/OBSOLETE_FAILED_DIAGNOSTIC.md`
+
+Analysis:
+- Teacher-force application and action-error instrumentation work; target safety remains clean.
+- Tiny PPO reduced raw-policy/reference error from the env-smoke baseline but did not make a usable policy. The lower-alpha eval fails lift, and the full-alpha eval only produces partial teacher-assisted success.
+- Do not scale PPO. The next iteration should isolate whether the handoff fails because teacher force turns off too early at phase `0.67` or because raw policy actions remain too far from the reference profile.
+
+Next:
+- Commit/push the summarizer/report/worklog update.
+- Run one bounded eval-only schedule diagnostic from the same epoch-5 checkpoint with `TRAJECTORY_TRACKING_TEACHER_FORCE_ALPHA_START=0.75`, `TRAJECTORY_TRACKING_TEACHER_FORCE_ALPHA_END=0.75`, and `TRAJECTORY_TRACKING_TEACHER_FORCE_PHASE_END=1.0`. This keeps the same lower alpha active for the whole trajectory to test whether the previous alpha `0.75` failure was mainly the phase gate/handoff turning off too early. Acceptance: target unsafe remains `0`, artifacts generated, and lift/success/contact behavior improves relative to `1027901`; if not, focus next on raw-policy/reference error or action normalization rather than schedule.
