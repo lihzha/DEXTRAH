@@ -4285,3 +4285,22 @@ Acceptance:
 - Target unsafe remains `0`.
 - A pass requires alpha `0.0` or alpha `0.5` to show visible contact/lift improvement over the current alpha `0.0` failure, not just scheduler success.
 - If policy-only/low-alpha remains dead, stop PPO handoff tweaks and move to explicit on-policy dataset aggregation / DAgger-style BC from policy-reached states.
+
+## 2026-06-11T18:30:00-07:00 - BC-initialized PPO handoff smoke launch
+
+Version Control:
+- implementation_commit: `ea49425766fabed234845789c6cabb45b9cfa93c`
+- branch: `codex/franka-cube-trajectory-tracking`
+- push: pushed to origin.
+- remote_commit/status: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking` detached at `ea49425766fabed234845789c6cabb45b9cfa93c`, clean after git-bundle deploy.
+
+Command / Job:
+- command: `sbatch --parsable --partition=batch --gpus-per-node=1 --cpus-per-task=16 --mem=160G --time=0-00:45:00 --job-name=bcinit_tfppo15 --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-traj-tracking,TASK=Dextrah-Franka-Cube-Grasp-Traj-Tracking,FULL_EXPERIMENT_NAME=franka_cube_traj_tracking_bcinit_tfppo15_20260611_183000,NPROC_PER_NODE=1,NUM_NODES=1,DISTRIBUTED=False,MULTI_GPU=False,NUM_ENVS=128,HORIZON_LENGTH=32,MINIBATCH_SIZE=1024,CENTRAL_VALUE_MINIBATCH_SIZE=1024,MINI_EPOCHS=2,MAX_ITERATIONS=15,SAVE_FREQUENCY=1,AUTO_RESUME=False,SELF_RELAUNCH=False,USE_CUDA_GRAPH=False,CUBE_SPAWN_XY_RANDOMIZATION=0.08,TRAJECTORY_TRACKING_REFERENCE_PATH=/results/trajectory_references/franka_cube_traj_ref_export_60mm_retry_20260611_134500_unvalidated/compact_reference.json,CHECKPOINT=/results/bc/franka_cube_traj_tracking_bc_ref_all7_20260611_181620/nn/bc_reference_action_imitation.pth,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_WEIGHT=80.0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_PHASE_START=0.0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_SHARPNESS=1.0,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_USE_CONTACT_GATE=False,TRAJECTORY_TRACKING_ACTION_ALIGNMENT_COMPARE_RAW_POLICY=True,TRAJECTORY_TRACKING_TEACHER_FORCE_ENABLED=True,TRAJECTORY_TRACKING_TEACHER_FORCE_ALPHA_START=0.75,TRAJECTORY_TRACKING_TEACHER_FORCE_ALPHA_END=0.5,TRAJECTORY_TRACKING_TEACHER_FORCE_PHASE_END=1.0,TRAJECTORY_TRACKING_TEACHER_FORCE_ANNEAL_STEPS=160,LEARNING_RATE=0.00005,CENTRAL_VALUE_LEARNING_RATE=0.00005,KL_THRESHOLD=0.006,ENTROPY_COEF=0.0001 cluster/sbatch_train_teacher_8gpu.sh`
+- job_id: `1027954`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_cube_traj_tracking/franka_cube_traj_tracking_bcinit_tfppo15_20260611_183000`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_1027954.out`
+
+Next:
+- Monitor job `1027954` through completion.
+- Fetch stdout/logs and checkpoint listing immediately after completion.
+- Do not launch eval until the smoke checkpoint and config are verified.
