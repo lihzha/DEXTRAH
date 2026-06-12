@@ -3991,3 +3991,56 @@ Analysis:
 Next:
 - Stay diagnostic-only; no A100/full RL and no additional PPO from this state.
 - Focus next on observation/action-label mismatch and closed-loop BC data semantics: compare labels against normalized observations at reset, phase conditioning, receding-horizon assisted labels, and whether the supervised dataset contains enough state-feedback corrections after the first few steps.
+
+## 2026-06-11 20:57 PDT - plan: BC label/observation semantics audit
+
+Goal:
+- Separate BC data/label semantics from policy fitting by testing whether the reference labels themselves grasp/lift when replayed from a valid pass7 reset, and by comparing the sanitized BC actor action to labels on the exact same live observations.
+
+Hypothesis:
+- If closed-loop reference labels pass but exact recorded label replay fails, the labels are only valid as receding-horizon corrective actions and the dataset needs closed-loop/action-state coverage rather than open-loop imitation.
+- If closed-loop and recorded replay both fail, the label action semantics, phase timing, sign convention, frame convention, or gripper/lift command are wrong.
+- If label replay succeeds but the BC actor differs strongly from labels on identical observations, the supervised policy/checkpoint normalization or fitting is the blocker.
+
+Change Plan:
+- Add diagnostic-only script `dextrah_lab/rl_games/audit_franka_cube_bc_label_semantics.py`.
+  - Reuse the same reference-action definitions as `bc_franka_cube_pass7_actions.py`: approach to exact pose, light-close width `0.055`, lift action z `0.15`, orientation tracking enabled, pass7 prior reset.
+  - For each reset: capture reset state, run a closed-loop label rollout while recording observations/actions and policy-vs-label deltas, restore the reset state and replay the exact recorded actions open-loop, and optionally replay the BC policy.
+  - Save action comparison CSV/JSONL, rollout traces, reset sample JSON, summary JSON, report, and contact sheets/videos or frame sheets for the first reset.
+- Add minimal wrapper `cluster/sbatch_audit_franka_cube_bc_label_semantics_1gpu.sh` using the same DEXTRAH Isaac/L401 container conventions.
+- No changes to task reward/reset/training/eval defaults.
+
+Version Control:
+- agent_id: `franka-cube-ggx-pregrasp-reset`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-ggx-pregrasp-reset`
+- branch: `codex/franka-cube-ggx-pregrasp-reset`
+- base_commit: `7e7f9e9d7c8ea0431285b9bffd05f3bf007ad029`
+- changed_files planned:
+  - `dextrah_lab/rl_games/audit_franka_cube_bc_label_semantics.py`
+  - `cluster/sbatch_audit_franka_cube_bc_label_semantics_1gpu.sh`
+  - this owned worklog
+
+Validation Before Launch:
+- `python3 -m py_compile dextrah_lab/rl_games/audit_franka_cube_bc_label_semantics.py`
+- `bash -n cluster/sbatch_audit_franka_cube_bc_label_semantics_1gpu.sh`
+- deploy exact committed source to the agent-owned L401 worktree before Slurm launch.
+
+Command / Job:
+- intended run_name: `franka_cube_ggx_pass7_bc_label_semantics_20260611_2057`
+- config: `Dextrah-Franka-Cube-Grasp`, `NUM_ENVS=1`, `NUM_RESETS=2`, pass7 prior library `/results/franka_cube_grasp_prior/franka-cube-ggx-pregrasp-reset/franka_cube_ggx_grasps_robust_pass7_20260612.npz`, seed `20260624`, cube XY randomization `0.08`, reference approach/close/lift steps `16/12/12`, close width `0.055`, lift z `0.15`, oracle gain `8.0`, orientation tracking enabled.
+- policy checkpoint for policy-vs-label: `/results/diagnostics/franka_cube_ggx_pass7_bc_actor_liftw_20260611_2002/bc_pass7_policy_init_epoch0.pth`.
+- expected Slurm surface: L401 `batch`, 1 GPU, bounded diagnostic only.
+
+Acceptance:
+- Job writes metrics/report plus CSV/JSONL traces and render sheets; fetch locally under `cluster_results/l401/<run_name>`.
+- Report verdict must answer:
+  - closed-loop label rollout succeeds/fails;
+  - exact recorded action replay succeeds/fails;
+  - sanitized BC policy-vs-label mismatch magnitude/sign by phase/action dimension;
+  - likely root-cause category: label semantics, open-loop/non-corrective labels, checkpoint normalization/fitting, or unresolved.
+- Produce `viz-open` URLs for report and contact/trace artifacts.
+- No PPO, A100, or full training launch from this diagnostic.
+
+Pre-launch local validation:
+- `python3 -m py_compile dextrah_lab/rl_games/audit_franka_cube_bc_label_semantics.py` passed.
+- `bash -n cluster/sbatch_audit_franka_cube_bc_label_semantics_1gpu.sh` passed.
