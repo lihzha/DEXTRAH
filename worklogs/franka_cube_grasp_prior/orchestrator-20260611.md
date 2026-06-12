@@ -2739,3 +2739,37 @@ Worker steering:
 - B was told to update its owned worklog, mark phase-end as an expected
   diagnostic override, avoid more schedule-only evals, and focus next on
   raw-policy/reference action semantics or stronger imitation diagnostics.
+
+## 2026-06-11T17:47:20-07:00 - C contact-aware rollout smoke failed before behavior
+
+Goal:
+- Monitor Worker C's first contact-aware controller rollout smoke, job
+  `1027908`.
+
+Job:
+- `1027908`: `dextrah_cube_contact_rollout`, run
+  `franka_cube_contact_rollout_ep24s260_center_sweep_20260611_172603`.
+- State: `FAILED 1:0`, elapsed `00:00:49`.
+- Log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/contact_aware_franka_cube_rollout_1027908.out`
+
+Result:
+- This is not a negative controller/DP result. The script failed before a
+  meaningful rollout:
+  `AttributeError: 'numpy.ndarray' object has no attribute 'detach'` at
+  `contact_aware_franka_cube_rollout.py:389`.
+- The failing line assumes `extract_lowdim_obs_from_ppo_obs(policy_obs)` returns
+  a torch tensor, but this path returned a NumPy array.
+
+Additional launch issue:
+- The log shows `VARIANTS=center` and the executed command contains only
+  `--variant center`, despite C's worklog planning
+  `center,center_high15,center_high30`. The multi-variant passing needs to be
+  made shell/Slurm-safe or the relaunch should explicitly be declared a
+  single-variant smoke.
+
+Worker steering:
+- C was instructed to patch tensor/NumPy handling, validate locally, commit and
+  deploy exact commit, fix variant passing, then relaunch a bounded smoke only.
+- DP BC/RL training remains blocked until a contact-aware rollout produces
+  stable close/lift artifacts.
