@@ -5779,6 +5779,100 @@ Verdict:
 Active Jobs:
 - none.
 
+## 2026-06-11T22:31:26-07:00 - handoff selector metrics launch plan
+
+Goal:
+- Run the bounded selector metric gate for the supervised handoff checkpoint before any video or rollout scale-up decision.
+
+Version Control:
+- local worklog commit: `8b286bfd9e922721aba961340de55e631205d3ff` (`Record handoff BC supervised result`), pushed to `origin/codex/franka-cube-trajectory-tracking`.
+- remote source fetch of `8b286bfd9e922721aba961340de55e631205d3ff` from GitHub failed on l401 with `Permission denied (publickey)`.
+- remote source remains clean at `6a403ae2d7bfb39b5faa5b805fa97da8ebb4d4dc`, which is the exact source-code commit that implements the handoff selector/eval path; `8b286bfd9e922721aba961340de55e631205d3ff` is worklog-only.
+
+Planned Jobs:
+- checkpoint: `/results/bc/franka_cube_traj_tracking_bc_handoff_success_alpha0_20260611_223200/nn/bc_reference_action_imitation.pth`.
+- alphas: `0.0/0.25/0.5/0.75/1.0`.
+- action source: `policy_reference_mix`, metrics only, `NUM_ENVS=4`, `NUM_STEPS=520`, video disabled.
+- acceptance: inspect metrics/logs first; only generate targeted videos/contact sheets if policy-only or lower-alpha behavior improves. No PPO/RL scale-up.
+- reference caveat remains `curobo_validated=false`.
+
+Submitted Jobs:
+- alpha0.0: job_id `1028156`, run `franka_cube_traj_tracking_bc_handoff_selector_a000_520_20260611_223300`.
+- alpha0.25: job_id `1028157`, run `franka_cube_traj_tracking_bc_handoff_selector_a025_520_20260611_223300`.
+- alpha0.5: job_id `1028158`, run `franka_cube_traj_tracking_bc_handoff_selector_a050_520_20260611_223300`.
+- alpha0.75: job_id `1028159`, run `franka_cube_traj_tracking_bc_handoff_selector_a075_520_20260611_223300`.
+- alpha1.0: job_id `1028160`, run `franka_cube_traj_tracking_bc_handoff_selector_a100_520_20260611_223300`.
+
+## 2026-06-11T22:36:00-07:00 - handoff selector metrics result and visual probe plan
+
+Job Results:
+- jobs `1028156`-`1028160` all completed `0:0`.
+- local fetched runs:
+  - `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_selector_a000_520_20260611_223300`
+  - `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_selector_a025_520_20260611_223300`
+  - `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_selector_a050_520_20260611_223300`
+  - `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_selector_a075_520_20260611_223300`
+  - `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_selector_a100_520_20260611_223300`
+
+Metrics:
+- alpha0.0: success_ever `0/4`, final success `0`, max lift by env `[0.00917, 0.01502, 0.0, 0.02780]`; target unsafe max `0`; final EE/finger/max-finger distances `0.0868/0.1088/0.1171` m.
+- alpha0.25: success_ever `3/4`, final success `0`, done_after_success `3`; max lift by env `[0.13599, 0.13747, 0.0, 0.13694]`; first success steps min/mean/max `366/371.3/382`; target unsafe max `0`.
+- alpha0.5: success_ever `3/4`, final success `0`, done_after_success `3`; max lift by env `[0.13613, 0.13566, 0.00108, 0.13595]`; target unsafe max `0`.
+- alpha0.75: success_ever `3/4`, final success `0`, done_after_success `3`; max lift by env `[0.13590, 0.13523, 0.00095, 0.13554]`; target unsafe max `0`.
+- alpha1.0: success_ever `4/4`, final success `0`, done_after_success `4`; max lift by env `[0.13611, 0.13629, 0.13600, 0.13616]`; target unsafe max `0`.
+
+Analysis:
+- The derived handoff source did not make policy-only alpha0.0 succeed; policy-only remains outside the acceptance gate.
+- Low-teacher alpha0.25 reaches the same transient success pattern as the prior stage-alpha selector: successful envs trigger success_done/reset and end with final success `0`. This is useful as a low-teacher visual probe, but not a PPO/RL scale-up gate.
+- Because the supervised gate passed and alpha0.25 is the lowest successful assistance level, launch only targeted videos: alpha0.0 env0 failure, alpha0.25 env1 success-window visual, and alpha1.0 env0 teacher/reference context.
+
+Next:
+- Launch three short 520-step video evals from the same handoff checkpoint. No PPO/RL scale-up.
+
+Submitted Visual Jobs:
+- alpha0.0 failure: job_id `1028162`, run `franka_cube_traj_tracking_bc_handoff_vis_a000_env0_520_20260611_224000`, `CAMERA_ENV_INDEX=0`, video prefix `handoff-a000-env0-failure`.
+- alpha0.25 low-alpha success-window probe: job_id `1028163`, run `franka_cube_traj_tracking_bc_handoff_vis_a025_env1_520_20260611_224000`, `CAMERA_ENV_INDEX=1`, video prefix `handoff-a025-env1-lowalpha`.
+- alpha1.0 teacher/reference context: job_id `1028164`, run `franka_cube_traj_tracking_bc_handoff_vis_a100_env0_520_20260611_224000`, `CAMERA_ENV_INDEX=0`, video prefix `handoff-a100-env0-context`.
+
+## 2026-06-11T22:45:00-07:00 - handoff visual gate result
+
+Jobs:
+- `1028162` / `1028163` / `1028164` completed `0:0`.
+- local fetched runs:
+  - `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_vis_a000_env0_520_20260611_224000`
+  - `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_vis_a025_env1_520_20260611_224000`
+  - `cluster_results/l401/franka_cube_traj_tracking_bc_handoff_vis_a100_env0_520_20260611_224000`
+- MP4 validation: all three videos are `1280x720`, `520` frames, `8.666667 s`.
+
+Viewer Artifacts:
+- combined report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_visual_gate_20260611_2240/report.md`
+- alpha0.0 report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_vis_a000_env0_520_20260611_224000_artifacts/report.md`
+- alpha0.0 contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_vis_a000_env0_520_20260611_224000_artifacts/video_contact_sheet.png`
+- alpha0.0 video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_vis_a000_env0_520_20260611_224000/videos/handoff-a000-env0-failure-step-0.mp4`
+- alpha0.25 report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_vis_a025_env1_520_20260611_224000_artifacts/report.md`
+- alpha0.25 contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_vis_a025_env1_520_20260611_224000_artifacts/video_contact_sheet.png`
+- alpha0.25 video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_vis_a025_env1_520_20260611_224000/videos/handoff-a025-env1-lowalpha-step-0.mp4`
+- alpha1.0 report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_vis_a100_env0_520_20260611_224000_artifacts/report.md`
+- alpha1.0 contact sheet: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_vis_a100_env0_520_20260611_224000_artifacts/video_contact_sheet.png`
+- alpha1.0 video: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_vis_a100_env0_520_20260611_224000/videos/handoff-a100-env0-context-step-0.mp4`
+- action-semantics report: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_visual_action_semantics_20260611_2240/action_semantics_report.md`
+- action-semantics plot: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-traj-tracking/cluster_results/l401/franka_cube_traj_tracking_bc_handoff_visual_action_semantics_20260611_2240/action_semantics_plot.png`
+
+Metrics / Visual Diagnosis:
+- alpha0.0 (`1028162`): policy-only remains failed. `success_ever=0/4`, `success_final=0`, `done_count=0`, target unsafe max `0`, target clearance min `0.065114 m`; contact sheet shows approach/perturbation but no lift. Raw-policy/reference L2 mean/final `1.141/1.033`; action semantics show weak close/lift timing versus reference during close/lift windows.
+- alpha0.25 (`1028163`): lowest-alpha transient success. `success_ever=3/4`, `success_final=0`, `success_done=3`, target unsafe max `0`; selected env1 first/last success `366/378` and done at `378`. Contact sheet visibly shows lift in the success window; final-zero is due success termination/reset, not a physical final-frame hold failure in the selected episode segment.
+- alpha1.0 (`1028164`): teacher/reference context remains positive. `success_ever=4/4`, `success_final=0`, `success_done=4`, all envs first/last success `378/390` and done at `390`; target unsafe max `0`. Contact sheet visibly shows lift and then post-reset final frame.
+- Train/eval consistency: auto helper reports `train_config_unavailable` because this is a BC checkpoint without train-env YAML. Manual audit in the combined report confirms task/checkpoint/action source, obs/action dims `72/7`, cube randomization `0.08`, reference path, selector alpha, deterministic eval, and target safety. No mismatch was found in available eval metadata.
+- Reference caveat remains `curobo_validated=false`.
+- Old `actionscale-rewinf-diag-video480-step-0.mp4` from job `1027753` remains obsolete failed diagnostic evidence, not current B status.
+
+Verdict:
+- Not a PPO/RL scale-up gate.
+- Handoff supervised training created a useful low-alpha transient success at alpha0.25, but policy-only alpha0.0 still fails. Any next run should stay supervised/eval-only and target policy-only terminal stability or no-reset success-window retention before considering RL.
+
+Active Jobs:
+- none.
+
 ## 2026-06-11T21:49:54-07:00 - stage/alpha-conditioned assisted-manifold BC plan
 
 Goal:
