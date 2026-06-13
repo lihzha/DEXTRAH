@@ -75,10 +75,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--randomize_lighting", action="store_true")
     parser.add_argument(
         "--background",
-        choices=("none", "studio"),
+        choices=("none", "studio", "hdri"),
         default="studio",
-        help="Add a generated background around the imported RoboLab scene.",
+        help="Background mode: none, generated studio room, or RoboLab HDRI dome.",
     )
+    parser.add_argument(
+        "--background_texture",
+        default="indoors/kiara_interior_2k.hdr",
+        help="RoboLab background texture path for --background hdri. Relative paths are resolved under assets/backgrounds.",
+    )
+    parser.add_argument("--background_intensity", type=float, default=900.0, help="Dome intensity used by --background hdri.")
     parser.add_argument("--robot", choices=("none", "kuka_allegro"), default="none")
     parser.add_argument("--robot_translation", nargs=3, type=float, default=(0.0, 0.0, 0.0))
     parser.add_argument("--robot_rotation_deg", nargs=3, type=float, default=(0.0, 0.0, 0.0))
@@ -165,8 +171,62 @@ def _add_physics_scene(stage: Usd.Stage) -> None:
     scene.CreateGravityMagnitudeAttr(9.81)
 
 
-def _add_lighting(stage: Usd.Stage, *, rng: random.Random) -> dict[str, float]:
-    dome_intensity = float(args_cli.dome_intensity)
+def _iter_background_roots(*, robolab_root: Path | None, scene_dir: Path | None) -> Iterable[Path]:
+    roots: list[Path] = []
+    if robolab_root is not None:
+        roots.append(Path(robolab_root).expanduser() / "assets" / "backgrounds")
+    if scene_dir is not None:
+        roots.append(Path(scene_dir).expanduser().parent / "backgrounds")
+    try:
+        import robolab.constants as robolab_constants  # type: ignore
+
+        constants_root = getattr(robolab_constants, "BACKGROUND_ASSET_DIR", None)
+        if constants_root:
+            roots.append(Path(constants_root).expanduser())
+    except Exception:
+        pass
+    roots.append(_repo_root().parent / "RoboLab" / "assets" / "backgrounds")
+
+    seen: set[Path] = set()
+    for root in roots:
+        root = root.expanduser()
+        if root in seen:
+            continue
+        seen.add(root)
+        yield root
+
+
+def _resolve_background_texture(*, robolab_root: Path | None, scene_dir: Path | None) -> Path | None:
+    if args_cli.background != "hdri":
+        return None
+
+    texture = Path(str(args_cli.background_texture)).expanduser()
+    if texture.is_absolute():
+        if not texture.exists():
+            raise FileNotFoundError(f"RoboLab background texture does not exist: {texture}")
+        return texture.resolve()
+
+    searched: list[str] = []
+    for root in _iter_background_roots(robolab_root=robolab_root, scene_dir=scene_dir):
+        exact = root / texture
+        searched.append(str(exact))
+        if exact.exists():
+            return exact.resolve()
+
+    for root in _iter_background_roots(robolab_root=robolab_root, scene_dir=scene_dir):
+        if not root.is_dir():
+            continue
+        for candidate in root.rglob(texture.name):
+            searched.append(str(candidate))
+            if candidate.exists():
+                return candidate.resolve()
+
+    searched_text = "\n  - ".join(searched) if searched else "<none>"
+    raise FileNotFoundError(f"Could not resolve RoboLab background texture '{texture}'. Searched:\n  - {searched_text}")
+
+
+def _add_lighting(stage: Usd.Stage, *, rng: random.Random, background_texture: Path | None) -> dict[str, Any]:
+    dome_intensity = float(args_cli.background_intensity if background_texture is not None else args_cli.dome_intensity)
     sun_intensity = float(args_cli.sun_intensity)
     sun_angle = 35.0
     sun_yaw = -35.0
@@ -176,9 +236,19 @@ def _add_lighting(stage: Usd.Stage, *, rng: random.Random) -> dict[str, float]:
         sun_angle += rng.uniform(-10.0, 10.0)
         sun_yaw += rng.uniform(-45.0, 45.0)
 
-    dome = UsdLux.DomeLight.Define(stage, "/World/DomeLight")
-    dome.CreateIntensityAttr(dome_intensity)
-    dome.CreateExposureAttr(0.0)
+    if background_texture is not None:
+        dome_cfg = sim_utils.DomeLightCfg(
+            intensity=dome_intensity,
+            exposure=0.0,
+            texture_file=str(background_texture),
+            texture_format="latlong",
+            visible_in_primary_ray=True,
+        )
+        dome_cfg.func("/World/DomeLight", dome_cfg)
+    else:
+        dome = UsdLux.DomeLight.Define(stage, "/World/DomeLight")
+        dome.CreateIntensityAttr(dome_intensity)
+        dome.CreateExposureAttr(0.0)
 
     sun = UsdLux.DistantLight.Define(stage, "/World/SunLight")
     sun.CreateIntensityAttr(sun_intensity)
@@ -186,6 +256,9 @@ def _add_lighting(stage: Usd.Stage, *, rng: random.Random) -> dict[str, float]:
     _set_xform(sun.GetPrim(), (0.0, 0.0, 0.0), rotate_xyz_deg=(sun_angle, 0.0, sun_yaw))
     return {
         "dome_intensity": dome_intensity,
+        "dome_texture_file": str(background_texture) if background_texture is not None else None,
+        "dome_texture_format": "latlong" if background_texture is not None else None,
+        "dome_visible_in_primary_ray": bool(background_texture is not None),
         "sun_intensity": sun_intensity,
         "sun_angle_deg": sun_angle,
         "sun_yaw_deg": sun_yaw,
@@ -227,9 +300,18 @@ def _add_background(
     target: tuple[float, float, float],
     radius: float,
     height: float,
+    background_texture: Path | None,
 ) -> dict[str, Any] | None:
     if args_cli.background == "none":
         return None
+    if args_cli.background == "hdri":
+        return {
+            "mode": "hdri",
+            "texture_file": str(background_texture) if background_texture is not None else None,
+            "intensity": float(args_cli.background_intensity),
+            "visible_in_primary_ray": True,
+            "texture_format": "latlong",
+        }
 
     min_v = scene_bbox.GetMin()
     max_v = scene_bbox.GetMax()
@@ -841,6 +923,12 @@ def main() -> None:
         scene_dir=args_cli.robolab_scene_dir,
     )
     _log(f"resolved RoboLab scene: {resolved_scene.scene_path} ({resolved_scene.source})")
+    background_texture = _resolve_background_texture(
+        robolab_root=args_cli.robolab_root,
+        scene_dir=resolved_scene.scene_dir,
+    )
+    if background_texture is not None:
+        _log(f"resolved RoboLab background texture: {background_texture}")
 
     rng = random.Random(int(args_cli.seed))
     _log("creating USD stage")
@@ -855,7 +943,7 @@ def main() -> None:
 
     scene_root = _reference_robolab_scene(stage, resolved_scene.scene_path)
     robot_usd = _create_robot(stage)
-    lighting = _add_lighting(stage, rng=rng)
+    lighting = _add_lighting(stage, rng=rng, background_texture=background_texture)
     update_stage()
 
     scene_bbox = _compute_bbox(stage, scene_root)
@@ -865,12 +953,22 @@ def main() -> None:
         "orbit target="
         f"{target} source={target_source} radius={radius:.3f} height={height:.3f}"
     )
-    background = _add_background(stage, scene_bbox=scene_bbox, target=target, radius=radius, height=height)
+    background = _add_background(
+        stage,
+        scene_bbox=scene_bbox,
+        target=target,
+        radius=radius,
+        height=height,
+        background_texture=background_texture,
+    )
     if background is not None:
-        _log(
-            "added studio background "
-            f"half_extent={background['room_half_extent']:.3f} floor_z={background['floor_z']:.3f}"
-        )
+        if background["mode"] == "studio":
+            _log(
+                "added studio background "
+                f"half_extent={background['room_half_extent']:.3f} floor_z={background['floor_z']:.3f}"
+            )
+        else:
+            _log(f"using RoboLab HDRI background texture={background['texture_file']}")
         update_stage()
 
     if args_cli.capture_backend == "tiled":

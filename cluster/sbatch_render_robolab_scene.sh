@@ -115,6 +115,8 @@ srun \
       --dome_intensity \"${DOME_INTENSITY:-750}\" \
       --sun_intensity \"${SUN_INTENSITY:-1800}\" \
       --background \"${BACKGROUND:-studio}\" \
+      --background_texture \"${BACKGROUND_TEXTURE:-indoors/kiara_interior_2k.hdr}\" \
+      --background_intensity \"${BACKGROUND_INTENSITY:-900}\" \
       --robot \"${ROBOT:-none}\" \
       --robot_translation ${ROBOT_TRANSLATION:-0.0 0.0 0.0} \
       --robot_rotation_deg ${ROBOT_ROTATION_DEG:-0.0 0.0 0.0} \
