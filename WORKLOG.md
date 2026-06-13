@@ -6851,3 +6851,61 @@ Next:
 - Commit the viewport fallback, redeploy exact commit to l401, run a new
   viewport smoke, fetch/inspect frames/video, and scale the duration/resolution
   only after the smoke is visually valid.
+
+## 2026-06-13 01:24 PDT - robolab-orbit-sensor-noreset
+
+Goal:
+- Produce the first actual orbit frames after viewport capture also blocked on
+  the first frame.
+
+Hypothesis:
+- The blocking calls are `sim.render()` / viewport file capture, not scene
+  resolution. A no-reset `TiledCamera` sensor path that advances
+  `simulation_app.update()` and reads `camera.data.output["rgb"]` may avoid the
+  stalled render APIs while still producing camera images.
+
+Change:
+- Added `--capture_backend sensor` and made it the default.
+- The sensor backend creates a `TiledCamera`, moves the camera prim around the
+  orbit, advances the app with `simulation_app.update()`, and saves RGB tensors
+  without calling `SimulationContext.reset()` or `sim.render()`.
+- Updated the l401 wrapper default to `CAPTURE_BACKEND=sensor`.
+
+Version Control:
+- agent_id: codex-robolab-orbit-render
+- worktree: `/home/lzha/code/DEXTRAH`
+- worklog: `WORKLOG.md`
+- branch: `codex/robolab-orbit-render-20260613`
+- base_commit: `048e28d268f33ea8303cc8b03eda26c32f59517b`
+- implementation_commit: pending
+- push/pull: pending Git bundle deploy to l401.
+- changed_files: `dextrah_lab/scene_scripts/render_robolab_scene.py`,
+  `cluster/sbatch_render_robolab_scene.sh`, `WORKLOG.md`
+- remote_commit/status: previous l401 agent checkout at `048e28d`; new commit
+  pending.
+
+Command / Job:
+- command: previous viewport smoke job `1028902` with
+  `CAPTURE_BACKEND=viewport`.
+- job_id: `1028902`, canceled after no file output.
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/robolab_scene/robolab_orbit_viewport_smoke_20260613_0121`
+- logs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/robolab_scene_1028902.out`
+- artifacts: no frame artifacts before cancel
+
+Result:
+- status: viewport failed then patched
+- metrics/artifacts: scene loaded and entered `capturing orbit frame 1/4`, but
+  no `orbit_*.png` was written.
+- key evidence: no files in the run directory after more than one minute in
+  the first viewport capture call.
+
+Analysis:
+- The bridge and RoboLab asset staging are working; the remaining issue is
+  selecting a headless capture API that can return image data reliably on this
+  l401 container/node combination.
+
+Next:
+- Commit the no-reset sensor backend, redeploy exact commit to l401, run a
+  four-frame smoke, and inspect the image tensors/video.

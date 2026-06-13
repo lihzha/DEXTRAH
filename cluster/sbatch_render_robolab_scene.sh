@@ -106,7 +106,7 @@ srun \
       --warmup_frames \"${WARMUP_FRAMES:-8}\" \
       --rt_subframes \"${RT_SUBFRAMES:-4}\" \
       --physics_device \"${PHYSICS_DEVICE:-cuda:0}\" \
-      --capture_backend \"${CAPTURE_BACKEND:-viewport}\" \
+      --capture_backend \"${CAPTURE_BACKEND:-sensor}\" \
       --orbit_elevation_deg \"${ORBIT_ELEVATION_DEG:-45}\" \
       --orbit_start_deg \"${ORBIT_START_DEG:-35}\" \
       --target_source \"${TARGET_SOURCE:-table}\" \

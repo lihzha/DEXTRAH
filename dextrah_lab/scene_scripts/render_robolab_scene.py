@@ -66,9 +66,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--horizontal_aperture", type=float, default=20.955)
     parser.add_argument(
         "--capture_backend",
-        choices=("viewport", "tiled"),
-        default="viewport",
-        help="Viewport capture is slower but avoids TiledCamera reset stalls on imported static USD scenes.",
+        choices=("sensor", "viewport", "tiled"),
+        default="sensor",
+        help="Sensor capture avoids SimulationContext.reset/render stalls on imported static USD scenes.",
     )
     parser.add_argument("--dome_intensity", type=float, default=750.0)
     parser.add_argument("--sun_intensity", type=float, default=1800.0)
@@ -500,6 +500,86 @@ def _capture_orbit_viewport(
     return frames, {"frame_count": frame_count, "frames_dir": str(frames_dir), "camera_poses": poses}
 
 
+def _capture_orbit_sensor(
+    *,
+    target: tuple[float, float, float],
+    radius: float,
+    height: float,
+    scene_bbox: Gf.Range3d,
+    output_dir: Path,
+) -> tuple[list[str], dict[str, Any]]:
+    frame_count = max(2, int(round(float(args_cli.fps) * float(args_cli.video_seconds))))
+    frames_dir = output_dir / "frames"
+    frames_dir.mkdir(parents=True, exist_ok=True)
+    for stale in frames_dir.glob("orbit_*.png"):
+        stale.unlink()
+
+    start = math.radians(float(args_cli.orbit_start_deg))
+    first_eye = (
+        target[0] + radius * math.cos(start),
+        target[1] + radius * math.sin(start),
+        target[2] + height,
+    )
+    first_quat = _look_at_quat_world(first_eye, target)
+    scene_size = scene_bbox.GetSize()
+    scene_extent = max(float(scene_size[0]), float(scene_size[1]), float(scene_size[2]))
+    clipping_far = max(10.0, 4.0 * max(radius, height, scene_extent))
+    camera_cfg = TiledCameraCfg(
+        prim_path="/World/OrbitCamera",
+        offset=TiledCameraCfg.OffsetCfg(pos=first_eye, rot=first_quat, convention="world"),
+        data_types=["rgb"],
+        spawn=sim_utils.PinholeCameraCfg(
+            focal_length=float(args_cli.camera_focal_length),
+            focus_distance=400.0,
+            horizontal_aperture=float(args_cli.horizontal_aperture),
+            clipping_range=(0.03, float(clipping_far)),
+        ),
+        width=int(args_cli.width),
+        height=int(args_cli.height),
+        update_period=0,
+    )
+
+    _log("creating orbit TiledCamera for no-reset sensor capture")
+    camera = TiledCamera(camera_cfg)
+    for _ in range(max(2, int(args_cli.rt_subframes))):
+        simulation_app.update()
+
+    camera_prim = omni.usd.get_context().get_stage().GetPrimAtPath("/World/OrbitCamera")
+    if not camera_prim.IsValid():
+        raise RuntimeError("Orbit camera prim was not created")
+
+    frames: list[str] = []
+    poses: list[dict[str, Any]] = []
+    _log(f"capturing orbit frames with sensor backend: {frame_count} frames at {args_cli.fps} fps")
+    for frame_idx in range(frame_count):
+        theta = start + (2.0 * math.pi * frame_idx / frame_count)
+        eye = (
+            target[0] + radius * math.cos(theta),
+            target[1] + radius * math.sin(theta),
+            target[2] + height,
+        )
+        quat = _set_camera_pose(camera_prim, eye, target)
+        for _ in range(max(2, int(args_cli.rt_subframes))):
+            simulation_app.update()
+        camera.update(0.0)
+        dst = frames_dir / f"orbit_{frame_idx:04d}.png"
+        _log(f"capturing orbit frame {frame_idx + 1}/{frame_count}")
+        _save_rgb_tensor(dst, camera.data.output["rgb"][0])
+        frames.append(str(dst))
+        poses.append(
+            {
+                "frame": frame_idx,
+                "theta_deg": math.degrees(theta),
+                "eye": [float(v) for v in eye],
+                "target": [float(v) for v in target],
+                "quat_wxyz": [float(v) for v in quat],
+            }
+        )
+
+    del camera
+    return frames, {"frame_count": frame_count, "frames_dir": str(frames_dir), "camera_poses": poses}
+
+
 def _capture_orbit_video(
     *,
     sim,
@@ -628,6 +708,14 @@ def main() -> None:
     if args_cli.capture_backend == "tiled":
         frame_paths, orbit_result = _capture_orbit_video(
             sim=sim,
+            target=target,
+            radius=radius,
+            height=height,
+            scene_bbox=scene_bbox,
+            output_dir=output_dir,
+        )
+    elif args_cli.capture_backend == "sensor":
+        frame_paths, orbit_result = _capture_orbit_sensor(
             target=target,
             radius=radius,
             height=height,
