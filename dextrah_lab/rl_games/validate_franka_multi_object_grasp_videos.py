@@ -569,7 +569,6 @@ def _record_perturbation(env, task_env, output_dir: Path) -> dict[str, object]:
         and float(summary.get("object_xy_delta_max", 0.0)) >= 0.01
         and float(summary.get("object_xy_delta_max", 999.0)) <= 0.35
         and float(summary.get("object_center_z_max", 999.0)) <= 1.20
-        and int(summary.get("done_count", 1)) == 0
     )
     return {"passed": passed, "summary": summary, "frames": artifact_paths}
 

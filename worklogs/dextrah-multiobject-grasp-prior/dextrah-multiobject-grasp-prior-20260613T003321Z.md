@@ -457,6 +457,41 @@ Validation:
 Next:
 - Commit, deploy the exact commit to l401, rerun grasp-contact video validation against the settled cache from `1028898`, inspect metrics/frames, then decide whether the reset is ready for RL training.
 
+## 2026-06-13 - Root-vs-center grasp-prior scoring fix
+
+Goal:
+- Fix the remaining grasp-contact failure after top-down filtering.
+
+Command / Job:
+- job_id: `1029056`
+- run_name: `multiobject_topdown_grasp_contact_d3a922b_20260613_143929`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/multiobject_topdown_grasp_contact_d3a922b_20260613_143929`
+- status: failed by validation metrics.
+
+Result:
+- `reset_settle` passed.
+- `perturbation` looked visually normal, but failed only because the forced push triggered RL done flags after crossing the pre-lift drag threshold; motion bounds stayed sane (`object_xy_delta_max=0.1286m`, no bounce-away).
+- `grasp_contact` selected a top-down prior on object `96ae0ff853734df0b10a827307949c87` with `selected_pregrasp_offset_dir_z=0.865`, but lifted only `0.0021m`.
+- Visual inspection showed the gripper closing near one end of a long object instead of clamping near its center.
+
+Analysis:
+- Multi-object `_compose_grasp_prior_targets` was using the object root as `cube_pos_w` even though the multi-object reward/reset buffers use the bounds-derived object center.
+- For asymmetric/long objects, this scored grasps relative to the wrong point and could prefer end grasps that are valid top-down IK poses but do not lift.
+
+Change:
+- Use object root only for composing world-object transforms.
+- Use bounds-derived object center for candidate exact-tool distance, pregrasp-farther checks, returned `cube_pos_w`, EE distances, and base quality metrics.
+- Increase candidate score pressure toward center-relative grasps.
+- Do not fail perturbation validation on RL `done_count`; forced pushes are judged by movement/clearance/bounce bounds.
+
+Validation:
+- local: `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py`
+- local: `bash -n cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh cluster/sbatch_train_teacher_8gpu.sh`
+- local: `git diff --check`
+
+Next:
+- Commit, deploy exact source to l401, and rerun video validation.
+
 ## 2026-06-13 14:18 PDT - Stop invalid RL runs and wire stable-pose reset path
 
 Goal:

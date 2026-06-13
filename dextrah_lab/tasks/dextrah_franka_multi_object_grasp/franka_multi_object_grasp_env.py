@@ -590,9 +590,11 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             grasp_to_tool_t[mask] = grasp_to_tool.view(1, 1, 4, 4).expand(count, candidate_count, -1, -1)
 
         world_object_t = torch.eye(4, device=self.device).repeat(num_ids, 1, 1)
-        cube_pos_w = cube_pos + self.scene.env_origins[env_ids]
+        object_root_pos_w = cube_pos + self.scene.env_origins[env_ids]
+        object_center_pos = self._object_center_pos_from_root(env_ids, cube_pos, cube_quat)
+        object_center_pos_w = object_center_pos + self.scene.env_origins[env_ids]
         world_object_t[:, :3, :3] = math_utils.matrix_from_quat(cube_quat)
-        world_object_t[:, :3, 3] = cube_pos_w
+        world_object_t[:, :3, 3] = object_root_pos_w
         flat_world_object_t = world_object_t.unsqueeze(1).expand(-1, candidate_count, -1, -1).reshape(-1, 4, 4)
         flat_object_grasp_t = object_grasp_t.reshape(-1, 4, 4)
         flat_grasp_to_tool_t = grasp_to_tool_t.reshape(-1, 4, 4)
@@ -610,13 +612,13 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             torch.norm(candidate_tool_z_axis_w, dim=-1, keepdim=True),
             min=1.0e-6,
         )
-        cube_pos_w_candidates = cube_pos_w.unsqueeze(1)
+        object_center_pos_w_candidates = object_center_pos_w.unsqueeze(1)
         pregrasp_offset = abs(float(self.cfg.grasp_prior_pregrasp_offset))
         plus_tool_pos_w = candidate_exact_tool_pos_w + pregrasp_offset * candidate_tool_z_axis_w
         minus_tool_pos_w = candidate_exact_tool_pos_w - pregrasp_offset * candidate_tool_z_axis_w
-        candidate_exact_tool_dist = torch.norm(candidate_exact_tool_pos_w - cube_pos_w_candidates, dim=-1)
-        plus_tool_dist = torch.norm(plus_tool_pos_w - cube_pos_w_candidates, dim=-1)
-        minus_tool_dist = torch.norm(minus_tool_pos_w - cube_pos_w_candidates, dim=-1)
+        candidate_exact_tool_dist = torch.norm(candidate_exact_tool_pos_w - object_center_pos_w_candidates, dim=-1)
+        plus_tool_dist = torch.norm(plus_tool_pos_w - object_center_pos_w_candidates, dim=-1)
+        minus_tool_dist = torch.norm(minus_tool_pos_w - object_center_pos_w_candidates, dim=-1)
         use_plus = plus_tool_dist >= minus_tool_dist
         candidate_pregrasp_tool_pos_w = torch.where(use_plus.unsqueeze(-1), plus_tool_pos_w, minus_tool_pos_w)
         candidate_pregrasp_tool_dist = torch.where(use_plus, plus_tool_dist, minus_tool_dist)
@@ -633,7 +635,9 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         valid = candidate_pregrasp_farther & width_ok
         if bool(self.cfg.grasp_prior_reset_require_topdown):
             valid = valid & topdown_ok
-        score = candidate_confidence + 2.0 * pregrasp_z - 0.10 * candidate_exact_tool_dist
+        object_size = torch.clamp(self._grasp_prior_object_size(env_ids).unsqueeze(1), min=1.0e-4)
+        normalized_center_dist = candidate_exact_tool_dist / object_size
+        score = candidate_confidence + pregrasp_z - 4.0 * normalized_center_dist
         fallback_score = torch.where(
             candidate_pregrasp_farther & width_ok,
             score,
@@ -681,7 +685,7 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             "sample_indices": sample_indices,
             "target_ee_pos_b": target_ee_pos_b,
             "target_ee_quat_b": target_ee_quat_b,
-            "cube_pos_w": cube_pos_w,
+            "cube_pos_w": object_center_pos_w,
             "cube_quat_w": cube_quat,
             "exact_tool_pos_w": exact_tool_pos_w,
             "exact_tool_quat_w": tool_quat_w,
@@ -694,8 +698,8 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             "pregrasp_offset_dir_w": pregrasp_offset_dir_w,
             "exact_tool_dist": exact_tool_dist,
             "pregrasp_tool_dist": pregrasp_tool_dist,
-            "exact_ee_dist": torch.norm(exact_ee_pos_w - cube_pos_w, dim=-1),
-            "pregrasp_ee_dist": torch.norm(target_ee_pos_w - cube_pos_w, dim=-1),
+            "exact_ee_dist": torch.norm(exact_ee_pos_w - object_center_pos_w, dim=-1),
+            "pregrasp_ee_dist": torch.norm(target_ee_pos_w - object_center_pos_w, dim=-1),
             "pregrasp_farther": pregrasp_farther,
         }
 
