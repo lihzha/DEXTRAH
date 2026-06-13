@@ -327,10 +327,11 @@ def _extract_payload(payload: dict[str, Any], uuid: str) -> dict[str, Any]:
         raise ValueError(f"{uuid}: no valid grasp transforms after object_in_gripper filtering")
 
     confidence = np.ones((transforms.shape[0],), dtype=np.float32)
-    contact_locations = grasps.get("contact_locations")
+    contact_locations = None
+    raw_contact_locations = grasps.get("contact_locations")
     grasp_width = None
-    if contact_locations is not None:
-        contacts = np.asarray(contact_locations, dtype=np.float32)
+    if raw_contact_locations is not None:
+        contacts = np.asarray(raw_contact_locations, dtype=np.float32)
         if contacts.ndim == 3 and contacts.shape[0] == keep.shape[0] and contacts.shape[1] >= 2:
             contacts = contacts[keep]
             grasp_width = np.linalg.norm(contacts[:, 0, :] - contacts[:, 1, :], axis=-1).astype(np.float32)
@@ -338,7 +339,9 @@ def _extract_payload(payload: dict[str, Any], uuid: str) -> dict[str, Any]:
             if finite_width.any():
                 transforms = transforms[finite_width]
                 confidence = confidence[finite_width]
+                contacts = contacts[finite_width]
                 grasp_width = grasp_width[finite_width]
+                contact_locations = contacts
             else:
                 grasp_width = None
 
@@ -357,12 +360,15 @@ def _extract_payload(payload: dict[str, Any], uuid: str) -> dict[str, Any]:
         "grasp_to_tool_transform_name": "identity_dataset_panda_hand",
         "object_in_gripper_filter_kept": int(transforms.shape[0]),
         "object_in_gripper_filter_total": int(keep.shape[0]),
+        "has_contact_locations": contact_locations is not None,
+        "contact_location_count": 0 if contact_locations is None else int(contact_locations.shape[0]),
     }
     return {
         "scale": scale,
         "object_file": object_file,
         "grasps_object": transforms,
         "confidence": confidence,
+        "contact_locations": contact_locations,
         "grasp_width": grasp_width,
         "grasp_to_tool_transform": np.eye(4, dtype=np.float32),
         "metadata": metadata,
@@ -375,6 +381,7 @@ def _write_prior_npz(path: Path, uuid: str, extracted: dict[str, Any]) -> dict[s
     path.parent.mkdir(parents=True, exist_ok=True)
     metadata = extracted["metadata"]
     grasp_width = extracted["grasp_width"]
+    contact_locations = extracted["contact_locations"]
     save_kwargs = {
         "grasps_object": np.asarray(extracted["grasps_object"], dtype=np.float32),
         "confidence": np.asarray(extracted["confidence"], dtype=np.float32),
@@ -385,6 +392,8 @@ def _write_prior_npz(path: Path, uuid: str, extracted: dict[str, Any]) -> dict[s
         "tool_frame": np.asarray("panda_hand"),
         "gripper_name": np.asarray("franka_panda"),
     }
+    if contact_locations is not None:
+        save_kwargs["contact_locations"] = np.asarray(contact_locations, dtype=np.float32)
     if grasp_width is not None:
         save_kwargs["grasp_width"] = np.asarray(grasp_width, dtype=np.float32)
     np.savez_compressed(path, **save_kwargs)
@@ -392,6 +401,7 @@ def _write_prior_npz(path: Path, uuid: str, extracted: dict[str, Any]) -> dict[s
         "path": str(path),
         "scale": float(extracted["scale"]),
         "num_grasps": int(save_kwargs["grasps_object"].shape[0]),
+        "has_contact_locations": contact_locations is not None,
         "grasp_width_mean": None if grasp_width is None else float(np.mean(grasp_width)),
         "grasp_width_p95": None if grasp_width is None else float(np.percentile(grasp_width, 95)),
     }

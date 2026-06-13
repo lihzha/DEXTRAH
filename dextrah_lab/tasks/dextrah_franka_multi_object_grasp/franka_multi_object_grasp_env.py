@@ -490,6 +490,7 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
                         metadata.setdefault(key, _npz_scalar(data[key]))
                 grasps_object = data["grasps_object"]
                 confidence = data["confidence"] if "confidence" in data.files else None
+                contact_locations = data["contact_locations"] if "contact_locations" in data.files else None
                 grasp_width = data["grasp_width"] if "grasp_width" in data.files else None
                 grasp_to_tool = (
                     data["grasp_to_tool_transform"]
@@ -501,6 +502,7 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             metadata = dict(payload.get("metadata", {}))
             grasps_object = payload["grasps_object"]
             confidence = payload.get("confidence")
+            contact_locations = payload.get("contact_locations")
             grasp_width = payload.get("grasp_width")
             grasp_to_tool = payload.get("grasp_to_tool_transform", np.eye(4, dtype=np.float32))
         else:
@@ -532,9 +534,21 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             grasp_width_tensor = torch.as_tensor(grasp_width, dtype=torch.float32, device=self.device).flatten()
             if grasp_width_tensor.shape[0] != grasps_tensor.shape[0]:
                 raise ValueError("grasp_width length must match grasps_object count")
+        contact_locations_tensor = None
+        if contact_locations is not None:
+            contact_locations_tensor = torch.as_tensor(contact_locations, dtype=torch.float32, device=self.device)
+            if contact_locations_tensor.ndim != 3 or contact_locations_tensor.shape[0] != grasps_tensor.shape[0]:
+                raise ValueError("contact_locations must have shape (N, C, 3) and match grasps_object count")
+            if contact_locations_tensor.shape[1] < 2 or contact_locations_tensor.shape[2] != 3:
+                raise ValueError(
+                    f"contact_locations must have shape (N, C>=2, 3), got {tuple(contact_locations_tensor.shape)}"
+                )
         return {
             "grasps_object": grasps_tensor.contiguous(),
             "confidence": confidence_tensor.contiguous(),
+            "contact_locations": None
+            if contact_locations_tensor is None
+            else contact_locations_tensor[:, :2, :].contiguous(),
             "grasp_width": None if grasp_width_tensor is None else grasp_width_tensor.contiguous(),
             "grasp_to_tool": grasp_to_tool_tensor.contiguous(),
             "metadata": metadata,
@@ -559,6 +573,12 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         grasp_to_tool_t = torch.eye(4, device=self.device).repeat(num_ids, candidate_count, 1, 1)
         candidate_confidence = torch.ones((num_ids, candidate_count), dtype=torch.float32, device=self.device)
         candidate_required_width = self.object_grasp_size[env_ids].unsqueeze(1).expand(-1, candidate_count).clone()
+        candidate_contact_locations = torch.zeros(
+            (num_ids, candidate_count, 2, 3),
+            dtype=torch.float32,
+            device=self.device,
+        )
+        candidate_has_contact = torch.zeros((num_ids, candidate_count), dtype=torch.bool, device=self.device)
         object_indices = self.object_asset_index[env_ids]
         for object_idx_tensor in torch.unique(object_indices):
             object_idx = int(object_idx_tensor.item())
@@ -584,6 +604,18 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
                     sampled_width,
                     candidate_required_width[mask],
                 )
+            contact_locations = prior.get("contact_locations")
+            if isinstance(contact_locations, torch.Tensor):
+                sampled_contacts = contact_locations[local_indices]
+                finite_contacts = torch.isfinite(sampled_contacts).all(dim=(-1, -2))
+                candidate_contact_locations[mask] = sampled_contacts
+                candidate_has_contact[mask] = finite_contacts
+                sampled_contact_width = torch.norm(sampled_contacts[:, :, 0, :] - sampled_contacts[:, :, 1, :], dim=-1)
+                candidate_required_width[mask] = torch.where(
+                    finite_contacts & torch.isfinite(sampled_contact_width),
+                    sampled_contact_width,
+                    candidate_required_width[mask],
+                )
             grasp_to_tool = prior["grasp_to_tool"]
             if not isinstance(grasp_to_tool, torch.Tensor):
                 raise RuntimeError("Internal grasp-to-tool tensor is invalid")
@@ -605,6 +637,14 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             4,
             4,
         )
+        flat_contact_locations = candidate_contact_locations.reshape(-1, 2, 3)
+        flat_contact_points_w = torch.bmm(
+            flat_world_object_t[:, :3, :3],
+            flat_contact_locations.transpose(1, 2),
+        ).transpose(1, 2)
+        flat_contact_points_w = flat_contact_points_w + flat_world_object_t[:, None, :3, 3]
+        candidate_contact_points_w = flat_contact_points_w.reshape(num_ids, candidate_count, 2, 3)
+        candidate_contact_midpoint_w = candidate_contact_points_w.mean(dim=2)
 
         candidate_exact_tool_pos_w = world_tool_candidates[:, :, :3, 3]
         candidate_tool_z_axis_w = world_tool_candidates[:, :, :3, 2]
@@ -613,16 +653,22 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             min=1.0e-6,
         )
         object_center_pos_w_candidates = object_center_pos_w.unsqueeze(1)
+        candidate_contact_reference_w = torch.where(
+            candidate_has_contact.unsqueeze(-1),
+            candidate_contact_midpoint_w,
+            object_center_pos_w_candidates,
+        )
         pregrasp_offset = abs(float(self.cfg.grasp_prior_pregrasp_offset))
         plus_tool_pos_w = candidate_exact_tool_pos_w + pregrasp_offset * candidate_tool_z_axis_w
         minus_tool_pos_w = candidate_exact_tool_pos_w - pregrasp_offset * candidate_tool_z_axis_w
         candidate_exact_tool_dist = torch.norm(candidate_exact_tool_pos_w - object_center_pos_w_candidates, dim=-1)
-        plus_tool_dist = torch.norm(plus_tool_pos_w - object_center_pos_w_candidates, dim=-1)
-        minus_tool_dist = torch.norm(minus_tool_pos_w - object_center_pos_w_candidates, dim=-1)
+        candidate_exact_reference_dist = torch.norm(candidate_exact_tool_pos_w - candidate_contact_reference_w, dim=-1)
+        plus_tool_dist = torch.norm(plus_tool_pos_w - candidate_contact_reference_w, dim=-1)
+        minus_tool_dist = torch.norm(minus_tool_pos_w - candidate_contact_reference_w, dim=-1)
         use_plus = plus_tool_dist >= minus_tool_dist
         candidate_pregrasp_tool_pos_w = torch.where(use_plus.unsqueeze(-1), plus_tool_pos_w, minus_tool_pos_w)
         candidate_pregrasp_tool_dist = torch.where(use_plus, plus_tool_dist, minus_tool_dist)
-        candidate_pregrasp_farther = candidate_pregrasp_tool_dist > candidate_exact_tool_dist
+        candidate_pregrasp_farther = candidate_pregrasp_tool_dist > candidate_exact_reference_dist
         candidate_pregrasp_offset_dir_w = candidate_pregrasp_tool_pos_w - candidate_exact_tool_pos_w
         candidate_pregrasp_offset_dir_w = candidate_pregrasp_offset_dir_w / torch.clamp(
             torch.norm(candidate_pregrasp_offset_dir_w, dim=-1, keepdim=True),
@@ -636,12 +682,24 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             & (candidate_required_width <= float(self.cfg.max_gripper_width))
         )
         object_size = torch.clamp(self._grasp_prior_object_size(env_ids).unsqueeze(1), min=1.0e-4)
-        normalized_center_dist = candidate_exact_tool_dist / object_size
+        candidate_contact_center_dist = torch.norm(
+            candidate_contact_midpoint_w - object_center_pos_w_candidates,
+            dim=-1,
+        )
+        candidate_center_gate_dist = torch.where(
+            candidate_has_contact,
+            candidate_contact_center_dist,
+            candidate_exact_tool_dist,
+        )
+        normalized_center_dist = candidate_center_gate_dist / object_size
+        normalized_tool_center_dist = candidate_exact_tool_dist / object_size
         center_ok = normalized_center_dist <= float(self.cfg.grasp_prior_reset_max_center_distance_frac)
         valid = candidate_pregrasp_farther & width_ok & center_ok
         if bool(self.cfg.grasp_prior_reset_require_topdown):
             valid = valid & topdown_ok
-        score = candidate_confidence + pregrasp_z - 4.0 * normalized_center_dist
+        width_bonus = torch.clamp(candidate_required_width / max(float(self.cfg.max_gripper_width), 1.0e-6), 0.0, 1.0)
+        score = candidate_confidence + pregrasp_z + 0.75 * width_bonus
+        score = score - 4.0 * normalized_center_dist - normalized_tool_center_dist
         fallback_score = torch.where(
             candidate_pregrasp_farther & width_ok,
             score,
@@ -659,10 +717,15 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         tool_z_axis_w = candidate_tool_z_axis_w[row_ids, best_candidate]
         tool_z_axis_w = tool_z_axis_w / torch.clamp(torch.norm(tool_z_axis_w, dim=-1, keepdim=True), min=1.0e-6)
         exact_tool_dist = candidate_exact_tool_dist[row_ids, best_candidate]
+        exact_reference_dist = candidate_exact_reference_dist[row_ids, best_candidate]
         pregrasp_tool_pos_w = candidate_pregrasp_tool_pos_w[row_ids, best_candidate]
         pregrasp_tool_dist = candidate_pregrasp_tool_dist[row_ids, best_candidate]
         pregrasp_farther = candidate_pregrasp_farther[row_ids, best_candidate]
         pregrasp_offset_dir_w = candidate_pregrasp_offset_dir_w[row_ids, best_candidate]
+        contact_reference_w = candidate_contact_reference_w[row_ids, best_candidate]
+        contact_center_dist = candidate_contact_center_dist[row_ids, best_candidate]
+        center_gate_dist = candidate_center_gate_dist[row_ids, best_candidate]
+        has_contact_location = candidate_has_contact[row_ids, best_candidate]
 
         tool_quat_w = math_utils.quat_from_matrix(world_tool_t[:, :3, :3])
         exact_ee_pos_w, exact_ee_quat_w = math_utils.combine_frame_transforms(
@@ -701,9 +764,14 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             "target_ee_quat_w": target_ee_quat_w,
             "pregrasp_offset_dir_w": pregrasp_offset_dir_w,
             "exact_tool_dist": exact_tool_dist,
+            "exact_reference_dist": exact_reference_dist,
             "pregrasp_tool_dist": pregrasp_tool_dist,
-            "exact_ee_dist": torch.norm(exact_ee_pos_w - object_center_pos_w, dim=-1),
-            "pregrasp_ee_dist": torch.norm(target_ee_pos_w - object_center_pos_w, dim=-1),
+            "contact_reference_w": contact_reference_w,
+            "contact_center_dist": contact_center_dist,
+            "center_gate_dist": center_gate_dist,
+            "has_contact_location": has_contact_location,
+            "exact_ee_dist": torch.norm(exact_ee_pos_w - contact_reference_w, dim=-1),
+            "pregrasp_ee_dist": torch.norm(target_ee_pos_w - contact_reference_w, dim=-1),
             "pregrasp_farther": pregrasp_farther,
         }
 
@@ -716,7 +784,8 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         if bool(self.cfg.grasp_prior_reset_require_topdown):
             mask = mask & (targets["pregrasp_offset_dir_w"][:, 2] >= float(self.cfg.grasp_prior_reset_min_pregrasp_z))
         object_size = torch.clamp(self._grasp_prior_object_size(env_ids), min=1.0e-4)
-        center_dist_ok = targets["exact_tool_dist"] <= (
+        center_dist = targets.get("center_gate_dist", targets["exact_tool_dist"])
+        center_dist_ok = center_dist <= (
             float(self.cfg.grasp_prior_reset_max_center_distance_frac) * object_size
         )
         required_width = self._grasp_prior_required_open_width(env_ids, targets)

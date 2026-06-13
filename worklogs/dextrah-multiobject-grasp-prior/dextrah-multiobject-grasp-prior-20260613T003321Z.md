@@ -425,6 +425,109 @@ Command / Job:
 Result:
 - status: running/queued; monitoring in progress.
 
+## 2026-06-13 - Grasp-contact validation failure and contact-aware reset patch
+
+Goal:
+- Keep the latest multi-object reset branch off `main` until the rendered grasp-contact validation is physically correct.
+
+Result:
+- `origin/main` already contains the initial multi-object integration through `8bad95c`, but not the latest reset/grasp-contact fixes.
+- Validation job `1029064` ran commit `3292cdb4d0b088a506fd29d55b8675e3ecfa20ee` with `GRASP_RESET_MIN_WIDTH=0.02`, `GRASP_RESET_MIN_PREGRASP_Z=0.70`, and the cached stable poses from job `1028898`.
+- `reset_settle` passed: `object_xy_delta_max=7.28e-05m`, `bottom_clearance_min=-0.00405m`.
+- `perturbation` passed: `object_xy_delta_max=0.1286m`, `bottom_clearance_min=-0.00626m`.
+- `grasp_contact` failed: selected object `96ae0ff853734df0b10a827307949c87`, sample `1039`, `selected_lift_height_max=0.00908m` vs threshold `0.12m`, `selected_max_finger_dist_min=0.1445m`.
+
+Analysis:
+- Representative frames from `1029064` showed no object teleport, no table penetration, and no robot/object penetration, but the gripper was reset around a poor dynamic grasp and did not lift the long thin object.
+- Inspecting the raw GraspGen record showed the selected contact axis is consistent with the `panda_hand` frame, and the DEXTRAH EE offset lands near the contact midpoint. This is not a frame identity bug.
+- The remaining failure is candidate quality: for elongated objects, scoring only the hand/tool pose against the object bounding center can select contact locations that are geometrically valid but dynamically weak.
+
+Change:
+- Patched `dextrah_lab/assets/prepare_graspgen_assets.py` to preserve filtered `contact_locations` in the per-object Franka prior `.npz`.
+- Patched `dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py` to load optional contact locations, sample them with grasp candidates, choose pregrasp direction against the contact midpoint, and score/gate candidates using contact midpoint distance plus grasp width while preserving fallback behavior for old priors.
+
+Validation:
+- local: `python3 -m py_compile dextrah_lab/assets/prepare_graspgen_assets.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py`
+- local: `git diff --check`
+
+Next:
+- Commit and deploy the contact-aware code to l401.
+- Regenerate the 4-object smoke manifest under `/lustre` so the `.npz` priors include contact locations.
+- Rerun the three-video validation before merging the newest reset branch to `main` or launching RL training.
+
+## 2026-06-13 15:13 PDT - Min-width strict-topdown grasp-contact validation launch
+
+Goal:
+- Validate the current multi-object reset path after adding `grasp_prior_reset_min_width=0.008`, using cached settled poses so the robot reset is aligned to the actual object pose used by simulation.
+
+Hypothesis:
+- Rejecting near-zero-width priors should avoid impossible Panda clamp candidates while strict top-down filtering and center-distance gating continue to prevent side/rim grasps.
+
+Version Control:
+- agent_id: `integrate-multiobject-main-20260613`
+- local_worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/integrate-multiobject-main-20260613`
+- branch: `codex/multiobject-training-yaw-20260613`
+- implementation_commit: `3292cdb4d0b088a506fd29d55b8675e3ecfa20ee`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-stable-reset-c3c924f-20260613`
+- remote_commit: `3292cdb4d0b088a506fd29d55b8675e3ecfa20ee`
+
+Command / Job:
+- command: `NUM_ENVS=4 MAX_OBJECTS=4 OBJECT_ASSET_ASSIGNMENT=round_robin OBJECT_ASSET_MANIFEST_PATH=/results/assets/franka_multi_graspgen_asset_smoke_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_223457/manifest.json OBJECT_STABLE_POSE_ENABLED=True OBJECT_STABLE_POSE_CACHE_DIR=/results/validations/graspgen_stable_pose_validate_1028898_20260613_010532/settled_pose_cache OBJECT_STABLE_POSE_RANDOMIZE=False OBJECT_STABLE_POSE_ALLOW_MISSING=False OBJECT_RESET_SETTLE_STEPS=0 GRASP_OBJECT_SETTLE_STEPS=0 RENDER_WARMUP_FRAMES=0 GRASP_RESET_ATTEMPTS=96 GRASP_RESET_MIN_PREGRASP_Z=0.70 GRASP_RESET_CANDIDATE_COUNT=256 GRASP_RESET_MAX_CENTER_DISTANCE_FRAC=0.55 GRASP_RESET_MIN_WIDTH=0.008 GRASP_CONTACT_SCORE_STEPS=80 GRASP_STEPS=120 GRASP_WARMSTART_CLOSE_WIDTH=0.025 GRASP_WARMSTART_LIFT_ACTION_Z=0.30 CAPTURE_INTERVAL=2 CODE_COMMIT=3292cdb4d0b088a506fd29d55b8675e3ecfa20ee sbatch --partition=batch --time=0-00:30:00 cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh`
+- job_id: `1029063`
+- run_name: `multiobject_min_width_top07_3292cdb_20260613_151351`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/multiobject_min_width_top07_3292cdb_20260613_151351`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_1029063.out`
+- expected_artifacts: `reset_settle.mp4`, `perturbation.mp4`, `grasp_contact.mp4`, `video_metrics.json`
+
+Next:
+- Submit the job on l401, monitor logs/metrics/videos, then either accept the environment gate or patch the grasp-contact reset/warmstart again before RL training.
+
+## 2026-06-13 15:18 PDT - Strict min-width validation failed
+
+Goal:
+- Determine whether the min-width gate fixes the remaining grasp-contact validation failure.
+
+Command / Job:
+- job_id: `1029063`
+- run_name: `multiobject_min_width_top07_3292cdb_20260613_151351`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/multiobject_min_width_top07_3292cdb_20260613_151351`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_1029063.out`
+
+Result:
+- status: failed only `grasp_contact`; Slurm state `FAILED`, exit code `1:0`, elapsed `00:01:27`.
+- `reset_settle` passed with `object_xy_delta_max=7.28e-05m`, `bottom_clearance_min=-0.00405m`.
+- `perturbation` passed with `object_xy_delta_max=0.1286m`, `bottom_clearance_min=-0.00626m`.
+- `grasp_contact` selected object `96ae0ff853734df0b10a827307949c87`, sample `14`, `selected_pregrasp_offset_dir_z=0.746`, and `selected_open_width_margin=0.0704`, implying sampled contact width about `0.0096m`.
+- Contact metrics failed: `selected_lift_height_max=0.00298m` vs `0.12m`; `selected_max_finger_dist_min=0.104m`; `selected_done_count=0`; no table penetration.
+- Representative frames in `/tmp/dextrah_val_1029063/grasp_contact/` show no obvious penetration or teleporting, but the gripper stays offset and does not clamp/lift the thin stem.
+
+Analysis:
+- The failure is not passive object reset or perturbation physics; it is grasp-prior candidate quality.
+- Inspecting the raw GraspGen JSON for sample `14` showed `T_object_panda_hand` hand origin is about `0.105m` from the two contact points. Current quality scoring relies heavily on hand/tool-origin distance to object center and object-size-normalized tip proxies, which is too loose for elongated/thin objects.
+- The selected contact width is only about `9.6mm`; a stronger minimum width gate may reject these unstable stem grasps without a code patch.
+
+Next:
+- Rerun the same validation with `GRASP_RESET_MIN_WIDTH=0.02` before deciding whether to add contact-location-aware scoring to the reset selector and asset-prep format.
+
+## 2026-06-13 15:18 PDT - 2cm minimum-width validation launch
+
+Goal:
+- Test whether rejecting sub-2cm contact pairs avoids thin-stem Panda grasp-prior resets that look geometrically plausible but do not clamp or lift.
+
+Version Control:
+- implementation_commit: `3292cdb4d0b088a506fd29d55b8675e3ecfa20ee`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-stable-reset-c3c924f-20260613`
+
+Command / Job:
+- command: same as `1029063` but with `GRASP_RESET_MIN_WIDTH=0.02`.
+- job_id: `1029064`
+- run_name: `multiobject_min_width02_top07_3292cdb_20260613_151851`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/multiobject_min_width02_top07_3292cdb_20260613_151851`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_1029064.out`
+
+Next:
+- Monitor metrics and representative frames; if this fails, implement contact-location-aware candidate scoring/gating and regenerate the 4-object smoke priors.
+
 ## 2026-06-13 - Stable-reset grasp-contact failure and top-down prior patch
 
 Goal:
