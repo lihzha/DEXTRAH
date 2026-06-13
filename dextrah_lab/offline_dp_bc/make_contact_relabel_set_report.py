@@ -162,6 +162,7 @@ def _report(summary: dict[str, Any], rollout_rows: list[dict[str, Any]], failure
             f"- rollout CSV: `{summary['rollout_csv']}`",
             f"- failure CSV: `{summary['failure_csv']}`",
             f"- accepted NPZ: `{summary['accepted_npz']}`",
+            f"- accepted RGB NPZ: `{summary.get('accepted_rgb_npz', '')}`",
         ]
     )
     return "\n".join(lines) + "\n"
@@ -182,6 +183,17 @@ def main() -> None:
     accepted_rollout_ids: list[str] = []
     accepted_rollout_reset_joint_blend_alpha: list[float] = []
     accepted_rollout_reset_cube_pos_blend_alpha: list[float] = []
+    accepted_images: list[np.ndarray] = []
+    accepted_robot_states: list[np.ndarray] = []
+    accepted_rgb_actions: list[np.ndarray] = []
+    accepted_rgb_phase_ids: list[np.ndarray] = []
+    accepted_rgb_episode_ends: list[int] = []
+    accepted_rgb_rollout_ids: list[str] = []
+    accepted_rgb_rollout_reset_joint_blend_alpha: list[float] = []
+    accepted_rgb_rollout_reset_cube_pos_blend_alpha: list[float] = []
+    rgb_camera_eye: np.ndarray | None = None
+    rgb_camera_target: np.ndarray | None = None
+    rgb_robot_state_names: np.ndarray | None = None
 
     for summary_path in summary_paths:
         one_summary = json.loads(summary_path.read_text(encoding="utf-8"))
@@ -287,12 +299,59 @@ def main() -> None:
                 accepted_rollout_reset_joint_blend_alpha.append(reset_joint_blend_alpha)
                 accepted_rollout_reset_cube_pos_blend_alpha.append(reset_cube_pos_blend_alpha)
 
+            rgb_npz_raw = str(payload.get("rgb_npz", ""))
+            if rgb_npz_raw:
+                rgb_npz_path = _container_to_set_path(rgb_npz_raw, set_dir)
+                if not rgb_npz_path.exists():
+                    sibling_rgb = summary_path.parent / Path(rgb_npz_raw).name
+                    if sibling_rgb.exists():
+                        rgb_npz_path = sibling_rgb
+                if not rgb_npz_path.exists():
+                    raise FileNotFoundError(f"Accepted rollout {rollout_id} references missing RGB NPZ: {rgb_npz_raw}")
+                rgb_data = np.load(rgb_npz_path, allow_pickle=False)
+                image = np.asarray(rgb_data["image"], dtype=np.uint8)
+                robot_state = np.asarray(rgb_data["robot_state"], dtype=np.float32)
+                rgb_action = np.asarray(rgb_data["action"], dtype=np.float32)
+                rgb_phase = np.asarray(rgb_data["phase_ids"], dtype=np.int32)
+                if image.ndim != 4 or image.shape[-1] != 3:
+                    raise ValueError(f"{rgb_npz_path}: expected image shape (N,H,W,3), got {image.shape}")
+                if robot_state.shape != (image.shape[0], 8):
+                    raise ValueError(f"{rgb_npz_path}: expected robot_state ({image.shape[0]},8), got {robot_state.shape}")
+                if rgb_action.shape != (image.shape[0], 7):
+                    raise ValueError(f"{rgb_npz_path}: expected action ({image.shape[0]},7), got {rgb_action.shape}")
+                if rgb_phase.shape != (image.shape[0],):
+                    raise ValueError(f"{rgb_npz_path}: expected phase_ids ({image.shape[0]},), got {rgb_phase.shape}")
+                if image.shape[0] != len(variant_rows):
+                    raise ValueError(
+                        f"{rgb_npz_path}: RGB rows {image.shape[0]} do not match CSV rows {len(variant_rows)}"
+                    )
+                accepted_images.append(image)
+                accepted_robot_states.append(robot_state)
+                accepted_rgb_actions.append(rgb_action)
+                accepted_rgb_phase_ids.append(rgb_phase)
+                next_end = int(image.shape[0]) if not accepted_rgb_episode_ends else int(accepted_rgb_episode_ends[-1] + image.shape[0])
+                accepted_rgb_episode_ends.append(next_end)
+                accepted_rgb_rollout_ids.append(rollout_id)
+                accepted_rgb_rollout_reset_joint_blend_alpha.append(reset_joint_blend_alpha)
+                accepted_rgb_rollout_reset_cube_pos_blend_alpha.append(reset_cube_pos_blend_alpha)
+                if "camera_eye" in rgb_data.files:
+                    current_eye = np.asarray(rgb_data["camera_eye"], dtype=np.float32)
+                    if rgb_camera_eye is None:
+                        rgb_camera_eye = current_eye
+                if "camera_target" in rgb_data.files:
+                    current_target = np.asarray(rgb_data["camera_target"], dtype=np.float32)
+                    if rgb_camera_target is None:
+                        rgb_camera_target = current_target
+                if "robot_state_names" in rgb_data.files and rgb_robot_state_names is None:
+                    rgb_robot_state_names = np.asarray(rgb_data["robot_state_names"]).astype(str)
+
     output_prefix = args.output_prefix
     rollout_csv = set_dir / f"{output_prefix}_rollouts.csv"
     failure_csv = set_dir / f"{output_prefix}_failures.csv"
     summary_json = set_dir / f"{output_prefix}_summary.json"
     report_md = set_dir / f"{output_prefix}_report.md"
     accepted_npz = set_dir / f"{output_prefix}_accepted.npz"
+    accepted_rgb_npz = set_dir / f"{output_prefix}_accepted_rgb.npz"
     _write_csv(rollout_csv, rollout_rows)
     _write_csv(failure_csv, failure_rows)
     obs_arr = np.asarray(accepted_obs, dtype=np.float32).reshape((-1, 21))
@@ -309,6 +368,47 @@ def main() -> None:
         rollout_reset_joint_blend_alpha=np.asarray(accepted_rollout_reset_joint_blend_alpha, dtype=np.float32),
         rollout_reset_cube_pos_blend_alpha=np.asarray(accepted_rollout_reset_cube_pos_blend_alpha, dtype=np.float32),
     )
+    rgb_transition_count = 0
+    rgb_episode_count = 0
+    if accepted_images:
+        image_arr = np.concatenate(accepted_images, axis=0).astype(np.uint8)
+        robot_state_arr = np.concatenate(accepted_robot_states, axis=0).astype(np.float32)
+        rgb_action_arr = np.concatenate(accepted_rgb_actions, axis=0).astype(np.float32)
+        rgb_phase_arr = np.concatenate(accepted_rgb_phase_ids, axis=0).astype(np.int32)
+        rgb_episode_ends_arr = np.asarray(accepted_rgb_episode_ends, dtype=np.int64)
+        rgb_transition_count = int(image_arr.shape[0])
+        rgb_episode_count = int(rgb_episode_ends_arr.shape[0])
+        np.savez_compressed(
+            accepted_rgb_npz,
+            image=image_arr,
+            robot_state=robot_state_arr,
+            action=rgb_action_arr,
+            episode_ends=rgb_episode_ends_arr,
+            phase_ids=rgb_phase_arr,
+            rollout_ids=np.asarray(accepted_rgb_rollout_ids),
+            rollout_reset_joint_blend_alpha=np.asarray(
+                accepted_rgb_rollout_reset_joint_blend_alpha, dtype=np.float32
+            ),
+            rollout_reset_cube_pos_blend_alpha=np.asarray(
+                accepted_rgb_rollout_reset_cube_pos_blend_alpha, dtype=np.float32
+            ),
+            camera_eye=np.asarray([] if rgb_camera_eye is None else rgb_camera_eye, dtype=np.float32),
+            camera_target=np.asarray([] if rgb_camera_target is None else rgb_camera_target, dtype=np.float32),
+            robot_state_names=np.asarray(
+                [
+                    "ee_pos_x",
+                    "ee_pos_y",
+                    "ee_pos_z",
+                    "ee_quat_w",
+                    "ee_quat_x",
+                    "ee_quat_y",
+                    "ee_quat_z",
+                    "gripper_width",
+                ]
+                if rgb_robot_state_names is None
+                else rgb_robot_state_names.astype(str).tolist()
+            ),
+        )
     all_pass = bool(rollout_rows) and not failure_rows
     verdict = (
         "PASS: all contact-aware rollouts satisfied the hard relabel gate; this only permits a tiny official-DP smoke proposal."
@@ -323,6 +423,8 @@ def main() -> None:
         "failure_count": len(failure_rows),
         "accepted_transition_count": int(obs_arr.shape[0]),
         "accepted_episode_count": int(episode_ends_arr.shape[0]),
+        "accepted_rgb_transition_count": rgb_transition_count,
+        "accepted_rgb_episode_count": rgb_episode_count,
         "gate": {
             "min_lift": float(args.min_lift),
             "max_pose_action_clip_fraction": float(args.max_pose_clip_fraction),
@@ -336,6 +438,7 @@ def main() -> None:
         "failure_csv": str(failure_csv),
         "report": str(report_md),
         "accepted_npz": str(accepted_npz),
+        "accepted_rgb_npz": str(accepted_rgb_npz) if accepted_images else "",
         "rollouts": rollout_rows,
         "failures": failure_rows,
     }

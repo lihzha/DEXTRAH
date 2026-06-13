@@ -157,11 +157,19 @@ parser.add_argument("--video_length", default=280, type=int)
 parser.add_argument("--video_name_prefix", default="franka-cube-contact-rollout", type=str)
 parser.add_argument("--camera_eye", type=float, nargs=3, default=(-0.10, -0.78, 1.42))
 parser.add_argument("--camera_target", type=float, nargs=3, default=(-0.41, -0.10, 0.82))
+parser.add_argument(
+    "--save_rgb_obs",
+    action="store_true",
+    default=False,
+    help="Save pre-action RGB frames and robot proprio for image-policy BC.",
+)
+parser.add_argument("--rgb_obs_height", default=96, type=int)
+parser.add_argument("--rgb_obs_width", default=96, type=int)
 parser.add_argument("--disable_fabric", action="store_true", default=False)
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 
-if args_cli.video:
+if args_cli.video or args_cli.save_rgb_obs:
     args_cli.enable_cameras = True
 
 app_launcher = AppLauncher(args_cli)
@@ -256,6 +264,41 @@ def _lowdim_numpy_from_policy_obs(policy_obs: Any) -> np.ndarray:
     if lowdim_np.ndim == 2 and lowdim_np.shape[0] >= 1:
         return lowdim_np[0].astype(np.float32, copy=False)
     raise ValueError(f"Expected lowdim obs shape (21,) or (N, 21), got {lowdim_np.shape}")
+
+
+def _safe_name(value: str) -> str:
+    return "".join(c if c.isalnum() or c in "-_." else "_" for c in str(value))
+
+
+def _robot_state_from_lowdim(lowdim: np.ndarray) -> np.ndarray:
+    """Non-privileged robot proprio: EE position, EE quaternion, gripper width."""
+
+    return np.concatenate((lowdim[:7], lowdim[20:21]), axis=0).astype(np.float32)
+
+
+def _resize_rgb_nearest(frame: np.ndarray, height: int, width: int) -> np.ndarray:
+    if frame.ndim != 3 or frame.shape[-1] < 3:
+        raise ValueError(f"Expected RGB/RGBA frame with shape (H,W,3/4), got {frame.shape}")
+    rgb = np.asarray(frame[..., :3])
+    if rgb.dtype != np.uint8:
+        rgb = np.clip(rgb, 0, 255).astype(np.uint8)
+    h, w = rgb.shape[:2]
+    side = min(h, w)
+    y0 = max(0, (h - side) // 2)
+    x0 = max(0, (w - side) // 2)
+    crop = rgb[y0 : y0 + side, x0 : x0 + side]
+    ys = np.linspace(0, side - 1, int(height)).astype(np.int64)
+    xs = np.linspace(0, side - 1, int(width)).astype(np.int64)
+    return crop[ys][:, xs].copy()
+
+
+def _render_rgb_obs(gym_env: Any, height: int, width: int) -> np.ndarray:
+    frame = gym_env.render()
+    if isinstance(frame, list):
+        if not frame:
+            raise RuntimeError("gym_env.render() returned an empty frame list")
+        frame = frame[-1]
+    return _resize_rgb_nearest(np.asarray(frame), height=height, width=width)
 
 
 def _map_source_joint_to_env(task_env: Any, raw_q: np.ndarray, env_ids: torch.Tensor) -> torch.Tensor:
@@ -649,7 +692,11 @@ def main() -> None:
         env_cfg.viewer.eye = tuple(args_cli.camera_eye)
         env_cfg.viewer.lookat = tuple(args_cli.camera_target)
         env_cfg.viewer.origin_type = "world"
-    gym_env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)
+    gym_env = gym.make(
+        args_cli.task,
+        cfg=env_cfg,
+        render_mode="rgb_array" if (args_cli.video or args_cli.save_rgb_obs) else None,
+    )
     task_env = gym_env.unwrapped
     if hasattr(task_env, "sim") and hasattr(env_cfg, "viewer"):
         try:
@@ -693,6 +740,16 @@ def main() -> None:
             contact_align_trigger_step: int | None = None
             pre_close_row: dict[str, Any] | None = None
             contact_target_offset = offset.copy()
+            rgb_images: list[np.ndarray] = []
+            rgb_robot_states: list[np.ndarray] = []
+            rgb_actions: list[np.ndarray] = []
+            rgb_phase_ids: list[int] = []
+            rgb_local_steps: list[int] = []
+            if args_cli.save_rgb_obs:
+                try:
+                    _render_rgb_obs(gym_env, int(args_cli.rgb_obs_height), int(args_cli.rgb_obs_width))
+                except Exception as exc:
+                    print(f"[WARN] RGB warmup render failed: {exc}", flush=True)
             for local_step in range(steps_per_variant):
                 if local_step < align_end:
                     phase = "align_open"
@@ -735,6 +792,9 @@ def main() -> None:
                         target_base = contact_anchor_cube_pos
                 task_env._compute_intermediate_values()
                 live_lowdim = _lowdim_numpy_from_policy_obs(policy_obs)
+                rgb_frame = None
+                if args_cli.save_rgb_obs:
+                    rgb_frame = _render_rgb_obs(gym_env, int(args_cli.rgb_obs_height), int(args_cli.rgb_obs_width))
                 cube_pos = task_env.cube_pos.detach().float().cpu().numpy()[0]
                 finger_geom = _finger_geometry(task_env, cube_pos)
                 finger_center = np.asarray(finger_geom["center"], dtype=np.float32)
@@ -874,6 +934,12 @@ def main() -> None:
                     row["contact_align_trigger_step"] = int(contact_align_trigger_step)
                     row["close_start_local_step"] = int(close_start_step)
                 rows.append(row)
+                if args_cli.save_rgb_obs and rgb_frame is not None:
+                    rgb_images.append(rgb_frame)
+                    rgb_robot_states.append(_robot_state_from_lowdim(live_lowdim))
+                    rgb_actions.append(action.astype(np.float32, copy=True))
+                    rgb_phase_ids.append({"align_open": 0, "contact_align_open": 0, "close_hold": 1, "lift": 2}.get(phase, -1))
+                    rgb_local_steps.append(int(local_step))
                 if args_cli.print_interval > 0 and (
                     local_step == 0 or (local_step + 1) % int(args_cli.print_interval) == 0
                 ):
@@ -914,6 +980,34 @@ def main() -> None:
                 or _contact_gate_ok(pre_close)
             )
             success_like = bool(max_lift >= float(task_env.cfg.cube_success_lift_height) and min_finger < 0.08)
+            rgb_npz = ""
+            if args_cli.save_rgb_obs and rgb_images:
+                rgb_npz_path = output_dir / f"rgb_obs_{_safe_name(variant_name)}.npz"
+                np.savez_compressed(
+                    rgb_npz_path,
+                    image=np.stack(rgb_images, axis=0).astype(np.uint8),
+                    robot_state=np.asarray(rgb_robot_states, dtype=np.float32),
+                    action=np.asarray(rgb_actions, dtype=np.float32),
+                    phase_ids=np.asarray(rgb_phase_ids, dtype=np.int32),
+                    local_steps=np.asarray(rgb_local_steps, dtype=np.int64),
+                    variant=np.asarray(str(variant_name)),
+                    camera_eye=np.asarray(args_cli.camera_eye, dtype=np.float32),
+                    camera_target=np.asarray(args_cli.camera_target, dtype=np.float32),
+                    image_shape=np.asarray([int(args_cli.rgb_obs_height), int(args_cli.rgb_obs_width), 3], dtype=np.int32),
+                    robot_state_names=np.asarray(
+                        [
+                            "ee_pos_x",
+                            "ee_pos_y",
+                            "ee_pos_z",
+                            "ee_quat_w",
+                            "ee_quat_x",
+                            "ee_quat_y",
+                            "ee_quat_z",
+                            "gripper_width",
+                        ]
+                    ),
+                )
+                rgb_npz = str(rgb_npz_path)
             summaries[variant_name] = {
                 "offset": offset.astype(float).tolist(),
                 "orientation_mode": str(args_cli.orientation_mode),
@@ -964,6 +1058,7 @@ def main() -> None:
                 "min_pose_action_filter_scale": float(min(row["pose_action_filter_scale"] for row in vrows)),
                 "pose_action_filter": str(args_cli.pose_action_filter),
                 "pose_action_limit": float(args_cli.pose_action_limit),
+                "rgb_npz": rgb_npz,
                 "terminated_next_step": bool(any(row.get("terminated_next_step", False) for row in vrows)),
                 "truncated_next_step": bool(any(row.get("truncated_next_step", False) for row in vrows)),
                 "skipped_post_reset_local_step": int(
@@ -1024,6 +1119,8 @@ def main() -> None:
         "plot": str(plot_path),
         "report": str(report_path),
         "video_files": _latest_video_files(output_dir / "videos"),
+        "save_rgb_obs": bool(args_cli.save_rgb_obs),
+        "rgb_obs_shape": [int(args_cli.rgb_obs_height), int(args_cli.rgb_obs_width), 3],
     }
     json_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     report_path.write_text(_build_report(summary), encoding="utf-8")
