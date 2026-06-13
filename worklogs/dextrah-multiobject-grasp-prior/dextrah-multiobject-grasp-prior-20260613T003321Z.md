@@ -524,6 +524,35 @@ Validation:
 Next:
 - Commit/push the close-width fix, deploy a fresh source worktree, and relaunch the guided 4-object comparison with close width `0.025m`.
 
+## 2026-06-13T20:40:00Z - Corrected guided run queued
+
+Goal:
+- Relaunch the guided 4-object teacher comparison with the corrected closing reference action.
+
+Version Control:
+- implementation_commit: `10d6dd6bdf91a08b66c10763ddc20e537a4dc227`
+- push: pushed to `origin/main`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-guidance-closefix-10d6dd6-20260613`
+- remote_commit: `10d6dd6bdf91a08b66c10763ddc20e537a4dc227`
+
+Validation:
+- local: `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env_cfg.py`
+- local: `bash -n cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- local: `git diff --check`
+- remote: `bash -n cluster/sbatch_train_teacher_8gpu.sh`
+- remote: `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env_cfg.py`
+
+Command / Job:
+- job_id: `29049452`
+- run_name: `multiobject_teacher_4obj_guided_closefix_10d6dd6_20260613_1340`
+- config: same as canceled guided run, except `GRASP_PRIOR_ACTION_WARMSTART_CLOSE_WIDTH=0.025`.
+
+Result:
+- status: pending at launch due `QOSMaxJobsPerUserLimit`.
+
+Next:
+- Monitor until start, verify resolved `env.yaml`, then compare early gripper-width/action-z/lift metrics against baseline and the canceled bad-guidance run.
+
 ## 2026-06-13 - Main merge, randomized multi-object training, and cluster launch
 
 Goal:
