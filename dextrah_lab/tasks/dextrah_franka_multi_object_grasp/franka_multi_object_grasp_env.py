@@ -361,23 +361,33 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         import numpy as np
 
         with np.load(path, allow_pickle=False) as data:
-            if "transforms" not in data.files:
-                raise ValueError(f"Stable-pose cache for {uuid} is missing transforms: {path}")
-            transforms = np.asarray(data["transforms"], dtype=np.float32)
+            if "rotations" in data.files and "root_z_offsets" in data.files:
+                rotations = np.asarray(data["rotations"], dtype=np.float32)
+                root_z_offsets = np.asarray(data["root_z_offsets"], dtype=np.float32).reshape(-1)
+                transforms = None
+            elif "transforms" in data.files:
+                transforms = np.asarray(data["transforms"], dtype=np.float32)
+                rotations = transforms[:, :3, :3]
+                root_z_offsets = None
+            else:
+                raise ValueError(
+                    f"Stable-pose cache for {uuid} is missing rotations/root_z_offsets or transforms: {path}"
+                )
             probabilities = (
-                np.asarray(data["probabilities"], dtype=np.float32)
+                np.asarray(data["probabilities"], dtype=np.float32).reshape(-1)
                 if "probabilities" in data.files
-                else np.ones((transforms.shape[0],), dtype=np.float32)
+                else np.ones((rotations.shape[0],), dtype=np.float32)
             )
             vertices = np.asarray(data["vertices"], dtype=np.float32) if "vertices" in data.files else None
 
-        if transforms.ndim != 3 or tuple(transforms.shape[1:]) != (4, 4) or transforms.shape[0] == 0:
-            raise ValueError(f"Stable-pose transforms must have shape (N, 4, 4), got {transforms.shape}: {path}")
-        pose_count = min(max(int(self.cfg.object_stable_pose_count), 1), transforms.shape[0])
-        transforms = transforms[:pose_count]
+        if rotations.ndim != 3 or tuple(rotations.shape[1:]) != (3, 3) or rotations.shape[0] == 0:
+            raise ValueError(f"Stable-pose rotations must have shape (N, 3, 3), got {rotations.shape}: {path}")
+        pose_count = min(max(int(self.cfg.object_stable_pose_count), 1), rotations.shape[0])
+        rotations = rotations[:pose_count]
         probabilities = probabilities[:pose_count]
-        rotations = transforms[:, :3, :3]
-        if vertices is not None and vertices.ndim == 2 and vertices.shape[1] == 3 and vertices.shape[0] > 0:
+        if root_z_offsets is not None:
+            root_z_offsets = root_z_offsets[:pose_count]
+        elif vertices is not None and vertices.ndim == 2 and vertices.shape[1] == 3 and vertices.shape[0] > 0:
             rotated = np.einsum("nij,kj->nki", rotations, vertices)
             root_z_offsets = -rotated[:, :, 2].min(axis=1)
         else:

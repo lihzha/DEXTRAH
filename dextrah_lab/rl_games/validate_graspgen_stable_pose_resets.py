@@ -694,6 +694,71 @@ def _run_stability_rollout(
     }
 
 
+def _write_settled_pose_cache(
+    result: dict[str, object] | None,
+    output_dir: Path,
+    *,
+    table_surface_z: float,
+) -> dict[str, object] | None:
+    if result is None:
+        return None
+    placement = result.get("placement", {})
+    if not isinstance(placement, dict):
+        return None
+    object_uuids = placement.get("object_uuid_by_env")
+    object_indices = placement.get("object_asset_index_by_env")
+    pose_ranks = placement.get("pose_rank_by_env")
+    pose_probabilities = placement.get("pose_probability_by_env")
+    root_pos = result.get("final_root_pos")
+    root_quat = result.get("final_root_quat")
+    if not isinstance(object_uuids, list) or not isinstance(root_pos, list) or not isinstance(root_quat, list):
+        return None
+
+    cache_dir = output_dir / "settled_pose_cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    records: list[dict[str, object]] = []
+    seen: set[str] = set()
+    for env_i, uuid_value in enumerate(object_uuids):
+        uuid = str(uuid_value)
+        if uuid in seen:
+            continue
+        seen.add(uuid)
+        quat = torch.as_tensor([root_quat[env_i]], dtype=torch.float32)
+        rotation = math_utils.matrix_from_quat(quat).detach().cpu().numpy()
+        root_z_offset = float(root_pos[env_i][2]) - float(table_surface_z)
+        probability = (
+            float(pose_probabilities[env_i])
+            if isinstance(pose_probabilities, list) and env_i < len(pose_probabilities)
+            else 1.0
+        )
+        cache_path = cache_dir / f"{uuid}.npz"
+        np.savez_compressed(
+            cache_path,
+            uuid=np.asarray(uuid),
+            rotations=rotation.astype(np.float32),
+            root_z_offsets=np.asarray([root_z_offset], dtype=np.float32),
+            probabilities=np.asarray([probability], dtype=np.float32),
+            root_pos=np.asarray([root_pos[env_i]], dtype=np.float32),
+            root_quat_wxyz=np.asarray([root_quat[env_i]], dtype=np.float32),
+            source=np.asarray("physx_settled_replay"),
+        )
+        records.append(
+            {
+                "uuid": uuid,
+                "object_asset_index": int(object_indices[env_i])
+                if isinstance(object_indices, list) and env_i < len(object_indices)
+                else env_i,
+                "pose_rank": int(pose_ranks[env_i])
+                if isinstance(pose_ranks, list) and env_i < len(pose_ranks)
+                else 0,
+                "pose_probability": probability,
+                "root_z_offset": root_z_offset,
+                "path": str(cache_path),
+            }
+        )
+    return {"cache_dir": str(cache_dir), "objects": records}
+
+
 def main() -> None:
     output_dir = Path(args_cli.output_dir or datetime.now().strftime("graspgen_stable_pose_validate_%Y%m%d_%H%M%S"))
     output_dir = output_dir.expanduser().resolve()
@@ -750,6 +815,11 @@ def main() -> None:
             initial_local_root_quat=result["final_root_quat"],
             placement_template=result["placement"],
         )
+    settled_pose_cache = _write_settled_pose_cache(
+        settled_replay_result if settled_replay_result is not None else result,
+        output_dir,
+        table_surface_z=float(env_cfg.table_surface_z),
+    )
     passed = bool(result["passed"]) if settled_replay_result is None else bool(settled_replay_result["passed"])
     payload = {
         "passed": passed,
@@ -768,6 +838,7 @@ def main() -> None:
         "pose_data": pose_data,
         "result": result,
         "settled_replay_result": settled_replay_result,
+        "settled_pose_cache": settled_pose_cache,
     }
     metrics_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(f"[INFO] Wrote stable-pose metrics to {metrics_path}", flush=True)

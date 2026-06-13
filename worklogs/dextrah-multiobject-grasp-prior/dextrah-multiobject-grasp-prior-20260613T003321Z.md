@@ -460,6 +460,23 @@ Result:
 Next:
 - Commit and deploy to an l401 worktree, run stable-pose-enabled video validation against the 4-object smoke manifest/cache, inspect the stricter grasp-contact failure/geometry, then fix grasp alignment before relaunching training.
 
+## 2026-06-13 14:24 PDT - Add settled-pose cache format support
+
+Goal:
+- Ensure the RL reset path can use the post-PhysX settled object poses from stable-pose replay, not only raw trimesh stable candidates.
+
+Change:
+- Extended the multi-object stable-pose loader to accept `.npz` files containing `rotations` and `root_z_offsets`.
+- Extended `validate_graspgen_stable_pose_resets.py` to write `settled_pose_cache/<uuid>.npz` files from the replay final root poses.
+
+Validation:
+- local: `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py dextrah_lab/rl_games/validate_graspgen_stable_pose_resets.py dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py`
+- local: `bash -n cluster/sbatch_validate_graspgen_stable_pose_resets_1gpu.sh cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh cluster/sbatch_train_teacher_8gpu.sh`
+- local: `git diff --check`
+
+Next:
+- Commit, deploy the new exact commit, rerun stable-pose validation once to materialize `settled_pose_cache/`, then point grasp-contact video validation and training at that cache directory.
+
 ## 2026-06-13T20:27:04Z - Multi-object main merge and lift-guidance training patch
 
 Goal:
