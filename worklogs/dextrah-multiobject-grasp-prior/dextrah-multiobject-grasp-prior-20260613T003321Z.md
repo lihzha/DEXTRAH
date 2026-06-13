@@ -472,6 +472,36 @@ Checks:
 Next:
 - Commit/push the wrapper patch, deploy it to a new A100 source worktree, and launch a bounded tuned 4-object teacher run using grasp-prior action prior reward plus stronger lift/down-action shaping while keeping the current baseline run alive for comparison.
 
+## 2026-06-13T20:29:00Z - Guided 4-object teacher run queued
+
+Goal:
+- Compare the baseline 4-object teacher run against a tuned run that explicitly rewards the early grasp-prior close/lift reference action without applying scripted warmstart actions.
+
+Version Control:
+- implementation_commit: `21a5a063f3326b424d587fcf6151c683644589ce`
+- push: pushed to `origin/main`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-guidance-21a5a06-20260613`
+- remote_commit: `21a5a063f3326b424d587fcf6151c683644589ce`
+
+Validation:
+- local: `bash -n cluster/sbatch_train_teacher_8gpu.sh`
+- local: `git diff --check`
+- remote: `bash -n /lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-guidance-21a5a06-20260613/cluster/sbatch_train_teacher_8gpu.sh`
+
+Command / Job:
+- job_id: `29049357`
+- run_name: `multiobject_teacher_4obj_guided_21a5a06_20260613_1329`
+- source: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-guidance-21a5a06-20260613`
+- config: `MAX_OBJECTS=4`, `OBJECT_ASSET_ASSIGNMENT=random`, `OBJECT_SPAWN_CENTER_OFFSET_X=0.05`, `OBJECT_SPAWN_XY_RANDOMIZATION=0.10`, `OBJECT_SPAWN_YAW_RANDOMIZATION_DEG=180.0`, `NUM_ENVS=1024`, `MAX_ITERATIONS=500`.
+- action guidance: `GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED=True`, `WEIGHT=3.0`, `SHARPNESS=2.0`, reference sequence `approach=4`, `close=12`, `lift=24`, `lift_action_z=0.25`, no action warmstart override.
+- reward shaping: `CUBE_LIFT_WEIGHT=20.0`, `CUBE_HEIGHT_TRACKING_WEIGHT=6.0`, `CUBE_SUCCESS_BONUS_WEIGHT=30.0`, `CUBE_LIFT_ACTION_WEIGHT=4.0`, `CUBE_DESCEND_ACTION_PENALTY_WEIGHT=-4.0`, `CUBE_ACTION_PENALTY_WEIGHT=-0.0002`.
+
+Result:
+- status: pending at launch due `QOSMaxJobsPerUserLimit`.
+
+Next:
+- Monitor pending/start state, inspect stdout early for resolved overrides, then compare early action-prior, action-z, lift-height, and success metrics against baseline job `29048544`.
+
 ## 2026-06-13 - Main merge, randomized multi-object training, and cluster launch
 
 Goal:
