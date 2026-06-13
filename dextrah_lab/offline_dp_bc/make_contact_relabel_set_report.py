@@ -48,6 +48,16 @@ def _literal_list(value: str, *, expected: int | None = None) -> list[float]:
     return [float(v) for v in parsed]
 
 
+def _payload_vec3(payload: dict[str, Any], key: str) -> list[float]:
+    value = payload.get(key)
+    if value is None:
+        return [float("nan"), float("nan"), float("nan")]
+    arr = np.asarray(value, dtype=np.float32).reshape(-1)
+    if arr.shape[0] != 3:
+        raise ValueError(f"Expected {key} length 3, got {value}")
+    return [float(v) for v in arr.tolist()]
+
+
 def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
     fieldnames = sorted({key for row in rows for key in row.keys()})
     with path.open("w", encoding="utf-8", newline="") as f:
@@ -183,6 +193,9 @@ def main() -> None:
     accepted_rollout_ids: list[str] = []
     accepted_rollout_reset_joint_blend_alpha: list[float] = []
     accepted_rollout_reset_cube_pos_blend_alpha: list[float] = []
+    accepted_rollout_applied_cube_pos: list[list[float]] = []
+    accepted_rollout_normal_reset_cube_pos: list[list[float]] = []
+    accepted_rollout_source_cube_pos: list[list[float]] = []
     accepted_images: list[np.ndarray] = []
     accepted_robot_states: list[np.ndarray] = []
     accepted_rgb_actions: list[np.ndarray] = []
@@ -191,6 +204,9 @@ def main() -> None:
     accepted_rgb_rollout_ids: list[str] = []
     accepted_rgb_rollout_reset_joint_blend_alpha: list[float] = []
     accepted_rgb_rollout_reset_cube_pos_blend_alpha: list[float] = []
+    accepted_rgb_rollout_applied_cube_pos: list[list[float]] = []
+    accepted_rgb_rollout_normal_reset_cube_pos: list[list[float]] = []
+    accepted_rgb_rollout_source_cube_pos: list[list[float]] = []
     rgb_camera_eye: np.ndarray | None = None
     rgb_camera_target: np.ndarray | None = None
     rgb_robot_state_names: np.ndarray | None = None
@@ -225,6 +241,9 @@ def main() -> None:
             )
             orientation_mode = str(payload.get("orientation_mode", one_summary.get("orientation_mode", "")))
             pose_action_filter = str(payload.get("pose_action_filter", one_summary.get("pose_action_filter", "")))
+            applied_cube_pos = _payload_vec3(payload, "applied_cube_pos")
+            normal_reset_cube_pos = _payload_vec3(payload, "normal_reset_cube_pos")
+            source_cube_pos = _payload_vec3(payload, "source_cube_pos")
             rollout_row = {
                 "rollout_id": rollout_id,
                 "rollout_dir": str(summary_path.parent),
@@ -259,6 +278,9 @@ def main() -> None:
                 "reset_cube_minus_ee_l2_from_dataset": float(
                     payload.get("reset_cube_minus_ee_l2_from_dataset", float("nan"))
                 ),
+                "applied_cube_pos": applied_cube_pos,
+                "normal_reset_cube_pos": normal_reset_cube_pos,
+                "source_cube_pos": source_cube_pos,
                 "episode": int(one_summary.get("episode", -1)),
                 "episode_step": int(one_summary.get("episode_step", -1)),
                 "steps": int(payload.get("steps", 0)),
@@ -298,6 +320,9 @@ def main() -> None:
                 accepted_rollout_ids.append(rollout_id)
                 accepted_rollout_reset_joint_blend_alpha.append(reset_joint_blend_alpha)
                 accepted_rollout_reset_cube_pos_blend_alpha.append(reset_cube_pos_blend_alpha)
+                accepted_rollout_applied_cube_pos.append(applied_cube_pos)
+                accepted_rollout_normal_reset_cube_pos.append(normal_reset_cube_pos)
+                accepted_rollout_source_cube_pos.append(source_cube_pos)
 
             rgb_npz_raw = str(payload.get("rgb_npz", ""))
             if rgb_npz_raw:
@@ -334,6 +359,9 @@ def main() -> None:
                 accepted_rgb_rollout_ids.append(rollout_id)
                 accepted_rgb_rollout_reset_joint_blend_alpha.append(reset_joint_blend_alpha)
                 accepted_rgb_rollout_reset_cube_pos_blend_alpha.append(reset_cube_pos_blend_alpha)
+                accepted_rgb_rollout_applied_cube_pos.append(applied_cube_pos)
+                accepted_rgb_rollout_normal_reset_cube_pos.append(normal_reset_cube_pos)
+                accepted_rgb_rollout_source_cube_pos.append(source_cube_pos)
                 if "camera_eye" in rgb_data.files:
                     current_eye = np.asarray(rgb_data["camera_eye"], dtype=np.float32)
                     if rgb_camera_eye is None:
@@ -367,6 +395,9 @@ def main() -> None:
         rollout_ids=np.asarray(accepted_rollout_ids),
         rollout_reset_joint_blend_alpha=np.asarray(accepted_rollout_reset_joint_blend_alpha, dtype=np.float32),
         rollout_reset_cube_pos_blend_alpha=np.asarray(accepted_rollout_reset_cube_pos_blend_alpha, dtype=np.float32),
+        rollout_applied_cube_pos=np.asarray(accepted_rollout_applied_cube_pos, dtype=np.float32).reshape((-1, 3)),
+        rollout_normal_reset_cube_pos=np.asarray(accepted_rollout_normal_reset_cube_pos, dtype=np.float32).reshape((-1, 3)),
+        rollout_source_cube_pos=np.asarray(accepted_rollout_source_cube_pos, dtype=np.float32).reshape((-1, 3)),
     )
     rgb_transition_count = 0
     rgb_episode_count = 0
@@ -392,6 +423,15 @@ def main() -> None:
             rollout_reset_cube_pos_blend_alpha=np.asarray(
                 accepted_rgb_rollout_reset_cube_pos_blend_alpha, dtype=np.float32
             ),
+            rollout_applied_cube_pos=np.asarray(
+                accepted_rgb_rollout_applied_cube_pos, dtype=np.float32
+            ).reshape((-1, 3)),
+            rollout_normal_reset_cube_pos=np.asarray(
+                accepted_rgb_rollout_normal_reset_cube_pos, dtype=np.float32
+            ).reshape((-1, 3)),
+            rollout_source_cube_pos=np.asarray(
+                accepted_rgb_rollout_source_cube_pos, dtype=np.float32
+            ).reshape((-1, 3)),
             camera_eye=np.asarray([] if rgb_camera_eye is None else rgb_camera_eye, dtype=np.float32),
             camera_target=np.asarray([] if rgb_camera_target is None else rgb_camera_target, dtype=np.float32),
             robot_state_names=np.asarray(

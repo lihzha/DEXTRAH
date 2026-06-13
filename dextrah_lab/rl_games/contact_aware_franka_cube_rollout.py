@@ -151,6 +151,22 @@ parser.add_argument(
         "1.0 preserves previous source-cube relabel behavior; 0.0 keeps the normal task-reset cube."
     ),
 )
+parser.add_argument(
+    "--reset_cube_xy",
+    type=float,
+    nargs=2,
+    default=None,
+    help=(
+        "Optional explicit task-frame cube XY reset. This overrides the XY produced by "
+        "--reset_cube_pos_blend_alpha while preserving the selected reset orientation."
+    ),
+)
+parser.add_argument(
+    "--reset_cube_z",
+    type=float,
+    default=None,
+    help="Optional explicit task-frame cube Z reset. Defaults to env cfg cube_spawn_z when --reset_cube_xy is set.",
+)
 parser.add_argument("--print_interval", default=40, type=int)
 parser.add_argument("--video", action="store_true", default=False)
 parser.add_argument("--video_length", default=280, type=int)
@@ -357,6 +373,13 @@ def _reset_to_source(
     source_cube_quat = torch.where(quat_dot < 0.0, -source_cube_quat, source_cube_quat)
     cube_quat = normal_cube_quat + cube_alpha * (source_cube_quat - normal_cube_quat)
     cube_quat = torch.nn.functional.normalize(cube_quat, dim=1)
+    reset_cube_xy = getattr(args_cli, "reset_cube_xy", None)
+    reset_cube_z = getattr(args_cli, "reset_cube_z", None)
+    if reset_cube_xy is not None:
+        xy = torch.as_tensor(reset_cube_xy, dtype=torch.float32, device=task_env.device).reshape(1, 2)
+        cube_pos[:, 0:2] = xy.repeat(num_ids, 1)
+        z_value = float(task_env.cfg.cube_spawn_z) if reset_cube_z is None else float(reset_cube_z)
+        cube_pos[:, 2] = z_value
     object_state = torch.zeros(num_ids, 13, device=task_env.device)
     object_state[:, 0:3] = cube_pos + task_env.scene.env_origins[env_ids]
     object_state[:, 3:7] = cube_quat
@@ -392,6 +415,12 @@ def _reset_to_source(
         "source_cube_pos": source_cube_pos[0].detach().float().cpu().numpy().astype(float).tolist(),
         "normal_reset_cube_pos": normal_lowdim[7:10].astype(float).tolist(),
         "applied_cube_pos": cube_pos[0].detach().float().cpu().numpy().astype(float).tolist(),
+        "reset_cube_xy_override": (
+            np.asarray(reset_cube_xy, dtype=np.float32).astype(float).tolist()
+            if reset_cube_xy is not None
+            else None
+        ),
+        "reset_cube_z_override": None if reset_cube_z is None else float(reset_cube_z),
         "source_joint_position": source_joint_np.astype(float).tolist(),
         "normal_reset_joint_position": normal_joint_np.astype(float).tolist(),
         "applied_joint_position": applied_joint_np.astype(float).tolist(),
@@ -1112,6 +1141,13 @@ def main() -> None:
         "pose_action_limit": float(args_cli.pose_action_limit),
         "orientation_mode": str(args_cli.orientation_mode),
         "reset_joint_blend_alpha": float(np.clip(float(args_cli.reset_joint_blend_alpha), 0.0, 1.0)),
+        "reset_cube_pos_blend_alpha": float(np.clip(float(args_cli.reset_cube_pos_blend_alpha), 0.0, 1.0)),
+        "reset_cube_xy": (
+            np.asarray(args_cli.reset_cube_xy, dtype=np.float32).astype(float).tolist()
+            if args_cli.reset_cube_xy is not None
+            else None
+        ),
+        "reset_cube_z": None if args_cli.reset_cube_z is None else float(args_cli.reset_cube_z),
         "variants": summaries,
         "verdict": verdict,
         "csv": str(csv_path),

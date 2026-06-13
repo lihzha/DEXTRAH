@@ -57,6 +57,9 @@ def main() -> None:
     rollout_ids: list[str] = []
     joint_alphas: list[float] = []
     cube_alphas: list[float] = []
+    applied_cube_pos_parts: list[np.ndarray] = []
+    normal_reset_cube_pos_parts: list[np.ndarray] = []
+    source_cube_pos_parts: list[np.ndarray] = []
     source_rows: list[dict[str, Any]] = []
     camera_eye: np.ndarray | None = None
     camera_target: np.ndarray | None = None
@@ -108,6 +111,19 @@ def main() -> None:
             else:
                 target.extend(float("nan") for _ in range(n_episodes))
 
+        for key, target in [
+            ("rollout_applied_cube_pos", applied_cube_pos_parts),
+            ("rollout_normal_reset_cube_pos", normal_reset_cube_pos_parts),
+            ("rollout_source_cube_pos", source_cube_pos_parts),
+        ]:
+            if key in data.files:
+                values = np.asarray(data[key], dtype=np.float32)
+                if values.shape != (n_episodes, 3):
+                    raise ValueError(f"{path}: {key} expected shape ({n_episodes},3), got {values.shape}")
+                target.append(values)
+            else:
+                target.append(np.full((n_episodes, 3), np.nan, dtype=np.float32))
+
         if camera_eye is None and "camera_eye" in data.files:
             camera_eye = np.asarray(data["camera_eye"], dtype=np.float32)
         if camera_target is None and "camera_target" in data.files:
@@ -130,6 +146,9 @@ def main() -> None:
     action_out = np.concatenate(action_parts, axis=0).astype(np.float32)
     phase_out = np.concatenate(phase_parts, axis=0).astype(np.int32)
     episode_ends_out = np.cumsum(np.asarray(episode_lengths, dtype=np.int64))
+    applied_cube_pos_out = np.concatenate(applied_cube_pos_parts, axis=0).astype(np.float32)
+    normal_reset_cube_pos_out = np.concatenate(normal_reset_cube_pos_parts, axis=0).astype(np.float32)
+    source_cube_pos_out = np.concatenate(source_cube_pos_parts, axis=0).astype(np.float32)
 
     np.savez_compressed(
         output_path,
@@ -141,6 +160,9 @@ def main() -> None:
         rollout_ids=np.asarray(rollout_ids),
         rollout_reset_joint_blend_alpha=np.asarray(joint_alphas, dtype=np.float32),
         rollout_reset_cube_pos_blend_alpha=np.asarray(cube_alphas, dtype=np.float32),
+        rollout_applied_cube_pos=applied_cube_pos_out,
+        rollout_normal_reset_cube_pos=normal_reset_cube_pos_out,
+        rollout_source_cube_pos=source_cube_pos_out,
         source_npzs=np.asarray([str(path) for path in input_paths]),
         camera_eye=np.asarray([] if camera_eye is None else camera_eye, dtype=np.float32),
         camera_target=np.asarray([] if camera_target is None else camera_target, dtype=np.float32),
@@ -173,6 +195,12 @@ def main() -> None:
         "joint_reset_alpha_values": sorted({round(float(v), 6) for v in joint_alphas if np.isfinite(v)}),
         "cube_reset_alpha_values": sorted({round(float(v), 6) for v in cube_alphas if np.isfinite(v)}),
     }
+    finite_applied = applied_cube_pos_out[np.isfinite(applied_cube_pos_out).all(axis=1)]
+    if finite_applied.size:
+        xy = finite_applied[:, :2]
+        summary["applied_cube_xy_min"] = xy.min(axis=0).astype(float).tolist()
+        summary["applied_cube_xy_max"] = xy.max(axis=0).astype(float).tolist()
+        summary["applied_cube_xy_unique_rounded_1mm"] = int(np.unique(np.round(xy, 3), axis=0).shape[0])
     (report_path.parent / "combined_contact_relabel_rgb_summary.json").write_text(
         json.dumps(_to_builtin(summary), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -188,6 +216,8 @@ def main() -> None:
         f"- phase counts: `{summary['phase_counts']}`",
         f"- joint reset alpha values: `{summary['joint_reset_alpha_values']}`",
         f"- cube reset alpha values: `{summary['cube_reset_alpha_values']}`",
+        f"- applied cube XY min/max: `{summary.get('applied_cube_xy_min')}` / `{summary.get('applied_cube_xy_max')}`",
+        f"- unique applied cube XY rounded to 1mm: `{summary.get('applied_cube_xy_unique_rounded_1mm')}`",
         "",
         "## Inputs",
         "",

@@ -49,6 +49,14 @@ parser.add_argument("--demo_reset_episode", type=int, default=0)
 parser.add_argument("--demo_reset_step", type=int, default=0)
 parser.add_argument("--demo_reset_cube_pos_blend_alpha", type=float, default=1.0)
 parser.add_argument(
+    "--reset_cube_xy",
+    type=float,
+    nargs=2,
+    default=None,
+    help="Optional explicit task-frame cube XY reset for deterministic in-domain/OOD eval.",
+)
+parser.add_argument("--reset_cube_z", type=float, default=None)
+parser.add_argument(
     "--append_phase_progress",
     action="store_true",
     default=False,
@@ -409,6 +417,51 @@ def _apply_demo_cube_reset(task_env: Any, demo_reset: dict[str, Any]) -> tuple[t
     }
 
 
+def _apply_explicit_cube_reset(task_env: Any, cube_xy: list[float] | tuple[float, float], cube_z: float | None) -> tuple[torch.Tensor, dict[str, Any]]:
+    env_ids = torch.as_tensor(task_env._robot._ALL_INDICES, device=task_env.device, dtype=torch.long)
+    num_ids = int(env_ids.numel())
+    before_policy_obs = _reset_policy_obs_from_task_env(task_env)
+    before_lowdim = extract_lowdim_obs_from_ppo_obs(before_policy_obs).detach().float().cpu().numpy()
+    before0 = before_lowdim[0]
+    target_cube_pos = torch.as_tensor(before_lowdim[:, 7:10], dtype=torch.float32, device=task_env.device)
+    xy = torch.as_tensor(cube_xy, dtype=torch.float32, device=task_env.device).reshape(1, 2)
+    target_cube_pos[:, 0:2] = xy.repeat(num_ids, 1)
+    target_cube_pos[:, 2] = float(task_env.cfg.cube_spawn_z) if cube_z is None else float(cube_z)
+    target_cube_quat = torch.as_tensor(before_lowdim[:, 10:14], dtype=torch.float32, device=task_env.device)
+    target_cube_quat = torch.nn.functional.normalize(target_cube_quat, dim=1)
+
+    object_state = torch.zeros(num_ids, 13, device=task_env.device)
+    object_state[:, 0:3] = target_cube_pos + task_env.scene.env_origins[env_ids]
+    object_state[:, 3:7] = target_cube_quat
+    task_env._cube.write_root_state_to_sim(object_state, env_ids=env_ids)
+    task_env.cube_initial_pos[env_ids] = target_cube_pos
+    task_env.cube_goal_pos[env_ids] = target_cube_pos
+    task_env.cube_goal_pos[env_ids, 2] = target_cube_pos[:, 2] + float(task_env.cfg.cube_lift_height)
+    task_env.has_lifted_cube[env_ids] = False
+    task_env.in_success_region[env_ids] = False
+    task_env.time_in_success_region[env_ids] = 0.0
+    task_env.actions[env_ids] = 0.0
+    task_env.ik_controller.reset(env_ids)
+    task_env.scene.write_data_to_sim()
+    task_env.sim.forward()
+
+    policy_obs = _reset_policy_obs_from_task_env(task_env)
+    live_lowdim = extract_lowdim_obs_from_ppo_obs(policy_obs).detach().float().cpu().numpy()
+    live0 = live_lowdim[0]
+    return policy_obs, {
+        "requested_cube_xy": [float(cube_xy[0]), float(cube_xy[1])],
+        "requested_cube_z": None if cube_z is None else float(cube_z),
+        "normal_cube_pos_before_reset_env0": before0[7:10].astype(float).tolist(),
+        "applied_cube_pos_env0": target_cube_pos[0].detach().float().cpu().numpy().astype(float).tolist(),
+        "applied_cube_quat_env0": target_cube_quat[0].detach().float().cpu().numpy().astype(float).tolist(),
+        "live_lowdim_after_reset_env0": live0.astype(float).tolist(),
+        "cube_pos_l2_diff_env0": float(
+            np.linalg.norm(live0[7:10] - target_cube_pos[0].detach().float().cpu().numpy())
+        ),
+        "cube_pos_l2_from_normal_env0": float(np.linalg.norm(live0[7:10] - before0[7:10])),
+    }
+
+
 def _configure_camera(env_cfg: Any, task_env: Any | None = None) -> None:
     if hasattr(env_cfg, "viewer"):
         env_cfg.viewer.eye = tuple(float(v) for v in args_cli.camera_eye)
@@ -489,6 +542,7 @@ def main() -> None:
     if demo_reset_path is not None and not demo_reset_path.is_file():
         raise FileNotFoundError(demo_reset_path)
     demo_reset = _load_demo_reset(demo_reset_path)
+    explicit_reset_summary: dict[str, Any] | None = None
 
     _stage(
         "start",
@@ -500,6 +554,12 @@ def main() -> None:
         phase_progress_dataset=str(args_cli.phase_progress_dataset) if args_cli.phase_progress_dataset else None,
         phase_progress_episode=int(args_cli.phase_progress_episode),
         phase_progress_start_step=int(args_cli.phase_progress_start_step),
+        reset_cube_xy=(
+            [float(v) for v in args_cli.reset_cube_xy]
+            if args_cli.reset_cube_xy is not None
+            else None
+        ),
+        reset_cube_z=None if args_cli.reset_cube_z is None else float(args_cli.reset_cube_z),
         num_action_samples=int(args_cli.num_action_samples),
         policy_sample_seed=args_cli.policy_sample_seed,
         action_chunk_steps=int(args_cli.action_chunk_steps),
@@ -569,6 +629,13 @@ def main() -> None:
         if demo_reset is not None:
             policy_obs, demo_reset_summary = _apply_demo_cube_reset(task_env, demo_reset)
             _stage("demo_reset_apply_done", **demo_reset_summary)
+        if args_cli.reset_cube_xy is not None:
+            policy_obs, explicit_reset_summary = _apply_explicit_cube_reset(
+                task_env,
+                cube_xy=args_cli.reset_cube_xy,
+                cube_z=args_cli.reset_cube_z,
+            )
+            _stage("explicit_cube_reset_apply_done", **explicit_reset_summary)
 
         # Warm renderer once, then initialize the policy history from current state.
         _render_rgb_obs(gym_env)
@@ -727,6 +794,7 @@ def main() -> None:
         "final_cube_pos_mean": final_cube_pos_mean,
         "final_gripper_width": final_gripper_width,
         "demo_reset": demo_reset_summary,
+        "explicit_cube_reset": explicit_reset_summary,
         "video_enabled": bool(args_cli.video),
         "video_files": _latest_video_files(video_folder if args_cli.video else None),
         "env_closed": env_closed,

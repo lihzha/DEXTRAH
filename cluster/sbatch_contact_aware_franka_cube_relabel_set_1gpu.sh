@@ -101,8 +101,12 @@ container_path_from_host() {
 
 resolve_trajectory_for_host_check() {
   local spec="$1"
-  local ep step traj alpha
-  IFS=: read -r ep step traj alpha <<< "$spec"
+  local ep step traj alpha spec_seed cube_x cube_y extra
+  IFS=: read -r ep step traj alpha spec_seed cube_x cube_y extra <<< "$spec"
+  if [ -n "${extra:-}" ]; then
+    echo "Too many ':'-separated fields in spec: $spec" >&2
+    return 2
+  fi
   if [ -z "${traj:-}" ]; then
     local template="$TRAJECTORY_TEMPLATE"
     template="$(printf '%s' "$template" | sed "s/{episode}/$ep/g; s/{seed}/$ep/g")"
@@ -193,6 +197,7 @@ echo "VARIANT=$VARIANT"
 echo "ORIENTATION_MODE=$ORIENTATION_MODE"
 echo "RESET_JOINT_BLEND_ALPHA=$RESET_JOINT_BLEND_ALPHA"
 echo "RESET_CUBE_POS_BLEND_ALPHA=$RESET_CUBE_POS_BLEND_ALPHA"
+echo "Spec format: episode:step:trajectory:joint_alpha:seed:cube_x:cube_y"
 echo "ALIGN_STEPS=$ALIGN_STEPS CONTACT_ALIGN_STEPS=$CONTACT_ALIGN_STEPS CONTACT_ALIGN_REFERENCE=$CONTACT_ALIGN_REFERENCE CONTACT_ALIGN_THRESHOLD=$CONTACT_ALIGN_THRESHOLD"
 echo "CONTACT_GATE_MODE=$CONTACT_GATE_MODE FINGER_GATE_MAX_DISTANCE=$FINGER_GATE_MAX_DISTANCE FINGER_GATE_BALANCE_THRESHOLD=$FINGER_GATE_BALANCE_THRESHOLD REQUIRE_CONTACT_GATE=$REQUIRE_CONTACT_GATE"
 echo "LATERAL_CENTERING_GAIN=$LATERAL_CENTERING_GAIN LATERAL_CENTERING_LIMIT=$LATERAL_CENTERING_LIMIT LATERAL_SEARCH_AMPLITUDE=$LATERAL_SEARCH_AMPLITUDE LATERAL_SEARCH_PERIOD=$LATERAL_SEARCH_PERIOD"
@@ -252,7 +257,11 @@ srun \
     fi
 
     for spec in "${SPEC_LIST[@]}"; do
-      IFS=: read -r ep step traj alpha <<< "$spec"
+      IFS=: read -r ep step traj alpha spec_seed cube_x cube_y extra <<< "$spec"
+      if [ -n "${extra:-}" ]; then
+        echo "Too many fields in SPEC: $spec"
+        exit 2
+      fi
       if [ -z "${traj:-}" ]; then
         template="$TRAJECTORY_TEMPLATE"
         template="$(printf "%s" "$template" | sed "s/{episode}/$ep/g; s/{seed}/$ep/g")"
@@ -261,8 +270,25 @@ srun \
       if [ -z "${alpha:-}" ]; then
         alpha="$RESET_JOINT_BLEND_ALPHA"
       fi
+      rollout_seed="$SEED"
+      if [ -n "${spec_seed:-}" ]; then
+        rollout_seed="$spec_seed"
+      fi
       alpha_tag=$(printf "%s" "$alpha" | tr "." "p" | tr -c "A-Za-z0-9p_-" "_")
-      rollout_id=$(printf "ep%02ds%03d_a%s" "$ep" "$step" "$alpha_tag")
+      seed_tag=$(printf "%s" "$rollout_seed" | tr -c "A-Za-z0-9_-" "_")
+      xy_tag=""
+      RESET_CUBE_ARGS=()
+      if [ -n "${cube_x:-}" ] || [ -n "${cube_y:-}" ]; then
+        if [ -z "${cube_x:-}" ] || [ -z "${cube_y:-}" ]; then
+          echo "SPEC must provide both cube_x and cube_y, got: $spec"
+          exit 2
+        fi
+        RESET_CUBE_ARGS=(--reset_cube_xy "$cube_x" "$cube_y")
+        x_tag=$(printf "%s" "$cube_x" | sed "s/-/m/g; s/\\./p/g" | tr -c "A-Za-z0-9p_m" "_")
+        y_tag=$(printf "%s" "$cube_y" | sed "s/-/m/g; s/\\./p/g" | tr -c "A-Za-z0-9p_m" "_")
+        xy_tag=$(printf "_x%s_y%s" "$x_tag" "$y_tag")
+      fi
+      rollout_id=$(printf "ep%02ds%03d_a%s_seed%s%s" "$ep" "$step" "$alpha_tag" "$seed_tag" "$xy_tag")
       rollout_dir="$RUN_DIR_CONTAINER/rollouts/$rollout_id"
       mkdir -p "$rollout_dir"
       CMD=(
@@ -274,7 +300,7 @@ srun \
         --trajectory_json "$traj"
         --episode "$ep"
         --episode_step "$step"
-        --seed "$SEED"
+        --seed "$rollout_seed"
         --align_steps "$ALIGN_STEPS"
         --contact_align_steps "$CONTACT_ALIGN_STEPS"
         --contact_align_reference "$CONTACT_ALIGN_REFERENCE"
@@ -297,6 +323,7 @@ srun \
         --orientation_mode "$ORIENTATION_MODE"
         --reset_joint_blend_alpha "$alpha"
         --reset_cube_pos_blend_alpha "$RESET_CUBE_POS_BLEND_ALPHA"
+        "${RESET_CUBE_ARGS[@]}"
         --output_dir "$rollout_dir"
         --print_interval "$PRINT_INTERVAL"
         --camera_eye "$CAMERA_EYE_X" "$CAMERA_EYE_Y" "$CAMERA_EYE_Z"
