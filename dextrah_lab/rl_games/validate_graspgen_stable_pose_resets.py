@@ -391,6 +391,11 @@ def _bottom_z_from_vertices(task_env, vertices_by_asset: list[torch.Tensor], env
     return bottom
 
 
+def _zero_object_root_velocity(task_env, env_ids: torch.Tensor) -> None:
+    zero_vel = torch.zeros((int(env_ids.numel()), 6), dtype=torch.float32, device=task_env.device)
+    task_env._cube.write_root_velocity_to_sim(zero_vel, env_ids=env_ids)
+
+
 def _quat_angle_delta(initial_quat: torch.Tensor, current_quat: torch.Tensor) -> torch.Tensor:
     dot = torch.abs(torch.sum(initial_quat * current_quat, dim=-1))
     dot = torch.clamp(dot, -1.0, 1.0)
@@ -459,6 +464,7 @@ def _place_stable_pose_states(
         local_root_quat_by_env.append(quat.detach().cpu().tolist())
 
     task_env._cube.write_root_state_to_sim(root_state, env_ids=env_ids)
+    _zero_object_root_velocity(task_env, env_ids)
     task_env.scene.write_data_to_sim()
     task_env.sim.forward()
     task_env.scene.update(dt=0.0)
@@ -487,6 +493,7 @@ def _place_local_root_states(
     root_state[:, 0:3] = local_pos + task_env.scene.env_origins[env_ids]
     root_state[:, 3:7] = local_quat
     task_env._cube.write_root_state_to_sim(root_state, env_ids=env_ids)
+    _zero_object_root_velocity(task_env, env_ids)
     task_env.scene.write_data_to_sim()
     task_env.sim.forward()
     task_env.scene.update(dt=0.0)
