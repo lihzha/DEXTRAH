@@ -426,6 +426,49 @@ Result:
 - status: running/queued; monitoring in progress.
 
 Follow-up:
+- Slurm state: `FAILED`, exit code `1:0`, elapsed `00:02:06`.
+- Local fetched artifacts: `local_results/video_topdown_1028886`.
+- Encoded MP4s:
+  - `reset_settle.mp4`: 1280x720, 96 frames, 8.0s.
+  - `perturbation.mp4`: 1280x720, 48 frames, 4.0s.
+  - `grasp_contact.mp4`: 1280x720, 45 frames, 3.75s.
+- Metrics:
+  - `reset_settle` passed.
+  - `perturbation` failed because the tuned-up push was too strong: `object_xy_delta_max=0.2159m`, `done_count=4`.
+  - `grasp_contact` failed only under the stricter pregrasp-z selector threshold: `selected_done_count=0`, `object_xy_delta_max=0.0306m`, `finger_table_clearance_min=0.0301m`, `selected_pregrasp_offset_dir_z=0.122`.
+- Visual inspection:
+  - Contact video no longer shows a mid-video reset jump.
+  - Robot reset is aligned to the settled object pose; no obvious gripper/table or gripper/object penetration is visible.
+  - Perturbation visibly moves and rotates the object but goes too far for the no-done metric.
+
+Analysis:
+- The user's two grasp-contact concerns are addressed in this run: no auto-reset artifact, and reset is composed after object settling.
+- The remaining validation issue is parameter tuning for perturbation and avoiding an unnecessarily strict contact-selector threshold.
+
+Next:
+- Rerun without code changes using a smaller perturbation push and `GRASP_RESET_MIN_PREGRASP_Z=0.10`.
+
+## 2026-06-13 - Tuned perturbation 4-object video launch
+
+Goal:
+- Produce a clean video-validation run where reset-settle, moderate perturbation, and settled-pose grasp contact all pass their metrics and visual checks.
+
+Version Control:
+- local_commit: `3b8c306efd73103f5fe4eabc006ccf57dd5f3b2e`
+- remote_commit: `3b8c306efd73103f5fe4eabc006ccf57dd5f3b2e`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-20260613T003321Z`
+
+Command / Job:
+- command: `NUM_ENVS=4 MAX_OBJECTS=4 RESET_CYCLES=2 SETTLE_STEPS=96 PERTURB_STEPS=96 PERTURB_PUSH_STEPS=8 PERTURB_LINEAR_VELOCITY=0.45 PERTURB_LATERAL_VELOCITY=0.15 PERTURB_ANGULAR_VELOCITY=4.0 GRASP_STEPS=90 GRASP_OBJECT_SETTLE_STEPS=0 OBJECT_RESET_SETTLE_STEPS=240 CAPTURE_INTERVAL=2 GRASP_RESET_ATTEMPTS=64 GRASP_RESET_MIN_PREGRASP_Z=0.10 OBJECT_ASSET_MANIFEST_PATH=/results/assets/franka_multi_graspgen_asset_smoke_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_223457/manifest.json RUN_NAME=<run> CODE_NFS=<remote_worktree> CODE_COMMIT=3b8c306efd73103f5fe4eabc006ccf57dd5f3b2e sbatch --partition=batch --time=0-00:45:00 cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh`
+- job_id: `1028887`
+- run_name: `franka_multi_video_tuned_manual_4obj_dextrah-multiobject-grasp-prior-20260613T003321Z_20260613_000239`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_tuned_manual_4obj_dextrah-multiobject-grasp-prior-20260613T003321Z_20260613_000239`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_1028887.out`
+
+Result:
+- status: running/queued; monitoring in progress.
+
+Follow-up:
 - Slurm state: `FAILED`, exit code `1:0`, elapsed `00:01:26`.
 - Local fetched artifacts: `local_results/video_manual_1028884`.
 - Encoded MP4s:
@@ -471,6 +514,26 @@ Validation:
 
 Next:
 - Commit, deploy, rerun the 4-object video smoke with `GRASP_RESET_ATTEMPTS=64`, then inspect metrics and MP4s.
+
+## 2026-06-13 - Top-down settled-reset 4-object video launch
+
+Goal:
+- Verify the contact video no longer contains auto-reset jumps and that the robot reset is computed from the object's settled pose.
+
+Version Control:
+- local_commit: `3b8c306efd73103f5fe4eabc006ccf57dd5f3b2e`
+- remote_commit: `3b8c306efd73103f5fe4eabc006ccf57dd5f3b2e`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-20260613T003321Z`
+
+Command / Job:
+- command: `NUM_ENVS=4 MAX_OBJECTS=4 RESET_CYCLES=2 SETTLE_STEPS=96 PERTURB_STEPS=96 PERTURB_PUSH_STEPS=12 PERTURB_LINEAR_VELOCITY=0.75 PERTURB_LATERAL_VELOCITY=0.25 PERTURB_ANGULAR_VELOCITY=5.0 GRASP_STEPS=90 GRASP_OBJECT_SETTLE_STEPS=0 OBJECT_RESET_SETTLE_STEPS=240 CAPTURE_INTERVAL=2 GRASP_RESET_ATTEMPTS=64 GRASP_RESET_MIN_PREGRASP_Z=0.15 OBJECT_ASSET_MANIFEST_PATH=/results/assets/franka_multi_graspgen_asset_smoke_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_223457/manifest.json RUN_NAME=<run> CODE_NFS=<remote_worktree> CODE_COMMIT=3b8c306efd73103f5fe4eabc006ccf57dd5f3b2e sbatch --partition=batch --time=0-00:45:00 cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh`
+- job_id: `1028886`
+- run_name: `franka_multi_video_topdown_manual_4obj_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_235716`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_topdown_manual_4obj_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_235716`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_1028886.out`
+
+Result:
+- status: running/queued; monitoring in progress.
 
 ## 2026-06-13 - Single-env 4-object video smoke result
 
@@ -637,6 +700,56 @@ Analysis:
 Next:
 - Run `RENDER_CHECK=True` validation on the 4-object cluster smoke manifest.
 - After full asset staging finishes, run the same rendered validation on a sampled full-manifest subset before training.
+
+## 2026-06-13 - Scored grasp-contact video selector
+
+Goal:
+- Fix the remaining `grasp_contact.mp4` artifact where the selected prior passed static IK/prior checks but approached a side protrusion, dragged the object about 10 cm, and hit pre-lift termination.
+
+Change:
+- Added snapshot/restore and non-rendered candidate scoring to `dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py`.
+- The contact selector now samples grasp-prior resets after object settling, rolls each candidate briefly without rendering, rejects candidates with termination/object drag/table contact, restores the best candidate state, and records the MP4 from that same candidate.
+- Added `GRASP_CONTACT_SCORE_STEPS` plumbing to `cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh`.
+
+Version Control:
+- local_commit: `c674494fbc3ac857f6858227a108401146f84ae7`
+- remote_commit: `c674494fbc3ac857f6858227a108401146f84ae7`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-20260613T003321Z`
+
+Validation:
+- local: `python3 -m py_compile dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py`
+- local: `bash -n cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh`
+- local: `git diff --check`
+- remote: `python3 -m py_compile dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py && bash -n cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh`
+
+Command / Job:
+- command: `NUM_ENVS=4 MAX_OBJECTS=4 RESET_CYCLES=2 SETTLE_STEPS=96 PERTURB_STEPS=96 PERTURB_PUSH_STEPS=8 PERTURB_LINEAR_VELOCITY=0.45 PERTURB_LATERAL_VELOCITY=0.15 PERTURB_ANGULAR_VELOCITY=4.0 GRASP_STEPS=90 GRASP_OBJECT_SETTLE_STEPS=0 OBJECT_RESET_SETTLE_STEPS=240 CAPTURE_INTERVAL=2 GRASP_RESET_ATTEMPTS=128 GRASP_RESET_MIN_PREGRASP_Z=0.10 GRASP_CONTACT_SCORE_STEPS=60 OBJECT_ASSET_MANIFEST_PATH=/results/assets/franka_multi_graspgen_asset_smoke_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_223457/manifest.json CODE_COMMIT=c674494fbc3ac857f6858227a108401146f84ae7 sbatch --partition=batch --time=0-00:45:00 cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh`
+- job_id: `1028888`
+- run_name: `franka_multi_video_scored_contact_4obj_dextrah-multiobject-grasp-prior-20260613T003321Z_20260613_001201`
+- status: passed.
+- Slurm state: `COMPLETED`, exit code `0:0`, elapsed `00:01:22`.
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_1028888.out`
+
+Result:
+- `video_metrics.json` overall `passed=true`.
+- `reset_settle`: passed; `done_count=0`, `object_xy_delta_max=1.54e-05`, `bottom_clearance_min=-0.00403`.
+- `perturbation`: passed; `done_count=0`, `object_xy_delta_max=0.07945`, `bottom_clearance_min=-0.00418`.
+- `grasp_contact`: passed; `selected_done_count=0`, `selected_object_xy_delta_max=0.00451` with threshold `0.06`, `finger_table_clearance_min=0.03809`, `bottom_clearance_min=-0.00560`.
+- Contact selector chose a scored candidate from selection attempt `4`; the non-rendered probe also passed with `selected_object_xy_delta_max=0.00688`.
+
+Local Artifacts:
+- `local_results/video_scored_1028888/reset_settle.mp4`
+- `local_results/video_scored_1028888/perturbation.mp4`
+- `local_results/video_scored_1028888/grasp_contact.mp4`
+
+Viewer URLs:
+- `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-20260613T003321Z/local_results/video_scored_1028888/reset_settle.mp4`
+- `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-20260613T003321Z/local_results/video_scored_1028888/perturbation.mp4`
+- `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-20260613T003321Z/local_results/video_scored_1028888/grasp_contact.mp4`
+
+Visual Inspection:
+- `grasp_contact` first/mid/last frames show no mid-video object teleport/reset, no large lateral shove, and no obvious gripper/table or gripper/object penetration.
+- `reset_settle` and `perturbation` remain visually consistent with the prior accepted videos.
 
 ## 2026-06-13 - Rendered environment validation smoke launch
 
