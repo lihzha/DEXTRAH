@@ -15,5 +15,4 @@
 # Third Party
 import setuptools
 
-setuptools.setup(name='dextrah_lab', packages=['dextrah_lab'])
-
+setuptools.setup(name='dextrah_lab', packages=['dextrah_lab', 'dextrah_lab.robolab_bridge'])

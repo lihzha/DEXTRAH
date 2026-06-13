@@ -6728,3 +6728,63 @@ Stop State:
   documentation.
 - Do not continue monitoring, patching, launching, or canceling jobs in this
   turn unless the user gives a new explicit instruction.
+
+## 2026-06-13 01:10 PDT - robolab-orbit-render-bridge
+
+Goal:
+- Import RoboLab scene USDs into DEXTRAH's Isaac Lab render path and produce a
+  360 degree constant-speed orbit video looking down at the table center.
+
+Hypothesis:
+- DEXTRAH can treat RoboLab as an optional scene asset provider, reference the
+  resolved RoboLab USD under `/World/RoboLabScene`, compute a table-centered
+  orbit target from USD bounds, and capture headless frames with `TiledCamera`.
+
+Change:
+- Added a lightweight `dextrah_lab.robolab_bridge` resolver that can use an
+  installed `robolab` package, explicit scene dirs, or the sibling RoboLab
+  checkout.
+- Added `dextrah_lab/scene_scripts/render_robolab_scene.py` to render RoboLab
+  scenes as an orbit PNG sequence and optional `orbit.mp4`.
+- Added l401 Slurm wrappers for the RoboLab orbit render path.
+- Updated `setup.py` so the bridge package is installable without changing
+  the rest of the package surface.
+
+Version Control:
+- agent_id: codex-robolab-orbit-render
+- worktree: `/home/lzha/code/DEXTRAH`
+- worklog: `WORKLOG.md`
+- branch: main before commit; agent branch pending
+- base_commit: `cac41fc47ce3e002a4c1b6c0afce1d6b971e18c9`
+- implementation_commit: pending
+- push/pull: pending
+- changed_files: `setup.py`, `dextrah_lab/robolab_bridge/*`,
+  `dextrah_lab/scene_scripts/render_robolab_scene.py`,
+  `cluster/sbatch_render_robolab_scene.sh`,
+  `cluster/submit_render_robolab_scene_l401.sh`, `WORKLOG.md`
+- remote_commit/status: pending
+
+Command / Job:
+- command: planned l401 smoke via `cluster/sbatch_render_robolab_scene.sh`
+  with `WIDTH=640 HEIGHT=360 FPS=6 VIDEO_SECONDS=2 CAPTURE/encode orbit`.
+- job_id: pending
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/robolab_scene/robolab_orbit_smoke_20260613_0110`
+- logs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/robolab_scene_<job>.out`
+- artifacts: `frames/orbit_*.png`, `orbit.mp4`, `render_manifest.json`,
+  `camera_poses.json`, `robolab_scene_in_dextrah.usda`
+
+Result:
+- status: implementation checks pending
+- metrics/artifacts: none yet
+- key evidence: local cheap checks to be recorded after rerun
+
+Analysis:
+- Local workstation has GPUs but no visible local Isaac Sim `python.sh` or conda
+  environment, so l401 container rendering is the practical validation path.
+
+Next:
+- Commit/push the implementation, deploy exact commit to an agent-owned l401
+  worktree, run the small smoke render, fetch/inspect frames/video, patch if
+  the render is blank or the orbit target is wrong, then scale if needed.
