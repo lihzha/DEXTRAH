@@ -492,6 +492,39 @@ Validation:
 Next:
 - Commit, deploy exact source to l401, and rerun video validation.
 
+## 2026-06-13 - Center-distance quality gate after `1029057`
+
+Goal:
+- Stop treating far end/rim priors as successful grasp-prior reset states.
+
+Command / Job:
+- job_id: `1029057`
+- run_name: `multiobject_center_grasp_contact_8cef12d_20260613_144714`
+- status: failed only `grasp_contact`; `reset_settle` and `perturbation` passed.
+
+Result:
+- Selected object `30700bc210844bdc991a5ccf16b6379f`.
+- The selected prior was nominally top-down (`selected_pregrasp_offset_dir_z=0.122`) but was far from the object center: object center `[-0.6012, -0.0405, 0.7831]`, exact tool `[-0.6927, -0.2351, 0.7930]`.
+- Lift remained negligible (`selected_lift_height_max=0.0030m` vs `0.12m` threshold).
+
+Analysis:
+- Object-center scoring alone improved the selected object but did not make center distance a hard quality condition.
+- Objects with sparse or poor prior samples can still win selection if the validator only asks for top-down and IK success.
+
+Change:
+- Added `grasp_prior_reset_max_center_distance_frac=0.55`.
+- Candidate selection now requires center distance within that fraction of object grasp size.
+- Multi-object reset success/quality also requires the same center-distance gate.
+- Validation and teacher-training wrappers now log and expose the center-distance fraction.
+
+Validation:
+- local: `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py`
+- local: `bash -n cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh cluster/sbatch_train_teacher_8gpu.sh`
+- local: `git diff --check`
+
+Next:
+- Commit, deploy exact source to l401, and rerun grasp-contact validation.
+
 ## 2026-06-13 14:18 PDT - Stop invalid RL runs and wire stable-pose reset path
 
 Goal:

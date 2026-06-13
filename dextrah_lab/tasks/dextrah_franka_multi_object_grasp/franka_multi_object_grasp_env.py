@@ -632,11 +632,12 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         pregrasp_z = candidate_pregrasp_offset_dir_w[:, :, 2]
         topdown_ok = pregrasp_z >= float(self.cfg.grasp_prior_reset_min_pregrasp_z)
         width_ok = candidate_required_width <= float(self.cfg.max_gripper_width)
-        valid = candidate_pregrasp_farther & width_ok
-        if bool(self.cfg.grasp_prior_reset_require_topdown):
-            valid = valid & topdown_ok
         object_size = torch.clamp(self._grasp_prior_object_size(env_ids).unsqueeze(1), min=1.0e-4)
         normalized_center_dist = candidate_exact_tool_dist / object_size
+        center_ok = normalized_center_dist <= float(self.cfg.grasp_prior_reset_max_center_distance_frac)
+        valid = candidate_pregrasp_farther & width_ok & center_ok
+        if bool(self.cfg.grasp_prior_reset_require_topdown):
+            valid = valid & topdown_ok
         score = candidate_confidence + pregrasp_z - 4.0 * normalized_center_dist
         fallback_score = torch.where(
             candidate_pregrasp_farther & width_ok,
@@ -708,9 +709,14 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         env_ids: torch.Tensor,
         targets: dict[str, torch.Tensor],
     ) -> torch.Tensor:
-        if not bool(self.cfg.grasp_prior_reset_require_topdown):
-            return torch.ones(int(env_ids.numel()), dtype=torch.bool, device=self.device)
-        return targets["pregrasp_offset_dir_w"][:, 2] >= float(self.cfg.grasp_prior_reset_min_pregrasp_z)
+        mask = torch.ones(int(env_ids.numel()), dtype=torch.bool, device=self.device)
+        if bool(self.cfg.grasp_prior_reset_require_topdown):
+            mask = mask & (targets["pregrasp_offset_dir_w"][:, 2] >= float(self.cfg.grasp_prior_reset_min_pregrasp_z))
+        object_size = torch.clamp(self._grasp_prior_object_size(env_ids), min=1.0e-4)
+        center_dist_ok = targets["exact_tool_dist"] <= (
+            float(self.cfg.grasp_prior_reset_max_center_distance_frac) * object_size
+        )
+        return mask & center_dist_ok
 
     def _grasp_prior_reset_extra_success_mask(
         self,
