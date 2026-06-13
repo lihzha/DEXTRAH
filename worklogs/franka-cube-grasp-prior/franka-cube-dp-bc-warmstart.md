@@ -16404,3 +16404,67 @@ Next:
   - conservative `optimizer.lr`, `training.num_epochs`, and
     `training.max_train_steps`
 - Gate with the nominal trace eval before any shifted-object evaluation.
+
+## 2026-06-13T01:51:49-07:00 - RGB retention fine-tune wrapper and launch plan
+
+Goal:
+- Launch a bounded nominal-preserving RGB fine-tune from the known-good normal
+  checkpoint using the existing mixed normal-reset plus `OOD3x4` dataset.
+
+Hypothesis:
+- The previous `lr=2e-5`, 2000-step model-only fine-tune overwrote the nominal
+  close manifold. A lower-risk 400-step update with the good checkpoint
+  normalizer frozen and teacher distillation on normal-reset rows should retain
+  nominal grasp/lift behavior while nudging the policy toward the full-start
+  support rows.
+
+Change:
+- Added `cluster/sbatch_train_franka_cube_rgb_dp_1gpu.sh`, a versioned l401
+  training wrapper for official RGB Diffusion Policy runs. It:
+  - creates a model-only bootstrap checkpoint from `INIT_CHECKPOINT`,
+    resetting epoch/global step and excluding optimizer state;
+  - trains through `/official_dp/train.py` inside the same Isaac Lab/Pyxis
+    environment used by RGB eval;
+  - exposes `normalizer_checkpoint`, `distill_reference_checkpoint`,
+    `distill_mask_mode`, `distill_loss_weight`, and fine-tune schedule
+    settings as environment variables;
+  - validates `logs.json.txt` and `checkpoints/latest.ckpt`;
+  - stages the final checkpoint to
+    `/results/dp_bc/checkpoints/<RUN_NAME>/latest.ckpt`.
+
+Version Control:
+- agent_id: franka-cube-bc-warmstart
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `d6b3d1043d1e1f32a916d25dc813a3ff14628ff0`
+- implementation_commit: pending
+- changed_files:
+  `cluster/sbatch_train_franka_cube_rgb_dp_1gpu.sh`,
+  `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+- intentionally_unstaged:
+  `dextrah_lab/offline_dp_bc/make_support_expansion_dataset.py`
+
+Validation:
+- `bash -n cluster/sbatch_train_franka_cube_rgb_dp_1gpu.sh`
+- `git diff --check -- cluster/sbatch_train_franka_cube_rgb_dp_1gpu.sh`
+
+Command / Job:
+- planned run:
+  `rgb_phase12_normal_ckpt_ft_ood3x4_retention_lr5e6_s400_20260613_015149`
+- command:
+  `sbatch --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart,RUN_NAME=rgb_phase12_normal_ckpt_ft_ood3x4_retention_lr5e6_s400_20260613_015149,DATASET=/results/dp_bc/contact_relabel_rgb_fullstart_ood19_20260612_2351/combined/franka_cube_rgb_normalreset28x7_plus_fullstart_ood3x4_96.npz,INIT_CHECKPOINT=/results/dp_bc/checkpoints/rgb_phase12_normalreset28x7_20260612_2225/latest.ckpt,NORMALIZER_CHECKPOINT=/results/dp_bc/checkpoints/rgb_phase12_normalreset28x7_20260612_2225/latest.ckpt,DISTILL_REFERENCE_CHECKPOINT=/results/dp_bc/checkpoints/rgb_phase12_normalreset28x7_20260612_2225/latest.ckpt,LR=0.000005,MAX_TRAIN_STEPS=400,MAX_VAL_STEPS=100,LR_WARMUP_STEPS=50,NUM_EPOCHS=1,VAL_RATIO=0.02,DISTILL_MASK_MODE=normal_reset,DISTILL_LOSS_WEIGHT=2.0 cluster/sbatch_train_franka_cube_rgb_dp_1gpu.sh`
+- expected run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/official_dp_rgb/rgb_phase12_normal_ckpt_ft_ood3x4_retention_lr5e6_s400_20260613_015149`
+- expected checkpoint:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/rgb_phase12_normal_ckpt_ft_ood3x4_retention_lr5e6_s400_20260613_015149/latest.ckpt`
+
+Acceptance Gate:
+- Training must finish with finite loss and a staged checkpoint.
+- Inspect loss/val logs before eval.
+- Eval the checkpoint on the same nominal reset/action-trace gate that the
+  normal checkpoint passed and the previous OOD3x4 fine-tune failed.
+- Run shifted-object eval only if the nominal gate succeeds.
+
+Result:
+- status: pending commit/deploy/submit.
