@@ -219,6 +219,16 @@ def _snapshot_task_tensor_names() -> tuple[str, ...]:
         "grasp_prior_reset_offset_radial_angle",
         "grasp_prior_reset_exact_ee_dist",
         "grasp_prior_reset_pregrasp_ee_dist",
+        "grasp_prior_reset_quality_reference_pos_w",
+        "grasp_prior_reset_contact_reference_pos_w",
+        "grasp_prior_reset_contact_center_dist",
+        "grasp_prior_reset_center_gate_dist",
+        "grasp_prior_reset_has_contact_location",
+        "grasp_prior_reset_candidate_topdown_count",
+        "grasp_prior_reset_candidate_center_count",
+        "grasp_prior_reset_candidate_width_count",
+        "grasp_prior_reset_candidate_valid_count",
+        "grasp_prior_reset_candidate_fallback_count",
         "grasp_prior_reset_projected_exact_finger_center_dist",
         "grasp_prior_reset_projected_exact_tip_center_dist",
         "grasp_prior_reset_projected_exact_tip_max_dist",
@@ -462,9 +472,29 @@ def _selected_grasp_geometry_snapshot(task_env, env_id: int) -> dict[str, object
         "selected_reset_pos_error": float(task_env.grasp_prior_reset_pos_error[env_id].detach().cpu()),
         "selected_reset_rot_error": float(task_env.grasp_prior_reset_rot_error[env_id].detach().cpu()),
         "selected_open_width_margin": float(task_env.grasp_prior_reset_open_width_margin[env_id].detach().cpu()),
+        "selected_has_contact_location": bool(task_env.grasp_prior_reset_has_contact_location[env_id].detach().cpu()),
+        "selected_contact_center_dist": float(task_env.grasp_prior_reset_contact_center_dist[env_id].detach().cpu()),
+        "selected_center_gate_dist": float(task_env.grasp_prior_reset_center_gate_dist[env_id].detach().cpu()),
+        "selected_candidate_topdown_count": int(
+            task_env.grasp_prior_reset_candidate_topdown_count[env_id].detach().cpu()
+        ),
+        "selected_candidate_center_count": int(
+            task_env.grasp_prior_reset_candidate_center_count[env_id].detach().cpu()
+        ),
+        "selected_candidate_width_count": int(
+            task_env.grasp_prior_reset_candidate_width_count[env_id].detach().cpu()
+        ),
+        "selected_candidate_valid_count": int(
+            task_env.grasp_prior_reset_candidate_valid_count[env_id].detach().cpu()
+        ),
+        "selected_candidate_fallback_count": int(
+            task_env.grasp_prior_reset_candidate_fallback_count[env_id].detach().cpu()
+        ),
         "object_root_pos": _tensor_list(object_root_pos_w - origin),
         "object_root_quat_wxyz": _tensor_list(object_root_quat_w),
         "object_center_pos": _tensor_list(task_env.cube_pos[env_id]),
+        "quality_reference_pos": _tensor_list(task_env.grasp_prior_reset_quality_reference_pos_w[env_id] - origin),
+        "contact_reference_pos": _tensor_list(task_env.grasp_prior_reset_contact_reference_pos_w[env_id] - origin),
         "hand_pos": _tensor_list(hand_pos_w - origin),
         "hand_quat_wxyz": _tensor_list(hand_quat_w),
         "ee_pos": _tensor_list(task_env.ee_pos[env_id]),

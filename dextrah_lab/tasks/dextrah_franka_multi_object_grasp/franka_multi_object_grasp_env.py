@@ -699,7 +699,7 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             valid = valid & topdown_ok
         width_bonus = torch.clamp(candidate_required_width / max(float(self.cfg.max_gripper_width), 1.0e-6), 0.0, 1.0)
         score = candidate_confidence + pregrasp_z + 0.75 * width_bonus
-        score = score - 4.0 * normalized_center_dist - normalized_tool_center_dist
+        score = score - 6.0 * normalized_center_dist - normalized_tool_center_dist
         fallback_score = torch.where(
             candidate_pregrasp_farther & width_ok,
             score,
@@ -766,10 +766,16 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             "exact_tool_dist": exact_tool_dist,
             "exact_reference_dist": exact_reference_dist,
             "pregrasp_tool_dist": pregrasp_tool_dist,
+            "quality_reference_pos_w": contact_reference_w,
             "contact_reference_w": contact_reference_w,
             "contact_center_dist": contact_center_dist,
             "center_gate_dist": center_gate_dist,
             "has_contact_location": has_contact_location,
+            "candidate_topdown_count": topdown_ok.sum(dim=1),
+            "candidate_center_count": center_ok.sum(dim=1),
+            "candidate_width_count": width_ok.sum(dim=1),
+            "candidate_valid_count": valid.sum(dim=1),
+            "candidate_fallback_count": (candidate_pregrasp_farther & width_ok).sum(dim=1),
             "exact_ee_dist": torch.norm(exact_ee_pos_w - contact_reference_w, dim=-1),
             "pregrasp_ee_dist": torch.norm(target_ee_pos_w - contact_reference_w, dim=-1),
             "pregrasp_farther": pregrasp_farther,
