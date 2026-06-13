@@ -2,6 +2,7 @@
 __pycache__
 *.swp
 logs
+local_results/
 *.npy
 .thumbs/
 

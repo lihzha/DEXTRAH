@@ -64,7 +64,7 @@ elif [ "$TASK" = "Dextrah-Franka-Star-Kitting" ]; then
   ENTROPY_COEF="${ENTROPY_COEF:-0.001}"
   E_CLIP="${E_CLIP:-0.2}"
   GRAD_NORM="${GRAD_NORM:-1.0}"
-elif [ "$TASK" = "Dextrah-Franka-Cube-Grasp" ] || [ "$TASK" = "Dextrah-Franka-Cube-Grasp-Traj-Tracking" ]; then
+elif [ "$TASK" = "Dextrah-Franka-Cube-Grasp" ] || [ "$TASK" = "Dextrah-Franka-Cube-Grasp-Traj-Tracking" ] || [ "$TASK" = "Dextrah-Franka-Multi-Object-Grasp" ]; then
   NUM_ENVS="${NUM_ENVS:-2048}"
   MINIBATCH_SIZE="${MINIBATCH_SIZE:-32768}"
   CENTRAL_VALUE_MINIBATCH_SIZE="${CENTRAL_VALUE_MINIBATCH_SIZE:-32768}"
@@ -101,8 +101,15 @@ STAR_RESET_NEAR_HAND_X="${STAR_RESET_NEAR_HAND_X:--0.360}"
 STAR_RESET_NEAR_HAND_Y="${STAR_RESET_NEAR_HAND_Y:--0.120}"
 STAR_RESET_NEAR_HAND_XY_NOISE="${STAR_RESET_NEAR_HAND_XY_NOISE:-0.020}"
 CUBE_SPAWN_XY_RANDOMIZATION="${CUBE_SPAWN_XY_RANDOMIZATION:-0.08}"
+OBJECT_ASSET_MANIFEST_PATH="${OBJECT_ASSET_MANIFEST_PATH:-}"
+OBJECT_ASSETS_DIR="${OBJECT_ASSETS_DIR:-}"
+MAX_OBJECTS="${MAX_OBJECTS:-0}"
+OBJECT_SPAWN_XY_RANDOMIZATION="${OBJECT_SPAWN_XY_RANDOMIZATION:-0.08}"
+OBJECT_SPAWN_YAW_RANDOMIZATION_DEG="${OBJECT_SPAWN_YAW_RANDOMIZATION_DEG:-180.0}"
 GRASP_PRIOR_RESET_ENABLED="${GRASP_PRIOR_RESET_ENABLED:-False}"
 GRASP_PRIOR_LIBRARY_PATH="${GRASP_PRIOR_LIBRARY_PATH:-}"
+GRASP_PRIOR_LIBRARY_DIR="${GRASP_PRIOR_LIBRARY_DIR:-}"
+GRASP_PRIOR_ALLOW_MISSING="${GRASP_PRIOR_ALLOW_MISSING:-False}"
 DEXTRAH_RLGAMES_JSONL_METRICS="${DEXTRAH_RLGAMES_JSONL_METRICS:-False}"
 TRAJECTORY_TRACKING_REFERENCE_PATH="${TRAJECTORY_TRACKING_REFERENCE_PATH:-}"
 CUBE_APPROACH_WEIGHT="${CUBE_APPROACH_WEIGHT:-}"
@@ -141,11 +148,11 @@ REQUEUE_SUBMITTED=0
 
 case "$GRASP_PRIOR_RESET_ENABLED" in
   True|true|1|yes|Yes)
-    if [ "$TASK" != "Dextrah-Franka-Cube-Grasp" ]; then
-      echo "GRASP_PRIOR_RESET_ENABLED is only supported for TASK=Dextrah-Franka-Cube-Grasp" >&2
+    if [ "$TASK" != "Dextrah-Franka-Cube-Grasp" ] && [ "$TASK" != "Dextrah-Franka-Multi-Object-Grasp" ]; then
+      echo "GRASP_PRIOR_RESET_ENABLED is only supported for Franka cube or multi-object grasp tasks" >&2
       exit 2
     fi
-    if [ -z "$GRASP_PRIOR_LIBRARY_PATH" ]; then
+    if [ "$TASK" = "Dextrah-Franka-Cube-Grasp" ] && [ -z "$GRASP_PRIOR_LIBRARY_PATH" ]; then
       echo "GRASP_PRIOR_RESET_ENABLED requires GRASP_PRIOR_LIBRARY_PATH" >&2
       exit 2
     fi
@@ -322,8 +329,15 @@ echo "STAR_RESET_NEAR_HAND_X=$STAR_RESET_NEAR_HAND_X"
 echo "STAR_RESET_NEAR_HAND_Y=$STAR_RESET_NEAR_HAND_Y"
 echo "STAR_RESET_NEAR_HAND_XY_NOISE=$STAR_RESET_NEAR_HAND_XY_NOISE"
 echo "CUBE_SPAWN_XY_RANDOMIZATION=$CUBE_SPAWN_XY_RANDOMIZATION"
+echo "OBJECT_ASSET_MANIFEST_PATH=$OBJECT_ASSET_MANIFEST_PATH"
+echo "OBJECT_ASSETS_DIR=$OBJECT_ASSETS_DIR"
+echo "MAX_OBJECTS=$MAX_OBJECTS"
+echo "OBJECT_SPAWN_XY_RANDOMIZATION=$OBJECT_SPAWN_XY_RANDOMIZATION"
+echo "OBJECT_SPAWN_YAW_RANDOMIZATION_DEG=$OBJECT_SPAWN_YAW_RANDOMIZATION_DEG"
 echo "GRASP_PRIOR_RESET_ENABLED=$GRASP_PRIOR_RESET_ENABLED"
 echo "GRASP_PRIOR_LIBRARY_PATH=$GRASP_PRIOR_LIBRARY_PATH"
+echo "GRASP_PRIOR_LIBRARY_DIR=$GRASP_PRIOR_LIBRARY_DIR"
+echo "GRASP_PRIOR_ALLOW_MISSING=$GRASP_PRIOR_ALLOW_MISSING"
 echo "DEXTRAH_RLGAMES_JSONL_METRICS=$DEXTRAH_RLGAMES_JSONL_METRICS"
 echo "TRAJECTORY_TRACKING_REFERENCE_PATH=$TRAJECTORY_TRACKING_REFERENCE_PATH"
 echo "CUBE_APPROACH_WEIGHT=$CUBE_APPROACH_WEIGHT"
@@ -421,10 +435,17 @@ PY
     PRIOR_RESET_OVERRIDES=()
     case '$GRASP_PRIOR_RESET_ENABLED' in
       True|true|1|yes|Yes)
-        PRIOR_RESET_OVERRIDES=(
-          env.grasp_prior_reset_enabled=True
-          env.grasp_prior_library_path='$GRASP_PRIOR_LIBRARY_PATH'
-        )
+        if [ '$TASK' = 'Dextrah-Franka-Multi-Object-Grasp' ]; then
+          PRIOR_RESET_OVERRIDES=(env.grasp_prior_reset_enabled=True env.grasp_prior_allow_missing='$GRASP_PRIOR_ALLOW_MISSING')
+          if [ -n '$GRASP_PRIOR_LIBRARY_DIR' ]; then
+            PRIOR_RESET_OVERRIDES+=(env.grasp_prior_library_dir='$GRASP_PRIOR_LIBRARY_DIR')
+          fi
+        else
+          PRIOR_RESET_OVERRIDES=(
+            env.grasp_prior_reset_enabled=True
+            env.grasp_prior_library_path='$GRASP_PRIOR_LIBRARY_PATH'
+          )
+        fi
         ;;
     esac
 
@@ -492,6 +513,17 @@ PY
       if [ '$TASK' = 'Dextrah-Franka-Cube-Grasp-Traj-Tracking' ]; then
         append_trajectory_tracking_reward_overrides
       fi
+    elif [ '$TASK' = 'Dextrah-Franka-Multi-Object-Grasp' ]; then
+      TASK_OVERRIDES=(
+        agent.wandb_activate=False
+        env.use_cuda_graph='$USE_CUDA_GRAPH'
+        env.max_objects='$MAX_OBJECTS'
+        env.object_spawn_xy_randomization='$OBJECT_SPAWN_XY_RANDOMIZATION'
+        env.object_spawn_yaw_randomization_deg='$OBJECT_SPAWN_YAW_RANDOMIZATION_DEG'
+      )
+      append_env_override object_asset_manifest_path '$OBJECT_ASSET_MANIFEST_PATH'
+      append_env_override object_assets_dir '$OBJECT_ASSETS_DIR'
+      append_franka_cube_reward_overrides
     else
       TASK_OVERRIDES=(
         agent.wandb_activate=False

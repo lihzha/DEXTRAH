@@ -1,0 +1,50 @@
+"""Configuration for the Franka multi-object GraspGen pick-up task."""
+
+from __future__ import annotations
+
+from isaaclab.utils import configclass
+
+from dextrah_lab.tasks.dextrah_franka_cube_grasp.franka_cube_grasp_env_cfg import (
+    DextrahFrankaCubeGraspEnvCfg,
+)
+
+
+@configclass
+class DextrahFrankaMultiObjectGraspEnvCfg(DextrahFrankaCubeGraspEnvCfg):
+    """State-based Franka pick-up task over a manifest of GraspGen objects."""
+
+    observation_space = 80
+    state_space = 80
+    num_observations = observation_space
+    num_states = state_space
+
+    # Asset manifest produced by dextrah_lab/assets/prepare_graspgen_assets.py.
+    # If empty, object_assets_dir is scanned for a manifest.json or USD/*/*.usd.
+    object_asset_manifest_path = ""
+    object_assets_dir = "dextrah_lab/assets/graspgen_objects"
+    max_objects = 0
+    require_graspgen_scale = True
+
+    # Object placement and physical properties.  The robot base remains at the
+    # cube task's higher z, which avoids placing the Franka fingers under the
+    # tabletop at reset.
+    object_spawn_xy_randomization = 0.08
+    object_spawn_yaw_randomization_deg = 180.0
+    object_spawn_z_clearance = 0.006
+    object_default_half_extents = (0.03, 0.03, 0.03)
+    object_default_grasp_size = 0.06
+    object_default_scale = 1.0
+    object_density = 500.0
+    object_solver_position_iterations = 12
+    object_solver_velocity_iterations = 4
+    object_linear_damping = 0.08
+    object_angular_damping = 0.25
+    object_sleep_threshold = 0.02
+    object_stabilization_threshold = 0.01
+    object_max_depenetration_velocity = 3.0
+
+    # For multi-object training, per-object prior paths come from the manifest
+    # or from grasp_prior_library_dir/<uuid>.npz.
+    grasp_prior_library_dir = ""
+    grasp_prior_allow_missing = False
+

@@ -86,6 +86,56 @@ The A100 wrapper can launch the same task with:
           sbatch --export=ALL cluster/sbatch_train_teacher_8gpu.sh
 ```
 
+### Franka GraspGen multi-object grasp training
+The multi-object Franka task registers as `Dextrah-Franka-Multi-Object-Grasp`.
+It samples one object asset per vectorized environment, applies the GraspGen
+object scale from the dataset manifest, and can reset the Franka near a
+per-object Franka grasp prior. The policy input extends the cube teacher state
+with object scale, bounds, object id, and prior-availability features.
+
+Prepare a local debug subset from the Robotiq split while extracting Franka
+priors and scales from the matching Franka GraspGen shards:
+
+```bash
+        python dextrah_lab/assets/prepare_graspgen_assets.py \
+            --output_dir local_results/graspgen_objects_debug \
+            --limit 16 \
+            --prefer_single_shard
+```
+
+Convert the generated URDF assets to USD with Isaac Lab:
+
+```bash
+        python dextrah_lab/assets/batch_convert_urdf.py \
+            local_results/graspgen_objects_debug/urdf \
+            local_results/graspgen_objects_debug/USD \
+            --headless
+```
+
+Validate loading, reset geometry, grasp-prior reset, and rollout finiteness
+before training:
+
+```bash
+        cd dextrah_lab/rl_games
+        python validate_franka_multi_object_grasp_env.py \
+            --headless \
+            --task Dextrah-Franka-Multi-Object-Grasp \
+            --num_envs 8 \
+            --object_asset_manifest_path ../../local_results/graspgen_objects_debug/manifest.json \
+            --max_objects 8 \
+            --enable_grasp_prior_reset
+```
+
+On a1001, prepare/convert the full object set on mounted storage, then launch:
+
+```bash
+        TASK=Dextrah-Franka-Multi-Object-Grasp \
+        OBJECT_ASSET_MANIFEST_PATH=/results/assets/graspgen_objects/manifest.json \
+        GRASP_PRIOR_RESET_ENABLED=True \
+        FULL_EXPERIMENT_NAME=franka_multi_object_grasp_teacher \
+          sbatch --export=ALL cluster/sbatch_train_teacher_8gpu.sh
+```
+
 ## DextrAH Camera-based FGP Student Distillation
 **Note**: Before starting the student training, you also need to download the visual texture data (textures.zip) and place its contents inside `dextrah_lab/assets` directory. Download the assets from [link](https://huggingface.co/datasets/nvidia/dextrah_textures/blob/main/textures.zip) and unzip its contents into the assets folder.
 

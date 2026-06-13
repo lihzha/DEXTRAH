@@ -194,6 +194,7 @@ from isaaclab_rl.rl_games import RlGamesGpuEnv, RlGamesVecEnvWrapper
 
 import dextrah_lab.tasks.dextrah_kuka_allegro.gym_setup  # noqa: F401
 import dextrah_lab.tasks.dextrah_franka_cube_grasp.gym_setup  # noqa: F401
+import dextrah_lab.tasks.dextrah_franka_multi_object_grasp.gym_setup  # noqa: F401
 import dextrah_lab.tasks.dextrah_franka_star_kitting.gym_setup  # noqa: F401
 
 from residual_action_adapter import build_residual_adapter_from_metadata

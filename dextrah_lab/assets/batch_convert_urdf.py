@@ -62,6 +62,7 @@ simulation_app = app_launcher.app
 """Rest everything follows."""
 
 import contextlib
+import inspect
 import os
 
 import carb
@@ -125,16 +126,25 @@ def main():
         # TODO: make this a CLI arg
         convex_decompose_mesh = True
 
-        urdf_converter_cfg = UrdfConverterCfg(
+        converter_kwargs = dict(
             asset_path=full_object_urdf_path,
             usd_dir=full_object_usd_path,
-            usd_file_name= usd_filename,
+            usd_file_name=usd_filename,
             fix_base=args_cli.fix_base,
             merge_fixed_joints=args_cli.merge_joints,
             force_usd_conversion=True,
             make_instanceable=args_cli.make_instanceable,
-            convex_decompose_mesh=convex_decompose_mesh,
         )
+        if "convex_decompose_mesh" in inspect.signature(UrdfConverterCfg).parameters:
+            converter_kwargs["convex_decompose_mesh"] = convex_decompose_mesh
+        urdf_converter_cfg = UrdfConverterCfg(**converter_kwargs)
+        if hasattr(urdf_converter_cfg, "joint_drive") and hasattr(urdf_converter_cfg.joint_drive, "gains"):
+            gains = urdf_converter_cfg.joint_drive.gains
+            stiffness = getattr(gains, "stiffness", None)
+            if not isinstance(stiffness, (float, int, dict)):
+                gains.stiffness = 0.0
+            if getattr(gains, "damping", None) is None:
+                gains.damping = 0.0
 
         # Print info
         print("-" * 80)
