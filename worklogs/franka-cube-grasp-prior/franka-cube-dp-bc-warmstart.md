@@ -15602,3 +15602,49 @@ RGB Scale Training Launch:
   `training.device=cuda:0`, `training.use_ema=false`,
   `training.num_epochs=25`, batch size `32`,
   `policy.num_inference_steps=100`, `logging.mode=offline`.
+
+Update 2026-06-12T19:39:00-07:00:
+- RGB accepted183-only training finished cleanly:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_rgb/rgb_scale264_accepted183_20260612_1846/official_dp_train/checkpoints/latest.ckpt`.
+- Final W&B summary: `epoch=24`, `global_step=32324`,
+  `train_loss=0.0009`, `train_action_mse_error=0.00007`,
+  `val_loss=0.12502`. Latest checkpoint size is `1020M`.
+- Staged checkpoint to l401:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/rgb_scale264_accepted183_20260612_1846/latest.ckpt`.
+- Exact cube reset RGB eval job `1028801` completed `0:0`:
+  `franka_cube_rgb_dp_scale183_ep54_exact_chunk1_video_20260612_1922`.
+  Policy input was object-state-free (`image` plus 8D `robot_state`), with
+  `ACTION_CHUNK_STEPS=1`, `NUM_STEPS=320`, demo reset episode `54`,
+  reset step `0`.
+- Result: failed. `final_success_rate=0.0`, `window_success_rate=0.0`,
+  `max_cube_lift_height=0.0`, minimum finger-center-to-cube distance
+  `0.1395 m` at step `109`, final gripper width `0.00021 m`.
+- Video:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_rgb_dp_scale183_ep54_exact_chunk1_video_20260612_1922/videos/franka-cube-rgb-dp-scale183-ep54-exact-chunk1-step-0.mp4`.
+  Contact-sheet inspection shows the hand approaches beside/above the cube,
+  closes, and lifts away without contact.
+- Dataset support diagnosis:
+  accepted183 RGB starts are near-contact only. Accepted183 lowdim start
+  EE-to-cube distance range is `0.0171-0.0734 m`, mean `0.0445 m`.
+  The normal-reset augmentation used by the working lowdim checkpoint starts
+  from `0.1454-0.1997 m`, mean `0.1750 m`. The failed RGB eval reset for
+  episode `54` started from the normal Franka pose with cube reset only,
+  outside accepted183-only support.
+- Launched normal-reset RGB regeneration using the same previous lowdim
+  normal-reset spec and controller settings, changing only RGB capture:
+  spec `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/contact_relabel_specs/normalreset_scale264_ep000_031_a0_20260612_165029.env`,
+  `SAVE_RGB_OBS=True`, `RGB_OBS_HEIGHT=96`, `RGB_OBS_WIDTH=96`,
+  `CAPTURE_VIDEO=False`.
+- Normal-reset RGB jobs submitted:
+
+| Job | Run |
+| --- | --- |
+| `1028804` | `franka_cube_contact_relabel_scale264_normalreset_rgb_ep000_031_seed43_high30_20260612_1937` |
+| `1028805` | `franka_cube_contact_relabel_scale264_normalreset_rgb_ep000_031_seed44_high30_20260612_1937` |
+| `1028806` | `franka_cube_contact_relabel_scale264_normalreset_rgb_ep000_031_seed45_high30_20260612_1937` |
+| `1028807` | `franka_cube_contact_relabel_scale264_normalreset_rgb_ep000_031_seed46_high30_20260612_1937` |
+
+- Current scheduler status at this update: all four jobs pending on `batch`
+  due to priority/resources. Next step after they finish is to combine
+  accepted normal-reset RGB NPZs with accepted183 RGB, retrain RGB DP, and
+  rerun normal/default and slightly shifted object evals.
