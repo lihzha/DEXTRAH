@@ -17,6 +17,8 @@ parser.add_argument("--object_asset_manifest_path", type=str, required=True)
 parser.add_argument("--max_objects", type=int, default=4)
 parser.add_argument("--object_uuids", type=str, default="")
 parser.add_argument("--stable_pose_count", type=int, default=1)
+parser.add_argument("--rollout_pose_count", type=int, default=None)
+parser.add_argument("--stable_pose_rank_overrides", type=str, default="")
 parser.add_argument("--stable_pose_mesh_mode", type=str, default="convex_hull", choices=("convex_hull", "visual"))
 parser.add_argument("--stable_pose_sigma", type=float, default=0.0)
 parser.add_argument("--stable_pose_samples", type=int, default=1)
@@ -71,6 +73,25 @@ def _resolve_manifest_path(value: str | Path, *, base_dir: Path) -> Path:
     if path.is_absolute():
         return path
     return (base_dir / path).resolve()
+
+
+def _parse_rank_overrides(value: str) -> dict[str, int]:
+    overrides: dict[str, int] = {}
+    for item in str(value or "").split(","):
+        item = item.strip()
+        if not item:
+            continue
+        if ":" not in item:
+            raise ValueError(f"Invalid rank override '{item}', expected UUID:RANK")
+        uuid, rank_text = item.split(":", 1)
+        uuid = uuid.strip()
+        if not uuid:
+            raise ValueError(f"Invalid empty UUID in rank override '{item}'")
+        rank = int(rank_text)
+        if rank < 0:
+            raise ValueError(f"Rank override must be non-negative for {uuid}: {rank}")
+        overrides[uuid] = rank
+    return overrides
 
 
 def _load_selected_manifest(output_dir: Path) -> tuple[Path, list[dict[str, object]], Path]:
@@ -331,10 +352,17 @@ def _quat_angle_delta(initial_quat: torch.Tensor, current_quat: torch.Tensor) ->
     return 2.0 * torch.acos(dot)
 
 
-def _place_stable_pose_states(task_env, pose_data: list[dict[str, object]], vertices_by_asset: list[torch.Tensor]) -> dict[str, object]:
+def _place_stable_pose_states(
+    task_env,
+    pose_data: list[dict[str, object]],
+    vertices_by_asset: list[torch.Tensor],
+    *,
+    rollout_pose_count: int,
+) -> dict[str, object]:
     env_ids = task_env._robot._ALL_INDICES
     num_assets = len(pose_data)
     object_indices = task_env.object_asset_index[env_ids].detach().cpu().numpy().astype(int)
+    rank_overrides = _parse_rank_overrides(args_cli.stable_pose_rank_overrides)
     root_state = torch.zeros((task_env.num_envs, 13), dtype=torch.float32, device=task_env.device)
     pose_rank_by_env: list[int] = []
     pose_probability_by_env: list[float] = []
@@ -347,7 +375,16 @@ def _place_stable_pose_states(task_env, pose_data: list[dict[str, object]], vert
         poses = pose_data[object_idx]["poses"]
         if not isinstance(poses, list) or not poses:
             raise RuntimeError(f"No stable poses available for object index {object_idx}")
-        pose_rank = (env_i // num_assets) % len(poses)
+        uuid = str(pose_data[object_idx]["uuid"])
+        if uuid in rank_overrides:
+            pose_rank = int(rank_overrides[uuid])
+        else:
+            pose_rank = (env_i // num_assets) % max(int(rollout_pose_count), 1)
+        if pose_rank >= len(poses):
+            raise ValueError(
+                f"Pose rank {pose_rank} for {uuid} is unavailable; computed {len(poses)} poses. "
+                "Increase --stable_pose_count or lower the rank override."
+            )
         pose = poses[pose_rank]
         rot = np.asarray(pose["rotation"], dtype=np.float64)
         quat = _matrix_to_quat_wxyz(rot, device=task_env.device)
@@ -366,7 +403,7 @@ def _place_stable_pose_states(task_env, pose_data: list[dict[str, object]], vert
         )
         root_state[env_i, 0:3] = local_root_pos + task_env.scene.env_origins[env_i]
         root_state[env_i, 3:7] = quat
-        object_uuid_by_env.append(str(pose_data[object_idx]["uuid"]))
+        object_uuid_by_env.append(uuid)
         object_asset_index_by_env.append(int(object_idx))
         pose_rank_by_env.append(int(pose_rank))
         pose_probability_by_env.append(float(pose["probability"]))
@@ -415,6 +452,7 @@ def _run_stability_rollout(
     *,
     rollout_name: str,
     settle_steps: int,
+    rollout_pose_count: int,
     initial_local_root_pos: list[list[float]] | None = None,
     initial_local_root_quat: list[list[float]] | None = None,
     placement_template: dict[str, object] | None = None,
@@ -422,7 +460,12 @@ def _run_stability_rollout(
     env.reset()
     _configure_camera(task_env, env_id=0)
     if initial_local_root_pos is None or initial_local_root_quat is None:
-        placement = _place_stable_pose_states(task_env, pose_data, vertices_by_asset)
+        placement = _place_stable_pose_states(
+            task_env,
+            pose_data,
+            vertices_by_asset,
+            rollout_pose_count=rollout_pose_count,
+        )
         placement["source"] = "trimesh_stable_pose"
     else:
         _place_local_root_states(task_env, initial_local_root_pos, initial_local_root_quat)
@@ -603,7 +646,9 @@ def main() -> None:
 
     filtered_manifest, selected, asset_root = _load_selected_manifest(output_dir)
     pose_data, vertices_by_asset = _compute_pose_cache(selected, asset_root, output_dir)
-    num_envs = len(selected) * max(int(args_cli.stable_pose_count), 1)
+    rollout_pose_count = int(args_cli.rollout_pose_count or args_cli.stable_pose_count)
+    rollout_pose_count = max(rollout_pose_count, 1)
+    num_envs = len(selected) * rollout_pose_count
 
     env_cfg = parse_env_cfg(
         args_cli.task,
@@ -631,6 +676,7 @@ def main() -> None:
         output_dir,
         rollout_name="stable_pose",
         settle_steps=int(args_cli.settle_steps),
+        rollout_pose_count=rollout_pose_count,
     )
     settled_replay_result = None
     if int(args_cli.settled_replay_steps) > 0:
@@ -642,6 +688,7 @@ def main() -> None:
             output_dir,
             rollout_name="settled_replay",
             settle_steps=int(args_cli.settled_replay_steps),
+            rollout_pose_count=rollout_pose_count,
             initial_local_root_pos=result["final_root_pos"],
             initial_local_root_quat=result["final_root_quat"],
             placement_template=result["placement"],
@@ -654,6 +701,8 @@ def main() -> None:
         "num_envs": int(num_envs),
         "max_objects": int(len(selected)),
         "stable_pose_count": int(args_cli.stable_pose_count),
+        "rollout_pose_count": int(rollout_pose_count),
+        "stable_pose_rank_overrides": str(args_cli.stable_pose_rank_overrides),
         "settle_steps": int(args_cli.settle_steps),
         "settled_replay_steps": int(args_cli.settled_replay_steps),
         "selected_manifest": str(filtered_manifest),
