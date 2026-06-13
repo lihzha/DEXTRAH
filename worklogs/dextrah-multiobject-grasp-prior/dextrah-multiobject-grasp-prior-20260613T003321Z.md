@@ -553,6 +553,29 @@ Result:
 Next:
 - Monitor until start, verify resolved `env.yaml`, then compare early gripper-width/action-z/lift metrics against baseline and the canceled bad-guidance run.
 
+## 2026-06-13T20:52:00Z - Sequence-timing comparison queued
+
+Goal:
+- Test whether delaying the lift reference and rebalancing reward weights fixes the guided-closefix run's early-lift-before-secure-contact behavior.
+
+Evidence:
+- Baseline job `29048544` through epoch 555: stable approach/close but mean z remains negative and lift/success stay near zero.
+- Corrected guided job `29049452` through epoch 90: mean z is strongly positive and gripper closes, but finger/object distance remains worse than baseline and no reliable lift appears.
+
+Command / Job:
+- job_id: `29049710`
+- run_name: `multiobject_teacher_4obj_seqprior_10d6dd6_20260613_1352`
+- source: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-guidance-closefix-10d6dd6-20260613`
+- code_commit: `10d6dd6bdf91a08b66c10763ddc20e537a4dc227`
+- sequence guidance: `approach=24`, `close=16`, `lift=16`, `close_width=0.025`, `lift_action_z=0.15`, action-prior weight `4.0`.
+- reward shaping: `approach=3.0`, `enclosure=2.0`, `close_action=0.5`, `lift=15.0`, `height_tracking=5.0`, `success_bonus=30.0`, `lift_action=2.0`, `descend_penalty=-2.0`, `action_penalty=-0.0002`.
+
+Result:
+- status: pending at launch due `QOSMaxJobsPerUserLimit`.
+
+Next:
+- Let baseline and guided-closefix continue; if guided-closefix starts producing real lift before a slot opens, cancel the pending sequence-timing run. Otherwise compare all three.
+
 ## 2026-06-13 - Main merge, randomized multi-object training, and cluster launch
 
 Goal:
