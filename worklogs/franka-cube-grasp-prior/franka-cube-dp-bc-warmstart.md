@@ -15482,3 +15482,59 @@ Analysis:
   step is to regenerate accepted relabel episodes with `SAVE_RGB_OBS=True`,
   combine the accepted RGB NPZs, train on the larger RGB dataset, and evaluate
   with chunk-1 first.
+
+## 2026-06-12T18:02:02-07:00 - RGB scale264 relabel launch plan
+
+Goal:
+- Regenerate the successful scale264 contact-aware relabel chunks with RGB
+  observations so the next BC checkpoint can train on camera images plus robot
+  proprioception, without privileged cube/object state.
+
+Hypothesis:
+- The one-demo RGB proof-of-life shows the image policy/eval path is wired
+  correctly. Reusing the accepted lowdim relabel controller settings while
+  adding `SAVE_RGB_OBS=True` should produce an RGB accepted set with the same
+  success distribution as the 183 accepted lowdim episodes.
+
+Change:
+- No source-code change for this launch. Use implementation commit
+  `50ff0c0ef59b7a8b56e9a9d1446632d44cee7a5f`.
+- Relaunch the ten scale264 relabel spec chunks from
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/contact_relabel_specs/scale264_20260612_1449`
+  with:
+  `SAVE_RGB_OBS=True`, `RGB_OBS_HEIGHT=96`, `RGB_OBS_WIDTH=96`,
+  `CAPTURE_VIDEO=False`.
+- Preserve the prior accepted scale settings:
+  `ALIGN_STEPS=0`, `CONTACT_ALIGN_STEPS=160`,
+  `CONTACT_ALIGN_REFERENCE=live_cube`, `CONTACT_ALIGN_THRESHOLD=0.055`,
+  `CONTACT_GATE_MODE=left_right`, `FINGER_GATE_MAX_DISTANCE=0.075`,
+  `FINGER_GATE_BALANCE_THRESHOLD=0.015`, `REQUIRE_CONTACT_GATE=True`,
+  `LATERAL_CENTERING_GAIN=0.75`, `LATERAL_CENTERING_LIMIT=0.025`,
+  `LATERAL_SEARCH_AMPLITUDE=0.004`, `POSE_ACTION_FILTER=scale`,
+  `POSE_ACTION_LIMIT=0.95`, `ORIENTATION_MODE=source`.
+
+Version Control:
+- agent_id: franka-cube-bc-warmstart
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- worklog:
+  `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `50ff0c0ef59b7a8b56e9a9d1446632d44cee7a5f`
+- implementation_commit: `50ff0c0ef59b7a8b56e9a9d1446632d44cee7a5f`
+- changed_files: worklog only for this launch record
+- remote_commit/status: pending update before launch
+
+Command / Job:
+- command: source each `scale264_chunk_*.env`, override the settings above,
+  and submit `cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh`
+  from the l401 agent worktree.
+- jobs: pending
+- expected artifacts per chunk:
+  `contact_relabel_set_summary.json`, `contact_relabel_set_accepted.npz`,
+  `contact_relabel_set_accepted_rgb.npz`.
+
+Next:
+- Update the l401 agent worktree to the exact commit, submit the RGB chunks,
+  monitor scheduler/logs, inspect accepted RGB counts and sample frames, then
+  combine accepted RGB NPZs for image-policy training.
