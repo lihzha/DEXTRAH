@@ -425,6 +425,38 @@ Command / Job:
 Result:
 - status: running/queued; monitoring in progress.
 
+## 2026-06-13 - Stable-reset grasp-contact failure and top-down prior patch
+
+Goal:
+- Make grasp-contact validation use a physically plausible grasp-prior reset before relaunching RL training.
+
+Evidence:
+- Settled-pose cache generation reruns on commit `c3c924f` failed for jobs `1029052` and `1029053` because object `96ae0ff853734df0b10a827307949c87` retained high final speed (`~0.0527m/s`) in the new cache-generation rollout.
+- To keep debugging unblocked, materialized a settled-pose cache from the previously passed validation `1028898` at `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/graspgen_stable_pose_validate_1028898_20260613_010532/settled_pose_cache`.
+- Video validation job `1029054` used that cache and passed `reset_settle` and `perturbation`, but failed `grasp_contact`.
+- `1029054` grasp-contact metrics: selected object `30700bc210844bdc991a5ccf16b6379f`, `selected_lift_height_max=0.0195m` vs threshold `0.12m`, `selected_max_finger_dist_min=0.175m`, `selected_object_xy_delta_max=0.0165m`.
+- Selection probe showed the same object could lift `0.0798m`, but it dragged `0.0726m` and the selected pregrasp direction was not top-down (`selected_pregrasp_offset_dir_z=-0.141`), so the validator was accepting a side/rim grasp from its fallback path.
+
+Change:
+- Added no-op grasp-prior reset success/quality hooks to the Franka cube env so subclasses can add task-specific reset gates without changing cube behavior.
+- Multi-object grasp-prior reset now samples `grasp_prior_reset_candidate_count` priors per env, scores by prior confidence and pregrasp z, and prefers top-down candidates with width and pregrasp-farther checks.
+- Multi-object reset success/quality now requires `grasp_prior_reset_min_pregrasp_z` when `grasp_prior_reset_require_topdown=True`, so bad side grasps fall back to default robot reset instead of becoming warmstart candidates.
+- Tightened grasp-contact validation candidate selection to reject non-top-down quality fallbacks.
+- Added validation/training wrapper controls for candidate count and top-down threshold.
+
+Version Control:
+- base_commit: `c3c924f41cf87688d7ea0860a9d5b2286a968863`
+- implementation_commit: pending
+- changed_files: `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`, `dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py`, `dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py`, `dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py`, `cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh`, `cluster/sbatch_train_teacher_8gpu.sh`
+
+Validation:
+- local: `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py`
+- local: `bash -n cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh cluster/sbatch_train_teacher_8gpu.sh`
+- local: `git diff --check`
+
+Next:
+- Commit, deploy the exact commit to l401, rerun grasp-contact video validation against the settled cache from `1028898`, inspect metrics/frames, then decide whether the reset is ready for RL training.
+
 ## 2026-06-13 14:18 PDT - Stop invalid RL runs and wire stable-pose reset path
 
 Goal:

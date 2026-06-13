@@ -44,6 +44,7 @@ parser.add_argument("--grasp_warmstart_lift_action_z", type=float, default=0.30)
 parser.add_argument("--capture_interval", type=int, default=2)
 parser.add_argument("--grasp_reset_attempts", type=int, default=12)
 parser.add_argument("--grasp_reset_min_pregrasp_z", type=float, default=0.15)
+parser.add_argument("--grasp_reset_candidate_count", type=int, default=16)
 parser.add_argument("--grasp_contact_score_steps", type=int, default=60)
 parser.add_argument("--disable_fabric", action="store_true", default=False)
 AppLauncher.add_app_launcher_args(parser)
@@ -618,13 +619,12 @@ def _candidate_contact_envs(task_env) -> list[int]:
     quality = task_env.grasp_prior_reset_quality_success
     topdown_quality = quality & (task_env.grasp_prior_reset_offset_dir_w[:, 2] >= min_pregrasp_z)
     ordered: list[int] = []
-    for mask in (topdown_quality, quality & ~topdown_quality):
-        if not bool(mask.any().item()):
-            continue
-        env_ids = torch.nonzero(mask, as_tuple=False).flatten()
-        z_values = task_env.grasp_prior_reset_offset_dir_w[env_ids, 2]
-        order = torch.argsort(z_values, descending=True)
-        ordered.extend(int(env_ids[index].item()) for index in order)
+    if not bool(topdown_quality.any().item()):
+        return ordered
+    env_ids = torch.nonzero(topdown_quality, as_tuple=False).flatten()
+    z_values = task_env.grasp_prior_reset_offset_dir_w[env_ids, 2]
+    order = torch.argsort(z_values, descending=True)
+    ordered.extend(int(env_ids[index].item()) for index in order)
     return ordered
 
 
@@ -837,6 +837,9 @@ def _make_env(*, grasp_prior: bool):
     env_cfg.object_reset_settle_full_reset_only = True
     env_cfg.grasp_prior_reset_enabled = bool(grasp_prior)
     env_cfg.grasp_prior_action_warmstart_enabled = bool(grasp_prior)
+    env_cfg.grasp_prior_reset_candidate_count = int(args_cli.grasp_reset_candidate_count)
+    env_cfg.grasp_prior_reset_require_topdown = True
+    env_cfg.grasp_prior_reset_min_pregrasp_z = float(args_cli.grasp_reset_min_pregrasp_z)
     if grasp_prior:
         env_cfg.grasp_prior_action_warmstart_close_width = float(args_cli.grasp_warmstart_close_width)
         env_cfg.grasp_prior_action_warmstart_lift_action_z = float(args_cli.grasp_warmstart_lift_action_z)

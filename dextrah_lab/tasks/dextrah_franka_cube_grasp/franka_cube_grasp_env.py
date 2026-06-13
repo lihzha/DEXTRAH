@@ -688,6 +688,20 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         applied_actions = self._apply_grasp_prior_action_warmstart(actions)
         super()._pre_physics_step(applied_actions)
 
+    def _grasp_prior_reset_extra_success_mask(
+        self,
+        env_ids: torch.Tensor,
+        targets: dict[str, torch.Tensor],
+    ) -> torch.Tensor:
+        return torch.ones(int(env_ids.numel()), dtype=torch.bool, device=self.device)
+
+    def _grasp_prior_reset_extra_quality_mask(
+        self,
+        env_ids: torch.Tensor,
+        targets: dict[str, torch.Tensor],
+    ) -> torch.Tensor:
+        return torch.ones(int(env_ids.numel()), dtype=torch.bool, device=self.device)
+
     def _apply_grasp_prior_reset(
         self,
         env_ids: torch.Tensor,
@@ -708,7 +722,12 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         table_clearance_ok = self.finger_table_clearance[env_ids] >= float(
             self.cfg.finger_table_penetration_termination_margin
         )
-        success = ik_success & targets["pregrasp_farther"] & table_clearance_ok
+        success = (
+            ik_success
+            & targets["pregrasp_farther"]
+            & table_clearance_ok
+            & self._grasp_prior_reset_extra_success_mask(env_ids, targets)
+        )
 
         final_joint_pos = solved_joint_pos
         failed = ~success
@@ -796,6 +815,7 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             & (exact_tip_max_dist <= 1.25 * object_size)
             & (pregrasp_tip_table_clearance >= float(self.cfg.finger_table_penetration_termination_margin))
             & (exact_tip_table_clearance >= float(self.cfg.finger_table_penetration_termination_margin))
+            & self._grasp_prior_reset_extra_quality_mask(env_ids, targets)
         )
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:

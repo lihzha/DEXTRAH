@@ -548,9 +548,17 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         cube_quat: torch.Tensor,
     ) -> dict[str, torch.Tensor]:
         num_ids = int(env_ids.numel())
-        sample_indices = torch.full((num_ids,), -1, dtype=torch.long, device=self.device)
-        object_grasp_t = torch.eye(4, device=self.device).repeat(num_ids, 1, 1)
-        grasp_to_tool_t = torch.eye(4, device=self.device).repeat(num_ids, 1, 1)
+        candidate_count = max(int(self.cfg.grasp_prior_reset_candidate_count), 1)
+        candidate_sample_indices = torch.full(
+            (num_ids, candidate_count),
+            -1,
+            dtype=torch.long,
+            device=self.device,
+        )
+        object_grasp_t = torch.eye(4, device=self.device).repeat(num_ids, candidate_count, 1, 1)
+        grasp_to_tool_t = torch.eye(4, device=self.device).repeat(num_ids, candidate_count, 1, 1)
+        candidate_confidence = torch.ones((num_ids, candidate_count), dtype=torch.float32, device=self.device)
+        candidate_required_width = self.object_grasp_size[env_ids].unsqueeze(1).expand(-1, candidate_count).clone()
         object_indices = self.object_asset_index[env_ids]
         for object_idx_tensor in torch.unique(object_indices):
             object_idx = int(object_idx_tensor.item())
@@ -562,39 +570,91 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             grasps = prior["grasps_object"]
             if not isinstance(grasps, torch.Tensor):
                 raise RuntimeError("Internal grasp prior tensor is invalid")
-            local_indices = torch.randint(grasps.shape[0], (count,), device=self.device)
+            local_indices = torch.randint(grasps.shape[0], (count, candidate_count), device=self.device)
             object_grasp_t[mask] = grasps[local_indices]
-            sample_indices[mask] = local_indices
+            candidate_sample_indices[mask] = local_indices
+            confidence = prior["confidence"]
+            if isinstance(confidence, torch.Tensor):
+                candidate_confidence[mask] = confidence[local_indices]
+            grasp_width = prior.get("grasp_width")
+            if isinstance(grasp_width, torch.Tensor):
+                sampled_width = grasp_width[local_indices]
+                candidate_required_width[mask] = torch.where(
+                    torch.isfinite(sampled_width),
+                    sampled_width,
+                    candidate_required_width[mask],
+                )
             grasp_to_tool = prior["grasp_to_tool"]
             if not isinstance(grasp_to_tool, torch.Tensor):
                 raise RuntimeError("Internal grasp-to-tool tensor is invalid")
-            grasp_to_tool_t[mask] = grasp_to_tool.unsqueeze(0).expand(count, -1, -1)
+            grasp_to_tool_t[mask] = grasp_to_tool.view(1, 1, 4, 4).expand(count, candidate_count, -1, -1)
 
         world_object_t = torch.eye(4, device=self.device).repeat(num_ids, 1, 1)
         cube_pos_w = cube_pos + self.scene.env_origins[env_ids]
         world_object_t[:, :3, :3] = math_utils.matrix_from_quat(cube_quat)
         world_object_t[:, :3, 3] = cube_pos_w
-        world_grasp_t = torch.bmm(world_object_t, object_grasp_t)
-        world_tool_t = torch.bmm(world_grasp_t, grasp_to_tool_t)
+        flat_world_object_t = world_object_t.unsqueeze(1).expand(-1, candidate_count, -1, -1).reshape(-1, 4, 4)
+        flat_object_grasp_t = object_grasp_t.reshape(-1, 4, 4)
+        flat_grasp_to_tool_t = grasp_to_tool_t.reshape(-1, 4, 4)
+        world_grasp_t = torch.bmm(flat_world_object_t, flat_object_grasp_t)
+        world_tool_candidates = torch.bmm(world_grasp_t, flat_grasp_to_tool_t).reshape(
+            num_ids,
+            candidate_count,
+            4,
+            4,
+        )
 
-        exact_tool_pos_w = world_tool_t[:, :3, 3]
-        tool_z_axis_w = world_tool_t[:, :3, 2]
-        tool_z_axis_w = tool_z_axis_w / torch.clamp(torch.norm(tool_z_axis_w, dim=-1, keepdim=True), min=1.0e-6)
-        pregrasp_offset = abs(float(self.cfg.grasp_prior_pregrasp_offset))
-        plus_tool_pos_w = exact_tool_pos_w + pregrasp_offset * tool_z_axis_w
-        minus_tool_pos_w = exact_tool_pos_w - pregrasp_offset * tool_z_axis_w
-        exact_tool_dist = torch.norm(exact_tool_pos_w - cube_pos_w, dim=-1)
-        plus_tool_dist = torch.norm(plus_tool_pos_w - cube_pos_w, dim=-1)
-        minus_tool_dist = torch.norm(minus_tool_pos_w - cube_pos_w, dim=-1)
-        use_plus = plus_tool_dist >= minus_tool_dist
-        pregrasp_tool_pos_w = torch.where(use_plus.unsqueeze(-1), plus_tool_pos_w, minus_tool_pos_w)
-        pregrasp_tool_dist = torch.where(use_plus, plus_tool_dist, minus_tool_dist)
-        pregrasp_farther = pregrasp_tool_dist > exact_tool_dist
-        pregrasp_offset_dir_w = pregrasp_tool_pos_w - exact_tool_pos_w
-        pregrasp_offset_dir_w = pregrasp_offset_dir_w / torch.clamp(
-            torch.norm(pregrasp_offset_dir_w, dim=-1, keepdim=True),
+        candidate_exact_tool_pos_w = world_tool_candidates[:, :, :3, 3]
+        candidate_tool_z_axis_w = world_tool_candidates[:, :, :3, 2]
+        candidate_tool_z_axis_w = candidate_tool_z_axis_w / torch.clamp(
+            torch.norm(candidate_tool_z_axis_w, dim=-1, keepdim=True),
             min=1.0e-6,
         )
+        cube_pos_w_candidates = cube_pos_w.unsqueeze(1)
+        pregrasp_offset = abs(float(self.cfg.grasp_prior_pregrasp_offset))
+        plus_tool_pos_w = candidate_exact_tool_pos_w + pregrasp_offset * candidate_tool_z_axis_w
+        minus_tool_pos_w = candidate_exact_tool_pos_w - pregrasp_offset * candidate_tool_z_axis_w
+        candidate_exact_tool_dist = torch.norm(candidate_exact_tool_pos_w - cube_pos_w_candidates, dim=-1)
+        plus_tool_dist = torch.norm(plus_tool_pos_w - cube_pos_w_candidates, dim=-1)
+        minus_tool_dist = torch.norm(minus_tool_pos_w - cube_pos_w_candidates, dim=-1)
+        use_plus = plus_tool_dist >= minus_tool_dist
+        candidate_pregrasp_tool_pos_w = torch.where(use_plus.unsqueeze(-1), plus_tool_pos_w, minus_tool_pos_w)
+        candidate_pregrasp_tool_dist = torch.where(use_plus, plus_tool_dist, minus_tool_dist)
+        candidate_pregrasp_farther = candidate_pregrasp_tool_dist > candidate_exact_tool_dist
+        candidate_pregrasp_offset_dir_w = candidate_pregrasp_tool_pos_w - candidate_exact_tool_pos_w
+        candidate_pregrasp_offset_dir_w = candidate_pregrasp_offset_dir_w / torch.clamp(
+            torch.norm(candidate_pregrasp_offset_dir_w, dim=-1, keepdim=True),
+            min=1.0e-6,
+        )
+
+        pregrasp_z = candidate_pregrasp_offset_dir_w[:, :, 2]
+        topdown_ok = pregrasp_z >= float(self.cfg.grasp_prior_reset_min_pregrasp_z)
+        width_ok = candidate_required_width <= float(self.cfg.max_gripper_width)
+        valid = candidate_pregrasp_farther & width_ok
+        if bool(self.cfg.grasp_prior_reset_require_topdown):
+            valid = valid & topdown_ok
+        score = candidate_confidence + 2.0 * pregrasp_z - 0.10 * candidate_exact_tool_dist
+        fallback_score = torch.where(
+            candidate_pregrasp_farther & width_ok,
+            score,
+            score - 1.0e5,
+        )
+        scored = torch.where(valid, score, score - 1.0e6)
+        has_valid = valid.any(dim=1, keepdim=True)
+        scored = torch.where(has_valid, scored, fallback_score)
+        best_candidate = torch.argmax(scored, dim=1)
+        row_ids = torch.arange(num_ids, dtype=torch.long, device=self.device)
+
+        sample_indices = candidate_sample_indices[row_ids, best_candidate]
+        world_tool_t = world_tool_candidates[row_ids, best_candidate]
+        exact_tool_pos_w = candidate_exact_tool_pos_w[row_ids, best_candidate]
+        tool_z_axis_w = candidate_tool_z_axis_w[row_ids, best_candidate]
+        tool_z_axis_w = tool_z_axis_w / torch.clamp(torch.norm(tool_z_axis_w, dim=-1, keepdim=True), min=1.0e-6)
+        exact_tool_dist = candidate_exact_tool_dist[row_ids, best_candidate]
+        pregrasp_tool_pos_w = candidate_pregrasp_tool_pos_w[row_ids, best_candidate]
+        pregrasp_tool_dist = candidate_pregrasp_tool_dist[row_ids, best_candidate]
+        pregrasp_farther = candidate_pregrasp_farther[row_ids, best_candidate]
+        pregrasp_offset_dir_w = candidate_pregrasp_offset_dir_w[row_ids, best_candidate]
 
         tool_quat_w = math_utils.quat_from_matrix(world_tool_t[:, :3, :3])
         exact_ee_pos_w, exact_ee_quat_w = math_utils.combine_frame_transforms(
@@ -638,6 +698,29 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             "pregrasp_ee_dist": torch.norm(target_ee_pos_w - cube_pos_w, dim=-1),
             "pregrasp_farther": pregrasp_farther,
         }
+
+    def _grasp_prior_reset_topdown_mask(
+        self,
+        env_ids: torch.Tensor,
+        targets: dict[str, torch.Tensor],
+    ) -> torch.Tensor:
+        if not bool(self.cfg.grasp_prior_reset_require_topdown):
+            return torch.ones(int(env_ids.numel()), dtype=torch.bool, device=self.device)
+        return targets["pregrasp_offset_dir_w"][:, 2] >= float(self.cfg.grasp_prior_reset_min_pregrasp_z)
+
+    def _grasp_prior_reset_extra_success_mask(
+        self,
+        env_ids: torch.Tensor,
+        targets: dict[str, torch.Tensor],
+    ) -> torch.Tensor:
+        return self._grasp_prior_reset_topdown_mask(env_ids, targets)
+
+    def _grasp_prior_reset_extra_quality_mask(
+        self,
+        env_ids: torch.Tensor,
+        targets: dict[str, torch.Tensor],
+    ) -> torch.Tensor:
+        return self._grasp_prior_reset_topdown_mask(env_ids, targets)
 
     def _grasp_prior_object_size(self, env_ids: torch.Tensor) -> torch.Tensor:
         return self.object_grasp_size[env_ids]
