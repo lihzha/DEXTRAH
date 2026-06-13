@@ -16328,3 +16328,79 @@ Next:
   expansion, likely via stronger normal replay/base-policy distillation and a
   lower-risk fine-tune schedule, then rerun this same nominal trace gate before
   any larger data or shifted-object eval.
+
+## 2026-06-13T01:45:34-07:00 - RGB nominal-preserving fine-tune implementation
+
+Goal:
+- Make the next RGB support-expansion fine-tune preserve the known-good
+  nominal reset behavior instead of overwriting the close manifold.
+
+Hypothesis:
+- The failed `OOD3x4` fine-tune regressed nominal grasping because it both
+  refit normalizers on a mixed dataset and updated policy weights without an
+  explicit nominal-retention objective.
+- Reusing the good normal checkpoint normalizer and distilling only normal-reset
+  rows against a frozen copy of that checkpoint should retain nominal close
+  behavior while allowing supervised updates on the mixed support data.
+
+Change:
+- `FrankaCubeRgbDataset` now accepts:
+  - `normalizer_checkpoint`: loads `image`, `robot_state`, and `action`
+    normalizer state from an official DP checkpoint instead of fitting on the
+    current dataset.
+  - `distill_mask_mode`: `none`, `all`, or `normal_reset`; `normal_reset`
+    emits a per-row `distill_mask` for episodes with joint and cube reset
+    alphas both near zero.
+- `WeightedDiffusionUnetImagePolicy` now accepts:
+  - `distill_reference_checkpoint`
+  - `distill_loss_weight`
+  - `distill_mask_key`
+  - `distill_use_action_loss_weights`
+- The reference policy is loaded lazily and kept out of the student's
+  registered module tree, so saved student checkpoints remain ordinary policy
+  checkpoints. Distillation matches raw-action clean-sample predictions for the
+  same denoising timestep/noise, masked to nominal rows when `distill_mask` is
+  present.
+- `franka_cube_rgb_dp.yaml` exposes the new knobs with defaults off, preserving
+  existing behavior unless a training run opts in.
+
+Version Control:
+- agent_id: franka-cube-bc-warmstart
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `da53322e3bc5175cb0dc7307be95c70a07d1f0d5`
+- implementation_commit: pending
+- changed_files:
+  `dextrah_lab/offline_dp_bc/dp_dataset.py`,
+  `dextrah_lab/offline_dp_bc/weighted_diffusion_policy.py`,
+  `dextrah_lab/offline_dp_bc/config/franka_cube_rgb_dp.yaml`,
+  `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+- intentionally_unstaged:
+  `dextrah_lab/offline_dp_bc/make_support_expansion_dataset.py`
+
+Validation:
+- `python3 -m py_compile dextrah_lab/offline_dp_bc/dp_dataset.py dextrah_lab/offline_dp_bc/weighted_diffusion_policy.py`
+- `PYTHONPATH=<worktree>:<official_dp> <venv>/bin/python -m py_compile dextrah_lab/offline_dp_bc/dp_dataset.py dextrah_lab/offline_dp_bc/weighted_diffusion_policy.py`
+- `git diff --check -- dextrah_lab/offline_dp_bc/dp_dataset.py dextrah_lab/offline_dp_bc/weighted_diffusion_policy.py dextrah_lab/offline_dp_bc/config/franka_cube_rgb_dp.yaml`
+- Dataset/normalizer smoke on
+  `franka_cube_rgb_normalreset28x7_plus_fullstart_ood3x4_96.npz` with the
+  good normal checkpoint as reference: dataset length `66276`, 12D robot state,
+  `distill_mask` sum `62832`, normalizer fields `action`, `image`,
+  `robot_state`, robot dim `12`, action dim `7`.
+- One-batch GPU policy smoke on local RTX 6000 Ada with frozen-teacher
+  distillation enabled: total loss `2.22865`, supervised loss `1.22888`,
+  distill loss `0.99977`.
+
+Next:
+- Commit and push the implementation.
+- Deploy the exact commit to the l401 task worktree.
+- Launch a bounded fine-tune from
+  `rgb_phase12_normalreset28x7_20260612_2225` on the same OOD3x4 mixed dataset,
+  with:
+  - `task.dataset.normalizer_checkpoint=<good normal checkpoint>`
+  - `task.dataset.distill_mask_mode=normal_reset`
+  - `policy.distill_reference_checkpoint=<good normal checkpoint>`
+  - conservative `optimizer.lr`, `training.num_epochs`, and
+    `training.max_train_steps`
+- Gate with the nominal trace eval before any shifted-object evaluation.

@@ -32,6 +32,10 @@ shape_meta:
 policy:
   _target_: dextrah_lab.offline_dp_bc.weighted_diffusion_policy.WeightedDiffusionUnetImagePolicy
   action_loss_weights: [1, 1, 1, 1, 1, 1, 8]
+  distill_reference_checkpoint: null
+  distill_loss_weight: 0.0
+  distill_mask_key: distill_mask
+  distill_use_action_loss_weights: true
   shape_meta: ${shape_meta}
   noise_scheduler:
     _target_: diffusers.schedulers.scheduling_ddpm.DDPMScheduler
@@ -112,6 +116,9 @@ task:
     robot_state_key: robot_state
     obs_image_name: image
     obs_robot_state_name: robot_state
+    normalizer_checkpoint: null
+    distill_mask_mode: none
+    distill_mask_tolerance: 1.0e-6
   env_runner:
     _target_: dextrah_lab.offline_dp_bc.dp_dataset.NoopImageRunner
     metric_prefix: test

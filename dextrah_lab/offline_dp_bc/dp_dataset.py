@@ -113,6 +113,33 @@ def _contact_phase_progress_features(
     return np.concatenate((one_hot, progress[:, None]), axis=1).astype(np.float32)
 
 
+def _linear_normalizer_from_checkpoint(checkpoint_path: str | Path):
+    """Load the policy normalizer state from an official DP checkpoint."""
+
+    if LinearNormalizer is None:
+        raise ImportError("diffusion_policy is not installed; cannot load checkpoint normalizer")
+    import dill
+
+    path = Path(checkpoint_path).expanduser().resolve()
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    payload = torch.load(path.open("rb"), pickle_module=dill, map_location="cpu")
+    try:
+        model_state = payload["state_dicts"]["model"]
+    except KeyError as exc:
+        raise KeyError(f"{path} does not look like an official DP workspace checkpoint") from exc
+    normalizer_state = {
+        key[len("normalizer.") :]: value
+        for key, value in model_state.items()
+        if key.startswith("normalizer.")
+    }
+    if not normalizer_state:
+        raise KeyError(f"{path} does not contain model normalizer state")
+    normalizer = LinearNormalizer()
+    normalizer.load_state_dict(normalizer_state)
+    return normalizer
+
+
 class FrankaCubeLowdimDataset(BaseLowdimDataset):
     """NPZ-backed low-dimensional dataset for official Diffusion Policy.
 
@@ -282,6 +309,9 @@ class FrankaCubeRgbDataset(BaseImageDataset):
         obs_robot_state_name: str = "robot_state",
         append_phase_progress: bool = False,
         phase_key: str = "phase_ids",
+        normalizer_checkpoint: str | None = None,
+        distill_mask_mode: str = "none",
+        distill_mask_tolerance: float = 1.0e-6,
     ):
         super().__init__()
         self.dataset_path = str(dataset_path)
@@ -299,6 +329,9 @@ class FrankaCubeRgbDataset(BaseImageDataset):
         self.obs_robot_state_name = str(obs_robot_state_name)
         self.append_phase_progress = bool(append_phase_progress)
         self.phase_key = str(phase_key)
+        self.normalizer_checkpoint = None if normalizer_checkpoint in (None, "") else str(normalizer_checkpoint)
+        self.distill_mask_mode = str(distill_mask_mode)
+        self.distill_mask_tolerance = float(distill_mask_tolerance)
 
         data = np.load(self.dataset_path, allow_pickle=False)
         actual_image_key = self.image_key if self.image_key in data.files else "rgb"
@@ -343,8 +376,47 @@ class FrankaCubeRgbDataset(BaseImageDataset):
             self.robot_state = np.concatenate((self.robot_state, phase_features), axis=1).astype(np.float32)
 
         self.episode_starts = np.concatenate(([0], self.episode_ends[:-1])).astype(np.int64)
+        self.row_distill_mask = self._make_row_distill_mask(data, n)
         self.train_episode_mask = self._make_train_episode_mask()
         self.indices = self._build_indices(self.split)
+
+    def _make_row_distill_mask(self, data: np.lib.npyio.NpzFile, n_rows: int) -> np.ndarray | None:
+        mode = self.distill_mask_mode
+        if mode in {"", "none", "off", "false"}:
+            return None
+        if mode == "all":
+            return np.ones((int(n_rows),), dtype=np.float32)
+        if mode != "normal_reset":
+            raise ValueError(
+                "distill_mask_mode must be one of 'none', 'all', or 'normal_reset', "
+                f"got {mode!r}"
+            )
+        required = ["rollout_reset_joint_blend_alpha", "rollout_reset_cube_pos_blend_alpha"]
+        missing = [key for key in required if key not in data.files]
+        if missing:
+            raise KeyError(
+                f"{self.dataset_path} missing {missing}; required for distill_mask_mode='normal_reset'"
+            )
+        joint_alpha = np.asarray(data["rollout_reset_joint_blend_alpha"], dtype=np.float32).reshape(-1)
+        cube_alpha = np.asarray(data["rollout_reset_cube_pos_blend_alpha"], dtype=np.float32).reshape(-1)
+        n_eps = int(self.episode_ends.shape[0])
+        if joint_alpha.shape[0] != n_eps or cube_alpha.shape[0] != n_eps:
+            raise ValueError(
+                "reset alpha metadata must have one row per episode: "
+                f"joint={joint_alpha.shape}, cube={cube_alpha.shape}, episodes={n_eps}"
+            )
+        tol = float(self.distill_mask_tolerance)
+        episode_mask = (
+            np.isfinite(joint_alpha)
+            & np.isfinite(cube_alpha)
+            & (np.abs(joint_alpha) <= tol)
+            & (np.abs(cube_alpha) <= tol)
+        )
+        row_mask = np.zeros((int(n_rows),), dtype=np.float32)
+        for keep, start, end in zip(episode_mask, self.episode_starts, self.episode_ends):
+            if bool(keep):
+                row_mask[int(start) : int(end)] = 1.0
+        return row_mask
 
     def _make_train_episode_mask(self) -> np.ndarray:
         n_eps = int(self.episode_ends.shape[0])
@@ -389,6 +461,27 @@ class FrankaCubeRgbDataset(BaseImageDataset):
                 "diffusion_policy is not installed; install real-stanford/diffusion_policy "
                 "to use get_normalizer in the official workspace."
             )
+        if self.normalizer_checkpoint is not None:
+            normalizer = _linear_normalizer_from_checkpoint(self.normalizer_checkpoint)
+            expected = {self.obs_image_name, self.obs_robot_state_name, "action"}
+            missing = expected.difference(normalizer.params_dict.keys())
+            if missing:
+                raise KeyError(
+                    f"Normalizer checkpoint {self.normalizer_checkpoint} is missing fields {sorted(missing)}"
+                )
+            robot_scale = normalizer.params_dict[self.obs_robot_state_name]["scale"]
+            action_scale = normalizer.params_dict["action"]["scale"]
+            if int(robot_scale.numel()) != int(self.robot_state.shape[1]):
+                raise ValueError(
+                    f"Reference normalizer robot_state dim {robot_scale.numel()} "
+                    f"does not match dataset dim {self.robot_state.shape[1]}"
+                )
+            if int(action_scale.numel()) != int(self.action.shape[1]):
+                raise ValueError(
+                    f"Reference normalizer action dim {action_scale.numel()} "
+                    f"does not match dataset dim {self.action.shape[1]}"
+                )
+            return normalizer
         normalizer = LinearNormalizer()
         normalizer[self.obs_image_name] = get_image_range_normalizer()
         normalizer[self.obs_robot_state_name] = SingleFieldLinearNormalizer.create_fit(
@@ -435,13 +528,16 @@ class FrankaCubeRgbDataset(BaseImageDataset):
         seq_start = center - self.pad_before
         frame_ids = np.arange(seq_start, seq_start + self.horizon, dtype=np.int64)
         frame_ids = np.clip(frame_ids, ep_start, ep_end - 1)
-        return {
+        sample = {
             "obs": {
                 self.obs_image_name: torch.from_numpy(self._image_chw_float(frame_ids)),
                 self.obs_robot_state_name: torch.from_numpy(self.robot_state[frame_ids]),
             },
             "action": torch.from_numpy(self.action[frame_ids]),
         }
+        if self.row_distill_mask is not None:
+            sample["distill_mask"] = torch.from_numpy(self.row_distill_mask[frame_ids])
+        return sample
 
 
 class NoopLowdimRunner(BaseLowdimRunner):
