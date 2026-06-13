@@ -34,6 +34,7 @@ parser.add_argument("--object_reset_settle_steps", type=int, default=120)
 parser.add_argument("--capture_interval", type=int, default=2)
 parser.add_argument("--grasp_reset_attempts", type=int, default=12)
 parser.add_argument("--grasp_reset_min_pregrasp_z", type=float, default=0.15)
+parser.add_argument("--grasp_contact_score_steps", type=int, default=60)
 parser.add_argument("--disable_fabric", action="store_true", default=False)
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
@@ -126,6 +127,159 @@ def _as_float(value) -> float:
 
 def _tensor_list(value: torch.Tensor) -> list[float] | list[list[float]]:
     return value.detach().float().cpu().tolist()
+
+
+def _snapshot_tensor(value):
+    if isinstance(value, torch.Tensor):
+        return value.detach().clone()
+    return value
+
+
+def _root_state_w(asset) -> torch.Tensor:
+    return torch.cat((asset.data.root_pos_w, asset.data.root_quat_w, asset.data.root_vel_w), dim=-1)
+
+
+def _snapshot_task_tensor_names() -> tuple[str, ...]:
+    return (
+        "episode_length_buf",
+        "reset_buf",
+        "actions",
+        "robot_dof_targets",
+        "arm_joint_pos_target",
+        "finger_joint_pos_target",
+        "cube_initial_pos",
+        "cube_goal_pos",
+        "cube_lift_height",
+        "cube_xy_error",
+        "cube_goal_height_error",
+        "has_lifted_cube",
+        "in_success_region",
+        "time_in_success_region",
+        "ee_to_cube_dist",
+        "finger_center_to_cube_dist",
+        "left_finger_to_cube_dist",
+        "right_finger_to_cube_dist",
+        "max_finger_to_cube_dist",
+        "finger_distance_asymmetry",
+        "hand_to_cube_mean_dist",
+        "hand_to_cube_max_dist",
+        "gripper_width",
+        "finger_table_clearance",
+        "finger_table_clearance_violation",
+        "cube_pos",
+        "cube_quat",
+        "cube_vel",
+        "ee_pos",
+        "ee_quat",
+        "left_finger_pos",
+        "right_finger_pos",
+        "grasp_prior_reset_attempted",
+        "grasp_prior_reset_success",
+        "grasp_prior_reset_farther",
+        "grasp_prior_reset_sample_index",
+        "grasp_prior_reset_pos_error",
+        "grasp_prior_reset_rot_error",
+        "grasp_prior_reset_exact_tool_dist",
+        "grasp_prior_reset_pregrasp_tool_dist",
+        "grasp_prior_reset_finger_center_dist",
+        "grasp_prior_reset_finger_table_clearance",
+        "grasp_prior_reset_cube_pos_w",
+        "grasp_prior_reset_cube_quat_w",
+        "grasp_prior_reset_exact_tool_pos_w",
+        "grasp_prior_reset_pregrasp_tool_pos_w",
+        "grasp_prior_reset_exact_ee_pos_w",
+        "grasp_prior_reset_target_ee_pos_w",
+        "grasp_prior_reset_offset_dir_w",
+        "grasp_prior_reset_exact_tool_quat_w",
+        "grasp_prior_reset_pregrasp_tool_quat_w",
+        "grasp_prior_reset_exact_ee_quat_w",
+        "grasp_prior_reset_target_ee_quat_w",
+        "grasp_prior_reset_left_finger_pos",
+        "grasp_prior_reset_right_finger_pos",
+        "grasp_prior_reset_left_tip_proxy_pos",
+        "grasp_prior_reset_right_tip_proxy_pos",
+        "grasp_prior_reset_projected_exact_left_tip_proxy_pos",
+        "grasp_prior_reset_projected_exact_right_tip_proxy_pos",
+        "grasp_prior_reset_gripper_width",
+        "grasp_prior_reset_open_width_margin",
+        "grasp_prior_reset_offset_radial_dot",
+        "grasp_prior_reset_offset_radial_angle",
+        "grasp_prior_reset_exact_ee_dist",
+        "grasp_prior_reset_pregrasp_ee_dist",
+        "grasp_prior_reset_projected_exact_finger_center_dist",
+        "grasp_prior_reset_projected_exact_tip_center_dist",
+        "grasp_prior_reset_projected_exact_tip_max_dist",
+        "grasp_prior_reset_pregrasp_tip_table_clearance",
+        "grasp_prior_reset_projected_exact_tip_table_clearance",
+        "grasp_prior_reset_quality_success",
+        "grasp_prior_action_warmstart_active",
+        "grasp_prior_action_warmstart_phase",
+        "grasp_prior_action_warmstart_policy_actions",
+        "grasp_prior_action_warmstart_applied_actions",
+        "grasp_prior_action_warmstart_policy_action_z",
+        "grasp_prior_action_warmstart_policy_gripper_action",
+        "grasp_prior_action_warmstart_applied_action_z",
+        "grasp_prior_action_warmstart_applied_gripper_action",
+        "grasp_prior_action_warmstart_action_delta_abs",
+        "grasp_prior_action_warmstart_exact_ee_error",
+    )
+
+
+def _snapshot_task_env_state(task_env) -> dict[str, object]:
+    task_tensors = {}
+    for name in _snapshot_task_tensor_names():
+        if hasattr(task_env, name):
+            task_tensors[name] = _snapshot_tensor(getattr(task_env, name))
+    return {
+        "version": 1,
+        "num_envs": task_env.num_envs,
+        "common_step_counter": int(getattr(task_env, "common_step_counter", 0)),
+        "sim_step_counter": int(getattr(task_env, "_sim_step_counter", 0)),
+        "task_tensors": task_tensors,
+        "sim": {
+            "robot_root_state": _snapshot_tensor(_root_state_w(task_env._robot)),
+            "robot_joint_pos": _snapshot_tensor(task_env._robot.data.joint_pos),
+            "robot_joint_vel": _snapshot_tensor(task_env._robot.data.joint_vel),
+            "table_root_state": _snapshot_tensor(_root_state_w(task_env._table)),
+            "cube_root_state": _snapshot_tensor(_root_state_w(task_env._cube)),
+        },
+    }
+
+
+def _restore_task_env_state(task_env, env_state: dict[str, object]) -> None:
+    if int(env_state.get("num_envs", task_env.num_envs)) != task_env.num_envs:
+        raise ValueError(
+            f"Cannot restore env state with num_envs={env_state.get('num_envs')} into num_envs={task_env.num_envs}"
+        )
+    task_env.common_step_counter = int(
+        env_state.get("common_step_counter", getattr(task_env, "common_step_counter", 0))
+    )
+    if hasattr(task_env, "_sim_step_counter"):
+        task_env._sim_step_counter = int(env_state.get("sim_step_counter", task_env._sim_step_counter))
+
+    for name, value in env_state.get("task_tensors", {}).items():
+        if isinstance(value, torch.Tensor):
+            setattr(task_env, name, value.to(task_env.device).clone())
+
+    sim_state = env_state.get("sim", {})
+    if "robot_root_state" in sim_state:
+        task_env._robot.write_root_state_to_sim(sim_state["robot_root_state"].to(task_env.device))
+    if "robot_joint_pos" in sim_state and "robot_joint_vel" in sim_state:
+        task_env._robot.write_joint_state_to_sim(
+            sim_state["robot_joint_pos"].to(task_env.device),
+            sim_state["robot_joint_vel"].to(task_env.device),
+        )
+    if "table_root_state" in sim_state:
+        task_env._table.write_root_state_to_sim(sim_state["table_root_state"].to(task_env.device))
+    if "cube_root_state" in sim_state:
+        task_env._cube.write_root_state_to_sim(sim_state["cube_root_state"].to(task_env.device))
+
+    task_env._robot.set_joint_position_target(task_env.arm_joint_pos_target, joint_ids=task_env.arm_joint_ids)
+    task_env._robot.set_joint_position_target(task_env.finger_joint_pos_target, joint_ids=task_env.finger_joint_ids)
+    task_env.scene.write_data_to_sim()
+    task_env.sim.forward()
+    task_env.scene.update(dt=0.0)
+    task_env._compute_intermediate_values(update_success_timer=False)
 
 
 def _configure_camera(task_env, env_id: int = 0) -> None:
@@ -402,31 +556,53 @@ def _reset_settled_object_then_apply_grasp_prior(env, task_env) -> None:
     task_env._compute_intermediate_values(env_ids)
 
 
-def _reset_until_quality_grasp(env, task_env) -> int:
-    selected_env = 0
-    fallback_env: int | None = None
+def _candidate_contact_envs(task_env) -> list[int]:
     min_pregrasp_z = float(args_cli.grasp_reset_min_pregrasp_z)
-    for _ in range(max(int(args_cli.grasp_reset_attempts), 1)):
-        env.reset()
-        task_env._compute_intermediate_values()
-        quality = task_env.grasp_prior_reset_quality_success
-        topdown_quality = quality & (task_env.grasp_prior_reset_offset_dir_w[:, 2] >= min_pregrasp_z)
-        if bool(topdown_quality.any().item()):
-            selected_env = int(torch.nonzero(topdown_quality, as_tuple=False)[0].item())
-            break
-        if bool(quality.any().item()):
-            fallback_env = int(torch.nonzero(quality, as_tuple=False)[0].item())
-    else:
-        if fallback_env is not None:
-            selected_env = fallback_env
-    return selected_env
+    quality = task_env.grasp_prior_reset_quality_success
+    topdown_quality = quality & (task_env.grasp_prior_reset_offset_dir_w[:, 2] >= min_pregrasp_z)
+    ordered: list[int] = []
+    for mask in (topdown_quality, quality & ~topdown_quality):
+        if not bool(mask.any().item()):
+            continue
+        env_ids = torch.nonzero(mask, as_tuple=False).flatten()
+        z_values = task_env.grasp_prior_reset_offset_dir_w[env_ids, 2]
+        order = torch.argsort(z_values, descending=True)
+        ordered.extend(int(env_ids[index].item()) for index in order)
+    return ordered
 
 
-def _record_grasp_contact(env, task_env, output_dir: Path) -> dict[str, object]:
-    scenario_dir = output_dir / "grasp_contact"
-    selected_env = _reset_until_quality_grasp(env, task_env)
-    _configure_camera(task_env, env_id=selected_env)
-    _warmup_render(env, task_env, args_cli.render_warmup_frames)
+def _score_grasp_contact_result(result: dict[str, object]) -> float:
+    summary = result.get("summary", {})
+    if not isinstance(summary, dict):
+        summary = {}
+    done_count = int(result.get("selected_done_count", 999))
+    object_xy = float(summary.get("object_xy_delta_max", 999.0))
+    bottom_clearance = float(summary.get("bottom_clearance_min", -999.0))
+    finger_clearance = float(summary.get("finger_table_clearance_min", -999.0))
+    finger_dist = float(result.get("selected_max_finger_dist_min", 999.0))
+    pregrasp_z = float(result.get("selected_pregrasp_offset_dir_z", -999.0))
+    phases = result.get("warmstart_phases", [])
+    phase_bonus = 1.0 if isinstance(phases, list) and (1 in phases or 2 in phases) else 0.0
+    return (
+        (1000.0 if bool(result.get("passed", False)) else 0.0)
+        + (250.0 if done_count == 0 else -50.0 * done_count)
+        + 30.0 * phase_bonus
+        + 10.0 * pregrasp_z
+        + 5.0 * min(finger_clearance, 0.10)
+        + 5.0 * min(bottom_clearance, 0.02)
+        - 150.0 * object_xy
+        - 5.0 * finger_dist
+    )
+
+
+def _rollout_grasp_contact(
+    env,
+    task_env,
+    *,
+    selected_env: int,
+    steps: int,
+    scenario_dir: Path | None = None,
+) -> dict[str, object]:
     frame_idx = 0
     series: list[dict[str, object]] = []
     artifact_paths: list[str] = []
@@ -434,13 +610,13 @@ def _record_grasp_contact(env, task_env, output_dir: Path) -> dict[str, object]:
     active_values: list[bool] = []
     selected_done_count = 0
     selected_env_ids = torch.tensor([selected_env], device=task_env.device, dtype=torch.long)
-    for step in range(max(int(args_cli.grasp_steps), 1)):
+    for step in range(max(int(steps), 1)):
         _, dones = _step_env(env, task_env)
         if hasattr(task_env, "grasp_prior_action_warmstart_phase"):
             phase_values.append(int(task_env.grasp_prior_action_warmstart_phase[selected_env].detach().cpu()))
             active_values.append(bool(task_env.grasp_prior_action_warmstart_active[selected_env].detach().cpu()))
         selected_done_count += int(dones[selected_env].detach().cpu())
-        if step % max(int(args_cli.capture_interval), 1) == 0:
+        if scenario_dir is not None and step % max(int(args_cli.capture_interval), 1) == 0:
             artifact_paths.append(_capture(env, scenario_dir, frame_idx))
             frame_idx += 1
         snap = _metrics_snapshot(task_env, dones, env_ids=selected_env_ids)
@@ -470,6 +646,7 @@ def _record_grasp_contact(env, task_env, output_dir: Path) -> dict[str, object]:
             }
         )
         series.append(snap)
+
     summary = _summarize_series(series)
     selected_lift = max(float(item["selected_lift_height"]) for item in series)
     selected_max_finger = min(float(item["selected_max_finger_dist"]) for item in series)
@@ -477,6 +654,8 @@ def _record_grasp_contact(env, task_env, output_dir: Path) -> dict[str, object]:
     selected_object_size = max(float(item["selected_object_size"]) for item in series)
     selected_tip_max = min(float(item["selected_projected_tip_max_dist"]) for item in series)
     selected_pregrasp_z = max(float(item["selected_pregrasp_offset_dir_z"]) for item in series)
+    selected_object_xy_delta = float(summary.get("object_xy_delta_max", 999.0))
+    max_contact_xy_delta = min(0.06, 0.75 * float(task_env.cfg.prelift_drag_termination_xy_error))
     phases = sorted(set(phase_values))
     passed = (
         bool(task_env.grasp_prior_reset_quality_success[selected_env].detach().cpu())
@@ -484,6 +663,7 @@ def _record_grasp_contact(env, task_env, output_dir: Path) -> dict[str, object]:
         and float(summary.get("bottom_clearance_min", -1.0)) >= -0.01
         and float(summary.get("finger_table_clearance_min", -1.0)) >= float(task_env.cfg.finger_table_penetration_termination_margin)
         and selected_done_count == 0
+        and selected_object_xy_delta <= max_contact_xy_delta
         and (1 in phases or 2 in phases)
         and selected_tip_max <= 1.25 * selected_object_size
         and selected_width <= float(task_env.cfg.max_gripper_width)
@@ -498,11 +678,75 @@ def _record_grasp_contact(env, task_env, output_dir: Path) -> dict[str, object]:
         "selected_projected_tip_max_dist_min": selected_tip_max,
         "selected_pregrasp_offset_dir_z": selected_pregrasp_z,
         "selected_object_size": selected_object_size,
+        "selected_object_xy_delta_max": selected_object_xy_delta,
+        "selected_contact_xy_delta_threshold": max_contact_xy_delta,
         "selected_done_count": selected_done_count,
         "warmstart_phases": phases,
         "warmstart_active_count": sum(1 for item in active_values if item),
         "frames": artifact_paths,
     }
+
+
+def _select_scored_grasp_contact_state(env, task_env) -> tuple[int, dict[str, object]]:
+    best_state: dict[str, object] | None = None
+    best_result: dict[str, object] | None = None
+    best_score = -float("inf")
+    attempts = max(int(args_cli.grasp_reset_attempts), 1)
+    score_steps = max(int(args_cli.grasp_contact_score_steps), 1)
+
+    for attempt in range(attempts):
+        env.reset()
+        task_env._compute_intermediate_values()
+        candidate_envs = _candidate_contact_envs(task_env)
+        if not candidate_envs:
+            continue
+        reset_state = _snapshot_task_env_state(task_env)
+        for selected_env in candidate_envs:
+            _restore_task_env_state(task_env, reset_state)
+            candidate_state = _snapshot_task_env_state(task_env)
+            result = _rollout_grasp_contact(env, task_env, selected_env=selected_env, steps=score_steps)
+            result["selection_attempt"] = attempt
+            result["selection_score_steps"] = score_steps
+            score = _score_grasp_contact_result(result)
+            result["selection_score"] = score
+            if score > best_score:
+                best_score = score
+                best_state = candidate_state
+                best_result = result
+            if bool(result.get("passed", False)):
+                _restore_task_env_state(task_env, candidate_state)
+                return selected_env, result
+        _restore_task_env_state(task_env, reset_state)
+
+    if best_state is None or best_result is None:
+        env.reset()
+        task_env._compute_intermediate_values()
+        selected_env = 0
+        return selected_env, {
+            "passed": False,
+            "selection_failure": "no_quality_candidate",
+            "selection_score": best_score,
+            "selected_env": selected_env,
+        }
+
+    _restore_task_env_state(task_env, best_state)
+    return int(best_result["selected_env"]), best_result
+
+
+def _record_grasp_contact(env, task_env, output_dir: Path) -> dict[str, object]:
+    scenario_dir = output_dir / "grasp_contact"
+    selected_env, probe_result = _select_scored_grasp_contact_state(env, task_env)
+    _configure_camera(task_env, env_id=selected_env)
+    _warmup_render(env, task_env, args_cli.render_warmup_frames)
+    result = _rollout_grasp_contact(
+        env,
+        task_env,
+        selected_env=selected_env,
+        steps=max(int(args_cli.grasp_steps), 1),
+        scenario_dir=scenario_dir,
+    )
+    result["selection_probe"] = {k: v for k, v in probe_result.items() if k != "frames"}
+    return result
 
 
 def _make_env(*, grasp_prior: bool):
@@ -575,6 +819,7 @@ def main() -> None:
             "grasp_object_settle_steps": args_cli.grasp_object_settle_steps,
             "object_reset_settle_steps": args_cli.object_reset_settle_steps,
             "grasp_reset_min_pregrasp_z": args_cli.grasp_reset_min_pregrasp_z,
+            "grasp_contact_score_steps": args_cli.grasp_contact_score_steps,
             "perturb_push_steps": args_cli.perturb_push_steps,
             "perturb_linear_velocity": args_cli.perturb_linear_velocity,
             "perturb_lateral_velocity": args_cli.perturb_lateral_velocity,
