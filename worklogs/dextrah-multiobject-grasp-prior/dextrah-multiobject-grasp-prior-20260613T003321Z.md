@@ -425,6 +425,99 @@ Command / Job:
 Result:
 - status: running/queued; monitoring in progress.
 
+## 2026-06-13 - Edge-offset stable replay validation
+
+Goal:
+- Move the multi-object spawn domain off the symmetric table-center prior to
+  table-frame center `(5, 0)cm` with `+-10cm` randomization, then render the same
+  four-object settled replay at the requested edge placements:
+  `(15, 0)cm`, `(-5, 0)cm`, `(5, 10)cm`, `(5, -10)cm`.
+
+Implementation:
+- Multi-object reset now samples around
+  `table_center + (object_spawn_center_offset_x, object_spawn_center_offset_y)`.
+- Default center offset is `(0.05, 0.0)m`; default XY randomization half-range is
+  `0.10m`.
+- Added `--object_xy_offsets_cm` to the stable-pose validator and propagated
+  `OBJECT_XY_OFFSETS_CM` through the validation/training wrappers.
+- Added velocity zeroing after validator root-state writes; follow-up testing
+  showed the remaining nonzero speed came from PhysX contact, not a stale root
+  velocity buffer.
+
+Version Control:
+- implementation_commit: `6d179de08f0f85811971d7982a8d8ecfff7c6502`
+  (`Adjust multi-object spawn domain center`)
+- follow_up_commit: `5845a08d4da16878992cbb10aebce50215ea1a4a`
+  (`Clear object velocity in stable pose validator`)
+- remote_deploy: transferred as Git bundles to
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/.bundles/` and
+  fetched into the l401 agent worktree.
+- remote_worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-20260613T003321Z`
+
+Validation:
+- local: `python3 -m py_compile dextrah_lab/rl_games/validate_graspgen_stable_pose_resets.py dextrah_lab/rl_games/validate_franka_multi_object_grasp_env.py dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py`
+- local: `bash -n cluster/sbatch_validate_graspgen_stable_pose_resets_1gpu.sh cluster/sbatch_validate_franka_multi_object_grasp_env_1gpu.sh cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh cluster/sbatch_train_teacher_8gpu.sh`
+- local: `git diff --check`
+- remote: `python3 -m py_compile dextrah_lab/rl_games/validate_graspgen_stable_pose_resets.py dextrah_lab/rl_games/validate_franka_multi_object_grasp_env.py dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py`
+- remote: `bash -n cluster/sbatch_validate_graspgen_stable_pose_resets_1gpu.sh cluster/sbatch_validate_franka_multi_object_grasp_env_1gpu.sh cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh cluster/sbatch_train_teacher_8gpu.sh`
+
+Command / Jobs:
+- first edge render command: `OBJECT_ASSET_MANIFEST_PATH=/results/assets/franka_multi_graspgen_asset_smoke_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_223457/manifest.json MAX_OBJECTS=4 STABLE_POSE_COUNT=2 ROLLOUT_POSE_COUNT=1 STABLE_POSE_RANK_OVERRIDES=96ae0ff853734df0b10a827307949c87:1 STABLE_POSE_MESH_MODE=convex_hull SETTLE_STEPS=240 SETTLED_REPLAY_STEPS=240 RENDER_FRAMES=True CAPTURE_INTERVAL=24 TABLE_CLEARANCE=0.002 OBJECT_XY_OFFSETS_CM=15:0,-5:0,5:10,5:-10 RUN_NAME=graspgen_stable_pose_edge_offsets_6d179de_20260613_115930 CODE_COMMIT=6d179de08f0f85811971d7982a8d8ecfff7c6502 sbatch --parsable --partition=batch --time=0-00:45:00 cluster/sbatch_validate_graspgen_stable_pose_resets_1gpu.sh`
+- first edge render job_id: `1028962`; status: `FAILED`, exit `1:0`.
+- zero-velocity rerun job_id: `1028965`; status: `FAILED`, exit `1:0`.
+- rank sweep command: `OBJECT_ASSET_MANIFEST_PATH=/results/assets/franka_multi_graspgen_asset_smoke_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_223457/manifest.json OBJECT_UUIDS=96ae0ff853734df0b10a827307949c87 MAX_OBJECTS=1 STABLE_POSE_COUNT=6 ROLLOUT_POSE_COUNT=6 STABLE_POSE_MESH_MODE=convex_hull SETTLE_STEPS=240 SETTLED_REPLAY_STEPS=240 RENDER_FRAMES=False TABLE_CLEARANCE=0.002 OBJECT_XY_OFFSETS_CM=5:10 RUN_NAME=graspgen_edge_96ae_rank_sweep_5845a08_20260613_120645 CODE_COMMIT=5845a08d4da16878992cbb10aebce50215ea1a4a sbatch --parsable --partition=batch --time=0-00:25:00 cluster/sbatch_validate_graspgen_stable_pose_resets_1gpu.sh`
+- rank sweep job_id: `1028969`; status: `FAILED` by aggregate threshold because most ranks fail, but rank `2` passed for `96ae...` at `(5, 10)cm`.
+- final edge render command: `OBJECT_ASSET_MANIFEST_PATH=/results/assets/franka_multi_graspgen_asset_smoke_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_223457/manifest.json MAX_OBJECTS=4 STABLE_POSE_COUNT=3 ROLLOUT_POSE_COUNT=1 STABLE_POSE_RANK_OVERRIDES=96ae0ff853734df0b10a827307949c87:2 STABLE_POSE_MESH_MODE=convex_hull SETTLE_STEPS=240 SETTLED_REPLAY_STEPS=240 RENDER_FRAMES=True CAPTURE_INTERVAL=24 TABLE_CLEARANCE=0.002 OBJECT_XY_OFFSETS_CM=15:0,-5:0,5:10,5:-10 RUN_NAME=graspgen_stable_pose_edge_offsets_rank2_5845a08_20260613_120807 CODE_COMMIT=5845a08d4da16878992cbb10aebce50215ea1a4a sbatch --parsable --partition=batch --time=0-00:45:00 cluster/sbatch_validate_graspgen_stable_pose_resets_1gpu.sh`
+- final edge render job_id: `1028971`; status: `COMPLETED`, exit `0:0`, elapsed `00:01:14`.
+
+Final Edge Replay Result:
+- Top-level metrics: `passed=true`.
+- Edge placements are interpreted as table-frame centimeters around the table
+  center, so the final local object roots are approximately:
+  `(-0.47, 0.0)`, `(-0.67, 0.0)`, `(-0.57, 0.10)`,
+  `(-0.57, -0.10)`.
+- Settled replay summary: `root_xy_delta_max=3.36e-06m`,
+  `center_xy_delta_max=3.11e-06m`, `root_z_delta_max=1.61e-06m`,
+  `angular_delta_deg_max=0.0791`, `bottom_clearance_min=-0.00416m`,
+  `final_object_speed_max=0.00292m/s`.
+- Settled replay per-env:
+  - `7195ed3346a445448308febe833c180a`, offset `(15, 0)cm`, rank 0: passed.
+  - `1d489db9cdc24161a7537926a20bb17b`, offset `(-5, 0)cm`, rank 0: passed.
+  - `96ae0ff853734df0b10a827307949c87`, offset `(5, 10)cm`, rank 2: passed.
+  - `30700bc210844bdc991a5ccf16b6379f`, offset `(5, -10)cm`, rank 0: passed.
+
+Local Artifacts:
+- Fetched results: `local_results/stable_pose_edge_rank2_1028971/`
+- Settled replay grid video:
+  `local_results/stable_pose_edge_rank2_1028971/settled_replay_grid.mp4`
+- Discovery grid video:
+  `local_results/stable_pose_edge_rank2_1028971/stable_pose_discovery_grid.mp4`
+- Contact sheets:
+  `local_results/stable_pose_edge_rank2_1028971/settled_replay_contact_sheet.jpg`
+  and
+  `local_results/stable_pose_edge_rank2_1028971/stable_pose_discovery_contact_sheet.jpg`
+- Slurm log:
+  `local_results/stable_pose_edge_rank2_1028971/slurm.out`
+
+Viewer URL:
+- settled replay grid:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-20260613T003321Z/local_results/stable_pose_edge_rank2_1028971/settled_replay_grid.mp4`
+
+Visual Inspection:
+- Settled replay contact sheet and MP4 show all four edge placements on top of
+  the table.
+- No visible bounce-away, falling off the table, table sticking, or robot/object
+  crowding is visible in the settled replay.
+- The first discovery rollout still marks `1d489...` as failing strict angular
+  drift before settled-pose replay, which is expected for this shape and is why
+  the accepted RL reset path should use cached settled poses.
+
+Next:
+- Use the shifted spawn domain and cached settled poses for the multi-object RL
+  reset path. For the current smoke set, keep the rank override
+  `96ae0ff853734df0b10a827307949c87:2` at the `(5, 10)cm` edge placement.
+
 ## 2026-06-13 - Multi-object spawn center and edge-placement replay
 
 Goal:
