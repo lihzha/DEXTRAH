@@ -425,6 +425,72 @@ Command / Job:
 Result:
 - status: running/queued; monitoring in progress.
 
+## 2026-06-13 - Main merge, randomized multi-object training, and cluster launch
+
+Goal:
+- Merge the multi-object Franka GraspGen environment into `main`.
+- Add training-time object yaw randomization, randomized object assignment across vector envs, and validation checks that the policy observation is object-conditioned.
+- Launch RL training from the merged commit while preparing the full GraspGen object set under `/lustre`.
+
+Version Control:
+- integration_worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/integrate-multiobject-main-20260613`
+- branch: `codex/multiobject-training-yaw-20260613`
+- merged_main_commit: `8bad95c36af398366a4d112da9e7f766c60497ef`
+- pushed_main: `origin/main` fast-forwarded to `8bad95c36af398366a4d112da9e7f766c60497ef`.
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-training-main-20260613`
+- remote_commit: `8bad95c36af398366a4d112da9e7f766c60497ef`
+
+Implementation:
+- `object_spawn_yaw_randomization_deg=180.0` gives uniform yaw over `[-180deg, +180deg]`, i.e. full 360-degree object yaw randomization.
+- `object_asset_assignment=random` samples a balanced randomized object assignment across vector envs at scene construction; `round_robin` remains available for deterministic validation.
+- Training wrappers now pass `OBJECT_ASSET_ASSIGNMENT`.
+- Validation now checks parallel reset pose diversity and verifies object-conditioned observations: multi-object observation space is 80 vs the cube teacher's 72, with finite object feature tail values.
+
+Local / Remote Checks:
+- local: `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py dextrah_lab/rl_games/validate_franka_multi_object_grasp_env.py dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py`
+- local: `bash -n cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_validate_franka_multi_object_grasp_env_1gpu.sh cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh`
+- local: `git diff --check`
+- remote_l401: `python3 -m py_compile ...`
+- remote_l401: `bash -n ...`
+
+Validation:
+- run_name: `multiobject_random_assignment_smoke_8bad95c_20260613_122620`
+- job_id: `1028979`
+- metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/multiobject_random_assignment_smoke_8bad95c_20260613_122620/metrics.json`
+- result: passed.
+- object_asset_assignment: `random`
+- object_asset_index_by_env: `[1, 2, 2, 3, 0, 0, 1, 3]`
+- reset_parallel_env_pose_diversity: passed with 8 unique XY positions and yaw span `3.526031rad`.
+- policy_conditioned_on_object: passed with observation shape `[8, 80]`, cube teacher obs space `72`, and finite object feature tail values.
+
+Training Smoke:
+- job_id: `29048488`
+- run_name: `multiobject_teacher_smoke_8bad95c_20260613_122751`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/multiobject_teacher_smoke_8bad95c_20260613_122751`
+- result: completed, exit code `0:0`, elapsed `00:06:36`.
+- saved checkpoint: `nn/last_dextrah_franka_multi_object_grasp_ep_20_rew__489.9839_.pth`
+- saved config confirmed `object_asset_assignment=random`, `object_spawn_yaw_randomization_deg=180.0`, `observation_space=80`, `num_envs=1024`, and `max_epochs=20`.
+- metrics: rank-0 JSONL wrote 20 records, no non-finite numeric values.
+
+Active Training:
+- job_id: `29048544`
+- run_name: `multiobject_teacher_4obj_8bad95c_20260613_123520`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/multiobject_teacher_4obj_8bad95c_20260613_123520`
+- config: 4-object smoke manifest, `MAX_ITERATIONS=1000`, `NUM_ENVS=1024`, `HORIZON_LENGTH=64`, `OBJECT_ASSET_ASSIGNMENT=random`, `OBJECT_SPAWN_YAW_RANDOMIZATION_DEG=180.0`.
+- early status: running on A100 `polar3`; by epoch 12, no non-finite scalars, `cube_ee_to_cube_dist` improved from `0.2192` to `0.1860`, and `cube_finger_table_clearance_violation=0.0`.
+
+Active Full Asset Prep:
+- job_id: `1028980`
+- run_name: `franka_multi_graspgen_full_8bad95c_20260613_122621`
+- output: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/franka_multi_graspgen_full_8bad95c_20260613_122621`
+- cache: `/lustre/fsw/portfolios/nvr/users/lzha/cache/graspgen`
+- input split count: 8031 UUIDs.
+- early status: running on l401 `batch_lon`; progressed past batch 125/804 with all download/cache paths under `/lustre`.
+
+Next:
+- Continue monitoring job `29048544` through checkpoints and JSONL metrics.
+- Continue monitoring asset prep job `1028980`; launch full-asset training once the manifest and grasp-prior assets are complete and validated.
+
 ## 2026-06-13 - Main integration and training object randomization prep
 
 Goal:
