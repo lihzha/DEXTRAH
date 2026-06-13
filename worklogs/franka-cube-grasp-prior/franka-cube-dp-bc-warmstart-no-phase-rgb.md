@@ -41,3 +41,231 @@ Analysis:
 
 Next:
 - Commit these changes, deploy the exact commit to the l401 agent worktree, then run a small unique-location RGB collection smoke before scaling.
+
+## 2026-06-13T19:20:18Z - uniform3 no-phase RGB collection smoke
+
+Goal:
+- Collect and inspect a minimal 3-location RGB dataset with unique cube XY positions before scaling to 100-200 demos.
+
+Hypothesis:
+- The contact-aware controller settings that produced accepted normal-reset RGB demos should still produce successful demos when cube XY is explicitly sampled inside the default reachable support.
+
+Change:
+- No code changes after commit `5bf5f063bebf93e86eecfbf1daafdd7c401e297a`.
+- Generated 3 uniform specs over support `x=[-0.44,-0.28]`, `y=[-0.20,-0.04]`:
+  - `8:260::0:710000:-0.404725:-0.047353`
+  - `9:260::0:710001:-0.289497:-0.110581`
+  - `10:260::0:710002:-0.397624:-0.049468`
+
+Version Control:
+- local_deploy_commit: `5bf5f063bebf93e86eecfbf1daafdd7c401e297a`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- remote_commit: `5bf5f063bebf93e86eecfbf1daafdd7c401e297a`
+
+Command / Job:
+- job_id: `1028973`
+- run_name: `franka_cube_rgb_uniform3_nophase_smoke_20260613_122018`
+- command: `sbatch --export=ALL,CODE_NFS=<remote-worktree>,RUN_NAME=<run>,DATASET=/results/dp_bc/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz,RESET_JOINT_BLEND_ALPHA=0.0,RESET_CUBE_POS_BLEND_ALPHA=0.0,SAVE_RGB_OBS=True,RGB_OBS_HEIGHT=96,RGB_OBS_WIDTH=96,CAPTURE_VIDEO=True,VIDEO_LENGTH=640,VARIANT=center_high30,ORIENTATION_MODE=source,ALIGN_STEPS=80,CONTACT_ALIGN_STEPS=320,CONTACT_ALIGN_REFERENCE=live_cube,CONTACT_ALIGN_THRESHOLD=0.055,CONTACT_GATE_MODE=left_right,FINGER_GATE_MAX_DISTANCE=0.08,FINGER_GATE_BALANCE_THRESHOLD=0.02,REQUIRE_CONTACT_GATE=True,LATERAL_CENTERING_GAIN=0.75,LATERAL_CENTERING_LIMIT=0.03,CLOSE_STEPS=80,LIFT_STEPS=160,LIFT_HEIGHT=0.22,FINGER_GAIN=0.75,CLIP_ACTIONS=1.0,POSE_ACTION_FILTER=scale,POSE_ACTION_LIMIT=0.95,SEED=43 cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh`
+- specs: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/uniform_rgb_specs/franka_cube_rgb_uniform3_nophase_smoke_20260613_122018/specs.json`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/contact_relabel_sets/franka_cube_rgb_uniform3_nophase_smoke_20260613_122018`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/contact_aware_franka_cube_relabel_set_1028973.out`
+
+Result:
+- status: running at launch on `pool0-00018`
+
+Next:
+- Monitor job `1028973`, then inspect gate summary, accepted RGB NPZ, cube XY coverage report, and rollout/video artifacts.
+
+## 2026-06-13T19:27:56Z - confirmed default reachable support and failed smoke recap
+
+Goal:
+- Keep the next dataset on the default reachable Franka cube task support, with one unique successful RGB demo per uniformly sampled cube XY.
+
+Hypothesis:
+- The explicit cube XY reset and RGB logging path are working; the current blocker is the contact-aware data-generation controller settings under normal robot reset.
+
+Change:
+- User confirmed that "support" means the default reachable task support.
+- No code changes after commit `5bf5f063bebf93e86eecfbf1daafdd7c401e297a`.
+
+Command / Job:
+- `1028973`: `franka_cube_rgb_uniform3_nophase_smoke_20260613_122018`; canceled early by agent error after misreading Slurm elapsed time.
+- `1028974`: `franka_cube_rgb_uniform1_nophase_smoke_20260613_122131`; one random support location, normal robot reset, 8D robot state RGB capture.
+- `1028975`: `franka_cube_rgb_centerexplicit_nophase_smoke_20260613_122442`; support center location, normal robot reset, 8D robot state RGB capture.
+
+Result:
+- status: failed data-collection settings, not failed RGB plumbing.
+- key evidence:
+  - `1028974` saved raw RGB observations with `image (93, 96, 96, 3) uint8`, `robot_state (93, 8)`, `action (93, 7)`, and exact applied cube XY `[-0.317087, -0.169985]`.
+  - `1028974` failed gate with lateral drag/early termination: final cube XY moved to approximately `[-0.270232, -0.254676]`, `cube_xy_error=0.098913`, final lift `0`, and left/right finger distances were unbalanced.
+  - `1028975` at support center also failed before accepted close/lift under the same 320-step contact-align settings.
+
+Analysis:
+- The explicit reset path applies the requested cube XY and the RGB observation path is writing nonblank image/proprio/action arrays with the intended no-phase 8D robot state.
+- The `ALIGN_STEPS=80`, `CONTACT_ALIGN_STEPS=320`, loose balance-threshold settings can drag the cube before close/lift. This is unsuitable as the smoke gate for scaling.
+- Next retry should go back to the older accepted RGB relabel settings: no initial align, shorter contact align, tighter left/right gate, smaller centering limit, and small lateral search.
+
+Next:
+- Launch a one-location support-center smoke excluding `pool0-00018` with the older accepted RGB relabel settings. If accepted, make a dataset report/video; if not, inspect the rollout summary and tune the controller before scaling.
+
+## 2026-06-13T19:28:40Z - center old-controller no-phase RGB smoke
+
+Goal:
+- Test whether normal robot reset plus explicit support-center cube XY can produce one accepted RGB demo using the older accepted relabel controller settings.
+
+Hypothesis:
+- The previous 320-step contact-align configuration was dragging the cube before close/lift. Returning to `ALIGN_STEPS=0`, `CONTACT_ALIGN_STEPS=160`, tighter left/right balance, smaller centering limit, and small lateral search should reduce pre-close cube drag.
+
+Change:
+- No code changes after commit `5bf5f063bebf93e86eecfbf1daafdd7c401e297a`.
+- Excluded `pool0-00018` because unrelated user/agent jobs are already running there.
+
+Version Control:
+- agent_id: `franka-cube-no-phase-rgb`
+- local_commit: `5bf5f063bebf93e86eecfbf1daafdd7c401e297a`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- remote_commit: `5bf5f063bebf93e86eecfbf1daafdd7c401e297a`
+
+Command / Job:
+- job_id: `1028982`
+- run_name: `franka_cube_rgb_center_oldctrl_nophase_smoke_20260613_1228`
+- command: `sbatch --parsable --exclude=pool0-00018 --export=ALL,CODE_NFS=<remote-worktree>,RUN_NAME=<run>,DATASET=/results/dp_bc/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz,SPEC_COUNT=1,SPEC_0=8:260::0:740000:-0.360000:-0.120000,RESET_JOINT_BLEND_ALPHA=0.0,RESET_CUBE_POS_BLEND_ALPHA=0.0,SAVE_RGB_OBS=True,RGB_OBS_HEIGHT=96,RGB_OBS_WIDTH=96,CAPTURE_VIDEO=False,VARIANT=center_high30,ORIENTATION_MODE=source,ALIGN_STEPS=0,CONTACT_ALIGN_STEPS=160,CONTACT_ALIGN_REFERENCE=live_cube,CONTACT_ALIGN_THRESHOLD=0.055,CONTACT_GATE_MODE=left_right,FINGER_GATE_MAX_DISTANCE=0.075,FINGER_GATE_BALANCE_THRESHOLD=0.015,REQUIRE_CONTACT_GATE=True,LATERAL_CENTERING_GAIN=0.75,LATERAL_CENTERING_LIMIT=0.025,LATERAL_SEARCH_AMPLITUDE=0.004,LATERAL_SEARCH_PERIOD=32,CLOSE_STEPS=80,LIFT_STEPS=160,LIFT_HEIGHT=0.22,FINGER_GAIN=0.75,CLIP_ACTIONS=1.0,POSE_ACTION_FILTER=scale,POSE_ACTION_LIMIT=0.95,SEED=43,PRINT_INTERVAL=40 cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/contact_relabel_sets/franka_cube_rgb_center_oldctrl_nophase_smoke_20260613_1228`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/contact_aware_franka_cube_relabel_set_1028982.out`
+
+Result:
+- status: running/queued at launch
+
+Next:
+- Monitor job `1028982`; inspect summary JSON, accepted NPZ, and raw RGB observations before deciding whether to scale.
+
+## 2026-06-13T19:31:10Z - merge RGB BC implementation to main
+
+Goal:
+- Merge the current committed diffusion RGB implementation branch into `main` before continuing larger data generation.
+
+Hypothesis:
+- The implementation branch can be integrated cleanly on top of current `origin/main` in an isolated worktree without touching the dirty canonical checkout or the active experiment worktree.
+
+Change:
+- Created integration worktree `/home/lzha/code/.codex-worktrees/DEXTRAH/merge-dp-rgb-main-20260613` at `origin/main`.
+- Merged `origin/codex/franka-cube-diffusion-policy-bc` into `main`.
+
+Version Control:
+- source_commit: `5bf5f063bebf93e86eecfbf1daafdd7c401e297a`
+- base_main: `8bad95c36af398366a4d112da9e7f766c60497ef`
+- merge_commit: `fd970d35ee7dc5bf8742f5ab6e155e886b9338c7`
+- push: `git push origin main` succeeded (`8bad95c..fd970d3 main -> main`)
+
+Validation:
+- `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/venv/bin/python -m py_compile dextrah_lab/offline_dp_bc/dp_dataset.py dextrah_lab/offline_dp_bc/weighted_diffusion_policy.py dextrah_lab/offline_dp_bc/make_rgb_dataset_report.py dextrah_lab/offline_dp_bc/make_uniform_cube_relabel_specs.py dextrah_lab/offline_dp_bc/make_contact_relabel_set_report.py dextrah_lab/offline_dp_bc/combine_contact_relabel_rgb_sets.py dextrah_lab/rl_games/contact_aware_franka_cube_rollout.py dextrah_lab/rl_games/eval_franka_cube_rgb_dp_policy.py`
+- `bash -n cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh cluster/sbatch_train_franka_cube_rgb_dp_1gpu.sh cluster/sbatch_eval_franka_cube_rgb_dp_policy_1gpu.sh`
+- `git diff --check HEAD~1..HEAD`
+
+Result:
+- status: merged and pushed to `origin/main`
+
+Next:
+- Continue inspecting job `1028982` and tune the normal-reset RGB collection controller before scaling.
+
+## 2026-06-13T19:36:20Z - center smoke failure analysis and ablation launch plan
+
+Goal:
+- Identify a normal-reset controller setting that produces one clean accepted center-location RGB demo without phase/progress features.
+
+Hypothesis:
+- Job `1028982` failed because contact alignment chased the live cube while the gripper was open, so the right finger bumped the cube and the target moved with it. The left/right gate never became true and the cube drifted about 10 cm before termination.
+
+Evidence:
+- `1028982` completed with scheduler state `COMPLETED`, but relabel summary verdict was hard failure.
+- Raw RGB path still worked: `image (37, 96, 96, 3) uint8`, `robot_state (37, 8)`, `action (37, 7)`.
+- The failed rollout stayed in `contact_align_open`; center finger distance decreased from `0.1192` to min `0.0698` m, but left/right were imbalanced (`left min 0.0944`, `right min 0.0630`), and `cube_xy_error` grew to `0.0999` m.
+
+Change:
+- No code changes.
+- Next ablations keep the explicit center cube XY and normal robot reset, but freeze the contact target to the initial cube and remove lateral live-cube chasing. Variants:
+  - `initref_nolat_center075`: source orientation, initial cube reference, no lateral/search, center gate `0.075`.
+  - `initref_nolat_center085`: source orientation, initial cube reference, no lateral/search, center gate `0.085`.
+  - `liveori_initref_nolat_center075`: live orientation, initial cube reference, no lateral/search, center gate `0.075`.
+
+Next:
+- Launch these three one-episode ablations on l401 excluding `pool0-00018`; inspect summary JSON/CSV for accepted lift, cube drift, and RGB integrity.
+
+Command / Job:
+- `1028983`: `franka_cube_rgb_center_initref_nolat_center075_20260613_1236`
+- `1028984`: `franka_cube_rgb_center_initref_nolat_center085_20260613_1236`
+- `1028985`: `franka_cube_rgb_center_liveori_initref_nolat_center075_20260613_1236`
+
+Result:
+- status: all three failed the hard relabel gate.
+- key evidence:
+  - Source-orientation jobs (`1028983`, `1028984`) still never reached a usable close/lift.
+  - Live-orientation job (`1028985`) centered and closed cleanly, but with `center_high30` the closed fingers stayed about 6 cm from the cube; lift then moved the gripper away and the cube lift stayed zero.
+
+Analysis:
+- `ORIENTATION_MODE=live`, `CONTACT_ALIGN_REFERENCE=initial_cube`, no lateral/search fixes the left/right imbalance. The remaining issue is vertical/offset geometry: `center_high30` is too high to grip the cube.
+
+Next:
+- Run lower-offset live-orientation smokes with `VARIANT=center_high15` and `VARIANT=center`.
+
+Command / Job:
+- `1028986`: `franka_cube_rgb_center_liveori_initref_nolat_high15_20260613_1238`
+- `1028987`: `franka_cube_rgb_center_liveori_initref_nolat_center_20260613_1238`
+
+Result:
+- status: failed hard relabel gate.
+- key evidence:
+  - `center_high15` reached finger-center distance about `0.0848` m but never crossed the `0.075` m center gate, so it stayed open through the entire rollout.
+  - `center` briefly reached about `0.0796` m, then drifted away; it also never closed.
+
+Analysis:
+- Lowering the vertical offset alone is not enough when the close gate is too strict. A `0.09` m center gate should start close before the approach diverges; then the lower offsets can test whether early closing actually grips.
+
+Next:
+- Run `center_high15` and `center` again with live orientation, frozen initial target, no lateral/search, and `CONTACT_ALIGN_THRESHOLD=0.09`.
+
+Command / Job:
+- `1028988`: `franka_cube_rgb_center_liveori_initref_nolat_high15_thr09_20260613_1241`
+- `1028989`: `franka_cube_rgb_center_liveori_initref_nolat_center_thr09_20260613_1241`
+
+Result:
+- status: failed hard relabel gate for both variants.
+- `center_high15`: close gate fired at local step `32`, max cube lift was `0.0135` m, final lift was `0.0`, final finger-center distance was `0.2529` m.
+- `center`: close gate fired at local step `33`, max cube lift was `0.0143` m, final lift was `0.0`, final finger-center distance was `0.2391` m.
+- Both runs closed symmetrically around the cube and briefly lifted it about 1.3-1.4 cm, but the cube slipped away during lift.
+
+Analysis:
+- The failure is now in controller/data generation rather than RGB plumbing or explicit cube reset.
+- CSV inspection shows the cube drifts during close while lift still uses the pre-close contact anchor. For example, in `center`, by local step `80` the live cube had moved from `[-0.3398, -0.1600, 0.7942]` to `[-0.3455, -0.1808, 0.7760]`, but the target anchor remained the old pose. Lift starts from this stale anchor, so the gripper moves up and away instead of preserving the closed grasp.
+
+Next:
+- Add an opt-in close/hold anchor policy: track the live cube during close/hold, then freeze the last close pose for lift. Validate on the same one-location center smoke before scaling.
+
+## 2026-06-13T20:02:10Z - close-hold live-anchor controller patch
+
+Goal:
+- Fix the one-demo center collection failure where the frozen contact anchor becomes stale during gripper close.
+
+Hypothesis:
+- Updating the contact anchor from the live cube pose during close/hold should keep the finger target centered on the cube while the gripper squeezes it; freezing the last close pose for lift should avoid live-cube chasing during lift.
+
+Change:
+- Added `--close_hold_reference {contact_anchor,live_cube}` to `contact_aware_franka_cube_rollout.py`.
+- Default remains `contact_anchor`, preserving prior behavior.
+- Exposed the same knob in `cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh` as `CLOSE_HOLD_REFERENCE`.
+
+Version Control:
+- agent_id: `franka-cube-no-phase-rgb`
+- base_commit: `5bf5f063bebf93e86eecfbf1daafdd7c401e297a`
+- implementation_commit: pending
+- changed_files:
+  - `dextrah_lab/rl_games/contact_aware_franka_cube_rollout.py`
+  - `cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh`
+  - `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart-no-phase-rgb.md`
+
+Validation:
+- `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/venv/bin/python -m py_compile dextrah_lab/rl_games/contact_aware_franka_cube_rollout.py`
+- `bash -n cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh`
+
+Next:
+- Commit, push/deploy to the agent-owned l401 worktree, and run a one-location smoke with `CLOSE_HOLD_REFERENCE=live_cube`.

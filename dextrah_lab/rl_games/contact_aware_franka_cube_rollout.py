@@ -44,6 +44,17 @@ parser.add_argument(
     ),
 )
 parser.add_argument(
+    "--close_hold_reference",
+    choices=("contact_anchor", "live_cube"),
+    default="contact_anchor",
+    help=(
+        "Target anchor during gripper close/hold. 'contact_anchor' preserves the "
+        "cube pose captured when the close gate fires. 'live_cube' tracks the "
+        "measured cube pose while closing, then the last close pose is frozen "
+        "for lift."
+    ),
+)
+parser.add_argument(
     "--contact_align_threshold",
     default=0.06,
     type=float,
@@ -650,6 +661,7 @@ def _build_report(summary: dict[str, Any]) -> str:
         f"- reset seed: `{summary['seed']}`",
         f"- gripper timing: align/open `{summary['align_steps']}` steps, contact-align/open `{summary['contact_align_steps']}` steps, close `{summary['close_steps']}` steps, lift `{summary['lift_steps']}` steps",
         f"- contact-align reference: `{summary['contact_align_reference']}`",
+        f"- close/hold reference: `{summary['close_hold_reference']}`",
         f"- contact-align threshold: `{summary['contact_align_threshold']:.4f}` m",
         f"- contact gate mode: `{summary['contact_gate_mode']}`",
         f"- require contact gate: `{summary['require_contact_gate']}`",
@@ -806,7 +818,10 @@ def main() -> None:
                         phase = "close_hold"
                         gripper = -1.0
                         lift_delta = np.zeros(3, dtype=np.float32)
-                        target_reference = "contact_anchor"
+                        if args_cli.close_hold_reference == "live_cube":
+                            task_env._compute_intermediate_values()
+                            contact_anchor_cube_pos = task_env.cube_pos.detach().float().cpu().numpy()[0].copy()
+                        target_reference = str(args_cli.close_hold_reference)
                         target_base = contact_anchor_cube_pos
                     else:
                         phase = "lift"
@@ -1062,6 +1077,7 @@ def main() -> None:
                 "contact_align_success": contact_align_success,
                 "contact_align_steps": int(args_cli.contact_align_steps),
                 "contact_align_reference": str(args_cli.contact_align_reference),
+                "close_hold_reference": str(args_cli.close_hold_reference),
                 "contact_align_threshold": float(args_cli.contact_align_threshold),
                 "contact_gate_mode": str(args_cli.contact_gate_mode),
                 "require_contact_gate": bool(args_cli.require_contact_gate),
@@ -1123,6 +1139,7 @@ def main() -> None:
         "align_steps": int(args_cli.align_steps),
         "contact_align_steps": int(args_cli.contact_align_steps),
         "contact_align_reference": str(args_cli.contact_align_reference),
+        "close_hold_reference": str(args_cli.close_hold_reference),
         "contact_align_threshold": float(args_cli.contact_align_threshold),
         "contact_gate_mode": str(args_cli.contact_gate_mode),
         "require_contact_gate": bool(args_cli.require_contact_gate),
