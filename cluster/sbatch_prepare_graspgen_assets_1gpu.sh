@@ -34,6 +34,7 @@ UNUSED_CPU_COUNT="${UNUSED_CPU_COUNT:-208}"
 SIMPLIFY="${SIMPLIFY:-False}"
 OVERWRITE="${OVERWRITE:-False}"
 CONVERT_USD="${CONVERT_USD:-True}"
+CONVERT_SKIP_EXISTING="${CONVERT_SKIP_EXISTING:-True}"
 REFRESH_MANIFEST="${REFRESH_MANIFEST:-True}"
 SKIP_OBJECT_DOWNLOAD="${SKIP_OBJECT_DOWNLOAD:-False}"
 SKIP_GRASP_EXTRACT="${SKIP_GRASP_EXTRACT:-False}"
@@ -61,7 +62,7 @@ mkdir -p \
   "$CACHE_NFS/data" "$CACHE_NFS/documents"
 
 export RUN_NAME ASSET_OUTPUT_DIR_CONTAINER LIMIT PREFER_SINGLE_SHARD UNUSED_CPU_COUNT
-export SIMPLIFY OVERWRITE CONVERT_USD REFRESH_MANIFEST SKIP_OBJECT_DOWNLOAD SKIP_GRASP_EXTRACT UUIDS CODE_COMMIT
+export SIMPLIFY OVERWRITE CONVERT_USD CONVERT_SKIP_EXISTING REFRESH_MANIFEST SKIP_OBJECT_DOWNLOAD SKIP_GRASP_EXTRACT UUIDS CODE_COMMIT
 export PREP_DEPS_DIR
 
 echo "Running DextrAH GraspGen asset preparation"
@@ -82,6 +83,7 @@ echo "UNUSED_CPU_COUNT=$UNUSED_CPU_COUNT"
 echo "SIMPLIFY=$SIMPLIFY"
 echo "OVERWRITE=$OVERWRITE"
 echo "CONVERT_USD=$CONVERT_USD"
+echo "CONVERT_SKIP_EXISTING=$CONVERT_SKIP_EXISTING"
 echo "REFRESH_MANIFEST=$REFRESH_MANIFEST"
 echo "SKIP_OBJECT_DOWNLOAD=$SKIP_OBJECT_DOWNLOAD"
 echo "SKIP_GRASP_EXTRACT=$SKIP_GRASP_EXTRACT"
@@ -156,10 +158,19 @@ PY
             export CONVERT_PYTHONPATH="$d:$CONVERT_PYTHONPATH"
           fi
         done
+        CONVERT_ARGS=(
+          dextrah_lab/assets/batch_convert_urdf.py
+          "$ASSET_OUTPUT_DIR_CONTAINER/urdf"
+          "$ASSET_OUTPUT_DIR_CONTAINER/USD"
+          --headless
+        )
+        case "$CONVERT_SKIP_EXISTING" in
+          True|true|1|yes|Yes) CONVERT_ARGS+=(--skip-existing) ;;
+        esac
         printf "convert_command="
-        printf "%q " /isaac-sim/python.sh dextrah_lab/assets/batch_convert_urdf.py "$ASSET_OUTPUT_DIR_CONTAINER/urdf" "$ASSET_OUTPUT_DIR_CONTAINER/USD" --headless
+        printf "%q " /isaac-sim/python.sh "${CONVERT_ARGS[@]}"
         printf "\n"
-        PYTHONPATH="$CONVERT_PYTHONPATH" /isaac-sim/python.sh dextrah_lab/assets/batch_convert_urdf.py "$ASSET_OUTPUT_DIR_CONTAINER/urdf" "$ASSET_OUTPUT_DIR_CONTAINER/USD" --headless
+        PYTHONPATH="$CONVERT_PYTHONPATH" /isaac-sim/python.sh "${CONVERT_ARGS[@]}"
         ;;
     esac
 

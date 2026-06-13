@@ -171,3 +171,17 @@ Next:
 - Patch `UNUSED_CPU_COUNT` default for full staging to avoid oversubscribing the node.
 - Commit/push/deploy the wrapper patch.
 - Launch full `LIMIT=0` asset staging on `l401`.
+
+## 2026-06-13 - Make full USD conversion resumable
+
+Goal:
+- Avoid restarting full GraspGen USD conversion from zero if a long cluster run is interrupted.
+
+Change:
+- Added `--skip-existing` to `dextrah_lab/assets/batch_convert_urdf.py`.
+- Wired `cluster/sbatch_prepare_graspgen_assets_1gpu.sh` to pass `--skip-existing` by default during conversion.
+- Documented that reruns can resume in the same asset output directory.
+
+Next:
+- Commit/push/deploy this patch.
+- Launch full `LIMIT=0` asset staging with a longer `batch_long` walltime.

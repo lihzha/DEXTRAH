@@ -50,6 +50,12 @@ parser.add_argument(
     default=False,
     help="Make the asset instanceable for efficient cloning.",
 )
+parser.add_argument(
+    "--skip-existing",
+    action="store_true",
+    default=False,
+    help="Skip objects whose target USD file already exists.",
+)
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
 # parse the arguments
@@ -120,6 +126,11 @@ def main():
         full_object_urdf_path = urdf_path + "/" + object_name + "/model.urdf"
         full_object_usd_path = usd_path + "/" + object_name
         usd_filename = object_name + ".usd"
+        full_object_usd_file = os.path.join(full_object_usd_path, usd_filename)
+
+        if args_cli.skip_existing and os.path.isfile(full_object_usd_file):
+            print(f"Skipping existing USD file: {full_object_usd_file}")
+            continue
 
         update_urdf(full_object_urdf_path, object_name)
 

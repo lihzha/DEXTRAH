@@ -136,6 +136,9 @@ Robotiq split:
         ASSET_OUTPUT_DIR_CONTAINER=/results/assets/graspgen_objects \
         LIMIT=0 \
           sbatch --export=ALL cluster/sbatch_prepare_graspgen_assets_1gpu.sh
+
+   The cluster wrapper skips existing USDs by default so interrupted full-set
+   conversion can be resumed in the same output directory.
 ```
 
 On a1001, launch teacher training with the staged manifest that passed
