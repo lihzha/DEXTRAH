@@ -6788,3 +6788,66 @@ Next:
 - Commit/push the implementation, deploy exact commit to an agent-owned l401
   worktree, run the small smoke render, fetch/inspect frames/video, patch if
   the render is blank or the orbit target is wrong, then scale if needed.
+
+## 2026-06-13 01:20 PDT - robolab-orbit-viewport-fallback
+
+Goal:
+- Recover the RoboLab orbit render after the first TiledCamera smoke attempts
+  stalled before writing frames.
+
+Hypothesis:
+- The imported RoboLab static USD path does not need physics stepping or
+  `TiledCamera` reset. A viewport-capture orbit should avoid the reset stall
+  while still using the DEXTRAH/Isaac headless renderer.
+
+Change:
+- Added `--capture_backend viewport|tiled` to
+  `render_robolab_scene.py`, with `viewport` as the default.
+- Implemented viewport orbit frame capture using the existing Isaac viewport
+  capture pattern from DEXTRAH scene scripts.
+- Updated the l401 wrapper to pass `CAPTURE_BACKEND`, defaulting to viewport.
+
+Version Control:
+- agent_id: codex-robolab-orbit-render
+- worktree: `/home/lzha/code/DEXTRAH`
+- worklog: `WORKLOG.md`
+- branch: `codex/robolab-orbit-render-20260613`
+- base_commit: `27827a95a82bf79b74b4b821e30d1f00fa548e07`
+- implementation_commit: pending
+- push/pull: pending Git bundle deploy to l401 because l401 cannot fetch
+  GitHub SSH remotes.
+- changed_files: `dextrah_lab/scene_scripts/render_robolab_scene.py`,
+  `cluster/sbatch_render_robolab_scene.sh`, `WORKLOG.md`
+- remote_commit/status: previous l401 agent checkout at `27827a95`; new commit
+  pending.
+
+Command / Job:
+- command:
+  `sbatch --export=ALL,CODE_NFS=<agent_code>,ROBOLAB_NFS=<staged_robolab>,RUN_NAME=...,WIDTH=640,HEIGHT=360,FPS=4,VIDEO_SECONDS=1.0,SETTLE_STEPS=0,WARMUP_FRAMES=0,RT_SUBFRAMES=1,SIM_STEPS_PER_FRAME=0 cluster/sbatch_render_robolab_scene.sh`
+- job_id: `1028899` then `1028901`, both canceled after repeated stall
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/robolab_scene/robolab_orbit_smoke_20260613_0115`
+  and
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/robolab_scene/robolab_orbit_smoke_static_20260613_0117`
+- logs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/robolab_scene_1028899.out`,
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/robolab_scene_1028901.out`
+- artifacts: no frame artifacts before cancel
+
+Result:
+- status: failed then patched
+- metrics/artifacts: both jobs reached scene load, resolved
+  `/robolab/assets/scenes/banana_bowl.usda`, and computed table target near
+  `(0.043, 0.0, 0.053)`; both stalled after `creating orbit TiledCamera` and
+  `resetting SimulationContext after camera creation`.
+- key evidence: no `frames/orbit_*.png` were written for either run.
+
+Analysis:
+- RoboLab asset staging was sufficient for USD resolution and table-bounds
+  computation. The failure localized to the TiledCamera/reset/capture path, not
+  scene resolution.
+
+Next:
+- Commit the viewport fallback, redeploy exact commit to l401, run a new
+  viewport smoke, fetch/inspect frames/video, and scale the duration/resolution
+  only after the smoke is visually valid.

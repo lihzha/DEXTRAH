@@ -10,11 +10,13 @@ bounding-box center.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import math
 import random
 import shutil
 import subprocess
+import time
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -62,6 +64,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--camera_focal_length", type=float, default=22.0)
     parser.add_argument("--horizontal_aperture", type=float, default=20.955)
+    parser.add_argument(
+        "--capture_backend",
+        choices=("viewport", "tiled"),
+        default="viewport",
+        help="Viewport capture is slower but avoids TiledCamera reset stalls on imported static USD scenes.",
+    )
     parser.add_argument("--dome_intensity", type=float, default=750.0)
     parser.add_argument("--sun_intensity", type=float, default=1800.0)
     parser.add_argument("--randomize_lighting", action="store_true")
@@ -362,6 +370,54 @@ def _save_rgb_tensor(path: Path, rgb_tensor) -> None:
         save_image(image, str(path))
 
 
+def _set_view(eye: tuple[float, float, float], target: tuple[float, float, float]):
+    try:
+        from isaacsim.core.utils.viewports import set_camera_view
+    except Exception:
+        from omni.isaac.core.utils.viewports import set_camera_view  # type: ignore
+    from omni.kit.viewport.utility import get_active_viewport
+
+    try:
+        set_camera_view(eye=list(eye), target=list(target))
+    except TypeError:
+        set_camera_view(list(eye), list(target))
+
+    viewport = get_active_viewport()
+    if viewport is None:
+        raise RuntimeError("No active viewport available for capture")
+    return viewport
+
+
+def _capture_viewport_png(viewport, dst: Path, *, deadline_seconds: float = 120.0) -> Path:
+    from omni.kit.viewport.utility import capture_viewport_to_file, next_viewport_frame_async
+
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    for _ in range(2):
+        simulation_app.update()
+
+    async def _wait_for_capture() -> None:
+        await next_viewport_frame_async(viewport, n_frames=max(1, int(args_cli.rt_subframes)))
+        capture = capture_viewport_to_file(viewport, file_path=str(dst))
+        await capture.wait_for_result(completion_frames=max(8, int(args_cli.rt_subframes)))
+
+    loop = asyncio.get_event_loop()
+    task = loop.create_task(_wait_for_capture())
+    deadline = time.time() + float(deadline_seconds)
+    while not task.done() and time.time() < deadline:
+        simulation_app.update()
+        loop.run_until_complete(asyncio.sleep(0.0))
+    if not task.done():
+        task.cancel()
+        loop.run_until_complete(asyncio.sleep(0.0))
+        raise TimeoutError(f"Timed out while capturing viewport image {dst}")
+    task.result()
+
+    if not dst.exists():
+        raise RuntimeError(f"Viewport capture did not write {dst}")
+
+    return dst
+
+
 def _encode_video(frames_dir: Path, video_path: Path, fps: int) -> dict[str, Any]:
     ffmpeg = shutil.which("ffmpeg")
     if ffmpeg is None:
@@ -398,6 +454,50 @@ def _encode_video(frames_dir: Path, video_path: Path, fps: int) -> dict[str, Any
     if proc.stderr:
         result["stderr"] = proc.stderr
     return result
+
+
+def _capture_orbit_viewport(
+    *,
+    target: tuple[float, float, float],
+    radius: float,
+    height: float,
+    output_dir: Path,
+) -> tuple[list[str], dict[str, Any]]:
+    frame_count = max(2, int(round(float(args_cli.fps) * float(args_cli.video_seconds))))
+    frames_dir = output_dir / "frames"
+    frames_dir.mkdir(parents=True, exist_ok=True)
+    for stale in frames_dir.glob("orbit_*.png"):
+        stale.unlink()
+
+    frames: list[str] = []
+    poses: list[dict[str, Any]] = []
+    start = math.radians(float(args_cli.orbit_start_deg))
+
+    _log(f"capturing orbit frames with viewport backend: {frame_count} frames at {args_cli.fps} fps")
+    for frame_idx in range(frame_count):
+        theta = start + (2.0 * math.pi * frame_idx / frame_count)
+        eye = (
+            target[0] + radius * math.cos(theta),
+            target[1] + radius * math.sin(theta),
+            target[2] + height,
+        )
+        quat = _look_at_quat_world(eye, target)
+        viewport = _set_view(eye, target)
+        dst = frames_dir / f"orbit_{frame_idx:04d}.png"
+        _log(f"capturing orbit frame {frame_idx + 1}/{frame_count}")
+        _capture_viewport_png(viewport, dst)
+        frames.append(str(dst))
+        poses.append(
+            {
+                "frame": frame_idx,
+                "theta_deg": math.degrees(theta),
+                "eye": [float(v) for v in eye],
+                "target": [float(v) for v in target],
+                "quat_wxyz": [float(v) for v in quat],
+            }
+        )
+
+    return frames, {"frame_count": frame_count, "frames_dir": str(frames_dir), "camera_poses": poses}
 
 
 def _capture_orbit_video(
@@ -525,14 +625,22 @@ def main() -> None:
         f"{target} source={target_source} radius={radius:.3f} height={height:.3f}"
     )
 
-    frame_paths, orbit_result = _capture_orbit_video(
-        sim=sim,
-        target=target,
-        radius=radius,
-        height=height,
-        scene_bbox=scene_bbox,
-        output_dir=output_dir,
-    )
+    if args_cli.capture_backend == "tiled":
+        frame_paths, orbit_result = _capture_orbit_video(
+            sim=sim,
+            target=target,
+            radius=radius,
+            height=height,
+            scene_bbox=scene_bbox,
+            output_dir=output_dir,
+        )
+    else:
+        frame_paths, orbit_result = _capture_orbit_viewport(
+            target=target,
+            radius=radius,
+            height=height,
+            output_dir=output_dir,
+        )
 
     video_result: dict[str, Any] | None = None
     if args_cli.encode_video:
@@ -558,6 +666,7 @@ def main() -> None:
             "fps": int(args_cli.fps),
             "video_seconds": float(args_cli.video_seconds),
             "frame_count": len(frame_paths),
+            "capture_backend": str(args_cli.capture_backend),
             "encode_video": bool(args_cli.encode_video),
             "video": video_result,
         },
