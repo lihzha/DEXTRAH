@@ -7295,3 +7295,62 @@ Analysis:
 Next:
 - No DEXTRAH-owned render job remains active. Finalize by committing and
   pushing this worklog update.
+
+## 2026-06-13 12:32 PDT - robolab-hdri-household-slow-hq
+
+Goal:
+- Replace the white/generated studio background with a RoboLab household-like
+  background, slow down the orbit, and raise image quality.
+
+Change:
+- Added `--background hdri` to `render_robolab_scene.py`.
+- Added RoboLab background texture resolution under `assets/backgrounds`, using
+  `indoors/kiara_interior_2k.hdr` for this run.
+- Spawned an Isaac Lab `DomeLightCfg` with `texture_file`,
+  `texture_format="latlong"`, and `visible_in_primary_ray=True`.
+- Updated `cluster/sbatch_render_robolab_scene.sh` to pass
+  `BACKGROUND_TEXTURE` and `BACKGROUND_INTENSITY`.
+
+Version Control:
+- agent_id: codex-robolab-orbit-render
+- branch: `codex/robolab-orbit-render-20260613`
+- implementation_commit: `26237f7217696fad699d863cab498364a090543a`
+- pushed: yes, to origin
+- l401 source: detached
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/codex-robolab-orbit-render`
+  at `26237f7217696fad699d863cab498364a090543a`
+- staged asset: `/lustre/fsw/portfolios/nvr/users/lzha/src/RoboLab/assets/backgrounds/indoors/kiara_interior_2k.hdr`
+
+Command / Job:
+- smoke_job_id: `1028976`
+- final_job_id: `1028981`
+- final settings: `clutter_fruit_bottle_bluebin.usda`, `BACKGROUND=hdri`,
+  `BACKGROUND_TEXTURE=indoors/kiara_interior_2k.hdr`, `WIDTH=1024`,
+  `HEIGHT=1024`, `FPS=12`, `VIDEO_SECONDS=12.0`, `RT_SUBFRAMES=8`,
+  `ROBOT=kuka_allegro`, `ORBIT_RADIUS=4.0`, `ORBIT_HEIGHT=3.3`,
+  `ORBIT_ELEVATION_DEG=52`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/robolab_scene_1028981.out`
+- artifact:
+  `cluster_results/l401/robolab_hdri_household_slow_hq_20260613_122711/orbit.mp4`
+
+Result:
+- status: passed
+- Slurm: `1028981` completed with `ExitCode=0:0`, elapsed `00:02:13`.
+- MP4 validation: local `ffprobe` reports `1024x1024`, `12/1` fps,
+  `12.000000` seconds, and `144` frames; local decode completed with no
+  ffmpeg errors.
+- key evidence: manifest records `background.mode=hdri`,
+  `texture_file=/robolab/assets/backgrounds/indoors/kiara_interior_2k.hdr`,
+  and `visible_in_primary_ray=true`. Exported USD contains
+  `asset inputs:texture:file = @/robolab/assets/backgrounds/indoors/kiara_interior_2k.hdr@`
+  and `bool visibleInPrimaryRay = 1`.
+- visual inspection: checked high-res frames `orbit_0000.png`,
+  `orbit_0072.png`, and `orbit_0108.png`; each shows the household HDRI
+  background and the RoboLab/DEXTRAH robot scene.
+- viewer:
+  `http://localhost:8765/view?path=DEXTRAH/cluster_results/l401/robolab_hdri_household_slow_hq_20260613_122711/orbit.mp4`
+
+Next:
+- No DEXTRAH-owned render job remains active. Finalize by committing and
+  pushing this worklog update.
