@@ -934,6 +934,103 @@ Analysis:
 Next:
 - Add per-env/object metrics and per-env rendered frames so the unstable object/rank is identifiable. Keep hard pass gates on drift, table clearance, angular drift, and final object speed.
 
+## 2026-06-13 - Per-env stable-pose diagnostics relaunch
+
+Goal:
+- Re-run the same 4-object, rank-0 stable-pose smoke with per-env/object metrics and per-env rendered frames.
+
+Change:
+- Added per-env stability summaries with UUID, pose rank/probability, drift, angular drift, bottom clearance, final speed, and task done count.
+- Render capture now saves `frames/env_<id>/frame_<idx>.png` for each parallel environment and still writes root `frames/frame_<idx>.png` for env 0.
+- `done_count` is diagnostic unless `--fail_on_task_done` is set.
+
+Version Control:
+- local_commit: `a947d09a064b2dfa99d6537ffad11257d4b42905`
+- push: pushed to `origin/codex/dextrah-multiobject-grasp-prior/dextrah-multiobject-grasp-prior-20260613T003321Z`
+- remote_deploy: transferred as Git bundle `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/.bundles/dextrah_stable_pose_a947d09.bundle` and fetched into the l401 agent worktree.
+- remote_commit: `a947d09a064b2dfa99d6537ffad11257d4b42905`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-20260613T003321Z`
+
+Validation:
+- local: `python3 -m py_compile dextrah_lab/rl_games/validate_graspgen_stable_pose_resets.py`
+- local: `bash -n cluster/sbatch_validate_graspgen_stable_pose_resets_1gpu.sh`
+- local: `git diff --check`
+- remote: `python3 -m py_compile dextrah_lab/rl_games/validate_graspgen_stable_pose_resets.py`
+- remote: `bash -n cluster/sbatch_validate_graspgen_stable_pose_resets_1gpu.sh`
+
+Command / Job:
+- command: `OBJECT_ASSET_MANIFEST_PATH=/results/assets/franka_multi_graspgen_asset_smoke_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_223457/manifest.json MAX_OBJECTS=4 STABLE_POSE_COUNT=1 STABLE_POSE_MESH_MODE=convex_hull SETTLE_STEPS=240 RENDER_FRAMES=True CAPTURE_INTERVAL=24 TABLE_CLEARANCE=0.002 CODE_COMMIT=a947d09a064b2dfa99d6537ffad11257d4b42905 sbatch --parsable --partition=batch --time=0-00:45:00 cluster/sbatch_validate_graspgen_stable_pose_resets_1gpu.sh`
+- job_id: `1028894`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_graspgen_stable_pose_1028894.out`
+- run_name: `graspgen_stable_pose_validate_1028894_20260613_005332`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/graspgen_stable_pose_validate_1028894_20260613_005332`
+- status: failed metrics after producing per-env artifacts.
+
+Result:
+- Slurm state: `FAILED`, exit code `1:0`, elapsed `00:01:03`; Python step wrote metrics and `55` frame files.
+- Per-env results:
+  - env 0 / `7195ed3346a445448308febe833c180a` / rank 0: passed; root XY `0.00005m`, angular `0.68deg`, final speed `0.00084m/s`.
+  - env 1 / `1d489db9cdc24161a7537926a20bb17b` / rank 0: failed angular drift; root XY `0.00397m`, angular `6.04deg`, final speed `0.00068m/s`.
+  - env 2 / `96ae0ff853734df0b10a827307949c87` / rank 0: failed final speed; root XY `0.00002m`, angular `0.09deg`, final speed `0.04977m/s`.
+  - env 3 / `30700bc210844bdc991a5ccf16b6379f` / rank 0: passed; root XY `0.00170m`, angular `2.59deg`, final speed `0.00310m/s`.
+- Local artifacts fetched to `local_results/stable_pose_1028894/`.
+- Viewer URLs:
+  - env 1: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-20260613T003321Z/local_results/stable_pose_1028894/env_01.mp4`
+  - env 2: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-20260613T003321Z/local_results/stable_pose_1028894/env_02.mp4`
+
+Analysis:
+- Videos show no bounce-away, no table penetration, and no robot/object contact. The failed cases are mild rank-0 settling/contact jitter, not gross initialization failure.
+- To make resets robust for RL, the cache should not blindly use only the top probability stable pose if other ranks are more stable in PhysX.
+
+Next:
+- Run a non-rendered `STABLE_POSE_COUNT=3` candidate search on the same four objects to see whether a stable rank exists for each object before designing cache selection.
+
+## 2026-06-13 - Stable-pose rank candidate search launch
+
+Goal:
+- Test the top three trimesh stable-pose ranks per object without rendering to identify stable candidates for the small object set.
+
+Version Control:
+- remote_commit: `a947d09a064b2dfa99d6537ffad11257d4b42905`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-20260613T003321Z`
+
+Command / Job:
+- command: `OBJECT_ASSET_MANIFEST_PATH=/results/assets/franka_multi_graspgen_asset_smoke_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_223457/manifest.json MAX_OBJECTS=4 STABLE_POSE_COUNT=3 STABLE_POSE_MESH_MODE=convex_hull SETTLE_STEPS=240 RENDER_FRAMES=False CAPTURE_INTERVAL=24 TABLE_CLEARANCE=0.002 CODE_COMMIT=a947d09a064b2dfa99d6537ffad11257d4b42905 sbatch --parsable --partition=batch --time=0-00:45:00 cluster/sbatch_validate_graspgen_stable_pose_resets_1gpu.sh`
+- job_id: `1028895`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_graspgen_stable_pose_1028895.out`
+- run_name: `graspgen_stable_pose_validate_1028895_20260613_005752`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/graspgen_stable_pose_validate_1028895_20260613_005752`
+- status: failed metrics as expected for candidate search.
+
+Result:
+- Slurm state: `FAILED`, exit code `1:0`, elapsed `00:00:46`.
+- Candidate pass table:
+  - `7195ed3346a445448308febe833c180a`: ranks `0`, `1`, and `2` passed.
+  - `1d489db9cdc24161a7537926a20bb17b`: ranks `0`, `1`, and `2` all failed; rank 0 was closest with root XY `0.0040m`, angular `6.04deg`, final speed `0.0007m/s`.
+  - `96ae0ff853734df0b10a827307949c87`: rank 0 failed due final speed `0.0498m/s`; ranks `1` and `2` passed.
+  - `30700bc210844bdc991a5ccf16b6379f`: rank 0 passed; ranks `1` and `2` failed bottom clearance (`-0.0066m`).
+
+Analysis:
+- Candidate search helps for the long thin `96ae...` object, where rank 1 is stable.
+- The rounded `1d489...` object appears to settle from the theoretical convex-hull stable pose into a nearby PhysX-stable pose. Replaying the post-settle root pose is the correct next test for a cache-based reset: precompute once, then reset directly to the settled root state.
+
+Next:
+- Add a settled-pose replay mode: first place from trimesh stable poses, settle, cache final local root poses/quaternions, then reset to those cached poses and verify they remain stable.
+
+## 2026-06-13 - Settled-pose replay implementation
+
+Goal:
+- Validate the cache strategy needed for RL resets: use trimesh poses only to discover stable candidates, then cache and replay PhysX-settled root states.
+
+Change:
+- Added `--settled_replay_steps` to `validate_graspgen_stable_pose_resets.py`.
+- The validator now records final local root positions/quaternions from the first rollout.
+- If replay steps are requested, it resets objects to those cached settled root states, zeros velocities, and runs a second stability rollout.
+- Added `SETTLED_REPLAY_STEPS` wrapper plumbing.
+
+Next:
+- Run local/remote checks, commit, deploy, and relaunch a rendered 4-object settled-replay validation.
+
 ## 2026-06-13 - Rendered environment validation smoke launch
 
 Goal:

@@ -22,6 +22,7 @@ parser.add_argument("--stable_pose_sigma", type=float, default=0.0)
 parser.add_argument("--stable_pose_samples", type=int, default=1)
 parser.add_argument("--stable_pose_threshold", type=float, default=0.0)
 parser.add_argument("--settle_steps", type=int, default=240)
+parser.add_argument("--settled_replay_steps", type=int, default=0)
 parser.add_argument("--seed", type=int, default=42)
 parser.add_argument("--output_dir", type=str, default=None)
 parser.add_argument("--metrics_path", type=str, default=None)
@@ -275,17 +276,17 @@ def _save_frame(frame, dst: Path) -> str:
         return str(ppm_path)
 
 
-def _capture_env_frames(env, task_env, output_dir: Path, frame_idx: int) -> dict[str, str]:
+def _capture_env_frames(env, task_env, frame_root: Path, frame_idx: int) -> dict[str, str]:
     if not args_cli.render_frames:
         return {}
     paths: dict[str, str] = {}
     for env_i in range(int(task_env.num_envs)):
         _configure_camera(task_env, env_id=env_i)
         frame = env.render()
-        env_path = output_dir / "frames" / f"env_{env_i:02d}" / f"frame_{frame_idx:04d}.png"
+        env_path = frame_root / f"env_{env_i:02d}" / f"frame_{frame_idx:04d}.png"
         paths[str(env_i)] = _save_frame(frame, env_path)
         if env_i == 0:
-            _save_frame(frame, output_dir / "frames" / f"frame_{frame_idx:04d}.png")
+            _save_frame(frame, frame_root / f"frame_{frame_idx:04d}.png")
     return paths
 
 
@@ -387,10 +388,48 @@ def _place_stable_pose_states(task_env, pose_data: list[dict[str, object]], vert
     }
 
 
-def _run_stability_rollout(env, task_env, pose_data: list[dict[str, object]], vertices_by_asset: list[torch.Tensor], output_dir: Path) -> dict[str, object]:
+def _place_local_root_states(
+    task_env,
+    local_root_pos_by_env: list[list[float]],
+    local_root_quat_by_env: list[list[float]],
+) -> None:
+    env_ids = task_env._robot._ALL_INDICES
+    root_state = torch.zeros((task_env.num_envs, 13), dtype=torch.float32, device=task_env.device)
+    local_pos = torch.as_tensor(local_root_pos_by_env, dtype=torch.float32, device=task_env.device)
+    local_quat = torch.as_tensor(local_root_quat_by_env, dtype=torch.float32, device=task_env.device)
+    root_state[:, 0:3] = local_pos + task_env.scene.env_origins[env_ids]
+    root_state[:, 3:7] = local_quat
+    task_env._cube.write_root_state_to_sim(root_state, env_ids=env_ids)
+    task_env.scene.write_data_to_sim()
+    task_env.sim.forward()
+    task_env.scene.update(dt=0.0)
+    task_env._compute_intermediate_values(env_ids)
+
+
+def _run_stability_rollout(
+    env,
+    task_env,
+    pose_data: list[dict[str, object]],
+    vertices_by_asset: list[torch.Tensor],
+    output_dir: Path,
+    *,
+    rollout_name: str,
+    settle_steps: int,
+    initial_local_root_pos: list[list[float]] | None = None,
+    initial_local_root_quat: list[list[float]] | None = None,
+    placement_template: dict[str, object] | None = None,
+) -> dict[str, object]:
     env.reset()
     _configure_camera(task_env, env_id=0)
-    placement = _place_stable_pose_states(task_env, pose_data, vertices_by_asset)
+    if initial_local_root_pos is None or initial_local_root_quat is None:
+        placement = _place_stable_pose_states(task_env, pose_data, vertices_by_asset)
+        placement["source"] = "trimesh_stable_pose"
+    else:
+        _place_local_root_states(task_env, initial_local_root_pos, initial_local_root_quat)
+        placement = dict(placement_template or {})
+        placement["initial_root_pos"] = initial_local_root_pos
+        placement["initial_root_quat"] = initial_local_root_quat
+        placement["source"] = "settled_replay"
     for _ in range(max(int(args_cli.render_warmup_frames), 0)):
         if args_cli.render_frames:
             env.render()
@@ -400,10 +439,13 @@ def _run_stability_rollout(env, task_env, pose_data: list[dict[str, object]], ve
     initial_root_quat = task_env._cube.data.root_quat_w[env_ids].detach().clone()
     initial_center_pos = task_env.cube_pos.detach().clone()
     initial_bottom_z = _bottom_z_from_vertices(task_env, vertices_by_asset, env_ids).detach().clone()
+    frame_root = output_dir / "frames"
+    if rollout_name:
+        frame_root = frame_root / rollout_name
 
     frame_records: list[dict[str, object]] = []
     if args_cli.render_frames:
-        frame_records.append({"frame_index": 0, "paths_by_env": _capture_env_frames(env, task_env, output_dir, 0)})
+        frame_records.append({"frame_index": 0, "paths_by_env": _capture_env_frames(env, task_env, frame_root, 0)})
 
     series: list[dict[str, object]] = []
     done_count = 0
@@ -420,7 +462,8 @@ def _run_stability_rollout(env, task_env, pose_data: list[dict[str, object]], ve
     final_object_speed_by_env = torch.zeros(num_envs, dtype=torch.float32, device=task_env.device)
     final_object_angular_speed_by_env = torch.zeros(num_envs, dtype=torch.float32, device=task_env.device)
     capture_interval = max(int(args_cli.capture_interval), 1)
-    for step in range(max(int(args_cli.settle_steps), 1)):
+    rollout_steps = max(int(settle_steps), 1)
+    for step in range(rollout_steps):
         dones = _manual_step(task_env)
         done_count += int(dones.float().sum().detach().cpu())
         done_count_by_env += dones.to(dtype=torch.long)
@@ -461,10 +504,10 @@ def _run_stability_rollout(env, task_env, pose_data: list[dict[str, object]], ve
                 "done_count": int(dones.float().sum().detach().cpu()),
             }
         )
-        if args_cli.render_frames and ((step + 1) % capture_interval == 0 or step == int(args_cli.settle_steps) - 1):
+        if args_cli.render_frames and ((step + 1) % capture_interval == 0 or step == rollout_steps - 1):
             frame_idx = len(frame_records)
             frame_records.append(
-                {"frame_index": frame_idx, "paths_by_env": _capture_env_frames(env, task_env, output_dir, frame_idx)}
+                {"frame_index": frame_idx, "paths_by_env": _capture_env_frames(env, task_env, frame_root, frame_idx)}
             )
 
     summary = {
@@ -525,11 +568,18 @@ def _run_stability_rollout(env, task_env, pose_data: list[dict[str, object]], ve
             }
         )
     passed = all(bool(item["passed"]) for item in per_env)
+    final_root_pos_local = (
+        task_env._cube.data.root_pos_w[env_ids] - task_env.scene.env_origins[env_ids]
+    ).detach().cpu().tolist()
+    final_root_quat = task_env._cube.data.root_quat_w[env_ids].detach().cpu().tolist()
     return {
         "passed": bool(passed),
+        "rollout_name": rollout_name or "stable_pose",
         "summary": summary,
         "per_env": per_env,
         "placement": placement,
+        "final_root_pos": final_root_pos_local,
+        "final_root_quat": final_root_quat,
         "frames": frame_records,
         "series_tail": series[-min(len(series), 10):],
         "thresholds": {
@@ -573,19 +623,44 @@ def main() -> None:
     env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.render_frames else None)
     task_env = env.unwrapped
     _configure_camera(task_env, env_id=0)
-    result = _run_stability_rollout(env, task_env, pose_data, vertices_by_asset, output_dir)
+    result = _run_stability_rollout(
+        env,
+        task_env,
+        pose_data,
+        vertices_by_asset,
+        output_dir,
+        rollout_name="stable_pose",
+        settle_steps=int(args_cli.settle_steps),
+    )
+    settled_replay_result = None
+    if int(args_cli.settled_replay_steps) > 0:
+        settled_replay_result = _run_stability_rollout(
+            env,
+            task_env,
+            pose_data,
+            vertices_by_asset,
+            output_dir,
+            rollout_name="settled_replay",
+            settle_steps=int(args_cli.settled_replay_steps),
+            initial_local_root_pos=result["final_root_pos"],
+            initial_local_root_quat=result["final_root_quat"],
+            placement_template=result["placement"],
+        )
+    passed = bool(result["passed"]) if settled_replay_result is None else bool(settled_replay_result["passed"])
     payload = {
-        "passed": bool(result["passed"]),
+        "passed": passed,
         "task": args_cli.task,
         "seed": int(args_cli.seed),
         "num_envs": int(num_envs),
         "max_objects": int(len(selected)),
         "stable_pose_count": int(args_cli.stable_pose_count),
         "settle_steps": int(args_cli.settle_steps),
+        "settled_replay_steps": int(args_cli.settled_replay_steps),
         "selected_manifest": str(filtered_manifest),
         "object_asset_manifest_path": str(args_cli.object_asset_manifest_path),
         "pose_data": pose_data,
         "result": result,
+        "settled_replay_result": settled_replay_result,
     }
     metrics_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(f"[INFO] Wrote stable-pose metrics to {metrics_path}", flush=True)
