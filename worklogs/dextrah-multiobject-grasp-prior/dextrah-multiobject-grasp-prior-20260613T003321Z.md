@@ -425,6 +425,60 @@ Command / Job:
 Result:
 - status: running/queued; monitoring in progress.
 
+## 2026-06-13 - Main integration and training object randomization prep
+
+Goal:
+- Merge the validated multi-object environment into `main`, then prepare the
+  multi-object teacher training path so parallel envs cover different objects,
+  each reset samples independent object poses, and the policy remains
+  object-conditioned like the cube teacher.
+
+Change:
+- Merged the validated environment branch into a clean integration worktree and
+  pushed `origin/main` to `bb4941bb38db7995859fc1e4fae750f3c855495c`.
+- Added `object_asset_assignment` to the multi-object task. `round_robin`
+  preserves deterministic validation videos; `random` uses a randomized
+  balanced assignment at scene construction so parallel envs cover as many
+  different object USDs as possible.
+- Set the A100 teacher wrapper default `OBJECT_ASSET_ASSIGNMENT=random` for
+  `Dextrah-Franka-Multi-Object-Grasp`.
+- Kept yaw randomization as the existing full 360-degree range:
+  `OBJECT_SPAWN_YAW_RANDOMIZATION_DEG=180.0`, meaning uniform yaw in
+  `[-180deg, 180deg]`.
+- Added validation metrics for parallel pose/yaw diversity and for the
+  object-conditioned observation tail. The multi-object policy still reuses the
+  original cube teacher actor-critic MLP and appends object scale, half extents,
+  grasp size, asset-id fraction, prior flag, and radius to the cube teacher
+  pose/velocity observation.
+
+Version Control:
+- agent_id: `integrate-multiobject-main-20260613`
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/integrate-multiobject-main-20260613`
+- branch: `codex/multiobject-training-yaw-20260613`
+- base_commit: `bb4941bb38db7995859fc1e4fae750f3c855495c`
+- implementation_commit: pending
+- changed_files:
+  `dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py`,
+  `dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py`,
+  `dextrah_lab/rl_games/validate_franka_multi_object_grasp_env.py`,
+  `dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py`,
+  `cluster/sbatch_train_teacher_8gpu.sh`,
+  `cluster/sbatch_validate_franka_multi_object_grasp_env_1gpu.sh`,
+  `cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh`,
+  this worklog.
+
+Validation:
+- local: `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py dextrah_lab/rl_games/validate_franka_multi_object_grasp_env.py dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py`
+- local: `bash -n cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_validate_franka_multi_object_grasp_env_1gpu.sh cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh`
+- local: `git diff --check`
+
+Next:
+- Commit/push this training-prep patch, deploy to l401/a100 agent-owned
+  worktrees, run a small l401 multi-env smoke with `OBJECT_ASSET_ASSIGNMENT=random`,
+  then launch A100 teacher training if the smoke confirms object/yaw diversity
+  and finite object-conditioned observations.
+
 ## 2026-06-13 - Edge-offset stable replay validation
 
 Goal:

@@ -18,6 +18,7 @@ parser.add_argument("--output_dir", type=str, default=None)
 parser.add_argument("--metrics_path", type=str, default=None)
 parser.add_argument("--object_asset_manifest_path", type=str, required=True)
 parser.add_argument("--max_objects", type=int, default=4)
+parser.add_argument("--object_asset_assignment", type=str, default="round_robin")
 parser.add_argument("--object_spawn_center_offset_x", type=float, default=0.05)
 parser.add_argument("--object_spawn_center_offset_y", type=float, default=0.0)
 parser.add_argument("--object_spawn_xy_randomization", type=float, default=0.10)
@@ -761,6 +762,7 @@ def _make_env(*, grasp_prior: bool):
     env_cfg.seed = int(args_cli.seed)
     env_cfg.object_asset_manifest_path = str(Path(args_cli.object_asset_manifest_path).expanduser().resolve())
     env_cfg.max_objects = int(args_cli.max_objects)
+    env_cfg.object_asset_assignment = str(args_cli.object_asset_assignment)
     env_cfg.object_spawn_center_offset_x = float(args_cli.object_spawn_center_offset_x)
     env_cfg.object_spawn_center_offset_y = float(args_cli.object_spawn_center_offset_y)
     env_cfg.object_spawn_xy_randomization = float(args_cli.object_spawn_xy_randomization)
@@ -819,6 +821,7 @@ def main() -> None:
             "seed": args_cli.seed,
             "object_asset_manifest_path": str(args_cli.object_asset_manifest_path),
             "max_objects": args_cli.max_objects,
+            "object_asset_assignment": str(args_cli.object_asset_assignment),
             "object_spawn_center_offset_x": args_cli.object_spawn_center_offset_x,
             "object_spawn_center_offset_y": args_cli.object_spawn_center_offset_y,
             "object_spawn_xy_randomization": args_cli.object_spawn_xy_randomization,

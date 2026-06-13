@@ -26,6 +26,7 @@ parser.add_argument("--render_warmup_frames", type=int, default=2)
 parser.add_argument("--object_asset_manifest_path", type=str, default=None)
 parser.add_argument("--object_assets_dir", type=str, default=None)
 parser.add_argument("--max_objects", type=int, default=None)
+parser.add_argument("--object_asset_assignment", type=str, default=None)
 parser.add_argument("--object_spawn_center_offset_x", type=float, default=None)
 parser.add_argument("--object_spawn_center_offset_y", type=float, default=None)
 parser.add_argument("--object_spawn_xy_randomization", type=float, default=None)
@@ -72,6 +73,13 @@ def _mean(value) -> float:
 
 def _tensor_list(value: torch.Tensor) -> list[float] | list[list[float]]:
     return value.detach().float().cpu().tolist()
+
+
+def _yaw_from_quat_wxyz(quat: torch.Tensor) -> torch.Tensor:
+    w, x, y, z = quat.unbind(dim=-1)
+    siny_cosp = 2.0 * (w * z + x * y)
+    cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
+    return torch.atan2(siny_cosp, cosy_cosp)
 
 
 class CheckRecorder:
@@ -129,12 +137,15 @@ def _run_asset_checks(task_env, checks: CheckRecorder) -> dict[str, object]:
     usd_paths = [Path(path) for path in summary["usd_paths"]]
     used_asset_count = int(torch.unique(task_env.object_asset_index).numel())
     expected_used = min(task_env.num_envs, num_unique)
+    assignment = str(summary.get("object_asset_assignment", "round_robin"))
     checks.check(
         "multi_object_asset_count",
         num_unique >= 2 and used_asset_count == expected_used,
         num_unique_objects=num_unique,
         used_asset_count=used_asset_count,
         expected_used_asset_count=expected_used,
+        object_asset_assignment=assignment,
+        object_asset_index_by_env=summary.get("object_asset_index_by_env", [])[:32],
         uuids=summary["uuids"][:16],
     )
     checks.check(
@@ -200,6 +211,7 @@ def _run_reset_checks(env, task_env, checks: CheckRecorder) -> dict[str, object]
 
     env_ids = task_env._robot._ALL_INDICES
     root_pos = task_env._cube.data.root_pos_w[env_ids] - task_env.scene.env_origins[env_ids]
+    root_quat = task_env._cube.data.root_quat_w[env_ids]
     expected_root_z = (
         float(task_env.cfg.table_surface_z)
         + task_env.object_spawn_z_offset[env_ids]
@@ -221,6 +233,29 @@ def _run_reset_checks(env, task_env, checks: CheckRecorder) -> dict[str, object]
         bool(torch.isfinite(task_env.cube_pos).all().item()),
         center_z_min=float(task_env.cube_pos[:, 2].detach().min().cpu()),
         center_z_max=float(task_env.cube_pos[:, 2].detach().max().cpu()),
+    )
+    unique_xy = torch.unique(torch.round(task_env.cube_initial_pos[:, :2] * 1000.0) / 1000.0, dim=0)
+    object_yaw = _yaw_from_quat_wxyz(root_quat)
+    yaw_span = float((object_yaw.max() - object_yaw.min()).detach().cpu()) if object_yaw.numel() else 0.0
+    checks.check(
+        "reset_parallel_env_pose_diversity",
+        int(unique_xy.shape[0]) > 1 and (yaw_span > 0.05 or task_env.num_envs == 1),
+        unique_xy_positions=int(unique_xy.shape[0]),
+        yaw_span_rad=yaw_span,
+        yaw_min_rad=float(object_yaw.min().detach().cpu()) if object_yaw.numel() else None,
+        yaw_max_rad=float(object_yaw.max().detach().cpu()) if object_yaw.numel() else None,
+        object_spawn_xy_randomization=float(task_env.cfg.object_spawn_xy_randomization),
+        object_spawn_yaw_randomization_deg=float(task_env.cfg.object_spawn_yaw_randomization_deg),
+    )
+    checks.check(
+        "policy_conditioned_on_object",
+        tuple(policy_obs.shape) == (task_env.num_envs, task_env.cfg.observation_space)
+        and int(task_env.cfg.observation_space) > 72
+        and bool(torch.isfinite(policy_obs[:, -8:]).all().item()),
+        observed_shape=list(policy_obs.shape),
+        cube_teacher_observation_space=72,
+        multi_object_observation_space=int(task_env.cfg.observation_space),
+        object_feature_tail_sample=_tensor_list(policy_obs[: min(4, task_env.num_envs), -8:]),
     )
     checks.check(
         "reset_fingers_clear_table",
@@ -245,6 +280,8 @@ def _run_reset_checks(env, task_env, checks: CheckRecorder) -> dict[str, object]
         "root_z_error_max": float(root_z_error.detach().max().cpu()),
         "bottom_z_min": float(bottom_z.detach().min().cpu()),
         "finger_table_clearance_min": float(task_env.finger_table_clearance.detach().min().cpu()),
+        "unique_xy_positions": int(unique_xy.shape[0]),
+        "yaw_span_rad": yaw_span,
     }
 
 
@@ -508,6 +545,8 @@ def main() -> None:
         env_cfg.object_assets_dir = str(Path(args_cli.object_assets_dir).expanduser().resolve())
     if args_cli.max_objects is not None:
         env_cfg.max_objects = int(args_cli.max_objects)
+    if args_cli.object_asset_assignment is not None:
+        env_cfg.object_asset_assignment = str(args_cli.object_asset_assignment)
     if args_cli.object_spawn_center_offset_x is not None:
         env_cfg.object_spawn_center_offset_x = float(args_cli.object_spawn_center_offset_x)
     if args_cli.object_spawn_center_offset_y is not None:
@@ -576,6 +615,7 @@ def main() -> None:
             "object_asset_manifest_path": str(getattr(task_env.cfg, "object_asset_manifest_path", "")),
             "object_assets_dir": str(getattr(task_env.cfg, "object_assets_dir", "")),
             "max_objects": int(getattr(task_env.cfg, "max_objects", 0)),
+            "object_asset_assignment": str(getattr(task_env.cfg, "object_asset_assignment", "round_robin")),
             "object_spawn_center_offset_x": float(task_env.cfg.object_spawn_center_offset_x),
             "object_spawn_center_offset_y": float(task_env.cfg.object_spawn_center_offset_y),
             "object_spawn_xy_randomization": float(task_env.cfg.object_spawn_xy_randomization),

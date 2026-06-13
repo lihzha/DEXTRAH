@@ -23,6 +23,10 @@ class DextrahFrankaMultiObjectGraspEnvCfg(DextrahFrankaCubeGraspEnvCfg):
     object_asset_manifest_path = ""
     object_assets_dir = "dextrah_lab/assets/graspgen_objects"
     max_objects = 0
+    # Object USD assets are instantiated during scene setup, so the asset
+    # assignment is sampled once per vectorized env at construction time.
+    # Reset-time pose randomization below still runs independently per env.
+    object_asset_assignment = "round_robin"
     require_graspgen_scale = True
 
     # Object placement and physical properties.  The robot base remains at the

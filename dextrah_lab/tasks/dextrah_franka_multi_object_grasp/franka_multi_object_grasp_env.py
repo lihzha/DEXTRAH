@@ -201,10 +201,23 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
     def _setup_scene(self):
         self._object_assets = self._load_object_asset_manifest()
         self.num_unique_objects = len(self._object_assets)
-        self.object_asset_index = torch.remainder(
-            torch.arange(self.num_envs, device=self.device),
-            self.num_unique_objects,
-        ).long()
+        assignment = str(getattr(self.cfg, "object_asset_assignment", "round_robin")).lower()
+        if assignment in ("round_robin", "round-robin", "cyclic"):
+            self.object_asset_index = torch.remainder(
+                torch.arange(self.num_envs, device=self.device),
+                self.num_unique_objects,
+            ).long()
+        elif assignment in ("random", "uniform"):
+            balanced_indices = torch.remainder(
+                torch.arange(self.num_envs, device=self.device),
+                self.num_unique_objects,
+            ).long()
+            self.object_asset_index = balanced_indices[torch.randperm(self.num_envs, device=self.device)]
+        else:
+            raise ValueError(
+                "object_asset_assignment must be 'round_robin' or 'random', "
+                f"got {self.cfg.object_asset_assignment!r}"
+            )
         scale_by_asset = torch.tensor(
             [[float(asset["scale"])] for asset in self._object_assets],
             dtype=torch.float32,
@@ -737,6 +750,8 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
     def multi_object_asset_summary(self) -> dict[str, object]:
         return {
             "num_unique_objects": self.num_unique_objects,
+            "object_asset_assignment": str(getattr(self.cfg, "object_asset_assignment", "round_robin")),
+            "object_asset_index_by_env": [int(v) for v in self.object_asset_index.detach().cpu().tolist()],
             "uuids": [str(asset["uuid"]) for asset in self._object_assets],
             "scales": [float(asset["scale"]) for asset in self._object_assets],
             "usd_paths": [str(asset["usd_path"]) for asset in self._object_assets],
