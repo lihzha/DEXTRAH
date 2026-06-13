@@ -37,7 +37,7 @@ Version Control:
 - worklog: /home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart/worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md
 - branch: codex/franka-cube-diffusion-policy-bc
 - base_commit: 589dd81c9f9691fcda3a3d4b9ad714d90dae4794
-- implementation_commit: pending
+- implementation_commit: `a2960bd702fe19f8481dbac1b78de4c50409e440`
 - push/pull: n/a, local implementation checkpoint only unless requested
 - changed_files: owned worklog pending
 - remote_commit/status: n/a/local env
@@ -16452,6 +16452,7 @@ Validation:
 Command / Job:
 - planned run:
   `rgb_phase12_normal_ckpt_ft_ood3x4_retention_lr5e6_s400_20260613_015149`
+- job_id: `1028911`
 - command:
   `sbatch --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart,RUN_NAME=rgb_phase12_normal_ckpt_ft_ood3x4_retention_lr5e6_s400_20260613_015149,DATASET=/results/dp_bc/contact_relabel_rgb_fullstart_ood19_20260612_2351/combined/franka_cube_rgb_normalreset28x7_plus_fullstart_ood3x4_96.npz,INIT_CHECKPOINT=/results/dp_bc/checkpoints/rgb_phase12_normalreset28x7_20260612_2225/latest.ckpt,NORMALIZER_CHECKPOINT=/results/dp_bc/checkpoints/rgb_phase12_normalreset28x7_20260612_2225/latest.ckpt,DISTILL_REFERENCE_CHECKPOINT=/results/dp_bc/checkpoints/rgb_phase12_normalreset28x7_20260612_2225/latest.ckpt,LR=0.000005,MAX_TRAIN_STEPS=400,MAX_VAL_STEPS=100,LR_WARMUP_STEPS=50,NUM_EPOCHS=1,VAL_RATIO=0.02,DISTILL_MASK_MODE=normal_reset,DISTILL_LOSS_WEIGHT=2.0 cluster/sbatch_train_franka_cube_rgb_dp_1gpu.sh`
 - expected run_dir:
@@ -16467,4 +16468,140 @@ Acceptance Gate:
 - Run shifted-object eval only if the nominal gate succeeds.
 
 Result:
-- status: pending commit/deploy/submit.
+- status: submitted, pending monitoring.
+
+## 2026-06-13T01:55:47-07:00 - RGB retention fine-tune train result and nominal eval launch
+
+Goal:
+- Inspect the bounded retention fine-tune and launch the required nominal-reset
+  trace gate before any shifted-object evaluation.
+
+Result:
+- training job `1028911`: `COMPLETED`, exit `0:0`, elapsed `00:01:27`.
+- run:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/official_dp_rgb/rgb_phase12_normal_ckpt_ft_ood3x4_retention_lr5e6_s400_20260613_015149`
+- staged checkpoint:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/rgb_phase12_normal_ckpt_ft_ood3x4_retention_lr5e6_s400_20260613_015149/latest.ckpt`
+- checkpoint size: `1021M`.
+- training logs: `401` JSON rows, finite losses, max train loss `0.08831`,
+  final train loss `0.00392`, final val loss `0.00162`.
+- Hydra overrides confirm:
+  - `normalizer_checkpoint=/results/dp_bc/checkpoints/rgb_phase12_normalreset28x7_20260612_2225/latest.ckpt`
+  - `distill_reference_checkpoint=/results/dp_bc/checkpoints/rgb_phase12_normalreset28x7_20260612_2225/latest.ckpt`
+  - `distill_mask_mode=normal_reset`
+  - `distill_loss_weight=2.0`
+  - `optimizer.lr=0.000005`
+  - `max_train_steps=400`
+
+Command / Job:
+- nominal eval job: `1028912`
+- nominal eval run:
+  `franka_cube_rgb_dp_trace_retention_lr5e6_s400_seed42default_chunk1_video_20260613_015547`
+- checkpoint:
+  `/results/dp_bc/checkpoints/rgb_phase12_normal_ckpt_ft_ood3x4_retention_lr5e6_s400_20260613_015149/latest.ckpt`
+- settings:
+  `NUM_ENVS=1`, `NUM_STEPS=340`, `NUM_INFERENCE_STEPS=100`,
+  `NUM_ACTION_SAMPLES=1`, `ACTION_CHUNK_STEPS=1`, `CLIP_ACTIONS=1.0`,
+  `SUCCESS_WINDOW=80`, `CAPTURE_VIDEO=True`, `VIDEO_LENGTH=340`,
+  `SEED=42`, `IMAGE_HEIGHT=96`, `IMAGE_WIDTH=96`,
+  `APPEND_PHASE_PROGRESS=True`,
+  `PHASE_PROGRESS_DATASET=/results/dp_bc/contact_relabel_rgb_one_ep233_normalreset_20260612_2201/franka_cube_rgb_one_ep233_normalreset_96.npz`,
+  `PHASE_PROGRESS_EPISODE=0`, `PHASE_PROGRESS_START_STEP=0`.
+
+Next:
+- Monitor eval job `1028912`; fetch metrics/video; compare the action trace to
+  the known normal-success and failed OOD3x4 traces before deciding whether to
+  run shifted-object eval.
+
+## 2026-06-13T02:02:41-07:00 - RGB retention nominal eval result
+
+Goal:
+- Close out eval job `1028912` and verify whether any dataset-generation work
+  is still running.
+
+Result:
+- l401 `squeue -u lzha` is empty. No dataset-generation, training, eval, or
+  holder jobs are running.
+- eval job `1028912`: `COMPLETED`, exit `0:0`, elapsed `00:04:02`.
+- eval run:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_rgb_dp_trace_retention_lr5e6_s400_seed42default_chunk1_video_20260613_015547`
+- fetched artifacts:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_rgb_dp_trace_retention_lr5e6_s400_seed42default_chunk1_video_20260613_015547`
+- video:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_rgb_dp_trace_retention_lr5e6_s400_seed42default_chunk1_video_20260613_015547/videos/franka-cube-rgb-dp-trace-retention-lr5e6-s400-seed42default-chunk1-step-0.mp4`
+- video validation: `1280x720`, `339` frames, `5.65s`.
+- behavioral result: nominal gate failed. `final_success_rate=0.0`,
+  `window_success_rate=0.15`, max lift `0.1346m` at step `296`, final lift
+  `0.0m`, final gripper width `0.0746m`, final finger-center-to-cube distance
+  `0.1626m`.
+
+Analysis:
+- The run is evaluation/debugging only. The current RGB dataset already exists;
+  no new datasets were generated.
+- The retention fine-tune still corrupts the nominal policy. It keeps contact
+  and lifts through roughly step `296`, then action trace abruptly switches from
+  closed/lifting actions to open/reposition actions around step `298`, dropping
+  the cube.
+- Compared with the known-good normal checkpoint, the fine-tuned checkpoint
+  reaches a similar close distance but does not preserve the final lift. The
+  previous OOD3x4 fine-tune failed by over-closing/collapsing the gripper; this
+  retention run avoids collapse but still loses the cube late.
+
+Next:
+- Do not run shifted/OOD eval yet; the nominal gate failed.
+- Next launch, if approved, should be a stricter nominal-preservation run rather
+  than more data generation: lower LR/steps and stronger teacher distillation
+  on normal-reset rows, then re-run the same nominal trace gate.
+
+## 2026-06-13T02:20:05-07:00 - RGB eval reset-aware nominal gate patch
+
+Goal:
+- Fix the nominal RGB trace gate before making training/data decisions.
+
+Hypothesis:
+- The apparent late drop in the retention fine-tune eval is partly an evaluator
+  artifact: Gymnasium auto-resets after task success, but the evaluator keeps
+  rolling and summarizes post-reset final metrics.
+
+Evidence:
+- In `franka_cube_rgb_dp_trace_retention_lr5e6_s400_seed42default_chunk1`,
+  `in_success_region=1` for exactly steps `285..296`, then `done_count=1`.
+- The task config has `success_timeout=0.20s`; at the 60 Hz control rate this is
+  12 consecutive success-region steps. The env's done condition is
+  `time_in_success_region >= success_timeout`.
+- Step `297` metrics are post-reset state (`cube_lift_height=0`,
+  open gripper), while the reward is still the high pre-reset success reward
+  (`23.94`). The action switch at step `298` is policy acting on the auto-reset
+  state, not evidence that it dropped the original cube.
+
+Change:
+- `eval_franka_cube_rgb_dp_policy.py` now supports `--stop_on_done`, records
+  `first_done` with pre-reset metrics, and uses the pre-reset gripper/cube state
+  as final evidence when stopped on done.
+- `cluster/sbatch_eval_franka_cube_rgb_dp_policy_1gpu.sh` exposes
+  `STOP_ON_DONE=True` and allows early structural completion only when the
+  metrics confirm `stopped_on_done` and `done_count > 0`.
+
+Version Control:
+- agent_id: franka-cube-bc-warmstart
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `a2960bd702fe19f8481dbac1b78de4c50409e440`
+- implementation_commit: pending
+- changed_files:
+  `dextrah_lab/rl_games/eval_franka_cube_rgb_dp_policy.py`,
+  `cluster/sbatch_eval_franka_cube_rgb_dp_policy_1gpu.sh`,
+  `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+- intentionally_unstaged:
+  `dextrah_lab/offline_dp_bc/make_support_expansion_dataset.py`
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/eval_franka_cube_rgb_dp_policy.py`
+- `bash -n cluster/sbatch_eval_franka_cube_rgb_dp_policy_1gpu.sh`
+- `git diff --check -- dextrah_lab/rl_games/eval_franka_cube_rgb_dp_policy.py cluster/sbatch_eval_franka_cube_rgb_dp_policy_1gpu.sh`
+
+Next:
+- Commit/push/deploy this evaluator patch, rerun the same nominal trace with
+  `STOP_ON_DONE=True`, and only then decide whether the retention fine-tune can
+  advance to shifted/OOD evaluation.

@@ -33,6 +33,12 @@ parser.add_argument("--action_chunk_steps", type=int, default=8)
 parser.add_argument("--clip_actions", type=float, default=1.0)
 parser.add_argument("--success_window", type=int, default=80)
 parser.add_argument("--success_timeout_override", type=float, default=None)
+parser.add_argument(
+    "--stop_on_done",
+    action="store_true",
+    default=False,
+    help="Stop the one-env trace on the first done instead of continuing after the Gymnasium auto-reset.",
+)
 parser.add_argument("--print_interval", type=int, default=20)
 parser.add_argument("--image_height", type=int, default=96)
 parser.add_argument("--image_width", type=int, default=96)
@@ -133,6 +139,18 @@ def _collect_task_metrics(task_env: Any) -> dict[str, float | None]:
         "finger_table_clearance_violation",
     ]
     return {name: _env_metric(task_env, name) for name in names if hasattr(task_env, name)}
+
+
+def _json_metric_dict(metrics: dict[str, float | int | None]) -> dict[str, float | int | None]:
+    out: dict[str, float | int | None] = {}
+    for key, value in metrics.items():
+        if value is None:
+            out[key] = None
+        elif isinstance(value, (int, np.integer)):
+            out[key] = int(value)
+        else:
+            out[key] = float(value)
+    return out
 
 
 def _summarize_step_metrics(step_metrics: list[dict[str, float | int | None]]) -> dict[str, dict[str, float | int]]:
@@ -538,6 +556,7 @@ def main() -> None:
     action_queue_policy_call_idx = -1
     action_queue_step_offset = 0
     done_count = 0
+    first_done: dict[str, Any] | None = None
     env_closed = False
     demo_reset_summary: dict[str, Any] | None = None
     final_cube_pos_mean = None
@@ -571,6 +590,8 @@ def main() -> None:
         for step in range(int(args_cli.num_steps)):
             if not simulation_app.is_running():
                 break
+            pre_step_metrics = _collect_task_metrics(task_env)
+            pre_step_cube_pos_mean = _tensor_list(task_env.cube_pos.mean(dim=0)) if hasattr(task_env, "cube_pos") else None
             new_policy_call = False
             if action_queue.shape[1] == 0:
                 action_queue_policy_call_idx = policy_call_idx
@@ -605,9 +626,22 @@ def main() -> None:
             actions = torch.as_tensor(action_np, dtype=torch.float32, device=task_env.device)
             policy_obs, rewards, terminated, truncated, _ = _policy_obs_from_step(gym_env.step(actions))
             dones = torch.logical_or(terminated, truncated)
+            done_now = bool(dones.any())
             if dones.any():
                 done_count += int(torch.count_nonzero(dones).detach().cpu())
                 action_queue = np.empty((1, 0, 7), dtype=np.float32)
+                if first_done is None:
+                    first_done = {
+                        "step": int(step + 1),
+                        "terminated": bool(terminated.detach().bool().any().cpu()),
+                        "truncated": bool(truncated.detach().bool().any().cpu()),
+                        "reward_mean": _mean_float(rewards),
+                        "pre_step_metrics": _json_metric_dict(pre_step_metrics),
+                        "pre_step_cube_pos_mean": pre_step_cube_pos_mean,
+                        "previous_record": _json_metric_dict(step_metrics[-1]) if step_metrics else None,
+                    }
+                if args_cli.stop_on_done:
+                    break
 
             next_image = _render_rgb_obs(gym_env)
             next_robot_state = _robot_state_from_policy_obs(
@@ -621,7 +655,14 @@ def main() -> None:
 
             reward_mean = _mean_float(rewards)
             task_metrics = _collect_task_metrics(task_env)
-            record = {"step": step + 1, "reward_mean": reward_mean, **task_metrics}
+            record = {
+                "step": step + 1,
+                "reward_mean": reward_mean,
+                "done": float(done_now),
+                "terminated": float(bool(terminated.detach().bool().any().cpu())),
+                "truncated": float(bool(truncated.detach().bool().any().cpu())),
+                **task_metrics,
+            }
             step_metrics.append(record)
             if args_cli.print_interval > 0 and ((step + 1) % int(args_cli.print_interval) == 0 or step == 0):
                 print(
@@ -632,8 +673,12 @@ def main() -> None:
                     f"action_min={action_min.tolist()} action_max={action_max.tolist()}",
                     flush=True,
                 )
-        final_cube_pos_mean = _tensor_list(task_env.cube_pos.mean(dim=0)) if hasattr(task_env, "cube_pos") else None
-        final_gripper_width = _env_metric(task_env, "gripper_width")
+        if first_done is not None and args_cli.stop_on_done:
+            final_cube_pos_mean = first_done.get("pre_step_cube_pos_mean")
+            final_gripper_width = first_done.get("pre_step_metrics", {}).get("gripper_width")
+        else:
+            final_cube_pos_mean = _tensor_list(task_env.cube_pos.mean(dim=0)) if hasattr(task_env, "cube_pos") else None
+            final_gripper_width = _env_metric(task_env, "gripper_width")
     finally:
         gym_env.close()
         env_closed = True
@@ -658,7 +703,12 @@ def main() -> None:
         "num_envs": 1,
         "num_steps_requested": int(args_cli.num_steps),
         "steps_completed": len(step_metrics),
+        "actions_completed": len(action_trace),
         "done_count": done_count,
+        "stop_on_done": bool(args_cli.stop_on_done),
+        "stopped_on_done": bool(first_done is not None and args_cli.stop_on_done),
+        "stop_reason": "done" if first_done is not None and args_cli.stop_on_done else "num_steps",
+        "first_done": first_done,
         "reward_mean": sum(reward_values) / len(reward_values) if reward_values else None,
         "reward_final": reward_values[-1] if reward_values else None,
         "final_success_rate": success_values[-1] if success_values else None,

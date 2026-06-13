@@ -36,6 +36,7 @@ ACTION_CHUNK_STEPS="${ACTION_CHUNK_STEPS:-8}"
 CLIP_ACTIONS="${CLIP_ACTIONS:-1.0}"
 SUCCESS_WINDOW="${SUCCESS_WINDOW:-80}"
 SUCCESS_TIMEOUT_OVERRIDE="${SUCCESS_TIMEOUT_OVERRIDE:-}"
+STOP_ON_DONE="${STOP_ON_DONE:-False}"
 IMAGE_HEIGHT="${IMAGE_HEIGHT:-96}"
 IMAGE_WIDTH="${IMAGE_WIDTH:-96}"
 VIDEO_LENGTH="${VIDEO_LENGTH:-320}"
@@ -135,7 +136,7 @@ mkdir -p \
   "$CACHE_NFS/data" "$CACHE_NFS/documents"
 
 export TASK RUN_NAME NUM_ENVS NUM_STEPS NUM_INFERENCE_STEPS NUM_ACTION_SAMPLES POLICY_SAMPLE_SEED
-export ACTION_CHUNK_STEPS CLIP_ACTIONS SUCCESS_WINDOW SUCCESS_TIMEOUT_OVERRIDE
+export ACTION_CHUNK_STEPS CLIP_ACTIONS SUCCESS_WINDOW SUCCESS_TIMEOUT_OVERRIDE STOP_ON_DONE
 export IMAGE_HEIGHT IMAGE_WIDTH VIDEO_LENGTH VIDEO_NAME_PREFIX PRINT_INTERVAL CAPTURE_VIDEO SEED
 export CAMERA_EYE_X CAMERA_EYE_Y CAMERA_EYE_Z CAMERA_TARGET_X CAMERA_TARGET_Y CAMERA_TARGET_Z
 export CHECKPOINT_ARG RUN_DIR_CONTAINER METRICS_CONTAINER ENV_NAME OFFICIAL_DP_ENV_NAME
@@ -154,6 +155,7 @@ echo "NUM_ENVS=$NUM_ENVS NUM_STEPS=$NUM_STEPS"
 echo "NUM_INFERENCE_STEPS=$NUM_INFERENCE_STEPS NUM_ACTION_SAMPLES=$NUM_ACTION_SAMPLES"
 echo "POLICY_SAMPLE_SEED=$POLICY_SAMPLE_SEED"
 echo "ACTION_CHUNK_STEPS=$ACTION_CHUNK_STEPS CLIP_ACTIONS=$CLIP_ACTIONS"
+echo "SUCCESS_WINDOW=$SUCCESS_WINDOW SUCCESS_TIMEOUT_OVERRIDE=$SUCCESS_TIMEOUT_OVERRIDE STOP_ON_DONE=$STOP_ON_DONE"
 echo "IMAGE_HEIGHT=$IMAGE_HEIGHT IMAGE_WIDTH=$IMAGE_WIDTH"
 echo "CAPTURE_VIDEO=$CAPTURE_VIDEO VIDEO_LENGTH=$VIDEO_LENGTH VIDEO_NAME_PREFIX=$VIDEO_NAME_PREFIX"
 echo "SEED=$SEED"
@@ -210,6 +212,10 @@ srun \
     if [ -n "$SUCCESS_TIMEOUT_OVERRIDE" ]; then
       SUCCESS_TIMEOUT_ARGS=(--success_timeout_override "$SUCCESS_TIMEOUT_OVERRIDE")
     fi
+    STOP_ON_DONE_ARGS=()
+    if [ "$STOP_ON_DONE" = "True" ]; then
+      STOP_ON_DONE_ARGS=(--stop_on_done)
+    fi
     POLICY_SEED_ARGS=()
     if [ -n "$POLICY_SAMPLE_SEED" ]; then
       POLICY_SEED_ARGS=(--policy_sample_seed "$POLICY_SAMPLE_SEED")
@@ -250,6 +256,7 @@ srun \
       --clip_actions "$CLIP_ACTIONS"
       --success_window "$SUCCESS_WINDOW"
       "${SUCCESS_TIMEOUT_ARGS[@]}"
+      "${STOP_ON_DONE_ARGS[@]}"
       --image_height "$IMAGE_HEIGHT"
       --image_width "$IMAGE_WIDTH"
       --output_dir "$RUN_DIR_CONTAINER"
@@ -277,20 +284,23 @@ if [ ! -s "$RUN_DIR_HOST/metrics.json" ]; then
   exit 1
 fi
 
-python3 - "$RUN_DIR_HOST/metrics.json" "$NUM_STEPS" <<'PY'
+python3 - "$RUN_DIR_HOST/metrics.json" "$NUM_STEPS" "$STOP_ON_DONE" <<'PY'
 import json
 import math
 import sys
 
 metrics_path = sys.argv[1]
 requested_steps = int(sys.argv[2])
+stop_on_done = sys.argv[3] == "True"
 with open(metrics_path, "r", encoding="utf-8") as f:
     payload = json.load(f)
 summary = payload.get("summary", {})
 if not bool(summary.get("env_closed", False)):
     raise SystemExit("RGB DP eval env did not close cleanly")
-if int(summary.get("steps_completed", 0)) < requested_steps:
-    raise SystemExit(f"RGB DP eval completed {summary.get('steps_completed')} steps, expected {requested_steps}")
+steps_completed = int(summary.get("steps_completed", 0))
+stopped_on_done = bool(summary.get("stopped_on_done", False))
+if steps_completed < requested_steps and not (stop_on_done and stopped_on_done and int(summary.get("done_count", 0)) > 0):
+    raise SystemExit(f"RGB DP eval completed {steps_completed} steps, expected {requested_steps}")
 if bool(summary.get("privileged_object_state_in_policy", True)):
     raise SystemExit("RGB DP metrics did not confirm object-state-free policy obs")
 for key in ("action_min", "action_max"):
