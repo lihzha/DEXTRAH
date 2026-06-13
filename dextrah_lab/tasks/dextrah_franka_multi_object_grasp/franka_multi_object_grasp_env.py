@@ -143,6 +143,10 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
                 resolved_prior = ""
                 if grasp_prior_path:
                     resolved_prior = str(_resolve_path(str(grasp_prior_path), base_dir=asset_root_path))
+                stable_pose_path = record.get("stable_pose_path")
+                resolved_stable_pose = ""
+                if stable_pose_path:
+                    resolved_stable_pose = str(_resolve_path(str(stable_pose_path), base_dir=asset_root_path))
                 raw_object_path = record.get("raw_object_path")
                 resolved_raw_object = ""
                 if raw_object_path:
@@ -161,6 +165,7 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
                         "spawn_z_offset": -bounds_min[2],
                         "grasp_size": float(record.get("grasp_size", max(2.0 * max(half_extents), 0.02))),
                         "grasp_prior_path": resolved_prior,
+                        "stable_pose_path": resolved_stable_pose,
                     }
                 )
         else:
@@ -188,6 +193,7 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
                         "spawn_z_offset": half_extents[2],
                         "grasp_size": float(self.cfg.object_default_grasp_size),
                         "grasp_prior_path": "",
+                        "stable_pose_path": "",
                     }
                 )
 
@@ -269,6 +275,7 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         self.object_spawn_z_offset = spawn_z_offset_by_asset[self.object_asset_index]
         self.object_asset_id_fraction = self.object_asset_index.float() / max(float(self.num_unique_objects - 1), 1.0)
         self.object_has_grasp_prior = torch.zeros(self.num_envs, dtype=torch.float32, device=self.device)
+        self._setup_stable_pose_resets()
 
         self._robot = Articulation(self.cfg.robot)
         self._table = RigidObject(self.cfg.table)
@@ -327,6 +334,105 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
 
         light_cfg = sim_utils.DomeLightCfg(intensity=1800.0, color=(0.75, 0.75, 0.75))
         light_cfg.func("/World/Light", light_cfg)
+
+    def _setup_stable_pose_resets(self) -> None:
+        self._object_stable_pose_enabled = bool(self.cfg.object_stable_pose_enabled)
+        self._object_stable_poses: dict[int, dict[str, torch.Tensor | str]] = {}
+        if not self._object_stable_pose_enabled:
+            return
+
+        cache_dir = str(self.cfg.object_stable_pose_cache_dir or "")
+        for object_idx, asset in enumerate(self._object_assets):
+            stable_pose_path = str(asset.get("stable_pose_path") or "")
+            if not stable_pose_path and cache_dir:
+                stable_pose_path = str(_resolve_path(Path(cache_dir) / f"{asset['uuid']}.npz", base_dir=_repo_root()))
+            if not stable_pose_path:
+                if bool(self.cfg.object_stable_pose_allow_missing):
+                    continue
+                raise FileNotFoundError(f"Missing stable-pose cache path for object {asset['uuid']}")
+            path = Path(stable_pose_path).expanduser()
+            if not path.is_file():
+                if bool(self.cfg.object_stable_pose_allow_missing):
+                    continue
+                raise FileNotFoundError(f"Missing stable-pose cache for object {asset['uuid']}: {path}")
+            self._object_stable_poses[object_idx] = self._load_stable_pose_cache(path, uuid=str(asset["uuid"]))
+
+    def _load_stable_pose_cache(self, path: Path, *, uuid: str) -> dict[str, torch.Tensor | str]:
+        import numpy as np
+
+        with np.load(path, allow_pickle=False) as data:
+            if "transforms" not in data.files:
+                raise ValueError(f"Stable-pose cache for {uuid} is missing transforms: {path}")
+            transforms = np.asarray(data["transforms"], dtype=np.float32)
+            probabilities = (
+                np.asarray(data["probabilities"], dtype=np.float32)
+                if "probabilities" in data.files
+                else np.ones((transforms.shape[0],), dtype=np.float32)
+            )
+            vertices = np.asarray(data["vertices"], dtype=np.float32) if "vertices" in data.files else None
+
+        if transforms.ndim != 3 or tuple(transforms.shape[1:]) != (4, 4) or transforms.shape[0] == 0:
+            raise ValueError(f"Stable-pose transforms must have shape (N, 4, 4), got {transforms.shape}: {path}")
+        pose_count = min(max(int(self.cfg.object_stable_pose_count), 1), transforms.shape[0])
+        transforms = transforms[:pose_count]
+        probabilities = probabilities[:pose_count]
+        rotations = transforms[:, :3, :3]
+        if vertices is not None and vertices.ndim == 2 and vertices.shape[1] == 3 and vertices.shape[0] > 0:
+            rotated = np.einsum("nij,kj->nki", rotations, vertices)
+            root_z_offsets = -rotated[:, :, 2].min(axis=1)
+        else:
+            root_z_offsets = transforms[:, 2, 3]
+        return {
+            "rotations": torch.as_tensor(rotations, dtype=torch.float32, device=self.device).contiguous(),
+            "probabilities": torch.as_tensor(probabilities, dtype=torch.float32, device=self.device).contiguous(),
+            "root_z_offsets": torch.as_tensor(root_z_offsets, dtype=torch.float32, device=self.device).contiguous(),
+            "path": str(path),
+        }
+
+    def _sample_object_reset_pose(self, env_ids: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        num_ids = int(env_ids.numel())
+        yaw_randomization = math.radians(float(self.cfg.object_spawn_yaw_randomization_deg))
+        if yaw_randomization > 0.0:
+            yaw = yaw_randomization * (2.0 * torch.rand(num_ids, device=self.device) - 1.0)
+            yaw_quat = _yaw_quat_wxyz(yaw)
+        else:
+            yaw_quat = torch.zeros(num_ids, 4, device=self.device)
+            yaw_quat[:, 0] = 1.0
+
+        if not getattr(self, "_object_stable_pose_enabled", False):
+            return yaw_quat, self.object_spawn_z_offset[env_ids]
+
+        object_indices = self.object_asset_index[env_ids]
+        reset_rot = torch.empty((num_ids, 3, 3), dtype=torch.float32, device=self.device)
+        root_z_offsets = torch.empty((num_ids,), dtype=torch.float32, device=self.device)
+        for object_idx_tensor in torch.unique(object_indices):
+            object_idx = int(object_idx_tensor.item())
+            stable = self._object_stable_poses.get(object_idx)
+            mask = object_indices == object_idx
+            count = int(mask.sum().item())
+            if stable is None:
+                if bool(self.cfg.object_stable_pose_allow_missing):
+                    reset_rot[mask] = math_utils.matrix_from_quat(yaw_quat[mask])
+                    root_z_offsets[mask] = self.object_spawn_z_offset[env_ids[mask]]
+                    continue
+                raise RuntimeError(
+                    f"Stable-pose reset requested for object without cache: {self._object_assets[object_idx]['uuid']}"
+                )
+            rotations = stable["rotations"]
+            offsets = stable["root_z_offsets"]
+            if not isinstance(rotations, torch.Tensor) or not isinstance(offsets, torch.Tensor):
+                raise RuntimeError("Internal stable-pose cache tensor is invalid")
+            if bool(self.cfg.object_stable_pose_randomize) and rotations.shape[0] > 1:
+                ranks = torch.randint(rotations.shape[0], (count,), device=self.device)
+            else:
+                ranks = torch.zeros((count,), dtype=torch.long, device=self.device)
+            reset_rot[mask] = rotations[ranks]
+            root_z_offsets[mask] = offsets[ranks]
+
+        yaw_rot = math_utils.matrix_from_quat(yaw_quat)
+        object_quat = math_utils.quat_from_matrix(torch.bmm(yaw_rot, reset_rot))
+        object_quat = object_quat / torch.clamp(torch.norm(object_quat, dim=-1, keepdim=True), min=1.0e-6)
+        return object_quat, root_z_offsets
 
     def _setup_grasp_prior_reset(self) -> None:
         self._grasp_prior_reset_enabled = bool(self.cfg.grasp_prior_reset_enabled)
@@ -546,7 +652,7 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             local_sample_indices = sample_indices[mask].clamp(min=0)
             sampled_width = grasp_width[local_sample_indices]
             required_width[mask] = torch.where(torch.isfinite(sampled_width), sampled_width, required_width[mask])
-        return torch.clamp(required_width, min=0.0, max=float(self.cfg.max_gripper_width))
+        return torch.clamp(required_width, min=0.0)
 
     def _object_center_pos_from_root(
         self,
@@ -634,18 +740,12 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
 
         object_pos = torch.zeros(num_ids, 3, device=self.device)
         object_pos[:, 0:2] = spawn_xy
+        object_quat, object_root_z_offset = self._sample_object_reset_pose(env_ids)
         object_pos[:, 2] = (
             float(self.cfg.table_surface_z)
-            + self.object_spawn_z_offset[env_ids]
+            + object_root_z_offset
             + float(self.cfg.object_spawn_z_clearance)
         )
-        yaw_randomization = math.radians(float(self.cfg.object_spawn_yaw_randomization_deg))
-        if yaw_randomization > 0.0:
-            yaw = yaw_randomization * (2.0 * torch.rand(num_ids, device=self.device) - 1.0)
-            object_quat = _yaw_quat_wxyz(yaw)
-        else:
-            object_quat = torch.zeros(num_ids, 4, device=self.device)
-            object_quat[:, 0] = 1.0
         object_state = torch.zeros(num_ids, 13, device=self.device)
         object_state[:, 0:3] = object_pos + self.scene.env_origins[env_ids]
         object_state[:, 3:7] = object_quat

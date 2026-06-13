@@ -41,6 +41,11 @@ class DextrahFrankaMultiObjectGraspEnvCfg(DextrahFrankaCubeGraspEnvCfg):
     object_spawn_xy_randomization = 0.10
     object_spawn_yaw_randomization_deg = 180.0
     object_spawn_z_clearance = 0.006
+    object_stable_pose_enabled = False
+    object_stable_pose_cache_dir = ""
+    object_stable_pose_count = 1
+    object_stable_pose_randomize = True
+    object_stable_pose_allow_missing = False
     # Optional reset-time settling for rendered/debug validation.  This is
     # disabled by default because stepping the whole simulator inside a partial
     # vector-env reset would advance unrelated envs.  Use precomputed stable

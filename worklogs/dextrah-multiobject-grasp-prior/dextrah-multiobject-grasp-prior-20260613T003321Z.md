@@ -425,6 +425,41 @@ Command / Job:
 Result:
 - status: running/queued; monitoring in progress.
 
+## 2026-06-13 14:18 PDT - Stop invalid RL runs and wire stable-pose reset path
+
+Goal:
+- Stop spending A100 time on PPO runs whose reset/warmstart path does not physically lift, then make the multi-object reset path use cached stable poses so partial vector-env resets do not require in-reset settling.
+
+Hypothesis:
+- The training runs are stalled because the reset path still uses ideal yaw-only object poses while object stability/grasp alignment requires precomputed stable poses. The grasp-contact validator also accepted a non-lifting hand/object configuration because its pass criteria were too loose.
+
+Change:
+- Canceled A100 jobs `29048544`, `29049452`, and `29049710` after metrics showed latest success `0.0` and only sub-centimeter lift.
+- Added optional `object_stable_pose_*` config fields and a multi-object env loader for per-object stable-pose `.npz` caches.
+- Reset now samples a cached stable rotation per env/object, composes 360-degree yaw randomization around world z, and places the object using the stable pose root-z offset.
+- Fixed grasp-prior width gating so too-wide sampled grasps are not hidden by clamping to `max_gripper_width`.
+- Tightened video `grasp_contact` pass criteria to require actual lift height and added selected-env geometry diagnostics.
+- Added stable-pose cache knobs to the teacher and video-validation Slurm wrappers.
+
+Version Control:
+- agent_id: `integrate-multiobject-main-20260613`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/integrate-multiobject-main-20260613`
+- branch: `codex/multiobject-training-yaw-20260613`
+- base_commit: `c8786b40442e29abb1ad27385bd848a09a8fdc75`
+- implementation_commit: pending
+- changed_files: `dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py`, `dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py`, `dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py`, `cluster/sbatch_train_teacher_8gpu.sh`, `cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh`, this worklog
+
+Validation:
+- local: `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py`
+- local: `bash -n cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh`
+- local: `git diff --check`
+
+Result:
+- status: implementation checks passed locally; l401 validation launch pending exact commit deployment.
+
+Next:
+- Commit and deploy to an l401 worktree, run stable-pose-enabled video validation against the 4-object smoke manifest/cache, inspect the stricter grasp-contact failure/geometry, then fix grasp alignment before relaunching training.
+
 ## 2026-06-13T20:27:04Z - Multi-object main merge and lift-guidance training patch
 
 Goal:

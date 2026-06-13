@@ -23,6 +23,11 @@ parser.add_argument("--object_spawn_center_offset_x", type=float, default=0.05)
 parser.add_argument("--object_spawn_center_offset_y", type=float, default=0.0)
 parser.add_argument("--object_spawn_xy_randomization", type=float, default=0.10)
 parser.add_argument("--object_spawn_yaw_randomization_deg", type=float, default=180.0)
+parser.add_argument("--object_stable_pose_enabled", action="store_true", default=False)
+parser.add_argument("--object_stable_pose_cache_dir", type=str, default="")
+parser.add_argument("--object_stable_pose_count", type=int, default=1)
+parser.add_argument("--object_stable_pose_randomize", action=argparse.BooleanOptionalAction, default=True)
+parser.add_argument("--object_stable_pose_allow_missing", action="store_true", default=False)
 parser.add_argument("--render_warmup_frames", type=int, default=2)
 parser.add_argument("--reset_cycles", type=int, default=3)
 parser.add_argument("--settle_steps", type=int, default=72)
@@ -430,6 +435,53 @@ def _metrics_snapshot(
     }
 
 
+def _selected_grasp_geometry_snapshot(task_env, env_id: int) -> dict[str, object]:
+    env_ids = torch.tensor([env_id], device=task_env.device, dtype=torch.long)
+    origin = task_env.scene.env_origins[env_id]
+    hand_pos_w = task_env._robot.data.body_pos_w[env_id, task_env.ee_body_idx]
+    hand_quat_w = task_env._robot.data.body_quat_w[env_id, task_env.ee_body_idx]
+    exact_tool_pos_w = task_env.grasp_prior_reset_exact_tool_pos_w[env_id]
+    pregrasp_tool_pos_w = task_env.grasp_prior_reset_pregrasp_tool_pos_w[env_id]
+    exact_ee_pos_w = task_env.grasp_prior_reset_exact_ee_pos_w[env_id]
+    target_ee_pos_w = task_env.grasp_prior_reset_target_ee_pos_w[env_id]
+    left_finger_pos_w = task_env.left_finger_pos[env_id] + origin
+    right_finger_pos_w = task_env.right_finger_pos[env_id] + origin
+    object_root_pos_w = task_env._cube.data.root_pos_w[env_id]
+    object_root_quat_w = task_env._cube.data.root_quat_w[env_id]
+    object_idx = int(task_env.object_asset_index[env_id].detach().cpu())
+    asset = task_env._object_assets[object_idx]
+    return {
+        "selected_asset_index": object_idx,
+        "selected_asset_uuid": str(asset.get("uuid", "")),
+        "selected_reset_sample_index": int(task_env.grasp_prior_reset_sample_index[env_id].detach().cpu()),
+        "selected_reset_success": bool(task_env.grasp_prior_reset_success[env_id].detach().cpu()),
+        "selected_quality_success": bool(task_env.grasp_prior_reset_quality_success[env_id].detach().cpu()),
+        "selected_reset_pos_error": float(task_env.grasp_prior_reset_pos_error[env_id].detach().cpu()),
+        "selected_reset_rot_error": float(task_env.grasp_prior_reset_rot_error[env_id].detach().cpu()),
+        "selected_open_width_margin": float(task_env.grasp_prior_reset_open_width_margin[env_id].detach().cpu()),
+        "object_root_pos": _tensor_list(object_root_pos_w - origin),
+        "object_root_quat_wxyz": _tensor_list(object_root_quat_w),
+        "object_center_pos": _tensor_list(task_env.cube_pos[env_id]),
+        "hand_pos": _tensor_list(hand_pos_w - origin),
+        "hand_quat_wxyz": _tensor_list(hand_quat_w),
+        "ee_pos": _tensor_list(task_env.ee_pos[env_id]),
+        "ee_quat_wxyz": _tensor_list(task_env.ee_quat[env_id]),
+        "left_finger_pos": _tensor_list(task_env.left_finger_pos[env_id]),
+        "right_finger_pos": _tensor_list(task_env.right_finger_pos[env_id]),
+        "exact_tool_pos": _tensor_list(exact_tool_pos_w - origin),
+        "pregrasp_tool_pos": _tensor_list(pregrasp_tool_pos_w - origin),
+        "exact_ee_pos": _tensor_list(exact_ee_pos_w - origin),
+        "target_ee_pos": _tensor_list(target_ee_pos_w - origin),
+        "pregrasp_tool_to_hand_dist": float(torch.norm(pregrasp_tool_pos_w - hand_pos_w).detach().cpu()),
+        "target_ee_to_ee_dist": float(torch.norm((target_ee_pos_w - origin) - task_env.ee_pos[env_id]).detach().cpu()),
+        "exact_tool_to_finger_center_dist": float(
+            torch.norm(exact_tool_pos_w - 0.5 * (left_finger_pos_w + right_finger_pos_w)).detach().cpu()
+        ),
+        "exact_ee_to_ee_dist": float(torch.norm((exact_ee_pos_w - origin) - task_env.ee_pos[env_id]).detach().cpu()),
+        "object_size": float(task_env._grasp_prior_object_size(env_ids)[0].detach().cpu()),
+    }
+
+
 def _summarize_series(series: list[dict[str, object]]) -> dict[str, object]:
     keys = [
         "bottom_clearance_min",
@@ -585,6 +637,7 @@ def _score_grasp_contact_result(result: dict[str, object]) -> float:
     bottom_clearance = float(summary.get("bottom_clearance_min", -999.0))
     finger_clearance = float(summary.get("finger_table_clearance_min", -999.0))
     finger_dist = float(result.get("selected_max_finger_dist_min", 999.0))
+    lift_height = float(result.get("selected_lift_height_max", 0.0))
     pregrasp_z = float(result.get("selected_pregrasp_offset_dir_z", -999.0))
     phases = result.get("warmstart_phases", [])
     phase_bonus = 1.0 if isinstance(phases, list) and (1 in phases or 2 in phases) else 0.0
@@ -593,6 +646,7 @@ def _score_grasp_contact_result(result: dict[str, object]) -> float:
         + (250.0 if done_count == 0 else -50.0 * done_count)
         + 30.0 * phase_bonus
         + 10.0 * pregrasp_z
+        + 500.0 * min(lift_height, 0.08)
         + 5.0 * min(finger_clearance, 0.10)
         + 5.0 * min(bottom_clearance, 0.02)
         - 150.0 * object_xy
@@ -614,6 +668,7 @@ def _rollout_grasp_contact(
     phase_values: list[int] = []
     active_values: list[bool] = []
     selected_done_count = 0
+    reset_geometry = _selected_grasp_geometry_snapshot(task_env, selected_env)
     selected_env_ids = torch.tensor([selected_env], device=task_env.device, dtype=torch.long)
     for step in range(max(int(steps), 1)):
         _, dones = _step_env(env, task_env)
@@ -661,10 +716,12 @@ def _rollout_grasp_contact(
     selected_pregrasp_z = max(float(item["selected_pregrasp_offset_dir_z"]) for item in series)
     selected_object_xy_delta = float(summary.get("object_xy_delta_max", 999.0))
     max_contact_xy_delta = min(0.06, 0.75 * float(task_env.cfg.prelift_drag_termination_xy_error))
+    min_lift_height = max(0.02, float(task_env.cfg.cube_success_lift_height))
     phases = sorted(set(phase_values))
     passed = (
         bool(task_env.grasp_prior_reset_quality_success[selected_env].detach().cpu())
         and selected_pregrasp_z >= float(args_cli.grasp_reset_min_pregrasp_z)
+        and selected_lift >= min_lift_height
         and float(summary.get("bottom_clearance_min", -1.0)) >= -0.01
         and float(summary.get("finger_table_clearance_min", -1.0)) >= float(task_env.cfg.finger_table_penetration_termination_margin)
         and selected_done_count == 0
@@ -685,9 +742,11 @@ def _rollout_grasp_contact(
         "selected_object_size": selected_object_size,
         "selected_object_xy_delta_max": selected_object_xy_delta,
         "selected_contact_xy_delta_threshold": max_contact_xy_delta,
+        "selected_lift_height_threshold": min_lift_height,
         "selected_done_count": selected_done_count,
         "warmstart_phases": phases,
         "warmstart_active_count": sum(1 for item in active_values if item),
+        "reset_geometry": reset_geometry,
         "frames": artifact_paths,
     }
 
@@ -769,6 +828,11 @@ def _make_env(*, grasp_prior: bool):
     env_cfg.object_spawn_center_offset_y = float(args_cli.object_spawn_center_offset_y)
     env_cfg.object_spawn_xy_randomization = float(args_cli.object_spawn_xy_randomization)
     env_cfg.object_spawn_yaw_randomization_deg = float(args_cli.object_spawn_yaw_randomization_deg)
+    env_cfg.object_stable_pose_enabled = bool(args_cli.object_stable_pose_enabled)
+    env_cfg.object_stable_pose_cache_dir = str(args_cli.object_stable_pose_cache_dir)
+    env_cfg.object_stable_pose_count = int(args_cli.object_stable_pose_count)
+    env_cfg.object_stable_pose_randomize = bool(args_cli.object_stable_pose_randomize)
+    env_cfg.object_stable_pose_allow_missing = bool(args_cli.object_stable_pose_allow_missing)
     env_cfg.object_reset_settle_steps = int(args_cli.object_reset_settle_steps)
     env_cfg.object_reset_settle_full_reset_only = True
     env_cfg.grasp_prior_reset_enabled = bool(grasp_prior)
@@ -828,6 +892,11 @@ def main() -> None:
             "object_spawn_center_offset_y": args_cli.object_spawn_center_offset_y,
             "object_spawn_xy_randomization": args_cli.object_spawn_xy_randomization,
             "object_spawn_yaw_randomization_deg": args_cli.object_spawn_yaw_randomization_deg,
+            "object_stable_pose_enabled": args_cli.object_stable_pose_enabled,
+            "object_stable_pose_cache_dir": args_cli.object_stable_pose_cache_dir,
+            "object_stable_pose_count": args_cli.object_stable_pose_count,
+            "object_stable_pose_randomize": args_cli.object_stable_pose_randomize,
+            "object_stable_pose_allow_missing": args_cli.object_stable_pose_allow_missing,
             "capture_interval": args_cli.capture_interval,
             "grasp_object_settle_steps": args_cli.grasp_object_settle_steps,
             "object_reset_settle_steps": args_cli.object_reset_settle_steps,
