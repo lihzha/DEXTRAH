@@ -751,6 +751,33 @@ Visual Inspection:
 - `grasp_contact` first/mid/last frames show no mid-video object teleport/reset, no large lateral shove, and no obvious gripper/table or gripper/object penetration.
 - `reset_settle` and `perturbation` remain visually consistent with the prior accepted videos.
 
+## 2026-06-13 - Trimesh stable-pose placement validator
+
+Goal:
+- Before wiring stable poses into RL resets, test whether trimesh-computed stable poses actually remain stable in Isaac when objects are placed directly at the computed pose.
+
+Scope Clarification:
+- Use a small set of objects from the manifest, not physically small objects.
+- Initial target is the existing 4-object staged GraspGen smoke manifest.
+
+Change:
+- Added `dextrah_lab/rl_games/validate_graspgen_stable_pose_resets.py`.
+  - Filters the manifest to `MAX_OBJECTS` or explicit UUIDs.
+  - Loads each `raw_object_path` with `trimesh`, applies the manifest scale, computes stable poses, and writes `stable_pose_cache/<uuid>.npz`.
+  - Instantiates the existing Franka multi-object Isaac Lab env only as a USD/PhysX loader.
+  - Overrides object root states directly to the computed stable pose, then manually steps physics without Gym auto-reset.
+  - Reports root/center XY drift, root Z drift, angular drift, bottom clearance, velocity, and done counts.
+- Added `cluster/sbatch_validate_graspgen_stable_pose_resets_1gpu.sh`.
+  - Runs the validator on l401 with all outputs under `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations`.
+
+Validation:
+- local: `python3 -m py_compile dextrah_lab/rl_games/validate_graspgen_stable_pose_resets.py`
+- local: `bash -n cluster/sbatch_validate_graspgen_stable_pose_resets_1gpu.sh`
+- local: `git diff --check`
+
+Next:
+- Commit, deploy to l401, and run the 4-object stable-pose placement smoke with rendered frames.
+
 ## 2026-06-13 - Rendered environment validation smoke launch
 
 Goal:
