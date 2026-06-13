@@ -13,7 +13,8 @@
 set -euo pipefail
 
 NFS_ROOT="${NFS_ROOT:-/lustre/fsw/portfolios/nvr/users/lzha}"
-CODE_NFS="${CODE_NFS:-$NFS_ROOT/src/DEXTRAH}"
+SUBMIT_DIR="${SLURM_SUBMIT_DIR:-$PWD}"
+CODE_NFS="${CODE_NFS:-$SUBMIT_DIR}"
 FABRICS_NFS="${FABRICS_NFS:-$NFS_ROOT/src/FABRICS}"
 ISAACLAB_NFS="${ISAACLAB_NFS:-$NFS_ROOT/src/IsaacLab-v2.2.1}"
 IMAGE="${IMAGE:-$NFS_ROOT/cache/isaac_lab_2.2.0.sqsh}"
