@@ -20,7 +20,7 @@ Version Control:
 - worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
 - branch: `codex/franka-cube-diffusion-policy-bc`
 - base_commit: `10a924232fe6ac72eaef026acb1eed13d8db2533`
-- implementation_commit: `40bd5c5d5e3b51d8a8419603bb40d9fbd418184b`
+- implementation_commit: `a8e805a971b82ced017129c16341ef93cacfe36b`
 - changed_files: `cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh`, `cluster/sbatch_eval_franka_cube_rgb_dp_policy_1gpu.sh`, `cluster/sbatch_train_franka_cube_rgb_dp_1gpu.sh`, `dextrah_lab/rl_games/contact_aware_franka_cube_rollout.py`, `dextrah_lab/rl_games/eval_franka_cube_rgb_dp_policy.py`, `dextrah_lab/offline_dp_bc/make_contact_relabel_set_report.py`, `dextrah_lab/offline_dp_bc/combine_contact_relabel_rgb_sets.py`, `dextrah_lab/offline_dp_bc/make_uniform_cube_relabel_specs.py`, `dextrah_lab/offline_dp_bc/make_rgb_dataset_report.py`
 
 Command / Job:
