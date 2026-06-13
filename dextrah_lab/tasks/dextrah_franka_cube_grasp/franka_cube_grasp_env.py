@@ -768,7 +768,7 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         self.grasp_prior_reset_exact_ee_dist[env_ids] = targets["exact_ee_dist"]
         self.grasp_prior_reset_pregrasp_ee_dist[env_ids] = targets["pregrasp_ee_dist"]
 
-        cube_to_exact = targets["exact_ee_pos_w"] - targets["cube_pos_w"]
+        cube_to_exact = targets["exact_tool_pos_w"] - targets["cube_pos_w"]
         cube_to_exact = cube_to_exact / torch.clamp(torch.norm(cube_to_exact, dim=-1, keepdim=True), min=1.0e-6)
         offset_dot = torch.sum(targets["pregrasp_offset_dir_w"] * cube_to_exact, dim=-1)
         self.grasp_prior_reset_offset_radial_dot[env_ids] = offset_dot

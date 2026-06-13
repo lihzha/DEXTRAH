@@ -525,6 +525,36 @@ Validation:
 Next:
 - Commit, deploy exact source to l401, and rerun grasp-contact validation.
 
+## 2026-06-13 - Tool-frame radial quality fix after `1029058`
+
+Goal:
+- Fix false negative quality rejection for center-near grasp-prior resets.
+
+Command / Job:
+- job_id: `1029058`
+- run_name: `multiobject_center_gate_grasp_contact_02b77d2_20260613_145328`
+- status: failed only `grasp_contact`.
+
+Result:
+- `reset_settle` passed.
+- `perturbation` passed.
+- Grasp-contact found a center-near prior on `7195ed3346a445448308febe833c180a`, but selection still reported no quality candidate and the final rollout had warmstart inactive (`warmstart_phases=[-1]`).
+- Geometry showed IK alignment was good and center-distance gate passed: `selected_reset_success=true`, center distance fraction `0.408`, top-down z `0.471`.
+
+Analysis:
+- The base quality radial gate used `exact_ee_pos_w - cube_pos_w`.
+- The pregrasp direction is defined in the grasp/tool frame, while `exact_ee_pos_w` includes the task control-frame offset. For this object that offset pointed opposite the actual tool radial direction, falsely failing `offset_dot > 0.25`.
+
+Change:
+- Compute `cube_grasp_prior_offset_radial_dot` from `exact_tool_pos_w - cube_pos_w`.
+
+Validation:
+- local: `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py`
+- local: `git diff --check`
+
+Next:
+- Commit, deploy exact source to l401, and rerun video validation.
+
 ## 2026-06-13 14:18 PDT - Stop invalid RL runs and wire stable-pose reset path
 
 Goal:
