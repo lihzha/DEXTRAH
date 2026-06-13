@@ -1087,6 +1087,68 @@ Change:
 Next:
 - Run checks, commit, deploy, and validate the small set using rank override `96ae0ff853734df0b10a827307949c87:1`.
 
+## 2026-06-13 - Rank-overridden settled replay validation launch
+
+Goal:
+- Verify the small set passes when using the selected stable rank for the long `96ae...` object and replaying cached settled poses.
+
+Version Control:
+- local_commit: `c34ed5198a5729fb405559b12d57d41b969430c9`
+- push: pushed to `origin/codex/dextrah-multiobject-grasp-prior/dextrah-multiobject-grasp-prior-20260613T003321Z`
+- remote_deploy: transferred as Git bundle `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/.bundles/dextrah_stable_pose_c34ed51.bundle` and fetched into the l401 agent worktree.
+- remote_commit: `c34ed5198a5729fb405559b12d57d41b969430c9`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-20260613T003321Z`
+
+Validation:
+- local: `python3 -m py_compile dextrah_lab/rl_games/validate_graspgen_stable_pose_resets.py`
+- local: `bash -n cluster/sbatch_validate_graspgen_stable_pose_resets_1gpu.sh`
+- local: `git diff --check`
+- remote: `python3 -m py_compile dextrah_lab/rl_games/validate_graspgen_stable_pose_resets.py`
+- remote: `bash -n cluster/sbatch_validate_graspgen_stable_pose_resets_1gpu.sh`
+
+Command / Job:
+- command: `OBJECT_ASSET_MANIFEST_PATH=/results/assets/franka_multi_graspgen_asset_smoke_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_223457/manifest.json MAX_OBJECTS=4 STABLE_POSE_COUNT=2 ROLLOUT_POSE_COUNT=1 STABLE_POSE_RANK_OVERRIDES=96ae0ff853734df0b10a827307949c87:1 STABLE_POSE_MESH_MODE=convex_hull SETTLE_STEPS=240 SETTLED_REPLAY_STEPS=240 RENDER_FRAMES=True CAPTURE_INTERVAL=24 TABLE_CLEARANCE=0.002 CODE_COMMIT=c34ed5198a5729fb405559b12d57d41b969430c9 sbatch --parsable --partition=batch --time=0-00:45:00 cluster/sbatch_validate_graspgen_stable_pose_resets_1gpu.sh`
+- job_id: `1028898`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_graspgen_stable_pose_1028898.out`
+- run_name: `graspgen_stable_pose_validate_1028898_20260613_010532`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/graspgen_stable_pose_validate_1028898_20260613_010532`
+- status: passed.
+
+Result:
+- Slurm state: `COMPLETED`, exit code `0:0`, elapsed `00:01:13`.
+- Metrics: top-level `passed=true`.
+- Discovery rollout:
+  - `96ae0ff853734df0b10a827307949c87` used rank 1 and passed immediately.
+  - `1d489db9cdc24161a7537926a20bb17b` still settled by `6.04deg`, which is expected discovery motion and is why the post-settle pose is cached.
+- Settled replay rollout passed for all four objects.
+- Settled replay summary: `root_xy_delta_max=1.41e-05m`, `center_xy_delta_max=1.05e-05m`, `root_z_delta_max=3.46e-06m`, `angular_delta_deg_max=0.0791`, `bottom_clearance_min=-0.00416m`, `final_object_speed_max=0.00401m/s`.
+- Per-env settled replay:
+  - `7195ed3346a445448308febe833c180a` rank 0 passed.
+  - `1d489db9cdc24161a7537926a20bb17b` rank 0 passed after settled-pose replay.
+  - `96ae0ff853734df0b10a827307949c87` rank 1 passed.
+  - `30700bc210844bdc991a5ccf16b6379f` rank 0 passed.
+
+Local Artifacts:
+- Fetched results: `local_results/stable_pose_1028898/`
+- Settled replay grid video: `local_results/stable_pose_1028898/settled_replay_grid.mp4`
+- Discovery grid video: `local_results/stable_pose_1028898/stable_pose_discovery_grid.mp4`
+- Slurm log: `local_results/stable_pose_1028898/slurm.out`
+
+Viewer URLs:
+- settled replay grid: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-20260613T003321Z/local_results/stable_pose_1028898/settled_replay_grid.mp4`
+- discovery grid: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-20260613T003321Z/local_results/stable_pose_1028898/stable_pose_discovery_grid.mp4`
+
+Visual Inspection:
+- Settled replay first/last grid frames show all four objects on top of the table with the gripper clear of contact.
+- No visible object bounce-away, table sticking/penetration, or robot/object contact is visible in replay.
+
+Analysis:
+- The correct reset strategy is to use trimesh convex-hull stable poses as discovery candidates, simulate-settle each object once, cache the post-settle local root pose/quaternion, and reset to that cached state for RL/grasp-prior alignment.
+- A rank override/selection step is needed because the top-probability trimesh pose is not always the most stable PhysX pose.
+
+Next:
+- Wire this settled-pose cache and rank selection into the multi-object RL reset path so grasp-prior robot reset is computed from the actual cached object pose, not the ideal initial pose.
+
 ## 2026-06-13 - Rendered environment validation smoke launch
 
 Goal:
