@@ -141,7 +141,7 @@ srun \
     echo "CODE_COMMIT=${CODE_COMMIT:-unknown}"
     git rev-parse HEAD 2>/dev/null || true
     nvidia-smi || true
-    python - <<PY
+    /isaac-sim/python.sh - <<PY
 import trimesh
 print("trimesh_version=" + str(trimesh.__version__), flush=True)
 PY

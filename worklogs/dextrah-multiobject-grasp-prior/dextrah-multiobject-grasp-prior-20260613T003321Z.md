@@ -778,6 +778,32 @@ Validation:
 Next:
 - Commit, deploy to l401, and run the 4-object stable-pose placement smoke with rendered frames.
 
+## 2026-06-13 - 4-object trimesh stable-pose placement smoke launch
+
+Goal:
+- Test whether a small set of GraspGen objects placed exactly at trimesh stable poses remain stable in Isaac without reset-time settling.
+
+Version Control:
+- local_commit: `36b918013c5c96183192e9547c89f2b5f92f3f02`
+- remote_commit: `36b918013c5c96183192e9547c89f2b5f92f3f02`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-20260613T003321Z`
+
+Command / Job:
+- command: `OBJECT_ASSET_MANIFEST_PATH=/results/assets/franka_multi_graspgen_asset_smoke_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_223457/manifest.json MAX_OBJECTS=4 STABLE_POSE_COUNT=1 SETTLE_STEPS=240 RENDER_FRAMES=True CAPTURE_INTERVAL=24 TABLE_CLEARANCE=0.002 CODE_COMMIT=36b918013c5c96183192e9547c89f2b5f92f3f02 sbatch --partition=batch --time=0-00:45:00 cluster/sbatch_validate_graspgen_stable_pose_resets_1gpu.sh`
+- job_id: `1028890`
+- status: failed before validator startup.
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_graspgen_stable_pose_1028890.out`
+
+Result:
+- Slurm state: `FAILED`, exit code `127:0`, elapsed `00:00:19`.
+- key evidence: `/usr/bin/bash: line 19: python: command not found`
+
+Analysis:
+- The failure happened in the wrapper while printing the `trimesh` version. The Isaac Lab container command path uses `/isaac-sim/python.sh`; this was not an Isaac/PhysX or stable-pose validator failure.
+
+Next:
+- Replace the wrapper's plain `python` call with `/isaac-sim/python.sh`, commit, redeploy to the l401 agent worktree, and relaunch the same 4-object stable-pose placement smoke.
+
 ## 2026-06-13 - Rendered environment validation smoke launch
 
 Goal:
