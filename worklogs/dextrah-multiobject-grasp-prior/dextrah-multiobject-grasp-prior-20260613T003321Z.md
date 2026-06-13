@@ -96,3 +96,20 @@ Next:
 - Push the agent branch.
 - Create/update an agent-owned remote worktree.
 - Run remote GraspGen asset staging/conversion and validation before A100 teacher training.
+
+## 2026-06-13 - Add cluster asset staging wrapper
+
+Goal:
+- Make GraspGen object download, prior extraction, URDF-to-USD conversion, and manifest validation reproducible as a Slurm job.
+
+Change:
+- Added `cluster/sbatch_prepare_graspgen_assets_1gpu.sh`.
+- Documented the cluster asset-staging command in `README.md`.
+
+Validation:
+- `bash -n cluster/sbatch_prepare_graspgen_assets_1gpu.sh cluster/sbatch_validate_franka_multi_object_grasp_env_1gpu.sh cluster/sbatch_train_teacher_8gpu.sh`
+
+Next:
+- Commit/push this wrapper.
+- Deploy the updated commit to an agent-owned `l401` worktree.
+- Launch a small cluster asset-staging smoke before the full `LIMIT=0` staging run.

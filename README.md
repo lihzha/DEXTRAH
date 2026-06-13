@@ -126,7 +126,20 @@ before training:
             --enable_grasp_prior_reset
 ```
 
-On a1001, prepare/convert the full object set on mounted storage, then launch:
+On the cluster, prepare/convert the full object set on mounted storage. Use a
+small `LIMIT` first for a cluster smoke test, then set `LIMIT=0` for the full
+Robotiq split:
+
+```bash
+        CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/<agent_id> \
+        ASSET_OUTPUT_DIR_HOST=/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/graspgen_objects \
+        ASSET_OUTPUT_DIR_CONTAINER=/results/assets/graspgen_objects \
+        LIMIT=0 \
+          sbatch --export=ALL cluster/sbatch_prepare_graspgen_assets_1gpu.sh
+```
+
+On a1001, launch teacher training with the staged manifest that passed
+validation:
 
 ```bash
         TASK=Dextrah-Franka-Multi-Object-Grasp \
