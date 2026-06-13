@@ -22,6 +22,7 @@ parser.add_argument("--video_length", type=int, default=120)
 parser.add_argument("--video_folder", type=str, default=None)
 parser.add_argument("--render_check", action="store_true", default=False)
 parser.add_argument("--render_check_frames", type=int, default=2)
+parser.add_argument("--render_warmup_frames", type=int, default=2)
 parser.add_argument("--object_asset_manifest_path", type=str, default=None)
 parser.add_argument("--object_assets_dir", type=str, default=None)
 parser.add_argument("--max_objects", type=int, default=None)
@@ -426,8 +427,21 @@ def _write_rgb_artifact(frame, path: Path) -> str:
         return str(ppm_path)
 
 
-def _run_render_checks(env, task_env, checks: CheckRecorder, output_dir: Path, num_frames: int) -> dict[str, object]:
+def _run_render_checks(
+    env,
+    task_env,
+    checks: CheckRecorder,
+    output_dir: Path,
+    num_frames: int,
+    warmup_frames: int,
+) -> dict[str, object]:
     import numpy as np
+
+    warmup_frames = max(int(warmup_frames), 0)
+    for _ in range(warmup_frames):
+        actions = torch.zeros((task_env.num_envs, task_env.cfg.action_space), device=task_env.device)
+        env.step(actions)
+        env.render()
 
     frame_summaries: list[dict[str, object]] = []
     num_frames = max(int(num_frames), 1)
@@ -468,7 +482,7 @@ def _run_render_checks(env, task_env, checks: CheckRecorder, output_dir: Path, n
         ),
         frames=frame_summaries,
     )
-    return {"enabled": True, "frames": frame_summaries}
+    return {"enabled": True, "warmup_frames": warmup_frames, "frames": frame_summaries}
 
 
 def main() -> None:
@@ -521,7 +535,14 @@ def main() -> None:
     asset_summary = _run_asset_checks(task_env, checks)
     reset_summary = _run_reset_checks(env, task_env, checks)
     render_summary = (
-        _run_render_checks(env, task_env, checks, output_dir, args_cli.render_check_frames)
+        _run_render_checks(
+            env,
+            task_env,
+            checks,
+            output_dir,
+            args_cli.render_check_frames,
+            args_cli.render_warmup_frames,
+        )
         if args_cli.render_check
         else {"enabled": False}
     )

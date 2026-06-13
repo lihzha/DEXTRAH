@@ -205,7 +205,31 @@ Command / Job:
 - log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/prepare_graspgen_assets_1028836.out`
 
 Result:
-- status: running/queued; monitoring in progress.
+- status: failed
+- metrics/artifacts: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_env_render_smoke_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_225022/metrics.json`
+- key evidence: `render_check_frames_nonblank` failed because frame 0 was black (`dynamic_range=0`, `mean_value=0`) while frame 1 was nonblank (`dynamic_range=254`, `mean_value=209.6`).
+- local artifact inspected: `local_results/render_smoke_1028838/frame_0001.png`; it shows the table, Franka, and a small rendered object.
+
+Analysis:
+- Rendering is functional after the first frame, but the validator was too strict because it scored the initial black warmup frame.
+- This should be treated as a validator/render-warmup issue, not a physics/env failure.
+
+Next:
+- Add render warmup frames before scored render checks.
+- Rerun rendered validation smoke.
+
+## 2026-06-13 - Add render warmup before scored frames
+
+Goal:
+- Make render validation robust to Isaac's initial black RGB frame while still requiring scored frames to be nonblank.
+
+Change:
+- Added `--render_warmup_frames` to the validator.
+- Added `RENDER_WARMUP_FRAMES` to the cluster validation wrapper.
+
+Next:
+- Commit/push/deploy the warmup patch.
+- Rerun `RENDER_CHECK=True` smoke validation.
 
 ## 2026-06-13 - Add explicit rendered validation check
 
@@ -225,3 +249,18 @@ Analysis:
 Next:
 - Run `RENDER_CHECK=True` validation on the 4-object cluster smoke manifest.
 - After full asset staging finishes, run the same rendered validation on a sampled full-manifest subset before training.
+
+## 2026-06-13 - Rendered environment validation smoke launch
+
+Goal:
+- Verify rendered RGB output is nonblank for the multi-object Franka environment using the already staged 4-object smoke manifest.
+
+Command / Job:
+- command: `RENDER_CHECK=True RENDER_CHECK_FRAMES=2 CAPTURE_VIDEO=False NUM_ENVS=4 NUM_STEPS=40 MAX_OBJECTS=4 OBJECT_ASSET_MANIFEST_PATH=/results/assets/franka_multi_graspgen_asset_smoke_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_223457/manifest.json sbatch --export=ALL cluster/sbatch_validate_franka_multi_object_grasp_env_1gpu.sh`
+- job_id: 1028838
+- run_name: `franka_multi_env_render_smoke_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_225022`
+- metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_env_render_smoke_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_225022/metrics.json`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_1028838.out`
+
+Result:
+- status: running/queued; monitoring in progress.
