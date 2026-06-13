@@ -73,3 +73,4 @@ class DextrahFrankaMultiObjectGraspEnvCfg(DextrahFrankaCubeGraspEnvCfg):
     grasp_prior_reset_require_topdown = True
     grasp_prior_reset_min_pregrasp_z = 0.10
     grasp_prior_reset_max_center_distance_frac = 0.55
+    grasp_prior_reset_min_width = 0.008

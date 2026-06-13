@@ -46,6 +46,7 @@ parser.add_argument("--grasp_reset_attempts", type=int, default=12)
 parser.add_argument("--grasp_reset_min_pregrasp_z", type=float, default=0.15)
 parser.add_argument("--grasp_reset_candidate_count", type=int, default=16)
 parser.add_argument("--grasp_reset_max_center_distance_frac", type=float, default=0.55)
+parser.add_argument("--grasp_reset_min_width", type=float, default=0.008)
 parser.add_argument("--grasp_contact_score_steps", type=int, default=60)
 parser.add_argument("--disable_fabric", action="store_true", default=False)
 AppLauncher.add_app_launcher_args(parser)
@@ -841,6 +842,7 @@ def _make_env(*, grasp_prior: bool):
     env_cfg.grasp_prior_reset_require_topdown = True
     env_cfg.grasp_prior_reset_min_pregrasp_z = float(args_cli.grasp_reset_min_pregrasp_z)
     env_cfg.grasp_prior_reset_max_center_distance_frac = float(args_cli.grasp_reset_max_center_distance_frac)
+    env_cfg.grasp_prior_reset_min_width = float(args_cli.grasp_reset_min_width)
     if grasp_prior:
         env_cfg.grasp_prior_action_warmstart_close_width = float(args_cli.grasp_warmstart_close_width)
         env_cfg.grasp_prior_action_warmstart_lift_action_z = float(args_cli.grasp_warmstart_lift_action_z)

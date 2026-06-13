@@ -492,6 +492,37 @@ Validation:
 Next:
 - Commit, deploy exact source to l401, and rerun video validation.
 
+## 2026-06-13 - Minimum grasp-prior width gate after `1029062`
+
+Goal:
+- Avoid selecting near-zero-width grasp priors that the Panda fingers cannot use to clamp the object.
+
+Command / Job:
+- job_id: `1029062`
+- run_name: `multiobject_dynamic_close_top07_77e314f_20260613_150725`
+- status: failed only `grasp_contact`.
+
+Result:
+- Strict top-down threshold selected object `96ae0ff853734df0b10a827307949c87`, `selected_pregrasp_offset_dir_z=0.869`.
+- The gripper closed almost completely (`selected_gripper_width_min=0.0002m`) but object lift remained `0.0m`.
+- The selected prior had open-width margin `0.0785m`, implying an unrealistically tiny required width of `~0.0015m`.
+
+Analysis:
+- Some high-confidence, top-down priors correspond to needle-like contact pairs. They can be geometrically valid but are poor Panda grasp reset candidates.
+
+Change:
+- Added `grasp_prior_reset_min_width=0.008`.
+- Candidate selection and reset success/quality now require sampled prior width within `[min_width, max_gripper_width]`.
+- Validation and teacher wrappers expose/log the min-width gate.
+
+Validation:
+- local: `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`
+- local: `bash -n cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh cluster/sbatch_train_teacher_8gpu.sh`
+- local: `git diff --check`
+
+Next:
+- Commit, deploy exact source to l401, and rerun validation with strict top-down plus min-width gating.
+
 ## 2026-06-13 - Dynamic warmstart close width after `1029060`
 
 Goal:

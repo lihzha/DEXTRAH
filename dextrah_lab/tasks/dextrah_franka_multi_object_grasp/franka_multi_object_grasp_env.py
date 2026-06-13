@@ -631,7 +631,10 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
 
         pregrasp_z = candidate_pregrasp_offset_dir_w[:, :, 2]
         topdown_ok = pregrasp_z >= float(self.cfg.grasp_prior_reset_min_pregrasp_z)
-        width_ok = candidate_required_width <= float(self.cfg.max_gripper_width)
+        width_ok = (
+            (candidate_required_width >= float(self.cfg.grasp_prior_reset_min_width))
+            & (candidate_required_width <= float(self.cfg.max_gripper_width))
+        )
         object_size = torch.clamp(self._grasp_prior_object_size(env_ids).unsqueeze(1), min=1.0e-4)
         normalized_center_dist = candidate_exact_tool_dist / object_size
         center_ok = normalized_center_dist <= float(self.cfg.grasp_prior_reset_max_center_distance_frac)
@@ -716,7 +719,12 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         center_dist_ok = targets["exact_tool_dist"] <= (
             float(self.cfg.grasp_prior_reset_max_center_distance_frac) * object_size
         )
-        return mask & center_dist_ok
+        required_width = self._grasp_prior_required_open_width(env_ids, targets)
+        width_ok = (
+            (required_width >= float(self.cfg.grasp_prior_reset_min_width))
+            & (required_width <= float(self.cfg.max_gripper_width))
+        )
+        return mask & center_dist_ok & width_ok
 
     def _grasp_prior_reset_extra_success_mask(
         self,
