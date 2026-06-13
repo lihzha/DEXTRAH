@@ -576,6 +576,24 @@ Result:
 Next:
 - Let baseline and guided-closefix continue; if guided-closefix starts producing real lift before a slot opens, cancel the pending sequence-timing run. Otherwise compare all three.
 
+## 2026-06-13T20:58:00Z - Guided checkpoint eval launch
+
+Goal:
+- Render and quantify the guided-closefix epoch-100 policy to diagnose why strong upward action is not producing object lift.
+
+Command / Job:
+- job_id: `1029046`
+- run_name: `multiobject_eval_guided_closefix_ep100_20260613_1358`
+- source: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-eval-afb9dde-20260613`
+- checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/multiobject_teacher_4obj_guided_closefix_10d6dd6_20260613_1340/nn/last_dextrah_franka_multi_object_grasp_ep_100_rew_1620.4617.pth`
+- config: `NUM_ENVS=4`, `NUM_STEPS=360`, `CAPTURE_VIDEO=True`, `OBJECT_ASSET_ASSIGNMENT=round_robin`, `OBJECT_SPAWN_YAW_RANDOMIZATION_DEG=180.0`, same 4-object manifest and grasp-prior directory.
+
+Result:
+- status: pending at launch.
+
+Next:
+- Inspect eval metrics and video for whether the policy lifts away before enclosure, slips, or penetrates/contact-fails.
+
 ## 2026-06-13 - Main merge, randomized multi-object training, and cluster launch
 
 Goal:
