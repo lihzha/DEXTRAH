@@ -425,6 +425,53 @@ Command / Job:
 Result:
 - status: running/queued; monitoring in progress.
 
+## 2026-06-13T20:27:04Z - Multi-object main merge and lift-guidance training patch
+
+Goal:
+- Integrate the multi-object Franka grasp environment into `main`, launch actual 4-object teacher training, and diagnose early learning quality.
+
+Version Control:
+- integration_commit: `8bad95c36af398366a4d112da9e7f766c60497ef`
+- current_main_before_patch: `afb9ddeeabe93a6b32cafb89db82a7652595ab19`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/integrate-multiobject-main-20260613`
+- branch: `codex/multiobject-training-yaw-20260613`
+- pushed: `8bad95c` and later `afb9dde` are both on `origin/main`.
+
+Validation:
+- local: `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py dextrah_lab/rl_games/validate_franka_multi_object_grasp_env.py dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py`
+- local: `bash -n cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_validate_franka_multi_object_grasp_env_1gpu.sh cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh`
+- local: `git diff --check`
+- l401 smoke job `1028979`: random object assignment, 8 unique reset poses, yaw span `3.526031rad`, obs shape `[8, 80]`, finite object feature tail, grasp-prior reset mean success `0.625`.
+
+Command / Job:
+- active training job: `29048544`
+- run_name: `multiobject_teacher_4obj_8bad95c_20260613_123520`
+- code_commit: `8bad95c36af398366a4d112da9e7f766c60497ef`
+- source: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-training-main-20260613`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/multiobject_teacher_4obj_8bad95c_20260613_123520`
+- config: `TASK=Dextrah-Franka-Multi-Object-Grasp`, `MAX_OBJECTS=4`, `OBJECT_ASSET_ASSIGNMENT=random`, `OBJECT_SPAWN_CENTER_OFFSET_X=0.05`, `OBJECT_SPAWN_XY_RANDOMIZATION=0.10`, `OBJECT_SPAWN_YAW_RANDOMIZATION_DEG=180.0`, `NUM_ENVS=1024`, `MAX_ITERATIONS=1000`, `HORIZON_LENGTH=64`, `MINIBATCH_SIZE=32768`.
+
+Result:
+- A100 smoke `29048488` completed successfully through 20 epochs, obs space `80`, no non-finite JSONL metrics.
+- Active A100 training `29048544` is running. At epoch 350: no non-finite JSONL metrics; `ee_to_cube_dist=0.05395`, `finger_center_to_cube_dist=0.06751`, `gripper_width=0.00177`, `cube_success_rate=0.0`, `cube_lift_height=0.000783m`.
+- Diagnostic l401 eval `1029044` on epoch 150 completed with video and metrics; `success_ever_rate=0.0`, max lift height `0.001713m`, mean z action `-0.1190`, gripper closes quickly.
+- Full GraspGen asset-prep job `1028980` is running on l401, downloading on `/lustre`; last checked around batch `294/804`.
+
+Analysis:
+- The merged environment is RLable and correctly conditions the teacher policy on object state (`72 -> 80` obs). Parallel envs sample different object identities and poses; training randomizes yaw over the full 360 degrees.
+- The current 4-object run learns approach/enclosure/closing but not reliable upward lift. Recent policy diagnostics show more down than up z action even when lift-action reward is available.
+
+Change:
+- Added training-wrapper support for existing `grasp_prior_action_warmstart_*` and `grasp_prior_action_prior_reward_*` environment knobs in `cluster/sbatch_train_teacher_8gpu.sh`.
+- This is wrapper-only; it does not change default environment behavior because all new knobs default disabled.
+
+Checks:
+- local: `bash -n cluster/sbatch_train_teacher_8gpu.sh`
+- local: `git diff --check`
+
+Next:
+- Commit/push the wrapper patch, deploy it to a new A100 source worktree, and launch a bounded tuned 4-object teacher run using grasp-prior action prior reward plus stronger lift/down-action shaping while keeping the current baseline run alive for comparison.
+
 ## 2026-06-13 - Main merge, randomized multi-object training, and cluster launch
 
 Goal:
