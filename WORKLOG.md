@@ -7296,6 +7296,56 @@ Next:
 - No DEXTRAH-owned render job remains active. Finalize by committing and
   pushing this worklog update.
 
+## 2026-06-13 12:47 PDT - pure-robolab-scene-visualization
+
+Goal:
+- Visualize a pure RoboLab scene with no DEXTRAH robot and no generated studio
+  geometry.
+
+Change:
+- No source changes. Reused the existing RoboLab render bridge with
+  `ROBOT=none` and `BACKGROUND=hdri`.
+
+Version Control:
+- agent_id: codex-robolab-orbit-render
+- branch: `codex/robolab-orbit-render-20260613`
+- local_head: `ee006b7`
+- remote_render_source: l401 detached worktree
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/codex-robolab-orbit-render`
+  at `26237f7217696fad699d863cab498364a090543a`
+- changed_files: `WORKLOG.md`
+
+Command / Job:
+- smoke_job_id: `1028994`
+- final_job_id: `1028995`
+- final settings: `ROBOLAB_SCENE=clutter_fruit_bottle_bluebin.usda`,
+  `ROBOT=none`, `BACKGROUND=hdri`,
+  `BACKGROUND_TEXTURE=indoors/kiara_interior_2k.hdr`, `WIDTH=1024`,
+  `HEIGHT=1024`, `FPS=12`, `VIDEO_SECONDS=12.0`, `RT_SUBFRAMES=8`,
+  `ORBIT_RADIUS=2.8`, `ORBIT_HEIGHT=2.45`, `ORBIT_ELEVATION_DEG=55`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/robolab_scene_1028995.out`
+- artifact:
+  `cluster_results/l401/robolab_pure_scene_hq_20260613_124229/orbit.mp4`
+
+Result:
+- status: passed
+- Slurm: `1028995` completed with `ExitCode=0:0`, elapsed `00:02:14`.
+- MP4 validation: local `ffprobe` reports `1024x1024`, `12/1` fps,
+  `12.000000` seconds, and `144` frames; local decode completed without
+  ffmpeg errors.
+- key evidence: manifest records `robot.mode=none`, `background.mode=hdri`,
+  and `texture_file=/robolab/assets/backgrounds/indoors/kiara_interior_2k.hdr`.
+- visual inspection: checked frames `orbit_0000.png`, `orbit_0072.png`, and
+  `orbit_0108.png`; all show only the RoboLab scene/table/clutter with the
+  household HDRI background.
+- viewer:
+  `http://localhost:8765/view?path=DEXTRAH/cluster_results/l401/robolab_pure_scene_hq_20260613_124229/orbit.mp4`
+
+Next:
+- No DEXTRAH-owned RoboLab render job remains active. Commit and push this
+  worklog update.
+
 ## 2026-06-13 12:32 PDT - robolab-hdri-household-slow-hq
 
 Goal:
