@@ -6965,3 +6965,62 @@ Analysis:
 Next:
 - Commit and deploy the xform precision fix, rerun the same low-resolution
   sensor smoke, and inspect any generated frames/video before scaling.
+
+## 2026-06-13 01:27 PDT - robolab-orbit-sensor-manual-init
+
+Goal:
+- Advance the no-reset sensor backend past the first `TiledCamera.update()`
+  call and produce RoboLab orbit frames.
+
+Hypothesis:
+- `TiledCamera` relies on SensorBase initialization normally triggered by the
+  simulator timeline during `SimulationContext.reset()`. The full sim reset
+  path stalls in this scene, but the sensor's own `_initialize_impl()` and
+  `reset()` should be enough to create timestamps, buffers, render products,
+  and annotators.
+
+Change:
+- Added `_initialize_tiled_camera_sensor()` for the sensor backend.
+- The helper initializes and resets only the `TiledCamera`, avoiding
+  `SimulationContext.reset()`.
+- The sensor capture loop now calls `camera.update(..., force_recompute=True)`
+  after moving the camera pose.
+
+Version Control:
+- agent_id: codex-robolab-orbit-render
+- worktree: `/home/lzha/code/DEXTRAH`
+- worklog: `WORKLOG.md`
+- branch: `codex/robolab-orbit-render-20260613`
+- base_commit: `5d64f7cf479100d476601a465a3538b31e793d85`
+- implementation_commit: pending
+- push/pull: pending Git bundle deploy to l401.
+- changed_files: `dextrah_lab/scene_scripts/render_robolab_scene.py`,
+  `WORKLOG.md`
+- remote_commit/status: l401 agent checkout at
+  `5d64f7cf479100d476601a465a3538b31e793d85`; new commit pending.
+
+Command / Job:
+- command:
+  `sbatch --export=ALL,CODE_NFS=<agent_code>,ROBOLAB_NFS=<staged_robolab>,RUN_NAME=robolab_orbit_sensor_smoke_20260613_0129,ROBOLAB_SCENE=banana_bowl.usda,WIDTH=320,HEIGHT=180,FPS=1,VIDEO_SECONDS=1.0,SETTLE_STEPS=0,WARMUP_FRAMES=0,RT_SUBFRAMES=2,SIM_STEPS_PER_FRAME=0,PHYSICS_DEVICE=cuda:0,CAPTURE_BACKEND=sensor cluster/sbatch_render_robolab_scene.sh`
+- job_id: `1028904`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/robolab_scene/robolab_orbit_sensor_smoke_20260613_0129`
+- logs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/robolab_scene_1028904.out`
+- artifacts: no frame artifacts before exception
+
+Result:
+- status: failed then patched
+- metrics/artifacts: the run passed the xform precision point and failed at
+  `camera.update(0.0)` with `AttributeError: 'TiledCamera' object has no
+  attribute '_timestamp'`.
+- key evidence: SensorBase expects `_timestamp`, `_timestamp_last_update`, and
+  `_is_outdated` from `_initialize_impl()` before `update()`.
+
+Analysis:
+- The previous patch was correct. The next missing piece is normal sensor
+  initialization, not scene loading, camera pose math, or object assets.
+
+Next:
+- Commit and deploy manual sensor initialization, rerun the low-resolution
+  sensor smoke, and inspect generated frames/video if it progresses.

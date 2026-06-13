@@ -386,6 +386,16 @@ def _set_camera_pose(
     return quat
 
 
+def _initialize_tiled_camera_sensor(camera: TiledCamera) -> None:
+    if camera.is_initialized:
+        camera.reset()
+        return
+    _log("initializing orbit TiledCamera sensor without SimulationContext reset")
+    camera._initialize_impl()
+    camera._is_initialized = True
+    camera.reset()
+
+
 def _save_rgb_tensor(path: Path, rgb_tensor) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     rgb = rgb_tensor.detach().cpu().numpy()
@@ -574,6 +584,7 @@ def _capture_orbit_sensor(
     camera = TiledCamera(camera_cfg)
     for _ in range(max(2, int(args_cli.rt_subframes))):
         simulation_app.update()
+    _initialize_tiled_camera_sensor(camera)
 
     camera_prim = omni.usd.get_context().get_stage().GetPrimAtPath("/World/OrbitCamera")
     if not camera_prim.IsValid():
@@ -592,7 +603,7 @@ def _capture_orbit_sensor(
         quat = _set_camera_pose(camera_prim, eye, target)
         for _ in range(max(2, int(args_cli.rt_subframes))):
             simulation_app.update()
-        camera.update(0.0)
+        camera.update(0.0, force_recompute=True)
         dst = frames_dir / f"orbit_{frame_idx:04d}.png"
         _log(f"capturing orbit frame {frame_idx + 1}/{frame_count}")
         _save_rgb_tensor(dst, camera.data.output["rgb"][0])
