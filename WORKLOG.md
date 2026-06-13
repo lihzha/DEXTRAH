@@ -7239,36 +7239,59 @@ Version Control:
 - worklog: `WORKLOG.md`
 - branch: `codex/robolab-orbit-render-20260613`
 - base_commit: `77c812e06306ef1fd8247bf633237b9f6784d8bf`
-- implementation_commit: pending
-- push/pull: pending Git bundle deploy to l401.
+- implementation_commit: `eec453cb71b656afe546e06436b3af8cd7daa16b`
+- push/pull: implementation pushed to origin; exact commit deployed to l401 via
+  `/tmp/dextrah_robolab_orbit_eec453c.bundle`.
 - changed_files: `dextrah_lab/scene_scripts/render_robolab_scene.py`,
   `cluster/sbatch_render_robolab_scene.sh`, `WORKLOG.md`
-- remote_commit/status: l401 agent checkout from previous render still at
-  `6a9af04b7a56b54685d5fd077cacc80309d79aeb`; update pending.
+- remote_commit/status: l401 agent checkout refreshed to detached
+  `eec453cb71b656afe546e06436b3af8cd7daa16b`; materialized
+  `kuka_allegro_colored.usd` copied from the canonical l401 checkout because
+  the bundle checkout contains the Git LFS pointer.
 
 Command / Job:
-- command: pending
-- job_id: pending
-- run_dir: pending
-- logs: pending
-- artifacts: expected smoke and final orbit frames/videos for
-  `clutter_fruit_bottle_bluebin.usda` with `kuka_allegro` and `studio`
-  background.
+- command:
+  `sbatch --parsable --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/codex-robolab-orbit-render,ROBOLAB_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/RoboLab,RUN_NAME=robolab_complex_robot_bg_final_20260613_120931,ROBOLAB_SCENE=clutter_fruit_bottle_bluebin.usda,WIDTH=720,HEIGHT=720,FPS=6,VIDEO_SECONDS=6.0,SETTLE_STEPS=0,WARMUP_FRAMES=0,RT_SUBFRAMES=2,SIM_STEPS_PER_FRAME=0,PHYSICS_DEVICE=cuda:0,CAPTURE_BACKEND=sensor,BACKGROUND=studio,ROBOT=kuka_allegro,ROBOT_TRANSLATION=1.15 0.0 0.0,ROBOT_ROTATION_DEG=0 0 180,ORBIT_RADIUS=4.0,ORBIT_HEIGHT=3.3,ORBIT_ELEVATION_DEG=52 cluster/sbatch_render_robolab_scene.sh`
+- job_id: final `1028972`; smoke jobs `1028963`, `1028964`, `1028968`,
+  and `1028970`.
+- run_dir:
+  `cluster_results/l401/robolab_complex_robot_bg_final_20260613_120931/`
+- logs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/robolab_scene_1028972.out`
+- artifacts:
+  `cluster_results/l401/robolab_complex_robot_bg_final_20260613_120931/orbit.mp4`,
+  `cluster_results/l401/robolab_complex_robot_bg_final_20260613_120931/render_manifest.json`,
+  `cluster_results/l401/robolab_complex_robot_bg_final_20260613_120931/camera_poses.json`,
+  `cluster_results/l401/robolab_complex_robot_bg_final_20260613_120931/robolab_scene_in_dextrah.usda`,
+  `cluster_results/l401/robolab_complex_robot_bg_final_20260613_120931/frames/`.
 
 Result:
-- status: patched
+- status: passed
 - metrics/artifacts: local `py_compile` and wrapper `bash -n` passed.
+  Final Slurm job `1028972` completed with exit code `0:0`, producing 36
+  frames. Local `ffprobe` on the encoded MP4 reports `720x720`, `6/1` fps,
+  `6.000000` seconds, and `36` frames.
 - key evidence: local RoboLab scene scan ranked
   `clutter_fruit_bottle_bluebin.usda` highest by file size and tied-highest
-  by reference count among top scenes.
+  by reference count among top scenes. l401 staged the dense scene plus
+  referenced asset subtrees (`objects/fruits_veggies` about 495M and selected
+  `objects/vomp` about 163M). Inspected final frames `orbit_0000.png`,
+  `orbit_0009.png`, `orbit_0018.png`, and `orbit_0027.png`; the robot, studio
+  background, metal cart, and cluttered RoboLab table scene are visible across
+  the orbit. `viz-open` returned
+  `http://localhost:8765/view?path=DEXTRAH/cluster_results/l401/robolab_complex_robot_bg_final_20260613_120931/orbit.mp4`.
 
 Analysis:
-- The dense scene needs additional RoboLab assets on l401: `objects/fruits_veggies`
+- The dense scene needed additional RoboLab assets on l401: `objects/fruits_veggies`
   and selected `objects/vomp/*` directories. The isolated l401 code checkout
   also needs a materialized Kuka-Allegro USD because Git bundle checkout leaves
   the LFS pointer, while the canonical l401 checkout has the full robot USD.
+- The 16:9 smoke renders confirmed the background and robot but clipped the
+  robot at some orbit angles. A square `720x720` final render preserved the
+  table-centered 360-degree orbit while keeping the robot fully visible. The
+  cluster container still skips video encoding because `ffmpeg` is unavailable;
+  the final MP4 was encoded locally from the validated frame sequence.
 
 Next:
-- Commit/push the patch, deploy exact commit to l401, stage the dense RoboLab
-  assets plus robot USD, run a low-resolution smoke, inspect the robot,
-  background, and dense scene visibility, then scale to a final 360 orbit.
+- No DEXTRAH-owned render job remains active. Finalize by committing and
+  pushing this worklog update.
