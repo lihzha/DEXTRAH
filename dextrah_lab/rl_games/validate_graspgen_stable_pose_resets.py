@@ -32,6 +32,7 @@ parser.add_argument("--max_root_z_drift", type=float, default=0.02)
 parser.add_argument("--max_angular_drift_deg", type=float, default=5.0)
 parser.add_argument("--min_bottom_clearance", type=float, default=-0.005)
 parser.add_argument("--max_final_speed", type=float, default=0.03)
+parser.add_argument("--fail_on_task_done", action="store_true", default=False)
 parser.add_argument("--render_frames", action="store_true", default=False)
 parser.add_argument("--capture_interval", type=int, default=24)
 parser.add_argument("--render_warmup_frames", type=int, default=2)
@@ -274,6 +275,20 @@ def _save_frame(frame, dst: Path) -> str:
         return str(ppm_path)
 
 
+def _capture_env_frames(env, task_env, output_dir: Path, frame_idx: int) -> dict[str, str]:
+    if not args_cli.render_frames:
+        return {}
+    paths: dict[str, str] = {}
+    for env_i in range(int(task_env.num_envs)):
+        _configure_camera(task_env, env_id=env_i)
+        frame = env.render()
+        env_path = output_dir / "frames" / f"env_{env_i:02d}" / f"frame_{frame_idx:04d}.png"
+        paths[str(env_i)] = _save_frame(frame, env_path)
+        if env_i == 0:
+            _save_frame(frame, output_dir / "frames" / f"frame_{frame_idx:04d}.png")
+    return paths
+
+
 def _zero_actions(task_env) -> torch.Tensor:
     return torch.zeros((task_env.num_envs, int(task_env.cfg.action_space)), device=task_env.device)
 
@@ -322,6 +337,8 @@ def _place_stable_pose_states(task_env, pose_data: list[dict[str, object]], vert
     root_state = torch.zeros((task_env.num_envs, 13), dtype=torch.float32, device=task_env.device)
     pose_rank_by_env: list[int] = []
     pose_probability_by_env: list[float] = []
+    object_uuid_by_env: list[str] = []
+    object_asset_index_by_env: list[int] = []
     local_root_pos_by_env: list[list[float]] = []
     local_root_quat_by_env: list[list[float]] = []
 
@@ -348,6 +365,8 @@ def _place_stable_pose_states(task_env, pose_data: list[dict[str, object]], vert
         )
         root_state[env_i, 0:3] = local_root_pos + task_env.scene.env_origins[env_i]
         root_state[env_i, 3:7] = quat
+        object_uuid_by_env.append(str(pose_data[object_idx]["uuid"]))
+        object_asset_index_by_env.append(int(object_idx))
         pose_rank_by_env.append(int(pose_rank))
         pose_probability_by_env.append(float(pose["probability"]))
         local_root_pos_by_env.append(local_root_pos.detach().cpu().tolist())
@@ -359,6 +378,8 @@ def _place_stable_pose_states(task_env, pose_data: list[dict[str, object]], vert
     task_env.scene.update(dt=0.0)
     task_env._compute_intermediate_values(env_ids)
     return {
+        "object_uuid_by_env": object_uuid_by_env,
+        "object_asset_index_by_env": object_asset_index_by_env,
         "pose_rank_by_env": pose_rank_by_env,
         "pose_probability_by_env": pose_probability_by_env,
         "initial_root_pos": local_root_pos_by_env,
@@ -380,16 +401,29 @@ def _run_stability_rollout(env, task_env, pose_data: list[dict[str, object]], ve
     initial_center_pos = task_env.cube_pos.detach().clone()
     initial_bottom_z = _bottom_z_from_vertices(task_env, vertices_by_asset, env_ids).detach().clone()
 
-    frame_paths: list[str] = []
+    frame_records: list[dict[str, object]] = []
     if args_cli.render_frames:
-        frame_paths.append(_save_frame(env.render(), output_dir / "frames" / "frame_0000.png"))
+        frame_records.append({"frame_index": 0, "paths_by_env": _capture_env_frames(env, task_env, output_dir, 0)})
 
     series: list[dict[str, object]] = []
     done_count = 0
+    num_envs = int(env_ids.numel())
+    root_xy_delta_max_by_env = torch.zeros(num_envs, dtype=torch.float32, device=task_env.device)
+    center_xy_delta_max_by_env = torch.zeros(num_envs, dtype=torch.float32, device=task_env.device)
+    root_z_delta_max_by_env = torch.zeros(num_envs, dtype=torch.float32, device=task_env.device)
+    angular_delta_deg_max_by_env = torch.zeros(num_envs, dtype=torch.float32, device=task_env.device)
+    bottom_clearance_min_by_env = torch.full((num_envs,), float("inf"), dtype=torch.float32, device=task_env.device)
+    bottom_z_delta_max_by_env = torch.zeros(num_envs, dtype=torch.float32, device=task_env.device)
+    object_speed_max_by_env = torch.zeros(num_envs, dtype=torch.float32, device=task_env.device)
+    object_angular_speed_max_by_env = torch.zeros(num_envs, dtype=torch.float32, device=task_env.device)
+    done_count_by_env = torch.zeros(num_envs, dtype=torch.long, device=task_env.device)
+    final_object_speed_by_env = torch.zeros(num_envs, dtype=torch.float32, device=task_env.device)
+    final_object_angular_speed_by_env = torch.zeros(num_envs, dtype=torch.float32, device=task_env.device)
     capture_interval = max(int(args_cli.capture_interval), 1)
     for step in range(max(int(args_cli.settle_steps), 1)):
         dones = _manual_step(task_env)
         done_count += int(dones.float().sum().detach().cpu())
+        done_count_by_env += dones.to(dtype=torch.long)
         root_pos = task_env._cube.data.root_pos_w[env_ids]
         root_quat = task_env._cube.data.root_quat_w[env_ids]
         center_pos = task_env.cube_pos
@@ -397,26 +431,41 @@ def _run_stability_rollout(env, task_env, pose_data: list[dict[str, object]], ve
         center_xy_delta = torch.norm(center_pos[:, :2] - initial_center_pos[:, :2], dim=-1)
         root_z_delta = torch.abs(root_pos[:, 2] - initial_root_pos[:, 2])
         angular_delta = _quat_angle_delta(initial_root_quat, root_quat)
+        angular_delta_deg = torch.rad2deg(angular_delta)
         bottom_z = _bottom_z_from_vertices(task_env, vertices_by_asset, env_ids)
+        bottom_clearance = bottom_z - float(task_env.cfg.table_surface_z)
+        bottom_z_delta = torch.abs(bottom_z - initial_bottom_z)
         object_speed = torch.norm(task_env._cube.data.root_vel_w[env_ids, :3], dim=-1)
         object_angular_speed = torch.norm(task_env._cube.data.root_vel_w[env_ids, 3:], dim=-1)
+        root_xy_delta_max_by_env = torch.maximum(root_xy_delta_max_by_env, root_xy_delta.detach())
+        center_xy_delta_max_by_env = torch.maximum(center_xy_delta_max_by_env, center_xy_delta.detach())
+        root_z_delta_max_by_env = torch.maximum(root_z_delta_max_by_env, root_z_delta.detach())
+        angular_delta_deg_max_by_env = torch.maximum(angular_delta_deg_max_by_env, angular_delta_deg.detach())
+        bottom_clearance_min_by_env = torch.minimum(bottom_clearance_min_by_env, bottom_clearance.detach())
+        bottom_z_delta_max_by_env = torch.maximum(bottom_z_delta_max_by_env, bottom_z_delta.detach())
+        object_speed_max_by_env = torch.maximum(object_speed_max_by_env, object_speed.detach())
+        object_angular_speed_max_by_env = torch.maximum(object_angular_speed_max_by_env, object_angular_speed.detach())
+        final_object_speed_by_env = object_speed.detach()
+        final_object_angular_speed_by_env = object_angular_speed.detach()
         series.append(
             {
                 "step": step + 1,
                 "root_xy_delta_max": float(root_xy_delta.detach().max().cpu()),
                 "center_xy_delta_max": float(center_xy_delta.detach().max().cpu()),
                 "root_z_delta_max": float(root_z_delta.detach().max().cpu()),
-                "angular_delta_deg_max": float(torch.rad2deg(angular_delta).detach().max().cpu()),
-                "bottom_clearance_min": float((bottom_z - float(task_env.cfg.table_surface_z)).detach().min().cpu()),
-                "bottom_z_delta_max": float(torch.abs(bottom_z - initial_bottom_z).detach().max().cpu()),
+                "angular_delta_deg_max": float(angular_delta_deg.detach().max().cpu()),
+                "bottom_clearance_min": float(bottom_clearance.detach().min().cpu()),
+                "bottom_z_delta_max": float(bottom_z_delta.detach().max().cpu()),
                 "object_speed_max": float(object_speed.detach().max().cpu()),
                 "object_angular_speed_max": float(object_angular_speed.detach().max().cpu()),
                 "done_count": int(dones.float().sum().detach().cpu()),
             }
         )
         if args_cli.render_frames and ((step + 1) % capture_interval == 0 or step == int(args_cli.settle_steps) - 1):
-            frame_idx = len(frame_paths)
-            frame_paths.append(_save_frame(env.render(), output_dir / "frames" / f"frame_{frame_idx:04d}.png"))
+            frame_idx = len(frame_records)
+            frame_records.append(
+                {"frame_index": frame_idx, "paths_by_env": _capture_env_frames(env, task_env, output_dir, frame_idx)}
+            )
 
     summary = {
         "samples": len(series),
@@ -432,20 +481,56 @@ def _run_stability_rollout(env, task_env, pose_data: list[dict[str, object]], ve
         "final_object_angular_speed_max": float(series[-1]["object_angular_speed_max"]),
         "done_count": done_count,
     }
-    passed = (
-        summary["root_xy_delta_max"] <= float(args_cli.max_root_xy_drift)
-        and summary["center_xy_delta_max"] <= float(args_cli.max_center_xy_drift)
-        and summary["root_z_delta_max"] <= float(args_cli.max_root_z_drift)
-        and summary["angular_delta_deg_max"] <= float(args_cli.max_angular_drift_deg)
-        and summary["bottom_clearance_min"] >= float(args_cli.min_bottom_clearance)
-        and summary["final_object_speed_max"] <= float(args_cli.max_final_speed)
-        and summary["done_count"] == 0
-    )
+    root_xy_list = root_xy_delta_max_by_env.detach().cpu().tolist()
+    center_xy_list = center_xy_delta_max_by_env.detach().cpu().tolist()
+    root_z_list = root_z_delta_max_by_env.detach().cpu().tolist()
+    angular_list = angular_delta_deg_max_by_env.detach().cpu().tolist()
+    bottom_clearance_list = bottom_clearance_min_by_env.detach().cpu().tolist()
+    bottom_z_delta_list = bottom_z_delta_max_by_env.detach().cpu().tolist()
+    speed_list = object_speed_max_by_env.detach().cpu().tolist()
+    angular_speed_list = object_angular_speed_max_by_env.detach().cpu().tolist()
+    final_speed_list = final_object_speed_by_env.detach().cpu().tolist()
+    final_angular_speed_list = final_object_angular_speed_by_env.detach().cpu().tolist()
+    done_count_list = done_count_by_env.detach().cpu().tolist()
+    per_env: list[dict[str, object]] = []
+    for env_i in range(num_envs):
+        env_passed = (
+            root_xy_list[env_i] <= float(args_cli.max_root_xy_drift)
+            and center_xy_list[env_i] <= float(args_cli.max_center_xy_drift)
+            and root_z_list[env_i] <= float(args_cli.max_root_z_drift)
+            and angular_list[env_i] <= float(args_cli.max_angular_drift_deg)
+            and bottom_clearance_list[env_i] >= float(args_cli.min_bottom_clearance)
+            and final_speed_list[env_i] <= float(args_cli.max_final_speed)
+            and (not args_cli.fail_on_task_done or int(done_count_list[env_i]) == 0)
+        )
+        per_env.append(
+            {
+                "env_id": env_i,
+                "object_uuid": placement["object_uuid_by_env"][env_i],
+                "object_asset_index": placement["object_asset_index_by_env"][env_i],
+                "pose_rank": placement["pose_rank_by_env"][env_i],
+                "pose_probability": placement["pose_probability_by_env"][env_i],
+                "passed": bool(env_passed),
+                "root_xy_delta_max": float(root_xy_list[env_i]),
+                "center_xy_delta_max": float(center_xy_list[env_i]),
+                "root_z_delta_max": float(root_z_list[env_i]),
+                "angular_delta_deg_max": float(angular_list[env_i]),
+                "bottom_clearance_min": float(bottom_clearance_list[env_i]),
+                "bottom_z_delta_max": float(bottom_z_delta_list[env_i]),
+                "object_speed_max": float(speed_list[env_i]),
+                "object_angular_speed_max": float(angular_speed_list[env_i]),
+                "final_object_speed": float(final_speed_list[env_i]),
+                "final_object_angular_speed": float(final_angular_speed_list[env_i]),
+                "task_done_count": int(done_count_list[env_i]),
+            }
+        )
+    passed = all(bool(item["passed"]) for item in per_env)
     return {
         "passed": bool(passed),
         "summary": summary,
+        "per_env": per_env,
         "placement": placement,
-        "frames": frame_paths,
+        "frames": frame_records,
         "series_tail": series[-min(len(series), 10):],
         "thresholds": {
             "max_root_xy_drift": float(args_cli.max_root_xy_drift),
@@ -454,6 +539,7 @@ def _run_stability_rollout(env, task_env, pose_data: list[dict[str, object]], ve
             "max_angular_drift_deg": float(args_cli.max_angular_drift_deg),
             "min_bottom_clearance": float(args_cli.min_bottom_clearance),
             "max_final_speed": float(args_cli.max_final_speed),
+            "fail_on_task_done": bool(args_cli.fail_on_task_done),
         },
     }
 
