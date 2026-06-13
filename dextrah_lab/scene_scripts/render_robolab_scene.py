@@ -73,6 +73,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dome_intensity", type=float, default=750.0)
     parser.add_argument("--sun_intensity", type=float, default=1800.0)
     parser.add_argument("--randomize_lighting", action="store_true")
+    parser.add_argument(
+        "--background",
+        choices=("none", "studio"),
+        default="studio",
+        help="Add a generated background around the imported RoboLab scene.",
+    )
     parser.add_argument("--robot", choices=("none", "kuka_allegro"), default="none")
     parser.add_argument("--robot_translation", nargs=3, type=float, default=(0.0, 0.0, 0.0))
     parser.add_argument("--robot_rotation_deg", nargs=3, type=float, default=(0.0, 0.0, 0.0))
@@ -91,7 +97,7 @@ import isaaclab.sim as sim_utils  # noqa: E402
 from isaaclab.sensors.camera import TiledCamera, TiledCameraCfg  # noqa: E402
 from isaaclab.sim import PhysxCfg, SimulationCfg  # noqa: E402
 from isaaclab.sim.spawners.materials.physics_materials_cfg import RigidBodyMaterialCfg  # noqa: E402
-from pxr import Gf, Usd, UsdGeom, UsdLux, UsdPhysics  # noqa: E402
+from pxr import Gf, Sdf, Usd, UsdGeom, UsdLux, UsdPhysics, UsdShade  # noqa: E402
 
 try:
     from isaacsim.core.utils.stage import create_new_stage, update_stage
@@ -183,6 +189,106 @@ def _add_lighting(stage: Usd.Stage, *, rng: random.Random) -> dict[str, float]:
         "sun_intensity": sun_intensity,
         "sun_angle_deg": sun_angle,
         "sun_yaw_deg": sun_yaw,
+    }
+
+
+def _create_preview_material(stage: Usd.Stage, path: str, color: tuple[float, float, float], roughness: float) -> UsdShade.Material:
+    mat = UsdShade.Material.Define(stage, path)
+    shader = UsdShade.Shader.Define(stage, f"{path}/Shader")
+    shader.CreateIdAttr("UsdPreviewSurface")
+    shader.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).Set(Gf.Vec3f(*[float(v) for v in color]))
+    shader.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(float(roughness))
+    shader.CreateInput("metallic", Sdf.ValueTypeNames.Float).Set(0.0)
+    mat.CreateSurfaceOutput().ConnectToSource(shader.ConnectableAPI(), "surface")
+    return mat
+
+
+def _bind_material(prim: Usd.Prim, mat: UsdShade.Material) -> None:
+    UsdShade.MaterialBindingAPI.Apply(prim).Bind(mat)
+
+
+def _add_background_cube(
+    stage: Usd.Stage,
+    path: str,
+    center: tuple[float, float, float],
+    size: tuple[float, float, float],
+    mat: UsdShade.Material,
+) -> None:
+    cube = UsdGeom.Cube.Define(stage, path)
+    cube.CreateSizeAttr(1.0)
+    prim = cube.GetPrim()
+    _set_xform(prim, center, scale=size)
+    _bind_material(prim, mat)
+
+
+def _add_background(
+    stage: Usd.Stage,
+    scene_bbox: Gf.Range3d,
+    target: tuple[float, float, float],
+    radius: float,
+    height: float,
+) -> dict[str, Any] | None:
+    if args_cli.background == "none":
+        return None
+
+    min_v = scene_bbox.GetMin()
+    max_v = scene_bbox.GetMax()
+    size = scene_bbox.GetSize()
+    xy_extent = max(float(size[0]), float(size[1]), 1.0)
+    room_half = max(float(radius) * 1.9, xy_extent * 1.45, 2.8)
+    floor_thickness = 0.035
+    wall_thickness = 0.04
+    floor_z = float(min_v[2]) - 0.04
+    wall_height = max(float(height) * 1.35, float(max_v[2] - min_v[2]) + 1.4, 2.6)
+    wall_center_z = floor_z + wall_height * 0.5
+
+    root = UsdGeom.Xform.Define(stage, "/World/Background").GetPrim()
+    _set_xform(root, (0.0, 0.0, 0.0))
+    floor_mat = _create_preview_material(stage, "/World/Background/Looks/WarmGreyFloor", (0.50, 0.52, 0.51), 0.82)
+    wall_mat = _create_preview_material(stage, "/World/Background/Looks/SoftWall", (0.70, 0.72, 0.72), 0.88)
+
+    cx, cy = float(target[0]), float(target[1])
+    _add_background_cube(
+        stage,
+        "/World/Background/Floor",
+        (cx, cy, floor_z - floor_thickness * 0.5),
+        (room_half * 2.0, room_half * 2.0, floor_thickness),
+        floor_mat,
+    )
+    _add_background_cube(
+        stage,
+        "/World/Background/Wall_PosY",
+        (cx, cy + room_half, wall_center_z),
+        (room_half * 2.0, wall_thickness, wall_height),
+        wall_mat,
+    )
+    _add_background_cube(
+        stage,
+        "/World/Background/Wall_NegY",
+        (cx, cy - room_half, wall_center_z),
+        (room_half * 2.0, wall_thickness, wall_height),
+        wall_mat,
+    )
+    _add_background_cube(
+        stage,
+        "/World/Background/Wall_PosX",
+        (cx + room_half, cy, wall_center_z),
+        (wall_thickness, room_half * 2.0, wall_height),
+        wall_mat,
+    )
+    _add_background_cube(
+        stage,
+        "/World/Background/Wall_NegX",
+        (cx - room_half, cy, wall_center_z),
+        (wall_thickness, room_half * 2.0, wall_height),
+        wall_mat,
+    )
+    return {
+        "mode": str(args_cli.background),
+        "center": [cx, cy, float(target[2])],
+        "room_half_extent": float(room_half),
+        "floor_z": float(floor_z),
+        "wall_height": float(wall_height),
     }
 
 
@@ -759,6 +865,13 @@ def main() -> None:
         "orbit target="
         f"{target} source={target_source} radius={radius:.3f} height={height:.3f}"
     )
+    background = _add_background(stage, scene_bbox=scene_bbox, target=target, radius=radius, height=height)
+    if background is not None:
+        _log(
+            "added studio background "
+            f"half_extent={background['room_half_extent']:.3f} floor_z={background['floor_z']:.3f}"
+        )
+        update_stage()
 
     if args_cli.capture_backend == "tiled":
         frame_paths, orbit_result = _capture_orbit_video(
@@ -835,6 +948,7 @@ def main() -> None:
             "start_deg": float(args_cli.orbit_start_deg),
         },
         "lighting": lighting,
+        "background": background,
         "robot": {
             "mode": str(args_cli.robot),
             "usd": robot_usd,

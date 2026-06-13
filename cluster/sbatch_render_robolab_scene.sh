@@ -114,7 +114,10 @@ srun \
       --scene_scale \"${SCENE_SCALE:-1.0}\" \
       --dome_intensity \"${DOME_INTENSITY:-750}\" \
       --sun_intensity \"${SUN_INTENSITY:-1800}\" \
+      --background \"${BACKGROUND:-studio}\" \
       --robot \"${ROBOT:-none}\" \
+      --robot_translation ${ROBOT_TRANSLATION:-0.0 0.0 0.0} \
+      --robot_rotation_deg ${ROBOT_ROTATION_DEG:-0.0 0.0 0.0} \
       --seed \"${SEED:-17}\" \
       \${ORBIT_RADIUS:+--orbit_radius \"\$ORBIT_RADIUS\"} \
       \${ORBIT_HEIGHT:+--orbit_height \"\$ORBIT_HEIGHT\"} \

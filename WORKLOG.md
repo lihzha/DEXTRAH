@@ -7210,3 +7210,65 @@ Analysis:
 Next:
 - Finalize by committing and pushing this worklog update. No DEXTRAH-owned
   render job remains active.
+
+## 2026-06-13 11:59 PDT - robolab-complex-scene-background-robot
+
+Goal:
+- Address the missing background and robot in the RoboLab orbit video, and
+  render the most complicated RoboLab scene available in the local checkout.
+
+Hypothesis:
+- The prior video looked sparse because the script used `banana_bowl.usda`,
+  no robot, and only renderer clear color/dome lighting as background. Adding a
+  generated studio floor/wall background and exposing robot pose through the
+  Slurm wrapper should make the scene context visible. The densest local
+  RoboLab scene by size/structure is `clutter_fruit_bottle_bluebin.usda`
+  (`68387246` bytes, 17 referenced USD assets, 180 USD `def`s).
+
+Change:
+- Added `--background {none,studio}` to `render_robolab_scene.py`, defaulting
+  to `studio`.
+- Added a generated neutral studio floor plus four far walls around the
+  detected RoboLab scene bounds, with metadata in `render_manifest.json`.
+- Exposed `BACKGROUND`, `ROBOT_TRANSLATION`, and `ROBOT_ROTATION_DEG` through
+  `cluster/sbatch_render_robolab_scene.sh`.
+
+Version Control:
+- agent_id: codex-robolab-orbit-render
+- worktree: `/home/lzha/code/DEXTRAH`
+- worklog: `WORKLOG.md`
+- branch: `codex/robolab-orbit-render-20260613`
+- base_commit: `77c812e06306ef1fd8247bf633237b9f6784d8bf`
+- implementation_commit: pending
+- push/pull: pending Git bundle deploy to l401.
+- changed_files: `dextrah_lab/scene_scripts/render_robolab_scene.py`,
+  `cluster/sbatch_render_robolab_scene.sh`, `WORKLOG.md`
+- remote_commit/status: l401 agent checkout from previous render still at
+  `6a9af04b7a56b54685d5fd077cacc80309d79aeb`; update pending.
+
+Command / Job:
+- command: pending
+- job_id: pending
+- run_dir: pending
+- logs: pending
+- artifacts: expected smoke and final orbit frames/videos for
+  `clutter_fruit_bottle_bluebin.usda` with `kuka_allegro` and `studio`
+  background.
+
+Result:
+- status: patched
+- metrics/artifacts: local `py_compile` and wrapper `bash -n` passed.
+- key evidence: local RoboLab scene scan ranked
+  `clutter_fruit_bottle_bluebin.usda` highest by file size and tied-highest
+  by reference count among top scenes.
+
+Analysis:
+- The dense scene needs additional RoboLab assets on l401: `objects/fruits_veggies`
+  and selected `objects/vomp/*` directories. The isolated l401 code checkout
+  also needs a materialized Kuka-Allegro USD because Git bundle checkout leaves
+  the LFS pointer, while the canonical l401 checkout has the full robot USD.
+
+Next:
+- Commit/push the patch, deploy exact commit to l401, stage the dense RoboLab
+  assets plus robot USD, run a low-resolution smoke, inspect the robot,
+  background, and dense scene visibility, then scale to a final 360 orbit.
