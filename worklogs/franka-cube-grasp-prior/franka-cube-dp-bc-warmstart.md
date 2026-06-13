@@ -16206,3 +16206,125 @@ Next:
 - Commit and push this instrumentation, update the l401 worktree to the exact
   commit, then launch paired nominal-reset trace evals for the normal-only and
   failed `OOD3x4` checkpoints.
+
+## 2026-06-13T01:31:35-07:00 - RGB nominal action-trace eval launch
+
+Goal:
+- Capture closed-loop action traces for the known-success normal-only RGB
+  checkpoint and the failed `OOD3x4` fine-tune under identical nominal reset
+  conditions.
+
+Hypothesis:
+- The failed fine-tune will show higher/shallower close-phase pose commands and
+  hard-close behavior in the closed-loop trace, matching the prior video,
+  metrics, and offline row comparison.
+
+Version Control:
+- agent_id: franka-cube-bc-warmstart
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- implementation_commit: `d6c6ba54c50a8221e6adedb1f52e53c9d8e29982`
+- push/pull: pushed to GitHub; l401 GitHub fetch failed due missing SSH key,
+  so pushed the commit over SSH into the l401 repository branch
+  `codex/franka-cube-diffusion-policy-bc-actiontrace` with `git push
+  --no-verify`, then checked out the exact commit in the l401 task worktree.
+- remote_code:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- remote_commit/status: `d6c6ba54c50a8221e6adedb1f52e53c9d8e29982`,
+  detached clean.
+
+Validation:
+- local:
+  `python3 -m py_compile dextrah_lab/rl_games/eval_franka_cube_rgb_dp_policy.py dextrah_lab/offline_dp_bc/diagnose_rgb_dp_offline_coherence.py dextrah_lab/offline_dp_bc/filter_contact_relabel_rgb_episodes.py`
+- remote:
+  `python3 -m py_compile <remote>/dextrah_lab/rl_games/eval_franka_cube_rgb_dp_policy.py <remote>/dextrah_lab/offline_dp_bc/diagnose_rgb_dp_offline_coherence.py <remote>/dextrah_lab/offline_dp_bc/filter_contact_relabel_rgb_episodes.py`
+
+Command / Job:
+- common settings: `NUM_ENVS=1`, `NUM_STEPS=340`,
+  `NUM_INFERENCE_STEPS=100`, `ACTION_CHUNK_STEPS=1`, `CLIP_ACTIONS=1.0`,
+  `SUCCESS_WINDOW=80`, `CAPTURE_VIDEO=True`, `VIDEO_LENGTH=340`,
+  `SEED=42`, `IMAGE_HEIGHT=96`, `IMAGE_WIDTH=96`,
+  `APPEND_PHASE_PROGRESS=True`,
+  `PHASE_PROGRESS_DATASET=/results/dp_bc/contact_relabel_rgb_one_ep233_normalreset_20260612_2201/franka_cube_rgb_one_ep233_normalreset_96.npz`,
+  `PHASE_PROGRESS_EPISODE=0`, `PHASE_PROGRESS_START_STEP=0`.
+- normal-only job: `1028906`.
+- normal-only run:
+  `franka_cube_rgb_dp_trace_normalreset28x7_seed42default_chunk1_video_20260613_013130`.
+- normal-only checkpoint:
+  `/results/dp_bc/checkpoints/rgb_phase12_normalreset28x7_20260612_2225/latest.ckpt`.
+- fine-tune job: `1028907`.
+- fine-tune run:
+  `franka_cube_rgb_dp_trace_ood3x4_ft_latest_seed42default_chunk1_video_20260613_013130`.
+- fine-tune checkpoint:
+  `/results/dp_bc/checkpoints/rgb_phase12_normal_ckpt_ft_fullstart_ood3x4_lr2e5_20260613_010824/latest.ckpt`.
+- logs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_rgb_dp_policy_1028906.out`,
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_rgb_dp_policy_1028907.out`.
+
+Acceptance Gate:
+- Fetch both metrics/videos locally.
+- Confirm `metrics.json` includes `action_trace`.
+- Compare trace channels around contact/close/lift, especially `dz`, `dy`, and
+  gripper action.
+- Use the trace result to choose the next BC fix; do not launch larger training
+  until the normal-reset regression mechanism is confirmed.
+
+Result:
+- status: running/queued, pending monitoring.
+
+## 2026-06-13T02:00:21-07:00 - RGB nominal action-trace eval result
+
+Goal:
+- Finish and inspect the paired trace evals launched above.
+
+Result:
+- status: completed, fetched locally, inspected.
+- normal-only run:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_rgb_dp_trace_normalreset28x7_seed42default_chunk1_video_20260613_013130`
+- failed fine-tune run:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_rgb_dp_trace_ood3x4_ft_latest_seed42default_chunk1_video_20260613_013130`
+- videos:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_rgb_dp_trace_normalreset28x7_seed42default_chunk1_video_20260613_013130/videos/franka-cube-rgb-dp-trace-normalreset28x7-seed42default-chunk1-step-0.mp4`,
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_rgb_dp_trace_ood3x4_ft_latest_seed42default_chunk1_video_20260613_013130/videos/franka-cube-rgb-dp-trace-ood3x4-ft-latest-seed42default-chunk1-step-0.mp4`
+- video metadata: both videos are 1280x720, 339 frames, 5.65 s.
+- action traces: both `metrics.json` files contain 340 trace rows.
+
+Key Evidence:
+- Normal-only checkpoint lifts steadily and keeps the cube in hand through the
+  final frame: lift goes from 0.019 m at step 200 to 0.209 m at step 340,
+  gripper width stays near 0.039 m, and finger-center distance stays near
+  0.0495 m.
+- Failed fine-tune lifts briefly but loses the cube around step 300: lift is
+  0.115 m at step 280, then 0.0 m at steps 300/320/340; finger-center distance
+  jumps from 0.059 m to about 0.184 m; gripper width collapses from about
+  0.047 m to 0.0002 m by the end.
+- The fine-tune commands a much shallower close descent than the normal-only
+  checkpoint under the same nominal reset:
+  - approach phase mean `dz`: normal `0.0106`, fine-tune `0.0264`.
+  - preclose phase mean `dz`: normal `-0.2114`, fine-tune `-0.1126`.
+  - close-provider phase mean `dz`: normal `-0.1026`, fine-tune `-0.0620`.
+  - close-after-step-120 mean `dz`: normal `-0.0880`, fine-tune `-0.0580`.
+- Visual contact sheets match the numeric trace: the normal checkpoint keeps the
+  cube during lift; the fine-tune loses it and ends with the cube back on the
+  table.
+
+Analysis:
+- No DEXTRAH dataset-generation job is currently running. The only active jobs
+  after launch were the two `dextrah_cube_rgb_dp_eval` trace evals, and both
+  have now completed.
+- The regression is not caused by missing action execution in eval or by an
+  obvious video/render artifact. The failed fine-tune preserves coarse approach
+  and lift intent, but shifts the close trajectory upward and then over-closes
+  after losing the cube.
+- This supports the prior offline diagnosis: small raw OOD replay/fine-tune
+  changed the learned nominal close behavior enough to break the known-good
+  reset. Generating more raw data is not the immediate next step unless the
+  training/data-retention fix still fails.
+
+Next:
+- Gate all future OOD/scale-up runs on nominal-reset success first.
+- Patch the RGB BC training path to preserve nominal behavior during support
+  expansion, likely via stronger normal replay/base-policy distillation and a
+  lower-risk fine-tune schedule, then rerun this same nominal trace gate before
+  any larger data or shifted-object eval.
