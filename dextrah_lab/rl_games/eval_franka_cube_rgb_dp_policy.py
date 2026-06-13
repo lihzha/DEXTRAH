@@ -87,6 +87,8 @@ from dextrah_lab.offline_dp_bc.ppo_bridge import (
     extract_lowdim_obs_from_ppo_obs,
 )
 
+ACTION_NAMES = ["dx", "dy", "dz", "droll", "dpitch", "dyaw", "gripper"]
+
 
 def _stage(name: str, **details: Any) -> None:
     print("RGB_DP_EVAL_STAGE " + json.dumps({"stage": name, **details}, sort_keys=True, default=str), flush=True)
@@ -529,9 +531,12 @@ def main() -> None:
         )
 
     step_metrics: list[dict[str, float | int | None]] = []
+    action_trace: list[dict[str, Any]] = []
     action_min = np.full(7, np.inf, dtype=np.float64)
     action_max = np.full(7, -np.inf, dtype=np.float64)
     action_queue = np.empty((1, 0, 7), dtype=np.float32)
+    action_queue_policy_call_idx = -1
+    action_queue_step_offset = 0
     done_count = 0
     env_closed = False
     demo_reset_summary: dict[str, Any] | None = None
@@ -566,20 +571,37 @@ def main() -> None:
         for step in range(int(args_cli.num_steps)):
             if not simulation_app.is_running():
                 break
+            new_policy_call = False
             if action_queue.shape[1] == 0:
+                action_queue_policy_call_idx = policy_call_idx
+                action_queue_step_offset = 0
                 action_seq = _predict_action_sequence(policy, history, policy_call_idx)
                 policy_call_idx += 1
+                new_policy_call = True
                 if action_seq.ndim != 3 or action_seq.shape[0] != 1:
                     raise RuntimeError(f"Unexpected RGB DP action sequence shape {action_seq.shape}")
                 chunk_steps = min(chunk_steps_requested, int(action_seq.shape[1]))
                 action_queue = np.asarray(action_seq[:, :chunk_steps], dtype=np.float32)
-            action_np = action_queue[:, 0]
+            raw_action_np = action_queue[:, 0].copy()
+            queue_step_offset = int(action_queue_step_offset)
+            action_np = raw_action_np.copy()
             action_queue = action_queue[:, 1:]
+            action_queue_step_offset += 1
             clip = float(args_cli.clip_actions)
             if math.isfinite(clip) and clip > 0.0:
                 action_np = np.clip(action_np, -clip, clip)
             action_min = np.minimum(action_min, action_np.min(axis=0))
             action_max = np.maximum(action_max, action_np.max(axis=0))
+            action_trace.append(
+                {
+                    "step": step + 1,
+                    "policy_call_index": int(action_queue_policy_call_idx),
+                    "queue_step_offset": queue_step_offset,
+                    "new_policy_call": bool(new_policy_call),
+                    "raw_action": raw_action_np.reshape(-1).astype(float).tolist(),
+                    "applied_action": action_np.reshape(-1).astype(float).tolist(),
+                }
+            )
             actions = torch.as_tensor(action_np, dtype=torch.float32, device=task_env.device)
             policy_obs, rewards, terminated, truncated, _ = _policy_obs_from_step(gym_env.step(actions))
             dones = torch.logical_or(terminated, truncated)
@@ -642,6 +664,13 @@ def main() -> None:
         "final_success_rate": success_values[-1] if success_values else None,
         "window_success_rate": sum(success_values[-window:]) / window if success_values else None,
         "success_timeout_override": success_timeout_override,
+        "action_names": ACTION_NAMES,
+        "action_trace_format": {
+            "raw_action": "Policy output before eval clipping, one 7D action for env0.",
+            "applied_action": "Action after eval clipping, sent directly to the environment.",
+            "policy_call_index": "Zero-based predict_action call that produced this action.",
+            "queue_step_offset": "Index within the queued action chunk from that predict_action call.",
+        },
         "action_min": action_min.astype(float).tolist(),
         "action_max": action_max.astype(float).tolist(),
         "step_metric_summary": _summarize_step_metrics(step_metrics),
@@ -654,7 +683,10 @@ def main() -> None:
         "output_dir": str(output_dir),
         "metrics_path": str(metrics_path),
     }
-    metrics_path.write_text(json.dumps({"summary": summary, "steps": step_metrics}, indent=2, sort_keys=True) + "\n")
+    metrics_path.write_text(
+        json.dumps({"summary": summary, "steps": step_metrics, "action_trace": action_trace}, indent=2, sort_keys=True)
+        + "\n"
+    )
     print("FRANKA_CUBE_RGB_DP_POLICY_EVAL_DONE " + json.dumps(summary, sort_keys=True, default=str), flush=True)
 
 

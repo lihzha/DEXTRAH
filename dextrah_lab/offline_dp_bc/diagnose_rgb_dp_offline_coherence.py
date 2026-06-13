@@ -19,6 +19,8 @@ from typing import Any
 import numpy as np
 import torch
 
+from dextrah_lab.offline_dp_bc.dp_dataset import _contact_phase_progress_features
+
 ACTION_NAMES = ["dx", "dy", "dz", "droll", "dpitch", "dyaw", "gripper"]
 PHASE_NAME_BY_ID = {
     0: "align_open",
@@ -183,6 +185,11 @@ def diagnose(args: argparse.Namespace) -> dict[str, Any]:
     rollout_ids = np.asarray(data["rollout_ids"]).astype(str) if "rollout_ids" in data.files else None
     if image.shape[0] != robot_state.shape[0] or image.shape[0] != action.shape[0]:
         raise ValueError(f"Length mismatch: image {image.shape}, robot_state {robot_state.shape}, action {action.shape}")
+    if args.append_phase_progress:
+        if phase_ids is None:
+            raise KeyError(f"{dataset} missing phase_ids required for --append-phase-progress")
+        phase_features = _contact_phase_progress_features(phase_ids, episode_ends, int(robot_state.shape[0]))
+        robot_state = np.concatenate((robot_state, phase_features), axis=1).astype(np.float32)
 
     workspace, policy, resolved_policy = _load_policy(
         checkpoint,
@@ -301,6 +308,12 @@ def main() -> None:
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--num-inference-steps", type=int, default=100)
     parser.add_argument("--policy-source", choices=["auto", "ema", "model"], default="auto")
+    parser.add_argument(
+        "--append-phase-progress",
+        action="store_true",
+        default=False,
+        help="Append contact phase one-hot plus episode progress to raw 8D robot_state before scoring.",
+    )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--row", action="append", type=int, default=[])

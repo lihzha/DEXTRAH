@@ -15648,3 +15648,561 @@ Update 2026-06-12T19:39:00-07:00:
   due to priority/resources. Next step after they finish is to combine
   accepted normal-reset RGB NPZs with accepted183 RGB, retrain RGB DP, and
   rerun normal/default and slightly shifted object evals.
+
+## 2026-06-12T23:55:00-07:00 - RGB mixed-support failure and full-start OOD data relaunch
+
+Goal:
+- Preserve the working RGB normal-reset policy behavior while adding
+  object-state-free RGB support for a slightly shifted cube.
+
+Hypothesis:
+- The failed `normal_plus_mixed_near_eval_r4` checkpoint was not an RGB
+  architecture/I/O failure. The added mixed episodes were mostly
+  `reset_joint_blend_alpha=0.75` partial-start support episodes, while the
+  evaluator starts from the normal robot reset. Their close phase begins around
+  local step `16-24`, versus `81-110` for normal-start relabel demos, so they
+  teach early dive/close behavior that corrupts the normal-start policy.
+
+Change:
+- Added a local RGB episode filter helper:
+  `dextrah_lab/offline_dp_bc/filter_contact_relabel_rgb_episodes.py`.
+- Extended the RGB offline coherence diagnostic to support the same
+  `append_phase_progress` 12D robot-state input used by training/eval.
+- No eval policy behavior was changed for this attempt.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `f494ce33d0bb358cf75953dc85c207bbed810669`
+- implementation_commit: pending
+- remote_commit/status: l401 eval worktree
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-bc-relabel32`
+  detached at `f494ce33d0bb358cf75953dc85c207bbed810669`, clean.
+- changed_files:
+  `dextrah_lab/offline_dp_bc/diagnose_rgb_dp_offline_coherence.py`,
+  `dextrah_lab/offline_dp_bc/filter_contact_relabel_rgb_episodes.py`,
+  `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+- unrelated_untracked:
+  `dextrah_lab/offline_dp_bc/make_support_expansion_dataset.py`
+
+Command / Job:
+- completed local train:
+  `rgb_phase12_normal_plus_mixed_near_eval_r4_20260612_2322`, dataset
+  `franka_cube_rgb_normalreset28x7_plus_mixed_near_eval_r4_96.npz`,
+  8 epochs, 12D RGB robot state with phase/progress.
+- completed normal eval job: `1028882`, run
+  `franka_cube_rgb_dp_phase12_normal_plus_mixed_near_eval_r4_seed42default_chunk1_video_20260612_2340`.
+- next data job: Slurm `1028883` failed immediately because the scale264
+  trajectory seed is not equal to the episode index. Relaunched as Slurm
+  `1028885` with explicit `episode -> seed` trajectory paths, 19 closest
+  shifted-cube source episodes with
+  `RESET_JOINT_BLEND_ALPHA=0.0`, `RESET_CUBE_POS_BLEND_ALPHA=1.0`,
+  `SAVE_RGB_OBS=True`, `RGB_OBS_HEIGHT=96`, `RGB_OBS_WIDTH=96`, source
+  dataset `/results/dp_bc/datasets/franka_cube_curobo_lowdim_scale264_20260612_1449_full_pick_lift_framefix.npz`,
+  and scale264 trajectory template
+  `cube_curobo_scale264_20260612_1449_seed{episode}/trajectory.json`.
+
+Result:
+- filtered-support training completed cleanly:
+  `train_loss=0.00274`, `val_loss=0.00185`,
+  `train_action_mse_error=0.00334`.
+- offline coherence on the filtered-support checkpoint was passable but worse
+  than normal-only: first-step MSE `7.32e-4`, sequence MSE `1.17e-3`, pose
+  cosine `0.996`, gripper sign match `1.0`.
+- normal eval failed: `final_success_rate=0.0`, `window_success_rate=0.0`,
+  max lift `0.00757 m`, final gripper width `0.00023 m`, final
+  finger-center-to-cube distance `0.1466 m`.
+- video:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_rgb_dp_phase12_normal_plus_mixed_near_eval_r4_seed42default_chunk1_video_20260612_2340/videos/franka-cube-rgb-dp-phase12-normal-plus-mixed-near-eval-r4-seed42default-chunk1-step-0.mp4`
+- contact sheet:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_rgb_dp_phase12_normal_plus_mixed_near_eval_r4_seed42default_chunk1_video_20260612_2340/normal_filtered_mixed_failed_contact_sheet.jpg`
+
+Analysis:
+- Do not run OOD eval for the failed filtered-support checkpoint.
+- The selected `mixed_near_eval_r4` subset contained 19 partial-start
+  `joint_alpha=0.75,cube_alpha=1.0` episodes and 26 normal duplicates
+  `joint_alpha=0.0,cube_alpha=0.0`; it added no full-start OOD demonstrations.
+- The 19 partial-start episodes have mean close start `58.3` and many close at
+  `16-24`; normal-start demos have mean close start `88.0`. The failed policy
+  dives/closes early and bumps the cube, matching that data conflict.
+- Correct data for this evaluator must start from normal robot joints
+  (`joint_alpha=0.0`) with shifted cube positions (`cube_alpha=1.0`).
+
+Next:
+- Launch and monitor the full-start OOD RGB relabel job.
+- If it accepts enough rollouts, combine those accepted RGB NPZs with the
+  working normal-reset dataset, train a new RGB 12D policy, first gate on the
+  normal reset, then evaluate the +1.5 cm shifted reset.
+## 2026-06-13T00:08:26-07:00 - RGB full-start OOD accepted-data training
+
+Goal:
+- Test whether a small amount of correct full-start shifted-cube RGB data fixes the
+  RGB BC policy's +1.5 cm OOD failure without breaking the known-good normal reset.
+
+Hypothesis:
+- The previous broad mixed-support dataset failed because it included partial-start
+  rollouts (`reset_joint_blend_alpha=0.75`) whose phase/action timing does not
+  match the normal-start evaluator. Training on only accepted full-start OOD
+  rollouts (`reset_joint_blend_alpha=0.0`, `reset_cube_pos_blend_alpha=1.0`) should
+  preserve normal reset behavior and add local image support near the +1.5 cm cube
+  position.
+
+Change:
+- Fetched relabel job
+  `franka_cube_contact_relabel_scale264_fullstart_ood_rgb19_seed43_high30_retry1_20260612_2351`.
+- Inspected accepted RGB subset: `3` passing full-start OOD episodes, `861`
+  transitions, rollouts `ep166s260_a0_center_high30`,
+  `ep213s260_a0_center_high30`, and `ep25s260_a0_center_high30`.
+- Visualized the accepted RGB frames from the actual 96x96 training observation:
+  `accepted_rgb_visualization/fullstart_ood_accepted_rgb_three_rollouts.mp4`
+  and `accepted_rgb_visualization/fullstart_ood_accepted_rgb_contact_sheet.jpg`.
+- Combined the working normal-reset RGB dataset with the accepted full-start OOD
+  subset repeated `32x`:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_rgb_fullstart_ood19_20260612_2351/combined/franka_cube_rgb_normalreset28x7_plus_fullstart_ood3x32_96.npz`.
+
+Version Control:
+- agent_id: franka-cube-bc-warmstart
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `f494ce33d0bb358cf75953dc85c207bbed810669`
+- implementation_commit: pending
+- changed_files:
+  `dextrah_lab/offline_dp_bc/diagnose_rgb_dp_offline_coherence.py`,
+  `dextrah_lab/offline_dp_bc/filter_contact_relabel_rgb_episodes.py`,
+  `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+
+Command / Job:
+- command: pending local official image-DP training run
+  `rgb_phase12_normal_plus_fullstart_ood3x32_20260613_0008`
+- job_id: n/a local GPU process
+- run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_rgb/rgb_phase12_normal_plus_fullstart_ood3x32_20260613_0008`
+- artifacts: checkpoint, `train.log`, W&B offline summary, offline coherence report,
+  then l401 closed-loop normal and +1.5 cm eval videos if training/coherence look
+  acceptable.
+
+Result:
+- status: running next
+
+Analysis:
+- The accepted OOD first-frame cube centroids are within about `1-3 px` of the
+  normal and +1.5 cm eval centroids, and phase/gripper timing matches normal-start
+  rollouts: open through local step `80`, close at `81`, lift at `161`.
+
+Next:
+- Train the RGB 12D phase/progress image policy on the combined dataset, inspect
+  loss/offline coherence, copy checkpoint to l401, evaluate normal reset first,
+  and only run +1.5 cm eval if normal still succeeds.
+
+## 2026-06-13T00:34:26-07:00 - RGB full-start OOD3x32 normal-reset eval
+
+Goal:
+- Gate the combined normal-reset plus full-start OOD RGB checkpoint on the known
+  normal reset before trying the +1.5 cm shifted-cube eval.
+
+Hypothesis:
+- Correct full-start shifted-cube support should preserve the normal-reset
+  behavior while adding image support near the OOD cube footprint.
+
+Change:
+- Trained official image diffusion policy
+  `rgb_phase12_normal_plus_fullstart_ood3x32_20260613_0008` on the working
+  normal-reset RGB dataset plus the 3 accepted full-start OOD episodes repeated
+  `32x`.
+- No dataset generation is active now. The only generated data in this loop was
+  the small full-start OOD candidate relabel set; only 3 accepted episodes were
+  used after RGB visualization and metric inspection.
+
+Version Control:
+- agent_id: franka-cube-bc-warmstart
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `f494ce33d0bb358cf75953dc85c207bbed810669`
+- implementation_commit: pending
+- remote_commit/status: l401 eval worktree
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-bc-relabel32`
+  detached at `f494ce33d0bb358cf75953dc85c207bbed810669`, clean.
+- changed_files:
+  `dextrah_lab/offline_dp_bc/diagnose_rgb_dp_offline_coherence.py`,
+  `dextrah_lab/offline_dp_bc/filter_contact_relabel_rgb_episodes.py`,
+  `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+
+Command / Job:
+- train run:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_rgb/rgb_phase12_normal_plus_fullstart_ood3x32_20260613_0008`
+- checkpoint copied to l401:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/rgb_phase12_normal_plus_fullstart_ood3x32_20260613_0008/latest.ckpt`
+- normal eval job: `1028889`
+- eval run:
+  `franka_cube_rgb_dp_phase12_normal_plus_fullstart_ood3x32_seed42default_chunk1_video_20260613_0030`
+- local artifacts:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_rgb_dp_phase12_normal_plus_fullstart_ood3x32_seed42default_chunk1_video_20260613_0030`
+
+Result:
+- status: failed strict normal-reset gate.
+- training finished cleanly: final W&B summary `train_loss=0.0024`,
+  `val_loss=0.00193`, `train_action_mse_error=0.00085`.
+- offline coherence was acceptable but worse than normal-only during alignment:
+  first-step MSE mean `4.79e-4`, sequence MSE mean `1.83e-3`, pose cosine mean
+  `0.9966`, gripper sign match `1.0`.
+- normal eval: `final_success_rate=0.0`, `window_success_rate=0.0`,
+  `steps_completed=340`, final/max lift `0.12925 m`, final cube XY error
+  `0.09153 m`, final gripper width `0.05030 m`.
+- video:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_rgb_dp_phase12_normal_plus_fullstart_ood3x32_seed42default_chunk1_video_20260613_0030/videos/franka-cube-rgb-dp-phase12-normal-plus-fullstart-ood3x32-seed42default-chunk1-step-0.mp4`
+- contact sheet:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_rgb_dp_phase12_normal_plus_fullstart_ood3x32_seed42default_chunk1_video_20260613_0030/normal_plus_fullstart_ood3x32_contact_sheet.jpg`
+
+Analysis:
+- Do not run the +1.5 cm eval for this checkpoint.
+- The video/contact sheet shows the robot approaches, contacts, and eventually
+  lifts, but after pushing the cube far off the target XY. This is not a pure
+  no-grasp failure; it is a behavior corruption/offset problem.
+- The most likely cause is OOD data overweighting: 3 OOD episodes repeated
+  `32x` versus 196 normal episodes changed normal-reset behavior even though the
+  OOD episodes are physically valid and full-start.
+
+Next:
+- Before launching, ask for confirmation on a lower-weight support run:
+  normal-reset dataset plus the accepted full-start OOD episodes repeated `4x`
+  or `8x`, then gate on normal reset. The expected acceptance criterion remains:
+  normal reset must succeed before any +1.5 cm OOD eval.
+
+## 2026-06-13T00:37:46-07:00 - Lower OOD weight diagnostic
+
+Goal:
+- Choose the next RGB support-training attempt without launching a new job before
+  user confirmation.
+
+Change:
+- Refreshed local process and l401 Slurm state: no active DEXTRAH dataset,
+  training, or eval jobs.
+- Read the normal-reset RGB dataset, accepted full-start OOD subset, and failed
+  `OOD3x32` combined dataset directly from NPZ files.
+
+Result:
+- normal-reset RGB dataset: `196` episodes, `62832` frames,
+  `rollout_reset_joint_blend_alpha=0.0`,
+  `rollout_reset_cube_pos_blend_alpha=0.0`.
+- accepted OOD subset: `3` episodes, `861` frames,
+  `rollout_reset_joint_blend_alpha=0.0`,
+  `rollout_reset_cube_pos_blend_alpha=1.0`.
+- failed `OOD3x32` mix: `292` episodes, `90384` frames, with `96` OOD episode
+  copies; OOD share is `32.9%` by episode and `30.5%` by frame.
+- accepted OOD demos close at step `81` with phase changes `[81, 161]`, matching
+  many normal-start demos. Normal first-close statistics are min/median/mean/max
+  `81/84/88/110`.
+- Expected lower-weight shares:
+  `OOD3x4` -> `208` episodes, `66276` frames, `5.2%` OOD frames;
+  `OOD3x8` -> `220` episodes, `69720` frames, `9.9%` OOD frames.
+
+Analysis:
+- The accepted OOD data is still the right kind of data: full-start robot, shifted
+  cube, valid grasp/lift, and sane phase timing. The failed result is better
+  explained by overweighting three source trajectories than by bad OOD timing.
+- Recommended next run is `OOD3x8`, not more dataset generation: it should add
+  support near the shifted cube footprint while preserving normal-reset behavior
+  much better than `x32`. If `x8` still breaks normal, fall back to `x4`.
+
+Next:
+- Pending confirmation: build `franka_cube_rgb_normalreset28x7_plus_fullstart_ood3x8_96.npz`,
+  train the same official image-DP config with only the dataset path/run name
+  changed, run offline coherence, copy checkpoint to l401, and gate on the
+  normal-reset video/metrics before any +1.5 cm eval.
+
+## 2026-06-13T00:39:40-07:00 - RGB full-start OOD3x8 training launch
+
+Goal:
+- Test whether lowering the accepted full-start OOD support weight preserves
+  normal-reset success while retaining enough shifted-cube visual support to
+  later improve the +1.5 cm reset.
+
+Hypothesis:
+- `OOD3x32` failed because 3 source trajectories accounted for `30.5%` of frames.
+  `OOD3x8` reduces the OOD share to `9.9%`, which should be strong enough to add
+  support and much less likely to corrupt normal-start behavior.
+
+Change:
+- Built combined RGB dataset:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_rgb_fullstart_ood19_20260612_2351/combined/franka_cube_rgb_normalreset28x7_plus_fullstart_ood3x8_96.npz`.
+- Dataset summary: `220` episodes, `69720` frames, phase counts
+  `{"0": 19192, "1": 17600, "2": 32928}`, joint reset alpha values `[0.0]`,
+  cube reset alpha values `[0.0, 1.0]`.
+
+Version Control:
+- agent_id: franka-cube-bc-warmstart
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `f494ce33d0bb358cf75953dc85c207bbed810669`
+- implementation_commit: pending
+- changed_files:
+  `dextrah_lab/offline_dp_bc/diagnose_rgb_dp_offline_coherence.py`,
+  `dextrah_lab/offline_dp_bc/filter_contact_relabel_rgb_episodes.py`,
+  `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+- unrelated_untracked:
+  `dextrah_lab/offline_dp_bc/make_support_expansion_dataset.py`
+
+Command / Job:
+- command: local official image DP training, same config as `OOD3x32`, only
+  dataset path and logging name changed.
+- job_id: local process, pending launch.
+- run_name: `rgb_phase12_normal_plus_fullstart_ood3x8_20260613_0040`
+- run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_rgb/rgb_phase12_normal_plus_fullstart_ood3x8_20260613_0040`
+- acceptance gate: inspect training loss and offline coherence, then run l401
+  normal-reset video/metrics. Do not run +1.5 cm OOD eval unless normal reset
+  succeeds.
+
+Result:
+- training status: passed.
+- final training summary: epoch `7`, global step `16006`, final
+  `train_loss=0.00148`, `val_loss=0.000815`.
+- offline coherence status: passed sanity gate.
+- offline coherence summary: first-step MSE mean `4.65e-4`, median `2.10e-5`;
+  sequence MSE mean `1.77e-3`, median `2.43e-5`; first pose cosine mean
+  `0.9980`; gripper sign match `1.0`.
+- phase coherence: align/open first-step MSE `7.48e-4`, close/hold
+  `1.67e-5`, lift `1.12e-5`.
+- copied checkpoint to l401:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/rgb_phase12_normal_plus_fullstart_ood3x8_20260613_0040/latest.ckpt`.
+- submitted normal-reset eval job `1028896`, run
+  `franka_cube_rgb_dp_phase12_normal_plus_fullstart_ood3x8_seed42default_chunk1_video_20260613_0100`.
+- eval log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_rgb_dp_policy_1028896.out`.
+
+Next:
+- Monitor job `1028896`, fetch metrics/video, inspect success and visual
+  behavior. Only launch the +1.5 cm OOD eval if normal reset succeeds.
+
+## 2026-06-13T01:05:32-07:00 - RGB full-start OOD3x8 normal-reset eval
+
+Goal:
+- Gate the lower-weight full-start OOD RGB checkpoint on the known normal reset
+  before attempting any +1.5 cm shifted-cube eval.
+
+Result:
+- eval status: failed normal-reset gate.
+- job_id: `1028896`.
+- run:
+  `franka_cube_rgb_dp_phase12_normal_plus_fullstart_ood3x8_seed42default_chunk1_video_20260613_0100`.
+- final success rate: `0.0`.
+- window success rate: `0.0`.
+- max cube lift: `0.06133824586868286 m` at step `261`.
+- final cube lift: `0.0 m`.
+- final gripper width: `0.0002194760600104928 m`.
+- final cube XY error: `0.04764890298247337 m`.
+- local metrics:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_rgb_dp_phase12_normal_plus_fullstart_ood3x8_seed42default_chunk1_video_20260613_0100/metrics.json`.
+- local video:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_rgb_dp_phase12_normal_plus_fullstart_ood3x8_seed42default_chunk1_video_20260613_0100/videos/franka-cube-rgb-dp-phase12-normal-plus-fullstart-ood3x8-seed42default-chunk1-step-0.mp4`.
+- viewer URL:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_rgb_dp_phase12_normal_plus_fullstart_ood3x8_seed42default_chunk1_video_20260613_0100/videos/franka-cube-rgb-dp-phase12-normal-plus-fullstart-ood3x8-seed42default-chunk1-step-0.mp4`.
+- video metadata: `1280x720`, `339` frames, `5.65 s`, `60 FPS`.
+- contact sheets:
+  `normal_plus_fullstart_ood3x8_contact_sheet.jpg`,
+  `drop_window_contact_sheet.jpg`.
+
+Analysis:
+- The rollout is not a no-contact failure. The gripper approaches the cube,
+  closes, briefly drags/lifts it, then loses the cube as the arm continues the
+  lift. This is worse than the normal-only RGB checkpoint, which succeeded on
+  the same normal reset.
+- Lowering OOD support from `x32` to `x8` reduced but did not eliminate behavior
+  corruption on the nominal distribution. Do not run the +1.5 cm eval for this
+  checkpoint.
+
+Next:
+- Proposed next attempt is not more dataset generation. Use either an even
+  lower OOD support weight (`OOD3x4`) or fine-tune from the normal-only RGB
+  checkpoint with a small OOD mixture and lower LR, then gate normal reset again.
+- Before launching another nontrivial training/eval job, present the plan and
+  get confirmation.
+
+## 2026-06-13T01:08:24-07:00 - RGB normal checkpoint model-only OOD3x4 fine-tune
+
+Goal:
+- Preserve the successful normal-reset RGB policy while adding a much smaller
+  amount of full-start shifted-cube support, then gate on normal reset before
+  any shifted-cube eval.
+
+Hypothesis:
+- From-scratch mixed training overfits the tiny OOD source set enough to corrupt
+  nominal behavior. Initializing from the successful normal-only RGB checkpoint,
+  resetting optimizer/scheduler state, lowering LR, and using only `OOD3x4`
+  should preserve the nominal grasp while moving the visual policy slightly
+  toward the +1.5 cm cube footprint.
+
+Change:
+- Build `franka_cube_rgb_normalreset28x7_plus_fullstart_ood3x4_96.npz` from
+  existing normal-reset RGB and accepted full-start OOD RGB NPZs only. No new
+  trajectories are generated.
+- Create a model-only init checkpoint from
+  `rgb_phase12_normalreset28x7_20260612_2225/official_dp_train/checkpoints/latest.ckpt`
+  in the new run's `checkpoints/latest.ckpt`, excluding optimizer and
+  `global_step`/`epoch`.
+- Fine-tune with official image DP config, `append_phase_progress=true`,
+  `robot_state.shape=[12]`, `optimizer.lr=2e-5`, `training.resume=true`,
+  `training.num_epochs=2`, `training.max_train_steps=1000`.
+
+Version Control:
+- agent_id: franka-cube-bc-warmstart
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `f494ce33d0bb358cf75953dc85c207bbed810669`
+- implementation_commit: pending
+- changed_files:
+  `dextrah_lab/offline_dp_bc/diagnose_rgb_dp_offline_coherence.py`,
+  `dextrah_lab/offline_dp_bc/filter_contact_relabel_rgb_episodes.py`,
+  `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+- unrelated_untracked:
+  `dextrah_lab/offline_dp_bc/make_support_expansion_dataset.py`
+
+Command / Job:
+- run_name: `rgb_phase12_normal_ckpt_ft_fullstart_ood3x4_lr2e5_20260613_010824`
+- run_dir:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_rgb/rgb_phase12_normal_ckpt_ft_fullstart_ood3x4_lr2e5_20260613_010824`
+- acceptance gate: training loss/coherence sanity, then l401 normal-reset
+  video/metrics. Do not run +1.5 cm shifted eval unless normal reset succeeds.
+
+Result:
+- local fine-tune status: passed.
+- dataset:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_rgb_fullstart_ood19_20260612_2351/combined/franka_cube_rgb_normalreset28x7_plus_fullstart_ood3x4_96.npz`.
+- dataset summary: `208` episodes, `66276` frames, joint alpha values `[0.0]`,
+  cube alpha values `[0.0, 1.0]`, phase counts
+  `{"0": 18220, "1": 16640, "2": 31416}`.
+- model-only init checkpoint contained only `state_dicts["model"]` and no
+  optimizer/pickles.
+- training loaded the model-only init through `training.resume=true` and wrote a
+  full checkpoint by epoch 0.
+- final local training metrics: epoch `1`, global step `2000`,
+  `train_loss=0.00300`, `val_loss=0.00329`, `train_action_mse_error=0.00123`.
+- offline coherence, latest checkpoint on `OOD3x4` rows: first-step MSE
+  `7.63e-4`, sequence MSE `5.28e-3`, pose cosine `0.99585`, gripper sign
+  match `1.0`.
+- offline coherence comparison on same rows:
+  `normal_only` first/seq MSE `2.24e-3` / `5.94e-3`;
+  `ft_epoch0` `5.95e-4` / `7.37e-3`;
+  `ft_latest` `7.63e-4` / `5.28e-3`.
+- selected eval candidate: `latest.ckpt`, because it improves coherence versus
+  the known nominal-success normal-only checkpoint and has the best sequence
+  MSE among candidates.
+- copied checkpoint to l401:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/rgb_phase12_normal_ckpt_ft_fullstart_ood3x4_lr2e5_20260613_010824/latest.ckpt`.
+- submitted normal-reset eval job `1028900`, run
+  `franka_cube_rgb_dp_phase12_normal_ckpt_ft_ood3x4_lr2e5_latest_seed42default_chunk1_video_20260613_011434`.
+- eval log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_rgb_dp_policy_1028900.out`.
+
+Next:
+- Monitor normal-reset eval job `1028900`, fetch metrics/video, and inspect the
+  rollout. Only launch +1.5 cm shifted-cube eval if normal reset passes.
+
+## 2026-06-13T01:26:15-07:00 - RGB OOD3x4 fine-tune normal-reset eval analysis
+
+Goal:
+- Inspect the latest `OOD3x4` fine-tune nominal-reset failure before launching
+  any more dataset generation or scale-up.
+
+Result:
+- eval status: failed normal-reset gate.
+- job_id: `1028900`.
+- run:
+  `franka_cube_rgb_dp_phase12_normal_ckpt_ft_ood3x4_lr2e5_latest_seed42default_chunk1_video_20260613_011434`.
+- final success rate: `0.0`.
+- window success rate: `0.0`.
+- max cube lift: `0.011183977127075195 m` at step `161`.
+- final cube lift: `0.0 m`.
+- final gripper width: `0.00021212642604950815 m`.
+- final cube XY error: `0.09729737043380737 m`.
+- local metrics:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_rgb_dp_phase12_normal_ckpt_ft_ood3x4_lr2e5_latest_seed42default_chunk1_video_20260613_011434/metrics.json`.
+- local video:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_rgb_dp_phase12_normal_ckpt_ft_ood3x4_lr2e5_latest_seed42default_chunk1_video_20260613_011434/videos/franka-cube-rgb-dp-phase12-normal-ckpt-ft-ood3x4-lr2e5-latest-seed42default-chunk1-step-0.mp4`.
+- contact sheet:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_rgb_dp_phase12_normal_ckpt_ft_ood3x4_lr2e5_latest_seed42default_chunk1_video_20260613_011434/normal_ckpt_ft_ood3x4_failed_contact_sheet.jpg`.
+
+Key Evidence:
+- The successful normal-only RGB checkpoint on the same nominal reset holds the
+  gripper around `0.0387 m` during lift and reaches final lift `0.1457 m`.
+- The `OOD3x4` fine-tuned checkpoint hard-closes to near zero by the end,
+  reaches only `0.0112 m` max lift, and leaves the cube behind.
+- Offline comparison on the same one-demo phase-provider RGB NPZ showed the
+  fine-tuned checkpoint is worse than the normal-only checkpoint on normal rows:
+  first-step MSE `6.93e-4` vs `2.53e-4`.
+- Per-row offline deltas show the fine-tuned checkpoint commands less downward
+  close motion after the phase switch: at steps `107/120/140/160/186`,
+  `dz` is about `+0.024` to `+0.037` higher than labels, while the normal-only
+  checkpoint is much closer.
+- Data stats explain the shift: accepted full-start OOD clips have shallower
+  first-close `dz` labels (`-0.1328` mean over first 20 close steps) than normal
+  clips (`-0.1587` mean), so repeating only 3 OOD demos pulls the close approach
+  upward even at `x4`.
+
+Analysis:
+- This is not a rendering, metric, or phase-provider crash. It is a closed-loop
+  action distribution problem: small repeated OOD support changes the close
+  pose enough to corrupt the nominal grasp.
+- The OOD examples are not obviously invalid, but they are too few and
+  systematically different in close-phase depth. Blindly increasing their
+  repeat count is the wrong direction.
+- The current RGB evaluator does not save per-step action traces, only
+  cumulative action min/max. The next debugging run should record action traces
+  so normal-only and modified checkpoints can be compared directly in closed
+  loop.
+
+Next:
+- Do not generate more data yet.
+- Proposed next step: add action-trace logging to the RGB eval metrics, then
+  rerun a nominal reset for the successful normal-only checkpoint and the
+  failed/fixed candidate to compare closed-loop gripper and pose actions.
+- Candidate training fix after trace confirmation: preserve nominal close-depth
+  behavior with stronger normal retention instead of raw OOD repetition
+  (for example, lower LR/fewer steps plus base-policy distillation or normal
+  replay weighting), then gate nominal reset before shifted eval.
+
+## 2026-06-13T01:28:12-07:00 - RGB eval action trace instrumentation
+
+Goal:
+- Add enough closed-loop evidence to compare successful and failed RGB policies
+  directly, instead of relying only on cumulative action min/max and videos.
+
+Change:
+- Patched `dextrah_lab/rl_games/eval_franka_cube_rgb_dp_policy.py` to write an
+  `action_trace` array in `metrics.json`.
+- Each trace row records `step`, `policy_call_index`, `queue_step_offset`,
+  `new_policy_call`, raw 7D policy action, and clipped/applied 7D action.
+- Added `summary.action_names` and `summary.action_trace_format` to document
+  the trace schema.
+- Kept existing `steps` metrics unchanged.
+- Included the current RGB offline diagnostic `--append-phase-progress` support
+  and RGB episode filter helper in the same source checkpoint, because both are
+  now part of the debugging loop.
+
+Version Control:
+- agent_id: franka-cube-bc-warmstart
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `f494ce33d0bb358cf75953dc85c207bbed810669`
+- implementation_commit: pending
+- changed_files:
+  `dextrah_lab/rl_games/eval_franka_cube_rgb_dp_policy.py`,
+  `dextrah_lab/offline_dp_bc/diagnose_rgb_dp_offline_coherence.py`,
+  `dextrah_lab/offline_dp_bc/filter_contact_relabel_rgb_episodes.py`,
+  `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+- intentionally_unstaged:
+  `dextrah_lab/offline_dp_bc/make_support_expansion_dataset.py`
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/eval_franka_cube_rgb_dp_policy.py dextrah_lab/offline_dp_bc/diagnose_rgb_dp_offline_coherence.py dextrah_lab/offline_dp_bc/filter_contact_relabel_rgb_episodes.py`
+
+Next:
+- Commit and push this instrumentation, update the l401 worktree to the exact
+  commit, then launch paired nominal-reset trace evals for the normal-only and
+  failed `OOD3x4` checkpoints.
