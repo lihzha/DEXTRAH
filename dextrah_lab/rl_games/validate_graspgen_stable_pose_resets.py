@@ -6,6 +6,7 @@ import argparse
 from datetime import datetime
 import json
 from pathlib import Path
+import time
 
 from isaaclab.app import AppLauncher
 
@@ -16,6 +17,7 @@ parser.add_argument("--object_asset_manifest_path", type=str, required=True)
 parser.add_argument("--max_objects", type=int, default=4)
 parser.add_argument("--object_uuids", type=str, default="")
 parser.add_argument("--stable_pose_count", type=int, default=1)
+parser.add_argument("--stable_pose_mesh_mode", type=str, default="convex_hull", choices=("convex_hull", "visual"))
 parser.add_argument("--stable_pose_sigma", type=float, default=0.0)
 parser.add_argument("--stable_pose_samples", type=int, default=1)
 parser.add_argument("--stable_pose_threshold", type=float, default=0.0)
@@ -123,6 +125,26 @@ def _load_scaled_mesh(record: dict[str, object], asset_root: Path) -> trimesh.Tr
     return mesh
 
 
+def _make_stable_pose_mesh(mesh: trimesh.Trimesh, *, uuid: str) -> trimesh.Trimesh:
+    if args_cli.stable_pose_mesh_mode == "visual":
+        return mesh.copy()
+
+    start = time.perf_counter()
+    pose_mesh = mesh.convex_hull
+    pose_mesh.merge_vertices()
+    pose_mesh.remove_unreferenced_vertices()
+    elapsed = time.perf_counter() - start
+    print(
+        "[stable_pose] "
+        f"uuid={uuid} convex_hull_vertices={len(pose_mesh.vertices)} "
+        f"convex_hull_faces={len(pose_mesh.faces)} hull_seconds={elapsed:.3f}",
+        flush=True,
+    )
+    if pose_mesh.vertices.size == 0 or pose_mesh.faces.size == 0:
+        raise ValueError(f"Convex hull has no vertices/faces for {uuid}")
+    return pose_mesh
+
+
 def _matrix_to_quat_wxyz(matrix: np.ndarray, *, device: torch.device) -> torch.Tensor:
     rot = torch.as_tensor(matrix[:3, :3], dtype=torch.float32, device=device).unsqueeze(0)
     quat = math_utils.quat_from_matrix(rot)[0]
@@ -143,10 +165,26 @@ def _compute_pose_cache(
     for record in selected:
         uuid = str(record.get("uuid") or "unknown")
         mesh = _load_scaled_mesh(record, asset_root)
-        transforms, probabilities = mesh.compute_stable_poses(
+        visual_vertex_count = int(len(mesh.vertices))
+        visual_face_count = int(len(mesh.faces))
+        print(
+            "[stable_pose] "
+            f"uuid={uuid} visual_vertices={visual_vertex_count} visual_faces={visual_face_count} "
+            f"scale={float(record.get('scale', 1.0)):.10f} mode={args_cli.stable_pose_mesh_mode}",
+            flush=True,
+        )
+        pose_mesh = _make_stable_pose_mesh(mesh, uuid=uuid)
+        start = time.perf_counter()
+        transforms, probabilities = pose_mesh.compute_stable_poses(
             sigma=float(args_cli.stable_pose_sigma),
             n_samples=max(int(args_cli.stable_pose_samples), 1),
             threshold=float(args_cli.stable_pose_threshold),
+        )
+        stable_pose_seconds = time.perf_counter() - start
+        print(
+            "[stable_pose] "
+            f"uuid={uuid} stable_pose_count={len(transforms)} stable_pose_seconds={stable_pose_seconds:.3f}",
+            flush=True,
         )
         if len(transforms) == 0:
             raise RuntimeError(f"trimesh returned no stable poses for {uuid}")
@@ -175,9 +213,12 @@ def _compute_pose_cache(
             cache_path,
             uuid=uuid,
             scale=float(record.get("scale", 1.0)),
+            stable_pose_mesh_mode=args_cli.stable_pose_mesh_mode,
             transforms=transforms,
             probabilities=probabilities,
             vertices=vertices,
+            pose_vertices=np.asarray(pose_mesh.vertices, dtype=np.float64),
+            pose_faces=np.asarray(pose_mesh.faces, dtype=np.int64),
             pose_count=min(pose_count, len(transforms)),
         )
         all_pose_data.append(
@@ -186,6 +227,12 @@ def _compute_pose_cache(
                 "scale": float(record.get("scale", 1.0)),
                 "raw_object_path": str(_resolve_manifest_path(str(record.get("raw_object_path")), base_dir=asset_root)),
                 "cache_path": str(cache_path),
+                "stable_pose_mesh_mode": args_cli.stable_pose_mesh_mode,
+                "visual_vertex_count": visual_vertex_count,
+                "visual_face_count": visual_face_count,
+                "pose_vertex_count": int(len(pose_mesh.vertices)),
+                "pose_face_count": int(len(pose_mesh.faces)),
+                "stable_pose_seconds": stable_pose_seconds,
                 "num_stable_poses": int(len(transforms)),
                 "tested_pose_count": int(len(pose_records)),
                 "poses": pose_records,
