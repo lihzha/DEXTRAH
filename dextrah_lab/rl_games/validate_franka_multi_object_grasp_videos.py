@@ -34,6 +34,8 @@ parser.add_argument("--perturb_angular_velocity", type=float, default=4.0)
 parser.add_argument("--grasp_steps", type=int, default=72)
 parser.add_argument("--grasp_object_settle_steps", type=int, default=48)
 parser.add_argument("--object_reset_settle_steps", type=int, default=120)
+parser.add_argument("--grasp_warmstart_close_width", type=float, default=0.025)
+parser.add_argument("--grasp_warmstart_lift_action_z", type=float, default=0.30)
 parser.add_argument("--capture_interval", type=int, default=2)
 parser.add_argument("--grasp_reset_attempts", type=int, default=12)
 parser.add_argument("--grasp_reset_min_pregrasp_z", type=float, default=0.15)
@@ -772,8 +774,8 @@ def _make_env(*, grasp_prior: bool):
     env_cfg.grasp_prior_reset_enabled = bool(grasp_prior)
     env_cfg.grasp_prior_action_warmstart_enabled = bool(grasp_prior)
     if grasp_prior:
-        env_cfg.grasp_prior_action_warmstart_close_width = 0.035
-        env_cfg.grasp_prior_action_warmstart_lift_action_z = 0.30
+        env_cfg.grasp_prior_action_warmstart_close_width = float(args_cli.grasp_warmstart_close_width)
+        env_cfg.grasp_prior_action_warmstart_lift_action_z = float(args_cli.grasp_warmstart_lift_action_z)
         env_cfg.grasp_prior_action_warmstart_approach_steps = min(20, max(args_cli.grasp_steps // 3, 1))
         env_cfg.grasp_prior_action_warmstart_close_steps = min(20, max(args_cli.grasp_steps // 3, 1))
         env_cfg.grasp_prior_action_warmstart_lift_steps = max(args_cli.grasp_steps - 2 * (args_cli.grasp_steps // 3), 1)
@@ -829,6 +831,8 @@ def main() -> None:
             "capture_interval": args_cli.capture_interval,
             "grasp_object_settle_steps": args_cli.grasp_object_settle_steps,
             "object_reset_settle_steps": args_cli.object_reset_settle_steps,
+            "grasp_warmstart_close_width": args_cli.grasp_warmstart_close_width,
+            "grasp_warmstart_lift_action_z": args_cli.grasp_warmstart_lift_action_z,
             "grasp_reset_min_pregrasp_z": args_cli.grasp_reset_min_pregrasp_z,
             "grasp_contact_score_steps": args_cli.grasp_contact_score_steps,
             "perturb_push_steps": args_cli.perturb_push_steps,
