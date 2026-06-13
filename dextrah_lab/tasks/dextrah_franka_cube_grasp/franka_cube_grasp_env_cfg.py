@@ -90,7 +90,7 @@ class DextrahFrankaCubeGraspEnvCfg(DextrahFrankaStarKittingEnvCfg):
     grasp_prior_action_warmstart_approach_steps = 16
     grasp_prior_action_warmstart_close_steps = 12
     grasp_prior_action_warmstart_lift_steps = 12
-    grasp_prior_action_warmstart_close_width = 0.055
+    grasp_prior_action_warmstart_close_width = 0.025
     grasp_prior_action_warmstart_lift_action_z = 0.15
     grasp_prior_action_warmstart_gain = 8.0
     grasp_prior_action_warmstart_max_position_action = 1.0

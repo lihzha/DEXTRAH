@@ -502,6 +502,28 @@ Result:
 Next:
 - Monitor pending/start state, inspect stdout early for resolved overrides, then compare early action-prior, action-z, lift-height, and success metrics against baseline job `29048544`.
 
+## 2026-06-13T20:38:00Z - Guided run close-width correction
+
+Goal:
+- Stop the first guided comparison run after discovering its reference close command was not actually closing the Robotiq gripper.
+
+Evidence:
+- Job `29049357` started and resolved all intended overrides, but `GRASP_PRIOR_ACTION_WARMSTART_CLOSE_WIDTH=0.055` with `max_gripper_width=0.08` maps to action `2 * 0.055 / 0.08 - 1 = +0.375`.
+- Positive gripper action commands a wider gripper in the Franka env; the reward close term uses `clamp(-action[:, 6])`, confirming negative is the closing direction.
+- Early guided metrics showed gripper width staying open around `0.042m`, while baseline converges near `0.002m`.
+
+Action:
+- Canceled job `29049357` after about 5 minutes to avoid training against a bad reference action.
+- Changed the default diagnostic reference close width to `0.025m` in the env config and affected training/eval wrappers.
+
+Validation:
+- local: `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env_cfg.py`
+- local: `bash -n cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_train_franka_cube_grasp_1gpu_smoke.sh cluster/sbatch_eval_franka_cube_grasp_1gpu.sh`
+- local: `git diff --check`
+
+Next:
+- Commit/push the close-width fix, deploy a fresh source worktree, and relaunch the guided 4-object comparison with close width `0.025m`.
+
 ## 2026-06-13 - Main merge, randomized multi-object training, and cluster launch
 
 Goal:
