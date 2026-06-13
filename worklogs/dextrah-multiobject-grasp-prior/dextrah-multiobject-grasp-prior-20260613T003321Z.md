@@ -425,6 +425,53 @@ Command / Job:
 Result:
 - status: running/queued; monitoring in progress.
 
+Follow-up:
+- Slurm state: `FAILED`, exit code `1:0`, elapsed `00:01:26`.
+- Local fetched artifacts: `local_results/video_manual_1028884`.
+- Encoded MP4s:
+  - `reset_settle.mp4`: 1280x720, 96 frames, 8.0s.
+  - `perturbation.mp4`: 1280x720, 48 frames, 4.0s.
+  - `grasp_contact.mp4`: 1280x720, 45 frames, 3.75s.
+- Metrics:
+  - `reset_settle` passed. Mesh-vertex bottom clearance min `-0.0040m`, done count `0`, xy drift `1.5e-05m`.
+  - `perturbation` failed because the one-shot push was too weak after settling: xy delta max `0.0049m`, done count `0`, bottom clearance min `-0.0042m`.
+  - `grasp_contact` failed. It reached phases `[-1, 0, 1, 2]`, but selected env `3` terminated 4 times due object drag; xy delta max was `0.1016m`.
+- Visual inspection:
+  - Reset-settle no longer shows bouncing, table sticking, or robot shaking.
+  - Perturbation does not visibly move enough to prove normal response.
+  - Grasp-contact uses a side/protrusion grasp on object `30700bc210844bdc991a5ccf16b6379f`; fingers stay table-clear, but the robot pushes/drags the object rather than grasping it.
+
+Analysis:
+- The raised base is effective; finger table clearance in reset/contact is no longer the issue.
+- The validation perturbation must be a short sustained push, not a single weak initial velocity.
+- Object `30700bc...` only has 4 Franka prior samples and they are side/downward (`zaxis_z` about `[-0.45, -0.34]`), so selecting it for the first contact smoke is a bad evidence target.
+
+Next:
+- Patch video validation to use a sustained perturb push and to prefer quality grasps with upward/top-down pregrasp directions for contact evidence.
+
+## 2026-06-13 - Perturbation and top-down contact selection patch
+
+Goal:
+- Make the perturbation video visibly exercise object motion and avoid selecting known side-push grasp priors for the contact smoke.
+
+Hypothesis:
+- Reapplying a bounded root velocity for the first few perturbation steps will produce visible object motion without causing table penetration or large displacement.
+- Requiring `grasp_prior_reset_offset_dir_w.z >= 0.15` for selected contact evidence will prefer top-down/upward pregrasp samples from objects with richer priors and reject the object-3 side-protrusion sample.
+
+Change:
+- Added video validator args for perturb push steps and velocities.
+- Added a `grasp_reset_min_pregrasp_z` selector in `_reset_until_quality_grasp`.
+- Added selected pregrasp-z diagnostics to grasp-contact metrics.
+- Exposed the new knobs in the video Slurm wrapper.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py` passed.
+- `bash -n cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh` passed.
+- `git diff --check` passed.
+
+Next:
+- Commit, deploy, rerun the 4-object video smoke with `GRASP_RESET_ATTEMPTS=64`, then inspect metrics and MP4s.
+
 ## 2026-06-13 - Single-env 4-object video smoke result
 
 Goal:
@@ -478,6 +525,26 @@ Validation:
 
 Next:
 - Commit, deploy the exact commit to the l401 agent worktree, rerun the 4-object rendered validation, fetch/encode/inspect videos and metrics, then decide whether another environment fix is needed before training.
+
+## 2026-06-13 - Manual-step settled-reset 4-object video launch
+
+Goal:
+- Rerun rendered reset-settle, perturbation, and grasp-contact evidence after the reset-settle/contact validator patch.
+
+Version Control:
+- local_commit: `dfbb376c1ba71af8a0edf1ee89b940bcb2a2754d`
+- remote_commit: `dfbb376c1ba71af8a0edf1ee89b940bcb2a2754d`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-20260613T003321Z`
+
+Command / Job:
+- command: `NUM_ENVS=4 MAX_OBJECTS=4 RESET_CYCLES=2 SETTLE_STEPS=96 PERTURB_STEPS=96 GRASP_STEPS=90 GRASP_OBJECT_SETTLE_STEPS=0 OBJECT_RESET_SETTLE_STEPS=240 CAPTURE_INTERVAL=2 GRASP_RESET_ATTEMPTS=16 OBJECT_ASSET_MANIFEST_PATH=/results/assets/franka_multi_graspgen_asset_smoke_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_223457/manifest.json RUN_NAME=<run> CODE_NFS=<remote_worktree> CODE_COMMIT=dfbb376c1ba71af8a0edf1ee89b940bcb2a2754d sbatch --partition=batch --time=0-00:45:00 cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh`
+- job_id: `1028884`
+- run_name: `franka_multi_video_resetsettle_manual_4obj_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_235021`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_resetsettle_manual_4obj_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_235021`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_1028884.out`
+
+Result:
+- status: running/queued; monitoring in progress.
 
 ## 2026-06-13 - Route GraspGen downloads off home and revise video validation
 

@@ -24,11 +24,16 @@ parser.add_argument("--render_warmup_frames", type=int, default=2)
 parser.add_argument("--reset_cycles", type=int, default=3)
 parser.add_argument("--settle_steps", type=int, default=72)
 parser.add_argument("--perturb_steps", type=int, default=96)
+parser.add_argument("--perturb_push_steps", type=int, default=10)
+parser.add_argument("--perturb_linear_velocity", type=float, default=0.60)
+parser.add_argument("--perturb_lateral_velocity", type=float, default=0.20)
+parser.add_argument("--perturb_angular_velocity", type=float, default=4.0)
 parser.add_argument("--grasp_steps", type=int, default=72)
 parser.add_argument("--grasp_object_settle_steps", type=int, default=48)
 parser.add_argument("--object_reset_settle_steps", type=int, default=120)
 parser.add_argument("--capture_interval", type=int, default=2)
 parser.add_argument("--grasp_reset_attempts", type=int, default=12)
+parser.add_argument("--grasp_reset_min_pregrasp_z", type=float, default=0.15)
 parser.add_argument("--disable_fabric", action="store_true", default=False)
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
@@ -327,9 +332,9 @@ def _record_perturbation(env, task_env, output_dir: Path) -> dict[str, object]:
     env_ids = task_env._robot._ALL_INDICES
     velocity = torch.zeros((task_env.num_envs, 6), device=task_env.device)
     signs = torch.where(torch.arange(task_env.num_envs, device=task_env.device) % 2 == 0, 1.0, -1.0)
-    velocity[:, 0] = 0.28 * signs
-    velocity[:, 1] = 0.10 * torch.roll(signs, shifts=1)
-    velocity[:, 5] = 3.0 * signs
+    velocity[:, 0] = float(args_cli.perturb_linear_velocity) * signs
+    velocity[:, 1] = float(args_cli.perturb_lateral_velocity) * torch.roll(signs, shifts=1)
+    velocity[:, 5] = float(args_cli.perturb_angular_velocity) * signs
     task_env._cube.write_root_velocity_to_sim(velocity, env_ids=env_ids)
     task_env._compute_intermediate_values()
 
@@ -337,6 +342,8 @@ def _record_perturbation(env, task_env, output_dir: Path) -> dict[str, object]:
     series: list[dict[str, object]] = []
     artifact_paths: list[str] = []
     for step in range(max(int(args_cli.perturb_steps), 1)):
+        if step < max(int(args_cli.perturb_push_steps), 1):
+            task_env._cube.write_root_velocity_to_sim(velocity, env_ids=env_ids)
         _, dones = _step_env(env, task_env)
         if step % max(int(args_cli.capture_interval), 1) == 0:
             artifact_paths.append(_capture(env, scenario_dir, frame_idx))
@@ -397,13 +404,21 @@ def _reset_settled_object_then_apply_grasp_prior(env, task_env) -> None:
 
 def _reset_until_quality_grasp(env, task_env) -> int:
     selected_env = 0
+    fallback_env: int | None = None
+    min_pregrasp_z = float(args_cli.grasp_reset_min_pregrasp_z)
     for _ in range(max(int(args_cli.grasp_reset_attempts), 1)):
         env.reset()
         task_env._compute_intermediate_values()
         quality = task_env.grasp_prior_reset_quality_success
-        if bool(quality.any().item()):
-            selected_env = int(torch.nonzero(quality, as_tuple=False)[0].item())
+        topdown_quality = quality & (task_env.grasp_prior_reset_offset_dir_w[:, 2] >= min_pregrasp_z)
+        if bool(topdown_quality.any().item()):
+            selected_env = int(torch.nonzero(topdown_quality, as_tuple=False)[0].item())
             break
+        if bool(quality.any().item()):
+            fallback_env = int(torch.nonzero(quality, as_tuple=False)[0].item())
+    else:
+        if fallback_env is not None:
+            selected_env = fallback_env
     return selected_env
 
 
@@ -446,6 +461,9 @@ def _record_grasp_contact(env, task_env, output_dir: Path) -> dict[str, object]:
                 "selected_projected_tip_max_dist": float(
                     task_env.grasp_prior_reset_projected_exact_tip_max_dist[selected_env].detach().cpu()
                 ),
+                "selected_pregrasp_offset_dir_z": float(
+                    task_env.grasp_prior_reset_offset_dir_w[selected_env, 2].detach().cpu()
+                ),
                 "selected_object_size": float(
                     task_env._grasp_prior_object_size(selected_env_ids)[0].detach().cpu()
                 ),
@@ -458,9 +476,11 @@ def _record_grasp_contact(env, task_env, output_dir: Path) -> dict[str, object]:
     selected_width = min(float(item["selected_gripper_width"]) for item in series)
     selected_object_size = max(float(item["selected_object_size"]) for item in series)
     selected_tip_max = min(float(item["selected_projected_tip_max_dist"]) for item in series)
+    selected_pregrasp_z = max(float(item["selected_pregrasp_offset_dir_z"]) for item in series)
     phases = sorted(set(phase_values))
     passed = (
         bool(task_env.grasp_prior_reset_quality_success[selected_env].detach().cpu())
+        and selected_pregrasp_z >= float(args_cli.grasp_reset_min_pregrasp_z)
         and float(summary.get("bottom_clearance_min", -1.0)) >= -0.01
         and float(summary.get("finger_table_clearance_min", -1.0)) >= float(task_env.cfg.finger_table_penetration_termination_margin)
         and selected_done_count == 0
@@ -476,6 +496,7 @@ def _record_grasp_contact(env, task_env, output_dir: Path) -> dict[str, object]:
         "selected_max_finger_dist_min": selected_max_finger,
         "selected_gripper_width_min": selected_width,
         "selected_projected_tip_max_dist_min": selected_tip_max,
+        "selected_pregrasp_offset_dir_z": selected_pregrasp_z,
         "selected_object_size": selected_object_size,
         "selected_done_count": selected_done_count,
         "warmstart_phases": phases,
@@ -553,6 +574,11 @@ def main() -> None:
             "capture_interval": args_cli.capture_interval,
             "grasp_object_settle_steps": args_cli.grasp_object_settle_steps,
             "object_reset_settle_steps": args_cli.object_reset_settle_steps,
+            "grasp_reset_min_pregrasp_z": args_cli.grasp_reset_min_pregrasp_z,
+            "perturb_push_steps": args_cli.perturb_push_steps,
+            "perturb_linear_velocity": args_cli.perturb_linear_velocity,
+            "perturb_lateral_velocity": args_cli.perturb_lateral_velocity,
+            "perturb_angular_velocity": args_cli.perturb_angular_velocity,
         },
     }
     metrics_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
