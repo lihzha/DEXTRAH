@@ -599,7 +599,7 @@ Change:
 
 Version Control:
 - base_commit: `c3c924f41cf87688d7ea0860a9d5b2286a968863`
-- implementation_commit: pending
+- implementation_commit: this commit
 - changed_files: `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`, `dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py`, `dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py`, `dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py`, `cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh`, `cluster/sbatch_train_teacher_8gpu.sh`
 
 Validation:
@@ -2143,6 +2143,66 @@ Analysis:
 
 Next:
 - Patch source to record selected contact geometry and candidate counts, then revise quality checks so “quality” means a plausible liftable contact, not only IK/topdown/geometric proximity.
+
+## 2026-06-13T23:05:11Z - Contact-reference quality patch validation
+
+Goal:
+- Validate the source patch that uses contact references for reset-quality distances, records candidate diagnostics, increases center penalty, and sets the multi-object default center gate to `0.30`.
+
+Hypothesis:
+- Measuring reset quality against the selected contact reference should reject missed-contact poses and make diagnostics explain remaining failures. The stricter center gate should prevent the previous end-contact selections.
+
+Version Control:
+- agent_id: `integrate-multiobject-main-20260613`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/integrate-multiobject-main-20260613`
+- branch: `codex/multiobject-training-yaw-20260613`
+- implementation_commit: `b3a11418dd04ef904740d5d1b69bb7279d805568`
+- push/pull: pushed to `origin/codex/multiobject-training-yaw-20260613`; l401 direct GitHub fetch failed due publickey auth, so deployed exact commit via git bundle.
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-stable-reset-c3c924f-20260613`
+- remote_commit: `b3a11418dd04ef904740d5d1b69bb7279d805568`
+
+Command / Job:
+- command: `CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-stable-reset-c3c924f-20260613 CODE_COMMIT=b3a11418dd04ef904740d5d1b69bb7279d805568 RUN_NAME=multiobject_contactref_quality_b3a1141_20260613_230511 OBJECT_ASSET_MANIFEST_PATH=/results/assets/franka_multi_graspgen_asset_smoke_contacts_2d7f495_20260613_153029/manifest.json MAX_OBJECTS=4 NUM_ENVS=4 OBJECT_ASSET_ASSIGNMENT=round_robin OBJECT_STABLE_POSE_ENABLED=True OBJECT_STABLE_POSE_CACHE_DIR=/results/validations/graspgen_stable_pose_validate_1028898_20260613_010532/settled_pose_cache OBJECT_STABLE_POSE_RANDOMIZE=False RESET_CYCLES=3 SETTLE_STEPS=72 PERTURB_STEPS=96 PERTURB_PUSH_STEPS=10 PERTURB_LINEAR_VELOCITY=0.60 PERTURB_LATERAL_VELOCITY=0.20 PERTURB_ANGULAR_VELOCITY=4.0 GRASP_STEPS=120 GRASP_OBJECT_SETTLE_STEPS=0 OBJECT_RESET_SETTLE_STEPS=0 GRASP_WARMSTART_CLOSE_WIDTH=0.0 GRASP_WARMSTART_LIFT_ACTION_Z=0.80 CAPTURE_INTERVAL=2 GRASP_RESET_ATTEMPTS=32 GRASP_RESET_MIN_PREGRASP_Z=0.15 GRASP_RESET_CANDIDATE_COUNT=512 GRASP_RESET_MAX_CENTER_DISTANCE_FRAC=0.30 GRASP_RESET_MIN_WIDTH=0.008 GRASP_CONTACT_SCORE_STEPS=40 sbatch --parsable cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh`
+- job_id: `1029105`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/multiobject_contactref_quality_b3a1141_20260613_230511`
+
+Result:
+- status: submitted on l401, monitoring in progress.
+
+## 2026-06-13T23:10:16Z - Fix grasp-contact validation state mutation and lift scoring
+
+Goal:
+- Make the grasp-contact validation video start from the selected reset state and score candidates through the lift phase before deciding whether the environment is mergeable.
+
+Hypothesis:
+- Job `1029105` failed partly because the validation harness advanced physics during render warmup after restoring the selected state, so the recorded `grasp_contact` rollout started from a different object/robot pose than the selector scored. The selector also used `GRASP_CONTACT_SCORE_STEPS=40`, while the validation warmstart did not enter lift until after approach/close, so the best candidate was selected mostly on pre-lift contact.
+
+Change:
+- Added static render warmup for `grasp_contact`, captured an initial reset frame before stepping, made scorer steps cover the full configured warmstart sequence, and fixed validation warmstart step allocation so lift lasts through the requested `grasp_steps`.
+
+Version Control:
+- agent_id: `integrate-multiobject-main-20260613`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/integrate-multiobject-main-20260613`
+- branch: `codex/multiobject-training-yaw-20260613`
+- base_commit: `b3a11418dd04ef904740d5d1b69bb7279d805568`
+- implementation_commit: pending
+- changed_files: `dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py`, this worklog
+
+Command / Job:
+- previous_job_id: `1029105`
+- previous_run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/multiobject_contactref_quality_b3a1141_20260613_230511`
+- checks: `python3 -m py_compile dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py`; `bash -n cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh`; `git diff --check`
+
+Result:
+- status: patch checks passed locally.
+- previous_metrics: `1029105` passed `reset_settle` and `perturbation`, failed only `grasp_contact`; selected `96ae0ff853734df0b10a827307949c87` sample `1154`, `selected_lift_height_max=0.0278m` vs `0.12m`, `selected_object_xy_delta_max=0.0582m`, `selected_candidate_valid_count=2`.
+- artifact_inspection: first/mid/last frames showed a slender object slipping/tilting rather than a clean lift; final recorded reset geometry did not match the scored probe state because render warmup advanced physics before recording.
+
+Analysis:
+- The environment reset still numerically reached the selected pregrasp target in the probe, but validation was not preserving that state for the recorded clip. This made the video evidence unreliable and could also hide good candidates because the selection score did not evaluate lift.
+
+Next:
+- Commit this validation fix, deploy the exact commit to the l401 worktree, and rerun the same 4-object smoke before merging to `main`.
 - final_status: failed on `grasp_contact` metrics.
 - Slurm: `1029100` exited `FAILED 1:0` after `00:02:52`; failure was metrics-gated, not a simulator crash.
 - Metrics:

@@ -412,6 +412,11 @@ def _warmup_render(env, task_env, frames: int) -> None:
         env.render()
 
 
+def _warmup_render_static(env, frames: int) -> None:
+    for _ in range(max(int(frames), 0)):
+        env.render()
+
+
 def _metrics_snapshot(
     task_env,
     dones: torch.Tensor | None = None,
@@ -701,6 +706,9 @@ def _rollout_grasp_contact(
     selected_done_count = 0
     reset_geometry = _selected_grasp_geometry_snapshot(task_env, selected_env)
     selected_env_ids = torch.tensor([selected_env], device=task_env.device, dtype=torch.long)
+    if scenario_dir is not None:
+        artifact_paths.append(_capture(env, scenario_dir, frame_idx))
+        frame_idx += 1
     for step in range(max(int(steps), 1)):
         _, dones = _step_env(env, task_env)
         if hasattr(task_env, "grasp_prior_action_warmstart_phase"):
@@ -787,7 +795,12 @@ def _select_scored_grasp_contact_state(env, task_env) -> tuple[int, dict[str, ob
     best_result: dict[str, object] | None = None
     best_score = -float("inf")
     attempts = max(int(args_cli.grasp_reset_attempts), 1)
-    score_steps = max(int(args_cli.grasp_contact_score_steps), 1)
+    warmstart_steps = (
+        max(int(task_env.cfg.grasp_prior_action_warmstart_approach_steps), 0)
+        + max(int(task_env.cfg.grasp_prior_action_warmstart_close_steps), 0)
+        + max(int(task_env.cfg.grasp_prior_action_warmstart_lift_steps), 0)
+    )
+    score_steps = max(int(args_cli.grasp_contact_score_steps), warmstart_steps, 1)
 
     for attempt in range(attempts):
         env.reset()
@@ -832,7 +845,7 @@ def _record_grasp_contact(env, task_env, output_dir: Path) -> dict[str, object]:
     scenario_dir = output_dir / "grasp_contact"
     selected_env, probe_result = _select_scored_grasp_contact_state(env, task_env)
     _configure_camera(task_env, env_id=selected_env)
-    _warmup_render(env, task_env, args_cli.render_warmup_frames)
+    _warmup_render_static(env, args_cli.render_warmup_frames)
     result = _rollout_grasp_contact(
         env,
         task_env,
@@ -874,11 +887,17 @@ def _make_env(*, grasp_prior: bool):
     env_cfg.grasp_prior_reset_max_center_distance_frac = float(args_cli.grasp_reset_max_center_distance_frac)
     env_cfg.grasp_prior_reset_min_width = float(args_cli.grasp_reset_min_width)
     if grasp_prior:
+        grasp_steps = max(int(args_cli.grasp_steps), 1)
+        approach_steps = min(20, max(grasp_steps // 3, 1))
+        close_steps = min(20, max(grasp_steps // 3, 1))
+        if approach_steps + close_steps >= grasp_steps:
+            close_steps = max(grasp_steps - approach_steps - 1, 0)
+        lift_steps = max(grasp_steps - approach_steps - close_steps, 1)
         env_cfg.grasp_prior_action_warmstart_close_width = float(args_cli.grasp_warmstart_close_width)
         env_cfg.grasp_prior_action_warmstart_lift_action_z = float(args_cli.grasp_warmstart_lift_action_z)
-        env_cfg.grasp_prior_action_warmstart_approach_steps = min(20, max(args_cli.grasp_steps // 3, 1))
-        env_cfg.grasp_prior_action_warmstart_close_steps = min(20, max(args_cli.grasp_steps // 3, 1))
-        env_cfg.grasp_prior_action_warmstart_lift_steps = max(args_cli.grasp_steps - 2 * (args_cli.grasp_steps // 3), 1)
+        env_cfg.grasp_prior_action_warmstart_approach_steps = approach_steps
+        env_cfg.grasp_prior_action_warmstart_close_steps = close_steps
+        env_cfg.grasp_prior_action_warmstart_lift_steps = lift_steps
     env_cfg.grasp_prior_allow_missing = False
     env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array")
     task_env = env.unwrapped
