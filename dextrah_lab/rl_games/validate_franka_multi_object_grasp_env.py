@@ -20,6 +20,8 @@ parser.add_argument("--metrics_path", type=str, default=None)
 parser.add_argument("--video", action="store_true", default=False)
 parser.add_argument("--video_length", type=int, default=120)
 parser.add_argument("--video_folder", type=str, default=None)
+parser.add_argument("--render_check", action="store_true", default=False)
+parser.add_argument("--render_check_frames", type=int, default=2)
 parser.add_argument("--object_asset_manifest_path", type=str, default=None)
 parser.add_argument("--object_assets_dir", type=str, default=None)
 parser.add_argument("--max_objects", type=int, default=None)
@@ -36,7 +38,7 @@ parser.add_argument(
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 
-if args_cli.video:
+if args_cli.video or args_cli.render_check:
     args_cli.enable_cameras = True
 
 app_launcher = AppLauncher(args_cli)
@@ -99,7 +101,7 @@ def _run_registration_checks(task: str, checks: CheckRecorder) -> None:
 
 
 def _configure_validation_camera(env_cfg, task_env=None) -> None:
-    if not args_cli.video or not hasattr(env_cfg, "viewer"):
+    if not (args_cli.video or args_cli.render_check) or not hasattr(env_cfg, "viewer"):
         return
     eye = tuple(DEFAULT_CAMERA_EYE)
     target = tuple(DEFAULT_CAMERA_TARGET)
@@ -403,6 +405,72 @@ def _run_short_rollout(env, task_env, checks: CheckRecorder, num_steps: int, pri
     }
 
 
+def _write_rgb_artifact(frame, path: Path) -> str:
+    import numpy as np
+
+    rgb = np.asarray(frame)
+    if rgb.ndim == 3 and rgb.shape[-1] >= 3:
+        rgb = rgb[..., :3]
+    rgb = np.clip(rgb, 0, 255).astype(np.uint8)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        from PIL import Image
+
+        png_path = path.with_suffix(".png")
+        Image.fromarray(rgb).save(png_path)
+        return str(png_path)
+    except Exception:
+        ppm_path = path.with_suffix(".ppm")
+        header = f"P6\n{rgb.shape[1]} {rgb.shape[0]}\n255\n".encode("ascii")
+        ppm_path.write_bytes(header + rgb.tobytes())
+        return str(ppm_path)
+
+
+def _run_render_checks(env, task_env, checks: CheckRecorder, output_dir: Path, num_frames: int) -> dict[str, object]:
+    import numpy as np
+
+    frame_summaries: list[dict[str, object]] = []
+    num_frames = max(int(num_frames), 1)
+    for frame_idx in range(num_frames):
+        if frame_idx > 0:
+            actions = torch.zeros((task_env.num_envs, task_env.cfg.action_space), device=task_env.device)
+            env.step(actions)
+        frame_arr = np.asarray(env.render())
+        finite = bool(np.isfinite(frame_arr).all())
+        nonempty = frame_arr.ndim == 3 and frame_arr.shape[0] >= 32 and frame_arr.shape[1] >= 32 and frame_arr.shape[2] >= 3
+        dynamic_range = float(frame_arr[..., :3].max() - frame_arr[..., :3].min()) if nonempty else 0.0
+        mean_value = float(frame_arr[..., :3].mean()) if nonempty else 0.0
+        artifact = None
+        if finite and nonempty:
+            artifact = _write_rgb_artifact(frame_arr, output_dir / "render_check" / f"frame_{frame_idx:04d}.png")
+        frame_summaries.append(
+            {
+                "frame_index": frame_idx,
+                "shape": list(frame_arr.shape),
+                "finite": finite,
+                "dynamic_range": dynamic_range,
+                "mean_value": mean_value,
+                "artifact": artifact,
+            }
+        )
+
+    checks.check(
+        "render_check_frames_nonblank",
+        all(
+            bool(item["finite"])
+            and len(item["shape"]) == 3
+            and item["shape"][0] >= 32
+            and item["shape"][1] >= 32
+            and item["shape"][2] >= 3
+            and float(item["dynamic_range"]) >= 5.0
+            and float(item["mean_value"]) >= 1.0
+            for item in frame_summaries
+        ),
+        frames=frame_summaries,
+    )
+    return {"enabled": True, "frames": frame_summaries}
+
+
 def main() -> None:
     output_dir = Path(args_cli.output_dir or datetime.now().strftime("franka_multi_object_validate_%Y%m%d_%H%M%S"))
     output_dir = output_dir.expanduser().resolve()
@@ -437,7 +505,8 @@ def main() -> None:
 
     checks = CheckRecorder()
     _run_registration_checks(args_cli.task, checks)
-    env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)
+    needs_rgb_render = bool(args_cli.video or args_cli.render_check)
+    env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if needs_rgb_render else None)
     if args_cli.video:
         env = gym.wrappers.RecordVideo(
             env,
@@ -451,6 +520,11 @@ def main() -> None:
 
     asset_summary = _run_asset_checks(task_env, checks)
     reset_summary = _run_reset_checks(env, task_env, checks)
+    render_summary = (
+        _run_render_checks(env, task_env, checks, output_dir, args_cli.render_check_frames)
+        if args_cli.render_check
+        else {"enabled": False}
+    )
     grasp_prior_summary = _run_grasp_prior_reset_checks(
         env,
         task_env,
@@ -468,6 +542,7 @@ def main() -> None:
         "seed": args_cli.seed,
         "asset_summary": asset_summary,
         "reset_summary": reset_summary,
+        "render_summary": render_summary,
         "grasp_prior_reset_summary": grasp_prior_summary,
         "rollout_summary": rollout_summary,
         "config": {

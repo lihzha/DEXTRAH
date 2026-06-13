@@ -185,3 +185,43 @@ Change:
 Next:
 - Commit/push/deploy this patch.
 - Launch full `LIMIT=0` asset staging with a longer `batch_long` walltime.
+
+## 2026-06-13 - Full GraspGen asset staging launch
+
+Goal:
+- Download, prepare, convert, and validate the full Robotiq split object set with Franka GraspGen priors on cluster storage.
+
+Version Control:
+- local_commit: f61e1a1e6c02ea2d3c82a3b60bde102b5920393e
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-20260613T003321Z`
+- remote_commit: f61e1a1e6c02ea2d3c82a3b60bde102b5920393e
+
+Command / Job:
+- command: `LIMIT=0 CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-20260613T003321Z sbatch --time=3-00:00:00 --export=ALL cluster/sbatch_prepare_graspgen_assets_1gpu.sh`
+- job_id: 1028836
+- run_name: `franka_multi_graspgen_assets_full_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_224052`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/franka_multi_graspgen_assets_full_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_224052`
+- manifest: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/franka_multi_graspgen_assets_full_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_224052/manifest.json`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/prepare_graspgen_assets_1028836.out`
+
+Result:
+- status: running/queued; monitoring in progress.
+
+## 2026-06-13 - Add explicit rendered validation check
+
+Goal:
+- Close the validation gap where physics/RL checks passed without proving rendered RGB output is nonblank.
+
+Change:
+- Added `--render_check` and `--render_check_frames` to `dextrah_lab/rl_games/validate_franka_multi_object_grasp_env.py`.
+- Render check uses `render_mode="rgb_array"`, captures frames via `env.render()`, verifies finite shape/statistics, and writes frame artifacts under `render_check/`.
+- Added `RENDER_CHECK` and `RENDER_CHECK_FRAMES` to `cluster/sbatch_validate_franka_multi_object_grasp_env_1gpu.sh`.
+- Documented `--render_check` in the README validation command.
+
+Analysis:
+- Earlier environment validation proved asset loading, rigid-object simulation, reset geometry, finite observations/rewards, grasp-prior reset, and rollout stability.
+- It did not prove that visual meshes render correctly; this check is now an explicit pre-training gate.
+
+Next:
+- Run `RENDER_CHECK=True` validation on the 4-object cluster smoke manifest.
+- After full asset staging finishes, run the same rendered validation on a sampled full-manifest subset before training.

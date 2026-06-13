@@ -123,7 +123,8 @@ before training:
             --num_envs 8 \
             --object_asset_manifest_path ../../local_results/graspgen_objects_debug/manifest.json \
             --max_objects 8 \
-            --enable_grasp_prior_reset
+            --enable_grasp_prior_reset \
+            --render_check
 ```
 
 On the cluster, prepare/convert the full object set on mounted storage. Use a
