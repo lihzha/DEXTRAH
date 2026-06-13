@@ -15435,3 +15435,50 @@ Next:
   one-demo closed-loop RGB eval. If that succeeds, start regenerating a larger
   RGB dataset; if it fails, debug image preprocessing, action sampling, and
   reset/rollout mismatch before scaling.
+
+Update 2026-06-12T17:59:30-07:00:
+- Committed eval wrapper as
+  `f3390aebc3109ee24d8660dc6fa3635160987be0` and pushed
+  `codex/franka-cube-diffusion-policy-bc`.
+- Deployed l401 agent worktree
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-bc-relabel32`
+  detached at `f3390aebc3109ee24d8660dc6fa3635160987be0`.
+- Staged RGB one-demo overfit checkpoint:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/rgb_smoke_ep00_overfit_20260612_173852/latest.ckpt`.
+- Staged one-demo reset/RGB datasets:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/contact_relabel_rgb_smoke_ep00_20260612_173625/contact_relabel_set_accepted.npz`
+  and `contact_relabel_set_accepted_rgb.npz`.
+- Exact one-demo RGB eval job `1028762`:
+  `franka_cube_rgb_dp_eval_overfit_ep00_exact_video_20260612_174709`,
+  `ACTION_CHUNK_STEPS=8`, video enabled, seed `43`, exact cube reset.
+  Result: failed, `final_success_rate=0.0`, `window_success_rate=0.0`,
+  max lift `0.01038 m`.
+- Debug finding: offline replay-style prediction against the saved RGB demo
+  showed the model tracks pose labels reasonably but smooths/delays the gripper
+  discontinuity when executing 8-step chunks. The demo label closes at step
+  `81`, while the chunk starting at step `80` produced a partial/open first
+  gripper action and delayed decisive close.
+- Exact one-demo RGB eval job `1028763`:
+  `franka_cube_rgb_dp_eval_overfit_ep00_exact_chunk1_video_20260612_175405`,
+  same reset/checkpoint but `ACTION_CHUNK_STEPS=1`.
+  Result: passed proof-of-life, `window_success_rate=0.875`,
+  `has_lifted_cube.max=1.0`, `in_success_region.max=1.0`,
+  max lift `0.24309 m` at step `313`, final lift `0.24003 m`.
+  `final_success_rate=0.0` only because the cube overshoots the success-height
+  window at the final frame.
+- Successful RGB eval video:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_rgb_dp_eval_overfit_ep00_exact_chunk1_video_20260612_175405/videos/franka-cube-rgb-dp-overfit-ep00-chunk1-step-0.mp4`.
+- Video metadata: `1280x720`, `319` frames, `5.316667 s`, `60 FPS`.
+- Contact sheet:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_rgb_dp_eval_overfit_ep00_exact_chunk1_video_20260612_175405/frame_samples/contact_sheet.jpg`.
+- Visual inspection: the gripper reaches, closes, grasps the cube, and lifts it.
+
+Analysis:
+- The RGB architecture and policy I/O are now validated end-to-end on one exact
+  demo without privileged object state. For this dataset/style, RGB DP eval
+  should use `ACTION_CHUNK_STEPS=1` unless retraining or config changes make the
+  gripper transition robust to longer chunks.
+- The one-demo proof-of-life is enough to scale to a larger RGB dataset. Next
+  step is to regenerate accepted relabel episodes with `SAVE_RGB_OBS=True`,
+  combine the accepted RGB NPZs, train on the larger RGB dataset, and evaluate
+  with chunk-1 first.
