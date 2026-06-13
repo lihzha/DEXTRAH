@@ -139,3 +139,134 @@ coherent coupled actions and a separate tiny gate is explicitly authorized.
 - Normal-reset generalization remains unproven and previously failed.
 - l401 GitHub SSH fetch was unavailable earlier; remote worktree updates used
   HTTPS fetch from `https://github.com/lihzha/DEXTRAH.git`.
+
+## 2026-06-12T21:11:56-07:00 - RGB epoch12 exact-reset chunked averaged eval
+
+Goal:
+- Test whether the RGB accepted183+normalreset25x2 epoch12 checkpoint fails exact ep183 because one-step stochastic DP sampling drifts/early-closes, rather than because RGB I/O or labels are incoherent.
+
+Hypothesis:
+- Offline RGB coherence on exact ep183 mostly matches labels, but row 43626/step80 predicts close one step early under one seeded sample, and the unseeded chunk1 eval uses aggressive first actions. Standard image-DP inference with `ACTION_CHUNK_STEPS=8`, `NUM_ACTION_SAMPLES=8`, and fixed `POLICY_SAMPLE_SEED=42` may reduce sampling noise and preserve the learned action sequence.
+
+Change:
+- Added offline-only diagnostic `dextrah_lab/offline_dp_bc/diagnose_rgb_dp_offline_coherence.py`.
+- No policy/eval behavior changed.
+
+Version Control:
+- agent_id: franka-cube-dp-bc-warmstart
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `143bc9739875f6c2e047912d39db5097b7c6a108`
+- implementation_commit: pending
+- remote_commit/status: l401 eval code at detached `ea21066cb91a7bef36972f60f89996b62d6d09ac`; new diagnostic is local-only and not needed by eval wrapper.
+- changed_files: `dextrah_lab/offline_dp_bc/diagnose_rgb_dp_offline_coherence.py`, `worklogs/franka-cube-grasp-prior/HANDOFF_C.md`
+
+Command / Job:
+- command: pending `sbatch cluster/sbatch_eval_franka_cube_rgb_dp_policy_1gpu.sh` with epoch12 checkpoint, exact demo reset ep183, `ACTION_CHUNK_STEPS=8`, `NUM_ACTION_SAMPLES=8`, `POLICY_SAMPLE_SEED=42`, video enabled.
+- success condition: exact ep183 reset lifts cube / nonzero success; if it still fails, inspect video and compare to offline row diagnostics before changing data/model.
+
+Result:
+- status: launching
+
+Analysis:
+- Previous epoch12 chunk1 evals failed exact ep183 and default seed42 with zero success. Exact video shows gripper near cube, closes/pushes slightly off-axis, then retreats upward with gripper closed.
+- Offline diagnostic report: `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/diagnostics/rgb_offline_coherence_epoch12_ep183_20260612_210940/rgb_offline_coherence_report.md`.
+- Exact ep183 row 43546 first action label roughly matches; row 43626/step80 still align/open label but policy predicts gripper close.
+
+Next:
+- Launch and monitor the chunked averaged exact eval, fetch metrics/video, then decide between inference tuning, adding non-object phase/progress/history, or retraining with better normal-reset data.
+
+## 2026-06-12T21:23:42-07:00 - RGB epoch12 eval result and seed42 normal-reset data gate
+
+Goal:
+- Close out the RGB epoch12 chunked averaged eval and inspect the seed42 normal-reset RGB relabel job before any more training.
+
+Hypothesis:
+- If the epoch12 RGB checkpoint failure is mostly inference-noise driven, chunked averaged inference should recover exact ep183. If not, the seed42 relabel job should tell us whether normal-reset support data is broad enough for the next RGB training round.
+
+Change:
+- No eval/policy source changes after the offline RGB coherence diagnostic.
+- Fetched and visualized the completed seed42 normal-reset RGB relabel set.
+
+Version Control:
+- agent_id: franka-cube-dp-bc-warmstart
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `143bc9739875f6c2e047912d39db5097b7c6a108`
+- implementation_commit: pending
+- changed_files: `dextrah_lab/offline_dp_bc/diagnose_rgb_dp_offline_coherence.py`, `worklogs/franka-cube-grasp-prior/HANDOFF_C.md`
+- unrelated_untracked: `dextrah_lab/offline_dp_bc/make_support_expansion_dataset.py` existed before this pass and was not touched.
+
+Command / Job:
+- eval job: `1028823`, run `franka_cube_rgb_dp_scale183_plus_normal25x2_epoch12_ep183_exact_chunk8_s8_seed42_video_20260612_2114`, checkpoint `rgb_scale264_accepted183_plus_normalreset25x2_20260612_2038_epoch12/latest.ckpt`, `ACTION_CHUNK_STEPS=8`, `NUM_ACTION_SAMPLES=8`, `POLICY_SAMPLE_SEED=42`, exact cube reset ep183, video enabled.
+- data job: `1028819`, run `franka_cube_contact_relabel_scale264_normalreset_rgb_ep000_031_seed42_high30_20260612_2059`, normal reset (`reset_joint_blend_alpha=0`, `reset_cube_pos_blend_alpha=0`), RGB obs 96x96, episodes 0-31.
+
+Result:
+- eval status: failed behaviorally, process completed. `window_success_rate=0.0`, `final_success_rate=0.0`, max lift `0.00555` m, min finger-center-to-cube `0.05571` m, final cube around `[-0.4087, -0.1634, 0.776]`.
+- eval video:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_rgb_dp_scale183_plus_normal25x2_epoch12_ep183_exact_chunk8_s8_seed42_video_20260612_2114/videos/franka-cube-rgb-dp-scale183-normalx2-epoch12-ep183-exact-chunk8-s8-seed42-step-0.mp4`
+- seed42 data status: Slurm `COMPLETED 0:0`, relabel-set verdict `FAIL: at least one contact-aware rollout failed the hard relabel gate; do not train DP on this set.`
+- accepted seed42 RGB subset: `3/32` rollouts, `948` transitions, rollouts `ep06s260_a0_center_high30`, `ep22s260_a0_center_high30`, `ep26s260_a0_center_high30`.
+- accepted lift metrics: final/max lift about `0.1366`, `0.1363`, and `0.1362` m; final finger-center-to-cube about `0.0586`, `0.0598`, and `0.0491` m.
+- accepted RGB NPZ:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_rgb_normalreset_scale264_seed42_20260612_2059/franka_cube_contact_relabel_scale264_normalreset_rgb_ep000_031_seed42_high30_20260612_2059/contact_relabel_set_accepted_rgb.npz`
+- accepted RGB visualization:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_rgb_normalreset_scale264_seed42_20260612_2059/franka_cube_contact_relabel_scale264_normalreset_rgb_ep000_031_seed42_high30_20260612_2059/accepted_rgb_visualization/seed42_accepted_rgb_three_rollouts.mp4`
+- accepted RGB contact sheet:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_rgb_normalreset_scale264_seed42_20260612_2059/franka_cube_contact_relabel_scale264_normalreset_rgb_ep000_031_seed42_high30_20260612_2059/accepted_rgb_visualization/seed42_accepted_rgb_contact_sheet.jpg`
+
+Analysis:
+- Lowdim already met the user's current bar: a trained lowdim policy produced success on a slightly shifted cube state, so no more lowdim polishing is needed before RGB.
+- RGB I/O still looks correct: one-demo RGB overfit succeeds, the offline coherence diagnostic matches labels reasonably on dataset histories, and the accepted seed42 RGB frames are visually sane.
+- The mixed RGB epoch12 policy failure is not fixed by chunked averaged inference. The video shows the same off-axis close/push pattern as chunk1.
+- The seed42 normal-reset relabel controller is too fragile for blind scaling: only `3/32` rollouts passed, while failed rollouts often reached near-contact but did not lift or drifted far after closing. This is a data coverage/controller robustness problem, not evidence that the RGB observation schema is broken.
+
+Next:
+- Do not retrain on the full seed42 relabel set. At most merge only `contact_relabel_set_accepted_rgb.npz`, likely with oversampling, as a small seed42 support addition.
+- Next RGB iteration should either (a) generate more accepted normal-reset RGB support with better controller settings / broader seeds, or (b) add a non-privileged time/phase/progress signal to RGB `robot_state` and retrain with accepted183 plus accepted normal-reset data.
+- No active l401 DEXTRAH jobs remain after this entry.
+
+## 2026-06-12T21:33:00-07:00 - RGB 12D phase/progress implementation and dataset build
+
+Goal:
+- Reduce RGB close/lift timing ambiguity without reintroducing privileged cube state.
+
+Hypothesis:
+- The successful lowdim proof-of-life used phase/progress features. RGB currently discards `phase_ids`, so two-frame image/proprio history must infer when to close/lift from a fragile closed-loop state. Appending three contact-phase one-hot bits plus episode progress to the non-privileged robot state should improve timing while keeping object state out of policy inputs.
+
+Change:
+- `FrankaCubeRgbDataset` now has optional `append_phase_progress=true`; it appends `[phase_align_open, phase_close_hold, phase_lift, episode_progress]` from `phase_ids` and `episode_ends` to `robot_state`.
+- `eval_franka_cube_rgb_dp_policy.py` now has matching `--append_phase_progress` and dataset-backed runtime schedule flags.
+- `cluster/sbatch_eval_franka_cube_rgb_dp_policy_1gpu.sh` forwards phase/progress eval flags.
+- Built a new training dataset from `accepted183+normalreset25x2` plus the seed42 accepted RGB subset repeated `8x`.
+
+Version Control:
+- agent_id: franka-cube-dp-bc-warmstart
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `143bc9739875f6c2e047912d39db5097b7c6a108`
+- implementation_commit: pending
+- changed_files: `dextrah_lab/offline_dp_bc/dp_dataset.py`, `dextrah_lab/rl_games/eval_franka_cube_rgb_dp_policy.py`, `cluster/sbatch_eval_franka_cube_rgb_dp_policy_1gpu.sh`, `dextrah_lab/offline_dp_bc/diagnose_rgb_dp_offline_coherence.py`, `worklogs/franka-cube-grasp-prior/HANDOFF_C.md`
+- unrelated_untracked: `dextrah_lab/offline_dp_bc/make_support_expansion_dataset.py` remains unstaged/untouched.
+
+Command / Job:
+- local checks:
+  - `PYTHONPATH=$PWD /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/venv/bin/python -m py_compile dextrah_lab/offline_dp_bc/dp_dataset.py dextrah_lab/rl_games/eval_franka_cube_rgb_dp_policy.py`
+  - `bash -n cluster/sbatch_eval_franka_cube_rgb_dp_policy_1gpu.sh`
+  - `git diff --check -- dextrah_lab/offline_dp_bc/dp_dataset.py dextrah_lab/rl_games/eval_franka_cube_rgb_dp_policy.py cluster/sbatch_eval_franka_cube_rgb_dp_policy_1gpu.sh`
+- dataset combine:
+  `PYTHONPATH=$DEX $VENV -m dextrah_lab.offline_dp_bc.combine_contact_relabel_rgb_sets --input <accepted183_plus_normalreset25x2> --input <seed42_accepted_rgb> ... x8 --output <combined_seed42x8_rgb_96.npz> --report <combined_rgb_report.md>`
+
+Result:
+- local checks passed.
+- augmented dataset loader smoke passed: `image=(16,3,96,96)`, `robot_state=(16,12)`, `action=(16,7)`.
+- combined dataset:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_rgb_scale264_accepted183_plus_normalreset25x2_plus_seed42x8_20260612_2128/franka_cube_scale264_contact_relabel_accepted183_plus_normalreset25x2_plus_seed42x8_rgb_96.npz`
+- combined dataset size: `257` episodes, `67186` transitions, phase counts `0:10062`, `1:20560`, `2:36564`; raw stored `robot_state` remains 8D and becomes 12D only through the dataset adapter.
+
+Analysis:
+- This is intentionally not privileged: eval-time phase/progress is a clock/schedule from an RGB NPZ, not cube pose/velocity/contact state.
+- The old 8D RGB path remains the default, so existing checkpoints/evals still work.
+
+Next:
+- Commit the implementation, train a 12D RGB checkpoint on the combined dataset, then evaluate exact ep183 and a slight cube offset using `APPEND_PHASE_PROGRESS=True` with the same phase schedule.

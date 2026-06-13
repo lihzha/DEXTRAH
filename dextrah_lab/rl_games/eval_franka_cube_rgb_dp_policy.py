@@ -42,6 +42,20 @@ parser.add_argument("--demo_reset_dataset", type=str, default=None)
 parser.add_argument("--demo_reset_episode", type=int, default=0)
 parser.add_argument("--demo_reset_step", type=int, default=0)
 parser.add_argument("--demo_reset_cube_pos_blend_alpha", type=float, default=1.0)
+parser.add_argument(
+    "--append_phase_progress",
+    action="store_true",
+    default=False,
+    help="Append non-privileged contact phase one-hot plus episode progress to robot_state.",
+)
+parser.add_argument(
+    "--phase_progress_dataset",
+    type=str,
+    default=None,
+    help="RGB NPZ with phase_ids/episode_ends used as the runtime phase/progress schedule.",
+)
+parser.add_argument("--phase_progress_episode", type=int, default=0)
+parser.add_argument("--phase_progress_start_step", type=int, default=0)
 parser.add_argument("--video", action="store_true", default=False)
 parser.add_argument("--video_length", type=int, default=320)
 parser.add_argument("--video_folder", type=str, default=None)
@@ -161,13 +175,72 @@ def _reset_policy_obs_from_task_env(task_env: Any) -> torch.Tensor:
     return obs_dict["policy"] if isinstance(obs_dict, dict) else obs_dict
 
 
-def _robot_state_from_policy_obs(policy_obs: torch.Tensor) -> np.ndarray:
+def _contact_phase_progress_features(phase_id: int, progress: float) -> np.ndarray:
+    phase = int(phase_id)
+    if phase < 0:
+        phase = 0
+    if phase not in (0, 1, 2):
+        raise ValueError(f"Expected contact phase id in {{-1,0,1,2}}, got {phase_id}")
+    out = np.zeros((4,), dtype=np.float32)
+    out[phase] = 1.0
+    out[3] = float(np.clip(float(progress), 0.0, 1.0))
+    return out
+
+
+class RgbPhaseProgressProvider:
+    def __init__(self, path: Path, episode: int, start_step: int):
+        self.path = path
+        data = np.load(path, allow_pickle=False)
+        if "phase_ids" not in data.files:
+            raise KeyError(f"{path} missing phase_ids required for --append_phase_progress")
+        if "episode_ends" not in data.files:
+            raise KeyError(f"{path} missing episode_ends required for --append_phase_progress")
+        self.phase_ids = np.asarray(data["phase_ids"], dtype=np.int32)
+        self.episode_ends = np.asarray(data["episode_ends"], dtype=np.int64)
+        if self.episode_ends.ndim != 1 or self.episode_ends.size == 0:
+            raise ValueError(f"{path}: episode_ends must be nonempty 1D")
+        if self.phase_ids.shape != (int(self.episode_ends[-1]),):
+            raise ValueError(
+                f"{path}: phase_ids shape {self.phase_ids.shape} does not match episode_ends[-1]={self.episode_ends[-1]}"
+            )
+        unique = set(int(v) for v in np.unique(self.phase_ids))
+        if not unique.issubset({-1, 0, 1, 2}):
+            raise ValueError(f"{path}: expected contact phase ids in {{-1,0,1,2}}, got {sorted(unique)}")
+        self.episode = int(np.clip(int(episode), 0, int(self.episode_ends.size - 1)))
+        self.episode_start = 0 if self.episode == 0 else int(self.episode_ends[self.episode - 1])
+        self.episode_end = int(self.episode_ends[self.episode])
+        self.episode_length = max(1, self.episode_end - self.episode_start)
+        self.start_step = int(np.clip(int(start_step), 0, self.episode_length - 1))
+
+    def feature_at(self, rollout_step: int) -> np.ndarray:
+        local_step = min(self.start_step + int(rollout_step), self.episode_length - 1)
+        row = self.episode_start + local_step
+        denom = max(1, self.episode_length - 1)
+        progress = float(local_step) / float(denom)
+        return _contact_phase_progress_features(int(self.phase_ids[row]), progress)
+
+    def summary(self) -> dict[str, Any]:
+        return {
+            "path": str(self.path),
+            "episode": int(self.episode),
+            "episode_start": int(self.episode_start),
+            "episode_end": int(self.episode_end),
+            "episode_length": int(self.episode_length),
+            "start_step": int(self.start_step),
+            "feature_names": ["phase_align_open", "phase_close_hold", "phase_lift", "episode_progress"],
+        }
+
+
+def _robot_state_from_policy_obs(policy_obs: torch.Tensor, phase_features: np.ndarray | None = None) -> np.ndarray:
     lowdim = extract_lowdim_obs_from_ppo_obs(policy_obs)
     lowdim_np = lowdim.detach().float().cpu().numpy()
     if lowdim_np.ndim != 2 or lowdim_np.shape[0] != 1:
         raise ValueError(f"RGB eval currently supports num_envs=1, got lowdim shape {lowdim_np.shape}")
     one = lowdim_np[0]
-    return np.concatenate((one[:7], one[20:21]), axis=0).astype(np.float32)
+    robot_state = np.concatenate((one[:7], one[20:21]), axis=0).astype(np.float32)
+    if phase_features is not None:
+        robot_state = np.concatenate((robot_state, np.asarray(phase_features, dtype=np.float32)), axis=0)
+    return robot_state.astype(np.float32)
 
 
 def _resize_rgb_nearest(frame: np.ndarray, height: int, width: int) -> np.ndarray:
@@ -196,15 +269,18 @@ def _render_rgb_obs(gym_env: Any) -> np.ndarray:
 
 
 class ImageRobotObsHistory:
-    def __init__(self, n_obs_steps: int, height: int, width: int):
+    def __init__(self, n_obs_steps: int, height: int, width: int, robot_state_dim: int = 8):
         self.n_obs_steps = int(n_obs_steps)
         self.height = int(height)
         self.width = int(width)
+        self.robot_state_dim = int(robot_state_dim)
         self.image = np.zeros((self.n_obs_steps, self.height, self.width, 3), dtype=np.uint8)
-        self.robot_state = np.zeros((self.n_obs_steps, 8), dtype=np.float32)
+        self.robot_state = np.zeros((self.n_obs_steps, self.robot_state_dim), dtype=np.float32)
         self.initialized = False
 
     def reset(self, image: np.ndarray, robot_state: np.ndarray) -> None:
+        if robot_state.shape != (self.robot_state_dim,):
+            raise ValueError(f"Expected robot_state shape ({self.robot_state_dim},), got {robot_state.shape}")
         self.image[:] = image[None, ...]
         self.robot_state[:] = robot_state[None, ...]
         self.initialized = True
@@ -400,6 +476,10 @@ def main() -> None:
         metrics_path=str(metrics_path),
         checkpoint=str(checkpoint),
         demo_reset_dataset=str(demo_reset_path) if demo_reset_path else None,
+        append_phase_progress=bool(args_cli.append_phase_progress),
+        phase_progress_dataset=str(args_cli.phase_progress_dataset) if args_cli.phase_progress_dataset else None,
+        phase_progress_episode=int(args_cli.phase_progress_episode),
+        phase_progress_start_step=int(args_cli.phase_progress_start_step),
         num_action_samples=int(args_cli.num_action_samples),
         policy_sample_seed=args_cli.policy_sample_seed,
         action_chunk_steps=int(args_cli.action_chunk_steps),
@@ -421,6 +501,20 @@ def main() -> None:
     _configure_camera(env_cfg)
 
     workspace, policy = _load_policy(checkpoint, str(args_cli.device), args_cli.diffusion_policy_root)
+    phase_provider = None
+    if args_cli.append_phase_progress:
+        if not args_cli.phase_progress_dataset:
+            raise ValueError("--append_phase_progress requires --phase_progress_dataset")
+        phase_path = Path(args_cli.phase_progress_dataset).expanduser().resolve()
+        if not phase_path.is_file():
+            raise FileNotFoundError(phase_path)
+        phase_provider = RgbPhaseProgressProvider(
+            phase_path,
+            episode=int(args_cli.phase_progress_episode),
+            start_step=int(args_cli.phase_progress_start_step),
+        )
+        _stage("phase_progress_provider_loaded", **phase_provider.summary())
+    robot_state_dim = 8 + (4 if phase_provider is not None else 0)
     gym_env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array")
     task_env = gym_env.unwrapped
     _configure_camera(env_cfg, task_env)
@@ -458,8 +552,15 @@ def main() -> None:
             n_obs_steps=int(policy.n_obs_steps),
             height=int(args_cli.image_height),
             width=int(args_cli.image_width),
+            robot_state_dim=robot_state_dim,
         )
-        history.reset(_render_rgb_obs(gym_env), _robot_state_from_policy_obs(policy_obs))
+        history.reset(
+            _render_rgb_obs(gym_env),
+            _robot_state_from_policy_obs(
+                policy_obs,
+                None if phase_provider is None else phase_provider.feature_at(0),
+            ),
+        )
         chunk_steps_requested = max(1, int(args_cli.action_chunk_steps))
 
         for step in range(int(args_cli.num_steps)):
@@ -487,7 +588,10 @@ def main() -> None:
                 action_queue = np.empty((1, 0, 7), dtype=np.float32)
 
             next_image = _render_rgb_obs(gym_env)
-            next_robot_state = _robot_state_from_policy_obs(policy_obs)
+            next_robot_state = _robot_state_from_policy_obs(
+                policy_obs,
+                None if phase_provider is None else phase_provider.feature_at(step + 1),
+            )
             if dones.any():
                 history.reset(next_image, next_robot_state)
             else:
@@ -520,8 +624,12 @@ def main() -> None:
         "checkpoint": str(checkpoint),
         "official_workspace": workspace.__class__.__name__,
         "policy_class": policy.__class__.__name__,
-        "obs_schema": {"image": [3, int(args_cli.image_height), int(args_cli.image_width)], "robot_state": 8},
+        "obs_schema": {
+            "image": [3, int(args_cli.image_height), int(args_cli.image_width)],
+            "robot_state": int(robot_state_dim),
+        },
         "privileged_object_state_in_policy": False,
+        "phase_progress_provider": None if phase_provider is None else phase_provider.summary(),
         "num_action_samples": int(args_cli.num_action_samples),
         "policy_sample_seed": args_cli.policy_sample_seed,
         "action_chunk_steps": max(1, int(args_cli.action_chunk_steps)),

@@ -82,6 +82,37 @@ def _create_limits_clamp_constant_action_normalizer(
     )
 
 
+def _contact_phase_progress_features(
+    phase_ids: np.ndarray,
+    episode_ends: np.ndarray,
+    n_rows: int,
+) -> np.ndarray:
+    phase_ids = np.asarray(phase_ids, dtype=np.int32)
+    if phase_ids.shape != (int(n_rows),):
+        raise ValueError(f"phase_ids must have shape ({n_rows},), got {phase_ids.shape}")
+    unique = set(int(v) for v in np.unique(phase_ids))
+    if not unique.issubset({-1, 0, 1, 2}):
+        raise ValueError(
+            "RGB phase/progress augmentation expects contact relabel phase ids "
+            f"in {{-1,0,1,2}}, got {sorted(unique)}"
+        )
+    contact_phase = phase_ids.copy()
+    contact_phase[contact_phase < 0] = 0
+    one_hot = np.eye(3, dtype=np.float32)[contact_phase]
+
+    starts = np.concatenate(([0], episode_ends[:-1])).astype(np.int64)
+    progress = np.zeros((int(n_rows),), dtype=np.float32)
+    for start, end in zip(starts, episode_ends):
+        start_i = int(start)
+        end_i = int(end)
+        length = end_i - start_i
+        if length <= 1:
+            progress[start_i:end_i] = 0.0
+        else:
+            progress[start_i:end_i] = np.linspace(0.0, 1.0, length, dtype=np.float32)
+    return np.concatenate((one_hot, progress[:, None]), axis=1).astype(np.float32)
+
+
 class FrankaCubeLowdimDataset(BaseLowdimDataset):
     """NPZ-backed low-dimensional dataset for official Diffusion Policy.
 
@@ -249,6 +280,8 @@ class FrankaCubeRgbDataset(BaseImageDataset):
         robot_state_key: str = "robot_state",
         obs_image_name: str = "image",
         obs_robot_state_name: str = "robot_state",
+        append_phase_progress: bool = False,
+        phase_key: str = "phase_ids",
     ):
         super().__init__()
         self.dataset_path = str(dataset_path)
@@ -264,6 +297,8 @@ class FrankaCubeRgbDataset(BaseImageDataset):
         self.robot_state_key = str(robot_state_key)
         self.obs_image_name = str(obs_image_name)
         self.obs_robot_state_name = str(obs_robot_state_name)
+        self.append_phase_progress = bool(append_phase_progress)
+        self.phase_key = str(phase_key)
 
         data = np.load(self.dataset_path, allow_pickle=False)
         actual_image_key = self.image_key if self.image_key in data.files else "rgb"
@@ -298,6 +333,14 @@ class FrankaCubeRgbDataset(BaseImageDataset):
             )
         if self.episode_ends.ndim != 1 or self.episode_ends.size == 0 or int(self.episode_ends[-1]) != n:
             raise ValueError("episode_ends must be 1D cumulative exclusive ends ending at N")
+        if self.append_phase_progress:
+            if self.phase_key not in data.files:
+                raise KeyError(
+                    f"{self.dataset_path} missing {self.phase_key!r}; "
+                    "required when append_phase_progress=true"
+                )
+            phase_features = _contact_phase_progress_features(data[self.phase_key], self.episode_ends, n)
+            self.robot_state = np.concatenate((self.robot_state, phase_features), axis=1).astype(np.float32)
 
         self.episode_starts = np.concatenate(([0], self.episode_ends[:-1])).astype(np.int64)
         self.train_episode_mask = self._make_train_episode_mask()
