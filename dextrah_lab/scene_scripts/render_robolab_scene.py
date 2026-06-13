@@ -346,12 +346,43 @@ def _look_at_quat_world(
     return _quat_from_matrix(forward, y_axis, z_axis)
 
 
-def _set_camera_pose(camera_prim: Usd.Prim, eye: tuple[float, float, float], target: tuple[float, float, float]) -> tuple[float, float, float, float]:
+def _get_or_add_xform_op(
+    xformable: UsdGeom.Xformable,
+    op_name: str,
+    add_fn,
+) -> UsdGeom.XformOp:
+    attr = xformable.GetPrim().GetAttribute(f"xformOp:{op_name}")
+    if attr.IsValid():
+        return UsdGeom.XformOp(attr)
+    return add_fn()
+
+
+def _set_camera_pose(
+    camera_prim: Usd.Prim,
+    eye: tuple[float, float, float],
+    target: tuple[float, float, float],
+) -> tuple[float, float, float, float]:
     quat = _look_at_quat_world(eye, target)
     xformable = UsdGeom.Xformable(camera_prim)
-    xformable.ClearXformOpOrder()
-    xformable.AddTranslateOp().Set(Gf.Vec3d(*eye))
-    xformable.AddOrientOp().Set(Gf.Quatf(float(quat[0]), Gf.Vec3f(float(quat[1]), float(quat[2]), float(quat[3]))))
+    translate_op = _get_or_add_xform_op(
+        xformable,
+        "translate",
+        lambda: xformable.AddTranslateOp(precision=UsdGeom.XformOp.PrecisionDouble),
+    )
+    orient_op = _get_or_add_xform_op(
+        xformable,
+        "orient",
+        lambda: xformable.AddOrientOp(precision=UsdGeom.XformOp.PrecisionDouble),
+    )
+    if translate_op.GetPrecision() == UsdGeom.XformOp.PrecisionFloat:
+        translate_op.Set(Gf.Vec3f(float(eye[0]), float(eye[1]), float(eye[2])))
+    else:
+        translate_op.Set(Gf.Vec3d(float(eye[0]), float(eye[1]), float(eye[2])))
+    if orient_op.GetPrecision() == UsdGeom.XformOp.PrecisionFloat:
+        orient_op.Set(Gf.Quatf(float(quat[0]), Gf.Vec3f(float(quat[1]), float(quat[2]), float(quat[3]))))
+    else:
+        orient_op.Set(Gf.Quatd(float(quat[0]), Gf.Vec3d(float(quat[1]), float(quat[2]), float(quat[3]))))
+    xformable.SetXformOpOrder([translate_op, orient_op])
     return quat
 
 

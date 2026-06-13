@@ -6909,3 +6909,59 @@ Analysis:
 Next:
 - Commit the no-reset sensor backend, redeploy exact commit to l401, run a
   four-frame smoke, and inspect the image tensors/video.
+
+## 2026-06-13 01:24 PDT - robolab-orbit-sensor-xform-precision
+
+Goal:
+- Fix the first no-reset sensor smoke failure and produce at least one valid
+  RoboLab orbit frame through the DEXTRAH render script.
+
+Hypothesis:
+- The no-reset sensor path reached camera capture setup. The failure is a USD
+  xform authoring bug: Isaac's camera prim already has a double-precision
+  orient op, while the script was adding a float orient op after clearing the
+  op order.
+
+Change:
+- Updated `_set_camera_pose()` to reuse existing `xformOp:translate` and
+  `xformOp:orient` attributes when present, preserve their precision, and set
+  the xform op order explicitly.
+
+Version Control:
+- agent_id: codex-robolab-orbit-render
+- worktree: `/home/lzha/code/DEXTRAH`
+- worklog: `WORKLOG.md`
+- branch: `codex/robolab-orbit-render-20260613`
+- base_commit: `96dd82d5813e58c37a0df85b3996270734254c72`
+- implementation_commit: pending
+- push/pull: pending Git bundle deploy to l401.
+- changed_files: `dextrah_lab/scene_scripts/render_robolab_scene.py`,
+  `WORKLOG.md`
+- remote_commit/status: l401 agent checkout at
+  `96dd82d5813e58c37a0df85b3996270734254c72`; new commit pending.
+
+Command / Job:
+- command:
+  `sbatch --export=ALL,CODE_NFS=<agent_code>,ROBOLAB_NFS=<staged_robolab>,RUN_NAME=robolab_orbit_sensor_smoke_20260613_0125,WIDTH=320,HEIGHT=180,FPS=1,VIDEO_SECONDS=1.0,SETTLE_STEPS=0,WARMUP_FRAMES=0,RT_SUBFRAMES=2,SIM_STEPS_PER_FRAME=0,PHYSICS_DEVICE=cuda:0,CAPTURE_BACKEND=sensor cluster/sbatch_render_robolab_scene.sh`
+- job_id: `1028903`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/robolab_scene/robolab_orbit_sensor_smoke_20260613_0125`
+- logs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/robolab_scene_1028903.out`
+- artifacts: no frame artifacts before exception
+
+Result:
+- status: failed then patched
+- metrics/artifacts: run exited after reaching `[robolab-render] capturing
+  orbit frames with sensor backend: 2 frames at 1 fps`.
+- key evidence: exception from `UsdGeomXformable::AddXformOp` because
+  `/World/OrbitCamera.xformOp:orient` already had type `quatd`.
+
+Analysis:
+- RoboLab USD loading and target computation are validated on l401. The next
+  risk is whether `TiledCamera.update()` returns RGB data without a
+  `SimulationContext.reset()` once the camera pose update succeeds.
+
+Next:
+- Commit and deploy the xform precision fix, rerun the same low-resolution
+  sensor smoke, and inspect any generated frames/video before scaling.
