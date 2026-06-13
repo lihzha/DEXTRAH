@@ -259,6 +259,16 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         self._grasp_prior_grasp_to_tool = grasp_to_tool_tensor.contiguous()
         self._grasp_prior_metadata = metadata
 
+    def _grasp_prior_object_size(self, env_ids: torch.Tensor) -> torch.Tensor:
+        return torch.full((env_ids.numel(),), float(self.cfg.cube_size), dtype=torch.float32, device=self.device)
+
+    def _grasp_prior_required_open_width(
+        self,
+        env_ids: torch.Tensor,
+        targets: dict[str, torch.Tensor],
+    ) -> torch.Tensor:
+        return self._grasp_prior_object_size(env_ids)
+
     def _reset_grasp_prior_metrics(self, env_ids: torch.Tensor) -> None:
         self.grasp_prior_reset_attempted[env_ids] = False
         self.grasp_prior_reset_success[env_ids] = False
@@ -733,7 +743,9 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         self.grasp_prior_reset_left_finger_pos[env_ids] = self.left_finger_pos[env_ids]
         self.grasp_prior_reset_right_finger_pos[env_ids] = self.right_finger_pos[env_ids]
         self.grasp_prior_reset_gripper_width[env_ids] = self.gripper_width[env_ids]
-        self.grasp_prior_reset_open_width_margin[env_ids] = self.gripper_width[env_ids] - float(self.cfg.cube_size)
+        object_size = self._grasp_prior_object_size(env_ids)
+        required_open_width = self._grasp_prior_required_open_width(env_ids, targets)
+        self.grasp_prior_reset_open_width_margin[env_ids] = self.gripper_width[env_ids] - required_open_width
         self.grasp_prior_reset_exact_ee_dist[env_ids] = targets["exact_ee_dist"]
         self.grasp_prior_reset_pregrasp_ee_dist[env_ids] = targets["pregrasp_ee_dist"]
 
@@ -780,8 +792,8 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             success
             & (self.grasp_prior_reset_open_width_margin[env_ids] >= 0.0)
             & (offset_dot > 0.25)
-            & (exact_tip_center_dist <= 0.75 * float(self.cfg.cube_size))
-            & (exact_tip_max_dist <= 1.25 * float(self.cfg.cube_size))
+            & (exact_tip_center_dist <= 0.75 * object_size)
+            & (exact_tip_max_dist <= 1.25 * object_size)
             & (pregrasp_tip_table_clearance >= float(self.cfg.finger_table_penetration_termination_margin))
             & (exact_tip_table_clearance >= float(self.cfg.finger_table_penetration_termination_margin))
         )

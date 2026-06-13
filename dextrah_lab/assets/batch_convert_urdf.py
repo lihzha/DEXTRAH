@@ -50,6 +50,12 @@ parser.add_argument(
     default=False,
     help="Make the asset instanceable for efficient cloning.",
 )
+parser.add_argument(
+    "--skip-existing",
+    action="store_true",
+    default=False,
+    help="Skip objects whose target USD file already exists.",
+)
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
 # parse the arguments
@@ -62,6 +68,7 @@ simulation_app = app_launcher.app
 """Rest everything follows."""
 
 import contextlib
+import inspect
 import os
 
 import carb
@@ -119,22 +126,36 @@ def main():
         full_object_urdf_path = urdf_path + "/" + object_name + "/model.urdf"
         full_object_usd_path = usd_path + "/" + object_name
         usd_filename = object_name + ".usd"
+        full_object_usd_file = os.path.join(full_object_usd_path, usd_filename)
+
+        if args_cli.skip_existing and os.path.isfile(full_object_usd_file):
+            print(f"Skipping existing USD file: {full_object_usd_file}")
+            continue
 
         update_urdf(full_object_urdf_path, object_name)
 
         # TODO: make this a CLI arg
         convex_decompose_mesh = True
 
-        urdf_converter_cfg = UrdfConverterCfg(
+        converter_kwargs = dict(
             asset_path=full_object_urdf_path,
             usd_dir=full_object_usd_path,
-            usd_file_name= usd_filename,
+            usd_file_name=usd_filename,
             fix_base=args_cli.fix_base,
             merge_fixed_joints=args_cli.merge_joints,
             force_usd_conversion=True,
             make_instanceable=args_cli.make_instanceable,
-            convex_decompose_mesh=convex_decompose_mesh,
         )
+        if "convex_decompose_mesh" in inspect.signature(UrdfConverterCfg).parameters:
+            converter_kwargs["convex_decompose_mesh"] = convex_decompose_mesh
+        urdf_converter_cfg = UrdfConverterCfg(**converter_kwargs)
+        if hasattr(urdf_converter_cfg, "joint_drive") and hasattr(urdf_converter_cfg.joint_drive, "gains"):
+            gains = urdf_converter_cfg.joint_drive.gains
+            stiffness = getattr(gains, "stiffness", None)
+            if not isinstance(stiffness, (float, int, dict)):
+                gains.stiffness = 0.0
+            if getattr(gains, "damping", None) is None:
+                gains.damping = 0.0
 
         # Print info
         print("-" * 80)
