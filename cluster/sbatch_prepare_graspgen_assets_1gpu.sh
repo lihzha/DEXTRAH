@@ -19,6 +19,7 @@ IMAGE="${IMAGE:-$NFS_ROOT/cache/isaac_lab_2.2.0.sqsh}"
 ENV_ROOT="${ENV_ROOT:-$NFS_ROOT/envs}"
 RESULTS_NFS="${RESULTS_NFS:-$NFS_ROOT/results/dextrah}"
 CACHE_NFS="${CACHE_NFS:-$NFS_ROOT/isaac_cache}"
+GRASPGEN_CACHE_NFS="${GRASPGEN_CACHE_NFS:-$NFS_ROOT/cache/graspgen}"
 PREP_DEPS_DIR="${PREP_DEPS_DIR:-$ENV_ROOT/dextrah-graspgen-prep/site}"
 
 SLURM_JOB_ID_SAFE="${SLURM_JOB_ID:-manual}"
@@ -56,6 +57,9 @@ mkdir -p \
   "$ASSET_OUTPUT_DIR_HOST" \
   "$PREP_DEPS_DIR" \
   "$NFS_ROOT/slurm_logs/dextrah" \
+  "$GRASPGEN_CACHE_NFS/home" "$GRASPGEN_CACHE_NFS/xdg" \
+  "$GRASPGEN_CACHE_NFS/huggingface/hub" "$GRASPGEN_CACHE_NFS/objaverse" \
+  "$GRASPGEN_CACHE_NFS/tmp" "$GRASPGEN_CACHE_NFS/pip" "$GRASPGEN_CACHE_NFS/torch" \
   "$CACHE_NFS/kit" "$CACHE_NFS/ov" "$CACHE_NFS/pip" \
   "$CACHE_NFS/glcache" "$CACHE_NFS/computecache" \
   "$CACHE_NFS/omni_logs" "$CACHE_NFS/carb_logs" \
@@ -73,6 +77,7 @@ echo "CODE_NFS=$CODE_NFS"
 echo "ISAACLAB_NFS=$ISAACLAB_NFS"
 echo "CODE_COMMIT=${CODE_COMMIT:-unknown}"
 echo "RESULTS_NFS=$RESULTS_NFS"
+echo "GRASPGEN_CACHE_NFS=$GRASPGEN_CACHE_NFS"
 echo "RUN_NAME=$RUN_NAME"
 echo "ASSET_OUTPUT_DIR_HOST=$ASSET_OUTPUT_DIR_HOST"
 echo "ASSET_OUTPUT_DIR_CONTAINER=$ASSET_OUTPUT_DIR_CONTAINER"
@@ -92,7 +97,7 @@ echo "UUIDS=$UUIDS"
 srun \
   --ntasks=1 \
   --container-image="$IMAGE" \
-  --container-mounts=/dev/shm:/dev/shm,"$CODE_NFS":/code,"$ISAACLAB_NFS":/IsaacLab,"$ENV_ROOT":/envs,"$RESULTS_NFS":/results,"$CACHE_NFS/kit":/isaac-sim/kit/cache,"$CACHE_NFS/ov":/root/.cache/ov,"$CACHE_NFS/pip":/root/.cache/pip,"$CACHE_NFS/glcache":/root/.cache/nvidia/GLCache,"$CACHE_NFS/computecache":/root/.nv/ComputeCache,"$CACHE_NFS/omni_logs":/root/.nvidia-omniverse/logs,"$CACHE_NFS/carb_logs":/isaac-sim/kit/logs/Kit/Isaac-Sim,"$CACHE_NFS/data":/root/.local/share/ov/data,"$CACHE_NFS/documents":/root/Documents \
+  --container-mounts=/dev/shm:/dev/shm,"$CODE_NFS":/code,"$ISAACLAB_NFS":/IsaacLab,"$ENV_ROOT":/envs,"$RESULTS_NFS":/results,"$GRASPGEN_CACHE_NFS":/graspgen_cache,"$CACHE_NFS/kit":/isaac-sim/kit/cache,"$CACHE_NFS/ov":/root/.cache/ov,"$CACHE_NFS/pip":/root/.cache/pip,"$CACHE_NFS/glcache":/root/.cache/nvidia/GLCache,"$CACHE_NFS/computecache":/root/.nv/ComputeCache,"$CACHE_NFS/omni_logs":/root/.nvidia-omniverse/logs,"$CACHE_NFS/carb_logs":/isaac-sim/kit/logs/Kit/Isaac-Sim,"$CACHE_NFS/data":/root/.local/share/ov/data,"$CACHE_NFS/documents":/root/Documents \
   --no-container-entrypoint \
   --container-remap-root \
   --container-writable \
@@ -100,13 +105,65 @@ srun \
   bash -lc '
     set -euo pipefail
     cd /code
+    export HOME=/graspgen_cache/home
+    export XDG_CACHE_HOME=/graspgen_cache/xdg
+    export HF_HOME=/graspgen_cache/huggingface
+    export HUGGINGFACE_HUB_CACHE=/graspgen_cache/huggingface/hub
+    export OBJAVERSE_HOME=/graspgen_cache/objaverse
+    export OBJAVERSE_CACHE_DIR=/graspgen_cache/objaverse
+    export TMPDIR=/graspgen_cache/tmp
+    export PIP_CACHE_DIR=/graspgen_cache/pip
+    export TORCH_HOME=/graspgen_cache/torch
+    export DEXTRAH_ENFORCE_NO_HOME_DOWNLOADS=1
+    mkdir -p "$HOME" "$XDG_CACHE_HOME" "$HF_HOME" "$HUGGINGFACE_HUB_CACHE" \
+      "$OBJAVERSE_HOME" "$TMPDIR" "$PIP_CACHE_DIR" "$TORCH_HOME"
     echo "container_host=$(hostname)"
     echo "container_cuda_visible_devices=${CUDA_VISIBLE_DEVICES:-unset}"
     echo "CODE_COMMIT=${CODE_COMMIT:-unknown}"
+    echo "HOME=$HOME"
+    echo "XDG_CACHE_HOME=$XDG_CACHE_HOME"
+    echo "HF_HOME=$HF_HOME"
+    echo "HUGGINGFACE_HUB_CACHE=$HUGGINGFACE_HUB_CACHE"
+    echo "OBJAVERSE_HOME=$OBJAVERSE_HOME"
+    echo "OBJAVERSE_CACHE_DIR=$OBJAVERSE_CACHE_DIR"
+    echo "TMPDIR=$TMPDIR"
+    echo "PIP_CACHE_DIR=$PIP_CACHE_DIR"
     git rev-parse HEAD 2>/dev/null || true
     nvidia-smi || true
 
     mkdir -p "$ASSET_OUTPUT_DIR_CONTAINER" "$PREP_DEPS_DIR"
+    /isaac-sim/python.sh - <<'"'"'PY'"'"'
+import os
+import tempfile
+from pathlib import Path
+
+checks = {
+    "Path.home": Path.home(),
+    "tempfile.gettempdir": Path(tempfile.gettempdir()),
+}
+for key in (
+    "HOME",
+    "XDG_CACHE_HOME",
+    "HF_HOME",
+    "HUGGINGFACE_HUB_CACHE",
+    "OBJAVERSE_HOME",
+    "OBJAVERSE_CACHE_DIR",
+    "TMPDIR",
+    "PIP_CACHE_DIR",
+    "TORCH_HOME",
+):
+    value = os.environ.get(key)
+    if value:
+        checks[key] = Path(value)
+bad = []
+for label, path in checks.items():
+    resolved = path.expanduser().resolve(strict=False)
+    print(f"GRASPGEN_CACHE_PATH {label}={resolved}", flush=True)
+    if str(resolved) == "/home" or str(resolved).startswith("/home/"):
+        bad.append(f"{label}={resolved}")
+if bad:
+    raise SystemExit("Refusing to run GraspGen preparation with /home cache paths: " + ", ".join(bad))
+PY
 
     export PREP_PYTHONPATH="$PREP_DEPS_DIR:/code"
     if ! PYTHONPATH="$PREP_PYTHONPATH" /isaac-sim/python.sh - <<'"'"'PY'"'"'

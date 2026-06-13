@@ -20,6 +20,17 @@ HF_BASE_URL = "https://huggingface.co/datasets/nvidia/PhysicalAI-Robotics-GraspG
 DEFAULT_SPLIT_URL = f"{HF_BASE_URL}/splits/robotiq_2f_140/train.txt"
 DEFAULT_GRASP_INDEX_URL = f"{HF_BASE_URL}/grasp_data/franka_panda/uuid_index.json"
 DEFAULT_DOWNLOADER_URL = "https://raw.githubusercontent.com/NVlabs/GraspGen/main/scripts/download_objects.py"
+NO_HOME_ENV_KEYS = (
+    "HOME",
+    "XDG_CACHE_HOME",
+    "HF_HOME",
+    "HUGGINGFACE_HUB_CACHE",
+    "OBJAVERSE_HOME",
+    "OBJAVERSE_CACHE_DIR",
+    "TMPDIR",
+    "PIP_CACHE_DIR",
+    "TORCH_HOME",
+)
 
 
 def _repo_root() -> Path:
@@ -56,6 +67,42 @@ def _download(url: str, path: Path, *, overwrite: bool = False) -> Path:
         shutil.copyfileobj(response, f)
     tmp_path.replace(path)
     return path
+
+
+def _enabled(value: str | None) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _under_home(path: Path) -> bool:
+    resolved = path.expanduser().resolve(strict=False)
+    return str(resolved) == "/home" or str(resolved).startswith("/home/")
+
+
+def _assert_no_home_download_paths(output_dir: Path) -> None:
+    if not _enabled(os.environ.get("DEXTRAH_ENFORCE_NO_HOME_DOWNLOADS")):
+        return
+
+    checks: list[tuple[str, Path]] = [
+        ("output_dir", output_dir),
+        ("Path.home", Path.home()),
+        ("tempfile.gettempdir", Path(tempfile.gettempdir())),
+    ]
+    for key in NO_HOME_ENV_KEYS:
+        value = os.environ.get(key)
+        if value:
+            checks.append((key, Path(value)))
+
+    bad: list[str] = []
+    for label, path in checks:
+        resolved = path.expanduser().resolve(strict=False)
+        print(f"[NO_HOME_DOWNLOAD_CHECK] {label}={resolved}", flush=True)
+        if _under_home(resolved):
+            bad.append(f"{label}={resolved}")
+    if bad:
+        raise RuntimeError(
+            "Refusing to prepare GraspGen assets with /home download/cache paths: "
+            + ", ".join(bad)
+        )
 
 
 def _read_uuid_lines(path_or_url: str, cache_path: Path | None = None) -> list[str]:
@@ -463,6 +510,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     output_dir = args.output_dir.expanduser().resolve()
+    _assert_no_home_download_paths(output_dir)
     cache_dir = output_dir / "cache"
     raw_object_dir = output_dir / "raw_objaverse"
     urdf_dir = output_dir / "urdf"

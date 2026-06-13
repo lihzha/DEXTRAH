@@ -25,6 +25,7 @@ parser.add_argument("--reset_cycles", type=int, default=3)
 parser.add_argument("--settle_steps", type=int, default=72)
 parser.add_argument("--perturb_steps", type=int, default=96)
 parser.add_argument("--grasp_steps", type=int, default=72)
+parser.add_argument("--grasp_object_settle_steps", type=int, default=48)
 parser.add_argument("--capture_interval", type=int, default=2)
 parser.add_argument("--grasp_reset_attempts", type=int, default=12)
 parser.add_argument("--disable_fabric", action="store_true", default=False)
@@ -138,12 +139,22 @@ def _warmup_render(env, task_env, frames: int) -> None:
         env.render()
 
 
-def _metrics_snapshot(task_env, dones: torch.Tensor | None = None) -> dict[str, object]:
-    env_ids = task_env._robot._ALL_INDICES
+def _metrics_snapshot(
+    task_env,
+    dones: torch.Tensor | None = None,
+    *,
+    reference_pos: torch.Tensor | None = None,
+    env_ids: torch.Tensor | None = None,
+) -> dict[str, object]:
+    if env_ids is None:
+        env_ids = task_env._robot._ALL_INDICES
     bottom_z = _object_bottom_z(task_env, env_ids)
-    object_xy_delta = torch.norm(task_env.cube_pos[:, :2] - task_env.cube_initial_pos[:, :2], dim=-1)
-    object_speed = torch.norm(task_env.cube_vel[:, :3], dim=-1)
-    angular_speed = torch.norm(task_env.cube_vel[:, 3:], dim=-1)
+    if reference_pos is None:
+        reference_pos = task_env.cube_initial_pos
+    object_xy_delta = torch.norm(task_env.cube_pos[env_ids, :2] - reference_pos[env_ids, :2], dim=-1)
+    object_speed = torch.norm(task_env.cube_vel[env_ids, :3], dim=-1)
+    angular_speed = torch.norm(task_env.cube_vel[env_ids, 3:], dim=-1)
+    done_count = int(dones[env_ids].float().sum().detach().cpu()) if isinstance(dones, torch.Tensor) else 0
     return {
         "bottom_z_min": float(bottom_z.detach().min().cpu()),
         "table_surface_z": float(task_env.cfg.table_surface_z),
@@ -151,14 +162,14 @@ def _metrics_snapshot(task_env, dones: torch.Tensor | None = None) -> dict[str, 
         "object_xy_delta_max": float(object_xy_delta.detach().max().cpu()),
         "object_speed_max": float(object_speed.detach().max().cpu()),
         "object_angular_speed_max": float(angular_speed.detach().max().cpu()),
-        "object_center_z_min": float(task_env.cube_pos[:, 2].detach().min().cpu()),
-        "object_center_z_max": float(task_env.cube_pos[:, 2].detach().max().cpu()),
-        "finger_table_clearance_min": float(task_env.finger_table_clearance.detach().min().cpu()),
-        "finger_center_to_object_min": float(task_env.finger_center_to_cube_dist.detach().min().cpu()),
-        "max_finger_to_object_min": float(task_env.max_finger_to_cube_dist.detach().min().cpu()),
-        "gripper_width_min": float(task_env.gripper_width.detach().min().cpu()),
-        "gripper_width_max": float(task_env.gripper_width.detach().max().cpu()),
-        "done_count": int(dones.float().sum().detach().cpu()) if isinstance(dones, torch.Tensor) else 0,
+        "object_center_z_min": float(task_env.cube_pos[env_ids, 2].detach().min().cpu()),
+        "object_center_z_max": float(task_env.cube_pos[env_ids, 2].detach().max().cpu()),
+        "finger_table_clearance_min": float(task_env.finger_table_clearance[env_ids].detach().min().cpu()),
+        "finger_center_to_object_min": float(task_env.finger_center_to_cube_dist[env_ids].detach().min().cpu()),
+        "max_finger_to_object_min": float(task_env.max_finger_to_cube_dist[env_ids].detach().min().cpu()),
+        "gripper_width_min": float(task_env.gripper_width[env_ids].detach().min().cpu()),
+        "gripper_width_max": float(task_env.gripper_width[env_ids].detach().max().cpu()),
+        "done_count": done_count,
     }
 
 
@@ -195,12 +206,13 @@ def _record_reset_settle(env, task_env, output_dir: Path) -> dict[str, object]:
         env.reset()
         _configure_camera(task_env, env_id=0)
         _warmup_render(env, task_env, args_cli.render_warmup_frames)
+        reference_pos = task_env.cube_pos.clone()
         for step in range(max(int(args_cli.settle_steps), 1)):
             _, dones = _step_env(env, task_env)
             if step % max(int(args_cli.capture_interval), 1) == 0:
                 artifact_paths.append(_capture(env, scenario_dir, frame_idx))
                 frame_idx += 1
-            snap = _metrics_snapshot(task_env, dones)
+            snap = _metrics_snapshot(task_env, dones, reference_pos=reference_pos)
             snap.update({"cycle": cycle, "step": step})
             series.append(snap)
     summary = _summarize_series(series)
@@ -217,6 +229,7 @@ def _record_perturbation(env, task_env, output_dir: Path) -> dict[str, object]:
     env.reset()
     _configure_camera(task_env, env_id=0)
     _warmup_render(env, task_env, args_cli.render_warmup_frames)
+    reference_pos = task_env.cube_pos.clone()
     env_ids = task_env._robot._ALL_INDICES
     velocity = torch.zeros((task_env.num_envs, 6), device=task_env.device)
     signs = torch.where(torch.arange(task_env.num_envs, device=task_env.device) % 2 == 0, 1.0, -1.0)
@@ -234,7 +247,7 @@ def _record_perturbation(env, task_env, output_dir: Path) -> dict[str, object]:
         if step % max(int(args_cli.capture_interval), 1) == 0:
             artifact_paths.append(_capture(env, scenario_dir, frame_idx))
             frame_idx += 1
-        snap = _metrics_snapshot(task_env, dones)
+        snap = _metrics_snapshot(task_env, dones, reference_pos=reference_pos)
         snap.update({"step": step})
         series.append(snap)
     summary = _summarize_series(series)
@@ -248,10 +261,50 @@ def _record_perturbation(env, task_env, output_dir: Path) -> dict[str, object]:
     return {"passed": passed, "summary": summary, "frames": artifact_paths}
 
 
+def _refresh_object_references(task_env, env_ids: torch.Tensor) -> None:
+    env_origins = task_env.scene.env_origins[env_ids]
+    object_root_pos = task_env._cube.data.root_pos_w[env_ids] - env_origins
+    object_root_quat = task_env._cube.data.root_quat_w[env_ids]
+    center_pos = task_env._object_center_pos_from_root(env_ids, object_root_pos, object_root_quat)
+    task_env.cube_initial_pos[env_ids] = center_pos
+    task_env.cube_goal_pos[env_ids] = center_pos
+    task_env.cube_goal_pos[env_ids, 2] = center_pos[:, 2] + float(task_env.cfg.cube_lift_height)
+    task_env.has_lifted_cube[env_ids] = False
+    task_env.in_success_region[env_ids] = False
+    task_env.time_in_success_region[env_ids] = 0.0
+    task_env._compute_intermediate_values(env_ids)
+
+
+def _reset_settled_object_then_apply_grasp_prior(env, task_env) -> None:
+    env_ids = task_env._robot._ALL_INDICES
+    prior_enabled = bool(getattr(task_env, "_grasp_prior_reset_enabled", False))
+    task_env._grasp_prior_reset_enabled = False
+    env.reset()
+    for _ in range(max(int(args_cli.grasp_object_settle_steps), 0)):
+        _step_env(env, task_env)
+    zero_vel = torch.zeros((task_env.num_envs, 6), device=task_env.device)
+    task_env._cube.write_root_velocity_to_sim(zero_vel, env_ids=env_ids)
+    task_env.scene.write_data_to_sim()
+    task_env.sim.forward()
+    task_env.scene.update(dt=0.0)
+    _refresh_object_references(task_env, env_ids)
+
+    object_root_pos = task_env._cube.data.root_pos_w[env_ids] - task_env.scene.env_origins[env_ids]
+    object_root_quat = task_env._cube.data.root_quat_w[env_ids]
+    baseline_joint_pos = task_env._robot.data.default_joint_pos[env_ids].clone()
+    joint_vel = torch.zeros_like(baseline_joint_pos)
+    task_env._reset_grasp_prior_metrics(env_ids)
+    task_env._grasp_prior_reset_enabled = prior_enabled
+    task_env._apply_grasp_prior_reset(env_ids, baseline_joint_pos, joint_vel, object_root_pos, object_root_quat)
+    task_env.episode_length_buf[env_ids] = 0
+    task_env.ik_controller.reset(env_ids)
+    task_env._compute_intermediate_values(env_ids)
+
+
 def _reset_until_quality_grasp(env, task_env) -> int:
     selected_env = 0
     for _ in range(max(int(args_cli.grasp_reset_attempts), 1)):
-        env.reset()
+        _reset_settled_object_then_apply_grasp_prior(env, task_env)
         task_env._compute_intermediate_values()
         quality = task_env.grasp_prior_reset_quality_success
         if bool(quality.any().item()):
@@ -312,13 +365,7 @@ def _record_grasp_contact(env, task_env, output_dir: Path) -> dict[str, object]:
     }
 
 
-def main() -> None:
-    output_dir = Path(args_cli.output_dir or datetime.now().strftime("franka_multi_object_video_validate_%Y%m%d_%H%M%S"))
-    output_dir = output_dir.expanduser().resolve()
-    output_dir.mkdir(parents=True, exist_ok=True)
-    metrics_path = Path(args_cli.metrics_path).expanduser().resolve() if args_cli.metrics_path else output_dir / "video_metrics.json"
-    metrics_path.parent.mkdir(parents=True, exist_ok=True)
-
+def _make_env(*, grasp_prior: bool):
     env_cfg = parse_env_cfg(
         args_cli.task,
         device=args_cli.device,
@@ -330,24 +377,37 @@ def main() -> None:
     env_cfg.max_objects = int(args_cli.max_objects)
     env_cfg.object_spawn_xy_randomization = float(args_cli.object_spawn_xy_randomization)
     env_cfg.object_spawn_yaw_randomization_deg = float(args_cli.object_spawn_yaw_randomization_deg)
-    env_cfg.grasp_prior_reset_enabled = True
-    env_cfg.grasp_prior_action_warmstart_enabled = True
-    env_cfg.grasp_prior_action_warmstart_close_width = 0.035
-    env_cfg.grasp_prior_action_warmstart_lift_action_z = 0.30
-    env_cfg.grasp_prior_action_warmstart_approach_steps = min(20, max(args_cli.grasp_steps // 3, 1))
-    env_cfg.grasp_prior_action_warmstart_close_steps = min(20, max(args_cli.grasp_steps // 3, 1))
-    env_cfg.grasp_prior_action_warmstart_lift_steps = max(args_cli.grasp_steps - 2 * (args_cli.grasp_steps // 3), 1)
+    env_cfg.grasp_prior_reset_enabled = bool(grasp_prior)
+    env_cfg.grasp_prior_action_warmstart_enabled = bool(grasp_prior)
+    if grasp_prior:
+        env_cfg.grasp_prior_action_warmstart_close_width = 0.035
+        env_cfg.grasp_prior_action_warmstart_lift_action_z = 0.30
+        env_cfg.grasp_prior_action_warmstart_approach_steps = min(20, max(args_cli.grasp_steps // 3, 1))
+        env_cfg.grasp_prior_action_warmstart_close_steps = min(20, max(args_cli.grasp_steps // 3, 1))
+        env_cfg.grasp_prior_action_warmstart_lift_steps = max(args_cli.grasp_steps - 2 * (args_cli.grasp_steps // 3), 1)
     env_cfg.grasp_prior_allow_missing = False
-
     env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array")
     task_env = env.unwrapped
     _configure_camera(task_env, env_id=0)
+    return env, task_env
 
+
+def main() -> None:
+    output_dir = Path(args_cli.output_dir or datetime.now().strftime("franka_multi_object_video_validate_%Y%m%d_%H%M%S"))
+    output_dir = output_dir.expanduser().resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    metrics_path = Path(args_cli.metrics_path).expanduser().resolve() if args_cli.metrics_path else output_dir / "video_metrics.json"
+    metrics_path.parent.mkdir(parents=True, exist_ok=True)
+
+    object_env, object_task_env = _make_env(grasp_prior=False)
     scenarios = {
-        "reset_settle": _record_reset_settle(env, task_env, output_dir),
-        "perturbation": _record_perturbation(env, task_env, output_dir),
-        "grasp_contact": _record_grasp_contact(env, task_env, output_dir),
+        "reset_settle": _record_reset_settle(object_env, object_task_env, output_dir),
+        "perturbation": _record_perturbation(object_env, object_task_env, output_dir),
     }
+    object_env.close()
+
+    grasp_env, grasp_task_env = _make_env(grasp_prior=True)
+    scenarios["grasp_contact"] = _record_grasp_contact(grasp_env, grasp_task_env, output_dir)
     payload = {
         "passed": all(bool(item.get("passed", False)) for item in scenarios.values()),
         "scenarios": scenarios,
@@ -358,11 +418,12 @@ def main() -> None:
             "object_asset_manifest_path": str(args_cli.object_asset_manifest_path),
             "max_objects": args_cli.max_objects,
             "capture_interval": args_cli.capture_interval,
+            "grasp_object_settle_steps": args_cli.grasp_object_settle_steps,
         },
     }
     metrics_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(f"[INFO] Wrote video metrics to {metrics_path}", flush=True)
-    env.close()
+    grasp_env.close()
     simulation_app.close()
     if not payload["passed"]:
         failed = [name for name, item in scenarios.items() if not bool(item.get("passed", False))]

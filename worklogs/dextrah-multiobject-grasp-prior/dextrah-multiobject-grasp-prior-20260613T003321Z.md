@@ -248,7 +248,45 @@ Command / Job:
 - log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_1028839.out`
 
 Result:
-- status: running/queued; monitoring in progress.
+- status: failed validation; artifacts fetched and encoded locally.
+- local_artifacts: `local_results/video_smoke_1028874/{reset_settle,perturbation,grasp_contact}.mp4`
+- metrics:
+  - overall `passed=false`
+  - `reset_settle`: `bottom_clearance_min=-0.1134`, `object_xy_delta_max=0.6423`, `object_center_z_max=1.2715`, `object_speed_max=3.0223`
+  - `perturbation`: `bottom_clearance_min=-0.0540`, `object_xy_delta_max=0.0270`, `object_angular_speed_max=45.7303`
+  - `grasp_contact`: `bottom_clearance_min=-0.1084`, `selected_lift_height_max=0.0`, `selected_max_finger_dist_min=0.1473`
+
+Analysis:
+- The environment is not yet validated. The rendered frames show a thin object drifting on reset and a selected grasp-contact case where the object is visibly below the gripper instead of cleanly captured.
+- The previous numeric rollout checks were insufficient because they did not render physical contact behavior or per-object reset stability.
+- The failure likely combines missing explicit imported-object collision/material settings, broad cube-derived grasp-prior quality checks that are too permissive for non-cube geometries, and a validator visibility gap: the video camera follows one env while metrics aggregate failures across all four envs.
+
+Next:
+- Patch object USD spawn to set explicit collision offsets and low-bounce/high-friction physics material, matching the cube task.
+- Split video validation into object-only reset/perturbation and grasp-prior-contact scenarios, and report per-env/per-object metrics so every failing object is visible.
+- Rerun the 4-object smoke videos before any training.
+
+## 2026-06-13 - Full GraspGen asset staging blocked by quota
+
+Goal:
+- Continue staging the full GraspGen object set on l401 for later scale-up.
+
+Command / Job:
+- job_id: 1028836
+- run_name: `franka_multi_graspgen_assets_full_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_224052`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/franka_multi_graspgen_assets_full_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_224052`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/prepare_graspgen_assets_1028836.out`
+
+Result:
+- status: cancelled after quota failure.
+- evidence: object download logged `[Errno 122] Disk quota exceeded` around batch 85/804; the job then continued into large grasp-shard downloads and was cancelled with `scancel 1028836`.
+- partial_size: about `2.6G` in the full staging run directory at cancellation time.
+
+Analysis:
+- Full-set staging is blocked by the user's/project's quota policy, not by the environment code. The 4-object smoke manifest remains available for environment debugging.
+
+Next:
+- Do not relaunch full staging until storage is freed or the staging/cache path is redirected to a quota-safe location.
 
 ## 2026-06-13 - Add physical-behavior video validator
 
@@ -274,6 +312,58 @@ Next:
 - Commit/push/deploy.
 - Launch the video validator on the 4-object smoke manifest first.
 - Fetch frames, encode MP4s locally with `ffmpeg`, inspect them, and then run equivalent validation on the full manifest after full asset staging finishes.
+
+## 2026-06-13 - Physical-behavior video smoke launch
+
+Goal:
+- Generate the three requested behavior videos on the 4-object staged smoke manifest.
+
+Version Control:
+- local_commit: 7ae5ca7c02463a610fdf35f94105c84bb7b09bf5
+- remote_commit: 7ae5ca7c02463a610fdf35f94105c84bb7b09bf5
+
+Command / Job:
+- command: `RESET_CYCLES=2 SETTLE_STEPS=48 PERTURB_STEPS=64 GRASP_STEPS=72 CAPTURE_INTERVAL=2 MAX_OBJECTS=4 NUM_ENVS=4 OBJECT_ASSET_MANIFEST_PATH=/results/assets/franka_multi_graspgen_asset_smoke_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_223457/manifest.json sbatch --export=ALL cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh`
+- job_id: 1028874
+- run_name: `franka_multi_video_smoke_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_230031`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_smoke_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_230031`
+- metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_smoke_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_230031/video_metrics.json`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_1028874.out`
+
+Result:
+- status: running/queued; monitoring in progress.
+
+## 2026-06-13 - Route GraspGen downloads off home and revise video validation
+
+Goal:
+- Fix the `[Errno 122] Disk quota exceeded` asset staging failure before further environment/video validation.
+- Apply the user-requested Franka base height increase and correct the video-validator semantics.
+
+Hypothesis:
+- The asset staging failure came from Objaverse using `/home/lzha/.objaverse`; `/home/lzha` was over its 10G quota.
+- Reset-settle metrics incorrectly counted randomized pose changes between reset cycles as physical drift.
+- Perturbation should be object-only, not initialized from a grasp-prior robot pose near the object.
+- Grasp-contact should compose the robot reset after the object pose has settled.
+
+Change:
+- Patched `cluster/sbatch_prepare_graspgen_assets_1gpu.sh` to mount `/lustre/fsw/portfolios/nvr/users/lzha/cache/graspgen` at `/graspgen_cache` and route `HOME`, `XDG_CACHE_HOME`, `HF_HOME`, `HUGGINGFACE_HUB_CACHE`, `OBJAVERSE_HOME`, `OBJAVERSE_CACHE_DIR`, `TMPDIR`, `PIP_CACHE_DIR`, and `TORCH_HOME` there.
+- Added `DEXTRAH_ENFORCE_NO_HOME_DOWNLOADS` checks to `dextrah_lab/assets/prepare_graspgen_assets.py`.
+- Raised Franka `robot_base_z` from `0.27` to `0.47`.
+- Patched `validate_franka_multi_object_grasp_videos.py` so reset/perturbation use a no-grasp-prior env; reset metrics measure within-cycle drift; grasp contact settles objects first, refreshes the reference pose, then applies grasp-prior robot reset.
+- Added `GRASP_OBJECT_SETTLE_STEPS` to the video validation Slurm wrapper.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/assets/prepare_graspgen_assets.py dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env_cfg.py` passed.
+- `bash -n cluster/sbatch_prepare_graspgen_assets_1gpu.sh cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh` passed.
+
+Next:
+- Finish moving `/home/lzha/.objaverse` to `/lustre/fsw/portfolios/nvr/users/lzha/cache/graspgen/home/.objaverse`.
+- Commit, deploy the exact commit to the l401 agent worktree, and run a small asset staging smoke that proves cache paths resolve under `/graspgen_cache` and not `/home`.
+
+Follow-up:
+- Moved `/home/lzha/.objaverse` to `/lustre/fsw/portfolios/nvr/users/lzha/cache/graspgen/home/.objaverse`.
+- `/home/lzha` quota after the move: `7.036G / 10G`.
+- GraspGen Objaverse cache on Lustre: `3.0G` at `/lustre/fsw/portfolios/nvr/users/lzha/cache/graspgen/home/.objaverse`.
 
 ## 2026-06-13 - Add explicit rendered validation check
 
