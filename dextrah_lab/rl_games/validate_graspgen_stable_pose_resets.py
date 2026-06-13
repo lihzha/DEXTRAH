@@ -23,6 +23,15 @@ parser.add_argument("--stable_pose_mesh_mode", type=str, default="convex_hull", 
 parser.add_argument("--stable_pose_sigma", type=float, default=0.0)
 parser.add_argument("--stable_pose_samples", type=int, default=1)
 parser.add_argument("--stable_pose_threshold", type=float, default=0.0)
+parser.add_argument(
+    "--object_xy_offsets_cm",
+    type=str,
+    default="",
+    help=(
+        "Optional comma-separated per-env table-center-relative XY offsets in cm, "
+        "formatted as x:y. Example: 15:0,-5:0,5:10,5:-10."
+    ),
+)
 parser.add_argument("--settle_steps", type=int, default=240)
 parser.add_argument("--settled_replay_steps", type=int, default=0)
 parser.add_argument("--seed", type=int, default=42)
@@ -92,6 +101,42 @@ def _parse_rank_overrides(value: str) -> dict[str, int]:
             raise ValueError(f"Rank override must be non-negative for {uuid}: {rank}")
         overrides[uuid] = rank
     return overrides
+
+
+def _default_object_xy(task_env) -> tuple[float, float]:
+    if hasattr(task_env.cfg, "object_spawn_center_offset_x") and hasattr(task_env.cfg, "object_spawn_center_offset_y"):
+        return (
+            float(task_env.cfg.table_center_x) + float(task_env.cfg.object_spawn_center_offset_x),
+            float(task_env.cfg.table_center_y) + float(task_env.cfg.object_spawn_center_offset_y),
+        )
+    return (float(task_env.cfg.pickup_x), float(task_env.cfg.pickup_y))
+
+
+def _parse_object_xy_offsets_cm(value: str, task_env, *, num_envs: int) -> list[tuple[float, float]] | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    offsets: list[tuple[float, float]] = []
+    for item in text.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        if ":" not in item:
+            raise ValueError(f"Invalid object XY offset '{item}', expected X_CM:Y_CM")
+        x_text, y_text = item.split(":", 1)
+        x_m = float(task_env.cfg.table_center_x) + 0.01 * float(x_text)
+        y_m = float(task_env.cfg.table_center_y) + 0.01 * float(y_text)
+        offsets.append((x_m, y_m))
+    if not offsets:
+        return None
+    if len(offsets) == 1:
+        return offsets * int(num_envs)
+    if len(offsets) != int(num_envs):
+        raise ValueError(
+            f"--object_xy_offsets_cm provided {len(offsets)} placements, but this rollout has {num_envs} envs. "
+            "Pass one placement to repeat it or one placement per env."
+        )
+    return offsets
 
 
 def _load_selected_manifest(output_dir: Path) -> tuple[Path, list[dict[str, object]], Path]:
@@ -363,6 +408,8 @@ def _place_stable_pose_states(
     num_assets = len(pose_data)
     object_indices = task_env.object_asset_index[env_ids].detach().cpu().numpy().astype(int)
     rank_overrides = _parse_rank_overrides(args_cli.stable_pose_rank_overrides)
+    default_object_xy = _default_object_xy(task_env)
+    object_xy_by_env = _parse_object_xy_offsets_cm(args_cli.object_xy_offsets_cm, task_env, num_envs=int(env_ids.numel()))
     root_state = torch.zeros((task_env.num_envs, 13), dtype=torch.float32, device=task_env.device)
     pose_rank_by_env: list[int] = []
     pose_probability_by_env: list[float] = []
@@ -392,10 +439,11 @@ def _place_stable_pose_states(
         rot_t = torch.as_tensor(rot, dtype=torch.float32, device=task_env.device)
         rotated = vertices @ rot_t.T
         bottom_z = float(rotated[:, 2].min().detach().cpu())
+        object_x, object_y = object_xy_by_env[env_i] if object_xy_by_env is not None else default_object_xy
         local_root_pos = torch.tensor(
             [
-                float(task_env.cfg.pickup_x),
-                float(task_env.cfg.pickup_y),
+                float(object_x),
+                float(object_y),
                 float(task_env.cfg.table_surface_z) + float(args_cli.table_clearance) - bottom_z,
             ],
             dtype=torch.float32,
@@ -422,6 +470,8 @@ def _place_stable_pose_states(
         "pose_probability_by_env": pose_probability_by_env,
         "initial_root_pos": local_root_pos_by_env,
         "initial_root_quat": local_root_quat_by_env,
+        "object_xy_offsets_cm": str(args_cli.object_xy_offsets_cm),
+        "object_xy_source": "table_center_offsets_cm" if object_xy_by_env is not None else "env_default_spawn_center",
     }
 
 
@@ -703,6 +753,7 @@ def main() -> None:
         "stable_pose_count": int(args_cli.stable_pose_count),
         "rollout_pose_count": int(rollout_pose_count),
         "stable_pose_rank_overrides": str(args_cli.stable_pose_rank_overrides),
+        "object_xy_offsets_cm": str(args_cli.object_xy_offsets_cm),
         "settle_steps": int(args_cli.settle_steps),
         "settled_replay_steps": int(args_cli.settled_replay_steps),
         "selected_manifest": str(filtered_manifest),

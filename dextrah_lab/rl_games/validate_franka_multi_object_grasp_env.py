@@ -26,6 +26,8 @@ parser.add_argument("--render_warmup_frames", type=int, default=2)
 parser.add_argument("--object_asset_manifest_path", type=str, default=None)
 parser.add_argument("--object_assets_dir", type=str, default=None)
 parser.add_argument("--max_objects", type=int, default=None)
+parser.add_argument("--object_spawn_center_offset_x", type=float, default=None)
+parser.add_argument("--object_spawn_center_offset_y", type=float, default=None)
 parser.add_argument("--object_spawn_xy_randomization", type=float, default=None)
 parser.add_argument("--object_spawn_yaw_randomization_deg", type=float, default=None)
 parser.add_argument("--enable_grasp_prior_reset", action="store_true", default=False)
@@ -506,6 +508,10 @@ def main() -> None:
         env_cfg.object_assets_dir = str(Path(args_cli.object_assets_dir).expanduser().resolve())
     if args_cli.max_objects is not None:
         env_cfg.max_objects = int(args_cli.max_objects)
+    if args_cli.object_spawn_center_offset_x is not None:
+        env_cfg.object_spawn_center_offset_x = float(args_cli.object_spawn_center_offset_x)
+    if args_cli.object_spawn_center_offset_y is not None:
+        env_cfg.object_spawn_center_offset_y = float(args_cli.object_spawn_center_offset_y)
     if args_cli.object_spawn_xy_randomization is not None:
         env_cfg.object_spawn_xy_randomization = float(args_cli.object_spawn_xy_randomization)
     if args_cli.object_spawn_yaw_randomization_deg is not None:
@@ -570,6 +576,8 @@ def main() -> None:
             "object_asset_manifest_path": str(getattr(task_env.cfg, "object_asset_manifest_path", "")),
             "object_assets_dir": str(getattr(task_env.cfg, "object_assets_dir", "")),
             "max_objects": int(getattr(task_env.cfg, "max_objects", 0)),
+            "object_spawn_center_offset_x": float(task_env.cfg.object_spawn_center_offset_x),
+            "object_spawn_center_offset_y": float(task_env.cfg.object_spawn_center_offset_y),
             "object_spawn_xy_randomization": float(task_env.cfg.object_spawn_xy_randomization),
             "object_spawn_yaw_randomization_deg": float(task_env.cfg.object_spawn_yaw_randomization_deg),
             "grasp_prior_reset_enabled": bool(task_env.cfg.grasp_prior_reset_enabled),

@@ -28,7 +28,13 @@ class DextrahFrankaMultiObjectGraspEnvCfg(DextrahFrankaCubeGraspEnvCfg):
     # Object placement and physical properties.  The robot base remains at the
     # cube task's higher z, which avoids placing the Franka fingers under the
     # tabletop at reset.
-    object_spawn_xy_randomization = 0.08
+    # Spawn objects around a table-center-relative workspace point instead of
+    # the gripper pickup point.  The default center is +5 cm in table X with a
+    # 10 cm half-width, giving edge offsets of (15, 0), (-5, 0), (5, 10),
+    # and (5, -10) cm in the table frame.
+    object_spawn_center_offset_x = 0.05
+    object_spawn_center_offset_y = 0.0
+    object_spawn_xy_randomization = 0.10
     object_spawn_yaw_randomization_deg = 180.0
     object_spawn_z_clearance = 0.006
     # Optional reset-time settling for rendered/debug validation.  This is

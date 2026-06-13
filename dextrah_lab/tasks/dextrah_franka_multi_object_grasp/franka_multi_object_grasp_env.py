@@ -607,15 +607,15 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
 
         object_radius_xy = self.object_xy_radius[env_ids]
         spawn_xy = torch.zeros(num_ids, 2, device=self.device)
-        spawn_xy[:, 0] = float(self.cfg.pickup_x)
-        spawn_xy[:, 1] = float(self.cfg.pickup_y)
+        spawn_xy[:, 0] = float(self.cfg.table_center_x) + float(self.cfg.object_spawn_center_offset_x)
+        spawn_xy[:, 1] = float(self.cfg.table_center_y) + float(self.cfg.object_spawn_center_offset_y)
         spawn_xy += float(self.cfg.object_spawn_xy_randomization) * (
             2.0 * torch.rand(num_ids, 2, device=self.device) - 1.0
         )
         min_x = float(self.cfg.table_center_x - 0.5 * self.cfg.table_size_x) + object_radius_xy
         max_x = float(self.cfg.table_center_x + 0.5 * self.cfg.table_size_x) - object_radius_xy
-        min_y = float(-0.5 * self.cfg.table_size_y) + object_radius_xy
-        max_y = float(0.5 * self.cfg.table_size_y) - object_radius_xy
+        min_y = float(self.cfg.table_center_y - 0.5 * self.cfg.table_size_y) + object_radius_xy
+        max_y = float(self.cfg.table_center_y + 0.5 * self.cfg.table_size_y) - object_radius_xy
         spawn_xy[:, 0] = torch.minimum(torch.maximum(spawn_xy[:, 0], min_x), max_x)
         spawn_xy[:, 1] = torch.minimum(torch.maximum(spawn_xy[:, 1], min_y), max_y)
 
