@@ -231,6 +231,50 @@ Next:
 - Commit/push/deploy the warmup patch.
 - Rerun `RENDER_CHECK=True` smoke validation.
 
+## 2026-06-13 - Rendered validation smoke rerun
+
+Goal:
+- Verify render check passes after discarding initial warmup frames.
+
+Version Control:
+- local_commit: 52d4d4a3c59b2d683a35931d79d9da103737e201
+- remote_commit: 52d4d4a3c59b2d683a35931d79d9da103737e201
+
+Command / Job:
+- command: `RENDER_CHECK=True RENDER_CHECK_FRAMES=2 RENDER_WARMUP_FRAMES=2 CAPTURE_VIDEO=False NUM_ENVS=4 NUM_STEPS=40 MAX_OBJECTS=4 OBJECT_ASSET_MANIFEST_PATH=/results/assets/franka_multi_graspgen_asset_smoke_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_223457/manifest.json sbatch --export=ALL cluster/sbatch_validate_franka_multi_object_grasp_env_1gpu.sh`
+- job_id: 1028839
+- run_name: `franka_multi_env_render_smoke2_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_225336`
+- metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_env_render_smoke2_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_225336/metrics.json`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_1028839.out`
+
+Result:
+- status: running/queued; monitoring in progress.
+
+## 2026-06-13 - Add physical-behavior video validator
+
+Goal:
+- Produce explicit video evidence for the three environment behaviors requested by the user:
+  reset robustness, perturbation dynamics, and grasp-prior contact/lift.
+
+Change:
+- Added `dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py`.
+- Added `cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh`.
+- The script writes PNG frame sequences and `video_metrics.json` for:
+  - `reset_settle`: repeated resets followed by zero-action settling; checks table penetration, drift, and dones.
+  - `perturbation`: writes object root velocities, records response; checks finite bounded motion, no table sinking, no out-of-workspace behavior.
+  - `grasp_contact`: uses grasp-prior reset plus action warmstart to approach/close/lift; checks no table penetration, finger clearance, contact-distance sanity, and no dones.
+- Documented the video validation command in `README.md`.
+
+Analysis:
+- The previous `--render_check` was necessary but insufficient: it showed nonblank render frames but not the physical failure modes that matter for RL readiness.
+- These videos are now an explicit pre-training gate. Training remains blocked until the video validator passes and the resulting frames/videos are inspected.
+
+Next:
+- Run syntax checks.
+- Commit/push/deploy.
+- Launch the video validator on the 4-object smoke manifest first.
+- Fetch frames, encode MP4s locally with `ffmpeg`, inspect them, and then run equivalent validation on the full manifest after full asset staging finishes.
+
 ## 2026-06-13 - Add explicit rendered validation check
 
 Goal:

@@ -127,6 +127,15 @@ before training:
             --render_check
 ```
 
+Render pre-training evidence videos for reset settling, perturbation response,
+and grasp-prior contact/lift:
+
+```bash
+        OBJECT_ASSET_MANIFEST_PATH=/results/assets/graspgen_objects/manifest.json \
+        RUN_NAME=franka_multi_object_video_validate \
+          sbatch --export=ALL cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh
+```
+
 On the cluster, prepare/convert the full object set on mounted storage. Use a
 small `LIMIT` first for a cluster smoke test, then set `LIMIT=0` for the full
 Robotiq split:
