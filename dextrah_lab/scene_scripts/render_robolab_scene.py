@@ -396,6 +396,19 @@ def _initialize_tiled_camera_sensor(camera: TiledCamera) -> None:
     camera.reset()
 
 
+def _set_sensor_camera_view(
+    camera: TiledCamera,
+    eye: tuple[float, float, float],
+    target: tuple[float, float, float],
+) -> tuple[float, float, float, float]:
+    import torch
+
+    eyes = torch.tensor([eye], dtype=torch.float32, device=camera.device)
+    targets = torch.tensor([target], dtype=torch.float32, device=camera.device)
+    camera.set_world_poses_from_view(eyes=eyes, targets=targets)
+    return _look_at_quat_world(eye, target)
+
+
 def _save_rgb_tensor(path: Path, rgb_tensor) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     rgb = rgb_tensor.detach().cpu().numpy()
@@ -600,7 +613,7 @@ def _capture_orbit_sensor(
             target[1] + radius * math.sin(theta),
             target[2] + height,
         )
-        quat = _set_camera_pose(camera_prim, eye, target)
+        quat = _set_sensor_camera_view(camera, eye, target)
         for _ in range(max(2, int(args_cli.rt_subframes))):
             simulation_app.update()
         camera.update(0.0, force_recompute=True)

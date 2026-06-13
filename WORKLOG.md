@@ -7024,3 +7024,67 @@ Analysis:
 Next:
 - Commit and deploy manual sensor initialization, rerun the low-resolution
   sensor smoke, and inspect generated frames/video if it progresses.
+
+## 2026-06-13 01:33 PDT - robolab-orbit-sensor-view-pose
+
+Goal:
+- Turn the successful no-reset sensor capture from uniform gray frames into
+  visible RoboLab scene frames.
+
+Hypothesis:
+- Manual USD xform authoring moves attributes on the camera prim, but the
+  initialized Isaac Lab `XFormPrim` view / tiled render product may not observe
+  that pose update correctly. Moving the camera with
+  `TiledCamera.set_world_poses_from_view()` should update the sensor-owned view
+  using Isaac Lab's own look-at convention.
+
+Change:
+- Added `_set_sensor_camera_view()` for the no-reset sensor backend.
+- The sensor capture loop now moves the camera through
+  `camera.set_world_poses_from_view(eyes, targets)` instead of direct USD xform
+  authoring.
+
+Version Control:
+- agent_id: codex-robolab-orbit-render
+- worktree: `/home/lzha/code/DEXTRAH`
+- worklog: `WORKLOG.md`
+- branch: `codex/robolab-orbit-render-20260613`
+- base_commit: `126dfe96d91a78599c569c270fc673d610caa652`
+- implementation_commit: pending
+- push/pull: pending Git bundle deploy to l401.
+- changed_files: `dextrah_lab/scene_scripts/render_robolab_scene.py`,
+  `WORKLOG.md`
+- remote_commit/status: l401 agent checkout at
+  `126dfe96d91a78599c569c270fc673d610caa652`; new commit pending.
+
+Command / Job:
+- command:
+  `sbatch --export=ALL,CODE_NFS=<agent_code>,ROBOLAB_NFS=<staged_robolab>,RUN_NAME=robolab_orbit_sensor_smoke_20260613_0133,ROBOLAB_SCENE=banana_bowl.usda,WIDTH=320,HEIGHT=180,FPS=1,VIDEO_SECONDS=1.0,SETTLE_STEPS=0,WARMUP_FRAMES=0,RT_SUBFRAMES=2,SIM_STEPS_PER_FRAME=0,PHYSICS_DEVICE=cuda:0,CAPTURE_BACKEND=sensor cluster/sbatch_render_robolab_scene.sh`
+- job_id: `1028905`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/robolab_scene/robolab_orbit_sensor_smoke_20260613_0133`
+- logs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/robolab_scene_1028905.out`
+- artifacts:
+  `cluster_results/l401/robolab_orbit_sensor_smoke_20260613_0133/frames/orbit_0000.png`,
+  `cluster_results/l401/robolab_orbit_sensor_smoke_20260613_0133/frames/orbit_0001.png`,
+  `cluster_results/l401/robolab_orbit_sensor_smoke_20260613_0133/render_manifest.json`
+
+Result:
+- status: failed visual validation then patched
+- metrics/artifacts: two `320x180` RGB PNG frames and a manifest were written,
+  but both frames are uniform gray. The cluster container skipped video encode
+  because `ffmpeg` is not installed there.
+- key evidence: manifest recorded `capture_backend=sensor`, 2 frames, and the
+  correct RoboLab scene path; local visual inspection showed no visible table or
+  objects.
+
+Analysis:
+- This validates the bridge, asset staging, manual sensor initialization, and
+  RGB buffer saving. The remaining failure is view/render-product correctness,
+  not scene resolution or file output.
+
+Next:
+- Commit and deploy the sensor view-pose patch, rerun the tiny smoke, inspect
+  frames, and if still gray, retry the standard tiled path with a longer
+  timeout or add an explicit Replicator render step.
