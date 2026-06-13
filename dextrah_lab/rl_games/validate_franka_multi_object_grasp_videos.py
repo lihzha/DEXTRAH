@@ -392,6 +392,12 @@ def _make_env(*, grasp_prior: bool):
     return env, task_env
 
 
+def _set_grasp_prior_runtime_enabled(task_env, enabled: bool) -> bool:
+    previous = bool(getattr(task_env, "_grasp_prior_reset_enabled", False))
+    task_env._grasp_prior_reset_enabled = bool(enabled)
+    return previous
+
+
 def main() -> None:
     output_dir = Path(args_cli.output_dir or datetime.now().strftime("franka_multi_object_video_validate_%Y%m%d_%H%M%S"))
     output_dir = output_dir.expanduser().resolve()
@@ -399,15 +405,20 @@ def main() -> None:
     metrics_path = Path(args_cli.metrics_path).expanduser().resolve() if args_cli.metrics_path else output_dir / "video_metrics.json"
     metrics_path.parent.mkdir(parents=True, exist_ok=True)
 
-    object_env, object_task_env = _make_env(grasp_prior=False)
-    scenarios = {
-        "reset_settle": _record_reset_settle(object_env, object_task_env, output_dir),
-        "perturbation": _record_perturbation(object_env, object_task_env, output_dir),
-    }
-    object_env.close()
+    env, task_env = _make_env(grasp_prior=True)
+    scenarios: dict[str, dict[str, object]] = {}
+    prior_enabled = _set_grasp_prior_runtime_enabled(task_env, False)
+    try:
+        print("[INFO] Recording reset_settle with grasp-prior resets disabled", flush=True)
+        scenarios["reset_settle"] = _record_reset_settle(env, task_env, output_dir)
+        print("[INFO] Recording perturbation with grasp-prior resets disabled", flush=True)
+        scenarios["perturbation"] = _record_perturbation(env, task_env, output_dir)
+    finally:
+        _set_grasp_prior_runtime_enabled(task_env, prior_enabled)
 
-    grasp_env, grasp_task_env = _make_env(grasp_prior=True)
-    scenarios["grasp_contact"] = _record_grasp_contact(grasp_env, grasp_task_env, output_dir)
+    _set_grasp_prior_runtime_enabled(task_env, True)
+    print("[INFO] Recording grasp_contact with settled-object grasp-prior reset", flush=True)
+    scenarios["grasp_contact"] = _record_grasp_contact(env, task_env, output_dir)
     payload = {
         "passed": all(bool(item.get("passed", False)) for item in scenarios.values()),
         "scenarios": scenarios,
@@ -423,7 +434,7 @@ def main() -> None:
     }
     metrics_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(f"[INFO] Wrote video metrics to {metrics_path}", flush=True)
-    grasp_env.close()
+    env.close()
     simulation_app.close()
     if not payload["passed"]:
         failed = [name for name, item in scenarios.items() if not bool(item.get("passed", False))]

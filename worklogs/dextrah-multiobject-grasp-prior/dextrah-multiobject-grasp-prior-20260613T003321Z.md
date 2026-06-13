@@ -331,7 +331,78 @@ Command / Job:
 - log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_1028874.out`
 
 Result:
-- status: running/queued; monitoring in progress.
+- status: failed diagnostic.
+- Generated reset/perturbation/grasp-contact videos, but user inspection identified physical issues:
+  - `grasp_contact`: object moved after initialization because it was not initialized in a stable pose; robot started in a weird pose and shook.
+  - `perturbation`: robot was initialized too close to the object.
+  - `reset_settle`: object was static within the video, but changed between resets as expected.
+
+Analysis:
+- The video validator needed to test object-only reset/perturbation separately from grasp-prior robot reset.
+- Grasp contact needed to settle the object first, then compose the robot reset from the settled object root pose.
+- The user requested raising Franka base z by `+0.2 m` before rerunning video validation.
+
+Next:
+- Fix `/home` quota first, route downloads to Lustre, raise the base, and revise the validator semantics before rerunning.
+
+## 2026-06-13 - Raised-base 4-object video smoke launch
+
+Goal:
+- Validate the user-requested behavior videos after the Lustre cache fix, Franka base +0.2 m change, and corrected reset/grasp-contact semantics.
+
+Hypothesis:
+- Raising the base to `robot_base_z=0.47` and resetting grasp contact after object settling should remove the low-gripper/wobbly-start issue.
+- Running reset/perturbation without grasp-prior robot reset should keep the robot away from the object until intended motion.
+- Measuring reset drift from the post-warmup pose should avoid falsely treating expected between-reset randomization as instability.
+
+Version Control:
+- local_commit: `5a9a5d85847ea6a97435f2069610d5f180644c4c`
+- remote_commit: `5a9a5d85847ea6a97435f2069610d5f180644c4c`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-20260613T003321Z`
+
+Command / Job:
+- command: `NUM_ENVS=4 MAX_OBJECTS=4 RESET_CYCLES=2 SETTLE_STEPS=96 PERTURB_STEPS=96 GRASP_STEPS=90 GRASP_OBJECT_SETTLE_STEPS=120 CAPTURE_INTERVAL=2 GRASP_RESET_ATTEMPTS=16 OBJECT_ASSET_MANIFEST_PATH=/results/assets/franka_multi_graspgen_asset_smoke_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_223457/manifest.json sbatch --partition=batch --time=0-00:45:00 --export=ALL,CODE_NFS=<remote_worktree>,CODE_COMMIT=<commit>,RUN_NAME=<run> cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh`
+- job_id: `1028877`
+- run_name: `franka_multi_video_cachefix_4obj_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_233314`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_cachefix_4obj_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_233314`
+- metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_cachefix_4obj_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_233314/video_metrics.json`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_1028877.out`
+
+Result:
+- status: cancelled diagnostic.
+- Slurm state: `CANCELLED by 158351`, elapsed `00:02:32`.
+- Produced `reset_settle=96` frames and `perturbation=48` frames, then stopped making progress before any `grasp_contact` frames.
+- Last useful log line was the second environment `Setting seed: 42`; no output or artifact modification after `2026-06-12 23:34:17 -0700`.
+
+Analysis:
+- The partial output showed the first two scenarios progressing, but the script hung when it closed the object-only Gym env and created a second grasp-prior env in the same Isaac app process.
+- This is a validator lifecycle issue, not a pass/fail signal for grasp-contact physics.
+
+Next:
+- Patch the validator to create one grasp-prior-loaded environment, temporarily disable `_grasp_prior_reset_enabled` for reset/perturbation, and reuse the same simulator for grasp-contact.
+
+## 2026-06-13 - Single-environment video validator patch
+
+Goal:
+- Fix the video validator lifecycle hang before rerunning grasp-contact evidence generation.
+
+Hypothesis:
+- Creating a second Gym/Isaac environment after closing the first one inside the same Isaac app process can hang during scene setup.
+- A single environment with grasp priors loaded can still test object-only reset/perturbation by disabling `_grasp_prior_reset_enabled` at runtime, because the warmstart and action-prior paths already gate on that flag.
+
+Change:
+- Patched `dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py` to create one grasp-prior-loaded environment.
+- For `reset_settle` and `perturbation`, the validator temporarily disables `_grasp_prior_reset_enabled`.
+- For `grasp_contact`, it re-enables the prior and reuses the same settled-object grasp reset path.
+- Added explicit per-scenario progress prints for cluster monitoring.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py` passed.
+- `bash -n cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh` passed.
+- `git diff --check` passed.
+
+Next:
+- Commit, deploy to the l401 agent worktree, and relaunch the 4-object raised-base video smoke.
 
 ## 2026-06-13 - Route GraspGen downloads off home and revise video validation
 
@@ -364,6 +435,47 @@ Follow-up:
 - Moved `/home/lzha/.objaverse` to `/lustre/fsw/portfolios/nvr/users/lzha/cache/graspgen/home/.objaverse`.
 - `/home/lzha` quota after the move: `7.036G / 10G`.
 - GraspGen Objaverse cache on Lustre: `3.0G` at `/lustre/fsw/portfolios/nvr/users/lzha/cache/graspgen/home/.objaverse`.
+
+## 2026-06-13 - GraspGen Lustre-cache smoke launch
+
+Goal:
+- Prove the patched asset staging wrapper routes GraspGen/Objaverse/HF/temp caches to Lustre and still stages a valid USD-backed object manifest.
+
+Version Control:
+- local_commit: `5a9a5d85847ea6a97435f2069610d5f180644c4c`
+- remote_commit: `5a9a5d85847ea6a97435f2069610d5f180644c4c`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-20260613T003321Z`
+
+Command / Job:
+- command: `LIMIT=1 CONVERT_USD=True REFRESH_MANIFEST=True SKIP_OBJECT_DOWNLOAD=False SKIP_GRASP_EXTRACT=False sbatch --partition=batch --time=0-00:30:00 --export=ALL,CODE_NFS=<remote_worktree>,RUN_NAME=<run>,ASSET_OUTPUT_DIR_HOST=<run_dir>,ASSET_OUTPUT_DIR_CONTAINER=/results/assets/<run> cluster/sbatch_prepare_graspgen_assets_1gpu.sh`
+- job_id: `1028876`
+- run_name: `franka_multi_graspgen_cache_smoke_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_233011`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/franka_multi_graspgen_cache_smoke_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_233011`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/prepare_graspgen_assets_1028876.out`
+
+Result:
+- status: passed.
+- Slurm state: `COMPLETED`, exit code `0:0`, elapsed `00:02:00`.
+- Log evidence:
+  - Wrapper preflight set `HOME`, `XDG_CACHE_HOME`, `HF_HOME`, `HUGGINGFACE_HUB_CACHE`, `OBJAVERSE_HOME`, `OBJAVERSE_CACHE_DIR`, `TMPDIR`, `PIP_CACHE_DIR`, and `TORCH_HOME` under `/graspgen_cache`.
+  - `DEXTRAH_GRASPGEN_ASSET_STAGE_SUMMARY` reported `objects=1` and `missing_usd_count=0`.
+  - Grep for `Disk quota exceeded`, `Errno 122`, `/home/lzha`, and `/home/` returned no matches.
+- Artifact evidence:
+  - Manifest object UUID `7195ed3346a445448308febe833c180a`.
+  - Dataset scale in manifest: `0.010088245384395123`.
+  - USD exists at `USD/7195ed3346a445448308febe833c180a/7195ed3346a445448308febe833c180a.usd`.
+  - Grasp prior exists at `grasp_priors/7195ed3346a445448308febe833c180a.npz`.
+- Storage evidence:
+  - Lustre GraspGen cache: `3.1G` at `/lustre/fsw/portfolios/nvr/users/lzha/cache/graspgen`.
+  - Smoke run directory: `839M`.
+  - `/home/lzha` quota after the run: `7.036G / 10G`.
+
+Analysis:
+- The quota failure path is fixed for the staging wrapper: all downloader/cache/temp locations now resolve to a Lustre-backed mount, and a fresh object+grasp+USD smoke completed without touching `/home`.
+- The smoke also proves manifest scale propagation for the sampled object and confirms the converted USD exists before the RL/render validation stage.
+
+Next:
+- Launch the video behavior smoke with the raised Franka base and revised reset/grasp validation semantics.
 
 ## 2026-06-13 - Add explicit rendered validation check
 
