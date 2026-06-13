@@ -31,6 +31,13 @@ class DextrahFrankaMultiObjectGraspEnvCfg(DextrahFrankaCubeGraspEnvCfg):
     object_spawn_xy_randomization = 0.08
     object_spawn_yaw_randomization_deg = 180.0
     object_spawn_z_clearance = 0.006
+    # Optional reset-time settling for rendered/debug validation.  This is
+    # disabled by default because stepping the whole simulator inside a partial
+    # vector-env reset would advance unrelated envs.  Use precomputed stable
+    # poses before enabling this in large-scale RL training.
+    object_reset_settle_steps = 0
+    object_reset_zero_velocity_after_settle = True
+    object_reset_settle_full_reset_only = True
     object_default_half_extents = (0.03, 0.03, 0.03)
     object_default_grasp_size = 0.06
     object_default_scale = 1.0
@@ -47,4 +54,3 @@ class DextrahFrankaMultiObjectGraspEnvCfg(DextrahFrankaCubeGraspEnvCfg):
     # or from grasp_prior_library_dir/<uuid>.npz.
     grasp_prior_library_dir = ""
     grasp_prior_allow_missing = False
-

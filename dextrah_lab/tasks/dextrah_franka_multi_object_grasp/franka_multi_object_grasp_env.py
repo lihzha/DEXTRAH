@@ -143,10 +143,15 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
                 resolved_prior = ""
                 if grasp_prior_path:
                     resolved_prior = str(_resolve_path(str(grasp_prior_path), base_dir=asset_root_path))
+                raw_object_path = record.get("raw_object_path")
+                resolved_raw_object = ""
+                if raw_object_path:
+                    resolved_raw_object = str(_resolve_path(str(raw_object_path), base_dir=asset_root_path))
                 assets.append(
                     {
                         "uuid": uuid,
                         "usd_path": str(usd_path),
+                        "raw_object_path": resolved_raw_object,
                         "scale": scale,
                         "scaled_half_extents": half_extents,
                         "scaled_bounds_min": bounds_min,
@@ -173,6 +178,7 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
                     {
                         "uuid": uuid,
                         "usd_path": str(usd_path.resolve()),
+                        "raw_object_path": "",
                         "scale": scale,
                         "scaled_half_extents": half_extents,
                         "scaled_bounds_min": [-v for v in half_extents],
@@ -539,6 +545,42 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         rot_m = math_utils.matrix_from_quat(root_quat)
         return root_pos + torch.bmm(rot_m, center_offset.unsqueeze(-1)).squeeze(-1)
 
+    def _settle_reset_objects(
+        self,
+        env_ids: torch.Tensor,
+        joint_pos: torch.Tensor,
+        joint_vel: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        settle_steps = max(int(self.cfg.object_reset_settle_steps), 0)
+        if settle_steps <= 0:
+            root_pos = self._cube.data.root_pos_w[env_ids] - self.scene.env_origins[env_ids]
+            root_quat = self._cube.data.root_quat_w[env_ids]
+            return root_pos, root_quat
+
+        if bool(self.cfg.object_reset_settle_full_reset_only) and int(env_ids.numel()) != int(self.num_envs):
+            raise RuntimeError(
+                "object_reset_settle_steps > 0 is only safe for full-env resets. "
+                "Partial RL resets need precomputed stable poses instead of in-reset simulation stepping."
+            )
+
+        self._sync_reset_joint_state(env_ids, joint_pos, joint_vel, update_buffers=True)
+        for _ in range(settle_steps):
+            self._robot.set_joint_position_target(joint_pos, env_ids=env_ids)
+            self.scene.write_data_to_sim()
+            self.sim.step(render=False)
+            self.scene.update(dt=self.sim.cfg.dt)
+
+        if bool(self.cfg.object_reset_zero_velocity_after_settle):
+            zero_vel = torch.zeros((int(env_ids.numel()), 6), dtype=torch.float32, device=self.device)
+            self._cube.write_root_velocity_to_sim(zero_vel, env_ids=env_ids)
+        self.scene.write_data_to_sim()
+        self.sim.forward()
+        self.scene.update(dt=0.0)
+
+        root_pos = self._cube.data.root_pos_w[env_ids] - self.scene.env_origins[env_ids]
+        root_quat = self._cube.data.root_quat_w[env_ids]
+        return root_pos, root_quat
+
     def _reset_idx(self, env_ids: Sequence[int] | None):
         self._ensure_cube_buffers()
         if env_ids is None:
@@ -595,7 +637,11 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         object_state[:, 0:3] = object_pos + self.scene.env_origins[env_ids]
         object_state[:, 3:7] = object_quat
         self._cube.write_root_state_to_sim(object_state, env_ids=env_ids)
+        self.scene.write_data_to_sim()
+        self.sim.forward()
+        self.scene.update(dt=0.0)
 
+        object_pos, object_quat = self._settle_reset_objects(env_ids, joint_pos, joint_vel)
         object_center_pos = self._object_center_pos_from_root(env_ids, object_pos, object_quat)
         self.cube_initial_pos[env_ids] = object_center_pos
         self.cube_goal_pos[env_ids] = object_center_pos
