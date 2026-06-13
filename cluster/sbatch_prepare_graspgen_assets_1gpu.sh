@@ -27,7 +27,10 @@ ASSET_OUTPUT_DIR_HOST="${ASSET_OUTPUT_DIR_HOST:-$RESULTS_NFS/assets/graspgen_obj
 ASSET_OUTPUT_DIR_CONTAINER="${ASSET_OUTPUT_DIR_CONTAINER:-/results/assets/graspgen_objects}"
 LIMIT="${LIMIT:-0}"
 PREFER_SINGLE_SHARD="${PREFER_SINGLE_SHARD:-True}"
-UNUSED_CPU_COUNT="${UNUSED_CPU_COUNT:-24}"
+# The Objaverse downloader subtracts this from multiprocessing.cpu_count().
+# On the cluster container it sees the full host CPU count, not the Slurm CPU
+# cgroup, so keep the default conservative to avoid oversubscribing the node.
+UNUSED_CPU_COUNT="${UNUSED_CPU_COUNT:-208}"
 SIMPLIFY="${SIMPLIFY:-False}"
 OVERWRITE="${OVERWRITE:-False}"
 CONVERT_USD="${CONVERT_USD:-True}"

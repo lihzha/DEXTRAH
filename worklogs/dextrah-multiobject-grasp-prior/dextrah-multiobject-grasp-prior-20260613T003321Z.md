@@ -113,3 +113,61 @@ Next:
 - Commit/push this wrapper.
 - Deploy the updated commit to an agent-owned `l401` worktree.
 - Launch a small cluster asset-staging smoke before the full `LIMIT=0` staging run.
+
+## 2026-06-13 - Cluster asset staging smoke launch
+
+Goal:
+- Prove GraspGen asset staging works under the cluster Isaac Lab container before running the full object split.
+
+Version Control:
+- agent_id: dextrah-multiobject-grasp-prior-20260613T003321Z
+- local_commit: c5312e5a661733aa72d3ecc3cd91972771e914d5
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-20260613T003321Z`
+- remote_commit: c5312e5a661733aa72d3ecc3cd91972771e914d5
+- deployment_note: canonical cluster checkout could not fetch GitHub due missing SSH credentials; deployed through an agent-owned bare Git mirror pushed over SSH with LFS smudge disabled.
+
+Command / Job:
+- command: `LIMIT=4 OVERWRITE=True CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-20260613T003321Z sbatch --export=ALL cluster/sbatch_prepare_graspgen_assets_1gpu.sh`
+- job_id: 1028833
+- run_name: `franka_multi_graspgen_asset_smoke_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_223457`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/franka_multi_graspgen_asset_smoke_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_223457`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/prepare_graspgen_assets_1028833.out`
+
+Result:
+- status: passed
+- metrics/artifacts: 4 objects downloaded, 4 USD files generated, manifest at `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/franka_multi_graspgen_asset_smoke_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_223457/manifest.json`
+- key evidence: log reported `DEXTRAH_GRASPGEN_ASSET_STAGE_SUMMARY {"missing_usd_count": 0, "objects": 4}` and `GraspGen Asset Preparation Done`.
+
+Analysis:
+- Cluster dependency installation and external downloads work from the L40 job container.
+- USD conversion works on `pool0-00003`; the non-fatal Warp CUDA warning matches known Isaac cluster behavior.
+
+Next:
+- Run cluster environment validation against the smoke manifest with video disabled.
+
+## 2026-06-13 - Cluster environment validation smoke launch
+
+Goal:
+- Validate that the multi-object Franka environment loads the cluster-staged GraspGen assets correctly and remains RLable under the cluster Isaac Lab container.
+
+Command / Job:
+- command: `NUM_ENVS=4 NUM_STEPS=80 MAX_OBJECTS=4 CAPTURE_VIDEO=False GRASP_PRIOR_RESET_ENABLED=True OBJECT_ASSET_MANIFEST_PATH=/results/assets/franka_multi_graspgen_asset_smoke_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_223457/manifest.json sbatch --export=ALL cluster/sbatch_validate_franka_multi_object_grasp_env_1gpu.sh`
+- job_id: 1028834
+- run_name: `franka_multi_env_validate_smoke_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_223735`
+- metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_env_validate_smoke_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_223735/metrics.json`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_1028834.out`
+
+Result:
+- status: passed
+- metrics/artifacts: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_env_validate_smoke_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_223735/metrics.json`
+- key evidence: `passed=true`, no failed checks, obs shape `[4, 80]`, reset `root_z_error_max=0.0`, grasp-prior mean success `0.5`, rollout completed 80 steps with `done_count=0`.
+
+Analysis:
+- Cluster-staged GraspGen USD assets load correctly into the vectorized Franka multi-object environment.
+- Reset geometry and grasp-prior reset behavior remain valid on the cluster container.
+- The smoke asset job revealed the Objaverse downloader sees the full host CPU count inside the container and used 200 workers despite a 32-CPU Slurm allocation; reduce the wrapper default worker count before full staging.
+
+Next:
+- Patch `UNUSED_CPU_COUNT` default for full staging to avoid oversubscribing the node.
+- Commit/push/deploy the wrapper patch.
+- Launch full `LIMIT=0` asset staging on `l401`.
