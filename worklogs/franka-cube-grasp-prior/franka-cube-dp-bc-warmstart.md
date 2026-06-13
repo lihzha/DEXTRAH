@@ -15538,3 +15538,67 @@ Next:
 - Update the l401 agent worktree to the exact commit, submit the RGB chunks,
   monitor scheduler/logs, inspect accepted RGB counts and sample frames, then
   combine accepted RGB NPZs for image-policy training.
+
+Update 2026-06-12T18:03:07-07:00:
+- Pushed `codex/franka-cube-diffusion-policy-bc` to
+  `1a2a84d8ad4da56fe80e073791882c1aceeac6ae`.
+- Updated l401 agent worktree
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-bc-relabel32`
+  detached at `1a2a84d8ad4da56fe80e073791882c1aceeac6ae`.
+- Submitted RGB relabel chunks:
+
+| Job | Run |
+| --- | --- |
+| `1028764` | `franka_cube_contact_relabel_scale264_rgb_000_023_a0p75_source_livealign_20260612_180307` |
+| `1028765` | `franka_cube_contact_relabel_scale264_rgb_024_047_a0p75_source_livealign_20260612_180307` |
+| `1028766` | `franka_cube_contact_relabel_scale264_rgb_048_071_a0p75_source_livealign_20260612_180307` |
+| `1028767` | `franka_cube_contact_relabel_scale264_rgb_072_095_a0p75_source_livealign_20260612_180307` |
+| `1028768` | `franka_cube_contact_relabel_scale264_rgb_096_119_a0p75_source_livealign_20260612_180307` |
+| `1028769` | `franka_cube_contact_relabel_scale264_rgb_120_143_a0p75_source_livealign_20260612_180307` |
+| `1028770` | `franka_cube_contact_relabel_scale264_rgb_144_167_a0p75_source_livealign_20260612_180307` |
+| `1028771` | `franka_cube_contact_relabel_scale264_rgb_168_191_a0p75_source_livealign_20260612_180307` |
+| `1028772` | `franka_cube_contact_relabel_scale264_rgb_192_215_a0p75_source_livealign_20260612_180307` |
+| `1028773` | `franka_cube_contact_relabel_scale264_rgb_216_231_a0p75_source_livealign_20260612_180307` |
+
+- Expected remote artifact root:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/contact_relabel_sets/franka_cube_contact_relabel_scale264_rgb_*_a0p75_source_livealign_20260612_180307`.
+
+Update 2026-06-12T18:29:08-07:00:
+- Nine of the ten RGB chunks completed with matching accepted lowdim/RGB
+  counts. Completed accepted RGB totals before retry: `164` episodes and
+  `39106` transitions.
+- Chunk `168_191`, job `1028771`, hit a renderer/GPU failure on
+  `pool0-00030` after eight rollout summaries. Key log evidence:
+  `VkResult: ERROR_DEVICE_LOST` and `A GPU crash occurred`.
+- Canceled the partial job and relaunched only chunk `168_191` as job
+  `1028774`, run
+  `franka_cube_contact_relabel_scale264_rgb_168_191_a0p75_source_livealign_retry1_20260612_182908`,
+  with the same relabel/RGB settings and `--exclude=pool0-00030`.
+- Do not include the partial
+  `franka_cube_contact_relabel_scale264_rgb_168_191_a0p75_source_livealign_20260612_180307`
+  directory in the combined training dataset.
+
+Update 2026-06-12T18:46:41-07:00:
+- Retry job `1028774` completed `0:0` on `pool0-00019` with `19` accepted RGB
+  episodes and `4440` transitions.
+- Combined ten clean RGB chunk NPZs on l401 into:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/contact_relabel_rgb_scale264_accepted183_20260612_1841/franka_cube_scale264_contact_relabel_accepted183_rgb_96.npz`.
+- Combined dataset check:
+  `image=(43546,96,96,3) uint8`, `robot_state=(43546,8)`,
+  `action=(43546,7)`, `episode_ends=(183,)`, final end `43546`.
+- Fetched locally to:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_rgb_scale264_accepted183_20260612_1841/franka_cube_scale264_contact_relabel_accepted183_rgb_96.npz`.
+- Visualized three random accepted trajectories in a montage video:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_rgb_scale264_accepted183_20260612_1841/random_rgb_trajectory_video/three_random_rgb_trajectories.mp4`.
+- Visual inspection: frames show the cube and gripper clearly through approach,
+  contact/close, and lift phases; no blank/corrupt RGB frames observed.
+
+RGB Scale Training Launch:
+- local GPU: `NVIDIA RTX 6000 Ada Generation`, GPU `0`, `49140 MiB`.
+- output root:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_rgb/rgb_scale264_accepted183_20260612_1846`.
+- planned command: local official-DP `train.py` with config
+  `franka_cube_rgb_dp`, dataset above, `val_ratio=0.05`,
+  `training.device=cuda:0`, `training.use_ema=false`,
+  `training.num_epochs=25`, batch size `32`,
+  `policy.num_inference_steps=100`, `logging.mode=offline`.
