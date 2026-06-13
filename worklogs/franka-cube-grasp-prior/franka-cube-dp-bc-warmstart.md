@@ -15380,3 +15380,58 @@ Next:
   agent-owned l401 worktree, launch a tiny camera-enabled RGB relabel smoke,
   inspect `contact_relabel_set_accepted_rgb.npz` and frames, then train an
   RGB overfit checkpoint on one accepted demo before scaling.
+
+## 2026-06-12T17:54:10-07:00 - RGB one-demo smoke and eval wrapper
+
+Goal:
+- Verify that RGB data capture is real camera data, train a one-demo image
+  policy overfit checkpoint, and add a cluster eval wrapper that feeds only RGB
+  plus robot proprioception to the policy.
+
+Version Control:
+- agent_id: franka-cube-bc-warmstart
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `daeb2a5c03b2dcb8113d6eaa247f5572378563a1`
+- implementation_commit: pending
+- changed_files:
+  `dextrah_lab/rl_games/eval_franka_cube_rgb_dp_policy.py`,
+  `cluster/sbatch_eval_franka_cube_rgb_dp_policy_1gpu.sh`,
+  `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+
+Command / Job:
+- RGB data smoke job `1028761`:
+  `franka_cube_contact_relabel_rgb_smoke_ep00_seed43_high30_20260612_173625`.
+- RGB overfit local run:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_rgb/rgb_smoke_ep00_overfit_20260612_173852`.
+- Wrapper validation:
+  `python3 -m py_compile dextrah_lab/rl_games/eval_franka_cube_rgb_dp_policy.py`,
+  `bash -n cluster/sbatch_eval_franka_cube_rgb_dp_policy_1gpu.sh`,
+  `git diff --check -- dextrah_lab/rl_games/eval_franka_cube_rgb_dp_policy.py cluster/sbatch_eval_franka_cube_rgb_dp_policy_1gpu.sh`.
+
+Result:
+- RGB relabel smoke accepted `1` episode with `285` transitions and wrote
+  `contact_relabel_set_accepted_rgb.npz`.
+- Real RGB NPZ shape: `image (285,96,96,3) uint8`, `robot_state (285,8)`,
+  `action (285,7)`, `episode_ends [285]`.
+- Contact sheet:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/rgb_smoke_ep00/franka_cube_contact_relabel_rgb_smoke_ep00_seed43_high30_20260612_173625/rgb_frame_samples/contact_sheet.png`.
+- Visual inspection: RGB frames are valid and phase-aligned: open approach,
+  close, then lift.
+- One-demo image-policy overfit completed at epoch `39`, global step `719`,
+  `train_loss=0.0089`, `train_action_mse_error=0.00015`.
+- Overfit checkpoint:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_rgb/rgb_smoke_ep00_overfit_20260612_173852/official_dp_train/checkpoints/latest.ckpt`.
+- Added `eval_franka_cube_rgb_dp_policy.py` and an l401 wrapper. The eval
+  wrapper calls the official image policy as `policy.predict_action(obs_dict)`
+  where `obs_dict` contains `image` and `robot_state`; this avoids the lowdim
+  wrapper's extra `{"obs": ...}` nesting.
+- Wrapper validation passed.
+
+Next:
+- Commit and push the RGB eval wrapper, deploy that exact commit on l401, stage
+  the one-demo checkpoint plus reset dataset, and run a camera-enabled exact
+  one-demo closed-loop RGB eval. If that succeeds, start regenerating a larger
+  RGB dataset; if it fails, debug image preprocessing, action sampling, and
+  reset/rollout mismatch before scaling.
