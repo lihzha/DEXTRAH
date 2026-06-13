@@ -2169,6 +2169,74 @@ Command / Job:
 Result:
 - status: submitted on l401, monitoring in progress.
 
+## 2026-06-13T23:21:35Z - Moderate close/lift validation result
+
+Result:
+- job_id: `1029107`
+- final_status: failed only `grasp_contact`.
+- Slurm: `FAILED 1:0` after `00:02:00`; failure was metrics-gated, not a simulator crash.
+- Metrics:
+  - `reset_settle`: passed.
+  - `perturbation`: passed.
+  - `grasp_contact`: failed; selected `96ae0ff853734df0b10a827307949c87` sample `1154`, `selected_lift_height_max=0.0413m` vs `0.12m`, `selected_object_xy_delta_max=0.0682m` vs `0.06m`, `selected_candidate_valid_count=2`, `target_ee_to_ee_dist=2.46e-7`.
+
+Analysis:
+- The validation harness fix is effective: the recorded reset state matches the selected target and there is no mid-video teleport. However, the same thin-object prior still slips under both aggressive and moderate close/lift settings. The remaining failure is a real grasp-quality/control limitation for this object/prior, not the earlier object settling/reset bug.
+
+Next:
+- Do not merge as a fully validated grasp-contact pass. Either relax the validation to a physics/contact-only artifact if that is the intended criterion, or add a real candidate-quality/control fix before merging and launching training.
+
+## 2026-06-13T23:20:01Z - Moderate close/lift grasp-contact validation
+
+Goal:
+- Test whether the corrected grasp-contact validation still fails because the diagnostic warmstart closes too aggressively on a thin object.
+
+Hypothesis:
+- The selected `96ae...` sample `1154` has a contact width of about `8.7mm`. Forcing `GRASP_WARMSTART_CLOSE_WIDTH=0.0` may squeeze the object out. Preserving a small residual width and reducing lift velocity may produce cleaner contact/lift without changing the environment source.
+
+Version Control:
+- agent_id: `integrate-multiobject-main-20260613`
+- implementation_commit: `c7cacbd23afa839e46f3cf0b75eb3b806884ad8b`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-stable-reset-c3c924f-20260613`
+- remote_commit: `c7cacbd23afa839e46f3cf0b75eb3b806884ad8b`
+
+Command / Job:
+- previous_job_id: `1029106`
+- previous_result: failed only `grasp_contact`; reset/perturbation passed; target reset was preserved with `target_ee_to_ee_dist=2.46e-7`, but the selected thin object slipped and lifted only `0.0337m`.
+- command: `CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-stable-reset-c3c924f-20260613 CODE_COMMIT=c7cacbd23afa839e46f3cf0b75eb3b806884ad8b RUN_NAME=multiobject_contact_width006_lift045_c7cacbd_20260613_232001 OBJECT_ASSET_MANIFEST_PATH=/results/assets/franka_multi_graspgen_asset_smoke_contacts_2d7f495_20260613_153029/manifest.json MAX_OBJECTS=4 NUM_ENVS=4 OBJECT_ASSET_ASSIGNMENT=round_robin OBJECT_STABLE_POSE_ENABLED=True OBJECT_STABLE_POSE_CACHE_DIR=/results/validations/graspgen_stable_pose_validate_1028898_20260613_010532/settled_pose_cache OBJECT_STABLE_POSE_RANDOMIZE=False RESET_CYCLES=3 SETTLE_STEPS=72 PERTURB_STEPS=96 PERTURB_PUSH_STEPS=10 PERTURB_LINEAR_VELOCITY=0.60 PERTURB_LATERAL_VELOCITY=0.20 PERTURB_ANGULAR_VELOCITY=4.0 GRASP_STEPS=160 GRASP_OBJECT_SETTLE_STEPS=0 OBJECT_RESET_SETTLE_STEPS=0 GRASP_WARMSTART_CLOSE_WIDTH=0.006 GRASP_WARMSTART_LIFT_ACTION_Z=0.45 CAPTURE_INTERVAL=2 GRASP_RESET_ATTEMPTS=32 GRASP_RESET_MIN_PREGRASP_Z=0.15 GRASP_RESET_CANDIDATE_COUNT=512 GRASP_RESET_MAX_CENTER_DISTANCE_FRAC=0.30 GRASP_RESET_MIN_WIDTH=0.008 GRASP_CONTACT_SCORE_STEPS=80 sbatch --parsable cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh`
+- job_id: `1029107`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/multiobject_contact_width006_lift045_c7cacbd_20260613_232001`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_1029107.out`
+
+Result:
+- status: submitted on l401, monitoring in progress.
+
+## 2026-06-13T23:13:14Z - Static-warmup grasp-contact validation rerun
+
+Goal:
+- Revalidate the same four-object smoke set after fixing the grasp-contact validation harness.
+
+Hypothesis:
+- Preserving the selected reset state during render warmup and scoring through the lift phase will either produce a clean `grasp_contact` pass or expose a real grasp-prior/control issue without the previous validation artifact.
+
+Version Control:
+- agent_id: `integrate-multiobject-main-20260613`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/integrate-multiobject-main-20260613`
+- branch: `codex/multiobject-training-yaw-20260613`
+- implementation_commit: `c7cacbd23afa839e46f3cf0b75eb3b806884ad8b`
+- push/pull: pushed to `origin/codex/multiobject-training-yaw-20260613`; deployed to l401 via `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah_c7cacbd.bundle`.
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-stable-reset-c3c924f-20260613`
+- remote_commit: `c7cacbd23afa839e46f3cf0b75eb3b806884ad8b`
+
+Command / Job:
+- command: `CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-stable-reset-c3c924f-20260613 CODE_COMMIT=c7cacbd23afa839e46f3cf0b75eb3b806884ad8b RUN_NAME=multiobject_contact_staticwarmup_c7cacbd_20260613_231314 OBJECT_ASSET_MANIFEST_PATH=/results/assets/franka_multi_graspgen_asset_smoke_contacts_2d7f495_20260613_153029/manifest.json MAX_OBJECTS=4 NUM_ENVS=4 OBJECT_ASSET_ASSIGNMENT=round_robin OBJECT_STABLE_POSE_ENABLED=True OBJECT_STABLE_POSE_CACHE_DIR=/results/validations/graspgen_stable_pose_validate_1028898_20260613_010532/settled_pose_cache OBJECT_STABLE_POSE_RANDOMIZE=False RESET_CYCLES=3 SETTLE_STEPS=72 PERTURB_STEPS=96 PERTURB_PUSH_STEPS=10 PERTURB_LINEAR_VELOCITY=0.60 PERTURB_LATERAL_VELOCITY=0.20 PERTURB_ANGULAR_VELOCITY=4.0 GRASP_STEPS=120 GRASP_OBJECT_SETTLE_STEPS=0 OBJECT_RESET_SETTLE_STEPS=0 GRASP_WARMSTART_CLOSE_WIDTH=0.0 GRASP_WARMSTART_LIFT_ACTION_Z=0.80 CAPTURE_INTERVAL=2 GRASP_RESET_ATTEMPTS=32 GRASP_RESET_MIN_PREGRASP_Z=0.15 GRASP_RESET_CANDIDATE_COUNT=512 GRASP_RESET_MAX_CENTER_DISTANCE_FRAC=0.30 GRASP_RESET_MIN_WIDTH=0.008 GRASP_CONTACT_SCORE_STEPS=40 sbatch --parsable cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh`
+- job_id: `1029106`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/multiobject_contact_staticwarmup_c7cacbd_20260613_231314`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_1029106.out`
+
+Result:
+- status: submitted on l401, monitoring in progress.
+
 ## 2026-06-13T23:10:16Z - Fix grasp-contact validation state mutation and lift scoring
 
 Goal:
