@@ -492,6 +492,36 @@ Validation:
 Next:
 - Commit, deploy exact source to l401, and rerun video validation.
 
+## 2026-06-13 - Dynamic warmstart close width after `1029060`
+
+Goal:
+- Make scripted grasp-contact validation actually clamp thin object grasps.
+
+Command / Job:
+- job_id: `1029060`
+- run_name: `multiobject_tool_radial_top03_c319018_20260613_150041`
+- status: failed only `grasp_contact`.
+
+Result:
+- Stricter top-down threshold selected a valid quality prior with `selected_pregrasp_offset_dir_z=0.354`.
+- Lift remained `0.0m` even though finger distances were small.
+- The selected prior required a narrow width: open-width margin `0.0678m` from a `0.08m` open gripper implies required width `~0.012m`, while the fixed warmstart close width was `0.025m`.
+
+Analysis:
+- The fixed warmstart close width is too wide for thin-object prior samples, so the fingers can track the pose without clamping.
+- Multi-object warmstart should close per env based on the sampled prior width.
+
+Change:
+- Added tensor-valued gripper action conversion.
+- Warmstart and action-prior teacher actions now use `min(configured_close_width, sampled_required_width - 0.003m)` per env.
+
+Validation:
+- local: `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py`
+- local: `git diff --check`
+
+Next:
+- Commit, deploy exact source to l401, and rerun video validation.
+
 ## 2026-06-13 - Center-distance quality gate after `1029057`
 
 Goal:

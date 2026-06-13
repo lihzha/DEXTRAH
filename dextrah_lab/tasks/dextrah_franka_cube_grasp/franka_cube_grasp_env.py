@@ -497,7 +497,28 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         value = 2.0 * float(width) / max_width - 1.0
         return max(-1.0, min(1.0, value))
 
-    def _grasp_prior_exact_tracking_action(self, gripper_action: float) -> torch.Tensor:
+    def _gripper_action_for_width_tensor(self, width: torch.Tensor) -> torch.Tensor:
+        max_width = float(self.cfg.max_gripper_width)
+        if max_width <= 1.0e-6:
+            return torch.full_like(width, -1.0)
+        return torch.clamp(2.0 * width / max_width - 1.0, min=-1.0, max=1.0)
+
+    def _grasp_prior_warmstart_close_action(self) -> torch.Tensor:
+        configured_width = torch.full(
+            (self.num_envs,),
+            float(self.cfg.grasp_prior_action_warmstart_close_width),
+            dtype=torch.float32,
+            device=self.device,
+        )
+        sampled_width = torch.clamp(
+            self.grasp_prior_reset_gripper_width - self.grasp_prior_reset_open_width_margin,
+            min=0.0,
+            max=float(self.cfg.max_gripper_width),
+        )
+        dynamic_width = torch.clamp(sampled_width - 0.003, min=0.0, max=float(self.cfg.max_gripper_width))
+        return self._gripper_action_for_width_tensor(torch.minimum(configured_width, dynamic_width))
+
+    def _grasp_prior_exact_tracking_action(self, gripper_action: float | torch.Tensor) -> torch.Tensor:
         action = torch.zeros(self.num_envs, int(self.cfg.action_space), device=self.device)
         self._compute_intermediate_values(update_success_timer=False)
         current_ee_pos_b, current_ee_quat_b = self._compute_ee_frame_pose()
@@ -521,7 +542,10 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             )
             rot_action = gain * rot_error_b / torch.clamp(self.action_scale[3:6], min=1.0e-6)
             action[:, 3:6] = torch.clamp(rot_action, min=-1.0, max=1.0)
-        action[:, 6] = gripper_action
+        if isinstance(gripper_action, torch.Tensor):
+            action[:, 6] = gripper_action.to(device=self.device)
+        else:
+            action[:, 6] = float(gripper_action)
         self.grasp_prior_action_warmstart_exact_ee_error[:] = torch.norm(
             exact_ee_pos_b - current_ee_pos_b, dim=-1
         )
@@ -575,7 +599,7 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         )
         if bool(active.any().item()):
             open_action = self._gripper_action_for_width(float(self.cfg.max_gripper_width))
-            close_action = self._gripper_action_for_width(float(self.cfg.grasp_prior_action_warmstart_close_width))
+            close_action = self._grasp_prior_warmstart_close_action()
             exact_open_action = self._grasp_prior_exact_tracking_action(open_action)
             exact_close_action = self._grasp_prior_exact_tracking_action(close_action)
             lift_action = exact_close_action.clone()
@@ -626,7 +650,7 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             return teacher_actions, active, phase, exact_ee_error
 
         open_action = self._gripper_action_for_width(float(self.cfg.max_gripper_width))
-        close_action = self._gripper_action_for_width(float(self.cfg.grasp_prior_action_warmstart_close_width))
+        close_action = self._grasp_prior_warmstart_close_action()
         exact_open_action = self._grasp_prior_exact_tracking_action(open_action)
         exact_ee_error = self.grasp_prior_action_warmstart_exact_ee_error.clone()
         exact_close_action = self._grasp_prior_exact_tracking_action(close_action)
