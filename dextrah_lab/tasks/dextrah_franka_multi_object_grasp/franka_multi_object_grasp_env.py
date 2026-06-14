@@ -18,6 +18,7 @@ from isaaclab.assets import Articulation, RigidObject, RigidObjectCfg
 from isaaclab.sensors import TiledCamera
 from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane
 from isaaclab.sim.spawners.materials.physics_materials_cfg import RigidBodyMaterialCfg
+from isaaclab.sim.utils import bind_physics_material
 
 from dextrah_lab.tasks.dextrah_franka_cube_grasp.franka_cube_grasp_env import (
     DextrahFrankaCubeGraspEnv,
@@ -323,18 +324,21 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
                         max_depenetration_velocity=float(self.cfg.object_max_depenetration_velocity),
                     ),
                     mass_props=sim_utils.MassPropertiesCfg(density=float(self.cfg.object_density)),
-                    physics_material=RigidBodyMaterialCfg(
-                        static_friction=float(self.cfg.object_static_friction),
-                        dynamic_friction=float(self.cfg.object_dynamic_friction),
-                        restitution=float(self.cfg.object_restitution),
-                        friction_combine_mode="max",
-                        restitution_combine_mode="min",
-                    ),
                     scale=(scale, scale, scale),
                 ),
                 init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, -10.0), rot=(1.0, 0.0, 0.0, 0.0)),
             )
             RigidObject(object_cfg)
+            object_material_cfg = RigidBodyMaterialCfg(
+                static_friction=float(self.cfg.object_static_friction),
+                dynamic_friction=float(self.cfg.object_dynamic_friction),
+                restitution=float(self.cfg.object_restitution),
+                friction_combine_mode="max",
+                restitution_combine_mode="min",
+            )
+            object_material_path = f"{prim_path}/physicsMaterial"
+            object_material_cfg.func(object_material_path, object_material_cfg)
+            bind_physics_material(prim_path, object_material_path)
 
         self._cube = RigidObject(RigidObjectCfg(prim_path="/World/envs/env_.*/object/.*", spawn=None))
         self.scene.rigid_objects["cube"] = self._cube

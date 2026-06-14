@@ -3017,3 +3017,56 @@ Validation:
 
 Next:
 - Commit and deploy this patch to the A100 worktree, then rerun the same video validation with a stricter `GRASP_RESET_MIN_PREGRASP_Z=0.55`, central candidate filtering, and the patched friction/contact settings.
+
+## 2026-06-14T07:52:00Z - Patched top-down/contact validation launch
+
+Goal:
+- Verify the patched multi-object environment produces clean grasp-contact video evidence before launching RL.
+
+Version Control:
+- implementation_commit: `08fcc52361d2d9403441eac6de846cb1368047f1`
+- push: local `origin/main` updated from `eb87564` to `08fcc52`.
+- deploy: incremental Git bundle copied to A1002 and fetched into the detached remote worktree.
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-main-rgb-teacher-20260614-f1a34bc`
+- remote_commit: `08fcc52361d2d9403441eac6de846cb1368047f1`
+
+Command / Job:
+- job_id: `29059176`
+- run: `franka_multi_video_main08f_topdown55_contact_20260614T0752Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_29059176.out`
+- output_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_main08f_topdown55_contact_20260614T0752Z`
+- command: `sbatch --partition=batch_singlenode,interactive_singlenode,polar,polar3,polar4,grizzly --export=ALL,CODE_NFS=<remote_worktree>,CODE_COMMIT=08fcc52361d2d9403441eac6de846cb1368047f1,RUN_NAME=franka_multi_video_main08f_topdown55_contact_20260614T0752Z,TASK=Dextrah-Franka-Multi-Object-Grasp,NUM_ENVS=4,MAX_OBJECTS=4,OBJECT_ASSET_ASSIGNMENT=random,OBJECT_SPAWN_CENTER_OFFSET_X=0.05,OBJECT_SPAWN_XY_RANDOMIZATION=0.10,OBJECT_SPAWN_YAW_RANDOMIZATION_DEG=180.0,OBJECT_STABLE_POSE_ENABLED=True,OBJECT_STABLE_POSE_CACHE_DIR=/results/validations/graspgen_stable_pose_validate_1028898_20260613_010532/settled_pose_cache,GRASP_RESET_ATTEMPTS=24,GRASP_RESET_MIN_PREGRASP_Z=0.55,GRASP_RESET_CANDIDATE_COUNT=4096,GRASP_RESET_MAX_CENTER_DISTANCE_FRAC=0.25,GRASP_PREGRASP_OFFSET=0.03,GRASP_WARMSTART_TRACK_ORIENTATION=True,... cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh`
+
+Next:
+- Monitor job `29059176`, inspect `video_metrics.json`, and pull frames/video if the metrics pass or fail in a way that needs visual diagnosis.
+
+## 2026-06-14T07:54:00Z - Fix USD material binding API mismatch
+
+Goal:
+- Recover from the patched validation construction failure and keep explicit object contact material support.
+
+Command / Job:
+- job_id: `29059176`
+- run: `franka_multi_video_main08f_topdown55_contact_20260614T0752Z`
+- status: failed before metrics.
+
+Result:
+- Error: `TypeError: UsdFileCfg.__init__() got an unexpected keyword argument 'physics_material'`.
+- Evidence: wrapper log `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_29059176.out`.
+
+Analysis:
+- Isaac Lab 2.2's `UsdFileCfg` supports nested `collision_props`, `rigid_props`, and `mass_props`, but not `physics_material`.
+- The correct API for USD assets is to spawn a `RigidBodyMaterialCfg` prim and bind it to collider descendants with `bind_physics_material`.
+
+Change:
+- Removed the unsupported `physics_material` field from `UsdFileCfg`.
+- Create `<object_prim>/physicsMaterial` per object and bind it recursively after `RigidObject` construction.
+- Aligned `validate_franka_multi_object_grasp_videos.py` argparse defaults with the stricter top-down/center wrapper defaults.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py`: passed.
+- `bash -n cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh cluster/sbatch_train_teacher_8gpu.sh`: passed.
+- `git diff --check`: passed.
+
+Next:
+- Commit, push, redeploy by Git bundle, and relaunch the patched video validation.
