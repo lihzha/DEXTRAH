@@ -3917,3 +3917,99 @@ Validation:
 
 Next:
 - Run local checks, commit/push/deploy exact commit to l401, then rerun rendered exact-grasp validation with `GRASP_RESET_MAX_CENTER_DISTANCE_FRAC=0.50`.
+
+## 2026-06-14T10:26:00Z - Rendered validation with below-table filter
+
+Goal:
+- Verify the table-filtered candidate selection with rendered reset-settle, perturbation, and exact grasp-contact videos before launching corrected PPO.
+
+Version Control:
+- local_commit: `5f5cbacdd1350610f31d7008beec1d665f1e1c1e`
+- push: pushed to `origin/main`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-main-evalfix-20260614-94d7274`
+- remote_commit: `5f5cbacdd1350610f31d7008beec1d665f1e1c1e`
+- deployment: Git bundle copied to `/lustre/fsw/portfolios/nvr/users/lzha/src/bundles/dextrah-main-5f5cbac.bundle`; remote worktree checked out detached at the exact commit.
+
+Command / Job:
+- job_id: `1029215`
+- host: `l401`
+- run: `franka_multi_video_exactgrasp_tablefilter_5f5cbac_notop_20260614T1026Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_1029215.out`
+- output_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_exactgrasp_tablefilter_5f5cbac_notop_20260614T1026Z`
+- key settings: same exact-grasp settings as `1029214`, with code-level table filtering: `GRASP_PREGRASP_OFFSET=0.0`, `GRASP_RESET_REQUIRE_TOPDOWN=False`, `GRASP_RESET_CANDIDATE_COUNT=2048`, `GRASP_RESET_MAX_CENTER_DISTANCE_FRAC=0.50`, IK `96/0.035/0.25/0.055/0.55`, close/lift warmstart `24/126`, lift action z `0.35`.
+
+Next:
+- Monitor `1029215`, inspect `video_metrics.json` and rendered `grasp_contact` frames/video. Launch corrected A100 PPO only if this validates clean reset/contact behavior.
+
+## 2026-06-14T10:31:00Z - Exact-reset table-filter validation failed
+
+Goal:
+- Diagnose the `1029215` rendered exact-reset failure.
+
+Result:
+- job_id: `1029215`
+- status: failed only `grasp_contact`; `reset_settle` and `perturbation` passed.
+- key evidence: `selected_candidate_table_count=27`, `selected_candidate_valid_count=21`, `selected_reset_pos_error=8.6e-05`, `selected_reset_rot_error=1.5e-05`, but `selected_reset_success=False`, `selected_quality_success=False`, and `warmstart_active_count=0`.
+- rendered evidence: `grasp_contact_contact_sheet.jpg` showed the fallback/default hover pose, not a grasp-contact pose.
+- geometry evidence: selected exact tool target was almost at table height (`exact_tool_z=0.7484`, table surface about `0.746`), while the object/contact reference was above the table (`object_center_z=0.7868`, `contact_reference_z=0.7616`). The safety gate rejected the solved pose and fell back.
+- offline prior scan: for this settled object pose, the prior contact midpoints are above the table, but all sampled tool origins are at or below the table within about 5 mm. Therefore a stricter tool-z filter would leave no candidates for this object/pose.
+
+Analysis:
+- Treating the GraspGen tool origin as the point that must clear the table is the wrong abstraction for this prior. Exact reset can put the hand/tool frame too close to the table even when contacts are above the table. The next validation should use the pregrasp reset path: reset above/away from contact and let the warmstart close/lift sequence produce contact.
+
+Next:
+- Launch a controlled rendered validation from the same commit with `GRASP_PREGRASP_OFFSET=0.08` and `GRASP_RESET_REQUIRE_TOPDOWN=True`.
+
+## 2026-06-14T10:33:00Z - Pregrasp/top-down rendered validation launch
+
+Goal:
+- Verify a safer reset mode that places the gripper at a top-down pregrasp and uses warmstart approach/close/lift to create contact.
+
+Version Control:
+- local_commit: `5f5cbacdd1350610f31d7008beec1d665f1e1c1e`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-main-evalfix-20260614-94d7274`
+- remote_commit: `5f5cbacdd1350610f31d7008beec1d665f1e1c1e`
+
+Command / Job:
+- job_id: `1029216`
+- host: `l401`
+- run: `franka_multi_video_pregrasp08_topdown_5f5cbac_20260614T1033Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_1029216.out`
+- output_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_pregrasp08_topdown_5f5cbac_20260614T1033Z`
+- key settings: `GRASP_PREGRASP_OFFSET=0.08`, `GRASP_RESET_REQUIRE_TOPDOWN=True`, `GRASP_RESET_CANDIDATE_COUNT=2048`, `GRASP_RESET_MAX_CENTER_DISTANCE_FRAC=0.50`, IK `96/0.035/0.25/0.055/0.55`, warmstart approach/close/lift `24/24/126`, close max EE error `0.08`, lift max EE error `0.10`, lift max finger-center dist `0.16`.
+
+Next:
+- Monitor `1029216`, then inspect metrics and rendered contact frames before deciding whether to use these settings for training or patch the env further.
+
+## 2026-06-14T10:38:00Z - Table-aware pregrasp direction patch
+
+Goal:
+- Fix the pregrasp/top-down reset failure from `1029216`.
+
+Result:
+- job_id: `1029216`
+- status: failed only `grasp_contact`; `reset_settle` and `perturbation` passed.
+- key evidence: `selected_candidate_valid_count=0`, `selected_candidate_fallback_count=0`, `selected_candidate_table_count=27`, `selected_candidate_topdown_count=0`, `selected_reset_success=False`, `selected_quality_success=False`, `warmstart_active_count=0`.
+- geometry evidence: with `GRASP_PREGRASP_OFFSET=0.08`, the selected pregrasp tool moved downward (`exact_tool_z=0.7359`, `pregrasp_tool_z=0.7104`) instead of upward/away from the table.
+
+Analysis:
+- The pregrasp direction chooser selected the plus/minus direction by distance from the contact reference. For this stable pose, the farther direction points downward through the table, so all top-down candidates are rejected and the reset falls back. Candidate selection should prefer the farther direction with higher world Z, then table-gate the actual pregrasp target/contact reference rather than the GraspGen hand/tool origin.
+
+Change:
+- Choose the pregrasp side using a table-aware score: among directions farther from the contact reference, prefer the one with higher pregrasp z.
+- Redefine multi-object `candidate_table_count`/`table_ok` to require the pregrasp tool target and contact reference to clear the table, instead of requiring the raw GraspGen tool origin to clear it.
+- Set multi-object default `grasp_prior_pregrasp_offset=0.08`.
+
+Version Control:
+- agent_id: `merge-dp-rgb-main-20260613`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/merge-dp-rgb-main-20260613`
+- branch: `main`
+- base_commit: `5f5cbacdd1350610f31d7008beec1d665f1e1c1e`
+- implementation_commit: pending
+- changed_files: `dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py`, `dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py`, this worklog.
+
+Validation:
+- pending: py_compile, diff-check, commit/push/deploy, rendered pregrasp/top-down validation rerun.
+
+Next:
+- Run local checks, commit/push/deploy exact commit to l401, then rerun the pregrasp/top-down rendered validation.

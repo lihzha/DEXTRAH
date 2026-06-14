@@ -695,6 +695,13 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         plus_tool_dist = torch.norm(plus_tool_pos_w - candidate_contact_reference_w, dim=-1)
         minus_tool_dist = torch.norm(minus_tool_pos_w - candidate_contact_reference_w, dim=-1)
         use_plus = plus_tool_dist >= minus_tool_dist
+        if pregrasp_offset > 1.0e-6:
+            plus_farther = plus_tool_dist > candidate_exact_reference_dist
+            minus_farther = minus_tool_dist > candidate_exact_reference_dist
+            has_farther = plus_farther | minus_farther
+            plus_score = torch.where(plus_farther, plus_tool_pos_w[:, :, 2], plus_tool_pos_w[:, :, 2] - 10.0)
+            minus_score = torch.where(minus_farther, minus_tool_pos_w[:, :, 2], minus_tool_pos_w[:, :, 2] - 10.0)
+            use_plus = torch.where(has_farther, plus_score >= minus_score, use_plus)
         candidate_pregrasp_offset_dir_w = torch.where(
             use_plus.unsqueeze(-1),
             candidate_tool_z_axis_w,
@@ -729,7 +736,10 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         normalized_tool_center_dist = candidate_exact_tool_dist / object_size
         center_ok = normalized_center_dist <= float(self.cfg.grasp_prior_reset_max_center_distance_frac)
         table_floor_z = float(self.cfg.table_surface_z) + float(self.cfg.finger_table_penetration_termination_margin)
-        table_ok = candidate_exact_tool_pos_w[:, :, 2] >= table_floor_z
+        table_ok = (
+            (candidate_pregrasp_tool_pos_w[:, :, 2] >= table_floor_z)
+            & (candidate_contact_reference_w[:, :, 2] >= table_floor_z)
+        )
         valid = candidate_pregrasp_farther & width_ok & center_ok & table_ok
         if bool(self.cfg.grasp_prior_reset_require_topdown):
             valid = valid & topdown_ok
