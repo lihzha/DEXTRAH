@@ -995,3 +995,83 @@ Next:
 - Inspect the new `finger_cube_surface_margin_min` curve and video. If the
   light-squeeze default prevents visible pad sinking but loses lift, tune only
   `close_gripper_width_offset` before scaling data generation.
+
+## 2026-06-14T12:25:01-07:00 - Pad-fix rollout smoke validation
+
+Goal:
+- Validate the pad/cube penetration fix on one known successful contact-aware
+  rollout before scaling data generation.
+
+Version Control:
+- local implementation commit: `d84b91a4bbe9b45d1980ed2555660423fdbc4f9e`
+  (`Fix Franka cube contact rollout gripper squeeze`)
+- pushed branch: `origin/codex/franka-cube-diffusion-policy-bc`
+- remote GitHub fetch from `l401` failed with
+  `git@github.com: Permission denied (publickey)`.
+- Deployed to the agent-owned remote worktree with a Git bundle, then detached
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+  to `d84b91a4bbe9b45d1980ed2555660423fdbc4f9e`.
+
+Commands / Jobs:
+- Video smoke attempt `1029363`, run
+  `franka_cube_contact_rollout_padfix_ep24s260_high30_20260614_1218`,
+  node `pool0-00015`, canceled after renderer startup stalled before rollout
+  rows or artifacts.
+- Video smoke attempt `1029364`, run
+  `franka_cube_contact_rollout_padfix_ep24s260_high30_retry1_20260614_1220`,
+  node `pool0-00002`, canceled after the same renderer/Fabric startup stall.
+- Non-video controller smoke `1029365`, run
+  `franka_cube_contact_rollout_padfix_ep24s260_high30_novideo_20260614_1222`,
+  node `pool0-00009`, completed successfully.
+- Pinned video attempt `1029366` on `pool0-00017` was canceled while pending
+  for resources.
+- Final video attempt `1029367` was canceled during startup; no useful rollout
+  artifacts were produced.
+
+Successful Non-Video Smoke Artifacts:
+- Remote run dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/contact_rollouts/franka_cube_contact_rollout_padfix_ep24s260_high30_novideo_20260614_1222`
+- Local fetched run dir:
+  `artifacts/contact_rollouts/franka_cube_contact_rollout_padfix_ep24s260_high30_novideo_20260614_1222`
+- Local logs:
+  `artifacts/logs/contact_aware_franka_cube_rollout_1029363.out`,
+  `artifacts/logs/contact_aware_franka_cube_rollout_1029364.out`,
+  `artifacts/logs/contact_aware_franka_cube_rollout_1029365.out`,
+  `artifacts/logs/contact_aware_franka_cube_rollout_1029367.out`
+- Viewer links:
+  - `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart/artifacts/contact_rollouts/franka_cube_contact_rollout_padfix_ep24s260_high30_novideo_20260614_1222/contact_rollout_plot.png`
+  - `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart/artifacts/contact_rollouts/franka_cube_contact_rollout_padfix_ep24s260_high30_novideo_20260614_1222/contact_rollout_report.md`
+
+Result:
+- Slurm `1029365` completed with exit `0:0`.
+- Summary JSON:
+  - close target width: `0.057999999999999996 m`
+  - close target action: `0.44999995827674866`
+  - final gripper width: `0.06309132277965546 m`
+  - max/final cube lift height: `0.13632076978683472 m`
+  - min finger/cube signed AABB margin:
+    `0.008559505455195904 m`
+  - final finger/cube signed AABB margin:
+    `0.008610937744379044 m`
+  - `success_like=true`
+- Plot inspection: after the initial approach, pose clipping goes to zero;
+  the gripper action switches from open to about `0.45`; the gripper width
+  settles around `0.063 m`; the signed finger/cube margin remains positive
+  during close/lift; the cube lifts monotonically past the success threshold.
+
+Analysis:
+- The controller-side cause of visible pad sinking was the old hard-close
+  command (`-1.0`, i.e. zero-width gripper target) on a 60 mm cube.
+- The patched close target prevents the measured finger body points from
+  entering the cube AABB on this known rollout while preserving successful
+  lift.
+- The video artifact is still blocked by the renderer path: video attempts
+  using `isaaclab.python.headless.rendering.kit` stalled before entering the
+  rollout loop on two allocated nodes. The non-rendering kit completed, so
+  the contact/controller logic is not the blocker.
+
+Next:
+- Use the patched close-width/margin gate for new relabel generation.
+- For visual confirmation, either debug the headless rendering stall separately
+  or render from a known-good node/session; do not treat video failure as a
+  contact-control failure.
