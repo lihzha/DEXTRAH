@@ -54,6 +54,7 @@ parser.add_argument("--grasp_warmstart_close_max_ee_error", type=float, default=
 parser.add_argument("--grasp_warmstart_lift_max_ee_error", type=float, default=0.0)
 parser.add_argument("--grasp_warmstart_lift_max_finger_center_dist", type=float, default=0.0)
 parser.add_argument("--grasp_warmstart_lift_closed_width_margin", type=float, default=-1.0)
+parser.add_argument("--grasp_warmstart_require_current_lift_ready", action=argparse.BooleanOptionalAction, default=None)
 parser.add_argument("--capture_interval", type=int, default=2)
 parser.add_argument("--grasp_reset_attempts", type=int, default=12)
 parser.add_argument("--grasp_reset_require_topdown", action=argparse.BooleanOptionalAction, default=True)
@@ -1029,6 +1030,10 @@ def _make_env(*, grasp_prior: bool):
         env_cfg.grasp_prior_action_warmstart_lift_closed_width_margin = float(
             args_cli.grasp_warmstart_lift_closed_width_margin
         )
+        if args_cli.grasp_warmstart_require_current_lift_ready is not None:
+            env_cfg.grasp_prior_action_warmstart_require_current_lift_ready = bool(
+                args_cli.grasp_warmstart_require_current_lift_ready
+            )
     env_cfg.grasp_prior_allow_missing = False
     env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array")
     task_env = env.unwrapped
@@ -1102,6 +1107,9 @@ def main() -> None:
             "grasp_warmstart_lift_max_ee_error": args_cli.grasp_warmstart_lift_max_ee_error,
             "grasp_warmstart_lift_max_finger_center_dist": args_cli.grasp_warmstart_lift_max_finger_center_dist,
             "grasp_warmstart_lift_closed_width_margin": args_cli.grasp_warmstart_lift_closed_width_margin,
+            "grasp_warmstart_require_current_lift_ready": getattr(
+                resolved_env_cfg, "grasp_prior_action_warmstart_require_current_lift_ready", None
+            ),
             "grasp_reset_require_topdown": args_cli.grasp_reset_require_topdown,
             "grasp_reset_min_pregrasp_z": args_cli.grasp_reset_min_pregrasp_z,
             "grasp_prior_verified_indices_path": args_cli.grasp_prior_verified_indices_path,

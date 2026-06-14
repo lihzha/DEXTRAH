@@ -5921,3 +5921,28 @@ Result:
 Next:
 - Monitor pending state until `29074553` starts.
 - Once running, confirm resolved config and parse rank-0 JSONL metrics.
+
+## 2026-06-14T21:01:00Z - Current-lift PPO canceled; prepare video diagnosis
+
+Result:
+- Job `29074553` (`franka_multi_state_teacher_7195_96ae_currentlift_0fea1cd_ckptfix_20260614T204417Z`) was canceled after epoch 56.
+- Metrics:
+  - close phase activated (`~0.24-0.26` at epochs 51-52).
+  - lift phase activated (`0.17-0.20` at epochs 53-54).
+  - current-lift patch worked: lift reference distance stayed bounded around `0.117-0.118 m`, unlike the stale-latch run where it drifted above `0.27 m`.
+  - lift success remained `0.0`; lift height during lift was near zero (`~0.0001 m` recent mean).
+  - overall success fell to `0.0059` by epoch 56.
+- Analysis: the controller is no longer applying stale bad lift actions, but the accepted grasp/contact is still not carrying the object. Further PPO is not useful until the grasp-contact behavior is visually diagnosed.
+
+Change:
+- Added `--grasp_warmstart_require_current_lift_ready` to `validate_franka_multi_object_grasp_videos.py`.
+- Exposed/logged `GRASP_WARMSTART_REQUIRE_CURRENT_LIFT_READY` in `cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh`.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py`
+- `bash -n cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh`
+- `git diff --check`
+
+Next:
+- Commit/push/deploy the validator patch.
+- Run focused videos with the exact current-lift warmstart settings and inspect `grasp_contact`.
