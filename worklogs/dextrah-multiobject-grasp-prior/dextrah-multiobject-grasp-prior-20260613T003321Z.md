@@ -4956,3 +4956,40 @@ Result:
 
 Next:
 - Monitor until `29070307` starts; inspect startup restore, sigma value if logged/observable, JSONL metrics, checkpoints, and compare stochastic success/lift against prior runs.
+
+## 2026-06-14T16:05:16Z - Low-sigma PPO epoch-50 checkpoint and eval launch
+
+Goal:
+- Decide whether the low-sigma PPO resume is actually improving the robust two-object policy, rather than only reducing sampled action noise.
+
+Result:
+- status: canceled after preserving checkpoint for eval
+- scheduler: `29070307` started on `a1001`/`batch-block7-03012`, restored epoch 40, reached epoch 50, and was intentionally canceled after the epoch-50 checkpoint was saved.
+- checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_96ae_lowsigma_m2_resume40_5a5cfca_20260614T1548Z/nn/last_dextrah_franka_multi_object_grasp_ep_50_rew_2608.1572.pth`
+- training metrics: epoch 41-50 last-10 `cube_success_rate ~= 0.0164`, `cube_has_lifted_rate ~= 0.1572`, `cube_lift_height ~= 0.0094 m`, `cube_grasp_prior_quality_success_rate ~= 0.563`, `cube_action_warmstart_lift_has_lifted_rate ~= 0.272`, `cube_action_warmstart_lift_success_rate ~= 0.0359`, and `cube_action_prior_delta_abs ~= 0.407`.
+- interpretation: lower sigma improved action tracking compared with the previous `~0.67` delta, but PPO-side success remained below the earlier deterministic epoch-40 eval baseline and the sampled policy still did not become a reliable grasp/lift controller.
+
+Command / Job:
+- deterministic eval job: `1029330`, run `franka_multi_7195_96ae_policy_det_ep50_lowsigma_5a5cfca_20260614T1603Z`
+- stochastic eval job: `1029331`, run `franka_multi_7195_96ae_policy_stoch_ep50_lowsigma_5a5cfca_20260614T1603Z`
+- host: `l401`, wrapper `cluster/sbatch_eval_franka_multi_object_grasp_1gpu.sh`
+- eval config: `NUM_ENVS=256`, `NUM_STEPS=600`, `SEED=53`, `CAPTURE_VIDEO=False`, two-object robust manifest, stable-pose cache, verified grasp indices, random object assignment, `+-180 deg` yaw, `+-0.10 m` XY around `(0.05, 0.0)`, reset attempts `4`, candidates `64`, and reference schedule `4/60/180`.
+
+Next:
+- Inspect eval metrics for both deterministic and stochastic epoch-50 rollouts. If epoch-50 does not beat the epoch-40 deterministic baseline, launch a multi-object BC/reference-action imitation intervention before resuming PPO again.
+
+## 2026-06-14T16:05:16Z - Multi-object BC wrapper fallback
+
+Goal:
+- Make the existing reference-action imitation wrapper capable of collecting and training on the multi-object grasp-prior task with the same object/reset distribution used by PPO.
+
+Change:
+- Updated `cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh` to forward multi-object object manifest, object assignment, spawn center/randomization/yaw, stable-pose cache, grasp-prior reset, verified grasp index cache, IK reset settings, pregrasp offset, and the grasp-prior reference action schedule to `bc_reference_action_imitation.py`.
+- Kept the existing cube trajectory path intact and avoided cube-only Hydra overrides for `Dextrah-Franka-Multi-Object-Grasp`.
+
+Validation:
+- `bash -n cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh cluster/sbatch_eval_franka_multi_object_grasp_1gpu.sh cluster/sbatch_train_teacher_8gpu.sh`
+- `git diff --check`
+
+Next:
+- Commit this wrapper fallback and deploy it via Git bundle if epoch-50 eval is poor and a BC warm-start launch is needed.
