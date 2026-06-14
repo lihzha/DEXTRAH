@@ -21,21 +21,24 @@ def _franka_star_robot_cfg(
     finger_effort_limit: float,
     finger_stiffness: float,
     finger_damping: float,
+    *,
+    joint_pos: dict[str, float] | None = None,
 ) -> ArticulationCfg:
+    default_joint_pos = {
+        "panda_joint1": 0.0,
+        "panda_joint2": -0.68,
+        "panda_joint3": 0.0,
+        "panda_joint4": -2.45,
+        "panda_joint5": 0.0,
+        "panda_joint6": 2.28,
+        "panda_joint7": 0.78,
+        "panda_finger_joint.*": 0.04,
+    }
     robot_cfg = FRANKA_PANDA_HIGH_PD_CFG.copy().replace(prim_path="/World/envs/env_.*/Robot").replace(
         init_state=ArticulationCfg.InitialStateCfg(
             pos=(0.0, 0.0, robot_base_z),
             rot=robot_yaw_wxyz,
-            joint_pos={
-                "panda_joint1": 0.0,
-                "panda_joint2": -0.68,
-                "panda_joint3": 0.0,
-                "panda_joint4": -2.45,
-                "panda_joint5": 0.0,
-                "panda_joint6": 2.28,
-                "panda_joint7": 0.78,
-                "panda_finger_joint.*": 0.04,
-            },
+            joint_pos=default_joint_pos if joint_pos is None else dict(joint_pos),
             joint_vel={".*": 0.0},
         )
     )

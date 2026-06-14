@@ -269,3 +269,120 @@ Validation:
 
 Next:
 - Commit, push/deploy to the agent-owned l401 worktree, and run a one-location smoke with `CLOSE_HOLD_REFERENCE=live_cube`.
+
+Result:
+- implementation_commit: `ce09babc57e74543c2e41d3858b0bb9e7282fe7c`
+- pushed to GitHub branch `codex/franka-cube-diffusion-policy-bc`.
+- pushed directly to l401 repo path and checked out in detached mode at `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`.
+
+Command / Job:
+- `1028992`: `franka_cube_rgb_center_liveclose_center_20260613_1305`, `VARIANT=center`, `CLOSE_HOLD_REFERENCE=live_cube`, explicit cube XY `[-0.36, -0.12]`, seed `780000`, video+RGB enabled.
+- `1028993`: `franka_cube_rgb_center_liveclose_high15_20260613_1305`, `VARIANT=center_high15`, `CLOSE_HOLD_REFERENCE=live_cube`, explicit cube XY `[-0.36, -0.12]`, seed `780001`, video+RGB enabled.
+- shared command base: `sbatch --exclude=pool0-00018 --export=ALL,CODE_NFS=<agent-worktree>,DATASET=/results/dp_bc/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz,SPEC_COUNT=1,RESET_JOINT_BLEND_ALPHA=0.0,RESET_CUBE_POS_BLEND_ALPHA=0.0,SAVE_RGB_OBS=True,RGB_OBS_HEIGHT=96,RGB_OBS_WIDTH=96,CAPTURE_VIDEO=True,VIDEO_LENGTH=360,ORIENTATION_MODE=live,ALIGN_STEPS=0,CONTACT_ALIGN_STEPS=120,CONTACT_ALIGN_REFERENCE=initial_cube,CLOSE_HOLD_REFERENCE=live_cube,CONTACT_ALIGN_THRESHOLD=0.09,CONTACT_GATE_MODE=center,REQUIRE_CONTACT_GATE=True,LATERAL_CENTERING_GAIN=0.0,LATERAL_CENTERING_LIMIT=0.0,LATERAL_SEARCH_AMPLITUDE=0.0,LATERAL_SEARCH_PERIOD=32,CLOSE_STEPS=80,LIFT_STEPS=160,LIFT_HEIGHT=0.22,FINGER_GAIN=0.75,CLIP_ACTIONS=1.0,POSE_ACTION_FILTER=scale,POSE_ACTION_LIMIT=0.95,PRINT_INTERVAL=40 cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh`
+
+Next:
+- Monitor `1028992,1028993`, inspect summaries/CSVs/videos, and either keep this setting for random-location smoke or tune again.
+
+Result:
+- `1028992` (`center`, live close anchor) failed the hard gate. It terminated after `99` rows, max/final cube lift `0.0166/0.0148` m, final finger-center-to-cube `0.0601` m.
+- `1028993` (`center_high15`, live close anchor) failed the hard gate. It ran `360` rows, max/final cube lift `0.0163/0.0` m, final finger-center-to-cube `0.2516` m.
+- Video inspection showed fingers close above/against the cube and then lift away. Live close anchoring improves centering but does not solve grasp capture.
+
+Analysis:
+- The failure is no longer primarily stale close/lift anchoring. The handcrafted finger-center controller remains too brittle for the explicit support center.
+- Re-inspected the prior seed42 normal-reset accepted subset. It has only `3/32` accepted rollouts (`ep06`, `ep22`, `ep26`) and all three start from the same normal-reset cube pose `[-0.282, -0.1794, 0.781]`; that subset is not diverse enough and explains why repetition is misleading.
+
+Next:
+- Test whether the source orientations that accepted at the seed42 normal reset also work at the explicit support center. This separates "bad episode orientation" from "center support location is outside the current controller's usable region."
+
+## 2026-06-13T20:45:20Z - known-orientation explicit-center smoke
+
+Goal:
+- Check whether known-good source episodes `6`, `22`, and `26` can produce accepted RGB demos when the cube is explicitly reset to the support center `[-0.36, -0.12]`.
+
+Hypothesis:
+- If any of the known-good source orientations work at the support center, the next data collector can use a bank of source orientations while sampling unique cube positions. If all fail, the current controller is not robust enough for uniform default support.
+
+Version Control:
+- implementation_commit: `ce09babc57e74543c2e41d3858b0bb9e7282fe7c`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- remote_commit: `ce09babc57e74543c2e41d3858b0bb9e7282fe7c`
+
+Command / Job:
+- job_id: `1028996`
+- run_name: `franka_cube_rgb_center_knownori_oldctrl_20260613_1345`
+- command: `sbatch --exclude=pool0-00018 --export=ALL,CODE_NFS=<agent-worktree>,RUN_NAME=<run>,DATASET=/results/dp_bc/datasets/franka_cube_curobo_lowdim_scale32_20260611_125957_full_pick_lift_framefix.npz,TRAJECTORY_ROOT=/results/dp_bc/curobo_plans,SPEC_COUNT=3,SPEC_0=6:260::0:790006:-0.360000:-0.120000,SPEC_1=22:260::0:790022:-0.360000:-0.120000,SPEC_2=26:260::0:790026:-0.360000:-0.120000,RESET_JOINT_BLEND_ALPHA=0.0,RESET_CUBE_POS_BLEND_ALPHA=0.0,SAVE_RGB_OBS=True,RGB_OBS_HEIGHT=96,RGB_OBS_WIDTH=96,CAPTURE_VIDEO=True,VIDEO_LENGTH=400,VARIANT=center_high30,ORIENTATION_MODE=source,POSE_ACTION_FILTER=scale,POSE_ACTION_LIMIT=0.95,ALIGN_STEPS=0,CONTACT_ALIGN_STEPS=160,CONTACT_ALIGN_REFERENCE=live_cube,CLOSE_HOLD_REFERENCE=contact_anchor,CONTACT_ALIGN_THRESHOLD=0.055,CONTACT_GATE_MODE=left_right,FINGER_GATE_MAX_DISTANCE=0.075,FINGER_GATE_BALANCE_THRESHOLD=0.015,REQUIRE_CONTACT_GATE=True,LATERAL_CENTERING_GAIN=0.75,LATERAL_CENTERING_LIMIT=0.025,LATERAL_SEARCH_AMPLITUDE=0.004,LATERAL_SEARCH_PERIOD=32,CLOSE_STEPS=80,LIFT_STEPS=160,LIFT_HEIGHT=0.22,FINGER_GAIN=0.75,CLIP_ACTIONS=1.0,PRINT_INTERVAL=40,SEED=43,GATE_MIN_LIFT=0.10,GATE_MAX_POSE_CLIP_FRACTION=0.0,GATE_MAX_FINAL_EE_TO_CUBE=0.05,GATE_MAX_FINAL_FINGER_TO_CUBE=0.08 cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh`
+
+Next:
+- Monitor `1028996`; inspect per-spec summaries, CSVs, and videos.
+
+Result:
+- status: failed before rollout; no physics/controller evidence produced.
+- key evidence: Slurm log `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/contact_aware_franka_cube_relabel_set_1028996.out` contains `Missing trajectory JSON for spec 6:260::0:790006:-0.360000:-0.120000: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/curobo_plans/cube_curobo_scale32_20260611_125957_seed6/trajectory.json`.
+
+Analysis:
+- This was a launch-configuration error. The known-good accepted episodes came from the scale264 dataset/plans, but the relaunch used the older scale32 dataset/template.
+
+Next:
+- Relaunch the same three explicit-center known-orientation specs with `/results/dp_bc/datasets/franka_cube_curobo_lowdim_scale264_20260612_1449_full_pick_lift_framefix.npz` and trajectory template `cube_curobo_scale264_20260612_1449_seed{episode}/trajectory.json`.
+
+## 2026-06-14T05:17:21Z - reset distribution and data-generation video visualization
+
+Goal:
+- Visualize the reset distributions used during data-generation attempts and expose representative success/failure videos.
+
+Command / Job:
+- job_id: n/a; local artifact inspection only.
+- command: parsed existing `contact_relabel_set_summary.json` files, accepted NPZs, and the local scale264 source lowdim dataset with the project venv.
+- artifacts:
+  - `/home/lzha/code/shared_artifacts/franka-cube-dp-bc-reset-videos-20260613/reset_distribution_attempts.png`
+  - `/home/lzha/code/shared_artifacts/franka-cube-dp-bc-reset-videos-20260613/reset_distribution_points.csv`
+  - `/home/lzha/code/shared_artifacts/franka-cube-dp-bc-reset-videos-20260613/reset_distribution_summary.json`
+
+Result:
+- Source scale264 reference distribution: 232 unique source cube XY positions.
+- Accepted source-position RGB relabel set: 183 accepted unique source positions.
+- Seeded normal-reset attempts: 160 attempted rollouts across only 5 unique XY positions; per-seed pass counts were seed42 `3/32`, seed43 `11/32`, seed44 `2/32`, seed45 `13/32`, seed46 `1/32`.
+- Target `xp015_nearest048` RGB attempts: 48 unique XY positions, 4 accepted and 44 failed.
+- Fullstart/OOD19 RGB attempts: 19 unique XY positions, 3 accepted and 16 failed.
+- Explicit support-center RGB smoke: fixed at approximately `[-0.36, -0.12]`, 0 accepted and 2 failed.
+
+Analysis:
+- The normal-reset data was not diverse: each seed repeated one cube XY for all 32 attempts. This confirms it should not be used as the main 100-200 trajectory BC dataset.
+- The broader source-position and target/fullstart attempts cover real XY diversity, but success rate is poor off the old source-position relabel regime.
+- The explicit support-center smoke is visually and metrically a grasp-capture failure, not an RGB/policy issue.
+
+Next:
+- Use the generated plot and representative videos to decide whether to repair the data-generation controller or switch to a known-good teacher rollout source for uniformly sampled default reachable cube positions.
+
+## 2026-06-14T05:43:44Z - cube reset geometry patch
+
+Goal:
+- Raise the Franka reset geometry for the cube task and start from an upright/down gripper pose before retrying support-center data generation.
+
+Hypothesis:
+- The current cube-task reset initializes the Franka too close to the table and with a forward-tilted wrist, causing the handcrafted data-generation controller to close above or against the cube and then lose the grasp. Raising the cube-task base by `+0.2m` relative to its existing `0.27m` setting and using the standard Panda upright/down reset pose should improve table clearance and grasp approach geometry.
+
+Change:
+- Left the star-kitting default reset pose unchanged.
+- Extended `_franka_star_robot_cfg(...)` with an optional keyword-only `joint_pos` override.
+- Rebuilt the cube-task robot cfg with `robot_base_z = 0.47` and joint reset `{0.0, -0.569, 0.0, -2.810, 0.0, 3.037, 0.741}` plus open fingers.
+
+Version Control:
+- agent_id: `franka-cube-no-phase-rgb`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `ce09babc57e74543c2e41d3858b0bb9e7282fe7c`
+- implementation_commit: pending
+- changed_files:
+  - `dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env_cfg.py`
+  - `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env_cfg.py`
+  - `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart-no-phase-rgb.md`
+
+Validation:
+- `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/venv/bin/python -m py_compile dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env_cfg.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env_cfg.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`
+- `bash -n cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh cluster/sbatch_eval_franka_cube_rgb_dp_policy_1gpu.sh`
+
+Next:
+- Commit and deploy this exact source to the l401 agent worktree.
+- Run a one-env reset/data-generation smoke at the explicit support center and inspect the produced metrics/video before any scale-up.

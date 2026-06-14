@@ -56,17 +56,29 @@ class DextrahFrankaCubeGraspEnvCfg(DextrahFrankaStarKittingEnvCfg):
     finger_effort_limit = 1000.0
     finger_stiffness = 4000.0
     finger_damping = 400.0
-    robot_base_z = 0.27
+    robot_base_z = 0.47
+    robot_joint_pos = {
+        "panda_joint1": 0.0,
+        "panda_joint2": -0.569,
+        "panda_joint3": 0.0,
+        "panda_joint4": -2.810,
+        "panda_joint5": 0.0,
+        "panda_joint6": 3.037,
+        "panda_joint7": 0.741,
+        "panda_finger_joint.*": 0.04,
+    }
 
     # The star task keeps the robot base lower for its fixture geometry.  In
-    # the cube task that places the default Franka fingertips below the table,
-    # so rebuild the inherited robot cfg with a cube-specific base height.
+    # the cube task that places the default Franka fingertips too close to the
+    # table, so rebuild the inherited robot cfg with a higher cube-specific
+    # base height and a standard upright/down Franka reset posture.
     robot: ArticulationCfg = _franka_star_robot_cfg(
         robot_base_z,
         robot_yaw_wxyz,
         finger_effort_limit,
         finger_stiffness,
         finger_damping,
+        joint_pos=robot_joint_pos,
     )
 
     # KUKA-cube-shaped reward weights for franka_cube_grasp_rewards.compute_franka_cube_grasp_rewards.
