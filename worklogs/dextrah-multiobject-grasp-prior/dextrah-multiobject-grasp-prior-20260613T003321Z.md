@@ -4840,3 +4840,23 @@ Validation:
 
 Next:
 - Commit and deploy this exact diagnostic commit to an isolated A100/L40 source worktree, then run deterministic policy eval and scripted reference-action eval against the robust `7195... + 96ae...` pair and the accepted verified-index cache.
+
+## 2026-06-14T15:35:44Z - Match eval reference-action schedule to PPO training
+
+Goal:
+- Make the scripted grasp-prior reference eval use the same approach/close/lift action schedule as the PPO training runs.
+
+Change:
+- Added grasp-prior action-warmstart sequence overrides to `cluster/sbatch_eval_franka_multi_object_grasp_1gpu.sh` so launch env can pass `4/60/180`, prior-width close, and lift z `0.50`.
+
+Version Control:
+- base_commit: `864f867834966b39f22b5d2fc3d14fe90517fb7e`
+- implementation_commit: pending
+- changed_files: `cluster/sbatch_eval_franka_multi_object_grasp_1gpu.sh`, this worklog.
+
+Validation:
+- `bash -n cluster/sbatch_eval_franka_multi_object_grasp_1gpu.sh`
+- `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`
+
+Next:
+- Commit, deploy the final eval-diagnostic commit, and launch deterministic policy vs scripted reference evals.
