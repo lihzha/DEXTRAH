@@ -5871,3 +5871,31 @@ Validation:
 
 Next:
 - Commit/push, deploy to the A100 agent worktree, and relaunch with current lift gating enabled.
+
+## 2026-06-14T20:42:03Z - Current-lift-gate PPO relaunch
+
+Goal:
+- Verify the current-lift-ready patch and test a less restrictive warmstart schedule that can still reach close/lift while preventing stale lift continuation.
+
+Version Control:
+- implementation_commit: `0fea1cde7ed59881c3a9ef04fb2af2499fb1feff`
+- push/pull: pushed to `origin/main`; deployed to A100 via `/lustre/fsw/portfolios/nvr/users/lzha/src/bundles/DEXTRAH/dextrah-0fea1cd.bundle`.
+- remote_worktree: `/lustre/fs11/portfolios/nvr/projects/nvr_lpr_rvp/users/lzha/src/worktrees/DEXTRAH/multiobject-bc-fallback-20260614-d5e8b27`
+- remote_commit/status: detached at `0fea1cde7ed59881c3a9ef04fb2af2499fb1feff`, clean.
+
+Validation:
+- Remote `python3 -m py_compile` passed for the affected env config/code files.
+- Remote `bash -n cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_eval_franka_multi_object_grasp_1gpu.sh` passed.
+- Remote `git diff --check` passed.
+
+Command / Job:
+- job_id: `29074535`
+- run_name: `franka_multi_state_teacher_7195_96ae_currentlift_0fea1cd_20260614T204203Z`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_96ae_currentlift_0fea1cd_20260614T204203Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29074535.out`
+- source_commit: `0fea1cde7ed59881c3a9ef04fb2af2499fb1feff`
+- changed warmstart overrides relative to the canceled gated run: `approach_steps=48`, `close_steps=96`, `lift_steps=160`, `lift_action_z=0.35`, `close_max_ee_error=0.12`, `lift_max_ee_error=0.12`, `lift_max_finger_center_dist=0.14`, `lift_closed_width_margin=0.006`, `require_current_lift_ready=True`.
+
+Next:
+- Confirm resolved config contains `grasp_prior_action_warmstart_require_current_lift_ready: true`.
+- Parse early JSONL epochs; accept only if lift actions keep current reference/finger distances bounded and produce nonzero lift success.
