@@ -4262,3 +4262,48 @@ Analysis:
 Decision:
 - Proceed to A100 PPO from the corrected `7182f3026edec7a74b9708b298bdbbc1f994f75b` code path.
 - Use random object assignment, full yaw randomization, stable-pose cache, grasp-prior reset enabled, action warmstart disabled, and action-prior reward/reference settings based on the successful `0.50` lift validation.
+
+## 2026-06-14T11:21:00Z - Corrected multi-object PPO launch intent
+
+Goal:
+- Launch the actual parallel multi-object Franka PPO teacher run from the validated main-branch source and monitor until it learns or needs another patch.
+
+Version Control:
+- local_commit: `02cb6b7a4fae8583e755317468cec4159ddb35d9`
+- code_delta_from_contact_fix: worklog only; environment code is the validated finger-center target commit `7182f3026edec7a74b9708b298bdbbc1f994f75b`.
+- pushed: `origin/main` at `02cb6b7a4fae8583e755317468cec4159ddb35d9`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-main-train-20260614-02cb6b7`
+- remote_commit: `02cb6b7a4fae8583e755317468cec4159ddb35d9`
+- deployment: Git bundle `/lustre/fsw/portfolios/nvr/users/lzha/src/bundles/dextrah-main-02cb6b7.bundle` fetched on A100; worktree checked out detached at the exact commit.
+
+Planned Command / Job:
+- host: `a1002`
+- wrapper: `cluster/sbatch_train_teacher_8gpu.sh`
+- run: `franka_multi_state_teacher_contactfix_liftshape_priorreward_20260614T1121Z`
+- task: `Dextrah-Franka-Multi-Object-Grasp`
+- scale: `NUM_ENVS=2048`, `MAX_ITERATIONS=600`, `HORIZON_LENGTH=64`, 8 GPUs.
+- assets: two-object filtered manifest `/results/assets/filtered_manifests/two_non_slender_1_3_assetroot_20260614T0826Z/manifest.json`, grasp priors from `/results/assets/franka_multi_graspgen_asset_smoke_contacts_2d7f495_20260613_153029/grasp_priors`.
+- randomization: `OBJECT_ASSET_ASSIGNMENT=random`, `OBJECT_SPAWN_CENTER_OFFSET_X=0.05`, `OBJECT_SPAWN_XY_RANDOMIZATION=0.10`, `OBJECT_SPAWN_YAW_RANDOMIZATION_DEG=180.0`.
+- stable poses: cache `/results/validations/graspgen_stable_pose_validate_1028898_20260613_010532/settled_pose_cache`, missing poses disallowed.
+- grasp reset: enabled, attempts `12`, candidates `2048`, top-down required, `GRASP_PRIOR_PREGRASP_OFFSET=0.08`, IK tolerances matching rendered validation.
+- guidance: action warmstart disabled; action-prior reward enabled with tuned lift/close reward overrides and reference sequence `approach=24`, `close=36`, `lift=160`, `close_width=0.004`, `lift_action_z=0.50`.
+
+Next:
+- Submit the A100 job, record job id/log/metrics, then monitor startup, JSONL reward terms, checkpoints, lift/success curves, and relaunch if metrics show another real failure mode.
+
+## 2026-06-14T11:22:00Z - Corrected multi-object PPO launch
+
+Goal:
+- Train the corrected multi-object Franka teacher policy on A100 with mixed objects and reset-time pose/yaw randomization.
+
+Command / Job:
+- job_id: `29063656`
+- host: `a1002`
+- run: `franka_multi_state_teacher_contactfix_liftshape_priorreward_20260614T1121Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29063656.out`
+- expected_metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_contactfix_liftshape_priorreward_20260614T1121Z/metrics/direct_info_rank_0.jsonl`
+- expected_checkpoints: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_contactfix_liftshape_priorreward_20260614T1121Z/nn/`
+- source: detached A100 worktree `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-main-train-20260614-02cb6b7` at `02cb6b7a4fae8583e755317468cec4159ddb35d9`.
+
+Next:
+- Monitor job `29063656` through startup, first metrics, first checkpoint, and either continue to success or patch/relaunch based on reward/lift/success evidence.
