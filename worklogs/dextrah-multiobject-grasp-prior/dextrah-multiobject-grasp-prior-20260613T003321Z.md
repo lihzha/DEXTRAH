@@ -2400,3 +2400,38 @@ Analysis:
 
 Next:
 - Commit and push the RGB teacher integration, deploy exact `main` commit to an A100-owned worktree, run a small RGB smoke, then launch/resume the 8-GPU teacher run with `REQUEUE_ON_EARLY_TERM=True` and monitor metrics/checkpoints until success.
+
+## 2026-06-14T05:49:00Z - Merged-main RGB smoke hang and CUDA graph default fix
+
+Goal:
+- Prove the merged `main` RGB teacher task initializes before launching a longer RL run.
+
+Hypothesis:
+- RGB camera observations should not use the CUDA graph path by default. The wrapper intended `USE_CUDA_GRAPH=False` for `Dextrah-Franka-Multi-Object-RGB-Grasp`, but initialized it to `True` before the RGB task branch, so the RGB default never took effect.
+
+Change:
+- Changed `cluster/sbatch_train_teacher_8gpu.sh` so `USE_CUDA_GRAPH` defaults after task selection: RGB multi-object training defaults to `False`, other tasks default to `True`, and explicit caller overrides are preserved.
+
+Version Control:
+- agent_id: `integrate-multiobject-main-20260613`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/merge-dp-rgb-main-20260613`
+- branch: `main`
+- base_commit: `98c69662f99a468c6fb5fe70a0beae5ba2ba2d16`
+- implementation_commit: pending
+- changed_files: `cluster/sbatch_train_teacher_8gpu.sh`, this worklog
+
+Command / Job:
+- failed_job_id: `29056877`
+- failed_command: `TASK=Dextrah-Franka-Multi-Object-RGB-Grasp`, `MAX_ITERATIONS=2`, `NUM_ENVS=64`, `OBJECT_SPAWN_YAW_RANDOMIZATION_DEG=180.0`, stable-pose cache enabled, grasp-prior reset enabled, `REQUEUE_ON_EARLY_TERM=True`
+- failed_log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29056877.out`
+- checks: `bash -n cluster/sbatch_train_teacher_8gpu.sh`; `git diff --check`
+
+Result:
+- status: failed smoke cancelled after no rl-games result directory and no `Completed setting up the environment` marker.
+- key evidence: launch log showed `env.use_cuda_graph=True` for the RGB task; log stopped after headless renderer setup warnings and never reached PPO startup.
+
+Analysis:
+- A pre-merge RGB run from commit `3680f4a` reached PPO epochs with `env.use_cuda_graph=False`, so the merged-main smoke was most likely blocked by the wrapper default rather than by asset paths or Slurm.
+
+Next:
+- Commit/push the wrapper fix, redeploy the exact commit to the A100 worktree, rerun the two-iteration merged-main smoke, and only then launch the longer run.
