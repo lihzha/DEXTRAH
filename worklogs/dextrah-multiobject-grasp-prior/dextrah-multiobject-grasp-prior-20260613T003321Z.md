@@ -5152,3 +5152,32 @@ Command / Job:
 
 Next:
 - Monitor startup/config, then inspect `cube_postlift_*`, `cube_action_z`, `cube_gripper_close_action`, lift/success, and checkpoint evals. If post-lift terms improve training metrics, launch deterministic/stochastic L40 eval at the first strong checkpoint.
+
+## 2026-06-14T16:55:00Z - PPO branch 2 JSONL relaunch
+
+Goal:
+- Preserve the post-lift PPO experiment but relaunch early with per-term JSONL metrics enabled, because reward/action diagnostics are required for debugging.
+
+Change:
+- Canceled startup-only A100 job `29071021` before PPO epochs; it had launched with `DEXTRAH_RLGAMES_JSONL_METRICS=False`.
+- Relaunched the same code/config/checkpoint with `DEXTRAH_RLGAMES_JSONL_METRICS=True`.
+
+Version Control:
+- local_commit: `91063df57ef3d018fc29d44357088cb7bd3f6eb4`
+- remote_source: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-bc-fallback-20260614-d5e8b27`
+- remote_status: detached at `91063df57ef3d018fc29d44357088cb7bd3f6eb4`
+
+Command / Job:
+- host: `a1001`
+- canceled_job_id: `29071021`
+- new_job_id: `29071091`
+- new_run: `franka_multi_state_teacher_7195_96ae_postlift_jsonl_91063df_20260614T1655Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29071091.out`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_96ae_postlift_jsonl_91063df_20260614T1655Z`
+- changed launch setting: `DEXTRAH_RLGAMES_JSONL_METRICS=True`; all task/object/reward/checkpoint settings otherwise matched job `29071021`.
+
+Result:
+- status: pending at launch due `QOSMaxJobsPerUserLimit`.
+
+Next:
+- Monitor queue/startup, verify the log shows `DEXTRAH_RLGAMES_JSONL_METRICS=True`, then inspect JSONL metrics once PPO epochs begin.
