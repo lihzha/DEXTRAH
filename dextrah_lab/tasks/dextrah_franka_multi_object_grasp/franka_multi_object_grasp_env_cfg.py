@@ -96,6 +96,10 @@ class DextrahFrankaMultiObjectGraspEnvCfg(DextrahFrankaCubeGraspEnvCfg):
     grasp_prior_reset_candidate_count = 16
     grasp_prior_reset_require_topdown = True
     grasp_prior_reset_min_pregrasp_z = 0.45
+    # Reject contact-based priors whose contact/reference midpoint is below
+    # the current object center in world z.  This prevents underside grasps
+    # even when the pregrasp offset is forced to approach from above.
+    grasp_prior_reset_min_contact_height_above_center = 0.0
     grasp_prior_reset_max_center_distance_frac = 0.50
     grasp_prior_reset_min_width = 0.008
     grasp_prior_reset_ik_iterations = 64

@@ -252,6 +252,7 @@ def _snapshot_task_tensor_names() -> tuple[str, ...]:
         "grasp_prior_reset_center_gate_dist",
         "grasp_prior_reset_has_contact_location",
         "grasp_prior_reset_candidate_topdown_count",
+        "grasp_prior_reset_candidate_contact_height_count",
         "grasp_prior_reset_candidate_center_count",
         "grasp_prior_reset_candidate_width_count",
         "grasp_prior_reset_candidate_table_count",
@@ -514,6 +515,9 @@ def _selected_grasp_geometry_snapshot(task_env, env_id: int) -> dict[str, object
         "selected_center_gate_dist": float(task_env.grasp_prior_reset_center_gate_dist[env_id].detach().cpu()),
         "selected_candidate_topdown_count": int(
             task_env.grasp_prior_reset_candidate_topdown_count[env_id].detach().cpu()
+        ),
+        "selected_candidate_contact_height_count": int(
+            task_env.grasp_prior_reset_candidate_contact_height_count[env_id].detach().cpu()
         ),
         "selected_candidate_center_count": int(
             task_env.grasp_prior_reset_candidate_center_count[env_id].detach().cpu()
@@ -1112,6 +1116,9 @@ def main() -> None:
             ),
             "grasp_reset_require_topdown": args_cli.grasp_reset_require_topdown,
             "grasp_reset_min_pregrasp_z": args_cli.grasp_reset_min_pregrasp_z,
+            "grasp_reset_min_contact_height_above_center": getattr(
+                resolved_env_cfg, "grasp_prior_reset_min_contact_height_above_center", None
+            ),
             "grasp_prior_verified_indices_path": args_cli.grasp_prior_verified_indices_path,
             "grasp_reset_ik_iterations": getattr(resolved_env_cfg, "grasp_prior_reset_ik_iterations", None),
             "grasp_reset_ik_damping": getattr(resolved_env_cfg, "grasp_prior_reset_ik_damping", None),

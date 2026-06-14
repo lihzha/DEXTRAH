@@ -6260,3 +6260,203 @@ Result:
 
 Next:
 - Commit this collector plumbing, deploy the exact commit to the agent-owned `/lustre` worktree, and run replacement object qualification jobs.
+
+Version Control Update:
+- implementation_commit: `087b709ff607c8db54020c98187e4f0f2c333c7f`
+- push/pull: pushed to `origin/main`; l401 remote worktree updated with one-off HTTPS fetch because SSH fetch lacked GitHub credentials.
+- remote_commit/status: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-bc-fallback-20260614-d5e8b27` clean detached HEAD at `087b709ff607c8db54020c98187e4f0f2c333c7f`.
+
+## 2026-06-14T22:09:50Z - Replacement candidate asset prep
+
+Goal:
+- Prepare a small replacement object subset on `/lustre` for stable-pose and strict contact qualification before the next PPO launch.
+
+Hypothesis:
+- The first three GraspGen train UUIDs already have partial `/lustre` raw/URDF preparation and may yield at least one RLable replacement for the bad `96ae...` / stale `1d489...` candidates.
+
+Change:
+- No source changes.
+- Use the pushed `087b709` remote worktree.
+- Prepare a clean asset subset under `/lustre`, with downloader/cache/temp paths configured by the wrapper to avoid `/home`.
+
+Version Control:
+- implementation_commit: `087b709ff607c8db54020c98187e4f0f2c333c7f`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-bc-fallback-20260614-d5e8b27`
+- remote_status: clean detached HEAD at `087b709ff607c8db54020c98187e4f0f2c333c7f`
+
+Command / Job:
+- command: `sbatch cluster/sbatch_prepare_graspgen_assets_1gpu.sh` on `l401`
+- job_id: `1029411`
+- run_name: `franka_multi_graspgen_candidates3_087b709_20260614T220950Z`
+- uuids: `bfa718fff3044541a3694863c3bf9c89`, `55cdf60e26db4f3d9f693282404c07f3`, `1c56f9b18a3f459891f6f8b902d192a0`
+- output_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/franka_multi_graspgen_candidates3_087b709_20260614T220950Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/prepare_graspgen_assets_1029411.out`
+- expected artifacts: `manifest.json`, `USD/<uuid>/<uuid>.usd`, `grasp_priors/<uuid>.npz`, `urdf/<uuid>/model.urdf`.
+
+Next:
+- Monitor job `1029411`; inspect log and manifest/USD/prior coverage before stable-pose validation.
+
+Result:
+- status: passed
+- scheduler: `COMPLETED`, job `1029411`, exit `0:0`, elapsed `00:01:49` on `pool0-00002`.
+- manifest: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/franka_multi_graspgen_candidates3_087b709_20260614T220950Z/manifest.json`
+- asset coverage:
+  - objects: `3`
+  - `missing_usd_count=0`
+  - USDs present for `bfa718fff3044541a3694863c3bf9c89`, `55cdf60e26db4f3d9f693282404c07f3`, `1c56f9b18a3f459891f6f8b902d192a0`
+  - grasp-prior NPZs present for all three.
+- manifest scale check:
+  - `bfa718...`: scale `0.3851195`, scaled half-extents roughly `[0.056, 0.034, 0.056]` m.
+  - `55cdf...`: scale `0.0014473`, scaled half-extents roughly `[0.042, 0.063, 0.069]` m.
+  - `1c56...`: scale `0.0278004`, scaled half-extents roughly `[0.037, 0.032, 0.071]` m.
+
+Analysis:
+- The candidate subset is loadable at the asset level: raw OBJ, URDF, USD, grasp-prior NPZ, and manifest paths are complete.
+- Next validation must prove stable placements and contact behavior, because asset coverage alone is not sufficient for RL.
+
+Next:
+- Run stable-pose placement validation and cache poses for these three objects.
+
+## 2026-06-14T22:12:17Z - Replacement candidate stable-pose validation
+
+Goal:
+- Compute trimesh stable poses for the three candidate objects and verify exact placement in Isaac Lab before using them for grasp-prior collection or PPO.
+
+Hypothesis:
+- A single high-probability convex-hull stable pose per object should settle with low drift and no table penetration at the default multi-object spawn center.
+
+Change:
+- No source changes.
+- Use candidate manifest `/results/assets/franka_multi_graspgen_candidates3_087b709_20260614T220950Z/manifest.json`.
+
+Version Control:
+- implementation_commit: `087b709ff607c8db54020c98187e4f0f2c333c7f`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-bc-fallback-20260614-d5e8b27`
+- remote_status: clean detached HEAD at `087b709ff607c8db54020c98187e4f0f2c333c7f`
+
+Command / Job:
+- command: `sbatch cluster/sbatch_validate_graspgen_stable_pose_resets_1gpu.sh` on `l401`
+- job_id: `1029412`
+- run_name: `graspgen_stable_candidates3_087b709_20260614T221217Z`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/graspgen_stable_candidates3_087b709_20260614T221217Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_graspgen_stable_pose_1029412.out`
+- settings: `MAX_OBJECTS=3`, `STABLE_POSE_COUNT=1`, `ROLLOUT_POSE_COUNT=1`, `SETTLE_STEPS=240`, `SETTLED_REPLAY_STEPS=120`, `RENDER_FRAMES=True`, `CAPTURE_INTERVAL=12`.
+
+Next:
+- Monitor job `1029412`, inspect `metrics.json`, `settled_pose_cache`, and rendered frames/video.
+
+Result:
+- status: passed
+- scheduler: `COMPLETED`, job `1029412`, exit `0:0`, elapsed `00:02:30` on `pool0-00002`.
+- metrics:
+  - `passed=true`
+  - `root_xy_delta_max=0.00389 m`
+  - `center_xy_delta_max=0.00365 m`
+  - `root_z_delta_max=0.00556 m`
+  - `bottom_clearance_min=-0.00241 m`
+  - `angular_delta_deg_max=6.18`
+  - `final_object_speed_max=0.00386 m/s`
+  - `final_object_angular_speed_max=0.103 rad/s`
+  - `done_count=0`
+- stable-pose cache: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/graspgen_stable_candidates3_087b709_20260614T221217Z/settled_pose_cache`
+- fetched artifacts: `cluster_results/l401/graspgen_stable_candidates3_087b709_20260614T221217Z/`
+- encoded videos:
+  - `stable_pose_env_00.mp4`, `stable_pose_env_01.mp4`, `stable_pose_env_02.mp4`: 1280x720, 21 frames, 1.4 s.
+  - `settled_replay_env_00.mp4`, `settled_replay_env_01.mp4`, `settled_replay_env_02.mp4`: 1280x720, 11 frames, 0.73 s.
+- visual inspection:
+  - `stable_pose_montage.jpg` shows all three objects on the table before and after settled replay, with no visible bouncing, sinking, or edge placement issue.
+
+Analysis:
+- The three replacement objects are stable enough for the next strict grasp-prior collection stage.
+- This only validates object placement, not grasp contact. Contact/RLability still depends on verified grasp collection and video validation.
+
+Next:
+- Launch strict verified-grasp collection with this stable-pose cache, current-lift gate enabled, yaw randomization over 360 degrees, and training-matched reset/warmstart settings.
+
+## 2026-06-14T22:16:14Z - Strict verified-grasp collection for replacement candidates
+
+Goal:
+- Find grasp-prior indices that actually lift the settled candidate objects under the same reset/warmstart gates used by PPO and contact validation.
+
+Hypothesis:
+- At least one or two of the three stable candidate objects will yield strict verified grasp indices; those objects can replace the failing `96ae...` / stale `1d489...` candidates in the next PPO set.
+
+Change:
+- No source changes.
+- Use stable-pose cache from `graspgen_stable_candidates3_087b709_20260614T221217Z`.
+- Enable current-lift warmstart gating in the collector.
+
+Version Control:
+- implementation_commit: `087b709ff607c8db54020c98187e4f0f2c333c7f`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-bc-fallback-20260614-d5e8b27`
+- remote_status: clean detached HEAD at `087b709ff607c8db54020c98187e4f0f2c333c7f`
+
+Command / Job:
+- command: `sbatch cluster/sbatch_collect_franka_multi_object_verified_grasps_1gpu.sh` on `l401`
+- job_id: `1029413`
+- run_name: `franka_multi_verified_candidates3_strict_087b709_20260614T221614Z`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/verified_grasp_indices/franka_multi_verified_candidates3_strict_087b709_20260614T221614Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/collect_franka_multi_object_verified_grasps_1029413.out`
+- settings:
+  - `NUM_ENVS=96`, `MAX_OBJECTS=3`, `OBJECT_ASSET_ASSIGNMENT=round_robin`
+  - spawn center `(0.05,0)`, XY randomization `0.10`, yaw randomization `180 deg` (full 360-degree range)
+  - stable pose cache enabled, count `1`, allow missing `False`
+  - `CYCLES=240`, `MIN_CYCLES=12`, `TARGET_PER_OBJECT=2`, `MAX_INDICES_PER_OBJECT=16`
+  - strict thresholds: `MIN_LIFT_HEIGHT=0.12`, `MAX_XY_DELTA=0.06`, `MAX_DONE_COUNT=0`
+  - reset/warmstart: attempts `12`, candidates `64`, center fraction `0.30`, IK iterations `128`, approach/close/lift `4/60/180`, prior close width enabled, current-lift gate enabled.
+
+Next:
+- Monitor job `1029413`; inspect `verified_indices.json` counts and logs. If all targets are met, run contact videos. If only a subset is good, validate that subset.
+
+Result:
+- status: canceled for source-level filter improvement
+- scheduler: `CANCELLED`, job `1029413`, elapsed `00:02:16`.
+- early counts before cancellation:
+  - after cycle 2: all counts `0`.
+  - after cycle 3: `bfa718fff3044541a3694863c3bf9c89=1`, others `0`.
+
+Analysis:
+- User noted an important prior: the robot should never grasp objects from below.
+- Audit showed the existing `grasp_prior_reset_require_topdown=True` path filters by `pregrasp_offset_dir_w.z >= grasp_prior_reset_min_pregrasp_z`.
+- For contact-based candidates, the reset code forces the pregrasp offset direction to world-up, which enforces approach from above but does not reject low/underside contact/reference points.
+- The partial cache from `1029413` should not be used because it was collected before this stronger underside-grasp filter.
+
+Next:
+- Add a config-backed contact/reference height filter, then relaunch verified-grasp collection from a new commit.
+
+## 2026-06-14T22:20:00Z - Reject underside GraspGen contact priors
+
+Goal:
+- Encode the “never grasp from below” prior directly in multi-object grasp-prior filtering.
+
+Hypothesis:
+- Rejecting contact-based candidates whose contact/reference midpoint is below the current object center will remove underside grasps that can pass an approach-direction-only top-down check.
+
+Change:
+- Add multi-object config `grasp_prior_reset_min_contact_height_above_center = 0.0`.
+- In `DextrahFrankaMultiObjectGraspEnv`, require `contact_reference_w.z >= object_center_w.z + threshold` when `grasp_prior_reset_require_topdown=True`.
+- Apply the same check in the extra reset success/quality mask, so a selected candidate cannot pass final reset-quality gates if it violates the height prior.
+- Add `grasp_prior_reset_candidate_contact_height_count` instrumentation to reset buffers and video validation details.
+- Record the resolved threshold in verified-grasp collection and contact-video metadata.
+
+Version Control:
+- base_commit: `087b709ff607c8db54020c98187e4f0f2c333c7f`
+- implementation_commit: pending
+- changed_files:
+  - `dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py`
+  - `dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py`
+  - `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`
+  - `dextrah_lab/rl_games/collect_franka_multi_object_verified_grasps.py`
+  - `dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py`
+  - this worklog
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py dextrah_lab/rl_games/collect_franka_multi_object_verified_grasps.py dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py`
+- `bash -n cluster/sbatch_collect_franka_multi_object_verified_grasps_1gpu.sh cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh cluster/sbatch_train_teacher_8gpu.sh`
+- `git diff --check`
+
+Result:
+- status: local checks passed
+
+Next:
+- Commit, push, update the l401 worktree, and relaunch strict verified-grasp collection using the same candidate asset manifest and stable-pose cache.

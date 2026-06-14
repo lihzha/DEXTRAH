@@ -233,6 +233,9 @@ def _make_payload(task_env, objects: dict[str, dict[str, Any]], *, cycles_comple
                 "grasp_reset_attempts": args_cli.grasp_reset_attempts,
                 "grasp_reset_candidate_count": args_cli.grasp_reset_candidate_count,
                 "grasp_reset_max_center_distance_frac": args_cli.grasp_reset_max_center_distance_frac,
+                "grasp_reset_min_contact_height_above_center": getattr(
+                    task_env.cfg, "grasp_prior_reset_min_contact_height_above_center", None
+                ),
                 "grasp_pregrasp_offset": args_cli.grasp_pregrasp_offset,
                 "score_steps": args_cli.score_steps,
                 "warmstart_steps": {
