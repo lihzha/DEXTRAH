@@ -5961,3 +5961,302 @@ Command / Job:
 Next:
 - Monitor job startup and completion.
 - Encode/inspect `grasp_contact` frames first, then reset/perturbation videos if needed.
+
+## 2026-06-14T21:14:00Z - Verified-schedule contact video relaunch
+
+Goal:
+- Revalidate grasp contact with the same schedule used by the accepted verified-index cache before launching more PPO.
+
+Hypothesis:
+- The failed current-lift PPO/video used a much longer approach phase (`48`) and lower lift action (`0.35`) than the verified grasp-index search (`approach=4`, `close=60`, `lift=180`, `lift_z=0.5`), causing the gripper to push the rod-like object while staying open instead of proving a real close/lift grasp.
+
+Change:
+- No environment code changes for this attempt.
+- Run the video validator from commit `5c1a3e3fb79d41615e4512ac173080c47e5a0091`.
+- Keep the same two-object manifest, stable-pose cache, 360-degree yaw randomization setting, spawn center `(0.05, 0)`, `+-0.10 m` XY randomization, verified grasp index cache, and `grasp_prior_pregrasp_offset=0.03`.
+- Switch the warmstart schedule to the verified-index search values: `approach=4`, `close=60`, `lift=180`, `lift_action_z=0.5`.
+
+Version Control:
+- agent_id: `merge-dp-rgb-main-20260613`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/merge-dp-rgb-main-20260613`
+- branch: `main`
+- implementation_commit: `5c1a3e3fb79d41615e4512ac173080c47e5a0091`
+- remote_worktree: `/lustre/fs11/portfolios/nvr/projects/nvr_lpr_rvp/users/lzha/src/worktrees/DEXTRAH/multiobject-bc-fallback-20260614-d5e8b27`
+- changed_files: this worklog only
+
+Command / Job:
+- command: `sbatch cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh` with verified warmstart schedule overrides.
+- job_id: `1029404`
+- run_name: `franka_multi_verifiedsched_contact_video_5c1a3e3_20260614T211437Z`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_verifiedsched_contact_video_5c1a3e3_20260614T211437Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_1029404.out`
+- expected_artifacts: `reset_settle.mp4`, `perturbation.mp4`, `grasp_contact.mp4`, `video_metrics.json`.
+
+Next:
+- Submit on `l401`, monitor to completion, fetch/encode artifacts, inspect `grasp_contact.mp4`, and only then decide whether to relaunch PPO with the verified schedule.
+
+Result:
+- status: passed
+- scheduler: job `1029404` completed with exit code `0:0` in `00:02:27` on `pool0-00002`.
+- local_artifacts:
+  - `cluster_results/l401/franka_multi_verifiedsched_contact_video_5c1a3e3_20260614T211437Z/reset_settle.mp4`
+  - `cluster_results/l401/franka_multi_verifiedsched_contact_video_5c1a3e3_20260614T211437Z/perturbation.mp4`
+  - `cluster_results/l401/franka_multi_verifiedsched_contact_video_5c1a3e3_20260614T211437Z/grasp_contact.mp4`
+  - `cluster_results/l401/franka_multi_verifiedsched_contact_video_5c1a3e3_20260614T211437Z/video_metrics.json`
+- video encoding: `grasp_contact.mp4` is 1280x720, 131 frames, 8.733s at 15 FPS; reset and perturbation are 1280x720, 36 frames, 2.4s each.
+- metrics:
+  - overall `passed=true`
+  - reset_settle passed: `object_xy_delta_max=6.60e-05`, `bottom_clearance_min=-0.00012`, `done_count=0`
+  - perturbation passed: `object_xy_delta_max=0.103`, `object_speed_max=0.495`, `object_angular_speed_max=5.51`, `bottom_clearance_min=-0.00020`
+  - grasp_contact passed: phases `[-1,0,1,2]`, `selected_lift_height_max=0.425`, `selected_object_xy_delta_max=0.024`, `selected_done_count=0`, `selected_gripper_width_min=0.0054`, `bottom_clearance_min=0.0011`
+- visual inspection:
+  - reset-settle frames show the object staying on the table without visible sinking or bouncing away.
+  - perturbation frames show the object moving/tilting normally and staying on the table.
+  - grasp-contact frames show the gripper closing around the thin object and carrying it upward; no obvious table penetration or impossible initial interpenetration was visible in sampled frames.
+
+Analysis:
+- The environment reset/contact path is valid with the verified schedule.
+- The previous PPO schedule was the likely problem: long approach (`48`) and stricter gates let the rod-like object get disturbed before a useful close/lift phase.
+
+Next:
+- Relaunch A100 PPO from the BC checkpoint using the verified warmstart schedule: `approach=4`, `close=60`, `lift=180`, `lift_action_z=0.5`, same two-object manifest, stable-pose cache, random object assignment, yaw randomization, and verified grasp index cache.
+
+## 2026-06-14T21:20:17Z - Verified-schedule state PPO relaunch
+
+Goal:
+- Train the state-based multi-object Franka policy after validating that the verified warmstart schedule produces clean reset/perturb/grasp-contact behavior.
+
+Hypothesis:
+- PPO should recover from the BC checkpoint and maintain nonzero lift/success when the scripted warmstart uses the verified schedule that physically lifted in video validation, instead of the long-approach gated schedule that disturbed the rod before close/lift.
+
+Change:
+- No new source-code changes.
+- Training schedule changes relative to failed job `29074553`:
+  - `GRASP_PRIOR_ACTION_WARMSTART_APPROACH_STEPS=4`
+  - `GRASP_PRIOR_ACTION_WARMSTART_CLOSE_STEPS=60`
+  - `GRASP_PRIOR_ACTION_WARMSTART_LIFT_STEPS=180`
+  - `GRASP_PRIOR_ACTION_WARMSTART_LIFT_ACTION_Z=0.5`
+  - close/lift EE/finger/closed-width gates disabled (`0.0`, `0.0`, `0.0`, `-1.0`)
+- Preserve the validated setup: two-object manifest, stable pose cache, `object_asset_assignment=random`, spawn center `(0.05,0)`, XY randomization `0.10`, yaw randomization `180 deg`, verified grasp indices, BC checkpoint, JSONL metrics, and action-prior reward.
+
+Version Control:
+- implementation_commit: `5c1a3e3fb79d41615e4512ac173080c47e5a0091`
+- remote_worktree: `/lustre/fs11/portfolios/nvr/projects/nvr_lpr_rvp/users/lzha/src/worktrees/DEXTRAH/multiobject-bc-fallback-20260614-d5e8b27`
+- remote_status: clean detached HEAD at `5c1a3e3fb79d41615e4512ac173080c47e5a0091`
+- changed_files: this worklog only
+
+Command / Job:
+- command: `sbatch cluster/sbatch_train_teacher_8gpu.sh` on `a1001`
+- job_id: `29075315`
+- run_name: `franka_multi_state_teacher_7195_96ae_verifiedsched_5c1a3e3_20260614T212017Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29075315.out`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_96ae_verifiedsched_5c1a3e3_20260614T212017Z`
+- expected_success_signal: early JSONL metrics show warmstart close/lift phases, bounded object/contact distances, nonzero lift height/success, and no reward collapse.
+
+Next:
+- Submit, record job id/log/run_dir, monitor queue/logs, inspect config and JSONL metrics, then relaunch/tune if abnormal.
+
+Monitor:
+- `2026-06-14T21:21Z`: job `29075315` transitioned to RUNNING on `batch-block5-01628`.
+- Startup log echoed the intended configuration, including random object assignment, stable pose cache, yaw randomization `180`, verified grasp indices, warmstart `4/60/180`, lift action z `0.5`, disabled extra gates, JSONL metrics enabled, and BC checkpoint `/results/bc/franka_multi_7195_96ae_bc_holdlabel_ep50_21378e9_20260614T1734Z/nn/bc_reference_action_imitation.pth`.
+- `2026-06-14T21:24Z`: resolved `params/env.yaml` confirms `robot_base_z=0.47`, random object assignment, stable pose cache, yaw randomization, verified grasp indices, and verified warmstart schedule.
+- `2026-06-14T21:30Z`: early rank-0 JSONL metrics:
+  - epoch 51: success `0.042`, has_lifted `0.163`, active warmstart success `0.076`, active has_lifted `0.296`; applied warmstart lift rate is `0.0` while reference lift rate is `0.451`, consistent with a first-step logging offset after resume.
+  - epoch 52: success `0.0249`, has_lifted `0.149`, applied warmstart lift rate `0.487`, lift success `0.041`, lift has_lifted `0.271`.
+  - epoch 53: success `0.0205`, has_lifted `0.150`, applied warmstart lift rate `0.517`, lift success `0.0388`, lift has_lifted `0.285`.
+  - current concern: lift phase is wired, but mean lift/finger distance grows (`~0.287 m`) and mean lift height remains low (`~0.017 m` during warmstart lift), so the run needs more epochs to distinguish early-noise from degradation.
+
+Result:
+- status: canceled for tuning
+- scheduler: `scancel 29075315`; Slurm reported `CANCELLED by 158351`, elapsed `00:19:17`.
+- epoch trend through 59:
+  - success fell from `0.042` at epoch 51 to `0.00049` by epoch 59.
+  - has_lifted stayed around `0.145-0.150`, but mean lift height drifted down to `0.0037`.
+  - applied warmstart lift phase was active after epoch 52, so phase wiring is not the blocker.
+  - lift-phase finger-center distance stayed large (`~0.22-0.29 m`), meaning many vector envs are not carrying the object cleanly despite the selected contact video passing.
+- Revised analysis:
+  - The passing contact video selected object `7195ed3346a445448308febe833c180a`.
+  - The verified-index cache shows the second object `96ae0ff853734df0b10a827307949c87` had much lower pass count (`7` vs `33`) and larger observed XY drift.
+  - Before launching more PPO, validate object `96ae...` explicitly instead of relying on the best-candidate multi-object contact video.
+
+Next:
+- Create a `/lustre` single-object debug manifest for `96ae0ff853734df0b10a827307949c87`.
+- Run the same reset/perturb/contact video validation for that object only with the verified schedule.
+- If object `96ae...` fails or looks marginal, build a more robust multi-object subset or collect stronger verified grasp indices before relaunching PPO.
+
+## 2026-06-14T21:38:00Z - Single-object `96ae` contact validation
+
+Goal:
+- Determine whether the weaker second object in the two-object training set can reset, perturb, and grasp cleanly under the verified schedule.
+
+Change:
+- Created `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/filtered_manifests/single_96ae_debug_20260614T2138Z/manifest.json`.
+- Container path: `/results/assets/filtered_manifests/single_96ae_debug_20260614T2138Z/manifest.json`.
+- Manifest includes only UUID `96ae0ff853734df0b10a827307949c87` and reuses the original `/results` asset root and scale.
+
+Command / Job:
+- command: `sbatch cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh` on `l401`
+- job_id: `1029406`
+- run_name: `franka_multi_96ae_verifiedsched_contact_video_5c1a3e3_20260614T214312Z`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_96ae_verifiedsched_contact_video_5c1a3e3_20260614T214312Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_1029406.out`
+- expected_artifacts: reset/perturb/contact videos and `video_metrics.json`.
+
+Next:
+- Submit and inspect the video/metrics before any new PPO launch.
+
+Result:
+- status: failed contact validation
+- scheduler: `FAILED`, job `1029406`, exit `1:0`, elapsed `00:03:54` on `pool0-00002`.
+- artifacts fetched locally under `cluster_results/l401/franka_multi_96ae_verifiedsched_contact_video_5c1a3e3_20260614T214312Z/`.
+- encoded videos:
+  - `grasp_contact.mp4`: 1280x720, 131 frames, 8.73 s at 15 FPS.
+  - `reset_settle.mp4`: 1280x720, 36 frames, 2.40 s at 15 FPS.
+  - `perturbation.mp4`: 1280x720, 36 frames, 2.40 s at 15 FPS.
+- metrics:
+  - reset passed: `object_xy_delta_max=6.65e-05`, `bottom_clearance_min=-1.69e-05`, `done_count=0`.
+  - perturbation passed: `object_xy_delta_max=0.0996`, `object_speed_max=0.524`, `object_angular_speed_max=5.00`, `done_count=0`.
+  - grasp_contact failed: selected UUID `96ae0ff853734df0b10a827307949c87`, selected sample `905`, max lift `0.0116 m` vs threshold `0.12 m`, finger/object distances remained large, and the object stayed on the table in the video.
+
+Analysis:
+- The environment reset, stable pose, perturbation physics, object scale, and table clearance look acceptable for `96ae...`; the failure is specifically the grasp-contact evidence.
+- The previous two-object contact video was a false positive for the whole set because the validator selected the best passing env/object (`7195...`) and did not force per-object coverage.
+- PPO should not be relaunched with the `7195+96ae` set until `96ae...` has better verified grasps or is replaced.
+
+Next:
+- Validate the existing `1d489db9cdc24161a7537926a20bb17b` candidate as a single object using its accepted verified index (`71`).
+- If `1d489...` passes reset/perturb/contact visually and by metrics, build a `7195+1d489` training manifest and relaunch PPO with yaw randomization and random per-env object assignment.
+
+## 2026-06-14T21:50:58Z - Single-object `1d489` contact validation
+
+Goal:
+- Validate a replacement second object before relaunching multi-object PPO.
+
+Hypothesis:
+- Existing verified index `71` for `1d489db9cdc24161a7537926a20bb17b` has repeated lift-success evidence and may provide a cleaner two-object training set than `96ae...`.
+
+Change:
+- No source-code changes planned for this attempt.
+- Create a `/lustre` single-object manifest for UUID `1d489db9cdc24161a7537926a20bb17b`.
+- Reuse accepted verified-index cache `/results/assets/verified_grasp_indices/franka_multi_verified_cache_1d_96ae_2977a39_20260614T1355Z/verified_indices_accepted.json`, which includes `1d489...` index `71`.
+
+Version Control:
+- implementation_commit: `5c1a3e3fb79d41615e4512ac173080c47e5a0091`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-bc-fallback-20260614-d5e8b27`
+- remote_status: clean detached HEAD at `5c1a3e3fb79d41615e4512ac173080c47e5a0091`
+- changed_files: this worklog only
+
+Command / Job:
+- command: `sbatch cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh` on `l401`
+- job_id: `1029407`
+- run_name: `franka_multi_1d_verifiedsched_contact_video_5c1a3e3_20260614T2151Z`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_1d_verifiedsched_contact_video_5c1a3e3_20260614T2151Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_1029407.out`
+- manifest: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/filtered_manifests/single_1d_debug_20260614T2151Z/manifest.json`
+- expected settings: single-object manifest, stable pose cache, spawn center `(0.05,0)`, XY randomization `0.10`, yaw randomization `180 deg`, verified schedule `approach=4`, `close=60`, `lift=180`, `lift_action_z=0.5`, current-lift gate enabled.
+
+Next:
+- Create the manifest, submit the validation, fetch/encode videos, inspect metrics/frames, then either build the replacement two-object training set or collect better grasp indices.
+
+Result:
+- status: failed contact validation
+- scheduler: `FAILED`, job `1029407`, exit `1:0`, elapsed `00:02:02` on `pool0-00002`.
+- artifacts fetched locally under `cluster_results/l401/franka_multi_1d_verifiedsched_contact_video_5c1a3e3_20260614T2151Z/`.
+- encoded videos:
+  - `grasp_contact.mp4`: 1280x720, 131 frames, 8.73 s at 15 FPS.
+  - `reset_settle.mp4`: 1280x720, 36 frames, 2.40 s at 15 FPS.
+  - `perturbation.mp4`: 1280x720, 36 frames, 2.40 s at 15 FPS.
+- metrics:
+  - reset passed as a passive object-stability scenario: `object_xy_delta_max=6.02e-07`, `bottom_clearance_min=-0.00237`, `done_count=0`.
+  - perturbation passed: `object_xy_delta_max=0.132`, `object_speed_max=0.479`, `object_angular_speed_max=10.09`; visual motion stayed normal.
+  - grasp_contact failed before contact: selected UUID `1d489db9cdc24161a7537926a20bb17b`, selected sample `71`, `selected_reset_success=false`, `target_ee_to_ee_dist=0.223 m`, `warmstart_active_count=0`, and max lift `0.0 m`.
+
+Analysis:
+- The object itself is stable and dynamic, but the old verified index is not compatible with the stricter validation/training reset gate (`grasp_prior_reset_max_center_distance_frac=0.30`, candidate count `64`).
+- This failure is not a post-contact penetration or lift issue; the hand starts far from the object and never executes warmstart.
+- The existing verifier cache was collected with a looser/reset-mismatched configuration, so it can mark indices that the current training/validation path will not actually use.
+
+Next:
+- Check `96ae...` with the richer existing cache that contains all three verified indices (`905`, `613`, `813`) instead of only the single accepted index used in the failed video.
+- If no existing cache yields a second object that passes, patch/relaunch verified-index collection so it uses the same reset/warmstart settings as training and validation.
+
+## 2026-06-14T22:00:00Z - Single-object `96ae` all-indices contact validation
+
+Goal:
+- Determine whether `96ae0ff853734df0b10a827307949c87` can pass contact validation with the fuller existing verified-index set before collecting new indices.
+
+Hypothesis:
+- The failed `96ae...` video used only index `905`; allowing the richer cache indices (`905`, `613`, `813`) may let the validator select a clean grasp-contact reset.
+
+Change:
+- No source-code changes.
+- Reuse the existing `/lustre` single-object `96ae...` manifest.
+- Switch verified-index path from the two-object one-index accepted cache to `/results/assets/verified_grasp_indices/franka_multi_verified_cache_1d_96ae_2977a39_20260614T1355Z/verified_indices_accepted.json`.
+
+Command / Job:
+- command: `sbatch cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh` on `l401`
+- job_id: `1029408`
+- run_name: `franka_multi_96ae_allindices_contact_video_5c1a3e3_20260614T2200Z`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_96ae_allindices_contact_video_5c1a3e3_20260614T2200Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_1029408.out`
+- expected settings: same verified contact schedule as the previous runs.
+
+Next:
+- Submit and inspect metrics/video before any PPO relaunch.
+
+Result:
+- status: failed contact validation
+- scheduler: `FAILED`, job `1029408`, exit `1:0`, elapsed `00:05:12`.
+- artifacts fetched locally under `cluster_results/l401/franka_multi_96ae_allindices_contact_video_5c1a3e3_20260614T2200Z/`.
+- encoded videos:
+  - `grasp_contact.mp4`: 1280x720, 131 frames, 8.73 s at 15 FPS.
+  - `reset_settle.mp4`: 1280x720, 108 frames, 7.20 s at 15 FPS.
+  - `perturbation.mp4`: 1280x720, 48 frames, 3.20 s at 15 FPS.
+- metrics:
+  - reset passed: `object_xy_delta_max=6.65e-05`, `bottom_clearance_min=-1.70e-05`, `done_count=0`.
+  - perturbation passed: `object_xy_delta_max=0.0988`, `object_speed_max=0.531`, `object_angular_speed_max=5.35`, `done_count=0`.
+  - grasp_contact failed: `object_xy_delta_max=0.552`, `object_speed_max=3.66`, `object_angular_speed_max=67.0`, `bottom_clearance_min=-0.765`, `done_count=1`, and max lift remained below the acceptance threshold.
+- visual inspection:
+  - contact montage `cluster_results/l401/franka_multi_96ae_allindices_contact_video_5c1a3e3_20260614T2200Z/contact_montage.jpg` shows the object being kicked/disappearing from the grasp region during contact/lift, not a clean grasp.
+
+Analysis:
+- `96ae...` is acceptable for passive reset and perturbation, but not for grasp-contact under the current training reset/warmstart gate.
+- This object should be excluded from the next PPO launch until it has newly collected, strictly validated grasp indices.
+- Existing verified-index caches are not sufficient because they were collected under settings that are looser or mismatched with the current validation/training path.
+
+Next:
+- Add the current-lift warmstart gate to the verified-grasp collector so future caches are generated under the same condition as PPO and contact validation.
+- Prepare a small replacement candidate subset from GraspGen UUIDs on `/lustre`, compute stable poses, collect strict verified indices, then validate contact videos before PPO.
+
+## 2026-06-14T22:12:00Z - Verified-grasp collector current-lift gate
+
+Goal:
+- Make strict verified-grasp collection match the current multi-object PPO and video-validation reset/warmstart behavior.
+
+Hypothesis:
+- Some stale verified-index caches fail because collection does not expose the same `grasp_prior_action_warmstart_require_current_lift_ready` gate that validation/training now use.
+- Adding the flag to the collector and wrapper will avoid accepting grasp indices that are only valid for the ideal/static object pose.
+
+Change:
+- Add `--grasp_warmstart_require_current_lift_ready` / `--no-grasp_warmstart_require_current_lift_ready` to `collect_franka_multi_object_verified_grasps.py`.
+- Apply the flag to `env_cfg.grasp_prior_action_warmstart_require_current_lift_ready` when provided.
+- Record the resolved setting in the collector JSON metadata.
+- Add `GRASP_WARMSTART_REQUIRE_CURRENT_LIFT_READY` to `cluster/sbatch_collect_franka_multi_object_verified_grasps_1gpu.sh`.
+
+Version Control:
+- base_commit: `5c1a3e3fb79d41615e4512ac173080c47e5a0091`
+- implementation_commit: pending
+- changed_files:
+  - `dextrah_lab/rl_games/collect_franka_multi_object_verified_grasps.py`
+  - `cluster/sbatch_collect_franka_multi_object_verified_grasps_1gpu.sh`
+  - this worklog
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/collect_franka_multi_object_verified_grasps.py dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py`
+- `bash -n cluster/sbatch_collect_franka_multi_object_verified_grasps_1gpu.sh cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh cluster/sbatch_prepare_graspgen_assets_1gpu.sh cluster/sbatch_validate_graspgen_stable_pose_resets_1gpu.sh`
+
+Result:
+- status: local checks passed
+
+Next:
+- Commit this collector plumbing, deploy the exact commit to the agent-owned `/lustre` worktree, and run replacement object qualification jobs.

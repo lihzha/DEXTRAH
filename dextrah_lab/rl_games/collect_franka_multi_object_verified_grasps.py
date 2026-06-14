@@ -65,6 +65,7 @@ parser.add_argument("--grasp_warmstart_close_max_ee_error", type=float, default=
 parser.add_argument("--grasp_warmstart_lift_max_ee_error", type=float, default=0.0)
 parser.add_argument("--grasp_warmstart_lift_max_finger_center_dist", type=float, default=0.0)
 parser.add_argument("--grasp_warmstart_lift_closed_width_margin", type=float, default=-1.0)
+parser.add_argument("--grasp_warmstart_require_current_lift_ready", action=argparse.BooleanOptionalAction, default=None)
 parser.add_argument("--disable_fabric", action="store_true", default=False)
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
@@ -151,6 +152,10 @@ def _make_env():
     env_cfg.grasp_prior_action_warmstart_lift_closed_width_margin = float(
         args_cli.grasp_warmstart_lift_closed_width_margin
     )
+    if args_cli.grasp_warmstart_require_current_lift_ready is not None:
+        env_cfg.grasp_prior_action_warmstart_require_current_lift_ready = bool(
+            args_cli.grasp_warmstart_require_current_lift_ready
+        )
     env = gym.make(args_cli.task, cfg=env_cfg)
     return env, env.unwrapped
 
@@ -238,6 +243,9 @@ def _make_payload(task_env, objects: dict[str, dict[str, Any]], *, cycles_comple
                 "grasp_warmstart_close_width": args_cli.grasp_warmstart_close_width,
                 "grasp_warmstart_use_prior_close_width": args_cli.grasp_warmstart_use_prior_close_width,
                 "grasp_warmstart_lift_action_z": args_cli.grasp_warmstart_lift_action_z,
+                "grasp_warmstart_require_current_lift_ready": getattr(
+                    task_env.cfg, "grasp_prior_action_warmstart_require_current_lift_ready", None
+                ),
             },
             "asset_summary": task_env.multi_object_asset_summary()
             if hasattr(task_env, "multi_object_asset_summary")
