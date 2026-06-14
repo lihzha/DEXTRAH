@@ -2501,3 +2501,158 @@ Result:
 
 Next:
 - Monitor startup, PPO metrics, reward/lift/success curves, reset candidate diagnostics, checkpoints, and requeue behavior. Patch/tune/relaunch if rewards stall, resets regress, checkpoints fail, or the job is preempted without clean resume.
+
+## 2026-06-14T06:21:14Z - Stop non-lifting merged-main RGB run
+
+Goal:
+- Decide whether the first 200-epoch merged-main RGB run is learning the actual pick-up task or only shaped rewards.
+
+Hypothesis:
+- If reset-to-grasp-prior is sufficient, lift height and success should become nonzero by the 75-100 epoch range after the aggregate reward improves.
+
+Version Control:
+- agent_id: `integrate-multiobject-main-20260613`
+- local_worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/merge-dp-rgb-main-20260613`
+- branch: `main`
+- implementation_commit: `f1a34bcd20d8b33f1cddb5b90a6e220effa9ca18`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-main-rgb-teacher-20260614-f1a34bc`
+
+Command / Job:
+- job_id: `29057045`
+- run: `franka_multi_rgb_mainf1_retry_c42_a16_c256_env64_h16_mb512_train_20260614T060553Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29057045.out`
+- metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_rgb_grasp/franka_multi_rgb_mainf1_retry_c42_a16_c256_env64_h16_mb512_train_20260614T060553Z/metrics/direct_info_rank_0.jsonl`
+
+Result:
+- status: failed; terminated instead of letting the allocation run to 200 epochs.
+- key evidence: epoch `100` metrics had `cube_success_rate=0.0`, `cube_has_lifted_rate=0.0`, `cube_lift_height=0.0000608`, `cube_grasp_prior_reset_success_rate=0.640625`, `cube_grasp_prior_quality_success_rate=0.59375`.
+- checkpoints: epoch `25` reward `119.33778`, epoch `50` reward `670.70465`, epoch `75` reward `701.0449`, epoch `100` reward `652.1903`.
+- scheduler_note: first cancel signal triggered the wrapper requeue path; Slurm reported `COMPLETING` after the job step ended, but the node had empty `AllocTRES` and no live `train.py`/`torch.distributed` processes.
+
+Analysis:
+- The environment and prior reset path remained healthy enough for PPO, but the policy optimized shaped/stability reward without learning a real lift. Reset-to-pregrasp alone is not enough for this multi-object RGB run.
+
+Next:
+- Relaunch from the same merged-main commit with grasp-prior action warm-start enabled for a longer approach/close/lift sequence and monitor whether lift/success become nonzero early.
+
+## 2026-06-14T06:27:42Z - Action-prior smoke and longer training launch
+
+Goal:
+- Keep the policy in control while adding a grasp-prior action reward for the approach/close/lift reference sequence, then launch a longer run if the path is healthy.
+
+Hypothesis:
+- The no-guidance run optimized shaped/stability rewards but did not discover closing/lifting. A direct action-prior reward should make the policy imitate the sampled grasp-prior sequence without overwriting actions during PPO rollouts.
+
+Version Control:
+- agent_id: `integrate-multiobject-main-20260613`
+- local_worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/merge-dp-rgb-main-20260613`
+- branch: `main`
+- implementation_commit: `f1a34bcd20d8b33f1cddb5b90a6e220effa9ca18`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-main-rgb-teacher-20260614-f1a34bc`
+- remote_commit: `f1a34bcd20d8b33f1cddb5b90a6e220effa9ca18`
+
+Command / Job:
+- failed_smoke_job: `29057370`
+- failed_smoke_result: failed before env registration because `CODE_NFS` was not exported and the wrapper mounted canonical `/lustre/fsw/portfolios/nvr/users/lzha/src/DEXTRAH` at old commit `378b722`, where `Dextrah-Franka-Multi-Object-RGB-Grasp` was not registered.
+- corrected_smoke_job: `29057385`
+- corrected_smoke_run: `franka_multi_rgb_mainf1_actionprior_a120_c80_l160_z075_w8_s3_env64_h16_mb512_smoke_20260614T062429Z`
+- corrected_smoke_command: `CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-main-rgb-teacher-20260614-f1a34bc TASK=Dextrah-Franka-Multi-Object-RGB-Grasp MAX_ITERATIONS=10 NUM_ENVS=64 HORIZON_LENGTH=16 MINIBATCH_SIZE=512 MINI_EPOCHS=2 GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED=True GRASP_PRIOR_ACTION_PRIOR_REWARD_WEIGHT=8.0 GRASP_PRIOR_ACTION_PRIOR_REWARD_SHARPNESS=3.0 GRASP_PRIOR_ACTION_WARMSTART_APPROACH_STEPS=120 GRASP_PRIOR_ACTION_WARMSTART_CLOSE_STEPS=80 GRASP_PRIOR_ACTION_WARMSTART_LIFT_STEPS=160 GRASP_PRIOR_ACTION_WARMSTART_LIFT_ACTION_Z=0.75 FULL_EXPERIMENT_NAME=... cluster/sbatch_train_teacher_8gpu.sh`
+- longer_job: `29057412`
+- longer_run: `franka_multi_rgb_mainf1_actionprior_a120_c80_l160_z075_w8_s3_env64_h16_mb512_train_20260614T062742Z`
+- longer_log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29057412.out`
+- longer_run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_rgb_grasp/franka_multi_rgb_mainf1_actionprior_a120_c80_l160_z075_w8_s3_env64_h16_mb512_train_20260614T062742Z`
+
+Result:
+- corrected_smoke_status: passed, PPO epochs `1/10` through `10/10`, checkpoints at epochs `5` and `10`.
+- corrected_smoke_metrics: `cube_grasp_prior_reset_success_rate=0.65625`, `cube_grasp_prior_quality_success_rate=0.546875`, `cube_action_prior_active_rate=0.546875`, `cube_action_prior_reward≈0.30-0.44`; lift phase was not reached in the 10-epoch smoke because the reference lift starts after step `200`.
+- longer_status: submitted, monitoring in progress.
+
+Analysis:
+- The action-prior code path is healthy when the correct merged-main worktree is mounted. The next decision should be based on whether the longer run reaches the prior lift phase and turns that into nonzero object lift/success.
+
+Next:
+- Monitor job `29057412` through startup, first checkpoints, action-prior phase metrics, lift height, success rate, and reset quality. If action prior still fails to produce lifting after the lift phase is active, tune the reference sequence/reward or run a temporary action-warmstart validation to verify the sampled grasps can physically lift the objects.
+
+## 2026-06-14T06:39:54Z - Stop failed action-prior run and launch warm-start validation
+
+Goal:
+- Determine whether the lack of lifting is caused by invalid sampled grasps/reset physics or by the policy failing to learn the reference sequence.
+
+Hypothesis:
+- If executing the grasp-prior reference sequence directly lifts objects, the environment/grasp initialization is physically usable and the next fix should be stronger policy learning/imitation. If direct execution still does not lift, the reset/grasp quality filter or grasp transform is wrong.
+
+Version Control:
+- agent_id: `integrate-multiobject-main-20260613`
+- local_worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/merge-dp-rgb-main-20260613`
+- branch: `main`
+- implementation_commit: `f1a34bcd20d8b33f1cddb5b90a6e220effa9ca18`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-main-rgb-teacher-20260614-f1a34bc`
+- remote_commit: `f1a34bcd20d8b33f1cddb5b90a6e220effa9ca18`
+
+Command / Job:
+- stopped_job: `29057412`
+- stopped_run: `franka_multi_rgb_mainf1_actionprior_a120_c80_l160_z075_w8_s3_env64_h16_mb512_train_20260614T062742Z`
+- stopped_log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29057412.out`
+- stopped_metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_rgb_grasp/franka_multi_rgb_mainf1_actionprior_a120_c80_l160_z075_w8_s3_env64_h16_mb512_train_20260614T062742Z/metrics/direct_info_rank_0.jsonl`
+- validation_job: `29057602`
+- validation_run: `franka_multi_rgb_mainf1_warmstart_validate_a120_c80_l160_z075_env64_h16_mb512_20260614T063954Z`
+- validation_log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29057602.out`
+
+Result:
+- stopped_status: failed, cancelled at epoch `100/400`.
+- stopped_metrics_epoch100: `cube_success_rate=0.0`, `cube_has_lifted_rate=0.0`, `cube_lift_height=0.0`, `cube_ee_to_cube_dist=0.8816`, `cube_finger_center_to_cube_dist=0.8686`, `cube_gripper_width=0.0104`.
+- stopped_analysis_signal: action-prior made the policy close and command upward motion, but the hand moved away from the object; raw action matching was not enough.
+- validation_status: submitted, monitoring in progress.
+
+Analysis:
+- The next necessary test is physical execution of the reference sequence. This validation must not be treated as learned-policy success because it overrides policy actions during warm-start.
+
+Next:
+- Monitor job `29057602` until warm-start lift phases are logged. If it lifts, implement stronger learning guidance or imitation; if it does not lift, debug grasp/reset geometry and close-width/approach transforms.
+
+## 2026-06-14T06:50:07Z - Warm-start validation outcome and geometry diagnosis
+
+Goal:
+- Validate whether directly executing the sampled grasp-prior approach/close/lift sequence can physically lift the GraspGen objects.
+
+Version Control:
+- agent_id: `integrate-multiobject-main-20260613`
+- local_worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/merge-dp-rgb-main-20260613`
+- branch: `main`
+- implementation_commit: `f1a34bcd20d8b33f1cddb5b90a6e220effa9ca18`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-main-rgb-teacher-20260614-f1a34bc`
+
+Command / Jobs:
+- rgb_warmstart_job_1: `29057602`
+- rgb_warmstart_run_1: `franka_multi_rgb_mainf1_warmstart_validate_a120_c80_l160_z075_env64_h16_mb512_20260614T063954Z`
+- rgb_warmstart_result_1: stalled before completed env setup/project metrics on `batch-block5-01074`; cancelled without useful rollout metrics.
+- rgb_warmstart_job_2: `29057741`
+- rgb_warmstart_run_2: `franka_multi_rgb_mainf1_warmstart_validate_a120_c80_l160_z075_env64_h16_mb512_retry_20260614T064440Z`
+- rgb_warmstart_result_2: relaunched excluding the first node, but again stalled before useful metrics; cancelled.
+- state_warmstart_bad_job: `29057875`
+- state_warmstart_bad_result: failed config validation because `NUM_ENVS=64`, `HORIZON_LENGTH=16`, and multi-GPU `MINIBATCH_SIZE=512` were not divisible per runner expectations.
+- state_warmstart_job: `29057942`
+- state_warmstart_run: `franka_multi_state_mainf1_warmstart_validate_a120_c80_l160_z075_env256_h16_mb512_20260614T065007Z`
+- state_warmstart_metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_mainf1_warmstart_validate_a120_c80_l160_z075_env256_h16_mb512_20260614T065007Z/metrics/direct_info_rank_0.jsonl`
+
+Result:
+- status: failed diagnostic; the reference sequence itself did not produce reliable lifting.
+- max_success_rate: `0.0078125`
+- final_success_rate: `0.0`
+- max_has_lifted_rate: `0.01171875`
+- final_has_lifted_rate: `0.01171875`
+- max_mean_lift_height_m: `0.003288`
+- final_mean_lift_height_m: `0.000616`
+- final_reset_success_rate: `0.65234375`
+- final_quality_success_rate: `0.60546875`
+- final_exact_ee_dist_m: `0.00219`
+- final_exact_tool_dist_m: `0.14677`
+- final_finger_center_dist_m: `0.17798`
+- final_projected_exact_tip_center_dist_m: `0.00219`
+
+Analysis:
+- Reset quality and candidate availability are healthy enough for RL, but the direct controller does not actually grasp and lift most objects. The large gap between exact EE/tip metrics and finger/tool/object-center distances indicates the candidate selection and warm-start phase logic are accepting poses that are not reliable physical grasps after closing.
+- This is a blocker for meaningful policy training. The next change needs to improve grasp candidate selection and the close/lift transition before another no-override policy run.
+
+Next:
+- Inspect the lift-latch/quality-selector snapshot, validate whether it fixes direct warm-start lifting, then port the targeted fix back to `main` before launching real RGB policy training.

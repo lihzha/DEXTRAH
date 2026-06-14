@@ -91,10 +91,17 @@ class DextrahFrankaCubeGraspEnvCfg(DextrahFrankaStarKittingEnvCfg):
     grasp_prior_action_warmstart_close_steps = 12
     grasp_prior_action_warmstart_lift_steps = 12
     grasp_prior_action_warmstart_close_width = 0.025
+    grasp_prior_action_warmstart_use_prior_close_width = True
+    grasp_prior_action_warmstart_prior_close_width_margin = 0.003
+    grasp_prior_action_warmstart_min_close_width = 0.0
     grasp_prior_action_warmstart_lift_action_z = 0.15
     grasp_prior_action_warmstart_gain = 8.0
     grasp_prior_action_warmstart_max_position_action = 1.0
     grasp_prior_action_warmstart_track_orientation = True
+    grasp_prior_action_warmstart_close_max_ee_error = 0.0
+    grasp_prior_action_warmstart_lift_max_ee_error = 0.0
+    grasp_prior_action_warmstart_lift_max_finger_center_dist = 0.0
+    grasp_prior_action_warmstart_lift_closed_width_margin = -1.0
     # Diagnostic-only reward intervention for reset-prior debugging.
     # Disabled by default; enabling it makes the run non-apple-to-apple because
     # the policy receives an additional teacher-action matching reward for the
