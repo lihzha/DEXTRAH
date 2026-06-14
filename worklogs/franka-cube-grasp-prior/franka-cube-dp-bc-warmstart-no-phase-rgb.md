@@ -602,3 +602,68 @@ Analysis:
 
 Next:
 - Commit, deploy exact commit to l401, and run a short validation job with video/metrics. If the measured reset tilt still fails, tune the cube joint reset again based on the reported quaternion/axis.
+
+Follow-up Result:
+- implementation_commit: `9a2947ffe6ef48e946451d9bce6de8def9da7ec9`
+- push/pull: pushed to GitHub and pushed directly to l401 NFS repo; remote worktree checked out detached at the same commit.
+- validation job `1029192`, run `franka_cube_reset_topdown_z047_validate_20260614_0626`, failed the new posture gate as intended:
+  - `reset_tool_tilt_deg_max=17.5882`
+  - `reset_tool_z_axis_w=[-0.2989, -0.0442, -0.9533]`
+  - `finger_table_clearance_min=0.3054`
+- local fetched artifact: `cluster_results/l401/franka_cube_reset_topdown_z047_validate_20260614_0626/metrics.json`
+
+Analysis:
+- The intermediate `q=[0,-1.3,0,-2.5,0,1.5,0.8]` reset improved over the visible ~45 degree pitch but still pointed the gripper forward by ~18 degrees. The validator caught this correctly; do not loosen the threshold.
+
+Next:
+- Use the one-process Isaac posture sweep to pick a measured top-down joint set, patch the cube config again, and rerun validation.
+
+## 2026-06-14T06:34:00Z - measured top-down reset sweep
+
+Goal:
+- Find a cube reset joint posture whose reset EE local z-axis is actually aligned with world down in Isaac, not just visually plausible.
+
+Hypothesis:
+- The gripper pitch is primarily controlled by the `q2/q4/q6` relationship. A canonical Panda top-down posture or the source CuRobo row should produce near-zero tilt.
+
+Change:
+- No committed repo code changes for the sweep itself; used a scratch Isaac script under `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_cube_reset_posture_sweep_20260614_0634`.
+- Patched local cube config after the sweep to the canonical symmetric top-down posture:
+  - `panda_joint1=0.0`
+  - `panda_joint2=-0.785398`
+  - `panda_joint3=0.0`
+  - `panda_joint4=-2.356194`
+  - `panda_joint5=0.0`
+  - `panda_joint6=1.570796`
+  - `panda_joint7=0.785398`
+
+Version Control:
+- agent_id: franka-cube-dp-bc-warmstart
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `9a2947ffe6ef48e946451d9bce6de8def9da7ec9`
+- implementation_commit: pending
+- push/pull: pending
+- changed_files: `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env_cfg.py`, this worklog
+- remote_commit/status: pending
+
+Command / Job:
+- job_id: `1029195`
+- command: scratch `posture_sweep.sbatch` under `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_cube_reset_posture_sweep_20260614_0634`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_cube_reset_posture_sweep_20260614_0634`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/franka_cube_posture_sweep_1029195.out`
+- artifacts: `posture_sweep_summary.json`
+
+Result:
+- status: passed sweep
+- metrics/artifacts:
+  - `classic_down_pi`: tilt `0.0 deg`, local z axis approximately `[0, 0, -1]`, finger-table clearance `0.2559 m`.
+  - `source_ep37`: tilt `0.0 deg`, local z axis approximately `[0, 0, -1]`, finger-table clearance `0.3001 m`, but includes episode-specific lateral/yaw joint offsets.
+  - `sym_source_q7_0`: tilt `0.2307 deg`, finger-table clearance `0.3023 m`.
+- key evidence: canonical top-down pose achieves exact down-axis without depending on a specific demonstration row.
+
+Analysis:
+- The previous `q6=1.5` candidate still had a measurable forward component. In the sweep, reducing the effective pitch through `q6=1.20` or `q4=-2.80` also gave zero tilt, but those were less canonical. The standard `[-pi/4, -3pi/4, pi/2, pi/4]` arm pattern is a clean, symmetric reset and remains well above the table after the cube-specific base-z raise.
+
+Next:
+- Commit the canonical reset patch, deploy it to l401, and rerun `validate_franka_cube_grasp_env.py` so `reset_gripper_points_down` passes.

@@ -59,12 +59,12 @@ class DextrahFrankaCubeGraspEnvCfg(DextrahFrankaStarKittingEnvCfg):
     robot_base_z = 0.47
     robot_joint_pos = {
         "panda_joint1": 0.0,
-        "panda_joint2": -1.300,
+        "panda_joint2": -0.785398,
         "panda_joint3": 0.0,
-        "panda_joint4": -2.500,
+        "panda_joint4": -2.356194,
         "panda_joint5": 0.0,
-        "panda_joint6": 1.500,
-        "panda_joint7": 0.800,
+        "panda_joint6": 1.570796,
+        "panda_joint7": 0.785398,
         "panda_finger_joint.*": 0.04,
     }
 
