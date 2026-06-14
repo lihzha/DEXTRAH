@@ -3473,3 +3473,47 @@ Validation:
 
 Next:
 - Commit, push, deploy by bundle, and relaunch validation with `GRASP_CONTACT_SCORE_STEPS=0`.
+
+## 2026-06-14T08:45:00Z - Fast grasp-contact validation launch
+
+Goal:
+- Record the final environment validation videos, especially grasp-contact, without the nonessential selection-scoring delay.
+
+Version Control:
+- implementation_commit: `fd4510c0831932ee93c370067c24f752a3731db7`
+- push: `origin/main` updated from `bacdcde` to `fd4510c`.
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-main-rgb-teacher-20260614-f1a34bc`
+- remote_commit: `fd4510c0831932ee93c370067c24f752a3731db7`
+- deploy: Git bundle copied to A100 and fetched into the remote worktree.
+
+Command / Job:
+- job_id: `29059925`
+- run: `franka_multi_video_mainfd4_filtered2_fastcontact_retry8_notop_center50_20260614T0845Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_29059925.out`
+- output_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_mainfd4_filtered2_fastcontact_retry8_notop_center50_20260614T0845Z`
+- key settings: `GRASP_CONTACT_SCORE_STEPS=0`, `GRASP_RESET_REQUIRE_TOPDOWN=False`, `GRASP_RESET_ATTEMPTS=8`, `GRASP_RESET_CANDIDATE_COUNT=1024`, `OBJECT_ASSET_ASSIGNMENT=random`, `OBJECT_SPAWN_YAW_RANDOMIZATION_DEG=180.0`.
+
+Next:
+- Monitor job `29059925`, inspect metrics/video locally, then launch PPO if physics/contact evidence is acceptable.
+
+Result:
+- status: completed with expected diagnostic failure
+- scheduler: Slurm job `29059925` exited `FAILED 1:0` because the validation script marks any failed scenario as process failure.
+- metrics/artifacts: reset-settle passed; perturbation passed; grasp-contact produced 106 frames and failed only because the scripted warmstart did not lift the object.
+- local_artifacts: `/home/lzha/code/artifacts/dextrah/franka_multi_video_mainfd4_filtered2_fastcontact_retry8_notop_center50_20260614T0845Z/`
+- viewer: `http://localhost:8765/view?path=artifacts/dextrah/franka_multi_video_mainfd4_filtered2_fastcontact_retry8_notop_center50_20260614T0845Z/grasp_contact.mp4`
+
+Metrics:
+- reset_settle: `passed=True`, `object_xy_delta_max=3.28e-7`, `bottom_clearance_min=-0.0040`, `finger_table_clearance_min=0.2503`.
+- perturbation: `passed=True`, `object_xy_delta_max=0.0499`, `bottom_clearance_min=-0.0063`, `finger_table_clearance_min=0.2488`.
+- grasp_contact: `passed=False`, `selected_done_count=0`, `selected_quality_success=True`, `selected_reset_success=True`, `selected_reset_pos_error=1.7e-7`, `selected_reset_rot_error=3.9e-7`, `selected_lift_height_max=0.00076`, `selected_candidate_valid_count=1024`, `selected_open_width_margin=0.0455`.
+
+Visual Inspection:
+- First/mid/final grasp-contact frames show the object stable on the table, no bounce-away, no object stuck through the table, and no obvious robot/object/table penetration.
+- The scripted warmstart approached near the side/handle of the object and lifted empty; this validates that the scene/reset is RLable but does not prove the prior is sufficient for scripted pickup.
+
+Analysis:
+- This is an environment-correctness pass for launching PPO. The remaining failure is policy/control quality: the selected GraspGen prior places the gripper near the object but the scripted open-loop close/lift does not capture it.
+
+Next:
+- Launch bounded multi-object PPO teacher training from commit `fd4510c0831932ee93c370067c24f752a3731db7` with random object assignment, full yaw randomization, stable-pose cache, and grasp-prior reset enabled.
