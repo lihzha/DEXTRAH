@@ -5946,3 +5946,18 @@ Validation:
 Next:
 - Commit/push/deploy the validator patch.
 - Run focused videos with the exact current-lift warmstart settings and inspect `grasp_contact`.
+
+## 2026-06-14T21:03:26Z - Current-lift contact video launch
+
+Command / Job:
+- job_id: `1029403`
+- host: `l401`
+- run_name: `franka_multi_currentlift_contact_video_5c1a3e3_20260614T210326Z`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_currentlift_contact_video_5c1a3e3_20260614T210326Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_1029403.out`
+- commit: `5c1a3e3fb79d41615e4512ac173080c47e5a0091`
+- key settings: `NUM_ENVS=4`, `MAX_OBJECTS=2`, stable pose cache enabled, yaw `180`, spawn center `(0.05,0)`, XY randomization `0.10`, grasp warmstart `48/96/160`, lift z `0.35`, close/lift EE gates `0.12`, lift finger gate `0.14`, current lift gate enabled.
+
+Next:
+- Monitor job startup and completion.
+- Encode/inspect `grasp_contact` frames first, then reset/perturbation videos if needed.
