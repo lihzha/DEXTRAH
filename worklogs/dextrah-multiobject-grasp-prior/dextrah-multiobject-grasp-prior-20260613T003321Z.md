@@ -2468,3 +2468,36 @@ Result:
 
 Next:
 - Commit, push, deploy a new exact commit to A100, run a two-epoch smoke with larger candidate count and reset retries, inspect reset metrics, then launch production if prior resets are nonzero and PPO remains healthy.
+
+## 2026-06-14T06:05:53Z - Launch merged-main RGB training
+
+Goal:
+- Start the requested merged-main multi-object Franka RL training after validating the environment, RGB model path, and grasp-prior reset behavior.
+
+Hypothesis:
+- The `f1a34bc` retry patch plus `GRASP_PRIOR_RESET_ATTEMPTS=16`, `GRASP_PRIOR_RESET_CANDIDATE_COUNT=256`, and `GRASP_PRIOR_RESET_MAX_CENTER_DISTANCE_FRAC=0.42` gives usable prior resets without disabling the contact-aware gate.
+
+Version Control:
+- agent_id: `integrate-multiobject-main-20260613`
+- local_worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/merge-dp-rgb-main-20260613`
+- branch: `main`
+- implementation_commit: `f1a34bcd20d8b33f1cddb5b90a6e220effa9ca18`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-main-rgb-teacher-20260614-f1a34bc`
+- remote_commit: `f1a34bcd20d8b33f1cddb5b90a6e220effa9ca18`
+
+Command / Job:
+- smoke_job: `29056984`
+- smoke_run: `franka_multi_rgb_mainf1_retry_smoke_20260614T055940Z`
+- smoke_result: completed, epochs `1/2` and `2/2`, finite checkpoint reward `4.8865104`
+- smoke_reset_metrics: `reset_success_rate=0.609375`, `quality_success_rate=0.5625`, `candidate_valid_count_mean=31.46875`, `candidate_center_count_mean=151.921875`, `candidate_topdown_count_mean=55.90625`
+- production_command: `TASK=Dextrah-Franka-Multi-Object-RGB-Grasp MAX_ITERATIONS=200 NUM_ENVS=64 HORIZON_LENGTH=16 MINIBATCH_SIZE=512 MINI_EPOCHS=2 OBJECT_SPAWN_YAW_RANDOMIZATION_DEG=180.0 OBJECT_ASSET_ASSIGNMENT=random OBJECT_STABLE_POSE_ENABLED=True GRASP_PRIOR_RESET_ATTEMPTS=16 GRASP_PRIOR_RESET_CANDIDATE_COUNT=256 GRASP_PRIOR_RESET_MAX_CENTER_DISTANCE_FRAC=0.42 REQUEUE_ON_EARLY_TERM=True DEXTRAH_RLGAMES_JSONL_METRICS=True cluster/sbatch_train_teacher_8gpu.sh`
+- production_job_id: `29057045`
+- production_run: `franka_multi_rgb_mainf1_retry_c42_a16_c256_env64_h16_mb512_train_20260614T060553Z`
+- production_log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29057045.out`
+- production_run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_rgb_grasp/franka_multi_rgb_mainf1_retry_c42_a16_c256_env64_h16_mb512_train_20260614T060553Z`
+
+Result:
+- status: submitted; monitoring in progress.
+
+Next:
+- Monitor startup, PPO metrics, reward/lift/success curves, reset candidate diagnostics, checkpoints, and requeue behavior. Patch/tune/relaunch if rewards stall, resets regress, checkpoints fail, or the job is preempted without clean resume.
