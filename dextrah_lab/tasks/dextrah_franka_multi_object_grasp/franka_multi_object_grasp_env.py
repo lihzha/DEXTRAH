@@ -695,14 +695,19 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         plus_tool_dist = torch.norm(plus_tool_pos_w - candidate_contact_reference_w, dim=-1)
         minus_tool_dist = torch.norm(minus_tool_pos_w - candidate_contact_reference_w, dim=-1)
         use_plus = plus_tool_dist >= minus_tool_dist
-        candidate_pregrasp_tool_pos_w = torch.where(use_plus.unsqueeze(-1), plus_tool_pos_w, minus_tool_pos_w)
-        candidate_pregrasp_tool_dist = torch.where(use_plus, plus_tool_dist, minus_tool_dist)
-        candidate_pregrasp_farther = candidate_pregrasp_tool_dist > candidate_exact_reference_dist
-        candidate_pregrasp_offset_dir_w = candidate_pregrasp_tool_pos_w - candidate_exact_tool_pos_w
-        candidate_pregrasp_offset_dir_w = candidate_pregrasp_offset_dir_w / torch.clamp(
-            torch.norm(candidate_pregrasp_offset_dir_w, dim=-1, keepdim=True),
-            min=1.0e-6,
+        candidate_pregrasp_offset_dir_w = torch.where(
+            use_plus.unsqueeze(-1),
+            candidate_tool_z_axis_w,
+            -candidate_tool_z_axis_w,
         )
+        candidate_pregrasp_tool_pos_w = (
+            candidate_exact_tool_pos_w + pregrasp_offset * candidate_pregrasp_offset_dir_w
+        )
+        candidate_pregrasp_tool_dist = torch.where(use_plus, plus_tool_dist, minus_tool_dist)
+        if pregrasp_offset <= 1.0e-6:
+            candidate_pregrasp_farther = torch.ones_like(candidate_pregrasp_tool_dist, dtype=torch.bool)
+        else:
+            candidate_pregrasp_farther = candidate_pregrasp_tool_dist > candidate_exact_reference_dist
 
         pregrasp_z = candidate_pregrasp_offset_dir_w[:, :, 2]
         topdown_ok = pregrasp_z >= float(self.cfg.grasp_prior_reset_min_pregrasp_z)

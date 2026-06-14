@@ -3661,3 +3661,65 @@ Validation:
 
 Next:
 - Evaluate the next useful checkpoint with stable poses and the same relaxed grasp-prior reset filters used by training.
+
+## 2026-06-14T09:53:10Z - Tuned PPO stopped; exact-grasp reset validation launch
+
+Goal:
+- Stop the tuned PPO run once the metrics show the remaining failure is contact capture, then validate a reset distribution that places the gripper at the exact sampled grasp instead of 3 cm pregrasp.
+
+Hypothesis:
+- The tuned run learned to close and command upward motion, but the object did not lift because reset/contact capture was off: the current `grasp_prior_pregrasp_offset=0.03` starts the policy 3 cm away from the exact grasp. Exact-grasp reset with a close/lift warmstart should reveal whether the GraspGen pose can produce actual object motion without penetration.
+
+Result:
+- status: tuned run canceled after epoch 36
+- job_id: `29060849`
+- run: `franka_multi_state_teacher_filtered2_liftshape_priorreward_20260614T0932Z`
+- checkpoint: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_filtered2_liftshape_priorreward_20260614T0932Z/nn/last_dextrah_franka_multi_object_grasp_ep_25_rew_934.70703.pth`
+- final observed metrics: epoch 36 had `cube_success_rate=0`, `cube_has_lifted_rate=0.00098`, `cube_lift_height=9.8e-05`, `cube_action_z=0.382`, `cube_gripper_width=0.010`.
+
+Analysis:
+- Continuing the same reward shaping is unlikely to solve the main issue: the policy is already producing strong upward actions, but the object is not captured.
+- The next change should affect reset/contact geometry or provide a stronger prior curriculum, not just more lift reward.
+
+Command / Job:
+- job_id: `1029209`
+- host: `l401`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-main-evalfix-20260614-94d7274`
+- remote_commit: `94d7274cfbf31dcdd0b2a518fafd5f0485e62a18`
+- run: `franka_multi_video_exactgrasp_offset0_filtered2_20260614T0958Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_1029209.out`
+- output_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_exactgrasp_offset0_filtered2_20260614T0958Z`
+- key settings: `GRASP_PREGRASP_OFFSET=0.0`, `GRASP_WARMSTART_APPROACH_STEPS=0`, `GRASP_WARMSTART_CLOSE_STEPS=24`, `GRASP_WARMSTART_LIFT_STEPS=96`, `GRASP_WARMSTART_USE_PRIOR_CLOSE_WIDTH=False`, `GRASP_WARMSTART_LIFT_ACTION_Z=0.30`.
+
+Next:
+- Monitor job `1029209`, inspect metrics and videos. If exact reset produces clean contact/lift, relaunch PPO with `GRASP_PRIOR_PREGRASP_OFFSET=0.0` and a warmstart/action-prior curriculum; otherwise diagnose the grasp prior/contact transform before more 8-GPU training.
+
+## 2026-06-14T09:58:09Z - Exact-grasp zero-offset reset fix
+
+Goal:
+- Make `GRASP_PRIOR_PREGRASP_OFFSET=0.0` a valid exact-grasp reset mode for multi-object contact validation and the next PPO curriculum.
+
+Hypothesis:
+- The failed `franka_multi_video_exactgrasp_offset0_filtered2_20260614T0958Z` grasp-contact video was not a true exact-grasp test. With zero pregrasp offset, the previous candidate code required `pregrasp_tool_dist > exact_tool_dist`, which is false when exact and pregrasp are identical. All candidates were invalid and the validator fell back to env 0 without a successful grasp-prior reset.
+
+Change:
+- In cube and multi-object grasp-prior target composition, preserve the selected tool-axis approach direction even when pregrasp offset is zero.
+- Treat zero-offset candidates as satisfying the "pregrasp farther" gate, so exact-grasp reset can be used intentionally.
+
+Version Control:
+- agent_id: `merge-dp-rgb-main-20260613`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/merge-dp-rgb-main-20260613`
+- branch: `main`
+- base_commit: `94d7274cfbf31dcdd0b2a518fafd5f0485e62a18`
+- implementation_commit: pending
+- changed_files: `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`, `dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py`, this worklog.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py`
+- `git diff --check -- dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py`
+
+Related running-job cleanup:
+- Canceled stale A100 RGB job `29060848` (`franka_multi_rgb_rl_linear_rebalance_yaw360_20260614T0930Z`) because it was launched from older snapshot code and rank-0 metrics through epoch 44 still had `cube_success_rate=0`, near-zero lift, and gripper collapse without capture.
+
+Next:
+- Commit/push this fix, deploy the exact commit to the L40 remote worktree, rerun the exact-grasp video validation, and only relaunch A100 PPO after grasp-contact passes.

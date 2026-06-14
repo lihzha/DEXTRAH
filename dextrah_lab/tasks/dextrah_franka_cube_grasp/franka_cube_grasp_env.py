@@ -412,14 +412,13 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         plus_tool_dist = torch.norm(plus_tool_pos_w - cube_pos_w, dim=-1)
         minus_tool_dist = torch.norm(minus_tool_pos_w - cube_pos_w, dim=-1)
         use_plus = plus_tool_dist >= minus_tool_dist
-        pregrasp_tool_pos_w = torch.where(use_plus.unsqueeze(-1), plus_tool_pos_w, minus_tool_pos_w)
+        pregrasp_offset_dir_w = torch.where(use_plus.unsqueeze(-1), tool_z_axis_w, -tool_z_axis_w)
+        pregrasp_tool_pos_w = exact_tool_pos_w + pregrasp_offset * pregrasp_offset_dir_w
         pregrasp_tool_dist = torch.where(use_plus, plus_tool_dist, minus_tool_dist)
-        pregrasp_farther = pregrasp_tool_dist > exact_tool_dist
-        pregrasp_offset_dir_w = pregrasp_tool_pos_w - exact_tool_pos_w
-        pregrasp_offset_dir_w = pregrasp_offset_dir_w / torch.clamp(
-            torch.norm(pregrasp_offset_dir_w, dim=-1, keepdim=True),
-            min=1.0e-6,
-        )
+        if pregrasp_offset <= 1.0e-6:
+            pregrasp_farther = torch.ones_like(pregrasp_tool_dist, dtype=torch.bool)
+        else:
+            pregrasp_farther = pregrasp_tool_dist > exact_tool_dist
 
         tool_quat_w = math_utils.quat_from_matrix(world_tool_t[:, :3, :3])
         exact_ee_pos_w, exact_ee_quat_w = math_utils.combine_frame_transforms(
