@@ -4013,3 +4013,58 @@ Validation:
 
 Next:
 - Run local checks, commit/push/deploy exact commit to l401, then rerun the pregrasp/top-down rendered validation.
+
+## 2026-06-14T10:39:00Z - Table-aware pregrasp validation relaunch
+
+Goal:
+- Validate the table-aware pregrasp direction fix with the same rendered pregrasp/top-down settings used in `1029216`.
+
+Version Control:
+- local_commit: `6aabf57618b7890ec9d9b2a87b683063ef21bf24`
+- push: pushed to `origin/main`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-main-evalfix-20260614-94d7274`
+- remote_commit: `6aabf57618b7890ec9d9b2a87b683063ef21bf24`
+- deployment: Git bundle copied to `/lustre/fsw/portfolios/nvr/users/lzha/src/bundles/dextrah-main-6aabf57.bundle`; remote worktree checked out detached at the exact commit.
+
+Command / Job:
+- job_id: `1029217`
+- host: `l401`
+- run: `franka_multi_video_pregrasp08_topdown_6aabf57_20260614T1039Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_1029217.out`
+- output_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_pregrasp08_topdown_6aabf57_20260614T1039Z`
+- key settings: same as `1029216`: `GRASP_PREGRASP_OFFSET=0.08`, `GRASP_RESET_REQUIRE_TOPDOWN=True`, candidate count `2048`, center frac `0.50`, warmstart approach/close/lift `24/24/126`.
+
+Next:
+- Monitor `1029217`, inspect metrics and rendered frames, then proceed to A100 PPO only if reset/contact/lift behavior is validated.
+
+## 2026-06-14T10:43:00Z - Contact-midpoint reset target patch
+
+Goal:
+- Fix the persistent `grasp_contact` fallback after the table-aware pregrasp direction patch.
+
+Result:
+- job_id: `1029217`
+- status: failed only `grasp_contact`; `reset_settle` and `perturbation` passed.
+- key evidence: `selected_candidate_topdown_count=0`, `selected_candidate_valid_count=0`, `selected_reset_success=False`, `selected_quality_success=False`, `warmstart_active_count=0`.
+
+Analysis:
+- The reset was still using the raw GraspGen hand/tool origin as the exact target, but for the selected stable pose that origin is below/near the table for all prior grasps. The useful geometry in this prior is the contact midpoint plus grasp width/orientation. For RL reset validation, the relevant exact target is the Franka EE/finger-center contact midpoint, with a world-up pregrasp offset for top-down approach.
+
+Change:
+- For multi-object priors with contact locations, use the sampled contact midpoint as the exact EE/finger-center target and the contact midpoint plus world-up pregrasp offset as the reset target.
+- Retain the sampled GraspGen orientation and width.
+- Add a target-level switch in the shared cube reset quality code so cube still requires radial offset quality, while contact-midpoint multi-object targets can skip that cube-specific radial check.
+
+Version Control:
+- agent_id: `merge-dp-rgb-main-20260613`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/merge-dp-rgb-main-20260613`
+- branch: `main`
+- base_commit: `6aabf57618b7890ec9d9b2a87b683063ef21bf24`
+- implementation_commit: pending
+- changed_files: `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`, `dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py`, this worklog.
+
+Validation:
+- pending: py_compile, diff-check, commit/push/deploy, rendered pregrasp/top-down validation rerun.
+
+Next:
+- Run local checks, commit/push/deploy, and rerun the same rendered validation.

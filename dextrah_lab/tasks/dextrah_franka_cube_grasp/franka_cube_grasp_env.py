@@ -993,6 +993,10 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         offset_dot = torch.sum(targets["pregrasp_offset_dir_w"] * reference_to_exact, dim=-1)
         self.grasp_prior_reset_offset_radial_dot[env_ids] = offset_dot
         self.grasp_prior_reset_offset_radial_angle[env_ids] = torch.acos(torch.clamp(offset_dot, -1.0, 1.0))
+        require_offset_radial_quality = targets.get(
+            "require_offset_radial_quality",
+            torch.ones(int(env_ids.numel()), dtype=torch.bool, device=self.device),
+        )
 
         pregrasp_offset = abs(float(self.cfg.grasp_prior_pregrasp_offset))
         body_finger_center = 0.5 * (self.left_finger_pos[env_ids] + self.right_finger_pos[env_ids])
@@ -1031,7 +1035,7 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         self.grasp_prior_reset_quality_success[env_ids] = (
             success
             & (self.grasp_prior_reset_open_width_margin[env_ids] >= 0.0)
-            & (offset_dot > 0.25)
+            & ((offset_dot > 0.25) | ~require_offset_radial_quality)
             & (actual_finger_center_dist <= 1.25 * object_size)
             & (exact_tip_center_dist <= 0.75 * object_size)
             & (exact_tip_max_dist <= 1.25 * object_size)

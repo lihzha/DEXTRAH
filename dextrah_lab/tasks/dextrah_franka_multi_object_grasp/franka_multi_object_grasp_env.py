@@ -675,17 +675,22 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         candidate_contact_points_w = flat_contact_points_w.reshape(num_ids, candidate_count, 2, 3)
         candidate_contact_midpoint_w = candidate_contact_points_w.mean(dim=2)
 
-        candidate_exact_tool_pos_w = world_tool_candidates[:, :, :3, 3]
-        candidate_tool_z_axis_w = world_tool_candidates[:, :, :3, 2]
-        candidate_tool_z_axis_w = candidate_tool_z_axis_w / torch.clamp(
-            torch.norm(candidate_tool_z_axis_w, dim=-1, keepdim=True),
-            min=1.0e-6,
-        )
         object_center_pos_w_candidates = object_center_pos_w.unsqueeze(1)
         candidate_contact_reference_w = torch.where(
             candidate_has_contact.unsqueeze(-1),
             candidate_contact_midpoint_w,
             object_center_pos_w_candidates,
+        )
+        candidate_raw_tool_pos_w = world_tool_candidates[:, :, :3, 3]
+        candidate_exact_tool_pos_w = torch.where(
+            candidate_has_contact.unsqueeze(-1),
+            candidate_contact_reference_w,
+            candidate_raw_tool_pos_w,
+        )
+        candidate_tool_z_axis_w = world_tool_candidates[:, :, :3, 2]
+        candidate_tool_z_axis_w = candidate_tool_z_axis_w / torch.clamp(
+            torch.norm(candidate_tool_z_axis_w, dim=-1, keepdim=True),
+            min=1.0e-6,
         )
         pregrasp_offset = abs(float(self.cfg.grasp_prior_pregrasp_offset))
         plus_tool_pos_w = candidate_exact_tool_pos_w + pregrasp_offset * candidate_tool_z_axis_w
@@ -707,10 +712,18 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             candidate_tool_z_axis_w,
             -candidate_tool_z_axis_w,
         )
+        if pregrasp_offset > 1.0e-6 and bool(self.cfg.grasp_prior_reset_require_topdown):
+            world_up = torch.zeros_like(candidate_pregrasp_offset_dir_w)
+            world_up[:, :, 2] = 1.0
+            candidate_pregrasp_offset_dir_w = torch.where(
+                candidate_has_contact.unsqueeze(-1),
+                world_up,
+                candidate_pregrasp_offset_dir_w,
+            )
         candidate_pregrasp_tool_pos_w = (
             candidate_exact_tool_pos_w + pregrasp_offset * candidate_pregrasp_offset_dir_w
         )
-        candidate_pregrasp_tool_dist = torch.where(use_plus, plus_tool_dist, minus_tool_dist)
+        candidate_pregrasp_tool_dist = torch.norm(candidate_pregrasp_tool_pos_w - candidate_contact_reference_w, dim=-1)
         if pregrasp_offset <= 1.0e-6:
             candidate_pregrasp_farther = torch.ones_like(candidate_pregrasp_tool_dist, dtype=torch.bool)
         else:
@@ -773,18 +786,20 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         has_contact_location = candidate_has_contact[row_ids, best_candidate]
 
         tool_quat_w = math_utils.quat_from_matrix(world_tool_t[:, :3, :3])
-        exact_ee_pos_w, exact_ee_quat_w = math_utils.combine_frame_transforms(
+        tool_exact_ee_pos_w, exact_ee_quat_w = math_utils.combine_frame_transforms(
             exact_tool_pos_w,
             tool_quat_w,
             self.ee_offset_pos[env_ids],
             self.ee_offset_rot[env_ids],
         )
-        target_ee_pos_w, target_ee_quat_w = math_utils.combine_frame_transforms(
+        tool_target_ee_pos_w, target_ee_quat_w = math_utils.combine_frame_transforms(
             pregrasp_tool_pos_w,
             tool_quat_w,
             self.ee_offset_pos[env_ids],
             self.ee_offset_rot[env_ids],
         )
+        exact_ee_pos_w = torch.where(has_contact_location.unsqueeze(-1), exact_tool_pos_w, tool_exact_ee_pos_w)
+        target_ee_pos_w = torch.where(has_contact_location.unsqueeze(-1), pregrasp_tool_pos_w, tool_target_ee_pos_w)
         root_pos_w = self._robot.data.root_pos_w[env_ids]
         root_quat_w = self._robot.data.root_quat_w[env_ids]
         target_ee_pos_b, target_ee_quat_b = math_utils.subtract_frame_transforms(
@@ -822,6 +837,7 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             "candidate_table_count": table_ok.sum(dim=1),
             "candidate_valid_count": valid.sum(dim=1),
             "candidate_fallback_count": fallback_ok.sum(dim=1),
+            "require_offset_radial_quality": ~has_contact_location,
             "exact_ee_dist": torch.norm(exact_ee_pos_w - contact_reference_w, dim=-1),
             "pregrasp_ee_dist": torch.norm(target_ee_pos_w - contact_reference_w, dim=-1),
             "pregrasp_farther": pregrasp_farther,
