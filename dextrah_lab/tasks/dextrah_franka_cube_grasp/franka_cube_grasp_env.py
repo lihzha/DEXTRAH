@@ -1117,6 +1117,7 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             self.cube_xy_error,
             self.finger_table_clearance,
             self.in_success_region,
+            self.has_lifted_cube,
             reward_actions,
             float(self.cfg.cube_lift_height),
             float(self.cfg.max_gripper_width),

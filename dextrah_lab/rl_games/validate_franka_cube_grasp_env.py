@@ -211,6 +211,7 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
         "cube_xy_error": zeros.clone(),
         "finger_table_clearance": torch.tensor([0.04], device=device),
         "in_success_region": torch.zeros(1, dtype=torch.bool, device=device),
+        "has_lifted_cube": torch.zeros(1, dtype=torch.bool, device=device),
         "actions": torch.zeros(1, 7, device=device),
         "target_lift_height": 0.16,
         "max_gripper_width": 0.08,
@@ -542,6 +543,7 @@ def _run_predicate_checks(task_env, checks: CheckRecorder) -> None:
         task_env.cube_xy_error,
         task_env.finger_table_clearance,
         torch.zeros_like(task_env.in_success_region),
+        torch.zeros_like(task_env.has_lifted_cube),
         prelift_actions,
         float(task_env.cfg.cube_lift_height),
         float(task_env.cfg.max_gripper_width),
@@ -559,6 +561,11 @@ def _run_predicate_checks(task_env, checks: CheckRecorder) -> None:
         float(task_env.cfg.cube_close_action_weight),
         float(task_env.cfg.cube_lift_action_weight),
         float(task_env.cfg.cube_descend_action_penalty_weight),
+        float(task_env.cfg.cube_postlift_action_gate_height),
+        float(task_env.cfg.cube_postlift_close_action_weight),
+        float(task_env.cfg.cube_postlift_open_action_penalty_weight),
+        float(task_env.cfg.cube_postlift_lift_action_weight),
+        float(task_env.cfg.cube_postlift_descend_action_penalty_weight),
         float(task_env.cfg.cube_table_clearance_penalty_weight),
         float(task_env.cfg.cube_gripper_close_reg_weight),
         float(task_env.cfg.cube_action_penalty_weight),
@@ -566,8 +573,8 @@ def _run_predicate_checks(task_env, checks: CheckRecorder) -> None:
     approach_reward = prelift_rewards[0]
     enclosure_reward = prelift_rewards[1]
     close_action_reward = prelift_rewards[6]
-    table_clearance_penalty = prelift_rewards[9]
-    gripper_close_reg = prelift_rewards[10]
+    table_clearance_penalty = prelift_rewards[13]
+    gripper_close_reg = prelift_rewards[14]
     approach_value = _mean(approach_reward)
     enclosure_value = _mean(enclosure_reward)
     close_action_value = _mean(close_action_reward)
@@ -608,6 +615,7 @@ def _run_predicate_checks(task_env, checks: CheckRecorder) -> None:
         task_env.cube_xy_error,
         task_env.finger_table_clearance,
         task_env.in_success_region,
+        task_env.has_lifted_cube,
         task_env.actions,
         float(task_env.cfg.cube_lift_height),
         float(task_env.cfg.max_gripper_width),
@@ -625,6 +633,11 @@ def _run_predicate_checks(task_env, checks: CheckRecorder) -> None:
         float(task_env.cfg.cube_close_action_weight),
         float(task_env.cfg.cube_lift_action_weight),
         float(task_env.cfg.cube_descend_action_penalty_weight),
+        float(task_env.cfg.cube_postlift_action_gate_height),
+        float(task_env.cfg.cube_postlift_close_action_weight),
+        float(task_env.cfg.cube_postlift_open_action_penalty_weight),
+        float(task_env.cfg.cube_postlift_lift_action_weight),
+        float(task_env.cfg.cube_postlift_descend_action_penalty_weight),
         float(task_env.cfg.cube_table_clearance_penalty_weight),
         float(task_env.cfg.cube_gripper_close_reg_weight),
         float(task_env.cfg.cube_action_penalty_weight),

@@ -15,6 +15,7 @@ def compute_franka_cube_grasp_rewards(
     cube_xy_error: torch.Tensor,
     finger_table_clearance: torch.Tensor,
     in_success_region: torch.Tensor,
+    has_lifted_cube: torch.Tensor,
     actions: torch.Tensor,
     target_lift_height: float,
     max_gripper_width: float,
@@ -90,7 +91,10 @@ def compute_franka_cube_grasp_rewards(
     postlift_gate_denom = postlift_action_gate_height
     if postlift_gate_denom < 1.0e-6:
         postlift_gate_denom = lift_denom
-    postlift_gate = torch.clamp(cube_lift_height / postlift_gate_denom, 0.0, 1.0)
+    postlift_gate = torch.maximum(
+        torch.clamp(cube_lift_height / postlift_gate_denom, 0.0, 1.0),
+        has_lifted_cube.float(),
+    )
     postlift_close_action_reward = postlift_close_action_weight * postlift_gate * torch.clamp(-actions[:, 6], 0.0, 1.0)
     postlift_open_action_penalty = postlift_open_action_penalty_weight * postlift_gate * torch.clamp(actions[:, 6], 0.0, 1.0)
     postlift_lift_action_reward = postlift_lift_action_weight * postlift_gate * torch.clamp(actions[:, 2], 0.0, 1.0)

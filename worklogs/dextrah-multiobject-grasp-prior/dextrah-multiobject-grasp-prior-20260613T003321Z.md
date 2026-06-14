@@ -5472,3 +5472,42 @@ Analysis:
 
 Next:
 - Monitor startup, then parse rank-0 direct metrics. Continue only if post-warmstart behavior improves materially.
+
+## 2026-06-14T18:31:00Z - Reward-action run canceled; persistent post-lift gate patch
+
+Goal:
+- Stop the second failing PPO attempt and add a hold/recovery action-shaping signal that survives object slip after the first lift.
+
+Hypothesis:
+- Even after action rewards used raw policy actions, post-lift action shaping disappeared as soon as current lift height fell below the gate. That removes the up/closed recovery signal exactly when the object starts slipping. Using `has_lifted_cube` as a persistent post-lift gate should keep close/up rewards and open/down penalties active after the first lift event.
+
+Change:
+- Canceled A100 job `29071991` after the same low-warmstart collapse window as the previous run.
+- Updated `compute_franka_cube_grasp_rewards()` to accept `has_lifted_cube` and set `postlift_gate=max(current_lift_gate, has_lifted_cube)`.
+- Threaded `has_lifted_cube` through the Franka cube env and validation helper; corrected stale validation reward-term indices for table-clearance and gripper-close regularization.
+
+Version Control:
+- agent_id: orchestrator/integration
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/merge-dp-rgb-main-20260613`
+- branch: `main`
+- base_commit: `ff306163f02fd3dc13c9b629f5b521351fc81d39`
+- implementation_commit: pending
+- changed_files: `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_rewards.py`, `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`, `dextrah_lab/rl_games/validate_franka_cube_grasp_env.py`, this worklog
+
+Command / Job:
+- canceled job_id: `29071991`
+- run_name: `franka_multi_state_teacher_7195_96ae_actionreward_831f546_20260614T1815Z`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_96ae_actionreward_831f546_20260614T1815Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29071991.out`
+- validation: `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_rewards.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py dextrah_lab/rl_games/validate_franka_cube_grasp_env.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py`; `bash -n cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_eval_franka_multi_object_grasp_1gpu.sh`; `git diff --check`
+
+Result:
+- epoch 55-60 metrics: success mean `0.00928`, max `0.0342`, min `0.00098`; lift mean `0.00822 m`; policy z mean `-0.198`; gripper width mean `0.0287 m`.
+- mechanical patch verification: `cube_reward_action_*` matched raw policy actions as intended, but that did not prevent collapse when warmstart was inactive.
+- local torch reward-value check could not run because local system Python has no `torch`; compile and wrapper syntax checks passed.
+
+Analysis:
+- The action-credit patch was necessary but insufficient. The policy receives some close/up shaping in low-lift states, but once the current lift gate drops the strongest post-lift action pressure weakens. The persistent `has_lifted_cube` gate should make slipping states keep producing direct recovery pressure.
+
+Next:
+- Commit/push/deploy this patch, relaunch another bounded PPO comparison, and watch epochs 55-60 plus later low-warmstart phases. If this still collapses, the next target is reset distribution or a supervised/auxiliary action loss rather than more reward weight tweaks.
