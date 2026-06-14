@@ -194,7 +194,13 @@ def _write_payload(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def _make_payload(task_env, objects: dict[str, dict[str, Any]], *, cycles_completed: int) -> dict[str, Any]:
+def _make_payload(
+    task_env,
+    objects: dict[str, dict[str, Any]],
+    *,
+    cycles_completed: int,
+    cycle_stats: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     max_indices = int(args_cli.max_indices_per_object)
     for record in objects.values():
         stats = record.get("stats", {})
@@ -258,6 +264,7 @@ def _make_payload(task_env, objects: dict[str, dict[str, Any]], *, cycles_comple
             "counts_by_uuid": counts,
             "all_targets_met": all(count >= int(args_cli.target_per_object) for count in counts.values()),
         },
+        "cycle_stats": cycle_stats or [],
         "objects": objects,
     }
 
@@ -271,6 +278,7 @@ def main() -> None:
     action_dim = int(task_env.cfg.action_space)
     actions = torch.zeros((num_envs, action_dim), device=device)
     cycles_completed = 0
+    cycle_stats: list[dict[str, Any]] = []
 
     try:
         for cycle in range(max(int(args_cli.cycles), 1)):
@@ -279,6 +287,19 @@ def main() -> None:
             object_indices = task_env.object_asset_index.detach().clone()
             reset_success = task_env.grasp_prior_reset_success.detach().clone()
             quality_success = task_env.grasp_prior_reset_quality_success.detach().clone()
+            candidate_count_names = (
+                "topdown",
+                "contact_height",
+                "center",
+                "width",
+                "table",
+                "valid",
+                "fallback",
+            )
+            candidate_counts = {
+                name: getattr(task_env, f"grasp_prior_reset_candidate_{name}_count").detach().clone()
+                for name in candidate_count_names
+            }
             initial_pos = task_env.cube_pos.detach().clone()
             max_lift = torch.zeros(num_envs, dtype=torch.float32, device=device)
             max_xy_delta = torch.zeros(num_envs, dtype=torch.float32, device=device)
@@ -319,17 +340,30 @@ def main() -> None:
             if bool(args_cli.require_success):
                 passes &= any_success
 
+            lift_ok = max_lift >= float(args_cli.min_lift_height)
+            xy_ok = max_xy_delta <= float(args_cli.max_xy_delta)
+            finger_ok = min_max_finger <= float(args_cli.max_finger_dist)
+            done_ok = done_count <= int(args_cli.max_done_count)
+
             object_indices_cpu = object_indices.cpu().tolist()
             sample_indices_cpu = sample_indices.cpu().tolist()
             passes_cpu = passes.cpu().tolist()
             quality_cpu = quality_success.cpu().tolist()
             reset_cpu = reset_success.cpu().tolist()
+            lift_ok_cpu = lift_ok.cpu().tolist()
+            xy_ok_cpu = xy_ok.cpu().tolist()
+            finger_ok_cpu = finger_ok.cpu().tolist()
+            done_ok_cpu = done_ok.cpu().tolist()
             max_lift_cpu = max_lift.cpu().tolist()
             max_xy_cpu = max_xy_delta.cpu().tolist()
             min_finger_cpu = min_max_finger.cpu().tolist()
             success_cpu = any_success.cpu().tolist()
             lifted_cpu = any_lifted.cpu().tolist()
             done_cpu = done_count.cpu().tolist()
+            candidate_counts_cpu = {
+                name: values.cpu().tolist() for name, values in candidate_counts.items()
+            }
+            per_object_cycle: dict[str, dict[str, Any]] = {}
 
             for env_id, object_idx in enumerate(object_indices_cpu):
                 asset = task_env._object_assets[int(object_idx)]
@@ -338,6 +372,32 @@ def main() -> None:
                 record["observed_reset_count"] += 1
                 if bool(quality_cpu[env_id]):
                     record["quality_reset_count"] += 1
+                diag = per_object_cycle.setdefault(
+                    uuid,
+                    {
+                        "envs": 0,
+                        "reset_success": 0,
+                        "quality_success": 0,
+                        "lift_ok": 0,
+                        "xy_ok": 0,
+                        "finger_ok": 0,
+                        "done_ok": 0,
+                        "success_ok": 0,
+                        "passed": 0,
+                    },
+                )
+                diag["envs"] += 1
+                diag["reset_success"] += int(bool(reset_cpu[env_id]))
+                diag["quality_success"] += int(bool(quality_cpu[env_id]))
+                diag["lift_ok"] += int(bool(lift_ok_cpu[env_id]))
+                diag["xy_ok"] += int(bool(xy_ok_cpu[env_id]))
+                diag["finger_ok"] += int(bool(finger_ok_cpu[env_id]))
+                diag["done_ok"] += int(bool(done_ok_cpu[env_id]))
+                diag["success_ok"] += int(bool(success_cpu[env_id]))
+                diag["passed"] += int(bool(passes_cpu[env_id]))
+                for name in candidate_count_names:
+                    key = f"candidate_{name}_count_sum"
+                    diag[key] = int(diag.get(key, 0)) + int(candidate_counts_cpu[name][env_id])
                 if not bool(passes_cpu[env_id]):
                     continue
                 index = int(sample_indices_cpu[env_id])
@@ -361,6 +421,8 @@ def main() -> None:
                     "done_count": int(done_cpu[env_id]),
                     "pass_observations": 1,
                 }
+                for name in candidate_count_names:
+                    candidate[f"candidate_{name}_count"] = int(candidate_counts_cpu[name][env_id])
                 previous = stats.get(key)
                 if previous is not None:
                     candidate["pass_observations"] = int(previous.get("pass_observations", 1)) + 1
@@ -369,8 +431,26 @@ def main() -> None:
                 else:
                     previous["pass_observations"] = candidate["pass_observations"]
 
+            for diag in per_object_cycle.values():
+                env_count = max(int(diag["envs"]), 1)
+                for name in candidate_count_names:
+                    key = f"candidate_{name}_count_sum"
+                    diag[f"candidate_{name}_count_mean"] = float(diag[key]) / float(env_count)
+
             cycles_completed = cycle + 1
-            payload = _make_payload(task_env, objects, cycles_completed=cycles_completed)
+            cycle_stats.append(
+                {
+                    "cycle": cycles_completed,
+                    "pass_envs": int(passes.sum().item()),
+                    "per_object": per_object_cycle,
+                }
+            )
+            payload = _make_payload(
+                task_env,
+                objects,
+                cycles_completed=cycles_completed,
+                cycle_stats=cycle_stats,
+            )
             _write_payload(output_path, payload)
             counts = payload["summary"]["counts_by_uuid"]
             print(
@@ -384,7 +464,12 @@ def main() -> None:
             ):
                 break
     finally:
-        payload = _make_payload(task_env, objects, cycles_completed=cycles_completed)
+        payload = _make_payload(
+            task_env,
+            objects,
+            cycles_completed=cycles_completed,
+            cycle_stats=cycle_stats,
+        )
         _write_payload(output_path, payload)
         env.close()
         simulation_app.close()

@@ -6460,3 +6460,71 @@ Result:
 
 Next:
 - Commit, push, update the l401 worktree, and relaunch strict verified-grasp collection using the same candidate asset manifest and stable-pose cache.
+
+Version Control Update:
+- implementation_commit: `8c478948cd0079534b339308b5288e2ddd857a50`
+- push/pull: pushed to `origin/main`; l401 remote worktree updated with one-off HTTPS fetch.
+- remote_commit/status: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-bc-fallback-20260614-d5e8b27` clean detached HEAD at `8c478948cd0079534b339308b5288e2ddd857a50`.
+
+## 2026-06-14T22:20:58Z - Strict verified-grasp collection with no-underside filter
+
+Goal:
+- Regenerate verified grasp indices after adding the contact-height/no-underside prior.
+
+Hypothesis:
+- The stricter filter may reduce acceptance rate, but any accepted indices are safer to use for contact validation and PPO because they are not underside contacts.
+
+Change:
+- Source commit changed from `087b709` to `8c47894`.
+- Use the same candidate asset manifest and stable-pose cache, but a fresh output directory.
+
+Version Control:
+- implementation_commit: `8c478948cd0079534b339308b5288e2ddd857a50`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-bc-fallback-20260614-d5e8b27`
+- remote_status: clean detached HEAD at `8c478948cd0079534b339308b5288e2ddd857a50`
+
+Command / Job:
+- command: `sbatch cluster/sbatch_collect_franka_multi_object_verified_grasps_1gpu.sh` on `l401`
+- job_id: `1029414`
+- run_name: `franka_multi_verified_candidates3_nobelow_8c47894_20260614T222058Z`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/verified_grasp_indices/franka_multi_verified_candidates3_nobelow_8c47894_20260614T222058Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/collect_franka_multi_object_verified_grasps_1029414.out`
+- settings: same as canceled `1029413` except `CYCLES=300`, `SEED=914`, and source includes `grasp_prior_reset_min_contact_height_above_center=0.0`.
+
+Next:
+- Monitor job `1029414`; inspect accepted counts and ensure generated metadata records the no-underside threshold.
+
+Result Update:
+- status: canceled at cycle 14 after the pattern was clear.
+- evidence: `1c56f9b18a3f459891f6f8b902d192a0` reached 2 verified indices (`[540, 539]`) with max lifts around 0.29 m, but `bfa718fff3044541a3694863c3bf9c89` and `55cdf60e26db4f3d9f693282404c07f3` remained at 0 after 448 reset attempts each.
+- decision: do not spend the full 300 cycles on this run without gate-failure diagnostics.
+
+Next:
+- Add per-object reset/lift/XY/finger/done/candidate-filter diagnostics to the collector and relaunch a short diagnostic collection from a new commit.
+
+## 2026-06-14T22:29:00Z - Verified-grasp gate diagnostics
+
+Goal:
+- Determine why two otherwise stable candidate objects are not producing no-underside verified grasp indices.
+
+Hypothesis:
+- The zero-count objects may be failing at different gates: no reset candidate after the contact-height filter, IK/quality failure, insufficient lift, excessive XY drift, finger-distance error, or early termination. Per-gate counts should identify which parameter or object-selection step is justified.
+
+Change:
+- Add `cycle_stats` to `verified_indices.json` with per-object counts for reset success, quality success, lift/XY/finger/done/success gates, pass counts, and mean candidate filter counts.
+- Add candidate filter counts to each accepted sample record.
+- No acceptance thresholds or environment dynamics changed.
+
+Version Control:
+- base_commit: `8c478948cd0079534b339308b5288e2ddd857a50`
+- implementation_commit: pending
+- changed_files:
+  - `dextrah_lab/rl_games/collect_franka_multi_object_verified_grasps.py`
+  - this worklog
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/collect_franka_multi_object_verified_grasps.py`
+- `git diff --check -- dextrah_lab/rl_games/collect_franka_multi_object_verified_grasps.py`
+
+Next:
+- Commit/push the diagnostic collector, update the l401 worktree, and relaunch a shorter diagnostic verified-grasp collection.
