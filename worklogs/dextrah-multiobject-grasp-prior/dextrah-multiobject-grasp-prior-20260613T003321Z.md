@@ -2656,3 +2656,75 @@ Analysis:
 
 Next:
 - Inspect the lift-latch/quality-selector snapshot, validate whether it fixes direct warm-start lifting, then port the targeted fix back to `main` before launching real RGB policy training.
+
+## 2026-06-14T07:08:28Z - Main latch patch and state validation launch
+
+Goal:
+- Fix the direct reference-sequence failure before spending another RGB RL allocation.
+
+Version Control:
+- agent_id: `integrate-multiobject-main-20260613`
+- local_worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/merge-dp-rgb-main-20260613`
+- branch: `main`
+- pushed_commits:
+  - `6c8a2f341acf1af6e67e3613fc73061c5725e936` - `Gate Franka grasp prior warmstart lift`
+  - `9c7e0f14d61b41d8a9636f8d16784dee03bad93d` - `Expose Franka grasp prior pregrasp offset`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-main-rgb-teacher-20260614-f1a34bc`
+- remote_commit: `9c7e0f14d61b41d8a9636f8d16784dee03bad93d`
+
+Snapshot Check:
+- snapshot_job: `29058004`
+- snapshot_commit: `c4a6381c3503653ad91e711c48a49a28e2e0866a`
+- snapshot_run: `franka_multi_rgb_liftlatch_orient_qfinger120_a160_c80_finger140_z075_g16_env64_h16_mb512_train_20260614T0655Z`
+- snapshot_result: cancelled externally at epoch `16/200` before checkpointing.
+- snapshot_signal: at first lift-phase epochs, `cube_action_warmstart_lift_rate=0.015625`, `cube_action_warmstart_lift_lift_height≈0.0001`, `cube_action_warmstart_lift_has_lifted_rate=0.0`, so the snapshot did not demonstrate physical lift.
+
+Patch:
+- Kept `main`'s newer contact-location-aware candidate sampler.
+- Added stateful warm-start close/lift latches.
+- Added optional gates for close exact-EE error, lift exact-EE error, lift finger-center distance, and lift closed-gripper width.
+- Added close-width target computation with optional grasp-prior width margin and a Slurm override for `GRASP_PRIOR_PREGRASP_OFFSET`.
+- Added direct metrics for latch rates, active-only lift/width/finger-distance, and lift-phase lift/width/finger-distance.
+
+Validation Job:
+- job_id: `29058337`
+- run: `franka_multi_state_main9c_latch_preg01_gate_env256_h16_mb512_validate_20260614T070758Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29058337.out`
+- metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_main9c_latch_preg01_gate_env256_h16_mb512_validate_20260614T070758Z/metrics/direct_info_rank_0.jsonl`
+- command: state task, `NUM_ENVS=256`, `MAX_ITERATIONS=40`, `OBJECT_SPAWN_YAW_RANDOMIZATION_DEG=180.0`, random object assignment, stable-pose cache, `GRASP_PRIOR_PREGRASP_OFFSET=0.01`, `GRASP_PRIOR_RESET_CANDIDATE_COUNT=512`, `GRASP_PRIOR_RESET_ATTEMPTS=16`, `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=True`, `approach=160`, `close=80`, `lift=160`, `lift_z=0.75`, `gain=16`, `close_max_ee_error=0.11`, `lift_max_ee_error=0.08`, `lift_max_finger_center_dist=0.20`, `lift_closed_width_margin=0.006`.
+
+Next:
+- Monitor job `29058337` through lift phase. If the direct controller lifts reliably, launch real RGB policy training with action-prior reward rather than action override. If it still fails, use the new latch metrics to decide whether the blocker is candidate quality, close width, approach tracking, or object/reference-frame geometry.
+
+## 2026-06-14T07:13:02Z - State latch validation failed
+
+Goal:
+- Decide whether the patched latch/gate warm-start sequence can physically lift the objects.
+
+Command / Job:
+- job_id: `29058337`
+- run: `franka_multi_state_main9c_latch_preg01_gate_env256_h16_mb512_validate_20260614T070758Z`
+- status: completed
+- metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_main9c_latch_preg01_gate_env256_h16_mb512_validate_20260614T070758Z/metrics/direct_info_rank_0.jsonl`
+- checkpoint: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_main9c_latch_preg01_gate_env256_h16_mb512_validate_20260614T070758Z/nn/last_dextrah_franka_multi_object_grasp_ep_40_rew__793.4423_.pth`
+
+Result:
+- max_success_rate: `0.00390625`
+- max_has_lifted_rate: `0.00390625`
+- max_mean_lift_height_m: `0.000729`
+- max_lift_phase_has_lifted_rate: `0.0`
+- final_success_rate: `0.0`
+- final_reset_success_rate: `0.609375`
+- final_quality_success_rate: `0.45703125`
+- final_candidate_valid_count_mean: `64.46484375`
+- final_lift_phase_finger_center_dist_m: `0.21645`
+- final_lift_phase_gripper_width_m: `0.03151`
+- final_lift_phase_exact_ee_error_m: `0.09185`
+
+Analysis:
+- The latch/gate patch works mechanically: warm-start enters close/lift and logs the expected latch metrics.
+- It still does not physically grasp. The gripper closes and lift action executes, but object lift remains below 1 mm and lift-phase lifted rate is zero.
+- Launching RGB RL now would train against a known-bad reference controller. The next step is rendered contact debugging using the same pregrasp/gate settings to inspect actual finger/object geometry.
+
+Next:
+- Patch the video validator to reproduce the exact gated warm-start settings, render a small grasp-contact rollout, inspect the video/JSON, and then fix candidate/transform geometry before training.

@@ -40,13 +40,27 @@ parser.add_argument("--grasp_steps", type=int, default=72)
 parser.add_argument("--grasp_object_settle_steps", type=int, default=48)
 parser.add_argument("--object_reset_settle_steps", type=int, default=120)
 parser.add_argument("--grasp_warmstart_close_width", type=float, default=0.025)
+parser.add_argument("--grasp_warmstart_use_prior_close_width", action=argparse.BooleanOptionalAction, default=True)
+parser.add_argument("--grasp_warmstart_prior_close_width_margin", type=float, default=0.003)
+parser.add_argument("--grasp_warmstart_min_close_width", type=float, default=0.0)
 parser.add_argument("--grasp_warmstart_lift_action_z", type=float, default=0.30)
+parser.add_argument("--grasp_warmstart_approach_steps", type=int, default=0)
+parser.add_argument("--grasp_warmstart_close_steps", type=int, default=0)
+parser.add_argument("--grasp_warmstart_lift_steps", type=int, default=0)
+parser.add_argument("--grasp_warmstart_gain", type=float, default=8.0)
+parser.add_argument("--grasp_warmstart_max_position_action", type=float, default=1.0)
+parser.add_argument("--grasp_warmstart_track_orientation", action=argparse.BooleanOptionalAction, default=True)
+parser.add_argument("--grasp_warmstart_close_max_ee_error", type=float, default=0.0)
+parser.add_argument("--grasp_warmstart_lift_max_ee_error", type=float, default=0.0)
+parser.add_argument("--grasp_warmstart_lift_max_finger_center_dist", type=float, default=0.0)
+parser.add_argument("--grasp_warmstart_lift_closed_width_margin", type=float, default=-1.0)
 parser.add_argument("--capture_interval", type=int, default=2)
 parser.add_argument("--grasp_reset_attempts", type=int, default=12)
 parser.add_argument("--grasp_reset_min_pregrasp_z", type=float, default=0.15)
 parser.add_argument("--grasp_reset_candidate_count", type=int, default=16)
 parser.add_argument("--grasp_reset_max_center_distance_frac", type=float, default=0.55)
 parser.add_argument("--grasp_reset_min_width", type=float, default=0.008)
+parser.add_argument("--grasp_pregrasp_offset", type=float, default=None)
 parser.add_argument("--grasp_contact_score_steps", type=int, default=60)
 parser.add_argument("--disable_fabric", action="store_true", default=False)
 AppLauncher.add_app_launcher_args(parser)
@@ -245,6 +259,9 @@ def _snapshot_task_tensor_names() -> tuple[str, ...]:
         "grasp_prior_action_warmstart_applied_gripper_action",
         "grasp_prior_action_warmstart_action_delta_abs",
         "grasp_prior_action_warmstart_exact_ee_error",
+        "grasp_prior_action_warmstart_close_width_target",
+        "grasp_prior_action_warmstart_close_latched",
+        "grasp_prior_action_warmstart_lift_latched",
     )
 
 
@@ -727,6 +744,31 @@ def _rollout_grasp_contact(
                 "selected_finger_center_dist": float(task_env.finger_center_to_cube_dist[selected_env].detach().cpu()),
                 "selected_max_finger_dist": float(task_env.max_finger_to_cube_dist[selected_env].detach().cpu()),
                 "selected_gripper_width": float(task_env.gripper_width[selected_env].detach().cpu()),
+                "selected_warmstart_phase": int(
+                    task_env.grasp_prior_action_warmstart_phase[selected_env].detach().cpu()
+                )
+                if hasattr(task_env, "grasp_prior_action_warmstart_phase")
+                else -1,
+                "selected_warmstart_close_latched": bool(
+                    task_env.grasp_prior_action_warmstart_close_latched[selected_env].detach().cpu()
+                )
+                if hasattr(task_env, "grasp_prior_action_warmstart_close_latched")
+                else False,
+                "selected_warmstart_lift_latched": bool(
+                    task_env.grasp_prior_action_warmstart_lift_latched[selected_env].detach().cpu()
+                )
+                if hasattr(task_env, "grasp_prior_action_warmstart_lift_latched")
+                else False,
+                "selected_warmstart_exact_ee_error": float(
+                    task_env.grasp_prior_action_warmstart_exact_ee_error[selected_env].detach().cpu()
+                )
+                if hasattr(task_env, "grasp_prior_action_warmstart_exact_ee_error")
+                else 0.0,
+                "selected_warmstart_close_width_target": float(
+                    task_env.grasp_prior_action_warmstart_close_width_target[selected_env].detach().cpu()
+                )
+                if hasattr(task_env, "grasp_prior_action_warmstart_close_width_target")
+                else 0.0,
                 "selected_episode_length": int(task_env.episode_length_buf[selected_env].detach().cpu()),
                 "selected_reset_success": bool(task_env.grasp_prior_reset_success[selected_env].detach().cpu()),
                 "selected_quality_success": bool(task_env.grasp_prior_reset_quality_success[selected_env].detach().cpu()),
@@ -881,23 +923,52 @@ def _make_env(*, grasp_prior: bool):
     env_cfg.object_reset_settle_full_reset_only = True
     env_cfg.grasp_prior_reset_enabled = bool(grasp_prior)
     env_cfg.grasp_prior_action_warmstart_enabled = bool(grasp_prior)
+    env_cfg.grasp_prior_reset_attempts = int(args_cli.grasp_reset_attempts)
     env_cfg.grasp_prior_reset_candidate_count = int(args_cli.grasp_reset_candidate_count)
     env_cfg.grasp_prior_reset_require_topdown = True
     env_cfg.grasp_prior_reset_min_pregrasp_z = float(args_cli.grasp_reset_min_pregrasp_z)
     env_cfg.grasp_prior_reset_max_center_distance_frac = float(args_cli.grasp_reset_max_center_distance_frac)
     env_cfg.grasp_prior_reset_min_width = float(args_cli.grasp_reset_min_width)
+    if args_cli.grasp_pregrasp_offset is not None:
+        env_cfg.grasp_prior_pregrasp_offset = float(args_cli.grasp_pregrasp_offset)
     if grasp_prior:
         grasp_steps = max(int(args_cli.grasp_steps), 1)
-        approach_steps = min(20, max(grasp_steps // 3, 1))
-        close_steps = min(20, max(grasp_steps // 3, 1))
-        if approach_steps + close_steps >= grasp_steps:
-            close_steps = max(grasp_steps - approach_steps - 1, 0)
-        lift_steps = max(grasp_steps - approach_steps - close_steps, 1)
+        approach_steps = max(int(args_cli.grasp_warmstart_approach_steps), 0)
+        close_steps = max(int(args_cli.grasp_warmstart_close_steps), 0)
+        lift_steps = max(int(args_cli.grasp_warmstart_lift_steps), 0)
+        if approach_steps + close_steps + lift_steps <= 0:
+            approach_steps = min(20, max(grasp_steps // 3, 1))
+            close_steps = min(20, max(grasp_steps // 3, 1))
+            if approach_steps + close_steps >= grasp_steps:
+                close_steps = max(grasp_steps - approach_steps - 1, 0)
+            lift_steps = max(grasp_steps - approach_steps - close_steps, 1)
         env_cfg.grasp_prior_action_warmstart_close_width = float(args_cli.grasp_warmstart_close_width)
+        env_cfg.grasp_prior_action_warmstart_use_prior_close_width = bool(
+            args_cli.grasp_warmstart_use_prior_close_width
+        )
+        env_cfg.grasp_prior_action_warmstart_prior_close_width_margin = float(
+            args_cli.grasp_warmstart_prior_close_width_margin
+        )
+        env_cfg.grasp_prior_action_warmstart_min_close_width = float(args_cli.grasp_warmstart_min_close_width)
         env_cfg.grasp_prior_action_warmstart_lift_action_z = float(args_cli.grasp_warmstart_lift_action_z)
         env_cfg.grasp_prior_action_warmstart_approach_steps = approach_steps
         env_cfg.grasp_prior_action_warmstart_close_steps = close_steps
         env_cfg.grasp_prior_action_warmstart_lift_steps = lift_steps
+        env_cfg.grasp_prior_action_warmstart_gain = float(args_cli.grasp_warmstart_gain)
+        env_cfg.grasp_prior_action_warmstart_max_position_action = float(args_cli.grasp_warmstart_max_position_action)
+        env_cfg.grasp_prior_action_warmstart_track_orientation = bool(args_cli.grasp_warmstart_track_orientation)
+        env_cfg.grasp_prior_action_warmstart_close_max_ee_error = float(
+            args_cli.grasp_warmstart_close_max_ee_error
+        )
+        env_cfg.grasp_prior_action_warmstart_lift_max_ee_error = float(
+            args_cli.grasp_warmstart_lift_max_ee_error
+        )
+        env_cfg.grasp_prior_action_warmstart_lift_max_finger_center_dist = float(
+            args_cli.grasp_warmstart_lift_max_finger_center_dist
+        )
+        env_cfg.grasp_prior_action_warmstart_lift_closed_width_margin = float(
+            args_cli.grasp_warmstart_lift_closed_width_margin
+        )
     env_cfg.grasp_prior_allow_missing = False
     env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array")
     task_env = env.unwrapped
@@ -956,8 +1027,22 @@ def main() -> None:
             "grasp_object_settle_steps": args_cli.grasp_object_settle_steps,
             "object_reset_settle_steps": args_cli.object_reset_settle_steps,
             "grasp_warmstart_close_width": args_cli.grasp_warmstart_close_width,
+            "grasp_warmstart_use_prior_close_width": args_cli.grasp_warmstart_use_prior_close_width,
+            "grasp_warmstart_prior_close_width_margin": args_cli.grasp_warmstart_prior_close_width_margin,
+            "grasp_warmstart_min_close_width": args_cli.grasp_warmstart_min_close_width,
             "grasp_warmstart_lift_action_z": args_cli.grasp_warmstart_lift_action_z,
+            "grasp_warmstart_approach_steps": args_cli.grasp_warmstart_approach_steps,
+            "grasp_warmstart_close_steps": args_cli.grasp_warmstart_close_steps,
+            "grasp_warmstart_lift_steps": args_cli.grasp_warmstart_lift_steps,
+            "grasp_warmstart_gain": args_cli.grasp_warmstart_gain,
+            "grasp_warmstart_max_position_action": args_cli.grasp_warmstart_max_position_action,
+            "grasp_warmstart_track_orientation": args_cli.grasp_warmstart_track_orientation,
+            "grasp_warmstart_close_max_ee_error": args_cli.grasp_warmstart_close_max_ee_error,
+            "grasp_warmstart_lift_max_ee_error": args_cli.grasp_warmstart_lift_max_ee_error,
+            "grasp_warmstart_lift_max_finger_center_dist": args_cli.grasp_warmstart_lift_max_finger_center_dist,
+            "grasp_warmstart_lift_closed_width_margin": args_cli.grasp_warmstart_lift_closed_width_margin,
             "grasp_reset_min_pregrasp_z": args_cli.grasp_reset_min_pregrasp_z,
+            "grasp_pregrasp_offset": args_cli.grasp_pregrasp_offset,
             "grasp_contact_score_steps": args_cli.grasp_contact_score_steps,
             "perturb_push_steps": args_cli.perturb_push_steps,
             "perturb_linear_velocity": args_cli.perturb_linear_velocity,
