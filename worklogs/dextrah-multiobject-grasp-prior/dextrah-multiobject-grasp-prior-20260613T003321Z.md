@@ -5437,3 +5437,38 @@ Analysis:
 
 Next:
 - Commit/push/deploy this patch to the A100 worktree, relaunch a bounded PPO run, and compare `cube_reward_action_*` against `cube_policy_*`/`cube_applied_*`. Continue only if non-warmstart epochs preserve lift/success better than `29071795`.
+
+## 2026-06-14T18:15:00Z - Reward-action fix PPO relaunch
+
+Goal:
+- Test whether computing action-dependent rewards from raw policy actions during warmstart improves policy takeover after scripted grasp-prior intervention ends.
+
+Hypothesis:
+- Compared with canceled job `29071795`, the first post-warmstart low-active epochs should show higher policy z/close pressure, smaller gripper-width opening, and less collapse in lift/success.
+
+Change:
+- Deployed `831f546e7f448530acab7208bca7e7b413558361` to `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-bc-fallback-20260614-d5e8b27` via Git bundle.
+- Relaunched the same A100 PPO configuration as `29071795`, changing only the source commit and seed.
+
+Version Control:
+- agent_id: orchestrator/integration
+- implementation_commit: `831f546e7f448530acab7208bca7e7b413558361`
+- push/pull: pushed to GitHub main; remote checkout updated from `/lustre/fsw/portfolios/nvr/users/lzha/src/bundles/DEXTRAH/dextrah-831f546.bundle`
+- remote_commit/status: detached clean at `831f546e7f448530acab7208bca7e7b413558361`
+
+Command / Job:
+- job_id: `29071991`
+- run_name: `franka_multi_state_teacher_7195_96ae_actionreward_831f546_20260614T1815Z`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_96ae_actionreward_831f546_20260614T1815Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29071991.out`
+- checkpoint input: `/results/bc/franka_multi_7195_96ae_bc_holdlabel_ep50_21378e9_20260614T1734Z/nn/bc_reference_action_imitation.pth`
+- task/config: same two-object manifest, random object assignment per env, full yaw, stable-pose cache, verified grasp indices, reset attempts `4`, candidates `64`, pregrasp offset `0.03`, warmstart `4/60/240`, action-prior reward `8.0`.
+
+Result:
+- status: submitted
+
+Analysis:
+- This run should be judged against the canceled job's epochs 51-60, not against wall-clock completion. If `cube_reward_action_*` equals raw policy diagnostics and non-warmstart success still collapses, the next change should target the reset/hold distribution or add a persistent post-lift action gate.
+
+Next:
+- Monitor startup, then parse rank-0 direct metrics. Continue only if post-warmstart behavior improves materially.
