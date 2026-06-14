@@ -5278,3 +5278,41 @@ Analysis:
 
 Next:
 - Commit/push/deploy this patch, launch a corrected L40 BC pass from the DAgger BC checkpoint with terminal hold-applied labels plus the reference rehearsal dataset, inspect dataset/action statistics and eval, then resume PPO only if policy-only eval improves.
+## 2026-06-14T17:34:00Z - Corrected hold-label BC launch
+
+Goal:
+- Train a corrected BC checkpoint whose terminal hold/lift samples are supervised toward the hold action that actually keeps the object lifted and the gripper closed.
+
+Hypothesis:
+- Replacing terminal-hold targets with the applied hold action should remove the contradictory negative-z labels in lifted states. A derived handoff source should upweight held/lifted samples enough for the actor to preserve early grasp behavior and improve policy-only terminal occupancy before the next PPO resume.
+
+Change:
+- Launched a L40 single-GPU BC run from the previous DAgger BC checkpoint using `LABEL_ACTION_SOURCE=hold_applied_reference_else`.
+- Kept the same two-object robust environment, random object assignment, `+-180 deg` yaw, stable-pose cache, verified grasp indices, and grasp-prior reference schedule as previous BC/eval runs.
+- Enabled `HANDOFF_SOURCE_ENABLED=True` with `HANDOFF_REQUIRE_HOLD_ACTIVE=True`, `HANDOFF_MIN_LIFT_HEIGHT=0.02`, `HANDOFF_MAX_FINGER_DIST=0.16`, and `HANDOFF_MAX_SAMPLES=120000`.
+
+Version Control:
+- agent_id: orchestrator/integration
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/merge-dp-rgb-main-20260613`
+- branch: `main`
+- implementation_commit: `21378e945b4fa573beb00a757ea9bd0387f66c50`
+- push/pull: pushed to GitHub main; deployed to `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-bc-fallback-20260614-d5e8b27` via Git bundle because cluster GitHub fetch still fails with publickey
+- remote_commit/status: detached clean at `21378e945b4fa573beb00a757ea9bd0387f66c50`
+
+Command / Job:
+- job_id: `1029357`
+- host: `l401`
+- run_name: `franka_multi_7195_96ae_bc_holdlabel_ep50_21378e9_20260614T1734Z`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/bc/franka_multi_7195_96ae_bc_holdlabel_ep50_21378e9_20260614T1734Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bc_franka_cube_1029357.out`
+- checkpoint input: `/results/bc/franka_multi_7195_96ae_bc_dagger_hold_ep50_d5e8b27_20260614T1625Z/nn/bc_reference_action_imitation.pth`
+- expected output checkpoint: `/results/bc/franka_multi_7195_96ae_bc_holdlabel_ep50_21378e9_20260614T1734Z/nn/bc_reference_action_imitation.pth`
+
+Result:
+- status: running/queued at launch
+
+Analysis:
+- Acceptance for this stage is not BC loss alone. Need inspect dataset stats to confirm hold-active/lifted labels now have positive z/closed gripper, then run deterministic/stochastic policy eval before deciding whether to resume PPO.
+
+Next:
+- Monitor `1029357` through completion, inspect `bc_metrics.json`, dataset stats, and corrected checkpoint evals.
