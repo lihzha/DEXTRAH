@@ -5511,3 +5511,37 @@ Analysis:
 
 Next:
 - Commit/push/deploy this patch, relaunch another bounded PPO comparison, and watch epochs 55-60 plus later low-warmstart phases. If this still collapses, the next target is reset distribution or a supervised/auxiliary action loss rather than more reward weight tweaks.
+
+## 2026-06-14T18:37:00Z - Persistent post-lift gate PPO launch
+
+Goal:
+- Test whether persistent post-lift action shaping improves policy hold/recovery after the object has been lifted once.
+
+Hypothesis:
+- In the low-warmstart phase, `cube_postlift_*` terms should stay large enough to oppose negative-z/opening behavior, increasing success/lift relative to jobs `29071795` and `29071991`.
+
+Change:
+- Deployed `ca70e4bbfa20472b098a0476d106bf781199aaa2` to the A100 source worktree via Git bundle.
+- Relaunched the same corrected-label BC warm PPO setup with the persistent `has_lifted_cube` post-lift gate patch.
+
+Version Control:
+- implementation_commit: `ca70e4bbfa20472b098a0476d106bf781199aaa2`
+- remote_source: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-bc-fallback-20260614-d5e8b27`
+- remote_commit/status: detached clean at `ca70e4bbfa20472b098a0476d106bf781199aaa2`
+- push/pull: pushed to GitHub main; remote updated from `/lustre/fsw/portfolios/nvr/users/lzha/src/bundles/DEXTRAH/dextrah-ca70e4b.bundle`
+
+Command / Job:
+- job_id: `29072214`
+- run_name: `franka_multi_state_teacher_7195_96ae_postliftgate_ca70e4b_20260614T1837Z`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_96ae_postliftgate_ca70e4b_20260614T1837Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29072214.out`
+- checkpoint input: `/results/bc/franka_multi_7195_96ae_bc_holdlabel_ep50_21378e9_20260614T1734Z/nn/bc_reference_action_imitation.pth`
+
+Result:
+- status: submitted
+
+Analysis:
+- Acceptance for this attempt is not the scripted warmstart spike. The run needs materially better epochs 55-60 and later low-warmstart windows than `29071991`, plus non-collapsing policy z/closed action.
+
+Next:
+- Monitor startup and parse rank-0 direct metrics. Cancel/tune again if the low-warmstart phase still collapses.
