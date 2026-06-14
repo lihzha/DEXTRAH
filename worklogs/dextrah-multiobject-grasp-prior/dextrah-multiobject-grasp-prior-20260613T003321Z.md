@@ -5545,3 +5545,83 @@ Analysis:
 
 Next:
 - Monitor startup and parse rank-0 direct metrics. Cancel/tune again if the low-warmstart phase still collapses.
+
+## 2026-06-14T18:47:00Z - Post-lift gate PPO diagnosis; collector-matched relaunch planned
+
+Goal:
+- Diagnose job `29072214` before launching another PPO attempt.
+
+Hypothesis:
+- The persistent post-lift gate made the policy learn up/close actions, but the run still failed because the training warmstart close/lift settings diverged from the dynamically verified grasp collector.
+
+Change:
+- No source changes for this entry.
+- Compared job `29072214` metrics with the verified-grasp collector log `collect_franka_multi_object_verified_grasps_1029302.out`.
+- Identified launch mismatch: collector used prior-width close (`close_width=0.08`, `use_prior_close_width=True`, `prior_close_width_margin=0.003`) and `lift_action_z=0.50`; PPO job `29072214` used `prior_close_width_margin=0.020`, `lift_action_z=0.70`, and `lift_closed_width_margin=0.020`, driving the gripper to about 2 mm and lifting faster than the verified behavior.
+
+Version Control:
+- agent_id: orchestrator/integration
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/merge-dp-rgb-main-20260613`
+- branch: `main`
+- implementation_commit: `ca70e4bbfa20472b098a0476d106bf781199aaa2`
+- changed_files: this worklog only
+- remote_source: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-bc-fallback-20260614-d5e8b27`
+- remote_commit/status: detached clean at `ca70e4bbfa20472b098a0476d106bf781199aaa2`
+
+Command / Job:
+- monitored job_id: `29072214`
+- run_name: `franka_multi_state_teacher_7195_96ae_postliftgate_ca70e4b_20260614T1837Z`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_96ae_postliftgate_ca70e4b_20260614T1837Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29072214.out`
+
+Result:
+- status: failed / still finishing final epochs at time of diagnosis
+- epochs 91-95: success mean `0.0135`, lift mean `0.0075 m`, warmstart lift success mean `0.0486`, warmstart lift height mean `0.0243 m`, max finger distance mean `0.567 m`.
+- epoch 96: success `0.00439`, lift `0.00711 m`, warmstart lift success `0.0328`, warmstart lift height `0.0191 m`, max finger distance `0.623 m`.
+
+Analysis:
+- The policy learned the intended z/close action direction (`policy_action_z` reached about `0.8`), but the object did not stay in contact. The gripper width and verified-grasp launch mismatch point to crushing/slipping caused by overly aggressive close and lift settings, not to a missing post-lift action signal.
+- The long/thin debug objects also expose a possible next code issue: reward and success distances are still measured to object center rather than sampled grasp/contact reference. I will first test the collector-matched close/lift schedule because it is the smallest controlled change and reuses the already verified grasp cache.
+
+Next:
+- Launch a collector-matched PPO run from the same corrected BC checkpoint with `GRASP_PRIOR_ACTION_WARMSTART_CLOSE_WIDTH=0.08`, `GRASP_PRIOR_ACTION_WARMSTART_PRIOR_CLOSE_WIDTH_MARGIN=0.003`, `GRASP_PRIOR_ACTION_WARMSTART_LIFT_ACTION_Z=0.50`, `GRASP_PRIOR_ACTION_WARMSTART_LIFT_CLOSED_WIDTH_MARGIN=-1.0`, `GRASP_PRIOR_RESET_ATTEMPTS=8`, and a training-safe verified-index candidate count.
+- If warmstart lift success remains low or PPO still drifts away, patch the multi-object env to transform the sampled contact reference with the current object pose and use that reference for finger/approach/success distance terms.
+
+## 2026-06-14T18:48:00Z - Collector-matched prior-width PPO launch
+
+Goal:
+- Test whether matching the verified-grasp collector's close/lift settings restores warmstart grasp stability and gives PPO a usable distribution.
+
+Hypothesis:
+- The previous PPO run crushed/slipped the long objects by closing to about 2 mm and lifting too aggressively. Restoring prior-width close (`margin=0.003`) and slower lift (`z=0.50`) should improve warmstart lift success, reduce lift-phase finger distance, and improve later PPO success/lift metrics.
+
+Change:
+- No source-code changes. Launched a new A100 run from the same deployed code commit and corrected BC checkpoint.
+- Training candidate count kept at `64` rather than `4096` because the verified cache contains one accepted grasp index per object; 4096 would duplicate the same verified index across 2048 envs and waste GPU memory.
+
+Version Control:
+- agent_id: orchestrator/integration
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/merge-dp-rgb-main-20260613`
+- branch: `main`
+- implementation_commit: `ca70e4bbfa20472b098a0476d106bf781199aaa2`
+- changed_files: this worklog only
+- remote_source: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-bc-fallback-20260614-d5e8b27`
+- remote_commit/status: detached clean at `ca70e4bbfa20472b098a0476d106bf781199aaa2`
+
+Command / Job:
+- command: `sbatch --export=ALL,... cluster/sbatch_train_teacher_8gpu.sh` from `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-bc-fallback-20260614-d5e8b27`
+- job_id: `29072558`
+- run_name: `franka_multi_state_teacher_7195_96ae_priorwidth_ca70e4b_20260614T1848Z`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_96ae_priorwidth_ca70e4b_20260614T1848Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29072558.out`
+- checkpoint input: `/results/bc/franka_multi_7195_96ae_bc_holdlabel_ep50_21378e9_20260614T1734Z/nn/bc_reference_action_imitation.pth`
+- key overrides: `MAX_ITERATIONS=120`, `GRASP_PRIOR_RESET_ATTEMPTS=8`, `GRASP_PRIOR_RESET_CANDIDATE_COUNT=64`, `GRASP_PRIOR_RESET_MAX_CENTER_DISTANCE_FRAC=0.50`, `GRASP_PRIOR_ACTION_WARMSTART_CLOSE_WIDTH=0.08`, `GRASP_PRIOR_ACTION_WARMSTART_PRIOR_CLOSE_WIDTH_MARGIN=0.003`, `GRASP_PRIOR_ACTION_WARMSTART_LIFT_ACTION_Z=0.50`, `GRASP_PRIOR_ACTION_WARMSTART_LIFT_CLOSED_WIDTH_MARGIN=-1.0`, same two-object manifest/stable-pose/verified-index paths.
+
+Result:
+- status: submitted
+
+Analysis:
+- Acceptance criteria for this run: warmstart lift success and lift height should beat job `29072214` by a clear margin in the same 51-60 and later windows, and low-warmstart PPO epochs must not drift to large finger distances while success/lift collapse.
+
+Next:
+- Monitor queue/startup, parse rank-0 direct metrics, and cancel/tune if the collector-matched warmstart still fails to lift or PPO still learns away from the objects.
