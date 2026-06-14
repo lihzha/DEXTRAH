@@ -5351,3 +5351,48 @@ Analysis:
 
 Next:
 - Inspect tensor-stat output to confirm hold/lift labels are positive-z/closed; inspect eval metrics/traces for terminal success/occupancy and policy z/gripper behavior.
+
+## 2026-06-14T17:50:00Z - Corrected BC eval result and warm PPO launch
+
+Goal:
+- Resume A100 teacher PPO from the corrected hold-label BC checkpoint and test whether reward shaping plus scripted grasp-prior warmstart can turn the now-consistent held/lifted labels into sustained multi-object grasp success.
+
+Hypothesis:
+- The pure BC rollout is still not stable enough, but it no longer has contradictory terminal labels. PPO with strong lift/success rewards, post-lift closed/up action pressure, and a longer grasp-prior action warmstart should keep exploration in the useful grasp basin and improve above the previous short-lived success spikes.
+
+Change:
+- Verified corrected dataset labels before PPO: hold-active/lifted samples now use the applied hold action as the supervised target.
+- Inspected deterministic/stochastic policy-only evals from the corrected BC checkpoint; both still decay to open/down behavior, so PPO remains required.
+- Launched a new 8-GPU A100 PPO run from the corrected BC checkpoint with full-yaw randomization, random object assignment per environment, stable-pose cache, verified grasp indices, and a 4/60/240 approach/close/lift warmstart sequence.
+
+Version Control:
+- agent_id: orchestrator/integration
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/merge-dp-rgb-main-20260613`
+- branch: `main`
+- implementation_commit: `21378e945b4fa573beb00a757ea9bd0387f66c50`
+- worklog_base_commit: `7576c7f0ec2cada0fb3908082f534b6b7020cb00`
+- remote_source: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-bc-fallback-20260614-d5e8b27`
+- remote_commit/status: detached clean at `21378e945b4fa573beb00a757ea9bd0387f66c50`
+
+Command / Job:
+- stats job: `1029360`, log `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bc_holdlabel_stats_1029360.out`
+- deterministic eval: `franka_multi_7195_96ae_holdlabel_ep50_21378e9_20260614T1740Z_det`
+- stochastic eval: `franka_multi_7195_96ae_holdlabel_ep50_21378e9_20260614T1740Z_stoch`
+- PPO job_id: `29071795`
+- PPO run_name: `franka_multi_state_teacher_7195_96ae_holdlabel_warmppo_21378e9_20260614T1750Z`
+- PPO run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_96ae_holdlabel_warmppo_21378e9_20260614T1750Z`
+- PPO log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29071795.out`
+- PPO checkpoint input: `/results/bc/franka_multi_7195_96ae_bc_holdlabel_ep50_21378e9_20260614T1734Z/nn/bc_reference_action_imitation.pth`
+
+Result:
+- corrected label stats: `hold_active` ref/app z both `0.47995`, gripper both `-0.800`; `lift_gt_02` ref/app z both `0.73179`, gripper both `-0.7589`; `hold_and_lift02` ref/app z both `0.88763`, gripper both `-0.800`.
+- deterministic eval: `success_rate_final=0.0`, `success_rate_max=0.0703125`, `success_ever_rate=0.13671875`, `success_occupancy_mean=0.006803`; final policy action decayed to z `-0.4970`, gripper `+0.3734`.
+- stochastic eval: `success_rate_final=0.00390625`, `success_rate_max=0.0703125`, `success_ever_rate=0.16015625`, `success_occupancy_mean=0.004349`; final policy action decayed to z `-0.5143`, gripper `+0.2049`.
+- PPO status: job running on A100 `polar`; startup log confirms the corrected checkpoint and intended multi-object environment/reward/warmstart overrides.
+
+Analysis:
+- The label bug is fixed, but the actor alone still loses the grasp after the scripted/data region. The next decision should be based on early PPO diagnostics: sustained lift/success, policy z/gripper action after warmstart, and post-lift reward/penalty balance.
+- If the PPO metrics show the same collapse as previous attempts after the warmstart phases, cancel early and tune the RL objective or handoff/warmstart path instead of spending the whole wall time.
+
+Next:
+- Monitor `direct_info_rank_0.jsonl` as soon as the run directory appears. Continue, cancel/tune/relaunch, or evaluate checkpoints based on reward/action traces rather than scheduler state.
