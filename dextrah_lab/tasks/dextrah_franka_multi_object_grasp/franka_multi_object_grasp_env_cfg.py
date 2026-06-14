@@ -82,6 +82,7 @@ class DextrahFrankaMultiObjectGraspEnvCfg(DextrahFrankaCubeGraspEnvCfg):
     # or from grasp_prior_library_dir/<uuid>.npz.
     grasp_prior_library_dir = ""
     grasp_prior_allow_missing = False
+    grasp_prior_reset_attempts = 1
     grasp_prior_reset_candidate_count = 16
     grasp_prior_reset_require_topdown = True
     grasp_prior_reset_min_pregrasp_z = 0.10

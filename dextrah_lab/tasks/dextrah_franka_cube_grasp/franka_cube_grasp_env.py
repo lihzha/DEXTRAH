@@ -1092,6 +1092,11 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
                     "cube_grasp_prior_pregrasp_tip_table_clearance": self.grasp_prior_reset_pregrasp_tip_table_clearance.mean(),
                     "cube_grasp_prior_projected_exact_tip_table_clearance": self.grasp_prior_reset_projected_exact_tip_table_clearance.mean(),
                     "cube_grasp_prior_quality_success_rate": self.grasp_prior_reset_quality_success.float().mean(),
+                    "cube_grasp_prior_candidate_topdown_count": self.grasp_prior_reset_candidate_topdown_count.float().mean(),
+                    "cube_grasp_prior_candidate_center_count": self.grasp_prior_reset_candidate_center_count.float().mean(),
+                    "cube_grasp_prior_candidate_width_count": self.grasp_prior_reset_candidate_width_count.float().mean(),
+                    "cube_grasp_prior_candidate_valid_count": self.grasp_prior_reset_candidate_valid_count.float().mean(),
+                    "cube_grasp_prior_candidate_fallback_count": self.grasp_prior_reset_candidate_fallback_count.float().mean(),
                 }
             )
         if bool(self.cfg.grasp_prior_action_warmstart_enabled):

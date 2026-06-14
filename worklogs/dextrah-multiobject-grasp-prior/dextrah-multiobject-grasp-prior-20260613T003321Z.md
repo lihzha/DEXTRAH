@@ -2435,3 +2435,36 @@ Analysis:
 
 Next:
 - Commit/push the wrapper fix, redeploy the exact commit to the A100 worktree, rerun the two-iteration merged-main smoke, and only then launch the longer run.
+
+## 2026-06-14T06:03:00Z - Retry grasp-prior resets and log candidate counts
+
+Goal:
+- Improve merged-main prior-reset behavior before launching long RGB RL training.
+
+Hypothesis:
+- The merged-main smoke proved the RGB task is RLable, but `cube_grasp_prior_reset_success_rate=0` because strict contact-aware gates plus only 16 candidates caused every env to fall back to the default robot reset. Retrying failed reset samples and logging candidate gate counts should either recover usable prior resets or expose which gate is blocking them.
+
+Change:
+- Added `grasp_prior_reset_attempts` to the multi-object config.
+- Added a multi-object reset retry loop that resamples only envs whose prior reset quality failed.
+- Added candidate topdown/center/width/valid/fallback count metrics to the grasp-prior reward diagnostics.
+- Exposed `GRASP_PRIOR_RESET_ATTEMPTS` in `cluster/sbatch_train_teacher_8gpu.sh`.
+
+Version Control:
+- agent_id: `integrate-multiobject-main-20260613`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/merge-dp-rgb-main-20260613`
+- branch: `main`
+- base_commit: `a02cbe6cb70ac8ab2fcceef6620399a31c66c23c`
+- implementation_commit: pending
+- changed_files: `cluster/sbatch_train_teacher_8gpu.sh`, `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`, `dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py`, `dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py`, this worklog
+
+Command / Job:
+- checks: `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`; `bash -n cluster/sbatch_train_teacher_8gpu.sh`; `git diff --check`
+- previous_smoke_job: `29056938`
+- previous_smoke_result: completed, PPO epochs `1/2` and `2/2`, checkpoint written, but prior reset success/quality were both `0.0`.
+
+Result:
+- status: patch checks passed locally; commit/deploy/re-smoke pending.
+
+Next:
+- Commit, push, deploy a new exact commit to A100, run a two-epoch smoke with larger candidate count and reset retries, inspect reset metrics, then launch production if prior resets are nonzero and PPO remains healthy.

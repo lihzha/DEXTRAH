@@ -957,6 +957,20 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         self.time_in_success_region[env_ids] = 0.0
         if getattr(self, "_grasp_prior_reset_enabled", False):
             self._apply_grasp_prior_reset(env_ids, joint_pos, joint_vel, object_pos, object_quat)
+            max_attempts = max(int(getattr(self.cfg, "grasp_prior_reset_attempts", 1)), 1)
+            for _ in range(1, max_attempts):
+                retry_mask = ~self.grasp_prior_reset_quality_success[env_ids]
+                if not bool(retry_mask.any().item()):
+                    break
+                retry_env_ids = env_ids[retry_mask]
+                self._reset_grasp_prior_metrics(retry_env_ids)
+                self._apply_grasp_prior_reset(
+                    retry_env_ids,
+                    joint_pos[retry_mask],
+                    joint_vel[retry_mask],
+                    object_pos[retry_mask],
+                    object_quat[retry_mask],
+                )
         self.actions[env_ids] = 0.0
         self.ik_controller.reset(env_ids)
 
