@@ -869,8 +869,7 @@ def _select_scored_grasp_contact_state(env, task_env) -> tuple[int, dict[str, ob
     score_steps = max(int(args_cli.grasp_contact_score_steps), warmstart_steps, 1)
 
     for attempt in range(attempts):
-        env.reset()
-        task_env._compute_intermediate_values()
+        _reset_settled_object_then_apply_grasp_prior(env, task_env)
         candidate_envs = _candidate_contact_envs(task_env)
         if not candidate_envs:
             continue
@@ -893,8 +892,7 @@ def _select_scored_grasp_contact_state(env, task_env) -> tuple[int, dict[str, ob
         _restore_task_env_state(task_env, reset_state)
 
     if best_state is None or best_result is None:
-        env.reset()
-        task_env._compute_intermediate_values()
+        _reset_settled_object_then_apply_grasp_prior(env, task_env)
         selected_env = 0
         return selected_env, {
             "passed": False,

@@ -3359,3 +3359,58 @@ Validation:
 
 Next:
 - Commit/deploy the validation patch, then rerun the filtered video diagnostic with `GRASP_RESET_REQUIRE_TOPDOWN=False` to match a feasible PPO reset distribution for these objects.
+
+## 2026-06-14T08:34:00Z - Retry-aware no-topdown filtered validation launch
+
+Goal:
+- Validate the feasible reset distribution intended for the first PPO run: stable-pose object resets, random assignment/yaw, grasp-prior reset retries, no top-down-only gate, and a broader center gate.
+
+Version Control:
+- implementation_commit: `cf6a52d1d725ce11bda000fe1ba2c6165e8b9c23`
+- push: `origin/main` updated from `0ef680d` to `cf6a52d`.
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-main-rgb-teacher-20260614-f1a34bc`
+- remote_commit: `cf6a52d1d725ce11bda000fe1ba2c6165e8b9c23`
+
+Command / Job:
+- job_id: `29059710`
+- run: `franka_multi_video_maincf6_filtered2_retry_notop_center50_20260614T0834Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_29059710.out`
+- output_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_maincf6_filtered2_retry_notop_center50_20260614T0834Z`
+- key settings: `GRASP_RESET_REQUIRE_TOPDOWN=False`, `GRASP_RESET_MAX_CENTER_DISTANCE_FRAC=0.50`, `GRASP_RESET_ATTEMPTS=24`, `GRASP_RESET_CANDIDATE_COUNT=4096`.
+
+Next:
+- Monitor job `29059710`, inspect metrics and the grasp-contact video, then launch bounded PPO if the reset/contact evidence is physically acceptable.
+
+Result:
+- status: canceled
+- evidence: job reached `Recording grasp_contact with settled-object grasp-prior reset` but produced zero grasp-contact frames after ~4.5 minutes; compute process was active, so this was expensive reset search rather than a dead process.
+
+Analysis:
+- The grasp-contact selector used `env.reset()` inside an outer loop of `grasp_reset_attempts`, while the environment reset itself also used `env.grasp_prior_reset_attempts`. With `GRASP_RESET_ATTEMPTS=24`, the diagnostic could require hundreds of settled reset attempts before emitting frames, which is not representative of the intended PPO reset budget.
+
+Next:
+- Patch the validator so grasp-contact selection calls the settled-object grasp-prior reset helper directly, then relaunch with PPO-matched reset budget.
+
+## 2026-06-14T08:38:20Z - Grasp-contact validation retry fix
+
+Goal:
+- Make validation exercise the same settled-object grasp-prior reset semantics intended for training without multiplying retry loops.
+
+Change:
+- Updated `dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py` so `_select_scored_grasp_contact_state` calls `_reset_settled_object_then_apply_grasp_prior` directly instead of `env.reset()` for selection attempts and fallback state.
+
+Version Control:
+- agent_id: `merge-dp-rgb-main-20260613`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/merge-dp-rgb-main-20260613`
+- branch: `main`
+- base_commit: `cf6a52d1d725ce11bda000fe1ba2c6165e8b9c23`
+- implementation_commit: pending
+- changed_files: `dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py`, this worklog.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py`
+- `bash -n cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh`
+- `git diff --check`
+
+Next:
+- Commit, push, update the A100 worktree, and rerun the filtered validation with a PPO-matched retry/candidate budget before launching teacher PPO.
