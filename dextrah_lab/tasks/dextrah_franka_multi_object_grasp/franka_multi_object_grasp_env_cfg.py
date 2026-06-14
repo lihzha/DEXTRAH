@@ -109,6 +109,7 @@ class DextrahFrankaMultiObjectGraspEnvCfg(DextrahFrankaCubeGraspEnvCfg):
     grasp_prior_reset_quality_max_finger_center_dist = 0.08
     grasp_prior_reset_quality_max_tip_center_dist = 0.08
     grasp_prior_reset_quality_max_tip_max_dist = 0.10
+    grasp_prior_action_warmstart_require_current_lift_ready = True
 
     # Optional online RGB observation path used by the RGB PPO task below.
     enable_rgb_observations = False

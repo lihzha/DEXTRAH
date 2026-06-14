@@ -684,7 +684,11 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             ready_to_lift = ready_to_lift & (self.gripper_width <= close_width + closed_width_margin)
 
         close_ready = active & close_latched
-        lift_latched = self.grasp_prior_action_warmstart_lift_latched | (close_ready & ready_to_lift)
+        current_lift_ready = close_ready & ready_to_lift
+        if bool(getattr(self.cfg, "grasp_prior_action_warmstart_require_current_lift_ready", False)):
+            lift_latched = current_lift_ready
+        else:
+            lift_latched = self.grasp_prior_action_warmstart_lift_latched | current_lift_ready
         if update_latches:
             self.grasp_prior_action_warmstart_lift_latched[:] = torch.where(
                 active,

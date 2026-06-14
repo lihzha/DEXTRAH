@@ -5838,3 +5838,36 @@ Analysis:
 Next:
 - Monitor `29074376` through the first 51-60 window.
 - If lift never triggers, relax the gates slightly; if lift triggers with low success, generate a focused grasp-contact rollout for the accepted reset subset.
+
+## 2026-06-14T20:40:00Z - Current-lift-gate patch
+
+Goal:
+- Stop the warmstart controller from continuing lift after a stale one-step gate hit when the gripper/object contact has already drifted away.
+
+Result:
+- Canceled job `29074376` after epoch 56.
+- Evidence:
+  - success stayed near `0.054` at epochs 52-55, then fell to `0.0093` at epoch 56.
+  - warmstart lift success remained `0.0`.
+  - the rare lift samples had `lift_reference_finger_center_dist=0.0788` at epoch 53, then drifted to `0.1736`, `0.2722`, and `0.3412` by epochs 54-56 while still counted as lift.
+  - this showed the lift latch was stale: once an env latched lift, it kept receiving lift actions even after current lift-readiness was false.
+
+Change:
+- Add `grasp_prior_action_warmstart_require_current_lift_ready`.
+- Keep the cube baseline default as `False`.
+- Set the multi-object default to `True`.
+- When enabled, `_grasp_prior_action_warmstart_phase_masks()` uses current `close_ready & ready_to_lift` instead of OR-ing with the previous lift latch.
+- Expose/log `GRASP_PRIOR_ACTION_WARMSTART_REQUIRE_CURRENT_LIFT_READY` in `cluster/sbatch_train_teacher_8gpu.sh`.
+
+Version Control:
+- base_commit: `47830a2`
+- implementation_commit: pending
+- changed_files: `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`, `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env_cfg.py`, `dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py`, `cluster/sbatch_train_teacher_8gpu.sh`, this worklog.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env_cfg.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py`
+- `bash -n cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_eval_franka_multi_object_grasp_1gpu.sh`
+- `git diff --check`
+
+Next:
+- Commit/push, deploy to the A100 agent worktree, and relaunch with current lift gating enabled.
