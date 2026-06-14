@@ -103,6 +103,12 @@ class DextrahFrankaMultiObjectGraspEnvCfg(DextrahFrankaCubeGraspEnvCfg):
     grasp_prior_reset_ik_max_joint_step = 0.25
     grasp_prior_reset_ik_pos_tolerance = 0.055
     grasp_prior_reset_ik_rot_tolerance = 0.55
+    # Long, thin objects can have a large grasp-size extent.  Keep reset
+    # quality tied to the actual projected gripper/contact alignment instead
+    # of allowing object-length-scaled distances.
+    grasp_prior_reset_quality_max_finger_center_dist = 0.08
+    grasp_prior_reset_quality_max_tip_center_dist = 0.08
+    grasp_prior_reset_quality_max_tip_max_dist = 0.10
 
     # Optional online RGB observation path used by the RGB PPO task below.
     enable_rgb_observations = False

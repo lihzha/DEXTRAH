@@ -5706,3 +5706,44 @@ Analysis:
 
 Next:
 - Monitor startup, parse rank-0 metrics, and cancel/tune if the first 51-60 window still collapses.
+## 2026-06-14 12:48 PDT - Contact-reference PPO cancellation and reset-quality cap patch
+
+Goal:
+- Stop the weak contact-reference PPO run and tighten multi-object grasp-prior reset acceptance before relaunching training.
+
+Hypothesis:
+- The moving contact-reference patch fixed stale distance bookkeeping, but reset quality is still too permissive for long objects because the inherited threshold scales with `object_grasp_size`.
+- Hard-capping projected gripper/contact distances should reject badly aligned reset poses instead of spending PPO updates on unreachable warmstart grasps.
+
+Change:
+- Canceled A100 job `29073180` (`franka_multi_state_teacher_7195_96ae_contactref_8b1a36a_20260614T1910Z`) after metrics stayed poor through epoch 68.
+- Added optional reset-quality hard caps to the shared Franka grasp-prior gate.
+- Kept cube defaults disabled and enabled multi-object defaults: finger center `0.08 m`, tip center `0.08 m`, tip max `0.10 m`.
+- Wired the cap values through `cluster/sbatch_train_teacher_8gpu.sh` for future launch-time tuning.
+
+Version Control:
+- agent_id: `dextrah-multiobject-grasp-prior-20260613T003321Z`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/merge-dp-rgb-main-20260613`
+- branch: `main`
+- base_commit: `28b36ac`
+- implementation_commit: pending
+- changed_files: `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`, `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env_cfg.py`, `dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py`, `cluster/sbatch_train_teacher_8gpu.sh`, this worklog
+
+Command / Job:
+- canceled_job_id: `29073180`
+- canceled_run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_96ae_contactref_8b1a36a_20260614T1910Z`
+- canceled_log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29073180.out`
+
+Result:
+- status: patch validated locally, relaunch pending
+- metrics/artifacts: epochs 66-68 mean success `0.00179`, mean lift height `0.00419 m`, mean warmstart lift success `0.0124`, mean projected exact finger center distance `0.153 m`, mean reset quality success rate `0.522`.
+- validation: `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env_cfg.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py`; `bash -n cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_eval_franka_multi_object_grasp_1gpu.sh`; `git diff --check`.
+
+Analysis:
+- The active run showed the policy sometimes learned upward action during teacher-active epochs, but reset/warmstart lift success collapsed again as the policy moved away from the scripted phase.
+- Since quality success remained above 50% while projected contact alignment was about 15 cm off, the reset gate itself was admitting weak examples.
+
+Next:
+- Commit and push the cap patch.
+- Deploy the exact commit to the A100 agent worktree with a Git bundle.
+- Relaunch PPO and monitor whether reset quality drops while warmstart lift/contact metrics improve.

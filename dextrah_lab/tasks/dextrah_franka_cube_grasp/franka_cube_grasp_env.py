@@ -1052,13 +1052,34 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         self.grasp_prior_reset_projected_exact_tip_max_dist[env_ids] = exact_tip_max_dist
         self.grasp_prior_reset_pregrasp_tip_table_clearance[env_ids] = pregrasp_tip_table_clearance
         self.grasp_prior_reset_projected_exact_tip_table_clearance[env_ids] = exact_tip_table_clearance
+        finger_center_limit = 1.25 * object_size
+        tip_center_limit = 0.75 * object_size
+        tip_max_limit = 1.25 * object_size
+        finger_center_cap = float(getattr(self.cfg, "grasp_prior_reset_quality_max_finger_center_dist", 0.0))
+        tip_center_cap = float(getattr(self.cfg, "grasp_prior_reset_quality_max_tip_center_dist", 0.0))
+        tip_max_cap = float(getattr(self.cfg, "grasp_prior_reset_quality_max_tip_max_dist", 0.0))
+        if finger_center_cap > 0.0:
+            finger_center_limit = torch.minimum(
+                finger_center_limit,
+                torch.full_like(finger_center_limit, finger_center_cap),
+            )
+        if tip_center_cap > 0.0:
+            tip_center_limit = torch.minimum(
+                tip_center_limit,
+                torch.full_like(tip_center_limit, tip_center_cap),
+            )
+        if tip_max_cap > 0.0:
+            tip_max_limit = torch.minimum(
+                tip_max_limit,
+                torch.full_like(tip_max_limit, tip_max_cap),
+            )
         self.grasp_prior_reset_quality_success[env_ids] = (
             success
             & (self.grasp_prior_reset_open_width_margin[env_ids] >= 0.0)
             & ((offset_dot > 0.25) | ~require_offset_radial_quality)
-            & (actual_finger_center_dist <= 1.25 * object_size)
-            & (exact_tip_center_dist <= 0.75 * object_size)
-            & (exact_tip_max_dist <= 1.25 * object_size)
+            & (actual_finger_center_dist <= finger_center_limit)
+            & (exact_tip_center_dist <= tip_center_limit)
+            & (exact_tip_max_dist <= tip_max_limit)
             & (pregrasp_tip_table_clearance >= float(self.cfg.finger_table_penetration_termination_margin))
             & (exact_tip_table_clearance >= float(self.cfg.finger_table_penetration_termination_margin))
             & self._grasp_prior_reset_extra_quality_mask(env_ids, targets)

@@ -81,6 +81,11 @@ class DextrahFrankaCubeGraspEnvCfg(DextrahFrankaStarKittingEnvCfg):
     grasp_prior_reset_ik_pos_tolerance = 0.020
     grasp_prior_reset_ik_rot_tolerance = 0.35
     grasp_prior_fallback_to_default_on_ik_failure = True
+    # Optional hard caps for reset quality.  A value <= 0 keeps the original
+    # object-size-scaled gate, which is appropriate for the cube baseline.
+    grasp_prior_reset_quality_max_finger_center_dist = 0.0
+    grasp_prior_reset_quality_max_tip_center_dist = 0.0
+    grasp_prior_reset_quality_max_tip_max_dist = 0.0
 
     # Diagnostic-only early action intervention for reset-prior debugging.
     # Disabled by default; enabling it makes the run non-apple-to-apple because
