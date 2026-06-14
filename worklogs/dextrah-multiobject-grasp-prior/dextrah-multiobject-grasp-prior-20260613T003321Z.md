@@ -5899,3 +5899,25 @@ Command / Job:
 Next:
 - Confirm resolved config contains `grasp_prior_action_warmstart_require_current_lift_ready: true`.
 - Parse early JSONL epochs; accept only if lift actions keep current reference/finger distances bounded and produce nonzero lift success.
+
+## 2026-06-14T20:44:17Z - Checkpoint path fix relaunch
+
+Result:
+- Job `29074535` failed before environment construction.
+- Root cause: the launch used the host checkpoint path `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/...` as `CHECKPOINT`; inside the container this must be `/results/...`.
+- Failure evidence: `FileNotFoundError: Unable to find the file: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/bc/.../bc_reference_action_imitation.pth`.
+
+Command / Job:
+- failed_job_id: `29074535`, state `FAILED`, elapsed `00:01:39`.
+- replacement_job_id: `29074553`
+- replacement_run_name: `franka_multi_state_teacher_7195_96ae_currentlift_0fea1cd_ckptfix_20260614T204417Z`
+- replacement_log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29074553.out`
+- replacement_run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_96ae_currentlift_0fea1cd_ckptfix_20260614T204417Z`
+- replacement_change: `CHECKPOINT=/results/bc/franka_multi_7195_96ae_bc_holdlabel_ep50_21378e9_20260614T1734Z/nn/bc_reference_action_imitation.pth`.
+
+Result:
+- `29074553` submitted successfully but is pending with `(QOSMaxJobsPerUserLimit)` while a separate RGB job from `/lustre/fs11/portfolios/nvr/projects/nvr_lpr_rvp/users/lzha/src/worktrees/DEXTRAH/franka-multiobject-rgb-rl-20260613` is running.
+
+Next:
+- Monitor pending state until `29074553` starts.
+- Once running, confirm resolved config and parse rank-0 JSONL metrics.
