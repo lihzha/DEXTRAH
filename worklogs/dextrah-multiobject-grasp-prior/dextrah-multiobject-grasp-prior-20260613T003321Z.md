@@ -3836,3 +3836,84 @@ Validation:
 
 Next:
 - Commit/push/deploy this validation-only fix, then rerun the exact same rendered validation settings under the new commit.
+
+## 2026-06-14T10:15:00Z - Rendered exact-grasp validation relaunch after metrics fix
+
+Goal:
+- Rerun the same exact-grasp rendered validation with metrics serialization fixed.
+
+Version Control:
+- local_commit: `63c0dbb6bcea20fcdf41f9154110ab3cf3acdef7`
+- push: pushed to `origin/main`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-main-evalfix-20260614-94d7274`
+- remote_commit: `63c0dbb6bcea20fcdf41f9154110ab3cf3acdef7`
+- deployment: Git bundle copied to `/lustre/fsw/portfolios/nvr/users/lzha/src/bundles/dextrah-main-63c0dbb.bundle`; remote worktree checked out detached at the exact commit.
+
+Command / Job:
+- job_id: `1029213`
+- host: `l401`
+- run: `franka_multi_video_exactgrasp_ik63c0dbb_notop_20260614T1015Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_1029213.out`
+- output_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_exactgrasp_ik63c0dbb_notop_20260614T1015Z`
+- key settings: same as `1029212`: exact grasp (`GRASP_PREGRASP_OFFSET=0.0`), top-down disabled, `GRASP_RESET_CANDIDATE_COUNT=2048`, `GRASP_RESET_IK_ITERATIONS=96`, `GRASP_RESET_IK_POS_TOLERANCE=0.055`, `GRASP_RESET_IK_ROT_TOLERANCE=0.55`, close/lift warmstart.
+
+Next:
+- Monitor job `1029213`, inspect metrics and rendered frames, then use the result to decide PPO launch or another reset/contact patch.
+
+## 2026-06-14T10:18:00Z - Center-distance gate validation test
+
+Goal:
+- Determine whether the remaining `grasp_contact` failure is caused by an over-tight candidate contact-center filter for the selected GraspGen object.
+
+Result:
+- job_id: `1029213`
+- status: failed metrics, with valid `reset_settle` and `perturbation`.
+- key evidence: `grasp_contact.passed=False`, `warmstart_active_count=0`, `selected_asset_uuid=1d489db9cdc24161a7537926a20bb17b`, `selected_candidate_center_count=0`, `selected_candidate_width_count=264`, `selected_candidate_topdown_count=2013`, `selected_candidate_valid_count=0`.
+- visual evidence: fetched contact frames showed the default hover pose; the robot did not reset to a grasp pose.
+
+Analysis:
+- This is not a PPO issue and not the earlier metrics-scope issue. The selected object has usable-width/topdown candidates, but all are rejected by center-distance gating. For heterogeneous objects, `grasp_prior_reset_max_center_distance_frac=0.30` appears too strict.
+
+Command / Job:
+- job_id: `1029214`
+- host: `l401`
+- run: `franka_multi_video_exactgrasp_center05_ik63c0dbb_notop_20260614T1018Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_1029214.out`
+- output_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_exactgrasp_center05_ik63c0dbb_notop_20260614T1018Z`
+- key change: `GRASP_RESET_MAX_CENTER_DISTANCE_FRAC=0.50`; all other exact-grasp IK/warmstart settings match `1029213`.
+
+Next:
+- If `1029214` produces valid candidates and clean contact/lift, update the multi-object default/launch settings to use the looser center gate before PPO. If it still fails, inspect whether the selected candidate is unreachable or whether the contact/reference frame is wrong.
+
+## 2026-06-14T10:25:02Z - Below-table GraspGen candidate filter
+
+Goal:
+- Fix the remaining rendered `grasp_contact` failure before launching corrected A100 PPO.
+
+Result:
+- job_id: `1029214`
+- status: failed metrics, with valid `reset_settle` and `perturbation`.
+- key evidence: `grasp_contact.passed=False`, `warmstart_active_count=0`, `selected_asset_uuid=1d489db9cdc24161a7537926a20bb17b`, `selected_candidate_center_count=1617`, `selected_candidate_width_count=264`, `selected_candidate_valid_count=240`, `selected_candidate_fallback_count=264`, `selected_reset_success=False`, `selected_quality_success=False`.
+- geometry evidence: selected contact/reference was near table height (`object_center_z=0.7868`, `contact_reference_z=0.7715`), but the selected exact tool target had `z=0.7359`, below the configured table surface near `0.746`. The post-IK/reset quality gate correctly rejected it and the validator saw the default hover pose.
+
+Analysis:
+- Loosening the center gate exposed usable GraspGen candidates, but the candidate selection did not prefilter exact tool poses that would intersect the table. That is an environment reset bug, not a training issue.
+
+Change:
+- Add an above-table candidate gate for multi-object GraspGen reset selection and apply it to both primary and fallback candidate pools.
+- Add `grasp_prior_reset_candidate_table_count` diagnostics through the inherited reset buffers, env extras, and video metrics.
+- Set the multi-object default `grasp_prior_reset_max_center_distance_frac` to `0.50`.
+
+Version Control:
+- agent_id: `merge-dp-rgb-main-20260613`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/merge-dp-rgb-main-20260613`
+- branch: `main`
+- base_commit: `63c0dbb6bcea20fcdf41f9154110ab3cf3acdef7`
+- implementation_commit: pending
+- changed_files: `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`, `dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py`, `dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py`, `dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py`, this worklog.
+
+Validation:
+- pending: py_compile, diff-check, commit/push/deploy, rendered validation rerun.
+
+Next:
+- Run local checks, commit/push/deploy exact commit to l401, then rerun rendered exact-grasp validation with `GRASP_RESET_MAX_CENTER_DISTANCE_FRAC=0.50`.

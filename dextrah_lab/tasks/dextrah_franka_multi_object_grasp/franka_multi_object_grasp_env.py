@@ -728,13 +728,15 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         normalized_center_dist = candidate_center_gate_dist / object_size
         normalized_tool_center_dist = candidate_exact_tool_dist / object_size
         center_ok = normalized_center_dist <= float(self.cfg.grasp_prior_reset_max_center_distance_frac)
-        valid = candidate_pregrasp_farther & width_ok & center_ok
+        table_floor_z = float(self.cfg.table_surface_z) + float(self.cfg.finger_table_penetration_termination_margin)
+        table_ok = candidate_exact_tool_pos_w[:, :, 2] >= table_floor_z
+        valid = candidate_pregrasp_farther & width_ok & center_ok & table_ok
         if bool(self.cfg.grasp_prior_reset_require_topdown):
             valid = valid & topdown_ok
         width_bonus = torch.clamp(candidate_required_width / max(float(self.cfg.max_gripper_width), 1.0e-6), 0.0, 1.0)
         score = candidate_confidence + pregrasp_z + 0.75 * width_bonus
         score = score - 6.0 * normalized_center_dist - normalized_tool_center_dist
-        fallback_ok = candidate_pregrasp_farther & width_ok
+        fallback_ok = candidate_pregrasp_farther & width_ok & table_ok
         if bool(self.cfg.grasp_prior_reset_require_topdown):
             fallback_ok = fallback_ok & topdown_ok
         fallback_score = torch.where(fallback_ok, score, score - 1.0e5)
@@ -807,8 +809,9 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             "candidate_topdown_count": topdown_ok.sum(dim=1),
             "candidate_center_count": center_ok.sum(dim=1),
             "candidate_width_count": width_ok.sum(dim=1),
+            "candidate_table_count": table_ok.sum(dim=1),
             "candidate_valid_count": valid.sum(dim=1),
-            "candidate_fallback_count": (candidate_pregrasp_farther & width_ok).sum(dim=1),
+            "candidate_fallback_count": fallback_ok.sum(dim=1),
             "exact_ee_dist": torch.norm(exact_ee_pos_w - contact_reference_w, dim=-1),
             "pregrasp_ee_dist": torch.norm(target_ee_pos_w - contact_reference_w, dim=-1),
             "pregrasp_farther": pregrasp_farther,

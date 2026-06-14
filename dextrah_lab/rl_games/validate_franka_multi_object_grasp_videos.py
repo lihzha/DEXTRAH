@@ -252,6 +252,7 @@ def _snapshot_task_tensor_names() -> tuple[str, ...]:
         "grasp_prior_reset_candidate_topdown_count",
         "grasp_prior_reset_candidate_center_count",
         "grasp_prior_reset_candidate_width_count",
+        "grasp_prior_reset_candidate_table_count",
         "grasp_prior_reset_candidate_valid_count",
         "grasp_prior_reset_candidate_fallback_count",
         "grasp_prior_reset_projected_exact_finger_center_dist",
@@ -517,6 +518,9 @@ def _selected_grasp_geometry_snapshot(task_env, env_id: int) -> dict[str, object
         ),
         "selected_candidate_width_count": int(
             task_env.grasp_prior_reset_candidate_width_count[env_id].detach().cpu()
+        ),
+        "selected_candidate_table_count": int(
+            task_env.grasp_prior_reset_candidate_table_count[env_id].detach().cpu()
         ),
         "selected_candidate_valid_count": int(
             task_env.grasp_prior_reset_candidate_valid_count[env_id].detach().cpu()

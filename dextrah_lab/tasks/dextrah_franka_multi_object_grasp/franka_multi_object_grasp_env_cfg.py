@@ -91,7 +91,7 @@ class DextrahFrankaMultiObjectGraspEnvCfg(DextrahFrankaCubeGraspEnvCfg):
     grasp_prior_reset_candidate_count = 16
     grasp_prior_reset_require_topdown = True
     grasp_prior_reset_min_pregrasp_z = 0.45
-    grasp_prior_reset_max_center_distance_frac = 0.30
+    grasp_prior_reset_max_center_distance_frac = 0.50
     grasp_prior_reset_min_width = 0.008
     grasp_prior_reset_ik_iterations = 64
     grasp_prior_reset_ik_damping = 0.035
