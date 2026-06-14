@@ -5747,3 +5747,38 @@ Next:
 - Commit and push the cap patch.
 - Deploy the exact commit to the A100 agent worktree with a Git bundle.
 - Relaunch PPO and monitor whether reset quality drops while warmstart lift/contact metrics improve.
+
+## 2026-06-14T19:52:00Z - Reset-quality-cap PPO relaunch
+
+Goal:
+- Test whether strict reset-quality caps improve two-object state-teacher PPO from the same BC checkpoint and task setup.
+
+Hypothesis:
+- If the previous run failed because long-object resets accepted gripper/contact alignment around `0.15 m`, then explicit `0.08/0.08/0.10 m` caps should lower reset quality acceptance but improve warmstart lift/contact quality and downstream PPO success.
+
+Change:
+- No source changes beyond `77927d9e377df598e011d90bafb29b09d44e7b66`.
+- Deployed `77927d9e377df598e011d90bafb29b09d44e7b66` to `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-bc-fallback-20260614-d5e8b27` using `/lustre/fsw/portfolios/nvr/users/lzha/src/bundles/DEXTRAH/dextrah-77927d9.bundle`.
+
+Version Control:
+- agent_id: `dextrah-multiobject-grasp-prior-20260613T003321Z`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/merge-dp-rgb-main-20260613`
+- branch: `main`
+- implementation_commit: `77927d9e377df598e011d90bafb29b09d44e7b66`
+- push/pull: pushed to `origin/main`; A100 worktree detached clean at implementation commit.
+
+Command / Job:
+- command: `sbatch --export=ALL cluster/sbatch_train_teacher_8gpu.sh` with task `Dextrah-Franka-Multi-Object-Grasp`, `NUM_ENVS=2048`, `MAX_ITERATIONS=120`, `SEED=114`, same two-object manifest/stable-pose cache/verified-index cache/BC checkpoint as the contact-reference run, yaw randomization `OBJECT_SPAWN_YAW_RANDOMIZATION_DEG=180.0`, and reset-quality caps `GRASP_PRIOR_RESET_QUALITY_MAX_FINGER_CENTER_DIST=0.08`, `GRASP_PRIOR_RESET_QUALITY_MAX_TIP_CENTER_DIST=0.08`, `GRASP_PRIOR_RESET_QUALITY_MAX_TIP_MAX_DIST=0.10`.
+- job_id: `29073685`
+- run_name: `franka_multi_state_teacher_7195_96ae_qualitycap_77927d9_20260614T1952Z`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_96ae_qualitycap_77927d9_20260614T1952Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29073685.out`
+
+Result:
+- status: submitted; startup/metrics monitoring pending.
+
+Analysis:
+- A separate RGB job `29073480` is already running from `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-multiobject-rgb-rl-20260613` at commit `c9e8dc7d48f4fcbf6bec7e94c18438d6970fabd7`; it is not this state-teacher relaunch and was left untouched.
+
+Next:
+- Monitor queue/startup, inspect log header for resolved overrides, parse metrics once rank-0 JSONL appears, and cancel/tune again if reset quality becomes zero or success remains collapsed.
