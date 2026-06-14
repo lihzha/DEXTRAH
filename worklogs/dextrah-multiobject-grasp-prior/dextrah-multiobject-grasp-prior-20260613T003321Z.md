@@ -4860,3 +4860,99 @@ Validation:
 
 Next:
 - Commit, deploy the final eval-diagnostic commit, and launch deterministic policy vs scripted reference evals.
+
+## 2026-06-14T15:38:00Z - Deterministic policy vs scripted prior eval launch
+
+Goal:
+- Decide whether the epoch-40 policy mean learned useful grasp behavior, and establish the scripted grasp-prior reference rollout upper bound under the exact robust two-object randomization.
+
+Hypothesis:
+- If deterministic policy success is much higher than stochastic training metrics, the next PPO iteration should reduce exploration/noise or evaluate with means. If deterministic policy is still poor while scripted reference succeeds, the next step should be supervised action imitation / BC warm-start before PPO.
+
+Version Control:
+- local_commit: `5a5cfcab77588ddf7bab531d4083540768f02dc0`
+- remote_source: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-evaldiag-20260614-5a5cfca`
+- deploy_method: Git bundle because A100 GitHub SSH fetch fails with `Permission denied (publickey)`.
+- remote_status: detached `5a5cfcab77588ddf7bab531d4083540768f02dc0`, wrapper `bash -n` clean.
+
+Command / Job:
+- host: `l401`
+- policy_job_id: `1029318`
+- reference_job_id: `1029319`
+- wrapper: `cluster/sbatch_eval_franka_multi_object_grasp_1gpu.sh`
+- checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_96ae_ap100_resume30_2977a39_20260614T1511Z/nn/last_dextrah_franka_multi_object_grasp_ep_40_rew_4292.6763.pth`
+- policy_run: `franka_multi_7195_96ae_policy_det_ep40_5a5cfca_20260614T1538Z`
+- reference_run: `franka_multi_7195_96ae_refprior_5a5cfca_20260614T1538Z`
+- distribution: manifest `/results/assets/filtered_manifests/two_liftable_7195_96ae_20260614T1432Z/manifest.json`, verified cache `/results/assets/verified_grasp_indices/franka_multi_verified_7195_96ae_priorwidth_2977a39_20260614T142942Z/verified_indices_accepted.json`, `OBJECT_ASSET_ASSIGNMENT=random`, `+-180 deg` yaw, `+-0.10 m` xy around `(0.05, 0.0)`.
+- reset/reference: stable-pose cache enabled; reset attempts `4`, candidates `64`, center gate `0.50`; IK `128/0.035/0.25/0.055/0.55`; reference schedule `4/60/180`, prior-width close, min close width `0.002`, lift z action `0.50`.
+
+Next:
+- Monitor `1029318` and `1029319`, inspect logs and `/results/evals/*/metrics.json`, then decide BC vs PPO relaunch.
+
+Result:
+- status: completed
+- policy job `1029318`: completed cleanly on `pool0-00009`, metrics at `/results/evals/franka_multi_7195_96ae_policy_det_ep40_5a5cfca_20260614T1538Z/metrics.json`.
+- reference job `1029319`: completed cleanly on `pool0-00002`, metrics at `/results/evals/franka_multi_7195_96ae_refprior_5a5cfca_20260614T1538Z/metrics.json`.
+- deterministic policy summary: first-attempt success `0.1172`, first-attempt success-hold `0.0508`, terminal success `0.0195`, success-ever `0.1719`, final per-step success occupancy `0.0`, max lift-height trace mean `0.4049`, has-lifted trace max `0.2305`.
+- scripted reference summary: first-attempt success `0.0938`, first-attempt success-hold `0.0625`, terminal success `0.0664`, success-ever `0.1367`, final per-step success occupancy `0.0039`, max lift-height trace mean `0.4235`, has-lifted trace max `0.1914`.
+- reset quality during eval remained partial: policy trace reset quality mean `0.5949`, reference trace reset quality mean `0.5385`; failed grasp-prior resets continue to dilute rollout success.
+
+Analysis:
+- The deterministic policy mean is materially better than the stochastic PPO metrics, so the fixed-sigma exploration noise is a training bottleneck.
+- The scripted reference under full training randomization is not a high-success oracle; it lifts some objects but does not hold them reliably. PPO should keep task reward active and not overfit purely to the reference.
+- The checkpoint stores `a2c_network.sigma` around `-0.11` log-std (`~0.9` action std), which is too noisy for the narrow grasp state reached by reset.
+
+Next:
+- Create a low-sigma copy of the epoch-40 checkpoint with `a2c_network.sigma=-2.0`, then resume PPO from that checkpoint with the same robust object distribution, lower action-prior reward than `ap100`, and frequent checkpoints.
+
+## 2026-06-14T15:45:00Z - Low-sigma checkpoint for PPO resume
+
+Goal:
+- Preserve the useful epoch-40 deterministic policy mean while reducing rollout action noise enough for PPO to improve grasp/hold behavior.
+
+Change:
+- Created `/results/checkpoints/dextrah_franka_multi_object_grasp/franka_multi_7195_96ae_ep40_sigma_m2_20260614T1545Z.pth` from the epoch-40 checkpoint by setting `model/a2c_network.sigma` to `-2.0` for all 7 action dimensions.
+
+Version Control:
+- source_commit: `5a5cfcab77588ddf7bab531d4083540768f02dc0`
+- source_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-evaldiag-20260614-5a5cfca`
+- checkpoint_edit_job: `1029324` on `l401`
+
+Validation:
+- checkpoint edit log: before sigma min/max/mean `-0.2219/-0.0535/-0.1089`; after `-2.0/-2.0/-2.0`.
+- output checkpoint exists on `/lustre`, size `146M`.
+
+Next:
+- Launch A100 8-GPU PPO resume from the low-sigma checkpoint and monitor whether stochastic training success approaches or exceeds the deterministic eval baseline.
+
+## 2026-06-14T15:48:00Z - Low-sigma PPO resume launch
+
+Goal:
+- Resume PPO from the useful epoch-40 policy mean with much lower fixed action noise, and improve stochastic training/eval success on the robust two-object task.
+
+Hypothesis:
+- Lowering fixed sigma from checkpoint log-std `~ -0.11` to `-2.0` should reduce destructive rollout noise. With task reward active and action-prior reward reduced from `100` back to `20`, PPO should improve holding success beyond the `~11.7%` deterministic first-attempt baseline instead of overfitting to the imperfect scripted reference.
+
+Change:
+- Resume checkpoint: `/results/checkpoints/dextrah_franka_multi_object_grasp/franka_multi_7195_96ae_ep40_sigma_m2_20260614T1545Z.pth`.
+- Training hyperparameters: `LEARNING_RATE=1e-4`, central value LR `5e-5`, `ENTROPY_COEF=0`, `KL_THRESHOLD=0.008`, save every `10`, max iterations `160`.
+- Environment unchanged from robust eval/training distribution: two objects `7195...` and `96ae...`, random assignment, full yaw, `+-0.10 m` XY around `(0.05, 0.0)`, stable-pose cache, verified indices, reset attempts `4`, candidates `64`.
+- Warmstart/action prior: `4/60/180`, prior-width close, min close width `0.002`, lift z `0.50`, action-prior reward `20.0`.
+
+Version Control:
+- source_commit: `5a5cfcab77588ddf7bab531d4083540768f02dc0`
+- remote_source: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-evaldiag-20260614-5a5cfca`
+
+Command / Job:
+- host: `a1001`
+- job_id: `29070307`
+- run: `franka_multi_state_teacher_7195_96ae_lowsigma_m2_resume40_5a5cfca_20260614T1548Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29070307.out`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_96ae_lowsigma_m2_resume40_5a5cfca_20260614T1548Z`
+
+Result:
+- status: pending at launch
+- scheduler_reason: `QOSMaxJobsPerUserLimit`, because an unrelated A100 `Dextrah-Franka-Star-Kitting` teacher job is running under the user.
+
+Next:
+- Monitor until `29070307` starts; inspect startup restore, sigma value if logged/observable, JSONL metrics, checkpoints, and compare stochastic success/lift against prior runs.
