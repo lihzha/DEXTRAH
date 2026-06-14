@@ -5181,3 +5181,28 @@ Result:
 
 Next:
 - Monitor queue/startup, verify the log shows `DEXTRAH_RLGAMES_JSONL_METRICS=True`, then inspect JSONL metrics once PPO epochs begin.
+
+## 2026-06-14T17:07:00Z - Post-lift PPO early stop and epoch-60 eval launch
+
+Goal:
+- Decide whether the post-lift action shaping branch should continue to epoch 90 or be stopped for a better training recipe.
+
+Result:
+- A100 job `29071091` reached PPO epoch 61 and was canceled deliberately after checkpointing epoch 60.
+- The branch reproduced the previous failure mode instead of fixing it. Rank-0 JSONL showed decaying lift/hold metrics:
+  - epoch 52: `cube_success_rate=0.0215`, `cube_lift_height=0.0107 m`, `cube_action_z=-0.0473`, `cube_gripper_close_action=0.418`
+  - epoch 55: `cube_success_rate=0.0103`, `cube_lift_height=0.00676 m`, `cube_action_z=-0.0878`, `cube_gripper_close_action=0.262`
+  - epoch 59: `cube_success_rate=0.00293`, `cube_lift_height=0.00443 m`, `cube_action_z=-0.0972`, `cube_gripper_close_action=0.218`
+  - epoch 60 spike: `cube_success_rate=0.0259`, `cube_lift_height=0.0132 m`, but `cube_action_z=-0.201` and `cube_postlift_descend_action_penalty=-1.108`
+  - epoch 61: `cube_success_rate=0.0254`, `cube_lift_height=0.0102 m`, `cube_action_z=-0.0786`
+- Diagnosis: the extra post-lift reward terms are active, but PPO still learns or preserves a negative vertical action and decaying gripper close action; this is not a successful sustained-hold policy.
+- Preserved checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_96ae_postlift_jsonl_91063df_20260614T1655Z/nn/last_dextrah_franka_multi_object_grasp_ep_60_rew_815.34076.pth`
+- Slurm cancellation note: the wrapper requeued once on signal, so the requeued step was explicitly canceled; `squeue` no longer listed job `29071091`.
+
+Command / Job:
+- deterministic eval: L40 job `1029351`, run `franka_multi_7195_96ae_postlift_ep60_91063df_det_20260614T1707Z`
+- stochastic eval: L40 job `1029352`, run `franka_multi_7195_96ae_postlift_ep60_91063df_stoch_20260614T1707Z`
+- eval distribution: `NUM_ENVS=256`, `NUM_STEPS=600`, policy action source, same two-object manifest, random object assignment, full yaw, stable-pose cache, verified grasp indices, reset attempts `4`, candidates `64`, pregrasp offset `0.03`.
+
+Next:
+- Monitor both eval jobs, inspect `metrics.json` and traces, then relaunch PPO with a stronger sustained-hold intervention if epoch-60 eval does not beat the prior best.
