@@ -5782,3 +5782,29 @@ Analysis:
 
 Next:
 - Monitor queue/startup, inspect log header for resolved overrides, parse metrics once rank-0 JSONL appears, and cancel/tune again if reset quality becomes zero or success remains collapsed.
+
+## 2026-06-14T20:03:00Z - JSONL-enabled reset-quality-cap relaunch
+
+Goal:
+- Relaunch the reset-quality-cap PPO run with direct scalar JSONL enabled so reset-quality and warmstart diagnostics can be monitored.
+
+Result:
+- Canceled job `29073685` after it reached epoch 51 because it was launched with `DEXTRAH_RLGAMES_JSONL_METRICS=False`; run directory contained TensorBoard summaries but no `metrics/direct_info_rank_0.jsonl`, and TensorBoard tooling was not available in the login/site Python environments.
+- Submitted replacement job `29073801` with identical source/config plus `DEXTRAH_RLGAMES_JSONL_METRICS=True`.
+
+Command / Job:
+- canceled_job_id: `29073685`
+- canceled_run_name: `franka_multi_state_teacher_7195_96ae_qualitycap_77927d9_20260614T1952Z`
+- canceled_result: `CANCELLED by 158351`, elapsed `00:10:53`; reached `epoch: 51/120`.
+- replacement_job_id: `29073801`
+- replacement_run_name: `franka_multi_state_teacher_7195_96ae_qualitycap_jsonl_77927d9_20260614T2003Z`
+- replacement_run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_96ae_qualitycap_jsonl_77927d9_20260614T2003Z`
+- replacement_log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29073801.out`
+
+Analysis:
+- Training itself started successfully under the cap patch, so the relaunch is for observability rather than an environment/runtime failure.
+- The first scene creation on `batch-block7-03208` took about `258 s`, so early startup should not be mistaken for a hang if logs are slow before the first epoch.
+
+Next:
+- Confirm the replacement log resolves `DEXTRAH_RLGAMES_JSONL_METRICS=True`.
+- Monitor the first epochs and compare reset-quality/contact metrics against canceled job `29073180`.
