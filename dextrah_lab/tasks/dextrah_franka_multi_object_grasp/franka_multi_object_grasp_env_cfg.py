@@ -93,6 +93,11 @@ class DextrahFrankaMultiObjectGraspEnvCfg(DextrahFrankaCubeGraspEnvCfg):
     grasp_prior_reset_min_pregrasp_z = 0.45
     grasp_prior_reset_max_center_distance_frac = 0.30
     grasp_prior_reset_min_width = 0.008
+    grasp_prior_reset_ik_iterations = 64
+    grasp_prior_reset_ik_damping = 0.035
+    grasp_prior_reset_ik_max_joint_step = 0.25
+    grasp_prior_reset_ik_pos_tolerance = 0.055
+    grasp_prior_reset_ik_rot_tolerance = 0.55
 
     # Optional online RGB observation path used by the RGB PPO task below.
     enable_rgb_observations = False

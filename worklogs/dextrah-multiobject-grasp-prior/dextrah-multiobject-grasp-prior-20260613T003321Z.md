@@ -3723,3 +3723,60 @@ Related running-job cleanup:
 
 Next:
 - Commit/push this fix, deploy the exact commit to the L40 remote worktree, rerun the exact-grasp video validation, and only relaunch A100 PPO after grasp-contact passes.
+
+## 2026-06-14T10:00:00Z - Exact-grasp validation relaunch after zero-offset fix
+
+Goal:
+- Verify with rendering that exact grasp-prior reset can produce clean object contact and lift for the same two-object debug set before relaunching PPO.
+
+Version Control:
+- local_commit: `d2e5272369262f56f2c59efe52b65b8937876004`
+- push: pushed to `origin/main`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-main-evalfix-20260614-94d7274`
+- remote_commit: `d2e5272369262f56f2c59efe52b65b8937876004`
+- deployment: Git bundle copied to `/lustre/fsw/portfolios/nvr/users/lzha/src/bundles/dextrah-main-d2e5272.bundle`; remote worktree checked out detached at the exact commit.
+
+Command / Job:
+- job_id: `1029210`
+- host: `l401`
+- run: `franka_multi_video_exactgrasp_offset0_fix_d2e5272_20260614T1000Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_1029210.out`
+- output_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_exactgrasp_offset0_fix_d2e5272_20260614T1000Z`
+- key settings: `GRASP_PREGRASP_OFFSET=0.0`, `GRASP_RESET_REQUIRE_TOPDOWN=True`, `GRASP_RESET_MIN_PREGRASP_Z=0.25`, `GRASP_RESET_CANDIDATE_COUNT=2048`, `GRASP_CONTACT_SCORE_STEPS=60`, `GRASP_WARMSTART_CLOSE_STEPS=24`, `GRASP_WARMSTART_LIFT_STEPS=126`, `GRASP_WARMSTART_LIFT_ACTION_Z=0.35`.
+
+Next:
+- Monitor job `1029210`; inspect `video_metrics.json` and rendered `grasp_contact` frames/videos. Relaunch PPO only if the grasp-contact scenario passes or if the remaining failure is diagnosed and fixed.
+
+## 2026-06-14T10:10:21Z - Reset IK quality and wrapper parity patch
+
+Goal:
+- Fix the exact-grasp rendered validation before relaunching PPO, and make training/eval/validation wrappers expose the same reset IK controls.
+
+Hypothesis:
+- Job `1029210` failed because the top-down candidate filter rejected all candidates for one debug object.
+- Job `1029211` with top-down disabled found candidates, but IK landed about 4 cm from the target with the old exact-reset tolerance, so the validator fell back to the default robot pose. The rendered grasp-contact frame confirmed this was not a real grasp reset.
+
+Result:
+- `1029210` status: failed. Evidence: `selected_candidate_topdown_count=0`, `selected_candidate_valid_count=0`, `selected_reset_success=False`, warmstart inactive.
+- `1029211` status: failed. Evidence: `selected_candidate_valid_count=247`, but `selected_reset_pos_error=0.0406`, `selected_reset_rot_error=0.2447`, `selected_reset_success=False`, `selected_quality_success=False`, warmstart inactive, rendered frame showed the default hover pose.
+
+Change:
+- Multi-object reset defaults now allow a stronger IK solve (`64` iterations, lower damping, larger joint step, and looser exact-reset tolerances) for heterogeneous GraspGen objects.
+- Grasp reset quality now gates on the actual post-IK finger-center distance so fallback/default robot poses cannot pass based only on projected target geometry.
+- Added optional reset IK pass-through and logging to the rendered validation, checkpoint eval, and 8-GPU training wrappers.
+
+Version Control:
+- agent_id: `merge-dp-rgb-main-20260613`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/merge-dp-rgb-main-20260613`
+- branch: `main`
+- base_commit: `d2e5272369262f56f2c59efe52b65b8937876004`
+- implementation_commit: pending
+- changed_files: `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`, `dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py`, `dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py`, `cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh`, `cluster/sbatch_train_teacher_8gpu.sh`, `cluster/sbatch_eval_franka_multi_object_grasp_1gpu.sh`, this worklog.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py`
+- `bash -n cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh && bash -n cluster/sbatch_train_teacher_8gpu.sh && bash -n cluster/sbatch_eval_franka_multi_object_grasp_1gpu.sh`
+- `git diff --check -- dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_eval_franka_multi_object_grasp_1gpu.sh`
+
+Next:
+- Commit/push, deploy the exact commit to the L40 remote worktree, relaunch exact-grasp rendered validation with top-down disabled and explicit IK overrides, inspect the video/metrics, then launch A100 PPO only after grasp-contact is clean.

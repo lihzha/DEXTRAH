@@ -992,6 +992,7 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         self.grasp_prior_reset_projected_exact_finger_center_dist[env_ids] = torch.norm(
             projected_exact_body_finger_center - quality_reference_pos_env, dim=-1
         )
+        actual_finger_center_dist = self.grasp_prior_reset_projected_exact_finger_center_dist[env_ids]
 
         gripper_half_axis = 0.5 * (self.left_finger_pos[env_ids] - self.right_finger_pos[env_ids])
         pregrasp_ee_pos_env = targets["target_ee_pos_w"] - self.scene.env_origins[env_ids]
@@ -1022,6 +1023,7 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             success
             & (self.grasp_prior_reset_open_width_margin[env_ids] >= 0.0)
             & (offset_dot > 0.25)
+            & (actual_finger_center_dist <= 1.25 * object_size)
             & (exact_tip_center_dist <= 0.75 * object_size)
             & (exact_tip_max_dist <= 1.25 * object_size)
             & (pregrasp_tip_table_clearance >= float(self.cfg.finger_table_penetration_termination_margin))
