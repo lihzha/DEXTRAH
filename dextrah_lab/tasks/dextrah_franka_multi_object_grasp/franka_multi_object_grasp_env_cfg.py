@@ -2,10 +2,23 @@
 
 from __future__ import annotations
 
+import isaaclab.sim as sim_utils
+from isaaclab.sensors import TiledCameraCfg
 from isaaclab.utils import configclass
 
 from dextrah_lab.tasks.dextrah_franka_cube_grasp.franka_cube_grasp_env_cfg import (
     DextrahFrankaCubeGraspEnvCfg,
+)
+
+FRANKA_MULTI_OBJECT_RGB_PROPRIO_DIM = 33
+FRANKA_MULTI_OBJECT_RGB_IMAGE_HEIGHT = 240
+FRANKA_MULTI_OBJECT_RGB_IMAGE_WIDTH = 320
+FRANKA_MULTI_OBJECT_RGB_IMAGE_CHANNELS = 3
+FRANKA_MULTI_OBJECT_RGB_OBSERVATION_SPACE = (
+    FRANKA_MULTI_OBJECT_RGB_PROPRIO_DIM
+    + FRANKA_MULTI_OBJECT_RGB_IMAGE_CHANNELS
+    * FRANKA_MULTI_OBJECT_RGB_IMAGE_HEIGHT
+    * FRANKA_MULTI_OBJECT_RGB_IMAGE_WIDTH
 )
 
 
@@ -74,3 +87,46 @@ class DextrahFrankaMultiObjectGraspEnvCfg(DextrahFrankaCubeGraspEnvCfg):
     grasp_prior_reset_min_pregrasp_z = 0.10
     grasp_prior_reset_max_center_distance_frac = 0.30
     grasp_prior_reset_min_width = 0.008
+
+    # Optional online RGB observation path used by the RGB PPO task below.
+    enable_rgb_observations = False
+    rgb_robot_proprio_dim = FRANKA_MULTI_OBJECT_RGB_PROPRIO_DIM
+    rgb_image_height = FRANKA_MULTI_OBJECT_RGB_IMAGE_HEIGHT
+    rgb_image_width = FRANKA_MULTI_OBJECT_RGB_IMAGE_WIDTH
+    rgb_image_channels = FRANKA_MULTI_OBJECT_RGB_IMAGE_CHANNELS
+    rgb_image_flat_dim = (
+        FRANKA_MULTI_OBJECT_RGB_IMAGE_CHANNELS
+        * FRANKA_MULTI_OBJECT_RGB_IMAGE_HEIGHT
+        * FRANKA_MULTI_OBJECT_RGB_IMAGE_WIDTH
+    )
+
+    # Workspace-facing Franka view derived from the validation rollout camera.
+    # Isaac Lab's world camera convention uses +X forward and +Z up.
+    rgb_camera_pos = (-0.10, -0.78, 1.42)
+    rgb_camera_rot = (0.51027146, -0.27909221, 0.17949265, 0.79341853)
+    rgb_camera_horizontal_aperture = 21.02
+    rgb_camera_focal_length = 23.59
+    tiled_camera: TiledCameraCfg = TiledCameraCfg(
+        prim_path="/World/envs/env_.*/Camera",
+        offset=TiledCameraCfg.OffsetCfg(pos=rgb_camera_pos, rot=rgb_camera_rot, convention="world"),
+        data_types=["rgb"],
+        spawn=sim_utils.PinholeCameraCfg(
+            focal_length=rgb_camera_focal_length,
+            focus_distance=400.0,
+            horizontal_aperture=rgb_camera_horizontal_aperture,
+            clipping_range=(0.01, 2.0),
+        ),
+        width=rgb_image_width,
+        height=rgb_image_height,
+    )
+
+
+@configclass
+class DextrahFrankaMultiObjectRgbGraspEnvCfg(DextrahFrankaMultiObjectGraspEnvCfg):
+    """RGB-observation Franka pick-up task over GraspGen objects."""
+
+    enable_rgb_observations = True
+    observation_space = FRANKA_MULTI_OBJECT_RGB_OBSERVATION_SPACE
+    state_space = 0
+    num_observations = observation_space
+    num_states = state_space

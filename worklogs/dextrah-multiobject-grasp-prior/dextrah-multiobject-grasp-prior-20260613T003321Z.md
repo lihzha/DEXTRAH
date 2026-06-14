@@ -2363,3 +2363,40 @@ Command / Job:
 
 Result:
 - status: submitted on l401, monitoring in progress.
+## 2026-06-14T05:40:56Z - Merge main and add RGB teacher task
+
+Goal:
+- Resume the user-requested sequence: merge the current multi-object environment to `main`, then launch RL training from a merged `main` commit with object yaw randomization, per-env object/pose variation, and object-conditioned policy inputs.
+
+Hypothesis:
+- The environment branch already has correct state-object conditioning and per-reset pose randomization, but successful teacher-scale training should use the RGB teacher stack from the separate RGB branch without merging its unrelated deletions.
+
+Change:
+- Fast-forwarded local and remote `main` from `483d0e5` to `c46a58d`.
+- Added a minimal RGB teacher stack on top of `main`: `Dextrah-Franka-Multi-Object-RGB-Grasp`, tiled RGB camera config, RGB observation path, `a2c_rgb_resnet` RL-Games model, RGB PPO config, trainer model registration, and A100 wrapper support.
+- Kept the stable-pose cache API and validation fixes from `main`; did not merge the full RGB branch because it carries unrelated deletions and dirty local files.
+
+Version Control:
+- agent_id: `integrate-multiobject-main-20260613`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/merge-dp-rgb-main-20260613`
+- branch: `main`
+- base_commit: `c46a58d05513d3b33dc1734a78b7b23ed4f25bc0`
+- implementation_commit: `c8861d37ce891df35af8be7122a354338816057e`
+- push/pull: local commit complete; push pending
+- changed_files: `cluster/sbatch_train_teacher_8gpu.sh`, `dextrah_lab/rl_games/a2c_rgb_resnet.py`, `dextrah_lab/rl_games/train.py`, `dextrah_lab/tasks/dextrah_franka_multi_object_grasp/agents/rl_games_ppo_franka_multi_object_rgb_grasp_cfg.yaml`, `dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py`, `dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py`, `dextrah_lab/tasks/dextrah_franka_multi_object_grasp/gym_setup.py`, this worklog
+
+Command / Job:
+- checks: `python3 -m py_compile dextrah_lab/rl_games/a2c_rgb_resnet.py dextrah_lab/rl_games/train.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/gym_setup.py`; `bash -n cluster/sbatch_train_teacher_8gpu.sh`; `git diff --check`
+- stale_job: A100 job `29056648` was a pre-merge RGB run from snapshot `franka-multiobject-rgb-phasegate-2670719`; it was cancelled at epoch `32/200` and saved epoch-25 checkpoint `last_dextrah_franka_multi_object_rgb_grasp_ep_25_rew_117.25747.pth`.
+
+Result:
+- status: patch checks passed locally; commit/push and A100 relaunch pending.
+- implementation_notes: state task policy observations include object pose via inherited cube observations and append 8 object-specific features; RGB task policy conditions on object appearance/pose through the image and robot proprioception.
+
+Analysis:
+- `object_spawn_yaw_randomization_deg=180.0` samples in `[-pi, pi]`, so it covers 360 degrees.
+- Object asset assignment is per vectorized env at scene construction because Isaac assets are instantiated per env; reset-time XY/yaw/stable-pose sampling still varies independently per env and episode.
+- Early A100 `TERM` signals have repeatedly cancelled runs outside the wrapper's default wall-time requeue window. The next launch should set `REQUEUE_ON_EARLY_TERM=True` so preemption/early termination requeues instead of stopping training.
+
+Next:
+- Commit and push the RGB teacher integration, deploy exact `main` commit to an A100-owned worktree, run a small RGB smoke, then launch/resume the 8-GPU teacher run with `REQUEUE_ON_EARLY_TERM=True` and monitor metrics/checkpoints until success.

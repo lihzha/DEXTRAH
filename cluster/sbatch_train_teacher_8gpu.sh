@@ -79,6 +79,22 @@ elif [ "$TASK" = "Dextrah-Franka-Cube-Grasp" ] || [ "$TASK" = "Dextrah-Franka-Cu
   ENTROPY_COEF="${ENTROPY_COEF:-0.0005}"
   E_CLIP="${E_CLIP:-0.2}"
   GRAD_NORM="${GRAD_NORM:-1.0}"
+elif [ "$TASK" = "Dextrah-Franka-Multi-Object-RGB-Grasp" ]; then
+  NUM_ENVS="${NUM_ENVS:-256}"
+  MINIBATCH_SIZE="${MINIBATCH_SIZE:-4096}"
+  CENTRAL_VALUE_MINIBATCH_SIZE="${CENTRAL_VALUE_MINIBATCH_SIZE:-$MINIBATCH_SIZE}"
+  LEARNING_RATE="${LEARNING_RATE:-0.0001}"
+  CENTRAL_VALUE_LEARNING_RATE="${CENTRAL_VALUE_LEARNING_RATE:-0.0001}"
+  HORIZON_LENGTH="${HORIZON_LENGTH:-32}"
+  MINI_EPOCHS="${MINI_EPOCHS:-3}"
+  SAVE_FREQUENCY="${SAVE_FREQUENCY:-25}"
+  GAMMA="${GAMMA:-0.995}"
+  TAU="${TAU:-0.95}"
+  KL_THRESHOLD="${KL_THRESHOLD:-0.012}"
+  ENTROPY_COEF="${ENTROPY_COEF:-0.0005}"
+  E_CLIP="${E_CLIP:-0.2}"
+  GRAD_NORM="${GRAD_NORM:-1.0}"
+  USE_CUDA_GRAPH="${USE_CUDA_GRAPH:-False}"
 else
   NUM_ENVS="${NUM_ENVS:-4096}"
   MINIBATCH_SIZE="${MINIBATCH_SIZE:-16384}"
@@ -149,6 +165,8 @@ CUBE_DESCEND_ACTION_PENALTY_WEIGHT="${CUBE_DESCEND_ACTION_PENALTY_WEIGHT:-}"
 CUBE_TABLE_CLEARANCE_PENALTY_WEIGHT="${CUBE_TABLE_CLEARANCE_PENALTY_WEIGHT:-}"
 CUBE_GRIPPER_CLOSE_REG_WEIGHT="${CUBE_GRIPPER_CLOSE_REG_WEIGHT:-}"
 CUBE_ACTION_PENALTY_WEIGHT="${CUBE_ACTION_PENALTY_WEIGHT:-}"
+RGB_TRAIN_BACKBONE="${RGB_TRAIN_BACKBONE:-}"
+RGB_ENCODER_BATCH_SIZE="${RGB_ENCODER_BATCH_SIZE:-}"
 TRAJECTORY_TRACKING_POSITION_WEIGHT="${TRAJECTORY_TRACKING_POSITION_WEIGHT:-}"
 TRAJECTORY_TRACKING_ORIENTATION_WEIGHT="${TRAJECTORY_TRACKING_ORIENTATION_WEIGHT:-}"
 TRAJECTORY_TRACKING_GRIPPER_WEIGHT="${TRAJECTORY_TRACKING_GRIPPER_WEIGHT:-}"
@@ -173,7 +191,9 @@ REQUEUE_SUBMITTED=0
 
 case "$GRASP_PRIOR_RESET_ENABLED" in
   True|true|1|yes|Yes)
-    if [ "$TASK" != "Dextrah-Franka-Cube-Grasp" ] && [ "$TASK" != "Dextrah-Franka-Multi-Object-Grasp" ]; then
+    if [ "$TASK" != "Dextrah-Franka-Cube-Grasp" ] \
+      && [ "$TASK" != "Dextrah-Franka-Multi-Object-Grasp" ] \
+      && [ "$TASK" != "Dextrah-Franka-Multi-Object-RGB-Grasp" ]; then
       echo "GRASP_PRIOR_RESET_ENABLED is only supported for Franka cube or multi-object grasp tasks" >&2
       exit 2
     fi
@@ -327,6 +347,7 @@ mkdir -p \
   "$RESULTS_NFS/logs" \
   "$NFS_ROOT/slurm_logs/dextrah" \
   "$CACHE_NFS/kit" "$CACHE_NFS/ov" "$CACHE_NFS/pip" \
+  "$CACHE_NFS/torch" \
   "$CACHE_NFS/glcache" "$CACHE_NFS/computecache" \
   "$CACHE_NFS/omni_logs" "$CACHE_NFS/carb_logs" \
   "$CACHE_NFS/data" "$CACHE_NFS/documents"
@@ -413,6 +434,8 @@ echo "CUBE_DESCEND_ACTION_PENALTY_WEIGHT=$CUBE_DESCEND_ACTION_PENALTY_WEIGHT"
 echo "CUBE_TABLE_CLEARANCE_PENALTY_WEIGHT=$CUBE_TABLE_CLEARANCE_PENALTY_WEIGHT"
 echo "CUBE_GRIPPER_CLOSE_REG_WEIGHT=$CUBE_GRIPPER_CLOSE_REG_WEIGHT"
 echo "CUBE_ACTION_PENALTY_WEIGHT=$CUBE_ACTION_PENALTY_WEIGHT"
+echo "RGB_TRAIN_BACKBONE=$RGB_TRAIN_BACKBONE"
+echo "RGB_ENCODER_BATCH_SIZE=$RGB_ENCODER_BATCH_SIZE"
 echo "TRAJECTORY_TRACKING_POSITION_WEIGHT=$TRAJECTORY_TRACKING_POSITION_WEIGHT"
 echo "TRAJECTORY_TRACKING_ORIENTATION_WEIGHT=$TRAJECTORY_TRACKING_ORIENTATION_WEIGHT"
 echo "TRAJECTORY_TRACKING_GRIPPER_WEIGHT=$TRAJECTORY_TRACKING_GRIPPER_WEIGHT"
@@ -432,7 +455,7 @@ echo "RUN_NAME=$RUN_NAME"
 srun \
   --ntasks=1 \
   --container-image="$IMAGE" \
-  --container-mounts=/dev/shm:/dev/shm,"$CODE_NFS":/code,"$FABRICS_NFS":/fabrics,"$ISAACLAB_NFS":/IsaacLab,"$ENV_ROOT":/envs,"$RESULTS_NFS":/results,"$CACHE_NFS/kit":/isaac-sim/kit/cache,"$CACHE_NFS/ov":/root/.cache/ov,"$CACHE_NFS/pip":/root/.cache/pip,"$CACHE_NFS/glcache":/root/.cache/nvidia/GLCache,"$CACHE_NFS/computecache":/root/.nv/ComputeCache,"$CACHE_NFS/omni_logs":/root/.nvidia-omniverse/logs,"$CACHE_NFS/carb_logs":/isaac-sim/kit/logs/Kit/Isaac-Sim,"$CACHE_NFS/data":/root/.local/share/ov/data,"$CACHE_NFS/documents":/root/Documents \
+  --container-mounts=/dev/shm:/dev/shm,"$CODE_NFS":/code,"$FABRICS_NFS":/fabrics,"$ISAACLAB_NFS":/IsaacLab,"$ENV_ROOT":/envs,"$RESULTS_NFS":/results,"$CACHE_NFS/kit":/isaac-sim/kit/cache,"$CACHE_NFS/ov":/root/.cache/ov,"$CACHE_NFS/pip":/root/.cache/pip,"$CACHE_NFS/torch":/root/.cache/torch,"$CACHE_NFS/glcache":/root/.cache/nvidia/GLCache,"$CACHE_NFS/computecache":/root/.nv/ComputeCache,"$CACHE_NFS/omni_logs":/root/.nvidia-omniverse/logs,"$CACHE_NFS/carb_logs":/isaac-sim/kit/logs/Kit/Isaac-Sim,"$CACHE_NFS/data":/root/.local/share/ov/data,"$CACHE_NFS/documents":/root/Documents \
   --no-container-entrypoint \
   --container-remap-root \
   --container-writable \
@@ -449,6 +472,7 @@ srun \
     export MASTER_ADDR=127.0.0.1
     export MASTER_PORT='$MASTER_PORT'
     export WANDB_MODE=offline
+    export TORCH_HOME=/root/.cache/torch
     export DEXTRAH_AUTO_RESUME='$AUTO_RESUME'
     export DEXTRAH_RUN_NAME='$RUN_NAME'
     export DEXTRAH_LOG_ROOT=/results/logs
@@ -481,6 +505,11 @@ PY
       MAX_ITER_ARGS=(--max_iterations '$MAX_ITERATIONS')
     fi
 
+    CAMERA_ARGS=()
+    if [ '$TASK' = 'Dextrah-Franka-Multi-Object-RGB-Grasp' ]; then
+      CAMERA_ARGS=(--enable_cameras)
+    fi
+
     DISTRIBUTED_ARGS=()
     if [ '$DISTRIBUTED' = 'True' ]; then
       DISTRIBUTED_ARGS=(--distributed)
@@ -493,10 +522,29 @@ PY
       RESUME_ARGS=(--auto_resume)
     fi
 
+    CENTRAL_VALUE_AGENT_OVERRIDES=()
+    if [ '$TASK' != 'Dextrah-Franka-Multi-Object-RGB-Grasp' ]; then
+      CENTRAL_VALUE_AGENT_OVERRIDES=(
+        agent.params.config.central_value_config.minibatch_size='$CENTRAL_VALUE_MINIBATCH_SIZE'
+        agent.params.config.central_value_config.learning_rate='$CENTRAL_VALUE_LEARNING_RATE'
+        agent.params.config.central_value_config.kl_threshold='$KL_THRESHOLD'
+      )
+    fi
+
+    RGB_AGENT_OVERRIDES=()
+    if [ '$TASK' = 'Dextrah-Franka-Multi-Object-RGB-Grasp' ]; then
+      if [ -n '$RGB_TRAIN_BACKBONE' ]; then
+        RGB_AGENT_OVERRIDES+=(agent.params.network.rgb.train_backbone='$RGB_TRAIN_BACKBONE')
+      fi
+      if [ -n '$RGB_ENCODER_BATCH_SIZE' ]; then
+        RGB_AGENT_OVERRIDES+=(agent.params.network.rgb.encoder_batch_size='$RGB_ENCODER_BATCH_SIZE')
+      fi
+    fi
+
     PRIOR_RESET_OVERRIDES=()
     case '$GRASP_PRIOR_RESET_ENABLED' in
       True|true|1|yes|Yes)
-        if [ '$TASK' = 'Dextrah-Franka-Multi-Object-Grasp' ]; then
+        if [ '$TASK' = 'Dextrah-Franka-Multi-Object-Grasp' ] || [ '$TASK' = 'Dextrah-Franka-Multi-Object-RGB-Grasp' ]; then
           PRIOR_RESET_OVERRIDES=(
             env.grasp_prior_reset_enabled=True
             env.grasp_prior_allow_missing='$GRASP_PRIOR_ALLOW_MISSING'
@@ -636,6 +684,26 @@ PY
       append_env_override object_stable_pose_cache_dir '$OBJECT_STABLE_POSE_CACHE_DIR'
       append_franka_cube_reward_overrides
       append_grasp_prior_action_guidance_overrides
+    elif [ '$TASK' = 'Dextrah-Franka-Multi-Object-RGB-Grasp' ]; then
+      TASK_OVERRIDES=(
+        agent.wandb_activate=False
+        env.use_cuda_graph='$USE_CUDA_GRAPH'
+        env.max_objects='$MAX_OBJECTS'
+        env.object_asset_assignment='$OBJECT_ASSET_ASSIGNMENT'
+        env.object_spawn_center_offset_x='$OBJECT_SPAWN_CENTER_OFFSET_X'
+        env.object_spawn_center_offset_y='$OBJECT_SPAWN_CENTER_OFFSET_Y'
+        env.object_spawn_xy_randomization='$OBJECT_SPAWN_XY_RANDOMIZATION'
+        env.object_spawn_yaw_randomization_deg='$OBJECT_SPAWN_YAW_RANDOMIZATION_DEG'
+        env.object_stable_pose_enabled='$OBJECT_STABLE_POSE_ENABLED'
+        env.object_stable_pose_count='$OBJECT_STABLE_POSE_COUNT'
+        env.object_stable_pose_randomize='$OBJECT_STABLE_POSE_RANDOMIZE'
+        env.object_stable_pose_allow_missing='$OBJECT_STABLE_POSE_ALLOW_MISSING'
+      )
+      append_env_override object_asset_manifest_path '$OBJECT_ASSET_MANIFEST_PATH'
+      append_env_override object_assets_dir '$OBJECT_ASSETS_DIR'
+      append_env_override object_stable_pose_cache_dir '$OBJECT_STABLE_POSE_CACHE_DIR'
+      append_franka_cube_reward_overrides
+      append_grasp_prior_action_guidance_overrides
     else
       TASK_OVERRIDES=(
         agent.wandb_activate=False
@@ -652,6 +720,7 @@ PY
     TRAIN_ARGS=(
       train.py \
         --headless \
+        \"\${CAMERA_ARGS[@]}\" \
         --task='$TASK' \
         --seed '$SEED' \
         \"\${DISTRIBUTED_ARGS[@]}\" \
@@ -659,21 +728,20 @@ PY
         --num_envs '$NUM_ENVS' \
         \"\${MAX_ITER_ARGS[@]}\" \
         agent.params.config.minibatch_size='$MINIBATCH_SIZE' \
-        agent.params.config.central_value_config.minibatch_size='$CENTRAL_VALUE_MINIBATCH_SIZE' \
         agent.params.config.learning_rate='$LEARNING_RATE' \
-        agent.params.config.central_value_config.learning_rate='$CENTRAL_VALUE_LEARNING_RATE' \
         agent.params.config.horizon_length='$HORIZON_LENGTH' \
         agent.params.config.mini_epochs='$MINI_EPOCHS' \
         agent.params.config.gamma='$GAMMA' \
         agent.params.config.tau='$TAU' \
         agent.params.config.kl_threshold='$KL_THRESHOLD' \
-        agent.params.config.central_value_config.kl_threshold='$KL_THRESHOLD' \
         agent.params.config.entropy_coef='$ENTROPY_COEF' \
         agent.params.network.space.continuous.sigma_init.val='$SIGMA_INIT_VAL' \
         agent.params.config.e_clip='$E_CLIP' \
         agent.params.config.grad_norm='$GRAD_NORM' \
         agent.params.config.save_frequency='$SAVE_FREQUENCY' \
         agent.params.config.multi_gpu='$MULTI_GPU' \
+        \"\${CENTRAL_VALUE_AGENT_OVERRIDES[@]}\" \
+        \"\${RGB_AGENT_OVERRIDES[@]}\" \
         \"\${TASK_OVERRIDES[@]}\"
         \"\${PRIOR_RESET_OVERRIDES[@]}\"
     )

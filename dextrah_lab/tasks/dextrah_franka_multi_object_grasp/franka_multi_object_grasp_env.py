@@ -15,6 +15,7 @@ import omni.usd
 import isaaclab.sim as sim_utils
 import isaaclab.utils.math as math_utils
 from isaaclab.assets import Articulation, RigidObject, RigidObjectCfg
+from isaaclab.sensors import TiledCamera
 from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane
 
 from dextrah_lab.tasks.dextrah_franka_cube_grasp.franka_cube_grasp_env import (
@@ -25,7 +26,10 @@ from dextrah_lab.tasks.dextrah_franka_star_kitting.franka_star_kitting_env impor
     DextrahFrankaStarKittingEnv,
 )
 
-from .franka_multi_object_grasp_env_cfg import DextrahFrankaMultiObjectGraspEnvCfg
+from .franka_multi_object_grasp_env_cfg import (
+    DextrahFrankaMultiObjectGraspEnvCfg,
+    DextrahFrankaMultiObjectRgbGraspEnvCfg,
+)
 
 
 def _repo_root() -> Path:
@@ -334,6 +338,9 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
 
         light_cfg = sim_utils.DomeLightCfg(intensity=1800.0, color=(0.75, 0.75, 0.75))
         light_cfg.func("/World/Light", light_cfg)
+        if bool(getattr(self.cfg, "enable_rgb_observations", False)):
+            self._tiled_camera = TiledCamera(self.cfg.tiled_camera)
+            self.scene.sensors["tiled_camera"] = self._tiled_camera
 
     def _setup_stable_pose_resets(self) -> None:
         self._object_stable_pose_enabled = bool(self.cfg.object_stable_pose_enabled)
@@ -1016,7 +1023,46 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
                 torch.zeros_like(self.time_in_success_region[env_ids]),
             )
 
+    def _get_robot_proprio_observations(self) -> torch.Tensor:
+        self._compute_intermediate_values()
+        joint_pos_scaled = (
+            2.0
+            * (self._robot.data.joint_pos - self.robot_dof_lower_limits)
+            / (self.robot_dof_upper_limits - self.robot_dof_lower_limits)
+            - 1.0
+        )
+        joint_vel_scaled = 0.12 * self._robot.data.joint_vel
+        obs = torch.cat(
+            (
+                joint_pos_scaled,
+                joint_vel_scaled,
+                self.ee_pos,
+                self.ee_quat,
+                self.gripper_width.unsqueeze(-1),
+                self.actions,
+            ),
+            dim=-1,
+        )
+        expected_dim = int(getattr(self.cfg, "rgb_robot_proprio_dim", obs.shape[-1]))
+        if obs.shape[-1] != expected_dim:
+            raise RuntimeError(f"RGB robot proprio dim mismatch: got {obs.shape[-1]}, expected {expected_dim}")
+        return torch.clamp(obs, -5.0, 5.0)
+
+    def _get_rgb_policy_observations(self) -> dict[str, torch.Tensor]:
+        proprio = self._get_robot_proprio_observations()
+        rgb = self._tiled_camera.data.output["rgb"].clone()[..., :3]
+        rgb = rgb.permute((0, 3, 1, 2)).contiguous().to(dtype=torch.float32) / 255.0
+        image_dim = int(getattr(self.cfg, "rgb_image_flat_dim", rgb.shape[1] * rgb.shape[2] * rgb.shape[3]))
+        flat_rgb = rgb.flatten(start_dim=1)
+        if flat_rgb.shape[-1] != image_dim:
+            raise RuntimeError(f"RGB image flat dim mismatch: got {flat_rgb.shape[-1]}, expected {image_dim}")
+        obs = torch.cat((proprio, flat_rgb), dim=-1)
+        return {"policy": obs}
+
     def _get_observations(self) -> dict[str, torch.Tensor]:
+        if bool(getattr(self.cfg, "enable_rgb_observations", False)):
+            return self._get_rgb_policy_observations()
+
         base = super()._get_observations()
         obs = base["policy"]
         object_features = torch.cat(
@@ -1043,3 +1089,9 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             "usd_paths": [str(asset["usd_path"]) for asset in self._object_assets],
             "grasp_prior_paths": [str(asset.get("grasp_prior_path") or "") for asset in self._object_assets],
         }
+
+
+class DextrahFrankaMultiObjectRgbGraspEnv(DextrahFrankaMultiObjectGraspEnv):
+    """RGB-observation variant of the Franka multi-object GraspGen task."""
+
+    cfg: DextrahFrankaMultiObjectRgbGraspEnvCfg

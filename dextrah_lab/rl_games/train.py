@@ -39,6 +39,8 @@ args_cli, hydra_args = parser.parse_known_args()
 # always enable cameras to record video
 if args_cli.video:
     args_cli.enable_cameras = True
+if args_cli.task and "RGB" in args_cli.task:
+    args_cli.enable_cameras = True
 
 # clear out sys.argv for Hydra
 sys.argv = [sys.argv[0]] + hydra_args
@@ -60,6 +62,8 @@ from rl_games.common import env_configurations, vecenv
 from rl_games.common.algo_observer import IsaacAlgoObserver
 from rl_games.algos_torch import model_builder
 from rl_games.torch_runner import Runner
+
+from a2c_rgb_resnet import A2CRgbResnetBuilder
 
 from isaaclab.utils.dict import print_dict
 from isaaclab.utils.io import dump_pickle, dump_yaml
@@ -291,6 +295,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             observers.append(wandb_observer)
 
     runner = Runner(MultiObserver(observers))
+    model_builder.register_network("a2c_rgb_resnet", A2CRgbResnetBuilder)
     runner.load(agent_cfg)
 
     # reset the agent and env
