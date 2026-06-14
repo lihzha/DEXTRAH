@@ -5126,3 +5126,29 @@ Validation:
 
 Next:
 - Commit and deploy the patch, then relaunch PPO from the DAgger BC checkpoint with post-lift close/up rewards and open/descend penalties enabled. Monitor the new post-lift reward terms plus policy z/close action, then evaluate the best checkpoint.
+
+## 2026-06-14T16:52:00Z - PPO branch 2 post-lift shaping launch
+
+Goal:
+- Test whether explicit post-lift close/up rewards and open/descend penalties prevent the policy from losing the object after brief contact/lift.
+
+Version Control:
+- local_commit: `91063df57ef3d018fc29d44357088cb7bd3f6eb4`
+- pushed: `main` updated on origin from `d5e8b27` to `91063df`
+- remote_source: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-bc-fallback-20260614-d5e8b27`
+- remote_deploy: GitHub fetch on `a1001` failed due `Permission denied (publickey)`, so commit `91063df` was deployed via a Git bundle and checked out detached in the remote worktree.
+- remote_status: detached at `91063df57ef3d018fc29d44357088cb7bd3f6eb4`; `bash -n cluster/sbatch_train_teacher_8gpu.sh` passed remotely.
+
+Command / Job:
+- host: `a1001`
+- job_id: `29071021`
+- run: `franka_multi_state_teacher_7195_96ae_postlift_ppo_d5e8b27_91063df_20260614T1649Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29071021.out`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_96ae_postlift_ppo_d5e8b27_91063df_20260614T1649Z`
+- checkpoint: `/results/bc/franka_multi_7195_96ae_bc_dagger_hold_ep50_d5e8b27_20260614T1625Z/nn/bc_reference_action_imitation.pth`
+- PPO: `NUM_ENVS=2048`, `MAX_ITERATIONS=90`, seed `71`, LR `2e-5`, central value LR `3e-5`, KL `0.004`, entropy `0`, save frequency `5`, sigma init `-2`.
+- object/reset distribution: two-object robust manifest, random object assignment, `+-180 deg` yaw, `+-0.10 m` XY around `(0.05, 0.0)`, stable-pose cache, verified grasp indices, reset attempts `4`, candidates `64`.
+- reward/guidance: no scripted action override; action-prior reward weight `6`; base rewards `lift=35`, `height=10`, `success_bonus=80`, `close_action=3`, `lift_action=8`, `descend_penalty=-8`; post-lift gate height `0.03`, post-lift `close=3`, `open_penalty=-5`, `lift=4`, `descend_penalty=-8`.
+
+Next:
+- Monitor startup/config, then inspect `cube_postlift_*`, `cube_action_z`, `cube_gripper_close_action`, lift/success, and checkpoint evals. If post-lift terms improve training metrics, launch deterministic/stochastic L40 eval at the first strong checkpoint.
