@@ -4508,3 +4508,33 @@ Validation:
 
 Next:
 - Commit/push the fix, deploy a detached A100 worktree at the exact commit, and launch a warmstart-enabled multi-object PPO run. Early acceptance criteria: warmstart-active rollouts should show real lift/success, and `cube_action_warmstart_delta_abs` plus `cube_policy_action_z`/`cube_policy_gripper_action` should improve over the first checkpoint.
+
+## 2026-06-14T13:18:00Z - Warmstart imitation A100 PPO launch
+
+Goal:
+- Resume from the epoch-25 approach/close checkpoint with scripted close/lift warmstart and policy-dependent action-prior reward, then train until the policy itself learns pickup or until the next diagnosed failure requires another patch.
+
+Hypothesis:
+- The validated warmstart sequence can physically close/lift from the `0.03` pregrasp and `0.35` center-gated reset. With the action-prior reward fixed to score policy actions, PPO should receive both successful lifted-state rollouts and a direct imitation signal toward the reference approach/close/lift actions.
+
+Version Control:
+- local_commit: `cdbc421b96620950e74c1898df0af6ca55456c5c`
+- pushed: `origin/main`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-main-warmfix-20260614-cdbc421`
+- remote_commit: `cdbc421b96620950e74c1898df0af6ca55456c5c`
+- deployment: Git bundle `/lustre/fsw/portfolios/nvr/users/lzha/src/bundles/dextrah-main-cdbc421.bundle` fetched on A100 because the cluster cannot fetch GitHub over SSH.
+
+Command / Job:
+- host: `a1002`
+- job_id: `29066207`
+- run: `franka_multi_state_teacher_pg03_c035_warmfix_resume25_20260614T1318Z`
+- checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_pg03_c035_ap8_20260614T1218Z/nn/last_dextrah_franka_multi_object_grasp_ep_25_rew_937.9583.pth`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29066207.out`
+- metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_pg03_c035_warmfix_resume25_20260614T1318Z/metrics/direct_info_rank_0.jsonl`
+- scale: `NUM_ENVS=2048`, `MAX_ITERATIONS=600`, `HORIZON_LENGTH=64`, 8 GPUs, `SAVE_FREQUENCY=10`.
+- reset: two-object manifest, random object assignment, full yaw randomization, stable-pose cache, `GRASP_PRIOR_PREGRASP_OFFSET=0.03`, center gate `0.35`, attempts `4`, candidates `2048`, IK `96/0.035/0.25/0.055/0.55`.
+- warmstart/action-prior: warmstart enabled with approach/close/lift `4/40/260`, close width `0.004`, lift z action `0.50`; action-prior reward enabled with weight `20`, sharpness `1`, now comparing teacher actions against policy actions during warmstart.
+- reward shaping: lift `60`, height tracking `15`, success `80`, close action `2`, lift action `10`, descend penalty `-8`, gripper close regularizer `0`, action penalty `-0.0002`.
+
+Next:
+- Monitor startup. Early pass/fail checks: `cube_action_warmstart_active_has_lifted_rate` and `cube_action_warmstart_lift_lift_height` should show physical lift under warmstart; then `cube_action_warmstart_delta_abs`, `cube_policy_action_z`, and `cube_policy_gripper_action` should move toward the applied reference before warmstart is disabled in a follow-up run.
