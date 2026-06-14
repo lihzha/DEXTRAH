@@ -62,7 +62,12 @@ parser.add_argument("--grasp_reset_candidate_count", type=int, default=16)
 parser.add_argument("--grasp_reset_max_center_distance_frac", type=float, default=0.30)
 parser.add_argument("--grasp_reset_min_width", type=float, default=0.008)
 parser.add_argument("--grasp_pregrasp_offset", type=float, default=None)
-parser.add_argument("--grasp_contact_score_steps", type=int, default=60)
+parser.add_argument(
+    "--grasp_contact_score_steps",
+    type=int,
+    default=60,
+    help="Unrendered rollout steps for selecting the grasp-contact reset; set 0 to record the first quality reset.",
+)
 parser.add_argument("--disable_fabric", action="store_true", default=False)
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
@@ -866,13 +871,25 @@ def _select_scored_grasp_contact_state(env, task_env) -> tuple[int, dict[str, ob
         + max(int(task_env.cfg.grasp_prior_action_warmstart_close_steps), 0)
         + max(int(task_env.cfg.grasp_prior_action_warmstart_lift_steps), 0)
     )
-    score_steps = max(int(args_cli.grasp_contact_score_steps), warmstart_steps, 1)
+    requested_score_steps = int(args_cli.grasp_contact_score_steps)
+    score_steps = 0 if requested_score_steps <= 0 else max(requested_score_steps, warmstart_steps, 1)
 
     for attempt in range(attempts):
         _reset_settled_object_then_apply_grasp_prior(env, task_env)
         candidate_envs = _candidate_contact_envs(task_env)
         if not candidate_envs:
             continue
+        if score_steps <= 0:
+            selected_env = int(candidate_envs[0])
+            return selected_env, {
+                "passed": False,
+                "selection_attempt": attempt,
+                "selection_candidates": candidate_envs,
+                "selection_scoring": False,
+                "selection_score_steps": 0,
+                "selection_score": 0.0,
+                "selected_env": selected_env,
+            }
         reset_state = _snapshot_task_env_state(task_env)
         for selected_env in candidate_envs:
             _restore_task_env_state(task_env, reset_state)

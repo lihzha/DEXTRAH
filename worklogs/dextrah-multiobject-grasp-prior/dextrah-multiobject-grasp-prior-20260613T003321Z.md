@@ -3414,3 +3414,62 @@ Validation:
 
 Next:
 - Commit, push, update the A100 worktree, and rerun the filtered validation with a PPO-matched retry/candidate budget before launching teacher PPO.
+
+## 2026-06-14T08:41:00Z - PPO-matched filtered validation launch
+
+Goal:
+- Validate the multi-object environment reset/contact behavior using the reset budget intended for the first PPO teacher run.
+
+Version Control:
+- implementation_commit: `bacdcde785919359e609e62fb9dfa05caf52f483`
+- push: `origin/main` updated from `cf6a52d` to `bacdcde`.
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-main-rgb-teacher-20260614-f1a34bc`
+- remote_commit: `bacdcde785919359e609e62fb9dfa05caf52f483`
+- deploy: Git bundle copied to A100 and fetched into the remote worktree because the remote host cannot fetch GitHub by SSH.
+
+Command / Job:
+- first_submit: failed before job creation because the validation wrapper defaults to `#SBATCH --partition=batch`, which is invalid on A100.
+- job_id: `29059849`
+- run: `franka_multi_video_mainbac_filtered2_retry8_notop_center50_20260614T0841Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_29059849.out`
+- output_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_mainbac_filtered2_retry8_notop_center50_20260614T0841Z`
+- key settings: `GRASP_RESET_REQUIRE_TOPDOWN=False`, `GRASP_RESET_MAX_CENTER_DISTANCE_FRAC=0.50`, `GRASP_RESET_ATTEMPTS=8`, `GRASP_RESET_CANDIDATE_COUNT=1024`, `OBJECT_SPAWN_YAW_RANDOMIZATION_DEG=180.0`, `OBJECT_ASSET_ASSIGNMENT=random`.
+
+Next:
+- Monitor job `29059849`; inspect metrics and grasp-contact video before launching PPO.
+
+Result:
+- status: canceled
+- metrics/artifacts: reset-settle wrote 2 frames and perturbation wrote 2 frames; grasp-contact wrote 0 frames after ~2.8 minutes.
+- key evidence: log reached `Recording grasp_contact with settled-object grasp-prior reset`; compute-node Python process was active at ~137% CPU with Isaac GPU memory allocated.
+
+Analysis:
+- The retry nesting bug was fixed, but the validation selector still spent time on unrendered rollout scoring before the actual video. That scoring is useful for picking the nicest diagnostic candidate, but it is not needed to prove the environment reset/contact path before PPO and does not represent training.
+
+Next:
+- Add a no-scoring validation path so `GRASP_CONTACT_SCORE_STEPS=0` records the first quality settled-object grasp-prior reset directly.
+
+## 2026-06-14T08:43:44Z - Grasp-contact no-scoring selector path
+
+Goal:
+- Produce the required grasp-contact video without spending cluster time on pre-video candidate scoring rollouts.
+
+Change:
+- Updated `dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py` so `--grasp_contact_score_steps 0` bypasses unrendered selection scoring and returns the first quality candidate from the settled-object grasp-prior reset.
+- Positive `--grasp_contact_score_steps` keeps the previous scoring behavior.
+
+Version Control:
+- agent_id: `merge-dp-rgb-main-20260613`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/merge-dp-rgb-main-20260613`
+- branch: `main`
+- base_commit: `bacdcde785919359e609e62fb9dfa05caf52f483`
+- implementation_commit: pending
+- changed_files: `dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py`, this worklog.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py`
+- `bash -n cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh`
+- `git diff --check`
+
+Next:
+- Commit, push, deploy by bundle, and relaunch validation with `GRASP_CONTACT_SCORE_STEPS=0`.
