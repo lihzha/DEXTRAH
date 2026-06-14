@@ -18,7 +18,8 @@ from isaaclab.assets import Articulation, RigidObject, RigidObjectCfg
 from isaaclab.sensors import TiledCamera
 from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane
 from isaaclab.sim.spawners.materials.physics_materials_cfg import RigidBodyMaterialCfg
-from isaaclab.sim.utils import bind_physics_material
+from isaaclab.sim.utils import bind_physics_material, make_uninstanceable
+from isaaclab.sim import schemas as sim_schemas
 
 from dextrah_lab.tasks.dextrah_franka_cube_grasp.franka_cube_grasp_env import (
     DextrahFrankaCubeGraspEnv,
@@ -303,11 +304,6 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
                 prim_path=prim_path,
                 spawn=sim_utils.UsdFileCfg(
                     usd_path=str(asset["usd_path"]),
-                    collision_props=sim_utils.CollisionPropertiesCfg(
-                        collision_enabled=True,
-                        contact_offset=float(self.cfg.object_contact_offset),
-                        rest_offset=float(self.cfg.object_rest_offset),
-                    ),
                     rigid_props=sim_utils.RigidBodyPropertiesCfg(
                         rigid_body_enabled=True,
                         kinematic_enabled=False,
@@ -329,6 +325,15 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
                 init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, -10.0), rot=(1.0, 0.0, 0.0, 0.0)),
             )
             RigidObject(object_cfg)
+            make_uninstanceable(prim_path)
+            sim_schemas.modify_collision_properties(
+                prim_path,
+                sim_utils.CollisionPropertiesCfg(
+                    collision_enabled=True,
+                    contact_offset=float(self.cfg.object_contact_offset),
+                    rest_offset=float(self.cfg.object_rest_offset),
+                ),
+            )
             object_material_cfg = RigidBodyMaterialCfg(
                 static_friction=float(self.cfg.object_static_friction),
                 dynamic_friction=float(self.cfg.object_dynamic_friction),

@@ -3070,3 +3070,62 @@ Validation:
 
 Next:
 - Commit, push, redeploy by Git bundle, and relaunch the patched video validation.
+
+## 2026-06-14T07:56:00Z - Corrected material-binding validation launch
+
+Goal:
+- Re-run the top-down/contact video validation after fixing the Isaac Lab USD material-binding API use.
+
+Version Control:
+- implementation_commit: `916ba6254ab537b2ba7651d1515fad8a9e1665e6`
+- push: local `origin/main` updated from `08fcc52` to `916ba62`.
+- deploy: incremental Git bundle copied to A1002 and fetched into the detached remote worktree.
+- remote_commit: `916ba6254ab537b2ba7651d1515fad8a9e1665e6`
+
+Command / Job:
+- job_id: `29059206`
+- run: `franka_multi_video_main916_topdown55_contact_20260614T0756Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_29059206.out`
+- output_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_main916_topdown55_contact_20260614T0756Z`
+- command: same as job `29059176`, but launched from commit `916ba6254ab537b2ba7651d1515fad8a9e1665e6`.
+
+Next:
+- Monitor job `29059206`, parse metrics, inspect video if the physical grasp still fails, and only launch RL once this environment validation is good enough.
+
+## 2026-06-14T08:00:00Z - De-instance object colliders before applying material/contact
+
+Goal:
+- Fix remaining object material/contact override warnings and interpret the top-down validation result.
+
+Command / Job:
+- job_id: `29059206`
+- run: `franka_multi_video_main916_topdown55_contact_20260614T0756Z`
+- metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_main916_topdown55_contact_20260614T0756Z/video_metrics.json`
+
+Result:
+- reset_settle: passed.
+- perturbation: passed.
+- grasp_contact: failed.
+- selected_candidate_valid_count: `0`
+- selected_candidate_topdown_count: `910`
+- selected_candidate_center_count: `725`
+- selected_pregrasp_offset_dir_z: `0.86750`
+- selected_reset_success: `false`
+- warmstart_active_count: `0`
+- selected_lift_height_max_m: `0.000001`
+
+Analysis:
+- The API fix allowed construction, but logs showed `modify_collision_properties` and `bind_physics_material` could not apply because the USD collision subtrees were instanceable.
+- The stricter `GRASP_RESET_MIN_PREGRASP_Z=0.55` was too brittle with `GRASP_RESET_MAX_CENTER_DISTANCE_FRAC=0.25`: no candidate passed the quality mask, so no grasp-contact diagnostic ran.
+
+Change:
+- Added `make_uninstanceable(prim_path)` after spawning each USD object.
+- Removed collision overrides from `UsdFileCfg`; instead, apply `modify_collision_properties` after de-instancing and then bind the physics material.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py`: passed.
+- `bash -n cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh cluster/sbatch_train_teacher_8gpu.sh`: passed.
+- `git diff --check`: passed.
+
+Next:
+- Commit/deploy de-instancing and relaunch with a less brittle but still top-down reset filter: `GRASP_RESET_MIN_PREGRASP_Z=0.45`, `GRASP_RESET_MAX_CENTER_DISTANCE_FRAC=0.30`.
