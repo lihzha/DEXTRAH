@@ -687,3 +687,193 @@ Analysis:
 
 Next:
 - Use this cube reset config for the next data-generation/evaluation pass.
+
+## 2026-06-14T07:08:00Z - top-down reset demo-generation smokes
+
+Goal:
+- Try generating center-support RGB demos with the corrected top-down cube reset posture.
+
+Hypothesis:
+- The corrected task reset should remove the previous live-orientation pitch problem. The last strict-gate run stabilized near the cube but never closed because `finger_center_to_cube ~= 0.038 m` stayed just above a `0.035 m` threshold; relaxing only that threshold to `0.040 m` should allow a close/lift attempt without reverting to the loose side-grasp failures.
+
+Change:
+- No code changes. Use deployed code commit `f0cad3d14e57ff414826b24ea39752f5e649ac59`.
+- Launch two one-demo explicit-center smokes:
+  - live reset orientation with corrected top-down task reset.
+  - source-row top-down orientation for comparison.
+
+Version Control:
+- agent_id: franka-cube-dp-bc-warmstart
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- worklog: `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart-no-phase-rgb.md`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `87841afdba38f17dfa83de1851585b313283d9d2`
+- implementation_commit: n/a
+- push/pull: remote l401 worktree already detached at code commit `f0cad3d14e57ff414826b24ea39752f5e649ac59`.
+- changed_files: this worklog only
+- remote_commit/status: pending launch check
+
+Command / Job:
+- command: `sbatch --exclude=pool0-00009,pool0-00017,pool0-00018 --export=ALL,CODE_NFS=<remote-worktree>,DATASET=/results/dp_bc/datasets/franka_cube_curobo_lowdim_scale264_20260612_1449_full_pick_lift_framefix.npz,TRAJECTORY_ROOT=/results/dp_bc/curobo_plans,TRAJECTORY_TEMPLATE=cube_curobo_scale264_20260612_1449_seed{episode}/trajectory.json,SPEC_COUNT=1,SPEC_0=37:260::0:861037:-0.360000:-0.120000,RESET_JOINT_BLEND_ALPHA=0.0,RESET_CUBE_POS_BLEND_ALPHA=0.0,SAVE_RGB_OBS=True,RGB_OBS_HEIGHT=96,RGB_OBS_WIDTH=96,CAPTURE_VIDEO=True,VIDEO_LENGTH=600,VARIANT=center_high15,ALIGN_STEPS=0,CONTACT_ALIGN_STEPS=320,CONTACT_ALIGN_REFERENCE=live_cube,CLOSE_HOLD_REFERENCE=contact_anchor,CONTACT_ALIGN_THRESHOLD=0.040,CONTACT_GATE_MODE=left_right,FINGER_GATE_MAX_DISTANCE=0.065,FINGER_GATE_BALANCE_THRESHOLD=0.010,REQUIRE_CONTACT_GATE=True,LATERAL_CENTERING_GAIN=1.0,LATERAL_CENTERING_LIMIT=0.03,LATERAL_SEARCH_AMPLITUDE=0.004,LATERAL_SEARCH_PERIOD=32,CLOSE_STEPS=80,LIFT_STEPS=160,LIFT_HEIGHT=0.22,FINGER_GAIN=0.75,CLIP_ACTIONS=1.0,POSE_ACTION_FILTER=scale,POSE_ACTION_LIMIT=0.95,PRINT_INTERVAL=40,GATE_MIN_LIFT=0.10,GATE_MAX_POSE_CLIP_FRACTION=0.0,GATE_MAX_FINAL_EE_TO_CUBE=0.05,GATE_MAX_FINAL_FINGER_TO_CUBE=0.08,ORIENTATION_MODE=<live|source>,RUN_NAME=<run> cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh`
+- job_id: `1029198` live orientation, `1029199` source orientation
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/contact_relabel_sets/franka_cube_rgb_center_topdown_live_lr_anchor_high15_thr040_ep37_20260614_0708`, `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/contact_relabel_sets/franka_cube_rgb_center_topdown_source_lr_anchor_high15_thr040_ep37_20260614_0708`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/contact_aware_franka_cube_relabel_set_1029198.out`, `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/contact_aware_franka_cube_relabel_set_1029199.out`
+- artifacts: expected per-rollout summaries, videos, `contact_relabel_set_summary.json`, accepted RGB NPZ if accepted.
+
+Next:
+- Submit and monitor the two smokes; fetch summaries/videos. If either accepts, scale to a small random default-support set before attempting 100-200 unique demos.
+
+Interim Result:
+- `1029199` (`source`, threshold `0.040`) completed and failed as a clean no-close case:
+  - accepted episodes: `0`
+  - `min_finger_center_to_cube=0.0431`
+  - `pre_close_finger_center_to_cube=0.0494`
+  - `max_cube_lift_height=0.0067`
+  - artifact: `cluster_results/l401/franka_cube_rgb_center_topdown_source_lr_anchor_high15_thr040_ep37_20260614_0708`
+- `1029198` (`live`, threshold `0.040`) stalled before task parsing on `pool0-00025`; canceled.
+- `1029201` (`live`, threshold `0.052`) passed:
+  - accepted RGB episodes: `1`
+  - accepted RGB transitions: `285`
+  - `final_cube_lift_height=0.1352`
+  - `final_ee_to_cube=0.0073`
+  - `final_finger_center_to_cube=0.0442`
+  - `pre_close_finger_center_to_cube=0.0500`
+  - artifact: `cluster_results/l401/franka_cube_rgb_center_topdown_live_lr_anchor_high15_thr052_ep37_20260614_0714`
+  - video: `cluster_results/l401/franka_cube_rgb_center_topdown_live_lr_anchor_high15_thr052_ep37_20260614_0714/rollouts/ep37s260_a0_seed861137_xm0p360000_ym0p120000/videos/franka-cube-contact-relabel-ep37s260_a0_seed861137_xm0p360000_ym0p120000-step-0.mp4`
+- `1029200` (`source`, threshold `0.052`) stalled before rollout and was canceled after the live run passed.
+
+Analysis:
+- The corrected live reset orientation is the useful path. It closes from a balanced top-down geometry and lifts the cube; source orientation is not needed for the center demo and can be slower/stall-prone in this launch pattern.
+
+Follow-up Command / Job:
+- Generated five unique default-support specs with `make_uniform_cube_relabel_specs.py --count 5 --seed 20260614 --seed_base 862000 --episodes 37 --episode_steps 260`.
+- spec artifacts:
+  - `artifacts/franka_cube_demo_generation/uniform5_topdown_live_thr052_20260614_0718.env`
+  - `artifacts/franka_cube_demo_generation/uniform5_topdown_live_thr052_20260614_0718.json`
+  - `artifacts/franka_cube_demo_generation/uniform5_topdown_live_thr052_20260614_0718.csv`
+- job_id: `1029202`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/contact_relabel_sets/franka_cube_rgb_uniform5_topdown_live_lr_anchor_high15_thr052_20260614_0718`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/contact_aware_franka_cube_relabel_set_1029202.out`
+- settings: live orientation, `center_high15`, `CONTACT_ALIGN_THRESHOLD=0.052`, `CONTACT_GATE_MODE=left_right`, `FINGER_GATE_MAX_DISTANCE=0.070`, `FINGER_GATE_BALANCE_THRESHOLD=0.010`, `RESET_JOINT_BLEND_ALPHA=0.0`, `RESET_CUBE_POS_BLEND_ALPHA=0.0`, RGB `96x96`, videos enabled.
+
+Next:
+- Monitor `1029202`; fetch summaries/videos; if enough locations accept, scale to a larger unique-location generation batch.
+
+Result:
+- `1029202` completed on `pool0-00002`; artifacts fetched to `cluster_results/l401/franka_cube_rgb_uniform5_topdown_live_lr_anchor_high15_thr052_20260614_0718`.
+- Aggregate verdict: hard gate failed because one of five rollouts failed, but the accepted files were written.
+- Metrics:
+  - accepted lowdim episodes/transitions: `4 / 1149`
+  - accepted RGB episodes/transitions: `4 / 1149`
+  - pass/failure count: `4 / 1`
+  - pass max/final lift heights: approximately `0.135-0.136 m`
+  - failed XY: `[-0.409985, -0.102835]`, `max_cube_lift_height=0.0167`, `final_cube_lift_height=0.0`
+- Dataset shape check:
+  - lowdim `obs=(1149,21)`, `action=(1149,7)`, `episode_ends=(4,)`
+  - RGB `image=(1149,96,96,3) uint8`, `robot_state=(1149,8)`, `action=(1149,7)`, `episode_ends=(4,)`
+- Video check:
+  - all five videos are nonempty (`1280x720`, `272-340` frames).
+  - representative pass video opened with `viz-open`: `cluster_results/l401/franka_cube_rgb_uniform5_topdown_live_lr_anchor_high15_thr052_20260614_0718/rollouts/ep37s260_a0_seed862000_xm0p317087_ym0p138876/videos/franka-cube-contact-relabel-ep37s260_a0_seed862000_xm0p317087_ym0p138876-step-0.mp4`
+  - representative failure video opened with `viz-open`: `cluster_results/l401/franka_cube_rgb_uniform5_topdown_live_lr_anchor_high15_thr052_20260614_0718/rollouts/ep37s260_a0_seed862001_xm0p409985_ym0p102835/videos/franka-cube-contact-relabel-ep37s260_a0_seed862001_xm0p409985_ym0p102835-step-0.mp4`
+
+Analysis:
+- The cube-specific raised-base canonical reset fixed the old forward-tilt/table-clearance problem: generated videos show the gripper upright/top-down at reset and at lift.
+- The one failure is a grasp gate/controller issue, not an initial-pose issue. The close gate fired at `contact_align_trigger_step=128` with `finger_center_to_cube=0.0519 m`, left/right distances `0.0656/0.0655 m`, and balance essentially zero. This passed the current `FINGER_GATE_MAX_DISTANCE=0.070` gate but was too far from the cube; the gripper closed just outside the object.
+
+Next:
+- Retest the failed XY with the same initial pose and a stricter per-finger gate (`FINGER_GATE_MAX_DISTANCE=0.060`) before scaling the generator.
+
+## 2026-06-14T07:23:00Z - failed-XY stricter gate retest and 20-location scale-up
+
+Goal:
+- Verify that the uniform5 failure at `[-0.409985, -0.102835]` is fixed by a stricter pre-close gate, then launch a 20-location default-support generation batch with the corrected initial pose.
+
+Hypothesis:
+- The corrected top-down reset is valid; the remaining failure mode is closing with fingers too far from the cube. Lowering `FINGER_GATE_MAX_DISTANCE` from `0.070` to `0.060` should delay close until the gripper is truly centered around the cube.
+
+Change:
+- No code changes.
+- Retest the failed XY with `CONTACT_ALIGN_STEPS=420`, `CONTACT_ALIGN_THRESHOLD=0.052`, `FINGER_GATE_MAX_DISTANCE=0.060`, live orientation, `center_high15`, RGB `96x96`, videos enabled.
+- Generate 20 new unique default-support XY specs with seed `20260615`, seeds `863000..863019`, episode `37`, step `260`.
+
+Version Control:
+- agent_id: franka-cube-dp-bc-warmstart
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- worklog: `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart-no-phase-rgb.md`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `87841afdba38f17dfa83de1851585b313283d9d2`
+- implementation_commit: n/a
+- push/pull: remote l401 worktree already detached at code commit `f0cad3d14e57ff414826b24ea39752f5e649ac59`
+- changed_files: this worklog and generated local spec artifacts
+- remote_commit/status: l401 run uses detached code commit `f0cad3d14e57ff414826b24ea39752f5e649ac59`
+
+Command / Job:
+- failed-XY retest job_id: `1029203`
+- failed-XY run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/contact_relabel_sets/franka_cube_rgb_failedxy_topdown_live_lr_anchor_high15_thr052_fmax060_20260614_0723`
+- failed-XY log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/contact_aware_franka_cube_relabel_set_1029203.out`
+- 20-location specs:
+  - `artifacts/franka_cube_demo_generation/uniform20_topdown_live_thr052_fmax060_20260614_0726.env`
+  - `artifacts/franka_cube_demo_generation/uniform20_topdown_live_thr052_fmax060_20260614_0726.json`
+  - `artifacts/franka_cube_demo_generation/uniform20_topdown_live_thr052_fmax060_20260614_0726.csv`
+- 20-location job_id: `1029204`
+- 20-location run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/contact_relabel_sets/franka_cube_rgb_uniform20_topdown_live_lr_anchor_high15_thr052_fmax060_20260614_0726`
+- 20-location log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/contact_aware_franka_cube_relabel_set_1029204.out`
+- 20-location settings: live orientation, `center_high15`, `CONTACT_ALIGN_THRESHOLD=0.052`, `CONTACT_GATE_MODE=left_right`, `FINGER_GATE_MAX_DISTANCE=0.060`, `FINGER_GATE_BALANCE_THRESHOLD=0.010`, `RESET_JOINT_BLEND_ALPHA=0.0`, `RESET_CUBE_POS_BLEND_ALPHA=0.0`, RGB `96x96`, videos enabled.
+
+Result:
+- failed-XY retest `1029203` passed hard relabel gate.
+- metrics:
+  - accepted RGB episodes/transitions: `1 / 271`
+  - final/max lift: `0.1354 m`
+  - final EE-to-cube: `0.0091 m`
+  - final finger-center-to-cube: `0.0401 m`
+  - pre-close finger-center-to-cube: `0.0421 m`
+- fetched artifact: `cluster_results/l401/franka_cube_rgb_failedxy_topdown_live_lr_anchor_high15_thr052_fmax060_20260614_0723`
+- video opened with `viz-open`: `cluster_results/l401/franka_cube_rgb_failedxy_topdown_live_lr_anchor_high15_thr052_fmax060_20260614_0723/rollouts/ep37s260_a0_seed862101_xm0p409985_ym0p102835/videos/franka-cube-contact-relabel-ep37s260_a0_seed862101_xm0p409985_ym0p102835-step-0.mp4`
+
+Analysis:
+- Tightening the per-finger gate fixes the exact failed coordinate without changing the initial pose. The top-down reset remains visually correct and the cube is lifted cleanly.
+
+Next:
+- Monitor `1029204`; fetch summaries/videos; use its pass rate to decide whether to generate the 100-200 unique-location dataset directly or add more controller filtering.
+
+Follow-up Result:
+- `1029204` completed; no active l401 jobs remained afterward.
+- fetched artifact: `cluster_results/l401/franka_cube_rgb_uniform20_topdown_live_lr_anchor_high15_thr052_fmax060_20260614_0726`
+- aggregate:
+  - verdict: hard gate failed because `5/20` attempted rollouts failed.
+  - accepted RGB episodes/transitions: `15 / 4276`
+  - accepted lowdim episodes/transitions: `15 / 4276`
+  - all 20 videos present and nonempty (`1280x720`, `187-340` frames).
+- accepted dataset shapes:
+  - lowdim `obs=(4276,21)`, `action=(4276,7)`, `episode_ends=(15,)`
+  - RGB `image=(4276,96,96,3) uint8`, `robot_state=(4276,8)`, `action=(4276,7)`, `episode_ends=(15,)`
+- visualization artifact:
+  - `artifacts/franka_cube_demo_generation/uniform20_topdown_live_thr052_fmax060_result_scatter_20260614_0726.png`
+  - opened with `viz-open`; pass/fail map shows accepted demos across much of the support but clear failure regions.
+- representative videos opened with `viz-open`:
+  - success: `cluster_results/l401/franka_cube_rgb_uniform20_topdown_live_lr_anchor_high15_thr052_fmax060_20260614_0726/rollouts/ep37s260_a0_seed863001_xm0p387962_ym0p169496/videos/franka-cube-contact-relabel-ep37s260_a0_seed863001_xm0p387962_ym0p169496-step-0.mp4`
+  - positive-x no-close failure: `cluster_results/l401/franka_cube_rgb_uniform20_topdown_live_lr_anchor_high15_thr052_fmax060_20260614_0726/rollouts/ep37s260_a0_seed863000_xm0p287821_ym0p114552/videos/franka-cube-contact-relabel-ep37s260_a0_seed863000_xm0p287821_ym0p114552-step-0.mp4`
+  - marginal-close/no-lift failure: `cluster_results/l401/franka_cube_rgb_uniform20_topdown_live_lr_anchor_high15_thr052_fmax060_20260614_0726/rollouts/ep37s260_a0_seed863009_xm0p407776_ym0p106173/videos/franka-cube-contact-relabel-ep37s260_a0_seed863009_xm0p407776_ym0p106173-step-0.mp4`
+
+Failure Details:
+- Clean no-close/reach-centering failures near positive x:
+  - seed `863000`, cube `[-0.287821, -0.114552]`: no close trigger; final/pre-close finger-center `0.0699 m`, left/right `0.0665/0.0924 m`, max lift `0.0074 m`.
+  - seed `863010`, cube `[-0.288733, -0.130526]`: no close trigger; final/pre-close finger-center `0.0742 m`, left/right `0.0639/0.1005 m`, max lift `0.0093 m`.
+- No-close gate-boundary failure:
+  - seed `863004`, cube `[-0.370537, -0.086656]`: no close trigger; finger-center `0.0500 m`, left/right `0.0657/0.0623 m`, max lift `0.0074 m`.
+- Marginal-close/no-lift failures:
+  - seed `863009`, cube `[-0.407776, -0.106173]`: close triggered at step `143`; pre-close finger-center `0.0438 m`, left/right `0.0586/0.0600 m`, max lift `0.0170 m`, final finger-center `0.2366 m`.
+  - seed `863014`, cube `[-0.410706, -0.095677]`: close triggered at step `139`; pre-close finger-center `0.0443 m`, left/right `0.0594/0.0600 m`, max lift `0.0169 m`, final finger-center `0.2351 m`.
+
+Analysis:
+- The initial pose fix is validated for demo generation: accepted and failed videos both show the gripper reset and move upright/top-down, not tilted forward into the table.
+- The generated accepted subset looks clean by metrics and video sampling. The hard-gate failures are excluded from the accepted NPZs.
+- The current controller is not uniformly successful on the full default rectangle. Positive-x edge locations need better lateral/yaw centering or a narrowed support. The `x≈-0.41, y≈-0.10` marginal-close failures suggest the 6 cm finger gate is still near the edge of reliable grasping for some approach poses; the earlier exact failed XY passed after stricter gating, but nearby samples still fail.
+- Do not launch 100-200 full-rectangle attempts as if the generator were solved. Either collect from the empirically reliable subregion first, or improve the controller/close criterion to handle the observed failure bands.
+
+Next:
+- For fast BC progress, use the accepted 15-demo RGB/lowdim subset only as a smoke dataset and optionally collect more with rejection filtering.
+- Before scaling to 100-200 unique demos over the whole requested support, test either:
+  - a narrowed support excluding positive x near `>-0.30` and the observed marginal band, or
+  - a controller change that rotates/centers the gripper more robustly before close and tightens the close trigger further for marginal-close cases.
