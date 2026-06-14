@@ -4068,3 +4068,107 @@ Validation:
 
 Next:
 - Run local checks, commit/push/deploy, and rerun the same rendered validation.
+
+## 2026-06-14T10:44:00Z - Contact-midpoint validation relaunch
+
+Goal:
+- Validate contact-midpoint reset targets with rendered pregrasp/top-down contact behavior.
+
+Version Control:
+- local_commit: `b113acebbeab1915e6534e226c06070ea7052f0d`
+- push: pushed to `origin/main`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-main-evalfix-20260614-94d7274`
+- remote_commit: `b113acebbeab1915e6534e226c06070ea7052f0d`
+- deployment: Git bundle copied to `/lustre/fsw/portfolios/nvr/users/lzha/src/bundles/dextrah-main-b113ace.bundle`; remote worktree checked out detached at the exact commit.
+
+Command / Job:
+- job_id: `1029218`
+- host: `l401`
+- run: `franka_multi_video_pregrasp08_topdown_b113ace_20260614T1044Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_1029218.out`
+- output_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_pregrasp08_topdown_b113ace_20260614T1044Z`
+- key settings: `GRASP_PREGRASP_OFFSET=0.08`, `GRASP_RESET_REQUIRE_TOPDOWN=True`, candidate count `2048`, center frac `0.50`, contact score steps `80`, warmstart approach/close/lift `24/24/126`.
+
+Next:
+- Monitor `1029218`, fetch metrics/videos, and inspect the contact sequence before training.
+
+## 2026-06-14T10:50:00Z - Contact-midpoint validation result
+
+Goal:
+- Inspect whether `b113ace` contact-midpoint reset makes the environment correctly reset and execute the grasp warmstart.
+
+Result:
+- job_id: `1029218`
+- status: failed only `grasp_contact`; `reset_settle` and `perturbation` passed.
+- key evidence: `selected_reset_success=True`, `selected_quality_success=True`, `selected_candidate_topdown_count=2048`, `selected_candidate_valid_count=227`, `warmstart_active_count=120`, `warmstart_phases=[0,1,2]`.
+- remaining failure: `selected_lift_height_max=0.0009`, below the `0.12` validation threshold. The final frame shows the gripper around the object, but the object remains on the table.
+
+Analysis:
+- The environment reset is now robust and contact-quality checks pass. The remaining issue is the warmstart grasp strength/closing sequence, not object loading or pose reset. The current `GRASP_WARMSTART_CLOSE_WIDTH=0.025` likely leaves the gripper too open for this selected object/contact.
+
+Next:
+- Relaunch from the same commit with a tighter close width (`0.004`), longer close window, and longer contact scoring before changing source again.
+
+## 2026-06-14T10:55:42Z - Tight-close contact validation relaunch
+
+Goal:
+- Validate whether the already-correct contact-midpoint reset can produce a physical lift when the gripper closes tightly around the selected object.
+
+Hypothesis:
+- `1029218` proved the reset/IK/contact target is correct, but `GRASP_WARMSTART_CLOSE_WIDTH=0.025` leaves the fingers too open. A tight `0.004` close width with longer close/lift phases should reveal whether the grasp prior is usable for RL warmstarts without another source change.
+
+Version Control:
+- agent_id: `merge-dp-rgb-main-20260613`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/merge-dp-rgb-main-20260613`
+- branch: `main`
+- implementation_commit: `b113acebbeab1915e6534e226c06070ea7052f0d`
+- push/pull: commit pushed to `origin/main`; l401 worktree `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-main-evalfix-20260614-94d7274` detached at the exact commit.
+- changed_files: this worklog only.
+
+Command / Job:
+- job_id: `1029220`
+- host: `l401`
+- run: `franka_multi_video_pregrasp08_topdown_close004_b113ace_20260614T1050Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_1029220.out`
+- output_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_pregrasp08_topdown_close004_b113ace_20260614T1050Z`
+- key settings: `GRASP_WARMSTART_CLOSE_WIDTH=0.004`, `GRASP_WARMSTART_USE_PRIOR_CLOSE_WIDTH=False`, warmstart approach/close/lift `24/36/160`, `GRASP_WARMSTART_LIFT_ACTION_Z=0.50`, contact score steps `120`, candidate count `2048`, pregrasp offset `0.08`, stable pose cache enabled.
+
+Result:
+- status: running at entry time; `reset_settle` and `perturbation` frame output complete, `grasp_contact` is in the unrendered scoring pass before final frame capture.
+
+Next:
+- Monitor `1029220` through completion, fetch metrics/videos, inspect contact frames, and either proceed to corrected A100 PPO launch or patch/tune the reset target/warmstart based on the evidence.
+
+## 2026-06-14T11:00:29Z - Finger-center contact target patch
+
+Goal:
+- Fix the remaining contact validation failure where the gripper closes beside the object rather than lifting it.
+
+Result:
+- job_id: `1029220`
+- status: failed only `grasp_contact`; `reset_settle` and `perturbation` passed.
+- key evidence: `selected_reset_success=True`, `selected_quality_success=True`, `selected_candidate_valid_count=227`, `warmstart_phases=[0,1,2]`, `selected_gripper_width_min=0.0040`, but `selected_lift_height_max=0.0022` vs threshold `0.12`.
+- geometry evidence: rendered frames show no reset jump or table penetration, but the hand/fingers close beside the object. Metrics show `selected_reference_finger_center_dist_min=0.059`, so the finger center never reaches the selected contact reference.
+
+Analysis:
+- The prior contact midpoint was incorrectly used as the Franka EE target. For the selected orientation, the open-hand finger center is offset from EE by the local gripper geometry, so placing EE on the contact midpoint places the fingers beside the object. The contact prior target should make the finger center land on the contact midpoint, then use the same sampled orientation and top-down pregrasp offset.
+
+Change:
+- In `DextrahFrankaMultiObjectGraspEnv._compose_grasp_prior_targets`, compute the current EE-to-finger-center offset in EE coordinates and rotate it by each candidate grasp orientation.
+- For contact-location priors, set `exact_ee_pos_w = contact_midpoint_w - R_candidate * finger_center_offset_ee`; set `target_ee_pos_w` by adding the pregrasp offset to that EE target.
+- Preserve non-contact prior behavior by continuing to use the raw `panda_hand + ee_offset_pos` target for legacy priors.
+
+Version Control:
+- agent_id: `merge-dp-rgb-main-20260613`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/merge-dp-rgb-main-20260613`
+- branch: `main`
+- base_commit: `b113acebbeab1915e6534e226c06070ea7052f0d`
+- implementation_commit: pending
+- changed_files: `dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py`, this worklog.
+
+Validation:
+- local: `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`
+- local: `git diff --check -- dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py`
+
+Next:
+- Commit/push/deploy exact commit to l401 and rerun rendered contact validation with the same tight-close settings.

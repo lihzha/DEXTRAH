@@ -687,6 +687,25 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             candidate_contact_reference_w,
             candidate_raw_tool_pos_w,
         )
+        candidate_tool_rot_w = world_tool_candidates[:, :, :3, :3]
+        ee_offset_w = torch.einsum(
+            "ncij,nj->nci",
+            candidate_tool_rot_w,
+            self.ee_offset_pos[env_ids],
+        )
+        candidate_raw_exact_ee_pos_w = candidate_raw_tool_pos_w + ee_offset_w
+        finger_center_offset_ee = self._finger_center_offset_from_ee(env_ids)
+        finger_center_offset_w = torch.einsum(
+            "ncij,nj->nci",
+            candidate_tool_rot_w,
+            finger_center_offset_ee,
+        )
+        candidate_contact_exact_ee_pos_w = candidate_contact_reference_w - finger_center_offset_w
+        candidate_exact_ee_pos_w = torch.where(
+            candidate_has_contact.unsqueeze(-1),
+            candidate_contact_exact_ee_pos_w,
+            candidate_raw_exact_ee_pos_w,
+        )
         candidate_tool_z_axis_w = world_tool_candidates[:, :, :3, 2]
         candidate_tool_z_axis_w = candidate_tool_z_axis_w / torch.clamp(
             torch.norm(candidate_tool_z_axis_w, dim=-1, keepdim=True),
@@ -723,11 +742,19 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         candidate_pregrasp_tool_pos_w = (
             candidate_exact_tool_pos_w + pregrasp_offset * candidate_pregrasp_offset_dir_w
         )
+        candidate_pregrasp_ee_pos_w = (
+            candidate_exact_ee_pos_w + pregrasp_offset * candidate_pregrasp_offset_dir_w
+        )
         candidate_pregrasp_tool_dist = torch.norm(candidate_pregrasp_tool_pos_w - candidate_contact_reference_w, dim=-1)
+        candidate_pregrasp_ee_dist = torch.norm(candidate_pregrasp_ee_pos_w - candidate_contact_reference_w, dim=-1)
         if pregrasp_offset <= 1.0e-6:
             candidate_pregrasp_farther = torch.ones_like(candidate_pregrasp_tool_dist, dtype=torch.bool)
         else:
-            candidate_pregrasp_farther = candidate_pregrasp_tool_dist > candidate_exact_reference_dist
+            candidate_pregrasp_farther = torch.where(
+                candidate_has_contact,
+                candidate_pregrasp_ee_dist > candidate_exact_reference_dist,
+                candidate_pregrasp_tool_dist > candidate_exact_reference_dist,
+            )
 
         pregrasp_z = candidate_pregrasp_offset_dir_w[:, :, 2]
         topdown_ok = pregrasp_z >= float(self.cfg.grasp_prior_reset_min_pregrasp_z)
@@ -750,7 +777,7 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         center_ok = normalized_center_dist <= float(self.cfg.grasp_prior_reset_max_center_distance_frac)
         table_floor_z = float(self.cfg.table_surface_z) + float(self.cfg.finger_table_penetration_termination_margin)
         table_ok = (
-            (candidate_pregrasp_tool_pos_w[:, :, 2] >= table_floor_z)
+            (candidate_pregrasp_ee_pos_w[:, :, 2] >= table_floor_z)
             & (candidate_contact_reference_w[:, :, 2] >= table_floor_z)
         )
         valid = candidate_pregrasp_farther & width_ok & center_ok & table_ok
@@ -777,7 +804,13 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         exact_tool_dist = candidate_exact_tool_dist[row_ids, best_candidate]
         exact_reference_dist = candidate_exact_reference_dist[row_ids, best_candidate]
         pregrasp_tool_pos_w = candidate_pregrasp_tool_pos_w[row_ids, best_candidate]
-        pregrasp_tool_dist = candidate_pregrasp_tool_dist[row_ids, best_candidate]
+        exact_ee_pos_w = candidate_exact_ee_pos_w[row_ids, best_candidate]
+        target_ee_pos_w = candidate_pregrasp_ee_pos_w[row_ids, best_candidate]
+        pregrasp_tool_dist = torch.where(
+            candidate_has_contact[row_ids, best_candidate],
+            candidate_pregrasp_ee_dist[row_ids, best_candidate],
+            candidate_pregrasp_tool_dist[row_ids, best_candidate],
+        )
         pregrasp_farther = candidate_pregrasp_farther[row_ids, best_candidate]
         pregrasp_offset_dir_w = candidate_pregrasp_offset_dir_w[row_ids, best_candidate]
         contact_reference_w = candidate_contact_reference_w[row_ids, best_candidate]
@@ -786,20 +819,8 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         has_contact_location = candidate_has_contact[row_ids, best_candidate]
 
         tool_quat_w = math_utils.quat_from_matrix(world_tool_t[:, :3, :3])
-        tool_exact_ee_pos_w, exact_ee_quat_w = math_utils.combine_frame_transforms(
-            exact_tool_pos_w,
-            tool_quat_w,
-            self.ee_offset_pos[env_ids],
-            self.ee_offset_rot[env_ids],
-        )
-        tool_target_ee_pos_w, target_ee_quat_w = math_utils.combine_frame_transforms(
-            pregrasp_tool_pos_w,
-            tool_quat_w,
-            self.ee_offset_pos[env_ids],
-            self.ee_offset_rot[env_ids],
-        )
-        exact_ee_pos_w = torch.where(has_contact_location.unsqueeze(-1), exact_tool_pos_w, tool_exact_ee_pos_w)
-        target_ee_pos_w = torch.where(has_contact_location.unsqueeze(-1), pregrasp_tool_pos_w, tool_target_ee_pos_w)
+        exact_ee_quat_w = tool_quat_w
+        target_ee_quat_w = tool_quat_w
         root_pos_w = self._robot.data.root_pos_w[env_ids]
         root_quat_w = self._robot.data.root_quat_w[env_ids]
         target_ee_pos_b, target_ee_quat_b = math_utils.subtract_frame_transforms(
@@ -842,6 +863,21 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             "pregrasp_ee_dist": torch.norm(target_ee_pos_w - contact_reference_w, dim=-1),
             "pregrasp_farther": pregrasp_farther,
         }
+
+    def _finger_center_offset_from_ee(self, env_ids: torch.Tensor) -> torch.Tensor:
+        self._compute_intermediate_values(env_ids)
+        env_origins = self.scene.env_origins[env_ids]
+        ee_pos_w = self.ee_pos[env_ids] + env_origins
+        finger_center_w = 0.5 * (self.left_finger_pos[env_ids] + self.right_finger_pos[env_ids]) + env_origins
+        point_quat_w = torch.zeros((int(env_ids.numel()), 4), dtype=torch.float32, device=self.device)
+        point_quat_w[:, 0] = 1.0
+        offset_ee, _ = math_utils.subtract_frame_transforms(
+            ee_pos_w,
+            self.ee_quat[env_ids],
+            finger_center_w,
+            point_quat_w,
+        )
+        return offset_ee
 
     def _grasp_prior_reset_topdown_mask(
         self,
