@@ -2785,3 +2785,235 @@ Validation:
 
 Next:
 - Commit/deploy the patch, rerun a bounded direct grasp-contact validation with the same settings, inspect whether phase `2` appears and whether lift occurs. Only then launch RL training.
+
+## 2026-06-14T07:26:00Z - Patched contact-reference validation launch
+
+Goal:
+- Validate whether the contact-reference lift gate lets the direct GraspGen warm-start reach lift and physically raise the object.
+
+Version Control:
+- implementation_commit: `eb8756425d836aed3d1e4479e6ab61819c12de81`
+- local_branch: `main`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-main-rgb-teacher-20260614-f1a34bc`
+- remote_commit: `eb8756425d836aed3d1e4479e6ab61819c12de81`
+- deploy: Git bundle because cluster GitHub SSH auth failed.
+
+Command / Job:
+- job_id: `29058785`
+- run: `franka_multi_video_maineb_refgate_contact_20260614T0726Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_29058785.out`
+- output_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_maineb_refgate_contact_20260614T0726Z`
+- command: patched video validation with stable poses, full yaw, `NUM_ENVS=4`, `MAX_OBJECTS=4`, `GRASP_RESET_CANDIDATE_COUNT=512`, `GRASP_RESET_ATTEMPTS=8`, and the same approach/close/lift gate settings as job `29058558`.
+
+Next:
+- Monitor job `29058785`, parse `video_metrics.json`, inspect the grasp-contact video frames, then decide whether to launch direct state/RGB training or patch contact geometry again.
+
+## 2026-06-14T07:35:12Z - Contact-reference validation still blocked by warmstart transition
+
+Goal:
+- Determine whether the contact-reference lift gate patch was enough to make the direct grasp warm-start lift objects before launching RL.
+
+Result:
+- job_id: `29058785`
+- status: failed immediately because the wrapper defaulted `CODE_NFS` to the fixed checkout instead of the detached main worktree; no valid evidence for commit `eb87564`.
+- job_id: `29058802`
+- run: `franka_multi_video_maineb_refgate_contact2_20260614T0728Z`
+- status: failed by validation criteria after writing artifacts
+- metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_maineb_refgate_contact2_20260614T0728Z/video_metrics.json`
+- selected_asset_uuid: `96ae0ff853734df0b10a827307949c87`
+- selected_lift_height_max_m: `0.0027228`
+- selected_reference_finger_center_dist_min_m: `0.05072`
+- selected_max_finger_dist_min_m: `0.12712`
+- selected_gripper_width_min_m: `0.01401`
+- selected_projected_tip_max_dist_min_m: `0.04005`
+- selected_object_size_m: `0.29604`
+- warmstart_phases: `[0, 1]`
+- reset_settle: passed
+- perturbation: passed
+- grasp_contact: failed
+
+Analysis:
+- The new reference-distance diagnostic confirms the contact-reference gate is no longer the blocker: the selected gripper/reference distance reaches about 5 cm, below the 20 cm lift threshold used for this validation.
+- The warm-start still never enters phase `2`. Given the measured gripper width and the forced `GRASP_WARMSTART_LIFT_CLOSED_WIDTH_MARGIN=0.006`, the remaining likely blocker is the measured closed-width gate rather than object loading, object settling, or center-distance geometry.
+- The rendered grasp-contact frames show a valid but difficult long-thin object. The fingers close near an end/contact patch; this is precisely the case where a measured-width gate tuned for cube-like objects is too brittle.
+
+Next:
+- Rerun the same main-branch video validation with `GRASP_WARMSTART_LIFT_CLOSED_WIDTH_MARGIN=-1.0`. If phase `2` appears, patch the warm-start transition to use the reference/step latch instead of measured width for multi-object training. If it still does not appear, add per-gate diagnostics and inspect the exact EE/finger tracking path.
+
+## 2026-06-14T07:39:00Z - No-width-gate grasp-contact render launch
+
+Goal:
+- Test whether the measured closed-width gate alone prevents the direct GraspGen warm-start from entering lift on the selected multi-object contact case.
+
+Version Control:
+- implementation_commit: `eb8756425d836aed3d1e4479e6ab61819c12de81`
+- local_branch: `main`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-main-rgb-teacher-20260614-f1a34bc`
+- remote_commit: `eb8756425d836aed3d1e4479e6ab61819c12de81`
+- deploy: existing Git bundle deployment; cluster GitHub SSH auth remains unavailable.
+
+Command / Job:
+- job_id: `29058987`
+- run: `franka_multi_video_maineb_refgate_nowidth_20260614T0739Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_29058987.out`
+- output_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_maineb_refgate_nowidth_20260614T0739Z`
+- command: same bounded video validation as job `29058802`, but with `GRASP_WARMSTART_LIFT_CLOSED_WIDTH_MARGIN=-1.0`.
+
+Next:
+- Monitor job `29058987`, parse `video_metrics.json`, inspect grasp-contact frames/video, and patch or proceed based on whether lift phase and object lift occur.
+
+## 2026-06-14T07:47:10Z - No-width gate render reached lift but failed physical grasp
+
+Goal:
+- Decide whether disabling the measured closed-width gate is enough to make the direct GraspGen warm-start physically lift the object.
+
+Command / Job:
+- job_id: `29058987`
+- run: `franka_multi_video_maineb_refgate_nowidth_20260614T0739Z`
+- status: failed by validation criteria after writing artifacts
+- metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_maineb_refgate_nowidth_20260614T0739Z/video_metrics.json`
+
+Result:
+- reset_settle: passed
+- perturbation: passed
+- grasp_contact: failed
+- selected_asset_uuid: `96ae0ff853734df0b10a827307949c87`
+- selected_lift_height_max_m: `0.002376`
+- selected_lift_height_threshold_m: `0.12`
+- selected_reference_finger_center_dist_min_m: `0.05572`
+- selected_gripper_width_min_m: `0.00319`
+- selected_max_finger_dist_min_m: `0.09704`
+- selected_object_xy_delta_max_m: `0.04494`
+- selected_candidate_valid_count: `119`
+- selected_center_gate_dist_m: `0.08242`
+- selected_object_size_m: `0.29604`
+- warmstart_phases: `[0, 1, 2]`
+
+Analysis:
+- Disabling the width gate fixes only the phase-transition issue. The direct controller reaches lift, but the object is not captured.
+- Rendered frames show the chosen candidate contacts a long thin object near an end; the object slides/rotates instead of being enclosed. The first frame is also too close to exact contact because the validation forced `GRASP_PREGRASP_OFFSET=0.01` while the env default is `0.03`.
+- The candidate center gate was too permissive for elongated objects: `0.08242 / 0.29604 = 0.278`, but the validation allowed `0.55`, so a poor end grasp passed.
+
+Next:
+- Rerun the same bounded render with `GRASP_RESET_MAX_CENTER_DISTANCE_FRAC=0.25`, `GRASP_PREGRASP_OFFSET=0.03`, and a larger candidate/attempt budget. Use the result to choose training launch settings or patch candidate scoring if central grasp selection is still poor.
+
+## 2026-06-14T07:50:00Z - Stricter center/default pregrasp render launch
+
+Goal:
+- Test whether centralizing selected GraspGen candidates and using the default pregrasp offset produces clean no-penetration contact and actual object lift.
+
+Version Control:
+- implementation_commit: `eb8756425d836aed3d1e4479e6ab61819c12de81`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-main-rgb-teacher-20260614-f1a34bc`
+- remote_commit: `eb8756425d836aed3d1e4479e6ab61819c12de81`
+
+Command / Job:
+- job_id: `29059034`
+- run: `franka_multi_video_maineb_center025_pre03_20260614T0750Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_29059034.out`
+- output_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_maineb_center025_pre03_20260614T0750Z`
+- command: same main-branch video validation, but with `GRASP_RESET_MAX_CENTER_DISTANCE_FRAC=0.25`, `GRASP_PREGRASP_OFFSET=0.03`, `GRASP_RESET_CANDIDATE_COUNT=2048`, `GRASP_RESET_ATTEMPTS=16`, and `GRASP_WARMSTART_LIFT_CLOSED_WIDTH_MARGIN=-1.0`.
+
+Next:
+- Monitor job `29059034`; if it passes or visually shows a clean central lift, launch the first current-main state teacher run with the same reset settings. If it fails, patch candidate scoring/quality masks before launching RL.
+
+## 2026-06-14T07:54:30Z - Stricter center/default pregrasp still blocked by lift EE gate
+
+Goal:
+- Test whether central candidate selection and the default pregrasp offset produce a clean direct lift.
+
+Command / Job:
+- job_id: `29059034`
+- run: `franka_multi_video_maineb_center025_pre03_20260614T0750Z`
+- status: failed by validation criteria after writing artifacts
+- metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_maineb_center025_pre03_20260614T0750Z/video_metrics.json`
+
+Result:
+- reset_settle: passed
+- perturbation: passed
+- grasp_contact: failed
+- selected_asset_uuid: `96ae0ff853734df0b10a827307949c87`
+- selected_lift_height_max_m: `0.03036`
+- selected_lift_height_threshold_m: `0.12`
+- selected_center_gate_dist_m: `0.07187`
+- selected_candidate_valid_count: `3`
+- selected_reference_finger_center_dist_min_m: `0.05644`
+- selected_max_finger_dist_min_m: `0.06138`
+- selected_gripper_width_min_m: `0.00273`
+- selected_object_xy_delta_max_m: `0.03520`
+- warmstart_phases: `[0, 1]`
+
+Analysis:
+- Tightening the center gate and using the default pregrasp offset improved the grasp: the fingers get closer to the object, object z reaches about 3 cm above its start, and table penetration is much smaller than the end-grasp run.
+- The warm-start still never enters phase `2`. With the width gate disabled and reference distance below threshold, the remaining blocker is likely `GRASP_WARMSTART_LIFT_MAX_EE_ERROR=0.08`, because contact motion changes the exact EE/reference tracking during close.
+
+Next:
+- Rerun the same central/pregrasp validation with `GRASP_WARMSTART_LIFT_MAX_EE_ERROR=0.0` to disable the lift EE-error gate. If it reaches phase `2` but still slips, patch multi-object USD spawn contact material/friction to match the cube baseline.
+
+## 2026-06-14T07:56:00Z - No lift-EE-gate central render launch
+
+Goal:
+- Decide whether the lift EE-error gate is the remaining reason the central/default-pregrasp direct controller does not command lift.
+
+Version Control:
+- implementation_commit: `eb8756425d836aed3d1e4479e6ab61819c12de81`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-main-rgb-teacher-20260614-f1a34bc`
+- remote_commit: `eb8756425d836aed3d1e4479e6ab61819c12de81`
+
+Command / Job:
+- job_id: `29059083`
+- run: `franka_multi_video_maineb_center025_pre03_noeegate_20260614T0756Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_29059083.out`
+- output_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_maineb_center025_pre03_noeegate_20260614T0756Z`
+- command: same as job `29059034`, but with `GRASP_WARMSTART_LIFT_MAX_EE_ERROR=0.0`.
+
+Next:
+- Monitor job `29059083`, inspect phases/lift/video. If lift phase appears but object slips, patch object USD contact material and rerun. If it lifts cleanly, launch state teacher RL with these reset/guidance settings.
+
+## 2026-06-14T07:50:12Z - Patch multi-object contact and top-down prior filtering
+
+Goal:
+- Fix the remaining `grasp_contact` validation failure before launching RL.
+
+Result:
+- job_id: `29059083`
+- run: `franka_multi_video_maineb_center025_pre03_noeegate_20260614T0756Z`
+- status: failed by validation criteria after writing metrics and frames.
+- reset_settle: passed.
+- perturbation: passed.
+- grasp_contact: failed.
+- selected_asset_uuid: `96ae0ff853734df0b10a827307949c87`
+- selected_lift_height_max_m: `0.02316`
+- selected_lift_height_threshold_m: `0.12`
+- selected_object_xy_delta_max_m: `0.10869`
+- selected_reference_finger_center_dist_min_m: `0.05430`
+- selected_candidate_valid_count: `2`
+- selected_pregrasp_offset_dir_z: `0.22564`
+- warmstart_phases: `[0, 1, 2]`
+
+Analysis:
+- Disabling the lift EE gate let the scripted diagnostic reach lift phase, but the object was pushed/slid instead of captured.
+- Pulled frames show the chosen GraspGen prior approaches mostly sideways (`pregrasp_offset_dir_z=0.22564`) and sweeps the rod across the table before lifting empty. This is a reset-prior selection issue, not a reset-settle issue.
+- The multi-object USD spawn was also missing the explicit collision/contact material used by the cube task, so successful grasps would be more likely to slip than the original cube baseline.
+
+Change:
+- Added explicit USD object collision properties and high-friction/zero-restitution material to match the cube task's physical setup.
+- Raised the multi-object default/top-level launcher top-down prior threshold from low side-approach values to `0.45`.
+- Tightened the wrapper default center-distance fraction from `0.55` to `0.30`.
+- Kept `require_topdown` active in the fallback scorer so failed strict masks do not silently choose side grasps.
+
+Version Control:
+- agent_id: `merge-dp-rgb-main-20260613`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/merge-dp-rgb-main-20260613`
+- branch: `main`
+- base_commit: `eb8756425d836aed3d1e4479e6ab61819c12de81`
+- implementation_commit: pending
+- changed_files: `dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py`, `dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py`, `cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh`, `cluster/sbatch_train_teacher_8gpu.sh`, this worklog.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py`: passed.
+- `bash -n cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh cluster/sbatch_train_teacher_8gpu.sh`: passed.
+- `git diff --check`: passed.
+
+Next:
+- Commit and deploy this patch to the A100 worktree, then rerun the same video validation with a stricter `GRASP_RESET_MIN_PREGRASP_Z=0.55`, central candidate filtering, and the patched friction/contact settings.

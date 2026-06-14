@@ -17,6 +17,7 @@ import isaaclab.utils.math as math_utils
 from isaaclab.assets import Articulation, RigidObject, RigidObjectCfg
 from isaaclab.sensors import TiledCamera
 from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane
+from isaaclab.sim.spawners.materials.physics_materials_cfg import RigidBodyMaterialCfg
 
 from dextrah_lab.tasks.dextrah_franka_cube_grasp.franka_cube_grasp_env import (
     DextrahFrankaCubeGraspEnv,
@@ -301,6 +302,11 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
                 prim_path=prim_path,
                 spawn=sim_utils.UsdFileCfg(
                     usd_path=str(asset["usd_path"]),
+                    collision_props=sim_utils.CollisionPropertiesCfg(
+                        collision_enabled=True,
+                        contact_offset=float(self.cfg.object_contact_offset),
+                        rest_offset=float(self.cfg.object_rest_offset),
+                    ),
                     rigid_props=sim_utils.RigidBodyPropertiesCfg(
                         rigid_body_enabled=True,
                         kinematic_enabled=False,
@@ -317,6 +323,13 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
                         max_depenetration_velocity=float(self.cfg.object_max_depenetration_velocity),
                     ),
                     mass_props=sim_utils.MassPropertiesCfg(density=float(self.cfg.object_density)),
+                    physics_material=RigidBodyMaterialCfg(
+                        static_friction=float(self.cfg.object_static_friction),
+                        dynamic_friction=float(self.cfg.object_dynamic_friction),
+                        restitution=float(self.cfg.object_restitution),
+                        friction_combine_mode="max",
+                        restitution_combine_mode="min",
+                    ),
                     scale=(scale, scale, scale),
                 ),
                 init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, -10.0), rot=(1.0, 0.0, 0.0, 0.0)),
@@ -707,11 +720,10 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         width_bonus = torch.clamp(candidate_required_width / max(float(self.cfg.max_gripper_width), 1.0e-6), 0.0, 1.0)
         score = candidate_confidence + pregrasp_z + 0.75 * width_bonus
         score = score - 6.0 * normalized_center_dist - normalized_tool_center_dist
-        fallback_score = torch.where(
-            candidate_pregrasp_farther & width_ok,
-            score,
-            score - 1.0e5,
-        )
+        fallback_ok = candidate_pregrasp_farther & width_ok
+        if bool(self.cfg.grasp_prior_reset_require_topdown):
+            fallback_ok = fallback_ok & topdown_ok
+        fallback_score = torch.where(fallback_ok, score, score - 1.0e5)
         scored = torch.where(valid, score, score - 1.0e6)
         has_valid = valid.any(dim=1, keepdim=True)
         scored = torch.where(has_valid, scored, fallback_score)

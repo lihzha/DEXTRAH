@@ -70,6 +70,11 @@ class DextrahFrankaMultiObjectGraspEnvCfg(DextrahFrankaCubeGraspEnvCfg):
     object_default_grasp_size = 0.06
     object_default_scale = 1.0
     object_density = 500.0
+    object_static_friction = 1.5
+    object_dynamic_friction = 1.2
+    object_restitution = 0.0
+    object_contact_offset = 0.004
+    object_rest_offset = 0.0
     object_solver_position_iterations = 12
     object_solver_velocity_iterations = 4
     object_linear_damping = 0.08
@@ -85,7 +90,7 @@ class DextrahFrankaMultiObjectGraspEnvCfg(DextrahFrankaCubeGraspEnvCfg):
     grasp_prior_reset_attempts = 1
     grasp_prior_reset_candidate_count = 16
     grasp_prior_reset_require_topdown = True
-    grasp_prior_reset_min_pregrasp_z = 0.10
+    grasp_prior_reset_min_pregrasp_z = 0.45
     grasp_prior_reset_max_center_distance_frac = 0.30
     grasp_prior_reset_min_width = 0.008
 
