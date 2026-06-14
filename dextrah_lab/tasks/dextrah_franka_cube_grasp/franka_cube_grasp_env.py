@@ -1085,6 +1085,12 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
 
     def _get_rewards(self) -> torch.Tensor:
         self._compute_intermediate_values(update_success_timer=True)
+        reward_actions = self.actions
+        if bool(getattr(self.cfg, "grasp_prior_action_warmstart_enabled", False)) and hasattr(
+            self,
+            "grasp_prior_action_warmstart_policy_actions",
+        ):
+            reward_actions = self.grasp_prior_action_warmstart_policy_actions
         (
             approach_reward,
             enclosure_reward,
@@ -1111,7 +1117,7 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             self.cube_xy_error,
             self.finger_table_clearance,
             self.in_success_region,
-            self.actions,
+            reward_actions,
             float(self.cfg.cube_lift_height),
             float(self.cfg.max_gripper_width),
             float(self.cfg.finger_table_clearance_margin),
@@ -1193,6 +1199,11 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             "cube_action_down": torch.clamp(-self.actions[:, 2], 0.0, 1.0).mean(),
             "cube_gripper_action": self.actions[:, 6].mean(),
             "cube_gripper_close_action": torch.clamp(-self.actions[:, 6], 0.0, 1.0).mean(),
+            "cube_reward_action_z": reward_actions[:, 2].mean(),
+            "cube_reward_action_up": torch.clamp(reward_actions[:, 2], 0.0, 1.0).mean(),
+            "cube_reward_action_down": torch.clamp(-reward_actions[:, 2], 0.0, 1.0).mean(),
+            "cube_reward_gripper_action": reward_actions[:, 6].mean(),
+            "cube_reward_gripper_close_action": torch.clamp(-reward_actions[:, 6], 0.0, 1.0).mean(),
         }
         if bool(self.cfg.grasp_prior_action_prior_reward_enabled):
             action_prior_phase = self.grasp_prior_action_prior_phase

@@ -5396,3 +5396,44 @@ Analysis:
 
 Next:
 - Monitor `direct_info_rank_0.jsonl` as soon as the run directory appears. Continue, cancel/tune/relaunch, or evaluate checkpoints based on reward/action traces rather than scheduler state.
+
+## 2026-06-14T18:08:00Z - Warm PPO early cancellation and reward-action fix
+
+Goal:
+- Diagnose the first corrected-label PPO attempt early enough to avoid wasting the A100 allocation, then patch the most likely credit-assignment bug before relaunching.
+
+Hypothesis:
+- The PPO run was rewarding scripted warmstart actions instead of raw policy actions for close/lift/post-lift action shaping. That makes the robot state look useful during warmstart, but PPO cannot learn the post-warmstart hold behavior because the action-dependent reward is not tied to the policy action that generated the log-prob.
+
+Change:
+- Canceled A100 job `29071795` after 10 metric rows because success/lift collapsed whenever warmstart was mostly inactive.
+- Changed `DextrahFrankaCubeGraspEnv._get_rewards()` so action-dependent cube grasp reward terms use `grasp_prior_action_warmstart_policy_actions` whenever warmstart is enabled, while state still evolves under the applied action.
+- Added diagnostic logs for `cube_reward_action_z`, `cube_reward_action_up/down`, and `cube_reward_gripper_*` so future runs can distinguish applied action from policy action in reward shaping.
+
+Version Control:
+- agent_id: orchestrator/integration
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/merge-dp-rgb-main-20260613`
+- branch: `main`
+- base_commit: `dbfe99671c385474bfc4e735c14fc1bda9685b55`
+- implementation_commit: pending
+- remote PPO source before patch: detached clean at `21378e945b4fa573beb00a757ea9bd0387f66c50`
+- changed_files: `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`, this worklog
+
+Command / Job:
+- canceled job_id: `29071795`
+- run_name: `franka_multi_state_teacher_7195_96ae_holdlabel_warmppo_21378e9_20260614T1750Z`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_96ae_holdlabel_warmppo_21378e9_20260614T1750Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29071795.out`
+- validation: `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py`; `bash -n cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_eval_franka_multi_object_grasp_1gpu.sh`; `git diff --check`
+
+Result:
+- job status: canceled intentionally after early failure evidence.
+- epoch 51-60 metrics: success mean `0.0163`, max `0.0439`, min `0.0010`; lift mean `0.00895 m`, min `0.00367 m`; policy z mean `-0.135`; policy gripper action mean `-0.431`.
+- failure signature: epochs 55-59 had low warmstart active rate (`0.025-0.089`), success `0.00098-0.0117`, lift below `0.008 m`, and gripper width around `0.025-0.031 m`. Epoch 60 success spike coincided with warmstart active rate returning to `0.498`, so it was not learned sustained grasping.
+
+Analysis:
+- The corrected BC labels helped the supervised data consistency but did not solve RL credit assignment. The warmstart intervention creates good state distributions, but the old reward helper used `self.actions` after `_pre_physics_step(applied_actions)`, so action-shaping reward terms were often credited to scripted actions rather than raw policy actions.
+- The patch keeps the intervention for physics but makes the close/lift/post-lift action reward policy-dependent, which should produce a usable gradient during the same warmstarted state distribution.
+
+Next:
+- Commit/push/deploy this patch to the A100 worktree, relaunch a bounded PPO run, and compare `cube_reward_action_*` against `cube_policy_*`/`cube_applied_*`. Continue only if non-warmstart epochs preserve lift/success better than `29071795`.
