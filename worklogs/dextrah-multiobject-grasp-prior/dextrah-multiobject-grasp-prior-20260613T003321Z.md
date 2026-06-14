@@ -5644,10 +5644,12 @@ Version Control:
 - agent_id: orchestrator/integration
 - worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/merge-dp-rgb-main-20260613`
 - branch: `main`
-- base_commit: `4f897bfe8c9c0dad840cb55669cae5aeb38debbf`
-- implementation_commit: pending
+- base_commit: `4f897bf901b973f0b989ca5d7611040dbb613d66`
+- implementation_commit: `8b1a36aaca67167366433be05365cd4384f0318f`
 - changed_files: `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`, `dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py`, this worklog
-- remote_source: pending deploy after commit
+- remote_source: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-bc-fallback-20260614-d5e8b27`
+- remote_commit/status: detached clean at `8b1a36aaca67167366433be05365cd4384f0318f`
+- push/pull: pushed to GitHub main; remote updated from `/lustre/fsw/portfolios/nvr/users/lzha/src/bundles/DEXTRAH/dextrah-8b1a36a.bundle`
 
 Command / Job:
 - canceled job_id: `29072558`
@@ -5667,3 +5669,40 @@ Analysis:
 
 Next:
 - Commit/push/deploy the contact-reference patch, relaunch PPO from the corrected BC checkpoint with the same two-object manifest and collector-matched warmstart settings, then compare epochs 51-60 against jobs `29072214` and `29072558`.
+
+## 2026-06-14T19:10:00Z - Contact-reference PPO relaunch
+
+Goal:
+- Test the moving contact-reference distance patch under the same two-object, yaw-randomized, collector-matched PPO setup.
+
+Hypothesis:
+- If the main blocker was center-distance reward/success mismatch for long objects, the same BC checkpoint and warmstart schedule should now produce lower logged hand distance, higher success, and higher lift in epochs 51-60 than job `29072558`.
+
+Change:
+- No additional source changes beyond `8b1a36aaca67167366433be05365cd4384f0318f`.
+- Deployed the commit to the A100 agent source worktree via Git bundle because the A100 host cannot authenticate to GitHub directly.
+
+Version Control:
+- agent_id: orchestrator/integration
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/merge-dp-rgb-main-20260613`
+- branch: `main`
+- implementation_commit: `8b1a36aaca67167366433be05365cd4384f0318f`
+- remote_source: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-bc-fallback-20260614-d5e8b27`
+- remote_commit/status: detached clean at `8b1a36aaca67167366433be05365cd4384f0318f`
+
+Command / Job:
+- command: `sbatch --export=ALL,... cluster/sbatch_train_teacher_8gpu.sh`
+- job_id: `29073180`
+- run_name: `franka_multi_state_teacher_7195_96ae_contactref_8b1a36a_20260614T1910Z`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_96ae_contactref_8b1a36a_20260614T1910Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29073180.out`
+- key overrides: same manifest, stable-pose cache, verified-index cache, random object assignment, `OBJECT_SPAWN_YAW_RANDOMIZATION_DEG=180.0`, `OBJECT_SPAWN_XY_RANDOMIZATION=0.10`, `GRASP_PRIOR_ACTION_WARMSTART_PRIOR_CLOSE_WIDTH_MARGIN=0.003`, `GRASP_PRIOR_ACTION_WARMSTART_LIFT_ACTION_Z=0.50`, `GRASP_PRIOR_ACTION_WARMSTART_LIFT_CLOSED_WIDTH_MARGIN=-1.0`, `MAX_ITERATIONS=120`, `NUM_ENVS=2048`.
+
+Result:
+- status: submitted / running on `batch-block5-00102`
+
+Analysis:
+- The first pass/fail gate is epochs 51-60. Contact-reference metrics should make the logged `cube_finger_center_to_cube_dist` much smaller than the previous center-based ~0.33 m if the selected grasp contact remains near the gripper.
+
+Next:
+- Monitor startup, parse rank-0 metrics, and cancel/tune if the first 51-60 window still collapses.
