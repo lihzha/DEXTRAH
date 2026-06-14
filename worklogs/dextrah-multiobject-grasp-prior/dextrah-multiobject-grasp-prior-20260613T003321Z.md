@@ -5316,3 +5316,38 @@ Analysis:
 
 Next:
 - Monitor `1029357` through completion, inspect `bc_metrics.json`, dataset stats, and corrected checkpoint evals.
+## 2026-06-14T17:40:00Z - Corrected BC checkpoint eval launch
+
+Goal:
+- Verify that the corrected hold-label BC checkpoint improves policy-only grasp/hold behavior before any A100 PPO resume.
+
+Hypothesis:
+- The corrected dataset now supervises held/lifted states toward positive z and closed gripper actions, so deterministic/stochastic rollouts should improve terminal occupancy and reduce the prior open/down failure mode.
+
+Change:
+- Completed BC job `1029357` successfully and launched deterministic/stochastic policy evals plus a tensor-stat verification job.
+
+Version Control:
+- implementation_commit: `21378e945b4fa573beb00a757ea9bd0387f66c50`
+- worklog_commit: `fe94903f0a206798db7d5a651b7c008662713674`
+- remote_source: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-bc-fallback-20260614-d5e8b27`
+- remote_commit/status: detached clean at `21378e945b4fa573beb00a757ea9bd0387f66c50`
+
+Command / Job:
+- BC run: `franka_multi_7195_96ae_bc_holdlabel_ep50_21378e9_20260614T1734Z`
+- BC checkpoint: `/results/bc/franka_multi_7195_96ae_bc_holdlabel_ep50_21378e9_20260614T1734Z/nn/bc_reference_action_imitation.pth`
+- deterministic eval job: `1029358`, run `franka_multi_7195_96ae_holdlabel_ep50_21378e9_20260614T1740Z_det`
+- stochastic eval job: `1029359`, run `franka_multi_7195_96ae_holdlabel_ep50_21378e9_20260614T1740Z_stoch`
+- tensor-stat job: `1029360`, log `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bc_holdlabel_stats_1029360.out`
+- eval distribution: `NUM_ENVS=256`, `NUM_STEPS=600`, policy action source, same two-object manifest, random object assignment, full yaw, stable-pose cache, verified grasp indices, reset attempts `4`, candidates `64`, pregrasp offset `0.03`.
+
+Result:
+- status: evals/stats launched
+- BC metrics: `selected_step=3000`, `val_l2=0.0533`, `val_source_hold_applied_handoff_l2=0.0552`, `val_source_hold_applied_handoff_up_abs=0.00818`, `val_source_hold_applied_handoff_close_abs=0.0157`.
+- handoff source: `29853` held/lifted samples, `lift_mean=0.211 m`, `success_rate=0.0611`, `max_finger_mean=0.0880`.
+
+Analysis:
+- The BC objective is now fitting the corrected labels well, but acceptance depends on rollout metrics and action traces.
+
+Next:
+- Inspect tensor-stat output to confirm hold/lift labels are positive-z/closed; inspect eval metrics/traces for terminal success/occupancy and policy z/gripper behavior.
