@@ -4599,3 +4599,132 @@ Validation:
 
 Next:
 - Commit/push/deploy this cache path, run the L40 collector for the two-object manifest with stable-pose cache, inspect the resulting JSON counts and stats, then launch A100 PPO with `GRASP_PRIOR_VERIFIED_INDICES_PATH` set to the collected cache.
+
+## 2026-06-14T14:15:02Z - Verified cache collection and A100 PPO launch
+
+Goal:
+- Produce a reset cache whose entries physically lift in sim, then resume multi-object PPO using only those reset prior indices.
+
+Hypothesis:
+- The previous warmstart PPO failed because most geometric reset samples were not dynamically liftable. Restricting reset sampling to lift-verified prior indices should increase warmstart lift/success enough for PPO to learn the pickup behavior.
+
+Change:
+- Deployed commit `2977a39d4b32cf3eefb5070fbd310aa72816d207` to `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-main-verifycache-20260614-2977a39`.
+- Initial collector `1029288` on the original two-object non-slender manifest found object `1d489...` sample `71`, but object `30700...` had zero quality resets at center gate `0.35`; offline prior inspection showed it has only 4 grasps and none within `0.35*object_size`.
+- Relaunch `1029289` with center gate `0.50` produced quality resets for `30700...` but no lift passes after 489+ quality resets, so that object was not used for the first RL scale-up.
+- Created `/results/assets/filtered_manifests/two_liftable_1d_96ae_20260614T1353Z/manifest.json` with objects `1d489...` and `96ae...`.
+- Collector `1029291` verified lift/success samples under the training reset distribution:
+  - `1d489db9cdc24161a7537926a20bb17b`: index `[71]`, best lift about `0.36 m`, success true.
+  - `96ae0ff853734df0b10a827307949c87`: indices `[905, 613, 813]`, best lifts about `0.43 m`, `0.18 m`, and another successful lifted sample.
+- Accepted cache: `/results/assets/verified_grasp_indices/franka_multi_verified_cache_1d_96ae_2977a39_20260614T1355Z/verified_indices_accepted.json`.
+
+Validation:
+- Local syntax: `python3 -m py_compile ... collect_franka_multi_object_verified_grasps.py`, `bash -n` on train/video/collector wrappers.
+- L40 collector exercised the environment headlessly with stable poses, yaw randomization, XY randomization, warmstart close/lift, and wrote per-index lift/success stats. The accepted cache has nonempty verified indices for both loaded objects.
+
+Command / Job:
+- A100 host: `a1001`
+- job_id: `29067700`
+- run: `franka_multi_state_teacher_cache_1d96_warm_resume25_20260614T1411Z`
+- code_commit: `2977a39d4b32cf3eefb5070fbd310aa72816d207`
+- checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_pg03_c035_ap8_20260614T1218Z/nn/last_dextrah_franka_multi_object_grasp_ep_25_rew_937.9583.pth`
+- manifest: `/results/assets/filtered_manifests/two_liftable_1d_96ae_20260614T1353Z/manifest.json`
+- verified_cache: `/results/assets/verified_grasp_indices/franka_multi_verified_cache_1d_96ae_2977a39_20260614T1355Z/verified_indices_accepted.json`
+- reset: `OBJECT_ASSET_ASSIGNMENT=random`, stable pose cache enabled, yaw randomization `180 deg`, XY randomization `0.10 m`, center `(0.05, 0.0)`, grasp center gate `0.50`, candidate count `16` sampled from verified cache.
+- warmstart/action prior: enabled, approach/close/lift `4/40/180`, close width `0.004`, prior close width disabled, lift action z `0.50`, action-prior reward weight `20.0`, sharpness `1.0`.
+
+Result:
+- status: running
+- startup: all 8 ranks restored runtime state at epoch 25; rank-0 metrics file is active; epoch-30 checkpoint was written.
+- early metrics: by epoch 35, `cube_success_rate ~= 0.0063`, `cube_has_lifted_rate ~= 0.059`, `cube_action_warmstart_lift_success_rate ~= 0.025`, `cube_action_warmstart_lift_has_lifted_rate ~= 0.068`, `cube_grasp_prior_quality_success_rate ~= 0.667`.
+
+Analysis:
+- The verified cache removed the total flatline from the previous run and gives real lifted/success states during warmstart, but the lift rate is still low relative to the standalone collector. Continue monitoring trend before deciding whether to tune reset IK/yaw, increase cache diversity, or alter warmstart gating.
+
+Next:
+- Monitor through the next checkpoint window. If success/lift rise, keep training; if they stagnate or fall, stop and patch/tune with evidence from the metric trend.
+
+## 2026-06-14T14:30:00Z - Verified-cache PPO stopped after weak warmstart lift
+
+Goal:
+- Decide whether the verified-cache A100 run is learning enough to continue.
+
+Result:
+- status: canceled for poor learning signal after preserving metrics and checkpoints
+- job_id: `29067700`
+- run: `franka_multi_state_teacher_cache_1d96_warm_resume25_20260614T1411Z`
+- final checkpoint observed before cancel: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_cache_1d96_warm_resume25_20260614T1411Z/nn/last_dextrah_franka_multi_object_grasp_ep_50_rew_2241.0818.pth`
+- evidence: rank-0 rows through epoch 50 had last-10 average `cube_success_rate ~= 0.00093`, `cube_has_lifted_rate ~= 0.0508`, `cube_lift_height ~= 0.00146 m`, `cube_grasp_prior_quality_success_rate ~= 0.679`, `cube_action_warmstart_lift_has_lifted_rate ~= 0.065`, and `cube_action_warmstart_lift_success_rate ~= 0.0026`.
+- diagnostic detail: reset quality was around `70%`, but warmstart lift-phase finger-center distance was commonly `0.2-0.3 m` and lift success was near zero, so most cached reset samples still did not produce usable demonstrations under full randomized training resets.
+
+Analysis:
+- The policy observation is object-pose conditioned through inherited Franka cube terms (`cube_pos`, `cube_quat`, velocities, finger-to-object offsets, goal deltas) plus multi-object size/identity/grasp-prior features, so this does not look like an unconditioned-policy failure.
+- The accepted verified cache is too sparse and single-pass: it contains only one index for object `1d489...` and three for `96ae...`, and those indices only occasionally lift across randomized pose/yaw/IK realizations.
+- Continuing this run to epoch 600 would mostly train on non-lifting warmstart episodes and bad post-warmstart exploration.
+
+Next:
+- Relaunch with a tighter first-stage curriculum that keeps the user-required multi-object parallel sampling and full yaw randomization, but reduces XY spawn randomization and increases reset retries/candidate reuse so warmstart can generate many lifted demonstrations. If that still stalls, collect a larger robust verified cache or move to a staged XY curriculum before restoring the full `+-10 cm` pose range.
+
+## 2026-06-14T14:25:21Z - Prior-width robust verified-cache collector
+
+Goal:
+- Test whether closing to the GraspGen prior width, instead of forcing every object to a `0.004 m` gripper width, produces a more robust lift-verified cache under the full training pose randomization.
+
+Hypothesis:
+- The previous cache entries can lift occasionally, but the training warmstart often loses contact because arbitrary objects are squeezed to a cube-like near-closed width. Using the prior grasp width with a small margin should reduce object ejection/slip and increase repeatable lift success.
+
+Command / Job:
+- host: `l401`
+- job_id: `1029301`
+- run: `franka_multi_verified_priorwidth_fullxy_2977a39_20260614T142521Z`
+- code_commit: `2977a39d4b32cf3eefb5070fbd310aa72816d207`
+- manifest: `/results/assets/filtered_manifests/two_liftable_1d_96ae_20260614T1353Z/manifest.json`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/collect_franka_multi_object_verified_grasps_1029301.out`
+- output: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/verified_grasp_indices/franka_multi_verified_priorwidth_fullxy_2977a39_20260614T142521Z/verified_indices.json`
+- reset: full yaw randomization (`180 deg`), XY randomization `0.10 m`, stable-pose cache, center `(0.05, 0.0)`, reset attempts `8`, candidate count `4096`, center gate `0.50`, IK iterations `128`.
+- warmstart: approach/close/lift `4/60/180`, `GRASP_WARMSTART_CLOSE_WIDTH=0.08`, `GRASP_WARMSTART_USE_PRIOR_CLOSE_WIDTH=True`, prior margin `0.003`, min width `0.002`, lift action z `0.50`.
+- collector thresholds: `TARGET_PER_OBJECT=6`, `MIN_CYCLES=12`, `CYCLES=80`, `MIN_LIFT_HEIGHT=0.10`, `REQUIRE_SUCCESS=True`, `MAX_DONE_COUNT=0`.
+
+Next:
+- Monitor first cycle counts and final JSON. If counts improve without manual acceptance, use this cache for the next A100 PPO run; if not, switch to an easier first-stage XY curriculum or search a broader object subset for robust indices.
+
+Result:
+- status: stopped after answering the close-width hypothesis for `1d489...`
+- job_id: `1029301`
+- evidence: after 12 cycles, `1d489db9cdc24161a7537926a20bb17b` had `0` passing samples after `384` observed resets and `347` quality resets, while `96ae0ff853734df0b10a827307949c87` had `5` pass observations on indices `[905, 613]`.
+- decision: prior-width closing helps `96ae...` but makes `1d489...` unusable for this training pair. Do not use `1d489...` for the next PPO run.
+
+Next:
+- Test the remaining converted object `7195...` with `96ae...`, because the current `/lustre` debug USD set has only four converted objects and `30700...` was already diagnosed as low-quality/no-lift.
+
+## 2026-06-14T14:29:42Z - Robust pair collector for 7195+96ae
+
+Goal:
+- Find a two-object training pair whose grasp-prior warmstart produces repeated successful lifts under the full training pose randomization.
+
+Change:
+- Wrote filtered manifest `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/filtered_manifests/two_liftable_7195_96ae_20260614T1432Z/manifest.json` for objects:
+  - `7195ed3346a445448308febe833c180a`
+  - `96ae0ff853734df0b10a827307949c87`
+
+Command / Job:
+- host: `l401`
+- job_id: `1029302`
+- run: `franka_multi_verified_7195_96ae_priorwidth_2977a39_20260614T142942Z`
+- code_commit: `2977a39d4b32cf3eefb5070fbd310aa72816d207`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/collect_franka_multi_object_verified_grasps_1029302.out`
+- output: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/verified_grasp_indices/franka_multi_verified_7195_96ae_priorwidth_2977a39_20260614T142942Z/verified_indices.json`
+- accepted_cache: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/verified_grasp_indices/franka_multi_verified_7195_96ae_priorwidth_2977a39_20260614T142942Z/verified_indices_accepted.json`
+- settings: full yaw randomization, `OBJECT_SPAWN_XY_RANDOMIZATION=0.10`, stable-pose cache, `GRASP_WARMSTART_CLOSE_WIDTH=0.08`, `GRASP_WARMSTART_USE_PRIOR_CLOSE_WIDTH=True`, reset attempts `8`, candidate count `4096`, center gate `0.50`.
+
+Result:
+- status: accepted for first PPO launch
+- `7195ed3346a445448308febe833c180a`: accepted index `[354]`, `33` pass observations, `277` quality resets, `448` observed resets, best lift about `0.395 m`, success true.
+- `96ae0ff853734df0b10a827307949c87`: accepted index `[905]`, `7` pass observations, `302` quality resets, `448` observed resets, best lift about `0.244 m`, success true.
+
+Analysis:
+- This pair produces repeated lift-success passes for both objects under the full yaw and `+-10 cm` XY training distribution, unlike the `1d489... + 96ae...` pair.
+- The accepted cache intentionally overrides the collector's unique-index target because repeated success on one robust index per object is a better first PPO signal than many one-off geometric candidates.
+
+Next:
+- Launch A100 PPO on the `7195... + 96ae...` pair with the accepted cache, prior-width closing, full yaw, random object assignment, and full `+-10 cm` object pose randomization. Start from a clean policy initialization so the failed `1d489...` run does not carry optimizer/normalization state into the stronger pair.
