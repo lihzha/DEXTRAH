@@ -822,6 +822,11 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             phase[lift] = 2
         return teacher_actions, active, phase, exact_ee_error
 
+    def compute_grasp_prior_reference_actions(self) -> torch.Tensor:
+        """Return the current grasp-prior scripted action target for eval/BC."""
+        teacher_actions, _, _, _ = self._grasp_prior_reference_actions()
+        return teacher_actions.detach().clamp(-1.0, 1.0)
+
     def _compute_grasp_prior_action_prior_reward(self) -> torch.Tensor:
         self._ensure_cube_buffers()
         self.grasp_prior_action_prior_active[:] = False

@@ -456,6 +456,8 @@ def _reference_delta_actions(task_env) -> torch.Tensor:
     for this cheap feasibility smoke.
     """
 
+    if hasattr(task_env, "compute_grasp_prior_reference_actions"):
+        return task_env.compute_grasp_prior_reference_actions()
     if not hasattr(task_env, "traj_target_ee_pos"):
         raise ValueError("reference_delta action source requires a trajectory-tracking task environment.")
     if hasattr(task_env, "compute_reference_delta_actions"):

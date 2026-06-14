@@ -4728,3 +4728,115 @@ Analysis:
 
 Next:
 - Launch A100 PPO on the `7195... + 96ae...` pair with the accepted cache, prior-width closing, full yaw, random object assignment, and full `+-10 cm` object pose randomization. Start from a clean policy initialization so the failed `1d489...` run does not carry optimizer/normalization state into the stronger pair.
+
+## 2026-06-14T14:38:29Z - A100 PPO launch on robust 7195+96ae pair
+
+Goal:
+- Train the first multi-object Franka grasp teacher policy on a two-object pair whose grasp-prior warmstart has repeated lift-success passes under full training randomization.
+
+Version Control:
+- local main worklog commit: `471a556` (`Record multi-object grasp PPO relaunch diagnostics`)
+- training source commit: `2977a39d4b32cf3eefb5070fbd310aa72816d207`
+- remote source: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-main-verifycache-20260614-2977a39`
+- note: A100 login could not fetch GitHub over SSH (`Permission denied (publickey)`), but the only newer commit is worklog-only; training source code is unchanged from `2977a39`.
+
+Command / Job:
+- host: `a1001`
+- job_id: `29069517`
+- run: `franka_multi_state_teacher_7195_96ae_priorwidth_scratch_2977a39_20260614T143829Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29069517.out`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_96ae_priorwidth_scratch_2977a39_20260614T143829Z`
+- manifest: `/results/assets/filtered_manifests/two_liftable_7195_96ae_20260614T1432Z/manifest.json`
+- verified_cache: `/results/assets/verified_grasp_indices/franka_multi_verified_7195_96ae_priorwidth_2977a39_20260614T142942Z/verified_indices_accepted.json`
+- scale: `NUM_ENVS=2048`, 8 GPUs, `MAX_ITERATIONS=300`, `HORIZON_LENGTH=64`, `SAVE_FREQUENCY=10`, `SEED=47`.
+- randomization: `OBJECT_ASSET_ASSIGNMENT=random`, full yaw randomization (`180 deg`), XY randomization `0.10 m`, center `(0.05, 0.0)`.
+- reset/warmstart: stable-pose cache, reset attempts `4`, verified candidate count `64`, center gate `0.50`, IK `128/0.035/0.25/0.055/0.55`, warmstart approach/close/lift `4/60/180`, prior-width close enabled with width cap `0.08`, min width `0.002`, lift action z `0.50`.
+- action prior/rewards: action-prior reward enabled (`20.0`, sharpness `1.0`), lift `60.0`, height `15.0`, success `80.0`, close action `2.0`, lift action `10.0`, descend penalty `-8.0`, action penalty `-0.0002`.
+
+Next:
+- Monitor startup for config/load errors. First metric gate: reset quality should be high enough to keep warmstart active, and `cube_action_warmstart_lift_has_lifted_rate` / `cube_action_warmstart_lift_success_rate` should be materially higher than the failed `1d489...` run.
+
+Result:
+- status: canceled for curriculum tuning after epoch-30 checkpoint
+- job_state: `CANCELLED by 158351`; `.batch` recorded signal exit `15:0`, expected after manual cancellation.
+- checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_96ae_priorwidth_scratch_2977a39_20260614T143829Z/nn/last_dextrah_franka_multi_object_grasp_ep_30_rew_3406.4106.pth`
+- metrics through epoch 29: last-10 average `cube_success_rate ~= 0.0104`, `cube_has_lifted_rate ~= 0.1608`, `cube_lift_height ~= 0.0057 m`, `cube_grasp_prior_quality_success_rate ~= 0.5335`, `cube_action_warmstart_lift_has_lifted_rate ~= 0.3894`, `cube_action_warmstart_lift_success_rate ~= 0.0511`, and `cube_action_prior_delta_abs ~= 0.6682`.
+
+Analysis:
+- The robust pair environment is behaving materially better than the previous `1d489... + 96ae...` attempt: reset quality is stable and warmstart lift phases produce real lifted/success cases.
+- The learned policy has not yet absorbed the scripted action prior: `cube_action_prior_delta_abs` remains near `0.67` and strict success is still around one percent. This points to a curriculum/reward-strength issue rather than another asset/reset bug.
+
+Next:
+- Resume from the epoch-30 checkpoint with the same validated environment, same random object assignment, same full yaw and `+-10 cm` XY randomization, and a stronger action-prior reward. Keep code at `2977a39`; this is a launch-only hyperparameter change.
+
+## 2026-06-14T15:11:33Z - Stronger action-prior resume from robust-pair epoch 30
+
+Goal:
+- Make the policy imitate the working grasp-prior reference actions strongly enough that post-warmstart PPO can improve strict multi-object pickup success.
+
+Hypothesis:
+- The previous run's environment signal is adequate, but the action-prior reward is too weak relative to PPO noise and task reward. Increasing the action-prior reward weight should reduce `cube_action_prior_delta_abs` and improve policy lift/success while preserving the validated object/reset distribution.
+
+Change:
+- Launch-only change: increase `GRASP_PRIOR_ACTION_PRIOR_REWARD_WEIGHT` from `20.0` to `100.0`.
+- Keep `GRASP_PRIOR_ACTION_PRIOR_REWARD_SHARPNESS=1.0`, prior-width closing, stable-pose cache, verified indices, full yaw randomization, random object assignment, and full `+-10 cm` XY randomization unchanged.
+
+Version Control:
+- local main worklog commit before this entry: `471a5562b714ea1427f8e8a84be7c0c3d11e4d0c`
+- training source commit: `2977a39d4b32cf3eefb5070fbd310aa72816d207`
+- remote source: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-main-verifycache-20260614-2977a39`
+- push/pull: not needed for code because the only newer local changes are worklog entries and the A100 checkout could not fetch GitHub over SSH earlier.
+
+Command / Job:
+- command: `sbatch --export=ALL,... cluster/sbatch_train_teacher_8gpu.sh`
+- host: `a1001`
+- job_id: `29070006`
+- run: `franka_multi_state_teacher_7195_96ae_ap100_resume30_2977a39_20260614T1511Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29070006.out`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_96ae_ap100_resume30_2977a39_20260614T1511Z`
+- checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_96ae_priorwidth_scratch_2977a39_20260614T143829Z/nn/last_dextrah_franka_multi_object_grasp_ep_30_rew_3406.4106.pth`
+
+Next:
+- Submit the resume job, inspect startup/checkpoint restore, then monitor whether `cube_action_prior_delta_abs` drops and strict success/lift improve over the next checkpoint window.
+
+Result:
+- status: canceled for poor learning signal after epoch-40 checkpoint
+- checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_96ae_ap100_resume30_2977a39_20260614T1511Z/nn/last_dextrah_franka_multi_object_grasp_ep_40_rew_4292.6763.pth`
+- startup: all ranks restored the epoch-30 runtime state and loaded the checkpoint; rank-0 JSONL metrics were written normally.
+- metrics through epoch 40: last-10 average `cube_success_rate ~= 0.0142`, `cube_has_lifted_rate ~= 0.1442`, `cube_lift_height ~= 0.0066 m`, `cube_grasp_prior_quality_success_rate ~= 0.526`, `cube_action_warmstart_lift_has_lifted_rate ~= 0.263`, `cube_action_warmstart_lift_success_rate ~= 0.034`, and `cube_action_prior_delta_abs ~= 0.674`.
+- trend: first resumed epoch spiked to `cube_success_rate ~= 0.042`, but later epochs fell back under one percent except reset-phase spikes. Increasing the prior reward weight from `20.0` to `100.0` increased `cube_action_prior_reward` but did not reduce sampled action delta.
+
+Analysis:
+- Reward scaling alone is not enough. The policy keeps closing the gripper harder (`cube_policy_gripper_action` around `-0.7`) but does not reliably match the reference trajectory or lift.
+- PPO uses a fixed-sigma continuous actor (`SIGMA_INIT_VAL=0` in the training config), so logged sampled actions may stay noisy even if means improve. Before another PPO relaunch, inspect deterministic policy behavior and add a direct supervised/reference-action intervention for this multi-object grasp-prior task.
+
+Next:
+- Patch evaluation/BC tooling so the multi-object grasp env can expose or consume its grasp-prior reference actions, then run a deterministic policy eval and/or supervised action imitation stage before the next PPO resume.
+
+## 2026-06-14T15:32:50Z - Multi-object grasp-prior diagnostic hooks
+
+Goal:
+- Add a reproducible way to evaluate the deterministic policy and the scripted grasp-prior reference action sequence on the same multi-object reset distribution used for training.
+
+Hypothesis:
+- The `ap100` PPO resume may look poor because sampled actions include fixed-sigma exploration, so the next decision should compare deterministic policy behavior against the grasp-prior reference-action upper bound before another PPO relaunch.
+
+Change:
+- Added `compute_grasp_prior_reference_actions()` to the Franka cube grasp env base class so the multi-object env can expose the current scripted grasp-prior action target without changing dynamics.
+- Updated `eval_rollout.py` and `bc_reference_action_imitation.py` to use `compute_grasp_prior_reference_actions()` when a task does not have trajectory `compute_reference_delta_actions()`.
+- Updated `cluster/sbatch_eval_franka_multi_object_grasp_1gpu.sh` to accept `ACTION_SOURCE` and `GRASP_PRIOR_VERIFIED_INDICES_PATH`, and to allow manifest-provided per-object prior paths without requiring `GRASP_PRIOR_LIBRARY_DIR`.
+
+Version Control:
+- agent_id: merge-dp-rgb-main-20260613
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/merge-dp-rgb-main-20260613`
+- branch: `main`
+- base_commit: `471a5562b714ea1427f8e8a84be7c0c3d11e4d0c`
+- implementation_commit: pending
+- changed_files: `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`, `dextrah_lab/rl_games/eval_rollout.py`, `dextrah_lab/rl_games/bc_reference_action_imitation.py`, `cluster/sbatch_eval_franka_multi_object_grasp_1gpu.sh`, this worklog.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/bc_reference_action_imitation.py`
+- `bash -n cluster/sbatch_eval_franka_multi_object_grasp_1gpu.sh`
+
+Next:
+- Commit and deploy this exact diagnostic commit to an isolated A100/L40 source worktree, then run deterministic policy eval and scripted reference-action eval against the robust `7195... + 96ae...` pair and the accepted verified-index cache.

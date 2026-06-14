@@ -352,6 +352,7 @@ from isaaclab_tasks.utils.hydra import hydra_task_config
 
 import dextrah_lab.tasks.dextrah_kuka_allegro.gym_setup  # noqa: F401
 import dextrah_lab.tasks.dextrah_franka_cube_grasp.gym_setup  # noqa: F401
+import dextrah_lab.tasks.dextrah_franka_multi_object_grasp.gym_setup  # noqa: F401
 import dextrah_lab.tasks.dextrah_franka_star_kitting.gym_setup  # noqa: F401
 
 from residual_action_adapter import ResidualActionAdapter
@@ -536,9 +537,14 @@ def _model_mus(model: torch.nn.Module, obs_batch: torch.Tensor, action_dim: int,
 
 
 def _reference_delta_actions(task_env) -> torch.Tensor:
-    if not hasattr(task_env, "compute_reference_delta_actions"):
-        raise ValueError("BC diagnostic requires trajectory task env.compute_reference_delta_actions().")
-    return task_env.compute_reference_delta_actions().detach().clamp(-1.0, 1.0)
+    if hasattr(task_env, "compute_reference_delta_actions"):
+        return task_env.compute_reference_delta_actions().detach().clamp(-1.0, 1.0)
+    if hasattr(task_env, "compute_grasp_prior_reference_actions"):
+        return task_env.compute_grasp_prior_reference_actions().detach().clamp(-1.0, 1.0)
+    raise ValueError(
+        "BC diagnostic requires task env.compute_reference_delta_actions() "
+        "or compute_grasp_prior_reference_actions()."
+    )
 
 
 def _zero_actions(task_env) -> torch.Tensor:
