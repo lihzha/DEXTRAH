@@ -165,6 +165,9 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             self.grasp_prior_action_warmstart_action_delta_abs = torch.zeros(self.num_envs, device=self.device)
             self.grasp_prior_action_warmstart_exact_ee_error = torch.zeros(self.num_envs, device=self.device)
             self.grasp_prior_action_warmstart_close_width_target = torch.zeros(self.num_envs, device=self.device)
+            self.grasp_prior_action_warmstart_reference_finger_center_dist = torch.zeros(
+                self.num_envs, device=self.device
+            )
             self.grasp_prior_action_warmstart_close_latched = torch.zeros(
                 self.num_envs, dtype=torch.bool, device=self.device
             )
@@ -352,6 +355,8 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             self.grasp_prior_action_warmstart_close_latched[env_ids] = False
         if hasattr(self, "grasp_prior_action_warmstart_lift_latched"):
             self.grasp_prior_action_warmstart_lift_latched[env_ids] = False
+        if hasattr(self, "grasp_prior_action_warmstart_reference_finger_center_dist"):
+            self.grasp_prior_action_warmstart_reference_finger_center_dist[env_ids] = 0.0
 
     def _sync_reset_joint_state(
         self,
@@ -656,7 +661,13 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             getattr(self.cfg, "grasp_prior_action_warmstart_lift_max_finger_center_dist", 0.0)
         )
         if lift_max_finger_dist > 0.0:
-            ready_to_lift = ready_to_lift & (self.finger_center_to_cube_dist <= lift_max_finger_dist)
+            reference_pos = self.grasp_prior_reset_quality_reference_pos_w - self.scene.env_origins
+            missing_reference = torch.norm(reference_pos, dim=-1) < 1.0e-6
+            reference_pos = torch.where(missing_reference.unsqueeze(-1), self.cube_pos, reference_pos)
+            finger_center = 0.5 * (self.left_finger_pos + self.right_finger_pos)
+            reference_finger_dist = torch.norm(finger_center - reference_pos, dim=-1)
+            self.grasp_prior_action_warmstart_reference_finger_center_dist[:] = reference_finger_dist
+            ready_to_lift = ready_to_lift & (reference_finger_dist <= lift_max_finger_dist)
 
         closed_width_margin = float(
             getattr(self.cfg, "grasp_prior_action_warmstart_lift_closed_width_margin", -1.0)
@@ -689,6 +700,7 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         self.grasp_prior_action_warmstart_active[:] = False
         self.grasp_prior_action_warmstart_exact_ee_error[:] = 0.0
         self.grasp_prior_action_warmstart_close_width_target[:] = 0.0
+        self.grasp_prior_action_warmstart_reference_finger_center_dist[:] = 0.0
 
         if not bool(self.cfg.grasp_prior_action_warmstart_enabled):
             self.grasp_prior_action_warmstart_applied_actions[:] = applied_actions
@@ -1216,6 +1228,9 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
                     ),
                     "cube_action_warmstart_exact_ee_error": self.grasp_prior_action_warmstart_exact_ee_error.mean(),
                     "cube_action_warmstart_close_width_target": self.grasp_prior_action_warmstart_close_width_target.mean(),
+                    "cube_action_warmstart_reference_finger_center_dist": (
+                        self.grasp_prior_action_warmstart_reference_finger_center_dist.mean()
+                    ),
                     "cube_action_warmstart_delta_abs": self.grasp_prior_action_warmstart_action_delta_abs.mean(),
                     "cube_policy_action_z": self.grasp_prior_action_warmstart_policy_action_z.mean(),
                     "cube_policy_gripper_action": self.grasp_prior_action_warmstart_policy_gripper_action.mean(),
@@ -1226,6 +1241,10 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
                     / active_denom,
                     "cube_action_warmstart_active_finger_center_dist": (
                         self.finger_center_to_cube_dist * active_mask
+                    ).sum()
+                    / active_denom,
+                    "cube_action_warmstart_active_reference_finger_center_dist": (
+                        self.grasp_prior_action_warmstart_reference_finger_center_dist * active_mask
                     ).sum()
                     / active_denom,
                     "cube_action_warmstart_active_lift_height": (self.cube_lift_height * active_mask).sum()
@@ -1242,6 +1261,10 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
                     "cube_action_warmstart_lift_gripper_width": (self.gripper_width * lift_mask).sum() / lift_denom,
                     "cube_action_warmstart_lift_finger_center_dist": (
                         self.finger_center_to_cube_dist * lift_mask
+                    ).sum()
+                    / lift_denom,
+                    "cube_action_warmstart_lift_reference_finger_center_dist": (
+                        self.grasp_prior_action_warmstart_reference_finger_center_dist * lift_mask
                     ).sum()
                     / lift_denom,
                     "cube_action_warmstart_lift_lift_height": (self.cube_lift_height * lift_mask).sum()

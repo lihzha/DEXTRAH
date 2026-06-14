@@ -260,6 +260,7 @@ def _snapshot_task_tensor_names() -> tuple[str, ...]:
         "grasp_prior_action_warmstart_action_delta_abs",
         "grasp_prior_action_warmstart_exact_ee_error",
         "grasp_prior_action_warmstart_close_width_target",
+        "grasp_prior_action_warmstart_reference_finger_center_dist",
         "grasp_prior_action_warmstart_close_latched",
         "grasp_prior_action_warmstart_lift_latched",
     )
@@ -742,6 +743,11 @@ def _rollout_grasp_contact(
                 "selected_env": selected_env,
                 "selected_lift_height": float(task_env.cube_lift_height[selected_env].detach().cpu()),
                 "selected_finger_center_dist": float(task_env.finger_center_to_cube_dist[selected_env].detach().cpu()),
+                "selected_reference_finger_center_dist": float(
+                    task_env.grasp_prior_action_warmstart_reference_finger_center_dist[selected_env].detach().cpu()
+                )
+                if hasattr(task_env, "grasp_prior_action_warmstart_reference_finger_center_dist")
+                else 0.0,
                 "selected_max_finger_dist": float(task_env.max_finger_to_cube_dist[selected_env].detach().cpu()),
                 "selected_gripper_width": float(task_env.gripper_width[selected_env].detach().cpu()),
                 "selected_warmstart_phase": int(
@@ -791,6 +797,7 @@ def _rollout_grasp_contact(
     summary = _summarize_series(series)
     selected_lift = max(float(item["selected_lift_height"]) for item in series)
     selected_max_finger = min(float(item["selected_max_finger_dist"]) for item in series)
+    selected_reference_finger = min(float(item["selected_reference_finger_center_dist"]) for item in series)
     selected_width = min(float(item["selected_gripper_width"]) for item in series)
     selected_object_size = max(float(item["selected_object_size"]) for item in series)
     selected_tip_max = min(float(item["selected_projected_tip_max_dist"]) for item in series)
@@ -817,6 +824,7 @@ def _rollout_grasp_contact(
         "selected_env": selected_env,
         "selected_lift_height_max": selected_lift,
         "selected_max_finger_dist_min": selected_max_finger,
+        "selected_reference_finger_center_dist_min": selected_reference_finger,
         "selected_gripper_width_min": selected_width,
         "selected_projected_tip_max_dist_min": selected_tip_max,
         "selected_pregrasp_offset_dir_z": selected_pregrasp_z,

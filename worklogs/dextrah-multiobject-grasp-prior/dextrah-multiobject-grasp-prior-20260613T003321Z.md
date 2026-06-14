@@ -2728,3 +2728,60 @@ Analysis:
 
 Next:
 - Patch the video validator to reproduce the exact gated warm-start settings, render a small grasp-contact rollout, inspect the video/JSON, and then fix candidate/transform geometry before training.
+
+## 2026-06-14T07:16:36Z - Gated grasp-contact render launch
+
+Goal:
+- Render the same failing gated warm-start sequence to inspect finger/object contact geometry.
+
+Version Control:
+- implementation_commit: `23db977c00ec4b151e136864bb99e3f6a5706cdf`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-main-rgb-teacher-20260614-f1a34bc`
+
+Command / Job:
+- first_submit_result: failed immediately because the video script default partition `batch` is invalid on this cluster.
+- job_id: `29058558`
+- run: `franka_multi_video_main23_gated_contact_20260614T071636Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_29058558.out`
+- output_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_main23_gated_contact_20260614T071636Z`
+- command: `sbatch --partition=polar3 cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh` with `NUM_ENVS=4`, `GRASP_STEPS=400`, `GRASP_CONTACT_SCORE_STEPS=400`, stable poses, full yaw, `GRASP_PREGRASP_OFFSET=0.01`, `GRASP_RESET_CANDIDATE_COUNT=512`, and the same close/lift gate settings as job `29058337`.
+
+Next:
+- Monitor job `29058558`, inspect `video_metrics.json` and the generated `grasp_contact` frames/video, then patch grasp/contact geometry.
+
+## 2026-06-14T07:24:46Z - Gated grasp-contact render failed; contact-reference lift gate patch
+
+Goal:
+- Inspect rendered/metric evidence from the gated direct grasp-contact validation and patch the first concrete blocker before launching RL.
+
+Result:
+- job_id: `29058558`
+- status: failed by validation criteria after writing artifacts
+- metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_main23_gated_contact_20260614T071636Z/video_metrics.json`
+- reset_settle: passed
+- perturbation: passed
+- grasp_contact: failed
+- selected_asset_uuid: `96ae0ff853734df0b10a827307949c87`
+- selected_lift_height_max_m: `0.0027228`
+- selected_lift_height_threshold_m: `0.12`
+- selected_max_finger_dist_min_m: `0.12712`
+- selected_object_size_m: `0.29604`
+- selected_object_xy_delta_max_m: `0.01059`
+- selected_done_count: `0`
+- warmstart_phases: `[0, 1]`
+- selected_reset_quality_success: `True`
+
+Analysis:
+- The environment reset and perturbation validations remain acceptable.
+- The grasp-contact rollout did not lift and never entered phase `2`. The selected prior target is on a large asymmetric object; the old lift latch used `finger_center_to_cube_dist`, which measures distance to the object center. For large objects this can remain over 10 cm even when the gripper is near the intended contact/reference point, so the lift gate can reject otherwise plausible contact candidates.
+- This explains why previous direct warm-start runs could close without lifting: the warm-start gate and diagnostics were tied to object center distance, while the reset candidate quality/reference was contact-location-aware.
+
+Patch:
+- Changed the grasp-prior lift readiness gate to compare the gripper finger center against `grasp_prior_reset_quality_reference_pos_w` in env coordinates, falling back to object center only when no reference exists.
+- Added `grasp_prior_action_warmstart_reference_finger_center_dist` to env metrics and video validator snapshots.
+
+Validation:
+- local syntax: `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py`
+
+Next:
+- Commit/deploy the patch, rerun a bounded direct grasp-contact validation with the same settings, inspect whether phase `2` appears and whether lift occurs. Only then launch RL training.
