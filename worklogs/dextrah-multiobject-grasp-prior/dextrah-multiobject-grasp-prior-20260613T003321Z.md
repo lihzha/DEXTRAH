@@ -5206,3 +5206,34 @@ Command / Job:
 
 Next:
 - Monitor both eval jobs, inspect `metrics.json` and traces, then relaunch PPO with a stronger sustained-hold intervention if epoch-60 eval does not beat the prior best.
+
+## 2026-06-14T17:14:00Z - Hold-curriculum PPO launch
+
+Goal:
+- Train sustained lift/hold behavior after BC provides an initial grasp attempt, instead of continuing reward-only PPO that opens the gripper and commands downward z.
+
+Evidence From Eval:
+- Epoch-60 post-lift PPO evals completed:
+  - deterministic `1029351`: `success_rate_final=0.0`, `success_rate_max=0.0703`, `success_ever_rate=0.1445`, success occupancy mean `0.0118`
+  - stochastic `1029352`: `success_rate_final=0.0`, `success_rate_max=0.0742`, `success_ever_rate=0.1406`, success occupancy mean `0.0152`
+- Trace diagnosis:
+  - deterministic policy action z mean/final: `-0.099/-0.508`, gripper action mean/final: `-0.188/+0.462`, final gripper width `0.0674 m`
+  - stochastic policy action z mean/final: `-0.095/-0.530`, gripper action mean/final: `-0.176/+0.465`, final gripper width `0.0666 m`
+- Decision: post-lift reward-only PPO did not solve sustained hold; launch a training curriculum that uses grasp-prior action warmstart during training to create lifted/closed states, then makes PPO optimize the sustain phase.
+
+Command / Job:
+- host: `a1001`
+- job_id: `29071322`
+- run: `franka_multi_state_teacher_7195_96ae_holdwarm_91063df_20260614T1714Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29071322.out`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_96ae_holdwarm_91063df_20260614T1714Z`
+- source_commit: `91063df57ef3d018fc29d44357088cb7bd3f6eb4`
+- resume_checkpoint: `/results/bc/franka_multi_7195_96ae_bc_dagger_hold_ep50_d5e8b27_20260614T1625Z/nn/bc_reference_action_imitation.pth`
+- PPO: `NUM_ENVS=2048`, `MAX_ITERATIONS=80`, seed `91`, LR `5e-6`, central value LR `1e-5`, KL `0.002`, entropy `0`, save frequency `5`, sigma init `-3`.
+- curriculum: `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=True`, approach/close/lift steps `4/60/180`, lift action z `0.70`, prior close width enabled, lift closed-width margin `0.02`.
+- action prior/reward: action-prior reward weight `15`, sharpness `4`; rewards strengthened for hold: `lift=45`, `height=15`, `success_bonus=120`, `close_action=6`, `lift_action=10`, descend penalty `-12`, post-lift close/open/lift/descend `8/-12/8/-16`.
+- object/reset distribution: same two-object manifest, random object assignment, full yaw, stable-pose cache, verified grasp indices, reset attempts `4`, candidates `64`, pregrasp offset `0.03`.
+- launch note: `SELF_RELAUNCH=False` to prevent manual cancellations from requeueing failed experimental branches.
+
+Next:
+- Monitor startup/config, then inspect `cube_action_warmstart_*`, policy z/gripper during and after warmstart, lift/success rates, checkpoints, and policy-only evals.
