@@ -3129,3 +3129,233 @@ Validation:
 
 Next:
 - Commit/deploy de-instancing and relaunch with a less brittle but still top-down reset filter: `GRASP_RESET_MIN_PREGRASP_Z=0.45`, `GRASP_RESET_MAX_CENTER_DISTANCE_FRAC=0.30`.
+
+## 2026-06-14T08:01:00Z - De-instanced top-down 0.45 validation launch
+
+Goal:
+- Verify that de-instancing allows contact/material overrides and that a less brittle top-down prior mask produces a physical grasp-contact rollout.
+
+Version Control:
+- implementation_commit: `0ef680d7fdd0cabf19e4138952a414b3ebbdf3b1`
+- push: local `origin/main` updated from `916ba62` to `0ef680d`.
+- deploy: incremental Git bundle copied to A1002 and fetched into the detached remote worktree.
+- remote_commit: `0ef680d7fdd0cabf19e4138952a414b3ebbdf3b1`
+
+Command / Job:
+- job_id: `29059265`
+- run: `franka_multi_video_main0ef_topdown45_contact_20260614T0801Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_29059265.out`
+- output_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_main0ef_topdown45_contact_20260614T0801Z`
+- key settings: `GRASP_RESET_MIN_PREGRASP_Z=0.45`, `GRASP_RESET_MAX_CENTER_DISTANCE_FRAC=0.30`, `GRASP_RESET_CANDIDATE_COUNT=4096`, `GRASP_RESET_ATTEMPTS=24`, material/contact patch active.
+
+Next:
+- Monitor job `29059265`; if metrics pass or fail physically, inspect the log for material-binding warnings and pull representative frames.
+
+## 2026-06-14T08:12:00Z - Top-down 0.45 / center 0.30 validation result
+
+Goal:
+- Decide whether the merged multi-object environment is clean enough to launch PPO.
+
+Command / Job:
+- job_id: `29059265`
+- run: `franka_multi_video_main0ef_topdown45_contact_20260614T0801Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_29059265.out`
+- output_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_main0ef_topdown45_contact_20260614T0801Z`
+
+Result:
+- status: failed metrics because `grasp_contact` failed; reset_settle and perturbation passed.
+- material/contact warnings from instanceable USD prims were gone after de-instancing.
+- reset_settle: `object_xy_delta_max=0.0000055`, `bottom_clearance_min=-0.0040`, no dones.
+- perturbation: object moved normally, `object_xy_delta_max=0.0509`, no dones.
+- grasp_contact: `selected_lift_height_max=0.00199`, `selected_object_xy_delta_max=0.0119`, no dones.
+- selected prior geometry was accurate (`selected_reset_pos_error=2.1e-7`, `selected_reset_rot_error=5.9e-7`) but peripheral (`selected_contact_center_dist=0.0824 m`, `object_size=0.2960 m`, `selected_candidate_valid_count=10`).
+
+Analysis:
+- The previous reset-jump/moved-object issue is fixed: the grasp target is computed from the settled object pose and the arm reset reaches the requested pregrasp pose.
+- The remaining failure is candidate quality for a long object. The chosen GraspGen contact is near an end/side feature, so the gripper closes without enclosing the object and lifts away.
+
+Next:
+- Relaunch without code changes using a stricter center gate (`GRASP_RESET_MAX_CENTER_DISTANCE_FRAC=0.25`) and more candidates (`GRASP_RESET_CANDIDATE_COUNT=8192`) to see if parameter selection is sufficient before patching source.
+
+## 2026-06-14T08:15:00Z - Center 0.25 / 8192-candidate validation launch
+
+Goal:
+- Test whether stricter center gating fixes the long-object grasp-contact failure without additional source changes.
+
+Version Control:
+- implementation_commit: `0ef680d7fdd0cabf19e4138952a414b3ebbdf3b1`
+- remote_commit: `0ef680d7fdd0cabf19e4138952a414b3ebbdf3b1`
+
+Command / Job:
+- job_id: `29059438`
+- run: `franka_multi_video_main0ef_topdown45_center25_8192_20260614T0815Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_29059438.out`
+- output_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_main0ef_topdown45_center25_8192_20260614T0815Z`
+- key settings: `GRASP_RESET_MIN_PREGRASP_Z=0.45`, `GRASP_RESET_MAX_CENTER_DISTANCE_FRAC=0.25`, `GRASP_RESET_CANDIDATE_COUNT=8192`, `GRASP_RESET_ATTEMPTS=24`.
+
+Next:
+- Monitor job `29059438`, inspect metrics and frames, then either use the stricter reset for PPO or patch the source selector.
+
+## 2026-06-14T08:18:00Z - Center 0.25 validation result
+
+Goal:
+- Check whether a stricter center gate can avoid the peripheral long-object grasp.
+
+Command / Job:
+- job_id: `29059438`
+- run: `franka_multi_video_main0ef_topdown45_center25_8192_20260614T0815Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_29059438.out`
+- output_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_main0ef_topdown45_center25_8192_20260614T0815Z`
+
+Result:
+- status: failed metrics because `grasp_contact` had no quality candidate.
+- reset_settle and perturbation passed.
+- asset 2 (`96ae0ff853734df0b10a827307949c87`) had `selected_candidate_valid_count=0` under `GRASP_RESET_MAX_CENTER_DISTANCE_FRAC=0.25`, even with `8192` sampled candidates.
+- The same asset has `grasp_size=0.296 m` and scaled half-extents roughly `(0.015, 0.148, 0.018)`, so the available top-down priors are effectively end/peripheral contacts for a long object.
+
+Analysis:
+- Tightening the center gate proves the prior/object combination, not settled-pose reset, is the current bottleneck.
+- For the first PPO run, using this asset would add reset-quality failures or peripheral resets before the policy can learn. I will first validate/train a smaller multi-object subset and keep the full-set/long-object handling as the next scaling issue.
+
+Next:
+- Launch a two-object validation (`MAX_OBJECTS=2`) using the same stable-pose/yaw/random-assignment path. If it passes, use that subset for the initial state-teacher PPO launch.
+
+## 2026-06-14T08:21:00Z - Two-object validation launch
+
+Goal:
+- Validate a smaller multi-object subset for the first PPO run while preserving random object assignment, per-reset XY/yaw randomization, stable-pose resets, and grasp-prior reset.
+
+Version Control:
+- implementation_commit: `0ef680d7fdd0cabf19e4138952a414b3ebbdf3b1`
+- remote_commit: `0ef680d7fdd0cabf19e4138952a414b3ebbdf3b1`
+
+Command / Job:
+- job_id: `29059497`
+- run: `franka_multi_video_main0ef_twoobj_topdown45_center30_20260614T0821Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_29059497.out`
+- output_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_main0ef_twoobj_topdown45_center30_20260614T0821Z`
+- key settings: `MAX_OBJECTS=2`, `OBJECT_ASSET_ASSIGNMENT=random`, `OBJECT_SPAWN_YAW_RANDOMIZATION_DEG=180.0`, `GRASP_RESET_MAX_CENTER_DISTANCE_FRAC=0.30`, `GRASP_RESET_CANDIDATE_COUNT=4096`.
+
+Next:
+- Monitor job `29059497`; if the videos/metrics pass, launch bounded multi-object state-teacher PPO on this subset.
+
+## 2026-06-14T08:22:37Z - Two-object validation result
+
+Goal:
+- Decide whether the first two smoke-manifest assets are suitable for initial PPO.
+
+Command / Job:
+- job_id: `29059497`
+- run: `franka_multi_video_main0ef_twoobj_topdown45_center30_20260614T0821Z`
+- metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_main0ef_twoobj_topdown45_center30_20260614T0821Z/video_metrics.json`
+
+Result:
+- status: failed metrics because `grasp_contact` had no quality candidate.
+- reset_settle passed: `object_xy_delta_max=0.0000007`, `bottom_clearance_min=-0.0024`, `done_count=0`.
+- perturbation passed: `object_xy_delta_max=0.0509`, `object_speed_max=0.4388`, `done_count=0`.
+- grasp_contact selected asset 0 (`7195ed3346a445448308febe833c180a`) and found `selected_candidate_valid_count=0`, so warmstart/contact was inactive.
+
+Analysis:
+- The environment reset and perturbation behavior remain correct. The failure is again the GraspGen prior candidate distribution for a long/thin object, not object settling or pose recomputation.
+- The first smoke-manifest pair still includes a long/thin object, so it is not a good initial PPO subset.
+
+Next:
+- Validate the filtered two-object manifest containing non-slender assets 1 and 3, then use that subset for the first bounded PPO run if videos and metrics pass.
+
+## 2026-06-14T08:23:00Z - Filtered two-object validation launch
+
+Goal:
+- Validate the initial trainable multi-object subset with two non-slender GraspGen assets before launching PPO.
+
+Version Control:
+- implementation_commit: `0ef680d7fdd0cabf19e4138952a414b3ebbdf3b1`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-main-rgb-teacher-20260614-f1a34bc`
+- remote_commit: `0ef680d7fdd0cabf19e4138952a414b3ebbdf3b1`
+
+Command / Job:
+- job_id: `29059554`
+- run: `franka_multi_video_main0ef_filtered2_topdown45_center30_20260614T0823Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_29059554.out`
+- output_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_main0ef_filtered2_topdown45_center30_20260614T0823Z`
+- command: `OBJECT_ASSET_MANIFEST_PATH=/results/assets/filtered_manifests/two_non_slender_1_3_20260614T0824Z/manifest.json MAX_OBJECTS=2 OBJECT_ASSET_ASSIGNMENT=random OBJECT_SPAWN_YAW_RANDOMIZATION_DEG=180.0 OBJECT_STABLE_POSE_ENABLED=True GRASP_RESET_MIN_PREGRASP_Z=0.45 GRASP_RESET_MAX_CENTER_DISTANCE_FRAC=0.30 GRASP_RESET_CANDIDATE_COUNT=4096 sbatch --partition=polar ... cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh`
+
+Next:
+- Monitor job `29059554`, inspect `video_metrics.json` and the grasp-contact video, then launch bounded PPO if the filtered subset passes.
+
+## 2026-06-14T08:26:00Z - Filtered manifest asset-root fix
+
+Goal:
+- Recover the filtered two-object validation from a manifest path error.
+
+Command / Job:
+- failed_job_id: `29059554`
+- failed_run: `franka_multi_video_main0ef_filtered2_topdown45_center30_20260614T0823Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_29059554.out`
+
+Result:
+- status: failed before environment construction.
+- error: `FileNotFoundError: Missing USD asset ... /code/USD/1d489db9cdc24161a7537926a20bb17b/...usd`.
+
+Analysis:
+- The filtered manifest was stored outside the original asset directory but kept `asset_root: "."`, so relative `USD/...` paths resolved under `/code` inside the container.
+- Source code is correct: manifest-relative `asset_root` is how the original staged manifest works.
+
+Change:
+- Created corrected manifest on `/lustre`: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/filtered_manifests/two_non_slender_1_3_assetroot_20260614T0826Z/manifest.json`.
+- The corrected manifest points `asset_root` to `/results/assets/franka_multi_graspgen_asset_smoke_contacts_2d7f495_20260613_153029` and resolves both filtered USD/prior files.
+
+Next:
+- Relaunch filtered two-object validation with the corrected manifest.
+
+## 2026-06-14T08:27:00Z - Corrected filtered validation relaunch
+
+Goal:
+- Validate the non-slender two-object subset after fixing manifest asset resolution.
+
+Version Control:
+- implementation_commit: `0ef680d7fdd0cabf19e4138952a414b3ebbdf3b1`
+- remote_commit: `0ef680d7fdd0cabf19e4138952a414b3ebbdf3b1`
+
+Command / Job:
+- job_id: `29059587`
+- run: `franka_multi_video_main0ef_filtered2fix_topdown45_center30_20260614T0827Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_29059587.out`
+- output_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_main0ef_filtered2fix_topdown45_center30_20260614T0827Z`
+- manifest: `/results/assets/filtered_manifests/two_non_slender_1_3_assetroot_20260614T0826Z/manifest.json`
+
+Next:
+- Monitor job `29059587`; if metrics and video pass, launch bounded PPO with this corrected filtered manifest.
+
+## 2026-06-14T08:29:00Z - Corrected filtered validation result and validator retry patch
+
+Goal:
+- Determine whether the corrected filtered subset is ready for PPO and fix validation behavior if it diverges from the actual RL reset path.
+
+Command / Job:
+- job_id: `29059587`
+- run: `franka_multi_video_main0ef_filtered2fix_topdown45_center30_20260614T0827Z`
+- metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_main0ef_filtered2fix_topdown45_center30_20260614T0827Z/video_metrics.json`
+- local_video: `/home/lzha/code/artifacts/dextrah/franka_multi_video_main0ef_filtered2fix_topdown45_center30_20260614T0827Z/grasp_contact.mp4`
+
+Result:
+- status: failed metrics because `grasp_contact` had no quality top-down candidate.
+- reset_settle passed: `object_xy_delta_max=0.0000003`, `bottom_clearance_min=-0.0040`.
+- perturbation passed: `object_xy_delta_max=0.0499`, `bottom_clearance_min=-0.0063`.
+- grasp_contact selected asset `1d489db9cdc24161a7537926a20bb17b`; `selected_candidate_topdown_count=0`, `selected_candidate_valid_count=0`, `selected_pregrasp_offset_dir_z=-0.3198`, `warmstart_active_count=0`, `selected_lift_height_max=0.0`.
+- Visual inspection showed the robot stayed in the default pose, with no object bounce, table penetration, or grasp contact.
+
+Analysis:
+- This result is a reset-candidate filter issue, not an object stability or penetration issue.
+- The actual multi-object RL reset path retries failed prior samples up to `grasp_prior_reset_attempts`, but the video validator applied one settled-object prior sample only. This made validation pessimistic and inconsistent with training.
+- The filtered objects' Franka priors may not contain top-down candidates in the chosen stable pose/yaw, so the next validation should exercise the same top-down setting intended for PPO.
+
+Change:
+- Patched `dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py` so settled-object grasp-contact validation retries failed prior samples like `DextrahFrankaMultiObjectGraspEnv._reset_idx`.
+- Added `--grasp_reset_require_topdown/--no-grasp_reset_require_topdown` to the video validator and `GRASP_RESET_REQUIRE_TOPDOWN` to `cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh`.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py`: passed.
+- `bash -n cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh`: passed.
+
+Next:
+- Commit/deploy the validation patch, then rerun the filtered video diagnostic with `GRASP_RESET_REQUIRE_TOPDOWN=False` to match a feasible PPO reset distribution for these objects.

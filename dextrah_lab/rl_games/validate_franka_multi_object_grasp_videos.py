@@ -56,6 +56,7 @@ parser.add_argument("--grasp_warmstart_lift_max_finger_center_dist", type=float,
 parser.add_argument("--grasp_warmstart_lift_closed_width_margin", type=float, default=-1.0)
 parser.add_argument("--capture_interval", type=int, default=2)
 parser.add_argument("--grasp_reset_attempts", type=int, default=12)
+parser.add_argument("--grasp_reset_require_topdown", action=argparse.BooleanOptionalAction, default=True)
 parser.add_argument("--grasp_reset_min_pregrasp_z", type=float, default=0.45)
 parser.add_argument("--grasp_reset_candidate_count", type=int, default=16)
 parser.add_argument("--grasp_reset_max_center_distance_frac", type=float, default=0.30)
@@ -663,6 +664,20 @@ def _reset_settled_object_then_apply_grasp_prior(env, task_env) -> None:
     task_env._reset_grasp_prior_metrics(env_ids)
     task_env._grasp_prior_reset_enabled = prior_enabled
     task_env._apply_grasp_prior_reset(env_ids, baseline_joint_pos, joint_vel, object_root_pos, object_root_quat)
+    max_attempts = max(int(args_cli.grasp_reset_attempts), 1)
+    for _ in range(1, max_attempts):
+        retry_mask = ~task_env.grasp_prior_reset_quality_success[env_ids]
+        if not bool(retry_mask.any().item()):
+            break
+        retry_env_ids = env_ids[retry_mask]
+        task_env._reset_grasp_prior_metrics(retry_env_ids)
+        task_env._apply_grasp_prior_reset(
+            retry_env_ids,
+            baseline_joint_pos[retry_mask],
+            joint_vel[retry_mask],
+            object_root_pos[retry_mask],
+            object_root_quat[retry_mask],
+        )
     task_env.episode_length_buf[env_ids] = 0
     task_env.ik_controller.reset(env_ids)
     task_env._compute_intermediate_values(env_ids)
@@ -671,11 +686,12 @@ def _reset_settled_object_then_apply_grasp_prior(env, task_env) -> None:
 def _candidate_contact_envs(task_env) -> list[int]:
     min_pregrasp_z = float(args_cli.grasp_reset_min_pregrasp_z)
     quality = task_env.grasp_prior_reset_quality_success
-    topdown_quality = quality & (task_env.grasp_prior_reset_offset_dir_w[:, 2] >= min_pregrasp_z)
+    if bool(args_cli.grasp_reset_require_topdown):
+        quality = quality & (task_env.grasp_prior_reset_offset_dir_w[:, 2] >= min_pregrasp_z)
     ordered: list[int] = []
-    if not bool(topdown_quality.any().item()):
+    if not bool(quality.any().item()):
         return ordered
-    env_ids = torch.nonzero(topdown_quality, as_tuple=False).flatten()
+    env_ids = torch.nonzero(quality, as_tuple=False).flatten()
     z_values = task_env.grasp_prior_reset_offset_dir_w[env_ids, 2]
     order = torch.argsort(z_values, descending=True)
     ordered.extend(int(env_ids[index].item()) for index in order)
@@ -933,7 +949,7 @@ def _make_env(*, grasp_prior: bool):
     env_cfg.grasp_prior_action_warmstart_enabled = bool(grasp_prior)
     env_cfg.grasp_prior_reset_attempts = int(args_cli.grasp_reset_attempts)
     env_cfg.grasp_prior_reset_candidate_count = int(args_cli.grasp_reset_candidate_count)
-    env_cfg.grasp_prior_reset_require_topdown = True
+    env_cfg.grasp_prior_reset_require_topdown = bool(args_cli.grasp_reset_require_topdown)
     env_cfg.grasp_prior_reset_min_pregrasp_z = float(args_cli.grasp_reset_min_pregrasp_z)
     env_cfg.grasp_prior_reset_max_center_distance_frac = float(args_cli.grasp_reset_max_center_distance_frac)
     env_cfg.grasp_prior_reset_min_width = float(args_cli.grasp_reset_min_width)
@@ -1049,6 +1065,7 @@ def main() -> None:
             "grasp_warmstart_lift_max_ee_error": args_cli.grasp_warmstart_lift_max_ee_error,
             "grasp_warmstart_lift_max_finger_center_dist": args_cli.grasp_warmstart_lift_max_finger_center_dist,
             "grasp_warmstart_lift_closed_width_margin": args_cli.grasp_warmstart_lift_closed_width_margin,
+            "grasp_reset_require_topdown": args_cli.grasp_reset_require_topdown,
             "grasp_reset_min_pregrasp_z": args_cli.grasp_reset_min_pregrasp_z,
             "grasp_pregrasp_offset": args_cli.grasp_pregrasp_offset,
             "grasp_contact_score_steps": args_cli.grasp_contact_score_steps,
