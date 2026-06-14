@@ -9,7 +9,7 @@ The default geometry mirrors ``DextrahFrankaCubeGraspEnvCfg``:
 
 * table center ``(-0.62, 0.0, 0.72)`` with a 52 mm top;
 * 60 mm cube at ``(-0.36, -0.12)`` and 5 mm initial table clearance;
-* Franka base at ``(0, 0, 0.27)`` with DEXTRAH's 180 degree Z yaw.
+* Franka base at ``(0, 0, 0.47)`` with DEXTRAH's 180 degree Z yaw.
 
 The output ``trajectory.json`` is suitable for
 ``dextrah_lab.offline_dp_bc.trajectory_conversion`` with GraspGenX FK.
@@ -27,6 +27,18 @@ import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
+
+
+FRANKA_CUBE_DEFAULT_BASE_Z = 0.47
+FRANKA_CUBE_DEFAULT_JOINT_POSITION = [
+    0.0,
+    -0.785398,
+    0.0,
+    -2.356194,
+    0.0,
+    1.570796,
+    0.785398,
+]
 
 
 def _repo_root() -> Path:
@@ -103,6 +115,17 @@ def _require_file(path: Path, label: str) -> None:
         raise FileNotFoundError(f"Missing {label}: {path}")
 
 
+def _require_real_asset_file(path: Path, label: str, *, min_bytes: int = 256) -> dict[str, Any]:
+    _require_file(path, label)
+    size = int(path.stat().st_size)
+    if size < int(min_bytes):
+        raise RuntimeError(f"{label} is unexpectedly small ({size} bytes): {path}")
+    head = path.read_bytes()[:128]
+    if b"version https://git-lfs.github.com/spec/v1" in head:
+        raise RuntimeError(f"{label} is still a Git LFS pointer, not real asset content: {path}")
+    return {"path": str(path), "bytes": size}
+
+
 def _require_dir(path: Path, label: str) -> None:
     if not path.is_dir():
         raise FileNotFoundError(f"Missing {label}: {path}")
@@ -172,15 +195,7 @@ def _make_robot_config(
         "quaternion_xyzw": _yaw_quat_xyzw(robot_yaw_deg),
     }
     cfg.setdefault("curobo", {})
-    cfg["curobo"]["default_joint_position"] = [
-        0.0,
-        -0.68,
-        0.0,
-        -2.45,
-        0.0,
-        2.28,
-        0.78,
-    ]
+    cfg["curobo"]["default_joint_position"] = FRANKA_CUBE_DEFAULT_JOINT_POSITION
     out = run_dir / "configs/franka_panda_dextrah_cube.yaml"
     _write_yaml(out, cfg)
     return out
@@ -360,7 +375,45 @@ def _validate_environment() -> dict[str, Any]:
     dis_pth = _latest_pth(dis_dir)
 
     gripper_assets = Path(get_gripper_descriptions_assets()).resolve()
-    _require_dir(gripper_assets / "franka_panda", "franka_panda gripper assets")
+    franka_gripper_assets = gripper_assets / "franka_panda"
+    _require_dir(franka_gripper_assets, "franka_panda gripper assets")
+    validated_gripper_assets = {
+        "coll_mesh": _require_real_asset_file(
+            franka_gripper_assets / "coll_mesh.obj",
+            "franka_panda collision mesh",
+            min_bytes=1024,
+        ),
+        "vis_mesh": _require_real_asset_file(
+            franka_gripper_assets / "vis_mesh.obj",
+            "franka_panda visual mesh",
+            min_bytes=1024,
+        ),
+        "tsdf": _require_real_asset_file(
+            franka_gripper_assets / "tsdf.npy",
+            "franka_panda TSDF",
+            min_bytes=1024,
+        ),
+        "urdf": _require_real_asset_file(
+            franka_gripper_assets / "gripper.urdf",
+            "franka_panda gripper URDF",
+            min_bytes=512,
+        ),
+        "hand_collision": _require_real_asset_file(
+            franka_gripper_assets / "meshes/collision/hand.stl",
+            "franka_panda hand collision mesh",
+            min_bytes=1024,
+        ),
+        "finger_visual": _require_real_asset_file(
+            franka_gripper_assets / "meshes/visual/finger.dae",
+            "franka_panda finger visual mesh",
+            min_bytes=1024,
+        ),
+        "hand_visual": _require_real_asset_file(
+            franka_gripper_assets / "meshes/visual/hand.dae",
+            "franka_panda hand visual mesh",
+            min_bytes=1024,
+        ),
+    }
 
     curobo_assets = Path(get_assets_path()).resolve()
     _require_file(
@@ -383,6 +436,7 @@ def _validate_environment() -> dict[str, Any]:
         "gen_checkpoint": str(gen_pth),
         "dis_checkpoint": str(dis_pth),
         "gripper_assets": str(gripper_assets),
+        "validated_gripper_assets": validated_gripper_assets,
         "env": {
             "GRASPGENX_CHECKPOINT_DIR": os.environ.get("GRASPGENX_CHECKPOINT_DIR", ""),
             "GRASPGENX_GRIPPER_CFG_DIR": os.environ.get("GRASPGENX_GRIPPER_CFG_DIR", ""),
@@ -435,7 +489,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--table_size_x", type=float, default=0.86)
     parser.add_argument("--table_size_y", type=float, default=1.18)
     parser.add_argument("--table_thickness", type=float, default=0.052)
-    parser.add_argument("--robot_base_z", type=float, default=0.27)
+    parser.add_argument("--robot_base_z", type=float, default=FRANKA_CUBE_DEFAULT_BASE_Z)
     parser.add_argument("--robot_yaw_deg", type=float, default=180.0)
     return parser.parse_args()
 

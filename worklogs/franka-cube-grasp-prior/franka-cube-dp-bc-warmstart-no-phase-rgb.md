@@ -877,3 +877,121 @@ Next:
 - Before scaling to 100-200 unique demos over the whole requested support, test either:
   - a narrowed support excluding positive x near `>-0.30` and the observed marginal band, or
   - a controller change that rotates/centers the gripper more robustly before close and tightens the close trigger further for marginal-close cases.
+
+## 2026-06-14T12:02:36-07:00 - CuRobo/GraspGenX Franka collision-geometry audit
+
+Goal:
+- Double-check the collision geometry and saved metadata for Franka
+  GraspGenX/CuRobo cube demonstrations after visual reports of collided paths.
+
+Commands / Artifacts:
+- Inspected planner source:
+  `dextrah_lab/scene_scripts/plan_franka_cube_graspgenx_curobo.py`.
+- Inspected Isaac env source:
+  `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env_cfg.py`.
+- Inspected generated plan set:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/curobo_plans/cube_curobo_scale264_20260612_1449_seed*/`.
+- Audited seed37 locally using CuRobo's `franka.yml` collision spheres,
+  `franka_panda.urdf` FK, saved `trajectory.json`, saved table cuboid, and
+  saved 60 mm cube AABB.
+
+Findings:
+- The existing scale264 CuRobo demo set is stale relative to the current cube
+  Isaac env:
+  - all `232` inspected plans use `robot_base_z=0.27`;
+  - current `DextrahFrankaCubeGraspEnvCfg` uses `robot_base_z=0.47`;
+  - plans start from `[0.0, -0.68, 0.0, -2.45, 0.0, 2.28, 0.78]`, while the
+    current cube env reset is the raised top-down reset
+    `[0.0, -0.785398, 0.0, -2.356194, 0.0, 1.570796, 0.785398]`.
+- Cube/table placement metadata is internally consistent:
+  - saved `object_slot.world_position.z=0.751` is the cube bottom;
+  - GraspGenX `scene_builder` converts this to cube center
+    `object_world_T.z=0.781`, matching Isaac cube spawn z;
+  - table cuboid is `center=(-0.62,0.0,0.72)`, size
+    `(0.86,1.18,0.052)`, top z `0.746`, matching the cube env.
+- GraspGenX `franka_panda` gripper assets are complete now on both checked
+  local/shared asset paths:
+  `coll_mesh.obj`, `vis_mesh.obj`, `tsdf.npy`, `gripper.urdf`, and hand/finger
+  visual/collision meshes are real files, not LFS pointer stubs.
+- CuRobo scene model only contains the tabletop cuboid. The target cube is
+  intentionally excluded by GraspGenX `scene_builder` / `collision_world`, so
+  CuRobo is not checking arm/finger collision against the cube during the
+  approach-to-grasp path.
+- Seed37 collision-sphere audit with the saved `0.27` base:
+  - table min sphere-box margin: `+0.00952 m`, `0/702` frames colliding;
+  - cube min sphere-box margin: `-0.01888 m`, `260/702` frames colliding;
+  - cube collision is expected from the current scene model because the cube is
+    not in CuRobo obstacles.
+- Replaying the same saved joints with the current `0.47` base gives no table
+  or cube sphere-box collisions, but only because the arm is about `0.20 m`
+  too high relative to the saved grasp. That old dataset is therefore invalid
+  for the current raised-base cube env.
+
+Analysis:
+- The report of collided paths is not explained by missing GraspGenX Franka
+  gripper assets anymore; those assets are present.
+- The major concrete bug is stale geometry in
+  `plan_franka_cube_graspgenx_curobo.py`: its defaults and the generated
+  scale264 plans still use the old low Franka base and old tilted/low reset.
+- A second important limitation is that CuRobo is only avoiding the table, not
+  the target cube. "CuRobo says success" only means table/static-scene
+  clearance under its sphere model, not cube-intersection-free motion.
+- Isaac uses stock Isaac Lab `panda_instanceable.usd` collision geometry while
+  CuRobo uses URDF plus spheres, so even table-clear under CuRobo spheres does
+  not guarantee identical Isaac contact behavior.
+
+Next:
+- Patch the cube CuRobo planner defaults to match the current cube env
+  (`robot_base_z=0.47` and raised top-down reset), and add validation that
+  errors out if required GraspGenX Franka asset files are missing or LFS
+  pointer stubs.
+- Regenerate a small CuRobo/GraspGenX smoke plan with the corrected base/reset
+  and run the same sphere-vs-table/cube audit plus Isaac replay/video before
+  using it for BC data.
+
+## 2026-06-14T12:15:18-07:00 - Fix stale CuRobo defaults and pad/cube penetration gate
+
+Goal:
+- Address the observed visual issue where the Franka gripper's black pads
+  can sink into the cube, and apply the collision-geometry fixes proposed
+  after the CuRobo/GraspGenX audit.
+
+Changes:
+- `dextrah_lab/scene_scripts/plan_franka_cube_graspgenx_curobo.py`
+  now defaults to the current cube task geometry:
+  - `robot_base_z=0.47`;
+  - raised top-down reset joints
+    `[0.0, -0.785398, 0.0, -2.356194, 0.0, 1.570796, 0.785398]`.
+- The CuRobo planner wrapper now validates required GraspGenX Franka
+  gripper assets as real files and rejects missing/tiny/Git-LFS-pointer files
+  before generating plans.
+- `dextrah_lab/rl_games/contact_aware_franka_cube_rollout.py` no longer
+  hard-closes the gripper to action `-1.0` during `close_hold`/`lift`.
+  The default close target is now `cube_size + close_gripper_width_offset`,
+  with default offset `-0.002 m`; for the 60 mm cube this maps to a
+  `0.058 m` gap and gripper action about `0.45`.
+- The contact rollout now records signed AABB margins from left/right finger
+  body positions to the cube and requires the minimum margin to be at least
+  `-0.006 m` for `success_like`.
+- `make_contact_relabel_set_report.py` now carries these margin metrics into
+  rollout CSV/report rows and rejects new rollouts with
+  `finger_cube_surface_penetration`.
+- Both contact-aware Slurm wrappers pass and log the new close-width and
+  signed-margin parameters; the relabel-set wrapper also passes the aggregate
+  gate threshold.
+
+Validation:
+- `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/venv/bin/python -m py_compile dextrah_lab/scene_scripts/plan_franka_cube_graspgenx_curobo.py dextrah_lab/rl_games/contact_aware_franka_cube_rollout.py dextrah_lab/offline_dp_bc/make_contact_relabel_set_report.py`
+  passed.
+- `bash -n cluster/sbatch_contact_aware_franka_cube_rollout_1gpu.sh` passed.
+- `bash -n cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh`
+  passed.
+- Width/action sanity check in the project venv:
+  `cube_size=0.06`, target width `0.058`, target action
+  `0.44999995827674866`.
+
+Next:
+- Commit/push the patch and run a one-demo contact rollout smoke with video.
+- Inspect the new `finger_cube_surface_margin_min` curve and video. If the
+  light-squeeze default prevents visible pad sinking but loses lift, tune only
+  `close_gripper_width_offset` before scaling data generation.
