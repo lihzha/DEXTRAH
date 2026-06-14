@@ -4538,3 +4538,64 @@ Command / Job:
 
 Next:
 - Monitor startup. Early pass/fail checks: `cube_action_warmstart_active_has_lifted_rate` and `cube_action_warmstart_lift_lift_height` should show physical lift under warmstart; then `cube_action_warmstart_delta_abs`, `cube_policy_action_z`, and `cube_policy_gripper_action` should move toward the applied reference before warmstart is disabled in a follow-up run.
+
+Result:
+- status: failed before training
+- error: Hydra rejected integer reward overrides (`env.cube_lift_weight=60`, etc.) because those config fields are typed as floats.
+- job state: `FAILED`, elapsed `00:01:40`, no metrics rows produced.
+
+Next:
+- Relaunch the same run from the same source/checkpoint with float-valued overrides (`60.0`, `15.0`, etc.).
+
+## 2026-06-14T13:22:00Z - Warmstart imitation PPO corrected float launch
+
+Goal:
+- Relaunch the warmstart/imitation PPO run after fixing the launch-only float override issue.
+
+Version Control:
+- source_code_commit: `cdbc421b96620950e74c1898df0af6ca55456c5c`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-main-warmfix-20260614-cdbc421`
+
+Command / Job:
+- host: `a1002`
+- job_id: `29066299`
+- run: `franka_multi_state_teacher_pg03_c035_warmfixf_resume25_20260614T1322Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29066299.out`
+- metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_pg03_c035_warmfixf_resume25_20260614T1322Z/metrics/direct_info_rank_0.jsonl`
+- change from failed launch: float-valued reward overrides only; reset, warmstart, action-prior, source, checkpoint, and scale are unchanged.
+
+Next:
+- Monitor startup, first metrics, and first checkpoint. Use warmstart-active lift metrics to validate physical curriculum and policy/action delta metrics to decide whether the policy is learning the demonstrator.
+
+Result:
+- status: canceled after diagnosis
+- job_state: `CANCELLED by 158351`; `.batch` recorded a signal exit after cancellation.
+- metrics: by epoch 33, `cube_action_warmstart_active_rate` had fallen to about `0.052`, `cube_action_warmstart_lift_lift_height` was only about `0.002`, and `cube_action_warmstart_lift_success_rate` was about `0.014`; overall `cube_success_rate` remained about `0.001`.
+- evidence: warmstart was active and policy-action metrics moved, but most vectorized reset samples did not physically lift. The earlier successful grasp-contact video had used rollout scoring to pick a dynamically liftable candidate, while training sampled only geometrically valid candidates.
+
+Analysis:
+- The main bottleneck is reset-state quality, not PPO scale. Training needs to sample from grasp prior indices that have been dynamically verified under the same stable-pose/yaw/XY reset distribution, otherwise most warmstart rollouts are not usable lift demonstrations.
+
+Next:
+- Add a verified grasp-index cache path to the multi-object environment, collect dynamically passing prior indices on L40, validate that cached resets lift, and relaunch A100 training with the cache.
+
+## 2026-06-14T13:38:52Z - Verified grasp-index cache implementation
+
+Goal:
+- Restrict multi-object grasp-prior resets to dynamically liftable prior sample indices before the next PPO launch.
+
+Change:
+- Added `env.grasp_prior_verified_indices_path` to the multi-object task config.
+- The multi-object env now loads a JSON cache keyed by object UUID and samples grasp reset candidates only from cached indices when the path is set; cache coverage is strict for all loaded objects.
+- Added `dextrah_lab/rl_games/collect_franka_multi_object_verified_grasps.py`, a headless non-render collector that repeatedly resets the vectorized env, executes the same warmstart sequence, and writes a UUID-to-indices JSON cache for samples that lift without early termination.
+- Added `cluster/sbatch_collect_franka_multi_object_verified_grasps_1gpu.sh` for L40 collection under `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/verified_grasp_indices`.
+- Wired `GRASP_PRIOR_VERIFIED_INDICES_PATH` through the A100 teacher training wrapper and the L40 video-validation wrapper.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py dextrah_lab/rl_games/collect_franka_multi_object_verified_grasps.py`
+- `bash -n cluster/sbatch_train_teacher_8gpu.sh`
+- `bash -n cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh`
+- `bash -n cluster/sbatch_collect_franka_multi_object_verified_grasps_1gpu.sh`
+
+Next:
+- Commit/push/deploy this cache path, run the L40 collector for the two-object manifest with stable-pose cache, inspect the resulting JSON counts and stats, then launch A100 PPO with `GRASP_PRIOR_VERIFIED_INDICES_PATH` set to the collected cache.

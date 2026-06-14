@@ -61,6 +61,7 @@ parser.add_argument("--grasp_reset_min_pregrasp_z", type=float, default=0.45)
 parser.add_argument("--grasp_reset_candidate_count", type=int, default=16)
 parser.add_argument("--grasp_reset_max_center_distance_frac", type=float, default=0.30)
 parser.add_argument("--grasp_reset_min_width", type=float, default=0.008)
+parser.add_argument("--grasp_prior_verified_indices_path", type=str, default="")
 parser.add_argument("--grasp_reset_ik_iterations", type=int, default=None)
 parser.add_argument("--grasp_reset_ik_damping", type=float, default=None)
 parser.add_argument("--grasp_reset_ik_max_joint_step", type=float, default=None)
@@ -977,6 +978,7 @@ def _make_env(*, grasp_prior: bool):
     env_cfg.grasp_prior_reset_min_pregrasp_z = float(args_cli.grasp_reset_min_pregrasp_z)
     env_cfg.grasp_prior_reset_max_center_distance_frac = float(args_cli.grasp_reset_max_center_distance_frac)
     env_cfg.grasp_prior_reset_min_width = float(args_cli.grasp_reset_min_width)
+    env_cfg.grasp_prior_verified_indices_path = str(args_cli.grasp_prior_verified_indices_path)
     if args_cli.grasp_reset_ik_iterations is not None:
         env_cfg.grasp_prior_reset_ik_iterations = int(args_cli.grasp_reset_ik_iterations)
     if args_cli.grasp_reset_ik_damping is not None:
@@ -1102,6 +1104,7 @@ def main() -> None:
             "grasp_warmstart_lift_closed_width_margin": args_cli.grasp_warmstart_lift_closed_width_margin,
             "grasp_reset_require_topdown": args_cli.grasp_reset_require_topdown,
             "grasp_reset_min_pregrasp_z": args_cli.grasp_reset_min_pregrasp_z,
+            "grasp_prior_verified_indices_path": args_cli.grasp_prior_verified_indices_path,
             "grasp_reset_ik_iterations": getattr(resolved_env_cfg, "grasp_prior_reset_ik_iterations", None),
             "grasp_reset_ik_damping": getattr(resolved_env_cfg, "grasp_prior_reset_ik_damping", None),
             "grasp_reset_ik_max_joint_step": getattr(resolved_env_cfg, "grasp_prior_reset_ik_max_joint_step", None),

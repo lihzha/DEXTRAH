@@ -484,6 +484,9 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             return
 
         prior_dir = str(self.cfg.grasp_prior_library_dir or "")
+        verified_indices_by_uuid = self._load_verified_grasp_indices(
+            str(getattr(self.cfg, "grasp_prior_verified_indices_path", "") or "")
+        )
         for object_idx, asset in enumerate(self._object_assets):
             prior_path = str(asset.get("grasp_prior_path") or "")
             if not prior_path and prior_dir:
@@ -497,7 +500,30 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
                 if bool(self.cfg.grasp_prior_allow_missing):
                     continue
                 raise FileNotFoundError(f"Missing grasp prior library for object {asset['uuid']}: {path}")
-            self._object_grasp_priors[object_idx] = self._load_multi_object_prior(path, uuid=str(asset["uuid"]))
+            uuid = str(asset["uuid"])
+            prior = self._load_multi_object_prior(path, uuid=uuid)
+            verified_indices = verified_indices_by_uuid.get(uuid)
+            if verified_indices_by_uuid and verified_indices is None:
+                raise ValueError(
+                    f"Verified grasp cache {self.cfg.grasp_prior_verified_indices_path!r} "
+                    f"has no indices for loaded object {uuid}"
+                )
+            if verified_indices is not None:
+                grasps = prior["grasps_object"]
+                if not isinstance(grasps, torch.Tensor):
+                    raise RuntimeError("Internal grasp prior tensor is invalid")
+                verified_tensor = torch.as_tensor(verified_indices, dtype=torch.long, device=self.device)
+                verified_tensor = torch.unique(verified_tensor[(verified_tensor >= 0) & (verified_tensor < grasps.shape[0])])
+                if verified_tensor.numel() == 0:
+                    raise ValueError(
+                        f"Verified grasp cache contains no valid indices for object {uuid} in {path}"
+                    )
+                prior["verified_indices"] = verified_tensor.contiguous()
+                metadata = prior.get("metadata")
+                if isinstance(metadata, dict):
+                    metadata["verified_indices_count"] = int(verified_tensor.numel())
+                    metadata["verified_indices_path"] = str(getattr(self.cfg, "grasp_prior_verified_indices_path", ""))
+            self._object_grasp_priors[object_idx] = prior
 
         has_prior_by_asset = torch.tensor(
             [1.0 if idx in self._object_grasp_priors else 0.0 for idx in range(self.num_unique_objects)],
@@ -505,6 +531,29 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             device=self.device,
         )
         self.object_has_grasp_prior[:] = has_prior_by_asset[self.object_asset_index]
+
+    def _load_verified_grasp_indices(self, path_value: str) -> dict[str, list[int]]:
+        if not path_value:
+            return {}
+        path = _resolve_path(path_value, base_dir=_repo_root())
+        if not path.is_file():
+            raise FileNotFoundError(f"Missing verified grasp index cache: {path}")
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        raw_objects = payload.get("objects", payload) if isinstance(payload, dict) else {}
+        if not isinstance(raw_objects, dict):
+            raise ValueError(f"Verified grasp index cache must contain an object mapping: {path}")
+
+        verified: dict[str, list[int]] = {}
+        for uuid, entry in raw_objects.items():
+            indices = entry.get("indices") if isinstance(entry, dict) else entry
+            if indices is None:
+                continue
+            if not isinstance(indices, list):
+                raise ValueError(f"Verified indices for {uuid} must be a list in {path}")
+            parsed = sorted({int(value) for value in indices if int(value) >= 0})
+            if parsed:
+                verified[str(uuid)] = parsed
+        return verified
 
     def _load_multi_object_prior(self, path: Path, *, uuid: str) -> dict[str, object]:
         import numpy as np
@@ -619,7 +668,12 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             grasps = prior["grasps_object"]
             if not isinstance(grasps, torch.Tensor):
                 raise RuntimeError("Internal grasp prior tensor is invalid")
-            local_indices = torch.randint(grasps.shape[0], (count, candidate_count), device=self.device)
+            verified_indices = prior.get("verified_indices")
+            if isinstance(verified_indices, torch.Tensor) and verified_indices.numel() > 0:
+                verified_choice = torch.randint(verified_indices.shape[0], (count, candidate_count), device=self.device)
+                local_indices = verified_indices[verified_choice]
+            else:
+                local_indices = torch.randint(grasps.shape[0], (count, candidate_count), device=self.device)
             object_grasp_t[mask] = grasps[local_indices]
             candidate_sample_indices[mask] = local_indices
             confidence = prior["confidence"]

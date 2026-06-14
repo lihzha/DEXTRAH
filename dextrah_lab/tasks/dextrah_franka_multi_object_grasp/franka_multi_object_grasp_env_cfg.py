@@ -86,6 +86,10 @@ class DextrahFrankaMultiObjectGraspEnvCfg(DextrahFrankaCubeGraspEnvCfg):
     # For multi-object training, per-object prior paths come from the manifest
     # or from grasp_prior_library_dir/<uuid>.npz.
     grasp_prior_library_dir = ""
+    # Optional JSON cache of dynamically verified grasp prior sample indices.
+    # When set, reset sampling is restricted to indices that lifted in sim for
+    # the matching object UUID.
+    grasp_prior_verified_indices_path = ""
     grasp_prior_allow_missing = False
     grasp_prior_pregrasp_offset = 0.08
     grasp_prior_reset_attempts = 1
