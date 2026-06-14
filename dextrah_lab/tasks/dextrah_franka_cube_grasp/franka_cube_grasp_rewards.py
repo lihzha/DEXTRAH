@@ -32,6 +32,11 @@ def compute_franka_cube_grasp_rewards(
     close_action_weight: float,
     lift_action_weight: float,
     descend_action_penalty_weight: float,
+    postlift_action_gate_height: float,
+    postlift_close_action_weight: float,
+    postlift_open_action_penalty_weight: float,
+    postlift_lift_action_weight: float,
+    postlift_descend_action_penalty_weight: float,
     table_clearance_penalty_weight: float,
     gripper_close_reg_weight: float,
     action_penalty_weight: float,
@@ -82,6 +87,16 @@ def compute_franka_cube_grasp_rewards(
     descend_action_penalty = (
         descend_action_penalty_weight * prelift_gate * lift_ready_gate * torch.clamp(-actions[:, 2], 0.0, 1.0)
     )
+    postlift_gate_denom = postlift_action_gate_height
+    if postlift_gate_denom < 1.0e-6:
+        postlift_gate_denom = lift_denom
+    postlift_gate = torch.clamp(cube_lift_height / postlift_gate_denom, 0.0, 1.0)
+    postlift_close_action_reward = postlift_close_action_weight * postlift_gate * torch.clamp(-actions[:, 6], 0.0, 1.0)
+    postlift_open_action_penalty = postlift_open_action_penalty_weight * postlift_gate * torch.clamp(actions[:, 6], 0.0, 1.0)
+    postlift_lift_action_reward = postlift_lift_action_weight * postlift_gate * torch.clamp(actions[:, 2], 0.0, 1.0)
+    postlift_descend_action_penalty = (
+        postlift_descend_action_penalty_weight * postlift_gate * torch.clamp(-actions[:, 2], 0.0, 1.0)
+    )
     table_clearance_penalty = table_clearance_penalty_weight * table_clearance_violation * table_clearance_violation
     gripper_close_reg = gripper_close_reg_weight * gripper_open_fraction * gripper_open_fraction
     action_penalty = action_penalty_weight * torch.sum(actions * actions, dim=-1)
@@ -96,6 +111,10 @@ def compute_franka_cube_grasp_rewards(
         close_action_reward,
         lift_action_reward,
         descend_action_penalty,
+        postlift_close_action_reward,
+        postlift_open_action_penalty,
+        postlift_lift_action_reward,
+        postlift_descend_action_penalty,
         table_clearance_penalty,
         gripper_close_reg,
         action_penalty,

@@ -4993,3 +4993,136 @@ Validation:
 
 Next:
 - Commit this wrapper fallback and deploy it via Git bundle if epoch-50 eval is poor and a BC warm-start launch is needed.
+
+## 2026-06-14T16:09:54Z - Epoch-50 eval decision and BC fallback launch plan
+
+Goal:
+- Recover a stronger warm-start policy for the robust two-object multi-object grasp task after the low-sigma PPO resume failed to improve policy success.
+
+Hypothesis:
+- The epoch-50 low-sigma PPO checkpoint still tracks the grasp-prior reference poorly enough to miss contact/hold reliably. A bounded supervised pass on the same randomized multi-object distribution should reduce reference-action error and provide a better checkpoint for subsequent eval and PPO resume.
+
+Result:
+- deterministic epoch-50 eval `1029330`: completed 600 steps, `success_rate_final=0.00390625`, `success_rate_max=0.0703125`, `success_ever_rate=0.15234375`, `first_attempt_success_rate=0.11328125`, `first_attempt_success_hold_rate=0.05859375`.
+- stochastic epoch-50 eval `1029331`: completed 600 steps, `success_rate_final=0.00390625`, `success_rate_max=0.06640625`, `success_ever_rate=0.1484375`, `first_attempt_success_rate=0.11328125`, `first_attempt_success_hold_rate=0.0390625`.
+- decision: epoch-50 did not exceed the epoch-40 deterministic baseline and has low terminal occupancy, so continue with the BC warm-start intervention instead of spending more PPO time on this checkpoint.
+
+Version Control:
+- implementation_commit: `d5e8b273890e34501fbc01b7d1fa4c3e3423f268`
+- remote_source: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-bc-fallback-20260614-d5e8b27`
+- remote_status: detached clean at `d5e8b273890e34501fbc01b7d1fa4c3e3423f268`
+
+Command / Job:
+- host: `l401`
+- job_id: `1029338`
+- planned wrapper: `cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh`
+- planned task: `Dextrah-Franka-Multi-Object-Grasp`
+- planned checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_96ae_lowsigma_m2_resume40_5a5cfca_20260614T1548Z/nn/last_dextrah_franka_multi_object_grasp_ep_50_rew_2608.1572.pth`
+- run_name: `franka_multi_7195_96ae_bc_ref_ep50_d5e8b27_20260614T1612Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bc_franka_cube_1029338.out`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/bc/franka_multi_7195_96ae_bc_ref_ep50_d5e8b27_20260614T1612Z`
+- planned data distribution: two-object manifest `7195.../96ae...`, random object assignment, `+-180 deg` yaw, `+-0.10 m` XY around `(0.05, 0.0)`, stable-pose cache, verified grasp indices, reset attempts `4`, candidates `64`.
+- planned BC scale: `NUM_ENVS=256`, `COLLECTION_STEPS=600`, `TRAIN_STEPS=1600`, `BATCH_SIZE=8192`, `LEARNING_RATE=1e-4`, `COLLECTION_ACTION_SOURCE=reference_delta`.
+
+Next:
+- Submit the BC job, monitor collection/training curves, inspect `bc_metrics.json`, checkpoint loadability by eval, then relaunch deterministic/stochastic eval from the BC checkpoint. If eval improves, resume PPO from that checkpoint; if not, inspect per-source/action residual metrics and patch/tune the data or model path.
+
+## 2026-06-14T16:22:00Z - BC reference-action result and DAgger-style follow-up
+
+Goal:
+- Decide whether the first BC checkpoint is a strong enough warm start for PPO, and if not, correct the data distribution before spending A100 time.
+
+Result:
+- BC job `1029338` completed on `l401`/`pool0-00004` in `00:01:58`.
+- run: `franka_multi_7195_96ae_bc_ref_ep50_d5e8b27_20260614T1612Z`
+- checkpoint: `/results/bc/franka_multi_7195_96ae_bc_ref_ep50_d5e8b27_20260614T1612Z/nn/bc_reference_action_imitation.pth`
+- dataset: `153600` samples from `256 envs x 600 steps`, obs dim `80`, action dim `7`.
+- fit metrics: validation L2 improved from `1.5865` to selected `0.0446`; validation up abs `0.00568`; validation close abs `0.0176`.
+- deterministic eval `1029339`: `success_rate_final=0.0`, `success_rate_max=0.0742`, `success_ever_rate=0.1680`, `first_attempt_success_rate=0.1094`, `first_attempt_success_hold_rate=0.0273`.
+- stochastic eval `1029340`: `success_rate_final=0.0039`, `success_rate_max=0.0586`, `success_ever_rate=0.1719`, `first_attempt_success_rate=0.1133`, `first_attempt_success_hold_rate=0.0234`.
+- trace diagnosis: deterministic mean success occupancy improved to `0.0178`, but mean policy up action during rollout was only `0.0219` and mean cube lift height was `0.0095 m`; the clean reference-only BC fit still has rollout distribution shift and weak sustained lift/hold.
+
+Analysis:
+- The supervised fit itself is valid and reloadable, but it did not beat the earlier first-attempt/hold eval baseline. The next cheapest correction is to collect off-policy states under a policy/reference mixture with terminal hold while rehearsing the clean reference dataset, then evaluate before launching A100 PPO.
+
+Next:
+- Initial second BC launch `1029343`, run `franka_multi_7195_96ae_bc_dagger_hold_ep50_d5e8b27_20260614T1623Z`, failed fast with exit `2` because `policy_reference_mix_hold` is diagnostic-gated unless `ALLOW_DIAGNOSTIC_ACTION_SOURCES=True`.
+- Relaunched corrected second L40 BC pass `1029344`, run `franka_multi_7195_96ae_bc_dagger_hold_ep50_d5e8b27_20260614T1625Z`, from the first BC checkpoint using `COLLECTION_ACTION_SOURCE=policy_reference_mix_hold`, `ALLOW_DIAGNOSTIC_ACTION_SOURCES=True`, teacher alphas `0.25/0.5/0.75`, balanced source batches, and the first reference dataset as rehearsal.
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bc_franka_cube_1029344.out`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/bc/franka_multi_7195_96ae_bc_dagger_hold_ep50_d5e8b27_20260614T1625Z`
+- If rollout eval improves lift/hold, resume A100 PPO from that checkpoint; otherwise inspect per-source residuals and adjust collection/labels.
+
+## 2026-06-14T16:32:00Z - DAgger BC eval and PPO resume launch
+
+Goal:
+- Move from supervised warm-start correction back to actual PPO training on the randomized multi-object task.
+
+Result:
+- second BC job `1029344` completed cleanly in `00:03:28`.
+- checkpoint: `/results/bc/franka_multi_7195_96ae_bc_dagger_hold_ep50_d5e8b27_20260614T1625Z/nn/bc_reference_action_imitation.pth`
+- dataset: `614400` samples: three `policy_reference_mix_hold` sources at alphas `0.25/0.5/0.75` plus the clean reference rehearsal source.
+- selected validation L2: `0.2783`; per-source validation L2: alpha0.25 `0.3267`, alpha0.5 `0.3496`, alpha0.75 `0.3520`, rehearsal `0.0877`.
+- deterministic eval `1029347`: `success_rate_final=0.0`, `success_rate_max=0.0703`, `success_ever_rate=0.1406`, `first_attempt_success_rate=0.1211`, `first_attempt_success_hold_rate=0.0391`, occupancy mean `0.0117`.
+- stochastic eval `1029348`: `success_rate_final=0.0`, `success_rate_max=0.0820`, `success_ever_rate=0.1406`, `first_attempt_success_rate=0.1250`, `first_attempt_success_hold_rate=0.0352`, occupancy mean `0.0137`.
+
+Analysis:
+- DAgger-style BC improved first-attempt success slightly but still failed to sustain terminal occupancy, so supervised fitting is no longer the main path. The actor now has usable close/lift behavior for early attempts, and PPO should optimize sustained lift/success directly.
+
+Command / Job:
+- host: `a1001`
+- job_id: `29070717`
+- run: `franka_multi_state_teacher_7195_96ae_bc_dagger_ppo_lift_d5e8b27_20260614T1632Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29070717.out`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_96ae_bc_dagger_ppo_lift_d5e8b27_20260614T1632Z`
+- source_commit: `d5e8b273890e34501fbc01b7d1fa4c3e3423f268`
+- resume_checkpoint: `/results/bc/franka_multi_7195_96ae_bc_dagger_hold_ep50_d5e8b27_20260614T1625Z/nn/bc_reference_action_imitation.pth`
+- PPO settings: `NUM_ENVS=2048`, `MAX_ITERATIONS=100`, `LEARNING_RATE=5e-5`, central value LR `5e-5`, `KL_THRESHOLD=0.006`, `ENTROPY_COEF=0`, `SAVE_FREQUENCY=5`.
+- task distribution: same two-object robust manifest, random object assignment, `+-180 deg` yaw, `+-0.10 m` XY around `(0.05, 0.0)`, stable-pose cache, verified grasp indices, reset attempts `4`, candidates `64`.
+- guidance/reward: no action warmstart override; grasp-prior action prior reward enabled with weight `8`; task reward lifted toward sustained lift/hold (`lift=25`, `height=8`, `success_bonus=60`, `close_action=2`, `lift_action=6`, descend penalty `-3`).
+
+Next:
+- Monitor `29070717` through queue/startup, inspect restored checkpoint behavior, JSONL metrics, success/lift/action-prior terms, checkpoints, then evaluate the best checkpoint. If the reward shaping destabilizes or fails to improve, tune the PPO reward/prior balance and relaunch.
+
+## 2026-06-14T16:36:00Z - PPO resume startup/config check
+
+Goal:
+- Verify that the active A100 PPO resume is using the intended multi-object task distribution before waiting for training metrics.
+
+Result:
+- job `29070717` is running on `a1001` node `batch-block5-01579`.
+- all eight ranks loaded `/results/bc/franka_multi_7195_96ae_bc_dagger_hold_ep50_d5e8b27_20260614T1625Z/nn/bc_reference_action_imitation.pth`.
+- resolved env config confirms random object assignment, object yaw randomization `+-180 deg`, spawn center offset `(0.05, 0.0)`, spawn XY randomization `0.10 m`, stable-pose cache enabled, verified grasp indices enabled, reset attempts `4`, reset candidate count `64`, robot base z `0.47`, and action warmstart override disabled.
+- resolved PPO config confirms fixed low sigma init `-2.0`, LR `5e-5`, central value LR `5e-5`, KL threshold `0.006`, entropy coefficient `0`, horizon `64`, minibatch `32768`, save frequency `5`, and `max_epochs=100`.
+
+Next:
+- Continue monitoring until the first epochs/checkpoints appear, inspect training curves and reward terms, then run deterministic/stochastic eval on the strongest checkpoint.
+
+## 2026-06-14T16:49:00Z - PPO branch 1 eval failure and post-lift reward patch
+
+Goal:
+- Decide whether the BC-warm-start PPO branch is learning a usable policy-only lift/hold behavior, and patch the training recipe if not.
+
+Result:
+- A100 job `29070717`, run `franka_multi_state_teacher_7195_96ae_bc_dagger_ppo_lift_d5e8b27_20260614T1632Z`, was monitored through epoch 70 and then canceled deliberately after preserving checkpoints.
+- checkpoints preserved: epoch 55 reward `4938.438`, epoch 60 reward `1044.4028`, epoch 65 reward `3672.805`, epoch 70 reward `1771.5356`.
+- training direct-info metrics showed repeating short spikes followed by decay; examples: epoch 60 `cube_success_rate=0.0278`, `cube_lift_height=0.0130 m`, `cube_action_z=-0.229`; epoch 65 `cube_success_rate=0.0083`, `cube_lift_height=0.0050 m`, `cube_action_z=-0.110`; epoch 69 `cube_success_rate=0.0376`, `cube_lift_height=0.0245 m`, `cube_action_z=-0.527`.
+- deterministic L40 eval `1029349` from epoch 60: `success_rate_final=0.0039`, `success_rate_max=0.0781`, `success_ever_rate=0.1484`, `success_occupancy_mean=0.0144`, `first_attempt_success_rate=0.125`, `first_attempt_success_hold_rate=0.0586`.
+- stochastic L40 eval `1029350` from epoch 60: `success_rate_final=0.0`, `success_rate_max=0.0664`, `success_ever_rate=0.1445`, `success_occupancy_mean=0.0190`, `first_attempt_success_rate=0.125`, `first_attempt_success_hold_rate=0.0625`.
+- diagnosis: the policy can briefly contact/lift but tends to open or drive negative z after the grasp-prior schedule. Existing close/up action shaping is prelift-gated by `lift_ready_gate`, so after the object/fingers drift the policy receives little direct penalty for opening or descending while trying to hold.
+
+Change:
+- Added configurable post-lift action shaping in `franka_cube_grasp_rewards.py` and `franka_cube_grasp_env.py`, defaulting to zero effect unless enabled by config:
+  - `cube_postlift_action_gate_height`
+  - `cube_postlift_close_action_weight`
+  - `cube_postlift_open_action_penalty_weight`
+  - `cube_postlift_lift_action_weight`
+  - `cube_postlift_descend_action_penalty_weight`
+- Added A100 wrapper exports/logging/Hydra overrides for these weights in `cluster/sbatch_train_teacher_8gpu.sh`.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_rewards.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env_cfg.py`
+- `bash -n cluster/sbatch_train_teacher_8gpu.sh`
+- `git diff --check`
+
+Next:
+- Commit and deploy the patch, then relaunch PPO from the DAgger BC checkpoint with post-lift close/up rewards and open/descend penalties enabled. Monitor the new post-lift reward terms plus policy z/close action, then evaluate the best checkpoint.

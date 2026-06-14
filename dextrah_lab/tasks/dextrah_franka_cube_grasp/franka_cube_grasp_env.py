@@ -1095,6 +1095,10 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             close_action_reward,
             lift_action_reward,
             descend_action_penalty,
+            postlift_close_action_reward,
+            postlift_open_action_penalty,
+            postlift_lift_action_reward,
+            postlift_descend_action_penalty,
             table_clearance_penalty,
             gripper_close_reg,
             action_penalty,
@@ -1124,6 +1128,11 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             float(self.cfg.cube_close_action_weight),
             float(self.cfg.cube_lift_action_weight),
             float(self.cfg.cube_descend_action_penalty_weight),
+            float(self.cfg.cube_postlift_action_gate_height),
+            float(self.cfg.cube_postlift_close_action_weight),
+            float(self.cfg.cube_postlift_open_action_penalty_weight),
+            float(self.cfg.cube_postlift_lift_action_weight),
+            float(self.cfg.cube_postlift_descend_action_penalty_weight),
             float(self.cfg.cube_table_clearance_penalty_weight),
             float(self.cfg.cube_gripper_close_reg_weight),
             float(self.cfg.cube_action_penalty_weight),
@@ -1138,6 +1147,10 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             + close_action_reward
             + lift_action_reward
             + descend_action_penalty
+            + postlift_close_action_reward
+            + postlift_open_action_penalty
+            + postlift_lift_action_reward
+            + postlift_descend_action_penalty
             + table_clearance_penalty
             + gripper_close_reg
             + action_penalty
@@ -1154,6 +1167,10 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             "cube_close_action_reward": close_action_reward.mean(),
             "cube_lift_action_reward": lift_action_reward.mean(),
             "cube_descend_action_penalty": descend_action_penalty.mean(),
+            "cube_postlift_close_action_reward": postlift_close_action_reward.mean(),
+            "cube_postlift_open_action_penalty": postlift_open_action_penalty.mean(),
+            "cube_postlift_lift_action_reward": postlift_lift_action_reward.mean(),
+            "cube_postlift_descend_action_penalty": postlift_descend_action_penalty.mean(),
             "cube_table_clearance_penalty": table_clearance_penalty.mean(),
             "cube_gripper_close_reg": gripper_close_reg.mean(),
             "cube_action_penalty": action_penalty.mean(),

@@ -127,6 +127,11 @@ class DextrahFrankaCubeGraspEnvCfg(DextrahFrankaStarKittingEnvCfg):
     cube_close_action_weight = 0.3
     cube_lift_action_weight = 1.0
     cube_descend_action_penalty_weight = -1.0
+    cube_postlift_action_gate_height = 0.03
+    cube_postlift_close_action_weight = 0.0
+    cube_postlift_open_action_penalty_weight = 0.0
+    cube_postlift_lift_action_weight = 0.0
+    cube_postlift_descend_action_penalty_weight = 0.0
     cube_table_clearance_penalty_weight = -3.0
     cube_gripper_close_reg_weight = -0.002
     cube_action_penalty_weight = -0.0005
