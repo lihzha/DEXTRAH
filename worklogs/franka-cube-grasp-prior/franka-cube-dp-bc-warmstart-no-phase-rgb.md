@@ -386,3 +386,219 @@ Validation:
 Next:
 - Commit and deploy this exact source to the l401 agent worktree.
 - Run a one-env reset/data-generation smoke at the explicit support center and inspect the produced metrics/video before any scale-up.
+
+Result:
+- implementation_commit: `dfc9c7f58650d0efc9ed2232c6f676f114ce9fce`
+- validation passed locally:
+  - `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/venv/bin/python -m py_compile dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env_cfg.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env_cfg.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`
+  - `bash -n cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh cluster/sbatch_eval_franka_cube_rgb_dp_policy_1gpu.sh`
+  - `git diff --check -- dextrah_lab/tasks/dextrah_franka_star_kitting/franka_star_kitting_env_cfg.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env_cfg.py worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart-no-phase-rgb.md`
+- pushed to GitHub branch `codex/franka-cube-diffusion-policy-bc`.
+- pushed directly to l401 repo and checked out in detached mode at `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`.
+
+Command / Job:
+- reset validation job_id: `1029179`
+- run_name: `franka_cube_reset_upright_z047_validate_20260614_0548`
+- result_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/franka_cube_validate/franka_cube_reset_upright_z047_validate_20260614_0548`
+- local_fetch: `cluster_results/l401/franka_cube_reset_upright_z047_validate_20260614_0548`
+
+Result:
+- status: passed.
+- metrics/artifacts:
+  - `reset_cube_on_table`: cube z `0.781000018`, table surface `0.746`.
+  - `reset_fingers_clear_table`: min/mean finger-table clearance `0.1673378944`, required `0.025`.
+  - rollout finite for `40` steps and cube remained in workspace.
+  - video artifact existed but viewport MP4 was black; metrics are the useful evidence for this validation job.
+
+Analysis:
+- Raising only the cube-task base fixed the table-clearance problem numerically.
+- The subsequent contact-rollout videos still need to validate the intended gripper approach, because table clearance alone does not prove a usable grasp reset.
+
+## 2026-06-14T05:57:20Z - raised-reset explicit-center contact rollout
+
+Goal:
+- Test whether the raised cube-task reset plus existing contact-aware controller can generate one accepted RGB demo at the explicit support center.
+
+Command / Job:
+- job_id `1029180`: `franka_cube_rgb_center_z047_liveclose_center_20260614_0552`, spec episode `6`, failed pre-rollout because the scale264 seed6 trajectory JSON does not exist.
+- job_id `1029181`: `franka_cube_rgb_center_z047_liveclose_center_ep37_20260614_0557`, spec `37:260::0:850037:-0.360000:-0.120000`, `ORIENTATION_MODE=live`, `CONTACT_GATE_MODE=center`, `CONTACT_ALIGN_THRESHOLD=0.09`.
+- job_id `1029182`: `franka_cube_rgb_low20_z047_liveclose_thr06_ep37_20260614_0612`, canceled because comma-valued custom `VARIANT=center_low20:0,0,-0.020` is split by Slurm `--export`.
+- job_id `1029183`: `franka_cube_rgb_center_z047_liveclose_thr06_ep37_20260614_0612`, canceled after Isaac startup stall on `pool0-00017`.
+- job_id `1029184`: `franka_cube_rgb_center_z047_liveclose_thr06_ep37_20260614_0617`, spec `37:260::0:850337:-0.360000:-0.120000`, `ORIENTATION_MODE=live`, `CONTACT_GATE_MODE=center`, `CONTACT_ALIGN_THRESHOLD=0.06`.
+
+Result:
+- `1029181` failed the hard gate: `accepted_episode_count=0`, `max_cube_lift_height=0.00095`, `final_cube_lift_height=0.0`, `pre_close_finger_center_to_cube=0.0856`, `final_finger_center_to_cube=0.2200`.
+- `1029184` failed the hard gate: `accepted_episode_count=0`, `max_cube_lift_height=0.0`, `final_cube_lift_height=0.0`, `pre_close_finger_center_to_cube=0.0600`, `pre_close_left/right/balance=0.0837/0.0581/0.0256`, `final_finger_center_to_cube=0.2200`.
+- `1029184` local video: `cluster_results/l401/franka_cube_rgb_center_z047_liveclose_thr06_ep37_20260614_0617/rollouts/ep37s260_a0_seed850337_xm0p360000_ym0p120000/videos/franka-cube-contact-relabel-ep37s260_a0_seed850337_xm0p360000_ym0p120000-step-0.mp4`
+- `viz-open` URL: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart/cluster_results/l401/franka_cube_rgb_center_z047_liveclose_thr06_ep37_20260614_0617/rollouts/ep37s260_a0_seed850337_xm0p360000_ym0p120000/videos/franka-cube-contact-relabel-ep37s260_a0_seed850337_xm0p360000_ym0p120000-step-0.mp4`
+
+Analysis:
+- The raised reset no longer starts near the table, but the "upright/down" joint reset is still visually slanted.
+- `CONTACT_GATE_MODE=center` lets close start while left/right finger distances are imbalanced, so the gripper closes on one side/edge of the cube and then lifts away.
+- The scale264 source row for episode `37`, step `260`, has a source EE quaternion whose local z-axis is effectively `[0, 0, -1]` and whose EE is about `0.030m` above the cube. That source orientation is a better next smoke target than `ORIENTATION_MODE=live`.
+
+Next:
+- Launch a one-location smoke at the same explicit support center with the raised reset, `ORIENTATION_MODE=source`, `CONTACT_GATE_MODE=left_right`, lateral centering enabled, and no source-joint reset. If this succeeds, scale to a few random default-reachable cube positions; if it fails, add a fixed top-down orientation/control patch instead of scaling.
+
+## 2026-06-14T06:00:11Z - source-orientation balanced-gate center smoke
+
+Goal:
+- Determine whether the raised cube reset can produce a valid explicit-center demo when the controller drives the source CuRobo top-down orientation and waits for a balanced left/right finger gate before closing.
+
+Hypothesis:
+- The previous failure closed from a slanted live orientation with imbalanced finger distances. The source row for episode `37`, step `260`, has a top-down EE orientation and should make the same finger-center controller physically plausible if the left/right gate and lateral centering delay close until the cube is between the fingers.
+
+Version Control:
+- implementation_commit: `dfc9c7f58650d0efc9ed2232c6f676f114ce9fce`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- remote_commit: `dfc9c7f58650d0efc9ed2232c6f676f114ce9fce`
+
+Command / Job:
+- job_id: `1029185`
+- run_name: `franka_cube_rgb_center_z047_sourceori_lr_ep37_20260614_0600`
+- command: `sbatch --exclude=pool0-00017,pool0-00018 --export=ALL,CODE_NFS=<agent-worktree>,RUN_NAME=franka_cube_rgb_center_z047_sourceori_lr_ep37_20260614_0600,DATASET=/results/dp_bc/datasets/franka_cube_curobo_lowdim_scale264_20260612_1449_full_pick_lift_framefix.npz,TRAJECTORY_ROOT=/results/dp_bc/curobo_plans,TRAJECTORY_TEMPLATE=cube_curobo_scale264_20260612_1449_seed{episode}/trajectory.json,SPEC_COUNT=1,SPEC_0=37:260::0:850537:-0.360000:-0.120000,RESET_JOINT_BLEND_ALPHA=0.0,RESET_CUBE_POS_BLEND_ALPHA=0.0,SAVE_RGB_OBS=True,RGB_OBS_HEIGHT=96,RGB_OBS_WIDTH=96,CAPTURE_VIDEO=True,VIDEO_LENGTH=480,VARIANT=center,ORIENTATION_MODE=source,POSE_ACTION_FILTER=scale,POSE_ACTION_LIMIT=0.95,ALIGN_STEPS=0,CONTACT_ALIGN_STEPS=220,CONTACT_ALIGN_REFERENCE=live_cube,CLOSE_HOLD_REFERENCE=live_cube,CONTACT_ALIGN_THRESHOLD=0.065,CONTACT_GATE_MODE=left_right,FINGER_GATE_MAX_DISTANCE=0.08,FINGER_GATE_BALANCE_THRESHOLD=0.015,REQUIRE_CONTACT_GATE=True,LATERAL_CENTERING_GAIN=1.0,LATERAL_CENTERING_LIMIT=0.03,LATERAL_SEARCH_AMPLITUDE=0.004,LATERAL_SEARCH_PERIOD=32,CLOSE_STEPS=80,LIFT_STEPS=160,LIFT_HEIGHT=0.22,FINGER_GAIN=0.75,CLIP_ACTIONS=1.0,PRINT_INTERVAL=40,GATE_MIN_LIFT=0.10,GATE_MAX_POSE_CLIP_FRACTION=0.0,GATE_MAX_FINAL_EE_TO_CUBE=0.05,GATE_MAX_FINAL_FINGER_TO_CUBE=0.08 cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh`
+
+Next:
+- Monitor `1029185`; fetch summary/video; if accepted, launch a small random-location smoke; if not, inspect whether orientation convergence, gate, or target height is still wrong.
+
+Result:
+- status: failed the hard gate.
+- artifacts:
+  - local result dir: `cluster_results/l401/franka_cube_rgb_center_z047_sourceori_lr_ep37_20260614_0600`
+  - video URL: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart/cluster_results/l401/franka_cube_rgb_center_z047_sourceori_lr_ep37_20260614_0600/rollouts/ep37s260_a0_seed850537_xm0p360000_ym0p120000/videos/franka-cube-contact-relabel-ep37s260_a0_seed850537_xm0p360000_ym0p120000-step-0.mp4`
+- metrics: `accepted_episode_count=0`, `max_cube_lift_height=0.00734`, `final_cube_lift_height=0.0`, `pre_close_left/right/balance=0.0778/0.0682/0.0096`, `pre_close_finger_center_to_cube=0.0613`, `final_ee_to_cube=0.0490`, `terminated_next_step=true` at local step `205`.
+
+Analysis:
+- Source orientation and the `left_right` gate fixed the visibly imbalanced close from the previous run.
+- The top-down open-gripper alignment still pushes/tilts the cube before close. The failure is now target height/contact geometry: `center` is too low for a collision-free pre-close approach with this finger-center controller.
+
+Next:
+- Run the same explicit-center source-orientation/left-right-gate smoke with `center_high15` and `center_high30` target variants. If one lifts, use that for a small random-location smoke. If both still fail, patch the controller to separate pre-close approach height from close/lift grasp height instead of relying on a single static target offset.
+
+## 2026-06-14T06:03:02Z - source-orientation high-target center smokes
+
+Goal:
+- Test whether raising the finger-center target above cube center avoids pre-close cube pushing and produces a stable lift.
+
+Hypothesis:
+- `center` puts the top-down open fingers too low, causing side/top contact before close. `center_high15` or `center_high30` may approach without disturbing the cube and then close from a usable capture height.
+
+Version Control:
+- implementation_commit: `dfc9c7f58650d0efc9ed2232c6f676f114ce9fce`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+
+Command / Job:
+- command base: source-orientation, `CONTACT_GATE_MODE=left_right`, `CONTACT_ALIGN_REFERENCE=live_cube`, `CLOSE_HOLD_REFERENCE=live_cube`, `RESET_JOINT_BLEND_ALPHA=0.0`, explicit cube XY `[-0.36, -0.12]`, scale264 episode `37`, step `260`.
+- job_id `1029187`: `franka_cube_rgb_center_z047_sourceori_lr_high15_ep37_20260614_0603`, `VARIANT=center_high15`.
+- job_id `1029186`: `franka_cube_rgb_center_z047_sourceori_lr_high30_ep37_20260614_0603`, `VARIANT=center_high30`.
+- job_id `1029188`: `franka_cube_rgb_center_z047_sourceori_lr_high15_ep37_retry_20260614_0606`, retry for `center_high15` after canceling stalled `1029187` startup on `pool0-00009`.
+
+Next:
+- Submit `center_high15` and `center_high30`; fetch summaries/videos and decide whether a controller patch is required.
+
+Result:
+- `1029186` (`center_high30`) failed: `max_cube_lift_height=0.00734`, `final_cube_lift_height=0.0`, terminated during `close_hold` at local step `129`.
+- `1029187` (`center_high15`) stalled before task parsing on `pool0-00009`; canceled and treated as infrastructure evidence only.
+- `1029188` (`center_high15` retry) failed: `max_cube_lift_height=0.00812`, `final_cube_lift_height=0.0`, terminated during `close_hold` at local step `108`.
+- local videos:
+  - high15: `cluster_results/l401/franka_cube_rgb_center_z047_sourceori_lr_high15_ep37_retry_20260614_0606/rollouts/ep37s260_a0_seed850638_xm0p360000_ym0p120000/videos/franka-cube-contact-relabel-ep37s260_a0_seed850638_xm0p360000_ym0p120000-step-0.mp4`
+  - high30: `cluster_results/l401/franka_cube_rgb_center_z047_sourceori_lr_high30_ep37_20260614_0603/rollouts/ep37s260_a0_seed850737_xm0p360000_ym0p120000/videos/franka-cube-contact-relabel-ep37s260_a0_seed850737_xm0p360000_ym0p120000-step-0.mp4`
+
+Analysis:
+- Both target heights reach a balanced close gate but drag the cube laterally during close. CSV evidence shows `cube_xy_error` rises to about `0.10m`, which triggers `prelift_drag_done` before lift.
+- Because `CLOSE_HOLD_REFERENCE=live_cube`, the controller chases the cube as it is dragged. Before adding new stages, test the existing `contact_anchor` close reference so close/lift stay tied to the pre-close anchor instead of following the moving cube.
+
+Next:
+- Run `center` and `center_high15` with `CLOSE_HOLD_REFERENCE=contact_anchor`. If they still drag/terminate before lift, patch the controller to separate high approach, descent/capture, close, and lift phases.
+
+## 2026-06-14T06:10:03Z - contact-anchor close smokes
+
+Goal:
+- Test whether freezing the close/lift target at the contact anchor prevents the cube-drag failure seen with `CLOSE_HOLD_REFERENCE=live_cube`.
+
+Hypothesis:
+- Live-cube close anchoring follows the cube as the gripper pushes it, causing a 10 cm lateral drag and termination. Contact-anchor close/lift should keep the gripper centered around the original pre-close grasp anchor and may allow a lift if the grasp geometry is otherwise sufficient.
+
+Version Control:
+- implementation_commit: `dfc9c7f58650d0efc9ed2232c6f676f114ce9fce`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+
+Command / Job:
+- command base: source-orientation, `CONTACT_GATE_MODE=left_right`, `CONTACT_ALIGN_REFERENCE=live_cube`, `CLOSE_HOLD_REFERENCE=contact_anchor`, `RESET_JOINT_BLEND_ALPHA=0.0`, explicit cube XY `[-0.36, -0.12]`, scale264 episode `37`, step `260`.
+- job_id `1029190`: `franka_cube_rgb_center_z047_sourceori_lr_anchor_center_ep37_20260614_0610`, `VARIANT=center`.
+- job_id `1029189`: `franka_cube_rgb_center_z047_sourceori_lr_anchor_high15_ep37_20260614_0610`, `VARIANT=center_high15`.
+
+Next:
+- Submit `center` and `center_high15`, then inspect metrics/videos.
+
+Result:
+- `1029190` (`center`, contact anchor) failed after full `460` steps: `max_cube_lift_height=0.00027`, `final_cube_lift_height=0.0`, `final_finger_center_to_cube=0.2286`.
+- `1029189` (`center_high15`, contact anchor) failed after full `460` steps: `max_cube_lift_height=0.00599`, `final_cube_lift_height=0.0`, `final_finger_center_to_cube=0.2388`.
+- local high15 video: `cluster_results/l401/franka_cube_rgb_center_z047_sourceori_lr_anchor_high15_ep37_20260614_0610/rollouts/ep37s260_a0_seed850938_xm0p360000_ym0p120000/videos/franka-cube-contact-relabel-ep37s260_a0_seed850938_xm0p360000_ym0p120000-step-0.mp4`
+
+Analysis:
+- Contact-anchor prevents the early pre-lift drag termination, but the gripper closes while still beside the cube and then lifts away.
+- The gate is too loose: close starts at finger-center distances around `0.063m`, roughly one cube half-width from center. Left/right balance is not enough; require a much smaller center distance before close.
+
+Next:
+- Run one stricter-gate high15/contact-anchor smoke with `CONTACT_ALIGN_THRESHOLD=0.035`, tighter left/right/balance gates, and a longer alignment budget. If this still fails, implement a staged controller patch.
+
+## 2026-06-14T06:14:12Z - strict-center close-gate smoke
+
+Goal:
+- Verify whether the existing controller works when close is delayed until the finger center is actually near the cube center, instead of only approximately balanced around it.
+
+Hypothesis:
+- The previous contact-anchor runs closed with finger-center-to-cube around `0.063m`; this is too far. A `0.035m` center gate should force the gripper over/around the cube before close.
+
+Version Control:
+- implementation_commit: `dfc9c7f58650d0efc9ed2232c6f676f114ce9fce`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+
+Command / Job:
+- command base: source-orientation, `VARIANT=center_high15`, `CONTACT_GATE_MODE=left_right`, `CONTACT_ALIGN_THRESHOLD=0.035`, `FINGER_GATE_MAX_DISTANCE=0.065`, `FINGER_GATE_BALANCE_THRESHOLD=0.010`, `CONTACT_ALIGN_STEPS=320`, `CLOSE_HOLD_REFERENCE=contact_anchor`, explicit cube XY `[-0.36, -0.12]`.
+- job_id `1029191`: `franka_cube_rgb_center_z047_sourceori_lr_anchor_high15_strict_ep37_20260614_0614`.
+
+Next:
+- Submit strict high15 smoke and inspect metrics/video.
+## 2026-06-14T06:24:19Z - cube reset top-down posture correction
+
+Goal:
+- Fix the cube task default Franka reset so the gripper initializes upright and points down, rather than pitched forward after the base-z change.
+
+Hypothesis:
+- The previous cube reset joint set kept high table clearance but used `panda_joint6 ~= 3.04`, which leaves the hand visually pitched forward. A top-down Franka posture with `panda_joint6 ~= 1.5` should keep the raised base while aligning the EE local z-axis with world down.
+
+Change:
+- Updated only the cube task reset joints in `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env_cfg.py`.
+- Added `reset_gripper_points_down` to `dextrah_lab/rl_games/validate_franka_cube_grasp_env.py`, reporting reset EE quaternion, reset tool local z-axis, and max/mean tilt in degrees.
+
+Version Control:
+- agent_id: franka-cube-dp-bc-warmstart
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- worklog: `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart-no-phase-rgb.md`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- base_commit: `dfc9c7f58650d0efc9ed2232c6f676f114ce9fce`
+- implementation_commit: pending
+- push/pull: pending
+- changed_files: `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env_cfg.py`, `dextrah_lab/rl_games/validate_franka_cube_grasp_env.py`, this worklog
+- remote_commit/status: pending
+
+Command / Job:
+- command: `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/venv/bin/python -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env_cfg.py dextrah_lab/rl_games/validate_franka_cube_grasp_env.py`
+- command: `bash -n cluster/sbatch_validate_franka_cube_grasp_env_1gpu.sh`
+- job_id: n/a
+- run_dir: n/a
+- logs: n/a
+- artifacts: n/a
+
+Result:
+- status: local checks passed
+- metrics/artifacts: py_compile and shell syntax succeeded.
+- key evidence: validator now has an explicit posture gate; cluster validation pending.
+
+Analysis:
+- The prior reset validation only measured finger/table clearance and reward predicates, so it could pass while the gripper was pitched forward. The new gate should fail any reset whose local tool z-axis is more than 12 degrees away from world down.
+
+Next:
+- Commit, deploy exact commit to l401, and run a short validation job with video/metrics. If the measured reset tilt still fails, tune the cube joint reset again based on the reported quaternion/axis.
