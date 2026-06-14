@@ -169,7 +169,19 @@ parser.add_argument(
     default="reference_delta",
     help=(
         "Action source used to step the rollout while collecting observations. "
-        "Labels are always compute_reference_delta_actions()."
+        "Target labels are controlled by --label_action_source."
+    ),
+)
+parser.add_argument(
+    "--label_action_source",
+    choices=("reference_delta", "applied_collection", "hold_applied_reference_else"),
+    default="reference_delta",
+    help=(
+        "Action labels used for supervised targets. "
+        "'reference_delta' preserves the original behavior. "
+        "'applied_collection' labels every fresh sample with the action used to step the env. "
+        "'hold_applied_reference_else' labels terminal-hold samples with the applied hold action and all other "
+        "samples with the nominal reference action."
     ),
 )
 parser.add_argument(
@@ -735,6 +747,31 @@ def _policy_reference_mix_hold_actions(
         gripper_alpha=_reference_mix_override_alpha(float(args_cli.collection_reference_mix_gripper_alpha), alpha),
     )
     return _hold_actions_from_source(task_env, mixed_actions)
+
+
+def _hold_active_mask(task_env) -> torch.Tensor:
+    state = getattr(task_env, "_bc_terminal_hold_state", None)
+    if not isinstance(state, dict) or "active" not in state:
+        return torch.zeros(task_env.num_envs, dtype=torch.bool, device=task_env.device)
+    active = state["active"]
+    if not isinstance(active, torch.Tensor) or active.shape[0] != task_env.num_envs:
+        return torch.zeros(task_env.num_envs, dtype=torch.bool, device=task_env.device)
+    return active.to(device=task_env.device, dtype=torch.bool).reshape(task_env.num_envs)
+
+
+def _label_actions_from_source(
+    task_env,
+    reference_actions: torch.Tensor,
+    applied_actions: torch.Tensor,
+) -> torch.Tensor:
+    if args_cli.label_action_source == "reference_delta":
+        return reference_actions
+    if args_cli.label_action_source == "applied_collection":
+        return applied_actions
+    if args_cli.label_action_source == "hold_applied_reference_else":
+        hold_active = _hold_active_mask(task_env).unsqueeze(-1)
+        return torch.where(hold_active, applied_actions, reference_actions)
+    raise ValueError(f"Unsupported label_action_source: {args_cli.label_action_source}")
 
 
 def _mean_float(tensor: torch.Tensor) -> float:
@@ -1373,6 +1410,7 @@ def _write_report(summary: dict[str, object], rows: list[dict[str, float | int |
         f"- input checkpoint: `{summary.get('input_checkpoint')}`",
         f"- output checkpoint: `{summary.get('output_checkpoint')}`",
         f"- collection action source: `{summary.get('collection_action_source')}`",
+        f"- label action source: `{summary.get('label_action_source')}`",
         f"- collection teacher alpha: `{summary.get('collection_teacher_alpha')}`",
         f"- collection teacher alphas: `{summary.get('collection_teacher_alphas')}`",
         f"- collection reference z/gripper alpha override: `{summary.get('collection_reference_mix_z_alpha')}` / `{summary.get('collection_reference_mix_gripper_alpha')}`",
@@ -1611,9 +1649,10 @@ def main(env_cfg, agent_cfg: dict):
                         )
                     else:
                         raise ValueError(f"Unsupported collection action source: {args_cli.collection_action_source}")
+                    label_actions = _label_actions_from_source(task_env, reference_actions, applied_actions)
 
                     obs_records.append(obs_t.detach().cpu())
-                    reference_records.append(reference_actions.detach().cpu())
+                    reference_records.append(label_actions.detach().cpu())
                     raw_records.append(raw_mus.detach().cpu())
                     applied_records.append(applied_actions.detach().cpu())
                     phase_records.append(
@@ -1746,6 +1785,7 @@ def main(env_cfg, agent_cfg: dict):
                 "path": "fresh_collection",
                 "num_samples": int(obs_loaded.shape[0]),
                 "collection_action_source": args_cli.collection_action_source,
+                "label_action_source": args_cli.label_action_source,
                 "collection_teacher_alpha": source_alpha,
                 "collection_reference_mix_z_alpha": _reference_mix_override_alpha(
                     float(args_cli.collection_reference_mix_z_alpha),
@@ -1861,6 +1901,7 @@ def main(env_cfg, agent_cfg: dict):
                 "path": str(rehearsal_path),
                 "num_samples": int(obs_loaded.shape[0]),
                 "collection_action_source": loaded.get("collection_action_source", "unknown"),
+                "label_action_source": loaded.get("label_action_source", "unknown"),
                 "collection_teacher_alpha": loaded.get("collection_teacher_alpha", "unknown"),
                 "input_checkpoint": loaded.get("input_checkpoint", "unknown"),
             }
@@ -2103,6 +2144,7 @@ def main(env_cfg, agent_cfg: dict):
         "loss_dims": torch.tensor(loss_dims, dtype=torch.long),
         "input_checkpoint": str(resume_path),
         "collection_action_source": args_cli.collection_action_source,
+        "label_action_source": args_cli.label_action_source,
         "collection_teacher_alpha": collection_teacher_alphas[0] if len(collection_teacher_alphas) == 1 else list(collection_teacher_alphas),
         "collection_teacher_alphas": list(collection_teacher_alphas),
         "collection_reference_mix_z_alpha": float(args_cli.collection_reference_mix_z_alpha),
@@ -2690,6 +2732,7 @@ def main(env_cfg, agent_cfg: dict):
         "source_batch_mode": args_cli.source_batch_mode,
         "source_loss_weights": source_loss_weights,
         "best_score_weights": best_score_weights,
+        "label_action_source": args_cli.label_action_source,
         "collection_teacher_alphas": list(collection_teacher_alphas),
         "distill_target": "input_checkpoint_initial_actor" if distill_enabled else "disabled",
         "distill_sources": distill_source_names,
@@ -2744,6 +2787,7 @@ def main(env_cfg, agent_cfg: dict):
         "learning_rate": float(args_cli.learning_rate),
         "validation_fraction": float(args_cli.validation_fraction),
         "collection_action_source": args_cli.collection_action_source,
+        "label_action_source": args_cli.label_action_source,
         "collection_teacher_alpha": collection_teacher_alphas[0] if len(collection_teacher_alphas) == 1 else list(collection_teacher_alphas),
         "collection_teacher_alphas": list(collection_teacher_alphas),
         "collection_reference_mix_z_alpha": float(args_cli.collection_reference_mix_z_alpha),

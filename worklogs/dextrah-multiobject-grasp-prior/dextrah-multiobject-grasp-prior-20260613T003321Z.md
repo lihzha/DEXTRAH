@@ -5237,3 +5237,44 @@ Command / Job:
 
 Next:
 - Monitor startup/config, then inspect `cube_action_warmstart_*`, policy z/gripper during and after warmstart, lift/success rates, checkpoints, and policy-only evals.
+## 2026-06-14T17:31:15Z - Hold-label BC root-cause patch
+
+Goal:
+- Fix the sustained-hold failure mode seen after the DAgger BC, post-lift PPO, and hold-warmstart PPO branches before spending more A100 time.
+
+Hypothesis:
+- The mixed hold BC branch was stepping the environment with scripted terminal hold actions but still supervising the actor toward the nominal grasp-prior reference action. If true, the dataset would contain lifted/hold states whose applied action closes/lifts while the target label opens/descends, directly explaining the policy-only eval trend toward opening and negative z.
+
+Change:
+- Ran bounded L40 tensor-stat job `1029355` to inspect the previous BC datasets in the Isaac container.
+- Patched `bc_reference_action_imitation.py` with `--label_action_source`, defaulting to the old `reference_delta` labels and adding `hold_applied_reference_else` for terminal hold samples.
+- Patched `cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh` to expose/pass `LABEL_ACTION_SOURCE`.
+
+Version Control:
+- agent_id: orchestrator/integration
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/merge-dp-rgb-main-20260613`
+- worklog: `worklogs/dextrah-multiobject-grasp-prior/dextrah-multiobject-grasp-prior-20260613T003321Z.md`
+- branch: `main`
+- base_commit: `153ecb23cdd75f657902cf623cb02acfab8e505d`
+- implementation_commit: `315c3b11de8b5f91fa3d7f7e264323596fa92975`
+- push/pull: pending push/deploy
+- changed_files: `dextrah_lab/rl_games/bc_reference_action_imitation.py`, `cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh`, this worklog
+- remote_commit/status: pending deploy after commit
+
+Command / Job:
+- dataset stats job: `1029355` on `l401`, log `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bc_dataset_stats_1029355.out`
+- validation: `python3 -m py_compile dextrah_lab/rl_games/bc_reference_action_imitation.py dextrah_lab/rl_games/eval_rollout.py`
+- validation: `bash -n cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh cluster/sbatch_eval_franka_multi_object_grasp_1gpu.sh cluster/sbatch_train_teacher_8gpu.sh`
+- validation: `git diff --check`
+
+Result:
+- status: patch validated locally, not yet relaunched
+- metrics/artifacts: previous DAgger-hold dataset had `hold_active=144397/614400` samples and `hold_and_lift02=27699/614400`.
+- key evidence: on `hold_and_lift02`, applied labels from the hold controller averaged `z=0.865` and gripper `-0.800`, but the supervised target still averaged `z=-0.208` and gripper `-0.560`; on all `lift_gt_02` samples, applied `z=0.573` while target `z=-0.215`.
+
+Analysis:
+- The BC collector was correctly creating lifted/closed states but trained the actor against labels that oppose the hold action in those states. This explains why later PPO/eval repeatedly regressed to negative z/open behavior after the scripted schedule ended.
+- The fix preserves old runs by default and enables a targeted corrected run with `LABEL_ACTION_SOURCE=hold_applied_reference_else`.
+
+Next:
+- Commit/push/deploy this patch, launch a corrected L40 BC pass from the DAgger BC checkpoint with terminal hold-applied labels plus the reference rehearsal dataset, inspect dataset/action statistics and eval, then resume PPO only if policy-only eval improves.
