@@ -5808,3 +5808,33 @@ Analysis:
 Next:
 - Confirm the replacement log resolves `DEXTRAH_RLGAMES_JSONL_METRICS=True`.
 - Monitor the first epochs and compare reset-quality/contact metrics against canceled job `29073180`.
+
+## 2026-06-14T20:25:00Z - Gated warmstart PPO relaunch
+
+Goal:
+- Prevent the scripted warmstart/reference action from closing and lifting before the Franka EE reaches the grasp contact.
+
+Result:
+- Job `29073801` (`franka_multi_state_teacher_7195_96ae_qualitycap_jsonl_77927d9_20260614T2003Z`) was canceled after epoch 56.
+- Evidence from epochs 51-56:
+  - success fell from `0.0474` at epoch 51 to `0.0039` at epoch 56.
+  - warmstart lift success stayed low (`0.050-0.097` in epochs 54-56).
+  - active/lift exact EE error was large (`~0.21-0.29 m`) while the gripper was closing/lifting.
+  - close target and lift gripper width were reasonable (`~0.0054 m`), so the failure was not simply an open gripper.
+- Diagnosis: the previous launch closed after only 4 policy steps and lifted on a fixed schedule with `close_max_ee_error=0`, `lift_max_ee_error=0`, `lift_max_finger_center_dist=0`, and `lift_closed_width_margin=-1`; it was closing/lifting while still far from the contact.
+
+Command / Job:
+- canceled_job_id: `29073801`, state `CANCELLED by 158351`, elapsed `00:17:11`.
+- replacement_job_id: `29074376`
+- replacement_run_name: `franka_multi_state_teacher_7195_96ae_gatedwarm_77927d9_20260614T2025Z`
+- replacement_run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_96ae_gatedwarm_77927d9_20260614T2025Z`
+- replacement_log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29074376.out`
+- changed launch overrides only: `GRASP_PRIOR_ACTION_WARMSTART_APPROACH_STEPS=80`, `GRASP_PRIOR_ACTION_WARMSTART_CLOSE_STEPS=100`, `GRASP_PRIOR_ACTION_WARMSTART_LIFT_STEPS=160`, `GRASP_PRIOR_ACTION_WARMSTART_CLOSE_MAX_EE_ERROR=0.06`, `GRASP_PRIOR_ACTION_WARMSTART_LIFT_MAX_EE_ERROR=0.06`, `GRASP_PRIOR_ACTION_WARMSTART_LIFT_MAX_FINGER_CENTER_DIST=0.08`, `GRASP_PRIOR_ACTION_WARMSTART_LIFT_CLOSED_WIDTH_MARGIN=0.004`.
+
+Analysis:
+- This is a config-only tuning iteration on source commit `77927d9e377df598e011d90bafb29b09d44e7b66`.
+- Expected behavior: lower premature lift rate, lower lift exact-EE/finger distance, and higher warmstart lift success before policy learning is judged.
+
+Next:
+- Monitor `29074376` through the first 51-60 window.
+- If lift never triggers, relax the gates slightly; if lift triggers with low success, generate a focused grasp-contact rollout for the accepted reset subset.
