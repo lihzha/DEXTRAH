@@ -846,8 +846,12 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         self.grasp_prior_action_prior_teacher_gripper_action[:] = teacher_actions[:, 6]
         self.grasp_prior_action_prior_exact_ee_error[:] = exact_ee_error
 
+        policy_actions = self.actions
+        if bool(self.cfg.grasp_prior_action_warmstart_enabled):
+            policy_actions = self.grasp_prior_action_warmstart_policy_actions
+
         if bool(active.any().item()):
-            delta_abs = torch.mean(torch.abs(self.actions - teacher_actions), dim=-1)
+            delta_abs = torch.mean(torch.abs(policy_actions - teacher_actions), dim=-1)
             self.grasp_prior_action_prior_delta_abs[:] = delta_abs
             weight = max(float(self.cfg.grasp_prior_action_prior_reward_weight), 0.0)
             sharpness = max(float(self.cfg.grasp_prior_action_prior_reward_sharpness), 0.0)

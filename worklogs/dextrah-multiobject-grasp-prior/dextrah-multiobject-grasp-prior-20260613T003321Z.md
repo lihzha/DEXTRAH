@@ -4307,3 +4307,204 @@ Command / Job:
 
 Next:
 - Monitor job `29063656` through startup, first metrics, first checkpoint, and either continue to success or patch/relaunch based on reward/lift/success evidence.
+
+## 2026-06-14T12:03:00Z - Contactfix PPO stopped and closer-pregrasp validation launched
+
+Goal:
+- Stop the weak 8-GPU run once the first checkpoint showed no useful lift learning, then validate a closer reset curriculum before relaunching PPO.
+
+Stopped Job:
+- job_id: `29063656`
+- run: `franka_multi_state_teacher_contactfix_liftshape_priorreward_20260614T1121Z`
+- action: `scancel` issued after rank-0 metrics reached epoch `27`.
+- checkpoint preserved: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_contactfix_liftshape_priorreward_20260614T1121Z/nn/last_dextrah_franka_multi_object_grasp_ep_25_rew_1255.5575.pth`
+
+Metrics Evidence:
+- epoch 27: `cube_success_rate=0.0`, `cube_has_lifted_rate=0.0078125`, `cube_lift_height=0.0001328`, `cube_action_z=0.09855`, `cube_gripper_width=0.02898`, `cube_finger_center_to_cube_dist=0.13498`, `cube_max_finger_to_cube_dist=0.13940`.
+- best observed: `cube_success_rate=0.0043945` at epoch 19, `cube_lift_height=0.001576` at epoch 19.
+- reset quality remained healthy enough for training (`cube_grasp_prior_reset_success_rate=0.78125` at epoch 27), so the failure is contact capture/curriculum rather than asset loading or reset stability.
+
+Decision:
+- Do not continue the same `GRASP_PRIOR_PREGRASP_OFFSET=0.08` run. It starts the policy 8 cm above contact and the action-prior reward was too weak/sparse to make PPO reliably discover approach/close/lift.
+- Validate a closer `GRASP_PREGRASP_OFFSET=0.03` reset under the same tight close/lift settings before the next A100 launch.
+
+Validation Job:
+- host: `l401`
+- job_id: `1029270`
+- run: `franka_multi_video_pregrasp03_close004_7182f30_20260614T1203Z`
+- source: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-main-evalfix-20260614-94d7274` at `7182f3026edec7a74b9708b298bdbbc1f994f75b`.
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_1029270.out`
+- output_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_pregrasp03_close004_7182f30_20260614T1203Z`
+- key settings: `GRASP_PREGRASP_OFFSET=0.03`, top-down required, stable-pose cache enabled, `GRASP_WARMSTART_CLOSE_WIDTH=0.004`, `GRASP_WARMSTART_USE_PRIOR_CLOSE_WIDTH=False`, warmstart approach/close/lift `12/36/160`, lift action z `0.50`, candidate count `2048`, IK `96/0.035/0.25/0.055/0.55`.
+
+Next:
+- Monitor `1029270`, inspect metrics and `grasp_contact.mp4`; if physically clean, relaunch PPO with `GRASP_PRIOR_PREGRASP_OFFSET=0.03` and a stronger action-prior/reward curriculum.
+
+## 2026-06-14T12:10:00Z - Closer-pregrasp scored validation with tighter center gate
+
+Goal:
+- Validate a training-feasible grasp-prior reset before relaunching A100 PPO, using the closer 3 cm pregrasp offset but rejecting edge contacts with a tighter center-distance gate.
+
+Hypothesis:
+- The previous `grasp_contact` video was physically stable but selected an edge/handle contact on the wide object because `GRASP_RESET_MAX_CENTER_DISTANCE_FRAC=0.50`; tightening the gate to `0.30` and enabling full warmstart scoring should prefer contacts that can actually close and lift.
+
+Change:
+- No source changes. Validation-only hyperparameter change from the previous video run: `GRASP_RESET_MAX_CENTER_DISTANCE_FRAC=0.30`, `GRASP_CONTACT_SCORE_STEPS=60` which expands to the full warmstart horizon, `GRASP_PREGRASP_OFFSET=0.03`.
+
+Version Control:
+- agent_id: `merge-dp-rgb-main-20260613`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/merge-dp-rgb-main-20260613`
+- branch: `main`
+- implementation_commit: `7182f3026edec7a74b9708b298bdbbc1f994f75b` for environment code; current local `main` has worklog-only commits on top.
+- remote_commit/status: l401 validation worktree `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-main-evalfix-20260614-94d7274` at `7182f3026edec7a74b9708b298bdbbc1f994f75b`.
+
+Command / Job:
+- host: `l401`
+- job_id: `1029275`
+- run: `franka_multi_video_pregrasp03_center030_scored_7182f30_20260614T1210Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_1029275.out`
+- output_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_pregrasp03_center030_scored_7182f30_20260614T1210Z`
+- key settings: two-object filtered manifest, stable-pose cache, object yaw randomization `180` deg, candidate count `2048`, attempts `12`, IK `96/0.035/0.25/0.055/0.55`, close width `0.004`, warmstart approach/close/lift `12/36/160`, lift action z `0.50`.
+
+Next:
+- Monitor job `1029275`; fetch metrics and `grasp_contact.mp4`. If the contact sequence cleanly lifts, use this reset gate and closer offset in the next A100 PPO launch. If it still fails, patch/reset-filter the GraspGen candidate selection before spending A100 time.
+
+Result:
+- status: failed
+- metrics/artifacts: `reset_settle` and `perturbation` passed; `grasp_contact` failed because no quality candidate passed the tighter center gate. Selected fallback had `selected_reset_success=False`, `selected_candidate_valid_count=0`, `warmstart_active_count=0`, `selected_lift_height_max=0.0`, and the robot stayed in a default high pose.
+- key evidence: nearest fallback candidate for the small object had `selected_center_gate_dist=0.03456` and `selected_object_size=0.10143`, normalized to about `0.341`; the `0.30` gate was too strict.
+
+Analysis:
+- The bad previous wide-object edge candidate was about `0.386*object_size`, so a `0.35` gate should admit the small-object candidate while rejecting that wide-object edge grasp.
+
+Next:
+- Relaunch validation at `GRASP_RESET_MAX_CENTER_DISTANCE_FRAC=0.35` before patching source or launching A100 PPO.
+
+## 2026-06-14T12:13:00Z - Closer-pregrasp scored validation with 0.35 center gate
+
+Goal:
+- Find the narrow center-distance threshold that yields quality grasp-prior candidates and scripted lift without reintroducing the wide-object edge-grasp failure.
+
+Change:
+- Validation-only hyperparameter change: `GRASP_RESET_MAX_CENTER_DISTANCE_FRAC=0.35`, keeping `GRASP_PREGRASP_OFFSET=0.03`, candidate count `2048`, attempts `12`, full warmstart scoring, and the same stable-pose/two-object setup.
+
+Command / Job:
+- host: `l401`
+- job_id: `1029276`
+- run: `franka_multi_video_pregrasp03_center035_scored_7182f30_20260614T1213Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_1029276.out`
+- output_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_pregrasp03_center035_scored_7182f30_20260614T1213Z`
+
+Next:
+- Monitor job `1029276`; inspect metrics/video. If it still cannot lift, patch candidate selection/scoring instead of launching PPO.
+
+Result:
+- status: partially passed / acceptable for training relaunch
+- metrics/artifacts: `reset_settle` and `perturbation` passed. `grasp_contact` failed only the conservative lateral-drift gate, while the scripted contact sequence actually lifted the object: `selected_lift_height_max=0.1277` versus `0.12` threshold, `selected_max_finger_dist_min=0.0440`, `finger_table_clearance_min=0.0480`, `bottom_clearance_min=-0.0066`, `selected_done_count=0`, `warmstart_phases=[-1,0,1,2]`.
+- failure detail: `selected_object_xy_delta_max=0.0888` exceeded the validation gate `0.06`. This is above the task's `cube_success_xy_tol=0.08` by about `0.009 m`, but below the prelift-drag termination threshold `0.10`; visually the object was grasped/lifted rather than bouncing or penetrating.
+- local artifact: `/home/lzha/code/artifacts/dextrah/franka_multi_video_pregrasp03_center035_scored_7182f30_20260614T1213Z/grasp_contact.mp4`
+
+Decision:
+- Use `GRASP_PRIOR_PREGRASP_OFFSET=0.03` and `GRASP_PRIOR_RESET_MAX_CENTER_DISTANCE_FRAC=0.35` for the next A100 PPO launch. This is the first validation that gives a real lift from the GraspGen reset prior; failures are now reward/curriculum/training issues rather than object loading or reset impossibility.
+
+## 2026-06-14T12:18:00Z - Corrected closer-reset A100 PPO launch
+
+Goal:
+- Relaunch parallel multi-object Franka PPO from the closest validated reset distribution and monitor until it learns, fails with a new diagnosis, or needs a code/reward patch.
+
+Hypothesis:
+- The previous PPO run failed because `GRASP_PRIOR_PREGRASP_OFFSET=0.08` plus loose `0.50` center gate produced weak/no-contact curriculum. The new `0.03` pregrasp and `0.35` center gate start near a demonstrated liftable contact, while the stronger action-prior reward should make PPO discover approach/close/lift without overriding policy actions.
+
+Version Control:
+- local_commit: `de0d9954e08c56bd79075a6be4447c81f0756f32` plus uncommitted worklog updates only.
+- source_code_commit: `02cb6b7a4fae8583e755317468cec4159ddb35d9`; environment code is unchanged from `7182f3026edec7a74b9708b298bdbbc1f994f75b`.
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-main-train-20260614-02cb6b7`
+- remote_commit: `02cb6b7a4fae8583e755317468cec4159ddb35d9`
+
+Command / Job:
+- host: `a1002`
+- job_id: `29064966`
+- run: `franka_multi_state_teacher_pg03_c035_ap8_20260614T1218Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29064966.out`
+- expected_metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_pg03_c035_ap8_20260614T1218Z/metrics/direct_info_rank_0.jsonl`
+- expected_checkpoints: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_pg03_c035_ap8_20260614T1218Z/nn/`
+- scale: `NUM_ENVS=2048`, `MAX_ITERATIONS=600`, `HORIZON_LENGTH=64`, 8 GPUs.
+- assets/randomization: two-object filtered manifest, `OBJECT_ASSET_ASSIGNMENT=random`, stable-pose cache, object yaw randomization `180` deg, XY randomization `0.10` around `(0.05, 0)`.
+- reset curriculum: `GRASP_PRIOR_PREGRASP_OFFSET=0.03`, `GRASP_PRIOR_RESET_MAX_CENTER_DISTANCE_FRAC=0.35`, attempts `12`, candidates `2048`, top-down required, IK `96/0.035/0.25/0.055/0.55`.
+- guidance/reward: action warmstart disabled; action-prior reward enabled with weight `8.0`, sharpness `1.5`, reference close width `0.004`, reference approach/close/lift `12/36/160`, lift action z `0.50`; lifted/success shaping from the previous run retained.
+
+Next:
+- Monitor job `29064966` through queue/startup, first metrics, first checkpoint, and learning curves. If lift/success remains flat, inspect action-prior rates/deltas, reset-quality metrics, and patch the candidate scoring or reward/success tolerance before relaunching.
+
+Monitor:
+- epoch 2: `cube_grasp_prior_quality_success_rate=0.407`, `cube_action_prior_active_rate=0.407`, `cube_has_lifted_rate=0.0195`, `cube_success_rate=0.0`, `cube_lift_height=0.00012`.
+- epoch 7: policy had learned to close and approach (`cube_gripper_width=0.0342`, `cube_finger_center_to_cube_dist=0.2046`) but mostly descended (`cube_action_z=-0.0916`), with `cube_has_lifted_rate=0.0215` and near-zero success.
+- epoch 10: first stronger contact signal, `cube_success_rate=0.00146`, `cube_has_lifted_rate=0.0181`, `cube_lift_height=0.00190`, `cube_action_prior_close_rate=0.0396`, `cube_action_prior_lift_rate=0.0020`, reset quality `0.405`.
+
+Analysis:
+- Training is slower than the previous run because the `0.35` gate leaves only about `7.8/2048` valid candidates on average and quality success is about `40%`, causing expensive reset waves. However, the job is progressing and early lift/success are better than the previous failed run, so keep monitoring to the first checkpoint before changing the curriculum.
+
+Result:
+- status: stopped after first checkpoint
+- action: `scancel 29064966` after epoch 26 once the epoch-25 checkpoint was written.
+- checkpoint: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_pg03_c035_ap8_20260614T1218Z/nn/last_dextrah_franka_multi_object_grasp_ep_25_rew_937.9583.pth`
+- epoch 25 metrics: `cube_success_rate=0.00098`, `cube_has_lifted_rate=0.02295`, `cube_lift_height=0.00058`, `cube_gripper_width=0.03367`, `cube_gripper_action=-0.1658`, `cube_max_finger_to_cube_dist=0.1483`, `cube_action_z=0.00177`, reset quality `0.4097`.
+
+Analysis:
+- The policy learned the approach/close part, but the action-prior schedule barely exposed lift (`cube_action_prior_lift_rate=0.0034` at epoch 25) and lift height stayed below 1 mm. Continuing the same schedule would spend most of the allocation on a flat lift curve.
+
+Next:
+- Relaunch from the epoch-25 checkpoint with a shorter approach phase and longer lift-prior phase: approach `4`, close `20`, lift `184`, no close/lift gating, stronger close/lift rewards, and the same `0.35` reset curriculum.
+
+## 2026-06-14T13:05:00Z - Lift-prior resumed A100 PPO launch
+
+Goal:
+- Resume from the epoch-25 approach/close policy and push the curriculum toward actual object lift.
+
+Hypothesis:
+- The previous run learned approach/close but not lift because the action-prior reference spent too much active time in approach/open and too little in close/lift. Shorter approach, longer lift, no phase gating, and stronger close/lift shaping should expose a clear lift signal while preserving the validated `0.03` pregrasp and `0.35` center gate.
+
+Version Control:
+- source_code_commit: `02cb6b7a4fae8583e755317468cec4159ddb35d9`; code unchanged from the validated environment implementation.
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-main-train-20260614-02cb6b7`
+
+Command / Job:
+- host: `a1002`
+- job_id: `29065803`
+- run: `franka_multi_state_teacher_pg03_c035_liftprior_resume25_20260614T1305Z`
+- checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_pg03_c035_ap8_20260614T1218Z/nn/last_dextrah_franka_multi_object_grasp_ep_25_rew_937.9583.pth`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29065803.out`
+- expected_metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_pg03_c035_liftprior_resume25_20260614T1305Z/metrics/direct_info_rank_0.jsonl`
+- reset: `GRASP_PRIOR_PREGRASP_OFFSET=0.03`, center gate `0.35`, attempts `4`, candidates `2048`, same stable-pose/object randomization.
+- action-prior schedule: approach/close/lift `4/20/184`, close width `0.004`, lift action z `0.50`, close/lift gating disabled, action-prior reward weight `10.0`, sharpness `1.0`.
+- reward shaping: `CUBE_LIFT_WEIGHT=60`, `CUBE_HEIGHT_TRACKING_WEIGHT=15`, `CUBE_SUCCESS_BONUS_WEIGHT=80`, `CUBE_CLOSE_ACTION_WEIGHT=2`, `CUBE_LIFT_ACTION_WEIGHT=10`, descend penalty `-8`.
+
+Next:
+- Monitor startup and compare early resumed metrics against the stopped run: lift-phase rate should be much higher, action z should turn positive in lift phase, and lift height/success should improve beyond the epoch-25 baseline.
+
+Result:
+- status: stopped after early metrics
+- action: `scancel 29065803` after epoch 34 because the resumed action-prior-only curriculum was still flat.
+- metrics: epochs 26-28 briefly raised `cube_action_prior_lift_rate` to about `0.38`, but `cube_has_lifted_rate` stayed around `0.013`, `cube_lift_height` stayed below `0.001 m`, and by epoch 34 success was still `0.0`. The policy still had loose contacts (`cube_max_finger_to_cube_dist` about `0.138 m`) and no reliable lift.
+
+Analysis:
+- The reset distribution is still viable (`cube_grasp_prior_quality_success_rate` about `0.39`), but the reward-only action prior is too weak/short-lived to move the policy from approach/close into capture/lift.
+- Before using action warmstart for a staged curriculum, the action-prior reward must compare the teacher action against the policy action, not the warmstart-overwritten action. Otherwise warmstart can generate successful physics while giving high imitation reward even when the policy itself is not matching the demonstrator.
+
+Next:
+- Patch the inherited Franka grasp action-prior reward to use `grasp_prior_action_warmstart_policy_actions` when warmstart is enabled, commit/deploy the fix, then relaunch from the epoch-25 checkpoint with warmstart enabled and action-prior reward still policy-dependent.
+
+## 2026-06-14T13:16:08Z - Warmstart imitation reward fix
+
+Goal:
+- Make the staged warmstart curriculum train the policy instead of only driving the simulator with scripted actions.
+
+Change:
+- In `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`, `_compute_grasp_prior_action_prior_reward()` now compares teacher actions to the saved policy actions when `grasp_prior_action_warmstart_enabled=True`; otherwise it keeps the existing comparison to `self.actions`.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py`
+- `bash -n cluster/sbatch_train_teacher_8gpu.sh`
+
+Next:
+- Commit/push the fix, deploy a detached A100 worktree at the exact commit, and launch a warmstart-enabled multi-object PPO run. Early acceptance criteria: warmstart-active rollouts should show real lift/success, and `cube_action_warmstart_delta_abs` plus `cube_policy_action_z`/`cube_policy_gripper_action` should improve over the first checkpoint.
