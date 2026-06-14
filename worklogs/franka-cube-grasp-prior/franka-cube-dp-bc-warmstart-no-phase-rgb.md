@@ -667,3 +667,23 @@ Analysis:
 
 Next:
 - Commit the canonical reset patch, deploy it to l401, and rerun `validate_franka_cube_grasp_env.py` so `reset_gripper_points_down` passes.
+
+Follow-up Result:
+- implementation_commit: `f0cad3d14e57ff414826b24ea39752f5e649ac59`
+- push/pull: pushed to GitHub and l401 NFS repo; remote worktree checked out detached at the same commit.
+- validation job `1029196`, run `franka_cube_reset_canonical_topdown_z047_validate_20260614_0636`, passed.
+- local fetched artifacts:
+  - `cluster_results/l401/franka_cube_reset_canonical_topdown_z047_validate_20260614_0636/metrics.json`
+  - `cluster_results/l401/franka_cube_reset_canonical_topdown_z047_validate_20260614_0636/videos/franka-cube-validate-step-0.mp4`
+- key metrics:
+  - `reset_tool_tilt_deg_max=2.3407`
+  - `reset_tool_z_axis_w=[-0.0040, -0.0407, -0.9992]`
+  - `finger_table_clearance_min=0.2553`
+  - overall `passed=true`
+- video check: 40 frames at `1280x720`, first/middle/last frames extracted; sampled rendered frames show the gripper upright/down over the raised table.
+
+Analysis:
+- The cube config now uses the measured canonical top-down Franka reset posture and a cube-specific raised base. The validator explicitly guards against the earlier forward-pitched reset, so this should fail fast if the posture regresses.
+
+Next:
+- Use this cube reset config for the next data-generation/evaluation pass.
