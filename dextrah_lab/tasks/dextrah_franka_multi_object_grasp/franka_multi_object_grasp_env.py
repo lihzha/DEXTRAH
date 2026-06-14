@@ -730,6 +730,17 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         candidate_contact_midpoint_w = candidate_contact_points_w.mean(dim=2)
 
         object_center_pos_w_candidates = object_center_pos_w.unsqueeze(1)
+        object_center_offset_candidates = self.object_center_offset[env_ids].unsqueeze(1).expand(
+            -1,
+            candidate_count,
+            -1,
+        )
+        candidate_contact_midpoint_o = candidate_contact_locations.mean(dim=2)
+        candidate_contact_reference_o = torch.where(
+            candidate_has_contact.unsqueeze(-1),
+            candidate_contact_midpoint_o,
+            object_center_offset_candidates,
+        )
         candidate_contact_reference_w = torch.where(
             candidate_has_contact.unsqueeze(-1),
             candidate_contact_midpoint_w,
@@ -868,6 +879,7 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         pregrasp_farther = candidate_pregrasp_farther[row_ids, best_candidate]
         pregrasp_offset_dir_w = candidate_pregrasp_offset_dir_w[row_ids, best_candidate]
         contact_reference_w = candidate_contact_reference_w[row_ids, best_candidate]
+        contact_reference_o = candidate_contact_reference_o[row_ids, best_candidate]
         contact_center_dist = candidate_contact_center_dist[row_ids, best_candidate]
         center_gate_dist = candidate_center_gate_dist[row_ids, best_candidate]
         has_contact_location = candidate_has_contact[row_ids, best_candidate]
@@ -903,6 +915,7 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             "pregrasp_tool_dist": pregrasp_tool_dist,
             "quality_reference_pos_w": contact_reference_w,
             "contact_reference_w": contact_reference_w,
+            "contact_reference_object": contact_reference_o,
             "contact_center_dist": contact_center_dist,
             "center_gate_dist": center_gate_dist,
             "has_contact_location": has_contact_location,
@@ -1139,10 +1152,32 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         self.cube_pos[env_ids] = center_pos
 
         finger_center = 0.5 * (self.left_finger_pos[env_ids] + self.right_finger_pos[env_ids])
-        self.ee_to_cube_dist[env_ids] = torch.norm(self.ee_pos[env_ids] - center_pos, dim=-1)
-        self.finger_center_to_cube_dist[env_ids] = torch.norm(finger_center - center_pos, dim=-1)
-        self.left_finger_to_cube_dist[env_ids] = torch.norm(self.left_finger_pos[env_ids] - center_pos, dim=-1)
-        self.right_finger_to_cube_dist[env_ids] = torch.norm(self.right_finger_pos[env_ids] - center_pos, dim=-1)
+        distance_reference_pos = center_pos
+        if hasattr(self, "grasp_prior_reset_contact_reference_pos_o"):
+            reference_o = self.grasp_prior_reset_contact_reference_pos_o[env_ids]
+            rot_m = math_utils.matrix_from_quat(root_quat)
+            current_reference_pos = root_pos + torch.bmm(rot_m, reference_o.unsqueeze(-1)).squeeze(-1)
+            use_contact_reference = (
+                self.grasp_prior_reset_quality_success[env_ids]
+                & self.grasp_prior_reset_has_contact_location[env_ids]
+            )
+            distance_reference_pos = torch.where(
+                use_contact_reference.unsqueeze(-1),
+                current_reference_pos,
+                center_pos,
+            )
+            self.grasp_prior_current_contact_reference_pos[env_ids] = distance_reference_pos
+
+        self.ee_to_cube_dist[env_ids] = torch.norm(self.ee_pos[env_ids] - distance_reference_pos, dim=-1)
+        self.finger_center_to_cube_dist[env_ids] = torch.norm(finger_center - distance_reference_pos, dim=-1)
+        self.left_finger_to_cube_dist[env_ids] = torch.norm(
+            self.left_finger_pos[env_ids] - distance_reference_pos,
+            dim=-1,
+        )
+        self.right_finger_to_cube_dist[env_ids] = torch.norm(
+            self.right_finger_pos[env_ids] - distance_reference_pos,
+            dim=-1,
+        )
         self.max_finger_to_cube_dist[env_ids] = torch.maximum(
             self.left_finger_to_cube_dist[env_ids],
             self.right_finger_to_cube_dist[env_ids],

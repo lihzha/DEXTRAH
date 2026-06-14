@@ -5625,3 +5625,45 @@ Analysis:
 
 Next:
 - Monitor queue/startup, parse rank-0 direct metrics, and cancel/tune if the collector-matched warmstart still fails to lift or PPO still learns away from the objects.
+
+## 2026-06-14T19:07:21Z - Prior-width PPO failed; contact-reference patch
+
+Goal:
+- Stop the prior-width PPO attempt once it was clear that the collector-matched close/lift schedule alone did not create a successful learning signal, then patch the multi-object reward/success distances to follow the selected grasp contact on the moving object.
+
+Hypothesis:
+- The long/thin objects expose a mismatch in the multi-object task: grasp priors are sampled around contact points, but rewards/success still measure hand distance to object center. After reset and lift, the object center can be far from the intended grasp contact, causing the policy to receive weak or incorrect approach/enclosure/success signals even when the grasp prior is geometrically valid.
+
+Change:
+- Canceled job `29072558` after rank-0 metrics through epoch 58 showed collapse.
+- Added reset-prior buffers for the selected contact reference in object coordinates and current env coordinates.
+- Multi-object reset now returns the chosen contact midpoint in object coordinates.
+- Multi-object intermediate values now keep object center for lift/XY/goal, but compute EE/finger/hand distances and success hand-distance gate against the current contact reference transformed by the current object root pose when a quality contact prior is active.
+
+Version Control:
+- agent_id: orchestrator/integration
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/merge-dp-rgb-main-20260613`
+- branch: `main`
+- base_commit: `4f897bfe8c9c0dad840cb55669cae5aeb38debbf`
+- implementation_commit: pending
+- changed_files: `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`, `dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py`, this worklog
+- remote_source: pending deploy after commit
+
+Command / Job:
+- canceled job_id: `29072558`
+- run_name: `franka_multi_state_teacher_7195_96ae_priorwidth_ca70e4b_20260614T1848Z`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_96ae_priorwidth_ca70e4b_20260614T1848Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29072558.out`
+- validation: `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py`; `bash -n cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_eval_franka_multi_object_grasp_1gpu.sh`
+
+Result:
+- status: failed / canceled for tuning
+- Slurm: `29072558|CANCELLED by 158351|0:0|00:18:20|batch-block5-01569`
+- epoch 51-55: success mean `0.0281`, lift mean `0.0116 m`, warmstart lift success mean `0.0301`, warmstart lift height mean `0.0126 m`, center-based finger distance mean `0.283 m`.
+- epoch 56-58: success mean `0.00163`, lift mean `0.00607 m`, warmstart lift success mean `0.0239`, warmstart lift height mean `0.0128 m`, center-based finger distance mean `0.333 m`.
+
+Analysis:
+- Matching the verified collector's prior-width close settings avoided the overly aggressive 2 mm close target from the previous run, but the learning signal still collapsed by epoch 56. The center-distance reward/success path is now the most likely blocker because selected contact points for these objects are far from the object center, and the current logged finger distance grows while lift/success disappear.
+
+Next:
+- Commit/push/deploy the contact-reference patch, relaunch PPO from the corrected BC checkpoint with the same two-object manifest and collector-matched warmstart settings, then compare epochs 51-60 against jobs `29072214` and `29072558`.

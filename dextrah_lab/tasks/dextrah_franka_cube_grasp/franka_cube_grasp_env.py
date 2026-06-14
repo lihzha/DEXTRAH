@@ -118,6 +118,8 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             self.grasp_prior_reset_pregrasp_ee_dist = torch.zeros(self.num_envs, device=self.device)
             self.grasp_prior_reset_quality_reference_pos_w = torch.zeros(self.num_envs, 3, device=self.device)
             self.grasp_prior_reset_contact_reference_pos_w = torch.zeros(self.num_envs, 3, device=self.device)
+            self.grasp_prior_reset_contact_reference_pos_o = torch.zeros(self.num_envs, 3, device=self.device)
+            self.grasp_prior_current_contact_reference_pos = torch.zeros(self.num_envs, 3, device=self.device)
             self.grasp_prior_reset_contact_center_dist = torch.zeros(self.num_envs, device=self.device)
             self.grasp_prior_reset_center_gate_dist = torch.zeros(self.num_envs, device=self.device)
             self.grasp_prior_reset_has_contact_location = torch.zeros(
@@ -340,6 +342,8 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         self.grasp_prior_reset_pregrasp_ee_dist[env_ids] = 0.0
         self.grasp_prior_reset_quality_reference_pos_w[env_ids] = 0.0
         self.grasp_prior_reset_contact_reference_pos_w[env_ids] = 0.0
+        self.grasp_prior_reset_contact_reference_pos_o[env_ids] = 0.0
+        self.grasp_prior_current_contact_reference_pos[env_ids] = 0.0
         self.grasp_prior_reset_contact_center_dist[env_ids] = 0.0
         self.grasp_prior_reset_center_gate_dist[env_ids] = 0.0
         self.grasp_prior_reset_has_contact_location[env_ids] = False
@@ -952,6 +956,13 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         contact_reference_pos_w = targets.get("contact_reference_w", quality_reference_pos_w)
         self.grasp_prior_reset_quality_reference_pos_w[env_ids] = quality_reference_pos_w
         self.grasp_prior_reset_contact_reference_pos_w[env_ids] = contact_reference_pos_w
+        self.grasp_prior_reset_contact_reference_pos_o[env_ids] = targets.get(
+            "contact_reference_object",
+            torch.zeros(int(env_ids.numel()), 3, dtype=torch.float32, device=self.device),
+        )
+        self.grasp_prior_current_contact_reference_pos[env_ids] = contact_reference_pos_w - self.scene.env_origins[
+            env_ids
+        ]
         self.grasp_prior_reset_contact_center_dist[env_ids] = targets.get(
             "contact_center_dist",
             torch.zeros_like(self.grasp_prior_reset_contact_center_dist[env_ids]),
