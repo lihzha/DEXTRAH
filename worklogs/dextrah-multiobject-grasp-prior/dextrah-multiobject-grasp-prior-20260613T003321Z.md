@@ -3517,3 +3517,147 @@ Analysis:
 
 Next:
 - Launch bounded multi-object PPO teacher training from commit `fd4510c0831932ee93c370067c24f752a3731db7` with random object assignment, full yaw randomization, stable-pose cache, and grasp-prior reset enabled.
+
+## 2026-06-14T08:50:00Z - Bounded PPO teacher launch
+
+Goal:
+- Start actual multi-object Franka grasp PPO training on the validated environment and monitor whether rewards/lift metrics indicate learning.
+
+Version Control:
+- implementation_commit: `cf34bce3e27a017891d7a23c866446e88f03aa79`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-main-rgb-teacher-20260614-f1a34bc`
+- remote_commit: `cf34bce3e27a017891d7a23c866446e88f03aa79`
+
+Command / Job:
+- job_id: `29060007`
+- run: `franka_multi_state_teacher_filtered2_graspprior_20260614T0850Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29060007.out`
+- expected_metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_filtered2_graspprior_20260614T0850Z/metrics/direct_info_rank_0.jsonl`
+- key settings: `NUM_ENVS=2048`, `MAX_ITERATIONS=300`, `OBJECT_ASSET_ASSIGNMENT=random`, `OBJECT_SPAWN_YAW_RANDOMIZATION_DEG=180.0`, `OBJECT_STABLE_POSE_ENABLED=True`, `GRASP_PRIOR_RESET_ENABLED=True`, `GRASP_PRIOR_RESET_ATTEMPTS=8`, `GRASP_PRIOR_RESET_CANDIDATE_COUNT=1024`, `GRASP_PRIOR_RESET_REQUIRE_TOPDOWN=False`, `GRASP_PRIOR_RESET_MAX_CENTER_DISTANCE_FRAC=0.50`.
+
+Next:
+- Monitor startup; inspect metrics, reward terms, and checkpoints. If rewards flatline or reset cost is too high, tune and relaunch rather than stopping at job state.
+
+## 2026-06-14T09:04:19Z - PPO teacher early metrics
+
+Goal:
+- Decide whether the first launched multi-object PPO run is healthy enough to continue.
+
+Result:
+- status: running
+- job_id: `29060007`
+- scheduler: `RUNNING` on `batch-block7-03003`, partition `polar3`.
+- metrics: rank-0 JSONL reached epoch 16; no NaNs or tracebacks seen.
+- startup evidence: all 8 ranks created 2048-env scenes, simulation started, and direct-info metric writers came up.
+- checkpoint evidence: no checkpoint yet; save frequency is 25 epochs.
+
+Key Metrics:
+- epoch 1: `cube_success_rate=0`, `cube_has_lifted_rate=0`, `cube_finger_center_to_cube_dist=0.265`, `cube_lift_height=1.16e-05`.
+- epoch 15: `cube_success_rate=0`, `cube_has_lifted_rate=4.88e-04`, `cube_finger_center_to_cube_dist=0.161`, `cube_lift_height=4.38e-04`.
+- grasp-prior reset quality is nonzero and stable enough for RL: reset success around `0.24`, valid candidates around `571/1024`.
+
+Analysis:
+- Training is progressing and object-conditioned observations are wired: inherited object pose/velocity/relative vectors plus multi-object scale/shape/id/prior features make the state vector 80-D.
+- Early behavior improves approach/enclosure and starts producing rare tiny lifts, but success is still zero and the mean z action remains negative.
+- Keep monitoring to at least the epoch-25 checkpoint before deciding whether to relaunch with stronger lift/close shaping.
+
+Next:
+- Continue monitoring job `29060007`.
+- At or after epoch 25, inspect checkpoint presence and reward/lift trend; if success/lift remains flat, cancel and relaunch a tuned PPO run.
+
+## 2026-06-14T09:11:57Z - PPO teacher epoch-25 gate
+
+Goal:
+- Decide whether to keep baseline PPO job `29060007` after the first checkpoint.
+
+Result:
+- status: kept running
+- checkpoint: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_filtered2_graspprior_20260614T0850Z/nn/last_dextrah_franka_multi_object_grasp_ep_25_rew_862.03723.pth`
+- metrics_file: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_filtered2_graspprior_20260614T0850Z/metrics/direct_info_rank_0.jsonl`
+
+Key Metrics:
+- epoch 25: `cube_success_rate=0`, `cube_has_lifted_rate=4.88e-04`, `cube_lift_height=3.22e-04`, `cube_finger_center_to_cube_dist=0.122`, `cube_gripper_width=0.021`, `cube_action_z=-0.0566`.
+- epoch 26: `cube_success_rate=0`, `cube_has_lifted_rate=9.77e-04`, `cube_lift_height=2.92e-04`, `cube_action_z=-0.0656`.
+
+Analysis:
+- The job is not successful yet, but it is not completely flat: approach/enclosure improved strongly and rare tiny lift events have started.
+- The remaining problem is lift: z action is still negative on average and lift height is far below the success threshold.
+- Keep the baseline run to epoch 50 for one more learning window. If success/lift remains essentially zero, stop it and relaunch a tuned run with stronger lift/close/action shaping.
+
+Next:
+- Monitor to epoch 50.
+
+## 2026-06-14T09:30:46Z - Baseline PPO stopped after epoch 50
+
+Goal:
+- Stop the first baseline run if it converges to approach/close without lift.
+
+Result:
+- status: failed baseline; canceled after checkpoint
+- job_id: `29060007`
+- checkpoint: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_filtered2_graspprior_20260614T0850Z/nn/last_dextrah_franka_multi_object_grasp_ep_50_rew_1414.3331.pth`
+- action: `scancel 29060007`
+
+Key Metrics:
+- epoch 50: `cube_success_rate=0`, `cube_has_lifted_rate=0.00195`, `cube_lift_height=1.69e-04`, `cube_finger_center_to_cube_dist=0.101`, `cube_gripper_width=0.00495`, `cube_action_z=-0.0157`.
+- epoch 51 was written before cancellation completed and remained unsuccessful: `cube_success_rate=0`, `cube_lift_height=2.72e-05`.
+
+Analysis:
+- The baseline reward learned to approach and close the gripper but not to lift. The aggregate reward increased because approach/enclosure dominated while success stayed zero.
+- The gripper collapsed to nearly closed widths, so the default open-gripper penalty is likely counterproductive for heterogeneous objects.
+
+Next:
+- Launch a tuned PPO run from the same commit and assets.
+- Use stronger lift/height/success/action shaping, remove the open-gripper penalty, and enable grasp-prior action-prior reward without action warmstart override.
+
+## 2026-06-14T09:32:00Z - Tuned PPO launch
+
+Goal:
+- Relaunch PPO with reward/action-prior shaping that directly targets the baseline failure mode: approach/close without lift.
+
+Version Control:
+- implementation_commit: `cf34bce3e27a017891d7a23c866446e88f03aa79`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-main-rgb-teacher-20260614-f1a34bc`
+- remote_commit: `cf34bce3e27a017891d7a23c866446e88f03aa79`
+- source_change: none; training config override only.
+
+Command / Job:
+- job_id: `29060849`
+- run: `franka_multi_state_teacher_filtered2_liftshape_priorreward_20260614T0932Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29060849.out`
+- expected_metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_filtered2_liftshape_priorreward_20260614T0932Z/metrics/direct_info_rank_0.jsonl`
+- scheduler: started on `batch-block7-02880`, partition `polar3`.
+
+Key Overrides:
+- same assets/reset as baseline: `MAX_OBJECTS=2`, `OBJECT_ASSET_ASSIGNMENT=random`, `OBJECT_SPAWN_YAW_RANDOMIZATION_DEG=180.0`, stable-pose cache enabled, grasp-prior reset enabled.
+- reward/action tuning: `CUBE_LIFT_WEIGHT=40`, `CUBE_HEIGHT_TRACKING_WEIGHT=10`, `CUBE_SUCCESS_BONUS_WEIGHT=60`, `CUBE_CLOSE_ACTION_WEIGHT=0.6`, `CUBE_LIFT_ACTION_WEIGHT=6`, `CUBE_DESCEND_ACTION_PENALTY_WEIGHT=-6`, `CUBE_GRIPPER_CLOSE_REG_WEIGHT=0`, `CUBE_ACTION_PENALTY_WEIGHT=-0.0002`.
+- prior guidance: `GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED=True`, `GRASP_PRIOR_ACTION_PRIOR_REWARD_WEIGHT=3`, action warmstart remains disabled.
+
+Next:
+- Monitor startup, metrics, and checkpoint curve. Success criterion for keeping this run past the first checkpoint is nonzero and increasing lift/success rather than only approach/enclosure growth.
+
+## 2026-06-14T09:44:40Z - Multi-object eval wrapper reset parity fix
+
+Goal:
+- Make checkpoint evaluation use the same reset distribution as the training jobs before evaluating any PPO checkpoint.
+
+Hypothesis:
+- The existing multi-object eval wrapper would not faithfully validate the training environment because it did not pass through stable-pose cache settings or the relaxed grasp-prior reset candidate filters.
+
+Change:
+- Added pass-through and validation for `OBJECT_STABLE_POSE_*`, `GRASP_PRIOR_RESET_*`, and `GRASP_PRIOR_PREGRASP_OFFSET` in `cluster/sbatch_eval_franka_multi_object_grasp_1gpu.sh`.
+
+Version Control:
+- agent_id: `merge-dp-rgb-main-20260613`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/merge-dp-rgb-main-20260613`
+- branch: `main`
+- base_commit: `cf34bce3e27a017891d7a23c866446e88f03aa79`
+- implementation_commit: `ff4ec8cff8b0f806f707db3f808a343d9f2d0b80`
+- changed_files: `cluster/sbatch_eval_franka_multi_object_grasp_1gpu.sh`, this worklog.
+
+Validation:
+- `bash -n cluster/sbatch_eval_franka_multi_object_grasp_1gpu.sh`
+- `git diff --check -- cluster/sbatch_eval_franka_multi_object_grasp_1gpu.sh`
+
+Next:
+- Evaluate the next useful checkpoint with stable poses and the same relaxed grasp-prior reset filters used by training.
