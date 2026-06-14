@@ -3780,3 +3780,59 @@ Validation:
 
 Next:
 - Commit/push, deploy the exact commit to the L40 remote worktree, relaunch exact-grasp rendered validation with top-down disabled and explicit IK overrides, inspect the video/metrics, then launch A100 PPO only after grasp-contact is clean.
+
+## 2026-06-14T10:12:00Z - Rendered exact-grasp IK validation launch
+
+Goal:
+- Confirm the reset/IK fix with rendered grasp contact before launching another A100 PPO run.
+
+Version Control:
+- local_commit: `707733bce652c67b54d243aa4382c7a8e95fc2e7`
+- push: pushed to `origin/main`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-main-evalfix-20260614-94d7274`
+- remote_commit: `707733bce652c67b54d243aa4382c7a8e95fc2e7`
+- deployment: Git bundle copied to `/lustre/fsw/portfolios/nvr/users/lzha/src/bundles/dextrah-main-707733b.bundle`; remote worktree checked out detached at the exact commit.
+
+Command / Job:
+- job_id: `1029212`
+- host: `l401`
+- run: `franka_multi_video_exactgrasp_ik707733b_notop_20260614T1011Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_1029212.out`
+- output_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_exactgrasp_ik707733b_notop_20260614T1011Z`
+- key settings: `GRASP_PREGRASP_OFFSET=0.0`, `GRASP_RESET_REQUIRE_TOPDOWN=False`, `GRASP_RESET_CANDIDATE_COUNT=2048`, `GRASP_RESET_IK_ITERATIONS=96`, `GRASP_RESET_IK_POS_TOLERANCE=0.055`, `GRASP_RESET_IK_ROT_TOLERANCE=0.55`, `GRASP_WARMSTART_CLOSE_STEPS=24`, `GRASP_WARMSTART_LIFT_STEPS=126`, `GRASP_WARMSTART_LIFT_ACTION_Z=0.35`.
+
+Next:
+- Monitor job `1029212`; inspect `video_metrics.json`, encode/open `grasp_contact` frames, and only proceed to A100 PPO if reset/contact/lift behavior is visually and metrically correct.
+
+## 2026-06-14T10:16:00Z - Validator metrics scope fix
+
+Goal:
+- Preserve the `1029212` rendered evidence and fix the validator crash so the same scenario can produce metrics.
+
+Result:
+- job_id: `1029212`
+- status: failed after rendering all `grasp_contact` frames.
+- evidence: log traceback `NameError: name 'env_cfg' is not defined` while constructing `video_metrics.json`.
+- artifact note: `reset_settle`, `perturbation`, and `grasp_contact` frame folders were created, but no metrics JSON was written, so this run is not a valid pass/fail result.
+
+Analysis:
+- This was introduced by the IK metrics reporting patch. `env_cfg` was local to `_make_env`, while `main()` only owns the live `task_env`.
+
+Change:
+- Use `task_env.cfg` as `resolved_env_cfg` when serializing the effective reset IK settings.
+
+Version Control:
+- agent_id: `merge-dp-rgb-main-20260613`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/merge-dp-rgb-main-20260613`
+- branch: `main`
+- base_commit: `707733bce652c67b54d243aa4382c7a8e95fc2e7`
+- implementation_commit: pending
+- changed_files: `dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py`, this worklog.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py`
+- `bash -n cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh`
+- `git diff --check -- dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py worklogs/dextrah-multiobject-grasp-prior/dextrah-multiobject-grasp-prior-20260613T003321Z.md`
+
+Next:
+- Commit/push/deploy this validation-only fix, then rerun the exact same rendered validation settings under the new commit.

@@ -1058,6 +1058,7 @@ def main() -> None:
     _set_grasp_prior_runtime_enabled(task_env, True)
     print("[INFO] Recording grasp_contact with settled-object grasp-prior reset", flush=True)
     scenarios["grasp_contact"] = _record_grasp_contact(env, task_env, output_dir)
+    resolved_env_cfg = task_env.cfg
     payload = {
         "passed": all(bool(item.get("passed", False)) for item in scenarios.values()),
         "scenarios": scenarios,
@@ -1097,11 +1098,11 @@ def main() -> None:
             "grasp_warmstart_lift_closed_width_margin": args_cli.grasp_warmstart_lift_closed_width_margin,
             "grasp_reset_require_topdown": args_cli.grasp_reset_require_topdown,
             "grasp_reset_min_pregrasp_z": args_cli.grasp_reset_min_pregrasp_z,
-            "grasp_reset_ik_iterations": getattr(env_cfg, "grasp_prior_reset_ik_iterations", None),
-            "grasp_reset_ik_damping": getattr(env_cfg, "grasp_prior_reset_ik_damping", None),
-            "grasp_reset_ik_max_joint_step": getattr(env_cfg, "grasp_prior_reset_ik_max_joint_step", None),
-            "grasp_reset_ik_pos_tolerance": getattr(env_cfg, "grasp_prior_reset_ik_pos_tolerance", None),
-            "grasp_reset_ik_rot_tolerance": getattr(env_cfg, "grasp_prior_reset_ik_rot_tolerance", None),
+            "grasp_reset_ik_iterations": getattr(resolved_env_cfg, "grasp_prior_reset_ik_iterations", None),
+            "grasp_reset_ik_damping": getattr(resolved_env_cfg, "grasp_prior_reset_ik_damping", None),
+            "grasp_reset_ik_max_joint_step": getattr(resolved_env_cfg, "grasp_prior_reset_ik_max_joint_step", None),
+            "grasp_reset_ik_pos_tolerance": getattr(resolved_env_cfg, "grasp_prior_reset_ik_pos_tolerance", None),
+            "grasp_reset_ik_rot_tolerance": getattr(resolved_env_cfg, "grasp_prior_reset_ik_rot_tolerance", None),
             "grasp_pregrasp_offset": args_cli.grasp_pregrasp_offset,
             "grasp_contact_score_steps": args_cli.grasp_contact_score_steps,
             "perturb_push_steps": args_cli.perturb_push_steps,
