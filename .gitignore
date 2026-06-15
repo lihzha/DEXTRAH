@@ -17,4 +17,11 @@ object_textures/
 table_textures/
 curated_table_textures/
 eval_results/
+local_results/
+core
 .DS_Store
+
+# Downloaded/generated MolmoAct2 YAM robot assets.
+dextrah_lab/assets/yam/yam_mujoco/
+dextrah_lab/assets/yam/yam_urdf/
+dextrah_lab/assets/yam/yam_usd/
