@@ -752,3 +752,96 @@ Validation:
 
 Next:
 - Commit/push/redeploy, then continue from the epoch-320 checkpoint with the aligned lift prior and paired lift reward.
+
+## 2026-06-16 00:43Z - lift-prior PPO continuation
+
+Goal:
+- Continue from the epoch-320 checkpoint with the fixed lift-prior gate and paired lift-action reward.
+
+Version state:
+- local_commit: `134aba15dd69ccaeb24564546f5dfa0aea57835b`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/bimanual-yam-cube-rl-20260615T203824Z`
+- remote_commit: `134aba15dd69ccaeb24564546f5dfa0aea57835b`
+
+Command/job:
+- A100 job: `29117921`
+- run_name: `yam_cube_rl_liftprior_134aba1_20260616T0043Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bimanual_yam_cube_rl_29117921.out`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_bimanual_yam_cube_grasp/yam_cube_rl_liftprior_134aba1_20260616T0043Z`
+- metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_bimanual_yam_cube_grasp/yam_cube_rl_liftprior_134aba1_20260616T0043Z/metrics/direct_info_rank_0.jsonl`
+- checkpoint seed: `/results/logs/rl_games/dextrah_bimanual_yam_cube_grasp/yam_cube_rl_liftfocus_922a1a2_20260616T0020Z/nn/last_dextrah_bimanual_yam_cube_grasp_ep_320_rew_9447.83.pth`
+- key overrides: `MAX_ITERATIONS=440`, `BIMANUAL_ACTION_PRIOR_REWARD_WEIGHT=4.0`, `BIMANUAL_ACTION_PRIOR_REWARD_SHARPNESS=0.75`, `CUBE_LIFT_WEIGHT=80.0`, `CUBE_HEIGHT_TRACKING_WEIGHT=30.0`, `CUBE_SUCCESS_BONUS_WEIGHT=120.0`, `CUBE_LIFT_ACTION_WEIGHT=80.0`, `CUBE_DESCEND_ACTION_PENALTY_WEIGHT=-10.0`, `CUBE_CLOSE_ACTION_WEIGHT=0.25`.
+
+Success criteria:
+- Lift prior enters lift phase for solved side-contact states.
+- Positive z actions become coordinated across both arms and lift/success metrics improve.
+- If success is sustained, evaluate the best/latest checkpoint with rollout artifacts.
+
+Status:
+- Complete; the lift-prior gate fix worked, but training still did not learn a real lift.
+
+Result/evidence:
+- Job exited zero and wrote 120 JSONL rows for resumed epochs 321-440.
+- Metrics were finite (`nonfinite_count=0`).
+- `yam_cube_action_prior_lift_rate` increased from `0.0` in the previous run to typically `0.94-0.98` in solved side-contact states, confirming the gate fix.
+- The learned closed side contact remained strong, with late `yam_cube_bimanual_side_success_rate` around `0.99-1.0`.
+- Sparse task success stayed `0.0`; best `yam_cube_has_lifted_rate=0.0078125`; best mean `yam_cube_lift_height=0.0001899765629786998`.
+- Late policy z actions improved slightly but were still far too small for a physical lift, e.g. epochs 433-439 had mean left/right z actions around `0.006-0.078` and `0.025-0.058`.
+
+Analysis:
+- The environment and action-prior phase are now coherent, but the imitation signal is too weak relative to the local optimum of closed side contact.
+- Next run should keep code fixed and use stronger prior weight, stronger reference lift gain/max action, higher lift/action rewards, and more PPO exploration/LR.
+
+## 2026-06-16 00:55Z - strong lift-prior PPO continuation
+
+Goal:
+- Break the closed-side-contact local optimum by making the corrected lift prior and paired lift-action reward dominate after grasp readiness.
+
+Version state:
+- local_commit: `134aba15dd69ccaeb24564546f5dfa0aea57835b`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/bimanual-yam-cube-rl-20260615T203824Z`
+- remote_commit: `134aba15dd69ccaeb24564546f5dfa0aea57835b`
+
+Command/job:
+- A100 job: `29118158`
+- run_name: `yam_cube_rl_liftprior_strong_134aba1_20260616T0055Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bimanual_yam_cube_rl_29118158.out`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_bimanual_yam_cube_grasp/yam_cube_rl_liftprior_strong_134aba1_20260616T0055Z`
+- metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_bimanual_yam_cube_grasp/yam_cube_rl_liftprior_strong_134aba1_20260616T0055Z/metrics/direct_info_rank_0.jsonl`
+- checkpoint seed: `/results/logs/rl_games/dextrah_bimanual_yam_cube_grasp/yam_cube_rl_liftprior_134aba1_20260616T0043Z/nn/last_dextrah_bimanual_yam_cube_grasp_ep_440_rew_12477.769.pth`
+- key overrides: `MAX_ITERATIONS=620`, `LEARNING_RATE=0.0008`, `ENTROPY_COEF=0.003`, `E_CLIP=0.3`, `BIMANUAL_ACTION_PRIOR_REWARD_WEIGHT=40.0`, `BIMANUAL_ACTION_PRIOR_REWARD_SHARPNESS=0.25`, `BIMANUAL_REFERENCE_LIFT_GAIN=1.5`, `BIMANUAL_REFERENCE_LIFT_MAX_ACTION=1.0`, `CUBE_LIFT_WEIGHT=120.0`, `CUBE_HEIGHT_TRACKING_WEIGHT=60.0`, `CUBE_SUCCESS_BONUS_WEIGHT=200.0`, `CUBE_LIFT_ACTION_WEIGHT=200.0`, `CUBE_DESCEND_ACTION_PENALTY_WEIGHT=-60.0`.
+
+Success criteria:
+- Both arm z actions move substantially positive after side contact.
+- Cube lift height rises toward the 4 cm success threshold and `yam_cube_success_rate` becomes sustained above zero.
+- If success is sustained, evaluate checkpoint with rollout artifacts.
+
+Status:
+- Stopped early after plateau; job was canceled after metrics showed no sustained lift by epoch 528.
+
+Result/evidence:
+- Metrics through epoch 528 were finite.
+- Stronger prior/rewards produced the first sparse success blips (`best_yam_cube_success_rate=0.001953125`) and slightly higher lift-rate blips (`best_yam_cube_has_lifted_rate=0.0234375`), but mean lift height remained tiny (`best_yam_cube_lift_height=0.0010900782654061913`).
+- Side contact remained mostly good, but not enough to overcome the lift local optimum.
+- Policy z actions did not track the teacher; late rows regressed to near-zero/negative z despite high action-prior reward.
+- Checkpoints were written through `last_dextrah_bimanual_yam_cube_grasp_ep_530_rew_33915.824.pth`.
+
+Analysis:
+- The action-prior reward still used a 14-D mean action error. In lift phase, the important z-action mismatch is diluted by gripper and other dimensions, so the policy can receive high prior reward without matching the lift commands.
+- Patch the prior reward to use a z-weighted action delta in lift phase and log the z delta directly.
+
+## 2026-06-16 01:06Z - z-weighted lift-prior reward
+
+Goal:
+- Make the lift-phase action-prior reward directly sensitive to left/right z-action imitation.
+
+Change:
+- Added `yam_cube_action_prior_delta_z_abs` logging.
+- Changed lift-phase action-prior delta from a plain 14-D mean absolute action error to `0.20 * mean_delta + 0.80 * lift_z_delta`, where `lift_z_delta` is the mean absolute error on the two z-action dimensions.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_env.py`
+- Result: passed.
+
+Next:
+- Commit/push/redeploy after job `29118158` fully leaves the queue, then continue from the epoch-530 checkpoint with z-weighted prior reward.

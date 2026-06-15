@@ -175,6 +175,7 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
             self.num_envs, int(self.cfg.action_space), device=self.device
         )
         self.bimanual_action_prior_delta_abs = torch.zeros(self.num_envs, device=self.device)
+        self.bimanual_action_prior_delta_z_abs = torch.zeros(self.num_envs, device=self.device)
         self.bimanual_action_prior_reward = torch.zeros(self.num_envs, device=self.device)
         self.bimanual_action_prior_teacher_left_z = torch.zeros(self.num_envs, device=self.device)
         self.bimanual_action_prior_teacher_right_z = torch.zeros(self.num_envs, device=self.device)
@@ -380,6 +381,7 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
                     "yam_cube_action_prior_approach_rate": (action_prior_phase == 1).float().mean(),
                     "yam_cube_action_prior_lift_rate": (action_prior_phase == 2).float().mean(),
                     "yam_cube_action_prior_delta_abs": self.bimanual_action_prior_delta_abs.mean(),
+                    "yam_cube_action_prior_delta_z_abs": self.bimanual_action_prior_delta_z_abs.mean(),
                     "yam_cube_action_prior_teacher_left_z": self.bimanual_action_prior_teacher_left_z.mean(),
                     "yam_cube_action_prior_teacher_right_z": self.bimanual_action_prior_teacher_right_z.mean(),
                     "yam_cube_action_prior_teacher_left_gripper": (
@@ -511,6 +513,7 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
         self.bimanual_action_prior_phase[:] = -1
         self.bimanual_action_prior_teacher_actions[:] = 0.0
         self.bimanual_action_prior_delta_abs[:] = 0.0
+        self.bimanual_action_prior_delta_z_abs[:] = 0.0
         self.bimanual_action_prior_reward[:] = 0.0
         self.bimanual_action_prior_teacher_left_z[:] = 0.0
         self.bimanual_action_prior_teacher_right_z[:] = 0.0
@@ -532,8 +535,21 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
         self.bimanual_action_prior_hold_error[:] = hold_error
 
         if bool(active.any().item()):
-            delta_abs = torch.mean(torch.abs(self.actions - teacher_actions), dim=-1)
+            action_delta = torch.abs(self.actions - teacher_actions)
+            mean_delta_abs = torch.mean(action_delta, dim=-1)
+            lift_z_delta_abs = 0.5 * (action_delta[:, 2] + action_delta[:, 9])
+            lift_phase = phase == 2
+            delta_abs = torch.where(
+                lift_phase,
+                0.20 * mean_delta_abs + 0.80 * lift_z_delta_abs,
+                mean_delta_abs,
+            )
             self.bimanual_action_prior_delta_abs[:] = delta_abs
+            self.bimanual_action_prior_delta_z_abs[:] = torch.where(
+                lift_phase,
+                lift_z_delta_abs,
+                torch.zeros_like(lift_z_delta_abs),
+            )
             weight = max(float(self.cfg.bimanual_action_prior_reward_weight), 0.0)
             sharpness = max(float(self.cfg.bimanual_action_prior_reward_sharpness), 0.0)
             self.bimanual_action_prior_reward[:] = weight * active.float() * torch.exp(-sharpness * delta_abs)
