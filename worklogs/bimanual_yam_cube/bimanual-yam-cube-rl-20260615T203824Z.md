@@ -216,3 +216,88 @@ Validation:
 Next:
 - Commit, push, update the A100 worktree.
 - Rerun strict validator first, then reference-delta eval if validator succeeds.
+
+## 2026-06-15 21:25Z - strict validator for 16 cm cube
+
+Goal:
+- Verify the aligned 16 cm cube and config-driven validator target can lift unassisted.
+
+Version state:
+- local_commit: `25632dcf9e569a6e18bb82196665b388c0bd95e1`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/bimanual-yam-cube-rl-20260615T203824Z`
+- remote_commit: `25632dcf9e569a6e18bb82196665b388c0bd95e1`
+
+Command/job:
+- A100 job: `29116220`
+- run_name: `yam_cube_strict_validator_25632dc_20260615T2125Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_bimanual_yam_cube_29116220.out`
+- metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/yam_cube_strict_validator_25632dc_20260615T2125Z/metrics.json`
+- command: `sbatch --parsable --partition=batch_singlenode,grizzly,polar,polar3,polar4,interactive_singlenode --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/bimanual-yam-cube-rl-20260615T203824Z,CODE_COMMIT=25632dcf9e569a6e18bb82196665b388c0bd95e1,RUN_NAME=yam_cube_strict_validator_25632dc_20260615T2125Z,NUM_ENVS=1,NUM_STEPS=560,CAPTURE_VIDEO=False,VIDEO_LENGTH=560,PRINT_INTERVAL=40,SEED=42,CUBE_SPAWN_XY_RANDOMIZATION=0.0,ALLOW_GRASP_ASSIST=False,REQUIRE_UNASSISTED_LIFT=True,DISABLE_FABRIC=True,PREPARE_YAM_ASSETS=auto cluster/sbatch_validate_bimanual_yam_cube_grasp_env_1gpu.sh`
+
+Success criteria:
+- Validator exits zero and all checks pass, especially unassisted lift/success.
+
+Status:
+- Complete; failed the strict validator, but with improved physical contact.
+
+Result/evidence:
+- Validator exited nonzero with `passed=false`.
+- `max_lift=0.04995 m`, required `0.10 m`.
+- `scripted_demo_slow_approach_reaches_cube_contact` missed by a small margin: min left/right hold distances `0.12097/0.12007 m`, required `<=0.120` simultaneously.
+- Demo reached good contact and lifted briefly during approach, then lost lift before the fixed scheduled lift phase.
+- Best cube pose was around `z=0.0900 m` from an initial settled center of about `0.0800 m`; rollout prints showed transient lift around `0.036 m` during approach.
+
+Analysis:
+- The object is now contactable, but the fixed joint-space validator keeps approaching after first useful contact. This makes it a poor gate for the faster action-interface reference.
+- Run `ACTION_SOURCE=reference_delta` at the same commit; it can switch to lift as soon as contact is detected.
+
+## 2026-06-15 21:35Z - reference eval for 16 cm cube
+
+Goal:
+- Test the config-driven action-interface reference on the 16 cm cube.
+
+Version state:
+- local_commit: `25632dcf9e569a6e18bb82196665b388c0bd95e1`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/bimanual-yam-cube-rl-20260615T203824Z`
+- remote_commit: `25632dcf9e569a6e18bb82196665b388c0bd95e1`
+
+Command/job:
+- A100 job: `29116287`
+- run_name: `yam_cube_reference_delta_25632dc_20260615T2135Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_bimanual_yam_cube_29116287.out`
+- metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/yam_cube_reference_delta_25632dc_20260615T2135Z/metrics.json`
+- command: `sbatch --parsable --partition=batch_singlenode,grizzly,polar,polar3,polar4,interactive_singlenode --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/bimanual-yam-cube-rl-20260615T203824Z,RUN_NAME=yam_cube_reference_delta_25632dc_20260615T2135Z,ACTION_SOURCE=reference_delta,CHECKPOINT=,NUM_ENVS=1,NUM_STEPS=720,CAPTURE_VIDEO=False,VIDEO_LENGTH=720,PRINT_INTERVAL=40,SEED=42,CUBE_SPAWN_XY_RANDOMIZATION=0.0,USE_CUDA_GRAPH=False,PREPARE_YAM_ASSETS=auto cluster/sbatch_eval_bimanual_yam_cube_grasp_1gpu.sh`
+
+Success criteria:
+- `eval_success_rate > 0`, `success_ever_rate > 0`, and max cube lift at least `0.10 m`.
+
+Status:
+- Complete; failed the action-interface gate.
+
+Result/evidence:
+- `eval_success_rate=0.0`, `success_ever_rate=0.0`.
+- `cube_lift_height_max_by_env=[0.00749]`; first attempt max lift was only `0.00098 m`.
+- Trace showed lift action started at step 40 while hold points were still around z `0.20 m`; the intended side-contact band was z about `0.135 m`.
+- Computed target-error audit from `trace.csv`: best max error to the side-contact target was about `0.070 m`, mostly vertical, yet `bimanual_side_success=1.0` and lift was already commanded.
+
+Analysis:
+- The lift gate was based on hold-to-cube-center distance, which accepts high-above-cube poses on a tall object.
+- Patch the reference to require proximity to the actual side-contact target before entering lift.
+
+## 2026-06-15 21:43Z - gate reference lift on contact target error
+
+Goal:
+- Prevent the bimanual reference/action-prior from lifting before the hold points reach the intended side-contact pose.
+
+Change:
+- Added `bimanual_reference_contact_target_dist=0.045`.
+- Reordered `_bimanual_reference_actions()` to compute the contact targets before the lift gate.
+- Added `contact_target_error <= bimanual_reference_contact_target_dist` to `contact_ready`.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_env.py dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_env_cfg.py dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/validate_bimanual_yam_cube_grasp_env.py`
+- `git diff --check`
+- Result: passed.
+
+Next:
+- Commit/push, update A100 worktree, rerun the `reference_delta` eval.
