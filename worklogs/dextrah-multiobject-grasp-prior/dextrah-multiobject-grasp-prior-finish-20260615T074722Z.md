@@ -3666,3 +3666,302 @@ Analysis:
 
 Next:
 - Relaunch real PPO from the low-sigma BC checkpoint at current commit `a327a6a` with the anchor fix, bounds disabled, frozen obs RMS, low sigma, and a small actor update. Use the current direct BC baseline (`eval_success_rate~0.28`) as the preservation floor.
+
+## 2026-06-15T22:56:00Z - launched fixed-anchor PPO diagnostic sweep
+
+Version state:
+- Local commit: `e219815d80454f05fedfaecba9292cf711230fd8`
+- A100 agent worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-topdown-axis-20260615-753139c`
+- Remote worktree verified at `e219815d80454f05fedfaecba9292cf711230fd8` before launch.
+
+Common settings:
+- Initial checkpoint:
+  `/results/bc/franka_multi_bc_rawpose_cache_refdelta_9943101_20260615T1740Z/nn/bc_reference_action_imitation_lowsigma_m3_sigmaonly.pth`
+- Dataset/object slice: one object, `max_objects=1`, object0 manifest
+  `/results/assets/filtered_manifests/train2_7195_b87_nobelow_d053e6c_20260615T0045Z/manifest_object0_7195ed3346a445448308febe833c180a.json`
+- Stable pose cache:
+  `/results/validations/train2_7195_b87_nobelow_d053e6c_20260615T0045Z/settled_pose_cache`
+- Verified grasp indices:
+  `/results/assets/verified_grasp_indices/verified_rawpose_stricttable_train2_a100_4234fb5_20260615T1704Z/verified_indices.json`
+- Reset gates: grasp-prior reset enabled, 16 attempts, 128 candidates, require topdown, require downward tool z, min pregrasp z `0.45`, min downward tool z `0.45`, min contact height above center `-0.02`, max center distance frac `0.50`, min width `0.008`.
+- PPO controls: `NUM_ENVS=256`, `MAX_ITERATIONS=20`, `SAVE_FREQUENCY=5`, `LEARNING_RATE=1e-6`, `CENTRAL_VALUE_LEARNING_RATE=1e-6`, `HORIZON_LENGTH=64`, `MINI_EPOCHS=1`, `E_CLIP=0.01`, `TRAIN_SIGMA=-5`, `ENTROPY_COEF=0.0`.
+- Stabilizers: frozen obs RMS, BC policy anchor enabled with weight `1000.0`, bounds loss disabled with `DEXTRAH_BOUNDS_LOSS_COEF=0.0`, scripted BC loss off, action-prior reward off.
+
+Sweep arms:
+
+| Arm | Job | Run | Scope | Actor scale | Critic scale | Log |
+| --- | ---: | --- | --- | ---: | ---: | --- |
+| conservative policy head | `29120052` | `franka_multi_resetprior_mu_actor0001_critic0_bounds0_anchor1000_sigma_m5_e219815_20260615T2256Z` | `mu` | `0.001` | `0.0` | `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29120052.out` |
+| PPO-proper critic update | `29120053` | `franka_multi_resetprior_all_actor0001_critic1_bounds0_anchor1000_sigma_m5_e219815_20260615T2256Z` | `all` | `0.001` | `1.0` | `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29120053.out` |
+
+Early launch check:
+- Both jobs entered `RUNNING`.
+- Headers confirm `CODE_COMMIT=e219815d80454f05fedfaecba9292cf711230fd8`.
+- Job `29120052` header confirms `DEXTRAH_TRAINABLE_PARAM_SCOPE=mu`, `DEXTRAH_CRITIC_LOSS_SCALE=0.0`, and `DEXTRAH_BOUNDS_LOSS_COEF=0.0`.
+- Job `29120053` header confirms `DEXTRAH_TRAINABLE_PARAM_SCOPE=all`, `DEXTRAH_CRITIC_LOSS_SCALE=1.0`, and `DEXTRAH_BOUNDS_LOSS_COEF=0.0`.
+
+Success criteria:
+- No reset regression: maintain topdown/tool-down/table-valid candidate counts, downward tool z near `0.9976`, and no table/finger/prelift done reasons.
+- Preserve or beat direct BC deterministic baseline: `eval_success_rate=0.28125`, `success_rate_max=0.25`.
+- Prefer an arm only if reward/success improves without policy-anchor explosion or unstable done reasons.
+
+## 2026-06-15T23:09:00Z - fixed-anchor sweep completed; best checkpoint improves modestly
+
+Training jobs:
+- Job `29120052` (`mu`, critic off) completed with exit `0:0` in `00:02:49`.
+- Job `29120053` (`all`, critic on) completed with exit `0:0` in `00:02:43`.
+
+Training curves from `metrics/direct_info_rank_0.jsonl`:
+
+| Arm | Best epoch | Best rollout success | Final rollout success | Final anchor loss | Reset/tool status |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `mu`, critic `0.0` | `11` | `0.24609375` | `0.19140625` | `0.0582636` | topdown/tool-down/table-valid `128`, tool z downward `0.9975928`, no table/finger violations |
+| `all`, critic `1.0` | `11` | `0.1796875` | `0.0546875` | `10.920723` | topdown/tool-down/table-valid `128`, tool z downward `0.9975928`, no table/finger violations |
+
+Checkpoint evals launched:
+- Initial eval submit failed before launch because `cluster/sbatch_eval_franka_multi_object_grasp_1gpu.sh` defaults to the L40 `batch` partition, which is invalid on A100. Relaunched with explicit A100 partitions.
+- Job `29120181`: `franka_multi_resetprior_mu_actor0001_ep20_eval_e219815_a100_20260615T2302Z`
+- Job `29120182`: `franka_multi_resetprior_all_actor0001_ep10_eval_e219815_a100_20260615T2302Z`
+
+Deterministic eval results:
+
+| Eval | Checkpoint | `eval_success_rate` | `success_ever_rate` | `success_rate_max` | `done_count` | Done reasons |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| `mu` epoch 20 | `last_dextrah_franka_multi_object_grasp_ep_20_rew_1085.9113.pth` | `0.3203125` | `0.3203125` | `0.265625` | `8` | `success_done=7`, `unclassified=1`, table/finger/prelift/cube_out `0` |
+| `all` epoch 10 | `last_dextrah_franka_multi_object_grasp_ep_10_rew_1076.9912.pth` | `0.3359375` | `0.3359375` | `0.28125` | `25` | `success_done=22`, `unclassified=3`, table/finger/prelift/cube_out `0` |
+
+Eval reset diagnostics:
+- Both evals kept:
+  - `grasp_prior_reset_tool_downward_z=0.9975928068`
+  - `grasp_prior_reset_tool_z_axis_z_mean=-0.9975928664`
+  - `grasp_prior_reset_candidate_topdown_count=128`
+  - `grasp_prior_reset_candidate_tool_down_count=128`
+  - `grasp_prior_reset_candidate_table_count=128`
+  - `grasp_prior_reset_candidate_valid_count=128`
+  - `grasp_prior_reset_pregrasp_tip_table_clearance=0.0861287415`
+  - `grasp_prior_reset_projected_exact_tip_table_clearance=0.0063213445`
+
+Analysis:
+- The reset-from-below bug remains resolved: no upward end-effector z-axis reset, no table-colliding reset, and no table/finger/prelift terminal failures.
+- The best deterministic checkpoint is `all` epoch 10, which improves over the current direct BC baseline (`0.3359375` vs `0.28125`) but is not yet a strong training success.
+- The `all` arm degraded by epoch 20 while anchor loss grew to `10.920723`; the next iteration should continue from the epoch-10 checkpoint with lower update pressure rather than scale to more objects.
+
+Next:
+- Launch two continuation diagnostics from the `all` epoch-10 checkpoint:
+  1. lower learning rate with all parameters/critic enabled
+  2. actor-only scope with critic off
+- Keep the same one-object slice and strict reset gates until deterministic eval is clearly above the current BC floor.
+
+## 2026-06-15T23:11:00Z - launched epoch-10 continuation diagnostics
+
+Starting point:
+- Checkpoint:
+  `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_resetprior_all_actor0001_critic1_bounds0_anchor1000_sigma_m5_e219815_20260615T2256Z/nn/last_dextrah_franka_multi_object_grasp_ep_10_rew_1076.9912.pth`
+- This checkpoint evaluated at `eval_success_rate=0.3359375` and `success_rate_max=0.28125`.
+
+Common settings:
+- Commit `e219815d80454f05fedfaecba9292cf711230fd8`
+- One object, same object0 manifest/stable-pose cache/verified grasp indices.
+- Same strict reset gates as prior sweep.
+- `NUM_ENVS=256`, `MAX_ITERATIONS=20`, `SAVE_FREQUENCY=5`, `HORIZON_LENGTH=64`, `MINI_EPOCHS=1`, `E_CLIP=0.01`, `TRAIN_SIGMA=-5`, `ENTROPY_COEF=0.0`
+- Frozen obs RMS, BC policy anchor weight `1000.0`, bounds loss disabled, scripted BC loss off, action-prior reward off.
+
+Continuation arms:
+
+| Arm | Job | Run | Scope | Actor scale | Critic scale | LR | Log |
+| --- | ---: | --- | --- | ---: | ---: | ---: | --- |
+| lower LR all/critic | `29120316` | `franka_multi_resetprior_all_ep10cont_actor0001_critic1_lr5e7_anchor1000_sigma_m5_e219815_20260615T2311Z` | `all` | `0.001` | `1.0` | `5e-7` | `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29120316.out` |
+| actor-only continuation | `29120317` | `franka_multi_resetprior_all_ep10cont_actorScope_actor0001_critic0_lr1e6_anchor1000_sigma_m5_e219815_20260615T2311Z` | `actor` | `0.001` | `0.0` | `1e-6` | `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29120317.out` |
+
+Early launch check:
+- Both jobs entered `RUNNING`.
+- Headers confirm commit `e219815d80454f05fedfaecba9292cf711230fd8`, intended checkpoint, `DEXTRAH_BOUNDS_LOSS_COEF=0.0`, and the intended scope/critic/LR settings.
+
+## 2026-06-15T23:20:00Z - launched known-good-like PPO scale-up on object0
+
+Reason:
+- Code comparison found that the multi-object env inherits the single-cube reward and PPO config; no reward-path difference was identified beyond object-center substitution and extra object features.
+- The previous diagnostics used intentionally conservative settings (`lr=1e-6`, `sigma=-5`, `entropy=0`, `e_clip=0.01`, strong BC anchor), which are far from the known-good single-cube PPO recipe and appear to under-explore or over-constrain the policy.
+
+Launch:
+- Slurm job: `29121238`
+- Run:
+  `franka_multi_resetprior_object0_stdppo_8gpu_bcinit_sigma_m3_e219815_20260615T2320Z`
+- Log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29121238.out`
+- Run dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_resetprior_object0_stdppo_8gpu_bcinit_sigma_m3_e219815_20260615T2320Z`
+- Commit: `e219815d80454f05fedfaecba9292cf711230fd8`
+- Initial checkpoint:
+  `/results/bc/franka_multi_bc_rawpose_cache_refdelta_9943101_20260615T1740Z/nn/bc_reference_action_imitation_lowsigma_m3_sigmaonly.pth`
+
+Settings:
+- 8 GPUs, `NPROC_PER_NODE=8`, `NUM_ENVS=2048`, `MAX_ITERATIONS=50`, `SAVE_FREQUENCY=10`.
+- Single object/object0, same strict stable-pose and verified topdown/downward/table-safe reset settings.
+- Known-good-like PPO controls: `LEARNING_RATE=2e-4`, `CENTRAL_VALUE_LEARNING_RATE=1e-4`, `MINI_EPOCHS=4`, `E_CLIP=0.2`, `ENTROPY_COEF=0.0005`, `TRAIN_SIGMA=-3`.
+- Diagnostics disabled: BC anchor off, freeze obs RMS off, actor/critic loss scales `1.0`, trainable scope `all`; scripted BC loss and action-prior reward off.
+
+Success criteria:
+- Training should preserve the reset safety counters (`candidate_topdown/tool_down/table/valid=128`, downward tool z near `0.9976`) and avoid table/finger/prelift terminal failures.
+- Deterministic eval should exceed the current best object0 checkpoint (`eval_success_rate=0.3359375`) before scaling to more objects.
+
+## 2026-06-15T23:33:00Z - standard PPO scale-up completed; reward shaping collapsed the grasp
+
+Job:
+- Slurm job `29121238` completed with exit `0:0` in `00:11:07`.
+- Run:
+  `franka_multi_resetprior_object0_stdppo_8gpu_bcinit_sigma_m3_e219815_20260615T2320Z`
+- Log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29121238.out`
+- Metrics:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_resetprior_object0_stdppo_8gpu_bcinit_sigma_m3_e219815_20260615T2320Z/metrics/direct_info_rank_0.jsonl`
+
+Result:
+- Training did not produce an eval-worthy checkpoint.
+- Rank-0 rollout success:
+  - epoch 1: `0.0`
+  - best epoch 2: `0.0908203125`
+  - epoch 50: `0.00146484375`
+  - mean over 50 epochs: `0.003310546875`
+- Reset safety stayed clean throughout:
+  - final `cube_grasp_prior_tool_downward_z=0.9975928068`
+  - final `cube_grasp_prior_tool_z_axis_z=-0.9975928068`
+  - final `cube_finger_table_clearance_violation=0.0`
+  - final `cube_table_clearance_penalty=0.0`
+
+Reward/action diagnostics:
+- Best epoch 2 had the expected lift/close behavior:
+  - `cube_action_z=0.6061568`
+  - `cube_gripper_action=-0.6226241`
+  - `cube_gripper_close_action=0.7857118`
+  - `cube_has_lifted_rate=0.1616211`
+  - `cube_lift_height=0.0235507`
+- Final epoch optimized a non-grasp shaped-reward mode:
+  - `cube_action_z=-0.7119488`
+  - `cube_gripper_action=0.7434034`
+  - `cube_gripper_close_action=0.1239691`
+  - `cube_has_lifted_rate=0.0083008`
+  - `cube_lift_height=0.0005807`
+  - `cube_xy_stability_reward=0.9357798`
+  - `cube_approach_reward=0.7478603`
+
+Analysis:
+- The strict topdown/downward/table-safe reset gates are not regressing in this run.
+- The known-good-like PPO update is not sufficient from the BC checkpoint under reset-prior object0. It moves away from the grasp sequence and settles into a local optimum with good approach/XY shaping but no close-and-lift behavior.
+- The next diagnostic should measure the scripted/reference grasp-prior action ceiling under exactly the same reset gates, then use the teacher action stream as a BC/action-prior stabilizer if the ceiling is high.
+
+## 2026-06-15T23:36:00Z - planned reference-action ceiling eval
+
+Purpose:
+- Quantify whether the current strict reset candidates plus the environment's grasp-prior reference action stream can reliably lift object0.
+- If reference actions succeed, use this same teacher stream in PPO through `GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED=True` and `DEXTRAH_GRASP_PRIOR_BC_LOSS_ENABLED=True`.
+
+Planned eval settings:
+- Commit `e219815d80454f05fedfaecba9292cf711230fd8`
+- Action source: `reference_delta`
+- Checkpoint argument: low-sigma BC checkpoint only to satisfy the eval wrapper's required checkpoint input.
+- `NUM_ENVS=128`, `NUM_STEPS=360`, `CAPTURE_VIDEO=False`, `SEED=42`
+- Same object0 manifest, stable-pose cache, verified grasp indices, and strict topdown/downward/table-safe reset gates as the prior object0 runs.
+
+Launch:
+- Slurm job: `29122739`
+- Run:
+  `franka_multi_reference_delta_object0_ceiling_e219815_a100_20260615T2336Z`
+- Log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_multi_object_29122739.out`
+- Run dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_multi_reference_delta_object0_ceiling_e219815_a100_20260615T2336Z`
+
+Immediate result:
+- Job `29122739` failed before simulation with exit `2:0`.
+- Cause: stale `GRASP_PRIOR_LIBRARY_DIR=/results/assets/graspgenx_grasps/train2_7195_b87_nobelow_d053e6c_20260615T0045Z`.
+- Successful object0 training runs used `GRASP_PRIOR_LIBRARY_DIR=`; the object manifest already carries
+  `grasp_prior_path=/results/assets/franka_multi_graspgen_asset_smoke_contacts_2d7f495_20260613_153029/grasp_priors/7195ed3346a445448308febe833c180a.npz`.
+- Relaunch with the library dir unset.
+
+Relaunch:
+- Slurm job: `29122800`
+- Run:
+  `franka_multi_reference_delta_object0_ceiling_e219815_a100_20260615T2340Z`
+- Log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_multi_object_29122800.out`
+- Run dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_multi_reference_delta_object0_ceiling_e219815_a100_20260615T2340Z`
+
+Result:
+- Job `29122800` completed with exit `0:0` in `00:01:33`.
+- Metrics:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_multi_reference_delta_object0_ceiling_e219815_a100_20260615T2340Z/metrics.json`
+- Reference-action ceiling:
+  - `eval_success_rate=0.4296875`
+  - `success_ever_rate=0.4296875`
+  - `success_rate_max=0.4296875`
+  - `success_rate_final=0.0`
+  - `done_count=0`
+  - done reasons all `0`
+- Reset diagnostics at step `0`:
+  - `grasp_prior_reset_tool_downward_z=0.9975928068`
+  - `grasp_prior_reset_tool_z_axis_z_mean=-0.9975928664`
+  - `grasp_prior_reset_candidate_topdown_count=128`
+  - `grasp_prior_reset_candidate_tool_down_count=128`
+  - `grasp_prior_reset_candidate_table_count=128`
+  - `grasp_prior_reset_candidate_valid_count=128`
+  - `grasp_prior_reset_projected_exact_tip_table_clearance=0.0063213445`
+
+Analysis:
+- The strict reset filter remains safe and the reference action stream gives a real object0 ceiling above the current best RL checkpoint (`0.4297` vs `0.3359`).
+- The ceiling is not near `1.0`, so this object/cache slice still contains failed reference executions. However, the reference stream is strong enough to justify using it as an auxiliary PPO stabilizer.
+
+## 2026-06-15T23:45:00Z - planned stabilized PPO with action-prior BC loss
+
+Purpose:
+- Avoid the standard PPO failure mode where the policy learns approach/XY reward while opening the gripper and moving downward.
+- Use the same grasp-prior reference action stream that reached `0.4296875` as an auxiliary policy target.
+
+Planned settings:
+- Commit `e219815d80454f05fedfaecba9292cf711230fd8`
+- Start checkpoint:
+  `/results/bc/franka_multi_bc_rawpose_cache_refdelta_9943101_20260615T1740Z/nn/bc_reference_action_imitation_lowsigma_m3_sigmaonly.pth`
+- 8 GPUs, object0 only, same manifest/stable-pose cache/verified grasp indices/strict reset gates.
+- PPO: `NUM_ENVS=2048`, `MAX_ITERATIONS=80`, `HORIZON_LENGTH=128`, `LEARNING_RATE=1e-5`, `CENTRAL_VALUE_LEARNING_RATE=1e-5`, `MINI_EPOCHS=2`, `E_CLIP=0.05`, `ENTROPY_COEF=0.0`, `TRAIN_SIGMA=-5`.
+- Stabilizers: `GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED=True`, `GRASP_PRIOR_ACTION_PRIOR_REWARD_WEIGHT=2.0`, `DEXTRAH_GRASP_PRIOR_BC_LOSS_ENABLED=True`, `DEXTRAH_GRASP_PRIOR_BC_LOSS_WEIGHT=5.0`, BC policy anchor weight `100.0`, frozen obs RMS, bounds loss disabled, actor loss scale `0.1`, critic loss scale `1.0`.
+
+Success criteria:
+- Training rollout success should stay above the direct BC floor instead of collapsing below `0.01`.
+- Deterministic eval should exceed the current best RL checkpoint (`eval_success_rate=0.3359375`) and ideally approach the reference-action ceiling (`0.4296875`).
+- Reset safety counters must remain clean: topdown/tool-down/table/valid counts `128`, downward tool z near `0.9976`, and no table/finger/prelift terminal failures.
+
+Launch:
+- Slurm job: `29123054`
+- Run:
+  `franka_multi_resetprior_object0_bcaux_lr1e5_w5_anchor100_sigma_m5_e219815_20260615T2345Z`
+- Log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29123054.out`
+- Run dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_resetprior_object0_bcaux_lr1e5_w5_anchor100_sigma_m5_e219815_20260615T2345Z`
+
+Early result:
+- Job entered training and saved epoch 10, then was cancelled by this agent at elapsed `00:08:28` because it was below the preservation floor.
+- Metrics:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_resetprior_object0_bcaux_lr1e5_w5_anchor100_sigma_m5_e219815_20260615T2345Z/metrics/direct_info_rank_0.jsonl`
+- Rank-0 rollout curve through epoch 10:
+  - epoch 1: `cube_success_rate=0.13720703125`, `bc_active_rate=1.0`, `action_prior_active_rate=1.0`
+  - epoch 2: `0.0068359375`, `bc_active_rate=0.0830078125`, `action_prior_active_rate=0.03955078125`
+  - epoch 5: `0.00146484375`, `bc_active_rate=0.29461669921875`, `action_prior_active_rate=0.87255859375`
+  - epoch 10: `0.03271484375`, `bc_active_rate=0.54180908203125`, `action_prior_active_rate=0.845703125`
+- Reset safety stayed clean in observed rows; `cube_grasp_prior_tool_downward_z=0.9975928068`, no sustained table/finger penalties.
+
+Analysis:
+- The auxiliary losses were correctly enabled but did not prevent collapse.
+- The logged active rates confirm the teacher signal is intermittent under the inherited `episode_length_s=10.0`: the 128-step reference sequence is followed by a long low-signal remainder unless envs reset.
+- Next patch: expose `EPISODE_LENGTH_S` in `cluster/sbatch_train_teacher_8gpu.sh` so multi-object RL can test shorter episodes, e.g. `3.0s` (`~180` policy steps), keeping most rollouts inside or near the reference-action window.
+
+Patch:
+- `cluster/sbatch_train_teacher_8gpu.sh`
+  - added `EPISODE_LENGTH_S="${EPISODE_LENGTH_S:-}"`
+  - prints it in the job header
+  - forwards it as `env.episode_length_s=...` for Franka cube, Franka multi-object, and Franka multi-object RGB tasks when set
+- Local checks passed:
+  - `bash -n cluster/sbatch_train_teacher_8gpu.sh`
+  - `git diff --check`

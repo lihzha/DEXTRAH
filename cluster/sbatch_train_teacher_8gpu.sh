@@ -117,6 +117,7 @@ if [ -z "$USE_CUDA_GRAPH" ]; then
     USE_CUDA_GRAPH="True"
   fi
 fi
+EPISODE_LENGTH_S="${EPISODE_LENGTH_S:-}"
 SIGMA_INIT_VAL="${SIGMA_INIT_VAL:-0}"
 TRAIN_SIGMA="${TRAIN_SIGMA:-}"
 STAR_RESET_NEAR_HAND_PROBABILITY="${STAR_RESET_NEAR_HAND_PROBABILITY:-0.0}"
@@ -442,6 +443,7 @@ echo "MASTER_PORT=$MASTER_PORT"
 echo "SEED=$SEED"
 echo "DISTRIBUTED=$DISTRIBUTED"
 echo "MULTI_GPU=$MULTI_GPU"
+echo "EPISODE_LENGTH_S=$EPISODE_LENGTH_S"
 echo "LEARNING_RATE=$LEARNING_RATE"
 echo "CENTRAL_VALUE_LEARNING_RATE=$CENTRAL_VALUE_LEARNING_RATE"
 echo "HORIZON_LENGTH=$HORIZON_LENGTH"
@@ -866,6 +868,7 @@ PY
         env.use_cuda_graph='$USE_CUDA_GRAPH'
         env.cube_spawn_xy_randomization='$CUBE_SPAWN_XY_RANDOMIZATION'
       )
+      append_env_override episode_length_s '$EPISODE_LENGTH_S'
       append_franka_cube_reward_overrides
       append_grasp_prior_action_guidance_overrides
       if [ -n '$TRAJECTORY_TRACKING_REFERENCE_PATH' ]; then
@@ -891,6 +894,7 @@ PY
         env.object_stable_pose_randomize='$OBJECT_STABLE_POSE_RANDOMIZE'
         env.object_stable_pose_allow_missing='$OBJECT_STABLE_POSE_ALLOW_MISSING'
       )
+      append_env_override episode_length_s '$EPISODE_LENGTH_S'
       append_env_override object_asset_manifest_path '$OBJECT_ASSET_MANIFEST_PATH'
       append_env_override object_assets_dir '$OBJECT_ASSETS_DIR'
       append_env_override object_stable_pose_cache_dir '$OBJECT_STABLE_POSE_CACHE_DIR'
@@ -912,6 +916,7 @@ PY
         env.object_stable_pose_randomize='$OBJECT_STABLE_POSE_RANDOMIZE'
         env.object_stable_pose_allow_missing='$OBJECT_STABLE_POSE_ALLOW_MISSING'
       )
+      append_env_override episode_length_s '$EPISODE_LENGTH_S'
       append_env_override object_asset_manifest_path '$OBJECT_ASSET_MANIFEST_PATH'
       append_env_override object_assets_dir '$OBJECT_ASSETS_DIR'
       append_env_override object_stable_pose_cache_dir '$OBJECT_STABLE_POSE_CACHE_DIR'
