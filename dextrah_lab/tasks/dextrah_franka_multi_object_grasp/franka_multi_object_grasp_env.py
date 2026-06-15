@@ -753,16 +753,28 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             candidate_raw_tool_pos_w,
         )
         candidate_tool_rot_w = world_tool_candidates[:, :, :3, :3]
-        ee_offset_w = torch.einsum(
-            "ncij,nj->nci",
-            candidate_tool_rot_w,
-            self.ee_offset_pos[env_ids],
+        flat_candidate_tool_pos_w = candidate_raw_tool_pos_w.reshape(-1, 3)
+        flat_candidate_tool_quat_w = math_utils.quat_from_matrix(candidate_tool_rot_w.reshape(-1, 3, 3))
+        flat_ee_offset_pos = self.ee_offset_pos[env_ids].unsqueeze(1).expand(-1, candidate_count, -1).reshape(-1, 3)
+        flat_ee_offset_rot = self.ee_offset_rot[env_ids].unsqueeze(1).expand(-1, candidate_count, -1).reshape(-1, 4)
+        flat_raw_exact_ee_pos_w, flat_exact_ee_quat_w = math_utils.combine_frame_transforms(
+            flat_candidate_tool_pos_w,
+            flat_candidate_tool_quat_w,
+            flat_ee_offset_pos,
+            flat_ee_offset_rot,
         )
-        candidate_raw_exact_ee_pos_w = candidate_raw_tool_pos_w + ee_offset_w
+        candidate_raw_exact_ee_pos_w = flat_raw_exact_ee_pos_w.reshape(num_ids, candidate_count, 3)
+        candidate_exact_ee_quat_w = flat_exact_ee_quat_w.reshape(num_ids, candidate_count, 4)
+        candidate_exact_ee_rot_w = math_utils.matrix_from_quat(flat_exact_ee_quat_w).reshape(
+            num_ids,
+            candidate_count,
+            3,
+            3,
+        )
         finger_center_offset_ee = self._finger_center_offset_from_ee(env_ids)
         finger_center_offset_w = torch.einsum(
             "ncij,nj->nci",
-            candidate_tool_rot_w,
+            candidate_exact_ee_rot_w,
             finger_center_offset_ee,
         )
         candidate_contact_exact_ee_pos_w = candidate_contact_reference_w - finger_center_offset_w
@@ -862,7 +874,6 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         row_ids = torch.arange(num_ids, dtype=torch.long, device=self.device)
 
         sample_indices = candidate_sample_indices[row_ids, best_candidate]
-        world_tool_t = world_tool_candidates[row_ids, best_candidate]
         exact_tool_pos_w = candidate_exact_tool_pos_w[row_ids, best_candidate]
         tool_z_axis_w = candidate_tool_z_axis_w[row_ids, best_candidate]
         tool_z_axis_w = tool_z_axis_w / torch.clamp(torch.norm(tool_z_axis_w, dim=-1, keepdim=True), min=1.0e-6)
@@ -884,9 +895,9 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         center_gate_dist = candidate_center_gate_dist[row_ids, best_candidate]
         has_contact_location = candidate_has_contact[row_ids, best_candidate]
 
-        tool_quat_w = math_utils.quat_from_matrix(world_tool_t[:, :3, :3])
-        exact_ee_quat_w = tool_quat_w
-        target_ee_quat_w = tool_quat_w
+        tool_quat_w = flat_candidate_tool_quat_w.reshape(num_ids, candidate_count, 4)[row_ids, best_candidate]
+        exact_ee_quat_w = candidate_exact_ee_quat_w[row_ids, best_candidate]
+        target_ee_quat_w = exact_ee_quat_w
         root_pos_w = self._robot.data.root_pos_w[env_ids]
         root_quat_w = self._robot.data.root_quat_w[env_ids]
         target_ee_pos_b, target_ee_quat_b = math_utils.subtract_frame_transforms(
