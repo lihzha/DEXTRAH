@@ -65,3 +65,19 @@ Next:
 - Commit and deploy to the remote worktree.
 - Run an A100 `ACTION_SOURCE=reference_delta` eval with no checkpoint to prove action-interface solvability.
 - If reference eval succeeds, launch PPO with `BIMANUAL_ACTION_PRIOR_REWARD_ENABLED=True`; inspect JSONL reward/success metrics before scaling.
+
+## 2026-06-15 21:24Z - reference action target follows cube
+
+Observation:
+- A100 eval job `29115184` with `ACTION_SOURCE=reference_delta` reached the cube sides and briefly lifted, but then lost the cube.
+- Live metrics showed the contact action dragged the cube from `x=-0.30` to about `x=-0.205`; the reference kept targeting the original reset cube XY, so the lift phase fought the cube's physical motion.
+- The run was cancelled at 1:34 elapsed to avoid wasting GPU time.
+
+Change:
+- Updated the bimanual reference action target to follow the current cube XY during contact and lift.
+- Kept the lift target height tied to `cube_goal_pos.z + cube_center_to_hold_z` so the reference still aims at the configured success height.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_env.py`
+- `git diff --check`
+- Result: passed.

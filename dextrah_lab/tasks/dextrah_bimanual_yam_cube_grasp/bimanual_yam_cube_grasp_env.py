@@ -447,21 +447,23 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
 
         cube_half_size = 0.5 * float(self.cfg.cube_size)
         side_offset = cube_half_size + float(self.cfg.bimanual_reference_contact_side_margin)
+        reference_cube_pos = self.cube_pos.clone()
         hold_z = torch.maximum(
-            self.cube_initial_pos[:, 2] + float(self.cfg.bimanual_reference_cube_center_to_hold_z),
+            reference_cube_pos[:, 2] + float(self.cfg.bimanual_reference_cube_center_to_hold_z),
             torch.full_like(self.cube_initial_pos[:, 2], float(self.cfg.table_surface_z) + float(self.cfg.bimanual_reference_min_hold_z)),
         )
-        contact_left_hold = self.cube_initial_pos.clone()
-        contact_right_hold = self.cube_initial_pos.clone()
-        contact_left_hold[:, 1] = self.cube_initial_pos[:, 1] + side_offset
-        contact_right_hold[:, 1] = self.cube_initial_pos[:, 1] - side_offset
+        contact_left_hold = reference_cube_pos.clone()
+        contact_right_hold = reference_cube_pos.clone()
+        contact_left_hold[:, 1] = reference_cube_pos[:, 1] + side_offset
+        contact_right_hold[:, 1] = reference_cube_pos[:, 1] - side_offset
         contact_left_hold[:, 2] = hold_z
         contact_right_hold[:, 2] = hold_z
 
         lift_left_hold = contact_left_hold.clone()
         lift_right_hold = contact_right_hold.clone()
-        lift_left_hold[:, 2] += float(self.cfg.cube_lift_height)
-        lift_right_hold[:, 2] += float(self.cfg.cube_lift_height)
+        lift_hold_z = self.cube_goal_pos[:, 2] + float(self.cfg.bimanual_reference_cube_center_to_hold_z)
+        lift_left_hold[:, 2] = lift_hold_z
+        lift_right_hold[:, 2] = lift_hold_z
 
         close_mask = active & (~closed)
         approach_mask = active & closed & (~contact_ready)
