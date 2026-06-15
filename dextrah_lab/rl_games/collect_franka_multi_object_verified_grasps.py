@@ -31,6 +31,7 @@ parser.add_argument("--object_stable_pose_allow_missing", action="store_true", d
 parser.add_argument("--cycles", type=int, default=120)
 parser.add_argument("--min_cycles", type=int, default=10)
 parser.add_argument("--target_per_object", type=int, default=8)
+parser.add_argument("--min_pass_observations_per_index", type=int, default=1)
 parser.add_argument("--max_indices_per_object", type=int, default=128)
 parser.add_argument("--score_steps", type=int, default=220)
 parser.add_argument("--min_lift_height", type=float, default=0.10)
@@ -179,11 +180,13 @@ def _empty_object_records(task_env) -> dict[str, dict[str, Any]]:
     return objects
 
 
-def _sorted_indices(stats: dict[str, dict[str, Any]], max_indices: int) -> list[int]:
+def _sorted_indices(stats: dict[str, dict[str, Any]], max_indices: int, min_pass_observations: int) -> list[int]:
+    min_pass_observations = max(int(min_pass_observations), 1)
     keys = sorted(
-        stats.keys(),
+        (key for key, value in stats.items() if int(value.get("pass_observations", 0)) >= min_pass_observations),
         key=lambda key: (
             -float(stats[key].get("max_lift_height", 0.0)),
+            -int(stats[key].get("pass_observations", 0)),
             -float(stats[key].get("pregrasp_offset_dir_z", 0.0)),
             float(stats[key].get("min_max_finger_dist", 999.0)),
             int(key),
@@ -210,8 +213,13 @@ def _make_payload(
     for record in objects.values():
         stats = record.get("stats", {})
         if isinstance(stats, dict):
-            record["indices"] = _sorted_indices(stats, max_indices)
+            record["indices"] = _sorted_indices(
+                stats,
+                max_indices,
+                int(args_cli.min_pass_observations_per_index),
+            )
     counts = {uuid: len(record["indices"]) for uuid, record in objects.items()}
+    indices_by_uuid = {uuid: list(record["indices"]) for uuid, record in objects.items()}
     return {
         "metadata": {
             "created_at": datetime.now(timezone.utc).isoformat(),
@@ -221,6 +229,7 @@ def _make_payload(
             "cycles_requested": args_cli.cycles,
             "cycles_completed": cycles_completed,
             "target_per_object": args_cli.target_per_object,
+            "min_pass_observations_per_index": args_cli.min_pass_observations_per_index,
             "max_indices_per_object": args_cli.max_indices_per_object,
             "thresholds": {
                 "min_lift_height": args_cli.min_lift_height,
@@ -228,6 +237,7 @@ def _make_payload(
                 "max_finger_dist": args_cli.max_finger_dist,
                 "max_done_count": args_cli.max_done_count,
                 "require_success": args_cli.require_success,
+                "min_pass_observations_per_index": args_cli.min_pass_observations_per_index,
                 "grasp_reset_min_pregrasp_z": args_cli.grasp_reset_min_pregrasp_z,
             },
             "config": {
@@ -272,6 +282,7 @@ def _make_payload(
             "counts_by_uuid": counts,
             "all_targets_met": all(count >= int(args_cli.target_per_object) for count in counts.values()),
         },
+        "indices_by_uuid": indices_by_uuid,
         "cycle_stats": cycle_stats or [],
         "objects": objects,
     }
