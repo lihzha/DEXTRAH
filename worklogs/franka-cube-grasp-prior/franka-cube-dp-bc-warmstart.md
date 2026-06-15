@@ -11383,7 +11383,13 @@ Command / Job:
   final/window success should be nonzero and video should show grasp/lift.
 
 Result:
-- status: launching
+- status: submitted l401 Slurm jobs `1029585`, `1029586`, `1029587`, `1029588`
+- run_names:
+  - `franka_cube_rgb_normalreset_nofinalclip_topdown80_chunk0_20260614_2238`
+  - `franka_cube_rgb_normalreset_nofinalclip_topdown80_chunk1_20260614_2238`
+  - `franka_cube_rgb_normalreset_nofinalclip_topdown80_chunk2_20260614_2238`
+  - `franka_cube_rgb_normalreset_nofinalclip_topdown80_chunk3_20260614_2238`
+- specs: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/specs/franka_cube_rgb_normalreset_nofinalclip_topdown80_20260614_2238/spec_chunk{0..3}.{env,json,csv}`
 
 ## 2026-06-12T04:59:03-07:00 - local one-demo x0-prediction overfit probe
 
@@ -16634,7 +16640,11 @@ Command / Job:
   the pre-reset lifted state instead of post-reset zeros.
 
 Result:
-- status: submitting.
+- status: submitted as l401 Slurm job `1029571`.
+- logs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/train_franka_cube_rgb_dp_1029571.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/official_dp_rgb/franka_cube_rgb_hardclose64_notiming_recovery_x2_g64_smoke_20260614_2211`
 
 ## 2026-06-13T02:35:20-07:00 - RGB retention stop-on-done rerun result
 
@@ -17631,3 +17641,381 @@ Command / Job:
 
 Result:
 - status: ready to submit.
+## 2026-06-14T22:09:05-07:00 - RGB hard-close recovery weighted smoke launch
+
+Goal:
+- Verify that the recovery-augmented RGB dataset and gripper-weighted action
+  loss are wired correctly before launching a longer fine-tune.
+
+Hypothesis:
+- The previous hard-close RGB checkpoint fails exact ep0 closed-loop eval
+  because it predicts open gripper actions when the observation is at the
+  close-boundary state with fully open gripper proprio. Duplicating close/lift
+  observations with open gripper-width proprio and weighting the gripper action
+  loss should move this state onto support without changing the visual data.
+
+Change:
+- No new source changes since commit `575c4c30876fc55d36e91f1b0b12b92d146ba6bd`.
+- Use recovery dataset
+  `/results/dp_bc/datasets/franka_cube_rgb_noclip_accepted64_hardclose_gripopen_recovery_x2_20260614_2202.npz`.
+- Initialize from hard-close checkpoint
+  `/results/dp_bc/checkpoints/franka_cube_rgb_hardclose64_notiming_full_e20_20260614_2140/latest.ckpt`.
+- Set `ACTION_LOSS_WEIGHTS=[1,1,1,1,1,1,64]`.
+
+Version Control:
+- agent_id: franka-cube-bc-warmstart
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- worklog: `worklogs/franka-cube-grasp-prior/franka-cube-dp-bc-warmstart.md`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- implementation_commit: `575c4c30876fc55d36e91f1b0b12b92d146ba6bd`
+- remote_commit/status: l401 agent worktree detached at
+  `575c4c30876fc55d36e91f1b0b12b92d146ba6bd`, clean
+
+Command / Job:
+- planned run:
+  `franka_cube_rgb_hardclose64_notiming_recovery_x2_g64_smoke_20260614_2209`
+- command shape:
+  `sbatch --parsable --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart,RUN_NAME=<run>,DATASET=<recovery-dataset>,INIT_CHECKPOINT=<hardclose-checkpoint>,ROBOT_STATE_DIM=8,APPEND_PHASE_PROGRESS=false,ACTION_LOSS_WEIGHTS=[1,1,1,1,1,1,64],VAL_RATIO=0.05,LR=5e-5,NUM_EPOCHS=2,MAX_TRAIN_STEPS=200,MAX_VAL_STEPS=20,LR_WARMUP_STEPS=50,USE_EMA=false,COPY_FINAL_CHECKPOINT=True cluster/sbatch_train_franka_cube_rgb_dp_1gpu.sh`
+- success condition: finite training/validation losses, staged checkpoint, and
+  stdout showing the exact `policy.action_loss_weights` override.
+
+Result:
+- status: submitted as l401 Slurm job `1029570`.
+- logs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/train_franka_cube_rgb_dp_1029570.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/official_dp_rgb/franka_cube_rgb_hardclose64_notiming_recovery_x2_g64_smoke_20260614_2209`
+- update 2026-06-14T22:11:00-07:00: failed before training because Slurm
+  parsed `ACTION_LOSS_WEIGHTS=[1,1,1,1,1,1,64]` as comma-separated export
+  fields and the wrapper received only `[1`. Hydra failed with
+  `OverrideParseException: no viable alternative at input '[1'`.
+  Relaunching with `ACTION_LOSS_WEIGHTS` exported in the submission shell and
+  omitted from the comma-separated `--export` list.
+
+Next:
+- If the smoke passes, launch the full recovery fine-tune from the same commit
+  and dataset; then evaluate exact ep0 with chunk size 1 and unclipped actions.
+
+## 2026-06-14T22:11:00-07:00 - RGB hard-close recovery weighted smoke relaunch
+
+Goal:
+- Run the same bounded smoke with the gripper loss weights passed correctly.
+
+Change:
+- Export `ACTION_LOSS_WEIGHTS='[1,1,1,1,1,1,64]'` in the remote submission
+  shell, then call `sbatch --export=ALL,...` without embedding the value in the
+  comma-separated export list.
+
+Version Control:
+- implementation_commit: `575c4c30876fc55d36e91f1b0b12b92d146ba6bd`
+
+Command / Job:
+- planned run:
+  `franka_cube_rgb_hardclose64_notiming_recovery_x2_g64_smoke_20260614_2211`
+- success condition: wrapper stdout must show
+  `ACTION_LOSS_WEIGHTS=[1,1,1,1,1,1,64]`, Hydra command must include the full
+  list, and training must produce finite losses plus a staged checkpoint.
+
+Result:
+- status: submitted as l401 Slurm job `1029571`.
+- logs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/train_franka_cube_rgb_dp_1029571.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/official_dp_rgb/franka_cube_rgb_hardclose64_notiming_recovery_x2_g64_smoke_20260614_2211`
+- completed `0:0` in `00:01:18`.
+- stdout confirmed the full Hydra override:
+  `policy.action_loss_weights=[1,1,1,1,1,1,64]`.
+- metrics: `rows=402`, `global_step=400`, `epoch=1`, final
+  `train_loss=0.7342854871042073`, `val_loss=0.4820718765258789`,
+  `train_action_mse_error=0.0725`; all train losses were finite.
+- staged checkpoint:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/franka_cube_rgb_hardclose64_notiming_recovery_x2_g64_smoke_20260614_2211/latest.ckpt`
+
+Analysis:
+- The weighted loss override and recovery dataset path are wired correctly.
+- The first failed smoke was only a Slurm export quoting issue, not a training
+  or policy implementation issue.
+
+Next:
+- Launch the full recovery fine-tune from the original hard-close checkpoint,
+  with the same recovery dataset and gripper-weighted loss. Then evaluate exact
+  ep0 with no action clipping and no phase/progress features.
+
+## 2026-06-14T22:13:00-07:00 - RGB hard-close recovery weighted full fine-tune launch
+
+Goal:
+- Fine-tune the RGB no-timing hard-close checkpoint on the recovery-augmented
+  dataset strongly enough to make the closed-loop policy close from open
+  gripper proprio at the exact demo reset.
+
+Hypothesis:
+- Eight full epochs over the 128-episode recovery dataset with 64x gripper
+  loss should correct the close-boundary open-gripper state without needing
+  privileged timing features.
+
+Change:
+- Use the same recovery dataset and action-loss weights as the passing smoke.
+- Initialize from
+  `/results/dp_bc/checkpoints/franka_cube_rgb_hardclose64_notiming_full_e20_20260614_2140/latest.ckpt`.
+- Train for `NUM_EPOCHS=8`, `MAX_TRAIN_STEPS=10000`,
+  `MAX_VAL_STEPS=100`, `LR=5e-5`, `LR_WARMUP_STEPS=100`.
+
+Version Control:
+- implementation_commit: `575c4c30876fc55d36e91f1b0b12b92d146ba6bd`
+- remote_commit/status: l401 agent worktree detached at
+  `575c4c30876fc55d36e91f1b0b12b92d146ba6bd`
+
+Command / Job:
+- planned run:
+  `franka_cube_rgb_hardclose64_notiming_recovery_x2_g64_ft_e8_20260614_2213`
+- success condition: finite loss curve, staged checkpoint, no abnormal
+  divergence, then exact ep0 eval shows gripper actions go negative at close
+  and preferably lifts the cube.
+
+Result:
+- status: submitted as l401 Slurm job `1029572`.
+- logs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/train_franka_cube_rgb_dp_1029572.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/official_dp_rgb/franka_cube_rgb_hardclose64_notiming_recovery_x2_g64_ft_e8_20260614_2213`
+- completed `0:0` in `00:12:00`.
+- final metrics: `rows=8624`, `global_step=8623`, `epoch=7`,
+  `train_loss=0.02287055188720849`, `val_loss=0.028739754110574722`,
+  `last_lr=0.0`; all train losses finite.
+- validation loss by epoch:
+  `[(0, 0.264808), (1, 0.171935), (2, 0.232655), (3, 0.198449), (4, 0.066604), (5, 0.047124), (6, 0.035903), (7, 0.028740)]`.
+- staged final checkpoint:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/franka_cube_rgb_hardclose64_notiming_recovery_x2_g64_ft_e8_20260614_2213/latest.ckpt`
+- saved mid-run fallback checkpoint:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/franka_cube_rgb_hardclose64_notiming_recovery_x2_g64_ft_e8_20260614_2213/mid_epoch2_latest_snapshot.ckpt`
+
+Analysis:
+- Supervised training is healthy and the final checkpoint is the first
+  evaluation target because validation kept improving through epoch 7.
+- Multiprocessing semaphore cleanup warnings appeared after W&B shutdown, but
+  the wrapper validated metrics and exited `0:0`.
+
+Next:
+- Evaluate exact ep0 reset using the final checkpoint with no phase/progress
+  features and no action clipping.
+
+## 2026-06-14T22:25:00-07:00 - RGB recovery final exact ep0 eval launch
+
+Goal:
+- Test whether the recovery-weighted RGB checkpoint now closes the gripper and
+  lifts on the exact object position of demo episode 0.
+
+Hypothesis:
+- If the failure was the open-gripper close-boundary support gap, the final
+  checkpoint should produce negative gripper actions around close and improve
+  lift/contact at the exact ep0 reset.
+
+Version Control:
+- implementation_commit: `575c4c30876fc55d36e91f1b0b12b92d146ba6bd`
+- checkpoint:
+  `/results/dp_bc/checkpoints/franka_cube_rgb_hardclose64_notiming_recovery_x2_g64_ft_e8_20260614_2213/latest.ckpt`
+
+Command / Job:
+- planned run:
+  `franka_cube_rgb_hardclose64_notiming_recovery_x2_g64_ft_e8_ep0pos_chunk1_noclip_video_20260614_2225`
+- exact reset: `RESET_CUBE_X=-0.2878209948539734`,
+  `RESET_CUBE_Y=-0.15415899455547333`,
+  `RESET_CUBE_Z=0.781000018119812`.
+- eval settings: `NUM_ENVS=1`, `NUM_STEPS=340`,
+  `ACTION_CHUNK_STEPS=1`, `CLIP_ACTIONS=0`, `APPEND_PHASE_PROGRESS=False`,
+  `CAPTURE_VIDEO=True`, `STOP_ON_DONE=True`, `SUCCESS_WINDOW=80`.
+
+Result:
+- status: submitted as l401 Slurm job `1029578`.
+- logs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_rgb_dp_policy_1029578.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_rgb_hardclose64_notiming_recovery_x2_g64_ft_e8_ep0pos_chunk1_noclip_video_20260614_2225`
+- completed `0:0`; wrapper metrics passed, but task failed.
+- exact reset applied with zero cube position error.
+- summary: `window_success_rate=0.0`, `final_success_rate=0.0`,
+  `done_count=1`, `steps_completed=319`, max lift `0.014145m`, final cube
+  position `[-0.385651, -0.172548, 0.785748]`, final gripper width
+  `0.001209m`.
+- action range: gripper action stayed near `+1` through most of the rollout
+  and only reached `-1` around step 300, after the cube was pushed away.
+- video:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-warmstart-artifacts/evals/franka_cube_rgb_hardclose64_notiming_recovery_x2_g64_ft_e8_ep0pos_chunk1_noclip_video_20260614_2225/videos/franka-cube-rgb-hardclose64-recovery-g64-ft-e8-ep0pos-chunk1-noclip-step-0.mp4`
+- contact sheet:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-warmstart-artifacts/evals/franka_cube_rgb_hardclose64_notiming_recovery_x2_g64_ft_e8_ep0pos_chunk1_noclip_video_20260614_2225/contact_sheet.jpg`
+
+Analysis:
+- The recovery-weighted supervised fit worked, but closed-loop eval with
+  `ACTION_CHUNK_STEPS=1` still closes much too late. The policy config trains
+  with `n_action_steps=8`; repeatedly discarding all but the first predicted
+  action is a plausible train-eval mismatch for an image policy without timing
+  features.
+
+Next:
+- Run the same exact ep0 reset with `ACTION_CHUNK_STEPS=8`, matching the
+  trained action horizon usage, before modifying code or collecting more data.
+
+## 2026-06-14T22:31:00-07:00 - RGB recovery final exact ep0 eval chunk8 launch
+
+Goal:
+- Test whether using the trained/default action chunk length fixes the late
+  close behavior on the exact ep0 reset.
+
+Hypothesis:
+- `ACTION_CHUNK_STEPS=1` repeatedly executes only the first, approach/open
+  action from each 8-action prediction window. Executing the first eight
+  actions from each prediction should expose the future close actions that the
+  diffusion policy was trained to output.
+
+Command / Job:
+- planned run:
+  `franka_cube_rgb_hardclose64_notiming_recovery_x2_g64_ft_e8_ep0pos_chunk8_noclip_video_20260614_2231`
+- settings: same as the chunk1 exact reset eval except
+  `ACTION_CHUNK_STEPS=8`.
+
+Result:
+- status: submitted as l401 Slurm job `1029582`.
+- logs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_cube_rgb_dp_policy_1029582.out`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_cube_rgb_hardclose64_notiming_recovery_x2_g64_ft_e8_ep0pos_chunk8_noclip_video_20260614_2231`
+## 2026-06-14T22:38:21-07:00 - RGB normal-reset no-final-clip data generation launch
+
+Goal:
+- Generate default-reset RGB BC data for the user-confirmed reachable task support before training again.
+
+Hypothesis:
+- The previous 64-demo RGB training failure was data-distribution driven: the dataset used `rollout_reset_joint_blend_alpha=1.0`, while eval starts from the default Franka reset. The validated topdown/LR-anchor recipe with `reset_joint_blend_alpha=0.0` should produce clean default-reset RGB demonstrations. Removing final action clipping (`CLIP_ACTIONS=0`) while retaining uniform pose scaling under `POSE_ACTION_LIMIT=0.95` should preserve the successful controller behavior without per-component clipping artifacts.
+
+Change:
+- No source changes. New data-generation jobs will use the existing l401 detached worktree at commit `575c4c30876fc55d36e91f1b0b12b92d146ba6bd`.
+- Four 20-spec chunks will be generated from uniform cube XY samples, episode `37`, step `260`, `joint_alpha=0.0`, `cube_alpha=0.0`.
+
+Version Control:
+- agent_id: `franka-cube-dp-bc-warmstart`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- implementation_commit: `575c4c30876fc55d36e91f1b0b12b92d146ba6bd`
+- remote_commit/status: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart` at detached `575c4c30876fc55d36e91f1b0b12b92d146ba6bd`
+- changed_files: worklog only
+
+Command / Job:
+- command: generate specs with `dextrah_lab/offline_dp_bc/make_uniform_cube_relabel_specs.py`, then submit `cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh` for chunks 0-3.
+- settings: `ALIGN_STEPS=0`, `CONTACT_ALIGN_STEPS=420`, `CONTACT_ALIGN_REFERENCE=live_cube`, `CLOSE_HOLD_REFERENCE=contact_anchor`, `CONTACT_GATE_MODE=left_right`, `REQUIRE_CONTACT_GATE=True`, `VARIANT=center_high15`, `ORIENTATION_MODE=live`, `LATERAL_CENTERING_GAIN=1.0`, `LATERAL_CENTERING_LIMIT=0.03`, `LATERAL_SEARCH_AMPLITUDE=0.004`, `FINGER_GATE_MAX_DISTANCE=0.060`, `FINGER_GATE_BALANCE_THRESHOLD=0.010`, `CLIP_ACTIONS=0`, `POSE_ACTION_FILTER=scale`, `POSE_ACTION_LIMIT=0.95`, `SAVE_RGB_OBS=True`, `CAPTURE_VIDEO=False`.
+- expected run dirs: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/contact_relabel_sets/franka_cube_rgb_normalreset_nofinalclip_topdown80_chunk*_20260614_2238`
+- success condition: enough accepted `contact_relabel_set_accepted_rgb.npz` episodes to form at least 64 default-reset RGB demos, then combine, hard-close gripper labels, visualize a grid video, and train.
+
+Result:
+- status: launching
+
+Analysis:
+- Confirmed the just-trained `franka_cube_rgb_noclip_accepted64_hardclose_gripopen_recovery_x2_20260614_2202.npz` has `rollout_reset_joint_blend_alpha=1.0` for all episodes. Its exact cube eval therefore was not an exact robot-state reset: dataset ep0 starts at EE `[-0.420, -0.200, 1.001]`, while the live eval reset starts at `[-0.297, 0.005, 0.952]`.
+- Do not spend more training compute on the source-joint checkpoint until default-reset data is available.
+
+Next:
+- Monitor the four generation chunks, inspect summaries and accepted RGB counts, combine clean accepted episodes, and only then launch the training job.
+
+## 2026-06-14T22:40:42-07:00 - RGB normal-reset no-final-clip data generation retry
+
+Goal:
+- Relaunch the same default-reset RGB data-generation chunks after fixing the missing trajectory-template override.
+
+Change:
+- No source changes. The retry keeps the normal-reset, no-final-action-clip topdown/LR-anchor settings and explicitly passes `TRAJECTORY_TEMPLATE=cube_curobo_scale264_20260612_1449_seed{episode}/trajectory.json`.
+
+Version Control:
+- implementation_commit: `575c4c30876fc55d36e91f1b0b12b92d146ba6bd`
+- remote_commit/status: l401 agent worktree detached at `575c4c30876fc55d36e91f1b0b12b92d146ba6bd`
+- changed_files: worklog only
+
+Command / Job:
+- submitted jobs:
+  - chunk 0: `1029589`, run `franka_cube_rgb_normalreset_nofinalclip_topdown80_retry1_chunk0_20260614_224042`
+  - chunk 1: `1029590`, run `franka_cube_rgb_normalreset_nofinalclip_topdown80_retry1_chunk1_20260614_224042`
+  - chunk 2: `1029591`, run `franka_cube_rgb_normalreset_nofinalclip_topdown80_retry1_chunk2_20260614_224042`
+  - chunk 3: `1029592`, run `franka_cube_rgb_normalreset_nofinalclip_topdown80_retry1_chunk3_20260614_224042`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/contact_aware_franka_cube_relabel_set_<job>.out`
+- success condition: enough accepted default-reset RGB demos to combine, hard-close, grid-visualize, and train the RGB diffusion BC policy.
+
+Result:
+- status: submitted
+
+Next:
+- Monitor startup and final summaries; if acceptance is low, inspect failed/successful rollout videos with `CAPTURE_VIDEO=True` on representative specs before training.
+
+## 2026-06-14T22:43:48-07:00 - Extra normal-reset no-final-clip attempts
+
+Goal:
+- Avoid ending below the 64 accepted RGB-demo target due to strict stable-lift gate failures in the first 80 attempts.
+
+Change:
+- No source changes. Added three more 20-spec chunks sampled uniformly over the default reachable cube support.
+- These chunks keep `RESET_JOINT_BLEND_ALPHA=0`, `RESET_CUBE_POS_BLEND_ALPHA=0`, `CLIP_ACTIONS=0`, `POSE_ACTION_FILTER=scale`, and `POSE_ACTION_LIMIT=0.95`.
+
+Command / Job:
+- generated specs under `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/specs/franka_cube_rgb_normalreset_nofinalclip_topdown_extra60_20260614_2248`
+- submitted jobs:
+  - chunk 4: `1029593`, run `franka_cube_rgb_normalreset_nofinalclip_topdown140_retry1_chunk4_20260614_224347`
+  - chunk 5: `1029594`, run `franka_cube_rgb_normalreset_nofinalclip_topdown140_retry1_chunk5_20260614_224347`
+  - chunk 6: `1029595`, run `franka_cube_rgb_normalreset_nofinalclip_topdown140_retry1_chunk6_20260614_224348`
+
+Result:
+- status: submitted
+
+Next:
+- Combine enough accepted RGB NPZs from chunks 0-6 to train a clean normal-reset/no-timing RGB BC dataset; if accepted count overshoots, trim to a clean deterministic first-64 or use all clean accepted episodes and report the exact count before training.
+
+## 2026-06-14T23:06:02-07:00 - RGB normal-reset 64-demo training launch
+
+Goal:
+- Train the RGB diffusion-policy BC warm start on clean default-reset demos without privileged object state or timing features.
+
+Result:
+- Data generation completed with `99` accepted RGB demos from chunks 0-6.
+- Combined all accepted demos in chronological chunk order, filtered deterministic episodes `0..63`, and rewrote gripper actions by phase.
+- Final dataset:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/datasets/franka_cube_rgb_normalreset_nofinalclip_accepted64_hardclose_20260614_2305.npz`
+- Dataset summary:
+  - episodes/transitions: `64` / `19565`
+  - image shape/dtype: `(19565, 96, 96, 3)` / `uint8`
+  - robot state shape: `(19565, 8)`
+  - action shape: `(19565, 7)`
+  - reset alpha values: joint `[0.0]`, cube `[0.0]`
+  - applied cube XY range: `[-0.439961, -0.198386]` to `[-0.281068, -0.040890]`
+  - phase counts: `{0: 4812, 1: 5120, 2: 9633}`
+  - gripper after rewrite: `+1` for phase 0 rows and `-1` for phases 1/2 rows.
+
+Command / Job:
+- job_id: `1029601`
+- run_name: `franka_cube_rgb_normalreset_nofinalclip64_hardclose_g64_scratch_e20_20260614_230602`
+- command: `cluster/sbatch_train_franka_cube_rgb_dp_1gpu.sh`
+- settings: scratch train, `ROBOT_STATE_DIM=8`, `APPEND_PHASE_PROGRESS=false`, `VAL_RATIO=0.05`, `ACTION_LOSS_WEIGHTS=[1,1,1,1,1,1,64]`, `NUM_EPOCHS=20`, `MAX_TRAIN_STEPS=10000`, `LR=1e-4`, `BATCH_SIZE=32`, `USE_EMA=false`.
+- expected checkpoint:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/franka_cube_rgb_normalreset_nofinalclip64_hardclose_g64_scratch_e20_20260614_230602/latest.ckpt`
+- logs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/train_franka_cube_rgb_dp_1029601.out`
+
+Next:
+- Monitor training logs/metrics/checkpoint, generate the 64-demo grid video, then run exact in-domain RGB closed-loop evals from accepted cube poses and slightly OOD cube resets.
+
+Grid Artifact:
+- 64-demo grid video:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-warmstart-artifacts/datasets/franka_cube_rgb_normalreset_nofinalclip64_20260614_2305/franka_cube_rgb_normalreset_nofinalclip64_grid_stride2.mp4`
+- Media check: `782x782`, `299` frames, `9.97s`, `30fps`; extracted frame shows all 64 panels nonblank with the intended top-down RGB camera and varied cube positions.
+
+Update:
+- Training job `1029601` failed after epoch 1 with a bookkeeping-only error:
+  `KeyError: 'test_mean_score'` from official DP top-k checkpoint selection.
+- Evidence: W&B/logs contain finite losses through `global_step=1166`;
+  run summary had `train_loss=0.210244`, `val_loss=0.70287`,
+  `test/mean_score=0.0`.
+- Root cause: `NoopImageRunner` returned `test/mean_score`, while the config
+  top-k monitor key is `test_mean_score`.
+- Patch: `dextrah_lab/offline_dp_bc/dp_dataset.py` now returns both
+  `test/mean_score` and `test_mean_score` for lowdim and image no-op runners.
+- Validation: `python3 -m py_compile dextrah_lab/offline_dp_bc/dp_dataset.py`
+  and `bash -n cluster/sbatch_train_franka_cube_rgb_dp_1gpu.sh` passed.
+
+Next:
+- Commit/push the metric-key patch, update the l401 worktree, and relaunch a
+  clean scratch training run rather than resuming the failed two-epoch run.
