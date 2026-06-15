@@ -348,8 +348,13 @@ class DextrahGraspPriorA2CAgent(BaseA2CAgent):
         student_batch["is_train"] = False
         teacher_batch = dict(batch_dict)
         teacher_batch["is_train"] = False
-        student_res = self.model(student_batch)
-        student_mu = student_res["mus"]
+        student_was_training = self.model.training
+        self.model.eval()
+        try:
+            student_res = self.model(student_batch)
+            student_mu = student_res["mus"]
+        finally:
+            self.model.train(student_was_training)
         with torch.no_grad():
             teacher_res = anchor_model(teacher_batch)
             teacher_mu = teacher_res["mus"].detach()
@@ -359,6 +364,7 @@ class DextrahGraspPriorA2CAgent(BaseA2CAgent):
 
     def calc_gradients(self, input_dict):
         self.dextrah_restore_frozen_obs_rms()
+        self._ensure_dextrah_policy_anchor_model()
         value_preds_batch = input_dict["old_values"]
         old_action_log_probs_batch = input_dict["old_logp_actions"]
         advantage = input_dict["advantages"]

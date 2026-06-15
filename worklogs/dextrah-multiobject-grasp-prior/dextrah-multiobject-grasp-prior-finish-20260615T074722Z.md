@@ -3550,3 +3550,52 @@ Patch prepared:
 Next:
 - Commit/deploy the bounds-loss override.
 - Run a zero-update preservation diagnostic from the low-sigma BC checkpoint with `DEXTRAH_ACTOR_LOSS_SCALE=0.0`, `DEXTRAH_CRITIC_LOSS_SCALE=0.0`, `DEXTRAH_BOUNDS_LOSS_COEF=0.0`, `ENTROPY_COEF=0.0`, no scripted BC/action-prior, and frozen obs RMS. If deterministic eval returns to the fixed BC baseline, then run the real small-actor RL diagnostic with bounds loss disabled.
+
+## 2026-06-15T22:41:30Z - zero-update run exposed policy-anchor mode bug
+
+Version state:
+- Commit `3ac11f8ef1606c80ec5b1147aafab955e751d35c`: `Expose DEXTRAH bounds loss override`
+- A100 agent worktree updated to `3ac11f8ef1606c80ec5b1147aafab955e751d35c` by Git bundle.
+- Remote `bash -n cluster/sbatch_train_teacher_8gpu.sh` passed.
+
+Zero-update training launch:
+- Slurm job: `29118435`
+- Experiment: `franka_multi_resetprior_zero_actor0_critic0_bounds0_anchor1000_sigma_m5_3ac11f8_20260615T2238Z`
+- Log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29118435.out`
+- Run dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_resetprior_zero_actor0_critic0_bounds0_anchor1000_sigma_m5_3ac11f8_20260615T2238Z`
+
+Critical config verified in log:
+- `DEXTRAH_ACTOR_LOSS_SCALE=0.0`
+- `DEXTRAH_CRITIC_LOSS_SCALE=0.0`
+- `DEXTRAH_BOUNDS_LOSS_COEF=0.0`
+- Hydra command included `agent.params.config.bounds_loss_coef=0.0`
+- `ENTROPY_COEF=0.0`
+- scripted BC and action-prior reward disabled
+- BC policy anchor enabled with weight `1000.0`
+
+Training rows from `metrics/direct_info_rank_0.jsonl`:
+
+| Epoch | Success | Has lifted | Lift height | EE/root dist | Actor scale | Critic scale | Anchor loss | Reset tool down |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | `0.0` | `0.0` | `0.022847` | `0.083995` | `0.0` | `0.0` | `1.448262` | `0.9975928` |
+| 2 | `0.140625` | `0.2109375` | `0.038917` | `0.159250` | `0.0` | `0.0` | `0.891238` | `0.9975928` |
+| 3 | `0.015625` | `0.2265625` | `0.004095` | `0.287924` | `0.0` | `0.0` | `0.372251` | `0.9975928` |
+| 4 | `0.015625` | `0.23828125` | `0.003959` | `0.383518` | `0.0` | `0.0` | `0.341160` | `0.9975928` |
+| 5 | `0.00390625` | `0.234375` | `0.000634` | `0.445586` | `0.0` | `0.0` | `0.372263` | `0.9975928` |
+
+Analysis:
+- Even with actor, critic, entropy, and bounds losses disabled, the BC policy anchor loss is nonzero and updates the policy.
+- The remaining hidden drift source is the anchor itself. The code captured the teacher lazily and compared an eval-mode teacher against a student forward that only set `is_train=False`; the student module itself stayed in training mode, so RunningMeanStd/model-mode behavior can differ from the teacher.
+
+Patch prepared:
+- `dextrah_lab/rl_games/dextrah_grasp_prior_a2c.py`
+  - call `_ensure_dextrah_policy_anchor_model()` at the start of `calc_gradients()` immediately after restoring frozen observation RMS, before the normal train-mode policy forward can update normalization state
+  - run the student anchor forward with `self.model.eval()` temporarily, restoring the previous training state in a `finally` block
+- Local validation passed:
+  - `python3 -m py_compile dextrah_lab/rl_games/dextrah_grasp_prior_a2c.py`
+  - `bash -n cluster/sbatch_train_teacher_8gpu.sh`
+  - `git diff --check`
+
+Next:
+- Commit/deploy the anchor-mode fix and rerun the same zero-update preservation diagnostic. Expected anchor loss should be near zero; deterministic eval should match the fixed BC baseline before any RL actor update is trusted.
