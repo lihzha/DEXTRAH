@@ -744,3 +744,20 @@ Fixed-schedule reward-only ablation:
 
 Next:
 - Monitor `1029776`. If fixed-schedule reward-only improves raw policy success, evaluate the best checkpoint. If it still drifts, inspect whether the policy action frame/sign convention is mismatched for the z/lift action or whether the inherited single-cube success/XY shaping is overconstraining long objects.
+
+## 2026-06-15T11:18:00Z - Fixed-schedule prior was still gated; launch ungated schedule
+
+Fixed-schedule result:
+- Job `1029776` was manually canceled at elapsed `00:09:10`.
+- Best row was epoch 68 with `cube_success_rate=0.1602`, `has_lifted=0.3740`, `lift_height=0.0764m`, `xy_error=0.0471m`.
+- Later rows collapsed similarly; by epoch 76, `cube_success_rate=0.0029`, `xy_error=0.1212m`.
+- Diagnosis: setting `GRASP_PRIOR_ACTION_WARMSTART_REQUIRE_CURRENT_LIFT_READY=False` was insufficient because `GRASP_PRIOR_ACTION_WARMSTART_LIFT_MAX_FINGER_CENTER_DIST=0.12` and `GRASP_PRIOR_ACTION_WARMSTART_LIFT_CLOSED_WIDTH_MARGIN=0.008` still gated lift. The teacher stayed mostly in exact-close/approach, with `cube_action_prior_lift_rate` near zero and negative mean teacher z.
+
+Ungated fixed-schedule reward-only ablation:
+- Job `1029777` submitted.
+- Run: `franka_multi_state_teacher_7195_b87_oldcache_pre08_prioronly90_schednogate_w80_5e387a5_20260615T1118Z`
+- Changes from `1029776`: `GRASP_PRIOR_ACTION_WARMSTART_LIFT_MAX_FINGER_CENTER_DIST=0.0`, `GRASP_PRIOR_ACTION_WARMSTART_LIFT_CLOSED_WIDTH_MARGIN=-1.0`, `GRASP_PRIOR_ACTION_WARMSTART_REQUIRE_CURRENT_LIFT_READY=False`.
+- Expected signal: after the 8-step approach and 32-step close phase, `cube_action_prior_lift_rate` should remain substantial and `cube_action_prior_teacher_z` should become positive enough to train the raw policy's lift action.
+
+Next:
+- Monitor `1029777`; keep/evaluate only if policy-controlled success or lift improves without the same XY drift collapse.
