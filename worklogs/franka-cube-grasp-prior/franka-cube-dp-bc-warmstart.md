@@ -18019,3 +18019,115 @@ Update:
 Next:
 - Commit/push the metric-key patch, update the l401 worktree, and relaunch a
   clean scratch training run rather than resuming the failed two-epoch run.
+
+## 2026-06-14T23:13:22-07:00 - RGB normal-reset 64-demo training retry after monitor-key fix
+
+Goal:
+- Relaunch the same scratch RGB BC training after fixing the no-op runner monitor metric key.
+
+Change:
+- Committed `46bbed6c870d411b18f316a134531f4792f92caa`:
+  `Fix no-op BC runner monitor metrics`.
+- Patch: lowdim and image no-op runners now return both
+  `test/mean_score` and `test_mean_score`.
+- Push to GitHub succeeded locally, but l401 could not fetch `origin` due
+  `Permission denied (publickey)`. Deployed the exact commit to the agent
+  worktree with a Git bundle and checked out detached `46bbed6c...`.
+
+Command / Job:
+- job_id: `1029602`
+- run_name:
+  `franka_cube_rgb_normalreset_nofinalclip64_hardclose_g64_scratch_e20_retry1_20260614_231322`
+- settings: same as failed job `1029601`: scratch train,
+  `ROBOT_STATE_DIM=8`, `APPEND_PHASE_PROGRESS=false`, `VAL_RATIO=0.05`,
+  `ACTION_LOSS_WEIGHTS=[1,1,1,1,1,1,64]`, `NUM_EPOCHS=20`,
+  `MAX_TRAIN_STEPS=10000`, `LR=1e-4`, `BATCH_SIZE=32`, `USE_EMA=false`.
+- logs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/train_franka_cube_rgb_dp_1029602.out`
+- expected checkpoint:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/franka_cube_rgb_normalreset_nofinalclip64_hardclose_g64_scratch_e20_retry1_20260614_231322/latest.ckpt`
+
+Next:
+- Monitor the retry through completion, inspect losses/checkpoint, then run RGB closed-loop in-domain/OOD evals.
+
+Update:
+- Job `1029602` still failed after epoch 1 with the same top-k key error even
+  though W&B showed both `test/mean_score` and `test_mean_score`.
+- Root cause refined: `ROLLOUT_EVERY=100000` meant the no-op runner metric was
+  present at epoch 0 but absent on later checkpoint epochs. Official DP top-k
+  checkpointing runs every epoch and requires the monitor metric every time.
+- Relaunch: job `1029604`, run
+  `franka_cube_rgb_normalreset_nofinalclip64_hardclose_g64_scratch_e20_retry2_20260614_231719`,
+  same settings except `ROLLOUT_EVERY=1`.
+- Expected behavior: no-op runner is cheap and should provide
+  `test_mean_score=0.0` at every checkpoint epoch.
+
+## 2026-06-14T23:39:00-07:00 - RGB retry2 training result and exact-reset eval failure
+
+Goal:
+- Validate the 64-demo RGB BC checkpoint under exact in-domain cube reset and
+  debug the first failure before scaling.
+
+Result:
+- Training job `1029604` completed cleanly in `00:14:48`.
+- Staged checkpoint:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/franka_cube_rgb_normalreset_nofinalclip64_hardclose_g64_scratch_e20_retry2_20260614_231719/latest.ckpt`
+- Metrics: `11680` JSONL rows, finite train losses, train loss
+  `7.77297 -> 0.02281`, best val loss `0.08834` at epoch 10,
+  final val loss `0.16625`.
+
+Closed-loop eval:
+- job_id: `1029655`
+- run:
+  `franka_cube_rgb_normalreset64_retry2_ep0_indomain_noclip_video_20260614_233311`
+- reset: exact accepted demo-0 cube pose
+  `(-0.435617, -0.198386, 0.781000)`, raw actions with `CLIP_ACTIONS=0`,
+  no phase/progress features.
+- outcome: failed; `steps_completed=360`, `done_count=0`,
+  `final_success_rate=0.0`, `window_success_rate=0.0`,
+  max cube lift only `0.00216m`.
+- video:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-warmstart-artifacts/evals/franka_cube_rgb_normalreset64_retry2_ep0_indomain_noclip_video_20260614_233311/videos/franka-cube-rgb-normalreset64-retry2-ep0-indomain-step-0.mp4`
+- visual read: policy approaches the cube, closes, nudges it laterally, but
+  never lifts.
+
+Offline coherence:
+- job_id: `1029658`
+- run:
+  `rgb_offline_coherence_retry2_evalfail_retry1_20260614_233742`
+- result: teacher-forced image/proprio checkpoint predictions match labels
+  reasonably well, arguing against a gross normalization or image/proprio I/O
+  bug.
+- summary: first-action median MSE `0.000290`, mean first-action MSE
+  `0.00533`, mean first pose cosine `0.934`, gripper sign match `0.993`.
+- weak spot: lift-phase `dz` MAE is `0.0702`, so the model is less accurate on
+  vertical timing/lift than on XY/gripper sign.
+
+Analysis:
+- Initial predicted actions have the same rough scale/sign as demo-0 labels,
+  so this is not an obvious action unnormalization failure.
+- Closed-loop drift appears around contact: once the cube is nudged, the policy
+  alternates lift/down and closes without a clean grasp.
+- The exact cube reset did not reset robot joints to demo-0 first state; live
+  initial EE was about `1.4cm` away from the demo first saved EE position.
+
+Change:
+- Added optional RGB eval dataset-action replay mode:
+  `--replay_dataset_actions`, `--replay_dataset_episode`,
+  `--replay_dataset_start_step`.
+- Added Slurm wrapper env passthrough:
+  `REPLAY_DATASET_ACTIONS`, `REPLAY_DATASET_EPISODE`,
+  `REPLAY_DATASET_START_STEP`.
+- Purpose: execute saved labels through the same RGB eval/reset/video/metrics
+  path to test whether the accepted dataset labels remain executable under the
+  current eval reset/environment.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/eval_franka_cube_rgb_dp_policy.py`
+- `bash -n cluster/sbatch_eval_franka_cube_rgb_dp_policy_1gpu.sh`
+
+Next:
+- Commit/deploy the replay diagnostic, run demo-0 label replay at the same
+  exact cube pose, and branch on the result:
+  if replay fails, debug dataset/reset/env mismatch; if replay succeeds, train
+  or condition policy for better closed-loop robustness.
