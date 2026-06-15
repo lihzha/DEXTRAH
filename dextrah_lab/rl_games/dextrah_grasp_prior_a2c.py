@@ -302,12 +302,16 @@ class DextrahGraspPriorA2CAgent(BaseA2CAgent):
             self.dextrah_bc_policy_anchor_loss_last = torch.zeros((), device=self.ppo_device)
             return self.dextrah_bc_policy_anchor_loss_last
 
+        student_batch = dict(batch_dict)
+        student_batch["is_train"] = False
         teacher_batch = dict(batch_dict)
         teacher_batch["is_train"] = False
+        student_res = self.model(student_batch)
+        student_mu = student_res["mus"]
         with torch.no_grad():
             teacher_res = anchor_model(teacher_batch)
             teacher_mu = teacher_res["mus"].detach()
-        anchor_loss = self.dextrah_bc_policy_anchor_weight * torch.mean(torch.square(mu - teacher_mu))
+        anchor_loss = self.dextrah_bc_policy_anchor_weight * torch.mean(torch.square(student_mu - teacher_mu))
         self.dextrah_bc_policy_anchor_loss_last = anchor_loss.detach()
         return anchor_loss
 

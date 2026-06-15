@@ -3064,3 +3064,152 @@ Validation:
 
 Next:
 - Commit and deploy the launcher fix to the A100 worktree, then relaunch the z/gripper-only diagnostic under a new run name.
+
+## 2026-06-15T21:32:00Z - z/gripper-only diagnostic relaunched with Hydra fix
+
+Version state:
+- Local commit: `10916a196e4d1b6fcacbc0198fe2ee301f825ce2` (`Format DEXTRAH BC loss dims for Hydra`)
+- Branch pushed to origin.
+- A100 agent worktree `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-topdown-axis-20260615-753139c` updated to the same commit by Git bundle because remote GitHub SSH fetch still fails with `Permission denied (publickey)`.
+- Remote `bash -n cluster/sbatch_train_teacher_8gpu.sh`: passed.
+
+Training launch:
+- Slurm job: `29117115`
+- Experiment: `franka_multi_refzg_actor0_prior5_sigma_m5_lr1e6_anchor100_ref100_10916a1_20260615T2132Z`
+- Log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29117115.out`
+- Run dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_refzg_actor0_prior5_sigma_m5_lr1e6_anchor100_ref100_10916a1_20260615T2132Z`
+
+Effective configuration verified in log:
+- `DEXTRAH_GRASP_PRIOR_BC_LOSS_DIMS=2,6`
+- `DEXTRAH_GRASP_PRIOR_BC_LOSS_DIMS_HYDRA=[2,6]`
+- `DEXTRAH_ACTOR_LOSS_SCALE=0.0`
+- `NPROC_PER_NODE=1`, `NUM_ENVS=256`
+- `GRASP_PRIOR_RESET_MIN_PREGRASP_Z=0.45`
+- `GRASP_PRIOR_RESET_REQUIRE_DOWNWARD_TOOL_Z=True`
+
+Status:
+- Job is running; JSONL metrics not emitted yet at first poll.
+
+## 2026-06-15T21:38:00Z - z/gripper-only diagnostic completed; deterministic evals queued
+
+Training job `29117115` completed all 20 epochs and saved checkpoints at epochs `5`, `10`, `15`, and `20`.
+
+Key training rows:
+
+| Epoch | Success | Has lifted | Lift height | EE dist | Actor scale | Anchor loss | Ref BC loss | Ref active | Reset tool down |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | `0.0` | `0.0` | `0.0269` | `0.0820` | `0.0` | `143.89` | `107.30` | `1.0` | `0.9975928` |
+| 2 | `0.1328` | `0.2188` | `0.0341` | `0.1707` | `0.0` | `50.61` | `81.51` | `1.0` | `0.9975928` |
+| 5 | `0.0039` | `0.2344` | `0.00224` | `0.4198` | `0.0` | `33.73` | `137.64` | `1.0` | `0.9975928` |
+| 10 | `0.0` | `0.0117` | `0.00451` | `0.1219` | `0.0` | `115.78` | `126.35` | `0.5933` | `0.9975928` |
+| 11 | `0.1641` | `0.1719` | `0.0350` | `0.1964` | `0.0` | `39.27` | `55.08` | `0.8903` | `0.9975928` |
+| 15 | `0.0` | `0.0977` | `0.00066` | `0.5629` | `0.0` | `11.51` | `7.76` | `1.0` | `0.9975928` |
+| 20 | `0.0` | `0.0039` | `0.0` | `0.4946` | `0.0` | `27.90` | `73.98` | `0.7683` | `0.9975928` |
+
+Interpretation from training:
+- Limiting scripted reference BC to z/gripper dimensions is still not enough to preserve the deterministic BC baseline. The best training row was epoch `11` at success `0.1641`; saved checkpoints are weak.
+- Reset safety remains clean and unchanged: every row logs `grasp_prior_reset_tool_downward_z=0.9975928068`. This is not a from-below reset regression.
+- Because actor loss scale is `0.0`, the policy movement is coming from the supervised/reference and anchor losses plus optimizer state, not from the PPO actor objective.
+
+Deterministic evals submitted on l401:
+- `1030369`: epoch `5`, run `franka_multi_refzg_ep5_eval_10916a1_20260615T2138Z`
+- `1030370`: epoch `10`, run `franka_multi_refzg_ep10_eval_10916a1_20260615T2138Z`
+- `1030371`: epoch `15`, run `franka_multi_refzg_ep15_eval_10916a1_20260615T2138Z`
+- `1030372`: epoch `20`, run `franka_multi_refzg_ep20_eval_10916a1_20260615T2138Z`
+
+Eval setup:
+- `NUM_ENVS=128`, `NUM_STEPS=360`, deterministic policy, video disabled.
+- Same object0 manifest, stable-pose cache, exact verified-index cache, strict topdown/downward-tool/table gates, and object assignment as the fixed BC and zero-LR baselines.
+
+Next:
+- Inspect eval metrics. If they stay below the fixed BC baseline, stop using the scripted grasp-prior reference as an action target and switch the next implementation to a frozen-BC teacher/regularizer or reset-prior-only training.
+
+## 2026-06-15T21:45:00Z - z/gripper-only evals failed below BC baseline
+
+Deterministic object0 eval results:
+
+| Job | Checkpoint | Run | Eval success / success-ever | Max success | Final success | Done count | Done reasons |
+| --- | --- | --- | ---: | ---: | ---: | ---: | --- |
+| `1030369` | epoch `5` | `franka_multi_refzg_ep5_eval_10916a1_20260615T2138Z` | `0.25` / `0.25` | `0.2109375` | `0.0078125` | `15` | `success_done=14`, `unclassified=2`, table/prelift/cube-out `0` |
+| `1030370` | epoch `10` | `franka_multi_refzg_ep10_eval_10916a1_20260615T2138Z` | `0.125` / `0.125` | `0.1171875` | `0.0` | `13` | `success_done=13`, table/prelift/cube-out `0` |
+| `1030371` | epoch `15` | `franka_multi_refzg_ep15_eval_10916a1_20260615T2138Z` | `0.0` / `0.0` | `0.0` | `0.0` | `1` | `unclassified=1`, table/prelift/cube-out `0` |
+| `1030372` | epoch `20` | `franka_multi_refzg_ep20_eval_10916a1_20260615T2138Z` | `0.0` / `0.0` | `0.0` | `0.0` | `0` | all done reasons `0` |
+
+Reset diagnostics in every eval:
+- `grasp_prior_reset_tool_downward_z=0.9975928068`
+- `grasp_prior_reset_tool_z_axis_z_mean=-0.9975928664`
+- `grasp_prior_reset_candidate_topdown_count=128`
+- `grasp_prior_reset_candidate_tool_down_count=128`
+- `grasp_prior_reset_candidate_table_count=128`
+- `grasp_prior_reset_candidate_valid_count=128`
+
+Analysis:
+- The z/gripper-only scripted reference still underperforms the fixed BC/zero-LR baseline (`eval_success_rate=0.421875`, `success_ever_rate=0.4453125`).
+- The below-table/upward reset root cause is not recurring in these runs. All reset candidates are topdown/tool-down/table-valid, and there are no finger-table, prelift-drag, or cube-out done reasons.
+- The RL-Games config has `network.separate: False`, so critic loss can still move shared actor features even when `DEXTRAH_ACTOR_LOSS_SCALE=0.0`. This explains why the actor-zero diagnostics still drifted away from BC.
+
+Next:
+- Launch a reset-prior-only PPO diagnostic from the low-sigma BC checkpoint:
+  - scripted reference BC loss disabled
+  - action-prior reward disabled
+  - strong frozen-BC policy anchor
+  - `DEXTRAH_CRITIC_LOSS_SCALE=0.0` to prevent critic gradients through shared actor features
+  - small nonzero `DEXTRAH_ACTOR_LOSS_SCALE` to test whether PPO can improve without erasing BC behavior
+
+## 2026-06-15T21:46:00Z - reset-prior-only actor-small diagnostic launched
+
+Training launch:
+- Slurm job: `29117271`
+- Experiment: `franka_multi_resetprior_actor001_critic0_anchor1000_sigma_m5_lr1e6_10916a1_20260615T2146Z`
+- Commit: `10916a196e4d1b6fcacbc0198fe2ee301f825ce2`
+- Log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29117271.out`
+- Run dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_resetprior_actor001_critic0_anchor1000_sigma_m5_lr1e6_10916a1_20260615T2146Z`
+
+Settings:
+- Same object0 manifest, stable-pose cache, verified grasp indices, and strict topdown/downward reset gates.
+- Initial checkpoint: low-sigma BC checkpoint `bc_reference_action_imitation_lowsigma_m3_sigmaonly.pth`.
+- Scripted reference/action guidance disabled: `DEXTRAH_GRASP_PRIOR_BC_LOSS_ENABLED=False`, `GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED=False`.
+- Stabilizers: frozen obs RMS, policy anchor enabled with weight `1000.0`, forced `TRAIN_SIGMA=-5`, entropy coefficient `0.0`.
+- PPO loss scales: `DEXTRAH_ACTOR_LOSS_SCALE=0.01`, `DEXTRAH_CRITIC_LOSS_SCALE=0.0`.
+- One A100 GPU, `NUM_ENVS=256`, `MAX_ITERATIONS=20`, checkpoints every `5` epochs.
+
+Effective config verified in log:
+- `GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED=False`
+- `DEXTRAH_GRASP_PRIOR_BC_LOSS_ENABLED=False`
+- `DEXTRAH_BC_POLICY_ANCHOR_WEIGHT=1000.0`
+- `DEXTRAH_ACTOR_LOSS_SCALE=0.01`
+- `DEXTRAH_CRITIC_LOSS_SCALE=0.0`
+- `ENTROPY_COEF=0.0`
+
+Expected signal:
+- If this preserves the fixed BC eval baseline, the prior failure was driven by shared critic/reference losses rather than reset sampling. Then the next scale-up can slowly increase actor scale or epochs.
+- If this still falls below BC, PPO actor gradients alone are enough to leave the BC basin and the next change should freeze more of the actor or use a much lower actor scale.
+
+## 2026-06-15T21:48:56Z - actor-small diagnostic failed; patch policy anchor mode
+
+Training job `29117271` completed all 20 epochs.
+
+Key result:
+- Best training success row was epoch `11` with `cube_success_rate=0.0898`.
+- Saved checkpoint epochs were weak: epoch `5` success `0.0`, epoch `10` success `0.0`, epoch `15` success `0.0`, epoch `20` success `0.0`.
+- Reset remained clean: `grasp_prior_reset_tool_downward_z=0.9975928068` throughout.
+- The policy-anchor loss was unexpectedly large even in this conservative run, for example `306.13` at epoch `5`, `1075.11` at epoch `10`, and `236.67` at epoch `20`.
+
+Diagnosis:
+- The RL-Games config uses `network.separate: False`, so actor and critic share network features. Turning off critic loss removed one drift source, but the policy anchor itself was still comparing different policy modes:
+  - student `mu` was computed from the main PPO forward with `is_train=True`
+  - frozen BC teacher `mu` was computed with `is_train=False`
+- The deterministic policy used in evaluation is eval-mode. The anchor should regularize eval-mode student behavior to eval-mode frozen BC behavior.
+
+Code change:
+- Patched `dextrah_lab/rl_games/dextrah_grasp_prior_a2c.py` so `_compute_dextrah_policy_anchor_loss()` recomputes the current student policy with `is_train=False` and compares that eval-mode `mu` to the frozen BC eval-mode `mu`.
+- This leaves the PPO actor/critic loss computation unchanged.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/dextrah_grasp_prior_a2c.py`: passed.
+- `bash -n cluster/sbatch_train_teacher_8gpu.sh`: passed.
+
+Next:
+- Commit/deploy the anchor-mode fix and relaunch the same reset-prior-only actor-small diagnostic. Success criterion is preserving or beating the fixed BC deterministic baseline, then tuning actor scale upward only if preservation works.
