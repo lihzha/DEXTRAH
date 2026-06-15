@@ -1469,6 +1469,13 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         self.extras["log"] = log_terms
         for key, value in log_terms.items():
             self.extras[key] = value
+        if bool(self.cfg.grasp_prior_action_prior_reward_enabled):
+            self.extras["dextrah_grasp_prior_teacher_actions"] = (
+                self.grasp_prior_action_prior_teacher_actions.detach().clone()
+            )
+            self.extras["dextrah_grasp_prior_teacher_active"] = (
+                self.grasp_prior_action_prior_active.detach().float().unsqueeze(-1).clone()
+            )
         self.extras["in_success_region"] = self.in_success_region.float().mean()
         return total_reward
 
