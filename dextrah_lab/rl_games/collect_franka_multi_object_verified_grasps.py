@@ -43,6 +43,8 @@ parser.add_argument("--require_success", action="store_true", default=False)
 parser.add_argument("--grasp_reset_attempts", type=int, default=4)
 parser.add_argument("--grasp_reset_require_topdown", action=argparse.BooleanOptionalAction, default=True)
 parser.add_argument("--grasp_reset_min_pregrasp_z", type=float, default=0.45)
+parser.add_argument("--grasp_reset_require_downward_tool_z", action=argparse.BooleanOptionalAction, default=True)
+parser.add_argument("--grasp_reset_min_downward_tool_z", type=float, default=0.45)
 parser.add_argument("--grasp_reset_min_contact_height_above_center", type=float, default=0.0)
 parser.add_argument("--grasp_reset_candidate_count", type=int, default=2048)
 parser.add_argument("--grasp_reset_max_center_distance_frac", type=float, default=0.35)
@@ -119,6 +121,8 @@ def _make_env():
     env_cfg.grasp_prior_reset_candidate_count = int(args_cli.grasp_reset_candidate_count)
     env_cfg.grasp_prior_reset_require_topdown = bool(args_cli.grasp_reset_require_topdown)
     env_cfg.grasp_prior_reset_min_pregrasp_z = float(args_cli.grasp_reset_min_pregrasp_z)
+    env_cfg.grasp_prior_reset_require_downward_tool_z = bool(args_cli.grasp_reset_require_downward_tool_z)
+    env_cfg.grasp_prior_reset_min_downward_tool_z = float(args_cli.grasp_reset_min_downward_tool_z)
     env_cfg.grasp_prior_reset_min_contact_height_above_center = float(
         args_cli.grasp_reset_min_contact_height_above_center
     )
@@ -200,6 +204,7 @@ def _sorted_indices(
             -float(stats[key].get("pass_rate", 0.0)),
             -float(stats[key].get("max_lift_height", 0.0)),
             -int(stats[key].get("pass_observations", 0)),
+            -float(stats[key].get("tool_downward_z", 0.0)),
             -float(stats[key].get("pregrasp_offset_dir_z", 0.0)),
             float(stats[key].get("min_max_finger_dist", 999.0)),
             int(key),
@@ -255,6 +260,7 @@ def _make_payload(
                 "min_pass_observations_per_index": args_cli.min_pass_observations_per_index,
                 "min_pass_rate_per_index": args_cli.min_pass_rate_per_index,
                 "grasp_reset_min_pregrasp_z": args_cli.grasp_reset_min_pregrasp_z,
+                "grasp_reset_min_downward_tool_z": args_cli.grasp_reset_min_downward_tool_z,
             },
             "config": {
                 "object_asset_manifest_path": args_cli.object_asset_manifest_path,
@@ -323,8 +329,10 @@ def main() -> None:
             reset_success = task_env.grasp_prior_reset_success.detach().clone()
             quality_success = task_env.grasp_prior_reset_quality_success.detach().clone()
             pregrasp_z = task_env.grasp_prior_reset_offset_dir_w[:, 2].detach().clone()
+            tool_downward_z = (-task_env.grasp_prior_reset_tool_z_axis_w[:, 2]).detach().clone()
             candidate_count_names = (
                 "topdown",
+                "tool_down",
                 "contact_height",
                 "center",
                 "width",
@@ -397,6 +405,7 @@ def main() -> None:
             lifted_cpu = any_lifted.cpu().tolist()
             done_cpu = done_count.cpu().tolist()
             pregrasp_z_cpu = pregrasp_z.cpu().tolist()
+            tool_downward_z_cpu = tool_downward_z.cpu().tolist()
             candidate_counts_cpu = {
                 name: values.cpu().tolist() for name, values in candidate_counts.items()
             }
@@ -457,6 +466,7 @@ def main() -> None:
                     "max_xy_delta": float(max_xy_cpu[env_id]),
                     "min_max_finger_dist": float(min_finger_cpu[env_id]),
                     "pregrasp_offset_dir_z": float(pregrasp_z_cpu[env_id]),
+                    "tool_downward_z": float(tool_downward_z_cpu[env_id]),
                     "has_lifted": bool(lifted_cpu[env_id]),
                     "success": bool(success_cpu[env_id]),
                     "done_count": int(done_cpu[env_id]),

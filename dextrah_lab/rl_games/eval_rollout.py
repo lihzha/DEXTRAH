@@ -348,6 +348,7 @@ def _collect_task_metrics(task_env, actions: torch.Tensor | None = None) -> dict
         "grasp_prior_reset_pregrasp_tip_table_clearance",
         "grasp_prior_reset_projected_exact_tip_table_clearance",
         "grasp_prior_reset_quality_success",
+        "grasp_prior_reset_candidate_tool_down_count",
         "grasp_prior_action_warmstart_active",
         "grasp_prior_action_warmstart_phase",
         "grasp_prior_action_warmstart_policy_action_z",
@@ -407,6 +408,18 @@ def _collect_task_metrics(task_env, actions: torch.Tensor | None = None) -> dict
                     metrics[name] = mean_value
     _add_vector_metrics(metrics, "ee_pos", getattr(task_env, "ee_pos", None), ("x", "y", "z"))
     _add_vector_metrics(metrics, "cube_pos", getattr(task_env, "cube_pos", None), ("x", "y", "z"))
+    _add_vector_metrics(
+        metrics,
+        "grasp_prior_reset_offset_dir",
+        getattr(task_env, "grasp_prior_reset_offset_dir_w", None),
+        ("x", "y", "z"),
+    )
+    tool_z_axis = getattr(task_env, "grasp_prior_reset_tool_z_axis_w", None)
+    _add_vector_metrics(metrics, "grasp_prior_reset_tool_z_axis", tool_z_axis, ("x", "y", "z"))
+    if tool_z_axis is not None:
+        metrics["grasp_prior_reset_tool_downward_z"] = _mean_float(-tool_z_axis[:, 2])
+        metrics["grasp_prior_reset_tool_downward_z_min"] = _tensor_stat_float(-tool_z_axis[:, 2], "min")
+        metrics["grasp_prior_reset_tool_downward_z_max"] = _tensor_stat_float(-tool_z_axis[:, 2], "max")
     _add_vector_metrics(metrics, "traj_target_ee_pos", getattr(task_env, "traj_target_ee_pos", None), ("x", "y", "z"))
     _add_vector_metrics(metrics, "ee_quat", getattr(task_env, "ee_quat", None), ("w", "x", "y", "z"))
     _add_vector_metrics(

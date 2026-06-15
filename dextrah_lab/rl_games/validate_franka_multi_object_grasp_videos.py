@@ -76,6 +76,8 @@ parser.add_argument("--capture_interval", type=int, default=2)
 parser.add_argument("--grasp_reset_attempts", type=int, default=12)
 parser.add_argument("--grasp_reset_require_topdown", action=argparse.BooleanOptionalAction, default=True)
 parser.add_argument("--grasp_reset_min_pregrasp_z", type=float, default=0.45)
+parser.add_argument("--grasp_reset_require_downward_tool_z", action=argparse.BooleanOptionalAction, default=True)
+parser.add_argument("--grasp_reset_min_downward_tool_z", type=float, default=0.45)
 parser.add_argument("--grasp_reset_min_contact_height_above_center", type=float, default=0.0)
 parser.add_argument("--grasp_reset_candidate_count", type=int, default=16)
 parser.add_argument("--grasp_reset_max_center_distance_frac", type=float, default=0.30)
@@ -543,8 +545,14 @@ def _selected_grasp_geometry_snapshot(task_env, env_id: int) -> dict[str, object
         "selected_center_gate_dist": float(task_env.grasp_prior_reset_center_gate_dist[env_id].detach().cpu()),
         "selected_pregrasp_offset_dir": _tensor_list(task_env.grasp_prior_reset_offset_dir_w[env_id]),
         "selected_pregrasp_offset_dir_z": float(task_env.grasp_prior_reset_offset_dir_w[env_id, 2].detach().cpu()),
+        "selected_tool_z_axis": _tensor_list(task_env.grasp_prior_reset_tool_z_axis_w[env_id]),
+        "selected_tool_z_axis_z": float(task_env.grasp_prior_reset_tool_z_axis_w[env_id, 2].detach().cpu()),
+        "selected_tool_downward_z": float((-task_env.grasp_prior_reset_tool_z_axis_w[env_id, 2]).detach().cpu()),
         "selected_candidate_topdown_count": int(
             task_env.grasp_prior_reset_candidate_topdown_count[env_id].detach().cpu()
+        ),
+        "selected_candidate_tool_down_count": int(
+            task_env.grasp_prior_reset_candidate_tool_down_count[env_id].detach().cpu()
         ),
         "selected_candidate_contact_height_count": int(
             task_env.grasp_prior_reset_candidate_contact_height_count[env_id].detach().cpu()
@@ -735,14 +743,19 @@ def _reset_settled_object_then_apply_grasp_prior(env, task_env) -> None:
 
 def _candidate_contact_envs(task_env) -> list[int]:
     min_pregrasp_z = float(args_cli.grasp_reset_min_pregrasp_z)
+    min_downward_tool_z = float(args_cli.grasp_reset_min_downward_tool_z)
     quality = task_env.grasp_prior_reset_quality_success
     if bool(args_cli.grasp_reset_require_topdown):
         quality = quality & (task_env.grasp_prior_reset_offset_dir_w[:, 2] >= min_pregrasp_z)
+    if bool(args_cli.grasp_reset_require_downward_tool_z):
+        quality = quality & ((-task_env.grasp_prior_reset_tool_z_axis_w[:, 2]) >= min_downward_tool_z)
     ordered: list[int] = []
     if not bool(quality.any().item()):
         return ordered
     env_ids = torch.nonzero(quality, as_tuple=False).flatten()
-    z_values = task_env.grasp_prior_reset_offset_dir_w[env_ids, 2]
+    z_values = task_env.grasp_prior_reset_offset_dir_w[env_ids, 2] - task_env.grasp_prior_reset_tool_z_axis_w[
+        env_ids, 2
+    ]
     order = torch.argsort(z_values, descending=True)
     ordered.extend(int(env_ids[index].item()) for index in order)
     return ordered
@@ -759,6 +772,7 @@ def _score_grasp_contact_result(result: dict[str, object]) -> float:
     finger_dist = float(result.get("selected_max_finger_dist_min", 999.0))
     lift_height = float(result.get("selected_lift_height_max", 0.0))
     pregrasp_z = float(result.get("selected_pregrasp_offset_dir_z", -999.0))
+    tool_downward_z = float(result.get("selected_tool_downward_z", -999.0))
     phases = result.get("warmstart_phases", [])
     phase_bonus = 1.0 if isinstance(phases, list) and (1 in phases or 2 in phases) else 0.0
     return (
@@ -766,6 +780,7 @@ def _score_grasp_contact_result(result: dict[str, object]) -> float:
         + (250.0 if done_count == 0 else -50.0 * done_count)
         + 30.0 * phase_bonus
         + 10.0 * pregrasp_z
+        + 10.0 * tool_downward_z
         + 500.0 * min(lift_height, 0.08)
         + 5.0 * min(finger_clearance, 0.10)
         + 5.0 * min(bottom_clearance, 0.02)
@@ -853,6 +868,8 @@ def _rollout_grasp_contact(
                 "selected_pregrasp_offset_dir_z": float(
                     task_env.grasp_prior_reset_offset_dir_w[selected_env, 2].detach().cpu()
                 ),
+                "selected_tool_z_axis_z": float(task_env.grasp_prior_reset_tool_z_axis_w[selected_env, 2].detach().cpu()),
+                "selected_tool_downward_z": float((-task_env.grasp_prior_reset_tool_z_axis_w[selected_env, 2]).detach().cpu()),
                 "selected_object_size": float(
                     task_env._grasp_prior_object_size(selected_env_ids)[0].detach().cpu()
                 ),
@@ -868,6 +885,8 @@ def _rollout_grasp_contact(
     selected_object_size = max(float(item["selected_object_size"]) for item in series)
     selected_tip_max = min(float(item["selected_projected_tip_max_dist"]) for item in series)
     selected_pregrasp_z = max(float(item["selected_pregrasp_offset_dir_z"]) for item in series)
+    selected_tool_z_axis_z = max(float(item["selected_tool_z_axis_z"]) for item in series)
+    selected_tool_downward_z = min(float(item["selected_tool_downward_z"]) for item in series)
     selected_object_xy_delta = float(summary.get("object_xy_delta_max", 999.0))
     max_contact_xy_delta = min(0.06, 0.75 * float(task_env.cfg.prelift_drag_termination_xy_error))
     min_lift_height = max(0.02, float(task_env.cfg.cube_success_lift_height))
@@ -875,6 +894,7 @@ def _rollout_grasp_contact(
     passed = (
         bool(task_env.grasp_prior_reset_quality_success[selected_env].detach().cpu())
         and selected_pregrasp_z >= float(args_cli.grasp_reset_min_pregrasp_z)
+        and selected_tool_downward_z >= float(args_cli.grasp_reset_min_downward_tool_z)
         and selected_lift >= min_lift_height
         and float(summary.get("bottom_clearance_min", -1.0)) >= -0.01
         and float(summary.get("finger_table_clearance_min", -1.0)) >= float(task_env.cfg.finger_table_penetration_termination_margin)
@@ -894,6 +914,8 @@ def _rollout_grasp_contact(
         "selected_gripper_width_min": selected_width,
         "selected_projected_tip_max_dist_min": selected_tip_max,
         "selected_pregrasp_offset_dir_z": selected_pregrasp_z,
+        "selected_tool_z_axis_z": selected_tool_z_axis_z,
+        "selected_tool_downward_z": selected_tool_downward_z,
         "selected_object_size": selected_object_size,
         "selected_object_xy_delta_max": selected_object_xy_delta,
         "selected_contact_xy_delta_threshold": max_contact_xy_delta,
@@ -1052,6 +1074,8 @@ def _make_env(*, grasp_prior: bool):
     env_cfg.grasp_prior_reset_candidate_count = int(args_cli.grasp_reset_candidate_count)
     env_cfg.grasp_prior_reset_require_topdown = bool(args_cli.grasp_reset_require_topdown)
     env_cfg.grasp_prior_reset_min_pregrasp_z = float(args_cli.grasp_reset_min_pregrasp_z)
+    env_cfg.grasp_prior_reset_require_downward_tool_z = bool(args_cli.grasp_reset_require_downward_tool_z)
+    env_cfg.grasp_prior_reset_min_downward_tool_z = float(args_cli.grasp_reset_min_downward_tool_z)
     env_cfg.grasp_prior_reset_min_contact_height_above_center = float(
         args_cli.grasp_reset_min_contact_height_above_center
     )
@@ -1200,6 +1224,8 @@ def main() -> None:
             ),
             "grasp_reset_require_topdown": args_cli.grasp_reset_require_topdown,
             "grasp_reset_min_pregrasp_z": args_cli.grasp_reset_min_pregrasp_z,
+            "grasp_reset_require_downward_tool_z": args_cli.grasp_reset_require_downward_tool_z,
+            "grasp_reset_min_downward_tool_z": args_cli.grasp_reset_min_downward_tool_z,
             "grasp_reset_min_contact_height_above_center": getattr(
                 resolved_env_cfg, "grasp_prior_reset_min_contact_height_above_center", None
             ),

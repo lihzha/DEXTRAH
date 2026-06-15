@@ -81,6 +81,10 @@ class DextrahFrankaCubeGraspEnvCfg(DextrahFrankaStarKittingEnvCfg):
     grasp_prior_reset_ik_pos_tolerance = 0.020
     grasp_prior_reset_ik_rot_tolerance = 0.35
     grasp_prior_fallback_to_default_on_ik_failure = True
+    # Multi-object subclasses may enforce this as a safety gate; the single
+    # cube known-good reset path keeps it diagnostic-only by default.
+    grasp_prior_reset_require_downward_tool_z = False
+    grasp_prior_reset_min_downward_tool_z = 0.45
     # Optional hard caps for reset quality.  A value <= 0 keeps the original
     # object-size-scaled gate, which is appropriate for the cube baseline.
     grasp_prior_reset_quality_max_finger_center_dist = 0.0

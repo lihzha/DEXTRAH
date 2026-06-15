@@ -850,6 +850,8 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
 
         pregrasp_z = candidate_pregrasp_offset_dir_w[:, :, 2]
         topdown_ok = pregrasp_z >= float(self.cfg.grasp_prior_reset_min_pregrasp_z)
+        tool_downward_z = -candidate_tool_z_axis_w[:, :, 2]
+        tool_down_ok = tool_downward_z >= float(getattr(self.cfg, "grasp_prior_reset_min_downward_tool_z", 0.0))
         min_contact_height = float(getattr(self.cfg, "grasp_prior_reset_min_contact_height_above_center", -math.inf))
         if bool(self.cfg.grasp_prior_reset_require_topdown) and math.isfinite(min_contact_height):
             contact_height_ok = (~candidate_has_contact) | (
@@ -884,12 +886,16 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         valid = candidate_pregrasp_farther & width_ok & center_ok & table_ok
         if bool(self.cfg.grasp_prior_reset_require_topdown):
             valid = valid & topdown_ok & contact_height_ok
+        if bool(getattr(self.cfg, "grasp_prior_reset_require_downward_tool_z", False)):
+            valid = valid & tool_down_ok
         width_bonus = torch.clamp(candidate_required_width / max(float(self.cfg.max_gripper_width), 1.0e-6), 0.0, 1.0)
-        score = candidate_confidence + pregrasp_z + 0.75 * width_bonus
+        score = candidate_confidence + pregrasp_z + tool_downward_z + 0.75 * width_bonus
         score = score - 6.0 * normalized_center_dist - normalized_tool_center_dist
         fallback_ok = candidate_pregrasp_farther & width_ok & table_ok
         if bool(self.cfg.grasp_prior_reset_require_topdown):
             fallback_ok = fallback_ok & topdown_ok & contact_height_ok
+        if bool(getattr(self.cfg, "grasp_prior_reset_require_downward_tool_z", False)):
+            fallback_ok = fallback_ok & tool_down_ok
         fallback_score = torch.where(fallback_ok, score, score - 1.0e5)
         scored = torch.where(valid, score, score - 1.0e6)
         has_valid = valid.any(dim=1, keepdim=True)
@@ -944,6 +950,7 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             "exact_ee_quat_w": exact_ee_quat_w,
             "target_ee_pos_w": target_ee_pos_w,
             "target_ee_quat_w": target_ee_quat_w,
+            "tool_z_axis_w": tool_z_axis_w,
             "pregrasp_offset_dir_w": pregrasp_offset_dir_w,
             "exact_tool_dist": exact_tool_dist,
             "exact_reference_dist": exact_reference_dist,
@@ -955,6 +962,7 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             "center_gate_dist": center_gate_dist,
             "has_contact_location": has_contact_location,
             "candidate_topdown_count": topdown_ok.sum(dim=1),
+            "candidate_tool_down_count": tool_down_ok.sum(dim=1),
             "candidate_contact_height_count": contact_height_ok.sum(dim=1),
             "candidate_center_count": center_ok.sum(dim=1),
             "candidate_width_count": width_ok.sum(dim=1),
@@ -1008,6 +1016,11 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
                 mask = mask & (
                     targets["contact_reference_w"][:, 2] >= targets["cube_pos_w"][:, 2] + min_contact_height
                 )
+        if bool(getattr(self.cfg, "grasp_prior_reset_require_downward_tool_z", False)):
+            tool_z_axis_w = targets.get("tool_z_axis_w", targets["pregrasp_offset_dir_w"])
+            mask = mask & (
+                -tool_z_axis_w[:, 2] >= float(getattr(self.cfg, "grasp_prior_reset_min_downward_tool_z", 0.0))
+            )
         object_size = torch.clamp(self._grasp_prior_object_size(env_ids), min=1.0e-4)
         center_dist = targets.get("center_gate_dist", targets["exact_tool_dist"])
         center_dist_ok = center_dist <= (

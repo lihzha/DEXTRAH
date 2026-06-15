@@ -1343,3 +1343,45 @@ Final Selected Policy:
 
 Next:
 - No active jobs remain. Commit this worklog update and report the selected checkpoint, metrics, and caveats.
+
+## 2026-06-15T15:45:35Z - Add explicit downward tool-axis reset gate
+
+Goal:
+- Fix the remaining below-table reset root cause reported from visual inspection: a grasp could pass the old topdown filter because its pregrasp displacement was upward, while the actual GraspGen/Franka tool z-axis still pointed upward from below the object.
+
+Hypothesis:
+- GraspGenX/Franka priors use the panda-hand tool z-axis as the approach axis. A valid tabletop top-side grasp should have `tool_z_axis_w.z <= -threshold` (equivalently `-tool_z_axis_w.z >= threshold`). The previous `pregrasp_offset_dir_w.z >= threshold` check was necessary for table clearance but not sufficient to reject below-table approach orientations.
+
+Change:
+- Added multi-object config gates `grasp_prior_reset_require_downward_tool_z=True` and `grasp_prior_reset_min_downward_tool_z=0.45`.
+- Multi-object candidate selection now requires `-candidate_tool_z_axis_w.z >= min_downward_tool_z` for valid and fallback reset samples, and the post-IK quality mask enforces the same condition.
+- Added reset diagnostics for selected `tool_z_axis_w`, `tool_downward_z`, and per-reset `candidate_tool_down_count`.
+- Updated video validation and verified-grasp collection to pass/log the new gate and to fail videos whose selected grasp does not satisfy the tool-axis condition.
+- Updated policy eval traces to serialize the selected tool-axis and downward score, so PPO videos can be audited with the same invariant.
+- Updated l401 train/eval/BC/verified-grasp/video wrappers to expose and echo the new settings.
+
+Version Control:
+- agent_id: dextrah-multiobject-grasp-prior-finish-20260615T074722Z
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-finish-20260615T074722Z`
+- worklog: `worklogs/dextrah-multiobject-grasp-prior/dextrah-multiobject-grasp-prior-finish-20260615T074722Z.md`
+- branch: `codex/dextrah-multiobject-grasp-prior-finish-20260615T074722Z`
+- base_commit: `16acd21765e9a38b48727bb9b437d3a597f1aa01`
+- implementation_commit: pending
+- changed_files: `dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py`, `dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py`, `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`, `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env_cfg.py`, `dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py`, `dextrah_lab/rl_games/collect_franka_multi_object_verified_grasps.py`, `dextrah_lab/rl_games/eval_rollout.py`, and cluster wrappers.
+
+Command / Job:
+- local checks:
+  - `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env_cfg.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py dextrah_lab/rl_games/collect_franka_multi_object_verified_grasps.py dextrah_lab/rl_games/eval_rollout.py`
+  - `bash -n cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh cluster/sbatch_eval_franka_multi_object_grasp_1gpu.sh cluster/sbatch_collect_franka_multi_object_verified_grasps_1gpu.sh cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh`
+  - `git diff --check`
+
+Result:
+- status: local checks passed
+- metrics/artifacts: no cluster artifacts yet
+- key evidence: syntax checks, wrapper shell checks, and whitespace diff check all exited 0.
+
+Analysis:
+- The new gate is deliberately stricter than the old pregrasp-z check. Existing verified-index caches may contain samples that now fail the live reset filter; if that makes reset quality sparse, regenerate the cache under the new `tool_downward_z` invariant instead of relaxing the gate.
+
+Next:
+- Commit and push the patch, deploy the exact commit to the l401 agent worktree, then run a bounded video validation requiring `selected_tool_z_axis_z <= -0.45` and visually inspect the produced video before any further RL training.
