@@ -32,6 +32,7 @@ parser.add_argument("--cycles", type=int, default=120)
 parser.add_argument("--min_cycles", type=int, default=10)
 parser.add_argument("--target_per_object", type=int, default=8)
 parser.add_argument("--min_pass_observations_per_index", type=int, default=1)
+parser.add_argument("--min_pass_rate_per_index", type=float, default=0.0)
 parser.add_argument("--max_indices_per_object", type=int, default=128)
 parser.add_argument("--score_steps", type=int, default=220)
 parser.add_argument("--min_lift_height", type=float, default=0.10)
@@ -180,11 +181,23 @@ def _empty_object_records(task_env) -> dict[str, dict[str, Any]]:
     return objects
 
 
-def _sorted_indices(stats: dict[str, dict[str, Any]], max_indices: int, min_pass_observations: int) -> list[int]:
+def _sorted_indices(
+    stats: dict[str, dict[str, Any]],
+    max_indices: int,
+    min_pass_observations: int,
+    min_pass_rate: float,
+) -> list[int]:
     min_pass_observations = max(int(min_pass_observations), 1)
+    min_pass_rate = max(float(min_pass_rate), 0.0)
     keys = sorted(
-        (key for key, value in stats.items() if int(value.get("pass_observations", 0)) >= min_pass_observations),
+        (
+            key
+            for key, value in stats.items()
+            if int(value.get("pass_observations", 0)) >= min_pass_observations
+            and float(value.get("pass_rate", 0.0)) >= min_pass_rate
+        ),
         key=lambda key: (
+            -float(stats[key].get("pass_rate", 0.0)),
             -float(stats[key].get("max_lift_height", 0.0)),
             -int(stats[key].get("pass_observations", 0)),
             -float(stats[key].get("pregrasp_offset_dir_z", 0.0)),
@@ -217,6 +230,7 @@ def _make_payload(
                 stats,
                 max_indices,
                 int(args_cli.min_pass_observations_per_index),
+                float(args_cli.min_pass_rate_per_index),
             )
     counts = {uuid: len(record["indices"]) for uuid, record in objects.items()}
     indices_by_uuid = {uuid: list(record["indices"]) for uuid, record in objects.items()}
@@ -230,6 +244,7 @@ def _make_payload(
             "cycles_completed": cycles_completed,
             "target_per_object": args_cli.target_per_object,
             "min_pass_observations_per_index": args_cli.min_pass_observations_per_index,
+            "min_pass_rate_per_index": args_cli.min_pass_rate_per_index,
             "max_indices_per_object": args_cli.max_indices_per_object,
             "thresholds": {
                 "min_lift_height": args_cli.min_lift_height,
@@ -238,6 +253,7 @@ def _make_payload(
                 "max_done_count": args_cli.max_done_count,
                 "require_success": args_cli.require_success,
                 "min_pass_observations_per_index": args_cli.min_pass_observations_per_index,
+                "min_pass_rate_per_index": args_cli.min_pass_rate_per_index,
                 "grasp_reset_min_pregrasp_z": args_cli.grasp_reset_min_pregrasp_z,
             },
             "config": {
@@ -419,14 +435,17 @@ def main() -> None:
                 for name in candidate_count_names:
                     key = f"candidate_{name}_count_sum"
                     diag[key] = int(diag.get(key, 0)) + int(candidate_counts_cpu[name][env_id])
-                if not bool(passes_cpu[env_id]):
-                    continue
                 index = int(sample_indices_cpu[env_id])
                 if index < 0:
                     continue
-                record["pass_count"] += 1
                 stats = record["stats"]
                 key = str(index)
+                previous = stats.get(key, {})
+                attempt_observations = int(previous.get("attempt_observations", 0)) + 1
+                pass_observations = int(previous.get("pass_observations", 0))
+                if bool(passes_cpu[env_id]):
+                    pass_observations += 1
+                    record["pass_count"] += 1
                 candidate = {
                     "sample_index": index,
                     "object_index": int(object_idx),
@@ -441,17 +460,25 @@ def main() -> None:
                     "has_lifted": bool(lifted_cpu[env_id]),
                     "success": bool(success_cpu[env_id]),
                     "done_count": int(done_cpu[env_id]),
-                    "pass_observations": 1,
+                    "attempt_observations": attempt_observations,
+                    "pass_observations": pass_observations,
+                    "pass_rate": float(pass_observations) / float(max(attempt_observations, 1)),
                 }
                 for name in candidate_count_names:
                     candidate[f"candidate_{name}_count"] = int(candidate_counts_cpu[name][env_id])
-                previous = stats.get(key)
-                if previous is not None:
-                    candidate["pass_observations"] = int(previous.get("pass_observations", 1)) + 1
-                if previous is None or float(candidate["max_lift_height"]) > float(previous.get("max_lift_height", 0.0)):
+                if not bool(passes_cpu[env_id]) and previous:
+                    previous["attempt_observations"] = attempt_observations
+                    previous["pass_observations"] = pass_observations
+                    previous["pass_rate"] = candidate["pass_rate"]
+                    continue
+                if not bool(passes_cpu[env_id]) or float(candidate["max_lift_height"]) > float(
+                    previous.get("max_lift_height", 0.0)
+                ):
                     stats[key] = candidate
                 else:
-                    previous["pass_observations"] = candidate["pass_observations"]
+                    previous["attempt_observations"] = attempt_observations
+                    previous["pass_observations"] = pass_observations
+                    previous["pass_rate"] = candidate["pass_rate"]
 
             for diag in per_object_cycle.values():
                 env_count = max(int(diag["envs"]), 1)
