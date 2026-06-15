@@ -88,10 +88,11 @@ class DextrahBimanualYAMCubeGraspEnvCfg(DirectRLEnvCfg):
     cube_spawn_xy_randomization = 0.015
     cube_spawn_yaw_randomization_deg = 0.0
 
-    # The YAM linear fingers bottom out at roughly 10.8 cm separation in Isaac.
-    # Keep the training cube wider than that so unassisted side pinches are
-    # physically possible; the old 10 cm cube could be surrounded but not held.
-    cube_size = 0.12
+    # The YAM linear fingers bottom out at roughly 10.8 cm separation in Isaac,
+    # and their reachable pinch band sits around 13-14 cm above the table.
+    # A 16 cm cube is wide enough to pinch and tall enough for that reachable
+    # band to contact the side face instead of lifting above the object.
+    cube_size = 0.16
     cube_spawn_z = table_surface_z + cube_size / 2.0 + 0.005
     cube_lift_height = 0.14
     cube_success_lift_height = 0.10
@@ -148,7 +149,7 @@ class DextrahBimanualYAMCubeGraspEnvCfg(DirectRLEnvCfg):
     cube_static_friction = 2.4
     cube_dynamic_friction = 1.9
     cube_restitution = 0.0
-    cube_density = 80.0
+    cube_density = 35.0
     cube_contact_offset = 0.004
     cube_rest_offset = 0.0
     cube_solver_position_iterations = 14
@@ -231,8 +232,8 @@ class DextrahBimanualYAMCubeGraspEnvCfg(DirectRLEnvCfg):
     bimanual_reference_max_action = 1.0
     bimanual_reference_lift_gain = 0.35
     bimanual_reference_lift_max_action = 0.45
-    bimanual_reference_contact_side_margin = 0.010
-    bimanual_reference_cube_center_to_hold_z = 0.032
-    bimanual_reference_min_hold_z = 0.105
-    bimanual_reference_contact_dist = 0.155
+    bimanual_reference_contact_side_margin = 0.004
+    bimanual_reference_cube_center_to_hold_z = 0.055
+    bimanual_reference_min_hold_z = 0.130
+    bimanual_reference_contact_dist = 0.180
     bimanual_reference_closed_width_fraction = 0.65

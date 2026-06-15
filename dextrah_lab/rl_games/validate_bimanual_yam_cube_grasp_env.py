@@ -723,12 +723,15 @@ def _run_scripted_demo(
     start_right_width = _mean(task_env.right_gripper_width)
     target_cube_pos = task_env.cube_initial_pos.clone()
     cube_half_size = 0.5 * float(task_env.cfg.cube_size)
-    contact_side_offset = cube_half_size + 0.022
+    contact_side_offset = cube_half_size + float(task_env.cfg.bimanual_reference_contact_side_margin)
     standoff_side_offset = contact_side_offset + 0.080
-    cube_center_to_hold_z = 0.038
+    cube_center_to_hold_z = float(task_env.cfg.bimanual_reference_cube_center_to_hold_z)
     hold_z = torch.maximum(
         target_cube_pos[:, 2] + cube_center_to_hold_z,
-        torch.full_like(target_cube_pos[:, 2], float(task_env.cfg.table_surface_z) + 0.090),
+        torch.full_like(
+            target_cube_pos[:, 2],
+            float(task_env.cfg.table_surface_z) + float(task_env.cfg.bimanual_reference_min_hold_z),
+        ),
     )
     contact_left_hold = target_cube_pos.clone()
     contact_right_hold = target_cube_pos.clone()

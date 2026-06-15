@@ -121,3 +121,98 @@ Next:
 - Commit and push the graspability fix.
 - Update the A100 agent worktree to the exact commit.
 - Rerun the `reference_delta` eval as the strict action-interface RLability gate before launching PPO.
+
+## 2026-06-15 21:00Z - reference eval for graspable cube
+
+Goal:
+- Verify that the 12 cm YAM cube task is physically liftable through the 14D RL action interface before PPO.
+
+Version state:
+- local_commit: `9084b2b2df47d6202738adc08bba3f1951f543d7`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/bimanual-yam-cube-rl-20260615T203824Z`
+- remote_commit: `9084b2b2df47d6202738adc08bba3f1951f543d7`
+
+Command/job:
+- A100 job: `29115702`
+- run_name: `yam_cube_reference_delta_9084b2b_20260615T2100Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_bimanual_yam_cube_29115702.out`
+- metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/yam_cube_reference_delta_9084b2b_20260615T2100Z/metrics.json`
+- command: `sbatch --parsable --partition=batch_singlenode,grizzly,polar,polar3,polar4,interactive_singlenode --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/bimanual-yam-cube-rl-20260615T203824Z,RUN_NAME=yam_cube_reference_delta_9084b2b_20260615T2100Z,ACTION_SOURCE=reference_delta,CHECKPOINT=,NUM_ENVS=1,NUM_STEPS=720,CAPTURE_VIDEO=False,VIDEO_LENGTH=720,PRINT_INTERVAL=40,SEED=42,CUBE_SPAWN_XY_RANDOMIZATION=0.0,USE_CUDA_GRAPH=False,PREPARE_YAM_ASSETS=auto cluster/sbatch_eval_bimanual_yam_cube_grasp_1gpu.sh`
+
+Success criteria:
+- `eval_success_rate > 0`, `success_ever_rate > 0`, and max cube lift at least `0.10 m`.
+- No validator-only assist and no checkpoint/policy source.
+
+Status:
+- Complete; failed the gate.
+
+Result/evidence:
+- `eval_success_rate=0.0`, `success_ever_rate=0.0`, `cube_lift_height_max_by_env=[0.0]`.
+- First attempt reached side success (`max_bimanual_side_success=1.0`) and lift actions fired (`reference_delta_action_z_mean.max=0.45`), but the cube center stayed at table height.
+- Best observed first-attempt hold distance was about `0.121 m`; closed gripper width was about `0.1078 m`.
+
+Analysis:
+- The 12 cm cube fixes the finger-width mismatch, but the current task-space reference still lifts without producing a load-bearing pinch.
+- Run the strict joint-space validator next. If it lifts, the environment/contact setup is usable and the RL action prior needs a better reference; if not, continue physics/contact tuning.
+
+## 2026-06-15 21:10Z - strict validator for graspable cube
+
+Goal:
+- Test the existing bimanual scripted validator with no assist on the 12 cm cube.
+
+Version state:
+- local_commit: `9084b2b2df47d6202738adc08bba3f1951f543d7`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/bimanual-yam-cube-rl-20260615T203824Z`
+- remote_commit: `9084b2b2df47d6202738adc08bba3f1951f543d7`
+
+Command/job:
+- A100 job: `29115889`
+- run_name: `yam_cube_strict_validator_9084b2b_20260615T2110Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_bimanual_yam_cube_29115889.out`
+- metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/yam_cube_strict_validator_9084b2b_20260615T2110Z/metrics.json`
+- command: `sbatch --parsable --partition=batch_singlenode,grizzly,polar,polar3,polar4,interactive_singlenode --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/bimanual-yam-cube-rl-20260615T203824Z,CODE_COMMIT=9084b2b2df47d6202738adc08bba3f1951f543d7,RUN_NAME=yam_cube_strict_validator_9084b2b_20260615T2110Z,NUM_ENVS=1,NUM_STEPS=560,CAPTURE_VIDEO=False,VIDEO_LENGTH=560,PRINT_INTERVAL=40,SEED=42,CUBE_SPAWN_XY_RANDOMIZATION=0.0,ALLOW_GRASP_ASSIST=False,REQUIRE_UNASSISTED_LIFT=True,DISABLE_FABRIC=True,PREPARE_YAM_ASSETS=auto cluster/sbatch_validate_bimanual_yam_cube_grasp_env_1gpu.sh`
+
+Success criteria:
+- Validator exits zero and all checks pass, especially `scripted_demo_lifts_cube`, `scripted_demo_success_predicate`, and `scripted_demo_unassisted_physical_lift`.
+
+Status:
+- Complete; failed the strict RLability gate.
+
+Result/evidence:
+- Validator exited nonzero with `passed=false`.
+- Failed checks:
+  - `scripted_demo_slow_approach_reaches_cube_contact`: min left/right hold distances `0.1129/0.1066 m`, but max hold distance did not satisfy the `0.120 m` all-hands contact gate.
+  - `scripted_demo_lifts_cube`: `max_lift=0.0453 m`, required `0.10 m`.
+  - `scripted_demo_success_predicate`: max success rate `0.0`.
+  - `scripted_demo_unassisted_physical_lift`: false.
+- Useful geometry: best hold points were around z `0.135-0.138 m`, while the 12 cm cube side face ended at z `0.12 m`.
+
+Analysis:
+- The 12 cm cube is wide enough but still too short for the YAM's reachable pinch band. Both the reference eval and joint-space validator were lifting above the side face.
+- Next change should align object height with the actual reachable grasp band, and the validator should use env-configured reference offsets instead of hardcoded offsets.
+
+## 2026-06-15 21:18Z - align cube height and validator contact targets
+
+Goal:
+- Make the cube physically graspable by the YAM reachable side-pinch band and keep validator/reference geometry tied to the env config.
+
+Change:
+- Increased default cube edge length from `0.12 m` to `0.16 m`.
+- Reduced density from `80` to `35 kg/m^3`, keeping the larger cube near the previous mass scale.
+- Retuned reference contact geometry:
+  - `bimanual_reference_contact_side_margin=0.004`
+  - `bimanual_reference_cube_center_to_hold_z=0.055`
+  - `bimanual_reference_min_hold_z=0.130`
+  - `bimanual_reference_contact_dist=0.180`
+- Updated `validate_bimanual_yam_cube_grasp_env.py` to use those env config fields for contact side offset and hold height.
+- Added `cube_initial_pos`, `cube_goal_pos`, left/right hold positions, and left/right TCP positions to eval trace metrics.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_env_cfg.py dextrah_lab/rl_games/validate_bimanual_yam_cube_grasp_env.py dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/train.py`
+- `bash -n cluster/sbatch_validate_bimanual_yam_cube_grasp_env_1gpu.sh cluster/sbatch_eval_bimanual_yam_cube_grasp_1gpu.sh cluster/sbatch_train_bimanual_yam_cube_grasp_1gpu.sh`
+- `git diff --check`
+- Result: passed.
+
+Next:
+- Commit, push, update the A100 worktree.
+- Rerun strict validator first, then reference-delta eval if validator succeeds.

@@ -442,6 +442,12 @@ def _collect_task_metrics(task_env, actions: torch.Tensor | None = None) -> dict
                     metrics[name] = mean_value
     _add_vector_metrics(metrics, "ee_pos", getattr(task_env, "ee_pos", None), ("x", "y", "z"))
     _add_vector_metrics(metrics, "cube_pos", getattr(task_env, "cube_pos", None), ("x", "y", "z"))
+    _add_vector_metrics(metrics, "cube_initial_pos", getattr(task_env, "cube_initial_pos", None), ("x", "y", "z"))
+    _add_vector_metrics(metrics, "cube_goal_pos", getattr(task_env, "cube_goal_pos", None), ("x", "y", "z"))
+    _add_vector_metrics(metrics, "left_hold_pos", getattr(task_env, "left_hold_pos", None), ("x", "y", "z"))
+    _add_vector_metrics(metrics, "right_hold_pos", getattr(task_env, "right_hold_pos", None), ("x", "y", "z"))
+    _add_vector_metrics(metrics, "left_tcp_pos", getattr(task_env, "left_tcp_pos", None), ("x", "y", "z"))
+    _add_vector_metrics(metrics, "right_tcp_pos", getattr(task_env, "right_tcp_pos", None), ("x", "y", "z"))
     _add_vector_metrics(metrics, "traj_target_ee_pos", getattr(task_env, "traj_target_ee_pos", None), ("x", "y", "z"))
     _add_vector_metrics(metrics, "ee_quat", getattr(task_env, "ee_quat", None), ("w", "x", "y", "z"))
     _add_vector_metrics(
