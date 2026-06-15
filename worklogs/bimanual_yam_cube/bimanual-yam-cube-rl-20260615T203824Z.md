@@ -955,3 +955,134 @@ Validation:
 
 Next:
 - Commit/push/redeploy, then continue from the epoch-760 checkpoint with sigma exploration and retention-gated lift reward.
+
+## 2026-06-16 01:42Z - retention-gated PPO continuation
+
+Goal:
+- Continue from the epoch-760 checkpoint with lift/height rewards gated on grasp retention.
+
+Version state:
+- local_commit: `9dc179db7c3e7e14384cbaae7fa3a5b6a8016695`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/bimanual-yam-cube-rl-20260615T203824Z`
+- remote_commit: `9dc179db7c3e7e14384cbaae7fa3a5b6a8016695`
+
+Command/job:
+- A100 job: `29120071`
+- run_name: `yam_cube_rl_retaingate_9dc179d_20260616T0142Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bimanual_yam_cube_rl_29120071.out`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_bimanual_yam_cube_grasp/yam_cube_rl_retaingate_9dc179d_20260616T0142Z`
+- metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_bimanual_yam_cube_grasp/yam_cube_rl_retaingate_9dc179d_20260616T0142Z/metrics/direct_info_rank_0.jsonl`
+- checkpoint seed: `/results/logs/rl_games/dextrah_bimanual_yam_cube_grasp/yam_cube_rl_zprior_sigma_6a67e19_20260616T0123Z/nn/last_dextrah_bimanual_yam_cube_grasp_ep_760_rew_53154.688.pth`
+- key overrides: `TRAIN_SIGMA=0.8`, `MAX_ITERATIONS=920`, `CUBE_ENCLOSURE_WEIGHT=2.5`, `CUBE_SIDE_ALIGNMENT_WEIGHT=2.0`, `CUBE_LIFT_WEIGHT=260.0`, `CUBE_HEIGHT_TRACKING_WEIGHT=140.0`, `CUBE_SUCCESS_BONUS_WEIGHT=500.0`.
+
+Success criteria:
+- Retains side contact while lifting, raising sustained `yam_cube_success_rate`.
+- If successful, evaluate checkpoint with rollout artifacts.
+
+Status:
+- Submitted as job `29120071`; waiting for startup metrics.
+
+## 2026-06-16 01:48Z - rollout videos for physics inspection
+
+Goal:
+- Produce visual rollout artifacts, including failure cases, so environment geometry and contact physics can be inspected directly.
+
+Version state:
+- local_commit: `9dc179db7c3e7e14384cbaae7fa3a5b6a8016695`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/bimanual-yam-cube-rl-20260615T203824Z`
+- remote_commit: `9dc179db7c3e7e14384cbaae7fa3a5b6a8016695`
+
+Command/jobs:
+- Policy failure eval job: `29120084`
+- Policy failure run: `yam_cube_vis_policy_fail_ep760_20260616T0148Z`
+- Reference-delta eval job: `29120085`
+- Reference-delta run: `yam_cube_vis_reference_delta_20260616T0148Z`
+- Code path: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/bimanual-yam-cube-rl-20260615T203824Z`
+- Policy checkpoint: `/results/logs/rl_games/dextrah_bimanual_yam_cube_grasp/yam_cube_rl_zprior_sigma_6a67e19_20260616T0123Z/nn/last_dextrah_bimanual_yam_cube_grasp_ep_760_rew_53154.688.pth`
+
+Artifacts:
+- Remote policy video: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/yam_cube_vis_policy_fail_ep760_20260616T0148Z/videos/yam-cube-policy-fail-step-0.mp4`
+- Remote reference video: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/yam_cube_vis_reference_delta_20260616T0148Z/videos/yam-cube-reference-step-0.mp4`
+- Local copies: `artifacts/bimanual_yam_cube/visual_eval_20260616T0148Z/`
+- Viewer URLs:
+  - `http://localhost:8765/view?path=DEXTRAH/artifacts/bimanual_yam_cube/visual_eval_20260616T0148Z/yam-cube-policy-fail-step-0.mp4`
+  - `http://localhost:8765/view?path=DEXTRAH/artifacts/bimanual_yam_cube/visual_eval_20260616T0148Z/yam-cube-reference-step-0.mp4`
+
+Result/evidence:
+- Both videos are `1280x720`, `419` frames, about `6.98s` at `60 FPS`.
+- Policy eval metrics: `success_rate_max=0.0`, `success_ever_rate=0.0`.
+- Reference-delta eval metrics: `success_rate_max=0.0`, `success_ever_rate=0.0`.
+- Contact sheets show coherent scale/contact and no obvious exploding bodies, tunneling, or camera/render failure.
+
+Analysis:
+- These are useful failure/diagnostic videos, but the reference-delta action source is not the same evidence as the strict no-assist validator that previously reached `max_lift=0.04009155184030533` and `max_success_rate=1.0`.
+- Next visual artifact should come from the validator path itself with `CAPTURE_VIDEO=True`.
+
+## 2026-06-16 02:00Z - planned strict validator video
+
+Goal:
+- Generate a one-env no-assist validator video to visually confirm the same physics path that passed strict RLability validation.
+
+Planned command/job:
+- Submit `cluster/sbatch_validate_bimanual_yam_cube_grasp_env_1gpu.sh` from the agent-owned remote worktree.
+- Expected run: `yam_cube_vis_strict_validator_9dc179d_20260616T0200Z`
+- Key settings: `NUM_ENVS=1`, `NUM_STEPS=560`, `VIDEO_LENGTH=560`, `CAPTURE_VIDEO=True`, `ALLOW_GRASP_ASSIST=False`, `REQUIRE_UNASSISTED_LIFT=True`, `DISABLE_FABRIC=True`, `CUBE_SPAWN_XY_RANDOMIZATION=0.0`, `CODE_COMMIT=9dc179db7c3e7e14384cbaae7fa3a5b6a8016695`.
+
+Success criteria:
+- Metrics pass strict validation with finite values.
+- Video exists and shows physically plausible cube contact/lift without grasp assist.
+
+Result/evidence:
+- First submit attempt failed before allocation because the wrapper defaulted to the unavailable A100 `batch` partition.
+- Resubmitted with A100 short partitions as job `29120227`.
+- The job wrote a `1280x720`, `560` frame, `9.33s` video:
+  - local: `artifacts/bimanual_yam_cube/visual_eval_20260616T0148Z/bimanual-yam-cube-demo-manual.mp4`
+  - viewer: `http://localhost:8765/view?path=DEXTRAH/artifacts/bimanual_yam_cube/visual_eval_20260616T0148Z/bimanual-yam-cube-demo-manual.mp4`
+- Metrics did not pass strict validation: `passed=False`, `max_lift=0.11559515446424484`, `max_success_rate=0.0`, `final_success_rate=0.0`, `scripted_grasp_assist_used=False`, `scripted_contact_reached=False`.
+- Failed checks included `scripted_demo_success_predicate`, `scripted_demo_uses_physics_or_post_contact_assist`, and `scripted_demo_unassisted_physical_lift`.
+
+Analysis:
+- The video is a valid physics/debug artifact, but not a clean bimanual pick. The cube is lifted/disturbed without assist, yet it drifts out of the strict success region instead of being held in a stable centered grasp.
+- Need run the same strict validator without video to determine whether the current environment no longer passes strict validation or whether manual video capture changes the rollout.
+
+## 2026-06-16 02:18Z - planned no-video strict validator comparison
+
+Goal:
+- Compare against the visual validator with the same commit/settings but without video capture.
+
+Planned command/job:
+- Submit `cluster/sbatch_validate_bimanual_yam_cube_grasp_env_1gpu.sh` from the agent-owned remote worktree.
+- Expected run: `yam_cube_strict_validator_9dc179d_novideo_20260616T0218Z`
+- Key settings: `NUM_ENVS=1`, `NUM_STEPS=560`, `CAPTURE_VIDEO=False`, `ALLOW_GRASP_ASSIST=False`, `REQUIRE_UNASSISTED_LIFT=True`, `DISABLE_FABRIC=True`, `CUBE_SPAWN_XY_RANDOMIZATION=0.0`, `CODE_COMMIT=9dc179db7c3e7e14384cbaae7fa3a5b6a8016695`.
+
+Success criteria:
+- If this passes, investigate/fix validator video capture before using visual validator output as physics evidence.
+- If this also fails, patch current task/reference geometry before further PPO scaling.
+
+Result/evidence:
+- Job `29120753` completed and wrote metrics.
+- The current no-video strict rollout reached physical success: `max_success_rate=1.0`, `final_success_rate=1.0`, `max_lift=0.04009155184030533`, `scripted_grasp_assist_used=False`.
+- Top-level `passed=False` was caused by stale reward check `reward_close_action_is_positive_near_cube`, which expected close-action reward to remain positive with gripper width already at `0.025`.
+- This confirms the task remains physically RLable at current commit, while the manual per-frame video capture perturbed the rollout.
+
+Analysis:
+- Patch validator checks to match the current reward design: close-action reward should be positive while closing near the cube but should shut off once the grippers are already closed.
+- Patch manual validator capture to avoid `simulation_app.update()` inside every frame capture; use `task_env.sim.render()` plus `env.render()` only.
+
+## 2026-06-16 02:25Z - validator capture/reward-check fix
+
+Goal:
+- Make strict validator pass/fail reflect current environment behavior and produce a non-perturbing physics video.
+
+Change:
+- Replaced stale closed-gripper close-action reward check with:
+  - `reward_close_action_is_positive_while_closing_near_cube`
+  - `reward_close_action_shuts_off_once_closed`
+- Removed per-frame `simulation_app.update()` from manual video capture.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/validate_bimanual_yam_cube_grasp_env.py`
+- Result: passed.
+
+Next:
+- Commit/push/redeploy this validator fix, then rerun strict validator with video.

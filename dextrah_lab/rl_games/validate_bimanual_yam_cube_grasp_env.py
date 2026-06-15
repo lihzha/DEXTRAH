@@ -358,15 +358,24 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
         sided_reward=_mean(_reward_total(**sided)),
     )
 
-    closed = dict(sided)
+    closing = dict(sided)
+    closing["left_gripper_width"] = torch.tensor([0.14], device=device)
+    closing["right_gripper_width"] = torch.tensor([0.14], device=device)
+    closing["actions"] = torch.zeros(1, 14, device=device)
+    closing["actions"][:, 6] = -1.0
+    closing["actions"][:, 13] = -1.0
+    checks.check(
+        "reward_close_action_is_positive_while_closing_near_cube",
+        bool((compute_bimanual_yam_cube_grasp_rewards(**closing)[7] > 0.0).item()),
+        close_action_reward=_mean(compute_bimanual_yam_cube_grasp_rewards(**closing)[7]),
+    )
+
+    closed = dict(closing)
     closed["left_gripper_width"] = torch.tensor([0.025], device=device)
     closed["right_gripper_width"] = torch.tensor([0.025], device=device)
-    closed["actions"] = torch.zeros(1, 14, device=device)
-    closed["actions"][:, 6] = -1.0
-    closed["actions"][:, 13] = -1.0
     checks.check(
-        "reward_close_action_is_positive_near_cube",
-        bool((compute_bimanual_yam_cube_grasp_rewards(**closed)[7] > 0.0).item()),
+        "reward_close_action_shuts_off_once_closed",
+        bool((compute_bimanual_yam_cube_grasp_rewards(**closed)[7] <= 1.0e-6).item()),
         close_action_reward=_mean(compute_bimanual_yam_cube_grasp_rewards(**closed)[7]),
     )
 
@@ -681,7 +690,6 @@ def _run_scripted_demo(
         if video_writer is None or video_frames_written >= int(args_cli.video_length):
             return
         task_env.sim.render()
-        simulation_app.update()
         frame = env.render()
         if frame is None:
             return
