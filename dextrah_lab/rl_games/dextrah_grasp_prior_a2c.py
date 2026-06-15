@@ -48,6 +48,8 @@ class DextrahGraspPriorA2CAgent(BaseA2CAgent):
             self.config.get("dextrah_freeze_obs_rms_enabled", False)
         )
         self.dextrah_frozen_obs_rms_state = None
+        self.dextrah_actor_loss_scale = float(self.config.get("dextrah_actor_loss_scale", 1.0))
+        self.dextrah_critic_loss_scale = float(self.config.get("dextrah_critic_loss_scale", 1.0))
 
     def _clone_obs_rms_state(self, module) -> dict[str, torch.Tensor]:
         return {
@@ -367,8 +369,8 @@ class DextrahGraspPriorA2CAgent(BaseA2CAgent):
             bc_loss = self._compute_dextrah_bc_loss(mu, input_dict)
             policy_anchor_loss = self._compute_dextrah_policy_anchor_loss(mu, batch_dict)
             loss = (
-                a_loss
-                + 0.5 * c_loss * self.critic_coef
+                self.dextrah_actor_loss_scale * a_loss
+                + 0.5 * self.dextrah_critic_loss_scale * c_loss * self.critic_coef
                 - entropy * self.entropy_coef
                 + b_loss * self.bounds_loss_coef
                 + bc_loss
@@ -386,6 +388,12 @@ class DextrahGraspPriorA2CAgent(BaseA2CAgent):
             )
             self.aux_loss_dict.setdefault("dextrah_bc_policy_anchor_loss", []).append(
                 self.dextrah_bc_policy_anchor_loss_last
+            )
+            self.aux_loss_dict.setdefault("dextrah_actor_loss_scale", []).append(
+                torch.as_tensor(self.dextrah_actor_loss_scale, device=self.ppo_device)
+            )
+            self.aux_loss_dict.setdefault("dextrah_critic_loss_scale", []).append(
+                torch.as_tensor(self.dextrah_critic_loss_scale, device=self.ppo_device)
             )
 
             if self.multi_gpu:

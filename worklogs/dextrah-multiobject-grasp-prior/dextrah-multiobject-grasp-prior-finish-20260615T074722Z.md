@@ -2366,3 +2366,595 @@ Analysis:
 
 Next:
 - Run a targeted evaluation/diagnostic of the scripted grasp-prior warmstart distribution by object/index under the fixed raw-pose reset gates, using the current cache and training warmstart settings. Treat the PPO checkpoint as not ready for policy evaluation until the scripted prior itself is stable.
+
+## 2026-06-15T17:37:00Z - Launch exact verified-cache scripted audit
+
+Source update:
+- Commit `9943101936f74edda9da24680b8c1f97db047303` adds `GRASP_PRIOR_VERIFIED_INDICES_PATH` support to `collect_franka_multi_object_verified_grasps.py` and `cluster/sbatch_collect_franka_multi_object_verified_grasps_1gpu.sh`.
+- Deployed to remote worktree `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-topdown-axis-20260615-753139c`.
+
+Command / Job:
+- job_id: `29106214`
+- host: `a1001`
+- run_name: `verified_cache_audit_train2_rawpose_9943101_20260615T1737Z`
+- output JSON: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/verified_grasp_indices/verified_cache_audit_train2_rawpose_9943101_20260615T1737Z/verified_indices.json`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/collect_franka_multi_object_verified_grasps_29106214.out`
+
+Audit settings:
+- `NUM_ENVS=64`, `CYCLES=80`, `MIN_CYCLES=80`, `TARGET_PER_OBJECT=0` to force a fixed-length audit without target-count early stop/failure.
+- Restricts reset sampling to the exact cache used by PPO:
+  `/results/assets/verified_grasp_indices/verified_rawpose_stricttable_train2_a100_4234fb5_20260615T1704Z/verified_indices.json`.
+- Same raw-pose reset gates and training warmstart settings as the failed PPO continuation: downward tool axis, table-safe source gates, `SCORE_STEPS=128`, approach `20`, close `28`, lift `80`, close width `0.0`, lift action z `1.0`, `require_current_lift_ready=True`.
+- Success threshold: `MIN_LIFT_HEIGHT=0.12`, `REQUIRE_SUCCESS=True`, `MAX_DONE_COUNT=1`.
+
+Next:
+- Monitor cycle stats and per-index pass rates. If the exact cache is unstable, derive a pruned cache or adjust the scripted action prior before relaunching PPO.
+
+## 2026-06-15T17:40:00Z - Launch multi-object BC/action-imitation from current scripted prior
+
+Rationale:
+- The exact-cache audit showed the scripted prior itself is useful: after six cycles, object0 index `415` passed `79/192` (`0.411`) and object1 index `1209` passed `184/192` (`0.958`), with clean reset/quality.
+- The failed PPO continuation therefore looks like policy imitation/learning failure, not a reset or under-table failure.
+- This is the first BC/action-imitation run I launched myself for the Franka multi-object setup in this session. It starts from the existing epoch-40 BC-initialized PPO checkpoint rather than retraining the original BC pipeline from scratch.
+
+Command / Job:
+- job_id: `29106443`
+- host: `a1001`
+- run_name: `franka_multi_bc_rawpose_cache_refdelta_9943101_20260615T1740Z`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/bc/franka_multi_bc_rawpose_cache_refdelta_9943101_20260615T1740Z`
+- output checkpoint: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/bc/franka_multi_bc_rawpose_cache_refdelta_9943101_20260615T1740Z/nn/bc_reference_action_imitation.pth`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bc_franka_cube_29106443.out`
+
+BC settings:
+- Input checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_ppo_bcinit_retrypose_resetonly_cont40_9ae97c0_20260615T1312Z/nn/last_dextrah_franka_multi_object_grasp_ep_40_rew_4852.5146.pth`.
+- `TASK=Dextrah-Franka-Multi-Object-Grasp`, `NUM_ENVS=128`, `COLLECTION_STEPS=512`, `TRAIN_STEPS=1200`, `BATCH_SIZE=4096`, `LR=1e-4`, `LOSS_DIMS=all`.
+- Collection and label source are both `reference_delta`, which maps to `compute_grasp_prior_reference_actions()` for this task.
+- Same two-object manifest, current verified cache, stable-pose cache, object physics, and strict downward/top-down raw-pose reset gates.
+
+Next:
+- Monitor `bc_metrics.json`, validation loss/action-dim errors, and produced checkpoint. If BC learns the reference actions, use the BC checkpoint as the next PPO initialization and evaluate/continue RL.
+
+## 2026-06-15T17:45:00Z - BC/action-imitation completed
+
+Result:
+- Job `29106443` completed with exit `0:0` in `00:01:56`.
+- Output checkpoint exists:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/bc/franka_multi_bc_rawpose_cache_refdelta_9943101_20260615T1740Z/nn/bc_reference_action_imitation.pth`
+  (`77M`).
+- Metrics JSON:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/bc/franka_multi_bc_rawpose_cache_refdelta_9943101_20260615T1740Z/bc_metrics.json`.
+
+BC metrics:
+- Samples: `65536` total, `55706` train, `9830` validation.
+- Collection source and label source: `reference_delta`.
+- Initial frozen-policy residual: `val_l2=1.8569`, `val_mse=0.5220`.
+- Selected checkpoint step: `1150`.
+- Selected held-out error: `val_l2=0.1003`, `val_mse=0.00720`.
+- Per-dim selected validation abs errors: `x=0.0245`, `y=0.0259`, `z=0.0268`, `up=0.0135`, `rx=0.0162`, `ry=0.0187`, `rz=0.0165`, `gripper=0.0319`.
+- Final step was similar: `val_l2=0.1005`, `val_mse=0.00717`.
+
+Analysis:
+- This is a strong supervised fit to the scripted current-code reference actions, and materially different from the input policy.
+- It is still not proof of task success; it needs policy rollout under the same fixed raw-pose cache and table-safe gates.
+
+## 2026-06-15T17:47:00Z - Launch BC policy rollout eval
+
+Submission note:
+- Attempted to submit the eval wrapper from `a1001`, but `cluster/sbatch_eval_franka_multi_object_grasp_1gpu.sh` requests `#SBATCH --partition=batch`, which is not an A100 partition. Slurm rejected the submission before creating a job.
+- Relaunched the same metrics eval on `l401`, where `batch` is the correct L40S partition.
+
+Command / Job:
+- job_id: `1029946`
+- host: `l401`
+- run_name: `franka_multi_bc_policy_eval_rawpose_cache_9943101_20260615T1747Z`
+- checkpoint: `/results/bc/franka_multi_bc_rawpose_cache_refdelta_9943101_20260615T1740Z/nn/bc_reference_action_imitation.pth`
+- expected run dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_multi_bc_policy_eval_rawpose_cache_9943101_20260615T1747Z`
+- expected metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_multi_bc_policy_eval_rawpose_cache_9943101_20260615T1747Z/metrics.json`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_multi_object_1029946.out`
+
+Eval settings:
+- `NUM_ENVS=64`, `NUM_STEPS=360`, `CAPTURE_VIDEO=False`, deterministic policy, `SEED=82`.
+- Same two-object manifest, stable-pose cache, object friction `4.0/3.5`, exact verified-cache path, and raw-pose top-down/downward-tool/table gates as the audit and PPO jobs.
+
+Next:
+- Inspect rollout metrics. If the BC policy actually lifts/succeeds, use this checkpoint as the PPO initialization; if not, inspect rollout traces before relaunching PPO.
+
+## 2026-06-15T17:50:00Z - Exact-cache audit and BC policy eval completed
+
+Exact-cache audit result:
+- Job `29106214` completed with exit `0:0` in `00:08:42`.
+- Final audit cycles: `80/80`.
+- Object `7195ed3346a445448308febe833c180a`, index `415`: `986/2560` pass observations, pass rate `0.3852`, max lift `0.2664`, `done_count=0`.
+- Object `b87a65917e494aa4b306aeb6ee961182`, index `1209`: `2493/2560` pass observations, pass rate `0.9738`, max lift `0.1623`, `done_count=1`.
+- Aggregate scripted pass observations: `3479/5120 = 0.6795`.
+- Interpretation: the exact verified cache used by PPO is table-safe and useful, but object0 is intrinsically much harder than object1 under this single-index cache.
+
+BC policy eval result:
+- Job `1029946` completed with exit `0:0` in `00:01:16`.
+- Metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_multi_bc_policy_eval_rawpose_cache_9943101_20260615T1747Z/metrics.json`.
+- First-attempt `eval_success_rate=0.375` over `64` envs; `success_ever_rate=0.375`.
+- `success_rate_max=0.21875`, `success_rate_final=0.0`; success termination was not suppressed, so completed successes reset during the rollout.
+- Completed episodes: `22`, completed episode success rate `0.9091`.
+- Done reasons: `success_done=20`, `unclassified=2`; `finger_table_penetration=0`, `prelift_drag=0`, `cube_out=0`.
+- Reset diagnostics remain clean in trace: `grasp_prior_reset_success=1.0`, `quality_success=1.0`, `tool_downward_z≈0.9981`, `finger_table_clearance_violation=0`.
+
+Analysis:
+- The root under-table/from-below bug is not showing up in the current reset distribution or the BC policy rollout.
+- The policy bottleneck is now learning/stability: BC gets `37.5%` first-attempt success versus the scripted exact-cache upper bound of about `68%` under this small two-object cache.
+- Next PPO should initialize from the BC checkpoint, keep reset gates/cache fixed, and use light reference-action reward regularization without scripted warmstart overrides, so the actor policy itself continues learning.
+
+## 2026-06-15T17:52:00Z - Launch PPO from self-trained BC checkpoint
+
+Planned settings:
+- Source commit: `9943101936f74edda9da24680b8c1f97db047303`.
+- Checkpoint: `/results/bc/franka_multi_bc_rawpose_cache_refdelta_9943101_20260615T1740Z/nn/bc_reference_action_imitation.pth`.
+- Two-object manifest and stable-pose cache unchanged.
+- Exact verified-cache path unchanged:
+  `/results/assets/verified_grasp_indices/verified_rawpose_stricttable_train2_a100_4234fb5_20260615T1704Z/verified_indices.json`.
+- PPO: `NUM_ENVS=1024`, `NPROC_PER_NODE=4`, `MAX_ITERATIONS=100`, LR `1e-5`, central LR `5e-6`, horizon `64`, minibatch `16384`, mini epochs `2`, save every epoch.
+- Action prior: `GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED=True`, weight `10.0`, sharpness `2.0`.
+- Scripted action warmstart: disabled, so training/eval uses policy actions rather than scripted overrides.
+
+Command / Job:
+- job_id: `29106873`
+- host: `a1001`
+- run_name: `franka_multi_ppo_bcself_rawpose_cache_reg10_9943101_20260615T1752Z`
+- expected run dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_ppo_bcself_rawpose_cache_reg10_9943101_20260615T1752Z`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29106873.out`
+
+Next:
+- Monitor RL curves, reset diagnostics, per-object success, and checkpoints. Required success evidence is not Slurm completion; inspect JSONL/TensorBoard metrics and run eval/video from the best checkpoint.
+
+## 2026-06-15T18:01:00Z - PPO from BC completed; launch epoch-100 eval
+
+PPO result:
+- Job `29106873` completed with exit `0:0` in `00:11:47`.
+- Run dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_ppo_bcself_rawpose_cache_reg10_9943101_20260615T1752Z`
+- Final checkpoint:
+  `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_ppo_bcself_rawpose_cache_reg10_9943101_20260615T1752Z/nn/last_dextrah_franka_multi_object_grasp_ep_100_rew_5377.594.pth`
+
+Training curve summary:
+- Epoch `100`: aggregate `cube_success_rate=0.3701`, `cube_has_lifted_rate=0.3926`.
+- Epoch `100` per logged object metric: object0 success `0.0`, object1 success `0.7402`; object0 lift `0.0`, object1 lift `0.7852`.
+- Best aggregate training success: epoch `100`, `0.3701`.
+- Last-10 mean aggregate success: `0.3438`; last-10 mean lift: `0.3747`.
+- Reset diagnostics remained clean: `cube_grasp_prior_reset_success_rate=1.0`, `cube_grasp_prior_quality_success_rate=1.0`, `cube_grasp_prior_tool_downward_z=0.9981`, table-clearance violation near zero.
+
+Analysis:
+- PPO learned strong behavior for one logged object and did not solve the other object under the current cache/reward mix.
+- Because the training metrics are not deterministic eval metrics and the logged object ordering may not be identical to manifest/env parity, launch an explicit 128-env policy eval from epoch 100.
+
+Eval command / job:
+- job_id: `1029947`
+- host: `l401`
+- run_name: `franka_multi_ppo_bcself_ep100_eval_rawpose_cache_9943101_20260615T1801Z`
+- checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_ppo_bcself_rawpose_cache_reg10_9943101_20260615T1752Z/nn/last_dextrah_franka_multi_object_grasp_ep_100_rew_5377.594.pth`
+- expected metrics:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_multi_ppo_bcself_ep100_eval_rawpose_cache_9943101_20260615T1801Z/metrics.json`
+- settings: deterministic policy, `NUM_ENVS=128`, `NUM_STEPS=360`, same two-object manifest/stable-pose/verified-cache/raw-pose reset gates and object friction.
+
+Next:
+- Inspect epoch-100 deterministic eval success/lift and reset artifacts. If still imbalanced, the next iteration should target object-specific balancing/cache quality rather than table-collision fixes.
+
+## 2026-06-15T18:04:00Z - Epoch-100 eval result and object0-focused PPO launch
+
+Epoch-100 deterministic eval result:
+- Job `1029947` completed with exit `0:0` in `00:01:15`.
+- Metrics:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_multi_ppo_bcself_ep100_eval_rawpose_cache_9943101_20260615T1801Z/metrics.json`
+- `NUM_ENVS=128`, `NUM_STEPS=360`, deterministic policy.
+- `eval_success_rate=0.3984`, `success_ever_rate=0.4297`, `success_rate_final=0.3828`.
+- Done reasons: `success_done=2`, `unclassified=6`, `finger_table_penetration=0`, `prelift_drag=0`, `cube_out=0`.
+- Assuming round-robin env parity, success was fully imbalanced: even envs `0/64`, odd envs `55/64`.
+- Reset/table diagnostics remained clean.
+
+Analysis:
+- The epoch-100 policy is not a multi-object solution. It learned one object and effectively dropped the other.
+- Because the BC checkpoint was much less imbalanced than the epoch-100 PPO checkpoint, the next run should start from BC, use only the harder object0 manifest, and remove the action-prior reward so PPO optimizes task reward directly.
+
+Object0-focused PPO launch:
+- job_id: `29107468`
+- host: `a1001`
+- run_name: `franka_multi_ppo_bcself_object0_rawpose_noprior_9943101_20260615T1804Z`
+- checkpoint: `/results/bc/franka_multi_bc_rawpose_cache_refdelta_9943101_20260615T1740Z/nn/bc_reference_action_imitation.pth`
+- manifest: `/results/assets/filtered_manifests/train2_7195_b87_nobelow_d053e6c_20260615T0045Z/manifest_object0_7195ed3346a445448308febe833c180a.json`
+- `MAX_OBJECTS=1`, `NUM_ENVS=1024`, `NPROC_PER_NODE=4`, `MAX_ITERATIONS=100`.
+- Grasp-prior reset remains enabled with the exact verified cache, downward/top-down/table gates, and stable-pose cache.
+- Action-prior reward and scripted warmstart are disabled for this run.
+- expected run dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_ppo_bcself_object0_rawpose_noprior_9943101_20260615T1804Z`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29107468.out`
+
+Next:
+- Monitor object0 PPO curve. If object0 can be solved from BC, use that checkpoint as a candidate for mixed fine-tuning or evaluate whether it generalizes back to the two-object manifest.
+
+## 2026-06-15T18:13:00Z - Object0 BC eval and unanchored PPO diagnosis
+
+Object0-only BC eval:
+- Job `1029949` completed with exit `0:0` in `00:01:05`.
+- Metrics:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_multi_bc_object0_eval_rawpose_cache_9943101_20260615T1811Z/metrics.json`
+- `NUM_ENVS=64`, `NUM_STEPS=360`, deterministic policy.
+- `eval_success_rate=0.3594`, `success_ever_rate=0.3750`, `success_rate_max=0.3125`, `success_rate_final=0.0`.
+- Completed episodes: `15`; completed episode success rate `0.7333`.
+- Done reasons: `success_done=11`, `unclassified=4`, `finger_table_penetration=0`, `prelift_drag=0`, `cube_out=0`.
+- Lift diagnostics: mean per-env max lift `0.1069`, max lift `0.6775`, lift >= 3 cm in `0.4844` of envs, lift >= 8 cm in `0.3906` of envs.
+
+Object0-only PPO progress:
+- Job `29107468` was still running near epoch `89/100` when inspected.
+- The unanchored PPO run is collapsing the BC behavior rather than improving it.
+- Best training success through epoch `89`: `0.00195` at epoch `48`.
+- Last 10 epochs through epoch `89`: success mean `0.0`; has-lifted mean `0.00459`; close action decayed to about `0.006-0.01`.
+- Reset diagnostics remain clean: reset success `1.0`, quality success `1.0`, tool downward z `0.9976`, table-clearance violation `0.0`.
+
+Analysis:
+- Object0 is hard, but the BC action-imitation checkpoint is not useless: it produces first-attempt successes and large lifts on object0 without table-contact failures.
+- PPO from BC without an action anchor rapidly learns a policy that avoids closing/lifting. This is an optimization/reward-shaping issue, not a recurrence of the from-below reset bug.
+- Next run should keep the strict raw-pose grasp reset and exact verified cache, but add an action/reference anchor for object0 so PPO cannot erase the useful contact strategy while optimizing task reward.
+
+Anchored object0 PPO launch:
+- job_id: `29107610`
+- host: `a1001`
+- run_name: `franka_multi_ppo_bcself_object0_rawpose_reg50_9943101_20260615T1815Z`
+- source commit: `9943101936f74edda9da24680b8c1f97db047303`
+- code path:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-topdown-axis-20260615-753139c`
+- checkpoint:
+  `/results/bc/franka_multi_bc_rawpose_cache_refdelta_9943101_20260615T1740Z/nn/bc_reference_action_imitation.pth`
+- manifest:
+  `/results/assets/filtered_manifests/train2_7195_b87_nobelow_d053e6c_20260615T0045Z/manifest_object0_7195ed3346a445448308febe833c180a.json`
+- exact verified-cache path:
+  `/results/assets/verified_grasp_indices/verified_rawpose_stricttable_train2_a100_4234fb5_20260615T1704Z/verified_indices.json`
+- PPO: `NUM_ENVS=1024`, `NPROC_PER_NODE=4`, `MAX_ITERATIONS=100`, LR `1e-5`, central LR `5e-6`, horizon `64`, mini epochs `2`.
+- Reset gates unchanged: topdown required, downward tool z min `0.45`, pregrasp z min `0.45`, contact height min `-0.02`, center-distance frac `0.50`, min width `0.008`.
+- Action guidance: scripted warmstart disabled; action-prior reward enabled with weight `50.0`, sharpness `2.0`.
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29107610.out`
+- expected run dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_ppo_bcself_object0_rawpose_reg50_9943101_20260615T1815Z`
+
+Next:
+- Monitor first metrics rows for close action, action-prior reward, lift, success, and reset/table diagnostics.
+- Also let job `29107468` exit and record its final failed status, because it is the failed unanchored PPO ablation.
+
+## 2026-06-15T18:24:00Z - Anchor run interim metrics and epoch-69 eval launch
+
+Unanchored object0 PPO final status:
+- Job `29107468` completed with exit `0:0` in `00:11:38`.
+- Final epoch `100`: `cube_success_rate=0.0`, object0 success `0.0`, `cube_has_lifted_rate=0.0078`, close action `0.0063`.
+- Reset diagnostics stayed clean: reset success `1.0`, tool downward z `0.9976`, table-clearance violation `0.0`.
+- Interpretation: unanchored PPO destroys the useful BC closing/lifting behavior.
+
+Anchored object0 PPO interim metrics:
+- Job `29107610` is running.
+- First structured metrics started at epoch `41` because the BC checkpoint carries epoch `40`.
+- Early epochs preserved closing (`cube_gripper_close_action` peaked at `0.8880`) and reached lift-rate `0.0342`, unlike the no-prior run.
+- Later epochs began collapsing again: by epoch `79`, close action was `0.0422` and lift-rate `0.0039`.
+- Best training success so far was epoch `69`: `cube_success_rate=0.0088`, object0 success `0.0088`.
+- Reset diagnostics are still top-down/table-safe: tool downward z `0.9976`, table-clearance violation near zero, reset success around `0.94-0.95`, quality success around `0.92-0.94`.
+
+Eval launch:
+- job_id: `1029950`
+- host: `l401`
+- run_name: `franka_multi_ppo_object0_reg50_ep69_eval_9943101_20260615T1824Z`
+- checkpoint:
+  `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_ppo_bcself_object0_rawpose_reg50_9943101_20260615T1815Z/nn/last_dextrah_franka_multi_object_grasp_ep_69_rew_2107.527.pth`
+- `NUM_ENVS=128`, `NUM_STEPS=360`, deterministic policy, no video.
+- Same object0-only manifest, stable-pose cache, exact verified-index cache, strict topdown/downward-tool/table gates, and object friction as training.
+
+Next:
+- Inspect eval metrics from `1029950`; if it does not beat the object0 BC eval baseline, this run is not a solution.
+- Let `29107610` finish and inspect the final checkpoint as a failed/partial anchor ablation unless late recovery appears.
+
+## 2026-06-15T18:31:00Z - Reg50 PPO failed; low-sigma PPO stability run launched
+
+Reg50 PPO final:
+- Job `29107610` completed with exit `0:0` in `00:11:12`.
+- Final epoch `100`: training `cube_success_rate=0.0`, `cube_has_lifted_rate=0.0049`, close action `0.0064`.
+- Best training checkpoint was epoch `69`, with `cube_success_rate=0.0088`.
+
+Epoch-69 deterministic eval:
+- Job `1029950` completed with exit `0:0` in `00:01:23`.
+- Metrics:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_multi_ppo_object0_reg50_ep69_eval_9943101_20260615T1824Z/metrics.json`
+- `eval_success_rate=0.0`, `success_ever_rate=0.0`, max per-env lift `0.0688`, lift >= 3 cm in `0.0078` of envs.
+- Done reasons all zero: no success, no table/finger-table termination, no cube-out.
+- Trace comparison against BC:
+  - BC object0 policy closes after approach: window steps `20-60` close mean `0.9567`, z action mean transitions upward; success ever reaches `24/64`.
+  - PPO epoch-69 keeps gripper open and keeps descending: window steps `20-60` close mean `0.0080`, z mean `-0.9557`; success ever stays `0/128`.
+
+Checkpoint sigma audit:
+- Helper jobs:
+  - `1029956` failed because the container uses `/isaac-sim/python.sh`, not `python3`.
+  - `1029973` failed under PyTorch 2.6 `weights_only=True` checkpoint loading.
+  - `1029988` loaded the checkpoint but incorrectly matched normalization `std` keys in a generated copy; that generated copy was deleted.
+  - `1030014` completed with exit `0:0` and wrote a corrected sigma-only checkpoint.
+- Corrected checkpoint:
+  `/results/bc/franka_multi_bc_rawpose_cache_refdelta_9943101_20260615T1740Z/nn/bc_reference_action_imitation_lowsigma_m3_sigmaonly.pth`
+- Original `a2c_network.sigma` values were approximately `[-0.139, -0.166, -0.365, -0.210, -0.243, -0.166, -0.430]`.
+- Corrected copy sets only `a2c_network.sigma` to `-3.0`; helper asserted `changed_keys == ["a2c_network.sigma"]`.
+
+Low-sigma PPO launch:
+- job_id: `29107974`
+- host: `a1001`
+- run_name: `franka_multi_ppo_bcself_object0_lowsigma_lr1e6_9943101_20260615T1831Z`
+- checkpoint:
+  `/results/bc/franka_multi_bc_rawpose_cache_refdelta_9943101_20260615T1740Z/nn/bc_reference_action_imitation_lowsigma_m3_sigmaonly.pth`
+- Object0-only manifest/cache and strict reset gates unchanged.
+- PPO: `MAX_ITERATIONS=60` from epoch-40 checkpoint, `NUM_ENVS=1024`, `NPROC_PER_NODE=4`, LR `1e-6`, central LR `5e-7`, mini epochs `1`, clip `0.05`, entropy `0.0`, KL threshold `0.003`, save every epoch.
+- Grasp-prior action reward and scripted warmstart are disabled; this run tests whether reduced exploration/update pressure preserves the BC close/lift behavior while doing conservative PPO updates.
+
+Next:
+- Monitor close/lift/success and deterministic eval the final or best low-sigma checkpoint. Success criterion is at least preserving the BC object0 baseline before returning to mixed two-object training.
+
+## 2026-06-15T19:16:00Z - PPO action-anchor implementation and object0 eval sweep
+
+Implementation:
+- Added `dextrah_lab/rl_games/dextrah_grasp_prior_a2c.py`, a DEXTRAH-specific RL-Games continuous PPO agent that stores grasp-prior teacher actions from `infos` and adds an optional supervised MSE loss on the current policy mean.
+- Patched `dextrah_lab/rl_games/train.py` to install the DEXTRAH PPO agent before constructing the RL-Games runner.
+- Patched `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py` to expose `dextrah_grasp_prior_teacher_actions` and `dextrah_grasp_prior_teacher_active` through `extras` when action-prior reference generation is enabled.
+- Patched `cluster/sbatch_train_teacher_8gpu.sh` to pass:
+  - `DEXTRAH_GRASP_PRIOR_BC_LOSS_ENABLED`
+  - `DEXTRAH_GRASP_PRIOR_BC_LOSS_WEIGHT`
+  - `DEXTRAH_GRASP_PRIOR_BC_LOSS_DIMS`
+- Local commits:
+  - `6e3aa3e` - add PPO grasp-prior behavior anchor
+  - `d606b19` - fix Hydra overrides for the new anchor config
+- Remote code commit in the a1001/l401 worktree: `5f98d31601c7a47c1fa140772a36a67305cbc857`.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/dextrah_grasp_prior_a2c.py dextrah_lab/rl_games/train.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`
+- `bash -n cluster/sbatch_train_teacher_8gpu.sh`
+- Remote CPU-container import smoke confirmed `DextrahGraspPriorA2CAgent` imports with the installed RL-Games.
+
+Failed launch:
+- Job `29109854` failed before training because Hydra rejected the new config keys without `+`.
+- Fixed by commit `d606b19` locally / `5f98d31` remotely.
+
+Completed object0 anchor run:
+- Job `29110276` completed successfully.
+- Run:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_ppo_bcanchor_object0_lowsigma_w10_5f98d31_20260615T1921Z`
+- Checkpoint source:
+  `/results/bc/franka_multi_bc_rawpose_cache_refdelta_9943101_20260615T1740Z/nn/bc_reference_action_imitation_lowsigma_m3_sigmaonly.pth`
+- PPO settings: object0-only, `NUM_ENVS=256`, `MAX_ITERATIONS=80` from epoch-40 BC checkpoint, LR `5e-6`, central LR `2.5e-6`, `HORIZON_LENGTH=64`, `MINI_EPOCHS=2`, `E_CLIP=0.05`, entropy `0.0`, KL `0.003`, supervised grasp-prior BC loss enabled with weight `10`.
+- Reset settings: object0-only manifest, current-code verified grasp cache, stable-pose cache enabled, top-down/downward tool axis required, min downward tool z `0.45`, min pregrasp z `0.45`, contact-height floor `-0.02`, center-distance frac `0.50`, min width `0.008`, object friction `4.0/3.5`.
+- Saved checkpoints: epochs `50`, `60`, `70`, and `80`.
+
+Training metrics:
+- Reset remained table-safe and top-down: `cube_grasp_prior_tool_downward_z ~= 0.9976`, `cube_finger_table_clearance_violation=0`, reset success roughly `0.93-0.95`.
+- The behavior anchor prevented the immediate fully-open collapse seen in previous PPO runs, but it still did not solve object0 in training.
+- Final epoch `80`: `cube_success_rate=0.0547`, `cube_has_lifted_rate=0.1211`, `cube_lift_height=0.0147`, close action `0.7717`, action-prior active rate `0.0977`, action-prior delta `0.3532`.
+- Interpretation: the from-below/table-collision root cause is not recurring in this run; the remaining failure is PPO drifting away from the BC/reference behavior when the reference-active window becomes sparse.
+
+Deterministic object0 eval sweep:
+- Submitted l401 eval jobs for epochs `50`, `60`, `70`, and `80`, all with the same object0-only manifest/cache/reset gates as the training run.
+- `1030076`: epoch `70`, run `franka_multi_ppo_bcanchor_object0_lowsigma_w10_ep70_eval_5f98d31_20260615T1938Z`
+- `1030077`: epoch `80`, run `franka_multi_ppo_bcanchor_object0_lowsigma_w10_ep80_eval_5f98d31_20260615T1938Z`
+- `1030078`: epoch `60`, run `franka_multi_ppo_bcanchor_object0_lowsigma_w10_ep60_eval_5f98d31_20260615T1938Z`
+- `1030079`: epoch `50`, run `franka_multi_ppo_bcanchor_object0_lowsigma_w10_ep50_eval_5f98d31_20260615T1938Z`
+
+Next:
+- Inspect deterministic eval metrics and traces. If they are below the object0 BC baseline (`success_ever_rate=0.375`), strengthen the action anchor and/or change the active reference schedule rather than weakening the reset filters.
+
+## 2026-06-15T19:51:00Z - Object0 deterministic eval results and visual check
+
+Object0 checkpoint sweep, 128 envs, deterministic policy, same seed/cache/reset gates:
+
+| Checkpoint | Eval success / success-ever | Final success occupancy | Completed episodes | Max lift | Table violations |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| BC baseline, low-sigma copy | `0.4141` | `0.0` | `36`, `0.9167` success | `0.0559` | `0.0` |
+| PPO anchor epoch 50 | `0.0469` | `0.0` | `6`, `0.8333` success | `0.0076` | `0.0` |
+| PPO anchor epoch 60 | `0.2500` | `0.0` | `17`, `1.0000` success | `0.0322` | `0.0` |
+| PPO anchor epoch 70 | `0.0078` | `0.0` | `0` | `0.0020` | `0.0` |
+| PPO anchor epoch 80 | `0.1719` | `0.0703` | `6`, `1.0000` success | `0.0218` | `0.0` |
+
+Trace diagnostics:
+- Epoch 60 is the best PPO checkpoint but still underperforms the deterministic BC policy under the same 128-env eval.
+- Epoch 80 partially recovers from the epoch-70 collapse but remains below BC.
+- No eval produced finger-table penetration, prelift drag, or cube-out failures. This supports the conclusion that the from-below/table-penetrating reset root cause is fixed in the current reset/cache path.
+
+Video check:
+- Captured a 2-env video for PPO anchor epoch 60:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-finish-20260615T074722Z/artifacts/dextrah-multiobject-grasp-prior/franka-multi-bcanchor-ep60-object0-step-0.mp4`
+- Viewer URL:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-finish-20260615T074722Z/artifacts/dextrah-multiobject-grasp-prior/franka-multi-bcanchor-ep60-object0-step-0.mp4`
+- Extracted frames `frame_002.png` through `frame_005.png` show above-table/top-down approach, close, and lift attempt. I did not see the old under-table reach.
+
+Analysis:
+- The current PPO action anchor is a partial improvement over prior PPO runs, but it does not preserve the BC policy's object0 performance.
+- The reference-active schedule currently supervises roughly approach `20` + close `28` + lift `80` steps. After that window, PPO can drift during hold/success phases. The next run should increase the supervised lift/hold window and strengthen the supervised loss rather than relaxing grasp validity filters.
+
+Next:
+- Launch a stronger object0 anchor run from the same BC checkpoint with a longer lift/hold reference window and higher BC-loss weight. Success criterion remains beating the deterministic BC baseline before returning to the two-object manifest.
+
+## 2026-06-15T19:59:00Z - Stronger long-hold object0 anchor launch
+
+Command / Job:
+- job_id: `29110991`
+- host: `a1001`
+- run_name: `franka_multi_ppo_bcanchor_object0_lowsigma_w100_lift420_5f98d31_20260615T1958Z`
+- source commit on remote worktree: `5f98d31601c7a47c1fa140772a36a67305cbc857`
+- code path:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-topdown-axis-20260615-753139c`
+- checkpoint:
+  `/results/bc/franka_multi_bc_rawpose_cache_refdelta_9943101_20260615T1740Z/nn/bc_reference_action_imitation_lowsigma_m3_sigmaonly.pth`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29110991.out`
+
+Training settings:
+- Object0-only manifest, current-code verified grasp cache, stable-pose cache enabled.
+- Reset gates unchanged: topdown and downward tool-axis required, min downward tool z `0.45`, min pregrasp z `0.45`, contact-height floor `-0.02`, center-distance frac `0.50`, min width `0.008`, object friction `4.0/3.5`.
+- PPO: `NPROC_PER_NODE=4`, `NUM_ENVS=1024`, `MAX_ITERATIONS=70`, LR `1e-6`, central LR `5e-7`, horizon `64`, mini epochs `2`, clip `0.05`, entropy `0.0`, KL `0.003`, save frequency `5`.
+- Behavior anchor: `DEXTRAH_GRASP_PRIOR_BC_LOSS_ENABLED=True`, weight `100`, dims `all`.
+- Reference schedule: approach `20`, close `28`, lift/hold `420` steps. This extends the supervised window from `128` total steps to `468` total steps while keeping scripted warmstart intervention disabled.
+
+Expected signal:
+- If the hypothesis is right, train/eval should preserve or improve over the BC baseline rather than decaying below it. If it still underperforms, the next likely issue is mismatch between the scripted reference and the BC policy/contact dynamics, not grasp sampling safety.
+
+Correction:
+- The training wrapper derives the actual experiment name from `FULL_EXPERIMENT_NAME`, not `RUN_NAME`.
+- I passed `RUN_NAME`, so Slurm job `29110991` is running with the default output experiment `slurm_29110991`.
+- The settings reached the job correctly; continue monitoring:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/slurm_29110991`
+
+Update:
+- Canceled job `29110991` after roughly three minutes because it never advanced past scene construction or wrote metrics. GPU utilization stayed mostly idle and the Slurm log stopped at the collision-filtering warning.
+- First 1-GPU relaunch was rejected by Slurm because the script's default `--cpus-per-task=64` is too high for one GPU.
+- Relaunched as job `29111164` with `--gpus-per-node=1 --cpus-per-task=16 --mem=160G`.
+- New experiment name:
+  `franka_multi_ppo_bcanchor_object0_lowsigma_w100_lift420_1gpu_5f98d31_20260615T2004Z`
+- Same long-anchor settings as above, but `NUM_ENVS=256`, `NPROC_PER_NODE=1`, `DISTRIBUTED=False`, `MULTI_GPU=False`.
+
+## 2026-06-15T20:43:00Z - Conservative fixed-checkpoint PPO launch
+
+Prior result:
+- The checkpoint-init fix at commit `f80a1c84c1064a16ae5aa223da38742dfad3400e` made zero-LR PPO preserve the low-sigma BC policy. Eval job `1030325` on checkpoint epoch `45` matched deterministic BC-level behavior with `eval_success_rate=0.421875`, `success_ever_rate=0.4453125`, `done_ever_count=36`, no table/prelift/cube-out violations, and reset diagnostics `tool_downward_z=0.9975928068`, `tool_z_axis_z_mean=-0.9975928664`.
+- The first real PPO run after that fix (`29114460`, `LR=1e-5`, `anchor=1`) degraded by epoch `10`: eval job `1030326` had `eval_success_rate=0.0` and `success_ever_rate=0.0`. Reset diagnostics remained top-down/downward, so this was PPO drift rather than from-below grasp sampling.
+
+New run:
+- Slurm job: `29114922`
+- Experiment: `franka_multi_ppo_bc_lowsigma_lr1e6_clip001_anchor100_f80a1c8_20260615T2043Z`
+- Remote code path: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-topdown-axis-20260615-753139c`
+- Commit: `f80a1c84c1064a16ae5aa223da38742dfad3400e`
+- Checkpoint: `/results/bc/franka_multi_bc_rawpose_cache_refdelta_9943101_20260615T1740Z/nn/bc_reference_action_imitation_lowsigma_m3_sigmaonly.pth`
+
+Training settings:
+- Object0-only manifest: `/results/assets/filtered_manifests/train2_7195_b87_nobelow_d053e6c_20260615T0045Z/manifest_object0_7195ed3346a445448308febe833c180a.json`
+- Stable-pose cache enabled: `/results/validations/train2_7195_b87_nobelow_d053e6c_20260615T0045Z/settled_pose_cache`
+- Verified grasp indices: `/results/assets/verified_grasp_indices/verified_rawpose_stricttable_train2_a100_4234fb5_20260615T1704Z/verified_indices.json`
+- Reset gates unchanged: top-down required, downward tool-Z required, min downward tool-Z `0.45`, min pregrasp Z `0.45`, min contact height above center `-0.02`, max center distance frac `0.50`, min width `0.008`, candidate count `128`, attempts `16`.
+- PPO: `NUM_ENVS=256`, `MAX_ITERATIONS=80`, `HORIZON_LENGTH=64`, `MINI_EPOCHS=1`, `LEARNING_RATE=1e-6`, central value LR `1e-6`, `E_CLIP=0.01`, `KL_THRESHOLD=0.003`, entropy `0`, save frequency `5`.
+- Stabilizers: `DEXTRAH_BC_POLICY_ANCHOR_ENABLED=True`, anchor weight `100`, `DEXTRAH_FREEZE_OBS_RMS_ENABLED=True`, JSONL metrics enabled.
+
+Expected signal:
+- This run should preserve the deterministic BC baseline if the optimizer-state and obs-RMS bugs are fixed. If it still collapses early, the next step is an even stronger anchor/lower LR or a reward/reference redesign, not weakening the strict reset filter.
+
+Update:
+- Job `29114922` loaded the BC checkpoint with the fixed semantics:
+  `loading policy initialization checkpoint ... without epoch/runtime restore` and
+  `ignoring checkpoint optimizer for policy initialization`.
+- Training was canceled after saving epoch `50` because the direct metrics showed PPO drift/collapse despite strict reset safety. By epoch `35`, `cube_success_rate=0.0`, `cube_has_lifted_rate=0.0`, `cube_lift_height=0.0`, `cube_ee_to_cube_dist=0.76896`, while reset diagnostics stayed clean: `cube_grasp_prior_tool_downward_z=0.9975928068`, `cube_grasp_prior_tool_z_axis_z=-0.9975928068`, candidate valid/topdown/tool-down/table counts all `128`, and `cube_finger_table_clearance_violation=0.0`.
+- Early training rows still looked potentially useful, so I submitted deterministic object0 evals:
+  - `1030341`: epoch `5`, run `franka_multi_ppo_lr1e6_anchor100_ep5_eval_f80a1c8_20260615T2048Z`
+  - `1030342`: epoch `10`, run `franka_multi_ppo_lr1e6_anchor100_ep10_eval_f80a1c8_20260615T2048Z`
+  - `1030343`: epoch `15`, run `franka_multi_ppo_lr1e6_anchor100_ep15_eval_f80a1c8_20260615T2048Z`
+  - `1030344`: epoch `50`, run `franka_multi_ppo_lr1e6_anchor100_ep50_eval_f80a1c8_20260615T2048Z`
+
+Eval results:
+
+| Checkpoint | Eval success / success-ever | Max success occupancy | Completed episodes | Max lifted rate | Max lift | Table violations |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Epoch 5 | `0.328125` / `0.328125` | `0.265625` | `131`, success `0.3282` | `0.2734375` | `0.0460` | max `0.0078125` |
+| Epoch 10 | `0.046875` / `0.046875` | `0.0234375` | `128`, success `0.046875` | `0.0390625` | `0.0056` | max `0.0062963` |
+| Epoch 15 | `0.0` / `0.0` | `0.0` | `128`, success `0.0` | `0.0` | `0.00021` | `0.0` |
+| Epoch 50 | `0.0` / `0.0` | `0.0` | `128`, success `0.0` | `0.0078125` | `0.00078` | `0.0` |
+
+Interpretation:
+- Even epoch `5` underperforms the fixed zero-LR/BC eval baseline (`success_ever_rate=0.4453125`), and later epochs collapse.
+- Reset sampling is still not the root cause: eval traces kept `grasp_prior_reset_tool_downward_z=0.9975928068` for all checkpoints. The small table-violation rates at epochs `5` and `10` occur during rollout after reset, not from upward/below-table reset grasps.
+- The fixed zero-LR training JSONL is also weak under stochastic rollout despite deterministic eval being BC-level: at epoch `45`, `cube_success_rate=0.00390625`, `cube_has_lifted_rate=0.19140625`, and `cube_lift_height=0.00248`. This points to stochastic rollout/sigma as a likely PPO failure mode.
+
+Code updates:
+- Commit `58b3f59a63ff4a2d2ef08a0d811f62016e7b2663`: log agent auxiliary losses, including `dextrah_bc_policy_anchor_loss`, into `direct_info_rank_0.jsonl`.
+- Commit `a06b2c560fe1230c9f47dd1cdab22776ecfa1c8d`: add `TRAIN_SIGMA` to `cluster/sbatch_train_teacher_8gpu.sh` and pass it to `train.py --sigma`.
+- Remote a1001 worktree updated to `a06b2c560fe1230c9f47dd1cdab22776ecfa1c8d`; remote `bash -n` and `py_compile` checks passed.
+
+Next run:
+- Slurm job `29115505`
+- Experiment `franka_multi_ppo_bc_lowsigma_forcesigma_m3_lr1e6_anchor100_a06b2c5_20260615T2056Z`
+- Same object0-only/reset/frozen-obs/anchor settings as `29114922`, but with `TRAIN_SIGMA=-3` and `MAX_ITERATIONS=20`.
+- Purpose: verify whether forcing low log-std after checkpoint load improves stochastic rollout and whether the policy-anchor loss is actually active.
+
+Update:
+- Job `29115505` completed 20 epochs.
+- Launch log confirmed `TRAIN_SIGMA=-3`.
+- JSONL now includes `agent_aux/dextrah_bc_policy_anchor_loss`, confirming the policy anchor is active.
+- Training diagnostics still look poor under stochastic rollout: epoch `5` `cube_success_rate=0.00390625`, `cube_has_lifted_rate=0.15234375`, `cube_lift_height=0.00155`, `cube_ee_to_cube_dist=0.40884`; epoch `20` `cube_success_rate=0.0`, `cube_has_lifted_rate=0.00390625`, `cube_lift_height=0.000022`.
+- Anchor loss was nonzero/large: epoch `1` `146.20`, epoch `5` `36.95`, epoch `10` `106.04`, epoch `20` `22.42`.
+- Reset diagnostics stayed clean: `cube_grasp_prior_tool_downward_z=0.9975928068` and no finger-table violation in the sampled training rows.
+
+Deterministic evals submitted:
+- `1030345`: epoch `5`, run `franka_multi_forcesigma_m3_ep5_eval_a06b2c5_20260615T2100Z`
+- `1030346`: epoch `10`, run `franka_multi_forcesigma_m3_ep10_eval_a06b2c5_20260615T2100Z`
+- `1030347`: epoch `15`, run `franka_multi_forcesigma_m3_ep15_eval_a06b2c5_20260615T2100Z`
+- `1030348`: epoch `20`, run `franka_multi_forcesigma_m3_ep20_eval_a06b2c5_20260615T2100Z`
+
+Forced-sigma eval results:
+
+| Checkpoint | Eval success / success-ever | Max success occupancy | Completed episodes | Max lifted rate | Max lift | Table violations |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Epoch 5 | `0.3671875` / `0.375` | `0.296875` | `131`, success `0.3817` | `0.296875` | `0.0537` | `0.0` |
+| Epoch 10 | `0.03125` / `0.03125` | `0.03125` | `128`, success `0.03125` | `0.03125` | `0.00519` | max `0.000736` |
+| Epoch 15 | `0.0` / `0.0` | `0.0` | `128`, success `0.0` | `0.0` | `0.00029` | `0.0` |
+| Epoch 20 | `0.0` / `0.0` | `0.0` | `128`, success `0.0` | `0.0` | `0.0` | `0.0` |
+
+Interpretation:
+- Forcing sigma helped the early checkpoint (`0.375` vs previous `0.328125`) and removed the epoch-5 table violation, but it still underperforms the fixed zero-LR/BC baseline (`0.4453125`) and collapses by epoch `10`.
+- Reset axis remains fixed: every eval kept `grasp_prior_reset_tool_downward_z=0.9975928068`.
+
+Reference-action diagnostic launch:
+- Slurm job `29115810`
+- Experiment `franka_multi_ppo_refbc100_prior5_sigma_m5_lr1e6_anchor100_a06b2c5_20260615T2101Z`
+- Same object0-only/reset/cache settings.
+- PPO: `MAX_ITERATIONS=40`, `LR=1e-6`, `E_CLIP=0.01`, `MINI_EPOCHS=1`, `TRAIN_SIGMA=-5`, frozen obs RMS.
+- Stabilizers/guidance: policy anchor weight `100`, `DEXTRAH_GRASP_PRIOR_BC_LOSS_ENABLED=True`, reference BC loss weight `100`, action-prior reward enabled with weight `5.0`, reference schedule approach `20`, close `28`, lift/hold `420`.
+- Purpose: policy anchor alone preserves a target policy but does not guide off-BC states; this run tests whether the grasp-prior reference action provides recovery guidance while keeping strict reset filters.
+
+Update:
+- Job `29115810` completed 40 epochs.
+- Training reward increased (epoch `10` checkpoint reward `1636.0488`), but success diagnostics did not improve: epoch `10` `cube_success_rate=0.0`, `cube_has_lifted_rate=0.046875`; epoch `20` `cube_success_rate=0.0`, `cube_has_lifted_rate=0.0078125`; epoch `40` `cube_success_rate=0.0`, `cube_has_lifted_rate=0.0078125`.
+- Reference losses were active: `agent_aux/dextrah_grasp_prior_bc_active_rate` ranged from `0.562` to `1.0`, and `agent_aux/dextrah_grasp_prior_bc_loss` stayed nonzero (`79.65` to `328.10` in sampled rows).
+- Reset safety remained clean in sampled rows: `cube_grasp_prior_tool_downward_z=0.9975928068` and `cube_finger_table_clearance_violation=0.0`.
+
+Deterministic evals submitted:
+- `1030352`: epoch `5`, run `franka_multi_refbc100_prior5_ep5_eval_a06b2c5_20260615T2106Z`
+- `1030353`: epoch `10`, run `franka_multi_refbc100_prior5_ep10_eval_a06b2c5_20260615T2106Z`
+- `1030354`: epoch `15`, run `franka_multi_refbc100_prior5_ep15_eval_a06b2c5_20260615T2106Z`
+- `1030355`: epoch `20`, run `franka_multi_refbc100_prior5_ep20_eval_a06b2c5_20260615T2106Z`
+- `1030356`: epoch `40`, run `franka_multi_refbc100_prior5_ep40_eval_a06b2c5_20260615T2106Z`
+
+High-anchor/reference diagnostic launch:
+- Slurm job `29116248`
+- Experiment `franka_multi_ppo_refbc1000_prior5_sigma_m5_lr1e6_anchor1000_a06b2c5_20260615T2107Z`
+- Same object0-only/reset/cache settings as `29115810`.
+- Changed only regularization strength: policy anchor weight `1000`, reference BC loss weight `1000`, max iterations `20`.
+- Purpose: test whether stronger guidance can prevent PPO reward drift while keeping the grasp reset filters unchanged.
+
+## 2026-06-15T21:14:58Z - High-anchor/reference diagnostic result
+
+Training job `29116248` completed all 20 epochs.
+
+Key training rows:
+
+| Epoch | Success | Has lifted | Lift height | EE dist | Anchor loss | Ref BC loss | Ref active | Reset tool down |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | `0.0` | `0.0117` | `0.0208` | `0.0795` | `1497.78` | `892.35` | `1.0` | `0.9975928` |
+| 2 | `0.1797` | `0.1992` | `0.0394` | `0.1609` | `549.14` | `1159.42` | `1.0` | `0.9975928` |
+| 5 | `0.0039` | `0.1758` | `0.0045` | `0.3940` | `358.74` | `1253.21` | `1.0` | `0.9975928` |
+| 10 | `0.0` | `0.0195` | `0.0046` | `0.1360` | `1088.97` | `818.47` | `0.6136` | `0.9975928` |
+| 15 | `0.0` | `0.0625` | `0.0` | `0.4744` | `127.93` | `770.38` | `0.9896` | `0.9975928` |
+| 20 | `0.0` | `0.0039` | `0.0` | `0.3549` | `189.94` | `1063.96` | `0.7294` | `0.9975928` |
+
+Deterministic object0 evals:
+
+| Job | Checkpoint | Run | Eval success / success-ever | Max success | Max lifted | Max lift | Table violations |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `1030358` | epoch `5` | `franka_multi_refbc1000_prior5_ep5_eval_a06b2c5_20260615T2118Z` | `0.25` / `0.25` | `0.1953125` | `0.1953125` | `0.0368` | `0.0` |
+| `1030359` | epoch `10` | `franka_multi_refbc1000_prior5_ep10_eval_a06b2c5_20260615T2118Z` | `0.109375` / `0.1171875` | `0.0703125` | `0.0703125` | `0.0122` | max `0.0001896` |
+| `1030360` | epoch `15` | `franka_multi_refbc1000_prior5_ep15_eval_a06b2c5_20260615T2118Z` | `0.0` / `0.0` | `0.0` | `0.0` | `0.00028` | `0.0` |
+| `1030361` | epoch `20` | `franka_multi_refbc1000_prior5_ep20_eval_a06b2c5_20260615T2118Z` | `0.0` / `0.0` | `0.0` | `0.0` | `0.0` | `0.0` |
+
+Eval reset diagnostics:
+- Every eval had all `128` candidates passing topdown, tool-down, table, and valid-count checks.
+- `grasp_prior_reset_tool_downward_z=0.9975928068` and `grasp_prior_reset_tool_z_axis_z_mean=-0.9975928664` throughout.
+- No eval had cube-out, prelift-drag, or finger-table-penetration done reasons.
+
+Interpretation:
+- Increasing both the policy anchor and reference BC loss from `100` to `1000` did not preserve the BC baseline; it worsened the early checkpoint compared with the lower-anchor run and still collapsed by epoch `15`.
+- The reward/action-prior terms remain gameable: training reward stayed high while deterministic success fell below the fixed zero-LR/BC baseline.
+- The below-table/upward-grasp reset root cause remains fixed in the current reset path. The next change should constrain PPO's actor update explicitly, so supervised/reference terms can be tested without the PPO actor loss immediately moving the policy off the BC basin.
