@@ -81,3 +81,20 @@ Validation:
 - `python3 -m py_compile dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_env.py`
 - `git diff --check`
 - Result: passed.
+
+## 2026-06-15 21:30Z - loosen reference lift trigger
+
+Observation:
+- A100 eval job `29115291` with the live-cube reference improved the contact behavior but still failed to solve.
+- The cube briefly lifted to `0.014 m` with only `0.033 m` XY drift by step 80, but the teacher waited for `max_hold_to_cube_dist <= 0.120`; observed side-contact distances were typically `0.136-0.140`.
+- Because the lift phase did not start early enough, the reference kept commanding downward approach and reset/lost contact.
+- The run was cancelled at about 1:30 elapsed.
+
+Change:
+- Increased the reference-action lift trigger `bimanual_reference_contact_dist` from `0.120` to `0.145`.
+- This only affects the scripted reference/action-prior target; the actual task success predicate is unchanged.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_env_cfg.py`
+- `git diff --check`
+- Result: passed.
