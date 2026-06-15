@@ -100,12 +100,13 @@ def compute_bimanual_yam_cube_grasp_rewards(
         * closed_grippers
         * xy_stability
     )
+    lift_hold_gate = bimanual_ready_gate
 
     approach_reward = approach_weight * near_gate
     enclosure_reward = enclosure_weight * enclosure_gate * (0.25 + 0.75 * side_gate)
     side_alignment_reward = side_alignment_weight * side_gate * near_gate
-    lift_reward = lift_weight * lift_progress * (0.2 + 0.8 * near_gate) * (0.35 + 0.65 * side_gate)
-    height_tracking_reward = height_tracking_weight * height_tracking * near_gate
+    lift_reward = lift_weight * lift_progress * (0.10 + 0.90 * lift_hold_gate)
+    height_tracking_reward = height_tracking_weight * height_tracking * (0.10 + 0.90 * lift_hold_gate)
     xy_stability_reward = xy_stability_weight * xy_stability
     success_bonus = success_bonus_weight * in_success_region.float()
     close_action_reward = close_action_weight * prelift_gate * bimanual_close_gate * (1.0 - closed_grippers) * close_action

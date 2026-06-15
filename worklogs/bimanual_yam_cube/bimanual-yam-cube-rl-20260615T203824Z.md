@@ -899,3 +899,59 @@ Validation:
 
 Next:
 - Commit/push/redeploy after job `29118346` fully leaves the queue, then continue from the epoch-610 checkpoint with `TRAIN_SIGMA` set.
+
+## 2026-06-16 01:23Z - z-prior PPO continuation with sigma reset
+
+Goal:
+- Continue from the z-prior epoch-610 checkpoint while reopening exploration via `TRAIN_SIGMA=0.8`.
+
+Version state:
+- local_commit: `6a67e1949202ec6be9682063deff67ed762a9d02`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/bimanual-yam-cube-rl-20260615T203824Z`
+- remote_commit: `6a67e1949202ec6be9682063deff67ed762a9d02`
+
+Command/job:
+- A100 job: `29118543`
+- run_name: `yam_cube_rl_zprior_sigma_6a67e19_20260616T0123Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bimanual_yam_cube_rl_29118543.out`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_bimanual_yam_cube_grasp/yam_cube_rl_zprior_sigma_6a67e19_20260616T0123Z`
+- metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_bimanual_yam_cube_grasp/yam_cube_rl_zprior_sigma_6a67e19_20260616T0123Z/metrics/direct_info_rank_0.jsonl`
+- checkpoint seed: `/results/logs/rl_games/dextrah_bimanual_yam_cube_grasp/yam_cube_rl_zprior_d674beb_20260616T0110Z/nn/last_dextrah_bimanual_yam_cube_grasp_ep_610_rew_38231.203.pth`
+- key overrides: `TRAIN_SIGMA=0.8`, `SIGMA_INIT_VAL=0.8`, `MAX_ITERATIONS=760`, `BIMANUAL_ACTION_PRIOR_REWARD_WEIGHT=180.0`, `BIMANUAL_ACTION_PRIOR_REWARD_SHARPNESS=2.0`, `BIMANUAL_REFERENCE_LIFT_GAIN=2.0`, `BIMANUAL_REFERENCE_LIFT_MAX_ACTION=1.0`, `CUBE_LIFT_WEIGHT=200.0`, `CUBE_HEIGHT_TRACKING_WEIGHT=100.0`, `CUBE_SUCCESS_BONUS_WEIGHT=300.0`, `CUBE_LIFT_ACTION_WEIGHT=300.0`, `CUBE_DESCEND_ACTION_PENALTY_WEIGHT=-150.0`.
+
+Success criteria:
+- Policy z actions sample and retain larger positive values instead of collapsing near zero/negative.
+- `yam_cube_action_prior_delta_z_abs` drops and lift/success metrics improve.
+- If success is sustained, evaluate checkpoint with rollout artifacts.
+
+Status:
+- Complete; sigma reset improved exploration and produced transient lift, but did not sustain success.
+
+Result/evidence:
+- Job exited zero and wrote 150 JSONL rows for resumed epochs 611-760.
+- Metrics were finite (`nonfinite_count=0`).
+- `TRAIN_SIGMA=0.8` was active in the job header.
+- Sigma reset created real lift exploration early in the run: `best_yam_cube_has_lifted_rate=0.208984375` and `best_yam_cube_lift_height=0.002732273191213608` at/near epochs 613-617.
+- Sparse success remained only a one-env blip: `best_yam_cube_success_rate=0.001953125`.
+- Late training recovered side contact (`yam_cube_bimanual_side_success_rate` often `0.93-0.97`) but lost meaningful lift; final epoch 760 had `yam_cube_success_rate=0.0`, `yam_cube_has_lifted_rate=0.0`, `yam_cube_lift_height=0.00014436103811021894`, and `yam_cube_bimanual_side_success_rate=0.4453125`.
+- Latest checkpoint: `/results/logs/rl_games/dextrah_bimanual_yam_cube_grasp/yam_cube_rl_zprior_sigma_6a67e19_20260616T0123Z/nn/last_dextrah_bimanual_yam_cube_grasp_ep_760_rew_53154.688.pth`.
+
+Analysis:
+- The environment is physically liftable and PPO can now discover lift, but the reward still allows policies that trade off grasp retention and lift instead of doing both.
+- Next patch should harden post-lift reward around the strict bimanual ready gate so lift/height rewards are strongest only when the robot keeps closed, balanced side contact.
+
+## 2026-06-16 01:35Z - gate lift reward on grasp retention
+
+Goal:
+- Reward post-grasp lift only when the policy maintains the same strict bimanual ready grasp gate used by lift-action readiness.
+
+Change:
+- Added `lift_hold_gate = bimanual_ready_gate`.
+- Changed `lift_reward` and `height_tracking_reward` to use `(0.10 + 0.90 * lift_hold_gate)` instead of soft `near_gate`/`side_gate` factors.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_rewards.py`
+- Result: passed.
+
+Next:
+- Commit/push/redeploy, then continue from the epoch-760 checkpoint with sigma exploration and retention-gated lift reward.
