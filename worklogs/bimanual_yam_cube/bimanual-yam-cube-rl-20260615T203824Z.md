@@ -1297,3 +1297,45 @@ Validation:
 
 Next:
 - Commit/push/redeploy, then rerun stable validator with `LIFT_HEIGHT=0.06`.
+
+## 2026-06-16 03:43Z - planned stable validator with smaller lift
+
+Goal:
+- Check whether a smaller scripted lift target produces stable physical lift without losing contact.
+
+Version state:
+- local_commit: `772a0fd2e9ea3ccd5f77848709e9448e4964e960`
+- remote_commit: `772a0fd2e9ea3ccd5f77848709e9448e4964e960`
+
+Planned command/job:
+- Submit `cluster/sbatch_validate_bimanual_yam_cube_grasp_env_1gpu.sh`.
+- Expected run: `yam_cube_strict_stable_validator_lift006_772a0fd_20260616T0343Z`
+- Key settings: same strict stable validator settings as prior run, plus `LIFT_HEIGHT=0.06`.
+
+Success criteria:
+- Stable no-assist success, or diagnostics showing whether more contact/friction/reference tuning is needed.
+
+Result/evidence:
+- Job `29123383` completed and failed stable validation.
+- Metrics: `scripted_contact_reached=True`, `scripted_actual_lift_start_step=236`, `max_lift=0.028804734349250793`, `max_success_rate=0.0`, `max_lifted_cube_linear_speed=0.0`, `max_lifted_cube_angular_speed=0.0`.
+- Sampled lift remained stable but slipped: step 240 had `lift=0.008`, `lin_speed=0.360`, `ang_speed=4.307`; later contact distances rose and the cube did not follow the grippers.
+
+Analysis:
+- Smaller lift target did not solve the issue. The next tuning should increase sustained friction/contact while preserving the stability gates and the lower depenetration/contact-offset settings.
+
+## 2026-06-16 03:50Z - grip/friction tuning
+
+Goal:
+- Improve sustained side grasp without reintroducing large contact impulses.
+
+Change:
+- Restored higher cube friction: static `1.6 -> 2.4`, dynamic `1.1 -> 1.8`.
+- Reduced cube density from `80.0 -> 50.0`.
+- Kept the stability improvements from the prior tuning: contact offset `0.002`, solver `32/8`, damping `0.20/1.00`, max depenetration velocity `1.0`.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_env_cfg.py`
+- Result: passed.
+
+Next:
+- Commit/push/redeploy and rerun stable validator with `LIFT_HEIGHT=0.06`.

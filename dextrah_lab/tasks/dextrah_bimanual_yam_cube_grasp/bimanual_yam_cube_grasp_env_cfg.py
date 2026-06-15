@@ -148,10 +148,10 @@ class DextrahBimanualYAMCubeGraspEnvCfg(DirectRLEnvCfg):
         ),
     )
 
-    cube_static_friction = 1.6
-    cube_dynamic_friction = 1.1
+    cube_static_friction = 2.4
+    cube_dynamic_friction = 1.8
     cube_restitution = 0.0
-    cube_density = 80.0
+    cube_density = 50.0
     cube_contact_offset = 0.002
     cube_rest_offset = 0.0
     cube_solver_position_iterations = 32
