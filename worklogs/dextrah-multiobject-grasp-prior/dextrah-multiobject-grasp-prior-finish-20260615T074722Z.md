@@ -845,3 +845,31 @@ Command / Job:
 Expected signal:
 - `cube_action_prior_active_rate` should remain high after the old collapse window instead of dropping below `0.1`.
 - If the active-rate hypothesis is sufficient, success/lift should stop degrading as XY error approaches the success tolerance.
+
+## 2026-06-15T12:16:00Z - Full-episode prior completed; prepare BC handoff
+
+Result:
+- Job `1029809` completed normally at elapsed `00:24:18`.
+- Metrics rows covered epochs 68-90.
+- Full-episode lift prior kept teacher signal active, but did not solve success:
+  - epoch 83: success `0.00781`, has-lifted `0.45313`, lift height `0.12212m`, XY `0.14661m`, active prior `0.66895`
+  - epoch 87: success `0.03516`, has-lifted `0.42578`, lift height `0.09762m`, XY `0.09998m`, active prior `0.72266`
+  - epoch 90: success `0.01953`, has-lifted `0.49414`, lift height `0.11571m`, XY `0.14419m`, active prior `0.70801`
+- Best row remained epoch 68: success `0.18066`, has-lifted `0.36914`, lift height `0.07388m`, XY `0.04362m`.
+
+Analysis:
+- The old active-rate collapse was real, but it was not the main blocker. Keeping the action prior active through the full episode mostly taught strong lift/close behavior while still allowing large XY drift and poor grasp ownership.
+- Reward-only PPO is not providing a reliable supervised handoff from the scripted grasp prior. The existing BC diagnostic supports `compute_grasp_prior_reference_actions()` and imports the multi-object task, so the next practical route is supervised action imitation on the old-cache grasp-prior reference, followed by PPO fine-tuning/eval.
+- The BC wrapper did not forward multi-object object physics overrides, which would make BC collection inconsistent with training/eval.
+
+Change:
+- Patched `cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh` to accept, export, echo, and forward object physics overrides for multi-object BC collection: density, friction, contact/rest offsets, solver iterations, damping, and max depenetration velocity.
+
+Version Control:
+- implementation_commit: pending
+- changed_files: `cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh`, this worklog.
+
+Next:
+- Commit/deploy the BC wrapper parity fix.
+- Launch a 1-GPU BC run on `Dextrah-Franka-Multi-Object-Grasp` from the low-LR epoch-67 checkpoint using the old verified cache and physics-parity settings.
+- Evaluate the BC checkpoint with the same physics-parity eval wrapper; if BC can imitate the prior rollouts, continue PPO fine-tuning from the BC checkpoint.
