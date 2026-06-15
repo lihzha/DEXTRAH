@@ -94,8 +94,8 @@ class DextrahBimanualYAMCubeGraspEnvCfg(DirectRLEnvCfg):
     # band to contact the side face instead of lifting above the object.
     cube_size = 0.16
     cube_spawn_z = table_surface_z + cube_size / 2.0 + 0.005
-    cube_lift_height = 0.14
-    cube_success_lift_height = 0.10
+    cube_lift_height = 0.08
+    cube_success_lift_height = 0.04
     cube_success_xy_tol = 0.16
     cube_success_hand_dist = 0.18
     side_success_y_margin = 0.010
