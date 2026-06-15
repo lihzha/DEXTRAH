@@ -369,6 +369,15 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             self.grasp_prior_action_warmstart_lift_latched[env_ids] = False
         if hasattr(self, "grasp_prior_action_warmstart_reference_finger_center_dist"):
             self.grasp_prior_action_warmstart_reference_finger_center_dist[env_ids] = 0.0
+        if hasattr(self, "grasp_prior_action_prior_reward"):
+            self.grasp_prior_action_prior_active[env_ids] = False
+            self.grasp_prior_action_prior_phase[env_ids] = -1
+            self.grasp_prior_action_prior_teacher_actions[env_ids] = 0.0
+            self.grasp_prior_action_prior_delta_abs[env_ids] = 0.0
+            self.grasp_prior_action_prior_reward[env_ids] = 0.0
+            self.grasp_prior_action_prior_teacher_action_z[env_ids] = 0.0
+            self.grasp_prior_action_prior_teacher_gripper_action[env_ids] = 0.0
+            self.grasp_prior_action_prior_exact_ee_error[env_ids] = 0.0
 
     def _sync_reset_joint_state(
         self,
@@ -839,7 +848,7 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         teacher_actions, _, _, _ = self._grasp_prior_reference_actions()
         return teacher_actions.detach().clamp(-1.0, 1.0)
 
-    def _compute_grasp_prior_action_prior_reward(self) -> torch.Tensor:
+    def _clear_grasp_prior_action_prior_cache(self) -> None:
         self._ensure_cube_buffers()
         self.grasp_prior_action_prior_active[:] = False
         self.grasp_prior_action_prior_phase[:] = -1
@@ -850,12 +859,16 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         self.grasp_prior_action_prior_teacher_gripper_action[:] = 0.0
         self.grasp_prior_action_prior_exact_ee_error[:] = 0.0
 
+    def _cache_grasp_prior_action_prior_reference(self) -> None:
+        self._clear_grasp_prior_action_prior_cache()
         if not bool(self.cfg.grasp_prior_action_prior_reward_enabled):
-            return self.grasp_prior_action_prior_reward
+            return
         if not getattr(self, "_grasp_prior_reset_enabled", False):
-            return self.grasp_prior_action_prior_reward
+            return
 
         teacher_actions, active, phase, exact_ee_error = self._grasp_prior_reference_actions()
+        teacher_actions = teacher_actions.detach().clamp(-1.0, 1.0)
+        exact_ee_error = exact_ee_error.detach()
         self.grasp_prior_action_prior_active[:] = active
         self.grasp_prior_action_prior_phase[:] = phase
         self.grasp_prior_action_prior_teacher_actions[:] = teacher_actions
@@ -863,6 +876,20 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         self.grasp_prior_action_prior_teacher_gripper_action[:] = teacher_actions[:, 6]
         self.grasp_prior_action_prior_exact_ee_error[:] = exact_ee_error
 
+    def _compute_grasp_prior_action_prior_reward(self) -> torch.Tensor:
+        self._ensure_cube_buffers()
+        self.grasp_prior_action_prior_delta_abs[:] = 0.0
+        self.grasp_prior_action_prior_reward[:] = 0.0
+
+        if not bool(self.cfg.grasp_prior_action_prior_reward_enabled):
+            self._clear_grasp_prior_action_prior_cache()
+            return self.grasp_prior_action_prior_reward
+        if not getattr(self, "_grasp_prior_reset_enabled", False):
+            self._clear_grasp_prior_action_prior_cache()
+            return self.grasp_prior_action_prior_reward
+
+        active = self.grasp_prior_action_prior_active
+        teacher_actions = self.grasp_prior_action_prior_teacher_actions
         policy_actions = self.actions
         if bool(self.cfg.grasp_prior_action_warmstart_enabled):
             policy_actions = self.grasp_prior_action_warmstart_policy_actions
@@ -881,6 +908,7 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
 
     def _pre_physics_step(self, actions: torch.Tensor) -> None:
         applied_actions = self._apply_grasp_prior_action_warmstart(actions)
+        self._cache_grasp_prior_action_prior_reference()
         super()._pre_physics_step(applied_actions)
 
     def _grasp_prior_reset_extra_success_mask(

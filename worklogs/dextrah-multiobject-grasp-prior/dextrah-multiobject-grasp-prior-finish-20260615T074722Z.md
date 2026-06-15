@@ -761,3 +761,31 @@ Ungated fixed-schedule reward-only ablation:
 
 Next:
 - Monitor `1029777`; keep/evaluate only if policy-controlled success or lift improves without the same XY drift collapse.
+
+## 2026-06-15T11:42:00Z - Ungated prior still collapsed; patch action-prior timing
+
+Ungated fixed-schedule result:
+- Job `1029777` was manually canceled at elapsed `00:11:29` after reproducing collapse under the old code.
+- Best row was epoch 68 with `cube_success_rate=0.16699`, `has_lifted=0.34766`, lift height `0.06642m`, XY error `0.04499m`, and `cube_action_prior_delta_abs=0.85575`.
+- The ungated schedule did produce lift teacher signal: epoch 69 had `cube_action_prior_lift_rate=0.47461` and `cube_action_prior_teacher_z=0.15400`; epoch 71 had `cube_action_prior_lift_rate=0.49609` and `cube_action_prior_teacher_z=0.21250`.
+- Despite that, train success dropped to `0.03809` at epoch 69, `0.00586` at epoch 71, and stayed near zero for several rows while XY error rose toward `0.10m`.
+
+Diagnosis:
+- `_compute_grasp_prior_action_prior_reward()` recomputed `_grasp_prior_reference_actions()` inside `_get_rewards`, after the policy action had already been applied and the simulator had advanced.
+- That compares the action taken from the previous pre-step state against a teacher action generated for the next state. The action-prior deltas were therefore partly measuring time misalignment, not only policy error.
+
+Change:
+- Patched `DextrahFrankaCubeGraspEnv` to cache the grasp-prior teacher action in `_pre_physics_step()` before `super()._pre_physics_step(applied_actions)`.
+- `_compute_grasp_prior_action_prior_reward()` now consumes the cached pre-step teacher action and compares it to the matching policy action; it no longer recomputes the teacher from post-step state.
+- Reset now clears action-prior diagnostics for reset envs to avoid stale active/phase state.
+
+Version Control:
+- implementation_commit: pending
+- changed_files: `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`, this worklog.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`
+- `git diff --check`
+
+Next:
+- Commit and deploy this patch, then relaunch the same ungated reward-only diagnostic from the low-LR epoch-67 checkpoint. The expected first signal is lower/more coherent `cube_action_prior_delta_abs`; the required outcome is that policy-controlled success/lift no longer collapses from XY drift.
