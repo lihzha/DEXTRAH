@@ -922,9 +922,9 @@ PY
         agent.params.config.grad_norm='$GRAD_NORM' \
         agent.params.config.save_frequency='$SAVE_FREQUENCY' \
         agent.params.config.multi_gpu='$MULTI_GPU' \
-        agent.params.config.dextrah_grasp_prior_bc_loss_enabled='$DEXTRAH_GRASP_PRIOR_BC_LOSS_ENABLED' \
-        agent.params.config.dextrah_grasp_prior_bc_loss_weight='$DEXTRAH_GRASP_PRIOR_BC_LOSS_WEIGHT' \
-        agent.params.config.dextrah_grasp_prior_bc_loss_dims='$DEXTRAH_GRASP_PRIOR_BC_LOSS_DIMS' \
+        +agent.params.config.dextrah_grasp_prior_bc_loss_enabled='$DEXTRAH_GRASP_PRIOR_BC_LOSS_ENABLED' \
+        +agent.params.config.dextrah_grasp_prior_bc_loss_weight='$DEXTRAH_GRASP_PRIOR_BC_LOSS_WEIGHT' \
+        +agent.params.config.dextrah_grasp_prior_bc_loss_dims='$DEXTRAH_GRASP_PRIOR_BC_LOSS_DIMS' \
         \"\${CENTRAL_VALUE_AGENT_OVERRIDES[@]}\" \
         \"\${RGB_AGENT_OVERRIDES[@]}\" \
         \"\${TASK_OVERRIDES[@]}\"
