@@ -6728,3 +6728,679 @@ Stop State:
   documentation.
 - Do not continue monitoring, patching, launching, or canceling jobs in this
   turn unless the user gives a new explicit instruction.
+
+## 2026-06-13 01:10 PDT - robolab-orbit-render-bridge
+
+Goal:
+- Import RoboLab scene USDs into DEXTRAH's Isaac Lab render path and produce a
+  360 degree constant-speed orbit video looking down at the table center.
+
+Hypothesis:
+- DEXTRAH can treat RoboLab as an optional scene asset provider, reference the
+  resolved RoboLab USD under `/World/RoboLabScene`, compute a table-centered
+  orbit target from USD bounds, and capture headless frames with `TiledCamera`.
+
+Change:
+- Added a lightweight `dextrah_lab.robolab_bridge` resolver that can use an
+  installed `robolab` package, explicit scene dirs, or the sibling RoboLab
+  checkout.
+- Added `dextrah_lab/scene_scripts/render_robolab_scene.py` to render RoboLab
+  scenes as an orbit PNG sequence and optional `orbit.mp4`.
+- Added l401 Slurm wrappers for the RoboLab orbit render path.
+- Updated `setup.py` so the bridge package is installable without changing
+  the rest of the package surface.
+
+Version Control:
+- agent_id: codex-robolab-orbit-render
+- worktree: `/home/lzha/code/DEXTRAH`
+- worklog: `WORKLOG.md`
+- branch: main before commit; agent branch pending
+- base_commit: `cac41fc47ce3e002a4c1b6c0afce1d6b971e18c9`
+- implementation_commit: pending
+- push/pull: pending
+- changed_files: `setup.py`, `dextrah_lab/robolab_bridge/*`,
+  `dextrah_lab/scene_scripts/render_robolab_scene.py`,
+  `cluster/sbatch_render_robolab_scene.sh`,
+  `cluster/submit_render_robolab_scene_l401.sh`, `WORKLOG.md`
+- remote_commit/status: pending
+
+Command / Job:
+- command: planned l401 smoke via `cluster/sbatch_render_robolab_scene.sh`
+  with `WIDTH=640 HEIGHT=360 FPS=6 VIDEO_SECONDS=2 CAPTURE/encode orbit`.
+- job_id: pending
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/robolab_scene/robolab_orbit_smoke_20260613_0110`
+- logs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/robolab_scene_<job>.out`
+- artifacts: `frames/orbit_*.png`, `orbit.mp4`, `render_manifest.json`,
+  `camera_poses.json`, `robolab_scene_in_dextrah.usda`
+
+Result:
+- status: implementation checks pending
+- metrics/artifacts: none yet
+- key evidence: local cheap checks to be recorded after rerun
+
+Analysis:
+- Local workstation has GPUs but no visible local Isaac Sim `python.sh` or conda
+  environment, so l401 container rendering is the practical validation path.
+
+Next:
+- Commit/push the implementation, deploy exact commit to an agent-owned l401
+  worktree, run the small smoke render, fetch/inspect frames/video, patch if
+  the render is blank or the orbit target is wrong, then scale if needed.
+
+## 2026-06-13 01:20 PDT - robolab-orbit-viewport-fallback
+
+Goal:
+- Recover the RoboLab orbit render after the first TiledCamera smoke attempts
+  stalled before writing frames.
+
+Hypothesis:
+- The imported RoboLab static USD path does not need physics stepping or
+  `TiledCamera` reset. A viewport-capture orbit should avoid the reset stall
+  while still using the DEXTRAH/Isaac headless renderer.
+
+Change:
+- Added `--capture_backend viewport|tiled` to
+  `render_robolab_scene.py`, with `viewport` as the default.
+- Implemented viewport orbit frame capture using the existing Isaac viewport
+  capture pattern from DEXTRAH scene scripts.
+- Updated the l401 wrapper to pass `CAPTURE_BACKEND`, defaulting to viewport.
+
+Version Control:
+- agent_id: codex-robolab-orbit-render
+- worktree: `/home/lzha/code/DEXTRAH`
+- worklog: `WORKLOG.md`
+- branch: `codex/robolab-orbit-render-20260613`
+- base_commit: `27827a95a82bf79b74b4b821e30d1f00fa548e07`
+- implementation_commit: pending
+- push/pull: pending Git bundle deploy to l401 because l401 cannot fetch
+  GitHub SSH remotes.
+- changed_files: `dextrah_lab/scene_scripts/render_robolab_scene.py`,
+  `cluster/sbatch_render_robolab_scene.sh`, `WORKLOG.md`
+- remote_commit/status: previous l401 agent checkout at `27827a95`; new commit
+  pending.
+
+Command / Job:
+- command:
+  `sbatch --export=ALL,CODE_NFS=<agent_code>,ROBOLAB_NFS=<staged_robolab>,RUN_NAME=...,WIDTH=640,HEIGHT=360,FPS=4,VIDEO_SECONDS=1.0,SETTLE_STEPS=0,WARMUP_FRAMES=0,RT_SUBFRAMES=1,SIM_STEPS_PER_FRAME=0 cluster/sbatch_render_robolab_scene.sh`
+- job_id: `1028899` then `1028901`, both canceled after repeated stall
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/robolab_scene/robolab_orbit_smoke_20260613_0115`
+  and
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/robolab_scene/robolab_orbit_smoke_static_20260613_0117`
+- logs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/robolab_scene_1028899.out`,
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/robolab_scene_1028901.out`
+- artifacts: no frame artifacts before cancel
+
+Result:
+- status: failed then patched
+- metrics/artifacts: both jobs reached scene load, resolved
+  `/robolab/assets/scenes/banana_bowl.usda`, and computed table target near
+  `(0.043, 0.0, 0.053)`; both stalled after `creating orbit TiledCamera` and
+  `resetting SimulationContext after camera creation`.
+- key evidence: no `frames/orbit_*.png` were written for either run.
+
+Analysis:
+- RoboLab asset staging was sufficient for USD resolution and table-bounds
+  computation. The failure localized to the TiledCamera/reset/capture path, not
+  scene resolution.
+
+Next:
+- Commit the viewport fallback, redeploy exact commit to l401, run a new
+  viewport smoke, fetch/inspect frames/video, and scale the duration/resolution
+  only after the smoke is visually valid.
+
+## 2026-06-13 01:24 PDT - robolab-orbit-sensor-noreset
+
+Goal:
+- Produce the first actual orbit frames after viewport capture also blocked on
+  the first frame.
+
+Hypothesis:
+- The blocking calls are `sim.render()` / viewport file capture, not scene
+  resolution. A no-reset `TiledCamera` sensor path that advances
+  `simulation_app.update()` and reads `camera.data.output["rgb"]` may avoid the
+  stalled render APIs while still producing camera images.
+
+Change:
+- Added `--capture_backend sensor` and made it the default.
+- The sensor backend creates a `TiledCamera`, moves the camera prim around the
+  orbit, advances the app with `simulation_app.update()`, and saves RGB tensors
+  without calling `SimulationContext.reset()` or `sim.render()`.
+- Updated the l401 wrapper default to `CAPTURE_BACKEND=sensor`.
+
+Version Control:
+- agent_id: codex-robolab-orbit-render
+- worktree: `/home/lzha/code/DEXTRAH`
+- worklog: `WORKLOG.md`
+- branch: `codex/robolab-orbit-render-20260613`
+- base_commit: `048e28d268f33ea8303cc8b03eda26c32f59517b`
+- implementation_commit: pending
+- push/pull: pending Git bundle deploy to l401.
+- changed_files: `dextrah_lab/scene_scripts/render_robolab_scene.py`,
+  `cluster/sbatch_render_robolab_scene.sh`, `WORKLOG.md`
+- remote_commit/status: previous l401 agent checkout at `048e28d`; new commit
+  pending.
+
+Command / Job:
+- command: previous viewport smoke job `1028902` with
+  `CAPTURE_BACKEND=viewport`.
+- job_id: `1028902`, canceled after no file output.
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/robolab_scene/robolab_orbit_viewport_smoke_20260613_0121`
+- logs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/robolab_scene_1028902.out`
+- artifacts: no frame artifacts before cancel
+
+Result:
+- status: viewport failed then patched
+- metrics/artifacts: scene loaded and entered `capturing orbit frame 1/4`, but
+  no `orbit_*.png` was written.
+- key evidence: no files in the run directory after more than one minute in
+  the first viewport capture call.
+
+Analysis:
+- The bridge and RoboLab asset staging are working; the remaining issue is
+  selecting a headless capture API that can return image data reliably on this
+  l401 container/node combination.
+
+Next:
+- Commit the no-reset sensor backend, redeploy exact commit to l401, run a
+  four-frame smoke, and inspect the image tensors/video.
+
+## 2026-06-13 01:24 PDT - robolab-orbit-sensor-xform-precision
+
+Goal:
+- Fix the first no-reset sensor smoke failure and produce at least one valid
+  RoboLab orbit frame through the DEXTRAH render script.
+
+Hypothesis:
+- The no-reset sensor path reached camera capture setup. The failure is a USD
+  xform authoring bug: Isaac's camera prim already has a double-precision
+  orient op, while the script was adding a float orient op after clearing the
+  op order.
+
+Change:
+- Updated `_set_camera_pose()` to reuse existing `xformOp:translate` and
+  `xformOp:orient` attributes when present, preserve their precision, and set
+  the xform op order explicitly.
+
+Version Control:
+- agent_id: codex-robolab-orbit-render
+- worktree: `/home/lzha/code/DEXTRAH`
+- worklog: `WORKLOG.md`
+- branch: `codex/robolab-orbit-render-20260613`
+- base_commit: `96dd82d5813e58c37a0df85b3996270734254c72`
+- implementation_commit: pending
+- push/pull: pending Git bundle deploy to l401.
+- changed_files: `dextrah_lab/scene_scripts/render_robolab_scene.py`,
+  `WORKLOG.md`
+- remote_commit/status: l401 agent checkout at
+  `96dd82d5813e58c37a0df85b3996270734254c72`; new commit pending.
+
+Command / Job:
+- command:
+  `sbatch --export=ALL,CODE_NFS=<agent_code>,ROBOLAB_NFS=<staged_robolab>,RUN_NAME=robolab_orbit_sensor_smoke_20260613_0125,WIDTH=320,HEIGHT=180,FPS=1,VIDEO_SECONDS=1.0,SETTLE_STEPS=0,WARMUP_FRAMES=0,RT_SUBFRAMES=2,SIM_STEPS_PER_FRAME=0,PHYSICS_DEVICE=cuda:0,CAPTURE_BACKEND=sensor cluster/sbatch_render_robolab_scene.sh`
+- job_id: `1028903`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/robolab_scene/robolab_orbit_sensor_smoke_20260613_0125`
+- logs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/robolab_scene_1028903.out`
+- artifacts: no frame artifacts before exception
+
+Result:
+- status: failed then patched
+- metrics/artifacts: run exited after reaching `[robolab-render] capturing
+  orbit frames with sensor backend: 2 frames at 1 fps`.
+- key evidence: exception from `UsdGeomXformable::AddXformOp` because
+  `/World/OrbitCamera.xformOp:orient` already had type `quatd`.
+
+Analysis:
+- RoboLab USD loading and target computation are validated on l401. The next
+  risk is whether `TiledCamera.update()` returns RGB data without a
+  `SimulationContext.reset()` once the camera pose update succeeds.
+
+Next:
+- Commit and deploy the xform precision fix, rerun the same low-resolution
+  sensor smoke, and inspect any generated frames/video before scaling.
+
+## 2026-06-13 01:27 PDT - robolab-orbit-sensor-manual-init
+
+Goal:
+- Advance the no-reset sensor backend past the first `TiledCamera.update()`
+  call and produce RoboLab orbit frames.
+
+Hypothesis:
+- `TiledCamera` relies on SensorBase initialization normally triggered by the
+  simulator timeline during `SimulationContext.reset()`. The full sim reset
+  path stalls in this scene, but the sensor's own `_initialize_impl()` and
+  `reset()` should be enough to create timestamps, buffers, render products,
+  and annotators.
+
+Change:
+- Added `_initialize_tiled_camera_sensor()` for the sensor backend.
+- The helper initializes and resets only the `TiledCamera`, avoiding
+  `SimulationContext.reset()`.
+- The sensor capture loop now calls `camera.update(..., force_recompute=True)`
+  after moving the camera pose.
+
+Version Control:
+- agent_id: codex-robolab-orbit-render
+- worktree: `/home/lzha/code/DEXTRAH`
+- worklog: `WORKLOG.md`
+- branch: `codex/robolab-orbit-render-20260613`
+- base_commit: `5d64f7cf479100d476601a465a3538b31e793d85`
+- implementation_commit: pending
+- push/pull: pending Git bundle deploy to l401.
+- changed_files: `dextrah_lab/scene_scripts/render_robolab_scene.py`,
+  `WORKLOG.md`
+- remote_commit/status: l401 agent checkout at
+  `5d64f7cf479100d476601a465a3538b31e793d85`; new commit pending.
+
+Command / Job:
+- command:
+  `sbatch --export=ALL,CODE_NFS=<agent_code>,ROBOLAB_NFS=<staged_robolab>,RUN_NAME=robolab_orbit_sensor_smoke_20260613_0129,ROBOLAB_SCENE=banana_bowl.usda,WIDTH=320,HEIGHT=180,FPS=1,VIDEO_SECONDS=1.0,SETTLE_STEPS=0,WARMUP_FRAMES=0,RT_SUBFRAMES=2,SIM_STEPS_PER_FRAME=0,PHYSICS_DEVICE=cuda:0,CAPTURE_BACKEND=sensor cluster/sbatch_render_robolab_scene.sh`
+- job_id: `1028904`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/robolab_scene/robolab_orbit_sensor_smoke_20260613_0129`
+- logs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/robolab_scene_1028904.out`
+- artifacts: no frame artifacts before exception
+
+Result:
+- status: failed then patched
+- metrics/artifacts: the run passed the xform precision point and failed at
+  `camera.update(0.0)` with `AttributeError: 'TiledCamera' object has no
+  attribute '_timestamp'`.
+- key evidence: SensorBase expects `_timestamp`, `_timestamp_last_update`, and
+  `_is_outdated` from `_initialize_impl()` before `update()`.
+
+Analysis:
+- The previous patch was correct. The next missing piece is normal sensor
+  initialization, not scene loading, camera pose math, or object assets.
+
+Next:
+- Commit and deploy manual sensor initialization, rerun the low-resolution
+  sensor smoke, and inspect generated frames/video if it progresses.
+
+## 2026-06-13 01:33 PDT - robolab-orbit-sensor-view-pose
+
+Goal:
+- Turn the successful no-reset sensor capture from uniform gray frames into
+  visible RoboLab scene frames.
+
+Hypothesis:
+- Manual USD xform authoring moves attributes on the camera prim, but the
+  initialized Isaac Lab `XFormPrim` view / tiled render product may not observe
+  that pose update correctly. Moving the camera with
+  `TiledCamera.set_world_poses_from_view()` should update the sensor-owned view
+  using Isaac Lab's own look-at convention.
+
+Change:
+- Added `_set_sensor_camera_view()` for the no-reset sensor backend.
+- The sensor capture loop now moves the camera through
+  `camera.set_world_poses_from_view(eyes, targets)` instead of direct USD xform
+  authoring.
+
+Version Control:
+- agent_id: codex-robolab-orbit-render
+- worktree: `/home/lzha/code/DEXTRAH`
+- worklog: `WORKLOG.md`
+- branch: `codex/robolab-orbit-render-20260613`
+- base_commit: `126dfe96d91a78599c569c270fc673d610caa652`
+- implementation_commit: pending
+- push/pull: pending Git bundle deploy to l401.
+- changed_files: `dextrah_lab/scene_scripts/render_robolab_scene.py`,
+  `WORKLOG.md`
+- remote_commit/status: l401 agent checkout at
+  `126dfe96d91a78599c569c270fc673d610caa652`; new commit pending.
+
+Command / Job:
+- command:
+  `sbatch --export=ALL,CODE_NFS=<agent_code>,ROBOLAB_NFS=<staged_robolab>,RUN_NAME=robolab_orbit_sensor_smoke_20260613_0133,ROBOLAB_SCENE=banana_bowl.usda,WIDTH=320,HEIGHT=180,FPS=1,VIDEO_SECONDS=1.0,SETTLE_STEPS=0,WARMUP_FRAMES=0,RT_SUBFRAMES=2,SIM_STEPS_PER_FRAME=0,PHYSICS_DEVICE=cuda:0,CAPTURE_BACKEND=sensor cluster/sbatch_render_robolab_scene.sh`
+- job_id: `1028905`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/robolab_scene/robolab_orbit_sensor_smoke_20260613_0133`
+- logs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/robolab_scene_1028905.out`
+- artifacts:
+  `cluster_results/l401/robolab_orbit_sensor_smoke_20260613_0133/frames/orbit_0000.png`,
+  `cluster_results/l401/robolab_orbit_sensor_smoke_20260613_0133/frames/orbit_0001.png`,
+  `cluster_results/l401/robolab_orbit_sensor_smoke_20260613_0133/render_manifest.json`
+
+Result:
+- status: failed visual validation then patched
+- metrics/artifacts: two `320x180` RGB PNG frames and a manifest were written,
+  but both frames are uniform gray. The cluster container skipped video encode
+  because `ffmpeg` is not installed there.
+- key evidence: manifest recorded `capture_backend=sensor`, 2 frames, and the
+  correct RoboLab scene path; local visual inspection showed no visible table or
+  objects.
+
+Analysis:
+- This validates the bridge, asset staging, manual sensor initialization, and
+  RGB buffer saving. The remaining failure is view/render-product correctness,
+  not scene resolution or file output.
+
+Next:
+- Commit and deploy the sensor view-pose patch, rerun the tiny smoke, inspect
+  frames, and if still gray, retry the standard tiled path with a longer
+  timeout or add an explicit Replicator render step.
+
+## 2026-06-13 01:33 PDT - robolab-orbit-final-render
+
+Goal:
+- Produce the requested 360-degree RoboLab-in-DEXTRAH orbit video with the
+  camera moving at constant angular speed and looking at the table center from
+  above.
+
+Hypothesis:
+- The visual smoke at commit `6a9af04b7a56b54685d5fd077cacc80309d79aeb`
+  produced valid RoboLab scene frames after switching the no-reset sensor path
+  to `TiledCamera.set_world_poses_from_view()`. Scaling the same backend to
+  72 frames should produce a usable orbit sequence.
+
+Change:
+- No new code changes for this attempt.
+- Use the validated sensor backend at `960x540`, `12 fps`, `6 seconds`.
+- Encode the final video locally after fetching frames because the cluster
+  container does not have `ffmpeg`.
+
+Version Control:
+- agent_id: codex-robolab-orbit-render
+- worktree: `/home/lzha/code/DEXTRAH`
+- worklog: `WORKLOG.md`
+- branch: `codex/robolab-orbit-render-20260613`
+- base_commit: `6a9af04b7a56b54685d5fd077cacc80309d79aeb`
+- implementation_commit: `6a9af04b7a56b54685d5fd077cacc80309d79aeb`
+- push/pull: pushed to GitHub and deployed to l401 from
+  `/tmp/dextrah_robolab_orbit_6a9af04.bundle`.
+- changed_files: none for launch
+- remote_commit/status: l401 agent checkout at
+  `6a9af04b7a56b54685d5fd077cacc80309d79aeb`, detached clean checkout.
+
+Command / Job:
+- command:
+  `sbatch --export=ALL,CODE_NFS=<agent_code>,ROBOLAB_NFS=<staged_robolab>,RUN_NAME=robolab_orbit_final_20260613_0141,ROBOLAB_SCENE=banana_bowl.usda,WIDTH=960,HEIGHT=540,FPS=12,VIDEO_SECONDS=6.0,SETTLE_STEPS=0,WARMUP_FRAMES=0,RT_SUBFRAMES=4,SIM_STEPS_PER_FRAME=0,PHYSICS_DEVICE=cuda:0,CAPTURE_BACKEND=sensor cluster/sbatch_render_robolab_scene.sh`
+- job_id: `1028909`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/robolab_scene/robolab_orbit_final_20260613_0141`
+- logs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/robolab_scene_1028909.out`
+- artifacts: expected `frames/orbit_*.png`, `render_manifest.json`,
+  `camera_poses.json`, `robolab_scene_in_dextrah.usda`, and local
+  `orbit.mp4` after fetch/encode.
+
+Result:
+- status: running
+- metrics/artifacts: pending
+- key evidence: pending
+
+Analysis:
+- Pending.
+
+Next:
+- Monitor job `1028909`, fetch the frame sequence, encode locally, validate
+  frame count/duration/resolution, inspect representative frames/video, update
+  this worklog entry, and only then finish.
+
+## 2026-06-13 01:36 PDT - robolab-orbit-final-validation
+
+Goal:
+- Validate the final RoboLab orbit render and make the video available locally.
+
+Hypothesis:
+- The fetched 72-frame sequence from job `1028909` should encode into a
+  6-second, 12 fps, 960x540 MP4 and show a complete orbit around the table
+  scene.
+
+Change:
+- Fetched final render artifacts from l401 into
+  `cluster_results/l401/robolab_orbit_final_20260613_0141/`.
+- Encoded `orbit.mp4` locally with `ffmpeg` because the cluster container
+  skipped video encoding due to missing `ffmpeg`.
+
+Version Control:
+- agent_id: codex-robolab-orbit-render
+- worktree: `/home/lzha/code/DEXTRAH`
+- worklog: `WORKLOG.md`
+- branch: `codex/robolab-orbit-render-20260613`
+- base_commit: `6a9af04b7a56b54685d5fd077cacc80309d79aeb`
+- implementation_commit: `6a9af04b7a56b54685d5fd077cacc80309d79aeb`
+- push/pull: implementation pushed; final worklog commit pending.
+- changed_files: `WORKLOG.md`
+- remote_commit/status: render ran from l401 detached checkout
+  `6a9af04b7a56b54685d5fd077cacc80309d79aeb`.
+
+Command / Job:
+- command:
+  `ffmpeg -y -loglevel error -framerate 12 -i cluster_results/l401/robolab_orbit_final_20260613_0141/frames/orbit_%04d.png -vf format=yuv420p -c:v libx264 -pix_fmt yuv420p -movflags +faststart cluster_results/l401/robolab_orbit_final_20260613_0141/orbit.mp4`
+- job_id: `1028909` for the cluster render; local encode job id n/a
+- run_dir:
+  `cluster_results/l401/robolab_orbit_final_20260613_0141/`
+- logs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/robolab_scene_1028909.out`
+- artifacts:
+  `cluster_results/l401/robolab_orbit_final_20260613_0141/orbit.mp4`,
+  `cluster_results/l401/robolab_orbit_final_20260613_0141/render_manifest.json`,
+  `cluster_results/l401/robolab_orbit_final_20260613_0141/camera_poses.json`,
+  `cluster_results/l401/robolab_orbit_final_20260613_0141/frames/`
+
+Result:
+- status: passed
+- metrics/artifacts: local `ffprobe` reports `960x540`, `12/1` fps,
+  `6.000000` seconds, and `72` frames.
+- key evidence: inspected frames `orbit_0000.png`, `orbit_0018.png`,
+  `orbit_0036.png`, and `orbit_0054.png`; all show the RoboLab table scene,
+  banana, and bowl from different angles with the camera looking downward at
+  the table area. `viz-open` returned
+  `http://localhost:8765/view?path=DEXTRAH/cluster_results/l401/robolab_orbit_final_20260613_0141/orbit.mp4`.
+
+Analysis:
+- The RoboLab scene is now imported through the DEXTRAH render script and
+  captured with a table-centered 360-degree orbit. The final implementation
+  supports RoboLab scene path resolution, l401 execution, scene metadata, USD
+  export, camera poses, frame sequence output, and local MP4 encoding.
+- The cluster-side video field in `render_manifest.json` still says skipped
+  because that container lacks `ffmpeg`; the validated MP4 is the locally
+  encoded artifact.
+
+Next:
+- Finalize by committing and pushing this worklog update. No DEXTRAH-owned
+  render job remains active.
+
+## 2026-06-13 11:59 PDT - robolab-complex-scene-background-robot
+
+Goal:
+- Address the missing background and robot in the RoboLab orbit video, and
+  render the most complicated RoboLab scene available in the local checkout.
+
+Hypothesis:
+- The prior video looked sparse because the script used `banana_bowl.usda`,
+  no robot, and only renderer clear color/dome lighting as background. Adding a
+  generated studio floor/wall background and exposing robot pose through the
+  Slurm wrapper should make the scene context visible. The densest local
+  RoboLab scene by size/structure is `clutter_fruit_bottle_bluebin.usda`
+  (`68387246` bytes, 17 referenced USD assets, 180 USD `def`s).
+
+Change:
+- Added `--background {none,studio}` to `render_robolab_scene.py`, defaulting
+  to `studio`.
+- Added a generated neutral studio floor plus four far walls around the
+  detected RoboLab scene bounds, with metadata in `render_manifest.json`.
+- Exposed `BACKGROUND`, `ROBOT_TRANSLATION`, and `ROBOT_ROTATION_DEG` through
+  `cluster/sbatch_render_robolab_scene.sh`.
+
+Version Control:
+- agent_id: codex-robolab-orbit-render
+- worktree: `/home/lzha/code/DEXTRAH`
+- worklog: `WORKLOG.md`
+- branch: `codex/robolab-orbit-render-20260613`
+- base_commit: `77c812e06306ef1fd8247bf633237b9f6784d8bf`
+- implementation_commit: `eec453cb71b656afe546e06436b3af8cd7daa16b`
+- push/pull: implementation pushed to origin; exact commit deployed to l401 via
+  `/tmp/dextrah_robolab_orbit_eec453c.bundle`.
+- changed_files: `dextrah_lab/scene_scripts/render_robolab_scene.py`,
+  `cluster/sbatch_render_robolab_scene.sh`, `WORKLOG.md`
+- remote_commit/status: l401 agent checkout refreshed to detached
+  `eec453cb71b656afe546e06436b3af8cd7daa16b`; materialized
+  `kuka_allegro_colored.usd` copied from the canonical l401 checkout because
+  the bundle checkout contains the Git LFS pointer.
+
+Command / Job:
+- command:
+  `sbatch --parsable --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/codex-robolab-orbit-render,ROBOLAB_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/RoboLab,RUN_NAME=robolab_complex_robot_bg_final_20260613_120931,ROBOLAB_SCENE=clutter_fruit_bottle_bluebin.usda,WIDTH=720,HEIGHT=720,FPS=6,VIDEO_SECONDS=6.0,SETTLE_STEPS=0,WARMUP_FRAMES=0,RT_SUBFRAMES=2,SIM_STEPS_PER_FRAME=0,PHYSICS_DEVICE=cuda:0,CAPTURE_BACKEND=sensor,BACKGROUND=studio,ROBOT=kuka_allegro,ROBOT_TRANSLATION=1.15 0.0 0.0,ROBOT_ROTATION_DEG=0 0 180,ORBIT_RADIUS=4.0,ORBIT_HEIGHT=3.3,ORBIT_ELEVATION_DEG=52 cluster/sbatch_render_robolab_scene.sh`
+- job_id: final `1028972`; smoke jobs `1028963`, `1028964`, `1028968`,
+  and `1028970`.
+- run_dir:
+  `cluster_results/l401/robolab_complex_robot_bg_final_20260613_120931/`
+- logs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/robolab_scene_1028972.out`
+- artifacts:
+  `cluster_results/l401/robolab_complex_robot_bg_final_20260613_120931/orbit.mp4`,
+  `cluster_results/l401/robolab_complex_robot_bg_final_20260613_120931/render_manifest.json`,
+  `cluster_results/l401/robolab_complex_robot_bg_final_20260613_120931/camera_poses.json`,
+  `cluster_results/l401/robolab_complex_robot_bg_final_20260613_120931/robolab_scene_in_dextrah.usda`,
+  `cluster_results/l401/robolab_complex_robot_bg_final_20260613_120931/frames/`.
+
+Result:
+- status: passed
+- metrics/artifacts: local `py_compile` and wrapper `bash -n` passed.
+  Final Slurm job `1028972` completed with exit code `0:0`, producing 36
+  frames. Local `ffprobe` on the encoded MP4 reports `720x720`, `6/1` fps,
+  `6.000000` seconds, and `36` frames.
+- key evidence: local RoboLab scene scan ranked
+  `clutter_fruit_bottle_bluebin.usda` highest by file size and tied-highest
+  by reference count among top scenes. l401 staged the dense scene plus
+  referenced asset subtrees (`objects/fruits_veggies` about 495M and selected
+  `objects/vomp` about 163M). Inspected final frames `orbit_0000.png`,
+  `orbit_0009.png`, `orbit_0018.png`, and `orbit_0027.png`; the robot, studio
+  background, metal cart, and cluttered RoboLab table scene are visible across
+  the orbit. `viz-open` returned
+  `http://localhost:8765/view?path=DEXTRAH/cluster_results/l401/robolab_complex_robot_bg_final_20260613_120931/orbit.mp4`.
+
+Analysis:
+- The dense scene needed additional RoboLab assets on l401: `objects/fruits_veggies`
+  and selected `objects/vomp/*` directories. The isolated l401 code checkout
+  also needs a materialized Kuka-Allegro USD because Git bundle checkout leaves
+  the LFS pointer, while the canonical l401 checkout has the full robot USD.
+- The 16:9 smoke renders confirmed the background and robot but clipped the
+  robot at some orbit angles. A square `720x720` final render preserved the
+  table-centered 360-degree orbit while keeping the robot fully visible. The
+  cluster container still skips video encoding because `ffmpeg` is unavailable;
+  the final MP4 was encoded locally from the validated frame sequence.
+
+Next:
+- No DEXTRAH-owned render job remains active. Finalize by committing and
+  pushing this worklog update.
+
+## 2026-06-13 12:47 PDT - pure-robolab-scene-visualization
+
+Goal:
+- Visualize a pure RoboLab scene with no DEXTRAH robot and no generated studio
+  geometry.
+
+Change:
+- No source changes. Reused the existing RoboLab render bridge with
+  `ROBOT=none` and `BACKGROUND=hdri`.
+
+Version Control:
+- agent_id: codex-robolab-orbit-render
+- branch: `codex/robolab-orbit-render-20260613`
+- local_head: `ee006b7`
+- remote_render_source: l401 detached worktree
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/codex-robolab-orbit-render`
+  at `26237f7217696fad699d863cab498364a090543a`
+- changed_files: `WORKLOG.md`
+
+Command / Job:
+- smoke_job_id: `1028994`
+- final_job_id: `1028995`
+- final settings: `ROBOLAB_SCENE=clutter_fruit_bottle_bluebin.usda`,
+  `ROBOT=none`, `BACKGROUND=hdri`,
+  `BACKGROUND_TEXTURE=indoors/kiara_interior_2k.hdr`, `WIDTH=1024`,
+  `HEIGHT=1024`, `FPS=12`, `VIDEO_SECONDS=12.0`, `RT_SUBFRAMES=8`,
+  `ORBIT_RADIUS=2.8`, `ORBIT_HEIGHT=2.45`, `ORBIT_ELEVATION_DEG=55`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/robolab_scene_1028995.out`
+- artifact:
+  `cluster_results/l401/robolab_pure_scene_hq_20260613_124229/orbit.mp4`
+
+Result:
+- status: passed
+- Slurm: `1028995` completed with `ExitCode=0:0`, elapsed `00:02:14`.
+- MP4 validation: local `ffprobe` reports `1024x1024`, `12/1` fps,
+  `12.000000` seconds, and `144` frames; local decode completed without
+  ffmpeg errors.
+- key evidence: manifest records `robot.mode=none`, `background.mode=hdri`,
+  and `texture_file=/robolab/assets/backgrounds/indoors/kiara_interior_2k.hdr`.
+- visual inspection: checked frames `orbit_0000.png`, `orbit_0072.png`, and
+  `orbit_0108.png`; all show only the RoboLab scene/table/clutter with the
+  household HDRI background.
+- viewer:
+  `http://localhost:8765/view?path=DEXTRAH/cluster_results/l401/robolab_pure_scene_hq_20260613_124229/orbit.mp4`
+
+Next:
+- No DEXTRAH-owned RoboLab render job remains active. Commit and push this
+  worklog update.
+
+## 2026-06-13 12:32 PDT - robolab-hdri-household-slow-hq
+
+Goal:
+- Replace the white/generated studio background with a RoboLab household-like
+  background, slow down the orbit, and raise image quality.
+
+Change:
+- Added `--background hdri` to `render_robolab_scene.py`.
+- Added RoboLab background texture resolution under `assets/backgrounds`, using
+  `indoors/kiara_interior_2k.hdr` for this run.
+- Spawned an Isaac Lab `DomeLightCfg` with `texture_file`,
+  `texture_format="latlong"`, and `visible_in_primary_ray=True`.
+- Updated `cluster/sbatch_render_robolab_scene.sh` to pass
+  `BACKGROUND_TEXTURE` and `BACKGROUND_INTENSITY`.
+
+Version Control:
+- agent_id: codex-robolab-orbit-render
+- branch: `codex/robolab-orbit-render-20260613`
+- implementation_commit: `26237f7217696fad699d863cab498364a090543a`
+- pushed: yes, to origin
+- l401 source: detached
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/codex-robolab-orbit-render`
+  at `26237f7217696fad699d863cab498364a090543a`
+- staged asset: `/lustre/fsw/portfolios/nvr/users/lzha/src/RoboLab/assets/backgrounds/indoors/kiara_interior_2k.hdr`
+
+Command / Job:
+- smoke_job_id: `1028976`
+- final_job_id: `1028981`
+- final settings: `clutter_fruit_bottle_bluebin.usda`, `BACKGROUND=hdri`,
+  `BACKGROUND_TEXTURE=indoors/kiara_interior_2k.hdr`, `WIDTH=1024`,
+  `HEIGHT=1024`, `FPS=12`, `VIDEO_SECONDS=12.0`, `RT_SUBFRAMES=8`,
+  `ROBOT=kuka_allegro`, `ORBIT_RADIUS=4.0`, `ORBIT_HEIGHT=3.3`,
+  `ORBIT_ELEVATION_DEG=52`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/robolab_scene_1028981.out`
+- artifact:
+  `cluster_results/l401/robolab_hdri_household_slow_hq_20260613_122711/orbit.mp4`
+
+Result:
+- status: passed
+- Slurm: `1028981` completed with `ExitCode=0:0`, elapsed `00:02:13`.
+- MP4 validation: local `ffprobe` reports `1024x1024`, `12/1` fps,
+  `12.000000` seconds, and `144` frames; local decode completed with no
+  ffmpeg errors.
+- key evidence: manifest records `background.mode=hdri`,
+  `texture_file=/robolab/assets/backgrounds/indoors/kiara_interior_2k.hdr`,
+  and `visible_in_primary_ray=true`. Exported USD contains
+  `asset inputs:texture:file = @/robolab/assets/backgrounds/indoors/kiara_interior_2k.hdr@`
+  and `bool visibleInPrimaryRay = 1`.
+- visual inspection: checked high-res frames `orbit_0000.png`,
+  `orbit_0072.png`, and `orbit_0108.png`; each shows the household HDRI
+  background and the RoboLab/DEXTRAH robot scene.
+- viewer:
+  `http://localhost:8765/view?path=DEXTRAH/cluster_results/l401/robolab_hdri_household_slow_hq_20260613_122711/orbit.mp4`
+
+Next:
+- No DEXTRAH-owned render job remains active. Finalize by committing and
+  pushing this worklog update.
