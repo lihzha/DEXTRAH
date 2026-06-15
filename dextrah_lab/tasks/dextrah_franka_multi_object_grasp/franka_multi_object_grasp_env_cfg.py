@@ -104,10 +104,10 @@ class DextrahFrankaMultiObjectGraspEnvCfg(DextrahFrankaCubeGraspEnvCfg):
     grasp_prior_reset_min_pregrasp_z = 0.45
     grasp_prior_reset_require_downward_tool_z = True
     grasp_prior_reset_min_downward_tool_z = 0.45
-    # Reject contact-based priors whose contact/reference midpoint is below
-    # the current object center in world z.  This prevents underside grasps
-    # even when the pregrasp offset is forced to approach from above.
-    grasp_prior_reset_min_contact_height_above_center = 0.0
+    # Thin objects can require side contacts whose midpoint is slightly below
+    # the object center even with a top-side, downward tool-axis approach.
+    # Table safety is enforced by exact finger/tip clearance gates.
+    grasp_prior_reset_min_contact_height_above_center = -0.02
     grasp_prior_reset_max_center_distance_frac = 0.50
     grasp_prior_reset_min_width = 0.008
     grasp_prior_reset_ik_iterations = 64

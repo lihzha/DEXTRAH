@@ -1938,3 +1938,125 @@ Validation:
 
 Next:
 - Commit the default update, deploy the exact commit to the l401 worktree, and relaunch video validation without overriding the warmstart values.
+
+## 2026-06-15T16:37:00Z - Launch default-warmstart validation from `881a14a`
+
+Goal:
+- Verify that the committed multi-object defaults reproduce the passing grasp-contact validation without manually overriding warmstart parameters.
+
+Command / Job:
+- job_id: `1029922`
+- run_name: `franka_multi_video_defaults_2obj_seed44_881a14a_20260615T1637Z`
+- commit: `881a14a261ec3a2063b3f997ba0e5ea7ec1eb35c`
+- remote code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-topdown-axis-20260615-753139c`
+- manifest: `/results/assets/filtered_manifests/train2_7195_b87_nobelow_d053e6c_20260615T0045Z/manifest.json`
+- stable pose cache: `/results/validations/train2_7195_b87_nobelow_d053e6c_20260615T0045Z/settled_pose_cache`
+- num_envs: `2`
+- max_objects: `2`
+- seed: `44`
+- candidate_count: `4096`
+- reset_attempts: `8`
+- warmstart values inherited from wrapper defaults:
+  - close width `0.0`
+  - `use_prior_close_width=False`
+  - lift action z `1.0`
+  - approach/close/lift steps `20/28/80`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_defaults_2obj_seed44_881a14a_20260615T1637Z`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_1029922.out`
+
+Result:
+- status: running on `pool0-00008` at first poll.
+
+Next:
+- Fetch `video_metrics.json` and frames after completion, inspect table-clearance/downward-axis/lift evidence, then decide whether to launch RL.
+
+## 2026-06-15T16:41:00Z - Launch current-code verified-grasp collection
+
+Goal:
+- Regenerate a small verified-grasp cache under the fixed raw-pose/downward-tool/table-clearance implementation before PPO training, instead of reusing older caches produced by now-stale semantics.
+
+Command / Job:
+- job_id: `1029923`
+- run_name: `verified_rawpose_defaults_train2_881a14a_20260615T1641Z`
+- commit: `881a14a261ec3a2063b3f997ba0e5ea7ec1eb35c`
+- remote code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-topdown-axis-20260615-753139c`
+- manifest: `/results/assets/filtered_manifests/train2_7195_b87_nobelow_d053e6c_20260615T0045Z/manifest.json`
+- stable pose cache: `/results/validations/train2_7195_b87_nobelow_d053e6c_20260615T0045Z/settled_pose_cache`
+- num_envs: `64`
+- max_objects: `2`
+- seed: `46`
+- candidate_count: `4096`
+- reset_attempts: `8`
+- target_per_object: `8`
+- score_steps: `128`
+- warmstart values inherited from the updated wrapper defaults.
+- output: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/verified_grasp_indices/verified_rawpose_defaults_train2_881a14a_20260615T1641Z/verified_indices.json`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/collect_franka_multi_object_verified_grasps_1029923.out`
+
+Result:
+- status: submitted.
+
+Next:
+- Require indices for both object UUIDs before using this cache in PPO training.
+
+## 2026-06-15T16:44:00Z - Cancel stale-cache replacement attempt and launch object0 gate diagnostic
+
+Collection Result:
+- Job `1029923` was canceled after 10 cycles because it was not producing a usable current-code cache.
+- Partial output:
+  - object `b87a65917e494aa4b306aeb6ee961182` had many valid reset candidates and dynamic lifts, but `MAX_DONE_COUNT=0` rejected successful rollouts that terminated once.
+  - object `7195ed3346a445448308febe833c180a` had `reset_success=0`, `quality_success=0`, and `candidate_valid_count=0` / `candidate_fallback_count=0` in all observed cycles.
+- This means the next blocker is object0 candidate-gate intersection under the fixed raw-pose semantics, not just stale verified-cache selection.
+
+Command / Job:
+- job_id: `1029924`
+- run_name: `franka_multi_eval_object0_gate_diag_881a14a_20260615T1644Z`
+- commit: `881a14a261ec3a2063b3f997ba0e5ea7ec1eb35c`
+- manifest: `/results/assets/filtered_manifests/train2_7195_b87_nobelow_d053e6c_20260615T0045Z/manifest_object0_7195ed3346a445448308febe833c180a.json`
+- num_envs: `64`
+- max_objects: `1`
+- num_steps: `5`
+- candidate_count: `4096`
+- reset_attempts: `8`
+- no video; diagnostics come from `trace.csv`/`metrics.json`.
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_multi_eval_object0_gate_diag_881a14a_20260615T1644Z`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_multi_object_1029924.out`
+
+Next:
+- Inspect `grasp_prior_reset_candidate_down_table*` counters to identify which gate combination eliminates object0.
+
+## 2026-06-15T16:50:00Z - Patch object0 gate without allowing table penetration
+
+Diagnostic Results:
+- Strict contact-height gate (`GRASP_PRIOR_RESET_MIN_CONTACT_HEIGHT_ABOVE_CENTER=0.0`) on object0:
+  - `grasp_prior_reset_success=0.0`
+  - `grasp_prior_reset_quality_success=0.0`
+  - `candidate_down_table_width_center_count=135.94`
+  - `candidate_down_table_width_center_contact_count=0.0`
+  - `candidate_valid_count=0.0`, `candidate_fallback_count=0.0`
+- Relaxed contact-height gate (`-0.02`) before tightening table floor:
+  - `grasp_prior_reset_success=1.0`
+  - `grasp_prior_reset_quality_success=1.0`
+  - `candidate_valid_count=139.70`, `candidate_fallback_count=139.70`
+  - `grasp_prior_reset_tool_downward_z=0.9708`
+  - `grasp_prior_reset_pregrasp_tip_table_clearance=0.0764`
+  - `grasp_prior_reset_projected_exact_tip_table_clearance=-0.0013`
+  - `finger_table_clearance_violation=0.0`
+
+Analysis:
+- Object0 is long/thin, so useful top-down pinch contacts can have a contact midpoint slightly below the object center.
+- The contact-height gate was stricter than the user requirement. It eliminated object0 even though many candidates were downward-tool, table-safe under finger clearance, width-valid, and center-valid.
+- However, using the environment penetration margin as the reset table floor allowed a selected projected tip proxy to be slightly below the table. For this task, grasp-prior reset candidates should require nonnegative table clearance.
+
+Change:
+- Set multi-object `grasp_prior_reset_min_contact_height_above_center=-0.02`.
+- Tighten multi-object candidate and reset-quality table floors to `max(finger_table_penetration_termination_margin, 0.0)`.
+- Updated eval, validation, training, and verified-grasp collection wrappers to use the same contact-height default.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py dextrah_lab/rl_games/collect_franka_multi_object_verified_grasps.py dextrah_lab/rl_games/eval_rollout.py`: passed
+- `bash -n cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh cluster/sbatch_eval_franka_multi_object_grasp_1gpu.sh cluster/sbatch_collect_franka_multi_object_verified_grasps_1gpu.sh cluster/sbatch_train_teacher_8gpu.sh`: passed
+- `git diff --check`: passed
+
+Next:
+- Commit/deploy, then rerun object0 and two-object validation from the patched SHA. Acceptance requires nonnegative projected exact tip clearance, downward tool axis, positive valid/fallback counts, and no table-clearance violation.

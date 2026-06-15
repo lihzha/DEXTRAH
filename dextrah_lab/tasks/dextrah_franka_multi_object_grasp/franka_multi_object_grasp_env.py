@@ -892,7 +892,7 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         normalized_center_dist = candidate_center_gate_dist / object_size
         normalized_tool_center_dist = candidate_exact_tool_dist / object_size
         center_ok = normalized_center_dist <= float(self.cfg.grasp_prior_reset_max_center_distance_frac)
-        table_clearance_floor = float(self.cfg.finger_table_penetration_termination_margin)
+        table_clearance_floor = max(float(self.cfg.finger_table_penetration_termination_margin), 0.0)
         table_floor_z = float(self.cfg.table_surface_z) + table_clearance_floor
         table_ok = (
             (candidate_pregrasp_finger_table_clearance >= table_clearance_floor)
@@ -1098,7 +1098,7 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             (required_width >= float(self.cfg.grasp_prior_reset_min_width))
             & (required_width <= float(self.cfg.max_gripper_width))
         )
-        table_clearance_floor = float(self.cfg.finger_table_penetration_termination_margin)
+        table_clearance_floor = max(float(self.cfg.finger_table_penetration_termination_margin), 0.0)
         table_floor_z = float(self.cfg.table_surface_z) + table_clearance_floor
         table_ok = targets["contact_reference_w"][:, 2] >= table_floor_z
         if "pregrasp_finger_table_clearance" in targets and "exact_finger_table_clearance" in targets:
