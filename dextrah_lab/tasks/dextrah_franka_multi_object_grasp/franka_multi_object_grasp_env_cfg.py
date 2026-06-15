@@ -91,7 +91,9 @@ class DextrahFrankaMultiObjectGraspEnvCfg(DextrahFrankaCubeGraspEnvCfg):
     # the matching object UUID.
     grasp_prior_verified_indices_path = ""
     grasp_prior_allow_missing = False
-    grasp_prior_pregrasp_offset = 0.08
+    # Match the known-good Franka cube reset distance. Table safety is enforced
+    # by the top-down and projected finger-clearance reset gates below.
+    grasp_prior_pregrasp_offset = 0.03
     grasp_prior_reset_attempts = 1
     grasp_prior_reset_candidate_count = 16
     grasp_prior_reset_require_topdown = True
