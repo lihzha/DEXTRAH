@@ -845,3 +845,57 @@ Validation:
 
 Next:
 - Commit/push/redeploy after job `29118158` fully leaves the queue, then continue from the epoch-530 checkpoint with z-weighted prior reward.
+
+## 2026-06-16 01:10Z - z-weighted lift-prior PPO continuation
+
+Goal:
+- Continue from the strong-prior epoch-530 checkpoint with z-weighted lift-prior reward so the policy is directly paid for matching both lift z commands.
+
+Version state:
+- local_commit: `d674bebff63ae461dbd312fe47a69d0996388f94`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/bimanual-yam-cube-rl-20260615T203824Z`
+- remote_commit: `d674bebff63ae461dbd312fe47a69d0996388f94`
+
+Command/job:
+- A100 job: `29118346`
+- run_name: `yam_cube_rl_zprior_d674beb_20260616T0110Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bimanual_yam_cube_rl_29118346.out`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_bimanual_yam_cube_grasp/yam_cube_rl_zprior_d674beb_20260616T0110Z`
+- metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_bimanual_yam_cube_grasp/yam_cube_rl_zprior_d674beb_20260616T0110Z/metrics/direct_info_rank_0.jsonl`
+- checkpoint seed: `/results/logs/rl_games/dextrah_bimanual_yam_cube_grasp/yam_cube_rl_liftprior_strong_134aba1_20260616T0055Z/nn/last_dextrah_bimanual_yam_cube_grasp_ep_530_rew_33915.824.pth`
+- key overrides: `MAX_ITERATIONS=720`, `BIMANUAL_ACTION_PRIOR_REWARD_WEIGHT=120.0`, `BIMANUAL_ACTION_PRIOR_REWARD_SHARPNESS=2.0`, `BIMANUAL_REFERENCE_LIFT_GAIN=2.0`, `BIMANUAL_REFERENCE_LIFT_MAX_ACTION=1.0`, `CUBE_LIFT_WEIGHT=160.0`, `CUBE_HEIGHT_TRACKING_WEIGHT=80.0`, `CUBE_SUCCESS_BONUS_WEIGHT=250.0`, `CUBE_LIFT_ACTION_WEIGHT=250.0`, `CUBE_DESCEND_ACTION_PENALTY_WEIGHT=-120.0`, `LEARNING_RATE=0.0008`, `ENTROPY_COEF=0.004`.
+
+Success criteria:
+- `yam_cube_action_prior_delta_z_abs` falls as policy z actions match the teacher.
+- Lift height and sparse success rise beyond the previous one-env blips.
+- If success is sustained, evaluate checkpoint with rollout artifacts.
+
+Status:
+- Stopped early after plateau; job was canceled after epoch 616 metrics showed no sustained lift.
+
+Result/evidence:
+- Metrics through epoch 616 were finite.
+- The new `yam_cube_action_prior_delta_z_abs` exposed the core issue directly: it stayed high in solved-grasp lift states, around `0.85-0.98`, meaning the actor was not sampling or retaining the teacher z actions.
+- There was a brief positive-z window near epochs 576-581, but it did not translate into meaningful lift.
+- Sparse success remained only a one-env blip (`best_yam_cube_success_rate=0.001953125`), best `yam_cube_has_lifted_rate=0.013671875`, and best mean lift height regressed to `0.0005192866083234549`.
+- Checkpoints were written through `last_dextrah_bimanual_yam_cube_grasp_ep_610_rew_38231.203.pth`.
+
+Analysis:
+- Reward targeting is now explicit, but the restored policy is not exploring enough in the z dimensions to escape the closed-grasp local optimum.
+- `train.py` already exposes `--sigma`, but the bimanual YAM Slurm wrapper did not pass it. Add a launch-time `TRAIN_SIGMA` override to reset training exploration without editing checkpoints.
+
+## 2026-06-16 01:18Z - expose train sigma in YAM wrapper
+
+Goal:
+- Allow resumed PPO runs to increase exploration from a restored checkpoint by passing `--sigma` to `train.py`.
+
+Change:
+- Added optional `TRAIN_SIGMA` to `cluster/sbatch_train_bimanual_yam_cube_grasp_1gpu.sh`.
+- The wrapper logs `TRAIN_SIGMA`, exports it, and passes `--sigma "$TRAIN_SIGMA"` only when the variable is non-empty.
+
+Validation:
+- `bash -n cluster/sbatch_train_bimanual_yam_cube_grasp_1gpu.sh`
+- Result: passed.
+
+Next:
+- Commit/push/redeploy after job `29118346` fully leaves the queue, then continue from the epoch-610 checkpoint with `TRAIN_SIGMA` set.
