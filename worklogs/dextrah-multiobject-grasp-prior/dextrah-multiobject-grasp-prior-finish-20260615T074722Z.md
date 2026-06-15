@@ -789,3 +789,23 @@ Validation:
 
 Next:
 - Commit and deploy this patch, then relaunch the same ungated reward-only diagnostic from the low-LR epoch-67 checkpoint. The expected first signal is lower/more coherent `cube_action_prior_delta_abs`; the required outcome is that policy-controlled success/lift no longer collapses from XY drift.
+
+## 2026-06-15T11:39:00Z - Relaunch cached action-prior diagnostic
+
+Version Control:
+- implementation_commit: `14c986b1772bf9838e6b2cfbc336599abca0003b`
+- branch_push: pushed to `origin/codex/dextrah-multiobject-grasp-prior-finish-20260615T074722Z`
+- remote_commit/status: l401 worktree `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-finish-20260615T074722Z` detached at `14c986b1772bf9838e6b2cfbc336599abca0003b`, clean.
+- deployment: GitHub fetch failed on l401 due missing SSH key, so the branch was deployed with a Git bundle copied to `/tmp/dextrah-multiobject-grasp-prior-14c986b.bundle`.
+
+Command / Job:
+- job_id: `1029808`
+- run_name: `franka_multi_state_teacher_7195_b87_oldcache_pre08_prioronly90_cached_schednogate_w80_14c986b_20260615T1139Z`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_oldcache_pre08_prioronly90_cached_schednogate_w80_14c986b_20260615T1139Z`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_1029808.out`
+- metrics: `.../metrics/direct_info_rank_0.jsonl`
+- checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_oldcache_pre08_lowlr80_short_703f554_20260615T1021Z/nn/last_dextrah_franka_multi_object_grasp_ep_67_rew_2916.8196.pth`
+- key overrides: same as failed ungated prior-only job `1029777`, but with cached pre-step action-prior reward code at `14c986b`. Warmstart action override remains disabled, action-prior reward enabled with weight `80`, fixed ungated approach/close/lift schedule `8/32/240`, old verified indices, old top-side pregrasp settings, object friction `4.0/3.5`, solver iterations `24/8`, `NUM_ENVS=1024`, `NPROC_PER_NODE=4`, LR `5e-5`, CV LR `2.5e-5`.
+
+Next:
+- Monitor `1029808` startup, then inspect early epoch metrics. Keep the run only if cached action-prior metrics improve and success/lift avoid the old drift-collapse pattern.
