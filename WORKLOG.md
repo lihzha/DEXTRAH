@@ -7296,6 +7296,68 @@ Next:
 - No DEXTRAH-owned render job remains active. Finalize by committing and
   pushing this worklog update.
 
+## 2026-06-14 22:39 PDT - robolab-recorded-demo-static
+
+Goal:
+- Generate a no-orbit video that strictly follows RoboLab's recorded-demo path,
+  rather than a DEXTRAH-authored orbit renderer.
+
+Change:
+- Ran RoboLab's unmodified `examples/run_recorded.py` for
+  `RubiksCubeAndBananaTask` with the staged recorded HDF5 demo.
+- Synchronized the full local RoboLab `assets/` tree to L401 because the first
+  attempt failed while RoboLab auto-registered benchmark tasks and could not
+  open `bin_condiments.usda`.
+- Corrected the ad-hoc Slurm launch to use the known DEXTRAH L401 mount layout:
+  `IsaacLab-v2.2.1`, `FABRICS`, `/envs/dextrah-isaaclab`, and
+  `$NFS_ROOT/isaac_cache`.
+
+Version Control:
+- agent_id: `codex-robolab-recorded-demo`
+- RoboLab local_commit: `7d45d74904eade3b578a8eb1f2f9f89bc3d40326`
+- RoboLab remote worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/RoboLab/codex-robolab-demo`
+  at `7d45d74904eade3b578a8eb1f2f9f89bc3d40326`
+- DEXTRAH branch: `codex/robolab-orbit-render-20260613`
+- implementation_commit: n/a; worklog-only commit, no source code change
+- staged data:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/RoboLab/examples/recorded_data/RubiksCubeAndBananaTask/data.hdf5`
+- staged assets:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/RoboLab/assets`
+
+Command / Job:
+- failed_job_id: `1029577`
+- failure: missing staged RoboLab scene asset
+  `/robolab/assets/scenes/bin_condiments.usda` during RoboLab auto-registration.
+- failed_job_id: `1029581`
+- failure: container mount path typo for IsaacLab source.
+- final_job_id: `1029583`
+- command:
+  `/isaac-sim/python.sh examples/run_recorded.py --headless --enable_cameras --device cuda:0 --task RubiksCubeAndBananaTask --recorded-data-folder /robolab/examples/recorded_data --num_envs 1`
+- run_dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/robolab_demo/robolab_recorded_demo_static_20260614_223102`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/robolab/recorded_demo_1029583.out`
+- local artifact:
+  `RoboLab/cluster_results/l401/robolab_recorded_demo_static_20260614_223102/output/playback_recorded_data_RubiksCubeAndBananaTask/RubiksCubeAndBananaTask/video_0.mp4`
+
+Result:
+- status: passed for requested visualization artifact
+- Slurm: `1029583` completed with `ExitCode=0:0`, elapsed `00:03:01`.
+- MP4 validation: local `ffprobe` reports H.264, `2560x720`, `15/1` fps,
+  `36.000000` seconds, and `540` frames; local decode completed with no
+  ffmpeg errors.
+- visual inspection: checked extracted start, middle, and end frames. The video
+  shows RoboLab's fixed recorded-demo camera output, household-like background,
+  table, Franka robot, bowl, Rubik's cube, and banana. There is no orbit camera.
+- viewer:
+  `http://localhost:8765/view?path=RoboLab/cluster_results/l401/robolab_recorded_demo_static_20260614_223102/output/playback_recorded_data_RubiksCubeAndBananaTask/RubiksCubeAndBananaTask/video_0.mp4`
+
+Next:
+- No RoboLab recorded-demo job remains active. The unrelated L401 job
+  `dextrah_franka_multi_vid` was already running under the account and was not
+  launched for this task.
+
 ## 2026-06-13 12:47 PDT - pure-robolab-scene-visualization
 
 Goal:
