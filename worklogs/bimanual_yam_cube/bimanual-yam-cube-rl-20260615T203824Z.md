@@ -1255,3 +1255,45 @@ Validation:
 
 Next:
 - Commit/push/redeploy and rerun the stable validator.
+
+## 2026-06-16 03:29Z - planned stable validator after contact-switch fix
+
+Goal:
+- Test whether switching to lift immediately after contact avoids the over-press shake artifact.
+
+Version state:
+- local_commit: `03f0f3dbf85adff5cf1a68b3020ce14d0d03fb73`
+- remote_commit: `03f0f3dbf85adff5cf1a68b3020ce14d0d03fb73`
+
+Planned command/job:
+- Submit `cluster/sbatch_validate_bimanual_yam_cube_grasp_env_1gpu.sh` from the agent-owned remote worktree.
+- Expected run: `yam_cube_strict_stable_validator_03f0f3d_20260616T0329Z`
+- Key settings: `NUM_ENVS=1`, `NUM_STEPS=560`, `CAPTURE_VIDEO=False`, `ALLOW_GRASP_ASSIST=False`, `REQUIRE_UNASSISTED_LIFT=True`, `DISABLE_FABRIC=True`, `CUBE_SPAWN_XY_RANDOMIZATION=0.0`, `CODE_COMMIT=03f0f3dbf85adff5cf1a68b3020ce14d0d03fb73`.
+
+Success criteria:
+- `passed=True` with stable speed diagnostics, or lower-speed failure identifying remaining tuning needed.
+
+Result/evidence:
+- Job `29123092` completed and failed stable validation.
+- Metrics: `scripted_contact_reached=True`, `scripted_contact_reached_step=235`, `scripted_actual_lift_start_step=236`, `max_lift=0.02880547195672989`, `max_success_rate=0.0`, `max_cube_linear_speed=4.4424238204956055`, `max_cube_angular_speed=29.835750579833984`.
+- Sampled lift step was now stable (`step=240`, `lin_speed=0.254`, `ang_speed=4.129`) but the cube lifted only `0.008 m`; max lift stayed below the required `0.04 m`.
+
+Analysis:
+- Switching to lift after contact removed the over-pressing behavior, but the validator's default `lift_height=0.14` causes the grippers to lose side contact rather than lift the cube stably.
+- Expose validator `LIFT_HEIGHT` through the Slurm wrapper and test a smaller commanded lift closer to the success threshold.
+
+## 2026-06-16 03:38Z - expose validator lift height
+
+Goal:
+- Sweep smaller scripted lift targets without editing Python each time.
+
+Change:
+- Added `LIFT_HEIGHT` environment variable to `cluster/sbatch_validate_bimanual_yam_cube_grasp_env_1gpu.sh`.
+- Wrapper now echoes and passes `--lift_height "$LIFT_HEIGHT"` to `validate_bimanual_yam_cube_grasp_env.py`.
+
+Validation:
+- `bash -n cluster/sbatch_validate_bimanual_yam_cube_grasp_env_1gpu.sh`
+- Result: passed.
+
+Next:
+- Commit/push/redeploy, then rerun stable validator with `LIFT_HEIGHT=0.06`.
