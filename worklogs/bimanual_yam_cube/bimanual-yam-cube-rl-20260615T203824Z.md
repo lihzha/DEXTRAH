@@ -1086,3 +1086,80 @@ Validation:
 
 Next:
 - Commit/push/redeploy this validator fix, then rerun strict validator with video.
+
+## 2026-06-16 02:30Z - planned strict validator video after capture fix
+
+Goal:
+- Produce a strict no-assist validator video that matches the successful no-video physics trajectory.
+
+Version state:
+- local_commit: `618e701ed18125b3f386a7b94d01859cfb12ca38`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/bimanual-yam-cube-rl-20260615T203824Z`
+- remote_commit: `618e701ed18125b3f386a7b94d01859cfb12ca38`
+
+Planned command/job:
+- Submit `cluster/sbatch_validate_bimanual_yam_cube_grasp_env_1gpu.sh` from the agent-owned remote worktree.
+- Expected run: `yam_cube_vis_strict_validator_618e701_20260616T0230Z`
+- Key settings: `NUM_ENVS=1`, `NUM_STEPS=560`, `VIDEO_LENGTH=560`, `CAPTURE_VIDEO=True`, `ALLOW_GRASP_ASSIST=False`, `REQUIRE_UNASSISTED_LIFT=True`, `DISABLE_FABRIC=True`, `CUBE_SPAWN_XY_RANDOMIZATION=0.0`, `CODE_COMMIT=618e701ed18125b3f386a7b94d01859cfb12ca38`.
+
+Success criteria:
+- `passed=True`, `max_success_rate=1.0`, no grasp assist used.
+- Video exists and shows the no-assist physical lift without the prior capture-induced drift.
+
+Result/evidence:
+- Job `29121851` completed successfully.
+- Metrics: `passed=True`, `max_lift=0.04009155184030533`, `max_success_rate=1.0`, `final_success_rate=1.0`, `scripted_grasp_assist_used=False`, `steps_completed=305`, `video_frames_written=307`.
+- Local video: `artifacts/bimanual_yam_cube/visual_eval_20260616T0230Z/bimanual-yam-cube-demo-manual.mp4`
+- Viewer: `http://localhost:8765/view?path=DEXTRAH/artifacts/bimanual_yam_cube/visual_eval_20260616T0230Z/bimanual-yam-cube-demo-manual.mp4`
+- Video metadata: `1280x720`, `307` frames, `5.116667s`, `60 FPS`.
+
+Analysis:
+- This is the first passing no-assist visual validator artifact. The top-down camera makes the 4 cm lift hard to see by eye, so launch an oblique side-view strict validator video for better human inspection.
+
+## 2026-06-16 02:41Z - planned oblique strict validator video
+
+Goal:
+- Produce an oblique/side camera version of the passing strict no-assist validator to make cube-table clearance visually obvious.
+
+Version state:
+- local_commit: `618e701ed18125b3f386a7b94d01859cfb12ca38`
+- remote_commit: `618e701ed18125b3f386a7b94d01859cfb12ca38`
+
+Planned command/job:
+- Submit `cluster/sbatch_validate_bimanual_yam_cube_grasp_env_1gpu.sh` from the agent-owned remote worktree.
+- Expected run: `yam_cube_vis_strict_validator_side_618e701_20260616T0241Z`
+- Key settings: same strict no-assist validator settings as job `29121851`, with camera eye `(-0.86, -0.62, 0.34)` and target `(-0.36, 0.0, 0.10)`.
+
+Success criteria:
+- `passed=True`, no grasp assist used.
+- Video clearly shows the cube leaving the table from an oblique viewpoint.
+
+Result/evidence:
+- Job `29122308` completed and wrote metrics/video.
+- Metrics: `passed=True`, `max_lift=0.04009155184030533`, `max_success_rate=1.0`, `final_success_rate=1.0`, `scripted_grasp_assist_used=False`.
+- Local video: `artifacts/bimanual_yam_cube/visual_eval_20260616T0241Z/bimanual-yam-cube-demo-manual.mp4`
+- Viewer: `http://localhost:8765/view?path=DEXTRAH/artifacts/bimanual_yam_cube/visual_eval_20260616T0241Z/bimanual-yam-cube-demo-manual.mp4`
+- Camera overrides were not forwarded by the validation wrapper, so the video is still top-down.
+
+Analysis:
+- User inspection identified unrealistic cube shaking under finger pressure. Treat nonzero `has_lifted_rate` as a diagnostic only; it can be produced by contact impulses.
+- Patch the environment and validator so `success_rate` requires stable cube velocity, and the validator logs cube linear/angular speeds overall, during lifted frames, and during success frames.
+
+## 2026-06-16 02:53Z - stable-success metric patch
+
+Goal:
+- Prevent transient shake/contact impulses from counting as successful cube picks.
+
+Change:
+- Added `cube_success_max_linear_speed=0.60` and `cube_success_max_angular_speed=8.0` to the bimanual YAM cube task config.
+- Added `cube_linear_speed`, `cube_angular_speed`, and `cube_velocity_success_stable` diagnostics.
+- Gated `in_success_region` on both speed thresholds.
+- Added training logs for cube speed and velocity-stable rate.
+- Added validator metrics/checks for cube speed during lifted and success frames.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_env.py dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_env_cfg.py dextrah_lab/rl_games/validate_bimanual_yam_cube_grasp_env.py`
+- Result: passed.
+
+Next:
+- Commit/push/redeploy, then rerun strict no-assist validator. If it fails only because speeds are high, inspect the trace and tune physics/contact parameters before more PPO.

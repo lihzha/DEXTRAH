@@ -155,6 +155,9 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
         self.cube_pos = torch.zeros(self.num_envs, 3, device=self.device)
         self.cube_quat = torch.zeros(self.num_envs, 4, device=self.device)
         self.cube_vel = torch.zeros(self.num_envs, 6, device=self.device)
+        self.cube_linear_speed = torch.zeros(self.num_envs, device=self.device)
+        self.cube_angular_speed = torch.zeros(self.num_envs, device=self.device)
+        self.cube_velocity_success_stable = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
 
         self.left_hold_to_cube_dist = torch.zeros(self.num_envs, device=self.device)
         self.right_hold_to_cube_dist = torch.zeros(self.num_envs, device=self.device)
@@ -355,6 +358,9 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
             "yam_cube_goal_height_error": self.cube_goal_height_error.mean(),
             "yam_cube_success_rate": self.in_success_region.float().mean(),
             "yam_cube_has_lifted_rate": self.has_lifted_cube.float().mean(),
+            "yam_cube_linear_speed": self.cube_linear_speed.mean(),
+            "yam_cube_angular_speed": self.cube_angular_speed.mean(),
+            "yam_cube_velocity_success_stable_rate": self.cube_velocity_success_stable.float().mean(),
             "yam_cube_bimanual_side_success_rate": self.bimanual_side_success.float().mean(),
             "yam_cube_left_hold_to_cube_dist": self.left_hold_to_cube_dist.mean(),
             "yam_cube_right_hold_to_cube_dist": self.right_hold_to_cube_dist.mean(),
@@ -700,6 +706,8 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
         self.cube_pos[env_ids] = self._cube.data.root_pos_w[env_ids] - env_origins
         self.cube_quat[env_ids] = self._cube.data.root_quat_w[env_ids]
         self.cube_vel[env_ids] = self._cube.data.root_vel_w[env_ids]
+        self.cube_linear_speed[env_ids] = torch.norm(self.cube_vel[env_ids, :3], dim=-1)
+        self.cube_angular_speed[env_ids] = torch.norm(self.cube_vel[env_ids, 3:], dim=-1)
 
         self.left_gripper_width[env_ids] = torch.norm(left_finger_a - left_finger_b, dim=-1)
         self.right_gripper_width[env_ids] = torch.norm(right_finger_a - right_finger_b, dim=-1)
@@ -773,6 +781,12 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
             & (self.cube_xy_error[env_ids] <= float(self.cfg.cube_success_xy_tol))
             & self.bimanual_side_success[env_ids]
             & (self.finger_table_clearance[env_ids] >= float(self.cfg.finger_table_clearance_success_margin))
+            & (self.cube_linear_speed[env_ids] <= float(self.cfg.cube_success_max_linear_speed))
+            & (self.cube_angular_speed[env_ids] <= float(self.cfg.cube_success_max_angular_speed))
+        )
+        self.cube_velocity_success_stable[env_ids] = (
+            (self.cube_linear_speed[env_ids] <= float(self.cfg.cube_success_max_linear_speed))
+            & (self.cube_angular_speed[env_ids] <= float(self.cfg.cube_success_max_angular_speed))
         )
         self.in_success_region[env_ids] = success
         if update_success_timer:

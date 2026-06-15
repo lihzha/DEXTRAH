@@ -788,6 +788,12 @@ def _run_scripted_demo(
     best_step: int | None = None
     min_clearance = float("inf")
     max_success_rate = 0.0
+    max_cube_linear_speed = 0.0
+    max_cube_angular_speed = 0.0
+    max_success_cube_linear_speed = 0.0
+    max_success_cube_angular_speed = 0.0
+    max_lifted_cube_linear_speed = 0.0
+    max_lifted_cube_angular_speed = 0.0
     steps_completed = 0
     grasp_assist_used = False
     contact_reached = False
@@ -948,6 +954,30 @@ def _run_scripted_demo(
         reward_values.append(_mean(reward))
         done_count += int(done.float().sum().detach().cpu()) if isinstance(done, torch.Tensor) else int(done)
         max_lift = max(max_lift, _mean(task_env.cube_lift_height))
+        current_linear_speed = float(task_env.cube_linear_speed.detach().max().cpu())
+        current_angular_speed = float(task_env.cube_angular_speed.detach().max().cpu())
+        max_cube_linear_speed = max(max_cube_linear_speed, current_linear_speed)
+        max_cube_angular_speed = max(max_cube_angular_speed, current_angular_speed)
+        success_mask = task_env.in_success_region
+        if bool(success_mask.any().item()):
+            max_success_cube_linear_speed = max(
+                max_success_cube_linear_speed,
+                float(task_env.cube_linear_speed[success_mask].detach().max().cpu()),
+            )
+            max_success_cube_angular_speed = max(
+                max_success_cube_angular_speed,
+                float(task_env.cube_angular_speed[success_mask].detach().max().cpu()),
+            )
+        lifted_mask = task_env.cube_lift_height >= float(task_env.cfg.cube_success_lift_height)
+        if bool(lifted_mask.any().item()):
+            max_lifted_cube_linear_speed = max(
+                max_lifted_cube_linear_speed,
+                float(task_env.cube_linear_speed[lifted_mask].detach().max().cpu()),
+            )
+            max_lifted_cube_angular_speed = max(
+                max_lifted_cube_angular_speed,
+                float(task_env.cube_angular_speed[lifted_mask].detach().max().cpu()),
+            )
         current_left_dist = float(task_env.left_hold_to_cube_dist.detach().max().cpu())
         current_right_dist = float(task_env.right_hold_to_cube_dist.detach().max().cpu())
         current_max_hold_dist = max(current_left_dist, current_right_dist)
@@ -1021,6 +1051,20 @@ def _run_scripted_demo(
         max_success_rate > 0.0,
         max_success_rate=max_success_rate,
         final_success_rate=_mean(task_env.in_success_region.float()),
+        max_success_cube_linear_speed=max_success_cube_linear_speed,
+        max_success_cube_angular_speed=max_success_cube_angular_speed,
+        max_allowed_cube_linear_speed=float(task_env.cfg.cube_success_max_linear_speed),
+        max_allowed_cube_angular_speed=float(task_env.cfg.cube_success_max_angular_speed),
+    )
+    checks.check(
+        "scripted_demo_lifted_success_is_velocity_stable",
+        max_success_rate > 0.0
+        and max_success_cube_linear_speed <= float(task_env.cfg.cube_success_max_linear_speed) + 1.0e-6
+        and max_success_cube_angular_speed <= float(task_env.cfg.cube_success_max_angular_speed) + 1.0e-6,
+        max_success_cube_linear_speed=max_success_cube_linear_speed,
+        max_success_cube_angular_speed=max_success_cube_angular_speed,
+        max_allowed_cube_linear_speed=float(task_env.cfg.cube_success_max_linear_speed),
+        max_allowed_cube_angular_speed=float(task_env.cfg.cube_success_max_angular_speed),
     )
     checks.check(
         "scripted_demo_no_severe_table_penetration",
@@ -1082,6 +1126,14 @@ def _run_scripted_demo(
         "min_finger_table_clearance": min_clearance,
         "max_success_rate": max_success_rate,
         "final_success_rate": _mean(task_env.in_success_region.float()),
+        "max_cube_linear_speed": max_cube_linear_speed,
+        "max_cube_angular_speed": max_cube_angular_speed,
+        "max_success_cube_linear_speed": max_success_cube_linear_speed,
+        "max_success_cube_angular_speed": max_success_cube_angular_speed,
+        "max_lifted_cube_linear_speed": max_lifted_cube_linear_speed,
+        "max_lifted_cube_angular_speed": max_lifted_cube_angular_speed,
+        "cube_success_max_linear_speed": float(task_env.cfg.cube_success_max_linear_speed),
+        "cube_success_max_angular_speed": float(task_env.cfg.cube_success_max_angular_speed),
         "final_cube_pos_mean": _tensor_list(task_env.cube_pos.mean(dim=0)),
         "final_left_hold_pos_mean": _tensor_list(task_env.left_hold_pos.mean(dim=0)),
         "final_right_hold_pos_mean": _tensor_list(task_env.right_hold_pos.mean(dim=0)),

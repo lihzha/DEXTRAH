@@ -98,6 +98,8 @@ class DextrahBimanualYAMCubeGraspEnvCfg(DirectRLEnvCfg):
     cube_success_lift_height = 0.04
     cube_success_xy_tol = 0.16
     cube_success_hand_dist = 0.18
+    cube_success_max_linear_speed = 0.60
+    cube_success_max_angular_speed = 8.0
     side_success_y_margin = 0.010
     success_timeout = 0.10
     min_episode_steps_before_success = 30
