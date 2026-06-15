@@ -3599,3 +3599,70 @@ Patch prepared:
 
 Next:
 - Commit/deploy the anchor-mode fix and rerun the same zero-update preservation diagnostic. Expected anchor loss should be near zero; deterministic eval should match the fixed BC baseline before any RL actor update is trusted.
+
+## 2026-06-15T22:52:24Z - anchor fix validated; stale BC baseline corrected
+
+Version state:
+- Commit `a327a6aa67e9c96af4533c65bfdc83ac4f4c133c`: `Fix DEXTRAH anchor eval-mode comparison`
+- A100 agent worktree updated to `a327a6aa67e9c96af4533c65bfdc83ac4f4c133c` by Git bundle.
+- Remote `bash -n cluster/sbatch_train_teacher_8gpu.sh` passed.
+
+Zero-update anchor-fix diagnostic:
+- Slurm job: `29118526`
+- Experiment: `franka_multi_resetprior_zero_actor0_critic0_bounds0_anchor1000_sigma_m5_a327a6a_20260615T2243Z`
+- Log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29118526.out`
+- Run dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_resetprior_zero_actor0_critic0_bounds0_anchor1000_sigma_m5_a327a6a_20260615T2243Z`
+
+Training result:
+- Same zero-update controls as job `29118435`: actor loss scale `0.0`, critic loss scale `0.0`, bounds loss coef `0.0`, entropy `0.0`, scripted BC loss off, action-prior reward off, frozen obs RMS on, policy anchor weight `1000.0`.
+- Anchor loss is now near-zero instead of order-one:
+  - epoch 1: `2.3446e-05`
+  - epoch 2: `0.000789`
+  - epoch 3: `0.000646`
+  - epoch 4: `0.000899`
+  - epoch 5: `0.000905`
+- Reset diagnostics stayed clean:
+  - `grasp_prior_reset_tool_downward_z=0.9975928`
+  - `grasp_prior_reset_tool_z_axis_z_mean=-0.9975928`
+
+Deterministic eval of zero-update checkpoint:
+- Slurm job: `29118596`
+- Run: `franka_multi_resetprior_zero_anchorfix_ep5_eval_a327a6a_a100_20260615T2247Z`
+- Metrics:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_multi_resetprior_zero_anchorfix_ep5_eval_a327a6a_a100_20260615T2247Z/metrics.json`
+- `eval_success_rate=0.2890625`
+- `success_ever_rate=0.2890625`
+- `success_rate_max=0.25`
+- `success_rate_final=0.0`
+- `done_count=12`
+- `done_reason_counts`: `success_done=9`, `unclassified=3`, `cube_out=0`, `finger_table_penetration=0`, `prelift_drag=0`
+
+Direct deterministic eval of original low-sigma BC checkpoint under current code:
+- Slurm job: `29118811`
+- Run: `franka_multi_bc_lowsigma_direct_eval_a327a6a_a100_20260615T2252Z`
+- Metrics:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_multi_bc_lowsigma_direct_eval_a327a6a_a100_20260615T2252Z/metrics.json`
+- `eval_success_rate=0.28125`
+- `success_ever_rate=0.28125`
+- `success_rate_max=0.25`
+- `success_rate_final=0.0`
+- `done_count=16`
+- `done_reason_counts`: `success_done=14`, `unclassified=2`, `cube_out=0`, `finger_table_penetration=0`, `prelift_drag=0`
+- Reset diagnostics at step `0`:
+  - `grasp_prior_reset_tool_downward_z=0.9975928068`
+  - `grasp_prior_reset_tool_z_axis_z_mean=-0.9975928664`
+  - `grasp_prior_reset_candidate_topdown_count=128`
+  - `grasp_prior_reset_candidate_tool_down_count=128`
+  - `grasp_prior_reset_candidate_table_count=128`
+  - `grasp_prior_reset_candidate_valid_count=128`
+  - `grasp_prior_reset_pregrasp_tip_table_clearance=0.0861287415`
+  - `grasp_prior_reset_projected_exact_tip_table_clearance=0.0063213445`
+
+Analysis:
+- The older `eval_success_rate=0.421875` BC number is not comparable to the current eval path/seed. The current comparable direct BC baseline is about `0.28125`.
+- The zero-update PPO checkpoint preserves the direct BC behavior within sampling noise (`0.2890625` vs. `0.28125`), so there is no remaining evidence of checkpoint drift.
+- The from-below/table-penetrating grasp reset failure remains absent in these deterministic evals: every sampled reset candidate passed top-down/tool-down/table-valid gates, the end-effector tool z-axis points downward, and table/finger/prelift done reasons are zero.
+
+Next:
+- Relaunch real PPO from the low-sigma BC checkpoint at current commit `a327a6a` with the anchor fix, bounds disabled, frozen obs RMS, low sigma, and a small actor update. Use the current direct BC baseline (`eval_success_rate~0.28`) as the preservation floor.
