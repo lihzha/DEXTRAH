@@ -1795,3 +1795,146 @@ Result:
 
 Next:
 - Commit/deploy the raw-pose fix and rerun the same 4096-candidate diagnostic. Acceptance for this stage is positive `candidate_down_table_count` and nonzero valid/fallback candidates without table penetration.
+
+## 2026-06-15T17:55:00Z - Launch raw-pose 4096-candidate diagnostic
+
+Goal:
+- Verify that preserving the raw GraspGen `panda_hand` reset pose restores top-down/table-safe candidate intersections.
+
+Command / Job:
+- job_id: `1029918`
+- run_name: `franka_multi_eval_rawpose_ep40_cand4096_seed44_2b304fe_20260615T1755Z`
+- commit: `2b304feaaa45eacb3aa7570549c7042aff34b704`
+- candidate_count: `4096`
+- num_steps: `5`
+- video: disabled
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_multi_eval_rawpose_ep40_cand4096_seed44_2b304fe_20260615T1755Z`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_multi_object_1029918.out`
+
+Result:
+- status: completed; partially passed acceptance
+
+Next:
+- Run video validation to inspect the selected raw-pose grasp visually, with per-env geometry from the validator.
+
+Metrics / Evidence:
+- `candidate_down_table_count=270.0`, `candidate_down_table_width_count=204.0`, `candidate_down_table_width_center_contact_farther_count=34.5`
+- `candidate_valid_count=34.5`, `candidate_fallback_count=34.5`
+- `reset_success=0.5`, `quality_success=0.5`
+- `tool_downward_z=0.9993`, `projected_exact_tip_table_clearance=0.1189`, `pregrasp_tip_table_clearance=0.1589`
+- `finger_table_clearance_violation=0.0`
+
+Analysis:
+- The raw-pose fix resolves the missing top-down/table-safe candidate intersection.
+- One of the two vectorized objects still fails reset quality in this short eval. The next evidence should come from video validation because it records selected per-env grasp geometry and can score candidate envs before rendering.
+
+## 2026-06-15T18:15:00Z - Launch raw-pose video validation
+
+Goal:
+- Visually inspect the selected grasp after the raw-pose fix and verify the robot does not reach from below or penetrate the table.
+
+Command / Job:
+- job_id: `1029919`
+- run_name: `franka_multi_video_rawpose_2obj_seed44_2b304fe_20260615T1815Z`
+- commit: `2b304feaaa45eacb3aa7570549c7042aff34b704`
+- num_envs: `2`
+- candidate_count: `4096`
+- reset_attempts: `8`
+- warmstart_steps: approach `20`, close `20`, lift `32`
+- reset/perturbation scenarios shortened to keep the validation focused on grasp-contact.
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_rawpose_2obj_seed44_2b304fe_20260615T1815Z`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_1029919.out`
+
+Result:
+- status: running/queued
+
+Next:
+- Inspect `video_metrics.json`, selected grasp geometry, and frames via `viz-open`.
+
+## 2026-06-15T18:35:00Z - Launch raw-pose close-width ablation
+
+Goal:
+- Test whether the safe, top-down raw-pose grasp fails only because the warmstart closes too wide for thin GraspGen objects.
+
+Command / Job:
+- job_id: `1029920`
+- run_name: `franka_multi_video_rawpose_close0_2obj_seed44_2b304fe_20260615T1835Z`
+- commit: `2b304feaaa45eacb3aa7570549c7042aff34b704`
+- num_envs: `2`
+- candidate_count: `4096`
+- close_width: `0.0`
+- use_prior_close_width: `False`
+- warmstart_steps: approach `20`, close `24`, lift `28`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_rawpose_close0_2obj_seed44_2b304fe_20260615T1835Z`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_1029920.out`
+
+Result:
+- status: running/queued
+
+Next:
+- Compare lift and selected grasp metrics against close-width `0.025`.
+
+## 2026-06-15T18:50:00Z - Launch raw-pose close0 strong-lift validation
+
+Goal:
+- Test whether the close0 grasp can clear the success height with a longer, stronger lift phase.
+
+Command / Job:
+- job_id: `1029921`
+- run_name: `franka_multi_video_rawpose_close0_lift1_2obj_seed44_2b304fe_20260615T1850Z`
+- commit: `2b304feaaa45eacb3aa7570549c7042aff34b704`
+- num_envs: `2`
+- candidate_count: `4096`
+- close_width: `0.0`
+- use_prior_close_width: `False`
+- warmstart_steps: approach `20`, close `28`, lift `80`
+- lift_action_z: `1.0`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_rawpose_close0_lift1_2obj_seed44_2b304fe_20260615T1850Z`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_1029921.out`
+
+Result:
+- status: running/queued
+
+Next:
+- Inspect whether the selected grasp reaches `selected_lift_height_threshold=0.12` without table collision or object drag.
+
+## 2026-06-15T19:05:00Z - Inspect raw-pose validation sweep and promote warmstart defaults
+
+Goal:
+- Turn the passing raw-pose/top-down/table-safe validation settings into the multi-object defaults before launching RL, so later runs do not silently inherit the short single-cube warmstart.
+
+Evidence:
+- `franka_multi_video_rawpose_2obj_seed44_2b304fe_20260615T1815Z` selected a safe downward-tool grasp, but did not lift the object:
+  - `selected_tool_downward_z=0.9986`
+  - `selected_quality_success=True`
+  - `finger_table_clearance_min=0.0606`
+  - `selected_lift_height_max=0.0`
+- `franka_multi_video_rawpose_close0_2obj_seed44_2b304fe_20260615T1835Z` improved lift after fully closing the gripper:
+  - `selected_lift_height_max=0.0213`
+  - `selected_gripper_width_min=0.0192`
+  - no selected table violation
+- `franka_multi_video_rawpose_close0_lift1_2obj_seed44_2b304fe_20260615T1850Z` passed all validation scenarios:
+  - `overall_passed=True`
+  - `grasp_contact=True`, `perturbation=True`, `reset_settle=True`
+  - `selected_lift_height_max=0.2692` above threshold `0.12`
+  - `selected_tool_downward_z=0.9986`
+  - `selected_pregrasp_offset_dir_z=0.9986`
+  - `finger_table_clearance_min=0.06085`
+  - `selected_done_count=0`
+  - `selected_candidate_valid_count=91`, `selected_candidate_fallback_count=91`
+- Local viewer links:
+  - metrics: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-finish-20260615T074722Z/cluster_results/l401/franka_multi_video_rawpose_close0_lift1_2obj_seed44_2b304fe_20260615T1850Z/video_metrics.json`
+  - final frame: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-finish-20260615T074722Z/cluster_results/l401/franka_multi_video_rawpose_close0_lift1_2obj_seed44_2b304fe_20260615T1850Z/grasp_contact/frames/frame_0042.png`
+
+Change:
+- Set multi-object warmstart defaults to approach `20`, close `28`, lift `80`, close width `0.0`, `use_prior_close_width=False`, and lift z action `1.0`.
+- Applied the same defaults to eval, validation, teacher-training, and verified-grasp collection wrappers.
+- Left the single-cube Franka environment unchanged.
+
+Validation:
+- `python3 -m py_compile` on touched task/eval modules: passed
+- `bash -n` on touched Slurm wrappers: passed
+- `git diff --check`: passed
+
+Next:
+- Commit the default update, deploy the exact commit to the l401 worktree, and relaunch video validation without overriding the warmstart values.

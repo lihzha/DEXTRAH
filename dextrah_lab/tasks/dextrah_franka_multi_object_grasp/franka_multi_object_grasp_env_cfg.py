@@ -121,6 +121,15 @@ class DextrahFrankaMultiObjectGraspEnvCfg(DextrahFrankaCubeGraspEnvCfg):
     grasp_prior_reset_quality_max_finger_center_dist = 0.08
     grasp_prior_reset_quality_max_tip_center_dist = 0.08
     grasp_prior_reset_quality_max_tip_max_dist = 0.10
+    # Multi-object priors often target thin/elongated objects. Close fully and
+    # lift long enough for reset-video verification instead of inheriting the
+    # short single-cube warmstart.
+    grasp_prior_action_warmstart_approach_steps = 20
+    grasp_prior_action_warmstart_close_steps = 28
+    grasp_prior_action_warmstart_lift_steps = 80
+    grasp_prior_action_warmstart_close_width = 0.0
+    grasp_prior_action_warmstart_use_prior_close_width = False
+    grasp_prior_action_warmstart_lift_action_z = 1.0
     grasp_prior_action_warmstart_require_current_lift_ready = True
 
     # Optional online RGB observation path used by the RGB PPO task below.
