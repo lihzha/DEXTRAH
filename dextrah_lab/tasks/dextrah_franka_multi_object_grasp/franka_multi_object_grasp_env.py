@@ -771,7 +771,8 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             3,
             3,
         )
-        finger_center_offset_ee = self._finger_center_offset_from_ee(env_ids)
+        left_finger_offset_ee, right_finger_offset_ee = self._finger_offsets_from_ee(env_ids)
+        finger_center_offset_ee = 0.5 * (left_finger_offset_ee + right_finger_offset_ee)
         finger_center_offset_w = torch.einsum(
             "ncij,nj->nci",
             candidate_exact_ee_rot_w,
@@ -814,6 +815,28 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         candidate_pregrasp_ee_pos_w = (
             candidate_exact_ee_pos_w + pregrasp_offset * candidate_pregrasp_offset_dir_w
         )
+        left_finger_offset_w = torch.einsum(
+            "ncij,nj->nci",
+            candidate_exact_ee_rot_w,
+            left_finger_offset_ee,
+        )
+        right_finger_offset_w = torch.einsum(
+            "ncij,nj->nci",
+            candidate_exact_ee_rot_w,
+            right_finger_offset_ee,
+        )
+        candidate_exact_left_finger_pos_w = candidate_exact_ee_pos_w + left_finger_offset_w
+        candidate_exact_right_finger_pos_w = candidate_exact_ee_pos_w + right_finger_offset_w
+        candidate_pregrasp_left_finger_pos_w = candidate_pregrasp_ee_pos_w + left_finger_offset_w
+        candidate_pregrasp_right_finger_pos_w = candidate_pregrasp_ee_pos_w + right_finger_offset_w
+        candidate_pregrasp_finger_table_clearance = torch.minimum(
+            candidate_pregrasp_left_finger_pos_w[:, :, 2],
+            candidate_pregrasp_right_finger_pos_w[:, :, 2],
+        ) - float(self.cfg.table_surface_z)
+        candidate_exact_finger_table_clearance = torch.minimum(
+            candidate_exact_left_finger_pos_w[:, :, 2],
+            candidate_exact_right_finger_pos_w[:, :, 2],
+        ) - float(self.cfg.table_surface_z)
         candidate_pregrasp_tool_dist = torch.norm(candidate_pregrasp_tool_pos_w - candidate_contact_reference_w, dim=-1)
         candidate_pregrasp_ee_dist = torch.norm(candidate_pregrasp_ee_pos_w - candidate_contact_reference_w, dim=-1)
         if pregrasp_offset <= 1.0e-6:
@@ -852,9 +875,11 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         normalized_center_dist = candidate_center_gate_dist / object_size
         normalized_tool_center_dist = candidate_exact_tool_dist / object_size
         center_ok = normalized_center_dist <= float(self.cfg.grasp_prior_reset_max_center_distance_frac)
-        table_floor_z = float(self.cfg.table_surface_z) + float(self.cfg.finger_table_penetration_termination_margin)
+        table_clearance_floor = float(self.cfg.finger_table_penetration_termination_margin)
+        table_floor_z = float(self.cfg.table_surface_z) + table_clearance_floor
         table_ok = (
-            (candidate_pregrasp_ee_pos_w[:, :, 2] >= table_floor_z)
+            (candidate_pregrasp_finger_table_clearance >= table_clearance_floor)
+            & (candidate_exact_finger_table_clearance >= table_clearance_floor)
             & (candidate_contact_reference_w[:, :, 2] >= table_floor_z)
         )
         valid = candidate_pregrasp_farther & width_ok & center_ok & table_ok
@@ -937,26 +962,37 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             "candidate_table_count": table_ok.sum(dim=1),
             "candidate_valid_count": valid.sum(dim=1),
             "candidate_fallback_count": fallback_ok.sum(dim=1),
+            "pregrasp_finger_table_clearance": candidate_pregrasp_finger_table_clearance[row_ids, best_candidate],
+            "exact_finger_table_clearance": candidate_exact_finger_table_clearance[row_ids, best_candidate],
             "require_offset_radial_quality": ~has_contact_location,
             "exact_ee_dist": torch.norm(exact_ee_pos_w - contact_reference_w, dim=-1),
             "pregrasp_ee_dist": torch.norm(target_ee_pos_w - contact_reference_w, dim=-1),
             "pregrasp_farther": pregrasp_farther,
         }
 
-    def _finger_center_offset_from_ee(self, env_ids: torch.Tensor) -> torch.Tensor:
+    def _finger_offsets_from_ee(self, env_ids: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         self._compute_intermediate_values(env_ids)
         env_origins = self.scene.env_origins[env_ids]
         ee_pos_w = self.ee_pos[env_ids] + env_origins
-        finger_center_w = 0.5 * (self.left_finger_pos[env_ids] + self.right_finger_pos[env_ids]) + env_origins
         point_quat_w = torch.zeros((int(env_ids.numel()), 4), dtype=torch.float32, device=self.device)
         point_quat_w[:, 0] = 1.0
-        offset_ee, _ = math_utils.subtract_frame_transforms(
+        left_offset_ee, _ = math_utils.subtract_frame_transforms(
             ee_pos_w,
             self.ee_quat[env_ids],
-            finger_center_w,
+            self.left_finger_pos[env_ids] + env_origins,
             point_quat_w,
         )
-        return offset_ee
+        right_offset_ee, _ = math_utils.subtract_frame_transforms(
+            ee_pos_w,
+            self.ee_quat[env_ids],
+            self.right_finger_pos[env_ids] + env_origins,
+            point_quat_w,
+        )
+        return left_offset_ee, right_offset_ee
+
+    def _finger_center_offset_from_ee(self, env_ids: torch.Tensor) -> torch.Tensor:
+        left_offset_ee, right_offset_ee = self._finger_offsets_from_ee(env_ids)
+        return 0.5 * (left_offset_ee + right_offset_ee)
 
     def _grasp_prior_reset_topdown_mask(
         self,
@@ -983,11 +1019,17 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             (required_width >= float(self.cfg.grasp_prior_reset_min_width))
             & (required_width <= float(self.cfg.max_gripper_width))
         )
-        table_floor_z = float(self.cfg.table_surface_z) + float(self.cfg.finger_table_penetration_termination_margin)
-        table_ok = (
-            (targets["target_ee_pos_w"][:, 2] >= table_floor_z)
-            & (targets["contact_reference_w"][:, 2] >= table_floor_z)
-        )
+        table_clearance_floor = float(self.cfg.finger_table_penetration_termination_margin)
+        table_floor_z = float(self.cfg.table_surface_z) + table_clearance_floor
+        table_ok = targets["contact_reference_w"][:, 2] >= table_floor_z
+        if "pregrasp_finger_table_clearance" in targets and "exact_finger_table_clearance" in targets:
+            table_ok = (
+                table_ok
+                & (targets["pregrasp_finger_table_clearance"] >= table_clearance_floor)
+                & (targets["exact_finger_table_clearance"] >= table_clearance_floor)
+            )
+        else:
+            table_ok = table_ok & (targets["target_ee_pos_w"][:, 2] >= table_floor_z)
         return mask & center_dist_ok & width_ok & table_ok
 
     def _grasp_prior_reset_extra_success_mask(

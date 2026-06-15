@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 from pathlib import Path
 from datetime import datetime
 
@@ -91,6 +92,18 @@ parser.add_argument(
     type=int,
     default=60,
     help="Unrendered rollout steps for selecting the grasp-contact reset; set 0 to record the first quality reset.",
+)
+parser.add_argument(
+    "--grasp_contact_max_score_envs",
+    type=int,
+    default=0,
+    help="Maximum quality candidate envs to score per reset attempt; <=0 scores all candidates.",
+)
+parser.add_argument(
+    "--grasp_contact_max_score_seconds",
+    type=float,
+    default=0.0,
+    help="Wall-clock scoring budget before recording the best available reset; <=0 disables the limit.",
 )
 parser.add_argument("--disable_fabric", action="store_true", default=False)
 AppLauncher.add_app_launcher_args(parser)
@@ -905,8 +918,17 @@ def _select_scored_grasp_contact_state(env, task_env) -> tuple[int, dict[str, ob
     )
     requested_score_steps = int(args_cli.grasp_contact_score_steps)
     score_steps = 0 if requested_score_steps <= 0 else max(requested_score_steps, warmstart_steps, 1)
+    max_score_envs = max(int(args_cli.grasp_contact_max_score_envs), 0)
+    max_score_seconds = max(float(args_cli.grasp_contact_max_score_seconds), 0.0)
+    deadline = time.monotonic() + max_score_seconds if max_score_seconds > 0.0 else None
+    scored_envs = 0
+    skipped_envs = 0
+    time_limit_reached = False
 
     for attempt in range(attempts):
+        if deadline is not None and time.monotonic() >= deadline:
+            time_limit_reached = True
+            break
         _reset_settled_object_then_apply_grasp_prior(env, task_env)
         candidate_envs = _candidate_contact_envs(task_env)
         if not candidate_envs:
@@ -923,12 +945,21 @@ def _select_scored_grasp_contact_state(env, task_env) -> tuple[int, dict[str, ob
                 "selected_env": selected_env,
             }
         reset_state = _snapshot_task_env_state(task_env)
-        for selected_env in candidate_envs:
+        score_envs = candidate_envs[:max_score_envs] if max_score_envs > 0 else candidate_envs
+        skipped_envs += max(len(candidate_envs) - len(score_envs), 0)
+        for selected_env in score_envs:
+            if deadline is not None and time.monotonic() >= deadline:
+                time_limit_reached = True
+                break
             _restore_task_env_state(task_env, reset_state)
             candidate_state = _snapshot_task_env_state(task_env)
             result = _rollout_grasp_contact(env, task_env, selected_env=selected_env, steps=score_steps)
+            scored_envs += 1
             result["selection_attempt"] = attempt
             result["selection_score_steps"] = score_steps
+            result["selection_scored_envs"] = scored_envs
+            result["selection_skipped_envs"] = skipped_envs
+            result["selection_time_limit_reached"] = time_limit_reached
             score = _score_grasp_contact_result(result)
             result["selection_score"] = score
             if score > best_score:
@@ -939,6 +970,8 @@ def _select_scored_grasp_contact_state(env, task_env) -> tuple[int, dict[str, ob
                 _restore_task_env_state(task_env, candidate_state)
                 return selected_env, result
         _restore_task_env_state(task_env, reset_state)
+        if time_limit_reached:
+            break
 
     if best_state is None or best_result is None:
         _reset_settled_object_then_apply_grasp_prior(env, task_env)
@@ -947,10 +980,16 @@ def _select_scored_grasp_contact_state(env, task_env) -> tuple[int, dict[str, ob
             "passed": False,
             "selection_failure": "no_quality_candidate",
             "selection_score": best_score,
+            "selection_scored_envs": scored_envs,
+            "selection_skipped_envs": skipped_envs,
+            "selection_time_limit_reached": time_limit_reached,
             "selected_env": selected_env,
         }
 
     _restore_task_env_state(task_env, best_state)
+    best_result["selection_scored_envs"] = scored_envs
+    best_result["selection_skipped_envs"] = skipped_envs
+    best_result["selection_time_limit_reached"] = time_limit_reached
     return int(best_result["selected_env"]), best_result
 
 
