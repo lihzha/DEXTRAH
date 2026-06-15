@@ -16605,3 +16605,732 @@ Next:
 - Commit/push/deploy this evaluator patch, rerun the same nominal trace with
   `STOP_ON_DONE=True`, and only then decide whether the retention fine-tune can
   advance to shifted/OOD evaluation.
+
+## 2026-06-13T02:28:22-07:00 - RGB retention nominal stop-on-done rerun launch
+
+Goal:
+- Re-evaluate the bounded RGB retention fine-tune with reset-aware trace
+  metrics before any OOD evaluation or additional training.
+
+Version Control:
+- agent_id: franka-cube-bc-warmstart
+- local_commit: `10a924232fe6ac72eaef026acb1eed13d8db2533`
+- push/pull:
+  pushed to GitHub branch `codex/franka-cube-diffusion-policy-bc`; pushed over
+  SSH to l401 repo branch `codex/franka-cube-diffusion-policy-bc-retention`;
+  checked out l401 task worktree detached at the same commit.
+- remote_worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- remote_commit: `10a924232fe6ac72eaef026acb1eed13d8db2533`
+
+Command / Job:
+- run name:
+  `franka_cube_rgb_dp_trace_retention_lr5e6_s400_stopdone_seed42default_chunk1_video_20260613_0228`
+- command:
+  `sbatch --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart,RUN_NAME=franka_cube_rgb_dp_trace_retention_lr5e6_s400_stopdone_seed42default_chunk1_video_20260613_0228,CHECKPOINT=/results/dp_bc/checkpoints/rgb_phase12_normal_ckpt_ft_ood3x4_retention_lr5e6_s400_20260613_015149/latest.ckpt,NUM_ENVS=1,NUM_STEPS=340,NUM_INFERENCE_STEPS=100,NUM_ACTION_SAMPLES=1,ACTION_CHUNK_STEPS=1,CLIP_ACTIONS=1.0,SUCCESS_WINDOW=80,STOP_ON_DONE=True,CAPTURE_VIDEO=True,VIDEO_LENGTH=340,SEED=42,IMAGE_HEIGHT=96,IMAGE_WIDTH=96,APPEND_PHASE_PROGRESS=True,PHASE_PROGRESS_DATASET=/results/dp_bc/contact_relabel_rgb_one_ep233_normalreset_20260612_2201/franka_cube_rgb_one_ep233_normalreset_96.npz,PHASE_PROGRESS_EPISODE=0,PHASE_PROGRESS_START_STEP=0,VIDEO_NAME_PREFIX=franka-cube-rgb-dp-trace-retention-lr5e6-s400-stopdone-seed42default-chunk1 cluster/sbatch_eval_franka_cube_rgb_dp_policy_1gpu.sh`
+- success condition:
+  metrics should show `stopped_on_done=true`, `done_count=1`, first done with
+  pre-reset `in_success_region=1`, and final/summary metrics should preserve
+  the pre-reset lifted state instead of post-reset zeros.
+
+Result:
+- status: submitting.
+
+## 2026-06-13T02:35:20-07:00 - RGB retention stop-on-done rerun result
+
+Goal:
+- Interpret the reset-aware nominal rerun and decide whether the checkpoint can
+  advance to OOD eval.
+
+Result:
+- job `1028917`: `COMPLETED`, exit `0:0`, elapsed `00:04:02`.
+- artifacts:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_rgb_dp_trace_retention_lr5e6_s400_stopdone_seed42default_chunk1_video_20260613_0228`
+- video:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_rgb_dp_trace_retention_lr5e6_s400_stopdone_seed42default_chunk1_video_20260613_0228/videos/franka-cube-rgb-dp-trace-retention-lr5e6-s400-stopdone-seed42default-chunk1-step-0.mp4`
+- video validation: `1280x720`, `339` frames, `5.65s`.
+- metrics: `done_count=0`, `stopped_on_done=false`, max lift `0.0112m`,
+  no `has_lifted_cube`, final gripper width `0.00021m`, final
+  finger-center-to-cube distance `0.267m`.
+
+Analysis:
+- The evaluator patch works structurally, but this stochastic rerun did not
+  reproduce the earlier success-like trace. The prior no-seed run did hit
+  `in_success_region` for 12 steps and auto-reset; this no-seed repeat
+  over-closed and pushed/lost the cube before lift.
+- Therefore the current checkpoint is not robust under single stochastic
+  diffusion sampling. The nominal gate must use deterministic sampling settings
+  before any OOD conclusion is meaningful.
+
+Next:
+- Run deterministic nominal gates from the same checkpoint with
+  `POLICY_SAMPLE_SEED=42`: one single-sample trace and one 8-sample averaged
+  trace. If neither succeeds, return to training/inference tuning instead of
+  OOD eval.
+
+## 2026-06-13T02:23:26-07:00 - RGB retention fixed-seed nominal gate and OOD launch
+
+Goal:
+- Verify the retention fine-tune under deterministic diffusion sampling, then
+  run the +1.5 cm shifted-cube reset only if the nominal reset succeeds.
+
+Evidence:
+- Fixed-seed single-sample nominal eval artifacts:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_rgb_dp_trace_retention_lr5e6_s400_stopdone_policyseed42_s1_chunk1_video_20260613_0236`.
+- Metrics summary: `done_count=1`, `stopped_on_done=true`,
+  `stop_reason=done`, `policy_sample_seed=42`, `num_action_samples=1`,
+  `steps_completed=295`, `actions_completed=296`,
+  `final_success_rate=1.0`, final/pre-reset lift `0.137535m`,
+  final gripper width `0.042366m`, and `first_done.step=296`.
+- The 8-sample nominal job was canceled after the deterministic single-sample
+  run passed, so OOD eval can proceed with the same single-sample setting.
+
+OOD Reset:
+- Use existing eval-only lowdim reset file:
+  `/results/dp_bc/contact_relabel_scale264_accepted183_plus_normalreset27_20260612_170627/franka_cube_scale264_contact_relabel_accepted183_plus_normalreset27_phaseprogress_25d_ep183_cube_xp015.npz`.
+- Its metadata says `eval_only_cube_shift_episode=183` and
+  `eval_only_cube_shift_xyz=[0.015, 0.0, 0.0]`.
+- Episode `183` starts from normal robot joints (`joint_alpha=0.0`) with cube
+  position `[-0.398965, -0.124041, 0.781]`, i.e. +1.5 cm in x from the normal
+  reset neighborhood. The RGB evaluator uses this file only to set cube
+  pose/quaternion before rendering live RGB and robot-state observations.
+
+Command / Job:
+- planned run:
+  `franka_cube_rgb_dp_trace_retention_lr5e6_s400_stopdone_policyseed42_xp015_chunk1_video_20260613_022326`
+- command:
+  `sbatch --parsable --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart,RUN_NAME=franka_cube_rgb_dp_trace_retention_lr5e6_s400_stopdone_policyseed42_xp015_chunk1_video_20260613_022326,CHECKPOINT=/results/dp_bc/checkpoints/rgb_phase12_normal_ckpt_ft_ood3x4_retention_lr5e6_s400_20260613_015149/latest.ckpt,NUM_ENVS=1,NUM_STEPS=340,NUM_INFERENCE_STEPS=100,NUM_ACTION_SAMPLES=1,POLICY_SAMPLE_SEED=42,ACTION_CHUNK_STEPS=1,CLIP_ACTIONS=1.0,SUCCESS_WINDOW=80,STOP_ON_DONE=True,CAPTURE_VIDEO=True,VIDEO_LENGTH=340,SEED=42,IMAGE_HEIGHT=96,IMAGE_WIDTH=96,APPEND_PHASE_PROGRESS=True,PHASE_PROGRESS_DATASET=/results/dp_bc/contact_relabel_rgb_one_ep233_normalreset_20260612_2201/franka_cube_rgb_one_ep233_normalreset_96.npz,PHASE_PROGRESS_EPISODE=0,PHASE_PROGRESS_START_STEP=0,DEMO_RESET_DATASET=/results/dp_bc/contact_relabel_scale264_accepted183_plus_normalreset27_20260612_170627/franka_cube_scale264_contact_relabel_accepted183_plus_normalreset27_phaseprogress_25d_ep183_cube_xp015.npz,DEMO_RESET_EPISODE=183,DEMO_RESET_STEP=0,DEMO_RESET_CUBE_POS_BLEND_ALPHA=1.0,VIDEO_NAME_PREFIX=franka-cube-rgb-dp-trace-retention-lr5e6-s400-stopdone-policyseed42-xp015-chunk1 cluster/sbatch_eval_franka_cube_rgb_dp_policy_1gpu.sh`
+- success condition:
+  `stopped_on_done=true`, `done_count>0`, final/pre-reset
+  `in_success_region=1`, lifted cube height over the task success threshold,
+  and a video showing a physically plausible grasp/lift on the shifted cube.
+
+Result:
+- status: ready to submit.
+
+## 2026-06-14T19:45:00-07:00 - No-final-clip RGB demo generation and probe
+
+Goal:
+- Generate 64 RGB controller demos without physical action clipping and render
+  all accepted demos as a grid video.
+
+Hypothesis:
+- The previous `clip<=0.50` lowdim set was clean, but the user requested no
+  action clipping. Replacing the final per-dimension clip with a pose-vector
+  scaler should keep the controller bounded enough to run while avoiding
+  physical clipping artifacts in the accepted RGB demos.
+
+Change:
+- Commit `67ab389a30eacbbf97910871c288e1ba63ea76f2` fixes no-clip auditing so
+  `CLIP_ACTIONS=0` disables the physical clip and reports zero clip hits.
+- Commit `85aee4debbe6ac55706132da5fe8b4c57382277e` adds
+  `dextrah_lab/offline_dp_bc/make_rgb_episode_grid_video.py` for final 8x8 RGB
+  grid rendering.
+- Initial RGB chunks used the old remote code with `CLIP_ACTIONS=999`,
+  `POSE_ACTION_FILTER=scale`, `POSE_ACTION_LIMIT=1.5`, `ALIGN_STEPS=80`,
+  `SAVE_RGB_OBS=True`, and `CAPTURE_VIDEO=True`; this is effectively
+  unclipped for these action magnitudes but not the final desired config.
+
+Version Control:
+- agent_id: franka-cube-dp-bc-warmstart
+- worktree:
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- local_commit: `85aee4debbe6ac55706132da5fe8b4c57382277e`
+- remote_worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- remote_commit for active probe:
+  `67ab389a30eacbbf97910871c288e1ba63ea76f2`
+- deployment note: l401 cannot fetch GitHub directly
+  (`Permission denied (publickey)`), so commit `67ab389` was transferred by
+  Git push over SSH to `/lustre/.../src/DEXTRAH` and checked out in the remote
+  worktree.
+
+Command / Jobs:
+- Stale full RGB chunk jobs:
+  - `1029471`:
+    `franka_cube_rgb_nofinalclip_limit15_uniform64_ep8to31_chunk0_20260614_185046`
+  - `1029472`:
+    `franka_cube_rgb_nofinalclip_limit15_uniform64_ep8to31_chunk1_20260614_185046`
+  - `1029473`:
+    `franka_cube_rgb_nofinalclip_limit15_uniform64_ep8to31_chunk2_20260614_185046`
+  - `1029474`: canceled before start because the first three chunks failed
+    the hard gate.
+- Failed-support probe spec:
+  `artifacts/specs/franka_cube_rgb_noclip_probe_fail8_20260614_1925/specs_fail8.env`.
+- Active queued probe:
+  - job `1029504`
+  - run:
+    `franka_cube_noclip_probe_fail8_limit15_align160_node09_20260614_1925`
+  - config:
+    `CLIP_ACTIONS=0`, `POSE_ACTION_FILTER=scale`,
+    `POSE_ACTION_LIMIT=1.5`, `ALIGN_STEPS=160`, no RGB/video.
+
+Result:
+- Stale RGB chunks completed cleanly at the scheduler level but failed the hard
+  relabel gate:
+  - chunk0: `12/16` accepted RGB episodes
+  - chunk1: `14/16` accepted RGB episodes
+  - chunk2: `14/16` accepted RGB episodes
+  - total accepted from attempted chunks: `40/48`
+- All completed stale chunk rows report `max pose-action clip fraction = 0.0`.
+- Failure rows consistently missed pre-close convergence, then closed/lifted
+  away from the cube: examples include pre-close finger-center distances
+  `0.0589m` to `0.0890m` and max lift only `0.0054m` to `0.0123m`.
+- Current challenge: l401 queue priority. Probe `1029504` is pending on
+  `pool0-00009` with a 15-minute wall time; local execution is blocked because
+  the workstation has GPUs but no local Isaac Sim Python environment
+  (`IsaacLab-v2.2.1/_isaac_sim/python.sh` missing).
+
+Analysis:
+- The earlier passing lowdim set used final action clipping to `[-1, 1]` and
+  reached the failed support points cleanly. The no-final-clip `limit=1.5`
+  setting reaches many points but is too aggressive or too short on a subset of
+  XYs. The failure mode is controller approach convergence, not RGB capture or
+  dataset serialization.
+- Next useful test is whether longer `ALIGN_STEPS=160` with literal
+  `CLIP_ACTIONS=0` recovers the 8 failed supports. If it does, rerun the 8
+  failures plus the 16 canceled chunk3 specs with RGB/video under that config,
+  combine with the 40 accepted RGB episodes, and render the 64-demo 8x8 grid.
+
+Next:
+- Monitor `1029504` until it runs; if it passes, submit the missing 24 RGB
+  demos with the same no-clip config. If it fails, inspect the failed-support
+  summaries and test a smaller pose limit or longer align window before RGB
+  regeneration.
+
+Update 2026-06-14T20:28:00-07:00:
+- Probe `1029504` (`center_high30`, `ALIGN_STEPS=160`, `CLIP_ACTIONS=0`)
+  completed `3/8` accepted. Longer align recovered ep14, ep22, and ep31 but
+  still failed 5 supports with large pre-close finger distances.
+- Probe `1029509` (`center_high15`, `ALIGN_STEPS=160`, `CLIP_ACTIONS=0`)
+  completed `4/8` accepted. Lowering the target recovered ep16 too but still
+  failed 4 laterally difficult supports.
+- Probe `1029513` (`center_high15`, `CONTACT_ALIGN_STEPS=320`, left/right
+  gate) failed all 4 remaining supports because contact-align never reached
+  the gate. This indicates the current lateral contact-align controller is not
+  a reliable recovery mechanism for those edge supports.
+- Instead of forcing those exact bad supports, generated 48 additional unique
+  uniformly sampled reachable-support specs:
+  `artifacts/specs/franka_cube_rgb_noclip_extra48_20260614_2020/specs_all.env`.
+- Job `1029515`
+  (`franka_cube_rgb_noclip_extra48_high30_limit15_align80_20260614_2020`)
+  used literal `CLIP_ACTIONS=0`, `POSE_ACTION_FILTER=scale`,
+  `POSE_ACTION_LIMIT=1.5`, `SAVE_RGB_OBS=True`, `CAPTURE_VIDEO=False`.
+  It completed `43/48` accepted RGB demos with zero pose-action clip fraction.
+- Combined the 40 earlier no-final-clip accepted RGB demos with the 43 new
+  literal-no-clip accepted demos, then filtered to exactly 64 accepted demos:
+  `artifacts/contact_relabel_sets/franka_cube_rgb_noclip_accepted64_grid_20260614_2020/franka_cube_rgb_noclip_accepted64.npz`.
+- Final 64-demo dataset checks:
+  - image shape: `(18091, 96, 96, 3)`, dtype `uint8`, range `[0,255]`
+  - action shape: `(18091, 7)`, action max abs `1.5000001`
+  - episode count: `64`
+  - rounded unique cube XYs at 1 mm: `64`
+  - phase counts: `{0: 5120, 1: 5120, 2: 7851}`
+- Rendered requested 8x8 grid video:
+  `artifacts/contact_relabel_sets/franka_cube_rgb_noclip_accepted64_grid_20260614_2020/franka_cube_rgb_noclip_accepted64_grid.mp4`.
+  `ffprobe`: `782x782`, `300` frames, `10.0s`, `30 FPS`.
+- Viewer URL:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_rgb_noclip_accepted64_grid_20260614_2020/franka_cube_rgb_noclip_accepted64_grid.mp4`.
+
+## 2026-06-14T15:27:24-07:00 - Pad-fix non-video uniform relabel batches
+
+Goal:
+- Try generating more Franka-cube contact-aware demos after fixing the
+  gripper close target so the black pads no longer sink into the cube.
+
+Code / setup:
+- local branch: `codex/franka-cube-diffusion-policy-bc`
+- remote worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- remote code commit used for jobs:
+  `d84b91a4bbe9b45d1980ed2555660423fdbc4f9e`
+- non-video, lowdim only: `CAPTURE_VIDEO=False`, `SAVE_RGB_OBS=False`
+- controller settings:
+  `VARIANT=center_high30`, `ORIENTATION_MODE=live`,
+  `ALIGN_STEPS=80`, `CONTACT_ALIGN_STEPS=0`,
+  `CONTACT_ALIGN_REFERENCE=initial_cube`,
+  `CLOSE_HOLD_REFERENCE=contact_anchor`,
+  `CLOSE_GRIPPER_WIDTH=-1.0`,
+  `CLOSE_GRIPPER_WIDTH_OFFSET=-0.002`,
+  `MIN_FINGER_CUBE_SURFACE_MARGIN=-0.006`,
+  `LIFT_STEPS=160`, `LIFT_HEIGHT=0.22`, `FINGER_GAIN=0.75`,
+  `POSE_ACTION_FILTER=clip`, `POSE_ACTION_LIMIT=1.0`
+- physical gates:
+  `min_lift=0.10`, `max_final_ee_to_cube=0.05`,
+  `max_final_finger_to_cube=0.08`,
+  `min_finger_cube_surface_margin=-0.006`
+
+8-spec probe:
+- specs:
+  `artifacts/specs/franka_cube_padfix_uniform8_20260614_145853/`
+- job: `1029409`, completed on `pool0-00002`
+- remote run:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/contact_relabel_sets/franka_cube_contact_relabel_padfix_uniform8_novideo_20260614_145853`
+- local copy:
+  `artifacts/contact_relabel_sets/franka_cube_contact_relabel_padfix_uniform8_novideo_20260614_145853/`
+- strict wrapper gate with `max_pose_clip_fraction=0.2` accepted only `2/8`;
+  the six failures were only `pose_action_clipped`.
+- re-aggregated saved rollouts with `max_pose_clip_fraction=0.34`:
+  `contact_relabel_set_clip034_summary.json` reports PASS, `8/8` accepted,
+  `2248` transitions, `obs (2248, 21)`, `action (2248, 7)`.
+- metrics across all 8 were physically clean: final/max lift around `0.135m`,
+  final EE-to-cube around `6-7mm`, final finger-center-to-cube around
+  `38mm`, and signed finger/cube surface margin stayed positive around
+  `8mm`.
+
+64-spec batch:
+- specs:
+  `artifacts/specs/franka_cube_padfix_uniform64_ep8to31_20260614_150437/`
+- support sampled uniformly over default reachable cube XY support:
+  `x=[-0.4383,-0.2830]`, `y=[-0.1992,-0.0448]`
+- source episodes cycled through available CuRobo plans `8..31`, step `260`,
+  `joint_alpha=1.0`, explicit cube XY, `RESET_CUBE_POS_BLEND_ALPHA=0.0`
+- job: `1029410`, completed `0:0` on `pool0-00002` in `00:20:48`
+- remote run:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/contact_relabel_sets/franka_cube_contact_relabel_padfix_uniform64_ep8to31_novideo_clip034_20260614_150437`
+- local copy:
+  `artifacts/contact_relabel_sets/franka_cube_contact_relabel_padfix_uniform64_ep8to31_novideo_clip034_20260614_150437/`
+- wrapper gate with `max_pose_clip_fraction=0.34` accepted `61/64`; the three
+  failures were only `pose_action_clipped` at clip fraction `0.5`.
+- re-aggregated saved rollouts with `max_pose_clip_fraction=0.50`:
+  `contact_relabel_set_clip050_summary.json` reports PASS, `64/64` accepted,
+  `18059` transitions, `obs (18059, 21)`, `action (18059, 7)`.
+- accepted NPZ:
+  `artifacts/contact_relabel_sets/franka_cube_contact_relabel_padfix_uniform64_ep8to31_novideo_clip034_20260614_150437/contact_relabel_set_clip050_accepted.npz`
+- report viewer:
+  `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_sets/franka_cube_contact_relabel_padfix_uniform64_ep8to31_novideo_clip034_20260614_150437/contact_relabel_set_clip050_report.md`
+- physical metric ranges across all 64:
+  final/max lift `0.1351..0.1365m`, final EE-to-cube
+  `0.0025..0.0075m`, final finger-center-to-cube `0.0375..0.0426m`,
+  min signed finger/cube surface margin `0.0066..0.0121m`.
+
+Interpretation:
+- The pad/cube penetration failure did not reappear. The signed surface
+  margin stayed positive for both the 8-spec and 64-spec runs.
+- The current challenge is startup approach clipping, not contact geometry:
+  some first align-open steps saturate one to three pose action components.
+  Since the contact/lift phases are physically clean, either keep a documented
+  startup clip gate (`0.50`) for these relabel artifacts or regenerate with
+  `POSE_ACTION_FILTER=scale` before using larger datasets for training.
+- RGB/video generation is still intentionally deferred; these runs validate
+  lowdim physical data quality without exercising the renderer path.
+
+## 2026-06-13T03:20:00-07:00 - Target-neighborhood RGB relabel inspection
+
+Goal:
+- Answer whether any dataset generation is still active, and inspect the
+  bounded target-neighborhood RGB tranche before any more generation or
+  training launches.
+
+Result:
+- active jobs: none. `squeue -u lzha` on l401 is empty.
+- recent dataset jobs:
+  - `1028922`: `COMPLETED`, exit `0:0`, elapsed `00:19:25`.
+  - `1028923`: `COMPLETED`, exit `0:0`, elapsed `00:14:50`.
+- local and l401 process checks found no active
+  `contact_relabel`, `train_franka_cube`, `eval_franka_cube`,
+  `offline_dp_bc`, or `franka_cube` processes, other than the check commands
+  themselves.
+- fetched target-neighborhood run root:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_rgb_target_xp015_nearest048_20260613_024454`.
+- chunk `000_023`: `pass_count=1`, `failure_count=23`,
+  `accepted_rgb_episode_count=1`, `accepted_rgb_transition_count=311`.
+- chunk `024_047`: `pass_count=3`, `failure_count=21`,
+  `accepted_rgb_episode_count=3`, `accepted_rgb_transition_count=1180`.
+- accepted rollouts:
+  - `ep187s260_a0_center_high30`: final lift `0.13646m`, final EE-to-cube
+    `0.0230m`, final finger-center-to-cube `0.0560m`.
+  - `ep136s260_a0_center_high30`: final lift `0.13656m`, final EE-to-cube
+    `0.0346m`, final finger-center-to-cube `0.0492m`.
+  - `ep21s260_a0_center_high30`: final lift `0.13638m`, final EE-to-cube
+    `0.0417m`, final finger-center-to-cube `0.0550m`.
+  - `ep223s260_a0_center_high30`: final lift `0.20762m`, final EE-to-cube
+    `0.0486m`, final finger-center-to-cube `0.0599m`.
+- target XY distances for accepted source cube poses are `1.75cm`, `2.89cm`,
+  `3.29cm`, and `3.69cm` from the failed +1.5cm OOD target. This is much
+  closer support than the old full-start OOD3 set, but still only four accepted
+  demos.
+- video/contact-sheet inspection matched labels:
+  - accepted clips approach, close, and lift plausibly.
+  - `ep104s260_a0_center_high30` is a near miss: it lifts `0.13583m` but fails
+    the final EE distance gate by about `5mm`.
+  - `ep00s260_a0_center_high30` is a clear failure: it reaches near contact,
+    loses the grasp, and does not lift.
+- viewer links:
+  - accepted `ep187`:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_rgb_target_xp015_nearest048_20260613_024454/franka_cube_contact_relabel_scale264_target_xp015_nearest048_chunk000_023_a0_rgb96_video_20260613_024454/rollouts/ep187s260_a0/videos/franka-cube-contact-relabel-target-xp015-nearest048-chunk000_023-a0-ep187s260_a0-step-0.mp4`
+  - accepted `ep223`:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_rgb_target_xp015_nearest048_20260613_024454/franka_cube_contact_relabel_scale264_target_xp015_nearest048_chunk024_047_a0_rgb96_video_20260613_024454/rollouts/ep223s260_a0/videos/franka-cube-contact-relabel-target-xp015-nearest048-chunk024_047-a0-ep223s260_a0-step-0.mp4`
+  - near miss `ep104`:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_rgb_target_xp015_nearest048_20260613_024454/franka_cube_contact_relabel_scale264_target_xp015_nearest048_chunk024_047_a0_rgb96_video_20260613_024454/rollouts/ep104s260_a0/videos/franka-cube-contact-relabel-target-xp015-nearest048-chunk024_047-a0-ep104s260_a0-step-0.mp4`
+  - clear fail `ep00`:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_rgb_target_xp015_nearest048_20260613_024454/franka_cube_contact_relabel_scale264_target_xp015_nearest048_chunk000_023_a0_rgb96_video_20260613_024454/rollouts/ep00s260_a0/videos/franka-cube-contact-relabel-target-xp015-nearest048-chunk000_023-a0-ep00s260_a0-step-0.mp4`
+
+Analysis:
+- No dataset generation is currently running.
+- The small tranche was generated because the nominal-success RGB checkpoint
+  failed the exact +1.5cm OOD pose, and the prior "OOD" RGB support set was
+  not spatially near that evaluated pose.
+- The generated data appears valid but sparse. The immediate next training
+  experiment should not be another open-ended generation sweep; it should first
+  test whether these four near-target accepted RGB demos, mixed with the normal
+  RGB dataset and retention/distillation, move the policy at all without
+  breaking the nominal reset.
+
+Next:
+- Present a compact training/eval plan before launching: combine normal RGB
+  data with this target-neighborhood accepted RGB set at a small repeat weight,
+  fine-tune from the known-good normal RGB checkpoint with frozen normalizer
+  and normal-row distillation, gate on nominal reset, then evaluate the exact
+  +1.5cm OOD reset only if nominal still succeeds.
+
+## 2026-06-13T03:35:00-07:00 - Pending target-neighborhood RGB fine-tune plan
+
+Goal:
+- Prepare the next bounded train/eval step without launching it before user
+  approval.
+
+Current State:
+- l401 queue is empty.
+- local dirty tracked file is this worklog only.
+- remote DEXTRAH task worktree is detached clean at
+  `10a924232fe6ac72eaef026acb1eed13d8db2533`.
+- local and remote train/eval wrappers parse with `bash -n`.
+- normal RGB dataset:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/contact_relabel_rgb_normalreset28x7_20260612_2220/franka_cube_rgb_normalreset28x7_96.npz`.
+- normal RGB checkpoint:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/rgb_phase12_normalreset28x7_20260612_2225/latest.ckpt`.
+- target-neighborhood accepted RGB NPZs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/contact_relabel_sets/franka_cube_contact_relabel_scale264_target_xp015_nearest048_chunk000_023_a0_rgb96_video_20260613_024454/contact_relabel_set_accepted_rgb.npz`,
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/contact_relabel_sets/franka_cube_contact_relabel_scale264_target_xp015_nearest048_chunk024_047_a0_rgb96_video_20260613_024454/contact_relabel_set_accepted_rgb.npz`.
+- dataset sizes:
+  - normal: `196` episodes, `62832` frames.
+  - target accepted: `4` episodes, `1491` frames.
+  - proposed `target x4` mix: `212` episodes, `68796` frames, target rows
+    about `8.7%`.
+
+Plan:
+- Build one mixed RGB dataset locally from:
+  - normal RGB once.
+  - target chunk `000_023` accepted RGB repeated `4x`.
+  - target chunk `024_047` accepted RGB repeated `4x`.
+- Copy the mixed NPZ/report to:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/contact_relabel_rgb_target_xp015_nearest048_20260613_024454/combined/franka_cube_rgb_normalreset28x7_plus_target_xp015_nearest4x4_96.npz`.
+- Train one bounded retention fine-tune:
+  - init/normalizer/distill reference:
+    `/results/dp_bc/checkpoints/rgb_phase12_normalreset28x7_20260612_2225/latest.ckpt`.
+  - dataset:
+    `/results/dp_bc/contact_relabel_rgb_target_xp015_nearest048_20260613_024454/combined/franka_cube_rgb_normalreset28x7_plus_target_xp015_nearest4x4_96.npz`.
+  - `LR=5e-6`, `MAX_TRAIN_STEPS=400`, `NUM_EPOCHS=1`,
+    `DISTILL_MASK_MODE=normal_reset`, `DISTILL_LOSS_WEIGHT=2.0`.
+- Gate the resulting checkpoint on nominal stop-on-done RGB eval with action
+  trace and video.
+- Only if nominal succeeds, run the exact +1.5cm shifted reset eval:
+  - reset dataset:
+    `/results/dp_bc/contact_relabel_scale264_accepted183_plus_normalreset27_20260612_170627/franka_cube_scale264_contact_relabel_accepted183_plus_normalreset27_phaseprogress_25d_ep183_cube_xp015.npz`.
+  - `DEMO_RESET_EPISODE=183`, `DEMO_RESET_STEP=0`,
+    `DEMO_RESET_CUBE_POS_BLEND_ALPHA=1.0`.
+  - phase/progress dataset set to the same shifted reset file and episode.
+
+Acceptance:
+- Training loss finite and checkpoint staged.
+- Nominal eval must report `done_count>0`, `stopped_on_done=true`, a clean
+  lifted-cube video, and object-state-free RGB policy metrics.
+- If nominal fails, stop and debug the regression before any OOD eval.
+- If OOD succeeds, scale dataset size; if OOD fails, inspect action traces and
+  decide between higher target repeat, more near-target generation, or relabeler
+  tuning.
+
+Status:
+- Waiting for user approval to create the mixed dataset and launch the bounded
+  training/eval sequence.
+
+Prepared Command Sequence:
+- Use a fixed stamp when approved so dataset/train/eval names line up:
+
+```bash
+STAMP=20260613_031353
+WT=/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart
+ART=/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_rgb_target_xp015_nearest048_20260613_024454/combined
+mkdir -p "$ART"
+
+cd "$WT"
+uv run --no-project --with 'numpy<2' python -m dextrah_lab.offline_dp_bc.combine_contact_relabel_rgb_sets \
+  --input /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_rgb_normalreset28x7_20260612_2220/franka_cube_rgb_normalreset28x7_96.npz \
+  --input /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_rgb_target_xp015_nearest048_20260613_024454/franka_cube_contact_relabel_scale264_target_xp015_nearest048_chunk000_023_a0_rgb96_video_20260613_024454/contact_relabel_set_accepted_rgb.npz \
+  --input /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_rgb_target_xp015_nearest048_20260613_024454/franka_cube_contact_relabel_scale264_target_xp015_nearest048_chunk024_047_a0_rgb96_video_20260613_024454/contact_relabel_set_accepted_rgb.npz \
+  --input /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_rgb_target_xp015_nearest048_20260613_024454/franka_cube_contact_relabel_scale264_target_xp015_nearest048_chunk000_023_a0_rgb96_video_20260613_024454/contact_relabel_set_accepted_rgb.npz \
+  --input /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_rgb_target_xp015_nearest048_20260613_024454/franka_cube_contact_relabel_scale264_target_xp015_nearest048_chunk024_047_a0_rgb96_video_20260613_024454/contact_relabel_set_accepted_rgb.npz \
+  --input /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_rgb_target_xp015_nearest048_20260613_024454/franka_cube_contact_relabel_scale264_target_xp015_nearest048_chunk000_023_a0_rgb96_video_20260613_024454/contact_relabel_set_accepted_rgb.npz \
+  --input /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_rgb_target_xp015_nearest048_20260613_024454/franka_cube_contact_relabel_scale264_target_xp015_nearest048_chunk024_047_a0_rgb96_video_20260613_024454/contact_relabel_set_accepted_rgb.npz \
+  --input /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_rgb_target_xp015_nearest048_20260613_024454/franka_cube_contact_relabel_scale264_target_xp015_nearest048_chunk000_023_a0_rgb96_video_20260613_024454/contact_relabel_set_accepted_rgb.npz \
+  --input /home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_rgb_target_xp015_nearest048_20260613_024454/franka_cube_contact_relabel_scale264_target_xp015_nearest048_chunk024_047_a0_rgb96_video_20260613_024454/contact_relabel_set_accepted_rgb.npz \
+  --output "$ART/franka_cube_rgb_normalreset28x7_plus_target_xp015_nearest4x4_96.npz" \
+  --report "$ART/franka_cube_rgb_normalreset28x7_plus_target_xp015_nearest4x4_96_report.md"
+
+rsync -av "$ART/" \
+  l401:/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/contact_relabel_rgb_target_xp015_nearest048_20260613_024454/combined/
+```
+
+- Train command to submit after mixed dataset exists:
+
+```bash
+ssh l401 'cd /lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart && \
+  sbatch --parsable --export=ALL,\
+CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart,\
+RUN_NAME=rgb_phase12_normal_ckpt_ft_target_xp015_4x_retention_lr5e6_s400_20260613_031353,\
+DATASET=/results/dp_bc/contact_relabel_rgb_target_xp015_nearest048_20260613_024454/combined/franka_cube_rgb_normalreset28x7_plus_target_xp015_nearest4x4_96.npz,\
+INIT_CHECKPOINT=/results/dp_bc/checkpoints/rgb_phase12_normalreset28x7_20260612_2225/latest.ckpt,\
+NORMALIZER_CHECKPOINT=/results/dp_bc/checkpoints/rgb_phase12_normalreset28x7_20260612_2225/latest.ckpt,\
+DISTILL_REFERENCE_CHECKPOINT=/results/dp_bc/checkpoints/rgb_phase12_normalreset28x7_20260612_2225/latest.ckpt,\
+LR=0.000005,MAX_TRAIN_STEPS=400,MAX_VAL_STEPS=100,LR_WARMUP_STEPS=50,NUM_EPOCHS=1,VAL_RATIO=0.02,DISTILL_MASK_MODE=normal_reset,DISTILL_LOSS_WEIGHT=2.0 \
+cluster/sbatch_train_franka_cube_rgb_dp_1gpu.sh'
+```
+
+- Nominal gate command to submit only after training metrics/checkpoint pass:
+
+```bash
+ssh l401 'cd /lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart && \
+  sbatch --parsable --export=ALL,\
+CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart,\
+RUN_NAME=franka_cube_rgb_dp_trace_target_xp015_4x_retention_nominal_stopdone_policyseed42_20260613_031353,\
+CHECKPOINT=/results/dp_bc/checkpoints/rgb_phase12_normal_ckpt_ft_target_xp015_4x_retention_lr5e6_s400_20260613_031353/latest.ckpt,\
+NUM_ENVS=1,NUM_STEPS=340,NUM_INFERENCE_STEPS=100,NUM_ACTION_SAMPLES=1,POLICY_SAMPLE_SEED=42,ACTION_CHUNK_STEPS=1,CLIP_ACTIONS=1.0,SUCCESS_WINDOW=80,STOP_ON_DONE=True,CAPTURE_VIDEO=True,VIDEO_LENGTH=340,SEED=42,IMAGE_HEIGHT=96,IMAGE_WIDTH=96,APPEND_PHASE_PROGRESS=True,\
+PHASE_PROGRESS_DATASET=/results/dp_bc/contact_relabel_rgb_one_ep233_normalreset_20260612_2201/franka_cube_rgb_one_ep233_normalreset_96.npz,PHASE_PROGRESS_EPISODE=0,PHASE_PROGRESS_START_STEP=0,\
+VIDEO_NAME_PREFIX=franka-cube-rgb-dp-trace-target-xp015-4x-retention-nominal-stopdone-policyseed42 \
+cluster/sbatch_eval_franka_cube_rgb_dp_policy_1gpu.sh'
+```
+
+- Exact +1.5cm OOD command to submit only if the nominal gate succeeds:
+
+```bash
+ssh l401 'cd /lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart && \
+  sbatch --parsable --export=ALL,\
+CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart,\
+RUN_NAME=franka_cube_rgb_dp_trace_target_xp015_4x_retention_xp015_stopdone_policyseed42_20260613_031353,\
+CHECKPOINT=/results/dp_bc/checkpoints/rgb_phase12_normal_ckpt_ft_target_xp015_4x_retention_lr5e6_s400_20260613_031353/latest.ckpt,\
+NUM_ENVS=1,NUM_STEPS=340,NUM_INFERENCE_STEPS=100,NUM_ACTION_SAMPLES=1,POLICY_SAMPLE_SEED=42,ACTION_CHUNK_STEPS=1,CLIP_ACTIONS=1.0,SUCCESS_WINDOW=80,STOP_ON_DONE=True,CAPTURE_VIDEO=True,VIDEO_LENGTH=340,SEED=42,IMAGE_HEIGHT=96,IMAGE_WIDTH=96,APPEND_PHASE_PROGRESS=True,\
+PHASE_PROGRESS_DATASET=/results/dp_bc/contact_relabel_scale264_accepted183_plus_normalreset27_20260612_170627/franka_cube_scale264_contact_relabel_accepted183_plus_normalreset27_phaseprogress_25d_ep183_cube_xp015.npz,PHASE_PROGRESS_EPISODE=183,PHASE_PROGRESS_START_STEP=0,\
+DEMO_RESET_DATASET=/results/dp_bc/contact_relabel_scale264_accepted183_plus_normalreset27_20260612_170627/franka_cube_scale264_contact_relabel_accepted183_plus_normalreset27_phaseprogress_25d_ep183_cube_xp015.npz,DEMO_RESET_EPISODE=183,DEMO_RESET_STEP=0,DEMO_RESET_CUBE_POS_BLEND_ALPHA=1.0,\
+VIDEO_NAME_PREFIX=franka-cube-rgb-dp-trace-target-xp015-4x-retention-xp015-stopdone-policyseed42 \
+cluster/sbatch_eval_franka_cube_rgb_dp_policy_1gpu.sh'
+```
+
+Read-only launch audit:
+- Training/eval robot-state schemas match for the planned run:
+  - dataset appends `[phase one-hot 3, episode progress 1]` to 8D robot
+    proprio when `append_phase_progress=true`.
+  - wrapper overrides `shape_meta.obs.robot_state.shape=[12]`.
+  - RGB eval builds the same 8+4 robot state and records
+    `privileged_object_state_in_policy=false`.
+  - frozen normalizer loading checks the reference checkpoint robot-state dim
+    and action dim against the dataset before training.
+- Distillation mask is compatible with the combined dataset:
+  - normal episodes have joint/cube reset alphas `0/0` and receive teacher
+    distillation.
+  - full-start target episodes have `0/1` and receive supervised BC loss but
+    not normal-retention distillation.
+- The exact +1.5cm eval reset file has `210` episodes, so
+  `DEMO_RESET_EPISODE=183` and `PHASE_PROGRESS_EPISODE=183` do not clip to a
+  different compact-subset episode. Episode `183` starts with cube position
+  `[-0.39896524, -0.12404054, 0.78100002]`, matching the intended shifted
+  target.
+- Planned validation split is not expected to remove target support:
+  - combined episode order is `196` normal episodes followed by `16` target
+    repeated episodes.
+  - with `seed=42` and `VAL_RATIO=0.02`, selected validation episode IDs are
+    `[18, 93, 138, 162]`, all normal episodes.
+- Remaining launch risk:
+  - the target support is valid but sparse: only four unique accepted
+    trajectories repeated four times. If nominal still passes but +1.5cm OOD
+    fails, inspect the action trace before choosing between higher repeat
+    weight, more near-target relabel generation, or relabel-controller tuning.
+
+Update 2026-06-13T02:41:58-07:00:
+- No dataset generation, training, or eval jobs are currently running on l401;
+  `squeue -u lzha` is empty and process searches only matched the search
+  command itself.
+- The shifted-phase OOD RGB eval completed and still failed:
+  `done_count=0`, `stopped_on_done=false`, max lift `0.0m`, final reward
+  `0.6021`, final gripper width `0.000212m`, final cube position
+  `[-0.401824, -0.204795, 0.776]`, best finger-center distance `0.0701m`,
+  final finger-center distance `0.2867m`.
+- Artifacts:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_rgb_dp_trace_retention_lr5e6_s400_stopdone_policyseed42_xp015_shiftphase_chunk1_video_20260613_023041`.
+- Video:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_rgb_dp_trace_retention_lr5e6_s400_stopdone_policyseed42_xp015_shiftphase_chunk1_video_20260613_023041/videos/franka-cube-rgb-dp-trace-retention-lr5e6-s400-stopdone-policyseed42-xp015-shiftphase-chunk1-step-0.mp4`.
+- Phase timing alone is not the OOD failure cause.
+
+Dataset inspection:
+- Existing full-start OOD RGB support set:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_rgb_fullstart_ood19_20260612_2351/franka_cube_contact_relabel_scale264_fullstart_ood_rgb19_seed43_high30_retry1_20260612_2351/contact_relabel_set_accepted_rgb.npz`.
+- It contains only 3 accepted RGB episodes / 861 frames:
+  `ep166s260_a0_center_high30`, `ep213s260_a0_center_high30`,
+  `ep25s260_a0_center_high30`; image shape `(861, 96, 96, 3)`, robot state
+  shape `(861, 8)`, action shape `(861, 7)`, phase counts `{0: 243, 1: 240,
+  2: 378}`.
+- The 19 attempted source cube positions were not near the current +1.5 cm
+  eval target `[-0.398965, -0.124041, 0.781]`: their XY distances to that
+  target ranged roughly `0.070m..0.129m`.
+- The base scale264 lowdim dataset has better candidates for this OOD eval:
+  8 episodes within `1.5cm`, 14 within `2cm`, and 27 within `3cm` of the
+  +1.5cm target at source step 260.
+- Therefore the prior RGB OOD data is both too small and support-mismatched.
+  More data should be generated from the target-neighborhood episodes rather
+  than simply repeating the previous far-shift OOD19 selection.
+
+Relabel-controller inspection:
+- The relabel gate is not the main reason for low acceptance. Most failures
+  align near the cube, but close/lift then either pushes the cube away or times
+  out with zero lift.
+- Example failure `ep145`: pre-close finger-center `0.05497m`, balanced
+  left/right contact, but final finger-center `0.2609m`, final lift `0.0m`,
+  truncated at step `598`.
+- Example success `ep166`: pre-close finger-center `0.05060m`, balanced
+  left/right contact, final lift `0.13575m`, terminated at step `288`.
+- This argues for a bounded target-neighborhood generation tranche plus video
+  inspection on a small sample before a full 200-episode launch.
+
+Next:
+- Prepare a concrete target-neighborhood RGB relabel plan: first tranche should
+  use the nearest 48 source episodes to the +1.5cm eval target, chunked as
+  24+24, with RGB saving enabled, no privileged state in policy training, and
+  representative videos enabled for the first few relabels only.
+- After confirming that acceptance and visuals are sane, scale to the nearest
+  200/all available episodes, combine accepted RGB data with normal reset RGB,
+  fine-tune from the nominal checkpoint, and re-run the fixed-seed nominal and
+  shifted OOD gates.
+
+Prepared local specs:
+- directory:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/contact_relabel_specs/scale264_target_xp015_a0_20260613`
+- `target_xp015_nearest048_chunk000_023_a0.env/json`: 24 nearest source
+  episodes to the +1.5cm target, max target distance `0.0276m`.
+- `target_xp015_nearest048_chunk024_047_a0.env/json`: next 24 source
+  episodes, first 48 max target distance `0.0393m`.
+- The generated specs use source-aware trajectory paths from metadata and
+  reset alpha `0.0` for all rows, e.g.
+  `134:260:/results/dp_bc/curobo_plans/cube_curobo_scale264_20260612_1449_seed166/trajectory.json:0`.
+
+Proposed first launch:
+- Submit two l401 jobs, one per spec chunk, from remote commit
+  `10a924232fe6ac72eaef026acb1eed13d8db2533`.
+- Use the same RGB camera as RGB eval/training:
+  eye `[-0.10, -0.78, 1.42]`, target `[-0.41, -0.10, 0.82]`, `96x96`.
+- Use full-start resets: `RESET_JOINT_BLEND_ALPHA=0.0`,
+  `RESET_CUBE_POS_BLEND_ALPHA=1.0`, `SAVE_RGB_OBS=True`.
+- Keep the contact-aware controller settings that produced valid accepted
+  examples: `VARIANT=center_high30`, `ORIENTATION_MODE=source`,
+  `ALIGN_STEPS=80`, `CONTACT_ALIGN_STEPS=320`,
+  `CONTACT_ALIGN_REFERENCE=live_cube`, `CONTACT_ALIGN_THRESHOLD=0.055`,
+  `CONTACT_GATE_MODE=left_right`, `REQUIRE_CONTACT_GATE=True`,
+  `LATERAL_CENTERING_GAIN=0.75`, `LATERAL_CENTERING_LIMIT=0.03`,
+  `POSE_ACTION_FILTER=scale`, `POSE_ACTION_LIMIT=0.95`, `LIFT_HEIGHT=0.22`,
+  `FINGER_GAIN=0.75`.
+- For the first bounded tranche, set `CAPTURE_VIDEO=True` despite the storage
+  cost so representative successes/failures can be inspected. If these two
+  chunks validate, switch large-scale generation to `CAPTURE_VIDEO=False` and
+  keep RGB observations.
+- Acceptance for scaling: at least several accepted RGB episodes from the 48,
+  no blank/corrupt RGB arrays, contact sheets/videos show plausible grasp/lift
+  for accepted episodes, and failure modes are not dominated by a new script or
+  reset bug.
+
+## 2026-06-13T02:45:06-07:00 - Target-neighborhood full-start RGB relabel launch
+
+Goal:
+- Generate a bounded full-start RGB OOD support tranche around the actual
+  +1.5cm shifted-cube eval target, rather than the far-shift OOD19 support set.
+
+Hypothesis:
+- The RGB policy fails the +1.5cm reset because its full-start shifted RGB
+  support is only 3 accepted demos and those demos are 7-14cm away from the
+  evaluated target pose. Target-neighborhood relabels should provide the
+  needed visual/action support without privileged object state.
+
+Version Control:
+- agent_id: franka-cube-bc-warmstart
+- local_commit: `10a924232fe6ac72eaef026acb1eed13d8db2533`
+- remote_worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- remote_commit: `10a924232fe6ac72eaef026acb1eed13d8db2533`
+- local_dirty: worklog only plus unrelated untracked
+  `dextrah_lab/offline_dp_bc/make_support_expansion_dataset.py`
+
+Command / Jobs:
+- spec directory:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/contact_relabel_specs/scale264_target_xp015_a0_20260613`
+- command shape:
+  `source <chunk-env>; sbatch --parsable --export=ALL,CODE_NFS=<remote-worktree>,DATASET=/results/dp_bc/datasets/franka_cube_curobo_lowdim_scale264_20260612_1449_full_pick_lift_framefix.npz,RESET_JOINT_BLEND_ALPHA=0.0,RESET_CUBE_POS_BLEND_ALPHA=1.0,SAVE_RGB_OBS=True,RGB_OBS_HEIGHT=96,RGB_OBS_WIDTH=96,CAPTURE_VIDEO=True,VIDEO_LENGTH=320,VARIANT=center_high30,ORIENTATION_MODE=source,ALIGN_STEPS=80,CONTACT_ALIGN_STEPS=320,CONTACT_ALIGN_REFERENCE=live_cube,CONTACT_ALIGN_THRESHOLD=0.055,CONTACT_GATE_MODE=left_right,FINGER_GATE_MAX_DISTANCE=0.08,FINGER_GATE_BALANCE_THRESHOLD=0.02,REQUIRE_CONTACT_GATE=True,LATERAL_CENTERING_GAIN=0.75,LATERAL_CENTERING_LIMIT=0.03,CLOSE_STEPS=80,LIFT_STEPS=160,LIFT_HEIGHT=0.22,FINGER_GAIN=0.75,CLIP_ACTIONS=1.0,POSE_ACTION_FILTER=scale,POSE_ACTION_LIMIT=0.95,SEED=43,RUN_NAME=<run> cluster/sbatch_contact_aware_franka_cube_relabel_set_1gpu.sh`
+- job `1028922`:
+  `franka_cube_contact_relabel_scale264_target_xp015_nearest048_chunk000_023_a0_rgb96_video_20260613_024454`
+- job `1028923`:
+  `franka_cube_contact_relabel_scale264_target_xp015_nearest048_chunk024_047_a0_rgb96_video_20260613_024454`
+- logs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/contact_aware_franka_cube_relabel_set_1028922.out`,
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/contact_aware_franka_cube_relabel_set_1028923.out`
+- remote run dirs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/contact_relabel_sets/<run-name>`
+
+Acceptance:
+- Scheduler completion is not enough. Inspect each run's
+  `contact_relabel_set_summary.json`, accepted RGB NPZ shape/ranges, failures,
+  and representative videos.
+- Scale up only if the tranche yields several valid accepted RGB episodes near
+  the +1.5cm target and the videos/metrics show plausible grasp/lift behavior.
+
+Update 2026-06-13T02:30:41-07:00:
+- Submitted as job `1028920`; it completed `0:0` in `00:04:11`.
+- Fetched artifacts:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_rgb_dp_trace_retention_lr5e6_s400_stopdone_policyseed42_xp015_chunk1_video_20260613_022326`.
+- Video:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_rgb_dp_trace_retention_lr5e6_s400_stopdone_policyseed42_xp015_chunk1_video_20260613_022326/videos/franka-cube-rgb-dp-trace-retention-lr5e6-s400-stopdone-policyseed42-xp015-chunk1-step-0.mp4`.
+- Metrics: `done_count=0`, `stopped_on_done=false`, max lift `0.0m`,
+  final reward `0.6655`, final gripper width `0.000212m`, final
+  finger-center-to-cube distance `0.2603m`, final cube position
+  `[-0.408375, -0.203708, 0.776]`.
+- Contact sheet:
+  `/home/lzha/code/.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_rgb_dp_trace_retention_lr5e6_s400_stopdone_policyseed42_xp015_chunk1_video_20260613_022326/xp015_contact_sheet.jpg`.
+
+Analysis:
+- The reset was correct: `applied_cube_pos_env0` exactly matched
+  `[-0.398965, -0.124041, 0.781]` and `cube_pos_l2_diff_env0=0.0`.
+- The failure mode is an approach/centering miss. Compared with nominal
+  success, best finger-center distance degraded from `0.0451m` to `0.0682m`;
+  the gripper then closed fully and the cube moved away without any lift.
+- A train-eval phase/progress mismatch is plausible: the OOD eval used the
+  normal RGB episode phase schedule (`close` starts at step `107`, `lift` at
+  `187`), while the shifted lowdim ep183 trajectory used by the reset has
+  `close` at `81` and `lift` at `161`.
+
+Next:
+- Run the same OOD reset/checkpoint/sample seed but use the shifted ep183 file
+  as `PHASE_PROGRESS_DATASET`, with `PHASE_PROGRESS_EPISODE=183`. If this
+  still fails, the next likely issue is insufficient shifted RGB support rather
+  than phase timing.
+
+## 2026-06-13T02:30:41-07:00 - RGB OOD shifted-phase eval launch
+
+Goal:
+- Test whether the +1.5 cm RGB OOD failure is caused by feeding the nominal
+  phase/progress schedule during the shifted reset.
+
+Hypothesis:
+- The policy is conditioned on phase/progress features. Using the shifted
+  source episode's phase labels should close earlier (`81` instead of `107`)
+  and lift earlier (`161` instead of `187`), matching the reset trajectory
+  timing and reducing the chance that the open gripper pushes the shifted cube
+  away before close.
+
+Command / Job:
+- planned run:
+  `franka_cube_rgb_dp_trace_retention_lr5e6_s400_stopdone_policyseed42_xp015_shiftphase_chunk1_video_20260613_023041`
+- command:
+  `sbatch --parsable --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/franka-cube-dp-bc-warmstart,RUN_NAME=franka_cube_rgb_dp_trace_retention_lr5e6_s400_stopdone_policyseed42_xp015_shiftphase_chunk1_video_20260613_023041,CHECKPOINT=/results/dp_bc/checkpoints/rgb_phase12_normal_ckpt_ft_ood3x4_retention_lr5e6_s400_20260613_015149/latest.ckpt,NUM_ENVS=1,NUM_STEPS=340,NUM_INFERENCE_STEPS=100,NUM_ACTION_SAMPLES=1,POLICY_SAMPLE_SEED=42,ACTION_CHUNK_STEPS=1,CLIP_ACTIONS=1.0,SUCCESS_WINDOW=80,STOP_ON_DONE=True,CAPTURE_VIDEO=True,VIDEO_LENGTH=340,SEED=42,IMAGE_HEIGHT=96,IMAGE_WIDTH=96,APPEND_PHASE_PROGRESS=True,PHASE_PROGRESS_DATASET=/results/dp_bc/contact_relabel_scale264_accepted183_plus_normalreset27_20260612_170627/franka_cube_scale264_contact_relabel_accepted183_plus_normalreset27_phaseprogress_25d_ep183_cube_xp015.npz,PHASE_PROGRESS_EPISODE=183,PHASE_PROGRESS_START_STEP=0,DEMO_RESET_DATASET=/results/dp_bc/contact_relabel_scale264_accepted183_plus_normalreset27_20260612_170627/franka_cube_scale264_contact_relabel_accepted183_plus_normalreset27_phaseprogress_25d_ep183_cube_xp015.npz,DEMO_RESET_EPISODE=183,DEMO_RESET_STEP=0,DEMO_RESET_CUBE_POS_BLEND_ALPHA=1.0,VIDEO_NAME_PREFIX=franka-cube-rgb-dp-trace-retention-lr5e6-s400-stopdone-policyseed42-xp015-shiftphase-chunk1 cluster/sbatch_eval_franka_cube_rgb_dp_policy_1gpu.sh`
+- success condition:
+  same as previous OOD eval, but with phase-provider summary proving the
+  shifted lowdim file and episode `183` were used.
+
+Result:
+- status: ready to submit.
