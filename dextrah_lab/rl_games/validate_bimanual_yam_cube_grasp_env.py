@@ -105,25 +105,6 @@ MOLMOACT2_TOP_CAM_WORLD_TARGET = (
     0.10,
 )
 
-DEMO_CONTACT_JOINT_POS = {
-    # Contact waypoint solved against the spawned MJCF-derived Isaac USD. The
-    # rollout still starts from the MolmoAct2 rest keyframe; this waypoint is
-    # approached gradually after the grippers have already closed.
-    "left_joint1": -0.187994,
-    "left_joint2": 2.189542,
-    "left_joint3": 1.239098,
-    "left_joint4": -0.406251,
-    "left_joint5": 1.570800,
-    "left_joint6": 0.745140,
-    "right_joint1": 0.262975,
-    "right_joint2": 1.918793,
-    "right_joint3": 1.051843,
-    "right_joint4": -0.183927,
-    "right_joint5": -0.874573,
-    "right_joint6": 0.968451,
-}
-DEMO_STANDOFF_JOINT_ALPHA = 0.88
-
 def _mean(value) -> float:
     if isinstance(value, torch.Tensor):
         return float(value.detach().float().mean().cpu())
@@ -431,24 +412,6 @@ def _write_cube_pose(task_env, pos_local: torch.Tensor, has_lifted: bool) -> Non
     task_env._compute_intermediate_values()
 
 
-def _write_robot_joint_pose(task_env, joint_pos: torch.Tensor) -> None:
-    env_ids = task_env._robot._ALL_INDICES
-    joint_vel = torch.zeros_like(joint_pos)
-    task_env._robot.write_joint_state_to_sim(joint_pos, joint_vel, env_ids=env_ids)
-    task_env._robot.set_joint_position_target(joint_pos, env_ids=env_ids)
-    task_env.left_arm_joint_pos_target[:] = joint_pos[:, task_env.left_arm_joint_ids]
-    task_env.right_arm_joint_pos_target[:] = joint_pos[:, task_env.right_arm_joint_ids]
-    task_env.left_finger_joint_pos_target[:] = joint_pos[:, task_env.left_finger_joint_ids]
-    task_env.right_finger_joint_pos_target[:] = joint_pos[:, task_env.right_finger_joint_ids]
-    task_env.robot_dof_targets[:] = joint_pos
-    task_env.left_ik_controller.reset(env_ids)
-    task_env.right_ik_controller.reset(env_ids)
-    task_env.scene.write_data_to_sim()
-    task_env.sim.forward()
-    task_env.scene.update(dt=0.0)
-    task_env._compute_intermediate_values()
-
-
 def _assisted_cube_pose_between_grippers(
     desired_left_hold: torch.Tensor,
     desired_right_hold: torch.Tensor,
@@ -649,26 +612,13 @@ def _scripted_action(
     max_action: float = 1.0,
 ) -> torch.Tensor:
     task_env._compute_intermediate_values()
-    if not hasattr(task_env, "_validation_left_tcp_to_hold"):
-        task_env._validation_left_tcp_to_hold = task_env.left_hold_pos - task_env.left_tcp_pos
-        task_env._validation_right_tcp_to_hold = task_env.right_hold_pos - task_env.right_tcp_pos
-    desired_left_tcp = desired_left_hold - task_env._validation_left_tcp_to_hold
-    desired_right_tcp = desired_right_hold - task_env._validation_right_tcp_to_hold
-    action = torch.zeros(task_env.num_envs, task_env.cfg.action_space, device=task_env.device)
-    pos_scale = task_env.action_scale[:3]
-    action[:, :3] = torch.clamp(
-        gain * (desired_left_tcp - task_env.left_tcp_pos) / pos_scale,
-        -float(max_action),
-        float(max_action),
+    return task_env._actions_to_hold_targets(
+        desired_left_hold,
+        desired_right_hold,
+        grip,
+        gain=float(gain),
+        max_action=float(max_action),
     )
-    action[:, 7:10] = torch.clamp(
-        gain * (desired_right_tcp - task_env.right_tcp_pos) / pos_scale,
-        -float(max_action),
-        float(max_action),
-    )
-    action[:, 6] = float(grip)
-    action[:, 13] = float(grip)
-    return action
 
 
 def _lerp_tensor(start: torch.Tensor, end: torch.Tensor, alpha: float) -> torch.Tensor:
@@ -759,15 +709,6 @@ def _run_scripted_demo(
     lifted_right_hold = contact_right_hold.clone()
     lifted_left_hold[:, 2] += hold_lift_height
     lifted_right_hold[:, 2] += hold_lift_height
-    rest_joint_pos = task_env._robot.data.joint_pos.clone()
-    rest_closed_joint_pos = rest_joint_pos.clone()
-    rest_closed_joint_pos[:, task_env.left_finger_joint_ids] = float(task_env.cfg.gripper_closed_joint_pos)
-    rest_closed_joint_pos[:, task_env.right_finger_joint_ids] = float(task_env.cfg.gripper_closed_joint_pos)
-    contact_joint_pos = rest_closed_joint_pos.clone()
-    name_to_idx = {name: idx for idx, name in enumerate(task_env._robot.data.joint_names)}
-    for joint_name, value in DEMO_CONTACT_JOINT_POS.items():
-        contact_joint_pos[:, name_to_idx[joint_name]] = value
-    standoff_joint_pos = _lerp_tensor(rest_closed_joint_pos, contact_joint_pos, DEMO_STANDOFF_JOINT_ALPHA)
     phase_close = max(45, int(0.12 * num_steps))
     phase_standoff = max(120, int(0.30 * num_steps))
     phase_approach = max(140, int(0.34 * num_steps))
@@ -827,32 +768,35 @@ def _run_scripted_demo(
             phase_name = "standoff"
             alpha = min(float(step - standoff_start_step + 1) / float(phase_standoff), 1.0)
             alpha = alpha * alpha * (3.0 - 2.0 * alpha)
-            joint_pos = _lerp_tensor(rest_closed_joint_pos, standoff_joint_pos, alpha)
-            _write_robot_joint_pose(task_env, joint_pos)
-            desired_left_hold = task_env.left_hold_pos.clone()
-            desired_right_hold = task_env.right_hold_pos.clone()
-            action = torch.zeros(task_env.num_envs, task_env.cfg.action_space, device=task_env.device)
-            action[:, 6] = -1.0
-            action[:, 13] = -1.0
+            desired_left_hold = _lerp_tensor(start_left_hold, standoff_left_hold, alpha)
+            desired_right_hold = _lerp_tensor(start_right_hold, standoff_right_hold, alpha)
+            action = _scripted_action(
+                task_env,
+                desired_left_hold,
+                desired_right_hold,
+                grip=-1.0,
+                gain=0.65,
+                max_action=0.45,
+            )
         elif step < lift_start_step and not lift_phase_active:
             phase_name = "approach"
             alpha = min(float(step - approach_start_step + 1) / float(phase_approach), 1.0)
             alpha = alpha * alpha * (3.0 - 2.0 * alpha)
-            joint_pos = _lerp_tensor(standoff_joint_pos, contact_joint_pos, alpha)
-            _write_robot_joint_pose(task_env, joint_pos)
-            desired_left_hold = task_env.left_hold_pos.clone()
-            desired_right_hold = task_env.right_hold_pos.clone()
-            action = torch.zeros(task_env.num_envs, task_env.cfg.action_space, device=task_env.device)
-            action[:, 6] = -1.0
-            action[:, 13] = -1.0
+            desired_left_hold = _lerp_tensor(standoff_left_hold, contact_left_hold, alpha)
+            desired_right_hold = _lerp_tensor(standoff_right_hold, contact_right_hold, alpha)
+            action = _scripted_action(
+                task_env,
+                desired_left_hold,
+                desired_right_hold,
+                grip=-1.0,
+                gain=0.45,
+                max_action=0.35,
+            )
         else:
             phase_name = "lift"
             lift_origin_step = actual_lift_start_step if actual_lift_start_step is not None else lift_start_step
             alpha = min(float(step - lift_origin_step + 1) / float(phase_lift), 1.0)
             alpha = alpha * alpha * (3.0 - 2.0 * alpha)
-            if hasattr(task_env, "_validation_left_tcp_to_hold"):
-                delattr(task_env, "_validation_left_tcp_to_hold")
-                delattr(task_env, "_validation_right_tcp_to_hold")
             if not hasattr(task_env, "_validation_lift_left_hold"):
                 task_env._validation_lift_left_hold = task_env.left_hold_pos.clone()
                 task_env._validation_lift_right_hold = task_env.right_hold_pos.clone()

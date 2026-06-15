@@ -1340,6 +1340,42 @@ Validation:
 Next:
 - Commit/push/redeploy and rerun stable validator with `LIFT_HEIGHT=0.06`.
 
+## 2026-06-15 23:50Z - replace validator joint waypoint with action-interface contact path
+
+Observation:
+- User inspection of the validator video showed unrealistic cube shaking when the robot pressed on the cube.
+- This matches the strict-stability metrics: prior nonzero lift observations are not reliable unless the cube is also below the configured linear/angular speed thresholds.
+- The 14 cm stable validator run `yam_cube_strict_stable_validator_cube014_25d9908_20260616T0405Z` failed with `max_lift=0.010395966470241547`, `max_success_rate=0.0`, `max_cube_linear_speed=2.35905385017395`, and `max_cube_angular_speed=35.1982421875`.
+- The run did reach contact (`scripted_contact_reached=True`, step `284`), but then the grippers moved upward while the cube stayed on the table, so it did not demonstrate RLable physical lift.
+
+Change:
+- Removed the hardcoded validator contact joint waypoint and direct robot joint-pose writer.
+- Changed validator standoff/approach/lift to use the same hold-target action mapping as the RL policy/reference path.
+- Reduced reference hold height for the 14 cm cube from `center_z + 0.055` / min `0.130` to `center_z + 0.040` / min `0.110`, moving contact away from the top edge of the cube.
+
+Validation plan:
+- Run Python syntax checks and diff whitespace checks locally.
+- Commit/push/redeploy to the A100 agent worktree.
+- Rerun the strict stable validator with `LIFT_HEIGHT=0.06`, no grasp assist, and no video first.
+- If the stable validator passes, run a visual validator with video before resuming PPO.
+
+## 2026-06-16 04:05Z - planned smaller-cube stable validator
+
+Goal:
+- Test whether the 14 cm cube removes the press/shake artifact and recovers stable lift.
+
+Version state:
+- local_commit: `25d990898999008986678e98a1dd49af603e8ec0`
+- remote_commit: `25d990898999008986678e98a1dd49af603e8ec0`
+
+Planned command/job:
+- Submit `cluster/sbatch_validate_bimanual_yam_cube_grasp_env_1gpu.sh`.
+- Expected run: `yam_cube_strict_stable_validator_cube014_25d9908_20260616T0405Z`
+- Key settings: strict stable validator, `LIFT_HEIGHT=0.06`, no grasp assist.
+
+Success criteria:
+- Stable no-assist success, or speed/slip diagnostics showing the next geometry/contact issue.
+
 ## 2026-06-16 03:54Z - planned grip-tuned stable validator
 
 Goal:
