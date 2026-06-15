@@ -1289,6 +1289,48 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         obs = torch.clamp(torch.cat((obs, object_features), dim=-1), -5.0, 5.0)
         return {"policy": obs, "critic": obs}
 
+    def _get_rewards(self) -> torch.Tensor:
+        rewards = super()._get_rewards()
+        num_objects = int(getattr(self, "num_unique_objects", 0))
+        if num_objects <= 0 or num_objects > 16 or "log" not in self.extras:
+            return rewards
+
+        log_terms = self.extras["log"]
+        for object_idx in range(num_objects):
+            object_mask_bool = self.object_asset_index == object_idx
+            object_mask = object_mask_bool.float()
+            denom = torch.clamp(object_mask.sum(), min=1.0)
+            prefix = f"object_{object_idx}"
+            log_terms[f"{prefix}_env_fraction"] = object_mask.mean()
+            log_terms[f"{prefix}_success_rate"] = (self.in_success_region.float() * object_mask).sum() / denom
+            log_terms[f"{prefix}_has_lifted_rate"] = (self.has_lifted_cube.float() * object_mask).sum() / denom
+            log_terms[f"{prefix}_lift_height"] = (self.cube_lift_height * object_mask).sum() / denom
+            log_terms[f"{prefix}_xy_error"] = (self.cube_xy_error * object_mask).sum() / denom
+            log_terms[f"{prefix}_finger_center_dist"] = (
+                self.finger_center_to_cube_dist * object_mask
+            ).sum() / denom
+            if getattr(self, "_grasp_prior_reset_enabled", False):
+                log_terms[f"{prefix}_grasp_prior_reset_success_rate"] = (
+                    self.grasp_prior_reset_success.float() * object_mask
+                ).sum() / denom
+            if bool(getattr(self.cfg, "grasp_prior_action_warmstart_enabled", False)) and hasattr(
+                self, "grasp_prior_action_warmstart_phase"
+            ):
+                lift_mask_bool = object_mask_bool & (self.grasp_prior_action_warmstart_phase == 2)
+                lift_mask = lift_mask_bool.float()
+                lift_denom = torch.clamp(lift_mask.sum(), min=1.0)
+                log_terms[f"{prefix}_warmstart_lift_success_rate"] = (
+                    self.in_success_region.float() * lift_mask
+                ).sum() / lift_denom
+                log_terms[f"{prefix}_warmstart_lift_lift_height"] = (
+                    self.cube_lift_height * lift_mask
+                ).sum() / lift_denom
+                log_terms[f"{prefix}_warmstart_lift_gripper_width"] = (
+                    self.gripper_width * lift_mask
+                ).sum() / lift_denom
+                log_terms[f"{prefix}_warmstart_lift_count"] = lift_mask.sum()
+        return rewards
+
     def multi_object_asset_summary(self) -> dict[str, object]:
         return {
             "num_unique_objects": self.num_unique_objects,

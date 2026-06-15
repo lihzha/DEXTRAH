@@ -28,6 +28,16 @@ parser.add_argument("--object_stable_pose_cache_dir", type=str, default="")
 parser.add_argument("--object_stable_pose_count", type=int, default=1)
 parser.add_argument("--object_stable_pose_randomize", action=argparse.BooleanOptionalAction, default=True)
 parser.add_argument("--object_stable_pose_allow_missing", action="store_true", default=False)
+parser.add_argument("--object_density", type=float, default=None)
+parser.add_argument("--object_static_friction", type=float, default=None)
+parser.add_argument("--object_dynamic_friction", type=float, default=None)
+parser.add_argument("--object_contact_offset", type=float, default=None)
+parser.add_argument("--object_rest_offset", type=float, default=None)
+parser.add_argument("--object_solver_position_iterations", type=int, default=None)
+parser.add_argument("--object_solver_velocity_iterations", type=int, default=None)
+parser.add_argument("--object_linear_damping", type=float, default=None)
+parser.add_argument("--object_angular_damping", type=float, default=None)
+parser.add_argument("--object_max_depenetration_velocity", type=float, default=None)
 parser.add_argument("--render_warmup_frames", type=int, default=2)
 parser.add_argument("--reset_cycles", type=int, default=3)
 parser.add_argument("--settle_steps", type=int, default=72)
@@ -975,6 +985,21 @@ def _make_env(*, grasp_prior: bool):
     env_cfg.object_stable_pose_allow_missing = bool(args_cli.object_stable_pose_allow_missing)
     env_cfg.object_reset_settle_steps = int(args_cli.object_reset_settle_steps)
     env_cfg.object_reset_settle_full_reset_only = True
+    for field in (
+        "object_density",
+        "object_static_friction",
+        "object_dynamic_friction",
+        "object_contact_offset",
+        "object_rest_offset",
+        "object_solver_position_iterations",
+        "object_solver_velocity_iterations",
+        "object_linear_damping",
+        "object_angular_damping",
+        "object_max_depenetration_velocity",
+    ):
+        value = getattr(args_cli, field)
+        if value is not None:
+            setattr(env_cfg, field, value)
     env_cfg.grasp_prior_reset_enabled = bool(grasp_prior)
     env_cfg.grasp_prior_action_warmstart_enabled = bool(grasp_prior)
     env_cfg.grasp_prior_reset_attempts = int(args_cli.grasp_reset_attempts)
@@ -1093,6 +1118,16 @@ def main() -> None:
             "object_stable_pose_count": args_cli.object_stable_pose_count,
             "object_stable_pose_randomize": args_cli.object_stable_pose_randomize,
             "object_stable_pose_allow_missing": args_cli.object_stable_pose_allow_missing,
+            "object_density": args_cli.object_density,
+            "object_static_friction": args_cli.object_static_friction,
+            "object_dynamic_friction": args_cli.object_dynamic_friction,
+            "object_contact_offset": args_cli.object_contact_offset,
+            "object_rest_offset": args_cli.object_rest_offset,
+            "object_solver_position_iterations": args_cli.object_solver_position_iterations,
+            "object_solver_velocity_iterations": args_cli.object_solver_velocity_iterations,
+            "object_linear_damping": args_cli.object_linear_damping,
+            "object_angular_damping": args_cli.object_angular_damping,
+            "object_max_depenetration_velocity": args_cli.object_max_depenetration_velocity,
             "capture_interval": args_cli.capture_interval,
             "grasp_object_settle_steps": args_cli.grasp_object_settle_steps,
             "object_reset_settle_steps": args_cli.object_reset_settle_steps,

@@ -136,6 +136,16 @@ OBJECT_STABLE_POSE_CACHE_DIR="${OBJECT_STABLE_POSE_CACHE_DIR:-}"
 OBJECT_STABLE_POSE_COUNT="${OBJECT_STABLE_POSE_COUNT:-1}"
 OBJECT_STABLE_POSE_RANDOMIZE="${OBJECT_STABLE_POSE_RANDOMIZE:-True}"
 OBJECT_STABLE_POSE_ALLOW_MISSING="${OBJECT_STABLE_POSE_ALLOW_MISSING:-False}"
+OBJECT_DENSITY="${OBJECT_DENSITY:-}"
+OBJECT_STATIC_FRICTION="${OBJECT_STATIC_FRICTION:-}"
+OBJECT_DYNAMIC_FRICTION="${OBJECT_DYNAMIC_FRICTION:-}"
+OBJECT_CONTACT_OFFSET="${OBJECT_CONTACT_OFFSET:-}"
+OBJECT_REST_OFFSET="${OBJECT_REST_OFFSET:-}"
+OBJECT_SOLVER_POSITION_ITERATIONS="${OBJECT_SOLVER_POSITION_ITERATIONS:-}"
+OBJECT_SOLVER_VELOCITY_ITERATIONS="${OBJECT_SOLVER_VELOCITY_ITERATIONS:-}"
+OBJECT_LINEAR_DAMPING="${OBJECT_LINEAR_DAMPING:-}"
+OBJECT_ANGULAR_DAMPING="${OBJECT_ANGULAR_DAMPING:-}"
+OBJECT_MAX_DEPENETRATION_VELOCITY="${OBJECT_MAX_DEPENETRATION_VELOCITY:-}"
 GRASP_PRIOR_RESET_ENABLED="${GRASP_PRIOR_RESET_ENABLED:-False}"
 GRASP_PRIOR_LIBRARY_PATH="${GRASP_PRIOR_LIBRARY_PATH:-}"
 GRASP_PRIOR_LIBRARY_DIR="${GRASP_PRIOR_LIBRARY_DIR:-}"
@@ -429,6 +439,16 @@ echo "OBJECT_STABLE_POSE_CACHE_DIR=$OBJECT_STABLE_POSE_CACHE_DIR"
 echo "OBJECT_STABLE_POSE_COUNT=$OBJECT_STABLE_POSE_COUNT"
 echo "OBJECT_STABLE_POSE_RANDOMIZE=$OBJECT_STABLE_POSE_RANDOMIZE"
 echo "OBJECT_STABLE_POSE_ALLOW_MISSING=$OBJECT_STABLE_POSE_ALLOW_MISSING"
+echo "OBJECT_DENSITY=$OBJECT_DENSITY"
+echo "OBJECT_STATIC_FRICTION=$OBJECT_STATIC_FRICTION"
+echo "OBJECT_DYNAMIC_FRICTION=$OBJECT_DYNAMIC_FRICTION"
+echo "OBJECT_CONTACT_OFFSET=$OBJECT_CONTACT_OFFSET"
+echo "OBJECT_REST_OFFSET=$OBJECT_REST_OFFSET"
+echo "OBJECT_SOLVER_POSITION_ITERATIONS=$OBJECT_SOLVER_POSITION_ITERATIONS"
+echo "OBJECT_SOLVER_VELOCITY_ITERATIONS=$OBJECT_SOLVER_VELOCITY_ITERATIONS"
+echo "OBJECT_LINEAR_DAMPING=$OBJECT_LINEAR_DAMPING"
+echo "OBJECT_ANGULAR_DAMPING=$OBJECT_ANGULAR_DAMPING"
+echo "OBJECT_MAX_DEPENETRATION_VELOCITY=$OBJECT_MAX_DEPENETRATION_VELOCITY"
 echo "GRASP_PRIOR_RESET_ENABLED=$GRASP_PRIOR_RESET_ENABLED"
 echo "GRASP_PRIOR_LIBRARY_PATH=$GRASP_PRIOR_LIBRARY_PATH"
 echo "GRASP_PRIOR_LIBRARY_DIR=$GRASP_PRIOR_LIBRARY_DIR"
@@ -705,6 +725,18 @@ PY
       append_env_override trajectory_tracking_start_weight '$TRAJECTORY_TRACKING_START_WEIGHT'
       append_env_override trajectory_tracking_end_weight '$TRAJECTORY_TRACKING_END_WEIGHT'
     }
+    append_multi_object_physics_overrides() {
+      append_env_override object_density '$OBJECT_DENSITY'
+      append_env_override object_static_friction '$OBJECT_STATIC_FRICTION'
+      append_env_override object_dynamic_friction '$OBJECT_DYNAMIC_FRICTION'
+      append_env_override object_contact_offset '$OBJECT_CONTACT_OFFSET'
+      append_env_override object_rest_offset '$OBJECT_REST_OFFSET'
+      append_env_override object_solver_position_iterations '$OBJECT_SOLVER_POSITION_ITERATIONS'
+      append_env_override object_solver_velocity_iterations '$OBJECT_SOLVER_VELOCITY_ITERATIONS'
+      append_env_override object_linear_damping '$OBJECT_LINEAR_DAMPING'
+      append_env_override object_angular_damping '$OBJECT_ANGULAR_DAMPING'
+      append_env_override object_max_depenetration_velocity '$OBJECT_MAX_DEPENETRATION_VELOCITY'
+    }
     append_grasp_prior_reference_sequence_overrides() {
       TASK_OVERRIDES+=(
         env.grasp_prior_action_warmstart_approach_steps='$GRASP_PRIOR_ACTION_WARMSTART_APPROACH_STEPS'
@@ -800,6 +832,7 @@ PY
       append_env_override object_asset_manifest_path '$OBJECT_ASSET_MANIFEST_PATH'
       append_env_override object_assets_dir '$OBJECT_ASSETS_DIR'
       append_env_override object_stable_pose_cache_dir '$OBJECT_STABLE_POSE_CACHE_DIR'
+      append_multi_object_physics_overrides
       append_franka_cube_reward_overrides
       append_grasp_prior_action_guidance_overrides
     elif [ '$TASK' = 'Dextrah-Franka-Multi-Object-RGB-Grasp' ]; then
@@ -820,6 +853,7 @@ PY
       append_env_override object_asset_manifest_path '$OBJECT_ASSET_MANIFEST_PATH'
       append_env_override object_assets_dir '$OBJECT_ASSETS_DIR'
       append_env_override object_stable_pose_cache_dir '$OBJECT_STABLE_POSE_CACHE_DIR'
+      append_multi_object_physics_overrides
       append_franka_cube_reward_overrides
       append_grasp_prior_action_guidance_overrides
     else

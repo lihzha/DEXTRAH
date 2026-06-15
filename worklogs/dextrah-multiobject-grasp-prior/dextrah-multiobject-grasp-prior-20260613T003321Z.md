@@ -6528,3 +6528,874 @@ Validation:
 
 Next:
 - Commit/push the diagnostic collector, update the l401 worktree, and relaunch a shorter diagnostic verified-grasp collection.
+
+Version Control Update:
+- implementation_commit: `d053e6c41ecba568e602057e20be8492a8fb32d6`
+- push/pull: pushed to `origin/main`; l401 remote worktree updated through HTTPS fallback because SSH auth still fails on the login host.
+- remote_commit/status: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-bc-fallback-20260614-d5e8b27` clean detached HEAD at `d053e6c41ecba568e602057e20be8492a8fb32d6`.
+
+Command / Job:
+- command: `sbatch cluster/sbatch_collect_franka_multi_object_verified_grasps_1gpu.sh` on `l401`
+- job_id: `1029416`
+- run_name: `franka_multi_verified_candidates3_diag_d053e6c_20260614T222714Z`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/verified_grasp_indices/franka_multi_verified_candidates3_diag_d053e6c_20260614T222714Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/collect_franka_multi_object_verified_grasps_1029416.out`
+- settings: strict no-underside/current-lift gate, same three candidate objects and stable-pose cache, `CYCLES=24`, `MIN_CYCLES=12`, `TARGET_PER_OBJECT=2`, `NUM_ENVS=96`, `SEED=915`.
+
+Next:
+- Monitor `1029416`, then inspect `cycle_stats` to decide whether to tune reset filters or replace objects before PPO.
+
+Result:
+- status: diagnostic job failed intentionally because not all target counts were met.
+- final counts: `1c56f9b18a3f459891f6f8b902d192a0=3`, `bfa718fff3044541a3694863c3bf9c89=1`, `55cdf60e26db4f3d9f693282404c07f3=0`.
+- gate evidence after 24 cycles / 768 attempts per object:
+  - `1c56...`: 6 passing observations across 3 indices; 47 lift-capable attempts; reset/quality gates essentially always pass.
+  - `bfa718...`: 1 passing observation; many lift-capable attempts but frequent done/instability and very few valid filtered candidates.
+  - `55cdf...`: 0 passes and only 8 lift-capable attempts; reject from the immediate PPO set.
+
+Analysis:
+- The zero-count object is not blocked by reset/IK; it simply does not lift under the current no-underneath/current-lift warmstart.
+- `1c56...` is usable enough for video validation. `bfa718...` is marginal and must be video-validated before inclusion.
+
+Next:
+- Create filtered manifests/verified-index JSONs on `/lustre` for `7195...`, `bfa718...`, `1c56...`, and their combined candidate set.
+- Launch single-object contact-video validations for `bfa718...` and `1c56...`; keep `7195...` from the previously passing validation.
+
+## 2026-06-14T22:38:07Z - Contact video validation for no-underneath candidates
+
+Goal:
+- Verify visually and metrically that `bfa718...` and `1c56...` do not exhibit reset bounce, table penetration, perturbation instability, or weird gripper/object penetration under the no-underneath verified grasp indices.
+
+Change:
+- Generated filtered manifests and verified-index files under:
+  - `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/filtered_manifests/qual_7195_bfa_1c56_d053e6c_20260614T223737Z*`
+  - `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/verified_grasp_indices/qual_7195_bfa_1c56_d053e6c_20260614T223737Z*`
+- The combined manifest contains `7195...`, `bfa718...`, and `1c56...`; individual manifests force validation of each object.
+
+Command / Job:
+- `bfa718...` validation:
+  - job_id: `1029417`
+  - run_name: `franka_multi_bfa7_nobelow_contact_video_d053e6c_20260614T223807Z`
+  - run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_bfa7_nobelow_contact_video_d053e6c_20260614T223807Z`
+  - log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_1029417.out`
+- `1c56...` validation:
+  - job_id: `1029418`
+  - run_name: `franka_multi_1c56_nobelow_contact_video_d053e6c_20260614T223807Z`
+  - run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_1c56_nobelow_contact_video_d053e6c_20260614T223807Z`
+  - log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_1029418.out`
+- settings: `GRASP_STEPS=260`, warmstart `4/60/180`, current-lift gate enabled, verified indices only, no-underneath reset code at `d053e6c`.
+
+Next:
+- Monitor both validation jobs, fetch videos/metrics, inspect frames, then decide the PPO object set.
+
+Result:
+- status: both validation jobs failed on `grasp_contact`; reset-settle and perturbation passed for both.
+- `bfa718...`: lifted to 0.281 m with low XY drift, but `bottom_clearance_min=-0.00696` and contact montage shows aggressive/unclean contact. Treat as marginal and do not include in PPO yet.
+- `1c56...`: reset/perturb stable, but contact video did not lift (`selected_lift_height_max=0.0243`) and the montage shows the object left on the table. Reject from PPO for now.
+- viewer artifacts:
+  - `cluster_results/l401/franka_multi_bfa7_nobelow_contact_video_d053e6c_20260614T223807Z/grasp_contact.mp4`
+  - `cluster_results/l401/franka_multi_1c56_nobelow_contact_video_d053e6c_20260614T223807Z/grasp_contact.mp4`
+
+Analysis:
+- Verified-grasp collection alone is insufficient; validation-time settled-object contact exposes failures. Continue object qualification before PPO.
+
+Next:
+- Prepare a larger fresh GraspGen candidate subset on `/lustre`, then repeat stable-pose, verified-grasp, and contact-video filters.
+
+## 2026-06-14T22:43:47Z - Prepare 16 new GraspGen candidates
+
+Goal:
+- Expand the candidate object pool after `55cdf...`, `bfa718...`, and `1c56...` failed immediate PPO-quality contact validation.
+
+Hypothesis:
+- A 16-object shard-local subset should include at least one additional object that passes stable-pose, no-underneath verified-grasp, and contact-video validation while keeping download/extraction overhead bounded.
+
+Command / Job:
+- command: `sbatch cluster/sbatch_prepare_graspgen_assets_1gpu.sh` on `l401`
+- job_id: `1029419`
+- run_name: `franka_multi_graspgen_candidates16_shard2_d053e6c_20260614T224347Z`
+- output_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/franka_multi_graspgen_candidates16_shard2_d053e6c_20260614T224347Z`
+- manifest: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/franka_multi_graspgen_candidates16_shard2_d053e6c_20260614T224347Z/manifest.json`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/prepare_graspgen_assets_1029419.out`
+- UUIDs: `ca9ede83ef6c4f769fb8ffc000b73ab9 1cdad3cea6f64a0a81e02a7aebf4bdf0 784812e01f71466cbdba96245add0e27 b180b79e98834a83bf6dd1c14a588796 e38f11c29fd946eaa7460d7f43cf5313 eddd78c746734197a81613e10affed89 f4c2fcb0219743c2a717461882df7f7a 7383425b3cd549e98a7ef5a5438c9018 a2a048847e414be6b4aa66fa6d3687e7 6cfe7772bb6f415d88b61135b612b76d 4c656b98557f433499726238dfa8eaa5 e2c1f3a3079f410a90ede41dba8c4b06 da154bb403b64693aa3d76f9a935a5be 834b6b22df6e4925a94b2517201fe702 f34090dec2d845c1b1ec436325f5a56b 04bef8e589524b8c9d7a3bb206b206a8`
+
+Next:
+- Monitor job `1029419`; inspect the resulting manifest geometry, then run stable-pose validation on plausible objects.
+
+Result:
+- status: passed.
+- manifest objects: 16.
+- missing USDs: 0.
+- selected compact follow-up UUIDs: `1cdad3cea6f64a0a81e02a7aebf4bdf0`, `784812e01f71466cbdba96245add0e27`, `e38f11c29fd946eaa7460d7f43cf5313`, `eddd78c746734197a81613e10affed89`, `f4c2fcb0219743c2a717461882df7f7a`, `4c656b98557f433499726238dfa8eaa5`, `e2c1f3a3079f410a90ede41dba8c4b06`, `04bef8e589524b8c9d7a3bb206b206a8`.
+
+Analysis:
+- Avoided very large/elongated candidates from the 16-object manifest before running simulation.
+
+Next:
+- Run stable-pose validation for the compact subset.
+
+## 2026-06-14T22:46:53Z - Stable-pose validation for 8 compact shard-2 candidates
+
+Goal:
+- Confirm the eight compact candidate objects can be placed at precomputed stable poses without table penetration, bounce, or significant drift.
+
+Command / Job:
+- command: `sbatch cluster/sbatch_validate_graspgen_stable_pose_resets_1gpu.sh` on `l401`
+- job_id: `1029420`
+- run_name: `graspgen_stable_candidates8_shard2_d053e6c_20260614T224653Z`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/graspgen_stable_candidates8_shard2_d053e6c_20260614T224653Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_graspgen_stable_pose_1029420.out`
+- manifest: `/results/assets/franka_multi_graspgen_candidates16_shard2_d053e6c_20260614T224347Z/manifest.json`
+- settings: stable-pose count 1, one rollout pose, 240 settle steps, 80 settled replay steps, render frames enabled.
+
+Next:
+- Monitor `1029420`; if stable metrics pass, use its settled-pose cache for verified-grasp collection.
+
+Result:
+- status: failed before simulation.
+- evidence: Slurm job `1029420` exited `FAILED` after 41 seconds; no `metrics.json` was written.
+- error: `ValueError: Requested UUIDs are not present in manifest`, where the missing item was the entire space-separated UUID list as one string.
+
+Analysis:
+- The stable-pose validator expects `--object_uuids` as a comma-separated string; the wrapper intentionally forwards `OBJECT_UUIDS` as one argument. The launch used spaces, so the parser treated all eight UUIDs as one impossible UUID. This was a launch formatting error, not a physics/object-stability failure.
+
+Next:
+- Relaunch the same stable-pose validation with comma-separated `OBJECT_UUIDS`.
+
+## 2026-06-14T22:50:00Z - Relaunch stable-pose validation with comma-separated UUIDs
+
+Goal:
+- Run the same eight-object compact shard-2 stable-pose validation after fixing the launch-time UUID delimiter.
+
+Hypothesis:
+- Passing the UUID list as comma-separated values will allow the validator to select the intended eight manifest records and proceed to actual stable-pose physics validation.
+
+Version Control:
+- agent_id: multiobject-bc-fallback-20260614-d5e8b27
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/merge-dp-rgb-main-20260613`
+- branch: `main`
+- implementation_commit: `d053e6c41ecba568e602057e20be8492a8fb32d6`
+- remote_commit/status: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-bc-fallback-20260614-d5e8b27` at `d053e6c41ecba568e602057e20be8492a8fb32d6`
+
+Command / Job:
+- command: `sbatch cluster/sbatch_validate_graspgen_stable_pose_resets_1gpu.sh` on `l401`
+- job_id: `1029421`
+- run_name: `graspgen_stable_candidates8_shard2_comma_d053e6c_20260614T225000Z`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/graspgen_stable_candidates8_shard2_comma_d053e6c_20260614T225000Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_graspgen_stable_pose_1029421.out`
+- manifest: `/results/assets/franka_multi_graspgen_candidates16_shard2_d053e6c_20260614T224347Z/manifest.json`
+- UUID delimiter: comma-separated `OBJECT_UUIDS`
+
+Next:
+- Monitor `1029421`; inspect `metrics.json`, logs, and rendered videos before using any object for verified-grasp collection.
+
+Result:
+- status: failed before rollout.
+- evidence: the corrected UUID list was accepted and the script computed stable poses for the first object, then `parse_env_cfg()` failed.
+- error: `gymnasium.error.NameNotFound: Environment Isaac-Franka-MultiObject-Grasp-Direct doesn't exist. Did you mean: Dextrah-Franka-Multi-Object-Grasp?`
+
+Analysis:
+- I overrode the wrapper default task with the wrong Isaac Lab registry name. The correct registered task in `dextrah_lab/tasks/dextrah_franka_multi_object_grasp/gym_setup.py` and the validator default is `Dextrah-Franka-Multi-Object-Grasp`.
+
+Next:
+- Relaunch with the wrapper default task name and the same comma-separated UUID list.
+
+## 2026-06-14T22:52:00Z - Relaunch stable-pose validation with correct task registry
+
+Goal:
+- Run actual stable-pose physics validation for the eight compact shard-2 objects after fixing both launch argument issues.
+
+Hypothesis:
+- With `TASK=Dextrah-Franka-Multi-Object-Grasp` and comma-separated `OBJECT_UUIDS`, the job should reach Isaac Lab environment construction and produce stable-pose metrics/videos.
+
+Version Control:
+- implementation_commit: `d053e6c41ecba568e602057e20be8492a8fb32d6`
+- remote_commit/status: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-bc-fallback-20260614-d5e8b27` at `d053e6c41ecba568e602057e20be8492a8fb32d6`
+
+Command / Job:
+- command: `sbatch cluster/sbatch_validate_graspgen_stable_pose_resets_1gpu.sh` on `l401`
+- job_id: `1029422`
+- run_name: `graspgen_stable_candidates8_shard2_fixed_d053e6c_20260614T225200Z`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/graspgen_stable_candidates8_shard2_fixed_d053e6c_20260614T225200Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_graspgen_stable_pose_1029422.out`
+- manifest: `/results/assets/franka_multi_graspgen_candidates16_shard2_d053e6c_20260614T224347Z/manifest.json`
+
+Next:
+- Monitor `1029422`; inspect `metrics.json`, log warnings/errors, and rendered stable-pose videos.
+
+Result:
+- status: completed but only validated one object.
+- metrics: `passed=True`; one-object summary had `root_xy_delta_max=0.000325`, `center_xy_delta_max=0.000316`, `bottom_clearance_min=-0.001153`, `final_object_speed_max=0.00449`, and `done_count=0`.
+- evidence: the logged command contains only `--object_uuids 1cdad3cea6f64a0a81e02a7aebf4bdf0`.
+
+Analysis:
+- Slurm `--export` is comma-delimited, so passing comma-separated UUIDs inside `--export=...OBJECT_UUIDS=...` truncated the variable at the first UUID. The one-object result is valid evidence for `1cdad...`, but not for the full eight-object shard.
+
+Next:
+- Avoid `OBJECT_UUIDS` for this step by writing an explicit filtered eight-object manifest and launching stable-pose validation with `MAX_OBJECTS=8`.
+
+## 2026-06-14T22:54:30Z - Build filtered manifest for eight-object stable validation
+
+Goal:
+- Remove Slurm export delimiter ambiguity by materializing a manifest containing only the intended eight compact shard-2 objects.
+
+Command / Job:
+- command: remote `python3` JSON filter on `l401`
+- source_manifest: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/franka_multi_graspgen_candidates16_shard2_d053e6c_20260614T224347Z/manifest.json`
+- filtered_manifest: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/filtered_manifests/stable_candidates8_shard2_d053e6c_20260614T225430Z/manifest.json`
+- object_count: 8
+
+Next:
+- Launch stable-pose validation from the filtered manifest with no `OBJECT_UUIDS`.
+
+## 2026-06-14T22:55:00Z - Stable-pose validation from filtered eight-object manifest
+
+Goal:
+- Validate all eight compact shard-2 candidates for stable reset and settled replay without relying on `OBJECT_UUIDS`.
+
+Hypothesis:
+- The filtered manifest will make the validator instantiate eight envs and produce per-object stability metrics/videos for the intended candidates.
+
+Version Control:
+- implementation_commit: `d053e6c41ecba568e602057e20be8492a8fb32d6`
+- remote_commit/status: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-bc-fallback-20260614-d5e8b27` at `d053e6c41ecba568e602057e20be8492a8fb32d6`
+
+Command / Job:
+- command: `sbatch cluster/sbatch_validate_graspgen_stable_pose_resets_1gpu.sh` on `l401`
+- job_id: `1029423`
+- run_name: `graspgen_stable_candidates8_filtered_d053e6c_20260614T225500Z`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/graspgen_stable_candidates8_filtered_d053e6c_20260614T225500Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_graspgen_stable_pose_1029423.out`
+- manifest: `/results/assets/filtered_manifests/stable_candidates8_shard2_d053e6c_20260614T225430Z/manifest.json`
+
+Next:
+- Monitor `1029423`, inspect metrics and rendered artifacts, then use only passing objects for verified-grasp collection.
+
+Result:
+- status: failed before rollout.
+- error: `FileNotFoundError: Missing raw OBJ for 1cdad...: /results/assets/filtered_manifests/stable_candidates8_shard2_d053e6c_20260614T225430Z/raw_objaverse/...`
+
+Analysis:
+- The filtered manifest copied `asset_root: "."` from the source manifest. That made relative `raw_object_path` and USD paths resolve against the filtered-manifest directory, not the original prepared asset directory.
+
+Next:
+- Write a corrected filtered manifest with `asset_root=/results/assets/franka_multi_graspgen_candidates16_shard2_d053e6c_20260614T224347Z`, then relaunch.
+
+## 2026-06-14T22:57:00Z - Build asset-rooted filtered manifest
+
+Goal:
+- Keep the eight-object filtered selection while resolving raw OBJ/USD paths against the original prepared asset directory.
+
+Command / Job:
+- command: remote `python3` JSON filter on `l401`
+- filtered_manifest: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/filtered_manifests/stable_candidates8_shard2_assetroot_d053e6c_20260614T225700Z/manifest.json`
+- container_manifest: `/results/assets/filtered_manifests/stable_candidates8_shard2_assetroot_d053e6c_20260614T225700Z/manifest.json`
+- asset_root: `/results/assets/franka_multi_graspgen_candidates16_shard2_d053e6c_20260614T224347Z`
+- object_count: 8
+
+Next:
+- Relaunch stable-pose validation from this asset-rooted manifest.
+
+## 2026-06-14T22:58:00Z - Stable-pose validation from asset-rooted filtered manifest
+
+Goal:
+- Validate all eight compact shard-2 candidates with paths resolving back to the original prepared asset directory.
+
+Hypothesis:
+- The asset-rooted filtered manifest should let stable-pose computation load every raw OBJ and then run the eight-env Isaac Lab rollout.
+
+Version Control:
+- implementation_commit: `d053e6c41ecba568e602057e20be8492a8fb32d6`
+- remote_commit/status: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-bc-fallback-20260614-d5e8b27` at `d053e6c41ecba568e602057e20be8492a8fb32d6`
+
+Command / Job:
+- command: `sbatch cluster/sbatch_validate_graspgen_stable_pose_resets_1gpu.sh` on `l401`
+- job_id: `1029424`
+- run_name: `graspgen_stable_candidates8_assetroot_d053e6c_20260614T225800Z`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/graspgen_stable_candidates8_assetroot_d053e6c_20260614T225800Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_graspgen_stable_pose_1029424.out`
+- manifest: `/results/assets/filtered_manifests/stable_candidates8_shard2_assetroot_d053e6c_20260614T225700Z/manifest.json`
+
+Next:
+- Monitor `1029424`; inspect metrics and videos before collector launch.
+
+Result:
+- status: passed stable-pose/reset validation for eight envs.
+- metrics: `num_envs=8`, `passed=True`, cache files written for all eight objects.
+- stable summary: `root_xy_delta_max=0.00138`, `center_xy_delta_max=0.00625`, `bottom_clearance_min=-0.00179`, `angular_delta_deg_max=5.63`, `final_object_speed_max=0.00448`.
+- settled replay summary: `root_xy_delta_max=0.00000246`, `center_xy_delta_max=0.00000421`, `bottom_clearance_min=-0.00179`, `angular_delta_deg_max=0.079`, `final_object_speed_max=0.00448`.
+- artifacts fetched:
+  - `cluster_results/l401/graspgen_stable_candidates8_assetroot_d053e6c_20260614T225800Z/stable_pose.mp4`
+  - `cluster_results/l401/graspgen_stable_candidates8_assetroot_d053e6c_20260614T225800Z/settled_replay.mp4`
+  - `cluster_results/l401/graspgen_stable_candidates8_assetroot_d053e6c_20260614T225800Z/stable_pose_env_final_montage.jpg`
+  - `cluster_results/l401/graspgen_stable_candidates8_assetroot_d053e6c_20260614T225800Z/settled_replay_env_final_montage.jpg`
+
+Analysis:
+- Visual montages show all objects placed on the table without obvious penetration or off-table placement.
+- Object `f4c2fcb0219743c2a717461882df7f7a` physically settled, but it produced passive `task_done_count=238` during stable rollout and `78` during settled replay. Exclude it from RL qualification because it starts in a terminal/success-like state and could confuse training.
+
+Next:
+- Build a seven-object manifest excluding `f4c2...` and run the no-underneath/current-lift verified-grasp collector using the settled-pose cache from this run.
+
+## 2026-06-14T23:01:00Z - Build seven-object verified-grasp manifest
+
+Goal:
+- Prepare a collector manifest containing only stable, non-terminal candidates from shard 2.
+
+Command / Job:
+- command: remote `python3` JSON filter on `l401`
+- filtered_manifest: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/filtered_manifests/verify_candidates7_no_f4_d053e6c_20260614T230100Z/manifest.json`
+- container_manifest: `/results/assets/filtered_manifests/verify_candidates7_no_f4_d053e6c_20260614T230100Z/manifest.json`
+- asset_root: `/results/assets/franka_multi_graspgen_candidates16_shard2_d053e6c_20260614T224347Z`
+- object_count: 7
+- excluded: `f4c2fcb0219743c2a717461882df7f7a`
+
+Next:
+- Launch verified-grasp collection with stable poses, 360-degree yaw randomization, and no-underneath grasp filtering.
+
+## 2026-06-14T23:02:00Z - Seven-object no-underneath verified-grasp collection
+
+Goal:
+- Find dynamically verified GraspGen indices for the seven stable/non-terminal shard-2 candidates before contact-video validation.
+
+Hypothesis:
+- Stable-pose reset plus the no-underneath topdown/contact-height gate and current-lift readiness should identify at least one clean liftable prior for some of the seven objects.
+
+Version Control:
+- implementation_commit: `d053e6c41ecba568e602057e20be8492a8fb32d6`
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-bc-fallback-20260614-d5e8b27`
+- remote_commit/status: `d053e6c41ecba568e602057e20be8492a8fb32d6`
+
+Command / Job:
+- command: `sbatch cluster/sbatch_collect_franka_multi_object_verified_grasps_1gpu.sh` on `l401`
+- job_id: `1029444`
+- run_name: `franka_multi_verified_candidates7_nobelow_d053e6c_20260614T230200Z`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/verified_grasp_indices/franka_multi_verified_candidates7_nobelow_d053e6c_20260614T230200Z`
+- output: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/verified_grasp_indices/franka_multi_verified_candidates7_nobelow_d053e6c_20260614T230200Z/verified_indices.json`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/collect_franka_multi_object_verified_grasps_1029444.out`
+- key settings: `NUM_ENVS=112`, `MAX_OBJECTS=7`, `round_robin`, spawn center `(0.05, 0.0)`, xy randomization `0.10`, yaw randomization `180.0`, stable pose cache from `1029424`, `CYCLES=48`, `TARGET_PER_OBJECT=1`, current-lift readiness enabled.
+
+Next:
+- Monitor `1029444`; inspect verified counts and diagnostics, then run contact-video validation only for objects with accepted indices.
+
+Result:
+- status: wrapper failed as expected because not all seven objects reached `TARGET_PER_OBJECT=1`, but useful verified indices were written.
+- final counts: `e38f11c29fd946eaa7460d7f43cf5313=7`, `4c656b98557f433499726238dfa8eaa5=2`, all other five objects `0`.
+- diagnostics: each object had 768 observed resets; `e38f...` had 45 pass observations and `4c656...` had 2 pass observations.
+- failure reason: `Missing target counts` for `04bef...`, `1cdad...`, `784812...`, `e2c1...`, and `eddd...`.
+
+Analysis:
+- The failed Slurm state is a target-count failure, not a runtime/environment failure. Only `e38f...` and `4c656...` are worth contact-video validation from this shard.
+- The other five stable objects are not PPO-ready under the current no-underneath/current-lift gate and should remain out of the training manifest.
+
+Next:
+- Split the collector output into one-object manifests and verified-index files for `e38f...` and `4c656...`, then run contact video validation for each.
+
+## 2026-06-14T23:30:00Z - Build contact-validation inputs for two verified objects
+
+Goal:
+- Prepare per-object video validation inputs for the only shard-2 objects with verified no-underneath/current-lift grasp indices.
+
+Command / Job:
+- command: remote `python3` JSON split on `l401`
+- objects:
+  - `e38f11c29fd946eaa7460d7f43cf5313`, indices `[657, 39, 35, 652, 968, 73, 628]`
+  - `4c656b98557f433499726238dfa8eaa5`, indices `[642, 494]`
+- manifest_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/filtered_manifests/contact_candidates_e38f_4c656_d053e6c_20260614T233000Z`
+- verified_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/verified_grasp_indices/contact_candidates_e38f_4c656_d053e6c_20260614T233000Z`
+
+Next:
+- Launch one contact-video validation job per object and inspect the resulting videos/metrics.
+
+## 2026-06-14T23:31:00Z - Contact-video validation for two verified shard-2 objects
+
+Goal:
+- Verify that the dynamically accepted grasp indices produce physically clean reset, perturbation, and grasp-contact videos before adding either object to PPO.
+
+Command / Job:
+- `e38f11c29fd946eaa7460d7f43cf5313`
+  - job_id: `1029447`
+  - run_name: `franka_multi_e38f_contact_video_d053e6c_20260614T233100Z`
+  - run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_e38f_contact_video_d053e6c_20260614T233100Z`
+  - log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_1029447.out`
+- `4c656b98557f433499726238dfa8eaa5`
+  - job_id: `1029448`
+  - run_name: `franka_multi_4c65_contact_video_d053e6c_20260614T233100Z`
+  - run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_4c65_contact_video_d053e6c_20260614T233100Z`
+  - log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_1029448.out`
+- key settings: `NUM_ENVS=32`, stable pose cache from `1029424`, verified indices only, spawn center `(0.05, 0.0)`, xy randomization `0.10`, yaw randomization `180.0`, `GRASP_STEPS=260`, warmstart `4/60/180`, current-lift readiness enabled.
+
+Next:
+- Monitor jobs `1029447` and `1029448`; fetch videos, encode mp4s, inspect metrics and frame montages.
+
+Result:
+- status: both contact validations failed on `grasp_contact`.
+- `e38f...`: reset-settle and perturbation passed, but grasp-contact lift was only `0.00399 m`; montage shows the object remains on the table.
+- `4c656...`: reset-settle and perturbation passed, and lift reached `0.1996 m`, but `selected_object_xy_delta_max=0.8474 m` with `selected_done_count=222`; montage shows the object carried far out of the task region / out of view.
+- artifacts fetched and encoded:
+  - `cluster_results/l401/franka_multi_e38f_contact_video_d053e6c_20260614T233100Z/grasp_contact.mp4`
+  - `cluster_results/l401/franka_multi_e38f_contact_video_d053e6c_20260614T233100Z/contact_montage.jpg`
+  - `cluster_results/l401/franka_multi_4c65_contact_video_d053e6c_20260614T233100Z/grasp_contact.mp4`
+  - `cluster_results/l401/franka_multi_4c65_contact_video_d053e6c_20260614T233100Z/contact_montage.jpg`
+
+Analysis:
+- Neither shard-2 object is PPO-ready. Keep the validation gate strict and search another object shard rather than adding weak objects to training.
+
+Next:
+- Prepare a fresh, larger GraspGen candidate shard and repeat geometry, stable-pose, verified-grasp, and contact-video filtering.
+
+## 2026-06-14T23:40:00Z - Prepare 32 fresh shard-3 GraspGen candidates
+
+Goal:
+- Expand the candidate pool after shard-2 produced no new contact-validated objects.
+
+Hypothesis:
+- A larger explicit 32-object subset from unused GraspGen shard 3 increases the chance of finding at least one additional object that passes stable reset, no-underneath verified-grasp collection, and contact-video validation.
+
+Version Control:
+- implementation_commit: `d053e6c41ecba568e602057e20be8492a8fb32d6`
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-bc-fallback-20260614-d5e8b27`
+
+Command / Job:
+- command: `sbatch cluster/sbatch_prepare_graspgen_assets_1gpu.sh` on `l401`
+- job_id: `1029449`
+- run_name: `franka_multi_graspgen_candidates32_shard3_d053e6c_20260614T234000Z`
+- output_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/franka_multi_graspgen_candidates32_shard3_d053e6c_20260614T234000Z`
+- manifest: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/franka_multi_graspgen_candidates32_shard3_d053e6c_20260614T234000Z/manifest.json`
+- UUIDs: `747fe7a49dae4ef6b067ec8916c808e2 c351adf1cc9e4e7f83f24c0c7317e68d 9d9557c5f3af4639bcacf468e4e5182a 66d208d29503450ca28c0152864b7379 753efdb4234545a698343661c59664a4 f601cd38f655447da2e83e3d9f5beb80 4f4fe076fe624d2a8f198588c64fc6cb f71a628ddc1d45529b2dde4066f9ca71 0b07d4714a544a7fbe3a145ccda8bf03 7d4406b23e5e4525a7afe7f3b25d141f 6154520a963a4bb099642482a26aa9d3 b8a7cc0278304cf0882ddf25040af3d9 3693fa4414f64a41b04be4aa70e35448 2241e09cc3ad40a0a6da20cd76d7baa7 8fbc2087b1254376b9afec839f59d584 82f4d273bc2240c49f70fec7b6bc5fee c28358d1992547099ead51a462562030 7d840006d0184ef496c9860765023f52 6992dae82b99461a9a43c2debd84cbd5 ca8d526966a74d5ab796092e6e4531a8 b5d22010f2ab4123a72d7b2a7d6643d7 884defbca8c8473695e5a5420ca89de4 85c3d3b9cfd64c108dc548e525052c4e 59b9bb5fd55a4cc5ab71f24fcca26f8f 168ca4d0cad641f797fa4edba00164a5 29f7d53eae024e4d86d0d1360d32fa5d 75c058a8028340e1adbdc9ea2dfda9d4 9e4f6c7c49214be1b98cf180e1c432ac f3512126d36a4630893585f1ee2e44d2 6d19454feff8409ea697102783c17bc8 8d89bff741d1486398a3a1bab4626abe b87a65917e494aa4b306aeb6ee961182`
+
+Next:
+- Monitor `1029449`; inspect manifest geometry and choose compact candidates for stable-pose validation.
+
+Result:
+- status: passed.
+- manifest: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/franka_multi_graspgen_candidates32_shard3_d053e6c_20260614T234000Z/manifest.json`
+- objects: `32`
+- missing USD count: `0`
+- storage check: wrapper cache/home/temp paths stayed under `/lustre` mounts and `/results`; no `/home` download path was used.
+
+Analysis:
+- Raw OBJ bounds are not directly comparable across assets; candidate size must be evaluated using `bounds * scale`. After scaling, 18 candidates are within roughly 12 cm half-extent and are small enough for stable-pose/contact validation.
+
+Next:
+- Build an asset-rooted filtered manifest for the 18 scaled-compact candidates and run rendered stable-pose validation.
+
+## 2026-06-14T23:47:00Z - Stable-pose validation for 18 shard-3 compact candidates
+
+Goal:
+- Validate stable initialization for a new compact 18-object shard before no-underneath verified-grasp collection.
+
+Hypothesis:
+- Filtering by dataset-scaled bounds should avoid table-edge/base-clearance failures while retaining enough shape diversity to find at least one additional contact-valid object.
+
+Version Control:
+- implementation_commit: `d053e6c41ecba568e602057e20be8492a8fb32d6`
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-bc-fallback-20260614-d5e8b27`
+- remote_commit/status: `d053e6c41ecba568e602057e20be8492a8fb32d6`
+
+Command / Job:
+- command: `sbatch cluster/sbatch_validate_graspgen_stable_pose_resets_1gpu.sh` on `l401`
+- job_id: `1029450`
+- run_name: `graspgen_stable_candidates18_shard3_d053e6c_20260614T234900Z`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/graspgen_stable_candidates18_shard3_d053e6c_20260614T234900Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_graspgen_stable_pose_1029450.out`
+- filtered_manifest_host: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/filtered_manifests/stable_candidates18_shard3_assetroot_d053e6c_20260614T234700Z/manifest.json`
+- filtered_manifest_container: `/results/assets/filtered_manifests/stable_candidates18_shard3_assetroot_d053e6c_20260614T234700Z/manifest.json`
+- asset_root: `/results/assets/franka_multi_graspgen_candidates32_shard3_d053e6c_20260614T234000Z`
+- object_count: `18`
+- key settings: `MAX_OBJECTS=18`, `STABLE_POSE_COUNT=1`, `ROLLOUT_POSE_COUNT=1`, `SETTLE_STEPS=240`, `SETTLED_REPLAY_STEPS=80`, rendered frames enabled, `MAX_ANGULAR_DRIFT_DEG=8.0`, `MIN_BOTTOM_CLEARANCE=-0.005`, `MAX_FINAL_SPEED=0.03`.
+
+Next:
+- Launch stable-pose validation on `l401`, monitor logs/metrics, fetch videos, and exclude any unstable/passive-terminal objects before verified-grasp collection.
+
+Result:
+- status: failed aggregate stable-pose metrics, but produced usable per-object diagnostics and stable/settled pose caches.
+- job state: `FAILED`, exit `1:0`, elapsed `00:02:02`
+- summary: `root_xy_delta_max=0.02309`, `center_xy_delta_max=0.00943`, `angular_delta_deg_max=31.68`, `bottom_clearance_min=-0.00435`, `final_object_speed_max=0.0145`, `final_object_angular_speed_max=0.8822`, `done_count=714`.
+- outliers:
+  - `3693fa4414f64a41b04be4aa70e35448`: high angular drift (`31.68 deg` initial settle, `18.07 deg` replay).
+  - `f71a628ddc1d45529b2dde4066f9ca71`: excessive initial root XY drift (`0.02309 m`).
+  - `f601cd38f655447da2e83e3d9f5beb80`, `6992dae82b99461a9a43c2debd84cbd5`, `884defbca8c8473695e5a5420ca89de4`: passive task termination counts during settle/replay.
+- kept candidates with low drift and zero passive done count: `4f4fe076fe624d2a8f198588c64fc6cb`, `c28358d1992547099ead51a462562030`, `b87a65917e494aa4b306aeb6ee961182`, `0b07d4714a544a7fbe3a145ccda8bf03`, `b8a7cc0278304cf0882ddf25040af3d9`, `85c3d3b9cfd64c108dc548e525052c4e`, `b5d22010f2ab4123a72d7b2a7d6643d7`, `f3512126d36a4630893585f1ee2e44d2`, `66d208d29503450ca28c0152864b7379`, `75c058a8028340e1adbdc9ea2dfda9d4`, `7d840006d0184ef496c9860765023f52`, `ca8d526966a74d5ab796092e6e4531a8`, `168ca4d0cad641f797fa4edba00164a5`.
+
+Analysis:
+- The failure is caused by a small set of object-specific stability/termination outliers, not a manifest/container issue. The next step is to validate a reduced 13-object manifest rather than relaxing thresholds.
+
+Next:
+- Build a reduced 13-object manifest and rerun rendered stable-pose validation. If it passes visually/numerically, run no-underneath verified-grasp collection on those 13 objects.
+
+## 2026-06-14T23:57:00Z - Reduced 13-object shard-3 stable-pose validation
+
+Goal:
+- Revalidate only the shard-3 objects that had low drift and zero passive task terminations in the 18-object pass.
+
+Hypothesis:
+- Removing the five outliers should make the aggregate stable-pose metrics pass without weakening thresholds.
+
+Version Control:
+- implementation_commit: `d053e6c41ecba568e602057e20be8492a8fb32d6`
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-bc-fallback-20260614-d5e8b27`
+
+Command / Job:
+- command: `sbatch cluster/sbatch_validate_graspgen_stable_pose_resets_1gpu.sh` on `l401`
+- job_id: `1029451`
+- run_name: `graspgen_stable_candidates13_shard3_d053e6c_20260614T235700Z`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/graspgen_stable_candidates13_shard3_d053e6c_20260614T235700Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_graspgen_stable_pose_1029451.out`
+- filtered_manifest_host: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/filtered_manifests/stable_candidates13_shard3_assetroot_d053e6c_20260614T235600Z/manifest.json`
+- filtered_manifest_container: `/results/assets/filtered_manifests/stable_candidates13_shard3_assetroot_d053e6c_20260614T235600Z/manifest.json`
+- object_count: `13`
+- key settings: `MAX_OBJECTS=13`, `STABLE_POSE_COUNT=1`, `ROLLOUT_POSE_COUNT=1`, `SETTLE_STEPS=240`, `SETTLED_REPLAY_STEPS=80`, rendered frames enabled, `MAX_ANGULAR_DRIFT_DEG=8.0`, `MIN_BOTTOM_CLEARANCE=-0.005`, `MAX_FINAL_SPEED=0.03`.
+
+Next:
+- Monitor `1029451`, inspect metrics and rendered artifacts, then either run no-underneath verified-grasp collection or filter again.
+
+Result:
+- status: passed.
+- scheduler: `COMPLETED`, exit `0:0`, elapsed `00:01:47`.
+- initial settle summary: `root_xy_delta_max=0.00666`, `center_xy_delta_max=0.00460`, `angular_delta_deg_max=6.26`, `bottom_clearance_min=-0.00435`, `final_object_speed_max=0.00526`, `final_object_angular_speed_max=0.129`, `done_count=0`.
+- settled replay summary: `root_xy_delta_max=2.35e-05`, `center_xy_delta_max=7.70e-06`, `angular_delta_deg_max=0.079`, `bottom_clearance_min=-0.00435`, `final_object_speed_max=0.00528`, `done_count=0`.
+- stable pose cache: `/results/validations/graspgen_stable_candidates13_shard3_d053e6c_20260614T235700Z/settled_pose_cache`
+- local artifacts:
+  - `cluster_results/l401/graspgen_stable_candidates13_shard3_d053e6c_20260614T235700Z/stable_pose_grid.mp4`
+  - `cluster_results/l401/graspgen_stable_candidates13_shard3_d053e6c_20260614T235700Z/settled_replay_grid.mp4`
+  - `cluster_results/l401/graspgen_stable_candidates13_shard3_d053e6c_20260614T235700Z/stable_pose_env_final_grid.jpg`
+  - `cluster_results/l401/graspgen_stable_candidates13_shard3_d053e6c_20260614T235700Z/settled_replay_env_final_grid.jpg`
+- viewer links:
+  - `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/merge-dp-rgb-main-20260613/cluster_results/l401/graspgen_stable_candidates13_shard3_d053e6c_20260614T235700Z/stable_pose_grid.mp4`
+  - `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/merge-dp-rgb-main-20260613/cluster_results/l401/graspgen_stable_candidates13_shard3_d053e6c_20260614T235700Z/settled_replay_grid.mp4`
+
+Analysis:
+- The reduced set is stable enough for the next gate. Visual inspection of the 13-env grid is consistent with the metrics: objects remain on the tabletop, do not visibly bounce away, and settled replay is effectively static.
+
+Next:
+- Launch no-underneath/current-lift verified-grasp collection on the 13 stable objects with per-env object/pose/yaw randomization.
+
+## 2026-06-15T00:00:00Z - No-underneath verified-grasp collection for 13 stable shard-3 objects
+
+Goal:
+- Find dynamically verified GraspGen indices for the 13 stable shard-3 objects before contact-video validation.
+
+Hypothesis:
+- The top-down/no-underneath prior plus current-lift readiness will reject underside/invalid reset candidates early and identify any object-specific priors that can actually lift without excessive XY drift or terminations.
+
+Version Control:
+- implementation_commit: `d053e6c41ecba568e602057e20be8492a8fb32d6`
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-bc-fallback-20260614-d5e8b27`
+
+Command / Job:
+- command: `sbatch cluster/sbatch_collect_franka_multi_object_verified_grasps_1gpu.sh` on `l401`
+- job_id: `1029452`
+- run_name: `franka_multi_verified_candidates13_shard3_nobelow_d053e6c_20260615T000000Z`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/verified_grasp_indices/franka_multi_verified_candidates13_shard3_nobelow_d053e6c_20260615T000000Z`
+- output: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/verified_grasp_indices/franka_multi_verified_candidates13_shard3_nobelow_d053e6c_20260615T000000Z/verified_indices.json`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/collect_franka_multi_object_verified_grasps_1029452.out`
+- key settings: `NUM_ENVS=104`, `MAX_OBJECTS=13`, `round_robin`, spawn center `(0.05, 0.0)`, xy randomization `0.10`, yaw randomization `180.0`, stable pose cache from `1029451`, `CYCLES=48`, `TARGET_PER_OBJECT=1`, `SCORE_STEPS=260`, `MIN_LIFT_HEIGHT=0.12`, `MAX_XY_DELTA=0.06`, `MAX_DONE_COUNT=0`.
+- top-down prior: `GRASP_RESET_REQUIRE_TOPDOWN=True`, `GRASP_RESET_MIN_PREGRASP_Z=0.45`, `GRASP_RESET_CANDIDATE_COUNT=64`, `GRASP_RESET_MAX_CENTER_DISTANCE_FRAC=0.30`.
+- warmstart: prior close width enabled, `min_close_width=0.002`, `approach/close/lift=4/60/180`, current-lift readiness enabled.
+
+Next:
+- Monitor `1029452`; inspect verified counts/diagnostics and run contact-video validation only for objects with accepted indices.
+
+Result:
+- status: completed with useful output, but wrapper exited nonzero because not all 13 objects met the per-object target.
+- scheduler: `FAILED`, exit `1:0`, elapsed `00:26:30`.
+- output JSON: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/verified_grasp_indices/franka_multi_verified_candidates13_shard3_nobelow_d053e6c_20260615T000000Z/verified_indices.json`
+- nonzero no-underneath verified counts:
+  - `66d208d29503450ca28c0152864b7379`: `16`
+  - `7d840006d0184ef496c9860765023f52`: `10`
+  - `0b07d4714a544a7fbe3a145ccda8bf03`: `7`
+  - `b87a65917e494aa4b306aeb6ee961182`: `3`
+  - `168ca4d0cad641f797fa4edba00164a5`: `1`
+  - `f3512126d36a4630893585f1ee2e44d2`: `1`
+  - `75c058a8028340e1adbdc9ea2dfda9d4`: `1`
+  - `b5d22010f2ab4123a72d7b2a7d6643d7`: `1`
+- zero-count objects: `4f4fe076fe624d2a8f198588c64fc6cb`, `c28358d1992547099ead51a462562030`, `b8a7cc0278304cf0882ddf25040af3d9`, `85c3d3b9cfd64c108dc548e525052c4e`, `ca8d526966a74d5ab796092e6e4531a8`.
+
+Analysis:
+- The no-underneath/top-down gate is active and diagnostic counters show every kept candidate satisfies `candidate_topdown_count` gating; the wrapper failure is expected because five stable objects still found no dynamically verified grasp within 48 cycles.
+- The strongest candidates for real video inspection are `66d...`, `7d840...`, `0b07...`, and `b87...`; these have enough accepted indices to test whether the filtered prior actually produces clean contact rollouts after stable-object settling.
+
+Next:
+- Build one-object manifests and one-object verified-index JSONs for the four strongest candidates, then run contact-video validation with stable poses, yaw randomization, current-lift readiness, and the no-underneath reset gate.
+
+## 2026-06-15T00:24:00Z - One-object no-underneath contact-video validation jobs
+
+Goal:
+- Produce isolated reset/perturb/grasp-contact videos for the strongest no-underneath candidates before launching PPO.
+
+Hypothesis:
+- If at least one new GraspGen object passes the rendered contact gate, it can be combined with the previously validated `7195ed3346a445448308febe833c180a` object for the first multi-object PPO run.
+
+Version Control:
+- implementation_commit: `d053e6c41ecba568e602057e20be8492a8fb32d6`
+- remote_code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-bc-fallback-20260614-d5e8b27`
+
+Command / Job:
+- command: `sbatch cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh` on `l401`
+- shared input root:
+  - manifest root: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/filtered_manifests/contact_candidates4_shard3_nobelow_d053e6c41_20260615T002400Z`
+  - verified root: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/verified_grasp_indices/contact_candidates4_shard3_nobelow_d053e6c41_20260615T002400Z`
+- jobs:
+  - `1029453`: `franka_multi_contact_66d208_nobelow_d053e6c41_20260615T002400Z`
+  - `1029454`: `franka_multi_contact_7d8400_nobelow_d053e6c41_20260615T002400Z`
+  - `1029455`: `franka_multi_contact_0b07d4_nobelow_d053e6c41_20260615T002400Z`
+  - `1029456`: `franka_multi_contact_b87a65_nobelow_d053e6c41_20260615T002400Z`
+- key settings: `NUM_ENVS=32`, `MAX_OBJECTS=1`, spawn center `(0.05, 0.0)`, xy randomization `0.10`, yaw randomization `180.0`, stable pose cache from `1029451`, `OBJECT_STABLE_POSE_RANDOMIZE=False`, `GRASP_STEPS=260`, `GRASP_CONTACT_SCORE_STEPS=260`.
+- top-down prior: `GRASP_RESET_REQUIRE_TOPDOWN=True`, `GRASP_RESET_MIN_PREGRASP_Z=0.45`, `GRASP_RESET_CANDIDATE_COUNT=64`, `GRASP_RESET_MAX_CENTER_DISTANCE_FRAC=0.30`, `GRASP_PREGRASP_OFFSET=0.03`.
+- warmstart: prior close width enabled, `min_close_width=0.002`, `approach/close/lift=4/60/180`, current-lift readiness enabled.
+
+Next:
+- Monitor `1029453`-`1029456`, fetch videos/metrics, inspect reset stability, perturbation motion, and grasp-contact geometry. Relaunch/tune if artifacts show penetration, reset jumps, or unstable object dynamics.
+## 2026-06-15T00:34:20Z - Two-object no-underneath PPO smoke launch
+
+Goal:
+- Launch a short A100 PPO smoke on a multi-object set that has per-object rendered contact validation, before scaling to a longer teacher run.
+
+Hypothesis:
+- Replacing the older `7195+96ae` set with individually contact-passing `7195+b87` should avoid the previous false-positive multi-object validation failure mode, where the video validator selected only the best object.
+- The no-underneath prior should remain active through training because `grasp_prior_reset_require_topdown=True`, `grasp_prior_reset_min_pregrasp_z=0.45`, and the environment default contact-height gate rejects contact references below the object center.
+
+Change:
+- Created generated `/lustre` training bundle `train2_7195_b87_nobelow_d053e6c_20260615T0045Z`.
+- Manifest: `/results/assets/filtered_manifests/train2_7195_b87_nobelow_d053e6c_20260615T0045Z/manifest.json`.
+- Verified indices: `/results/assets/verified_grasp_indices/train2_7195_b87_nobelow_d053e6c_20260615T0045Z/verified_indices.json`.
+- Stable-pose cache: `/results/validations/train2_7195_b87_nobelow_d053e6c_20260615T0045Z/settled_pose_cache`.
+- Included objects: `7195ed3346a445448308febe833c180a` with one verified index, and `b87a65917e494aa4b306aeb6ee961182` with three verified indices.
+
+Version Control:
+- agent_id: `merge-dp-rgb-main-20260613`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/merge-dp-rgb-main-20260613`
+- branch: `main`
+- implementation_commit: `d053e6c41ecba568e602057e20be8492a8fb32d6`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-bc-fallback-20260614-d5e8b27`
+- remote_commit/status: clean detached HEAD at `d053e6c41ecba568e602057e20be8492a8fb32d6`
+- changed_files: generated `/lustre` manifest/cache/verified-index artifacts and this worklog
+
+Command / Job:
+- command: `sbatch --export=ALL,... cluster/sbatch_train_teacher_8gpu.sh` on `a1001`
+- job_id: `29080060`
+- run_name: `franka_multi_state_teacher_7195_b87_nobelow_smoke_d053e6c_20260615T0052Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29080060.out`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_smoke_d053e6c_20260615T0052Z`
+- key settings: `NUM_ENVS=1024`, `MAX_ITERATIONS=3`, `OBJECT_ASSET_ASSIGNMENT=random`, `OBJECT_SPAWN_YAW_RANDOMIZATION_DEG=180.0`, stable poses enabled, verified grasp indices enabled, warmstart `4/60/180`, lift action z `0.50`, action-prior reward enabled.
+
+Result:
+- status: canceled for relaunch
+- scheduler: ran on `batch-block5-00452`; canceled after `00:03:07`.
+- evidence: resolved config was written and confirmed `robot_base_z=0.47`, random object assignment, yaw `180.0`, stable-pose cache, verified-index path, and top-down reset settings.
+- reason: stdout stopped advancing after Isaac scene collision-filter warnings; compute-node inspection showed all ranks alive, about 3.5 GB allocated per GPU, 0% GPU utilization, and many Torch Inductor compile workers. For smoke validation, this looked like CUDA-graph/compile startup stall rather than an environment-path failure.
+
+Next:
+- Relaunch the same smoke with `USE_CUDA_GRAPH=False`, then monitor startup, resolved configs, JSONL metrics, checkpoints, and failure patterns.
+- If the no-CUDA-graph smoke passes, launch the longer A100 teacher run from the same bundle and commit.
+
+## 2026-06-15T00:37:48Z - Two-object no-underneath PPO smoke relaunch without CUDA graph
+
+Goal:
+- Verify the same two-object PPO smoke after disabling CUDA graph to avoid the Torch Inductor startup stall observed in job `29080060`.
+
+Hypothesis:
+- The environment/model/training path should start cleanly with the same manifest and prior settings when CUDA graph capture/compile is disabled.
+
+Change:
+- No source changes.
+- Relaunch only changed `USE_CUDA_GRAPH=False` and the run name.
+
+Version Control:
+- implementation_commit: `d053e6c41ecba568e602057e20be8492a8fb32d6`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-bc-fallback-20260614-d5e8b27`
+- changed_files: this worklog
+
+Command / Job:
+- command: `sbatch --export=ALL,...,USE_CUDA_GRAPH=False cluster/sbatch_train_teacher_8gpu.sh` on `a1001`
+- job_id: `29080124`
+- run_name: `franka_multi_state_teacher_7195_b87_nobelow_smoke_nocg_d053e6c_20260615T0039Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29080124.out`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_smoke_nocg_d053e6c_20260615T0039Z`
+- key settings: same two-object bundle, `NUM_ENVS=1024`, `MAX_ITERATIONS=3`, random object assignment, yaw `180.0`, stable poses enabled, verified grasp indices enabled, warmstart `4/60/180`, lift action z `0.50`, action-prior reward enabled.
+
+Result:
+- status: passed smoke
+- scheduler: `COMPLETED`, exit `0:0`, elapsed `00:04:29`, node `batch-block5-01636`.
+- startup: all 8 ranks created scenes in about 125 seconds, started simulation in about 5 seconds, entered rl_games training, and wrote checkpoints/events/JSONL metrics.
+- metrics from rank 0:
+  - epoch 1/2/3 reward checkpoints: `784.49`, `1000.93`, `1011.06`
+  - `cube_grasp_prior_candidate_topdown_count=64.0` and `cube_grasp_prior_candidate_valid_count=64.0`
+  - `cube_grasp_prior_reset_success_rate`: `0.541`, `0.490`, `0.475`
+  - `cube_action_warmstart_lift_has_lifted_rate`: `0.681` at epoch 2 and `0.661` at epoch 3
+  - `cube_has_lifted_rate`: `0.354`, `0.323`, `0.310`
+  - `cube_success_rate`: `0.067`, `0.038`, `0.024`
+  - `cube_finger_table_clearance_violation=0.0` and `cube_table_clearance_penalty=0.0`
+- artifacts:
+  - metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_smoke_nocg_d053e6c_20260615T0039Z/metrics/direct_info_rank_0.jsonl`
+  - checkpoints: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_smoke_nocg_d053e6c_20260615T0039Z/nn/`
+  - configs: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_smoke_nocg_d053e6c_20260615T0039Z/params/`
+
+Next:
+- Launch a bounded longer A100 run with the same two-object no-underneath bundle, `USE_CUDA_GRAPH=False`, random object assignment, and 360-degree yaw randomization.
+- Watch whether the nonzero lift/success signals trend upward. If success plateaus, debug reset IK success first because candidates are valid/top-down but only about half the envs pass the IK reset tolerance.
+
+## 2026-06-15T00:43:15Z - Two-object no-underneath PPO train60 launch
+
+Goal:
+- Run the first real bounded teacher-training curve for the two contact-passing GraspGen objects under the parallel multi-object environment.
+
+Hypothesis:
+- The smoke-proven no-CUDA-graph setup should train for 60 PPO epochs inside the A100 short-job limit and reveal whether the policy learns from the top-down grasp-prior reset/warmstart despite about 50% reset IK quality success.
+
+Change:
+- No source changes.
+- Scaled from `MAX_ITERATIONS=3` to `MAX_ITERATIONS=60`, kept `NUM_ENVS=1024`, 8 GPUs, `USE_CUDA_GRAPH=False`, and the same two-object generated bundle.
+
+Version Control:
+- implementation_commit: `d053e6c41ecba568e602057e20be8492a8fb32d6`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-bc-fallback-20260614-d5e8b27`
+- remote_commit/status: clean detached HEAD at `d053e6c41ecba568e602057e20be8492a8fb32d6`
+- changed_files: this worklog
+
+Command / Job:
+- command: `sbatch --export=ALL,...,MAX_ITERATIONS=60,USE_CUDA_GRAPH=False cluster/sbatch_train_teacher_8gpu.sh` on `a1001`
+- job_id: `29080618`
+- run_name: `franka_multi_state_teacher_7195_b87_nobelow_train60_nocg_d053e6c_20260615T0043Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29080618.out`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_train60_nocg_d053e6c_20260615T0043Z`
+- key settings: `OBJECT_ASSET_ASSIGNMENT=random`, `OBJECT_SPAWN_YAW_RANDOMIZATION_DEG=180.0`, stable pose cache and verified indices enabled, `GRASP_PRIOR_RESET_REQUIRE_TOPDOWN=True`, `GRASP_PRIOR_RESET_MIN_PREGRASP_Z=0.45`, action warmstart `4/60/180`, lift action z `0.50`, prior reward enabled, `SAVE_FREQUENCY=5`.
+
+Result:
+- status: canceled and relaunched
+- reason: the wrapper ignores `RUN_NAME` and uses `FULL_EXPERIMENT_NAME` to set `DEXTRAH_RUN_NAME`; job `29080618` therefore fell back to `slurm_29080618`. It was canceled after `00:00:47` before useful training output, to avoid confusing run directories.
+- relaunch job_id: `29080630`
+- relaunch command: same settings, but with `FULL_EXPERIMENT_NAME=franka_multi_state_teacher_7195_b87_nobelow_train60_nocg_d053e6c_20260615T0043Z`
+- relaunch result: `COMPLETED`, exit `0:0`, elapsed `00:19:07`.
+- artifacts:
+  - log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29080630.out`
+  - metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_train60_nocg_d053e6c_20260615T0043Z/metrics/direct_info_rank_0.jsonl`
+  - checkpoints: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_train60_nocg_d053e6c_20260615T0043Z/nn/last_dextrah_franka_multi_object_grasp_ep_60_rew_1003.60443.pth`
+- final metrics:
+  - rows/epochs: `60`
+  - max `cube_success_rate`: `0.077`
+  - last-10 mean `cube_success_rate`: `0.0256`
+  - last-10 mean `cube_lift_height`: `0.0122 m`
+  - epoch 60: `cube_grasp_prior_reset_success_rate=0.473`, `cube_action_warmstart_active_rate=0.253`, `cube_action_warmstart_lift_has_lifted_rate=0.754`, `cube_has_lifted_rate=0.314`, `cube_success_rate=0.026`, `cube_policy_action_z=-0.052`, `cube_policy_gripper_action=-0.289`
+  - table/finger safety: table-penetration penalties are zero or tiny (`<= 6e-6` near epochs 58-60); no evidence of table-stuck objects in training metrics.
+
+Next:
+- Treat `train60_nocg` as an environment/training-mechanics pass but learning-quality failure. Do not add more objects from this checkpoint.
+- Relaunch a tuned run with the same objects/env but stronger action-prior, lift, success, and post-lift hold rewards; the reward code shows `postlift_*` action shaping is currently disabled by default, which matches the observed policy drift toward non-positive z actions after the warmstart phase.
+
+## 2026-06-15T01:05:24Z - Two-object strong-prior train80 launch
+
+Goal:
+- Test whether the same validated multi-object environment can produce a materially better teacher curve after strengthening the grasp-prior imitation and post-lift hold incentives.
+
+Hypothesis:
+- The previous run proved the environment is parallel-RL compatible but showed policy drift after warmstart. Increasing action-prior reward and post-lift close/lift shaping should push policy z action positive and raise mean lift height/success beyond reset-cycle spikes.
+
+Change:
+- No source changes.
+- Same two-object bundle, random object assignment, yaw randomization, stable poses, no-underneath top-down grasp filter, and CUDA graph disabled.
+- Training/config changes from `train60_nocg`:
+  - `MAX_ITERATIONS=80`
+  - `GRASP_PRIOR_ACTION_PRIOR_REWARD_WEIGHT=20.0` from `2.0`
+  - warmstart close/lift steps `80/360` from `60/180`
+  - warmstart lift action z `0.75` from `0.50`
+  - reset attempts `2`, IK iterations `128`, pos/rot tolerances `0.075/0.65`
+  - lift/height/success rewards `25/8/50`
+  - prelift action shaping: close `0.8`, lift `3.0`, descend penalty `-3.0`
+  - postlift shaping enabled: close `0.5`, open penalty `-0.8`, lift `2.0`, descend penalty `-3.0`, gate height `0.02`
+
+Version Control:
+- implementation_commit: `d053e6c41ecba568e602057e20be8492a8fb32d6`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-bc-fallback-20260614-d5e8b27`
+- changed_files: this worklog
+
+Command / Job:
+- command: `sbatch --export=ALL,...,MAX_ITERATIONS=80,GRASP_PRIOR_ACTION_PRIOR_REWARD_WEIGHT=20.0,... cluster/sbatch_train_teacher_8gpu.sh` on `a1001`
+- job_id: `29080886`
+- run_name: `franka_multi_state_teacher_7195_b87_nobelow_train80_strongprior_d053e6c_20260615T0105Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29080886.out`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_train80_strongprior_d053e6c_20260615T0105Z`
+
+Result:
+- status: canceled after plateau
+- scheduler: canceled at `00:23:28` elapsed after metrics through epoch `38`.
+- artifacts:
+  - log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29080886.out`
+  - metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_train80_strongprior_d053e6c_20260615T0105Z/metrics/direct_info_rank_0.jsonl`
+  - checkpoints through epoch 35 in `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_train80_strongprior_d053e6c_20260615T0105Z/nn/`
+- metrics:
+  - improved reset and action behavior: `cube_grasp_prior_reset_success_rate` often `0.52-0.58`, policy z action became positive (`~0.08-0.31` after early epochs), gripper action closed strongly (`~-0.4 to -0.5`).
+  - still weak task success: max `cube_success_rate=0.0898`, last-10 mean around epoch 38 `0.0229`, last-10 mean lift height `0.0142 m`.
+  - detailed warmstart lift-phase metrics show likely grasp/contact failure, not just policy reward failure: lift-phase `has_lifted_rate` was often `0.58-0.63`, but `lift_success_rate` stayed `0.014-0.042`, `lift_lift_height` stayed around `0.018-0.030 m`, and gripper width stayed around `0.014-0.016 m`.
+  - table safety remained clean; table penalties were zero or negligible.
+
+Next:
+- Relaunch a targeted force-close diagnostic: keep the same environment/reward settings, but set `GRASP_PRIOR_ACTION_WARMSTART_USE_PRIOR_CLOSE_WIDTH=False` and command a near-closed gripper width. Hypothesis: the prior-derived close width is too gentle for these irregular objects in PhysX, so the gripper moves upward without enough normal force to carry the object.
+
+## 2026-06-15T01:32:16Z - Two-object force-close train50 launch
+
+Goal:
+- Test whether the current low success is caused by the grasp prior close-width target being too gentle to generate enough contact force on irregular GraspGen objects.
+
+Hypothesis:
+- `train80_strongprior` produced reasonable policy z/gripper actions, but the object was usually not carried upward. Forcing the warmstart close target near fully closed should reduce gripper width during the scripted lift phase and materially improve lift success if contact force is the limiting factor.
+
+Change:
+- No source changes.
+- Same two-object bundle, random object assignment, yaw randomization, stable poses, no-underneath top-down grasp filter, and CUDA graph disabled.
+- Same strong-prior reward/warmstart settings as `train80_strongprior`, except:
+  - `MAX_ITERATIONS=50`
+  - `GRASP_PRIOR_ACTION_WARMSTART_CLOSE_WIDTH=0.002`
+  - `GRASP_PRIOR_ACTION_WARMSTART_USE_PRIOR_CLOSE_WIDTH=False`
+  - `GRASP_PRIOR_ACTION_WARMSTART_MIN_CLOSE_WIDTH=0.0`
+
+Version Control:
+- implementation_commit: `d053e6c41ecba568e602057e20be8492a8fb32d6`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-bc-fallback-20260614-d5e8b27`
+- changed_files: this worklog
+
+Command / Job:
+- command: `sbatch --export=ALL,...,MAX_ITERATIONS=50,GRASP_PRIOR_ACTION_WARMSTART_CLOSE_WIDTH=0.002,GRASP_PRIOR_ACTION_WARMSTART_USE_PRIOR_CLOSE_WIDTH=False cluster/sbatch_train_teacher_8gpu.sh` on `a1001`
+- job_id: `29081633`
+- run_name: `franka_multi_state_teacher_7195_b87_nobelow_train50_forceclose_d053e6c_20260615T0130Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29081633.out`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_train50_forceclose_d053e6c_20260615T0130Z`
+
+Result:
+- status: canceled after diagnostic plateau.
+- startup config confirmed: object spawn center `(0.05, 0.0)`, xy randomization `0.10`, yaw randomization `180.0`, stable pose cache enabled, and force-close overrides active.
+- scheduler: canceled at `00:16:27` elapsed after checkpointing epoch `25`; rank-0 metrics reached epoch `26`.
+- artifacts:
+  - log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29081633.out`
+  - metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_train50_forceclose_d053e6c_20260615T0130Z/metrics/direct_info_rank_0.jsonl`
+  - checkpoint: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_train50_forceclose_d053e6c_20260615T0130Z/nn/last_dextrah_franka_multi_object_grasp_ep_25_rew_2818.4521.pth`
+- metrics:
+  - close override was applied correctly: `cube_action_warmstart_close_width_target=0.002`, and lift-phase gripper width stayed around `0.0020-0.0022 m` instead of the prior `0.014-0.016 m`.
+  - task success did not improve: max `cube_success_rate=0.0918`, last-10 mean at cancel `0.0269`, epoch 25 `cube_success_rate=0.0186`.
+  - lift/carry remained the limiting behavior: success requires `cube_lift_height >= 0.12 m`, but last-10 mean lift height was about `0.0161 m`, and lift-phase finger-center distance often grew to `0.3-0.4 m`.
+  - policy did learn stronger close and some positive z by later epochs (`epoch 25 policy_z=0.101`, `policy_gripper=-0.609`), but the object still did not stay with the gripper.
+
+Next:
+- Do not keep sweeping reward weights alone. Patch diagnostics to log per-object outcomes and expose object physics overrides, then relaunch a friction/contact diagnostic with higher object friction/contact solver settings.
+
+## 2026-06-15T01:47:18Z - Per-object metrics and object-physics override patch
+
+Goal:
+- Make the next training/debug launch distinguish per-object failures and test whether contact/friction settings are the reason force-closed grasps still slip.
+
+Hypothesis:
+- The environment, reset, object scale, yaw randomization, and no-underneath prior are working, but the Franka/object contact is too weak for irregular GraspGen objects under the current object friction/solver defaults.
+
+Change:
+- Added per-object scalar logging for small multi-object runs (`num_unique_objects <= 16`): object-specific success, lift, xy error, finger distance, grasp-prior reset success, and warmstart lift metrics.
+- Exposed multi-object physics overrides in `cluster/sbatch_train_teacher_8gpu.sh`: density, static/dynamic friction, contact/rest offset, solver iterations, damping, and max depenetration velocity.
+- Added the same object physics override plumbing to `cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh` and `dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py` so rendered contact diagnostics can match training physics.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py`
+- `bash -n cluster/sbatch_train_teacher_8gpu.sh`
+- `bash -n cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh`
+
+Next:
+- Commit and deploy this patch to the A100 agent worktree, then launch a short two-object diagnostic with high object friction and the same force-close warmstart. If lift height/success improves, keep the physics change and continue training; if not, render a matching contact video and inspect object-by-object metrics.
