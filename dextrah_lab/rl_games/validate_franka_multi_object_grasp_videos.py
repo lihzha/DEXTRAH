@@ -10,6 +10,10 @@ from datetime import datetime
 from isaaclab.app import AppLauncher
 
 
+DEFAULT_CAMERA_EYE = (-0.12, -0.90, 1.35)
+DEFAULT_CAMERA_TARGET = (-0.40, -0.08, 0.80)
+
+
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--task", type=str, default="Dextrah-Franka-Multi-Object-Grasp")
 parser.add_argument("--num_envs", type=int, default=4)
@@ -39,6 +43,8 @@ parser.add_argument("--object_linear_damping", type=float, default=None)
 parser.add_argument("--object_angular_damping", type=float, default=None)
 parser.add_argument("--object_max_depenetration_velocity", type=float, default=None)
 parser.add_argument("--render_warmup_frames", type=int, default=2)
+parser.add_argument("--camera_eye", type=float, nargs=3, default=DEFAULT_CAMERA_EYE)
+parser.add_argument("--camera_target", type=float, nargs=3, default=DEFAULT_CAMERA_TARGET)
 parser.add_argument("--reset_cycles", type=int, default=3)
 parser.add_argument("--settle_steps", type=int, default=72)
 parser.add_argument("--perturb_steps", type=int, default=96)
@@ -106,10 +112,6 @@ from isaaclab_tasks.utils import parse_env_cfg
 import dextrah_lab.tasks.dextrah_franka_cube_grasp.gym_setup  # noqa: F401
 import dextrah_lab.tasks.dextrah_franka_multi_object_grasp.gym_setup  # noqa: F401
 import dextrah_lab.tasks.dextrah_franka_star_kitting.gym_setup  # noqa: F401
-
-
-DEFAULT_CAMERA_EYE = (-0.12, -0.90, 1.35)
-DEFAULT_CAMERA_TARGET = (-0.40, -0.08, 0.80)
 
 
 def _resolve_manifest_path(value: str | Path, *, base_dir: Path) -> Path:
@@ -351,8 +353,10 @@ def _restore_task_env_state(task_env, env_state: dict[str, object]) -> None:
 
 def _configure_camera(task_env, env_id: int = 0) -> None:
     origin = tuple(float(v) for v in task_env.scene.env_origins[env_id].detach().cpu())
-    eye = tuple(DEFAULT_CAMERA_EYE[idx] + origin[idx] for idx in range(3))
-    target = tuple(DEFAULT_CAMERA_TARGET[idx] + origin[idx] for idx in range(3))
+    base_eye = tuple(float(v) for v in args_cli.camera_eye)
+    base_target = tuple(float(v) for v in args_cli.camera_target)
+    eye = tuple(base_eye[idx] + origin[idx] for idx in range(3))
+    target = tuple(base_target[idx] + origin[idx] for idx in range(3))
     try:
         task_env.sim.set_camera_view(eye=eye, target=target, camera_prim_path=task_env.cfg.viewer.cam_prim_path)
     except Exception as exc:

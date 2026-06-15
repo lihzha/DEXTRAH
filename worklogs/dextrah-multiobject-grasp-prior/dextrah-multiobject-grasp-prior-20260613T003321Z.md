@@ -8031,3 +8031,39 @@ Result:
 
 Next:
 - Commit/push, deploy exact commit to the l401 agent worktree via Git bundle, regenerate verified indices for the two-object manifest with stable poses and yaw randomization, then rerun per-object videos using the new cache.
+2026-06-15T05:47:00Z committed/pushed `1b31a8bce070cf65283e71c4c9489d6837e8cbc5`, deployed it to l401 worktree `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-topdown-axis-20260615-753139c` via Git bundle, and launched verified-grasp collection job `1029596` run `verified_topside70_train2_7195_b87_1b31a8b_20260615T0547Z`. Key settings: two-object manifest, stable pose cache, round-robin assets, yaw `+-180deg`, `GRASP_RESET_MIN_PREGRASP_Z=0.70`, candidate count `2048`, attempts `8`, IK `128`, pos tol `0.09`, rot tol `0.75`, target `16` verified indices/object. Output JSON: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/verified_grasp_indices/verified_topside70_train2_7195_b87_1b31a8b_20260615T0547Z/verified_indices.json`.
+2026-06-15T05:54:00Z canceled over-targeted collector job `1029596` after 12 cycles because object0 repeatedly validated only sample index `354` and object1 validated indices `1075`/`929`; target `16` would waste the allocation and likely fail despite sufficient no-bottom reset evidence. Partial JSON has counts `{7195: 1, b87: 2}` with approach z ranges object0 `0.7484`, object1 `0.8661-0.9987`. Relaunched clean target-one collector job `1029598` run `verified_topside70_min1_train2_7195_b87_1b31a8b_20260615T0554Z` with otherwise identical settings and `TARGET_PER_OBJECT=1`, `MAX_INDICES_PER_OBJECT=16`; output JSON `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/verified_grasp_indices/verified_topside70_min1_train2_7195_b87_1b31a8b_20260615T0554Z/verified_indices.json`.
+2026-06-15T05:58:00Z clean collector job `1029598` completed successfully in `00:02:12`. JSON summary `all_targets_met=True`, counts `{7195ed3346a445448308febe833c180a: 1, b87a65917e494aa4b306aeb6ee961182: 2}`, cycles `6`; selected indices: object0 `354` with approach z `0.7484`, lift `0.2271m`; object1 `1075` z `0.9987`, lift `0.1604m`, and `929` z `0.8661`, lift `0.1276m`. Launched cached video validations using this JSON: job `1029599` run `franka_multi_grasp_video_topside70_obj0_7195_1b31a8b_20260615T0559Z`; job `1029600` run `franka_multi_grasp_video_topside70_obj1_b87a_1b31a8b_20260615T0559Z`.
+2026-06-15T06:06:00Z cached video validations completed successfully. Job `1029599` object0: all scenarios passed; grasp lift `0.1433m`, XY drift `0.0343m`, zero dones, sample index `354`, selected approach z `0.7485`, `128/128` valid/topdown candidates, finger-table clearance min `0.0510m`. Job `1029600` object1: all scenarios passed; grasp lift `0.1286m`, XY drift `0.0518m`, zero dones, sample index `1075`, selected approach z `0.9987`, `128/128` valid/topdown candidates, finger-table clearance min `0.0944m`. Local videos encoded under `cluster_results/l401/franka_multi_grasp_video_topside70_obj0_7195_1b31a8b_20260615T0559Z` and `cluster_results/l401/franka_multi_grasp_video_topside70_obj1_b87a_1b31a8b_20260615T0559Z`. Visual inspection: object0 is clear; object1 passes metrics but the default camera makes the gripper/object interaction hard to inspect, so add a diagnostics-only camera override and rerender object1 from a closer angle.
+
+## 2026-06-15T06:11:49Z - Close camera contact validation
+
+Goal:
+- Render a clearer view of the object1 grasp contact after enforcing the real top-side approach-axis constraint.
+
+Hypothesis:
+- The cached object1 grasp is physically valid, but the default validation camera hides the gripper/object geometry. A configurable validation camera should let us visually confirm that the selected cached grasp does not approach from below or penetrate the table.
+
+Change:
+- Added `--camera_eye` and `--camera_target` options to the multi-object validation video script.
+- Added `CAMERA_EYE` and `CAMERA_TARGET` pass-through in the l401 validation wrapper.
+
+Version Control:
+- agent_id: merge-dp-rgb-main-20260613
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/merge-dp-rgb-main-20260613`
+- branch: `main`
+- base_commit: `1b31a8bce070cf65283e71c4c9489d6837e8cbc5`
+- implementation_commit: pending
+- changed_files: `dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py`, `cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh`, this worklog
+
+Command / Job:
+- command: `python3 -m py_compile dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py`
+- command: `bash -n cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh`
+- command: `git diff --check`
+- job_id: pending
+
+Result:
+- local checks passed.
+
+Next:
+- Commit/push, deploy the exact commit to the l401 agent worktree, rerender object1 with the same verified no-bottom cache and a closer camera angle, then inspect encoded frames/video before launching any further RL training.
