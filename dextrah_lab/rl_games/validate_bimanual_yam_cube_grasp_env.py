@@ -27,8 +27,8 @@ parser.add_argument("--print_interval", type=int, default=20)
 parser.add_argument("--lift_height", type=float, default=0.14)
 parser.add_argument("--continue_after_success", action="store_true", default=False)
 parser.add_argument("--disable_fabric", action="store_true", default=False)
-parser.add_argument("--camera_eye", type=float, nargs=3, default=(-0.02, -0.90, 0.24))
-parser.add_argument("--camera_target", type=float, nargs=3, default=(-0.36, -0.03, 0.10))
+parser.add_argument("--camera_eye", type=float, nargs=3, default=(-0.50, 0.0, 0.81))
+parser.add_argument("--camera_target", type=float, nargs=3, default=(-0.375, 0.0, 0.10))
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 
@@ -56,12 +56,47 @@ from dextrah_lab.tasks.dextrah_bimanual_yam_cube_grasp.bimanual_yam_cube_grasp_r
 )
 
 
-DEMO_PREGRASP_JOINT_POS = {
-    # Scripted validator waypoint reached after reset. The start pose remains
-    # MolmoAct2's rest keyframe; this pose is not used as an env reset seed.
-    # It is solved against the spawned Isaac articulation with table-clearance
-    # penalties so the wrist/finger chain approaches the cube sides without
-    # sweeping through the table.
+MOLMOACT2_TOP_CAM_LOCAL_POS = (0.15, 0.0, 0.80)
+MOLMOACT2_TOP_CAM_QUAT_WXYZ = (0.7660444431189782, 0.0, 0.6427876096865391, 0.0)
+MOLMOACT2_TOP_CAM_FOV_DEG = 69.4
+MOLMOACT2_TOP_CAM_WIDTH = 640
+MOLMOACT2_TOP_CAM_HEIGHT = 360
+MOLMOACT2_TOP_CAM_FORWARD = (
+    1.0
+    - 2.0
+    * (
+        MOLMOACT2_TOP_CAM_QUAT_WXYZ[1] * MOLMOACT2_TOP_CAM_QUAT_WXYZ[1]
+        + MOLMOACT2_TOP_CAM_QUAT_WXYZ[2] * MOLMOACT2_TOP_CAM_QUAT_WXYZ[2]
+    ),
+    2.0
+    * (
+        MOLMOACT2_TOP_CAM_QUAT_WXYZ[1] * MOLMOACT2_TOP_CAM_QUAT_WXYZ[2]
+        + MOLMOACT2_TOP_CAM_QUAT_WXYZ[0] * MOLMOACT2_TOP_CAM_QUAT_WXYZ[3]
+    ),
+    2.0
+    * (
+        MOLMOACT2_TOP_CAM_QUAT_WXYZ[1] * MOLMOACT2_TOP_CAM_QUAT_WXYZ[3]
+        - MOLMOACT2_TOP_CAM_QUAT_WXYZ[0] * MOLMOACT2_TOP_CAM_QUAT_WXYZ[2]
+    ),
+)
+MOLMOACT2_TOP_CAM_WORLD_EYE = (
+    -0.65 + MOLMOACT2_TOP_CAM_LOCAL_POS[0],
+    0.0 + MOLMOACT2_TOP_CAM_LOCAL_POS[1],
+    0.01 + MOLMOACT2_TOP_CAM_LOCAL_POS[2],
+)
+_TOP_CAM_TABLE_TARGET_SCALE = (
+    (MOLMOACT2_TOP_CAM_WORLD_EYE[2] - 0.10) / max(-MOLMOACT2_TOP_CAM_FORWARD[2], 1.0e-6)
+)
+MOLMOACT2_TOP_CAM_WORLD_TARGET = (
+    MOLMOACT2_TOP_CAM_WORLD_EYE[0] + _TOP_CAM_TABLE_TARGET_SCALE * MOLMOACT2_TOP_CAM_FORWARD[0],
+    MOLMOACT2_TOP_CAM_WORLD_EYE[1] + _TOP_CAM_TABLE_TARGET_SCALE * MOLMOACT2_TOP_CAM_FORWARD[1],
+    0.10,
+)
+
+DEMO_CONTACT_JOINT_POS = {
+    # Contact waypoint solved against the spawned MJCF-derived Isaac USD. The
+    # rollout still starts from the MolmoAct2 rest keyframe; this waypoint is
+    # approached gradually after the grippers have already closed.
     "left_joint1": -0.187994,
     "left_joint2": 2.189542,
     "left_joint3": 1.239098,
@@ -75,7 +110,7 @@ DEMO_PREGRASP_JOINT_POS = {
     "right_joint5": -0.874573,
     "right_joint6": 0.968451,
 }
-
+DEMO_STANDOFF_JOINT_ALPHA = 0.88
 
 def _mean(value) -> float:
     if isinstance(value, torch.Tensor):
@@ -111,6 +146,12 @@ def _configure_camera(env_cfg, task_env=None) -> None:
     env_cfg.viewer.eye = eye
     env_cfg.viewer.lookat = target
     env_cfg.viewer.origin_type = "world"
+    for fov_attr in ("fov", "camera_fov"):
+        if hasattr(env_cfg.viewer, fov_attr):
+            try:
+                setattr(env_cfg.viewer, fov_attr, MOLMOACT2_TOP_CAM_FOV_DEG)
+            except Exception:
+                pass
     if task_env is not None and hasattr(task_env, "sim"):
         try:
             task_env.sim.set_camera_view(eye=eye, target=target, camera_prim_path=env_cfg.viewer.cam_prim_path)
@@ -390,10 +431,11 @@ def _write_robot_joint_pose(task_env, joint_pos: torch.Tensor) -> None:
 def _assisted_cube_pose_between_grippers(
     desired_left_hold: torch.Tensor,
     desired_right_hold: torch.Tensor,
+    cube_center_to_hold_z: float,
 ) -> torch.Tensor:
     bimanual_center = 0.5 * (desired_left_hold + desired_right_hold)
     cube_pos = bimanual_center.clone()
-    cube_pos[:, 2] = bimanual_center[:, 2] + 0.035
+    cube_pos[:, 2] = bimanual_center[:, 2] - float(cube_center_to_hold_z)
     return cube_pos
 
 
@@ -581,6 +623,9 @@ def _scripted_action(
     desired_left_hold: torch.Tensor,
     desired_right_hold: torch.Tensor,
     grip: float,
+    *,
+    gain: float = 1.35,
+    max_action: float = 1.0,
 ) -> torch.Tensor:
     task_env._compute_intermediate_values()
     if not hasattr(task_env, "_validation_left_tcp_to_hold"):
@@ -589,10 +634,17 @@ def _scripted_action(
     desired_left_tcp = desired_left_hold - task_env._validation_left_tcp_to_hold
     desired_right_tcp = desired_right_hold - task_env._validation_right_tcp_to_hold
     action = torch.zeros(task_env.num_envs, task_env.cfg.action_space, device=task_env.device)
-    gain = 1.35
     pos_scale = task_env.action_scale[:3]
-    action[:, :3] = torch.clamp(gain * (desired_left_tcp - task_env.left_tcp_pos) / pos_scale, -1.0, 1.0)
-    action[:, 7:10] = torch.clamp(gain * (desired_right_tcp - task_env.right_tcp_pos) / pos_scale, -1.0, 1.0)
+    action[:, :3] = torch.clamp(
+        gain * (desired_left_tcp - task_env.left_tcp_pos) / pos_scale,
+        -float(max_action),
+        float(max_action),
+    )
+    action[:, 7:10] = torch.clamp(
+        gain * (desired_right_tcp - task_env.right_tcp_pos) / pos_scale,
+        -float(max_action),
+        float(max_action),
+    )
     action[:, 6] = float(grip)
     action[:, 13] = float(grip)
     return action
@@ -655,23 +707,51 @@ def _run_scripted_demo(
 
     start_left_hold = task_env.left_hold_pos.clone()
     start_right_hold = task_env.right_hold_pos.clone()
-    rest_joint_pos = task_env._robot.data.joint_pos.clone()
-    pregrasp_joint_pos = rest_joint_pos.clone()
-    name_to_idx = {name: idx for idx, name in enumerate(task_env._robot.data.joint_names)}
-    for joint_name, value in DEMO_PREGRASP_JOINT_POS.items():
-        pregrasp_joint_pos[:, name_to_idx[joint_name]] = value
-    pregrasp_joint_pos[:, task_env.left_finger_joint_ids] = float(task_env.cfg.gripper_open_joint_pos)
-    pregrasp_joint_pos[:, task_env.right_finger_joint_ids] = float(task_env.cfg.gripper_open_joint_pos)
-    closed_joint_pos = pregrasp_joint_pos.clone()
-    closed_joint_pos[:, task_env.left_finger_joint_ids] = float(task_env.cfg.gripper_closed_joint_pos)
-    closed_joint_pos[:, task_env.right_finger_joint_ids] = float(task_env.cfg.gripper_closed_joint_pos)
-    pregrasp_left_hold = task_env.left_hold_pos.clone()
-    pregrasp_right_hold = task_env.right_hold_pos.clone()
+    start_left_width = _mean(task_env.left_gripper_width)
+    start_right_width = _mean(task_env.right_gripper_width)
+    target_cube_pos = task_env.cube_initial_pos.clone()
+    cube_half_size = 0.5 * float(task_env.cfg.cube_size)
+    contact_side_offset = cube_half_size + 0.022
+    standoff_side_offset = contact_side_offset + 0.080
+    cube_center_to_hold_z = 0.038
+    hold_z = torch.maximum(
+        target_cube_pos[:, 2] + cube_center_to_hold_z,
+        torch.full_like(target_cube_pos[:, 2], float(task_env.cfg.table_surface_z) + 0.090),
+    )
+    contact_left_hold = target_cube_pos.clone()
+    contact_right_hold = target_cube_pos.clone()
+    contact_left_hold[:, 0] = target_cube_pos[:, 0]
+    contact_right_hold[:, 0] = target_cube_pos[:, 0]
+    contact_left_hold[:, 1] = target_cube_pos[:, 1] + contact_side_offset
+    contact_right_hold[:, 1] = target_cube_pos[:, 1] - contact_side_offset
+    contact_left_hold[:, 2] = hold_z
+    contact_right_hold[:, 2] = hold_z
+    standoff_left_hold = contact_left_hold.clone()
+    standoff_right_hold = contact_right_hold.clone()
+    standoff_left_hold[:, 1] = target_cube_pos[:, 1] + standoff_side_offset
+    standoff_right_hold[:, 1] = target_cube_pos[:, 1] - standoff_side_offset
     lift_height = float(args_cli.lift_height)
-    hold_lift_height = min(lift_height, 0.050)
-    phase_reach = max(150, int(0.36 * num_steps))
-    phase_close = max(80, int(0.18 * num_steps))
-    phase_lift = max(1, num_steps - phase_reach - phase_close)
+    hold_lift_height = min(lift_height, 0.14)
+    lifted_left_hold = contact_left_hold.clone()
+    lifted_right_hold = contact_right_hold.clone()
+    lifted_left_hold[:, 2] += hold_lift_height
+    lifted_right_hold[:, 2] += hold_lift_height
+    rest_joint_pos = task_env._robot.data.joint_pos.clone()
+    rest_closed_joint_pos = rest_joint_pos.clone()
+    rest_closed_joint_pos[:, task_env.left_finger_joint_ids] = float(task_env.cfg.gripper_closed_joint_pos)
+    rest_closed_joint_pos[:, task_env.right_finger_joint_ids] = float(task_env.cfg.gripper_closed_joint_pos)
+    contact_joint_pos = rest_closed_joint_pos.clone()
+    name_to_idx = {name: idx for idx, name in enumerate(task_env._robot.data.joint_names)}
+    for joint_name, value in DEMO_CONTACT_JOINT_POS.items():
+        contact_joint_pos[:, name_to_idx[joint_name]] = value
+    standoff_joint_pos = _lerp_tensor(rest_closed_joint_pos, contact_joint_pos, DEMO_STANDOFF_JOINT_ALPHA)
+    phase_close = max(45, int(0.12 * num_steps))
+    phase_standoff = max(120, int(0.30 * num_steps))
+    phase_approach = max(140, int(0.34 * num_steps))
+    phase_lift = max(1, num_steps - phase_close - phase_standoff - phase_approach)
+    standoff_start_step = phase_close
+    approach_start_step = standoff_start_step + phase_standoff
+    lift_start_step = approach_start_step + phase_approach
 
     reward_values: list[float] = []
     done_count = 0
@@ -687,58 +767,140 @@ def _run_scripted_demo(
     max_success_rate = 0.0
     steps_completed = 0
     grasp_assist_used = False
-    grasp_assist_ready = False
-    grasp_assist_ready_step: int | None = None
-    lift_start_step = phase_reach + phase_close
-    reach_required = float(task_env.cfg.cube_success_hand_dist)
+    contact_reached = False
+    contact_reached_step: int | None = None
+    standoff_reached = False
+    standoff_reached_step: int | None = None
+    closed_before_standoff = False
+    closed_before_standoff_step: int | None = None
+    close_width_threshold = 0.65 * float(task_env.cfg.max_gripper_width)
+    contact_required = min(float(task_env.cfg.cube_success_hand_dist), 0.120)
+    standoff_min_dist = contact_required + 0.040
+    standoff_max_dist = 0.45
+    phase_name = "close"
 
     for step in range(num_steps):
-        action_marker = torch.zeros(task_env.num_envs, task_env.cfg.action_space, device=task_env.device)
-        if step < phase_reach:
-            alpha = min(float(step + 1) / float(phase_reach), 1.0)
+        if step < standoff_start_step:
+            phase_name = "close"
+            action = torch.zeros(task_env.num_envs, task_env.cfg.action_space, device=task_env.device)
+            action[:, 6] = -1.0
+            action[:, 13] = -1.0
+            desired_left_hold = task_env.left_hold_pos.clone()
+            desired_right_hold = task_env.right_hold_pos.clone()
+        elif step < approach_start_step:
+            phase_name = "standoff"
+            alpha = min(float(step - standoff_start_step + 1) / float(phase_standoff), 1.0)
             alpha = alpha * alpha * (3.0 - 2.0 * alpha)
-            joint_pos = _lerp_tensor(rest_joint_pos, pregrasp_joint_pos, alpha)
-            grip = 1.0
+            joint_pos = _lerp_tensor(rest_closed_joint_pos, standoff_joint_pos, alpha)
+            _write_robot_joint_pose(task_env, joint_pos)
+            desired_left_hold = task_env.left_hold_pos.clone()
+            desired_right_hold = task_env.right_hold_pos.clone()
+            action = torch.zeros(task_env.num_envs, task_env.cfg.action_space, device=task_env.device)
+            action[:, 6] = -1.0
+            action[:, 13] = -1.0
         elif step < lift_start_step:
-            alpha = min(float(step - phase_reach + 1) / float(phase_close), 1.0)
+            phase_name = "approach"
+            alpha = min(float(step - approach_start_step + 1) / float(phase_approach), 1.0)
             alpha = alpha * alpha * (3.0 - 2.0 * alpha)
-            joint_pos = _lerp_tensor(pregrasp_joint_pos, closed_joint_pos, alpha)
-            grip = -1.0
+            joint_pos = _lerp_tensor(standoff_joint_pos, contact_joint_pos, alpha)
+            _write_robot_joint_pose(task_env, joint_pos)
+            desired_left_hold = task_env.left_hold_pos.clone()
+            desired_right_hold = task_env.right_hold_pos.clone()
+            action = torch.zeros(task_env.num_envs, task_env.cfg.action_space, device=task_env.device)
+            action[:, 6] = -1.0
+            action[:, 13] = -1.0
         else:
-            joint_pos = closed_joint_pos
-            grip = -1.0
+            phase_name = "lift"
+            alpha = min(float(step - lift_start_step + 1) / float(phase_lift), 1.0)
+            alpha = alpha * alpha * (3.0 - 2.0 * alpha)
+            if hasattr(task_env, "_validation_left_tcp_to_hold"):
+                delattr(task_env, "_validation_left_tcp_to_hold")
+                delattr(task_env, "_validation_right_tcp_to_hold")
+            if not hasattr(task_env, "_validation_lift_left_hold"):
+                task_env._validation_lift_left_hold = task_env.left_hold_pos.clone()
+                task_env._validation_lift_right_hold = task_env.right_hold_pos.clone()
+            desired_left_hold = task_env._validation_lift_left_hold.clone()
+            desired_right_hold = task_env._validation_lift_right_hold.clone()
+            desired_left_hold[:, 2] += alpha * hold_lift_height
+            desired_right_hold[:, 2] += alpha * hold_lift_height
+            action = _scripted_action(
+                task_env,
+                desired_left_hold,
+                desired_right_hold,
+                grip=-1.0,
+                gain=0.35,
+                max_action=0.45,
+            )
+            action[:, 2] = torch.clamp(action[:, 2], min=0.0)
+            action[:, 9] = torch.clamp(action[:, 9], min=0.0)
 
-        _write_robot_joint_pose(task_env, joint_pos)
-        action_marker[:, 6] = float(grip)
-        action_marker[:, 13] = float(grip)
-        task_env.actions[:] = action_marker
-        if step == phase_reach - 1:
-            pregrasp_left_hold = task_env.left_hold_pos.clone()
-            pregrasp_right_hold = task_env.right_hold_pos.clone()
+        step_out = env.step(action)
+        if len(step_out) == 5:
+            _obs, _step_reward, terminated, truncated, _info = step_out
+            done = torch.logical_or(terminated, truncated)
+        else:
+            _obs, _step_reward, done, _info = step_out
+        task_env._compute_intermediate_values()
 
-        if step >= phase_reach and not grasp_assist_ready:
+        if not closed_before_standoff and step < standoff_start_step:
+            closed_now = bool(
+                (
+                    (task_env.left_gripper_width <= close_width_threshold)
+                    & (task_env.right_gripper_width <= close_width_threshold)
+                )
+                .all()
+                .item()
+            )
+            if closed_now:
+                closed_before_standoff = True
+                closed_before_standoff_step = step
+
+        if not standoff_reached and step >= standoff_start_step:
+            left_side_distance = task_env.left_hold_pos[:, 1] - task_env.cube_pos[:, 1]
+            right_side_distance = task_env.cube_pos[:, 1] - task_env.right_hold_pos[:, 1]
             reached = bool(
                 (
-                    (task_env.left_hold_to_cube_dist <= reach_required)
-                    & (task_env.right_hold_to_cube_dist <= reach_required)
+                    (task_env.left_hold_to_cube_dist >= standoff_min_dist)
+                    & (task_env.right_hold_to_cube_dist >= standoff_min_dist)
+                    & (task_env.left_hold_to_cube_dist <= standoff_max_dist)
+                    & (task_env.right_hold_to_cube_dist <= standoff_max_dist)
+                    & (left_side_distance >= contact_side_offset + 0.030)
+                    & (right_side_distance >= contact_side_offset + 0.030)
                 )
                 .all()
                 .item()
             )
             if reached:
-                grasp_assist_ready = True
-                grasp_assist_ready_step = step
+                standoff_reached = True
+                standoff_reached_step = step
 
-        if grasp_assist_ready and step >= lift_start_step:
-            alpha = min(float(step - lift_start_step + 1) / float(phase_lift), 1.0)
-            lift_delta = alpha * hold_lift_height
-            left_hold = task_env.left_hold_pos.clone()
-            right_hold = task_env.right_hold_pos.clone()
-            left_hold[:, 2] += lift_delta
-            right_hold[:, 2] += lift_delta
-            task_env.actions[:, 2] = 1.0
-            task_env.actions[:, 9] = 1.0
-            assisted_cube_pos = _assisted_cube_pose_between_grippers(left_hold, right_hold)
+        if not contact_reached and step >= approach_start_step:
+            left_side_distance = task_env.left_hold_pos[:, 1] - task_env.cube_pos[:, 1]
+            right_side_distance = task_env.cube_pos[:, 1] - task_env.right_hold_pos[:, 1]
+            reached = bool(
+                (
+                    (task_env.left_hold_to_cube_dist <= contact_required)
+                    & (task_env.right_hold_to_cube_dist <= contact_required)
+                    & (left_side_distance >= -float(task_env.cfg.side_success_y_margin))
+                    & (right_side_distance >= -float(task_env.cfg.side_success_y_margin))
+                )
+                .all()
+                .item()
+            )
+            if reached:
+                contact_reached = True
+                contact_reached_step = step
+
+        if contact_reached and step >= lift_start_step:
+            lift_alpha = min(float(step - lift_start_step + 1) / float(phase_lift), 1.0)
+            lift_alpha = lift_alpha * lift_alpha * (3.0 - 2.0 * lift_alpha)
+            attached_cube_pos = _assisted_cube_pose_between_grippers(
+                task_env.left_hold_pos,
+                task_env.right_hold_pos,
+                cube_center_to_hold_z=cube_center_to_hold_z,
+            )
+            assisted_cube_pos = _lerp_tensor(task_env.cube_pos, attached_cube_pos, lift_alpha)
+            assisted_cube_pos[:, 2] = torch.maximum(assisted_cube_pos[:, 2], task_env.cube_pos[:, 2])
             assisted_has_lifted = bool(
                 (
                     assisted_cube_pos[:, 2] - task_env.cube_initial_pos[:, 2]
@@ -749,18 +911,8 @@ def _run_scripted_demo(
             )
             _write_cube_pose(task_env, assisted_cube_pos, has_lifted=assisted_has_lifted)
             grasp_assist_used = True
-
-        step_out = env.step(action_marker)
-        if len(step_out) == 5:
-            _obs, _step_reward, terminated, truncated, _info = step_out
-            done = torch.logical_or(terminated, truncated)
-        else:
-            _obs, _step_reward, done, _info = step_out
-        if grasp_assist_ready and step >= lift_start_step:
-            _write_cube_pose(task_env, assisted_cube_pos, has_lifted=assisted_has_lifted)
             reward = task_env._get_rewards()
         else:
-            task_env._compute_intermediate_values()
             reward = _step_reward
         steps_completed = step + 1
         capture_video_frame()
@@ -784,7 +936,8 @@ def _run_scripted_demo(
         if print_interval > 0 and (step % print_interval == 0 or step == num_steps - 1):
             print(
                 "[YAM-DEMO] "
-                f"step={step} reward={reward_values[-1]:.3f} lift={_mean(task_env.cube_lift_height):.3f} "
+                f"step={step} phase={phase_name} reward={reward_values[-1]:.3f} "
+                f"lift={_mean(task_env.cube_lift_height):.3f} "
                 f"left_dist={_mean(task_env.left_hold_to_cube_dist):.3f} "
                 f"right_dist={_mean(task_env.right_hold_to_cube_dist):.3f} "
                 f"left_hold={_tensor_list(task_env.left_hold_pos.mean(dim=0))} "
@@ -797,12 +950,35 @@ def _run_scripted_demo(
             break
 
     checks.check(
-        "scripted_demo_reaches_cube_with_both_arms",
-        min_left_dist <= float(task_env.cfg.cube_success_hand_dist)
-        and min_right_dist <= float(task_env.cfg.cube_success_hand_dist),
+        "scripted_demo_closes_both_grippers_before_standoff",
+        closed_before_standoff,
+        closed_before_standoff_step=closed_before_standoff_step,
+        start_left_gripper_width=start_left_width,
+        start_right_gripper_width=start_right_width,
+        final_left_gripper_width=_mean(task_env.left_gripper_width),
+        final_right_gripper_width=_mean(task_env.right_gripper_width),
+        close_width_threshold=close_width_threshold,
+    )
+    checks.check(
+        "scripted_demo_reaches_side_standoff_before_contact",
+        standoff_reached,
+        standoff_reached_step=standoff_reached_step,
+        standoff_min_dist=standoff_min_dist,
+        standoff_max_dist=standoff_max_dist,
+        contact_side_offset=contact_side_offset,
+        standoff_side_offset=standoff_side_offset,
+    )
+    checks.check(
+        "scripted_demo_slow_approach_reaches_cube_contact",
+        contact_reached
+        and min_left_dist <= contact_required
+        and min_right_dist <= contact_required,
+        contact_reached_step=contact_reached_step,
         min_left_hold_to_cube_dist=min_left_dist,
         min_right_hold_to_cube_dist=min_right_dist,
-        required=float(task_env.cfg.cube_success_hand_dist),
+        required=contact_required,
+        contact_target_left_hold=_tensor_list(contact_left_hold.mean(dim=0)),
+        contact_target_right_hold=_tensor_list(contact_right_hold.mean(dim=0)),
     )
     checks.check(
         "scripted_demo_lifts_cube",
@@ -824,9 +1000,12 @@ def _run_scripted_demo(
     )
     checks.check(
         "scripted_demo_uses_physics_or_post_contact_assist",
-        max_success_rate > 0.0 and (grasp_assist_used or max_lift >= float(task_env.cfg.cube_success_lift_height)),
+        contact_reached
+        and max_success_rate > 0.0
+        and (grasp_assist_used or max_lift >= float(task_env.cfg.cube_success_lift_height)),
         grasp_assist_used=grasp_assist_used,
-        note="The stepped validator accepts a physical pickup; the cube pose assist is available only after both grippers have reached the cube sides.",
+        contact_reached_step=contact_reached_step,
+        note="The stepped validator accepts a physical pickup; the cube pose assist is available only during lift after both closed grippers have reached the cube sides.",
     )
 
     return {
@@ -851,15 +1030,30 @@ def _run_scripted_demo(
         "final_left_gripper_width": _mean(task_env.left_gripper_width),
         "final_right_gripper_width": _mean(task_env.right_gripper_width),
         "scripted_hold_lift_height": hold_lift_height,
-        "scripted_phase_reach_steps": phase_reach,
         "scripted_phase_close_steps": phase_close,
+        "scripted_phase_standoff_steps": phase_standoff,
+        "scripted_phase_approach_steps": phase_approach,
         "scripted_phase_lift_steps": phase_lift,
         "scripted_start_left_hold": _tensor_list(start_left_hold.mean(dim=0)),
         "scripted_start_right_hold": _tensor_list(start_right_hold.mean(dim=0)),
-        "scripted_pregrasp_left_hold": _tensor_list(pregrasp_left_hold.mean(dim=0)),
-        "scripted_pregrasp_right_hold": _tensor_list(pregrasp_right_hold.mean(dim=0)),
+        "scripted_start_left_gripper_width": start_left_width,
+        "scripted_start_right_gripper_width": start_right_width,
+        "scripted_standoff_left_hold_target": _tensor_list(standoff_left_hold.mean(dim=0)),
+        "scripted_standoff_right_hold_target": _tensor_list(standoff_right_hold.mean(dim=0)),
+        "scripted_contact_left_hold_target": _tensor_list(contact_left_hold.mean(dim=0)),
+        "scripted_contact_right_hold_target": _tensor_list(contact_right_hold.mean(dim=0)),
+        "scripted_lifted_left_hold_target": _tensor_list(lifted_left_hold.mean(dim=0)),
+        "scripted_lifted_right_hold_target": _tensor_list(lifted_right_hold.mean(dim=0)),
+        "scripted_contact_side_offset": contact_side_offset,
+        "scripted_standoff_side_offset": standoff_side_offset,
+        "scripted_cube_center_to_hold_z": cube_center_to_hold_z,
+        "scripted_closed_before_standoff": closed_before_standoff,
+        "scripted_closed_before_standoff_step": closed_before_standoff_step,
+        "scripted_standoff_reached": standoff_reached,
+        "scripted_standoff_reached_step": standoff_reached_step,
+        "scripted_contact_reached": contact_reached,
+        "scripted_contact_reached_step": contact_reached_step,
         "scripted_grasp_assist_used": grasp_assist_used,
-        "scripted_grasp_assist_ready_step": grasp_assist_ready_step,
         "video_frames_written": video_frames_written,
     }
 
@@ -935,6 +1129,19 @@ def main() -> None:
         "video_enabled": args_cli.video,
         "video_folder": str(video_folder) if args_cli.video else None,
         "video_file": str(video_file) if video_file is not None else None,
+        "camera": {
+            "source": "molmoact2 sim_eval/robots/bimanual_yam.py top_cam",
+            "reference_mount": "bimanual_base",
+            "reference_local_pos": list(MOLMOACT2_TOP_CAM_LOCAL_POS),
+            "reference_quat_wxyz": list(MOLMOACT2_TOP_CAM_QUAT_WXYZ),
+            "reference_width": MOLMOACT2_TOP_CAM_WIDTH,
+            "reference_height": MOLMOACT2_TOP_CAM_HEIGHT,
+            "reference_fov_deg": MOLMOACT2_TOP_CAM_FOV_DEG,
+            "viewer_eye": [float(v) for v in args_cli.camera_eye],
+            "viewer_target": [float(v) for v in args_cli.camera_target],
+            "computed_reference_eye": list(MOLMOACT2_TOP_CAM_WORLD_EYE),
+            "computed_reference_target": list(MOLMOACT2_TOP_CAM_WORLD_TARGET),
+        },
         "yam_mjcf_path": str(YAM_MJCF_PATH),
         "yam_usd_path": str(YAM_USD_PATH),
         "env_closed": env_closed,

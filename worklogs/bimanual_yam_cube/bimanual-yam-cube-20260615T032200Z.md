@@ -137,7 +137,7 @@ Version Control:
 - worklog: `worklogs/bimanual_yam_cube/bimanual-yam-cube-20260615T032200Z.md`
 - branch: `codex/bimanual-yam-cube-20260615T032200Z`
 - base_commit: `74c8ab6c0c06a428fcd6bd26761ffc4a4718b055`
-- implementation_commit: pending
+- implementation_commit: `12bb9ba`
 - push/pull: n/a local smoke
 - changed_files: `dextrah_lab/rl_games/validate_bimanual_yam_cube_grasp_env.py`, worklog
 - remote_commit/status: n/a local
@@ -506,3 +506,62 @@ Analysis:
 
 Next:
 - Stop. Active jobs: none. Generated asset/result directories were chowned back to the user.
+
+## 2026-06-15 16:58Z - MolmoAct2 top-camera close-first bimanual grasp demo
+
+Goal:
+- Update the YAM cube demo to use the MolmoAct2 `top_cam` view and make the grasp sequence explicit: close both grippers first, move to a side standoff away from the cube, slowly approach until side contact, then lift.
+
+Hypothesis:
+- The visual defect is in the scripted validator phasing rather than the robot asset. Keeping the stable DEXTRAH-style solved contact waypoint, but reaching it only after a close-first standoff/approach sequence, should preserve the correct arm geometry while making the grasp behavior readable.
+
+Change:
+- Changed the validator camera default to the MolmoAct2 top camera equivalent: reference local pose `[0.15, 0.0, 0.8]`, quaternion `[0.7660444431, 0.0, 0.6427876097, 0.0]`, 69.4 degree FOV, projected to viewer eye `[-0.5, 0.0, 0.81]` and target `[-0.375, 0.0, 0.1]`.
+- Reworked the scripted demo state machine:
+  - close both grippers from the MolmoAct2 rest reset,
+  - move closed grippers to a side standoff,
+  - slowly interpolate to the side-contact waypoint,
+  - use a low-gain lift command and the existing post-contact demo-only cube assist after contact.
+- Added explicit checks for close-before-standoff, standoff-before-contact, slow side-contact approach, lift success, and no severe table penetration.
+
+Version Control:
+- agent_id: bimanual-yam-cube-20260615T032200Z
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/bimanual-yam-cube-20260615T032200Z`
+- branch: `codex/bimanual-yam-cube-20260615T032200Z`
+- base_commit: `e673e34828a7c82b2ba555a5c9942b8879a89d59`
+- implementation_commit: pending
+- changed_files: `dextrah_lab/rl_games/validate_bimanual_yam_cube_grasp_env.py`, worklog
+- remote_commit/status: n/a local validation
+
+Command / Job:
+- command: `python3 -m py_compile dextrah_lab/rl_games/validate_bimanual_yam_cube_grasp_env.py`
+- command: `git diff --check`
+- command: local Docker Isaac Lab smoke, one env, 560 steps, headless, `--disable_fabric`
+- command: local Docker Isaac Lab render, one env, 560 max steps, `--video --video_length 560`, MolmoAct2 top-camera default, `--disable_fabric`
+- job_id: n/a local Docker jobs
+- run_dir:
+  - `local_results/bimanual_yam_cube_grasp/demo_topcam_sequence_smoke3_20260615_095508`
+  - `local_results/bimanual_yam_cube_grasp/demo_topcam_sequence_render_20260615_095610`
+- logs:
+  - `local_results/bimanual_yam_cube_grasp/demo_topcam_sequence_smoke3_20260615_095508/run.log`
+  - `local_results/bimanual_yam_cube_grasp/demo_topcam_sequence_render_20260615_095610/run.log`
+- artifacts:
+  - metrics: `local_results/bimanual_yam_cube_grasp/demo_topcam_sequence_smoke3_20260615_095508/metrics.json`
+  - metrics: `local_results/bimanual_yam_cube_grasp/demo_topcam_sequence_render_20260615_095610/metrics.json`
+  - video: `local_results/bimanual_yam_cube_grasp/demo_topcam_sequence_render_20260615_095610/videos/bimanual-yam-cube-demo-manual.mp4`
+  - inspected frames: `local_results/bimanual_yam_cube_grasp/demo_topcam_sequence_render_20260615_095610/frames/`
+  - viewer: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/bimanual-yam-cube-20260615T032200Z/local_results/bimanual_yam_cube_grasp/demo_topcam_sequence_render_20260615_095610/videos/bimanual-yam-cube-demo-manual.mp4`
+
+Result:
+- status: passed
+- key metrics: `passed=true`; `video_frames_written=518`; `steps_completed=516`; gripper close before standoff at step `1`; standoff at step `145`; contact at step `383`; `max_lift=0.10017`; `max_success_rate=1.0`; `min_finger_table_clearance=0.0599`.
+- MP4 metadata: `1280x720`, `518` frames, `8.63s`, `60 fps`.
+- frame inspection: early frame shows cube/table from the top camera; standoff frame shows both closed grippers away from the cube sides; contact frame shows closed left/right approach; final frame shows the cube lifted between the two arms.
+
+Analysis:
+- The reference top camera is intentionally tight on the cube/table, so shoulder links are cropped at the start but the grippers and cube are visible through the grasp sequence.
+- The demo still records `scripted_grasp_assist_used=true`; the assist is demo-only and starts only after the validator has proven both closed grippers reached the cube sides.
+- No local Isaac Docker containers remain active after validation; generated final video ownership was chowned back to the user.
+
+Next:
+- Stop after final status check. Active Isaac Docker jobs: none.
