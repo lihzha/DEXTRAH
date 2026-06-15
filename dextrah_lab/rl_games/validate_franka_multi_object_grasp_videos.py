@@ -75,7 +75,7 @@ parser.add_argument("--grasp_warmstart_require_current_lift_ready", action=argpa
 parser.add_argument("--capture_interval", type=int, default=2)
 parser.add_argument("--grasp_reset_attempts", type=int, default=12)
 parser.add_argument("--grasp_reset_require_topdown", action=argparse.BooleanOptionalAction, default=True)
-parser.add_argument("--grasp_reset_min_pregrasp_z", type=float, default=0.70)
+parser.add_argument("--grasp_reset_min_pregrasp_z", type=float, default=0.45)
 parser.add_argument("--grasp_reset_min_contact_height_above_center", type=float, default=0.0)
 parser.add_argument("--grasp_reset_candidate_count", type=int, default=16)
 parser.add_argument("--grasp_reset_max_center_distance_frac", type=float, default=0.30)

@@ -91,15 +91,16 @@ class DextrahFrankaMultiObjectGraspEnvCfg(DextrahFrankaCubeGraspEnvCfg):
     # the matching object UUID.
     grasp_prior_verified_indices_path = ""
     grasp_prior_allow_missing = False
-    # Match the known-good Franka cube reset distance. Table safety is enforced
-    # by the top-down and projected finger-clearance reset gates below.
-    grasp_prior_pregrasp_offset = 0.03
+    # Multi-object priors include side/top approaches that need more pregrasp
+    # clearance than the cube default. Table safety is enforced by the top-side
+    # and projected finger-clearance reset gates below.
+    grasp_prior_pregrasp_offset = 0.08
     grasp_prior_reset_attempts = 1
     grasp_prior_reset_candidate_count = 16
     grasp_prior_reset_require_topdown = True
     # Require a real top-side approach direction.  A shallow or underside
     # pregrasp vector can put the fingers through the table during reset.
-    grasp_prior_reset_min_pregrasp_z = 0.70
+    grasp_prior_reset_min_pregrasp_z = 0.45
     # Reject contact-based priors whose contact/reference midpoint is below
     # the current object center in world z.  This prevents underside grasps
     # even when the pregrasp offset is forced to approach from above.
