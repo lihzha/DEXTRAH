@@ -1406,6 +1406,51 @@ Validation plan:
 - Run Python syntax and whitespace checks.
 - Commit/push/redeploy and rerun the strict no-video stable validator.
 
+## 2026-06-16 00:06Z - planned contact-authority stable validator
+
+Goal:
+- Check whether the stronger action-path approach and slightly higher hold target reach side contact without reintroducing cube shake.
+
+Version state:
+- local_commit: `ea3e10ccf86ba2f1d041e4ebb1139bf125a9b77c`
+- remote_commit: `ea3e10ccf86ba2f1d041e4ebb1139bf125a9b77c`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/bimanual-yam-cube-rl-20260615T203824Z`
+
+Planned command/job:
+- Submit `cluster/sbatch_validate_bimanual_yam_cube_grasp_env_1gpu.sh`.
+- A100 job: `29124952`
+- Expected run: `yam_cube_actionpath_contact_ea3e10c_20260616T0006Z`
+- Log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_bimanual_yam_cube_29124952.out`
+- Metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/yam_cube_actionpath_contact_ea3e10c_20260616T0006Z/metrics.json`
+- Key settings: strict stable validator, `NUM_ENVS=1`, `NUM_STEPS=560`, `LIFT_HEIGHT=0.06`, `CAPTURE_VIDEO=False`, `ALLOW_GRASP_ASSIST=False`, `REQUIRE_UNASSISTED_LIFT=True`, `DISABLE_FABRIC=True`.
+
+Success criteria:
+- Stable no-assist success, or diagnostics showing whether the stronger action path now reaches contact and whether cube speeds remain below the stability gates.
+
+Result/evidence:
+- Job `29124952` completed and failed stable validation.
+- Metrics: `max_lift=0.006822377443313599`, `max_success_rate=0.0`, `max_cube_linear_speed=0.5696948766708374`, `max_cube_angular_speed=5.423696517944336`.
+- The run did not reproduce the prior high-speed shake artifact and stayed within the success speed gates, but the validator still did not declare contact.
+- Best hold distance was `0.1308608502149582` versus required `0.120`; best hold positions were approximately left `[-0.2932, 0.1169, 0.1380]` and right `[-0.2943, -0.1171, 0.1389]`.
+- The cube briefly lifted `6.8 mm`, then settled before the scheduled lift phase.
+
+Analysis:
+- The action path is now contacting or brushing the cube stably, but the lift trigger waits for overly deep contact and starts lift too late.
+- Next change should relax only the validator lift trigger while keeping final success and speed gates strict.
+
+## 2026-06-16 00:13Z - relax validator lift trigger
+
+Goal:
+- Start the scripted lift while the grippers are still in stable side contact, without weakening the final physical success predicate.
+
+Change:
+- Changed the validator contact/lift trigger from `max(0.120, contact_geometry_dist + 0.025)` to `max(0.140, contact_geometry_dist + 0.045)`.
+- Final success remains gated by physical lift, side success, XY tolerance, and cube speed thresholds.
+
+Validation plan:
+- Run syntax and diff checks.
+- Commit/push/redeploy and rerun the same strict stable validator.
+
 ## 2026-06-16 04:05Z - planned smaller-cube stable validator
 
 Goal:

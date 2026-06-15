@@ -749,7 +749,9 @@ def _run_scripted_demo(
     contact_required = min(
         float(task_env.cfg.cube_success_hand_dist),
         float(task_env.cfg.bimanual_reference_contact_dist),
-        max(0.120, contact_geometry_dist + 0.025),
+        # The measured hold midpoint sits above the physical fingertip contact
+        # patch, so start the lift before forcing deeper side penetration.
+        max(0.140, contact_geometry_dist + 0.045),
     )
     standoff_min_dist = contact_required + 0.040
     standoff_max_dist = 0.45
