@@ -15,6 +15,19 @@ from isaaclab.utils import configclass
 from isaaclab_assets.robots.franka import FRANKA_PANDA_HIGH_PD_CFG
 
 
+FRANKA_DEFAULT_BASE_Z = 0.47
+FRANKA_DEFAULT_JOINT_POS = {
+    "panda_joint1": 0.0,
+    "panda_joint2": -0.785398,
+    "panda_joint3": 0.0,
+    "panda_joint4": -2.356194,
+    "panda_joint5": 0.0,
+    "panda_joint6": 1.570796,
+    "panda_joint7": 0.785398,
+    "panda_finger_joint.*": 0.04,
+}
+
+
 def _franka_star_robot_cfg(
     robot_base_z: float,
     robot_yaw_wxyz: tuple[float, float, float, float],
@@ -24,21 +37,11 @@ def _franka_star_robot_cfg(
     *,
     joint_pos: dict[str, float] | None = None,
 ) -> ArticulationCfg:
-    default_joint_pos = {
-        "panda_joint1": 0.0,
-        "panda_joint2": -0.68,
-        "panda_joint3": 0.0,
-        "panda_joint4": -2.45,
-        "panda_joint5": 0.0,
-        "panda_joint6": 2.28,
-        "panda_joint7": 0.78,
-        "panda_finger_joint.*": 0.04,
-    }
     robot_cfg = FRANKA_PANDA_HIGH_PD_CFG.copy().replace(prim_path="/World/envs/env_.*/Robot").replace(
         init_state=ArticulationCfg.InitialStateCfg(
             pos=(0.0, 0.0, robot_base_z),
             rot=robot_yaw_wxyz,
-            joint_pos=default_joint_pos if joint_pos is None else dict(joint_pos),
+            joint_pos=dict(FRANKA_DEFAULT_JOINT_POS if joint_pos is None else joint_pos),
             joint_vel={".*": 0.0},
         )
     )
@@ -118,7 +121,7 @@ class DextrahFrankaStarKittingEnvCfg(DirectRLEnvCfg):
     # Franka geometry/control
     max_gripper_width = 0.08
     arm_joint_reset_noise = 0.035
-    robot_base_z = 0.20
+    robot_base_z = FRANKA_DEFAULT_BASE_Z
     robot_yaw_wxyz = (0.0, 0.0, 0.0, 1.0)  # 180 deg about z; points arm toward negative X table.
     ee_offset_pos = (0.0, 0.0, 0.1034)
     ik_position_action_scale = (0.060, 0.060, 0.045)

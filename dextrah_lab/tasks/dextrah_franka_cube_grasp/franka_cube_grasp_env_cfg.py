@@ -3,14 +3,11 @@
 from __future__ import annotations
 
 import isaaclab.sim as sim_utils
-from isaaclab.assets import ArticulationCfg, RigidObjectCfg
+from isaaclab.assets import RigidObjectCfg
 from isaaclab.sim.spawners.materials.physics_materials_cfg import RigidBodyMaterialCfg
 from isaaclab.utils import configclass
 
-from dextrah_lab.tasks.dextrah_franka_star_kitting.franka_star_kitting_env_cfg import (
-    DextrahFrankaStarKittingEnvCfg,
-    _franka_star_robot_cfg,
-)
+from dextrah_lab.tasks.dextrah_franka_star_kitting.franka_star_kitting_env_cfg import DextrahFrankaStarKittingEnvCfg
 
 
 FRANKA_TABLE_CENTER_Z = 0.72
@@ -49,38 +46,6 @@ class DextrahFrankaCubeGraspEnvCfg(DextrahFrankaStarKittingEnvCfg):
     finger_table_clearance_margin = 0.025
     finger_table_penetration_termination_margin = -0.002
     finger_table_clearance_success_margin = 0.005
-
-    # Restate the inherited Franka constants locally because Isaac Lab's
-    # configclass fields are not reliable class attributes during subclass
-    # body evaluation.
-    robot_yaw_wxyz = (0.0, 0.0, 0.0, 1.0)
-    finger_effort_limit = 1000.0
-    finger_stiffness = 4000.0
-    finger_damping = 400.0
-    robot_base_z = 0.47
-    robot_joint_pos = {
-        "panda_joint1": 0.0,
-        "panda_joint2": -0.785398,
-        "panda_joint3": 0.0,
-        "panda_joint4": -2.356194,
-        "panda_joint5": 0.0,
-        "panda_joint6": 1.570796,
-        "panda_joint7": 0.785398,
-        "panda_finger_joint.*": 0.04,
-    }
-
-    # The star task keeps the robot base lower for its fixture geometry.  In
-    # the cube task that places the default Franka fingertips too close to the
-    # table, so rebuild the inherited robot cfg with a higher cube-specific
-    # base height and a standard upright/down Franka reset posture.
-    robot: ArticulationCfg = _franka_star_robot_cfg(
-        robot_base_z,
-        robot_yaw_wxyz,
-        finger_effort_limit,
-        finger_stiffness,
-        finger_damping,
-        joint_pos=robot_joint_pos,
-    )
 
     # Optional reset-only GraspGenX prior.  Disabled by default so the
     # production Franka cube baseline remains unchanged.

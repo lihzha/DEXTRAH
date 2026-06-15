@@ -18557,3 +18557,26 @@ Next:
   explicit coverage near the low-left edge, then retrain or fine-tune the final
   RGB policy. A 100-200 episode dataset should be the next production-scale
   attempt.
+
+## 2026-06-15 Shared Franka Default Reset Pose
+
+Goal:
+- Make the raised-base upright/down Franka reset pose the default for all
+  Franka environments, not just the cube grasp subclass.
+
+Change:
+- Moved the default Franka base height to
+  `FRANKA_DEFAULT_BASE_Z = 0.47` in
+  `dextrah_franka_star_kitting/franka_star_kitting_env_cfg.py`.
+- Moved the upright/down reset joints into
+  `FRANKA_DEFAULT_JOINT_POS` and made `_franka_star_robot_cfg()` use them when
+  no task-specific `joint_pos` override is supplied.
+- Removed the duplicated cube-only robot override so cube, trajectory-tracking,
+  and multi-object Franka grasp configs inherit the same shared default pose.
+
+Validation:
+- Passed `python3 -m py_compile` for the base star-kitting config, cube grasp
+  config, cube trajectory-tracking config, and multi-object Franka grasp config.
+- `rg` found no remaining old Franka defaults (`robot_base_z = 0.20`,
+  `panda_joint2 = -0.68`, or `panda_joint6 = 2.28`) under the Franka task
+  configs.
