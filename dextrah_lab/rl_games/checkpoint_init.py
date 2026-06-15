@@ -72,7 +72,12 @@ def is_policy_initialization_checkpoint(weights: dict[str, Any]) -> bool:
     if weights.get("dextrah_checkpoint_semantics") == POLICY_INITIALIZATION_SEMANTICS:
         return True
     diagnostic = weights.get("dextrah_bc_diagnostic")
-    return isinstance(diagnostic, dict) and diagnostic.get("checkpoint_semantics") == POLICY_INITIALIZATION_SEMANTICS
+    if isinstance(diagnostic, dict) and diagnostic.get("checkpoint_semantics") == POLICY_INITIALIZATION_SEMANTICS:
+        return True
+
+    # Legacy BC checkpoints predate the explicit semantics marker but carry this
+    # payload. They should seed PPO weights/RMS only, never optimizer/runtime state.
+    return isinstance(weights.get("bc_reference_action_imitation"), dict)
 
 
 def sanitize_rlgames_checkpoint_for_initialization(
