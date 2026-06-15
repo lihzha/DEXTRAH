@@ -804,6 +804,10 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             plus_score = torch.where(plus_farther, plus_tool_pos_w[:, :, 2], plus_tool_pos_w[:, :, 2] - 10.0)
             minus_score = torch.where(minus_farther, minus_tool_pos_w[:, :, 2], minus_tool_pos_w[:, :, 2] - 10.0)
             use_plus = torch.where(has_farther, plus_score >= minus_score, use_plus)
+        if bool(getattr(self.cfg, "grasp_prior_reset_require_downward_tool_z", False)):
+            # GraspGen/Franka tool +Z is the approach axis. For tabletop top-side resets,
+            # pregrasp must move opposite that axis, away from the object and table.
+            use_plus = torch.zeros_like(use_plus)
         candidate_pregrasp_offset_dir_w = torch.where(
             use_plus.unsqueeze(-1),
             candidate_tool_z_axis_w,

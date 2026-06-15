@@ -1551,3 +1551,103 @@ Result:
 
 Next:
 - Commit/push/deploy, then rerun the two-env seed-44 eval. If `candidate_valid_count=0` and `candidate_fallback_count=0`, run the same eval with a larger `GRASP_PRIOR_RESET_CANDIDATE_COUNT` before changing reward/training.
+
+## 2026-06-15T16:30:00Z - Launch fail-closed 256-candidate smoke
+
+Goal:
+- Verify that no-candidate rows no longer target invalid table-colliding grasps, and collect combined valid/fallback candidate counts under the current 256-candidate setting.
+
+Version Control:
+- agent_id: dextrah-multiobject-grasp-prior-finish-20260615T074722Z
+- local_head: `321dd9b38eb04d52b2cb37467ca8086fbafbb697`
+- implementation_commit: `e331f5a123cc7dc22514a65f1e7d995b24332f5e`
+- remote_commit/status: l401 agent worktree `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-topdown-axis-20260615-753139c` detached at `321dd9b38eb04d52b2cb37467ca8086fbafbb697`, clean.
+- deploy: Git bundle `/lustre/fsw/portfolios/nvr/users/lzha/cache/dextrah_321dd9b_failclosed.bundle`.
+
+Command / Job:
+- job_id: `1029906`
+- run_name: `franka_multi_eval_failclosed_ep40_video2_seed44_321dd9b_20260615T1625Z`
+- candidate_count: `256`
+- command: `sbatch --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-topdown-axis-20260615-753139c,CODE_COMMIT=321dd9b38eb04d52b2cb37467ca8086fbafbb697,RUN_NAME=franka_multi_eval_failclosed_ep40_video2_seed44_321dd9b_20260615T1625Z,NUM_ENVS=2,NUM_STEPS=180,VIDEO_LENGTH=180,SEED=44,CHECKPOINT=/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_ppo_bcinit_retrypose_resetonly_cont40_9ae97c0_20260615T1312Z/nn/last_dextrah_franka_multi_object_grasp_ep_40_rew_4852.5146.pth,GRASP_PRIOR_RESET_CANDIDATE_COUNT=256,... cluster/sbatch_eval_franka_multi_object_grasp_1gpu.sh`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_multi_eval_failclosed_ep40_video2_seed44_321dd9b_20260615T1625Z`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_multi_object_1029906.out`
+
+Result:
+- status: running/queued
+
+Next:
+- Monitor, fetch metrics/video, inspect `candidate_valid_count`, `candidate_fallback_count`, selected tool/downward axis, exact tip clearance, and whether any table penetration remains.
+
+## 2026-06-15T16:40:00Z - Launch 4096-candidate reset sparsity smoke
+
+Goal:
+- Determine whether the zero valid/fallback count under 256 candidates is simple sampling sparsity.
+
+Command / Job:
+- job_id: `1029907`
+- run_name: `franka_multi_eval_failclosed_ep40_cand4096_seed44_321dd9b_20260615T1635Z`
+- candidate_count: `4096`
+- num_steps: `5`
+- video: disabled
+- command: same seed/checkpoint/manifest/stable-pose config as job `1029906`, with `GRASP_PRIOR_RESET_CANDIDATE_COUNT=4096`, `CAPTURE_VIDEO=False`, and `NUM_STEPS=5`.
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_multi_eval_failclosed_ep40_cand4096_seed44_321dd9b_20260615T1635Z`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_multi_object_1029907.out`
+
+Result:
+- status: running/queued
+
+Next:
+- Inspect first-step reset metrics. If valid/fallback counts are still zero, debug which gate intersection kills all candidates rather than launching RL.
+
+## 2026-06-15T16:50:00Z - 4096-candidate smoke confirms gate-intersection bug
+
+Goal:
+- Decide whether simply increasing `GRASP_PRIOR_RESET_CANDIDATE_COUNT` solves zero valid/fallback candidates.
+
+Result:
+- status: completed but failed acceptance
+- job_state: `COMPLETED`, exit `0:0`, elapsed `00:00:50`
+- local_artifacts: `cluster_results/l401/franka_multi_eval_failclosed_ep40_cand4096_seed44_321dd9b_20260615T1635Z/`
+
+Metrics / Evidence:
+- `grasp_prior_reset_candidate_topdown_count=1645.5`
+- `grasp_prior_reset_candidate_tool_down_count=769.5`
+- `grasp_prior_reset_candidate_table_count=2154.5`
+- `grasp_prior_reset_candidate_valid_count=0.0`
+- `grasp_prior_reset_candidate_fallback_count=0.0`
+- `grasp_prior_reset_success=0.0`, `grasp_prior_reset_quality_success=0.0`
+
+Analysis:
+- The marginal gates are not sparse; their intersection is broken. The likely cause is direction-sign logic: for a tabletop grasp where the tool +Z approach axis points downward, pregrasp should be `-tool_z_axis_w` (up/away from the object). The old plus/minus distance heuristic can still choose `+tool_z_axis_w`, especially around contact-reference ties, making `tool_down_ok` and `topdown_ok` mutually exclusive enough to zero out the combined valid/fallback masks.
+
+Next:
+- Patch the multi-object prior to force `pregrasp_offset_dir_w = -tool_z_axis_w` whenever `grasp_prior_reset_require_downward_tool_z=True`, then rerun the 256-candidate smoke before changing training scale.
+
+## 2026-06-15T16:55:00Z - Force pregrasp opposite downward tool axis
+
+Goal:
+- Fix the real sign mismatch between the GraspGen/Franka tool approach axis and the pregrasp offset direction.
+
+Change:
+- In multi-object candidate selection, when `grasp_prior_reset_require_downward_tool_z=True`, force `use_plus=False`, so `candidate_pregrasp_offset_dir_w = -candidate_tool_z_axis_w`.
+- This makes a downward tool +Z approach axis produce an upward pregrasp offset, which is the expected tabletop motion away from the object/table.
+
+Version Control:
+- agent_id: dextrah-multiobject-grasp-prior-finish-20260615T074722Z
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-finish-20260615T074722Z`
+- branch: `codex/dextrah-multiobject-grasp-prior-finish-20260615T074722Z`
+- base_commit: `321dd9b38eb04d52b2cb37467ca8086fbafbb697`
+- implementation_commit: pending
+- changed_files: `dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py`, this worklog.
+
+Command / Job:
+- local checks:
+  - `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env_cfg.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py dextrah_lab/rl_games/collect_franka_multi_object_verified_grasps.py dextrah_lab/rl_games/eval_rollout.py`
+  - `bash -n cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh cluster/sbatch_eval_franka_multi_object_grasp_1gpu.sh cluster/sbatch_collect_franka_multi_object_verified_grasps_1gpu.sh cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh`
+  - `git diff --check`
+
+Result:
+- status: local checks passed
+
+Next:
+- Commit/push/deploy the sign fix, rerun the seed-44 256-candidate smoke, and require positive valid/fallback counts plus `reset_quality_success=1.0` before RL relaunch.
