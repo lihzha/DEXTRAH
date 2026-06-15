@@ -825,10 +825,20 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             candidate_exact_ee_rot_w,
             right_finger_offset_ee,
         )
+        finger_half_axis_ee = 0.5 * (left_finger_offset_ee - right_finger_offset_ee)
+        candidate_gripper_half_axis_w = torch.einsum(
+            "ncij,nj->nci",
+            candidate_exact_ee_rot_w,
+            finger_half_axis_ee,
+        )
         candidate_exact_left_finger_pos_w = candidate_exact_ee_pos_w + left_finger_offset_w
         candidate_exact_right_finger_pos_w = candidate_exact_ee_pos_w + right_finger_offset_w
         candidate_pregrasp_left_finger_pos_w = candidate_pregrasp_ee_pos_w + left_finger_offset_w
         candidate_pregrasp_right_finger_pos_w = candidate_pregrasp_ee_pos_w + right_finger_offset_w
+        candidate_exact_left_tip_proxy_pos_w = candidate_exact_ee_pos_w + candidate_gripper_half_axis_w
+        candidate_exact_right_tip_proxy_pos_w = candidate_exact_ee_pos_w - candidate_gripper_half_axis_w
+        candidate_pregrasp_left_tip_proxy_pos_w = candidate_pregrasp_ee_pos_w + candidate_gripper_half_axis_w
+        candidate_pregrasp_right_tip_proxy_pos_w = candidate_pregrasp_ee_pos_w - candidate_gripper_half_axis_w
         candidate_pregrasp_finger_table_clearance = torch.minimum(
             candidate_pregrasp_left_finger_pos_w[:, :, 2],
             candidate_pregrasp_right_finger_pos_w[:, :, 2],
@@ -836,6 +846,14 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         candidate_exact_finger_table_clearance = torch.minimum(
             candidate_exact_left_finger_pos_w[:, :, 2],
             candidate_exact_right_finger_pos_w[:, :, 2],
+        ) - float(self.cfg.table_surface_z)
+        candidate_pregrasp_tip_table_clearance = torch.minimum(
+            candidate_pregrasp_left_tip_proxy_pos_w[:, :, 2],
+            candidate_pregrasp_right_tip_proxy_pos_w[:, :, 2],
+        ) - float(self.cfg.table_surface_z)
+        candidate_projected_exact_tip_table_clearance = torch.minimum(
+            candidate_exact_left_tip_proxy_pos_w[:, :, 2],
+            candidate_exact_right_tip_proxy_pos_w[:, :, 2],
         ) - float(self.cfg.table_surface_z)
         candidate_pregrasp_tool_dist = torch.norm(candidate_pregrasp_tool_pos_w - candidate_contact_reference_w, dim=-1)
         candidate_pregrasp_ee_dist = torch.norm(candidate_pregrasp_ee_pos_w - candidate_contact_reference_w, dim=-1)
@@ -881,6 +899,9 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         table_floor_z = float(self.cfg.table_surface_z) + table_clearance_floor
         table_ok = (
             (candidate_pregrasp_finger_table_clearance >= table_clearance_floor)
+            & (candidate_exact_finger_table_clearance >= table_clearance_floor)
+            & (candidate_pregrasp_tip_table_clearance >= table_clearance_floor)
+            & (candidate_projected_exact_tip_table_clearance >= table_clearance_floor)
             & (candidate_contact_reference_w[:, :, 2] >= table_floor_z)
         )
         valid = candidate_pregrasp_farther & width_ok & center_ok & table_ok
@@ -971,6 +992,10 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             "candidate_fallback_count": fallback_ok.sum(dim=1),
             "pregrasp_finger_table_clearance": candidate_pregrasp_finger_table_clearance[row_ids, best_candidate],
             "exact_finger_table_clearance": candidate_exact_finger_table_clearance[row_ids, best_candidate],
+            "pregrasp_tip_table_clearance": candidate_pregrasp_tip_table_clearance[row_ids, best_candidate],
+            "projected_exact_tip_table_clearance": candidate_projected_exact_tip_table_clearance[
+                row_ids, best_candidate
+            ],
             "require_offset_radial_quality": ~has_contact_location,
             "exact_ee_dist": torch.norm(exact_ee_pos_w - contact_reference_w, dim=-1),
             "pregrasp_ee_dist": torch.norm(target_ee_pos_w - contact_reference_w, dim=-1),
@@ -1038,7 +1063,14 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             table_ok = (
                 table_ok
                 & (targets["pregrasp_finger_table_clearance"] >= table_clearance_floor)
+                & (targets["exact_finger_table_clearance"] >= table_clearance_floor)
             )
+            if "pregrasp_tip_table_clearance" in targets and "projected_exact_tip_table_clearance" in targets:
+                table_ok = (
+                    table_ok
+                    & (targets["pregrasp_tip_table_clearance"] >= table_clearance_floor)
+                    & (targets["projected_exact_tip_table_clearance"] >= table_clearance_floor)
+                )
         else:
             table_ok = table_ok & (targets["target_ee_pos_w"][:, 2] >= table_floor_z)
         return mask & center_dist_ok & width_ok & table_ok

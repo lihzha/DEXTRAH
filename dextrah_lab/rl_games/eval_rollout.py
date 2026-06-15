@@ -349,6 +349,7 @@ def _collect_task_metrics(task_env, actions: torch.Tensor | None = None) -> dict
         "grasp_prior_reset_projected_exact_tip_table_clearance",
         "grasp_prior_reset_quality_success",
         "grasp_prior_reset_candidate_tool_down_count",
+        "grasp_prior_reset_candidate_table_count",
         "grasp_prior_action_warmstart_active",
         "grasp_prior_action_warmstart_phase",
         "grasp_prior_action_warmstart_policy_action_z",

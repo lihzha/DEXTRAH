@@ -1385,3 +1385,91 @@ Analysis:
 
 Next:
 - Commit and push the patch, deploy the exact commit to the l401 agent worktree, then run a bounded video validation requiring `selected_tool_z_axis_z <= -0.45` and visually inspect the produced video before any further RL training.
+
+## 2026-06-15T15:56:00Z - Launch policy video eval with tool-axis diagnostics
+
+Goal:
+- Validate the patched sampler in the same PPO video path where the user observed table-penetrating below-table behavior.
+
+Hypothesis:
+- With commit `5218e000731ea062b9d5af86debe989f4bd2fec0`, reset samples in the PPO eval trace should show `grasp_prior_reset_tool_z_axis_z_max <= -0.45` and `grasp_prior_reset_tool_downward_z_min >= 0.45`. The video should not show the arm/gripper approaching from under the table.
+
+Version Control:
+- agent_id: dextrah-multiobject-grasp-prior-finish-20260615T074722Z
+- local_commit: `5218e000731ea062b9d5af86debe989f4bd2fec0`
+- remote_commit/status: l401 agent worktree `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-topdown-axis-20260615-753139c` detached at `5218e000731ea062b9d5af86debe989f4bd2fec0`, clean
+- push/pull: pushed to GitHub; l401 GitHub fetch failed with public-key auth, deployed via Git bundle `/lustre/fsw/portfolios/nvr/users/lzha/cache/dextrah_5218e00_tool_axis.bundle`.
+
+Command / Job:
+- job_id: `1029904`
+- run_name: `franka_multi_eval_toolaxis_ep40_video2_seed44_5218e00_20260615T1550Z`
+- command: `sbatch --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-topdown-axis-20260615-753139c,CODE_COMMIT=5218e000731ea062b9d5af86debe989f4bd2fec0,RUN_NAME=franka_multi_eval_toolaxis_ep40_video2_seed44_5218e00_20260615T1550Z,NUM_ENVS=2,NUM_STEPS=180,VIDEO_LENGTH=180,SEED=44,CHECKPOINT=/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_ppo_bcinit_retrypose_resetonly_cont40_9ae97c0_20260615T1312Z/nn/last_dextrah_franka_multi_object_grasp_ep_40_rew_4852.5146.pth,OBJECT_ASSET_MANIFEST_PATH=/results/assets/filtered_manifests/train2_7195_b87_nobelow_d053e6c_20260615T0045Z/manifest.json,MAX_OBJECTS=2,OBJECT_STABLE_POSE_ENABLED=True,OBJECT_STABLE_POSE_CACHE_DIR=/results/validations/train2_7195_b87_nobelow_d053e6c_20260615T0045Z/settled_pose_cache,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_RESET_ATTEMPTS=8,GRASP_PRIOR_RESET_CANDIDATE_COUNT=256,GRASP_PRIOR_RESET_REQUIRE_TOPDOWN=True,GRASP_PRIOR_RESET_MIN_PREGRASP_Z=0.45,GRASP_PRIOR_RESET_REQUIRE_DOWNWARD_TOOL_Z=True,GRASP_PRIOR_RESET_MIN_DOWNWARD_TOOL_Z=0.45,GRASP_PRIOR_RESET_MAX_CENTER_DISTANCE_FRAC=0.50,... cluster/sbatch_eval_franka_multi_object_grasp_1gpu.sh`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_multi_eval_toolaxis_ep40_video2_seed44_5218e00_20260615T1550Z`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_multi_object_1029904.out`
+- expected artifacts: `metrics.json`, `trace.csv`, `trace.jsonl`, and an MP4 under `videos/`.
+
+Result:
+- status: running/queued
+
+Next:
+- Monitor scheduler/logs, fetch artifacts, verify the tool-axis metrics, and inspect the video with `viz-open`.
+
+## 2026-06-15T16:00:00Z - Tool-axis eval exposes exact table-clearance gap
+
+Goal:
+- Inspect job `1029904` beyond scheduler completion and decide whether the reset sampler is actually safe enough to resume RL work.
+
+Result:
+- status: completed but failed acceptance
+- job_state: `COMPLETED`, exit `0:0`, elapsed `00:01:16`
+- local_artifacts: `cluster_results/l401/franka_multi_eval_toolaxis_ep40_video2_seed44_5218e00_20260615T1550Z/`
+- video: `cluster_results/l401/franka_multi_eval_toolaxis_ep40_video2_seed44_5218e00_20260615T1550Z/videos/franka-multi-toolaxis-ep40-seed44-step-0.mp4`
+- viewer_url: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-finish-20260615T074722Z/cluster_results/l401/franka_multi_eval_toolaxis_ep40_video2_seed44_5218e00_20260615T1550Z/videos/franka-multi-toolaxis-ep40-seed44-step-0.mp4`
+
+Metrics / Evidence:
+- Axis gate worked: `grasp_prior_reset_tool_z_axis_z_mean=-0.7927039265632629`, `grasp_prior_reset_tool_downward_z_min=0.7213642001152039`, `grasp_prior_reset_candidate_tool_down_count=49.5`.
+- Reset quality still failed: `grasp_prior_reset_quality_success=0.0`.
+- Table proxy identified the remaining bug: `grasp_prior_reset_projected_exact_tip_table_clearance=-0.04389432072639465` even though `grasp_prior_reset_pregrasp_tip_table_clearance=0.019522011280059814`.
+- Runtime table penetration stayed false in this rollout (`finger_table_clearance_violation=0.0`), but the reset should not select a projected exact grasp whose tip proxy is below the table.
+- Policy did not succeed (`success_ever_rate=0.0`, `success_rate_max=0.0`), so this run cannot be treated as evidence that Franka multi-object RL is done.
+
+Analysis:
+- The user's reported under-table approach has two separable root causes. The upward tool-axis cause is fixed by commit `5218e000731ea062b9d5af86debe989f4bd2fec0`; the selected tool z-axis is now downward. The remaining gap is that candidate `table_ok` only gated pregrasp clearance and contact-reference height, while `grasp_prior_reset_quality_success` also requires exact projected tip clearance. This mismatch lets the sampler mark a reset attempt successful while quality rejects the exact grasp geometry.
+
+Next:
+- Patch candidate selection and the post-IK mask to require exact fingertip clearance plus the same pregrasp/exact projected tip proxy clearances used by quality diagnostics. Rerun the same bounded two-env video eval without stale verified-index caches.
+
+## 2026-06-15T16:05:00Z - Require exact projected tip table clearance in candidate selection
+
+Goal:
+- Make the multi-object grasp-prior reset sampler fail closed on the exact table-collision geometry exposed by job `1029904`.
+
+Hypothesis:
+- If the candidate table gate mirrors the quality gate's table-clearance geometry, then selected resets should have `grasp_prior_reset_quality_success=1.0`, positive `grasp_prior_reset_projected_exact_tip_table_clearance`, and positive candidate table counts under the stricter filter.
+
+Change:
+- Multi-object candidate selection now computes candidate pregrasp and projected-exact tip proxy table clearances from the candidate exact EE orientation, matching the quality diagnostic's EE-center tip proxy.
+- `table_ok` now requires all four clearances to exceed `finger_table_penetration_termination_margin`: pregrasp fingertip, exact fingertip, pregrasp tip proxy, and projected-exact tip proxy.
+- `_grasp_prior_reset_topdown_mask` now enforces the same selected-target fingertip and tip-proxy clearances.
+- Policy eval traces now include `grasp_prior_reset_candidate_table_count` so the next run exposes whether the stricter table gate is too sparse.
+
+Version Control:
+- agent_id: dextrah-multiobject-grasp-prior-finish-20260615T074722Z
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-finish-20260615T074722Z`
+- worklog: `worklogs/dextrah-multiobject-grasp-prior/dextrah-multiobject-grasp-prior-finish-20260615T074722Z.md`
+- branch: `codex/dextrah-multiobject-grasp-prior-finish-20260615T074722Z`
+- base_commit: `5218e000731ea062b9d5af86debe989f4bd2fec0`
+- implementation_commit: `a5131aa0ce41740cb904c2b7238cda2e77ec5543`
+- changed_files: `dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py`, `dextrah_lab/rl_games/eval_rollout.py`, this worklog.
+
+Command / Job:
+- local checks:
+  - `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env_cfg.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py dextrah_lab/rl_games/collect_franka_multi_object_verified_grasps.py dextrah_lab/rl_games/eval_rollout.py`
+  - `bash -n cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh cluster/sbatch_eval_franka_multi_object_grasp_1gpu.sh cluster/sbatch_collect_franka_multi_object_verified_grasps_1gpu.sh cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh`
+  - `git diff --check`
+
+Result:
+- status: local checks passed
+
+Next:
+- Commit and push, deploy the exact commit to the l401 agent worktree, and rerun the bounded policy video eval with `GRASP_PRIOR_RESET_REQUIRE_DOWNWARD_TOOL_Z=True` and no verified-index cache.
