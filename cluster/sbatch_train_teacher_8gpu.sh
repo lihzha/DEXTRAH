@@ -79,6 +79,21 @@ elif [ "$TASK" = "Dextrah-Franka-Cube-Grasp" ] || [ "$TASK" = "Dextrah-Franka-Cu
   ENTROPY_COEF="${ENTROPY_COEF:-0.0005}"
   E_CLIP="${E_CLIP:-0.2}"
   GRAD_NORM="${GRAD_NORM:-1.0}"
+elif [ "$TASK" = "Dextrah-Bimanual-YAM-Cube-Grasp" ]; then
+  NUM_ENVS="${NUM_ENVS:-1024}"
+  MINIBATCH_SIZE="${MINIBATCH_SIZE:-16384}"
+  CENTRAL_VALUE_MINIBATCH_SIZE="${CENTRAL_VALUE_MINIBATCH_SIZE:-$MINIBATCH_SIZE}"
+  LEARNING_RATE="${LEARNING_RATE:-0.0002}"
+  CENTRAL_VALUE_LEARNING_RATE="${CENTRAL_VALUE_LEARNING_RATE:-0.0001}"
+  HORIZON_LENGTH="${HORIZON_LENGTH:-64}"
+  MINI_EPOCHS="${MINI_EPOCHS:-4}"
+  SAVE_FREQUENCY="${SAVE_FREQUENCY:-25}"
+  GAMMA="${GAMMA:-0.995}"
+  TAU="${TAU:-0.95}"
+  KL_THRESHOLD="${KL_THRESHOLD:-0.012}"
+  ENTROPY_COEF="${ENTROPY_COEF:-0.0005}"
+  E_CLIP="${E_CLIP:-0.2}"
+  GRAD_NORM="${GRAD_NORM:-1.0}"
 elif [ "$TASK" = "Dextrah-Franka-Multi-Object-RGB-Grasp" ]; then
   NUM_ENVS="${NUM_ENVS:-256}"
   MINIBATCH_SIZE="${MINIBATCH_SIZE:-4096}"
@@ -817,6 +832,13 @@ PY
       if [ '$TASK' = 'Dextrah-Franka-Cube-Grasp-Traj-Tracking' ]; then
         append_trajectory_tracking_reward_overrides
       fi
+    elif [ '$TASK' = 'Dextrah-Bimanual-YAM-Cube-Grasp' ]; then
+      TASK_OVERRIDES=(
+        agent.wandb_activate=False
+        env.use_cuda_graph='$USE_CUDA_GRAPH'
+        env.cube_spawn_xy_randomization='$CUBE_SPAWN_XY_RANDOMIZATION'
+      )
+      append_franka_cube_reward_overrides
     elif [ '$TASK' = 'Dextrah-Franka-Multi-Object-Grasp' ]; then
       TASK_OVERRIDES=(
         agent.wandb_activate=False

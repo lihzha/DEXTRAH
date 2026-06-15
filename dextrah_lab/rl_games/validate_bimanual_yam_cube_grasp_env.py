@@ -26,6 +26,18 @@ parser.add_argument("--cube_spawn_xy_randomization", type=float, default=0.0)
 parser.add_argument("--print_interval", type=int, default=20)
 parser.add_argument("--lift_height", type=float, default=0.14)
 parser.add_argument("--continue_after_success", action="store_true", default=False)
+parser.add_argument(
+    "--allow_grasp_assist",
+    action=argparse.BooleanOptionalAction,
+    default=True,
+    help="Allow the validator-only post-contact cube pose assist during the scripted lift.",
+)
+parser.add_argument(
+    "--require_unassisted_lift",
+    action="store_true",
+    default=False,
+    help="Fail unless the scripted rollout lifts the cube without the validator-only pose assist.",
+)
 parser.add_argument("--disable_fabric", action="store_true", default=False)
 parser.add_argument("--camera_eye", type=float, nargs=3, default=(-0.50, 0.0, 0.81))
 parser.add_argument("--camera_target", type=float, nargs=3, default=(-0.375, 0.0, 0.10))
@@ -891,7 +903,7 @@ def _run_scripted_demo(
                 contact_reached = True
                 contact_reached_step = step
 
-        if contact_reached and step >= lift_start_step:
+        if args_cli.allow_grasp_assist and contact_reached and step >= lift_start_step:
             lift_alpha = min(float(step - lift_start_step + 1) / float(phase_lift), 1.0)
             lift_alpha = lift_alpha * lift_alpha * (3.0 - 2.0 * lift_alpha)
             attached_cube_pos = _assisted_cube_pose_between_grippers(
@@ -1007,6 +1019,23 @@ def _run_scripted_demo(
         contact_reached_step=contact_reached_step,
         note="The stepped validator accepts a physical pickup; the cube pose assist is available only during lift after both closed grippers have reached the cube sides.",
     )
+    checks.check(
+        "scripted_demo_assist_policy_matches_cli",
+        args_cli.allow_grasp_assist or not grasp_assist_used,
+        allow_grasp_assist=bool(args_cli.allow_grasp_assist),
+        grasp_assist_used=grasp_assist_used,
+    )
+    if args_cli.require_unassisted_lift:
+        checks.check(
+            "scripted_demo_unassisted_physical_lift",
+            (not grasp_assist_used)
+            and max_lift >= float(task_env.cfg.cube_success_lift_height)
+            and max_success_rate > 0.0,
+            grasp_assist_used=grasp_assist_used,
+            max_lift=max_lift,
+            required=float(task_env.cfg.cube_success_lift_height),
+            max_success_rate=max_success_rate,
+        )
 
     return {
         "steps_completed": steps_completed,
@@ -1054,6 +1083,8 @@ def _run_scripted_demo(
         "scripted_contact_reached": contact_reached,
         "scripted_contact_reached_step": contact_reached_step,
         "scripted_grasp_assist_used": grasp_assist_used,
+        "scripted_allow_grasp_assist": bool(args_cli.allow_grasp_assist),
+        "scripted_require_unassisted_lift": bool(args_cli.require_unassisted_lift),
         "video_frames_written": video_frames_written,
     }
 
@@ -1127,6 +1158,8 @@ def main() -> None:
         "demo": demo_summary,
         "output_dir": str(output_dir),
         "video_enabled": args_cli.video,
+        "allow_grasp_assist": bool(args_cli.allow_grasp_assist),
+        "require_unassisted_lift": bool(args_cli.require_unassisted_lift),
         "video_folder": str(video_folder) if args_cli.video else None,
         "video_file": str(video_file) if video_file is not None else None,
         "camera": {

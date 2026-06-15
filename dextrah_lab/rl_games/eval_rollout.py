@@ -193,6 +193,7 @@ from isaaclab_tasks.utils.hydra import hydra_task_config
 from isaaclab_rl.rl_games import RlGamesGpuEnv, RlGamesVecEnvWrapper
 
 import dextrah_lab.tasks.dextrah_kuka_allegro.gym_setup  # noqa: F401
+import dextrah_lab.tasks.dextrah_bimanual_yam_cube_grasp.gym_setup  # noqa: F401
 import dextrah_lab.tasks.dextrah_franka_cube_grasp.gym_setup  # noqa: F401
 import dextrah_lab.tasks.dextrah_franka_multi_object_grasp.gym_setup  # noqa: F401
 import dextrah_lab.tasks.dextrah_franka_star_kitting.gym_setup  # noqa: F401
@@ -282,6 +283,21 @@ def _add_action_signal_metrics(metrics: dict[str, float | None], prefix: str, ac
     if dim_count >= 7:
         metrics[f"{prefix}_gripper_mean"] = _mean_float(action_tensor[:, 6])
         metrics[f"{prefix}_close_mean"] = _mean_float(torch.clamp(-action_tensor[:, 6], 0.0, 1.0))
+    if dim_count >= 14:
+        left_up = torch.clamp(action_tensor[:, 2], 0.0, 1.0)
+        right_up = torch.clamp(action_tensor[:, 9], 0.0, 1.0)
+        left_close = torch.clamp(-action_tensor[:, 6], 0.0, 1.0)
+        right_close = torch.clamp(-action_tensor[:, 13], 0.0, 1.0)
+        metrics[f"{prefix}_left_z_mean"] = _mean_float(action_tensor[:, 2])
+        metrics[f"{prefix}_left_up_mean"] = _mean_float(left_up)
+        metrics[f"{prefix}_left_gripper_mean"] = _mean_float(action_tensor[:, 6])
+        metrics[f"{prefix}_left_close_mean"] = _mean_float(left_close)
+        metrics[f"{prefix}_right_z_mean"] = _mean_float(action_tensor[:, 9])
+        metrics[f"{prefix}_right_up_mean"] = _mean_float(right_up)
+        metrics[f"{prefix}_right_gripper_mean"] = _mean_float(action_tensor[:, 13])
+        metrics[f"{prefix}_right_close_mean"] = _mean_float(right_close)
+        metrics[f"{prefix}_mean_up_mean"] = _mean_float(0.5 * (left_up + right_up))
+        metrics[f"{prefix}_mean_close_mean"] = _mean_float(0.5 * (left_close + right_close))
 
 
 def _add_action_delta_metrics(
@@ -327,6 +343,17 @@ def _collect_task_metrics(task_env, actions: torch.Tensor | None = None) -> dict
         "hand_to_cube_max_dist",
         "finger_table_clearance",
         "finger_table_clearance_violation",
+        "left_hold_to_cube_dist",
+        "right_hold_to_cube_dist",
+        "max_hold_to_cube_dist",
+        "hold_distance_asymmetry",
+        "bimanual_center_to_cube_dist",
+        "left_gripper_width",
+        "right_gripper_width",
+        "mean_gripper_width",
+        "left_side_alignment",
+        "right_side_alignment",
+        "bimanual_side_success",
         "grasp_prior_reset_attempted",
         "grasp_prior_reset_success",
         "grasp_prior_reset_farther",
@@ -385,6 +412,14 @@ def _collect_task_metrics(task_env, actions: torch.Tensor | None = None) -> dict
         "cube_xy_error",
         "finger_table_clearance",
         "finger_table_clearance_violation",
+        "left_hold_to_cube_dist",
+        "right_hold_to_cube_dist",
+        "max_hold_to_cube_dist",
+        "hold_distance_asymmetry",
+        "bimanual_center_to_cube_dist",
+        "left_gripper_width",
+        "right_gripper_width",
+        "mean_gripper_width",
         "gripper_width",
         "traj_target_table_clearance",
         "traj_target_gripper_width",
@@ -1038,6 +1073,14 @@ def _collect_episode_probe_metrics(task_env, num_envs: int) -> dict[str, list[fl
         "ee_to_cube_dist": "ee_to_cube_dist",
         "finger_center_to_cube_dist": "finger_center_to_cube_dist",
         "gripper_width": "gripper_width",
+        "left_hold_to_cube_dist": "left_hold_to_cube_dist",
+        "right_hold_to_cube_dist": "right_hold_to_cube_dist",
+        "max_hold_to_cube_dist": "max_hold_to_cube_dist",
+        "bimanual_center_to_cube_dist": "bimanual_center_to_cube_dist",
+        "left_gripper_width": "left_gripper_width",
+        "right_gripper_width": "right_gripper_width",
+        "mean_gripper_width": "mean_gripper_width",
+        "bimanual_side_success": "bimanual_side_success",
     }
     metrics: dict[str, list[float]] = {}
     for output_name, source_name in metric_sources.items():
@@ -1057,6 +1100,14 @@ def _empty_episode_stats(start_step: int) -> dict[str, float | int | None]:
         "min_ee_to_cube_dist": None,
         "min_finger_center_to_cube_dist": None,
         "min_gripper_width": None,
+        "min_left_hold_to_cube_dist": None,
+        "min_right_hold_to_cube_dist": None,
+        "min_max_hold_to_cube_dist": None,
+        "min_bimanual_center_to_cube_dist": None,
+        "min_left_gripper_width": None,
+        "min_right_gripper_width": None,
+        "min_mean_gripper_width": None,
+        "max_bimanual_side_success": None,
     }
 
 
@@ -1068,11 +1119,19 @@ def _update_episode_stats(
         "time_in_success_region": "max_time_in_success_region",
         "cube_lift_height": "max_cube_lift_height",
         "has_lifted_cube": "max_has_lifted_cube",
+        "bimanual_side_success": "max_bimanual_side_success",
     }
     min_fields = {
         "ee_to_cube_dist": "min_ee_to_cube_dist",
         "finger_center_to_cube_dist": "min_finger_center_to_cube_dist",
         "gripper_width": "min_gripper_width",
+        "left_hold_to_cube_dist": "min_left_hold_to_cube_dist",
+        "right_hold_to_cube_dist": "min_right_hold_to_cube_dist",
+        "max_hold_to_cube_dist": "min_max_hold_to_cube_dist",
+        "bimanual_center_to_cube_dist": "min_bimanual_center_to_cube_dist",
+        "left_gripper_width": "min_left_gripper_width",
+        "right_gripper_width": "min_right_gripper_width",
+        "mean_gripper_width": "min_mean_gripper_width",
     }
     for source_name, stat_name in max_fields.items():
         values = probe_metrics.get(source_name)
@@ -1127,6 +1186,24 @@ def _finish_episode_outcome(
             terminal_probe_metrics, "finger_center_to_cube_dist", env_idx
         ),
         "terminal_gripper_width": _episode_metric_value(terminal_probe_metrics, "gripper_width", env_idx),
+        "terminal_left_hold_to_cube_dist": _episode_metric_value(
+            terminal_probe_metrics, "left_hold_to_cube_dist", env_idx
+        ),
+        "terminal_right_hold_to_cube_dist": _episode_metric_value(
+            terminal_probe_metrics, "right_hold_to_cube_dist", env_idx
+        ),
+        "terminal_max_hold_to_cube_dist": _episode_metric_value(
+            terminal_probe_metrics, "max_hold_to_cube_dist", env_idx
+        ),
+        "terminal_bimanual_center_to_cube_dist": _episode_metric_value(
+            terminal_probe_metrics, "bimanual_center_to_cube_dist", env_idx
+        ),
+        "terminal_left_gripper_width": _episode_metric_value(terminal_probe_metrics, "left_gripper_width", env_idx),
+        "terminal_right_gripper_width": _episode_metric_value(terminal_probe_metrics, "right_gripper_width", env_idx),
+        "terminal_mean_gripper_width": _episode_metric_value(terminal_probe_metrics, "mean_gripper_width", env_idx),
+        "terminal_bimanual_side_success": _episode_metric_value(
+            terminal_probe_metrics, "bimanual_side_success", env_idx
+        ),
         **{key: value for key, value in stats.items() if key != "start_step"},
         "success": bool(max_success is not None and float(max_success) >= 0.5),
         "lifted": bool(max_lifted is not None and float(max_lifted) >= 0.5),
@@ -1150,6 +1227,11 @@ def _collect_action_metrics(actions: torch.Tensor) -> dict[str, float | None]:
             metrics[f"action_env0_{idx}"] = float(value)
         if first.numel() > 6:
             metrics["gripper_action_env0"] = float(first[6])
+        if first.numel() > 13:
+            metrics["left_z_action_env0"] = float(first[2])
+            metrics["left_gripper_action_env0"] = float(first[6])
+            metrics["right_z_action_env0"] = float(first[9])
+            metrics["right_gripper_action_env0"] = float(first[13])
     return metrics
 
 
@@ -1343,6 +1425,11 @@ def _env_config_summary(env_cfg, task_env) -> dict[str, object]:
         "cube_table_clearance_penalty_weight",
         "cube_gripper_close_reg_weight",
         "cube_action_penalty_weight",
+        "cube_side_alignment_weight",
+        "cube_success_lift_height",
+        "cube_success_xy_tol",
+        "cube_success_hand_dist",
+        "side_success_y_margin",
         "trajectory_tracking_enabled",
         "trajectory_tracking_reference_path",
         "trajectory_tracking_reference_duration_s",
