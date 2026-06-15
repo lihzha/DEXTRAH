@@ -775,8 +775,8 @@ def _run_scripted_demo(
                 desired_left_hold,
                 desired_right_hold,
                 grip=-1.0,
-                gain=0.65,
-                max_action=0.45,
+                gain=0.85,
+                max_action=0.65,
             )
         elif step < lift_start_step and not lift_phase_active:
             phase_name = "approach"
@@ -789,8 +789,8 @@ def _run_scripted_demo(
                 desired_left_hold,
                 desired_right_hold,
                 grip=-1.0,
-                gain=0.45,
-                max_action=0.35,
+                gain=0.85,
+                max_action=0.65,
             )
         else:
             phase_name = "lift"

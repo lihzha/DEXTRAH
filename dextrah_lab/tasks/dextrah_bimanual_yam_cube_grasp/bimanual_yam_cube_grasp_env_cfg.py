@@ -235,8 +235,8 @@ class DextrahBimanualYAMCubeGraspEnvCfg(DirectRLEnvCfg):
     bimanual_reference_lift_gain = 0.35
     bimanual_reference_lift_max_action = 0.45
     bimanual_reference_contact_side_margin = 0.004
-    bimanual_reference_cube_center_to_hold_z = 0.040
-    bimanual_reference_min_hold_z = 0.110
+    bimanual_reference_cube_center_to_hold_z = 0.050
+    bimanual_reference_min_hold_z = 0.125
     bimanual_reference_contact_dist = 0.180
     bimanual_reference_contact_target_dist = 0.045
     bimanual_reference_closed_width_fraction = 0.65

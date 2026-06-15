@@ -1359,6 +1359,53 @@ Validation plan:
 - Rerun the strict stable validator with `LIFT_HEIGHT=0.06`, no grasp assist, and no video first.
 - If the stable validator passes, run a visual validator with video before resuming PPO.
 
+## 2026-06-15 23:56Z - planned action-path stable validator
+
+Goal:
+- Test whether the action-interface validator can reach and lift the 14 cm cube without the hardcoded joint-pose contact artifact.
+
+Version state:
+- local_commit: `ad8c8d7cc50b0372a98be886887670e0b309fd77`
+- remote_commit: `ad8c8d7cc50b0372a98be886887670e0b309fd77`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/bimanual-yam-cube-rl-20260615T203824Z`
+
+Planned command/job:
+- Submit `cluster/sbatch_validate_bimanual_yam_cube_grasp_env_1gpu.sh`.
+- A100 job: `29124276`
+- Expected run: `yam_cube_actionpath_validator_ad8c8d7_20260615T2356Z`
+- Log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_bimanual_yam_cube_29124276.out`
+- Metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/yam_cube_actionpath_validator_ad8c8d7_20260615T2356Z/metrics.json`
+- Key settings: strict stable validator, `NUM_ENVS=1`, `NUM_STEPS=560`, `LIFT_HEIGHT=0.06`, `CAPTURE_VIDEO=False`, `ALLOW_GRASP_ASSIST=False`, `REQUIRE_UNASSISTED_LIFT=True`, `DISABLE_FABRIC=True`.
+
+Success criteria:
+- Stable no-assist success with `max_success_rate > 0.0` and success cube speeds below `0.60 m/s` and `8.0 rad/s`.
+- If failed, use hold-distance, cube-speed, and lift diagnostics to decide whether the next issue is reach/contact geometry or physics tuning.
+
+Result/evidence:
+- Job `29124276` completed and failed stable validation.
+- Metrics: `max_lift=0.0`, `max_success_rate=0.0`, `max_cube_linear_speed=0.1630914807319641`, `max_cube_angular_speed=1.5506199598312378`.
+- The action-interface path did not reproduce the prior shaking/false-lift behavior.
+- Standoff was reached at step `141`, but contact was not reached. Best hold distance was `0.12881381809711456` versus required `0.120`.
+- Best hold positions were approximately left `[-0.3018, 0.1210, 0.1143]` and right `[-0.3018, -0.1210, 0.1143]`, with the cube stable on the table.
+
+Analysis:
+- The current action path is stable but too conservative or too low for the YAM to close the lateral side gap.
+- Next change should keep the action-interface validator but increase approach authority and move the hold target slightly higher, then rerun the same strict stable gate.
+
+## 2026-06-16 00:00Z - tune action-path contact authority
+
+Goal:
+- Reach physical side contact through the RL action interface while preserving the stricter cube-speed stability gate.
+
+Change:
+- Increased validator standoff/approach action gains and max actions from `0.65/0.45` and `0.45/0.35` to `0.85/0.65`.
+- Raised reference hold target from `center_z + 0.040`, min `0.110` to `center_z + 0.050`, min `0.125`.
+- Kept cube geometry, friction, damping, solver settings, success speed thresholds, and no-assist requirement unchanged.
+
+Validation plan:
+- Run Python syntax and whitespace checks.
+- Commit/push/redeploy and rerun the strict no-video stable validator.
+
 ## 2026-06-16 04:05Z - planned smaller-cube stable validator
 
 Goal:
