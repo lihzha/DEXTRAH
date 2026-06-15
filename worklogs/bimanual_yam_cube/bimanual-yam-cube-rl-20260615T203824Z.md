@@ -608,3 +608,92 @@ Validation:
 
 Next:
 - Commit/push/redeploy, then resume PPO from the dense-run best checkpoint with higher close/lift action weights.
+
+## 2026-06-15 23:50Z - resume PPO with fixed close reward
+
+Goal:
+- Continue from the approach-trained dense policy and test whether the fixed close-action reward drives gripper closure and lift.
+
+Version state:
+- local_commit: `a50a48061337266d4fe500add4d90093e95d72ef`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/bimanual-yam-cube-rl-20260615T203824Z`
+- remote_commit: `a50a48061337266d4fe500add4d90093e95d72ef`
+
+Command/job:
+- A100 job: `29117551`
+- run_name: `yam_cube_rl_closefix_a50a480_20260615T2350Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bimanual_yam_cube_rl_29117551.out`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_bimanual_yam_cube_grasp/yam_cube_rl_closefix_a50a480_20260615T2350Z`
+- metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_bimanual_yam_cube_grasp/yam_cube_rl_closefix_a50a480_20260615T2350Z/metrics/direct_info_rank_0.jsonl`
+- checkpoint seed: `/results/logs/rl_games/dextrah_bimanual_yam_cube_grasp/yam_cube_rl_tuned_dense_0decdfa_20260615T2328Z/nn/dextrah_bimanual_yam_cube_grasp.pth`
+- key overrides: `NUM_ENVS=512`, `MAX_ITERATIONS=100`, `CHECKPOINT=<dense best>`, `CUBE_APPROACH_WEIGHT=12.0`, `CUBE_APPROACH_SHARPNESS=2.0`, `CUBE_ENCLOSURE_WEIGHT=6.0`, `CUBE_ENCLOSURE_SHARPNESS=3.0`, `CUBE_LIFT_WEIGHT=24.0`, `CUBE_HEIGHT_TRACKING_WEIGHT=6.0`, `CUBE_XY_STABILITY_WEIGHT=0.0`, `CUBE_SUCCESS_BONUS_WEIGHT=40.0`, `CUBE_CLOSE_ACTION_WEIGHT=4.0`, `CUBE_LIFT_ACTION_WEIGHT=4.0`, `CUBE_DESCEND_ACTION_PENALTY_WEIGHT=-2.0`.
+
+Success criteria:
+- Job exits zero with finite metrics/checkpoints.
+- Gripper widths drop toward the closed threshold and success rate improves beyond the dense run's sparse `0.001953125`.
+- If success is sustained, evaluate the best/latest checkpoint.
+
+Status:
+- Complete; configuration mistake caused immediate stop after one resumed epoch.
+
+Result/evidence:
+- The checkpoint loaded and restored runtime state: `[DEXTRAH resume] restored runtime state on rank 0 at epoch 120`.
+- Because `MAX_ITERATIONS=100` was lower than the restored epoch, RL-Games stopped after epoch 121.
+- The single row showed the reward fix was active and useful for the current policy state: `yam_cube_bimanual_side_success_rate=0.896484375`, `yam_cube_max_hold_to_cube_dist=0.16850101947784424`, `yam_cube_close_action_reward=1.1209946870803833`.
+- Gripper closure was asymmetric: right gripper width `0.12067050486803055`, left gripper width `0.15432754158973694`; success remained `0.0`.
+
+Analysis:
+- Relaunch with `MAX_ITERATIONS` greater than the restored checkpoint epoch, e.g. `220`, to run about 100 additional epochs.
+
+## 2026-06-16 00:02Z - corrected close-fix PPO continuation
+
+Goal:
+- Continue the dense checkpoint with the fixed close-action reward for roughly 100 additional epochs.
+
+Version state:
+- local_commit: `a50a48061337266d4fe500add4d90093e95d72ef`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/bimanual-yam-cube-rl-20260615T203824Z`
+- remote_commit: `a50a48061337266d4fe500add4d90093e95d72ef`
+
+Command/job:
+- A100 job: `29117584`
+- run_name: `yam_cube_rl_closefix_a50a480_20260616T0002Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bimanual_yam_cube_rl_29117584.out`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_bimanual_yam_cube_grasp/yam_cube_rl_closefix_a50a480_20260616T0002Z`
+- metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_bimanual_yam_cube_grasp/yam_cube_rl_closefix_a50a480_20260616T0002Z/metrics/direct_info_rank_0.jsonl`
+- checkpoint seed: `/results/logs/rl_games/dextrah_bimanual_yam_cube_grasp/yam_cube_rl_tuned_dense_0decdfa_20260615T2328Z/nn/dextrah_bimanual_yam_cube_grasp.pth`
+- key correction: `MAX_ITERATIONS=220` so the run continues past the restored epoch 120.
+
+Success criteria:
+- Job exits zero with finite metrics/checkpoints.
+- Close reward lowers both gripper widths near the closed threshold, lift/success improve, and a usable checkpoint can be evaluated.
+
+Status:
+- Complete; training succeeded mechanically and learned closed side grasp, but still did not lift.
+
+Result/evidence:
+- Job exited zero and wrote 100 JSONL records for resumed epochs 121-220 plus checkpoints through epoch 220.
+- By epoch 220: `yam_cube_bimanual_side_success_rate=0.998046875`, `yam_cube_max_hold_to_cube_dist=0.14741522073745728`, `left_gripper_width=0.1084306538105011`, `right_gripper_width=0.10866105556488037`.
+- Best observed side success reached `1.0`; both grippers reached the physical closed width.
+- Task success remained `0.0`; best `yam_cube_has_lifted_rate` was only `0.009765625`.
+- Z actions stayed near zero or negative in late epochs, e.g. epoch 220 `left_action_z=-0.08321336656808853`, `right_action_z=-0.009048357605934143`.
+
+Analysis:
+- The close-reward fix solved the gripper-closure bottleneck.
+- Remaining bottleneck is lift encouragement. The YAM reward's `closed_grippers` scale used the Franka-style denominator and only reached about 0.4 at YAM's physical closed width, so the lift-ready gate stayed weak while close reward kept paying.
+
+## 2026-06-16 00:14Z - saturate YAM closed-gripper reward gate
+
+Goal:
+- Treat the YAM's physical closed width as closed for reward gating, then stop paying close-action reward once closed so lift rewards can dominate.
+
+Change:
+- Changed the `closed_grippers` denominator from `0.65 * max_gripper_width` to `0.25 * max_gripper_width`, so the gate reaches 1.0 around the task's `0.65 * max_gripper_width` closed threshold.
+- Multiplied `close_action_reward` by `(1.0 - closed_grippers)`.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_rewards.py`
+- Result: passed.
+
+Next:
+- Commit/push/redeploy, then continue from the closed-grasp checkpoint with stronger lift-action and lift rewards.
