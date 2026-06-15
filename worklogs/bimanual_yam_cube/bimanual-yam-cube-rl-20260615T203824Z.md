@@ -98,3 +98,26 @@ Validation:
 - `python3 -m py_compile dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_env_cfg.py`
 - `git diff --check`
 - Result: passed.
+
+## 2026-06-15 20:58Z - make the YAM cube grasp physically pinchable
+
+Observation:
+- A100 eval job `29115397` with `ACTION_SOURCE=reference_delta` completed 720 steps with `eval_success_rate=0.0` and `success_ever_rate=0.0`.
+- The reference reached balanced side contact (`max_bimanual_side_success=1.0`) but never lifted the cube (`cube_lift_height_max_by_env=[0.0]`).
+- The measured closed YAM finger spacing was about `0.1078 m`, while the task cube was `0.10 m`; the robot could surround the cube but could not physically pinch it.
+
+Change:
+- Increased the default cube edge length from `0.10 m` to `0.12 m`, keeping the cube wider than the closed YAM finger spacing.
+- Reduced density from `120` to `80 kg/m^3` so the larger cube stays near the old mass scale.
+- Increased cube friction to `2.4/1.9` static/dynamic.
+- Retuned the bimanual reference contact offset and lift trigger for the larger cube: side margin `0.010`, hold-z center offset `0.032`, min hold-z `0.105`, contact distance `0.155`.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_env_cfg.py dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_env.py dextrah_lab/rl_games/validate_bimanual_yam_cube_grasp_env.py dextrah_lab/rl_games/eval_rollout.py dextrah_lab/rl_games/train.py`
+- `git diff --check`
+- Result: passed.
+
+Next:
+- Commit and push the graspability fix.
+- Update the A100 agent worktree to the exact commit.
+- Rerun the `reference_delta` eval as the strict action-interface RLability gate before launching PPO.
