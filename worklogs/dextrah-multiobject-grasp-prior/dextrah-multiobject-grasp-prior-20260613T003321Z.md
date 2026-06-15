@@ -7399,3 +7399,275 @@ Validation:
 
 Next:
 - Commit and deploy this patch to the A100 agent worktree, then launch a short two-object diagnostic with high object friction and the same force-close warmstart. If lift height/success improves, keep the physics change and continue training; if not, render a matching contact video and inspect object-by-object metrics.
+
+## 2026-06-15T01:55:00Z - High-friction force-close train35 launch
+
+Goal:
+- Test whether high object friction and stronger solver settings let force-closed top-down grasps carry the two validated objects high enough for the teacher task success threshold.
+
+Hypothesis:
+- If the prior reset and force-close sequence are geometrically correct but the object slips out of the gripper, increasing object friction and solver iterations should raise lift-phase lift height and success. Per-object metrics should reveal whether only one UUID is responsible for the aggregate plateau.
+
+Change:
+- implementation_commit: `3c4e22e87a23688e99fcde3f191bece9832ebf1e`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-bc-fallback-20260614-d5e8b27`
+- same two-object manifest, stable pose cache, verified indices, force-close warmstart, no-underneath grasp prior, and random yaw/object assignment as `train50_forceclose`.
+- object physics overrides:
+  - `OBJECT_STATIC_FRICTION=4.0`
+  - `OBJECT_DYNAMIC_FRICTION=3.5`
+  - `OBJECT_SOLVER_POSITION_ITERATIONS=24`
+  - `OBJECT_SOLVER_VELOCITY_ITERATIONS=8`
+
+Command / Job:
+- command: `sbatch --export=ALL,...,MAX_ITERATIONS=35,OBJECT_STATIC_FRICTION=4.0,OBJECT_DYNAMIC_FRICTION=3.5,OBJECT_SOLVER_POSITION_ITERATIONS=24,OBJECT_SOLVER_VELOCITY_ITERATIONS=8 cluster/sbatch_train_teacher_8gpu.sh` on `a1001`
+- job_id: `29082527`
+- run_name: `franka_multi_state_teacher_7195_b87_nobelow_train35_forceclose_friction_3c4e22e_20260615T0155Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29082527.out`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_train35_forceclose_friction_3c4e22e_20260615T0155Z`
+
+Next:
+- Verify log echo and first metrics include the object-physics overrides and per-object scalar keys. Compare against `train50_forceclose`: max success `0.0918`, last-10 mean success around cancel `0.0269`, last-10 mean lift height `0.0161 m`, lift-phase gripper width around `0.002 m`.
+
+Result:
+- status: canceled after checkpoint `20`.
+- scheduler: canceled at `00:15:53` elapsed.
+- artifacts:
+  - log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29082527.out`
+  - metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_train35_forceclose_friction_3c4e22e_20260615T0155Z/metrics/direct_info_rank_0.jsonl`
+  - checkpoint: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_train35_forceclose_friction_3c4e22e_20260615T0155Z/nn/last_dextrah_franka_multi_object_grasp_ep_20_rew_2325.0469.pth`
+- metrics:
+  - high friction improved mechanical carry relative to `train50_forceclose`: max `cube_success_rate=0.1221` vs `0.0918`, last-10 mean success at cancel `0.0397` vs `0.0269`, and lift-phase height often `0.04-0.08 m` instead of `0.02-0.04 m`.
+  - per-object metrics worked. Both objects can succeed, but object 0 is easier; object 1 often trails after the initial reset cycle.
+  - still not training-success quality: sustained success remains low and below the `0.12 m` success-height requirement for most envs.
+
+Next:
+- Keep high friction/solver settings, but reduce `GRASP_PRIOR_PREGRASP_OFFSET` from `0.03` to `0.005`. The reset code currently solves IK to the pregrasp pose, so the 3 cm offset leaves too much approach/close burden before lift. Keep the offset nonzero so contact-based candidates still use the forced top-down approach prior.
+
+## 2026-06-15T02:17:00Z - High-friction 5mm-pregrasp train30 launch
+
+Goal:
+- Test whether resetting closer to the exact grasp pose improves carry/lift enough for sustained success while preserving the no-underneath top-down prior.
+
+Hypothesis:
+- The high-friction run showed contact can carry objects partway, but the 3 cm pregrasp offset forces too much approach/close before lift. A 5 mm pregrasp offset should make the initial gripper pose closer to the sampled grasp without disabling the top-down approach filter.
+
+Change:
+- Same commit and settings as high-friction train35, except:
+  - `MAX_ITERATIONS=30`
+  - `GRASP_PRIOR_PREGRASP_OFFSET=0.005`
+
+Command / Job:
+- command: `sbatch --export=ALL,...,MAX_ITERATIONS=30,GRASP_PRIOR_PREGRASP_OFFSET=0.005,OBJECT_STATIC_FRICTION=4.0,... cluster/sbatch_train_teacher_8gpu.sh` on `a1001`
+- job_id: `29082969`
+- run_name: `franka_multi_state_teacher_7195_b87_nobelow_train30_friction_pregrasp5mm_3c4e22e_20260615T0217Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29082969.out`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_train30_friction_pregrasp5mm_3c4e22e_20260615T0217Z`
+
+Next:
+- Verify startup and compare against high-friction train35: max success `0.1221`, last-10 mean success at cancel `0.0397`, lift-phase height often `0.04-0.08 m`.
+
+Result:
+- status: canceled after epoch `18`; the hypothesis was rejected.
+- scheduler: `29082969` was canceled after about `00:10:36`; `sacct` shows the batch step exited with signal/exit `15:0`.
+- artifacts:
+  - log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29082969.out`
+  - metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_train30_friction_pregrasp5mm_3c4e22e_20260615T0217Z/metrics/direct_info_rank_0.jsonl`
+  - checkpoint: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_train30_friction_pregrasp5mm_3c4e22e_20260615T0217Z/nn/last_dextrah_franka_multi_object_grasp_ep_15_rew_1184.4327.pth`
+- metrics:
+  - max `cube_success_rate=0.0361`, last-10 mean success `0.0122`, latest success `0.0039`.
+  - reducing pregrasp to `0.005 m` regressed reset quality: latest `cube_grasp_prior_reset_success_rate=0.2188`, with object 0 at `0.3984` but object 1 only `0.0391`.
+  - the previous high-friction 3 cm run was materially better: best success `0.1221`, latest reset success `0.4893`, object 0 reset `0.5566`, object 1 reset `0.4219`.
+
+Analysis:
+- The no-underneath prior is not the current blocker: candidate diagnostics reported all sampled candidates passing the top-down/contact-height gates. The 5 mm offset breaks the reset-quality geometry for the second object, so the policy receives far fewer valid warmstart demonstrations.
+- Keep the 3 cm high-friction setup as the best current baseline. Further improvement should come from better reset/curriculum settings around that setup, not from shrinking the pregrasp offset.
+
+Next:
+- Relaunch from the high-friction 3 cm recipe with the validated close/lift sequence rather than the failed 5 mm offset. Track per-object reset success, warmstart lift success, lift height, and policy action imitation.
+
+## 2026-06-15T02:37:00Z - High-friction validated-warmstart train60 launch
+
+Goal:
+- Improve over the best `3 cm + high friction` baseline while preserving the no-underneath grasp prior and the two-object randomized-yaw setup.
+
+Hypothesis:
+- The 5 mm pregrasp regressed reset quality, while the 3 cm high-friction run produced usable resets for both objects. A less violent validated warmstart (`close_width=0.004`, `lift_z=0.50`) should produce more consistent lifted rollouts than the force-close `0.002 / z=0.75` sequence, giving PPO better policy-action imitation data.
+
+Change:
+- No source-code change from `3c4e22e87a23688e99fcde3f191bece9832ebf1e`.
+- Settings relative to `train35_forceclose_friction`:
+  - keep `GRASP_PRIOR_PREGRASP_OFFSET=0.03`
+  - keep high-friction object physics
+  - keep verified two-object grasp cache and stable-pose cache
+  - change warmstart/reference sequence to `approach=12`, `close=36`, `lift=160`
+  - change close width to `0.004 m`
+  - change lift z action to `0.50`
+  - use `MAX_ITERATIONS=60`
+
+Command / Job:
+- command: `sbatch --export=ALL,...,MAX_ITERATIONS=60,GRASP_PRIOR_ACTION_WARMSTART_CLOSE_WIDTH=0.004,GRASP_PRIOR_ACTION_WARMSTART_LIFT_ACTION_Z=0.50 cluster/sbatch_train_teacher_8gpu.sh` on `a1001`
+- job_id: `29083214`
+- run_name: `franka_multi_state_teacher_7195_b87_nobelow_train60_friction_validwarm_3c4e22e_20260615T0237Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29083214.out`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_train60_friction_validwarm_3c4e22e_20260615T0237Z`
+
+Next:
+- Submit and monitor startup, object/reset scalar keys, warmstart lift success, per-object reset success, and policy-action imitation metrics. Stop/relaunch if reset success or warmstart lift collapses below the high-friction baseline.
+
+Result:
+- status: canceled after epoch `33`; useful diagnostic but not a successful training run.
+- scheduler: canceled at `00:23:53` elapsed after checkpoint `30`.
+- artifacts:
+  - log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29083214.out`
+  - metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_train60_friction_validwarm_3c4e22e_20260615T0237Z/metrics/direct_info_rank_0.jsonl`
+  - checkpoint: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_train60_friction_validwarm_3c4e22e_20260615T0237Z/nn/last_dextrah_franka_multi_object_grasp_ep_30_rew_2020.2227.pth`
+- metrics:
+  - first epoch was strong (`cube_success_rate=0.1885`, object 0 `0.2070`, object 1 `0.1699`), proving the reset/physics/curriculum can produce successful lifted rollouts for both objects.
+  - sustained policy training did not follow: latest rows had last-20 mean success `0.0363`, last-20 mean lift height `0.0221 m`, and latest success `0.0381`.
+  - policy learned to close more than to lift. The reference/action-prior aggregate z was near zero or negative through most later epochs because approach/close dominated the active reference phases, while mean policy z also stayed near zero or negative.
+
+Analysis:
+- This is a better mechanical curriculum than the rejected 5 mm run, but the action-prior signal is not lift-dominant enough. The policy gets successful warmstart physics intermittently yet settles into close/hold behavior.
+
+Next:
+- Relaunch from the epoch-30 checkpoint with a lift-heavy curriculum: latch lift readiness, shorten approach/close, lengthen lift, raise lift action/reward weights, and make the action-prior imitation less sharp so positive lift commands are easier to learn.
+
+## 2026-06-15T02:47:00Z - Lift-heavy continuation launch
+
+Goal:
+- Turn the successful warmstart mechanics into a policy that actually commands upward motion after closing.
+
+Hypothesis:
+- The previous run already learned some closing behavior and saw successful lifted rollouts, but its reference/action-prior signal did not emphasize lift enough. Starting from the epoch-30 checkpoint with a latched, longer lift phase and stronger lift rewards should increase mean policy z and sustained success.
+
+Change:
+- No source-code change from `3c4e22e87a23688e99fcde3f191bece9832ebf1e`.
+- Resume from checkpoint:
+  `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_train60_friction_validwarm_3c4e22e_20260615T0237Z/nn/last_dextrah_franka_multi_object_grasp_ep_30_rew_2020.2227.pth`
+- Settings relative to `train60_friction_validwarm`:
+  - `MAX_ITERATIONS=40`
+  - warmstart/reference `approach=4`, `close=20`, `lift=300`
+  - `GRASP_PRIOR_ACTION_WARMSTART_LIFT_ACTION_Z=0.75`
+  - `GRASP_PRIOR_ACTION_WARMSTART_REQUIRE_CURRENT_LIFT_READY=False`
+  - `GRASP_PRIOR_ACTION_PRIOR_REWARD_WEIGHT=40.0`
+  - `GRASP_PRIOR_ACTION_PRIOR_REWARD_SHARPNESS=1.0`
+  - stronger lift shaping: `CUBE_LIFT_ACTION_WEIGHT=8`, `CUBE_POSTLIFT_LIFT_ACTION_WEIGHT=6`, descend penalties `-8`
+
+Command / Job:
+- command: `sbatch --export=ALL,...,CHECKPOINT=/results/...ep_30...,GRASP_PRIOR_ACTION_WARMSTART_REQUIRE_CURRENT_LIFT_READY=False cluster/sbatch_train_teacher_8gpu.sh` on `a1001`
+- job_id: `29083826`
+- run_name: `franka_multi_state_teacher_7195_b87_nobelow_train40_liftheavy_resume30_3c4e22e_20260615T0247Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29083826.out`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_train40_liftheavy_resume30_3c4e22e_20260615T0247Z`
+
+Next:
+- Submit and monitor startup/checkpoint loading. Early acceptance: policy z should become positive during the first 10-15 epochs, with last-10 success above the previous `~0.04` plateau.
+
+Result:
+- status: completed at epoch `40`.
+- scheduler: `COMPLETED`, elapsed `00:10:28`.
+- artifacts:
+  - log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29083826.out`
+  - metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_train40_liftheavy_resume30_3c4e22e_20260615T0247Z/metrics/direct_info_rank_0.jsonl`
+  - checkpoint: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_train40_liftheavy_resume30_3c4e22e_20260615T0247Z/nn/last_dextrah_franka_multi_object_grasp_ep_40_rew_3007.3823.pth`
+- metrics:
+  - best/latest epoch `40`: `cube_success_rate=0.1235`, `cube_lift_height=0.0381 m`, object 0 success `0.1143`, object 1 success `0.1328`.
+  - policy z moved positive by later epochs (`epoch 40 cube_policy_action_z=0.0650`; epochs 36-39 were also positive), so the lift-heavy curriculum fixed the previous no-lift policy tendency.
+  - closure degraded during lift: lift-phase gripper width at epoch 40 was `0.0142 m`, and success was stochastic rather than sustained (`last10 mean success=0.0395`).
+
+Analysis:
+- The next bottleneck is not lift command anymore; it is retaining a tight enough grasp while lifting. Continue from epoch 40 with stronger close/hold shaping and a tighter close target.
+
+Next:
+- Relaunch from epoch 40 with `close_width=0.002`, stronger close/postlift close rewards, stronger open penalties, and close regularization, while keeping lift-heavy positive-z settings.
+
+## 2026-06-15T03:00:00Z - Close-heavy lift continuation launch
+
+Goal:
+- Preserve the positive lift behavior from the lift-heavy run while preventing the gripper from opening/slipping during lift.
+
+Hypothesis:
+- Epoch 40 shows the policy can lift when the rollout happens to keep contact. A tighter close target and stronger close-retention shaping should improve sustained success rather than only producing isolated success spikes.
+
+Change:
+- No source-code change from `3c4e22e87a23688e99fcde3f191bece9832ebf1e`.
+- Resume from checkpoint:
+  `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_train40_liftheavy_resume30_3c4e22e_20260615T0247Z/nn/last_dextrah_franka_multi_object_grasp_ep_40_rew_3007.3823.pth`
+- Settings relative to `liftheavy_resume30`:
+  - `MAX_ITERATIONS=60`
+  - `GRASP_PRIOR_ACTION_WARMSTART_CLOSE_WIDTH=0.002`
+  - `GRASP_PRIOR_ACTION_PRIOR_REWARD_WEIGHT=60.0`
+  - `CUBE_CLOSE_ACTION_WEIGHT=2.0`
+  - `CUBE_POSTLIFT_CLOSE_ACTION_WEIGHT=2.0`
+  - `CUBE_POSTLIFT_OPEN_ACTION_PENALTY_WEIGHT=-3.0`
+  - `CUBE_GRIPPER_CLOSE_REG_WEIGHT=-0.02`
+
+Command / Job:
+- command: `sbatch --export=ALL,...,CHECKPOINT=/results/...ep_40...,GRASP_PRIOR_ACTION_WARMSTART_CLOSE_WIDTH=0.002 cluster/sbatch_train_teacher_8gpu.sh` on `a1001`
+- job_id: `29083967`
+- run_name: `franka_multi_state_teacher_7195_b87_nobelow_train60_closeheavy_resume40_3c4e22e_20260615T0300Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29083967.out`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_train60_closeheavy_resume40_3c4e22e_20260615T0300Z`
+
+Next:
+- Submit and monitor. Early acceptance: maintain positive policy z while driving policy gripper negative and lift-phase gripper width below the prior `~0.014 m`; success should exceed the `0.12` spike more consistently.
+
+Result:
+- status: completed, but not accepted as a successful training run.
+- scheduler: `COMPLETED`, elapsed `00:16:24`.
+- artifacts:
+  - log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29083967.out`
+  - metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_train60_closeheavy_resume40_3c4e22e_20260615T0300Z/metrics/direct_info_rank_0.jsonl`
+  - checkpoints:
+    - `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_train60_closeheavy_resume40_3c4e22e_20260615T0300Z/nn/last_dextrah_franka_multi_object_grasp_ep_50_rew_4457.714.pth`
+    - `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_train60_closeheavy_resume40_3c4e22e_20260615T0300Z/nn/last_dextrah_franka_multi_object_grasp_ep_60_rew_4632.7217.pth`
+- metrics:
+  - best epoch `50`: `cube_success_rate=0.1138`, object 0 `0.1055`, object 1 `0.1221`, `cube_lift_height=0.0361 m`, `cube_gripper_width=0.0199`, `cube_policy_action_z=0.1556`, `cube_policy_gripper_action=-0.3985`.
+  - final epoch `60`: `cube_success_rate=0.0630`, object 0 `0.0391`, object 1 `0.0869`, `cube_lift_height=0.0293 m`, `cube_gripper_width=0.0094`, `cube_policy_action_z=0.3236`, `cube_policy_gripper_action=-0.6515`.
+  - tail stability stayed poor: last-10 mean success `0.0354`, last-20 mean success `0.0346`.
+
+Analysis:
+- The close-heavy continuation did what it was designed to do mechanically: the policy learned stronger negative gripper action and stronger positive z action. Success still decayed, so the remaining bottleneck is likely action/reward balance or control mismatch during contact, not missing closure or missing lift intent.
+- The best scalar point from this run does not beat the lift-heavy epoch-40 peak (`0.1235`) and is less stable than required. Do not continue from the degraded epoch-60 state as the primary path.
+
+Next:
+- Run policy-only evaluation videos/metrics for the lift-heavy epoch-40, close-heavy epoch-50, and close-heavy epoch-60 checkpoints under identical two-object random-yaw/no-underneath reset settings. Use the eval evidence to decide whether to continue from lift-heavy epoch-40 with gentler close shaping and lower learning rate, or from close-heavy epoch-50 if policy-only behavior is materially better.
+
+## 2026-06-15T03:17:41Z - Make no-underneath prior explicit in wrappers
+
+Goal:
+- Ensure the user's prior that the robot should never grasp objects from below is explicit and reproducible in collection, validation, evaluation, and training launch logs.
+
+Hypothesis:
+- The environment already enforces top-down/contact-height filtering, but relying on the task default for the contact-height threshold makes it easy for future runs to miss or fail to record the underside rejection rule. Exposing it through wrappers prevents silent drift.
+
+Change:
+- Added `GRASP_PRIOR_RESET_MIN_CONTACT_HEIGHT_ABOVE_CENTER=0.0` to multi-object train/eval wrappers and passed it as `env.grasp_prior_reset_min_contact_height_above_center`.
+- Added `GRASP_RESET_MIN_CONTACT_HEIGHT_ABOVE_CENTER=0.0` to verified-grasp collection and validation-video wrappers.
+- Added CLI plumbing in `collect_franka_multi_object_verified_grasps.py` and `validate_franka_multi_object_grasp_videos.py`.
+- The environment math is unchanged: contact/reference points below the current object center are rejected, and contact-based pregrasp offsets remain forced to world-up when top-down reset is required.
+
+Version Control:
+- agent_id: `merge-dp-rgb-main-20260613`
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/merge-dp-rgb-main-20260613`
+- branch: `main`
+- base_commit: `3c4e22e87a23688e99fcde3f191bece9832ebf1e`
+- implementation_commit: pending
+- changed_files:
+  - `cluster/sbatch_collect_franka_multi_object_verified_grasps_1gpu.sh`
+  - `cluster/sbatch_eval_franka_multi_object_grasp_1gpu.sh`
+  - `cluster/sbatch_train_teacher_8gpu.sh`
+  - `cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh`
+  - `dextrah_lab/rl_games/collect_franka_multi_object_verified_grasps.py`
+  - `dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py`
+  - `worklogs/dextrah-multiobject-grasp-prior/dextrah-multiobject-grasp-prior-20260613T003321Z.md`
+
+Command / Job:
+- command: `python3 -m py_compile dextrah_lab/rl_games/collect_franka_multi_object_verified_grasps.py dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py && bash -n cluster/sbatch_collect_franka_multi_object_verified_grasps_1gpu.sh && bash -n cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh && bash -n cluster/sbatch_train_teacher_8gpu.sh && bash -n cluster/sbatch_eval_franka_multi_object_grasp_1gpu.sh && git diff --check`
+- job_id: n/a
+
+Result:
+- status: local validation passed.
+
+Next:
+- Commit/push the wrapper patch, update the A100 agent worktree to the exact commit, then launch policy-only evaluation of the best candidate checkpoints.

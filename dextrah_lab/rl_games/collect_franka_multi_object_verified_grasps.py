@@ -41,6 +41,7 @@ parser.add_argument("--require_success", action="store_true", default=False)
 parser.add_argument("--grasp_reset_attempts", type=int, default=4)
 parser.add_argument("--grasp_reset_require_topdown", action=argparse.BooleanOptionalAction, default=True)
 parser.add_argument("--grasp_reset_min_pregrasp_z", type=float, default=0.45)
+parser.add_argument("--grasp_reset_min_contact_height_above_center", type=float, default=0.0)
 parser.add_argument("--grasp_reset_candidate_count", type=int, default=2048)
 parser.add_argument("--grasp_reset_max_center_distance_frac", type=float, default=0.35)
 parser.add_argument("--grasp_reset_min_width", type=float, default=0.008)
@@ -116,6 +117,9 @@ def _make_env():
     env_cfg.grasp_prior_reset_candidate_count = int(args_cli.grasp_reset_candidate_count)
     env_cfg.grasp_prior_reset_require_topdown = bool(args_cli.grasp_reset_require_topdown)
     env_cfg.grasp_prior_reset_min_pregrasp_z = float(args_cli.grasp_reset_min_pregrasp_z)
+    env_cfg.grasp_prior_reset_min_contact_height_above_center = float(
+        args_cli.grasp_reset_min_contact_height_above_center
+    )
     env_cfg.grasp_prior_reset_max_center_distance_frac = float(args_cli.grasp_reset_max_center_distance_frac)
     env_cfg.grasp_prior_reset_min_width = float(args_cli.grasp_reset_min_width)
     env_cfg.grasp_prior_reset_ik_iterations = int(args_cli.grasp_reset_ik_iterations)
