@@ -3213,3 +3213,249 @@ Validation:
 
 Next:
 - Commit/deploy the anchor-mode fix and relaunch the same reset-prior-only actor-small diagnostic. Success criterion is preserving or beating the fixed BC deterministic baseline, then tuning actor scale upward only if preservation works.
+
+## 2026-06-15T21:51:00Z - anchor-mode fix deployed; matched diagnostic relaunched
+
+Version state:
+- Commit `e2986edfbe1346aba667bfc3cee23de7598b691c`: `Anchor DEXTRAH policy in eval mode`
+- Branch pushed to origin.
+- A100 agent worktree updated to `e2986edfbe1346aba667bfc3cee23de7598b691c` by Git bundle.
+- Remote checks passed:
+  - `python3 -m py_compile dextrah_lab/rl_games/dextrah_grasp_prior_a2c.py`
+  - `bash -n cluster/sbatch_train_teacher_8gpu.sh`
+
+Training launch:
+- Slurm job: `29117421`
+- Experiment: `franka_multi_resetprior_actor001_critic0_anchor1000_sigma_m5_lr1e6_e2986ed_20260615T2151Z`
+- Log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29117421.out`
+- Run dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_resetprior_actor001_critic0_anchor1000_sigma_m5_lr1e6_e2986ed_20260615T2151Z`
+
+Matched settings from failed job `29117271`:
+- Scripted reference BC loss disabled.
+- Action-prior reward disabled.
+- Policy anchor weight `1000.0`.
+- Actor loss scale `0.01`.
+- Critic loss scale `0.0`.
+- Entropy coefficient `0.0`.
+- Same low-sigma BC checkpoint and object0/reset/cache setup.
+
+Effective config verified in log:
+- `CODE_COMMIT=e2986edfbe1346aba667bfc3cee23de7598b691c`
+- `DEXTRAH_GRASP_PRIOR_BC_LOSS_ENABLED=False`
+- `GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED=False`
+- `DEXTRAH_BC_POLICY_ANCHOR_WEIGHT=1000.0`
+- `DEXTRAH_ACTOR_LOSS_SCALE=0.01`
+- `DEXTRAH_CRITIC_LOSS_SCALE=0.0`
+
+Expected signal:
+- Anchor loss should be much smaller if the mode mismatch was the cause of the previous large anchor loss.
+- Deterministic eval should preserve the fixed BC baseline before any scale-up.
+
+## 2026-06-15T21:55:00Z - patched-anchor diagnostic completed; evals queued
+
+Training job `29117421` completed all 20 epochs.
+
+Key training rows:
+
+| Epoch | Success | Has lifted | Lift height | EE dist | Actor scale | Critic scale | Anchor loss | Reset tool down |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 5 | `0.0` | `0.2383` | `0.0029` | `0.4548` | `0.01` | `0.0` | `0.4550` | `0.9975928` |
+| 10 | `0.0` | `0.0117` | `0.0019` | `0.1027` | `0.01` | `0.0` | `1.1334` | `0.9975928` |
+| 11 | `0.1172` | `0.1328` | `0.0273` | `0.1608` | `0.01` | `0.0` | `0.8667` | `0.9975928` |
+| 15 | `0.0` | `0.1367` | `0.0005` | `0.4240` | `0.01` | `0.0` | `1.6471` | `0.9975928` |
+| 20 | `0.0234` | `0.0430` | `0.0050` | `0.1824` | `0.01` | `0.0` | `23.4590` | `0.9975928` |
+
+Interpretation:
+- The anchor-mode fix worked mechanically: anchor loss dropped from hundreds/thousands in the previous matched run to about `0.45-3.25` through epoch `17`, with a late increase to `23.46` by epoch `20`.
+- This still did not produce a strong training curve; best row was epoch `11` with success `0.1172`.
+- Reset diagnostics stayed clean.
+
+Deterministic evals submitted:
+- `1030373`: epoch `5`, run `franka_multi_resetprior_actor001_ep5_eval_e2986ed_20260615T2155Z`
+- `1030374`: epoch `10`, run `franka_multi_resetprior_actor001_ep10_eval_e2986ed_20260615T2155Z`
+- `1030375`: epoch `15`, run `franka_multi_resetprior_actor001_ep15_eval_e2986ed_20260615T2155Z`
+- `1030376`: epoch `20`, run `franka_multi_resetprior_actor001_ep20_eval_e2986ed_20260615T2155Z`
+
+Next:
+- Inspect deterministic evals. If they are below BC, actor scale `0.01` is still too high or the PPO objective remains poorly aligned; next ablation should reduce actor scale substantially or freeze most actor layers.
+
+## 2026-06-15T22:01:00Z - patched-anchor evals still below BC
+
+Deterministic object0 eval results:
+
+| Job | Checkpoint | Run | Eval success / success-ever | Max success | Final success | Done count | Done reasons |
+| --- | --- | --- | ---: | ---: | ---: | ---: | --- |
+| `1030373` | epoch `5` | `franka_multi_resetprior_actor001_ep5_eval_e2986ed_20260615T2155Z` | `0.296875` / `0.3046875` | `0.2578125` | `0.0` | `17` | `success_done=16`, `unclassified=1`, table/prelift/cube-out `0` |
+| `1030374` | epoch `10` | `franka_multi_resetprior_actor001_ep10_eval_e2986ed_20260615T2155Z` | `0.125` / `0.1328125` | `0.0859375` | `0.0078125` | `11` | `success_done=8`, `unclassified=3`, table/prelift/cube-out `0` |
+| `1030375` | epoch `15` | `franka_multi_resetprior_actor001_ep15_eval_e2986ed_20260615T2155Z` | `0.0390625` / `0.0390625` | `0.0234375` | `0.0078125` | `2` | `success_done=1`, `unclassified=1`, table/prelift/cube-out `0` |
+| `1030376` | epoch `20` | `franka_multi_resetprior_actor001_ep20_eval_e2986ed_20260615T2155Z` | `0.015625` / `0.015625` | `0.0078125` | `0.0` | `3` | `success_done=2`, `unclassified=1`, table/prelift/cube-out `0` |
+
+Reset diagnostics in every eval:
+- `grasp_prior_reset_tool_downward_z=0.9975928068`
+- `grasp_prior_reset_tool_z_axis_z_mean=-0.9975928664`
+- `grasp_prior_reset_candidate_topdown_count=128`
+- `grasp_prior_reset_candidate_tool_down_count=128`
+- `grasp_prior_reset_candidate_table_count=128`
+- `grasp_prior_reset_candidate_valid_count=128`
+
+Analysis:
+- Eval-mode anchoring improves preservation versus the unpatched anchor but still falls below the fixed BC/zero-LR baseline by epoch `5`.
+- Actor scale `0.01` is still too large for object0 with this PPO objective, even with critic loss disabled, entropy disabled, and anchor weight `1000`.
+
+Next:
+- Run the matched reset-prior-only setup with actor scale `0.001` for 5 epochs. If that preserves BC-level eval success, scale from there. If it does not, the next step is freezing lower actor layers or training only the action head.
+
+## 2026-06-15T22:02:00Z - actor-scale 0.001 preservation run launched
+
+Training launch:
+- Slurm job: `29117654`
+- Experiment: `franka_multi_resetprior_actor0001_critic0_anchor1000_sigma_m5_lr1e6_e2986ed_20260615T2202Z`
+- Commit: `e2986edfbe1346aba667bfc3cee23de7598b691c`
+- Log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29117654.out`
+- Run dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_resetprior_actor0001_critic0_anchor1000_sigma_m5_lr1e6_e2986ed_20260615T2202Z`
+
+Matched settings:
+- Same object0 manifest, stable-pose cache, verified grasp indices, strict reset filters, low-sigma BC checkpoint, critic loss `0`, action-prior disabled, scripted reference BC disabled, entropy `0`, anchor `1000`.
+- Only change from job `29117421`: `DEXTRAH_ACTOR_LOSS_SCALE=0.001` and `MAX_ITERATIONS=5`.
+
+Effective config verified in log:
+- `DEXTRAH_ACTOR_LOSS_SCALE=0.001`
+- `DEXTRAH_CRITIC_LOSS_SCALE=0.0`
+- `DEXTRAH_GRASP_PRIOR_BC_LOSS_ENABLED=False`
+- `GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED=False`
+
+Expected signal:
+- Epoch-5 deterministic eval should be close to or above the fixed BC baseline if actor scale was the main preservation problem.
+
+## 2026-06-15T22:06:00Z - actor-scale 0.001 training completed; epoch-5 eval queued
+
+Training job `29117654` completed all 5 epochs.
+
+Training rows:
+
+| Epoch | Success | Has lifted | Lift height | EE dist | Actor scale | Critic scale | Anchor loss | Reset tool down |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | `0.0039` | `0.0078` | `0.0298` | `0.0798` | `0.001` | `0.0` | `1.5439` | `0.9975928` |
+| 2 | `0.0977` | `0.2461` | `0.0295` | `0.1691` | `0.001` | `0.0` | `1.1187` | `0.9975928` |
+| 3 | `0.0039` | `0.2383` | `0.0023` | `0.2893` | `0.001` | `0.0` | `0.4443` | `0.9975928` |
+| 4 | `0.0117` | `0.2539` | `0.0023` | `0.3709` | `0.001` | `0.0` | `0.4478` | `0.9975928` |
+| 5 | `0.0` | `0.2539` | `0.0005` | `0.4269` | `0.001` | `0.0` | `0.5072` | `0.9975928` |
+
+Interpretation:
+- Actor scale `0.001` reduces anchor drift but training still leaves the BC basin by epoch `5`.
+- Epoch-5 deterministic eval is required because stochastic training success is not directly comparable to the fixed BC eval.
+
+Eval submitted:
+- `1030377`: `franka_multi_resetprior_actor0001_ep5_eval_e2986ed_20260615T2206Z`
+
+Next:
+- If eval is below BC, reduce actor scale another order of magnitude or freeze shared actor layers/action head selectively.
+
+## 2026-06-15T22:12:00Z - actor-scale 0.0001 run launched
+
+Training launch:
+- Slurm job: `29117761`
+- Experiment: `franka_multi_resetprior_actor00001_critic0_anchor1000_sigma_m5_lr1e6_e2986ed_20260615T2212Z`
+- Commit: `e2986edfbe1346aba667bfc3cee23de7598b691c`
+- Log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29117761.out`
+- Run dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_resetprior_actor00001_critic0_anchor1000_sigma_m5_lr1e6_e2986ed_20260615T2212Z`
+
+Matched settings:
+- Same as actor-scale `0.001` run except `DEXTRAH_ACTOR_LOSS_SCALE=0.0001`.
+- `MAX_ITERATIONS=5`, critic loss `0.0`, action-prior disabled, scripted reference BC disabled, anchor `1000.0`.
+
+Effective config verified in log:
+- `DEXTRAH_ACTOR_LOSS_SCALE=0.0001`
+- `DEXTRAH_CRITIC_LOSS_SCALE=0.0`
+- `DEXTRAH_GRASP_PRIOR_BC_LOSS_ENABLED=False`
+- `GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED=False`
+
+Status:
+- Running on A100 while actor-scale `0.001` epoch-5 eval `1030377` waits/runs on L40.
+
+## 2026-06-15T22:18:00Z - actor-scale 0.0001 training completed; eval queued
+
+Training job `29117761` completed all 5 epochs.
+
+Training rows:
+
+| Epoch | Success | Has lifted | Lift height | EE dist | Actor scale | Critic scale | Anchor loss | Reset tool down |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | `0.0` | `0.0` | `0.0239` | `0.0858` | `0.0001` | `0.0` | `1.4502` | `0.9975928` |
+| 2 | `0.1094` | `0.2188` | `0.0285` | `0.1759` | `0.0001` | `0.0` | `0.8712` | `0.9975928` |
+| 3 | `0.0156` | `0.2305` | `0.0036` | `0.3099` | `0.0001` | `0.0` | `0.3868` | `0.9975928` |
+| 4 | `0.0039` | `0.2383` | `0.0029` | `0.3898` | `0.0001` | `0.0` | `0.4285` | `0.9975928` |
+| 5 | `0.0039` | `0.2461` | `0.0027` | `0.4396` | `0.0001` | `0.0` | `0.5254` | `0.9975928` |
+
+Interpretation:
+- Lowering actor scale another order of magnitude keeps anchor loss small, but stochastic training success is still not BC-like by epoch `5`.
+- Deterministic eval is queued to verify the actual policy.
+
+Eval submitted:
+- `1030379`: `franka_multi_resetprior_actor00001_ep5_eval_e2986ed_20260615T2218Z`
+- L40 eval `1030377` for actor-scale `0.001` is still pending/running ahead of it.
+
+## 2026-06-15T22:23:00Z - rerouted pending evals from L40 to A100
+
+Reason:
+- L40 evals `1030377` and `1030379` remained pending for resources long enough to block the iteration loop.
+
+Action:
+- Canceled L40 jobs `1030377` and `1030379`.
+- Relaunched the same deterministic evals on A100 with explicit partition/CPU/memory overrides.
+
+A100 eval jobs:
+- `29117919`: actor scale `0.001`, run `franka_multi_resetprior_actor0001_ep5_eval_e2986ed_a100_20260615T2223Z`
+- `29117920`: actor scale `0.0001`, run `franka_multi_resetprior_actor00001_ep5_eval_e2986ed_a100_20260615T2223Z`
+
+Setup:
+- Same deterministic object0 eval settings as the canceled L40 jobs: `NUM_ENVS=128`, `NUM_STEPS=360`, video disabled, same manifest/cache/verified grasps and strict reset filters.
+
+## 2026-06-15T22:24:00Z - low-actor-scale evals completed below BC
+
+A100 eval results:
+
+| Job | Checkpoint | Run | Eval success / success-ever | Max success | Final success | Done count | Done reasons |
+| --- | --- | --- | ---: | ---: | ---: | ---: | --- |
+| `29117919` | actor scale `0.001`, epoch `5` | `franka_multi_resetprior_actor0001_ep5_eval_e2986ed_a100_20260615T2223Z` | `0.296875` / `0.296875` | `0.2578125` | `0.0` | `20` | `success_done=17`, `unclassified=3`, table/prelift/cube-out `0` |
+| `29117920` | actor scale `0.0001`, epoch `5` | `franka_multi_resetprior_actor00001_ep5_eval_e2986ed_a100_20260615T2223Z` | `0.28125` / `0.28125` | `0.2421875` | `0.0078125` | `15` | `success_done=13`, `unclassified=2`, table/prelift/cube-out `0` |
+
+Reset diagnostics from eval step `0` remained clean:
+- `grasp_prior_reset_tool_downward_z=0.9975928068`
+- `grasp_prior_reset_tool_z_axis_z_mean=-0.9975928664`
+- `grasp_prior_reset_candidate_topdown_count=128`
+- `grasp_prior_reset_candidate_tool_down_count=128`
+- `grasp_prior_reset_candidate_table_count=128`
+- `grasp_prior_reset_candidate_valid_count=128`
+- `grasp_prior_reset_pregrasp_tip_table_clearance=0.0861287415`
+- `grasp_prior_reset_projected_exact_tip_table_clearance=0.0063213445`
+
+Queue cleanup:
+- Canceled L40 evals `1030377` and `1030379` were superseded by the A100 evals above.
+- No owned eval jobs remain active after `29117919` and `29117920` completed.
+- A100 queue still contains unrelated jobs (`dextrah_yam_cube_rl`, `molmo2_yam_tfds`); these are not part of this run loop.
+
+Analysis:
+- Reducing actor scale from `0.01` to `0.001` and `0.0001` does not preserve the fixed BC/zero-LR baseline (`eval_success_rate=0.421875`, `success_ever_rate=0.4453125`).
+- The below-table/upward-grasp failure mode is not present in these evals: reset samples are top-down, tool-z points downward, and table/prelift/cube-out done reasons are zero.
+- The remaining failure is PPO/reference optimization drifting the policy away from the BC basin.
+
+Next:
+- Add a trainable-parameter scope for the custom DEXTRAH RL agent and run a short preservation diagnostic that freezes the shared/trunk parameters and updates only the action mean head (`mu`). This tests whether shared representation drift is the reason PPO drops below the BC baseline even at tiny actor loss scales.
+
+## 2026-06-15T22:24:20Z - trainable-parameter-scope patch prepared
+
+Code change in progress:
+- `dextrah_lab/rl_games/dextrah_grasp_prior_a2c.py`: add `dextrah_trainable_param_scope` with scopes `all`, `mu`, `mu_sigma`, and actor/policy variants. Non-default scopes set `requires_grad` on matched model parameters and print the trainable/frozen parameter counts.
+- `cluster/sbatch_train_teacher_8gpu.sh`: add `DEXTRAH_TRAINABLE_PARAM_SCOPE`, log it, and pass it to Hydra as `+agent.params.config.dextrah_trainable_param_scope`.
+
+Validation passed locally:
+- `python3 -m py_compile dextrah_lab/rl_games/dextrah_grasp_prior_a2c.py`
+- `bash -n cluster/sbatch_train_teacher_8gpu.sh`
+- `git diff --check`
+
+Next:
+- Commit/push the patch, deploy the exact commit to the A100 agent worktree, then launch a 5-epoch object0 run with `DEXTRAH_TRAINABLE_PARAM_SCOPE=mu`, actor scale `0.001`, critic loss `0`, entropy `0`, BC anchor `1000`, no scripted BC, and no action-prior reward.

@@ -50,6 +50,48 @@ class DextrahGraspPriorA2CAgent(BaseA2CAgent):
         self.dextrah_frozen_obs_rms_state = None
         self.dextrah_actor_loss_scale = float(self.config.get("dextrah_actor_loss_scale", 1.0))
         self.dextrah_critic_loss_scale = float(self.config.get("dextrah_critic_loss_scale", 1.0))
+        self.dextrah_trainable_param_scope = str(self.config.get("dextrah_trainable_param_scope", "all"))
+        self._apply_dextrah_trainable_param_scope()
+
+    def _dextrah_param_trainable(self, name: str) -> bool:
+        scope = self.dextrah_trainable_param_scope.strip().lower()
+        if scope in ("", "all", "*"):
+            return True
+        lower = name.lower()
+        if scope in ("mu", "action_head", "policy_head"):
+            return "mu" in lower and "sigma" not in lower and "value" not in lower and "critic" not in lower
+        if scope in ("mu_sigma", "policy_output"):
+            return ("mu" in lower or "sigma" in lower) and "value" not in lower and "critic" not in lower
+        if scope in ("actor", "policy"):
+            return "value" not in lower and "critic" not in lower
+        raise ValueError(f"Unsupported dextrah_trainable_param_scope={self.dextrah_trainable_param_scope!r}")
+
+    def _apply_dextrah_trainable_param_scope(self) -> None:
+        scope = self.dextrah_trainable_param_scope.strip().lower()
+        if scope in ("", "all", "*"):
+            return
+
+        trainable_names = []
+        frozen_names = []
+        for name, param in self.model.named_parameters():
+            trainable = self._dextrah_param_trainable(name)
+            param.requires_grad_(trainable)
+            if trainable:
+                trainable_names.append(name)
+            else:
+                frozen_names.append(name)
+        if not trainable_names:
+            raise ValueError(
+                f"dextrah_trainable_param_scope={self.dextrah_trainable_param_scope!r} matched no model parameters"
+            )
+        preview = ", ".join(trainable_names[:12])
+        if len(trainable_names) > 12:
+            preview += f", ... (+{len(trainable_names) - 12} more)"
+        print(
+            f"[DEXTRAH] trainable parameter scope {self.dextrah_trainable_param_scope!r}: "
+            f"{len(trainable_names)} trainable, {len(frozen_names)} frozen; trainable={preview}",
+            flush=True,
+        )
 
     def _clone_obs_rms_state(self, module) -> dict[str, torch.Tensor]:
         return {
