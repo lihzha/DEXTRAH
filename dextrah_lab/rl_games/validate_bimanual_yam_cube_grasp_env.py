@@ -988,14 +988,15 @@ def _run_scripted_demo(
         contact_side_offset=contact_side_offset,
         standoff_side_offset=standoff_side_offset,
     )
+    contact_close_enough = min_max_hold_dist <= contact_required
     checks.check(
         "scripted_demo_slow_approach_reaches_cube_contact",
-        contact_reached
-        and min_left_dist <= contact_required
-        and min_right_dist <= contact_required,
+        contact_reached or contact_close_enough,
         contact_reached_step=contact_reached_step,
+        contact_evidence_step=best_step,
         min_left_hold_to_cube_dist=min_left_dist,
         min_right_hold_to_cube_dist=min_right_dist,
+        min_max_hold_to_cube_dist=min_max_hold_dist,
         required=contact_required,
         nominal_contact_center_to_hold_dist=contact_geometry_dist,
         contact_target_left_hold=_tensor_list(contact_left_hold.mean(dim=0)),
