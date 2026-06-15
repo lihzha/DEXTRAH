@@ -873,3 +873,23 @@ Next:
 - Commit/deploy the BC wrapper parity fix.
 - Launch a 1-GPU BC run on `Dextrah-Franka-Multi-Object-Grasp` from the low-LR epoch-67 checkpoint using the old verified cache and physics-parity settings.
 - Evaluate the BC checkpoint with the same physics-parity eval wrapper; if BC can imitate the prior rollouts, continue PPO fine-tuning from the BC checkpoint.
+
+## 2026-06-15T12:17:00Z - Launch multi-object grasp-prior BC
+
+Version Control:
+- implementation_commit: `0f235d3b3693f5237e9b74f2a7696f6ac7f1c39c`
+- remote_commit/status: l401 worktree detached at `0f235d3b3693f5237e9b74f2a7696f6ac7f1c39c`, clean.
+
+Command / Job:
+- job_id: `1029811`
+- run_name: `franka_multi_bc_oldcache_refdelta_0f235d3_20260615T1217Z`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/bc/franka_multi_bc_oldcache_refdelta_0f235d3_20260615T1217Z`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bc_franka_cube_1029811.out`
+- input_checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_oldcache_pre08_lowlr80_short_703f554_20260615T1021Z/nn/last_dextrah_franka_multi_object_grasp_ep_67_rew_2916.8196.pth`
+- output_checkpoint: `/results/bc/franka_multi_bc_oldcache_refdelta_0f235d3_20260615T1217Z/nn/bc_reference_action_imitation.pth`
+- dataset: `/results/bc/franka_multi_bc_oldcache_refdelta_0f235d3_20260615T1217Z/reference_action_dataset.pt`
+- settings: `NUM_ENVS=128`, `COLLECTION_STEPS=640`, `TRAIN_STEPS=2000`, `BATCH_SIZE=8192`, `COLLECTION_ACTION_SOURCE=reference_delta`, `LABEL_ACTION_SOURCE=reference_delta`, old verified indices, old stable-pose cache, object physics `4.0/3.5`, solver iterations `24/8`, reset prior `pregrasp_offset=0.08`, old top-side/quality settings, reference schedule `8/32/600`.
+
+Expected signal:
+- Collection should show nonzero teacher success/lift under reference actions.
+- BC validation loss should drop enough to produce an actor that tracks the prior better than the PPO reward-only continuations. If the checkpoint is produced, run physics-parity eval next.
