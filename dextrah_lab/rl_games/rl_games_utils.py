@@ -458,6 +458,9 @@ class DextrahResumableAlgoObserver(AlgoObserver):
         original_restore = getattr(algo, "restore", None)
 
         def get_full_state_weights_with_runtime():
+            restore_obs_rms = getattr(algo, "dextrah_restore_frozen_obs_rms", None)
+            if restore_obs_rms is not None:
+                restore_obs_rms()
             state = original_get_full_state_weights()
             state["dextrah_runtime_state"] = self._pack_runtime_state()
             return state

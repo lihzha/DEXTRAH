@@ -44,6 +44,39 @@ class DextrahGraspPriorA2CAgent(BaseA2CAgent):
         self.dextrah_bc_policy_anchor_weight = float(self.config.get("dextrah_bc_policy_anchor_weight", 0.0))
         self.dextrah_bc_policy_anchor_model = None
         self.dextrah_bc_policy_anchor_loss_last = torch.zeros((), device=self.ppo_device)
+        self.dextrah_freeze_obs_rms_enabled = _as_bool(
+            self.config.get("dextrah_freeze_obs_rms_enabled", False)
+        )
+        self.dextrah_frozen_obs_rms_state = None
+
+    def _clone_obs_rms_state(self, module) -> dict[str, torch.Tensor]:
+        return {
+            key: value.detach().clone()
+            for key, value in module.state_dict().items()
+            if isinstance(value, torch.Tensor)
+        }
+
+    def _obs_rms_module(self):
+        return getattr(self.model, "running_mean_std", None)
+
+    def _ensure_dextrah_frozen_obs_rms(self):
+        if not self.dextrah_freeze_obs_rms_enabled:
+            return None
+        module = self._obs_rms_module()
+        if module is None:
+            return None
+        if self.dextrah_frozen_obs_rms_state is None:
+            self.dextrah_frozen_obs_rms_state = self._clone_obs_rms_state(module)
+            print("[DEXTRAH] froze actor observation RunningMeanStd for BC-initialized PPO", flush=True)
+        return self.dextrah_frozen_obs_rms_state
+
+    def dextrah_restore_frozen_obs_rms(self):
+        state = self._ensure_dextrah_frozen_obs_rms()
+        if state is None:
+            return
+        module = self._obs_rms_module()
+        if module is not None:
+            module.load_state_dict(state, strict=True)
 
     def _parse_bc_loss_dims(self, raw_dims) -> torch.Tensor | None:
         if raw_dims is None:
@@ -102,18 +135,23 @@ class DextrahGraspPriorA2CAgent(BaseA2CAgent):
         return value.to(device=self.ppo_device, dtype=fallback.dtype).reshape_as(fallback)
 
     def play_steps(self):
+        self.dextrah_restore_frozen_obs_rms()
         if not self.dextrah_bc_loss_enabled or self.dextrah_bc_loss_weight <= 0.0:
-            return super().play_steps()
+            batch_dict = super().play_steps()
+            self.dextrah_restore_frozen_obs_rms()
+            return batch_dict
 
         update_list = self.update_list
         step_time = 0.0
 
         for n in range(self.horizon_length):
+            self.dextrah_restore_frozen_obs_rms()
             if self.use_action_masks:
                 masks = self.vec_env.get_action_masks()
                 res_dict = self.get_masked_action_values(self.obs, masks)
             else:
                 res_dict = self.get_action_values(self.obs)
+            self.dextrah_restore_frozen_obs_rms()
 
             self.experience_buffer.update_data("obses", n, self.obs["obs"])
             self.experience_buffer.update_data("dones", n, self.dones)
@@ -164,6 +202,7 @@ class DextrahGraspPriorA2CAgent(BaseA2CAgent):
             self.current_lengths = self.current_lengths * not_dones
 
         last_values = self.get_values(self.obs)
+        self.dextrah_restore_frozen_obs_rms()
 
         fdones = self.dones.float()
         mb_fdones = self.experience_buffer.tensor_dict["dones"].float()
@@ -251,6 +290,7 @@ class DextrahGraspPriorA2CAgent(BaseA2CAgent):
         return anchor_loss
 
     def calc_gradients(self, input_dict):
+        self.dextrah_restore_frozen_obs_rms()
         value_preds_batch = input_dict["old_values"]
         old_action_log_probs_batch = input_dict["old_logp_actions"]
         advantage = input_dict["advantages"]
@@ -336,6 +376,7 @@ class DextrahGraspPriorA2CAgent(BaseA2CAgent):
 
         self.scaler.scale(loss).backward()
         self.trancate_gradients_and_step()
+        self.dextrah_restore_frozen_obs_rms()
 
         with torch.no_grad():
             reduce_kl = rnn_masks is None
