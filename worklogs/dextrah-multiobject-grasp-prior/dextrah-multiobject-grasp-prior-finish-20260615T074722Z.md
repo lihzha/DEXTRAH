@@ -727,3 +727,20 @@ Reward-only continuation:
 
 Next:
 - Monitor job `1029774`. If raw policy success/lift improves with lower `cube_action_prior_delta_abs`, evaluate the best checkpoint with physics parity. If it fails to learn lift, run the same reward-only continuation with `GRASP_PRIOR_ACTION_WARMSTART_REQUIRE_CURRENT_LIFT_READY=False` so the prior provides a fixed schedule teacher signal.
+
+## 2026-06-15T11:08:00Z - Reward-only ready-gated diagnostic failed; launch fixed-schedule ablation
+
+Ready-gated reward-only result:
+- Job `1029774` was manually canceled at elapsed `00:09:46` after the failure mode was clear.
+- Best training row was epoch 68 with `cube_success_rate=0.1621`, `has_lifted=0.3545`, `lift_height=0.0683m`, `xy_error=0.0421m`, and `cube_action_prior_delta_abs=0.9076`.
+- By epoch 76, success had collapsed to `0.0020`, XY error rose to `0.1113m`, and `cube_action_prior_active_rate` fell to `0.0273`.
+- Diagnosis: with `GRASP_PRIOR_ACTION_WARMSTART_REQUIRE_CURRENT_LIFT_READY=True`, the prior almost stops producing lift-phase teacher reward once the raw policy misses the close/finger-distance gate. The policy keeps closing/lifting poorly and drifts the object away.
+
+Fixed-schedule reward-only ablation:
+- Job `1029776` submitted and currently pending.
+- Run: `franka_multi_state_teacher_7195_b87_oldcache_pre08_prioronly90_sched_w80_5e387a5_20260615T1108Z`
+- Change from `1029774`: `GRASP_PRIOR_ACTION_WARMSTART_REQUIRE_CURRENT_LIFT_READY=False`; all other reset/prior/physics/checkpoint settings are the same.
+- Expected signal: `cube_action_prior_lift_rate` should remain scheduled after the close phase instead of disappearing, and policy-controlled success should not collapse if the issue was only the lift-ready teacher gate.
+
+Next:
+- Monitor `1029776`. If fixed-schedule reward-only improves raw policy success, evaluate the best checkpoint. If it still drifts, inspect whether the policy action frame/sign convention is mismatched for the z/lift action or whether the inherited single-cube success/XY shaping is overconstraining long objects.
