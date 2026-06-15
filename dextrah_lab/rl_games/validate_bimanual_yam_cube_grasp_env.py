@@ -789,7 +789,12 @@ def _run_scripted_demo(
     closed_before_standoff = False
     closed_before_standoff_step: int | None = None
     close_width_threshold = 0.65 * float(task_env.cfg.max_gripper_width)
-    contact_required = min(float(task_env.cfg.cube_success_hand_dist), 0.120)
+    contact_geometry_dist = math.hypot(contact_side_offset, cube_center_to_hold_z)
+    contact_required = min(
+        float(task_env.cfg.cube_success_hand_dist),
+        float(task_env.cfg.bimanual_reference_contact_dist),
+        max(0.120, contact_geometry_dist + 0.025),
+    )
     standoff_min_dist = contact_required + 0.040
     standoff_max_dist = 0.45
     phase_name = "close"
@@ -992,6 +997,7 @@ def _run_scripted_demo(
         min_left_hold_to_cube_dist=min_left_dist,
         min_right_hold_to_cube_dist=min_right_dist,
         required=contact_required,
+        nominal_contact_center_to_hold_dist=contact_geometry_dist,
         contact_target_left_hold=_tensor_list(contact_left_hold.mean(dim=0)),
         contact_target_right_hold=_tensor_list(contact_right_hold.mean(dim=0)),
     )
@@ -1013,13 +1019,24 @@ def _run_scripted_demo(
         min_finger_table_clearance=min_clearance,
         termination_margin=float(task_env.cfg.finger_table_penetration_termination_margin),
     )
+    physics_lift_success = (
+        (not grasp_assist_used)
+        and max_success_rate > 0.0
+        and max_lift >= float(task_env.cfg.cube_success_lift_height)
+    )
+    assisted_lift_success = (
+        grasp_assist_used
+        and contact_reached
+        and max_success_rate > 0.0
+        and max_lift >= float(task_env.cfg.cube_success_lift_height)
+    )
     checks.check(
         "scripted_demo_uses_physics_or_post_contact_assist",
-        contact_reached
-        and max_success_rate > 0.0
-        and (grasp_assist_used or max_lift >= float(task_env.cfg.cube_success_lift_height)),
+        physics_lift_success or assisted_lift_success,
         grasp_assist_used=grasp_assist_used,
         contact_reached_step=contact_reached_step,
+        physics_lift_success=physics_lift_success,
+        assisted_lift_success=assisted_lift_success,
         note="The stepped validator accepts a physical pickup; the cube pose assist is available only during lift after both closed grippers have reached the cube sides.",
     )
     checks.check(
