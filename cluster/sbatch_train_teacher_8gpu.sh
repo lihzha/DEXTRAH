@@ -118,6 +118,7 @@ if [ -z "$USE_CUDA_GRAPH" ]; then
   fi
 fi
 SIGMA_INIT_VAL="${SIGMA_INIT_VAL:-0}"
+TRAIN_SIGMA="${TRAIN_SIGMA:-}"
 STAR_RESET_NEAR_HAND_PROBABILITY="${STAR_RESET_NEAR_HAND_PROBABILITY:-0.0}"
 STAR_RESET_NEAR_HAND_X="${STAR_RESET_NEAR_HAND_X:--0.360}"
 STAR_RESET_NEAR_HAND_Y="${STAR_RESET_NEAR_HAND_Y:--0.120}"
@@ -445,6 +446,7 @@ echo "ENTROPY_COEF=$ENTROPY_COEF"
 echo "E_CLIP=$E_CLIP"
 echo "GRAD_NORM=$GRAD_NORM"
 echo "SIGMA_INIT_VAL=$SIGMA_INIT_VAL"
+echo "TRAIN_SIGMA=$TRAIN_SIGMA"
 echo "STAR_RESET_NEAR_HAND_PROBABILITY=$STAR_RESET_NEAR_HAND_PROBABILITY"
 echo "STAR_RESET_NEAR_HAND_X=$STAR_RESET_NEAR_HAND_X"
 echo "STAR_RESET_NEAR_HAND_Y=$STAR_RESET_NEAR_HAND_Y"
@@ -610,6 +612,11 @@ PY
     MAX_ITER_ARGS=()
     if [ -n '$MAX_ITERATIONS' ]; then
       MAX_ITER_ARGS=(--max_iterations '$MAX_ITERATIONS')
+    fi
+
+    SIGMA_ARGS=()
+    if [ -n '$TRAIN_SIGMA' ]; then
+      SIGMA_ARGS=(--sigma '$TRAIN_SIGMA')
     fi
 
     CAMERA_ARGS=()
@@ -911,6 +918,7 @@ PY
         \"\${CAMERA_ARGS[@]}\" \
         --task='$TASK' \
         --seed '$SEED' \
+        \"\${SIGMA_ARGS[@]}\" \
         \"\${DISTRIBUTED_ARGS[@]}\" \
         \"\${RESUME_ARGS[@]}\" \
         --num_envs '$NUM_ENVS' \
