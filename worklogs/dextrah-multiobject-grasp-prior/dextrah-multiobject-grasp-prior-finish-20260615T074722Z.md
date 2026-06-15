@@ -1151,3 +1151,195 @@ Validation:
 
 Next:
 - Commit/deploy the restore fix, then relaunch the same PPO smoke from the sanitized BC policy-init checkpoint.
+
+## 2026-06-15T12:58:00Z - Relaunch PPO smoke after policy-init restore fix
+
+Version Control:
+- implementation_commit: `9ae97c0d36b3baea3acd45977b9b30cd1c8f078f`
+- commit message: `Allow optimizer-free policy initialization checkpoints`
+- pushed branch: `origin/codex/dextrah-multiobject-grasp-prior-finish-20260615T074722Z`
+- remote deploy: l401 worktree updated via `/tmp/dextrah-policy-init-9ae97c0.bundle`
+- remote_commit/status: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-finish-20260615T074722Z` detached at `9ae97c0d36b3baea3acd45977b9b30cd1c8f078f`, clean.
+
+Command / Job:
+- job_id: `1029823`
+- run_name: `franka_multi_ppo_bcinit_retrypose_resetonly_smoke20_9ae97c0_20260615T1258Z`
+- checkpoint: `/results/bc/franka_multi_bc_oldcache_refdelta_nolibdir_0f235d3_20260615T1220Z/nn/bc_reference_action_imitation_policy_init.pth`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_ppo_bcinit_retrypose_resetonly_smoke20_9ae97c0_20260615T1258Z`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_1029823.out`
+- settings: identical to failed job `1029822`, except source commit is `9ae97c0`.
+
+Next:
+- Confirm the optimizer-free policy-init checkpoint now loads and reaches epoch metrics. If stable, evaluate the best checkpoint from this smoke.
+
+## 2026-06-15T13:10:00Z - PPO BC-init smoke completes; launch epoch-20 eval
+
+PPO Result:
+- Job `1029823` completed with exit `0:0` in `00:10:12`.
+- The restore fix worked: all ranks loaded the optimizer-free policy-init checkpoint and trained normally.
+- Best training success was epoch `20`:
+  - checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_ppo_bcinit_retrypose_resetonly_smoke20_9ae97c0_20260615T1258Z/nn/last_dextrah_franka_multi_object_grasp_ep_20_rew_4873.9688.pth`
+  - `cube_success_rate=0.30078125`
+  - `cube_has_lifted_rate=0.5859375`
+  - `cube_lift_height=0.0806846171617508`
+  - `cube_xy_error=0.05585388094186783`
+  - `cube_grasp_prior_quality_success_rate=0.9990234375`
+  - `cube_grasp_prior_reset_success_rate=0.9990234375`
+  - `cube_finger_table_clearance_violation=0.0`
+- Training had an early dip through epoch 9, then recovered through epoch 20. Reset safety stayed intact throughout.
+
+Command / Job:
+- job_id: `1029825`
+- run_name: `franka_multi_eval_ppo_bcinit_ep20_retrypose_phys_9ae97c0_20260615T1310Z`
+- source_commit: `9ae97c0d36b3baea3acd45977b9b30cd1c8f078f`
+- checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_ppo_bcinit_retrypose_resetonly_smoke20_9ae97c0_20260615T1258Z/nn/last_dextrah_franka_multi_object_grasp_ep_20_rew_4873.9688.pth`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_multi_eval_ppo_bcinit_ep20_retrypose_phys_9ae97c0_20260615T1310Z`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_multi_object_1029825.out`
+- settings: same corrected-reset 64-env, 360-step physics eval used for `1029816` and `1029820`.
+
+Next:
+- Inspect eval metrics and compare PPO epoch 20 against old BC fixed-reset baseline (`eval_success_rate=0.65625`, `success_ever_rate=0.71875`).
+
+## 2026-06-15T13:12:00Z - Epoch-20 eval shows stable held success; launch continuation to 40
+
+Eval Result:
+- Job `1029825` completed with exit `0:0` in `00:01:09`.
+- Run `franka_multi_eval_ppo_bcinit_ep20_retrypose_phys_9ae97c0_20260615T1310Z`.
+- PPO epoch 20:
+  - `eval_success_rate=0.609375`
+  - `success_ever_rate=0.671875`
+  - `success_rate_max=0.5625`
+  - `success_rate_final=0.515625`
+  - `success_rate_mean=0.4956597222222222`
+  - `success_rate_last_window_mean=0.51625`
+  - reset success/quality: `1.0` throughout trace.
+  - no `cube_out`, no `finger_table_penetration`, no `prelift_drag`.
+- Comparison to old BC under fixed reset:
+  - old BC had better first-attempt/ever success (`0.65625` / `0.71875`) but collapsed to low sustained occupancy (`success_rate_final=0.015625`, mean `0.09765625`).
+  - PPO epoch 20 has lower first-attempt/ever success but much better sustained success occupancy and final held success.
+
+Analysis:
+- PPO reset-only fine-tuning changed the policy from a quick success-and-reset behavior into a more stable object-holding behavior. Since training success improved into epoch 20 and reset safety stayed clean, continue the same run family to epoch 40 before selecting the final checkpoint.
+
+Command / Job:
+- job_id: `1029827`
+- run_name: `franka_multi_ppo_bcinit_retrypose_resetonly_cont40_9ae97c0_20260615T1312Z`
+- source_commit: `9ae97c0d36b3baea3acd45977b9b30cd1c8f078f`
+- checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_ppo_bcinit_retrypose_resetonly_smoke20_9ae97c0_20260615T1258Z/nn/last_dextrah_franka_multi_object_grasp_ep_20_rew_4873.9688.pth`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_ppo_bcinit_retrypose_resetonly_cont40_9ae97c0_20260615T1312Z`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_1029827.out`
+- settings: same as `1029823`, with `MAX_ITERATIONS=40` and checkpointed continuation from epoch 20.
+
+Next:
+- Monitor epochs 21-40. Keep the continuation only if reset safety remains clean and success/hold metrics improve or stay stable.
+
+## 2026-06-15T13:22:00Z - Continuation to epoch 40 completes; launch epoch selection evals
+
+PPO Result:
+- Job `1029827` completed with exit `0:0` in `00:07:30`.
+- Best training success was epoch `28`:
+  - checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_ppo_bcinit_retrypose_resetonly_cont40_9ae97c0_20260615T1312Z/nn/last_dextrah_franka_multi_object_grasp_ep_28_rew_2699.3933.pth`
+  - `cube_success_rate=0.525390625`
+  - `cube_has_lifted_rate=0.7080078125`
+  - `cube_lift_height=0.09716371446847916`
+  - `cube_xy_error=0.05214633047580719`
+  - `cube_grasp_prior_quality_success_rate=1.0`
+  - `cube_grasp_prior_reset_success_rate=1.0`
+  - `cube_finger_table_clearance_violation=0.0`
+- Final epoch `40` remained useful but lower by training success:
+  - checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_ppo_bcinit_retrypose_resetonly_cont40_9ae97c0_20260615T1312Z/nn/last_dextrah_franka_multi_object_grasp_ep_40_rew_4852.5146.pth`
+  - `cube_success_rate=0.47265625`, `cube_has_lifted_rate=0.646484375`, `cube_xy_error=0.0447169691324234`.
+- Reset quality remained `~1.0` and table-clearance violations stayed zero in the logged epochs.
+
+Command / Jobs:
+- job_id: `1029828`
+  - run_name: `franka_multi_eval_ppo_bcinit_ep28_retrypose_phys_9ae97c0_20260615T1322Z`
+  - checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_ppo_bcinit_retrypose_resetonly_cont40_9ae97c0_20260615T1312Z/nn/last_dextrah_franka_multi_object_grasp_ep_28_rew_2699.3933.pth`
+- job_id: `1029829`
+  - run_name: `franka_multi_eval_ppo_bcinit_ep40_retrypose_phys_9ae97c0_20260615T1322Z`
+  - checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_ppo_bcinit_retrypose_resetonly_cont40_9ae97c0_20260615T1312Z/nn/last_dextrah_franka_multi_object_grasp_ep_40_rew_4852.5146.pth`
+- settings: same corrected-reset 64-env, 360-step physics eval used for prior comparisons.
+
+Next:
+- Fetch and compare epoch 28 vs epoch 40 evals. Then run a short video eval for the selected checkpoint.
+
+## 2026-06-15T13:33:00Z - Select PPO epoch 40 for sustained-success video checks
+
+Goal:
+- Compare the epoch-28 and epoch-40 checkpoints from the BC-initialized reset-only PPO continuation, then render policy behavior for the selected checkpoint.
+
+Eval Results:
+- Job `1029828`, run `franka_multi_eval_ppo_bcinit_ep28_retrypose_phys_9ae97c0_20260615T1322Z`, completed with exit `0:0`.
+  - `eval_success_rate=0.640625`
+  - `success_ever_rate=0.703125`
+  - `success_rate_max=0.546875`
+  - `success_rate_final=0.484375`
+  - `success_rate_mean=0.4890190972222222`
+  - `success_rate_last_window_mean=0.50265625`
+- Job `1029829`, run `franka_multi_eval_ppo_bcinit_ep40_retrypose_phys_9ae97c0_20260615T1322Z`, completed with exit `0:0`.
+  - `eval_success_rate=0.640625`
+  - `success_ever_rate=0.6875`
+  - `success_rate_max=0.59375`
+  - `success_rate_final=0.578125`
+  - `success_rate_mean=0.5296875`
+  - `success_rate_last_window_mean=0.5575`
+
+Safety Diagnostics:
+- Both evals had `grasp_prior_reset_success=1.0` and `grasp_prior_reset_quality_success=1.0` for all trace rows.
+- Epoch 40 reset clearances stayed positive:
+  - pregrasp tip table clearance min `0.06740409880876541m`.
+  - projected exact tip table clearance min `0.017579711973667145m`.
+  - reset finger table clearance min `0.041523486375808716m`.
+  - runtime finger table penetration done rate `0.0`.
+- No `cube_out`, `finger_table_penetration`, or `prelift_drag` done reasons appeared in either eval.
+
+Decision:
+- Select epoch 40 for visual inspection and as the current best PPO checkpoint because it matches epoch 28 on first-attempt success and is better on sustained held success, final occupancy, and max occupancy.
+- Selected checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_ppo_bcinit_retrypose_resetonly_cont40_9ae97c0_20260615T1312Z/nn/last_dextrah_franka_multi_object_grasp_ep_40_rew_4852.5146.pth`.
+
+Video Eval:
+- Jobs `1029831` and `1029832` were canceled while pending to reduce resource shape from 4 envs / 160G to 1 env / 64G.
+- Job `1029833`, run `franka_multi_eval_ppo_bcinit_ep40_video1_phys_9ae97c0_20260615T1333Z`, completed with exit `0:0`.
+- Video: `cluster_results/l401/franka_multi_eval_ppo_bcinit_ep40_video1_phys_9ae97c0_20260615T1333Z/videos/franka-multi-ppo-bcinit-ep40-phys-1env-step-0.mp4`.
+- Viewer URL: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-finish-20260615T074722Z/cluster_results/l401/franka_multi_eval_ppo_bcinit_ep40_video1_phys_9ae97c0_20260615T1333Z/videos/franka-multi-ppo-bcinit-ep40-phys-1env-step-0.mp4`.
+- Result: this single seed did not succeed (`success_ever_rate=0.0`) but reset diagnostics were clean: reset success/quality `1.0`, pregrasp tip table clearance `0.0918087363243103m`, projected exact tip table clearance `0.031935155391693115m`, reset finger table clearance `0.014400243759155273m`, runtime finger table penetration `0.0`.
+- Visual inspection: the sampled failure is not a table-collision or below-object reset; the policy misses/does not lift the object from this pose.
+
+Next:
+- Jobs `1029834`, `1029835`, and `1029836` are queued for one-env visual samples with seeds `43`, `44`, and `45` to capture a representative successful rollout from the same selected epoch-40 checkpoint.
+
+## 2026-06-15T13:50:00Z - Video seed sweep completes
+
+Goal:
+- Capture visual evidence for the selected PPO epoch-40 checkpoint while keeping the aggregate 64-env eval as the primary policy metric.
+
+Jobs:
+- `1029834`, run `franka_multi_eval_ppo_bcinit_ep40_video1_seed43_phys_9ae97c0_20260615T1338Z`, completed with exit `0:0`.
+- `1029835`, run `franka_multi_eval_ppo_bcinit_ep40_video1_seed44_phys_9ae97c0_20260615T1338Z`, completed with exit `0:0`.
+- `1029836`, run `franka_multi_eval_ppo_bcinit_ep40_video1_seed45_phys_9ae97c0_20260615T1338Z`, completed with exit `0:0`.
+
+Result:
+- Seed 43: `success_ever_rate=0.0`, reset quality `1.0`, reset finger table clearance `0.03770244121551514m`, runtime finger table penetration `0.0`.
+- Seed 44: `eval_success_rate=1.0`, `success_ever_rate=1.0`, `success_rate_max=1.0`, `success_rate_final=0.0`, max lift `0.14014548063278198m`, reset quality `1.0`, reset finger table clearance `0.02714639902114868m`, runtime finger table penetration `0.0`.
+- Seed 45: `success_ever_rate=0.0`, reset quality `1.0`, reset finger table clearance `0.0630999207496643m`, runtime finger table penetration `0.0`.
+
+Artifacts:
+- Successful visual sample: `cluster_results/l401/franka_multi_eval_ppo_bcinit_ep40_video1_seed44_phys_9ae97c0_20260615T1338Z/videos/franka-multi-ppo-bcinit-ep40-phys-seed44-step-0.mp4`
+- Viewer URL: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-finish-20260615T074722Z/cluster_results/l401/franka_multi_eval_ppo_bcinit_ep40_video1_seed44_phys_9ae97c0_20260615T1338Z/videos/franka-multi-ppo-bcinit-ep40-phys-seed44-step-0.mp4`
+- Additional contrast videos:
+  - `cluster_results/l401/franka_multi_eval_ppo_bcinit_ep40_video1_phys_9ae97c0_20260615T1333Z/videos/franka-multi-ppo-bcinit-ep40-phys-1env-step-0.mp4`
+  - `cluster_results/l401/franka_multi_eval_ppo_bcinit_ep40_video1_seed43_phys_9ae97c0_20260615T1338Z/videos/franka-multi-ppo-bcinit-ep40-phys-seed43-step-0.mp4`
+  - `cluster_results/l401/franka_multi_eval_ppo_bcinit_ep40_video1_seed45_phys_9ae97c0_20260615T1338Z/videos/franka-multi-ppo-bcinit-ep40-phys-seed45-step-0.mp4`
+
+Analysis:
+- The selected checkpoint is not perfect across individual random reset seeds, but the 64-env metric eval is successful and substantially better than BC on sustained held-success occupancy.
+- The user-suspected reset bug is addressed: all selected-policy metric/video evals have reset quality `1.0`, positive projected/reset finger-table clearance, and no finger-table penetration, cube-out, or prelift-drag done reasons.
+- The visual seed sweep did not show a below-object or table-colliding reset. Failures are policy grasp/hold failures, not reset-safety failures.
+
+Final Selected Policy:
+- Checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_ppo_bcinit_retrypose_resetonly_cont40_9ae97c0_20260615T1312Z/nn/last_dextrah_franka_multi_object_grasp_ep_40_rew_4852.5146.pth`
+- Best 64-env eval: `franka_multi_eval_ppo_bcinit_ep40_retrypose_phys_9ae97c0_20260615T1322Z`
+- Key eval metrics: `eval_success_rate=0.640625`, `success_ever_rate=0.6875`, `success_rate_max=0.59375`, `success_rate_final=0.578125`, `success_rate_mean=0.5296875`, `success_rate_last_window_mean=0.5575`.
+
+Next:
+- No active jobs remain. Commit this worklog update and report the selected checkpoint, metrics, and caveats.
