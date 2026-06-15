@@ -56,27 +56,47 @@ class DextrahGraspPriorA2CAgent(BaseA2CAgent):
             if isinstance(value, torch.Tensor)
         }
 
-    def _obs_rms_module(self):
-        return getattr(self.model, "running_mean_std", None)
+    def _obs_rms_modules(self):
+        modules = []
+        seen_ids = set()
+        for name, module in (
+            ("algo.running_mean_std", getattr(self, "running_mean_std", None)),
+            ("model.running_mean_std", getattr(self.model, "running_mean_std", None)),
+        ):
+            if module is None or id(module) in seen_ids:
+                continue
+            if not hasattr(module, "state_dict") or not hasattr(module, "load_state_dict"):
+                continue
+            modules.append((name, module))
+            seen_ids.add(id(module))
+        return modules
 
     def _ensure_dextrah_frozen_obs_rms(self):
         if not self.dextrah_freeze_obs_rms_enabled:
             return None
-        module = self._obs_rms_module()
-        if module is None:
+        modules = self._obs_rms_modules()
+        if not modules:
             return None
         if self.dextrah_frozen_obs_rms_state is None:
-            self.dextrah_frozen_obs_rms_state = self._clone_obs_rms_state(module)
-            print("[DEXTRAH] froze actor observation RunningMeanStd for BC-initialized PPO", flush=True)
+            self.dextrah_frozen_obs_rms_state = {
+                name: self._clone_obs_rms_state(module) for name, module in modules
+            }
+            frozen_names = ", ".join(self.dextrah_frozen_obs_rms_state)
+            print(
+                f"[DEXTRAH] froze observation RunningMeanStd for BC-initialized PPO: {frozen_names}",
+                flush=True,
+            )
         return self.dextrah_frozen_obs_rms_state
 
     def dextrah_restore_frozen_obs_rms(self):
         state = self._ensure_dextrah_frozen_obs_rms()
         if state is None:
             return
-        module = self._obs_rms_module()
-        if module is not None:
-            module.load_state_dict(state, strict=True)
+        modules = dict(self._obs_rms_modules())
+        for name, module_state in state.items():
+            module = modules.get(name)
+            if module is not None:
+                module.load_state_dict(module_state, strict=True)
 
     def _parse_bc_loss_dims(self, raw_dims) -> torch.Tensor | None:
         if raw_dims is None:
