@@ -45,7 +45,7 @@ policy:
     beta_schedule: squaredcos_cap_v2
     variance_type: fixed_small
     clip_sample: true
-    prediction_type: sample
+    prediction_type: epsilon
   obs_encoder:
     _target_: diffusion_policy.model.vision.multi_image_obs_encoder.MultiImageObsEncoder
     shape_meta: ${shape_meta}

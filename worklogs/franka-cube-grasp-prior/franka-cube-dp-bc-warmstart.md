@@ -18131,3 +18131,147 @@ Next:
   exact cube pose, and branch on the result:
   if replay fails, debug dataset/reset/env mismatch; if replay succeeds, train
   or condition policy for better closed-loop robustness.
+
+## 2026-06-14T23:59:41-07:00 - RGB one-demo overfit retry launch
+
+Goal:
+- Overfit the RGB diffusion-policy BC model on the executable accepted demo-0
+  trajectory, then evaluate on the exact demo reset using the matching cube pose
+  and reset seed.
+
+Result so far:
+- Dataset-action replay with the demo-0 cube pose and seed `864000` succeeds,
+  so the saved labels are executable when the reset matches the source rollout.
+- The 64-demo RGB checkpoint still fails the same exact reset, reaching only
+  about `3cm` max cube lift before losing the grasp.
+- First one-demo training attempt `1029664` failed before training because
+  `ACTION_LOSS_WEIGHTS=[1,1,1,1,1,1,64]` was passed through Slurm
+  `--export`, whose comma splitting truncated the Hydra override to `[1`.
+
+Change:
+- Relaunch the one-demo overfit with `ACTION_LOSS_WEIGHTS` exported in the
+  remote shell environment instead of embedded directly in the comma-separated
+  Slurm `--export` list.
+
+Command / Job:
+- dataset:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/datasets/franka_cube_rgb_normalreset_nofinalclip_ep0_hardclose_20260614_2356.npz`
+- expected settings: `ROBOT_STATE_DIM=8`, no phase/progress features,
+  `VAL_RATIO=0`, `NUM_EPOCHS=401`, `MAX_TRAIN_STEPS=5000`,
+  `BATCH_SIZE=64`, `USE_EMA=false`, raw eval actions, gripper loss weight 64.
+
+Next:
+- Submit retry, monitor train loss/checkpoint, then evaluate the checkpoint on
+  seed `864000` with cube pose `(-0.435617, -0.198386, 0.781000)`.
+
+## 2026-06-15T00:37:51-07:00 - RGB one-demo overfit and closed-loop diagnostics
+
+Goal:
+- Verify whether the RGB diffusion-policy implementation can overfit and
+  execute one exact demo before scaling to more data.
+
+Result:
+- One-demo dataset:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/datasets/franka_cube_rgb_normalreset_nofinalclip_ep0_hardclose_20260614_2356.npz`
+  with 319 rows from accepted demo-0, cube pose
+  `(-0.435617, -0.198386, 0.781000)`, reset seed `864000`.
+- Training job `1029666`, run
+  `franka_cube_rgb_ep0_hardclose_g64_overfit_e401_retry1_20260615_000004`,
+  completed in `00:04:39`.
+- Train loss collapsed from `8.41966` to `0.000548`, min `0.000349`.
+- Staged checkpoint:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/franka_cube_rgb_ep0_hardclose_g64_overfit_e401_retry1_20260615_000004/latest.ckpt`
+
+Exact-reset closed-loop eval:
+- job_id: `1029669`
+- run:
+  `franka_cube_rgb_ep0_overfit_policy_seed864000_exact_noclip_video_20260615_000528`
+- settings: seed `864000`, exact cube pose, `ACTION_CHUNK_STEPS=8`,
+  `CLIP_ACTIONS=0`, no phase/progress features.
+- outcome: failed but close; stopped on task termination at step 261.
+- metrics: max cube lift `0.11824m`, final lift `0.11017m`,
+  final XY error `0.09965m`, final gripper width `0.06408m`,
+  final/window success `0.0`.
+- comparison: dataset-action replay on the same reset succeeded with final lift
+  `0.12024m`, XY error `0.06125m`, gripper width `0.04832m`.
+- video:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-warmstart-artifacts/evals/franka_cube_rgb_ep0_overfit_policy_seed864000_exact_noclip_video_20260615_000528/videos/franka-cube-rgb-dp-eval-step-0.mp4`
+
+Offline coherence:
+- direct teacher-forced RGB diagnostic on the one-demo checkpoint and dataset:
+  `rgb_offline_coherence_ep0_overfit_retry3_20260615_001029`.
+- summary: median first-action MSE `1.05e-5`, mean first-action MSE
+  `4.58e-5`, median sequence MSE `1.73e-5`, pose cosine `0.9995`,
+  gripper sign match `1.0`.
+- analysis: basic image/proprio/action normalizer and DP I/O are coherent on
+  saved observations; closed-loop fails from small contact-state drift, not a
+  gross train/eval wiring bug.
+
+Additional eval:
+- job_id: `1029675`, same checkpoint/reset with `ACTION_CHUNK_STEPS=1`.
+- outcome: worse; stopped at step 129, max lift `0.01679m`, final lift `0`.
+- decision: first-action replanning is not enough here; chunking helps commit
+  to the close/lift sequence.
+
+Gripper-width recovery augmentation:
+- Built augmented one-demo RGB dataset with four extra copies that force the
+  close/lift proprio gripper width to open while keeping labels unchanged:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/datasets/franka_cube_rgb_normalreset_nofinalclip_ep0_hardclose_griprecover4_20260615_001735.npz`.
+- Training job `1029676`, run
+  `franka_cube_rgb_ep0_griprecover4_g64_overfit_e201_20260615_001750`,
+  was cancelled externally at epoch 101 but had reached train loss
+  `0.000285`, min `0.000167`; staged checkpoint was copied manually from
+  `official_dp_train/checkpoints/latest.ckpt`.
+- Exact-reset eval job `1029698`, run
+  `franka_cube_rgb_ep0_griprecover4_policy_seed864000_exact_noclip_video_20260615_002507`,
+  failed: max lift `0.01623m`, final lift `0.00913m`, final success `0.0`.
+- decision: this augmentation over-corrects and should not be scaled as-is.
+
+Active / Next:
+- Test whether DDPM sampling variance causes the narrow one-demo miss by
+  averaging 8 sampled action sequences from the original one-demo checkpoint.
+- Initial job `1029719` was cancelled while pending due oversized memory
+  request; replacement job `1029720` uses the same settings with `--mem=64G`:
+  run `franka_cube_rgb_ep0_overfit_policy_seed864000_exact_noclip_samples8_mem64_video_20260615_003655`.
+
+## 2026-06-15T00:48:31-07:00 - RGB one-demo follow-up and epsilon hypothesis
+
+Goal:
+- Finish the current one-demo RGB overfit diagnostics and choose the next
+  implementation change before scaling beyond the 64 accepted demos.
+
+Result:
+- No active l401 Slurm jobs remain.
+- 8-sample averaging eval job `1029720`, run
+  `franka_cube_rgb_ep0_overfit_policy_seed864000_exact_noclip_samples8_mem64_video_20260615_003655`,
+  completed successfully as a job but failed the task: final lift `0.03778m`,
+  max lift `0.03778m`, final XY error `0.07810m`, final gripper width
+  `0.04708m`, final/window success `0.0`.
+- This did not fix the one-demo exact-reset failure. It improved grasp closure
+  and kept XY inside the nominal tolerance, but averaged action samples blurred
+  or delayed the lift sequence.
+- The upstream official image Diffusion Policy configs all use DDPM
+  `prediction_type: epsilon`, and the local DEXTRAH lowdim config already uses
+  `epsilon`. The RGB config was the outlier with `prediction_type: sample`.
+
+Change:
+- Switched `dextrah_lab/offline_dp_bc/config/franka_cube_rgb_dp.yaml` from
+  DDPM `prediction_type: sample` to `prediction_type: epsilon`.
+- The weighted image policy already mirrors official DP loss behavior for both
+  `epsilon` and `sample`; reference distillation requires `sample` only when
+  distillation is enabled, which is not used in the current supervised runs.
+
+Validation:
+- `grep -n "prediction_type" .../franka_cube_rgb_dp.yaml .../franka_cube_lowdim_dp.yaml`
+- `bash -n cluster/sbatch_train_franka_cube_rgb_dp_1gpu.sh`
+- `bash -n cluster/sbatch_eval_franka_cube_rgb_dp_policy_1gpu.sh`
+
+Next:
+- Commit and deploy this config change to the l401 worktree.
+- Retrain the one-demo RGB overfit checkpoint with the epsilon scheduler and
+  evaluate on the exact demo reset `(x=-0.435617, y=-0.198386, z=0.781000)`,
+  seed `864000`, no action clipping, `ACTION_CHUNK_STEPS=8`.
+- If epsilon one-demo succeeds, scale back to the 64-demo RGB dataset and then
+  continue to larger unique-demo training. If it still fails, next debug target
+  is action normalization / closed-loop precision rather than dataset replay or
+  gross RGB I/O wiring.
