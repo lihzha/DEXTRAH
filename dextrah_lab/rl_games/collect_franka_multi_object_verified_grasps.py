@@ -54,6 +54,7 @@ parser.add_argument("--grasp_reset_ik_damping", type=float, default=0.035)
 parser.add_argument("--grasp_reset_ik_max_joint_step", type=float, default=0.25)
 parser.add_argument("--grasp_reset_ik_pos_tolerance", type=float, default=0.055)
 parser.add_argument("--grasp_reset_ik_rot_tolerance", type=float, default=0.55)
+parser.add_argument("--grasp_prior_verified_indices_path", type=str, default="")
 parser.add_argument("--grasp_pregrasp_offset", type=float, default=0.08)
 parser.add_argument("--grasp_warmstart_close_width", type=float, default=0.004)
 parser.add_argument("--grasp_warmstart_use_prior_close_width", action=argparse.BooleanOptionalAction, default=False)
@@ -133,6 +134,7 @@ def _make_env():
     env_cfg.grasp_prior_reset_ik_max_joint_step = float(args_cli.grasp_reset_ik_max_joint_step)
     env_cfg.grasp_prior_reset_ik_pos_tolerance = float(args_cli.grasp_reset_ik_pos_tolerance)
     env_cfg.grasp_prior_reset_ik_rot_tolerance = float(args_cli.grasp_reset_ik_rot_tolerance)
+    env_cfg.grasp_prior_verified_indices_path = str(args_cli.grasp_prior_verified_indices_path)
     env_cfg.grasp_prior_pregrasp_offset = float(args_cli.grasp_pregrasp_offset)
     env_cfg.grasp_prior_action_warmstart_enabled = True
     env_cfg.grasp_prior_action_warmstart_close_width = float(args_cli.grasp_warmstart_close_width)
@@ -279,6 +281,7 @@ def _make_payload(
                 "grasp_reset_candidate_count": args_cli.grasp_reset_candidate_count,
                 "grasp_reset_max_center_distance_frac": args_cli.grasp_reset_max_center_distance_frac,
                 "grasp_reset_min_width": args_cli.grasp_reset_min_width,
+                "grasp_prior_verified_indices_path": args_cli.grasp_prior_verified_indices_path,
                 "grasp_reset_min_contact_height_above_center": getattr(
                     task_env.cfg, "grasp_prior_reset_min_contact_height_above_center", None
                 ),

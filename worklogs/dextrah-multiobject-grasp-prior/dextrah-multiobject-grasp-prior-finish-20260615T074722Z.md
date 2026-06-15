@@ -2060,3 +2060,309 @@ Validation:
 
 Next:
 - Commit/deploy, then rerun object0 and two-object validation from the patched SHA. Acceptance requires nonnegative projected exact tip clearance, downward tool axis, positive valid/fallback counts, and no table-clearance violation.
+
+## 2026-06-15T16:49:00Z - Launch object0 default diagnostic from `4234fb5`
+
+Command / Job:
+- job_id: `1029926`
+- run_name: `franka_multi_eval_object0_default_4234fb5_20260615T1649Z`
+- commit: `4234fb5859db7206d55ddca7342e41a5b06439ff`
+- manifest: `/results/assets/filtered_manifests/train2_7195_b87_nobelow_d053e6c_20260615T0045Z/manifest_object0_7195ed3346a445448308febe833c180a.json`
+- num_envs: `64`
+- max_objects: `1`
+- num_steps: `5`
+- candidate_count: `4096`
+- reset_attempts: `8`
+- contact-height default inherited from wrapper/config: `-0.02`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_multi_eval_object0_default_4234fb5_20260615T1649Z`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_multi_object_1029926.out`
+
+Result:
+- status: submitted.
+
+Next:
+- Inspect whether nonnegative table-clearance floor still leaves object0 with valid/fallback candidates and reset quality.
+
+## 2026-06-15T16:52:00Z - Resubmit object0 diagnostic with lower memory
+
+Result:
+- Job `1029926` stayed pending with `(Resources)` under the wrapper's `160G` memory request.
+- Prior identical 64-env object0 diagnostics used about `22G`, so the pending job was canceled and resubmitted with `--mem=64G`.
+
+Command / Job:
+- job_id: `1029927`
+- run_name: `franka_multi_eval_object0_default64g_4234fb5_20260615T1652Z`
+- commit: `4234fb5859db7206d55ddca7342e41a5b06439ff`
+- same diagnostic settings as `1029926`, with Slurm memory override `64G`.
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_multi_eval_object0_default64g_4234fb5_20260615T1652Z`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_multi_object_1029927.out`
+
+Next:
+- Monitor job `1029927` and inspect trace counters after completion.
+
+## 2026-06-15T16:54:00Z - Object0 default diagnostic passes after strict table floor
+
+Result:
+- Job `1029927` completed with exit `0:0` in `00:01:06`.
+- Local artifacts: `cluster_results/l401/franka_multi_eval_object0_default64g_4234fb5_20260615T1652Z/`
+
+Metrics:
+- `grasp_prior_reset_success=1.0`
+- `grasp_prior_reset_quality_success=1.0`
+- `grasp_prior_reset_candidate_valid_count=116.48`
+- `grasp_prior_reset_candidate_fallback_count=116.48`
+- `grasp_prior_reset_candidate_down_table_width_center_contact_farther_count=116.48`
+- `grasp_prior_reset_tool_downward_z=0.9832`
+- `grasp_prior_reset_pregrasp_tip_table_clearance=0.0822`
+- `grasp_prior_reset_projected_exact_tip_table_clearance=0.00358`
+- `grasp_prior_reset_finger_table_clearance=0.1266`
+- `finger_table_clearance_violation=0.0`
+
+Analysis:
+- The committed defaults now admit object0 top-side grasps while preserving nonnegative projected tip clearance.
+- This resolves the prior object0 zero-candidate blocker without reintroducing table penetration.
+
+Next:
+- Run a two-object video validation from `4234fb5` with committed defaults before regenerating verified-grasp cache and launching PPO.
+
+## 2026-06-15T16:54:00Z - Launch two-object video validation from `4234fb5`
+
+Command / Job:
+- job_id: `1029928`
+- run_name: `franka_multi_video_defaults_2obj_seed44_4234fb5_20260615T1654Z`
+- commit: `4234fb5859db7206d55ddca7342e41a5b06439ff`
+- manifest: `/results/assets/filtered_manifests/train2_7195_b87_nobelow_d053e6c_20260615T0045Z/manifest.json`
+- stable pose cache: `/results/validations/train2_7195_b87_nobelow_d053e6c_20260615T0045Z/settled_pose_cache`
+- num_envs: `2`
+- max_objects: `2`
+- seed: `44`
+- candidate_count: `4096`
+- reset_attempts: `8`
+- Slurm memory override: `64G`
+- warmstart/contact/table defaults inherited from `4234fb5` wrappers.
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_defaults_2obj_seed44_4234fb5_20260615T1654Z`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_1029928.out`
+
+Next:
+- Fetch metrics/frames and verify the selected grasp is top-down, table-clear, and dynamically lifted.
+
+## 2026-06-15T16:56:00Z - Two-object video validation passes on `4234fb5`; launch current-code cache collection
+
+Video Result:
+- Job `1029928` completed with exit `0:0` in `00:01:05`.
+- Local artifacts: `cluster_results/l401/franka_multi_video_defaults_2obj_seed44_4234fb5_20260615T1654Z/`
+- Viewer links:
+  - metrics: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-finish-20260615T074722Z/cluster_results/l401/franka_multi_video_defaults_2obj_seed44_4234fb5_20260615T1654Z/video_metrics.json`
+  - first frame: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-finish-20260615T074722Z/cluster_results/l401/franka_multi_video_defaults_2obj_seed44_4234fb5_20260615T1654Z/grasp_contact/frames/frame_0000.png`
+  - final frame: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-finish-20260615T074722Z/cluster_results/l401/franka_multi_video_defaults_2obj_seed44_4234fb5_20260615T1654Z/grasp_contact/frames/frame_0064.png`
+
+Metrics:
+- `overall_passed=True`, `grasp_contact=True`
+- selected object: `b87a65917e494aa4b306aeb6ee961182`, sample `1209`
+- `selected_lift_height_max=0.26917` vs threshold `0.12`
+- `selected_tool_downward_z=0.9986`, `selected_tool_z_axis_z=-0.9986`
+- `selected_pregrasp_offset_dir_z=0.9986`
+- `selected_candidate_valid_count=237`, `selected_candidate_fallback_count=240`
+- `selected_done_count=0`
+- `finger_table_clearance_min=0.06085`
+- visual inspection of frames `0000`, `0042`, and `0064`: arm stays above the table and lifts the object.
+
+Command / Job:
+- job_id: `1029929`
+- run_name: `verified_rawpose_stricttable_train2_4234fb5_20260615T1656Z`
+- goal: regenerate current-code verified indices for the two-object debug set before PPO.
+- num_envs: `64`, max_objects: `2`, candidate_count: `4096`, reset_attempts: `8`
+- collection pass criteria: `MAX_DONE_COUNT=1`, `REQUIRE_SUCCESS=True`, `MIN_LIFT_HEIGHT=0.10`
+- output: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/verified_grasp_indices/verified_rawpose_stricttable_train2_4234fb5_20260615T1656Z/verified_indices.json`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/collect_franka_multi_object_verified_grasps_1029929.out`
+
+Next:
+- Require nonempty `indices_by_uuid` for both objects before PPO.
+
+## 2026-06-15T17:03:00Z - Resubmit current-code cache collection with shorter walltime
+
+Result:
+- Job `1029929` remained pending with `(Resources)`. Node inspection showed mixed nodes with planned allocations; the likely blocker was the 2-hour walltime not fitting a backfill gap, not a code failure.
+- Canceled `1029929` before it started.
+
+Command / Job:
+- job_id: `1029930`
+- run_name: `verified_rawpose_stricttable_train2_short_4234fb5_20260615T1703Z`
+- source/settings: same commit `4234fb5859db7206d55ddca7342e41a5b06439ff`, same two-object manifest, stable-pose cache, strict downward-tool/table gates, `NUM_ENVS=64`, `CYCLES=30`, `MIN_CYCLES=8`, `TARGET_PER_OBJECT=8`, `MAX_DONE_COUNT=1`, `REQUIRE_SUCCESS=True`, `MIN_LIFT_HEIGHT=0.10`.
+- scheduler change only: `--time=0:30:00`, `--mem=64G`.
+- output: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/verified_grasp_indices/verified_rawpose_stricttable_train2_short_4234fb5_20260615T1703Z/verified_indices.json`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/collect_franka_multi_object_verified_grasps_1029930.out`
+
+Next:
+- Monitor `1029930`; require nonempty verified indices for both object UUIDs before PPO continuation.
+
+## 2026-06-15T17:04:00Z - Move verified-cache collection from l401 to A100
+
+Result:
+- Job `1029930` also remained pending on l401. Since A100 has the same NFS worktree at commit `4234fb5859db7206d55ddca7342e41a5b06439ff` and visible mixed GPU capacity, canceled `1029930` before it started.
+
+Command / Job:
+- job_id: `29104254`
+- host: `a1001`
+- run_name: `verified_rawpose_stricttable_train2_a100_4234fb5_20260615T1704Z`
+- source/settings: same current-code cache collection settings as `1029930`.
+- scheduler: A100 short partitions, `--time=0:30:00`, `--mem=64G`, `1` GPU.
+- output: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/verified_grasp_indices/verified_rawpose_stricttable_train2_a100_4234fb5_20260615T1704Z/verified_indices.json`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/collect_franka_multi_object_verified_grasps_29104254.out`
+
+Next:
+- Monitor `29104254`; if it produces target counts for both objects, use this cache for PPO continuation.
+
+## 2026-06-15T17:09:00Z - Current-code verified-cache collection is sparse
+
+Result:
+- A100 job `29104254` completed the simulation/collection but exited with wrapper status `1:0` because it did not meet `TARGET_PER_OBJECT=8`.
+- Slurm elapsed: `00:04:22`.
+- Output JSON was still written at `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/verified_grasp_indices/verified_rawpose_stricttable_train2_a100_4234fb5_20260615T1704Z/verified_indices.json`.
+
+Metrics:
+- `counts_by_uuid`: object0 `7195ed3346a445448308febe833c180a` -> `1`; object1 `b87a65917e494aa4b306aeb6ee961182` -> `3`.
+- object0 indices: `[415]`, `pass_count=4`, `observed_reset_count=960`, `quality_reset_count=960`.
+- object1 indices: `[1154, 521, 1209]`, `pass_count=936`, `observed_reset_count=960`, `quality_reset_count=960`.
+
+Analysis:
+- This is not a table-collision/root-pose failure: reset quality was available for both objects under the strict gates.
+- The hard object0 has only rare scripted warmstart lift success under the collector, so training should not blindly assume a broad verified dynamic cache exists.
+- Before PPO, run an object0-only video validation with the current raw sampler and no verified-cache restriction to inspect whether the sampler can still produce a table-safe dynamic lift for object0.
+
+## 2026-06-15T17:11:00Z - Launch object0 raw-sampler video validation
+
+Command / Job:
+- job_id: `29105119`
+- host: `a1001`
+- run_name: `franka_multi_video_object0_rawsampler_4234fb5_20260615T1711Z`
+- commit: `4234fb5859db7206d55ddca7342e41a5b06439ff`
+- manifest: `/results/assets/filtered_manifests/train2_7195_b87_nobelow_d053e6c_20260615T0045Z/manifest_object0_7195ed3346a445448308febe833c180a.json`
+- settings: `NUM_ENVS=8`, `MAX_OBJECTS=1`, strict downward-tool/table gates, `GRASP_RESET_CANDIDATE_COUNT=4096`, `GRASP_RESET_ATTEMPTS=8`, `GRASP_RESET_MAX_CENTER_DISTANCE_FRAC=0.50`, no verified-index cache.
+- metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_multi_video_object0_rawsampler_4234fb5_20260615T1711Z/video_metrics.json`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_franka_multi_object_videos_29105119.out`
+
+Next:
+- Inspect object0 selected reset geometry, table clearance, lift height, and rendered frames.
+
+## 2026-06-15T17:14:00Z - Object0 raw-sampler video validation passes
+
+Result:
+- Job `29105119` completed with exit `0:0` in `00:02:19`.
+- Local artifacts: `cluster_results/a1001/franka_multi_video_object0_rawsampler_4234fb5_20260615T1711Z/`
+- Viewer links:
+  - metrics: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-finish-20260615T074722Z/cluster_results/a1001/franka_multi_video_object0_rawsampler_4234fb5_20260615T1711Z/video_metrics.json`
+  - mid frame: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-finish-20260615T074722Z/cluster_results/a1001/franka_multi_video_object0_rawsampler_4234fb5_20260615T1711Z/grasp_contact/frames/frame_0024.png`
+  - final frame: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-finish-20260615T074722Z/cluster_results/a1001/franka_multi_video_object0_rawsampler_4234fb5_20260615T1711Z/grasp_contact/frames/frame_0048.png`
+
+Metrics:
+- `overall_passed=True`, `grasp_contact=True`.
+- selected object: `7195ed3346a445448308febe833c180a`
+- selected grasp index: `415`
+- `selected_lift_height_max=0.13918`
+- `selected_tool_downward_z=0.99762`, `selected_tool_z_axis_z=-0.99762`, `selected_pregrasp_offset_dir_z=0.99762`
+- `selected_candidate_tool_down_count=657`, `selected_candidate_topdown_count=657`, `selected_candidate_table_count=1570`, `selected_candidate_valid_count=75`, `selected_candidate_fallback_count=75`
+- `finger_table_clearance_min=0.05452`
+- `selected_done_count=0`
+- Visual inspection of frames `0000`, `0024`, and `0048`: above-table approach, top-down close, visible lift; no under-table reach.
+
+Analysis:
+- Object0 is hard for the scripted collector because only index `415` produced dynamic lift passes often enough to be selected, but the current raw sampler can still find a valid, table-safe, top-down lift under the fixed gates.
+- PPO continuation can use the current-code small verified cache to avoid stale/outdated indices while preserving a known object0-valid grasp prior.
+
+Next:
+- Launch PPO continuation from epoch 40 using the current commit and current-code verified cache.
+
+## 2026-06-15T17:17:00Z - Launch PPO continuation with current reset prior
+
+Submission note:
+- First attempted 4-GPU submission with `--mem=0`; Slurm rejected it before creating a job because all-node memory with 4 GPUs strands resources.
+- Resubmitted with `--mem=512G`.
+
+Command / Job:
+- job_id: `29105479`
+- host: `a1001`
+- run_name: `franka_multi_ppo_bcinit_rawpose_stricttable_cont80_4234fb5_20260615T1717Z`
+- source commit: `4234fb5859db7206d55ddca7342e41a5b06439ff`
+- remote code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-topdown-axis-20260615-753139c`
+- checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_ppo_bcinit_retrypose_resetonly_cont40_9ae97c0_20260615T1312Z/nn/last_dextrah_franka_multi_object_grasp_ep_40_rew_4852.5146.pth`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_ppo_bcinit_rawpose_stricttable_cont80_4234fb5_20260615T1717Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29105479.out`
+
+Training settings:
+- `NPROC_PER_NODE=4`, `NUM_ENVS=1024`, `MAX_ITERATIONS=80`
+- PPO resume shape kept close to the known epoch-40 run: `LR=2e-5`, central value LR `1e-5`, `HORIZON_LENGTH=64`, `MINIBATCH_SIZE=16384`, `MINI_EPOCHS=2`, `SAVE_FREQUENCY=1`.
+- two-object manifest `/results/assets/filtered_manifests/train2_7195_b87_nobelow_d053e6c_20260615T0045Z/manifest.json`, `MAX_OBJECTS=2`, stable-pose cache enabled.
+- current-code verified cache: `/results/assets/verified_grasp_indices/verified_rawpose_stricttable_train2_a100_4234fb5_20260615T1704Z/verified_indices.json`.
+- strict reset gates: downward tool axis required, `GRASP_PRIOR_RESET_MIN_DOWNWARD_TOOL_Z=0.45`, contact-height floor `-0.02`, nonnegative table floor in source, `GRASP_PRIOR_RESET_MAX_CENTER_DISTANCE_FRAC=0.50`, `GRASP_PRIOR_RESET_CANDIDATE_COUNT=128`.
+
+Next:
+- Monitor job startup, then inspect JSONL curves and checkpoints. Success requires reward/success curves plus evaluation/video evidence under the fixed reset prior.
+
+## 2026-06-15T17:24:00Z - Cancel reset-only PPO continuation after success collapse
+
+Result:
+- Job `29105479` started cleanly, restored the epoch-40 runtime state on 4 ranks, and trained from epoch `41` through `62`.
+- Canceled manually after JSONL inspection showed the run was not learning under the current small verified-cache reset distribution.
+
+Metrics:
+- `cube_grasp_prior_reset_success_rate=1.0`
+- `cube_grasp_prior_candidate_valid_count=128`
+- `cube_grasp_prior_tool_downward_z=0.9981`
+- `cube_finger_table_clearance_violation` was zero or near-zero numerical noise.
+- `cube_success_rate=0.0` across inspected epochs `41-62`.
+- `cube_has_lifted_rate` stayed low, roughly `0.005-0.023`.
+- object0 lift was low but nonzero; object1 lift was near zero.
+
+Analysis:
+- This is not the original under-table/from-below bug: the reset distribution is table-safe and top-down.
+- The old policy checkpoint does not immediately handle the new small current-code verified reset distribution when no action guidance is present.
+- Relaunch from the original epoch-40 checkpoint with grasp-prior action warmstart and action-prior reward enabled, so the scripted reference sequence both creates successful trajectories and gives the policy an imitation signal.
+
+Next:
+- Run a shorter guided continuation to epoch `60`; inspect warmstart/action-prior metrics before committing to a longer continuation.
+
+## 2026-06-15T17:26:00Z - Launch guided PPO continuation with action prior
+
+Command / Job:
+- job_id: `29105685`
+- host: `a1001`
+- run_name: `franka_multi_ppo_bcinit_rawpose_stricttable_warmprior60_4234fb5_20260615T1726Z`
+- source commit: `4234fb5859db7206d55ddca7342e41a5b06439ff`
+- remote code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-topdown-axis-20260615-753139c`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_ppo_bcinit_rawpose_stricttable_warmprior60_4234fb5_20260615T1726Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29105685.out`
+
+Training settings:
+- Resumes the same BC-initialized epoch-40 PPO checkpoint used by the reset-only test:
+  `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_ppo_bcinit_retrypose_resetonly_cont40_9ae97c0_20260615T1312Z/nn/last_dextrah_franka_multi_object_grasp_ep_40_rew_4852.5146.pth`.
+- 4 A100 GPUs, `NUM_ENVS=1024`, `MAX_ITERATIONS=60`, `LR=2e-5`, central value LR `1e-5`, `HORIZON_LENGTH=64`, `MINIBATCH_SIZE=16384`, `MINI_EPOCHS=2`, `SAVE_FREQUENCY=1`.
+- Same two-object manifest and current-code verified cache as the reset-only run.
+- Strict reset gates remain enabled: downward tool axis, top-down, current source table-clearance floor, and current-code verified indices.
+- New guidance: `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=True`, `GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED=True`, action-prior reward weight `40.0`, sharpness `2.0`.
+
+Next:
+- Monitor startup and JSONL metrics. Required diagnostics: reset success/table clearance, warmstart phase rates, action-prior reward/active rate, lift and success curves by object.
+
+## 2026-06-15T17:34:00Z - Guided PPO continuation completed but did not solve task
+
+Result:
+- Job `29105685` completed with exit `0:0` in `00:07:36`.
+- Run dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_ppo_bcinit_rawpose_stricttable_warmprior60_4234fb5_20260615T1726Z`
+- Final checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_ppo_bcinit_rawpose_stricttable_warmprior60_4234fb5_20260615T1726Z/nn/last_dextrah_franka_multi_object_grasp_ep_60_rew_1813.5569.pth`
+
+Final metrics:
+- Epoch `60`: `cube_success_rate=0.1367`, `cube_has_lifted_rate=0.2402`.
+- Epoch `60` per object: object0 success `0.1250`, object1 success `0.1484`.
+- Last-10 mean: aggregate success `0.0807`, lift `0.1808`, object0 success `0.1215`, object1 success `0.0398`.
+- Full run mean over epochs `42-60`: aggregate success `0.1353`, lift `0.2339`, object0 success `0.1095`, object1 success `0.1612`.
+- Reset geometry remained healthy throughout: `cube_grasp_prior_reset_success_rate=1.0`, `cube_grasp_prior_tool_downward_z=0.9981`, `cube_finger_table_clearance_violation=0` except one tiny numerical blip `0.0006115`.
+
+Analysis:
+- The under-table/from-below root cause remains fixed under the current reset gates.
+- Action warmstart plus action-prior reward produced an early spike (`epoch 43` success `0.4902`, object1 success `0.9375`) but did not stabilize. By epochs `52-60`, aggregate success stayed roughly `0.045-0.137`.
+- The current-code verified cache is very small and imbalanced: object0 exports only index `415` (`4/6` pass rate in collector), object1 exports three indices (`1154`, `521`, `1209`) with high collector pass rates but only from a short current-code collection.
+- This is not a reason to train longer as-is. The next useful step is a targeted scripted rollout / cache robustness diagnostic under the exact training warmstart settings, then either prune/regenerate verified indices or adjust the scripted action prior before PPO.
+
+Next:
+- Run a targeted evaluation/diagnostic of the scripted grasp-prior warmstart distribution by object/index under the fixed raw-pose reset gates, using the current cache and training warmstart settings. Treat the PPO checkpoint as not ready for policy evaluation until the scripted prior itself is stable.
