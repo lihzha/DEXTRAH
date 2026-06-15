@@ -1216,7 +1216,6 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         self.cube_pos[env_ids] = center_pos
 
         finger_center = 0.5 * (self.left_finger_pos[env_ids] + self.right_finger_pos[env_ids])
-        distance_reference_pos = center_pos
         if hasattr(self, "grasp_prior_reset_contact_reference_pos_o"):
             reference_o = self.grasp_prior_reset_contact_reference_pos_o[env_ids]
             rot_m = math_utils.matrix_from_quat(root_quat)
@@ -1225,21 +1224,20 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
                 self.grasp_prior_reset_quality_success[env_ids]
                 & self.grasp_prior_reset_has_contact_location[env_ids]
             )
-            distance_reference_pos = torch.where(
+            self.grasp_prior_current_contact_reference_pos[env_ids] = torch.where(
                 use_contact_reference.unsqueeze(-1),
                 current_reference_pos,
                 center_pos,
             )
-            self.grasp_prior_current_contact_reference_pos[env_ids] = distance_reference_pos
 
-        self.ee_to_cube_dist[env_ids] = torch.norm(self.ee_pos[env_ids] - distance_reference_pos, dim=-1)
-        self.finger_center_to_cube_dist[env_ids] = torch.norm(finger_center - distance_reference_pos, dim=-1)
+        self.ee_to_cube_dist[env_ids] = torch.norm(self.ee_pos[env_ids] - center_pos, dim=-1)
+        self.finger_center_to_cube_dist[env_ids] = torch.norm(finger_center - center_pos, dim=-1)
         self.left_finger_to_cube_dist[env_ids] = torch.norm(
-            self.left_finger_pos[env_ids] - distance_reference_pos,
+            self.left_finger_pos[env_ids] - center_pos,
             dim=-1,
         )
         self.right_finger_to_cube_dist[env_ids] = torch.norm(
-            self.right_finger_pos[env_ids] - distance_reference_pos,
+            self.right_finger_pos[env_ids] - center_pos,
             dim=-1,
         )
         self.max_finger_to_cube_dist[env_ids] = torch.maximum(
