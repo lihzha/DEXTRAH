@@ -379,3 +379,60 @@ Analysis:
 
 Next:
 - Commit this provenance update, deploy the current source/worklog to l401, then launch Franka multi-object RL training with the derived verified cache and current grasp-prior reset/action-warmstart settings.
+
+## 2026-06-15T09:09:01Z - Launch current-cache RL smoke continuation
+
+Goal:
+- Smoke-test RL training on the repaired source and current verified cache before launching a longer continuation.
+
+Change:
+- Committed provenance update `34a696a283015cfbec6134cf1dd78f613c62ea06`.
+- Deployed the local branch to l401 by Git bundle and updated `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-finish-20260615T074722Z` to `34a696a283015cfbec6134cf1dd78f613c62ea06`.
+- Initial `sbatch` submit failed because l401 exposes `batch` with 4 GPUs/node, not the wrapper's directive partition `batch_singlenode`.
+- Resubmitted with explicit `--partition=batch --gpus-per-node=4`, `NPROC_PER_NODE=4`, `NUM_ENVS=1024`, and `MINIBATCH_SIZE=16384`.
+
+Version Control:
+- agent_id: dextrah-multiobject-grasp-prior-finish-20260615T074722Z
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-finish-20260615T074722Z`
+- branch: `codex/dextrah-multiobject-grasp-prior-finish-20260615T074722Z`
+- implementation_commit: `34a696a283015cfbec6134cf1dd78f613c62ea06`
+- remote_commit/status: remote worktree at `34a696a283015cfbec6134cf1dd78f613c62ea06`, clean.
+
+Command / Job:
+- command: `sbatch --partition=batch --gpus-per-node=4 --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-finish-20260615T074722Z,CODE_COMMIT=34a696a283015cfbec6134cf1dd78f613c62ea06,NPROC_PER_NODE=4,TASK=Dextrah-Franka-Multi-Object-Grasp,FULL_EXPERIMENT_NAME=franka_multi_state_teacher_7195_b87_currentcache_smoke66_34a696a_20260615T0907Z,MAX_ITERATIONS=66,CHECKPOINT=/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_ikrelax61_resume60_3c4e22e_20260615T0501Z_r3/nn/last_dextrah_franka_multi_object_grasp_ep_61_rew__3078.7478_.pth,AUTO_RESUME=False,SELF_RELAUNCH=False,DEXTRAH_RLGAMES_JSONL_METRICS=True,USE_CUDA_GRAPH=False,NUM_ENVS=1024,... cluster/sbatch_train_teacher_8gpu.sh`
+- job_id: `1029740`
+- run_name: `franka_multi_state_teacher_7195_b87_currentcache_smoke66_34a696a_20260615T0907Z`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_currentcache_smoke66_34a696a_20260615T0907Z`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_1029740.out`
+- metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_currentcache_smoke66_34a696a_20260615T0907Z/metrics/direct_info_rank_0.jsonl`
+- checkpoint source: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_ikrelax61_resume60_3c4e22e_20260615T0501Z_r3/nn/last_dextrah_franka_multi_object_grasp_ep_61_rew__3078.7478_.pth`
+- verified cache: `/results/assets/verified_grasp_indices/verified_preoffset03_collectclose_obs3_rate09_train2_7195_b87_45662da_20260615T0852Z/verified_indices.json`
+- stable pose cache: `/results/validations/train2_7195_b87_nobelow_d053e6c_20260615T0045Z/settled_pose_cache`
+
+Key settings:
+- `GRASP_PRIOR_RESET_MIN_PREGRASP_Z=0.70`
+- `GRASP_PRIOR_RESET_ATTEMPTS=8`
+- `GRASP_PRIOR_RESET_CANDIDATE_COUNT=128`
+- `GRASP_PRIOR_RESET_MAX_CENTER_DISTANCE_FRAC=0.35`
+- `GRASP_PRIOR_PREGRASP_OFFSET=0.03`
+- `GRASP_PRIOR_ACTION_WARMSTART_APPROACH_STEPS=8`
+- `GRASP_PRIOR_ACTION_WARMSTART_CLOSE_STEPS=32`
+- `GRASP_PRIOR_ACTION_WARMSTART_LIFT_STEPS=240`
+- `GRASP_PRIOR_ACTION_WARMSTART_CLOSE_WIDTH=0.004`
+- `GRASP_PRIOR_ACTION_WARMSTART_USE_PRIOR_CLOSE_WIDTH=False`
+- `GRASP_PRIOR_ACTION_WARMSTART_LIFT_ACTION_Z=0.45`
+- `GRASP_PRIOR_ACTION_WARMSTART_LIFT_MAX_FINGER_CENTER_DIST=0.12`
+- `GRASP_PRIOR_ACTION_WARMSTART_LIFT_CLOSED_WIDTH_MARGIN=0.008`
+- `GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED=True`
+- `GRASP_PRIOR_ACTION_PRIOR_REWARD_WEIGHT=40.0`
+- `OBJECT_STATIC_FRICTION=4.0`
+- `OBJECT_DYNAMIC_FRICTION=3.5`
+- `OBJECT_SOLVER_POSITION_ITERATIONS=24`
+- `OBJECT_SOLVER_VELOCITY_ITERATIONS=8`
+
+Result:
+- status: pending
+- metrics/artifacts: pending; first queue check showed `PENDING (Resources)`.
+
+Next:
+- Monitor queue and startup log. Once metrics are emitted, compare reset quality, table-clearance, success, lift, and warmstart-lift metrics against the prior epoch-61 baseline before launching a longer continuation.
