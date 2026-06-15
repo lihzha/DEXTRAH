@@ -18275,3 +18275,285 @@ Next:
   continue to larger unique-demo training. If it still fails, next debug target
   is action normalization / closed-loop precision rather than dataset replay or
   gross RGB I/O wiring.
+
+## 2026-06-15T00:50:09-07:00 - RGB one-demo epsilon overfit launch
+
+Goal:
+- Test whether matching upstream image Diffusion Policy's epsilon target fixes
+  the one-demo exact-reset closed-loop miss.
+
+Version Control:
+- agent_id: franka-cube-dp-bc-warmstart
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/franka-cube-dp-bc-warmstart`
+- branch: `codex/franka-cube-diffusion-policy-bc`
+- implementation_commit: `ee647cf4e34e3cc0a6e0da7010b22366f87b76ff`
+- remote_commit/status: l401 worktree detached at
+  `ee647cf4e34e3cc0a6e0da7010b22366f87b76ff`, clean.
+
+Command / Job:
+- job_id: `1029723`
+- run_name: `franka_cube_rgb_ep0_epsilon_g64_overfit_e401_20260615_005009`
+- dataset:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/datasets/franka_cube_rgb_normalreset_nofinalclip_ep0_hardclose_20260614_2356.npz`
+- settings: `ROBOT_STATE_DIM=8`, `APPEND_PHASE_PROGRESS=false`,
+  `VAL_RATIO=0`, `NUM_EPOCHS=401`, `MAX_TRAIN_STEPS=5000`,
+  `BATCH_SIZE=64`, `USE_EMA=false`, `ACTION_LOSS_WEIGHTS=[1,1,1,1,1,1,64]`,
+  `NUM_INFERENCE_STEPS=100`, seed `42`.
+
+Expected:
+- Training loss should overfit the one trajectory as before. Acceptance is not
+  train loss alone; the produced checkpoint must succeed or at least materially
+  improve on exact-reset closed-loop eval with seed `864000`.
+
+Result:
+- Training job `1029723` completed in `00:04:51`.
+- Last train loss `0.0978346`; no validation split (`VAL_RATIO=0`).
+- Staged checkpoint:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/franka_cube_rgb_ep0_epsilon_g64_overfit_e401_20260615_005009/latest.ckpt`.
+- Shutdown printed Python multiprocessing semaphore cleanup warnings after W&B
+  success, but Slurm exit was `0:0`, wrapper metrics passed, and the checkpoint
+  copied successfully.
+
+Exact-reset eval launch:
+- job_id: `1029725`
+- run_name:
+  `franka_cube_rgb_ep0_epsilon_policy_seed864000_exact_noclip_video_20260615_005534`
+- checkpoint:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/franka_cube_rgb_ep0_epsilon_g64_overfit_e401_20260615_005009/latest.ckpt`
+- settings: seed `864000`, cube pose
+  `(-0.435617000, -0.198385999, 0.781000018)`, `ACTION_CHUNK_STEPS=8`,
+  `CLIP_ACTIONS=0`, `NUM_ACTION_SAMPLES=1`, no phase/progress features,
+  `96x96` RGB, video enabled.
+
+Exact-reset eval result:
+- Eval job `1029725` completed in `00:01:21`, exit `0:0`.
+- Outcome: success on the exact demo reset.
+- Metrics: `steps_completed=220`, `stop_reason=done`,
+  `final_success_rate=1.0`, `window_success_rate=0.15`,
+  final lift `0.132429m`, final XY error `0.072386m`,
+  final gripper width `0.045810m`, final cube pose
+  `(-0.480219, -0.255398, 0.913429)`.
+- This is the first closed-loop pass for the RGB one-demo overfit. The key
+  implementation fix is changing the RGB DP scheduler target to
+  `prediction_type=epsilon` to match upstream image Diffusion Policy.
+- Fetched video:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-warmstart-artifacts/evals/franka_cube_rgb_ep0_epsilon_policy_seed864000_exact_noclip_video_20260615_005534/videos/franka-cube-rgb-dp-eval-step-0.mp4`
+
+Next:
+- Train the 64-demo RGB dataset under the same epsilon config and exact
+  non-privileged observation/action settings, then evaluate in-domain and on
+  slightly shifted object states.
+
+## 2026-06-15T00:58:23-07:00 - RGB 64-demo epsilon training launch
+
+Goal:
+- Scale the now-working RGB one-demo epsilon setup to the accepted 64-demo
+  dataset before collecting or training on larger unique-demo sets.
+
+Hypothesis:
+- The previous 64-demo RGB failure was at least partly caused by the RGB config
+  using DDPM `prediction_type=sample`; with upstream-compatible `epsilon`, the
+  policy should reproduce the executable demos more robustly under closed-loop
+  eval.
+
+Version Control:
+- implementation_commit: `ee647cf4e34e3cc0a6e0da7010b22366f87b76ff`
+- remote_commit/status: l401 detached at the same commit for the launch.
+
+Command / Job:
+- job_id: `1029726`
+- run_name: `franka_cube_rgb_normalreset64_epsilon_g64_scratch_e20_20260615_005823`
+- dataset:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/datasets/franka_cube_rgb_normalreset_nofinalclip_accepted64_hardclose_20260614_2305.npz`
+- settings: scratch RGB DP, `ROBOT_STATE_DIM=8`, no phase/progress,
+  `VAL_RATIO=0.05`, `NUM_EPOCHS=20`, `BATCH_SIZE=32`,
+  `USE_EMA=false`, `ACTION_LOSS_WEIGHTS=[1,1,1,1,1,1,64]`,
+  `NUM_INFERENCE_STEPS=100`, seed `42`.
+
+Expected:
+- Training should complete in roughly the same time as the earlier 64-demo run.
+  Acceptance is closed-loop eval on exact accepted-demo resets and then
+  slightly shifted object states.
+
+Result:
+- Training job `1029726` completed in `00:14:47`, exit `0:0`.
+- Final epoch `19`, final train loss `0.035245`, final val loss `0.033747`.
+- Best validation was the final epoch (`0.033747`).
+- Staged checkpoint:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/franka_cube_rgb_normalreset64_epsilon_g64_scratch_e20_20260615_005823/latest.ckpt`.
+- Shutdown printed the same non-fatal Python multiprocessing semaphore cleanup
+  warnings seen in prior successful DP runs; wrapper metrics passed and the
+  checkpoint copied successfully.
+
+Next:
+- Run exact accepted-demo reset eval on demo-0 / seed `864000`, then broader
+  in-domain and shifted object-state evals if that sanity check passes.
+
+## 2026-06-15T01:13:40-07:00 - RGB 64-demo epsilon exact reset eval and diagnosis
+
+Goal:
+- Evaluate the 64-demo epsilon RGB checkpoint on the exact demo-0 cube reset
+  that the one-demo epsilon checkpoint solved.
+
+Command / Job:
+- job_id: `1029729`
+- run_name:
+  `franka_cube_rgb_normalreset64_epsilon_ep0_seed864000_exact_noclip_video_20260615_011340`
+- checkpoint:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/franka_cube_rgb_normalreset64_epsilon_g64_scratch_e20_20260615_005823/latest.ckpt`
+- settings: seed `864000`, cube pose
+  `(-0.435617000, -0.198385999, 0.781000018)`,
+  `ACTION_CHUNK_STEPS=8`, `CLIP_ACTIONS=0`, no phase/progress timing,
+  `96x96` RGB, video enabled.
+
+Result:
+- Eval job `1029729` completed, exit `0:0`, but failed the grasp.
+- Metrics: `final_success_rate=0.0`, `window_success_rate=0.0`,
+  `steps_completed=360`, `stop_reason=num_steps`, max lift `0.01118m`,
+  final lift `0.0m`, final XY error `0.06676m`, final gripper width
+  `0.02801m`.
+- Video:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-warmstart-artifacts/evals/franka_cube_rgb_normalreset64_epsilon_ep0_seed864000_exact_noclip_video_20260615_011340/videos/franka-cube-rgb-dp-eval-step-0.mp4`
+- Visual inspection: the policy approaches and closes, but contacts from an
+  offset, nudges the cube, and never gets a stable lift.
+
+Offline diagnosis:
+- Ran
+  `dextrah_lab.offline_dp_bc.diagnose_rgb_dp_offline_coherence` locally on
+  demo-0 observations with both the 64-demo checkpoint and the successful
+  one-demo checkpoint.
+- 64-demo checkpoint on selected demo-0 steps:
+  `first_mse_all_mean=0.009817`, `first_mse_all_median=0.001739`,
+  `first_pose_cosine_mean=0.671`, `gripper_sign_match_fraction=1.0`.
+- Successful one-demo checkpoint on the same rows:
+  `first_mse_all_mean=0.001813`, `first_mse_all_median=0.001304`,
+  `first_pose_cosine_mean=0.865`, `gripper_sign_match_fraction=1.0`.
+- The 64-demo model is coherent in the approach phase but has much worse
+  contact/hold/lift pose errors, especially `dz`. The deterministic 5%
+  validation split held out episodes `[5, 41, 48]`, so episode 0 was in the
+  training set. This makes the failure a fit/contact-precision issue rather
+  than a held-out-reset artifact or gross train/eval I/O bug.
+
+Next:
+- Train the 64-demo RGB epsilon policy longer from scratch with
+  `VAL_RATIO=0.0`, so all accepted demos are in the fitting set and the cosine
+  LR schedule spans the longer run instead of reaching zero at epoch 20. Then
+  repeat offline coherence and exact-reset eval before broader in-domain/OOD
+  evals.
+
+## 2026-06-15T01:22:00-07:00 - RGB 64-demo epsilon longer training launch
+
+Goal:
+- Improve contact/lift action fit on the accepted 64-demo RGB dataset after
+  the 20-epoch checkpoint failed exact demo-0 closed-loop eval.
+
+Hypothesis:
+- The 20-epoch run was underfit for contact precision: final validation was
+  still best at epoch 19 and offline coherence on demo-0 showed poor
+  close/hold/lift pose matching. A longer scratch run with `VAL_RATIO=0.0`
+  should reduce the train-set contact error and improve exact-reset lift.
+
+Version Control:
+- implementation_commit: `ee647cf4e34e3cc0a6e0da7010b22366f87b76ff`
+- remote_commit/status: l401 detached at the same commit, clean.
+
+Command / Job:
+- job_id: `1029732`
+- run_name:
+  `franka_cube_rgb_normalreset64_epsilon_g64_scratch_e80_val0_20260615_0122`
+- dataset:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/datasets/franka_cube_rgb_normalreset_nofinalclip_accepted64_hardclose_20260614_2305.npz`
+- settings: scratch RGB DP, `ROBOT_STATE_DIM=8`, no phase/progress,
+  `VAL_RATIO=0`, `NUM_EPOCHS=80`, `BATCH_SIZE=32`, `USE_EMA=false`,
+  `ACTION_LOSS_WEIGHTS=[1,1,1,1,1,1,64]`, `LR=1e-4`,
+  `LR_WARMUP_STEPS=500`, `NUM_INFERENCE_STEPS=100`, seed `42`,
+  Slurm time limit `2h`.
+
+Expected:
+- After completion, run local offline coherence on demo-0, then exact demo-0
+  reset eval with no action clipping. If that passes, run nominal/default reset
+  and small shifted-object evals.
+
+Result:
+- Training job `1029732` completed normally. The final epoch was `79`,
+  `global_step=48959`, final train loss `0.0092376`, LR `0.0`.
+- Final checkpoint:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/official_dp_rgb/franka_cube_rgb_normalreset64_epsilon_g64_scratch_e80_val0_20260615_0122/official_dp_train/checkpoints/latest.ckpt`
+- Non-fatal Python multiprocessing semaphore cleanup warnings appeared at
+  shutdown, but wrapper metrics passed and the checkpoint was written.
+
+Offline diagnosis:
+- Ran `dextrah_lab.offline_dp_bc.diagnose_rgb_dp_offline_coherence` on demo-0
+  for epoch 30, 40, 50, 60, and final checkpoints.
+- Epoch 40 improved close/hold relative to the failed 20-epoch run
+  (`close_hold first_mse_all_mean=0.000632`, pose cosine `0.993`), but exact
+  eval still failed by closing off-center.
+- Epoch 50 chunk-1 eval reduced contact distance but still failed to lift,
+  ruling out action-chunking as the primary failure.
+- Final checkpoint metrics on selected demo-0 observations:
+  `first_mse_all_mean=0.001202`, `first_mse_all_median=0.000119`,
+  `first_pose_cosine_mean=0.861`, `gripper_sign_match_fraction=1.0`.
+- Final close/hold phase:
+  `first_mse_all_mean=0.000361`, pose cosine `0.995`, `first_mae_dx=0.00999`,
+  `first_mae_dy=0.0219`, `first_mae_dz=0.0190`.
+- Final lift phase remains imperfect but improved:
+  `first_mae_dz=0.147` versus `0.164` at epoch 60 and `0.220` at epoch 50.
+
+Exact reset eval:
+- job_id: `1029743`
+- run_name:
+  `franka_cube_rgb_normalreset64_e80_final_ep0_seed864000_exact_chunk8_noclip_video_20260615_0220`
+- settings: exact demo-0 cube pose
+  `(-0.435617, -0.198385999, 0.781000018)`, `ACTION_CHUNK_STEPS=8`,
+  `CLIP_ACTIONS=0`, no phase/progress, seed `864000`, video enabled.
+- Result: passed. `final_success_rate=1.0`, `window_success_rate=0.15`,
+  `steps_completed=230`, final lift `0.130699m`, final XY error `0.06435m`,
+  final gripper width `0.05595m`, final reward `23.45`.
+- Video:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-warmstart-artifacts/evals/franka_cube_rgb_normalreset64_e80_final_ep0_seed864000_exact_chunk8_noclip_video_20260615_0220/videos/franka-cube-rgb-dp-eval-step-0.mp4`
+
+Reset sweep:
+- All sweep runs used final checkpoint, `ACTION_CHUNK_STEPS=8`,
+  `CLIP_ACTIONS=0`, no phase/progress, one-env RGB eval, video enabled.
+- Nominal default reset, job `1029746`: passed.
+  `final_success_rate=1.0`, steps `277`, final lift `0.135816m`,
+  final XY error `0.07115m`, final reward `24.70`.
+- In-domain ep5 pose `(-0.395296, -0.040890)`, job `1029747`: passed.
+  `final_success_rate=1.0`, steps `291`, final lift `0.132726m`,
+  final XY error `0.02946m`, final reward `24.72`.
+- In-domain ep7 pose `(-0.300300, -0.051513)`, job `1029748`: passed.
+  `final_success_rate=1.0`, steps `267`, final lift `0.134780m`,
+  final XY error `0.02070m`, final reward `24.32`.
+- Low-corner OOD pose `(-0.455617, -0.210386)`, job `1029749`: failed.
+  `final_success_rate=0.0`, no lift, final gripper width `0.00021m`.
+- Mild low-edge OOD pose `(-0.445617, -0.204386)`, job `1029750`: failed.
+  `final_success_rate=0.0`, no lift, final gripper width `0.00462m`.
+- Mild high-edge OOD pose `(-0.280000, -0.035000)`, job `1029751`: passed.
+  `final_success_rate=1.0`, steps `251`, final lift `0.135392m`,
+  final XY error `0.01800m`, final reward `25.07`.
+- Representative videos:
+  - nominal success:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-warmstart-artifacts/evals/franka_cube_rgb_normalreset64_e80_final_nominal_seed42_chunk8_video_20260615_0224/videos/franka-cube-rgb-dp-eval-step-0.mp4`
+  - low-edge mild OOD failure:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-warmstart-artifacts/evals/franka_cube_rgb_normalreset64_e80_final_ood_low_mild_chunk8_video_20260615_0228/videos/franka-cube-rgb-dp-eval-step-0.mp4`
+  - high-edge mild OOD success:
+    `http://localhost:8765/view?path=.codex-external/franka-cube-dp-warmstart-artifacts/evals/franka_cube_rgb_normalreset64_e80_final_ood_high_mild_chunk8_video_20260615_0228/videos/franka-cube-rgb-dp-eval-step-0.mp4`
+
+Analysis:
+- The final 64-demo RGB epsilon BC policy works on exact demo-0, nominal
+  default reset, and two in-domain supported positions. This validates the
+  RGB policy I/O, action normalization, no-phase/no-privileged-state setting,
+  and closed-loop evaluator for in-domain resets.
+- Earlier failures were primarily undertraining/contact precision: epoch 40
+  and 60 approached and contacted the cube but closed off-center and pushed it.
+  The full 80-epoch schedule was needed for a reliable exact grasp.
+- The low-left extrapolation failure is now the main limitation. Both low-edge
+  OOD cases overclose without lift, while a mild high-edge OOD case succeeds.
+  The next data collection should expand/oversample the low-left support rather
+  than changing policy I/O.
+
+Next:
+- Generate additional unique RGB demos in the default reachable support with
+  explicit coverage near the low-left edge, then retrain or fine-tune the final
+  RGB policy. A 100-200 episode dataset should be the next production-scale
+  attempt.
