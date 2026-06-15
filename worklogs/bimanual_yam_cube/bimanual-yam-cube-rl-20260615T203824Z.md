@@ -552,3 +552,59 @@ Validation:
 
 Next:
 - Commit/push, redeploy, and run tuned PPO with lower approach/enclosure sharpness, high approach/enclosure/close/lift weights, and `CUBE_XY_STABILITY_WEIGHT=0.0`.
+
+## 2026-06-15 23:28Z - tuned dense-reward PPO
+
+Goal:
+- Test whether denser distance shaping and removal of the do-nothing XY-stability reward lets PPO learn approach/contact from the YAM rest pose.
+
+Version state:
+- local_commit: `0decdfadac52f464304647183a81c17eff9f2118`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/bimanual-yam-cube-rl-20260615T203824Z`
+- remote_commit: `0decdfadac52f464304647183a81c17eff9f2118`
+
+Command/job:
+- A100 job: `29117284`
+- run_name: `yam_cube_rl_tuned_dense_0decdfa_20260615T2328Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bimanual_yam_cube_rl_29117284.out`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_bimanual_yam_cube_grasp/yam_cube_rl_tuned_dense_0decdfa_20260615T2328Z`
+- metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_bimanual_yam_cube_grasp/yam_cube_rl_tuned_dense_0decdfa_20260615T2328Z/metrics/direct_info_rank_0.jsonl`
+- submit note: initial long `sbatch --export=...` submissions timed out after the PPP stale-data quota hook warning. The accepted submission used a stdin `sbatch` script with the same wrapper and variables exported inside the job.
+- key overrides: `NUM_ENVS=512`, `MAX_ITERATIONS=120`, `HORIZON_LENGTH=64`, `MINIBATCH_SIZE=8192`, `BIMANUAL_ACTION_PRIOR_REWARD_ENABLED=False`, `CUBE_SPAWN_XY_RANDOMIZATION=0.0`, `CUBE_APPROACH_WEIGHT=12.0`, `CUBE_APPROACH_SHARPNESS=2.0`, `CUBE_ENCLOSURE_WEIGHT=6.0`, `CUBE_ENCLOSURE_SHARPNESS=3.0`, `CUBE_SIDE_ALIGNMENT_WEIGHT=2.0`, `CUBE_LIFT_WEIGHT=16.0`, `CUBE_XY_STABILITY_WEIGHT=0.0`, `CUBE_SUCCESS_BONUS_WEIGHT=30.0`, `CUBE_CLOSE_ACTION_WEIGHT=1.0`, `CUBE_LIFT_ACTION_WEIGHT=2.0`.
+
+Success criteria:
+- Job exits zero, metrics/checkpoints are present and finite.
+- Success rate becomes nonzero; if it does, evaluate the latest/best checkpoint with rollout metrics/video.
+- If success remains zero, inspect whether hold distances/contact/lift improved enough to guide the next reward or action-prior iteration.
+
+Status:
+- Complete; training succeeded mechanically and learned approach/side contact, but not reliable close/lift.
+
+Result/evidence:
+- Job exited zero and wrote 120 JSONL records, finite metrics, runtime sidecar, and checkpoints through epoch 120.
+- Final/best checkpoints include `dextrah_bimanual_yam_cube_grasp.pth`, `last_dextrah_bimanual_yam_cube_grasp_ep_120_rew_6482.559.pth`, and `last_dextrah_bimanual_yam_cube_grasp_ep_120_rew__6482.559_.pth`.
+- Best task success during training was sparse: `best_yam_cube_success_rate=0.001953125` at epoch 36.
+- Approach/side contact learned strongly: `best_yam_cube_bimanual_side_success_rate=0.791015625` at epoch 114.
+- Hold distance improved substantially: by epoch 100 `yam_cube_max_hold_to_cube_dist=0.19647689163684845`; best observed right/left hold distances were about `0.1847/0.1897`.
+- Close/lift did not follow: final gripper widths were still around `0.136-0.146 m`, above the strict closed threshold near `0.1105 m`; final `yam_cube_success_rate=0.0`, final `yam_cube_has_lifted_rate=0.0`.
+
+Analysis:
+- Dense distance shaping fixed the first learning bottleneck: the policy can approach the cube sides from the YAM rest pose.
+- The next bottleneck is reward gating for closing. In the reward helper, `close_action_reward` was gated by `closed_grippers` through `bimanual_ready_gate`, so closing was rewarded only after the grippers were already closed.
+
+## 2026-06-15 23:45Z - fix close-action reward gate
+
+Goal:
+- Reward closing when the bimanual hold points are near the cube sides, while keeping lift actions gated on both near contact and closed grippers.
+
+Change:
+- Added a broader `bimanual_close_gate` that starts around `0.26 m` max hold distance and includes balance/side/XY stability.
+- Kept `bimanual_ready_gate` at the stricter `0.18 m` contact distance and multiplied by `closed_grippers` for lift/descend shaping.
+- Changed `close_action_reward` to use `bimanual_close_gate` instead of `bimanual_ready_gate`.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_rewards.py`
+- Result: passed.
+
+Next:
+- Commit/push/redeploy, then resume PPO from the dense-run best checkpoint with higher close/lift action weights.

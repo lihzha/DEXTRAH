@@ -83,6 +83,12 @@ def compute_bimanual_yam_cube_grasp_rewards(
     close_action = 0.5 * (left_close_action + right_close_action)
     lift_action = 0.5 * (torch.clamp(actions[:, 2], 0.0, 1.0) + torch.clamp(actions[:, 9], 0.0, 1.0))
     descend_action = 0.5 * (torch.clamp(-actions[:, 2], 0.0, 1.0) + torch.clamp(-actions[:, 9], 0.0, 1.0))
+    bimanual_close_gate = (
+        torch.clamp((0.260 - max_hold_to_cube_dist) / 0.160, 0.0, 1.0)
+        * (0.25 + 0.75 * balance_gate)
+        * (0.20 + 0.80 * side_gate)
+        * xy_stability
+    )
     bimanual_ready_gate = (
         torch.clamp((0.180 - max_hold_to_cube_dist) / 0.100, 0.0, 1.0)
         * (0.25 + 0.75 * balance_gate)
@@ -98,7 +104,7 @@ def compute_bimanual_yam_cube_grasp_rewards(
     height_tracking_reward = height_tracking_weight * height_tracking * near_gate
     xy_stability_reward = xy_stability_weight * xy_stability
     success_bonus = success_bonus_weight * in_success_region.float()
-    close_action_reward = close_action_weight * prelift_gate * bimanual_ready_gate * close_action
+    close_action_reward = close_action_weight * prelift_gate * bimanual_close_gate * close_action
     lift_action_reward = lift_action_weight * prelift_gate * bimanual_ready_gate * lift_action
     descend_action_penalty = descend_action_penalty_weight * prelift_gate * bimanual_ready_gate * descend_action
     table_clearance_penalty = table_clearance_penalty_weight * table_clearance_violation * table_clearance_violation
