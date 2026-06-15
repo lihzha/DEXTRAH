@@ -539,7 +539,7 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         if not path.is_file():
             raise FileNotFoundError(f"Missing verified grasp index cache: {path}")
         payload = json.loads(path.read_text(encoding="utf-8"))
-        raw_objects = payload.get("objects", payload) if isinstance(payload, dict) else {}
+        raw_objects = payload.get("indices_by_uuid", payload.get("objects", payload)) if isinstance(payload, dict) else {}
         if not isinstance(raw_objects, dict):
             raise ValueError(f"Verified grasp index cache must contain an object mapping: {path}")
 
