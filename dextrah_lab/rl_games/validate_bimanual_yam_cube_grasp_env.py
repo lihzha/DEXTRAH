@@ -996,6 +996,8 @@ def _run_scripted_demo(
                 "[YAM-DEMO] "
                 f"step={step} phase={phase_name} reward={reward_values[-1]:.3f} "
                 f"lift={_mean(task_env.cube_lift_height):.3f} "
+                f"lin_speed={_mean(task_env.cube_linear_speed):.3f} "
+                f"ang_speed={_mean(task_env.cube_angular_speed):.3f} "
                 f"left_dist={_mean(task_env.left_hold_to_cube_dist):.3f} "
                 f"right_dist={_mean(task_env.right_hold_to_cube_dist):.3f} "
                 f"left_hold={_tensor_list(task_env.left_hold_pos.mean(dim=0))} "

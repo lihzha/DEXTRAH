@@ -148,19 +148,19 @@ class DextrahBimanualYAMCubeGraspEnvCfg(DirectRLEnvCfg):
         ),
     )
 
-    cube_static_friction = 2.4
-    cube_dynamic_friction = 1.9
+    cube_static_friction = 1.6
+    cube_dynamic_friction = 1.1
     cube_restitution = 0.0
-    cube_density = 35.0
-    cube_contact_offset = 0.004
+    cube_density = 80.0
+    cube_contact_offset = 0.002
     cube_rest_offset = 0.0
-    cube_solver_position_iterations = 14
-    cube_solver_velocity_iterations = 4
-    cube_linear_damping = 0.08
-    cube_angular_damping = 0.25
+    cube_solver_position_iterations = 32
+    cube_solver_velocity_iterations = 8
+    cube_linear_damping = 0.20
+    cube_angular_damping = 1.00
     cube_sleep_threshold = 0.02
     cube_stabilization_threshold = 0.01
-    cube_max_depenetration_velocity = 3.0
+    cube_max_depenetration_velocity = 1.0
 
     cube: RigidObjectCfg = RigidObjectCfg(
         prim_path="/World/envs/env_.*/Cube",
