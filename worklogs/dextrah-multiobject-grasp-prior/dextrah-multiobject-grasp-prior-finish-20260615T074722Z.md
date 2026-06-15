@@ -2958,3 +2958,109 @@ Interpretation:
 - Increasing both the policy anchor and reference BC loss from `100` to `1000` did not preserve the BC baseline; it worsened the early checkpoint compared with the lower-anchor run and still collapsed by epoch `15`.
 - The reward/action-prior terms remain gameable: training reward stayed high while deterministic success fell below the fixed zero-LR/BC baseline.
 - The below-table/upward-grasp reset root cause remains fixed in the current reset path. The next change should constrain PPO's actor update explicitly, so supervised/reference terms can be tested without the PPO actor loss immediately moving the policy off the BC basin.
+
+## 2026-06-15T21:17:48Z - Actor-loss-scale control and actor-zero launch
+
+Code update:
+- Commit `14120a06917931e7e62807fd78e3fe8e94ed1208`: added `dextrah_actor_loss_scale` and `dextrah_critic_loss_scale` to `DextrahGraspPriorA2CAgent`, logged both scales through the JSONL auxiliary metrics, and exposed them as `DEXTRAH_ACTOR_LOSS_SCALE` / `DEXTRAH_CRITIC_LOSS_SCALE` in `cluster/sbatch_train_teacher_8gpu.sh`.
+- Defaults are `1.0`, so existing PPO behavior is unchanged unless a run opts in.
+- Local checks passed: `python3 -m py_compile dextrah_lab/rl_games/dextrah_grasp_prior_a2c.py`, `bash -n cluster/sbatch_train_teacher_8gpu.sh`, and `git diff --check`.
+- Remote worktree `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-topdown-axis-20260615-753139c` was updated to `14120a06917931e7e62807fd78e3fe8e94ed1208` using a Git bundle because the remote GitHub SSH key failed, then remote `py_compile` and `bash -n` checks passed.
+
+Actor-zero diagnostic launch:
+- Slurm job: `29116656`
+- Experiment: `franka_multi_refonly_actor0_prior5_sigma_m5_lr1e6_anchor100_ref100_14120a0_20260615T2117Z`
+- Log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29116656.out`
+- Run dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_refonly_actor0_prior5_sigma_m5_lr1e6_anchor100_ref100_14120a0_20260615T2117Z`
+- One A100 GPU, `NUM_ENVS=256`, `MAX_ITERATIONS=20`, checkpoints every `5` epochs.
+- Same object0-only manifest, stable-pose cache, verified grasp indices, and strict top-down/downward reset gates as the previous diagnostics.
+- Initial checkpoint:
+  `/results/bc/franka_multi_bc_rawpose_cache_refdelta_9943101_20260615T1740Z/nn/bc_reference_action_imitation_lowsigma_m3_sigmaonly.pth`
+- PPO/update settings: `LEARNING_RATE=1e-6`, `CENTRAL_VALUE_LEARNING_RATE=1e-6`, `HORIZON_LENGTH=64`, `MINI_EPOCHS=1`, `E_CLIP=0.01`, `TRAIN_SIGMA=-5`, frozen obs RMS, policy anchor weight `100`, reference BC loss weight `100`, action-prior reward enabled with weight `5.0`, and reference schedule `20/28/420`.
+- Critical new setting: `DEXTRAH_ACTOR_LOSS_SCALE=0.0`, `DEXTRAH_CRITIC_LOSS_SCALE=1.0`.
+
+Expected signal:
+- If deterministic success preserves the fixed zero-LR/BC baseline, the next step is a small nonzero actor scale sweep from that checkpoint.
+- If this still collapses, the remaining issue is not PPO actor pressure alone; it would point to the reference-action target/schedule or the BC checkpoint/data rather than reset sampling safety.
+
+## 2026-06-15T21:21:37Z - Actor-zero training completed; evals queued
+
+Training job `29116656` completed all 20 epochs and saved checkpoints at epochs `5`, `10`, `15`, and `20`.
+
+Key training rows:
+
+| Epoch | Success | Has lifted | Lift height | EE dist | Actor scale | Anchor loss | Ref BC loss | Ref active | Reset tool down |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | `0.0039` | `0.0195` | `0.0245` | `0.0805` | `0.0` | `151.82` | `86.77` | `1.0` | `0.9975928` |
+| 2 | `0.1875` | `0.2227` | `0.0427` | `0.1613` | `0.0` | `56.27` | `110.44` | `1.0` | `0.9975928` |
+| 5 | `0.0039` | `0.2188` | `0.00081` | `0.4088` | `0.0` | `33.79` | `127.44` | `1.0` | `0.9975928` |
+| 10 | `0.0` | `0.0156` | `0.00336` | `0.1483` | `0.0` | `112.97` | `78.37` | `0.5764` | `0.9975928` |
+| 11 | `0.1602` | `0.1758` | `0.0300` | `0.1983` | `0.0` | `42.73` | `105.07` | `0.8421` | `0.9975928` |
+| 15 | `0.0039` | `0.0820` | `0.00122` | `0.4532` | `0.0` | `14.01` | `77.62` | `0.9991` | `0.9975928` |
+| 20 | `0.0039` | `0.0078` | `0.00082` | `0.3474` | `0.0` | `18.05` | `110.30` | `0.6753` | `0.9975928` |
+
+Interpretation from training metrics:
+- The new actor-loss-scale plumbing works: every JSONL row recorded `agent_aux/dextrah_actor_loss_scale=0.0`.
+- Disabling PPO actor loss did not make the stochastic training curve stable. Success briefly reached `0.1875` at epoch `2` and `0.1602` at epoch `11`, but saved checkpoint epochs still looked weak.
+- Reset filtering again stayed clean. The failure mode is now clearly downstream policy/reference behavior, not upward/below-table reset grasps.
+
+Deterministic evals submitted on l401:
+- `1030362`: epoch `5`, run `franka_multi_actor0_refonly_ep5_eval_14120a0_20260615T2123Z`
+- `1030363`: epoch `10`, run `franka_multi_actor0_refonly_ep10_eval_14120a0_20260615T2123Z`
+- `1030364`: epoch `15`, run `franka_multi_actor0_refonly_ep15_eval_14120a0_20260615T2123Z`
+- `1030365`: epoch `20`, run `franka_multi_actor0_refonly_ep20_eval_14120a0_20260615T2123Z`
+
+Next:
+- Monitor l401 eval metrics. If these are below the BC baseline, stop using the current scripted reference action as a full-action BC target and switch to a safer target: either only regularize gripper/z during reference phases, or use the frozen BC policy as the teacher instead of the scripted grasp-prior controller.
+
+## 2026-06-15T21:29:12Z - Actor-zero evals completed; z/gripper reference run relaunched
+
+Actor-zero full-action deterministic evals completed:
+
+| Job | Checkpoint | Run | Eval success / success-ever | Max success | Max lifted | Max lift | Table violations |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `1030362` | epoch `5` | `franka_multi_actor0_refonly_ep5_eval_14120a0_20260615T2123Z` | `0.2578125` / `0.2578125` | `0.171875` | `0.171875` | `0.0313` | `0.0` |
+| `1030363` | epoch `10` | `franka_multi_actor0_refonly_ep10_eval_14120a0_20260615T2123Z` | `0.0703125` / `0.078125` | `0.0625` | `0.0625` | `0.0120` | max `0.000568` |
+| `1030364` | epoch `15` | `franka_multi_actor0_refonly_ep15_eval_14120a0_20260615T2123Z` | `0.0` / `0.0` | `0.0` | `0.0` | near `0.0` | `0.0` |
+| `1030365` | epoch `20` | `franka_multi_actor0_refonly_ep20_eval_14120a0_20260615T2123Z` | `0.0` / `0.0` | `0.0` | `0.0` | near `0.0` | `0.0` |
+
+Interpretation:
+- Full-action scripted-reference BC remains harmful even with PPO actor loss disabled. The best saved deterministic checkpoint (`0.2578125`) is below the fixed zero-LR/BC baseline (`0.421875`) and the run collapses by epoch `15`.
+- Reset filtering remained clean in these evals: all candidates passed topdown/tool-down/table/valid-count checks, `grasp_prior_reset_tool_downward_z=0.9975928068`, and `grasp_prior_reset_tool_z_axis_z_mean=-0.9975928664`.
+- Next diagnostic should not use the scripted reference for all action dimensions. It should preserve the BC policy with the anchor and only supervise the z motion and gripper closure from the grasp-prior reference.
+
+Launch notes:
+- Submitted job `29116858` as the intended z/gripper diagnostic, then immediately found from its log that `DEXTRAH_GRASP_PRIOR_BC_LOSS_DIMS` arrived as `2` instead of `2,6`. Root cause: Slurm's comma-separated `--export` parser split the comma-valued variable. The job was canceled during startup and should not be treated as a valid experiment.
+- A first corrected `sbatch --export=ALL` attempt was rejected because the script's default `64` CPU request is invalid for a 1-GPU job on this partition. No job was created by that failed submission.
+- Corrected job `29116982` is running on A100 as `dextrah_refzg`.
+- Experiment: `franka_multi_refzg_actor0_prior5_sigma_m5_lr1e6_anchor100_ref100_14120a0_20260615T2134Z`
+- Log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29116982.out`
+- Run dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_refzg_actor0_prior5_sigma_m5_lr1e6_anchor100_ref100_14120a0_20260615T2134Z`
+- Same object0 manifest, stable-pose cache, verified grasp indices, BC checkpoint, reset filters, low LR, forced sigma, frozen obs RMS, actor loss scale `0.0`, critic loss scale `1.0`, policy anchor weight `100`, reference BC loss weight `100`, and action-prior reward weight `5.0` as the actor-zero run.
+- Effective env was verified in the log: `DEXTRAH_GRASP_PRIOR_BC_LOSS_DIMS=2,6`, `DEXTRAH_ACTOR_LOSS_SCALE=0.0`, `NPROC_PER_NODE=1`, `NUM_ENVS=256`, `GRASP_PRIOR_RESET_MIN_PREGRASP_Z=0.45`, and `GRASP_PRIOR_RESET_REQUIRE_DOWNWARD_TOOL_Z=True`.
+
+Expected signal:
+- If this still falls below the deterministic BC baseline, the scripted reference target is not reliable enough even when limited to z/gripper. The next step should be a run that uses the frozen BC policy itself as the action teacher/regularizer, or turns off scripted reference BC entirely and keeps only safe reset sampling plus PPO/anchor tuning.
+
+## 2026-06-15T21:31:20Z - Hydra comma override fix
+
+Job `29116982` failed before training with:
+- `hydra.errors.ConfigCompositionException: Ambiguous value for argument '+agent.params.config.dextrah_grasp_prior_bc_loss_dims=2,6'`
+
+Root cause:
+- Passing the comma-valued setting through the environment fixed Slurm's `--export` parser, but the launcher still emitted `+agent.params.config.dextrah_grasp_prior_bc_loss_dims=2,6`, which Hydra interprets as an ambiguous sweep unless it is quoted or written as a list.
+
+Fix:
+- Patched `cluster/sbatch_train_teacher_8gpu.sh` to derive `DEXTRAH_GRASP_PRIOR_BC_LOSS_DIMS_HYDRA`.
+- Values containing a comma are converted to Hydra list syntax, for example `2,6` becomes `[2,6]`.
+- Existing `all`, `*`, empty, and single-dimension values are preserved.
+- The launcher now logs both `DEXTRAH_GRASP_PRIOR_BC_LOSS_DIMS` and `DEXTRAH_GRASP_PRIOR_BC_LOSS_DIMS_HYDRA`.
+
+Validation:
+- `bash -n cluster/sbatch_train_teacher_8gpu.sh`: passed.
+- Local formatting sanity check for `DEXTRAH_GRASP_PRIOR_BC_LOSS_DIMS=2,6`: produced `[2,6]`.
+
+Next:
+- Commit and deploy the launcher fix to the A100 worktree, then relaunch the z/gripper-only diagnostic under a new run name.
