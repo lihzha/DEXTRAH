@@ -453,3 +453,41 @@ Validation:
 
 Next:
 - Commit/push, redeploy the A100 worktree, rerun strict validation one more time, then launch PPO if all checks pass.
+
+## 2026-06-15 22:44Z - strict validator after simultaneous-contact fix
+
+Goal:
+- Confirm the full strict validator passes with no assist after accepting simultaneous bimanual contact-distance evidence.
+
+Version state:
+- local_commit: `37aef5c938fde64cc2c489dca644f2cf9d9a114d`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/bimanual-yam-cube-rl-20260615T203824Z`
+- remote_commit: `37aef5c938fde64cc2c489dca644f2cf9d9a114d`
+
+Command/job:
+- A100 job: `29117004`
+- run_name: `yam_cube_strict_validator_37aef5c_20260615T2244Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_bimanual_yam_cube_29117004.out`
+- metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/yam_cube_strict_validator_37aef5c_20260615T2244Z/metrics.json`
+- command: `sbatch --parsable --partition=batch_singlenode,grizzly,polar,polar3,polar4,interactive_singlenode --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/bimanual-yam-cube-rl-20260615T203824Z,CODE_COMMIT=37aef5c938fde64cc2c489dca644f2cf9d9a114d,RUN_NAME=yam_cube_strict_validator_37aef5c_20260615T2244Z,NUM_ENVS=1,NUM_STEPS=560,CAPTURE_VIDEO=False,VIDEO_LENGTH=560,PRINT_INTERVAL=40,SEED=42,CUBE_SPAWN_XY_RANDOMIZATION=0.0,ALLOW_GRASP_ASSIST=False,REQUIRE_UNASSISTED_LIFT=True,DISABLE_FABRIC=True,PREPARE_YAM_ASSETS=auto cluster/sbatch_validate_bimanual_yam_cube_grasp_env_1gpu.sh`
+
+Success criteria:
+- Validator exits zero and all checks pass, especially unassisted physical lift/success.
+
+Status:
+- Complete; strict validator passed.
+
+Result/evidence:
+- `passed=true` in `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/yam_cube_strict_validator_37aef5c_20260615T2244Z/metrics.json`.
+- All checks passed, including asset/registration/reset checks, scripted standoff/contact, no severe table penetration, no-assist policy match, and unassisted physical lift.
+- `scripted_demo_lifts_cube`: `max_lift=0.04009155184030533`, required `0.04`.
+- `scripted_demo_success_predicate`: `max_success_rate=1.0`, `final_success_rate=1.0`.
+- `scripted_demo_unassisted_physical_lift`: `grasp_assist_used=false`, `max_lift=0.04009155184030533`, `max_success_rate=1.0`.
+- Contact evidence: `min_max_hold_to_cube_dist=0.12492484599351883`, required `0.12540418317978588`, evidence step `229`.
+
+Analysis:
+- The environment is RLable: the action interface drives the bimanual YAM, the observations/rewards/success predicate are finite, the reset pose is valid, the cube is physically graspable by the current YAM geometry, and a strict scripted no-assist rollout reaches the success predicate.
+- The optional bimanual action-prior reference is still not a reliable teacher because the position-only delta-IK reference cannot reach the low contact band from reset. PPO should start with `BIMANUAL_ACTION_PRIOR_REWARD_ENABLED=False`.
+
+Next:
+- Launch a small PPO smoke run, inspect JSONL rewards/success/checkpoint artifacts, then scale or tune until policy success.
