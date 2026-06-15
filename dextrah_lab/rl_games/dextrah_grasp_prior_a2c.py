@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import torch
 import time
+import copy
 
 from rl_games.algos_torch import a2c_continuous, torch_ext
 from rl_games.common import common_losses
@@ -37,6 +38,12 @@ class DextrahGraspPriorA2CAgent(BaseA2CAgent):
         self.dextrah_bc_loss_dims = self._parse_bc_loss_dims(self.config.get("dextrah_grasp_prior_bc_loss_dims", "all"))
         self.dextrah_bc_loss_last = torch.zeros((), device=self.ppo_device)
         self.dextrah_bc_active_rate_last = torch.zeros((), device=self.ppo_device)
+        self.dextrah_bc_policy_anchor_enabled = _as_bool(
+            self.config.get("dextrah_bc_policy_anchor_enabled", False)
+        )
+        self.dextrah_bc_policy_anchor_weight = float(self.config.get("dextrah_bc_policy_anchor_weight", 0.0))
+        self.dextrah_bc_policy_anchor_model = None
+        self.dextrah_bc_policy_anchor_loss_last = torch.zeros((), device=self.ppo_device)
 
     def _parse_bc_loss_dims(self, raw_dims) -> torch.Tensor | None:
         if raw_dims is None:
@@ -214,6 +221,35 @@ class DextrahGraspPriorA2CAgent(BaseA2CAgent):
         self.dextrah_bc_loss_last = bc_loss.detach()
         return bc_loss
 
+    def _ensure_dextrah_policy_anchor_model(self):
+        if (
+            not self.dextrah_bc_policy_anchor_enabled
+            or self.dextrah_bc_policy_anchor_weight <= 0.0
+        ):
+            return None
+        if self.dextrah_bc_policy_anchor_model is None:
+            self.dextrah_bc_policy_anchor_model = copy.deepcopy(self.model)
+            self.dextrah_bc_policy_anchor_model.to(self.ppo_device)
+            self.dextrah_bc_policy_anchor_model.eval()
+            for param in self.dextrah_bc_policy_anchor_model.parameters():
+                param.requires_grad_(False)
+        return self.dextrah_bc_policy_anchor_model
+
+    def _compute_dextrah_policy_anchor_loss(self, mu: torch.Tensor, batch_dict: dict) -> torch.Tensor:
+        anchor_model = self._ensure_dextrah_policy_anchor_model()
+        if anchor_model is None:
+            self.dextrah_bc_policy_anchor_loss_last = torch.zeros((), device=self.ppo_device)
+            return self.dextrah_bc_policy_anchor_loss_last
+
+        teacher_batch = dict(batch_dict)
+        teacher_batch["is_train"] = False
+        with torch.no_grad():
+            teacher_res = anchor_model(teacher_batch)
+            teacher_mu = teacher_res["mus"].detach()
+        anchor_loss = self.dextrah_bc_policy_anchor_weight * torch.mean(torch.square(mu - teacher_mu))
+        self.dextrah_bc_policy_anchor_loss_last = anchor_loss.detach()
+        return anchor_loss
+
     def calc_gradients(self, input_dict):
         value_preds_batch = input_dict["old_values"]
         old_action_log_probs_batch = input_dict["old_logp_actions"]
@@ -269,12 +305,14 @@ class DextrahGraspPriorA2CAgent(BaseA2CAgent):
             a_loss, c_loss, entropy, b_loss = losses[0], losses[1], losses[2], losses[3]
 
             bc_loss = self._compute_dextrah_bc_loss(mu, input_dict)
+            policy_anchor_loss = self._compute_dextrah_policy_anchor_loss(mu, batch_dict)
             loss = (
                 a_loss
                 + 0.5 * c_loss * self.critic_coef
                 - entropy * self.entropy_coef
                 + b_loss * self.bounds_loss_coef
                 + bc_loss
+                + policy_anchor_loss
             )
             aux_loss = self.model.get_aux_loss()
             self.aux_loss_dict = {}
@@ -285,6 +323,9 @@ class DextrahGraspPriorA2CAgent(BaseA2CAgent):
             self.aux_loss_dict.setdefault("dextrah_grasp_prior_bc_loss", []).append(self.dextrah_bc_loss_last)
             self.aux_loss_dict.setdefault("dextrah_grasp_prior_bc_active_rate", []).append(
                 self.dextrah_bc_active_rate_last
+            )
+            self.aux_loss_dict.setdefault("dextrah_bc_policy_anchor_loss", []).append(
+                self.dextrah_bc_policy_anchor_loss_last
             )
 
             if self.multi_gpu:
