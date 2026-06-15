@@ -796,14 +796,6 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             candidate_tool_z_axis_w,
             -candidate_tool_z_axis_w,
         )
-        if pregrasp_offset > 1.0e-6 and bool(self.cfg.grasp_prior_reset_require_topdown):
-            world_up = torch.zeros_like(candidate_pregrasp_offset_dir_w)
-            world_up[:, :, 2] = 1.0
-            candidate_pregrasp_offset_dir_w = torch.where(
-                candidate_has_contact.unsqueeze(-1),
-                world_up,
-                candidate_pregrasp_offset_dir_w,
-            )
         candidate_pregrasp_tool_pos_w = (
             candidate_exact_tool_pos_w + pregrasp_offset * candidate_pregrasp_offset_dir_w
         )

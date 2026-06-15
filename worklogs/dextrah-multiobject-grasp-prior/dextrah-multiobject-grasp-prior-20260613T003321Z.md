@@ -7671,3 +7671,322 @@ Result:
 
 Next:
 - Commit/push the wrapper patch, update the A100 agent worktree to the exact commit, then launch policy-only evaluation of the best candidate checkpoints.
+
+Result:
+- status: committed and pushed locally, but A100 deployment of the wrapper-only commit is blocked by GitHub SSH auth.
+- implementation_commit: `73eb239b1eae3bd2b494cbee82179f273d40cea8`
+- push/pull:
+  - pushed `origin/main` from local successfully.
+  - `git fetch origin` in the A100 agent worktree failed with `git@github.com: Permission denied (publickey)`.
+- remote_commit/status:
+  - A100 agent worktree remains at `3c4e22e87a23688e99fcde3f191bece9832ebf1e`, detached clean.
+  - Verified that this deployed commit already contains the actual no-underneath environment filter: contact-based pregrasp offsets are forced to world-up, and `grasp_prior_reset_min_contact_height_above_center = 0.0` rejects contact/reference points below the object center.
+
+Analysis:
+- The new commit only makes the contact-height prior explicit in wrappers/logging. The environment behavior needed for evaluation and training is already present in the deployed A100 commit. To avoid bypassing the Git-based source workflow with an ad hoc source copy, use the existing deployed commit for immediate evals and pass explicit Hydra overrides in a one-off sbatch body.
+
+Next:
+- Run policy-only evals from deployed commit `3c4e22e`, explicitly passing high-friction physics and `env.grasp_prior_reset_min_contact_height_above_center=0.0` in the eval command.
+
+## 2026-06-15T03:18:00Z - Policy-only checkpoint eval launch
+
+Goal:
+- Determine whether the learned policy itself can lift the two randomized objects, independent of train-time warmstart/action-prior scalar effects.
+
+Hypothesis:
+- Train-time success spikes may be inflated or destabilized by reset/warmstart distribution. Policy-only eval with identical object/randomization/physics/reset settings should identify the best checkpoint for further continuation.
+
+Change:
+- No source-code change on the remote A100 worktree; eval uses deployed commit `3c4e22e87a23688e99fcde3f191bece9832ebf1e`.
+- One-off eval sbatch body explicitly sets:
+  - two-object manifest `train2_7195_b87_nobelow_d053e6c_20260615T0045Z`
+  - `OBJECT_ASSET_ASSIGNMENT=random`
+  - full yaw randomization via `object_spawn_yaw_randomization_deg=180.0`
+  - stable pose cache enabled/randomize false
+  - object physics `static_friction=4.0`, `dynamic_friction=3.5`, solver iterations `24/8`
+  - grasp reset enabled with verified indices, `candidate_count=64`, `attempts=2`, top-down required, `min_pregrasp_z=0.45`, `min_contact_height_above_center=0.0`, `pregrasp_offset=0.03`
+  - `action_source=policy`, `NUM_ENVS=512`, `NUM_STEPS=600`
+
+Command / Job:
+- command: custom `sbatch` on `a1001` using the same Pyxis mounts as the repo eval wrapper plus explicit Hydra overrides.
+- job_id: `29084674`
+  - run_name: `franka_multi_eval_policy_liftheavy_ep40_3c4e22e_20260615T0318Z`
+  - checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_train40_liftheavy_resume30_3c4e22e_20260615T0247Z/nn/last_dextrah_franka_multi_object_grasp_ep_40_rew_3007.3823.pth`
+- job_id: `29084675`
+  - run_name: `franka_multi_eval_policy_closeheavy_ep50_3c4e22e_20260615T0318Z`
+  - checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_train60_closeheavy_resume40_3c4e22e_20260615T0300Z/nn/last_dextrah_franka_multi_object_grasp_ep_50_rew_4457.714.pth`
+- job_id: `29084676`
+  - run_name: `franka_multi_eval_policy_closeheavy_ep60_3c4e22e_20260615T0318Z`
+  - checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_train60_closeheavy_resume40_3c4e22e_20260615T0300Z/nn/last_dextrah_franka_multi_object_grasp_ep_60_rew_4632.7217.pth`
+- logs:
+  - `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_policy_29084674.out`
+  - `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_policy_29084675.out`
+  - `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_policy_29084676.out`
+
+Next:
+- Monitor startup, metrics JSONs, and success/lift summaries. If all policy-only evals are poor, relaunch training from the least-bad checkpoint with gentler close shaping and a lower learning rate rather than continuing from the degraded epoch-60 state.
+
+Result:
+- status: completed, diagnostic pass.
+- scheduler: all eval jobs `COMPLETED`.
+- metrics:
+  - `liftheavy_ep40`: `eval_success_rate=0.3906`, `eval_success_hold_rate=0.2383`, `first_attempt_terminal_success_rate=0.1934`, `success_ever_rate=0.4336`.
+  - `closeheavy_ep50`: `eval_success_rate=0.3848`, `eval_success_hold_rate=0.2500`, `first_attempt_terminal_success_rate=0.1953`, `success_ever_rate=0.4316`.
+  - `closeheavy_ep60`: `eval_success_rate=0.3984`, `eval_success_hold_rate=0.2402`, `first_attempt_terminal_success_rate=0.1953`, `success_ever_rate=0.4473`.
+  - The policies can get transient success on roughly 39-40% of first attempts, but stable hold is only 24-25%.
+  - Failure signature:
+    - `closeheavy_ep50`: mean policy z `0.478`, mean close `0.734`, mean finger-center distance `0.319 m`.
+    - `closeheavy_ep60`: mean policy z `0.568`, mean close `0.841`, mean finger-center distance `0.342 m`.
+    - The policy learned to close and lift, but the hand often moves away from the contact reference after transient lift.
+
+Analysis:
+- Do not increase lift or close action shaping further. The policy is already over-commanding both.
+- Continue from `closeheavy_ep50` rather than `ep60`: it has the best hold rate and less extreme over-lift/over-close, so it is a better starting point for contact-stabilizing continuation.
+- The next run should lower LR, reduce teacher-action prior strength, require current lift readiness for lift guidance, gate lift on finger-center distance and closed width, and increase approach/enclosure/success rewards.
+
+Next:
+- Launch a contact-gated continuation from close-heavy epoch 50 with lower LR and less aggressive lift/close action shaping.
+
+## 2026-06-15T03:30:00Z - Contact-gated continuation launch
+
+Goal:
+- Improve policy-only stable grasp retention after transient success without further increasing upward/free-space motion.
+
+Hypothesis:
+- The policy has learned enough close/lift intent. Lower learning rate plus contact-gated lift guidance should reduce the tendency to fly away from the object. Stronger approach/enclosure/success rewards should make staying with the contact reference more valuable than simply commanding z-up.
+
+Change:
+- No source-code change from remote deployed commit `3c4e22e87a23688e99fcde3f191bece9832ebf1e`.
+- Resume from:
+  `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_train60_closeheavy_resume40_3c4e22e_20260615T0300Z/nn/last_dextrah_franka_multi_object_grasp_ep_50_rew_4457.714.pth`
+- Settings relative to close-heavy continuation:
+  - `MAX_ITERATIONS=70`
+  - `LEARNING_RATE=0.00005`
+  - `CENTRAL_VALUE_LEARNING_RATE=0.00005`
+  - `SAVE_FREQUENCY=5`
+  - `GRASP_PRIOR_ACTION_WARMSTART_REQUIRE_CURRENT_LIFT_READY=True`
+  - `GRASP_PRIOR_ACTION_WARMSTART_LIFT_MAX_FINGER_CENTER_DIST=0.12`
+  - `GRASP_PRIOR_ACTION_WARMSTART_LIFT_CLOSED_WIDTH_MARGIN=0.008`
+  - `GRASP_PRIOR_ACTION_WARMSTART_CLOSE_WIDTH=0.004`
+  - `GRASP_PRIOR_ACTION_WARMSTART_LIFT_ACTION_Z=0.45`
+  - `GRASP_PRIOR_ACTION_PRIOR_REWARD_WEIGHT=20`
+  - stronger contact/task rewards: `CUBE_APPROACH_WEIGHT=6`, `CUBE_ENCLOSURE_WEIGHT=4`, `CUBE_XY_STABILITY_WEIGHT=3`, `CUBE_HEIGHT_TRACKING_WEIGHT=5`, `CUBE_SUCCESS_BONUS_WEIGHT=30`
+  - less free-space action shaping: `CUBE_LIFT_ACTION_WEIGHT=2`, `CUBE_POSTLIFT_LIFT_ACTION_WEIGHT=0`, `CUBE_POSTLIFT_CLOSE_ACTION_WEIGHT=1.5`, `CUBE_GRIPPER_CLOSE_REG_WEIGHT=-0.01`, `CUBE_ACTION_PENALTY_WEIGHT=-0.003`
+
+Command / Job:
+- command: `sbatch --export=ALL,...,CHECKPOINT=/results/...ep_50...,GRASP_PRIOR_ACTION_WARMSTART_REQUIRE_CURRENT_LIFT_READY=True,GRASP_PRIOR_ACTION_WARMSTART_LIFT_MAX_FINGER_CENTER_DIST=0.12,LEARNING_RATE=0.00005 cluster/sbatch_train_teacher_8gpu.sh` on `a1001`
+- job_id: `29084821`
+- run_name: `franka_multi_state_teacher_7195_b87_nobelow_train70_contactgate_resume50_3c4e22e_20260615T0330Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29084821.out`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_train70_contactgate_resume50_3c4e22e_20260615T0330Z`
+
+Next:
+- Submit and monitor. Acceptance for this run: policy-only eval after training should improve hold rate above `0.25` and not worsen first-attempt success below `0.38`; training scalars should show lower finger distance without exploding z action.
+
+## 2026-06-15T03:54:24Z - Policy-render diagnosis and policy-execution continuation plan
+
+Goal:
+- Use the current multi-object policy videos to diagnose the grasp failure mode, then launch the next training run from the best prior checkpoint.
+
+Hypothesis:
+- The action warmstart may be masking bad policy timing: rendered rollouts show the policy opens or lifts away early and only closes strongly after it has lost useful object contact. Disabling warmstart while keeping the grasp-prior action reward should force the executed policy to learn close/contact timing.
+
+Change:
+- No new source-code change for this launch. Remote code remains detached at `3c4e22e87a23688e99fcde3f191bece9832ebf1e`.
+- Continue from the best evaluated policy-only checkpoint:
+  `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_train60_closeheavy_resume40_3c4e22e_20260615T0300Z/nn/last_dextrah_franka_multi_object_grasp_ep_60_rew_4632.7217.pth`
+- Key settings:
+  - `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`
+  - `GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED=True`
+  - `GRASP_PRIOR_ACTION_PRIOR_REWARD_WEIGHT=80`
+  - `GRASP_PRIOR_ACTION_PRIOR_REWARD_SHARPNESS=1`
+  - `OBJECT_ASSET_ASSIGNMENT=random`
+  - `OBJECT_SPAWN_YAW_RANDOMIZATION_DEG=180.0`
+  - stable pose cache enabled with two-object manifest and verified no-below grasp indices
+  - `DEXTRAH_RLGAMES_JSONL_METRICS=True`
+
+Command / Job:
+- command: `sbatch --export=ALL,...,FULL_EXPERIMENT_NAME=franka_multi_state_teacher_7195_b87_nobelow_train80_policyexec_resume60_3c4e22e_20260615T0354Z,MAX_ITERATIONS=80,CHECKPOINT=/results/...ep_60...,GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False,GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED=True cluster/sbatch_train_teacher_8gpu.sh` on `a1001`
+- job_id: `29085412`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29085412.out`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_train80_policyexec_resume60_3c4e22e_20260615T0354Z`
+- expected metrics: JSONL metrics under the run dir plus TensorBoard events.
+- expected artifacts: checkpoints every 5 epochs, then policy-only eval metrics and videos after training.
+
+Result:
+- status: submitted.
+- startup: verified in `teacher_8gpu_29085412.out`; `RUN_NAME`/`FULL_EXPERIMENT_NAME` match, `DEXTRAH_RLGAMES_JSONL_METRICS=True`, `OBJECT_ASSET_ASSIGNMENT=random`, `OBJECT_SPAWN_YAW_RANDOMIZATION_DEG=180.0`, `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`, and `GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED=True`.
+- canceled: `CODE_NFS` defaulted to stale canonical checkout `/lustre/fsw/portfolios/nvr/users/lzha/src/DEXTRAH` at commit `378b722a82a42b293b7eea9f27629502cbf44d19`, not the agent worktree commit. Canceled before useful training and will relaunch with `CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-bc-fallback-20260614-d5e8b27`.
+- policy-render artifacts already generated:
+  - `cluster_results/a1001/franka_multi_policy_grasp_vis_ep70_env0_3c4e22e_20260615T0346Z/videos/franka_multi_policy_grasp_vis_ep70_env0_3c4e22e_20260615T0346Z-step-0.mp4`
+  - `cluster_results/a1001/franka_multi_policy_grasp_vis_ep70_env1_3c4e22e_20260615T0346Z/videos/franka_multi_policy_grasp_vis_ep70_env1_3c4e22e_20260615T0346Z-step-0.mp4`
+- visual diagnosis: both clips execute on different objects, but current policy does not reliably grasp; gripper opens/lifts away and objects remain on the table.
+
+Next:
+- Submit and monitor startup config. Acceptance for this run is a policy-only eval hold rate above the prior best of roughly `0.286` plus new videos showing close/contact/hold behavior for both objects.
+
+## 2026-06-15T04:00:00Z - Policy-execution continuation relaunch with pinned source
+
+Goal:
+- Relaunch the policy-execution continuation using the intended agent-owned DEXTRAH source tree.
+
+Hypothesis:
+- Pinning `CODE_NFS` to the detached remote worktree will ensure the training container sees the no-underneath grasp prior and multi-object environment changes instead of the stale canonical checkout.
+
+Change:
+- Same training settings as the canceled `29085412` launch.
+- Added `CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-bc-fallback-20260614-d5e8b27`.
+- New run name to avoid mixing outputs:
+  `franka_multi_state_teacher_7195_b87_nobelow_train80_policyexec_resume60_3c4e22e_20260615T0400Z`
+
+Command / Job:
+- command: `sbatch --export=ALL,CODE_NFS=/lustre/.../multiobject-bc-fallback-20260614-d5e8b27,... cluster/sbatch_train_teacher_8gpu.sh` on `a1001`
+- job_id: `29085444`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29085444.out`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_train80_policyexec_resume60_3c4e22e_20260615T0400Z`
+
+Next:
+- Verify header uses `CODE_COMMIT=3c4e22e87a23688e99fcde3f191bece9832ebf1e`, then monitor JSONL metrics/checkpoints.
+
+Result:
+- status: running.
+- startup: verified `CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-bc-fallback-20260614-d5e8b27` and `CODE_COMMIT=3c4e22e87a23688e99fcde3f191bece9832ebf1e` in `teacher_8gpu_29085444.out`. Training config still has random object assignment, full yaw randomization, stable-pose cache, warmstart disabled, and action-prior reward enabled.
+- failure: Hydra config type check failed before training because `env.grasp_prior_action_prior_reward_weight=80` was parsed as an int while the config field expects float. No useful training occurred.
+
+Next:
+- Relaunch with float literals for the action-prior settings and all reward weights, e.g. `GRASP_PRIOR_ACTION_PRIOR_REWARD_WEIGHT=80.0` and `GRASP_PRIOR_ACTION_PRIOR_REWARD_SHARPNESS=1.0`.
+
+## 2026-06-15T04:03:00Z - Policy-execution continuation relaunch with float overrides
+
+Goal:
+- Run the same policy-execution continuation after fixing Hydra override types.
+
+Change:
+- Same source/checkpoint/settings as job `29085444`.
+- Changed scalar reward/action-prior overrides that should be floats to include decimal points.
+
+Command / Job:
+- job_id: `29085476`
+- run_name: `franka_multi_state_teacher_7195_b87_nobelow_train80_policyexec_resume60_3c4e22e_20260615T0403Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29085476.out`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_train80_policyexec_resume60_3c4e22e_20260615T0403Z`
+
+Next:
+- Monitor startup past Hydra config parsing and inspect first metrics/checkpoints.
+
+Result:
+- status: running.
+- startup: passed Hydra config parsing, loaded checkpoint `last_dextrah_franka_multi_object_grasp_ep_60_rew_4632.7217.pth`, and constructed base environments on all 8 GPUs.
+- epoch 61: first JSONL metrics written; `cube_success_rate=0.0947`, `object_0_success_rate=0.0889`, `object_1_success_rate=0.1006`, `cube_grasp_prior_reset_success_rate=0.5215`, `cube_finger_center_to_cube_dist=0.171 m`. Low but expected immediately after disabling scripted action warmstart; monitor trend through epoch 65 before deciding.
+- epochs 63-70: unstable. Success collapsed to `0.003-0.006` at epochs 64-69 while finger-center distance grew to `0.422 m`, then recovered at epoch 70 to `cube_success_rate=0.0913`, `object_0=0.1094`, `object_1=0.0732`, `finger_center_dist=0.214 m`. Continue to epoch 80 and evaluate the best checkpoint rather than assuming the final checkpoint is best.
+- final: completed cleanly at epoch 80. Final metrics: `cube_success_rate=0.0645`, `object_0=0.0566`, `object_1=0.0723`, `finger_center_dist=0.174 m`, checkpoint `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_train80_policyexec_resume60_3c4e22e_20260615T0403Z/nn/last_dextrah_franka_multi_object_grasp_ep_80_rew_5025.534.pth`.
+
+Analysis:
+- Negative ablation. Disabling action warmstart made the executed policy corrupt the rollout distribution: close/up actions became large, but the fingers drifted away from contact. The action-prior reward alone did not keep the robot in a useful grasp state.
+
+Next:
+- Do not evaluate this checkpoint unless needed for a control comparison. Relaunch from the old epoch-60 checkpoint with action warmstart enabled and a stronger action-prior/BC reward so the policy can learn the reference actions while the environment remains on a valid grasping distribution.
+
+## 2026-06-15T04:15:00Z - Warmstart strong-BC continuation
+
+Goal:
+- Test whether stronger action-prior/BC learning improves policy-only behavior when the rollout state distribution is kept valid by grasp-prior action warmstart.
+
+Hypothesis:
+- The no-warmstart run failed because executed policy actions drove the robot away from contact. Keeping warmstart enabled should preserve useful grasping states while a stronger action-prior reward trains the policy outputs toward the reference sequence.
+
+Change:
+- Resume again from old close-heavy epoch 60.
+- `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=True`
+- `GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED=True`
+- `GRASP_PRIOR_ACTION_PRIOR_REWARD_WEIGHT=80.0`
+- Lower LR to `2e-5` and KL threshold to `0.006`.
+- Source pinned with `CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-bc-fallback-20260614-d5e8b27`.
+
+Command / Job:
+- job_id: `29085835`
+- run_name: `franka_multi_state_teacher_7195_b87_nobelow_train70_warmbc80_resume60_3c4e22e_20260615T0415Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29085835.out`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_train70_warmbc80_resume60_3c4e22e_20260615T0415Z`
+
+Next:
+- Verify startup config, then inspect epochs 61-70. If training succeeds, run policy-only eval and videos on the best checkpoint.
+
+Result:
+- startup: verified in `teacher_8gpu_29085835.out`; `CODE_NFS` points to the agent worktree at `3c4e22e87a23688e99fcde3f191bece9832ebf1e`, `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=True`, `GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED=True`, `DEXTRAH_RLGAMES_JSONL_METRICS=True`, random object assignment, and full yaw randomization.
+- epoch 65: `cube_success_rate=0.1030`, `object_0=0.1377`, `object_1=0.0684`, `cube_grasp_prior_reset_success_rate=0.4619`, `finger_center_dist=0.231 m`; checkpoint `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_train70_warmbc80_resume60_3c4e22e_20260615T0415Z/nn/last_dextrah_franka_multi_object_grasp_ep_65_rew_16712.201.pth`.
+- final: completed cleanly at epoch 70. Final metrics: `cube_success_rate=0.0825`, `object_0=0.1191`, `object_1=0.0459`, `finger_center_dist=0.177 m`, checkpoint `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_train70_warmbc80_resume60_3c4e22e_20260615T0415Z/nn/last_dextrah_franka_multi_object_grasp_ep_70_rew_4855.7393.pth`.
+
+Analysis:
+- Negative ablation. Keeping warmstart with stronger BC reward did not improve the correctly pinned worktree run. Object 1 remains weak, and success is still far below a useful policy-only acceptance level.
+- Also discovered a reproducibility risk: earlier wrapper launches likely used the stale canonical checkout unless `CODE_NFS` was explicitly passed. New launches must always set `CODE_NFS`.
+
+Next:
+- Re-check the pinned environment/model wiring before more training, especially object-pose/identity conditioning in the state observation and whether the no-underneath/topdown grasp filter is producing reachable, high-quality grasps for both objects.
+
+## 2026-06-15T04:28:00Z - Reset sampling coverage diagnostic
+
+Goal:
+- Test whether low reset success, not policy architecture, is the immediate bottleneck for the correctly pinned multi-object runs.
+
+Hypothesis:
+- About half the envs fall back to default starts because grasp-prior reset quality succeeds only around `0.43-0.54`. More candidates and retry attempts may find reachable topdown/no-below candidates more consistently without relaxing IK/quality thresholds.
+
+Change:
+- Resume old epoch-60 checkpoint for only five epochs.
+- `GRASP_PRIOR_RESET_ATTEMPTS=6`
+- `GRASP_PRIOR_RESET_CANDIDATE_COUNT=128`
+- Keep IK tolerances unchanged.
+- Keep warmstart enabled and use moderate action-prior reward `40.0`.
+
+Command / Job:
+- job_id: `29086001`
+- run_name: `franka_multi_state_teacher_7195_b87_nobelow_train65_resetboost_resume60_3c4e22e_20260615T0428Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29086001.out`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_nobelow_train65_resetboost_resume60_3c4e22e_20260615T0428Z`
+
+Next:
+- Monitor through epoch 65 and compare reset success against the previous `0.43-0.54` range.
+
+Result:
+- startup: verified `GRASP_PRIOR_RESET_ATTEMPTS=6`, `GRASP_PRIOR_RESET_CANDIDATE_COUNT=128`, pinned `CODE_NFS`, warmstart enabled, and action-prior reward `40.0` in `teacher_8gpu_29086001.out`.
+2026-06-15T04:40:23Z resetboost final: job 29086001 completed. epoch65 success=0.0894 obj0=0.1094 obj1=0.0693 reset=0.4634 r0=0.5029 r1=0.4238; candidate count increase did not fix reset quality; next inspect reset/IK candidate quality and render diagnostic artifacts.
+2026-06-15T04:43:02Z launched per-object video validation jobs 1029556 obj0 run franka_multi_grasp_video_obj0_7195_3c4e22e_20260615T0442Z and 1029557 obj1 run franka_multi_grasp_video_obj1_b87a_3c4e22e_20260615T0442Z on l401; single-object manifests under /lustre/.../results/dextrah/assets/filtered_manifests/train2_7195...; stable pose cache, verified no-below indices, yaw +-180, high friction, grasp prior reset after object settle.
+2026-06-15T04:44:09Z initial video jobs 1029556/1029557 failed before Python due unbound wrapper optional OBJECT_DENSITY; relaunched as 1029558/1029559 with optional env vars exported empty.
+2026-06-15T04:48:25Z per-object video validations 1029558/1029559 passed. Local artifacts encoded under cluster_results/l401/franka_multi_grasp_video_obj0_7195_3c4e22e_20260615T0444Z_r2 and obj1_b87a...; metrics: obj0 grasp lift 0.1237m xy 0.0329m, obj1 grasp lift 0.1226m xy 0.0469m; reset_settle and perturbation passed. This confirms controlled settled-object grasp-prior warmstart can lift both objects, while PPO policy metrics remain low.
+2026-06-15T04:50:10Z launched IK relaxation reset diagnostic job 29086543 run franka_multi_state_teacher_7195_b87_nobelow_ikrelax61_resume60_3c4e22e_20260615T0449Z from epoch60, max_iter=61, pos_tol=0.09 rot_tol=0.75 ik_iters=128, unchanged geometric quality caps; goal is reset_quality_success improvement before longer training.
+2026-06-15T04:51:06Z canceled IK diagnostic job 29086543 before metrics because wrapper used --auto_resume; checkpoint env var was wrong. Inspecting wrapper and relaunching with correct checkpoint variable.
+2026-06-15T04:51:41Z relaunched IK diagnostic as job 29086560 run franka_multi_state_teacher_7195_b87_nobelow_ikrelax61_resume60_3c4e22e_20260615T0451Z_r2 with CHECKPOINT set and AUTO_RESUME=False.
+2026-06-15T05:00:47Z IK diagnostic job 29086560 completed but is inconclusive: run fell back to slurm_29086560 and JSONL metrics were not written; checkpoint saved but no reset-quality metrics. Need relaunch with explicit DEXTRAH_RLGAMES_JSONL_METRICS=True/short env export or patch wrapper.
+2026-06-15T05:01:28Z relaunched IK diagnostic as job 29086749 run franka_multi_state_teacher_7195_b87_nobelow_ikrelax61_resume60_3c4e22e_20260615T0501Z_r3 with exported vars, FULL_EXPERIMENT_NAME, JSONL metrics enabled.
+2026-06-15T05:10:28Z IK diagnostic 29086749 completed: epoch61 success=0.1104 obj0=0.1689 obj1=0.0518 reset=0.6436 r0=0.6826 r1=0.6045 quality=0.6318 poserr=0.0707 roterr=0.3888 active=0.6318 active_succ=0.1731. Reset quality improved enough to continue training with same IK settings.
+
+## 2026-06-15T05:16:52Z - Enforce real topdown grasp-prior approach axis
+
+Goal:
+- Prevent multi-object grasp-prior resets from accepting candidates that effectively approach from below/side even when the diagnostic offset was forced upward.
+
+Hypothesis:
+- The contact-grasp path overwrote `candidate_pregrasp_offset_dir_w` with world-up for every contact candidate, so the `grasp_prior_reset_require_topdown` gate verified the artificial offset instead of the actual sampled tool-axis approach. Removing that override should make the topdown gate reject bottom/side approach axes before IK/reset.
+
+Change:
+- Removed the contact-candidate world-up override in `franka_multi_object_grasp_env.py`.
+- Candidate selection now keeps the sign-selected sampled tool z-axis as the pregrasp offset direction, then applies the existing `min_pregrasp_z`, contact-height, table, center, and width gates.
+
+Version Control:
+- agent_id: merge-dp-rgb-main-20260613
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/merge-dp-rgb-main-20260613`
+- branch: `main`
+- base_commit: `73eb239b1eae3bd2b494cbee82179f273d40cea8`
+- implementation_commit: `e591681`
+- changed_files: `dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py`, this worklog
+
+Command / Job:
+- command: `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py dextrah_lab/rl_games/collect_franka_multi_object_verified_grasps.py`
+- job_id: n/a
+
+Result:
+- local syntax check passed.
+
+Next:
+- Commit and push this fix, update an agent-owned Lustre worktree to the exact commit, regenerate per-object grasp-contact videos, inspect candidate topdown/contact metrics, and only then continue RL training.
