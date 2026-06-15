@@ -16750,6 +16750,117 @@ Next:
   state, then rerun the exact episode-0 cube-position eval with `CLIP_ACTIONS=0`
   and `ACTION_CHUNK_STEPS=1`.
 
+Update 2026-06-14T21:38:00-07:00:
+- implementation commit: `b0aa81211208b54091ecd4846d08c9ab36fc0da3`
+- pushed to `origin/codex/franka-cube-diffusion-policy-bc`.
+- l401 could not fetch GitHub directly due SSH key auth, so the commit was
+  transferred as a Git bundle and the agent worktree was detached at
+  `b0aa81211208b54091ecd4846d08c9ab36fc0da3`.
+- generated hard-close dataset:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/datasets/franka_cube_rgb_noclip_accepted64_hardclose_20260614_2136.npz`
+- report:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/datasets/franka_cube_rgb_noclip_accepted64_hardclose_20260614_2136_report.json`
+- audit: `image=(18091,96,96,3)`, `robot_state=(18091,8)`,
+  `action=(18091,7)`, `episode_ends=(64,)`; gripper counts are
+  `+1.0:5120` and `-1.0:12971`.
+- submitted smoke training job `1029554`:
+  `franka_cube_rgb_hardclose64_notiming_smoke_s200_20260614_2138`
+  with `APPEND_PHASE_PROGRESS=false`, `ROBOT_STATE_DIM=8`, `VAL_RATIO=0.05`,
+  `LR=1e-4`, `NUM_EPOCHS=3`, `MAX_TRAIN_STEPS=200`,
+  `MAX_VAL_STEPS=20`, `USE_EMA=false`.
+
+Smoke result:
+- job `1029554` completed `0:0` in `00:01:33`.
+- final metrics: `global_step=601`, `epoch=2`, `train_loss=0.0637111`,
+  `val_loss=0.0425979`, finite.
+- staged checkpoint:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/franka_cube_rgb_hardclose64_notiming_smoke_s200_20260614_2138/latest.ckpt`
+
+Full hard-close training launch:
+- submitted job `1029555`.
+- run name:
+  `franka_cube_rgb_hardclose64_notiming_full_e20_20260614_2140`
+- dataset:
+  `/results/dp_bc/datasets/franka_cube_rgb_noclip_accepted64_hardclose_20260614_2136.npz`
+- overrides: `APPEND_PHASE_PROGRESS=false`, `ROBOT_STATE_DIM=8`,
+  `VAL_RATIO=0.05`, `LR=1e-4`, `NUM_EPOCHS=20`,
+  `MAX_TRAIN_STEPS=10000`, `MAX_VAL_STEPS=100`,
+  `LR_WARMUP_STEPS=500`, `USE_EMA=false`.
+
+Full hard-close training result:
+- job `1029555` completed and staged checkpoint:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/franka_cube_rgb_hardclose64_notiming_full_e20_20260614_2140/latest.ckpt`
+- final metrics: `global_step=10779`, `epoch=19`,
+  `train_loss=0.00211091`, `val_loss=0.02286855`, finite.
+- note: Python multiprocessing semaphore cleanup warnings appeared after W&B
+  shutdown, but the wrapper printed `RGB DP train metrics passed` and staged
+  the checkpoint.
+
+Exact ep0 eval launch:
+- submitted job `1029560`.
+- run name:
+  `franka_cube_rgb_hardclose64_notiming_full_e20_ep0pos_chunk1_noclip_video_20260614_2151`
+- checkpoint:
+  `/results/dp_bc/checkpoints/franka_cube_rgb_hardclose64_notiming_full_e20_20260614_2140/latest.ckpt`
+- reset cube position:
+  `[-0.2878209948539734, -0.15415899455547333, 0.781000018119812]`.
+- eval settings: `APPEND_PHASE_PROGRESS=False`, no privileged object state,
+  `ACTION_CHUNK_STEPS=1`, `CLIP_ACTIONS=0`, `POLICY_SAMPLE_SEED=42`,
+  `STOP_ON_DONE=True`, video enabled.
+
+Exact ep0 eval result:
+- job `1029560` completed with `window_success_rate=0.0`,
+  `done_count=0`, `steps_completed=340`, `stop_reason=num_steps`.
+- exact reset was correct: `cube_pos_l2_diff_env0=0.0`.
+- object-state-free policy I/O confirmed: `image=[3,96,96]`,
+  `robot_state=8`, `privileged_object_state_in_policy=false`.
+- failure mode persisted even with hard-close `-1` training labels:
+  raw/applied gripper action stayed open (`0.98235697..1.00001395`),
+  final gripper width was `0.079987m`, max lift was `0.0156m`.
+- fetched video:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/cluster_evals/franka_cube_rgb_hardclose64_notiming_full_e20_ep0pos_chunk1_noclip_video_20260614_2151/videos/franka-cube-rgb-hardclose64-notiming-full-e20-ep0pos-chunk1-noclip-step-0.mp4`
+- submitted offline saved-history coherence job `1029564` to determine whether
+  the hard-close checkpoint predicts `-1` on dataset histories or whether the
+  training/normalizer path is still wrong.
+
+Offline coherence result:
+- jobs `1029564`/`1029568` were bad diagnostic launches due missing wrapper
+  environment (`PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python`, then missing
+  official-DP dependency site). Fixed launch `1029569` used the same Python
+  dependency sites as the train wrapper and completed.
+- local report:
+  `http://localhost:8765/view?path=.codex-external/franka-cube-dp-bc-warmstart/artifacts/official_dp_rgb/franka_cube_rgb_hardclose64_notiming_full_e20_20260614_2140/offline_coherence_ep0_random_interactive3_20260614_2211/rgb_offline_coherence_report.md`
+- overall saved-history coherence is mostly good:
+  `gripper_sign_match_fraction=0.941`, `first_mae_gripper=0.1169`,
+  `sequence_mse_all_mean=0.00979`.
+- the failure is concentrated at the close boundary:
+  close-hold `first_mae_gripper=0.3889`,
+  `gripper_sign_match_fraction=0.8`.
+- ep0 boundary rows:
+  step `79` is still align-open but predicts close
+  (`pred=-1.0000`, label `+1.0`); step `80` is close-hold with open gripper
+  width but predicts open (`pred=+1.0000`, label `-1.0`); by step `100`, after
+  saved gripper width is partially closed, it predicts close correctly
+  (`pred=-1.0000`, label `-1.0`).
+
+Recovery dataset:
+- generated and audited:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/datasets/franka_cube_rgb_noclip_accepted64_hardclose_gripopen_recovery_x2_20260614_2202.npz`
+- report:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/datasets/franka_cube_rgb_noclip_accepted64_hardclose_gripopen_recovery_x2_20260614_2202_report.json`
+- stats: `128` episodes, `36182` rows,
+  `image=(36182,96,96,3)`, `robot_state=(36182,8)`, `action=(36182,7)`.
+- gripper labels stay hard-close: `+1.0:10240`, `-1.0:25942`; phase `1/2`
+  duplicate rows include open gripper-width proprio support.
+
+Next:
+- Patch `cluster/sbatch_train_franka_cube_rgb_dp_1gpu.sh` to accept optional
+  `ACTION_LOSS_WEIGHTS`, so recovery fine-tunes can use a stronger gripper
+  channel without hardcoding the config.
+- Run a short recovery-weight smoke with `ACTION_LOSS_WEIGHTS=[1,1,1,1,1,1,64]`
+  and then a recovery fine-tune from the hard-close checkpoint if the smoke is
+  clean.
+
 ## 2026-06-14T20:42:34-07:00 - 64-demo no-timing RGB BC training launch
 
 Goal:
