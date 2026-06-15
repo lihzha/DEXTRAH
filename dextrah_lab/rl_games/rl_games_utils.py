@@ -487,6 +487,13 @@ class DextrahResumableAlgoObserver(AlgoObserver):
             weights_without_env = dict(weights)
             weights_without_env["env_state"] = None
             weights_without_env.pop("dextrah_runtime_state", None)
+            if is_init_checkpoint and hasattr(algo, "optimizer"):
+                if "optimizer" in weights_without_env:
+                    print(
+                        f"[DEXTRAH resume] ignoring checkpoint optimizer for policy initialization "
+                        f"on rank {self._rank()}"
+                    )
+                weights_without_env["optimizer"] = algo.optimizer.state_dict()
             original_set_full_state_weights(weights_without_env, set_epoch=set_epoch)
 
             if runtime_state is not None:

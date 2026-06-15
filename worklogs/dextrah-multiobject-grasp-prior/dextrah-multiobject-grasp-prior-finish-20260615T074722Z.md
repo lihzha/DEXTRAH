@@ -992,3 +992,162 @@ Command / Job:
 
 Next:
 - Compare reset quality, eval success, table clearance, and trace against `1029813`. If shorter pregrasp improves reset quality, regenerate BC/fine-tune using this reset distribution; otherwise patch the reset IK/retry path.
+
+## 2026-06-15T12:38:00Z - Patch retry loop to resample object pose
+
+Result:
+- Shorter-pregrasp ablation job `1029815` completed with exit `0:0`.
+- Compared to `pre08`, `pre04` improved `eval_success_rate` from `0.359375` to `0.40625` and initial reset quality from `0.59375` to `0.6875`, but mean/late reset quality remained poor (`~0.46` mean, `0.375` final).
+- Table clearance stayed positive, so the main issue is not below-table collision in these runs; it is failed grasp-prior reset IK/quality, especially after post-success resets.
+
+Hypothesis:
+- The multi-object retry loop resampled grasp candidates but kept the same object pose. For objects with only one or a few verified candidate indices, an unreachable object yaw/spawn could repeatedly fail and then fall back to the default arm pose. Retrying must resample the object reset pose too.
+
+Change:
+- Added `_sample_and_write_object_reset_state()` to factor the multi-object object-spawn/stable-pose write path.
+- On failed grasp-prior reset quality, retry now resamples/writes a fresh object pose for those envs, updates `cube_initial_pos` and `cube_goal_pos`, then applies the next grasp-prior IK target.
+- Single-cube reset code is untouched.
+
+Version Control:
+- implementation_commit: `0898bb2a0fcad0f000e37f51baa2bcbc32ccf452`
+- validation: `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py`; `git diff --check`
+- branch_push: pushed to `origin/codex/dextrah-multiobject-grasp-prior-finish-20260615T074722Z`
+- remote_commit/status: l401 worktree detached at `0898bb2a0fcad0f000e37f51baa2bcbc32ccf452`, clean.
+- deployment: GitHub fetch unavailable on l401, so deployed with `/tmp/dextrah-reset-retry-0898bb2.bundle`.
+
+Command / Job:
+- job_id: `1029816`
+- run_name: `franka_multi_eval_bc_oldcache_refdelta_retrypose_phys_0898bb2_20260615T1238Z`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_multi_eval_bc_oldcache_refdelta_retrypose_phys_0898bb2_20260615T1238Z`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_multi_object_1029816.out`
+- checkpoint: `/results/bc/franka_multi_bc_oldcache_refdelta_nolibdir_0f235d3_20260615T1220Z/nn/bc_reference_action_imitation.pth`
+- settings: same as `1029813`, with source commit `0898bb2` and `GRASP_PRIOR_PREGRASP_OFFSET=0.08`.
+
+Next:
+- Compare reset quality and rollout metrics against `1029813`. If quality improves materially, regenerate BC/fine-tune at the patched commit; if not, inspect IK target selection/reachability next.
+
+## 2026-06-15T12:46:00Z - Patched reset-retry eval verifies reset-quality fix
+
+Result:
+- Job `1029816` completed with exit `0:0` in `00:01:15`.
+- Metrics improved sharply versus the same BC checkpoint on the old reset code:
+  - old reset eval `1029813`: `eval_success_rate=0.359375`, `success_ever_rate=0.390625`, `success_rate_max=0.28125`.
+  - patched reset eval `1029816`: `eval_success_rate=0.65625`, `success_ever_rate=0.71875`, `success_rate_max=0.484375`, `success_rate_mean=0.09765625`.
+- Completed episodes: `87`, with `completed_episode_success_rate=0.7241379310344828`, `terminal_success_rate=0.7126436781609196`, and `done_after_success_rate=0.625`.
+- Done reasons: no `cube_out`, no `finger_table_penetration`, and no `prelift_drag`; `44` `success_done`, `33` `done_after_success_unclassified`, `10` `unclassified`.
+
+Reset Diagnostics:
+- `grasp_prior_reset_success=1.0` and `grasp_prior_reset_quality_success=1.0` for all `360` trace rows.
+- Exact projected finger-tip table clearance stayed positive: min `0.016721786931157112`, mean `0.017134606206996573`.
+- Pregrasp tip table clearance stayed positive: min `0.06654615700244904`, mean `0.06695897804780139`.
+- Projected exact finger-center distance remained bounded: min `0.007992328144609928`, mean `0.03000422019718422`, max `0.03589753806591034`.
+
+Analysis:
+- The main multi-object Franka bug was the reset retry loop: it retried grasp candidates while keeping an object pose that could be unreachable for the small verified-candidate set, then fell back to the default arm pose. Resampling the object reset pose during failed reset-quality retries fixes the mixed reset distribution.
+- The current BC policy was trained before this patch and still reaches `0.71875` success-ever under the corrected reset distribution. The next step should retrain BC data collection at commit `0898bb2`, then evaluate that checkpoint before PPO fine-tuning.
+
+Artifacts:
+- local metrics/trace: `cluster_results/l401/franka_multi_eval_bc_oldcache_refdelta_retrypose_phys_0898bb2_20260615T1238Z/`
+
+Next:
+- Launch BC reference-action imitation at source commit `0898bb2` using the patched reset distribution and no stale `GRASP_PRIOR_LIBRARY_DIR`.
+
+## 2026-06-15T12:43:00Z - Launch patched-reset BC training
+
+Command / Job:
+- job_id: `1029819`
+- run_name: `franka_multi_bc_oldcache_refdelta_retrypose_0898bb2_20260615T1243Z`
+- source_commit: `0898bb2a0fcad0f000e37f51baa2bcbc32ccf452`
+- expected_run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/bc/franka_multi_bc_oldcache_refdelta_retrypose_0898bb2_20260615T1243Z`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bc_franka_cube_1029819.out`
+
+Settings:
+- Same old-cache manifest/stable-pose/verified-index inputs as the successful evals, but source code includes the reset retry object-pose resampling patch.
+- `GRASP_PRIOR_LIBRARY_DIR` explicitly unset to avoid stale or missing cached prior directories.
+- Collection/labels use `reference_delta`; `NUM_ENVS=128`, `COLLECTION_STEPS=640`, `TRAIN_STEPS=2000`, `BATCH_SIZE=8192`, `LEARNING_RATE=0.0001`.
+- Seed policy checkpoint remains the low-LR PPO checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_oldcache_pre08_lowlr80_short_703f554_20260615T1021Z/nn/last_dextrah_franka_multi_object_grasp_ep_67_rew_2916.8196.pth`.
+
+Next:
+- Monitor job `1029819`; fetch and inspect the BC report/checkpoint, then run patched-reset eval with the new BC policy.
+
+## 2026-06-15T12:47:00Z - Patched-reset BC completes; launch matched eval
+
+BC Result:
+- Job `1029819` completed with exit `0:0` in `00:02:09`.
+- Artifacts fetched locally to `cluster_results/l401/franka_multi_bc_oldcache_refdelta_retrypose_0898bb2_20260615T1243Z/`.
+- Dataset: `reference_action_dataset.pt`, `36379213` bytes.
+- Checkpoint: `nn/bc_reference_action_imitation.pth`, `80184666` bytes.
+- Selected BC step: `2000`, `selected_score=0.12192357331514359`.
+- Held-out metrics: `val_l2=0.12192357331514359`, `val_mse=0.008468596264719963`, `val_x_abs=0.018328633159399033`, `val_y_abs=0.016300488263368607`, `val_z_abs=0.016632050275802612`, `val_gripper_abs=0.06531829386949539`, `val_close_abs=0.05451121926307678`.
+
+Analysis:
+- The corrected-reset BC imitation loss is worse than the earlier old-reset BC (`val_l2=0.07336`), but the dataset distribution is no longer polluted by default-arm fallback resets. Closed-loop eval is needed before deciding whether to use this checkpoint or the old BC checkpoint under corrected resets.
+
+Command / Job:
+- job_id: `1029820`
+- run_name: `franka_multi_eval_bc_retrypose_refdelta_phys_0898bb2_20260615T1247Z`
+- source_commit: `0898bb2a0fcad0f000e37f51baa2bcbc32ccf452`
+- checkpoint: `/results/bc/franka_multi_bc_oldcache_refdelta_retrypose_0898bb2_20260615T1243Z/nn/bc_reference_action_imitation.pth`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_multi_eval_bc_retrypose_refdelta_phys_0898bb2_20260615T1247Z`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_multi_object_1029820.out`
+- settings: same 64-env, 360-step patched-reset physics eval as `1029816`; only checkpoint changed.
+
+Next:
+- Inspect eval metrics/trace. If the new BC is worse than the old BC under patched resets, keep the old BC checkpoint for PPO fine-tuning and investigate better BC labels/settings separately.
+
+## 2026-06-15T12:53:00Z - Select old BC under fixed reset and launch PPO smoke
+
+Matched Eval Result:
+- Job `1029820` completed with exit `0:0` in `00:01:30`.
+- Run `franka_multi_eval_bc_retrypose_refdelta_phys_0898bb2_20260615T1247Z` evaluated the new patched-reset BC checkpoint.
+- New BC under fixed reset: `eval_success_rate=0.625`, `success_ever_rate=0.6875`, `success_rate_max=0.53125`, `success_rate_mean=0.11141493055555556`, `completed_episode_success_rate=0.7549019607843137`.
+- Old BC under fixed reset (`1029816`): `eval_success_rate=0.65625`, `success_ever_rate=0.71875`, `success_rate_max=0.484375`, `success_rate_mean=0.09765625`, `completed_episode_success_rate=0.7241379310344828`.
+- Both had `grasp_prior_reset_success=1.0`, `grasp_prior_reset_quality_success=1.0`, no `finger_table_penetration`, no `prelift_drag`, and no `cube_out`.
+
+Decision:
+- Use the old BC checkpoint for PPO initialization because it has better first-attempt and success-ever performance under the corrected reset code. The new BC is useful evidence that corrected reset collection is viable, but it is not a clear policy upgrade.
+
+Sanitization:
+- Created policy-init checkpoint inside the Isaac container:
+  - input: `/results/bc/franka_multi_bc_oldcache_refdelta_nolibdir_0f235d3_20260615T1220Z/nn/bc_reference_action_imitation.pth`
+  - output: `/results/bc/franka_multi_bc_oldcache_refdelta_nolibdir_0f235d3_20260615T1220Z/nn/bc_reference_action_imitation_policy_init.pth`
+  - summary: `/results/bc/franka_multi_bc_oldcache_refdelta_nolibdir_0f235d3_20260615T1220Z/nn/bc_reference_action_imitation_policy_init.sanitize_summary.json`
+- Sanitizer removed `dextrah_runtime_state`, `env_state`, and `optimizer`, reset epoch/frame (`67`, `65536000`) to zero, and marked `dextrah_checkpoint_semantics=policy_initialization`.
+
+Command / Job:
+- job_id: `1029822`
+- run_name: `franka_multi_ppo_bcinit_retrypose_resetonly_smoke20_0898bb2_20260615T1253Z`
+- source_commit: `0898bb2a0fcad0f000e37f51baa2bcbc32ccf452`
+- checkpoint: `/results/bc/franka_multi_bc_oldcache_refdelta_nolibdir_0f235d3_20260615T1220Z/nn/bc_reference_action_imitation_policy_init.pth`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_ppo_bcinit_retrypose_resetonly_smoke20_0898bb2_20260615T1253Z`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_1029822.out`
+
+Settings:
+- `NUM_ENVS=1024`, `NPROC_PER_NODE=4`, `MAX_ITERATIONS=20`, `HORIZON_LENGTH=64`, `MINI_EPOCHS=2`, `LEARNING_RATE=2e-5`, `CENTRAL_VALUE_LEARNING_RATE=1e-5`, `SAVE_FREQUENCY=1`.
+- Corrected reset-only grasp prior: `GRASP_PRIOR_RESET_ENABLED=True`, old verified cache, `GRASP_PRIOR_PREGRASP_OFFSET=0.08`, `GRASP_PRIOR_RESET_ATTEMPTS=8`, `GRASP_PRIOR_RESET_CANDIDATE_COUNT=128`, `GRASP_PRIOR_RESET_MIN_PREGRASP_Z=0.45`, IK tolerances `0.09/0.75`.
+- Object physics matches successful eval: static/dynamic friction `4.0/3.5`, solver iterations `24/8`.
+- Action warmstart override disabled and action-prior reward disabled. Previous reward-only PPO guidance was unstable; this smoke tests whether PPO can improve from the BC actor using task reward plus corrected grasp-prior resets.
+
+Next:
+- Monitor `1029822`; inspect JSONL metrics, reset quality, success/lift/XY drift, checkpoints, then evaluate the best checkpoint against the fixed-reset physics eval.
+
+## 2026-06-15T12:59:00Z - PPO policy-init smoke exposes optimizer restore bug
+
+Result:
+- Job `1029822` failed with exit `1:0` at elapsed `00:03:05`, before any PPO epoch metrics/checkpoints.
+- Startup was otherwise healthy: all four ranks loaded the sanitized checkpoint and constructed the corrected-reset multi-object environment.
+- Failure:
+  - `DextrahResumableAlgoObserver` detected the policy-init checkpoint and set `set_epoch=False`.
+  - The sanitizer intentionally stripped `optimizer`.
+  - RL-Games' `set_full_state_weights()` still expected `weights['optimizer']`, causing `KeyError: 'optimizer'` on all ranks.
+
+Fix:
+- Patched `dextrah_lab/rl_games/rl_games_utils.py` so policy-initialization checkpoints inject the freshly-created optimizer state before calling RL-Games' original loader.
+- Normal resume checkpoints are unchanged: saved optimizer/runtime state still load as before.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/rl_games_utils.py`
+- `git diff --check`
+
+Next:
+- Commit/deploy the restore fix, then relaunch the same PPO smoke from the sanitized BC policy-init checkpoint.
