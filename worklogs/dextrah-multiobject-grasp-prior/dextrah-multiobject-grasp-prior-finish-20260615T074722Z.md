@@ -1752,3 +1752,46 @@ Result:
 
 Next:
 - Commit/push/deploy the diagnostic counters and rerun a short 4096-candidate smoke.
+
+## 2026-06-15T17:30:00Z - Launch targeted intersection 4096-candidate smoke
+
+Goal:
+- Measure which exact gate combination removes all top-side, table-safe grasp prior reset candidates.
+
+Command / Job:
+- job_id: `1029915`
+- run_name: `franka_multi_eval_intersections_ep40_cand4096_seed44_6911e84_20260615T1725Z`
+- commit: `6911e842249b0830551bd882c1c7f8c16bbee36a`
+- candidate_count: `4096`
+- num_steps: `5`
+- video: disabled
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_multi_eval_intersections_ep40_cand4096_seed44_6911e84_20260615T1725Z`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_multi_object_1029915.out`
+
+Result:
+- status: completed but failed acceptance
+- job_state: no longer in queue; eval script exited successfully.
+- local_artifacts: `cluster_results/l401/franka_multi_eval_intersections_ep40_cand4096_seed44_6911e84_20260615T1725Z/`
+
+Metrics / Evidence:
+- `candidate_topdown_count=769.5`, `candidate_tool_down_count=769.5`, and `candidate_table_count=1432.0`, but `candidate_down_table_count=0.0`.
+- Offline reproduction from the same priors and stable poses showed both objects do have downward-tool contact candidates above the table:
+  - `7195ed...`: `down_contact_table=117`, `down_contact_table_center_width=14`
+  - `b87a65...`: `down_contact_table=303`, `down_contact_table_center_width=68`
+- The zero intersection comes from the contact-enriched reset code replacing the raw GraspGen `panda_hand` pose with a pose that places DEXTRAH finger-link origins at the contact midpoint. For top-down grasps that moves the DEXTRAH EE/TCP below the object/table.
+
+Change:
+- Preserve the raw GraspGen `panda_hand` pose plus DEXTRAH EE/TCP offset for the exact reset pose.
+- Keep GraspGen contact locations as selection/quality references only.
+- For contact-enriched priors, compute the exact-reference distance from DEXTRAH EE/TCP to the contact midpoint instead of from the `panda_hand` origin.
+
+Command / Job:
+- local checks:
+  - `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py`
+  - `git diff --check`
+
+Result:
+- status: local checks passed
+
+Next:
+- Commit/deploy the raw-pose fix and rerun the same 4096-candidate diagnostic. Acceptance for this stage is positive `candidate_down_table_count` and nonzero valid/fallback candidates without table penetration.

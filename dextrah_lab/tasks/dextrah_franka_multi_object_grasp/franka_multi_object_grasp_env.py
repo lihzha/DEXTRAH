@@ -746,14 +746,9 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             candidate_contact_midpoint_w,
             object_center_pos_w_candidates,
         )
-        candidate_raw_tool_pos_w = world_tool_candidates[:, :, :3, 3]
-        candidate_exact_tool_pos_w = torch.where(
-            candidate_has_contact.unsqueeze(-1),
-            candidate_contact_reference_w,
-            candidate_raw_tool_pos_w,
-        )
+        candidate_exact_tool_pos_w = world_tool_candidates[:, :, :3, 3]
         candidate_tool_rot_w = world_tool_candidates[:, :, :3, :3]
-        flat_candidate_tool_pos_w = candidate_raw_tool_pos_w.reshape(-1, 3)
+        flat_candidate_tool_pos_w = candidate_exact_tool_pos_w.reshape(-1, 3)
         flat_candidate_tool_quat_w = math_utils.quat_from_matrix(candidate_tool_rot_w.reshape(-1, 3, 3))
         flat_ee_offset_pos = self.ee_offset_pos[env_ids].unsqueeze(1).expand(-1, candidate_count, -1).reshape(-1, 3)
         flat_ee_offset_rot = self.ee_offset_rot[env_ids].unsqueeze(1).expand(-1, candidate_count, -1).reshape(-1, 4)
@@ -772,18 +767,11 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             3,
         )
         left_finger_offset_ee, right_finger_offset_ee = self._finger_offsets_from_ee(env_ids)
-        finger_center_offset_ee = 0.5 * (left_finger_offset_ee + right_finger_offset_ee)
-        finger_center_offset_w = torch.einsum(
-            "ncij,nj->nci",
-            candidate_exact_ee_rot_w,
-            finger_center_offset_ee,
-        )
-        candidate_contact_exact_ee_pos_w = candidate_contact_reference_w - finger_center_offset_w
-        candidate_exact_ee_pos_w = torch.where(
-            candidate_has_contact.unsqueeze(-1),
-            candidate_contact_exact_ee_pos_w,
-            candidate_raw_exact_ee_pos_w,
-        )
+        # Contact locations are selection/quality references.  The reset pose
+        # itself must remain the raw GraspGen panda_hand pose plus the DEXTRAH
+        # EE/TCP offset; placing finger-link origins at contact points pushes
+        # top-down grasps below the table.
+        candidate_exact_ee_pos_w = candidate_raw_exact_ee_pos_w
         candidate_tool_z_axis_w = world_tool_candidates[:, :, :3, 2]
         candidate_tool_z_axis_w = candidate_tool_z_axis_w / torch.clamp(
             torch.norm(candidate_tool_z_axis_w, dim=-1, keepdim=True),
@@ -793,7 +781,12 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         plus_tool_pos_w = candidate_exact_tool_pos_w + pregrasp_offset * candidate_tool_z_axis_w
         minus_tool_pos_w = candidate_exact_tool_pos_w - pregrasp_offset * candidate_tool_z_axis_w
         candidate_exact_tool_dist = torch.norm(candidate_exact_tool_pos_w - object_center_pos_w_candidates, dim=-1)
-        candidate_exact_reference_dist = torch.norm(candidate_exact_tool_pos_w - candidate_contact_reference_w, dim=-1)
+        candidate_exact_ee_dist = torch.norm(candidate_exact_ee_pos_w - candidate_contact_reference_w, dim=-1)
+        candidate_exact_reference_dist = torch.where(
+            candidate_has_contact,
+            candidate_exact_ee_dist,
+            candidate_exact_tool_dist,
+        )
         plus_tool_dist = torch.norm(plus_tool_pos_w - candidate_contact_reference_w, dim=-1)
         minus_tool_dist = torch.norm(minus_tool_pos_w - candidate_contact_reference_w, dim=-1)
         use_plus = plus_tool_dist >= minus_tool_dist
