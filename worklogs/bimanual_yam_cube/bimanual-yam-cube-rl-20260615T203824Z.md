@@ -491,3 +491,64 @@ Analysis:
 
 Next:
 - Launch a small PPO smoke run, inspect JSONL rewards/success/checkpoint artifacts, then scale or tune until policy success.
+
+## 2026-06-15 22:55Z - PPO smoke without action-prior reward
+
+Goal:
+- Verify the validated bimanual YAM cube task trains under RL-Games and writes usable metrics/checkpoints before scaling.
+
+Version state:
+- local_commit: `a4eb56d93a6d031759e95e52d75194b632ad5403`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/bimanual-yam-cube-rl-20260615T203824Z`
+- remote_commit: `a4eb56d93a6d031759e95e52d75194b632ad5403`
+
+Command/job:
+- A100 job: `29117126`
+- run_name: `yam_cube_rl_smoke_a4eb56d_20260615T2255Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bimanual_yam_cube_rl_29117126.out`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_bimanual_yam_cube_grasp/yam_cube_rl_smoke_a4eb56d_20260615T2255Z`
+- metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_bimanual_yam_cube_grasp/yam_cube_rl_smoke_a4eb56d_20260615T2255Z/metrics/direct_info_rank_0.jsonl`
+- command: `sbatch --parsable --partition=batch_singlenode,grizzly,polar,polar3,polar4,interactive_singlenode --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/bimanual-yam-cube-rl-20260615T203824Z,CODE_COMMIT=a4eb56d93a6d031759e95e52d75194b632ad5403,FULL_EXPERIMENT_NAME=yam_cube_rl_smoke_a4eb56d_20260615T2255Z,NUM_ENVS=256,MAX_ITERATIONS=20,HORIZON_LENGTH=64,MINIBATCH_SIZE=4096,CENTRAL_VALUE_MINIBATCH_SIZE=4096,MINI_EPOCHS=3,SAVE_FREQUENCY=5,USE_CUDA_GRAPH=False,AUTO_RESUME=False,BIMANUAL_ACTION_PRIOR_REWARD_ENABLED=False,CUBE_SPAWN_XY_RANDOMIZATION=0.0,SEED=42,PREPARE_YAM_ASSETS=auto cluster/sbatch_train_bimanual_yam_cube_grasp_1gpu.sh`
+
+Success criteria:
+- Job exits zero, writes JSONL metrics and at least one checkpoint.
+- Metrics contain finite rewards/losses and no NaNs or crash patterns.
+- If success appears, evaluate the best/latest checkpoint; otherwise scale or tune based on observed metrics.
+
+Status:
+- Complete; smoke training succeeded mechanically but did not solve the task.
+
+Result/evidence:
+- Job exited zero and wrote JSONL metrics plus checkpoints at epochs 5/10/15/20.
+- Metrics path contained 20 records and no non-finite scalar values.
+- Checkpoints:
+  - `last_dextrah_bimanual_yam_cube_grasp_ep_5_rew_241.38074.pth`
+  - `last_dextrah_bimanual_yam_cube_grasp_ep_10_rew_456.078.pth`
+  - `last_dextrah_bimanual_yam_cube_grasp_ep_15_rew_462.59827.pth`
+  - `last_dextrah_bimanual_yam_cube_grasp_ep_20_rew_342.81085.pth`
+- Final metrics at epoch 20: `yam_cube_success_rate=0.0`, `yam_cube_has_lifted_rate=0.02734375`, `yam_cube_lift_height=0.00021122267935425043`, `yam_cube_max_hold_to_cube_dist=0.7610562443733215`.
+- Hold distances remained far from the cube (`left=0.7000278234481812`, `right=0.6144793033599854`), so the policy did not learn approach/contact in 20 iterations.
+
+Analysis:
+- The env and RL-Games pipeline are healthy: configs, metrics, checkpoints, finite rewards, and resume sidecar all work.
+- Reward shaping is poorly scaled for the YAM reset geometry. At reset distances around 0.6-0.8 m, the Franka-style `exp(-10 * distance)` approach reward is nearly zero, while `cube_xy_stability_reward` is near 1.0 for doing nothing.
+- Next run should suppress the do-nothing XY-stability reward and lower distance-shaping sharpness to provide gradient from the YAM rest pose.
+
+## 2026-06-15 23:05Z - expose YAM reward sharpness overrides
+
+Goal:
+- Allow cluster PPO runs to tune bimanual YAM reward sharpness without hardcoding experimental values into the default task config.
+
+Change:
+- Added wrapper env vars and Hydra overrides for:
+  - `CUBE_APPROACH_SHARPNESS`
+  - `CUBE_ENCLOSURE_SHARPNESS`
+  - `CUBE_HEIGHT_TRACKING_SHARPNESS`
+  - `CUBE_XY_STABILITY_SHARPNESS`
+
+Validation:
+- `bash -n cluster/sbatch_train_bimanual_yam_cube_grasp_1gpu.sh`
+- Result: passed.
+
+Next:
+- Commit/push, redeploy, and run tuned PPO with lower approach/enclosure sharpness, high approach/enclosure/close/lift weights, and `CUBE_XY_STABILITY_WEIGHT=0.0`.
