@@ -70,6 +70,14 @@ parser.add_argument(
 )
 parser.add_argument("--phase_progress_episode", type=int, default=0)
 parser.add_argument("--phase_progress_start_step", type=int, default=0)
+parser.add_argument(
+    "--replay_dataset_actions",
+    type=str,
+    default=None,
+    help="Optional RGB NPZ whose saved action labels are replayed instead of querying the policy.",
+)
+parser.add_argument("--replay_dataset_episode", type=int, default=0)
+parser.add_argument("--replay_dataset_start_step", type=int, default=0)
 parser.add_argument("--video", action="store_true", default=False)
 parser.add_argument("--video_length", type=int, default=320)
 parser.add_argument("--video_folder", type=str, default=None)
@@ -362,6 +370,44 @@ def _load_demo_reset(path: Path | None) -> dict[str, Any] | None:
     }
 
 
+def _load_action_replay(path: Path | None) -> dict[str, Any] | None:
+    if path is None:
+        return None
+    data = np.load(path, allow_pickle=False)
+    if "action" not in data.files:
+        raise KeyError(f"{path} missing action")
+    if "episode_ends" not in data.files:
+        raise KeyError(f"{path} missing episode_ends")
+    action = np.asarray(data["action"], dtype=np.float32)
+    episode_ends = np.asarray(data["episode_ends"], dtype=np.int64)
+    if action.ndim != 2 or action.shape[1] != len(ACTION_NAMES):
+        raise ValueError(f"{path}: expected action shape (T, {len(ACTION_NAMES)}), got {action.shape}")
+    if episode_ends.ndim != 1 or episode_ends.size == 0:
+        raise ValueError(f"{path}: episode_ends must be nonempty 1D")
+    if int(episode_ends[-1]) != int(action.shape[0]):
+        raise ValueError(f"{path}: episode_ends[-1]={episode_ends[-1]} does not match action rows={action.shape[0]}")
+    row, episode_idx, start, end = _row_for_episode_step(
+        episode_ends,
+        int(args_cli.replay_dataset_episode),
+        int(args_cli.replay_dataset_start_step),
+    )
+    first_robot_state = None
+    if "robot_state" in data.files:
+        first_robot_state = np.asarray(data["robot_state"], dtype=np.float32)[row].astype(float).tolist()
+    return {
+        "path": str(path),
+        "action": action,
+        "episode_ends": episode_ends,
+        "episode": episode_idx,
+        "episode_start": start,
+        "episode_end": end,
+        "episode_length": end - start,
+        "start_row": row,
+        "start_step": row - start,
+        "first_robot_state": first_robot_state,
+    }
+
+
 def _apply_demo_cube_reset(task_env: Any, demo_reset: dict[str, Any]) -> tuple[torch.Tensor, dict[str, Any]]:
     env_ids = torch.as_tensor(task_env._robot._ALL_INDICES, device=task_env.device, dtype=torch.long)
     num_ids = int(env_ids.numel())
@@ -542,6 +588,10 @@ def main() -> None:
     if demo_reset_path is not None and not demo_reset_path.is_file():
         raise FileNotFoundError(demo_reset_path)
     demo_reset = _load_demo_reset(demo_reset_path)
+    replay_path = Path(args_cli.replay_dataset_actions).expanduser().resolve() if args_cli.replay_dataset_actions else None
+    if replay_path is not None and not replay_path.is_file():
+        raise FileNotFoundError(replay_path)
+    replay_actions = _load_action_replay(replay_path)
     explicit_reset_summary: dict[str, Any] | None = None
 
     _stage(
@@ -563,6 +613,9 @@ def main() -> None:
         num_action_samples=int(args_cli.num_action_samples),
         policy_sample_seed=args_cli.policy_sample_seed,
         action_chunk_steps=int(args_cli.action_chunk_steps),
+        replay_dataset_actions=str(replay_path) if replay_path else None,
+        replay_dataset_episode=int(args_cli.replay_dataset_episode),
+        replay_dataset_start_step=int(args_cli.replay_dataset_start_step),
         image_shape=[int(args_cli.image_height), int(args_cli.image_width), 3],
     )
 
@@ -613,6 +666,7 @@ def main() -> None:
     action_min = np.full(7, np.inf, dtype=np.float64)
     action_max = np.full(7, -np.inf, dtype=np.float64)
     action_queue = np.empty((1, 0, 7), dtype=np.float32)
+    action_queue_dataset_rows: list[int] = []
     action_queue_policy_call_idx = -1
     action_queue_step_offset = 0
     done_count = 0
@@ -663,15 +717,29 @@ def main() -> None:
             if action_queue.shape[1] == 0:
                 action_queue_policy_call_idx = policy_call_idx
                 action_queue_step_offset = 0
-                action_seq = _predict_action_sequence(policy, history, policy_call_idx)
+                if replay_actions is not None:
+                    row0 = min(
+                        int(replay_actions["start_row"]) + int(step),
+                        int(replay_actions["episode_end"]) - 1,
+                    )
+                    row_ids = np.arange(row0, row0 + chunk_steps_requested, dtype=np.int64)
+                    row_ids = np.clip(row_ids, row0, int(replay_actions["episode_end"]) - 1)
+                    action_seq = np.asarray(replay_actions["action"][row_ids], dtype=np.float32)[None, :, :]
+                    action_queue_dataset_rows = row_ids.astype(int).tolist()
+                else:
+                    action_seq = _predict_action_sequence(policy, history, policy_call_idx)
+                    action_queue_dataset_rows = []
                 policy_call_idx += 1
                 new_policy_call = True
                 if action_seq.ndim != 3 or action_seq.shape[0] != 1:
-                    raise RuntimeError(f"Unexpected RGB DP action sequence shape {action_seq.shape}")
+                    raise RuntimeError(f"Unexpected RGB action sequence shape {action_seq.shape}")
                 chunk_steps = min(chunk_steps_requested, int(action_seq.shape[1]))
                 action_queue = np.asarray(action_seq[:, :chunk_steps], dtype=np.float32)
             raw_action_np = action_queue[:, 0].copy()
             queue_step_offset = int(action_queue_step_offset)
+            dataset_action_row = action_queue_dataset_rows[0] if action_queue_dataset_rows else None
+            if action_queue_dataset_rows:
+                action_queue_dataset_rows = action_queue_dataset_rows[1:]
             action_np = raw_action_np.copy()
             action_queue = action_queue[:, 1:]
             action_queue_step_offset += 1
@@ -686,6 +754,8 @@ def main() -> None:
                     "policy_call_index": int(action_queue_policy_call_idx),
                     "queue_step_offset": queue_step_offset,
                     "new_policy_call": bool(new_policy_call),
+                    "action_source": "dataset_replay" if replay_actions is not None else "policy",
+                    "dataset_action_row": dataset_action_row,
                     "raw_action": raw_action_np.reshape(-1).astype(float).tolist(),
                     "applied_action": action_np.reshape(-1).astype(float).tolist(),
                 }
@@ -767,6 +837,18 @@ def main() -> None:
         "num_action_samples": int(args_cli.num_action_samples),
         "policy_sample_seed": args_cli.policy_sample_seed,
         "action_chunk_steps": max(1, int(args_cli.action_chunk_steps)),
+        "replay_dataset_actions": None
+        if replay_actions is None
+        else {
+            "path": str(replay_actions["path"]),
+            "episode": int(replay_actions["episode"]),
+            "episode_start": int(replay_actions["episode_start"]),
+            "episode_end": int(replay_actions["episode_end"]),
+            "episode_length": int(replay_actions["episode_length"]),
+            "start_row": int(replay_actions["start_row"]),
+            "start_step": int(replay_actions["start_step"]),
+            "first_robot_state": replay_actions["first_robot_state"],
+        },
         "num_envs": 1,
         "num_steps_requested": int(args_cli.num_steps),
         "steps_completed": len(step_metrics),
@@ -783,10 +865,11 @@ def main() -> None:
         "success_timeout_override": success_timeout_override,
         "action_names": ACTION_NAMES,
         "action_trace_format": {
-            "raw_action": "Policy output before eval clipping, one 7D action for env0.",
+            "raw_action": "Policy output or replayed dataset label before eval clipping, one 7D action for env0.",
             "applied_action": "Action after eval clipping, sent directly to the environment.",
             "policy_call_index": "Zero-based predict_action call that produced this action.",
             "queue_step_offset": "Index within the queued action chunk from that predict_action call.",
+            "dataset_action_row": "Global dataset row when action_source is dataset_replay; otherwise null.",
         },
         "action_min": action_min.astype(float).tolist(),
         "action_max": action_max.astype(float).tolist(),

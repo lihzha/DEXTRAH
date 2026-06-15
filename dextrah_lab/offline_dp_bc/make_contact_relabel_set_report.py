@@ -25,6 +25,7 @@ parser.add_argument("--min_lift", default=0.10, type=float)
 parser.add_argument("--max_pose_clip_fraction", default=0.0, type=float)
 parser.add_argument("--max_final_ee_to_cube", default=0.05, type=float)
 parser.add_argument("--max_final_finger_to_cube", default=0.08, type=float)
+parser.add_argument("--min_finger_cube_surface_margin", default=-0.006, type=float)
 parser.add_argument("--require_success_like", action="store_true", default=True)
 parser.add_argument("--no_require_success_like", dest="require_success_like", action="store_false")
 parser.add_argument("--output_prefix", default="contact_relabel_set", type=str)
@@ -104,6 +105,9 @@ def _gate_failures(payload: dict[str, Any], rows: list[dict[str, str]]) -> list[
         failures.append("final_ee_to_cube_too_large")
     if float(payload.get("final_finger_center_to_cube", 1.0e9)) > float(args.max_final_finger_to_cube):
         failures.append("final_finger_to_cube_too_large")
+    surface_margin = payload.get("min_finger_cube_surface_margin")
+    if surface_margin is not None and float(surface_margin) < float(args.min_finger_cube_surface_margin):
+        failures.append("finger_cube_surface_penetration")
     skipped = int(payload.get("skipped_post_reset_local_step", -1))
     if skipped >= 0 and any(int(float(row.get("local_step", -1))) >= skipped for row in rows):
         failures.append("post_reset_row_detected")
@@ -128,11 +132,12 @@ def _report(summary: dict[str, Any], rollout_rows: list[dict[str, Any]], failure
         f"- maximum pose-action clip fraction: `{args.max_pose_clip_fraction:.4f}`",
         f"- maximum final EE-to-cube: `{args.max_final_ee_to_cube:.4f}` m",
         f"- maximum final finger-center-to-cube: `{args.max_final_finger_to_cube:.4f}` m",
+        f"- minimum finger/cube signed surface margin: `{args.min_finger_cube_surface_margin:.4f}` m",
         "",
         "## Rollouts",
         "",
-        "| rollout | pass | orientation | filter | contact ref | pre-close finger | pre-close EE | contact-ok | reset joint alpha | reset cube alpha | episode | step | final EE-cube | final finger-cube | final/max lift | max clip | max raw | min scale | failures | video |",
-        "|---|---|---|---|---|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---|",
+        "| rollout | pass | orientation | filter | contact ref | pre-close finger | pre-close margin | min margin | final margin | pre-close EE | contact-ok | reset joint alpha | reset cube alpha | episode | step | final EE-cube | final finger-cube | final/max lift | max clip | max raw | min scale | failures | video |",
+        "|---|---|---|---|---|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---|",
     ]
     for row in rollout_rows:
         lines.append(
@@ -141,6 +146,9 @@ def _report(summary: dict[str, Any], rollout_rows: list[dict[str, Any]], failure
             f"{row.get('pose_action_filter', '')} | "
             f"{row.get('contact_align_reference', '')} | "
             f"{float(row.get('pre_close_finger_center_to_cube', float('nan'))):.4f} | "
+            f"{float(row.get('pre_close_finger_cube_surface_margin_min', float('nan'))):.4f} | "
+            f"{float(row.get('min_finger_cube_surface_margin', float('nan'))):.4f} | "
+            f"{float(row.get('final_finger_cube_surface_margin_min', float('nan'))):.4f} | "
             f"{float(row.get('pre_close_ee_to_cube', float('nan'))):.4f} | "
             f"{row.get('contact_align_success', '')} | "
             f"{float(row.get('reset_joint_blend_alpha', float('nan'))):.3f} | "
@@ -265,6 +273,9 @@ def main() -> None:
                 "pre_close_finger_center_to_cube": float(
                     payload.get("pre_close_finger_center_to_cube", float("nan"))
                 ),
+                "pre_close_finger_cube_surface_margin_min": float(
+                    payload.get("pre_close_finger_cube_surface_margin_min", float("nan"))
+                ),
                 "pre_close_finger_error_norm": float(payload.get("pre_close_finger_error_norm", float("nan"))),
                 "pre_close_target_reference": str(payload.get("pre_close_target_reference", "")),
                 "pre_close_target_minus_cube_norm": float(
@@ -292,6 +303,11 @@ def main() -> None:
                 "final_cube_lift_height": float(payload.get("final_cube_lift_height", float("nan"))),
                 "max_cube_lift_height": float(payload.get("max_cube_lift_height", float("nan"))),
                 "final_gripper_width": float(payload.get("final_gripper_width", float("nan"))),
+                "min_finger_cube_surface_margin": float(payload.get("min_finger_cube_surface_margin", float("nan"))),
+                "final_finger_cube_surface_margin_min": float(
+                    payload.get("final_finger_cube_surface_margin_min", float("nan"))
+                ),
+                "surface_margin_ok": bool(payload.get("surface_margin_ok", True)),
                 "max_pose_action_clip_fraction": float(payload.get("max_pose_action_clip_fraction", float("nan"))),
                 "max_raw_pose_action_max_abs": float(payload.get("max_raw_pose_action_max_abs", float("nan"))),
                 "max_executed_pose_action_max_abs": float(
@@ -470,6 +486,7 @@ def main() -> None:
             "max_pose_action_clip_fraction": float(args.max_pose_clip_fraction),
             "max_final_ee_to_cube": float(args.max_final_ee_to_cube),
             "max_final_finger_to_cube": float(args.max_final_finger_to_cube),
+            "min_finger_cube_surface_margin": float(args.min_finger_cube_surface_margin),
             "require_success_like": bool(args.require_success_like),
         },
         "verdict": verdict,

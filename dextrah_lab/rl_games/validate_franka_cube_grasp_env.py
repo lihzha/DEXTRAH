@@ -116,6 +116,19 @@ def _tensor_list(value: torch.Tensor) -> list[float] | list[list[float]]:
     return value.detach().float().cpu().tolist()
 
 
+def _quat_local_z_axis_wxyz(quat: torch.Tensor) -> torch.Tensor:
+    quat = torch.nn.functional.normalize(quat, dim=-1)
+    w, x, y, z = quat.unbind(dim=-1)
+    return torch.stack(
+        (
+            2.0 * (x * z + w * y),
+            2.0 * (y * z - w * x),
+            1.0 - 2.0 * (x * x + y * y),
+        ),
+        dim=-1,
+    )
+
+
 def _camera_tuple(values: list[float] | tuple[float, float, float] | None):
     if values is None:
         return None
@@ -824,6 +837,18 @@ def _run_short_rollout(env, task_env, checks: CheckRecorder, num_steps: int, pri
         finger_table_clearance_min=float(task_env.finger_table_clearance.detach().min().cpu()),
         finger_table_clearance_mean=_mean(task_env.finger_table_clearance),
         required_margin=float(task_env.cfg.finger_table_clearance_margin),
+    )
+    reset_tool_z_axis = _quat_local_z_axis_wxyz(task_env.ee_quat)
+    reset_tool_down_cos = torch.clamp(-reset_tool_z_axis[:, 2], -1.0, 1.0)
+    reset_tool_tilt_deg = torch.rad2deg(torch.acos(reset_tool_down_cos))
+    checks.check(
+        "reset_gripper_points_down",
+        bool((reset_tool_tilt_deg <= 12.0).all().item()),
+        reset_ee_quat_wxyz=_tensor_list(task_env.ee_quat),
+        reset_tool_z_axis_w=_tensor_list(reset_tool_z_axis),
+        reset_tool_tilt_deg_max=float(reset_tool_tilt_deg.detach().max().cpu()),
+        reset_tool_tilt_deg_mean=_mean(reset_tool_tilt_deg),
+        allowed_tilt_deg=12.0,
     )
 
     reward_values: list[float] = []

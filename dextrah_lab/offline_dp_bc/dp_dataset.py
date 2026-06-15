@@ -556,7 +556,10 @@ class NoopLowdimRunner(BaseLowdimRunner):
         self.metric_prefix = metric_prefix
 
     def run(self, policy) -> dict[str, float]:
-        return {f"{self.metric_prefix}/mean_score": 0.0}
+        return {
+            f"{self.metric_prefix}/mean_score": 0.0,
+            f"{self.metric_prefix}_mean_score": 0.0,
+        }
 
 
 class NoopImageRunner(BaseImageRunner):
@@ -570,4 +573,7 @@ class NoopImageRunner(BaseImageRunner):
         self.metric_prefix = metric_prefix
 
     def run(self, policy) -> dict[str, float]:
-        return {f"{self.metric_prefix}/mean_score": 0.0}
+        return {
+            f"{self.metric_prefix}/mean_score": 0.0,
+            f"{self.metric_prefix}_mean_score": 0.0,
+        }
