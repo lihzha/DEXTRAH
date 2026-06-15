@@ -879,7 +879,6 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         table_floor_z = float(self.cfg.table_surface_z) + table_clearance_floor
         table_ok = (
             (candidate_pregrasp_finger_table_clearance >= table_clearance_floor)
-            & (candidate_exact_finger_table_clearance >= table_clearance_floor)
             & (candidate_contact_reference_w[:, :, 2] >= table_floor_z)
         )
         valid = candidate_pregrasp_farther & width_ok & center_ok & table_ok
@@ -1026,7 +1025,6 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             table_ok = (
                 table_ok
                 & (targets["pregrasp_finger_table_clearance"] >= table_clearance_floor)
-                & (targets["exact_finger_table_clearance"] >= table_clearance_floor)
             )
         else:
             table_ok = table_ok & (targets["target_ee_pos_w"][:, 2] >= table_floor_z)
