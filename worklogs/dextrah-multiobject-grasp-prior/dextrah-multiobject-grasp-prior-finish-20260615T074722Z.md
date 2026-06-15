@@ -893,3 +893,102 @@ Command / Job:
 Expected signal:
 - Collection should show nonzero teacher success/lift under reference actions.
 - BC validation loss should drop enough to produce an actor that tracks the prior better than the PPO reward-only continuations. If the checkpoint is produced, run physics-parity eval next.
+
+## 2026-06-15T12:19:39Z - BC launch failed on stale library-dir override
+
+Result:
+- Job `1029811` failed before container execution with exit `2:0`.
+- Log evidence: `Missing grasp prior library dir: /lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/franka_multi_object_grasp_priors`.
+
+Analysis:
+- The multi-object manifest already contains per-object `grasp_prior_path` entries, which are the paths used successfully by the validated reset/prior jobs and PPO/eval runs.
+- Passing `GRASP_PRIOR_LIBRARY_DIR=/results/assets/franka_multi_object_grasp_priors` forced the wrapper to validate a nonexistent stale cache directory and blocked startup before the environment could use the manifest-owned prior paths.
+
+Next:
+- Relaunch the same BC configuration from commit `0f235d3b3693f5237e9b74f2a7696f6ac7f1c39c`, but omit `GRASP_PRIOR_LIBRARY_DIR`.
+- Keep old verified indices and stable-pose cache unchanged because both objects were already independently validated as safe top-side grasps with positive table clearance.
+
+## 2026-06-15T12:20:00Z - Relaunch BC without stale library dir
+
+Command / Job:
+- job_id: `1029812`
+- run_name: `franka_multi_bc_oldcache_refdelta_nolibdir_0f235d3_20260615T1220Z`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/bc/franka_multi_bc_oldcache_refdelta_nolibdir_0f235d3_20260615T1220Z`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bc_franka_cube_1029812.out`
+- source: l401 worktree `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-finish-20260615T074722Z` detached at `0f235d3b3693f5237e9b74f2a7696f6ac7f1c39c`
+- scheduler: submitted on l401 with explicit `--partition=batch` because the wrapper's default A100-style partition list is invalid for L40S.
+- change from `1029811`: `GRASP_PRIOR_LIBRARY_DIR` left unset; all object manifest, old verified indices, stable-pose, physics, reference schedule, and BC hyperparameters unchanged.
+
+Expected artifacts:
+- `/results/bc/franka_multi_bc_oldcache_refdelta_nolibdir_0f235d3_20260615T1220Z/reference_action_dataset.pt`
+- `/results/bc/franka_multi_bc_oldcache_refdelta_nolibdir_0f235d3_20260615T1220Z/nn/bc_reference_action_imitation.pth`
+
+Next:
+- Monitor startup, collection, loss curve, and produced artifacts. If the checkpoint is produced, run a physics-parity multi-object eval before using it for PPO fine-tuning.
+
+## 2026-06-15T12:24:00Z - Launch BC checkpoint physics-parity eval
+
+BC Result:
+- Job `1029812` completed with exit `0:0` in `00:02:51`.
+- Dataset: `/results/bc/franka_multi_bc_oldcache_refdelta_nolibdir_0f235d3_20260615T1220Z/reference_action_dataset.pt`, 35 MB, 81,920 samples.
+- Checkpoint: `/results/bc/franka_multi_bc_oldcache_refdelta_nolibdir_0f235d3_20260615T1220Z/nn/bc_reference_action_imitation.pth`, 64 MB.
+- Held-out error improved from `val_l2=1.8792` at step 0 to `val_l2=0.07336` at step 2000; held-out x/y/z abs errors were `0.01357/0.01049/0.01150`.
+
+Analysis:
+- The supervised fit is strong enough to warrant rollout eval, but it is not an acceptance criterion by itself because the reference-action dataset is on-policy under the scripted reference and may not cover policy drift.
+
+Command / Job:
+- job_id: `1029813`
+- run_name: `franka_multi_eval_bc_oldcache_refdelta_phys_0f235d3_20260615T1224Z`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_multi_eval_bc_oldcache_refdelta_phys_0f235d3_20260615T1224Z`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_multi_object_1029813.out`
+- checkpoint: `/results/bc/franka_multi_bc_oldcache_refdelta_nolibdir_0f235d3_20260615T1220Z/nn/bc_reference_action_imitation.pth`
+- settings: metrics-only, `NUM_ENVS=64`, `NUM_STEPS=360`, deterministic policy, old manifest/stable-pose/verified-cache settings, object physics `4.0/3.5` and solver iterations `24/8`, `GRASP_PRIOR_LIBRARY_DIR` unset.
+
+Next:
+- Inspect rollout metrics and trace. If policy rollout is good, run a video eval before PPO fine-tuning; if it fails, inspect action drift and reset/reference mismatch.
+
+## 2026-06-15T12:28:00Z - Launch BC checkpoint video eval
+
+Metrics Result:
+- Job `1029813` completed with exit `0:0` in `00:01:42`.
+- `eval_success_rate=0.359375`, `success_ever_rate=0.390625`, `success_rate_max=0.28125`.
+- Completed episodes: `50`, with `completed_episode_success_rate=0.68` and `completed_episode_success_hold_rate=0.68`.
+- Done reasons: no `prelift_drag`, no `finger_table_penetration`, no `cube_out`; `done_after_success_rate=0.359375`.
+- Trace pattern: success rises by step 39, then drops mostly because successful envs terminate/reset; later horizon episodes are much weaker and final success is zero.
+
+Analysis:
+- The BC actor is a real grasping policy under the physics-parity reset settings, but the post-reset/horizon performance is weaker than the initial episode distribution. Before PPO fine-tuning, inspect video for whether failures are due to grasp closure timing, lateral drift, object identity/pose changes, or reset artifacts.
+
+Command / Job:
+- job_id: `1029814`
+- run_name: `franka_multi_eval_bc_oldcache_refdelta_video_0f235d3_20260615T1228Z`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_multi_eval_bc_oldcache_refdelta_video_0f235d3_20260615T1228Z`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_multi_object_1029814.out`
+- settings: `NUM_ENVS=4`, `NUM_STEPS=180`, video enabled, deterministic policy, same checkpoint and physics-parity old-cache settings as `1029813`.
+
+Next:
+- Fetch/open video and inspect visible behavior. Use this to choose PPO fine-tune settings rather than treating BC loss alone as success.
+
+## 2026-06-15T12:34:00Z - Launch shorter-pregrasp reset ablation
+
+Video Result:
+- Job `1029814` completed with exit `0:0` in `00:01:14`.
+- Video artifact: `/results/evals/franka_multi_eval_bc_oldcache_refdelta_video_0f235d3_20260615T1228Z/videos/franka-multi-bc-oldcache-refdelta-step-0.mp4`.
+- Local viewer URL: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-finish-20260615T074722Z/cluster_results/l401/franka_multi_eval_bc_oldcache_refdelta_video_0f235d3_20260615T1228Z/videos/franka-multi-bc-oldcache-refdelta-step-0.mp4`
+- Video metadata: `1280x720`, `179` frames, `2.98s`.
+- Sampled env-0 failure shows a miss/post-reset failure rather than a finger-table collision. Logs showed no finger-table penetration.
+
+Analysis:
+- The stronger blocker is reset quality: metrics-only eval had `grasp_prior_reset_quality_success` around `0.59` at initial reset and decaying after resets, with positive table clearance. Failed resets have larger IK position/orientation errors and fall back to default arm pose, so PPO would be learning around a mixed valid/default reset distribution.
+- Hypothesis for ablation: `GRASP_PRIOR_PREGRASP_OFFSET=0.08` makes the top-side pregrasp IK target too hard for the Franka on some object yaw/spawn combinations. The logged exact-tip table clearance remains positive, so shortening the pregrasp to `0.04` may improve reset IK while still avoiding table collision.
+
+Command / Job:
+- job_id: `1029815`
+- run_name: `franka_multi_eval_bc_oldcache_refdelta_pre04_phys_0f235d3_20260615T1234Z`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_multi_eval_bc_oldcache_refdelta_pre04_phys_0f235d3_20260615T1234Z`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_multi_object_1029815.out`
+- change from `1029813`: only `GRASP_PRIOR_PREGRASP_OFFSET=0.04`; same BC checkpoint, old verified cache, stable-pose cache, object physics, and eval settings.
+
+Next:
+- Compare reset quality, eval success, table clearance, and trace against `1029813`. If shorter pregrasp improves reset quality, regenerate BC/fine-tune using this reset distribution; otherwise patch the reset IK/retry path.

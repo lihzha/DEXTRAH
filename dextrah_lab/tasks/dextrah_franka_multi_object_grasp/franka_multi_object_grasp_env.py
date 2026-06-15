@@ -1115,30 +1115,13 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         root_quat = self._cube.data.root_quat_w[env_ids]
         return root_pos, root_quat
 
-    def _reset_idx(self, env_ids: Sequence[int] | None):
-        self._ensure_cube_buffers()
-        if env_ids is None:
-            env_ids = self._robot._ALL_INDICES
-        env_ids = torch.as_tensor(env_ids, device=self.device, dtype=torch.long)
-        super(DextrahFrankaStarKittingEnv, self)._reset_idx(env_ids)
-        self._reset_grasp_prior_metrics(env_ids)
-
-        num_ids = len(env_ids)
-        joint_pos = self._robot.data.default_joint_pos[env_ids].clone()
-        joint_vel = torch.zeros_like(joint_pos)
-        joint_noise = torch.zeros_like(joint_pos)
-        arm_noise = float(self.cfg.arm_joint_reset_noise)
-        if arm_noise > 0.0:
-            joint_noise[:, self.arm_joint_ids] = arm_noise * (
-                2.0 * torch.rand(num_ids, len(self.arm_joint_ids), device=self.device) - 1.0
-            )
-        joint_pos = torch.clamp(joint_pos + joint_noise, self.robot_dof_lower_limits, self.robot_dof_upper_limits)
-        self._robot.write_joint_state_to_sim(joint_pos, joint_vel, env_ids=env_ids)
-        self._robot.set_joint_position_target(joint_pos, env_ids=env_ids)
-        self.robot_dof_targets[env_ids] = joint_pos
-        self.arm_joint_pos_target[env_ids] = joint_pos[:, self.arm_joint_ids]
-        self.finger_joint_pos_target[env_ids] = joint_pos[:, self.finger_joint_ids]
-
+    def _sample_and_write_object_reset_state(
+        self,
+        env_ids: torch.Tensor,
+        joint_pos: torch.Tensor,
+        joint_vel: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        num_ids = int(env_ids.numel())
         object_radius_xy = self.object_xy_radius[env_ids]
         spawn_xy = torch.zeros(num_ids, 2, device=self.device)
         spawn_xy[:, 0] = float(self.cfg.table_center_x) + float(self.cfg.object_spawn_center_offset_x)
@@ -1169,7 +1152,33 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         self.sim.forward()
         self.scene.update(dt=0.0)
 
-        object_pos, object_quat = self._settle_reset_objects(env_ids, joint_pos, joint_vel)
+        return self._settle_reset_objects(env_ids, joint_pos, joint_vel)
+
+    def _reset_idx(self, env_ids: Sequence[int] | None):
+        self._ensure_cube_buffers()
+        if env_ids is None:
+            env_ids = self._robot._ALL_INDICES
+        env_ids = torch.as_tensor(env_ids, device=self.device, dtype=torch.long)
+        super(DextrahFrankaStarKittingEnv, self)._reset_idx(env_ids)
+        self._reset_grasp_prior_metrics(env_ids)
+
+        num_ids = len(env_ids)
+        joint_pos = self._robot.data.default_joint_pos[env_ids].clone()
+        joint_vel = torch.zeros_like(joint_pos)
+        joint_noise = torch.zeros_like(joint_pos)
+        arm_noise = float(self.cfg.arm_joint_reset_noise)
+        if arm_noise > 0.0:
+            joint_noise[:, self.arm_joint_ids] = arm_noise * (
+                2.0 * torch.rand(num_ids, len(self.arm_joint_ids), device=self.device) - 1.0
+            )
+        joint_pos = torch.clamp(joint_pos + joint_noise, self.robot_dof_lower_limits, self.robot_dof_upper_limits)
+        self._robot.write_joint_state_to_sim(joint_pos, joint_vel, env_ids=env_ids)
+        self._robot.set_joint_position_target(joint_pos, env_ids=env_ids)
+        self.robot_dof_targets[env_ids] = joint_pos
+        self.arm_joint_pos_target[env_ids] = joint_pos[:, self.arm_joint_ids]
+        self.finger_joint_pos_target[env_ids] = joint_pos[:, self.finger_joint_ids]
+
+        object_pos, object_quat = self._sample_and_write_object_reset_state(env_ids, joint_pos, joint_vel)
         object_center_pos = self._object_center_pos_from_root(env_ids, object_pos, object_quat)
         self.cube_initial_pos[env_ids] = object_center_pos
         self.cube_goal_pos[env_ids] = object_center_pos
@@ -1186,12 +1195,29 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
                     break
                 retry_env_ids = env_ids[retry_mask]
                 self._reset_grasp_prior_metrics(retry_env_ids)
+                retry_object_pos, retry_object_quat = self._sample_and_write_object_reset_state(
+                    retry_env_ids,
+                    joint_pos[retry_mask],
+                    joint_vel[retry_mask],
+                )
+                object_pos[retry_mask] = retry_object_pos
+                object_quat[retry_mask] = retry_object_quat
+                retry_object_center_pos = self._object_center_pos_from_root(
+                    retry_env_ids,
+                    retry_object_pos,
+                    retry_object_quat,
+                )
+                self.cube_initial_pos[retry_env_ids] = retry_object_center_pos
+                self.cube_goal_pos[retry_env_ids] = retry_object_center_pos
+                self.cube_goal_pos[retry_env_ids, 2] = retry_object_center_pos[:, 2] + float(
+                    self.cfg.cube_lift_height
+                )
                 self._apply_grasp_prior_reset(
                     retry_env_ids,
                     joint_pos[retry_mask],
                     joint_vel[retry_mask],
-                    object_pos[retry_mask],
-                    object_quat[retry_mask],
+                    retry_object_pos,
+                    retry_object_quat,
                 )
         self.actions[env_ids] = 0.0
         self.ik_controller.reset(env_ids)
