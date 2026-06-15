@@ -32,6 +32,7 @@ VIDEO_NAME_PREFIX="${VIDEO_NAME_PREFIX:-bimanual-yam-cube-eval}"
 PRINT_INTERVAL="${PRINT_INTERVAL:-40}"
 CAPTURE_VIDEO="${CAPTURE_VIDEO:-True}"
 DETERMINISTIC="${DETERMINISTIC:-True}"
+ACTION_SOURCE="${ACTION_SOURCE:-policy}"
 USE_CUDA_GRAPH="${USE_CUDA_GRAPH:-False}"
 SEED="${SEED:-42}"
 CUBE_SPAWN_XY_RANDOMIZATION="${CUBE_SPAWN_XY_RANDOMIZATION:-0.015}"
@@ -44,7 +45,7 @@ CAMERA_TARGET_Z="${CAMERA_TARGET_Z:-0.10}"
 CAMERA_ENV_INDEX="${CAMERA_ENV_INDEX:-0}"
 CHECKPOINT="${CHECKPOINT:-}"
 PREPARE_YAM_ASSETS="${PREPARE_YAM_ASSETS:-auto}"
-if [ -z "$CHECKPOINT" ]; then
+if [ -z "$CHECKPOINT" ] && [[ "$ACTION_SOURCE" == policy* ]]; then
   echo "Set CHECKPOINT to a bimanual YAM cube RL-Games .pth file." >&2
   exit 2
 fi
@@ -56,9 +57,9 @@ LOG_FILE="$NFS_ROOT/slurm_logs/dextrah/eval_bimanual_yam_cube_${SLURM_JOB_ID_SAF
 
 CHECKPOINT_ARG="$CHECKPOINT"
 CHECKPOINT_HOST="$CHECKPOINT"
-if [[ "$CHECKPOINT" == /results/* ]]; then
+if [[ -n "$CHECKPOINT" && "$CHECKPOINT" == /results/* ]]; then
   CHECKPOINT_HOST="$RESULTS_NFS/${CHECKPOINT#/results/}"
-elif [[ "$CHECKPOINT" == "$RESULTS_NFS"/* ]]; then
+elif [[ -n "$CHECKPOINT" && "$CHECKPOINT" == "$RESULTS_NFS"/* ]]; then
   rel_checkpoint="${CHECKPOINT#$RESULTS_NFS/}"
   CHECKPOINT_ARG="/results/$rel_checkpoint"
 fi
@@ -75,7 +76,7 @@ if [ ! -d "$ENV_ROOT/$ENV_NAME/site" ]; then
   echo "Missing DEXTRAH Python target: $ENV_ROOT/$ENV_NAME/site" >&2
   exit 2
 fi
-if [ ! -f "$CHECKPOINT_HOST" ]; then
+if [ -n "$CHECKPOINT_HOST" ] && [ ! -f "$CHECKPOINT_HOST" ]; then
   echo "Missing checkpoint: $CHECKPOINT_HOST" >&2
   exit 2
 fi
@@ -89,7 +90,7 @@ mkdir -p \
   "$CACHE_NFS/data" "$CACHE_NFS/documents"
 
 export TASK RUN_NAME NUM_ENVS NUM_STEPS VIDEO_LENGTH VIDEO_NAME_PREFIX PRINT_INTERVAL CAPTURE_VIDEO
-export DETERMINISTIC USE_CUDA_GRAPH SEED CUBE_SPAWN_XY_RANDOMIZATION
+export DETERMINISTIC ACTION_SOURCE USE_CUDA_GRAPH SEED CUBE_SPAWN_XY_RANDOMIZATION
 export CAMERA_EYE_X CAMERA_EYE_Y CAMERA_EYE_Z CAMERA_TARGET_X CAMERA_TARGET_Y CAMERA_TARGET_Z CAMERA_ENV_INDEX
 export CHECKPOINT_ARG RUN_DIR_CONTAINER METRICS_CONTAINER ENV_NAME PREPARE_YAM_ASSETS
 
@@ -108,13 +109,14 @@ echo "NUM_STEPS=$NUM_STEPS"
 echo "CAPTURE_VIDEO=$CAPTURE_VIDEO"
 echo "VIDEO_LENGTH=$VIDEO_LENGTH"
 echo "DETERMINISTIC=$DETERMINISTIC"
+echo "ACTION_SOURCE=$ACTION_SOURCE"
 echo "USE_CUDA_GRAPH=$USE_CUDA_GRAPH"
 echo "SEED=$SEED"
 echo "CUBE_SPAWN_XY_RANDOMIZATION=$CUBE_SPAWN_XY_RANDOMIZATION"
 echo "CAMERA_EYE=($CAMERA_EYE_X $CAMERA_EYE_Y $CAMERA_EYE_Z)"
 echo "CAMERA_TARGET=($CAMERA_TARGET_X $CAMERA_TARGET_Y $CAMERA_TARGET_Z)"
-echo "CHECKPOINT_ARG=$CHECKPOINT_ARG"
-echo "CHECKPOINT_HOST=$CHECKPOINT_HOST"
+echo "CHECKPOINT_ARG=${CHECKPOINT_ARG:-none}"
+echo "CHECKPOINT_HOST=${CHECKPOINT_HOST:-none}"
 echo "RUN_DIR_HOST=$RUN_DIR_HOST"
 echo "METRICS_CONTAINER=$METRICS_CONTAINER"
 
@@ -164,7 +166,7 @@ srun \
       eval_rollout.py
       --headless
       --task="$TASK"
-      --checkpoint "$CHECKPOINT_ARG"
+      --action_source "$ACTION_SOURCE"
       --num_envs "$NUM_ENVS"
       --num_steps "$NUM_STEPS"
       --seed "$SEED"
@@ -180,6 +182,9 @@ srun \
       env.use_cuda_graph="$USE_CUDA_GRAPH"
       env.cube_spawn_xy_randomization="$CUBE_SPAWN_XY_RANDOMIZATION"
     )
+    if [ -n "$CHECKPOINT_ARG" ]; then
+      EVAL_ARGS+=(--checkpoint "$CHECKPOINT_ARG")
+    fi
 
     printf "eval_command="
     printf "%q " /isaac-sim/python.sh "${EVAL_ARGS[@]}"

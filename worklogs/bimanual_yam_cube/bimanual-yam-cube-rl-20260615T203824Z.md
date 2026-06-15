@@ -37,3 +37,31 @@ Local checks:
 - `bash -n cluster/sbatch_validate_bimanual_yam_cube_grasp_env_1gpu.sh cluster/sbatch_train_bimanual_yam_cube_grasp_1gpu.sh cluster/sbatch_eval_bimanual_yam_cube_grasp_1gpu.sh cluster/sbatch_train_teacher_8gpu.sh`
 - `git diff --check`
 - Result: passed.
+
+## 2026-06-15 21:17Z - bimanual action-prior path for RL training
+
+Goal:
+- Make the YAM cube task trainable through the same RL-Games path as Franka while keeping policy evaluation unassisted.
+
+Observation:
+- Strict top-camera close-first validation on A100 job `29114858` failed as expected when `ALLOW_GRASP_ASSIST=False`.
+- The environment and asset checks passed, but the close-first scripted choreography only reached `max_lift=0.0539` with `max_success_rate=0.0`; the failure was physical contact/lift, not task registration or observation/reward plumbing.
+- Prior worklog evidence showed the environment can physically lift with a different rest-to-contact path, so the next gate should exercise the 14D RL action interface rather than the assisted demo sequence.
+
+Change:
+- Added opt-in bimanual scripted-action prior reward fields to `DextrahBimanualYAMCubeGraspEnvCfg`.
+- Added vectorized `compute_grasp_prior_reference_actions()` to the bimanual env. This reuses the eval script's existing `reference_delta` action-source hook and returns 14D left/right delta-IK plus gripper actions.
+- Added bimanual action-prior reward logging: active rate, phase rates, teacher z/gripper actions, action error, and hold-target error.
+- Exposed the new knobs through the 1-GPU bimanual train wrapper and the shared 8-GPU teacher wrapper.
+- Updated the bimanual eval wrapper to accept `ACTION_SOURCE=reference_delta` without requiring a checkpoint.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_env.py dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_env_cfg.py dextrah_lab/rl_games/eval_rollout.py`
+- `bash -n cluster/sbatch_train_bimanual_yam_cube_grasp_1gpu.sh cluster/sbatch_eval_bimanual_yam_cube_grasp_1gpu.sh cluster/sbatch_train_teacher_8gpu.sh`
+- `git diff --check`
+- Result: passed.
+
+Next:
+- Commit and deploy to the remote worktree.
+- Run an A100 `ACTION_SOURCE=reference_delta` eval with no checkpoint to prove action-interface solvability.
+- If reference eval succeeds, launch PPO with `BIMANUAL_ACTION_PRIOR_REWARD_ENABLED=True`; inspect JSONL reward/success metrics before scaling.

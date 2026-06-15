@@ -217,3 +217,19 @@ class DextrahBimanualYAMCubeGraspEnvCfg(DirectRLEnvCfg):
     cube_table_clearance_penalty_weight = -2.0
     cube_gripper_close_reg_weight = -0.001
     cube_action_penalty_weight = -0.0005
+
+    # Optional bimanual scripted-action prior, modeled after the Franka cube
+    # action-prior reward.  It never overrides the policy action; it only adds a
+    # dense imitation-style reward and exposes reference actions for eval smokes.
+    bimanual_action_prior_reward_enabled = False
+    bimanual_action_prior_reward_weight = 2.0
+    bimanual_action_prior_reward_sharpness = 2.0
+    bimanual_reference_gain = 1.35
+    bimanual_reference_max_action = 1.0
+    bimanual_reference_lift_gain = 0.35
+    bimanual_reference_lift_max_action = 0.45
+    bimanual_reference_contact_side_margin = 0.022
+    bimanual_reference_cube_center_to_hold_z = 0.038
+    bimanual_reference_min_hold_z = 0.090
+    bimanual_reference_contact_dist = 0.120
+    bimanual_reference_closed_width_fraction = 0.65

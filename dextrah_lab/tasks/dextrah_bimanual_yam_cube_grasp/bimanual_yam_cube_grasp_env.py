@@ -169,6 +169,18 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
         self.left_side_alignment = torch.zeros(self.num_envs, device=self.device)
         self.right_side_alignment = torch.zeros(self.num_envs, device=self.device)
         self.bimanual_side_success = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        self.bimanual_action_prior_active = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        self.bimanual_action_prior_phase = torch.full((self.num_envs,), -1, dtype=torch.long, device=self.device)
+        self.bimanual_action_prior_teacher_actions = torch.zeros(
+            self.num_envs, int(self.cfg.action_space), device=self.device
+        )
+        self.bimanual_action_prior_delta_abs = torch.zeros(self.num_envs, device=self.device)
+        self.bimanual_action_prior_reward = torch.zeros(self.num_envs, device=self.device)
+        self.bimanual_action_prior_teacher_left_z = torch.zeros(self.num_envs, device=self.device)
+        self.bimanual_action_prior_teacher_right_z = torch.zeros(self.num_envs, device=self.device)
+        self.bimanual_action_prior_teacher_left_gripper = torch.zeros(self.num_envs, device=self.device)
+        self.bimanual_action_prior_teacher_right_gripper = torch.zeros(self.num_envs, device=self.device)
+        self.bimanual_action_prior_hold_error = torch.zeros(self.num_envs, device=self.device)
 
     def _pre_physics_step(self, actions: torch.Tensor) -> None:
         self.actions = actions.clone().clamp(-1.0, 1.0)
@@ -321,6 +333,8 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
             + gripper_close_reg
             + action_penalty
         )
+        action_prior_reward = self._compute_bimanual_action_prior_reward()
+        total_reward = total_reward + action_prior_reward
         log_terms = {
             "yam_cube_approach_reward": approach_reward.mean(),
             "yam_cube_enclosure_reward": enclosure_reward.mean(),
@@ -356,11 +370,181 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
             "yam_cube_left_gripper_action": self.actions[:, 6].mean(),
             "yam_cube_right_gripper_action": self.actions[:, 13].mean(),
         }
+        if bool(self.cfg.bimanual_action_prior_reward_enabled):
+            action_prior_phase = self.bimanual_action_prior_phase
+            log_terms.update(
+                {
+                    "yam_cube_action_prior_reward": action_prior_reward.mean(),
+                    "yam_cube_action_prior_active_rate": self.bimanual_action_prior_active.float().mean(),
+                    "yam_cube_action_prior_close_rate": (action_prior_phase == 0).float().mean(),
+                    "yam_cube_action_prior_approach_rate": (action_prior_phase == 1).float().mean(),
+                    "yam_cube_action_prior_lift_rate": (action_prior_phase == 2).float().mean(),
+                    "yam_cube_action_prior_delta_abs": self.bimanual_action_prior_delta_abs.mean(),
+                    "yam_cube_action_prior_teacher_left_z": self.bimanual_action_prior_teacher_left_z.mean(),
+                    "yam_cube_action_prior_teacher_right_z": self.bimanual_action_prior_teacher_right_z.mean(),
+                    "yam_cube_action_prior_teacher_left_gripper": (
+                        self.bimanual_action_prior_teacher_left_gripper.mean()
+                    ),
+                    "yam_cube_action_prior_teacher_right_gripper": (
+                        self.bimanual_action_prior_teacher_right_gripper.mean()
+                    ),
+                    "yam_cube_action_prior_hold_error": self.bimanual_action_prior_hold_error.mean(),
+                }
+            )
         self.extras["log"] = log_terms
         for key, value in log_terms.items():
             self.extras[key] = value
         self.extras["in_success_region"] = self.in_success_region.float().mean()
         return total_reward
+
+    def _actions_to_hold_targets(
+        self,
+        desired_left_hold: torch.Tensor,
+        desired_right_hold: torch.Tensor,
+        grip: float,
+        *,
+        gain: float,
+        max_action: float,
+    ) -> torch.Tensor:
+        actions = torch.zeros(self.num_envs, int(self.cfg.action_space), device=self.device)
+        pos_scale = torch.clamp(self.action_scale[:3], min=1.0e-6)
+        actions[:, :3] = torch.clamp(
+            gain * (desired_left_hold - self.left_hold_pos) / pos_scale,
+            -float(max_action),
+            float(max_action),
+        )
+        actions[:, 7:10] = torch.clamp(
+            gain * (desired_right_hold - self.right_hold_pos) / pos_scale,
+            -float(max_action),
+            float(max_action),
+        )
+        actions[:, 6] = float(grip)
+        actions[:, 13] = float(grip)
+        return actions
+
+    def _bimanual_reference_actions(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        self._compute_intermediate_values()
+        teacher_actions = torch.zeros(self.num_envs, int(self.cfg.action_space), device=self.device)
+        active = ~self.in_success_region
+        phase = torch.full((self.num_envs,), -1, dtype=torch.long, device=self.device)
+        hold_error = torch.zeros(self.num_envs, device=self.device)
+        if not bool(active.any().item()):
+            return teacher_actions, active, phase, hold_error
+
+        max_gripper_width = max(float(self.cfg.max_gripper_width), 1.0e-6)
+        close_width = float(self.cfg.bimanual_reference_closed_width_fraction) * max_gripper_width
+        closed = (self.left_gripper_width <= close_width) & (self.right_gripper_width <= close_width)
+
+        contact_dist = min(float(self.cfg.cube_success_hand_dist), float(self.cfg.bimanual_reference_contact_dist))
+        left_side_distance = self.left_hold_pos[:, 1] - self.cube_pos[:, 1]
+        right_side_distance = self.cube_pos[:, 1] - self.right_hold_pos[:, 1]
+        contact_ready = (
+            closed
+            & (self.max_hold_to_cube_dist <= contact_dist)
+            & (left_side_distance >= -float(self.cfg.side_success_y_margin))
+            & (right_side_distance >= -float(self.cfg.side_success_y_margin))
+        )
+
+        cube_half_size = 0.5 * float(self.cfg.cube_size)
+        side_offset = cube_half_size + float(self.cfg.bimanual_reference_contact_side_margin)
+        hold_z = torch.maximum(
+            self.cube_initial_pos[:, 2] + float(self.cfg.bimanual_reference_cube_center_to_hold_z),
+            torch.full_like(self.cube_initial_pos[:, 2], float(self.cfg.table_surface_z) + float(self.cfg.bimanual_reference_min_hold_z)),
+        )
+        contact_left_hold = self.cube_initial_pos.clone()
+        contact_right_hold = self.cube_initial_pos.clone()
+        contact_left_hold[:, 1] = self.cube_initial_pos[:, 1] + side_offset
+        contact_right_hold[:, 1] = self.cube_initial_pos[:, 1] - side_offset
+        contact_left_hold[:, 2] = hold_z
+        contact_right_hold[:, 2] = hold_z
+
+        lift_left_hold = contact_left_hold.clone()
+        lift_right_hold = contact_right_hold.clone()
+        lift_left_hold[:, 2] += float(self.cfg.cube_lift_height)
+        lift_right_hold[:, 2] += float(self.cfg.cube_lift_height)
+
+        close_mask = active & (~closed)
+        approach_mask = active & closed & (~contact_ready)
+        lift_mask = active & contact_ready
+
+        if bool(close_mask.any().item()):
+            close_actions = self._actions_to_hold_targets(
+                self.left_hold_pos,
+                self.right_hold_pos,
+                -1.0,
+                gain=0.0,
+                max_action=0.0,
+            )
+            teacher_actions[close_mask] = close_actions[close_mask]
+            phase[close_mask] = 0
+        if bool(approach_mask.any().item()):
+            approach_actions = self._actions_to_hold_targets(
+                contact_left_hold,
+                contact_right_hold,
+                -1.0,
+                gain=float(self.cfg.bimanual_reference_gain),
+                max_action=float(self.cfg.bimanual_reference_max_action),
+            )
+            teacher_actions[approach_mask] = approach_actions[approach_mask]
+            phase[approach_mask] = 1
+        if bool(lift_mask.any().item()):
+            lift_actions = self._actions_to_hold_targets(
+                lift_left_hold,
+                lift_right_hold,
+                -1.0,
+                gain=float(self.cfg.bimanual_reference_lift_gain),
+                max_action=float(self.cfg.bimanual_reference_lift_max_action),
+            )
+            lift_actions[:, 2] = torch.clamp(lift_actions[:, 2], min=0.0)
+            lift_actions[:, 9] = torch.clamp(lift_actions[:, 9], min=0.0)
+            teacher_actions[lift_mask] = lift_actions[lift_mask]
+            phase[lift_mask] = 2
+
+        desired_left = torch.where(lift_mask.unsqueeze(-1), lift_left_hold, contact_left_hold)
+        desired_right = torch.where(lift_mask.unsqueeze(-1), lift_right_hold, contact_right_hold)
+        hold_error[:] = torch.maximum(
+            torch.norm(desired_left - self.left_hold_pos, dim=-1),
+            torch.norm(desired_right - self.right_hold_pos, dim=-1),
+        )
+        return teacher_actions.clamp(-1.0, 1.0), active, phase, hold_error
+
+    def compute_grasp_prior_reference_actions(self) -> torch.Tensor:
+        """Return a bimanual scripted action target using the 14-D RL action interface."""
+        teacher_actions, _, _, _ = self._bimanual_reference_actions()
+        return teacher_actions.detach().clamp(-1.0, 1.0)
+
+    def _compute_bimanual_action_prior_reward(self) -> torch.Tensor:
+        self.bimanual_action_prior_active[:] = False
+        self.bimanual_action_prior_phase[:] = -1
+        self.bimanual_action_prior_teacher_actions[:] = 0.0
+        self.bimanual_action_prior_delta_abs[:] = 0.0
+        self.bimanual_action_prior_reward[:] = 0.0
+        self.bimanual_action_prior_teacher_left_z[:] = 0.0
+        self.bimanual_action_prior_teacher_right_z[:] = 0.0
+        self.bimanual_action_prior_teacher_left_gripper[:] = 0.0
+        self.bimanual_action_prior_teacher_right_gripper[:] = 0.0
+        self.bimanual_action_prior_hold_error[:] = 0.0
+
+        if not bool(self.cfg.bimanual_action_prior_reward_enabled):
+            return self.bimanual_action_prior_reward
+
+        teacher_actions, active, phase, hold_error = self._bimanual_reference_actions()
+        self.bimanual_action_prior_active[:] = active
+        self.bimanual_action_prior_phase[:] = phase
+        self.bimanual_action_prior_teacher_actions[:] = teacher_actions
+        self.bimanual_action_prior_teacher_left_z[:] = teacher_actions[:, 2]
+        self.bimanual_action_prior_teacher_right_z[:] = teacher_actions[:, 9]
+        self.bimanual_action_prior_teacher_left_gripper[:] = teacher_actions[:, 6]
+        self.bimanual_action_prior_teacher_right_gripper[:] = teacher_actions[:, 13]
+        self.bimanual_action_prior_hold_error[:] = hold_error
+
+        if bool(active.any().item()):
+            delta_abs = torch.mean(torch.abs(self.actions - teacher_actions), dim=-1)
+            self.bimanual_action_prior_delta_abs[:] = delta_abs
+            weight = max(float(self.cfg.bimanual_action_prior_reward_weight), 0.0)
+            sharpness = max(float(self.cfg.bimanual_action_prior_reward_sharpness), 0.0)
+            self.bimanual_action_prior_reward[:] = weight * active.float() * torch.exp(-sharpness * delta_abs)
+        return self.bimanual_action_prior_reward
 
     def _reset_idx(self, env_ids: Sequence[int] | None):
         if env_ids is None:
