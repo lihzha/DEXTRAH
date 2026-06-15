@@ -3459,3 +3459,94 @@ Validation passed locally:
 
 Next:
 - Commit/push the patch, deploy the exact commit to the A100 agent worktree, then launch a 5-epoch object0 run with `DEXTRAH_TRAINABLE_PARAM_SCOPE=mu`, actor scale `0.001`, critic loss `0`, entropy `0`, BC anchor `1000`, no scripted BC, and no action-prior reward.
+
+## 2026-06-15T22:26:00Z - trainable-scope patch committed, deployed, and launched
+
+Version state:
+- Commit `1fdd8b9008325efe8dc81805048eae11a818b724`: `Add DEXTRAH trainable parameter scope`
+- Branch pushed to origin.
+- A100 agent worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-topdown-axis-20260615-753139c`
+- Remote worktree updated to `1fdd8b9008325efe8dc81805048eae11a818b724` by Git bundle because direct GitHub fetch was still unavailable.
+- Remote checks passed:
+  - `python3 -m py_compile dextrah_lab/rl_games/dextrah_grasp_prior_a2c.py`
+  - `bash -n cluster/sbatch_train_teacher_8gpu.sh`
+
+Training launch:
+- Slurm job: `29118194`
+- Experiment: `franka_multi_resetprior_mu_actor0001_critic0_anchor1000_sigma_m5_lr1e6_1fdd8b9_20260615T2226Z`
+- Log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29118194.out`
+- Run dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_resetprior_mu_actor0001_critic0_anchor1000_sigma_m5_lr1e6_1fdd8b9_20260615T2226Z`
+
+Settings:
+- Same object0 manifest, stable-pose cache, verified grasp indices, and strict topdown/downward reset gates as jobs `29117654` and `29117761`.
+- Initial checkpoint:
+  `/results/bc/franka_multi_bc_rawpose_cache_refdelta_9943101_20260615T1740Z/nn/bc_reference_action_imitation_lowsigma_m3_sigmaonly.pth`
+- One A100 GPU, `NUM_ENVS=256`, `MAX_ITERATIONS=5`, `SAVE_FREQUENCY=5`.
+- PPO/stabilizer settings: `LEARNING_RATE=1e-6`, `CENTRAL_VALUE_LEARNING_RATE=1e-6`, `HORIZON_LENGTH=64`, `MINI_EPOCHS=1`, `E_CLIP=0.01`, `TRAIN_SIGMA=-5`, `ENTROPY_COEF=0.0`, frozen obs RMS, BC policy anchor enabled with weight `1000.0`, scripted BC loss disabled, action-prior reward disabled.
+- Loss controls: `DEXTRAH_ACTOR_LOSS_SCALE=0.001`, `DEXTRAH_CRITIC_LOSS_SCALE=0.0`.
+- New diagnostic setting: `DEXTRAH_TRAINABLE_PARAM_SCOPE=mu`.
+
+Startup evidence:
+- Log header confirms `CODE_COMMIT=1fdd8b9008325efe8dc81805048eae11a818b724`.
+- Log header and Hydra command confirm `DEXTRAH_TRAINABLE_PARAM_SCOPE=mu` and `+agent.params.config.dextrah_trainable_param_scope=mu`.
+
+Expected signal:
+- First verify the trainable-scope print shows real `mu` parameters were matched.
+- If training completes, deterministic epoch-5 eval should preserve or beat the fixed BC baseline (`eval_success_rate=0.421875`, `success_ever_rate=0.4453125`) before scaling beyond object0.
+
+## 2026-06-15T22:33:30Z - mu-only run completed; still below BC
+
+Training job `29118194` completed with exit `0:0`.
+
+Scope verification:
+- Log printed:
+  `[DEXTRAH] trainable parameter scope 'mu': 2 trainable, 11 frozen; trainable=a2c_network.mu.weight, a2c_network.mu.bias`
+- This confirms the diagnostic updated only the action-mean head.
+
+Training rows from `metrics/direct_info_rank_0.jsonl`:
+
+| Epoch | Success | Has lifted | Lift height | EE/root dist | Actor scale | Critic scale | Anchor loss | Reset tool down | Tool z axis z |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | `0.00390625` | `0.0078125` | `0.032401` | `0.080374` | `0.001` | `0.0` | `1.548663` | `0.9975928` | `-0.9975928` |
+| 2 | `0.16015625` | `0.2734375` | `0.043661` | `0.161067` | `0.001` | `0.0` | `1.095648` | `0.9975928` | `-0.9975928` |
+| 3 | `0.01953125` | `0.2734375` | `0.011892` | `0.289096` | `0.001` | `0.0` | `0.468634` | `0.9975928` | `-0.9975928` |
+| 4 | `0.01171875` | `0.28125` | `0.010499` | `0.389524` | `0.001` | `0.0` | `0.405717` | `0.9975928` | `-0.9975928` |
+| 5 | `0.0` | `0.27734375` | `0.000435` | `0.461347` | `0.001` | `0.0` | `0.418394` | `0.9975928` | `-0.9975928` |
+
+Deterministic eval:
+- Slurm job: `29118299`
+- Run: `franka_multi_resetprior_mu_actor0001_ep5_eval_1fdd8b9_a100_20260615T2230Z`
+- Metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_multi_resetprior_mu_actor0001_ep5_eval_1fdd8b9_a100_20260615T2230Z/metrics.json`
+- `eval_success_rate=0.2890625`
+- `success_ever_rate=0.296875`
+- `success_rate_max=0.265625`
+- `success_rate_final=0.0`
+- `done_count=14`
+- `done_reason_counts`: `success_done=11`, `unclassified=3`, `cube_out=0`, `finger_table_penetration=0`, `prelift_drag=0`
+
+Eval reset diagnostics at step `0`:
+- `grasp_prior_reset_tool_downward_z=0.9975928068`
+- `grasp_prior_reset_tool_z_axis_z_mean=-0.9975928664`
+- `grasp_prior_reset_candidate_topdown_count=128`
+- `grasp_prior_reset_candidate_tool_down_count=128`
+- `grasp_prior_reset_candidate_table_count=128`
+- `grasp_prior_reset_candidate_valid_count=128`
+- `grasp_prior_reset_pregrasp_tip_table_clearance=0.0861287415`
+- `grasp_prior_reset_projected_exact_tip_table_clearance=0.0063213445`
+
+Analysis:
+- Freezing all non-`mu` parameters did not preserve the fixed BC baseline.
+- The reset sampler remains physically clean; the root from-below/table penetration issue is still absent.
+- Config review found another uncontrolled optimizer term: `agent.params.config.bounds_loss_coef=0.001` in both the known-good single-cube and multi-object PPO configs. The custom DEXTRAH loss scaling disables PPO actor/critic terms but still always includes `b_loss * bounds_loss_coef`; therefore even actor/critic-zero preservation diagnostics can move the policy through bound regularization.
+
+Patch prepared:
+- `cluster/sbatch_train_teacher_8gpu.sh`: add optional `DEXTRAH_BOUNDS_LOSS_COEF`, log it, and pass `agent.params.config.bounds_loss_coef` through a common agent override only when explicitly set.
+- Local validation passed:
+  - `bash -n cluster/sbatch_train_teacher_8gpu.sh`
+  - `git diff --check`
+
+Next:
+- Commit/deploy the bounds-loss override.
+- Run a zero-update preservation diagnostic from the low-sigma BC checkpoint with `DEXTRAH_ACTOR_LOSS_SCALE=0.0`, `DEXTRAH_CRITIC_LOSS_SCALE=0.0`, `DEXTRAH_BOUNDS_LOSS_COEF=0.0`, `ENTROPY_COEF=0.0`, no scripted BC/action-prior, and frozen obs RMS. If deterministic eval returns to the fixed BC baseline, then run the real small-actor RL diagnostic with bounds loss disabled.
