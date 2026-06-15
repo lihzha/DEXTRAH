@@ -1212,3 +1212,46 @@ Validation:
 
 Next:
 - Commit/push/redeploy, then rerun the stable strict validator.
+
+## 2026-06-16 03:15Z - planned tuned stable strict validator
+
+Goal:
+- Check whether the cube contact tuning removes the unstable lift artifact.
+
+Version state:
+- local_commit: `ad6d94a6668d1970a14056142276fd7fa1c89982`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/bimanual-yam-cube-rl-20260615T203824Z`
+- remote_commit: `ad6d94a6668d1970a14056142276fd7fa1c89982`
+
+Planned command/job:
+- Submit `cluster/sbatch_validate_bimanual_yam_cube_grasp_env_1gpu.sh` from the agent-owned remote worktree.
+- Expected run: `yam_cube_strict_stable_validator_ad6d94a_20260616T0315Z`
+- Key settings: `NUM_ENVS=1`, `NUM_STEPS=560`, `CAPTURE_VIDEO=False`, `ALLOW_GRASP_ASSIST=False`, `REQUIRE_UNASSISTED_LIFT=True`, `DISABLE_FABRIC=True`, `CUBE_SPAWN_XY_RANDOMIZATION=0.0`, `CODE_COMMIT=ad6d94a6668d1970a14056142276fd7fa1c89982`.
+
+Success criteria:
+- Passes strict validation with stable success speeds, or fails with lower speed spikes that indicate the next physics/contact tuning direction.
+
+Result/evidence:
+- Job `29122799` completed and failed stable validation.
+- Metrics: `max_lift=0.16294211149215698`, `max_success_rate=0.0`, `max_cube_linear_speed=7.3011016845703125`, `max_cube_angular_speed=91.15203857421875`, `max_lifted_cube_linear_speed=3.0481185913085938`, `max_lifted_cube_angular_speed=10.899657249450684`.
+- Step logs showed speeds rising during the approach and lift after contact: step 240 had `lin_speed=0.654`, `ang_speed=11.584`; step 280 had `lin_speed=0.756`, `ang_speed=32.138`; step 440 lift had `lin_speed=2.811`, `ang_speed=10.366`.
+
+Analysis:
+- The validator keeps executing the hardcoded approach long after it has enough contact evidence, over-pressing the cube before the lift phase. Patch the validator to switch to lift immediately after contact and stop on non-success termination, so the scripted diagnostic better matches the RL reference prior.
+
+## 2026-06-16 03:23Z - validator contact-switch fix
+
+Goal:
+- Avoid over-pressing the cube in the scripted validator after contact has already been reached.
+
+Change:
+- Added `actual_lift_start_step`, set to the next step after scripted contact is detected.
+- Lift phase now starts from `actual_lift_start_step` when available instead of always waiting for the static phase boundary.
+- The validator now stops on non-success termination instead of continuing through reset artifacts.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/validate_bimanual_yam_cube_grasp_env.py`
+- Result: passed.
+
+Next:
+- Commit/push/redeploy and rerun the stable validator.

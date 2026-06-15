@@ -798,6 +798,7 @@ def _run_scripted_demo(
     grasp_assist_used = False
     contact_reached = False
     contact_reached_step: int | None = None
+    actual_lift_start_step: int | None = None
     standoff_reached = False
     standoff_reached_step: int | None = None
     closed_before_standoff = False
@@ -814,6 +815,7 @@ def _run_scripted_demo(
     phase_name = "close"
 
     for step in range(num_steps):
+        lift_phase_active = actual_lift_start_step is not None and step >= actual_lift_start_step
         if step < standoff_start_step:
             phase_name = "close"
             action = torch.zeros(task_env.num_envs, task_env.cfg.action_space, device=task_env.device)
@@ -832,7 +834,7 @@ def _run_scripted_demo(
             action = torch.zeros(task_env.num_envs, task_env.cfg.action_space, device=task_env.device)
             action[:, 6] = -1.0
             action[:, 13] = -1.0
-        elif step < lift_start_step:
+        elif step < lift_start_step and not lift_phase_active:
             phase_name = "approach"
             alpha = min(float(step - approach_start_step + 1) / float(phase_approach), 1.0)
             alpha = alpha * alpha * (3.0 - 2.0 * alpha)
@@ -845,7 +847,8 @@ def _run_scripted_demo(
             action[:, 13] = -1.0
         else:
             phase_name = "lift"
-            alpha = min(float(step - lift_start_step + 1) / float(phase_lift), 1.0)
+            lift_origin_step = actual_lift_start_step if actual_lift_start_step is not None else lift_start_step
+            alpha = min(float(step - lift_origin_step + 1) / float(phase_lift), 1.0)
             alpha = alpha * alpha * (3.0 - 2.0 * alpha)
             if hasattr(task_env, "_validation_left_tcp_to_hold"):
                 delattr(task_env, "_validation_left_tcp_to_hold")
@@ -924,6 +927,7 @@ def _run_scripted_demo(
             if reached:
                 contact_reached = True
                 contact_reached_step = step
+                actual_lift_start_step = min(step + 1, num_steps - 1)
 
         if args_cli.allow_grasp_assist and contact_reached and step >= lift_start_step:
             lift_alpha = min(float(step - lift_start_step + 1) / float(phase_lift), 1.0)
@@ -1007,6 +1011,10 @@ def _run_scripted_demo(
             )
         if max_success_rate > 0.0 and not args_cli.continue_after_success:
             print(f"[YAM-DEMO] success reached at step={step}; stopping demo rollout", flush=True)
+            break
+        done_any = bool(done.any().item()) if isinstance(done, torch.Tensor) else bool(done)
+        if done_any and max_success_rate <= 0.0:
+            print(f"[YAM-DEMO] non-success termination reached at step={step}; stopping demo rollout", flush=True)
             break
 
     checks.check(
@@ -1165,6 +1173,7 @@ def _run_scripted_demo(
         "scripted_standoff_reached_step": standoff_reached_step,
         "scripted_contact_reached": contact_reached,
         "scripted_contact_reached_step": contact_reached_step,
+        "scripted_actual_lift_start_step": actual_lift_start_step,
         "scripted_grasp_assist_used": grasp_assist_used,
         "scripted_allow_grasp_assist": bool(args_cli.allow_grasp_assist),
         "scripted_require_unassisted_lift": bool(args_cli.require_unassisted_lift),
