@@ -809,3 +809,39 @@ Command / Job:
 
 Next:
 - Monitor `1029808` startup, then inspect early epoch metrics. Keep the run only if cached action-prior metrics improve and success/lift avoid the old drift-collapse pattern.
+
+## 2026-06-15T11:49:00Z - Cached action-prior diagnostic failed similarly
+
+Result:
+- Job `1029808` was manually canceled at elapsed `00:08:39` after the failure mode was clear.
+- `sacct`: job `CANCELLED by 158351`, batch step `FAILED` due signal after manual cancel.
+- Metrics rows covered epochs 68-73.
+- Best row was epoch 68: `cube_success_rate=0.15625`, `has_lifted=0.34375`, lift height `0.06758m`, XY error `0.03974m`, `cube_action_prior_delta_abs=0.84558`.
+- Collapse reproduced:
+  - epoch 69: success `0.03418`, XY `0.06064m`, lift-rate teacher `0.46094`, teacher z `0.13613`
+  - epoch 70: success `0.01172`, XY `0.07971m`, lift-rate teacher `0.49121`, teacher z `0.20054`
+  - epoch 73: success `0.00977`, XY `0.09358m`, lift-rate teacher `0.07715`
+
+Analysis:
+- Caching the teacher at pre-step state fixed a real mismatch, but it did not solve the collapse. The run still learns/executes strong positive z and close actions while losing XY stability.
+- The next likely bug is in the scripted reference itself rather than timing: the lift-phase teacher may be encouraging lateral motion or object drag because it reuses exact-contact tracking components while overriding only z.
+
+Next:
+- Audit `_grasp_prior_exact_tracking_action()` and lift-phase reference construction. If the teacher keeps pulling the gripper laterally toward a stale reset contact pose during lift, patch lift to hold/limit lateral motion instead of continuing exact-contact XY tracking.
+
+## 2026-06-15T11:50:00Z - Relaunch with full-episode lift prior
+
+Hypothesis:
+- The prior-only runs collapse partly because the teacher schedule ends at `8 + 32 + 240 = 280` steps while the episode can run for about 600 steps. Once a poor policy has lifted the object at all, `prelift_drag` termination no longer resets failed large-XY episodes, so they can spend the rest of the episode with no active teacher and no success.
+
+Command / Job:
+- job_id: `1029809`
+- run_name: `franka_multi_state_teacher_7195_b87_oldcache_pre08_prioronly90_cached_schedfull_w80_14c986b_20260615T1150Z`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_state_teacher_7195_b87_oldcache_pre08_prioronly90_cached_schedfull_w80_14c986b_20260615T1150Z`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_1029809.out`
+- metrics: `.../metrics/direct_info_rank_0.jsonl`
+- change from `1029808`: `GRASP_PRIOR_ACTION_WARMSTART_LIFT_STEPS=600`; all source/reset/cache/physics/LR/action-prior settings unchanged.
+
+Expected signal:
+- `cube_action_prior_active_rate` should remain high after the old collapse window instead of dropping below `0.1`.
+- If the active-rate hypothesis is sufficient, success/lift should stop degrading as XY error approaches the success tolerance.
