@@ -1473,3 +1473,81 @@ Result:
 
 Next:
 - Commit and push, deploy the exact commit to the l401 agent worktree, and rerun the bounded policy video eval with `GRASP_PRIOR_RESET_REQUIRE_DOWNWARD_TOOL_Z=True` and no verified-index cache.
+
+## 2026-06-15T16:10:00Z - Launch policy video eval with exact table gate
+
+Goal:
+- Validate the stricter exact table-clearance gate on the same two-env seed-44 PPO video path that exposed negative projected exact tip clearance.
+
+Version Control:
+- agent_id: dextrah-multiobject-grasp-prior-finish-20260615T074722Z
+- local_head: `f4f4c2acee3393bc259ea8546bfdc0fd473d1c8f`
+- implementation_commit: `16f8cb812adad37bedb58bb1d186a173ad01a3a7`
+- remote_commit/status: l401 agent worktree `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-topdown-axis-20260615-753139c` detached at `f4f4c2acee3393bc259ea8546bfdc0fd473d1c8f`, clean
+- push/deploy: pushed branch to GitHub; deployed to l401 via Git bundle `/lustre/fsw/portfolios/nvr/users/lzha/cache/dextrah_f4f4c2a_table_gate.bundle`.
+
+Command / Job:
+- job_id: `1029905`
+- run_name: `franka_multi_eval_toolaxis_tablegate_ep40_video2_seed44_f4f4c2a_20260615T1605Z`
+- command: `sbatch --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-topdown-axis-20260615-753139c,CODE_COMMIT=f4f4c2acee3393bc259ea8546bfdc0fd473d1c8f,RUN_NAME=franka_multi_eval_toolaxis_tablegate_ep40_video2_seed44_f4f4c2a_20260615T1605Z,NUM_ENVS=2,NUM_STEPS=180,VIDEO_LENGTH=180,VIDEO_NAME_PREFIX=franka-multi-toolaxis-tablegate-ep40-seed44,SEED=44,CHECKPOINT=/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_ppo_bcinit_retrypose_resetonly_cont40_9ae97c0_20260615T1312Z/nn/last_dextrah_franka_multi_object_grasp_ep_40_rew_4852.5146.pth,OBJECT_ASSET_MANIFEST_PATH=/results/assets/filtered_manifests/train2_7195_b87_nobelow_d053e6c_20260615T0045Z/manifest.json,MAX_OBJECTS=2,OBJECT_STABLE_POSE_ENABLED=True,OBJECT_STABLE_POSE_CACHE_DIR=/results/validations/train2_7195_b87_nobelow_d053e6c_20260615T0045Z/settled_pose_cache,GRASP_PRIOR_RESET_ENABLED=True,GRASP_PRIOR_RESET_ATTEMPTS=8,GRASP_PRIOR_RESET_CANDIDATE_COUNT=256,GRASP_PRIOR_RESET_REQUIRE_TOPDOWN=True,GRASP_PRIOR_RESET_MIN_PREGRASP_Z=0.45,GRASP_PRIOR_RESET_REQUIRE_DOWNWARD_TOOL_Z=True,GRASP_PRIOR_RESET_MIN_DOWNWARD_TOOL_Z=0.45,GRASP_PRIOR_RESET_MAX_CENTER_DISTANCE_FRAC=0.50,... cluster/sbatch_eval_franka_multi_object_grasp_1gpu.sh`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_multi_eval_toolaxis_tablegate_ep40_video2_seed44_f4f4c2a_20260615T1605Z`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_multi_object_1029905.out`
+- expected_artifacts: `metrics.json`, `trace.csv`, `trace.jsonl`, and MP4 under `videos/`.
+
+Result:
+- status: running/queued
+
+Next:
+- Monitor scheduler/logs, fetch artifacts on completion, verify `candidate_table_count`, `quality_success`, projected exact tip clearance, downward tool-axis metrics, and inspect the MP4 with `viz-open`.
+
+## 2026-06-15T16:20:00Z - Exact table-gate eval reveals no-candidate fallthrough
+
+Goal:
+- Inspect job `1029905` and decide whether the stricter table gate is sufficient for training.
+
+Result:
+- status: completed but failed acceptance
+- job_state: `COMPLETED`, exit `0:0`, elapsed `00:01:10`
+- local_artifacts: `cluster_results/l401/franka_multi_eval_toolaxis_tablegate_ep40_video2_seed44_f4f4c2a_20260615T1605Z/`
+- video: `cluster_results/l401/franka_multi_eval_toolaxis_tablegate_ep40_video2_seed44_f4f4c2a_20260615T1605Z/videos/franka-multi-toolaxis-tablegate-ep40-seed44-step-0.mp4`
+- viewer_url: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-finish-20260615T074722Z/cluster_results/l401/franka_multi_eval_toolaxis_tablegate_ep40_video2_seed44_f4f4c2a_20260615T1605Z/videos/franka-multi-toolaxis-tablegate-ep40-seed44-step-0.mp4`
+
+Metrics / Evidence:
+- `grasp_prior_reset_success=0.0`, `grasp_prior_reset_quality_success=0.0`, `success_ever_rate=0.0`.
+- Candidate marginal counts were nonzero: `candidate_tool_down_count=49.5`, `candidate_table_count=137.0`, but the selected diagnostic target had `tool_downward_z_min=0.4186267852783203 < 0.45` and `projected_exact_tip_table_clearance=-0.016749143600463867`.
+- This means the stricter gates prevented accepting the bad target, but when no combined valid/fallback candidate existed in the final retry, `_compose_grasp_prior_targets` still selected the least-bad invalid candidate for IK/diagnostics. Runtime fallback-to-default kept the actual reset safe, but this is not good enough for grasp-prior RL because it yields no prior reset and confusing diagnostics.
+
+Analysis:
+- The root collision acceptance is fixed only in the success mask; the selector still needs a fail-closed no-candidate path. The next patch should never feed an invalid sampled grasp target to reset IK when `valid.any == fallback_ok.any == False` for an env.
+
+Next:
+- Add valid/fallback candidate-count metrics to eval traces and make no-candidate rows target the current safe EE pose with `sample_index=-1` and `pregrasp_farther=False`, so reset success remains false without transiently solving toward a table-colliding grasp. Then rerun the same smoke; if no valid candidates remain, increase candidate count or regenerate verified indices under the new gates.
+
+## 2026-06-15T16:25:00Z - Fail closed when no table-safe candidate exists
+
+Goal:
+- Prevent no-candidate rows from driving IK toward invalid grasp targets and expose the combined candidate counts needed to tune the sampler.
+
+Change:
+- `_compose_grasp_prior_targets` now computes `has_reset_candidate = valid.any | fallback_ok.any`.
+- For rows without a reset candidate, it sets `sample_indices=-1`, replaces target/exact EE pose with the current safe EE pose, marks `pregrasp_farther=False`, and assigns `inf` distances for selected-grasp diagnostics. This keeps reset success false but avoids transient IK toward an invalid table-colliding grasp.
+- `eval_rollout.py` now logs all candidate counts: topdown, tool-down, contact-height, center, width, table, valid, and fallback.
+
+Version Control:
+- agent_id: dextrah-multiobject-grasp-prior-finish-20260615T074722Z
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-finish-20260615T074722Z`
+- branch: `codex/dextrah-multiobject-grasp-prior-finish-20260615T074722Z`
+- base_commit: `f4f4c2acee3393bc259ea8546bfdc0fd473d1c8f`
+- implementation_commit: pending
+- changed_files: `dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py`, `dextrah_lab/rl_games/eval_rollout.py`, this worklog.
+
+Command / Job:
+- local checks:
+  - `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py dextrah_lab/rl_games/eval_rollout.py`
+  - `git diff --check`
+
+Result:
+- status: local checks passed
+
+Next:
+- Commit/push/deploy, then rerun the two-env seed-44 eval. If `candidate_valid_count=0` and `candidate_fallback_count=0`, run the same eval with a larger `GRASP_PRIOR_RESET_CANDIDATE_COUNT` before changing reward/training.

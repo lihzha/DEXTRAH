@@ -920,6 +920,8 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         fallback_score = torch.where(fallback_ok, score, score - 1.0e5)
         scored = torch.where(valid, score, score - 1.0e6)
         has_valid = valid.any(dim=1, keepdim=True)
+        has_fallback = fallback_ok.any(dim=1, keepdim=True)
+        has_reset_candidate = (has_valid | has_fallback).squeeze(1)
         scored = torch.where(has_valid, scored, fallback_score)
         best_candidate = torch.argmax(scored, dim=1)
         row_ids = torch.arange(num_ids, dtype=torch.long, device=self.device)
@@ -949,6 +951,34 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         tool_quat_w = flat_candidate_tool_quat_w.reshape(num_ids, candidate_count, 4)[row_ids, best_candidate]
         exact_ee_quat_w = candidate_exact_ee_quat_w[row_ids, best_candidate]
         target_ee_quat_w = exact_ee_quat_w
+        if bool((~has_reset_candidate).any().item()):
+            no_candidate = ~has_reset_candidate
+            env_origins = self.scene.env_origins[env_ids]
+            safe_ee_pos_w = self.ee_pos[env_ids] + env_origins
+            safe_ee_quat_w = self.ee_quat[env_ids]
+            safe_tool_z_axis_w = torch.zeros_like(tool_z_axis_w)
+            safe_tool_z_axis_w[:, 2] = -1.0
+            safe_pregrasp_dir_w = torch.zeros_like(pregrasp_offset_dir_w)
+            safe_pregrasp_dir_w[:, 2] = 1.0
+            bad_dist = torch.full_like(exact_tool_dist, float("inf"))
+            select_mask = no_candidate.unsqueeze(-1)
+            sample_indices = torch.where(no_candidate, torch.full_like(sample_indices, -1), sample_indices)
+            exact_tool_pos_w = torch.where(select_mask, safe_ee_pos_w, exact_tool_pos_w)
+            pregrasp_tool_pos_w = torch.where(select_mask, safe_ee_pos_w, pregrasp_tool_pos_w)
+            exact_ee_pos_w = torch.where(select_mask, safe_ee_pos_w, exact_ee_pos_w)
+            target_ee_pos_w = torch.where(select_mask, safe_ee_pos_w, target_ee_pos_w)
+            tool_z_axis_w = torch.where(select_mask, safe_tool_z_axis_w, tool_z_axis_w)
+            pregrasp_offset_dir_w = torch.where(select_mask, safe_pregrasp_dir_w, pregrasp_offset_dir_w)
+            tool_quat_w = torch.where(no_candidate.unsqueeze(-1), safe_ee_quat_w, tool_quat_w)
+            exact_ee_quat_w = torch.where(no_candidate.unsqueeze(-1), safe_ee_quat_w, exact_ee_quat_w)
+            target_ee_quat_w = exact_ee_quat_w
+            exact_tool_dist = torch.where(no_candidate, bad_dist, exact_tool_dist)
+            exact_reference_dist = torch.where(no_candidate, bad_dist, exact_reference_dist)
+            pregrasp_tool_dist = torch.where(no_candidate, bad_dist, pregrasp_tool_dist)
+            contact_center_dist = torch.where(no_candidate, bad_dist, contact_center_dist)
+            center_gate_dist = torch.where(no_candidate, bad_dist, center_gate_dist)
+            has_contact_location = has_contact_location & has_reset_candidate
+            pregrasp_farther = pregrasp_farther & has_reset_candidate
         root_pos_w = self._robot.data.root_pos_w[env_ids]
         root_quat_w = self._robot.data.root_quat_w[env_ids]
         target_ee_pos_b, target_ee_quat_b = math_utils.subtract_frame_transforms(
@@ -990,6 +1020,7 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             "candidate_table_count": table_ok.sum(dim=1),
             "candidate_valid_count": valid.sum(dim=1),
             "candidate_fallback_count": fallback_ok.sum(dim=1),
+            "candidate_select_success": has_reset_candidate,
             "pregrasp_finger_table_clearance": candidate_pregrasp_finger_table_clearance[row_ids, best_candidate],
             "exact_finger_table_clearance": candidate_exact_finger_table_clearance[row_ids, best_candidate],
             "pregrasp_tip_table_clearance": candidate_pregrasp_tip_table_clearance[row_ids, best_candidate],
