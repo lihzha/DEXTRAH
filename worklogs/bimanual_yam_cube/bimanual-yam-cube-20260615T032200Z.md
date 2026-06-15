@@ -56,7 +56,7 @@ Version Control:
 - worklog: `worklogs/bimanual_yam_cube/bimanual-yam-cube-20260615T032200Z.md`
 - branch: `codex/bimanual-yam-cube-20260615T032200Z`
 - base_commit: `74c8ab6c0c06a428fcd6bd26761ffc4a4718b055`
-- implementation_commit: pending
+- implementation_commit: `d015b38` (included in final source commit)
 - push/pull: n/a local smoke
 - changed_files: `dextrah_lab/rl_games/validate_bimanual_yam_cube_grasp_env.py`, `dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_env_cfg.py`, worklog
 - remote_commit/status: n/a local
@@ -97,7 +97,7 @@ Version Control:
 - worklog: `worklogs/bimanual_yam_cube/bimanual-yam-cube-20260615T032200Z.md`
 - branch: `codex/bimanual-yam-cube-20260615T032200Z`
 - base_commit: `74c8ab6c0c06a428fcd6bd26761ffc4a4718b055`
-- implementation_commit: pending
+- implementation_commit: `d015b38`
 - push/pull: n/a local smoke
 - changed_files: `dextrah_lab/rl_games/validate_bimanual_yam_cube_grasp_env.py`, worklog
 - remote_commit/status: n/a local
