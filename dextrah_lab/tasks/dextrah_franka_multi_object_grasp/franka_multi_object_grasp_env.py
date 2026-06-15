@@ -983,7 +983,12 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             (required_width >= float(self.cfg.grasp_prior_reset_min_width))
             & (required_width <= float(self.cfg.max_gripper_width))
         )
-        return mask & center_dist_ok & width_ok
+        table_floor_z = float(self.cfg.table_surface_z) + float(self.cfg.finger_table_penetration_termination_margin)
+        table_ok = (
+            (targets["target_ee_pos_w"][:, 2] >= table_floor_z)
+            & (targets["contact_reference_w"][:, 2] >= table_floor_z)
+        )
+        return mask & center_dist_ok & width_ok & table_ok
 
     def _grasp_prior_reset_extra_success_mask(
         self,

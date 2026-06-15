@@ -68,7 +68,7 @@ parser.add_argument("--grasp_warmstart_require_current_lift_ready", action=argpa
 parser.add_argument("--capture_interval", type=int, default=2)
 parser.add_argument("--grasp_reset_attempts", type=int, default=12)
 parser.add_argument("--grasp_reset_require_topdown", action=argparse.BooleanOptionalAction, default=True)
-parser.add_argument("--grasp_reset_min_pregrasp_z", type=float, default=0.45)
+parser.add_argument("--grasp_reset_min_pregrasp_z", type=float, default=0.70)
 parser.add_argument("--grasp_reset_min_contact_height_above_center", type=float, default=0.0)
 parser.add_argument("--grasp_reset_candidate_count", type=int, default=16)
 parser.add_argument("--grasp_reset_max_center_distance_frac", type=float, default=0.30)
@@ -524,6 +524,8 @@ def _selected_grasp_geometry_snapshot(task_env, env_id: int) -> dict[str, object
         "selected_has_contact_location": bool(task_env.grasp_prior_reset_has_contact_location[env_id].detach().cpu()),
         "selected_contact_center_dist": float(task_env.grasp_prior_reset_contact_center_dist[env_id].detach().cpu()),
         "selected_center_gate_dist": float(task_env.grasp_prior_reset_center_gate_dist[env_id].detach().cpu()),
+        "selected_pregrasp_offset_dir": _tensor_list(task_env.grasp_prior_reset_offset_dir_w[env_id]),
+        "selected_pregrasp_offset_dir_z": float(task_env.grasp_prior_reset_offset_dir_w[env_id, 2].detach().cpu()),
         "selected_candidate_topdown_count": int(
             task_env.grasp_prior_reset_candidate_topdown_count[env_id].detach().cpu()
         ),

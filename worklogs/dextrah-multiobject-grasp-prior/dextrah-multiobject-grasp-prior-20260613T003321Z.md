@@ -7995,3 +7995,39 @@ Next:
 2026-06-15T05:22:00Z jobs `1029573` and `1029574` failed before Python with `/usr/bin/bash: line 114: OBJECT_DENSITY: unbound variable`. Root cause: `cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh` initialized optional object physics vars in the outer shell but did not export them before the container `srun`, where the inline script runs under `set -u`. Patched the wrapper to export `OBJECT_DENSITY`, friction/contact/rest/solver/damping, and max depenetration optional vars before `srun`. Validation checks: `bash -n cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh` and Python py_compile passed.
 2026-06-15T05:22:00Z pushed wrapper fix commit `f30341434fa4f99141fc5a8235540359d023f438`, deployed to `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-topdown-axis-20260615-753139c` via Git bundle, and relaunched video validations: job `1029575` run `franka_multi_grasp_video_topaxis2_obj0_7195_f303414_20260615T0522Z`, job `1029576` run `franka_multi_grasp_video_topaxis2_obj1_b87a_f303414_20260615T0522Z`.
 2026-06-15T05:27:00Z topaxis2 result: job `1029575` object0 passed all scenarios with grasp lift `0.1281m`, XY drift `0.0468m`, selected pregrasp offset z `0.7485`, and zero dones. Job `1029576` object1 failed `grasp_contact`: topdown candidates dropped to `88/128`, but selected quality/reset failed and fingers were about `0.26m` from object with no lift. Analysis: after removing world-up offset, object1 exposed a contact-target frame bug. The multi-object contact path used raw tool rotation as the EE quaternion and rotated the finger-center offset by the tool frame, while the cube path composes `tool -> EE` using `ee_offset_rot`. Patched multi-object contact targets to compose candidate tool pose with `ee_offset_pos/ee_offset_rot` and rotate finger-center offsets by the actual candidate EE rotation.
+2026-06-15T05:28:00Z pushed and deployed EE-frame fix commit `8097709202f60bd5eb3165aa1d39f22401115901`; relaunched corrected validation jobs `1029579` object0 run `franka_multi_grasp_video_topaxis_ee_obj0_7195_8097709_20260615T0528Z` and `1029580` object1 run `franka_multi_grasp_video_topaxis_ee_obj1_b87a_8097709_20260615T0528Z`.
+2026-06-15T05:31:00Z object1 still failed `grasp_contact` under the old verified-index subset after the EE-frame fix. Metrics remain no-lift with selected quality false, topdown candidates `88/128`, selected pregrasp z `0.4975`, and fingers about `0.26m` from object. Launched raw-library diagnostic job `1029584` run `franka_multi_grasp_video_topaxis_raw_obj1_b87a_8097709_20260615T0531Z` with no `GRASP_PRIOR_VERIFIED_INDICES_PATH`, candidate count `512`, attempts `24`, and the same real topdown/IK settings to test whether the stale verified subset is the bottleneck.
+2026-06-15T05:33:00Z canceled object0 job `1029579` after it stayed in `grasp_contact` for over four minutes without metrics; this freed the GPU for raw object1 diagnostic `1029584`. Need rerun object0 after object1/root cause is resolved.
+2026-06-15T05:40:00Z raw object1 diagnostic job `1029584` completed and passed. Metrics: selected pregrasp offset z `0.9987`, valid candidates `68/512`, topdown candidates `244/512`, lift `0.1226m`, XY drift `0.0264m`, zero dones, and finger-table clearance min `0.0909m`. Local artifact: `cluster_results/l401/franka_multi_grasp_video_topaxis_raw_obj1_b87a_8097709_20260615T0531Z/grasp_contact.mp4`; visual inspection shows top-side reset/contact without table collision. Analysis: raw GraspGen library can provide a no-bottom grasp for object1; the old verified-index cache is stale under the real-axis invariant.
+
+## 2026-06-15T05:47:00Z - Tighten no-bottom grasp-prior guard
+
+Goal:
+- Make bottom/near-bottom approach rejection a default environment contract before regenerating verified indices and resuming RL.
+
+Hypothesis:
+- `grasp_prior_reset_min_pregrasp_z=0.45` rejects literal underside grasps but still allows shallow side approaches. A stricter `0.70` top-side gate, combined with table-clearance checks in the post-IK success/quality mask, should prevent unrealistic reset grasps from entering cached indices or training launches.
+
+Change:
+- Raised multi-object env, collector, video, teacher-train, eval, and BC wrapper defaults from `0.45` to `0.70`.
+- Added table-clearance gating to `_grasp_prior_reset_topdown_mask`, so post-IK reset success/quality keeps the same table invariant used during candidate selection.
+- Added selected pregrasp approach direction diagnostics to video metrics and `pregrasp_offset_dir_z` to verified-cache candidate stats; cache sorting now prefers more vertical top-side grasps after lift quality.
+
+Version Control:
+- agent_id: merge-dp-rgb-main-20260613
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/merge-dp-rgb-main-20260613`
+- branch: `main`
+- base_commit: `8097709202f60bd5eb3165aa1d39f22401115901`
+- implementation_commit: pending
+- changed_files: `dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py`, `dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py`, `dextrah_lab/rl_games/collect_franka_multi_object_verified_grasps.py`, `dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py`, affected cluster wrappers, this worklog
+
+Command / Job:
+- command: `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py dextrah_lab/rl_games/collect_franka_multi_object_verified_grasps.py dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py`
+- command: `bash -n cluster/sbatch_collect_franka_multi_object_verified_grasps_1gpu.sh cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_eval_franka_multi_object_grasp_1gpu.sh cluster/sbatch_bc_franka_cube_traj_action_imitation_1gpu.sh`
+- job_id: n/a
+
+Result:
+- local syntax checks passed; grep found no remaining active `0.45` reset-approach defaults in `dextrah_lab` or `cluster`.
+
+Next:
+- Commit/push, deploy exact commit to the l401 agent worktree via Git bundle, regenerate verified indices for the two-object manifest with stable poses and yaw randomization, then rerun per-object videos using the new cache.

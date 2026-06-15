@@ -95,7 +95,9 @@ class DextrahFrankaMultiObjectGraspEnvCfg(DextrahFrankaCubeGraspEnvCfg):
     grasp_prior_reset_attempts = 1
     grasp_prior_reset_candidate_count = 16
     grasp_prior_reset_require_topdown = True
-    grasp_prior_reset_min_pregrasp_z = 0.45
+    # Require a real top-side approach direction.  A shallow or underside
+    # pregrasp vector can put the fingers through the table during reset.
+    grasp_prior_reset_min_pregrasp_z = 0.70
     # Reject contact-based priors whose contact/reference midpoint is below
     # the current object center in world z.  This prevents underside grasps
     # even when the pregrasp offset is forced to approach from above.
