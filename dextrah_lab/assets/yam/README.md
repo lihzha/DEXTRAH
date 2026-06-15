@@ -1,8 +1,11 @@
 # Bimanual YAM Assets
 
 The YAM MJCF and mesh files are downloaded from the MolmoAct2 simulation asset
-dataset, `TreeePlanter/molmoact2-sim-eval-assets`, then converted through a
-generated URDF into a USD cache for Isaac Lab.
+dataset, `TreeePlanter/molmoact2-sim-eval-assets`, then converted into a USD
+cache for Isaac Lab.  The environment spawns the cached USD through a
+DEXTRAH-style `ArticulationCfg` and `UsdFileCfg`; the generated URDF is only an
+offline converter intermediate because Isaac Lab 2.2 does not provide a stable
+direct MJCF spawner for this asset.
 
 Prepare them from the DEXTRAH repo root with:
 

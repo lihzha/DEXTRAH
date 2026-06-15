@@ -7,7 +7,7 @@
 
 ## Asset Path
 - Source assets come from Hugging Face dataset `TreeePlanter/molmoact2-sim-eval-assets`, matching the MolmoAct2 sim eval README.
-- `dextrah_lab/assets/scripts/prepare_yam_assets.py` downloads the upstream YAM MJCF assets, generates a URDF preserving YAM link/joint names, and converts/caches an Isaac USD through `UrdfFileCfg`/`UrdfConverter`.
+- `dextrah_lab/assets/scripts/prepare_yam_assets.py` downloads the upstream YAM MJCF assets, generates an offline URDF intermediate preserving YAM link/joint names, and converts/caches an Isaac USD through `UrdfConverter`.
 - Generated asset outputs are ignored:
   - `dextrah_lab/assets/yam/yam_mujoco/`
   - `dextrah_lab/assets/yam/yam_urdf/`
@@ -17,8 +17,8 @@
 - Action space is 14D: left relative pose `0:6`, left gripper `6`, right relative pose `7:13`, right gripper `13`.
 - Observation/state space is 97D and includes both arm states, both TCPs, cube pose/velocity, goal/lift state, gripper widths, distances, and previous actions.
 - The configured TCP offset is `(0, 0, 0.0605)` in each wrist frame, matching the midpoint between the upstream linear fingers. This was necessary because controlling `left_link_6`/`right_link_6` directly left the actual fingertips too high during IK.
-- The env reset uses MolmoAct2's reference YAM start state: base pose `(-0.65, 0.0, 0.01)` and `BimanualYAM.keyframes["home"].qpos == np.zeros(16)`.
-- The scripted validator first checks that reference reset, then seeds a deterministic FK ready pose only for the demonstration rollout.
+- The env reset uses MolmoAct2's reference YAM rest start state: base pose `(-0.65, 0.0, 0.01)` and `BimanualYAM.keyframes["rest"].qpos == [0, pi/4, pi/2, 0, 0, 0, -0.02, -0.02, 0, pi/4, pi/2, 0, 0, 0, -0.02, -0.02]`.
+- The scripted validator starts from that reset and reaches the cube from a safe waypoint solved against the spawned Isaac articulation, without seeding a custom pregrasp qpos.
 
 ## Validation
 - Asset prep was run successfully in `nvcr.io/nvidia/isaac-lab:2.2.0`.
@@ -258,6 +258,54 @@ Result:
 
 Analysis:
 - The low-side camera best exposes the vertical table gap. The higher side camera shows the robot/table/cube layout but the lift gap is harder to judge visually.
+
+## 2026-06-15 08:14Z - DEXTRAH-style YAM USD config and Isaac-safe demo waypoint
+
+Goal:
+- Address the video defect report: the first two YAM joints appeared initialized inside the table and adjacent links looked disconnected around the middle of the demo.
+
+Hypothesis:
+- The env should follow the DEXTRAH asset pattern by spawning a prepared robot USD through `ArticulationCfg`/`UsdFileCfg`, while only borrowing MolmoAct2 assets, rest keyframe, actuator gains, and relative table/robot/object placement. The remaining table-intersection issue is demo waypoint geometry, not the desired rest keyframe.
+
+Change:
+- Added reusable `dextrah_lab/assets/yam/bimanual_yam.py` with `BIMANUAL_YAM_CFG`, MolmoAct2 rest qpos, MJCF path, and prepared USD path.
+- Updated the bimanual YAM cube env to import the reusable asset cfg instead of defining robot import/actuators inline.
+- Kept the runtime robot spawn on a cached USD via `UsdFileCfg`; the prep script defaults to an offline URDF intermediate because IsaacLab 2.2's native MJCF converter hung or produced only a stub USD for this YAM asset, and IsaacLab 2.3.2 crashed during conversion.
+- Replaced the validator demo waypoint with a qpos solved against the spawned Isaac articulation so the arms approach the cube from above the table.
+- Added reset checks for the MolmoAct2 rest keyframe, first-two-link table clearance, and adjacent-link-origin continuity.
+
+Version Control:
+- agent_id: bimanual-yam-cube-20260615T032200Z
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/bimanual-yam-cube-20260615T032200Z`
+- worklog: `worklogs/bimanual_yam_cube/bimanual-yam-cube-20260615T032200Z.md`
+- branch: `codex/bimanual-yam-cube-20260615T032200Z`
+- base_commit: `198858f3a83ff5ae4114c03070034613cb9c10bc`
+- implementation_commit: `37cbc8a`
+- push/pull: n/a local validation
+- changed_files: `.gitignore`, `dextrah_lab/assets/scripts/prepare_yam_assets.py`, `dextrah_lab/assets/yam/README.md`, `dextrah_lab/assets/yam/bimanual_yam.py`, `dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_env_cfg.py`, `dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_env.py`, `dextrah_lab/rl_games/validate_bimanual_yam_cube_grasp_env.py`, worklog
+- remote_commit/status: n/a local
+
+Command / Job:
+- command: Docker IsaacLab 2.2 asset prep, headless, `dextrah_lab/assets/scripts/prepare_yam_assets.py --headless`
+- command: Docker IsaacLab 2.2 smoke validator, one env, `--disable_fabric`
+- command: Docker IsaacLab 2.2 video validator, one env, `--video --width 1280 --height 720`
+- job_id: n/a local Docker jobs
+- run_dir: `local_results/bimanual_yam_cube_grasp/smoke_usd_cfg_isaac_safe_waypoint_20260615_080821`, `local_results/bimanual_yam_cube_grasp/demo_usd_cfg_isaac_safe_waypoint_20260615_080915`
+- logs: console
+- artifacts: `metrics.json`, `videos/bimanual-yam-cube-demo-manual.mp4`, extracted frames at `t_0p5.png`, `t_2p0.png`, `t_5p2.png`
+
+Result:
+- status: passed
+- metrics/artifacts: final metrics at `local_results/bimanual_yam_cube_grasp/demo_usd_cfg_isaac_safe_waypoint_20260615_080915/metrics.json`; final video at `local_results/bimanual_yam_cube_grasp/demo_usd_cfg_isaac_safe_waypoint_20260615_080915/videos/bimanual-yam-cube-demo-manual.mp4`
+- key evidence: reset qpos matched `BimanualYAM.keyframes["rest"].qpos` with `max_abs_error=0.0`; `reset_rest_first_two_links_clear_table` passed with minimum body-origin z `0.0731`; adjacent link continuity passed for all checked pairs; scripted demo minimum finger/table clearance was `0.0408`; both arms reached the cube sides; max lift was `0.1001`; success predicate reached `1.0`; MP4 is `1280x720`, `345` frames, `5.75s`.
+- video viewer: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/bimanual-yam-cube-20260615T032200Z/local_results/bimanual_yam_cube_grasp/demo_usd_cfg_isaac_safe_waypoint_20260615_080915/videos/bimanual-yam-cube-demo-manual.mp4`
+
+Analysis:
+- The reported visual failure was addressed by moving robot definition into a DEXTRAH-style asset cfg and by solving the validator waypoint against the actual spawned Isaac articulation. Frame inspection at 0.5s showed the first two arm links above the tabletop, frame inspection at 2.0s showed both grippers on the cube sides with a coherent link chain, and the final frame showed the cube lifted above the table.
+- The validator still records `scripted_grasp_assist_used=true`: this assist is demo-only and only activates after both grippers reach the cube sides. It is not part of the environment reset or asset configuration.
+
+Next:
+- Commit the corrected source, worklog, and validation notes. No Isaac validation containers remain active.
 
 ## 2026-06-15 05:38Z - cleanup/status
 

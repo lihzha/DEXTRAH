@@ -47,7 +47,8 @@ from isaaclab_tasks.utils import parse_env_cfg
 import dextrah_lab.tasks.dextrah_bimanual_yam_cube_grasp.gym_setup  # noqa: F401
 from dextrah_lab.tasks.dextrah_bimanual_yam_cube_grasp.bimanual_yam_cube_grasp_env_cfg import (
     MOLMOACT2_REST_JOINT_POS,
-    YAM_URDF_PATH,
+    YAM_MJCF_PATH,
+    YAM_USD_PATH,
 )
 from dextrah_lab.tasks.dextrah_bimanual_yam_cube_grasp.bimanual_yam_cube_grasp_rewards import (
     compute_bimanual_yam_cube_grasp_rewards,
@@ -57,18 +58,21 @@ from dextrah_lab.tasks.dextrah_bimanual_yam_cube_grasp.bimanual_yam_cube_grasp_r
 DEMO_PREGRASP_JOINT_POS = {
     # Scripted validator waypoint reached after reset. The start pose remains
     # MolmoAct2's rest keyframe; this pose is not used as an env reset seed.
+    # It is solved against the spawned Isaac articulation with table-clearance
+    # penalties so the wrist/finger chain approaches the cube sides without
+    # sweeping through the table.
     "left_joint1": -0.226764,
-    "left_joint2": 2.358510,
+    "left_joint2": 2.318510,
     "left_joint3": 1.271654,
-    "left_joint4": 0.185453,
+    "left_joint4": -0.094547,
     "left_joint5": 1.015119,
-    "left_joint6": 0.074223,
-    "right_joint1": 0.622119,
-    "right_joint2": 2.519072,
-    "right_joint3": 1.559053,
-    "right_joint4": -1.009149,
-    "right_joint5": 0.653773,
-    "right_joint6": -1.951857,
+    "left_joint6": 0.214223,
+    "right_joint1": 0.296477,
+    "right_joint2": 2.244961,
+    "right_joint3": 1.198900,
+    "right_joint4": 0.776837,
+    "right_joint5": -0.608850,
+    "right_joint6": 1.954400,
 }
 
 
@@ -123,12 +127,19 @@ def _run_registration_checks(task: str, checks: CheckRecorder) -> None:
 
 
 def _run_asset_checks(checks: CheckRecorder) -> None:
-    urdf_path = Path(YAM_URDF_PATH)
+    mjcf_path = Path(YAM_MJCF_PATH)
+    usd_path = Path(YAM_USD_PATH)
     checks.check(
-        "yam_urdf_asset_exists",
-        urdf_path.is_file() and urdf_path.stat().st_size > 0,
-        yam_urdf_path=str(urdf_path),
-        size_bytes=urdf_path.stat().st_size if urdf_path.exists() else 0,
+        "yam_mjcf_asset_exists",
+        mjcf_path.is_file() and mjcf_path.stat().st_size > 0,
+        yam_mjcf_path=str(mjcf_path),
+        size_bytes=mjcf_path.stat().st_size if mjcf_path.exists() else 0,
+    )
+    checks.check(
+        "yam_robot_usd_asset_exists",
+        usd_path.is_file() and usd_path.stat().st_size > 0,
+        yam_usd_path=str(usd_path),
+        size_bytes=usd_path.stat().st_size if usd_path.exists() else 0,
     )
 
 
@@ -323,6 +334,83 @@ def _run_reference_rest_reset_check(task_env, checks: CheckRecorder) -> None:
         min_finger_clearance >= 0.0,
         min_finger_table_clearance=min_finger_clearance,
         table_surface_z=float(task_env.cfg.table_surface_z),
+    )
+
+    body_names = (
+        "left_link_1",
+        "left_link_2",
+        "right_link_1",
+        "right_link_2",
+    )
+    body_ids = []
+    missing_bodies = []
+    for body_name in body_names:
+        ids, names = task_env._robot.find_bodies(body_name)
+        if len(ids) != 1:
+            missing_bodies.append({"body": body_name, "matches": list(names)})
+        else:
+            body_ids.append(int(ids[0]))
+    if missing_bodies:
+        checks.check("reset_rest_first_two_links_clear_table", False, missing_bodies=missing_bodies)
+    else:
+        env_origins = task_env.scene.env_origins
+        body_pos = task_env._robot.data.body_pos_w[:, body_ids] - env_origins[:, None, :]
+        min_link_z = float(body_pos[..., 2].min().detach().cpu())
+        checks.check(
+            "reset_rest_first_two_links_clear_table",
+            min_link_z >= float(task_env.cfg.table_surface_z) + 0.015,
+            min_body_origin_z=min_link_z,
+            table_surface_z=float(task_env.cfg.table_surface_z),
+            body_names=list(body_names),
+        )
+
+    continuity_pairs = (
+        ("left_arm", "left_link_1", 0.12),
+        ("left_link_1", "left_link_2", 0.14),
+        ("left_link_2", "left_link_3", 0.34),
+        ("left_link_3", "left_link_4", 0.34),
+        ("left_link_4", "left_link_5", 0.16),
+        ("left_link_5", "left_link_6", 0.14),
+        ("right_arm", "right_link_1", 0.12),
+        ("right_link_1", "right_link_2", 0.14),
+        ("right_link_2", "right_link_3", 0.34),
+        ("right_link_3", "right_link_4", 0.34),
+        ("right_link_4", "right_link_5", 0.16),
+        ("right_link_5", "right_link_6", 0.14),
+    )
+    pair_details = []
+    continuity_passed = True
+    for parent_name, child_name, max_distance in continuity_pairs:
+        parent_ids, _ = task_env._robot.find_bodies(parent_name)
+        child_ids, _ = task_env._robot.find_bodies(child_name)
+        if len(parent_ids) != 1 or len(child_ids) != 1:
+            continuity_passed = False
+            pair_details.append(
+                {
+                    "parent": parent_name,
+                    "child": child_name,
+                    "found_parent": len(parent_ids),
+                    "found_child": len(child_ids),
+                }
+            )
+            continue
+        parent_pos = task_env._robot.data.body_pos_w[:, int(parent_ids[0])]
+        child_pos = task_env._robot.data.body_pos_w[:, int(child_ids[0])]
+        distance = torch.norm(parent_pos - child_pos, dim=-1)
+        max_observed = float(distance.max().detach().cpu())
+        continuity_passed = continuity_passed and max_observed <= max_distance
+        pair_details.append(
+            {
+                "parent": parent_name,
+                "child": child_name,
+                "max_observed_distance": max_observed,
+                "allowed_distance": max_distance,
+            }
+        )
+    checks.check(
+        "reset_rest_adjacent_link_origins_are_connected",
+        continuity_passed,
+        pairs=pair_details,
     )
 
 
@@ -745,7 +833,8 @@ def main() -> None:
         "video_enabled": args_cli.video,
         "video_folder": str(video_folder) if args_cli.video else None,
         "video_file": str(video_file) if video_file is not None else None,
-        "yam_urdf_path": str(YAM_URDF_PATH),
+        "yam_mjcf_path": str(YAM_MJCF_PATH),
+        "yam_usd_path": str(YAM_USD_PATH),
         "env_closed": env_closed,
     }
     metrics_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")

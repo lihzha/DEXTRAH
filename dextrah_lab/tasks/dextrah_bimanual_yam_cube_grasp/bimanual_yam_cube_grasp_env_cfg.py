@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import isaaclab.sim as sim_utils
-from isaaclab.actuators import ImplicitActuatorCfg
 from isaaclab.assets import ArticulationCfg, RigidObjectCfg
 from isaaclab.envs import DirectRLEnvCfg
 from isaaclab.scene import InteractiveSceneCfg
@@ -13,108 +10,27 @@ from isaaclab.sim import PhysxCfg, SimulationCfg
 from isaaclab.sim.spawners.materials.physics_materials_cfg import RigidBodyMaterialCfg
 from isaaclab.utils import configclass
 
+from dextrah_lab.assets.yam.bimanual_yam import (
+    BIMANUAL_YAM_CFG,
+    BIMANUAL_YAM_MJCF_PATH,
+    BIMANUAL_YAM_USD_PATH,
+    MOLMOACT2_REST_JOINT_POS,
+)
 
-DEXTRAH_LAB_ROOT = Path(__file__).resolve().parents[2]
-YAM_URDF_PATH = DEXTRAH_LAB_ROOT / "assets" / "yam" / "yam_urdf" / "bimanual_yam.urdf"
-YAM_USD_DIR = DEXTRAH_LAB_ROOT / "assets" / "yam" / "yam_usd"
-
-MOLMOACT2_REST_JOINT_POS = {
-    # Matches MolmoAct2 BimanualYAM.keyframes["rest"].qpos by joint name.
-    "left_joint1": 0.0,
-    "left_joint2": 0.7853981633974483,
-    "left_joint3": 1.5707963267948966,
-    "left_joint4": 0.0,
-    "left_joint5": 0.0,
-    "left_joint6": 0.0,
-    "left_left_finger": -0.02,
-    "left_right_finger": -0.02,
-    "right_joint1": 0.0,
-    "right_joint2": 0.7853981633974483,
-    "right_joint3": 1.5707963267948966,
-    "right_joint4": 0.0,
-    "right_joint5": 0.0,
-    "right_joint6": 0.0,
-    "right_left_finger": -0.02,
-    "right_right_finger": -0.02,
-}
+YAM_MJCF_PATH = BIMANUAL_YAM_MJCF_PATH
+YAM_USD_PATH = BIMANUAL_YAM_USD_PATH
 
 
 def _bimanual_yam_robot_cfg(
     robot_base_pos: tuple[float, float, float],
-    gripper_open_joint_pos: float,
 ) -> ArticulationCfg:
-    return ArticulationCfg(
-        prim_path="/World/envs/env_.*/Robot",
-        spawn=sim_utils.UrdfFileCfg(
-            asset_path=str(YAM_URDF_PATH),
-            usd_dir=str(YAM_USD_DIR),
-            usd_file_name="bimanual_yam.usd",
-            fix_base=True,
-            root_link_name="bimanual_base",
-            merge_fixed_joints=False,
-            force_usd_conversion=False,
-            make_instanceable=False,
-            self_collision=False,
-            collision_from_visuals=False,
-            replace_cylinders_with_capsules=True,
-            joint_drive=None,
-            activate_contact_sensors=False,
-            rigid_props=sim_utils.RigidBodyPropertiesCfg(
-                disable_gravity=True,
-                max_depenetration_velocity=5.0,
-            ),
-            articulation_props=sim_utils.ArticulationRootPropertiesCfg(
-                enabled_self_collisions=False,
-                solver_position_iteration_count=12,
-                solver_velocity_iteration_count=4,
-                fix_root_link=True,
-            ),
-        ),
+    return BIMANUAL_YAM_CFG.copy().replace(prim_path="/World/envs/env_.*/Robot").replace(
         init_state=ArticulationCfg.InitialStateCfg(
             pos=robot_base_pos,
             rot=(1.0, 0.0, 0.0, 0.0),
             joint_pos=MOLMOACT2_REST_JOINT_POS,
             joint_vel={".*": 0.0},
         ),
-        actuators={
-            "left_shoulder": ImplicitActuatorCfg(
-                joint_names_expr=["left_joint[1-3]"],
-                effort_limit_sim=28.0,
-                stiffness=80.0,
-                damping=6.0,
-            ),
-            "left_wrist": ImplicitActuatorCfg(
-                joint_names_expr=["left_joint[4-6]"],
-                effort_limit_sim=12.0,
-                stiffness=35.0,
-                damping=3.0,
-            ),
-            "right_shoulder": ImplicitActuatorCfg(
-                joint_names_expr=["right_joint[1-3]"],
-                effort_limit_sim=28.0,
-                stiffness=80.0,
-                damping=6.0,
-            ),
-            "right_wrist": ImplicitActuatorCfg(
-                joint_names_expr=["right_joint[4-6]"],
-                effort_limit_sim=12.0,
-                stiffness=35.0,
-                damping=3.0,
-            ),
-            "left_gripper": ImplicitActuatorCfg(
-                joint_names_expr=["left_(left|right)_finger"],
-                effort_limit_sim=120.0,
-                stiffness=4000.0,
-                damping=80.0,
-            ),
-            "right_gripper": ImplicitActuatorCfg(
-                joint_names_expr=["right_(left|right)_finger"],
-                effort_limit_sim=120.0,
-                stiffness=4000.0,
-                damping=80.0,
-            ),
-        },
-        soft_joint_pos_limit_factor=1.0,
     )
 
 
@@ -199,7 +115,7 @@ class DextrahBimanualYAMCubeGraspEnvCfg(DirectRLEnvCfg):
     left_tcp_offset_pos = (0.0, 0.0, 0.0605)
     right_tcp_offset_pos = (0.0, 0.0, 0.0605)
 
-    robot: ArticulationCfg = _bimanual_yam_robot_cfg(robot_base_pos, gripper_open_joint_pos)
+    robot: ArticulationCfg = _bimanual_yam_robot_cfg(robot_base_pos)
 
     table: RigidObjectCfg = RigidObjectCfg(
         prim_path="/World/envs/env_.*/Table",

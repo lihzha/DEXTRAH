@@ -15,7 +15,7 @@ from isaaclab.controllers import DifferentialIKController, DifferentialIKControl
 from isaaclab.envs import DirectRLEnv
 from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane
 
-from .bimanual_yam_cube_grasp_env_cfg import DextrahBimanualYAMCubeGraspEnvCfg, YAM_URDF_PATH
+from .bimanual_yam_cube_grasp_env_cfg import DextrahBimanualYAMCubeGraspEnvCfg, YAM_USD_PATH
 from .bimanual_yam_cube_grasp_rewards import compute_bimanual_yam_cube_grasp_rewards
 
 
@@ -32,11 +32,11 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
     cfg: DextrahBimanualYAMCubeGraspEnvCfg
 
     def __init__(self, cfg: DextrahBimanualYAMCubeGraspEnvCfg, render_mode: str | None = None, **kwargs):
-        if not Path(YAM_URDF_PATH).is_file():
+        if not Path(YAM_USD_PATH).is_file():
             raise FileNotFoundError(
-                "Bimanual YAM URDF is missing. Prepare assets with "
+                "Bimanual YAM USD is missing. Prepare assets with "
                 "`/isaac-sim/python.sh dextrah_lab/assets/scripts/prepare_yam_assets.py --headless`. "
-                f"Expected: {YAM_URDF_PATH}"
+                f"Expected: {YAM_USD_PATH}"
             )
         super().__init__(cfg, render_mode, **kwargs)
 
