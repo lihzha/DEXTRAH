@@ -921,6 +921,13 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             fallback_ok = fallback_ok & topdown_ok & contact_height_ok
         if bool(getattr(self.cfg, "grasp_prior_reset_require_downward_tool_z", False)):
             fallback_ok = fallback_ok & tool_down_ok
+        down_table_ok = tool_down_ok & table_ok
+        down_table_width_ok = down_table_ok & width_ok
+        down_table_width_center_ok = down_table_width_ok & center_ok
+        down_table_width_center_contact_ok = down_table_width_center_ok & contact_height_ok
+        down_table_width_center_contact_farther_ok = (
+            down_table_width_center_contact_ok & candidate_pregrasp_farther
+        )
         fallback_score = torch.where(fallback_ok, score, score - 1.0e5)
         scored = torch.where(valid, score, score - 1.0e6)
         has_valid = valid.any(dim=1, keepdim=True)
@@ -1022,6 +1029,13 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             "candidate_center_count": center_ok.sum(dim=1),
             "candidate_width_count": width_ok.sum(dim=1),
             "candidate_table_count": table_ok.sum(dim=1),
+            "candidate_down_table_count": down_table_ok.sum(dim=1),
+            "candidate_down_table_width_count": down_table_width_ok.sum(dim=1),
+            "candidate_down_table_width_center_count": down_table_width_center_ok.sum(dim=1),
+            "candidate_down_table_width_center_contact_count": down_table_width_center_contact_ok.sum(dim=1),
+            "candidate_down_table_width_center_contact_farther_count": (
+                down_table_width_center_contact_farther_ok.sum(dim=1)
+            ),
             "candidate_valid_count": valid.sum(dim=1),
             "candidate_fallback_count": fallback_ok.sum(dim=1),
             "candidate_select_success": has_reset_candidate,

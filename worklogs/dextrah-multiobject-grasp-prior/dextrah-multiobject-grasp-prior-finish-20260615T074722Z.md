@@ -1651,3 +1651,104 @@ Result:
 
 Next:
 - Commit/push/deploy the sign fix, rerun the seed-44 256-candidate smoke, and require positive valid/fallback counts plus `reset_quality_success=1.0` before RL relaunch.
+
+## 2026-06-15T17:00:00Z - Launch pregrasp-direction 256-candidate smoke
+
+Goal:
+- Verify the sign fix restores nonzero valid/fallback candidates under the normal 256-candidate setting.
+
+Version Control:
+- agent_id: dextrah-multiobject-grasp-prior-finish-20260615T074722Z
+- local_head: `1c0aeb13504ce0a6c656e8cd5de0e9cc563b6d5d`
+- implementation_commit: `ba91db8a63a0837456ef722bf8c8c94bec5fce76`
+- remote_commit/status: l401 agent worktree `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-topdown-axis-20260615-753139c` detached at `1c0aeb13504ce0a6c656e8cd5de0e9cc563b6d5d`, clean.
+- deploy: Git bundle `/lustre/fsw/portfolios/nvr/users/lzha/cache/dextrah_1c0aeb1_pregrasp_dir.bundle`.
+
+Command / Job:
+- job_id: `1029908`
+- run_name: `franka_multi_eval_predir_ep40_cand256_seed44_1c0aeb1_20260615T1655Z`
+- candidate_count: `256`
+- num_steps: `5`
+- video: disabled
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_multi_eval_predir_ep40_cand256_seed44_1c0aeb1_20260615T1655Z`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_multi_object_1029908.out`
+
+Result:
+- status: running/queued
+
+Next:
+- Inspect reset metrics. Acceptance for the sign fix is nonzero valid/fallback counts, `reset_success=1.0`, `quality_success=1.0`, downward tool axis, and positive exact projected tip clearance.
+
+## 2026-06-15T17:10:00Z - Launch pregrasp-direction 4096-candidate smoke
+
+Goal:
+- Check whether the pregrasp direction fix plus larger candidate sampling produces table-safe topdown reset candidates.
+
+Command / Job:
+- job_id: `1029909`
+- run_name: `franka_multi_eval_predir_ep40_cand4096_seed44_1c0aeb1_20260615T1705Z`
+- candidate_count: `4096`
+- num_steps: `5`
+- video: disabled
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_multi_eval_predir_ep40_cand4096_seed44_1c0aeb1_20260615T1705Z`
+- logs: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_multi_object_1029909.out`
+
+Result:
+- status: running/queued
+
+Next:
+- Inspect candidate intersections and reset quality. If still zero, add targeted intersection diagnostics for `tool_down & table`, `tool_down & width`, and `tool_down & table & width & center` to identify the next gate mismatch.
+
+## 2026-06-15T17:20:00Z - Patched 4096-candidate smoke still has zero valid/fallback
+
+Goal:
+- Inspect whether the pregrasp direction fix plus larger sample count is sufficient.
+
+Result:
+- status: completed but failed acceptance
+- job_state: `COMPLETED`, exit `0:0`, elapsed `00:00:50`
+- local_artifacts: `cluster_results/l401/franka_multi_eval_predir_ep40_cand4096_seed44_1c0aeb1_20260615T1705Z/`
+
+Metrics / Evidence:
+- `candidate_topdown_count=769.5` and `candidate_tool_down_count=769.5`, so the sign fix made those gates align.
+- `candidate_table_count=1432.0`, but `candidate_valid_count=0.0` and `candidate_fallback_count=0.0`.
+- `reset_success=0.0`, `quality_success=0.0`; no prior reset is usable yet.
+
+Analysis:
+- The next failure is not random sample count or pregrasp direction. The missing information is the intersection between downward/topdown candidates and the exact table/width/center/contact/farther gates.
+
+Next:
+- Add targeted intersection counters and rerun the short 4096-candidate smoke before relaxing any gate.
+
+## 2026-06-15T17:25:00Z - Add targeted candidate-intersection diagnostics
+
+Goal:
+- Identify the exact gate combination that eliminates all top-side table-safe candidates.
+
+Change:
+- Added reset buffers and eval metrics for:
+  - `candidate_down_table_count`
+  - `candidate_down_table_width_count`
+  - `candidate_down_table_width_center_count`
+  - `candidate_down_table_width_center_contact_count`
+  - `candidate_down_table_width_center_contact_farther_count`
+- Multi-object candidate selection now fills those counts from the same boolean masks used for selection.
+
+Version Control:
+- agent_id: dextrah-multiobject-grasp-prior-finish-20260615T074722Z
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-finish-20260615T074722Z`
+- branch: `codex/dextrah-multiobject-grasp-prior-finish-20260615T074722Z`
+- base_commit: `1c0aeb13504ce0a6c656e8cd5de0e9cc563b6d5d`
+- implementation_commit: pending
+- changed_files: `dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py`, `dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py`, `dextrah_lab/rl_games/eval_rollout.py`, this worklog.
+
+Command / Job:
+- local checks:
+  - `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_cube_grasp/franka_cube_grasp_env.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py dextrah_lab/rl_games/eval_rollout.py`
+  - `git diff --check`
+
+Result:
+- status: local checks passed
+
+Next:
+- Commit/push/deploy the diagnostic counters and rerun a short 4096-candidate smoke.
