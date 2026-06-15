@@ -1339,3 +1339,47 @@ Validation:
 
 Next:
 - Commit/push/redeploy and rerun stable validator with `LIFT_HEIGHT=0.06`.
+
+## 2026-06-16 03:54Z - planned grip-tuned stable validator
+
+Goal:
+- Test whether higher friction and lower mass recover stable lift without reintroducing shake.
+
+Version state:
+- local_commit: `2ed452c7ec06e08821a0d20e39a806d5b41b7d18`
+- remote_commit: `2ed452c7ec06e08821a0d20e39a806d5b41b7d18`
+
+Planned command/job:
+- Submit `cluster/sbatch_validate_bimanual_yam_cube_grasp_env_1gpu.sh`.
+- Expected run: `yam_cube_strict_stable_validator_grip_2ed452c_20260616T0354Z`
+- Key settings: strict stable validator, `LIFT_HEIGHT=0.06`, no grasp assist.
+
+Success criteria:
+- Stable no-assist success or a clear speed/slip diagnostic.
+
+Result/evidence:
+- Job `29123654` completed and failed stable validation.
+- Metrics: `max_lift=0.020177721977233887`, `max_success_rate=0.0`, `max_cube_linear_speed=4.583145618438721`, `max_cube_angular_speed=44.35249328613281`.
+- Higher friction reintroduced high-speed contact: sampled step 240 had `lift=0.019`, `lin_speed=3.050`, `ang_speed=11.547`.
+
+Analysis:
+- High friction is not sufficient and reintroduces launch-like dynamics.
+- Next attempt should reduce forced geometry/interpenetration: use a smaller cube that better fits the closed YAM finger geometry, and revert to lower friction with the improved solver/damping settings.
+
+## 2026-06-16 04:00Z - smaller cube geometry tuning
+
+Goal:
+- Reduce over-constrained finger/cube contact while keeping the cube large enough for side contact.
+
+Change:
+- Cube size: `0.16 -> 0.14`.
+- Cube friction reverted to the lower stable-tuning values: static/dynamic `2.4/1.8 -> 1.6/1.1`.
+- Cube density restored to `80.0`.
+- Kept contact offset `0.002`, solver `32/8`, damping `0.20/1.00`, and max depenetration velocity `1.0`.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_env_cfg.py`
+- Result: passed.
+
+Next:
+- Commit/push/redeploy and rerun stable validator with `LIFT_HEIGHT=0.06`.

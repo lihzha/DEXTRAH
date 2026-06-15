@@ -90,9 +90,9 @@ class DextrahBimanualYAMCubeGraspEnvCfg(DirectRLEnvCfg):
 
     # The YAM linear fingers bottom out at roughly 10.8 cm separation in Isaac,
     # and their reachable pinch band sits around 13-14 cm above the table.
-    # A 16 cm cube is wide enough to pinch and tall enough for that reachable
-    # band to contact the side face instead of lifting above the object.
-    cube_size = 0.16
+    # A 14 cm cube fits the closed YAM finger geometry with less forced
+    # interpenetration while keeping the reachable band on the side face.
+    cube_size = 0.14
     cube_spawn_z = table_surface_z + cube_size / 2.0 + 0.005
     cube_lift_height = 0.08
     cube_success_lift_height = 0.04
@@ -148,10 +148,10 @@ class DextrahBimanualYAMCubeGraspEnvCfg(DirectRLEnvCfg):
         ),
     )
 
-    cube_static_friction = 2.4
-    cube_dynamic_friction = 1.8
+    cube_static_friction = 1.6
+    cube_dynamic_friction = 1.1
     cube_restitution = 0.0
-    cube_density = 50.0
+    cube_density = 80.0
     cube_contact_offset = 0.002
     cube_rest_offset = 0.0
     cube_solver_position_iterations = 32
