@@ -697,3 +697,58 @@ Validation:
 
 Next:
 - Commit/push/redeploy, then continue from the closed-grasp checkpoint with stronger lift-action and lift rewards.
+
+## 2026-06-16 00:20Z - lift-focused PPO continuation
+
+Goal:
+- Continue from the closed-grasp checkpoint with the YAM closed-gripper gate fix, stronger lift/height rewards, lower close reward, no XY stability reward, and the bimanual action-prior reward enabled.
+
+Version state:
+- local_commit: `922a1a238e1f768301f190ceefb8c975e258412d`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/bimanual-yam-cube-rl-20260615T203824Z`
+- remote_commit: `922a1a238e1f768301f190ceefb8c975e258412d`
+
+Command/job:
+- A100 job: `29117710`
+- run_name: `yam_cube_rl_liftfocus_922a1a2_20260616T0020Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/bimanual_yam_cube_rl_29117710.out`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_bimanual_yam_cube_grasp/yam_cube_rl_liftfocus_922a1a2_20260616T0020Z`
+- metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_bimanual_yam_cube_grasp/yam_cube_rl_liftfocus_922a1a2_20260616T0020Z/metrics/direct_info_rank_0.jsonl`
+- checkpoint seed: `/results/logs/rl_games/dextrah_bimanual_yam_cube_grasp/yam_cube_rl_closefix_a50a480_20260616T0002Z/nn/last_dextrah_bimanual_yam_cube_grasp_ep_220_rew_8256.423.pth`
+- key overrides: `NUM_ENVS=512`, `MAX_ITERATIONS=320`, `CUBE_APPROACH_WEIGHT=8.0`, `CUBE_ENCLOSURE_WEIGHT=4.0`, `CUBE_SIDE_ALIGNMENT_WEIGHT=2.0`, `CUBE_LIFT_WEIGHT=60.0`, `CUBE_HEIGHT_TRACKING_WEIGHT=20.0`, `CUBE_XY_STABILITY_WEIGHT=0.0`, `CUBE_SUCCESS_BONUS_WEIGHT=80.0`, `CUBE_CLOSE_ACTION_WEIGHT=0.5`, `CUBE_LIFT_ACTION_WEIGHT=40.0`, `CUBE_DESCEND_ACTION_PENALTY_WEIGHT=-5.0`, `BIMANUAL_ACTION_PRIOR_REWARD_ENABLED=True`, `BIMANUAL_ACTION_PRIOR_REWARD_WEIGHT=2.0`.
+
+Success criteria:
+- Job exits zero with finite metrics/checkpoints.
+- The learned closed side grasp persists, z actions become positive after contact, lift/height rewards increase, and `yam_cube_success_rate` becomes sustained above zero.
+- If success is sustained, evaluate the best/latest checkpoint with rollout artifacts.
+
+Status:
+- Complete; training remained mechanically stable but did not learn lift.
+
+Result/evidence:
+- Job exited zero and wrote 100 JSONL records for resumed epochs 221-320 plus checkpoints through epoch 320.
+- Metrics were finite (`nonfinite_count=0`).
+- Final sparse success remained `0.0`; best `yam_cube_has_lifted_rate=0.00390625` at epoch 234; best mean `yam_cube_lift_height=0.00017934516654349864` at epoch 263.
+- The closed side grasp stayed solved: late `yam_cube_bimanual_side_success_rate` was typically `0.994-1.0` and late `yam_cube_max_hold_to_cube_dist` was around `0.141-0.143`.
+- The action prior never entered lift (`yam_cube_action_prior_lift_rate=0.0` throughout). It stayed in approach for most solved-grasp states and asked one arm to descend while the other lifted, e.g. late `yam_cube_action_prior_teacher_left_z ~= -0.96` and `yam_cube_action_prior_teacher_right_z ~= 0.85`.
+- The mean lift-action reward was high but did not require both arms to command upward motion, so the policy could receive lift-action reward without physically lifting the cube.
+
+Analysis:
+- The post-closure bottleneck is now specific to the transition from side contact to coordinated lift.
+- The prior's stricter contact-target gate is misaligned with the environment's side-contact success predicate. The reward also overcredits one-arm upward commands for a bimanual lift.
+
+## 2026-06-16 00:34Z - align lift prior and paired lift reward
+
+Goal:
+- Make the post-grasp reward/prior match the bimanual task mechanics: once both grippers are closed and the side-contact predicate is true, the prior should switch to lift, and lift-action reward should favor both arms moving up together.
+
+Change:
+- Changed the bimanual action-prior lift readiness from an exact contact-target error gate to `closed & bimanual_side_success`.
+- Changed lift-action reward from the mean of left/right upward actions to a blend of mean upward action and paired upward action (`min(left_z, right_z)`), reducing reward for one-arm lift commands.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_env.py dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_rewards.py`
+- Result: passed.
+
+Next:
+- Commit/push/redeploy, then continue from the epoch-320 checkpoint with the aligned lift prior and paired lift reward.

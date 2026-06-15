@@ -81,7 +81,11 @@ def compute_bimanual_yam_cube_grasp_rewards(
     left_close_action = torch.clamp(-actions[:, 6], 0.0, 1.0)
     right_close_action = torch.clamp(-actions[:, 13], 0.0, 1.0)
     close_action = 0.5 * (left_close_action + right_close_action)
-    lift_action = 0.5 * (torch.clamp(actions[:, 2], 0.0, 1.0) + torch.clamp(actions[:, 9], 0.0, 1.0))
+    left_lift_action = torch.clamp(actions[:, 2], 0.0, 1.0)
+    right_lift_action = torch.clamp(actions[:, 9], 0.0, 1.0)
+    mean_lift_action = 0.5 * (left_lift_action + right_lift_action)
+    paired_lift_action = torch.minimum(left_lift_action, right_lift_action)
+    lift_action = 0.5 * (mean_lift_action + paired_lift_action)
     descend_action = 0.5 * (torch.clamp(-actions[:, 2], 0.0, 1.0) + torch.clamp(-actions[:, 9], 0.0, 1.0))
     bimanual_close_gate = (
         torch.clamp((0.260 - max_hold_to_cube_dist) / 0.160, 0.0, 1.0)

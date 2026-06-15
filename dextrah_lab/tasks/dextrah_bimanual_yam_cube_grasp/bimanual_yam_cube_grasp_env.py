@@ -448,22 +448,7 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
         contact_right_hold[:, 1] = reference_cube_pos[:, 1] - side_offset
         contact_left_hold[:, 2] = hold_z
         contact_right_hold[:, 2] = hold_z
-        contact_target_error = torch.maximum(
-            torch.norm(contact_left_hold - self.left_hold_pos, dim=-1),
-            torch.norm(contact_right_hold - self.right_hold_pos, dim=-1),
-        )
-
-        contact_dist = min(float(self.cfg.cube_success_hand_dist), float(self.cfg.bimanual_reference_contact_dist))
-        contact_target_dist = max(float(self.cfg.bimanual_reference_contact_target_dist), 1.0e-6)
-        left_side_distance = self.left_hold_pos[:, 1] - self.cube_pos[:, 1]
-        right_side_distance = self.cube_pos[:, 1] - self.right_hold_pos[:, 1]
-        contact_ready = (
-            closed
-            & (self.max_hold_to_cube_dist <= contact_dist)
-            & (contact_target_error <= contact_target_dist)
-            & (left_side_distance >= -float(self.cfg.side_success_y_margin))
-            & (right_side_distance >= -float(self.cfg.side_success_y_margin))
-        )
+        contact_ready = closed & self.bimanual_side_success
 
         lift_left_hold = contact_left_hold.clone()
         lift_right_hold = contact_right_hold.clone()
