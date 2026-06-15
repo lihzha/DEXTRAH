@@ -950,7 +950,11 @@ def main() -> None:
                     pose_action_filter=str(args_cli.pose_action_filter),
                     pose_action_limit=float(args_cli.pose_action_limit),
                 )
-                clip_hits = np.abs(action[:6]) >= (float(args_cli.clip_actions) - 1.0e-6)
+                clip_value = float(args_cli.clip_actions)
+                if math.isfinite(clip_value) and clip_value > 0.0:
+                    clip_hits = np.abs(action[:6]) >= (clip_value - 1.0e-6)
+                else:
+                    clip_hits = np.zeros_like(action[:6], dtype=bool)
                 policy_obs, rewards, terminated, truncated = _policy_obs_from_step(
                     gym_env.step(torch.as_tensor(action[None], dtype=torch.float32, device=task_env.device))
                 )
