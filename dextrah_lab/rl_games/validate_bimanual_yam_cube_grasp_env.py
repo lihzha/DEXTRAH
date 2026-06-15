@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime
 import json
+import math
 from pathlib import Path
 import sys
 
@@ -61,18 +62,18 @@ DEMO_PREGRASP_JOINT_POS = {
     # It is solved against the spawned Isaac articulation with table-clearance
     # penalties so the wrist/finger chain approaches the cube sides without
     # sweeping through the table.
-    "left_joint1": -0.226764,
-    "left_joint2": 2.318510,
-    "left_joint3": 1.271654,
-    "left_joint4": -0.094547,
-    "left_joint5": 1.015119,
-    "left_joint6": 0.214223,
-    "right_joint1": 0.296477,
-    "right_joint2": 2.244961,
-    "right_joint3": 1.198900,
-    "right_joint4": 0.776837,
-    "right_joint5": -0.608850,
-    "right_joint6": 1.954400,
+    "left_joint1": -0.187994,
+    "left_joint2": 2.189542,
+    "left_joint3": 1.239098,
+    "left_joint4": -0.406251,
+    "left_joint5": 1.570800,
+    "left_joint6": 0.745140,
+    "right_joint1": 0.262975,
+    "right_joint2": 1.918793,
+    "right_joint3": 1.051843,
+    "right_joint4": -0.183927,
+    "right_joint5": -0.874573,
+    "right_joint6": 0.968451,
 }
 
 
@@ -137,10 +138,111 @@ def _run_asset_checks(checks: CheckRecorder) -> None:
     )
     checks.check(
         "yam_robot_usd_asset_exists",
-        usd_path.is_file() and usd_path.stat().st_size > 0,
+        usd_path.is_file() and usd_path.stat().st_size > 1024,
         yam_usd_path=str(usd_path),
         size_bytes=usd_path.stat().st_size if usd_path.exists() else 0,
     )
+    checks.check(
+        "yam_robot_uses_direct_mjcf_usd_cache",
+        "yam_mjcf_usd" in usd_path.parts,
+        yam_usd_path=str(usd_path),
+    )
+    if usd_path.is_file():
+        try:
+            from pxr import Usd, UsdGeom, UsdPhysics
+
+            stage = Usd.Stage.Open(str(usd_path), Usd.Stage.LoadAll)
+            if stage is None:
+                checks.check("yam_robot_usd_opens", False, yam_usd_path=str(usd_path))
+                return
+            stage.Load()
+            default_prim = stage.GetDefaultPrim()
+
+            rigid_body_paths = []
+            invalid_mass_bodies = []
+            joint_paths = []
+            revolute_joint_paths = []
+            prismatic_joint_paths = []
+            for prim in stage.TraverseAll():
+                if prim.HasAPI(UsdPhysics.RigidBodyAPI):
+                    rigid_body_paths.append(str(prim.GetPath()))
+                    mass_api = UsdPhysics.MassAPI(prim)
+                    mass = mass_api.GetMassAttr().Get()
+                    diag = mass_api.GetDiagonalInertiaAttr().Get()
+                    center = mass_api.GetCenterOfMassAttr().Get()
+                    mass_valid = mass is not None and math.isfinite(float(mass)) and float(mass) > 0.0
+                    diag_valid = diag is not None and all(
+                        math.isfinite(float(value)) and float(value) > 0.0 for value in diag
+                    )
+                    center_valid = center is not None and all(math.isfinite(float(value)) for value in center)
+                    if not (mass_valid and diag_valid and center_valid):
+                        invalid_mass_bodies.append(
+                            {
+                                "path": str(prim.GetPath()),
+                                "mass": float(mass) if mass is not None and math.isfinite(float(mass)) else str(mass),
+                                "diagonal_inertia": [float(value) for value in diag] if diag is not None else None,
+                                "center_of_mass": [float(value) for value in center] if center is not None else None,
+                            }
+                        )
+                if prim.IsA(UsdPhysics.Joint):
+                    joint_paths.append(str(prim.GetPath()))
+                if prim.IsA(UsdPhysics.RevoluteJoint):
+                    revolute_joint_paths.append(str(prim.GetPath()))
+                if prim.IsA(UsdPhysics.PrismaticJoint):
+                    prismatic_joint_paths.append(str(prim.GetPath()))
+
+            visual_mesh_paths = []
+            collision_paths = []
+            for prim in Usd.PrimRange.Stage(stage, Usd.TraverseInstanceProxies()):
+                prim_path = str(prim.GetPath())
+                if prim.IsA(UsdGeom.Mesh) and "/visuals/" in prim_path:
+                    visual_mesh_paths.append(prim_path)
+                if prim.HasAPI(UsdPhysics.CollisionAPI):
+                    collision_paths.append(prim_path)
+
+            expected_joint_names = set(MOLMOACT2_REST_JOINT_POS)
+            observed_joint_names = {Path(path).name for path in joint_paths}
+            missing_joint_names = sorted(expected_joint_names - observed_joint_names)
+            checks.check(
+                "yam_robot_usd_opens",
+                default_prim.IsValid() if default_prim else False,
+                default_prim=str(default_prim.GetPath()) if default_prim else None,
+                yam_usd_path=str(usd_path),
+            )
+            checks.check(
+                "yam_robot_usd_contains_official_mjcf_articulation",
+                len(rigid_body_paths) >= 18
+                and len(revolute_joint_paths) == 12
+                and len(prismatic_joint_paths) == 4
+                and not missing_joint_names,
+                rigid_body_count=len(rigid_body_paths),
+                joint_count=len(joint_paths),
+                revolute_joint_count=len(revolute_joint_paths),
+                prismatic_joint_count=len(prismatic_joint_paths),
+                missing_joint_names=missing_joint_names,
+                rigid_body_paths=rigid_body_paths,
+            )
+            checks.check(
+                "yam_robot_usd_mass_properties_are_valid",
+                not invalid_mass_bodies,
+                invalid_mass_bodies=invalid_mass_bodies,
+            )
+            checks.check(
+                "yam_robot_usd_contains_visuals_and_colliders",
+                len(visual_mesh_paths) >= 28 and len(collision_paths) >= 30,
+                visual_mesh_count=len(visual_mesh_paths),
+                collision_prim_count=len(collision_paths),
+                first_visual_mesh_paths=visual_mesh_paths[:8],
+                first_collision_paths=collision_paths[:8],
+                traversal="Usd.TraverseInstanceProxies",
+            )
+        except Exception as exc:
+            checks.check(
+                "yam_robot_usd_introspection",
+                False,
+                yam_usd_path=str(usd_path),
+                error=repr(exc),
+            )
 
 
 def _reward_total(**kwargs) -> torch.Tensor:

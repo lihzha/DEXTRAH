@@ -448,3 +448,61 @@ Analysis:
 
 Next:
 - Stop. Active jobs: none. Generated `__pycache__` directories removed; root-owned result directories chowned back to the user.
+
+## 2026-06-15 16:06Z - direct official MJCF USD import and validated bimanual demo
+
+Goal:
+- Replace the lossy hand-written MJCF-to-URDF bridge with an Isaac MJCF-to-USD conversion path, then validate that the YAM asset is articulated, visually complete, collidable, and usable in the cube pickup demo.
+
+Hypothesis:
+- YAM is fundamentally different from the Franka asset in this repo because the upstream reference is MJCF/SAPIEN-style rather than URDF/USD. The correct DEXTRAH integration should still spawn a prepared USD through `ArticulationCfg`/`UsdFileCfg`, but the USD should come from Isaac's official MJCF importer, not from a partial local URDF recreation of MuJoCo semantics.
+
+Change:
+- `dextrah_lab/assets/scripts/prepare_yam_assets.py` now defaults to the MJCF converter and enables the Isaac MJCF importer extension before conversion.
+- Rewrote the MJCF mesh references into unique `assets/isaac_meshes/{mesh_name}.obj` paths before import so Isaac's mesh conversion does not collide on duplicated left/right OBJ basenames.
+- Added a generated-USD post-process that removes the importer-created dummy `worldBody` articulation API and repairs only the zero/invalid `MassAPI` entries for MJCF bodies whose inertials are omitted in the source XML.
+- `dextrah_lab/assets/yam/bimanual_yam.py` now points runtime spawning at `yam_mjcf_usd/bimanual_yam_linear_flattened.usd`.
+- Strengthened `dextrah_lab/rl_games/validate_bimanual_yam_cube_grasp_env.py` to inspect the USD with `Usd.TraverseInstanceProxies`, checking 19 rigid bodies, 12 revolute joints, 4 prismatic joints, valid mass properties, 28 visual meshes, and 34 collision prims.
+- Retuned the validator demo pregrasp waypoint against the direct MJCF USD so both grippers approach the cube sides above the table.
+
+Version Control:
+- agent_id: bimanual-yam-cube-20260615T032200Z
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/bimanual-yam-cube-20260615T032200Z`
+- worklog: `worklogs/bimanual_yam_cube/bimanual-yam-cube-20260615T032200Z.md`
+- branch: `codex/bimanual-yam-cube-20260615T032200Z`
+- base_commit: `6a0791d79f22300e35cfa38b79bb03ecd7c9811a`
+- implementation_commit: pending
+- push/pull: n/a local validation
+- changed_files: `dextrah_lab/assets/scripts/prepare_yam_assets.py`, `dextrah_lab/assets/yam/README.md`, `dextrah_lab/assets/yam/bimanual_yam.py`, `dextrah_lab/rl_games/validate_bimanual_yam_cube_grasp_env.py`, worklog
+- remote_commit/status: n/a local
+
+Command / Job:
+- command: `/isaac-sim/python.sh dextrah_lab/assets/scripts/prepare_yam_assets.py --headless --converter mjcf --force-conversion`
+- command: local Docker Isaac Lab smoke, one env, 480 steps, `--disable_fabric`
+- command: local Docker Isaac Lab render, one env, 480 max steps, `--video --video_length 420`, `--disable_fabric`
+- job_id: n/a
+- run_dir:
+  - `local_results/bimanual_yam_cube_grasp/smoke_mjcf_usd_waypoint_20260615_160402`
+  - `local_results/bimanual_yam_cube_grasp/demo_mjcf_usd_waypoint_20260615_160438`
+- logs:
+  - `local_results/bimanual_yam_cube_grasp/smoke_mjcf_usd_waypoint_20260615_160402/run.log`
+  - `local_results/bimanual_yam_cube_grasp/demo_mjcf_usd_waypoint_20260615_160438/run.log`
+- artifacts:
+  - metrics: `local_results/bimanual_yam_cube_grasp/smoke_mjcf_usd_waypoint_20260615_160402/metrics.json`
+  - metrics: `local_results/bimanual_yam_cube_grasp/demo_mjcf_usd_waypoint_20260615_160438/metrics.json`
+  - video: `local_results/bimanual_yam_cube_grasp/demo_mjcf_usd_waypoint_20260615_160438/videos/bimanual-yam-cube-demo-manual.mp4`
+  - inspected frames: `local_results/bimanual_yam_cube_grasp/demo_mjcf_usd_waypoint_20260615_160438/frames/`
+  - viewer: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/bimanual-yam-cube-20260615T032200Z/local_results/bimanual_yam_cube_grasp/demo_mjcf_usd_waypoint_20260615_160438/videos/bimanual-yam-cube-demo-manual.mp4`
+
+Result:
+- status: passed
+- metrics/artifacts: MP4 is `1280x720`, `174` frames, `2.90s`.
+- key evidence: reset rest qpos max error `0.0`; first two link origins clear the table with min body-origin z `0.0731`; adjacent link continuity passed; USD asset checks passed with 19 rigid bodies, 16 actuated joints, 28 visual mesh proxies, 34 collision prims, and no invalid mass bodies; demo reached both cube sides (`min_left=0.0794`, `min_right=0.0773`), lifted to `0.1232`, reached success `1.0`, and had minimum finger/table clearance `0.0324`.
+- video evidence: inspected start and grasp/lift frames; visible YAM base/shoulder/wrist/finger links are present, both arms approach from opposite cube sides, and the cube is lifted above the tabletop.
+
+Analysis:
+- The old bridge was the source of the obvious missing-link/bad-physics symptoms because it dropped MuJoCo defaults/compiled inertials/instanceable mesh composition and replaced absent inertials with arbitrary dummy values.
+- The official MJCF importer still needed DEXTRAH-specific preparation: unique mesh filenames avoided importer temp-file collisions; removing the dummy non-rigid `worldBody` articulation root made Isaac Lab fixed-base spawning target the real `bimanual_base` rigid root; fallback mass properties repaired MJCF bodies whose inertials are omitted upstream.
+
+Next:
+- Stop. Active jobs: none. Generated asset/result directories were chowned back to the user.

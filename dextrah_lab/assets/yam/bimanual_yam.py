@@ -12,7 +12,7 @@ from isaaclab.assets import ArticulationCfg
 YAM_ASSET_DIR = Path(__file__).resolve().parent
 BIMANUAL_YAM_MJCF_PATH = YAM_ASSET_DIR / "yam_mujoco" / "bimanual_yam_linear_flattened.xml"
 BIMANUAL_YAM_URDF_PATH = YAM_ASSET_DIR / "yam_urdf" / "bimanual_yam.urdf"
-BIMANUAL_YAM_USD_PATH = YAM_ASSET_DIR / "yam_usd" / "bimanual_yam.usd"
+BIMANUAL_YAM_USD_PATH = YAM_ASSET_DIR / "yam_mjcf_usd" / "bimanual_yam_linear_flattened.usd"
 
 MOLMOACT2_REST_JOINT_POS = {
     # Matches MolmoAct2 BimanualYAM.keyframes["rest"].qpos by joint name.

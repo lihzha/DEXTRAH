@@ -17,6 +17,18 @@ HF_REPO_ID = "TreeePlanter/molmoact2-sim-eval-assets"
 YAM_MJCF_NAME = "bimanual_yam_linear_flattened.xml"
 YAM_ISAAC_MJCF_NAME = "bimanual_yam_linear_flattened_isaac.xml"
 YAM_USD_NAME = "bimanual_yam_linear_flattened.usd"
+YAM_ISAAC_MESH_DIR_NAME = "isaac_meshes"
+YAM_FALLBACK_MASS_PROPS = {
+    "bimanual_base": (1.0, (1.0e-2, 1.0e-2, 1.0e-2)),
+    "left_arm": (0.2, (2.0e-4, 2.0e-4, 2.0e-4)),
+    "right_arm": (0.2, (2.0e-4, 2.0e-4, 2.0e-4)),
+    "left_link_6": (0.12, (1.0e-4, 1.0e-4, 1.0e-4)),
+    "right_link_6": (0.12, (1.0e-4, 1.0e-4, 1.0e-4)),
+    "left_link_left_finger": (0.03, (2.0e-5, 2.0e-5, 2.0e-5)),
+    "left_link_right_finger": (0.03, (2.0e-5, 2.0e-5, 2.0e-5)),
+    "right_link_left_finger": (0.03, (2.0e-5, 2.0e-5, 2.0e-5)),
+    "right_link_right_finger": (0.03, (2.0e-5, 2.0e-5, 2.0e-5)),
+}
 
 
 def _repo_root() -> Path:
@@ -66,8 +78,27 @@ def _download_assets(repo_id: str, force: bool) -> Path:
 
 def _write_isaac_compatible_mjcf(source_xml: Path) -> Path:
     output_xml = source_xml.with_name(YAM_ISAAC_MJCF_NAME)
+    source_mesh_dir = source_xml.parent / "assets"
+    isaac_mesh_dir = source_mesh_dir / YAM_ISAAC_MESH_DIR_NAME
+    isaac_mesh_dir.mkdir(parents=True, exist_ok=True)
+
     tree = ET.parse(source_xml)
     root = tree.getroot()
+    compiler = root.find("compiler")
+    if compiler is not None:
+        compiler.attrib["meshdir"] = "assets/"
+
+    for mesh in root.findall("./asset/mesh"):
+        mesh_name = mesh.attrib["name"]
+        source_file = mesh.attrib["file"]
+        source_path = source_mesh_dir / source_file
+        if not source_path.is_file():
+            raise FileNotFoundError(f"Missing MJCF mesh source for {mesh_name}: {source_path}")
+        unique_file = f"{YAM_ISAAC_MESH_DIR_NAME}/{mesh_name}{source_path.suffix}"
+        unique_path = source_mesh_dir / unique_file
+        shutil.copy2(source_path, unique_path)
+        mesh.attrib["file"] = unique_file
+
     for index, geom in enumerate(root.findall(".//geom")):
         geom_class = geom.attrib.get("class", "")
         if "name" not in geom.attrib:
@@ -295,16 +326,16 @@ def _convert_urdf(urdf_path: Path, force: bool) -> Path:
 
 
 def _convert_mjcf(source_xml: Path, force: bool) -> Path:
-    from isaacsim.core.api.simulation_context import SimulationContext
     from isaacsim.core.utils.extensions import enable_extension
-    import isaacsim.core.utils.stage as stage_utils
+    import omni.kit.app
 
     from isaaclab.sim.converters import MjcfConverter, MjcfConverterCfg
     from isaaclab.utils.dict import print_dict
 
-    stage_utils.create_new_stage()
-    sim = SimulationContext(physics_dt=0.01, rendering_dt=0.01, backend="numpy")
     enable_extension("isaacsim.asset.importer.mjcf")
+    app = omni.kit.app.get_app()
+    for _ in range(10):
+        app.update()
 
     converter_xml = _write_isaac_compatible_mjcf(source_xml)
     output_dir = _assets_root() / "yam_mjcf_usd"
@@ -323,18 +354,89 @@ def _convert_mjcf(source_xml: Path, force: bool) -> Path:
     )
     print("MJCF converter config:")
     print_dict(cfg.to_dict(), nesting=0)
+    converter = MjcfConverter(cfg)
+    usd_path = Path(converter.usd_path)
+    if not usd_path.is_file():
+        raise FileNotFoundError(f"MJCF converter did not create expected USD: {usd_path}")
+    if usd_path.stat().st_size <= 1024:
+        raise RuntimeError(f"MJCF converter produced an invalid stub USD: {usd_path} ({usd_path.stat().st_size} bytes)")
+    _postprocess_mjcf_usd(usd_path)
+    print(f"Generated YAM USD at {usd_path}")
+    return usd_path
+
+
+def _valid_positive_tuple(values: object) -> bool:
+    if values is None:
+        return False
     try:
-        converter = MjcfConverter(cfg)
-        usd_path = Path(converter.usd_path)
-        if not usd_path.is_file():
-            raise FileNotFoundError(f"MJCF converter did not create expected USD: {usd_path}")
-        print(f"Generated YAM USD at {usd_path}")
-        return usd_path
-    finally:
-        sim.stop()
-        sim.clear()
-        sim.clear_all_callbacks()
-        sim.clear_instance()
+        return all(math.isfinite(float(value)) and float(value) > 0.0 for value in values)
+    except TypeError:
+        return False
+
+
+def _valid_finite_tuple(values: object) -> bool:
+    if values is None:
+        return False
+    try:
+        return all(math.isfinite(float(value)) for value in values)
+    except TypeError:
+        return False
+
+
+def _postprocess_mjcf_usd(usd_path: Path) -> None:
+    from pxr import Gf, PhysxSchema, Usd, UsdPhysics
+
+    physics_path = usd_path.parent / "configuration" / f"{usd_path.stem}_physics.usd"
+    if not physics_path.is_file():
+        raise FileNotFoundError(f"MJCF converter did not create expected physics layer: {physics_path}")
+
+    stage = Usd.Stage.Open(str(physics_path), Usd.Stage.LoadAll)
+    if stage is None:
+        raise RuntimeError(f"Could not open generated YAM physics layer: {physics_path}")
+    default_prim = stage.GetDefaultPrim()
+    if not default_prim:
+        raise RuntimeError(f"Generated YAM physics layer has no default prim: {physics_path}")
+
+    world_body = stage.GetPrimAtPath(f"{default_prim.GetPath()}/worldBody")
+    if world_body.IsValid():
+        # Isaac's MJCF importer adds a dummy worldBody articulation root. Isaac
+        # Lab's fixed-base spawning expects the root API on a rigid body, so
+        # keep the real bimanual_base body as the single articulation root.
+        world_body.RemoveAPI(UsdPhysics.ArticulationRootAPI)
+        world_body.RemoveAPI(PhysxSchema.PhysxArticulationAPI)
+
+    repaired_mass_bodies: list[str] = []
+    for prim in stage.TraverseAll():
+        if not prim.HasAPI(UsdPhysics.RigidBodyAPI):
+            continue
+        body_name = prim.GetName()
+        fallback = YAM_FALLBACK_MASS_PROPS.get(body_name)
+        if fallback is None:
+            continue
+        mass_api = UsdPhysics.MassAPI.Apply(prim)
+        mass = mass_api.GetMassAttr().Get()
+        diag = mass_api.GetDiagonalInertiaAttr().Get()
+        center = mass_api.GetCenterOfMassAttr().Get()
+        if (
+            mass is not None
+            and math.isfinite(float(mass))
+            and float(mass) > 0.0
+            and _valid_positive_tuple(diag)
+            and _valid_finite_tuple(center)
+        ):
+            continue
+        fallback_mass, fallback_diag = fallback
+        mass_api.GetMassAttr().Set(float(fallback_mass))
+        mass_api.GetDiagonalInertiaAttr().Set(Gf.Vec3f(*fallback_diag))
+        mass_api.GetCenterOfMassAttr().Set(Gf.Vec3f(0.0, 0.0, 0.0))
+        mass_api.GetPrincipalAxesAttr().Set(Gf.Quatf(1.0, 0.0, 0.0, 0.0))
+        repaired_mass_bodies.append(body_name)
+
+    stage.GetRootLayer().Save()
+    print(
+        "Post-processed YAM MJCF USD: "
+        f"removed dummy worldBody articulation root; repaired mass bodies={repaired_mass_bodies}"
+    )
 
 
 def main() -> int:
@@ -342,7 +444,7 @@ def main() -> int:
     parser.add_argument("--repo-id", default=HF_REPO_ID)
     parser.add_argument("--force", action="store_true", help="Re-download and re-convert assets.")
     parser.add_argument("--force-conversion", action="store_true", help="Re-convert the existing MJCF without re-downloading.")
-    parser.add_argument("--converter", choices=("urdf", "mjcf"), default="urdf")
+    parser.add_argument("--converter", choices=("mjcf", "urdf"), default="mjcf")
     parser.add_argument("--download-only", action="store_true", help="Only download/copy MJCF assets.")
     AppLauncher.add_app_launcher_args(parser)
     args = parser.parse_args()
