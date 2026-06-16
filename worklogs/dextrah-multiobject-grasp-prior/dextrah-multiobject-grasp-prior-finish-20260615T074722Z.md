@@ -6127,3 +6127,65 @@ Early PPO evidence:
 
 Next:
 - Continue monitoring through epoch `600`, then evaluate the continuation best/final checkpoint and regenerate videos if success improves.
+
+## 2026-06-16T20:46:30Z - continuation epoch 338 snapshot
+
+Status:
+- job id: `29167189`
+- scheduler state: `RUNNING`
+- elapsed at check: about `00:17:50`
+- rank-0 metrics rows: `45`
+- latest epoch: `338/600`
+
+Metrics:
+- Best continuation row so far: epoch `335`, `cube_success_rate=0.34033203125`, `cube_has_lifted_rate=0.453125`, `cube_lift_height=0.06541617214679718`.
+- Latest epoch `338`:
+  - `cube_success_rate=0.33544921875`
+  - `cube_has_lifted_rate=0.45263671875`
+  - `cube_lift_height=0.0639890804886818`
+  - `cube_lift_reward=2.0987067222595215`
+  - `cube_height_tracking_reward=0.4172786772251129`
+  - `cube_grasp_prior_reset_success_rate=1.0`
+  - `cube_grasp_prior_quality_success_rate=1.0`
+  - `cube_grasp_prior_projected_exact_tip_table_clearance=0.028150126338005066`
+  - `cube_grasp_prior_tool_downward_z=0.7996823787689209`
+  - `cube_finger_table_clearance_violation=0.0`
+  - BC and policy-anchor losses remain `0.0`.
+
+Analysis:
+- Continuation is stable and improving over the fresh-run best training success (`0.306640625`), but not yet solved.
+- Reset safety remains clean.
+
+Next:
+- Continue monitoring through epoch `600`.
+
+## 2026-06-16T20:57:40Z - continuation epoch 377 snapshot
+
+Status:
+- job id: `29167189`
+- scheduler state: `RUNNING`
+- elapsed at check: about `00:28:55`
+- rank-0 metrics rows: `84`
+- latest epoch: `377/600`
+
+Metrics:
+- Best continuation row so far: epoch `355`, `cube_success_rate=0.3447265625`, `cube_has_lifted_rate=0.46435546875`, `cube_lift_height=0.06707292050123215`.
+- Latest epoch `377`:
+  - `cube_success_rate=0.33740234375`
+  - `cube_has_lifted_rate=0.47314453125`
+  - `cube_lift_height=0.06669776886701584`
+  - `cube_lift_reward=2.1760237216949463`
+  - `cube_height_tracking_reward=0.4260529577732086`
+  - `cube_grasp_prior_reset_success_rate=1.0`
+  - `cube_grasp_prior_quality_success_rate=1.0`
+  - `cube_grasp_prior_projected_exact_tip_table_clearance=0.02834043838083744`
+  - `cube_grasp_prior_tool_downward_z=0.8016873598098755`
+  - `cube_finger_table_clearance_violation=0.0`
+  - BC and policy-anchor losses remain `0.0`.
+
+Analysis:
+- Continuation remains stable and is modestly above the fresh-run training best, but improvement is slow.
+- Reset safety remains clean.
+
+Next:
+- Continue monitoring toward epoch `600`; evaluate if the final/best policy improves enough to justify a new video grid.
