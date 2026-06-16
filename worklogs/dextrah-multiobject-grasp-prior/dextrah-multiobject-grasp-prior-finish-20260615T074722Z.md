@@ -6220,3 +6220,34 @@ Analysis:
 
 Next:
 - Continue to epoch `600`; if final eval remains near this plateau, the next iteration should tune the policy/reward/object-conditioning rather than reset safety.
+
+## 2026-06-16T21:19:20Z - continuation epoch 447 snapshot
+
+Status:
+- job id: `29167189`
+- scheduler state: `RUNNING`
+- elapsed at check: about `00:50:26`
+- rank-0 metrics rows: `154`
+- latest epoch: `447/600`
+
+Metrics:
+- Best continuation row so far: epoch `440`, `cube_success_rate=0.3564453125`, `cube_has_lifted_rate=0.46484375`, `cube_lift_height=0.06955724954605103`.
+- Latest epoch `447`:
+  - `cube_success_rate=0.34765625`
+  - `cube_has_lifted_rate=0.45947265625`
+  - `cube_lift_height=0.06888307631015778`
+  - `cube_lift_reward=2.2243194580078125`
+  - `cube_height_tracking_reward=0.43555036187171936`
+  - `cube_grasp_prior_reset_success_rate=1.0`
+  - `cube_grasp_prior_quality_success_rate=1.0`
+  - `cube_grasp_prior_projected_exact_tip_table_clearance=0.028293687850236893`
+  - `cube_grasp_prior_tool_downward_z=0.8017938733100891`
+  - `cube_finger_table_clearance_violation=0.0`
+  - BC and policy-anchor losses remain `0.0`.
+
+Analysis:
+- Continuation is still improving, but slowly.
+- Reset safety remains clean.
+
+Next:
+- Continue monitoring through epoch `600`.
