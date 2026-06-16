@@ -694,8 +694,11 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
                 candidate_has_contact[mask] = finite_contacts
                 sampled_contact_width = torch.norm(sampled_contacts[:, :, 0, :] - sampled_contacts[:, :, 1, :], dim=-1)
                 candidate_required_width[mask] = torch.where(
-                    finite_contacts & torch.isfinite(sampled_contact_width),
-                    sampled_contact_width,
+                    finite_contacts,
+                    self._sanitize_grasp_prior_width(
+                        sampled_contact_width,
+                        candidate_required_width[mask],
+                    ),
                     candidate_required_width[mask],
                 )
             grasp_to_tool = prior["grasp_to_tool"]

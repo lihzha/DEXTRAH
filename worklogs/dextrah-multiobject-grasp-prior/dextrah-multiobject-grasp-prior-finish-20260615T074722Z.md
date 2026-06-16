@@ -4834,3 +4834,47 @@ Validation:
 
 Next:
 - Commit and redeploy the wrapper fix, then rerun the patched side-safe reset audit. The next audit must show source import from `/code` by behavior, and ideally by explicit log output in a follow-up wrapper instrumentation if ambiguity remains.
+
+## 2026-06-16T05:00:00Z - rerun patched side-safe reset audit with /code-first wrappers
+
+Goal:
+- Verify the prior-width fallback patch under a container import path that prefers committed `/code` over the installed site package.
+
+Version Control:
+- local_commit: `5678d7157363ee4babea36f4821944e00136cbe6`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-full-objects-20260616-f5b3c7b`
+- remote_commit: `5678d7157363ee4babea36f4821944e00136cbe6`
+
+Job:
+- job_id: `1030521`
+- host: `l401`
+- run: `franka_multi_full18_reset_audit_z0_widthfix_c512a8_5678d71_20260616T0500Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/collect_franka_multi_object_verified_grasps_1030521.out`
+- output: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/verified_grasp_indices/franka_multi_full18_reset_audit_z0_widthfix_c512a8_5678d71_20260616T0500Z/verified_indices.json`
+
+Configuration:
+- Same side-safe reset-only diagnostic: `candidate_count=512`, `attempts=8`, `min_pregrasp_z=0.0`, `min_downward_tool_z=0.0`, unchanged table/center/contact gates.
+
+Expected evidence:
+- `4f4fe076fe624d2a8f198588c64fc6cb` should no longer fail the width gate if `/code` source is active and the fallback object width is physically feasible.
+
+Result:
+- Slurm state: `COMPLETED|0:0`
+- `/code` source was active in `PYTHONPATH`.
+- `4f4fe076fe624d2a8f198588c64fc6cb` still failed: `0/12` reset and quality success.
+- Candidate width count remained low: `3.0/512`.
+
+Analysis:
+- The first width patch did not cover a second assignment: finite contact locations compute `sampled_contact_width` and overwrite `candidate_required_width` after `grasp_width` sanitization.
+- For object `4f4fe076fe624d2a8f198588c64fc6cb`, contact locations are nearly coincident for most samples, so contact-derived width reintroduced implausibly tiny values.
+
+Change:
+- Patched contact-derived `sampled_contact_width` through the same `_sanitize_grasp_prior_width()` helper before it can override `candidate_required_width`.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py`
+- `bash -n cluster/sbatch_collect_franka_multi_object_verified_grasps_1gpu.sh cluster/sbatch_eval_franka_multi_object_grasp_1gpu.sh cluster/sbatch_train_teacher_8gpu.sh`
+- `git diff --check`
+
+Next:
+- Commit/deploy the contact-width fix and rerun the side-safe reset audit.
