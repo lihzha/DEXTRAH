@@ -6070,3 +6070,60 @@ Conclusion:
 
 Next:
 - Commit/push this worklog update with the exact local/remote artifacts and final metrics.
+
+## 2026-06-16T20:28:30Z - launched longer continuation from best checkpoint
+
+Rationale:
+- The reset-prior table/below-table issue is fixed by metrics and video evidence, but the policy is not solved: aggregate eval reached `eval_success_rate=0.3611111111111111` and several object IDs remained at `0.0` success.
+- I am therefore continuing PPO rather than treating the 300-epoch policy as complete.
+
+Continuation launch:
+- job id: `29167189`
+- run: `franka_multi_full18_teacherobs_nograph_bestckpt_ppo600_ebcf612_20260616T202812Z`
+- source commit for executable code: `ebcf612cbcac328d5fbd6209dd2bca579c00c110`
+- remote code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-teacher-obs-20260616-ebcf612`
+- checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_teacherobs_nograph_fresh_ppo300_ebcf612_20260616T1148Z/nn/dextrah_franka_multi_object_grasp.pth`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29167189.out`
+- result dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_teacherobs_nograph_bestckpt_ppo600_ebcf612_20260616T202812Z`
+
+Continuation config:
+- 8 GPUs, `NUM_ENVS=2048` per rank, `MAX_ITERATIONS=600`, `HORIZON_LENGTH=64`.
+- `CHECKPOINT` set explicitly to the prior best checkpoint; `AUTO_RESUME=False`, `SELF_RELAUNCH=False`.
+- Same full 18-object manifest/cache and same exact reset gates as the completed 300-epoch run.
+- No BC, no BC policy anchor, no warmstart, no action-prior reward.
+- `USE_CUDA_GRAPH=False`, `SAVE_FREQUENCY=20`, `DEXTRAH_RLGAMES_JSONL_METRICS=True`.
+
+Next:
+- Monitor startup for checkpoint load, `build mlp: 91`, epoch/restore behavior, reset safety metrics, and early PPO stability.
+
+## 2026-06-16T20:37:45Z - continuation startup passed; resumed from epoch 293
+
+Startup evidence:
+- job id: `29167189`
+- scheduler state: `RUNNING`
+- node: `batch-block5-03441`
+- log reached `build mlp: 91` and `RunningMeanStd: (91,)` on all ranks.
+- All ranks loaded the explicit checkpoint:
+  - `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_teacherobs_nograph_fresh_ppo300_ebcf612_20260616T1148Z/nn/dextrah_franka_multi_object_grasp.pth`
+- RL-Games restored checkpoint epoch `293`.
+- Sidecar runtime state at epoch `300` was ignored because it did not match checkpoint epoch `293`; rank-mismatched runtime state was ignored on nonzero ranks.
+- Rank 0 restored runtime state at epoch `293`.
+
+Early PPO evidence:
+- PPO reached epoch `307/600`.
+- Checkpoints were saved successfully in the continuation run directory.
+- Rank-0 metrics rows: `14`.
+- Latest rank-0 row at epoch `307`, frame `320864256`:
+  - `cube_success_rate=0.3330078125`
+  - `cube_has_lifted_rate=0.4560546875`
+  - `cube_lift_height=0.06441407650709152`
+  - `cube_grasp_prior_reset_success_rate=0.99951171875`
+  - `cube_grasp_prior_quality_success_rate=0.99951171875`
+  - `cube_grasp_prior_projected_exact_tip_table_clearance=0.028271757066249847`
+  - `cube_grasp_prior_tool_downward_z=0.8020470142364502`
+  - `cube_finger_table_clearance_violation=0.0`
+  - `agent_aux/dextrah_grasp_prior_bc_loss=0.0`
+  - `agent_aux/dextrah_bc_policy_anchor_loss=0.0`
+
+Next:
+- Continue monitoring through epoch `600`, then evaluate the continuation best/final checkpoint and regenerate videos if success improves.
