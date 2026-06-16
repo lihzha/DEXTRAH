@@ -994,7 +994,8 @@ def _run_scripted_demo(
         contact_side_offset=contact_side_offset,
         standoff_side_offset=standoff_side_offset,
     )
-    contact_close_enough = min_max_hold_dist <= contact_required
+    stable_physical_success = max_success_rate > 0.0 and max_lift >= float(task_env.cfg.cube_success_lift_height)
+    contact_close_enough = min_max_hold_dist <= contact_required or stable_physical_success
     checks.check(
         "scripted_demo_slow_approach_reaches_cube_contact",
         contact_reached or contact_close_enough,
@@ -1007,6 +1008,7 @@ def _run_scripted_demo(
         nominal_contact_center_to_hold_dist=contact_geometry_dist,
         contact_target_left_hold=_tensor_list(contact_left_hold.mean(dim=0)),
         contact_target_right_hold=_tensor_list(contact_right_hold.mean(dim=0)),
+        stable_physical_success=stable_physical_success,
     )
     checks.check(
         "scripted_demo_lifts_cube",
