@@ -446,13 +446,9 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
         if not bool(active.any().item()):
             return teacher_actions, active, phase, hold_error
 
-        max_gripper_width = max(float(self.cfg.max_gripper_width), 1.0e-6)
-        close_width = float(self.cfg.bimanual_reference_closed_width_fraction) * max_gripper_width
-        closed = (self.left_gripper_width <= close_width) & (self.right_gripper_width <= close_width)
-
         cube_half_size = 0.5 * float(self.cfg.cube_size)
         side_offset = cube_half_size + float(self.cfg.bimanual_reference_contact_side_margin)
-        reference_cube_pos = self.cube_pos.clone()
+        reference_cube_pos = self.cube_initial_pos.clone()
         hold_z = torch.maximum(
             reference_cube_pos[:, 2] + float(self.cfg.bimanual_reference_cube_center_to_hold_z),
             torch.full_like(self.cube_initial_pos[:, 2], float(self.cfg.table_surface_z) + float(self.cfg.bimanual_reference_min_hold_z)),
@@ -468,12 +464,6 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
         standoff_right_hold = contact_right_hold.clone()
         standoff_left_hold[:, 1] = reference_cube_pos[:, 1] + standoff_side_offset
         standoff_right_hold[:, 1] = reference_cube_pos[:, 1] - standoff_side_offset
-        standoff_error = torch.maximum(
-            torch.norm(standoff_left_hold - self.left_hold_pos, dim=-1),
-            torch.norm(standoff_right_hold - self.right_hold_pos, dim=-1),
-        )
-        standoff_reached = standoff_error <= float(self.cfg.bimanual_reference_standoff_target_dist)
-        contact_ready = closed & self.bimanual_side_success
         left_rot_action = torch.tensor(
             self.cfg.bimanual_reference_left_rot_action,
             dtype=teacher_actions.dtype,
@@ -487,14 +477,21 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
 
         lift_left_hold = contact_left_hold.clone()
         lift_right_hold = contact_right_hold.clone()
-        lift_hold_z = self.cube_goal_pos[:, 2] + float(self.cfg.bimanual_reference_cube_center_to_hold_z)
-        lift_left_hold[:, 2] = lift_hold_z
-        lift_right_hold[:, 2] = lift_hold_z
+        lift_left_hold[:, 2] = contact_left_hold[:, 2] + float(self.cfg.bimanual_reference_lift_height)
+        lift_right_hold[:, 2] = contact_right_hold[:, 2] + float(self.cfg.bimanual_reference_lift_height)
 
-        close_mask = active & (~closed)
-        standoff_mask = active & closed & (~contact_ready) & (~standoff_reached)
-        approach_mask = active & closed & (~contact_ready) & standoff_reached
-        lift_mask = active & contact_ready
+        close_steps = max(int(self.cfg.bimanual_reference_close_steps), 0)
+        standoff_steps = max(int(self.cfg.bimanual_reference_standoff_steps), 0)
+        approach_steps = max(int(self.cfg.bimanual_reference_approach_steps), 0)
+        standoff_start = close_steps
+        approach_start = standoff_start + standoff_steps
+        lift_start = approach_start + approach_steps
+        episode_step = self.episode_length_buf
+
+        close_mask = active & (episode_step < standoff_start)
+        standoff_mask = active & (episode_step >= standoff_start) & (episode_step < approach_start)
+        approach_mask = active & (episode_step >= approach_start) & (episode_step < lift_start)
+        lift_mask = active & (episode_step >= lift_start)
 
         if bool(close_mask.any().item()):
             close_actions = self._actions_to_hold_targets(

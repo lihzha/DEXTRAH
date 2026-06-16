@@ -230,10 +230,14 @@ class DextrahBimanualYAMCubeGraspEnvCfg(DirectRLEnvCfg):
     bimanual_action_prior_reward_enabled = False
     bimanual_action_prior_reward_weight = 2.0
     bimanual_action_prior_reward_sharpness = 2.0
-    bimanual_reference_gain = 1.35
-    bimanual_reference_max_action = 1.0
+    bimanual_reference_gain = 0.85
+    bimanual_reference_max_action = 0.65
     bimanual_reference_lift_gain = 0.35
     bimanual_reference_lift_max_action = 0.45
+    bimanual_reference_close_steps = 45
+    bimanual_reference_standoff_steps = 120
+    bimanual_reference_approach_steps = 140
+    bimanual_reference_lift_height = 0.060
     bimanual_reference_left_rot_action = (0.0, 0.0, -0.5)
     bimanual_reference_right_rot_action = (0.0, 0.0, 0.5)
     bimanual_reference_contact_side_margin = 0.004

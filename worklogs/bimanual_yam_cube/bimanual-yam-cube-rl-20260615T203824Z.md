@@ -1448,6 +1448,49 @@ Validation:
 Next:
 - Commit/push/redeploy, then run `ACTION_SOURCE=reference_delta` smoke from the eval wrapper before PPO.
 
+## 2026-06-16 - reference-prior smoke launch
+
+Goal:
+- Confirm the PPO reference/action-prior path can run the stable YAM pickup sequence before launching training.
+
+Version state:
+- local_commit: `e6a14d90fb2e3a50783024d740994ed06fed1672`
+- remote_commit: `e6a14d90fb2e3a50783024d740994ed06fed1672`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/bimanual-yam-cube-rl-20260615T203824Z`
+
+Planned command/job:
+- Wrapper: `cluster/sbatch_eval_bimanual_yam_cube_grasp_1gpu.sh`
+- Job: `29127395`
+- Run: `yam_cube_reference_prior_smoke_e6a14d9_20260616T0041Z`
+- Key settings: `ACTION_SOURCE=reference_delta`, `NUM_ENVS=1`, `NUM_STEPS=640`, `CAPTURE_VIDEO=True`, no checkpoint, no cube XY randomization, side-y camera.
+- Log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_bimanual_yam_cube_29127395.out`
+- Metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/yam_cube_reference_prior_smoke_e6a14d9_20260616T0041Z/metrics.json`
+
+Success criteria:
+- Stable reference success/lift from the training-side action path, or a clear phase/reward/contact diagnostic showing what to patch before PPO.
+
+Result/evidence:
+- Job `29127395` completed normally in `00:02:12`, exit code `0:0`.
+- Metrics: `success_ever_rate=0.0`, `success_rate_max=0.0`, `num_steps_completed=640`.
+- Local artifacts: `artifacts/bimanual_yam_cube/reference_prior_smoke_20260616T0041Z/metrics.json`, `trace.csv`, `trace.jsonl`, and `videos/yam-cube-reference-prior-smoke-step-0.mp4`.
+- Viewer URL: `http://localhost:8765/view?path=DEXTRAH/artifacts/bimanual_yam_cube/reference_prior_smoke_20260616T0041Z/videos/yam-cube-reference-prior-smoke-step-0.mp4`
+
+Analysis:
+- The reactive training reference path was not equivalent to the validator. It reached side alignment intermittently but dragged the cube in XY and oscillated between lift and correction.
+- Trace examples: step 80 had `cube_lift_height=0.0237` and `cube_xy_error=0.0398`; step 120 had `bimanual_side_success=1.0` but only `cube_lift_height=0.0162`; success stayed zero for all 640 steps.
+- Do not launch PPO from this reference prior.
+
+Change:
+- Converted the bimanual reference action prior from reactive contact/standoff switching to a timed close -> standoff -> approach -> lift schedule anchored to `cube_initial_pos`, matching the validator structure.
+- Reduced default reference approach gain/action cap to validator-like values: `bimanual_reference_gain=0.85`, `bimanual_reference_max_action=0.65`.
+- Set default reference lift height to `0.060`.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_env.py dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_env_cfg.py` passed.
+
+Next:
+- Commit/push/redeploy and rerun `ACTION_SOURCE=reference_delta` smoke before PPO.
+
 ## 2026-06-15 23:50Z - replace validator joint waypoint with action-interface contact path
 
 Observation:
