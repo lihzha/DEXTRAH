@@ -4518,3 +4518,92 @@ Analysis:
 
 Next:
 - Run policy/reference-mix eval diagnostics on the prior-best checkpoint to identify whether z/gripper timing alone or broader task-space deltas account for the gap to the reference ceiling.
+
+## 2026-06-16T03:10:00Z - prior-best policy/reference-mix diagnostics
+
+Goal:
+- Determine whether the remaining gap is mostly z/gripper timing or broader task-space action disagreement.
+
+Setup:
+- Code commit: `454a9d92b549949f4126fba0960eaf3a8ef31b01`
+- A100 worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/multiobject-topdown-axis-20260615-753139c`
+- Policy checkpoint:
+  `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_resetprior_all_actor0001_critic1_bounds0_anchor1000_sigma_m5_e219815_20260615T2256Z/nn/last_dextrah_franka_multi_object_grasp_ep_10_rew_1076.9912.pth`
+- Manifest/stable-pose/verified-index/reset settings match the all-action and reference evals above.
+- `ACTION_SOURCE=policy_reference_mix`, deterministic, 512 envs, 600 steps.
+
+Results:
+- z/gripper-only reference override:
+  - job `29130028`
+  - run `franka_multi_train2_priorbest_zgonly_mix_eval512_454a9d9_20260616T0310Z`
+  - `reference_mix_alpha=0.0`, `reference_mix_z_alpha=1.0`, `reference_mix_gripper_alpha=1.0`
+  - `success_ever_rate=0.693359375`, `success_rate_max=0.669921875`, `eval_success_ever_count=355`
+- full 25% reference mix:
+  - job `29130048`
+  - run `franka_multi_train2_priorbest_full25_mix_eval512_454a9d9_20260616T0312Z`
+  - `reference_mix_alpha=0.25`
+  - `success_ever_rate=0.75390625`, `success_rate_max=0.75`, `eval_success_ever_count=386`
+- full 50% reference mix:
+  - job `29130050`
+  - run `franka_multi_train2_priorbest_full50_mix_eval512_454a9d9_20260616T0312Z`
+  - `reference_mix_alpha=0.50`
+  - `success_ever_rate=0.84375`, `success_rate_max=0.8359375`, `eval_success_ever_count=432`
+- full 25% reference mix plus z/gripper fully referenced:
+  - job `29130051`
+  - run `franka_multi_train2_priorbest_full25_zg1_mix_eval512_454a9d9_20260616T0312Z`
+  - `reference_mix_alpha=0.25`, `reference_mix_z_alpha=1.0`, `reference_mix_gripper_alpha=1.0`
+  - `success_ever_rate=0.71484375`, `success_rate_max=0.712890625`, `eval_success_ever_count=366`
+- Safety evidence for all four:
+  `grasp_prior_reset_tool_downward_z=0.9981104`,
+  `grasp_prior_reset_tool_z_axis_z=-0.9981104`,
+  `grasp_prior_reset_candidate_valid_count=128`,
+  `finger_table_clearance_violation=0`,
+  and terminal finger-table/prelift/cube-out rates all `0`.
+
+Interpretation:
+- z/gripper timing is a major part of the failure: simply overriding those two dimensions with the safe reference lifts success-ever from the pure-policy two-object baseline `0.30859375` to `0.693359375`.
+- Full 50% reference mixing is best so far and beats both the pure reference ceiling (`0.7109375`) and the prior-best pure policy (`0.30859375`).
+- The useful policy signal is complementary to the reference prior; supervised action-head updates harmed the checkpoint, but online execution with the prior mixed into the policy action is robust.
+
+Selected execution mode:
+- Use the prior-best RL checkpoint with:
+  `ACTION_SOURCE=policy_reference_mix`,
+  `REFERENCE_MIX_ALPHA=0.50`,
+  `MAX_OBJECTS=2`,
+  strict top-down/downward-tool-z/table-safe reset, stable-pose cache, and strict verified grasp indices.
+
+## 2026-06-16T03:20:00Z - selected full50 mix videos
+
+Goal:
+- Visually inspect the selected policy/reference-mix execution on both round-robin camera envs and confirm the robot is not reaching from below the table.
+
+Jobs:
+- env0 camera:
+  - job `29130131`
+  - run `franka_multi_train2_priorbest_full50_mix_video_env0_454a9d9_20260616T0320Z`
+  - video:
+    `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_multi_train2_priorbest_full50_mix_video_env0_454a9d9_20260616T0320Z/videos/full50-mix-env0-step-0.mp4`
+- env1 camera:
+  - job `29130132`
+  - run `franka_multi_train2_priorbest_full50_mix_video_env1_454a9d9_20260616T0320Z`
+  - video:
+    `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_multi_train2_priorbest_full50_mix_video_env1_454a9d9_20260616T0320Z/videos/full50-mix-env1-step-0.mp4`
+
+Local artifacts:
+- `cluster_results/a100/full50_mix_videos_454a9d9_20260616T0320Z/full50-mix-env0-step-0.mp4`
+- `cluster_results/a100/full50_mix_videos_454a9d9_20260616T0320Z/full50-mix-env1-step-0.mp4`
+- viewer URLs:
+  - `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-finish-20260615T074722Z/cluster_results/a100/full50_mix_videos_454a9d9_20260616T0320Z/full50-mix-env0-step-0.mp4`
+  - `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-finish-20260615T074722Z/cluster_results/a100/full50_mix_videos_454a9d9_20260616T0320Z/full50-mix-env1-step-0.mp4`
+
+Metrics:
+- Both 4-env video runs completed with `success_ever_rate=1.0`, `success_rate_max=0.75`, `num_steps_completed=600`.
+- First-success steps by env: `[92, 87, 107, 87]`.
+- Extracted success-window frames under:
+  `cluster_results/a100/full50_mix_videos_454a9d9_20260616T0320Z/success_frames/`
+
+Visual inspection:
+- The rendered env0/env1 frames show the wrist and gripper above the tabletop throughout the approach/contact window.
+- The gripper approaches from the top side; no frame shows the arm reaching from below the table or penetrating the table.
+- This matches the scalar reset evidence: tool z-axis points downward and finger-table violations are zero.
