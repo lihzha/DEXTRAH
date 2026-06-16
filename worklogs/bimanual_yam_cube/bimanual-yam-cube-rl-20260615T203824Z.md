@@ -1639,6 +1639,55 @@ Validation:
 Next:
 - Commit/push/deploy and rerun the `ACTION_SOURCE=reference_delta` side-camera video smoke.
 
+## 2026-06-16 - contact-triggered reference-prior smoke launch
+
+Goal:
+- Verify that the contact-triggered lift prior produces the known stable side pickup without the launch artifact.
+
+Version state:
+- local_commit: `ec440c69391dcb1149509835a321bbc43e3ea29c`
+- remote_commit: `ec440c69391dcb1149509835a321bbc43e3ea29c`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/bimanual-yam-cube-rl-20260615T203824Z`
+
+Planned command/job:
+- Wrapper: `cluster/sbatch_eval_bimanual_yam_cube_grasp_1gpu.sh`
+- Job: `29128141`
+- Run: `yam_cube_reference_prior_smoke_ec440c6_20260616T0106Z`
+- Key settings: `ACTION_SOURCE=reference_delta`, `NUM_ENVS=1`, `NUM_STEPS=640`, `CAPTURE_VIDEO=True`, no checkpoint, no cube XY randomization, side-y camera.
+- Expected log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_bimanual_yam_cube_<job>.out`
+- Expected metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/yam_cube_reference_prior_smoke_ec440c6_20260616T0106Z/metrics.json`
+
+Success criteria:
+- Stable success from the reference action source: `eval_success_rate > 0`, `stable_success_ever_rate > 0`, no high-Z cube-out, and video shows physical side grasp/lift.
+
+Result/evidence:
+- Job `29128141` completed with metrics and video.
+- Local video: `artifacts/bimanual_yam_cube/reference_prior_smoke_20260616T0106Z/videos/yam-cube-reference-prior-smoke-step-0.mp4`.
+- Viewer: `http://localhost:8765/view?path=DEXTRAH/artifacts/bimanual_yam_cube/reference_prior_smoke_20260616T0106Z/videos/yam-cube-reference-prior-smoke-step-0.mp4`.
+- Metrics: `eval_success_rate=0.0`, `stable_success_ever_rate=0.0`, `success_ever_rate=0.0`, `max_lift=0.0`.
+- Trace summary: the lift triggered around step `210` when `max_hold_to_cube_dist` was still `0.17964085936546326 m`; the gripper hold points rose from roughly `0.132 m` to `0.196 m`, but the cube stayed at table height.
+
+Analysis:
+- The user's visual observation is consistent with the metrics: nonzero lift from the earlier ungated rollout can be a physics artifact when the cube is shaken or launched by pressing.
+- The artifact-gated metrics now reject those false positives, but the reference prior's `0.182 m` contact trigger is too permissive and starts lift before load-bearing side contact.
+- The scheduled lift fallback has the same failure mode: it can lift without actual contact.
+
+Decision:
+- Tighten the contact trigger to `0.166 m` and require the same contact predicate for the scheduled fallback, so the reference policy keeps approaching instead of lifting by time alone.
+
+## 2026-06-16 - tighter contact-gated reference lift patch
+
+Goal:
+- Prevent false reference-prior lift starts and only lift after closer load-bearing contact.
+
+Change:
+- Reduced `bimanual_reference_contact_trigger_dist` from `0.182` to `0.166`.
+- Gated the scheduled lift fallback on `bimanual_side_success` and the same max hold-to-cube distance threshold, so the action prior continues approach after the nominal lift phase until contact is close enough.
+
+Validation plan:
+- Run Python syntax checks, Slurm wrapper syntax checks, and diff whitespace checks.
+- Commit/push/deploy and rerun the side-camera `ACTION_SOURCE=reference_delta` rollout video before any PPO training.
+
 ## 2026-06-15 23:50Z - replace validator joint waypoint with action-interface contact path
 
 Observation:

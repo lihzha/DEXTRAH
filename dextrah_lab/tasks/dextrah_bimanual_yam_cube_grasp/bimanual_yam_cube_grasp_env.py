@@ -532,7 +532,13 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
             & self.bimanual_side_success
             & (self.max_hold_to_cube_dist <= float(self.cfg.bimanual_reference_contact_trigger_dist))
         )
-        fixed_lift_trigger = active & (~self.bimanual_reference_lift_started) & (episode_step >= lift_start)
+        fixed_lift_trigger = (
+            active
+            & (~self.bimanual_reference_lift_started)
+            & (episode_step >= lift_start)
+            & self.bimanual_side_success
+            & (self.max_hold_to_cube_dist <= float(self.cfg.bimanual_reference_contact_trigger_dist))
+        )
         new_lift = contact_trigger | fixed_lift_trigger
         if bool(new_lift.any().item()):
             self.bimanual_reference_lift_started[new_lift] = True
