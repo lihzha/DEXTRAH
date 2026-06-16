@@ -1583,6 +1583,62 @@ Validation:
 Next:
 - Commit/push/deploy and rerun the `ACTION_SOURCE=reference_delta` video smoke before PPO.
 
+## 2026-06-16 - patched reference-prior smoke launch
+
+Goal:
+- Verify that the artifact-gated reference prior no longer undershoots contact height or launches the cube.
+
+Version state:
+- local_commit: `4ca3a22981180ff6cb304d75f607ce4fef6a529f`
+- remote_commit: `4ca3a22981180ff6cb304d75f607ce4fef6a529f`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/bimanual-yam-cube-rl-20260615T203824Z`
+
+Planned command/job:
+- Wrapper: `cluster/sbatch_eval_bimanual_yam_cube_grasp_1gpu.sh`
+- Job: `29127835`
+- Run: `yam_cube_reference_prior_smoke_4ca3a22_20260616T0059Z`
+- Key settings: `ACTION_SOURCE=reference_delta`, `NUM_ENVS=1`, `NUM_STEPS=640`, `CAPTURE_VIDEO=True`, no checkpoint, no cube XY randomization, side-y camera.
+- Expected log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_bimanual_yam_cube_<job>.out`
+- Expected metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/yam_cube_reference_prior_smoke_4ca3a22_20260616T0059Z/metrics.json`
+
+Success criteria:
+- `eval_success_rate`/`stable_success_ever_rate` show stable success, no high-Z cube-out launch, no contact-height undershoot below the side-contact floor, and video shows physically plausible side grasp/lift.
+
+Result/evidence:
+- Job `29127835` completed with metrics and video.
+- Local video: `artifacts/bimanual_yam_cube/reference_prior_smoke_20260616T0059Z/videos/yam-cube-reference-prior-smoke-step-0.mp4`.
+- Viewer: `http://localhost:8765/view?path=DEXTRAH/artifacts/bimanual_yam_cube/reference_prior_smoke_20260616T0059Z/videos/yam-cube-reference-prior-smoke-step-0.mp4`.
+- Metrics: `eval_success_rate=0.0`, `stable_success_ever_rate=0.0`, `success_ever_rate=0.0`, `max_lift=0.0038136690855026245`, `max_cube_z=0.09881366789340973`.
+- The previous launch artifact is gone: no high-Z cube-out and no false success pulse. The minimum hold heights stayed around `0.129-0.130 m` instead of the prior `0.083 m`.
+- Failure mode changed to stable drag/no-lift: the hands reached side contact, then rose while the cube stayed on the table or slid slightly in X/Y.
+
+Analysis:
+- The strict validator that physically succeeded switches to lift from the actual hand pose once contact is reached.
+- The training reference prior still waits for the fixed approach schedule and lifts toward a nominal contact pose, which keeps pressing/dragging after contact instead of preserving the working contact geometry.
+
+Decision:
+- Patch the reference prior to trigger lift on contact, store the current left/right hold poses as lift origins, and lift from those origins.
+
+## 2026-06-16 - contact-triggered reference lift patch
+
+Goal:
+- Match the successful strict validator's event-driven lift behavior in the training/eval reference action source.
+
+Change:
+- Added per-env reference-lift state buffers: lift started flag, trigger step, and left/right lift origins.
+- Trigger lift once approach has begun, the side-contact predicate is true, and `max_hold_to_cube_dist <= 0.182`.
+- On trigger, record the current hand-center poses and lift from those actual poses instead of from the nominal contact target.
+- Kept lift squeeze at `0.0` because the known-success strict validator used half-Z with no squeeze.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_env.py dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_env_cfg.py dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_rewards.py dextrah_lab/rl_games/eval_rollout.py`
+- `bash -n cluster/sbatch_eval_bimanual_yam_cube_grasp_1gpu.sh cluster/sbatch_train_bimanual_yam_cube_grasp_1gpu.sh cluster/sbatch_validate_bimanual_yam_cube_grasp_env_1gpu.sh`
+- `git diff --check`
+- Result: passed.
+
+Next:
+- Commit/push/deploy and rerun the `ACTION_SOURCE=reference_delta` side-camera video smoke.
+
 ## 2026-06-15 23:50Z - replace validator joint waypoint with action-interface contact path
 
 Observation:

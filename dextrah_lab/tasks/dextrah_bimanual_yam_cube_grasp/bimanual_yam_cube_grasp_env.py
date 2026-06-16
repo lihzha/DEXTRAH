@@ -187,6 +187,10 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
         self.bimanual_action_prior_hold_error = torch.zeros(self.num_envs, device=self.device)
         self.bimanual_reference_start_left_hold = torch.zeros(self.num_envs, 3, device=self.device)
         self.bimanual_reference_start_right_hold = torch.zeros(self.num_envs, 3, device=self.device)
+        self.bimanual_reference_lift_started = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        self.bimanual_reference_lift_start_step = torch.zeros(self.num_envs, device=self.device)
+        self.bimanual_reference_lift_left_origin = torch.zeros(self.num_envs, 3, device=self.device)
+        self.bimanual_reference_lift_right_origin = torch.zeros(self.num_envs, 3, device=self.device)
 
     def _pre_physics_step(self, actions: torch.Tensor) -> None:
         self.actions = actions.clone().clamp(-1.0, 1.0)
@@ -513,11 +517,6 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
             device=self.device,
         )
 
-        lift_left_hold = contact_left_hold.clone()
-        lift_right_hold = contact_right_hold.clone()
-        lift_left_hold[:, 2] = contact_left_hold[:, 2] + float(self.cfg.bimanual_reference_lift_height)
-        lift_right_hold[:, 2] = contact_right_hold[:, 2] + float(self.cfg.bimanual_reference_lift_height)
-
         close_steps = max(int(self.cfg.bimanual_reference_close_steps), 0)
         standoff_steps = max(int(self.cfg.bimanual_reference_standoff_steps), 0)
         approach_steps = max(int(self.cfg.bimanual_reference_approach_steps), 0)
@@ -526,14 +525,35 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
         lift_start = approach_start + approach_steps
         episode_step = self.episode_length_buf
 
-        close_mask = active & (episode_step < standoff_start)
-        standoff_mask = active & (episode_step >= standoff_start) & (episode_step < approach_start)
-        approach_mask = active & (episode_step >= approach_start) & (episode_step < lift_start)
-        lift_mask = active & (episode_step >= lift_start)
+        contact_trigger = (
+            active
+            & (~self.bimanual_reference_lift_started)
+            & (episode_step >= approach_start)
+            & self.bimanual_side_success
+            & (self.max_hold_to_cube_dist <= float(self.cfg.bimanual_reference_contact_trigger_dist))
+        )
+        fixed_lift_trigger = active & (~self.bimanual_reference_lift_started) & (episode_step >= lift_start)
+        new_lift = contact_trigger | fixed_lift_trigger
+        if bool(new_lift.any().item()):
+            self.bimanual_reference_lift_started[new_lift] = True
+            self.bimanual_reference_lift_start_step[new_lift] = episode_step[new_lift].float()
+            self.bimanual_reference_lift_left_origin[new_lift] = self.left_hold_pos[new_lift]
+            self.bimanual_reference_lift_right_origin[new_lift] = self.right_hold_pos[new_lift]
+
+        lift_mask = active & self.bimanual_reference_lift_started
+        close_mask = active & (~lift_mask) & (episode_step < standoff_start)
+        standoff_mask = active & (~lift_mask) & (episode_step >= standoff_start) & (episode_step < approach_start)
+        approach_mask = active & (~lift_mask) & (episode_step >= approach_start)
 
         standoff_alpha = self._smooth_phase_alpha(standoff_start, standoff_steps)
         approach_alpha = self._smooth_phase_alpha(approach_start, approach_steps)
-        lift_alpha = self._smooth_phase_alpha(lift_start, max(int(self.cfg.bimanual_reference_lift_steps), 1))
+        lift_steps = max(int(self.cfg.bimanual_reference_lift_steps), 1)
+        lift_alpha = torch.clamp(
+            (episode_step.float() - self.bimanual_reference_lift_start_step + 1.0) / float(lift_steps),
+            0.0,
+            1.0,
+        )
+        lift_alpha = lift_alpha * lift_alpha * (3.0 - 2.0 * lift_alpha)
         desired_standoff_left = self._lerp_hold_target(
             self.bimanual_reference_start_left_hold,
             standoff_left_hold,
@@ -546,8 +566,13 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
         )
         desired_approach_left = self._lerp_hold_target(standoff_left_hold, contact_left_hold, approach_alpha)
         desired_approach_right = self._lerp_hold_target(standoff_right_hold, contact_right_hold, approach_alpha)
-        desired_lift_left = self._lerp_hold_target(contact_left_hold, lift_left_hold, lift_alpha)
-        desired_lift_right = self._lerp_hold_target(contact_right_hold, lift_right_hold, lift_alpha)
+        desired_lift_left = self.bimanual_reference_lift_left_origin.clone()
+        desired_lift_right = self.bimanual_reference_lift_right_origin.clone()
+        desired_lift_left[:, 2] += lift_alpha * float(self.cfg.bimanual_reference_lift_height)
+        desired_lift_right[:, 2] += lift_alpha * float(self.cfg.bimanual_reference_lift_height)
+        squeeze_alpha = torch.clamp(2.0 * lift_alpha, 0.0, 1.0)
+        desired_lift_left[:, 1] -= squeeze_alpha * float(self.cfg.bimanual_reference_lift_squeeze_y)
+        desired_lift_right[:, 1] += squeeze_alpha * float(self.cfg.bimanual_reference_lift_squeeze_y)
 
         if bool(close_mask.any().item()):
             close_actions = self._actions_to_hold_targets(
@@ -736,6 +761,10 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
         self._compute_intermediate_values(env_ids)
         self.bimanual_reference_start_left_hold[env_ids] = self.left_hold_pos[env_ids]
         self.bimanual_reference_start_right_hold[env_ids] = self.right_hold_pos[env_ids]
+        self.bimanual_reference_lift_started[env_ids] = False
+        self.bimanual_reference_lift_start_step[env_ids] = 0.0
+        self.bimanual_reference_lift_left_origin[env_ids] = self.left_hold_pos[env_ids]
+        self.bimanual_reference_lift_right_origin[env_ids] = self.right_hold_pos[env_ids]
 
     def _get_observations(self) -> dict[str, torch.Tensor]:
         self._compute_intermediate_values()
