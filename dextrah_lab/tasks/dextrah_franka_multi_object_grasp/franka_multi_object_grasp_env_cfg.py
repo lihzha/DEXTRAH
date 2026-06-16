@@ -93,6 +93,10 @@ class DextrahFrankaMultiObjectGraspEnvCfg(DextrahFrankaCubeGraspEnvCfg):
     # When set, reset sampling is restricted to indices that lifted in sim for
     # the matching object UUID.
     grasp_prior_verified_indices_path = ""
+    # If true, objects absent from the verified-index cache, or present with no
+    # valid indices, fall back to the original GraspGen prior.  Keep false by
+    # default so stale/incomplete caches fail loudly unless explicitly allowed.
+    grasp_prior_verified_allow_uncovered = False
     grasp_prior_allow_missing = False
     # Multi-object priors include side/top approaches that need more pregrasp
     # clearance than the cube default. Table safety is enforced by the top-side

@@ -531,6 +531,8 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         verified_indices_by_uuid = self._load_verified_grasp_indices(
             str(getattr(self.cfg, "grasp_prior_verified_indices_path", "") or "")
         )
+        allow_uncovered_verified = bool(getattr(self.cfg, "grasp_prior_verified_allow_uncovered", False))
+        self._grasp_prior_verified_uncovered_uuids: list[str] = []
         for object_idx, asset in enumerate(self._object_assets):
             prior_path = str(asset.get("grasp_prior_path") or "")
             if not prior_path and prior_dir:
@@ -548,10 +550,13 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             prior = self._load_multi_object_prior(path, uuid=uuid)
             verified_indices = verified_indices_by_uuid.get(uuid)
             if verified_indices_by_uuid and verified_indices is None:
-                raise ValueError(
-                    f"Verified grasp cache {self.cfg.grasp_prior_verified_indices_path!r} "
-                    f"has no indices for loaded object {uuid}"
-                )
+                if allow_uncovered_verified:
+                    self._grasp_prior_verified_uncovered_uuids.append(uuid)
+                else:
+                    raise ValueError(
+                        f"Verified grasp cache {self.cfg.grasp_prior_verified_indices_path!r} "
+                        f"has no indices for loaded object {uuid}"
+                    )
             if verified_indices is not None:
                 grasps = prior["grasps_object"]
                 if not isinstance(grasps, torch.Tensor):
@@ -559,14 +564,18 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
                 verified_tensor = torch.as_tensor(verified_indices, dtype=torch.long, device=self.device)
                 verified_tensor = torch.unique(verified_tensor[(verified_tensor >= 0) & (verified_tensor < grasps.shape[0])])
                 if verified_tensor.numel() == 0:
-                    raise ValueError(
-                        f"Verified grasp cache contains no valid indices for object {uuid} in {path}"
-                    )
-                prior["verified_indices"] = verified_tensor.contiguous()
-                metadata = prior.get("metadata")
-                if isinstance(metadata, dict):
-                    metadata["verified_indices_count"] = int(verified_tensor.numel())
-                    metadata["verified_indices_path"] = str(getattr(self.cfg, "grasp_prior_verified_indices_path", ""))
+                    if allow_uncovered_verified:
+                        self._grasp_prior_verified_uncovered_uuids.append(uuid)
+                    else:
+                        raise ValueError(
+                            f"Verified grasp cache contains no valid indices for object {uuid} in {path}"
+                        )
+                else:
+                    prior["verified_indices"] = verified_tensor.contiguous()
+                    metadata = prior.get("metadata")
+                    if isinstance(metadata, dict):
+                        metadata["verified_indices_count"] = int(verified_tensor.numel())
+                        metadata["verified_indices_path"] = str(getattr(self.cfg, "grasp_prior_verified_indices_path", ""))
             self._object_grasp_priors[object_idx] = prior
 
         has_prior_by_asset = torch.tensor(
