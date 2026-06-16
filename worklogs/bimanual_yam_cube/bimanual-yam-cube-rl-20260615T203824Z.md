@@ -2024,6 +2024,48 @@ Validation:
 - `git diff --check`
 - Result: passed.
 
+## 2026-06-16 - classified speed-guard verification launch
+
+Goal:
+- Confirm the same suspect rollout now reports `done_reason_counts.cube_speed > 0` instead of `unclassified`.
+
+Version state:
+- local_commit: `b85b1aabfbc8c31ab6825fbca406301393d5cbe2`
+- remote_commit: `b85b1aabfbc8c31ab6825fbca406301393d5cbe2`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/bimanual-yam-cube-rl-20260615T203824Z`
+
+Planned command/job:
+- Submit `cluster/sbatch_eval_bimanual_yam_cube_grasp_1gpu.sh`.
+- Job: `29129978`
+- Run: `yam_cube_cube014d12tr162sq006_speedguard_b85b1aa_20260616T0215Z`
+- Key settings: same as `29129923`.
+
+Result/evidence:
+- Job `29129978` completed; artifacts copied to `artifacts/bimanual_yam_cube/yam_cube_cube014d12tr162sq006_speedguard_b85b1aa_20260616T0215Z/`.
+- Metrics: eval success `0.0`, stable success `0.0`, instant success `0.0`, max lift `0.0`, max XY `0.000485`, first done step `207`.
+- Done counts: `cube_speed=1`, `unclassified=0`, all other reasons `0`.
+- Trace row `207`: `done_any_step=1`, `done_count_step=1`, `last_cube_speed_done=1`.
+
+Decision:
+- The speed guard now blocks the user's observed press/shake false-positive path before it can produce a one-frame lift. The environment is safer for RL, but the current reference path is too aggressive and still does not demonstrate a valid physical pickup. Do not start PPO yet; next tune slower contact/reference gains under the new guard.
+
+## 2026-06-16 - expose eval reference gain knobs
+
+Goal:
+- Sweep slower scripted contact actions in eval using the same reference gain/max-action knobs already available to training.
+
+Change:
+- Added eval wrapper env overrides and logs for `BIMANUAL_REFERENCE_GAIN`, `BIMANUAL_REFERENCE_MAX_ACTION`, `BIMANUAL_REFERENCE_LIFT_GAIN`, and `BIMANUAL_REFERENCE_LIFT_MAX_ACTION`.
+
+Validation:
+- `bash -n cluster/sbatch_eval_bimanual_yam_cube_grasp_1gpu.sh cluster/sbatch_train_bimanual_yam_cube_grasp_1gpu.sh`
+- `git diff --check`
+- Result: passed.
+
+Planned sweep:
+- Run three no-video `sq006` arms under the speed guard with progressively slower reference gains/max actions.
+- Success criteria: no `cube_speed` reset, no instant-only success, and evidence of real lift/contact. If any arm avoids the impulse and lifts, render it with video.
+
 ## 2026-06-15 23:50Z - replace validator joint waypoint with action-interface contact path
 
 Observation:
