@@ -104,6 +104,7 @@ class DextrahBimanualYAMCubeGraspEnvCfg(DirectRLEnvCfg):
     success_timeout = 0.10
     min_episode_steps_before_success = 30
     prelift_drag_termination_xy_error = 0.18
+    cube_out_max_z = table_surface_z + 0.35
     finger_table_clearance_margin = 0.010
     finger_table_penetration_termination_margin = -0.008
     finger_table_clearance_success_margin = -0.004
@@ -246,6 +247,8 @@ class DextrahBimanualYAMCubeGraspEnvCfg(DirectRLEnvCfg):
     bimanual_reference_standoff_target_dist = 0.050
     bimanual_reference_cube_center_to_hold_z = 0.050
     bimanual_reference_min_hold_z = 0.125
+    bimanual_reference_descent_max_action = 0.22
+    bimanual_reference_descent_floor_margin = 0.015
     bimanual_reference_contact_dist = 0.180
     bimanual_reference_contact_target_dist = 0.045
     bimanual_reference_closed_width_fraction = 0.65

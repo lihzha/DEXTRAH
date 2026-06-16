@@ -1533,6 +1533,56 @@ Validation:
 Next:
 - Commit/push/redeploy and rerun the reference-prior smoke before PPO.
 
+## 2026-06-16 - smooth reference-prior smoke launch
+
+Goal:
+- Verify the smooth-interpolated training reference prior.
+
+Version state:
+- local_commit: `e5240ad4a3d1526a4e71b8a36911a63b2eb27295`
+- remote_commit: `e5240ad4a3d1526a4e71b8a36911a63b2eb27295`
+
+Planned command/job:
+- Wrapper: `cluster/sbatch_eval_bimanual_yam_cube_grasp_1gpu.sh`
+- Job: `29127476`
+- Run: `yam_cube_reference_prior_smoke_e5240ad_20260616T0051Z`
+- Key settings: `ACTION_SOURCE=reference_delta`, `NUM_ENVS=1`, `NUM_STEPS=640`, `CAPTURE_VIDEO=True`, no checkpoint, no cube XY randomization, side-y camera.
+- Log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_bimanual_yam_cube_29127476.out`
+- Metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/yam_cube_reference_prior_smoke_e5240ad_20260616T0051Z/metrics.json`
+
+Success criteria:
+- Stable success from the reference action path, with no speed-based false lift.
+
+Result/evidence:
+- Job `29127476` completed and produced metrics, trace, and a video.
+- Local video: `artifacts/bimanual_yam_cube/reference_prior_smoke_20260616T0051Z/videos/yam-cube-reference-prior-smoke-step-0.mp4`.
+- Viewer: `http://localhost:8765/view?path=DEXTRAH/artifacts/bimanual_yam_cube/reference_prior_smoke_20260616T0051Z/videos/yam-cube-reference-prior-smoke-step-0.mp4`.
+- The rollout is a failure despite `success_ever_rate=1.0`: the cube briefly enters the instantaneous success region near step 219, then launches to `cube_pos_z_env0=0.8040` by step 245.
+- Trace diagnosis: the reference-prior fingers undershoot the intended contact height during approach (`left/right_hold_pos_z_env0` around `0.083-0.095` at steps 185-205), then command max upward action. This matches the user-observed press/shake artifact and can explain misleading nonzero lift/success diagnostics.
+
+Decision:
+- Do not launch PPO from this reference prior.
+- Patch the reference-prior descent and reward/eval success gating, then rerun a video smoke.
+
+## 2026-06-16 - physics artifact gating patch
+
+Goal:
+- Prevent the training-side controller and reward/eval summaries from accepting the press/shake launch artifact as success.
+
+Change:
+- Added a high-Z cube out-of-bounds termination for launched cubes.
+- Added a reference-prior descent limiter so standoff/approach actions slow descent and stop downward action near the side-contact hold height.
+- Changed the large YAM cube success bonus to require `time_in_success_region >= success_timeout`.
+- Added explicit stable-success fields to `eval_rollout.py` and changed `eval_success_rate` to use timeout-stable first-attempt success.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_env.py dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_env_cfg.py dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_rewards.py dextrah_lab/rl_games/eval_rollout.py`
+- `bash -n cluster/sbatch_eval_bimanual_yam_cube_grasp_1gpu.sh cluster/sbatch_train_bimanual_yam_cube_grasp_1gpu.sh cluster/sbatch_validate_bimanual_yam_cube_grasp_env_1gpu.sh`
+- Result: passed.
+
+Next:
+- Commit/push/deploy and rerun the `ACTION_SOURCE=reference_delta` video smoke before PPO.
+
 ## 2026-06-15 23:50Z - replace validator joint waypoint with action-interface contact path
 
 Observation:

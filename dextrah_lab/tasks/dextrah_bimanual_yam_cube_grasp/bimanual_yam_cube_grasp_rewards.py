@@ -18,6 +18,7 @@ def compute_bimanual_yam_cube_grasp_rewards(
     left_side_alignment: torch.Tensor,
     right_side_alignment: torch.Tensor,
     in_success_region: torch.Tensor,
+    stable_success_region: torch.Tensor,
     actions: torch.Tensor,
     target_lift_height: float,
     max_gripper_width: float,
@@ -108,7 +109,7 @@ def compute_bimanual_yam_cube_grasp_rewards(
     lift_reward = lift_weight * lift_progress * (0.10 + 0.90 * lift_hold_gate)
     height_tracking_reward = height_tracking_weight * height_tracking * (0.10 + 0.90 * lift_hold_gate)
     xy_stability_reward = xy_stability_weight * xy_stability
-    success_bonus = success_bonus_weight * in_success_region.float()
+    success_bonus = success_bonus_weight * stable_success_region.float()
     close_action_reward = close_action_weight * prelift_gate * bimanual_close_gate * (1.0 - closed_grippers) * close_action
     lift_action_reward = lift_action_weight * prelift_gate * bimanual_ready_gate * lift_action
     descend_action_penalty = descend_action_penalty_weight * prelift_gate * bimanual_ready_gate * descend_action

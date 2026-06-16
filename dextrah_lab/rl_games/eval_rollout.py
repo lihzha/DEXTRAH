@@ -648,6 +648,7 @@ def _done_reason_snapshot(task_env, success_timeout_override: float | None = Non
         | (cube_pos[:, 1] < lower_y)
         | (cube_pos[:, 1] > upper_y)
         | (cube_pos[:, 2] < float(getattr(cfg, "table_surface_z", 0.0)) - 0.08)
+        | (cube_pos[:, 2] > float(getattr(cfg, "cube_out_max_z", math.inf)))
     )
     episode_length = _env_tensor(task_env, "episode_length_buf")
     success_region = _env_bool_tensor(task_env, "in_success_region")
@@ -1295,7 +1296,14 @@ def _summarize_episode_outcomes(
             "terminal_time_in_success_region_mean": None,
             "terminal_lift_mean": None,
         }
-    success_values = [1.0 if outcome.get("success") else 0.0 for outcome in outcomes]
+    if success_hold_time_threshold is not None:
+        success_values = [
+            1.0 if float(outcome["max_time_in_success_region"]) >= float(success_hold_time_threshold) else 0.0
+            for outcome in outcomes
+            if outcome.get("max_time_in_success_region") is not None
+        ]
+    else:
+        success_values = [1.0 if outcome.get("success") else 0.0 for outcome in outcomes]
     terminal_success_values = [
         1.0 if float(outcome["terminal_success_rate"]) >= 0.5 else 0.0
         for outcome in outcomes
@@ -1672,6 +1680,8 @@ def main(env_cfg, agent_cfg: dict):
     done_ever_env = torch.zeros(task_env.num_envs, dtype=torch.bool, device=task_env.device)
     first_done_step = torch.full((task_env.num_envs,), -1.0, device=task_env.device)
     done_after_success_env = torch.zeros(task_env.num_envs, dtype=torch.bool, device=task_env.device)
+    stable_success_ever_env = torch.zeros(task_env.num_envs, dtype=torch.bool, device=task_env.device)
+    first_stable_success_step = torch.full((task_env.num_envs,), -1.0, device=task_env.device)
     suppressed_success_done_ever_env = torch.zeros(task_env.num_envs, dtype=torch.bool, device=task_env.device)
     first_suppressed_success_done_step = torch.full((task_env.num_envs,), -1.0, device=task_env.device)
     final_success_env = torch.zeros(task_env.num_envs, dtype=torch.bool, device=task_env.device)
@@ -1797,6 +1807,13 @@ def main(env_cfg, agent_cfg: dict):
                 if bool(success_tensor.any()):
                     last_success_step[success_tensor] = float(step + 1)
                 success_ever_env |= success_tensor
+                stable_success_tensor = pre_step_done_reasons["success_done"]
+                if dones_bool is not None:
+                    stable_success_tensor = stable_success_tensor | (dones_bool & pre_step_done_reasons["success_done"])
+                new_stable_success = stable_success_tensor & (~stable_success_ever_env)
+                if bool(new_stable_success.any()):
+                    first_stable_success_step[new_stable_success] = float(step + 1)
+                stable_success_ever_env |= stable_success_tensor
 
                 if dones_bool is not None and bool(dones_bool.any()):
                     new_done = dones_bool & (~done_ever_env)
@@ -1849,6 +1866,9 @@ def main(env_cfg, agent_cfg: dict):
                 eval_event_metrics = {
                     "eval_success_ever_rate": _mean_float(success_ever_env.float()),
                     "eval_success_ever_count": int(success_ever_env.sum().detach().cpu()),
+                    "eval_stable_success_ever_rate": _mean_float(stable_success_ever_env.float()),
+                    "eval_stable_success_ever_count": int(stable_success_ever_env.sum().detach().cpu()),
+                    "eval_first_stable_success_step_mean": _step_tensor_summary(first_stable_success_step)["mean"],
                     "eval_first_success_step_mean": _step_tensor_summary(first_success_step)["mean"],
                     "eval_last_success_step_mean": _step_tensor_summary(last_success_step)["mean"],
                     "eval_done_rate": done_step_rate,
@@ -1962,9 +1982,10 @@ def main(env_cfg, agent_cfg: dict):
         success_hold_time_threshold=success_hold_time_threshold,
     )
     eval_success_rate = first_attempt_summary["success_rate"]
-    eval_success_rate_source = "first_attempt_success_rate"
+    eval_success_rate_source = "first_attempt_stable_success_rate"
     first_success_summary = _step_tensor_summary(first_success_step)
     last_success_summary = _step_tensor_summary(last_success_step)
+    first_stable_success_summary = _step_tensor_summary(first_stable_success_step)
     first_done_summary = _step_tensor_summary(first_done_step)
     first_suppressed_success_done_summary = _step_tensor_summary(first_suppressed_success_done_step)
     summary = {
@@ -2062,8 +2083,8 @@ def main(env_cfg, agent_cfg: dict):
         "eval_success_hold_rate": first_attempt_summary["success_hold_rate"],
         "eval_success_rate_definition": (
             "Success rate over each env's first evaluation attempt, where an attempt is successful "
-            "if its per-env max in_success_region is >= 0.5. Completed attempts use the pre-reset "
-            "terminal state; unfinished first attempts use horizon-end state. "
+            "if it remains in_success_region for cfg.success_timeout. Completed attempts use the "
+            "pre-reset terminal state; unfinished first attempts use horizon-end state. "
             "success_occupancy_* fields are per-step in_success_region occupancy and may show reset artifacts."
         ),
         "reward_mean": reward_mean,
@@ -2071,11 +2092,18 @@ def main(env_cfg, agent_cfg: dict):
         "success_ever_count": int(success_ever_env.sum().detach().cpu()),
         "success_ever_rate": _mean_float(success_ever_env.float()),
         "success_ever_by_env": _tensor_bool_list(success_ever_env),
+        "success_ever_definition": "Instantaneous in_success_region diagnostic; prefer eval_success_rate.",
+        "stable_success_ever_count": int(stable_success_ever_env.sum().detach().cpu()),
+        "stable_success_ever_rate": _mean_float(stable_success_ever_env.float()),
+        "stable_success_ever_by_env": _tensor_bool_list(stable_success_ever_env),
+        "stable_success_ever_definition": "Reached success_done after cfg.success_timeout.",
         "success_final_by_env": _tensor_bool_list(final_success_env),
         "first_success_step": first_success_summary,
         "first_success_step_by_env": _tensor_float_list(first_success_step),
         "last_success_step": last_success_summary,
         "last_success_step_by_env": _tensor_float_list(last_success_step),
+        "first_stable_success_step": first_stable_success_summary,
+        "first_stable_success_step_by_env": _tensor_float_list(first_stable_success_step),
         "cube_lift_height_final_by_env": _tensor_float_list(final_lift_height_env),
         "cube_lift_height_max_by_env": _tensor_float_list(max_lift_height_env),
         "done_ever_count": int(done_ever_env.sum().detach().cpu()),

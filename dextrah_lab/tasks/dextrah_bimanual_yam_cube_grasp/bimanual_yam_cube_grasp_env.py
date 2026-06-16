@@ -256,6 +256,7 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
             | (self.cube_pos[:, 1] < lower_y)
             | (self.cube_pos[:, 1] > upper_y)
             | (self.cube_pos[:, 2] < self.cfg.table_surface_z - 0.08)
+            | (self.cube_pos[:, 2] > float(self.cfg.cube_out_max_z))
         )
         success_done = (
             (self.time_in_success_region >= self.cfg.success_timeout)
@@ -302,6 +303,7 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
             self.left_side_alignment,
             self.right_side_alignment,
             self.in_success_region,
+            self.time_in_success_region >= float(self.cfg.success_timeout),
             self.actions,
             float(self.cfg.cube_lift_height),
             float(self.cfg.max_gripper_width),
@@ -359,6 +361,9 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
             "yam_cube_xy_error": self.cube_xy_error.mean(),
             "yam_cube_goal_height_error": self.cube_goal_height_error.mean(),
             "yam_cube_success_rate": self.in_success_region.float().mean(),
+            "yam_cube_stable_success_rate": (
+                self.time_in_success_region >= float(self.cfg.success_timeout)
+            ).float().mean(),
             "yam_cube_has_lifted_rate": self.has_lifted_cube.float().mean(),
             "yam_cube_linear_speed": self.cube_linear_speed.mean(),
             "yam_cube_angular_speed": self.cube_angular_speed.mean(),
@@ -438,6 +443,24 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
         actions[:, 6] = float(grip)
         actions[:, 13] = float(grip)
         return actions
+
+    def _limit_reference_descent(
+        self,
+        actions: torch.Tensor,
+        left_floor_z: torch.Tensor,
+        right_floor_z: torch.Tensor,
+    ) -> torch.Tensor:
+        limited_actions = actions.clone()
+        descent_max = max(float(self.cfg.bimanual_reference_descent_max_action), 0.0)
+        floor_margin = max(float(self.cfg.bimanual_reference_descent_floor_margin), 0.0)
+        if descent_max > 0.0:
+            limited_actions[:, 2] = torch.clamp(limited_actions[:, 2], min=-descent_max)
+            limited_actions[:, 9] = torch.clamp(limited_actions[:, 9], min=-descent_max)
+        left_near_floor = self.left_hold_pos[:, 2] <= (left_floor_z + floor_margin)
+        right_near_floor = self.right_hold_pos[:, 2] <= (right_floor_z + floor_margin)
+        limited_actions[left_near_floor, 2] = torch.clamp(limited_actions[left_near_floor, 2], min=0.0)
+        limited_actions[right_near_floor, 9] = torch.clamp(limited_actions[right_near_floor, 9], min=0.0)
+        return limited_actions
 
     def _smooth_phase_alpha(self, start_step: int, phase_steps: int) -> torch.Tensor:
         if phase_steps <= 0:
@@ -544,6 +567,11 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
                 gain=float(self.cfg.bimanual_reference_gain),
                 max_action=float(self.cfg.bimanual_reference_max_action),
             )
+            standoff_actions = self._limit_reference_descent(
+                standoff_actions,
+                contact_left_hold[:, 2],
+                contact_right_hold[:, 2],
+            )
             standoff_actions[:, 3:6] = left_rot_action
             standoff_actions[:, 10:13] = right_rot_action
             teacher_actions[standoff_mask] = standoff_actions[standoff_mask]
@@ -555,6 +583,11 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
                 -1.0,
                 gain=float(self.cfg.bimanual_reference_gain),
                 max_action=float(self.cfg.bimanual_reference_max_action),
+            )
+            approach_actions = self._limit_reference_descent(
+                approach_actions,
+                contact_left_hold[:, 2],
+                contact_right_hold[:, 2],
             )
             approach_actions[:, 3:6] = left_rot_action
             approach_actions[:, 10:13] = right_rot_action
