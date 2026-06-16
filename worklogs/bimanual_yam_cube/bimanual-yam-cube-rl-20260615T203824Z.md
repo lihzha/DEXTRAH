@@ -1848,6 +1848,89 @@ Validation plan:
 - Run Python syntax, wrapper syntax, and diff checks.
 - Commit/push/deploy, then relaunch the same three geometry arms.
 
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_env.py dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_env_cfg.py dextrah_lab/rl_games/eval_rollout.py`
+- `bash -n cluster/sbatch_eval_bimanual_yam_cube_grasp_1gpu.sh cluster/sbatch_train_bimanual_yam_cube_grasp_1gpu.sh cluster/sbatch_validate_bimanual_yam_cube_grasp_env_1gpu.sh`
+- `git diff --check`
+- Result: passed.
+
+Version state:
+- local_commit: `9eafbdd12e1f7f0370dcc71e268eef3de7cfcd5f`
+- remote_commit: `9eafbdd12e1f7f0370dcc71e268eef3de7cfcd5f`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/bimanual-yam-cube-rl-20260615T203824Z`
+
+## 2026-06-16 - cube geometry sweep relaunch
+
+Goal:
+- Relaunch the same geometry arms now that physical cube settings bypass Hydra and are applied directly by the task.
+
+Sweep manifest:
+
+| Attempt | Commit | Key settings | Result | Evidence | Decision |
+| --- | --- | --- | --- | --- | --- |
+| `yam_cube_cube016d24sq006_9eafbdd_20260616T0202Z` | `9eafbdd` | cube `0.16 m`, density `24`, center-to-hold-z `0.040`, trigger `0.170`, squeeze `0.006`, no video | failed: `stable_success=0`, `max_lift=0`, `max_xy=0.027969` | metrics `artifacts/bimanual_yam_cube/yam_cube_cube016d24sq006_9eafbdd_20260616T0202Z/metrics.json`; job `29129568` | no lift |
+| `yam_cube_cube016d24sq012_9eafbdd_20260616T0202Z` | `9eafbdd` | cube `0.16 m`, density `24`, center-to-hold-z `0.040`, trigger `0.170`, squeeze `0.012`, no video | failed: `stable_success=0`, `max_lift=0`, `max_xy=0.027969` | metrics `artifacts/bimanual_yam_cube/yam_cube_cube016d24sq012_9eafbdd_20260616T0202Z/metrics.json`; job `29129571` | no lift |
+| `yam_cube_cube014d24sq006_9eafbdd_20260616T0202Z` | `9eafbdd` | cube `0.14 m`, density `24`, center-to-hold-z `0.040`, trigger `0.160`, squeeze `0.006`, no video | failed: `stable_success=0`, `max_lift=0.020618`, `max_xy=0.025569` | metrics `artifacts/bimanual_yam_cube/yam_cube_cube014d24sq006_9eafbdd_20260616T0202Z/metrics.json`; job `29129573` | best arm but unstable/asymmetric |
+
+Shared success criteria:
+- Prefer stable success; otherwise prefer larger lift with low XY slip and no launch-like dynamics.
+
+Decision:
+- `0.16 m` gives no lift. `0.14 m` produces intermittent lift but still slips and does not reach the stable success threshold. Next sweep lower density at `0.14 m` and vary squeeze.
+
+## 2026-06-16 - 14 cm lower-density squeeze sweep launch
+
+Goal:
+- Test whether a lighter 14 cm cube converts the intermittent lift into stable carry without returning to shake/launch.
+
+Sweep manifest:
+
+| Attempt | Commit | Key settings | Result | Evidence | Decision |
+| --- | --- | --- | --- | --- | --- |
+| `yam_cube_cube014d12sq006_9eafbdd_20260616T0209Z` | `9eafbdd` | cube `0.14 m`, density `12`, trigger `0.160`, squeeze `0.006`, no video | failed: `stable_success=0`, `max_lift=0.009466`, `max_xy=0.017310`, min max-hold `0.161856` | metrics `artifacts/bimanual_yam_cube/yam_cube_cube014d12sq006_9eafbdd_20260616T0209Z/metrics.json`; job `29129685` | trigger not reached |
+| `yam_cube_cube014d12sq012_9eafbdd_20260616T0209Z` | `9eafbdd` | cube `0.14 m`, density `12`, trigger `0.160`, squeeze `0.012`, no video | failed: `stable_success=0`, `max_lift=0.009466`, `max_xy=0.017310`, min max-hold `0.161856` | metrics `artifacts/bimanual_yam_cube/yam_cube_cube014d12sq012_9eafbdd_20260616T0209Z/metrics.json`; job `29129686` | trigger not reached |
+| `yam_cube_cube014d12sq018_9eafbdd_20260616T0209Z` | `9eafbdd` | cube `0.14 m`, density `12`, trigger `0.160`, squeeze `0.018`, no video | failed: `stable_success=0`, `max_lift=0.009466`, `max_xy=0.017310`, min max-hold `0.161856` | metrics `artifacts/bimanual_yam_cube/yam_cube_cube014d12sq018_9eafbdd_20260616T0209Z/metrics.json`; job `29129688` | trigger not reached |
+
+Shared success criteria:
+- Stable success preferred; otherwise choose the lowest-slip arm with sustained lift and no high-Z/velocity artifact.
+
+Decision:
+- The `0.160` trigger was too strict for the lower-density 14 cm cube; all three arms are identical because the lift phase did not start. Relaunch around trigger `0.162`.
+
+## 2026-06-16 - 14 cm lower-density trigger sweep launch
+
+Goal:
+- Start the lift phase on the lower-density 14 cm cube and compare squeeze levels.
+
+Sweep manifest:
+
+| Attempt | Commit | Key settings | Result | Evidence | Decision |
+| --- | --- | --- | --- | --- | --- |
+| `yam_cube_cube014d12tr162sq000_9eafbdd_20260616T0215Z` | `9eafbdd` | cube `0.14 m`, density `12`, trigger `0.162`, squeeze `0.000`, no video | failed: stable `0`, instant `0`, max lift `0.000000`, max xy `0.003173` | metrics `artifacts/bimanual_yam_cube/yam_cube_cube014d12tr162sq000_9eafbdd_20260616T0215Z/metrics.json`; job `29129795` | no lift |
+| `yam_cube_cube014d12tr162sq006_9eafbdd_20260616T0215Z` | `9eafbdd` | cube `0.14 m`, density `12`, trigger `0.162`, squeeze `0.006`, no video | failed: stable `0`, instant `1`, one-step max lift `0.040239`, max xy `0.020013` | metrics `artifacts/bimanual_yam_cube/yam_cube_cube014d12tr162sq006_9eafbdd_20260616T0215Z/metrics.json`; job `29129796` | render video with speed diagnostics |
+| `yam_cube_cube014d12tr162sq012_9eafbdd_20260616T0215Z` | `9eafbdd` | cube `0.14 m`, density `12`, trigger `0.162`, squeeze `0.012`, no video | failed: stable `0`, instant `1`, one-step max lift `0.040164`, max xy `0.034257` | metrics `artifacts/bimanual_yam_cube/yam_cube_cube014d12tr162sq012_9eafbdd_20260616T0215Z/metrics.json`; job `29129797` | lower-quality than squeeze `0.006` |
+
+Shared success criteria:
+- Stable success preferred; otherwise choose the arm with the best lift/slip tradeoff for a follow-up video.
+
+Decision:
+- The user-reported press/shake artifact is a plausible explanation for earlier nonzero lift. This sweep still only reaches the lift threshold for a single step and never reaches stable success; do not start PPO from this setup.
+- Add cube velocity diagnostics to eval traces, then rerun the best arm (`squeeze=0.006`) with video to visually confirm whether the one-step lift is physical carry or artifact/slip.
+
+## 2026-06-16 - eval cube speed diagnostics
+
+Goal:
+- Make rollout artifacts auditable for press/shake false positives by recording cube linear and angular speed directly in `trace.csv`, `trace.jsonl`, and metric summaries.
+
+Change:
+- Added `cube_linear_speed`, `cube_angular_speed`, `cube_velocity_success_stable`, `in_success_region`, and `time_in_success_region` to eval task metrics.
+- Added `cube_vel_{vx,vy,vz,wx,wy,wz}` vector metrics.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py`
+- `bash -n cluster/sbatch_eval_bimanual_yam_cube_grasp_1gpu.sh`
+- Result: passed.
+
 ## 2026-06-15 23:50Z - replace validator joint waypoint with action-interface contact path
 
 Observation:

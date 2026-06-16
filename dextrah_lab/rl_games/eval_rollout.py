@@ -332,7 +332,12 @@ def _collect_task_metrics(task_env, actions: torch.Tensor | None = None) -> dict
         "cube_lift_height",
         "cube_xy_error",
         "cube_goal_height_error",
+        "cube_linear_speed",
+        "cube_angular_speed",
+        "cube_velocity_success_stable",
         "has_lifted_cube",
+        "in_success_region",
+        "time_in_success_region",
         "ee_to_cube_dist",
         "finger_center_to_cube_dist",
         "left_finger_to_cube_dist",
@@ -410,6 +415,9 @@ def _collect_task_metrics(task_env, actions: torch.Tensor | None = None) -> dict
     stat_metric_names = {
         "cube_lift_height",
         "cube_xy_error",
+        "cube_linear_speed",
+        "cube_angular_speed",
+        "time_in_success_region",
         "finger_table_clearance",
         "finger_table_clearance_violation",
         "left_hold_to_cube_dist",
@@ -442,6 +450,7 @@ def _collect_task_metrics(task_env, actions: torch.Tensor | None = None) -> dict
                     metrics[name] = mean_value
     _add_vector_metrics(metrics, "ee_pos", getattr(task_env, "ee_pos", None), ("x", "y", "z"))
     _add_vector_metrics(metrics, "cube_pos", getattr(task_env, "cube_pos", None), ("x", "y", "z"))
+    _add_vector_metrics(metrics, "cube_vel", getattr(task_env, "cube_vel", None), ("vx", "vy", "vz", "wx", "wy", "wz"))
     _add_vector_metrics(metrics, "cube_initial_pos", getattr(task_env, "cube_initial_pos", None), ("x", "y", "z"))
     _add_vector_metrics(metrics, "cube_goal_pos", getattr(task_env, "cube_goal_pos", None), ("x", "y", "z"))
     _add_vector_metrics(metrics, "left_hold_pos", getattr(task_env, "left_hold_pos", None), ("x", "y", "z"))
