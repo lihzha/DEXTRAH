@@ -131,8 +131,8 @@ class DextrahFrankaMultiObjectGraspEnvCfg(DextrahFrankaCubeGraspEnvCfg):
     grasp_prior_action_warmstart_use_prior_close_width = False
     grasp_prior_action_warmstart_lift_action_z = 1.0
     grasp_prior_action_warmstart_close_max_ee_error = 0.0
-    grasp_prior_action_warmstart_lift_max_ee_error = 0.05
-    grasp_prior_action_warmstart_lift_max_finger_center_dist = 0.08
+    grasp_prior_action_warmstart_lift_max_ee_error = 0.0
+    grasp_prior_action_warmstart_lift_max_finger_center_dist = 0.0
     grasp_prior_action_warmstart_lift_closed_width_margin = 0.03
     grasp_prior_action_warmstart_require_current_lift_ready = True
 
