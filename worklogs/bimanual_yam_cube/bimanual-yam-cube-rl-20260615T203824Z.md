@@ -1451,6 +1451,54 @@ Validation plan:
 - Run syntax and diff checks.
 - Commit/push/redeploy and rerun the same strict stable validator.
 
+## 2026-06-16 00:17Z - planned relaxed-trigger stable validator
+
+Goal:
+- Test whether starting lift earlier from stable side contact produces a physical lift without cube shake.
+
+Version state:
+- local_commit: `04e01fb0a8fc9a8d63528432ef834c776cc0b22c`
+- remote_commit: `04e01fb0a8fc9a8d63528432ef834c776cc0b22c`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/bimanual-yam-cube-rl-20260615T203824Z`
+
+Planned command/job:
+- Submit `cluster/sbatch_validate_bimanual_yam_cube_grasp_env_1gpu.sh`.
+- A100 job: `29125579`
+- Expected run: `yam_cube_actionpath_trigger_04e01fb_20260616T0017Z`
+- Log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_bimanual_yam_cube_29125579.out`
+- Metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/yam_cube_actionpath_trigger_04e01fb_20260616T0017Z/metrics.json`
+- Key settings: strict stable validator, `NUM_ENVS=1`, `NUM_STEPS=560`, `LIFT_HEIGHT=0.06`, `CAPTURE_VIDEO=False`, `ALLOW_GRASP_ASSIST=False`, `REQUIRE_UNASSISTED_LIFT=True`, `DISABLE_FABRIC=True`.
+
+Success criteria:
+- Stable no-assist success, or diagnostics showing whether earlier lift starts while contact is still valid and whether the cube follows the grippers.
+
+Result/evidence:
+- Job `29125579` completed and failed stable validation.
+- The relaxed trigger worked as intended: `scripted_contact_reached=True`, contact step `309`, lift step `310`.
+- Metrics: `max_lift=0.0`, `max_success_rate=0.0`, `max_cube_linear_speed=0.1630914807319641`, `max_cube_angular_speed=0.0049080695025622845`.
+- Best hold distance was `0.138511523604393` with hold positions around `y=+/-0.127`, `z=0.125`; the cube remained still.
+
+Analysis:
+- The action path is stable and can start lift earlier, but it still does not create load-bearing contact.
+- Likely missing factor: the validator/reference currently use only XYZ deltas and gripper close actions. The older hardcoded joint waypoint also changed wrist orientation substantially.
+- Next change should sweep wrist rotation action components through the normal 14D action interface instead of restoring direct joint writes.
+
+## 2026-06-16 00:24Z - add validator rotation-action sweep controls
+
+Goal:
+- Test whether wrist orientation, not just XYZ reach, is preventing side contact and lift.
+
+Change:
+- Added `--left_rot_action x y z` and `--right_rot_action x y z` to the bimanual YAM cube validator.
+- The validator applies these rotation action components during standoff and approach only; lift still uses the existing hold-position lift action.
+- The validator records the rotation actions in metrics.
+- Exposed the six scalar rotation components through `cluster/sbatch_validate_bimanual_yam_cube_grasp_env_1gpu.sh`.
+
+Validation plan:
+- Run Python syntax, wrapper syntax, and diff checks.
+- Commit/push/redeploy.
+- Run small strict validator sweeps for mirrored wrist rotations, starting with opposite Y-axis and opposite Z-axis commands.
+
 ## 2026-06-16 04:05Z - planned smaller-cube stable validator
 
 Goal:

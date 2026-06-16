@@ -25,6 +25,8 @@ parser.add_argument("--video_folder", type=str, default=None)
 parser.add_argument("--cube_spawn_xy_randomization", type=float, default=0.0)
 parser.add_argument("--print_interval", type=int, default=20)
 parser.add_argument("--lift_height", type=float, default=0.14)
+parser.add_argument("--left_rot_action", type=float, nargs=3, default=(0.0, 0.0, 0.0))
+parser.add_argument("--right_rot_action", type=float, nargs=3, default=(0.0, 0.0, 0.0))
 parser.add_argument("--continue_after_success", action="store_true", default=False)
 parser.add_argument(
     "--allow_grasp_assist",
@@ -709,6 +711,8 @@ def _run_scripted_demo(
     lifted_right_hold = contact_right_hold.clone()
     lifted_left_hold[:, 2] += hold_lift_height
     lifted_right_hold[:, 2] += hold_lift_height
+    left_rot_action = torch.tensor(args_cli.left_rot_action, device=task_env.device).view(1, 3)
+    right_rot_action = torch.tensor(args_cli.right_rot_action, device=task_env.device).view(1, 3)
     phase_close = max(45, int(0.12 * num_steps))
     phase_standoff = max(120, int(0.30 * num_steps))
     phase_approach = max(140, int(0.34 * num_steps))
@@ -780,6 +784,8 @@ def _run_scripted_demo(
                 gain=0.85,
                 max_action=0.65,
             )
+            action[:, 3:6] = left_rot_action
+            action[:, 10:13] = right_rot_action
         elif step < lift_start_step and not lift_phase_active:
             phase_name = "approach"
             alpha = min(float(step - approach_start_step + 1) / float(phase_approach), 1.0)
@@ -794,6 +800,8 @@ def _run_scripted_demo(
                 gain=0.85,
                 max_action=0.65,
             )
+            action[:, 3:6] = left_rot_action
+            action[:, 10:13] = right_rot_action
         else:
             phase_name = "lift"
             lift_origin_step = actual_lift_start_step if actual_lift_start_step is not None else lift_start_step
@@ -1096,6 +1104,8 @@ def _run_scripted_demo(
         "final_left_gripper_width": _mean(task_env.left_gripper_width),
         "final_right_gripper_width": _mean(task_env.right_gripper_width),
         "scripted_hold_lift_height": hold_lift_height,
+        "scripted_left_rot_action": list(args_cli.left_rot_action),
+        "scripted_right_rot_action": list(args_cli.right_rot_action),
         "scripted_phase_close_steps": phase_close,
         "scripted_phase_standoff_steps": phase_standoff,
         "scripted_phase_approach_steps": phase_approach,
