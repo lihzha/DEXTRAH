@@ -335,6 +335,8 @@ def _collect_task_metrics(task_env, actions: torch.Tensor | None = None) -> dict
         "cube_linear_speed",
         "cube_angular_speed",
         "cube_velocity_success_stable",
+        "cube_speed_done",
+        "last_cube_speed_done",
         "has_lifted_cube",
         "in_success_region",
         "time_in_success_region",
@@ -627,6 +629,7 @@ def _done_reason_snapshot(task_env, success_timeout_override: float | None = Non
             "success_done": false,
             "cube_out": false,
             "prelift_drag": false,
+            "cube_speed": false,
             "finger_table_penetration": false,
             "truncated": false,
         }
@@ -638,6 +641,7 @@ def _done_reason_snapshot(task_env, success_timeout_override: float | None = Non
             "success_done": false,
             "cube_out": false,
             "prelift_drag": false,
+            "cube_speed": false,
             "finger_table_penetration": false,
             "truncated": false,
         }
@@ -675,6 +679,16 @@ def _done_reason_snapshot(task_env, success_timeout_override: float | None = Non
         & (_env_tensor(task_env, "cube_xy_error") >= float(getattr(cfg, "prelift_drag_termination_xy_error", math.inf)))
         & (episode_length > 2)
     )
+    cube_speed = (
+        (
+            (_env_tensor(task_env, "cube_linear_speed") > float(getattr(cfg, "cube_speed_termination_linear", math.inf)))
+            | (
+                _env_tensor(task_env, "cube_angular_speed")
+                > float(getattr(cfg, "cube_speed_termination_angular", math.inf))
+            )
+        )
+        & (episode_length > 2)
+    ) | _env_bool_tensor(task_env, "last_cube_speed_done")
     finger_table_penetration = (
         _env_tensor(task_env, "finger_table_clearance", default=math.inf)
         < float(getattr(cfg, "finger_table_penetration_termination_margin", -math.inf))
@@ -685,6 +699,7 @@ def _done_reason_snapshot(task_env, success_timeout_override: float | None = Non
         "success_done": success_done,
         "cube_out": cube_out,
         "prelift_drag": prelift_drag,
+        "cube_speed": cube_speed,
         "finger_table_penetration": finger_table_penetration,
         "truncated": truncated,
     }
@@ -1452,7 +1467,13 @@ def _env_config_summary(env_cfg, task_env) -> dict[str, object]:
         "cube_success_lift_height",
         "cube_success_xy_tol",
         "cube_success_hand_dist",
+        "cube_success_max_linear_speed",
+        "cube_success_max_angular_speed",
+        "cube_speed_termination_linear",
+        "cube_speed_termination_angular",
+        "prelift_drag_termination_xy_error",
         "side_success_y_margin",
+        "cube_velocity_penalty_weight",
         "trajectory_tracking_enabled",
         "trajectory_tracking_reference_path",
         "trajectory_tracking_reference_duration_s",
@@ -1700,6 +1721,7 @@ def main(env_cfg, agent_cfg: dict):
         "success_done": 0,
         "cube_out": 0,
         "prelift_drag": 0,
+        "cube_speed": 0,
         "finger_table_penetration": 0,
         "truncated": 0,
         "done_after_success_unclassified": 0,
@@ -1829,7 +1851,14 @@ def main(env_cfg, agent_cfg: dict):
                     if bool(new_done.any()):
                         first_done_step[new_done] = float(step + 1)
                     done_after_success_env |= dones_bool & success_ever_env
-                    reason_names = ("success_done", "cube_out", "prelift_drag", "finger_table_penetration", "truncated")
+                    reason_names = (
+                        "success_done",
+                        "cube_out",
+                        "prelift_drag",
+                        "cube_speed",
+                        "finger_table_penetration",
+                        "truncated",
+                    )
                     done_reason_tensors = dict(pre_step_done_reasons)
                     if isinstance(truncated, torch.Tensor):
                         done_reason_tensors["truncated"] = done_reason_tensors["truncated"] | truncated.bool()

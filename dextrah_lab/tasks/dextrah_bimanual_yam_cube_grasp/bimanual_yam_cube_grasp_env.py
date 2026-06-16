@@ -192,6 +192,8 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
         self.cube_linear_speed = torch.zeros(self.num_envs, device=self.device)
         self.cube_angular_speed = torch.zeros(self.num_envs, device=self.device)
         self.cube_velocity_success_stable = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        self.cube_speed_done = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        self.last_cube_speed_done = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
 
         self.left_hold_to_cube_dist = torch.zeros(self.num_envs, device=self.device)
         self.right_hold_to_cube_dist = torch.zeros(self.num_envs, device=self.device)
@@ -305,11 +307,20 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
             & (self.cube_xy_error >= float(self.cfg.prelift_drag_termination_xy_error))
             & (self.episode_length_buf > 2)
         )
+        cube_speed_done = (
+            (
+                (self.cube_linear_speed > float(self.cfg.cube_speed_termination_linear))
+                | (self.cube_angular_speed > float(self.cfg.cube_speed_termination_angular))
+            )
+            & (self.episode_length_buf > 2)
+        )
+        self.cube_speed_done[:] = cube_speed_done
+        self.last_cube_speed_done[:] = cube_speed_done
         finger_table_penetration_done = (
             (self.finger_table_clearance < float(self.cfg.finger_table_penetration_termination_margin))
             & (self.episode_length_buf > 2)
         )
-        terminated = cube_out | success_done | prelift_drag_done | finger_table_penetration_done
+        terminated = cube_out | success_done | prelift_drag_done | cube_speed_done | finger_table_penetration_done
         truncated = self.episode_length_buf >= self.max_episode_length - 1
         return terminated, truncated
 
@@ -379,6 +390,18 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
             + gripper_close_reg
             + action_penalty
         )
+        linear_speed_limit = max(float(self.cfg.cube_success_max_linear_speed), 1.0e-6)
+        angular_speed_limit = max(float(self.cfg.cube_success_max_angular_speed), 1.0e-6)
+        linear_speed_violation = torch.clamp((self.cube_linear_speed - linear_speed_limit) / linear_speed_limit, min=0.0)
+        angular_speed_violation = torch.clamp(
+            (self.cube_angular_speed - angular_speed_limit) / angular_speed_limit,
+            min=0.0,
+        )
+        cube_velocity_penalty = float(self.cfg.cube_velocity_penalty_weight) * (
+            linear_speed_violation * linear_speed_violation
+            + angular_speed_violation * angular_speed_violation
+        )
+        total_reward = total_reward + cube_velocity_penalty
         action_prior_reward = self._compute_bimanual_action_prior_reward()
         total_reward = total_reward + action_prior_reward
         log_terms = {
@@ -395,6 +418,7 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
             "yam_cube_table_clearance_penalty": table_clearance_penalty.mean(),
             "yam_cube_gripper_close_reg": gripper_close_reg.mean(),
             "yam_cube_action_penalty": action_penalty.mean(),
+            "yam_cube_velocity_penalty": cube_velocity_penalty.mean(),
             "yam_cube_lift_height": self.cube_lift_height.mean(),
             "yam_cube_xy_error": self.cube_xy_error.mean(),
             "yam_cube_goal_height_error": self.cube_goal_height_error.mean(),
@@ -406,6 +430,7 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
             "yam_cube_linear_speed": self.cube_linear_speed.mean(),
             "yam_cube_angular_speed": self.cube_angular_speed.mean(),
             "yam_cube_velocity_success_stable_rate": self.cube_velocity_success_stable.float().mean(),
+            "yam_cube_speed_done_rate": self.cube_speed_done.float().mean(),
             "yam_cube_bimanual_side_success_rate": self.bimanual_side_success.float().mean(),
             "yam_cube_left_hold_to_cube_dist": self.left_hold_to_cube_dist.mean(),
             "yam_cube_right_hold_to_cube_dist": self.right_hold_to_cube_dist.mean(),
@@ -794,6 +819,7 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
         self.has_lifted_cube[env_ids] = False
         self.in_success_region[env_ids] = False
         self.time_in_success_region[env_ids] = 0.0
+        self.cube_speed_done[env_ids] = False
         self.actions[env_ids] = 0.0
         self.left_ik_controller.reset(env_ids)
         self.right_ik_controller.reset(env_ids)

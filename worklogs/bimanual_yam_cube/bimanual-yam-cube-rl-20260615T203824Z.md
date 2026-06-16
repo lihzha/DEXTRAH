@@ -1931,6 +1931,57 @@ Validation:
 - `bash -n cluster/sbatch_eval_bimanual_yam_cube_grasp_1gpu.sh`
 - Result: passed.
 
+## 2026-06-16 - trigger sq006 video rollout launch
+
+Goal:
+- Visually inspect the one-step lift case with cube speed diagnostics to determine whether it is physical carry, slip, or the press/shake artifact.
+
+Version state:
+- local_commit: `47f4db84d8ea19f84d5466f1d247cfb5ca752763`
+- remote_commit: `47f4db84d8ea19f84d5466f1d247cfb5ca752763`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/bimanual-yam-cube-rl-20260615T203824Z`
+
+Planned command/job:
+- Submit `cluster/sbatch_eval_bimanual_yam_cube_grasp_1gpu.sh`.
+- Job: `29129855`
+- Run: `yam_cube_cube014d12tr162sq006_video_47f4db8_20260616T0150Z`
+- Key settings: cube `0.14 m`, density `12`, trigger `0.162`, squeeze `0.006`, `NUM_STEPS=360`, `CAPTURE_VIDEO=True`, `VIDEO_LENGTH=360`.
+
+Success criteria:
+- Stable success preferred. If stable success remains zero, inspect video and speed trace to classify the instant lift as physical slip, press/shake, or other artifact.
+
+Result/evidence:
+- Job `29129855` completed; video copied to `artifacts/bimanual_yam_cube/yam_cube_cube014d12tr162sq006_video_47f4db8_20260616T0150Z/videos/yam-cube-trigger-sq006-video-step-0.mp4`.
+- Viewer: `http://localhost:8765/view?path=DEXTRAH/artifacts/bimanual_yam_cube/yam_cube_cube014d12tr162sq006_video_47f4db8_20260616T0150Z/videos/yam-cube-trigger-sq006-video-step-0.mp4`.
+- Video metadata: `1280x720`, `359` frames, `5.983 s`, `60 fps`.
+- Metrics: stable success `0.0`, instant success `1.0`, max lift `0.040239` at step `286`, max linear speed `1.223611 m/s` at step `207`, max angular speed `12.533587 rad/s` at step `207`, max success hold time `0.016667 s`.
+- Trace around key frames: step `207` has a contact impulse and fails the velocity gate; step `286` crosses lift threshold for one frame; step `287` falls at `-0.662 m/s`; step `300` is back on the table with `0.020 m` XY slip.
+
+Analysis:
+- This is not a valid grasp. The cube is kicked/tilted into a one-frame lift and then falls, matching the user's concern about press/shake artifacts.
+- PPO remains blocked until this behavior is made terminal/penalized and the eval no longer reports an exploitable instant lift.
+
+## 2026-06-16 - speed-guard RLability patch
+
+Goal:
+- Prevent RL from exploiting contact impulses, cube shake, or large pre-lift slides while preserving the stable-success gate for real lifts.
+
+Change:
+- Tightened `cube_success_xy_tol` from `0.16` to `0.04`.
+- Tightened `prelift_drag_termination_xy_error` from `0.18` to `0.04`.
+- Added `cube_speed_termination_linear=1.00` and `cube_speed_termination_angular=10.0`; either threshold now terminates the episode after the first two steps.
+- Added `cube_velocity_penalty_weight=-2.0` and logs `yam_cube_velocity_penalty`.
+- Added `cube_speed_done` / `last_cube_speed_done` diagnostics and eval `done_reason_counts.cube_speed`.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_env.py dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_env_cfg.py dextrah_lab/rl_games/eval_rollout.py`
+- `bash -n cluster/sbatch_eval_bimanual_yam_cube_grasp_1gpu.sh cluster/sbatch_train_bimanual_yam_cube_grasp_1gpu.sh cluster/sbatch_validate_bimanual_yam_cube_grasp_env_1gpu.sh`
+- `git diff --check`
+- Result: passed.
+
+Next:
+- Commit/push/deploy and rerun `yam_cube_cube014d12tr162sq006` with video disabled to confirm it terminates as `cube_speed` before any instant lift.
+
 ## 2026-06-15 23:50Z - replace validator joint waypoint with action-interface contact path
 
 Observation:

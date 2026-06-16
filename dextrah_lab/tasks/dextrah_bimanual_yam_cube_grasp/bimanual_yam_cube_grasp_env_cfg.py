@@ -96,14 +96,16 @@ class DextrahBimanualYAMCubeGraspEnvCfg(DirectRLEnvCfg):
     cube_spawn_z = table_surface_z + cube_size / 2.0 + 0.005
     cube_lift_height = 0.08
     cube_success_lift_height = 0.04
-    cube_success_xy_tol = 0.16
+    cube_success_xy_tol = 0.04
     cube_success_hand_dist = 0.18
     cube_success_max_linear_speed = 0.60
     cube_success_max_angular_speed = 8.0
+    cube_speed_termination_linear = 1.00
+    cube_speed_termination_angular = 10.0
     side_success_y_margin = 0.010
     success_timeout = 0.10
     min_episode_steps_before_success = 30
-    prelift_drag_termination_xy_error = 0.18
+    prelift_drag_termination_xy_error = 0.04
     cube_out_max_z = table_surface_z + 0.35
     finger_table_clearance_margin = 0.010
     finger_table_penetration_termination_margin = -0.008
@@ -224,6 +226,7 @@ class DextrahBimanualYAMCubeGraspEnvCfg(DirectRLEnvCfg):
     cube_table_clearance_penalty_weight = -2.0
     cube_gripper_close_reg_weight = -0.001
     cube_action_penalty_weight = -0.0005
+    cube_velocity_penalty_weight = -2.0
 
     # Optional bimanual scripted-action prior, modeled after the Franka cube
     # action-prior reward.  It never overrides the policy action; it only adds a
