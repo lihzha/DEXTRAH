@@ -6659,3 +6659,58 @@ Analysis:
 Next:
 - Deploy commit `d71262b3b853c1eeec602ae26725430bb2e8213a` to an agent-owned A100 worktree.
 - Continue full-18 PPO from the epoch-600 checkpoint using the fresh verified cache and uncovered-object fallback.
+
+## 2026-06-16T23:01:08Z - verified-cache smoke passed and full epoch-1200 continuation launched
+
+Deployment:
+- pushed branch: `codex/dextrah-multiobject-grasp-prior-finish-20260615T074722Z`
+- GitHub fetch from A100 base checkout still failed with `Permission denied (publickey)`, so deployment used a git bundle.
+- remote worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-verified-fallback-20260616-e7b35b49`
+- remote HEAD: `e7b35b498d2274028212a398abb4874f31abd380`
+
+Smoke:
+- job id: `29170840`
+- run: `franka_multi_full18_teacherobs_verified17_fallback_smoke3_e7b35b49_20260616T2252Z`
+- status: `COMPLETED`, exit `0:0`, elapsed `00:06:41`
+- scale: 8 GPUs, `NUM_ENVS=2048` per rank, full 18 objects, `MAX_ITERATIONS=3`
+- checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_teacherobs_nograph_bestckpt_ppo600_ebcf612_20260616T202812Z/nn/last_dextrah_franka_multi_object_grasp_ep_600_rew_3798.3723.pth`
+- verified cache: `/results/assets/verified_grasp_indices/verified_full18_current_ebcf612_20260616T222409Z/verified_indices.json`
+- `GRASP_PRIOR_VERIFIED_ALLOW_UNCOVERED=True`, stale `GRASP_PRIOR_LIBRARY_DIR` left empty
+- BC, action-prior reward, action warmstart, and BC policy anchor all disabled
+
+Smoke evidence:
+- all ranks loaded the epoch-600 checkpoint and restored runtime state at epoch `600`
+- all ranks built `build mlp: 91` and `RunningMeanStd: (91,)`
+- rank-0 PPO row at epoch `601`:
+  - `cube_success_rate=0.23681640625`
+  - `cube_has_lifted_rate=0.3798828125`
+  - `cube_lift_height=0.05359881743788719`
+  - `cube_grasp_prior_reset_success_rate=1.0`
+  - `cube_grasp_prior_quality_success_rate=1.0`
+  - `cube_grasp_prior_projected_exact_tip_table_clearance=0.029926111921668053`
+  - `cube_grasp_prior_tool_downward_z=0.804953396320343`
+  - `cube_grasp_prior_tool_z_axis_z=-0.8049534559249878`
+  - `cube_finger_table_clearance_violation=0.0`
+  - `agent_aux/dextrah_grasp_prior_bc_loss=0.0`
+  - `agent_aux/dextrah_bc_policy_anchor_loss=0.0`
+- smoke-only checkpoints were deleted after inspection:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_teacherobs_verified17_fallback_smoke3_e7b35b49_20260616T2252Z/nn/*.pth`
+
+Full continuation launch:
+- job id: `29170977`
+- run: `franka_multi_full18_teacherobs_verified17_fallback_ep1200_e7b35b49_20260616T2303Z`
+- remote code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-verified-fallback-20260616-e7b35b49`
+- code commit: `e7b35b498d2274028212a398abb4874f31abd380`
+- target: continue PPO from epoch `600` to `MAX_ITERATIONS=1200`
+- scale: 8 GPUs, `NUM_ENVS=2048` per rank, full 18 objects, `USE_CUDA_GRAPH=False`, `SAVE_FREQUENCY=20`
+- explicit checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_teacherobs_nograph_bestckpt_ppo600_ebcf612_20260616T202812Z/nn/last_dextrah_franka_multi_object_grasp_ep_600_rew_3798.3723.pth`
+- object manifest: `/results/assets/filtered_manifests/stable_candidates18_shard3_assetroot_d053e6c_20260614T234700Z/manifest.json`
+- stable-pose cache: `/results/validations/graspgen_stable_candidates18_shard3_d053e6c_20260614T234900Z/settled_pose_cache`
+- verified cache: `/results/assets/verified_grasp_indices/verified_full18_current_ebcf612_20260616T222409Z/verified_indices.json`
+- reset gates: attempts `8`, candidates `512`, topdown `True`, min pregrasp z `0.0`, downward tool-z `True`, min downward `0.0`, contact height `-0.02`, center-distance frac `0.50`, min width `0.008`, pregrasp offset `0.0`
+- `AUTO_RESUME=False`, `SELF_RELAUNCH=False`
+- no BC, no action-prior reward, no action warmstart, no BC policy anchor
+
+Next:
+- Monitor job `29170977` through startup and training.
+- After completion, evaluate the latest and generic checkpoints, inspect per-object metrics, and generate videos if the policy improves or behavior changes.
