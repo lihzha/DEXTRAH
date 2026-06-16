@@ -6159,6 +6159,99 @@ Analysis:
 Next:
 - Continue monitoring through epoch `600`.
 
+## 2026-06-16T21:30:05Z - continuation epoch 481 snapshot
+
+Status:
+- job id: `29167189`
+- scheduler state: `RUNNING`
+- elapsed at check: about `01:01:09`
+- rank-0 metrics rows: `188`
+- latest epoch: `481/600`
+
+Metrics:
+- Best continuation row so far: epoch `470`, `cube_success_rate=0.35986328125`, `cube_has_lifted_rate=0.4755859375`, `cube_lift_height=0.06896691024303436`.
+- Latest epoch `481`:
+  - `cube_success_rate=0.2900390625`
+  - `cube_has_lifted_rate=0.41650390625`
+  - `cube_lift_height=0.05736379325389862`
+  - `cube_lift_reward=1.8843913078308105`
+  - `cube_height_tracking_reward=0.35572701692581177`
+  - `cube_grasp_prior_reset_success_rate=1.0`
+  - `cube_grasp_prior_quality_success_rate=1.0`
+  - `cube_grasp_prior_projected_exact_tip_table_clearance=0.028054526075720787`
+  - `cube_grasp_prior_tool_downward_z=0.7995647192001343`
+  - `cube_finger_table_clearance_violation=0.0`
+  - BC and policy-anchor losses remain `0.0`.
+
+Analysis:
+- The best checkpoint improved modestly to `0.35986328125` training success, but latest-policy performance is noisy and dropped at epoch `481`.
+- Reset safety remains clean; this is now a policy optimization/generalization issue.
+
+Next:
+- Continue to epoch `600`; evaluate the saved best checkpoint, not only the final checkpoint.
+
+## 2026-06-16T21:40:30Z - continuation epoch 516 snapshot
+
+Status:
+- job id: `29167189`
+- scheduler state: `RUNNING`
+- elapsed at check: about `01:11:39`
+- rank-0 metrics rows: `223`
+- latest epoch: `516/600`
+
+Metrics:
+- Best continuation row so far: epoch `515`, `cube_success_rate=0.36572265625`, `cube_has_lifted_rate=0.4697265625`, `cube_lift_height=0.0708358958363533`.
+- Latest epoch `516`:
+  - `cube_success_rate=0.359375`
+  - `cube_has_lifted_rate=0.4677734375`
+  - `cube_lift_height=0.07023386657238007`
+  - `cube_lift_reward=2.3018484115600586`
+  - `cube_height_tracking_reward=0.4539909362792969`
+  - `cube_grasp_prior_reset_success_rate=1.0`
+  - `cube_grasp_prior_quality_success_rate=1.0`
+  - `cube_grasp_prior_projected_exact_tip_table_clearance=0.02789902314543724`
+  - `cube_grasp_prior_tool_downward_z=0.7974492311477661`
+  - `cube_finger_table_clearance_violation=0.0`
+  - BC and policy-anchor losses remain `0.0`.
+
+Analysis:
+- Best checkpoint continues to improve gradually.
+- Reset safety remains clean.
+
+Next:
+- Continue to epoch `600`, then run aggregate evaluation on the continuation best checkpoint.
+
+## 2026-06-16T21:51:05Z - continuation epoch 549 snapshot
+
+Status:
+- job id: `29167189`
+- scheduler state: `RUNNING`
+- elapsed at check: about `01:22:06`
+- rank-0 metrics rows: `256`
+- latest epoch: `549/600`
+
+Metrics:
+- Best continuation row so far: epoch `545`, `cube_success_rate=0.369140625`, `cube_has_lifted_rate=0.4755859375`, `cube_lift_height=0.07424677163362503`.
+- Latest epoch `549`:
+  - `cube_success_rate=0.353515625`
+  - `cube_has_lifted_rate=0.470703125`
+  - `cube_lift_height=0.07263313233852386`
+  - `cube_lift_reward=2.3053712844848633`
+  - `cube_height_tracking_reward=0.4419362545013428`
+  - `cube_grasp_prior_reset_success_rate=1.0`
+  - `cube_grasp_prior_quality_success_rate=1.0`
+  - `cube_grasp_prior_projected_exact_tip_table_clearance=0.028108419850468636`
+  - `cube_grasp_prior_tool_downward_z=0.8016143441200256`
+  - `cube_finger_table_clearance_violation=0.0`
+  - BC and policy-anchor losses remain `0.0`.
+
+Analysis:
+- Best checkpoint continues modest improvement to `0.369140625` training success.
+- Reset safety remains clean.
+
+Next:
+- Monitor to completion at epoch `600`, then evaluate the continuation best checkpoint.
+
 ## 2026-06-16T20:57:40Z - continuation epoch 377 snapshot
 
 Status:
@@ -6251,3 +6344,266 @@ Analysis:
 
 Next:
 - Continue monitoring through epoch `600`.
+
+## 2026-06-16T21:43:10Z - continuation epoch 516 snapshot
+
+Status:
+- job id: `29167189`
+- scheduler state: `RUNNING`
+- rank-0 metrics rows: `223`
+- latest epoch: `516/600`
+
+Metrics:
+- Best continuation row so far: epoch `515`, `cube_success_rate=0.36572265625`, `cube_has_lifted_rate=0.4775390625`, `cube_lift_height=0.07189076393842697`.
+- Latest epoch `516`:
+  - `cube_success_rate=0.359375`
+  - `cube_has_lifted_rate=0.47265625`
+  - `cube_lift_height=0.07119069248437881`
+  - `cube_lift_reward=2.305847406387329`
+  - `cube_height_tracking_reward=0.4505966603755951`
+  - `cube_grasp_prior_reset_success_rate=1.0`
+  - `cube_grasp_prior_quality_success_rate=0.99951171875`
+  - `cube_grasp_prior_projected_exact_tip_table_clearance=0.028277894482016563`
+  - `cube_grasp_prior_tool_downward_z=0.7997758984565735`
+  - `cube_finger_table_clearance_violation=0.0`
+  - BC and policy-anchor losses remain `0.0`.
+
+Analysis:
+- Continuation is making slow but real progress above the fresh run.
+- Reset safety remains clean.
+
+Next:
+- Continue to epoch `600`, then evaluate the best saved checkpoint.
+
+## 2026-06-16T21:54:40Z - continuation epoch 549 snapshot
+
+Status:
+- job id: `29167189`
+- scheduler state: `RUNNING`
+- rank-0 metrics rows: `256`
+- latest epoch: `549/600`
+
+Metrics:
+- Best continuation row so far: epoch `545`, `cube_success_rate=0.369140625`, `cube_has_lifted_rate=0.482421875`, `cube_lift_height=0.07381077110767365`.
+- Latest epoch `549`:
+  - `cube_success_rate=0.353515625`
+  - `cube_has_lifted_rate=0.47119140625`
+  - `cube_lift_height=0.0702463760972023`
+  - `cube_lift_reward=2.2764556407928467`
+  - `cube_height_tracking_reward=0.44603678584098816`
+  - `cube_grasp_prior_reset_success_rate=0.99951171875`
+  - `cube_grasp_prior_quality_success_rate=0.99951171875`
+  - `cube_grasp_prior_projected_exact_tip_table_clearance=0.028276437893509865`
+  - `cube_grasp_prior_tool_downward_z=0.7998459935188293`
+  - `cube_finger_table_clearance_violation=0.0`
+  - BC and policy-anchor losses remain `0.0`.
+
+Analysis:
+- Continuation remains stable and slightly improves the training best.
+- Reset safety remains clean; no evidence of the earlier below-table reset failure.
+
+Next:
+- Continue to epoch `600`, then run deterministic aggregate eval.
+
+## 2026-06-16T22:08:20Z - continuation completed and aggregate eval launched
+
+Status:
+- training job id: `29167189`
+- training status: completed normally at epoch `600/600`
+- continuation run: `franka_multi_full18_teacherobs_nograph_bestckpt_ppo600_ebcf612_20260616T202812Z`
+- training log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29167189.out`
+- eval job id: `29169289`
+- eval run: `eval_franka_multi_full18_teacherobs_cont600_best_180env_ebcf612_20260616T220801Z`
+- eval log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_multi_object_29169289.out`
+- eval result dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/eval_franka_multi_full18_teacherobs_cont600_best_180env_ebcf612_20260616T220801Z`
+
+Training metrics:
+- rank-0 metrics rows: `307`
+- best continuation row: epoch `597`, `cube_success_rate=0.3837890625`, `cube_has_lifted_rate=0.48876953125`, `cube_lift_height=0.0762513279914856`.
+- final epoch `600`:
+  - `cube_success_rate=0.37646484375`
+  - `cube_has_lifted_rate=0.47900390625`
+  - `cube_lift_height=0.07697559893131256`
+  - `cube_lift_reward=2.3863015174865723`
+  - `cube_height_tracking_reward=0.45967748761177063`
+  - `cube_grasp_prior_reset_success_rate=1.0`
+  - `cube_grasp_prior_quality_success_rate=1.0`
+  - `cube_grasp_prior_projected_exact_tip_table_clearance=0.028036685660481453`
+  - `cube_grasp_prior_tool_downward_z=0.7964051365852356`
+  - `cube_finger_table_clearance_violation=0.0`
+  - BC and policy-anchor losses remain `0.0`.
+
+Checkpoint note:
+- The continuation produced the generic best checkpoint on the cluster result filesystem at `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_teacherobs_nograph_bestckpt_ppo600_ebcf612_20260616T202812Z/nn/dextrah_franka_multi_object_grasp.pth`.
+- The first eval submission preflight checked the container path `/results/...` from the login host and failed before submitting; the corrected submission used the host path for preflight and passed the container path to the wrapper.
+
+Analysis:
+- Continuation improved training success from the fresh run's best `0.3066` to `0.3838`.
+- Reset-prior safety remains clean through the full continuation, so the remaining weakness appears policy/object robustness rather than table-penetrating reset grasps.
+
+Next:
+- Monitor eval job `29169289`, inspect `metrics.json`, then generate a continuation video grid if the aggregate eval is useful for comparison.
+
+## 2026-06-16T22:11:58Z - continuation aggregate eval completed and video jobs launched
+
+Aggregate eval:
+- job id: `29169289`
+- status: completed
+- run: `eval_franka_multi_full18_teacherobs_cont600_best_180env_ebcf612_20260616T220801Z`
+- metrics path: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/eval_franka_multi_full18_teacherobs_cont600_best_180env_ebcf612_20260616T220801Z/metrics.json`
+
+Metrics:
+- `eval_success_rate=0.36666666666666664`
+- `first_attempt_success_rate=0.36666666666666664`
+- `first_attempt_terminal_success_rate=0.35555555555555557`
+- `success_ever_rate=0.4055555760860443`
+- `success_rate_final=0.38333335518836975`
+- `success_rate_max=0.3888888955116272`
+- `reward_mean=9.679297817548116`
+- `reward_final=11.261923789978027`
+- `has_lifted_cube`: final `0.46666666865348816`, mean `0.40998148925602435`
+- `cube_lift_height`: final `0.0779159739613533`, max `0.07824591547250748`
+- `done_reason_counts={'cube_out': 0, 'done_after_success_unclassified': 0, 'finger_table_penetration': 0, 'prelift_drag': 0, 'success_done': 1, 'truncated': 0, 'unclassified': 28}`
+- `finger_table_clearance_violation`: final/max/mean/min all `0.0`
+- `grasp_prior_reset_success`: final/max/mean/min all `1.0`
+- `grasp_prior_reset_quality_success`: final/max/mean/min all `1.0`
+- `grasp_prior_reset_projected_exact_tip_table_clearance`: final `0.028135569766163826`, mean `0.028042991651842993`, min `0.02791135199368`
+- `grasp_prior_reset_tool_downward_z`: final `0.8021832704544067`, mean `0.8036854489644368`, min `0.7993570566177368`
+- `eval_done_finger_table_penetration_rate`, `eval_done_prelift_drag_rate`, and `eval_done_cube_out_rate`: final/max/mean/min all `0.0`
+
+Per-object success-ever split (`env_id % 18`, 10 eval envs/object):
+- `obj00=9/10`, `obj01=10/10`, `obj02=10/10`, `obj03=10/10`
+- `obj04=3/10`, `obj05=5/10`, `obj06=1/10`, `obj07=0/10`
+- `obj08=2/10`, `obj09=7/10`, `obj10=0/10`, `obj11=0/10`
+- `obj12=0/10`, `obj13=8/10`, `obj14=0/10`, `obj15=0/10`
+- `obj16=8/10`, `obj17=0/10`
+
+Analysis:
+- Continuation modestly improves the fresh best aggregate eval (`success_ever_rate` from about `0.4000` to `0.4056`; final occupancy from `0.3667` to `0.3833`), but it is still far from solved.
+- Reset safety remains clean. No aggregate evidence of table penetration, pre-lift drag termination, or below-table reset behavior.
+- Remaining failures are strongly object-dependent, concentrated in objects `07`, `10`, `11`, `12`, `14`, `15`, and `17`.
+
+Video grid launch:
+- base: `video_franka_multi_full18_teacherobs_cont600_20260616T221158Z`
+- jobs file: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/video_franka_multi_full18_teacherobs_cont600_20260616T221158Z_jobs.tsv`
+- checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_teacherobs_nograph_bestckpt_ppo600_ebcf612_20260616T202812Z/nn/dextrah_franka_multi_object_grasp.pth`
+- config: 18 jobs, `NUM_ENVS=18`, `NUM_STEPS=300`, `VIDEO_LENGTH=300`, deterministic policy, seed `456`, `SUPPRESS_SUCCESS_TERMINATION=True`, same 18-object manifest/stable-pose cache/reset gates as aggregate eval.
+- job ids: `29169345`, `29169346`, `29169347`, `29169348`, `29169349`, `29169350`, `29169352`, `29169353`, `29169354`, `29169355`, `29169356`, `29169357`, `29169358`, `29169359`, `29169360`, `29169363`, `29169364`, `29169365`.
+
+Next:
+- Monitor all 18 video jobs, fetch videos locally, build a labeled 6x3 grid, inspect frames/metrics, and expose with `viz-open`.
+
+## 2026-06-16T22:18:10Z - continuation video grid built and inspected
+
+Status:
+- all 18 video jobs completed and wrote one MP4 each
+- remote base: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/video_franka_multi_full18_teacherobs_cont600_20260616T221158Z_envXX`
+- local artifact root: `/home/lzha/code/artifacts/dextrah-multiobject-grasp-prior/teacherobs-cont600-full18-video-20260616T221158Z`
+- grid video: `/home/lzha/code/artifacts/dextrah-multiobject-grasp-prior/teacherobs-cont600-full18-video-20260616T221158Z/franka_multi_full18_cont600_policy_grid_6x3_labeled.mp4`
+- viewer URL: `http://localhost:8765/view?path=artifacts/dextrah-multiobject-grasp-prior/teacherobs-cont600-full18-video-20260616T221158Z/franka_multi_full18_cont600_policy_grid_6x3_labeled.mp4`
+
+Video verification:
+- input videos: `18`
+- each source video: `1280x720`, `299` frames, `4.983333s`, `60 fps`
+- labeled grid: `1920x540`, `299` frames, `4.983333s`, `60 fps`
+- sampled frames: `frames/grid_001.png`, `frames/grid_002.png`, `frames/grid_003.png`
+- sampled frame pixel means are nonblank and all extrema include `[0,255]`.
+
+Visual inspection:
+- No sampled frame shows the robot reaching from below the table or penetrating the table to reach the object.
+- The starts are side/top approaches above the table.
+- Remaining failures are missed alignment, poor enclosure, slip, or no stable lift on hard objects, matching the per-object eval split.
+
+Analysis:
+- The original reset-prior root cause appears fixed in both metrics and video.
+- The current policy is not solved. The next iteration should target policy learning/object robustness, not table-collision reset filtering.
+
+Next:
+- Check for active jobs, then continue development/training rather than finalizing.
+
+## 2026-06-16T22:18:39Z - epoch-600 checkpoint eval
+
+Reason:
+- The previous continuation aggregate eval used `nn/dextrah_franka_multi_object_grasp.pth`, which is the reward-best checkpoint, not necessarily the success-best or latest checkpoint.
+- The continuation training success peaked near epoch `597`, and the reward-best checkpoint timestamp was earlier, so the epoch-600 checkpoint needed a direct eval.
+
+Aggregate eval:
+- job id: `29169525`
+- status: completed
+- run: `eval_franka_multi_full18_teacherobs_cont600_ep600_180env_ebcf612_20260616T221839Z`
+- checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_teacherobs_nograph_bestckpt_ppo600_ebcf612_20260616T202812Z/nn/last_dextrah_franka_multi_object_grasp_ep_600_rew_3798.3723.pth`
+- metrics path: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/eval_franka_multi_full18_teacherobs_cont600_ep600_180env_ebcf612_20260616T221839Z/metrics.json`
+
+Metrics:
+- `eval_success_rate=0.39444444444444443`
+- `first_attempt_success_rate=0.39444444444444443`
+- `first_attempt_terminal_success_rate=0.3888888888888889`
+- `success_ever_rate=0.4055555760860443`
+- `success_rate_final=0.4000000059604645`
+- `success_rate_max=0.4000000059604645`
+- `reward_mean=9.816250844796498`
+- `reward_final=11.59007453918457`
+- `has_lifted_cube`: final `0.4888888895511627`, mean `0.4204444527626038`
+- `cube_lift_height`: final `0.07823669165372849`, max `0.0783156156539917`
+- `done_reason_counts={'cube_out': 1, 'done_after_success_unclassified': 0, 'finger_table_penetration': 0, 'prelift_drag': 0, 'success_done': 1, 'truncated': 0, 'unclassified': 23}`
+- `finger_table_clearance_violation`: final `0.0`, max `0.00033678486943244934`, mean `1.2427706436331695e-06`
+- `grasp_prior_reset_success`: final/max/mean/min all `1.0`
+- `grasp_prior_reset_quality_success`: final/max/mean/min all `1.0`
+- `grasp_prior_reset_projected_exact_tip_table_clearance`: final `0.027825605124235153`, mean `0.027852367851883175`, min `0.027800465002655983`
+- `grasp_prior_reset_tool_downward_z`: final `0.8010713458061218`, mean `0.8015139613548915`, min `0.7993570566177368`
+- `eval_done_finger_table_penetration_rate` and `eval_done_prelift_drag_rate`: final/max/mean/min all `0.0`
+
+Per-object success-ever split (`env_id % 18`, 10 eval envs/object):
+- `obj00=10/10`, `obj01=10/10`, `obj02=10/10`, `obj03=10/10`
+- `obj04=2/10`, `obj05=6/10`, `obj06=1/10`, `obj07=0/10`
+- `obj08=2/10`, `obj09=3/10`, `obj10=0/10`, `obj11=0/10`
+- `obj12=0/10`, `obj13=9/10`, `obj14=0/10`, `obj15=0/10`
+- `obj16=10/10`, `obj17=0/10`
+
+Analysis:
+- Epoch 600 is the best evaluated checkpoint so far by first-attempt/final occupancy, but `success_ever_rate` is still about `40.6%`.
+- Reset safety remains clean; the remaining issue is hard-object physical grasp/robustness.
+
+## 2026-06-16T22:31:30Z - verified-grasp cache audit
+
+Checks:
+- Scanned `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/verified_grasp_indices`.
+- The only nonzero verified caches are old two-object runs.
+- The full-18 files such as `franka_multi_full18_reset_audit_*` have `target_per_object=0`, `score_steps=1`, and zero accepted indices; they are reset audits, not physical lift-valid grasp caches.
+
+Collector contract:
+- `collect_franka_multi_object_verified_grasps.py` resets with grasp-prior candidates, executes the built-in warmstart close/lift sequence, and keeps indices that satisfy lift height, XY stability, finger distance, done-count, and optional success gates.
+- This is the right filter for physically valid Franka grasps; it is stricter than the reset-quality/table-clearance gate used during PPO.
+
+Analysis:
+- Existing full-18 training did not use a physical verified-index cache.
+- Some hard-object failures may be because the reset sampler still chooses above-table but physically poor grasp candidates.
+
+Next:
+- Collect a fresh full-18 verified-index JSON under current commit `ebcf612` and current reset filters, then train/evaluate using that cache if it has useful coverage.
+
+## 2026-06-16T22:24:09Z - fresh full-18 verified-grasp collection launched
+
+Job:
+- job id: `29169941`
+- run: `verified_full18_current_ebcf612_20260616T222409Z`
+- remote code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-teacher-obs-20260616-ebcf612`
+- code commit: `ebcf612cbcac328d5fbd6209dd2bca579c00c110`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/collect_franka_multi_object_verified_grasps_29169941.out`
+- output: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/verified_grasp_indices/verified_full18_current_ebcf612_20260616T222409Z/verified_indices.json`
+
+Key config:
+- `NUM_ENVS=180`, `MAX_OBJECTS=18`, `OBJECT_ASSET_ASSIGNMENT=round_robin`
+- manifest: `/results/assets/filtered_manifests/stable_candidates18_shard3_assetroot_d053e6c_20260614T234700Z/manifest.json`
+- stable-pose cache: `/results/validations/graspgen_stable_candidates18_shard3_d053e6c_20260614T234900Z/settled_pose_cache`
+- collection cycles: `CYCLES=80`, `MIN_CYCLES=80`, `TARGET_PER_OBJECT=0`
+- score: `SCORE_STEPS=180`, `MIN_LIFT_HEIGHT=0.06`, `MAX_XY_DELTA=0.12`, `MAX_FINGER_DIST=0.18`, `MAX_DONE_COUNT=1`
+- reset gates: `GRASP_RESET_ATTEMPTS=8`, `GRASP_RESET_CANDIDATE_COUNT=512`, `GRASP_RESET_REQUIRE_TOPDOWN=True`, `GRASP_RESET_MIN_PREGRASP_Z=0.0`, `GRASP_RESET_REQUIRE_DOWNWARD_TOOL_Z=True`, `GRASP_RESET_MIN_DOWNWARD_TOOL_Z=0.0`, `GRASP_RESET_MIN_CONTACT_HEIGHT_ABOVE_CENTER=-0.02`, `GRASP_RESET_MAX_CENTER_DISTANCE_FRAC=0.50`, `GRASP_RESET_MIN_WIDTH=0.008`
+- warmstart verifier: exact reset pose (`GRASP_PREGRASP_OFFSET=0.0`), close `28` steps, lift `100` steps, lift action z `1.0`, current-lift-ready gate enabled.
+
+Analysis:
+- `TARGET_PER_OBJECT=0` is intentional: it forces the full 80-cycle scan to complete and avoids failing the job just because a hard object has no accepted indices.
+- The next decision is based on actual counts/coverage, not the scheduler exit code alone.
+
+Next:
+- Monitor job `29169941`, inspect partial/final counts, and decide whether to train with the fresh verified cache.
