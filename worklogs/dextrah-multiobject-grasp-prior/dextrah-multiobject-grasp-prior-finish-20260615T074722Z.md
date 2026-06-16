@@ -6607,3 +6607,55 @@ Analysis:
 
 Next:
 - Monitor job `29169941`, inspect partial/final counts, and decide whether to train with the fresh verified cache.
+
+## 2026-06-16T22:50:31Z - verified cache completed and fallback patch committed
+
+Verified-grasp collection result:
+- job id: `29169941`
+- status: completed cleanly
+- run: `verified_full18_current_ebcf612_20260616T222409Z`
+- output: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/verified_grasp_indices/verified_full18_current_ebcf612_20260616T222409Z/verified_indices.json`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/collect_franka_multi_object_verified_grasps_29169941.out`
+- accepted: `56` lift-verified grasp indices across `17/18` objects
+- uncovered UUID: `0b07d4714a544a7fbe3a145ccda8bf03`
+
+Per-object accepted counts:
+- `0b07d4714a544a7fbe3a145ccda8bf03=0`
+- `168ca4d0cad641f797fa4edba00164a5=3`
+- `3693fa4414f64a41b04be4aa70e35448=8`
+- `4f4fe076fe624d2a8f198588c64fc6cb=1`
+- `66d208d29503450ca28c0152864b7379=1`
+- `6992dae82b99461a9a43c2debd84cbd5=1`
+- `75c058a8028340e1adbdc9ea2dfda9d4=1`
+- `7d840006d0184ef496c9860765023f52=4`
+- `85c3d3b9cfd64c108dc548e525052c4e=2`
+- `884defbca8c8473695e5a5420ca89de4=7`
+- `b5d22010f2ab4123a72d7b2a7d6643d7=3`
+- `b87a65917e494aa4b306aeb6ee961182=7`
+- `b8a7cc0278304cf0882ddf25040af3d9=3`
+- `c28358d1992547099ead51a462562030=5`
+- `ca8d526966a74d5ab796092e6e4531a8=1`
+- `f3512126d36a4630893585f1ee2e44d2=2`
+- `f601cd38f655447da2e83e3d9f5beb80=6`
+- `f71a628ddc1d45529b2dde4066f9ca71=1`
+
+Source change:
+- commit: `d71262b3b853c1eeec602ae26725430bb2e8213a`
+- added `env.grasp_prior_verified_allow_uncovered`, default `False`
+- strict cache behavior remains the default so stale/incomplete verified caches still fail loudly
+- when explicitly enabled, objects absent from the verified cache, or present with no valid indices, fall back to the original GraspGen prior
+- train and eval wrappers now expose `GRASP_PRIOR_VERIFIED_ALLOW_UNCOVERED`
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py`
+- `bash -n cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_eval_franka_multi_object_grasp_1gpu.sh`
+- `git diff --check`
+
+Analysis:
+- The fresh cache provides physically lift-verified candidates for almost all loaded objects without changing the dataset size.
+- For the next full-18 run, set `GRASP_PRIOR_VERIFIED_ALLOW_UNCOVERED=True` so the one uncovered object remains in training with original-prior fallback.
+- Training remains pure RL: no BC, no action-prior reward, and no action warmstart.
+
+Next:
+- Deploy commit `d71262b3b853c1eeec602ae26725430bb2e8213a` to an agent-owned A100 worktree.
+- Continue full-18 PPO from the epoch-600 checkpoint using the fresh verified cache and uncovered-object fallback.
