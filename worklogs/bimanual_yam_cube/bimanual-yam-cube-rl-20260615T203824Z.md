@@ -1688,6 +1688,50 @@ Validation plan:
 - Run Python syntax checks, Slurm wrapper syntax checks, and diff whitespace checks.
 - Commit/push/deploy and rerun the side-camera `ACTION_SOURCE=reference_delta` rollout video before any PPO training.
 
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_env.py dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_env_cfg.py dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_rewards.py dextrah_lab/rl_games/eval_rollout.py`
+- `bash -n cluster/sbatch_eval_bimanual_yam_cube_grasp_1gpu.sh cluster/sbatch_train_bimanual_yam_cube_grasp_1gpu.sh cluster/sbatch_validate_bimanual_yam_cube_grasp_env_1gpu.sh`
+- `git diff --check`
+- Result: passed.
+
+Version state:
+- local_commit: `c8e3c7becbdc551c1e6dbb9776f1e3d127114f17`
+- remote_commit: `c8e3c7becbdc551c1e6dbb9776f1e3d127114f17`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/bimanual-yam-cube-rl-20260615T203824Z`
+
+## 2026-06-16 - close-contact reference-prior smoke launch
+
+Goal:
+- Verify that the stricter contact-gated lift trigger removes premature no-contact lift and produces either stable lift or a clear closer-contact failure.
+
+Planned command/job:
+- Wrapper: `cluster/sbatch_eval_bimanual_yam_cube_grasp_1gpu.sh`
+- Job: `29128388`
+- Run: `yam_cube_reference_prior_smoke_c8e3c7b_20260616T0118Z`
+- Key settings: `ACTION_SOURCE=reference_delta`, `NUM_ENVS=1`, `NUM_STEPS=720`, `CAPTURE_VIDEO=True`, no checkpoint, no cube XY randomization, side-y camera.
+- Expected log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_bimanual_yam_cube_<job>.out`
+- Expected metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/yam_cube_reference_prior_smoke_c8e3c7b_20260616T0118Z/metrics.json`
+
+Success criteria:
+- Stable success from the reference action source: `eval_success_rate > 0`, `stable_success_ever_rate > 0`, no high-Z cube-out, no high-speed shake/launch, and video shows physical side grasp/lift.
+
+Result/evidence:
+- Job `29128388` completed with metrics and video.
+- Local video: `artifacts/bimanual_yam_cube/reference_prior_smoke_20260616T0118Z/videos/yam-cube-reference-prior-smoke-step-0.mp4`.
+- Viewer: `http://localhost:8765/view?path=DEXTRAH/artifacts/bimanual_yam_cube/reference_prior_smoke_20260616T0118Z/videos/yam-cube-reference-prior-smoke-step-0.mp4`.
+- Video metadata: `1280x720`, `720` frames, `12.0 s`.
+- Metrics: `eval_success_rate=0.0`, `stable_success_ever_rate=0.0`, `success_ever_rate=0.0`, `success_rate_max=0.0`, `max_lift=0.0`, `max_cube_z=0.095`, `max_xy_error=0.00806974433362484`.
+- Trace: min `max_hold_to_cube_dist=0.17985525727272034` at step `674`; the tightened `0.166` contact trigger was never reached.
+- The first episode reset at step `479` and was classified as `unclassified`, which appears to be horizon truncation not a task-specific physics termination.
+
+Analysis:
+- The previous launch/shake false positive is now removed: no high-Z cube-out, no success pulse, no unstable lift.
+- The remaining failure is clean no-lift contact geometry. The gripper touches around the cube side/top region, then the cube remains on the table and slips slightly.
+- The `0.166 m` trigger is too strict for the current measured YAM hold geometry; however, the wrapper does not yet expose the contact/hold-height knobs needed for quick sweeps.
+
+Decision:
+- Add bimanual reference geometry overrides to eval/train wrappers and fix eval done-reason classification for actual environment truncation.
+
 ## 2026-06-15 23:50Z - replace validator joint waypoint with action-interface contact path
 
 Observation:

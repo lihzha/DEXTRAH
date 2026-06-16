@@ -1821,9 +1821,12 @@ def main(env_cfg, agent_cfg: dict):
                         first_done_step[new_done] = float(step + 1)
                     done_after_success_env |= dones_bool & success_ever_env
                     reason_names = ("success_done", "cube_out", "prelift_drag", "finger_table_penetration", "truncated")
+                    done_reason_tensors = dict(pre_step_done_reasons)
+                    if isinstance(truncated, torch.Tensor):
+                        done_reason_tensors["truncated"] = done_reason_tensors["truncated"] | truncated.bool()
                     classified = torch.zeros_like(dones_bool)
                     for reason_name in reason_names:
-                        reason_mask = dones_bool & pre_step_done_reasons[reason_name]
+                        reason_mask = dones_bool & done_reason_tensors[reason_name]
                         done_reason_counts[reason_name] += int(reason_mask.sum().detach().cpu())
                         classified |= reason_mask
                     after_success_unclassified = dones_bool & (~classified) & success_ever_env
@@ -1838,7 +1841,7 @@ def main(env_cfg, agent_cfg: dict):
                         reasons = [
                             name
                             for name in reason_names
-                            if bool(pre_step_done_reasons[name][env_id].detach().cpu())
+                            if bool(done_reason_tensors[name][env_id].detach().cpu())
                         ]
                         if not reasons and bool(success_ever_env[env_id].detach().cpu()):
                             reasons = ["done_after_success_unclassified"]
@@ -1851,7 +1854,7 @@ def main(env_cfg, agent_cfg: dict):
                                 "first_success_step": int(first_success_value) if first_success_value >= 0 else None,
                                 "last_success_step": int(last_success_value) if last_success_value >= 0 else None,
                                 "success_ever_before_done": bool(success_ever_env[env_id].detach().cpu()),
-                                "reason_source": "pre_step_snapshot_before_auto_reset",
+                                "reason_source": "pre_step_snapshot_or_env_truncated",
                                 "reasons": reasons,
                             }
                         )
