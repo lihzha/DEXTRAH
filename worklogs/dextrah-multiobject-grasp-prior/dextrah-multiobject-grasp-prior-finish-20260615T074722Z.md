@@ -6751,3 +6751,33 @@ Analysis:
 
 Next:
 - Continue monitoring training progress and checkpoint cadence toward epoch `1200`.
+
+## 2026-06-16T23:35:00Z - verified-cache continuation epoch 715 snapshot
+
+Status:
+- job id: `29170977`
+- scheduler state: `RUNNING`
+- latest rank-0 row: epoch `715`, frame `748683264`
+- checkpoint cadence is active; latest visible periodic checkpoints include epochs `680` and `700`.
+
+Metrics:
+- latest `cube_success_rate=0.3837890625`
+- latest `cube_has_lifted_rate=0.47509765625`
+- latest `cube_lift_height=0.07847440242767334`
+- latest `cube_lift_reward=2.408189058303833`
+- latest `cube_height_tracking_reward=0.4875178337097168`
+- best training success so far in this continuation: `0.42138671875` at epoch `673`
+- recent success rows: `708=0.408203125`, `709=0.41064453125`, `710=0.4091796875`, `711=0.41162109375`, `712=0.40966796875`, `713=0.26318359375`, `714=0.36181640625`, `715=0.3837890625`
+
+Reset safety:
+- `cube_grasp_prior_reset_success_rate=1.0`
+- `cube_grasp_prior_quality_success_rate=1.0`
+- `cube_grasp_prior_projected_exact_tip_table_clearance=0.029834508895874023`
+- `cube_grasp_prior_tool_downward_z=0.8049522638320923`
+- `cube_finger_table_clearance_violation=0.0`
+- `cube_table_clearance_penalty=0.0`
+
+Analysis:
+- Training is noisy under the verified-cache reset distribution, with transient success dips that recover quickly.
+- The dips are not reset-safety regressions; reset quality, downward approach, and table-clearance metrics remain clean.
+- Continue training to collect a stronger trend and evaluate actual checkpoints rather than judging from transient rank-0 rows.
