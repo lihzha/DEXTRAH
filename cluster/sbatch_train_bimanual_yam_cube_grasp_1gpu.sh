@@ -4,7 +4,7 @@
 #SBATCH --account=nvr_lpr_rvp
 #SBATCH --gpus-per-node=1
 #SBATCH --job-name=dextrah_yam_cube_rl
-#SBATCH --partition=batch
+#SBATCH --partition=batch_singlenode,grizzly,polar,polar3,polar4,interactive_singlenode
 #SBATCH --time=0-03:50:00
 #SBATCH --mem=160G
 #SBATCH --cpus-per-task=16

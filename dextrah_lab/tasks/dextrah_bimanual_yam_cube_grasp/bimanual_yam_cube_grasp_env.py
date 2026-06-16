@@ -390,6 +390,12 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
                     "yam_cube_action_prior_delta_z_abs": self.bimanual_action_prior_delta_z_abs.mean(),
                     "yam_cube_action_prior_teacher_left_z": self.bimanual_action_prior_teacher_left_z.mean(),
                     "yam_cube_action_prior_teacher_right_z": self.bimanual_action_prior_teacher_right_z.mean(),
+                    "yam_cube_action_prior_teacher_left_rot_z": (
+                        self.bimanual_action_prior_teacher_actions[:, 5].mean()
+                    ),
+                    "yam_cube_action_prior_teacher_right_rot_z": (
+                        self.bimanual_action_prior_teacher_actions[:, 12].mean()
+                    ),
                     "yam_cube_action_prior_teacher_left_gripper": (
                         self.bimanual_action_prior_teacher_left_gripper.mean()
                     ),
@@ -457,6 +463,16 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
         contact_left_hold[:, 2] = hold_z
         contact_right_hold[:, 2] = hold_z
         contact_ready = closed & self.bimanual_side_success
+        left_rot_action = torch.tensor(
+            self.cfg.bimanual_reference_left_rot_action,
+            dtype=teacher_actions.dtype,
+            device=self.device,
+        )
+        right_rot_action = torch.tensor(
+            self.cfg.bimanual_reference_right_rot_action,
+            dtype=teacher_actions.dtype,
+            device=self.device,
+        )
 
         lift_left_hold = contact_left_hold.clone()
         lift_right_hold = contact_right_hold.clone()
@@ -486,6 +502,8 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
                 gain=float(self.cfg.bimanual_reference_gain),
                 max_action=float(self.cfg.bimanual_reference_max_action),
             )
+            approach_actions[:, 3:6] = left_rot_action
+            approach_actions[:, 10:13] = right_rot_action
             teacher_actions[approach_mask] = approach_actions[approach_mask]
             phase[approach_mask] = 1
         if bool(lift_mask.any().item()):

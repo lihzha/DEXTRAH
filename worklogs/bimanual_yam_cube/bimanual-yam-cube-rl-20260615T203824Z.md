@@ -1368,6 +1368,65 @@ Validation:
 Next:
 - Commit/push/redeploy the camera-wrapper support, then run short strict no-assist videos from oblique and side camera views.
 
+## 2026-06-16 - diagnostic camera video batch
+
+Goal:
+- Render the same strict no-assist stable pickup from camera angles that expose side contact and any cube shaking.
+
+Version state:
+- local_commit: `7836ba712596e1e427f36e4b0ee8f86ba4890912`
+- remote_commit: `7836ba712596e1e427f36e4b0ee8f86ba4890912`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/bimanual-yam-cube-rl-20260615T203824Z`
+
+Launch note:
+- Initial submit without partition override failed because A100 does not have a `batch` partition.
+- Relaunched with explicit partition list: `batch_singlenode,grizzly,polar,polar3,polar4,interactive_singlenode`.
+
+Batch manifest:
+
+| Attempt | Commit | Camera | Job | Result | Evidence | Decision |
+| --- | --- | --- | --- | --- | --- | --- |
+| `yam_cube_strict_frontlow_video_7836ba7_20260616T0030Z` | `7836ba7` | eye `[-0.95, 0.0, 0.30]`, target `[-0.30, 0.0, 0.105]` | `29127345` | pending | log `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_bimanual_yam_cube_29127345.out`; metrics `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/yam_cube_strict_frontlow_video_7836ba7_20260616T0030Z/metrics.json` | inspect contact/lift video |
+| `yam_cube_strict_sidey_video_7836ba7_20260616T0030Z` | `7836ba7` | eye `[-0.32, -0.72, 0.26]`, target `[-0.30, 0.0, 0.11]` | `29127346` | pending | log `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_bimanual_yam_cube_29127346.out`; metrics `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/yam_cube_strict_sidey_video_7836ba7_20260616T0030Z/metrics.json` | inspect contact/lift video |
+
+Shared settings:
+- `CAPTURE_VIDEO=True`, `NUM_STEPS=360`, `VIDEO_LENGTH=360`, `LIFT_HEIGHT=0.06`, `LIFT_SQUEEZE_Y=0.0`, left/right Z rotations `[-0.5, +0.5]`, `ALLOW_GRASP_ASSIST=False`, `REQUIRE_UNASSISTED_LIFT=True`, `DISABLE_FABRIC=True`.
+
+Result/evidence:
+- `29127345` completed in `00:02:27` with exit code `0:0`.
+- `29127346` completed in `00:01:24` with exit code `0:0`.
+- Both runs passed with identical stable metrics: `max_lift=0.04091353714466095`, `final_success_rate=1.0`, `max_success_cube_linear_speed=0.11340032517910004`, `max_success_cube_angular_speed=1.7459335327148438`, `max_cube_linear_speed=0.2115592509508133`, `max_cube_angular_speed=2.2767233848571777`, `video_frames_written=221`.
+- Front-low local video: `artifacts/bimanual_yam_cube/frontlow_video_20260616T0030Z/videos/bimanual-yam-cube-demo-manual.mp4`
+- Front-low viewer URL: `http://localhost:8765/view?path=DEXTRAH/artifacts/bimanual_yam_cube/frontlow_video_20260616T0030Z/videos/bimanual-yam-cube-demo-manual.mp4`
+- Front-low 4x slow viewer URL: `http://localhost:8765/view?path=DEXTRAH/artifacts/bimanual_yam_cube/frontlow_video_20260616T0030Z/bimanual-yam-cube-demo-manual-slow4x.mp4`
+- Side-y local video: `artifacts/bimanual_yam_cube/sidey_video_20260616T0030Z/videos/bimanual-yam-cube-demo-manual.mp4`
+- Side-y viewer URL: `http://localhost:8765/view?path=DEXTRAH/artifacts/bimanual_yam_cube/sidey_video_20260616T0030Z/videos/bimanual-yam-cube-demo-manual.mp4`
+- Side-y 4x slow viewer URL: `http://localhost:8765/view?path=DEXTRAH/artifacts/bimanual_yam_cube/sidey_video_20260616T0030Z/bimanual-yam-cube-demo-manual-slow4x.mp4`
+- Extracted local stills for sanity checks: `frame_01.jpg`, `frame_02.jpg`, and `frame_03.jpg` in each fetched artifact directory.
+
+Analysis:
+- The stricter physics gate rejects the earlier type of false lift: raw lift alone is not enough; success now requires low cube linear and angular speed.
+- The extracted stills do not show an obvious press-launch or violent bounce, but contact visibility is partially occluded by the cube/fingertip geometry. Keep the side-view slow video as the primary user-facing artifact for visual inspection.
+
+## 2026-06-16 - align RL action prior with stable no-assist pickup
+
+Goal:
+- Make PPO training use the same YAM wrist orientation that produced the stable strict no-assist pickup.
+
+Change:
+- Added config defaults `bimanual_reference_left_rot_action=(0.0, 0.0, -0.5)` and `bimanual_reference_right_rot_action=(0.0, 0.0, 0.5)`.
+- Applied those rotation actions in `_bimanual_reference_actions()` during the approach phase.
+- Added teacher rotation-z terms to the action-prior logs.
+- Changed the YAM validation and 1-GPU training wrappers from invalid A100 partition `batch` to the short A100 partition set.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_env.py dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_env_cfg.py` passed.
+- `bash -n cluster/sbatch_validate_bimanual_yam_cube_grasp_env_1gpu.sh` passed.
+- `bash -n cluster/sbatch_train_bimanual_yam_cube_grasp_1gpu.sh` passed.
+
+Next:
+- Commit/push/redeploy, run a reference-action smoke to confirm the training-side prior is wired, then launch PPO with the action-prior reward enabled.
+
 ## 2026-06-15 23:50Z - replace validator joint waypoint with action-interface contact path
 
 Observation:
