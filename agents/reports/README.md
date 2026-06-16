@@ -12,8 +12,27 @@ Report template:
 - Branch:
 - Local worktree:
 - Remote worktree:
-- Starting hypothesis:
 - Base commit:
+
+## Survey
+
+- Files inspected:
+- Prior runs/worklogs inspected:
+- Peer branches inspected before first experiment:
+- Key bottlenecks inferred:
+
+## Candidate Hypotheses
+
+1.
+2.
+3.
+4.
+
+## Selected Current Hypothesis
+
+- Hypothesis:
+- Evidence/rationale:
+- Smallest first test:
 
 ## Current Best
 

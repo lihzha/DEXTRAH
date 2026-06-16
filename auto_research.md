@@ -55,13 +55,13 @@ Agents may modify:
 - `cluster/sbatch_validate_bimanual_yam_cube_grasp_env_1gpu.sh`
 - Agent-owned docs under `agents/reports/` and `experiments/`
 
-Agents may explore:
+Agents may explore any approach that preserves the final success predicate. The list below is a non-exhaustive menu, not an assignment:
 
 - Reward shaping that preserves the final success predicate.
 - Curriculum, reset randomization, and staged training schedules.
 - PPO hyperparameters, exploration settings, and seeds.
 - Pure-RL training from scratch.
-- Optional reference/action-prior ideas only when explicitly assigned, but they cannot be used as final success evidence.
+- Optional reference/action-prior ideas as training aids, but they cannot be used as final success evidence.
 - Diagnostic eval/video tooling that improves artifact inspection without changing policy behavior.
 
 ## Forbidden Work
@@ -87,7 +87,7 @@ Do not break isolation:
 
 Each agent must use:
 
-- Unique `CODEX_AGENT_ID`, for example `yam-cube-a01-side-surface`.
+- Unique neutral `CODEX_AGENT_ID`, for example `yam-cube-a01`.
 - Dedicated local worktree.
 - Dedicated Git branch.
 - Dedicated remote source worktree under `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/<CODEX_AGENT_ID>`.
@@ -166,7 +166,7 @@ Smoke acceptance:
 
 - Slurm exits `0:0`.
 - Log confirms exact `CODE_COMMIT`.
-- Log confirms `PURE_RL=True`, `AUTO_RESUME=False`, empty `CHECKPOINT`, and `BIMANUAL_ACTION_PRIOR_REWARD_ENABLED=False` unless the agent was explicitly assigned a non-pure-RL hypothesis.
+- Log confirms `PURE_RL=True`, `AUTO_RESUME=False`, empty `CHECKPOINT`, and `BIMANUAL_ACTION_PRIOR_REWARD_ENABLED=False` unless the agent explicitly chose and documented a non-pure-RL hypothesis.
 - JSONL metrics exist at `metrics/direct_info_rank_0.jsonl`.
 - Metrics are finite.
 - Checkpoints are written.
@@ -266,7 +266,9 @@ Use `viz-open <local-video-path>` after fetching videos under `/home/lzha/code`.
 
 Each agent must maintain `agents/reports/<CODEX_AGENT_ID>.md` with:
 
-- Hypothesis.
+- Survey notes.
+- Candidate hypotheses considered.
+- Selected current hypothesis and rationale.
 - Branch, local worktree, remote worktree, final commit.
 - Local checks run.
 - Smoke job id, log, run dir, metrics path, decision.
@@ -280,20 +282,30 @@ Each agent must maintain `agents/reports/<CODEX_AGENT_ID>.md` with:
 
 Append experiment rows to `experiments/registry.md`. If conflicts become frequent, use per-agent registries named `experiments/registry-<CODEX_AGENT_ID>.md` and let the orchestrator compile them.
 
-## Initial Hypothesis Assignments
+## Survey-First Protocol
 
-Recommended eight-agent split:
+Do not assign fixed methods to agents. This run follows the ENPIRE pattern: every agent starts from the same task contract and independently surveys the repo, prior evidence, current metrics, and peer branches before choosing an approach.
 
-| Agent | Starting Hypothesis |
-| --- | --- |
-| `yam-cube-a01-side-surface` | Add dense side-surface contact reward without weakening final success. |
-| `yam-cube-a02-contact-curriculum` | Curriculum from approach to X alignment to side contact to lift, preserving final eval. |
-| `yam-cube-a03-reset-distribution` | Reset/curriculum changes that help policy reach load-bearing contact from rest. |
-| `yam-cube-a04-lift-transition` | Redesign lift-after-contact reward so lift only pays under retained grasp. |
-| `yam-cube-a05-ppo-exploration` | PPO exploration, sigma, entropy, LR, horizon, and minibatch schedule. |
-| `yam-cube-a06-reference-prior` | Repair reference/action-prior as training aid only, not final success evidence. |
-| `yam-cube-a07-physics-audit` | Audit contact geometry, cube properties, and speed guards; preserve strict final success. |
-| `yam-cube-a08-eval-diagnostics` | Improve policy eval/video/trace diagnostics without changing success semantics. |
+At the start of the run, each agent must:
+
+1. Read this document and the launch prompt.
+2. Inspect the current task code, rewards, wrappers, eval tools, and prior bimanual YAM cube worklog.
+3. Write 2-4 candidate hypotheses in `agents/reports/<CODEX_AGENT_ID>.md`.
+4. Choose the most promising first experiment and justify the choice from evidence.
+5. Run local checks and a bounded smoke before any long run.
+
+Agents should diversify through independent analysis and Git-mediated learning, not through human-assigned lanes. They may converge later by cherry-picking, merging, or manually copying peer ideas when evidence supports it.
+
+Example research directions agents may consider:
+
+- Dense contact or side-surface rewards that preserve final success.
+- Curriculum from approach to alignment to load-bearing contact to lift.
+- Reset/randomization changes that help policy reach useful bimanual contact from rest.
+- Lift rewards that pay only under retained grasp and stable cube speed.
+- PPO exploration, sigma, entropy, LR, horizon, minibatch, and seed schedules.
+- Reference/action-prior ideas as training aids only, never as final success evidence.
+- Contact geometry, cube physical properties, and speed-guard audits.
+- Eval/video/trace diagnostics that improve artifact inspection without changing success semantics.
 
 ## Stop Criteria
 
@@ -301,6 +313,6 @@ Stop an agent's current line when:
 
 - A policy-only eval reaches 100% and video/trace inspection passes.
 - The line is blocked by infrastructure or quota.
-- Smoke fails and root cause is outside the assigned scope.
+- Smoke fails and root cause is outside the agent's chosen line of work.
 - Metrics plateau in a known local optimum and the report identifies the next hypothesis.
 - The orchestrator asks the agent to stop or hand off.

@@ -23,9 +23,7 @@ Objective:
 
 Train a policy for `Dextrah-Bimanual-YAM-Cube-Grasp` that reaches 100% stable policy-only cube-pick success under `auto_research.md`.
 
-Your assigned starting hypothesis:
-
-`[ASSIGNED_HYPOTHESIS]`
+You are not assigned a fixed method. First survey the repository, prior evidence, current metrics, wrappers, and peer branches. Then choose your own first experiment from evidence.
 
 Isolation:
 
@@ -49,6 +47,15 @@ Rules:
 10. Fetch peer branches regularly. Cherry-pick or copy peer ideas only with evidence and attribution.
 11. Push your branch after meaningful changes or results.
 12. Before handoff, stop or transfer every active job you own and report cleanup state.
+
+Survey-first protocol:
+
+1. Read `auto_research.md` and confirm the exact success and forbidden-change rules.
+2. Inspect the task code, reward code, wrappers, eval tools, prior worklog, and any peer branches already pushed.
+3. Write 2-4 candidate hypotheses in `agents/reports/[CODEX_AGENT_ID].md`.
+4. Choose the most promising first experiment and justify it with concrete evidence.
+5. Implement the smallest change or command sequence that tests that hypothesis.
+6. Continue surveying peer branches throughout the run; adopt peer ideas only when their evidence is stronger than your current line.
 
 Initial local checks:
 
@@ -88,15 +95,19 @@ Operating loop:
 Final success requires policy-only eval with video and trace inspection. Do not report success from training curves alone.
 ````
 
-## Suggested Agent/Hypothesis Mapping
+## Neutral Agent Lanes
 
-| Agent | Branch | Hypothesis |
-| --- | --- | --- |
-| `yam-cube-a01-side-surface` | `agent/yam-cube/a01-side-surface` | Add dense side-surface contact reward without weakening final success. |
-| `yam-cube-a02-contact-curriculum` | `agent/yam-cube/a02-contact-curriculum` | Curriculum from approach to X alignment to side contact to lift. |
-| `yam-cube-a03-reset-distribution` | `agent/yam-cube/a03-reset-distribution` | Reset/curriculum changes that help policy reach load-bearing contact from rest. |
-| `yam-cube-a04-lift-transition` | `agent/yam-cube/a04-lift-transition` | Redesign lift-after-contact reward so lift only pays under retained grasp. |
-| `yam-cube-a05-ppo-exploration` | `agent/yam-cube/a05-ppo-exploration` | PPO exploration, sigma, entropy, LR, horizon, and minibatch schedule. |
-| `yam-cube-a06-reference-prior` | `agent/yam-cube/a06-reference-prior` | Repair reference/action-prior as training aid only, not final success evidence. |
-| `yam-cube-a07-physics-audit` | `agent/yam-cube/a07-physics-audit` | Audit contact geometry, cube properties, and speed guards; preserve strict final success. |
-| `yam-cube-a08-eval-diagnostics` | `agent/yam-cube/a08-eval-diagnostics` | Improve policy eval/video/trace diagnostics without changing success semantics. |
+Use neutral lanes so branch names do not bias the agents toward human-assigned methods.
+
+| Agent | Branch |
+| --- | --- |
+| `yam-cube-a01` | `agent/yam-cube/a01` |
+| `yam-cube-a02` | `agent/yam-cube/a02` |
+| `yam-cube-a03` | `agent/yam-cube/a03` |
+| `yam-cube-a04` | `agent/yam-cube/a04` |
+| `yam-cube-a05` | `agent/yam-cube/a05` |
+| `yam-cube-a06` | `agent/yam-cube/a06` |
+| `yam-cube-a07` | `agent/yam-cube/a07` |
+| `yam-cube-a08` | `agent/yam-cube/a08` |
+
+Example research directions are listed in `auto_research.md`. They are a menu for agent self-selection, not assignments.
