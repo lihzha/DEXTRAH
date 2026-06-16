@@ -5876,3 +5876,197 @@ Rank-0 early metrics at epoch 2:
 
 Next:
 - Continue monitoring epoch/reward/success/lift curves and checkpoint creation through completion.
+
+## 2026-06-16T20:10:00Z - full 18-object PPO completed; aggregate eval launched
+
+Full training completion:
+- job id: `29163012`
+- run: `franka_multi_full18_teacherobs_nograph_fresh_ppo300_ebcf612_20260616T1148Z`
+- Slurm state: `COMPLETED`, exit `0:0`, elapsed `01:48:39`
+- source commit: `ebcf612cbcac328d5fbd6209dd2bca579c00c110`
+- remote code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-teacher-obs-20260616-ebcf612`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29163012.out`
+- result dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_teacherobs_nograph_fresh_ppo300_ebcf612_20260616T1148Z`
+- metrics: `metrics/direct_info_rank_0.jsonl` contains `300` rank-0 rows and no non-finite scalar values in the best or final row.
+
+Full training configuration:
+- 8 GPUs, `NUM_ENVS=2048` per rank, aggregate `16384` envs, `MAX_ITERATIONS=300`.
+- Full current 18-object manifest/cache:
+  - `/results/assets/filtered_manifests/stable_candidates18_shard3_assetroot_d053e6c_20260614T234700Z/manifest.json`
+  - `/results/validations/graspgen_stable_candidates18_shard3_d053e6c_20260614T234900Z/settled_pose_cache`
+- Fresh run after user-requested checkpoint deletion: `AUTO_RESUME=False`, `CHECKPOINT=`, pre-launch checkpoint count under the Franka multi-object tree was `0`.
+- Exact grasp-prior reset enabled with attempts `8`, candidates `512`, topdown required, downward-tool-z gate enabled with minimum `0.0`, max center distance fraction `0.50`, min width `0.008`, and pregrasp offset `0.0`.
+- BC, policy anchor, warmstart, and action-prior reward remained disabled.
+
+Training metrics:
+- Best rank-0 training success row: epoch `291`, `cube_success_rate=0.306640625`, `cube_has_lifted_rate=0.44873046875`, `cube_lift_height=0.05973755195736885`.
+- Final epoch `300`: `cube_success_rate=0.29541015625`, `cube_has_lifted_rate=0.43505859375`, `cube_lift_height=0.059360403567552567`.
+- Final reset diagnostics: `cube_grasp_prior_reset_success_rate=1.0`, `cube_grasp_prior_quality_success_rate=1.0`, `cube_grasp_prior_projected_exact_tip_table_clearance=0.028365805745124817`, `cube_grasp_prior_tool_downward_z=0.7997406721115112`, `cube_grasp_prior_tool_z_axis_z=-0.7997406721115112`, `cube_finger_table_clearance_violation=0.0`, `cube_table_clearance_penalty=0.0`.
+- Success curve snapshots from rank 0:
+  - epoch 1: success `0.0`, lifted `0.11474609375`, lift height `0.0014627673663198948`
+  - epoch 47: success `0.00146484375`, lifted `0.15234375`, lift height `0.00681003462523222`
+  - epoch 92: success `0.02587890625`, lifted `0.2744140625`, lift height `0.04072568938136101`
+  - epoch 137: success `0.154296875`, lifted `0.33203125`, lift height `0.04300641268491745`
+  - epoch 182: success `0.197265625`, lifted `0.38427734375`, lift height `0.05597372353076935`
+  - epoch 228: success `0.2509765625`, lifted `0.40869140625`, lift height `0.055749472230672836`
+  - epoch 274: success `0.28857421875`, lifted `0.4384765625`, lift height `0.061720289289951324`
+  - epoch 300: success `0.29541015625`, lifted `0.43505859375`, lift height `0.059360403567552567`
+
+Checkpoint evidence:
+- Generic best-reward checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_teacherobs_nograph_fresh_ppo300_ebcf612_20260616T1148Z/nn/dextrah_franka_multi_object_grasp.pth`.
+- Final checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_teacherobs_nograph_fresh_ppo300_ebcf612_20260616T1148Z/nn/last_dextrah_franka_multi_object_grasp_ep_300_rew_3808.408.pth`.
+- Generic best checkpoint was saved after log line `saving next best rewards: [5639.333]` at epoch `293`.
+
+Aggregate eval launch:
+- job id: `29166794`
+- run: `eval_franka_multi_full18_teacherobs_best_180env_ebcf612_20260616T201029Z`
+- checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_teacherobs_nograph_fresh_ppo300_ebcf612_20260616T1148Z/nn/dextrah_franka_multi_object_grasp.pth`
+- remote code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-teacher-obs-20260616-ebcf612`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_29166794.out`
+- result dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/eval_franka_multi_full18_teacherobs_best_180env_ebcf612_20260616T201029Z`
+- Eval config: 1 GPU, `NUM_ENVS=180`, `NUM_STEPS=300`, deterministic policy, no video, full 18-object round-robin manifest/cache, same exact reset gates as training, no BC/warmstart/action-prior.
+
+Next:
+- Monitor eval job `29166794`, inspect `metrics.json`, then launch video evals across object IDs for visual debugging.
+
+## 2026-06-16T20:15:30Z - aggregate eval passed; 18 object-index videos launched
+
+Aggregate eval result:
+- job id: `29166794`
+- run: `eval_franka_multi_full18_teacherobs_best_180env_ebcf612_20260616T201029Z`
+- actual wrapper log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_multi_object_29166794.out`
+- metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/eval_franka_multi_full18_teacherobs_best_180env_ebcf612_20260616T201029Z/metrics.json`
+- trace CSV/JSONL written next to metrics.
+- Slurm completed and wrapper printed `Evaluation Done`.
+- Checkpoint loaded cleanly with observation shape `(91,)`, `build mlp: 91`, and `RunningMeanStd: (91,)`.
+
+Aggregate eval metrics:
+- `num_envs=180`, `num_steps_completed=300`.
+- `eval_success_rate=0.3611111111111111` over first attempts.
+- `success_ever_rate=0.4000000059604645`.
+- `success_rate_final=0.36666667461395264`, `success_rate_max=0.37222224473953247`.
+- `reward_mean=9.176426599820456`, `reward_final=10.6556978225708`.
+- `has_lifted_cube` final `0.4611111283302307`, max `0.4611111283302307`.
+- `cube_lift_height` final `0.07402577251195908`, max `0.07544383406639099`.
+- `finger_table_clearance_violation` final/max/mean `0.0`.
+- `grasp_prior_reset_success` mean/final `1.0`.
+- `grasp_prior_reset_quality_success` mean/final `1.0`.
+- `grasp_prior_reset_projected_exact_tip_table_clearance` mean `0.02788627417758107`.
+- `grasp_prior_reset_tool_downward_z` mean `0.7985007496674855`.
+- Done reason counts: `finger_table_penetration=0`, `cube_out=0`, `prelift_drag=0`, `done_after_success_unclassified=2`, `unclassified=39`.
+
+Round-robin object-index eval breakdown:
+- The eval metrics did not include `multi_object_asset_summary`; because the env was launched with `OBJECT_ASSET_ASSIGNMENT=round_robin`, object index is `env_id % 18`.
+- Per-object first-attempt success-ever over 10 envs each:
+  - object 00: `1.000`, final `0.900`, mean max lift `0.1752`
+  - object 01: `1.000`, final `1.000`, mean max lift `0.1696`
+  - object 02: `1.000`, final `1.000`, mean max lift `0.1594`
+  - object 03: `1.000`, final `1.000`, mean max lift `0.1599`
+  - object 04: `0.300`, final `0.200`, mean max lift `0.0750`
+  - object 05: `0.700`, final `0.500`, mean max lift `0.2096`
+  - object 06: `0.100`, final `0.100`, mean max lift `0.0611`
+  - object 07: `0.000`, final `0.000`, mean max lift `0.0126`
+  - object 08: `0.300`, final `0.200`, mean max lift `0.0759`
+  - object 09: `0.600`, final `0.500`, mean max lift `0.1995`
+  - object 10: `0.000`, final `0.000`, mean max lift `0.0177`
+  - object 11: `0.000`, final `0.000`, mean max lift `0.0200`
+  - object 12: `0.100`, final `0.100`, mean max lift `0.0447`
+  - object 13: `0.600`, final `0.600`, mean max lift `0.1034`
+  - object 14: `0.000`, final `0.000`, mean max lift `0.0063`
+  - object 15: `0.000`, final `0.000`, mean max lift `0.0153`
+  - object 16: `0.500`, final `0.500`, mean max lift `0.1328`
+  - object 17: `0.000`, final `0.000`, mean max lift `0.0139`
+
+Video eval launch:
+- Goal: capture one deterministic 300-step video for each `CAMERA_ENV_INDEX=0..17` with `NUM_ENVS=18`, full 18-object round-robin assignment, and the same checkpoint/reset/object config as aggregate eval.
+- `SUPPRESS_SUCCESS_TERMINATION=True` only for videos, so successful clips remain full-length for debugging.
+- `SEED=456`, `CAPTURE_VIDEO=True`, `VIDEO_LENGTH=300`.
+- Submitted jobs/runs:
+  - object/camera 00: job `29166854`, run `eval_franka_multi_full18_teacherobs_best_video_env00_ebcf612_20260616T201453Z`
+  - object/camera 01: job `29166855`, run `eval_franka_multi_full18_teacherobs_best_video_env01_ebcf612_20260616T201453Z`
+  - object/camera 02: job `29166856`, run `eval_franka_multi_full18_teacherobs_best_video_env02_ebcf612_20260616T201453Z`
+  - object/camera 03: job `29166857`, run `eval_franka_multi_full18_teacherobs_best_video_env03_ebcf612_20260616T201453Z`
+  - object/camera 04: job `29166858`, run `eval_franka_multi_full18_teacherobs_best_video_env04_ebcf612_20260616T201453Z`
+  - object/camera 05: job `29166859`, run `eval_franka_multi_full18_teacherobs_best_video_env05_ebcf612_20260616T201453Z`
+  - object/camera 06: job `29166860`, run `eval_franka_multi_full18_teacherobs_best_video_env06_ebcf612_20260616T201453Z`
+  - object/camera 07: job `29166861`, run `eval_franka_multi_full18_teacherobs_best_video_env07_ebcf612_20260616T201453Z`
+  - object/camera 08: job `29166864`, run `eval_franka_multi_full18_teacherobs_best_video_env08_ebcf612_20260616T201453Z`
+  - object/camera 09: job `29166865`, run `eval_franka_multi_full18_teacherobs_best_video_env09_ebcf612_20260616T201453Z`
+  - object/camera 10: job `29166868`, run `eval_franka_multi_full18_teacherobs_best_video_env10_ebcf612_20260616T201453Z`
+  - object/camera 11: job `29166870`, run `eval_franka_multi_full18_teacherobs_best_video_env11_ebcf612_20260616T201453Z`
+  - object/camera 12: job `29166872`, run `eval_franka_multi_full18_teacherobs_best_video_env12_ebcf612_20260616T201453Z`
+  - object/camera 13: job `29166873`, run `eval_franka_multi_full18_teacherobs_best_video_env13_ebcf612_20260616T201453Z`
+  - object/camera 14: job `29166875`, run `eval_franka_multi_full18_teacherobs_best_video_env14_ebcf612_20260616T201453Z`
+  - object/camera 15: job `29166876`, run `eval_franka_multi_full18_teacherobs_best_video_env15_ebcf612_20260616T201453Z`
+  - object/camera 16: job `29166877`, run `eval_franka_multi_full18_teacherobs_best_video_env16_ebcf612_20260616T201453Z`
+  - object/camera 17: job `29166878`, run `eval_franka_multi_full18_teacherobs_best_video_env17_ebcf612_20260616T201453Z`
+
+Infrastructure note:
+- Each `sbatch` emitted the cluster warning that the `PPP` account is approaching stale-data GPU access limits. This did not block the current submissions, but it may become an external access blocker if not handled outside this code task.
+
+Next:
+- Monitor all 18 video jobs, fetch the resulting MP4s/metrics, assemble a video grid, inspect visually for table penetration or below-table reaching, then update this worklog.
+
+## 2026-06-16T20:25:00Z - video evals completed; grid artifact inspected
+
+Video job result:
+- All 18 video eval jobs completed and produced `Evaluation Done`, `metrics.json`, and one non-placeholder MP4 each.
+- No active A100 jobs remained at the final scheduler check.
+- Remote video/result roots:
+  - `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/eval_franka_multi_full18_teacherobs_best_video_env00_ebcf612_20260616T201453Z`
+  - same prefix through `env17`.
+- Local fetched artifact root:
+  - `/home/lzha/code/artifacts/dextrah-multiobject-grasp-prior/teacherobs-full18-eval-20260616T201453Z`
+- Local aggregate metrics:
+  - `/home/lzha/code/artifacts/dextrah-multiobject-grasp-prior/teacherobs-full18-eval-20260616T201453Z/eval_franka_multi_full18_teacherobs_best_180env_ebcf612_20260616T201029Z/metrics.json`
+- Local labeled video grid:
+  - `/home/lzha/code/artifacts/dextrah-multiobject-grasp-prior/teacherobs-full18-eval-20260616T201453Z/franka_multi_full18_best_policy_grid_6x3_labeled.mp4`
+  - `viz-open` URL: `http://localhost:8765/view?path=artifacts/dextrah-multiobject-grasp-prior/teacherobs-full18-eval-20260616T201453Z/franka_multi_full18_best_policy_grid_6x3_labeled.mp4`
+- Grid video probe: `1920x540`, `299` frames, `4.983333s`, `60 fps`.
+- Per-source MP4 probe: all 18 videos were `1280x720`, `299` frames, `4.983333s`, `60 fps`.
+
+Visual inspection:
+- Sampled grid frames:
+  - `frames/grid_t0005.png`
+  - `frames/grid_t0025.png`
+  - `frames/grid_t0048.png`
+- The sampled frames show above-table reset and motion for all 18 tiles.
+- I did not see the old failure mode where the arm reaches from below the table or penetrates the table to reach the object.
+- Failures in the grid are concentrated on object-specific missed/unstable grasps rather than invalid below-table reset poses.
+
+Video metric inspection:
+- Across the video runs, `video_max_table_violation=0.0`.
+- Minimum projected reset tip table clearance across video metrics: `0.027235204353928566`.
+- Minimum `grasp_prior_reset_tool_downward_z_min` across video metrics: `0.0004895143210887909`, which remains non-negative; no sampled reset had a positive/upward tool z-axis under this diagnostic.
+- Aggregate eval table/reset checks remained:
+  - `finger_table_clearance_violation` final/max/mean `0.0`.
+  - `grasp_prior_reset_projected_exact_tip_table_clearance` min `0.027773592621088028`.
+  - `grasp_prior_reset_tool_downward_z` mean `0.7985007496674855`.
+  - `grasp_prior_reset_tool_z_axis_z_mean` mean `-0.7985007536411285`.
+
+Per-tile video first-attempt outcome for the camera env:
+- object 00: success ever `True`, final `False`, max lift `0.1213`, final lift `0.0000`
+- object 01: success ever `True`, final `True`, max lift `0.1859`, final lift `0.1785`
+- object 02: success ever `True`, final `True`, max lift `0.1275`, final lift `0.1206`
+- object 03: success ever `True`, final `True`, max lift `0.1558`, final lift `0.1558`
+- object 04: success ever `True`, final `True`, max lift `0.2393`, final lift `0.2287`
+- object 05: success ever `True`, final `True`, max lift `0.3051`, final lift `0.2664`
+- object 06: success ever `False`, final `False`, max lift `0.0000`, final lift `0.0000`
+- object 07: success ever `False`, final `False`, max lift `0.0014`, final lift `0.0000`
+- object 08: success ever `False`, final `False`, max lift `0.0137`, final lift `0.0000`
+- object 09: success ever `False`, final `False`, max lift `0.0142`, final lift `0.0000`
+- object 10: success ever `False`, final `False`, max lift `0.0217`, final lift `0.0035`
+- object 11: success ever `False`, final `False`, max lift `0.0145`, final lift `0.0000`
+- object 12: success ever `False`, final `False`, max lift `0.0209`, final lift `0.0000`
+- object 13: success ever `False`, final `False`, max lift `0.0006`, final lift `0.0000`
+- object 14: success ever `False`, final `False`, max lift `0.0249`, final lift `0.0000`
+- object 15: success ever `False`, final `False`, max lift `0.0295`, final lift `0.0000`
+- object 16: success ever `True`, final `True`, max lift `0.1870`, final lift `0.1729`
+- object 17: success ever `False`, final `False`, max lift `0.0142`, final lift `0.0125`
+
+Conclusion:
+- The reset-prior table-collision/below-table root cause appears fixed in this revision and run evidence.
+- The remaining performance gap is object-dependent grasp/lift robustness: the policy succeeds on a subset of objects and fails to lift several hard objects, despite safe reset poses.
+
+Next:
+- Commit/push this worklog update with the exact local/remote artifacts and final metrics.
