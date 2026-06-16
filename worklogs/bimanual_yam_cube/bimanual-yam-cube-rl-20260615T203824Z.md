@@ -1982,6 +1982,48 @@ Validation:
 Next:
 - Commit/push/deploy and rerun `yam_cube_cube014d12tr162sq006` with video disabled to confirm it terminates as `cube_speed` before any instant lift.
 
+## 2026-06-16 - speed-guard verification launch
+
+Goal:
+- Verify the previous suspect `sq006` rollout is now rejected by the new cube-speed guard before it can produce one-step instant success.
+
+Version state:
+- local_commit: `10628a42f1d7a9148ca741cfa0a768a604efb55f`
+- remote_commit: `10628a42f1d7a9148ca741cfa0a768a604efb55f`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/bimanual-yam-cube-rl-20260615T203824Z`
+
+Planned command/job:
+- Submit `cluster/sbatch_eval_bimanual_yam_cube_grasp_1gpu.sh`.
+- Job: `29129923`
+- Run: `yam_cube_cube014d12tr162sq006_speedguard_10628a4_20260616T0204Z`
+- Key settings: same as the suspect video run, except `CAPTURE_VIDEO=False`, `NUM_STEPS=360`.
+
+Success criteria:
+- Expected failure mode is early `done_reason_counts.cube_speed > 0`, stable success `0`, instant success `0`, and no post-impulse lift.
+
+Result/evidence:
+- Job `29129923` completed; artifacts copied to `artifacts/bimanual_yam_cube/yam_cube_cube014d12tr162sq006_speedguard_10628a4_20260616T0204Z/`.
+- Metrics: stable success `0.0`, instant success `0.0`, max lift `0.0`, first done step `207`, max trace linear speed `0.569412`, max trace angular speed `8.487934`.
+- Trace row `207` has `done_any_step=1`, `done_count_step=1`, and `last_cube_speed_done=1`.
+- The environment guard worked: the rollout reset before the previous one-frame lift at step `286`.
+- Eval done classification still reported `done_reason_counts.unclassified=1` because the reason snapshot was pre-step while the persisted post-step `last_cube_speed_done` flag was not folded into the classifier.
+
+Decision:
+- Patch eval done-reason classification to OR in `last_cube_speed_done` for `cube_speed` when a done occurs, then rerun the same smoke.
+
+## 2026-06-16 - cube-speed done classifier patch
+
+Goal:
+- Ensure eval summaries label speed-guard resets as `cube_speed` instead of `unclassified`.
+
+Change:
+- In eval done classification, OR `task_env.last_cube_speed_done` into the `cube_speed` reason tensor before counting done reasons.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/eval_rollout.py`
+- `git diff --check`
+- Result: passed.
+
 ## 2026-06-15 23:50Z - replace validator joint waypoint with action-interface contact path
 
 Observation:

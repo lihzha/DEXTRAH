@@ -1860,6 +1860,10 @@ def main(env_cfg, agent_cfg: dict):
                         "truncated",
                     )
                     done_reason_tensors = dict(pre_step_done_reasons)
+                    done_reason_tensors["cube_speed"] = done_reason_tensors["cube_speed"] | _env_bool_tensor(
+                        task_env,
+                        "last_cube_speed_done",
+                    )
                     if isinstance(truncated, torch.Tensor):
                         done_reason_tensors["truncated"] = done_reason_tensors["truncated"] | truncated.bool()
                     classified = torch.zeros_like(dones_bool)
