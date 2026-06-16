@@ -682,8 +682,7 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             grasp_width = prior.get("grasp_width")
             if isinstance(grasp_width, torch.Tensor):
                 sampled_width = grasp_width[local_indices]
-                candidate_required_width[mask] = torch.where(
-                    torch.isfinite(sampled_width),
+                candidate_required_width[mask] = self._sanitize_grasp_prior_width(
                     sampled_width,
                     candidate_required_width[mask],
                 )
@@ -1153,8 +1152,18 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             mask = object_indices == object_idx
             local_sample_indices = sample_indices[mask].clamp(min=0)
             sampled_width = grasp_width[local_sample_indices]
-            required_width[mask] = torch.where(torch.isfinite(sampled_width), sampled_width, required_width[mask])
+            required_width[mask] = self._sanitize_grasp_prior_width(sampled_width, required_width[mask])
         return torch.clamp(required_width, min=0.0)
+
+    def _sanitize_grasp_prior_width(
+        self,
+        sampled_width: torch.Tensor,
+        fallback_width: torch.Tensor,
+    ) -> torch.Tensor:
+        min_width = max(float(getattr(self.cfg, "grasp_prior_reset_min_width", 0.0)), 0.0)
+        max_width = max(float(getattr(self.cfg, "max_gripper_width", 0.0)), min_width)
+        plausible = torch.isfinite(sampled_width) & (sampled_width >= min_width) & (sampled_width <= max_width)
+        return torch.where(plausible, sampled_width, fallback_width)
 
     def _object_center_pos_from_root(
         self,

@@ -4653,3 +4653,136 @@ Analysis:
 
 Next:
 - Commit this run record, deploy exact source to an A100 agent worktree, launch the 18-object smoke eval, inspect reset/success metrics, then launch or adjust the 8-GPU PPO continuation.
+
+## 2026-06-16T04:03:01Z - 18-object smoke eval result
+
+Goal:
+- Check whether the largest converted/stable-backed object slice is ready for PPO continuation without stale verified-index caches.
+
+Job:
+- job_id: `29131125`
+- run: `franka_multi_full18_priorbest_full50_mix_eval180_f5b3c7b_20260616T0400Z`
+- run_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_multi_full18_priorbest_full50_mix_eval180_f5b3c7b_20260616T0400Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_multi_object_29131125.out`
+- source_commit: `f5b3c7b645db1e2e091263198320b91e3901f39e`
+
+Configuration:
+- `NUM_ENVS=180`, `MAX_OBJECTS=18`, `OBJECT_ASSET_ASSIGNMENT=round_robin`
+- `ACTION_SOURCE=policy_reference_mix`, `REFERENCE_MIX_ALPHA=0.50`
+- `GRASP_PRIOR_RESET_ATTEMPTS=8`, `GRASP_PRIOR_RESET_CANDIDATE_COUNT=256`
+- `GRASP_PRIOR_RESET_REQUIRE_TOPDOWN=True`
+- `GRASP_PRIOR_RESET_REQUIRE_DOWNWARD_TOOL_Z=True`
+- `GRASP_PRIOR_RESET_MIN_DOWNWARD_TOOL_Z=0.45`
+- `GRASP_PRIOR_RESET_MAX_CENTER_DISTANCE_FRAC=0.50`
+- `GRASP_PRIOR_PREGRASP_OFFSET=0.03`
+
+Result:
+- Slurm state: `COMPLETED|0:0`
+- `eval_success_ever_rate=0.0555555559694767`
+- `eval_success_ever_count=10`
+- `grasp_prior_reset_success=0.8888888955116272`
+- `grasp_prior_reset_quality_success=0.8888888955116272`
+- `grasp_prior_reset_tool_downward_z=0.9016064405441284`
+- `grasp_prior_reset_tool_downward_z_min=0.4775547683238983`
+- `grasp_prior_reset_candidate_valid_count=34.17778015136719`
+- `grasp_prior_reset_candidate_fallback_count=35.4444465637207`
+- `finger_table_clearance_violation=0.0`
+- `eval_done_finger_table_penetration_rate=0.0`
+- `eval_done_prelift_drag_rate=0.0`
+- `eval_done_cube_out_rate=0.0055555556900799274`
+
+Analysis:
+- The below-table/root-cause gate is holding for this run: no table violations and the minimum downward tool-z margin remains above the `0.45` threshold.
+- The 18-object slice is not ready for PPO launch as-is. The reset-quality rate maps to 16/18 clean assignments, so two objects or object/pose assignments still fail the reset prior under the current safe gates.
+
+Next:
+- Run a per-object reset audit with the same safe grasp-prior parameters to identify the failed UUIDs and decide whether to tune sampling or train on the maximal clean full-available subset.
+
+## 2026-06-16T04:12:00Z - launch 18-object reset audit
+
+Goal:
+- Identify which object assignments fail reset quality under the safe top-side/downward-tool-z gates before launching PPO.
+
+Job:
+- job_id: `1030517`
+- host: `l401`
+- run: `franka_multi_full18_reset_audit_f5b3c7b_20260616T0412Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/collect_franka_multi_object_verified_grasps_1030517.out`
+- output: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/verified_grasp_indices/franka_multi_full18_reset_audit_f5b3c7b_20260616T0412Z/verified_indices.json`
+- source_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-full-objects-20260616-f5b3c7b`
+- source_commit: `f5b3c7b645db1e2e091263198320b91e3901f39e`
+
+Configuration:
+- `NUM_ENVS=18`, `CYCLES=12`, `MIN_CYCLES=12`, `TARGET_PER_OBJECT=0`
+- `SCORE_STEPS=1` so this is a reset diagnostic, not a final verified-cache collection.
+- Same object manifest, stable-pose cache, safe grasp-prior gates, and pregrasp offset as the 18-object smoke.
+
+Expected evidence:
+- Per-object `reset_success`, `quality_success`, candidate gate counts, and tool-downward/pregrasp-z diagnostics in `verified_indices.json`.
+
+## 2026-06-16T04:22:00Z - launch larger-sampler 18-object reset audit
+
+Goal:
+- Test whether the two failed objects are a sampling-budget problem rather than an invalid-prior/root-cause problem.
+
+Job:
+- job_id: `1030518`
+- host: `l401`
+- run: `franka_multi_full18_reset_audit_c2048a16_f5b3c7b_20260616T0422Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/collect_franka_multi_object_verified_grasps_1030518.out`
+- output: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/verified_grasp_indices/franka_multi_full18_reset_audit_c2048a16_f5b3c7b_20260616T0422Z/verified_indices.json`
+- source_commit: `f5b3c7b645db1e2e091263198320b91e3901f39e`
+
+Configuration:
+- Same reset-only diagnostic as job `1030517`.
+- Increased `GRASP_RESET_CANDIDATE_COUNT=2048` and `GRASP_RESET_ATTEMPTS=16`.
+- Kept strict `GRASP_RESET_REQUIRE_TOPDOWN=True`, `GRASP_RESET_REQUIRE_DOWNWARD_TOOL_Z=True`, and `GRASP_RESET_MIN_DOWNWARD_TOOL_Z=0.45`.
+
+Expected evidence:
+- Whether all 18 objects reach 12/12 reset-quality success without relaxing table or below-approach constraints.
+
+## 2026-06-16T04:30:00Z - launch side-safe 18-object reset audit
+
+Goal:
+- Test the user's intended safety heuristic directly: reject below/upward approaches, but allow horizontal/side approaches that remain table-clear.
+
+Job:
+- job_id: `1030519`
+- host: `l401`
+- run: `franka_multi_full18_reset_audit_z0_c512a8_f5b3c7b_20260616T0430Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/collect_franka_multi_object_verified_grasps_1030519.out`
+- output: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/verified_grasp_indices/franka_multi_full18_reset_audit_z0_c512a8_f5b3c7b_20260616T0430Z/verified_indices.json`
+- source_commit: `f5b3c7b645db1e2e091263198320b91e3901f39e`
+
+Configuration:
+- `GRASP_RESET_CANDIDATE_COUNT=512`, `GRASP_RESET_ATTEMPTS=8`
+- `GRASP_RESET_REQUIRE_TOPDOWN=True`, `GRASP_RESET_MIN_PREGRASP_Z=0.0`
+- `GRASP_RESET_REQUIRE_DOWNWARD_TOOL_Z=True`, `GRASP_RESET_MIN_DOWNWARD_TOOL_Z=0.0`
+- Table-clearance, width, center-distance, and contact-height checks unchanged.
+
+Expected evidence:
+- Whether the two objects that have almost no steep top-down candidates become resettable without allowing upward/below-table grasps.
+
+Result:
+- Slurm state: `COMPLETED|0:0`
+- The side-safe gate fixed `85c3d3b9cfd64c108dc548e525052c4e`: `12/12` reset and quality success.
+- `4f4fe076fe624d2a8f198588c64fc6cb` still failed: `0/12` reset and quality success.
+- For `4f4fe076fe624d2a8f198588c64fc6cb`, average candidate counts under side-safe gates:
+  `z_nonbelow=120.7`, `tool_not_up=120.7`, `contact=512.0`, `center=511.3`, `width=2.2`, `table=112.8`, `valid=0.0`, `fallback=0.0`.
+
+Analysis:
+- The remaining blocker is not a below-table approach. It is a bad or incompatible per-grasp width cache for object `4f4fe076fe624d2a8f198588c64fc6cb`.
+- Manifest object scale is normal for the Franka gripper: `scaled_half_extents=[0.0278, 0.0342, 0.0132]` and `grasp_size=0.0683`.
+- The corresponding GraspGen prior has `grasp_width` median `0.00073 m`, 99th percentile `0.00191 m`, and max `0.03698 m`. These widths are implausibly tiny relative to the manifest object size and cause the reset width gate to reject almost all otherwise side-safe candidates.
+
+Change:
+- Patched `dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py` so prior `grasp_width` only overrides the manifest/object grasp size when the sampled width is finite and within `[grasp_prior_reset_min_width, max_gripper_width]`.
+- This mirrors the single-cube environment's conservative behavior for required open width when a prior width is missing or unusable.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py`
+- `bash -n cluster/sbatch_collect_franka_multi_object_verified_grasps_1gpu.sh cluster/sbatch_eval_franka_multi_object_grasp_1gpu.sh cluster/sbatch_train_teacher_8gpu.sh`
+- `git diff --check`
+
+Next:
+- Commit and redeploy the patch, then rerun the side-safe 18-object reset audit.
