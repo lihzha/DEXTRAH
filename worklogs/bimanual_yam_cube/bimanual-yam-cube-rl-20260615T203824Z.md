@@ -1732,6 +1732,75 @@ Analysis:
 Decision:
 - Add bimanual reference geometry overrides to eval/train wrappers and fix eval done-reason classification for actual environment truncation.
 
+## 2026-06-16 - planned low-hold contact-trigger sweep
+
+Goal:
+- Test whether a lower hold-height target and measured YAM contact trigger produce a physical lift without reintroducing shake/launch.
+
+Version state:
+- local_commit: `9ef653c130adb56c8315d3757a78ae5a7814e9ef`
+- remote_commit: `9ef653c130adb56c8315d3757a78ae5a7814e9ef`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/bimanual-yam-cube-rl-20260615T203824Z`
+
+Planned command/job:
+- Wrapper: `cluster/sbatch_eval_bimanual_yam_cube_grasp_1gpu.sh`
+- Job: `29128856`
+- Run: `yam_cube_reference_prior_smoke_lowhold180sq012_9ef653c_20260616T0135Z`
+- Key settings: `ACTION_SOURCE=reference_delta`, `NUM_ENVS=1`, `NUM_STEPS=640`, `CAPTURE_VIDEO=True`, `BIMANUAL_REFERENCE_CUBE_CENTER_TO_HOLD_Z=0.040`, `BIMANUAL_REFERENCE_CONTACT_TRIGGER_DIST=0.180`, `BIMANUAL_REFERENCE_LIFT_SQUEEZE_Y=0.012`, no cube XY randomization, side-y camera.
+- Expected log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_bimanual_yam_cube_<job>.out`
+- Expected metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/yam_cube_reference_prior_smoke_lowhold180sq012_9ef653c_20260616T0135Z/metrics.json`
+
+Success criteria:
+- Stable physical pickup (`eval_success_rate > 0`, `stable_success_ever_rate > 0`) with no high-Z cube-out, no high-speed shake/launch, and a video that shows side pressure carrying the cube.
+
+Result/evidence:
+- Job `29128856` completed with metrics and video.
+- Local video: `artifacts/bimanual_yam_cube/reference_prior_smoke_20260616T0135Z/videos/yam-cube-reference-prior-smoke-step-0.mp4`.
+- Viewer: `http://localhost:8765/view?path=DEXTRAH/artifacts/bimanual_yam_cube/reference_prior_smoke_20260616T0135Z/videos/yam-cube-reference-prior-smoke-step-0.mp4`.
+- Video metadata: `1280x720`, `640` frames, `10.666667 s`.
+- Metrics: `eval_success_rate=0.0`, `stable_success_ever_rate=0.0`, `success_ever_rate=0.0`, `success_rate_max=0.0`, `max_lift=0.008029408752918243`, `max_cube_z=0.10302940756082535`, `max_xy_error=0.01757890172302723`.
+- Done reason counts now classify the first reset as `truncated=1`, `unclassified=0`.
+- Trace: min `max_hold_to_cube_dist=0.17637212574481964` at step `206`; cube pivots/tilts and then slides rather than being carried.
+
+Analysis:
+- The lower hold target and small squeeze make contact deeper and produce a small physical lift, but the cube is being torqued/pivoted, not stably pinched.
+- This is no longer the launch artifact, but it is still not RLable enough for PPO: the reward can still reward small pivot/lift without a stable grasp.
+
+Decision:
+- Run a no-video squeeze sweep at the same commit to see whether less or more squeeze improves lift/slip before producing another visual rollout.
+
+## 2026-06-16 - low-hold squeeze sweep launch
+
+Goal:
+- Compare lift/slip/velocity tradeoffs for lift-phase squeeze under the lower hold-height and `0.180 m` measured-contact trigger.
+
+Sweep manifest:
+
+| Attempt | Commit | Key settings | Result | Evidence | Decision |
+| --- | --- | --- | --- | --- | --- |
+| `yam_cube_lowhold180sq000_9ef653c_20260616T0143Z` | `9ef653c` | center-to-hold-z `0.040`, trigger `0.180`, squeeze `0.000`, no video | failed: `stable_success=0`, `max_lift=0`, `max_xy=0.000003`, min max-hold `0.17733` | metrics `artifacts/bimanual_yam_cube/yam_cube_lowhold180sq000_9ef653c_20260616T0143Z/metrics.json`; job `29129030` | no lift |
+| `yam_cube_lowhold180sq006_9ef653c_20260616T0143Z` | `9ef653c` | center-to-hold-z `0.040`, trigger `0.180`, squeeze `0.006`, no video | failed: `stable_success=0`, `max_lift=0`, `max_xy=0.000066`, min max-hold `0.17660` | metrics `artifacts/bimanual_yam_cube/yam_cube_lowhold180sq006_9ef653c_20260616T0143Z/metrics.json`; job `29129031` | no lift |
+| `yam_cube_lowhold180sq018_9ef653c_20260616T0143Z` | `9ef653c` | center-to-hold-z `0.040`, trigger `0.180`, squeeze `0.018`, no video | failed: `stable_success=0`, `max_lift=0.010843`, `max_xy=0.027486`, min max-hold `0.17631` | metrics `artifacts/bimanual_yam_cube/yam_cube_lowhold180sq018_9ef653c_20260616T0143Z/metrics.json`; job `29129033` | lift comes with excess slip/tilt |
+
+Shared success criteria:
+- Prefer stable success; otherwise prefer the arm with larger lift, lower XY slip, lower cube speeds, and no high-Z cube-out or launch-like velocity spike.
+
+Decision:
+- Squeeze alone is not sufficient. Low/no squeeze produces no lift; high squeeze creates torque/slip. Next test should change cube geometry/mass while keeping artifact-gated success.
+
+## 2026-06-16 - cube physical override plumbing
+
+Goal:
+- Allow controlled cube-size/mass/friction sweeps without committing a separate config edit per arm.
+
+Change:
+- Added env/config synchronization so scalar Hydra overrides for `cube_size`, cube density, and cube friction update the nested Isaac Lab cube spawn config before `RigidObject` creation.
+- Exposed `CUBE_SIZE`, `CUBE_DENSITY`, `CUBE_STATIC_FRICTION`, and `CUBE_DYNAMIC_FRICTION` in the YAM eval and train wrappers.
+
+Validation plan:
+- Run Python syntax, wrapper syntax, and diff checks.
+- Commit/push/deploy before launching cube geometry sweeps.
+
 ## 2026-06-15 23:50Z - replace validator joint waypoint with action-interface contact path
 
 Observation:

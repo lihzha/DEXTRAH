@@ -26,6 +26,28 @@ def _yaw_quat_wxyz(yaw_rad: torch.Tensor) -> torch.Tensor:
     return quat
 
 
+def _sync_cube_spawn_cfg_from_scalars(cfg: DextrahBimanualYAMCubeGraspEnvCfg) -> None:
+    """Apply scalar Hydra overrides to the nested cube spawner config."""
+
+    cube_size = float(cfg.cube_size)
+    cfg.cube_spawn_z = float(cfg.table_surface_z) + 0.5 * cube_size + 0.005
+    cfg.cube.spawn.size = (cube_size, cube_size, cube_size)
+    cfg.cube.init_state.pos = (float(cfg.pickup_x), float(cfg.pickup_y), float(cfg.cube_spawn_z))
+    cfg.cube.spawn.collision_props.contact_offset = float(cfg.cube_contact_offset)
+    cfg.cube.spawn.collision_props.rest_offset = float(cfg.cube_rest_offset)
+    cfg.cube.spawn.rigid_props.linear_damping = float(cfg.cube_linear_damping)
+    cfg.cube.spawn.rigid_props.angular_damping = float(cfg.cube_angular_damping)
+    cfg.cube.spawn.rigid_props.solver_position_iteration_count = int(cfg.cube_solver_position_iterations)
+    cfg.cube.spawn.rigid_props.solver_velocity_iteration_count = int(cfg.cube_solver_velocity_iterations)
+    cfg.cube.spawn.rigid_props.sleep_threshold = float(cfg.cube_sleep_threshold)
+    cfg.cube.spawn.rigid_props.stabilization_threshold = float(cfg.cube_stabilization_threshold)
+    cfg.cube.spawn.rigid_props.max_depenetration_velocity = float(cfg.cube_max_depenetration_velocity)
+    cfg.cube.spawn.mass_props.density = float(cfg.cube_density)
+    cfg.cube.spawn.physics_material.static_friction = float(cfg.cube_static_friction)
+    cfg.cube.spawn.physics_material.dynamic_friction = float(cfg.cube_dynamic_friction)
+    cfg.cube.spawn.physics_material.restitution = float(cfg.cube_restitution)
+
+
 class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
     """Bimanual YAM task: pick a cube with left and right arms and lift it."""
 
@@ -38,6 +60,7 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
                 "`/isaac-sim/python.sh dextrah_lab/assets/scripts/prepare_yam_assets.py --headless`. "
                 f"Expected: {YAM_USD_PATH}"
             )
+        _sync_cube_spawn_cfg_from_scalars(cfg)
         super().__init__(cfg, render_mode, **kwargs)
 
         self.dt = self.cfg.sim.dt * self.cfg.decimation
