@@ -1801,6 +1801,53 @@ Validation plan:
 - Run Python syntax, wrapper syntax, and diff checks.
 - Commit/push/deploy before launching cube geometry sweeps.
 
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_env.py dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_env_cfg.py dextrah_lab/rl_games/eval_rollout.py`
+- `bash -n cluster/sbatch_eval_bimanual_yam_cube_grasp_1gpu.sh cluster/sbatch_train_bimanual_yam_cube_grasp_1gpu.sh cluster/sbatch_validate_bimanual_yam_cube_grasp_env_1gpu.sh`
+- `git diff --check`
+- Result: passed.
+
+Version state:
+- local_commit: `0111d625da62a8c80e64d9d1dce90c154d82da8c`
+- remote_commit: `0111d625da62a8c80e64d9d1dce90c154d82da8c`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/bimanual-yam-cube-rl-20260615T203824Z`
+
+## 2026-06-16 - cube geometry sweep launch
+
+Goal:
+- Test whether a smaller/lighter cube gives the YAM fingers a stable side pinch without relying on torque.
+
+Sweep manifest:
+
+| Attempt | Commit | Key settings | Result | Evidence | Decision |
+| --- | --- | --- | --- | --- | --- |
+| `yam_cube_cube016d24sq006_0111d62_20260616T0152Z` | `0111d62` | cube `0.16 m`, density `24`, center-to-hold-z `0.040`, trigger `0.170`, squeeze `0.006`, no video | job `29129327` | metrics pending | compare |
+| `yam_cube_cube016d24sq012_0111d62_20260616T0152Z` | `0111d62` | cube `0.16 m`, density `24`, center-to-hold-z `0.040`, trigger `0.170`, squeeze `0.012`, no video | job `29129328` | metrics pending | compare |
+| `yam_cube_cube014d24sq006_0111d62_20260616T0152Z` | `0111d62` | cube `0.14 m`, density `24`, center-to-hold-z `0.040`, trigger `0.160`, squeeze `0.006`, no video | job `29129329` | metrics pending | compare |
+
+Shared success criteria:
+- Prefer stable success; otherwise prefer the arm with larger lift, lower XY slip, and no high-Z cube-out or launch-like spike.
+
+Result/evidence:
+- All three jobs failed before env construction: `29129327`, `29129328`, `29129329`.
+- Logs show Hydra rejected the physical cube overrides, e.g. `env.cube_size=0.16` / `env.cube_density=24`, before metrics could be written.
+
+Decision:
+- Keep the wrapper logging/export knobs, but stop sending physical cube settings through Hydra. The task will read `CUBE_SIZE`, `CUBE_DENSITY`, `CUBE_STATIC_FRICTION`, and `CUBE_DYNAMIC_FRICTION` directly before constructing the cube spawner.
+
+## 2026-06-16 - direct env-var cube physical overrides
+
+Goal:
+- Make cube-size/mass/friction sweeps work without Hydra rejecting physical config fields.
+
+Change:
+- `_sync_cube_spawn_cfg_from_scalars` now consumes `CUBE_SIZE`, `CUBE_DENSITY`, `CUBE_STATIC_FRICTION`, and `CUBE_DYNAMIC_FRICTION` from the environment before mutating the nested cube spawner config.
+- Eval/train wrappers still export and log these values, but no longer include them as Hydra `env.*` overrides.
+
+Validation plan:
+- Run Python syntax, wrapper syntax, and diff checks.
+- Commit/push/deploy, then relaunch the same three geometry arms.
+
 ## 2026-06-15 23:50Z - replace validator joint waypoint with action-interface contact path
 
 Observation:

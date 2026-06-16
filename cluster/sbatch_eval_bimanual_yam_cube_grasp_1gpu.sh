@@ -210,10 +210,6 @@ srun \
         TASK_OVERRIDES+=(env."$field"="$value")
       fi
     }
-    append_env_override cube_size "$CUBE_SIZE"
-    append_env_override cube_density "$CUBE_DENSITY"
-    append_env_override cube_static_friction "$CUBE_STATIC_FRICTION"
-    append_env_override cube_dynamic_friction "$CUBE_DYNAMIC_FRICTION"
     append_env_override bimanual_reference_cube_center_to_hold_z "$BIMANUAL_REFERENCE_CUBE_CENTER_TO_HOLD_Z"
     append_env_override bimanual_reference_min_hold_z "$BIMANUAL_REFERENCE_MIN_HOLD_Z"
     append_env_override bimanual_reference_contact_dist "$BIMANUAL_REFERENCE_CONTACT_DIST"

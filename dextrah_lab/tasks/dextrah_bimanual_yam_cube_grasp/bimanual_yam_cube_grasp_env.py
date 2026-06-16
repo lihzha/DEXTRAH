@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 import math
+import os
 from pathlib import Path
 
 import torch
@@ -28,6 +29,16 @@ def _yaw_quat_wxyz(yaw_rad: torch.Tensor) -> torch.Tensor:
 
 def _sync_cube_spawn_cfg_from_scalars(cfg: DextrahBimanualYAMCubeGraspEnvCfg) -> None:
     """Apply scalar Hydra overrides to the nested cube spawner config."""
+
+    for field_name, env_name in (
+        ("cube_size", "CUBE_SIZE"),
+        ("cube_density", "CUBE_DENSITY"),
+        ("cube_static_friction", "CUBE_STATIC_FRICTION"),
+        ("cube_dynamic_friction", "CUBE_DYNAMIC_FRICTION"),
+    ):
+        env_value = os.environ.get(env_name)
+        if env_value:
+            setattr(cfg, field_name, float(env_value))
 
     cube_size = float(cfg.cube_size)
     cfg.cube_spawn_z = float(cfg.table_surface_z) + 0.5 * cube_size + 0.005
