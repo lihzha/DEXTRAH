@@ -5754,3 +5754,125 @@ Checkpoint deletion:
 
 Next:
 - Launch a fresh 8-GPU full 18-object PPO run from `ebcf612` using teacher-style object one-hot observations, exact reset, no BC, and old-checkpoint reuse disabled.
+
+## 2026-06-16T18:20:00Z - launched fresh full 18-object teacher-observation PPO
+
+Goal:
+- Train Franka multi-object RL from scratch on the full current 18-object manifest using teacher-style one-hot object identity observations.
+
+Launch:
+- job id: `29162665`
+- run: `franka_multi_full18_teacherobs_fresh_ppo300_ebcf612_20260616T1120Z`
+- source commit: `ebcf612cbcac328d5fbd6209dd2bca579c00c110`
+- remote code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-teacher-obs-20260616-ebcf612`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29162665.out`
+- result dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_teacherobs_fresh_ppo300_ebcf612_20260616T1120Z`
+- launch record: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/launch_records/franka_multi_full18_teacherobs_fresh_ppo300_ebcf612_20260616T1120Z_job29162665.env`
+
+Configuration:
+- `TASK=Dextrah-Franka-Multi-Object-Grasp`
+- `NPROC_PER_NODE=8`, `DISTRIBUTED=True`, `MULTI_GPU=True`
+- `NUM_ENVS=2048` per rank, `MAX_ITERATIONS=300`, `HORIZON_LENGTH=64`
+- `MINIBATCH_SIZE=32768`, `CENTRAL_VALUE_MINIBATCH_SIZE=32768`, `MINI_EPOCHS=4`
+- `LEARNING_RATE=0.0002`, `CENTRAL_VALUE_LEARNING_RATE=0.0001`, `ENTROPY_COEF=0.0005`, `SIGMA_INIT_VAL=0`
+- `SAVE_FREQUENCY=10`, `DEXTRAH_RLGAMES_JSONL_METRICS=True`
+- `AUTO_RESUME=False`, `SELF_RELAUNCH=False`, `CHECKPOINT=`
+- object manifest: `/results/assets/filtered_manifests/stable_candidates18_shard3_assetroot_d053e6c_20260614T234700Z/manifest.json`
+- stable pose cache: `/results/validations/graspgen_stable_candidates18_shard3_d053e6c_20260614T234900Z/settled_pose_cache`
+- `MAX_OBJECTS=18`, `OBJECT_ASSET_ASSIGNMENT=round_robin`
+- exact grasp-prior reset enabled with attempts `8`, candidates `512`, topdown required, no below-table approach gate (`GRASP_PRIOR_RESET_REQUIRE_DOWNWARD_TOOL_Z=True`, `GRASP_PRIOR_RESET_MIN_DOWNWARD_TOOL_Z=0.0`), `GRASP_PRIOR_PREGRASP_OFFSET=0.0`
+- BC, policy anchor, warmstart, and action-prior reward all disabled.
+
+Initial scheduler status:
+- Submitted successfully.
+- Pending with reason `QOSMaxJobsPerUserLimit` because another user-owned A100 job (`29162396`, `dextrah_yam_cube_rl`) is running.
+- I did not cancel the unrelated job.
+
+Next:
+- Monitor until the job starts, then inspect startup logs for `build mlp: 91`, no checkpoint load, resolved config correctness, reset diagnostics, and early PPO stability.
+
+## 2026-06-16T18:48:00Z - 8-GPU startup smoke completed; full no-graph PPO launched
+
+Issue:
+- Full job `29162665` was canceled at `00:05:34` because the log appeared frozen after base environment setup.
+- This was premature: comparison against prior successful run `teacher_8gpu_29137989.out` showed scene creation alone takes about `262-264s`, followed by about `20s` for simulation start before `build mlp`.
+
+8-GPU smoke:
+- job id: `29162715`
+- run: `franka_multi_full18_teacherobs_nograph_smoke3_ebcf612_20260616T1133Z`
+- source commit: `ebcf612cbcac328d5fbd6209dd2bca579c00c110`
+- scale: 8 GPUs, `NUM_ENVS=2048` per rank, `MAX_ITERATIONS=3`, full 18-object manifest/cache.
+- `USE_CUDA_GRAPH=False`, `AUTO_RESUME=False`, `CHECKPOINT=`, BC/action-prior/warmstart disabled.
+- Slurm state: `COMPLETED`, exit `0:0`, elapsed `00:07:24`.
+
+Smoke evidence:
+- Scene creation per rank: `262.3-264.0s`.
+- Simulation start per rank: about `20.3-21.6s`.
+- Log reached `build mlp: 91` and `RunningMeanStd: (91,)` on all ranks.
+- PPO completed 3 epochs:
+  - epoch 1: `fps total 29678`
+  - epoch 2: `fps total 49582`
+  - epoch 3: `fps total 59512`
+  - ended with `MAX EPOCHS NUM!`
+- Rank-0 last metrics row:
+  - `cube_grasp_prior_reset_success_rate=0.99951171875`
+  - `cube_grasp_prior_quality_success_rate=0.99951171875`
+  - `cube_grasp_prior_projected_exact_tip_table_clearance=0.0282626767`
+  - `cube_grasp_prior_tool_downward_z=0.7980465889`
+  - `cube_grasp_prior_tool_z_axis_z=-0.7980465889`
+  - `cube_finger_table_clearance_violation=0.0`
+  - `cube_table_clearance_penalty=0.0`
+  - `cube_has_lifted_rate=0.11767578125`
+  - `cube_success_rate=0.0`
+  - BC/anchor scalars remained zero.
+
+Smoke checkpoint cleanup:
+- Deleted smoke-generated checkpoints before the full run.
+- Deletion manifest: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/_deleted_checkpoints_before_full_nograph_20260616T1146Z.txt`
+- Deleted `12` checkpoint files (`2.4G`); post-delete checkpoint count was `0`.
+
+Full run launch:
+- job id: `29163012`
+- run: `franka_multi_full18_teacherobs_nograph_fresh_ppo300_ebcf612_20260616T1148Z`
+- remote code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-teacher-obs-20260616-ebcf612`
+- source commit: `ebcf612cbcac328d5fbd6209dd2bca579c00c110`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29163012.out`
+- result dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_teacherobs_nograph_fresh_ppo300_ebcf612_20260616T1148Z`
+- launch record: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/launch_records/franka_multi_full18_teacherobs_nograph_fresh_ppo300_ebcf612_20260616T1148Z_job29163012.env`
+- pre-launch checkpoint count under the Franka multi-object RL tree: `0`
+- key config: 8 GPUs, `NUM_ENVS=2048`, `MAX_ITERATIONS=300`, `HORIZON_LENGTH=64`, `MINIBATCH_SIZE=32768`, `MINI_EPOCHS=4`, `LEARNING_RATE=0.0002`, `SAVE_FREQUENCY=10`, `USE_CUDA_GRAPH=False`, full 18-object manifest/cache, exact reset gates, no BC/action-prior/warmstart.
+
+Next:
+- Monitor `29163012` through startup and training, then inspect metrics/checkpoints/evaluation artifacts.
+
+## 2026-06-16T18:55:00Z - full PPO startup passed
+
+Full run status:
+- job id: `29163012`
+- run: `franka_multi_full18_teacherobs_nograph_fresh_ppo300_ebcf612_20260616T1148Z`
+- scheduler state: `RUNNING`
+- node: `batch-block7-01618`
+- elapsed at check: about `00:07:00`
+
+Startup evidence:
+- Scene creation per rank: `262.18-264.15s`.
+- Simulation start per rank: `20.41-21.16s`.
+- Log reached `build mlp: 91` and `RunningMeanStd: (91,)`.
+- No checkpoint load line was observed.
+- PPO reached at least epoch `2/300`.
+
+Rank-0 early metrics at epoch 2:
+- `cube_success_rate=0.0`
+- `cube_has_lifted_rate=0.11669921875`
+- `cube_grasp_prior_reset_success_rate=1.0`
+- `cube_grasp_prior_quality_success_rate=1.0`
+- `cube_grasp_prior_projected_exact_tip_table_clearance=0.0282866154`
+- `cube_grasp_prior_tool_downward_z=0.7998201251`
+- `cube_grasp_prior_tool_z_axis_z=-0.7998200655`
+- `cube_finger_table_clearance_violation=0.0`
+- `cube_table_clearance_penalty=0.0`
+- `agent_aux/dextrah_grasp_prior_bc_loss=0.0`
+- `agent_aux/dextrah_bc_policy_anchor_loss=0.0`
+
+Next:
+- Continue monitoring epoch/reward/success/lift curves and checkpoint creation through completion.
