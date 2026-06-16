@@ -368,7 +368,7 @@ srun \
   bash -lc '
     set -euo pipefail
     export SITE="/envs/$ENV_NAME/site"
-    export PYTHONPATH="$SITE:/code:/fabrics/src"
+    export PYTHONPATH="/code:$SITE:/fabrics/src"
     for d in /IsaacLab/source/*; do
       if [ -d "$d" ]; then
         export PYTHONPATH="$d:$PYTHONPATH"

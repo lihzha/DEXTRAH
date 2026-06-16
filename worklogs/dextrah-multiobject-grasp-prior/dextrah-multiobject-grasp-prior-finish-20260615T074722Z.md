@@ -4786,3 +4786,51 @@ Validation:
 
 Next:
 - Commit and redeploy the patch, then rerun the side-safe 18-object reset audit.
+
+## 2026-06-16T04:45:00Z - launch patched side-safe reset audit
+
+Goal:
+- Verify the prior-width fallback patch fixes the remaining object while preserving no-below-table side-safe reset gates.
+
+Version Control:
+- local_commit: `1b1e45c02e020d2fb6399606b244778e25ded7b0`
+- branch: `codex/dextrah-multiobject-grasp-prior-finish-20260615T074722Z`
+- pushed: yes
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-full-objects-20260616-f5b3c7b`
+- remote_commit: `1b1e45c02e020d2fb6399606b244778e25ded7b0`
+
+Job:
+- job_id: `1030520`
+- host: `l401`
+- run: `franka_multi_full18_reset_audit_z0_widthfix_c512a8_1b1e45c_20260616T0445Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/collect_franka_multi_object_verified_grasps_1030520.out`
+- output: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/verified_grasp_indices/franka_multi_full18_reset_audit_z0_widthfix_c512a8_1b1e45c_20260616T0445Z/verified_indices.json`
+
+Configuration:
+- Same as job `1030519`: side-safe `min_pregrasp_z=0.0`, `min_downward_tool_z=0.0`, table/center/contact gates unchanged, `candidate_count=512`, `attempts=8`.
+
+Expected evidence:
+- All 18 objects should reach reset-quality success if the last blocker was the invalid `grasp_width` cache.
+
+Result:
+- Slurm state: `COMPLETED|0:0`
+- `4f4fe076fe624d2a8f198588c64fc6cb` remained at `0/12` reset and quality success.
+- Candidate width count remained near the pre-patch value: `3.1/512`.
+
+Analysis:
+- The metric did not reflect the source patch. The collect/eval/train wrappers export `PYTHONPATH` with `$SITE` before `/code`, so the container can import the installed `dextrah_lab` copy instead of the committed worktree source.
+- This is a deployment bug for all subsequent validation and PPO jobs, not only this audit.
+
+Change:
+- Patched these wrappers to put `/code` before `$SITE`:
+  - `cluster/sbatch_collect_franka_multi_object_verified_grasps_1gpu.sh`
+  - `cluster/sbatch_eval_franka_multi_object_grasp_1gpu.sh`
+  - `cluster/sbatch_train_teacher_8gpu.sh`
+
+Validation:
+- `bash -n cluster/sbatch_collect_franka_multi_object_verified_grasps_1gpu.sh cluster/sbatch_eval_franka_multi_object_grasp_1gpu.sh cluster/sbatch_train_teacher_8gpu.sh`
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py`
+- `git diff --check`
+
+Next:
+- Commit and redeploy the wrapper fix, then rerun the patched side-safe reset audit. The next audit must show source import from `/code` by behavior, and ideally by explicit log output in a follow-up wrapper instrumentation if ambiguity remains.
