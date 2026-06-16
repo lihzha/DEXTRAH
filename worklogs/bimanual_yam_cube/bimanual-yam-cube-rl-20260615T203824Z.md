@@ -1523,6 +1523,26 @@ Sweep manifest:
 Shared settings:
 - Strict stable validator, `NUM_ENVS=1`, `NUM_STEPS=560`, `LIFT_HEIGHT=0.06`, `CAPTURE_VIDEO=False`, `ALLOW_GRASP_ASSIST=False`, `REQUIRE_UNASSISTED_LIFT=True`, `DISABLE_FABRIC=True`.
 
+Squeeze results:
+- `squeeze002`: failed; `max_lift=0.016242563724517822`, `max_cube_linear_speed=0.43821200728416443`, `max_cube_angular_speed=4.540881156921387`, contact reached at step `361`.
+- `squeeze0035`: failed; `max_lift=0.016242586076259613`, `max_cube_linear_speed=0.454257994890213`, `max_cube_angular_speed=4.734441757202148`, contact reached at step `361`.
+- Decision: inward lift squeeze did not increase lift. The best stable action path remains contact-like but not load-bearing; test a larger cube that matches the actual reachable hand-center separation.
+
+## 2026-06-16 01:02Z - larger cube geometry test
+
+Goal:
+- Check whether a slightly larger cube lets the stable action path produce load-bearing side contact without false-lift/shake artifacts.
+
+Change:
+- Increase cube size from `0.14` to `0.18`.
+- Reduce cube density from `80.0` to `38.0` to keep object mass close to the prior 14 cm cube.
+- Keep friction, damping, solver, contact offset, success speed gates, and action-path validator behavior unchanged.
+
+Validation plan:
+- Run syntax and diff checks.
+- Commit/push/redeploy.
+- Rerun strict stable validator with the best stable orientation (`left/right Z = [-0.25, +0.25]`) and no squeeze first.
+
 Success criteria:
 - Prefer any arm that produces stable lift; otherwise choose the arm with improved min hold distance / cube lift without speed spikes for the next sweep.
 
@@ -1555,6 +1575,26 @@ Validation plan:
 - Run Python syntax, wrapper syntax, and diff checks.
 - Commit/push/redeploy.
 - Test quarter-Z with moderate squeeze values.
+
+## 2026-06-16 00:57Z - planned quarter-Z squeeze sweep
+
+Goal:
+- Test whether maintaining inward side pressure during lift turns the stable quarter-Z contact into a stable physical lift.
+
+Version state:
+- local_commit: `5dd3486d07c8bc1dcb12b2e20c7ea05b06c56631`
+- remote_commit: `5dd3486d07c8bc1dcb12b2e20c7ea05b06c56631`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/bimanual-yam-cube-rl-20260615T203824Z`
+
+Sweep manifest:
+
+| Attempt | Commit | Key settings | Result | Evidence | Decision |
+| --- | --- | --- | --- | --- | --- |
+| `yam_cube_zquarter_squeeze002_5dd3486_20260616T0057Z` | `5dd3486` | left/right Z `[-0.25, +0.25]`, `LIFT_SQUEEZE_Y=0.02` | job `29126930` | log `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_bimanual_yam_cube_29126930.out`; metrics pending | compare lift and speed stability |
+| `yam_cube_zquarter_squeeze0035_5dd3486_20260616T0057Z` | `5dd3486` | left/right Z `[-0.25, +0.25]`, `LIFT_SQUEEZE_Y=0.035` | job `29126929` | log `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_bimanual_yam_cube_29126929.out`; metrics pending | compare lift and speed stability |
+
+Shared settings:
+- Strict stable validator, `NUM_ENVS=1`, `NUM_STEPS=560`, `LIFT_HEIGHT=0.06`, `CAPTURE_VIDEO=False`, `ALLOW_GRASP_ASSIST=False`, `REQUIRE_UNASSISTED_LIFT=True`, `DISABLE_FABRIC=True`.
 
 ## 2026-06-16 04:05Z - planned smaller-cube stable validator
 
