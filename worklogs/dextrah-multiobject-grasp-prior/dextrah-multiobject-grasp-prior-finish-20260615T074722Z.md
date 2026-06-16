@@ -5711,3 +5711,46 @@ Next:
 - Commit and push the source/worklog update.
 - Deploy an agent-owned A100 worktree at the exact commit.
 - Launch a small fresh teacher-style-observation exact-reset PPO smoke first, inspect logs/config/metrics, then scale if shape and reset behavior are correct.
+
+## 2026-06-16T18:09:00Z - teacher-style obs smoke passed and previous checkpoints deleted
+
+Goal:
+- Verify the teacher-style object identity observation on A100 before launching full 18-object Franka RL from scratch.
+- Remove previous Franka multi-object checkpoints so the next run cannot accidentally reuse stale or input-shape-incompatible weights.
+
+Source/version:
+- local branch: `codex/dextrah-multiobject-grasp-prior-finish-20260615T074722Z`
+- commit: `ebcf612cbcac328d5fbd6209dd2bca579c00c110`
+- remote agent worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-teacher-obs-20260616-ebcf612`
+- remote worktree HEAD verified at `ebcf612cbcac328d5fbd6209dd2bca579c00c110`.
+
+Smoke job:
+- job id: `29162489`
+- run: `franka_multi_full18_teacherobs_smoke3_fresh_ebcf612_20260616T1055Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29162489.out`
+- result dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_teacherobs_smoke3_fresh_ebcf612_20260616T1055Z`
+- scale: one A100 GPU, `NUM_ENVS=144`, `MAX_ITERATIONS=3`, `HORIZON_LENGTH=16`, full 18-object manifest, exact grasp-prior reset, no BC/action-prior/warmstart.
+- resume controls: `AUTO_RESUME=False`, `CHECKPOINT=`.
+
+Smoke result:
+- Slurm state: `COMPLETED`, exit `0:0`, elapsed `00:01:39`.
+- Log showed `build mlp: 91` and `RunningMeanStd: (91,)`.
+- Saved config showed `observation_space=91`, `num_observations=91`, `state_space=91`, `num_states=91`, `max_objects=18`, `object_asset_assignment=round_robin`, `grasp_prior_reset_enabled=true`, and `grasp_prior_pregrasp_offset=0.0`.
+- Metrics JSONL had 3 rows. Last epoch:
+  - `cube_grasp_prior_reset_success_rate=1.0`
+  - `cube_grasp_prior_quality_success_rate=1.0`
+  - `cube_grasp_prior_projected_exact_tip_table_clearance=0.028059`
+  - `cube_grasp_prior_tool_downward_z=0.802754`
+  - `cube_finger_table_clearance_violation=0.0`
+  - `cube_has_lifted_rate=0.111111`
+  - `cube_success_rate=0.0`
+
+Checkpoint deletion:
+- Targeted remote tree: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp`
+- Deleted only model checkpoint files matching `*.pth`; logs, configs, metrics, videos, and deletion manifests were preserved.
+- Before deletion: `1332` checkpoint files, approximately `27G`.
+- Deletion manifest: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/_deleted_checkpoints_20260616T1109Z.txt`
+- After deletion: `0` checkpoint files remain under the target tree.
+
+Next:
+- Launch a fresh 8-GPU full 18-object PPO run from `ebcf612` using teacher-style object one-hot observations, exact reset, no BC, and old-checkpoint reuse disabled.
