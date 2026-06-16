@@ -4607,3 +4607,49 @@ Visual inspection:
 - The rendered env0/env1 frames show the wrist and gripper above the tabletop throughout the approach/contact window.
 - The gripper approaches from the top side; no frame shows the arm reaching from below the table or penetrating the table.
 - This matches the scalar reset evidence: tool z-axis points downward and finger-table violations are zero.
+
+## 2026-06-16T03:54:40Z - start full available object scale-up
+
+Goal:
+- Continue from the two-object result toward full-object Franka multi-object RL training with grasp prior.
+
+Hypothesis:
+- The true full Robotiq split is not directly trainable from current staged data because the earlier full staging directories have raw OBJ/prior files but no converted USD manifest or stable-pose cache.
+- The largest usable current object slice is the converted/stable shard3 set. Start with the 18-object manifest and no stale verified-index cache, relying on the current top-side/downward-tool/table-clearance reset gates. Run a one-GPU reference/mix smoke first, then launch 8-GPU PPO continuation if reset metrics are clean.
+
+Change:
+- No source edits.
+- Selected full-available object target:
+  `/results/assets/filtered_manifests/stable_candidates18_shard3_assetroot_d053e6c_20260614T234700Z/manifest.json`
+- Stable-pose cache:
+  `/results/validations/graspgen_stable_candidates18_shard3_d053e6c_20260614T234900Z/settled_pose_cache`
+- Verified cache choice: none. The available 13-object verified cache has only 8/13 non-empty entries and cannot be used with its manifest because current code raises on loaded objects with no valid verified indices.
+- Full-staging audit:
+  `/results/assets/franka_multi_graspgen_full_8bad95c_20260613_122621` has 8031 prior files and 8027 raw OBJ files, but 0 USDs and no manifest.
+  `/results/assets/franka_multi_graspgen_assets_full_dextrah-multiobject-grasp-prior-20260613T003321Z_20260612_224052` has 4029 prior files but 0 USDs.
+
+Version Control:
+- agent_id: dextrah-multiobject-grasp-prior-finish-20260615T074722Z
+- worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-finish-20260615T074722Z`
+- branch: `codex/dextrah-multiobject-grasp-prior-finish-20260615T074722Z`
+- implementation_commit: pending
+- changed_files: this worklog only
+
+Command / Job:
+- command: `bash -n cluster/sbatch_train_teacher_8gpu.sh && bash -n cluster/sbatch_eval_franka_multi_object_grasp_1gpu.sh`
+- command: `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py dextrah_lab/rl_games/eval_rollout.py`
+- command: `git diff --check`
+- job_id: pending
+- run_dir: pending
+- logs: pending
+
+Result:
+- status: local checks passed
+- key evidence: training/eval wrappers parse; multi-object env and eval rollout compile; diff check clean.
+
+Analysis:
+- This is not yet the complete 8k-object Robotiq split. Converting and stable-pose-validating that set remains a separate asset-prep workstream.
+- The immediate training target is the largest converted, stable-pose-backed object slice available now.
+
+Next:
+- Commit this run record, deploy exact source to an A100 agent worktree, launch the 18-object smoke eval, inspect reset/success metrics, then launch or adjust the 8-GPU PPO continuation.
