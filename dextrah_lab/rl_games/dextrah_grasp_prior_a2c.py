@@ -161,7 +161,7 @@ class DextrahGraspPriorA2CAgent(BaseA2CAgent):
         return torch.as_tensor(dims, dtype=torch.long, device=self.ppo_device)
 
     def init_tensors(self):
-        if not self.dextrah_bc_loss_enabled or self.dextrah_bc_loss_weight <= 0.0:
+        if not getattr(self, "dextrah_bc_loss_enabled", False) or getattr(self, "dextrah_bc_loss_weight", 0.0) <= 0.0:
             return super().init_tensors()
 
         batch_size = self.num_agents * self.num_actors
@@ -190,6 +190,32 @@ class DextrahGraspPriorA2CAgent(BaseA2CAgent):
             self._TEACHER_ACTIVE_KEY,
         ]
 
+    def _ensure_dextrah_teacher_buffers(self) -> None:
+        tensor_dict = getattr(getattr(self, "experience_buffer", None), "tensor_dict", None)
+        if tensor_dict is None:
+            raise RuntimeError("DEXTRAH grasp-prior BC loss requires an initialized experience buffer")
+        if self._TEACHER_ACTIONS_KEY in tensor_dict and self._TEACHER_ACTIVE_KEY in tensor_dict:
+            return
+        actions_buffer = tensor_dict.get("actions")
+        if actions_buffer is None:
+            raise RuntimeError("DEXTRAH grasp-prior BC loss could not find the base actions rollout buffer")
+
+        tensor_dict.setdefault(self._TEACHER_ACTIONS_KEY, torch.zeros_like(actions_buffer))
+        active_shape = (*actions_buffer.shape[:-1], 1)
+        tensor_dict.setdefault(
+            self._TEACHER_ACTIVE_KEY,
+            torch.zeros(active_shape, device=actions_buffer.device, dtype=torch.float32),
+        )
+        for key in (self._TEACHER_ACTIONS_KEY, self._TEACHER_ACTIVE_KEY):
+            if key not in self.tensor_list:
+                self.tensor_list.append(key)
+        if not getattr(self, "_dextrah_teacher_buffer_warning_printed", False):
+            print(
+                "[DEXTRAH] added missing grasp-prior teacher tensors to rollout buffer",
+                flush=True,
+            )
+            self._dextrah_teacher_buffer_warning_printed = True
+
     def _info_tensor(self, infos: dict, key: str, fallback: torch.Tensor) -> torch.Tensor:
         value = infos.get(key)
         if value is None:
@@ -206,6 +232,7 @@ class DextrahGraspPriorA2CAgent(BaseA2CAgent):
             return batch_dict
 
         update_list = self.update_list
+        self._ensure_dextrah_teacher_buffers()
         step_time = 0.0
 
         for n in range(self.horizon_length):

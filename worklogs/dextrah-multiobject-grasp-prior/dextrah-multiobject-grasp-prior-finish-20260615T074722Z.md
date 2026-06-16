@@ -5111,3 +5111,123 @@ Analysis:
 Next:
 - Patch the multi-object eval wrapper to expose the same action warmstart/action-prior flags as the training wrapper.
 - Run a short scripted-prior eval with `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=True` and `GRASP_PRIOR_ACTION_WARMSTART_USE_PRIOR_CLOSE_WIDTH=True` to test whether the verified side-safe grasps can drive actual lifts before launching another 8-GPU PPO segment.
+
+## 2026-06-16T06:02:22Z - launch 18-object action-warmstart eval smoke
+
+Goal:
+- Test whether the fixed side-safe grasp prior can drive the arm through approach, close, and lift when the action-warmstart controller is enabled. This is a cheaper prerequisite before another 8-GPU PPO segment with action-prior guidance.
+
+Version Control:
+- local_commit: `02882446b8e5dcb5914a68bf135af9b4d7116954`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-full-objects-20260616-f5b3c7b`
+- remote_commit: `02882446b8e5dcb5914a68bf135af9b4d7116954`
+- deployment note: A100 login could not fetch GitHub directly, so commit `0288244` was transferred via Git bundle and checked out detached in the agent-owned remote worktree.
+
+Job:
+- job_id: `29134173`
+- host: `a1001`
+- run: `franka_multi_full18_z0_widthfix2_actionwarm_ep100_eval180_0288244_20260616T060222Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_multi_object_29134173.out`
+- output: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_multi_full18_z0_widthfix2_actionwarm_ep100_eval180_0288244_20260616T060222Z`
+
+Configuration:
+- checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_z0_widthfix2_ppo100_all_actor0001_critic1_bounds0_anchor1000_sigma_m5_4adac71_20260616T043650Z/nn/last_dextrah_franka_multi_object_grasp_ep_100_rew_585.27966.pth`
+- `NUM_ENVS=180`, `NUM_STEPS=240`, `MAX_OBJECTS=18`, `OBJECT_ASSET_ASSIGNMENT=round_robin`, metrics only (`CAPTURE_VIDEO=False`).
+- manifest: `/results/assets/filtered_manifests/stable_candidates18_shard3_assetroot_d053e6c_20260614T234700Z/manifest.json`
+- stable pose cache: `/results/validations/graspgen_stable_candidates18_shard3_d053e6c_20260614T234900Z/settled_pose_cache`
+- action source: `policy`; the environment applies warmstart actions during the first `20+28+80` steps.
+- action warmstart: enabled, `use_prior_close_width=True`, `approach_steps=20`, `close_steps=28`, `lift_steps=80`, `lift_action_z=1.0`, `require_current_lift_ready=True`.
+- reset prior: enabled, no verified-index cache because the available cache has empty `indices_by_uuid`, `candidate_count=512`, `attempts=8`, `pregrasp_offset=0.03`.
+- side-safe grasp gates: `min_pregrasp_z=0.0`, `require_downward_tool_z=True`, `min_downward_tool_z=0.0`, `min_contact_height_above_center=-0.02`, `max_center_distance_frac=0.50`, `min_width=0.008`.
+
+Expected evidence:
+- Log confirms commit `0288244` and that `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=True` is forwarded by the patched multi-object eval wrapper.
+- Metrics include action-warmstart phase/active rates and reset safety terms.
+- Reset success/quality should stay near `1.0`, below-table/table-penetration done reasons should remain zero, and success/lift should be substantially better than pure policy if the scripted prior is a viable training guide.
+
+Result:
+- Slurm state: `COMPLETED|0:0`, elapsed `00:01:50` on `batch-block1-2092`.
+- Final summary: `num_steps_completed=240`, `eval_success_rate=0.1111111111111111`, `success_ever_count=20`, `success_ever_rate=0.1111111119389534`, `completed_episode_success_rate=0.5555555555555556`.
+- First-attempt summary: `success_rate=0.1111111111111111`, `terminal_success_rate=0.1`, `success_hold_rate=0.09444444444444444`, `lifted_rate=0.22777777777777777`, `max_lift_mean=0.022030697266260783`.
+- Horizon summary: `success_rate=0.016666666666666666`, `terminal_success_rate=0.005555555555555556`, `lifted_rate=0.13333333333333333`.
+- Safety held: `done_reason_counts.finger_table_penetration=0`, `done_reason_counts.prelift_drag=0`, final trace `eval_done_finger_table_penetration_rate=0.0`, `eval_done_prelift_drag_rate=0.0`, final `finger_table_clearance_violation_max=0.0`, final `finger_table_clearance_min=0.047406017780303955`.
+
+Analysis:
+- The action warmstart is table-safe and improves first-attempt success versus the pure policy evals, but `11.1%` is still not strong enough to use unchanged as the main training guide.
+- Completed episodes look much better than horizon occupancy because successful envs reset; first-attempt success is the useful comparison for full-object RL.
+- The next likely bottleneck is warmstart sequencing rather than reset sampling. Compare whether forcing the lift phase by time and/or closing fully improves first-attempt success.
+
+Next:
+- Run a three-arm warmstart ablation from the same commit and object/reset setup:
+
+| Attempt | Commit | Key setting | Job | Result | Evidence | Decision |
+| --- | --- | --- | --- | --- | --- | --- |
+| priorwidth_reqtrue | `0288244` | prior close width, require current lift readiness | `29134173` | `eval_success_rate=0.1111111111111111`, `success_ever_rate=0.1111111119389534`, safe | metrics JSON + trace | baseline arm |
+| priorwidth_reqfalse | `0288244` | prior close width, timed lift without current lift gate | `29134318` | pending | `/results/evals/franka_multi_full18_z0_widthfix2_actionwarm_priorwidth_reqfalse_eval180_0288244_20260616T060533Z` | compare |
+| close0_reqtrue | `0288244` | full close, require current lift readiness | `29134320` | pending | `/results/evals/franka_multi_full18_z0_widthfix2_actionwarm_close0_reqtrue_eval180_0288244_20260616T060535Z` | compare |
+| close0_reqfalse | `0288244` | full close, timed lift without current lift gate | `29134324` | pending | `/results/evals/franka_multi_full18_z0_widthfix2_actionwarm_close0_reqfalse_eval180_0288244_20260616T060538Z` | compare |
+
+## 2026-06-16T06:12:06Z - action-warmstart ablation result and guided PPO launch plan
+
+Goal:
+- Finish the Franka multi-object RL training on the largest currently safe object set: the 18-object manifest with matching settled-pose cache. A raw 32-object candidate manifest exists, but no matching settled-pose cache was found, so using it would reintroduce raw-pose or missing-cache behavior in exactly the part of the system that was suspected to be unsafe.
+
+Warmstart ablation result:
+- Jobs `29134318`, `29134320`, and `29134324` all completed successfully.
+- All four warmstart arms, including baseline job `29134173`, produced identical summary metrics:
+  - `eval_success_rate=0.1111111111111111`
+  - `success_ever_rate=0.1111111119389534`
+  - `success_ever_count=20`
+  - `completed_episode_success_rate=0.5555555555555556`
+  - first-attempt `success_rate=0.1111111111111111`, `terminal_success_rate=0.1`, `lifted_rate=0.22777777777777777`, `max_lift_mean=0.022030697266260783`
+  - horizon `success_rate=0.016666666666666666`, `lifted_rate=0.13333333333333333`
+  - `done_reason_counts.finger_table_penetration=0`, `done_reason_counts.prelift_drag=0`
+- Interpretation: toggling prior close width versus full close and current-lift-ready versus timed lift does not change this setup. The action warmstart is safe and somewhat useful, but the bottleneck is now learning the guided sequence, not reset filtering.
+
+Next launch:
+- Train from the strongest previous RL checkpoint, not the later regressed continuation:
+  `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_z0_widthfix2_ppo100_all_actor0001_critic1_bounds0_anchor1000_sigma_m5_4adac71_20260616T043650Z/nn/last_dextrah_franka_multi_object_grasp_ep_100_rew_585.27966.pth`
+- Use code commit `02882446b8e5dcb5914a68bf135af9b4d7116954` from remote worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-full-objects-20260616-f5b3c7b`
+- Use action warmstart plus action-prior reward plus PPO BC loss:
+  - `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=True`
+  - `GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED=True`, weight `2.0`, sharpness `2.0`
+  - `DEXTRAH_GRASP_PRIOR_BC_LOSS_ENABLED=True`, weight `0.25`, dims `all`
+- PPO stabilization:
+  - `LEARNING_RATE=1e-6`, `CENTRAL_VALUE_LEARNING_RATE=1e-6`
+  - `DEXTRAH_ACTOR_LOSS_SCALE=0.001`, `DEXTRAH_CRITIC_LOSS_SCALE=1.0`
+  - `DEXTRAH_BC_POLICY_ANCHOR_ENABLED=True`, weight `300.0`
+  - frozen obs RMS, fixed sigma `TRAIN_SIGMA=-5`, no entropy, one mini epoch, minibatch `16384`
+- Object/reset config:
+  - manifest `/results/assets/filtered_manifests/stable_candidates18_shard3_assetroot_d053e6c_20260614T234700Z/manifest.json`
+  - settled cache `/results/validations/graspgen_stable_candidates18_shard3_d053e6c_20260614T234900Z/settled_pose_cache`
+  - `MAX_OBJECTS=18`, `OBJECT_STABLE_POSE_ALLOW_MISSING=False`
+  - no verified-index cache, because the latest full18 cache file has empty `indices_by_uuid`
+  - preserve side-safe gates: `min_pregrasp_z=0.0`, `require_downward_tool_z=True`, `min_downward_tool_z=0.0`, `min_contact_height_above_center=-0.02`, `max_center_distance_frac=0.50`, `min_width=0.008`
+
+Expected evidence:
+- Startup prints the action guidance and BC settings in the Slurm log.
+- Rank-0 JSONL includes nonzero `agent_aux/dextrah_grasp_prior_bc_active_rate` and finite `agent_aux/dextrah_grasp_prior_bc_loss`.
+- Reset safety remains clean: reset success and quality near `1.0`, downward tool z nonnegative, table penetration/prelift drag at zero.
+- After completion, evaluate saved checkpoints with pure policy and action warmstart/mixed policy before deciding whether to continue the run.
+
+Launch:
+- job_id: `29134651`
+- host: `a1001`
+- run: `franka_multi_full18_z0_widthfix2_ppo180_warmbc025_apr2_anchor300_0288244_20260616T061258Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29134651.out`
+- output: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_z0_widthfix2_ppo180_warmbc025_apr2_anchor300_0288244_20260616T061258Z`
+- submit warning: Slurm reported the account is approaching the stale data limit; job was still accepted.
+
+Result:
+- Slurm state: `FAILED|1:0`, elapsed `00:06:18` on `batch-block5-02104`.
+- Failure: all ranks raised `KeyError: 'dextrah_grasp_prior_teacher_actions'` in `dextrah_lab/rl_games/dextrah_grasp_prior_a2c.py:242`.
+- Diagnosis: the custom `play_steps()` path used the BC-enabled rollout write path, but the RL-Games experience buffer still lacked the teacher action and active-mask auxiliary tensors. This means the action-prior/BC training path had not actually been exercised by earlier successful PPO runs, because those runs had BC disabled.
+
+Patch:
+- File: `dextrah_lab/rl_games/dextrah_grasp_prior_a2c.py`
+- Change: guard `init_tensors()` against early base-class calls, and add `_ensure_dextrah_teacher_buffers()` before BC rollout collection. The helper adds `dextrah_grasp_prior_teacher_actions` and `dextrah_grasp_prior_teacher_active` to `experience_buffer.tensor_dict` if RL-Games initialized a base buffer, and appends both names to `tensor_list` so the batch transform reaches `prepare_dataset()`.
+- Validation: `python3 -m py_compile dextrah_lab/rl_games/dextrah_grasp_prior_a2c.py` and `git diff --check` passed.
+
+Next:
+- Commit the fix, deploy the exact new commit to the A100 remote worktree by Git bundle, run `bash -n cluster/sbatch_train_teacher_8gpu.sh`, and relaunch the same guided PPO segment from the epoch-100 checkpoint.
