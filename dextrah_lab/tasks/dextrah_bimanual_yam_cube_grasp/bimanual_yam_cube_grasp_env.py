@@ -384,8 +384,9 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
                     "yam_cube_action_prior_reward": action_prior_reward.mean(),
                     "yam_cube_action_prior_active_rate": self.bimanual_action_prior_active.float().mean(),
                     "yam_cube_action_prior_close_rate": (action_prior_phase == 0).float().mean(),
-                    "yam_cube_action_prior_approach_rate": (action_prior_phase == 1).float().mean(),
-                    "yam_cube_action_prior_lift_rate": (action_prior_phase == 2).float().mean(),
+                    "yam_cube_action_prior_standoff_rate": (action_prior_phase == 1).float().mean(),
+                    "yam_cube_action_prior_approach_rate": (action_prior_phase == 2).float().mean(),
+                    "yam_cube_action_prior_lift_rate": (action_prior_phase == 3).float().mean(),
                     "yam_cube_action_prior_delta_abs": self.bimanual_action_prior_delta_abs.mean(),
                     "yam_cube_action_prior_delta_z_abs": self.bimanual_action_prior_delta_z_abs.mean(),
                     "yam_cube_action_prior_teacher_left_z": self.bimanual_action_prior_teacher_left_z.mean(),
@@ -462,6 +463,16 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
         contact_right_hold[:, 1] = reference_cube_pos[:, 1] - side_offset
         contact_left_hold[:, 2] = hold_z
         contact_right_hold[:, 2] = hold_z
+        standoff_side_offset = side_offset + float(self.cfg.bimanual_reference_standoff_side_margin)
+        standoff_left_hold = contact_left_hold.clone()
+        standoff_right_hold = contact_right_hold.clone()
+        standoff_left_hold[:, 1] = reference_cube_pos[:, 1] + standoff_side_offset
+        standoff_right_hold[:, 1] = reference_cube_pos[:, 1] - standoff_side_offset
+        standoff_error = torch.maximum(
+            torch.norm(standoff_left_hold - self.left_hold_pos, dim=-1),
+            torch.norm(standoff_right_hold - self.right_hold_pos, dim=-1),
+        )
+        standoff_reached = standoff_error <= float(self.cfg.bimanual_reference_standoff_target_dist)
         contact_ready = closed & self.bimanual_side_success
         left_rot_action = torch.tensor(
             self.cfg.bimanual_reference_left_rot_action,
@@ -481,7 +492,8 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
         lift_right_hold[:, 2] = lift_hold_z
 
         close_mask = active & (~closed)
-        approach_mask = active & closed & (~contact_ready)
+        standoff_mask = active & closed & (~contact_ready) & (~standoff_reached)
+        approach_mask = active & closed & (~contact_ready) & standoff_reached
         lift_mask = active & contact_ready
 
         if bool(close_mask.any().item()):
@@ -494,6 +506,18 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
             )
             teacher_actions[close_mask] = close_actions[close_mask]
             phase[close_mask] = 0
+        if bool(standoff_mask.any().item()):
+            standoff_actions = self._actions_to_hold_targets(
+                standoff_left_hold,
+                standoff_right_hold,
+                -1.0,
+                gain=float(self.cfg.bimanual_reference_gain),
+                max_action=float(self.cfg.bimanual_reference_max_action),
+            )
+            standoff_actions[:, 3:6] = left_rot_action
+            standoff_actions[:, 10:13] = right_rot_action
+            teacher_actions[standoff_mask] = standoff_actions[standoff_mask]
+            phase[standoff_mask] = 1
         if bool(approach_mask.any().item()):
             approach_actions = self._actions_to_hold_targets(
                 contact_left_hold,
@@ -505,7 +529,7 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
             approach_actions[:, 3:6] = left_rot_action
             approach_actions[:, 10:13] = right_rot_action
             teacher_actions[approach_mask] = approach_actions[approach_mask]
-            phase[approach_mask] = 1
+            phase[approach_mask] = 2
         if bool(lift_mask.any().item()):
             lift_actions = self._actions_to_hold_targets(
                 lift_left_hold,
@@ -517,10 +541,12 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
             lift_actions[:, 2] = torch.clamp(lift_actions[:, 2], min=0.0)
             lift_actions[:, 9] = torch.clamp(lift_actions[:, 9], min=0.0)
             teacher_actions[lift_mask] = lift_actions[lift_mask]
-            phase[lift_mask] = 2
+            phase[lift_mask] = 3
 
-        desired_left = torch.where(lift_mask.unsqueeze(-1), lift_left_hold, contact_left_hold)
-        desired_right = torch.where(lift_mask.unsqueeze(-1), lift_right_hold, contact_right_hold)
+        desired_left = torch.where(standoff_mask.unsqueeze(-1), standoff_left_hold, contact_left_hold)
+        desired_right = torch.where(standoff_mask.unsqueeze(-1), standoff_right_hold, contact_right_hold)
+        desired_left = torch.where(lift_mask.unsqueeze(-1), lift_left_hold, desired_left)
+        desired_right = torch.where(lift_mask.unsqueeze(-1), lift_right_hold, desired_right)
         hold_error[:] = torch.maximum(
             torch.norm(desired_left - self.left_hold_pos, dim=-1),
             torch.norm(desired_right - self.right_hold_pos, dim=-1),
@@ -562,7 +588,7 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
             action_delta = torch.abs(self.actions - teacher_actions)
             mean_delta_abs = torch.mean(action_delta, dim=-1)
             lift_z_delta_abs = 0.5 * (action_delta[:, 2] + action_delta[:, 9])
-            lift_phase = phase == 2
+            lift_phase = phase == 3
             delta_abs = torch.where(
                 lift_phase,
                 0.20 * mean_delta_abs + 0.80 * lift_z_delta_abs,

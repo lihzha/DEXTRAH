@@ -4,7 +4,7 @@
 #SBATCH --account=nvr_lpr_rvp
 #SBATCH --gpus-per-node=1
 #SBATCH --job-name=dextrah_yam_cube_eval
-#SBATCH --partition=batch
+#SBATCH --partition=batch_singlenode,grizzly,polar,polar3,polar4,interactive_singlenode
 #SBATCH --time=0-01:00:00
 #SBATCH --mem=160G
 #SBATCH --cpus-per-task=16
@@ -25,6 +25,7 @@ CACHE_NFS="${CACHE_NFS:-$NFS_ROOT/isaac_cache}"
 TASK="${TASK:-Dextrah-Bimanual-YAM-Cube-Grasp}"
 SLURM_JOB_ID_SAFE="${SLURM_JOB_ID:-manual}"
 RUN_NAME="${RUN_NAME:-bimanual_yam_cube_eval_${SLURM_JOB_ID_SAFE}_$(date +%Y%m%d_%H%M%S)}"
+CODE_COMMIT="${CODE_COMMIT:-}"
 NUM_ENVS="${NUM_ENVS:-64}"
 NUM_STEPS="${NUM_STEPS:-640}"
 VIDEO_LENGTH="${VIDEO_LENGTH:-640}"
@@ -76,6 +77,13 @@ if [ ! -d "$ENV_ROOT/$ENV_NAME/site" ]; then
   echo "Missing DEXTRAH Python target: $ENV_ROOT/$ENV_NAME/site" >&2
   exit 2
 fi
+if [ -n "$CODE_COMMIT" ]; then
+  actual_commit="$(git -C "$CODE_NFS" rev-parse HEAD)"
+  if [ "$actual_commit" != "$CODE_COMMIT" ]; then
+    echo "CODE_COMMIT mismatch: expected $CODE_COMMIT, found $actual_commit in $CODE_NFS" >&2
+    exit 2
+  fi
+fi
 if [ -n "$CHECKPOINT_HOST" ] && [ ! -f "$CHECKPOINT_HOST" ]; then
   echo "Missing checkpoint: $CHECKPOINT_HOST" >&2
   exit 2
@@ -99,6 +107,7 @@ echo "SLURM_JOB_ID=$SLURM_JOB_ID_SAFE"
 echo "SLURM_JOB_NODELIST=${SLURM_JOB_NODELIST:-unset}"
 echo "IMAGE=$IMAGE"
 echo "CODE_NFS=$CODE_NFS"
+echo "CODE_COMMIT=${CODE_COMMIT:-unknown}"
 echo "FABRICS_NFS=$FABRICS_NFS"
 echo "ISAACLAB_NFS=$ISAACLAB_NFS"
 echo "RESULTS_NFS=$RESULTS_NFS"

@@ -1427,6 +1427,27 @@ Validation:
 Next:
 - Commit/push/redeploy, run a reference-action smoke to confirm the training-side prior is wired, then launch PPO with the action-prior reward enabled.
 
+## 2026-06-16 - add standoff phase to training reference prior
+
+Goal:
+- Avoid teaching the policy the direct rest-to-contact approach that caused earlier press/shake artifacts.
+
+Change:
+- Added `bimanual_reference_standoff_side_margin=0.080` and `bimanual_reference_standoff_target_dist=0.050`.
+- Updated `_bimanual_reference_actions()` to use four inferred phases: close, standoff, approach, lift.
+- Applied the validated half-Z rotations during both standoff and approach, matching the successful validator schedule.
+- Updated action-prior phase logs and lift-phase delta weighting for the new phase ids.
+- Fixed the bimanual YAM eval wrapper A100 partition and added a `CODE_COMMIT` guard.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_env.py dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_env_cfg.py` passed.
+- `bash -n cluster/sbatch_validate_bimanual_yam_cube_grasp_env_1gpu.sh` passed.
+- `bash -n cluster/sbatch_train_bimanual_yam_cube_grasp_1gpu.sh` passed.
+- `bash -n cluster/sbatch_eval_bimanual_yam_cube_grasp_1gpu.sh` passed.
+
+Next:
+- Commit/push/redeploy, then run `ACTION_SOURCE=reference_delta` smoke from the eval wrapper before PPO.
+
 ## 2026-06-15 23:50Z - replace validator joint waypoint with action-interface contact path
 
 Observation:
