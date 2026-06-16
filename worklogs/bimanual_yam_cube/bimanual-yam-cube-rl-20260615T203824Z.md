@@ -1491,6 +1491,48 @@ Validation:
 Next:
 - Commit/push/redeploy and rerun `ACTION_SOURCE=reference_delta` smoke before PPO.
 
+## 2026-06-16 - scheduled reference-prior smoke launch
+
+Goal:
+- Verify the scheduled training reference prior after replacing the reactive prior.
+
+Version state:
+- local_commit: `11ec0387e0bd3acb4b4c70bb91e3f90bdcfcb4e1`
+- remote_commit: `11ec0387e0bd3acb4b4c70bb91e3f90bdcfcb4e1`
+
+Planned command/job:
+- Wrapper: `cluster/sbatch_eval_bimanual_yam_cube_grasp_1gpu.sh`
+- Job: `29127439`
+- Run: `yam_cube_reference_prior_smoke_11ec038_20260616T0046Z`
+- Key settings: `ACTION_SOURCE=reference_delta`, `NUM_ENVS=1`, `NUM_STEPS=640`, `CAPTURE_VIDEO=True`, no checkpoint, no cube XY randomization, side-y camera.
+- Log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_bimanual_yam_cube_29127439.out`
+- Metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/yam_cube_reference_prior_smoke_11ec038_20260616T0046Z/metrics.json`
+
+Success criteria:
+- Stable success from the reference action path, with no speed-based false lift.
+
+Result/evidence:
+- Job `29127439` completed normally in `00:02:18`, exit code `0:0`.
+- Metrics: `success_ever_rate=0.0`, `success_rate_max=0.0`, `num_steps_completed=640`.
+- Local artifacts: `artifacts/bimanual_yam_cube/reference_prior_smoke_20260616T0046Z/metrics.json`, `trace.csv`, `trace.jsonl`, and `videos/yam-cube-reference-prior-smoke-step-0.mp4`.
+- Viewer URL: `http://localhost:8765/view?path=DEXTRAH/artifacts/bimanual_yam_cube/reference_prior_smoke_20260616T0046Z/videos/yam-cube-reference-prior-smoke-step-0.mp4`
+
+Analysis:
+- The timed prior fixed early cube motion, but it still commanded each phase target as a step target. The controller overshot the standoff height and then oscillated.
+- Trace examples: step 120 had hands below the intended side band (`left_hold_z=0.0699`, `right_hold_z=0.0703`), then step 200 reached side success but only `cube_lift_height=0.0`. Success remained zero.
+- Do not launch PPO from this prior.
+
+Change:
+- Added reset-time start-hold buffers and smoothstep phase interpolation for standoff, approach, and lift targets.
+- Added `bimanual_reference_lift_steps=55`.
+- Hold-error diagnostics now use the current hold pose during the close phase.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_env.py dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_env_cfg.py` passed.
+
+Next:
+- Commit/push/redeploy and rerun the reference-prior smoke before PPO.
+
 ## 2026-06-15 23:50Z - replace validator joint waypoint with action-interface contact path
 
 Observation:

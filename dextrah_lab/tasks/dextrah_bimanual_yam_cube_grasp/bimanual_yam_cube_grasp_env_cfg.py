@@ -237,6 +237,7 @@ class DextrahBimanualYAMCubeGraspEnvCfg(DirectRLEnvCfg):
     bimanual_reference_close_steps = 45
     bimanual_reference_standoff_steps = 120
     bimanual_reference_approach_steps = 140
+    bimanual_reference_lift_steps = 55
     bimanual_reference_lift_height = 0.060
     bimanual_reference_left_rot_action = (0.0, 0.0, -0.5)
     bimanual_reference_right_rot_action = (0.0, 0.0, 0.5)

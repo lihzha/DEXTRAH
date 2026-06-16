@@ -185,6 +185,8 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
         self.bimanual_action_prior_teacher_left_gripper = torch.zeros(self.num_envs, device=self.device)
         self.bimanual_action_prior_teacher_right_gripper = torch.zeros(self.num_envs, device=self.device)
         self.bimanual_action_prior_hold_error = torch.zeros(self.num_envs, device=self.device)
+        self.bimanual_reference_start_left_hold = torch.zeros(self.num_envs, 3, device=self.device)
+        self.bimanual_reference_start_right_hold = torch.zeros(self.num_envs, 3, device=self.device)
 
     def _pre_physics_step(self, actions: torch.Tensor) -> None:
         self.actions = actions.clone().clamp(-1.0, 1.0)
@@ -437,6 +439,19 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
         actions[:, 13] = float(grip)
         return actions
 
+    def _smooth_phase_alpha(self, start_step: int, phase_steps: int) -> torch.Tensor:
+        if phase_steps <= 0:
+            return torch.ones(self.num_envs, device=self.device)
+        alpha = torch.clamp(
+            (self.episode_length_buf.float() - float(start_step) + 1.0) / float(phase_steps),
+            0.0,
+            1.0,
+        )
+        return alpha * alpha * (3.0 - 2.0 * alpha)
+
+    def _lerp_hold_target(self, start: torch.Tensor, end: torch.Tensor, alpha: torch.Tensor) -> torch.Tensor:
+        return start + alpha.unsqueeze(-1) * (end - start)
+
     def _bimanual_reference_actions(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         self._compute_intermediate_values()
         teacher_actions = torch.zeros(self.num_envs, int(self.cfg.action_space), device=self.device)
@@ -493,6 +508,24 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
         approach_mask = active & (episode_step >= approach_start) & (episode_step < lift_start)
         lift_mask = active & (episode_step >= lift_start)
 
+        standoff_alpha = self._smooth_phase_alpha(standoff_start, standoff_steps)
+        approach_alpha = self._smooth_phase_alpha(approach_start, approach_steps)
+        lift_alpha = self._smooth_phase_alpha(lift_start, max(int(self.cfg.bimanual_reference_lift_steps), 1))
+        desired_standoff_left = self._lerp_hold_target(
+            self.bimanual_reference_start_left_hold,
+            standoff_left_hold,
+            standoff_alpha,
+        )
+        desired_standoff_right = self._lerp_hold_target(
+            self.bimanual_reference_start_right_hold,
+            standoff_right_hold,
+            standoff_alpha,
+        )
+        desired_approach_left = self._lerp_hold_target(standoff_left_hold, contact_left_hold, approach_alpha)
+        desired_approach_right = self._lerp_hold_target(standoff_right_hold, contact_right_hold, approach_alpha)
+        desired_lift_left = self._lerp_hold_target(contact_left_hold, lift_left_hold, lift_alpha)
+        desired_lift_right = self._lerp_hold_target(contact_right_hold, lift_right_hold, lift_alpha)
+
         if bool(close_mask.any().item()):
             close_actions = self._actions_to_hold_targets(
                 self.left_hold_pos,
@@ -505,8 +538,8 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
             phase[close_mask] = 0
         if bool(standoff_mask.any().item()):
             standoff_actions = self._actions_to_hold_targets(
-                standoff_left_hold,
-                standoff_right_hold,
+                desired_standoff_left,
+                desired_standoff_right,
                 -1.0,
                 gain=float(self.cfg.bimanual_reference_gain),
                 max_action=float(self.cfg.bimanual_reference_max_action),
@@ -517,8 +550,8 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
             phase[standoff_mask] = 1
         if bool(approach_mask.any().item()):
             approach_actions = self._actions_to_hold_targets(
-                contact_left_hold,
-                contact_right_hold,
+                desired_approach_left,
+                desired_approach_right,
                 -1.0,
                 gain=float(self.cfg.bimanual_reference_gain),
                 max_action=float(self.cfg.bimanual_reference_max_action),
@@ -529,8 +562,8 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
             phase[approach_mask] = 2
         if bool(lift_mask.any().item()):
             lift_actions = self._actions_to_hold_targets(
-                lift_left_hold,
-                lift_right_hold,
+                desired_lift_left,
+                desired_lift_right,
                 -1.0,
                 gain=float(self.cfg.bimanual_reference_lift_gain),
                 max_action=float(self.cfg.bimanual_reference_lift_max_action),
@@ -540,10 +573,12 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
             teacher_actions[lift_mask] = lift_actions[lift_mask]
             phase[lift_mask] = 3
 
-        desired_left = torch.where(standoff_mask.unsqueeze(-1), standoff_left_hold, contact_left_hold)
-        desired_right = torch.where(standoff_mask.unsqueeze(-1), standoff_right_hold, contact_right_hold)
-        desired_left = torch.where(lift_mask.unsqueeze(-1), lift_left_hold, desired_left)
-        desired_right = torch.where(lift_mask.unsqueeze(-1), lift_right_hold, desired_right)
+        desired_left = torch.where(standoff_mask.unsqueeze(-1), desired_standoff_left, desired_approach_left)
+        desired_right = torch.where(standoff_mask.unsqueeze(-1), desired_standoff_right, desired_approach_right)
+        desired_left = torch.where(lift_mask.unsqueeze(-1), desired_lift_left, desired_left)
+        desired_right = torch.where(lift_mask.unsqueeze(-1), desired_lift_right, desired_right)
+        desired_left = torch.where(close_mask.unsqueeze(-1), self.left_hold_pos, desired_left)
+        desired_right = torch.where(close_mask.unsqueeze(-1), self.right_hold_pos, desired_right)
         hold_error[:] = torch.maximum(
             torch.norm(desired_left - self.left_hold_pos, dim=-1),
             torch.norm(desired_right - self.right_hold_pos, dim=-1),
@@ -666,6 +701,8 @@ class DextrahBimanualYAMCubeGraspEnv(DirectRLEnv):
         self.right_ik_controller.reset(env_ids)
 
         self._compute_intermediate_values(env_ids)
+        self.bimanual_reference_start_left_hold[env_ids] = self.left_hold_pos[env_ids]
+        self.bimanual_reference_start_right_hold[env_ids] = self.right_hold_pos[env_ids]
 
     def _get_observations(self) -> dict[str, torch.Tensor]:
         self._compute_intermediate_values()
