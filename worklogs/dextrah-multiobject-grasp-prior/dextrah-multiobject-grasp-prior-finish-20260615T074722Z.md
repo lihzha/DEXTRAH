@@ -3965,3 +3965,131 @@ Patch:
 - Local checks passed:
   - `bash -n cluster/sbatch_train_teacher_8gpu.sh`
   - `git diff --check`
+
+Version state:
+- Commit `6dadf1649c8205b74e8f304862ddf38f3f215839`: `Expose DEXTRAH episode length override`
+- Pushed to branch `codex/dextrah-multiobject-grasp-prior-finish-20260615T074722Z`.
+- A100 agent worktree updated via git bundle to `6dadf1649c8205b74e8f304862ddf38f3f215839`.
+- Remote `bash -n cluster/sbatch_train_teacher_8gpu.sh` passed.
+
+## 2026-06-15T23:46:00Z - planned shortened-episode BC/action-prior PPO
+
+Reason:
+- Previous BC/action-prior run had correct auxiliary losses but long low-teacher-signal stretches under `episode_length_s=10.0`.
+- Set `EPISODE_LENGTH_S=3.0`, about 180 policy steps, so the 128-step reference sequence occupies most of each episode.
+
+Planned settings:
+- Commit `6dadf1649c8205b74e8f304862ddf38f3f215839`
+- Start checkpoint:
+  `/results/bc/franka_multi_bc_rawpose_cache_refdelta_9943101_20260615T1740Z/nn/bc_reference_action_imitation_lowsigma_m3_sigmaonly.pth`
+- Object0 only, same strict reset gates/caches.
+- `NUM_ENVS=2048`, `MAX_ITERATIONS=60`, `HORIZON_LENGTH=128`, `EPISODE_LENGTH_S=3.0`
+- `LEARNING_RATE=2e-5`, `CENTRAL_VALUE_LEARNING_RATE=2e-5`, `MINI_EPOCHS=2`, `E_CLIP=0.05`, `ENTROPY_COEF=0.0`, `TRAIN_SIGMA=-5`
+- `GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED=True`, action-prior reward weight `2.0`
+- `DEXTRAH_GRASP_PRIOR_BC_LOSS_ENABLED=True`, BC loss weight `10.0`
+- BC policy anchor weight `100.0`, frozen obs RMS, bounds loss disabled, actor loss scale `0.05`, critic loss scale `1.0`.
+
+Launch:
+- Slurm job: `29123798`
+- Run:
+  `franka_multi_resetprior_object0_bcaux_ep3_lr2e5_w10_anchor100_sigma_m5_6dadf16_20260615T2346Z`
+- Log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29123798.out`
+- Run dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_resetprior_object0_bcaux_ep3_lr2e5_w10_anchor100_sigma_m5_6dadf16_20260615T2346Z`
+
+Result:
+- Job compiled slowly but entered training; rank-0 metrics appeared after the Torch Inductor/CUDA-graph warmup.
+- Cancelled by this agent at elapsed `00:08:08` because the policy again collapsed below the BC preservation floor before the first saved checkpoint.
+- Metrics:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_resetprior_object0_bcaux_ep3_lr2e5_w10_anchor100_sigma_m5_6dadf16_20260615T2346Z/metrics/direct_info_rank_0.jsonl`
+- Rank-0 rollout curve:
+  - epoch 1: `cube_success_rate=0.134765625`, `cube_has_lifted_rate=0.21923828125`, `bc_active_rate=1.0`, `action_prior_active_rate=1.0`
+  - epoch 2: `0.04541015625`
+  - epoch 3: `0.0107421875`
+  - epoch 4: `0.037109375`
+  - epoch 5: `0.017578125`
+  - epoch 6: `0.00390625`
+  - epoch 7: `0.00390625`
+- Reset safety remained clean in all observed rows:
+  `cube_grasp_prior_tool_downward_z=0.9975928068`, `cube_grasp_prior_tool_z_axis_z=-0.9975928068`,
+  candidate topdown/tool-down/table/valid counts `128`, and no finger/table clearance penalties.
+
+Analysis:
+- The shortened episode increases the fraction of reference-action frames, but PPO updates still destroy the BC-initialized behavior within a few epochs.
+- The root cause of the current learning failure is not below-table grasp sampling; the strict reset diagnostics remain clean.
+- Next step is to separate representation of the current online reference-action teacher from PPO:
+  train only the policy mean head with PPO actor/critic losses disabled, then deterministic-evaluate the saved online-BC checkpoints before allowing any PPO updates.
+
+## 2026-06-15T23:53:28Z - planned online-BC mean-head pass
+
+Reason:
+- Direct deterministic BC eval under the corrected reset policy reached `eval_success_rate=0.28125`.
+- The reference-action ceiling under the same reset policy reached `eval_success_rate=0.4296875`.
+- PPO fine-tuning is currently worse than BC because actor/critic updates move the policy away from the grasp-prior teacher faster than auxiliary BC can recover.
+
+Planned settings:
+- Commit `6dadf1649c8205b74e8f304862ddf38f3f215839`
+- Start checkpoint:
+  `/results/bc/franka_multi_bc_rawpose_cache_refdelta_9943101_20260615T1740Z/nn/bc_reference_action_imitation_lowsigma_m3_sigmaonly.pth`
+- Object0 only, same manifest/stable-pose cache/verified grasp indices/strict reset gates.
+- `NUM_ENVS=2048`, `MAX_ITERATIONS=30`, `HORIZON_LENGTH=128`, `EPISODE_LENGTH_S=3.0`, `SAVE_FREQUENCY=5`
+- `LEARNING_RATE=1e-4`, `MINI_EPOCHS=2`, `TRAIN_SIGMA=-5`
+- `DEXTRAH_GRASP_PRIOR_BC_LOSS_ENABLED=True`, BC loss weight `50.0`
+- `DEXTRAH_ACTOR_LOSS_SCALE=0.0`, `DEXTRAH_CRITIC_LOSS_SCALE=0.0`, bounds loss disabled, entropy disabled
+- `DEXTRAH_TRAINABLE_PARAM_SCOPE=mu`, frozen obs RMS, no BC policy anchor.
+
+Success criteria:
+- Online-BC rollout success should not collapse below the direct BC floor.
+- Deterministic eval of saved checkpoints should exceed the current best RL checkpoint (`0.3359375`) and move toward the reference-action ceiling (`0.4296875`).
+
+Launch:
+- Slurm job: `29124444`
+- Run:
+  `franka_multi_onlinebc_mu_object0_ep3_lr1e4_w50_sigma_m5_6dadf16_20260615T2354Z`
+- Log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29124444.out`
+- Run dir:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_onlinebc_mu_object0_ep3_lr1e4_w50_sigma_m5_6dadf16_20260615T2354Z`
+
+Result:
+- Job entered training and saved epoch 5, then was cancelled by this agent at elapsed `00:07:56`.
+- Rank-0 rollout curve through epoch 6:
+  - epoch 1: `cube_success_rate=0.13427734375`, `bc_active_rate=1.0`, `action_prior_active_rate=1.0`
+  - epoch 2: `0.05224609375`
+  - epoch 3: `0.00830078125`
+  - epoch 4: `0.0087890625`
+  - epoch 5: `0.091796875`
+  - epoch 6: `0.0107421875`
+- Saved checkpoint:
+  `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_onlinebc_mu_object0_ep3_lr1e4_w50_sigma_m5_6dadf16_20260615T2354Z/nn/last_dextrah_franka_multi_object_grasp_ep_5_rew_652.1376.pth`
+- Deterministic eval job `29126261` completed:
+  - run: `franka_multi_onlinebc_mu_ep5_policy_eval_6dadf16_20260616T0001Z`
+  - metrics:
+    `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_multi_onlinebc_mu_ep5_policy_eval_6dadf16_20260616T0001Z/metrics.json`
+  - `eval_success_rate=0.109375`
+  - `success_ever_rate=0.1171875`
+  - `success_rate_max=0.1015625`
+  - `success_rate_final=0.0`
+
+Analysis:
+- Pure online BC against the current reference stream is worse than both the plain BC checkpoint (`0.28125`) and best RL checkpoint (`0.3359375`).
+- This points to a teacher/curriculum issue rather than PPO loss alone.
+- The reference stream can advance to lift by schedule alone after approach/close timing. Although `grasp_prior_action_warmstart_require_current_lift_ready=True`, the inherited multi-object lift gates were effectively disabled:
+  `lift_max_ee_error=0.0`, `lift_max_finger_center_dist=0.0`, `lift_closed_width_margin=-1.0`.
+- That creates physically inconsistent labels for off-reference policy states: once the phase clock reaches lift, BC can ask the policy to lift even when the gripper is still open or not at the object.
+
+Patch:
+- `dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py`
+  - `grasp_prior_action_warmstart_close_max_ee_error = 0.05`
+  - `grasp_prior_action_warmstart_lift_max_ee_error = 0.05`
+  - `grasp_prior_action_warmstart_lift_max_finger_center_dist = 0.08`
+  - `grasp_prior_action_warmstart_lift_closed_width_margin = 0.03`
+- Local checks passed:
+  - `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py`
+  - `git diff --check`
+
+Next validation:
+- Deploy patch to A100.
+- Re-evaluate reference-delta ceiling with gated lift.
+- Relaunch BC/PPO only if the gated reference still produces clean lift behavior and no below-table/table-collision diagnostics.
