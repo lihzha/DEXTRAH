@@ -1340,6 +1340,34 @@ Validation:
 Next:
 - Commit/push/redeploy and rerun stable validator with `LIFT_HEIGHT=0.06`.
 
+## 2026-06-16 - strict pass video evidence and diagnostic camera support
+
+Goal:
+- Verify the stable no-assist lift visually after the user reported unrealistic cube shaking in an earlier rollout video.
+
+Result/evidence:
+- Run: `yam_cube_strict_pass_video_86a9992_20260616T0127Z`
+- Job: `29127251`, completed with exit code `0:0`.
+- Metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/yam_cube_strict_pass_video_86a9992_20260616T0127Z/metrics.json`
+- Video: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/yam_cube_strict_pass_video_86a9992_20260616T0127Z/videos/bimanual-yam-cube-demo-manual.mp4`
+- Local copy: `artifacts/bimanual_yam_cube/strict_pass_video_20260616T0127Z/videos/bimanual-yam-cube-demo-manual.mp4`
+- Viewer URL: `http://localhost:8765/view?path=DEXTRAH/artifacts/bimanual_yam_cube/strict_pass_video_20260616T0127Z/videos/bimanual-yam-cube-demo-manual.mp4`
+- MP4 metadata: `1280x720`, `221` frames, `3.683333 s`, `60 fps`.
+- Stable metrics: `passed=true`, `max_lift=0.04091353714466095`, `final_success_rate=1.0`, `max_success_cube_linear_speed=0.11340032517910004`, `max_success_cube_angular_speed=1.7459335327148438`, `grasp_assist_used=false`.
+
+Analysis:
+- The earlier user-observed press/shake artifact is a credible explanation for false non-zero lift signals. Raw lift is no longer accepted unless the cube is also velocity-stable.
+- The default camera is not diagnostic enough for judging side contact because the cube and fingertips are nearly aligned in the rendered view.
+
+Change:
+- Exposed validator camera eye/target settings through `cluster/sbatch_validate_bimanual_yam_cube_grasp_env_1gpu.sh` so the same strict rollout can be rendered from oblique and side viewpoints.
+
+Validation:
+- `bash -n cluster/sbatch_validate_bimanual_yam_cube_grasp_env_1gpu.sh` passed.
+
+Next:
+- Commit/push/redeploy the camera-wrapper support, then run short strict no-assist videos from oblique and side camera views.
+
 ## 2026-06-15 23:50Z - replace validator joint waypoint with action-interface contact path
 
 Observation:
@@ -1610,6 +1638,51 @@ Validation plan:
 - Commit/push/redeploy.
 - Rerun the strict stable validator on the known-success configuration: 18 cm cube, left/right Z `[-0.5,+0.5]`, no squeeze.
 - If it passes, run a video validator with the same configuration for visual inspection before resuming training.
+
+## 2026-06-16 01:22Z - planned corrected strict stable validator
+
+Goal:
+- Confirm the known-success 18 cm cube / half-Z configuration passes the full strict validator after fixing the stale contact diagnostic.
+
+Version state:
+- local_commit: `86a9992c5b0093184f7358fda44ce6a678470fa7`
+- remote_commit: `86a9992c5b0093184f7358fda44ce6a678470fa7`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/bimanual-yam-cube-rl-20260615T203824Z`
+
+Planned command/job:
+- Submit `cluster/sbatch_validate_bimanual_yam_cube_grasp_env_1gpu.sh`.
+- A100 job: `29127229`
+- Expected run: `yam_cube_strict_pass_86a9992_20260616T0122Z`
+- Log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_bimanual_yam_cube_29127229.out`
+- Metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/yam_cube_strict_pass_86a9992_20260616T0122Z/metrics.json`
+- Key settings: strict stable validator, 18 cm cube, `NUM_ENVS=1`, `NUM_STEPS=560`, `LIFT_HEIGHT=0.06`, `LIFT_SQUEEZE_Y=0.0`, left/right Z `[-0.5,+0.5]`, `CAPTURE_VIDEO=False`, `ALLOW_GRASP_ASSIST=False`, `REQUIRE_UNASSISTED_LIFT=True`, `DISABLE_FABRIC=True`.
+
+Result/evidence:
+- Job `29127229` passed the corrected strict validator.
+- Metrics: `max_lift=0.04196731746196747`, `max_success_rate=1.0`, `final_success_rate=1.0`.
+- Speed evidence: `max_cube_linear_speed=0.2641906440258026`, `max_cube_angular_speed=1.091199278831482`; success/lifted speeds were `0.17715735733509064 m/s` and `0.625289797782898 rad/s`, below gates.
+- No failed checks; no grasp assist; run completed after stable success at `steps_completed=256`.
+
+Next:
+- Run the same strict configuration with video enabled for user visual inspection before resuming PPO.
+
+## 2026-06-16 01:27Z - planned strict pass video
+
+Goal:
+- Produce a video of the passing strict no-assist 18 cm cube validator so the physics can be inspected visually.
+
+Version state:
+- local_commit: `86a9992c5b0093184f7358fda44ce6a678470fa7`
+- remote_commit: `86a9992c5b0093184f7358fda44ce6a678470fa7`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/bimanual-yam-cube-rl-20260615T203824Z`
+
+Planned command/job:
+- Submit `cluster/sbatch_validate_bimanual_yam_cube_grasp_env_1gpu.sh`.
+- A100 job: `29127251`
+- Expected run: `yam_cube_strict_pass_video_86a9992_20260616T0127Z`
+- Log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_bimanual_yam_cube_29127251.out`
+- Metrics: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/yam_cube_strict_pass_video_86a9992_20260616T0127Z/metrics.json`
+- Key settings: same passing strict configuration, `CAPTURE_VIDEO=True`, `NUM_STEPS=360`, `VIDEO_LENGTH=360`.
 
 Success criteria:
 - Prefer any arm that produces stable lift; otherwise choose the arm with improved min hold distance / cube lift without speed spikes for the next sweep.
