@@ -6714,3 +6714,40 @@ Full continuation launch:
 Next:
 - Monitor job `29170977` through startup and training.
 - After completion, evaluate the latest and generic checkpoints, inspect per-object metrics, and generate videos if the policy improves or behavior changes.
+
+## 2026-06-16T23:10:00Z - full verified-cache continuation startup passed
+
+Status:
+- job id: `29170977`
+- run: `franka_multi_full18_teacherobs_verified17_fallback_ep1200_e7b35b49_20260616T2303Z`
+- scheduler state: `RUNNING`
+- node: `batch-block5-03472`
+- log reached `build mlp: 91` and `RunningMeanStd: (91,)` on all ranks.
+- All ranks loaded `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_teacherobs_nograph_bestckpt_ppo600_ebcf612_20260616T202812Z/nn/last_dextrah_franka_multi_object_grasp_ep_600_rew_3798.3723.pth`.
+- Runtime state restored at epoch `600` on all ranks.
+
+Early rank-0 metrics:
+- metrics path: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_teacherobs_verified17_fallback_ep1200_e7b35b49_20260616T2303Z/metrics/direct_info_rank_0.jsonl`
+- latest row: epoch `609`, frame `637534208`
+- `cube_success_rate=0.39599609375`
+- `cube_has_lifted_rate=0.50146484375`
+- `cube_lift_height=0.07902954518795013`
+- `cube_lift_reward=2.4383983612060547`
+- `cube_height_tracking_reward=0.48803627490997314`
+- `cube_grasp_prior_reset_success_rate=0.99951171875`
+- `cube_grasp_prior_quality_success_rate=0.99951171875`
+- `cube_grasp_prior_projected_exact_tip_table_clearance=0.02998988889157772`
+- `cube_grasp_prior_tool_downward_z=0.8054530620574951`
+- `cube_grasp_prior_tool_z_axis_z=-0.8054530024528503`
+- `cube_finger_table_clearance_violation=0.0`
+- `cube_table_clearance_penalty=0.0`
+- `agent_aux/dextrah_grasp_prior_bc_loss=0.0`
+- `agent_aux/dextrah_bc_policy_anchor_loss=0.0`
+- best early training success in rows so far: `0.400390625` at epoch `606`
+
+Analysis:
+- The verified cache and uncovered-object fallback are functioning in full training.
+- Reset safety remains clean; no evidence of the old below-table/table-penetration reset bug.
+
+Next:
+- Continue monitoring training progress and checkpoint cadence toward epoch `1200`.
