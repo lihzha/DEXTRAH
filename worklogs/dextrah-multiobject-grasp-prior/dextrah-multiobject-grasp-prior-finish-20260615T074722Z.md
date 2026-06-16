@@ -4918,3 +4918,196 @@ Analysis:
 
 Next:
 - Launch an 18-object eval smoke using commit `4efbf06f61481b36ef6e85da8a6cbc3d5bfcbdd1`, patched `/code`-first wrapper, and the same side-safe reset parameters. Only launch full PPO after eval confirms no table/finger penetration metrics regress.
+
+## 2026-06-16T04:29:21Z - launch 18-object side-safe eval smoke before PPO
+
+Goal:
+- Verify the patched reset code under actual eval rollout before launching full PPO on the converted/stable-backed 18-object slice.
+
+Version Control:
+- local_commit: `4adac71e48dd1464c54d19dce71c7ccef6931228`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-full-objects-20260616-f5b3c7b`
+- remote_commit: `4adac71e48dd1464c54d19dce71c7ccef6931228`
+
+Job:
+- job_id: `29131361`
+- host: `a1001`
+- run: `franka_multi_full18_z0_widthfix2_full50_mix_eval180_4adac71_20260616T042921Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/eval_franka_multi_object_29131361.out`
+- output: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_multi_full18_z0_widthfix2_full50_mix_eval180_4adac71_20260616T042921Z`
+
+Configuration:
+- checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_resetprior_all_actor0001_critic1_bounds0_anchor1000_sigma_m5_e219815_20260615T2256Z/nn/last_dextrah_franka_multi_object_grasp_ep_10_rew_1076.9912.pth`
+- `NUM_ENVS=180`, `NUM_STEPS=600`, `MAX_OBJECTS=18`, `OBJECT_ASSET_ASSIGNMENT=round_robin`
+- manifest: `/results/assets/filtered_manifests/stable_candidates18_shard3_assetroot_d053e6c_20260614T234700Z/manifest.json`
+- stable pose cache: `/results/validations/graspgen_stable_candidates18_shard3_d053e6c_20260614T234900Z/settled_pose_cache`
+- action source: `policy_reference_mix`, `REFERENCE_MIX_ALPHA=0.50`
+- reset prior: enabled, no verified cache, `candidate_count=512`, `attempts=8`, `pregrasp_offset=0.03`
+- side-safe grasp gates: `min_pregrasp_z=0.0`, `require_downward_tool_z=True`, `min_downward_tool_z=0.0`, `min_contact_height_above_center=-0.02`, `max_center_distance_frac=0.50`, `min_width=0.008`
+
+Expected evidence:
+- `metrics.json` and `trace.csv` show reset prior success/quality near `1.0`.
+- Table/finger penetration and prelift drag metrics remain zero.
+- Eval success may remain low with the current weak policy/reference mix, but the grasp-from-below failure mode must not recur.
+
+Result:
+- Slurm state: `COMPLETED|0:0`, elapsed `00:02:10`.
+- Artifacts:
+  - `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_multi_full18_z0_widthfix2_full50_mix_eval180_4adac71_20260616T042921Z/metrics.json`
+  - `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_multi_full18_z0_widthfix2_full50_mix_eval180_4adac71_20260616T042921Z/trace.csv`
+  - `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_multi_full18_z0_widthfix2_full50_mix_eval180_4adac71_20260616T042921Z/trace.jsonl`
+- Final summary: `num_envs=180`, `num_steps_completed=600`, `eval_success_rate=0.07777777777777778`, `success_ever_count=14`, `success_ever_rate=0.07777778059244156`, `completed_episode_success_rate=0.21621621621621623`.
+- Reset safety held through the rollout: `grasp_prior_reset_success=1.0`, `grasp_prior_reset_quality_success=1.0`, `grasp_prior_reset_tool_downward_z_min=0.0004895143210887909`, final `grasp_prior_reset_projected_exact_tip_table_clearance=0.02853330224752426`.
+- Done-time safety counters stayed clean: `eval_done_finger_table_penetration_rate=0.0`, `eval_done_prelift_drag_rate=0.0`, done reasons `finger_table_penetration=0`, `prelift_drag=0`, `cube_out=0`.
+- The generic reward-margin `finger_table_clearance_violation_max` was nonzero in two rows, but the minimum finger clearance stayed positive (`0.014290094375610352` and `0.016924023628234863`) and reset-specific finger/tip clearances stayed positive. This is not evidence of below-table reset sampling.
+
+Analysis:
+- The actual eval confirms the reset sampler now rejects below/upward approach directions on the full converted/stable-backed 18-object slice.
+- The weak policy/reference mix still has low first-attempt success, but that is expected from a single-object prior-best checkpoint transferred onto all 18 objects; PPO can now be launched against the full slice.
+
+Next:
+- Launch a capped 8-GPU PPO segment from the prior-best checkpoint with the same 18-object side-safe reset configuration. Use an explicit cap and disable self-requeue for the first segment so Slurm cannot requeue back into the initial single-object checkpoint.
+
+## 2026-06-16T04:36:50Z - launch 18-object PPO segment from prior-best checkpoint
+
+Goal:
+- Start real Franka multi-object PPO training on the full converted/stable-backed 18-object slice after reset/eval safety passed.
+
+Version Control:
+- local_commit: `4adac71e48dd1464c54d19dce71c7ccef6931228`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-full-objects-20260616-f5b3c7b`
+- remote_commit: `4adac71e48dd1464c54d19dce71c7ccef6931228`
+
+Job:
+- job_id: `29131412`
+- host: `a1001`
+- run: `franka_multi_full18_z0_widthfix2_ppo100_all_actor0001_critic1_bounds0_anchor1000_sigma_m5_4adac71_20260616T043650Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29131412.out`
+- output: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_z0_widthfix2_ppo100_all_actor0001_critic1_bounds0_anchor1000_sigma_m5_4adac71_20260616T043650Z`
+
+Configuration:
+- Initial checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_resetprior_all_actor0001_critic1_bounds0_anchor1000_sigma_m5_e219815_20260615T2256Z/nn/last_dextrah_franka_multi_object_grasp_ep_10_rew_1076.9912.pth`
+- `TASK=Dextrah-Franka-Multi-Object-Grasp`, `NPROC_PER_NODE=8`, `NUM_ENVS=2048`, `MAX_ITERATIONS=100`, `SAVE_FREQUENCY=10`.
+- First-segment resume policy: `CHECKPOINT=<prior-best>`, `AUTO_RESUME=False`, `SELF_RELAUNCH=False`. Later continuation segments should clear `CHECKPOINT` and use `AUTO_RESUME=True` from this run's own checkpoints.
+- PPO stabilizers preserved from prior-best: `LEARNING_RATE=1e-6`, `CENTRAL_VALUE_LEARNING_RATE=1e-6`, `MINIBATCH_SIZE=16384`, `CENTRAL_VALUE_MINIBATCH_SIZE=16384`, `MINI_EPOCHS=1`, `ENTROPY_COEF=0.0`, `TRAIN_SIGMA=-5`, `SIGMA_INIT_VAL=0`, `DEXTRAH_BC_POLICY_ANCHOR_ENABLED=True`, `DEXTRAH_BC_POLICY_ANCHOR_WEIGHT=1000.0`, `DEXTRAH_FREEZE_OBS_RMS_ENABLED=True`, `DEXTRAH_ACTOR_LOSS_SCALE=0.001`, `DEXTRAH_CRITIC_LOSS_SCALE=1.0`, `DEXTRAH_TRAINABLE_PARAM_SCOPE=all`, `DEXTRAH_BOUNDS_LOSS_COEF=0.0`.
+- Object/reset config: same 18-object manifest, stable-pose cache, and side-safe grasp prior gates from eval job `29131361`.
+- Monitoring: JSONL metrics enabled with `DEXTRAH_RLGAMES_JSONL_METRICS=True`.
+
+Expected evidence:
+- Startup log confirms `/code` source, 8 ranks, intended env/reset config, and successful checkpoint load.
+- JSONL/TensorBoard metrics show non-NaN rewards/losses, reset prior success/quality near `1.0`, no table/prelift done reasons, and checkpoints by epoch `10/20/...`.
+- After completion, evaluate the best/latest checkpoint on the same 18-object eval protocol and continue training if success is still low.
+
+Result:
+- Slurm state: `COMPLETED|0:0`, elapsed `00:32:02` on `batch-block7-01812`.
+- Run directory: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_z0_widthfix2_ppo100_all_actor0001_critic1_bounds0_anchor1000_sigma_m5_4adac71_20260616T043650Z`
+- Checkpoints were saved at epochs `20,30,40,50,60,70,80,90,100`; best reward-labeled checkpoint was epoch `70` (`rew_593.76`), with epoch `100` close behind (`rew_585.27966`).
+- Rank-0 JSONL metrics: 90 rows, epochs `11..100`, frame `93487104`, no nonfinite scalar values.
+- Final online training metrics:
+  - `cube_success_rate=0.001953125`
+  - `cube_has_lifted_rate=0.11865234375`
+  - `cube_lift_reward=0.0262281596660614`
+  - `cube_grasp_prior_reset_success_rate=0.99951171875`
+  - `cube_grasp_prior_quality_success_rate=0.99951171875`
+  - `cube_grasp_prior_tool_downward_z=0.8038444519042969`
+  - `cube_finger_table_clearance=0.25797802209854126`
+  - `cube_finger_table_clearance_violation=0.001150633441284299`
+  - `agent_aux/dextrah_bc_policy_anchor_loss=0.038854122161865234`
+
+Checkpoint evals:
+- Jobs: `29131921`, `29131922`, `29131923`, `29131925`; all `COMPLETED|0:0`.
+- Protocol: same 18-object manifest/cache, side-safe reset gates, `NUM_ENVS=180`, `NUM_STEPS=600`, no video.
+- Results:
+  - `ep70` pure policy: `eval_success_rate=0.03333333333333333`, `success_ever_rate=0.03333333507180214`, `completed_episode_success_rate=0.04854368932038835`.
+  - `ep100` pure policy: `eval_success_rate=0.05`, `success_ever_rate=0.0555555559694767`, `completed_episode_success_rate=0.07179487179487179`.
+  - `ep70` `policy_reference_mix`, `alpha=0.50`: `eval_success_rate=0.07222222222222222`, `success_ever_rate=0.07222222536802292`, `completed_episode_success_rate=0.2575107296137339`.
+  - `ep100` `policy_reference_mix`, `alpha=0.50`: `eval_success_rate=0.06111111111111111`, `success_ever_rate=0.06111111119389534`, `completed_episode_success_rate=0.22767857142857142`.
+- Baseline pre-PPO `policy_reference_mix`, `alpha=0.50`, was `eval_success_rate=0.07777777777777778`; the first PPO segment did not improve the mixed policy.
+- Safety held across all evals:
+  - `grasp_prior_reset_success=1.0`
+  - `grasp_prior_reset_quality_success=1.0`
+  - `grasp_prior_reset_tool_downward_z_min=0.0004895143210887909`
+  - reset `projected_exact_tip_table_clearance` stayed positive, min about `0.028768956661224365`.
+  - `done_reason_counts.finger_table_penetration=0`, `done_reason_counts.prelift_drag=0`, and both done-rate metrics were `0.0`.
+
+Analysis:
+- The root grasp-from-below/table-penetration failure mode remains fixed under PPO and eval.
+- The conservative PPO segment was too restrictive: pure policy became nonzero but low, and the mixed eval regressed slightly versus the pre-PPO baseline.
+- Since reset safety is clean, continue from epoch `100` with a less restrictive actor update rather than changing object initialization or relaxing grasp safety gates.
+
+Next:
+- Launch a continuation segment from epoch `100` with unchanged object/reset configuration, higher actor LR, larger actor loss scale, and lower BC anchor.
+
+## 2026-06-16T05:15:59Z - launch PPO continuation with lower BC anchor and larger actor step
+
+Goal:
+- Continue full 18-object PPO from the epoch-100 checkpoint while allowing the actor to move more than the first conservative segment.
+
+Version Control:
+- local_commit: `4adac71e48dd1464c54d19dce71c7ccef6931228`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-full-objects-20260616-f5b3c7b`
+- remote_commit: `4adac71e48dd1464c54d19dce71c7ccef6931228`
+
+Job:
+- job_id: `29131955`
+- host: `a1001`
+- run: `franka_multi_full18_z0_widthfix2_ppo200_lr3e6_actor003_anchor100_all_sigma_m5_4adac71_20260616T051559Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29131955.out`
+- output: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_z0_widthfix2_ppo200_lr3e6_actor003_anchor100_all_sigma_m5_4adac71_20260616T051559Z`
+
+Configuration:
+- Initial checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_z0_widthfix2_ppo100_all_actor0001_critic1_bounds0_anchor1000_sigma_m5_4adac71_20260616T043650Z/nn/last_dextrah_franka_multi_object_grasp_ep_100_rew_585.27966.pth`
+- `TASK=Dextrah-Franka-Multi-Object-Grasp`, `NPROC_PER_NODE=8`, `NUM_ENVS=2048`, `MAX_ITERATIONS=200`, `SAVE_FREQUENCY=10`.
+- Resume policy: `CHECKPOINT=<epoch100>`, `AUTO_RESUME=False`, `SELF_RELAUNCH=False`.
+- PPO update changes relative to the first segment:
+  - `LEARNING_RATE=3e-6`
+  - `CENTRAL_VALUE_LEARNING_RATE=1e-6`
+  - `DEXTRAH_ACTOR_LOSS_SCALE=0.003`
+  - `DEXTRAH_BC_POLICY_ANCHOR_WEIGHT=100.0`
+- Preserved stabilizers: `MINIBATCH_SIZE=16384`, `CENTRAL_VALUE_MINIBATCH_SIZE=16384`, `MINI_EPOCHS=1`, `ENTROPY_COEF=0.0`, `TRAIN_SIGMA=-5`, `SIGMA_INIT_VAL=0`, `DEXTRAH_BC_POLICY_ANCHOR_ENABLED=True`, `DEXTRAH_FREEZE_OBS_RMS_ENABLED=True`, `DEXTRAH_CRITIC_LOSS_SCALE=1.0`, `DEXTRAH_TRAINABLE_PARAM_SCOPE=all`, `DEXTRAH_BOUNDS_LOSS_COEF=0.0`.
+- Object/reset config: unchanged 18-object manifest, stable-pose cache, and side-safe grasp prior gates from jobs `29131361` and `29131412`.
+
+Expected evidence:
+- Startup confirms checkpoint load from epoch `100`, then trains epochs `101..200`.
+- Online reset success/quality remains near `1.0`, `tool_downward_z` stays positive, no NaNs.
+- After completion, evaluate best/latest checkpoints with both pure policy and `policy_reference_mix alpha=0.50`; continue tuning only from artifact-backed results.
+
+Result:
+- Slurm state: `COMPLETED|0:0`, elapsed `00:35:57` on `batch-block7-01148`.
+- Run directory: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_z0_widthfix2_ppo200_lr3e6_actor003_anchor100_all_sigma_m5_4adac71_20260616T051559Z`
+- Checkpoints saved at epochs `110,120,130,140,150,160,170,180,190,200`; best reward-labeled checkpoint in this segment was epoch `190` (`rew_527.541`), still below the earlier epoch-70 checkpoint (`rew_593.76`).
+- Rank-0 JSONL metrics: 100 rows, epochs `101..200`, frame `198344704`, no nonfinite scalar values.
+- Final online training metrics:
+  - `cube_success_rate=0.0`
+  - `cube_has_lifted_rate=0.11767578125`
+  - `cube_lift_reward=0.023281008005142212`
+  - `cube_grasp_prior_reset_success_rate=1.0`
+  - `cube_grasp_prior_quality_success_rate=1.0`
+  - `cube_grasp_prior_tool_downward_z=0.8059350252151489`
+  - `cube_finger_table_clearance=0.24949893355369568`
+  - `cube_finger_table_clearance_violation=0.0018642221111804247`
+  - `agent_aux/dextrah_bc_policy_anchor_loss=0.0048274691216647625`
+
+Checkpoint evals:
+- Jobs: `29132630`, `29132633`, `29132635`, `29132638`; all `COMPLETED|0:0`.
+- Protocol: same 18-object manifest/cache, side-safe reset gates, `NUM_ENVS=180`, `NUM_STEPS=600`, no video.
+- Results:
+  - `ep190` pure policy: `eval_success_rate=0.022222222222222223`, `success_ever_rate=0.02222222276031971`, `completed_episode_success_rate=0.025`.
+  - `ep200` pure policy: `eval_success_rate=0.027777777777777776`, `success_ever_rate=0.02777777798473835`, `completed_episode_success_rate=0.035897435897435895`.
+  - `ep190` `policy_reference_mix`, `alpha=0.50`: `eval_success_rate=0.07777777777777778`, `success_ever_rate=0.07777778059244156`, `completed_episode_success_rate=0.23636363636363636`.
+  - `ep200` `policy_reference_mix`, `alpha=0.50`: `eval_success_rate=0.06666666666666667`, `success_ever_rate=0.06666667014360428`, `completed_episode_success_rate=0.24686192468619247`.
+- Safety held across all evals:
+  - `grasp_prior_reset_success=1.0`
+  - `grasp_prior_reset_quality_success=1.0`
+  - `grasp_prior_reset_tool_downward_z_min=0.0004895143210887909`
+  - reset `projected_exact_tip_table_clearance` stayed positive, min about `0.0288`.
+  - `done_reason_counts.finger_table_penetration=0`, `done_reason_counts.prelift_drag=0`, and both done-rate metrics were `0.0`.
+
+Analysis:
+- The larger actor step and weaker BC anchor hurt pure policy success and only tied the pre-PPO mixed-policy baseline at epoch `190`.
+- The below-table grasp bug is still absent: side-safe reset sampling remains valid in both training and eval.
+- The remaining bottleneck is policy improvement after reset, so further blind PPO from epoch `200` is not justified.
+
+Next:
+- Patch the multi-object eval wrapper to expose the same action warmstart/action-prior flags as the training wrapper.
+- Run a short scripted-prior eval with `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=True` and `GRASP_PRIOR_ACTION_WARMSTART_USE_PRIOR_CLOSE_WIDTH=True` to test whether the verified side-safe grasps can drive actual lifts before launching another 8-GPU PPO segment.
