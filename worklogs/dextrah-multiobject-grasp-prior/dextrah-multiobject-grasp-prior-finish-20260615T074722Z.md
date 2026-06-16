@@ -4878,3 +4878,43 @@ Validation:
 
 Next:
 - Commit/deploy the contact-width fix and rerun the side-safe reset audit.
+
+## 2026-06-16T05:15:00Z - rerun side-safe reset audit with contact-width sanitization
+
+Goal:
+- Verify all prior/contact-derived width paths now fall back to object-scale width when cached/contact widths are implausible.
+
+Version Control:
+- local_commit: `4efbf06f61481b36ef6e85da8a6cbc3d5bfcbdd1`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-full-objects-20260616-f5b3c7b`
+- remote_commit: `4efbf06f61481b36ef6e85da8a6cbc3d5bfcbdd1`
+
+Job:
+- job_id: `1030522`
+- host: `l401`
+- run: `franka_multi_full18_reset_audit_z0_widthfix2_c512a8_4efbf06_20260616T0515Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/collect_franka_multi_object_verified_grasps_1030522.out`
+- output: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/verified_grasp_indices/franka_multi_full18_reset_audit_z0_widthfix2_c512a8_4efbf06_20260616T0515Z/verified_indices.json`
+
+Configuration:
+- Same side-safe reset-only diagnostic as jobs `1030519` and `1030521`.
+
+Expected evidence:
+- `4f4fe076fe624d2a8f198588c64fc6cb` should have high width candidate count and nonzero valid/fallback candidates if cached width was the only blocker.
+
+Result:
+- Slurm state: `COMPLETED|0:0`
+- `summary.all_targets_met=true`.
+- All 18 objects reached `12/12` reset success and `12/12` quality reset success.
+- Problem objects are now clean:
+  - `4f4fe076fe624d2a8f198588c64fc6cb`: `reset=12/12`, `quality=12/12`, mean `candidate_valid_count=94.7`, mean `candidate_width_count=512.0`, min saved `tool_downward_z=0.405`.
+  - `85c3d3b9cfd64c108dc548e525052c4e`: `reset=12/12`, `quality=12/12`, mean `candidate_valid_count=1.3`, mean `candidate_width_count=6.7`, min saved `tool_downward_z=0.000`.
+- Every saved sampled reset had nonnegative `tool_downward_z`; this audit no longer shows grasps approaching from below/table-penetrating upward end-effector directions.
+
+Analysis:
+- The root blocker for `4f4fe076fe624d2a8f198588c64fc6cb` was the stale/invalid prior contact width path, not stable-pose sampling.
+- Side-safe gates with `min_pregrasp_z=0.0` and `min_downward_tool_z=0.0` are materially less restrictive than the earlier steep topdown gates while still rejecting upward/below-table approach directions.
+- The 18-object converted/stable-backed manifest is now ready for an actual policy/reference-mix eval smoke before PPO continuation.
+
+Next:
+- Launch an 18-object eval smoke using commit `4efbf06f61481b36ef6e85da8a6cbc3d5bfcbdd1`, patched `/code`-first wrapper, and the same side-safe reset parameters. Only launch full PPO after eval confirms no table/finger penetration metrics regress.
