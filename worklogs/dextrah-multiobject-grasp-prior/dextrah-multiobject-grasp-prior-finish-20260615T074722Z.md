@@ -5231,3 +5231,483 @@ Patch:
 
 Next:
 - Commit the fix, deploy the exact new commit to the A100 remote worktree by Git bundle, run `bash -n cluster/sbatch_train_teacher_8gpu.sh`, and relaunch the same guided PPO segment from the epoch-100 checkpoint.
+
+## 2026-06-16T06:24:34Z - relaunch guided PPO after BC rollout-buffer fix
+
+Version Control:
+- local_commit: `85911451778536d2da30a563ac05b1d1eac2b1a0`
+- branch: `codex/dextrah-multiobject-grasp-prior-finish-20260615T074722Z`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-full-objects-20260616-f5b3c7b`
+- remote_commit: `85911451778536d2da30a563ac05b1d1eac2b1a0`
+- deployment: pushed branch to GitHub and transferred `0288244..8591145` to A100 as `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-8591145.bundle`; checked out detached `8591145`.
+- validation: remote `bash -n cluster/sbatch_train_teacher_8gpu.sh` passed.
+
+Job:
+- job_id: `29135114`
+- host: `a1001`
+- run: `franka_multi_full18_z0_widthfix2_ppo180_warmbc025_apr2_anchor300_fixbuf_8591145_20260616T062434Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29135114.out`
+- output: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_z0_widthfix2_ppo180_warmbc025_apr2_anchor300_fixbuf_8591145_20260616T062434Z`
+- submit warning: same stale-data quota warning; job accepted.
+
+Configuration:
+- Same as failed job `29134651`, except code commit `8591145` contains the BC rollout-buffer fix.
+- Checkpoint: PPO-100 epoch-100 checkpoint from `franka_multi_full18_z0_widthfix2_ppo100_all_actor0001_critic1_bounds0_anchor1000_sigma_m5_4adac71_20260616T043650Z`.
+- Target: train epochs `101..180` with action warmstart, action-prior reward, and PPO BC loss on the stable-backed 18-object set.
+
+Expected evidence:
+- Log prints `[DEXTRAH] added missing grasp-prior teacher tensors to rollout buffer` at most once per rank if the defensive path is used.
+- JSONL reaches epoch `101` and shows nonzero `agent_aux/dextrah_grasp_prior_bc_active_rate`.
+- No nonfinite scalar values or table-safety regressions.
+
+Result:
+- Slurm state: `COMPLETED|0:0`, elapsed `00:30:31` on `batch-block7-01973`.
+- Training reached epoch `180` and saved checkpoints at `110,120,130,140,150,160,170,180` plus generic best `dextrah_franka_multi_object_grasp.pth`.
+- The buffer fix worked: each rank printed `[DEXTRAH] added missing grasp-prior teacher tensors to rollout buffer`, and rank-0 JSONL reached 80 rows, epochs `101..180`.
+- BC/action-prior evidence:
+  - final last-10 `agent_aux/dextrah_grasp_prior_bc_active_rate`: last `0.24407958984375`, mean `0.270269775390625`.
+  - final last-10 `agent_aux/dextrah_grasp_prior_bc_loss`: last `0.01689635030925274`, mean `0.020289888512343167`.
+  - final last-10 `agent_aux/dextrah_bc_policy_anchor_loss`: last `0.010750077664852142`, mean `0.01131251542828977`.
+- Online guided training metrics:
+  - final last-10 `cube_success_rate`: last `0.01611328125`, mean `0.01025390625`.
+  - final last-10 `cube_has_lifted_rate`: last `0.138671875`, mean `0.1333984375`.
+  - final last-10 `cube_lift_reward`: last `0.19799965620040894`, mean `0.1555078998208046`.
+  - best online `cube_success_rate` occurred at epoch `103`: `0.06494140625`; best online `cube_has_lifted_rate` also at epoch `103`: `0.1875`.
+  - best reward-named checkpoint: epoch `170`, `last_dextrah_franka_multi_object_grasp_ep_170_rew_1034.3812.pth`.
+- Reset/table safety:
+  - final last-10 `cube_grasp_prior_reset_success_rate`: last `1.0`, mean `0.998828125`.
+  - final last-10 `cube_grasp_prior_quality_success_rate`: last `1.0`, mean `0.998828125`.
+  - final last-10 `cube_grasp_prior_tool_downward_z`: last `0.803516149520874`, mean `0.8035919666290283`.
+  - final last-10 `cube_grasp_prior_projected_exact_tip_table_clearance`: last `0.028268340975046158`, mean `0.028244392201304435`.
+  - final last-10 `cube_finger_table_clearance_violation`: last `0.0`, mean `0.00007823095947969704`.
+- Abnormal scalars:
+  - 64 nonfinite JSONL values were present, all diagnostic `*_grasp_prior_*_tool_dist` keys at epochs where the diagnostic distance was `inf`. No loss, BC, reward, success, reset-success, or table-clearance safety scalar was nonfinite.
+
+Analysis:
+- The BC/action-prior code path is now exercised and stable enough to train through a full 80-epoch segment.
+- Online reward is not sufficient for model selection because it includes action-prior guidance and the generic best checkpoint was saved early. Need policy evals before continuing.
+
+Eval launches:
+
+| Label | Job | Checkpoint | Steps | Warmstart | Run |
+| --- | --- | --- | --- | --- | --- |
+| best_pure | `29136268` | `nn/dextrah_franka_multi_object_grasp.pth` | `600` | `False` | `franka_multi_full18_guided859_best_pure_eval180_8591145_20260616T065904Z` |
+| ep170_pure | `29136269` | `nn/last_dextrah_franka_multi_object_grasp_ep_170_rew_1034.3812.pth` | `600` | `False` | `franka_multi_full18_guided859_ep170_pure_eval180_8591145_20260616T065904Z` |
+| ep180_pure | `29136270` | `nn/last_dextrah_franka_multi_object_grasp_ep_180_rew_906.1192.pth` | `600` | `False` | `franka_multi_full18_guided859_ep180_pure_eval180_8591145_20260616T065904Z` |
+| best_actionwarm | `29136271` | `nn/dextrah_franka_multi_object_grasp.pth` | `240` | `True` | `franka_multi_full18_guided859_best_actionwarm_eval180_8591145_20260616T065904Z` |
+
+Expected eval evidence:
+- Pure-policy eval determines whether the policy itself improved beyond PPO-100.
+- Action-warmstart eval compares directly to the pre-guided baseline action-warmstart result (`11.1%` first-attempt success).
+- All evals must preserve reset safety and zero below-table/table-penetration done reasons.
+
+Eval results:
+- All four eval jobs completed successfully.
+
+| Label | Job | `eval_success_rate` | `success_ever_count` | `success_ever_rate` | first-attempt lifted | first-attempt max lift mean | completed episode success | Done reasons | Decision |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| best_pure | `29136268` | `0.03333333333333333` | `6` | `0.03333333507180214` | `0.15` | `0.0129163834783766` | `0.0380952380952381` | `finger_table_penetration=0`, `prelift_drag=0` | worse than PPO-100 pure; do not continue from generic best |
+| ep170_pure | `29136269` | `0.07777777777777778` | `15` | `0.0833333358168602` | `0.19444444444444445` | `0.018891644808981152` | `0.11055276381909548` | `finger_table_penetration=0`, `prelift_drag=0` | improved over PPO-100 pure, but below ep180 |
+| ep180_pure | `29136270` | `0.09444444444444444` | `17` | `0.09444444626569748` | `0.20555555555555555` | `0.02173902326160007` | `0.12307692307692308` | `finger_table_penetration=0`, `prelift_drag=0` | best pure policy so far |
+| best_actionwarm | `29136271` | `0.10555555555555556` | `19` | `0.10555555671453476` | `0.21666666666666667` | `0.02184892064995236` | `0.5555555555555556` | `finger_table_penetration=0`, `prelift_drag=0` | roughly matches pre-guided warmstart baseline, not a decisive improvement |
+
+Analysis:
+- Guided PPO with warmstart improved the learned pure policy from PPO-100's `5%` eval success to `9.44%` at epoch `180`, while preserving the table safety constraints.
+- The generic best checkpoint selected by online guided reward is misleading (`3.33%` pure), confirming that action-prior-contaminated online reward is not a reliable model selector.
+- The pure ep180 policy is close to the scripted warmstart result, so the next step should reduce the train/eval mismatch: let the policy execute its own actions during training while retaining the prior reference as a reward/BC guide.
+
+Next launch plan:
+- Continue from ep180:
+  `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_z0_widthfix2_ppo180_warmbc025_apr2_anchor300_fixbuf_8591145_20260616T062434Z/nn/last_dextrah_franka_multi_object_grasp_ep_180_rew_906.1192.pth`
+- Disable action warmstart execution:
+  - `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`
+  - keep `GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED=True` so the environment still emits teacher actions and action-prior reward
+  - lower `DEXTRAH_GRASP_PRIOR_BC_LOSS_WEIGHT` from `0.25` to `0.10`
+- Keep conservative PPO and side-safe reset settings unchanged, train epochs `181..260`, then evaluate pure-policy checkpoints.
+
+## 2026-06-16T07:05:00Z - launch phase-2 no-warmstart guided PPO
+
+Goal:
+- Reduce the train/eval mismatch after the ep180 pure-policy improvement by letting the policy execute its own actions during training, while still using the side-safe grasp-prior reference for reward and supervised BC.
+
+Version Control:
+- local_commit: `85911451778536d2da30a563ac05b1d1eac2b1a0`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-full-objects-20260616-f5b3c7b`
+- remote_commit: `85911451778536d2da30a563ac05b1d1eac2b1a0`
+
+Job:
+- job_id: `29136455`
+- host: `a1001`
+- run: `franka_multi_full18_z0_widthfix2_ppo260_nowarm_apr2_bc010_anchor200_8591145_20260616T070500Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29136455.out`
+- output: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_z0_widthfix2_ppo260_nowarm_apr2_bc010_anchor200_8591145_20260616T070500Z`
+- submit warning: same stale-data quota warning; job accepted.
+
+Configuration:
+- Initial checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_z0_widthfix2_ppo180_warmbc025_apr2_anchor300_fixbuf_8591145_20260616T062434Z/nn/last_dextrah_franka_multi_object_grasp_ep_180_rew_906.1192.pth`
+- `MAX_ITERATIONS=260`, so target epochs `181..260`.
+- PPO: `LR=1e-6`, central LR `1e-6`, minibatch `16384`, mini epochs `1`, entropy `0`, fixed sigma `-5`, actor loss scale `0.001`, critic loss scale `1.0`, anchor enabled at `200.0`, frozen obs RMS.
+- Guidance:
+  - `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`
+  - `GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED=True`, weight `2.0`, sharpness `2.0`
+  - `DEXTRAH_GRASP_PRIOR_BC_LOSS_ENABLED=True`, weight `0.10`, dims `all`
+- Object/reset config: unchanged 18-object stable-backed manifest/cache and side-safe grasp reset gates; no verified-index cache.
+
+Expected evidence:
+- Log confirms warmstart disabled and action-prior reward/BC enabled.
+- JSONL has nonzero BC active rate even without warmstart.
+- Online `cube_success_rate` is now meaningful because policy actions are applied directly.
+- Reset safety remains clean and no table-penetration/prelift-drag done reasons appear in later evals.
+
+## 2026-06-16T07:39:00Z - phase-2 no-warmstart eval results and reset-policy correction
+
+Goal:
+- Evaluate the phase-2 no-warmstart guided PPO continuation and decide whether to continue from it.
+
+Training result:
+- Job `29136455` completed successfully: `COMPLETED|0:0`, elapsed `00:29:19`.
+- Run reached epoch `260` and wrote checkpoints `ep190,200,210,220,230,240,250,260` plus generic `dextrah_franka_multi_object_grasp.pth`.
+- Finished training metrics:
+  - `agent_aux/dextrah_grasp_prior_bc_active_rate`: last `0.1656494140625`, last-10 mean `0.22454833984375`.
+  - `agent_aux/dextrah_grasp_prior_bc_loss`: last `0.0947146862745285`, last-10 mean `0.0935829296708107`.
+  - `cube_success_rate`: last `0.0029296875`, last-10 mean `0.0021484375`.
+  - `cube_has_lifted_rate`: last `0.119140625`, last-10 mean `0.118212890625`.
+  - `cube_grasp_prior_reset_success_rate`: last-10 mean `1.0`.
+  - `cube_grasp_prior_quality_success_rate`: last-10 mean `1.0`.
+  - `cube_grasp_prior_tool_downward_z`: last `0.8034302592277527`, last-10 mean `0.8029212296009064`.
+  - `cube_grasp_prior_projected_exact_tip_table_clearance`: last `0.02837948128581047`, last-10 mean `0.028260606899857522`.
+  - `cube_finger_table_clearance_violation`: last `0.0`, last-10 mean `0.000035920855589210986`.
+- Nonfinite JSONL values were limited to diagnostic `*_grasp_prior_*_tool_dist` fields. No losses, rewards, reset success, or table-safety scalars were nonfinite.
+- Best reward-named checkpoint was epoch `230`: `last_dextrah_franka_multi_object_grasp_ep_230_rew_934.5868.pth`.
+
+Pure-policy eval launches:
+
+| Label | Job | Checkpoint | Run |
+| --- | --- | --- | --- |
+| generic_best | `29137621` | `nn/dextrah_franka_multi_object_grasp.pth` | `franka_multi_full18_nowarm260_generic_best_pure_eval180_8591145_20260616T0739Z` |
+| ep230 | `29137623` | `nn/last_dextrah_franka_multi_object_grasp_ep_230_rew_934.5868.pth` | `franka_multi_full18_nowarm260_ep230_pure_eval180_8591145_20260616T0739Z` |
+| ep250 | `29137625` | `nn/last_dextrah_franka_multi_object_grasp_ep_250_rew_871.02435.pth` | `franka_multi_full18_nowarm260_ep250_pure_eval180_8591145_20260616T0739Z` |
+| ep260 | `29137627` | `nn/last_dextrah_franka_multi_object_grasp_ep_260_rew_857.0648.pth` | `franka_multi_full18_nowarm260_ep260_pure_eval180_8591145_20260616T0739Z` |
+
+Pure-policy eval results:
+
+| Label | Job | `eval_success_rate` | `success_ever_count` | `success_ever_rate` | first-lifted rate | completed episode success | Done reasons | Decision |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| generic_best | `29137621` | `0.07222222222222222` | `13` | `0.07222222536802292` | `0.1388888888888889` | `0.095` | `finger_table_penetration=0`, `prelift_drag=0`, `cube_out=0` | best of phase-2, but below prior ep180 |
+| ep230 | `29137623` | `0.05555555555555555` | `11` | `0.06111111119389534` | `0.14444444444444443` | `0.05945945945945946` | `finger_table_penetration=0`, `prelift_drag=0`, `cube_out=0` | do not continue |
+| ep250 | `29137625` | `0.05555555555555555` | `10` | `0.0555555559694767` | `0.13333333333333333` | `0.07936507936507936` | `finger_table_penetration=0`, `prelift_drag=0`, `cube_out=0` | do not continue |
+| ep260 | `29137627` | `0.06111111111111111` | `11` | `0.06111111119389534` | `0.12777777777777777` | `0.0851063829787234` | `finger_table_penetration=0`, `prelift_drag=0`, `cube_out=0` | do not continue |
+
+Eval reset safety:
+- All four evals had `grasp_prior_reset_success=1.0`, `grasp_prior_reset_quality_success=1.0`, `finger_table_clearance_violation=0.0`, and `finger_table_clearance_violation_max=0.0` at the final step.
+- Minimum sampled `grasp_prior_reset_tool_downward_z` remained nonnegative: `0.0004895143`.
+- Final projected exact tip clearance stayed positive: approximately `0.0279..0.0289`.
+
+Analysis:
+- Phase-2 no-warmstart imitation/action-prior continuation regressed from the previous best pure policy, epoch `180` from job `29135114`, which had `eval_success_rate=0.09444444444444444` and `success_ever_count=17`.
+- The user pointed out a key mismatch with the known-good Franka cube RL task: the cube task resets the gripper directly to the grasp pose, while this multi-object branch has been using `GRASP_PRIOR_PREGRASP_OFFSET=0.03`.
+- Code audit confirms the current grasp-prior reset solves IK to `targets["target_ee_pos_b"]`, and `target_ee` is the pregrasp pose. The exact grasp pose is stored as `grasp_prior_reset_exact_ee_pos_w` and used by the action reference, but not as the reset IK target when the pregrasp offset is nonzero.
+- There is no principled reason to keep the 3 cm pregrasp curriculum if the known-good cube task starts at the grasp pose and the exact grasp passes table/width/downward-tool safety gates. The next branch should set `GRASP_PRIOR_PREGRASP_OFFSET=0.0` so `target_ee == exact_ee`, disable BC/action-prior guidance, and train/evaluate pure PPO from an exact grasp-pose reset.
+
+Next:
+- Run exact-grasp reset smoke evals (`GRASP_PRIOR_PREGRASP_OFFSET=0.0`) with the prior best epoch-180 checkpoint:
+  - pure policy, warmstart off, to measure immediate policy transfer.
+  - action warmstart on, to measure the exact-reset scripted/reference ceiling.
+- If exact-reset safety is clean and the scripted/reference ceiling improves, launch an 8-GPU pure PPO continuation with `GRASP_PRIOR_PREGRASP_OFFSET=0.0`, `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`, `GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED=False`, and `DEXTRAH_GRASP_PRIOR_BC_LOSS_ENABLED=False`.
+
+## 2026-06-16T07:48:00Z - exact grasp-pose reset smoke evals
+
+Goal:
+- Test the user's observation that the known-good Franka cube RL task resets the gripper directly to the grasp pose. For multi-object, set `GRASP_PRIOR_PREGRASP_OFFSET=0.0` so the reset IK target collapses from pregrasp to the exact grasp-prior EE pose.
+
+Jobs:
+
+| Label | Job | Run | Checkpoint | Warmstart |
+| --- | --- | --- | --- | --- |
+| exact_pure | `29137797` | `franka_multi_full18_exactreset_ep180_pure_eval180_8591145_20260616T0748Z` | ep180 from `29135114` | `False` |
+| exact_actionwarm | `29137799` | `franka_multi_full18_exactreset_ep180_actionwarm_eval180_8591145_20260616T0748Z` | ep180 from `29135114` | `True` |
+
+Configuration:
+- `NUM_ENVS=180`, `NUM_STEPS=240`, `MAX_OBJECTS=18`, `OBJECT_ASSET_ASSIGNMENT=round_robin`.
+- `GRASP_PRIOR_PREGRASP_OFFSET=0.0`.
+- Same 18-object manifest/cache and side-safe reset gates:
+  - `GRASP_PRIOR_RESET_ATTEMPTS=8`
+  - `GRASP_PRIOR_RESET_CANDIDATE_COUNT=512`
+  - `GRASP_PRIOR_RESET_REQUIRE_TOPDOWN=True`
+  - `GRASP_PRIOR_RESET_MIN_PREGRASP_Z=0.0`
+  - `GRASP_PRIOR_RESET_REQUIRE_DOWNWARD_TOOL_Z=True`
+  - `GRASP_PRIOR_RESET_MIN_DOWNWARD_TOOL_Z=0.0`
+  - `GRASP_PRIOR_RESET_MIN_CONTACT_HEIGHT_ABOVE_CENTER=-0.02`
+  - `GRASP_PRIOR_RESET_MAX_CENTER_DISTANCE_FRAC=0.50`
+  - `GRASP_PRIOR_RESET_MIN_WIDTH=0.008`
+
+Results:
+
+| Label | Job | `eval_success_rate` | `success_ever_count` | `success_ever_rate` | first-lifted rate | max-lift mean | completed episode success | Done reasons |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| exact_pure | `29137797` | `0.14444444444444443` | `26` | `0.14444445073604584` | `0.2777777777777778` | `0.03293028341399299` | `0.4772727272727273` | `finger_table_penetration=0`, `prelift_drag=0`, `cube_out=0` |
+| exact_actionwarm | `29137799` | `0.1111111111111111` | `20` | `0.1111111119389534` | `0.2111111111111111` | `0.026416198743714227` | `0.5208333333333334` | `finger_table_penetration=0`, `prelift_drag=0`, `cube_out=0` |
+
+Safety:
+- Both evals had `grasp_prior_reset_success=1.0`, `grasp_prior_reset_quality_success=1.0`, `finger_table_clearance_violation=0.0`, and `finger_table_clearance_violation_max=0.0`.
+- Exact reset kept positive table clearance:
+  - `exact_pure`: projected exact/pregrasp tip table clearance `0.028994010761380196`, finger table clearance `0.0647331178188324`.
+  - `exact_actionwarm`: projected exact/pregrasp tip table clearance `0.02906336821615696`, finger table clearance `0.06506871432065964`.
+- Minimum `tool_downward_z` stayed nonnegative at `0.0004895143792964518`.
+
+Analysis:
+- Exact grasp-pose reset immediately improves the prior-best pure policy from the previous `9.44%` 600-step eval to `14.44%` in this 240-step smoke, with clean table safety.
+- The pure policy outperformed the action-warmstart reference under exact reset, which suggests the previous pregrasp/action-reference setup was an unnecessary train/eval mismatch rather than a required scaffold.
+- The next PPO branch should match the cube-task assumption: exact grasp-pose reset, no action warmstart, no action-prior reward, no BC loss.
+
+Next launch:
+- Continue from the prior best ep180 checkpoint:
+  `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_z0_widthfix2_ppo180_warmbc025_apr2_anchor300_fixbuf_8591145_20260616T062434Z/nn/last_dextrah_franka_multi_object_grasp_ep_180_rew_906.1192.pth`
+- Use exact grasp-pose reset:
+  - `GRASP_PRIOR_PREGRASP_OFFSET=0.0`
+  - `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`
+  - `GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED=False`
+  - `DEXTRAH_GRASP_PRIOR_BC_LOSS_ENABLED=False`
+- Keep the same 18-object stable-backed manifest/cache and side-safe grasp filters.
+
+## 2026-06-16T07:55:00Z - launch exact-reset pure PPO continuation
+
+Goal:
+- Train the multi-object Franka policy under the known-good cube-task assumption: reset directly to the sampled valid grasp pose, then let pure RL learn/continue close-and-lift behavior without imitation/action-prior scaffolding.
+
+Version Control:
+- local_commit: `85911451778536d2da30a563ac05b1d1eac2b1a0`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-full-objects-20260616-f5b3c7b`
+- remote_commit: `85911451778536d2da30a563ac05b1d1eac2b1a0`
+
+Job:
+- job_id: `29137941`
+- host: `a1001`
+- run: `franka_multi_full18_exactreset_ppo300_pure_from180_8591145_20260616T0755Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29137941.out`
+- output: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_exactreset_ppo300_pure_from180_8591145_20260616T0755Z`
+- submit warning: same stale-data quota warning; job accepted.
+
+Configuration:
+- Initial checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_z0_widthfix2_ppo180_warmbc025_apr2_anchor300_fixbuf_8591145_20260616T062434Z/nn/last_dextrah_franka_multi_object_grasp_ep_180_rew_906.1192.pth`
+- `MAX_ITERATIONS=300`, so target epochs `181..300`.
+- PPO: `NUM_ENVS=2048`, `HORIZON_LENGTH=64`, minibatch `16384`, mini epochs `1`, LR `1e-6`, central LR `1e-6`, entropy `0.0`, fixed sigma `-5`, actor loss scale `0.001`, critic loss scale `1.0`, no policy anchor, obs RMS not frozen.
+- Guidance disabled:
+  - `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`
+  - `GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED=False`
+  - `DEXTRAH_GRASP_PRIOR_BC_LOSS_ENABLED=False`
+  - `DEXTRAH_BC_POLICY_ANCHOR_ENABLED=False`
+- Exact grasp reset:
+  - `GRASP_PRIOR_PREGRASP_OFFSET=0.0`
+  - same 18-object stable-backed manifest/cache
+  - same side-safe gates and no verified-index cache.
+
+Expected evidence:
+- Log confirms pregrasp offset `0.0` and all BC/action-prior/warmstart guidance disabled.
+- Online success/lift should start near or above the exact-reset smoke behavior, with clean reset safety.
+- Evaluate saved checkpoints after completion using pure policy and exact-reset config.
+
+Correction:
+- Job `29137941` was cancelled after `00:00:45` because the launch omitted `DEXTRAH_RLGAMES_JSONL_METRICS=True`, which would weaken metric inspection. No useful training result should be taken from this cancelled job.
+- Relaunched the same configuration with JSONL metrics enabled:
+  - job_id: `29137989`
+  - run: `franka_multi_full18_exactreset_ppo300_pure_jsonl_from180_8591145_20260616T0758Z`
+  - log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29137989.out`
+  - output: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_exactreset_ppo300_pure_jsonl_from180_8591145_20260616T0758Z`
+
+## 2026-06-16T08:50:00Z - exact-reset PPO completion and checkpoint evals
+
+Goal:
+- Complete the exact grasp-pose reset PPO continuation and evaluate checkpoint quality with policy-only actions.
+
+Training job:
+- job_id: `29137989`
+- state: `COMPLETED`, exit `0:0`, elapsed `00:45:10`
+- run: `franka_multi_full18_exactreset_ppo300_pure_jsonl_from180_8591145_20260616T0758Z`
+- output: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_exactreset_ppo300_pure_jsonl_from180_8591145_20260616T0758Z`
+
+Training metrics:
+- JSONL rows: `120`, epochs `181..300`, final frame `303202304`.
+- Online `cube_success_rate`: final `0.00244140625`, last-10 mean `0.002294921875`, max `0.0400390625`.
+- Online `cube_has_lifted_rate`: final `0.16552734375`, last-10 mean `0.15947265625`, max `0.2392578125`.
+- Online `cube_lift_height`: final `0.00835323240607977`, last-10 mean `0.007055615866556763`, max `0.039476629346609116`.
+- Reset health stayed high: final `cube_grasp_prior_reset_success_rate=1.0`, last-10 mean `1.0`; final `cube_grasp_prior_quality_success_rate=1.0`, last-10 mean `1.0`.
+- Exact reset was active: final projected exact/pregrasp tip table clearance both `0.028014816343784332`, because `GRASP_PRIOR_PREGRASP_OFFSET=0.0`.
+- Tool axis safety stayed side/top safe by the current metric: `cube_grasp_prior_tool_downward_z` final `0.7962332367897034`, last-10 mean `0.7983426094055176`.
+- Best reward-named checkpoint: epoch `250`, `last_dextrah_franka_multi_object_grasp_ep_250_rew_938.38104.pth`.
+- Online training peaked around epochs `230..250` and then regressed strongly by epoch `300`; do not use the final checkpoint by default.
+
+Pure-policy exact-reset eval launches:
+
+| Label | Job | Checkpoint | Run |
+| --- | --- | --- | --- |
+| generic | `29140283` | `nn/dextrah_franka_multi_object_grasp.pth` | `franka_multi_full18_exactreset_ppo300_generic_eval180_8591145_20260616T0848Z` |
+| ep230 | `29140284` | `nn/last_dextrah_franka_multi_object_grasp_ep_230_rew_861.8694.pth` | `franka_multi_full18_exactreset_ppo300_ep230_eval180_8591145_20260616T0848Z` |
+| ep240 | `29140285` | `nn/last_dextrah_franka_multi_object_grasp_ep_240_rew_917.49646.pth` | `franka_multi_full18_exactreset_ppo300_ep240_eval180_8591145_20260616T0848Z` |
+| ep250 | `29140286` | `nn/last_dextrah_franka_multi_object_grasp_ep_250_rew_938.38104.pth` | `franka_multi_full18_exactreset_ppo300_ep250_eval180_8591145_20260616T0848Z` |
+| ep300 | `29140287` | `nn/last_dextrah_franka_multi_object_grasp_ep_300_rew_328.7021.pth` | `franka_multi_full18_exactreset_ppo300_ep300_eval180_8591145_20260616T0848Z` |
+
+Eval configuration:
+- `NUM_ENVS=180`, `NUM_STEPS=600`, `CAPTURE_VIDEO=False`, `DETERMINISTIC=True`, `ACTION_SOURCE=policy`.
+- `MAX_OBJECTS=18`, random object assignment, same stable-backed manifest/cache.
+- `GRASP_PRIOR_PREGRASP_OFFSET=0.0`, `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`, `GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED=False`.
+- Same side-safe gates: attempts `8`, candidates `512`, topdown required, min pregrasp z `0.0`, downward tool z required, min downward `0.0`, contact height `-0.02`, center distance frac `0.50`, min width `0.008`.
+
+Eval results:
+
+| Label | Job | `eval_success_rate` | `success_ever_rate` | max-lift mean | terminal success | completed episode success | hold success | Done reasons |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| generic | `29140283` | `0.16666666666666666` | `0.17222222685813904` | `0.10395283699035644` | `0.044444444444444446` | `0.17258883248730963` | `0.05555555555555555` | `success_done=12`, `done_after_success_unclassified=22`, `finger_table_penetration=0`, `prelift_drag=0`, `cube_out=1` |
+| ep230 | `29140284` | `0.16111111111111112` | `0.18333333730697632` | `0.0908709165122774` | `0.07777777777777778` | `0.15979381443298968` | `0.08333333333333333` | `success_done=16`, `done_after_success_unclassified=15`, `finger_table_penetration=0`, `prelift_drag=0`, `cube_out=1` |
+| ep240 | `29140285` | `0.16111111111111112` | `0.17222222685813904` | `0.09305805729495155` | `0.07777777777777778` | `0.19158878504672897` | `0.07777777777777778` | `success_done=25`, `done_after_success_unclassified=20`, `finger_table_penetration=0`, `prelift_drag=0`, `cube_out=2` |
+| ep250 | `29140286` | `0.1` | `0.10000000149011612` | `0.03129972947968377` | `0.07222222222222222` | `0.11458333333333333` | `0.08333333333333333` | `success_done=17`, `done_after_success_unclassified=6`, `finger_table_penetration=0`, `prelift_drag=0`, `cube_out=1` |
+| ep300 | `29140287` | `0.022222222222222223` | `0.03333333507180214` | `0.026809873183568318` | `0.005555555555555556` | `0.0176678445229682` | `0.0` | `success_done=1`, `done_after_success_unclassified=5`, `finger_table_penetration=0`, `prelift_drag=0`, `cube_out=1` |
+
+Cleanup:
+- Job `29140287` wrote complete metrics and printed `Evaluation Done`, but the Slurm allocation stayed running for more than 11 minutes afterward. Issued `scancel`; final accounting shows `CANCELLED by 158351` for the job while the metrics artifact is valid.
+
+Analysis:
+- The user's cube-task comparison was correct. The multi-object branch should reset directly to the exact grasp pose, not a pregrasp pose, when matching the known-good Franka cube RL task.
+- Exact reset improves the prior best exact-reset smoke result from `14.44%` to `16.67%` first-attempt success on the generic checkpoint.
+- This branch fixes the below-table/root reset mismatch: eval done reasons have `finger_table_penetration=0` and `prelift_drag=0`; sampled reset tool-down and exact-tip clearance metrics stayed valid during training.
+- The main remaining issue is PPO stability/checkpoint selection. Training after the online peak collapses, so a longer continuation from epoch `300` is not justified.
+
+Next:
+- Treat the generic checkpoint from `29137989` as the current best exact-reset policy.
+- Next training iteration should start from the generic/ep230 exact-reset policy with an explicit anti-collapse plan, such as shorter continuation, early stopping on eval success, lower LR, or anchoring only to the best exact-reset checkpoint. Do not reintroduce pregrasp reset or BC/action-prior imitation unless a specific ablation justifies it.
+
+## 2026-06-16T09:10:00Z - exact-reset visual sanity check
+
+Goal:
+- Verify visually that the current exact-reset best policy no longer reaches from below the table.
+
+Job:
+- job_id: `29140741`
+- run: `franka_multi_full18_exactreset_best_video4_8591145_20260616T0910Z`
+- checkpoint: `franka_multi_full18_exactreset_ppo300_pure_jsonl_from180_8591145_20260616T0758Z/nn/dextrah_franka_multi_object_grasp.pth`
+- configuration: `NUM_ENVS=4`, `NUM_STEPS=300`, `CAPTURE_VIDEO=True`, exact reset with `GRASP_PRIOR_PREGRASP_OFFSET=0.0`, policy-only actions.
+
+Result:
+- Metrics: `eval_success_rate=0.5`, `success_ever_count=2`, `success_ever_rate=0.5`.
+- Done reasons: `finger_table_penetration=0`, `prelift_drag=0`, `cube_out=0`.
+- Remote video: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/franka_multi_full18_exactreset_best_video4_8591145_20260616T0910Z/videos/franka_multi_full18_exactreset_best_video4_8591145_20260616T0910Z-step-0.mp4`
+- Local artifact: `artifacts/dextrah-multiobject-grasp-prior/exactreset-best-video4/videos/franka_multi_full18_exactreset_best_video4_8591145_20260616T0910Z-step-0.mp4`
+- Viewer URL: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-finish-20260615T074722Z/artifacts/dextrah-multiobject-grasp-prior/exactreset-best-video4/videos/franka_multi_full18_exactreset_best_video4_8591145_20260616T0910Z-step-0.mp4`
+
+Visual inspection:
+- Frame `0` is black from recorder startup.
+- Later sampled frames show the gripper above the tabletop and approaching from side/top, not reaching upward from below the table.
+- This visual check supports the metric conclusion that the previous below-table reset failure is fixed under exact grasp-pose reset. The policy itself is still not solved.
+
+## 2026-06-16T17:20:53Z - exact-reset 18-object video grid sweep
+
+Goal:
+- Produce many videos for the user to debug whether remaining failures are reset bugs, multi-object difficulty, or policy/control issues.
+
+Sweep:
+- remote code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-full-objects-20260616-f5b3c7b`
+- commit: `85911451778536d2da30a563ac05b1d1eac2b1a0`
+- prefix: `dextrah_debug_exactreset_video_sweep_8591145_20260616T1015Z`
+- remote manifest: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/dextrah_debug_exactreset_video_sweep_8591145_20260616T1015Z_manifest.tsv`
+- local artifact dir: `artifacts/dextrah-multiobject-grasp-prior/video-sweep-exactreset-20260616T1015Z`
+- source checkpoint: `franka_multi_full18_exactreset_ppo300_pure_jsonl_from180_8591145_20260616T0758Z/nn/dextrah_franka_multi_object_grasp.pth`
+- object manifest/cache: `stable_candidates18_shard3_assetroot_d053e6c_20260614T234700Z`, `graspgen_stable_candidates18_shard3_d053e6c_20260614T234900Z/settled_pose_cache`
+
+Configuration:
+- 18 fixed env/object slots, `OBJECT_ASSET_ASSIGNMENT=round_robin`, `MAX_OBJECTS=18`.
+- Three action arms:
+  - `reset_zero`: exact reset, then zero actions.
+  - `policy`: exact reset, then deterministic policy actions.
+  - `reference`: exact reset, then per-step `compute_grasp_prior_reference_actions()` with no policy mix.
+- Common settings: `NUM_ENVS=18`, `NUM_STEPS=300`, `VIDEO_LENGTH=300`, `CAPTURE_VIDEO=True`, `DETERMINISTIC=True`, `SEED=44`.
+- Exact reset and side-safe grasp prior gates: `GRASP_PRIOR_PREGRASP_OFFSET=0.0`, reset enabled, attempts `8`, candidates `512`, topdown required, min pregrasp z `0.0`, downward tool-z required, min downward `0.0`, contact height `-0.02`, center-distance frac `0.50`, min width `0.008`.
+- Guidance disabled: action warmstart disabled, action-prior reward disabled.
+
+Job/result status:
+- Submitted one L40 job per arm/env video, 55 rows in the manifest because `policy_env04` initially stalled in Isaac startup and was relaunched as `policy_env04_retry1`.
+- All 54 useful clips completed and were fetched locally.
+- l401 queue check after fetch was empty for user `lzha`.
+
+Generated artifacts:
+- `index.html`: local HTML index with per-object labels and all individual video links.
+- `summary.csv` and `summary.md`: per-arm/per-env metrics, object UUIDs, classifications, and links.
+- `grid_all_6x9.mp4`: 54 clips stacked in one grid. Layout is rows `0..2` reset-zero, rows `3..5` policy, rows `6..8` reference; columns repeat env slots `00..05`.
+- `grid_reset_zero_6x3.mp4`, `grid_policy_6x3.mp4`, `grid_reference_6x3.mp4`: one grid per arm, env slots row-major `00..17`.
+- `grid_focus_env02_08_16_17_3x4.mp4`: focused comparison grid. Columns are env `02`, `08`, `16`, `17`; rows are reset-zero, policy, reference.
+- `grid_frames/`: first/mid/late sampled frames. Frame `0` is black from recorder startup; mid/late frames are nonblank.
+
+Video verification:
+- All grid videos are `299` frames, `60 fps`, duration `4.983333s`.
+- `grid_all_6x9.mp4`: `1920x1620`.
+- Per-arm grids: `1920x540`.
+- Focus grid: `1920x810`, `299` frames, `60 fps`, duration `4.983333s`.
+- Local `view_image` inspection of `grid_all_mid.png`, `grid_reset_zero_early060.png`, `grid_reset_zero_mid.png`, `grid_policy_early060.png`, `grid_policy_late.png`, and `grid_reference_late.png` showed nonblank views and no obvious below-table approach in the sampled frames.
+
+Viewer URLs:
+- HTML index: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-finish-20260615T074722Z/artifacts/dextrah-multiobject-grasp-prior/video-sweep-exactreset-20260616T1015Z/index.html`
+- All-video grid: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-finish-20260615T074722Z/artifacts/dextrah-multiobject-grasp-prior/video-sweep-exactreset-20260616T1015Z/grid_all_6x9.mp4`
+- Reset-only grid: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-finish-20260615T074722Z/artifacts/dextrah-multiobject-grasp-prior/video-sweep-exactreset-20260616T1015Z/grid_reset_zero_6x3.mp4`
+- Policy grid: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-finish-20260615T074722Z/artifacts/dextrah-multiobject-grasp-prior/video-sweep-exactreset-20260616T1015Z/grid_policy_6x3.mp4`
+- Reference grid: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-finish-20260615T074722Z/artifacts/dextrah-multiobject-grasp-prior/video-sweep-exactreset-20260616T1015Z/grid_reference_6x3.mp4`
+- Focus grid: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-finish-20260615T074722Z/artifacts/dextrah-multiobject-grasp-prior/video-sweep-exactreset-20260616T1015Z/grid_focus_env02_08_16_17_3x4.mp4`
+- Early reset frame: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-finish-20260615T074722Z/artifacts/dextrah-multiobject-grasp-prior/video-sweep-exactreset-20260616T1015Z/grid_frames/grid_reset_zero_early060.png`
+- Early policy frame: `http://localhost:8765/view?path=.codex-worktrees/DEXTRAH/dextrah-multiobject-grasp-prior-finish-20260615T074722Z/artifacts/dextrah-multiobject-grasp-prior/video-sweep-exactreset-20260616T1015Z/grid_frames/grid_policy_early060.png`
+
+Metrics:
+
+| Arm | Success ever | Success envs | Max lift mean | Max lift max | `lift>=0.03` | Table penetration | Prelift drag | Cube out | Classification counts |
+| --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `reset_zero` | `0/18` | none | `0.0078` | `0.0411` | `2` | `0/18` | `0/18` | `0/18` | `reset visually inspect=16`, `reset contact perturbs object=2` |
+| `policy` | `2/18` | `1,2` | `0.0466` | `0.5747` | `3` | `0/18` | `0/18` | `0/18` | `no lift/no success=11`, `success/lift episode=2`, `termination: unclassified=4`, `partial lift/slip=1` |
+| `reference` | `1/18` | `2` | `0.0157` | `0.1620` | `1` | `0/18` | `0/18` | `0/18` | `no lift/no success=16`, `success/lift episode=1`, `termination: unclassified=1` |
+
+Per-env compact readout:
+- Env `01` (`c28358d1`): policy success, reference no lift.
+- Env `02` (`b87a6591`): policy success and reference success.
+- Env `08` (`f3512126`): policy partial lift/slip; reset-only passive lift `0.025m`.
+- Env `16` (`884defbc`) and `17` (`168ca4d0`): reset-only passive lift `0.038m` and `0.041m`, classified as reset contact perturbation candidates.
+
+Analysis:
+- This exact-reset sweep does not reproduce the earlier below-table approach in the sampled views. The reset metrics also show `finger_table_penetration=0`, `prelift_drag=0`, and `cube_out=0` across all arms/jobs.
+- Reset is not completely perfect: envs `16` and `17` show small passive object motion under zero actions, so the reset/grasp contact can perturb some objects even without table penetration.
+- The reference action succeeds on only `1/18` objects, which means the side-safe reset pose alone plus the current scripted close/lift reference is not a reliable multi-object controller. This points at control/trajectory/contact feasibility after reset, not just learned policy quality.
+- The policy is slightly better than reference on this fixed-object sweep (`2/18` vs `1/18`) and shares the same clean table diagnostics, so the current bottleneck appears to be robust grasp execution across object shapes after exact reset, not a remaining below-table reset bug.
+
+Next:
+- Inspect individual clips for envs `16`, `17`, `08`, and successful env `02` side by side, then use those to decide whether to tune reset contact clearance, reference lift/close timing, or reward/termination shaping before further RL.
+
+## 2026-06-16T17:50:04Z - switch Franka multi-object obs to DEXTRAH teacher-style object identity
+
+Goal:
+- Match the working original DEXTRAH Kuka/Allegro teacher's object-conditioning pattern for Franka multi-object RL.
+
+Issue:
+- Current Franka multi-object low-dimensional policy used a normalized scalar object id plus several geometry scalars:
+  `scale`, `half_extents[3]`, `grasp_size`, `object_asset_id_fraction`, `has_prior`, `radius`.
+- Original DEXTRAH teacher uses a one-hot object id plus object scale in the policy and critic observations.
+- Scalar manifest-index conditioning is a weaker, arbitrary ordinal signal and is not what the known-good teacher does.
+
+Change:
+- Updated `dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py`.
+- Added manifest/object-count lookup before `DirectRLEnv` initialization, so state obs dimensions can depend on loaded object count.
+- For state observations, set `observation_space`, `state_space`, `num_observations`, and `num_states` to:
+  `72 + num_unique_objects + 1`.
+- For the current 18-object manifest, this gives `91` dims.
+- Added `multi_object_idx_onehot = F.one_hot(object_asset_index, num_classes=num_unique_objects).float()`.
+- Replaced the appended Franka multi-object features with:
+  `multi_object_idx_onehot`, `object_scale`.
+- Updated `dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py` default/comment to reflect the full-18 state obs dimension and dynamic construction-time override.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py`
+- `bash -n cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_eval_franka_multi_object_grasp_1gpu.sh`
+
+Checkpoint policy:
+- This observation change is input-shape incompatible with all previous Franka multi-object checkpoints.
+- New training must be a fresh run with `CHECKPOINT=""` and `AUTO_RESUME=False`.
+- I will not bulk-delete previous remote checkpoint/result directories without a bounded target path, because that would remove historical evidence across unrelated ablations. The new run will be isolated so old checkpoints cannot be reused accidentally.
+
+Next:
+- Commit and push the source/worklog update.
+- Deploy an agent-owned A100 worktree at the exact commit.
+- Launch a small fresh teacher-style-observation exact-reset PPO smoke first, inspect logs/config/metrics, then scale if shape and reset behavior are correct.

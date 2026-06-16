@@ -26,8 +26,11 @@ FRANKA_MULTI_OBJECT_RGB_OBSERVATION_SPACE = (
 class DextrahFrankaMultiObjectGraspEnvCfg(DextrahFrankaCubeGraspEnvCfg):
     """State-based Franka pick-up task over a manifest of GraspGen objects."""
 
-    observation_space = 80
-    state_space = 80
+    # The state-based env updates this at construction to:
+    # Franka cube base obs (72) + one-hot object id + object scale, matching
+    # the original DEXTRAH teacher's object conditioning.
+    observation_space = 91
+    state_space = 91
     num_observations = observation_space
     num_states = state_space
 

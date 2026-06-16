@@ -10,6 +10,7 @@ import re
 from typing import Any
 
 import torch
+import torch.nn.functional as F
 
 import omni.usd
 import isaaclab.sim as sim_utils
@@ -54,6 +55,33 @@ def _resolve_path(value: str | Path, *, base_dir: Path) -> Path:
     if candidate.exists():
         return candidate
     return (_repo_root() / path).resolve()
+
+
+def _count_object_assets_for_observations(cfg: DextrahFrankaMultiObjectGraspEnvCfg) -> int:
+    """Count loaded objects before DirectRLEnv allocates observation buffers."""
+
+    object_assets_dir = _resolve_path(str(cfg.object_assets_dir), base_dir=_repo_root())
+    manifest_path = str(cfg.object_asset_manifest_path or "")
+    if not manifest_path:
+        candidate = object_assets_dir / "manifest.json"
+        manifest_path = str(candidate) if candidate.is_file() else ""
+
+    if manifest_path:
+        manifest = _resolve_path(manifest_path, base_dir=_repo_root())
+        payload = json.loads(manifest.read_text(encoding="utf-8"))
+        object_records = payload.get("objects")
+        if not isinstance(object_records, list):
+            raise ValueError(f"Expected manifest objects list in {manifest}")
+        count = len(object_records)
+    else:
+        count = len(sorted((object_assets_dir / "USD").glob("*/*.usd")))
+
+    max_objects = int(getattr(cfg, "max_objects", 0))
+    if max_objects > 0:
+        count = min(count, max_objects)
+    if count <= 0:
+        raise ValueError("No multi-object GraspGen assets were found")
+    return count
 
 
 def _as_float_list(value: Any, length: int, default: Sequence[float]) -> list[float]:
@@ -102,6 +130,18 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
     """Franka task: pick up one of many GraspGen object assets per vectorized env."""
 
     cfg: DextrahFrankaMultiObjectGraspEnvCfg
+
+    def __init__(self, cfg: DextrahFrankaMultiObjectGraspEnvCfg, render_mode: str | None = None, **kwargs):
+        if not bool(getattr(cfg, "enable_rgb_observations", False)):
+            num_objects = _count_object_assets_for_observations(cfg)
+            # Match the original DEXTRAH teacher's object conditioning: base
+            # low-dimensional state plus one-hot object id and object scale.
+            obs_dim = 72 + num_objects + 1
+            cfg.observation_space = obs_dim
+            cfg.state_space = obs_dim
+            cfg.num_observations = obs_dim
+            cfg.num_states = obs_dim
+        super().__init__(cfg, render_mode, **kwargs)
 
     def _load_object_asset_manifest(self) -> list[dict[str, object]]:
         manifest_path = str(self.cfg.object_asset_manifest_path or "")
@@ -231,6 +271,10 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
                 "object_asset_assignment must be 'round_robin' or 'random', "
                 f"got {self.cfg.object_asset_assignment!r}"
             )
+        self.multi_object_idx_onehot = F.one_hot(
+            self.object_asset_index,
+            num_classes=self.num_unique_objects,
+        ).to(dtype=torch.float32)
         scale_by_asset = torch.tensor(
             [[float(asset["scale"])] for asset in self._object_assets],
             dtype=torch.float32,
@@ -1448,12 +1492,8 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         obs = base["policy"]
         object_features = torch.cat(
             (
+                self.multi_object_idx_onehot,
                 self.object_scale,
-                self.object_half_extents,
-                self.object_grasp_size.unsqueeze(-1),
-                self.object_asset_id_fraction.unsqueeze(-1),
-                self.object_has_grasp_prior.unsqueeze(-1),
-                self.object_radius.unsqueeze(-1),
             ),
             dim=-1,
         )
