@@ -25,6 +25,7 @@ parser.add_argument("--video_folder", type=str, default=None)
 parser.add_argument("--cube_spawn_xy_randomization", type=float, default=0.0)
 parser.add_argument("--print_interval", type=int, default=20)
 parser.add_argument("--lift_height", type=float, default=0.14)
+parser.add_argument("--lift_squeeze_y", type=float, default=0.0)
 parser.add_argument("--left_rot_action", type=float, nargs=3, default=(0.0, 0.0, 0.0))
 parser.add_argument("--right_rot_action", type=float, nargs=3, default=(0.0, 0.0, 0.0))
 parser.add_argument("--continue_after_success", action="store_true", default=False)
@@ -814,6 +815,9 @@ def _run_scripted_demo(
             desired_right_hold = task_env._validation_lift_right_hold.clone()
             desired_left_hold[:, 2] += alpha * hold_lift_height
             desired_right_hold[:, 2] += alpha * hold_lift_height
+            squeeze_alpha = min(2.0 * alpha, 1.0)
+            desired_left_hold[:, 1] -= squeeze_alpha * float(args_cli.lift_squeeze_y)
+            desired_right_hold[:, 1] += squeeze_alpha * float(args_cli.lift_squeeze_y)
             action = _scripted_action(
                 task_env,
                 desired_left_hold,
@@ -1104,6 +1108,7 @@ def _run_scripted_demo(
         "final_left_gripper_width": _mean(task_env.left_gripper_width),
         "final_right_gripper_width": _mean(task_env.right_gripper_width),
         "scripted_hold_lift_height": hold_lift_height,
+        "scripted_lift_squeeze_y": float(args_cli.lift_squeeze_y),
         "scripted_left_rot_action": list(args_cli.left_rot_action),
         "scripted_right_rot_action": list(args_cli.right_rot_action),
         "scripted_phase_close_steps": phase_close,

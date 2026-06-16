@@ -1499,6 +1499,63 @@ Validation plan:
 - Commit/push/redeploy.
 - Run small strict validator sweeps for mirrored wrist rotations, starting with opposite Y-axis and opposite Z-axis commands.
 
+## 2026-06-16 00:29Z - planned wrist-rotation sweep
+
+Goal:
+- Determine whether mirrored wrist rotation through the 14D action interface improves side contact/lift without restoring hardcoded joint writes.
+
+Version state:
+- local_commit: `25ca613c2808b099647cffe35b1a22d5691dc173`
+- remote_commit: `25ca613c2808b099647cffe35b1a22d5691dc173`
+- remote_worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/bimanual-yam-cube-rl-20260615T203824Z`
+
+Sweep manifest:
+
+| Attempt | Commit | Rotation action | Result | Evidence | Decision |
+| --- | --- | --- | --- | --- | --- |
+| `yam_cube_rot_y_posneg_25ca613_20260616T0029Z` | `25ca613` | left `[0, 1, 0]`, right `[0, -1, 0]` | job `29126299` | log `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_bimanual_yam_cube_29126299.out`; metrics pending | compare contact distance/lift/speeds |
+| `yam_cube_rot_y_negpos_25ca613_20260616T0029Z` | `25ca613` | left `[0, -1, 0]`, right `[0, 1, 0]` | job `29126298` | log `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_bimanual_yam_cube_29126298.out`; metrics pending | compare contact distance/lift/speeds |
+| `yam_cube_rot_z_posneg_25ca613_20260616T0036Z` | `25ca613` | left `[0, 0, 1]`, right `[0, 0, -1]` | job `29126516` | log `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_bimanual_yam_cube_29126516.out`; metrics pending | compare contact distance/lift/speeds |
+| `yam_cube_rot_z_negpos_25ca613_20260616T0036Z` | `25ca613` | left `[0, 0, -1]`, right `[0, 0, 1]` | job `29126515` | log `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_bimanual_yam_cube_29126515.out`; metrics pending | compare contact distance/lift/speeds |
+| `yam_cube_rot_z_half_25ca613_20260616T0044Z` | `25ca613` | left `[0, 0, -0.5]`, right `[0, 0, 0.5]` | job `29126747` | log `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_bimanual_yam_cube_29126747.out`; metrics pending | test lower-speed variant of promising Z direction |
+| `yam_cube_rot_z_quarter_25ca613_20260616T0044Z` | `25ca613` | left `[0, 0, -0.25]`, right `[0, 0, 0.25]` | job `29126746` | log `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/validate_bimanual_yam_cube_29126746.out`; metrics pending | test lower-speed variant of promising Z direction |
+
+Shared settings:
+- Strict stable validator, `NUM_ENVS=1`, `NUM_STEPS=560`, `LIFT_HEIGHT=0.06`, `CAPTURE_VIDEO=False`, `ALLOW_GRASP_ASSIST=False`, `REQUIRE_UNASSISTED_LIFT=True`, `DISABLE_FABRIC=True`.
+
+Success criteria:
+- Prefer any arm that produces stable lift; otherwise choose the arm with improved min hold distance / cube lift without speed spikes for the next sweep.
+
+Y-axis results:
+- `y_posneg`: failed; `max_lift=0.0`, `min_max_hold_to_cube_dist=0.13823407888412476`, `max_cube_linear_speed=0.1630914807319641`, `max_cube_angular_speed=0.0049080695025622845`.
+- `y_negpos`: failed; `max_lift=0.0`, `min_max_hold_to_cube_dist=0.13823264837265015`, `max_cube_linear_speed=0.1630914807319641`, `max_cube_angular_speed=0.0049080695025622845`.
+- Decision: mirrored Y rotation did not improve load-bearing contact; continue to mirrored Z rotation.
+
+Z-axis full-magnitude results:
+- `z_posneg`: failed; `max_lift=0.06349541246891022`, but `max_cube_linear_speed=2.099775552749634`, `max_cube_angular_speed=50.409385681152344`, and contact was not reached. This is another false-lift/launch arm.
+- `z_negpos`: failed; `max_lift=0.01646425575017929`, `min_max_hold_to_cube_dist=0.13749444484710693`, contact reached at step `301`, but speeds were still too high (`1.2013092041015625 m/s`, `14.84819507598877 rad/s`).
+- Decision: continue with reduced-magnitude `z_negpos` rotations to see if the useful contact can be made stable.
+
+Reduced Z results:
+- `z_half`: failed; `max_lift=0.030203908681869507`, `max_cube_linear_speed=0.3668556809425354`, `max_cube_angular_speed=12.298881530761719`. Lift improved but angular speed exceeded the stability gate and contact did not reach.
+- `z_quarter`: failed; `max_lift=0.01624254882335663`, `max_cube_linear_speed=0.502712607383728`, `max_cube_angular_speed=5.257813930511475`, contact reached at step `361`. This is the best stable arm, but lift remained below the `0.04 m` success threshold.
+- Decision: use quarter-Z rotation and add a lift-phase inward squeeze because the current lift freezes the hand Y positions and lets the cube slip.
+
+## 2026-06-16 00:52Z - add lift-phase squeeze control
+
+Goal:
+- Preserve side pressure while lifting in the best stable quarter-Z orientation arm.
+
+Change:
+- Added `--lift_squeeze_y` to the validator and `LIFT_SQUEEZE_Y` to the Slurm wrapper.
+- During lift only, the validator moves the left hold target inward by `lift_squeeze_y` and the right hold target inward by the same amount, ramped over the first half of lift.
+- Rotation actions still apply only during standoff and approach.
+
+Validation plan:
+- Run Python syntax, wrapper syntax, and diff checks.
+- Commit/push/redeploy.
+- Test quarter-Z with moderate squeeze values.
+
 ## 2026-06-16 04:05Z - planned smaller-cube stable validator
 
 Goal:
