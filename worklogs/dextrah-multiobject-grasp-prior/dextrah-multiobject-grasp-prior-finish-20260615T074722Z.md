@@ -6986,3 +6986,20 @@ Job `29176371` startup:
 
 Next:
 - keep monitoring for scalar success/reset-safety trends and completion, then evaluate selected checkpoints after epoch `1800`.
+
+## 2026-06-17T02:48:00Z - epoch 1250 scalar snapshot
+
+Job `29176371`:
+- state: `RUNNING`
+- latest TensorBoard scalar epoch: `1250`
+- latest `cube_success_rate/frame=0.4326171875`
+- best `cube_success_rate/frame=0.4443359375` at frame `1302331392` (around epoch `1243`)
+- latest `cube_has_lifted_rate/frame=0.5146484375`, best `0.5322265625`
+- latest reward scalar `rewards/step=3284.0048828125`; best reward so far in this continuation `4139.1962890625` at epoch `1248`
+- reset safety: `cube_grasp_prior_reset_success_rate=1.0`, `cube_grasp_prior_quality_success_rate=1.0`
+- exact tip table clearance remains about `0.0299 m`
+- `cube_finger_table_clearance_violation/frame=0.0`, `cube_table_clearance_penalty=0.0`
+
+Analysis:
+- Early continuation is improving beyond the previous rank-0 training-success peak (`0.43115`) without reintroducing the table-penetration reset failure.
+- Continue monitoring through later checkpoints.
