@@ -129,6 +129,10 @@ class DextrahFrankaMultiObjectGraspEnvCfg(MultiObjectGraspTaskCfg, DextrahFranka
     grasp_prior_reset_quality_max_finger_center_dist = 0.08
     grasp_prior_reset_quality_max_tip_center_dist = 0.08
     grasp_prior_reset_quality_max_tip_max_dist = 0.10
+    # Optional reward variant from 25d819b.  Keep it off by default so main
+    # retains the inherited cube reward's object-center distance terms unless a
+    # run explicitly opts into contact/reference distances.
+    grasp_prior_reward_use_contact_reference = False
     # Multi-object priors often target thin/elongated objects. Close fully and
     # lift long enough for reset-video verification instead of inheriting the
     # short single-cube warmstart.

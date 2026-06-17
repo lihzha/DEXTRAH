@@ -307,6 +307,7 @@ class DirectInfoJsonlObserver(AlgoObserver):
 
         scalars = dict(self._direct_info)
         scalars.update(self._collect_env_extras())
+        scalars.update(self._collect_agent_aux_scalars())
         if not scalars:
             return
 
@@ -361,6 +362,19 @@ class DirectInfoJsonlObserver(AlgoObserver):
             for scalar in [self._to_scalar(value)]
             if scalar is not None
         }
+
+    def _collect_agent_aux_scalars(self):
+        aux_loss_dict = getattr(self.algo, "aux_loss_dict", None)
+        if not isinstance(aux_loss_dict, dict):
+            return {}
+
+        scalars = {}
+        for key, values in aux_loss_dict.items():
+            value = values[-1] if isinstance(values, list) and values else values
+            scalar = self._to_scalar(value)
+            if scalar is not None:
+                scalars[f"agent_aux/{key}"] = scalar
+        return scalars
 
     def _find_env_with_extras(self):
         candidates = [getattr(self.algo, "vec_env", None)]
@@ -458,6 +472,9 @@ class DextrahResumableAlgoObserver(AlgoObserver):
         original_restore = getattr(algo, "restore", None)
 
         def get_full_state_weights_with_runtime():
+            restore_obs_rms = getattr(algo, "dextrah_restore_frozen_obs_rms", None)
+            if restore_obs_rms is not None:
+                restore_obs_rms()
             state = original_get_full_state_weights()
             state["dextrah_runtime_state"] = self._pack_runtime_state()
             return state
@@ -487,6 +504,13 @@ class DextrahResumableAlgoObserver(AlgoObserver):
             weights_without_env = dict(weights)
             weights_without_env["env_state"] = None
             weights_without_env.pop("dextrah_runtime_state", None)
+            if is_init_checkpoint and hasattr(algo, "optimizer"):
+                if "optimizer" in weights_without_env:
+                    print(
+                        f"[DEXTRAH resume] ignoring checkpoint optimizer for policy initialization "
+                        f"on rank {self._rank()}"
+                    )
+                weights_without_env["optimizer"] = algo.optimizer.state_dict()
             original_set_full_state_weights(weights_without_env, set_epoch=set_epoch)
 
             if runtime_state is not None:

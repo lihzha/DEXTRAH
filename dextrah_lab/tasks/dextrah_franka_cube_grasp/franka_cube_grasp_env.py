@@ -96,6 +96,7 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             self.grasp_prior_reset_exact_ee_pos_w = torch.zeros(self.num_envs, 3, device=self.device)
             self.grasp_prior_reset_target_ee_pos_w = torch.zeros(self.num_envs, 3, device=self.device)
             self.grasp_prior_reset_offset_dir_w = torch.zeros(self.num_envs, 3, device=self.device)
+            self.grasp_prior_reset_tool_z_axis_w = torch.zeros(self.num_envs, 3, device=self.device)
             self.grasp_prior_reset_exact_tool_quat_w = torch.zeros(self.num_envs, 4, device=self.device)
             self.grasp_prior_reset_pregrasp_tool_quat_w = torch.zeros(self.num_envs, 4, device=self.device)
             self.grasp_prior_reset_exact_ee_quat_w = torch.zeros(self.num_envs, 4, device=self.device)
@@ -128,6 +129,9 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             self.grasp_prior_reset_candidate_topdown_count = torch.zeros(
                 self.num_envs, dtype=torch.long, device=self.device
             )
+            self.grasp_prior_reset_candidate_tool_down_count = torch.zeros(
+                self.num_envs, dtype=torch.long, device=self.device
+            )
             self.grasp_prior_reset_candidate_contact_height_count = torch.zeros(
                 self.num_envs, dtype=torch.long, device=self.device
             )
@@ -138,6 +142,21 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
                 self.num_envs, dtype=torch.long, device=self.device
             )
             self.grasp_prior_reset_candidate_table_count = torch.zeros(
+                self.num_envs, dtype=torch.long, device=self.device
+            )
+            self.grasp_prior_reset_candidate_down_table_count = torch.zeros(
+                self.num_envs, dtype=torch.long, device=self.device
+            )
+            self.grasp_prior_reset_candidate_down_table_width_count = torch.zeros(
+                self.num_envs, dtype=torch.long, device=self.device
+            )
+            self.grasp_prior_reset_candidate_down_table_width_center_count = torch.zeros(
+                self.num_envs, dtype=torch.long, device=self.device
+            )
+            self.grasp_prior_reset_candidate_down_table_width_center_contact_count = torch.zeros(
+                self.num_envs, dtype=torch.long, device=self.device
+            )
+            self.grasp_prior_reset_candidate_down_table_width_center_contact_farther_count = torch.zeros(
                 self.num_envs, dtype=torch.long, device=self.device
             )
             self.grasp_prior_reset_candidate_valid_count = torch.zeros(
@@ -327,6 +346,7 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         self.grasp_prior_reset_exact_ee_pos_w[env_ids] = 0.0
         self.grasp_prior_reset_target_ee_pos_w[env_ids] = 0.0
         self.grasp_prior_reset_offset_dir_w[env_ids] = 0.0
+        self.grasp_prior_reset_tool_z_axis_w[env_ids] = 0.0
         self.grasp_prior_reset_exact_tool_quat_w[env_ids] = 0.0
         self.grasp_prior_reset_pregrasp_tool_quat_w[env_ids] = 0.0
         self.grasp_prior_reset_exact_ee_quat_w[env_ids] = 0.0
@@ -351,10 +371,16 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         self.grasp_prior_reset_center_gate_dist[env_ids] = 0.0
         self.grasp_prior_reset_has_contact_location[env_ids] = False
         self.grasp_prior_reset_candidate_topdown_count[env_ids] = 0
+        self.grasp_prior_reset_candidate_tool_down_count[env_ids] = 0
         self.grasp_prior_reset_candidate_contact_height_count[env_ids] = 0
         self.grasp_prior_reset_candidate_center_count[env_ids] = 0
         self.grasp_prior_reset_candidate_width_count[env_ids] = 0
         self.grasp_prior_reset_candidate_table_count[env_ids] = 0
+        self.grasp_prior_reset_candidate_down_table_count[env_ids] = 0
+        self.grasp_prior_reset_candidate_down_table_width_count[env_ids] = 0
+        self.grasp_prior_reset_candidate_down_table_width_center_count[env_ids] = 0
+        self.grasp_prior_reset_candidate_down_table_width_center_contact_count[env_ids] = 0
+        self.grasp_prior_reset_candidate_down_table_width_center_contact_farther_count[env_ids] = 0
         self.grasp_prior_reset_candidate_valid_count[env_ids] = 0
         self.grasp_prior_reset_candidate_fallback_count[env_ids] = 0
         self.grasp_prior_reset_projected_exact_finger_center_dist[env_ids] = 0.0
@@ -369,6 +395,15 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             self.grasp_prior_action_warmstart_lift_latched[env_ids] = False
         if hasattr(self, "grasp_prior_action_warmstart_reference_finger_center_dist"):
             self.grasp_prior_action_warmstart_reference_finger_center_dist[env_ids] = 0.0
+        if hasattr(self, "grasp_prior_action_prior_reward"):
+            self.grasp_prior_action_prior_active[env_ids] = False
+            self.grasp_prior_action_prior_phase[env_ids] = -1
+            self.grasp_prior_action_prior_teacher_actions[env_ids] = 0.0
+            self.grasp_prior_action_prior_delta_abs[env_ids] = 0.0
+            self.grasp_prior_action_prior_reward[env_ids] = 0.0
+            self.grasp_prior_action_prior_teacher_action_z[env_ids] = 0.0
+            self.grasp_prior_action_prior_teacher_gripper_action[env_ids] = 0.0
+            self.grasp_prior_action_prior_exact_ee_error[env_ids] = 0.0
 
     def _sync_reset_joint_state(
         self,
@@ -417,6 +452,9 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         exact_tool_pos_w = world_tool_t[:, :3, 3]
         tool_z_axis_w = world_tool_t[:, :3, 2]
         tool_z_axis_w = tool_z_axis_w / torch.clamp(torch.norm(tool_z_axis_w, dim=-1, keepdim=True), min=1.0e-6)
+        tool_down_ok = (
+            -tool_z_axis_w[:, 2] >= float(getattr(self.cfg, "grasp_prior_reset_min_downward_tool_z", 0.0))
+        )
         pregrasp_offset = abs(float(self.cfg.grasp_prior_pregrasp_offset))
         plus_tool_pos_w = exact_tool_pos_w + pregrasp_offset * tool_z_axis_w
         minus_tool_pos_w = exact_tool_pos_w - pregrasp_offset * tool_z_axis_w
@@ -467,6 +505,7 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             "exact_ee_quat_w": exact_ee_quat_w,
             "target_ee_pos_w": target_ee_pos_w,
             "target_ee_quat_w": target_ee_quat_w,
+            "tool_z_axis_w": tool_z_axis_w,
             "pregrasp_offset_dir_w": pregrasp_offset_dir_w,
             "exact_tool_dist": exact_tool_dist,
             "pregrasp_tool_dist": pregrasp_tool_dist,
@@ -476,6 +515,7 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             "center_gate_dist": exact_tool_dist,
             "has_contact_location": torch.zeros(num_ids, dtype=torch.bool, device=self.device),
             "candidate_topdown_count": torch.ones(num_ids, dtype=torch.long, device=self.device),
+            "candidate_tool_down_count": tool_down_ok.to(dtype=torch.long),
             "candidate_center_count": torch.ones(num_ids, dtype=torch.long, device=self.device),
             "candidate_width_count": torch.ones(num_ids, dtype=torch.long, device=self.device),
             "candidate_table_count": torch.ones(num_ids, dtype=torch.long, device=self.device),
@@ -839,7 +879,7 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         teacher_actions, _, _, _ = self._grasp_prior_reference_actions()
         return teacher_actions.detach().clamp(-1.0, 1.0)
 
-    def _compute_grasp_prior_action_prior_reward(self) -> torch.Tensor:
+    def _clear_grasp_prior_action_prior_cache(self) -> None:
         self._ensure_cube_buffers()
         self.grasp_prior_action_prior_active[:] = False
         self.grasp_prior_action_prior_phase[:] = -1
@@ -850,12 +890,16 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         self.grasp_prior_action_prior_teacher_gripper_action[:] = 0.0
         self.grasp_prior_action_prior_exact_ee_error[:] = 0.0
 
+    def _cache_grasp_prior_action_prior_reference(self) -> None:
+        self._clear_grasp_prior_action_prior_cache()
         if not bool(self.cfg.grasp_prior_action_prior_reward_enabled):
-            return self.grasp_prior_action_prior_reward
+            return
         if not getattr(self, "_grasp_prior_reset_enabled", False):
-            return self.grasp_prior_action_prior_reward
+            return
 
         teacher_actions, active, phase, exact_ee_error = self._grasp_prior_reference_actions()
+        teacher_actions = teacher_actions.detach().clamp(-1.0, 1.0)
+        exact_ee_error = exact_ee_error.detach()
         self.grasp_prior_action_prior_active[:] = active
         self.grasp_prior_action_prior_phase[:] = phase
         self.grasp_prior_action_prior_teacher_actions[:] = teacher_actions
@@ -863,6 +907,20 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         self.grasp_prior_action_prior_teacher_gripper_action[:] = teacher_actions[:, 6]
         self.grasp_prior_action_prior_exact_ee_error[:] = exact_ee_error
 
+    def _compute_grasp_prior_action_prior_reward(self) -> torch.Tensor:
+        self._ensure_cube_buffers()
+        self.grasp_prior_action_prior_delta_abs[:] = 0.0
+        self.grasp_prior_action_prior_reward[:] = 0.0
+
+        if not bool(self.cfg.grasp_prior_action_prior_reward_enabled):
+            self._clear_grasp_prior_action_prior_cache()
+            return self.grasp_prior_action_prior_reward
+        if not getattr(self, "_grasp_prior_reset_enabled", False):
+            self._clear_grasp_prior_action_prior_cache()
+            return self.grasp_prior_action_prior_reward
+
+        active = self.grasp_prior_action_prior_active
+        teacher_actions = self.grasp_prior_action_prior_teacher_actions
         policy_actions = self.actions
         if bool(self.cfg.grasp_prior_action_warmstart_enabled):
             policy_actions = self.grasp_prior_action_warmstart_policy_actions
@@ -881,6 +939,7 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
 
     def _pre_physics_step(self, actions: torch.Tensor) -> None:
         applied_actions = self._apply_grasp_prior_action_warmstart(actions)
+        self._cache_grasp_prior_action_prior_reference()
         super()._pre_physics_step(applied_actions)
 
     def _grasp_prior_reset_extra_success_mask(
@@ -950,6 +1009,10 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         self.grasp_prior_reset_exact_ee_pos_w[env_ids] = targets["exact_ee_pos_w"]
         self.grasp_prior_reset_target_ee_pos_w[env_ids] = targets["target_ee_pos_w"]
         self.grasp_prior_reset_offset_dir_w[env_ids] = targets["pregrasp_offset_dir_w"]
+        self.grasp_prior_reset_tool_z_axis_w[env_ids] = targets.get(
+            "tool_z_axis_w",
+            targets["pregrasp_offset_dir_w"],
+        )
         self.grasp_prior_reset_exact_tool_quat_w[env_ids] = targets["exact_tool_quat_w"]
         self.grasp_prior_reset_pregrasp_tool_quat_w[env_ids] = targets["pregrasp_tool_quat_w"]
         self.grasp_prior_reset_exact_ee_quat_w[env_ids] = targets["exact_ee_quat_w"]
@@ -984,6 +1047,10 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
             "candidate_topdown_count",
             torch.zeros(int(env_ids.numel()), dtype=torch.long, device=self.device),
         )
+        self.grasp_prior_reset_candidate_tool_down_count[env_ids] = targets.get(
+            "candidate_tool_down_count",
+            torch.zeros(int(env_ids.numel()), dtype=torch.long, device=self.device),
+        )
         self.grasp_prior_reset_candidate_contact_height_count[env_ids] = targets.get(
             "candidate_contact_height_count",
             torch.zeros(int(env_ids.numel()), dtype=torch.long, device=self.device),
@@ -998,6 +1065,26 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         )
         self.grasp_prior_reset_candidate_table_count[env_ids] = targets.get(
             "candidate_table_count",
+            torch.zeros(int(env_ids.numel()), dtype=torch.long, device=self.device),
+        )
+        self.grasp_prior_reset_candidate_down_table_count[env_ids] = targets.get(
+            "candidate_down_table_count",
+            torch.zeros(int(env_ids.numel()), dtype=torch.long, device=self.device),
+        )
+        self.grasp_prior_reset_candidate_down_table_width_count[env_ids] = targets.get(
+            "candidate_down_table_width_count",
+            torch.zeros(int(env_ids.numel()), dtype=torch.long, device=self.device),
+        )
+        self.grasp_prior_reset_candidate_down_table_width_center_count[env_ids] = targets.get(
+            "candidate_down_table_width_center_count",
+            torch.zeros(int(env_ids.numel()), dtype=torch.long, device=self.device),
+        )
+        self.grasp_prior_reset_candidate_down_table_width_center_contact_count[env_ids] = targets.get(
+            "candidate_down_table_width_center_contact_count",
+            torch.zeros(int(env_ids.numel()), dtype=torch.long, device=self.device),
+        )
+        self.grasp_prior_reset_candidate_down_table_width_center_contact_farther_count[env_ids] = targets.get(
+            "candidate_down_table_width_center_contact_farther_count",
             torch.zeros(int(env_ids.numel()), dtype=torch.long, device=self.device),
         )
         self.grasp_prior_reset_candidate_valid_count[env_ids] = targets.get(
@@ -1287,6 +1374,8 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
                     "cube_grasp_prior_open_width_margin": self.grasp_prior_reset_open_width_margin.mean(),
                     "cube_grasp_prior_offset_radial_dot": self.grasp_prior_reset_offset_radial_dot.mean(),
                     "cube_grasp_prior_offset_radial_angle": self.grasp_prior_reset_offset_radial_angle.mean(),
+                    "cube_grasp_prior_tool_z_axis_z": self.grasp_prior_reset_tool_z_axis_w[:, 2].mean(),
+                    "cube_grasp_prior_tool_downward_z": (-self.grasp_prior_reset_tool_z_axis_w[:, 2]).mean(),
                     "cube_grasp_prior_projected_exact_finger_center_dist": self.grasp_prior_reset_projected_exact_finger_center_dist.mean(),
                     "cube_grasp_prior_projected_exact_tip_center_dist": self.grasp_prior_reset_projected_exact_tip_center_dist.mean(),
                     "cube_grasp_prior_projected_exact_tip_max_dist": self.grasp_prior_reset_projected_exact_tip_max_dist.mean(),
@@ -1294,6 +1383,7 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
                     "cube_grasp_prior_projected_exact_tip_table_clearance": self.grasp_prior_reset_projected_exact_tip_table_clearance.mean(),
                     "cube_grasp_prior_quality_success_rate": self.grasp_prior_reset_quality_success.float().mean(),
                     "cube_grasp_prior_candidate_topdown_count": self.grasp_prior_reset_candidate_topdown_count.float().mean(),
+                    "cube_grasp_prior_candidate_tool_down_count": self.grasp_prior_reset_candidate_tool_down_count.float().mean(),
                     "cube_grasp_prior_candidate_center_count": self.grasp_prior_reset_candidate_center_count.float().mean(),
                     "cube_grasp_prior_candidate_width_count": self.grasp_prior_reset_candidate_width_count.float().mean(),
                     "cube_grasp_prior_candidate_table_count": self.grasp_prior_reset_candidate_table_count.float().mean(),
@@ -1379,6 +1469,13 @@ class DextrahFrankaCubeGraspEnv(DextrahFrankaStarKittingEnv):
         self.extras["log"] = log_terms
         for key, value in log_terms.items():
             self.extras[key] = value
+        if bool(self.cfg.grasp_prior_action_prior_reward_enabled):
+            self.extras["dextrah_grasp_prior_teacher_actions"] = (
+                self.grasp_prior_action_prior_teacher_actions.detach().clone()
+            )
+            self.extras["dextrah_grasp_prior_teacher_active"] = (
+                self.grasp_prior_action_prior_active.detach().float().unsqueeze(-1).clone()
+            )
         self.extras["in_success_region"] = self.in_success_region.float().mean()
         return total_reward
 

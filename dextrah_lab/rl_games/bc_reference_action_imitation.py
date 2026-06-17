@@ -354,6 +354,8 @@ from rl_games.common import env_configurations, vecenv
 from rl_games.common.player import BasePlayer
 from rl_games.torch_runner import Runner
 
+from dextrah_lab.rl_games.checkpoint_init import POLICY_INITIALIZATION_SEMANTICS
+
 from isaaclab.envs import DirectMARLEnv, multi_agent_to_single_agent
 import isaaclab.utils.math as math_utils
 from isaaclab.utils.assets import retrieve_file_path
@@ -2753,6 +2755,18 @@ def main(env_cfg, agent_cfg: dict):
         "best_step": int(best_step),
         "best_score": best_score,
     }
+    diagnostic = ckpt.get("dextrah_bc_diagnostic")
+    if not isinstance(diagnostic, dict):
+        diagnostic = {}
+    diagnostic.update(
+        {
+            "checkpoint_semantics": POLICY_INITIALIZATION_SEMANTICS,
+            "source": "bc_reference_action_imitation",
+            "input_checkpoint": str(resume_path),
+        }
+    )
+    ckpt["dextrah_checkpoint_semantics"] = POLICY_INITIALIZATION_SEMANTICS
+    ckpt["dextrah_bc_diagnostic"] = diagnostic
     torch.save(ckpt, checkpoint_out)
 
     reference_summary = (

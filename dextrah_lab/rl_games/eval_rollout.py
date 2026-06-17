@@ -496,6 +496,18 @@ def _collect_task_metrics(task_env, actions: torch.Tensor | None = None) -> dict
     _add_vector_metrics(metrics, "ee_pos", getattr(task_env, "ee_pos", None), ("x", "y", "z"))
     _add_vector_metrics(metrics, "cube_pos", getattr(task_env, "cube_pos", None), ("x", "y", "z"))
     _add_vector_metrics(metrics, "cube_vel", getattr(task_env, "cube_vel", None), ("vx", "vy", "vz", "wx", "wy", "wz"))
+    _add_vector_metrics(
+        metrics,
+        "grasp_prior_reset_offset_dir",
+        getattr(task_env, "grasp_prior_reset_offset_dir_w", None),
+        ("x", "y", "z"),
+    )
+    tool_z_axis = getattr(task_env, "grasp_prior_reset_tool_z_axis_w", None)
+    _add_vector_metrics(metrics, "grasp_prior_reset_tool_z_axis", tool_z_axis, ("x", "y", "z"))
+    if tool_z_axis is not None:
+        metrics["grasp_prior_reset_tool_downward_z"] = _mean_float(-tool_z_axis[:, 2])
+        metrics["grasp_prior_reset_tool_downward_z_min"] = _tensor_stat_float(-tool_z_axis[:, 2], "min")
+        metrics["grasp_prior_reset_tool_downward_z_max"] = _tensor_stat_float(-tool_z_axis[:, 2], "max")
     _add_vector_metrics(metrics, "cube_initial_pos", getattr(task_env, "cube_initial_pos", None), ("x", "y", "z"))
     _add_vector_metrics(metrics, "cube_goal_pos", getattr(task_env, "cube_goal_pos", None), ("x", "y", "z"))
     _add_vector_metrics(metrics, "left_hold_pos", getattr(task_env, "left_hold_pos", None), ("x", "y", "z"))
