@@ -87,15 +87,26 @@ require_dir() {
   fi
 }
 
-require_clean_worktree() {
-  local wt="$1"
+require_launchable_worktree() {
+  local agent="$1"
+  local wt="$2"
+  local allowed_report="agents/reports/$agent.md"
   local status
   status="$(git -C "$wt" status --porcelain)"
-  if [[ -n "$status" ]]; then
-    echo "worktree is dirty: $wt" >&2
-    echo "$status" >&2
-    exit 1
-  fi
+  [[ -z "$status" ]] && return 0
+
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    path="${line:3}"
+    if [[ "$path" != "$allowed_report" ]]; then
+      echo "worktree has non-report changes: $wt" >&2
+      echo "$status" >&2
+      exit 1
+    fi
+  done <<< "$status"
+
+  echo "allowing existing agent report in $wt:" >&2
+  echo "$status" >&2
 }
 
 render_prompt() {
@@ -177,7 +188,7 @@ for i in 01 02 03 04 05 06 07 08; do
   require_dir "$worktree"
   require_file "$worktree/auto_research.md"
   require_file "$worktree/agents/launch/bimanual_yam_cube_agent_prompt.md"
-  require_clean_worktree "$worktree"
+  require_launchable_worktree "$agent" "$worktree"
 
   current_branch="$(git -C "$worktree" branch --show-current)"
   if [[ "$current_branch" != "$branch" ]]; then
