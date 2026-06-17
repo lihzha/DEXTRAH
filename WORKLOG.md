@@ -7352,6 +7352,38 @@ Notes:
   `cuDeviceGetUuid`, headless display probing, and the secondary T400 GPU being
   skipped.  The RTX 6000 Ada was active and used for the environment.
 
+## 2026-06-16 23:01 PDT - local-camera-path-repro
+
+Goal:
+- Reproduce and fix the local camera/render path for the new YAM
+  multi-object/tabletop environment after the state-only local GPU smoke passed.
+
+Command / Job:
+- local_gpu: `NVIDIA RTX 6000 Ada Generation`, `CUDA_VISIBLE_DEVICES=0`
+- run_root: `local_results/local_camera_path_repro_20260616_230131`
+- expected artifacts: `settle.mp4`, `metrics.json`, and `frames/frame_*.png`
+- initial command: run
+  `dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py` headless with
+  task `Dextrah-Single-YAM-Tabletop-Clutter-Grasp`, `num_envs=1`,
+  `max_objects=2`, `tabletop_clutter_object_count=2`, `settle_steps=1`,
+  `capture_interval=1`, `fps=2`, `object_assets_dir=dextrah_lab/assets/visdex_objects`,
+  and `tabletop_clutter_assets_dir=dextrah_lab/assets/visdex_objects`.
+- second command: run `dextrah_lab/rl_games/eval_rollout.py --video` with
+  task `Dextrah-Single-YAM-Multi-Object-Grasp`, `action_source=zero`,
+  `num_envs=1`, `num_steps=2`, `video_length=2`, and the same VisDex
+  object-asset override.
+
+Result:
+- status: blocked locally by renderer infrastructure, then routed to l401.
+- Both camera-enabled local commands failed before useful task evidence with
+  Isaac/Kit Vulkan `ERROR_DEVICE_LOST`, `A GPU crash occurred`, and exit 139.
+- A minimal camera-enabled AppLauncher repro with the RTX 6000 Ada selected also
+  crashed before `launcher_ready`, so the failure is not specific to the new
+  DEXTRAH tabletop clutter task.
+- Crash dump:
+  `/home/lzha/code/.venvs/dextrah-isaaclab/lib/python3.11/site-packages/omni/data/Kit/Isaac-Sim/5.0/71117789-fb57-4fa7-66164b88-c7fed1d4.dmp`
+- No local render process remains active.
+
 ## 2026-06-16 20:30 PDT - tabletop-clutter-objaverse-textured-video
 
 Goal:
@@ -7843,3 +7875,66 @@ Video Attempt:
 Next:
 - If video evidence is still required, run the same render helper on a stable
   rendering surface such as l401, or fix the local Vulkan/driver issue first.
+
+## 2026-06-16 23:24 PDT - tabletop-clutter-franka-robolab-l401-video
+
+Goal:
+- Produce the requested 5 second initialization-to-settled video for the new
+  Franka tabletop clutter environment with textured Objaverse/RoboLab objects,
+  non-overlapping initialization, randomized yaw, and about six common tabletop
+  objects.
+
+Change:
+- Committed and pushed the tabletop clutter task/render implementation in
+  `c71ba81febf0523608938ef362f21254747c9b8f`.
+- Deployed that exact commit to l401 agent worktree
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/codex-tabletop-clutter-render`.
+- Updated `cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh` to use
+  l401's `batch` partition by default after the first submission required an
+  explicit partition override.
+
+Command / Jobs:
+- source branch: `autorl/yam-cube`
+- render source commit: `c71ba81febf0523608938ef362f21254747c9b8f`
+- RoboLab asset mount:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/RoboLab` to
+  `/home/lzha/code/RoboLab` inside the container.
+- final task: `Dextrah-Franka-Tabletop-Clutter-Grasp`
+- final settings: `TABLETOP_CLUTTER_OBJECT_COUNT=6`,
+  `TABLETOP_CLUTTER_NON_OVERLAPPING=1`,
+  `TABLETOP_CLUTTER_PLACEMENT_PADDING=0.01`,
+  `TABLETOP_CLUTTER_SPAWN_XY_RANDOMIZATION=0.14`,
+  `TABLETOP_CLUTTER_SPAWN_Z_JITTER=0.0`, `RENDER_WARMUP_FRAMES=8`,
+  `SETTLE_STEPS=300`, `VIDEO_SECONDS=5`, `FPS=30`, `SEED=43`
+- discarded render jobs: `1030833` was valid but its first frame was still
+  dark from render warmup; `1030834` was valid but camera framing clipped a
+  large foreground object.
+- selected render job: `1030835`
+- selected run:
+  `tabletop_clutter_franka_robolab_nonoverlap_warm_20260616_230605`
+- remote artifact:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/tabletop_clutter_franka_robolab_nonoverlap_warm_20260616_230605/settle.mp4`
+- local artifact:
+  `cluster_results/l401/tabletop_clutter_franka_robolab_nonoverlap_warm_20260616_230605/settle.mp4`
+- metrics:
+  `cluster_results/l401/tabletop_clutter_franka_robolab_nonoverlap_warm_20260616_230605/metrics.json`
+
+Result:
+- status: passed
+- Slurm: `1030835` completed with `ExitCode=0:0`, elapsed `00:01:15`.
+- MP4 validation: local `ffprobe` reports `1280x720`, `30/1` fps,
+  `5.000000` seconds, and `150` frames.
+- Objects: `snickers_bar`, `bagel_06`, `apple_01`, `lunchbag`,
+  `red_bell_pepper`, and `gregorys_coffee_cup`.
+- Initialization metrics: all six placements succeeded, initial overlap count
+  was `0`, and initial minimum clearance was `0.011939342634585973`.
+- Settled metrics: final overlap count was `1`, with minimum clearance
+  `-0.0338547135451699`, which is acceptable for the requested settled clutter
+  behavior after physics contact.
+- Visual inspection: checked first, middle, and last frames; the selected video
+  shows textured tabletop objects, robot/table context, readable initialization,
+  and settled contact without camera clipping.
+
+Next:
+- No DEXTRAH-owned render job remains active. Commit and push the wrapper and
+  worklog follow-up, then open the selected local video with `viz-open`.

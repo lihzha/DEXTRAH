@@ -4,7 +4,7 @@
 #SBATCH --account=nvr_lpr_rvp
 #SBATCH --gpus-per-node=1
 #SBATCH --job-name=dextrah_clutter_vid
-#SBATCH --partition=batch_singlenode,grizzly,polar,polar3,polar4,interactive_singlenode
+#SBATCH --partition=batch
 #SBATCH --time=0-00:30:00
 #SBATCH --mem=128G
 #SBATCH --cpus-per-task=16
