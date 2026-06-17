@@ -6873,3 +6873,35 @@ Reset safety:
 
 Next:
 - Continue to epoch `1200`, then evaluate final/latest plus selected saved checkpoints.
+
+## 2026-06-17T02:18:00Z - full-object continuation completed and eval wrapper fixed
+
+Training completion:
+- job id: `29170977`
+- Slurm state: `COMPLETED`, exit `0:0`, elapsed `02:57:23`
+- run: `franka_multi_full18_teacherobs_verified17_fallback_ep1200_e7b35b49_20260616T2303Z`
+- source commit used by training: `e7b35b498d2274028212a398abb4874f31abd380`
+- objects: full manifest, `MAX_OBJECTS=18`, round-robin assignment
+- envs: `2048` per rank x 8 ranks = `16384`
+- no BC, no action-prior reward, no warmstart; continued PPO/RL from epoch-600 checkpoint
+- verified grasp cache: `/results/assets/verified_grasp_indices/verified_full18_current_ebcf612_20260616T222409Z/verified_indices.json`
+- uncovered-object fallback enabled for the 1 object not covered by verified cache
+
+Training evidence:
+- latest rank-0 snapshot at epoch `1200`: `cube_success_rate=0.37158203125`, `cube_has_lifted_rate=0.46337890625`
+- best observed rank-0 training success in this run: `0.43115234375` at epoch `824`
+- recent high rows near the end included epoch `1170=0.4287109375`, `1177=0.42236328125`, `1197=0.41943359375`
+- final stdout saved both final checkpoints and reward-best generic checkpoint
+- final checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_teacherobs_verified17_fallback_ep1200_e7b35b49_20260616T2303Z/nn/last_dextrah_franka_multi_object_grasp_ep_1200_rew_7104.527.pth`
+- reward-best checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_teacherobs_verified17_fallback_ep1200_e7b35b49_20260616T2303Z/nn/dextrah_franka_multi_object_grasp.pth`
+- selected training-success/high-reward checkpoints for eval: epoch `820`, epoch `1040`
+
+Wrapper fix:
+- found a real eval wrapper bug before launching aggregate evals: `GRASP_PRIOR_VERIFIED_ALLOW_UNCOVERED` was used inside the container command but not exported into the container environment.
+- feature commit: `a16944672c21b23f12ea94ccb77af4ce0cd934fe`
+- main follow-up commit pushed: `f9248efef82acac2bfe46f2ba9bdbd7d66539afe`
+- remote eval code worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-eval-wrapper-fix-20260617-a169446`
+
+Next:
+- launch aggregate evals for final, reward-best, epoch `820`, and epoch `1040` checkpoints using the same full-18 object/stable-pose/grasp-prior gates.
+- inspect metrics and, if promising or suspicious, render videos for visual diagnosis.
