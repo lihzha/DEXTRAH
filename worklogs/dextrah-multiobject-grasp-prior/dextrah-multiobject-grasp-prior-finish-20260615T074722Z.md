@@ -7035,3 +7035,19 @@ Job `29176371`:
 Analysis:
 - Reward continues to improve, but training success remains on the same `~0.44` plateau.
 - Continue to epoch `1800` so the next decision is based on final/eval evidence, not a partial plateau.
+
+## 2026-06-17T03:29:00Z - epoch 1411 scalar snapshot
+
+Job `29176371`:
+- state: `RUNNING`
+- latest TensorBoard epoch scalar: `1411`
+- latest `cube_success_rate/frame=0.4365234375`
+- best `cube_success_rate/frame=0.4443359375`, unchanged from around epoch `1243`
+- latest `cube_has_lifted_rate/frame=0.52392578125`; best `0.5322265625`
+- reward-best improved to `6557.1611328125` around epoch `1406`; latest reward scalar `3726.7861328125`
+- reset safety: `cube_grasp_prior_reset_success_rate=1.0`, `cube_grasp_prior_quality_success_rate=1.0`, exact tip table clearance about `0.0298 m`
+- `cube_finger_table_clearance_violation/frame` had one tiny max `8.7107e-05`; latest is `0.0` and `cube_table_clearance_penalty=0.0`
+
+Analysis:
+- Reward increases are not translating into a higher success ceiling yet.
+- Continue to completion, then evaluate reward-best, best-success-near-1243/1245, and final checkpoints.
