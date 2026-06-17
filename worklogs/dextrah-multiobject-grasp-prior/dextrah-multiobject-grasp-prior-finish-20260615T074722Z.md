@@ -6947,3 +6947,29 @@ Video launch:
 
 Next:
 - wait for video artifacts, fetch them locally, stack them into a labeled grid, and inspect for reset/table penetration and object-specific failure modes.
+
+## 2026-06-17T02:30:00Z - epoch 1200 videos inspected and epoch 1800 continuation launched
+
+Video evidence:
+- all 18 object-index video jobs completed `COMPLETED`, exit `0:0`.
+- local grid artifact: `/home/lzha/code/artifacts/dextrah-multiobject-grasp-prior/ep1200_final_videos_20260617T022323Z/franka_multi_full18_verified_ep1200_grid_6x3.mp4`
+- viewer URL from `viz-open`: `http://localhost:8765/view?path=artifacts/dextrah-multiobject-grasp-prior/ep1200_final_videos_20260617T022323Z/franka_multi_full18_verified_ep1200_grid_6x3.mp4`
+- grid layout: row-major object/env IDs `00..05`, `06..11`, `12..17`
+- visual inspection of first/mid/last grid frames showed nonblank renders and no obvious below-table reset or arm-through-table behavior.
+- per-video outcomes for one rollout/object: successes on envs `00`, `01`, `02`, `03`, `05`, `13`, `16`, `17`; failures on `04`, `06`, `07`, `08`, `09`, `10`, `11`, `12`, `14`, `15`.
+- failure-object videos generally show above-table approach/closure without a stable lift, not the old below-table grasp-prior bug.
+
+Object/cache correlation:
+- hard objects are not explained only by verified-cache coverage: one uncovered object is hard, but several hard objects still have 1-6 verified grasps.
+- examples: `obj04` has `0` verified grasps and `2/10` aggregate success; `obj12` has `6` verified grasps but `0/10`; `obj16` has `7` verified grasps and `10/10`.
+
+Continuation launch:
+- job id: `29176371`
+- run: `franka_multi_full18_teacherobs_verified17_fallback_ep1800_a169446_20260617T023031Z`
+- code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-eval-wrapper-fix-20260617-a169446`, commit `a16944672c21b23f12ea94ccb77af4ce0cd934fe`
+- checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_teacherobs_verified17_fallback_ep1200_e7b35b49_20260616T2303Z/nn/last_dextrah_franka_multi_object_grasp_ep_1200_rew_7104.527.pth`
+- target: continue PPO from epoch `1200` to `MAX_ITERATIONS=1800`
+- same full-object config as the epoch-1200 run: `MAX_OBJECTS=18`, stable poses, verified-grasp cache with uncovered fallback, no BC, no warmstart, no action-prior reward.
+
+Next:
+- monitor startup and first metrics for `29176371`, then continue polling to epoch `1800` or failure.
