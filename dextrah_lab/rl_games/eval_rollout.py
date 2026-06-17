@@ -168,13 +168,14 @@ args_cli, hydra_args = parser.parse_known_args()
 if args_cli.video:
     args_cli.enable_cameras = True
 
-sys.argv = [sys.argv[0]] + hydra_args
-
 app_launcher = AppLauncher(args_cli)
 simulation_app = app_launcher.app
+sys.argv = [sys.argv[0]] + hydra_args
 
 
 import gymnasium as gym
+import imageio.v2 as imageio
+import numpy as np
 import torch
 
 from rl_games.algos_torch import torch_ext
@@ -192,11 +193,43 @@ from isaaclab_tasks.utils import get_checkpoint_path, parse_env_cfg
 from isaaclab_tasks.utils.hydra import hydra_task_config
 from isaaclab_rl.rl_games import RlGamesGpuEnv, RlGamesVecEnvWrapper
 
-import dextrah_lab.tasks.dextrah_kuka_allegro.gym_setup  # noqa: F401
-import dextrah_lab.tasks.dextrah_bimanual_yam_cube_grasp.gym_setup  # noqa: F401
-import dextrah_lab.tasks.dextrah_franka_cube_grasp.gym_setup  # noqa: F401
-import dextrah_lab.tasks.dextrah_franka_multi_object_grasp.gym_setup  # noqa: F401
-import dextrah_lab.tasks.dextrah_franka_star_kitting.gym_setup  # noqa: F401
+
+def _import_task_registrations(task_name: str | None) -> None:
+    """Register only the task family needed by this eval run."""
+
+    task = task_name or ""
+    imported = False
+    if "YAM" in task:
+        import dextrah_lab.tasks.dextrah_bimanual_yam_cube_grasp.gym_setup  # noqa: F401
+        import dextrah_lab.tasks.dextrah_single_yam_multi_object_grasp.gym_setup  # noqa: F401
+
+        imported = True
+    if "Kuka" in task or task == "Dextrah-Cube-Grasp":
+        import dextrah_lab.tasks.dextrah_kuka_allegro.gym_setup  # noqa: F401
+
+        imported = True
+    if "Franka-Cube" in task:
+        import dextrah_lab.tasks.dextrah_franka_cube_grasp.gym_setup  # noqa: F401
+
+        imported = True
+    if "Franka-Multi-Object" in task or "Franka-Tabletop-Clutter" in task:
+        import dextrah_lab.tasks.dextrah_franka_multi_object_grasp.gym_setup  # noqa: F401
+
+        imported = True
+    if "Franka-Star" in task:
+        import dextrah_lab.tasks.dextrah_franka_star_kitting.gym_setup  # noqa: F401
+
+        imported = True
+    if not imported:
+        import dextrah_lab.tasks.dextrah_kuka_allegro.gym_setup  # noqa: F401
+        import dextrah_lab.tasks.dextrah_bimanual_yam_cube_grasp.gym_setup  # noqa: F401
+        import dextrah_lab.tasks.dextrah_single_yam_multi_object_grasp.gym_setup  # noqa: F401
+        import dextrah_lab.tasks.dextrah_franka_cube_grasp.gym_setup  # noqa: F401
+        import dextrah_lab.tasks.dextrah_franka_multi_object_grasp.gym_setup  # noqa: F401
+        import dextrah_lab.tasks.dextrah_franka_star_kitting.gym_setup  # noqa: F401
+
+
+_import_task_registrations(args_cli.task)
 
 from residual_action_adapter import build_residual_adapter_from_metadata
 
@@ -204,6 +237,16 @@ from residual_action_adapter import build_residual_adapter_from_metadata
 POLICY_ACTION_SOURCES = ("policy", "policy_reference_mix", "policy_reference_mix_hold")
 MIX_ACTION_SOURCES = ("policy_reference_mix", "policy_reference_mix_hold")
 HOLD_ACTION_SOURCES = ("reference_delta_hold", "policy_reference_mix_hold")
+DEFAULT_FRANKA_CAMERA_EYE = (-0.10, -1.05, 1.36)
+DEFAULT_FRANKA_CAMERA_TARGET = (-0.62, 0.0, 0.78)
+DEFAULT_YAM_CAMERA_EYE = (-0.52, -0.86, 0.72)
+DEFAULT_YAM_CAMERA_TARGET = (-0.27, 0.0, 0.08)
+
+
+def _task_camera_defaults(task: str | None) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
+    if "YAM" in (task or ""):
+        return DEFAULT_YAM_CAMERA_EYE, DEFAULT_YAM_CAMERA_TARGET
+    return DEFAULT_FRANKA_CAMERA_EYE, DEFAULT_FRANKA_CAMERA_TARGET
 
 
 def _mean_float(value) -> float | None:
@@ -1542,6 +1585,73 @@ def _latest_video_files(video_folder: Path | None) -> list[str]:
     return [str(path) for path in sorted(video_folder.glob("*.mp4"))]
 
 
+def _latest_video_frame_files(video_folder: Path | None) -> list[str]:
+    if video_folder is None or not video_folder.exists():
+        return []
+    return [str(path) for path in sorted(video_folder.glob("**/*.png"))]
+
+
+def _frame_array(frame) -> np.ndarray:
+    if isinstance(frame, (list, tuple)):
+        if not frame:
+            raise RuntimeError("render() returned an empty frame list")
+        frame = frame[0]
+    if isinstance(frame, torch.Tensor):
+        frame = frame.detach().cpu().numpy()
+    frame = np.asarray(frame)
+    if frame.ndim == 4:
+        frame = frame[0]
+    if frame.ndim != 3 or frame.shape[-1] not in (3, 4):
+        raise RuntimeError(f"Unexpected render frame shape: {frame.shape}")
+    if frame.dtype.kind == "f":
+        frame = np.clip(frame, 0.0, 1.0) * 255.0
+    return frame.astype(np.uint8, copy=False)
+
+
+def _render_fps(env) -> int:
+    metadata = getattr(env, "metadata", {}) or {}
+    return max(1, int(metadata.get("render_fps", 60)))
+
+
+class _EvalVideoRecorder:
+    def __init__(self, video_folder: Path, name_prefix: str, *, max_frames: int, fps: int, warmup_frames: int = 2):
+        self.video_folder = video_folder
+        self.frame_folder = video_folder / f"{name_prefix}_frames"
+        self.video_path = video_folder / f"{name_prefix}.mp4"
+        self.max_frames = max(1, int(max_frames))
+        self.warmup_frames = max(0, int(warmup_frames))
+        self.frame_count = 0
+        self.frame_files: list[str] = []
+        self.video_folder.mkdir(parents=True, exist_ok=True)
+        self.frame_folder.mkdir(parents=True, exist_ok=True)
+        self._writer = imageio.get_writer(str(self.video_path), fps=max(1, int(fps)))
+
+    @property
+    def video_files(self) -> list[str]:
+        return [str(self.video_path)] if self.frame_count > 0 else []
+
+    def capture(self, env, task_env) -> None:
+        if self.frame_count >= self.max_frames:
+            return
+        render_passes = self.warmup_frames + 1 if self.frame_count == 0 else 1
+        for _ in range(render_passes):
+            task_env.sim.render()
+        frame = _frame_array(env.render())
+        for _ in range(self.warmup_frames if self.frame_count == 0 else 0):
+            if frame.max() > 0:
+                break
+            task_env.sim.render()
+            frame = _frame_array(env.render())
+        frame_path = self.frame_folder / f"frame_{self.frame_count:04d}.png"
+        imageio.imwrite(frame_path, frame)
+        self._writer.append_data(frame)
+        self.frame_files.append(str(frame_path))
+        self.frame_count += 1
+
+    def close(self) -> None:
+        self._writer.close()
+
+
 def _write_trace_files(
     step_metrics: list[dict[str, float | int | None]],
     *,
@@ -1572,14 +1682,15 @@ def _camera_tuple(values: list[float] | tuple[float, float, float] | None):
 
 
 def _configure_eval_camera(env_cfg, task_env=None) -> None:
-    if args_cli.camera_eye is None and args_cli.camera_target is None:
+    if args_cli.camera_eye is None and args_cli.camera_target is None and not args_cli.video:
         return
     if not hasattr(env_cfg, "viewer"):
         print("[WARN] Environment config has no viewer config; eval camera override skipped.")
         return
 
-    eye = _camera_tuple(args_cli.camera_eye) or tuple(env_cfg.viewer.eye)
-    target = _camera_tuple(args_cli.camera_target) or tuple(env_cfg.viewer.lookat)
+    default_eye, default_target = _task_camera_defaults(args_cli.task)
+    eye = _camera_tuple(args_cli.camera_eye) or default_eye
+    target = _camera_tuple(args_cli.camera_target) or default_target
     camera_env_index = max(0, int(args_cli.camera_env_index))
     if task_env is not None and hasattr(task_env, "scene") and len(task_env.scene.env_origins) > 0:
         origin_count = len(task_env.scene.env_origins)
@@ -1654,18 +1765,26 @@ def main(env_cfg, agent_cfg: dict):
             print("[WARN] Requested success termination suppression, but this env does not expose success_timeout.")
     trajectory_tracking_reference = _trajectory_tracking_reference_summary(task_env)
     _configure_eval_camera(env_cfg, task_env)
-
+    video_recorder: _EvalVideoRecorder | None = None
     if args_cli.video:
         video_kwargs = {
             "video_folder": str(video_folder),
-            "step_trigger": lambda step: step == 0,
-            "video_length": min(args_cli.video_length, args_cli.num_steps),
+            "video_path": str(video_folder / f"{args_cli.video_name_prefix}.mp4"),
+            "frame_folder": str(video_folder / f"{args_cli.video_name_prefix}_frames"),
+            "video_length": min(args_cli.video_length, max(1, args_cli.num_steps)),
+            "fps": _render_fps(gym_env),
+            "warmup_frames": 2,
             "name_prefix": args_cli.video_name_prefix,
-            "disable_logger": True,
         }
-        print("[INFO] Recording rollout video.")
+        print("[INFO] Recording rollout video with explicit env.render capture.")
         print_dict(video_kwargs, nesting=4)
-        gym_env = gym.wrappers.RecordVideo(gym_env, **video_kwargs)
+        video_recorder = _EvalVideoRecorder(
+            video_folder,
+            args_cli.video_name_prefix,
+            max_frames=int(video_kwargs["video_length"]),
+            fps=int(video_kwargs["fps"]),
+            warmup_frames=int(video_kwargs["warmup_frames"]),
+        )
 
     agent: BasePlayer | None = None
     residual_adapter_summary: dict[str, object] | None = None
@@ -1769,6 +1888,8 @@ def main(env_cfg, agent_cfg: dict):
 
                 if args_cli.action_source in POLICY_ACTION_SOURCES and isinstance(obs, dict):
                     obs = obs["obs"]
+                if video_recorder is not None:
+                    video_recorder.capture(gym_env, task_env)
 
                 success_tensor = _env_bool_tensor(task_env, "in_success_region")
                 reward_mean = _mean_float(rewards)
@@ -1986,6 +2107,8 @@ def main(env_cfg, agent_cfg: dict):
                         )
                     )
     finally:
+        if video_recorder is not None:
+            video_recorder.close()
         env.close()
         env_closed = True
 
@@ -2165,7 +2288,10 @@ def main(env_cfg, agent_cfg: dict):
         "done_events": done_events,
         "video_enabled": args_cli.video,
         "video_folder": str(video_folder) if args_cli.video else None,
-        "video_files": _latest_video_files(video_folder),
+        "video_files": video_recorder.video_files if video_recorder is not None else _latest_video_files(video_folder),
+        "video_frame_files": (
+            video_recorder.frame_files if video_recorder is not None else _latest_video_frame_files(video_folder)
+        ),
         "trace_jsonl_path": str(trace_jsonl_path),
         "trace_csv_path": str(trace_csv_path),
         "output_dir": str(output_dir),

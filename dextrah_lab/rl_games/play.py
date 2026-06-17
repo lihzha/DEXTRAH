@@ -54,6 +54,7 @@ from isaaclab_rl.rl_games import RlGamesGpuEnv, RlGamesVecEnvWrapper
 
 import dextrah_lab.tasks.dextrah_kuka_allegro.gym_setup
 import dextrah_lab.tasks.dextrah_bimanual_yam_cube_grasp.gym_setup
+import dextrah_lab.tasks.dextrah_single_yam_multi_object_grasp.gym_setup
 import dextrah_lab.tasks.dextrah_franka_cube_grasp.gym_setup
 import dextrah_lab.tasks.dextrah_franka_multi_object_grasp.gym_setup
 import dextrah_lab.tasks.dextrah_franka_star_kitting.gym_setup

@@ -64,7 +64,10 @@ elif [ "$TASK" = "Dextrah-Franka-Star-Kitting" ]; then
   ENTROPY_COEF="${ENTROPY_COEF:-0.001}"
   E_CLIP="${E_CLIP:-0.2}"
   GRAD_NORM="${GRAD_NORM:-1.0}"
-elif [ "$TASK" = "Dextrah-Franka-Cube-Grasp" ] || [ "$TASK" = "Dextrah-Franka-Cube-Grasp-Traj-Tracking" ] || [ "$TASK" = "Dextrah-Franka-Multi-Object-Grasp" ]; then
+elif [ "$TASK" = "Dextrah-Franka-Cube-Grasp" ] \
+  || [ "$TASK" = "Dextrah-Franka-Cube-Grasp-Traj-Tracking" ] \
+  || [ "$TASK" = "Dextrah-Franka-Multi-Object-Grasp" ] \
+  || [ "$TASK" = "Dextrah-Franka-Tabletop-Clutter-Grasp" ]; then
   NUM_ENVS="${NUM_ENVS:-2048}"
   MINIBATCH_SIZE="${MINIBATCH_SIZE:-32768}"
   CENTRAL_VALUE_MINIBATCH_SIZE="${CENTRAL_VALUE_MINIBATCH_SIZE:-32768}"
@@ -79,7 +82,9 @@ elif [ "$TASK" = "Dextrah-Franka-Cube-Grasp" ] || [ "$TASK" = "Dextrah-Franka-Cu
   ENTROPY_COEF="${ENTROPY_COEF:-0.0005}"
   E_CLIP="${E_CLIP:-0.2}"
   GRAD_NORM="${GRAD_NORM:-1.0}"
-elif [ "$TASK" = "Dextrah-Bimanual-YAM-Cube-Grasp" ]; then
+elif [ "$TASK" = "Dextrah-Bimanual-YAM-Cube-Grasp" ] \
+  || [ "$TASK" = "Dextrah-Single-YAM-Multi-Object-Grasp" ] \
+  || [ "$TASK" = "Dextrah-Single-YAM-Tabletop-Clutter-Grasp" ]; then
   NUM_ENVS="${NUM_ENVS:-1024}"
   MINIBATCH_SIZE="${MINIBATCH_SIZE:-16384}"
   CENTRAL_VALUE_MINIBATCH_SIZE="${CENTRAL_VALUE_MINIBATCH_SIZE:-$MINIBATCH_SIZE}"
@@ -151,6 +156,14 @@ OBJECT_STABLE_POSE_CACHE_DIR="${OBJECT_STABLE_POSE_CACHE_DIR:-}"
 OBJECT_STABLE_POSE_COUNT="${OBJECT_STABLE_POSE_COUNT:-1}"
 OBJECT_STABLE_POSE_RANDOMIZE="${OBJECT_STABLE_POSE_RANDOMIZE:-True}"
 OBJECT_STABLE_POSE_ALLOW_MISSING="${OBJECT_STABLE_POSE_ALLOW_MISSING:-False}"
+TABLETOP_CLUTTER_ASSET_MANIFEST_PATH="${TABLETOP_CLUTTER_ASSET_MANIFEST_PATH:-}"
+TABLETOP_CLUTTER_ASSETS_DIR="${TABLETOP_CLUTTER_ASSETS_DIR:-}"
+TABLETOP_CLUTTER_MAX_OBJECTS="${TABLETOP_CLUTTER_MAX_OBJECTS:-}"
+TABLETOP_CLUTTER_OBJECT_COUNT="${TABLETOP_CLUTTER_OBJECT_COUNT:-}"
+TABLETOP_CLUTTER_ASSET_ASSIGNMENT="${TABLETOP_CLUTTER_ASSET_ASSIGNMENT:-}"
+TABLETOP_CLUTTER_SPAWN_XY_RANDOMIZATION="${TABLETOP_CLUTTER_SPAWN_XY_RANDOMIZATION:-}"
+TABLETOP_CLUTTER_SPAWN_YAW_RANDOMIZATION_DEG="${TABLETOP_CLUTTER_SPAWN_YAW_RANDOMIZATION_DEG:-}"
+TABLETOP_CLUTTER_SPAWN_Z_JITTER="${TABLETOP_CLUTTER_SPAWN_Z_JITTER:-}"
 OBJECT_DENSITY="${OBJECT_DENSITY:-}"
 OBJECT_STATIC_FRICTION="${OBJECT_STATIC_FRICTION:-}"
 OBJECT_DYNAMIC_FRICTION="${OBJECT_DYNAMIC_FRICTION:-}"
@@ -264,6 +277,7 @@ case "$GRASP_PRIOR_RESET_ENABLED" in
   True|true|1|yes|Yes)
     if [ "$TASK" != "Dextrah-Franka-Cube-Grasp" ] \
       && [ "$TASK" != "Dextrah-Franka-Multi-Object-Grasp" ] \
+      && [ "$TASK" != "Dextrah-Franka-Tabletop-Clutter-Grasp" ] \
       && [ "$TASK" != "Dextrah-Franka-Multi-Object-RGB-Grasp" ]; then
       echo "GRASP_PRIOR_RESET_ENABLED is only supported for Franka cube or multi-object grasp tasks" >&2
       exit 2
@@ -470,6 +484,14 @@ echo "OBJECT_STABLE_POSE_CACHE_DIR=$OBJECT_STABLE_POSE_CACHE_DIR"
 echo "OBJECT_STABLE_POSE_COUNT=$OBJECT_STABLE_POSE_COUNT"
 echo "OBJECT_STABLE_POSE_RANDOMIZE=$OBJECT_STABLE_POSE_RANDOMIZE"
 echo "OBJECT_STABLE_POSE_ALLOW_MISSING=$OBJECT_STABLE_POSE_ALLOW_MISSING"
+echo "TABLETOP_CLUTTER_ASSET_MANIFEST_PATH=$TABLETOP_CLUTTER_ASSET_MANIFEST_PATH"
+echo "TABLETOP_CLUTTER_ASSETS_DIR=$TABLETOP_CLUTTER_ASSETS_DIR"
+echo "TABLETOP_CLUTTER_MAX_OBJECTS=$TABLETOP_CLUTTER_MAX_OBJECTS"
+echo "TABLETOP_CLUTTER_OBJECT_COUNT=$TABLETOP_CLUTTER_OBJECT_COUNT"
+echo "TABLETOP_CLUTTER_ASSET_ASSIGNMENT=$TABLETOP_CLUTTER_ASSET_ASSIGNMENT"
+echo "TABLETOP_CLUTTER_SPAWN_XY_RANDOMIZATION=$TABLETOP_CLUTTER_SPAWN_XY_RANDOMIZATION"
+echo "TABLETOP_CLUTTER_SPAWN_YAW_RANDOMIZATION_DEG=$TABLETOP_CLUTTER_SPAWN_YAW_RANDOMIZATION_DEG"
+echo "TABLETOP_CLUTTER_SPAWN_Z_JITTER=$TABLETOP_CLUTTER_SPAWN_Z_JITTER"
 echo "OBJECT_DENSITY=$OBJECT_DENSITY"
 echo "OBJECT_STATIC_FRICTION=$OBJECT_STATIC_FRICTION"
 echo "OBJECT_DYNAMIC_FRICTION=$OBJECT_DYNAMIC_FRICTION"
@@ -661,7 +683,9 @@ PY
     PRIOR_RESET_OVERRIDES=()
     case '$GRASP_PRIOR_RESET_ENABLED' in
       True|true|1|yes|Yes)
-        if [ '$TASK' = 'Dextrah-Franka-Multi-Object-Grasp' ] || [ '$TASK' = 'Dextrah-Franka-Multi-Object-RGB-Grasp' ]; then
+        if [ '$TASK' = 'Dextrah-Franka-Multi-Object-Grasp' ] \
+          || [ '$TASK' = 'Dextrah-Franka-Tabletop-Clutter-Grasp' ] \
+          || [ '$TASK' = 'Dextrah-Franka-Multi-Object-RGB-Grasp' ]; then
           PRIOR_RESET_OVERRIDES=(
             env.grasp_prior_reset_enabled=True
             env.grasp_prior_allow_missing='$GRASP_PRIOR_ALLOW_MISSING'
@@ -794,6 +818,16 @@ PY
       append_env_override object_angular_damping '$OBJECT_ANGULAR_DAMPING'
       append_env_override object_max_depenetration_velocity '$OBJECT_MAX_DEPENETRATION_VELOCITY'
     }
+    append_tabletop_clutter_overrides() {
+      append_env_override tabletop_clutter_asset_manifest_path '$TABLETOP_CLUTTER_ASSET_MANIFEST_PATH'
+      append_env_override tabletop_clutter_assets_dir '$TABLETOP_CLUTTER_ASSETS_DIR'
+      append_env_override tabletop_clutter_max_objects '$TABLETOP_CLUTTER_MAX_OBJECTS'
+      append_env_override tabletop_clutter_object_count '$TABLETOP_CLUTTER_OBJECT_COUNT'
+      append_env_override tabletop_clutter_asset_assignment '$TABLETOP_CLUTTER_ASSET_ASSIGNMENT'
+      append_env_override tabletop_clutter_spawn_xy_randomization '$TABLETOP_CLUTTER_SPAWN_XY_RANDOMIZATION'
+      append_env_override tabletop_clutter_spawn_yaw_randomization_deg '$TABLETOP_CLUTTER_SPAWN_YAW_RANDOMIZATION_DEG'
+      append_env_override tabletop_clutter_spawn_z_jitter '$TABLETOP_CLUTTER_SPAWN_Z_JITTER'
+    }
     append_grasp_prior_reference_sequence_overrides() {
       TASK_OVERRIDES+=(
         env.grasp_prior_action_warmstart_approach_steps='$GRASP_PRIOR_ACTION_WARMSTART_APPROACH_STEPS'
@@ -879,7 +913,7 @@ PY
       )
       append_franka_cube_reward_overrides
       append_bimanual_action_prior_overrides
-    elif [ '$TASK' = 'Dextrah-Franka-Multi-Object-Grasp' ]; then
+    elif [ '$TASK' = 'Dextrah-Single-YAM-Multi-Object-Grasp' ] || [ '$TASK' = 'Dextrah-Single-YAM-Tabletop-Clutter-Grasp' ]; then
       TASK_OVERRIDES=(
         agent.wandb_activate=False
         env.use_cuda_graph='$USE_CUDA_GRAPH'
@@ -898,6 +932,29 @@ PY
       append_env_override object_assets_dir '$OBJECT_ASSETS_DIR'
       append_env_override object_stable_pose_cache_dir '$OBJECT_STABLE_POSE_CACHE_DIR'
       append_multi_object_physics_overrides
+      append_tabletop_clutter_overrides
+      append_franka_cube_reward_overrides
+      append_bimanual_action_prior_overrides
+    elif [ '$TASK' = 'Dextrah-Franka-Multi-Object-Grasp' ] || [ '$TASK' = 'Dextrah-Franka-Tabletop-Clutter-Grasp' ]; then
+      TASK_OVERRIDES=(
+        agent.wandb_activate=False
+        env.use_cuda_graph='$USE_CUDA_GRAPH'
+        env.max_objects='$MAX_OBJECTS'
+        env.object_asset_assignment='$OBJECT_ASSET_ASSIGNMENT'
+        env.object_spawn_center_offset_x='$OBJECT_SPAWN_CENTER_OFFSET_X'
+        env.object_spawn_center_offset_y='$OBJECT_SPAWN_CENTER_OFFSET_Y'
+        env.object_spawn_xy_randomization='$OBJECT_SPAWN_XY_RANDOMIZATION'
+        env.object_spawn_yaw_randomization_deg='$OBJECT_SPAWN_YAW_RANDOMIZATION_DEG'
+        env.object_stable_pose_enabled='$OBJECT_STABLE_POSE_ENABLED'
+        env.object_stable_pose_count='$OBJECT_STABLE_POSE_COUNT'
+        env.object_stable_pose_randomize='$OBJECT_STABLE_POSE_RANDOMIZE'
+        env.object_stable_pose_allow_missing='$OBJECT_STABLE_POSE_ALLOW_MISSING'
+      )
+      append_env_override object_asset_manifest_path '$OBJECT_ASSET_MANIFEST_PATH'
+      append_env_override object_assets_dir '$OBJECT_ASSETS_DIR'
+      append_env_override object_stable_pose_cache_dir '$OBJECT_STABLE_POSE_CACHE_DIR'
+      append_multi_object_physics_overrides
+      append_tabletop_clutter_overrides
       append_franka_cube_reward_overrides
       append_grasp_prior_action_guidance_overrides
     elif [ '$TASK' = 'Dextrah-Franka-Multi-Object-RGB-Grasp' ]; then

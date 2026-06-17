@@ -1,0 +1,68 @@
+{
+  "format": "dextrah_local_objaverse_tabletop_manifest_v1",
+  "asset_root": ".",
+  "source_dataset": "local_robolab_objaverse",
+  "selected_uuid_count": 6,
+  "objects": [
+    {
+      "uuid": "gregorys_coffee_cup",
+      "name": "coffee cup",
+      "category": "cup",
+      "usd_path": "/home/lzha/code/RoboLab/assets/objects/objaverse/gregorys_coffee_cup.usd",
+      "scale": 1.0,
+      "scaled_bounds_min": [-0.045, -0.045, -0.005],
+      "scaled_bounds_max": [0.045, 0.045, 0.095],
+      "grasp_size": 0.09
+    },
+    {
+      "uuid": "apple_01",
+      "name": "apple",
+      "category": "fruit",
+      "usd_path": "/home/lzha/code/RoboLab/assets/objects/objaverse/apple_01.usd",
+      "scale": 1.0,
+      "scaled_bounds_min": [-0.04, -0.04, -0.005],
+      "scaled_bounds_max": [0.04, 0.04, 0.075],
+      "grasp_size": 0.08
+    },
+    {
+      "uuid": "red_bell_pepper",
+      "name": "red bell pepper",
+      "category": "vegetable",
+      "usd_path": "/home/lzha/code/RoboLab/assets/objects/objaverse/red_bell_pepper.usd",
+      "scale": 1.0,
+      "scaled_bounds_min": [-0.05, -0.045, -0.005],
+      "scaled_bounds_max": [0.05, 0.045, 0.075],
+      "grasp_size": 0.09
+    },
+    {
+      "uuid": "snickers_bar",
+      "name": "candy bar",
+      "category": "snack",
+      "usd_path": "/home/lzha/code/RoboLab/assets/objects/objaverse/snickers_bar.usd",
+      "scale": 1.0,
+      "scaled_bounds_min": [-0.08, -0.028, -0.004],
+      "scaled_bounds_max": [0.08, 0.028, 0.022],
+      "grasp_size": 0.08
+    },
+    {
+      "uuid": "bagel_06",
+      "name": "bagel",
+      "category": "food",
+      "usd_path": "/home/lzha/code/RoboLab/assets/objects/objaverse/bagel_06.usd",
+      "scale": 1.0,
+      "scaled_bounds_min": [-0.055, -0.055, -0.004],
+      "scaled_bounds_max": [0.055, 0.055, 0.035],
+      "grasp_size": 0.09
+    },
+    {
+      "uuid": "lunchbag",
+      "name": "lunch bag",
+      "category": "bag",
+      "usd_path": "/home/lzha/code/RoboLab/assets/objects/objaverse/lunchbag.usd",
+      "scale": 1.0,
+      "scaled_bounds_min": [-0.06, -0.04, -0.004],
+      "scaled_bounds_max": [0.06, 0.04, 0.13],
+      "grasp_size": 0.10
+    }
+  ]
+}
