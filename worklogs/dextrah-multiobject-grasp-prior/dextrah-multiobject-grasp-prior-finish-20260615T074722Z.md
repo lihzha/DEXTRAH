@@ -7102,3 +7102,35 @@ Job `29176371`:
 Analysis:
 - The reward-best checkpoint for post-run eval is now the epoch-1668 generic `dextrah_franka_multi_object_grasp.pth`, not the older epoch-1434 reward-best checkpoint.
 - Training success is still not breaking the `~0.44` ceiling; final eval should include at least final, generic reward-best, `ep1240`, and likely `ep1620` or `ep1640` if a second near-best checkpoint is useful.
+
+## 2026-06-17T06:05:00Z - epoch 1800 continuation completed and aggregate evals launched
+
+Training:
+- job id: `29176371`
+- state: `COMPLETED`, exit `0:0`, elapsed `02:48:56`
+- run: `franka_multi_full18_teacherobs_verified17_fallback_ep1800_a169446_20260617T023031Z`
+- remote code: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-eval-wrapper-fix-20260617-a169446`
+- code commit: `a16944672c21b23f12ea94ccb77af4ce0cd934fe`
+- final checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_teacherobs_verified17_fallback_ep1800_a169446_20260617T023031Z/nn/last_dextrah_franka_multi_object_grasp_ep_1800_rew_6469.2476.pth`
+- generic reward-best checkpoint was overwritten at epoch `1799` with `rewards/step=12799.172`: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_teacherobs_verified17_fallback_ep1800_a169446_20260617T023031Z/nn/dextrah_franka_multi_object_grasp.pth`
+- final TensorBoard scalar sync ended at epoch `1797`: latest `cube_success_rate/frame=0.427734375`, `cube_has_lifted_rate/frame=0.50341796875`
+- best observed training success across the epoch-1200-to-1800 continuation remained `0.4443359375` near epochs `1243/1245`; later near-best epoch `1627` reached `0.44384765625`
+- final reset safety remained clean: latest reset success `0.99951171875`, quality success `0.99951171875`, `cube_finger_table_clearance_violation/frame=0.0`, `cube_table_clearance_penalty=0.0`
+
+Aggregate eval launch:
+- shared config: `NUM_ENVS=180`, `NUM_STEPS=300`, `CAPTURE_VIDEO=False`, `MAX_OBJECTS=18`, `OBJECT_ASSET_ASSIGNMENT=round_robin`
+- manifest: `/results/assets/filtered_manifests/stable_candidates18_shard3_assetroot_d053e6c_20260614T234700Z/manifest.json`
+- stable-pose cache: `/results/validations/graspgen_stable_candidates18_shard3_d053e6c_20260614T234900Z/settled_pose_cache`
+- verified cache: `/results/assets/verified_grasp_indices/verified_full18_current_ebcf612_20260616T222409Z/verified_indices.json`
+- uncovered-object fallback: `GRASP_PRIOR_VERIFIED_ALLOW_UNCOVERED=True`
+- reset gates: attempts `8`, candidates `512`, topdown `True`, min pregrasp z `0.0`, downward tool-z `True`, min downward `0.0`, center-distance frac `0.50`, contact-height threshold `-0.02`, min width `0.008`, pregrasp offset `0.0`
+
+Jobs:
+- `29180585`: `eval_franka_multi_full18_ep1800_final_180env_a169446_20260617T0603Z`
+- `29180586`: `eval_franka_multi_full18_ep1800_rewardbest_180env_a169446_20260617T0603Z`
+- `29180587`: `eval_franka_multi_full18_ep1800_ep1240_trainpeak_180env_a169446_20260617T0603Z`
+- `29180589`: `eval_franka_multi_full18_ep1800_ep1620_latepeak_180env_a169446_20260617T0603Z`
+- `29180590`: `eval_franka_multi_full18_ep1800_ep1640_highreward_180env_a169446_20260617T0603Z`
+
+Next:
+- monitor eval startup, inspect metrics JSONs and logs, then decide which checkpoint deserves video inspection.
