@@ -7068,3 +7068,20 @@ Job `29176371`:
 Analysis:
 - The run is stable and still physically clean at reset, but training success remains on the same `~0.44` plateau despite the reward spike.
 - Continue to epoch `1800`; evaluate final, generic reward-best, and the saved checkpoint nearest the training-success peak (`ep1240`) after completion.
+
+## 2026-06-17T04:25:00Z - epoch 1562 scalar snapshot
+
+Job `29176371`:
+- state: still actively writing PPO epochs and checkpoints; latest log reached epoch `1566/1800`, latest TensorBoard scalar epoch `1562`
+- latest `cube_success_rate/frame=0.4248046875`
+- best `cube_success_rate/frame=0.4443359375`, still around epoch `1243`
+- latest `cube_has_lifted_rate/frame=0.51123046875`; best `0.5322265625`
+- recent success has transient dips (`0.2168` at epoch `1537`, `0.1875` at epoch `1556`) but recovers to `~0.42-0.43`
+- latest reward scalar `4027.24951171875`; reward-best remains `11363.3525390625` around epoch `1434`
+- reset quality remains clean enough for training: latest reset/quality success `1.0`, with minima `0.99853515625` and `0.998046875`
+- latest exact tip clearance about `0.02999 m`, tool downward-z about `0.8054`
+- latest `cube_finger_table_clearance_violation/frame=0.0`, latest `cube_table_clearance_penalty=0.0`
+
+Analysis:
+- The original below-table reset/prior failure is still not reappearing in the aggregate safety scalars.
+- The later continuation is not improving the success plateau; the post-run eval should compare final, reward-best, and the early best-success checkpoint rather than assume final is best.
