@@ -244,6 +244,7 @@ missing_raw = []
 missing_urdf = []
 missing_prior = []
 bad_scale = []
+bad_extent = []
 scales = []
 for record in payload.get("objects", []):
     raw = root / record["raw_object_path"]
@@ -261,6 +262,13 @@ for record in payload.get("objects", []):
     if not math.isfinite(scale) or scale <= 0.0:
         bad_scale.append((record["uuid"], scale))
     scales.append(scale)
+    scaled_half_extents = record.get("scaled_half_extents", [])
+    if (
+        not isinstance(scaled_half_extents, list)
+        or len(scaled_half_extents) != 3
+        or any((not isinstance(value, (int, float))) or (not math.isfinite(float(value))) or float(value) <= 0.0 for value in scaled_half_extents)
+    ):
+        bad_extent.append((record["uuid"], scaled_half_extents))
 
 summary = {
     "manifest": str(manifest),
@@ -269,11 +277,13 @@ summary = {
     "missing_urdf": len(missing_urdf),
     "missing_prior": len(missing_prior),
     "bad_scale": len(bad_scale),
+    "bad_scaled_half_extent": len(bad_extent),
+    "skipped_object_count": int(payload.get("skipped_object_count") or 0),
     "scale_min": min(scales) if scales else None,
     "scale_max": max(scales) if scales else None,
 }
 print("DEXTRAH_GRASPGEN_CPU_STAGE_SUMMARY", json.dumps(summary, sort_keys=True), flush=True)
-if not payload.get("objects") or missing_raw or missing_urdf or missing_prior or bad_scale:
+if not payload.get("objects") or missing_raw or missing_urdf or missing_prior or bad_scale or bad_extent:
     raise SystemExit(1)
 PY
   '

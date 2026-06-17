@@ -298,6 +298,22 @@ class MultiObjectGraspTaskMixin:
                     default_half_extents=default_half_extents,
                 )
                 expected_size = [bounds_max[axis] - bounds_min[axis] for axis in range(3)]
+                if any((not math.isfinite(value)) or value <= 0.0 for value in expected_size):
+                    print(
+                        json.dumps(
+                            {
+                                "event": "skip_asset_invalid_bounds",
+                                "label": label,
+                                "uuid": uuid,
+                                "usd_path": str(usd_path),
+                                "scaled_bounds_min": bounds_min,
+                                "scaled_bounds_max": bounds_max,
+                                "expected_size": expected_size,
+                            }
+                        ),
+                        flush=True,
+                    )
+                    continue
                 usd_bbox_size = None
                 usd_root_scale = 1.0
                 if bool(validate_usd_bounds):

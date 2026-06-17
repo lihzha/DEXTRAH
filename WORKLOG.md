@@ -8767,3 +8767,53 @@ Estimate:
   throughput.
 - With all 8 prior shards concurrent, reserve 2 to 4 hours wall-clock plus
   queue wait; serial full prep is not appropriate for the A100 4-hour limit.
+
+## 2026-06-17 16:55 - Full Objaverse CPU prep array and validation filter
+
+Goal:
+- Push the full-Objaverse pipeline work, continue on a1001, and launch the
+  authorized 32-way CPU-only prior-shard asset-prep array.
+
+Version state:
+- Pushed documentation commit `f10d7cb` to `origin/main` and fast-forwarded
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/DEXTRAH` on a1001.
+- Added and pushed CPU array wrapper commit `abe26b1`, then fast-forwarded the
+  a1001 checkout to `abe26b1c8cbd72c8b5e5cc9741d2bfcf23988f23`.
+- Validation-filter implementation commit: `VALIDATION_FILTER_COMMIT_TBD`.
+
+Job:
+- Run name: `graspgen_objects_full_cpu_20260617_153051`.
+- Slurm array: `29214576`, submitted as `--array=0-31%32` on the `cpu`
+  partition with 32 CPUs/task.
+- Result root:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/graspgen_objects_full_cpu_20260617_153051`.
+- Logs:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/prepare_graspgen_assets_cpu_29214576_*.out`.
+
+Result:
+- All 32 array tasks completed with exit code `0:0`.
+- 32 shard completion markers are present.
+- Log grep for traceback/runtime/slurm/OOM patterns was clean.
+- Pending tasks initially hit `QOSMaxMemoryPerUser`; updated pending array
+  memory from 128G to 32G with `scontrol update JobId=29214576 MinMemoryNode=32768`.
+- Running concurrency was then limited to 6 tasks by `QOSMaxCpuPerUserLimit`
+  because 6 tasks x 32 CPUs = 192 CPUs.
+- Per-task elapsed times ranged from about `00:09:34` to `00:20:27`; the whole
+  CPU stage took about 1.3 hours after launch under the 6-task concurrency cap.
+
+Evidence:
+- Aggregate validation found 32 manifests, 8,031 objects, 8,031 unique UUIDs,
+  0 duplicate UUIDs, 0 missing raw mesh/URDF/prior paths, and 0 bad scales.
+- Scaled physical max dimension distribution was bounded:
+  min `0.0600m`, p50 `0.2038m`, p95 `0.3360m`, p99 `0.3470m`, max `0.3499m`.
+- 11 records had a zero GraspGen-scaled half extent and are invalid for
+  training/conversion even though their source files and priors exist.
+
+Follow-up:
+- Patched future prep to skip non-finite, zero, or near-zero scaled half
+  extents and record skipped objects in the manifest.
+- Patched the runtime manifest loader to skip invalid bounds defensively.
+- Patched the URDF converter to accept `--manifest` so GPU USD conversion can
+  convert only the valid records.
+- Next production step is a GPU/Isaac USD conversion array using the filtered
+  shard manifests; do not use the unfiltered directory scan.

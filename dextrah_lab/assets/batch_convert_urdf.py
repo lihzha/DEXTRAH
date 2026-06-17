@@ -56,6 +56,12 @@ parser.add_argument(
     default=False,
     help="Skip objects whose target USD file already exists.",
 )
+parser.add_argument(
+    "--manifest",
+    type=str,
+    default="",
+    help="Optional DEXTRAH object manifest; when set, convert only object URDFs listed in manifest.objects.",
+)
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
 # parse the arguments
@@ -69,7 +75,9 @@ simulation_app = app_launcher.app
 
 import contextlib
 import inspect
+import json
 import os
+from pathlib import Path
 
 import carb
 import isaacsim.core.utils.stage as stage_utils
@@ -99,6 +107,31 @@ def update_urdf(urdf_full_path, object_name):
     with open(urdf_full_path, 'w') as file:
         file.writelines(new_lines)
 
+
+def _manifest_object_names(manifest_path: str) -> set[str]:
+    if not manifest_path:
+        return set()
+    path = Path(manifest_path).expanduser().resolve()
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    records = payload.get("objects")
+    if not isinstance(records, list):
+        raise ValueError(f"Expected manifest objects list in {path}")
+    names: set[str] = set()
+    for idx, record in enumerate(records):
+        if not isinstance(record, dict):
+            raise ValueError(f"Object record {idx} in {path} is not a mapping")
+        urdf_path = record.get("urdf_path")
+        if urdf_path:
+            parts = Path(str(urdf_path)).parts
+            if len(parts) >= 2:
+                names.add(parts[-2])
+                continue
+        uuid = record.get("uuid") or record.get("name")
+        if not uuid:
+            raise ValueError(f"Object record {idx} in {path} is missing uuid/name and urdf_path")
+        names.add(str(uuid))
+    return names
+
 def main():
     """
     Example usage:
@@ -120,6 +153,11 @@ def main():
 
     # Filter out all subdirectories deeper than one level
     sub_dirs = [object_name for object_name in sub_dirs if os.path.isdir(os.path.join(urdf_path, object_name))]
+    manifest_names = _manifest_object_names(args_cli.manifest)
+    if manifest_names:
+        before = len(sub_dirs)
+        sub_dirs = [object_name for object_name in sub_dirs if object_name in manifest_names]
+        print(f"Manifest filter selected {len(sub_dirs)} of {before} URDF directories from {args_cli.manifest}")
 
     # Create Urdf converter config
     for object_name in sub_dirs:

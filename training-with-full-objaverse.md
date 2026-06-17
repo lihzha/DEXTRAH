@@ -222,13 +222,15 @@ python dextrah_lab/assets/batch_convert_urdf.py \
 
 After all shards finish, merge by rsyncing shard contents into one asset root
 and writing a merged `manifest.json` whose records point to the merged root.
-Validate before training.
+Validate before training. For USD conversion, pass each shard manifest to
+`batch_convert_urdf.py --manifest <manifest.json>` so skipped or invalid records
+are not converted by a directory-wide scan.
 
-The current Slurm wrapper accepts inline `UUIDS`, which is fine for small smoke
-sets but not for 1,000-object shard lists. For production, either add a
-`UUID_LIST` environment variable to the wrapper and pass
-`--uuid_list "$UUID_LIST"` inside the container, or use a purpose-built array
-wrapper that calls `prepare_graspgen_assets.py --uuid_list ...` directly.
+Use `cluster/sbatch_prepare_graspgen_assets_cpu_array.sh` for the CPU-only
+stage. It reads `splits/chunk_<id>.txt`, calls
+`prepare_graspgen_assets.py --uuid_list ...`, shares prior tar downloads through
+a per-prior-shard cache, and validates raw meshes, URDFs, priors, GraspGen
+scales, and nondegenerate scaled bounds.
 
 ## Slurm Array Shape
 
@@ -238,11 +240,12 @@ array tasks rather than one long job.
 
 Recommended initial sizing:
 
-- shard size: one GraspGen prior shard, currently about 995 to 1,013 objects;
+- shard size: either one GraspGen prior shard, currently about 995 to 1,013
+  objects, or four chunks per prior shard for 32 CPU array tasks;
 - `--cpus-per-task`: 16 to 32;
 - `--mem`: 64G to 128G;
-- wall time: start with 3 hours per prior shard on a1001, then adjust from
-  measured throughput;
+- wall time: start with 1 hour for 250-object CPU chunks and 3 hours for
+  1,000-object prior shards, then adjust from measured throughput;
 - one GPU for USD conversion shards because Isaac conversion starts Kit;
 - no GPU is usually required for pure mesh/prior extraction, but using the
   Isaac image may still reserve a GPU depending on wrapper constraints.
@@ -266,13 +269,18 @@ UUID_LIST="$SHARD_ROOT/splits/shard_$SHARD_ID.txt"
 
 For maximum throughput:
 
-- run the 8 prior-shard prep/conversion jobs concurrently if quota allows;
+- run CPU-only prep chunks concurrently up to the account CPU quota. On a1001,
+  32 chunks at 32 CPUs/task were limited to 6 concurrent jobs by a 192 CPU/user
+  cap;
 - set `UNUSED_CPU_COUNT` so the Objaverse downloader uses approximately the
   Slurm CPU allocation. On the probed A100 node, `UNUSED_CPU_COUNT=240` produced
   15 workers with `--cpus-per-task=16`; for 32 workers, use about
   `UNUSED_CPU_COUNT=224`;
 - keep each shard in its own output directory and use `--skip-existing` so
   failed conversion shards are restartable;
+- reject records with non-finite, zero, or near-zero GraspGen-scaled half
+  extents before training. These are degenerate physical objects even if their
+  raw Objaverse mesh and GraspGen prior exist;
 - only subdivide a prior shard further if a 1,000-object shard does not fit in
   the time limit. If subdividing, keep the prior tar cache shared so the same
   prior shard is not downloaded repeatedly.
@@ -297,6 +305,7 @@ if not root.is_absolute():
 missing_usd = []
 missing_prior = []
 bad_scale = []
+bad_extents = []
 scales = []
 
 for record in payload["objects"]:
@@ -312,6 +321,13 @@ for record in payload["objects"]:
         scale = float(data["object_scale"])
     if not math.isfinite(scale) or scale <= 0.0:
         bad_scale.append((uuid, scale))
+    extents = record.get("scaled_half_extents", [])
+    if (
+        not isinstance(extents, list)
+        or len(extents) != 3
+        or any((not isinstance(v, (int, float))) or (not math.isfinite(float(v))) or float(v) <= 0.0 for v in extents)
+    ):
+        bad_extents.append((uuid, extents))
     scales.append(scale)
 
 print({
@@ -320,11 +336,12 @@ print({
     "missing_usd": len(missing_usd),
     "missing_prior": len(missing_prior),
     "bad_scale": len(bad_scale),
+    "bad_extents": len(bad_extents),
     "scale_min": min(scales) if scales else None,
     "scale_max": max(scales) if scales else None,
 })
 
-if missing_usd or missing_prior or bad_scale:
+if missing_usd or missing_prior or bad_scale or bad_extents:
     raise SystemExit(1)
 PY
 ```
@@ -376,10 +393,9 @@ Do not judge success from Slurm state alone. Inspect:
 
 As of 2026-06-17:
 
-- Local `main` contains the single-YAM Objaverse-scale defaults at commit
-  `2c8a6b8`, but `origin/main` and the a1001 checkout are still at `21bca4a`.
-  Step 1 is therefore blocked until the local merge commit is pushed or
-  otherwise published.
+- Local `main`, `origin/main`, and the a1001 checkout include the
+  single-YAM Objaverse-scale defaults, this pipeline doc, and the CPU array
+  wrapper through commit `abe26b1`.
 - The exact repo default path
   `dextrah_lab/assets/graspgen_objects/manifest.json` is absent locally and on
   a1001.
@@ -393,6 +409,15 @@ As of 2026-06-17:
   elapsed time was `00:02:45`, including first-time prep dependency install,
   raw object download, prior shard download, URDF generation, serial USD
   conversion, and manifest refresh.
+- Full CPU-only prep array `29214576` used 32 chunks under
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/graspgen_objects_full_cpu_20260617_153051`.
+  All 32 tasks completed with exit code 0. Per-task elapsed time was about
+  `00:09:34` to `00:20:27`; account CPU quota limited concurrency to 6 tasks,
+  so the full CPU stage took about 1.3 hours after launch. The stage produced
+  8,031 unique records with all raw mesh, URDF, and prior paths present.
+- Aggregate validation found 11 records with a zero scaled half extent. Future
+  prep runs skip these records, and the runtime loader defensively skips any
+  invalid bounds. Use the filtered set for USD conversion and training.
 - Earlier l401 prep/conversion references using the same wrapper completed 3
   objects in `00:01:49`, 16 objects in `00:02:11`, and 32 objects in
   `00:03:11`. A full prior-shard job of about 1,000 objects should be budgeted
@@ -404,11 +429,15 @@ As of 2026-06-17:
 
 Estimated full materialization time with multiprocessing:
 
-- If all 8 prior-shard jobs run concurrently, expect roughly 2 to 4 hours of
-  wall-clock time plus queue wait for the first full pass.
-- If only 2 jobs run concurrently, expect roughly 6 to 12 hours wall-clock.
-- If run serially in one job, expect roughly 12 to 24 hours and it will not fit
-  the A100 short partition limit.
+- CPU-only raw/URDF/prior prep: with the observed a1001 CPU quota, budget about
+  1.5 hours plus queue wait for 32 chunks. If all 32 chunks could run
+  simultaneously, the measured per-task runtime suggests about 20 to 30 minutes
+  plus queue wait.
+- USD conversion still needs a GPU/Isaac array measurement. Start with 32 GPU
+  shard jobs using `batch_convert_urdf.py --manifest`; budget 1 to 3 hours for
+  the first full conversion pass until measured.
+- Serial full materialization is not recommended and will not fit the A100 short
+  partition limit.
 - Storage is object-dependent. Based on existing 8/16/32-object probes, reserve
   at least several hundred GB for raw meshes, URDFs, USDs, logs, and caches; use
   1TB free space as the safer target before starting the full dataset.

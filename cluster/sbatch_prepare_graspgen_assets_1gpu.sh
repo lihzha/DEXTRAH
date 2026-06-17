@@ -220,6 +220,7 @@ PY
           "$ASSET_OUTPUT_DIR_CONTAINER/urdf"
           "$ASSET_OUTPUT_DIR_CONTAINER/USD"
           --headless
+          --manifest "$ASSET_OUTPUT_DIR_CONTAINER/manifest.json"
         )
         case "$CONVERT_SKIP_EXISTING" in
           True|true|1|yes|Yes) CONVERT_ARGS+=(--skip-existing) ;;
@@ -261,6 +262,7 @@ PY
 
     PYTHONPATH="$PREP_PYTHONPATH" /isaac-sim/python.sh - "$ASSET_OUTPUT_DIR_CONTAINER/manifest.json" <<'"'"'PY'"'"'
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -273,14 +275,29 @@ missing = [
     for item in objects
     if not (path.parent / str(item.get("usd_path", ""))).is_file()
 ]
+bad_extents = [
+    (item.get("uuid"), item.get("scaled_half_extents"))
+    for item in objects
+    if (
+        not isinstance(item.get("scaled_half_extents"), list)
+        or len(item.get("scaled_half_extents")) != 3
+        or any(
+            (not isinstance(value, (int, float))) or (not math.isfinite(float(value))) or float(value) <= 0.0
+            for value in item.get("scaled_half_extents")
+        )
+    )
+]
 summary = {
     "manifest": str(path),
     "objects": len(objects),
+    "skipped_object_count": int(manifest.get("skipped_object_count") or 0),
     "missing_usd_count": len(missing),
     "missing_usd_examples": missing[:8],
+    "bad_scaled_half_extent_count": len(bad_extents),
+    "bad_scaled_half_extent_examples": bad_extents[:8],
 }
 print("DEXTRAH_GRASPGEN_ASSET_STAGE_SUMMARY", json.dumps(summary, sort_keys=True), flush=True)
-if missing:
+if missing or bad_extents:
     raise SystemExit(1)
 PY
   '
@@ -297,6 +314,7 @@ fi
 
 python3 - "$MANIFEST_HOST" <<'PY'
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -309,11 +327,26 @@ missing = [
     for item in objects
     if not (path.parent / str(item.get("usd_path", ""))).is_file()
 ]
+bad_extents = [
+    (item.get("uuid"), item.get("scaled_half_extents"))
+    for item in objects
+    if (
+        not isinstance(item.get("scaled_half_extents"), list)
+        or len(item.get("scaled_half_extents")) != 3
+        or any(
+            (not isinstance(value, (int, float))) or (not math.isfinite(float(value))) or float(value) <= 0.0
+            for value in item.get("scaled_half_extents")
+        )
+    )
+]
 if not objects:
     print(f"No objects in manifest: {path}")
     sys.exit(1)
 if missing:
     print(f"Missing USD files: {missing[:8]} ({len(missing)} total)")
+    sys.exit(1)
+if bad_extents:
+    print(f"Invalid scaled half extents: {bad_extents[:8]} ({len(bad_extents)} total)")
     sys.exit(1)
 print(f"Asset manifest ready: {path} objects={len(objects)}")
 PY

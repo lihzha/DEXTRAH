@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 from pathlib import Path
 import shutil
@@ -477,7 +478,13 @@ def _load_scale_from_prior(path: Path) -> float | None:
     return None
 
 
-def _write_manifest(output_dir: Path, objects: list[dict[str, Any]], selected_uuids: list[str], args) -> Path:
+def _write_manifest(
+    output_dir: Path,
+    objects: list[dict[str, Any]],
+    selected_uuids: list[str],
+    skipped_objects: list[dict[str, Any]],
+    args,
+) -> Path:
     manifest_path = output_dir / "manifest.json"
     payload = {
         "format": "dextrah_graspgen_object_manifest_v1",
@@ -487,12 +494,14 @@ def _write_manifest(output_dir: Path, objects: list[dict[str, Any]], selected_uu
         "object_split_gripper": "robotiq_2f_140",
         "grasp_prior_gripper": "franka_panda",
         "selected_uuid_count": len(selected_uuids),
+        "skipped_object_count": len(skipped_objects),
+        "skipped_objects": skipped_objects,
         "objects": objects,
         "conversion": {
             "urdf_dir": "urdf",
             "usd_dir": "USD",
             "command": "python dextrah_lab/assets/batch_convert_urdf.py "
-            f"{output_dir / 'urdf'} {output_dir / 'USD'} --headless",
+            f"{output_dir / 'urdf'} {output_dir / 'USD'} --headless --manifest {manifest_path}",
         },
     }
     manifest_path.write_text(json.dumps(_jsonable(payload), indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -514,6 +523,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--simplify", action="store_true", default=False)
     parser.add_argument("--unused_cpu_count", type=int, default=2)
     parser.add_argument("--overwrite", action="store_true", default=False)
+    parser.add_argument(
+        "--min_scaled_half_extent",
+        type=float,
+        default=1.0e-6,
+        help="Skip objects whose GraspGen-scaled half extent is non-finite or not larger than this value.",
+    )
     return parser.parse_args()
 
 
@@ -567,6 +582,8 @@ def main() -> None:
 
     object_mapping = _load_object_mapping(raw_object_dir, simplify=bool(args.simplify))
     manifest_objects: list[dict[str, Any]] = []
+    skipped_objects: list[dict[str, Any]] = []
+    min_scaled_half_extent = float(args.min_scaled_half_extent)
     for uuid in selected_uuids:
         object_path = _find_object_path(uuid, raw_object_dir, object_mapping)
         urdf_path, bounds_min, bounds_max = _write_urdf(uuid, object_path, urdf_dir, overwrite=bool(args.overwrite))
@@ -583,6 +600,29 @@ def main() -> None:
         scaled_bounds_max = [float(scale) * value for value in bounds_max]
         half_extents = [0.5 * (bounds_max[axis] - bounds_min[axis]) for axis in range(3)]
         scaled_half_extents = [float(scale) * value for value in half_extents]
+        if (
+            not math.isfinite(float(scale))
+            or float(scale) <= 0.0
+            or any(
+                (not math.isfinite(float(value))) or float(value) <= min_scaled_half_extent
+                for value in scaled_half_extents
+            )
+        ):
+            skipped = {
+                "uuid": uuid,
+                "reason": "invalid_scaled_half_extents",
+                "scale": float(scale),
+                "bounds_min": bounds_min,
+                "bounds_max": bounds_max,
+                "scaled_half_extents": scaled_half_extents,
+                "min_scaled_half_extent": min_scaled_half_extent,
+                "raw_object_path": os.path.relpath(object_path, output_dir),
+                "urdf_path": os.path.relpath(urdf_path, output_dir),
+                "grasp_prior_path": os.path.relpath(prior_path, output_dir),
+            }
+            skipped_objects.append(skipped)
+            print("DEXTRAH_GRASPGEN_ASSET_SKIPPED", json.dumps(_jsonable(skipped), sort_keys=True), flush=True)
+            continue
         grasp_size = max(2.0 * max(scaled_half_extents), 0.02)
         manifest_objects.append(
             {
@@ -603,7 +643,7 @@ def main() -> None:
             }
         )
 
-    manifest_path = _write_manifest(output_dir, manifest_objects, selected_uuids, args)
+    manifest_path = _write_manifest(output_dir, manifest_objects, selected_uuids, skipped_objects, args)
     missing_usd = [item["usd_path"] for item in manifest_objects if not (output_dir / item["usd_path"]).is_file()]
     summary = {
         "manifest_path": str(manifest_path),
@@ -613,6 +653,8 @@ def main() -> None:
         "usd_dir": str(usd_dir),
         "prior_dir": str(prior_dir),
         "num_objects": len(manifest_objects),
+        "skipped_object_count": len(skipped_objects),
+        "min_scaled_half_extent": min_scaled_half_extent,
         "missing_usd_count": len(missing_usd),
         "missing_usd_examples": missing_usd[:8],
     }
