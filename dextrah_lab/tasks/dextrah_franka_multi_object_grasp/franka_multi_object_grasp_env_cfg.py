@@ -26,8 +26,11 @@ FRANKA_MULTI_OBJECT_RGB_OBSERVATION_SPACE = (
 class DextrahFrankaMultiObjectGraspEnvCfg(DextrahFrankaCubeGraspEnvCfg):
     """State-based Franka pick-up task over a manifest of GraspGen objects."""
 
-    observation_space = 80
-    state_space = 80
+    # The state-based env updates this at construction to:
+    # Franka cube base obs (72) + one-hot object id + object scale, matching
+    # the original DEXTRAH teacher's object conditioning.
+    observation_space = 91
+    state_space = 91
     num_observations = observation_space
     num_states = state_space
 
@@ -90,18 +93,28 @@ class DextrahFrankaMultiObjectGraspEnvCfg(DextrahFrankaCubeGraspEnvCfg):
     # When set, reset sampling is restricted to indices that lifted in sim for
     # the matching object UUID.
     grasp_prior_verified_indices_path = ""
+    # If true, objects absent from the verified-index cache, or present with no
+    # valid indices, fall back to the original GraspGen prior.  Keep false by
+    # default so stale/incomplete caches fail loudly unless explicitly allowed.
+    grasp_prior_verified_allow_uncovered = False
     grasp_prior_allow_missing = False
+    # Multi-object priors include side/top approaches that need more pregrasp
+    # clearance than the cube default. Table safety is enforced by the top-side
+    # and projected finger-clearance reset gates below.
     grasp_prior_pregrasp_offset = 0.08
     grasp_prior_reset_attempts = 1
     grasp_prior_reset_candidate_count = 16
     grasp_prior_reset_require_topdown = True
-    # Require a real top-side approach direction.  A shallow or underside
-    # pregrasp vector can put the fingers through the table during reset.
-    grasp_prior_reset_min_pregrasp_z = 0.70
-    # Reject contact-based priors whose contact/reference midpoint is below
-    # the current object center in world z.  This prevents underside grasps
-    # even when the pregrasp offset is forced to approach from above.
-    grasp_prior_reset_min_contact_height_above_center = 0.0
+    # Require both a top-side pregrasp displacement and a downward GraspGen
+    # tool z-axis.  The pregrasp displacement alone can be above the object even
+    # when the gripper approach axis points upward from below the table.
+    grasp_prior_reset_min_pregrasp_z = 0.45
+    grasp_prior_reset_require_downward_tool_z = True
+    grasp_prior_reset_min_downward_tool_z = 0.45
+    # Thin objects can require side contacts whose midpoint is slightly below
+    # the object center even with a top-side, downward tool-axis approach.
+    # Table safety is enforced by exact finger/tip clearance gates.
+    grasp_prior_reset_min_contact_height_above_center = -0.02
     grasp_prior_reset_max_center_distance_frac = 0.50
     grasp_prior_reset_min_width = 0.008
     grasp_prior_reset_ik_iterations = 64
@@ -115,6 +128,19 @@ class DextrahFrankaMultiObjectGraspEnvCfg(DextrahFrankaCubeGraspEnvCfg):
     grasp_prior_reset_quality_max_finger_center_dist = 0.08
     grasp_prior_reset_quality_max_tip_center_dist = 0.08
     grasp_prior_reset_quality_max_tip_max_dist = 0.10
+    # Multi-object priors often target thin/elongated objects. Close fully and
+    # lift long enough for reset-video verification instead of inheriting the
+    # short single-cube warmstart.
+    grasp_prior_action_warmstart_approach_steps = 20
+    grasp_prior_action_warmstart_close_steps = 28
+    grasp_prior_action_warmstart_lift_steps = 80
+    grasp_prior_action_warmstart_close_width = 0.0
+    grasp_prior_action_warmstart_use_prior_close_width = False
+    grasp_prior_action_warmstart_lift_action_z = 1.0
+    grasp_prior_action_warmstart_close_max_ee_error = 0.0
+    grasp_prior_action_warmstart_lift_max_ee_error = 0.0
+    grasp_prior_action_warmstart_lift_max_finger_center_dist = 0.0
+    grasp_prior_action_warmstart_lift_closed_width_margin = 0.03
     grasp_prior_action_warmstart_require_current_lift_ready = True
 
     # Optional online RGB observation path used by the RGB PPO task below.
