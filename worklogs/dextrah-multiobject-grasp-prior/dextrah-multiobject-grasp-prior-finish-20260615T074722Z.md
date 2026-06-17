@@ -6811,3 +6811,34 @@ Analysis:
 - The verified-cache continuation has now exceeded the previous continuation training peak (`0.3838` at epoch `597`) on rank-0 training success, although rows remain noisy.
 - There is still no evidence of the old below-table/table-penetrating reset bug.
 - Continue to epoch `1200`, then evaluate saved checkpoints rather than relying only on reward-best selection.
+
+## 2026-06-17T01:00:00Z - fixed multi-object code merged into main
+
+Merge:
+- merged targeted fixed multi-object code into `main`
+- main commit: `f3e9fd3c1dde3dc8796538662063a9471957d646`
+- pushed to `origin/main`
+- merge worktree: `/home/lzha/code/.codex-worktrees/DEXTRAH/main-merge-dextrah-multiobject-20260617`
+
+Scope:
+- included the fixed Franka multi-object env/cfg with teacher-style object identity observations, no-below-table/downward-tool grasp reset gates, exact clearance checks, and verified-cache uncovered-object fallback.
+- included multi-object eval/verification helpers and wrappers needed to pass the same grasp-prior reset knobs.
+- preserved unrelated `main` YAM wrapper additions by patching `cluster/sbatch_train_teacher_8gpu.sh` in place instead of merging the full feature branch.
+- did not merge the full feature branch because it would have deleted unrelated YAM/RoboLab files from current `main`.
+
+Validation on the merge worktree:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py dextrah_lab/rl_games/collect_franka_multi_object_verified_grasps.py dextrah_lab/rl_games/validate_franka_multi_object_grasp_videos.py`
+- `bash -n cluster/sbatch_train_teacher_8gpu.sh cluster/sbatch_eval_franka_multi_object_grasp_1gpu.sh cluster/sbatch_collect_franka_multi_object_verified_grasps_1gpu.sh cluster/sbatch_validate_franka_multi_object_grasp_videos_1gpu.sh`
+- `git diff --check && git diff --cached --check`
+
+Active training status at merge time:
+- job id: `29170977`
+- state: `RUNNING`
+- latest checked row: epoch `995`, `cube_success_rate=0.36767578125`, `cube_has_lifted_rate=0.46826171875`
+- best checked training success so far: `0.43115234375` at epoch `824`
+- reset safety still clean: reset success `1.0`, table/finger violation `0.0`
+- latest visible checkpoint at merge-time check: `last_dextrah_franka_multi_object_grasp_ep_980_rew_3610.2715.pth`
+
+Next:
+- Continue monitoring job `29170977` through completion.
+- Evaluate final/latest plus selected saved checkpoints after epoch `1200`.
