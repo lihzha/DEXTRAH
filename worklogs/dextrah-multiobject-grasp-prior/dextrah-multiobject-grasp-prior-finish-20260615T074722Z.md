@@ -7174,3 +7174,22 @@ Visual analysis:
 Current status:
 - no remaining Slurm jobs for this account at the final queue check.
 - next development step should target policy/contact learning rather than reset/table-collision filtering.
+
+## 2026-06-17T06:45:00Z - contact-reference reward patch
+
+Code audit after the epoch-1800 eval/video pass:
+- The committed main merge did not delete tracked files. The merge changed eight tracked files and had zero file deletions; the apparent deletions were line replacements in diffs. The canonical checkout is currently on `autorl/yam-cube` with unrelated dirty work, so this iteration stayed in the isolated multi-object worktree.
+- The original Kuka/Allegro teacher observation includes object pose/goal, one-hot object id, object scale, action, and fabric state. The Franka multi-object state task already adds one-hot object id and object scale on top of the known-good 72-dim Franka cube observation, so the policy is not object-ID blind.
+- The more likely remaining issue is reward geometry: the inherited Franka cube reward used finger distances to `cube_pos`. In the multi-object subclass `cube_pos` is overwritten to the object center, so approach/enclosure/close/lift-ready shaping was still center-based for arbitrary shapes.
+
+Change:
+- `franka_multi_object_grasp_env.py`: multi-object intermediate values now keep object-center distances for diagnostics, but feed grasp-prior contact/reference distances into the inherited cube reward distance fields whenever a verified contact reference exists and `grasp_prior_reward_use_contact_reference=True`.
+- `franka_multi_object_grasp_env.py`: logs new aggregate contact-reference diagnostics and raises the per-object TensorBoard logging cap from 16 to 64 so the 18-object run reports per-object distances.
+- `franka_multi_object_grasp_env_cfg.py`: adds `grasp_prior_reward_use_contact_reference=True` for the multi-object task.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env_cfg.py`
+- `git diff --check`
+
+Next:
+- Commit the patch, update the remote agent worktree, and run a bounded full-18 PPO continuation/eval smoke without BC, warmstart, or action-prior imitation. Success criteria: no reset/table regression, active contact-reference logging, and improved lift/success trend versus the `~0.44` plateau before launching another long continuation.

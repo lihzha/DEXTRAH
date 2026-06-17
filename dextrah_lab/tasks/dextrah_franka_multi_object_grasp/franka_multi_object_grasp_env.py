@@ -1394,6 +1394,34 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         self.cube_pos[env_ids] = center_pos
 
         finger_center = 0.5 * (self.left_finger_pos[env_ids] + self.right_finger_pos[env_ids])
+        if not hasattr(self, "multi_object_reward_reference_active"):
+            self.multi_object_reward_reference_active = torch.zeros(
+                self.num_envs,
+                dtype=torch.bool,
+                device=self.device,
+            )
+            self.multi_object_ee_to_object_center_dist = torch.zeros(self.num_envs, device=self.device)
+            self.multi_object_finger_center_to_object_center_dist = torch.zeros(self.num_envs, device=self.device)
+            self.multi_object_left_finger_to_object_center_dist = torch.zeros(self.num_envs, device=self.device)
+            self.multi_object_right_finger_to_object_center_dist = torch.zeros(self.num_envs, device=self.device)
+            self.multi_object_ee_to_grasp_reference_dist = torch.zeros(self.num_envs, device=self.device)
+            self.multi_object_finger_center_to_grasp_reference_dist = torch.zeros(self.num_envs, device=self.device)
+            self.multi_object_left_finger_to_grasp_reference_dist = torch.zeros(self.num_envs, device=self.device)
+            self.multi_object_right_finger_to_grasp_reference_dist = torch.zeros(self.num_envs, device=self.device)
+
+        self.multi_object_ee_to_object_center_dist[env_ids] = torch.norm(self.ee_pos[env_ids] - center_pos, dim=-1)
+        self.multi_object_finger_center_to_object_center_dist[env_ids] = torch.norm(finger_center - center_pos, dim=-1)
+        self.multi_object_left_finger_to_object_center_dist[env_ids] = torch.norm(
+            self.left_finger_pos[env_ids] - center_pos,
+            dim=-1,
+        )
+        self.multi_object_right_finger_to_object_center_dist[env_ids] = torch.norm(
+            self.right_finger_pos[env_ids] - center_pos,
+            dim=-1,
+        )
+
+        distance_reference_pos = center_pos
+        use_contact_reference = torch.zeros(int(env_ids.numel()), dtype=torch.bool, device=self.device)
         if hasattr(self, "grasp_prior_reset_contact_reference_pos_o"):
             reference_o = self.grasp_prior_reset_contact_reference_pos_o[env_ids]
             rot_m = math_utils.matrix_from_quat(root_quat)
@@ -1407,15 +1435,36 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
                 current_reference_pos,
                 center_pos,
             )
+            if bool(getattr(self.cfg, "grasp_prior_reward_use_contact_reference", True)):
+                distance_reference_pos = self.grasp_prior_current_contact_reference_pos[env_ids]
+        self.multi_object_reward_reference_active[env_ids] = (
+            use_contact_reference & bool(getattr(self.cfg, "grasp_prior_reward_use_contact_reference", True))
+        )
+        self.multi_object_ee_to_grasp_reference_dist[env_ids] = torch.norm(
+            self.ee_pos[env_ids] - distance_reference_pos,
+            dim=-1,
+        )
+        self.multi_object_finger_center_to_grasp_reference_dist[env_ids] = torch.norm(
+            finger_center - distance_reference_pos,
+            dim=-1,
+        )
+        self.multi_object_left_finger_to_grasp_reference_dist[env_ids] = torch.norm(
+            self.left_finger_pos[env_ids] - distance_reference_pos,
+            dim=-1,
+        )
+        self.multi_object_right_finger_to_grasp_reference_dist[env_ids] = torch.norm(
+            self.right_finger_pos[env_ids] - distance_reference_pos,
+            dim=-1,
+        )
 
-        self.ee_to_cube_dist[env_ids] = torch.norm(self.ee_pos[env_ids] - center_pos, dim=-1)
-        self.finger_center_to_cube_dist[env_ids] = torch.norm(finger_center - center_pos, dim=-1)
+        self.ee_to_cube_dist[env_ids] = self.multi_object_ee_to_grasp_reference_dist[env_ids]
+        self.finger_center_to_cube_dist[env_ids] = self.multi_object_finger_center_to_grasp_reference_dist[env_ids]
         self.left_finger_to_cube_dist[env_ids] = torch.norm(
-            self.left_finger_pos[env_ids] - center_pos,
+            self.left_finger_pos[env_ids] - distance_reference_pos,
             dim=-1,
         )
         self.right_finger_to_cube_dist[env_ids] = torch.norm(
-            self.right_finger_pos[env_ids] - center_pos,
+            self.right_finger_pos[env_ids] - distance_reference_pos,
             dim=-1,
         )
         self.max_finger_to_cube_dist[env_ids] = torch.maximum(
@@ -1512,10 +1561,29 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
     def _get_rewards(self) -> torch.Tensor:
         rewards = super()._get_rewards()
         num_objects = int(getattr(self, "num_unique_objects", 0))
-        if num_objects <= 0 or num_objects > 16 or "log" not in self.extras:
+        if num_objects <= 0 or "log" not in self.extras:
             return rewards
 
         log_terms = self.extras["log"]
+        if hasattr(self, "multi_object_reward_reference_active"):
+            log_terms["multi_object_reward_reference_active_rate"] = (
+                self.multi_object_reward_reference_active.float().mean()
+            )
+            log_terms["multi_object_ee_to_object_center_dist"] = (
+                self.multi_object_ee_to_object_center_dist.mean()
+            )
+            log_terms["multi_object_finger_center_to_object_center_dist"] = (
+                self.multi_object_finger_center_to_object_center_dist.mean()
+            )
+            log_terms["multi_object_finger_center_to_grasp_reference_dist"] = (
+                self.multi_object_finger_center_to_grasp_reference_dist.mean()
+            )
+            log_terms["multi_object_max_finger_to_grasp_reference_dist"] = torch.maximum(
+                self.multi_object_left_finger_to_grasp_reference_dist,
+                self.multi_object_right_finger_to_grasp_reference_dist,
+            ).mean()
+        if num_objects > 64:
+            return rewards
         for object_idx in range(num_objects):
             object_mask_bool = self.object_asset_index == object_idx
             object_mask = object_mask_bool.float()
@@ -1529,6 +1597,16 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             log_terms[f"{prefix}_finger_center_dist"] = (
                 self.finger_center_to_cube_dist * object_mask
             ).sum() / denom
+            if hasattr(self, "multi_object_reward_reference_active"):
+                log_terms[f"{prefix}_reward_reference_active_rate"] = (
+                    self.multi_object_reward_reference_active.float() * object_mask
+                ).sum() / denom
+                log_terms[f"{prefix}_finger_center_to_object_center_dist"] = (
+                    self.multi_object_finger_center_to_object_center_dist * object_mask
+                ).sum() / denom
+                log_terms[f"{prefix}_finger_center_to_grasp_reference_dist"] = (
+                    self.multi_object_finger_center_to_grasp_reference_dist * object_mask
+                ).sum() / denom
             if getattr(self, "_grasp_prior_reset_enabled", False):
                 log_terms[f"{prefix}_grasp_prior_reset_success_rate"] = (
                     self.grasp_prior_reset_success.float() * object_mask
