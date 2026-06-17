@@ -18,6 +18,7 @@ from isaaclab.assets import RigidObject, RigidObjectCfg
 from isaaclab.sim import schemas as sim_schemas
 from isaaclab.sim.spawners.materials.physics_materials_cfg import RigidBodyMaterialCfg
 from isaaclab.sim.utils import bind_physics_material, make_uninstanceable
+from pxr import Gf, Usd, UsdGeom
 
 
 def repo_root() -> Path:
@@ -72,6 +73,65 @@ def _bounds_from_record(
     else:
         half_extents = [float(v) for v in default_half_extents]
     return ([-v for v in half_extents], half_extents)
+
+
+def _usd_default_prim_info(usd_path: Path) -> tuple[list[float] | None, float]:
+    stage = Usd.Stage.Open(str(usd_path), Usd.Stage.LoadAll)
+    if stage is None:
+        return None, 1.0
+    prim = stage.GetDefaultPrim()
+    if not prim.IsValid():
+        root_prims = [child for child in stage.GetPseudoRoot().GetChildren() if child.IsValid()]
+        prim = root_prims[0] if root_prims else prim
+    if not prim.IsValid():
+        return None, 1.0
+    root_scale = 1.0
+    for op in UsdGeom.Xformable(prim).GetOrderedXformOps():
+        if not op.GetOpName().startswith("xformOp:scale"):
+            continue
+        value = op.Get()
+        try:
+            values = [float(value[axis]) for axis in range(3)]
+        except Exception:
+            continue
+        if (
+            all(math.isfinite(v) and v > 0.0 for v in values)
+            and abs(values[0] - values[1]) <= 1.0e-6
+            and abs(values[0] - values[2]) <= 1.0e-6
+        ):
+            root_scale *= values[0]
+    cache = UsdGeom.BBoxCache(
+        Usd.TimeCode.Default(),
+        [UsdGeom.Tokens.default_, UsdGeom.Tokens.render, UsdGeom.Tokens.proxy],
+        useExtentsHint=True,
+    )
+    bbox_range = cache.ComputeWorldBound(prim).ComputeAlignedBox()
+    if bbox_range.IsEmpty():
+        return None, root_scale
+    return [float(v) for v in bbox_range.GetSize()], root_scale
+
+
+def _usd_default_prim_bbox_size(usd_path: Path) -> list[float] | None:
+    return _usd_default_prim_info(usd_path)[0]
+
+
+def _usd_bounds_outlier(
+    usd_bbox_size: Sequence[float] | None,
+    expected_size: Sequence[float],
+    *,
+    max_ratio: float,
+    max_dimension: float,
+) -> tuple[bool, float, float]:
+    if usd_bbox_size is None:
+        return False, 0.0, 0.0
+    usd_max = max(float(v) for v in usd_bbox_size)
+    expected_max = max(float(v) for v in expected_size)
+    ratio = usd_max / max(expected_max, 1.0e-6)
+    if max_dimension > 0.0 and usd_max > max_dimension:
+        return True, usd_max, ratio
+    if max_ratio > 0.0 and ratio > max_ratio:
+        return True, usd_max, ratio
+    return False, usd_max, ratio
 
 
 def _collect_record_text(value: object, fragments: list[str]) -> None:
@@ -179,6 +239,9 @@ class MultiObjectGraspTaskMixin:
         default_half_extents: Sequence[float],
         default_grasp_size: float,
         default_scale: float,
+        validate_usd_bounds: bool,
+        usd_bounds_max_ratio: float,
+        usd_bounds_max_dimension: float,
         label: str,
     ) -> list[dict[str, object]]:
         manifest_path = str(manifest_path_value or "")
@@ -234,6 +297,37 @@ class MultiObjectGraspTaskMixin:
                     scale=scale,
                     default_half_extents=default_half_extents,
                 )
+                expected_size = [bounds_max[axis] - bounds_min[axis] for axis in range(3)]
+                usd_bbox_size = None
+                usd_root_scale = 1.0
+                if bool(validate_usd_bounds):
+                    usd_bbox_size, usd_root_scale = _usd_default_prim_info(usd_path)
+                usd_spawn_scale = float(scale) * float(usd_root_scale)
+                usd_bounds_is_outlier, usd_bounds_max, usd_bounds_ratio = _usd_bounds_outlier(
+                    usd_bbox_size,
+                    expected_size,
+                    max_ratio=float(usd_bounds_max_ratio),
+                    max_dimension=float(usd_bounds_max_dimension),
+                )
+                if usd_bounds_is_outlier:
+                    print(
+                        json.dumps(
+                            {
+                                "event": "skip_asset_usd_bounds_outlier",
+                                "label": label,
+                                "uuid": uuid,
+                                "usd_path": str(usd_path),
+                                "usd_bbox_size": usd_bbox_size,
+                                "manifest_bbox_size": expected_size,
+                                "usd_bounds_max": usd_bounds_max,
+                                "usd_bounds_ratio": usd_bounds_ratio,
+                                "max_ratio": float(usd_bounds_max_ratio),
+                                "max_dimension": float(usd_bounds_max_dimension),
+                            }
+                        ),
+                        flush=True,
+                    )
+                    continue
                 half_extents = [0.5 * (bounds_max[axis] - bounds_min[axis]) for axis in range(3)]
                 center_offset = [0.5 * (bounds_max[axis] + bounds_min[axis]) for axis in range(3)]
                 xy_radius = max(abs(bounds_min[0]), abs(bounds_max[0]), abs(bounds_min[1]), abs(bounds_max[1]))
@@ -254,6 +348,8 @@ class MultiObjectGraspTaskMixin:
                         "usd_path": str(usd_path),
                         "raw_object_path": resolved_raw_object,
                         "scale": scale,
+                        "usd_spawn_scale": usd_spawn_scale,
+                        "usd_root_scale": usd_root_scale,
                         "scale_source": scale_source,
                         "scaled_half_extents": half_extents,
                         "scaled_bounds_min": bounds_min,
@@ -264,10 +360,18 @@ class MultiObjectGraspTaskMixin:
                         "grasp_size": float(record.get("grasp_size", max(2.0 * max(half_extents), 0.02))),
                         "grasp_prior_path": "" if prior_path is None else str(prior_path),
                         "stable_pose_path": resolved_stable_pose,
+                        "usd_bbox_size": [] if usd_bbox_size is None else usd_bbox_size,
+                        "usd_bounds_ratio": float(usd_bounds_ratio),
                     }
                 )
         else:
             usd_root = object_assets_dir / "USD"
+            if bool(require_scale):
+                raise FileNotFoundError(
+                    f"{label} requires GraspGen object_scale, but no manifest was found at "
+                    f"{object_assets_dir / 'manifest.json'}. Run dextrah_lab/assets/prepare_graspgen_assets.py "
+                    "or set an asset manifest that includes grasp_prior_path/object_scale."
+                )
             if not usd_root.is_dir():
                 raise FileNotFoundError(
                     "Set env.object_asset_manifest_path or provide assets under "
@@ -285,6 +389,8 @@ class MultiObjectGraspTaskMixin:
                         "usd_path": str(usd_path.resolve()),
                         "raw_object_path": "",
                         "scale": scale,
+                        "usd_spawn_scale": scale,
+                        "usd_root_scale": 1.0,
                         "scale_source": "default",
                         "scaled_half_extents": half_extents,
                         "scaled_bounds_min": [-v for v in half_extents],
@@ -295,6 +401,8 @@ class MultiObjectGraspTaskMixin:
                         "grasp_size": float(default_grasp_size),
                         "grasp_prior_path": "",
                         "stable_pose_path": "",
+                        "usd_bbox_size": [],
+                        "usd_bounds_ratio": 0.0,
                     }
                 )
 
@@ -313,6 +421,9 @@ class MultiObjectGraspTaskMixin:
             default_half_extents=tuple(float(v) for v in self.cfg.object_default_half_extents),
             default_grasp_size=float(self.cfg.object_default_grasp_size),
             default_scale=float(self.cfg.object_default_scale),
+            validate_usd_bounds=bool(getattr(self.cfg, "object_validate_usd_bounds", False)),
+            usd_bounds_max_ratio=float(getattr(self.cfg, "object_usd_bounds_max_ratio", 4.0)),
+            usd_bounds_max_dimension=float(getattr(self.cfg, "object_usd_bounds_max_dimension", 0.5)),
             label="multi-object",
         )
 
@@ -470,6 +581,9 @@ class MultiObjectGraspTaskMixin:
             default_half_extents=tuple(float(v) for v in self.cfg.object_default_half_extents),
             default_grasp_size=float(self.cfg.object_default_grasp_size),
             default_scale=float(self.cfg.object_default_scale),
+            validate_usd_bounds=bool(getattr(self.cfg, "tabletop_clutter_validate_usd_bounds", False)),
+            usd_bounds_max_ratio=float(getattr(self.cfg, "tabletop_clutter_usd_bounds_max_ratio", 4.0)),
+            usd_bounds_max_dimension=float(getattr(self.cfg, "tabletop_clutter_usd_bounds_max_dimension", 0.5)),
             label="tabletop clutter",
         )
         if prioritize_common:
@@ -620,6 +734,10 @@ class MultiObjectGraspTaskMixin:
         wall_z = info["wall_center_z"]
         wall_h = info["wall_height"]
         bottom = info["bottom_thickness"]
+        floor_color = tuple(float(v) for v in getattr(self.cfg, "tabletop_goal_bin_floor_color", (0.16, 0.18, 0.20)))
+        x_wall_color = tuple(float(v) for v in getattr(self.cfg, "tabletop_goal_bin_x_wall_color", (0.12, 0.38, 0.58)))
+        y_wall_color = tuple(float(v) for v in getattr(self.cfg, "tabletop_goal_bin_y_wall_color", (0.10, 0.32, 0.50)))
+        visual_roughness = float(getattr(self.cfg, "tabletop_goal_bin_visual_roughness", 0.68))
 
         def spawn_part(path: str, center: tuple[float, float, float], size: tuple[float, float, float], color):
             cfg = sim_utils.CuboidCfg(
@@ -637,17 +755,37 @@ class MultiObjectGraspTaskMixin:
                     friction_combine_mode="max",
                     restitution_combine_mode="min",
                 ),
-                visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=color, roughness=0.68),
+                visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=color, roughness=visual_roughness),
             )
             cfg.func(path, cfg, translation=center)
 
         for env_id in range(self.num_envs):
             root = f"/World/envs/env_{env_id}/GoalBin"
-            spawn_part(f"{root}/floor", (cx, cy, floor_z), (outer_x, outer_y, bottom), (0.16, 0.18, 0.20))
-            spawn_part(f"{root}/x_pos_wall", (cx + 0.5 * inner_x + 0.5 * wall, cy, wall_z), (wall, outer_y, wall_h), (0.12, 0.38, 0.58))
-            spawn_part(f"{root}/x_neg_wall", (cx - 0.5 * inner_x - 0.5 * wall, cy, wall_z), (wall, outer_y, wall_h), (0.12, 0.38, 0.58))
-            spawn_part(f"{root}/y_pos_wall", (cx, cy + 0.5 * inner_y + 0.5 * wall, wall_z), (inner_x, wall, wall_h), (0.10, 0.32, 0.50))
-            spawn_part(f"{root}/y_neg_wall", (cx, cy - 0.5 * inner_y - 0.5 * wall, wall_z), (inner_x, wall, wall_h), (0.10, 0.32, 0.50))
+            spawn_part(f"{root}/floor", (cx, cy, floor_z), (outer_x, outer_y, bottom), floor_color)
+            spawn_part(
+                f"{root}/x_pos_wall",
+                (cx + 0.5 * inner_x + 0.5 * wall, cy, wall_z),
+                (wall, outer_y, wall_h),
+                x_wall_color,
+            )
+            spawn_part(
+                f"{root}/x_neg_wall",
+                (cx - 0.5 * inner_x - 0.5 * wall, cy, wall_z),
+                (wall, outer_y, wall_h),
+                x_wall_color,
+            )
+            spawn_part(
+                f"{root}/y_pos_wall",
+                (cx, cy + 0.5 * inner_y + 0.5 * wall, wall_z),
+                (inner_x, wall, wall_h),
+                y_wall_color,
+            )
+            spawn_part(
+                f"{root}/y_neg_wall",
+                (cx, cy - 0.5 * inner_y - 0.5 * wall, wall_z),
+                (inner_x, wall, wall_h),
+                y_wall_color,
+            )
 
     def _tabletop_goal_bin_clearance(self, xy: tuple[float, float], radius: float) -> float:
         info = self._tabletop_goal_bin_info()
@@ -753,15 +891,17 @@ class MultiObjectGraspTaskMixin:
         *,
         physics_prefix: str = "object",
     ) -> None:
-        scale = float(asset["scale"])
+        scale = float(asset.get("usd_spawn_scale", asset["scale"]))
         object_cfg = RigidObjectCfg(
             prim_path=prim_path,
             spawn=sim_utils.UsdFileCfg(
                 usd_path=str(asset["usd_path"]),
                 rigid_props=sim_utils.RigidBodyPropertiesCfg(
                     rigid_body_enabled=True,
-                    kinematic_enabled=False,
-                    disable_gravity=False,
+                    kinematic_enabled=bool(
+                        self._rigid_body_cfg_value("kinematic_enabled", prefix=physics_prefix)
+                    ),
+                    disable_gravity=bool(self._rigid_body_cfg_value("disable_gravity", prefix=physics_prefix)),
                     linear_damping=float(self._rigid_body_cfg_value("linear_damping", prefix=physics_prefix)),
                     angular_damping=float(self._rigid_body_cfg_value("angular_damping", prefix=physics_prefix)),
                     enable_gyroscopic_forces=True,
@@ -775,8 +915,12 @@ class MultiObjectGraspTaskMixin:
                     stabilization_threshold=float(
                         self._rigid_body_cfg_value("stabilization_threshold", prefix=physics_prefix)
                     ),
-                    max_linear_velocity=1000.0,
-                    max_angular_velocity=1000.0,
+                    max_linear_velocity=float(
+                        self._rigid_body_cfg_value("max_linear_velocity", prefix=physics_prefix)
+                    ),
+                    max_angular_velocity=float(
+                        self._rigid_body_cfg_value("max_angular_velocity", prefix=physics_prefix)
+                    ),
                     max_depenetration_velocity=float(
                         self._rigid_body_cfg_value("max_depenetration_velocity", prefix=physics_prefix)
                     ),
@@ -815,6 +959,98 @@ class MultiObjectGraspTaskMixin:
         prim = stage.GetPrimAtPath(base_link_path)
         if prim.IsValid() and prim.HasAttribute("physxArticulation:articulationEnabled"):
             prim.GetAttribute("physxArticulation:articulationEnabled").Set(False)
+
+    def _object_asset_root_path(self, env_id: int) -> str:
+        asset = self._object_assets[int(self.object_asset_index[env_id].item())]
+        object_prim_name = f"object_{env_id}_{_safe_prim_token(str(asset['uuid']))}"
+        return f"/World/envs/env_{env_id}/object/{object_prim_name}"
+
+    def _tabletop_clutter_asset_root_path(self, env_id: int, slot_idx: int) -> str:
+        asset = self._tabletop_clutter_assets[int(self.tabletop_clutter_asset_index[env_id, slot_idx].item())]
+        prim_name = f"slot_{slot_idx:02d}_{env_id}_{_safe_prim_token(str(asset['uuid']))}"
+        return f"/World/envs/env_{env_id}/tabletop_clutter/{prim_name}"
+
+    @staticmethod
+    def _set_usd_asset_root_pose(prim_path: str, pos: torch.Tensor, quat: torch.Tensor) -> bool:
+        stage = omni.usd.get_context().get_stage()
+        prim = stage.GetPrimAtPath(prim_path)
+        if not prim.IsValid():
+            return False
+        xformable = UsdGeom.Xformable(prim)
+        translate_op = None
+        orient_op = None
+        for op in xformable.GetOrderedXformOps():
+            op_name = op.GetOpName()
+            if op_name == "xformOp:translate":
+                translate_op = op
+            elif op_name == "xformOp:orient":
+                orient_op = op
+        if translate_op is None:
+            translate_op = xformable.AddTranslateOp()
+        if orient_op is None:
+            orient_op = xformable.AddOrientOp()
+
+        pos_cpu = pos.detach().to(dtype=torch.float64, device="cpu")
+        quat_cpu = quat.detach().to(dtype=torch.float64, device="cpu")
+        translate_type = str(translate_op.GetAttr().GetTypeName())
+        orient_type = str(orient_op.GetAttr().GetTypeName())
+        if translate_type in {"float3", "vector3f"}:
+            translate_value = Gf.Vec3f(float(pos_cpu[0]), float(pos_cpu[1]), float(pos_cpu[2]))
+        else:
+            translate_value = Gf.Vec3d(float(pos_cpu[0]), float(pos_cpu[1]), float(pos_cpu[2]))
+        if orient_type == "quatf":
+            orient_value = Gf.Quatf(
+                float(quat_cpu[0]),
+                Gf.Vec3f(float(quat_cpu[1]), float(quat_cpu[2]), float(quat_cpu[3])),
+            )
+        else:
+            orient_value = Gf.Quatd(
+                float(quat_cpu[0]),
+                Gf.Vec3d(float(quat_cpu[1]), float(quat_cpu[2]), float(quat_cpu[3])),
+            )
+        translate_op.Set(translate_value)
+        orient_op.Set(orient_value)
+        return True
+
+    def _set_object_asset_root_pose(
+        self,
+        env_ids: torch.Tensor,
+        object_pos: torch.Tensor,
+        object_quat: torch.Tensor,
+    ) -> None:
+        for row_idx, env_id_tensor in enumerate(env_ids.detach().cpu().tolist()):
+            env_id = int(env_id_tensor)
+            self._set_usd_asset_root_pose(
+                self._object_asset_root_path(env_id),
+                object_pos[row_idx],
+                object_quat[row_idx],
+            )
+
+    def _set_tabletop_clutter_asset_root_pose(
+        self,
+        env_ids: torch.Tensor,
+        slot_idx: int,
+        object_pos: torch.Tensor,
+        object_quat: torch.Tensor,
+    ) -> None:
+        if not getattr(self, "_tabletop_clutter_enabled", False):
+            return
+        for row_idx, env_id_tensor in enumerate(env_ids.detach().cpu().tolist()):
+            env_id = int(env_id_tensor)
+            self._set_usd_asset_root_pose(
+                self._tabletop_clutter_asset_root_path(env_id, slot_idx),
+                object_pos[row_idx],
+                object_quat[row_idx],
+            )
+
+    def _sync_tabletop_clutter_asset_root_poses_from_sim(self, env_ids: torch.Tensor) -> None:
+        if not getattr(self, "_tabletop_clutter_enabled", False):
+            return
+        env_origins = self.scene.env_origins[env_ids]
+        for slot_idx, clutter_object in enumerate(getattr(self, "_tabletop_clutter_objects", [])):
+            root_pos = clutter_object.data.root_pos_w[env_ids] - env_origins
+            root_quat = clutter_object.data.root_quat_w[env_ids]
+            self._set_tabletop_clutter_asset_root_pose(env_ids, slot_idx, root_pos, root_quat)
 
     def _spawn_multi_object_assets(self) -> None:
         for env_id in range(self.num_envs):
@@ -1300,6 +1536,7 @@ class MultiObjectGraspTaskMixin:
             object_state[:, 0:3] = object_pos + self.scene.env_origins[env_ids]
             object_state[:, 3:7] = object_quat
             clutter_object.write_root_state_to_sim(object_state, env_ids=env_ids)
+            self._set_tabletop_clutter_asset_root_pose(env_ids, slot_idx, object_pos, object_quat)
             self.tabletop_clutter_initial_root_pos[env_ids, slot_idx] = object_pos
             self.tabletop_clutter_initial_root_quat[env_ids, slot_idx] = object_quat
 
@@ -1330,6 +1567,8 @@ class MultiObjectGraspTaskMixin:
         if settle_steps <= 0:
             root_pos = self._cube.data.root_pos_w[env_ids] - self.scene.env_origins[env_ids]
             root_quat = self._cube.data.root_quat_w[env_ids]
+            self._set_object_asset_root_pose(env_ids, root_pos, root_quat)
+            self._sync_tabletop_clutter_asset_root_poses_from_sim(env_ids)
             return root_pos, root_quat
 
         if bool(self.cfg.object_reset_settle_full_reset_only) and int(env_ids.numel()) != int(self.num_envs):
@@ -1365,6 +1604,8 @@ class MultiObjectGraspTaskMixin:
 
         root_pos = self._cube.data.root_pos_w[env_ids] - self.scene.env_origins[env_ids]
         root_quat = self._cube.data.root_quat_w[env_ids]
+        self._set_object_asset_root_pose(env_ids, root_pos, root_quat)
+        self._sync_tabletop_clutter_asset_root_poses_from_sim(env_ids)
         return root_pos, root_quat
 
     def _multi_object_features(self) -> torch.Tensor:
@@ -1404,7 +1645,11 @@ class MultiObjectGraspTaskMixin:
             "uuids": [str(asset["uuid"]) for asset in self._object_assets],
             "scales": [float(asset["scale"]) for asset in self._object_assets],
             "scale_sources": [str(asset.get("scale_source") or "") for asset in self._object_assets],
+            "usd_spawn_scales": [float(asset.get("usd_spawn_scale", asset["scale"])) for asset in self._object_assets],
+            "usd_root_scales": [float(asset.get("usd_root_scale", 1.0)) for asset in self._object_assets],
             "usd_paths": [str(asset["usd_path"]) for asset in self._object_assets],
+            "usd_bbox_sizes": [[float(v) for v in asset.get("usd_bbox_size", [])] for asset in self._object_assets],
+            "usd_bounds_ratios": [float(asset.get("usd_bounds_ratio", 0.0)) for asset in self._object_assets],
             "grasp_prior_paths": [str(asset.get("grasp_prior_path") or "") for asset in self._object_assets],
         }
 
@@ -1428,6 +1673,16 @@ class MultiObjectGraspTaskMixin:
             "raw_object_paths": [str(asset.get("raw_object_path") or "") for asset in self._tabletop_clutter_assets],
             "grasp_prior_paths": [str(asset.get("grasp_prior_path") or "") for asset in self._tabletop_clutter_assets],
             "stable_pose_paths": [str(asset.get("stable_pose_path") or "") for asset in self._tabletop_clutter_assets],
+            "usd_spawn_scales": [
+                float(asset.get("usd_spawn_scale", asset["scale"])) for asset in self._tabletop_clutter_assets
+            ],
+            "usd_root_scales": [float(asset.get("usd_root_scale", 1.0)) for asset in self._tabletop_clutter_assets],
+            "usd_bbox_sizes": [
+                [float(v) for v in asset.get("usd_bbox_size", [])] for asset in self._tabletop_clutter_assets
+            ],
+            "usd_bounds_ratios": [
+                float(asset.get("usd_bounds_ratio", 0.0)) for asset in self._tabletop_clutter_assets
+            ],
             "scales": [float(asset["scale"]) for asset in self._tabletop_clutter_assets],
             "scale_sources": [str(asset.get("scale_source") or "") for asset in self._tabletop_clutter_assets],
             "scaled_bounds_min": [
@@ -1479,6 +1734,10 @@ class MultiObjectGraspTaskMixin:
             "max_xy_radius": float(getattr(self.cfg, "tabletop_clutter_max_xy_radius", 0.0)),
             "physics": {
                 "density": float(self._rigid_body_cfg_value("density", prefix="tabletop_clutter")),
+                "kinematic_enabled": bool(
+                    self._rigid_body_cfg_value("kinematic_enabled", prefix="tabletop_clutter")
+                ),
+                "disable_gravity": bool(self._rigid_body_cfg_value("disable_gravity", prefix="tabletop_clutter")),
                 "static_friction": float(self._rigid_body_cfg_value("static_friction", prefix="tabletop_clutter")),
                 "dynamic_friction": float(self._rigid_body_cfg_value("dynamic_friction", prefix="tabletop_clutter")),
                 "restitution": float(self._rigid_body_cfg_value("restitution", prefix="tabletop_clutter")),
@@ -1495,6 +1754,12 @@ class MultiObjectGraspTaskMixin:
                 "sleep_threshold": float(self._rigid_body_cfg_value("sleep_threshold", prefix="tabletop_clutter")),
                 "stabilization_threshold": float(
                     self._rigid_body_cfg_value("stabilization_threshold", prefix="tabletop_clutter")
+                ),
+                "max_linear_velocity": float(
+                    self._rigid_body_cfg_value("max_linear_velocity", prefix="tabletop_clutter")
+                ),
+                "max_angular_velocity": float(
+                    self._rigid_body_cfg_value("max_angular_velocity", prefix="tabletop_clutter")
                 ),
                 "max_depenetration_velocity": float(
                     self._rigid_body_cfg_value("max_depenetration_velocity", prefix="tabletop_clutter")

@@ -18,10 +18,11 @@ DEFAULT_FRANKA_CAMERA_EYE = (-0.10, -1.05, 1.36)
 DEFAULT_FRANKA_CAMERA_TARGET = (-0.62, 0.0, 0.78)
 DEFAULT_YAM_CAMERA_EYE = (-0.52, -0.86, 0.72)
 DEFAULT_YAM_CAMERA_TARGET = (-0.27, 0.0, 0.08)
+DEFAULT_TASK = "Dextrah-Single-YAM-Tabletop-Clutter-Grasp"
 
 
 parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument("--task", type=str, default="Dextrah-Franka-Tabletop-Clutter-Grasp")
+parser.add_argument("--task", type=str, default=DEFAULT_TASK)
 parser.add_argument("--num_envs", type=int, default=1)
 parser.add_argument("--seed", type=int, default=42)
 parser.add_argument("--output_dir", type=str, default="artifacts/tabletop_clutter_settle")
@@ -32,14 +33,38 @@ parser.add_argument("--capture_interval", type=int, default=2)
 parser.add_argument("--fps", type=int, default=30)
 parser.add_argument("--video_seconds", type=float, default=None)
 parser.add_argument("--render_warmup_frames", type=int, default=2)
+parser.add_argument("--render_width", type=int, default=None)
+parser.add_argument("--render_height", type=int, default=None)
+parser.add_argument("--freeze_object_roots_for_video", action=argparse.BooleanOptionalAction, default=False)
+parser.add_argument("--repeat_initial_frame_for_video", action=argparse.BooleanOptionalAction, default=False)
+parser.add_argument("--visual_object_overlay", action=argparse.BooleanOptionalAction, default=False)
+parser.add_argument("--visual_object_overlay_z_offset", type=float, default=0.0)
+parser.add_argument("--dome_light_intensity", type=float, default=None)
+parser.add_argument("--dome_light_exposure", type=float, default=None)
+parser.add_argument("--key_light_enabled", action=argparse.BooleanOptionalAction, default=None)
+parser.add_argument("--key_light_intensity", type=float, default=None)
+parser.add_argument("--key_light_exposure", type=float, default=None)
 parser.add_argument("--camera_eye", type=float, nargs=3, default=None)
 parser.add_argument("--camera_target", type=float, nargs=3, default=None)
 parser.add_argument("--object_asset_manifest_path", type=str, default=None)
 parser.add_argument("--object_assets_dir", type=str, default=None)
 parser.add_argument("--max_objects", type=int, default=None)
 parser.add_argument("--object_asset_assignment", type=str, default=None)
+parser.add_argument("--require_graspgen_scale", action=argparse.BooleanOptionalAction, default=None)
 parser.add_argument("--object_spawn_xy_randomization", type=float, default=None)
 parser.add_argument("--object_spawn_yaw_randomization_deg", type=float, default=None)
+parser.add_argument("--object_spawn_z_clearance", type=float, default=None)
+parser.add_argument("--object_kinematic_enabled", action=argparse.BooleanOptionalAction, default=None)
+parser.add_argument("--object_disable_gravity", action=argparse.BooleanOptionalAction, default=None)
+parser.add_argument("--object_solver_position_iterations", type=int, default=None)
+parser.add_argument("--object_solver_velocity_iterations", type=int, default=None)
+parser.add_argument("--object_linear_damping", type=float, default=None)
+parser.add_argument("--object_angular_damping", type=float, default=None)
+parser.add_argument("--object_sleep_threshold", type=float, default=None)
+parser.add_argument("--object_stabilization_threshold", type=float, default=None)
+parser.add_argument("--object_max_linear_velocity", type=float, default=None)
+parser.add_argument("--object_max_angular_velocity", type=float, default=None)
+parser.add_argument("--object_max_depenetration_velocity", type=float, default=None)
 parser.add_argument("--tabletop_clutter_asset_manifest_path", type=str, default=None)
 parser.add_argument("--tabletop_clutter_assets_dir", type=str, default=None)
 parser.add_argument("--tabletop_clutter_max_objects", type=int, default=None)
@@ -59,10 +84,14 @@ parser.add_argument("--tabletop_clutter_placement_attempts", type=int, default=N
 parser.add_argument("--tabletop_clutter_max_xy_radius", type=float, default=None)
 parser.add_argument("--tabletop_clutter_solver_position_iterations", type=int, default=None)
 parser.add_argument("--tabletop_clutter_solver_velocity_iterations", type=int, default=None)
+parser.add_argument("--tabletop_clutter_kinematic_enabled", action=argparse.BooleanOptionalAction, default=None)
+parser.add_argument("--tabletop_clutter_disable_gravity", action=argparse.BooleanOptionalAction, default=None)
 parser.add_argument("--tabletop_clutter_linear_damping", type=float, default=None)
 parser.add_argument("--tabletop_clutter_angular_damping", type=float, default=None)
 parser.add_argument("--tabletop_clutter_sleep_threshold", type=float, default=None)
 parser.add_argument("--tabletop_clutter_stabilization_threshold", type=float, default=None)
+parser.add_argument("--tabletop_clutter_max_linear_velocity", type=float, default=None)
+parser.add_argument("--tabletop_clutter_max_angular_velocity", type=float, default=None)
 parser.add_argument("--tabletop_clutter_max_depenetration_velocity", type=float, default=None)
 parser.add_argument("--objaverse_textured_manifest_path", type=str, default=None)
 parser.add_argument("--objaverse_textured_asset_dir", type=str, default=None)
@@ -787,6 +816,117 @@ def _root_snapshot(task_env) -> dict[str, object]:
     return snapshot
 
 
+def _restore_root_snapshot(task_env, snapshot: dict[str, object]) -> None:
+    env_ids = torch.arange(int(task_env.num_envs), dtype=torch.long, device=task_env.device)
+    env_origins = task_env.scene.env_origins
+
+    def _pose_from_lists(pos_list: object, quat_list: object) -> tuple[torch.Tensor, torch.Tensor]:
+        pos = torch.as_tensor(pos_list, dtype=torch.float32, device=task_env.device)
+        quat = torch.as_tensor(quat_list, dtype=torch.float32, device=task_env.device)
+        if pos.ndim != 2 or quat.ndim != 2:
+            raise ValueError("Root snapshot entries must have shape (num_envs, dims)")
+        return pos, quat
+
+    def _state_from_pose(pos: torch.Tensor, quat: torch.Tensor) -> torch.Tensor:
+        state = torch.zeros((pos.shape[0], 13), dtype=torch.float32, device=task_env.device)
+        state[:, 0:3] = pos + env_origins[env_ids]
+        state[:, 3:7] = quat
+        return state
+
+    zero_vel = torch.zeros((int(task_env.num_envs), 6), dtype=torch.float32, device=task_env.device)
+    target_pos, target_quat = _pose_from_lists(snapshot["target_root_pos"], snapshot["target_root_quat"])
+    target_state = _state_from_pose(target_pos, target_quat)
+    task_env._cube.write_root_state_to_sim(target_state, env_ids=env_ids)
+    task_env._cube.write_root_velocity_to_sim(zero_vel, env_ids=env_ids)
+    sync_target_roots = getattr(task_env, "_set_object_asset_root_pose", None)
+    if callable(sync_target_roots):
+        sync_target_roots(env_ids, target_pos, target_quat)
+
+    clutter_positions = snapshot.get("clutter_root_pos_by_slot")
+    clutter_quats = snapshot.get("clutter_root_quat_by_slot")
+    clutter_objects = list(getattr(task_env, "_tabletop_clutter_objects", []))
+    sync_clutter_roots = getattr(task_env, "_set_tabletop_clutter_asset_root_pose", None)
+    if isinstance(clutter_positions, list) and isinstance(clutter_quats, list):
+        for slot_idx, (clutter_object, slot_pos, slot_quat) in enumerate(
+            zip(clutter_objects, clutter_positions, clutter_quats, strict=False)
+        ):
+            slot_pos_tensor, slot_quat_tensor = _pose_from_lists(slot_pos, slot_quat)
+            slot_state = _state_from_pose(slot_pos_tensor, slot_quat_tensor)
+            clutter_object.write_root_state_to_sim(slot_state, env_ids=env_ids)
+            clutter_object.write_root_velocity_to_sim(zero_vel, env_ids=env_ids)
+            if callable(sync_clutter_roots):
+                sync_clutter_roots(env_ids, slot_idx, slot_pos_tensor, slot_quat_tensor)
+
+    task_env.scene.write_data_to_sim()
+    task_env.sim.forward()
+    task_env.scene.update(dt=0.0)
+    if callable(sync_target_roots):
+        sync_target_roots(env_ids, target_pos, target_quat)
+    if callable(sync_clutter_roots) and isinstance(clutter_positions, list) and isinstance(clutter_quats, list):
+        for slot_idx, (slot_pos, slot_quat) in enumerate(zip(clutter_positions, clutter_quats, strict=False)):
+            slot_pos_tensor, slot_quat_tensor = _pose_from_lists(slot_pos, slot_quat)
+            sync_clutter_roots(env_ids, slot_idx, slot_pos_tensor, slot_quat_tensor)
+
+
+def _spawn_visual_object_overlay(task_env, snapshot: dict[str, object], *, z_offset: float = 0.0) -> list[dict[str, object]]:
+    env_origins = task_env.scene.env_origins.detach().float().cpu().numpy()
+    spawned: list[dict[str, object]] = []
+
+    def _spawn(path: str, asset: dict[str, object], pos, quat, env_id: int, label: str) -> None:
+        world_pos = np.asarray(pos, dtype=np.float64) + env_origins[env_id]
+        world_pos[2] += float(z_offset)
+        world_quat = tuple(float(v) for v in quat)
+        scale = float(asset["scale"])
+        cfg = sim_utils.UsdFileCfg(
+            usd_path=str(asset["usd_path"]),
+            scale=(scale, scale, scale),
+        )
+        cfg.func(path, cfg, translation=tuple(float(v) for v in world_pos), orientation=world_quat)
+        spawned.append(
+            {
+                "label": label,
+                "env_id": int(env_id),
+                "path": path,
+                "uuid": str(asset.get("uuid") or ""),
+                "usd_path": str(asset["usd_path"]),
+                "scale": scale,
+                "translation": [float(v) for v in world_pos],
+                "orientation": [float(v) for v in world_quat],
+            }
+        )
+
+    target_pos = snapshot.get("target_root_pos")
+    target_quat = snapshot.get("target_root_quat")
+    object_assets = list(getattr(task_env, "_object_assets", []))
+    if isinstance(target_pos, list) and isinstance(target_quat, list) and object_assets:
+        object_indices = getattr(task_env, "object_asset_index", None)
+        for env_id, (pos, quat) in enumerate(zip(target_pos, target_quat, strict=False)):
+            asset_idx = int(object_indices[env_id].item()) if object_indices is not None else 0
+            asset = object_assets[asset_idx]
+            _spawn(f"/World/VisualObjectOverlay/env_{env_id}/target", asset, pos, quat, env_id, "target")
+
+    clutter_positions = snapshot.get("clutter_root_pos_by_slot")
+    clutter_quats = snapshot.get("clutter_root_quat_by_slot")
+    clutter_assets = list(getattr(task_env, "_tabletop_clutter_assets", []))
+    clutter_indices = getattr(task_env, "tabletop_clutter_asset_index", None)
+    if isinstance(clutter_positions, list) and isinstance(clutter_quats, list) and clutter_assets:
+        for slot_idx, (slot_pos, slot_quat) in enumerate(zip(clutter_positions, clutter_quats, strict=False)):
+            for env_id, (pos, quat) in enumerate(zip(slot_pos, slot_quat, strict=False)):
+                asset_idx = int(clutter_indices[env_id, slot_idx].item()) if clutter_indices is not None else 0
+                asset = clutter_assets[asset_idx]
+                _spawn(
+                    f"/World/VisualObjectOverlay/env_{env_id}/clutter_{slot_idx:02d}",
+                    asset,
+                    pos,
+                    quat,
+                    env_id,
+                    f"clutter_{slot_idx:02d}",
+                )
+
+    task_env.sim.forward()
+    return spawned
+
+
 def _initial_clearance_summary(task_env, snapshot: dict[str, object]) -> dict[str, object] | None:
     clutter_positions = snapshot.get("clutter_root_pos_by_slot")
     if not isinstance(clutter_positions, list) or not clutter_positions:
@@ -1017,12 +1157,30 @@ def main() -> None:
     )
     if hasattr(env_cfg, "seed"):
         env_cfg.seed = int(args_cli.seed)
+    _set_if_present(env_cfg, "dome_light_intensity", args_cli.dome_light_intensity)
+    _set_if_present(env_cfg, "dome_light_exposure", args_cli.dome_light_exposure)
+    _set_if_present(env_cfg, "key_light_enabled", args_cli.key_light_enabled)
+    _set_if_present(env_cfg, "key_light_intensity", args_cli.key_light_intensity)
+    _set_if_present(env_cfg, "key_light_exposure", args_cli.key_light_exposure)
     _set_if_present(env_cfg, "object_asset_manifest_path", args_cli.object_asset_manifest_path)
     _set_if_present(env_cfg, "object_assets_dir", args_cli.object_assets_dir)
     _set_if_present(env_cfg, "max_objects", args_cli.max_objects)
     _set_if_present(env_cfg, "object_asset_assignment", args_cli.object_asset_assignment)
+    _set_if_present(env_cfg, "require_graspgen_scale", args_cli.require_graspgen_scale)
     _set_if_present(env_cfg, "object_spawn_xy_randomization", args_cli.object_spawn_xy_randomization)
     _set_if_present(env_cfg, "object_spawn_yaw_randomization_deg", args_cli.object_spawn_yaw_randomization_deg)
+    _set_if_present(env_cfg, "object_spawn_z_clearance", args_cli.object_spawn_z_clearance)
+    _set_if_present(env_cfg, "object_kinematic_enabled", args_cli.object_kinematic_enabled)
+    _set_if_present(env_cfg, "object_disable_gravity", args_cli.object_disable_gravity)
+    _set_if_present(env_cfg, "object_solver_position_iterations", args_cli.object_solver_position_iterations)
+    _set_if_present(env_cfg, "object_solver_velocity_iterations", args_cli.object_solver_velocity_iterations)
+    _set_if_present(env_cfg, "object_linear_damping", args_cli.object_linear_damping)
+    _set_if_present(env_cfg, "object_angular_damping", args_cli.object_angular_damping)
+    _set_if_present(env_cfg, "object_sleep_threshold", args_cli.object_sleep_threshold)
+    _set_if_present(env_cfg, "object_stabilization_threshold", args_cli.object_stabilization_threshold)
+    _set_if_present(env_cfg, "object_max_linear_velocity", args_cli.object_max_linear_velocity)
+    _set_if_present(env_cfg, "object_max_angular_velocity", args_cli.object_max_angular_velocity)
+    _set_if_present(env_cfg, "object_max_depenetration_velocity", args_cli.object_max_depenetration_velocity)
     _set_if_present(env_cfg, "tabletop_clutter_asset_manifest_path", args_cli.tabletop_clutter_asset_manifest_path)
     _set_if_present(env_cfg, "tabletop_clutter_assets_dir", args_cli.tabletop_clutter_assets_dir)
     _set_if_present(env_cfg, "tabletop_clutter_max_objects", args_cli.tabletop_clutter_max_objects)
@@ -1050,6 +1208,8 @@ def main() -> None:
         "tabletop_clutter_solver_velocity_iterations",
         args_cli.tabletop_clutter_solver_velocity_iterations,
     )
+    _set_if_present(env_cfg, "tabletop_clutter_kinematic_enabled", args_cli.tabletop_clutter_kinematic_enabled)
+    _set_if_present(env_cfg, "tabletop_clutter_disable_gravity", args_cli.tabletop_clutter_disable_gravity)
     _set_if_present(env_cfg, "tabletop_clutter_linear_damping", args_cli.tabletop_clutter_linear_damping)
     _set_if_present(env_cfg, "tabletop_clutter_angular_damping", args_cli.tabletop_clutter_angular_damping)
     _set_if_present(env_cfg, "tabletop_clutter_sleep_threshold", args_cli.tabletop_clutter_sleep_threshold)
@@ -1058,12 +1218,27 @@ def main() -> None:
         "tabletop_clutter_stabilization_threshold",
         args_cli.tabletop_clutter_stabilization_threshold,
     )
+    _set_if_present(env_cfg, "tabletop_clutter_max_linear_velocity", args_cli.tabletop_clutter_max_linear_velocity)
+    _set_if_present(env_cfg, "tabletop_clutter_max_angular_velocity", args_cli.tabletop_clutter_max_angular_velocity)
     _set_if_present(
         env_cfg,
         "tabletop_clutter_max_depenetration_velocity",
         args_cli.tabletop_clutter_max_depenetration_velocity,
     )
     _set_if_present(env_cfg, "object_reset_settle_steps", 0)
+
+    render_resolution = None
+    if hasattr(env_cfg, "viewer") and hasattr(env_cfg.viewer, "resolution"):
+        default_width, default_height = (int(v) for v in env_cfg.viewer.resolution)
+        if args_cli.render_width is not None or args_cli.render_height is not None:
+            render_width = default_width if args_cli.render_width is None else int(args_cli.render_width)
+            render_height = default_height if args_cli.render_height is None else int(args_cli.render_height)
+            if render_width <= 0 or render_height <= 0:
+                raise ValueError(f"Render resolution must be positive, got {render_width}x{render_height}")
+            env_cfg.viewer.resolution = (render_width, render_height)
+        render_resolution = [int(v) for v in env_cfg.viewer.resolution]
+    elif args_cli.render_width is not None or args_cli.render_height is not None:
+        raise AttributeError("The parsed env config does not expose viewer.resolution")
 
     print(
         json.dumps(
@@ -1073,6 +1248,7 @@ def main() -> None:
                 "num_envs": int(args_cli.num_envs),
                 "settle_steps": int(args_cli.settle_steps),
                 "capture_interval": int(args_cli.capture_interval),
+                "render_resolution": render_resolution,
                 "output_dir": str(output_dir),
             }
         ),
@@ -1095,12 +1271,34 @@ def main() -> None:
 
     frames: list[np.ndarray] = []
     frame_paths: list[str] = []
+    initial_snapshot = _root_snapshot(task_env)
+    initial_velocity_summary = _root_velocity_summary(task_env)
+    if bool(args_cli.freeze_object_roots_for_video):
+        _restore_root_snapshot(task_env, initial_snapshot)
+    visual_object_overlay_summary: list[dict[str, object]] = []
+    if bool(args_cli.visual_object_overlay):
+        visual_object_overlay_summary = _spawn_visual_object_overlay(
+            task_env,
+            initial_snapshot,
+            z_offset=float(args_cli.visual_object_overlay_z_offset),
+        )
+        for _ in range(max(int(args_cli.render_warmup_frames), 1)):
+            task_env.sim.render()
+            env.render()
+        print(
+            json.dumps(
+                {
+                    "event": "visual_object_overlay_spawned",
+                    "count": len(visual_object_overlay_summary),
+                    "z_offset": float(args_cli.visual_object_overlay_z_offset),
+                }
+            ),
+            flush=True,
+        )
     frame, frame_path = _capture_frame(env, frame_dir, 0)
     frames.append(frame)
     frame_paths.append(frame_path)
     print(json.dumps({"event": "frame_captured", "frame_idx": 0, "path": frame_path}), flush=True)
-    initial_snapshot = _root_snapshot(task_env)
-    initial_velocity_summary = _root_velocity_summary(task_env)
 
     robot = getattr(task_env, "_robot", None)
     hold_joint_pos = robot.data.joint_pos.detach().clone() if robot is not None else None
@@ -1125,23 +1323,49 @@ def main() -> None:
             flush=True,
         )
     frame_idx = 1
-    for step_idx in range(1, settle_steps + 1):
-        _step_physics_without_task_reset(task_env, hold_joint_pos)
-        should_capture = (
-            step_idx in capture_step_set
-            if capture_step_set is not None
-            else (step_idx % capture_interval == 0 or step_idx == settle_steps)
-        )
-        if should_capture:
-            frame, frame_path = _capture_frame(env, frame_dir, frame_idx)
-            frames.append(frame)
+    if bool(args_cli.repeat_initial_frame_for_video):
+        if target_frame_count is None:
+            raise ValueError("--repeat_initial_frame_for_video requires --video_seconds")
+        for frame_idx in range(1, int(target_frame_count)):
+            repeat_frame = frames[0].copy()
+            frame_path = str(frame_dir / f"frame_{frame_idx:04d}.png")
+            imageio.imwrite(frame_path, repeat_frame)
+            frames.append(repeat_frame)
             frame_paths.append(frame_path)
-            print(
-                json.dumps({"event": "frame_captured", "frame_idx": int(frame_idx), "step_idx": int(step_idx)}),
-                flush=True,
+        settle_steps = 0
+        print(
+            json.dumps(
+                {
+                    "event": "initial_frame_repeated",
+                    "frame_count": len(frames),
+                    "video_seconds": float(args_cli.video_seconds),
+                    "fps": int(args_cli.fps),
+                }
+            ),
+            flush=True,
+        )
+    else:
+        for step_idx in range(1, settle_steps + 1):
+            _step_physics_without_task_reset(task_env, hold_joint_pos)
+            if bool(args_cli.freeze_object_roots_for_video):
+                _restore_root_snapshot(task_env, initial_snapshot)
+            should_capture = (
+                step_idx in capture_step_set
+                if capture_step_set is not None
+                else (step_idx % capture_interval == 0 or step_idx == settle_steps)
             )
-            frame_idx += 1
+            if should_capture:
+                frame, frame_path = _capture_frame(env, frame_dir, frame_idx)
+                frames.append(frame)
+                frame_paths.append(frame_path)
+                print(
+                    json.dumps({"event": "frame_captured", "frame_idx": int(frame_idx), "step_idx": int(step_idx)}),
+                    flush=True,
+                )
+                frame_idx += 1
 
+    if bool(args_cli.freeze_object_roots_for_video):
+        _restore_root_snapshot(task_env, initial_snapshot)
     final_snapshot = _root_snapshot(task_env)
     final_velocity_summary = _root_velocity_summary(task_env)
     initial_clearance_summary = _initial_clearance_summary(task_env, initial_snapshot)
@@ -1160,9 +1384,78 @@ def main() -> None:
         "target_frame_count": target_frame_count,
         "camera_eye": [float(v) for v in eye],
         "camera_target": [float(v) for v in target],
+        "app_rendering_mode": getattr(args_cli, "rendering_mode", None),
+        "render_resolution": [int(v) for v in task_env.cfg.viewer.resolution]
+        if hasattr(task_env.cfg, "viewer")
+        else render_resolution,
+        "training_env_render_scene": {
+            "ground_plane_size": [float(v) for v in getattr(task_env.cfg, "ground_plane_size", ())],
+            "ground_plane_color": None
+            if getattr(task_env.cfg, "ground_plane_color", None) is None
+            else [float(v) for v in getattr(task_env.cfg, "ground_plane_color")],
+            "ground_plane_z": float(getattr(task_env.cfg, "ground_plane_z", 0.0)),
+            "ground_plane_thickness": float(getattr(task_env.cfg, "ground_plane_thickness", 0.0)),
+            "ground_grid_enabled": bool(getattr(task_env.cfg, "ground_grid_enabled", False)),
+            "ground_grid_spacing": float(getattr(task_env.cfg, "ground_grid_spacing", 0.0)),
+            "ground_grid_line_width": float(getattr(task_env.cfg, "ground_grid_line_width", 0.0)),
+            "ground_grid_line_height": float(getattr(task_env.cfg, "ground_grid_line_height", 0.0)),
+            "ground_grid_color": [float(v) for v in getattr(task_env.cfg, "ground_grid_color", ())],
+            "dome_light_intensity": float(getattr(task_env.cfg, "dome_light_intensity", 0.0)),
+            "dome_light_exposure": float(getattr(task_env.cfg, "dome_light_exposure", 0.0)),
+            "dome_light_color": [float(v) for v in getattr(task_env.cfg, "dome_light_color", ())],
+            "key_light_enabled": bool(getattr(task_env.cfg, "key_light_enabled", False)),
+            "key_light_intensity": float(getattr(task_env.cfg, "key_light_intensity", 0.0)),
+            "key_light_exposure": float(getattr(task_env.cfg, "key_light_exposure", 0.0)),
+            "key_light_color": [float(v) for v in getattr(task_env.cfg, "key_light_color", ())],
+            "key_light_angle": float(getattr(task_env.cfg, "key_light_angle", 0.0)),
+            "key_light_rotation_deg": [float(v) for v in getattr(task_env.cfg, "key_light_rotation_deg", ())],
+            "table_visual_diffuse_color": [
+                float(v)
+                for v in getattr(
+                    getattr(getattr(task_env.cfg.table, "spawn", None), "visual_material", None),
+                    "diffuse_color",
+                    (),
+                )
+            ],
+            "tabletop_goal_bin_floor_color": [
+                float(v) for v in getattr(task_env.cfg, "tabletop_goal_bin_floor_color", ())
+            ],
+            "tabletop_goal_bin_x_wall_color": [
+                float(v) for v in getattr(task_env.cfg, "tabletop_goal_bin_x_wall_color", ())
+            ],
+            "tabletop_goal_bin_y_wall_color": [
+                float(v) for v in getattr(task_env.cfg, "tabletop_goal_bin_y_wall_color", ())
+            ],
+            "tabletop_goal_bin_visual_roughness": float(
+                getattr(task_env.cfg, "tabletop_goal_bin_visual_roughness", 0.0)
+            ),
+        },
+        "freeze_object_roots_for_video": bool(args_cli.freeze_object_roots_for_video),
+        "repeat_initial_frame_for_video": bool(args_cli.repeat_initial_frame_for_video),
+        "visual_object_overlay": {
+            "enabled": bool(args_cli.visual_object_overlay),
+            "z_offset": float(args_cli.visual_object_overlay_z_offset),
+            "objects": visual_object_overlay_summary,
+        },
         "video_path": str(video_path),
         "frame_paths": frame_paths,
         "frame_count": len(frame_paths),
+        "asset_manifest_paths": {
+            "object": args_cli.object_asset_manifest_path,
+            "tabletop_clutter": args_cli.tabletop_clutter_asset_manifest_path,
+        },
+        "asset_config": {
+            "object_asset_manifest_path": str(getattr(task_env.cfg, "object_asset_manifest_path", "")),
+            "object_assets_dir": str(getattr(task_env.cfg, "object_assets_dir", "")),
+            "require_graspgen_scale": bool(getattr(task_env.cfg, "require_graspgen_scale", False)),
+            "tabletop_clutter_asset_manifest_path": str(
+                getattr(task_env.cfg, "tabletop_clutter_asset_manifest_path", "")
+            ),
+            "tabletop_clutter_assets_dir": str(getattr(task_env.cfg, "tabletop_clutter_assets_dir", "")),
+            "tabletop_clutter_require_graspgen_scale": bool(
+                getattr(task_env.cfg, "tabletop_clutter_require_graspgen_scale", False)
+            ),
+        },
         "objaverse_textured_assets": objaverse_textured_summary,
         "multi_object_asset_summary": task_env.multi_object_asset_summary()
         if hasattr(task_env, "multi_object_asset_summary")
