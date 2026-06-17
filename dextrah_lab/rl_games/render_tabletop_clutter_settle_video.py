@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import math
 import os
 from pathlib import Path
 import sys
@@ -46,11 +47,23 @@ parser.add_argument("--tabletop_clutter_object_count", type=int, default=None)
 parser.add_argument("--tabletop_clutter_asset_assignment", type=str, default=None)
 parser.add_argument("--tabletop_clutter_spawn_xy_randomization", type=float, default=None)
 parser.add_argument("--tabletop_clutter_spawn_yaw_randomization_deg", type=float, default=None)
+parser.add_argument("--tabletop_clutter_spawn_z_clearance", type=float, default=None)
 parser.add_argument("--tabletop_clutter_spawn_z_jitter", type=float, default=None)
+parser.add_argument("--tabletop_clutter_require_graspgen_scale", action=argparse.BooleanOptionalAction, default=None)
+parser.add_argument("--tabletop_clutter_stable_pose_enabled", action=argparse.BooleanOptionalAction, default=None)
+parser.add_argument("--tabletop_clutter_stable_pose_cache_dir", type=str, default=None)
+parser.add_argument("--tabletop_clutter_stable_pose_count", type=int, default=None)
 parser.add_argument("--tabletop_clutter_non_overlapping", action=argparse.BooleanOptionalAction, default=None)
 parser.add_argument("--tabletop_clutter_placement_padding", type=float, default=None)
 parser.add_argument("--tabletop_clutter_placement_attempts", type=int, default=None)
 parser.add_argument("--tabletop_clutter_max_xy_radius", type=float, default=None)
+parser.add_argument("--tabletop_clutter_solver_position_iterations", type=int, default=None)
+parser.add_argument("--tabletop_clutter_solver_velocity_iterations", type=int, default=None)
+parser.add_argument("--tabletop_clutter_linear_damping", type=float, default=None)
+parser.add_argument("--tabletop_clutter_angular_damping", type=float, default=None)
+parser.add_argument("--tabletop_clutter_sleep_threshold", type=float, default=None)
+parser.add_argument("--tabletop_clutter_stabilization_threshold", type=float, default=None)
+parser.add_argument("--tabletop_clutter_max_depenetration_velocity", type=float, default=None)
 parser.add_argument("--objaverse_textured_manifest_path", type=str, default=None)
 parser.add_argument("--objaverse_textured_asset_dir", type=str, default=None)
 parser.add_argument("--objaverse_textured_max_assets", type=int, default=None)
@@ -58,6 +71,8 @@ parser.add_argument("--objaverse_textured_mesh_source", type=str, default="auto"
 parser.add_argument("--objaverse_textured_make_instanceable", action="store_true", default=False)
 parser.add_argument("--objaverse_textured_force_conversion", action="store_true", default=False)
 parser.add_argument("--objaverse_textured_collision_approximation", type=str, default="convexHull")
+parser.add_argument("--objaverse_textured_require_graspgen_prior_scale", action=argparse.BooleanOptionalAction, default=True)
+parser.add_argument("--objaverse_textured_stable_pose_mesh_mode", type=str, default="convex_hull", choices=("convex_hull", "visual"))
 parser.add_argument("--disable_objaverse_textured_common_tabletop_priority", action="store_true", default=False)
 parser.add_argument("--disable_fabric", action="store_true", default=False)
 AppLauncher.add_app_launcher_args(parser)
@@ -133,6 +148,102 @@ def _resolve_path(value: str | Path, *, base_dir: Path) -> Path:
     if path.is_absolute():
         return path
     return (base_dir / path).resolve()
+
+
+def _npz_scalar(value) -> object:
+    if hasattr(value, "item"):
+        value = value.item()
+    if isinstance(value, bytes):
+        return value.decode("utf-8")
+    return value
+
+
+def _resolve_record_grasp_prior_path(record: dict[str, object], *, asset_root: Path) -> Path | None:
+    candidates: list[Path] = []
+    for key in ("grasp_prior_path", "source_grasp_prior_path"):
+        value = record.get(key)
+        if value:
+            candidates.append(_resolve_path(str(value), base_dir=asset_root))
+    prior = record.get("grasp_prior")
+    if isinstance(prior, dict):
+        for key in ("path", "grasp_prior_path", "prior_path"):
+            value = prior.get(key)
+            if value:
+                candidates.append(_resolve_path(str(value), base_dir=asset_root))
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return candidates[0] if candidates else None
+
+
+def _load_graspgen_object_scale_from_prior(path: Path | None) -> float | None:
+    if path is None or not path.is_file():
+        return None
+    try:
+        with np.load(path, allow_pickle=False) as data:
+            if "object_scale" in data.files:
+                scale = float(_npz_scalar(data["object_scale"]))
+                if math.isfinite(scale) and scale > 0.0:
+                    return scale
+            if "metadata_json" in data.files:
+                metadata = json.loads(str(_npz_scalar(data["metadata_json"])))
+                if "object_scale" in metadata:
+                    scale = float(metadata["object_scale"])
+                    if math.isfinite(scale) and scale > 0.0:
+                        return scale
+    except Exception:
+        return None
+    return None
+
+
+def _normalize_graspgen_record_scale(
+    record: dict[str, object],
+    *,
+    asset_root: Path,
+    require_prior_scale: bool,
+) -> tuple[dict[str, object], dict[str, object]]:
+    uuid = str(record.get("uuid") or record.get("name") or "")
+    prior_path = _resolve_record_grasp_prior_path(record, asset_root=asset_root)
+    prior_scale = _load_graspgen_object_scale_from_prior(prior_path)
+    record_has_scale = record.get("scale") is not None
+    if prior_scale is not None:
+        scale = float(prior_scale)
+        scale_source = "grasp_prior.object_scale"
+    elif require_prior_scale:
+        raise ValueError(f"Could not read GraspGen object_scale for {uuid} from prior: {prior_path}")
+    elif record_has_scale:
+        scale = float(record["scale"])
+        scale_source = "manifest.scale"
+    else:
+        scale = 1.0
+        scale_source = "default"
+
+    normalized = dict(record)
+    normalized["scale"] = float(scale)
+    normalized["scale_source"] = scale_source
+    if prior_path is not None:
+        normalized["grasp_prior_path"] = str(prior_path)
+        prior = dict(normalized.get("grasp_prior") or {})
+        prior["path"] = str(prior_path)
+        prior["scale_source"] = scale_source
+        normalized["grasp_prior"] = prior
+    if "bounds_min" in normalized and "bounds_max" in normalized:
+        bounds_min = [float(v) for v in normalized["bounds_min"]]
+        bounds_max = [float(v) for v in normalized["bounds_max"]]
+        scaled_bounds_min = [float(scale) * value for value in bounds_min]
+        scaled_bounds_max = [float(scale) * value for value in bounds_max]
+        normalized["scaled_bounds_min"] = scaled_bounds_min
+        normalized["scaled_bounds_max"] = scaled_bounds_max
+        normalized["scaled_half_extents"] = [
+            0.5 * (scaled_bounds_max[axis] - scaled_bounds_min[axis]) for axis in range(3)
+        ]
+    summary = {
+        "uuid": uuid,
+        "scale": float(scale),
+        "scale_source": scale_source,
+        "grasp_prior_path": "" if prior_path is None else str(prior_path),
+    }
+    return normalized, summary
 
 
 COMMON_TABLETOP_KEYWORDS = (
@@ -287,6 +398,103 @@ def _first_existing_objaverse_mesh(record: dict[str, object], *, asset_root: Pat
     raise FileNotFoundError(f"Could not find raw Objaverse mesh for manifest record {uuid!r}")
 
 
+def _load_scaled_trimesh(mesh_path: Path, *, scale: float):
+    import trimesh
+
+    loaded = trimesh.load(mesh_path, force="mesh", process=False)
+    if isinstance(loaded, trimesh.Scene):
+        meshes = [geom for geom in loaded.geometry.values() if isinstance(geom, trimesh.Trimesh)]
+        if not meshes:
+            raise ValueError(f"Scene contains no meshes: {mesh_path}")
+        mesh = trimesh.util.concatenate(meshes)
+    elif isinstance(loaded, trimesh.Trimesh):
+        mesh = loaded
+    else:
+        raise TypeError(f"Unsupported trimesh load result for {mesh_path}: {type(loaded).__name__}")
+    mesh = mesh.copy()
+    mesh.apply_scale(float(scale))
+    if mesh.vertices.size == 0 or mesh.faces.size == 0:
+        raise ValueError(f"Mesh has no vertices/faces after scaling: {mesh_path}")
+    return mesh
+
+
+def _write_stable_pose_cache(
+    *,
+    uuid: str,
+    mesh_path: Path,
+    scale: float,
+    cache_dir: Path,
+    pose_count: int,
+    mesh_mode: str,
+) -> dict[str, object]:
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_path = cache_dir / f"{uuid}.npz"
+    pose_count = max(int(pose_count), 1)
+    if cache_path.is_file():
+        try:
+            with np.load(cache_path, allow_pickle=False) as data:
+                cached_scale = float(_npz_scalar(data["scale"])) if "scale" in data.files else None
+                cached_pose_count = int(_npz_scalar(data["pose_count"])) if "pose_count" in data.files else 0
+            if cached_scale is not None and abs(cached_scale - float(scale)) < 1.0e-8 and cached_pose_count >= pose_count:
+                return {
+                    "uuid": uuid,
+                    "path": str(cache_path),
+                    "scale": float(scale),
+                    "pose_count": int(cached_pose_count),
+                    "mesh_mode": str(mesh_mode),
+                    "cached": True,
+                }
+        except Exception:
+            pass
+
+    mesh = _load_scaled_trimesh(mesh_path, scale=float(scale))
+    if str(mesh_mode) == "visual":
+        pose_mesh = mesh.copy()
+    else:
+        pose_mesh = mesh.convex_hull
+        pose_mesh.merge_vertices()
+        pose_mesh.remove_unreferenced_vertices()
+    transforms, probabilities = pose_mesh.compute_stable_poses(sigma=0.0, n_samples=1, threshold=0.0)
+    if len(transforms) == 0:
+        raise RuntimeError(f"trimesh returned no stable poses for {uuid}")
+    order = np.argsort(np.asarray(probabilities))[::-1]
+    transforms = np.asarray(transforms, dtype=np.float64)[order]
+    probabilities = np.asarray(probabilities, dtype=np.float64)[order]
+    rotations = transforms[:, :3, :3]
+    vertices = np.asarray(mesh.vertices, dtype=np.float64)
+    root_z_offsets = []
+    for rotation in rotations:
+        rotated = vertices @ rotation.T
+        root_z_offsets.append(-float(rotated[:, 2].min()))
+    root_z_offsets = np.asarray(root_z_offsets, dtype=np.float64)
+    np.savez_compressed(
+        cache_path,
+        uuid=np.asarray(uuid),
+        scale=np.asarray(float(scale), dtype=np.float32),
+        mesh_path=np.asarray(str(mesh_path)),
+        stable_pose_mesh_mode=np.asarray(str(mesh_mode)),
+        transforms=transforms,
+        rotations=rotations,
+        probabilities=probabilities,
+        vertices=vertices,
+        root_z_offsets=root_z_offsets,
+        pose_count=np.asarray(min(pose_count, len(transforms)), dtype=np.int64),
+    )
+    return {
+        "uuid": uuid,
+        "path": str(cache_path),
+        "scale": float(scale),
+        "pose_count": int(min(pose_count, len(transforms))),
+        "num_stable_poses": int(len(transforms)),
+        "mesh_mode": str(mesh_mode),
+        "visual_vertex_count": int(len(mesh.vertices)),
+        "visual_face_count": int(len(mesh.faces)),
+        "pose_vertex_count": int(len(pose_mesh.vertices)),
+        "pose_face_count": int(len(pose_mesh.faces)),
+        "cached": False,
+    }
+
+
 def _prepare_textured_objaverse_manifest(
     *,
     manifest_path: Path,
@@ -297,6 +505,11 @@ def _prepare_textured_objaverse_manifest(
     force_conversion: bool,
     collision_approximation: str,
     prioritize_common_tabletop: bool,
+    require_graspgen_prior_scale: bool,
+    max_xy_radius: float | None,
+    stable_pose_cache_dir: Path | None,
+    stable_pose_count: int,
+    stable_pose_mesh_mode: str,
 ) -> tuple[Path, dict[str, object]]:
     manifest_path = manifest_path.expanduser().resolve()
     payload = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -306,6 +519,27 @@ def _prepare_textured_objaverse_manifest(
 
     asset_root_value = str(payload.get("asset_root") or ".")
     asset_root = _resolve_path(asset_root_value, base_dir=manifest_path.parent)
+    scale_summaries: list[dict[str, object]] = []
+    normalized_records: list[dict[str, object]] = []
+    for record in object_records:
+        if not isinstance(record, dict):
+            continue
+        normalized, scale_summary = _normalize_graspgen_record_scale(
+            record,
+            asset_root=asset_root,
+            require_prior_scale=bool(require_graspgen_prior_scale),
+        )
+        normalized_records.append(normalized)
+        scale_summaries.append(scale_summary)
+    object_records = normalized_records
+    size_filtered_count = 0
+    max_xy_radius_value = None if max_xy_radius is None else float(max_xy_radius)
+    if max_xy_radius_value is not None and max_xy_radius_value > 0.0:
+        before_count = len(object_records)
+        object_records = [record for record in object_records if _record_xy_radius(record) <= max_xy_radius_value]
+        size_filtered_count = before_count - len(object_records)
+        if not object_records:
+            raise ValueError(f"No Objaverse records remain after max_xy_radius={max_xy_radius_value} filtering")
     if prioritize_common_tabletop:
         object_records = _prioritize_tabletop_objaverse_records(object_records)
     limit = len(object_records) if max_assets is None or int(max_assets) <= 0 else min(int(max_assets), len(object_records))
@@ -313,6 +547,7 @@ def _prepare_textured_objaverse_manifest(
     usd_root = output_dir / "USD"
     converted_records: list[dict[str, object]] = []
     converted_meshes: list[dict[str, object]] = []
+    stable_pose_summaries: list[dict[str, object]] = []
 
     collision_approximation = str(collision_approximation)
     collision_props = sim_utils.CollisionPropertiesCfg(
@@ -393,6 +628,17 @@ def _prepare_textured_objaverse_manifest(
         textured_record["usd_path"] = os.path.relpath(converted_usd_path, output_dir)
         textured_record["raw_object_path"] = str(mesh_path)
         textured_record["source_usd_path"] = str(record.get("usd_path") or "")
+        if stable_pose_cache_dir is not None:
+            stable_summary = _write_stable_pose_cache(
+                uuid=uuid,
+                mesh_path=mesh_path,
+                scale=float(textured_record["scale"]),
+                cache_dir=stable_pose_cache_dir,
+                pose_count=int(stable_pose_count),
+                mesh_mode=str(stable_pose_mesh_mode),
+            )
+            textured_record["stable_pose_path"] = str(stable_summary["path"])
+            stable_pose_summaries.append(stable_summary)
         converted_records.append(textured_record)
         converted_meshes.append(
             {
@@ -426,6 +672,12 @@ def _prepare_textured_objaverse_manifest(
         "output_dir": str(output_dir),
         "num_objects": len(converted_records),
         "prioritize_common_tabletop": bool(prioritize_common_tabletop),
+        "require_graspgen_prior_scale": bool(require_graspgen_prior_scale),
+        "max_xy_radius": max_xy_radius_value,
+        "size_filtered_count": int(size_filtered_count),
+        "scale_summaries": scale_summaries[:limit],
+        "stable_pose_cache_dir": "" if stable_pose_cache_dir is None else str(stable_pose_cache_dir),
+        "stable_pose_summaries": stable_pose_summaries,
         "converted_meshes": converted_meshes,
     }
     return textured_manifest, summary
@@ -592,6 +844,43 @@ def _initial_clearance_summary(task_env, snapshot: dict[str, object]) -> dict[st
     }
 
 
+def _speed_summary_from_root_vel(root_vel_w: torch.Tensor) -> dict[str, object]:
+    root_vel_w = root_vel_w.detach().float()
+    linear_speed = torch.linalg.norm(root_vel_w[:, 0:3], dim=-1)
+    angular_speed = torch.linalg.norm(root_vel_w[:, 3:6], dim=-1)
+    return {
+        "linear_speed": _tensor_list(linear_speed),
+        "angular_speed": _tensor_list(angular_speed),
+        "max_linear_speed": float(linear_speed.max().detach().cpu().item()) if linear_speed.numel() else 0.0,
+        "max_angular_speed": float(angular_speed.max().detach().cpu().item()) if angular_speed.numel() else 0.0,
+    }
+
+
+def _root_velocity_summary(task_env) -> dict[str, object]:
+    summary: dict[str, object] = {}
+    target_vel = getattr(task_env._cube.data, "root_vel_w", None)
+    if isinstance(target_vel, torch.Tensor):
+        summary["target"] = _speed_summary_from_root_vel(target_vel)
+    clutter_objects = list(getattr(task_env, "_tabletop_clutter_objects", []))
+    if clutter_objects:
+        clutter = []
+        max_linear = 0.0
+        max_angular = 0.0
+        for slot_idx, clutter_object in enumerate(clutter_objects):
+            root_vel = getattr(clutter_object.data, "root_vel_w", None)
+            if not isinstance(root_vel, torch.Tensor):
+                continue
+            slot_summary = _speed_summary_from_root_vel(root_vel)
+            slot_summary["slot_idx"] = int(slot_idx)
+            clutter.append(slot_summary)
+            max_linear = max(max_linear, float(slot_summary["max_linear_speed"]))
+            max_angular = max(max_angular, float(slot_summary["max_angular_speed"]))
+        summary["clutter_by_slot"] = clutter
+        summary["clutter_max_linear_speed"] = float(max_linear)
+        summary["clutter_max_angular_speed"] = float(max_angular)
+    return summary
+
+
 def _write_video(video_path: Path, frames: list[np.ndarray], fps: int) -> None:
     if not frames:
         raise RuntimeError("No frames captured for video")
@@ -628,6 +917,40 @@ def main() -> None:
             if args_cli.objaverse_textured_asset_dir
             else output_dir / "objaverse_textured_assets"
         )
+        if args_cli.tabletop_clutter_object_count is None:
+            args_cli.tabletop_clutter_object_count = 6
+        if args_cli.tabletop_clutter_require_graspgen_scale is None:
+            args_cli.tabletop_clutter_require_graspgen_scale = True
+        if args_cli.tabletop_clutter_stable_pose_enabled is None:
+            args_cli.tabletop_clutter_stable_pose_enabled = True
+        if args_cli.tabletop_clutter_stable_pose_count is None:
+            args_cli.tabletop_clutter_stable_pose_count = 1
+        if args_cli.tabletop_clutter_spawn_z_clearance is None:
+            args_cli.tabletop_clutter_spawn_z_clearance = 0.003
+        if args_cli.tabletop_clutter_spawn_z_jitter is None:
+            args_cli.tabletop_clutter_spawn_z_jitter = 0.0
+        if args_cli.tabletop_clutter_solver_position_iterations is None:
+            args_cli.tabletop_clutter_solver_position_iterations = 16
+        if args_cli.tabletop_clutter_solver_velocity_iterations is None:
+            args_cli.tabletop_clutter_solver_velocity_iterations = 6
+        if args_cli.tabletop_clutter_linear_damping is None:
+            args_cli.tabletop_clutter_linear_damping = 0.25
+        if args_cli.tabletop_clutter_angular_damping is None:
+            args_cli.tabletop_clutter_angular_damping = 1.25
+        if args_cli.tabletop_clutter_sleep_threshold is None:
+            args_cli.tabletop_clutter_sleep_threshold = 0.06
+        if args_cli.tabletop_clutter_stabilization_threshold is None:
+            args_cli.tabletop_clutter_stabilization_threshold = 0.03
+        if args_cli.tabletop_clutter_max_depenetration_velocity is None:
+            args_cli.tabletop_clutter_max_depenetration_velocity = 2.0
+        stable_pose_cache_dir = None
+        if bool(args_cli.tabletop_clutter_stable_pose_enabled):
+            stable_pose_cache_dir = (
+                Path(args_cli.tabletop_clutter_stable_pose_cache_dir).expanduser().resolve()
+                if args_cli.tabletop_clutter_stable_pose_cache_dir
+                else textured_asset_dir / "stable_pose_cache"
+            )
+            args_cli.tabletop_clutter_stable_pose_cache_dir = str(stable_pose_cache_dir)
         textured_manifest, objaverse_textured_summary = _prepare_textured_objaverse_manifest(
             manifest_path=Path(args_cli.objaverse_textured_manifest_path),
             output_dir=textured_asset_dir,
@@ -637,6 +960,11 @@ def main() -> None:
             force_conversion=bool(args_cli.objaverse_textured_force_conversion),
             collision_approximation=str(args_cli.objaverse_textured_collision_approximation),
             prioritize_common_tabletop=not bool(args_cli.disable_objaverse_textured_common_tabletop_priority),
+            require_graspgen_prior_scale=bool(args_cli.objaverse_textured_require_graspgen_prior_scale),
+            max_xy_radius=args_cli.tabletop_clutter_max_xy_radius,
+            stable_pose_cache_dir=stable_pose_cache_dir,
+            stable_pose_count=int(args_cli.tabletop_clutter_stable_pose_count),
+            stable_pose_mesh_mode=str(args_cli.objaverse_textured_stable_pose_mesh_mode),
         )
         args_cli.object_asset_manifest_path = str(textured_manifest)
         args_cli.tabletop_clutter_asset_manifest_path = str(textured_manifest)
@@ -678,11 +1006,39 @@ def main() -> None:
     _set_if_present(env_cfg, "tabletop_clutter_asset_assignment", args_cli.tabletop_clutter_asset_assignment)
     _set_if_present(env_cfg, "tabletop_clutter_spawn_xy_randomization", args_cli.tabletop_clutter_spawn_xy_randomization)
     _set_if_present(env_cfg, "tabletop_clutter_spawn_yaw_randomization_deg", args_cli.tabletop_clutter_spawn_yaw_randomization_deg)
+    _set_if_present(env_cfg, "tabletop_clutter_spawn_z_clearance", args_cli.tabletop_clutter_spawn_z_clearance)
     _set_if_present(env_cfg, "tabletop_clutter_spawn_z_jitter", args_cli.tabletop_clutter_spawn_z_jitter)
+    _set_if_present(env_cfg, "tabletop_clutter_require_graspgen_scale", args_cli.tabletop_clutter_require_graspgen_scale)
+    _set_if_present(env_cfg, "tabletop_clutter_stable_pose_enabled", args_cli.tabletop_clutter_stable_pose_enabled)
+    _set_if_present(env_cfg, "tabletop_clutter_stable_pose_cache_dir", args_cli.tabletop_clutter_stable_pose_cache_dir)
+    _set_if_present(env_cfg, "tabletop_clutter_stable_pose_count", args_cli.tabletop_clutter_stable_pose_count)
     _set_if_present(env_cfg, "tabletop_clutter_non_overlapping", args_cli.tabletop_clutter_non_overlapping)
     _set_if_present(env_cfg, "tabletop_clutter_placement_padding", args_cli.tabletop_clutter_placement_padding)
     _set_if_present(env_cfg, "tabletop_clutter_placement_attempts", args_cli.tabletop_clutter_placement_attempts)
     _set_if_present(env_cfg, "tabletop_clutter_max_xy_radius", args_cli.tabletop_clutter_max_xy_radius)
+    _set_if_present(
+        env_cfg,
+        "tabletop_clutter_solver_position_iterations",
+        args_cli.tabletop_clutter_solver_position_iterations,
+    )
+    _set_if_present(
+        env_cfg,
+        "tabletop_clutter_solver_velocity_iterations",
+        args_cli.tabletop_clutter_solver_velocity_iterations,
+    )
+    _set_if_present(env_cfg, "tabletop_clutter_linear_damping", args_cli.tabletop_clutter_linear_damping)
+    _set_if_present(env_cfg, "tabletop_clutter_angular_damping", args_cli.tabletop_clutter_angular_damping)
+    _set_if_present(env_cfg, "tabletop_clutter_sleep_threshold", args_cli.tabletop_clutter_sleep_threshold)
+    _set_if_present(
+        env_cfg,
+        "tabletop_clutter_stabilization_threshold",
+        args_cli.tabletop_clutter_stabilization_threshold,
+    )
+    _set_if_present(
+        env_cfg,
+        "tabletop_clutter_max_depenetration_velocity",
+        args_cli.tabletop_clutter_max_depenetration_velocity,
+    )
     _set_if_present(env_cfg, "object_reset_settle_steps", 0)
 
     print(
@@ -720,6 +1076,7 @@ def main() -> None:
     frame_paths.append(frame_path)
     print(json.dumps({"event": "frame_captured", "frame_idx": 0, "path": frame_path}), flush=True)
     initial_snapshot = _root_snapshot(task_env)
+    initial_velocity_summary = _root_velocity_summary(task_env)
 
     robot = getattr(task_env, "_robot", None)
     hold_joint_pos = robot.data.joint_pos.detach().clone() if robot is not None else None
@@ -762,6 +1119,7 @@ def main() -> None:
             frame_idx += 1
 
     final_snapshot = _root_snapshot(task_env)
+    final_velocity_summary = _root_velocity_summary(task_env)
     initial_clearance_summary = _initial_clearance_summary(task_env, initial_snapshot)
     final_clearance_summary = _initial_clearance_summary(task_env, final_snapshot)
     _write_video(video_path, frames, int(args_cli.fps))
@@ -789,8 +1147,10 @@ def main() -> None:
         if hasattr(task_env, "tabletop_clutter_summary")
         else None,
         "initial_snapshot": initial_snapshot,
+        "initial_velocity_summary": initial_velocity_summary,
         "initial_clearance_summary": initial_clearance_summary,
         "final_snapshot": final_snapshot,
+        "final_velocity_summary": final_velocity_summary,
         "final_clearance_summary": final_clearance_summary,
     }
     metrics_path.parent.mkdir(parents=True, exist_ok=True)

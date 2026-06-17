@@ -119,6 +119,46 @@ def npz_scalar(value) -> object:
     return value
 
 
+def _resolve_record_grasp_prior_path(record: dict[str, object], *, asset_root_path: Path) -> Path | None:
+    candidates: list[Path] = []
+    for key in ("grasp_prior_path", "source_grasp_prior_path"):
+        value = record.get(key)
+        if value:
+            candidates.append(resolve_repo_path(str(value), base_dir=asset_root_path))
+    prior = record.get("grasp_prior")
+    if isinstance(prior, dict):
+        for key in ("path", "grasp_prior_path", "prior_path"):
+            value = prior.get(key)
+            if value:
+                candidates.append(resolve_repo_path(str(value), base_dir=asset_root_path))
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return candidates[0] if candidates else None
+
+
+def _load_graspgen_object_scale_from_prior(path: Path | None) -> float | None:
+    if path is None or not path.is_file():
+        return None
+    try:
+        import numpy as np
+
+        with np.load(path, allow_pickle=False) as data:
+            if "object_scale" in data.files:
+                scale = float(npz_scalar(data["object_scale"]))
+                if math.isfinite(scale) and scale > 0.0:
+                    return scale
+            if "metadata_json" in data.files:
+                metadata = json.loads(str(npz_scalar(data["metadata_json"])))
+                if "object_scale" in metadata:
+                    scale = float(metadata["object_scale"])
+                    if math.isfinite(scale) and scale > 0.0:
+                        return scale
+    except Exception:
+        return None
+    return None
+
+
 def _yaw_quat_wxyz(yaw_rad: torch.Tensor) -> torch.Tensor:
     quat = torch.zeros(yaw_rad.shape[0], 4, device=yaw_rad.device)
     quat[:, 0] = torch.cos(0.5 * yaw_rad)
@@ -167,21 +207,36 @@ class MultiObjectGraspTaskMixin:
                 usd_path = resolve_repo_path(str(usd_value), base_dir=asset_root_path)
                 if not usd_path.is_file():
                     raise FileNotFoundError(f"Missing USD asset for {uuid}: {usd_path}")
-                scale = float(record.get("scale", default_scale))
-                if bool(require_scale) and "scale" not in record:
-                    raise ValueError(f"{label} record {uuid} does not include GraspGen object scale")
+                prior_path = _resolve_record_grasp_prior_path(record, asset_root_path=asset_root_path)
+                prior_scale = _load_graspgen_object_scale_from_prior(prior_path)
+                record_has_scale = record.get("scale") is not None
+                if prior_scale is not None:
+                    scale = float(prior_scale)
+                    scale_source = "grasp_prior.object_scale"
+                elif record_has_scale:
+                    scale = float(record["scale"])
+                    scale_source = "manifest.scale"
+                elif bool(require_scale):
+                    raise ValueError(
+                        f"{label} record {uuid} does not include GraspGen object scale or a readable prior"
+                    )
+                else:
+                    scale = float(default_scale)
+                    scale_source = "default"
+                bounds_record = record
+                if prior_scale is not None and record_has_scale and "bounds_min" in record and "bounds_max" in record:
+                    bounds_record = dict(record)
+                    bounds_record.pop("scaled_bounds_min", None)
+                    bounds_record.pop("scaled_bounds_max", None)
+                    bounds_record.pop("scaled_half_extents", None)
                 bounds_min, bounds_max = _bounds_from_record(
-                    record,
+                    bounds_record,
                     scale=scale,
                     default_half_extents=default_half_extents,
                 )
                 half_extents = [0.5 * (bounds_max[axis] - bounds_min[axis]) for axis in range(3)]
                 center_offset = [0.5 * (bounds_max[axis] + bounds_min[axis]) for axis in range(3)]
                 xy_radius = max(abs(bounds_min[0]), abs(bounds_max[0]), abs(bounds_min[1]), abs(bounds_max[1]))
-                grasp_prior_path = record.get("grasp_prior_path")
-                resolved_prior = ""
-                if grasp_prior_path:
-                    resolved_prior = str(resolve_repo_path(str(grasp_prior_path), base_dir=asset_root_path))
                 stable_pose_path = record.get("stable_pose_path")
                 resolved_stable_pose = ""
                 if stable_pose_path:
@@ -199,6 +254,7 @@ class MultiObjectGraspTaskMixin:
                         "usd_path": str(usd_path),
                         "raw_object_path": resolved_raw_object,
                         "scale": scale,
+                        "scale_source": scale_source,
                         "scaled_half_extents": half_extents,
                         "scaled_bounds_min": bounds_min,
                         "scaled_bounds_max": bounds_max,
@@ -206,7 +262,7 @@ class MultiObjectGraspTaskMixin:
                         "xy_radius": xy_radius,
                         "spawn_z_offset": -bounds_min[2],
                         "grasp_size": float(record.get("grasp_size", max(2.0 * max(half_extents), 0.02))),
-                        "grasp_prior_path": resolved_prior,
+                        "grasp_prior_path": "" if prior_path is None else str(prior_path),
                         "stable_pose_path": resolved_stable_pose,
                     }
                 )
@@ -229,6 +285,7 @@ class MultiObjectGraspTaskMixin:
                         "usd_path": str(usd_path.resolve()),
                         "raw_object_path": "",
                         "scale": scale,
+                        "scale_source": "default",
                         "scaled_half_extents": half_extents,
                         "scaled_bounds_min": [-v for v in half_extents],
                         "scaled_bounds_max": half_extents,
@@ -389,6 +446,8 @@ class MultiObjectGraspTaskMixin:
         self.tabletop_clutter_placement_success = torch.empty((self.num_envs, 0), dtype=torch.bool, device=self.device)
         self.tabletop_clutter_placement_attempts = torch.empty((self.num_envs, 0), dtype=torch.long, device=self.device)
         self.tabletop_clutter_placement_min_clearance = torch.empty((self.num_envs,), device=self.device)
+        self._tabletop_clutter_stable_pose_enabled = False
+        self._tabletop_clutter_stable_poses: dict[int, dict[str, torch.Tensor | str]] = {}
         if not self._tabletop_clutter_enabled:
             self.num_unique_tabletop_clutter_objects = 0
             return
@@ -449,8 +508,26 @@ class MultiObjectGraspTaskMixin:
             dtype=torch.float32,
             device=self.device,
         )
+        scale_by_asset = torch.tensor(
+            [float(asset["scale"]) for asset in self._tabletop_clutter_assets],
+            dtype=torch.float32,
+            device=self.device,
+        )
+        bounds_min_by_asset = torch.tensor(
+            [asset["scaled_bounds_min"] for asset in self._tabletop_clutter_assets],
+            dtype=torch.float32,
+            device=self.device,
+        )
+        bounds_max_by_asset = torch.tensor(
+            [asset["scaled_bounds_max"] for asset in self._tabletop_clutter_assets],
+            dtype=torch.float32,
+            device=self.device,
+        )
         self.tabletop_clutter_xy_radius = xy_radius_by_asset[self.tabletop_clutter_asset_index]
         self.tabletop_clutter_spawn_z_offset = spawn_z_offset_by_asset[self.tabletop_clutter_asset_index]
+        self.tabletop_clutter_scale = scale_by_asset[self.tabletop_clutter_asset_index]
+        self.tabletop_clutter_bounds_min = bounds_min_by_asset[self.tabletop_clutter_asset_index]
+        self.tabletop_clutter_bounds_max = bounds_max_by_asset[self.tabletop_clutter_asset_index]
         denom = max(float(self.num_unique_tabletop_clutter_objects - 1), 1.0)
         self.tabletop_clutter_asset_id_fraction = self.tabletop_clutter_asset_index.float() / denom
         self.tabletop_clutter_initial_root_pos = torch.zeros(
@@ -480,8 +557,21 @@ class MultiObjectGraspTaskMixin:
             dtype=torch.float32,
             device=self.device,
         )
+        self._setup_tabletop_clutter_stable_pose_resets()
 
-    def _spawn_usd_rigid_object(self, prim_path: str, asset: dict[str, object]) -> None:
+    def _rigid_body_cfg_value(self, name: str, *, prefix: str) -> object:
+        specific_name = f"{prefix}_{name}"
+        if hasattr(self.cfg, specific_name):
+            return getattr(self.cfg, specific_name)
+        return getattr(self.cfg, f"object_{name}")
+
+    def _spawn_usd_rigid_object(
+        self,
+        prim_path: str,
+        asset: dict[str, object],
+        *,
+        physics_prefix: str = "object",
+    ) -> None:
         scale = float(asset["scale"])
         object_cfg = RigidObjectCfg(
             prim_path=prim_path,
@@ -491,18 +581,28 @@ class MultiObjectGraspTaskMixin:
                     rigid_body_enabled=True,
                     kinematic_enabled=False,
                     disable_gravity=False,
-                    linear_damping=float(self.cfg.object_linear_damping),
-                    angular_damping=float(self.cfg.object_angular_damping),
+                    linear_damping=float(self._rigid_body_cfg_value("linear_damping", prefix=physics_prefix)),
+                    angular_damping=float(self._rigid_body_cfg_value("angular_damping", prefix=physics_prefix)),
                     enable_gyroscopic_forces=True,
-                    solver_position_iteration_count=int(self.cfg.object_solver_position_iterations),
-                    solver_velocity_iteration_count=int(self.cfg.object_solver_velocity_iterations),
-                    sleep_threshold=float(self.cfg.object_sleep_threshold),
-                    stabilization_threshold=float(self.cfg.object_stabilization_threshold),
+                    solver_position_iteration_count=int(
+                        self._rigid_body_cfg_value("solver_position_iterations", prefix=physics_prefix)
+                    ),
+                    solver_velocity_iteration_count=int(
+                        self._rigid_body_cfg_value("solver_velocity_iterations", prefix=physics_prefix)
+                    ),
+                    sleep_threshold=float(self._rigid_body_cfg_value("sleep_threshold", prefix=physics_prefix)),
+                    stabilization_threshold=float(
+                        self._rigid_body_cfg_value("stabilization_threshold", prefix=physics_prefix)
+                    ),
                     max_linear_velocity=1000.0,
                     max_angular_velocity=1000.0,
-                    max_depenetration_velocity=float(self.cfg.object_max_depenetration_velocity),
+                    max_depenetration_velocity=float(
+                        self._rigid_body_cfg_value("max_depenetration_velocity", prefix=physics_prefix)
+                    ),
                 ),
-                mass_props=sim_utils.MassPropertiesCfg(density=float(self.cfg.object_density)),
+                mass_props=sim_utils.MassPropertiesCfg(
+                    density=float(self._rigid_body_cfg_value("density", prefix=physics_prefix))
+                ),
                 scale=(scale, scale, scale),
             ),
             init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, -10.0), rot=(1.0, 0.0, 0.0, 0.0)),
@@ -513,14 +613,14 @@ class MultiObjectGraspTaskMixin:
             prim_path,
             sim_utils.CollisionPropertiesCfg(
                 collision_enabled=True,
-                contact_offset=float(self.cfg.object_contact_offset),
-                rest_offset=float(self.cfg.object_rest_offset),
+                contact_offset=float(self._rigid_body_cfg_value("contact_offset", prefix=physics_prefix)),
+                rest_offset=float(self._rigid_body_cfg_value("rest_offset", prefix=physics_prefix)),
             ),
         )
         object_material_cfg = RigidBodyMaterialCfg(
-            static_friction=float(self.cfg.object_static_friction),
-            dynamic_friction=float(self.cfg.object_dynamic_friction),
-            restitution=float(self.cfg.object_restitution),
+            static_friction=float(self._rigid_body_cfg_value("static_friction", prefix=physics_prefix)),
+            dynamic_friction=float(self._rigid_body_cfg_value("dynamic_friction", prefix=physics_prefix)),
+            restitution=float(self._rigid_body_cfg_value("restitution", prefix=physics_prefix)),
             friction_combine_mode="max",
             restitution_combine_mode="min",
         )
@@ -563,7 +663,7 @@ class MultiObjectGraspTaskMixin:
                 uuid = str(asset["uuid"])
                 prim_name = f"slot_{slot_idx:02d}_{env_id}_{_safe_prim_token(uuid)}"
                 prim_path = f"/World/envs/env_{env_id}/tabletop_clutter/{prim_name}"
-                self._spawn_usd_rigid_object(prim_path, asset)
+                self._spawn_usd_rigid_object(prim_path, asset, physics_prefix="tabletop_clutter")
                 self._disable_base_link_articulation(prim_path)
 
             clutter_object = RigidObject(
@@ -595,9 +695,49 @@ class MultiObjectGraspTaskMixin:
                 if bool(self.cfg.object_stable_pose_allow_missing):
                     continue
                 raise FileNotFoundError(f"Missing stable-pose cache for object {asset['uuid']}: {path}")
-            self._object_stable_poses[object_idx] = self._load_stable_pose_cache(path, uuid=str(asset["uuid"]))
+            self._object_stable_poses[object_idx] = self._load_stable_pose_cache(
+                path,
+                uuid=str(asset["uuid"]),
+                pose_count=int(self.cfg.object_stable_pose_count),
+            )
 
-    def _load_stable_pose_cache(self, path: Path, *, uuid: str) -> dict[str, torch.Tensor | str]:
+    def _setup_tabletop_clutter_stable_pose_resets(self) -> None:
+        self._tabletop_clutter_stable_pose_enabled = bool(
+            getattr(self.cfg, "tabletop_clutter_stable_pose_enabled", False)
+        )
+        self._tabletop_clutter_stable_poses: dict[int, dict[str, torch.Tensor | str]] = {}
+        if not self._tabletop_clutter_stable_pose_enabled:
+            return
+
+        cache_dir = str(getattr(self.cfg, "tabletop_clutter_stable_pose_cache_dir", "") or "")
+        allow_missing = bool(getattr(self.cfg, "tabletop_clutter_stable_pose_allow_missing", False))
+        pose_count = int(getattr(self.cfg, "tabletop_clutter_stable_pose_count", 1))
+        for asset_idx, asset in enumerate(self._tabletop_clutter_assets):
+            stable_pose_path = str(asset.get("stable_pose_path") or "")
+            if not stable_pose_path and cache_dir:
+                stable_pose_path = str(resolve_repo_path(Path(cache_dir) / f"{asset['uuid']}.npz", base_dir=repo_root()))
+            if not stable_pose_path:
+                if allow_missing:
+                    continue
+                raise FileNotFoundError(f"Missing stable-pose cache path for tabletop clutter {asset['uuid']}")
+            path = Path(stable_pose_path).expanduser()
+            if not path.is_file():
+                if allow_missing:
+                    continue
+                raise FileNotFoundError(f"Missing stable-pose cache for tabletop clutter {asset['uuid']}: {path}")
+            self._tabletop_clutter_stable_poses[asset_idx] = self._load_stable_pose_cache(
+                path,
+                uuid=str(asset["uuid"]),
+                pose_count=pose_count,
+            )
+
+    def _load_stable_pose_cache(
+        self,
+        path: Path,
+        *,
+        uuid: str,
+        pose_count: int,
+    ) -> dict[str, torch.Tensor | str]:
         import numpy as np
 
         with np.load(path, allow_pickle=False) as data:
@@ -622,7 +762,7 @@ class MultiObjectGraspTaskMixin:
 
         if rotations.ndim != 3 or tuple(rotations.shape[1:]) != (3, 3) or rotations.shape[0] == 0:
             raise ValueError(f"Stable-pose rotations must have shape (N, 3, 3), got {rotations.shape}: {path}")
-        pose_count = min(max(int(self.cfg.object_stable_pose_count), 1), rotations.shape[0])
+        pose_count = min(max(int(pose_count), 1), rotations.shape[0])
         rotations = rotations[:pose_count]
         probabilities = probabilities[:pose_count]
         if root_z_offsets is not None:
@@ -692,6 +832,55 @@ class MultiObjectGraspTaskMixin:
         quat = torch.zeros(num_ids, 4, device=self.device)
         quat[:, 0] = 1.0
         return quat
+
+    def _sample_tabletop_clutter_reset_pose(
+        self,
+        env_ids: torch.Tensor,
+        slot_idx: int,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        num_ids = int(env_ids.numel())
+        yaw_quat = self._sample_tabletop_clutter_quat(num_ids)
+        if not getattr(self, "_tabletop_clutter_stable_pose_enabled", False):
+            return yaw_quat, self.tabletop_clutter_spawn_z_offset[env_ids, slot_idx]
+
+        asset_indices = self.tabletop_clutter_asset_index[env_ids, slot_idx]
+        reset_rot = torch.empty((num_ids, 3, 3), dtype=torch.float32, device=self.device)
+        root_z_offsets = torch.empty((num_ids,), dtype=torch.float32, device=self.device)
+        allow_missing = bool(getattr(self.cfg, "tabletop_clutter_stable_pose_allow_missing", False))
+        randomize = bool(getattr(self.cfg, "tabletop_clutter_stable_pose_randomize", True))
+        for asset_idx_tensor in torch.unique(asset_indices):
+            asset_idx = int(asset_idx_tensor.item())
+            stable = self._tabletop_clutter_stable_poses.get(asset_idx)
+            mask = asset_indices == asset_idx
+            count = int(mask.sum().item())
+            if stable is None:
+                if allow_missing:
+                    reset_rot[mask] = (
+                        torch.eye(3, dtype=torch.float32, device=self.device)
+                        .unsqueeze(0)
+                        .expand(count, -1, -1)
+                    )
+                    root_z_offsets[mask] = self.tabletop_clutter_spawn_z_offset[env_ids[mask], slot_idx]
+                    continue
+                raise RuntimeError(
+                    "Stable-pose reset requested for tabletop clutter without cache: "
+                    f"{self._tabletop_clutter_assets[asset_idx]['uuid']}"
+                )
+            rotations = stable["rotations"]
+            offsets = stable["root_z_offsets"]
+            if not isinstance(rotations, torch.Tensor) or not isinstance(offsets, torch.Tensor):
+                raise RuntimeError("Internal tabletop clutter stable-pose cache tensor is invalid")
+            if randomize and rotations.shape[0] > 1:
+                ranks = torch.randint(rotations.shape[0], (count,), device=self.device)
+            else:
+                ranks = torch.zeros((count,), dtype=torch.long, device=self.device)
+            reset_rot[mask] = rotations[ranks]
+            root_z_offsets[mask] = offsets[ranks]
+
+        yaw_rot = math_utils.matrix_from_quat(yaw_quat)
+        object_quat = math_utils.quat_from_matrix(torch.bmm(yaw_rot, reset_rot))
+        object_quat = object_quat / torch.clamp(torch.norm(object_quat, dim=-1, keepdim=True), min=1.0e-6)
+        return object_quat, root_z_offsets
 
     def _sample_tabletop_clutter_xy(self, env_ids: torch.Tensor, slot_idx: int) -> torch.Tensor:
         num_ids = int(env_ids.numel())
@@ -896,13 +1085,13 @@ class MultiObjectGraspTaskMixin:
                 self.tabletop_clutter_placement_attempts[env_ids, slot_idx] = 1
                 self.tabletop_clutter_placement_min_clearance[env_ids] = float("nan")
             z_jitter = z_jitter_range * torch.rand(num_ids, device=self.device)
+            object_quat, root_z_offset = self._sample_tabletop_clutter_reset_pose(env_ids, slot_idx)
             object_pos[:, 2] = (
                 float(self.cfg.table_surface_z)
-                + self.tabletop_clutter_spawn_z_offset[env_ids, slot_idx]
+                + root_z_offset
                 + float(getattr(self.cfg, "tabletop_clutter_spawn_z_clearance", 0.0))
                 + z_jitter
             )
-            object_quat = self._sample_tabletop_clutter_quat(num_ids)
             object_state = torch.zeros(num_ids, 13, device=self.device)
             object_state[:, 0:3] = object_pos + self.scene.env_origins[env_ids]
             object_state[:, 3:7] = object_quat
@@ -1010,6 +1199,7 @@ class MultiObjectGraspTaskMixin:
             "object_asset_index_by_env": [int(v) for v in self.object_asset_index.detach().cpu().tolist()],
             "uuids": [str(asset["uuid"]) for asset in self._object_assets],
             "scales": [float(asset["scale"]) for asset in self._object_assets],
+            "scale_sources": [str(asset.get("scale_source") or "") for asset in self._object_assets],
             "usd_paths": [str(asset["usd_path"]) for asset in self._object_assets],
             "grasp_prior_paths": [str(asset.get("grasp_prior_path") or "") for asset in self._object_assets],
         }
@@ -1031,13 +1221,39 @@ class MultiObjectGraspTaskMixin:
             "uuids": [str(asset["uuid"]) for asset in self._tabletop_clutter_assets],
             "names": [str(asset.get("name") or asset["uuid"]) for asset in self._tabletop_clutter_assets],
             "usd_paths": [str(asset["usd_path"]) for asset in self._tabletop_clutter_assets],
+            "raw_object_paths": [str(asset.get("raw_object_path") or "") for asset in self._tabletop_clutter_assets],
+            "grasp_prior_paths": [str(asset.get("grasp_prior_path") or "") for asset in self._tabletop_clutter_assets],
+            "stable_pose_paths": [str(asset.get("stable_pose_path") or "") for asset in self._tabletop_clutter_assets],
+            "scales": [float(asset["scale"]) for asset in self._tabletop_clutter_assets],
+            "scale_sources": [str(asset.get("scale_source") or "") for asset in self._tabletop_clutter_assets],
+            "scaled_bounds_min": [
+                [float(v) for v in asset["scaled_bounds_min"]] for asset in self._tabletop_clutter_assets
+            ],
+            "scaled_bounds_max": [
+                [float(v) for v in asset["scaled_bounds_max"]] for asset in self._tabletop_clutter_assets
+            ],
+            "scaled_half_extents": [
+                [float(v) for v in asset["scaled_half_extents"]] for asset in self._tabletop_clutter_assets
+            ],
+            "xy_radii": [float(asset["xy_radius"]) for asset in self._tabletop_clutter_assets],
+            "spawn_z_offsets": [float(asset["spawn_z_offset"]) for asset in self._tabletop_clutter_assets],
             "spawn_xy_randomization": float(getattr(self.cfg, "tabletop_clutter_spawn_xy_randomization", 0.0)),
             "spawn_yaw_randomization_deg": float(
                 getattr(self.cfg, "tabletop_clutter_spawn_yaw_randomization_deg", 0.0)
             ),
             "spawn_z_jitter": float(getattr(self.cfg, "tabletop_clutter_spawn_z_jitter", 0.0)),
+            "stable_pose_enabled": bool(getattr(self.cfg, "tabletop_clutter_stable_pose_enabled", False)),
+            "stable_pose_count": int(getattr(self.cfg, "tabletop_clutter_stable_pose_count", 1)),
             "non_overlapping": bool(getattr(self.cfg, "tabletop_clutter_non_overlapping", False)),
             "placement_padding": float(getattr(self.cfg, "tabletop_clutter_placement_padding", 0.0)),
+            "initial_root_pos_by_env_slot": [
+                [[float(value) for value in slot] for slot in row]
+                for row in self.tabletop_clutter_initial_root_pos.detach().cpu().tolist()
+            ],
+            "initial_root_quat_by_env_slot": [
+                [[float(value) for value in slot] for slot in row]
+                for row in self.tabletop_clutter_initial_root_quat.detach().cpu().tolist()
+            ],
             "placement_success_by_env_slot": [
                 [bool(v) for v in row]
                 for row in self.tabletop_clutter_placement_success.detach().cpu().tolist()
@@ -1053,4 +1269,27 @@ class MultiObjectGraspTaskMixin:
                 getattr(self.cfg, "tabletop_clutter_prioritize_common_objects", False)
             ),
             "max_xy_radius": float(getattr(self.cfg, "tabletop_clutter_max_xy_radius", 0.0)),
+            "physics": {
+                "density": float(self._rigid_body_cfg_value("density", prefix="tabletop_clutter")),
+                "static_friction": float(self._rigid_body_cfg_value("static_friction", prefix="tabletop_clutter")),
+                "dynamic_friction": float(self._rigid_body_cfg_value("dynamic_friction", prefix="tabletop_clutter")),
+                "restitution": float(self._rigid_body_cfg_value("restitution", prefix="tabletop_clutter")),
+                "contact_offset": float(self._rigid_body_cfg_value("contact_offset", prefix="tabletop_clutter")),
+                "rest_offset": float(self._rigid_body_cfg_value("rest_offset", prefix="tabletop_clutter")),
+                "solver_position_iterations": int(
+                    self._rigid_body_cfg_value("solver_position_iterations", prefix="tabletop_clutter")
+                ),
+                "solver_velocity_iterations": int(
+                    self._rigid_body_cfg_value("solver_velocity_iterations", prefix="tabletop_clutter")
+                ),
+                "linear_damping": float(self._rigid_body_cfg_value("linear_damping", prefix="tabletop_clutter")),
+                "angular_damping": float(self._rigid_body_cfg_value("angular_damping", prefix="tabletop_clutter")),
+                "sleep_threshold": float(self._rigid_body_cfg_value("sleep_threshold", prefix="tabletop_clutter")),
+                "stabilization_threshold": float(
+                    self._rigid_body_cfg_value("stabilization_threshold", prefix="tabletop_clutter")
+                ),
+                "max_depenetration_velocity": float(
+                    self._rigid_body_cfg_value("max_depenetration_velocity", prefix="tabletop_clutter")
+                ),
+            },
         }

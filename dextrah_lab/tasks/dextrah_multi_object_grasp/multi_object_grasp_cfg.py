@@ -68,6 +68,11 @@ class MultiObjectGraspTaskCfg:
     tabletop_clutter_spawn_yaw_randomization_deg = 180.0
     tabletop_clutter_spawn_z_clearance = 0.006
     tabletop_clutter_spawn_z_jitter = 0.02
+    tabletop_clutter_stable_pose_enabled = False
+    tabletop_clutter_stable_pose_cache_dir = ""
+    tabletop_clutter_stable_pose_count = 1
+    tabletop_clutter_stable_pose_randomize = True
+    tabletop_clutter_stable_pose_allow_missing = False
     tabletop_clutter_non_overlapping = True
     tabletop_clutter_placement_padding = 0.01
     tabletop_clutter_placement_attempts = 128
@@ -75,6 +80,19 @@ class MultiObjectGraspTaskCfg:
     tabletop_clutter_include_target_object_in_placement = True
     tabletop_clutter_prioritize_common_objects = True
     tabletop_clutter_max_xy_radius = 0.14
+    tabletop_clutter_density = 500.0
+    tabletop_clutter_static_friction = 1.6
+    tabletop_clutter_dynamic_friction = 1.2
+    tabletop_clutter_restitution = 0.0
+    tabletop_clutter_contact_offset = 0.004
+    tabletop_clutter_rest_offset = 0.0
+    tabletop_clutter_solver_position_iterations = 16
+    tabletop_clutter_solver_velocity_iterations = 6
+    tabletop_clutter_linear_damping = 0.25
+    tabletop_clutter_angular_damping = 1.25
+    tabletop_clutter_sleep_threshold = 0.06
+    tabletop_clutter_stabilization_threshold = 0.03
+    tabletop_clutter_max_depenetration_velocity = 2.0
     tabletop_clutter_common_object_keywords = (
         "apple",
         "bag",

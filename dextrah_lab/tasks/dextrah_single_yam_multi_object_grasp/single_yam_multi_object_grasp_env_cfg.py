@@ -81,4 +81,4 @@ class DextrahSingleYAMTabletopClutterGraspEnvCfg(DextrahSingleYAMMultiObjectGras
     tabletop_clutter_spawn_xy_randomization = 0.22
     tabletop_clutter_spawn_yaw_randomization_deg = 180.0
     tabletop_clutter_spawn_z_clearance = 0.006
-    tabletop_clutter_spawn_z_jitter = 0.03
+    tabletop_clutter_spawn_z_jitter = 0.0

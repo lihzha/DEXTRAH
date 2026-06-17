@@ -7374,15 +7374,37 @@ Command / Job:
   object-asset override.
 
 Result:
-- status: blocked locally by renderer infrastructure, then routed to l401.
-- Both camera-enabled local commands failed before useful task evidence with
-  Isaac/Kit Vulkan `ERROR_DEVICE_LOST`, `A GPU crash occurred`, and exit 139.
-- A minimal camera-enabled AppLauncher repro with the RTX 6000 Ada selected also
-  crashed before `launcher_ready`, so the failure is not specific to the new
-  DEXTRAH tabletop clutter task.
-- Crash dump:
-  `/home/lzha/code/.venvs/dextrah-isaaclab/lib/python3.11/site-packages/omni/data/Kit/Isaac-Sim/5.0/71117789-fb57-4fa7-66164b88-c7fed1d4.dmp`
-- No local render process remains active.
+- status: local camera path fixed in `eval_rollout.py`; final local rerun was
+  blocked before DEXTRAH code by repeat Isaac/Kit `ERROR_DEVICE_LOST`.
+- Standalone settle-video local smoke passed and wrote
+  `local_results/local_camera_path_repro_20260616_230131/settle.mp4`,
+  `metrics.json`, and two `frames/frame_*.png` files. `ffprobe` reported
+  `1280x720`, `2/1` fps, duration `1.0`, `nb_frames=2`; inspected frames were
+  nonblank and showed the YAM tabletop scene.
+- Initial `eval_rollout.py --video` reproduced the local camera failure: the
+  process stalled during renderer startup before Hydra/project logs.
+- Change: `eval_rollout.py` now launches `AppLauncher` before handing Hydra
+  overrides back through `sys.argv`, registers only the selected task family
+  (YAM modules for YAM tasks), uses explicit `task_env.sim.render(); env.render()`
+  video capture instead of Gym `RecordVideo`, writes PNG frames alongside MP4,
+  applies task-specific default eval cameras, and starts recording after env
+  steps to avoid reset-time black frames.
+- Successful patched eval smoke:
+  `local_results/local_camera_path_repro_20260616_230131/eval_video_zero/logs/eval_video_zero_after_launch_order_patch.log`.
+  It completed `Dextrah-Single-YAM-Multi-Object-Grasp`, `num_envs=1`,
+  `num_steps=2`, `action_source=zero`, wrote metrics/traces, and produced
+  `videos/single-yam-local-camera-eval.mp4` plus two frame PNGs. `ffprobe`
+  reported `1280x720`, `60/1` fps, duration `0.033333`, `nb_frames=2`.
+  Frame stats showed frame 1 nonblank, and visual inspection showed the YAM
+  robot scene. Viewer URL:
+  `http://localhost:8765/view?path=DEXTRAH/local_results/local_camera_path_repro_20260616_230131/eval_video_zero/videos/single-yam-local-camera-eval.mp4`.
+- Follow-up reruns after the post-step capture/default-camera patch did not
+  reach Hydra or DEXTRAH code; Isaac/Kit crashed in renderer startup with
+  Vulkan `ERROR_DEVICE_LOST`, `A GPU crash occurred`, and exit 139. Last crash
+  log:
+  `local_results/local_camera_path_repro_20260616_230131/eval_video_zero_poststep/logs/eval_video_zero_poststep.log`.
+- Validation: `python -m py_compile dextrah_lab/rl_games/eval_rollout.py`
+  passed after the final source patch. No local render process remains active.
 
 ## 2026-06-16 20:30 PDT - tabletop-clutter-objaverse-textured-video
 
@@ -7938,3 +7960,37 @@ Result:
 Next:
 - No DEXTRAH-owned render job remains active. Commit and push the wrapper and
   worklog follow-up, then open the selected local video with `viz-open`.
+
+## 2026-06-16 23:42 PDT - tabletop-clutter-graspgen-scale-stable-damping
+
+Goal:
+- Fix the tabletop clutter environment to use GraspGenX prior `object_scale`
+  files, stable-pose initialization, non-overlap placement, yaw randomization,
+  and stronger clutter damping/sleep settings so settled objects do not keep
+  visibly shaking.
+
+Change:
+- Added GraspGenX prior-scale resolution to the shared multi-object task
+  manifest loader and the textured Objaverse render manifest preparation path.
+- Added clutter-specific stable-pose reset support, physics material/rigid-body
+  damping overrides, scale/bounds diagnostics, and final root-velocity metrics.
+- Updated Franka and single-YAM tabletop clutter configs to keep z jitter off
+  by default, preserving robot/task modularity through the shared mixin.
+- Updated the l401 tabletop render wrapper with stable-pose, prior-scale, and
+  damping/sleep command-line controls.
+
+Validation:
+- `python3 -m py_compile` passed for the shared task/configs and render helper.
+- `bash -n cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh` passed.
+- Local smoke using VisDex assets completed:
+  `local_results/tabletop_clutter_local_smoke_20260617/settle.mp4`.
+- Local smoke MP4 validation: `1280x720`, `4` fps, `1.000000` seconds, and
+  `4` frames. Metrics confirm non-overlap placement succeeded and clutter
+  physics used `linear_damping=0.25`, `angular_damping=1.25`,
+  `sleep_threshold=0.06`, `stabilization_threshold=0.03`, and
+  `max_depenetration_velocity=2.0`.
+
+Next:
+- Commit and deploy the exact revision to the l401 agent worktree, then run a
+  GraspGenX textured Objaverse 5 second render with `TABLETOP_CLUTTER_MAX_XY_RADIUS=0.09`
+  so large appliance-like objects are filtered out.
