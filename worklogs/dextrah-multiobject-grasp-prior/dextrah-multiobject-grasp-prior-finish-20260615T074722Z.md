@@ -7003,3 +7003,19 @@ Job `29176371`:
 Analysis:
 - Early continuation is improving beyond the previous rank-0 training-success peak (`0.43115`) without reintroducing the table-penetration reset failure.
 - Continue monitoring through later checkpoints.
+
+## 2026-06-17T02:59:00Z - epoch 1291 scalar snapshot
+
+Job `29176371`:
+- state: `RUNNING`
+- latest TensorBoard epoch scalar: `1291`
+- latest `cube_success_rate/frame=0.4404296875`
+- best `cube_success_rate/frame=0.4443359375` so far, still at around epoch `1243`
+- latest `cube_has_lifted_rate/frame=0.52294921875`; best `0.5322265625`
+- reward-best improved to `4537.5` at epoch `1276`; latest reward scalar `3434.27685546875`
+- reset safety remains clean: `cube_grasp_prior_reset_success_rate=1.0`, `cube_grasp_prior_quality_success_rate=1.0`, exact tip table clearance about `0.0300 m`
+- `cube_finger_table_clearance_violation/frame=0.0`, `cube_table_clearance_penalty=0.0`
+
+Analysis:
+- Continued RL has not yet moved aggregate training success beyond `~0.444`, but it is stable and reward improved.
+- Keep running to see whether later checkpoints improve object-specific behavior.
