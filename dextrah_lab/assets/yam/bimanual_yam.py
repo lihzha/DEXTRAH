@@ -13,6 +13,9 @@ YAM_ASSET_DIR = Path(__file__).resolve().parent
 BIMANUAL_YAM_MJCF_PATH = YAM_ASSET_DIR / "yam_mujoco" / "bimanual_yam_linear_flattened.xml"
 BIMANUAL_YAM_URDF_PATH = YAM_ASSET_DIR / "yam_urdf" / "bimanual_yam.urdf"
 BIMANUAL_YAM_USD_PATH = YAM_ASSET_DIR / "yam_mjcf_usd" / "bimanual_yam_linear_flattened.usd"
+SINGLE_YAM_MJCF_PATH = YAM_ASSET_DIR / "yam_mujoco" / "yam_linear.xml"
+SINGLE_YAM_URDF_PATH = YAM_ASSET_DIR / "yam_urdf" / "yam.urdf"
+SINGLE_YAM_USD_PATH = YAM_ASSET_DIR / "yam_mjcf_usd" / "yam_linear.usd"
 
 MOLMOACT2_REST_JOINT_POS = {
     # Matches MolmoAct2 BimanualYAM.keyframes["rest"].qpos by joint name.
@@ -32,6 +35,17 @@ MOLMOACT2_REST_JOINT_POS = {
     "right_joint6": 0.0,
     "right_left_finger": -0.02,
     "right_right_finger": -0.02,
+}
+
+MOLMOACT2_SINGLE_REST_JOINT_POS = {
+    "joint1": 0.0,
+    "joint2": 0.7853981633974483,
+    "joint3": 1.5707963267948966,
+    "joint4": 0.0,
+    "joint5": 0.0,
+    "joint6": 0.0,
+    "left_finger": -0.02,
+    "right_finger": -0.02,
 }
 
 BIMANUAL_YAM_CFG = ArticulationCfg(
@@ -108,6 +122,65 @@ BIMANUAL_YAM_CFG = ArticulationCfg(
         ),
         "right_gripper": ImplicitActuatorCfg(
             joint_names_expr=["right_(left|right)_finger"],
+            effort_limit_sim=40.0,
+            stiffness=2000.0,
+            damping=40.0,
+        ),
+    },
+    soft_joint_pos_limit_factor=1.0,
+)
+
+SINGLE_YAM_CFG = ArticulationCfg(
+    prim_path="{ENV_REGEX_NS}/Robot",
+    spawn=sim_utils.UsdFileCfg(
+        usd_path=str(SINGLE_YAM_USD_PATH),
+        activate_contact_sensors=False,
+        rigid_props=sim_utils.RigidBodyPropertiesCfg(
+            disable_gravity=True,
+            retain_accelerations=True,
+            linear_damping=0.0,
+            angular_damping=0.0,
+            max_linear_velocity=1000.0,
+            max_angular_velocity=1000.0,
+            max_depenetration_velocity=1000.0,
+        ),
+        articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+            enabled_self_collisions=False,
+            solver_position_iteration_count=12,
+            solver_velocity_iteration_count=4,
+            sleep_threshold=0.005,
+            stabilization_threshold=0.0005,
+            fix_root_link=True,
+        ),
+        joint_drive_props=sim_utils.JointDrivePropertiesCfg(drive_type="force"),
+        copy_from_source=False,
+    ),
+    init_state=ArticulationCfg.InitialStateCfg(
+        pos=(0.0, 0.0, 0.0),
+        rot=(1.0, 0.0, 0.0, 0.0),
+        joint_pos=MOLMOACT2_SINGLE_REST_JOINT_POS,
+        joint_vel={".*": 0.0},
+    ),
+    actuators={
+        "arm": ImplicitActuatorCfg(
+            joint_names_expr=["joint[1-6]"],
+            effort_limit_sim={
+                "joint[1-3]": 28.0,
+                "joint[4-6]": 10.0,
+            },
+            stiffness={
+                "joint[1-3]": 40.0,
+                "joint4": 20.0,
+                "joint[5-6]": 10.0,
+            },
+            damping={
+                "joint[1-3]": 2.5,
+                "joint4": 0.5,
+                "joint[5-6]": 1.0,
+            },
+        ),
+        "gripper": ImplicitActuatorCfg(
+            joint_names_expr=["(left|right)_finger"],
             effort_limit_sim=40.0,
             stiffness=2000.0,
             damping=40.0,

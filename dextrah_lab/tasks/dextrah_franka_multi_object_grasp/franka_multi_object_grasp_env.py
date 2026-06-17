@@ -60,6 +60,7 @@ class DextrahFrankaMultiObjectGraspEnv(MultiObjectGraspTaskMixin, DextrahFrankaC
         self.scene.rigid_objects["table"] = self._table
         self._spawn_multi_object_assets()
         self._spawn_tabletop_clutter_assets()
+        self._spawn_tabletop_goal_bin()
 
         light_cfg = sim_utils.DomeLightCfg(intensity=1800.0, color=(0.75, 0.75, 0.75))
         light_cfg.func("/World/Light", light_cfg)
@@ -671,6 +672,7 @@ class DextrahFrankaMultiObjectGraspEnv(MultiObjectGraspTaskMixin, DextrahFrankaC
         max_y = float(self.cfg.table_center_y + 0.5 * self.cfg.table_size_y) - object_radius_xy
         spawn_xy[:, 0] = torch.minimum(torch.maximum(spawn_xy[:, 0], min_x), max_x)
         spawn_xy[:, 1] = torch.minimum(torch.maximum(spawn_xy[:, 1], min_y), max_y)
+        spawn_xy = self._move_xy_outside_tabletop_goal_bin(env_ids, spawn_xy, object_radius_xy)
 
         object_pos = torch.zeros(num_ids, 3, device=self.device)
         object_pos[:, 0:2] = spawn_xy
@@ -696,8 +698,7 @@ class DextrahFrankaMultiObjectGraspEnv(MultiObjectGraspTaskMixin, DextrahFrankaC
         _debug_reset_log("after reset settle")
         object_center_pos = self._object_center_pos_from_root(env_ids, object_pos, object_quat)
         self.cube_initial_pos[env_ids] = object_center_pos
-        self.cube_goal_pos[env_ids] = object_center_pos
-        self.cube_goal_pos[env_ids, 2] = object_center_pos[:, 2] + float(self.cfg.cube_lift_height)
+        self.cube_goal_pos[env_ids] = self._tabletop_goal_pos(env_ids, object_center_pos)
         self.has_lifted_cube[env_ids] = False
         self.in_success_region[env_ids] = False
         self.time_in_success_region[env_ids] = 0.0

@@ -80,6 +80,23 @@ class MultiObjectGraspTaskCfg:
     tabletop_clutter_include_target_object_in_placement = True
     tabletop_clutter_prioritize_common_objects = True
     tabletop_clutter_max_xy_radius = 0.14
+
+    # Optional fixed tabletop bin used as a placement goal.  When enabled, the
+    # target object and clutter placement keep at least tabletop_goal_bin_clearance
+    # from the bin footprint.
+    tabletop_goal_bin_enabled = False
+    tabletop_goal_bin_center_offset_x = 0.0
+    tabletop_goal_bin_center_offset_y = 0.0
+    tabletop_goal_bin_inner_size_x = 0.22
+    tabletop_goal_bin_inner_size_y = 0.22
+    tabletop_goal_bin_wall_thickness = 0.02
+    tabletop_goal_bin_bottom_thickness = 0.012
+    tabletop_goal_bin_wall_height = 0.12
+    tabletop_goal_bin_clearance = 0.10
+    tabletop_goal_bin_placement_clearance = 0.0
+    tabletop_goal_bin_goal_height = 0.06
+    tabletop_goal_bin_success_xy_tol = 0.08
+
     tabletop_clutter_density = 500.0
     tabletop_clutter_static_friction = 1.6
     tabletop_clutter_dynamic_friction = 1.2

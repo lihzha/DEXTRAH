@@ -446,6 +446,7 @@ class MultiObjectGraspTaskMixin:
         self.tabletop_clutter_placement_success = torch.empty((self.num_envs, 0), dtype=torch.bool, device=self.device)
         self.tabletop_clutter_placement_attempts = torch.empty((self.num_envs, 0), dtype=torch.long, device=self.device)
         self.tabletop_clutter_placement_min_clearance = torch.empty((self.num_envs,), device=self.device)
+        self.tabletop_clutter_placement_min_bin_clearance = torch.empty((self.num_envs,), device=self.device)
         self._tabletop_clutter_stable_pose_enabled = False
         self._tabletop_clutter_stable_poses: dict[int, dict[str, torch.Tensor | str]] = {}
         if not self._tabletop_clutter_enabled:
@@ -557,7 +558,187 @@ class MultiObjectGraspTaskMixin:
             dtype=torch.float32,
             device=self.device,
         )
+        self.tabletop_clutter_placement_min_bin_clearance = torch.full(
+            (self.num_envs,),
+            float("inf"),
+            dtype=torch.float32,
+            device=self.device,
+        )
         self._setup_tabletop_clutter_stable_pose_resets()
+
+    def _tabletop_goal_bin_info(self) -> dict[str, float] | None:
+        if not bool(getattr(self.cfg, "tabletop_goal_bin_enabled", False)):
+            return None
+        wall = max(float(getattr(self.cfg, "tabletop_goal_bin_wall_thickness", 0.02)), 1.0e-4)
+        bottom = max(float(getattr(self.cfg, "tabletop_goal_bin_bottom_thickness", 0.012)), 1.0e-4)
+        inner_x = max(float(getattr(self.cfg, "tabletop_goal_bin_inner_size_x", 0.22)), 2.0 * wall)
+        inner_y = max(float(getattr(self.cfg, "tabletop_goal_bin_inner_size_y", 0.22)), 2.0 * wall)
+        wall_height = max(float(getattr(self.cfg, "tabletop_goal_bin_wall_height", 0.12)), 1.0e-4)
+        center_x = float(self.cfg.table_center_x) + float(getattr(self.cfg, "tabletop_goal_bin_center_offset_x", 0.0))
+        center_y = float(self.cfg.table_center_y) + float(getattr(self.cfg, "tabletop_goal_bin_center_offset_y", 0.0))
+        table_surface_z = float(self.cfg.table_surface_z)
+        outer_x = inner_x + 2.0 * wall
+        outer_y = inner_y + 2.0 * wall
+        return {
+            "center_x": center_x,
+            "center_y": center_y,
+            "inner_size_x": inner_x,
+            "inner_size_y": inner_y,
+            "outer_size_x": outer_x,
+            "outer_size_y": outer_y,
+            "wall_thickness": wall,
+            "bottom_thickness": bottom,
+            "wall_height": wall_height,
+            "table_surface_z": table_surface_z,
+            "floor_center_z": table_surface_z + 0.5 * bottom,
+            "inner_floor_z": table_surface_z + bottom,
+            "wall_center_z": table_surface_z + bottom + 0.5 * wall_height,
+            "inner_top_z": table_surface_z + bottom + wall_height,
+            "goal_z": table_surface_z + bottom + float(getattr(self.cfg, "tabletop_goal_bin_goal_height", 0.06)),
+            "clearance": max(float(getattr(self.cfg, "tabletop_goal_bin_clearance", 0.10)), 0.0),
+            "placement_clearance": self._tabletop_goal_bin_placement_clearance(),
+        }
+
+    def _tabletop_goal_bin_placement_clearance(self) -> float:
+        task_clearance = max(float(getattr(self.cfg, "tabletop_goal_bin_clearance", 0.10)), 0.0)
+        placement_clearance = max(float(getattr(self.cfg, "tabletop_goal_bin_placement_clearance", 0.0)), 0.0)
+        return max(task_clearance, placement_clearance)
+
+    def _spawn_tabletop_goal_bin(self) -> None:
+        info = self._tabletop_goal_bin_info()
+        if info is None:
+            return
+
+        wall = info["wall_thickness"]
+        inner_x = info["inner_size_x"]
+        inner_y = info["inner_size_y"]
+        outer_x = info["outer_size_x"]
+        outer_y = info["outer_size_y"]
+        cx = info["center_x"]
+        cy = info["center_y"]
+        floor_z = info["floor_center_z"]
+        wall_z = info["wall_center_z"]
+        wall_h = info["wall_height"]
+        bottom = info["bottom_thickness"]
+
+        def spawn_part(path: str, center: tuple[float, float, float], size: tuple[float, float, float], color):
+            cfg = sim_utils.CuboidCfg(
+                size=size,
+                collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=True, contact_offset=0.004),
+                rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                    rigid_body_enabled=True,
+                    kinematic_enabled=True,
+                    disable_gravity=True,
+                ),
+                physics_material=RigidBodyMaterialCfg(
+                    static_friction=1.5,
+                    dynamic_friction=1.0,
+                    restitution=0.0,
+                    friction_combine_mode="max",
+                    restitution_combine_mode="min",
+                ),
+                visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=color, roughness=0.68),
+            )
+            cfg.func(path, cfg, translation=center)
+
+        for env_id in range(self.num_envs):
+            root = f"/World/envs/env_{env_id}/GoalBin"
+            spawn_part(f"{root}/floor", (cx, cy, floor_z), (outer_x, outer_y, bottom), (0.16, 0.18, 0.20))
+            spawn_part(f"{root}/x_pos_wall", (cx + 0.5 * inner_x + 0.5 * wall, cy, wall_z), (wall, outer_y, wall_h), (0.12, 0.38, 0.58))
+            spawn_part(f"{root}/x_neg_wall", (cx - 0.5 * inner_x - 0.5 * wall, cy, wall_z), (wall, outer_y, wall_h), (0.12, 0.38, 0.58))
+            spawn_part(f"{root}/y_pos_wall", (cx, cy + 0.5 * inner_y + 0.5 * wall, wall_z), (inner_x, wall, wall_h), (0.10, 0.32, 0.50))
+            spawn_part(f"{root}/y_neg_wall", (cx, cy - 0.5 * inner_y - 0.5 * wall, wall_z), (inner_x, wall, wall_h), (0.10, 0.32, 0.50))
+
+    def _tabletop_goal_bin_clearance(self, xy: tuple[float, float], radius: float) -> float:
+        info = self._tabletop_goal_bin_info()
+        if info is None:
+            return float("inf")
+        half_x = 0.5 * info["outer_size_x"]
+        half_y = 0.5 * info["outer_size_y"]
+        dx = abs(float(xy[0]) - info["center_x"]) - half_x
+        dy = abs(float(xy[1]) - info["center_y"]) - half_y
+        if dx <= 0.0 and dy <= 0.0:
+            distance_to_rect = -min(-dx, -dy)
+        else:
+            distance_to_rect = math.hypot(max(dx, 0.0), max(dy, 0.0))
+        return distance_to_rect - max(float(radius), 0.0)
+
+    def _tabletop_goal_bin_keepout_bounds(self, radius: float) -> tuple[float, float, float, float] | None:
+        info = self._tabletop_goal_bin_info()
+        if info is None:
+            return None
+        margin = info["placement_clearance"] + max(float(radius), 0.0)
+        return (
+            info["center_x"] - 0.5 * info["outer_size_x"] - margin,
+            info["center_x"] + 0.5 * info["outer_size_x"] + margin,
+            info["center_y"] - 0.5 * info["outer_size_y"] - margin,
+            info["center_y"] + 0.5 * info["outer_size_y"] + margin,
+        )
+
+    def _move_xy_outside_tabletop_goal_bin(
+        self,
+        env_ids: torch.Tensor,
+        spawn_xy: torch.Tensor,
+        xy_radius: torch.Tensor,
+    ) -> torch.Tensor:
+        info = self._tabletop_goal_bin_info()
+        if info is None or int(env_ids.numel()) == 0:
+            return spawn_xy
+        adjusted = spawn_xy.clone()
+        eps = 1.0e-3
+        env_id_list = [int(env_id) for env_id in env_ids.detach().cpu().tolist()]
+        for row_idx, env_id in enumerate(env_id_list):
+            radius = float(xy_radius[row_idx].detach().cpu().item())
+            current_xy = (
+                float(adjusted[row_idx, 0].detach().cpu().item()),
+                float(adjusted[row_idx, 1].detach().cpu().item()),
+            )
+            required = info["placement_clearance"]
+            if self._tabletop_goal_bin_clearance(current_xy, radius) >= required:
+                continue
+            min_x, max_x, min_y, max_y = self._tabletop_clutter_xy_bounds(radius)
+            keepout = self._tabletop_goal_bin_keepout_bounds(radius)
+            if keepout is None:
+                continue
+            left, right, bottom, top = keepout
+            raw_candidates = (
+                (left - eps, current_xy[1]),
+                (right + eps, current_xy[1]),
+                (current_xy[0], bottom - eps),
+                (current_xy[0], top + eps),
+            )
+            best_xy = current_xy
+            best_score = self._tabletop_goal_bin_clearance(current_xy, radius) - required
+            best_dist = float("inf")
+            for candidate in raw_candidates:
+                candidate_xy = (
+                    max(min_x, min(max_x, candidate[0])),
+                    max(min_y, min(max_y, candidate[1])),
+                )
+                score = self._tabletop_goal_bin_clearance(candidate_xy, radius) - required
+                dist = math.hypot(candidate_xy[0] - current_xy[0], candidate_xy[1] - current_xy[1])
+                if score >= -1.0e-6 and (best_score < -1.0e-6 or dist < best_dist):
+                    best_xy = candidate_xy
+                    best_score = score
+                    best_dist = dist
+                elif score > best_score:
+                    best_xy = candidate_xy
+                    best_score = score
+                    best_dist = dist
+            adjusted[row_idx, 0] = best_xy[0]
+            adjusted[row_idx, 1] = best_xy[1]
+        return adjusted
+
+    def _tabletop_goal_pos(self, env_ids: torch.Tensor, object_center_pos: torch.Tensor) -> torch.Tensor:
+        goal_pos = object_center_pos.clone()
+        info = self._tabletop_goal_bin_info()
+        if info is None:
+            goal_pos[:, 2] = object_center_pos[:, 2] + float(self.cfg.cube_lift_height)
+            return goal_pos
+        goal_pos[:, 0] = info["center_x"]
+        goal_pos[:, 1] = info["center_y"]
+        goal_pos[:, 2] = info["goal_z"]
+        return goal_pos
 
     def _rigid_body_cfg_value(self, name: str, *, prefix: str) -> object:
         specific_name = f"{prefix}_{name}"
@@ -982,7 +1163,9 @@ class MultiObjectGraspTaskMixin:
         success = torch.ones(num_ids, self.tabletop_clutter_object_count, dtype=torch.bool, device=self.device)
         attempts_out = torch.zeros(num_ids, self.tabletop_clutter_object_count, dtype=torch.long, device=self.device)
         min_clearance_out = torch.full((num_ids,), float("inf"), dtype=torch.float32, device=self.device)
+        min_bin_clearance_out = torch.full((num_ids,), float("inf"), dtype=torch.float32, device=self.device)
         padding = max(float(getattr(self.cfg, "tabletop_clutter_placement_padding", 0.0)), 0.0)
+        bin_clearance_required = self._tabletop_goal_bin_placement_clearance()
         max_attempts = max(int(getattr(self.cfg, "tabletop_clutter_placement_attempts", 128)), 1)
         random_values = torch.rand(
             (num_ids, self.tabletop_clutter_object_count, max_attempts, 2),
@@ -1004,24 +1187,32 @@ class MultiObjectGraspTaskMixin:
                 )
                 placed.append((target_xy, float(self.object_xy_radius[env_id].detach().cpu().item())))
             env_min_clearance = float("inf")
+            env_min_bin_clearance = float("inf")
             for slot_idx in range(self.tabletop_clutter_object_count):
                 radius = float(self.tabletop_clutter_xy_radius[env_id, slot_idx].detach().cpu().item())
                 min_x, max_x, min_y, max_y = self._tabletop_clutter_xy_bounds(radius)
                 chosen_xy: tuple[float, float] | None = None
                 chosen_attempts = 0
                 best_xy = (0.5 * (min_x + max_x), 0.5 * (min_y + max_y))
-                best_clearance = -float("inf")
+                best_margin = -float("inf")
+                best_bin_safe_xy: tuple[float, float] | None = None
+                best_bin_safe_pair_clearance = -float("inf")
                 for attempt_idx in range(max_attempts):
                     sample = random_values[row_idx, slot_idx, attempt_idx]
                     candidate_xy = (
                         min_x + (max_x - min_x) * float(sample[0].detach().cpu().item()),
                         min_y + (max_y - min_y) * float(sample[1].detach().cpu().item()),
                     )
-                    clearance = self._tabletop_clearance(candidate_xy, radius, placed)
-                    if clearance > best_clearance:
+                    pair_clearance = self._tabletop_clearance(candidate_xy, radius, placed)
+                    bin_clearance = self._tabletop_goal_bin_clearance(candidate_xy, radius)
+                    margin = min(pair_clearance - padding, bin_clearance - bin_clearance_required)
+                    if margin > best_margin:
                         best_xy = candidate_xy
-                        best_clearance = clearance
-                    if clearance >= padding:
+                        best_margin = margin
+                    if bin_clearance >= bin_clearance_required and pair_clearance > best_bin_safe_pair_clearance:
+                        best_bin_safe_xy = candidate_xy
+                        best_bin_safe_pair_clearance = pair_clearance
+                    if margin >= 0.0:
                         chosen_xy = candidate_xy
                         chosen_attempts = attempt_idx + 1
                         break
@@ -1036,30 +1227,42 @@ class MultiObjectGraspTaskMixin:
                             slot_idx=slot_idx,
                         )
                     ):
-                        clearance = self._tabletop_clearance(candidate_xy, radius, placed)
-                        if clearance > best_clearance:
+                        pair_clearance = self._tabletop_clearance(candidate_xy, radius, placed)
+                        bin_clearance = self._tabletop_goal_bin_clearance(candidate_xy, radius)
+                        margin = min(pair_clearance - padding, bin_clearance - bin_clearance_required)
+                        if margin > best_margin:
                             best_xy = candidate_xy
-                            best_clearance = clearance
-                        if clearance >= padding:
+                            best_margin = margin
+                        if bin_clearance >= bin_clearance_required and pair_clearance > best_bin_safe_pair_clearance:
+                            best_bin_safe_xy = candidate_xy
+                            best_bin_safe_pair_clearance = pair_clearance
+                        if margin >= 0.0:
                             chosen_xy = candidate_xy
                             chosen_attempts = max_attempts + candidate_idx + 1
                             break
                 if chosen_xy is None:
-                    chosen_xy = best_xy
+                    chosen_xy = best_bin_safe_xy if best_bin_safe_xy is not None else best_xy
                     chosen_attempts = max_attempts
                     success[row_idx, slot_idx] = False
-                final_clearance = self._tabletop_clearance(chosen_xy, radius, placed)
-                if math.isfinite(final_clearance):
-                    env_min_clearance = min(env_min_clearance, final_clearance)
+                final_pair_clearance = self._tabletop_clearance(chosen_xy, radius, placed)
+                final_bin_clearance = self._tabletop_goal_bin_clearance(chosen_xy, radius)
+                if math.isfinite(final_pair_clearance):
+                    env_min_clearance = min(env_min_clearance, final_pair_clearance)
+                if math.isfinite(final_bin_clearance):
+                    env_min_bin_clearance = min(env_min_bin_clearance, final_bin_clearance)
                 positions[row_idx, slot_idx, 0] = chosen_xy[0]
                 positions[row_idx, slot_idx, 1] = chosen_xy[1]
                 attempts_out[row_idx, slot_idx] = chosen_attempts
                 placed.append((chosen_xy, radius))
             min_clearance_out[row_idx] = env_min_clearance if math.isfinite(env_min_clearance) else float("inf")
+            min_bin_clearance_out[row_idx] = (
+                env_min_bin_clearance if math.isfinite(env_min_bin_clearance) else float("inf")
+            )
 
         self.tabletop_clutter_placement_success[env_ids] = success
         self.tabletop_clutter_placement_attempts[env_ids] = attempts_out
         self.tabletop_clutter_placement_min_clearance[env_ids] = min_clearance_out
+        self.tabletop_clutter_placement_min_bin_clearance[env_ids] = min_bin_clearance_out
         return positions
 
     def _reset_tabletop_clutter(self, env_ids: torch.Tensor, target_root_pos: torch.Tensor | None = None) -> None:
@@ -1084,6 +1287,7 @@ class MultiObjectGraspTaskMixin:
                 self.tabletop_clutter_placement_success[env_ids, slot_idx] = True
                 self.tabletop_clutter_placement_attempts[env_ids, slot_idx] = 1
                 self.tabletop_clutter_placement_min_clearance[env_ids] = float("nan")
+                self.tabletop_clutter_placement_min_bin_clearance[env_ids] = float("nan")
             z_jitter = z_jitter_range * torch.rand(num_ids, device=self.device)
             object_quat, root_z_offset = self._sample_tabletop_clutter_reset_pose(env_ids, slot_idx)
             object_pos[:, 2] = (
@@ -1265,6 +1469,10 @@ class MultiObjectGraspTaskMixin:
             "placement_min_clearance_by_env": [
                 float(v) for v in self.tabletop_clutter_placement_min_clearance.detach().cpu().tolist()
             ],
+            "placement_min_bin_clearance_by_env": [
+                float(v) for v in self.tabletop_clutter_placement_min_bin_clearance.detach().cpu().tolist()
+            ],
+            "goal_bin": self._tabletop_goal_bin_info(),
             "prioritize_common_objects": bool(
                 getattr(self.cfg, "tabletop_clutter_prioritize_common_objects", False)
             ),

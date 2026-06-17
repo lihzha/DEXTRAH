@@ -801,8 +801,13 @@ def _initial_clearance_summary(task_env, snapshot: dict[str, object]) -> dict[st
     target_radii_list = target_radii.detach().float().cpu().tolist()
     clutter_radii_list = clutter_radii.detach().float().cpu().tolist()
     min_clearance = float("inf")
+    min_bin_clearance = float("inf")
     overlaps: list[dict[str, object]] = []
+    bin_clearance_violations: list[dict[str, object]] = []
     pair_count = 0
+    bin_pair_count = 0
+    bin_clearance_required = float(getattr(task_env.cfg, "tabletop_goal_bin_clearance", 0.0))
+    bin_clearance_fn = getattr(task_env, "_tabletop_goal_bin_clearance", None)
     for env_idx, target_pos in enumerate(target_positions):
         bodies: list[tuple[str, tuple[float, float], float]] = [
             ("target", (float(target_pos[0]), float(target_pos[1])), float(target_radii_list[env_idx]))
@@ -836,11 +841,30 @@ def _initial_clearance_summary(task_env, snapshot: dict[str, object]) -> dict[st
                             "clearance": float(clearance),
                         }
                     )
+        if callable(bin_clearance_fn) and bool(getattr(task_env.cfg, "tabletop_goal_bin_enabled", False)):
+            for body_name, body_xy, body_radius in bodies:
+                clearance = float(bin_clearance_fn(body_xy, body_radius))
+                min_bin_clearance = min(min_bin_clearance, clearance)
+                bin_pair_count += 1
+                if clearance < bin_clearance_required - 1.0e-6:
+                    bin_clearance_violations.append(
+                        {
+                            "env": int(env_idx),
+                            "body": body_name,
+                            "clearance": float(clearance),
+                            "required_clearance": float(bin_clearance_required),
+                        }
+                    )
     return {
         "pair_count": int(pair_count),
         "overlap_count": len(overlaps),
         "min_clearance": None if not np.isfinite(min_clearance) else float(min_clearance),
         "overlaps": overlaps[:20],
+        "bin_pair_count": int(bin_pair_count),
+        "bin_clearance_required": float(bin_clearance_required),
+        "min_bin_clearance": None if not np.isfinite(min_bin_clearance) else float(min_bin_clearance),
+        "bin_clearance_violation_count": len(bin_clearance_violations),
+        "bin_clearance_violations": bin_clearance_violations[:20],
     }
 
 
