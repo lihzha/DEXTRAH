@@ -7085,3 +7085,20 @@ Job `29176371`:
 Analysis:
 - The original below-table reset/prior failure is still not reappearing in the aggregate safety scalars.
 - The later continuation is not improving the success plateau; the post-run eval should compare final, reward-best, and the early best-success checkpoint rather than assume final is best.
+
+## 2026-06-17T05:10:00Z - epoch 1686 scalar snapshot
+
+Job `29176371`:
+- state: still running; latest log reached epoch `1689/1800`
+- latest TensorBoard epoch scalar: `1686`
+- latest `cube_success_rate/frame=0.42578125`
+- best training success remains `0.4443359375` near epochs `1243/1245`; a later near-best transient appeared at epoch `1627` with `0.44384765625`
+- latest `cube_has_lifted_rate/frame=0.51416015625`; best remains `0.5322265625`
+- the generic reward-best checkpoint was overwritten at epoch `1668`, with `rewards/step=12209.8359375`
+- latest reward scalar is back down to `3535.1494140625`, so the reward-best spike did not persist
+- reset/quality success latest `1.0`, minima so far `0.99853515625` and `0.998046875`
+- latest `cube_finger_table_clearance_violation/frame=0.0`, latest `cube_table_clearance_penalty=0.0`
+
+Analysis:
+- The reward-best checkpoint for post-run eval is now the epoch-1668 generic `dextrah_franka_multi_object_grasp.pth`, not the older epoch-1434 reward-best checkpoint.
+- Training success is still not breaking the `~0.44` ceiling; final eval should include at least final, generic reward-best, `ep1240`, and likely `ep1620` or `ep1640` if a second near-best checkpoint is useful.
