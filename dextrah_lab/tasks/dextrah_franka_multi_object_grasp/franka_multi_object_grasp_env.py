@@ -5,25 +5,25 @@ from __future__ import annotations
 from collections.abc import Sequence
 import json
 import math
+import os
 from pathlib import Path
-import re
-from typing import Any
 
 import torch
 
-import omni.usd
 import isaaclab.sim as sim_utils
 import isaaclab.utils.math as math_utils
-from isaaclab.assets import Articulation, RigidObject, RigidObjectCfg
+from isaaclab.assets import Articulation, RigidObject
 from isaaclab.sensors import TiledCamera
 from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane
-from isaaclab.sim.spawners.materials.physics_materials_cfg import RigidBodyMaterialCfg
-from isaaclab.sim.utils import bind_physics_material, make_uninstanceable
-from isaaclab.sim import schemas as sim_schemas
 
+from dextrah_lab.tasks.dextrah_multi_object_grasp.multi_object_grasp_task import (
+    MultiObjectGraspTaskMixin,
+    npz_scalar as _npz_scalar,
+    repo_root as _repo_root,
+    resolve_repo_path as _resolve_path,
+)
 from dextrah_lab.tasks.dextrah_franka_cube_grasp.franka_cube_grasp_env import (
     DextrahFrankaCubeGraspEnv,
-    _yaw_quat_wxyz,
 )
 from dextrah_lab.tasks.dextrah_franka_star_kitting.franka_star_kitting_env import (
     DextrahFrankaStarKittingEnv,
@@ -35,254 +35,19 @@ from .franka_multi_object_grasp_env_cfg import (
 )
 
 
-def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[3]
+def _debug_reset_log(message: str) -> None:
+    if os.environ.get("DEXTRAH_DEBUG_RESET", "").lower() in ("1", "true", "yes", "on"):
+        print(f"[DEBUG][franka_multi_object_reset] {message}", flush=True)
 
 
-def _safe_prim_token(value: str) -> str:
-    token = re.sub(r"[^A-Za-z0-9_]+", "_", value)
-    if not token or token[0].isdigit():
-        token = f"obj_{token}"
-    return token
-
-
-def _resolve_path(value: str | Path, *, base_dir: Path) -> Path:
-    path = Path(str(value)).expanduser()
-    if path.is_absolute():
-        return path
-    candidate = (base_dir / path).resolve()
-    if candidate.exists():
-        return candidate
-    return (_repo_root() / path).resolve()
-
-
-def _as_float_list(value: Any, length: int, default: Sequence[float]) -> list[float]:
-    if value is None:
-        return [float(v) for v in default]
-    if not isinstance(value, (list, tuple)) or len(value) != length:
-        raise ValueError(f"Expected a list of {length} floats, got {value!r}")
-    return [float(v) for v in value]
-
-
-def _bounds_from_record(
-    record: dict[str, object],
-    *,
-    scale: float,
-    default_half_extents: Sequence[float],
-) -> tuple[list[float], list[float]]:
-    if record.get("scaled_bounds_min") is not None and record.get("scaled_bounds_max") is not None:
-        return (
-            _as_float_list(record.get("scaled_bounds_min"), 3, (-float(default_half_extents[0]),) * 3),
-            _as_float_list(record.get("scaled_bounds_max"), 3, default_half_extents),
-        )
-    if record.get("bounds_min") is not None and record.get("bounds_max") is not None:
-        bounds_min = _as_float_list(record.get("bounds_min"), 3, (-float(default_half_extents[0]),) * 3)
-        bounds_max = _as_float_list(record.get("bounds_max"), 3, default_half_extents)
-        return ([scale * v for v in bounds_min], [scale * v for v in bounds_max])
-    if record.get("scaled_half_extents") is not None:
-        half_extents = _as_float_list(record.get("scaled_half_extents"), 3, default_half_extents)
-    elif record.get("half_extents") is not None:
-        half_extents = [
-            scale * v for v in _as_float_list(record.get("half_extents"), 3, default_half_extents)
-        ]
-    else:
-        half_extents = [float(v) for v in default_half_extents]
-    return ([-v for v in half_extents], half_extents)
-
-
-def _npz_scalar(value) -> object:
-    if hasattr(value, "item"):
-        value = value.item()
-    if isinstance(value, bytes):
-        return value.decode("utf-8")
-    return value
-
-
-class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
+class DextrahFrankaMultiObjectGraspEnv(MultiObjectGraspTaskMixin, DextrahFrankaCubeGraspEnv):
     """Franka task: pick up one of many GraspGen object assets per vectorized env."""
 
     cfg: DextrahFrankaMultiObjectGraspEnvCfg
 
-    def _load_object_asset_manifest(self) -> list[dict[str, object]]:
-        manifest_path = str(self.cfg.object_asset_manifest_path or "")
-        object_assets_dir = _resolve_path(str(self.cfg.object_assets_dir), base_dir=_repo_root())
-        if not manifest_path:
-            candidate = object_assets_dir / "manifest.json"
-            manifest_path = str(candidate) if candidate.is_file() else ""
-
-        assets: list[dict[str, object]] = []
-        default_half_extents = tuple(float(v) for v in self.cfg.object_default_half_extents)
-        if manifest_path:
-            manifest = _resolve_path(manifest_path, base_dir=_repo_root())
-            payload = json.loads(manifest.read_text(encoding="utf-8"))
-            object_records = payload.get("objects")
-            if not isinstance(object_records, list):
-                raise ValueError(f"Expected manifest objects list in {manifest}")
-            asset_root = payload.get("asset_root") or "."
-            asset_root_path = _resolve_path(str(asset_root), base_dir=manifest.parent)
-            for idx, record in enumerate(object_records):
-                if not isinstance(record, dict):
-                    raise ValueError(f"Object record {idx} in {manifest} is not a mapping")
-                uuid = str(record.get("uuid") or record.get("name") or f"object_{idx}")
-                usd_value = record.get("usd_path")
-                if not usd_value:
-                    raise ValueError(f"Object record {uuid} is missing usd_path")
-                usd_path = _resolve_path(str(usd_value), base_dir=asset_root_path)
-                if not usd_path.is_file():
-                    raise FileNotFoundError(f"Missing USD asset for {uuid}: {usd_path}")
-                scale = float(record.get("scale", self.cfg.object_default_scale))
-                if bool(self.cfg.require_graspgen_scale) and "scale" not in record:
-                    raise ValueError(f"Object record {uuid} does not include GraspGen object scale")
-                bounds_min, bounds_max = _bounds_from_record(
-                    record,
-                    scale=scale,
-                    default_half_extents=default_half_extents,
-                )
-                half_extents = [0.5 * (bounds_max[axis] - bounds_min[axis]) for axis in range(3)]
-                center_offset = [0.5 * (bounds_max[axis] + bounds_min[axis]) for axis in range(3)]
-                xy_radius = max(
-                    abs(bounds_min[0]),
-                    abs(bounds_max[0]),
-                    abs(bounds_min[1]),
-                    abs(bounds_max[1]),
-                )
-                grasp_prior_path = record.get("grasp_prior_path")
-                resolved_prior = ""
-                if grasp_prior_path:
-                    resolved_prior = str(_resolve_path(str(grasp_prior_path), base_dir=asset_root_path))
-                stable_pose_path = record.get("stable_pose_path")
-                resolved_stable_pose = ""
-                if stable_pose_path:
-                    resolved_stable_pose = str(_resolve_path(str(stable_pose_path), base_dir=asset_root_path))
-                raw_object_path = record.get("raw_object_path")
-                resolved_raw_object = ""
-                if raw_object_path:
-                    resolved_raw_object = str(_resolve_path(str(raw_object_path), base_dir=asset_root_path))
-                assets.append(
-                    {
-                        "uuid": uuid,
-                        "usd_path": str(usd_path),
-                        "raw_object_path": resolved_raw_object,
-                        "scale": scale,
-                        "scaled_half_extents": half_extents,
-                        "scaled_bounds_min": bounds_min,
-                        "scaled_bounds_max": bounds_max,
-                        "center_offset": center_offset,
-                        "xy_radius": xy_radius,
-                        "spawn_z_offset": -bounds_min[2],
-                        "grasp_size": float(record.get("grasp_size", max(2.0 * max(half_extents), 0.02))),
-                        "grasp_prior_path": resolved_prior,
-                        "stable_pose_path": resolved_stable_pose,
-                    }
-                )
-        else:
-            usd_root = object_assets_dir / "USD"
-            if not usd_root.is_dir():
-                raise FileNotFoundError(
-                    "Set env.object_asset_manifest_path or provide assets under "
-                    f"{usd_root}"
-                )
-            for usd_path in sorted(usd_root.glob("*/*.usd")):
-                uuid = usd_path.parent.name
-                half_extents = list(default_half_extents)
-                scale = float(self.cfg.object_default_scale)
-                assets.append(
-                    {
-                        "uuid": uuid,
-                        "usd_path": str(usd_path.resolve()),
-                        "raw_object_path": "",
-                        "scale": scale,
-                        "scaled_half_extents": half_extents,
-                        "scaled_bounds_min": [-v for v in half_extents],
-                        "scaled_bounds_max": half_extents,
-                        "center_offset": [0.0, 0.0, 0.0],
-                        "xy_radius": max(half_extents[0], half_extents[1]),
-                        "spawn_z_offset": half_extents[2],
-                        "grasp_size": float(self.cfg.object_default_grasp_size),
-                        "grasp_prior_path": "",
-                        "stable_pose_path": "",
-                    }
-                )
-
-        max_objects = int(self.cfg.max_objects)
-        if max_objects > 0:
-            assets = assets[:max_objects]
-        if not assets:
-            raise ValueError("No multi-object GraspGen assets were found")
-        return assets
-
     def _setup_scene(self):
-        self._object_assets = self._load_object_asset_manifest()
-        self.num_unique_objects = len(self._object_assets)
-        assignment = str(getattr(self.cfg, "object_asset_assignment", "round_robin")).lower()
-        if assignment in ("round_robin", "round-robin", "cyclic"):
-            self.object_asset_index = torch.remainder(
-                torch.arange(self.num_envs, device=self.device),
-                self.num_unique_objects,
-            ).long()
-        elif assignment in ("random", "uniform"):
-            balanced_indices = torch.remainder(
-                torch.arange(self.num_envs, device=self.device),
-                self.num_unique_objects,
-            ).long()
-            self.object_asset_index = balanced_indices[torch.randperm(self.num_envs, device=self.device)]
-        else:
-            raise ValueError(
-                "object_asset_assignment must be 'round_robin' or 'random', "
-                f"got {self.cfg.object_asset_assignment!r}"
-            )
-        scale_by_asset = torch.tensor(
-            [[float(asset["scale"])] for asset in self._object_assets],
-            dtype=torch.float32,
-            device=self.device,
-        )
-        half_extents_by_asset = torch.tensor(
-            [asset["scaled_half_extents"] for asset in self._object_assets],
-            dtype=torch.float32,
-            device=self.device,
-        )
-        grasp_size_by_asset = torch.tensor(
-            [float(asset["grasp_size"]) for asset in self._object_assets],
-            dtype=torch.float32,
-            device=self.device,
-        )
-        self.object_scale = scale_by_asset[self.object_asset_index]
-        self.object_half_extents = half_extents_by_asset[self.object_asset_index]
-        self.object_grasp_size = grasp_size_by_asset[self.object_asset_index]
-        self.object_radius = torch.norm(self.object_half_extents, dim=-1)
-        bounds_min_by_asset = torch.tensor(
-            [asset["scaled_bounds_min"] for asset in self._object_assets],
-            dtype=torch.float32,
-            device=self.device,
-        )
-        bounds_max_by_asset = torch.tensor(
-            [asset["scaled_bounds_max"] for asset in self._object_assets],
-            dtype=torch.float32,
-            device=self.device,
-        )
-        center_offset_by_asset = torch.tensor(
-            [asset["center_offset"] for asset in self._object_assets],
-            dtype=torch.float32,
-            device=self.device,
-        )
-        xy_radius_by_asset = torch.tensor(
-            [float(asset["xy_radius"]) for asset in self._object_assets],
-            dtype=torch.float32,
-            device=self.device,
-        )
-        spawn_z_offset_by_asset = torch.tensor(
-            [float(asset["spawn_z_offset"]) for asset in self._object_assets],
-            dtype=torch.float32,
-            device=self.device,
-        )
-        self.object_bounds_min = bounds_min_by_asset[self.object_asset_index]
-        self.object_bounds_max = bounds_max_by_asset[self.object_asset_index]
-        self.object_center_offset = center_offset_by_asset[self.object_asset_index]
-        self.object_xy_radius = xy_radius_by_asset[self.object_asset_index]
-        self.object_spawn_z_offset = spawn_z_offset_by_asset[self.object_asset_index]
-        self.object_asset_id_fraction = self.object_asset_index.float() / max(float(self.num_unique_objects - 1), 1.0)
-        self.object_has_grasp_prior = torch.zeros(self.num_envs, dtype=torch.float32, device=self.device)
-        self._setup_stable_pose_resets()
+        self._setup_multi_object_task()
+        self._setup_tabletop_clutter_task()
 
         self._robot = Articulation(self.cfg.robot)
         self._table = RigidObject(self.cfg.table)
@@ -293,185 +58,14 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             self.scene.filter_collisions(global_prim_paths=["/World/ground"])
         self.scene.articulations["robot"] = self._robot
         self.scene.rigid_objects["table"] = self._table
-
-        for env_id in range(self.num_envs):
-            asset = self._object_assets[int(self.object_asset_index[env_id].item())]
-            uuid = str(asset["uuid"])
-            object_prim_name = f"object_{env_id}_{_safe_prim_token(uuid)}"
-            prim_path = f"/World/envs/env_{env_id}/object/{object_prim_name}"
-            scale = float(asset["scale"])
-            object_cfg = RigidObjectCfg(
-                prim_path=prim_path,
-                spawn=sim_utils.UsdFileCfg(
-                    usd_path=str(asset["usd_path"]),
-                    rigid_props=sim_utils.RigidBodyPropertiesCfg(
-                        rigid_body_enabled=True,
-                        kinematic_enabled=False,
-                        disable_gravity=False,
-                        linear_damping=float(self.cfg.object_linear_damping),
-                        angular_damping=float(self.cfg.object_angular_damping),
-                        enable_gyroscopic_forces=True,
-                        solver_position_iteration_count=int(self.cfg.object_solver_position_iterations),
-                        solver_velocity_iteration_count=int(self.cfg.object_solver_velocity_iterations),
-                        sleep_threshold=float(self.cfg.object_sleep_threshold),
-                        stabilization_threshold=float(self.cfg.object_stabilization_threshold),
-                        max_linear_velocity=1000.0,
-                        max_angular_velocity=1000.0,
-                        max_depenetration_velocity=float(self.cfg.object_max_depenetration_velocity),
-                    ),
-                    mass_props=sim_utils.MassPropertiesCfg(density=float(self.cfg.object_density)),
-                    scale=(scale, scale, scale),
-                ),
-                init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, -10.0), rot=(1.0, 0.0, 0.0, 0.0)),
-            )
-            RigidObject(object_cfg)
-            make_uninstanceable(prim_path)
-            sim_schemas.modify_collision_properties(
-                prim_path,
-                sim_utils.CollisionPropertiesCfg(
-                    collision_enabled=True,
-                    contact_offset=float(self.cfg.object_contact_offset),
-                    rest_offset=float(self.cfg.object_rest_offset),
-                ),
-            )
-            object_material_cfg = RigidBodyMaterialCfg(
-                static_friction=float(self.cfg.object_static_friction),
-                dynamic_friction=float(self.cfg.object_dynamic_friction),
-                restitution=float(self.cfg.object_restitution),
-                friction_combine_mode="max",
-                restitution_combine_mode="min",
-            )
-            object_material_path = f"{prim_path}/physicsMaterial"
-            object_material_cfg.func(object_material_path, object_material_cfg)
-            bind_physics_material(prim_path, object_material_path)
-
-        self._cube = RigidObject(RigidObjectCfg(prim_path="/World/envs/env_.*/object/.*", spawn=None))
-        self.scene.rigid_objects["cube"] = self._cube
-        self.scene.rigid_objects["object"] = self._cube
-
-        stage = omni.usd.get_context().get_stage()
-        for env_id in range(self.num_envs):
-            asset = self._object_assets[int(self.object_asset_index[env_id].item())]
-            object_prim_name = f"object_{env_id}_{_safe_prim_token(str(asset['uuid']))}"
-            base_link_path = f"/World/envs/env_{env_id}/object/{object_prim_name}/baseLink"
-            prim = stage.GetPrimAtPath(base_link_path)
-            if prim.IsValid() and prim.HasAttribute("physxArticulation:articulationEnabled"):
-                prim.GetAttribute("physxArticulation:articulationEnabled").Set(False)
+        self._spawn_multi_object_assets()
+        self._spawn_tabletop_clutter_assets()
 
         light_cfg = sim_utils.DomeLightCfg(intensity=1800.0, color=(0.75, 0.75, 0.75))
         light_cfg.func("/World/Light", light_cfg)
         if bool(getattr(self.cfg, "enable_rgb_observations", False)):
             self._tiled_camera = TiledCamera(self.cfg.tiled_camera)
             self.scene.sensors["tiled_camera"] = self._tiled_camera
-
-    def _setup_stable_pose_resets(self) -> None:
-        self._object_stable_pose_enabled = bool(self.cfg.object_stable_pose_enabled)
-        self._object_stable_poses: dict[int, dict[str, torch.Tensor | str]] = {}
-        if not self._object_stable_pose_enabled:
-            return
-
-        cache_dir = str(self.cfg.object_stable_pose_cache_dir or "")
-        for object_idx, asset in enumerate(self._object_assets):
-            stable_pose_path = str(asset.get("stable_pose_path") or "")
-            if not stable_pose_path and cache_dir:
-                stable_pose_path = str(_resolve_path(Path(cache_dir) / f"{asset['uuid']}.npz", base_dir=_repo_root()))
-            if not stable_pose_path:
-                if bool(self.cfg.object_stable_pose_allow_missing):
-                    continue
-                raise FileNotFoundError(f"Missing stable-pose cache path for object {asset['uuid']}")
-            path = Path(stable_pose_path).expanduser()
-            if not path.is_file():
-                if bool(self.cfg.object_stable_pose_allow_missing):
-                    continue
-                raise FileNotFoundError(f"Missing stable-pose cache for object {asset['uuid']}: {path}")
-            self._object_stable_poses[object_idx] = self._load_stable_pose_cache(path, uuid=str(asset["uuid"]))
-
-    def _load_stable_pose_cache(self, path: Path, *, uuid: str) -> dict[str, torch.Tensor | str]:
-        import numpy as np
-
-        with np.load(path, allow_pickle=False) as data:
-            if "rotations" in data.files and "root_z_offsets" in data.files:
-                rotations = np.asarray(data["rotations"], dtype=np.float32)
-                root_z_offsets = np.asarray(data["root_z_offsets"], dtype=np.float32).reshape(-1)
-                transforms = None
-            elif "transforms" in data.files:
-                transforms = np.asarray(data["transforms"], dtype=np.float32)
-                rotations = transforms[:, :3, :3]
-                root_z_offsets = None
-            else:
-                raise ValueError(
-                    f"Stable-pose cache for {uuid} is missing rotations/root_z_offsets or transforms: {path}"
-                )
-            probabilities = (
-                np.asarray(data["probabilities"], dtype=np.float32).reshape(-1)
-                if "probabilities" in data.files
-                else np.ones((rotations.shape[0],), dtype=np.float32)
-            )
-            vertices = np.asarray(data["vertices"], dtype=np.float32) if "vertices" in data.files else None
-
-        if rotations.ndim != 3 or tuple(rotations.shape[1:]) != (3, 3) or rotations.shape[0] == 0:
-            raise ValueError(f"Stable-pose rotations must have shape (N, 3, 3), got {rotations.shape}: {path}")
-        pose_count = min(max(int(self.cfg.object_stable_pose_count), 1), rotations.shape[0])
-        rotations = rotations[:pose_count]
-        probabilities = probabilities[:pose_count]
-        if root_z_offsets is not None:
-            root_z_offsets = root_z_offsets[:pose_count]
-        elif vertices is not None and vertices.ndim == 2 and vertices.shape[1] == 3 and vertices.shape[0] > 0:
-            rotated = np.einsum("nij,kj->nki", rotations, vertices)
-            root_z_offsets = -rotated[:, :, 2].min(axis=1)
-        else:
-            root_z_offsets = transforms[:, 2, 3]
-        return {
-            "rotations": torch.as_tensor(rotations, dtype=torch.float32, device=self.device).contiguous(),
-            "probabilities": torch.as_tensor(probabilities, dtype=torch.float32, device=self.device).contiguous(),
-            "root_z_offsets": torch.as_tensor(root_z_offsets, dtype=torch.float32, device=self.device).contiguous(),
-            "path": str(path),
-        }
-
-    def _sample_object_reset_pose(self, env_ids: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        num_ids = int(env_ids.numel())
-        yaw_randomization = math.radians(float(self.cfg.object_spawn_yaw_randomization_deg))
-        if yaw_randomization > 0.0:
-            yaw = yaw_randomization * (2.0 * torch.rand(num_ids, device=self.device) - 1.0)
-            yaw_quat = _yaw_quat_wxyz(yaw)
-        else:
-            yaw_quat = torch.zeros(num_ids, 4, device=self.device)
-            yaw_quat[:, 0] = 1.0
-
-        if not getattr(self, "_object_stable_pose_enabled", False):
-            return yaw_quat, self.object_spawn_z_offset[env_ids]
-
-        object_indices = self.object_asset_index[env_ids]
-        reset_rot = torch.empty((num_ids, 3, 3), dtype=torch.float32, device=self.device)
-        root_z_offsets = torch.empty((num_ids,), dtype=torch.float32, device=self.device)
-        for object_idx_tensor in torch.unique(object_indices):
-            object_idx = int(object_idx_tensor.item())
-            stable = self._object_stable_poses.get(object_idx)
-            mask = object_indices == object_idx
-            count = int(mask.sum().item())
-            if stable is None:
-                if bool(self.cfg.object_stable_pose_allow_missing):
-                    reset_rot[mask] = math_utils.matrix_from_quat(yaw_quat[mask])
-                    root_z_offsets[mask] = self.object_spawn_z_offset[env_ids[mask]]
-                    continue
-                raise RuntimeError(
-                    f"Stable-pose reset requested for object without cache: {self._object_assets[object_idx]['uuid']}"
-                )
-            rotations = stable["rotations"]
-            offsets = stable["root_z_offsets"]
-            if not isinstance(rotations, torch.Tensor) or not isinstance(offsets, torch.Tensor):
-                raise RuntimeError("Internal stable-pose cache tensor is invalid")
-            if bool(self.cfg.object_stable_pose_randomize) and rotations.shape[0] > 1:
-                ranks = torch.randint(rotations.shape[0], (count,), device=self.device)
-            else:
-                ranks = torch.zeros((count,), dtype=torch.long, device=self.device)
-            reset_rot[mask] = rotations[ranks]
-            root_z_offsets[mask] = offsets[ranks]
-
-        yaw_rot = math_utils.matrix_from_quat(yaw_quat)
-        object_quat = math_utils.quat_from_matrix(torch.bmm(yaw_rot, reset_rot))
-        object_quat = object_quat / torch.clamp(torch.norm(object_quat, dim=-1, keepdim=True), min=1.0e-6)
-        return object_quat, root_z_offsets
 
     def _setup_grasp_prior_reset(self) -> None:
         self._grasp_prior_reset_enabled = bool(self.cfg.grasp_prior_reset_enabled)
@@ -1029,59 +623,23 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
             required_width[mask] = torch.where(torch.isfinite(sampled_width), sampled_width, required_width[mask])
         return torch.clamp(required_width, min=0.0)
 
-    def _object_center_pos_from_root(
-        self,
-        env_ids: torch.Tensor,
-        root_pos: torch.Tensor,
-        root_quat: torch.Tensor,
-    ) -> torch.Tensor:
-        center_offset = self.object_center_offset[env_ids]
-        rot_m = math_utils.matrix_from_quat(root_quat)
-        return root_pos + torch.bmm(rot_m, center_offset.unsqueeze(-1)).squeeze(-1)
-
-    def _settle_reset_objects(
-        self,
-        env_ids: torch.Tensor,
-        joint_pos: torch.Tensor,
-        joint_vel: torch.Tensor,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        settle_steps = max(int(self.cfg.object_reset_settle_steps), 0)
-        if settle_steps <= 0:
-            root_pos = self._cube.data.root_pos_w[env_ids] - self.scene.env_origins[env_ids]
-            root_quat = self._cube.data.root_quat_w[env_ids]
-            return root_pos, root_quat
-
-        if bool(self.cfg.object_reset_settle_full_reset_only) and int(env_ids.numel()) != int(self.num_envs):
-            raise RuntimeError(
-                "object_reset_settle_steps > 0 is only safe for full-env resets. "
-                "Partial RL resets need precomputed stable poses instead of in-reset simulation stepping."
-            )
-
-        self._sync_reset_joint_state(env_ids, joint_pos, joint_vel, update_buffers=True)
-        for _ in range(settle_steps):
-            self._robot.set_joint_position_target(joint_pos, env_ids=env_ids)
-            self.scene.write_data_to_sim()
-            self.sim.step(render=False)
-            self.scene.update(dt=self.sim.cfg.dt)
-
-        if bool(self.cfg.object_reset_zero_velocity_after_settle):
-            zero_vel = torch.zeros((int(env_ids.numel()), 6), dtype=torch.float32, device=self.device)
-            self._cube.write_root_velocity_to_sim(zero_vel, env_ids=env_ids)
-        self.scene.write_data_to_sim()
-        self.sim.forward()
-        self.scene.update(dt=0.0)
-
-        root_pos = self._cube.data.root_pos_w[env_ids] - self.scene.env_origins[env_ids]
-        root_quat = self._cube.data.root_quat_w[env_ids]
-        return root_pos, root_quat
-
     def _reset_idx(self, env_ids: Sequence[int] | None):
         self._ensure_cube_buffers()
         if env_ids is None:
             env_ids = self._robot._ALL_INDICES
         env_ids = torch.as_tensor(env_ids, device=self.device, dtype=torch.long)
+        _debug_reset_log(f"start num_envs={int(env_ids.numel())}")
         super(DextrahFrankaStarKittingEnv, self)._reset_idx(env_ids)
-        self._reset_grasp_prior_metrics(env_ids)
+        _debug_reset_log("after base reset")
+        prior_metrics_active = (
+            bool(getattr(self, "_grasp_prior_reset_enabled", False))
+            or bool(getattr(self.cfg, "grasp_prior_action_warmstart_enabled", False))
+            or bool(getattr(self.cfg, "grasp_prior_action_prior_reward_enabled", False))
+        )
+        if prior_metrics_active:
+            _debug_reset_log("before grasp prior metric reset")
+            self._reset_grasp_prior_metrics(env_ids)
+            _debug_reset_log("after grasp prior metric reset")
 
         num_ids = len(env_ids)
         joint_pos = self._robot.data.default_joint_pos[env_ids].clone()
@@ -1098,6 +656,7 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         self.robot_dof_targets[env_ids] = joint_pos
         self.arm_joint_pos_target[env_ids] = joint_pos[:, self.arm_joint_ids]
         self.finger_joint_pos_target[env_ids] = joint_pos[:, self.finger_joint_ids]
+        _debug_reset_log("after robot state reset")
 
         object_radius_xy = self.object_xy_radius[env_ids]
         spawn_xy = torch.zeros(num_ids, 2, device=self.device)
@@ -1125,11 +684,16 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         object_state[:, 0:3] = object_pos + self.scene.env_origins[env_ids]
         object_state[:, 3:7] = object_quat
         self._cube.write_root_state_to_sim(object_state, env_ids=env_ids)
+        _debug_reset_log("after target object reset")
+        self._reset_tabletop_clutter(env_ids, target_root_pos=object_pos)
+        _debug_reset_log("after tabletop clutter reset")
         self.scene.write_data_to_sim()
         self.sim.forward()
         self.scene.update(dt=0.0)
+        _debug_reset_log("after sim forward")
 
         object_pos, object_quat = self._settle_reset_objects(env_ids, joint_pos, joint_vel)
+        _debug_reset_log("after reset settle")
         object_center_pos = self._object_center_pos_from_root(env_ids, object_pos, object_quat)
         self.cube_initial_pos[env_ids] = object_center_pos
         self.cube_goal_pos[env_ids] = object_center_pos
@@ -1157,6 +721,7 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
         self.ik_controller.reset(env_ids)
 
         self._compute_intermediate_values(env_ids)
+        _debug_reset_log("after intermediate values")
 
     def _compute_intermediate_values(
         self,
@@ -1338,18 +903,6 @@ class DextrahFrankaMultiObjectGraspEnv(DextrahFrankaCubeGraspEnv):
                 ).sum() / lift_denom
                 log_terms[f"{prefix}_warmstart_lift_count"] = lift_mask.sum()
         return rewards
-
-    def multi_object_asset_summary(self) -> dict[str, object]:
-        return {
-            "num_unique_objects": self.num_unique_objects,
-            "object_asset_assignment": str(getattr(self.cfg, "object_asset_assignment", "round_robin")),
-            "object_asset_index_by_env": [int(v) for v in self.object_asset_index.detach().cpu().tolist()],
-            "uuids": [str(asset["uuid"]) for asset in self._object_assets],
-            "scales": [float(asset["scale"]) for asset in self._object_assets],
-            "usd_paths": [str(asset["usd_path"]) for asset in self._object_assets],
-            "grasp_prior_paths": [str(asset.get("grasp_prior_path") or "") for asset in self._object_assets],
-        }
-
 
 class DextrahFrankaMultiObjectRgbGraspEnv(DextrahFrankaMultiObjectGraspEnv):
     """RGB-observation variant of the Franka multi-object GraspGen task."""

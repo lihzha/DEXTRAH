@@ -6,6 +6,7 @@ import isaaclab.sim as sim_utils
 from isaaclab.sensors import TiledCameraCfg
 from isaaclab.utils import configclass
 
+from dextrah_lab.tasks.dextrah_multi_object_grasp.multi_object_grasp_cfg import MultiObjectGraspTaskCfg
 from dextrah_lab.tasks.dextrah_franka_cube_grasp.franka_cube_grasp_env_cfg import (
     DextrahFrankaCubeGraspEnvCfg,
 )
@@ -23,7 +24,7 @@ FRANKA_MULTI_OBJECT_RGB_OBSERVATION_SPACE = (
 
 
 @configclass
-class DextrahFrankaMultiObjectGraspEnvCfg(DextrahFrankaCubeGraspEnvCfg):
+class DextrahFrankaMultiObjectGraspEnvCfg(MultiObjectGraspTaskCfg, DextrahFrankaCubeGraspEnvCfg):
     """State-based Franka pick-up task over a manifest of GraspGen objects."""
 
     observation_space = 80
@@ -148,6 +149,31 @@ class DextrahFrankaMultiObjectGraspEnvCfg(DextrahFrankaCubeGraspEnvCfg):
         width=rgb_image_width,
         height=rgb_image_height,
     )
+
+
+@configclass
+class DextrahFrankaTabletopClutterGraspEnvCfg(DextrahFrankaMultiObjectGraspEnvCfg):
+    """Franka multi-object grasp task with extra randomly sampled tabletop clutter."""
+
+    object_assets_dir = "dextrah_lab/assets/visdex_objects"
+    max_objects = 96
+    object_asset_assignment = "random"
+    require_graspgen_scale = False
+    object_default_half_extents = (0.035, 0.035, 0.035)
+    object_default_grasp_size = 0.07
+
+    tabletop_clutter_enabled = True
+    tabletop_clutter_object_count = 6
+    tabletop_clutter_assets_dir = "dextrah_lab/assets/visdex_objects"
+    tabletop_clutter_max_objects = 96
+    tabletop_clutter_asset_assignment = "random"
+    tabletop_clutter_require_graspgen_scale = False
+    tabletop_clutter_spawn_center_offset_x = 0.0
+    tabletop_clutter_spawn_center_offset_y = 0.0
+    tabletop_clutter_spawn_xy_randomization = 0.22
+    tabletop_clutter_spawn_yaw_randomization_deg = 180.0
+    tabletop_clutter_spawn_z_clearance = 0.006
+    tabletop_clutter_spawn_z_jitter = 0.03
 
 
 @configclass

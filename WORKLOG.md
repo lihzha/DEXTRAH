@@ -5028,7 +5028,7 @@ Command / Job:
   `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/franka_star_env_validate_balanced_full180_20260610_092726`
 
 Result:
-- status: running
+- status: passed
 - ep100 failed-eval evidence: success `0.0`, lifted `0.0`, max lift
   `0.01318`, mean left-finger distance `0.20323`, mean right-finger distance
   `0.15098`, mean reward `-10.42`, final gripper width `0.07887`.
@@ -7134,7 +7134,7 @@ Command / Job:
   `orbit.mp4` after fetch/encode.
 
 Result:
-- status: running
+- status: passed
 - metrics/artifacts: pending
 - key evidence: pending
 
@@ -7295,6 +7295,314 @@ Analysis:
 Next:
 - No DEXTRAH-owned render job remains active. Finalize by committing and
   pushing this worklog update.
+
+## 2026-06-16 22:26 PDT - local-single-yam-multi-object-smoke
+
+Goal:
+- Set up the local DEXTRAH Isaac Lab environment on the workstation GPU and
+  validate that the new single-YAM multi-object task loads and steps locally.
+
+Change:
+- Created local venv `/home/lzha/code/.venvs/dextrah-isaaclab`.
+- Installed Isaac Sim 5.0 pip packages, Isaac Lab source packages from
+  `/home/lzha/code/IsaacLab-v2.2.1`, FABRICS, RL-Games, and DEXTRAH editable.
+- Downloaded YAM MuJoCo source assets to
+  `dextrah_lab/assets/yam/yam_mujoco`.
+- Converted the YAM MJCF source asset to the USD cache consumed by
+  `dextrah_lab/assets/yam/bimanual_yam.py`.
+
+Command / Job:
+- local_gpu: `NVIDIA RTX 6000 Ada Generation`, `CUDA_VISIBLE_DEVICES=0`
+- run_root:
+  `local_results/single_yam_multi_object_local_gpu_20260616_1928`
+- asset_conversion_log:
+  `local_results/single_yam_multi_object_local_gpu_20260616_1928/logs/prepare_yam_assets.log`
+- smoke_command:
+  headless Isaac Lab reset/step of
+  `Dextrah-Single-YAM-Multi-Object-Grasp` with `num_envs=1`,
+  `max_objects=2`, and `object_assets_dir=dextrah_lab/assets/visdex_objects`.
+
+Result:
+- status: passed
+- Direct Gym smoke passed on `cuda:0`: task
+  `Dextrah-Single-YAM-Multi-Object-Grasp`, `num_envs=1`,
+  `action_space=14`, declared/actual observation shape `105`, and four
+  zero-action steps with finite rewards.
+- RL-Games smoke initially exposed a real observation-size mismatch:
+  the shared multi-object feature vector has 8 fields, but
+  `MULTI_OBJECT_FEATURE_DIM` was set to 9.  Fixed
+  `dextrah_lab/tasks/dextrah_multi_object_grasp/multi_object_grasp_cfg.py`.
+- RL-Games one-epoch smoke then passed with `build mlp: 105`,
+  `horizon_length=4`, `minibatch_size=4`, and `max_iterations=1`.
+- Saved checkpoint:
+  `local_results/single_yam_multi_object_local_gpu_20260616_1928/logs/rlgames_smoke/rl_games/dextrah_single_yam_multi_object_grasp/single_yam_multi_object_rlgames_smoke/nn/last_dextrah_single_yam_multi_object_grasp_ep_1_rew_-inf.pth`
+- Saved runtime sidecar:
+  `local_results/single_yam_multi_object_local_gpu_20260616_1928/logs/rlgames_smoke/rl_games/dextrah_single_yam_multi_object_grasp/single_yam_multi_object_rlgames_smoke/nn/dextrah_runtime_rank_0.pth`
+- Both `.pth` files were loaded with `torch.load` and contain the expected
+  checkpoint/runtime keys.
+- Log scan after the fix found no traceback or runtime error in the final
+  smoke log.
+- No local Isaac Sim or `train.py` process remained active after validation.
+
+Notes:
+- The smoke intentionally ends before an episode terminates, so RL-Games logs
+  `WARNING: Max epochs reached before any env terminated at least once` and
+  saves reward `-inf`; this is expected for the tiny one-epoch validation.
+- Isaac Sim emitted known local workstation warnings for Warp
+  `cuDeviceGetUuid`, headless display probing, and the secondary T400 GPU being
+  skipped.  The RTX 6000 Ada was active and used for the environment.
+
+## 2026-06-16 20:30 PDT - tabletop-clutter-objaverse-textured-video
+
+Goal:
+- Extend the tabletop clutter render path to sample Objaverse objects, preserve
+  textures, and produce a 5 second initialization-to-settled video.
+
+Change:
+- Added render-time textured Objaverse manifest preparation to
+  `dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py`.
+- Added direct GLB-to-USD conversion via `omni.kit.asset_converter`, with
+  rigid-body, mass, and mesh collision APIs authored onto the converted USDs.
+- Updated `cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh` to
+  pass Objaverse texture conversion options and translate host `/lustre/...`
+  asset paths to container mount paths.
+
+Version Control:
+- branch: `autorl/yam-cube`
+- source state: dirty/uncommitted by user request; no dedicated worktree for
+  this run.
+- local_head: `378b722a82a42b293b7eea9f27629502cbf44d19`
+- remote_source: `/lustre/fsw/portfolios/nvr/users/lzha/src/DEXTRAH_tabletop_clutter_20260616_183149`
+- changed_files include the new render script/wrapper and the shared
+  multi-object/tabletop clutter task files already present in the dirty tree.
+
+Command / Job:
+- smoke failures while debugging:
+  `1030811`, `1030813`, `1030815`, `1030816`, `1030818`, `1030820`
+- passing smoke_job_id: `1030821`
+- final_job_id: `1030823`
+- source manifest:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/franka_multi_graspgen_candidates32_shard3_d053e6c_20260614T234000Z/manifest.json`
+- final settings: `TASK=Dextrah-Franka-Tabletop-Clutter-Grasp`,
+  `TABLETOP_CLUTTER_OBJECT_COUNT=24`, `OBJAVERSE_TEXTURED_MAX_ASSETS=16`,
+  `OBJAVERSE_TEXTURED_MESH_SOURCE=auto`, `OBJAVERSE_TEXTURED_COLLISION_APPROXIMATION=convexHull`,
+  `SETTLE_STEPS=300`, `VIDEO_SECONDS=5`, `FPS=30`, `SEED=17`
+- log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/tabletop_clutter_video_1030823.out`
+- remote artifact:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/tabletop_clutter_objaverse_textured_5s_20260616_2021/settle.mp4`
+- local artifact:
+  `cluster_results/l401/tabletop_clutter_objaverse_textured_5s_20260616_2021/settle.mp4`
+
+Result:
+- status: passed
+- Slurm: `1030823` completed with `ExitCode=0:0`, elapsed `00:01:33`.
+- MP4 validation: local `ffprobe` reports `1280x720`, `30/1` fps,
+  `5.000000` seconds, and `150` frames.
+- metrics: `frame_count=150`, `target_frame_count=150`,
+  `objaverse_num_objects=16`, `tabletop_clutter_object_count=24`,
+  `spawn_yaw_randomization_deg=180.0`.
+- visual inspection: checked frames `frame_0000.png`, `frame_0075.png`, and
+  `frame_0149.png`; the video is nonblank, textured objects render, and the
+  clutter moves from overlapped initialization into a settled/scattered state.
+  Some raw Objaverse assets are large/flat and several objects spill off the
+  tabletop, which is expected for this unfiltered clutter stress render but
+  should be filtered if a visually curated demo is needed.
+- viewer:
+  `http://localhost:8765/view?path=DEXTRAH/cluster_results/l401/tabletop_clutter_objaverse_textured_5s_20260616_2021/settle.mp4`
+
+Next:
+- No l401 Slurm jobs remain active for this account at completion check.
+- Optional follow-up: add object-size/category filtering for prettier
+  Objaverse demo videos while retaining the current overlap-permitted clutter
+  behavior.
+
+## 2026-06-16 19:17 PDT - single-yam-multi-object-local-gpu-setup
+
+Goal:
+- Set up a local DEXTRAH Isaac Lab environment and run a bounded GPU smoke for
+  `Dextrah-Single-YAM-Multi-Object-Grasp`.
+
+Version / State:
+- local repo: `/home/lzha/code/DEXTRAH`
+- branch: `autorl/yam-cube`
+- head: `1b5bf21ab5137f4f2516e287b144bfff73cfbe4b`
+- worktree: dirty from the modular multi-object/YAM task implementation plus
+  pre-existing unrelated local changes.
+- Isaac Lab checkout: `/home/lzha/code/IsaacLab-v2.2.1`
+- FABRICS checkout: `/home/lzha/code/FABRICS`
+- target venv: `/home/lzha/code/.venvs/dextrah-isaaclab`
+
+Run Plan:
+- Use local GPU 0: NVIDIA RTX 6000 Ada Generation, driver `580.159.03`.
+- Create an isolated CPython 3.11 venv with `uv`.
+- Install Isaac Sim 5.0.0 pip packages, Isaac Lab v2.2.1 source extensions,
+  FABRICS, and DEXTRAH into the venv.
+- Pull DEXTRAH Git LFS assets and generate the missing YAM MJCF/USD cache from
+  the MolmoAct2 Hugging Face asset snapshot.
+- Run a tiny headless smoke on the new single-YAM multi-object task with
+  local logs under `local_results`.
+
+Success Criteria:
+- Isaac Lab/DEXTRAH imports resolve from the venv.
+- YAM USD exists as a real generated file, not a missing asset or pointer.
+- The new Gym task registers, resets, and advances a short local GPU smoke
+  without NaNs or simulator/runtime errors.
+
+Progress:
+- Created venv `/home/lzha/code/.venvs/dextrah-isaaclab` with CPython 3.11.15.
+- Installed Isaac Sim 5.0.0 pip packages with extension cache wheels.
+- Installed Isaac Lab source packages from `/home/lzha/code/IsaacLab-v2.2.1`,
+  including `isaaclab`, `isaaclab_tasks`, `isaaclab_assets`, and
+  `isaaclab_rl`; worked around the `flatdict==4.0.1` build issue by pinning
+  `setuptools==80.9.0` and installing `flatdict` without build isolation.
+- Installed FABRICS and DEXTRAH editable packages into the same venv.
+- Pulled DEXTRAH Git LFS assets.
+- Downloaded the MolmoAct2 YAM MJCF/mesh asset subset to
+  `dextrah_lab/assets/yam/yam_mujoco`; verified
+  `bimanual_yam_linear_flattened.xml` exists and is `21716` bytes.
+- Corrected local package pins needed by Isaac Sim/Python 3.11:
+  `networkx==3.3`, `huggingface_hub==0.36.0`, `click==8.1.7`,
+  `typing_extensions==4.12.2`, `packaging==23.0`, `psutil==5.9.8`,
+  and `sentry-sdk==1.43.0`.
+
+Blocked:
+- No smoke job launched yet. First Isaac/Omniverse import prompts for NVIDIA
+  Omniverse EULA acceptance. Need explicit user approval before setting
+  `OMNI_KIT_ACCEPT_EULA=yes`, generating the YAM USD cache, and launching the
+  local GPU smoke.
+
+Current Status:
+- No DEXTRAH/Isaac local process remains active.
+
+Resume:
+- User approved setting `OMNI_KIT_ACCEPT_EULA=yes` for local Isaac/Omniverse
+  runs.
+- YAM USD conversion is required because `BIMANUAL_YAM_CFG` spawns
+  `dextrah_lab/assets/yam/yam_mjcf_usd/bimanual_yam_linear_flattened.usd`;
+  the downloaded MJCF/XML is the source asset, not the runtime asset path used
+  by the task.
+- Next run directory:
+  `local_results/single_yam_multi_object_local_gpu_20260616_1928`.
+
+## 2026-06-16 19:00 PDT - tabletop-clutter-multi-object-env
+
+Goal:
+- Add a tabletop clutter environment derived from the Franka multi-object task:
+  sample many object assets into the scene together, allow overlapping
+  placements at reset, randomize yaw for every clutter object, keep the task
+  modular across robot/task variants, and generate an initialization-to-settled
+  video.
+
+Change:
+- Added disabled-by-default tabletop clutter settings to the shared
+  `dextrah_multi_object_grasp` config and implemented shared clutter asset
+  loading, spawning, reset, yaw sampling, velocity zeroing, and summary
+  reporting in the task mixin.
+- Wired the clutter hooks into the Franka and Single-YAM multi-object envs.
+- Added registered tasks:
+  `Dextrah-Franka-Tabletop-Clutter-Grasp` and
+  `Dextrah-Single-YAM-Tabletop-Clutter-Grasp`.
+- Added `dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py` and
+  `cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh`.
+- Extended `cluster/sbatch_train_teacher_8gpu.sh` task detection and override
+  plumbing for the clutter variants.
+- Fixed reset/render validation issues found on l401: conditional YAM imports,
+  YAM config fallback constants, missing remote package/assets sync, skipping
+  disabled grasp-prior metric reset work during reset, and raw physics stepping
+  in the settle-video script so capture does not trigger task episode resets.
+
+Version Control:
+- branch: `autorl/yam-cube`
+- local changes: uncommitted by user request for this run; existing dirty
+  changes in train/play/eval and shared multi-object work were preserved.
+- local_head: `378b722a82a42b293b7eea9f27629502cbf44d19`
+- remote validation source: dirty temporary copy
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/DEXTRAH_tabletop_clutter_20260616_183149`
+  based on `378b722a82a42b293b7eea9f27629502cbf44d19`.
+
+Validation:
+- local cheap checks passed:
+  `python3 -m py_compile` for the shared clutter module, Franka/YAM env/config
+  registrations, and settle-video script; `bash -n` for both clutter/train
+  cluster wrappers.
+- local Isaac execution was blocked by unavailable local runtime wiring
+  (`IsaacLab-v2.2.1/isaaclab.sh -p` could not find `python`), so the render
+  validation ran on l401.
+- final Franka render job `1030787` completed with `ExitCode=0:0` on
+  `pool0-00009`; artifact:
+  `cluster_results/l401/tabletop_clutter_franka_settle_20260616_183149_r9/settle.mp4`.
+- Franka MP4 validation: `1280x720`, `30/1` fps, `2.033333` seconds, `61`
+  frames. Metrics show `24` tabletop clutter objects, `96` unique VisDex
+  assets, random clutter assignment, and `180` degree yaw randomization.
+- visual inspection: checked first/middle/final Franka frames; the video shows
+  a dense overlapping tabletop pile at initialization and the objects separating
+  and settling under physics while the robot is held fixed.
+- Single-YAM smoke job `1030789` completed with `ExitCode=0:0` on
+  `pool0-00009`; artifact:
+  `cluster_results/l401/tabletop_clutter_yam_smoke_20260616_1856_r1/settle.mp4`.
+- YAM smoke MP4 validation: `1280x720`, `3/1` fps, `0.666667` seconds, `2`
+  frames. Metrics show the same `24` clutter objects over `96` unique VisDex
+  assets with random clutter assignment and `180` degree yaw randomization.
+- viewer URLs:
+  `http://localhost:8765/view?path=DEXTRAH/cluster_results/l401/tabletop_clutter_franka_settle_20260616_183149_r9/settle.mp4`
+  and
+  `http://localhost:8765/view?path=DEXTRAH/cluster_results/l401/tabletop_clutter_yam_smoke_20260616_1856_r1/settle.mp4`.
+
+Next:
+- No l401 validation job remains active for this task. The source remains
+  uncommitted in the current branch per user instruction for this run.
+
+## 2026-06-16 18:18 PDT - Modular Multi-Object Grasp Robot Task Split
+
+Goal:
+- Add a YAM version of the Franka multi-object grasp environment while moving
+  the reusable object-manifest/reset/spawn mechanics into a robot-independent
+  task module.
+
+Hypothesis:
+- The GraspGen multi-object parts are independent of the end-effector as long
+  as each robot-specific environment supplies its own articulation, IK/action
+  interface, observations, reward terms, and reset joint synchronization.
+
+Change:
+- Added `dextrah_lab/tasks/dextrah_multi_object_grasp/` with shared config
+  fields and `MultiObjectGraspTaskMixin` for manifest loading, object asset
+  assignment, USD object spawning, stable-pose reset sampling, object center
+  offsets, reset settling, object feature observations, per-object logs, and
+  asset summaries.
+- Rewired `DextrahFrankaMultiObjectGraspEnv` to inherit the shared mixin while
+  preserving its Franka-specific reset-prior code, RGB variant, and registered
+  task IDs.
+- Added `dextrah_lab/tasks/dextrah_single_yam_multi_object_grasp/` with
+  `Dextrah-Single-YAM-Multi-Object-Grasp`, reusing the existing bimanual YAM
+  articulation/control/reward path and replacing the procedural cube with the
+  shared multi-object task object set.
+- Added an RL-Games config for the YAM multi-object task and imported its
+  `gym_setup` in train/play/eval entry points.
+- Updated `cluster/sbatch_train_teacher_8gpu.sh` so the new YAM multi-object
+  task uses the YAM training defaults plus the multi-object override surface.
+
+Version Control:
+- agent_id: codex
+- branch: `autorl/yam-cube`
+- implementation_commit: uncommitted
+- pre-existing untracked path left untouched: `artifacts/`
+
+Validation:
+- `python3 -m py_compile` on shared task files, rewired Franka files, new YAM
+  task files, and train/play/eval entry points: passed.
+- `python3` + PyYAML parse of
+  `dextrah_lab/tasks/dextrah_single_yam_multi_object_grasp/agents/rl_games_ppo_single_yam_multi_object_grasp_cfg.yaml`:
+  passed.
+- `bash -n cluster/sbatch_train_teacher_8gpu.sh`: passed.
+- No local Isaac Lab smoke or cluster job was launched in this implementation
+  pass.
+
+Next:
+- Run a small Isaac Lab validation smoke for
+  `Dextrah-Single-YAM-Multi-Object-Grasp` once the local or cluster runtime is
+  selected, then inspect logs/metrics/video before using it for training.
 
 ## 2026-06-14 22:39 PDT - robolab-recorded-demo-static
 
@@ -7466,3 +7774,72 @@ Result:
 Next:
 - No DEXTRAH-owned render job remains active. Finalize by committing and
   pushing this worklog update.
+
+## 2026-06-16 22:50 PDT - tabletop-clutter-nonoverlap-common-objaverse
+
+Goal:
+- Extend the modular multi-object grasp task with a tabletop clutter variant
+  that samples about six common Objaverse tabletop objects, initializes them
+  without overlap, randomizes yaw, and works for both Franka and Single-YAM
+  robots.
+
+Change:
+- Added non-overlapping tabletop clutter placement to the shared
+  `dextrah_multi_object_grasp` task mixin. Placement uses each asset's
+  conservative XY radius, table bounds, target-object exclusion, random trials,
+  and deterministic grid fallback.
+- Added placement diagnostics to `tabletop_clutter_summary()`:
+  success per env/slot, attempts, min clearance, common-object prioritization,
+  yaw randomization, and max XY radius.
+- Set tabletop clutter defaults to 6 objects for
+  `Dextrah-Franka-Tabletop-Clutter-Grasp` and
+  `Dextrah-Single-YAM-Tabletop-Clutter-Grasp`.
+- Passed the target object pose into clutter placement from both robot-specific
+  reset paths so clutter avoids the task object at initialization.
+- Added a local common Objaverse manifest for validation with textured tabletop
+  objects: `snickers_bar`, `bagel_06`, `apple_01`, `lunchbag`,
+  `red_bell_pepper`, and `gregorys_coffee_cup`.
+- Updated the render helper with non-overlap CLI flags and initial/final
+  clearance metrics. Added food/snack keywords to common tabletop ranking.
+- Updated local skills so future robotics/DEXTRAH development starts from a
+  dedicated agent-owned branch/worktree unless the user explicitly opts out.
+
+Version Control:
+- branch: `autorl/yam-cube`
+- HEAD: `1b5bf21ab5137f4f2516e287b144bfff73cfbe4b`
+- user explicitly opted out of a dedicated worktree for this run.
+- no commit made in this run; preserve existing dirty checkout and unrelated
+  edits.
+
+Commands / Evidence:
+- Syntax:
+  `python3 -m py_compile dextrah_lab/tasks/dextrah_multi_object_grasp/multi_object_grasp_task.py dextrah_lab/tasks/dextrah_multi_object_grasp/multi_object_grasp_cfg.py dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py dextrah_lab/tasks/dextrah_franka_multi_object_grasp/franka_multi_object_grasp_env.py dextrah_lab/tasks/dextrah_single_yam_multi_object_grasp/single_yam_multi_object_grasp_env.py`
+- Local Franka no-camera smoke:
+  `Dextrah-Franka-Tabletop-Clutter-Grasp`, 1 env, seed 43, six common
+  Objaverse assets, `tabletop_clutter_non_overlapping=True`,
+  `tabletop_clutter_placement_padding=0.01`.
+- Franka result: scene/reset passed; placement success was true for all six
+  slots; min initial clearance was `0.01860005594789982`; yaw randomization was
+  `180.0` degrees.
+- Local Single-YAM no-camera smoke:
+  `Dextrah-Single-YAM-Tabletop-Clutter-Grasp`, same manifest/settings.
+- Single-YAM result: scene/reset passed; placement success was true for all six
+  slots; min initial clearance was `0.01816391944885254`; yaw randomization was
+  `180.0` degrees.
+- Skill validation:
+  `python3 /home/lzha/.codex/skills/.system/skill-creator/scripts/quick_validate.py /home/lzha/.codex/skills/robotics-cluster-development-core`
+  and the same for `/home/lzha/.codex/skills/dextrah-cluster-workflow`; both
+  reported `Skill is valid!`.
+
+Video Attempt:
+- Full 5s local render and a cheaper 1s performance render both failed before
+  DEXTRAH scene creation with Isaac/Kit Vulkan `ERROR_DEVICE_LOST` and
+  `A GPU crash occurred`.
+- Crash dumps were written under
+  `/home/lzha/code/.venvs/dextrah-isaaclab/lib/python3.11/site-packages/omni/data/Kit/Isaac-Sim/5.0/`.
+- Because camera-enabled rendering crashes in the local Isaac renderer, no
+  local MP4 artifact was produced. No local render process remains active.
+
+Next:
+- If video evidence is still required, run the same render helper on a stable
+  rendering surface such as l401, or fix the local Vulkan/driver issue first.

@@ -12,6 +12,7 @@ from .franka_multi_object_grasp_env import (
 from .franka_multi_object_grasp_env_cfg import (
     DextrahFrankaMultiObjectGraspEnvCfg,
     DextrahFrankaMultiObjectRgbGraspEnvCfg,
+    DextrahFrankaTabletopClutterGraspEnvCfg,
 )
 
 
@@ -39,5 +40,19 @@ gym.register(
     kwargs={
         "env_cfg_entry_point": DextrahFrankaMultiObjectRgbGraspEnvCfg,
         "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_franka_multi_object_rgb_grasp_cfg.yaml",
+    },
+)
+
+
+gym.register(
+    id="Dextrah-Franka-Tabletop-Clutter-Grasp",
+    entry_point=(
+        "dextrah_lab.tasks.dextrah_franka_multi_object_grasp.franka_multi_object_grasp_env:"
+        "DextrahFrankaMultiObjectGraspEnv"
+    ),
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": DextrahFrankaTabletopClutterGraspEnvCfg,
+        "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_franka_multi_object_grasp_cfg.yaml",
     },
 )
