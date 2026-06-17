@@ -6973,3 +6973,16 @@ Continuation launch:
 
 Next:
 - monitor startup and first metrics for `29176371`, then continue polling to epoch `1800` or failure.
+
+## 2026-06-17T02:40:00Z - epoch 1800 continuation startup healthy
+
+Job `29176371` startup:
+- state: `RUNNING`
+- node: `batch-block7-01861`
+- all 8 ranks loaded checkpoint `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_teacherobs_verified17_fallback_ep1200_e7b35b49_20260616T2303Z/nn/last_dextrah_franka_multi_object_grasp_ep_1200_rew_7104.527.pth`
+- all 8 ranks created `2048` environments each; scene creation took about `262-264` seconds per rank.
+- PPO epoch rows are now emitted; latest checked row: epoch `1219/1800`.
+- run directory exists and already saved checkpoint `last_dextrah_franka_multi_object_grasp_ep_1220_rew_3033.3923.pth`.
+
+Next:
+- keep monitoring for scalar success/reset-safety trends and completion, then evaluate selected checkpoints after epoch `1800`.
