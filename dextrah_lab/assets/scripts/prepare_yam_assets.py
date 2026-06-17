@@ -17,6 +17,9 @@ HF_REPO_ID = "TreeePlanter/molmoact2-sim-eval-assets"
 YAM_MJCF_NAME = "bimanual_yam_linear_flattened.xml"
 YAM_ISAAC_MJCF_NAME = "bimanual_yam_linear_flattened_isaac.xml"
 YAM_USD_NAME = "bimanual_yam_linear_flattened.usd"
+SINGLE_YAM_MJCF_NAME = "yam_linear.xml"
+SINGLE_YAM_ISAAC_MJCF_NAME = "yam_linear_isaac.xml"
+SINGLE_YAM_USD_NAME = "yam_linear.usd"
 YAM_ISAAC_MESH_DIR_NAME = "isaac_meshes"
 YAM_FALLBACK_MASS_PROPS = {
     "bimanual_base": (1.0, (1.0e-2, 1.0e-2, 1.0e-2)),
@@ -28,6 +31,35 @@ YAM_FALLBACK_MASS_PROPS = {
     "left_link_right_finger": (0.03, (2.0e-5, 2.0e-5, 2.0e-5)),
     "right_link_left_finger": (0.03, (2.0e-5, 2.0e-5, 2.0e-5)),
     "right_link_right_finger": (0.03, (2.0e-5, 2.0e-5, 2.0e-5)),
+}
+SINGLE_YAM_FALLBACK_MASS_PROPS = {
+    "arm": (1.0, (1.0e-2, 1.0e-2, 1.0e-2)),
+    "link_1": (0.2, (2.0e-4, 2.0e-4, 2.0e-4)),
+    "link_2": (0.2, (2.0e-4, 2.0e-4, 2.0e-4)),
+    "link_3": (0.2, (2.0e-4, 2.0e-4, 2.0e-4)),
+    "link_4": (0.2, (2.0e-4, 2.0e-4, 2.0e-4)),
+    "link_5": (0.2, (2.0e-4, 2.0e-4, 2.0e-4)),
+    "link_6": (0.12, (1.0e-4, 1.0e-4, 1.0e-4)),
+    "link_left_finger": (0.03, (2.0e-5, 2.0e-5, 2.0e-5)),
+    "link_right_finger": (0.03, (2.0e-5, 2.0e-5, 2.0e-5)),
+}
+YAM_ROBOT_SPECS = {
+    "bimanual": {
+        "mjcf_name": YAM_MJCF_NAME,
+        "isaac_mjcf_name": YAM_ISAAC_MJCF_NAME,
+        "usd_name": YAM_USD_NAME,
+        "urdf_name": "bimanual_yam.urdf",
+        "root_body": "bimanual_base",
+        "fallback_mass_props": YAM_FALLBACK_MASS_PROPS,
+    },
+    "single": {
+        "mjcf_name": SINGLE_YAM_MJCF_NAME,
+        "isaac_mjcf_name": SINGLE_YAM_ISAAC_MJCF_NAME,
+        "usd_name": SINGLE_YAM_USD_NAME,
+        "urdf_name": "yam.urdf",
+        "root_body": "arm",
+        "fallback_mass_props": SINGLE_YAM_FALLBACK_MASS_PROPS,
+    },
 }
 
 
@@ -45,7 +77,7 @@ def _download_assets(repo_id: str, force: bool) -> Path:
     source_xml = yam_mjcf_dir / YAM_MJCF_NAME
     if source_xml.is_file() and not force:
         print(f"YAM MJCF assets already present at {yam_mjcf_dir}")
-        return source_xml
+        return yam_mjcf_dir
 
     try:
         from huggingface_hub import snapshot_download
@@ -73,11 +105,11 @@ def _download_assets(repo_id: str, force: bool) -> Path:
     if not source_xml.is_file():
         raise FileNotFoundError(f"Expected YAM MJCF after copy: {source_xml}")
     print(f"Installed YAM MJCF assets at {yam_mjcf_dir}")
-    return source_xml
+    return yam_mjcf_dir
 
 
-def _write_isaac_compatible_mjcf(source_xml: Path) -> Path:
-    output_xml = source_xml.with_name(YAM_ISAAC_MJCF_NAME)
+def _write_isaac_compatible_mjcf(source_xml: Path, isaac_mjcf_name: str) -> Path:
+    output_xml = source_xml.with_name(isaac_mjcf_name)
     source_mesh_dir = source_xml.parent / "assets"
     isaac_mesh_dir = source_mesh_dir / YAM_ISAAC_MESH_DIR_NAME
     isaac_mesh_dir.mkdir(parents=True, exist_ok=True)
@@ -270,22 +302,22 @@ def _add_body_tree(urdf_root: ET.Element, body: ET.Element, mesh_files: dict[str
         _add_body_tree(urdf_root, child, mesh_files, link_name)
 
 
-def _generate_urdf_from_mjcf(source_xml: Path, force: bool) -> Path:
+def _generate_urdf_from_mjcf(source_xml: Path, force: bool, *, urdf_name: str, root_body_name: str) -> Path:
     output_dir = _assets_root() / "yam_urdf"
-    output_path = output_dir / "bimanual_yam.urdf"
+    output_path = output_dir / urdf_name
     if output_path.is_file() and not force:
         print(f"YAM URDF already present at {output_path}")
         return output_path
     source_tree = ET.parse(source_xml)
     source_root = source_tree.getroot()
     mesh_files = {mesh.attrib["name"]: mesh.attrib["file"] for mesh in source_root.findall("./asset/mesh")}
-    urdf_root = ET.Element("robot", {"name": "bimanual_yam"})
+    urdf_root = ET.Element("robot", {"name": Path(urdf_name).stem})
     for material in source_root.findall("./asset/material"):
         material_el = ET.SubElement(urdf_root, "material", {"name": material.attrib["name"]})
         ET.SubElement(material_el, "color", {"rgba": material.attrib.get("rgba", "0.5 0.5 0.5 1")})
-    root_body = source_root.find("./worldbody/body[@name='bimanual_base']")
+    root_body = source_root.find(f"./worldbody/body[@name='{root_body_name}']")
     if root_body is None:
-        raise ValueError(f"Could not find bimanual_base in {source_xml}")
+        raise ValueError(f"Could not find {root_body_name} in {source_xml}")
     _add_body_tree(urdf_root, root_body, mesh_files)
     ET.indent(ET.ElementTree(urdf_root), space="  ")
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -294,19 +326,19 @@ def _generate_urdf_from_mjcf(source_xml: Path, force: bool) -> Path:
     return output_path
 
 
-def _convert_urdf(urdf_path: Path, force: bool) -> Path:
+def _convert_urdf(urdf_path: Path, force: bool, *, usd_name: str, root_body_name: str) -> Path:
     from isaaclab.sim.converters import UrdfConverter, UrdfConverterCfg
     from isaaclab.utils.dict import print_dict
 
     output_dir = _assets_root() / "yam_usd"
-    output_path = output_dir / "bimanual_yam.usd"
+    output_path = output_dir / usd_name
     output_dir.mkdir(parents=True, exist_ok=True)
     cfg = UrdfConverterCfg(
         asset_path=str(urdf_path),
         usd_dir=str(output_dir),
         usd_file_name=output_path.name,
         fix_base=True,
-        root_link_name="bimanual_base",
+        root_link_name=root_body_name,
         merge_fixed_joints=False,
         force_usd_conversion=force,
         make_instanceable=False,
@@ -325,7 +357,14 @@ def _convert_urdf(urdf_path: Path, force: bool) -> Path:
     return usd_path
 
 
-def _convert_mjcf(source_xml: Path, force: bool) -> Path:
+def _convert_mjcf(
+    source_xml: Path,
+    force: bool,
+    *,
+    isaac_mjcf_name: str,
+    usd_name: str,
+    fallback_mass_props: dict[str, tuple[float, tuple[float, float, float]]],
+) -> Path:
     from isaacsim.core.utils.extensions import enable_extension
     import omni.kit.app
 
@@ -337,9 +376,9 @@ def _convert_mjcf(source_xml: Path, force: bool) -> Path:
     for _ in range(10):
         app.update()
 
-    converter_xml = _write_isaac_compatible_mjcf(source_xml)
+    converter_xml = _write_isaac_compatible_mjcf(source_xml, isaac_mjcf_name)
     output_dir = _assets_root() / "yam_mjcf_usd"
-    output_path = output_dir / YAM_USD_NAME
+    output_path = output_dir / usd_name
     output_dir.mkdir(parents=True, exist_ok=True)
     cfg = MjcfConverterCfg(
         asset_path=str(converter_xml),
@@ -360,7 +399,7 @@ def _convert_mjcf(source_xml: Path, force: bool) -> Path:
         raise FileNotFoundError(f"MJCF converter did not create expected USD: {usd_path}")
     if usd_path.stat().st_size <= 1024:
         raise RuntimeError(f"MJCF converter produced an invalid stub USD: {usd_path} ({usd_path.stat().st_size} bytes)")
-    _postprocess_mjcf_usd(usd_path)
+    _postprocess_mjcf_usd(usd_path, fallback_mass_props=fallback_mass_props)
     print(f"Generated YAM USD at {usd_path}")
     return usd_path
 
@@ -383,7 +422,11 @@ def _valid_finite_tuple(values: object) -> bool:
         return False
 
 
-def _postprocess_mjcf_usd(usd_path: Path) -> None:
+def _postprocess_mjcf_usd(
+    usd_path: Path,
+    *,
+    fallback_mass_props: dict[str, tuple[float, tuple[float, float, float]]],
+) -> None:
     from pxr import Gf, PhysxSchema, Usd, UsdPhysics
 
     physics_path = usd_path.parent / "configuration" / f"{usd_path.stem}_physics.usd"
@@ -401,7 +444,7 @@ def _postprocess_mjcf_usd(usd_path: Path) -> None:
     if world_body.IsValid():
         # Isaac's MJCF importer adds a dummy worldBody articulation root. Isaac
         # Lab's fixed-base spawning expects the root API on a rigid body, so
-        # keep the real bimanual_base body as the single articulation root.
+        # keep the real robot base body as the single articulation root.
         world_body.RemoveAPI(UsdPhysics.ArticulationRootAPI)
         world_body.RemoveAPI(PhysxSchema.PhysxArticulationAPI)
 
@@ -410,7 +453,7 @@ def _postprocess_mjcf_usd(usd_path: Path) -> None:
         if not prim.HasAPI(UsdPhysics.RigidBodyAPI):
             continue
         body_name = prim.GetName()
-        fallback = YAM_FALLBACK_MASS_PROPS.get(body_name)
+        fallback = fallback_mass_props.get(body_name)
         if fallback is None:
             continue
         mass_api = UsdPhysics.MassAPI.Apply(prim)
@@ -445,25 +488,54 @@ def main() -> int:
     parser.add_argument("--force", action="store_true", help="Re-download and re-convert assets.")
     parser.add_argument("--force-conversion", action="store_true", help="Re-convert the existing MJCF without re-downloading.")
     parser.add_argument("--converter", choices=("mjcf", "urdf"), default="mjcf")
+    parser.add_argument("--robot", choices=("bimanual", "single", "all"), default="bimanual")
     parser.add_argument("--download-only", action="store_true", help="Only download/copy MJCF assets.")
     AppLauncher.add_app_launcher_args(parser)
     args = parser.parse_args()
 
-    source_xml = _download_assets(args.repo_id, args.force)
+    yam_mjcf_dir = _download_assets(args.repo_id, args.force)
+    robot_names = ("bimanual", "single") if args.robot == "all" else (args.robot,)
+    source_xml_by_robot = {
+        robot_name: yam_mjcf_dir / str(YAM_ROBOT_SPECS[robot_name]["mjcf_name"])
+        for robot_name in robot_names
+    }
+    for robot_name, source_xml in source_xml_by_robot.items():
+        if not source_xml.is_file():
+            raise FileNotFoundError(f"Expected {robot_name} YAM MJCF: {source_xml}")
     if args.download_only:
-        print(source_xml)
+        for source_xml in source_xml_by_robot.values():
+            print(source_xml)
         return 0
 
     app_launcher = AppLauncher(args)
     simulation_app = app_launcher.app
     try:
         force_conversion = args.force or args.force_conversion
-        if args.converter == "mjcf":
-            output_path = _convert_mjcf(source_xml, force_conversion)
-        else:
-            urdf_path = _generate_urdf_from_mjcf(source_xml, force_conversion)
-            output_path = _convert_urdf(urdf_path, force_conversion)
-        print(output_path)
+        for robot_name in robot_names:
+            spec = YAM_ROBOT_SPECS[robot_name]
+            source_xml = source_xml_by_robot[robot_name]
+            if args.converter == "mjcf":
+                output_path = _convert_mjcf(
+                    source_xml,
+                    force_conversion,
+                    isaac_mjcf_name=str(spec["isaac_mjcf_name"]),
+                    usd_name=str(spec["usd_name"]),
+                    fallback_mass_props=spec["fallback_mass_props"],
+                )
+            else:
+                urdf_path = _generate_urdf_from_mjcf(
+                    source_xml,
+                    force_conversion,
+                    urdf_name=str(spec["urdf_name"]),
+                    root_body_name=str(spec["root_body"]),
+                )
+                output_path = _convert_urdf(
+                    urdf_path,
+                    force_conversion,
+                    usd_name=str(spec["usd_name"]),
+                    root_body_name=str(spec["root_body"]),
+                )
+            print(output_path)
     finally:
         simulation_app.close()
     return 0

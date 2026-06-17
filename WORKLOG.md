@@ -8032,3 +8032,112 @@ Notes:
   the PhysX tensors had the correct object poses, but the renderer was not
   receiving those dynamic transforms. The final render leaves Fabric enabled.
 - No DEXTRAH clutter render job remains active after artifact inspection.
+
+## 2026-06-17 00:36 PDT - yam-tabletop-clutter-goal-bin
+
+Goal:
+- Add a fixed goal bin to the single-YAM tabletop clutter environment and keep
+  sampled tabletop objects at least 10 cm away from the bin.
+- Produce local object-settling video evidence with the YAM robot.
+
+Change:
+- Added shared tabletop goal-bin config, static bin spawning, bin keepout
+  geometry, bin target-position helpers, and per-reset bin-clearance metrics in
+  the multi-object clutter mixin.
+- Enabled the bin for `Dextrah-Single-YAM-Tabletop-Clutter-Grasp` at the table
+  center x with positive y offset, and routed lifted-object goals into the bin.
+- Patched clutter and target-object XY placement to avoid the bin keepout.
+- Added bin-clearance diagnostics to the local settle-video renderer metrics.
+
+Validation:
+- `python3 -m py_compile` passed for the shared clutter config/task, YAM/Franka
+  envs, and render helper.
+- `git diff --check` passed.
+- First local render launch with `CUDA_VISIBLE_DEVICES=0` crashed in Isaac Sim
+  Vulkan with `ERROR_DEVICE_LOST`; no artifact was written.
+- Relaunching without `CUDA_VISIBLE_DEVICES` completed:
+  `local_results/yam_tabletop_bin_settle_20260617_003223/settle.mp4`.
+- `ffprobe`: `1280x720`, `8/1` fps, `2.000000` seconds, `16` frames.
+- Metrics: `placement_min_bin_clearance_by_env=[0.14261890947818756]`,
+  initial minimum bin clearance `0.10099999994039532`, final minimum bin
+  clearance `0.10100002974271771`, and both initial/final bin-clearance
+  violation counts are `0`.
+- Visual inspection: checked first and final frames locally; the YAM robot,
+  six tabletop objects, and fixed cyan goal bin are visible and nonblank.
+
+Artifact:
+- Viewer:
+  `http://localhost:8765/view?path=DEXTRAH/local_results/yam_tabletop_bin_settle_20260617_003223/settle.mp4`
+
+Status:
+- No active DEXTRAH local render job remains.
+
+## 2026-06-17 01:03 PDT - single-yam-bigger-table-for-clutter
+
+Goal:
+- Enlarge the single-YAM tabletop clutter environment so the fixed goal bin
+  does not consume most of the usable table area and the scene can hold more
+  Objaverse clutter objects.
+
+Change:
+- Increased the single-YAM table from `0.74 x 0.74` m to `1.04 x 1.20` m.
+- Shifted the table center in x so the robot-side edge remains near its
+  previous world location.
+- Moved the fixed bin to the new positive-y table side while preserving the
+  same world x alignment and the 10 cm clearance requirement.
+- Recentered clutter sampling toward the open side of the table, increased the
+  spawn range, and raised placement attempts/grid resolution.
+- Hardened the clutter fallback sampler to prefer bin-safe candidates even if a
+  crowded scene cannot satisfy every object-object padding constraint.
+
+Validation:
+- `python3 -m py_compile` passed for the single-YAM clutter cfg and shared
+  multi-object task.
+- `git diff --check` passed.
+- One-env headless reset smoke using the local textured Objaverse cache with
+  six clutter objects passed:
+  `placement_success_by_env_slot=[[true,true,true,true,true,true]]`,
+  `placement_min_clearance_by_env=[0.02398480474948883]`, and
+  `placement_min_bin_clearance_by_env=[0.17406977713108063]`.
+- Attempted local RTX renders with six and five textured Objaverse objects on
+  the enlarged table; both hung before scene creation in the local renderer and
+  were stopped before another device-lost crash.
+- Local enlarged-table render with four textured Objaverse clutter objects
+  completed:
+  `local_results/single_yam_objaverse_textured_big_table_bin_settle_20260617_0105_obj4/settle.mp4`.
+- `ffprobe`: `1280x720`, `8/1` fps, `1.500000` seconds, `12` frames.
+- Metrics for the four-object render: placement succeeded for all clutter
+  slots, initial/final overlap counts are both `0`, and initial/final
+  bin-clearance violation counts are both `0`. Final min bin clearance is
+  `0.23498148693983145`.
+- Visual inspection: checked first and final frames; the enlarged table, single
+  YAM arm, fixed right-side bin, and textured Objaverse objects are visible.
+- Viewer:
+  `http://localhost:8765/view?path=DEXTRAH/local_results/single_yam_objaverse_textured_big_table_bin_settle_20260617_0105_obj4/settle.mp4`
+- No render process remains active.
+
+## 2026-06-17 01:34 PDT - merge-yam-cube-to-main
+
+Goal:
+- Merge `autorl/yam-cube` into `main` while preserving the behavior from both
+  branches and limiting merge refactoring to conflict resolution.
+
+Change:
+- Restarted the interrupted integration merge from clean `main` at `90cbef7`.
+- Resolved the shared multi-object/tabletop clutter files by keeping `main`'s
+  modular object handling and the branch's bin config, bin spawn hooks,
+  bin-aware placement, goal routing, and render metrics.
+- Kept the branch's true single-arm YAM environment/config so
+  `Dextrah-Single-YAM-Tabletop-Clutter-Grasp` remains a single-YAM task with
+  the enlarged table and fixed right-side bin.
+- Preserved `main` behavior for unrelated Franka/eval/training scripts where
+  the branch was older.
+
+Validation:
+- `git diff --check` passed.
+- `bash -n agents/launch/launch_yam_cube_agents_tmux.sh` passed.
+- `python3 -m py_compile` passed for the changed YAM asset helpers, tabletop
+  render helper, shared clutter config/task, Franka env, and single-YAM env/cfg.
+- Local Isaac runtime smoke was not launched because the local
+  `/home/lzha/code/.venvs/dextrah-isaaclab` runtime prompts for NVIDIA
+  Omniverse EULA acceptance on first `isaacsim` import.
