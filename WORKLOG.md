@@ -8725,3 +8725,45 @@ Local render note:
   `libgpu.foundation.plugin.so`/`libomni.kit.renderer.plugin.so` backtrace.
   The test processes were killed and cleanup confirmed no render process was
   left running.
+
+## 2026-06-17 15:20 - Full Objaverse training pipeline probe
+
+Goal:
+- Document the full GraspGen-backed Objaverse asset/training pipeline and run
+  bounded a1001 probes for deployment and asset materialization.
+
+Step 1 result:
+- Local `main` is at `2c8a6b81103fc7fadba7cf29afd77d18c3aaee6a`, but
+  `origin/main` and `/lustre/fsw/portfolios/nvr/users/lzha/src/DEXTRAH` on
+  a1001 are still at `21bca4a55c46e2e7ece8bfed5da1b9102d67c340`.
+- Step 1 is blocked until the local merge commit is pushed or otherwise
+  published to a remote branch that a1001 can fetch.
+
+Step 2 probe:
+- Metadata count: `robotiq_2f_140/train.txt` has 8,031 UUIDs, all present in
+  the Franka Panda GraspGen prior index.
+- Prior-shard distribution: 8 shards with counts `996`, `1013`, `1013`,
+  `1007`, `1004`, `999`, `995`, `1004`.
+- a1001 job: `29213914`, run
+  `full_objaverse_probe_20260617_150433`, log
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/prepare_graspgen_assets_29213914.out`.
+- Output manifest:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/full_objaverse_probe_20260617_150433/manifest.json`.
+- Slurm result: `COMPLETED`, elapsed `00:02:45`, exit `0:0`, 16 CPUs, 64G,
+  partition `interactive_singlenode`.
+- Asset validation: 8 objects, 0 missing USDs, 0 missing priors, 0 bad scales;
+  scale range `[0.0014315685, 0.5010873079]`.
+
+Documentation:
+- Added `training-with-full-objaverse.md`.
+- Updated the pipeline recommendation to shard by GraspGen prior shard first,
+  not fixed 256-object chunks, and to use file-backed `UUID_LIST` for full
+  shard arrays rather than inline `UUIDS`.
+
+Estimate:
+- The measured 8-object a1001 probe and older l401 3/16/32-object wrapper runs
+  suggest each roughly 1,000-object prior-shard prep/conversion job should be
+  budgeted at about 1.5 to 3 hours until a larger shard probe confirms
+  throughput.
+- With all 8 prior shards concurrent, reserve 2 to 4 hours wall-clock plus
+  queue wait; serial full prep is not appropriate for the A100 4-hour limit.
