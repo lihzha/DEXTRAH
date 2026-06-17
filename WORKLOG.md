@@ -8779,7 +8779,8 @@ Version state:
   `/lustre/fsw/portfolios/nvr/users/lzha/src/DEXTRAH` on a1001.
 - Added and pushed CPU array wrapper commit `abe26b1`, then fast-forwarded the
   a1001 checkout to `abe26b1c8cbd72c8b5e5cc9741d2bfcf23988f23`.
-- Validation-filter implementation commit: `VALIDATION_FILTER_COMMIT_TBD`.
+- Validation-filter implementation commit:
+  `de7f413d50b2be758e7338fd5367fd5859de970b`.
 
 Job:
 - Run name: `graspgen_objects_full_cpu_20260617_153051`.
