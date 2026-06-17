@@ -20,6 +20,7 @@ Report template:
 - Prior runs/worklogs inspected:
 - Peer branches inspected before first experiment:
 - Key bottlenecks inferred:
+- Environment/reward/eval bugs considered:
 
 ## Candidate Hypotheses
 

@@ -34,6 +34,7 @@ Known baseline status:
 
 - Strict scripted no-assist validation has shown the environment can be physically solvable under specific reference-style validator actions.
 - A learned policy has not been accepted as solved. Treat all previous nonzero instantaneous lift signals as suspect until policy-only eval video and stable metrics confirm them.
+- The current environment, reward, wrapper, and evaluation code may contain bugs. Agents must audit the task implementation before assuming poor training is an algorithmic failure.
 
 ## Skill.md Handling
 
@@ -57,12 +58,21 @@ Agents may modify:
 
 Agents may explore any approach that preserves the final success predicate. The list below is a non-exhaustive menu, not an assignment:
 
+- Bug fixes in environment, reward, reset, wrapper, metrics, or evaluation code when the agent can justify the bug from source evidence, logs, metrics, videos, or minimal repros.
 - Reward shaping that preserves the final success predicate.
 - Curriculum, reset randomization, and staged training schedules.
 - PPO hyperparameters, exploration settings, and seeds.
 - Pure-RL training from scratch.
 - Optional reference/action-prior ideas as training aids, but they cannot be used as final success evidence.
 - Diagnostic eval/video tooling that improves artifact inspection without changing policy behavior.
+
+Bug-fix constraints:
+
+- Start by reading the environment and reward code, especially observations, action application, reset logic, contact/lift metrics, termination conditions, success predicates, and wrapper environment variables.
+- Do not assume the existing task code is correct merely because it runs.
+- If suspicious behavior appears, build a cheap check or minimal repro before launching a long run.
+- Fix real bugs directly when the fix preserves or strengthens the intended task semantics.
+- Do not relabel a success-threshold weakening, metric inflation, reward hack, or assist mechanism as a bug fix.
 
 ## Forbidden Work
 
@@ -289,10 +299,11 @@ Do not assign fixed methods to agents. This run follows the ENPIRE pattern: ever
 At the start of the run, each agent must:
 
 1. Read this document and the launch prompt.
-2. Inspect the current task code, rewards, wrappers, eval tools, and prior bimanual YAM cube worklog.
-3. Write 2-4 candidate hypotheses in `agents/reports/<CODEX_AGENT_ID>.md`.
-4. Choose the most promising first experiment and justify the choice from evidence.
-5. Run local checks and a bounded smoke before any long run.
+2. Audit the current environment code first: observations, action semantics, resets, rewards, metrics, terminations, success predicates, wrappers, and eval tools.
+3. Inspect prior bimanual YAM cube worklogs and any peer branches already pushed.
+4. Write 2-4 candidate hypotheses in `agents/reports/<CODEX_AGENT_ID>.md`; at least one should consider whether a task-code, metric, reset, or evaluation bug is blocking learning.
+5. Choose the most promising first experiment and justify the choice from evidence.
+6. Run local checks and a bounded smoke before any long run.
 
 Agents should diversify through independent analysis and Git-mediated learning, not through human-assigned lanes. They may converge later by cherry-picking, merging, or manually copying peer ideas when evidence supports it.
 

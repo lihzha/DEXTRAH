@@ -25,6 +25,8 @@ Train a policy for `Dextrah-Bimanual-YAM-Cube-Grasp` that reaches 100% stable po
 
 You are not assigned a fixed method. First survey the repository, prior evidence, current metrics, wrappers, and peer branches. Then choose your own first experiment from evidence.
 
+Do not assume the current environment, reward, wrapper, metric, or evaluation code is correct. Start with the environment code. If you find a suspicious bug, build a cheap check or minimal repro, then fix it directly if the fix preserves the intended task semantics and does not weaken the final success criteria.
+
 Isolation:
 
 - Local branch: `[BRANCH_NAME]`
@@ -51,11 +53,12 @@ Rules:
 Survey-first protocol:
 
 1. Read `auto_research.md` and confirm the exact success and forbidden-change rules.
-2. Inspect the task code, reward code, wrappers, eval tools, prior worklog, and any peer branches already pushed.
-3. Write 2-4 candidate hypotheses in `agents/reports/[CODEX_AGENT_ID].md`.
-4. Choose the most promising first experiment and justify it with concrete evidence.
-5. Implement the smallest change or command sequence that tests that hypothesis.
-6. Continue surveying peer branches throughout the run; adopt peer ideas only when their evidence is stronger than your current line.
+2. Audit the task implementation first: environment observations, action semantics, resets, rewards, metrics, terminations, success predicates, wrapper env vars, and eval tools.
+3. Inspect the prior worklog and any peer branches already pushed.
+4. Write 2-4 candidate hypotheses in `agents/reports/[CODEX_AGENT_ID].md`; include bug hypotheses if the code or metrics look suspicious.
+5. Choose the most promising first experiment and justify it with concrete evidence.
+6. Implement the smallest change or command sequence that tests that hypothesis.
+7. Continue surveying peer branches throughout the run; adopt peer ideas only when their evidence is stronger than your current line.
 
 Initial local checks:
 
