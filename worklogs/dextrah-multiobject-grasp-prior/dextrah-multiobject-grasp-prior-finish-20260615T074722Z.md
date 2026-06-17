@@ -6842,3 +6842,34 @@ Active training status at merge time:
 Next:
 - Continue monitoring job `29170977` through completion.
 - Evaluate final/latest plus selected saved checkpoints after epoch `1200`.
+
+## 2026-06-17T01:28:00Z - merge-diff correction and epoch 1090 snapshot
+
+Merge correction:
+- A raw `git diff main..feature` showed unrelated YAM/RoboLab files as tree deletions because those files exist on current `main` but not in the feature branch tree.
+- A later no-commit dry-run three-way merge from pre-merge `main` showed that a full merge would not have deleted those files; it would have produced a conflict in `dextrah_lab/rl_games/eval_rollout.py` and broad unrelated support-file changes.
+- The actual pushed `main` commit remains the targeted merge `f3e9fd3c1dde3dc8796538662063a9471957d646`; it did not modify or delete the unrelated YAM/RoboLab files.
+
+Training status:
+- job id: `29170977`
+- state: `RUNNING`
+- latest rank-0 row: epoch `1090`, frame `1141899264`
+- `cube_success_rate=0.3935546875`
+- `cube_has_lifted_rate=0.4814453125`
+- `cube_lift_height=0.07600553333759308`
+- `cube_lift_reward=2.488682270050049`
+- `cube_height_tracking_reward=0.5229336023330688`
+- best training success so far: `0.43115234375` at epoch `824`
+- recent high rows include `1076=0.42138671875`, `1077=0.4228515625`, and `1083=0.4189453125`
+
+Reset safety:
+- `cube_grasp_prior_reset_success_rate=0.99951171875`
+- `cube_grasp_prior_quality_success_rate=0.99951171875`
+- `cube_grasp_prior_projected_exact_tip_table_clearance=0.029829122126102448`
+- `cube_grasp_prior_tool_downward_z=0.8052495718002319`
+- `cube_grasp_prior_tool_z_axis_z=-0.8052495718002319`
+- `cube_finger_table_clearance_violation=0.0`
+- `cube_table_clearance_penalty=0.0`
+
+Next:
+- Continue to epoch `1200`, then evaluate final/latest plus selected saved checkpoints.
