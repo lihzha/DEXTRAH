@@ -6929,3 +6929,21 @@ Jobs:
 
 Next:
 - monitor queue/logs, inspect `metrics.json`, and select follow-up video renders or relaunches from evidence.
+
+## 2026-06-17T02:23:00Z - final-checkpoint videos launched for all object IDs
+
+Aggregate eval result:
+- all four selected checkpoint eval jobs completed successfully.
+- best aggregate first-attempt checkpoint so far: epoch `1200` final checkpoint.
+- epoch `1200` final: `eval_success_rate=0.4166666666666667`, `success_ever_rate=0.43888890743255615`, `success_rate_final=0.4333333373069763`, `has_lifted_cube.final=0.5166666507720947`
+- reset safety on epoch `1200` final: `grasp_prior_reset_success=1.0`, `grasp_prior_reset_quality_success=1.0`, `finger_table_clearance_violation.final=0.0`, `done_reason_counts.finger_table_penetration=0`
+- per-object success-ever for epoch `1200` final, 10 envs/object: `0:9/10`, `1:10/10`, `2:10/10`, `3:10/10`, `4:2/10`, `5:10/10`, `6:0/10`, `7:1/10`, `8:2/10`, `9:4/10`, `10:0/10`, `11:0/10`, `12:0/10`, `13:10/10`, `14:0/10`, `15:0/10`, `16:10/10`, `17:1/10`
+
+Video launch:
+- checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_teacherobs_verified17_fallback_ep1200_e7b35b49_20260616T2303Z/nn/last_dextrah_franka_multi_object_grasp_ep_1200_rew_7104.527.pth`
+- run prefix: `video_franka_multi_full18_verified_ep1200_final_a169446_20260617T022323Z_envXX`
+- shared config: `NUM_ENVS=18`, `NUM_STEPS=300`, `CAPTURE_VIDEO=True`, `SUPPRESS_SUCCESS_TERMINATION=True`, `CAMERA_ENV_INDEX=0..17`
+- job ids: `29176077`, `29176078`, `29176079`, `29176082`, `29176083`, `29176084`, `29176087`, `29176088`, `29176089`, `29176090`, `29176091`, `29176092`, `29176093`, `29176103`, `29176121`, `29176123`, `29176124`, `29176126`
+
+Next:
+- wait for video artifacts, fetch them locally, stack them into a labeled grid, and inspect for reset/table penetration and object-specific failure modes.
