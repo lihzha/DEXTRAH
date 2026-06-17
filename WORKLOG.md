@@ -7994,3 +7994,41 @@ Next:
 - Commit and deploy the exact revision to the l401 agent worktree, then run a
   GraspGenX textured Objaverse 5 second render with `TABLETOP_CLUTTER_MAX_XY_RADIUS=0.09`
   so large appliance-like objects are filtered out.
+
+## 2026-06-16 23:59 PDT - tabletop-clutter-final-graspgen-render
+
+Goal:
+- Produce the requested 5 second tabletop clutter render using textured
+  Objaverse objects, GraspGenX prior object scales, stable-pose initialization,
+  non-overlap placement, yaw randomization, and damping/sleep settings.
+
+Result:
+- Final l401 render: `tabletop_clutter_graspgen_stable_5s_20260617_0010`
+  (`Slurm 1030849`) completed successfully.
+- Remote artifact:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/tabletop_clutter_graspgen_stable_5s_20260617_0010/settle.mp4`
+- Local artifact:
+  `cluster_results/l401/tabletop_clutter_graspgen_stable_5s_20260617_0010/settle.mp4`
+- Viewer:
+  `http://localhost:8765/view?path=DEXTRAH/cluster_results/l401/tabletop_clutter_graspgen_stable_5s_20260617_0010/settle.mp4`
+
+Validation:
+- `ffprobe`: `1280x720`, `30/1` fps, `5.000000` seconds, `150` frames.
+- Metrics: all six clutter objects use `grasp_prior.object_scale`; stable pose
+  is enabled; `TABLETOP_CLUTTER_MAX_XY_RADIUS=0.09`; initial and final overlap
+  counts are both `0`.
+- Physics/damping metrics: `linear_damping=0.25`,
+  `angular_damping=1.25`, `sleep_threshold=0.06`,
+  `stabilization_threshold=0.03`, and `max_depenetration_velocity=2.0`.
+- Final residual clutter velocity is low:
+  `clutter_max_linear_speed=0.0010555095504969358` and
+  `clutter_max_angular_speed=0.058043401688337326`.
+- Visual inspection: checked first, middle, and final frames locally; objects
+  render with textures, are tabletop-sized, remain separated at initialization,
+  and appear settled at the end.
+
+Notes:
+- Earlier blank smoke videos were caused by launching with `DISABLE_FABRIC=True`;
+  the PhysX tensors had the correct object poses, but the renderer was not
+  receiving those dynamic transforms. The final render leaves Fabric enabled.
+- No DEXTRAH clutter render job remains active after artifact inspection.
