@@ -6781,3 +6781,33 @@ Analysis:
 - Training is noisy under the verified-cache reset distribution, with transient success dips that recover quickly.
 - The dips are not reset-safety regressions; reset quality, downward approach, and table-clearance metrics remain clean.
 - Continue training to collect a stronger trend and evaluate actual checkpoints rather than judging from transient rank-0 rows.
+
+## 2026-06-17T00:10:00Z - verified-cache continuation epoch 840 snapshot
+
+Status:
+- job id: `29170977`
+- scheduler state: `RUNNING`
+- latest rank-0 row: epoch `840`, frame `879755264`
+- checkpoint cadence is active through `last_dextrah_franka_multi_object_grasp_ep_840_rew_3208.4744.pth`.
+
+Metrics:
+- latest `cube_success_rate=0.39697265625`
+- latest `cube_has_lifted_rate=0.49560546875`
+- latest `cube_lift_height=0.07839465141296387`
+- latest `cube_lift_reward=2.4985644817352295`
+- latest `cube_height_tracking_reward=0.50803142786026`
+- best training success so far in this continuation: `0.43115234375` at epoch `824`
+- recent success rows: `826=0.36083984375`, `827=0.38720703125`, `828=0.390625`, `829=0.40673828125`, `830=0.41455078125`, `831=0.4169921875`, `832=0.416015625`, `833=0.4130859375`, `834=0.21826171875`, `835=0.322265625`, `836=0.35693359375`, `837=0.373046875`, `838=0.380859375`, `839=0.39208984375`, `840=0.39697265625`
+
+Reset safety:
+- `cube_grasp_prior_reset_success_rate=0.99951171875`
+- `cube_grasp_prior_quality_success_rate=0.99951171875`
+- `cube_grasp_prior_projected_exact_tip_table_clearance=0.029974976554512978`
+- `cube_grasp_prior_tool_downward_z=0.805141806602478`
+- `cube_finger_table_clearance_violation=0.0`
+- `cube_table_clearance_penalty=0.0`
+
+Analysis:
+- The verified-cache continuation has now exceeded the previous continuation training peak (`0.3838` at epoch `597`) on rank-0 training success, although rows remain noisy.
+- There is still no evidence of the old below-table/table-penetrating reset bug.
+- Continue to epoch `1200`, then evaluate saved checkpoints rather than relying only on reward-best selection.
