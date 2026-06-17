@@ -7134,3 +7134,43 @@ Jobs:
 
 Next:
 - monitor eval startup, inspect metrics JSONs and logs, then decide which checkpoint deserves video inspection.
+
+## 2026-06-17T06:35:00Z - epoch 1800 evals and ep1620 video inspection complete
+
+Aggregate eval results:
+
+| checkpoint | job | eval success | success-ever | success max | reward mean | finger-table penetrations |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| final ep1800 | `29180585` | `0.4166666667` | `0.4277777970` (`77/180`) | `0.4277777970` | `10.6770` | `0` |
+| reward-best generic ep1799 | `29180586` | `0.4277777778` | `0.4388889074` (`79/180`) | `0.4277777970` | `10.6430` | `0` |
+| ep1240 train-peak-near | `29180587` | `0.3944444444` | `0.4111111164` (`74/180`) | `0.4055555761` | `10.0414` | `0` |
+| ep1620 late-peak-near | `29180589` | `0.4277777778` | `0.4444444478` (`80/180`) | `0.4388889074` | `10.7896` | `0` |
+| ep1640 high-reward saved | `29180590` | `0.4111111111` | `0.4111111164` (`74/180`) | `0.4055555761` | `10.1862` | `0` |
+
+Best eval checkpoint:
+- `ep1620_latepeak` is best by success-ever (`80/180`) and success max.
+- final ep1800 and reward-best generic are close but not better; the reward-best spike does not translate to higher task success.
+
+Ep1620 per-object success-ever from the 180-env aggregate eval, ten envs per object:
+- `00:5/10 01:4/10 02:4/10 03:6/10 04:2/10 05:6/10 06:2/10 07:6/10 08:2/10`
+- `09:8/10 10:4/10 11:5/10 12:6/10 13:2/10 14:7/10 15:2/10 16:7/10 17:2/10`
+
+Ep1620 video evals:
+- jobs: `29180717`, `29180719`, `29180721`, `29180724`, `29180725`, `29180726`, `29180728`, `29180729`, `29180730`, `29180731`, `29180732`, `29180733`, `29180734`, `29180735`, `29180736`, `29180737`, `29180738`, `29180739`
+- all completed `0:0`
+- each video run used `NUM_ENVS=18`, one camera env per job, `SUPPRESS_SUCCESS_TERMINATION=True`
+- all video-run metrics reported `finger_table_penetration=0`
+- local grid: `/home/lzha/code/artifacts/dextrah-multiobject-grasp-prior/ep1800_ep1620_videos_20260617T0614Z/franka_multi_full18_ep1800_ep1620_grid_6x3.mp4`
+- viewer URL: `http://localhost:8765/view?path=artifacts/dextrah-multiobject-grasp-prior/ep1800_ep1620_videos_20260617T0614Z/franka_multi_full18_ep1800_ep1620_grid_6x3.mp4`
+- grid is `2556x720`, `299` frames, `4.983333` seconds; source videos are all `1280x720`, `299` frames.
+- row-major grid order is env/object `00-05`, `06-11`, `12-17`.
+- one 18-env video rollout successes: `00,01,02,03,05,09,13,16`, plus transient success on `17`; failures: `04,06,07,08,10,11,12,14,15`.
+
+Visual analysis:
+- The previous below-table/table-penetrating reset failure is not visible in the ep1620 grid. Starts and approaches are above the table, and aggregate/video metrics both show zero finger-table-penetration terminations.
+- Failures are now policy/contact failures: weak or missed closure, poor lift retention, or no meaningful lift on the harder object slots.
+- Continuing pure PPO from epoch `1200` to `1800` did not break through the `~0.44` success-ever ceiling, although it made the behavior more balanced across objects than the earlier ep1200 videos.
+
+Current status:
+- no remaining Slurm jobs for this account at the final queue check.
+- next development step should target policy/contact learning rather than reset/table-collision filtering.
