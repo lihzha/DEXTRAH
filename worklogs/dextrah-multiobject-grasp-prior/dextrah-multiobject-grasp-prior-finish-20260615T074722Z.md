@@ -6905,3 +6905,27 @@ Wrapper fix:
 Next:
 - launch aggregate evals for final, reward-best, epoch `820`, and epoch `1040` checkpoints using the same full-18 object/stable-pose/grasp-prior gates.
 - inspect metrics and, if promising or suspicious, render videos for visual diagnosis.
+
+## 2026-06-17T02:19:00Z - aggregate evals launched for selected full-object checkpoints
+
+Eval source:
+- remote code worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-eval-wrapper-fix-20260617-a169446`
+- code commit: `a16944672c21b23f12ea94ccb77af4ce0cd934fe`
+
+Shared eval configuration:
+- `NUM_ENVS=180`, `NUM_STEPS=300`, `CAPTURE_VIDEO=False`
+- `MAX_OBJECTS=18`, `OBJECT_ASSET_ASSIGNMENT=round_robin`
+- manifest: `/results/assets/filtered_manifests/stable_candidates18_shard3_assetroot_d053e6c_20260614T234700Z/manifest.json`
+- stable-pose cache: `/results/validations/graspgen_stable_candidates18_shard3_d053e6c_20260614T234900Z/settled_pose_cache`
+- `GRASP_PRIOR_VERIFIED_INDICES_PATH=/results/assets/verified_grasp_indices/verified_full18_current_ebcf612_20260616T222409Z/verified_indices.json`
+- `GRASP_PRIOR_VERIFIED_ALLOW_UNCOVERED=True`
+- no-below-table reset gates: `GRASP_PRIOR_RESET_ATTEMPTS=8`, `CANDIDATE_COUNT=512`, topdown required, downward tool z required, min pregrasp/downward thresholds `0.0`, max center distance frac `0.50`, min width `0.008`, pregrasp offset `0.0`
+
+Jobs:
+- `29176040`: `eval_franka_multi_full18_verified_ep1200_final_180env_a169446_20260617T021903Z`
+- `29176042`: `eval_franka_multi_full18_verified_rewardbest_180env_a169446_20260617T021903Z`
+- `29176043`: `eval_franka_multi_full18_verified_ep820_trainpeak_180env_a169446_20260617T021903Z`
+- `29176044`: `eval_franka_multi_full18_verified_ep1040_highreward_180env_a169446_20260617T021903Z`
+
+Next:
+- monitor queue/logs, inspect `metrics.json`, and select follow-up video renders or relaunches from evidence.
