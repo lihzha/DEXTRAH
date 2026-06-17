@@ -7193,3 +7193,31 @@ Validation:
 
 Next:
 - Commit the patch, update the remote agent worktree, and run a bounded full-18 PPO continuation/eval smoke without BC, warmstart, or action-prior imitation. Success criteria: no reset/table regression, active contact-reference logging, and improved lift/success trend versus the `~0.44` plateau before launching another long continuation.
+
+## 2026-06-17T06:50:00Z - launched contact-reference reward PPO smoke
+
+Code:
+- local/branch commit: `25d819b5df7fa163fe40f637131361d32f5e6bd2` (`Use grasp reference distances for multi-object reward`)
+- remote worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/dextrah-contactref-reward-20260617-25d819b`
+- remote deployment used a Git bundle because the A100 repo could not fetch GitHub over SSH.
+- remote static checks passed: `python3 -m py_compile ...franka_multi_object_grasp_env.py ...franka_multi_object_grasp_env_cfg.py`, `git diff --check`
+
+Training smoke:
+- job id: `29181502`
+- run: `franka_multi_full18_contactref_reward_ep1680_25d819b_20260617T0648Z`
+- log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/teacher_8gpu_29181502.out`
+- task: `Dextrah-Franka-Multi-Object-Grasp`
+- GPUs/envs: 1 node, 8 GPUs, `NUM_ENVS=2048` per rank (`16384` total)
+- resume checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_teacherobs_verified17_fallback_ep1800_a169446_20260617T023031Z/nn/last_dextrah_franka_multi_object_grasp_ep_1620_rew_3868.6277.pth`
+- target: continue from ep1620 to `MAX_ITERATIONS=1680`
+- full-object data: `MAX_OBJECTS=18`, round-robin assignment, stable-pose cache `/results/validations/graspgen_stable_candidates18_shard3_d053e6c_20260614T234900Z/settled_pose_cache`
+- verified grasp cache: `/results/assets/verified_grasp_indices/verified_full18_current_ebcf612_20260616T222409Z/verified_indices.json`, uncovered fallback enabled
+- reset gates: attempts `8`, candidates `512`, topdown `True`, min pregrasp z `0.0`, downward tool-z `True`, min downward `0.0`, contact-height threshold `-0.02`, center-distance frac `0.50`, min width `0.008`, pregrasp offset `0.0`
+- disabled guidance: `GRASP_PRIOR_ACTION_WARMSTART_ENABLED=False`, `GRASP_PRIOR_ACTION_PRIOR_REWARD_ENABLED=False`, `DEXTRAH_GRASP_PRIOR_BC_LOSS_ENABLED=False`, `DEXTRAH_BC_POLICY_ANCHOR_ENABLED=False`
+- `SELF_RELAUNCH=False` for smoke; a code/config failure should not requeue.
+
+Success criteria before scaling:
+- startup imports/config are clean, no observation-dim mismatch.
+- TensorBoard contains `multi_object_reward_reference_active_rate` and contact-reference distance terms.
+- reset/table metrics remain clean (`cube_finger_table_clearance_violation=0`, no table penalty/termination regression).
+- lift/success trend improves beyond the previous `~0.44` plateau, or the metrics explain why the contact-reference change is insufficient.
