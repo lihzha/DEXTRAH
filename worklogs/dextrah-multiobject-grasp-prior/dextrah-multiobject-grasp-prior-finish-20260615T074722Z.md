@@ -7221,3 +7221,35 @@ Success criteria before scaling:
 - TensorBoard contains `multi_object_reward_reference_active_rate` and contact-reference distance terms.
 - reset/table metrics remain clean (`cube_finger_table_clearance_violation=0`, no table penalty/termination regression).
 - lift/success trend improves beyond the previous `~0.44` plateau, or the metrics explain why the contact-reference change is insufficient.
+
+## 2026-06-17T07:25:00Z - contact-reference smoke and aggregate evals complete
+
+Training smoke:
+- job `29181502` completed `0:0` in `00:19:48`.
+- run: `franka_multi_full18_contactref_reward_ep1680_25d819b_20260617T0648Z`
+- final checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_contactref_reward_ep1680_25d819b_20260617T0648Z/nn/last_dextrah_franka_multi_object_grasp_ep_1680_rew_3240.5803.pth`
+- reward-best checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_contactref_reward_ep1680_25d819b_20260617T0648Z/nn/dextrah_franka_multi_object_grasp.pth`
+- TensorBoard evidence through latest flushed scalar:
+  - `episode/multi_object_reward_reference_active_rate/frame=1.0`, so the patch was active.
+  - latest flushed `cube_success_rate/frame=0.433105469`; max `0.44140625`, still at the prior plateau.
+  - latest flushed `cube_has_lifted_rate/frame=0.518554688`; max `0.52734375`.
+  - reset/table safety stayed clean: `cube_finger_table_clearance_violation/frame=0.0`, `cube_table_clearance_penalty/frame=0.0`, reset/quality success latest `1.0`.
+
+Aggregate evals (`NUM_ENVS=180`, `NUM_STEPS=300`, 10 envs/object, full 18 objects):
+
+| checkpoint | job | eval success | success-ever | success max | reward mean | finger-table terminations |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| contact-ref final ep1680 | `29182185` | `0.4222222222` | `0.4277777970` (`77/180`) | `0.4222222269` | `10.5549` | `0` |
+| contact-ref reward-best | `29182186` | `0.4055555556` | `0.4333333373` (`78/180`) | `0.4222222269` | `10.4766` | `0` |
+
+Per-object success-ever from aggregate eval:
+- final ep1680: `00:10/10 01:10/10 02:10/10 03:10/10 04:0/10 05:10/10 06:0/10 07:0/10 08:1/10 09:5/10 10:0/10 11:0/10 12:0/10 13:10/10 14:0/10 15:0/10 16:10/10 17:1/10`
+- reward-best: `00:9/10 01:10/10 02:10/10 03:10/10 04:1/10 05:10/10 06:0/10 07:1/10 08:1/10 09:6/10 10:0/10 11:0/10 12:0/10 13:9/10 14:0/10 15:0/10 16:10/10 17:1/10`
+
+Analysis:
+- The contact-reference reward patch did not improve aggregate success beyond the previous best ep1620 eval (`0.4444444478` success-ever).
+- It made behavior more object-polarized: several objects are nearly solved, while objects `06`, `10`, `11`, `12`, `14`, and `15` are consistently failed.
+- Table/reset safety remains solved; this is not a below-table reset regression.
+
+Next:
+- Generate an 18-object video grid from the contact-reference reward-best checkpoint to identify whether the hard object failures are missed closure, contact slip, lift dynamics, or post-lift success criteria.
