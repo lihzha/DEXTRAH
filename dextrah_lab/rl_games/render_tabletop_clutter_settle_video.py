@@ -95,7 +95,8 @@ from isaacsim.core.utils.extensions import enable_extension
 from isaaclab.sim.converters import MeshConverter, MeshConverterCfg
 from isaaclab.sim.schemas import schemas as sim_schemas
 from isaaclab_tasks.utils import parse_env_cfg
-from pxr import Usd, UsdPhysics
+from pxr import Usd, UsdGeom, UsdPhysics
+import omni.usd
 
 import dextrah_lab.tasks.dextrah_franka_cube_grasp.gym_setup  # noqa: F401
 import dextrah_lab.tasks.dextrah_franka_multi_object_grasp.gym_setup  # noqa: F401
@@ -787,6 +788,55 @@ def _root_snapshot(task_env) -> dict[str, object]:
     return snapshot
 
 
+def _stage_object_bbox_summary() -> list[dict[str, object]]:
+    stage = omni.usd.get_context().get_stage()
+    if stage is None:
+        return []
+
+    root_paths: set[str] = set()
+    for prim in stage.Traverse():
+        path = str(prim.GetPath())
+        marker = "/object/"
+        if marker in path:
+            prefix, suffix = path.split(marker, 1)
+            first = suffix.split("/", 1)[0]
+            if first:
+                root_paths.add(f"{prefix}{marker}{first}")
+        marker = "/tabletop_clutter/"
+        if marker in path:
+            prefix, suffix = path.split(marker, 1)
+            first = suffix.split("/", 1)[0]
+            if first:
+                root_paths.add(f"{prefix}{marker}{first}")
+
+    cache = UsdGeom.BBoxCache(
+        Usd.TimeCode.Default(),
+        [UsdGeom.Tokens.default_, UsdGeom.Tokens.render],
+        useExtentsHint=False,
+    )
+    summaries: list[dict[str, object]] = []
+    for path in sorted(root_paths):
+        prim = stage.GetPrimAtPath(path)
+        if not prim.IsValid():
+            continue
+        aligned = cache.ComputeWorldBound(prim).ComputeAlignedBox()
+        min_v = aligned.GetMin()
+        max_v = aligned.GetMax()
+        size = [float(max_v[i] - min_v[i]) for i in range(3)]
+        finite = all(math.isfinite(float(axis[i])) for axis in (min_v, max_v) for i in range(3))
+        summaries.append(
+            {
+                "path": path,
+                "type_name": prim.GetTypeName(),
+                "min": [float(min_v[i]) for i in range(3)],
+                "max": [float(max_v[i]) for i in range(3)],
+                "size": size,
+                "finite": bool(finite),
+            }
+        )
+    return summaries
+
+
 def _initial_clearance_summary(task_env, snapshot: dict[str, object]) -> dict[str, object] | None:
     clutter_positions = snapshot.get("clutter_root_pos_by_slot")
     if not isinstance(clutter_positions, list) or not clutter_positions:
@@ -1077,6 +1127,7 @@ def main() -> None:
     print(json.dumps({"event": "frame_captured", "frame_idx": 0, "path": frame_path}), flush=True)
     initial_snapshot = _root_snapshot(task_env)
     initial_velocity_summary = _root_velocity_summary(task_env)
+    initial_stage_bboxes = _stage_object_bbox_summary()
 
     robot = getattr(task_env, "_robot", None)
     hold_joint_pos = robot.data.joint_pos.detach().clone() if robot is not None else None
@@ -1120,6 +1171,7 @@ def main() -> None:
 
     final_snapshot = _root_snapshot(task_env)
     final_velocity_summary = _root_velocity_summary(task_env)
+    final_stage_bboxes = _stage_object_bbox_summary()
     initial_clearance_summary = _initial_clearance_summary(task_env, initial_snapshot)
     final_clearance_summary = _initial_clearance_summary(task_env, final_snapshot)
     _write_video(video_path, frames, int(args_cli.fps))
@@ -1149,9 +1201,11 @@ def main() -> None:
         "initial_snapshot": initial_snapshot,
         "initial_velocity_summary": initial_velocity_summary,
         "initial_clearance_summary": initial_clearance_summary,
+        "initial_stage_bboxes": initial_stage_bboxes,
         "final_snapshot": final_snapshot,
         "final_velocity_summary": final_velocity_summary,
         "final_clearance_summary": final_clearance_summary,
+        "final_stage_bboxes": final_stage_bboxes,
     }
     metrics_path.parent.mkdir(parents=True, exist_ok=True)
     metrics_path.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
