@@ -8141,3 +8141,587 @@ Validation:
 - Local Isaac runtime smoke was not launched because the local
   `/home/lzha/code/.venvs/dextrah-isaaclab` runtime prompts for NVIDIA
   Omniverse EULA acceptance on first `isaacsim` import.
+
+## 2026-06-17 11:47 PDT - single-yam-tabletop-clutter-video
+
+Goal:
+- Generate a video of the multi-object tabletop clutter environment with the
+  true single-arm YAM robot.
+
+Plan:
+- Use existing task `Dextrah-Single-YAM-Tabletop-Clutter-Grasp` through
+  `dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py`.
+- Prefer a local RTX 6000 Ada render smoke; fall back to the existing l401
+  wrapper if the local Isaac runtime remains blocked.
+- Success criteria: MP4 is present and decodable; first/middle/final frames are
+  nonblank; single-arm YAM, target object, tabletop clutter, and fixed goal bin
+  are visible; metrics show no object overlaps or bin-clearance violations.
+
+Initial state:
+- Repo: `main` at `21bca4a55c46e2e7ece8bfed5da1b9102d67c340`.
+- `git status --short --branch`: clean relative to tracked source.
+- Cheap checks passed:
+  `python3 -m py_compile dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py dextrah_lab/tasks/dextrah_single_yam_multi_object_grasp/single_yam_multi_object_grasp_env.py dextrah_lab/tasks/dextrah_single_yam_multi_object_grasp/single_yam_multi_object_grasp_env_cfg.py`
+  and `bash -n cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh`.
+
+Local smoke:
+- Command attempted a 1 s local render with
+  `TASK=Dextrah-Single-YAM-Tabletop-Clutter-Grasp` into
+  `local_results/single_yam_clutter_video_20260617_1148_smoke`.
+- Result: blocked before Isaac Lab import by the local Omniverse EULA prompt
+  despite `ACCEPT_EULA=Y` and `PRIVACY_CONSENT=Y`; no video artifact was
+  produced.
+- Next step: use l401 with the existing cluster wrapper and an agent-owned
+  detached worktree at the same commit.
+
+l401 render launch:
+- `CODEX_AGENT_ID=single-yam-clutter-video-20260617T184746Z`.
+- Remote worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/single-yam-clutter-video-20260617T184746Z`
+  at `21bca4a55c46e2e7ece8bfed5da1b9102d67c340`.
+- Staged untracked generated YAM assets into that worktree with `rsync`:
+  `dextrah_lab/assets/yam/yam_mujoco` and
+  `dextrah_lab/assets/yam/yam_mjcf_usd`, including `yam_linear.usd`.
+- Job `1031064` submitted on l401:
+  `sbatch --parsable --export=ALL,CODE_NFS=<agent-worktree>,CODE_COMMIT=21bca4a55c46e2e7ece8bfed5da1b9102d67c340,TASK=Dextrah-Single-YAM-Tabletop-Clutter-Grasp,RUN_NAME=single_yam_clutter_video_21bca4a_20260617T1856Z,NUM_ENVS=1,SEED=42,SETTLE_STEPS=180,CAPTURE_INTERVAL=3,FPS=24,VIDEO_SECONDS=3.0,RENDER_WARMUP_FRAMES=2,PREPARE_YAM_ASSETS=auto,DISABLE_FABRIC=False cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh`.
+- Expected artifacts:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/single_yam_clutter_video_21bca4a_20260617T1856Z/settle.mp4`
+  and `metrics.json`.
+
+Local-first reroute:
+- User asked to debug local execution instead of using cluster jobs.
+- Canceled l401 job `1031064` before it completed and cleaned up interrupted
+  local polling processes.
+- Root cause of the local import failure: the pip Isaac Sim package checks
+  `OMNI_KIT_ACCEPT_EULA`, not `ACCEPT_EULA`.
+- Minimal local import passed with `OMNI_KIT_ACCEPT_EULA=YES`.
+
+Local debug loop:
+- A follow-up 1 s local smoke into
+  `local_results/single_yam_clutter_video_20260617_1200_smoke` got past EULA
+  and selected the RTX 6000 Ada, but stalled before the script's
+  `creating_env` log. Kit log `kit_20260617_115210.log` ended with Vulkan
+  `ERROR_DEVICE_LOST` and `A GPU crash occurred`; no artifact was produced.
+- Minimal `AppLauncher` startup passed locally with:
+  `OMNI_KIT_ACCEPT_EULA=YES`, `--headless --enable_cameras --device cuda:0`,
+  `--rendering_mode performance`, 640x360 app/render resolution, explicit
+  `--/renderer/activeGpu=0`, `--/physics/cudaDevice=0`, multi-GPU disabled,
+  GL interop disabled, and renderer presentation disabled.
+- Next step: rerun the single-YAM tabletop clutter render smoke with the same
+  single-GPU Kit settings before scaling duration/FPS.
+
+Local smoke success:
+- Run:
+  `local_results/single_yam_clutter_video_20260617_1158_smoke`.
+- Command used the existing
+  `dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py` script and
+  task `Dextrah-Single-YAM-Tabletop-Clutter-Grasp` with the single-GPU Kit
+  settings above.
+- Result: `settle.mp4` was written and decoded as 1280x720, 10 frames, 1.0 s
+  at 10 fps. Metrics reported tabletop clutter enabled with 6 objects, final
+  overlap count 0, bin-clearance violation count 0, and low final velocities.
+- Visual inspection of the final frame showed the single-arm YAM, tabletop
+  clutter, and blue goal bin. No source-code change was needed.
+
+Final local video:
+- Run:
+  `local_results/single_yam_clutter_video_20260617_1201_final`.
+- Git state at launch:
+  `21bca4a55c46e2e7ece8bfed5da1b9102d67c340` with only `WORKLOG.md` dirty.
+- Command used `OMNI_KIT_ACCEPT_EULA=YES`, local venv
+  `/home/lzha/code/.venvs/dextrah-isaaclab`, local Isaac Lab
+  `/home/lzha/code/IsaacLab-v2.2.1`, `--device cuda:0`,
+  `--rendering_mode performance`, and the single-GPU Kit settings from the
+  smoke. Render parameters: `--settle_steps 180`, `--capture_interval 3`,
+  `--fps 24`, `--video_seconds 3.0`, `--render_warmup_frames 2`,
+  `--camera_eye -0.85 -1.20 0.95`, and
+  `--camera_target -0.23 0.00 0.10`.
+- Result: `settle.mp4` was written and decoded as 1280x720, 72 frames, 3.0 s
+  at 24 fps. Metrics reported tabletop clutter enabled with 6 objects from 96
+  unique assets, final overlap count 0, final minimum clearance
+  0.06917305977160179, bin-clearance violation count 0, minimum bin clearance
+  0.1927658920142091, target maximum linear speed
+  8.813043677946553e-06, clutter maximum linear speed
+  0.0017824973911046982, and clutter maximum angular speed
+  0.01838984526693821.
+- First/middle/final frame inspection showed the single-arm YAM, tabletop
+  clutter objects, and blue goal bin visible; pixel statistics were nonblank
+  for frames 0, 36, and 71.
+- Artifact viewer URL:
+  `http://localhost:8765/view?path=DEXTRAH/local_results/single_yam_clutter_video_20260617_1201_final/settle.mp4`.
+- Conclusion: local jobs run with the corrected EULA environment variable and
+  explicit single-GPU Kit launch settings; no tracked source-code change is
+  required for the requested video.
+- Cleanup check: no local Isaac/render process remained after completion; RTX
+  6000 memory returned to baseline; the earlier l401 job `1031064` is no
+  longer active. The only tracked file modified by this loop is `WORKLOG.md`.
+
+## 2026-06-17 12:10 PDT - single-yam-textured-hq-bin-correction
+
+Goal:
+- Correct the single-arm YAM tabletop clutter video to use textured Objaverse
+  objects, true high-resolution frame capture, and a goal bin that is wider in
+  the x dimension.
+
+Initial inspection:
+- The prior final MP4 decoded as 1280x720 but looked noisy because it used the
+  default viewer resolution and `--rendering_mode performance`.
+- The prior metrics had `objaverse_textured_assets: null` and asset paths under
+  `dextrah_lab/assets/visdex_objects`, so it did not use the textured
+  Objaverse USDs.
+- The single-YAM tabletop config still had
+  `tabletop_goal_bin_inner_size_x = 0.22`.
+
+Change:
+- Created branch `codex/single-yam-textured-hq-bin-20260617` from
+  `21bca4a55c46e2e7ece8bfed5da1b9102d67c340`.
+- Added `--render_width` and `--render_height` to
+  `dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py` and applied
+  them to `env_cfg.viewer.resolution` before environment creation.
+- Added render resolution and manifest paths to `metrics.json`.
+- Changed
+  `dextrah_lab/tasks/dextrah_single_yam_multi_object_grasp/single_yam_multi_object_grasp_env_cfg.py`
+  so `tabletop_goal_bin_inner_size_x = 0.36`; y remains `0.22`.
+
+Validation before render:
+- `python3 -m py_compile dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py dextrah_lab/tasks/dextrah_single_yam_multi_object_grasp/single_yam_multi_object_grasp_env_cfg.py`
+  passed.
+- `git diff --check` passed.
+
+Next step:
+- Run a 1920x1080 local textured smoke with
+  `artifacts/common_objaverse_tabletop_manifest/manifest.json`,
+  `--rendering_mode quality`, and the known-good single-GPU Kit settings; then
+  inspect frames before launching the final 3 s / 24 fps render.
+
+Local smoke attempt 1:
+- Run:
+  `local_results/single_yam_textured_hq_bin_20260617_1212_smoke`.
+- Command used the common textured Objaverse manifest for both the target and
+  tabletop clutter, `--render_width 1920 --render_height 1080`,
+  `--rendering_mode quality`, and the known-good single-GPU Kit settings.
+- Result: the process got through Isaac/Kit startup but did not reach the
+  script's `creating_env` log after roughly two minutes. GPU memory was low and
+  the Kit log ended around RTX viewport initialization without
+  `ERROR_DEVICE_LOST`. The process was terminated; no video artifact was
+  produced.
+- Next step: rerun the same textured/high-resolution smoke with
+  `--rendering_mode balanced` to keep denoising/DLSS quality settings while
+  avoiding the quality-mode startup stall.
+
+Local smoke attempts 2-3:
+- The common textured Objaverse manifest reached environment creation in
+  `--rendering_mode balanced` but failed because `snickers_bar.usd` contains
+  multiple rigid bodies under one asset prim. Isaac Lab's `RigidObject` wrapper
+  requires a single rigid body for each spawned object.
+- Generated a run-local filtered manifest at
+  `local_results/single_yam_textured_hq_bin_20260617_1218_smoke_balanced_filtered/manifest_filtered.json`
+  by replacing `snickers_bar` with `apple_02` while keeping the six-object
+  textured Objaverse set.
+- The filtered 1920x1080 smoke produced a textured video and metrics confirmed
+  Objaverse USD paths under `/home/lzha/code/RoboLab/assets/objects/objaverse`,
+  render resolution `[1920, 1080]`, and goal bin inner size x/y of `0.36/0.22`.
+- Frame inspection confirmed textures and higher resolution, but physics was
+  unacceptable: several clutter objects left the table, one object violated the
+  bin clearance, and metrics reported a clutter max linear velocity near
+  `958 m/s`.
+
+Change:
+- Added configurable object and tabletop clutter `max_linear_velocity` and
+  `max_angular_velocity` fields to
+  `dextrah_lab/tasks/dextrah_multi_object_grasp/multi_object_grasp_cfg.py`.
+- Updated
+  `dextrah_lab/tasks/dextrah_multi_object_grasp/multi_object_grasp_task.py` so
+  USD rigid objects use those config values instead of hard-coded `1000.0`
+  limits, and record the tabletop clutter velocity caps in metrics.
+- Exposed target-object and tabletop-clutter physics overrides in
+  `dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py` for local
+  render tuning.
+
+Validation before rerender:
+- `python3 -m py_compile dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py dextrah_lab/tasks/dextrah_multi_object_grasp/multi_object_grasp_cfg.py dextrah_lab/tasks/dextrah_multi_object_grasp/multi_object_grasp_task.py dextrah_lab/tasks/dextrah_single_yam_multi_object_grasp/single_yam_multi_object_grasp_env_cfg.py`
+  passed.
+- `git diff --check` passed.
+
+Next step:
+- Launch another 1920x1080 balanced smoke using the filtered textured manifest,
+  stronger damping/sleep thresholds, and lower velocity/depenetration caps.
+
+Local smoke attempt 4:
+- Run:
+  `local_results/single_yam_textured_hq_bin_20260617_1228_smoke_damped`.
+- Command used the filtered textured manifest, `--render_width 1920`,
+  `--render_height 1080`, `--rendering_mode balanced`, the known single-GPU
+  Kit settings, stronger damping/sleep thresholds, and lower velocity and
+  depenetration caps.
+- Result: video wrote successfully as 1920x1080, 10 frames, 1.0 s at 10 fps.
+  Metrics confirmed textured Objaverse USDs and the wider x bin with
+  `inner_size_x = 0.36`.
+- Inspection: frame quality and textures were improved, but the video was still
+  unacceptable. Most objects left the visible tabletop. The final root-pose
+  metrics showed corrupted dynamic USD physics, with several objects tens to
+  thousands of meters from the table despite the velocity caps.
+
+Change:
+- Added `object_kinematic_enabled`, `object_disable_gravity`,
+  `tabletop_clutter_kinematic_enabled`, and
+  `tabletop_clutter_disable_gravity` config fields.
+- Updated USD rigid-object spawning to respect those flags.
+- Exposed matching CLI overrides in
+  `dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py`.
+
+Validation before static smoke:
+- `python3 -m py_compile dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py dextrah_lab/tasks/dextrah_multi_object_grasp/multi_object_grasp_cfg.py dextrah_lab/tasks/dextrah_multi_object_grasp/multi_object_grasp_task.py`
+  passed.
+- `git diff --check` passed.
+
+Next step:
+- Launch a 1920x1080 balanced smoke with target and tabletop clutter USDs set
+  kinematic/disable-gravity so the environment video uses textured Objaverse
+  visuals without unstable Objaverse dynamic contacts.
+
+Local smoke attempts 5-9:
+- `local_results/single_yam_textured_hq_bin_20260617_1238_smoke_static`
+  confirmed that kinematic/disable-gravity settings keep root poses and
+  velocities stable, but the rendered USD visuals did not follow the written
+  kinematic roots in the `RigidObject` wrapper.
+- Added `--object_spawn_z_clearance` to the render script so target-object
+  visual height can be adjusted like tabletop clutter.
+- Added `--freeze_object_roots_for_video` to restore target/clutter root poses
+  and zero velocities before captured frames when the render path opts in.
+- Added `--repeat_initial_frame_for_video` so environment videos can repeat a
+  validated static frame for the requested duration without stepping unstable
+  Objaverse dynamics.
+- Repeated 1920x1080 smokes with the filtered six-object manifest showed that
+  the original common set included visually problematic USDs: some meshes
+  rendered far outside the manifest bounds and clipped the camera.
+- Created run-local safe textured manifests:
+  `local_results/single_yam_textured_hq_bin_20260617_safe_target_manifest.json`
+  and
+  `local_results/single_yam_textured_hq_bin_20260617_safe_clutter_manifest.json`.
+  The target manifest uses `apple_01`; the clutter manifest uses `apple_01`,
+  `apple_02`, `lunchbag`, and `gregorys_coffee_cup`.
+- `local_results/single_yam_textured_hq_bin_20260617_1320_smoke_safe_manifest`
+  validated the safe manifests at 1920x1080, with the wider bin visible and no
+  clipped oversized object geometry.
+
+Final local render:
+- Run:
+  `local_results/single_yam_textured_hq_bin_20260617_1325_final`.
+- Command used the single-arm YAM tabletop clutter task, local Isaac Lab venv,
+  local RTX 6000, `--rendering_mode balanced`, 1920x1080 viewer resolution,
+  `--fps 24`, `--video_seconds 3.0`, `--freeze_object_roots_for_video`,
+  `--repeat_initial_frame_for_video`, safe Objaverse manifests, and the wider
+  single-YAM bin config.
+- Output:
+  `local_results/single_yam_textured_hq_bin_20260617_1325_final/settle.mp4`.
+- Color-corrected viewing copy:
+  `local_results/single_yam_textured_hq_bin_20260617_1325_final/settle_viewable.mp4`.
+- `ffprobe` for both MP4s: 1920x1080, 72 frames, 3.0 s, 24 fps.
+- Metrics:
+  render resolution `[1920, 1080]`; target USD
+  `/home/lzha/code/RoboLab/assets/objects/objaverse/apple_01.usd`; clutter
+  USDs from `/home/lzha/code/RoboLab/assets/objects/objaverse` for
+  `apple_01`, `apple_02`, `lunchbag`, and `gregorys_coffee_cup`; goal-bin
+  `inner_size_x = 0.36`, `inner_size_y = 0.22`; final overlap count `0`;
+  final bin-clearance violation count `0`; final target and clutter max speeds
+  `0.0`.
+- Visual inspection:
+  first/middle/last frames are identical by design, nonblank, high resolution,
+  and show the single-arm YAM, wider blue bin, and textured Objaverse objects
+  without oversized clipped geometry. `settle_viewable_frame0.png` was
+  extracted from the viewing copy for inspection.
+- Log check: no `ERROR`, `Traceback`, or renderer huge-bounds warnings in the
+  final log; final events include `initial_frame_repeated` and `video_written`.
+- Cleanup check: no local Isaac/render process remained after completion.
+- Source status: changes remain uncommitted on branch
+  `codex/single-yam-textured-hq-bin-20260617`; `git diff --check` passed.
+
+## 2026-06-17 - Single-YAM Render Visual Recovery, Object Scale Fix
+
+Goal:
+- Explain whether oversized object scale could be causing the artificial-looking
+  single-YAM clutter render, then recover visuals close to
+  `local_results/single_yam_training_render_visual_recovery_20260617_1628_topdown_smoke/settle.mp4`
+  while keeping the actual training env render path.
+
+Diagnosis:
+- Bounds diagnostic found `apple_01` as the only pathological live prim:
+  `8.45 x 8.58 x 6.77 m` in the spawned scene while the manifest expected
+  roughly `0.08 m`.
+- The current RoboLab/Objaverse manifest was not using GraspGenX prior scale:
+  all entries reported `scale_source = manifest.scale`, `scale = 1.0`, and
+  empty `grasp_prior_paths`.
+- Raw USD inspection showed `apple_01` has an authored uniform root scale
+  `0.01`. Isaac Lab `UsdFileCfg(scale=(1,1,1))` overwrote that root scale at
+  spawn, making the live USD meters wide and disrupting render bounds/shading.
+
+Change:
+- Added USD default-prim bbox/root-scale inspection to the shared
+  multi-object loader.
+- Preserved authored uniform USD root scale through a separate
+  `usd_spawn_scale = manifest_or_grasp_scale * usd_root_scale`.
+- Kept semantic task features as `object_scale`; only the USD spawn scale is
+  adjusted.
+- Added optional USD-bounds validation fields and metrics diagnostics
+  (`usd_root_scales`, `usd_spawn_scales`, `usd_bbox_sizes`,
+  `usd_bounds_ratios`) for target and tabletop clutter assets.
+- Enabled the validation path for the single-YAM tabletop clutter config.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_multi_object_grasp/multi_object_grasp_task.py dextrah_lab/tasks/dextrah_multi_object_grasp/multi_object_grasp_cfg.py dextrah_lab/tasks/dextrah_single_yam_multi_object_grasp/single_yam_multi_object_grasp_env_cfg.py dextrah_lab/tasks/dextrah_single_yam_multi_object_grasp/single_yam_multi_object_grasp_env.py dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py`
+  passed.
+- Live one-env no-render inspection after reset showed `apple_01` root scale
+  `(0.01, 0.01, 0.01)` and live bbox about `0.09 x 0.09 x 0.068 m`.
+- `git diff --check` passed.
+
+Render evidence:
+- Final run:
+  `local_results/single_yam_training_render_scale_fixed_balanced_final_20260617_1440`.
+- Output:
+  `local_results/single_yam_training_render_scale_fixed_balanced_final_20260617_1440/settle.mp4`.
+- Viewer URL:
+  `http://localhost:8765/view?path=DEXTRAH/local_results/single_yam_training_render_scale_fixed_balanced_final_20260617_1440/settle.mp4`.
+- `ffprobe`: 1280x720, 10 frames, 1.0 s, 10 fps.
+- Metrics: `visual_object_overlay.enabled = false`,
+  `app_rendering_mode = balanced`, `usd_spawn_scales` include
+  `0.009999999776482582` for `apple_01`.
+- Frame stats versus the 16:28 reference: reference frame mean `131.89`,
+  dark fraction `0.00091`; final frame-0 mean `137.09`, dark fraction
+  `0.00014`.
+- Visual inspection of first/middle/last frames shows textured objects at
+  normal scale with recovered arm/table/floor shading. No overlay copy was
+  used.
+
+Notes:
+- Two attempted `--rendering_mode performance` renders stalled before env
+  creation and produced no frames. They were killed cleanly by PID. Balanced
+  mode was used for the final artifact because it is the mode of the 16:28
+  visual reference and completed locally.
+- Cleanup check after final render found no active Isaac/render process.
+
+## 2026-06-17 17:12 - performance-mode object render
+
+- Goal: render the single-YAM tabletop object video again using Isaac `--rendering_mode performance`.
+- Command/result: local GPU run completed under `local_results/single_yam_training_render_visual_recovery_20260617_1712_overlay_objects_performance/`; wrote `settle.mp4`, `metrics.json`, `run.log`, and 10 PNG frames.
+- Evidence: `ffprobe` reports 1920x1080, 10 fps, 1.0 s, 10 frames. Metrics record `app_rendering_mode=performance`, 7 visual overlay objects, widened goal bin `inner_size_x=0.36`, and zero source-body velocities because the roots were frozen for this visual artifact.
+- Inspection: `frame_0000.png` shows the YAM arm, bin, and textured objects. `viz-open` URL: `http://localhost:8765/view?path=DEXTRAH/local_results/single_yam_training_render_visual_recovery_20260617_1712_overlay_objects_performance/settle.mp4`.
+- Status: no active local Isaac/render process remains.
+
+## 2026-06-17 15:02 - training-env visual-effect recovery
+
+Goal:
+- Recover the shaded, more realistic raw training-environment render effect
+  visible in
+  `local_results/single_yam_objaverse_textured_big_table_bin_settle_20260617_0105_obj4/settle.mp4`,
+  without relying on camera changes or a postprocessed viewing copy.
+
+Hypothesis:
+- The current artificial look is caused by scene-owned appearance defaults:
+  the blue/default grid path plus weak flat lighting. The fix should live in
+  the single-YAM training env and shared tabletop-bin config so training and
+  diagnostic videos render the same USD scene.
+
+Version state:
+- Branch: `codex/single-yam-textured-hq-bin-20260617`
+- HEAD: `21bca4a55c46e2e7ece8bfed5da1b9102d67c340`
+- Changed files: `dextrah_lab/tasks/dextrah_single_yam_multi_object_grasp/single_yam_multi_object_grasp_env.py`,
+  `dextrah_lab/tasks/dextrah_single_yam_multi_object_grasp/single_yam_multi_object_grasp_env_cfg.py`,
+  `dextrah_lab/tasks/dextrah_multi_object_grasp/multi_object_grasp_cfg.py`,
+  `dextrah_lab/tasks/dextrah_multi_object_grasp/multi_object_grasp_task.py`,
+  `dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py`, and this
+  worklog.
+
+Change:
+- Set single-YAM training scene appearance to a neutral grey ground, warmer
+  tabletop material, stronger dome light, and a configurable directional key
+  light.
+- Moved tabletop goal-bin colors/roughness into task config fields instead of
+  hard-coded spawn colors.
+- Extended settle-video metrics to record the render-scene appearance values.
+
+Validation before smoke:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_single_yam_multi_object_grasp/single_yam_multi_object_grasp_env.py dextrah_lab/tasks/dextrah_single_yam_multi_object_grasp/single_yam_multi_object_grasp_env_cfg.py dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py dextrah_lab/tasks/dextrah_multi_object_grasp/multi_object_grasp_cfg.py dextrah_lab/tasks/dextrah_multi_object_grasp/multi_object_grasp_task.py`
+  passed.
+- `git diff --check` passed.
+- Local GPU baseline: RTX 6000 Ada at 326 MiB used, 0% utilization.
+
+Next step:
+- Launch a short 1280x720 raw `env.render()` smoke with the reference camera
+  only for easier visual comparison, inspect first/middle/last frames and frame
+  statistics, then tune or scale to the final 1920x1080 render.
+
+## 2026-06-17 14:30 - recover 0105 render effect
+
+Goal:
+- Recover the overall render effect from
+  `local_results/single_yam_objaverse_textured_big_table_bin_settle_20260617_0105_obj4/settle.mp4`.
+- The target visual is the more realistic arm/table shading, not matching the
+  camera, objects, or bin placement.
+
+Diagnosis:
+- The reference artifact was produced before the high-resolution correction
+  loop and aligns with the legacy single-YAM render setup plus
+  `--rendering_mode performance`.
+- Later outputs switched to `--rendering_mode balanced` and then changed the
+  ground-plane tint to the default Isaac grid material. That changed the
+  overall RTX lighting/denoising response and made the YAM arm look flatter and
+  more artificial.
+
+Change:
+- Restored the single-YAM training environment's render ground tint to the
+  legacy YAM setting: `ground_plane_color = (0.03, 0.03, 0.03)`.
+- Added `app_rendering_mode` to settle-video metrics so artifacts record
+  whether they were rendered with `performance`, `balanced`, or `quality`.
+
+Validation before smoke:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_single_yam_multi_object_grasp/single_yam_multi_object_grasp_env.py dextrah_lab/tasks/dextrah_single_yam_multi_object_grasp/single_yam_multi_object_grasp_env_cfg.py dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py dextrah_lab/tasks/dextrah_multi_object_grasp/multi_object_grasp_cfg.py dextrah_lab/tasks/dextrah_multi_object_grasp/multi_object_grasp_task.py`
+  passed.
+- `git diff --check` passed.
+
+Next step:
+- Launch a short local 1920x1080 smoke through the actual single-YAM training
+  env render path with `--rendering_mode performance`, inspect the YAM arm
+  shading, then scale to the final MP4 if it recovers the reference effect.
+
+## 2026-06-17 14:05 - Training-env render appearance fix
+
+Goal:
+- Make the single-arm YAM clutter video match what the training environment
+  itself renders through `env.render()`, rather than using a separate
+  studio/TiledCamera setup or a postprocessed viewing copy.
+
+Diagnosis:
+- Inspection of the previous final frame showed the main issue was not
+  resolution: the single-YAM task hard-coded a near-black ground-plane tint
+  (`color=(0.03, 0.03, 0.03)`), producing a dominant black/bright grid floor
+  that looked unlike the normal Isaac Lab tabletop viewer.
+- The previous `settle_viewable.mp4` was color-corrected for visibility, so it
+  is not acceptable as the final artifact for this constraint.
+
+Change:
+- Added render-scene appearance fields to
+  `DextrahSingleYAMMultiObjectGraspEnvCfg` so the training environment owns
+  the ground and dome-light settings.
+- Updated `DextrahSingleYAMMultiObjectGraspEnv._setup_scene()` to use those
+  training config values.
+- Set `ground_plane_color = None` so the Isaac grid-world ground asset is not
+  retinted by the task.
+- Added `training_env_render_scene` to settle-video metrics for auditability.
+
+Validation before smoke:
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_single_yam_multi_object_grasp/single_yam_multi_object_grasp_env.py dextrah_lab/tasks/dextrah_single_yam_multi_object_grasp/single_yam_multi_object_grasp_env_cfg.py dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py dextrah_lab/tasks/dextrah_multi_object_grasp/multi_object_grasp_cfg.py dextrah_lab/tasks/dextrah_multi_object_grasp/multi_object_grasp_task.py`
+  passed.
+- `git diff --check` passed.
+
+Next step:
+- Launch a short local smoke through `render_tabletop_clutter_settle_video.py`
+  using the actual single-YAM training task render path, inspect the frame, and
+  only then scale to the final 1920x1080 MP4.
+
+Local smoke:
+- Run: `local_results/single_yam_training_render_20260617_1408_smoke`.
+- Command used the single-YAM tabletop clutter training task with
+  `render_mode="rgb_array"`, 1920x1080 viewer resolution, safe textured
+  Objaverse manifests, `--freeze_object_roots_for_video`, and
+  `--repeat_initial_frame_for_video`.
+- Output: `settle.mp4`, 1920x1080, 10 frames, 1.0 s, 10 fps.
+- Metrics record `training_env_render_scene.ground_plane_color = null`, so the
+  task no longer retints the Isaac grid-world ground plane.
+- Visual inspection of `frames/frame_0000.png` shows the default blue Isaac
+  grid material rather than the previous black/white retinted floor, with the
+  single-arm YAM, wider bin, and textured Objaverse clutter visible.
+- Log check found no `ERROR`, `Traceback`, `main_failed`, huge-bounds, or
+  invalid-geometry warnings.
+
+Next step:
+- Launch the final 3.0 s / 24 fps / 1920x1080 MP4 through the same raw
+  training-env render path, without a color-corrected viewing copy.
+
+Final local render:
+- Run: `local_results/single_yam_training_render_20260617_1412_final`.
+- Output: `settle.mp4`.
+- Viewer URL:
+  `http://localhost:8765/view?path=DEXTRAH/local_results/single_yam_training_render_20260617_1412_final/settle.mp4`.
+- Command used the single-YAM tabletop clutter training task,
+  `render_mode="rgb_array"`, local RTX 6000, local Isaac Lab venv,
+  `--rendering_mode balanced`, 1920x1080 viewer resolution, `--fps 24`,
+  `--video_seconds 3.0`, `--freeze_object_roots_for_video`,
+  `--repeat_initial_frame_for_video`, safe textured Objaverse manifests, and
+  the widened bin config.
+- No color-corrected copy was generated or used as the final artifact.
+- `ffprobe`: 1920x1080, 72 frames, 3.0 s, 24 fps.
+- Metrics:
+  `training_env_render_scene.ground_plane_color = null`, ground plane size
+  `[6.0, 6.0]`, dome light intensity `1800.0`, render resolution
+  `[1920, 1080]`, goal-bin `inner_size_x = 0.36`, `inner_size_y = 0.22`,
+  target/clutter final max speeds `0.0`.
+- Visual inspection:
+  first/middle/last frames are byte-identical by design because unstable
+  Objaverse dynamics are not stepped; frame inspection shows the default blue
+  Isaac grid material instead of the previous black retint, plus the single-arm
+  YAM, wider blue bin, and textured Objaverse objects.
+- Log check found no `ERROR`, `Traceback`, `main_failed`, huge-bounds, or
+  invalid-geometry warnings.
+- Cleanup check: no render/Isaac process remained; GPU memory returned to
+  baseline.
+- Source status: changes remain uncommitted on branch
+  `codex/single-yam-textured-hq-bin-20260617`; `git diff --check` passed.
+
+## 2026-06-17 14:52 - Single-YAM default GraspGen Objaverse scale
+
+Goal:
+- Make single-arm YAM tabletop-clutter training and the default render helper
+  use the generated Objaverse-backed GraspGen asset set with scale from
+  GraspGen prior `.npz` files, rather than the checked-in VisDex/demo assets or
+  a silent `scale=1.0` fallback.
+- Merge the result to `main` after validation.
+
+Diagnosis:
+- `DextrahSingleYAMTabletopClutterGraspEnvCfg` still overrode the shared
+  multi-object defaults back to `dextrah_lab/assets/visdex_objects` and set
+  both `require_graspgen_scale` and
+  `tabletop_clutter_require_graspgen_scale` to `False`.
+- `render_tabletop_clutter_settle_video.py` defaulted to the Franka tabletop
+  clutter task. A no-override render therefore did not exercise the
+  single-arm YAM training scene.
+- The shared asset loader already reads `object_scale` from
+  `grasp_prior_path`, but its no-manifest USD-directory fallback could still
+  use default scale even when a caller required GraspGen scale.
+
+Change:
+- Set the single-YAM tabletop clutter target and clutter asset directories to
+  `dextrah_lab/assets/graspgen_objects`.
+- Set `require_graspgen_scale = True` and
+  `tabletop_clutter_require_graspgen_scale = True` for the single-YAM clutter
+  task.
+- Tightened the shared loader so `require_scale=True` without a manifest now
+  raises a clear error asking for `prepare_graspgen_assets.py` or a manifest
+  with `grasp_prior_path/object_scale`.
+- Changed the settle-video helper's default task to
+  `Dextrah-Single-YAM-Tabletop-Clutter-Grasp`, added a target-object
+  `--require_graspgen_scale` override, and records actual asset config fields
+  in metrics.
+
+Validation:
+- `git diff --check` passed.
+- `python3 -m py_compile dextrah_lab/tasks/dextrah_multi_object_grasp/multi_object_grasp_task.py dextrah_lab/tasks/dextrah_multi_object_grasp/multi_object_grasp_cfg.py dextrah_lab/tasks/dextrah_single_yam_multi_object_grasp/single_yam_multi_object_grasp_env_cfg.py dextrah_lab/tasks/dextrah_single_yam_multi_object_grasp/single_yam_multi_object_grasp_env.py dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py`
+  passed.
+- AST validation confirmed the single-YAM clutter config defaults are
+  `dextrah_lab/assets/graspgen_objects` with both scale requirements enabled
+  and the render helper default task is
+  `Dextrah-Single-YAM-Tabletop-Clutter-Grasp`.
+- A stubbed loader test confirmed `require_scale=True` with no manifest now
+  raises: `requires GraspGen object_scale, but no manifest was found`.
+
+Local render note:
+- `dextrah_lab/assets/graspgen_objects` is not populated in this checkout, and
+  the discovered shared-artifact manifests either point to unavailable
+  `/results/...` asset roots or include only prior `.npz` files without USD/raw
+  Objaverse meshes.
+- A minimal local default render attempt
+  `local_results/single_yam_default_graspgen_guard_20260617_144750` did not
+  reach env creation; Isaac/Kit crashed during renderer startup with a
+  `libgpu.foundation.plugin.so`/`libomni.kit.renderer.plugin.so` backtrace.
+  The test processes were killed and cleanup confirmed no render process was
+  left running.

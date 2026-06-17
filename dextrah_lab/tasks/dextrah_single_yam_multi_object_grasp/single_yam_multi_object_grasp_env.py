@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+import math
 from pathlib import Path
 
 import torch
@@ -73,8 +74,8 @@ class DextrahSingleYAMMultiObjectGraspEnv(MultiObjectGraspTaskMixin, DirectRLEnv
         self._table = RigidObject(self.cfg.table)
         spawn_ground_plane(
             prim_path="/World/ground",
-            cfg=GroundPlaneCfg(size=(6.0, 6.0), color=(0.03, 0.03, 0.03)),
-            translation=(0.0, 0.0, -0.08),
+            cfg=GroundPlaneCfg(size=tuple(self.cfg.ground_plane_size), color=self.cfg.ground_plane_color),
+            translation=(0.0, 0.0, float(self.cfg.ground_plane_z)),
         )
 
         self.scene.clone_environments(copy_from_source=True)
@@ -86,8 +87,29 @@ class DextrahSingleYAMMultiObjectGraspEnv(MultiObjectGraspTaskMixin, DirectRLEnv
         self._spawn_tabletop_clutter_assets()
         self._spawn_tabletop_goal_bin()
 
-        light_cfg = sim_utils.DomeLightCfg(intensity=1800.0, color=(0.75, 0.75, 0.75))
+        light_cfg = sim_utils.DomeLightCfg(
+            intensity=float(self.cfg.dome_light_intensity),
+            exposure=float(self.cfg.dome_light_exposure),
+            color=tuple(float(v) for v in self.cfg.dome_light_color),
+        )
         light_cfg.func("/World/Light", light_cfg)
+        if bool(getattr(self.cfg, "key_light_enabled", False)):
+            key_light_cfg = sim_utils.DistantLightCfg(
+                intensity=float(self.cfg.key_light_intensity),
+                exposure=float(self.cfg.key_light_exposure),
+                color=tuple(float(v) for v in self.cfg.key_light_color),
+                angle=float(self.cfg.key_light_angle),
+            )
+            key_light_rotation = torch.tensor(
+                [[math.radians(float(v)) for v in self.cfg.key_light_rotation_deg]],
+                dtype=torch.float32,
+            )
+            key_light_quat = math_utils.quat_from_euler_xyz(
+                key_light_rotation[:, 0],
+                key_light_rotation[:, 1],
+                key_light_rotation[:, 2],
+            )[0]
+            key_light_cfg.func("/World/KeyLight", key_light_cfg, orientation=tuple(float(v) for v in key_light_quat))
 
     def _sanitize_joint_limits(self) -> None:
         default_pos = self._robot.data.default_joint_pos[0]
@@ -361,6 +383,7 @@ class DextrahSingleYAMMultiObjectGraspEnv(MultiObjectGraspTaskMixin, DirectRLEnv
         object_state[:, 0:3] = object_pos + self.scene.env_origins[env_ids]
         object_state[:, 3:7] = object_quat
         self._cube.write_root_state_to_sim(object_state, env_ids=env_ids)
+        self._set_object_asset_root_pose(env_ids, object_pos, object_quat)
         self._reset_tabletop_clutter(env_ids, target_root_pos=object_pos)
         self.scene.write_data_to_sim()
         self.sim.forward()
