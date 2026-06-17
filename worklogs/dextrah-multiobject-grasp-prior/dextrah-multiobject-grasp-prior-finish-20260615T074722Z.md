@@ -7253,3 +7253,63 @@ Analysis:
 
 Next:
 - Generate an 18-object video grid from the contact-reference reward-best checkpoint to identify whether the hard object failures are missed closure, contact slip, lift dynamics, or post-lift success criteria.
+
+## 2026-06-17T07:45:00Z - contact-reference reward-best video sweep and reference-action audit
+
+Video sweep:
+- jobs: `29182312` through `29182329`; all completed `0:0`.
+- checkpoint: `/results/logs/rl_games/dextrah_franka_multi_object_grasp/franka_multi_full18_contactref_reward_ep1680_25d819b_20260617T0648Z/nn/dextrah_franka_multi_object_grasp.pth`
+- each run used `NUM_ENVS=18`, `NUM_STEPS=300`, `SUPPRESS_SUCCESS_TERMINATION=True`, full 18-object manifest, round-robin object assignment, and one camera env index.
+- local artifacts: `/home/lzha/code/artifacts/dextrah-multiobject-grasp-prior/contactref_rewardbest_videos_20260617T0728Z/`
+- labeled grid: `/home/lzha/code/artifacts/dextrah-multiobject-grasp-prior/contactref_rewardbest_videos_20260617T0728Z/franka_multi_full18_contactref_rewardbest_grid_6x3.mp4`
+- viewer URL: `http://localhost:8765/view?path=artifacts/dextrah-multiobject-grasp-prior/contactref_rewardbest_videos_20260617T0728Z/franka_multi_full18_contactref_rewardbest_grid_6x3.mp4`
+- grid metadata: `2880x810`, `299` frames, `4.983333` seconds.
+- sampled frames:
+  - `grid_frame_start.jpg`
+  - `grid_frame_mid.jpg`
+  - `grid_frame_final.jpg`
+  - failed-object contact sheets under `failure_frames/`
+
+Deterministic 18-env video-run outcomes, env index equals object index:
+- successes: `00`, `01`, `02`, `03`, `05`, `13`, `16`, `17` (`8/18`, `0.4444444444`)
+- failures: `04`, `06`, `07`, `08`, `09`, `10`, `11`, `12`, `14`, `15`
+- `done_reason_counts`: all zero, including `finger_table_penetration=0` and `prelift_drag=0`.
+- trace safety: `finger_table_clearance_violation_max=0.0`; minimum observed aggregate finger-table clearance stayed about `0.0375 m`.
+- the video eval config reports `num_observations=91`, confirming full 18-object one-hot id plus scale is in the observation.
+
+Visual diagnosis:
+- No below-table or table-penetrating reset was visible in the start, mid, or final sampled frames. Starts and approaches are above the tabletop.
+- The remaining failures are object/contact execution failures. The gripper often closes fully or nearly fully on/beside the object without capturing load-bearing contact, then fails to lift.
+- Several failed slots are larger-grasp-size objects; object UUIDs from the manifest include:
+  - `04`: `0b07d4714a544a7fbe3a145ccda8bf03`
+  - `06`: `85c3d3b9cfd64c108dc548e525052c4e`
+  - `07`: `b5d22010f2ab4123a72d7b2a7d6643d7`
+  - `08`: `f3512126d36a4630893585f1ee2e44d2`
+  - `09`: `66d208d29503450ca28c0152864b7379`
+  - `10`: `75c058a8028340e1adbdc9ea2dfda9d4`
+  - `11`: `f71a628ddc1d45529b2dde4066f9ca71`
+  - `12`: `f601cd38f655447da2e83e3d9f5beb80`
+  - `14`: `ca8d526966a74d5ab796092e6e4531a8`
+  - `15`: `6992dae82b99461a9a43c2debd84cbd5`
+
+Reference-action audit:
+- job: `29182551`, completed `0:0`.
+- run: `eval_franka_multi_full18_reference_delta_18env_25d819b_20260617T0738Z`
+- action source: `reference_delta`, which uses `compute_grasp_prior_reference_actions()` instead of PPO.
+- local artifacts: `/home/lzha/code/artifacts/dextrah-multiobject-grasp-prior/reference_delta_eval_20260617T0738Z/`
+- result: only `1/18` success-ever (`0.055555556`), with `success_rate_final=0.0`.
+- per-object outcome: only object `02` succeeded transiently; all other objects failed under the scripted reference action.
+
+Analysis:
+- The current reset/grasp filtering appears table-safe, but the current reference-action execution policy is not a reliable Franka teacher for the full 18-object set.
+- This makes BC/imitation from `reference_delta` inappropriate right now; it would teach a weaker behavior than the PPO policy.
+- Scaling to full Objaverse should not be a blind full-dataset PPO launch. The path should be staged:
+  1. Build/refresh manifests, stable-pose caches, and verified grasp-index caches per shard.
+  2. Validate each shard with reference/reset diagnostics and videos; reject or quarantine objects where the Franka execution cannot lift from verified reset starts.
+  3. Train PPO from the verified reset starts with object-id/scale observations and per-object metrics, without treating the current reference action as a teacher.
+  4. Expand from 18 objects to larger shards only when per-object success and table-safety remain stable, then run shard-mixed training.
+  5. For objects that fail despite table-safe resets, either improve the Franka grasp execution controller/reference action or collect better Franka-specific verified grasp starts; do not reuse stale caches without re-verification after code changes.
+
+Current status:
+- no active Slurm jobs at the final queue check.
+- next code work should focus on making the Franka reference/grasp execution reliable on the failed objects, or on a PPO curriculum that explicitly handles hard-object contact/lift after table-safe verified resets.
