@@ -62,6 +62,12 @@ parser.add_argument(
     default="",
     help="Optional DEXTRAH object manifest; when set, convert only object URDFs listed in manifest.objects.",
 )
+parser.add_argument(
+    "--max-objects",
+    type=int,
+    default=0,
+    help="Convert at most this many objects after manifest filtering; <=0 converts all selected objects.",
+)
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
 # parse the arguments
@@ -158,6 +164,10 @@ def main():
         before = len(sub_dirs)
         sub_dirs = [object_name for object_name in sub_dirs if object_name in manifest_names]
         print(f"Manifest filter selected {len(sub_dirs)} of {before} URDF directories from {args_cli.manifest}")
+    sub_dirs = sorted(sub_dirs)
+    if int(args_cli.max_objects) > 0:
+        sub_dirs = sub_dirs[: int(args_cli.max_objects)]
+        print(f"Max object filter selected {len(sub_dirs)} URDF directories")
 
     # Create Urdf converter config
     for object_name in sub_dirs:
