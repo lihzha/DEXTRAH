@@ -8878,3 +8878,32 @@ Training path:
 - Use the final manifest above as `env.object_asset_manifest_path` for the full
   Objaverse-backed GraspGen asset set. It is the root manifest with paths
   relative to the asset root and `stage=usd_conversion_complete`.
+
+## 2026-06-17 19:05 - Default single-YAM training/render to full Objaverse assets
+
+Goal:
+- Make the repo defaults use the completed full Objaverse-backed GraspGen
+  manifest for single-arm YAM multi-object/tabletop-clutter training and
+  render visualization, without requiring an explicit manifest override.
+
+Change:
+- Implementation commit: `25b57a1d1741717fbd1635b9f5e5d6e1d9976c10`.
+- Added shared full-Objaverse asset constants with the standard container path
+  `/results/assets/graspgen_objects_full_cpu_20260617_153051`.
+- Pointed `DextrahSingleYAMTabletopClutterGraspEnvCfg` target and tabletop
+  clutter manifests at that full manifest by default.
+- Changed the single-YAM tabletop object caps from 96 to 0 so the full validated
+  8,019-object manifest is eligible for sampling.
+- Made the training and tabletop render wrappers default single-YAM tasks to
+  the same full manifest path while leaving Franka defaults unchanged.
+
+Validation:
+- `python3 -m py_compile` passed for the shared multi-object config and
+  single-YAM config.
+- `bash -n` passed for the 8-GPU training wrapper and tabletop-clutter render
+  wrapper.
+- `git diff --check` passed.
+- a1001 manifest check read 8,019 objects with stage
+  `usd_conversion_complete`.
+- a1001 `squeue -u lzha` showed no active jobs after the check.
+- a1001 checkout deployment pending.
