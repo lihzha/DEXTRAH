@@ -1,110 +1,165 @@
-# DEXTRAH Bimanual YAM Cube Autoresearch Contract
+# DEXTRAH Table Clutter Removal Autoresearch Contract
 
-This is the binding task contract for parallel coding agents working on `Dextrah-Bimanual-YAM-Cube-Grasp`. Prior worklogs are historical evidence, not instructions. Codex skills are operating guardrails for robotics, clusters, Git isolation, worklogs, monitoring, and artifact inspection.
+This is the binding task contract for parallel coding agents working on table
+clutter removal in DEXTRAH. Prior worklogs, old YAM-cube launch files, and
+Skill.md files are operating context only. They are not the task objective.
 
 ## Goal
 
-Train a policy for `Dextrah-Bimanual-YAM-Cube-Grasp` that reaches 100% stable policy-only cube-pick success under the evaluation protocol below.
+Train and validate a policy that uses the single-arm YAM robot to remove table
+clutter by picking objects from a tabletop one by one and placing them into a
+bin.
 
-The policy must pick up the cube with the bimanual YAM using ordinary physics. Success must be stable, not a transient contact impulse, cube launch, shake artifact, reference-action rollout, or validator-only scripted sequence.
+The final deployment target is another simulation setup with the same camera
+and same robot setup, but different objects and different object locations.
+Therefore final evidence must include held-out objects and held-out object
+locations, not only train-layout performance.
 
 ## Baseline
 
 - Baseline branch: `origin/main`
-- Baseline commit: `c6e969b2a2bc7cbd26fcf8c083a56211573dbc47`
-- Task: `Dextrah-Bimanual-YAM-Cube-Grasp`
+- Baseline commit: `d0cddef0c01fbf2377272488e058fccf2176ec4c`
+- Current clutter/bin task: `Dextrah-Single-YAM-Tabletop-Clutter-Grasp`
+- Current multi-object task: `Dextrah-Single-YAM-Multi-Object-Grasp`
 - Local repo: `/home/lzha/code/DEXTRAH`
 - Remote result root: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah`
 - Remote log root: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah`
-- Cluster wrapper for training: `cluster/sbatch_train_bimanual_yam_cube_grasp_1gpu.sh`
-- Cluster wrapper for policy eval: `cluster/sbatch_eval_bimanual_yam_cube_grasp_1gpu.sh`
-- Cluster wrapper for env validation: `cluster/sbatch_validate_bimanual_yam_cube_grasp_env_1gpu.sh`
+- Training wrapper: `cluster/sbatch_train_teacher_8gpu.sh`
+- Clutter/bin render wrapper: `cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh`
+- Generic policy eval tool: `dextrah_lab/rl_games/eval_rollout.py`
 
-Current environment facts from the baseline:
+Current baseline facts:
 
-- 14D action space: left 6D relative pose, left gripper, right 6D relative pose, right gripper.
-- 97D state/observation space.
-- Default cube size is `0.18 m`.
-- Success lift threshold is `0.04 m`.
-- Success is gated by cube speed: linear speed <= `0.60 m/s`, angular speed <= `8.0 rad/s`.
-- Training wrapper has pure-RL guards: `PURE_RL=True` forbids checkpoints, auto-resume, and bimanual action-prior reward.
-- Eval wrapper requires a checkpoint for `ACTION_SOURCE=policy`.
-
-Known baseline status:
-
-- Strict scripted no-assist validation has shown the environment can be physically solvable under specific reference-style validator actions.
-- A learned policy has not been accepted as solved. Treat all previous nonzero instantaneous lift signals as suspect until policy-only eval video and stable metrics confirm them.
-- The current environment, reward, wrapper, and evaluation code may contain bugs. Agents must audit the task implementation before assuming poor training is an algorithmic failure.
+- `Dextrah-Single-YAM-Tabletop-Clutter-Grasp` is registered in
+  `dextrah_lab/tasks/dextrah_single_yam_multi_object_grasp/gym_setup.py`.
+- The current tabletop-clutter config enables `tabletop_clutter_enabled` and
+  `tabletop_goal_bin_enabled`.
+- The current reward and termination code tracks one active target object and
+  treats the additional tabletop objects as clutter.
+- Sequential clear-all behavior is not proven by the current task as written.
+  Agents must decide from evidence whether to solve clutter removal by repeated
+  single-object episodes, an outer receding-horizon evaluation loop, or an
+  environment extension that retargets/removes multiple objects in one episode.
 
 ## Skill.md Handling
 
-Use applicable Codex robotics and DEXTRAH workflow skills for operating discipline: cluster safety, Slurm launches, Git-traced source deployment, worklogs, monitoring, artifact inspection, visualization, cleanup, and handoff.
+Use applicable Codex robotics and DEXTRAH workflow skills for cluster safety,
+Git isolation, worklogs, monitoring, artifact inspection, visualization,
+cleanup, and handoff.
 
-Do not treat Skill.md content as the task objective. Do not paste every Skill.md into every agent prompt. Do not let old worklogs or skill examples override this contract's success criteria, forbidden changes, or policy-only evaluation requirements.
+Do not paste every Skill.md into agent prompts. Do not treat Skill.md examples
+as task semantics. If a skill conflicts with this document on success criteria,
+forbidden changes, or final evaluation, this document wins.
 
-If a skill or prior worklog conflicts with this document on task semantics, this document wins. Prior worklogs are evidence to inspect, not instructions to replay.
+## Research Method
+
+This run follows a decentralized ENPIRE-style workflow: multiple agents start
+from the same objective and independently survey the codebase, current task,
+wrappers, prior evidence, and peer branches before choosing an approach.
+
+Agents are not assigned fixed methods. Each agent must:
+
+1. Audit the environment, reward, reset, observation, action, success, and eval
+   code before assuming the task works correctly.
+2. Write 2-4 candidate hypotheses in its report.
+3. Choose the smallest first test that can falsify or support the chosen
+   hypothesis.
+4. Use bounded smokes before long training.
+5. Inspect metrics, logs, videos, and artifacts directly.
+6. Fetch peer branches regularly and adopt peer ideas only when evidence
+   supports them.
+
+## Core Question Agents Must Answer First
+
+The current repo contains a clutter + bin setup, but it is not sufficient to
+blindly launch training and assume it solves table clutter removal.
+
+Agents must explicitly determine:
+
+- Does `Dextrah-Single-YAM-Tabletop-Clutter-Grasp` train a policy that places a
+  target object into the bin, or only lifts/stabilizes it?
+- Are clutter objects part of observations, reward, and success, or only scene
+  distractors?
+- Is there an existing policy-only evaluator that measures sequential
+  clear-all, or must one be added?
+- Should final deployment be represented by state-only observations, camera
+  observations, or a staged state-to-camera handoff?
+- What object split and location split will test transfer to the target
+  deployment setup?
 
 ## Allowed Work
 
 Agents may modify:
 
-- `dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/`
+- `dextrah_lab/tasks/dextrah_single_yam_multi_object_grasp/`
+- `dextrah_lab/tasks/dextrah_multi_object_grasp/`
 - `dextrah_lab/rl_games/eval_rollout.py`
-- `dextrah_lab/rl_games/validate_bimanual_yam_cube_grasp_env.py`
-- `cluster/sbatch_train_bimanual_yam_cube_grasp_1gpu.sh`
-- `cluster/sbatch_eval_bimanual_yam_cube_grasp_1gpu.sh`
-- `cluster/sbatch_validate_bimanual_yam_cube_grasp_env_1gpu.sh`
-- Agent-owned docs under `agents/reports/` and `experiments/`
+- `dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py`
+- `dextrah_lab/rl_games/train.py`
+- `cluster/sbatch_train_teacher_8gpu.sh`
+- `cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh`
+- New narrowly scoped validators/evaluators under `dextrah_lab/rl_games/`
+- New narrowly scoped cluster wrappers under `cluster/`
+- Agent-owned reports under `agents/reports/`
+- Experiment records under `experiments/`
 
-Agents may explore any approach that preserves the final success predicate. The list below is a non-exhaustive menu, not an assignment:
+Agents may explore any approach that preserves the final success predicate,
+including:
 
-- Bug fixes in environment, reward, reset, wrapper, metrics, or evaluation code when the agent can justify the bug from source evidence, logs, metrics, videos, or minimal repros.
-- Reward shaping that preserves the final success predicate.
-- Curriculum, reset randomization, and staged training schedules.
-- PPO hyperparameters, exploration settings, and seeds.
-- Pure-RL training from scratch.
-- Optional reference/action-prior ideas as training aids, but they cannot be used as final success evidence.
-- Diagnostic eval/video tooling that improves artifact inspection without changing policy behavior.
-
-Bug-fix constraints:
-
-- Start by reading the environment and reward code, especially observations, action application, reset logic, contact/lift metrics, termination conditions, success predicates, and wrapper environment variables.
-- Do not assume the existing task code is correct merely because it runs.
-- If suspicious behavior appears, build a cheap check or minimal repro before launching a long run.
-- Fix real bugs directly when the fix preserves or strengthens the intended task semantics.
-- Do not relabel a success-threshold weakening, metric inflation, reward hack, or assist mechanism as a bug fix.
+- Environment bug fixes when justified by source evidence, logs, metrics,
+  videos, or minimal repros.
+- Reward shaping that preserves final policy-only clear-all evaluation.
+- Sequential retargeting or remove-on-success task extensions.
+- A repeated single-pick evaluator that resets or retargets objects one by one.
+- Curriculum over object count, object set, location randomization, and bin
+  placement.
+- PPO hyperparameters, seeds, normalization, and exploration settings.
+- Diagnostic render/eval tooling that improves artifact inspection without
+  changing policy behavior.
+- State-policy first passes, as long as final deployment constraints and
+  camera-policy needs are recorded honestly.
 
 ## Forbidden Work
 
 Do not weaken or bypass success:
 
-- Do not lower `cube_success_lift_height`.
-- Do not loosen `cube_success_max_linear_speed` or `cube_success_max_angular_speed`.
-- Do not use `ALLOW_GRASP_ASSIST=True` as success evidence.
-- Do not claim success from `ACTION_SOURCE=reference_delta`, `reference_delta_hold`, `policy_reference_mix`, or validator-only scripted rollouts.
-- Do not suppress or remove speed-done, out-of-bounds, table-penetration, or unstable-physics checks to make training look better.
-- Do not edit evaluation metrics to inflate success.
-- Do not accept one-frame lift, contact impulse, cube shake, cube launch, or high-speed contact as success.
+- Do not claim success from scripted/reference actions.
+- Do not use validator-only actions, oracle object selection, or hard-coded
+  object teleportation as policy success evidence.
+- Do not edit eval metrics to inflate success.
+- Do not call a single target-object bin placement a solved clear-all policy
+  unless a repeated/sequential evaluator confirms the table is cleared.
+- Do not train and evaluate on the exact same object identities and object
+  layouts when claiming deployment readiness.
+- Do not suppress unstable physics checks, out-of-bounds checks, table
+  penetration checks, or speed gates to improve metrics.
+- Do not accept object launch, object shake, transient bin contact, or one-frame
+  bin entry as success.
 
 Do not break isolation:
 
 - Do not work directly on `main`.
-- Do not mutate the canonical remote checkout under another active job.
-- Do not reuse another agent's branch, run directory, Slurm log path, or remote worktree.
-- Do not commit large checkpoints, videos, generated assets, or cache directories.
+- Do not mutate canonical remote checkouts under active jobs.
+- Do not reuse another agent's branch, run directory, Slurm log path, or remote
+  worktree.
+- Do not commit large checkpoints, videos, generated assets, or cache
+  directories.
 
 ## Agent Isolation Requirements
 
 Each agent must use:
 
-- Unique neutral `CODEX_AGENT_ID`, for example `yam-cube-a01`.
+- Unique neutral `CODEX_AGENT_ID`, for example `clutter-removal-a01`.
 - Dedicated local worktree.
 - Dedicated Git branch.
-- Dedicated remote source worktree under `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/<CODEX_AGENT_ID>`.
-- Dedicated run namespace: every `FULL_EXPERIMENT_NAME` and `RUN_NAME` must start with `<CODEX_AGENT_ID>`.
+- Dedicated remote source worktree under
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/<CODEX_AGENT_ID>`.
+- Dedicated run namespace: every `FULL_EXPERIMENT_NAME` and `RUN_NAME` must
+  start with `<CODEX_AGENT_ID>`.
 - Dedicated report: `agents/reports/<CODEX_AGENT_ID>.md`.
 
-Before a cluster job, deploy tracked source through Git, not `rsync`, and verify:
+Before a cluster job, deploy tracked source through Git, not `rsync`, and
+verify:
 
 ```bash
 git rev-parse HEAD
@@ -119,7 +174,25 @@ git -C <agent-code-dir> status --short --branch
 git -C <agent-code-dir> lfs pull
 ```
 
-Pass both `CODE_NFS=<agent-code-dir>` and `CODE_COMMIT=<commit>` to Slurm wrappers.
+Pass both `CODE_NFS=<agent-code-dir>` and `CODE_COMMIT=<commit>` to Slurm
+wrappers.
+
+## Required Initial Files To Read
+
+Agents should start with:
+
+- `auto_research.md`
+- `dextrah_lab/tasks/dextrah_single_yam_multi_object_grasp/gym_setup.py`
+- `dextrah_lab/tasks/dextrah_single_yam_multi_object_grasp/single_yam_multi_object_grasp_env.py`
+- `dextrah_lab/tasks/dextrah_single_yam_multi_object_grasp/single_yam_multi_object_grasp_env_cfg.py`
+- `dextrah_lab/tasks/dextrah_single_yam_multi_object_grasp/agents/rl_games_ppo_single_yam_multi_object_grasp_cfg.yaml`
+- `dextrah_lab/tasks/dextrah_multi_object_grasp/multi_object_grasp_cfg.py`
+- `dextrah_lab/tasks/dextrah_multi_object_grasp/multi_object_grasp_task.py`
+- `dextrah_lab/rl_games/eval_rollout.py`
+- `dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py`
+- `dextrah_lab/rl_games/train.py`
+- `cluster/sbatch_train_teacher_8gpu.sh`
+- `cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh`
 
 ## Required Local Checks
 
@@ -127,26 +200,29 @@ Run before committing or submitting jobs:
 
 ```bash
 python3 -m py_compile \
-  dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_env.py \
-  dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_env_cfg.py \
-  dextrah_lab/tasks/dextrah_bimanual_yam_cube_grasp/bimanual_yam_cube_grasp_rewards.py \
+  dextrah_lab/tasks/dextrah_single_yam_multi_object_grasp/gym_setup.py \
+  dextrah_lab/tasks/dextrah_single_yam_multi_object_grasp/single_yam_multi_object_grasp_env.py \
+  dextrah_lab/tasks/dextrah_single_yam_multi_object_grasp/single_yam_multi_object_grasp_env_cfg.py \
+  dextrah_lab/tasks/dextrah_multi_object_grasp/multi_object_grasp_cfg.py \
+  dextrah_lab/tasks/dextrah_multi_object_grasp/multi_object_grasp_task.py \
   dextrah_lab/rl_games/eval_rollout.py \
-  dextrah_lab/rl_games/validate_bimanual_yam_cube_grasp_env.py \
+  dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py \
   dextrah_lab/rl_games/train.py
 
 bash -n \
-  cluster/sbatch_train_bimanual_yam_cube_grasp_1gpu.sh \
-  cluster/sbatch_eval_bimanual_yam_cube_grasp_1gpu.sh \
-  cluster/sbatch_validate_bimanual_yam_cube_grasp_env_1gpu.sh
+  cluster/sbatch_train_teacher_8gpu.sh \
+  cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh
 
 git diff --check
 ```
 
 ## Required Smoke Run
 
-Every agent must run a bounded 1-GPU smoke before scaling.
+Every agent must run a bounded smoke before scaling. The exact smoke may change
+if the agent first adds a validator or fixes a task bug, but it must stay small
+and record metrics/logs/artifacts.
 
-Template:
+Current training smoke template:
 
 ```bash
 ssh a1001 'cd <agent-code-dir> && \
@@ -155,38 +231,38 @@ ssh a1001 'cd <agent-code-dir> && \
     --export=ALL,\
 CODE_NFS=<agent-code-dir>,\
 CODE_COMMIT=<commit>,\
+TASK=Dextrah-Single-YAM-Tabletop-Clutter-Grasp,\
 FULL_EXPERIMENT_NAME=<CODEX_AGENT_ID>_smoke_<short-sha>_<timestamp>,\
-PURE_RL=True,\
-AUTO_RESUME=False,\
-CHECKPOINT=,\
-BIMANUAL_ACTION_PRIOR_REWARD_ENABLED=False,\
-NUM_ENVS=256,\
-MAX_ITERATIONS=50,\
-HORIZON_LENGTH=64,\
-MINIBATCH_SIZE=4096,\
-CENTRAL_VALUE_MINIBATCH_SIZE=4096,\
+NUM_ENVS=128,\
+MAX_ITERATIONS=25,\
+HORIZON_LENGTH=32,\
+MINIBATCH_SIZE=2048,\
+CENTRAL_VALUE_MINIBATCH_SIZE=2048,\
 SAVE_FREQUENCY=25,\
 USE_CUDA_GRAPH=False,\
-SEED=<agent-seed>,\
-PREPARE_YAM_ASSETS=auto \
-    cluster/sbatch_train_bimanual_yam_cube_grasp_1gpu.sh'
+OBJECT_ASSET_ASSIGNMENT=random,\
+TABLETOP_CLUTTER_OBJECT_COUNT=3,\
+TABLETOP_CLUTTER_ASSET_ASSIGNMENT=random,\
+SEED=<agent-seed> \
+    cluster/sbatch_train_teacher_8gpu.sh'
 ```
 
 Smoke acceptance:
 
-- Slurm exits `0:0`.
+- Slurm exits cleanly.
 - Log confirms exact `CODE_COMMIT`.
-- Log confirms `PURE_RL=True`, `AUTO_RESUME=False`, empty `CHECKPOINT`, and `BIMANUAL_ACTION_PRIOR_REWARD_ENABLED=False` unless the agent explicitly chose and documented a non-pure-RL hypothesis.
-- JSONL metrics exist at `metrics/direct_info_rank_0.jsonl`.
-- Metrics are finite.
-- Checkpoints are written.
-- Expected `yam_cube_*` metrics appear under JSONL `scalars`, often with names such as `env_extras/log/yam_cube_success_rate`, `env_extras/log/yam_cube_stable_success_rate`, and `env_extras/log/yam_cube_max_hold_to_cube_dist`.
+- Metrics JSONL exists and is finite.
+- Checkpoints are written when training is expected.
+- Key environment extras appear, including success, lift/placement, object,
+  clutter-placement, and reward terms.
+- If a video or reset renderer is part of the smoke, inspect it before scaling.
 
 ## Required Long Run
 
-Scale only after smoke acceptance.
+Scale only after smoke acceptance and after the agent has justified the task
+semantics. Do not run a long job solely because the wrapper exists.
 
-Template:
+Current long-run starting point:
 
 ```bash
 ssh a1001 'cd <agent-code-dir> && \
@@ -195,135 +271,70 @@ ssh a1001 'cd <agent-code-dir> && \
     --export=ALL,\
 CODE_NFS=<agent-code-dir>,\
 CODE_COMMIT=<commit>,\
+TASK=Dextrah-Single-YAM-Tabletop-Clutter-Grasp,\
 FULL_EXPERIMENT_NAME=<CODEX_AGENT_ID>_long_<short-sha>_<timestamp>,\
-PURE_RL=True,\
-AUTO_RESUME=False,\
-CHECKPOINT=,\
-BIMANUAL_ACTION_PRIOR_REWARD_ENABLED=False,\
 NUM_ENVS=1024,\
 MAX_ITERATIONS=1500,\
 HORIZON_LENGTH=64,\
-MINIBATCH_SIZE=32768,\
-CENTRAL_VALUE_MINIBATCH_SIZE=32768,\
+MINIBATCH_SIZE=16384,\
+CENTRAL_VALUE_MINIBATCH_SIZE=16384,\
 SAVE_FREQUENCY=25,\
 USE_CUDA_GRAPH=False,\
-SEED=<agent-seed>,\
-PREPARE_YAM_ASSETS=auto \
-    cluster/sbatch_train_bimanual_yam_cube_grasp_1gpu.sh'
+OBJECT_ASSET_ASSIGNMENT=random,\
+TABLETOP_CLUTTER_OBJECT_COUNT=6,\
+TABLETOP_CLUTTER_ASSET_ASSIGNMENT=random,\
+SEED=<agent-seed> \
+    cluster/sbatch_train_teacher_8gpu.sh'
 ```
 
-Long-run monitoring must inspect:
+Monitor at least:
 
-- `yam_cube_success_rate`
-- `yam_cube_stable_success_rate`
-- `yam_cube_has_lifted_rate`
-- `yam_cube_lift_height`
-- `yam_cube_linear_speed`
-- `yam_cube_angular_speed`
-- `yam_cube_speed_done_rate`
-- `yam_cube_bimanual_side_success_rate`
-- `yam_cube_max_hold_to_cube_dist`
-- `yam_cube_left_hold_to_cube_dist`
-- `yam_cube_right_hold_to_cube_dist`
-- `yam_cube_left_side_surface_error`
-- `yam_cube_right_side_surface_error`
-- `yam_cube_max_side_surface_error`
-- `yam_cube_left_gripper_width`
-- `yam_cube_right_gripper_width`
+- placement/success rate and stable success rate
+- lift height and goal/bin distance
+- object linear and angular speed
+- out-of-bounds, table penetration, and termination rates
+- clutter placement success and bin clearance
 - reward terms and PPO losses
+- policy action statistics and gripper behavior
 
-Cancel or patch if metrics show reward hacking, false lift, high speed, reset churn, NaNs, flatlined rewards, or repeated local optima without progress.
+Cancel or patch if metrics show reward hacking, false bin placement, high-speed
+object launch, reset churn, NaNs, flatlined rewards, or repeated local optima.
 
 ## Required Policy Evaluation
 
-Any candidate checkpoint must be evaluated policy-only with video.
+Any candidate checkpoint must be evaluated policy-only with representative
+videos and metrics.
 
-Template:
+Minimum acceptance tiers:
 
-```bash
-ssh a1001 'cd <agent-code-dir> && \
-  sbatch --parsable \
-    --partition=batch_singlenode,grizzly,polar,polar3,polar4,interactive_singlenode \
-    --export=ALL,\
-CODE_NFS=<agent-code-dir>,\
-CODE_COMMIT=<commit>,\
-RUN_NAME=<CODEX_AGENT_ID>_policy_eval_<short-sha>_<timestamp>,\
-ACTION_SOURCE=policy,\
-CHECKPOINT=<checkpoint-under-/results>,\
-NUM_ENVS=64,\
-NUM_STEPS=640,\
-VIDEO_LENGTH=640,\
-CAPTURE_VIDEO=True,\
-DETERMINISTIC=True,\
-SEED=<eval-seed>,\
-CUBE_SPAWN_XY_RANDOMIZATION=0.015,\
-PREPARE_YAM_ASSETS=auto \
-    cluster/sbatch_eval_bimanual_yam_cube_grasp_1gpu.sh'
-```
+1. Target-object bin placement: policy places the active target object into the
+   bin under randomized clutter.
+2. Repeated removal: a policy-only loop clears multiple tabletop objects one by
+   one, with no scripted action source.
+3. Deployment-style held-out evaluation: same camera and robot setup, but
+   held-out object identities and held-out object locations.
 
-Policy success criteria:
+Final success requires tier 3. Training curves alone are not success evidence.
 
-- `ACTION_SOURCE=policy`.
-- `CHECKPOINT` is the tested policy checkpoint.
-- `eval_success_rate == 1.0` over the required evaluation batch.
-- Stable success is not caused by high-speed cube motion.
-- Video shows plausible bimanual grasp and lift without shake, launch, teleport, or validator assist.
-- Trace artifacts support the video: `trace.csv`, `trace.jsonl`, and `metrics.json`.
+## Reporting
 
-Use `viz-open <local-video-path>` after fetching videos under `/home/lzha/code`.
+Each agent report must include:
 
-## Agent Reports
+- Branch, local worktree, remote worktree, and base commit.
+- Files audited before first experiment.
+- Candidate hypotheses and chosen first test.
+- Exact commands, job ids, logs, run directories, metrics, checkpoints, videos,
+  and decisions.
+- Peer branches inspected and ideas adopted.
+- Active jobs and cleanup state before handoff.
 
-Each agent must maintain `agents/reports/<CODEX_AGENT_ID>.md` with:
+## Neutral Agent Lanes
 
-- Survey notes.
-- Candidate hypotheses considered.
-- Selected current hypothesis and rationale.
-- Branch, local worktree, remote worktree, final commit.
-- Local checks run.
-- Smoke job id, log, run dir, metrics path, decision.
-- Long-run job id, log, run dir, metrics path, checkpoints, decision.
-- Eval job id, log, run dir, metrics path, trace path, video path, decision.
-- Peer branches inspected.
-- Peer commits cherry-picked or ideas copied, with attribution.
-- Active jobs or cleanup status.
+Use neutral lanes so branch names do not bias agents toward methods.
 
-## Experiment Registry
-
-Append experiment rows to `experiments/registry.md`. If conflicts become frequent, use per-agent registries named `experiments/registry-<CODEX_AGENT_ID>.md` and let the orchestrator compile them.
-
-## Survey-First Protocol
-
-Do not assign fixed methods to agents. This run follows the ENPIRE pattern: every agent starts from the same task contract and independently surveys the repo, prior evidence, current metrics, and peer branches before choosing an approach.
-
-At the start of the run, each agent must:
-
-1. Read this document and the launch prompt.
-2. Audit the current environment code first: observations, action semantics, resets, rewards, metrics, terminations, success predicates, wrappers, and eval tools.
-3. Inspect prior bimanual YAM cube worklogs and any peer branches already pushed.
-4. Write 2-4 candidate hypotheses in `agents/reports/<CODEX_AGENT_ID>.md`; at least one should consider whether a task-code, metric, reset, or evaluation bug is blocking learning.
-5. Choose the most promising first experiment and justify the choice from evidence.
-6. Run local checks and a bounded smoke before any long run.
-
-Agents should diversify through independent analysis and Git-mediated learning, not through human-assigned lanes. They may converge later by cherry-picking, merging, or manually copying peer ideas when evidence supports it.
-
-Example research directions agents may consider:
-
-- Dense contact or side-surface rewards that preserve final success.
-- Curriculum from approach to alignment to load-bearing contact to lift.
-- Reset/randomization changes that help policy reach useful bimanual contact from rest.
-- Lift rewards that pay only under retained grasp and stable cube speed.
-- PPO exploration, sigma, entropy, LR, horizon, minibatch, and seed schedules.
-- Reference/action-prior ideas as training aids only, never as final success evidence.
-- Contact geometry, cube physical properties, and speed-guard audits.
-- Eval/video/trace diagnostics that improve artifact inspection without changing success semantics.
-
-## Stop Criteria
-
-Stop an agent's current line when:
-
-- A policy-only eval reaches 100% and video/trace inspection passes.
-- The line is blocked by infrastructure or quota.
-- Smoke fails and root cause is outside the agent's chosen line of work.
-- Metrics plateau in a known local optimum and the report identifies the next hypothesis.
-- The orchestrator asks the agent to stop or hand off.
+| Agent | Branch |
+| --- | --- |
+| `clutter-removal-a01` | `agent/clutter-removal/a01` |
+| `clutter-removal-a02` | `agent/clutter-removal/a02` |
+| `clutter-removal-a03` | `agent/clutter-removal/a03` |
+| `clutter-removal-a04` | `agent/clutter-removal/a04` |
