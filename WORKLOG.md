@@ -8816,5 +8816,15 @@ Follow-up:
 - Patched the runtime manifest loader to skip invalid bounds defensively.
 - Patched the URDF converter to accept `--manifest` so GPU USD conversion can
   convert only the valid records.
+- After deploying the patch to a1001, filtered the completed CPU-stage shard
+  manifests in place, preserving backups as
+  `manifest.unfiltered_20260617_1700.json`.
+- Wrote the filtered root manifest
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/graspgen_objects_full_cpu_20260617_153051/manifest_cpu_stage.json`,
+  plus `valid_uuids.txt` and `skipped_uuids.txt`.
+- Post-filter validation: 32 shard manifests, 8,020 valid objects, 8,020 unique
+  UUIDs, 11 skipped objects, 0 duplicate UUIDs, 0 missing raw mesh/URDF/prior
+  paths, 0 bad scales, and 0 bad scaled half extents. Slurm job `29214576` is
+  no longer active and `squeue -u lzha` was empty at the final check.
 - Next production step is a GPU/Isaac USD conversion array using the filtered
   shard manifests; do not use the unfiltered directory scan.
