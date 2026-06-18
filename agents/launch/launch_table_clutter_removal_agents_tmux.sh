@@ -20,6 +20,11 @@ Environment overrides:
   SANDBOX         Codex sandbox. Default: danger-full-access
   APPROVAL        Codex approval policy. Default: never
   MODEL           Optional Codex model name.
+  AGENT_MAX_TURNS Maximum Codex turns per runner before stopping. Default 0
+                  means no runner-imposed limit.
+  AGENT_CONTINUE_SLEEP_SECS
+                  Seconds to sleep before relaunching an incomplete agent.
+                  Default: 30.
 
 Examples:
   agents/launch/launch_table_clutter_removal_agents_tmux.sh --prepare-worktrees --dry-run
@@ -27,8 +32,21 @@ Examples:
   agents/launch/launch_table_clutter_removal_agents_tmux.sh --launch --attach
 
 When launched, each tmux window starts as an interactive shell and the runner is
-sent into that shell. If an agent exits, the window stays open with the shell
-prompt and scrollback, and the full log is also written under agents/logs/.
+sent into that shell. The runner relaunches Codex after incomplete exits until
+the agent report contains one terminal marker line:
+
+  AGENT_STATUS: SUCCESS
+  AGENT_STATUS: EXTERNAL_BLOCKER
+  AGENT_STATUS: STOPPED_BY_ORCHESTRATOR
+
+To stop one runner without killing the whole tmux session:
+  touch agents/control/table-clutter-removal/<agent>.stop
+
+To stop all runners in the session:
+  touch agents/control/table-clutter-removal/all.stop
+
+The full aggregate log is written under agents/logs/, with per-turn logs under
+agents/logs/table-clutter-removal/turns/.
 USAGE
 }
 
@@ -79,6 +97,7 @@ prompt_template="${PROMPT_TEMPLATE:-$root/agents/launch/table_clutter_removal_ag
 prompt_dir="${PROMPT_DIR:-$root/agents/launch/generated/table-clutter-removal}"
 runner_dir="$prompt_dir/runners"
 log_dir="${LOG_DIR:-$root/agents/logs/table-clutter-removal}"
+control_dir="${CONTROL_DIR:-$root/agents/control/table-clutter-removal}"
 codex_bin="${CODEX_BIN:-codex}"
 sandbox="${SANDBOX:-danger-full-access}"
 approval="${APPROVAL:-never}"
@@ -171,30 +190,121 @@ write_runner() {
   local prompt="$4"
   local log="$5"
   local runner="$6"
+  local report="$worktree/agents/reports/$agent.md"
+  local turn_dir="$log_dir/turns"
 
   cat > "$runner" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
-export CODEX_AGENT_ID="$agent"
-export CODEX_REMOTE_WORKTREE="$remote_worktree"
-mkdir -p "$(dirname "$log")"
-cd "$worktree"
+agent=$(printf '%q' "$agent")
+worktree=$(printf '%q' "$worktree")
+remote_worktree=$(printf '%q' "$remote_worktree")
+prompt=$(printf '%q' "$prompt")
+report=$(printf '%q' "$report")
+log=$(printf '%q' "$log")
+turn_dir=$(printf '%q' "$turn_dir")
+control_dir=$(printf '%q' "$control_dir")
+codex_bin=$(printf '%q' "$codex_bin")
+sandbox=$(printf '%q' "$sandbox")
+approval=$(printf '%q' "$approval")
+model=$(printf '%q' "$model")
 EOF
 
-  if [[ -n "$model" ]]; then
-    printf '%q -s %q -a %q -m %q exec -C %q - < %q 2>&1 | tee %q\n' \
-      "$codex_bin" "$sandbox" "$approval" "$model" "$worktree" "$prompt" "$log" >> "$runner"
-  else
-    printf '%q -s %q -a %q exec -C %q - < %q 2>&1 | tee %q\n' \
-      "$codex_bin" "$sandbox" "$approval" "$worktree" "$prompt" "$log" >> "$runner"
+  cat >> "$runner" <<'EOF'
+export CODEX_AGENT_ID="$agent"
+export CODEX_REMOTE_WORKTREE="$remote_worktree"
+mkdir -p "$(dirname "$log")" "$turn_dir" "$control_dir" "$(dirname "$report")"
+cd "$worktree"
+
+done_regex='^AGENT_STATUS: (SUCCESS|EXTERNAL_BLOCKER|STOPPED_BY_ORCHESTRATOR)([[:space:]]|$)'
+max_turns="${AGENT_MAX_TURNS:-0}"
+sleep_secs="${AGENT_CONTINUE_SLEEP_SECS:-30}"
+turn=1
+
+echo "[$(date -Is)] supervisor start agent=$agent worktree=$worktree report=$report" | tee -a "$log"
+echo "[$(date -Is)] stop files: $control_dir/$agent.stop or $control_dir/all.stop" | tee -a "$log"
+
+while :; do
+  if [[ -f "$control_dir/$agent.stop" || -f "$control_dir/all.stop" ]]; then
+    echo "[$(date -Is)] stop file detected for $agent; supervisor exiting" | tee -a "$log"
+    exit 0
   fi
+
+  if [[ "$turn" -eq 1 ]]; then
+    turn_prompt="$prompt"
+  else
+    turn_prompt="$turn_dir/$agent.continuation-$turn.md"
+    {
+      cat <<PROMPT
+/goal
+You are $agent continuing a decentralized ENPIRE-style DEXTRAH autoresearch run.
+This is supervisor turn $turn because the previous Codex invocation exited
+without writing a terminal status marker in $report.
+
+Terminal marker contract:
+- The supervisor will keep relaunching you unless $report contains exactly one
+  line matching one of:
+  - AGENT_STATUS: SUCCESS
+  - AGENT_STATUS: EXTERNAL_BLOCKER
+  - AGENT_STATUS: STOPPED_BY_ORCHESTRATOR
+- Do not write a terminal marker for negative evidence, failed smokes, plateaus,
+  incomplete methods, or useful partial progress.
+
+Before acting in this continuation:
+1. Read $report and the latest relevant log/artifact evidence.
+2. Inspect current git status in $worktree.
+3. Fetch and inspect peer branches/reports.
+4. State why the previous line did not solve the final objective.
+5. Choose the next hypothesis, preferably changing method family or fixing the
+   strongest diagnosed blocker.
+6. Continue the operating loop: patch, validate, launch bounded experiments,
+   inspect artifacts, update the report, push meaningful commits, and repeat.
+
+The original task prompt follows.
+
+PROMPT
+      cat "$prompt"
+    } > "$turn_prompt"
+  fi
+
+  turn_log="$turn_dir/$agent.turn-$turn.log"
+  echo "[$(date -Is)] starting Codex turn $turn for $agent prompt=$turn_prompt" | tee -a "$log"
+
+  cmd=("$codex_bin" -s "$sandbox" -a "$approval")
+  if [[ -n "$model" ]]; then
+    cmd+=(-m "$model")
+  fi
+  cmd+=(exec -C "$worktree" -)
+
+  set +e
+  "${cmd[@]}" < "$turn_prompt" 2>&1 | tee -a "$log" "$turn_log"
+  codex_status=${PIPESTATUS[0]}
+  set -e
+
+  echo "[$(date -Is)] Codex turn $turn exited status=$codex_status for $agent" | tee -a "$log"
+
+  if [[ -f "$report" ]] && grep -Eq "$done_regex" "$report"; then
+    echo "[$(date -Is)] terminal status marker found in $report; supervisor exiting" | tee -a "$log"
+    exit 0
+  fi
+
+  if [[ "$max_turns" != "0" && "$turn" -ge "$max_turns" ]]; then
+    echo "[$(date -Is)] AGENT_MAX_TURNS=$max_turns reached without terminal marker; supervisor exiting" | tee -a "$log"
+    exit 0
+  fi
+
+  echo "[$(date -Is)] no terminal marker found; relaunching after ${sleep_secs}s" | tee -a "$log"
+  turn=$((turn + 1))
+  sleep "$sleep_secs"
+done
+EOF
 
   chmod +x "$runner"
 }
 
 require_dir "$root"
 require_file "$prompt_template"
-mkdir -p "$worktree_root" "$prompt_dir" "$runner_dir" "$log_dir"
+mkdir -p "$worktree_root" "$prompt_dir" "$runner_dir" "$log_dir" "$control_dir"
 
 if ! command -v "$codex_bin" >/dev/null 2>&1; then
   echo "Codex binary not found: $codex_bin" >&2

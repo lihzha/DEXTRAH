@@ -85,6 +85,24 @@ relaunches, or follow-up evaluations. Continue until the goal is achieved,
 unless the user/orchestrator explicitly stops you or an external blocker makes
 meaningful progress impossible.
 
+The launcher treats ordinary Codex process exit as incomplete. It will relaunch
+you unless your report contains one exact terminal status line:
+
+- `AGENT_STATUS: SUCCESS`
+- `AGENT_STATUS: EXTERNAL_BLOCKER`
+- `AGENT_STATUS: STOPPED_BY_ORCHESTRATOR`
+
+Do not write any terminal status line for a survey, a failed smoke, a negative
+diagnostic, a plateau, or a useful partial result. In those cases, append the
+evidence, explain why the line failed, write the next hypothesis, and keep
+working. Use `AGENT_STATUS: SUCCESS` only after final policy-only clear-all
+success is validated on held-out objects and locations with metrics, traces,
+and video/artifact inspection. Use `AGENT_STATUS: EXTERNAL_BLOCKER` only when
+you have documented that no meaningful progress is possible without external
+infrastructure, missing assets/data, credentials, quota, or explicit user
+input. Use `AGENT_STATUS: STOPPED_BY_ORCHESTRATOR` only after an explicit
+orchestrator/user stop.
+
 Do not assume the current environment, reward, wrapper, metric, or evaluation
 code is correct. Start with the environment code. If you find a suspicious bug,
 build a cheap check or minimal repro, then fix it directly if the fix preserves
@@ -138,6 +156,10 @@ Rules:
 15. Scripted/reference actions, planners, oracle object choices, and object
     teleportation may be used only for diagnostics, data collection, or training
     labels. They never count as final policy success evidence.
+16. If a Codex continuation turn starts, first read your own report and latest
+    log tail, inspect current git status, fetch peer branches, summarize why
+    the previous line did not solve the objective, and choose a next hypothesis
+    with stronger evidence or method diversity.
 
 Survey-first protocol:
 
