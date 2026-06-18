@@ -8906,4 +8906,5 @@ Validation:
 - a1001 manifest check read 8,019 objects with stage
   `usd_conversion_complete`.
 - a1001 `squeue -u lzha` showed no active jobs after the check.
-- a1001 checkout deployment pending.
+- a1001 checkout deployment completed via Git bundle, followed by remote
+  `py_compile`, `bash -n`, manifest, and queue checks.
