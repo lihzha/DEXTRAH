@@ -8828,3 +8828,53 @@ Follow-up:
   no longer active and `squeue -u lzha` was empty at the final check.
 - Next production step is a GPU/Isaac USD conversion array using the filtered
   shard manifests; do not use the unfiltered directory scan.
+
+## 2026-06-17 18:22 - Full Objaverse USD conversion
+
+Goal:
+- Convert the filtered full GraspGen/Objaverse URDF shards to USD assets for
+  training, using the manifest-filtered converter path.
+
+Version state:
+- Added `cluster/sbatch_convert_graspgen_assets_gpu_array.sh` and
+  `batch_convert_urdf.py --max-objects` at commit
+  `73642057b64382998334c7166980828b59065381`.
+- Pushed `origin/main` and deployed the exact commit to a1001 via Git bundle
+  because the a1001 checkout could not fetch GitHub over SSH directly.
+
+Launch:
+- A one-object smoke on shard `000`, job `29218401`, completed in `00:01:03`
+  and validated one USD.
+- A 32-task array submission was rejected with `QOSMaxSubmitJobPerUserLimit`.
+- A first 8-task array was cancelled after the user clarified not to use
+  arrays. Shard `000` had already completed under array job `29218436_0`; array
+  elements `1-7` were cancelled.
+- Converted the remaining shards with independent normal Slurm jobs, one
+  `sbatch` submission per shard. This avoided Slurm arrays while still allowing
+  scheduler-managed parallelism. The observed independent-job pool reached at
+  least 12 simultaneous/running-or-pending shard jobs under `QOS=normal`.
+
+Hang handling:
+- Shard `005` first job `29218841` hung for about 20 minutes on UUID
+  `6f97a35e0f264653b812298f03ad97ac` after converting 104 objects.
+- Cancelled job `29218841`, backed up manifests as
+  `manifest.before_usd_hang_20260617_1812.json` and
+  `manifest_cpu_stage.before_usd_hang_20260617_1812.json`, moved that UUID to
+  skipped records with reason `usd_conversion_hang`, and relaunched shard `005`
+  as job `29219296`. The relaunched shard completed successfully.
+
+Result:
+- Final manifest:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/graspgen_objects_full_cpu_20260617_153051/manifest.json`.
+- Aggregate validation: 32 shard manifests, 32 `_USD_CONVERT_DONE` markers,
+  8,019 USD-backed objects, 8,019 unique UUIDs, 12 skipped UUIDs, 0 duplicates,
+  0 missing raw mesh/URDF/prior/USD paths, 0 tiny USD files, 0 bad scales, and
+  0 bad scaled half extents.
+- Scaled max object dimension remained bounded: min `0.0600m`, median
+  `0.2038m`, max `0.3499m`.
+- Final queue check after validation was empty.
+
+Training path:
+- Use the final manifest above as `env.object_asset_manifest_path` for the full
+  Objaverse-backed GraspGen asset set. It is the root manifest with paths
+  relative to the asset root and `stage=usd_conversion_complete`.

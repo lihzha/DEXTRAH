@@ -394,8 +394,9 @@ Do not judge success from Slurm state alone. Inspect:
 As of 2026-06-17:
 
 - Local `main`, `origin/main`, and the a1001 checkout include the
-  single-YAM Objaverse-scale defaults, this pipeline doc, and the CPU array
-  wrapper through commit `abe26b1`.
+  single-YAM Objaverse-scale defaults, this pipeline doc, the CPU prep array
+  wrapper, and the single-shard USD conversion wrapper through commit
+  `7364205`.
 - The exact repo default path
   `dextrah_lab/assets/graspgen_objects/manifest.json` is absent locally and on
   a1001.
@@ -418,6 +419,15 @@ As of 2026-06-17:
 - Aggregate validation found 11 records with a zero scaled half extent. Future
   prep runs skip these records, and the runtime loader defensively skips any
   invalid bounds. Use the filtered set for USD conversion and training.
+- USD conversion completed for the filtered full asset set using independent
+  single-shard GPU jobs, not arrays. A single object,
+  `6f97a35e0f264653b812298f03ad97ac`, hung during USD conversion and was moved
+  to the skipped list with reason `usd_conversion_hang`.
+- Final full asset manifest:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/graspgen_objects_full_cpu_20260617_153051/manifest.json`.
+  It contains 8,019 USD-backed objects, 12 skipped UUIDs, 32 completed shard
+  markers, 0 missing raw mesh/URDF/prior/USD paths, 0 tiny USD files, 0 bad
+  scales, and 0 bad scaled half extents.
 - Earlier l401 prep/conversion references using the same wrapper completed 3
   objects in `00:01:49`, 16 objects in `00:02:11`, and 32 objects in
   `00:03:11`. A full prior-shard job of about 1,000 objects should be budgeted
@@ -433,9 +443,10 @@ Estimated full materialization time with multiprocessing:
   1.5 hours plus queue wait for 32 chunks. If all 32 chunks could run
   simultaneously, the measured per-task runtime suggests about 20 to 30 minutes
   plus queue wait.
-- USD conversion still needs a GPU/Isaac array measurement. Start with 32 GPU
-  shard jobs using `batch_convert_urdf.py --manifest`; budget 1 to 3 hours for
-  the first full conversion pass until measured.
+- USD conversion: independent single-shard GPU jobs reached at least 12
+  running-or-pending jobs under `QOS=normal` without using Slurm arrays. Most
+  shards completed in roughly 2.5 to 4 minutes once running. One object hung
+  and was filtered out before rerunning its shard.
 - Serial full materialization is not recommended and will not fit the A100 short
   partition limit.
 - Storage is object-dependent. Based on existing 8/16/32-object probes, reserve
