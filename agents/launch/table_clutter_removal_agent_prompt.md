@@ -28,6 +28,22 @@ Read these first:
 - `cluster/sbatch_train_teacher_8gpu.sh`
 - `cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh`
 
+Then inspect method-specific entry points as needed before choosing a method:
+
+- PPO/RL: the current RL-Games PPO config, `dextrah_lab/rl_games/train.py`,
+  and `cluster/sbatch_train_teacher_8gpu.sh`.
+- Imitation/BC: `dextrah_lab/rl_games/bc_reference_action_imitation.py`,
+  `dextrah_lab/distillation/run_distillation.py`,
+  `dextrah_lab/distillation/distillation.py`, and nearby distillation model
+  builders.
+- Scripted/demo collection: task reference-action methods, any relevant
+  collection scripts under `dextrah_lab/rl_games/`, and
+  `dextrah_lab/scene_scripts/plan_*grasp*` scripts as examples to adapt or
+  reject.
+- Evaluation/deployment: `dextrah_lab/rl_games/eval_rollout.py`, any clear-all
+  evaluator under `dextrah_lab/rl_games/`, camera/deployment scripts, and
+  held-out object/location split logic.
+
 Objective:
 
 Train and validate a policy for table clutter removal using the newly added
@@ -37,8 +53,30 @@ must transfer to another sim setup with the same camera and same robot setup,
 but different object identities and object locations.
 
 You are not assigned a fixed method. First survey the repository, current task,
-wrapper behavior, metrics, eval tools, and peer branches. Then choose your own
-first experiment from evidence.
+wrapper behavior, metrics, eval tools, imitation/distillation support, scripted
+data collection possibilities, deployment constraints, and peer branches. Then
+choose your own first experiment from evidence.
+
+This is an ENPIRE-style method-diversity run. Do not default to PPO merely
+because the existing wrapper is convenient. Before your first substantial job,
+compare at least these method families in your report:
+
+1. Task/evaluation semantics: sequential retargeting, remove-on-success,
+   reset/reward/success fixes, and policy-only clear-all evaluation.
+2. PPO/RL: train or tune the existing RL-Games teacher policy after task/reset
+   validity is established.
+3. Imitation/BC: collect or reuse reference-action data, demonstrations, or
+   trajectory replay for a supervised warm start.
+4. Hybrid BC-to-RL or distillation: train from demonstrations or teacher
+   policies, then continue with RL or policy-only rollout.
+5. Deployment/camera path: state-policy first, camera-policy handoff,
+   state-to-camera distillation, or held-out sim transfer evaluation.
+
+Choose the best line independently, but avoid needless duplication. If two or
+more peer agents are already pursuing the same PPO smoke/tuning direction, you
+should prefer a distinct method family unless you document concrete evidence
+that the alternatives are currently infeasible. If you choose PPO first, explain
+why imitation, hybrid, and evaluator-first directions were worse first tests.
 
 The user has already approved this workflow. Do not stop after writing a plan
 or ask for another confirmation before survey, report updates, local checks,
@@ -97,6 +135,9 @@ Rules:
    attempt. Keep working through the operating loop until final policy-only
    held-out success is achieved, explicit orchestrator/user stop is received, or
    a real external blocker is documented.
+15. Scripted/reference actions, planners, oracle object choices, and object
+    teleportation may be used only for diagnostics, data collection, or training
+    labels. They never count as final policy success evidence.
 
 Survey-first protocol:
 
@@ -105,14 +146,22 @@ Survey-first protocol:
 2. Audit the task implementation first: environment observations, action
    semantics, resets, rewards, metrics, terminations, success predicates,
    clutter/bin handling, wrapper environment variables, and eval tools.
-3. Inspect peer branches already pushed.
-4. Write 2-4 candidate hypotheses in `agents/reports/[CODEX_AGENT_ID].md`;
-   include bug hypotheses if the code or metrics look suspicious.
-5. Choose the most promising first experiment and justify it with concrete
-   evidence.
-6. Implement the smallest change or command sequence that tests that
+3. Inspect method-specific support for PPO/RL, imitation/BC, hybrid
+   BC-to-RL/distillation, scripted/demo collection, clear-all evaluation, and
+   deployment/camera handoff.
+4. Inspect peer branches already pushed and note which method families are
+   already covered.
+5. Write a method survey table in `agents/reports/[CODEX_AGENT_ID].md` with
+   columns: method family, repo support, smallest test, expected evidence,
+   blockers/risks, and current peer coverage.
+6. Write 2-4 candidate hypotheses in `agents/reports/[CODEX_AGENT_ID].md`;
+   include bug hypotheses and at least one non-PPO hypothesis unless you prove
+   non-PPO paths are infeasible.
+7. Choose the most promising first experiment and justify it with concrete
+   evidence plus diversity relative to peer branches.
+8. Implement the smallest change or command sequence that tests that
    hypothesis.
-7. Continue surveying peer branches throughout the run; adopt peer ideas only
+9. Continue surveying peer branches throughout the run; adopt peer ideas only
    when their evidence is stronger than your current line.
 
 Initial local checks:
@@ -139,22 +188,29 @@ Operating loop:
 
 1. Understand the current baseline and whether the task really represents
    sequential table clearing.
-2. Make the smallest code/config change that tests your hypothesis.
-3. Run local checks.
-4. Commit and push your branch.
-5. Update your remote worktree to the exact commit and run `git lfs pull`.
-6. Run the required bounded smoke from `auto_research.md`.
-7. Inspect JSONL metrics under `scalars` and any rendered videos/artifacts.
-8. If smoke passes, launch a justified longer run.
-9. Monitor early and final metrics: success, stable success, lift, bin/goal
-   error, object speeds, termination rates, clutter placement success, reward
-   terms, PPO losses, and action statistics.
-10. If a checkpoint looks promising, run policy-only eval with video.
-11. Add or use a repeated/sequential evaluator before claiming clear-all.
-12. Test held-out objects and held-out object locations before claiming
+2. Choose or revise a method family based on your survey and peer coverage.
+3. Make the smallest code/config/data-collection change that tests your
+   hypothesis.
+4. Run local checks.
+5. Commit and push your branch.
+6. Update your remote worktree to the exact commit and run `git lfs pull`.
+7. Run a bounded first experiment from `auto_research.md` for your selected
+   method family: PPO smoke, reset/render diagnostic, supervised BC overfit,
+   small demo collection, distillation smoke, or policy-only evaluator smoke.
+8. Inspect method-specific metrics and any rendered videos/artifacts.
+9. If the bounded run passes, launch a justified scale-up for that method.
+10. For PPO/RL, monitor success, stable success, lift, bin/goal error, object
+   speeds, termination rates, clutter placement success, reward terms, PPO
+   losses, and action statistics.
+11. For imitation/BC or hybrid runs, monitor dataset source/size, label source,
+   train/validation losses, action-dimension errors, rollout behavior, action
+   saturation, reset churn, and video failure modes.
+12. If a checkpoint looks promising, run policy-only eval with video.
+13. Add or use a repeated/sequential evaluator before claiming clear-all.
+14. Test held-out objects and held-out object locations before claiming
    deployment readiness.
-13. Fetch and inspect peer branches.
-14. Continue until success, blocker, plateau, or orchestrator stop.
+15. Fetch and inspect peer branches.
+16. Continue until success, blocker, plateau, or orchestrator stop.
 
 Final success requires policy-only evaluation with videos and trace inspection
 on held-out objects and locations. Do not report success from training curves

@@ -66,13 +66,45 @@ Agents are not assigned fixed methods. Each agent must:
 
 1. Audit the environment, reward, reset, observation, action, success, and eval
    code before assuming the task works correctly.
-2. Write 2-4 candidate hypotheses in its report.
-3. Choose the smallest first test that can falsify or support the chosen
+2. Survey multiple method families before choosing a first experiment.
+3. Write 2-4 candidate hypotheses in its report.
+4. Choose the smallest first test that can falsify or support the chosen
    hypothesis.
-4. Use bounded smokes before long training.
-5. Inspect metrics, logs, videos, and artifacts directly.
-6. Fetch peer branches regularly and adopt peer ideas only when evidence
+5. Use bounded smokes before long training or large data collection.
+6. Inspect metrics, logs, videos, and artifacts directly.
+7. Fetch peer branches regularly and adopt peer ideas only when evidence
    supports them.
+
+## ENPIRE-Style Method Diversity
+
+The parallel agents should not all default to PPO just because the existing
+wrapper is convenient. The objective is decentralized exploration with
+evidence-based convergence.
+
+Each agent must survey and explicitly compare these method families before its
+first substantial job:
+
+- Task/evaluation semantics: fix or extend reset, reward, success, sequential
+  retargeting, remove-on-success, and policy-only clear-all evaluation.
+- PPO/RL: train or tune the existing RL-Games teacher policy after the task and
+  reset path are verified.
+- Imitation/BC: inspect whether reference actions, scripted data collection,
+  trajectory replay, `bc_reference_action_imitation.py`, or distillation code
+  can produce a supervised warm start for the YAM clutter task.
+- Hybrid BC-to-RL or distillation: use demonstrations or teacher policies only
+  as training signals, then validate with policy-only rollout.
+- Deployment/camera path: decide whether final evidence needs a camera-policy
+  stage, state-to-camera distillation, or a held-out sim transfer evaluator.
+
+Agents choose their own line, but should avoid needless duplication. If two or
+more peer agents are already running the same PPO smoke or tuning direction, a
+new agent should prefer a distinct family unless the alternatives are
+documented as infeasible. A PPO-first choice must explain why imitation,
+hybrid, and evaluator-first directions were not the better first experiment.
+
+Scripted/reference actions, planners, oracle object selection, and object
+teleportation may be used only for diagnostics, data collection, or training
+targets. They never count as final policy success evidence.
 
 ## Stop Rule
 
@@ -139,6 +171,10 @@ including:
 - Curriculum over object count, object set, location randomization, and bin
   placement.
 - PPO hyperparameters, seeds, normalization, and exploration settings.
+- Imitation learning, behavior cloning, residual adapters, or distillation as
+  warm starts when the data source and labels are audited.
+- Scripted or reference-action data collection for training, provided final
+  success is still policy-only and no oracle action source is used at eval time.
 - Diagnostic render/eval tooling that improves artifact inspection without
   changing policy behavior.
 - State-policy first passes, as long as final deployment constraints and
@@ -219,6 +255,22 @@ Agents should start with:
 - `cluster/sbatch_train_teacher_8gpu.sh`
 - `cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh`
 
+Agents should then inspect method-specific entry points as needed, including:
+
+- PPO/RL: the existing RL-Games config, `dextrah_lab/rl_games/train.py`, and
+  `cluster/sbatch_train_teacher_8gpu.sh`.
+- Imitation/BC: `dextrah_lab/rl_games/bc_reference_action_imitation.py`,
+  `dextrah_lab/distillation/run_distillation.py`,
+  `dextrah_lab/distillation/distillation.py`, and nearby distillation model
+  builders.
+- Scripted/demo collection: any existing reference-action methods on task envs,
+  `dextrah_lab/rl_games/collect_franka_multi_object_verified_grasps.py`, and
+  relevant `dextrah_lab/scene_scripts/plan_*grasp*` scripts as examples to
+  adapt or reject.
+- Evaluation/deployment: `dextrah_lab/rl_games/eval_rollout.py`, any
+  clear-all evaluator under `dextrah_lab/rl_games/`, camera/deployment scripts,
+  and held-out object/location split logic.
+
 ## Required Local Checks
 
 Run before committing or submitting jobs:
@@ -241,13 +293,15 @@ bash -n \
 git diff --check
 ```
 
-## Required Smoke Run
+## Required Bounded First Run
 
-Every agent must run a bounded smoke before scaling. The exact smoke may change
-if the agent first adds a validator or fixes a task bug, but it must stay small
-and record metrics/logs/artifacts.
+Every agent must run a bounded first experiment before scaling. The exact
+experiment depends on the selected method family. It may be a PPO smoke, a
+reset/render diagnostic, a supervised imitation overfit, a small demo
+collection, or a policy-only evaluator smoke. It must stay small and record
+metrics/logs/artifacts.
 
-Current training smoke template:
+Current PPO training smoke template:
 
 ```bash
 ssh a1001 'cd <agent-code-dir> && \
@@ -272,22 +326,25 @@ SEED=<agent-seed> \
     cluster/sbatch_train_teacher_8gpu.sh'
 ```
 
-Smoke acceptance:
+Bounded-run acceptance:
 
 - Slurm exits cleanly.
 - Log confirms exact `CODE_COMMIT`.
-- Metrics JSONL exists and is finite.
-- Checkpoints are written when training is expected.
+- Metrics JSONL, CSV, JSON, report, or equivalent method-specific metrics exist
+  and are finite.
+- Checkpoints or datasets are written when the selected method expects them.
 - Key environment extras appear, including success, lift/placement, object,
   clutter-placement, and reward terms.
 - If a video or reset renderer is part of the smoke, inspect it before scaling.
+- For imitation/BC, report dataset source, label source, train/validation loss,
+  held-out validation behavior, and whether labels are valid for the YAM task.
 
-## Required Long Run
+## Required Scale-Up
 
-Scale only after smoke acceptance and after the agent has justified the task
-semantics. Do not run a long job solely because the wrapper exists.
+Scale only after bounded-run acceptance and after the agent has justified the
+task semantics. Do not run a long job solely because a wrapper exists.
 
-Current long-run starting point:
+Current PPO long-run starting point:
 
 ```bash
 ssh a1001 'cd <agent-code-dir> && \
@@ -312,7 +369,7 @@ SEED=<agent-seed> \
     cluster/sbatch_train_teacher_8gpu.sh'
 ```
 
-Monitor at least:
+For PPO/RL, monitor at least:
 
 - placement/success rate and stable success rate
 - lift height and goal/bin distance
@@ -324,6 +381,15 @@ Monitor at least:
 
 Cancel or patch if metrics show reward hacking, false bin placement, high-speed
 object launch, reset churn, NaNs, flatlined rewards, or repeated local optima.
+
+For imitation/BC or hybrid runs, monitor at least:
+
+- dataset size, split, object/location diversity, and label source
+- train/validation imitation loss and action-dimension errors
+- rollout success from the learned policy, not just supervised loss
+- covariate shift indicators such as action saturation, reset churn, and
+  failure modes in videos
+- whether the method can be followed by policy-only clear-all and held-out eval
 
 ## Required Policy Evaluation
 
