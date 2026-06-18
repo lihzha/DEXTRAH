@@ -72,6 +72,38 @@ compare at least these method families in your report:
 5. Deployment/camera path: state-policy first, camera-policy handoff,
    state-to-camera distillation, or held-out sim transfer evaluation.
 
+The next survey must explicitly analyze two required research tracks before
+choosing any first experiment:
+
+1. GraspGen-X prior acceleration:
+   - Find the current GraspGen-X / grasp-prior artifacts, APIs, file formats,
+     and existing integration points in DEXTRAH.
+   - Propose how grasp priors could be used without counting as final policy
+     success: reset curricula, action/reference warm starts, demo collection,
+     contact/lift candidate filtering, reward shaping, BC labels, hybrid
+     BC-to-RL, or evaluation-only diagnostics.
+   - Define the smallest experiment that can show accelerated learning versus
+     a no-prior baseline, including matched seeds, object split, budget, metrics
+     such as time-to-first-lift/time-to-bin/success-at-budget, and video checks.
+   - Treat prior grasps as untrusted until validated in the YAM hand/task
+     geometry. If a prior path fails, diagnose whether the issue is frame
+     convention, object width, IK/reset feasibility, gripper geometry, contact
+     physics, or policy/action-interface mismatch.
+2. Efficient multi-object policy training:
+   - Survey ways to avoid always simulating full sequential pick-up for every
+     object during training while still producing a policy that handles any
+     number of objects and arbitrary tabletop arrangements at evaluation.
+   - Consider single-object/subgoal training with shared policy repeated at
+     test time, active-object retargeting, object-centric observations,
+     permutation-invariant or top-k object encodings, curriculum over number of
+     objects, reset-state distributions near useful phases, hindsight/relabeling,
+     partial-episode rollouts, staged grasp/lift/place heads, and clear-all
+     policy-only evaluators.
+   - Define the smallest experiment that proves the efficient surrogate still
+     transfers to variable object counts and layouts, including held-out object
+     identities, held-out locations, repeated-policy clear-all metrics, and
+     failure videos.
+
 Choose the best line independently, but avoid needless duplication. If two or
 more peer agents are already pursuing the same PPO smoke/tuning direction, you
 should prefer a distinct method family unless you document concrete evidence
@@ -176,14 +208,20 @@ Survey-first protocol:
 5. Write a method survey table in `agents/reports/[CODEX_AGENT_ID].md` with
    columns: method family, repo support, smallest test, expected evidence,
    blockers/risks, and current peer coverage.
-6. Write 2-4 candidate hypotheses in `agents/reports/[CODEX_AGENT_ID].md`;
-   include bug hypotheses and at least one non-PPO hypothesis unless you prove
-   non-PPO paths are infeasible.
-7. Choose the most promising first experiment and justify it with concrete
+6. Add two dedicated subsections to `agents/reports/[CODEX_AGENT_ID].md`:
+   `Required Track A: GraspGen-X Prior Acceleration` and
+   `Required Track B: Efficient Multi-Object Policy Training`. Each subsection
+   must identify concrete repo entry points, the smallest falsifiable
+   experiment, required metrics/artifacts, and why the track is or is not the
+   best next step for this agent.
+7. Write 2-4 candidate hypotheses in `agents/reports/[CODEX_AGENT_ID].md`;
+   include bug hypotheses and at least one hypothesis from each required track
+   unless you prove a track is infeasible from concrete code evidence.
+8. Choose the most promising first experiment and justify it with concrete
    evidence plus diversity relative to peer branches.
-8. Implement the smallest change or command sequence that tests that
+9. Implement the smallest change or command sequence that tests that
    hypothesis.
-9. Continue surveying peer branches throughout the run; adopt peer ideas only
+10. Continue surveying peer branches throughout the run; adopt peer ideas only
    when their evidence is stronger than your current line.
 
 Initial local checks:
