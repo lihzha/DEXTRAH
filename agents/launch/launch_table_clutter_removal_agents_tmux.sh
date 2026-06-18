@@ -25,6 +25,10 @@ Examples:
   agents/launch/launch_table_clutter_removal_agents_tmux.sh --prepare-worktrees --dry-run
   agents/launch/launch_table_clutter_removal_agents_tmux.sh --prepare-worktrees --launch
   agents/launch/launch_table_clutter_removal_agents_tmux.sh --launch --attach
+
+When launched, each tmux window starts as an interactive shell and the runner is
+sent into that shell. If an agent exits, the window stays open with the shell
+prompt and scrollback, and the full log is also written under agents/logs/.
 USAGE
 }
 
@@ -256,11 +260,13 @@ if [[ "$action" == "dry-run" ]]; then
   for runner in "${runners[@]}"; do
     agent="$(basename "$runner" .sh)"
     if [[ "$first" -eq 1 ]]; then
-      printf 'tmux new-session -d -s %q -n %q "bash %q"\n' "$session" "$agent" "$runner"
+      printf 'tmux new-session -d -s %q -n %q\n' "$session" "$agent"
+      printf 'tmux set-option -t %q remain-on-exit on\n' "$session"
       first=0
     else
-      printf 'tmux new-window -t %q -n %q "bash %q"\n' "$session" "$agent" "$runner"
+      printf 'tmux new-window -t %q -n %q\n' "$session" "$agent"
     fi
+    printf 'tmux send-keys -t %q:%q %q C-m\n' "$session" "$agent" "bash '$runner'"
   done
   echo
   echo "Launch with:"
@@ -272,11 +278,13 @@ first=1
 for runner in "${runners[@]}"; do
   agent="$(basename "$runner" .sh)"
   if [[ "$first" -eq 1 ]]; then
-    tmux new-session -d -s "$session" -n "$agent" "bash '$runner'"
+    tmux new-session -d -s "$session" -n "$agent"
+    tmux set-option -t "$session" remain-on-exit on
     first=0
   else
-    tmux new-window -t "$session" -n "$agent" "bash '$runner'"
+    tmux new-window -t "$session" -n "$agent"
   fi
+  tmux send-keys -t "$session:$agent" "bash '$runner'" C-m
 done
 
 echo "Started tmux session: $session"

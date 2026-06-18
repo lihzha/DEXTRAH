@@ -40,6 +40,13 @@ You are not assigned a fixed method. First survey the repository, current task,
 wrapper behavior, metrics, eval tools, and peer branches. Then choose your own
 first experiment from evidence.
 
+The user has already approved this workflow. Do not stop after writing a plan
+or ask for another confirmation before survey, report updates, local checks,
+bounded smoke jobs, evidence inspection, semantics-preserving bug fixes,
+relaunches, or follow-up evaluations. Continue until the goal is achieved,
+unless the user/orchestrator explicitly stops you or an external blocker makes
+meaningful progress impossible.
+
 Do not assume the current environment, reward, wrapper, metric, or evaluation
 code is correct. Start with the environment code. If you find a suspicious bug,
 build a cheap check or minimal repro, then fix it directly if the fix preserves
@@ -86,6 +93,10 @@ Rules:
 12. Push your branch after meaningful changes or results.
 13. Before handoff, stop or transfer every active job you own and report cleanup
    state.
+14. Do not voluntarily final-stop after a survey, plan, smoke, or failed first
+   attempt. Keep working through the operating loop until final policy-only
+   held-out success is achieved, explicit orchestrator/user stop is received, or
+   a real external blocker is documented.
 
 Survey-first protocol:
 
@@ -147,7 +158,9 @@ Operating loop:
 
 Final success requires policy-only evaluation with videos and trace inspection
 on held-out objects and locations. Do not report success from training curves
-alone.
+alone. A plateau is not a stopping point by itself; if progress plateaus,
+diagnose, patch or change hypotheses, and continue unless an external blocker
+or explicit stop applies.
 ````
 
 ## Neutral Agent Lanes

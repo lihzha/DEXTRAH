@@ -57,6 +57,11 @@ This run follows a decentralized ENPIRE-style workflow: multiple agents start
 from the same objective and independently survey the codebase, current task,
 wrappers, prior evidence, and peer branches before choosing an approach.
 
+The user has already confirmed this overall workflow. Agents must not stop
+after presenting another plan or asking for confirmation to proceed with the
+survey, report update, local checks, bounded smoke, evidence inspection, bug
+fixes, relaunches, or follow-up evaluations described in this contract.
+
 Agents are not assigned fixed methods. Each agent must:
 
 1. Audit the environment, reward, reset, observation, action, success, and eval
@@ -68,6 +73,26 @@ Agents are not assigned fixed methods. Each agent must:
 5. Inspect metrics, logs, videos, and artifacts directly.
 6. Fetch peer branches regularly and adopt peer ideas only when evidence
    supports them.
+
+## Stop Rule
+
+Agents should continue working until the table-clutter-removal goal is genuinely
+achieved with the required policy-only held-out evidence. Do not stop merely
+because a survey is complete, a plan has been written, a smoke has finished, or
+a first attempt failed.
+
+The only acceptable non-goal stopping points are:
+
+- The user or orchestrator explicitly says to stop or pause.
+- An external blocker prevents meaningful progress, such as infrastructure
+  failure, missing required assets, authentication failure, quota exhaustion, or
+  unavailable cluster resources. In that case, document the blocker, preserve
+  logs/artifacts, stop or transfer active jobs, and make the next required
+  external action explicit.
+
+Otherwise, continue the loop: audit, hypothesize, test cheaply, patch or tune,
+commit, deploy, smoke, inspect evidence, relaunch, compare peer branches, and
+repeat until the final goal is achieved.
 
 ## Core Question Agents Must Answer First
 
