@@ -12,11 +12,22 @@ of objects that have:
 - a GraspGen prior at `grasp_priors/<uuid>.npz`;
 - a finite positive `object_scale` inside that prior.
 
-The single-YAM tabletop clutter task now defaults to
-`dextrah_lab/assets/graspgen_objects` and requires GraspGen prior scale for the
-target object and tabletop clutter. Production cluster runs should usually pass
-an explicit asset manifest path instead of copying a large generated asset tree
-into the Git checkout.
+The single-YAM tabletop clutter task now defaults to the completed full
+Objaverse-backed GraspGen manifest at the standard training-container path:
+
+```bash
+/results/assets/graspgen_objects_full_cpu_20260617_153051/manifest.json
+```
+
+On the a1001 host, the same file is:
+
+```bash
+/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/graspgen_objects_full_cpu_20260617_153051/manifest.json
+```
+
+The task requires GraspGen prior scale for the target object and tabletop
+clutter. `max_objects=0` and `tabletop_clutter_max_objects=0` mean the default
+samples from the whole validated manifest instead of the earlier 96-object cap.
 
 ## Fixed Cluster Paths
 
@@ -29,10 +40,10 @@ into the Git checkout.
 - Isaac Lab source: `/lustre/fsw/portfolios/nvr/users/lzha/src/IsaacLab-v2.2.1`
 - Isaac Lab venv site: `/lustre/fsw/portfolios/nvr/users/lzha/envs/dextrah-isaaclab/site`
 
-Suggested full asset root:
+Current full asset root:
 
 ```bash
-ASSET_ROOT=/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/graspgen_objects_full
+ASSET_ROOT=/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/assets/graspgen_objects_full_cpu_20260617_153051
 ```
 
 Keep `ASSET_ROOT` outside the repo. The generated meshes, USDs, caches, and

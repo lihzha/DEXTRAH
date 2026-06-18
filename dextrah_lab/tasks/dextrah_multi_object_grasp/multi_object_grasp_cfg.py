@@ -7,6 +7,9 @@ from isaaclab.utils import configclass
 
 MULTI_OBJECT_FEATURE_DIM = 8
 
+GRASPGEN_FULL_OBJAVERSE_ASSET_ROOT = "/results/assets/graspgen_objects_full_cpu_20260617_153051"
+GRASPGEN_FULL_OBJAVERSE_MANIFEST_PATH = f"{GRASPGEN_FULL_OBJAVERSE_ASSET_ROOT}/manifest.json"
+
 
 @configclass
 class MultiObjectGraspTaskCfg:
