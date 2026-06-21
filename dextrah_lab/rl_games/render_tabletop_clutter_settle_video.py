@@ -37,7 +37,14 @@ parser.add_argument("--demo_steps", type=int, default=180)
 parser.add_argument("--demo_high_hold_z", type=float, default=0.16)
 parser.add_argument("--demo_low_hold_z", type=float, default=-0.02)
 parser.add_argument("--demo_trajectory_path", type=str, default=None)
+parser.add_argument(
+    "--demo_trajectory_source",
+    type=str,
+    default="auto",
+    choices=("auto", "graspgenx_replay", "dextrah_table_rejection", "none"),
+)
 parser.add_argument("--demo_start_blend_steps", type=int, default=36)
+parser.add_argument("--demo_table_rejection_target_fraction", type=float, default=0.82)
 parser.add_argument("--render_warmup_frames", type=int, default=2)
 parser.add_argument("--render_width", type=int, default=None)
 parser.add_argument("--render_height", type=int, default=None)
@@ -1199,6 +1206,63 @@ def _single_yam_rejected_trajectory_joint_position(
     return joint_pos, phase, source_idx
 
 
+DEXTRAH_TABLE_REJECTION_TARGET_ARM_Q = (
+    -0.1004,
+    3.5656,
+    1.9488,
+    0.1869,
+    -0.0467,
+    -1.1129,
+)
+
+
+def _dextrah_table_rejection_full_target_joint_pos(task_env) -> torch.Tensor:
+    robot = getattr(task_env, "_robot", None)
+    if robot is None:
+        raise AttributeError("dextrah_table_rejection trajectory requires a robot articulation")
+    arm_joint_ids = list(getattr(task_env, "arm_joint_ids", []))
+    finger_joint_ids = list(getattr(task_env, "finger_joint_ids", []))
+    if len(arm_joint_ids) != len(DEXTRAH_TABLE_REJECTION_TARGET_ARM_Q):
+        raise ValueError(
+            "dextrah_table_rejection expects the six-joint single-YAM arm, "
+            f"got {len(arm_joint_ids)} arm joints"
+        )
+    target = robot.data.default_joint_pos.clone()
+    target_arm = torch.as_tensor(
+        DEXTRAH_TABLE_REJECTION_TARGET_ARM_Q,
+        dtype=target.dtype,
+        device=task_env.device,
+    ).view(1, -1)
+    target[:, arm_joint_ids] = target_arm.repeat(task_env.num_envs, 1)
+    if finger_joint_ids:
+        target[:, finger_joint_ids] = float(getattr(task_env.cfg, "gripper_closed_joint_pos", 0.0))
+    return torch.clamp(target, task_env.robot_dof_lower_limits, task_env.robot_dof_upper_limits)
+
+
+def _single_yam_dextrah_table_rejection_joint_position(
+    task_env,
+    step_idx: int,
+    total_steps: int,
+    *,
+    start_joint_pos: torch.Tensor,
+    target_fraction: float,
+) -> tuple[torch.Tensor, str, torch.Tensor]:
+    full_target = _dextrah_table_rejection_full_target_joint_pos(task_env)
+    target_fraction = max(0.0, min(float(target_fraction), 1.0))
+    target_joint_pos = start_joint_pos + target_fraction * (full_target - start_joint_pos)
+    total_steps = max(int(total_steps), 1)
+    approach_steps = max(int(round(0.78 * total_steps)), 1)
+    if step_idx <= approach_steps:
+        alpha = float(step_idx) / float(approach_steps)
+        alpha = alpha * alpha * (3.0 - 2.0 * alpha)
+        phase = "dextrah_current_scene_rejected_approach"
+    else:
+        alpha = 1.0
+        phase = "dextrah_current_scene_rejected_hold"
+    joint_pos = start_joint_pos + alpha * (target_joint_pos - start_joint_pos)
+    return joint_pos, phase, target_joint_pos
+
+
 def _single_yam_rejected_path_action(
     task_env,
     step_idx: int,
@@ -1557,22 +1621,30 @@ def main() -> None:
     demo_trajectory: dict[str, object] | None = None
     demo_trajectory_path: Path | None = None
     demo_start_joint_pos = None
+    demo_table_rejection_target_joint_pos = None
     if args_cli.demo_mode == "single_yam_rejected_path":
-        if args_cli.demo_trajectory_path:
-            demo_trajectory_path = Path(args_cli.demo_trajectory_path).expanduser().resolve()
-        else:
-            default_trajectory_path = _default_yam_rejected_trajectory_path()
-            if default_trajectory_path.is_file():
-                demo_trajectory_path = default_trajectory_path
-        if demo_trajectory_path is not None:
+        if robot is not None:
+            demo_start_joint_pos = robot.data.joint_pos.detach().clone()
+        trajectory_source = str(args_cli.demo_trajectory_source)
+        should_load_trajectory = trajectory_source in ("auto", "graspgenx_replay")
+        if should_load_trajectory:
+            if args_cli.demo_trajectory_path:
+                demo_trajectory_path = Path(args_cli.demo_trajectory_path).expanduser().resolve()
+            else:
+                default_trajectory_path = _default_yam_rejected_trajectory_path()
+                if default_trajectory_path.is_file():
+                    demo_trajectory_path = default_trajectory_path
+            if trajectory_source == "graspgenx_replay" and demo_trajectory_path is None:
+                raise FileNotFoundError("graspgenx_replay requested but no demo trajectory path was found")
+        if demo_trajectory_path is not None and should_load_trajectory:
             demo_trajectory = _load_demo_trajectory(demo_trajectory_path)
             if robot is None:
                 raise AttributeError("single_yam_rejected_path trajectory replay requires a robot articulation")
-            demo_start_joint_pos = robot.data.joint_pos.detach().clone()
             print(
                 json.dumps(
                     {
                         "event": "demo_trajectory_loaded",
+                        "source": trajectory_source,
                         "path": str(demo_trajectory_path),
                         "source_frames": int(len(demo_trajectory["joint_positions"])),
                         "source_fps": demo_trajectory.get("fps"),
@@ -1580,6 +1652,21 @@ def main() -> None:
                         "tabletop_status": demo_trajectory.get("tabletop_status"),
                         "nominal_status": demo_trajectory.get("nominal_status"),
                         "start_blend_steps": int(args_cli.demo_start_blend_steps),
+                    }
+                ),
+                flush=True,
+            )
+        elif trajectory_source == "dextrah_table_rejection":
+            if robot is None or demo_start_joint_pos is None:
+                raise AttributeError("dextrah_table_rejection requires a robot articulation")
+            demo_table_rejection_target_joint_pos = _dextrah_table_rejection_full_target_joint_pos(task_env)
+            print(
+                json.dumps(
+                    {
+                        "event": "demo_dextrah_table_rejection_target_loaded",
+                        "source": trajectory_source,
+                        "target_fraction": float(args_cli.demo_table_rejection_target_fraction),
+                        "full_target_joint_position": _tensor_list(demo_table_rejection_target_joint_pos),
                     }
                 ),
                 flush=True,
@@ -1618,6 +1705,21 @@ def main() -> None:
                     demo_steps,
                     start_joint_pos=demo_start_joint_pos,
                     start_blend_steps=int(args_cli.demo_start_blend_steps),
+                )
+                terminated, truncated = _apply_kinematic_joint_position(task_env, joint_position)
+                actions = torch.zeros((task_env.num_envs, int(task_env.cfg.action_space)), device=task_env.device)
+                target_hold = task_env.hold_pos.detach().clone()
+            elif args_cli.demo_trajectory_source == "dextrah_table_rejection":
+                if demo_start_joint_pos is None:
+                    raise AttributeError("dextrah_table_rejection requires a captured start joint position")
+                joint_position, phase, demo_table_rejection_target_joint_pos = (
+                    _single_yam_dextrah_table_rejection_joint_position(
+                        task_env,
+                        step_idx,
+                        demo_steps,
+                        start_joint_pos=demo_start_joint_pos,
+                        target_fraction=float(args_cli.demo_table_rejection_target_fraction),
+                    )
                 )
                 terminated, truncated = _apply_kinematic_joint_position(task_env, joint_position)
                 actions = torch.zeros((task_env.num_envs, int(task_env.cfg.action_space)), device=task_env.device)
@@ -1729,6 +1831,7 @@ def main() -> None:
             "enabled": args_cli.demo_mode == "single_yam_rejected_path",
             "high_hold_z": float(args_cli.demo_high_hold_z),
             "low_hold_z": float(args_cli.demo_low_hold_z),
+            "trajectory_source": str(args_cli.demo_trajectory_source),
             "trajectory_replay_enabled": demo_trajectory is not None,
             "trajectory_path": None if demo_trajectory_path is None else str(demo_trajectory_path),
             "trajectory_source_frames": None
@@ -1742,6 +1845,10 @@ def main() -> None:
             "trajectory_nominal_status": None if demo_trajectory is None else demo_trajectory.get("nominal_status"),
             "trajectory_segments": None if demo_trajectory is None else demo_trajectory.get("segments"),
             "start_blend_steps": int(args_cli.demo_start_blend_steps),
+            "table_rejection_target_fraction": float(args_cli.demo_table_rejection_target_fraction),
+            "table_rejection_target_joint_position": None
+            if demo_table_rejection_target_joint_pos is None
+            else _tensor_list(demo_table_rejection_target_joint_pos),
             "first_rejected_step": first_rejected_step,
             "first_done_step": first_done_step,
             "step_count": len(demo_step_rows),

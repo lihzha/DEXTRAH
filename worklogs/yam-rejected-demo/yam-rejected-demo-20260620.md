@@ -21,3 +21,26 @@
 - Analysis: the scripted target used the object center buffer, which can be shifted far away by object bounds for some Objaverse assets. The controller saturated laterally and did not descend far enough to trip the DEXTRAH table-clearance rejection.
 - Change: update the demo action target to use the simulated target object root, clamped to the current table footprint, before applying the low-clearance descent.
 - Next: commit the target-selection fix, redeploy to the same agent worktree, and rerun with a lower `DEMO_LOW_HOLD_Z`.
+
+## 2026-06-21 - Replay and Current-Scene Diagnosis
+
+- Version: `204235d0bfc0fb823bfed2b31537353474c60f6c`.
+- Job: `1038488`, run `single_yam_rejected_path_204235d0_low_20260621T0710Z`.
+- Result: Slurm completed and wrote a valid 72-frame MP4, but metrics still reported `first_rejected_step=null`; minimum finger-table clearance was about `0.03153 m`.
+- Analysis: the action-driven fallback plateaued above the current table and did not visibly show the rejected nominal path.
+- Version: `f2b11bac7eeaa7a16b6763dd27ac69c66129c869`.
+- Change: imported the compact GraspGenX/cuRobo rejected nominal trajectory from `/home/lzha/code/worktrees/graspgenx-yam-ggx-curobo/end2end/runs/yam_linear_rejected`, added a kinematic replay branch, and recorded the original GraspGenX tabletop rejection metadata.
+- Job: `1038494`, run `single_yam_rejected_trajectory_f2b11bac_20260621T0734Z`.
+- Result: Slurm completed and wrote a valid 96-frame, 4.0 s MP4. The video was nonblank and replayed the trajectory, but current DEXTRAH metrics still reported `first_rejected_step=null`; minimum current-scene finger-table clearance was about `0.30922 m`.
+- Analysis: the exported GraspGenX trajectory was rejected in its original tabletop scene, but its YAM base/table frame differs from current DEXTRAH. In current DEXTRAH, the replayed hand stays high above the table, so it is not sufficient evidence for a current-scene rejected-path demo.
+
+## 2026-06-21 - DEXTRAH-Native Rejected Path
+
+- Change: added `--demo_trajectory_source` with `dextrah_table_rejection`, preserving `graspgenx_replay` for the imported trajectory and `none` for the older action fallback.
+- Change: added a sampled single-YAM joint target in the current DEXTRAH joint order. The target is within URDF joint limits, lies over the current table footprint, and drives the finger links below the current `table_surface_z` when replayed kinematically from the live DEXTRAH start pose.
+- Change: added `--demo_table_rejection_target_fraction` and wrapper env passthrough so the render can tune how deeply the nominal rejected path enters the current table collision.
+- Local validation: `python3 -m py_compile dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py` passed.
+- Local validation: `bash -n cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh` passed.
+- Local validation: `python3 -m json.tool dextrah_lab/assets/yam/rejected_nominal_trajectory_compact.json >/dev/null` passed.
+- Local validation: `git diff --check` passed.
+- Next: commit, push, redeploy to the agent l401 worktree, run `DEMO_TRAJECTORY_SOURCE=dextrah_table_rejection`, fetch the MP4/metrics, and require `first_rejected_step` plus visual inspection before accepting the artifact.
