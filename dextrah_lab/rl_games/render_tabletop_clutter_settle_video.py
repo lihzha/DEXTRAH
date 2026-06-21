@@ -1101,8 +1101,23 @@ def _single_yam_rejected_path_action(
     approach_end = max(int(round(0.32 * total_steps)), 1)
     descend_end = max(int(round(0.72 * total_steps)), approach_end + 1)
     table_z = float(task_env.cfg.table_surface_z)
-
-    target_hold = task_env.cube_pos.detach().clone()
+    env_origins = task_env.scene.env_origins
+    if hasattr(task_env, "_cube"):
+        target_hold = (task_env._cube.data.root_pos_w - env_origins).detach().clone()
+    else:
+        target_hold = task_env.cube_pos.detach().clone()
+    table_half_x = 0.5 * float(task_env.cfg.table_size_x)
+    table_half_y = 0.5 * float(task_env.cfg.table_size_y)
+    target_hold[:, 0] = torch.clamp(
+        target_hold[:, 0],
+        float(task_env.cfg.table_center_x) - 0.85 * table_half_x,
+        float(task_env.cfg.table_center_x) + 0.85 * table_half_x,
+    )
+    target_hold[:, 1] = torch.clamp(
+        target_hold[:, 1],
+        float(task_env.cfg.table_center_y) - 0.85 * table_half_y,
+        float(task_env.cfg.table_center_y) + 0.85 * table_half_y,
+    )
     if step_idx <= approach_end:
         phase = "high_side_approach"
         target_hold[:, 0] -= 0.10
