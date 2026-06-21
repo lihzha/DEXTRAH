@@ -9436,3 +9436,64 @@ Residual note:
   held nearly fixed relative to the gripper during the final hold. The video and
   sampled positions do not show visible slipping, table contact, or object
   ejection.
+
+## 2026-06-21T17:18:00Z - Single YAM PD Overshoot Tuning
+
+Goal:
+- Reduce the visible overshoot/settling when Single YAM reaches the pre-grasp
+  pose, while preserving the validated dynamic grasp/lift and table clearance.
+
+Change:
+- Added optional replay-only YAM arm gain scaling to
+  `render_tabletop_clutter_settle_video.py` and the l401 render wrapper:
+  `--yam_arm_stiffness_scale`, `--yam_arm_damping_scale`, and
+  `--yam_arm_effort_scale`.
+- Swept dynamic replay gain variants against the validated seed-2 trajectory:
+  damping-only `K1/D3/E2`, coupled `K1.5/D2/E2`, `K2/D3/E3`,
+  `K2/D2.5/E5`, `K2/D2.5/E3`, and `K2/D2.5/E2`.
+- Selected the least aggressive validated setting, `K2/D2.5/E2`, and made it
+  the `SINGLE_YAM_CFG` default:
+  - arm stiffness: joint1-3 `80.0`, joint4 `40.0`, joint5-6 `20.0`
+  - arm damping: joint1-3 `6.25`, joint4 `1.25`, joint5-6 `2.5`
+  - effort limit: joint1-3 `56.0`, joint4-6 `20.0`
+
+Validation:
+- Local syntax checks passed:
+  `python3 -m py_compile dextrah_lab/assets/yam/bimanual_yam.py`
+  `dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py`,
+  `bash -n cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh`, and
+  `git diff --check`.
+- l401 final no-override render job `1038738`
+  (`single_yam_pd_default_tuned_seed2_9dc05821_20260621T171045Z`) completed
+  successfully on commit `9dc05821`.
+- Slurm log confirmed `YAM_ARM_STIFFNESS_SCALE`, `YAM_ARM_DAMPING_SCALE`, and
+  `YAM_ARM_EFFORT_SCALE` were unset, so the render exercised the asset defaults.
+- Final video metadata: `1280x720`, `12` FPS, `193` frames,
+  `16.083333` seconds.
+- Metrics matched the `K2/D2.5/E2` override run exactly:
+  - `first_rejected_step`: `null`
+  - replay mode: `dynamic`, timing: `realtime`
+  - source trajectory: `821` frames at `60` FPS
+  - max joint tracking error: `0.255987 rad`
+  - mean joint tracking error: `0.037486 rad`
+  - pre-grasp arrival residual actual arm velocity reduced from old-default
+    `2.488949 rad/s` to `0.523551 rad/s`
+  - source-frame 264 residual actual arm velocity reduced from
+    `0.870468 rad/s` to `0.220027 rad/s`
+  - source-frame 264 arm tracking error reduced from `0.055303 rad` to
+    `0.026372 rad`
+  - minimum finger/table clearance stayed positive: `0.056200 m`
+  - target object vertical lift: `0.185240 m`, with `0.019485 m` XY drift
+- Visual contact sheet and final video inspection showed no table contact,
+  no grasp/lift regression, and visibly damped pre-grasp settling.
+
+Artifacts:
+- Final default-tuned video:
+  `/home/lzha/code/cluster_results/l401/single_yam_pd_default_tuned_seed2_9dc05821_20260621T171045Z/single_yam_pd_default_tuned.mp4`
+- Final metrics:
+  `/home/lzha/code/cluster_results/l401/single_yam_pd_default_tuned_seed2_9dc05821_20260621T171045Z/metrics.json`
+- Baseline-vs-default contact sheet:
+  `/home/lzha/code/cluster_results/l401/yam_pd_default_validation_contact_sheet.png`
+- Viewer URLs:
+  `http://localhost:8765/view?path=cluster_results/l401/single_yam_pd_default_tuned_seed2_9dc05821_20260621T171045Z/single_yam_pd_default_tuned.mp4`
+  `http://localhost:8765/view?path=cluster_results/l401/yam_pd_default_validation_contact_sheet.png`
