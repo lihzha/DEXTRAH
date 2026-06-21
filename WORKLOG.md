@@ -9160,3 +9160,104 @@ Next:
   current DEXTRAH YAM environment. If a truly rejected trajectory is still
   required, search additional seeds/scenes after the settled-state pipeline
   rather than reusing this accepted cuRobo plan.
+
+## 2026-06-21 10:08 - Realtime YAM cuRobo trajectory replay
+
+Goal:
+- Investigate the sharp YAM velocity change visible in the dynamic replay and
+  make the renderer follow cuRobo's trajectory timing instead of compressing the
+  plan into a fixed short video.
+
+Diagnosis:
+- The earlier replay stretched a 647-frame cuRobo trajectory over only 240
+  environment steps. Because the source trajectory was treated as 30 FPS while
+  the DEXTRAH environment controls at 60 Hz, the renderer skipped through the
+  source trajectory with source-frame deltas of 2 or 3 frames per sim step.
+- That retiming produced a max commanded arm-joint velocity of roughly
+  `6.96 rad/s`, which explained the visible jump. cuRobo's saved trajectory was
+  smooth; the render-time sampling was not.
+
+Version state:
+- Implementation commit:
+  `6dd2bca48159f6bfcfb89863503c12e92370fddc`.
+- Remote l401 agent worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-collision-overlay-39915731`
+  checked out detached at that exact commit.
+- `CODEX_AGENT_ID` was not set in this shell; the branch and worktree are
+  agent-owned as `codex/yam-rejected-demo` and
+  `DEXTRAH-yam-rejected-demo`.
+
+Change:
+- Added `--demo_trajectory_timing_mode` to
+  `render_tabletop_clutter_settle_video.py`, defaulting to `realtime` while
+  keeping the old `stretch` behavior available.
+- In realtime mode, the renderer uses the trajectory's `fps` and the DEXTRAH
+  control dt to compute the required replay step count, interpolates joint
+  targets at the correct source time, and holds the final frame only after the
+  source trajectory ends.
+- Added per-step diagnostics for target joint velocity, actual joint velocity,
+  tracking error, source trajectory timing, and finger/table clearance.
+- Changed `plan_yam_graspgenx_curobo.py` default `--sim_fps` from 30 to 60 so
+  newly generated trajectories match the DEXTRAH control rate.
+- Added `DEMO_TRAJECTORY_TIMING_MODE` passthrough to
+  `cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh`.
+
+Validation:
+- Local checks passed:
+  `python3 -m py_compile dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py dextrah_lab/scene_scripts/plan_yam_graspgenx_curobo.py`,
+  `bash -n cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh`, and
+  `git diff --check`.
+- Remote l401 checks passed for the same Python compile and wrapper syntax.
+
+Planner:
+- Local GraspGenX/cuRobo run
+  `stable_scene_realtime_6dd2bca4_seed7` used the settled stable scene from
+  `/home/lzha/code/cluster_results/l401/single_yam_stable_scene_capture_f79ddbea_20260621T093128Z/stable_scene.json`.
+- Result: cuRobo accepted selected GraspGenX grasp index `9` with confidence
+  `0.7050067186355591`; planner status was
+  `Planning to lift pose succeeded.`
+- The exported trajectory has 647 frames at 60 FPS. Its max commanded arm-joint
+  velocity from the saved trajectory is `2.328243 rad/s`.
+
+Dynamic replay:
+- Slurm job `1038569` completed `0:0` on `pool0-00012` in `00:01:28`.
+- Run directory:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/single_yam_stable_scene_realtime_replay_6dd2bca4_20260621T095300Z`.
+- Local artifacts:
+  `/home/lzha/code/cluster_results/l401/single_yam_stable_scene_realtime_replay_6dd2bca4_20260621T095300Z`.
+- Replay used `DEMO_TRAJECTORY_TIMING_MODE=realtime`,
+  `DEMO_TRAJECTORY_REPLAY_MODE=dynamic`, `DEMO_START_BLEND_STEPS=0`,
+  `SETTLE_STEPS=0`, the captured stable-scene state, and the realtime 60 FPS
+  planner trajectory.
+
+Evidence:
+- Slurm log confirmed `trajectory_timing.mode=realtime`, source FPS `60`,
+  source frames `647`, source duration `10.766666666666667` seconds, environment
+  control dt `0.016666666666666666` seconds, and final replay length `648`
+  control steps.
+- `ffprobe` confirmed `single_yam_realtime_path.mp4` is 1280x720, 12 FPS,
+  `10.916667` seconds, and 131 frames.
+- Metrics confirmed `step_count=648`,
+  source-frame deltas `{0: 1, 1: 646}` where the single zero delta is the final
+  hold, max commanded target velocity `2.3282432556152344 rad/s`, max actual
+  joint velocity `2.7151103019714355 rad/s`, and max tracking error
+  `0.2043820023536682 rad`.
+- Finger/table diagnostics reported minimum clearance
+  `0.08890362828969955` meters, zero negative-clearance samples, and zero
+  penetration rejections.
+- Visual inspection of frames `0000`, `0030`, `0065`, `0100`, and `0130`
+  confirmed nonblank rendering, visible table/bin/target/clutter, visible
+  grasp-pose axes, no observed YAM-table penetration, and a realtime-length
+  replay instead of the prior compressed motion.
+- `viz-open` URL for inspection:
+  `http://localhost:8765/view?path=cluster_results/l401/single_yam_stable_scene_realtime_replay_6dd2bca4_20260621T095300Z/single_yam_realtime_path.mp4`.
+
+Analysis:
+- The sharp command discontinuity was caused by render-time trajectory
+  compression, not by cuRobo's saved trajectory. The new replay samples every
+  source frame in sequence at the DEXTRAH control dt.
+- The remaining max tracking error of `0.204382 rad` is a controller tracking
+  issue rather than a trajectory-sampling jump. Mean tracking error is
+  `0.023339 rad`, so the current demo is materially smoother, but tighter YAM
+  drive/PD tuning would be the next axis if the dynamic robot motion still
+  looks too soft or laggy.
