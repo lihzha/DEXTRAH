@@ -50,6 +50,17 @@ parser.add_argument(
     default="kinematic",
     choices=("kinematic", "dynamic"),
 )
+parser.add_argument(
+    "--demo_trajectory_timing_mode",
+    type=str,
+    default="realtime",
+    choices=("stretch", "realtime"),
+    help=(
+        "stretch maps all trajectory frames over --demo_steps. realtime respects "
+        "the trajectory fps at the Isaac control timestep and holds the final "
+        "frame after the source trajectory ends."
+    ),
+)
 parser.add_argument("--demo_start_blend_steps", type=int, default=36)
 parser.add_argument("--stable_scene_path", type=str, default=None)
 parser.add_argument("--demo_table_rejection_target_fraction", type=float, default=0.82)
@@ -1617,6 +1628,40 @@ def _load_demo_trajectory(path: Path) -> dict[str, object]:
     }
 
 
+def _trajectory_source_fps(trajectory: dict[str, object]) -> float:
+    try:
+        fps = float(trajectory.get("fps") or 0.0)
+    except (TypeError, ValueError):
+        fps = 0.0
+    if not math.isfinite(fps) or fps <= 0.0:
+        return 30.0
+    return fps
+
+
+def _env_control_dt(task_env) -> float:
+    sim_dt = float(getattr(task_env.sim.cfg, "dt", 0.0))
+    decimation = max(int(getattr(task_env.cfg, "decimation", 1)), 1)
+    if not math.isfinite(sim_dt) or sim_dt <= 0.0:
+        return 1.0 / 60.0
+    return sim_dt * float(decimation)
+
+
+def _trajectory_realtime_step_count(
+    task_env,
+    trajectory: dict[str, object],
+    *,
+    start_blend_steps: int,
+) -> int:
+    source_joint_positions = trajectory["joint_positions"]
+    if not isinstance(source_joint_positions, list) or not source_joint_positions:
+        return 0
+    fps = _trajectory_source_fps(trajectory)
+    control_dt = _env_control_dt(task_env)
+    source_duration = float(max(len(source_joint_positions) - 1, 0)) / fps
+    replay_steps = int(math.ceil(source_duration / control_dt)) + 1
+    return max(1, int(start_blend_steps) + replay_steps)
+
+
 def _map_source_joint_to_env(task_env, raw_q: np.ndarray | torch.Tensor) -> torch.Tensor:
     robot = getattr(task_env, "_robot", None)
     if robot is None:
@@ -1640,6 +1685,31 @@ def _map_source_joint_to_env(task_env, raw_q: np.ndarray | torch.Tensor) -> torc
             f"{joint_pos.shape[1]} env joints ({arm_count} arm, {finger_count} fingers)"
         )
     return torch.clamp(joint_pos, task_env.robot_dof_lower_limits, task_env.robot_dof_upper_limits)
+
+
+def _map_source_joint_velocity_to_env(task_env, raw_qd: np.ndarray | torch.Tensor) -> torch.Tensor:
+    robot = getattr(task_env, "_robot", None)
+    if robot is None:
+        raise AttributeError("single_yam_rejected_path trajectory replay requires a robot articulation")
+    raw = torch.as_tensor(raw_qd, dtype=robot.data.joint_vel.dtype, device=task_env.device).view(1, -1)
+    raw = raw.repeat(task_env.num_envs, 1)
+    joint_vel = torch.zeros_like(robot.data.joint_vel)
+    arm_count = len(getattr(task_env, "arm_joint_ids", []))
+    finger_count = len(getattr(task_env, "finger_joint_ids", []))
+    if raw.shape[1] == joint_vel.shape[1]:
+        joint_vel[:] = raw
+    elif raw.shape[1] == arm_count + finger_count:
+        joint_vel[:, task_env.arm_joint_ids] = raw[:, :arm_count]
+        joint_vel[:, task_env.finger_joint_ids] = raw[:, arm_count : arm_count + finger_count]
+    elif raw.shape[1] == arm_count + 1:
+        joint_vel[:, task_env.arm_joint_ids] = raw[:, :arm_count]
+        joint_vel[:, task_env.finger_joint_ids] = raw[:, arm_count : arm_count + 1].repeat(1, finger_count)
+    else:
+        raise ValueError(
+            f"Cannot map trajectory joint velocity dim {raw.shape[1]} to "
+            f"{joint_vel.shape[1]} env joints ({arm_count} arm, {finger_count} fingers)"
+        )
+    return joint_vel
 
 
 def _apply_kinematic_joint_position(task_env, joint_pos: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
@@ -1697,7 +1767,8 @@ def _single_yam_rejected_trajectory_joint_position(
     *,
     start_joint_pos: torch.Tensor,
     start_blend_steps: int,
-) -> tuple[torch.Tensor, str, int]:
+    timing_mode: str,
+) -> tuple[torch.Tensor, str, int, dict[str, object]]:
     source_joint_positions = trajectory["joint_positions"]
     source_phases = trajectory["phases"]
     if not isinstance(source_joint_positions, list) or not source_joint_positions:
@@ -1708,7 +1779,50 @@ def _single_yam_rejected_trajectory_joint_position(
     if start_blend_steps > 0 and step_idx <= start_blend_steps:
         alpha = float(step_idx) / float(start_blend_steps)
         joint_pos = start_joint_pos + alpha * (first_source_joint_pos - start_joint_pos)
-        return joint_pos, "blend_from_dextrah_start", 0
+        control_dt = _env_control_dt(task_env)
+        blend_velocity = (first_source_joint_pos - start_joint_pos) / max(float(start_blend_steps) * control_dt, 1.0e-9)
+        return (
+            joint_pos,
+            "blend_from_dextrah_start",
+            0,
+            {
+                "trajectory_timing_mode": str(timing_mode),
+                "trajectory_source_time_s": 0.0,
+                "trajectory_source_frame_float": 0.0,
+                "trajectory_source_frame_alpha": float(alpha),
+                "joint_target_velocity": _tensor_list(blend_velocity),
+            },
+        )
+
+    if str(timing_mode) == "realtime":
+        fps = _trajectory_source_fps(trajectory)
+        control_dt = _env_control_dt(task_env)
+        replay_step = max(int(step_idx) - int(start_blend_steps) - 1, 0)
+        source_time = float(replay_step) * control_dt
+        source_frame_float = min(source_time * fps, float(len(source_joint_positions) - 1))
+        lo = int(math.floor(source_frame_float))
+        hi = min(lo + 1, len(source_joint_positions) - 1)
+        alpha = float(source_frame_float - lo)
+        lo_q = np.asarray(source_joint_positions[lo], dtype=np.float32)
+        hi_q = np.asarray(source_joint_positions[hi], dtype=np.float32)
+        raw_q = lo_q + alpha * (hi_q - lo_q)
+        raw_qd = (hi_q - lo_q) * fps if hi > lo else np.zeros_like(raw_q)
+        joint_pos = _map_source_joint_to_env(task_env, raw_q)
+        joint_vel = _map_source_joint_velocity_to_env(task_env, raw_qd)
+        phase_idx = min(int(round(source_frame_float)), len(source_joint_positions) - 1)
+        phase = str(source_phases[phase_idx]) if isinstance(source_phases, list) else "trajectory"
+        return (
+            joint_pos,
+            phase,
+            phase_idx,
+            {
+                "trajectory_timing_mode": "realtime",
+                "trajectory_source_time_s": float(min(source_time, float(len(source_joint_positions) - 1) / fps)),
+                "trajectory_source_frame_float": float(source_frame_float),
+                "trajectory_source_frame_alpha": float(alpha),
+                "joint_target_velocity": _tensor_list(joint_vel),
+            },
+        )
 
     source_span = max(total_steps - start_blend_steps, 1)
     source_alpha = float(step_idx - start_blend_steps - 1) / float(max(source_span - 1, 1))
@@ -1716,7 +1830,17 @@ def _single_yam_rejected_trajectory_joint_position(
     source_idx = max(0, min(source_idx, len(source_joint_positions) - 1))
     joint_pos = _map_source_joint_to_env(task_env, source_joint_positions[source_idx])
     phase = str(source_phases[source_idx]) if isinstance(source_phases, list) else "trajectory"
-    return joint_pos, phase, source_idx
+    return (
+        joint_pos,
+        phase,
+        source_idx,
+        {
+            "trajectory_timing_mode": "stretch",
+            "trajectory_source_time_s": float(source_idx) / _trajectory_source_fps(trajectory),
+            "trajectory_source_frame_float": float(source_idx),
+            "trajectory_source_frame_alpha": 0.0,
+        },
+    )
 
 
 DEXTRAH_TABLE_REJECTION_TARGET_ARM_Q = (
@@ -1831,6 +1955,7 @@ def _single_yam_rejected_path_row(
     truncated: torch.Tensor,
     joint_position: torch.Tensor | None = None,
     source_frame_idx: int | None = None,
+    trajectory_timing: dict[str, object] | None = None,
     trajectory_path: str | None = None,
 ) -> dict[str, object]:
     done = torch.logical_or(terminated, truncated)
@@ -1856,11 +1981,67 @@ def _single_yam_rejected_path_row(
     }
     if joint_position is not None:
         row["joint_position"] = _tensor_list(joint_position)
+        robot = getattr(task_env, "_robot", None)
+        if robot is not None:
+            actual_pos = robot.data.joint_pos.detach()
+            actual_vel = robot.data.joint_vel.detach()
+            tracking_error = actual_pos - joint_position
+            row["actual_joint_position"] = _tensor_list(actual_pos)
+            row["actual_joint_velocity"] = _tensor_list(actual_vel)
+            row["joint_tracking_error"] = _tensor_list(tracking_error)
+            row["joint_tracking_error_max_abs"] = float(torch.max(torch.abs(tracking_error)).detach().cpu().item())
     if source_frame_idx is not None:
         row["source_frame_idx"] = int(source_frame_idx)
+    if trajectory_timing is not None:
+        row.update(trajectory_timing)
     if trajectory_path is not None:
         row["trajectory_path"] = str(trajectory_path)
     return row
+
+
+def _row_max_abs_summary(rows: list[dict[str, object]], key: str) -> dict[str, object]:
+    values: list[float] = []
+    for row in rows:
+        value = row.get(key)
+        if value is None:
+            continue
+        try:
+            arr = np.asarray(value, dtype=np.float64)
+        except (TypeError, ValueError):
+            continue
+        if arr.size == 0:
+            continue
+        finite = np.abs(arr[np.isfinite(arr)])
+        if finite.size:
+            values.append(float(np.max(finite)))
+    if not values:
+        return {"count": 0, "max_abs": None, "mean_abs": None}
+    return {
+        "count": int(len(values)),
+        "max_abs": float(max(values)),
+        "mean_abs": float(sum(values) / len(values)),
+    }
+
+
+def _row_scalar_summary(rows: list[dict[str, object]], key: str) -> dict[str, object]:
+    values: list[float] = []
+    for row in rows:
+        value = row.get(key)
+        if value is None:
+            continue
+        try:
+            scalar = float(value)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(scalar):
+            values.append(abs(scalar))
+    if not values:
+        return {"count": 0, "max_abs": None, "mean_abs": None}
+    return {
+        "count": int(len(values)),
+        "max_abs": float(max(values)),
+        "mean_abs": float(sum(values) / len(values)),
+    }
 
 
 def main() -> None:
@@ -2181,37 +2362,13 @@ def main() -> None:
     capture_interval = max(int(args_cli.capture_interval), 1)
     settle_steps = max(int(args_cli.settle_steps), 0)
     demo_steps = max(int(args_cli.demo_steps), 0)
-    planned_steps = settle_steps if args_cli.demo_mode == "settle" else demo_steps
-    target_frame_count = None
-    capture_step_set: set[int] | None = None
-    if args_cli.video_seconds is not None:
-        target_frame_count = max(int(round(float(args_cli.video_seconds) * int(args_cli.fps))), 1)
-        planned_steps, capture_step_set = _capture_steps_for_video(planned_steps, target_frame_count)
-        if args_cli.demo_mode == "settle":
-            settle_steps = planned_steps
-        else:
-            demo_steps = planned_steps
-        print(
-            json.dumps(
-                {
-                    "event": "video_seconds_capture_plan",
-                    "demo_mode": args_cli.demo_mode,
-                    "video_seconds": float(args_cli.video_seconds),
-                    "fps": int(args_cli.fps),
-                    "target_frame_count": int(target_frame_count),
-                    "planned_steps": int(planned_steps),
-                    "capture_steps": int(len(capture_step_set)),
-                }
-            ),
-            flush=True,
-        )
-    frame_idx = 1
     demo_step_rows: list[dict[str, object]] = []
     first_rejected_step: int | None = None
     first_done_step: int | None = None
     demo_trajectory: dict[str, object] | None = None
     demo_trajectory_path: Path | None = None
     demo_trajectory_start_error: dict[str, object] | None = None
+    demo_trajectory_timing_summary: dict[str, object] | None = None
     demo_start_joint_pos = None
     demo_table_rejection_target_joint_pos = None
     if args_cli.demo_mode == "single_yam_rejected_path":
@@ -2241,6 +2398,34 @@ def main() -> None:
                     "first_source_joint_position": _tensor_list(first_source_joint_pos),
                     "replay_start_joint_position": _tensor_list(demo_start_joint_pos),
                 }
+            if str(args_cli.demo_trajectory_timing_mode) == "realtime":
+                requested_demo_steps = int(demo_steps)
+                source_fps = _trajectory_source_fps(demo_trajectory)
+                source_frames = int(len(demo_trajectory["joint_positions"]))
+                source_duration_s = float(max(source_frames - 1, 0)) / source_fps
+                min_replay_steps = _trajectory_realtime_step_count(
+                    task_env,
+                    demo_trajectory,
+                    start_blend_steps=int(args_cli.demo_start_blend_steps),
+                )
+                demo_steps = max(int(demo_steps), int(min_replay_steps))
+                demo_trajectory_timing_summary = {
+                    "mode": "realtime",
+                    "source_fps": float(source_fps),
+                    "source_frames": int(source_frames),
+                    "source_duration_s": float(source_duration_s),
+                    "env_control_dt_s": float(_env_control_dt(task_env)),
+                    "requested_demo_steps": int(requested_demo_steps),
+                    "min_replay_steps": int(min_replay_steps),
+                    "final_demo_steps": int(demo_steps),
+                }
+            else:
+                demo_trajectory_timing_summary = {
+                    "mode": "stretch",
+                    "requested_demo_steps": int(demo_steps),
+                    "source_fps": float(_trajectory_source_fps(demo_trajectory)),
+                    "source_frames": int(len(demo_trajectory["joint_positions"])),
+                }
             print(
                 json.dumps(
                     {
@@ -2253,8 +2438,10 @@ def main() -> None:
                         "tabletop_status": demo_trajectory.get("tabletop_status"),
                         "nominal_status": demo_trajectory.get("nominal_status"),
                         "replay_mode": str(args_cli.demo_trajectory_replay_mode),
+                        "timing_mode": str(args_cli.demo_trajectory_timing_mode),
                         "start_blend_steps": int(args_cli.demo_start_blend_steps),
                         "start_error": demo_trajectory_start_error,
+                        "timing": demo_trajectory_timing_summary,
                     }
                 ),
                 flush=True,
@@ -2274,6 +2461,31 @@ def main() -> None:
                 ),
                 flush=True,
             )
+    planned_steps = settle_steps if args_cli.demo_mode == "settle" else demo_steps
+    target_frame_count = None
+    capture_step_set: set[int] | None = None
+    if args_cli.video_seconds is not None:
+        target_frame_count = max(int(round(float(args_cli.video_seconds) * int(args_cli.fps))), 1)
+        planned_steps, capture_step_set = _capture_steps_for_video(planned_steps, target_frame_count)
+        if args_cli.demo_mode == "settle":
+            settle_steps = planned_steps
+        else:
+            demo_steps = planned_steps
+        print(
+            json.dumps(
+                {
+                    "event": "video_seconds_capture_plan",
+                    "demo_mode": args_cli.demo_mode,
+                    "video_seconds": float(args_cli.video_seconds),
+                    "fps": int(args_cli.fps),
+                    "target_frame_count": int(target_frame_count),
+                    "planned_steps": int(planned_steps),
+                    "capture_steps": int(len(capture_step_set)),
+                }
+            ),
+            flush=True,
+        )
+    frame_idx = 1
     if bool(args_cli.repeat_initial_frame_for_video):
         if target_frame_count is None:
             raise ValueError("--repeat_initial_frame_for_video requires --video_seconds")
@@ -2300,14 +2512,16 @@ def main() -> None:
         for step_idx in range(1, demo_steps + 1):
             joint_position = None
             source_frame_idx = None
+            trajectory_timing = None
             if demo_trajectory is not None:
-                joint_position, phase, source_frame_idx = _single_yam_rejected_trajectory_joint_position(
+                joint_position, phase, source_frame_idx, trajectory_timing = _single_yam_rejected_trajectory_joint_position(
                     task_env,
                     demo_trajectory,
                     step_idx,
                     demo_steps,
                     start_joint_pos=demo_start_joint_pos,
                     start_blend_steps=int(args_cli.demo_start_blend_steps),
+                    timing_mode=str(args_cli.demo_trajectory_timing_mode),
                 )
                 if args_cli.demo_trajectory_replay_mode == "dynamic":
                     terminated, truncated = _apply_dynamic_joint_position_target(task_env, joint_position)
@@ -2349,6 +2563,7 @@ def main() -> None:
                 truncated=truncated,
                 joint_position=joint_position,
                 source_frame_idx=source_frame_idx,
+                trajectory_timing=trajectory_timing,
                 trajectory_path=None if demo_trajectory_path is None else str(demo_trajectory_path),
             )
             demo_step_rows.append(row)
@@ -2467,12 +2682,14 @@ def main() -> None:
             "low_hold_z": float(args_cli.demo_low_hold_z),
             "trajectory_source": str(args_cli.demo_trajectory_source),
             "trajectory_replay_mode": str(args_cli.demo_trajectory_replay_mode),
+            "trajectory_timing_mode": str(args_cli.demo_trajectory_timing_mode),
             "trajectory_replay_enabled": demo_trajectory is not None,
             "trajectory_path": None if demo_trajectory_path is None else str(demo_trajectory_path),
             "trajectory_source_frames": None
             if demo_trajectory is None
             else int(len(demo_trajectory["joint_positions"])),
             "trajectory_source_fps": None if demo_trajectory is None else demo_trajectory.get("fps"),
+            "trajectory_timing": demo_trajectory_timing_summary,
             "trajectory_tabletop_rejected": None
             if demo_trajectory is None
             else demo_trajectory.get("tabletop_rejected"),
@@ -2488,6 +2705,9 @@ def main() -> None:
             "first_rejected_step": first_rejected_step,
             "first_done_step": first_done_step,
             "step_count": len(demo_step_rows),
+            "joint_target_velocity_summary": _row_max_abs_summary(demo_step_rows, "joint_target_velocity"),
+            "actual_joint_velocity_summary": _row_max_abs_summary(demo_step_rows, "actual_joint_velocity"),
+            "joint_tracking_error_summary": _row_scalar_summary(demo_step_rows, "joint_tracking_error_max_abs"),
             "step_rows": demo_step_rows,
         },
         "camera_eye": [float(v) for v in eye],

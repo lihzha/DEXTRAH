@@ -671,7 +671,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--include_goal_bin", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--include_default_clutter", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--clutter_margin", type=float, default=0.006)
-    parser.add_argument("--sim_fps", type=int, default=30)
+    parser.add_argument("--sim_fps", type=int, default=60)
     parser.add_argument("--close_frames", type=int, default=30)
     parser.add_argument("--hold_frames", type=int, default=45)
     parser.add_argument("--hold_after_close_frames", type=int, default=60)
