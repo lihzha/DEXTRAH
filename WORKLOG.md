@@ -8943,3 +8943,15 @@ Result:
 - Local Isaac render is unavailable on this host because `omni.usd` and
   `isaaclab` are not installed; next step is a pinned l401 render job from an
   agent-owned DEXTRAH worktree.
+
+Cluster loop:
+- Deployed commit `39915731b222b90b253d7e0ed8e6b6ca589db244` to l401 via a
+  Git bundle because the remote checkout cannot fetch GitHub over SSH.
+- Scene-capture job `1038524` used the current single-YAM tabletop clutter
+  environment but was cancelled after it spent about a minute walking the full
+  full-Objaverse manifest.
+- Capped scene-capture job `1038525` showed the same problem because
+  `max_assets` was applied only after the full manifest validation pass.
+- Patched `MultiObjectGraspTaskMixin._load_asset_manifest` so positive
+  `max_assets` stops after collecting that many valid assets. Default
+  `max_assets=0` full-manifest behavior is unchanged.

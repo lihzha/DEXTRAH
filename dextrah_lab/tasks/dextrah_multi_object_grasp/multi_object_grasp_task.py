@@ -380,6 +380,8 @@ class MultiObjectGraspTaskMixin:
                         "usd_bounds_ratio": float(usd_bounds_ratio),
                     }
                 )
+                if max_assets > 0 and len(assets) >= int(max_assets):
+                    break
         else:
             usd_root = object_assets_dir / "USD"
             if bool(require_scale):
