@@ -43,4 +43,13 @@
 - Local validation: `bash -n cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh` passed.
 - Local validation: `python3 -m json.tool dextrah_lab/assets/yam/rejected_nominal_trajectory_compact.json >/dev/null` passed.
 - Local validation: `git diff --check` passed.
-- Next: commit, push, redeploy to the agent l401 worktree, run `DEMO_TRAJECTORY_SOURCE=dextrah_table_rejection`, fetch the MP4/metrics, and require `first_rejected_step` plus visual inspection before accepting the artifact.
+- Version: `d4d752c96c68247a82a20118d35612ada352dea6`.
+- Remote worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-rejected-demo-20260621T065917Z`.
+- Job: `1038499`, run `single_yam_dextrah_rejected_d4d752c9_20260621T0738Z`, node `pool0-00034`.
+- Command: `sbatch --parsable --export=ALL,CODE_NFS=<agent-worktree>,CODE_COMMIT=d4d752c96c68247a82a20118d35612ada352dea6,TASK=Dextrah-Single-YAM-Tabletop-Clutter-Grasp,RUN_NAME=single_yam_dextrah_rejected_d4d752c9_20260621T0738Z,NUM_ENVS=1,SEED=43,SETTLE_STEPS=0,CAPTURE_INTERVAL=4,FPS=24,VIDEO_SECONDS=4.0,DEMO_MODE=single_yam_rejected_path,DEMO_STEPS=360,DEMO_TRAJECTORY_SOURCE=dextrah_table_rejection,DEMO_TABLE_REJECTION_TARGET_FRACTION=0.82,DEMO_START_BLEND_STEPS=0,MAX_OBJECTS=64,TABLETOP_CLUTTER_MAX_OBJECTS=64,OBJECT_ASSET_ASSIGNMENT=round_robin,OBJECT_SPAWN_XY_RANDOMIZATION=0.0,RENDER_WARMUP_FRAMES=2,PREPARE_YAM_ASSETS=auto cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh`.
+- Result: Slurm completed with `ExitCode=0:0` in `00:03:21`.
+- Evidence: fetched artifacts to `/home/lzha/code/cluster_results/l401/single_yam_dextrah_rejected_d4d752c9_20260621T0738Z`.
+- Evidence: `single_yam_rejected_path.mp4` is 1280x720, 24 FPS, 4.0 s, 96 frames.
+- Evidence: metrics report `trajectory_source=dextrah_table_rejection`, `first_rejected_step=204`, `min_clearance=-0.2217942327`, `min_clearance_step=281`, and `rejected_row_count=157`.
+- Evidence: inspected frames `0048`, `0055`, `0075`, and `0095`; they are nonblank and show the current YAM arm descending into the current tabletop region and then holding the rejected nominal pose.
+- Status: accepted as the new DEXTRAH current-scene rejected-path demo. The prior GraspGenX/cuRobo exported trajectory remains available as `graspgenx_replay`, but the final render uses the current DEXTRAH scene collision metric for the rejection event.
