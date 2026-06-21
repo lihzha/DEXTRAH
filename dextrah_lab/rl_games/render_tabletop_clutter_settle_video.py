@@ -1324,9 +1324,20 @@ def _usd_add_box(
 
 def _grasp_overlay_candidates(payload: dict[str, object], max_count: int) -> tuple[list[np.ndarray], int | None]:
     annotations = payload.get("annotations") if isinstance(payload.get("annotations"), dict) else {}
-    raw_grasps = annotations.get("all_grasps") or payload.get("all_grasps") or payload.get("grasps_world") or []
+    raw_grasps = (
+        annotations.get("tool_grasps_world")
+        or payload.get("tool_grasps_world")
+        or annotations.get("all_grasps")
+        or payload.get("all_grasps")
+        or payload.get("grasps_world")
+        or []
+    )
     grasps = [matrix for item in raw_grasps if (matrix := _as_matrix4(item)) is not None]
-    target = _as_matrix4(payload.get("selected_grasp_world"))
+    target = _as_matrix4(payload.get("selected_tool_world"))
+    if target is None:
+        target = _as_matrix4(annotations.get("target_tool_transform"))
+    if target is None:
+        target = _as_matrix4(payload.get("selected_grasp_world"))
     if target is None:
         target = _as_matrix4(annotations.get("target_grasp_transform"))
     if target is None:

@@ -43,6 +43,8 @@ YAM_TABLE["center_z"] = YAM_TABLE["surface_z"] - 0.5 * YAM_TABLE["thickness"]
 YAM_ROBOT_BASE = [-0.65, 0.0, 0.01]
 YAM_TARGET_XY = [-0.30, 0.0]
 YAM_TARGET_DIMS = [0.08, 0.08, 0.08]
+YAM_GRIPPER_CENTER_LOCAL = [0.0, 0.0, 0.1098]
+YAM_GRIPPER_CENTER_TOL = [0.045, 0.040, 0.036]
 
 
 def _repo_root() -> Path:
@@ -178,6 +180,11 @@ def _matrix_from_pose_wxyz(translation: list[float], quat_wxyz: list[float]) -> 
     ]
 
 
+def _matrix_from_pose_xyzw(translation: list[float], quat_xyzw: list[float]) -> list[list[float]]:
+    qx, qy, qz, qw = [float(v) for v in quat_xyzw]
+    return _matrix_from_pose_wxyz(translation, [qw, qx, qy, qz])
+
+
 def _infer_raw_objaverse_path(usd_path: str) -> str:
     path = Path(str(usd_path))
     uuid = path.stem
@@ -218,6 +225,8 @@ def _metrics_target_info(metrics_path: Path | None) -> dict[str, Any] | None:
         raw_object_path = _infer_raw_objaverse_path(usd_path)
 
     scales = asset_summary.get("usd_spawn_scales") or asset_summary.get("scales") or []
+    bounds_min_all = asset_summary.get("scaled_bounds_min") or []
+    bounds_max_all = asset_summary.get("scaled_bounds_max") or []
     scale = float(scales[asset_idx]) if asset_idx < len(scales) else 1.0
     return {
         "metrics_path": str(metrics_path),
@@ -226,6 +235,8 @@ def _metrics_target_info(metrics_path: Path | None) -> dict[str, Any] | None:
         "usd_path": usd_path,
         "raw_object_path": raw_object_path,
         "scale": scale,
+        "scaled_bounds_min": bounds_min_all[asset_idx] if asset_idx < len(bounds_min_all) else None,
+        "scaled_bounds_max": bounds_max_all[asset_idx] if asset_idx < len(bounds_max_all) else None,
         "root_position": target_pos,
         "root_quat_wxyz": target_quat,
         "root_transform": _matrix_from_pose_wxyz(target_pos, target_quat),
@@ -260,6 +271,8 @@ def _stable_scene_target_info(stable_scene: dict[str, Any] | None) -> dict[str, 
         "usd_path": str(asset.get("usd_path") or ""),
         "raw_object_path": str(asset.get("raw_object_path") or ""),
         "scale": scale,
+        "scaled_bounds_min": asset.get("scaled_bounds_min"),
+        "scaled_bounds_max": asset.get("scaled_bounds_max"),
         "root_position": [float(v) for v in root_pos],
         "root_quat_wxyz": [float(v) for v in root_quat],
         "root_transform": _matrix_from_pose_wxyz([float(v) for v in root_pos], [float(v) for v in root_quat]),
@@ -480,6 +493,114 @@ def _scene_collision(args: argparse.Namespace) -> list[dict[str, Any]]:
     return obstacles
 
 
+def _grasp_to_tool_matrix(robot_cfg: dict[str, Any]) -> Any:
+    import numpy as np
+
+    transform = robot_cfg.get("grasp_to_tool_transform") or {}
+    translation = [float(v) for v in transform.get("translation", [0.0, 0.0, 0.0])]
+    quat_xyzw = [float(v) for v in transform.get("quaternion_xyzw", [0.0, 0.0, 0.0, 1.0])]
+    return np.asarray(_matrix_from_pose_xyzw(translation, quat_xyzw), dtype=float)
+
+
+def _target_center_from_info(target_info: dict[str, Any] | None) -> Any | None:
+    if target_info is None:
+        return None
+    bounds_min = target_info.get("scaled_bounds_min")
+    bounds_max = target_info.get("scaled_bounds_max")
+    root_transform = target_info.get("root_transform")
+    if not isinstance(bounds_min, list) or not isinstance(bounds_max, list) or root_transform is None:
+        return None
+    import numpy as np
+
+    bmin = np.asarray(bounds_min, dtype=float)
+    bmax = np.asarray(bounds_max, dtype=float)
+    if bmin.shape != (3,) or bmax.shape != (3,):
+        return None
+    local_center = 0.5 * (bmin + bmax)
+    target_T = np.asarray(root_transform, dtype=float)
+    center = target_T @ np.asarray([local_center[0], local_center[1], local_center[2], 1.0], dtype=float)
+    return center[:3]
+
+
+def _filter_yam_grasps_by_aperture(
+    grasps_world: Any,
+    conf: Any,
+    *,
+    robot_cfg: dict[str, Any],
+    target_center_world: Any | None,
+    min_keep: int,
+) -> tuple[Any, Any, dict[str, Any]]:
+    import numpy as np
+
+    if target_center_world is None or len(grasps_world) == 0:
+        return grasps_world, conf, {
+            "enabled": False,
+            "reason": "missing_target_center_or_empty_grasps",
+        }
+
+    grasp_to_tool = _grasp_to_tool_matrix(robot_cfg)
+    center_h = np.asarray([*np.asarray(target_center_world, dtype=float).reshape(3), 1.0], dtype=float)
+    desired = np.asarray(YAM_GRIPPER_CENTER_LOCAL, dtype=float)
+    tol = np.asarray(YAM_GRIPPER_CENTER_TOL, dtype=float)
+    scored: list[dict[str, Any]] = []
+    for idx, grasp in enumerate(np.asarray(grasps_world, dtype=float)):
+        tool_T = grasp @ grasp_to_tool
+        local_center = (np.linalg.inv(tool_T) @ center_h)[:3]
+        normalized_error = (local_center - desired) / np.maximum(tol, 1.0e-6)
+        cost = float(np.linalg.norm(normalized_error))
+        inside = bool(np.all(np.abs(local_center - desired) <= tol))
+        scored.append(
+            {
+                "index": int(idx),
+                "confidence": float(conf[idx]),
+                "object_center_in_tool": local_center.tolist(),
+                "geometry_cost": cost,
+                "inside_aperture": inside,
+            }
+        )
+
+    inside = [entry for entry in scored if entry["inside_aperture"]]
+    if inside:
+        keep_entries = inside
+        reason = "inside_aperture"
+    else:
+        keep_entries = sorted(scored, key=lambda entry: entry["geometry_cost"])[: max(1, int(min_keep))]
+        reason = "best_geometry_fallback"
+
+    keep_indices = [entry["index"] for entry in keep_entries]
+    order = sorted(
+        range(len(keep_indices)),
+        key=lambda i: (keep_entries[i]["geometry_cost"], -float(conf[keep_indices[i]])),
+    )
+    keep_indices = [keep_indices[i] for i in order]
+    keep_entries = [keep_entries[i] for i in order]
+    for entry in keep_entries:
+        # plan_to_grasp orders candidates by descending "confidence".
+        # For YAM, GraspGenX confidence alone often picks fingertip-edge
+        # grasps that are reachable but weak in dynamic sim, so pass a
+        # geometry-derived planning score while preserving true GGX
+        # confidence for reporting.
+        entry["planning_score"] = float(1.0 / (1.0 + entry["geometry_cost"]) + 1.0e-4 * entry["confidence"])
+    return (
+        np.asarray(grasps_world)[keep_indices].astype(np.float32),
+        np.asarray(conf)[keep_indices].astype(np.float32),
+        {
+            "enabled": True,
+            "reason": reason,
+            "target_center_world": np.asarray(target_center_world, dtype=float).tolist(),
+            "desired_object_center_in_tool": desired.tolist(),
+            "tolerance": tol.tolist(),
+            "input_count": int(len(scored)),
+            "kept_count": int(len(keep_indices)),
+            "kept_original_indices": keep_indices,
+            "kept": keep_entries,
+            "planning_order": "yam_aperture_geometry_then_confidence",
+            "planning_scores": [entry["planning_score"] for entry in keep_entries],
+            "best_overall": sorted(scored, key=lambda entry: entry["geometry_cost"])[: min(8, len(scored))],
+        },
+    )
+
+
 def _make_robot_config(
     graspgenx_root: Path,
     run_dir: Path,
@@ -503,7 +624,15 @@ def _make_robot_config(
 
     cfg.setdefault("curobo", {})
     cfg["curobo"]["robot_config"] = str(curobo_out)
+    cfg["curobo"]["tool_frame"] = "link_6"
     cfg["curobo"]["default_joint_position"] = list(start_arm)
+    # The YAM GraspGenX gripper asset is already expressed in the same
+    # link_6 gripper-base convention as the DEXTRAH/URDF YAM. The upstream
+    # Franka-style -90deg X offset moves the object outside the YAM aperture.
+    cfg["grasp_to_tool_transform"] = {
+        "translation": [0.0, 0.0, 0.0],
+        "quaternion_xyzw": [0.0, 0.0, 0.0, 1.0],
+    }
     cfg["robot_base_pose"] = {
         "translation": list(YAM_ROBOT_BASE),
         "quaternion_xyzw": [0.0, 0.0, 0.0, 1.0],
@@ -671,6 +800,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--include_goal_bin", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--include_default_clutter", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--clutter_margin", type=float, default=0.006)
+    parser.add_argument("--filter_yam_grasps_by_aperture", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--yam_grasp_filter_min_keep", type=int, default=4)
     parser.add_argument("--sim_fps", type=int, default=60)
     parser.add_argument("--close_frames", type=int, default=30)
     parser.add_argument("--hold_frames", type=int, default=45)
@@ -725,6 +856,7 @@ def main() -> None:
     stable_target_mesh = _stable_scene_target_mesh_path(stable_scene)
     stable_start_arm_q, stable_start_finger_q = _stable_scene_robot_start(stable_scene)
     target_mesh_source = "target_mesh_path" if args.target_mesh_path is not None else "stable_scene" if stable_target_mesh is not None else "generated_box"
+    target_center_world = _target_center_from_info(target_info)
     target_mesh = (
         args.target_mesh_path.expanduser().resolve()
         if args.target_mesh_path is not None
@@ -788,6 +920,7 @@ def main() -> None:
             "robot_profile": profile.NAME,
             "robot_base_T": bundle.robot_base_T,
             "object_world_T": bundle.object_world_T,
+            "target_center_world": target_center_world,
             "collision_obstacles_world": [ob.__dict__ for ob in bundle.collision_world],
         },
     )
@@ -819,6 +952,9 @@ def main() -> None:
         bundle.object_world_T = metrics_target_T
         if bundle.objects:
             bundle.objects[0].world_T = metrics_target_T.copy()
+        if "object" in bundle.vis_meshes:
+            object_mesh, _old_object_T = bundle.vis_meshes["object"]
+            bundle.vis_meshes["object"] = (object_mesh, metrics_target_T.copy())
         target_alignment = {
             "enabled": True,
             "source_target_transform": source_target_T,
@@ -832,6 +968,39 @@ def main() -> None:
             "reason": "missing target transform or external target mesh",
             "target_info": target_info,
         }
+
+    _write_json(
+        run_dir / "run_config.json",
+        {
+            "args": vars(args),
+            "stable_scene": stable_scene,
+            "stable_start_arm_joint_position": stable_start_arm_q,
+            "stable_start_finger_joint_position": stable_start_finger_q,
+            "robot_config": str(robot_config),
+            "env_config": str(env_config),
+            "target_mesh": target_mesh_meta,
+            "table_mesh": table_mesh_meta,
+            "robot_profile": profile.NAME,
+            "robot_base_T": bundle.robot_base_T,
+            "object_world_T": bundle.object_world_T,
+            "target_center_world": target_center_world,
+            "target_alignment": target_alignment,
+            "collision_obstacles_world": [ob.__dict__ for ob in bundle.collision_world],
+        },
+    )
+
+    if bool(args.filter_yam_grasps_by_aperture):
+        grasps_world, conf, grasp_filter_summary = _filter_yam_grasps_by_aperture(
+            grasps_world,
+            conf,
+            robot_cfg=robot_cfg,
+            target_center_world=target_center_world,
+            min_keep=int(args.yam_grasp_filter_min_keep),
+        )
+        if len(grasps_world) == 0:
+            raise RuntimeError("YAM aperture filtering removed all grasps")
+    else:
+        grasp_filter_summary = {"enabled": False, "reason": "disabled"}
 
     scene_model = collision_world_to_curobo(bundle.collision_world, bundle.robot_base_T)
     collision_scene_model_json = run_dir / "collision_scene_model.json"
@@ -850,11 +1019,17 @@ def main() -> None:
         scene_model,
         max_goalset=max(int(args.max_plan_attempts), len(grasps_world), 1),
     )
+    actual_conf = np.asarray(conf, dtype=np.float32).copy()
+    planning_conf = actual_conf
+    if bool(grasp_filter_summary.get("enabled")):
+        planning_scores = grasp_filter_summary.get("planning_scores")
+        if isinstance(planning_scores, list) and len(planning_scores) == len(actual_conf):
+            planning_conf = np.asarray(planning_scores, dtype=np.float32)
     success, result, target_idx, pregrasp_traj, lift_traj = plan_to_grasp(
         planner,
         robot_cfg,
         grasps_world,
-        conf,
+        planning_conf,
         max_attempts=int(args.max_plan_attempts),
         seed=int(args.seed),
         robot_base_T=bundle.robot_base_T,
@@ -864,7 +1039,7 @@ def main() -> None:
     planner_status = str(getattr(result, "status", "<no result>")) if result is not None else "<no result>"
 
     if target_idx < 0:
-        target_idx = int(np.argmax(conf))
+        target_idx = int(np.argmax(actual_conf))
 
     trajectory_json: Path | None = None
     trajectory_start_summary: dict[str, Any] | None = None
@@ -934,15 +1109,22 @@ def main() -> None:
         )
 
     overlay_json = run_dir / "grasp_pose_overlay.json"
+    grasp_to_tool = _grasp_to_tool_matrix(robot_cfg)
+    tool_grasps_world = [np.asarray(grasp, dtype=float) @ grasp_to_tool for grasp in grasps_world]
+    selected_tool_world = tool_grasps_world[target_idx]
     overlay_payload = {
         "status": "accepted" if bool(success) else "rejected_or_failed",
         "planner_status": planner_status,
         "selected_grasp_index": int(target_idx),
-        "selected_grasp_confidence": float(conf[target_idx]),
+        "selected_grasp_confidence": float(actual_conf[target_idx]),
+        "selected_grasp_planning_score": float(planning_conf[target_idx]),
         "selected_grasp_world": grasps_world[target_idx],
+        "selected_tool_world": selected_tool_world,
         "annotations": {
             "all_grasps": grasps_world,
+            "tool_grasps_world": tool_grasps_world,
             "target_grasp_transform": grasps_world[target_idx],
+            "target_tool_transform": selected_tool_world,
         },
         "collision_scene_model": scene_model,
         "world_scene": {
@@ -959,7 +1141,10 @@ def main() -> None:
             "target_dims": [float(v) for v in args.target_dims],
             "target_mesh": str(target_mesh),
             "target_mesh_scale": float(target_mesh_scale),
+            "target_center_world": None if target_center_world is None else target_center_world,
             "target_alignment": target_alignment,
+            "grasp_filter": grasp_filter_summary,
+            "grasp_to_tool_transform": robot_cfg.get("grasp_to_tool_transform"),
             "table": dict(YAM_TABLE),
         },
         "trajectory_start": trajectory_start_summary,
@@ -972,7 +1157,7 @@ def main() -> None:
         run_name=run_name,
         curobo_collision_aware=True,
         selected_grasp_index=int(target_idx),
-        selected_grasp_confidence=float(conf[target_idx]),
+        selected_grasp_confidence=float(actual_conf[target_idx]),
         num_grasps=int(len(grasps_world)),
         trajectory_json=None if trajectory_json is None else str(trajectory_json),
         grasp_pose_overlay_json=str(overlay_json),
@@ -981,7 +1166,13 @@ def main() -> None:
     )
     _write_json(
         run_dir / "plan_summary.json",
-        {**asdict(summary), "success": bool(success), "trajectory_start": trajectory_start_summary},
+        {
+            **asdict(summary),
+            "success": bool(success),
+            "trajectory_start": trajectory_start_summary,
+            "target_center_world": target_center_world,
+            "grasp_filter": grasp_filter_summary,
+        },
     )
     print("DEXTRAH_YAM_GRASPGENX_CUROBO_PLAN " + json.dumps(asdict(summary), sort_keys=True), flush=True)
     print(f"results={run_dir}", flush=True)
