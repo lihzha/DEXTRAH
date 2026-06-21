@@ -36,6 +36,8 @@ parser.add_argument("--demo_mode", type=str, default="settle", choices=("settle"
 parser.add_argument("--demo_steps", type=int, default=180)
 parser.add_argument("--demo_high_hold_z", type=float, default=0.16)
 parser.add_argument("--demo_low_hold_z", type=float, default=-0.02)
+parser.add_argument("--demo_trajectory_path", type=str, default=None)
+parser.add_argument("--demo_start_blend_steps", type=int, default=36)
 parser.add_argument("--render_warmup_frames", type=int, default=2)
 parser.add_argument("--render_width", type=int, default=None)
 parser.add_argument("--render_height", type=int, default=None)
@@ -1083,6 +1085,120 @@ def _manual_action_step(task_env, actions: torch.Tensor) -> tuple[torch.Tensor, 
     return task_env._get_dones()
 
 
+def _default_yam_rejected_trajectory_path() -> Path:
+    return Path(__file__).resolve().parents[1] / "assets" / "yam" / "rejected_nominal_trajectory_compact.json"
+
+
+def _load_demo_trajectory(path: Path) -> dict[str, object]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    frames = payload.get("frames")
+    if not isinstance(frames, list) or not frames:
+        raise ValueError(f"Expected non-empty frames list in demo trajectory: {path}")
+    joint_positions: list[np.ndarray] = []
+    phases: list[str] = []
+    for frame_idx, frame in enumerate(frames):
+        if not isinstance(frame, dict) or "joint_position" not in frame:
+            raise ValueError(f"Trajectory frame {frame_idx} has no joint_position: {path}")
+        q = np.asarray(frame["joint_position"], dtype=np.float32)
+        if q.ndim != 1:
+            raise ValueError(f"Trajectory frame {frame_idx} joint_position must be 1-D, got {q.shape}")
+        joint_positions.append(q)
+        phases.append(str(frame.get("phase") or "plan"))
+    return {
+        "path": str(path),
+        "fps": payload.get("fps"),
+        "total_frames": int(payload.get("total_frames") or len(joint_positions)),
+        "joint_names": payload.get("joint_names"),
+        "segments": payload.get("segments"),
+        "tabletop_rejected": payload.get("tabletop_rejected"),
+        "tabletop_status": payload.get("tabletop_status"),
+        "nominal_status": payload.get("nominal_status"),
+        "candidate_idx": payload.get("candidate_idx"),
+        "candidate_confidence": payload.get("candidate_confidence"),
+        "joint_positions": joint_positions,
+        "phases": phases,
+    }
+
+
+def _map_source_joint_to_env(task_env, raw_q: np.ndarray | torch.Tensor) -> torch.Tensor:
+    robot = getattr(task_env, "_robot", None)
+    if robot is None:
+        raise AttributeError("single_yam_rejected_path trajectory replay requires a robot articulation")
+    raw = torch.as_tensor(raw_q, dtype=robot.data.joint_pos.dtype, device=task_env.device).view(1, -1)
+    raw = raw.repeat(task_env.num_envs, 1)
+    joint_pos = robot.data.default_joint_pos.clone()
+    arm_count = len(getattr(task_env, "arm_joint_ids", []))
+    finger_count = len(getattr(task_env, "finger_joint_ids", []))
+    if raw.shape[1] == joint_pos.shape[1]:
+        joint_pos[:] = raw
+    elif raw.shape[1] == arm_count + finger_count:
+        joint_pos[:, task_env.arm_joint_ids] = raw[:, :arm_count]
+        joint_pos[:, task_env.finger_joint_ids] = raw[:, arm_count : arm_count + finger_count]
+    elif raw.shape[1] == arm_count + 1:
+        joint_pos[:, task_env.arm_joint_ids] = raw[:, :arm_count]
+        joint_pos[:, task_env.finger_joint_ids] = raw[:, arm_count : arm_count + 1].repeat(1, finger_count)
+    else:
+        raise ValueError(
+            f"Cannot map trajectory joint_position dim {raw.shape[1]} to "
+            f"{joint_pos.shape[1]} env joints ({arm_count} arm, {finger_count} fingers)"
+        )
+    return torch.clamp(joint_pos, task_env.robot_dof_lower_limits, task_env.robot_dof_upper_limits)
+
+
+def _apply_kinematic_joint_position(task_env, joint_pos: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    robot = getattr(task_env, "_robot", None)
+    if robot is None:
+        raise AttributeError("single_yam_rejected_path trajectory replay requires a robot articulation")
+    env_ids = robot._ALL_INDICES
+    joint_vel = torch.zeros_like(joint_pos)
+    robot.write_joint_state_to_sim(joint_pos, joint_vel, env_ids=env_ids)
+    robot.set_joint_position_target(joint_pos, env_ids=env_ids)
+    if hasattr(task_env, "robot_dof_targets"):
+        task_env.robot_dof_targets[env_ids] = joint_pos
+    if hasattr(task_env, "arm_joint_pos_target"):
+        task_env.arm_joint_pos_target[env_ids] = joint_pos[:, task_env.arm_joint_ids]
+    if hasattr(task_env, "finger_joint_pos_target"):
+        task_env.finger_joint_pos_target[env_ids] = joint_pos[:, task_env.finger_joint_ids]
+    task_env.scene.write_data_to_sim()
+    task_env.sim.forward()
+    task_env.scene.update(dt=0.0)
+    task_env.episode_length_buf += 1
+    if hasattr(task_env, "common_step_counter"):
+        task_env.common_step_counter += 1
+    task_env._compute_intermediate_values()
+    return task_env._get_dones()
+
+
+def _single_yam_rejected_trajectory_joint_position(
+    task_env,
+    trajectory: dict[str, object],
+    step_idx: int,
+    total_steps: int,
+    *,
+    start_joint_pos: torch.Tensor,
+    start_blend_steps: int,
+) -> tuple[torch.Tensor, str, int]:
+    source_joint_positions = trajectory["joint_positions"]
+    source_phases = trajectory["phases"]
+    if not isinstance(source_joint_positions, list) or not source_joint_positions:
+        raise ValueError("Trajectory has no source joint positions")
+    total_steps = max(int(total_steps), 1)
+    start_blend_steps = max(min(int(start_blend_steps), total_steps - 1), 0)
+    first_source_joint_pos = _map_source_joint_to_env(task_env, source_joint_positions[0])
+    if start_blend_steps > 0 and step_idx <= start_blend_steps:
+        alpha = float(step_idx) / float(start_blend_steps)
+        joint_pos = start_joint_pos + alpha * (first_source_joint_pos - start_joint_pos)
+        return joint_pos, "blend_from_dextrah_start", 0
+
+    source_span = max(total_steps - start_blend_steps, 1)
+    source_alpha = float(step_idx - start_blend_steps - 1) / float(max(source_span - 1, 1))
+    source_idx = int(round(source_alpha * (len(source_joint_positions) - 1)))
+    source_idx = max(0, min(source_idx, len(source_joint_positions) - 1))
+    joint_pos = _map_source_joint_to_env(task_env, source_joint_positions[source_idx])
+    phase = str(source_phases[source_idx]) if isinstance(source_phases, list) else "trajectory"
+    return joint_pos, phase, source_idx
+
+
 def _single_yam_rejected_path_action(
     task_env,
     step_idx: int,
@@ -1101,23 +1217,9 @@ def _single_yam_rejected_path_action(
     approach_end = max(int(round(0.32 * total_steps)), 1)
     descend_end = max(int(round(0.72 * total_steps)), approach_end + 1)
     table_z = float(task_env.cfg.table_surface_z)
-    env_origins = task_env.scene.env_origins
-    if hasattr(task_env, "_cube"):
-        target_hold = (task_env._cube.data.root_pos_w - env_origins).detach().clone()
-    else:
-        target_hold = task_env.cube_pos.detach().clone()
-    table_half_x = 0.5 * float(task_env.cfg.table_size_x)
-    table_half_y = 0.5 * float(task_env.cfg.table_size_y)
-    target_hold[:, 0] = torch.clamp(
-        target_hold[:, 0],
-        float(task_env.cfg.table_center_x) - 0.85 * table_half_x,
-        float(task_env.cfg.table_center_x) + 0.85 * table_half_x,
-    )
-    target_hold[:, 1] = torch.clamp(
-        target_hold[:, 1],
-        float(task_env.cfg.table_center_y) - 0.85 * table_half_y,
-        float(task_env.cfg.table_center_y) + 0.85 * table_half_y,
-    )
+    target_hold = task_env.hold_pos.detach().clone()
+    target_hold[:, 0] = float(getattr(task_env.cfg, "pickup_x", task_env.cfg.table_center_x))
+    target_hold[:, 1] = float(getattr(task_env.cfg, "pickup_y", task_env.cfg.table_center_y))
     if step_idx <= approach_end:
         phase = "high_side_approach"
         target_hold[:, 0] -= 0.10
@@ -1150,11 +1252,14 @@ def _single_yam_rejected_path_row(
     actions: torch.Tensor,
     terminated: torch.Tensor,
     truncated: torch.Tensor,
+    joint_position: torch.Tensor | None = None,
+    source_frame_idx: int | None = None,
+    trajectory_path: str | None = None,
 ) -> dict[str, object]:
     done = torch.logical_or(terminated, truncated)
     penetration_margin = float(getattr(task_env.cfg, "finger_table_penetration_termination_margin", -0.008))
     clearance = task_env.finger_table_clearance.detach()
-    return {
+    row = {
         "step": int(step_idx),
         "phase": phase,
         "target_hold_pos": _tensor_list(target_hold),
@@ -1172,6 +1277,13 @@ def _single_yam_rejected_path_row(
         "cube_linear_speed": _tensor_list(task_env.cube_linear_speed),
         "cube_angular_speed": _tensor_list(task_env.cube_angular_speed),
     }
+    if joint_position is not None:
+        row["joint_position"] = _tensor_list(joint_position)
+    if source_frame_idx is not None:
+        row["source_frame_idx"] = int(source_frame_idx)
+    if trajectory_path is not None:
+        row["trajectory_path"] = str(trajectory_path)
+    return row
 
 
 def main() -> None:
@@ -1442,6 +1554,36 @@ def main() -> None:
     demo_step_rows: list[dict[str, object]] = []
     first_rejected_step: int | None = None
     first_done_step: int | None = None
+    demo_trajectory: dict[str, object] | None = None
+    demo_trajectory_path: Path | None = None
+    demo_start_joint_pos = None
+    if args_cli.demo_mode == "single_yam_rejected_path":
+        if args_cli.demo_trajectory_path:
+            demo_trajectory_path = Path(args_cli.demo_trajectory_path).expanduser().resolve()
+        else:
+            default_trajectory_path = _default_yam_rejected_trajectory_path()
+            if default_trajectory_path.is_file():
+                demo_trajectory_path = default_trajectory_path
+        if demo_trajectory_path is not None:
+            demo_trajectory = _load_demo_trajectory(demo_trajectory_path)
+            if robot is None:
+                raise AttributeError("single_yam_rejected_path trajectory replay requires a robot articulation")
+            demo_start_joint_pos = robot.data.joint_pos.detach().clone()
+            print(
+                json.dumps(
+                    {
+                        "event": "demo_trajectory_loaded",
+                        "path": str(demo_trajectory_path),
+                        "source_frames": int(len(demo_trajectory["joint_positions"])),
+                        "source_fps": demo_trajectory.get("fps"),
+                        "tabletop_rejected": demo_trajectory.get("tabletop_rejected"),
+                        "tabletop_status": demo_trajectory.get("tabletop_status"),
+                        "nominal_status": demo_trajectory.get("nominal_status"),
+                        "start_blend_steps": int(args_cli.demo_start_blend_steps),
+                    }
+                ),
+                flush=True,
+            )
     if bool(args_cli.repeat_initial_frame_for_video):
         if target_frame_count is None:
             raise ValueError("--repeat_initial_frame_for_video requires --video_seconds")
@@ -1466,14 +1608,29 @@ def main() -> None:
         )
     elif args_cli.demo_mode == "single_yam_rejected_path":
         for step_idx in range(1, demo_steps + 1):
-            actions, phase, target_hold = _single_yam_rejected_path_action(
-                task_env,
-                step_idx,
-                demo_steps,
-                high_hold_z=float(args_cli.demo_high_hold_z),
-                low_hold_z=float(args_cli.demo_low_hold_z),
-            )
-            terminated, truncated = _manual_action_step(task_env, actions)
+            joint_position = None
+            source_frame_idx = None
+            if demo_trajectory is not None:
+                joint_position, phase, source_frame_idx = _single_yam_rejected_trajectory_joint_position(
+                    task_env,
+                    demo_trajectory,
+                    step_idx,
+                    demo_steps,
+                    start_joint_pos=demo_start_joint_pos,
+                    start_blend_steps=int(args_cli.demo_start_blend_steps),
+                )
+                terminated, truncated = _apply_kinematic_joint_position(task_env, joint_position)
+                actions = torch.zeros((task_env.num_envs, int(task_env.cfg.action_space)), device=task_env.device)
+                target_hold = task_env.hold_pos.detach().clone()
+            else:
+                actions, phase, target_hold = _single_yam_rejected_path_action(
+                    task_env,
+                    step_idx,
+                    demo_steps,
+                    high_hold_z=float(args_cli.demo_high_hold_z),
+                    low_hold_z=float(args_cli.demo_low_hold_z),
+                )
+                terminated, truncated = _manual_action_step(task_env, actions)
             row = _single_yam_rejected_path_row(
                 task_env,
                 step_idx=step_idx,
@@ -1482,6 +1639,9 @@ def main() -> None:
                 actions=actions,
                 terminated=terminated,
                 truncated=truncated,
+                joint_position=joint_position,
+                source_frame_idx=source_frame_idx,
+                trajectory_path=None if demo_trajectory_path is None else str(demo_trajectory_path),
             )
             demo_step_rows.append(row)
             rejected = torch.as_tensor(
@@ -1569,6 +1729,19 @@ def main() -> None:
             "enabled": args_cli.demo_mode == "single_yam_rejected_path",
             "high_hold_z": float(args_cli.demo_high_hold_z),
             "low_hold_z": float(args_cli.demo_low_hold_z),
+            "trajectory_replay_enabled": demo_trajectory is not None,
+            "trajectory_path": None if demo_trajectory_path is None else str(demo_trajectory_path),
+            "trajectory_source_frames": None
+            if demo_trajectory is None
+            else int(len(demo_trajectory["joint_positions"])),
+            "trajectory_source_fps": None if demo_trajectory is None else demo_trajectory.get("fps"),
+            "trajectory_tabletop_rejected": None
+            if demo_trajectory is None
+            else demo_trajectory.get("tabletop_rejected"),
+            "trajectory_tabletop_status": None if demo_trajectory is None else demo_trajectory.get("tabletop_status"),
+            "trajectory_nominal_status": None if demo_trajectory is None else demo_trajectory.get("nominal_status"),
+            "trajectory_segments": None if demo_trajectory is None else demo_trajectory.get("segments"),
+            "start_blend_steps": int(args_cli.demo_start_blend_steps),
             "first_rejected_step": first_rejected_step,
             "first_done_step": first_done_step,
             "step_count": len(demo_step_rows),
