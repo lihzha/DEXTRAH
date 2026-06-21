@@ -8985,3 +8985,64 @@ Next:
 - Commit and deploy this exact revision to the l401 agent worktree, then
   relaunch the scene-capture smoke with USD-bounds validation disabled for the
   bounded full-Objaverse sample.
+
+## 2026-06-21 02:18 - Dynamic YAM replay with captured-scene collisions
+
+Goal:
+- Re-run the YAM GraspGenX/cuRobo pipeline against the exact current DEXTRAH
+  tabletop-clutter scene, include the table/bin/clutter in cuRobo collision
+  checking, render with PhysX stepping instead of direct joint-state writes, and
+  visualize the selected grasp pose.
+
+Version state:
+- Implementation commit:
+  `64a0b0b0028af589744c63180c397d6bafe1851f`.
+- Remote l401 agent worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-collision-overlay-39915731`
+  checked out detached at the exact commit via Git bundle.
+
+Scene and planner:
+- Scene-capture job `1038528` wrote metrics for
+  `single_yam_collision_scene_capture_unvalidated16_91226432_20260621T085122Z`
+  with target pose `[-0.3000000119, 0.0, 0.1257996112]` and six captured
+  clutter objects.
+- Local GraspGenX/cuRobo rerun
+  `scene_metrics_targetmesh_collision_91226432_r2` used the captured target
+  mesh, captured target pose, DEXTRAH YAM start pose, table cuboid, five goal-bin
+  cuboids, and six captured clutter cuboids.
+- Result: cuRobo rejected earlier candidates, then accepted selected grasp
+  index `5` with confidence `0.7727668285369873`; planner status was
+  `Planning to lift pose succeeded.` This exact current scene therefore no
+  longer produces a fully rejected path.
+
+Render loop:
+- Job `1038534` used the wrong remote checkout path and was cancelled before it
+  produced useful evidence.
+- Job `1038535` rendered the same accepted path with grasp-pose overlay using
+  kinematic joint-state replay. It produced a 1280x720, 60-frame, 5-second MP4
+  but did not answer the dynamic-render concern.
+- Job `1038538` rendered
+  `single_yam_collision_dynamic_overlay_64a0b0b0_20260621T090546Z` with
+  `DEMO_TRAJECTORY_REPLAY_MODE=dynamic`, stepping PhysX with joint position
+  targets through the existing DEXTRAH environment.
+
+Evidence:
+- Slurm `1038538` completed `0:0` on `pool0-00008` in `00:01:18`.
+- Local artifacts:
+  `/home/lzha/code/cluster_results/l401/single_yam_collision_dynamic_overlay_64a0b0b0_20260621T090546Z`.
+- `ffprobe` confirmed `single_yam_rejected_path.mp4` is 1280x720, 12 FPS,
+  5.0 seconds, 60 frames.
+- Metrics confirmed `trajectory_replay_mode=dynamic`, `source_frames=627`,
+  `step_count=240`, grasp overlay enabled with `visualized_count=8`, and
+  `selected_marker_index=0`.
+- Metrics reported `min_finger_table_clearance=0.07335549592971802` with
+  `negative_clearance_count=0` over 240 replay steps.
+- Visual inspection of frames `0000`, `0030`, and `0059` confirmed nonblank
+  rendering, visible table/bin/target/clutter, visible RGB grasp axes, and no
+  observed YAM-table penetration in the sampled frames.
+
+Next:
+- Use the dynamic render as the corrected demo artifact for this captured
+  collision-aware scene. If a rejected-path artifact is still required, search
+  additional captured scenes or seeds rather than labeling this accepted cuRobo
+  trajectory as rejected.
