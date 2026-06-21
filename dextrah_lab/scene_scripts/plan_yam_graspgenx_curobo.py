@@ -45,6 +45,8 @@ YAM_TARGET_XY = [-0.30, 0.0]
 YAM_TARGET_DIMS = [0.08, 0.08, 0.08]
 YAM_GRIPPER_CENTER_LOCAL = [0.0, 0.0, 0.1098]
 YAM_GRIPPER_CENTER_TOL = [0.045, 0.040, 0.036]
+YAM_MIN_LIFT_UP_DOT = 0.50
+YAM_MIN_TOOL_Z = 0.02
 
 
 def _repo_root() -> Path:
@@ -529,6 +531,8 @@ def _filter_yam_grasps_by_aperture(
     robot_cfg: dict[str, Any],
     target_center_world: Any | None,
     min_keep: int,
+    min_lift_up_dot: float,
+    min_tool_z: float,
 ) -> tuple[Any, Any, dict[str, Any]]:
     import numpy as np
 
@@ -549,6 +553,11 @@ def _filter_yam_grasps_by_aperture(
         normalized_error = (local_center - desired) / np.maximum(tol, 1.0e-6)
         cost = float(np.linalg.norm(normalized_error))
         inside = bool(np.all(np.abs(local_center - desired) <= tol))
+        tool_z_w = tool_T[:3, 2]
+        lift_up_dot = float(-tool_z_w[2])
+        tool_z = float(tool_T[2, 3])
+        lift_ok = bool(lift_up_dot >= float(min_lift_up_dot))
+        height_ok = bool(tool_z >= float(min_tool_z))
         scored.append(
             {
                 "index": int(idx),
@@ -556,13 +565,27 @@ def _filter_yam_grasps_by_aperture(
                 "object_center_in_tool": local_center.tolist(),
                 "geometry_cost": cost,
                 "inside_aperture": inside,
+                "tool_position_world": tool_T[:3, 3].tolist(),
+                "tool_z_axis_world": tool_z_w.tolist(),
+                "lift_up_dot": lift_up_dot,
+                "tool_z": tool_z,
+                "lift_ok": lift_ok,
+                "height_ok": height_ok,
             }
         )
 
     inside = [entry for entry in scored if entry["inside_aperture"]]
-    if inside:
+    dynamic_ok = [
+        entry
+        for entry in inside
+        if bool(entry["lift_ok"]) and bool(entry["height_ok"])
+    ]
+    if dynamic_ok:
+        keep_entries = dynamic_ok
+        reason = "inside_aperture_lift_up_and_height"
+    elif inside:
         keep_entries = inside
-        reason = "inside_aperture"
+        reason = "inside_aperture_without_lift_filter_fallback"
     else:
         keep_entries = sorted(scored, key=lambda entry: entry["geometry_cost"])[: max(1, int(min_keep))]
         reason = "best_geometry_fallback"
@@ -590,15 +613,244 @@ def _filter_yam_grasps_by_aperture(
             "target_center_world": np.asarray(target_center_world, dtype=float).tolist(),
             "desired_object_center_in_tool": desired.tolist(),
             "tolerance": tol.tolist(),
+            "min_lift_up_dot": float(min_lift_up_dot),
+            "min_tool_z": float(min_tool_z),
             "input_count": int(len(scored)),
             "kept_count": int(len(keep_indices)),
             "kept_original_indices": keep_indices,
             "kept": keep_entries,
-            "planning_order": "yam_aperture_geometry_then_confidence",
+            "planning_order": "yam_aperture_lift_up_geometry_then_confidence",
             "planning_scores": [entry["planning_score"] for entry in keep_entries],
             "best_overall": sorted(scored, key=lambda entry: entry["geometry_cost"])[: min(8, len(scored))],
         },
     )
+
+
+def _plan_yam_to_grasp_vertical_lift(
+    planner: Any,
+    robot_cfg: dict[str, Any],
+    grasps_world: Any,
+    conf: Any,
+    *,
+    max_attempts: int,
+    seed: int,
+    robot_base_T: Any,
+    force_idx: int = -1,
+    rank_by_confidence: bool = False,
+) -> tuple[bool, Any, int, Any | None, Any | None]:
+    """Plan a YAM grasp with vertical lift in robot/world coordinates.
+
+    The stock GraspGenX helper lifts along tool ``z``. That is acceptable for
+    Franka-style top grasps, but YAM-side grasps can have tool ``z`` tilted
+    strongly sideways, which turns the lift into a sideways drag. Keep the
+    approach in tool coordinates, but make the lift use robot/world +Z.
+    """
+    import numpy as np
+    import torch
+    import trimesh.transformations as tra
+    from curobo.types import JointState
+    from e2e_grasp_demo import matrix_to_xyz_quat_wxyz
+
+    target_link = robot_cfg["curobo"]["tool_frame"]
+    default_q = robot_cfg["curobo"]["default_joint_position"]
+    q_start = JointState.from_position(
+        torch.tensor([default_q], device="cuda", dtype=torch.float32),
+        joint_names=planner.joint_names,
+    )
+
+    g2t = robot_cfg.get("grasp_to_tool_transform", {})
+    tt = g2t.get("translation", [0, 0, 0])
+    qq = g2t.get("quaternion_xyzw", [0, 0, 0, 1])
+    t_offset = np.eye(4)
+    t_offset[:3, 3] = tt
+    if not (
+        abs(qq[0]) < 1.0e-9
+        and abs(qq[1]) < 1.0e-9
+        and abs(qq[2]) < 1.0e-9
+        and abs(qq[3] - 1.0) < 1.0e-9
+    ):
+        t_offset[:3, :3] = tra.quaternion_matrix([qq[3], qq[0], qq[1], qq[2]])[:3, :3]
+
+    world_robot_inv = tra.inverse_matrix(robot_base_T)
+    conf_np = np.asarray(conf, dtype=np.float32)
+    order = np.argsort(-conf_np)
+    if force_idx >= 0 and force_idx < len(grasps_world):
+        try_idxs_list = [int(force_idx)]
+    else:
+        try_idxs_list = [int(i) for i in order[: max(1, int(max_attempts))]]
+
+    def _grasp_pose_dict(idx_subset: list[int]) -> Any:
+        positions: list[list[float]] = []
+        quats: list[list[float]] = []
+        for idx in idx_subset:
+            target_robot = world_robot_inv @ np.asarray(grasps_world[idx], dtype=float) @ t_offset
+            p, q = matrix_to_xyz_quat_wxyz(target_robot)
+            positions.append(p)
+            quats.append(q)
+        pos_t = torch.tensor(positions, device="cuda", dtype=torch.float32).unsqueeze(0)
+        quat_t = torch.tensor(quats, device="cuda", dtype=torch.float32).unsqueeze(0)
+        from curobo_compat import grasp_goals
+
+        return grasp_goals(target_link, pos_t, quat_t)
+
+    def _try(
+        grasp_poses: Any,
+        approach_offset: float,
+        plan_to_grasp_flag: bool,
+        plan_to_lift_flag: bool,
+        lift_offset: float,
+    ) -> Any:
+        return planner.plan_grasp(
+            grasp_poses,
+            q_start,
+            grasp_approach_axis="z",
+            grasp_approach_offset=approach_offset,
+            grasp_approach_in_tool_frame=True,
+            grasp_lift_axis="z",
+            grasp_lift_offset=lift_offset,
+            grasp_lift_in_tool_frame=False,
+            plan_approach_to_grasp=plan_to_grasp_flag,
+            plan_grasp_to_lift=plan_to_lift_flag,
+            disable_collision_links=[target_link],
+        )
+
+    iterate_singletons = rank_by_confidence or (force_idx >= 0)
+    outer_batches = [[i] for i in try_idxs_list] if iterate_singletons else [try_idxs_list]
+    result = None
+    kept_idxs: list[int] = []
+    attempt_log: list[dict[str, Any]] = []
+    for idx_subset in outer_batches:
+        kept_idxs = idx_subset
+        grasp_poses = _grasp_pose_dict(idx_subset)
+        strategies = [
+            (-0.15, True, True, 0.20, "vertical full (a=15, lift=20)"),
+            (-0.15, True, True, 0.12, "vertical full (a=15, lift=12)"),
+            (-0.10, True, True, 0.20, "vertical full (a=10, lift=20)"),
+            (-0.10, True, True, 0.12, "vertical full (a=10, lift=12)"),
+            (-0.07, True, True, 0.20, "vertical full (a=7, lift=20)"),
+            (-0.07, True, True, 0.12, "vertical full (a=7, lift=12)"),
+            (-0.10, True, False, 0.20, "approach+grasp"),
+            (-0.05, False, False, 0.20, "short approach"),
+        ]
+        for approach_offset, plan_grasp_flag, plan_lift_flag, lift_offset, _label in strategies:
+            try:
+                result = _try(
+                    grasp_poses,
+                    approach_offset,
+                    plan_grasp_flag,
+                    plan_lift_flag,
+                    lift_offset,
+                )
+            except Exception:
+                attempt_log.append(
+                    {
+                        "candidate_indices": [int(i) for i in idx_subset],
+                        "label": _label,
+                        "exception": True,
+                    }
+                )
+                continue
+            success_flag = result.success is not None and bool(result.success.any())
+            approach_field = getattr(result, "approach_success", None)
+            grasp_field = getattr(result, "grasp_success", None)
+            lift_field = getattr(result, "lift_success", None)
+            approach_success = approach_field is not None and bool(approach_field.any())
+            grasp_success = grasp_field is not None and bool(grasp_field.any())
+            lift_success = lift_field is not None and bool(lift_field.any())
+            attempt_log.append(
+                {
+                    "candidate_indices": [int(i) for i in idx_subset],
+                    "label": _label,
+                    "status": str(getattr(result, "status", "<no status>")),
+                    "success": bool(success_flag),
+                    "approach_success": bool(approach_success),
+                    "grasp_success": bool(grasp_success),
+                    "lift_success": bool(lift_success),
+                    "approach_offset": float(approach_offset),
+                    "lift_offset": float(lift_offset),
+                    "plan_grasp": bool(plan_grasp_flag),
+                    "plan_lift": bool(plan_lift_flag),
+                }
+            )
+            if success_flag:
+                break
+            if (
+                not plan_grasp_flag
+                and result is not None
+                and result.approach_success is not None
+                and bool(result.approach_success.any())
+            ):
+                break
+        else:
+            continue
+        break
+    else:
+        if result is not None:
+            setattr(result, "_yam_attempt_log", attempt_log)
+        return False, result, -1, None, None
+
+    if result is None:
+        return False, None, -1, None, None
+    setattr(result, "_yam_attempt_log", attempt_log)
+    has_approach = result.approach_success is not None and bool(result.approach_success.any())
+    if not has_approach:
+        return False, result, -1, None, None
+    chosen_in_goalset = (
+        int(result.goalset_index.view(-1)[0].item())
+        if result.goalset_index is not None
+        else -1
+    )
+    target_idx = kept_idxs[chosen_in_goalset] if 0 <= chosen_in_goalset < len(kept_idxs) else -1
+
+    def _last_idx(x: Any) -> int | None:
+        if x is None:
+            return None
+        try:
+            return int(x.view(-1)[0].item())
+        except Exception:
+            try:
+                return int(x)
+            except Exception:
+                return None
+
+    def _traj_to_np(t: Any, last_tstep: Any = None) -> Any | None:
+        if t is None:
+            return None
+        pos = t.position.detach().cpu().numpy()
+        while pos.ndim > 2:
+            pos = pos[0]
+        pos = pos.astype(np.float32)
+        li = _last_idx(last_tstep)
+        if li is not None and 0 <= li < pos.shape[0] - 1:
+            pos = pos[: li + 1]
+        return pos
+
+    pre_segments = []
+    for traj, last_tstep in [
+        (
+            result.approach_interpolated_trajectory,
+            getattr(result, "approach_interpolated_last_tstep", None),
+        ),
+        (
+            result.grasp_interpolated_trajectory,
+            getattr(result, "grasp_interpolated_last_tstep", None),
+        ),
+    ]:
+        pos = _traj_to_np(traj, last_tstep)
+        if pos is not None:
+            pre_segments.append(pos)
+    lift_np = _traj_to_np(
+        result.lift_interpolated_trajectory,
+        getattr(result, "lift_interpolated_last_tstep", None),
+    )
+    if not pre_segments:
+        return False, result, target_idx, None, None
+    result._segments = {
+        "approach": pre_segments[0] if len(pre_segments) >= 1 else None,
+        "grasp": pre_segments[1] if len(pre_segments) >= 2 else None,
+        "lift": lift_np,
+    }
+    return True, result, target_idx, np.concatenate(pre_segments, axis=0), lift_np
 
 
 def _make_robot_config(
@@ -813,6 +1065,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--clutter_margin", type=float, default=0.006)
     parser.add_argument("--filter_yam_grasps_by_aperture", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--yam_grasp_filter_min_keep", type=int, default=4)
+    parser.add_argument("--yam_min_lift_up_dot", type=float, default=YAM_MIN_LIFT_UP_DOT)
+    parser.add_argument("--yam_min_tool_z", type=float, default=YAM_MIN_TOOL_Z)
     parser.add_argument("--sim_fps", type=int, default=60)
     parser.add_argument("--start_guard_frames", type=int, default=60)
     parser.add_argument("--close_frames", type=int, default=30)
@@ -849,7 +1103,7 @@ def main() -> None:
     import numpy as np
     import torch
 
-    from e2e_grasp_demo import collision_world_to_curobo, export_trajectory, init_planner, plan_to_grasp, run_graspgen
+    from e2e_grasp_demo import collision_world_to_curobo, export_trajectory, init_planner, run_graspgen
     from robot_profiles import RobotProfile
     from scene_builder import build_scene, load_yaml
     from tasks import get_task
@@ -1008,6 +1262,8 @@ def main() -> None:
             robot_cfg=robot_cfg,
             target_center_world=target_center_world,
             min_keep=int(args.yam_grasp_filter_min_keep),
+            min_lift_up_dot=float(args.yam_min_lift_up_dot),
+            min_tool_z=float(args.yam_min_tool_z),
         )
         if len(grasps_world) == 0:
             raise RuntimeError("YAM aperture filtering removed all grasps")
@@ -1037,7 +1293,7 @@ def main() -> None:
         planning_scores = grasp_filter_summary.get("planning_scores")
         if isinstance(planning_scores, list) and len(planning_scores) == len(actual_conf):
             planning_conf = np.asarray(planning_scores, dtype=np.float32)
-    success, result, target_idx, pregrasp_traj, lift_traj = plan_to_grasp(
+    success, result, target_idx, pregrasp_traj, lift_traj = _plan_yam_to_grasp_vertical_lift(
         planner,
         robot_cfg,
         grasps_world,
@@ -1049,6 +1305,7 @@ def main() -> None:
         rank_by_confidence=bool(args.rank_grasps_by_confidence),
     )
     planner_status = str(getattr(result, "status", "<no result>")) if result is not None else "<no result>"
+    planning_attempts = getattr(result, "_yam_attempt_log", None) if result is not None else None
 
     if target_idx < 0:
         target_idx = int(np.argmax(actual_conf))
@@ -1169,6 +1426,7 @@ def main() -> None:
         },
         "trajectory_start": trajectory_start_summary,
         "trajectory_json": None if trajectory_json is None else str(trajectory_json),
+        "planning_attempts": planning_attempts,
     }
     _write_json(overlay_json, overlay_payload)
 
@@ -1192,6 +1450,7 @@ def main() -> None:
             "trajectory_start": trajectory_start_summary,
             "target_center_world": target_center_world,
             "grasp_filter": grasp_filter_summary,
+            "planning_attempts": planning_attempts,
         },
     )
     print("DEXTRAH_YAM_GRASPGENX_CUROBO_PLAN " + json.dumps(asdict(summary), sort_keys=True), flush=True)

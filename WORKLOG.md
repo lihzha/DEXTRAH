@@ -9309,3 +9309,49 @@ Next:
   render the 821-frame dynamic replay with grasp-pose overlay, fetch metrics and
   video, inspect whether the object is actually grasped/lifted, then iterate if
   the object still drifts or the overlay remains misleading.
+
+## 2026-06-21T10:49:12Z - YAM Vertical-Lift Planner Patch
+
+Goal:
+- Remove the remaining side-drag artifact in the dynamic grasp replay and make
+  the lift segment vertical in world/robot coordinates while keeping YAM's
+  GraspGenX grasp-to-tool frame identity.
+
+Hypothesis:
+- The accepted cuRobo trajectory was smooth, but the selected YAM grasp had
+  tool `z = [0.664, -0.673, -0.326]`. The stock GraspGenX helper lifted along
+  tool `-z`, which produced a mostly sideways lift vector and caused the object
+  to be pushed/dragged instead of lifted. Approach should stay tool-relative,
+  but the post-close lift should be world/robot +Z.
+
+Change:
+- Added YAM grasp filtering diagnostics for lift orientation and minimum tool
+  height.
+- Added a DEXTRAH-local YAM planning helper that calls cuRobo with
+  `grasp_lift_in_tool_frame=False` so lift offsets are vertical in the robot
+  frame.
+- Added per-candidate planning attempt logs to `grasp_pose_overlay.json` and
+  `plan_summary.json`.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/scene_scripts/plan_yam_graspgenx_curobo.py`
+  passed.
+- Strict lift filters (`--yam_min_lift_up_dot 0.50` and `0.38`) found upward
+  candidates, but cuRobo rejected them at the approach stage.
+- Relaxed diagnostic run `stable_scene_vertical_lift_seed7_min030_diag`
+  accepted a vertical-lift trajectory:
+  - planner status: `Planning to lift pose succeeded.`
+  - selected filtered grasp index: `1`
+  - selected original grasp index: `1`
+  - selected confidence: `0.9068072438240051`
+  - kept original grasp indices: `[7, 1, 3]`
+  - trajectory length: `821` frames at `60` FPS
+- FK audit of exported `link_6` poses confirmed vertical lift: frame `600` to
+  `820` changed approximately `[-0.0018, -0.0008, +0.1587]` meters.
+
+Next:
+- Commit and deploy this exact source revision, render the vertical-lift replay
+  dynamically on l401 with the stable-scene object manifests, then inspect
+  metrics/video. If the same side candidate still fails physically, sweep
+  GraspGenX seeds and/or selection constraints for a reachable upward-centered
+  grasp instead of accepting this candidate.
