@@ -43,6 +43,12 @@ parser.add_argument(
     default="auto",
     choices=("auto", "graspgenx_replay", "dextrah_table_rejection", "none"),
 )
+parser.add_argument(
+    "--demo_trajectory_replay_mode",
+    type=str,
+    default="kinematic",
+    choices=("kinematic", "dynamic"),
+)
 parser.add_argument("--demo_start_blend_steps", type=int, default=36)
 parser.add_argument("--demo_table_rejection_target_fraction", type=float, default=0.82)
 parser.add_argument("--render_warmup_frames", type=int, default=2)
@@ -1398,6 +1404,29 @@ def _apply_kinematic_joint_position(task_env, joint_pos: torch.Tensor) -> tuple[
     return task_env._get_dones()
 
 
+def _apply_dynamic_joint_position_target(task_env, joint_pos: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    robot = getattr(task_env, "_robot", None)
+    if robot is None:
+        raise AttributeError("single_yam_rejected_path trajectory replay requires a robot articulation")
+    env_ids = robot._ALL_INDICES
+    if hasattr(task_env, "robot_dof_targets"):
+        task_env.robot_dof_targets[env_ids] = joint_pos
+    if hasattr(task_env, "arm_joint_pos_target"):
+        task_env.arm_joint_pos_target[env_ids] = joint_pos[:, task_env.arm_joint_ids]
+    if hasattr(task_env, "finger_joint_pos_target"):
+        task_env.finger_joint_pos_target[env_ids] = joint_pos[:, task_env.finger_joint_ids]
+    for _ in range(int(task_env.cfg.decimation)):
+        robot.set_joint_position_target(joint_pos, env_ids=env_ids)
+        task_env.scene.write_data_to_sim()
+        task_env.sim.step(render=False)
+        task_env.scene.update(dt=task_env.sim.cfg.dt)
+    task_env.episode_length_buf += 1
+    if hasattr(task_env, "common_step_counter"):
+        task_env.common_step_counter += 1
+    task_env._compute_intermediate_values()
+    return task_env._get_dones()
+
+
 def _single_yam_rejected_trajectory_joint_position(
     task_env,
     trajectory: dict[str, object],
@@ -1928,6 +1957,7 @@ def main() -> None:
                         "tabletop_rejected": demo_trajectory.get("tabletop_rejected"),
                         "tabletop_status": demo_trajectory.get("tabletop_status"),
                         "nominal_status": demo_trajectory.get("nominal_status"),
+                        "replay_mode": str(args_cli.demo_trajectory_replay_mode),
                         "start_blend_steps": int(args_cli.demo_start_blend_steps),
                     }
                 ),
@@ -1983,7 +2013,10 @@ def main() -> None:
                     start_joint_pos=demo_start_joint_pos,
                     start_blend_steps=int(args_cli.demo_start_blend_steps),
                 )
-                terminated, truncated = _apply_kinematic_joint_position(task_env, joint_position)
+                if args_cli.demo_trajectory_replay_mode == "dynamic":
+                    terminated, truncated = _apply_dynamic_joint_position_target(task_env, joint_position)
+                else:
+                    terminated, truncated = _apply_kinematic_joint_position(task_env, joint_position)
                 actions = torch.zeros((task_env.num_envs, int(task_env.cfg.action_space)), device=task_env.device)
                 target_hold = task_env.hold_pos.detach().clone()
             elif args_cli.demo_trajectory_source == "dextrah_table_rejection":
@@ -2109,6 +2142,7 @@ def main() -> None:
             "high_hold_z": float(args_cli.demo_high_hold_z),
             "low_hold_z": float(args_cli.demo_low_hold_z),
             "trajectory_source": str(args_cli.demo_trajectory_source),
+            "trajectory_replay_mode": str(args_cli.demo_trajectory_replay_mode),
             "trajectory_replay_enabled": demo_trajectory is not None,
             "trajectory_path": None if demo_trajectory_path is None else str(demo_trajectory_path),
             "trajectory_source_frames": None

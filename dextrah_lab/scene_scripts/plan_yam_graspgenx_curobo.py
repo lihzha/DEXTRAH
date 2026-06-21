@@ -168,6 +168,70 @@ def _rotate_vec(rot: list[list[float]], vec: list[float]) -> list[float]:
     ]
 
 
+def _matrix_from_pose_wxyz(translation: list[float], quat_wxyz: list[float]) -> list[list[float]]:
+    rot = _quat_wxyz_to_matrix(quat_wxyz)
+    return [
+        [rot[0][0], rot[0][1], rot[0][2], float(translation[0])],
+        [rot[1][0], rot[1][1], rot[1][2], float(translation[1])],
+        [rot[2][0], rot[2][1], rot[2][2], float(translation[2])],
+        [0.0, 0.0, 0.0, 1.0],
+    ]
+
+
+def _infer_raw_objaverse_path(usd_path: str) -> str:
+    path = Path(str(usd_path))
+    uuid = path.stem
+    parts = list(path.parts)
+    try:
+        usd_idx = parts.index("USD")
+    except ValueError:
+        return str(path.with_suffix(".obj"))
+    return str(Path(*parts[:usd_idx], "raw_objaverse", f"{uuid}.obj"))
+
+
+def _metrics_target_info(metrics_path: Path | None) -> dict[str, Any] | None:
+    if metrics_path is None:
+        return None
+    metrics = json.loads(metrics_path.expanduser().read_text(encoding="utf-8"))
+    snapshot = metrics.get("initial_snapshot") or {}
+    target_positions = snapshot.get("target_root_pos") or []
+    target_quats = snapshot.get("target_root_quat") or []
+    if not target_positions or not target_quats:
+        return None
+    target_pos = [float(v) for v in target_positions[0]]
+    target_quat = [float(v) for v in target_quats[0]]
+
+    asset_summary = metrics.get("multi_object_asset_summary") or {}
+    indices = asset_summary.get("object_asset_index_by_env") or []
+    asset_idx = int(indices[0]) if indices else 0
+
+    def indexed(name: str, default: Any = None) -> Any:
+        values = asset_summary.get(name) or []
+        if asset_idx < len(values):
+            return values[asset_idx]
+        return default
+
+    usd_path = str(indexed("usd_paths", "") or "")
+    raw_paths = asset_summary.get("raw_object_paths") or []
+    raw_object_path = str(raw_paths[asset_idx]) if asset_idx < len(raw_paths) and raw_paths[asset_idx] else ""
+    if not raw_object_path and usd_path:
+        raw_object_path = _infer_raw_objaverse_path(usd_path)
+
+    scales = asset_summary.get("usd_spawn_scales") or asset_summary.get("scales") or []
+    scale = float(scales[asset_idx]) if asset_idx < len(scales) else 1.0
+    return {
+        "metrics_path": str(metrics_path),
+        "asset_index": asset_idx,
+        "uuid": str(indexed("uuids", "") or ""),
+        "usd_path": usd_path,
+        "raw_object_path": raw_object_path,
+        "scale": scale,
+        "root_position": target_pos,
+        "root_quat_wxyz": target_quat,
+        "root_transform": _matrix_from_pose_wxyz(target_pos, target_quat),
+    }
+
+
 def _goal_bin_obstacles() -> list[dict[str, Any]]:
     wall = 0.02
     bottom = 0.012
@@ -328,9 +392,31 @@ def _make_robot_config(graspgenx_root: Path, run_dir: Path) -> Path:
     return out
 
 
-def _make_env_config(args: argparse.Namespace, run_dir: Path, target_mesh: Path, table_mesh: Path) -> Path:
+def _make_env_config(
+    args: argparse.Namespace,
+    run_dir: Path,
+    target_mesh: Path,
+    table_mesh: Path,
+    *,
+    target_mesh_scale: float,
+    target_info: dict[str, Any] | None,
+) -> Path:
     target_dims = [float(v) for v in args.target_dims]
-    target_base_z = YAM_TABLE["surface_z"] + float(args.object_surface_offset)
+    if target_info is not None and bool(args.use_metrics_target_pose):
+        target_x = float(target_info["root_position"][0])
+        target_y = float(target_info["root_position"][1])
+        target_base_z = float(target_info["root_position"][2])
+        target_quat_xyzw = [
+            float(target_info["root_quat_wxyz"][1]),
+            float(target_info["root_quat_wxyz"][2]),
+            float(target_info["root_quat_wxyz"][3]),
+            float(target_info["root_quat_wxyz"][0]),
+        ]
+    else:
+        target_x = float(args.target_x)
+        target_y = float(args.target_y)
+        target_base_z = YAM_TABLE["surface_z"] + float(args.object_surface_offset)
+        target_quat_xyzw = [0.0, 0.0, 0.0, 1.0]
     collision = _scene_collision(args)
     cfg = {
         "name": "dextrah_single_yam_graspgenx_curobo",
@@ -352,10 +438,11 @@ def _make_env_config(args: argparse.Namespace, run_dir: Path, target_mesh: Path,
             "quaternion_xyzw": [0.0, 0.0, 0.0, 1.0],
         },
         "object_slot": {
-            "world_position": [float(args.target_x), float(args.target_y), target_base_z],
-            "mesh_scale": 1.0,
+            "world_position": [target_x, target_y, target_base_z],
+            "mesh_scale": float(target_mesh_scale),
             "mesh_file_hint": str(target_mesh),
             "randomize": {"yaw_range_deg": [float(args.target_yaw_deg), float(args.target_yaw_deg)]},
+            "root_quaternion_xyzw_hint": target_quat_xyzw,
         },
         "extra_collision": collision,
         "visual": {
@@ -363,7 +450,7 @@ def _make_env_config(args: argparse.Namespace, run_dir: Path, target_mesh: Path,
             "background_color": [0.95, 0.95, 0.95],
             "camera": {
                 "eye": [-0.52, -0.86, 0.72],
-                "target": [float(args.target_x), float(args.target_y), 0.08],
+                "target": [target_x, target_y, 0.08],
             },
         },
         "dextrah_geometry": {
@@ -374,6 +461,9 @@ def _make_env_config(args: argparse.Namespace, run_dir: Path, target_mesh: Path,
             "table": dict(YAM_TABLE),
             "target_dims": target_dims,
             "target_base_z": target_base_z,
+            "target_mesh": str(target_mesh),
+            "target_mesh_scale": float(target_mesh_scale),
+            "target_metrics": target_info,
             "metrics_path": None if args.metrics_path is None else str(args.metrics_path),
         },
     }
@@ -450,6 +540,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--target_y", type=float, default=YAM_TARGET_XY[1])
     parser.add_argument("--target_yaw_deg", type=float, default=0.0)
     parser.add_argument("--target_dims", type=float, nargs=3, default=YAM_TARGET_DIMS)
+    parser.add_argument("--target_mesh_path", type=Path, default=None)
+    parser.add_argument("--target_mesh_scale", type=float, default=None)
+    parser.add_argument("--use_metrics_target_pose", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--align_grasps_to_metrics_target", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--object_surface_offset", type=float, default=0.006)
     parser.add_argument("--include_goal_bin", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--include_default_clutter", action=argparse.BooleanOptionalAction, default=True)
@@ -501,16 +595,43 @@ def main() -> None:
     env_info = _validate_runtime(graspgenx_root)
     _write_json(run_dir / "environment.json", env_info)
 
-    target_mesh = run_dir / "assets/yam_target_cuboid.obj"
+    target_info = _metrics_target_info(args.metrics_path)
+    target_mesh = (
+        args.target_mesh_path.expanduser().resolve()
+        if args.target_mesh_path is not None
+        else run_dir / "assets/yam_target_cuboid.obj"
+    )
     table_mesh = run_dir / "assets/dextrah_tabletop.obj"
-    target_mesh_meta = _write_box_obj(target_mesh, [float(v) for v in args.target_dims], label="YAM target")
+    if args.target_mesh_path is None:
+        target_mesh_meta = _write_box_obj(target_mesh, [float(v) for v in args.target_dims], label="YAM target")
+    elif not target_mesh.is_file():
+        raise FileNotFoundError(f"Missing target mesh: {target_mesh}")
+    else:
+        target_mesh_meta = {
+            "path": str(target_mesh),
+            "source": "target_mesh_path",
+            "metrics": target_info,
+        }
+    if args.target_mesh_scale is not None:
+        target_mesh_scale = float(args.target_mesh_scale)
+    elif target_info is not None and args.target_mesh_path is not None:
+        target_mesh_scale = float(target_info.get("scale", 1.0))
+    else:
+        target_mesh_scale = 1.0
     table_mesh_meta = _write_box_obj(
         table_mesh,
         [YAM_TABLE["size_x"], YAM_TABLE["size_y"], YAM_TABLE["thickness"]],
         label="DEXTRAH tabletop",
     )
     robot_config = _make_robot_config(graspgenx_root, run_dir)
-    env_config = _make_env_config(args, run_dir, target_mesh, table_mesh)
+    env_config = _make_env_config(
+        args,
+        run_dir,
+        target_mesh,
+        table_mesh,
+        target_mesh_scale=target_mesh_scale,
+        target_info=target_info,
+    )
 
     robot_cfg = load_yaml(robot_config)
     env_cfg = load_yaml(env_config)
@@ -546,6 +667,32 @@ def main() -> None:
     )
     if len(grasps_world) == 0:
         raise RuntimeError("GraspGenX returned zero YAM grasps")
+    target_alignment: dict[str, Any] | None = None
+    if (
+        target_info is not None
+        and bool(args.align_grasps_to_metrics_target)
+        and args.target_mesh_path is not None
+    ):
+        metrics_target_T = np.asarray(target_info["root_transform"], dtype=float)
+        source_target_T = np.asarray(bundle.object_world_T, dtype=float)
+        source_to_metrics = metrics_target_T @ np.linalg.inv(source_target_T)
+        grasps_world = [source_to_metrics @ np.asarray(grasp, dtype=float) for grasp in grasps_world]
+        bundle.object_world_T = metrics_target_T
+        if bundle.objects:
+            bundle.objects[0].world_T = metrics_target_T.copy()
+        target_alignment = {
+            "enabled": True,
+            "source_target_transform": source_target_T,
+            "metrics_target_transform": metrics_target_T,
+            "source_to_metrics_transform": source_to_metrics,
+            "target_info": target_info,
+        }
+    else:
+        target_alignment = {
+            "enabled": False,
+            "reason": "missing metrics target or explicit target mesh path",
+            "target_info": target_info,
+        }
 
     scene_model = collision_world_to_curobo(bundle.collision_world, bundle.robot_base_T)
     collision_scene_model_json = run_dir / "collision_scene_model.json"
@@ -629,8 +776,19 @@ def main() -> None:
         "collision_scene_model": scene_model,
         "world_scene": {
             "robot_base": list(YAM_ROBOT_BASE),
-            "target_xyz": [float(args.target_x), float(args.target_y), YAM_TABLE["surface_z"] + float(args.object_surface_offset)],
+            "target_xyz": (
+                [float(v) for v in target_info["root_position"]]
+                if target_info is not None
+                else [
+                    float(args.target_x),
+                    float(args.target_y),
+                    YAM_TABLE["surface_z"] + float(args.object_surface_offset),
+                ]
+            ),
             "target_dims": [float(v) for v in args.target_dims],
+            "target_mesh": str(target_mesh),
+            "target_mesh_scale": float(target_mesh_scale),
+            "target_alignment": target_alignment,
             "table": dict(YAM_TABLE),
         },
         "trajectory_json": None if trajectory_json is None else str(trajectory_json),
