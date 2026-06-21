@@ -32,6 +32,10 @@ parser.add_argument("--settle_steps", type=int, default=180)
 parser.add_argument("--capture_interval", type=int, default=2)
 parser.add_argument("--fps", type=int, default=30)
 parser.add_argument("--video_seconds", type=float, default=None)
+parser.add_argument("--demo_mode", type=str, default="settle", choices=("settle", "single_yam_rejected_path"))
+parser.add_argument("--demo_steps", type=int, default=180)
+parser.add_argument("--demo_high_hold_z", type=float, default=0.16)
+parser.add_argument("--demo_low_hold_z", type=float, default=-0.02)
 parser.add_argument("--render_warmup_frames", type=int, default=2)
 parser.add_argument("--render_width", type=int, default=None)
 parser.add_argument("--render_height", type=int, default=None)
@@ -1065,6 +1069,96 @@ def _step_physics_without_task_reset(task_env, hold_joint_pos: torch.Tensor | No
     task_env.scene.update(dt=task_env.sim.cfg.dt)
 
 
+def _manual_action_step(task_env, actions: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    task_env._pre_physics_step(actions)
+    for _ in range(int(task_env.cfg.decimation)):
+        task_env._apply_action()
+        task_env.scene.write_data_to_sim()
+        task_env.sim.step(render=False)
+        task_env.scene.update(dt=task_env.sim.cfg.dt)
+    task_env.episode_length_buf += 1
+    if hasattr(task_env, "common_step_counter"):
+        task_env.common_step_counter += 1
+    task_env._compute_intermediate_values()
+    return task_env._get_dones()
+
+
+def _single_yam_rejected_path_action(
+    task_env,
+    step_idx: int,
+    total_steps: int,
+    *,
+    high_hold_z: float,
+    low_hold_z: float,
+) -> tuple[torch.Tensor, str, torch.Tensor]:
+    if not all(hasattr(task_env, name) for name in ("tcp_pos", "hold_pos", "cube_pos")):
+        raise AttributeError("single_yam_rejected_path demo requires the single-YAM task state buffers")
+    task_env._compute_intermediate_values()
+    actions = torch.zeros((task_env.num_envs, int(task_env.cfg.action_space)), device=task_env.device)
+    position_scale = torch.as_tensor(task_env.cfg.ik_position_action_scale, device=task_env.device)
+
+    total_steps = max(int(total_steps), 1)
+    approach_end = max(int(round(0.32 * total_steps)), 1)
+    descend_end = max(int(round(0.72 * total_steps)), approach_end + 1)
+    table_z = float(task_env.cfg.table_surface_z)
+
+    target_hold = task_env.cube_pos.detach().clone()
+    if step_idx <= approach_end:
+        phase = "high_side_approach"
+        target_hold[:, 0] -= 0.10
+        target_hold[:, 2] = table_z + float(high_hold_z)
+        gripper_action = 1.0
+    elif step_idx <= descend_end:
+        phase = "low_clearance_rejected_approach"
+        alpha = float(step_idx - approach_end) / float(max(descend_end - approach_end, 1))
+        side_offset = -0.10 * (1.0 - alpha)
+        target_hold[:, 0] += side_offset
+        target_hold[:, 2] = table_z + (1.0 - alpha) * float(high_hold_z) + alpha * float(low_hold_z)
+        gripper_action = 1.0
+    else:
+        phase = "rejected_pose_hold"
+        target_hold[:, 2] = table_z + float(low_hold_z)
+        gripper_action = -1.0
+
+    hold_error = target_hold - task_env.hold_pos.detach()
+    actions[:, :3] = torch.clamp(hold_error / torch.clamp(position_scale, min=1.0e-6), -1.0, 1.0)
+    actions[:, 6] = float(gripper_action)
+    return actions, phase, target_hold
+
+
+def _single_yam_rejected_path_row(
+    task_env,
+    *,
+    step_idx: int,
+    phase: str,
+    target_hold: torch.Tensor,
+    actions: torch.Tensor,
+    terminated: torch.Tensor,
+    truncated: torch.Tensor,
+) -> dict[str, object]:
+    done = torch.logical_or(terminated, truncated)
+    penetration_margin = float(getattr(task_env.cfg, "finger_table_penetration_termination_margin", -0.008))
+    clearance = task_env.finger_table_clearance.detach()
+    return {
+        "step": int(step_idx),
+        "phase": phase,
+        "target_hold_pos": _tensor_list(target_hold),
+        "action": _tensor_list(actions),
+        "tcp_pos": _tensor_list(task_env.tcp_pos),
+        "hold_pos": _tensor_list(task_env.hold_pos),
+        "target_object_pos": _tensor_list(task_env.cube_pos),
+        "gripper_width": _tensor_list(task_env.gripper_width),
+        "finger_table_clearance": _tensor_list(clearance),
+        "finger_table_penetration_margin": penetration_margin,
+        "finger_table_penetration_rejected": _tensor_list(clearance < penetration_margin),
+        "terminated": _tensor_list(terminated),
+        "truncated": _tensor_list(truncated),
+        "done": _tensor_list(done),
+        "cube_linear_speed": _tensor_list(task_env.cube_linear_speed),
+        "cube_angular_speed": _tensor_list(task_env.cube_angular_speed),
+    }
+
+
 def main() -> None:
     output_dir = Path(args_cli.output_dir).expanduser().resolve()
     frame_dir = output_dir / "frames"
@@ -1304,25 +1398,35 @@ def main() -> None:
     hold_joint_pos = robot.data.joint_pos.detach().clone() if robot is not None else None
     capture_interval = max(int(args_cli.capture_interval), 1)
     settle_steps = max(int(args_cli.settle_steps), 0)
+    demo_steps = max(int(args_cli.demo_steps), 0)
+    planned_steps = settle_steps if args_cli.demo_mode == "settle" else demo_steps
     target_frame_count = None
     capture_step_set: set[int] | None = None
     if args_cli.video_seconds is not None:
         target_frame_count = max(int(round(float(args_cli.video_seconds) * int(args_cli.fps))), 1)
-        settle_steps, capture_step_set = _capture_steps_for_video(settle_steps, target_frame_count)
+        planned_steps, capture_step_set = _capture_steps_for_video(planned_steps, target_frame_count)
+        if args_cli.demo_mode == "settle":
+            settle_steps = planned_steps
+        else:
+            demo_steps = planned_steps
         print(
             json.dumps(
                 {
                     "event": "video_seconds_capture_plan",
+                    "demo_mode": args_cli.demo_mode,
                     "video_seconds": float(args_cli.video_seconds),
                     "fps": int(args_cli.fps),
                     "target_frame_count": int(target_frame_count),
-                    "settle_steps": int(settle_steps),
+                    "planned_steps": int(planned_steps),
                     "capture_steps": int(len(capture_step_set)),
                 }
             ),
             flush=True,
         )
     frame_idx = 1
+    demo_step_rows: list[dict[str, object]] = []
+    first_rejected_step: int | None = None
+    first_done_step: int | None = None
     if bool(args_cli.repeat_initial_frame_for_video):
         if target_frame_count is None:
             raise ValueError("--repeat_initial_frame_for_video requires --video_seconds")
@@ -1333,6 +1437,7 @@ def main() -> None:
             frames.append(repeat_frame)
             frame_paths.append(frame_path)
         settle_steps = 0
+        demo_steps = 0
         print(
             json.dumps(
                 {
@@ -1344,6 +1449,67 @@ def main() -> None:
             ),
             flush=True,
         )
+    elif args_cli.demo_mode == "single_yam_rejected_path":
+        for step_idx in range(1, demo_steps + 1):
+            actions, phase, target_hold = _single_yam_rejected_path_action(
+                task_env,
+                step_idx,
+                demo_steps,
+                high_hold_z=float(args_cli.demo_high_hold_z),
+                low_hold_z=float(args_cli.demo_low_hold_z),
+            )
+            terminated, truncated = _manual_action_step(task_env, actions)
+            row = _single_yam_rejected_path_row(
+                task_env,
+                step_idx=step_idx,
+                phase=phase,
+                target_hold=target_hold,
+                actions=actions,
+                terminated=terminated,
+                truncated=truncated,
+            )
+            demo_step_rows.append(row)
+            rejected = torch.as_tensor(
+                task_env.finger_table_clearance
+                < float(getattr(task_env.cfg, "finger_table_penetration_termination_margin", -0.008)),
+                device=task_env.device,
+            )
+            done = torch.logical_or(terminated, truncated)
+            if first_rejected_step is None and bool(rejected.any().detach().cpu().item()):
+                first_rejected_step = int(step_idx)
+                print(
+                    json.dumps(
+                        {
+                            "event": "rejected_path_detected",
+                            "step_idx": int(step_idx),
+                            "finger_table_clearance": _tensor_list(task_env.finger_table_clearance),
+                        }
+                    ),
+                    flush=True,
+                )
+            if first_done_step is None and bool(done.any().detach().cpu().item()):
+                first_done_step = int(step_idx)
+            should_capture = (
+                step_idx in capture_step_set
+                if capture_step_set is not None
+                else (step_idx % capture_interval == 0 or step_idx == demo_steps)
+            )
+            if should_capture:
+                frame, frame_path = _capture_frame(env, frame_dir, frame_idx)
+                frames.append(frame)
+                frame_paths.append(frame_path)
+                print(
+                    json.dumps(
+                        {
+                            "event": "frame_captured",
+                            "frame_idx": int(frame_idx),
+                            "step_idx": int(step_idx),
+                            "phase": phase,
+                        }
+                    ),
+                    flush=True,
+                )
+                frame_idx += 1
     else:
         for step_idx in range(1, settle_steps + 1):
             _step_physics_without_task_reset(task_env, hold_joint_pos)
@@ -1377,11 +1543,22 @@ def main() -> None:
         "task": args_cli.task,
         "num_envs": int(task_env.num_envs),
         "seed": int(args_cli.seed),
+        "demo_mode": args_cli.demo_mode,
         "settle_steps": int(settle_steps),
+        "demo_steps": int(demo_steps),
         "capture_interval": int(capture_interval),
         "fps": int(args_cli.fps),
         "video_seconds": None if args_cli.video_seconds is None else float(args_cli.video_seconds),
         "target_frame_count": target_frame_count,
+        "single_yam_rejected_path_demo": {
+            "enabled": args_cli.demo_mode == "single_yam_rejected_path",
+            "high_hold_z": float(args_cli.demo_high_hold_z),
+            "low_hold_z": float(args_cli.demo_low_hold_z),
+            "first_rejected_step": first_rejected_step,
+            "first_done_step": first_done_step,
+            "step_count": len(demo_step_rows),
+            "step_rows": demo_step_rows,
+        },
         "camera_eye": [float(v) for v in eye],
         "camera_target": [float(v) for v in target],
         "app_rendering_mode": getattr(args_cli, "rendering_mode", None),

@@ -34,6 +34,10 @@ SETTLE_STEPS="${SETTLE_STEPS:-180}"
 CAPTURE_INTERVAL="${CAPTURE_INTERVAL:-2}"
 FPS="${FPS:-30}"
 VIDEO_SECONDS="${VIDEO_SECONDS:-}"
+DEMO_MODE="${DEMO_MODE:-settle}"
+DEMO_STEPS="${DEMO_STEPS:-180}"
+DEMO_HIGH_HOLD_Z="${DEMO_HIGH_HOLD_Z:-0.16}"
+DEMO_LOW_HOLD_Z="${DEMO_LOW_HOLD_Z:--0.02}"
 RENDER_WARMUP_FRAMES="${RENDER_WARMUP_FRAMES:-2}"
 CAMERA_EYE="${CAMERA_EYE:-}"
 CAMERA_TARGET="${CAMERA_TARGET:-}"
@@ -96,7 +100,14 @@ fi
 
 RUN_DIR_HOST="$RESULTS_NFS/validations/$RUN_NAME"
 RUN_DIR_CONTAINER="/results/validations/$RUN_NAME"
-VIDEO_CONTAINER="$RUN_DIR_CONTAINER/settle.mp4"
+if [ -z "${VIDEO_FILENAME:-}" ]; then
+  if [ "$DEMO_MODE" = "settle" ]; then
+    VIDEO_FILENAME="settle.mp4"
+  else
+    VIDEO_FILENAME="${DEMO_MODE}.mp4"
+  fi
+fi
+VIDEO_CONTAINER="$RUN_DIR_CONTAINER/$VIDEO_FILENAME"
 METRICS_CONTAINER="$RUN_DIR_CONTAINER/metrics.json"
 
 if [ ! -f "$IMAGE" ]; then
@@ -124,7 +135,8 @@ mkdir -p \
   "$CACHE_NFS/data" "$CACHE_NFS/documents"
 
 export NFS_ROOT CODE_NFS FABRICS_NFS ISAACLAB_NFS ROBOLAB_NFS RESULTS_NFS
-export TASK RUN_NAME NUM_ENVS SEED SETTLE_STEPS CAPTURE_INTERVAL FPS VIDEO_SECONDS RENDER_WARMUP_FRAMES
+export TASK RUN_NAME NUM_ENVS SEED SETTLE_STEPS CAPTURE_INTERVAL FPS VIDEO_SECONDS DEMO_MODE DEMO_STEPS
+export DEMO_HIGH_HOLD_Z DEMO_LOW_HOLD_Z RENDER_WARMUP_FRAMES
 export CAMERA_EYE CAMERA_TARGET DISABLE_FABRIC PREPARE_YAM_ASSETS CODE_COMMIT ENV_NAME
 export OBJECT_ASSET_MANIFEST_PATH OBJECT_ASSETS_DIR MAX_OBJECTS OBJECT_ASSET_ASSIGNMENT
 export OBJECT_SPAWN_XY_RANDOMIZATION OBJECT_SPAWN_YAW_RANDOMIZATION_DEG
@@ -160,6 +172,10 @@ echo "SETTLE_STEPS=$SETTLE_STEPS"
 echo "CAPTURE_INTERVAL=$CAPTURE_INTERVAL"
 echo "FPS=$FPS"
 echo "VIDEO_SECONDS=${VIDEO_SECONDS:-unset}"
+echo "DEMO_MODE=$DEMO_MODE"
+echo "DEMO_STEPS=$DEMO_STEPS"
+echo "DEMO_HIGH_HOLD_Z=$DEMO_HIGH_HOLD_Z"
+echo "DEMO_LOW_HOLD_Z=$DEMO_LOW_HOLD_Z"
 echo "OBJAVERSE_TEXTURED_MANIFEST_PATH=${OBJAVERSE_TEXTURED_MANIFEST_PATH:-unset}"
 echo "OBJAVERSE_TEXTURED_ASSET_DIR=${OBJAVERSE_TEXTURED_ASSET_DIR:-unset}"
 echo "OBJAVERSE_TEXTURED_MAX_ASSETS=${OBJAVERSE_TEXTURED_MAX_ASSETS:-unset}"
@@ -204,9 +220,15 @@ srun \
     nvidia-smi || true
 
     if [[ "$TASK" == *YAM* ]]; then
-      YAM_USD=/code/dextrah_lab/assets/yam/yam_mjcf_usd/bimanual_yam_linear_flattened.usd
+      if [[ "$TASK" == Dextrah-Single-YAM-* ]]; then
+        YAM_USD=/code/dextrah_lab/assets/yam/yam_mjcf_usd/yam_linear.usd
+        YAM_PREPARE_ARGS=(--headless --converter mjcf --robot single)
+      else
+        YAM_USD=/code/dextrah_lab/assets/yam/yam_mjcf_usd/bimanual_yam_linear_flattened.usd
+        YAM_PREPARE_ARGS=(--headless --converter mjcf)
+      fi
       if [ "$PREPARE_YAM_ASSETS" = "True" ] || { [ "$PREPARE_YAM_ASSETS" = "auto" ] && [ ! -s "$YAM_USD" ]; }; then
-        /isaac-sim/python.sh dextrah_lab/assets/scripts/prepare_yam_assets.py --headless --converter mjcf
+        /isaac-sim/python.sh dextrah_lab/assets/scripts/prepare_yam_assets.py "${YAM_PREPARE_ARGS[@]}"
       fi
       test -s "$YAM_USD"
     fi
@@ -241,6 +263,10 @@ srun \
       --settle_steps "$SETTLE_STEPS"
       --capture_interval "$CAPTURE_INTERVAL"
       --fps "$FPS"
+      --demo_mode "$DEMO_MODE"
+      --demo_steps "$DEMO_STEPS"
+      --demo_high_hold_z "$DEMO_HIGH_HOLD_Z"
+      --demo_low_hold_z "$DEMO_LOW_HOLD_Z"
       --render_warmup_frames "$RENDER_WARMUP_FRAMES"
       --headless
     )
