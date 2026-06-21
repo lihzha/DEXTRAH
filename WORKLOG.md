@@ -9046,3 +9046,117 @@ Next:
   collision-aware scene. If a rejected-path artifact is still required, search
   additional captured scenes or seeds rather than labeling this accepted cuRobo
   trajectory as rejected.
+
+## 2026-06-21 09:42 - Settled-scene YAM plan and dynamic replay
+
+Goal:
+- Remove the artificial reset-to-plan blend that made the arm appear to hit the
+  table before grasping, and generate a demo from a dynamically settled DEXTRAH
+  tabletop scene: settle objects for 100 sim steps, export the stable target and
+  clutter poses, transform GraspGenX grasps into that stable target pose, plan
+  from the settled YAM joint state with cuRobo, then replay the plan in dynamic
+  simulation with a grasp-pose overlay.
+
+Version state:
+- Implementation commit:
+  `f79ddbeab115eec0b47042200cad69f84dd13b42`.
+- Remote l401 agent worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-collision-overlay-39915731`
+  checked out detached at that exact commit via Git bundle.
+- `CODEX_AGENT_ID` was not set in this shell; the branch and worktree are
+  agent-owned as `codex/yam-rejected-demo` and
+  `DEXTRAH-yam-rejected-demo`.
+
+Change:
+- Added `--stable_scene_path` to
+  `render_tabletop_clutter_settle_video.py`. When no stable-scene file exists,
+  the renderer now exports the settled target/clutter root poses, target mesh
+  copy, robot joint state, transform snapshots, velocity summaries, clearance
+  summaries, and asset summaries. When the file exists, the renderer restores
+  those object and robot states before replay.
+- Added `--stable_scene_path` to `plan_yam_graspgenx_curobo.py`. The planner now
+  uses the stable target mesh/pose, stable clutter collision proxies, and the
+  settled YAM arm/finger joint state as cuRobo's start/default/locked robot
+  state. The exported trajectory is guarded so frame 0 matches the settled
+  robot state.
+- Extended the l401 render wrapper with `STABLE_SCENE_PATH`.
+
+Validation:
+- Local and remote `python3 -m py_compile` passed for the render and planner
+  scripts.
+- Local and remote `bash -n cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh`
+  passed.
+- `git diff --check` passed before the implementation commit.
+
+Stable scene capture:
+- Slurm job `1038555` completed `0:0` on `pool0-00025` in `00:01:02`.
+- Run directory:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/single_yam_stable_scene_capture_f79ddbea_20260621T093128Z`.
+- Local artifacts:
+  `/home/lzha/code/cluster_results/l401/single_yam_stable_scene_capture_f79ddbea_20260621T093128Z`.
+- The run used `SETTLE_STEPS=100`, seed `7`, existing
+  `Dextrah-Single-YAM-Tabletop-Clutter-Grasp`, current YAM start pose, current
+  table/bin/clutter setup, `MAX_OBJECTS=16`, `TABLETOP_CLUTTER_OBJECT_COUNT=6`,
+  and USD-bounds validation disabled for the bounded Objaverse sample.
+- `stable_scene.json` target pose:
+  position `[-0.2680080533027649, -0.07423330098390579, 0.006011251360177994]`,
+  quaternion wxyz
+  `[0.7049441337585449, 0.6572731137275696, -0.1838998645544052, -0.19294188916683197]`.
+- Settled robot arm state:
+  `[0.0, 0.7853981852531433, 1.5707963705062866, 0.0, 0.0, 0.0]`;
+  fingers:
+  `[-0.019999999552965164, -0.019999999552965164]`.
+- The full Objaverse manifest did not provide a precomputed stable-pose cache
+  for the sampled target, so this run intentionally used the requested 100-step
+  dynamic-settle pose as the stable planning state.
+
+Planner:
+- Local GraspGenX/cuRobo run
+  `stable_scene_capture_f79ddbea_seed7` used
+  `/home/lzha/code/cluster_results/l401/single_yam_stable_scene_capture_f79ddbea_20260621T093128Z/stable_scene.json`.
+- cuRobo collision world included `dextrah_tabletop`, five goal-bin cuboids, and
+  six `dextrah_stable_clutter_*` cuboids from the settled scene.
+- Result: cuRobo accepted selected GraspGenX grasp index `9` with confidence
+  `0.7050070762634277`; planner status was
+  `Planning to lift pose succeeded.` This is an accepted path, not a rejected
+  path, despite the legacy demo filename.
+- The exported trajectory has 647 frames at 30 FPS. Its first frame matches the
+  settled YAM state with max absolute joint delta
+  `1.1920928955078125e-07`; no trajectory-start frame needed to be prepended.
+
+Dynamic replay:
+- Slurm job `1038556` completed `0:0` on `pool0-00025` in `00:01:13`.
+- Run directory:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/single_yam_stable_scene_dynamic_replay_f79ddbea_20260621T093410Z`.
+- Local artifacts:
+  `/home/lzha/code/cluster_results/l401/single_yam_stable_scene_dynamic_replay_f79ddbea_20260621T093410Z`.
+- Replay used `STABLE_SCENE_PATH` from job `1038555`,
+  `DEMO_TRAJECTORY_REPLAY_MODE=dynamic`,
+  `DEMO_START_BLEND_STEPS=0`, `SETTLE_STEPS=0`, and the planner trajectory and
+  grasp overlay from `stable_scene_capture_f79ddbea_seed7`.
+- Log and metrics confirmed `stable_scene_restored`,
+  `grasp_pose_overlay_spawned` with `visualized_count=8`,
+  `selected_marker_index=0`, all replay rows in phase `plan`, and no
+  `blend_from_dextrah_start` phase.
+
+Evidence:
+- `ffprobe` confirmed `single_yam_rejected_path.mp4` is 1280x720, 12 FPS,
+  5.0 seconds, 60 frames.
+- Metrics confirmed `trajectory_replay_mode=dynamic`, `start_blend_steps=0`,
+  `step_count=240`, and trajectory-start error max absolute delta
+  `1.1920928955078125e-07`.
+- Metrics reported minimum finger-to-table clearance
+  `0.028015736490488052` meters and zero negative-clearance samples across the
+  240 replay steps.
+- Visual inspection of frames `0000`, `0010`, `0030`, and `0059` confirmed
+  nonblank rendering, visible table/bin/target/clutter, visible grasp-pose axes,
+  direct start from the settled scene, and no observed YAM-table penetration in
+  the sampled frames.
+- `viz-open` URL for inspection:
+  `http://localhost:8765/view?path=cluster_results/l401/single_yam_stable_scene_dynamic_replay_f79ddbea_20260621T093410Z/single_yam_rejected_path.mp4`.
+
+Next:
+- Use this settled-scene dynamic replay as the corrected demo artifact for the
+  current DEXTRAH YAM environment. If a truly rejected trajectory is still
+  required, search additional seeds/scenes after the settled-state pipeline
+  rather than reusing this accepted cuRobo plan.
