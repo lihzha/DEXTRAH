@@ -52,6 +52,10 @@ parser.add_argument("--freeze_object_roots_for_video", action=argparse.BooleanOp
 parser.add_argument("--repeat_initial_frame_for_video", action=argparse.BooleanOptionalAction, default=False)
 parser.add_argument("--visual_object_overlay", action=argparse.BooleanOptionalAction, default=False)
 parser.add_argument("--visual_object_overlay_z_offset", type=float, default=0.0)
+parser.add_argument("--grasp_pose_overlay_path", type=str, default=None)
+parser.add_argument("--grasp_pose_overlay_max_count", type=int, default=8)
+parser.add_argument("--grasp_pose_overlay_axis_length", type=float, default=0.075)
+parser.add_argument("--grasp_pose_overlay_axis_thickness", type=float, default=0.007)
 parser.add_argument("--dome_light_intensity", type=float, default=None)
 parser.add_argument("--dome_light_exposure", type=float, default=None)
 parser.add_argument("--key_light_enabled", action=argparse.BooleanOptionalAction, default=None)
@@ -137,7 +141,8 @@ from isaacsim.core.utils.extensions import enable_extension
 from isaaclab.sim.converters import MeshConverter, MeshConverterCfg
 from isaaclab.sim.schemas import schemas as sim_schemas
 from isaaclab_tasks.utils import parse_env_cfg
-from pxr import Usd, UsdPhysics
+import omni.usd
+from pxr import Gf, Sdf, Usd, UsdGeom, UsdPhysics, UsdShade
 
 import dextrah_lab.tasks.dextrah_franka_cube_grasp.gym_setup  # noqa: F401
 import dextrah_lab.tasks.dextrah_franka_multi_object_grasp.gym_setup  # noqa: F401
@@ -940,6 +945,217 @@ def _spawn_visual_object_overlay(task_env, snapshot: dict[str, object], *, z_off
     return spawned
 
 
+def _as_matrix4(value: object) -> np.ndarray | None:
+    try:
+        arr = np.asarray(value, dtype=np.float64)
+    except Exception:
+        return None
+    if arr.shape != (4, 4) or not np.isfinite(arr).all():
+        return None
+    return arr
+
+
+def _matrix_to_quat_xyzw(matrix: np.ndarray) -> tuple[float, float, float, float]:
+    rot = np.asarray(matrix[:3, :3], dtype=np.float64)
+    trace = float(np.trace(rot))
+    if trace > 0.0:
+        s = math.sqrt(trace + 1.0) * 2.0
+        qw = 0.25 * s
+        qx = (rot[2, 1] - rot[1, 2]) / s
+        qy = (rot[0, 2] - rot[2, 0]) / s
+        qz = (rot[1, 0] - rot[0, 1]) / s
+    else:
+        diag = np.diag(rot)
+        if diag[0] > diag[1] and diag[0] > diag[2]:
+            s = math.sqrt(1.0 + rot[0, 0] - rot[1, 1] - rot[2, 2]) * 2.0
+            qw = (rot[2, 1] - rot[1, 2]) / s
+            qx = 0.25 * s
+            qy = (rot[0, 1] + rot[1, 0]) / s
+            qz = (rot[0, 2] + rot[2, 0]) / s
+        elif diag[1] > diag[2]:
+            s = math.sqrt(1.0 + rot[1, 1] - rot[0, 0] - rot[2, 2]) * 2.0
+            qw = (rot[0, 2] - rot[2, 0]) / s
+            qx = (rot[0, 1] + rot[1, 0]) / s
+            qy = 0.25 * s
+            qz = (rot[1, 2] + rot[2, 1]) / s
+        else:
+            s = math.sqrt(1.0 + rot[2, 2] - rot[0, 0] - rot[1, 1]) * 2.0
+            qw = (rot[1, 0] - rot[0, 1]) / s
+            qx = (rot[0, 2] + rot[2, 0]) / s
+            qy = (rot[1, 2] + rot[2, 1]) / s
+            qz = 0.25 * s
+    quat = np.asarray([qx, qy, qz, qw], dtype=np.float64)
+    norm = float(np.linalg.norm(quat))
+    if norm > 0.0:
+        quat /= norm
+    return tuple(float(v) for v in quat)
+
+
+def _usd_set_xform(
+    prim: Usd.Prim,
+    translate: tuple[float, float, float],
+    *,
+    rotate_quat_xyzw: tuple[float, float, float, float] | None = None,
+    scale: tuple[float, float, float] | None = None,
+) -> None:
+    xformable = UsdGeom.Xformable(prim)
+    xformable.ClearXformOpOrder()
+    xformable.AddTranslateOp().Set(Gf.Vec3d(*[float(v) for v in translate]))
+    if rotate_quat_xyzw is not None:
+        qx, qy, qz, qw = [float(v) for v in rotate_quat_xyzw]
+        xformable.AddOrientOp().Set(Gf.Quatf(qw, qx, qy, qz))
+    if scale is not None:
+        xformable.AddScaleOp().Set(Gf.Vec3f(*[float(v) for v in scale]))
+
+
+def _usd_material(stage: Usd.Stage, path: str, color: tuple[float, float, float]) -> UsdShade.Material:
+    mat = UsdShade.Material.Define(stage, path)
+    shader = UsdShade.Shader.Define(stage, f"{path}/Shader")
+    shader.CreateIdAttr("UsdPreviewSurface")
+    shader.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).Set(Gf.Vec3f(*color))
+    shader.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(0.42)
+    shader.CreateInput("metallic", Sdf.ValueTypeNames.Float).Set(0.0)
+    mat.CreateSurfaceOutput().ConnectToSource(shader.ConnectableAPI(), "surface")
+    return mat
+
+
+def _usd_bind(prim: Usd.Prim, mat: UsdShade.Material) -> None:
+    UsdShade.MaterialBindingAPI.Apply(prim).Bind(mat)
+
+
+def _usd_add_box(
+    stage: Usd.Stage,
+    path: str,
+    center: tuple[float, float, float],
+    size: tuple[float, float, float],
+    mat: UsdShade.Material,
+) -> None:
+    cube = UsdGeom.Cube.Define(stage, path)
+    cube.CreateSizeAttr(1.0)
+    prim = cube.GetPrim()
+    _usd_set_xform(prim, center, scale=size)
+    _usd_bind(prim, mat)
+
+
+def _grasp_overlay_candidates(payload: dict[str, object], max_count: int) -> tuple[list[np.ndarray], int | None]:
+    annotations = payload.get("annotations") if isinstance(payload.get("annotations"), dict) else {}
+    raw_grasps = annotations.get("all_grasps") or payload.get("all_grasps") or payload.get("grasps_world") or []
+    grasps = [matrix for item in raw_grasps if (matrix := _as_matrix4(item)) is not None]
+    target = _as_matrix4(payload.get("selected_grasp_world"))
+    if target is None:
+        target = _as_matrix4(annotations.get("target_grasp_transform"))
+    if target is None:
+        target = _as_matrix4(payload.get("target_grasp_transform"))
+    target_idx: int | None = None
+    if target is not None and grasps:
+        distances = [float(np.linalg.norm(g[:3, 3] - target[:3, 3])) for g in grasps]
+        target_idx = int(min(range(len(distances)), key=distances.__getitem__))
+    elif target is not None:
+        grasps = [target]
+        target_idx = 0
+
+    if not grasps:
+        return [], None
+    budget = max(int(max_count), 1)
+    selected: list[int] = []
+    if target_idx is not None:
+        selected.append(target_idx)
+    remaining = max(0, budget - len(selected))
+    if remaining > 0:
+        candidates = (
+            [0]
+            if remaining == 1
+            else [
+                int(round(float(idx) * float(len(grasps) - 1) / float(remaining - 1)))
+                for idx in range(remaining)
+            ]
+        )
+        for idx in candidates:
+            if idx not in selected:
+                selected.append(idx)
+    for idx in range(len(grasps)):
+        if len(selected) >= budget:
+            break
+        if idx not in selected:
+            selected.append(idx)
+    selected = selected[:budget]
+    target_marker_idx = selected.index(target_idx) if target_idx in selected else None
+    return [grasps[idx] for idx in selected], target_marker_idx
+
+
+def _spawn_grasp_pose_overlay(
+    overlay_path: Path | None,
+    *,
+    max_count: int,
+    axis_length: float,
+    axis_thickness: float,
+) -> dict[str, object]:
+    if overlay_path is None:
+        return {"enabled": False, "reason": "missing_path"}
+    if not overlay_path.is_file():
+        return {"enabled": False, "reason": "path_not_found", "path": str(overlay_path)}
+    payload = json.loads(overlay_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        return {"enabled": False, "reason": "payload_not_mapping", "path": str(overlay_path)}
+    stage = omni.usd.get_context().get_stage()
+    if stage is None:
+        return {"enabled": False, "reason": "missing_usd_stage", "path": str(overlay_path)}
+
+    grasps, target_marker_idx = _grasp_overlay_candidates(payload, max_count)
+    if not grasps:
+        return {"enabled": False, "reason": "no_valid_grasp_matrices", "path": str(overlay_path)}
+
+    root_path = "/World/GraspPoseOverlay"
+    looks_root = "/World/Looks/GraspPoseOverlay"
+    UsdGeom.Xform.Define(stage, root_path)
+    UsdGeom.Xform.Define(stage, looks_root)
+    x_mat = _usd_material(stage, f"{looks_root}/axis_x_red", (0.88, 0.08, 0.06))
+    y_mat = _usd_material(stage, f"{looks_root}/axis_y_green", (0.08, 0.62, 0.18))
+    z_mat = _usd_material(stage, f"{looks_root}/axis_z_blue", (0.10, 0.25, 0.92))
+    center_mat = _usd_material(stage, f"{looks_root}/selected_center", (1.0, 0.95, 0.70))
+
+    markers: list[dict[str, object]] = []
+    for marker_idx, transform in enumerate(grasps):
+        is_selected = target_marker_idx is not None and marker_idx == target_marker_idx
+        marker_path = f"{root_path}/g_{marker_idx:03d}"
+        marker_root = UsdGeom.Xform.Define(stage, marker_path).GetPrim()
+        position = tuple(float(v) for v in transform[:3, 3])
+        quat = _matrix_to_quat_xyzw(transform)
+        _usd_set_xform(marker_root, position, rotate_quat_xyzw=quat)
+        length = float(axis_length) * (1.35 if is_selected else 1.0)
+        thickness = float(axis_thickness) * (1.35 if is_selected else 1.0)
+        half = 0.5 * length
+        _usd_add_box(stage, f"{marker_path}/x_axis", (half, 0.0, 0.0), (length, thickness, thickness), x_mat)
+        _usd_add_box(stage, f"{marker_path}/y_axis", (0.0, half, 0.0), (thickness, length, thickness), y_mat)
+        _usd_add_box(stage, f"{marker_path}/z_axis", (0.0, 0.0, half), (thickness, thickness, length), z_mat)
+        if is_selected:
+            _usd_add_box(
+                stage,
+                f"{marker_path}/selected_center",
+                (0.0, 0.0, 0.0),
+                (2.5 * thickness, 2.5 * thickness, 2.5 * thickness),
+                center_mat,
+            )
+        markers.append(
+            {
+                "path": marker_path,
+                "is_selected": bool(is_selected),
+                "position_w": [float(v) for v in position],
+                "axis_z_w": [float(v) for v in transform[:3, 2]],
+            }
+        )
+    return {
+        "enabled": True,
+        "path": str(overlay_path),
+        "root_path": root_path,
+        "visualized_count": len(markers),
+        "selected_marker_index": target_marker_idx,
+        "axis_length": float(axis_length),
+        "axis_thickness": float(axis_thickness),
+        "markers": markers,
+    }
+
+
 def _initial_clearance_summary(task_env, snapshot: dict[str, object]) -> dict[str, object] | None:
     clutter_positions = snapshot.get("clutter_root_pos_by_slot")
     if not isinstance(clutter_positions, list) or not clutter_positions:
@@ -1580,6 +1796,43 @@ def main() -> None:
             ),
             flush=True,
         )
+    grasp_pose_overlay_path = (
+        Path(args_cli.grasp_pose_overlay_path).expanduser().resolve()
+        if args_cli.grasp_pose_overlay_path
+        else None
+    )
+    grasp_pose_overlay_summary = _spawn_grasp_pose_overlay(
+        grasp_pose_overlay_path,
+        max_count=max(1, int(args_cli.grasp_pose_overlay_max_count)),
+        axis_length=float(args_cli.grasp_pose_overlay_axis_length),
+        axis_thickness=float(args_cli.grasp_pose_overlay_axis_thickness),
+    )
+    if grasp_pose_overlay_summary.get("enabled"):
+        for _ in range(max(int(args_cli.render_warmup_frames), 1)):
+            task_env.sim.render()
+            env.render()
+        print(
+            json.dumps(
+                {
+                    "event": "grasp_pose_overlay_spawned",
+                    "path": grasp_pose_overlay_summary.get("path"),
+                    "count": grasp_pose_overlay_summary.get("visualized_count"),
+                    "selected_marker_index": grasp_pose_overlay_summary.get("selected_marker_index"),
+                }
+            ),
+            flush=True,
+        )
+    elif grasp_pose_overlay_path is not None:
+        print(
+            json.dumps(
+                {
+                    "event": "grasp_pose_overlay_skipped",
+                    "path": str(grasp_pose_overlay_path),
+                    "reason": grasp_pose_overlay_summary.get("reason"),
+                }
+            ),
+            flush=True,
+        )
     frame, frame_path = _capture_frame(env, frame_dir, 0)
     frames.append(frame)
     frame_paths.append(frame_path)
@@ -1909,6 +2162,7 @@ def main() -> None:
             "z_offset": float(args_cli.visual_object_overlay_z_offset),
             "objects": visual_object_overlay_summary,
         },
+        "grasp_pose_overlay": grasp_pose_overlay_summary,
         "video_path": str(video_path),
         "frame_paths": frame_paths,
         "frame_count": len(frame_paths),

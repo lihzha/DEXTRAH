@@ -8908,3 +8908,38 @@ Validation:
 - a1001 `squeue -u lzha` showed no active jobs after the check.
 - a1001 checkout deployment completed via Git bundle, followed by remote
   `py_compile`, `bash -n`, manifest, and queue checks.
+
+## 2026-06-21 01:45 - Collision-aware YAM GraspGenX/cuRobo rejection render
+
+Goal:
+- Replace the earlier kinematic rejected-path video with a DEXTRAH-owned
+  GraspGenX/cuRobo pipeline that plans against the current YAM table/bin/clutter
+  collision model and visualizes the rejected grasp pose in Isaac.
+
+Change:
+- Added `dextrah_lab/scene_scripts/plan_yam_graspgenx_curobo.py` to generate
+  run-local YAM robot/env configs from DEXTRAH start pose and scene geometry,
+  emit the exact cuRobo collision model, run GraspGenX, and export a
+  `grasp_pose_overlay.json` whether cuRobo accepts or rejects.
+- Extended `dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py` and
+  `cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh` with a
+  visual-only grasp-frame overlay. The overlay does not affect physics.
+
+Local validation:
+- `python3 -m py_compile dextrah_lab/scene_scripts/plan_yam_graspgenx_curobo.py
+  dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py` passed.
+- `bash -n cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh`
+  passed.
+- Local GraspGenX/cuRobo smoke:
+  `GRASPGENX_ROOT=/home/lzha/code/worktrees/graspgenx-yam-ggx-curobo uv run --no-sync python dextrah_lab/scene_scripts/plan_yam_graspgenx_curobo.py --output_dir local_results/yam_graspgenx_curobo --run_name local_smoke_collision_scene --num_sample_points 2000 --num_grasps 32 --topk 16 --max_plan_attempts 12 --include_goal_bin --include_default_clutter --seed 7 --grasp_planner graspmoe`.
+
+Result:
+- GraspGenX returned 16 YAM grasps; cuRobo rejected all attempted approaches
+  with `Goalset planning returned None.` under the collision-aware scene.
+- `collision_scene_model.json` contains `dextrah_tabletop`, five goal-bin
+  cuboids, and four DEXTRAH clutter proxies.
+- `grasp_pose_overlay.json` records selected grasp index `8`, confidence
+  `0.8704508543014526`, all 16 grasp transforms, and the collision model.
+- Local Isaac render is unavailable on this host because `omni.usd` and
+  `isaaclab` are not installed; next step is a pinned l401 render job from an
+  agent-owned DEXTRAH worktree.
