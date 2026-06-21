@@ -67,6 +67,9 @@ parser.add_argument("--object_asset_manifest_path", type=str, default=None)
 parser.add_argument("--object_assets_dir", type=str, default=None)
 parser.add_argument("--max_objects", type=int, default=None)
 parser.add_argument("--object_asset_assignment", type=str, default=None)
+parser.add_argument("--object_validate_usd_bounds", action=argparse.BooleanOptionalAction, default=None)
+parser.add_argument("--object_usd_bounds_max_ratio", type=float, default=None)
+parser.add_argument("--object_usd_bounds_max_dimension", type=float, default=None)
 parser.add_argument("--require_graspgen_scale", action=argparse.BooleanOptionalAction, default=None)
 parser.add_argument("--object_spawn_xy_randomization", type=float, default=None)
 parser.add_argument("--object_spawn_yaw_randomization_deg", type=float, default=None)
@@ -87,6 +90,9 @@ parser.add_argument("--tabletop_clutter_assets_dir", type=str, default=None)
 parser.add_argument("--tabletop_clutter_max_objects", type=int, default=None)
 parser.add_argument("--tabletop_clutter_object_count", type=int, default=None)
 parser.add_argument("--tabletop_clutter_asset_assignment", type=str, default=None)
+parser.add_argument("--tabletop_clutter_validate_usd_bounds", action=argparse.BooleanOptionalAction, default=None)
+parser.add_argument("--tabletop_clutter_usd_bounds_max_ratio", type=float, default=None)
+parser.add_argument("--tabletop_clutter_usd_bounds_max_dimension", type=float, default=None)
 parser.add_argument("--tabletop_clutter_spawn_xy_randomization", type=float, default=None)
 parser.add_argument("--tabletop_clutter_spawn_yaw_randomization_deg", type=float, default=None)
 parser.add_argument("--tabletop_clutter_spawn_z_clearance", type=float, default=None)
@@ -1667,6 +1673,9 @@ def main() -> None:
     _set_if_present(env_cfg, "object_assets_dir", args_cli.object_assets_dir)
     _set_if_present(env_cfg, "max_objects", args_cli.max_objects)
     _set_if_present(env_cfg, "object_asset_assignment", args_cli.object_asset_assignment)
+    _set_if_present(env_cfg, "object_validate_usd_bounds", args_cli.object_validate_usd_bounds)
+    _set_if_present(env_cfg, "object_usd_bounds_max_ratio", args_cli.object_usd_bounds_max_ratio)
+    _set_if_present(env_cfg, "object_usd_bounds_max_dimension", args_cli.object_usd_bounds_max_dimension)
     _set_if_present(env_cfg, "require_graspgen_scale", args_cli.require_graspgen_scale)
     _set_if_present(env_cfg, "object_spawn_xy_randomization", args_cli.object_spawn_xy_randomization)
     _set_if_present(env_cfg, "object_spawn_yaw_randomization_deg", args_cli.object_spawn_yaw_randomization_deg)
@@ -1687,6 +1696,21 @@ def main() -> None:
     _set_if_present(env_cfg, "tabletop_clutter_max_objects", args_cli.tabletop_clutter_max_objects)
     _set_if_present(env_cfg, "tabletop_clutter_object_count", args_cli.tabletop_clutter_object_count)
     _set_if_present(env_cfg, "tabletop_clutter_asset_assignment", args_cli.tabletop_clutter_asset_assignment)
+    _set_if_present(
+        env_cfg,
+        "tabletop_clutter_validate_usd_bounds",
+        args_cli.tabletop_clutter_validate_usd_bounds,
+    )
+    _set_if_present(
+        env_cfg,
+        "tabletop_clutter_usd_bounds_max_ratio",
+        args_cli.tabletop_clutter_usd_bounds_max_ratio,
+    )
+    _set_if_present(
+        env_cfg,
+        "tabletop_clutter_usd_bounds_max_dimension",
+        args_cli.tabletop_clutter_usd_bounds_max_dimension,
+    )
     _set_if_present(env_cfg, "tabletop_clutter_spawn_xy_randomization", args_cli.tabletop_clutter_spawn_xy_randomization)
     _set_if_present(env_cfg, "tabletop_clutter_spawn_yaw_randomization_deg", args_cli.tabletop_clutter_spawn_yaw_randomization_deg)
     _set_if_present(env_cfg, "tabletop_clutter_spawn_z_clearance", args_cli.tabletop_clutter_spawn_z_clearance)

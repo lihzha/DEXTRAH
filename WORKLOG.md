@@ -8955,3 +8955,33 @@ Cluster loop:
 - Patched `MultiObjectGraspTaskMixin._load_asset_manifest` so positive
   `max_assets` stops after collecting that many valid assets. Default
   `max_assets=0` full-manifest behavior is unchanged.
+
+## 2026-06-21 01:50 - Bound scene-capture asset validation controls
+
+Goal:
+- Capture exact DEXTRAH YAM tabletop-clutter scene metrics for cuRobo collision
+  synthesis without waiting on a long USD-bounds scan through sparse full
+  Objaverse shards.
+
+Change:
+- Cancelled l401 job `1038526`; it reached shard 022 after more than two
+  minutes and was still printing `skip_asset_usd_bounds_outlier` instead of
+  writing scene metrics.
+- Added render CLI and Slurm wrapper controls for
+  `object_validate_usd_bounds`, `object_usd_bounds_max_ratio`,
+  `object_usd_bounds_max_dimension`, `tabletop_clutter_validate_usd_bounds`,
+  `tabletop_clutter_usd_bounds_max_ratio`, and
+  `tabletop_clutter_usd_bounds_max_dimension`.
+- Defaults remain unchanged unless a run explicitly supplies the new overrides.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py
+  dextrah_lab/tasks/dextrah_multi_object_grasp/multi_object_grasp_task.py
+  dextrah_lab/scene_scripts/plan_yam_graspgenx_curobo.py` passed.
+- `bash -n cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh` passed.
+- `git diff --check` passed.
+
+Next:
+- Commit and deploy this exact revision to the l401 agent worktree, then
+  relaunch the scene-capture smoke with USD-bounds validation disabled for the
+  bounded full-Objaverse sample.
