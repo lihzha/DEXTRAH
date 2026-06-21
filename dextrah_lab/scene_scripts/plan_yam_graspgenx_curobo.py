@@ -609,16 +609,26 @@ def _make_robot_config(
     start_finger_joint_position: float | None = None,
 ) -> Path:
     start_arm = list(start_arm_joint_position or DEXTRAH_YAM_ARM_START)
-    finger_open = DEXTRAH_YAM_FINGER_OPEN if start_finger_joint_position is None else float(start_finger_joint_position)
+    start_finger = DEXTRAH_YAM_FINGER_OPEN if start_finger_joint_position is None else float(start_finger_joint_position)
     src = graspgenx_root / "end2end/robots/yam_linear.yaml"
     cfg = _load_yaml(src)
+    profile_open = {
+        str(name): float(value)
+        for name, value in (cfg.get("gripper_open") or {}).items()
+    }
+    if not profile_open:
+        profile_open = {"left_finger": DEXTRAH_YAM_FINGER_OPEN, "right_finger": DEXTRAH_YAM_FINGER_OPEN}
     curobo_src = (src.parent / cfg["curobo"]["robot_config"]).resolve()
     curobo_cfg = _load_yaml(curobo_src)
     cspace = curobo_cfg.setdefault("robot_cfg", {}).setdefault("kinematics", {}).setdefault("cspace", {})
-    cspace["default_joint_position"] = [*start_arm, finger_open, finger_open]
+    # Keep cuRobo's locked gripper collision state at the settled DEXTRAH
+    # start width. The dynamic replay still opens to the profile width before
+    # approach, but planning with the fully-open finger collision can reject
+    # otherwise valid grasp goals near the table/clutter.
+    cspace["default_joint_position"] = [*start_arm, start_finger, start_finger]
     lock = curobo_cfg["robot_cfg"]["kinematics"].setdefault("lock_joints", {})
-    lock["left_finger"] = finger_open
-    lock["right_finger"] = finger_open
+    lock["left_finger"] = start_finger
+    lock["right_finger"] = start_finger
     curobo_out = run_dir / "configs/yam_linear_curobo_dextrah.yml"
     _write_yaml(curobo_out, curobo_cfg)
 
@@ -637,7 +647,8 @@ def _make_robot_config(
         "translation": list(YAM_ROBOT_BASE),
         "quaternion_xyzw": [0.0, 0.0, 0.0, 1.0],
     }
-    cfg["gripper_open"] = {"left_finger": finger_open, "right_finger": finger_open}
+    cfg["gripper_open"] = profile_open
+    cfg["dextrah_start_gripper_open"] = {"left_finger": start_finger, "right_finger": start_finger}
     out = run_dir / "configs/yam_linear_dextrah.yaml"
     _write_yaml(out, cfg)
     return out
@@ -803,6 +814,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--filter_yam_grasps_by_aperture", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--yam_grasp_filter_min_keep", type=int, default=4)
     parser.add_argument("--sim_fps", type=int, default=60)
+    parser.add_argument("--start_guard_frames", type=int, default=60)
     parser.add_argument("--close_frames", type=int, default=30)
     parser.add_argument("--hold_frames", type=int, default=45)
     parser.add_argument("--hold_after_close_frames", type=int, default=60)
@@ -1083,7 +1095,15 @@ def main() -> None:
                 "prepended_settled_start": bool(max_abs_start_delta > 1.0e-4),
             }
             if max_abs_start_delta > 1.0e-4:
-                joint_traj = np.vstack([expected_start[None, :], joint_traj]).astype(np.float32)
+                guard_frames = max(2, int(args.start_guard_frames))
+                alpha = np.linspace(0.0, 1.0, guard_frames, dtype=np.float32)[:, None]
+                start_ramp = (
+                    expected_start[None, :]
+                    + alpha * (joint_traj[0][None, :] - expected_start[None, :])
+                ).astype(np.float32)
+                tail = joint_traj[1:] if joint_traj.shape[0] > 1 else np.empty((0, joint_traj.shape[1]), dtype=np.float32)
+                joint_traj = np.vstack([start_ramp, tail]).astype(np.float32)
+                trajectory_start_summary["start_guard_frames"] = guard_frames
         else:
             trajectory_start_summary = {
                 "expected_start": expected_start,

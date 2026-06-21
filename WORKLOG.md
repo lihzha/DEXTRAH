@@ -9261,3 +9261,51 @@ Analysis:
   `0.023339 rad`, so the current demo is materially smoother, but tighter YAM
   drive/PD tuning would be the next axis if the dynamic robot motion still
   looks too soft or laggy.
+
+## 2026-06-21T10:30:43Z - YAM Full-Open Replay / Narrow Collision Plan Loop
+
+Goal:
+- Fix the dynamic YAM grasp demo so the motion is smooth, the rendered grasp
+  corresponds to the visible target, the gripper actually captures and
+  vertically lifts the object, and the replay has no table/object physics
+  artifacts.
+
+Hypothesis:
+- The previous identity-frame render pushed the object because replay used the
+  settled `-0.02` finger state as the open gripper state. YAM's GraspGenX
+  profile opens to `-0.0475`, but planning cuRobo with fully-open finger
+  collision rejects the reachable table-side grasp set. Keep cuRobo's locked
+  finger collision at the settled start width, but export the dynamic replay
+  profile with full-open fingers and a smooth start guard.
+
+Change:
+- In `dextrah_lab/scene_scripts/plan_yam_graspgenx_curobo.py`, split the
+  planner finger state from the replay profile: cuRobo `lock_joints` and
+  `default_joint_position` use the stable-scene start finger value, while
+  `gripper_open` remains the YAM profile value from `yam_linear.yaml`.
+- Added `dextrah_start_gripper_open` to the generated robot config and
+  `--start_guard_frames` to export a smooth settled-start to first-planned-frame
+  ramp instead of a single-frame jump.
+
+Validation before render:
+- `python3 -m py_compile dextrah_lab/scene_scripts/plan_yam_graspgenx_curobo.py`
+  passed.
+- `bash -n cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh`
+  passed.
+- Local GraspGenX/cuRobo run
+  `stable_scene_identity_narrowplan_fullopen_seed7` used stable scene
+  `/home/lzha/code/cluster_results/l401/single_yam_stable_scene_capture_f79ddbea_20260621T093128Z/stable_scene.json`.
+- Result: accepted, planner status `Planning to lift pose succeeded.`
+- Exported trajectory:
+  `/home/lzha/code/worktrees/DEXTRAH-yam-rejected-demo/local_results/yam_graspgenx_curobo/stable_scene_identity_narrowplan_fullopen_seed7/trajectory.json`,
+  821 frames at 60 FPS.
+- The trajectory starts at the stable `-0.02` finger state, reaches full-open
+  `-0.0475` at frame 59, and keeps the arm unchanged during the guard.
+- Selected grasp index is `3`; planner selected a candidate whose target center
+  is inside the YAM aperture in link_6 coordinates.
+
+Next:
+- Commit the source change, deploy the exact commit to the l401 agent worktree,
+  render the 821-frame dynamic replay with grasp-pose overlay, fetch metrics and
+  video, inspect whether the object is actually grasped/lifted, then iterate if
+  the object still drifts or the overlay remains misleading.
