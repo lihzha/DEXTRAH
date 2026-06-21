@@ -45,8 +45,8 @@ YAM_TARGET_XY = [-0.30, 0.0]
 YAM_TARGET_DIMS = [0.08, 0.08, 0.08]
 YAM_GRIPPER_CENTER_LOCAL = [0.0, 0.0, 0.1098]
 YAM_GRIPPER_CENTER_TOL = [0.045, 0.040, 0.036]
-YAM_MIN_LIFT_UP_DOT = 0.50
-YAM_MIN_TOOL_Z = 0.02
+YAM_MIN_LIFT_UP_DOT = 0.40
+YAM_MIN_TOOL_Z = 0.095
 
 
 def _repo_root() -> Path:
@@ -533,6 +533,7 @@ def _filter_yam_grasps_by_aperture(
     min_keep: int,
     min_lift_up_dot: float,
     min_tool_z: float,
+    allow_filter_fallback: bool,
 ) -> tuple[Any, Any, dict[str, Any]]:
     import numpy as np
 
@@ -583,12 +584,15 @@ def _filter_yam_grasps_by_aperture(
     if dynamic_ok:
         keep_entries = dynamic_ok
         reason = "inside_aperture_lift_up_and_height"
-    elif inside:
+    elif inside and bool(allow_filter_fallback):
         keep_entries = inside
         reason = "inside_aperture_without_lift_filter_fallback"
-    else:
+    elif bool(allow_filter_fallback):
         keep_entries = sorted(scored, key=lambda entry: entry["geometry_cost"])[: max(1, int(min_keep))]
         reason = "best_geometry_fallback"
+    else:
+        keep_entries = []
+        reason = "no_grasp_satisfies_aperture_lift_and_height"
 
     keep_indices = [entry["index"] for entry in keep_entries]
     order = sorted(
@@ -615,6 +619,7 @@ def _filter_yam_grasps_by_aperture(
             "tolerance": tol.tolist(),
             "min_lift_up_dot": float(min_lift_up_dot),
             "min_tool_z": float(min_tool_z),
+            "allow_filter_fallback": bool(allow_filter_fallback),
             "input_count": int(len(scored)),
             "kept_count": int(len(keep_indices)),
             "kept_original_indices": keep_indices,
@@ -1067,11 +1072,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--yam_grasp_filter_min_keep", type=int, default=4)
     parser.add_argument("--yam_min_lift_up_dot", type=float, default=YAM_MIN_LIFT_UP_DOT)
     parser.add_argument("--yam_min_tool_z", type=float, default=YAM_MIN_TOOL_Z)
+    parser.add_argument("--yam_allow_lift_filter_fallback", action="store_true")
     parser.add_argument("--sim_fps", type=int, default=60)
     parser.add_argument("--start_guard_frames", type=int, default=60)
-    parser.add_argument("--close_frames", type=int, default=30)
-    parser.add_argument("--hold_frames", type=int, default=45)
-    parser.add_argument("--hold_after_close_frames", type=int, default=60)
+    parser.add_argument("--close_frames", type=int, default=60)
+    parser.add_argument("--hold_frames", type=int, default=60)
+    parser.add_argument("--hold_after_close_frames", type=int, default=120)
     return parser.parse_args()
 
 
@@ -1264,6 +1270,7 @@ def main() -> None:
             min_keep=int(args.yam_grasp_filter_min_keep),
             min_lift_up_dot=float(args.yam_min_lift_up_dot),
             min_tool_z=float(args.yam_min_tool_z),
+            allow_filter_fallback=bool(args.yam_allow_lift_filter_fallback),
         )
         if len(grasps_world) == 0:
             raise RuntimeError("YAM aperture filtering removed all grasps")

@@ -9355,3 +9355,84 @@ Next:
   metrics/video. If the same side candidate still fails physically, sweep
   GraspGenX seeds and/or selection constraints for a reachable upward-centered
   grasp instead of accepting this candidate.
+
+## 2026-06-21T11:04:31Z - Valid YAM Seed-2 Strict-Lift Dynamic Demo
+
+Goal:
+- Produce a dynamic DEXTRAH YAM grasp demo that is smooth, visualizes a grasp
+  pose corresponding to the target, actually captures the object, lifts it
+  vertically, and avoids table/finger physics artifacts.
+
+Diagnosis:
+- The vertical-lift patch removed sideways lift from the exported FK trajectory,
+  but seed `7` still selected the reachable low side grasp at tool position
+  `[-0.363, 0.072, 0.074]`.
+- Dynamic render job `1038601`
+  (`single_yam_vertical_lift_replay_97aeeede_20260621T105321Z`) still reported
+  `rejected_path_detected` at step `232` with finger/table clearance
+  `-0.00847536325454712`.
+- Visual frames confirmed the fingertips swept into the table before closure.
+  The object eventually rose, but only after side-loading and table contact, so
+  that trajectory was rejected as invalid.
+
+Change:
+- Ran a local GraspGenX/cuRobo seed sweep against the same stable scene with
+  stricter YAM dynamic filters:
+  `--yam_min_lift_up_dot 0.40`, `--yam_min_tool_z 0.095`,
+  `--rank_grasps_by_confidence`, `--include_goal_bin`,
+  `--no-include_default_clutter`, and the captured stable-scene collisions.
+- Seed `2` accepted on the first full approach/grasp/lift strategy. The
+  selected original grasp index was `23`, confidence `0.684619`, tool position
+  `[-0.307284, 0.012502, 0.142414]`, and lift-up dot `0.902759`.
+- Patched `plan_yam_graspgenx_curobo.py` so future YAM runs fail closed unless
+  a grasp passes aperture, lift orientation, and minimum tool-height filters.
+  Fallback to low/geometry-only candidates now requires
+  `--yam_allow_lift_filter_fallback`.
+- Updated YAM defaults to the validated filter/timing values:
+  minimum lift-up dot `0.40`, minimum tool z `0.095`, `60` close frames,
+  `60` hold frames, and `120` post-close hold frames.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/scene_scripts/plan_yam_graspgenx_curobo.py`
+  passed.
+- Patched-code seed-2 smoke
+  `stable_scene_seed2_strict_defaults_patched` reproduced the same selected
+  high/upward grasp with fallback disabled and wrote an `821` frame trajectory.
+- Dynamic l401 render job `1038603` completed successfully:
+  `single_yam_seed2_strict_lift_replay_97aeeede_20260621T110006Z`.
+- Slurm log had no `rejected_path_detected` events.
+- `ffprobe` confirmed `single_yam_valid_grasp.mp4` is `1280x720`, `12` FPS,
+  `16.083333` seconds, and `193` frames.
+- Metrics:
+  - `first_rejected_step`: `null`
+  - replay mode: `dynamic`
+  - timing mode: `realtime`
+  - source trajectory: `821` frames at `60` FPS
+  - start error max abs: `0.0`
+  - max commanded joint velocity: `2.5311756 rad/s`
+  - max actual joint velocity: `2.4889486 rad/s`
+  - max joint tracking error: `0.2104553 rad`
+  - finger/table clearance at the old failure step `232`: `0.0986701 m`
+  - finger/table clearance at grasp/lift: positive, about `0.055-0.245 m`
+  - target moved from approximately `[-0.2664, -0.0168, 0.0274]` to
+    `[-0.2832, -0.0104, 0.2101]`, about `0.183 m` vertical lift with about
+    `0.018 m` XY drift.
+- Visual inspection of extracted frames confirmed nonblank rendering, selected
+  grasp axes near the target, approach from above/side without table contact,
+  gripper closure around the target, object capture, and vertical lift.
+- `viz-open` URL:
+  `http://localhost:8765/view?path=cluster_results/l401/single_yam_seed2_strict_lift_replay_97aeeede_20260621T110006Z/single_yam_valid_grasp.mp4`.
+
+Artifacts:
+- Local final video:
+  `/home/lzha/code/cluster_results/l401/single_yam_seed2_strict_lift_replay_97aeeede_20260621T110006Z/single_yam_valid_grasp.mp4`.
+- Local metrics:
+  `/home/lzha/code/cluster_results/l401/single_yam_seed2_strict_lift_replay_97aeeede_20260621T110006Z/metrics.json`.
+- Local patched-code seed-2 plan:
+  `/home/lzha/code/worktrees/DEXTRAH-yam-rejected-demo/local_results/yam_graspgenx_curobo/stable_scene_seed2_strict_defaults_patched`.
+
+Residual note:
+- PhysX reports nonzero target root velocity while the sampled target pose is
+  held nearly fixed relative to the gripper during the final hold. The video and
+  sampled positions do not show visible slipping, table contact, or object
+  ejection.
