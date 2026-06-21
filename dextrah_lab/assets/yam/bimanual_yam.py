@@ -165,18 +165,18 @@ SINGLE_YAM_CFG = ArticulationCfg(
         "arm": ImplicitActuatorCfg(
             joint_names_expr=["joint[1-6]"],
             effort_limit_sim={
-                "joint[1-3]": 28.0,
-                "joint[4-6]": 10.0,
+                "joint[1-3]": 56.0,
+                "joint[4-6]": 20.0,
             },
             stiffness={
-                "joint[1-3]": 40.0,
-                "joint4": 20.0,
-                "joint[5-6]": 10.0,
+                "joint[1-3]": 80.0,
+                "joint4": 40.0,
+                "joint[5-6]": 20.0,
             },
             damping={
-                "joint[1-3]": 2.5,
-                "joint4": 0.5,
-                "joint[5-6]": 1.0,
+                "joint[1-3]": 6.25,
+                "joint4": 1.25,
+                "joint[5-6]": 2.5,
             },
         ),
         "gripper": ImplicitActuatorCfg(
