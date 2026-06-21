@@ -82,6 +82,9 @@ parser.add_argument("--key_light_intensity", type=float, default=None)
 parser.add_argument("--key_light_exposure", type=float, default=None)
 parser.add_argument("--camera_eye", type=float, nargs=3, default=None)
 parser.add_argument("--camera_target", type=float, nargs=3, default=None)
+parser.add_argument("--yam_arm_stiffness_scale", type=float, default=None)
+parser.add_argument("--yam_arm_damping_scale", type=float, default=None)
+parser.add_argument("--yam_arm_effort_scale", type=float, default=None)
 parser.add_argument("--object_asset_manifest_path", type=str, default=None)
 parser.add_argument("--object_assets_dir", type=str, default=None)
 parser.add_argument("--max_objects", type=int, default=None)
@@ -181,6 +184,59 @@ if "YAM" in args_cli.task:
 def _set_if_present(cfg, name: str, value) -> None:
     if value is not None and hasattr(cfg, name):
         setattr(cfg, name, value)
+
+
+def _scale_gain_value(value, scale: float):
+    if isinstance(value, dict):
+        return {k: _scale_gain_value(v, scale) for k, v in value.items()}
+    if value is None:
+        return None
+    return float(value) * float(scale)
+
+
+def _jsonable_gain_value(value):
+    if isinstance(value, dict):
+        return {str(k): _jsonable_gain_value(v) for k, v in value.items()}
+    if value is None:
+        return None
+    return float(value)
+
+
+def _apply_yam_arm_gain_scales(env_cfg, *, stiffness_scale, damping_scale, effort_scale) -> dict[str, object]:
+    summary: dict[str, object] = {
+        "enabled": False,
+        "stiffness_scale": None if stiffness_scale is None else float(stiffness_scale),
+        "damping_scale": None if damping_scale is None else float(damping_scale),
+        "effort_scale": None if effort_scale is None else float(effort_scale),
+        "before": None,
+        "after": None,
+    }
+    if stiffness_scale is None and damping_scale is None and effort_scale is None:
+        return summary
+    robot_cfg = getattr(env_cfg, "robot", None)
+    actuators = getattr(robot_cfg, "actuators", None)
+    if not isinstance(actuators, dict) or "arm" not in actuators:
+        summary["reason"] = "missing_yam_arm_actuator"
+        return summary
+    arm = actuators["arm"]
+    before = {
+        "stiffness": _jsonable_gain_value(getattr(arm, "stiffness", None)),
+        "damping": _jsonable_gain_value(getattr(arm, "damping", None)),
+        "effort_limit_sim": _jsonable_gain_value(getattr(arm, "effort_limit_sim", None)),
+    }
+    if stiffness_scale is not None:
+        arm.stiffness = _scale_gain_value(arm.stiffness, float(stiffness_scale))
+    if damping_scale is not None:
+        arm.damping = _scale_gain_value(arm.damping, float(damping_scale))
+    if effort_scale is not None:
+        arm.effort_limit_sim = _scale_gain_value(arm.effort_limit_sim, float(effort_scale))
+    after = {
+        "stiffness": _jsonable_gain_value(getattr(arm, "stiffness", None)),
+        "damping": _jsonable_gain_value(getattr(arm, "damping", None)),
+        "effort_limit_sim": _jsonable_gain_value(getattr(arm, "effort_limit_sim", None)),
+    }
+    summary.update({"enabled": True, "before": before, "after": after})
+    return summary
 
 
 def _task_camera_defaults(task: str) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
@@ -2159,6 +2215,14 @@ def main() -> None:
     _set_if_present(env_cfg, "key_light_enabled", args_cli.key_light_enabled)
     _set_if_present(env_cfg, "key_light_intensity", args_cli.key_light_intensity)
     _set_if_present(env_cfg, "key_light_exposure", args_cli.key_light_exposure)
+    yam_arm_control_gains = _apply_yam_arm_gain_scales(
+        env_cfg,
+        stiffness_scale=args_cli.yam_arm_stiffness_scale,
+        damping_scale=args_cli.yam_arm_damping_scale,
+        effort_scale=args_cli.yam_arm_effort_scale,
+    )
+    if bool(yam_arm_control_gains.get("enabled")):
+        print(json.dumps({"event": "yam_arm_control_gains", **yam_arm_control_gains}), flush=True)
     _set_if_present(env_cfg, "object_asset_manifest_path", args_cli.object_asset_manifest_path)
     _set_if_present(env_cfg, "object_assets_dir", args_cli.object_assets_dir)
     _set_if_present(env_cfg, "max_objects", args_cli.max_objects)
@@ -2724,6 +2788,7 @@ def main() -> None:
         "camera_eye": [float(v) for v in eye],
         "camera_target": [float(v) for v in target],
         "app_rendering_mode": getattr(args_cli, "rendering_mode", None),
+        "yam_arm_control_gains": yam_arm_control_gains,
         "render_resolution": [int(v) for v in task_env.cfg.viewer.resolution]
         if hasattr(task_env.cfg, "viewer")
         else render_resolution,
