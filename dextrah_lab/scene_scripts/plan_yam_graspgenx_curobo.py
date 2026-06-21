@@ -232,6 +232,84 @@ def _metrics_target_info(metrics_path: Path | None) -> dict[str, Any] | None:
     }
 
 
+def _load_stable_scene(path: Path | None) -> dict[str, Any] | None:
+    if path is None:
+        return None
+    payload = json.loads(path.expanduser().read_text(encoding="utf-8"))
+    if not isinstance(payload, dict) or payload.get("format") != "dextrah_stable_scene_v1":
+        raise ValueError(f"Expected dextrah_stable_scene_v1 payload in {path}")
+    payload["_path"] = str(path.expanduser().resolve())
+    return payload
+
+
+def _stable_scene_target_info(stable_scene: dict[str, Any] | None) -> dict[str, Any] | None:
+    if stable_scene is None:
+        return None
+    target = stable_scene.get("target") or {}
+    asset = target.get("asset") or {}
+    root_pos = target.get("root_position")
+    root_quat = target.get("root_quat_wxyz")
+    if not isinstance(root_pos, list) or not isinstance(root_quat, list):
+        return None
+    scale = float(asset.get("usd_spawn_scale", asset.get("scale", 1.0)) or 1.0)
+    return {
+        "stable_scene_path": str(stable_scene.get("_path", "")),
+        "source": "stable_scene",
+        "asset_index": int(asset.get("asset_index", 0) or 0),
+        "uuid": str(asset.get("uuid") or ""),
+        "usd_path": str(asset.get("usd_path") or ""),
+        "raw_object_path": str(asset.get("raw_object_path") or ""),
+        "scale": scale,
+        "root_position": [float(v) for v in root_pos],
+        "root_quat_wxyz": [float(v) for v in root_quat],
+        "root_transform": _matrix_from_pose_wxyz([float(v) for v in root_pos], [float(v) for v in root_quat]),
+    }
+
+
+def _stable_scene_target_mesh_path(stable_scene: dict[str, Any] | None) -> Path | None:
+    if stable_scene is None:
+        return None
+    stable_scene_path = Path(str(stable_scene.get("_path", ""))).expanduser()
+    base_dir = stable_scene_path.parent if stable_scene_path else Path.cwd()
+    target = stable_scene.get("target") or {}
+    mesh_copy = target.get("mesh_copy") if isinstance(target.get("mesh_copy"), dict) else {}
+    rel = mesh_copy.get("copy_rel")
+    if rel:
+        candidate = (base_dir / str(rel)).resolve()
+        if candidate.is_file():
+            return candidate
+    copy_path = mesh_copy.get("copy_path")
+    if copy_path:
+        candidate = Path(str(copy_path)).expanduser()
+        if not candidate.is_absolute():
+            candidate = (base_dir / candidate).resolve()
+        if candidate.is_file():
+            return candidate
+    asset = target.get("asset") if isinstance(target.get("asset"), dict) else {}
+    for value in (asset.get("raw_object_path"), _infer_raw_objaverse_path(str(asset.get("usd_path") or ""))):
+        if not value:
+            continue
+        candidate = Path(str(value)).expanduser()
+        if candidate.is_file():
+            return candidate.resolve()
+    return None
+
+
+def _stable_scene_robot_start(stable_scene: dict[str, Any] | None) -> tuple[list[float] | None, float | None]:
+    if stable_scene is None:
+        return None, None
+    robot = stable_scene.get("robot") if isinstance(stable_scene.get("robot"), dict) else {}
+    arm = robot.get("arm_joint_position")
+    if not isinstance(arm, list) or not arm:
+        return None, None
+    start_arm = [float(v) for v in arm[0]]
+    finger_value: float | None = None
+    fingers = robot.get("finger_joint_position")
+    if isinstance(fingers, list) and fingers and fingers[0]:
+        finger_value = float(sum(float(v) for v in fingers[0]) / float(len(fingers[0])))
+    return start_arm, finger_value
+
+
 def _goal_bin_obstacles() -> list[dict[str, Any]]:
     wall = 0.02
     bottom = 0.012
@@ -341,6 +419,40 @@ def _metrics_clutter_obstacles(metrics_path: Path, *, margin: float) -> list[dic
     return obstacles
 
 
+def _stable_scene_clutter_obstacles(stable_scene: dict[str, Any], *, margin: float) -> list[dict[str, Any]]:
+    obstacles: list[dict[str, Any]] = []
+    for entry in stable_scene.get("clutter") or []:
+        if not isinstance(entry, dict):
+            continue
+        asset = entry.get("asset") if isinstance(entry.get("asset"), dict) else {}
+        bounds_min = asset.get("scaled_bounds_min")
+        bounds_max = asset.get("scaled_bounds_max")
+        root_pos = entry.get("root_position")
+        root_quat = entry.get("root_quat_wxyz")
+        if not all(isinstance(value, list) for value in (bounds_min, bounds_max, root_pos, root_quat)):
+            continue
+        bounds_min_f = [float(v) for v in bounds_min]
+        bounds_max_f = [float(v) for v in bounds_max]
+        root_pos_f = [float(v) for v in root_pos]
+        root_quat_f = [float(v) for v in root_quat]
+        local_center = [0.5 * (bounds_min_f[axis] + bounds_max_f[axis]) for axis in range(3)]
+        dims = [max(bounds_max_f[axis] - bounds_min_f[axis] + 2.0 * float(margin), 0.005) for axis in range(3)]
+        rot = _quat_wxyz_to_matrix(root_quat_f)
+        center_offset = _rotate_vec(rot, local_center)
+        center = [root_pos_f[axis] + center_offset[axis] for axis in range(3)]
+        obstacles.append(
+            {
+                "name": f"dextrah_stable_clutter_{int(entry.get('slot_idx', len(obstacles))):02d}",
+                "type": "cuboid",
+                "dims": dims,
+                "pose": [*center, *root_quat_f],
+                "source_asset_index": int(asset.get("asset_index", -1) or -1),
+                "uuid": str(asset.get("uuid") or ""),
+            }
+        )
+    return obstacles
+
+
 def _scene_collision(args: argparse.Namespace) -> list[dict[str, Any]]:
     table = {
         "name": "dextrah_tabletop",
@@ -359,34 +471,44 @@ def _scene_collision(args: argparse.Namespace) -> list[dict[str, Any]]:
     obstacles = [table]
     if bool(args.include_goal_bin):
         obstacles.extend(_goal_bin_obstacles())
-    if args.metrics_path is not None:
+    if getattr(args, "stable_scene", None) is not None:
+        obstacles.extend(_stable_scene_clutter_obstacles(args.stable_scene, margin=float(args.clutter_margin)))
+    elif args.metrics_path is not None:
         obstacles.extend(_metrics_clutter_obstacles(args.metrics_path.expanduser().resolve(), margin=float(args.clutter_margin)))
     elif bool(args.include_default_clutter):
         obstacles.extend(_default_clutter_obstacles())
     return obstacles
 
 
-def _make_robot_config(graspgenx_root: Path, run_dir: Path) -> Path:
+def _make_robot_config(
+    graspgenx_root: Path,
+    run_dir: Path,
+    *,
+    start_arm_joint_position: list[float] | None = None,
+    start_finger_joint_position: float | None = None,
+) -> Path:
+    start_arm = list(start_arm_joint_position or DEXTRAH_YAM_ARM_START)
+    finger_open = DEXTRAH_YAM_FINGER_OPEN if start_finger_joint_position is None else float(start_finger_joint_position)
     src = graspgenx_root / "end2end/robots/yam_linear.yaml"
     cfg = _load_yaml(src)
     curobo_src = (src.parent / cfg["curobo"]["robot_config"]).resolve()
     curobo_cfg = _load_yaml(curobo_src)
     cspace = curobo_cfg.setdefault("robot_cfg", {}).setdefault("kinematics", {}).setdefault("cspace", {})
-    cspace["default_joint_position"] = [*DEXTRAH_YAM_ARM_START, DEXTRAH_YAM_FINGER_OPEN, DEXTRAH_YAM_FINGER_OPEN]
+    cspace["default_joint_position"] = [*start_arm, finger_open, finger_open]
     lock = curobo_cfg["robot_cfg"]["kinematics"].setdefault("lock_joints", {})
-    lock["left_finger"] = DEXTRAH_YAM_FINGER_OPEN
-    lock["right_finger"] = DEXTRAH_YAM_FINGER_OPEN
+    lock["left_finger"] = finger_open
+    lock["right_finger"] = finger_open
     curobo_out = run_dir / "configs/yam_linear_curobo_dextrah.yml"
     _write_yaml(curobo_out, curobo_cfg)
 
     cfg.setdefault("curobo", {})
     cfg["curobo"]["robot_config"] = str(curobo_out)
-    cfg["curobo"]["default_joint_position"] = list(DEXTRAH_YAM_ARM_START)
+    cfg["curobo"]["default_joint_position"] = list(start_arm)
     cfg["robot_base_pose"] = {
         "translation": list(YAM_ROBOT_BASE),
         "quaternion_xyzw": [0.0, 0.0, 0.0, 1.0],
     }
-    cfg["gripper_open"] = {"left_finger": DEXTRAH_YAM_FINGER_OPEN, "right_finger": DEXTRAH_YAM_FINGER_OPEN}
+    cfg["gripper_open"] = {"left_finger": finger_open, "right_finger": finger_open}
     out = run_dir / "configs/yam_linear_dextrah.yaml"
     _write_yaml(out, cfg)
     return out
@@ -527,6 +649,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--graspgenx_root", type=Path, default=_default_graspgenx_root())
     parser.add_argument("--curobo_root", type=Path, default=_default_curobo_root())
     parser.add_argument("--metrics_path", type=Path, default=None, help="Optional DEXTRAH render metrics.json for sampled clutter proxies.")
+    parser.add_argument("--stable_scene_path", type=Path, default=None, help="Optional DEXTRAH stable_scene.json captured after simulation settle.")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--num_sample_points", type=int, default=2000)
     parser.add_argument("--num_grasps", type=int, default=64)
@@ -595,26 +718,34 @@ def main() -> None:
     env_info = _validate_runtime(graspgenx_root)
     _write_json(run_dir / "environment.json", env_info)
 
-    target_info = _metrics_target_info(args.metrics_path)
+    stable_scene = _load_stable_scene(args.stable_scene_path)
+    args.stable_scene = stable_scene
+    stable_target_info = _stable_scene_target_info(stable_scene)
+    target_info = stable_target_info or _metrics_target_info(args.metrics_path)
+    stable_target_mesh = _stable_scene_target_mesh_path(stable_scene)
+    stable_start_arm_q, stable_start_finger_q = _stable_scene_robot_start(stable_scene)
+    target_mesh_source = "target_mesh_path" if args.target_mesh_path is not None else "stable_scene" if stable_target_mesh is not None else "generated_box"
     target_mesh = (
         args.target_mesh_path.expanduser().resolve()
         if args.target_mesh_path is not None
+        else stable_target_mesh
+        if stable_target_mesh is not None
         else run_dir / "assets/yam_target_cuboid.obj"
     )
     table_mesh = run_dir / "assets/dextrah_tabletop.obj"
-    if args.target_mesh_path is None:
+    if target_mesh_source == "generated_box":
         target_mesh_meta = _write_box_obj(target_mesh, [float(v) for v in args.target_dims], label="YAM target")
     elif not target_mesh.is_file():
         raise FileNotFoundError(f"Missing target mesh: {target_mesh}")
     else:
         target_mesh_meta = {
             "path": str(target_mesh),
-            "source": "target_mesh_path",
-            "metrics": target_info,
+            "source": target_mesh_source,
+            "target_info": target_info,
         }
     if args.target_mesh_scale is not None:
         target_mesh_scale = float(args.target_mesh_scale)
-    elif target_info is not None and args.target_mesh_path is not None:
+    elif target_info is not None and target_mesh_source in {"target_mesh_path", "stable_scene"}:
         target_mesh_scale = float(target_info.get("scale", 1.0))
     else:
         target_mesh_scale = 1.0
@@ -623,7 +754,12 @@ def main() -> None:
         [YAM_TABLE["size_x"], YAM_TABLE["size_y"], YAM_TABLE["thickness"]],
         label="DEXTRAH tabletop",
     )
-    robot_config = _make_robot_config(graspgenx_root, run_dir)
+    robot_config = _make_robot_config(
+        graspgenx_root,
+        run_dir,
+        start_arm_joint_position=stable_start_arm_q,
+        start_finger_joint_position=stable_start_finger_q,
+    )
     env_config = _make_env_config(
         args,
         run_dir,
@@ -642,6 +778,9 @@ def main() -> None:
         run_dir / "run_config.json",
         {
             "args": vars(args),
+            "stable_scene": stable_scene,
+            "stable_start_arm_joint_position": stable_start_arm_q,
+            "stable_start_finger_joint_position": stable_start_finger_q,
             "robot_config": str(robot_config),
             "env_config": str(env_config),
             "target_mesh": target_mesh_meta,
@@ -671,7 +810,7 @@ def main() -> None:
     if (
         target_info is not None
         and bool(args.align_grasps_to_metrics_target)
-        and args.target_mesh_path is not None
+        and target_mesh_source in {"target_mesh_path", "stable_scene"}
     ):
         metrics_target_T = np.asarray(target_info["root_transform"], dtype=float)
         source_target_T = np.asarray(bundle.object_world_T, dtype=float)
@@ -690,7 +829,7 @@ def main() -> None:
     else:
         target_alignment = {
             "enabled": False,
-            "reason": "missing metrics target or explicit target mesh path",
+            "reason": "missing target transform or external target mesh",
             "target_info": target_info,
         }
 
@@ -728,6 +867,7 @@ def main() -> None:
         target_idx = int(np.argmax(conf))
 
     trajectory_json: Path | None = None
+    trajectory_start_summary: dict[str, Any] | None = None
     if bool(success) and pregrasp_traj is not None and len(pregrasp_traj) > 0 and lift_traj is not None and len(lift_traj) > 0:
         task = get_task("pick_and_lift")
         task_result = task.plan_actions(
@@ -746,6 +886,37 @@ def main() -> None:
             playback_mode="dynamic",
             result=result,
         )
+        joint_traj = np.asarray(task_result.joint_traj, dtype=np.float32)
+        expected_start_arm = np.asarray(robot_cfg["curobo"]["default_joint_position"], dtype=np.float32)
+        expected_start_grip = np.asarray(
+            [
+                stable_start_finger_q
+                if stable_start_finger_q is not None
+                else profile.open_value(name)
+                for name in profile.gripper_joint_names
+            ],
+            dtype=np.float32,
+        )
+        expected_start = np.concatenate([expected_start_arm, expected_start_grip], axis=0)
+        if joint_traj.shape[1] == expected_start.shape[0]:
+            start_delta = joint_traj[0] - expected_start
+            max_abs_start_delta = float(np.max(np.abs(start_delta)))
+            trajectory_start_summary = {
+                "expected_start": expected_start,
+                "first_planned": joint_traj[0],
+                "max_abs_delta_before_guard": max_abs_start_delta,
+                "prepended_settled_start": bool(max_abs_start_delta > 1.0e-4),
+            }
+            if max_abs_start_delta > 1.0e-4:
+                joint_traj = np.vstack([expected_start[None, :], joint_traj]).astype(np.float32)
+        else:
+            trajectory_start_summary = {
+                "expected_start": expected_start,
+                "first_planned": joint_traj[0] if joint_traj.shape[0] else [],
+                "reason": "dimension_mismatch",
+                "trajectory_dim": int(joint_traj.shape[1]),
+                "expected_dim": int(expected_start.shape[0]),
+            }
         trajectory_json = run_dir / "trajectory.json"
         camera = (env_cfg.get("visual") or {}).get("camera", {})
         fk = URDFFK(profile.urdf_path, asset_root=profile.asset_root_path)
@@ -753,7 +924,7 @@ def main() -> None:
             bundle=bundle,
             fk=fk,
             profile=profile,
-            joint_traj=task_result.joint_traj,
+            joint_traj=joint_traj,
             grasps_world=grasps_world,
             target_idx=int(target_idx),
             camera_eye=list(camera.get("eye", [-0.52, -0.86, 0.72])),
@@ -791,6 +962,7 @@ def main() -> None:
             "target_alignment": target_alignment,
             "table": dict(YAM_TABLE),
         },
+        "trajectory_start": trajectory_start_summary,
         "trajectory_json": None if trajectory_json is None else str(trajectory_json),
     }
     _write_json(overlay_json, overlay_payload)
@@ -807,7 +979,10 @@ def main() -> None:
         collision_scene_model_json=str(collision_scene_model_json),
         planner_status=planner_status,
     )
-    _write_json(run_dir / "plan_summary.json", {**asdict(summary), "success": bool(success)})
+    _write_json(
+        run_dir / "plan_summary.json",
+        {**asdict(summary), "success": bool(success), "trajectory_start": trajectory_start_summary},
+    )
     print("DEXTRAH_YAM_GRASPGENX_CUROBO_PLAN " + json.dumps(asdict(summary), sort_keys=True), flush=True)
     print(f"results={run_dir}", flush=True)
 

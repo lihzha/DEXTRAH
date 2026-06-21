@@ -8,6 +8,7 @@ import json
 import math
 import os
 from pathlib import Path
+import shutil
 import sys
 import traceback
 
@@ -50,6 +51,7 @@ parser.add_argument(
     choices=("kinematic", "dynamic"),
 )
 parser.add_argument("--demo_start_blend_steps", type=int, default=36)
+parser.add_argument("--stable_scene_path", type=str, default=None)
 parser.add_argument("--demo_table_rejection_target_fraction", type=float, default=0.82)
 parser.add_argument("--render_warmup_frames", type=int, default=2)
 parser.add_argument("--render_width", type=int, default=None)
@@ -200,6 +202,45 @@ def _capture_frame(env, frame_dir: Path, frame_idx: int) -> tuple[np.ndarray, st
 
 def _tensor_list(value: torch.Tensor):
     return value.detach().float().cpu().tolist()
+
+
+def _jsonable(value):
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, torch.Tensor):
+        return value.detach().float().cpu().tolist()
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, np.generic):
+        return value.item()
+    if isinstance(value, dict):
+        return {str(k): _jsonable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(v) for v in value]
+    return value
+
+
+def _quat_wxyz_to_matrix(q: list[float]) -> np.ndarray:
+    qw, qx, qy, qz = [float(v) for v in q]
+    n = math.sqrt(qw * qw + qx * qx + qy * qy + qz * qz)
+    if n <= 0.0:
+        return np.eye(3, dtype=np.float64)
+    qw, qx, qy, qz = qw / n, qx / n, qy / n, qz / n
+    return np.asarray(
+        [
+            [1.0 - 2.0 * (qy * qy + qz * qz), 2.0 * (qx * qy - qz * qw), 2.0 * (qx * qz + qy * qw)],
+            [2.0 * (qx * qy + qz * qw), 1.0 - 2.0 * (qx * qx + qz * qz), 2.0 * (qy * qz - qx * qw)],
+            [2.0 * (qx * qz - qy * qw), 2.0 * (qy * qz + qx * qw), 1.0 - 2.0 * (qx * qx + qy * qy)],
+        ],
+        dtype=np.float64,
+    )
+
+
+def _matrix_from_pose_wxyz(pos: list[float], quat_wxyz: list[float]) -> list[list[float]]:
+    mat = np.eye(4, dtype=np.float64)
+    mat[:3, :3] = _quat_wxyz_to_matrix(quat_wxyz)
+    mat[:3, 3] = np.asarray(pos, dtype=np.float64)
+    return mat.tolist()
 
 
 def _resolve_path(value: str | Path, *, base_dir: Path) -> Path:
@@ -844,6 +885,227 @@ def _root_snapshot(task_env) -> dict[str, object]:
         snapshot["clutter_root_pos_by_slot"] = clutter_pos
         snapshot["clutter_root_quat_by_slot"] = clutter_quat
     return snapshot
+
+
+def _infer_raw_objaverse_path(path: str) -> str:
+    value = Path(str(path))
+    uuid = value.stem
+    parts = list(value.parts)
+    try:
+        usd_idx = parts.index("USD")
+    except ValueError:
+        return str(value.with_suffix(".obj"))
+    return str(Path(*parts[:usd_idx], "raw_objaverse", f"{uuid}.obj"))
+
+
+def _copy_asset_mesh(output_dir: Path, asset: dict[str, object], label: str) -> dict[str, object]:
+    candidates: list[Path] = []
+    for key in ("raw_object_path", "source_raw_object_path", "mesh_path"):
+        value = asset.get(key)
+        if value:
+            candidates.append(Path(str(value)).expanduser())
+    usd_path = str(asset.get("usd_path") or "")
+    if usd_path:
+        candidates.append(Path(_infer_raw_objaverse_path(usd_path)).expanduser())
+    existing = [path for path in candidates if path.is_file()]
+    summary: dict[str, object] = {
+        "label": label,
+        "source_candidates": [str(path) for path in candidates],
+        "copied": False,
+    }
+    if not existing:
+        return summary
+    source = existing[0].resolve()
+    asset_dir = output_dir / "stable_scene_assets"
+    asset_dir.mkdir(parents=True, exist_ok=True)
+    suffix = source.suffix or ".obj"
+    uuid = str(asset.get("uuid") or source.stem or label)
+    dest = asset_dir / f"{label}_{uuid}{suffix}"
+    if source.resolve() != dest.resolve():
+        shutil.copy2(source, dest)
+    summary.update(
+        {
+            "copied": True,
+            "source_path": str(source),
+            "copy_path": str(dest),
+            "copy_rel": os.path.relpath(dest, output_dir),
+            "copy_size": int(dest.stat().st_size),
+        }
+    )
+    return summary
+
+
+def _asset_record_for_env(task_env, env_id: int) -> dict[str, object]:
+    assets = list(getattr(task_env, "_object_assets", []))
+    indices = getattr(task_env, "object_asset_index", None)
+    if not assets or indices is None:
+        return {}
+    return dict(assets[int(indices[env_id].item())])
+
+
+def _clutter_asset_record_for_slot(task_env, env_id: int, slot_idx: int) -> dict[str, object]:
+    assets = list(getattr(task_env, "_tabletop_clutter_assets", []))
+    indices = getattr(task_env, "tabletop_clutter_asset_index", None)
+    if not assets or indices is None:
+        return {}
+    return dict(assets[int(indices[env_id, slot_idx].item())])
+
+
+def _robot_state_snapshot(task_env) -> dict[str, object]:
+    robot = getattr(task_env, "_robot", None)
+    if robot is None:
+        return {"enabled": False}
+    joint_names = list(getattr(robot.data, "joint_names", []))
+    joint_pos = robot.data.joint_pos.detach().float().cpu()
+    joint_vel = robot.data.joint_vel.detach().float().cpu()
+    arm_joint_ids = list(getattr(task_env, "arm_joint_ids", []))
+    finger_joint_ids = list(getattr(task_env, "finger_joint_ids", []))
+    return {
+        "enabled": True,
+        "joint_names": joint_names,
+        "joint_position": joint_pos.tolist(),
+        "joint_velocity": joint_vel.tolist(),
+        "arm_joint_ids": [int(v) for v in arm_joint_ids],
+        "finger_joint_ids": [int(v) for v in finger_joint_ids],
+        "arm_joint_names": [joint_names[int(i)] for i in arm_joint_ids if int(i) < len(joint_names)],
+        "finger_joint_names": [joint_names[int(i)] for i in finger_joint_ids if int(i) < len(joint_names)],
+        "arm_joint_position": joint_pos[:, arm_joint_ids].tolist() if arm_joint_ids else [],
+        "finger_joint_position": joint_pos[:, finger_joint_ids].tolist() if finger_joint_ids else [],
+    }
+
+
+def _stable_scene_payload(
+    task_env,
+    *,
+    output_dir: Path,
+    task: str,
+    seed: int,
+    settle_steps: int,
+    initial_snapshot: dict[str, object],
+    stable_snapshot: dict[str, object],
+    initial_velocity_summary: dict[str, object],
+    stable_velocity_summary: dict[str, object],
+    initial_clearance_summary: dict[str, object] | None,
+    stable_clearance_summary: dict[str, object] | None,
+) -> dict[str, object]:
+    env_id = 0
+    target_pos = [float(v) for v in stable_snapshot["target_root_pos"][env_id]]
+    target_quat = [float(v) for v in stable_snapshot["target_root_quat"][env_id]]
+    target_asset = _asset_record_for_env(task_env, env_id)
+    target_mesh_copy = _copy_asset_mesh(output_dir, target_asset, "target") if target_asset else {}
+
+    clutter_entries: list[dict[str, object]] = []
+    clutter_positions = stable_snapshot.get("clutter_root_pos_by_slot")
+    clutter_quats = stable_snapshot.get("clutter_root_quat_by_slot")
+    if isinstance(clutter_positions, list) and isinstance(clutter_quats, list):
+        for slot_idx, (slot_positions, slot_quats) in enumerate(zip(clutter_positions, clutter_quats, strict=False)):
+            if env_id >= len(slot_positions) or env_id >= len(slot_quats):
+                continue
+            asset = _clutter_asset_record_for_slot(task_env, env_id, slot_idx)
+            root_pos = [float(v) for v in slot_positions[env_id]]
+            root_quat = [float(v) for v in slot_quats[env_id]]
+            clutter_entries.append(
+                {
+                    "slot_idx": int(slot_idx),
+                    "asset": _jsonable(asset),
+                    "root_position": root_pos,
+                    "root_quat_wxyz": root_quat,
+                    "root_transform": _matrix_from_pose_wxyz(root_pos, root_quat),
+                }
+            )
+
+    return {
+        "format": "dextrah_stable_scene_v1",
+        "task": task,
+        "seed": int(seed),
+        "settle_steps": int(settle_steps),
+        "env_id": int(env_id),
+        "sim_dt": float(task_env.sim.cfg.dt),
+        "robot": _robot_state_snapshot(task_env),
+        "target": {
+            "asset": _jsonable(target_asset),
+            "mesh_copy": target_mesh_copy,
+            "root_position": target_pos,
+            "root_quat_wxyz": target_quat,
+            "root_transform": _matrix_from_pose_wxyz(target_pos, target_quat),
+        },
+        "clutter": clutter_entries,
+        "snapshots": {
+            "initial": initial_snapshot,
+            "stable": stable_snapshot,
+        },
+        "velocity_summary": {
+            "initial": initial_velocity_summary,
+            "stable": stable_velocity_summary,
+        },
+        "clearance_summary": {
+            "initial": initial_clearance_summary,
+            "stable": stable_clearance_summary,
+        },
+        "multi_object_asset_summary": task_env.multi_object_asset_summary()
+        if hasattr(task_env, "multi_object_asset_summary")
+        else None,
+        "tabletop_clutter_summary": task_env.tabletop_clutter_summary()
+        if hasattr(task_env, "tabletop_clutter_summary")
+        else None,
+    }
+
+
+def _load_stable_scene(path: Path | None) -> dict[str, object] | None:
+    if path is None:
+        return None
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict) or payload.get("format") != "dextrah_stable_scene_v1":
+        raise ValueError(f"Expected dextrah_stable_scene_v1 payload in {path}")
+    return payload
+
+
+def _restore_robot_state_from_stable_scene(task_env, stable_scene: dict[str, object]) -> dict[str, object]:
+    robot = getattr(task_env, "_robot", None)
+    robot_payload = stable_scene.get("robot") if isinstance(stable_scene.get("robot"), dict) else {}
+    if robot is None or not robot_payload:
+        return {"enabled": False, "reason": "missing_robot_or_payload"}
+    joint_positions = robot_payload.get("joint_position")
+    if not isinstance(joint_positions, list) or not joint_positions:
+        return {"enabled": False, "reason": "missing_joint_position"}
+    q = torch.as_tensor(joint_positions, dtype=robot.data.joint_pos.dtype, device=task_env.device)
+    if q.ndim != 2:
+        return {"enabled": False, "reason": "bad_joint_position_shape", "shape": list(q.shape)}
+    if q.shape[0] == 1 and int(task_env.num_envs) > 1:
+        q = q.repeat(int(task_env.num_envs), 1)
+    if q.shape != robot.data.joint_pos.shape:
+        return {
+            "enabled": False,
+            "reason": "joint_position_shape_mismatch",
+            "payload_shape": list(q.shape),
+            "env_shape": list(robot.data.joint_pos.shape),
+        }
+    env_ids = robot._ALL_INDICES
+    q = torch.clamp(q, task_env.robot_dof_lower_limits, task_env.robot_dof_upper_limits)
+    qd = torch.zeros_like(q)
+    robot.write_joint_state_to_sim(q, qd, env_ids=env_ids)
+    robot.set_joint_position_target(q, env_ids=env_ids)
+    if hasattr(task_env, "robot_dof_targets"):
+        task_env.robot_dof_targets[env_ids] = q
+    if hasattr(task_env, "arm_joint_pos_target"):
+        task_env.arm_joint_pos_target[env_ids] = q[:, task_env.arm_joint_ids]
+    if hasattr(task_env, "finger_joint_pos_target"):
+        task_env.finger_joint_pos_target[env_ids] = q[:, task_env.finger_joint_ids]
+    return {"enabled": True, "joint_position": _tensor_list(q)}
+
+
+def _restore_stable_scene(task_env, stable_scene: dict[str, object]) -> dict[str, object]:
+    snapshots = stable_scene.get("snapshots") if isinstance(stable_scene.get("snapshots"), dict) else {}
+    stable_snapshot = snapshots.get("stable") if isinstance(snapshots.get("stable"), dict) else None
+    if stable_snapshot is None:
+        return {"enabled": False, "reason": "missing_stable_snapshot"}
+    _restore_root_snapshot(task_env, stable_snapshot)
+    robot_restore = _restore_robot_state_from_stable_scene(task_env, stable_scene)
+    task_env.scene.write_data_to_sim()
+    task_env.sim.forward()
+    task_env.scene.update(dt=0.0)
+    task_env._compute_intermediate_values()
+    return {"enabled": True, "robot": robot_restore}
 
 
 def _restore_root_snapshot(task_env, snapshot: dict[str, object]) -> None:
@@ -1609,6 +1871,13 @@ def main() -> None:
     metrics_path = (
         Path(args_cli.metrics_path).expanduser().resolve() if args_cli.metrics_path else output_dir / "metrics.json"
     )
+    stable_scene_path = (
+        Path(args_cli.stable_scene_path).expanduser().resolve()
+        if args_cli.stable_scene_path
+        else output_dir / "stable_scene.json"
+    )
+    stable_scene_input_path = stable_scene_path if stable_scene_path.is_file() else None
+    stable_scene_input = _load_stable_scene(stable_scene_input_path)
 
     objaverse_textured_summary = None
     if args_cli.objaverse_textured_manifest_path:
@@ -1822,6 +2091,22 @@ def main() -> None:
         task_env.sim.render()
         env.render()
     print(json.dumps({"event": "render_warmup_done"}), flush=True)
+    stable_scene_restore_summary = {"enabled": False}
+    if stable_scene_input is not None:
+        stable_scene_restore_summary = _restore_stable_scene(task_env, stable_scene_input)
+        for _ in range(max(int(args_cli.render_warmup_frames), 1)):
+            task_env.sim.render()
+            env.render()
+        print(
+            json.dumps(
+                {
+                    "event": "stable_scene_restored",
+                    "path": str(stable_scene_input_path),
+                    "summary": stable_scene_restore_summary,
+                }
+            ),
+            flush=True,
+        )
 
     frames: list[np.ndarray] = []
     frame_paths: list[str] = []
@@ -1926,6 +2211,7 @@ def main() -> None:
     first_done_step: int | None = None
     demo_trajectory: dict[str, object] | None = None
     demo_trajectory_path: Path | None = None
+    demo_trajectory_start_error: dict[str, object] | None = None
     demo_start_joint_pos = None
     demo_table_rejection_target_joint_pos = None
     if args_cli.demo_mode == "single_yam_rejected_path":
@@ -1946,6 +2232,15 @@ def main() -> None:
             demo_trajectory = _load_demo_trajectory(demo_trajectory_path)
             if robot is None:
                 raise AttributeError("single_yam_rejected_path trajectory replay requires a robot articulation")
+            first_source_joint_pos = _map_source_joint_to_env(task_env, demo_trajectory["joint_positions"][0])
+            if demo_start_joint_pos is not None:
+                start_delta = first_source_joint_pos - demo_start_joint_pos
+                demo_trajectory_start_error = {
+                    "max_abs": float(torch.max(torch.abs(start_delta)).detach().cpu().item()),
+                    "l2": float(torch.linalg.norm(start_delta).detach().cpu().item()),
+                    "first_source_joint_position": _tensor_list(first_source_joint_pos),
+                    "replay_start_joint_position": _tensor_list(demo_start_joint_pos),
+                }
             print(
                 json.dumps(
                     {
@@ -1959,6 +2254,7 @@ def main() -> None:
                         "nominal_status": demo_trajectory.get("nominal_status"),
                         "replay_mode": str(args_cli.demo_trajectory_replay_mode),
                         "start_blend_steps": int(args_cli.demo_start_blend_steps),
+                        "start_error": demo_trajectory_start_error,
                     }
                 ),
                 flush=True,
@@ -2123,6 +2419,34 @@ def main() -> None:
     final_velocity_summary = _root_velocity_summary(task_env)
     initial_clearance_summary = _initial_clearance_summary(task_env, initial_snapshot)
     final_clearance_summary = _initial_clearance_summary(task_env, final_snapshot)
+    stable_scene_written = False
+    if stable_scene_input is None:
+        stable_scene = _stable_scene_payload(
+            task_env,
+            output_dir=stable_scene_path.parent,
+            task=str(args_cli.task),
+            seed=int(args_cli.seed),
+            settle_steps=int(settle_steps if args_cli.demo_mode == "settle" else 0),
+            initial_snapshot=initial_snapshot,
+            stable_snapshot=final_snapshot,
+            initial_velocity_summary=initial_velocity_summary,
+            stable_velocity_summary=final_velocity_summary,
+            initial_clearance_summary=initial_clearance_summary,
+            stable_clearance_summary=final_clearance_summary,
+        )
+        stable_scene_path.parent.mkdir(parents=True, exist_ok=True)
+        stable_scene_path.write_text(json.dumps(_jsonable(stable_scene), indent=2), encoding="utf-8")
+        stable_scene_written = True
+        print(
+            json.dumps(
+                {
+                    "event": "stable_scene_written",
+                    "path": str(stable_scene_path),
+                    "settle_steps": int(settle_steps if args_cli.demo_mode == "settle" else 0),
+                }
+            ),
+            flush=True,
+        )
     _write_video(video_path, frames, int(args_cli.fps))
     print(json.dumps({"event": "video_written", "path": str(video_path), "frame_count": len(frames)}), flush=True)
 
@@ -2156,6 +2480,7 @@ def main() -> None:
             "trajectory_nominal_status": None if demo_trajectory is None else demo_trajectory.get("nominal_status"),
             "trajectory_segments": None if demo_trajectory is None else demo_trajectory.get("segments"),
             "start_blend_steps": int(args_cli.demo_start_blend_steps),
+            "trajectory_start_error": demo_trajectory_start_error,
             "table_rejection_target_fraction": float(args_cli.demo_table_rejection_target_fraction),
             "table_rejection_target_joint_position": None
             if demo_table_rejection_target_joint_pos is None
@@ -2221,6 +2546,13 @@ def main() -> None:
             "objects": visual_object_overlay_summary,
         },
         "grasp_pose_overlay": grasp_pose_overlay_summary,
+        "stable_scene": {
+            "path": str(stable_scene_path),
+            "input_path": None if stable_scene_input_path is None else str(stable_scene_input_path),
+            "input_loaded": stable_scene_input is not None,
+            "restore": stable_scene_restore_summary,
+            "written": bool(stable_scene_written),
+        },
         "video_path": str(video_path),
         "frame_paths": frame_paths,
         "frame_count": len(frame_paths),
