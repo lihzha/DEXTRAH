@@ -9755,3 +9755,46 @@ Next:
 - Generate a one-object stable scene, plan a bin-drop trajectory, render it
   dynamically with grasp overlay and dataset recording, inspect video/metrics,
   then iterate until the pick, lift, transport, and drop are BC-learnable.
+
+## 2026-06-22T07:57:00Z - One-Object Pick-Drop Replay Asset Mismatch
+
+Goal:
+- Validate the first one-object YAM pick-and-drop-into-bin trajectory in
+  dynamic Isaac simulation with RGB and full-state dataset recording.
+
+Result:
+- l401 job `1039080` completed and wrote a 25s/300-frame video plus a
+  1500-step `trajectory_dataset.npz`.
+- Artifact inspection showed the trajectory was not valid: the gripper reached
+  the bin, but the physical object root stayed near the original table XY
+  instead of moving with the gripper.
+- Numeric evidence from the dataset:
+  - `terminated` was true from the first step because the task-local
+    `cube_pos` center was inconsistent for the active mesh.
+  - `target_root_pos` jumped during the first 42 replay steps, then stayed
+    nearly fixed while the arm moved to the bin.
+  - The active simulator object UUID in the Isaac log was not the stable-scene
+    target UUID used by GraspGenX/cuRobo planning.
+
+Analysis:
+- The replay restored the target root pose from `stable_scene.json`, but the
+  DEXTRAH environment had spawned a different target asset. That invalidated
+  the planned GraspGenX/cuRobo grasp geometry and produced a misleading
+  floating-object replay.
+
+Change:
+- Added stable-scene target manifest materialization in
+  `render_tabletop_clutter_settle_video.py` for single-YAM trajectory replay.
+  The render script now forces env 0 to spawn the same target UUID/USD/scale
+  recorded in `stable_scene.json`.
+- Added a runtime UUID check that aborts if the stable-scene target UUID and
+  active simulator target UUID differ.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py
+  dextrah_lab/scene_scripts/plan_yam_graspgenx_curobo.py`
+- `bash -n cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh`
+
+Next:
+- Commit/deploy this exact revision to l401 and rerun the one-object
+  pick/drop dataset replay with object USD bounds validation disabled.

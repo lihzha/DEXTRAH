@@ -376,6 +376,254 @@ def _goal_bin_center() -> list[float]:
     return [center_x, center_y, YAM_TABLE["surface_z"] + bottom + wall_h]
 
 
+def _minimum_jerk_ramp(start: Any, end: Any, n_frames: int) -> Any:
+    import numpy as np
+
+    n = max(int(n_frames), 1)
+    start_arr = np.asarray(start, dtype=np.float32).reshape(1, -1)
+    end_arr = np.asarray(end, dtype=np.float32).reshape(1, -1)
+    alpha = np.linspace(0.0, 1.0, n, dtype=np.float32).reshape(-1, 1)
+    blend = 10.0 * alpha**3 - 15.0 * alpha**4 + 6.0 * alpha**5
+    return (start_arr + blend * (end_arr - start_arr)).astype(np.float32)
+
+
+def _yam_fk_link_position(
+    fk: Any,
+    profile: Any,
+    base_T: Any,
+    q_arm: Any,
+    link_name: str,
+) -> tuple[Any, Any]:
+    import numpy as np
+
+    cfg = {name: float(value) for name, value in zip(profile.arm_joint_names, q_arm, strict=True)}
+    T = fk.fk(cfg, base_T=base_T, link_names=[link_name])[link_name]
+    return np.asarray(T[:3, 3], dtype=np.float64), T
+
+
+def _solve_yam_scripted_bin_arm_pose(
+    *,
+    profile: Any,
+    bundle: Any,
+    q_start_arm: Any,
+    target_link_position_world: Any,
+) -> tuple[Any | None, dict[str, Any]]:
+    import numpy as np
+    from scipy.optimize import least_squares
+    from trajectory_visualizer import URDFFK
+
+    fk = URDFFK(profile.urdf_path, asset_root=profile.asset_root_path)
+    q_start = np.asarray(q_start_arm, dtype=np.float64).reshape(-1)
+    target = np.asarray(target_link_position_world, dtype=np.float64).reshape(3)
+    if q_start.shape[0] != int(profile.n_arm):
+        return None, {
+            "enabled": True,
+            "success": False,
+            "reason": "bad_start_arm_shape",
+            "shape": list(q_start.shape),
+            "expected": int(profile.n_arm),
+        }
+
+    lower: list[float] = []
+    upper: list[float] = []
+    joint_map = {joint.name: joint for joint in fk._urdf.actuated_joints}
+    for name, value in zip(profile.arm_joint_names, q_start, strict=True):
+        joint = joint_map.get(name)
+        limit = getattr(joint, "limit", None) if joint is not None else None
+        lower.append(float(getattr(limit, "lower", value - 1.0)))
+        upper.append(float(getattr(limit, "upper", value + 1.0)))
+    lo = np.asarray(lower, dtype=np.float64)
+    hi = np.asarray(upper, dtype=np.float64)
+    q_start = np.clip(q_start, lo, hi)
+
+    starts = [q_start]
+    deterministic_offsets = [
+        [0.10, 0.20, 0.20, 0.10, -0.05, 0.0],
+        [0.20, 0.35, 0.30, 0.20, -0.10, 0.0],
+        [0.35, 0.55, 0.55, 0.35, -0.15, 0.0],
+        [-0.10, 0.20, 0.20, 0.10, -0.05, 0.0],
+    ]
+    for offset in deterministic_offsets:
+        starts.append(np.clip(q_start + np.asarray(offset, dtype=np.float64), lo, hi))
+
+    def _position(q: Any) -> Any:
+        pos, _ = _yam_fk_link_position(fk, profile, bundle.robot_base_T, q, profile.tool_frame)
+        return pos
+
+    best: tuple[float, float, float, Any, Any] | None = None
+    attempts: list[dict[str, Any]] = []
+    for start in starts:
+        def residual(q: Any) -> Any:
+            pos = _position(q)
+            return np.concatenate([(pos - target) * 8.0, (q - q_start) * 0.08])
+
+        result = least_squares(
+            residual,
+            start,
+            bounds=(lo, hi),
+            max_nfev=180,
+            xtol=1.0e-5,
+            ftol=1.0e-5,
+            gtol=1.0e-5,
+        )
+        q = np.asarray(result.x, dtype=np.float64)
+        pos = _position(q)
+        position_error = float(np.linalg.norm(pos - target))
+        q_distance = float(np.linalg.norm(q - q_start))
+        score = float(position_error + 0.015 * q_distance)
+        attempts.append(
+            {
+                "start": start.tolist(),
+                "q": q.tolist(),
+                "position": pos.tolist(),
+                "position_error": position_error,
+                "q_distance": q_distance,
+                "score": score,
+                "success": bool(result.success),
+                "status": int(result.status),
+                "message": str(result.message),
+            }
+        )
+        candidate = (score, position_error, q_distance, q, pos)
+        if best is None or candidate[0] < best[0]:
+            best = candidate
+
+    if best is None:
+        return None, {
+            "enabled": True,
+            "success": False,
+            "reason": "no_ik_attempts",
+            "target_link_position_world": target.tolist(),
+            "attempts": attempts,
+        }
+
+    score, position_error, q_distance, q_best, pos_best = best
+    ramp = _minimum_jerk_ramp(q_start, q_best, 121)
+    ramp_positions = np.asarray([_position(q) for q in ramp], dtype=np.float64)
+    summary = {
+        "enabled": True,
+        "success": bool(position_error <= 0.025),
+        "target_link_position_world": target.tolist(),
+        "solved_link_position_world": pos_best.tolist(),
+        "position_error": position_error,
+        "q_distance": q_distance,
+        "score": score,
+        "q_start_arm": q_start.tolist(),
+        "q_target_arm": q_best.tolist(),
+        "ramp_link_min_z": float(ramp_positions[:, 2].min()),
+        "ramp_link_max_z": float(ramp_positions[:, 2].max()),
+        "ramp_link_min_y": float(ramp_positions[:, 1].min()),
+        "ramp_link_max_y": float(ramp_positions[:, 1].max()),
+        "joint_limits_lower": lo.tolist(),
+        "joint_limits_upper": hi.tolist(),
+        "attempts": sorted(attempts, key=lambda item: float(item["score"]))[:3],
+    }
+    if not summary["success"]:
+        return None, summary
+    return q_best.astype(np.float32), summary
+
+
+def _append_scripted_yam_bin_drop(
+    *,
+    joint_traj: Any,
+    segments: list[tuple[str, int]],
+    profile: Any,
+    bundle: Any,
+    target_center_world: Any | None,
+    selected_tool_world: Any,
+    move_frames: int,
+    hold_frames: int,
+    open_frames: int,
+    drop_height_above_bin: float,
+    drop_y_offset: float,
+) -> tuple[Any, list[tuple[str, int]], dict[str, Any]]:
+    import numpy as np
+
+    traj = np.asarray(joint_traj, dtype=np.float32)
+    if traj.ndim != 2 or traj.shape[0] == 0:
+        return traj, segments, {"enabled": True, "success": False, "reason": "empty_trajectory"}
+    if target_center_world is None:
+        return traj, segments, {"enabled": True, "success": False, "reason": "missing_target_center_world"}
+
+    n_arm = int(profile.n_arm)
+    n_grip = int(profile.n_gripper)
+    q_start_arm = traj[-1, :n_arm].astype(np.float32)
+    finger_hold = traj[-1, n_arm : n_arm + n_grip].astype(np.float32)
+    selected_tool = np.asarray(selected_tool_world, dtype=np.float64)
+    target_center = np.asarray(target_center_world, dtype=np.float64).reshape(3)
+    tool_center_offset = selected_tool[:3, 3] - target_center
+    bin_top = np.asarray(_goal_bin_center(), dtype=np.float64)
+    desired_object_drop = np.asarray(
+        [
+            bin_top[0],
+            bin_top[1] + float(drop_y_offset),
+            max(bin_top[2] + 0.035, bin_top[2] + float(drop_height_above_bin) - float(tool_center_offset[2])),
+        ],
+        dtype=np.float64,
+    )
+    target_link_position = desired_object_drop + tool_center_offset
+    target_link_position[2] = max(
+        target_link_position[2],
+        bin_top[2] + float(drop_height_above_bin),
+    )
+
+    q_bin, solve_summary = _solve_yam_scripted_bin_arm_pose(
+        profile=profile,
+        bundle=bundle,
+        q_start_arm=q_start_arm,
+        target_link_position_world=target_link_position,
+    )
+    summary: dict[str, Any] = {
+        "enabled": True,
+        "success": q_bin is not None,
+        "drop_mode": "scripted_minimum_jerk_joint_space",
+        "bin_top_center_world": bin_top.tolist(),
+        "desired_object_drop_world": desired_object_drop.tolist(),
+        "tool_minus_object_center_world_at_grasp": tool_center_offset.tolist(),
+        "target_link_position_world": target_link_position.tolist(),
+        "drop_y_offset": float(drop_y_offset),
+        "drop_height_above_bin": float(drop_height_above_bin),
+        "move_frames": int(move_frames),
+        "hold_frames": int(hold_frames),
+        "open_frames": int(open_frames),
+        "solve": solve_summary,
+    }
+    if q_bin is None:
+        return traj, segments, summary
+
+    move_arm = _minimum_jerk_ramp(q_start_arm, q_bin, max(2, int(move_frames)))
+    move_full = np.concatenate(
+        [move_arm, np.tile(finger_hold.reshape(1, -1), (move_arm.shape[0], 1))],
+        axis=1,
+    ).astype(np.float32)
+    chunks = [traj, move_full]
+    new_segments = list(segments)
+    new_segments.append(("move_to_above_bin_scripted", int(move_full.shape[0])))
+
+    if int(hold_frames) > 0:
+        hold = np.tile(move_full[-1], (int(hold_frames), 1)).astype(np.float32)
+        chunks.append(hold)
+        new_segments.append(("hold_above_bin", int(hold.shape[0])))
+
+    if n_grip > 0:
+        open_vals = np.asarray([profile.open_value(name) for name in profile.gripper_joint_names], dtype=np.float32)
+        release_grip = _minimum_jerk_ramp(finger_hold, open_vals, max(1, int(open_frames)))
+        release_arm = np.tile(move_full[-1, :n_arm], (release_grip.shape[0], 1)).astype(np.float32)
+        release = np.concatenate([release_arm, release_grip], axis=1).astype(np.float32)
+        chunks.append(release)
+        new_segments.append(("open_fingers_to_drop", int(release.shape[0])))
+        if int(hold_frames) > 0:
+            post = np.tile(release[-1], (int(hold_frames), 1)).astype(np.float32)
+            chunks.append(post)
+            new_segments.append(("hold_after_drop", int(post.shape[0])))
+
+    out = np.concatenate(chunks, axis=0).astype(np.float32)
+    summary["total_frames_before"] = int(traj.shape[0])
+    summary["total_frames_after"] = int(out.shape[0])
+    summary["q_target_full"] = out[min(traj.shape[0] + move_full.shape[0] - 1, out.shape[0] - 1)].tolist()
+    return out, new_segments, summary
+
+
 def _default_clutter_obstacles() -> list[dict[str, Any]]:
     half_extents = [
         [0.040, 0.030, 0.030],
@@ -1104,6 +1352,18 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--move_to_bin_frames", type=int, default=360)
     parser.add_argument("--drop_height_above_bin", type=float, default=0.18)
+    parser.add_argument(
+        "--scripted_place_fallback",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="For YAM pick_and_drop_in_bin, append a DEXTRAH scripted drop if cuRobo transport fails.",
+    )
+    parser.add_argument(
+        "--scripted_bin_drop_y_offset",
+        type=float,
+        default=-0.08,
+        help="Object-center Y offset from the bin center for the scripted drop target.",
+    )
     parser.add_argument("--target_x", type=float, default=YAM_TARGET_XY[0])
     parser.add_argument("--target_y", type=float, default=YAM_TARGET_XY[1])
     parser.add_argument("--target_yaw_deg", type=float, default=0.0)
@@ -1400,6 +1660,7 @@ def main() -> None:
 
     trajectory_json: Path | None = None
     trajectory_start_summary: dict[str, Any] | None = None
+    scripted_place_summary: dict[str, Any] = {"enabled": False, "reason": "not_requested"}
     if bool(success) and pregrasp_traj is not None and len(pregrasp_traj) > 0 and lift_traj is not None and len(lift_traj) > 0:
         task = get_task(str(args.plan_task))
         if hasattr(task, "MOVE_TO_BIN_FRAMES"):
@@ -1423,6 +1684,33 @@ def main() -> None:
             result=result,
         )
         joint_traj = np.asarray(task_result.joint_traj, dtype=np.float32)
+        task_segments = list(task_result.segments)
+        has_task_bin_transport = any(str(name) == "move_to_above_bin" for name, _count in task_segments)
+        if (
+            str(args.plan_task) == "pick_and_drop_in_bin"
+            and bool(args.scripted_place_fallback)
+            and not has_task_bin_transport
+        ):
+            selected_tool_for_script = np.asarray(grasps_world[target_idx], dtype=float) @ _grasp_to_tool_matrix(robot_cfg)
+            joint_traj, task_segments, scripted_place_summary = _append_scripted_yam_bin_drop(
+                joint_traj=joint_traj,
+                segments=task_segments,
+                profile=profile,
+                bundle=bundle,
+                target_center_world=target_center_world,
+                selected_tool_world=selected_tool_for_script,
+                move_frames=int(args.move_to_bin_frames),
+                hold_frames=int(args.hold_frames),
+                open_frames=int(args.close_frames),
+                drop_height_above_bin=float(args.drop_height_above_bin),
+                drop_y_offset=float(args.scripted_bin_drop_y_offset),
+            )
+        elif str(args.plan_task) == "pick_and_drop_in_bin":
+            scripted_place_summary = {
+                "enabled": bool(args.scripted_place_fallback),
+                "success": False,
+                "reason": "task_already_added_bin_transport" if has_task_bin_transport else "disabled",
+            }
         expected_start_arm = np.asarray(robot_cfg["curobo"]["default_joint_position"], dtype=np.float32)
         expected_start_grip = np.asarray(
             [
@@ -1476,7 +1764,7 @@ def main() -> None:
             output_path=trajectory_json,
             fps=int(args.sim_fps),
         )
-        _annotate_trajectory_phases(trajectory_json, task_result.segments)
+        _annotate_trajectory_phases(trajectory_json, task_segments)
 
     overlay_json = run_dir / "grasp_pose_overlay.json"
     grasp_to_tool = _grasp_to_tool_matrix(robot_cfg)
@@ -1522,6 +1810,7 @@ def main() -> None:
         "plan_task": str(args.plan_task),
         "move_to_bin_frames": int(args.move_to_bin_frames),
         "drop_height_above_bin": float(args.drop_height_above_bin),
+        "scripted_place": scripted_place_summary,
         "planning_attempts": planning_attempts,
     }
     _write_json(overlay_json, overlay_payload)
@@ -1548,6 +1837,7 @@ def main() -> None:
             "plan_task": str(args.plan_task),
             "move_to_bin_frames": int(args.move_to_bin_frames),
             "drop_height_above_bin": float(args.drop_height_above_bin),
+            "scripted_place": scripted_place_summary,
             "grasp_filter": grasp_filter_summary,
             "planning_attempts": planning_attempts,
         },

@@ -1165,6 +1165,46 @@ def _load_stable_scene(path: Path | None) -> dict[str, object] | None:
     return payload
 
 
+def _stable_scene_target_manifest(stable_scene: dict[str, object], output_dir: Path) -> Path | None:
+    target = stable_scene.get("target") if isinstance(stable_scene.get("target"), dict) else {}
+    asset = target.get("asset") if isinstance(target.get("asset"), dict) else {}
+    uuid = str(asset.get("uuid") or "")
+    usd_path = str(asset.get("usd_path") or "")
+    if not uuid or not usd_path:
+        return None
+
+    record: dict[str, object] = {
+        "uuid": uuid,
+        "name": str(asset.get("name") or uuid),
+        "usd_path": usd_path,
+    }
+    for key in (
+        "metadata_text",
+        "raw_object_path",
+        "scale",
+        "usd_spawn_scale",
+        "usd_root_scale",
+        "scaled_half_extents",
+        "scaled_bounds_min",
+        "scaled_bounds_max",
+        "grasp_size",
+        "grasp_prior_path",
+        "stable_pose_path",
+    ):
+        value = asset.get(key)
+        if value not in (None, ""):
+            record[key] = value
+
+    manifest = {
+        "asset_root": "/",
+        "objects": [record],
+        "source": "stable_scene_target",
+    }
+    manifest_path = output_dir / "stable_scene_target_manifest.json"
+    manifest_path.write_text(json.dumps(_jsonable(manifest), indent=2), encoding="utf-8")
+    return manifest_path
+
+
 def _restore_robot_state_from_stable_scene(task_env, stable_scene: dict[str, object]) -> dict[str, object]:
     robot = getattr(task_env, "_robot", None)
     robot_payload = stable_scene.get("robot") if isinstance(stable_scene.get("robot"), dict) else {}
@@ -2376,6 +2416,27 @@ def main() -> None:
             flush=True,
         )
 
+    if stable_scene_input is not None and single_yam_demo_enabled:
+        target_manifest_path = _stable_scene_target_manifest(stable_scene_input, output_dir)
+        if target_manifest_path is not None:
+            args_cli.object_asset_manifest_path = str(target_manifest_path)
+            args_cli.max_objects = 1
+            args_cli.object_asset_assignment = "round_robin"
+            if args_cli.object_validate_usd_bounds is None:
+                args_cli.object_validate_usd_bounds = False
+            target = stable_scene_input.get("target") if isinstance(stable_scene_input.get("target"), dict) else {}
+            asset = target.get("asset") if isinstance(target.get("asset"), dict) else {}
+            print(
+                json.dumps(
+                    {
+                        "event": "stable_scene_target_manifest_prepared",
+                        "manifest_path": str(target_manifest_path),
+                        "uuid": str(asset.get("uuid") or ""),
+                    }
+                ),
+                flush=True,
+            )
+
     torch.manual_seed(int(args_cli.seed))
     np.random.seed(int(args_cli.seed))
     env_cfg = parse_env_cfg(
@@ -2521,6 +2582,30 @@ def main() -> None:
     )
     env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array")
     task_env = env.unwrapped
+    if stable_scene_input is not None and single_yam_demo_enabled:
+        target = stable_scene_input.get("target") if isinstance(stable_scene_input.get("target"), dict) else {}
+        asset = target.get("asset") if isinstance(target.get("asset"), dict) else {}
+        expected_uuid = str(asset.get("uuid") or "")
+        active_assets = list(getattr(task_env, "_object_assets", []))
+        active_indices = getattr(task_env, "object_asset_index", None)
+        active_uuid = ""
+        if active_assets and active_indices is not None:
+            active_idx = int(active_indices[0].detach().cpu().item())
+            active_uuid = str(active_assets[active_idx].get("uuid") or "")
+        if expected_uuid and active_uuid and active_uuid != expected_uuid:
+            raise RuntimeError(
+                f"Stable-scene target UUID mismatch: expected {expected_uuid}, active environment has {active_uuid}"
+            )
+        print(
+            json.dumps(
+                {
+                    "event": "stable_scene_target_asset_active",
+                    "expected_uuid": expected_uuid,
+                    "active_uuid": active_uuid,
+                }
+            ),
+            flush=True,
+        )
     eye_default, target_default = _task_camera_defaults(args_cli.task)
     eye = tuple(float(v) for v in (args_cli.camera_eye or eye_default))
     target = tuple(float(v) for v in (args_cli.camera_target or target_default))
