@@ -34,6 +34,22 @@ def _load_json(path: Path) -> dict[str, Any]:
     return payload
 
 
+def _localize_container_path(value: object) -> object:
+    if not isinstance(value, str):
+        return value
+    if value.startswith("/code/"):
+        return str(_repo_root() / value[len("/code/") :])
+    return value
+
+
+def _localize_asset(asset: dict[str, Any]) -> dict[str, Any]:
+    localized = copy.deepcopy(asset)
+    for key in ("raw_object_path", "source_raw_object_path", "mesh_path", "usd_path"):
+        if key in localized:
+            localized[key] = _localize_container_path(localized[key])
+    return localized
+
+
 def _matrix_from_pose_wxyz(pos: list[float], quat_wxyz: list[float]) -> list[list[float]]:
     import math
 
@@ -62,7 +78,7 @@ def _target_to_object(target: dict[str, Any]) -> dict[str, Any]:
         "object_id": "target",
         "source": "target",
         "slot_idx": None,
-        "asset": copy.deepcopy(asset),
+        "asset": _localize_asset(asset),
         "root_position": pos,
         "root_quat_wxyz": quat,
         "root_transform": copy.deepcopy(target.get("root_transform") or _matrix_from_pose_wxyz(pos, quat)),
@@ -79,7 +95,7 @@ def _clutter_to_object(entry: dict[str, Any]) -> dict[str, Any]:
         "object_id": f"clutter_{slot_idx:02d}",
         "source": "clutter",
         "slot_idx": slot_idx,
-        "asset": copy.deepcopy(asset),
+        "asset": _localize_asset(asset),
         "root_position": pos,
         "root_quat_wxyz": quat,
         "root_transform": copy.deepcopy(entry.get("root_transform") or _matrix_from_pose_wxyz(pos, quat)),
