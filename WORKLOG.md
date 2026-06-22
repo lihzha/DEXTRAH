@@ -9798,3 +9798,81 @@ Validation:
 Next:
 - Commit/deploy this exact revision to l401 and rerun the one-object
   pick/drop dataset replay with object USD bounds validation disabled.
+
+## 2026-06-22T09:04:00Z - Clean Three-Object YAM Pick-All-Into-Bin Demo
+
+Goal:
+- Scale the YAM GraspGenX/cuRobo pipeline from the validated single-object and
+  two-object pick/drop replays to a randomized three-object scene.
+- Keep current YAM damping/control values, use GraspGenX + cuRobo for grasp
+  approach, and use scripted lift/bin-drop primitives for the lift/place phase.
+- Record a BC-ready trajectory dataset with RGB observations plus full states,
+  and ensure all objects start non-overlapping and end in the bin.
+
+Changes:
+- Added scripted lift fallback support in
+  `dextrah_lab/scene_scripts/plan_yam_graspgenx_curobo.py` and
+  `plan_yam_multi_object_pick_place.py`; multi-object planning defaults to
+  scripted vertical lift so cuRobo is only responsible for the grasp approach.
+- Added `--hide_robot_debug_sites` to
+  `dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py` and hid YAM
+  MJCF `tcp_site`/`grasp_site` prims from rendered RGB by default. This removed
+  the visible green `grasp_site` marker from BC data while preserving meshes,
+  collisions, physics, damping, and the trajectory.
+- Commits:
+  - `903fc6e0b2b2151467baf9c0cdfc484842f49e54`:
+    scripted lift fallback.
+  - `90827893141d6a307e0a8ae4ae633d8e877dd86d`:
+    hide YAM debug sites in demo renders.
+
+Jobs and artifacts:
+- Stable scene job `1039092`:
+  `/home/lzha/code/cluster_results/l401/yam_three_obj_primitive_settle_2d83e03b_seed41_20260622T083756Z`
+- Three-object plan:
+  `/home/lzha/code/cluster_results/l401/yam_pick_place_plans/three_obj_primitive_seed41_2d83e03b_scripted_lift`
+- First dynamic replay job `1039093` succeeded but exposed visible YAM site
+  markers in the RGB stream, so it was kept as diagnostic only.
+- Final clean dynamic replay job `1039094`:
+  `/home/lzha/code/cluster_results/l401/yam_three_obj_primitive_pick_drop_dataset_90827893_seed41_clean_sites_20260622T085800Z`
+
+Validation:
+- l401 remote worktree was deployed to `90827893` via Git bundle because l401
+  GitHub SSH fetch lacked a usable key.
+- Remote checks passed:
+  `python3 -m py_compile dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py
+  dextrah_lab/scene_scripts/plan_yam_graspgenx_curobo.py
+  dextrah_lab/scene_scripts/plan_yam_multi_object_pick_place.py`
+  and `bash -n cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh`.
+- Final MP4: 1280x720, 12 fps, 901 frames, 75.08 s.
+- Final dataset: `trajectory_dataset.npz`, `4500` state steps and RGB shape
+  `[4500, 120, 160, 3]`.
+- Final object state metrics:
+  - `target` final `[-0.21276, 0.43846, 0.03153]`, inside bin true,
+    lift delta `0.22218 m`.
+  - `clutter_00` final `[-0.19236, 0.37613, 0.02450]`, inside bin true,
+    lift delta `0.19283 m`.
+  - `clutter_01` final `[-0.13177, 0.43666, 0.02435]`, inside bin true,
+    lift delta `0.18975 m`.
+  - Min finger-table clearance `0.09358 m`.
+  - Joint tracking max absolute error `0.03245`, mean absolute error
+    `0.00372`, last-100-step max absolute error `4.65e-05`.
+  - Cleaned dataset flags: `done_sum=1`, `terminated_sum=1`,
+    `truncated_sum=0`.
+  - Hidden-site metadata: `hidden_count=2` for `tcp_site` and `grasp_site`.
+  - Green-site pixel audit on previously affected frames: `0` green pixels.
+
+Inspection artifacts:
+- Video:
+  `http://localhost:8765/view?path=cluster_results/l401/yam_three_obj_primitive_pick_drop_dataset_90827893_seed41_clean_sites_20260622T085800Z/three_obj_yam_pick_drop_clean_sites.mp4`
+- Timeline sheet:
+  `http://localhost:8765/view?path=cluster_results/l401/yam_three_obj_primitive_pick_drop_dataset_90827893_seed41_clean_sites_20260622T085800Z/three_obj_pick_drop_clean_sites_timeline_sheet.png`
+- Bin zoom sheet:
+  `http://localhost:8765/view?path=cluster_results/l401/yam_three_obj_primitive_pick_drop_dataset_90827893_seed41_clean_sites_20260622T085800Z/three_obj_pick_drop_clean_sites_bin_zoom_sheet.png`
+- State traces:
+  `http://localhost:8765/view?path=cluster_results/l401/yam_three_obj_primitive_pick_drop_dataset_90827893_seed41_clean_sites_20260622T085800Z/three_obj_pick_drop_clean_sites_state_traces.png`
+
+Conclusion:
+- The final clean three-object trajectory is acceptable as the first
+  multi-object YAM pick-all-into-bin demonstration: smooth joint tracking,
+  positive table clearance, no visible debug sites, all objects grasped/lifted,
+  and all objects end inside the bin.
