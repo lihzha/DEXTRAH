@@ -9999,3 +9999,11 @@ Smoke follow-up:
   one-object dynamic replay, RGB/state recording, and current YAM damping.
 - Revised result directory:
   `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/yam_demos/yam_objaverse_oneobj_300_top512_65b32317_20260622T173847Z`.
+- Early revised-run monitor: after roughly 19 minutes, the revised run had 6
+  accepted demos from 22 started attempts, with planner and validation rejects
+  acting as intended. First two accepted revised demos were fetched and visually
+  checked; both had clean grasp/lift/drop behavior and accepted validation
+  metrics.
+- Throughput adjustment: increased Slurm array throttle for job `1039183` from
+  4 to 8 via `scontrol update JobId=1039183 ArrayTaskThrottle=8`; shards 4-7
+  started on `pool0-00023`.
