@@ -74,6 +74,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source_manifest", type=Path, required=True)
     parser.add_argument("--output_manifest", type=Path, required=True)
+    parser.add_argument(
+        "--output_asset_root",
+        type=str,
+        default="",
+        help="Optional asset_root to write to the output manifest, e.g. a container-visible mount path.",
+    )
     parser.add_argument("--max_assets", type=int, default=1024)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--min_xy_radius", type=float, default=0.012)
@@ -164,7 +170,7 @@ def main() -> None:
 
     output = dict(payload)
     output["format"] = "dextrah_yam_objaverse_collection_pool_v1"
-    output["asset_root"] = str(source_asset_root)
+    output["asset_root"] = str(args.output_asset_root or source_asset_root)
     output["source_manifest_path"] = str(args.source_manifest)
     output["selected_uuid_count"] = len(selected)
     output["objects"] = selected

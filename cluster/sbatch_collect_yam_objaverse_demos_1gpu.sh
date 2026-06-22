@@ -124,9 +124,14 @@ prepare_pool_manifest() {
   (
     flock 9
     if [ ! -s "$POOL_MANIFEST" ]; then
+      output_asset_root="${FULL_OBJAVERSE_CONTAINER_ASSET_ROOT:-}"
+      if [ -z "$output_asset_root" ]; then
+        output_asset_root="$(host_to_results_container "$FULL_OBJAVERSE_ASSET_ROOT")"
+      fi
       python3 "$CODE_NFS/dextrah_lab/scene_scripts/prepare_yam_objaverse_pool_manifest.py" \
         --source_manifest "$FULL_OBJAVERSE_MANIFEST_PATH" \
         --output_manifest "$POOL_MANIFEST" \
+        --output_asset_root "$output_asset_root" \
         --max_assets "$POOL_MAX_ASSETS" \
         --seed "$START_SEED" \
         --min_xy_radius "$POOL_MIN_XY_RADIUS" \

@@ -269,7 +269,10 @@ class MultiObjectGraspTaskMixin:
                     raise ValueError(f"Object record {uuid} is missing usd_path")
                 usd_path = resolve_repo_path(str(usd_value), base_dir=asset_root_path)
                 if not usd_path.is_file():
-                    raise FileNotFoundError(f"Missing USD asset for {uuid}: {usd_path}")
+                    raise FileNotFoundError(
+                        f"Missing USD asset for {uuid}: {usd_path} "
+                        f"(manifest={manifest}, asset_root={asset_root_path}, usd_path={usd_value})"
+                    )
                 prior_path = _resolve_record_grasp_prior_path(record, asset_root_path=asset_root_path)
                 prior_scale = _load_graspgen_object_scale_from_prior(prior_path)
                 record_has_scale = record.get("scale") is not None

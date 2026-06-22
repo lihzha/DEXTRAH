@@ -9933,3 +9933,8 @@ Smoke follow-up:
 - Patched `prepare_yam_objaverse_pool_manifest.py` to resolve the source
   manifest asset root once and write that absolute root into the filtered pool
   manifest before relaunching the smoke shard.
+- Follow-up smoke still failed in Isaac before scene creation because the
+  filtered manifest's absolute host asset root was not a container-visible
+  path. Patched the manifest writer and shard collector so generated pool
+  manifests write `/results/assets/...` as their `asset_root`, matching the
+  Pyxis mount used by render, planning, and validation steps.
