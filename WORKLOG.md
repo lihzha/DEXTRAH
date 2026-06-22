@@ -9671,3 +9671,50 @@ Artifacts:
 - Viewer URLs:
   `http://localhost:8765/view?path=cluster_results/l401/single_yam_franka_pd_default_seed2_5e8aea27_20260622T0534Z/single_yam_franka_pd_default.mp4`
   `http://localhost:8765/view?path=cluster_results/l401/yam_franka_pd_final_hold_sheet.png`
+
+## 2026-06-22T06:12:35Z - Single YAM Pre-Contact Joint Tracking Diagnostic
+
+Goal:
+- Test whether the observed YAM shakiness is caused by object contact or by
+  controller/joint tracking instability before object interaction.
+
+Method:
+- Used the saved dynamic replay `metrics.json` artifacts from the direct
+  Franka-PD run at `5e8aea27` and the previous YAM-damped run at `28ccd85a`.
+- Generated a local HTML/SVG dashboard without rerunning simulation:
+  commanded joint position, actual joint position, tracking error, actual
+  velocity, and object motion thresholds.
+
+Result:
+- Object pose first moved by more than `5 mm` near step `578` in the direct
+  Franka-PD run and near steps `568-584` in the previous YAM-damped run.
+- In the direct Franka-PD run, before object motion and during static-command
+  windows, the arm still showed large actual joint velocities:
+  - pre-step-560 mean absolute arm velocity: `0.297350 rad/s`
+  - static-target mean absolute arm velocity: `0.299837 rad/s`
+  - static-target max absolute arm velocity: `3.207282 rad/s`
+- In the previous YAM-damped run, the same static-target diagnostic was much
+  lower on average:
+  - pre-step-560 mean absolute arm velocity: `0.097419 rad/s`
+  - static-target mean absolute arm velocity: `0.046219 rad/s`
+- The main direct Franka-PD instability was visible around steps `386-424`,
+  while commanded arm target velocity was `0.0`; joint 5 actual velocity
+  repeatedly exceeded `2.4 rad/s`, and joint 6 error accumulated toward
+  roughly `0.064 rad`.
+
+Conclusion:
+- The user's diagnosis is correct: the dominant shaking is not explained by
+  object contact. It is already present before object pose motion and while
+  the commanded arm target is static.
+- Next tuning should focus on the YAM joint tracking loop: effective drive
+  damping/stiffness/effort, target interpolation/hold behavior, velocity target
+  feedforward, timestep/substep/solver settings, and possible joint 5/6
+  dynamics or frame/inertia mismatch.
+
+Artifacts:
+- Diagnostic dashboard:
+  `/home/lzha/code/cluster_results/l401/yam_joint_tracking_diagnostic/index.html`
+- Summary CSV:
+  `/home/lzha/code/cluster_results/l401/yam_joint_tracking_diagnostic/summary.csv`
+- Viewer URL:
+  `http://localhost:8765/view?path=cluster_results/l401/yam_joint_tracking_diagnostic/index.html`
