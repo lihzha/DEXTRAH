@@ -1,0 +1,46 @@
+{
+  "asset_root": "../../..",
+  "source": "repo_primitives_yam_pick_place_smoke",
+  "objects": [
+    {
+      "uuid": "small_5_cuboid",
+      "name": "small_5_cuboid",
+      "usd_path": "dextrah_lab/assets/primitives/USD/small_5_cuboid/small_5_cuboid.usd",
+      "raw_object_path": "dextrah_lab/assets/primitives/urdf/small_5_cuboid/small_5_cuboid.stl",
+      "scale": 1.0,
+      "scaled_bounds_min": [-0.012500000186264515, -0.012500000186264515, -0.029999999329447746],
+      "scaled_bounds_max": [0.012500000186264515, 0.012500000186264515, 0.029999999329447746],
+      "grasp_size": 0.0600000000000000
+    },
+    {
+      "uuid": "small_5_cyl",
+      "name": "small_5_cyl",
+      "usd_path": "dextrah_lab/assets/primitives/USD/small_5_cyl/small_5_cyl.usd",
+      "raw_object_path": "dextrah_lab/assets/primitives/urdf/small_5_cyl/small_5_cyl.stl",
+      "scale": 1.0,
+      "scaled_bounds_min": [-0.012500000186264515, -0.012481668032705784, -0.029999999329447746],
+      "scaled_bounds_max": [0.012500000186264515, 0.012481668032705784, 0.029999999329447746],
+      "grasp_size": 0.0600000000000000
+    },
+    {
+      "uuid": "small_8_cuboid",
+      "name": "small_8_cuboid",
+      "usd_path": "dextrah_lab/assets/primitives/USD/small_8_cuboid/small_8_cuboid.usd",
+      "raw_object_path": "dextrah_lab/assets/primitives/urdf/small_8_cuboid/small_8_cuboid.stl",
+      "scale": 1.0,
+      "scaled_bounds_min": [-0.019999999552965164, -0.019999999552965164, -0.019999999552965164],
+      "scaled_bounds_max": [0.019999999552965164, 0.019999999552965164, 0.019999999552965164],
+      "grasp_size": 0.0500000000000000
+    },
+    {
+      "uuid": "small_8_cyl",
+      "name": "small_8_cyl",
+      "usd_path": "dextrah_lab/assets/primitives/USD/small_8_cyl/small_8_cyl.usd",
+      "raw_object_path": "dextrah_lab/assets/primitives/urdf/small_8_cyl/small_8_cyl.stl",
+      "scale": 1.0,
+      "scaled_bounds_min": [-0.019999999552965164, -0.019970668479800224, -0.019999999552965164],
+      "scaled_bounds_max": [0.019999999552965164, 0.019970668479800224, 0.019999999552965164],
+      "grasp_size": 0.0500000000000000
+    }
+  ]
+}
