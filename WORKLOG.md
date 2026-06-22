@@ -9497,3 +9497,64 @@ Artifacts:
 - Viewer URLs:
   `http://localhost:8765/view?path=cluster_results/l401/single_yam_pd_default_tuned_seed2_9dc05821_20260621T171045Z/single_yam_pd_default_tuned.mp4`
   `http://localhost:8765/view?path=cluster_results/l401/yam_pd_default_validation_contact_sheet.png`
+
+## 2026-06-22T03:10:34Z - Single YAM Residual Hold Shake Tuning
+
+Goal:
+- Reduce the slight post-pose shake visible after Single YAM reaches and holds
+  the grasp/lift pose, while preserving the validated dynamic grasp, object
+  lift, and positive table clearance.
+
+Diagnosis:
+- The held source trajectory is constant at the end of the replay, but the
+  dynamic robot remains in a small contact-driven limit cycle.
+- Gripper sweep `single_yam_grip_s05_d2_e05_seed2_db5bb460_20260622T030529Z`
+  reduced final held arm velocity from `0.630101 rad/s` to `0.209096 rad/s`
+  and final finger velocity from `0.334350 rad/s` to `0.146885 rad/s`, with
+  `0.185207 m` target lift and no rejected step.
+
+Sweep manifest:
+| Attempt | Commit | Key setting | Expected artifact | Success criteria |
+| --- | --- | --- | --- | --- |
+| single_yam_grip_s05_d4_e05_seed2_db5bb460_20260622T0311Z | db5bb460 | gripper K0.5 D4 E0.5 | `single_yam_grip_s05_d4_e05.mp4`, `metrics.json` | no rejection, object lift, lower final held velocities |
+| single_yam_grip_s025_d4_e05_seed2_db5bb460_20260622T0311Z | db5bb460 | gripper K0.25 D4 E0.5 | `single_yam_grip_s025_d4_e05.mp4`, `metrics.json` | no rejection, object lift, lower final held velocities |
+| single_yam_armd15_grip_s05_d2_e05_seed2_db5bb460_20260622T0311Z | db5bb460 | arm D1.5 plus gripper K0.5 D2 E0.5 | `single_yam_armd15_grip_s05_d2_e05.mp4`, `metrics.json` | no rejection, object lift, lower final held velocities |
+| single_yam_armd20_grip_s05_d2_e05_seed2_db5bb460_20260622T0311Z | db5bb460 | arm D2.0 plus gripper K0.5 D2 E0.5 | `single_yam_armd20_grip_s05_d2_e05.mp4`, `metrics.json` | no rejection, object lift, lower final held velocities |
+
+Pre-launch checks:
+- Local `py_compile`, wrapper `bash -n`, and `git diff --check` passed.
+- Remote l401 agent worktree
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-collision-overlay-39915731`
+  is at `db5bb460e5a8439a3f49a52acd6ef3e414b39ad9`.
+
+Launch:
+- Submitted l401 jobs `1038926`, `1038927`, `1038928`, and `1038929` from
+  the same remote worktree and commit.
+
+Interim result:
+- All four jobs completed, but the launch omitted the minimal target and
+  clutter manifest overrides used by the accepted baseline. Metrics still
+  restored the target pose and trajectory, but the clutter visuals changed, so
+  this sweep is not a clean A/B against
+  `single_yam_grip_s05_d2_e05_seed2_db5bb460_20260622T030529Z`.
+- Re-running the most relevant candidates with the same minimal manifests:
+  `/results/validations/stable_scene_sweep_seed2_lift040_z095_plan/minimal_manifests/target_manifest.json`
+  and
+  `/results/validations/stable_scene_sweep_seed2_lift040_z095_plan/minimal_manifests/clutter_manifest_slot_order.json`.
+- Submitted corrected l401 jobs `1038930`, `1038931`, `1038932`, and
+  `1038933`.
+
+Corrected sweep result:
+| Attempt | Result | Decision |
+| --- | --- | --- |
+| exact `gripper K1000 D160 E20` | no rejected step, `0.198703 m` lift, final held arm/finger velocity `0.195918/0.103710 rad/s`, target speed `0.067336 m/s` and `1.071238 rad/s` | improves contact damping but leaves arm hold higher than arm-damped variants |
+| exact `arm D1.5 + gripper K1000 D160 E20` | no rejected step, `0.183666 m` lift, final held arm/finger velocity `0.167836/0.111184 rad/s`, target speed `0.071813 m/s` and `1.060251 rad/s` | acceptable, but less hold damping than D2.0 |
+| exact `arm D2.0 + gripper K1000 D160 E20` | no rejected step, `0.184576 m` lift, final held arm/finger velocity `0.149246/0.110583 rad/s`, target speed `0.071609 m/s` and `0.835306 rad/s` | selected for default; peak tracking error is early in approach with large table clearance |
+| exact `gripper K500 D160 E20` | no rejected step, `0.189450 m` lift, final held finger velocity `0.057544 rad/s` but target angular speed `1.879909 rad/s` | rejected because object spin is worse |
+
+Default change:
+- Set `SINGLE_YAM_CFG` arm damping to joint1-3 `12.5`, joint4 `2.5`,
+  joint5-6 `5.0`.
+- Set `SINGLE_YAM_CFG` gripper to effort `20.0`, stiffness `1000.0`,
+  damping `160.0`.
+- Local syntax checks passed after the edit.
