@@ -10007,3 +10007,6 @@ Smoke follow-up:
 - Throughput adjustment: increased Slurm array throttle for job `1039183` from
   4 to 8 via `scontrol update JobId=1039183 ArrayTaskThrottle=8`; shards 4-7
   started on `pool0-00023`.
+- Second throughput adjustment: after the run reached 19 accepted demos from
+  51 started attempts, increased job `1039183` throttle from 8 to 12; shards
+  8-11 started on `pool0-00012` and `pool0-00041`.
