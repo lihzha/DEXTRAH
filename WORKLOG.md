@@ -9558,3 +9558,47 @@ Default change:
 - Set `SINGLE_YAM_CFG` gripper to effort `20.0`, stiffness `1000.0`,
   damping `160.0`.
 - Local syntax checks passed after the edit.
+
+Final default validation:
+- Commit `28ccd85aeb3d1b223e30da03dc7c858e08115dd1`
+  (`Dampen single YAM hold contact dynamics`) was pushed to
+  `codex/yam-rejected-demo`.
+- l401 GitHub fetch was blocked by missing SSH credentials, so the exact commit
+  was transferred as a Git bundle and fetched into the agent worktree. Remote
+  worktree
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-collision-overlay-39915731`
+  was checked out at `28ccd85a`.
+- l401 no-override validation job `1038934`
+  (`single_yam_pd_hold_damped_default_seed2_28ccd85a_20260622T0324Z`)
+  completed successfully with exit code `0:0`.
+- Slurm log confirmed all `YAM_ARM_*` and `YAM_GRIPPER_*` overrides were unset,
+  so the render exercised the new asset defaults.
+- Final video metadata: `1280x720`, `12` FPS, `193` frames,
+  `16.083333` seconds.
+- Final metrics matched the selected override run exactly:
+  - `first_rejected_step`: `null`
+  - max/mean joint tracking error: `0.425236 / 0.046386 rad`
+  - final held arm/finger velocity mean: `0.149246 / 0.110583 rad/s`
+  - closure arm velocity mean: `0.175883 rad/s`
+  - target lift: `0.184576 m`, XY drift `0.019128 m`
+  - final target speed: `0.071609 m/s`, angular speed `0.835306 rad/s`
+  - minimum finger/table clearance: `0.056096 m`
+- Compared with the previous default
+  `single_yam_pd_default_tuned_seed2_9dc05821_20260621T171045Z`, the held arm
+  velocity dropped from `0.629874` to `0.149246 rad/s`, held finger velocity
+  from `0.334325` to `0.110583 rad/s`, and final target angular speed from
+  `1.482639` to `0.835306 rad/s`.
+- Frame inspection and final-hold contact sheet showed the same target/clutter
+  scene, visible grasp/lift, positive table clearance, and no obvious
+  frame-to-frame hold shake at the rendered view.
+
+Artifacts:
+- Final default validation video:
+  `/home/lzha/code/cluster_results/l401/single_yam_pd_hold_damped_default_seed2_28ccd85a_20260622T0324Z/single_yam_pd_hold_damped_default.mp4`
+- Final metrics:
+  `/home/lzha/code/cluster_results/l401/single_yam_pd_hold_damped_default_seed2_28ccd85a_20260622T0324Z/metrics.json`
+- Final hold contact sheet:
+  `/home/lzha/code/cluster_results/l401/yam_hold_damped_default_final_hold_sheet.png`
+- Viewer URLs:
+  `http://localhost:8765/view?path=cluster_results/l401/single_yam_pd_hold_damped_default_seed2_28ccd85a_20260622T0324Z/single_yam_pd_hold_damped_default.mp4`
+  `http://localhost:8765/view?path=cluster_results/l401/yam_hold_damped_default_final_hold_sheet.png`
