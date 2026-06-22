@@ -235,6 +235,11 @@ def main() -> None:
         "truncated",
     ]
     missing = [key for key in required_keys if key not in arrays]
+    expected_objects = int(args.expected_objects) if args.expected_objects is not None else None
+    clutter_slot_count = 0
+    if "clutter_root_pos" in arrays:
+        clutter_array = arrays["clutter_root_pos"]
+        clutter_slot_count = int(clutter_array.shape[1]) if clutter_array.ndim >= 3 else 0
     object_results: list[dict[str, Any]] = []
     if not missing:
         object_results.append(_object_metrics("target", _as_pos(arrays["target_root_pos"]), stable_scene, args))
@@ -242,8 +247,8 @@ def main() -> None:
             clutter = arrays["clutter_root_pos"]
             clutter_count = int(clutter.shape[1]) if clutter.ndim >= 3 else 0
             stable_clutter = stable_scene.get("clutter") if isinstance(stable_scene.get("clutter"), list) else []
-            if args.expected_objects is not None:
-                clutter_limit = max(0, int(args.expected_objects) - 1)
+            if expected_objects is not None:
+                clutter_limit = max(0, expected_objects - 1)
             elif stable_clutter:
                 clutter_limit = len(stable_clutter)
             else:
@@ -264,7 +269,8 @@ def main() -> None:
     terminated = np.asarray(arrays.get("terminated", np.empty((0,))), dtype=bool)
     truncated = np.asarray(arrays.get("truncated", np.empty((0,))), dtype=bool)
 
-    expected_objects = int(args.expected_objects) if args.expected_objects is not None else len(object_results)
+    expected_objects = expected_objects if expected_objects is not None else len(object_results)
+    expected_clutter_count = max(0, expected_objects - 1)
     state_steps = int(arrays["step_idx"].shape[0]) if "step_idx" in arrays else 0
     try:
         source_frame_count = int(metadata.get("trajectory_total_frames") or 0)
@@ -280,6 +286,7 @@ def main() -> None:
     checks = {
         "required_keys_present": not missing,
         "expected_object_count": len(object_results) == expected_objects,
+        "clutter_slot_count_matches_expected": clutter_slot_count == expected_clutter_count,
         **sequence_summary["checks"],
         "all_objects_inside_bin": bool(object_results) and all(bool(item["inside_bin"]) for item in object_results),
         "all_objects_lifted": bool(object_results) and all(bool(item["passes_lift_delta"]) for item in object_results),
@@ -312,6 +319,8 @@ def main() -> None:
             "keys": sorted(arrays.keys()),
             "state_steps": state_steps if state_steps > 0 else None,
             "rgb_shape": list(rgb.shape),
+            "expected_clutter_count": expected_clutter_count,
+            "clutter_slot_count": clutter_slot_count,
             "done_sum": int(done.sum()) if done.size else 0,
             "terminated_sum": int(terminated.sum()) if terminated.size else 0,
             "truncated_sum": int(truncated.sum()) if truncated.size else 0,
