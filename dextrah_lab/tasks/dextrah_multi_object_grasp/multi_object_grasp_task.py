@@ -455,11 +455,12 @@ class MultiObjectGraspTaskMixin:
                 self.num_unique_objects,
             ).long()
         elif assignment in ("random", "uniform"):
-            balanced_indices = torch.remainder(
-                torch.arange(self.num_envs, device=self.device),
+            self.object_asset_index = torch.randint(
                 self.num_unique_objects,
-            ).long()
-            self.object_asset_index = balanced_indices[torch.randperm(self.num_envs, device=self.device)]
+                (self.num_envs,),
+                dtype=torch.long,
+                device=self.device,
+            )
         else:
             raise ValueError(
                 "object_asset_assignment must be 'round_robin' or 'random', "

@@ -9876,3 +9876,50 @@ Conclusion:
   multi-object YAM pick-all-into-bin demonstration: smooth joint tracking,
   positive table clearance, no visible debug sites, all objects grasped/lifted,
   and all objects end inside the bin.
+
+## 2026-06-22T10:02:00Z - Start 300-Demo YAM Objaverse Collection
+
+Goal:
+- Start collecting 300 BC-ready YAM pick-all-into-bin demonstrations using
+  realistic Objaverse-derived tabletop objects.
+- Preserve current YAM damping/control gains, keep GraspGenX + cuRobo for
+  grasp approach planning, and use scripted vertical lift/bin-drop primitives.
+- Randomize object identities and poses, require non-overlapping initialization,
+  and record RGB observations plus all states.
+
+Changes prepared:
+- Fixed `object_asset_assignment="random"` for the target object so single-env
+  collection samples a random object instead of always choosing manifest index
+  `0`.
+- Added `dextrah_lab/scene_scripts/prepare_yam_objaverse_pool_manifest.py` to
+  create a reachable tabletop-sized pool from the full Objaverse-derived
+  GraspGen object manifest.
+- Added `dextrah_lab/scene_scripts/validate_yam_pick_place_dataset.py` to accept
+  only demos with all objects lifted, all final object centers in the bin,
+  positive finger-table clearance, bounded joint tracking error, nonblank RGB,
+  and valid done/terminated/truncated flags.
+- Added `cluster/sbatch_collect_yam_objaverse_demos_1gpu.sh`, a one-GPU shard
+  collector that loops seeds until `SHARD_TARGET` accepted demos are produced.
+  Each attempt runs settle -> multi-object GraspGenX/cuRobo plan -> dynamic
+  replay with RGB/state NPZ -> validator.
+
+Validation before launch:
+- Local syntax checks passed:
+  `python3 -m py_compile dextrah_lab/tasks/dextrah_multi_object_grasp/multi_object_grasp_task.py
+  dextrah_lab/scene_scripts/prepare_yam_objaverse_pool_manifest.py
+  dextrah_lab/scene_scripts/validate_yam_pick_place_dataset.py
+  dextrah_lab/scene_scripts/plan_yam_multi_object_pick_place.py
+  dextrah_lab/scene_scripts/plan_yam_graspgenx_curobo.py`
+  and `bash -n cluster/sbatch_collect_yam_objaverse_demos_1gpu.sh
+  cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh`.
+- The new validator accepts the previously approved clean three-object dataset
+  with RGB shape `[4500, 120, 160, 3]`, all object-in-bin checks true, min
+  finger-table clearance `0.09358 m`, joint max absolute error `0.03245`, and
+  no truncation.
+
+Launch plan:
+- Commit and deploy the exact revision to the l401 agent worktree.
+- Run one smoke shard with `SHARD_TARGET=1`, `OBJECTS_PER_DEMO=3`,
+  `SETTLE_STEPS=100`, and the filtered Objaverse pool manifest.
+- Inspect the resulting video, validation metrics, object identities/poses, and
+  dataset keys before launching the full 300-demo shard array.
