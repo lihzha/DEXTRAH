@@ -9983,3 +9983,19 @@ Smoke follow-up:
   `yam_objaverse_oneobj_300_1097763a_20260622T172427Z`.
 - Result directory:
   `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/yam_demos/yam_objaverse_oneobj_300_1097763a_20260622T172427Z`.
+- Pilot outcome: cancelled array `1039162` after 13 minutes because
+  `MAX_ATTEMPTS=60` was too low for the observed realistic-object yield. The
+  pilot produced 3 accepted demos from 17 started attempts; accepted seed
+  `293001` was fetched and visually checked, with clean grasp, lift, and bin
+  drop. Validation status was `accepted`, RGB shape `[1500, 120, 160, 3]`,
+  target lift delta `0.2004 m`, min finger-table clearance `0.0816 m`, and no
+  truncation.
+- Revised launch: submitted l401 Slurm array `1039183` with `--array=0-19%4`
+  for batch `yam_objaverse_oneobj_300_top512_65b32317_20260622T173847Z` at
+  code commit `65b32317c3abb3ac7c4b830b2d0c682f17079f8c`.
+- Revised parameters: `POOL_MAX_ASSETS=512`,
+  `POOL_MAX_GRASP_WIDTH_P95=0.110`, `MAX_ATTEMPTS=180`, `START_SEED=94000`,
+  20 shards x 15 accepted demos, four concurrent one-GPU jobs, with the same
+  one-object dynamic replay, RGB/state recording, and current YAM damping.
+- Revised result directory:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/yam_demos/yam_objaverse_oneobj_300_top512_65b32317_20260622T173847Z`.
