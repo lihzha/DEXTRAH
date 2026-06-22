@@ -2670,6 +2670,8 @@ def main() -> None:
         "tabletop_clutter_max_depenetration_velocity",
         args_cli.tabletop_clutter_max_depenetration_velocity,
     )
+    if stable_scene_input is not None and single_yam_demo_enabled:
+        _set_if_present(env_cfg, "tabletop_clutter_prioritize_common_objects", False)
     _set_if_present(env_cfg, "object_reset_settle_steps", 0)
 
     render_resolution = None
