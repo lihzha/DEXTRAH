@@ -184,7 +184,14 @@ def main() -> None:
         if "clutter_root_pos" in arrays:
             clutter = arrays["clutter_root_pos"]
             clutter_count = int(clutter.shape[1]) if clutter.ndim >= 3 else 0
-            for slot_idx in range(clutter_count):
+            stable_clutter = stable_scene.get("clutter") if isinstance(stable_scene.get("clutter"), list) else []
+            if args.expected_objects is not None:
+                clutter_limit = max(0, int(args.expected_objects) - 1)
+            elif stable_clutter:
+                clutter_limit = len(stable_clutter)
+            else:
+                clutter_limit = clutter_count
+            for slot_idx in range(min(clutter_count, clutter_limit)):
                 object_results.append(
                     _object_metrics(f"clutter_{slot_idx:02d}", _clutter_pos(clutter, slot_idx), stable_scene, args)
                 )

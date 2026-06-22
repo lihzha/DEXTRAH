@@ -9938,3 +9938,11 @@ Smoke follow-up:
   path. Patched the manifest writer and shard collector so generated pool
   manifests write `/results/assets/...` as their `asset_root`, matching the
   Pyxis mount used by render, planning, and validation steps.
+- Three-object Objaverse smoke then reached valid GraspGenX/cuRobo planning
+  calls but had low yield because later objects often had no valid trajectory.
+  Switched the smoke path to one realistic object per demo to begin the
+  requested 300-demo collection with a high-yield configuration.
+- First one-object replay succeeded physically, but validation rejected it
+  because unused fixed-size clutter buffers were treated as real objects.
+  Patched the validator to check only `target + expected_objects - 1` clutter
+  slots when `--expected_objects` is supplied.
