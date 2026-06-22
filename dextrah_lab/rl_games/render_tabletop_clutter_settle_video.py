@@ -61,6 +61,8 @@ parser.add_argument(
         "frame after the source trajectory ends."
     ),
 )
+parser.add_argument("--demo_trajectory_velocity_targets", action=argparse.BooleanOptionalAction, default=True)
+parser.add_argument("--demo_trajectory_velocity_target_scale", type=float, default=1.0)
 parser.add_argument("--demo_start_blend_steps", type=int, default=36)
 parser.add_argument("--stable_scene_path", type=str, default=None)
 parser.add_argument("--demo_table_rejection_target_fraction", type=float, default=0.82)
@@ -1803,11 +1805,20 @@ def _apply_kinematic_joint_position(task_env, joint_pos: torch.Tensor) -> tuple[
     return task_env._get_dones()
 
 
-def _apply_dynamic_joint_position_target(task_env, joint_pos: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+def _apply_dynamic_joint_position_target(
+    task_env,
+    joint_pos: torch.Tensor,
+    joint_vel: torch.Tensor | None = None,
+    *,
+    velocity_target_scale: float = 1.0,
+) -> tuple[torch.Tensor, torch.Tensor]:
     robot = getattr(task_env, "_robot", None)
     if robot is None:
         raise AttributeError("single_yam_rejected_path trajectory replay requires a robot articulation")
     env_ids = robot._ALL_INDICES
+    velocity_target = None
+    if joint_vel is not None and hasattr(robot, "set_joint_velocity_target"):
+        velocity_target = float(velocity_target_scale) * joint_vel
     if hasattr(task_env, "robot_dof_targets"):
         task_env.robot_dof_targets[env_ids] = joint_pos
     if hasattr(task_env, "arm_joint_pos_target"):
@@ -1816,6 +1827,8 @@ def _apply_dynamic_joint_position_target(task_env, joint_pos: torch.Tensor) -> t
         task_env.finger_joint_pos_target[env_ids] = joint_pos[:, task_env.finger_joint_ids]
     for _ in range(int(task_env.cfg.decimation)):
         robot.set_joint_position_target(joint_pos, env_ids=env_ids)
+        if velocity_target is not None:
+            robot.set_joint_velocity_target(velocity_target, env_ids=env_ids)
         task_env.scene.write_data_to_sim()
         task_env.sim.step(render=False)
         task_env.scene.update(dt=task_env.sim.cfg.dt)
@@ -1835,7 +1848,7 @@ def _single_yam_rejected_trajectory_joint_position(
     start_joint_pos: torch.Tensor,
     start_blend_steps: int,
     timing_mode: str,
-) -> tuple[torch.Tensor, str, int, dict[str, object]]:
+) -> tuple[torch.Tensor, torch.Tensor, str, int, dict[str, object]]:
     source_joint_positions = trajectory["joint_positions"]
     source_phases = trajectory["phases"]
     if not isinstance(source_joint_positions, list) or not source_joint_positions:
@@ -1850,6 +1863,7 @@ def _single_yam_rejected_trajectory_joint_position(
         blend_velocity = (first_source_joint_pos - start_joint_pos) / max(float(start_blend_steps) * control_dt, 1.0e-9)
         return (
             joint_pos,
+            blend_velocity,
             "blend_from_dextrah_start",
             0,
             {
@@ -1880,6 +1894,7 @@ def _single_yam_rejected_trajectory_joint_position(
         phase = str(source_phases[phase_idx]) if isinstance(source_phases, list) else "trajectory"
         return (
             joint_pos,
+            joint_vel,
             phase,
             phase_idx,
             {
@@ -1896,9 +1911,11 @@ def _single_yam_rejected_trajectory_joint_position(
     source_idx = int(round(source_alpha * (len(source_joint_positions) - 1)))
     source_idx = max(0, min(source_idx, len(source_joint_positions) - 1))
     joint_pos = _map_source_joint_to_env(task_env, source_joint_positions[source_idx])
+    joint_vel = torch.zeros_like(joint_pos)
     phase = str(source_phases[source_idx]) if isinstance(source_phases, list) else "trajectory"
     return (
         joint_pos,
+        joint_vel,
         phase,
         source_idx,
         {
@@ -1906,6 +1923,7 @@ def _single_yam_rejected_trajectory_joint_position(
             "trajectory_source_time_s": float(source_idx) / _trajectory_source_fps(trajectory),
             "trajectory_source_frame_float": float(source_idx),
             "trajectory_source_frame_alpha": 0.0,
+            "joint_target_velocity": _tensor_list(joint_vel),
         },
     )
 
@@ -2586,20 +2604,29 @@ def main() -> None:
     elif args_cli.demo_mode == "single_yam_rejected_path":
         for step_idx in range(1, demo_steps + 1):
             joint_position = None
+            joint_velocity = None
             source_frame_idx = None
             trajectory_timing = None
             if demo_trajectory is not None:
-                joint_position, phase, source_frame_idx, trajectory_timing = _single_yam_rejected_trajectory_joint_position(
-                    task_env,
-                    demo_trajectory,
-                    step_idx,
-                    demo_steps,
-                    start_joint_pos=demo_start_joint_pos,
-                    start_blend_steps=int(args_cli.demo_start_blend_steps),
-                    timing_mode=str(args_cli.demo_trajectory_timing_mode),
+                joint_position, joint_velocity, phase, source_frame_idx, trajectory_timing = (
+                    _single_yam_rejected_trajectory_joint_position(
+                        task_env,
+                        demo_trajectory,
+                        step_idx,
+                        demo_steps,
+                        start_joint_pos=demo_start_joint_pos,
+                        start_blend_steps=int(args_cli.demo_start_blend_steps),
+                        timing_mode=str(args_cli.demo_trajectory_timing_mode),
+                    )
                 )
                 if args_cli.demo_trajectory_replay_mode == "dynamic":
-                    terminated, truncated = _apply_dynamic_joint_position_target(task_env, joint_position)
+                    velocity_target = joint_velocity if bool(args_cli.demo_trajectory_velocity_targets) else None
+                    terminated, truncated = _apply_dynamic_joint_position_target(
+                        task_env,
+                        joint_position,
+                        velocity_target,
+                        velocity_target_scale=float(args_cli.demo_trajectory_velocity_target_scale),
+                    )
                 else:
                     terminated, truncated = _apply_kinematic_joint_position(task_env, joint_position)
                 actions = torch.zeros((task_env.num_envs, int(task_env.cfg.action_space)), device=task_env.device)
@@ -2758,6 +2785,8 @@ def main() -> None:
             "trajectory_source": str(args_cli.demo_trajectory_source),
             "trajectory_replay_mode": str(args_cli.demo_trajectory_replay_mode),
             "trajectory_timing_mode": str(args_cli.demo_trajectory_timing_mode),
+            "trajectory_velocity_targets": bool(args_cli.demo_trajectory_velocity_targets),
+            "trajectory_velocity_target_scale": float(args_cli.demo_trajectory_velocity_target_scale),
             "trajectory_replay_enabled": demo_trajectory is not None,
             "trajectory_path": None if demo_trajectory_path is None else str(demo_trajectory_path),
             "trajectory_source_frames": None
