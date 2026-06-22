@@ -21,6 +21,8 @@ Report template:
 - Peer branches inspected before first experiment:
 - Key bottlenecks inferred:
 - Environment/reward/eval bugs considered:
+- Does current task support sequential removal, or only target-object placement:
+- Proposed deployment split for held-out objects and held-out locations:
 
 ## Candidate Hypotheses
 
@@ -41,6 +43,8 @@ Report template:
 - Checkpoint:
 - Policy eval metrics:
 - Video:
+- Repeated/sequential clear-all eval:
+- Held-out object/location eval:
 - Decision:
 
 ## Experiments

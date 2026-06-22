@@ -8908,3 +8908,1112 @@ Validation:
 - a1001 `squeue -u lzha` showed no active jobs after the check.
 - a1001 checkout deployment completed via Git bundle, followed by remote
   `py_compile`, `bash -n`, manifest, and queue checks.
+
+## 2026-06-21 01:45 - Collision-aware YAM GraspGenX/cuRobo rejection render
+
+Goal:
+- Replace the earlier kinematic rejected-path video with a DEXTRAH-owned
+  GraspGenX/cuRobo pipeline that plans against the current YAM table/bin/clutter
+  collision model and visualizes the rejected grasp pose in Isaac.
+
+Change:
+- Added `dextrah_lab/scene_scripts/plan_yam_graspgenx_curobo.py` to generate
+  run-local YAM robot/env configs from DEXTRAH start pose and scene geometry,
+  emit the exact cuRobo collision model, run GraspGenX, and export a
+  `grasp_pose_overlay.json` whether cuRobo accepts or rejects.
+- Extended `dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py` and
+  `cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh` with a
+  visual-only grasp-frame overlay. The overlay does not affect physics.
+
+Local validation:
+- `python3 -m py_compile dextrah_lab/scene_scripts/plan_yam_graspgenx_curobo.py
+  dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py` passed.
+- `bash -n cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh`
+  passed.
+- Local GraspGenX/cuRobo smoke:
+  `GRASPGENX_ROOT=/home/lzha/code/worktrees/graspgenx-yam-ggx-curobo uv run --no-sync python dextrah_lab/scene_scripts/plan_yam_graspgenx_curobo.py --output_dir local_results/yam_graspgenx_curobo --run_name local_smoke_collision_scene --num_sample_points 2000 --num_grasps 32 --topk 16 --max_plan_attempts 12 --include_goal_bin --include_default_clutter --seed 7 --grasp_planner graspmoe`.
+
+Result:
+- GraspGenX returned 16 YAM grasps; cuRobo rejected all attempted approaches
+  with `Goalset planning returned None.` under the collision-aware scene.
+- `collision_scene_model.json` contains `dextrah_tabletop`, five goal-bin
+  cuboids, and four DEXTRAH clutter proxies.
+- `grasp_pose_overlay.json` records selected grasp index `8`, confidence
+  `0.8704508543014526`, all 16 grasp transforms, and the collision model.
+- Local Isaac render is unavailable on this host because `omni.usd` and
+  `isaaclab` are not installed; next step is a pinned l401 render job from an
+  agent-owned DEXTRAH worktree.
+
+Cluster loop:
+- Deployed commit `39915731b222b90b253d7e0ed8e6b6ca589db244` to l401 via a
+  Git bundle because the remote checkout cannot fetch GitHub over SSH.
+- Scene-capture job `1038524` used the current single-YAM tabletop clutter
+  environment but was cancelled after it spent about a minute walking the full
+  full-Objaverse manifest.
+- Capped scene-capture job `1038525` showed the same problem because
+  `max_assets` was applied only after the full manifest validation pass.
+- Patched `MultiObjectGraspTaskMixin._load_asset_manifest` so positive
+  `max_assets` stops after collecting that many valid assets. Default
+  `max_assets=0` full-manifest behavior is unchanged.
+
+## 2026-06-21 01:50 - Bound scene-capture asset validation controls
+
+Goal:
+- Capture exact DEXTRAH YAM tabletop-clutter scene metrics for cuRobo collision
+  synthesis without waiting on a long USD-bounds scan through sparse full
+  Objaverse shards.
+
+Change:
+- Cancelled l401 job `1038526`; it reached shard 022 after more than two
+  minutes and was still printing `skip_asset_usd_bounds_outlier` instead of
+  writing scene metrics.
+- Added render CLI and Slurm wrapper controls for
+  `object_validate_usd_bounds`, `object_usd_bounds_max_ratio`,
+  `object_usd_bounds_max_dimension`, `tabletop_clutter_validate_usd_bounds`,
+  `tabletop_clutter_usd_bounds_max_ratio`, and
+  `tabletop_clutter_usd_bounds_max_dimension`.
+- Defaults remain unchanged unless a run explicitly supplies the new overrides.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py
+  dextrah_lab/tasks/dextrah_multi_object_grasp/multi_object_grasp_task.py
+  dextrah_lab/scene_scripts/plan_yam_graspgenx_curobo.py` passed.
+- `bash -n cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh` passed.
+- `git diff --check` passed.
+
+Next:
+- Commit and deploy this exact revision to the l401 agent worktree, then
+  relaunch the scene-capture smoke with USD-bounds validation disabled for the
+  bounded full-Objaverse sample.
+
+## 2026-06-21 02:18 - Dynamic YAM replay with captured-scene collisions
+
+Goal:
+- Re-run the YAM GraspGenX/cuRobo pipeline against the exact current DEXTRAH
+  tabletop-clutter scene, include the table/bin/clutter in cuRobo collision
+  checking, render with PhysX stepping instead of direct joint-state writes, and
+  visualize the selected grasp pose.
+
+Version state:
+- Implementation commit:
+  `64a0b0b0028af589744c63180c397d6bafe1851f`.
+- Remote l401 agent worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-collision-overlay-39915731`
+  checked out detached at the exact commit via Git bundle.
+
+Scene and planner:
+- Scene-capture job `1038528` wrote metrics for
+  `single_yam_collision_scene_capture_unvalidated16_91226432_20260621T085122Z`
+  with target pose `[-0.3000000119, 0.0, 0.1257996112]` and six captured
+  clutter objects.
+- Local GraspGenX/cuRobo rerun
+  `scene_metrics_targetmesh_collision_91226432_r2` used the captured target
+  mesh, captured target pose, DEXTRAH YAM start pose, table cuboid, five goal-bin
+  cuboids, and six captured clutter cuboids.
+- Result: cuRobo rejected earlier candidates, then accepted selected grasp
+  index `5` with confidence `0.7727668285369873`; planner status was
+  `Planning to lift pose succeeded.` This exact current scene therefore no
+  longer produces a fully rejected path.
+
+Render loop:
+- Job `1038534` used the wrong remote checkout path and was cancelled before it
+  produced useful evidence.
+- Job `1038535` rendered the same accepted path with grasp-pose overlay using
+  kinematic joint-state replay. It produced a 1280x720, 60-frame, 5-second MP4
+  but did not answer the dynamic-render concern.
+- Job `1038538` rendered
+  `single_yam_collision_dynamic_overlay_64a0b0b0_20260621T090546Z` with
+  `DEMO_TRAJECTORY_REPLAY_MODE=dynamic`, stepping PhysX with joint position
+  targets through the existing DEXTRAH environment.
+
+Evidence:
+- Slurm `1038538` completed `0:0` on `pool0-00008` in `00:01:18`.
+- Local artifacts:
+  `/home/lzha/code/cluster_results/l401/single_yam_collision_dynamic_overlay_64a0b0b0_20260621T090546Z`.
+- `ffprobe` confirmed `single_yam_rejected_path.mp4` is 1280x720, 12 FPS,
+  5.0 seconds, 60 frames.
+- Metrics confirmed `trajectory_replay_mode=dynamic`, `source_frames=627`,
+  `step_count=240`, grasp overlay enabled with `visualized_count=8`, and
+  `selected_marker_index=0`.
+- Metrics reported `min_finger_table_clearance=0.07335549592971802` with
+  `negative_clearance_count=0` over 240 replay steps.
+- Visual inspection of frames `0000`, `0030`, and `0059` confirmed nonblank
+  rendering, visible table/bin/target/clutter, visible RGB grasp axes, and no
+  observed YAM-table penetration in the sampled frames.
+
+Next:
+- Use the dynamic render as the corrected demo artifact for this captured
+  collision-aware scene. If a rejected-path artifact is still required, search
+  additional captured scenes or seeds rather than labeling this accepted cuRobo
+  trajectory as rejected.
+
+## 2026-06-21 09:42 - Settled-scene YAM plan and dynamic replay
+
+Goal:
+- Remove the artificial reset-to-plan blend that made the arm appear to hit the
+  table before grasping, and generate a demo from a dynamically settled DEXTRAH
+  tabletop scene: settle objects for 100 sim steps, export the stable target and
+  clutter poses, transform GraspGenX grasps into that stable target pose, plan
+  from the settled YAM joint state with cuRobo, then replay the plan in dynamic
+  simulation with a grasp-pose overlay.
+
+Version state:
+- Implementation commit:
+  `f79ddbeab115eec0b47042200cad69f84dd13b42`.
+- Remote l401 agent worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-collision-overlay-39915731`
+  checked out detached at that exact commit via Git bundle.
+- `CODEX_AGENT_ID` was not set in this shell; the branch and worktree are
+  agent-owned as `codex/yam-rejected-demo` and
+  `DEXTRAH-yam-rejected-demo`.
+
+Change:
+- Added `--stable_scene_path` to
+  `render_tabletop_clutter_settle_video.py`. When no stable-scene file exists,
+  the renderer now exports the settled target/clutter root poses, target mesh
+  copy, robot joint state, transform snapshots, velocity summaries, clearance
+  summaries, and asset summaries. When the file exists, the renderer restores
+  those object and robot states before replay.
+- Added `--stable_scene_path` to `plan_yam_graspgenx_curobo.py`. The planner now
+  uses the stable target mesh/pose, stable clutter collision proxies, and the
+  settled YAM arm/finger joint state as cuRobo's start/default/locked robot
+  state. The exported trajectory is guarded so frame 0 matches the settled
+  robot state.
+- Extended the l401 render wrapper with `STABLE_SCENE_PATH`.
+
+Validation:
+- Local and remote `python3 -m py_compile` passed for the render and planner
+  scripts.
+- Local and remote `bash -n cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh`
+  passed.
+- `git diff --check` passed before the implementation commit.
+
+Stable scene capture:
+- Slurm job `1038555` completed `0:0` on `pool0-00025` in `00:01:02`.
+- Run directory:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/single_yam_stable_scene_capture_f79ddbea_20260621T093128Z`.
+- Local artifacts:
+  `/home/lzha/code/cluster_results/l401/single_yam_stable_scene_capture_f79ddbea_20260621T093128Z`.
+- The run used `SETTLE_STEPS=100`, seed `7`, existing
+  `Dextrah-Single-YAM-Tabletop-Clutter-Grasp`, current YAM start pose, current
+  table/bin/clutter setup, `MAX_OBJECTS=16`, `TABLETOP_CLUTTER_OBJECT_COUNT=6`,
+  and USD-bounds validation disabled for the bounded Objaverse sample.
+- `stable_scene.json` target pose:
+  position `[-0.2680080533027649, -0.07423330098390579, 0.006011251360177994]`,
+  quaternion wxyz
+  `[0.7049441337585449, 0.6572731137275696, -0.1838998645544052, -0.19294188916683197]`.
+- Settled robot arm state:
+  `[0.0, 0.7853981852531433, 1.5707963705062866, 0.0, 0.0, 0.0]`;
+  fingers:
+  `[-0.019999999552965164, -0.019999999552965164]`.
+- The full Objaverse manifest did not provide a precomputed stable-pose cache
+  for the sampled target, so this run intentionally used the requested 100-step
+  dynamic-settle pose as the stable planning state.
+
+Planner:
+- Local GraspGenX/cuRobo run
+  `stable_scene_capture_f79ddbea_seed7` used
+  `/home/lzha/code/cluster_results/l401/single_yam_stable_scene_capture_f79ddbea_20260621T093128Z/stable_scene.json`.
+- cuRobo collision world included `dextrah_tabletop`, five goal-bin cuboids, and
+  six `dextrah_stable_clutter_*` cuboids from the settled scene.
+- Result: cuRobo accepted selected GraspGenX grasp index `9` with confidence
+  `0.7050070762634277`; planner status was
+  `Planning to lift pose succeeded.` This is an accepted path, not a rejected
+  path, despite the legacy demo filename.
+- The exported trajectory has 647 frames at 30 FPS. Its first frame matches the
+  settled YAM state with max absolute joint delta
+  `1.1920928955078125e-07`; no trajectory-start frame needed to be prepended.
+
+Dynamic replay:
+- Slurm job `1038556` completed `0:0` on `pool0-00025` in `00:01:13`.
+- Run directory:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/single_yam_stable_scene_dynamic_replay_f79ddbea_20260621T093410Z`.
+- Local artifacts:
+  `/home/lzha/code/cluster_results/l401/single_yam_stable_scene_dynamic_replay_f79ddbea_20260621T093410Z`.
+- Replay used `STABLE_SCENE_PATH` from job `1038555`,
+  `DEMO_TRAJECTORY_REPLAY_MODE=dynamic`,
+  `DEMO_START_BLEND_STEPS=0`, `SETTLE_STEPS=0`, and the planner trajectory and
+  grasp overlay from `stable_scene_capture_f79ddbea_seed7`.
+- Log and metrics confirmed `stable_scene_restored`,
+  `grasp_pose_overlay_spawned` with `visualized_count=8`,
+  `selected_marker_index=0`, all replay rows in phase `plan`, and no
+  `blend_from_dextrah_start` phase.
+
+Evidence:
+- `ffprobe` confirmed `single_yam_rejected_path.mp4` is 1280x720, 12 FPS,
+  5.0 seconds, 60 frames.
+- Metrics confirmed `trajectory_replay_mode=dynamic`, `start_blend_steps=0`,
+  `step_count=240`, and trajectory-start error max absolute delta
+  `1.1920928955078125e-07`.
+- Metrics reported minimum finger-to-table clearance
+  `0.028015736490488052` meters and zero negative-clearance samples across the
+  240 replay steps.
+- Visual inspection of frames `0000`, `0010`, `0030`, and `0059` confirmed
+  nonblank rendering, visible table/bin/target/clutter, visible grasp-pose axes,
+  direct start from the settled scene, and no observed YAM-table penetration in
+  the sampled frames.
+- `viz-open` URL for inspection:
+  `http://localhost:8765/view?path=cluster_results/l401/single_yam_stable_scene_dynamic_replay_f79ddbea_20260621T093410Z/single_yam_rejected_path.mp4`.
+
+Next:
+- Use this settled-scene dynamic replay as the corrected demo artifact for the
+  current DEXTRAH YAM environment. If a truly rejected trajectory is still
+  required, search additional seeds/scenes after the settled-state pipeline
+  rather than reusing this accepted cuRobo plan.
+
+## 2026-06-21 10:08 - Realtime YAM cuRobo trajectory replay
+
+Goal:
+- Investigate the sharp YAM velocity change visible in the dynamic replay and
+  make the renderer follow cuRobo's trajectory timing instead of compressing the
+  plan into a fixed short video.
+
+Diagnosis:
+- The earlier replay stretched a 647-frame cuRobo trajectory over only 240
+  environment steps. Because the source trajectory was treated as 30 FPS while
+  the DEXTRAH environment controls at 60 Hz, the renderer skipped through the
+  source trajectory with source-frame deltas of 2 or 3 frames per sim step.
+- That retiming produced a max commanded arm-joint velocity of roughly
+  `6.96 rad/s`, which explained the visible jump. cuRobo's saved trajectory was
+  smooth; the render-time sampling was not.
+
+Version state:
+- Implementation commit:
+  `6dd2bca48159f6bfcfb89863503c12e92370fddc`.
+- Remote l401 agent worktree:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-collision-overlay-39915731`
+  checked out detached at that exact commit.
+- `CODEX_AGENT_ID` was not set in this shell; the branch and worktree are
+  agent-owned as `codex/yam-rejected-demo` and
+  `DEXTRAH-yam-rejected-demo`.
+
+Change:
+- Added `--demo_trajectory_timing_mode` to
+  `render_tabletop_clutter_settle_video.py`, defaulting to `realtime` while
+  keeping the old `stretch` behavior available.
+- In realtime mode, the renderer uses the trajectory's `fps` and the DEXTRAH
+  control dt to compute the required replay step count, interpolates joint
+  targets at the correct source time, and holds the final frame only after the
+  source trajectory ends.
+- Added per-step diagnostics for target joint velocity, actual joint velocity,
+  tracking error, source trajectory timing, and finger/table clearance.
+- Changed `plan_yam_graspgenx_curobo.py` default `--sim_fps` from 30 to 60 so
+  newly generated trajectories match the DEXTRAH control rate.
+- Added `DEMO_TRAJECTORY_TIMING_MODE` passthrough to
+  `cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh`.
+
+Validation:
+- Local checks passed:
+  `python3 -m py_compile dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py dextrah_lab/scene_scripts/plan_yam_graspgenx_curobo.py`,
+  `bash -n cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh`, and
+  `git diff --check`.
+- Remote l401 checks passed for the same Python compile and wrapper syntax.
+
+Planner:
+- Local GraspGenX/cuRobo run
+  `stable_scene_realtime_6dd2bca4_seed7` used the settled stable scene from
+  `/home/lzha/code/cluster_results/l401/single_yam_stable_scene_capture_f79ddbea_20260621T093128Z/stable_scene.json`.
+- Result: cuRobo accepted selected GraspGenX grasp index `9` with confidence
+  `0.7050067186355591`; planner status was
+  `Planning to lift pose succeeded.`
+- The exported trajectory has 647 frames at 60 FPS. Its max commanded arm-joint
+  velocity from the saved trajectory is `2.328243 rad/s`.
+
+Dynamic replay:
+- Slurm job `1038569` completed `0:0` on `pool0-00012` in `00:01:28`.
+- Run directory:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/single_yam_stable_scene_realtime_replay_6dd2bca4_20260621T095300Z`.
+- Local artifacts:
+  `/home/lzha/code/cluster_results/l401/single_yam_stable_scene_realtime_replay_6dd2bca4_20260621T095300Z`.
+- Replay used `DEMO_TRAJECTORY_TIMING_MODE=realtime`,
+  `DEMO_TRAJECTORY_REPLAY_MODE=dynamic`, `DEMO_START_BLEND_STEPS=0`,
+  `SETTLE_STEPS=0`, the captured stable-scene state, and the realtime 60 FPS
+  planner trajectory.
+
+Evidence:
+- Slurm log confirmed `trajectory_timing.mode=realtime`, source FPS `60`,
+  source frames `647`, source duration `10.766666666666667` seconds, environment
+  control dt `0.016666666666666666` seconds, and final replay length `648`
+  control steps.
+- `ffprobe` confirmed `single_yam_realtime_path.mp4` is 1280x720, 12 FPS,
+  `10.916667` seconds, and 131 frames.
+- Metrics confirmed `step_count=648`,
+  source-frame deltas `{0: 1, 1: 646}` where the single zero delta is the final
+  hold, max commanded target velocity `2.3282432556152344 rad/s`, max actual
+  joint velocity `2.7151103019714355 rad/s`, and max tracking error
+  `0.2043820023536682 rad`.
+- Finger/table diagnostics reported minimum clearance
+  `0.08890362828969955` meters, zero negative-clearance samples, and zero
+  penetration rejections.
+- Visual inspection of frames `0000`, `0030`, `0065`, `0100`, and `0130`
+  confirmed nonblank rendering, visible table/bin/target/clutter, visible
+  grasp-pose axes, no observed YAM-table penetration, and a realtime-length
+  replay instead of the prior compressed motion.
+- `viz-open` URL for inspection:
+  `http://localhost:8765/view?path=cluster_results/l401/single_yam_stable_scene_realtime_replay_6dd2bca4_20260621T095300Z/single_yam_realtime_path.mp4`.
+
+Analysis:
+- The sharp command discontinuity was caused by render-time trajectory
+  compression, not by cuRobo's saved trajectory. The new replay samples every
+  source frame in sequence at the DEXTRAH control dt.
+- The remaining max tracking error of `0.204382 rad` is a controller tracking
+  issue rather than a trajectory-sampling jump. Mean tracking error is
+  `0.023339 rad`, so the current demo is materially smoother, but tighter YAM
+  drive/PD tuning would be the next axis if the dynamic robot motion still
+  looks too soft or laggy.
+
+## 2026-06-21T10:30:43Z - YAM Full-Open Replay / Narrow Collision Plan Loop
+
+Goal:
+- Fix the dynamic YAM grasp demo so the motion is smooth, the rendered grasp
+  corresponds to the visible target, the gripper actually captures and
+  vertically lifts the object, and the replay has no table/object physics
+  artifacts.
+
+Hypothesis:
+- The previous identity-frame render pushed the object because replay used the
+  settled `-0.02` finger state as the open gripper state. YAM's GraspGenX
+  profile opens to `-0.0475`, but planning cuRobo with fully-open finger
+  collision rejects the reachable table-side grasp set. Keep cuRobo's locked
+  finger collision at the settled start width, but export the dynamic replay
+  profile with full-open fingers and a smooth start guard.
+
+Change:
+- In `dextrah_lab/scene_scripts/plan_yam_graspgenx_curobo.py`, split the
+  planner finger state from the replay profile: cuRobo `lock_joints` and
+  `default_joint_position` use the stable-scene start finger value, while
+  `gripper_open` remains the YAM profile value from `yam_linear.yaml`.
+- Added `dextrah_start_gripper_open` to the generated robot config and
+  `--start_guard_frames` to export a smooth settled-start to first-planned-frame
+  ramp instead of a single-frame jump.
+
+Validation before render:
+- `python3 -m py_compile dextrah_lab/scene_scripts/plan_yam_graspgenx_curobo.py`
+  passed.
+- `bash -n cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh`
+  passed.
+- Local GraspGenX/cuRobo run
+  `stable_scene_identity_narrowplan_fullopen_seed7` used stable scene
+  `/home/lzha/code/cluster_results/l401/single_yam_stable_scene_capture_f79ddbea_20260621T093128Z/stable_scene.json`.
+- Result: accepted, planner status `Planning to lift pose succeeded.`
+- Exported trajectory:
+  `/home/lzha/code/worktrees/DEXTRAH-yam-rejected-demo/local_results/yam_graspgenx_curobo/stable_scene_identity_narrowplan_fullopen_seed7/trajectory.json`,
+  821 frames at 60 FPS.
+- The trajectory starts at the stable `-0.02` finger state, reaches full-open
+  `-0.0475` at frame 59, and keeps the arm unchanged during the guard.
+- Selected grasp index is `3`; planner selected a candidate whose target center
+  is inside the YAM aperture in link_6 coordinates.
+
+Next:
+- Commit the source change, deploy the exact commit to the l401 agent worktree,
+  render the 821-frame dynamic replay with grasp-pose overlay, fetch metrics and
+  video, inspect whether the object is actually grasped/lifted, then iterate if
+  the object still drifts or the overlay remains misleading.
+
+## 2026-06-21T10:49:12Z - YAM Vertical-Lift Planner Patch
+
+Goal:
+- Remove the remaining side-drag artifact in the dynamic grasp replay and make
+  the lift segment vertical in world/robot coordinates while keeping YAM's
+  GraspGenX grasp-to-tool frame identity.
+
+Hypothesis:
+- The accepted cuRobo trajectory was smooth, but the selected YAM grasp had
+  tool `z = [0.664, -0.673, -0.326]`. The stock GraspGenX helper lifted along
+  tool `-z`, which produced a mostly sideways lift vector and caused the object
+  to be pushed/dragged instead of lifted. Approach should stay tool-relative,
+  but the post-close lift should be world/robot +Z.
+
+Change:
+- Added YAM grasp filtering diagnostics for lift orientation and minimum tool
+  height.
+- Added a DEXTRAH-local YAM planning helper that calls cuRobo with
+  `grasp_lift_in_tool_frame=False` so lift offsets are vertical in the robot
+  frame.
+- Added per-candidate planning attempt logs to `grasp_pose_overlay.json` and
+  `plan_summary.json`.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/scene_scripts/plan_yam_graspgenx_curobo.py`
+  passed.
+- Strict lift filters (`--yam_min_lift_up_dot 0.50` and `0.38`) found upward
+  candidates, but cuRobo rejected them at the approach stage.
+- Relaxed diagnostic run `stable_scene_vertical_lift_seed7_min030_diag`
+  accepted a vertical-lift trajectory:
+  - planner status: `Planning to lift pose succeeded.`
+  - selected filtered grasp index: `1`
+  - selected original grasp index: `1`
+  - selected confidence: `0.9068072438240051`
+  - kept original grasp indices: `[7, 1, 3]`
+  - trajectory length: `821` frames at `60` FPS
+- FK audit of exported `link_6` poses confirmed vertical lift: frame `600` to
+  `820` changed approximately `[-0.0018, -0.0008, +0.1587]` meters.
+
+Next:
+- Commit and deploy this exact source revision, render the vertical-lift replay
+  dynamically on l401 with the stable-scene object manifests, then inspect
+  metrics/video. If the same side candidate still fails physically, sweep
+  GraspGenX seeds and/or selection constraints for a reachable upward-centered
+  grasp instead of accepting this candidate.
+
+## 2026-06-21T11:04:31Z - Valid YAM Seed-2 Strict-Lift Dynamic Demo
+
+Goal:
+- Produce a dynamic DEXTRAH YAM grasp demo that is smooth, visualizes a grasp
+  pose corresponding to the target, actually captures the object, lifts it
+  vertically, and avoids table/finger physics artifacts.
+
+Diagnosis:
+- The vertical-lift patch removed sideways lift from the exported FK trajectory,
+  but seed `7` still selected the reachable low side grasp at tool position
+  `[-0.363, 0.072, 0.074]`.
+- Dynamic render job `1038601`
+  (`single_yam_vertical_lift_replay_97aeeede_20260621T105321Z`) still reported
+  `rejected_path_detected` at step `232` with finger/table clearance
+  `-0.00847536325454712`.
+- Visual frames confirmed the fingertips swept into the table before closure.
+  The object eventually rose, but only after side-loading and table contact, so
+  that trajectory was rejected as invalid.
+
+Change:
+- Ran a local GraspGenX/cuRobo seed sweep against the same stable scene with
+  stricter YAM dynamic filters:
+  `--yam_min_lift_up_dot 0.40`, `--yam_min_tool_z 0.095`,
+  `--rank_grasps_by_confidence`, `--include_goal_bin`,
+  `--no-include_default_clutter`, and the captured stable-scene collisions.
+- Seed `2` accepted on the first full approach/grasp/lift strategy. The
+  selected original grasp index was `23`, confidence `0.684619`, tool position
+  `[-0.307284, 0.012502, 0.142414]`, and lift-up dot `0.902759`.
+- Patched `plan_yam_graspgenx_curobo.py` so future YAM runs fail closed unless
+  a grasp passes aperture, lift orientation, and minimum tool-height filters.
+  Fallback to low/geometry-only candidates now requires
+  `--yam_allow_lift_filter_fallback`.
+- Updated YAM defaults to the validated filter/timing values:
+  minimum lift-up dot `0.40`, minimum tool z `0.095`, `60` close frames,
+  `60` hold frames, and `120` post-close hold frames.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/scene_scripts/plan_yam_graspgenx_curobo.py`
+  passed.
+- Patched-code seed-2 smoke
+  `stable_scene_seed2_strict_defaults_patched` reproduced the same selected
+  high/upward grasp with fallback disabled and wrote an `821` frame trajectory.
+- Dynamic l401 render job `1038603` completed successfully:
+  `single_yam_seed2_strict_lift_replay_97aeeede_20260621T110006Z`.
+- Slurm log had no `rejected_path_detected` events.
+- `ffprobe` confirmed `single_yam_valid_grasp.mp4` is `1280x720`, `12` FPS,
+  `16.083333` seconds, and `193` frames.
+- Metrics:
+  - `first_rejected_step`: `null`
+  - replay mode: `dynamic`
+  - timing mode: `realtime`
+  - source trajectory: `821` frames at `60` FPS
+  - start error max abs: `0.0`
+  - max commanded joint velocity: `2.5311756 rad/s`
+  - max actual joint velocity: `2.4889486 rad/s`
+  - max joint tracking error: `0.2104553 rad`
+  - finger/table clearance at the old failure step `232`: `0.0986701 m`
+  - finger/table clearance at grasp/lift: positive, about `0.055-0.245 m`
+  - target moved from approximately `[-0.2664, -0.0168, 0.0274]` to
+    `[-0.2832, -0.0104, 0.2101]`, about `0.183 m` vertical lift with about
+    `0.018 m` XY drift.
+- Visual inspection of extracted frames confirmed nonblank rendering, selected
+  grasp axes near the target, approach from above/side without table contact,
+  gripper closure around the target, object capture, and vertical lift.
+- `viz-open` URL:
+  `http://localhost:8765/view?path=cluster_results/l401/single_yam_seed2_strict_lift_replay_97aeeede_20260621T110006Z/single_yam_valid_grasp.mp4`.
+
+Artifacts:
+- Local final video:
+  `/home/lzha/code/cluster_results/l401/single_yam_seed2_strict_lift_replay_97aeeede_20260621T110006Z/single_yam_valid_grasp.mp4`.
+- Local metrics:
+  `/home/lzha/code/cluster_results/l401/single_yam_seed2_strict_lift_replay_97aeeede_20260621T110006Z/metrics.json`.
+- Local patched-code seed-2 plan:
+  `/home/lzha/code/worktrees/DEXTRAH-yam-rejected-demo/local_results/yam_graspgenx_curobo/stable_scene_seed2_strict_defaults_patched`.
+
+Residual note:
+- PhysX reports nonzero target root velocity while the sampled target pose is
+  held nearly fixed relative to the gripper during the final hold. The video and
+  sampled positions do not show visible slipping, table contact, or object
+  ejection.
+
+## 2026-06-21T17:18:00Z - Single YAM PD Overshoot Tuning
+
+Goal:
+- Reduce the visible overshoot/settling when Single YAM reaches the pre-grasp
+  pose, while preserving the validated dynamic grasp/lift and table clearance.
+
+Change:
+- Added optional replay-only YAM arm gain scaling to
+  `render_tabletop_clutter_settle_video.py` and the l401 render wrapper:
+  `--yam_arm_stiffness_scale`, `--yam_arm_damping_scale`, and
+  `--yam_arm_effort_scale`.
+- Swept dynamic replay gain variants against the validated seed-2 trajectory:
+  damping-only `K1/D3/E2`, coupled `K1.5/D2/E2`, `K2/D3/E3`,
+  `K2/D2.5/E5`, `K2/D2.5/E3`, and `K2/D2.5/E2`.
+- Selected the least aggressive validated setting, `K2/D2.5/E2`, and made it
+  the `SINGLE_YAM_CFG` default:
+  - arm stiffness: joint1-3 `80.0`, joint4 `40.0`, joint5-6 `20.0`
+  - arm damping: joint1-3 `6.25`, joint4 `1.25`, joint5-6 `2.5`
+  - effort limit: joint1-3 `56.0`, joint4-6 `20.0`
+
+Validation:
+- Local syntax checks passed:
+  `python3 -m py_compile dextrah_lab/assets/yam/bimanual_yam.py`
+  `dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py`,
+  `bash -n cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh`, and
+  `git diff --check`.
+- l401 final no-override render job `1038738`
+  (`single_yam_pd_default_tuned_seed2_9dc05821_20260621T171045Z`) completed
+  successfully on commit `9dc05821`.
+- Slurm log confirmed `YAM_ARM_STIFFNESS_SCALE`, `YAM_ARM_DAMPING_SCALE`, and
+  `YAM_ARM_EFFORT_SCALE` were unset, so the render exercised the asset defaults.
+- Final video metadata: `1280x720`, `12` FPS, `193` frames,
+  `16.083333` seconds.
+- Metrics matched the `K2/D2.5/E2` override run exactly:
+  - `first_rejected_step`: `null`
+  - replay mode: `dynamic`, timing: `realtime`
+  - source trajectory: `821` frames at `60` FPS
+  - max joint tracking error: `0.255987 rad`
+  - mean joint tracking error: `0.037486 rad`
+  - pre-grasp arrival residual actual arm velocity reduced from old-default
+    `2.488949 rad/s` to `0.523551 rad/s`
+  - source-frame 264 residual actual arm velocity reduced from
+    `0.870468 rad/s` to `0.220027 rad/s`
+  - source-frame 264 arm tracking error reduced from `0.055303 rad` to
+    `0.026372 rad`
+  - minimum finger/table clearance stayed positive: `0.056200 m`
+  - target object vertical lift: `0.185240 m`, with `0.019485 m` XY drift
+- Visual contact sheet and final video inspection showed no table contact,
+  no grasp/lift regression, and visibly damped pre-grasp settling.
+
+Artifacts:
+- Final default-tuned video:
+  `/home/lzha/code/cluster_results/l401/single_yam_pd_default_tuned_seed2_9dc05821_20260621T171045Z/single_yam_pd_default_tuned.mp4`
+- Final metrics:
+  `/home/lzha/code/cluster_results/l401/single_yam_pd_default_tuned_seed2_9dc05821_20260621T171045Z/metrics.json`
+- Baseline-vs-default contact sheet:
+  `/home/lzha/code/cluster_results/l401/yam_pd_default_validation_contact_sheet.png`
+- Viewer URLs:
+  `http://localhost:8765/view?path=cluster_results/l401/single_yam_pd_default_tuned_seed2_9dc05821_20260621T171045Z/single_yam_pd_default_tuned.mp4`
+  `http://localhost:8765/view?path=cluster_results/l401/yam_pd_default_validation_contact_sheet.png`
+
+## 2026-06-22T03:10:34Z - Single YAM Residual Hold Shake Tuning
+
+Goal:
+- Reduce the slight post-pose shake visible after Single YAM reaches and holds
+  the grasp/lift pose, while preserving the validated dynamic grasp, object
+  lift, and positive table clearance.
+
+Diagnosis:
+- The held source trajectory is constant at the end of the replay, but the
+  dynamic robot remains in a small contact-driven limit cycle.
+- Gripper sweep `single_yam_grip_s05_d2_e05_seed2_db5bb460_20260622T030529Z`
+  reduced final held arm velocity from `0.630101 rad/s` to `0.209096 rad/s`
+  and final finger velocity from `0.334350 rad/s` to `0.146885 rad/s`, with
+  `0.185207 m` target lift and no rejected step.
+
+Sweep manifest:
+| Attempt | Commit | Key setting | Expected artifact | Success criteria |
+| --- | --- | --- | --- | --- |
+| single_yam_grip_s05_d4_e05_seed2_db5bb460_20260622T0311Z | db5bb460 | gripper K0.5 D4 E0.5 | `single_yam_grip_s05_d4_e05.mp4`, `metrics.json` | no rejection, object lift, lower final held velocities |
+| single_yam_grip_s025_d4_e05_seed2_db5bb460_20260622T0311Z | db5bb460 | gripper K0.25 D4 E0.5 | `single_yam_grip_s025_d4_e05.mp4`, `metrics.json` | no rejection, object lift, lower final held velocities |
+| single_yam_armd15_grip_s05_d2_e05_seed2_db5bb460_20260622T0311Z | db5bb460 | arm D1.5 plus gripper K0.5 D2 E0.5 | `single_yam_armd15_grip_s05_d2_e05.mp4`, `metrics.json` | no rejection, object lift, lower final held velocities |
+| single_yam_armd20_grip_s05_d2_e05_seed2_db5bb460_20260622T0311Z | db5bb460 | arm D2.0 plus gripper K0.5 D2 E0.5 | `single_yam_armd20_grip_s05_d2_e05.mp4`, `metrics.json` | no rejection, object lift, lower final held velocities |
+
+Pre-launch checks:
+- Local `py_compile`, wrapper `bash -n`, and `git diff --check` passed.
+- Remote l401 agent worktree
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-collision-overlay-39915731`
+  is at `db5bb460e5a8439a3f49a52acd6ef3e414b39ad9`.
+
+Launch:
+- Submitted l401 jobs `1038926`, `1038927`, `1038928`, and `1038929` from
+  the same remote worktree and commit.
+
+Interim result:
+- All four jobs completed, but the launch omitted the minimal target and
+  clutter manifest overrides used by the accepted baseline. Metrics still
+  restored the target pose and trajectory, but the clutter visuals changed, so
+  this sweep is not a clean A/B against
+  `single_yam_grip_s05_d2_e05_seed2_db5bb460_20260622T030529Z`.
+- Re-running the most relevant candidates with the same minimal manifests:
+  `/results/validations/stable_scene_sweep_seed2_lift040_z095_plan/minimal_manifests/target_manifest.json`
+  and
+  `/results/validations/stable_scene_sweep_seed2_lift040_z095_plan/minimal_manifests/clutter_manifest_slot_order.json`.
+- Submitted corrected l401 jobs `1038930`, `1038931`, `1038932`, and
+  `1038933`.
+
+Corrected sweep result:
+| Attempt | Result | Decision |
+| --- | --- | --- |
+| exact `gripper K1000 D160 E20` | no rejected step, `0.198703 m` lift, final held arm/finger velocity `0.195918/0.103710 rad/s`, target speed `0.067336 m/s` and `1.071238 rad/s` | improves contact damping but leaves arm hold higher than arm-damped variants |
+| exact `arm D1.5 + gripper K1000 D160 E20` | no rejected step, `0.183666 m` lift, final held arm/finger velocity `0.167836/0.111184 rad/s`, target speed `0.071813 m/s` and `1.060251 rad/s` | acceptable, but less hold damping than D2.0 |
+| exact `arm D2.0 + gripper K1000 D160 E20` | no rejected step, `0.184576 m` lift, final held arm/finger velocity `0.149246/0.110583 rad/s`, target speed `0.071609 m/s` and `0.835306 rad/s` | selected for default; peak tracking error is early in approach with large table clearance |
+| exact `gripper K500 D160 E20` | no rejected step, `0.189450 m` lift, final held finger velocity `0.057544 rad/s` but target angular speed `1.879909 rad/s` | rejected because object spin is worse |
+
+Default change:
+- Set `SINGLE_YAM_CFG` arm damping to joint1-3 `12.5`, joint4 `2.5`,
+  joint5-6 `5.0`.
+- Set `SINGLE_YAM_CFG` gripper to effort `20.0`, stiffness `1000.0`,
+  damping `160.0`.
+- Local syntax checks passed after the edit.
+
+Final default validation:
+- Commit `28ccd85aeb3d1b223e30da03dc7c858e08115dd1`
+  (`Dampen single YAM hold contact dynamics`) was pushed to
+  `codex/yam-rejected-demo`.
+- l401 GitHub fetch was blocked by missing SSH credentials, so the exact commit
+  was transferred as a Git bundle and fetched into the agent worktree. Remote
+  worktree
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-collision-overlay-39915731`
+  was checked out at `28ccd85a`.
+- l401 no-override validation job `1038934`
+  (`single_yam_pd_hold_damped_default_seed2_28ccd85a_20260622T0324Z`)
+  completed successfully with exit code `0:0`.
+- Slurm log confirmed all `YAM_ARM_*` and `YAM_GRIPPER_*` overrides were unset,
+  so the render exercised the new asset defaults.
+- Final video metadata: `1280x720`, `12` FPS, `193` frames,
+  `16.083333` seconds.
+- Final metrics matched the selected override run exactly:
+  - `first_rejected_step`: `null`
+  - max/mean joint tracking error: `0.425236 / 0.046386 rad`
+  - final held arm/finger velocity mean: `0.149246 / 0.110583 rad/s`
+  - closure arm velocity mean: `0.175883 rad/s`
+  - target lift: `0.184576 m`, XY drift `0.019128 m`
+  - final target speed: `0.071609 m/s`, angular speed `0.835306 rad/s`
+  - minimum finger/table clearance: `0.056096 m`
+- Compared with the previous default
+  `single_yam_pd_default_tuned_seed2_9dc05821_20260621T171045Z`, the held arm
+  velocity dropped from `0.629874` to `0.149246 rad/s`, held finger velocity
+  from `0.334325` to `0.110583 rad/s`, and final target angular speed from
+  `1.482639` to `0.835306 rad/s`.
+- Frame inspection and final-hold contact sheet showed the same target/clutter
+  scene, visible grasp/lift, positive table clearance, and no obvious
+  frame-to-frame hold shake at the rendered view.
+
+Artifacts:
+- Final default validation video:
+  `/home/lzha/code/cluster_results/l401/single_yam_pd_hold_damped_default_seed2_28ccd85a_20260622T0324Z/single_yam_pd_hold_damped_default.mp4`
+- Final metrics:
+  `/home/lzha/code/cluster_results/l401/single_yam_pd_hold_damped_default_seed2_28ccd85a_20260622T0324Z/metrics.json`
+- Final hold contact sheet:
+  `/home/lzha/code/cluster_results/l401/yam_hold_damped_default_final_hold_sheet.png`
+- Viewer URLs:
+  `http://localhost:8765/view?path=cluster_results/l401/single_yam_pd_hold_damped_default_seed2_28ccd85a_20260622T0324Z/single_yam_pd_hold_damped_default.mp4`
+  `http://localhost:8765/view?path=cluster_results/l401/yam_hold_damped_default_final_hold_sheet.png`
+
+## 2026-06-22T05:33:14Z - Single YAM Franka PD Defaults
+
+Goal:
+- Apply the known-good DEXTRAH Franka PD values directly to the current
+  Single-YAM robot defaults and validate the same grasp/lift demo.
+
+Mapping:
+- Franka high-PD arm uses `Kp=400`, `Kd=80`; map this to all six YAM arm
+  joints.
+- Franka shoulder effort `87` maps to YAM joints `1-4`; Franka forearm effort
+  `12` maps to YAM joints `5-6`.
+- DEXTRAH Franka finger override uses effort `1000`, stiffness `4000`, damping
+  `400`; map this directly to the two YAM finger joints.
+
+Change:
+- Updated `SINGLE_YAM_CFG` in `dextrah_lab/assets/yam/bimanual_yam.py`.
+
+Validation plan:
+- Run local `py_compile`, wrapper `bash -n`, and `git diff --check`.
+- Commit/push the config change.
+- Deploy the exact commit to the l401 agent worktree.
+- Run the same no-override seed-2 dynamic replay validation used for the
+  previous default, then inspect metrics, video, and final-hold frames.
+
+Validation result:
+- Commit `5e8aea275c18efe5592239fc355e627838307f37`
+  (`Use Franka PD values for single YAM`) was pushed to
+  `codex/yam-rejected-demo`.
+- l401 GitHub fetch was still blocked by missing SSH credentials, so the exact
+  commit was transferred as a Git bundle and fetched into
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-collision-overlay-39915731`.
+- l401 no-override validation job `1038945`
+  (`single_yam_franka_pd_default_seed2_5e8aea27_20260622T0534Z`) completed
+  successfully with exit code `0:0`.
+- Slurm log confirmed all `YAM_ARM_*` and `YAM_GRIPPER_*` overrides were unset,
+  so the render exercised the Franka-mapped asset defaults.
+- Final video metadata: `1280x720`, `12` FPS, `193` frames,
+  `16.083333` seconds.
+- Final dynamic replay metrics:
+  - `first_rejected_step`: `null`
+  - max/mean joint tracking error: `0.367326 / 0.062028 rad`
+  - final held arm max/mean absolute velocity:
+    `1.474969 / 0.383300 rad/s`
+  - final held finger max/mean absolute velocity:
+    `0.413127 / 0.364168 rad/s`
+  - target lift: `0.188389 m`, XY drift `0.015385 m`
+  - final target speed: `0.449073 m/s`, angular speed `10.921917 rad/s`
+  - minimum finger/table clearance: `0.057757 m`
+- Compared with the previous YAM-damped default at `28ccd85a`, direct Franka
+  values regress the held arm max velocity from `0.149246` to
+  `1.474969 rad/s`, held finger max velocity from `0.110583` to
+  `0.413127 rad/s`, and final target angular speed from `0.835306` to
+  `10.921917 rad/s`.
+- Frame inspection and final-hold contact sheet showed positive table clearance
+  and a completed lift, but the metrics expose substantial residual contact
+  motion. Direct Franka PD is therefore implemented as requested, but it is not
+  the recommended setting if the objective is the smoothest YAM grasp/lift.
+
+Artifacts:
+- Franka-PD validation video:
+  `/home/lzha/code/cluster_results/l401/single_yam_franka_pd_default_seed2_5e8aea27_20260622T0534Z/single_yam_franka_pd_default.mp4`
+- Franka-PD metrics:
+  `/home/lzha/code/cluster_results/l401/single_yam_franka_pd_default_seed2_5e8aea27_20260622T0534Z/metrics.json`
+- Franka-PD final hold contact sheet:
+  `/home/lzha/code/cluster_results/l401/yam_franka_pd_final_hold_sheet.png`
+- Viewer URLs:
+  `http://localhost:8765/view?path=cluster_results/l401/single_yam_franka_pd_default_seed2_5e8aea27_20260622T0534Z/single_yam_franka_pd_default.mp4`
+  `http://localhost:8765/view?path=cluster_results/l401/yam_franka_pd_final_hold_sheet.png`
+
+## 2026-06-22T06:12:35Z - Single YAM Pre-Contact Joint Tracking Diagnostic
+
+Goal:
+- Test whether the observed YAM shakiness is caused by object contact or by
+  controller/joint tracking instability before object interaction.
+
+Method:
+- Used the saved dynamic replay `metrics.json` artifacts from the direct
+  Franka-PD run at `5e8aea27` and the previous YAM-damped run at `28ccd85a`.
+- Generated a local HTML/SVG dashboard without rerunning simulation:
+  commanded joint position, actual joint position, tracking error, actual
+  velocity, and object motion thresholds.
+
+Result:
+- Object pose first moved by more than `5 mm` near step `578` in the direct
+  Franka-PD run and near steps `568-584` in the previous YAM-damped run.
+- In the direct Franka-PD run, before object motion and during static-command
+  windows, the arm still showed large actual joint velocities:
+  - pre-step-560 mean absolute arm velocity: `0.297350 rad/s`
+  - static-target mean absolute arm velocity: `0.299837 rad/s`
+  - static-target max absolute arm velocity: `3.207282 rad/s`
+- In the previous YAM-damped run, the same static-target diagnostic was much
+  lower on average:
+  - pre-step-560 mean absolute arm velocity: `0.097419 rad/s`
+  - static-target mean absolute arm velocity: `0.046219 rad/s`
+- The main direct Franka-PD instability was visible around steps `386-424`,
+  while commanded arm target velocity was `0.0`; joint 5 actual velocity
+  repeatedly exceeded `2.4 rad/s`, and joint 6 error accumulated toward
+  roughly `0.064 rad`.
+
+Conclusion:
+- The user's diagnosis is correct: the dominant shaking is not explained by
+  object contact. It is already present before object pose motion and while
+  the commanded arm target is static.
+- Next tuning should focus on the YAM joint tracking loop: effective drive
+  damping/stiffness/effort, target interpolation/hold behavior, velocity target
+  feedforward, timestep/substep/solver settings, and possible joint 5/6
+  dynamics or frame/inertia mismatch.
+
+Artifacts:
+- Diagnostic dashboard:
+  `/home/lzha/code/cluster_results/l401/yam_joint_tracking_diagnostic/index.html`
+- Summary CSV:
+  `/home/lzha/code/cluster_results/l401/yam_joint_tracking_diagnostic/summary.csv`
+- Viewer URL:
+  `http://localhost:8765/view?path=cluster_results/l401/yam_joint_tracking_diagnostic/index.html`
+
+## 2026-06-22T07:23:57Z - YAM GraspGenX/cuRobo Pick-Place Dataset Path
+
+Goal:
+- Start generating YAM demonstration trajectories where GraspGenX proposes the
+  grasp, cuRobo plans the grasping motion, and the replay records RGB plus full
+  state streams for BC.
+- First target is a single-object pick-and-drop-into-bin trajectory with video
+  inspection before scaling to multiple non-overlapping initialized objects.
+
+Changes:
+- Restored the current validated YAM-damped actuator defaults instead of the
+  direct Franka-PD experiment, because the direct Franka values showed
+  pre-contact static-command shaking.
+- Extended `plan_yam_graspgenx_curobo.py` with `--plan_task
+  pick_and_drop_in_bin`, procedural bin metadata, and trajectory phase
+  annotation.
+- Extended `render_tabletop_clutter_settle_video.py` with
+  `single_yam_trajectory` replay mode and `trajectory_dataset.npz` export:
+  RGB frames, policy/critic observations, commanded and actual joint states,
+  TCP/hold poses, target object root/center states, clutter slot root states,
+  gripper width, clearance, phase labels, and termination flags.
+- Extended the l401 render wrapper to pass dataset-recording options through
+  the Isaac Lab container.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/assets/yam/bimanual_yam.py
+  dextrah_lab/scene_scripts/plan_yam_graspgenx_curobo.py
+  dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py`
+- `bash -n cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh`
+- `git diff --check`
+
+Next:
+- Commit and deploy this exact revision to an agent-owned l401 worktree.
+- Generate a one-object stable scene, plan a bin-drop trajectory, render it
+  dynamically with grasp overlay and dataset recording, inspect video/metrics,
+  then iterate until the pick, lift, transport, and drop are BC-learnable.
+
+## 2026-06-22T07:57:00Z - One-Object Pick-Drop Replay Asset Mismatch
+
+Goal:
+- Validate the first one-object YAM pick-and-drop-into-bin trajectory in
+  dynamic Isaac simulation with RGB and full-state dataset recording.
+
+Result:
+- l401 job `1039080` completed and wrote a 25s/300-frame video plus a
+  1500-step `trajectory_dataset.npz`.
+- Artifact inspection showed the trajectory was not valid: the gripper reached
+  the bin, but the physical object root stayed near the original table XY
+  instead of moving with the gripper.
+- Numeric evidence from the dataset:
+  - `terminated` was true from the first step because the task-local
+    `cube_pos` center was inconsistent for the active mesh.
+  - `target_root_pos` jumped during the first 42 replay steps, then stayed
+    nearly fixed while the arm moved to the bin.
+  - The active simulator object UUID in the Isaac log was not the stable-scene
+    target UUID used by GraspGenX/cuRobo planning.
+
+Analysis:
+- The replay restored the target root pose from `stable_scene.json`, but the
+  DEXTRAH environment had spawned a different target asset. That invalidated
+  the planned GraspGenX/cuRobo grasp geometry and produced a misleading
+  floating-object replay.
+
+Change:
+- Added stable-scene target manifest materialization in
+  `render_tabletop_clutter_settle_video.py` for single-YAM trajectory replay.
+  The render script now forces env 0 to spawn the same target UUID/USD/scale
+  recorded in `stable_scene.json`.
+- Added a runtime UUID check that aborts if the stable-scene target UUID and
+  active simulator target UUID differ.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py
+  dextrah_lab/scene_scripts/plan_yam_graspgenx_curobo.py`
+- `bash -n cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh`
+
+Next:
+- Commit/deploy this exact revision to l401 and rerun the one-object
+  pick/drop dataset replay with object USD bounds validation disabled.
+
+## 2026-06-22T09:04:00Z - Clean Three-Object YAM Pick-All-Into-Bin Demo
+
+Goal:
+- Scale the YAM GraspGenX/cuRobo pipeline from the validated single-object and
+  two-object pick/drop replays to a randomized three-object scene.
+- Keep current YAM damping/control values, use GraspGenX + cuRobo for grasp
+  approach, and use scripted lift/bin-drop primitives for the lift/place phase.
+- Record a BC-ready trajectory dataset with RGB observations plus full states,
+  and ensure all objects start non-overlapping and end in the bin.
+
+Changes:
+- Added scripted lift fallback support in
+  `dextrah_lab/scene_scripts/plan_yam_graspgenx_curobo.py` and
+  `plan_yam_multi_object_pick_place.py`; multi-object planning defaults to
+  scripted vertical lift so cuRobo is only responsible for the grasp approach.
+- Added `--hide_robot_debug_sites` to
+  `dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py` and hid YAM
+  MJCF `tcp_site`/`grasp_site` prims from rendered RGB by default. This removed
+  the visible green `grasp_site` marker from BC data while preserving meshes,
+  collisions, physics, damping, and the trajectory.
+- Commits:
+  - `903fc6e0b2b2151467baf9c0cdfc484842f49e54`:
+    scripted lift fallback.
+  - `90827893141d6a307e0a8ae4ae633d8e877dd86d`:
+    hide YAM debug sites in demo renders.
+
+Jobs and artifacts:
+- Stable scene job `1039092`:
+  `/home/lzha/code/cluster_results/l401/yam_three_obj_primitive_settle_2d83e03b_seed41_20260622T083756Z`
+- Three-object plan:
+  `/home/lzha/code/cluster_results/l401/yam_pick_place_plans/three_obj_primitive_seed41_2d83e03b_scripted_lift`
+- First dynamic replay job `1039093` succeeded but exposed visible YAM site
+  markers in the RGB stream, so it was kept as diagnostic only.
+- Final clean dynamic replay job `1039094`:
+  `/home/lzha/code/cluster_results/l401/yam_three_obj_primitive_pick_drop_dataset_90827893_seed41_clean_sites_20260622T085800Z`
+
+Validation:
+- l401 remote worktree was deployed to `90827893` via Git bundle because l401
+  GitHub SSH fetch lacked a usable key.
+- Remote checks passed:
+  `python3 -m py_compile dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py
+  dextrah_lab/scene_scripts/plan_yam_graspgenx_curobo.py
+  dextrah_lab/scene_scripts/plan_yam_multi_object_pick_place.py`
+  and `bash -n cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh`.
+- Final MP4: 1280x720, 12 fps, 901 frames, 75.08 s.
+- Final dataset: `trajectory_dataset.npz`, `4500` state steps and RGB shape
+  `[4500, 120, 160, 3]`.
+- Final object state metrics:
+  - `target` final `[-0.21276, 0.43846, 0.03153]`, inside bin true,
+    lift delta `0.22218 m`.
+  - `clutter_00` final `[-0.19236, 0.37613, 0.02450]`, inside bin true,
+    lift delta `0.19283 m`.
+  - `clutter_01` final `[-0.13177, 0.43666, 0.02435]`, inside bin true,
+    lift delta `0.18975 m`.
+  - Min finger-table clearance `0.09358 m`.
+  - Joint tracking max absolute error `0.03245`, mean absolute error
+    `0.00372`, last-100-step max absolute error `4.65e-05`.
+  - Cleaned dataset flags: `done_sum=1`, `terminated_sum=1`,
+    `truncated_sum=0`.
+  - Hidden-site metadata: `hidden_count=2` for `tcp_site` and `grasp_site`.
+  - Green-site pixel audit on previously affected frames: `0` green pixels.
+
+Inspection artifacts:
+- Video:
+  `http://localhost:8765/view?path=cluster_results/l401/yam_three_obj_primitive_pick_drop_dataset_90827893_seed41_clean_sites_20260622T085800Z/three_obj_yam_pick_drop_clean_sites.mp4`
+- Timeline sheet:
+  `http://localhost:8765/view?path=cluster_results/l401/yam_three_obj_primitive_pick_drop_dataset_90827893_seed41_clean_sites_20260622T085800Z/three_obj_pick_drop_clean_sites_timeline_sheet.png`
+- Bin zoom sheet:
+  `http://localhost:8765/view?path=cluster_results/l401/yam_three_obj_primitive_pick_drop_dataset_90827893_seed41_clean_sites_20260622T085800Z/three_obj_pick_drop_clean_sites_bin_zoom_sheet.png`
+- State traces:
+  `http://localhost:8765/view?path=cluster_results/l401/yam_three_obj_primitive_pick_drop_dataset_90827893_seed41_clean_sites_20260622T085800Z/three_obj_pick_drop_clean_sites_state_traces.png`
+
+Conclusion:
+- The final clean three-object trajectory is acceptable as the first
+  multi-object YAM pick-all-into-bin demonstration: smooth joint tracking,
+  positive table clearance, no visible debug sites, all objects grasped/lifted,
+  and all objects end inside the bin.
+
+## 2026-06-22T10:02:00Z - Start 300-Demo YAM Objaverse Collection
+
+Goal:
+- Start collecting 300 BC-ready YAM pick-all-into-bin demonstrations using
+  realistic Objaverse-derived tabletop objects.
+- Preserve current YAM damping/control gains, keep GraspGenX + cuRobo for
+  grasp approach planning, and use scripted vertical lift/bin-drop primitives.
+- Randomize object identities and poses, require non-overlapping initialization,
+  and record RGB observations plus all states.
+
+Changes prepared:
+- Fixed `object_asset_assignment="random"` for the target object so single-env
+  collection samples a random object instead of always choosing manifest index
+  `0`.
+- Added `dextrah_lab/scene_scripts/prepare_yam_objaverse_pool_manifest.py` to
+  create a reachable tabletop-sized pool from the full Objaverse-derived
+  GraspGen object manifest.
+- Added `dextrah_lab/scene_scripts/validate_yam_pick_place_dataset.py` to accept
+  only demos with all objects lifted, all final object centers in the bin,
+  positive finger-table clearance, bounded joint tracking error, nonblank RGB,
+  and valid done/terminated/truncated flags.
+- Added `cluster/sbatch_collect_yam_objaverse_demos_1gpu.sh`, a one-GPU shard
+  collector that loops seeds until `SHARD_TARGET` accepted demos are produced.
+  Each attempt runs settle -> multi-object GraspGenX/cuRobo plan -> dynamic
+  replay with RGB/state NPZ -> validator.
+
+Validation before launch:
+- Local syntax checks passed:
+  `python3 -m py_compile dextrah_lab/tasks/dextrah_multi_object_grasp/multi_object_grasp_task.py
+  dextrah_lab/scene_scripts/prepare_yam_objaverse_pool_manifest.py
+  dextrah_lab/scene_scripts/validate_yam_pick_place_dataset.py
+  dextrah_lab/scene_scripts/plan_yam_multi_object_pick_place.py
+  dextrah_lab/scene_scripts/plan_yam_graspgenx_curobo.py`
+  and `bash -n cluster/sbatch_collect_yam_objaverse_demos_1gpu.sh
+  cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh`.
+- The new validator accepts the previously approved clean three-object dataset
+  with RGB shape `[4500, 120, 160, 3]`, all object-in-bin checks true, min
+  finger-table clearance `0.09358 m`, joint max absolute error `0.03245`, and
+  no truncation.
+
+Launch plan:
+- Commit and deploy the exact revision to the l401 agent worktree.
+- Run one smoke shard with `SHARD_TARGET=1`, `OBJECTS_PER_DEMO=3`,
+  `SETTLE_STEPS=100`, and the filtered Objaverse pool manifest.
+- Inspect the resulting video, validation metrics, object identities/poses, and
+  dataset keys before launching the full 300-demo shard array.
+
+Smoke follow-up:
+- First smoke job `1039152` failed during Isaac asset loading because the
+  filtered pool manifest preserved the source manifest's relative
+  `asset_root="."`. After the manifest was written under the batch directory,
+  relative USD paths resolved under `/code/shards/...` inside the container
+  instead of the original Objaverse asset directory.
+- Patched `prepare_yam_objaverse_pool_manifest.py` to resolve the source
+  manifest asset root once and write that absolute root into the filtered pool
+  manifest before relaunching the smoke shard.
+- Follow-up smoke still failed in Isaac before scene creation because the
+  filtered manifest's absolute host asset root was not a container-visible
+  path. Patched the manifest writer and shard collector so generated pool
+  manifests write `/results/assets/...` as their `asset_root`, matching the
+  Pyxis mount used by render, planning, and validation steps.
+- Three-object Objaverse smoke then reached valid GraspGenX/cuRobo planning
+  calls but had low yield because later objects often had no valid trajectory.
+  Switched the smoke path to one realistic object per demo to begin the
+  requested 300-demo collection with a high-yield configuration.
+- First one-object replay succeeded physically, but validation rejected it
+  because unused fixed-size clutter buffers were treated as real objects.
+  Patched the validator to check only `target + expected_objects - 1` clutter
+  slots when `--expected_objects` is supplied.
+
+2026-06-22T17:23:09Z - YAM Objaverse 300-demo scale-up run record
+- Goal: start collecting 300 realistic Objaverse YAM pick-and-place
+  demonstrations with GraspGenX grasp generation, cuRobo motion planning,
+  scripted lift/place, dynamic replay, RGB observations, and full state
+  trajectory datasets.
+- Version state: local and l401 agent worktree both at
+  `e958fa04ad4b7e9836f784918f18e6184b80ad95` on branch
+  `codex/yam-rejected-demo`; remote l401 worktree
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-collision-overlay-39915731`.
+- Smoke evidence before scaling: replay
+  `yam_objaverse_smoke_oneobj_fa4b77a1_20260622T171217Z_s000_seed92000_replay`
+  visually picks a small Objaverse object and drops it in the bin. Corrected
+  validation `validation_metrics_rechecked_e958fa04.json` has status
+  `accepted`, 1500 state steps, RGB shape `[1500, 120, 160, 3]`, all checks
+  true, min finger-table clearance `0.0756 m`, target lift delta `0.2278 m`,
+  max target z `0.2383 m`, final target inside bin, max absolute joint error
+  `0.0360`, max L2 joint error `0.0445`, and no truncation.
+- Scale-up parameters: one object per demo for current high-yield realistic
+  Objaverse collection; 20 shards x 15 accepted demos each, four concurrent
+  one-GPU jobs, `START_SEED=93000`, `MAX_ATTEMPTS=60`, `POOL_MAX_ASSETS=2048`,
+  `NUM_GRASPS=192`, `TOPK=96`, `MAX_PLAN_ATTEMPTS=96`,
+  `SETTLE_STEPS=100`, `DEMO_STEPS_PER_OBJECT=1500`, RGB recording
+  `160x120` every step, current YAM damping/PD values unchanged.
+- Expected artifacts: per-shard `events.jsonl`, `accepted_demos.jsonl`,
+  `rejected_attempts.jsonl`, `accepted_validation_metrics.jsonl`,
+  `summary.json`; per accepted replay `trajectory_dataset.npz`,
+  `yam_pick_place.mp4`, `metrics.json`, stable scene, plan trajectory, grasp
+  overlay, and cuRobo planning summary.
+- Success criteria: 300 accepted demos total, validator status accepted for
+  every accepted entry, representative videos show smooth non-penetrating
+  grasps and bin drops, RGB arrays nonblank, recorded state keys present, and
+  no active Slurm work remains without monitoring.
+- Launch: submitted l401 Slurm array `1039162` with `--array=0-19%4` for batch
+  `yam_objaverse_oneobj_300_1097763a_20260622T172427Z`.
+- Result directory:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/yam_demos/yam_objaverse_oneobj_300_1097763a_20260622T172427Z`.
+- Pilot outcome: cancelled array `1039162` after 13 minutes because
+  `MAX_ATTEMPTS=60` was too low for the observed realistic-object yield. The
+  pilot produced 3 accepted demos from 17 started attempts; accepted seed
+  `293001` was fetched and visually checked, with clean grasp, lift, and bin
+  drop. Validation status was `accepted`, RGB shape `[1500, 120, 160, 3]`,
+  target lift delta `0.2004 m`, min finger-table clearance `0.0816 m`, and no
+  truncation.
+- Revised launch: submitted l401 Slurm array `1039183` with `--array=0-19%4`
+  for batch `yam_objaverse_oneobj_300_top512_65b32317_20260622T173847Z` at
+  code commit `65b32317c3abb3ac7c4b830b2d0c682f17079f8c`.
+- Revised parameters: `POOL_MAX_ASSETS=512`,
+  `POOL_MAX_GRASP_WIDTH_P95=0.110`, `MAX_ATTEMPTS=180`, `START_SEED=94000`,
+  20 shards x 15 accepted demos, four concurrent one-GPU jobs, with the same
+  one-object dynamic replay, RGB/state recording, and current YAM damping.
+- Revised result directory:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/yam_demos/yam_objaverse_oneobj_300_top512_65b32317_20260622T173847Z`.
+- Early revised-run monitor: after roughly 19 minutes, the revised run had 6
+  accepted demos from 22 started attempts, with planner and validation rejects
+  acting as intended. First two accepted revised demos were fetched and visually
+  checked; both had clean grasp/lift/drop behavior and accepted validation
+  metrics.
+- Throughput adjustment: increased Slurm array throttle for job `1039183` from
+  4 to 8 via `scontrol update JobId=1039183 ArrayTaskThrottle=8`; shards 4-7
+  started on `pool0-00023`.
+- Second throughput adjustment: after the run reached 19 accepted demos from
+  51 started attempts, increased job `1039183` throttle from 8 to 12; shards
+  8-11 started on `pool0-00012` and `pool0-00041`.
+- Third throughput adjustment: after 26 accepted demos from 75 started
+  attempts, increased job `1039183` throttle from 12 to 16; shards 12-15
+  started on `pool0-00002`, `pool0-00017`, and `pool0-00041`.
+- Fourth throughput adjustment: after 45 accepted demos from 122 started
+  attempts and a clean high-concurrency spot-check video, increased job
+  `1039183` throttle from 16 to 20; shards 16-19 started on `pool0-00002` and
+  `pool0-00008`, so all 20 shards are active.

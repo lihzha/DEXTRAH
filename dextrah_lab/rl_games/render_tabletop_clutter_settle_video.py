@@ -8,6 +8,7 @@ import json
 import math
 import os
 from pathlib import Path
+import shutil
 import sys
 import traceback
 
@@ -32,6 +33,49 @@ parser.add_argument("--settle_steps", type=int, default=180)
 parser.add_argument("--capture_interval", type=int, default=2)
 parser.add_argument("--fps", type=int, default=30)
 parser.add_argument("--video_seconds", type=float, default=None)
+parser.add_argument(
+    "--demo_mode",
+    type=str,
+    default="settle",
+    choices=("settle", "single_yam_rejected_path", "single_yam_trajectory"),
+)
+parser.add_argument("--demo_steps", type=int, default=180)
+parser.add_argument("--demo_high_hold_z", type=float, default=0.16)
+parser.add_argument("--demo_low_hold_z", type=float, default=-0.02)
+parser.add_argument("--demo_trajectory_path", type=str, default=None)
+parser.add_argument(
+    "--demo_trajectory_source",
+    type=str,
+    default="auto",
+    choices=("auto", "graspgenx_replay", "dextrah_table_rejection", "none"),
+)
+parser.add_argument(
+    "--demo_trajectory_replay_mode",
+    type=str,
+    default="kinematic",
+    choices=("kinematic", "dynamic"),
+)
+parser.add_argument(
+    "--demo_trajectory_timing_mode",
+    type=str,
+    default="realtime",
+    choices=("stretch", "realtime"),
+    help=(
+        "stretch maps all trajectory frames over --demo_steps. realtime respects "
+        "the trajectory fps at the Isaac control timestep and holds the final "
+        "frame after the source trajectory ends."
+    ),
+)
+parser.add_argument("--demo_trajectory_velocity_targets", action=argparse.BooleanOptionalAction, default=False)
+parser.add_argument("--demo_trajectory_velocity_target_scale", type=float, default=1.0)
+parser.add_argument("--demo_start_blend_steps", type=int, default=36)
+parser.add_argument("--stable_scene_path", type=str, default=None)
+parser.add_argument("--record_trajectory_dataset", action=argparse.BooleanOptionalAction, default=False)
+parser.add_argument("--trajectory_dataset_path", type=str, default=None)
+parser.add_argument("--record_rgb_width", type=int, default=160)
+parser.add_argument("--record_rgb_height", type=int, default=120)
+parser.add_argument("--record_rgb_interval", type=int, default=1)
+parser.add_argument("--demo_table_rejection_target_fraction", type=float, default=0.82)
 parser.add_argument("--render_warmup_frames", type=int, default=2)
 parser.add_argument("--render_width", type=int, default=None)
 parser.add_argument("--render_height", type=int, default=None)
@@ -39,6 +83,16 @@ parser.add_argument("--freeze_object_roots_for_video", action=argparse.BooleanOp
 parser.add_argument("--repeat_initial_frame_for_video", action=argparse.BooleanOptionalAction, default=False)
 parser.add_argument("--visual_object_overlay", action=argparse.BooleanOptionalAction, default=False)
 parser.add_argument("--visual_object_overlay_z_offset", type=float, default=0.0)
+parser.add_argument(
+    "--hide_robot_debug_sites",
+    action=argparse.BooleanOptionalAction,
+    default=True,
+    help="Hide visible MuJoCo robot site prims, such as YAM tcp_site/grasp_site, from rendered RGB.",
+)
+parser.add_argument("--grasp_pose_overlay_path", type=str, default=None)
+parser.add_argument("--grasp_pose_overlay_max_count", type=int, default=8)
+parser.add_argument("--grasp_pose_overlay_axis_length", type=float, default=0.075)
+parser.add_argument("--grasp_pose_overlay_axis_thickness", type=float, default=0.007)
 parser.add_argument("--dome_light_intensity", type=float, default=None)
 parser.add_argument("--dome_light_exposure", type=float, default=None)
 parser.add_argument("--key_light_enabled", action=argparse.BooleanOptionalAction, default=None)
@@ -46,10 +100,19 @@ parser.add_argument("--key_light_intensity", type=float, default=None)
 parser.add_argument("--key_light_exposure", type=float, default=None)
 parser.add_argument("--camera_eye", type=float, nargs=3, default=None)
 parser.add_argument("--camera_target", type=float, nargs=3, default=None)
+parser.add_argument("--yam_arm_stiffness_scale", type=float, default=None)
+parser.add_argument("--yam_arm_damping_scale", type=float, default=None)
+parser.add_argument("--yam_arm_effort_scale", type=float, default=None)
+parser.add_argument("--yam_gripper_stiffness_scale", type=float, default=None)
+parser.add_argument("--yam_gripper_damping_scale", type=float, default=None)
+parser.add_argument("--yam_gripper_effort_scale", type=float, default=None)
 parser.add_argument("--object_asset_manifest_path", type=str, default=None)
 parser.add_argument("--object_assets_dir", type=str, default=None)
 parser.add_argument("--max_objects", type=int, default=None)
 parser.add_argument("--object_asset_assignment", type=str, default=None)
+parser.add_argument("--object_validate_usd_bounds", action=argparse.BooleanOptionalAction, default=None)
+parser.add_argument("--object_usd_bounds_max_ratio", type=float, default=None)
+parser.add_argument("--object_usd_bounds_max_dimension", type=float, default=None)
 parser.add_argument("--require_graspgen_scale", action=argparse.BooleanOptionalAction, default=None)
 parser.add_argument("--object_spawn_xy_randomization", type=float, default=None)
 parser.add_argument("--object_spawn_yaw_randomization_deg", type=float, default=None)
@@ -70,6 +133,9 @@ parser.add_argument("--tabletop_clutter_assets_dir", type=str, default=None)
 parser.add_argument("--tabletop_clutter_max_objects", type=int, default=None)
 parser.add_argument("--tabletop_clutter_object_count", type=int, default=None)
 parser.add_argument("--tabletop_clutter_asset_assignment", type=str, default=None)
+parser.add_argument("--tabletop_clutter_validate_usd_bounds", action=argparse.BooleanOptionalAction, default=None)
+parser.add_argument("--tabletop_clutter_usd_bounds_max_ratio", type=float, default=None)
+parser.add_argument("--tabletop_clutter_usd_bounds_max_dimension", type=float, default=None)
 parser.add_argument("--tabletop_clutter_spawn_xy_randomization", type=float, default=None)
 parser.add_argument("--tabletop_clutter_spawn_yaw_randomization_deg", type=float, default=None)
 parser.add_argument("--tabletop_clutter_spawn_z_clearance", type=float, default=None)
@@ -124,7 +190,8 @@ from isaacsim.core.utils.extensions import enable_extension
 from isaaclab.sim.converters import MeshConverter, MeshConverterCfg
 from isaaclab.sim.schemas import schemas as sim_schemas
 from isaaclab_tasks.utils import parse_env_cfg
-from pxr import Usd, UsdPhysics
+import omni.usd
+from pxr import Gf, Sdf, Usd, UsdGeom, UsdPhysics, UsdShade
 
 import dextrah_lab.tasks.dextrah_franka_cube_grasp.gym_setup  # noqa: F401
 import dextrah_lab.tasks.dextrah_franka_multi_object_grasp.gym_setup  # noqa: F401
@@ -138,6 +205,67 @@ if "YAM" in args_cli.task:
 def _set_if_present(cfg, name: str, value) -> None:
     if value is not None and hasattr(cfg, name):
         setattr(cfg, name, value)
+
+
+def _scale_gain_value(value, scale: float):
+    if isinstance(value, dict):
+        return {k: _scale_gain_value(v, scale) for k, v in value.items()}
+    if value is None:
+        return None
+    return float(value) * float(scale)
+
+
+def _jsonable_gain_value(value):
+    if isinstance(value, dict):
+        return {str(k): _jsonable_gain_value(v) for k, v in value.items()}
+    if value is None:
+        return None
+    return float(value)
+
+
+def _apply_yam_actuator_gain_scales(
+    env_cfg,
+    *,
+    actuator_name: str,
+    stiffness_scale,
+    damping_scale,
+    effort_scale,
+) -> dict[str, object]:
+    summary: dict[str, object] = {
+        "enabled": False,
+        "actuator_name": str(actuator_name),
+        "stiffness_scale": None if stiffness_scale is None else float(stiffness_scale),
+        "damping_scale": None if damping_scale is None else float(damping_scale),
+        "effort_scale": None if effort_scale is None else float(effort_scale),
+        "before": None,
+        "after": None,
+    }
+    if stiffness_scale is None and damping_scale is None and effort_scale is None:
+        return summary
+    robot_cfg = getattr(env_cfg, "robot", None)
+    actuators = getattr(robot_cfg, "actuators", None)
+    if not isinstance(actuators, dict) or actuator_name not in actuators:
+        summary["reason"] = f"missing_yam_{actuator_name}_actuator"
+        return summary
+    actuator = actuators[actuator_name]
+    before = {
+        "stiffness": _jsonable_gain_value(getattr(actuator, "stiffness", None)),
+        "damping": _jsonable_gain_value(getattr(actuator, "damping", None)),
+        "effort_limit_sim": _jsonable_gain_value(getattr(actuator, "effort_limit_sim", None)),
+    }
+    if stiffness_scale is not None:
+        actuator.stiffness = _scale_gain_value(actuator.stiffness, float(stiffness_scale))
+    if damping_scale is not None:
+        actuator.damping = _scale_gain_value(actuator.damping, float(damping_scale))
+    if effort_scale is not None:
+        actuator.effort_limit_sim = _scale_gain_value(actuator.effort_limit_sim, float(effort_scale))
+    after = {
+        "stiffness": _jsonable_gain_value(getattr(actuator, "stiffness", None)),
+        "damping": _jsonable_gain_value(getattr(actuator, "damping", None)),
+        "effort_limit_sim": _jsonable_gain_value(getattr(actuator, "effort_limit_sim", None)),
+    }
+    summary.update({"enabled": True, "before": before, "after": after})
+    return summary
 
 
 def _task_camera_defaults(task: str) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
@@ -168,8 +296,90 @@ def _capture_frame(env, frame_dir: Path, frame_idx: int) -> tuple[np.ndarray, st
     return frame, str(frame_path)
 
 
+def _resize_rgb_nearest(frame: np.ndarray, height: int, width: int) -> np.ndarray:
+    height = max(int(height), 1)
+    width = max(int(width), 1)
+    frame = np.asarray(frame)
+    if frame.shape[0] == height and frame.shape[1] == width:
+        return frame.astype(np.uint8, copy=False)
+    y_idx = np.linspace(0, frame.shape[0] - 1, height).round().astype(np.int64)
+    x_idx = np.linspace(0, frame.shape[1] - 1, width).round().astype(np.int64)
+    return frame[y_idx[:, None], x_idx[None, :], :].astype(np.uint8, copy=False)
+
+
+def _tensor_numpy(value: torch.Tensor, dtype=np.float32) -> np.ndarray:
+    return value.detach().cpu().numpy().astype(dtype, copy=False)
+
+
 def _tensor_list(value: torch.Tensor):
     return value.detach().float().cpu().tolist()
+
+
+def _jsonable(value):
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, torch.Tensor):
+        return value.detach().float().cpu().tolist()
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, np.generic):
+        return value.item()
+    if isinstance(value, dict):
+        return {str(k): _jsonable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(v) for v in value]
+    return value
+
+
+def _hide_robot_debug_site_prims(*, site_names: tuple[str, ...] = ("tcp_site", "grasp_site")) -> dict[str, object]:
+    stage = omni.usd.get_context().get_stage()
+    summary: dict[str, object] = {
+        "enabled": True,
+        "site_names": list(site_names),
+        "hidden_count": 0,
+        "hidden_paths": [],
+    }
+    if stage is None:
+        summary["reason"] = "missing_stage"
+        return summary
+
+    hidden_paths: list[str] = []
+    site_name_set = set(site_names)
+    for prim in stage.Traverse():
+        if prim.GetName() not in site_name_set:
+            continue
+        imageable = UsdGeom.Imageable(prim)
+        if not imageable:
+            continue
+        imageable.MakeInvisible()
+        hidden_paths.append(str(prim.GetPath()))
+
+    summary["hidden_count"] = len(hidden_paths)
+    summary["hidden_paths"] = hidden_paths
+    return summary
+
+
+def _quat_wxyz_to_matrix(q: list[float]) -> np.ndarray:
+    qw, qx, qy, qz = [float(v) for v in q]
+    n = math.sqrt(qw * qw + qx * qx + qy * qy + qz * qz)
+    if n <= 0.0:
+        return np.eye(3, dtype=np.float64)
+    qw, qx, qy, qz = qw / n, qx / n, qy / n, qz / n
+    return np.asarray(
+        [
+            [1.0 - 2.0 * (qy * qy + qz * qz), 2.0 * (qx * qy - qz * qw), 2.0 * (qx * qz + qy * qw)],
+            [2.0 * (qx * qy + qz * qw), 1.0 - 2.0 * (qx * qx + qz * qz), 2.0 * (qy * qz - qx * qw)],
+            [2.0 * (qx * qz - qy * qw), 2.0 * (qy * qz + qx * qw), 1.0 - 2.0 * (qx * qx + qy * qy)],
+        ],
+        dtype=np.float64,
+    )
+
+
+def _matrix_from_pose_wxyz(pos: list[float], quat_wxyz: list[float]) -> list[list[float]]:
+    mat = np.eye(4, dtype=np.float64)
+    mat[:3, :3] = _quat_wxyz_to_matrix(quat_wxyz)
+    mat[:3, 3] = np.asarray(pos, dtype=np.float64)
+    return mat.tolist()
 
 
 def _resolve_path(value: str | Path, *, base_dir: Path) -> Path:
@@ -816,6 +1026,315 @@ def _root_snapshot(task_env) -> dict[str, object]:
     return snapshot
 
 
+def _infer_raw_objaverse_path(path: str) -> str:
+    value = Path(str(path))
+    uuid = value.stem
+    parts = list(value.parts)
+    try:
+        usd_idx = parts.index("USD")
+    except ValueError:
+        return str(value.with_suffix(".obj"))
+    return str(Path(*parts[:usd_idx], "raw_objaverse", f"{uuid}.obj"))
+
+
+def _copy_asset_mesh(output_dir: Path, asset: dict[str, object], label: str) -> dict[str, object]:
+    candidates: list[Path] = []
+    for key in ("raw_object_path", "source_raw_object_path", "mesh_path"):
+        value = asset.get(key)
+        if value:
+            candidates.append(Path(str(value)).expanduser())
+    usd_path = str(asset.get("usd_path") or "")
+    if usd_path:
+        candidates.append(Path(_infer_raw_objaverse_path(usd_path)).expanduser())
+    existing = [path for path in candidates if path.is_file()]
+    summary: dict[str, object] = {
+        "label": label,
+        "source_candidates": [str(path) for path in candidates],
+        "copied": False,
+    }
+    if not existing:
+        return summary
+    source = existing[0].resolve()
+    asset_dir = output_dir / "stable_scene_assets"
+    asset_dir.mkdir(parents=True, exist_ok=True)
+    suffix = source.suffix or ".obj"
+    uuid = str(asset.get("uuid") or source.stem or label)
+    dest = asset_dir / f"{label}_{uuid}{suffix}"
+    if source.resolve() != dest.resolve():
+        shutil.copy2(source, dest)
+    summary.update(
+        {
+            "copied": True,
+            "source_path": str(source),
+            "copy_path": str(dest),
+            "copy_rel": os.path.relpath(dest, output_dir),
+            "copy_size": int(dest.stat().st_size),
+        }
+    )
+    return summary
+
+
+def _asset_record_for_env(task_env, env_id: int) -> dict[str, object]:
+    assets = list(getattr(task_env, "_object_assets", []))
+    indices = getattr(task_env, "object_asset_index", None)
+    if not assets or indices is None:
+        return {}
+    return dict(assets[int(indices[env_id].item())])
+
+
+def _clutter_asset_record_for_slot(task_env, env_id: int, slot_idx: int) -> dict[str, object]:
+    assets = list(getattr(task_env, "_tabletop_clutter_assets", []))
+    indices = getattr(task_env, "tabletop_clutter_asset_index", None)
+    if not assets or indices is None:
+        return {}
+    return dict(assets[int(indices[env_id, slot_idx].item())])
+
+
+def _robot_state_snapshot(task_env) -> dict[str, object]:
+    robot = getattr(task_env, "_robot", None)
+    if robot is None:
+        return {"enabled": False}
+    joint_names = list(getattr(robot.data, "joint_names", []))
+    joint_pos = robot.data.joint_pos.detach().float().cpu()
+    joint_vel = robot.data.joint_vel.detach().float().cpu()
+    arm_joint_ids = list(getattr(task_env, "arm_joint_ids", []))
+    finger_joint_ids = list(getattr(task_env, "finger_joint_ids", []))
+    return {
+        "enabled": True,
+        "joint_names": joint_names,
+        "joint_position": joint_pos.tolist(),
+        "joint_velocity": joint_vel.tolist(),
+        "arm_joint_ids": [int(v) for v in arm_joint_ids],
+        "finger_joint_ids": [int(v) for v in finger_joint_ids],
+        "arm_joint_names": [joint_names[int(i)] for i in arm_joint_ids if int(i) < len(joint_names)],
+        "finger_joint_names": [joint_names[int(i)] for i in finger_joint_ids if int(i) < len(joint_names)],
+        "arm_joint_position": joint_pos[:, arm_joint_ids].tolist() if arm_joint_ids else [],
+        "finger_joint_position": joint_pos[:, finger_joint_ids].tolist() if finger_joint_ids else [],
+    }
+
+
+def _stable_scene_payload(
+    task_env,
+    *,
+    output_dir: Path,
+    task: str,
+    seed: int,
+    settle_steps: int,
+    initial_snapshot: dict[str, object],
+    stable_snapshot: dict[str, object],
+    initial_velocity_summary: dict[str, object],
+    stable_velocity_summary: dict[str, object],
+    initial_clearance_summary: dict[str, object] | None,
+    stable_clearance_summary: dict[str, object] | None,
+) -> dict[str, object]:
+    env_id = 0
+    target_pos = [float(v) for v in stable_snapshot["target_root_pos"][env_id]]
+    target_quat = [float(v) for v in stable_snapshot["target_root_quat"][env_id]]
+    target_asset = _asset_record_for_env(task_env, env_id)
+    target_mesh_copy = _copy_asset_mesh(output_dir, target_asset, "target") if target_asset else {}
+
+    clutter_entries: list[dict[str, object]] = []
+    clutter_positions = stable_snapshot.get("clutter_root_pos_by_slot")
+    clutter_quats = stable_snapshot.get("clutter_root_quat_by_slot")
+    if isinstance(clutter_positions, list) and isinstance(clutter_quats, list):
+        for slot_idx, (slot_positions, slot_quats) in enumerate(zip(clutter_positions, clutter_quats, strict=False)):
+            if env_id >= len(slot_positions) or env_id >= len(slot_quats):
+                continue
+            asset = _clutter_asset_record_for_slot(task_env, env_id, slot_idx)
+            root_pos = [float(v) for v in slot_positions[env_id]]
+            root_quat = [float(v) for v in slot_quats[env_id]]
+            clutter_entries.append(
+                {
+                    "slot_idx": int(slot_idx),
+                    "asset": _jsonable(asset),
+                    "root_position": root_pos,
+                    "root_quat_wxyz": root_quat,
+                    "root_transform": _matrix_from_pose_wxyz(root_pos, root_quat),
+                }
+            )
+
+    return {
+        "format": "dextrah_stable_scene_v1",
+        "task": task,
+        "seed": int(seed),
+        "settle_steps": int(settle_steps),
+        "env_id": int(env_id),
+        "sim_dt": float(task_env.sim.cfg.dt),
+        "robot": _robot_state_snapshot(task_env),
+        "target": {
+            "asset": _jsonable(target_asset),
+            "mesh_copy": target_mesh_copy,
+            "root_position": target_pos,
+            "root_quat_wxyz": target_quat,
+            "root_transform": _matrix_from_pose_wxyz(target_pos, target_quat),
+        },
+        "clutter": clutter_entries,
+        "snapshots": {
+            "initial": initial_snapshot,
+            "stable": stable_snapshot,
+        },
+        "velocity_summary": {
+            "initial": initial_velocity_summary,
+            "stable": stable_velocity_summary,
+        },
+        "clearance_summary": {
+            "initial": initial_clearance_summary,
+            "stable": stable_clearance_summary,
+        },
+        "multi_object_asset_summary": task_env.multi_object_asset_summary()
+        if hasattr(task_env, "multi_object_asset_summary")
+        else None,
+        "tabletop_clutter_summary": task_env.tabletop_clutter_summary()
+        if hasattr(task_env, "tabletop_clutter_summary")
+        else None,
+    }
+
+
+def _load_stable_scene(path: Path | None) -> dict[str, object] | None:
+    if path is None:
+        return None
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict) or payload.get("format") != "dextrah_stable_scene_v1":
+        raise ValueError(f"Expected dextrah_stable_scene_v1 payload in {path}")
+    return payload
+
+
+def _stable_scene_asset_record(asset: dict[str, object]) -> dict[str, object] | None:
+    uuid = str(asset.get("uuid") or "")
+    usd_path = str(asset.get("usd_path") or "")
+    if not uuid or not usd_path:
+        return None
+
+    record: dict[str, object] = {
+        "uuid": uuid,
+        "name": str(asset.get("name") or uuid),
+        "usd_path": usd_path,
+    }
+    for key in (
+        "metadata_text",
+        "raw_object_path",
+        "scale",
+        "usd_spawn_scale",
+        "usd_root_scale",
+        "scaled_half_extents",
+        "scaled_bounds_min",
+        "scaled_bounds_max",
+        "grasp_size",
+        "grasp_prior_path",
+        "stable_pose_path",
+    ):
+        value = asset.get(key)
+        if value not in (None, ""):
+            record[key] = value
+    return record
+
+
+def _write_stable_scene_asset_manifest(
+    records: list[dict[str, object]],
+    output_dir: Path,
+    *,
+    filename: str,
+    source: str,
+) -> Path | None:
+    if not records:
+        return None
+    manifest = {
+        "asset_root": "/",
+        "objects": records,
+        "source": source,
+    }
+    manifest_path = output_dir / filename
+    manifest_path.write_text(json.dumps(_jsonable(manifest), indent=2), encoding="utf-8")
+    return manifest_path
+
+
+def _stable_scene_asset_manifests(stable_scene: dict[str, object], output_dir: Path) -> dict[str, object]:
+    target = stable_scene.get("target") if isinstance(stable_scene.get("target"), dict) else {}
+    target_asset = target.get("asset") if isinstance(target.get("asset"), dict) else {}
+    target_record = _stable_scene_asset_record(target_asset)
+
+    clutter_records: list[dict[str, object]] = []
+    clutter = stable_scene.get("clutter") if isinstance(stable_scene.get("clutter"), list) else []
+    for entry in clutter:
+        if not isinstance(entry, dict):
+            continue
+        asset = entry.get("asset") if isinstance(entry.get("asset"), dict) else {}
+        record = _stable_scene_asset_record(asset)
+        if record is not None:
+            clutter_records.append(record)
+
+    target_manifest_path = (
+        _write_stable_scene_asset_manifest(
+            [target_record],
+            output_dir,
+            filename="stable_scene_target_manifest.json",
+            source="stable_scene_target",
+        )
+        if target_record is not None
+        else None
+    )
+    clutter_manifest_path = _write_stable_scene_asset_manifest(
+        clutter_records,
+        output_dir,
+        filename="stable_scene_clutter_manifest.json",
+        source="stable_scene_clutter",
+    )
+    return {
+        "target_manifest_path": target_manifest_path,
+        "target_uuid": "" if target_record is None else str(target_record.get("uuid") or ""),
+        "clutter_manifest_path": clutter_manifest_path,
+        "clutter_uuids": [str(record.get("uuid") or "") for record in clutter_records],
+    }
+
+
+def _restore_robot_state_from_stable_scene(task_env, stable_scene: dict[str, object]) -> dict[str, object]:
+    robot = getattr(task_env, "_robot", None)
+    robot_payload = stable_scene.get("robot") if isinstance(stable_scene.get("robot"), dict) else {}
+    if robot is None or not robot_payload:
+        return {"enabled": False, "reason": "missing_robot_or_payload"}
+    joint_positions = robot_payload.get("joint_position")
+    if not isinstance(joint_positions, list) or not joint_positions:
+        return {"enabled": False, "reason": "missing_joint_position"}
+    q = torch.as_tensor(joint_positions, dtype=robot.data.joint_pos.dtype, device=task_env.device)
+    if q.ndim != 2:
+        return {"enabled": False, "reason": "bad_joint_position_shape", "shape": list(q.shape)}
+    if q.shape[0] == 1 and int(task_env.num_envs) > 1:
+        q = q.repeat(int(task_env.num_envs), 1)
+    if q.shape != robot.data.joint_pos.shape:
+        return {
+            "enabled": False,
+            "reason": "joint_position_shape_mismatch",
+            "payload_shape": list(q.shape),
+            "env_shape": list(robot.data.joint_pos.shape),
+        }
+    env_ids = robot._ALL_INDICES
+    q = torch.clamp(q, task_env.robot_dof_lower_limits, task_env.robot_dof_upper_limits)
+    qd = torch.zeros_like(q)
+    robot.write_joint_state_to_sim(q, qd, env_ids=env_ids)
+    robot.set_joint_position_target(q, env_ids=env_ids)
+    if hasattr(task_env, "robot_dof_targets"):
+        task_env.robot_dof_targets[env_ids] = q
+    if hasattr(task_env, "arm_joint_pos_target"):
+        task_env.arm_joint_pos_target[env_ids] = q[:, task_env.arm_joint_ids]
+    if hasattr(task_env, "finger_joint_pos_target"):
+        task_env.finger_joint_pos_target[env_ids] = q[:, task_env.finger_joint_ids]
+    return {"enabled": True, "joint_position": _tensor_list(q)}
+
+
+def _restore_stable_scene(task_env, stable_scene: dict[str, object]) -> dict[str, object]:
+    snapshots = stable_scene.get("snapshots") if isinstance(stable_scene.get("snapshots"), dict) else {}
+    stable_snapshot = snapshots.get("stable") if isinstance(snapshots.get("stable"), dict) else None
+    if stable_snapshot is None:
+        return {"enabled": False, "reason": "missing_stable_snapshot"}
+    _restore_root_snapshot(task_env, stable_snapshot)
+    robot_restore = _restore_robot_state_from_stable_scene(task_env, stable_scene)
+    task_env.scene.write_data_to_sim()
+    task_env.sim.forward()
+    task_env.scene.update(dt=0.0)
+    task_env._compute_intermediate_values()
+    return {"enabled": True, "robot": robot_restore}
+
+
 def _restore_root_snapshot(task_env, snapshot: dict[str, object]) -> None:
     env_ids = torch.arange(int(task_env.num_envs), dtype=torch.long, device=task_env.device)
     env_origins = task_env.scene.env_origins
@@ -925,6 +1444,228 @@ def _spawn_visual_object_overlay(task_env, snapshot: dict[str, object], *, z_off
 
     task_env.sim.forward()
     return spawned
+
+
+def _as_matrix4(value: object) -> np.ndarray | None:
+    try:
+        arr = np.asarray(value, dtype=np.float64)
+    except Exception:
+        return None
+    if arr.shape != (4, 4) or not np.isfinite(arr).all():
+        return None
+    return arr
+
+
+def _matrix_to_quat_xyzw(matrix: np.ndarray) -> tuple[float, float, float, float]:
+    rot = np.asarray(matrix[:3, :3], dtype=np.float64)
+    trace = float(np.trace(rot))
+    if trace > 0.0:
+        s = math.sqrt(trace + 1.0) * 2.0
+        qw = 0.25 * s
+        qx = (rot[2, 1] - rot[1, 2]) / s
+        qy = (rot[0, 2] - rot[2, 0]) / s
+        qz = (rot[1, 0] - rot[0, 1]) / s
+    else:
+        diag = np.diag(rot)
+        if diag[0] > diag[1] and diag[0] > diag[2]:
+            s = math.sqrt(1.0 + rot[0, 0] - rot[1, 1] - rot[2, 2]) * 2.0
+            qw = (rot[2, 1] - rot[1, 2]) / s
+            qx = 0.25 * s
+            qy = (rot[0, 1] + rot[1, 0]) / s
+            qz = (rot[0, 2] + rot[2, 0]) / s
+        elif diag[1] > diag[2]:
+            s = math.sqrt(1.0 + rot[1, 1] - rot[0, 0] - rot[2, 2]) * 2.0
+            qw = (rot[0, 2] - rot[2, 0]) / s
+            qx = (rot[0, 1] + rot[1, 0]) / s
+            qy = 0.25 * s
+            qz = (rot[1, 2] + rot[2, 1]) / s
+        else:
+            s = math.sqrt(1.0 + rot[2, 2] - rot[0, 0] - rot[1, 1]) * 2.0
+            qw = (rot[1, 0] - rot[0, 1]) / s
+            qx = (rot[0, 2] + rot[2, 0]) / s
+            qy = (rot[1, 2] + rot[2, 1]) / s
+            qz = 0.25 * s
+    quat = np.asarray([qx, qy, qz, qw], dtype=np.float64)
+    norm = float(np.linalg.norm(quat))
+    if norm > 0.0:
+        quat /= norm
+    return tuple(float(v) for v in quat)
+
+
+def _usd_set_xform(
+    prim: Usd.Prim,
+    translate: tuple[float, float, float],
+    *,
+    rotate_quat_xyzw: tuple[float, float, float, float] | None = None,
+    scale: tuple[float, float, float] | None = None,
+) -> None:
+    xformable = UsdGeom.Xformable(prim)
+    xformable.ClearXformOpOrder()
+    xformable.AddTranslateOp().Set(Gf.Vec3d(*[float(v) for v in translate]))
+    if rotate_quat_xyzw is not None:
+        qx, qy, qz, qw = [float(v) for v in rotate_quat_xyzw]
+        xformable.AddOrientOp().Set(Gf.Quatf(qw, qx, qy, qz))
+    if scale is not None:
+        xformable.AddScaleOp().Set(Gf.Vec3f(*[float(v) for v in scale]))
+
+
+def _usd_material(stage: Usd.Stage, path: str, color: tuple[float, float, float]) -> UsdShade.Material:
+    mat = UsdShade.Material.Define(stage, path)
+    shader = UsdShade.Shader.Define(stage, f"{path}/Shader")
+    shader.CreateIdAttr("UsdPreviewSurface")
+    shader.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).Set(Gf.Vec3f(*color))
+    shader.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(0.42)
+    shader.CreateInput("metallic", Sdf.ValueTypeNames.Float).Set(0.0)
+    mat.CreateSurfaceOutput().ConnectToSource(shader.ConnectableAPI(), "surface")
+    return mat
+
+
+def _usd_bind(prim: Usd.Prim, mat: UsdShade.Material) -> None:
+    UsdShade.MaterialBindingAPI.Apply(prim).Bind(mat)
+
+
+def _usd_add_box(
+    stage: Usd.Stage,
+    path: str,
+    center: tuple[float, float, float],
+    size: tuple[float, float, float],
+    mat: UsdShade.Material,
+) -> None:
+    cube = UsdGeom.Cube.Define(stage, path)
+    cube.CreateSizeAttr(1.0)
+    prim = cube.GetPrim()
+    _usd_set_xform(prim, center, scale=size)
+    _usd_bind(prim, mat)
+
+
+def _grasp_overlay_candidates(payload: dict[str, object], max_count: int) -> tuple[list[np.ndarray], int | None]:
+    annotations = payload.get("annotations") if isinstance(payload.get("annotations"), dict) else {}
+    raw_grasps = (
+        annotations.get("tool_grasps_world")
+        or payload.get("tool_grasps_world")
+        or annotations.get("all_grasps")
+        or payload.get("all_grasps")
+        or payload.get("grasps_world")
+        or []
+    )
+    grasps = [matrix for item in raw_grasps if (matrix := _as_matrix4(item)) is not None]
+    target = _as_matrix4(payload.get("selected_tool_world"))
+    if target is None:
+        target = _as_matrix4(annotations.get("target_tool_transform"))
+    if target is None:
+        target = _as_matrix4(payload.get("selected_grasp_world"))
+    if target is None:
+        target = _as_matrix4(annotations.get("target_grasp_transform"))
+    if target is None:
+        target = _as_matrix4(payload.get("target_grasp_transform"))
+    target_idx: int | None = None
+    if target is not None and grasps:
+        distances = [float(np.linalg.norm(g[:3, 3] - target[:3, 3])) for g in grasps]
+        target_idx = int(min(range(len(distances)), key=distances.__getitem__))
+    elif target is not None:
+        grasps = [target]
+        target_idx = 0
+
+    if not grasps:
+        return [], None
+    budget = max(int(max_count), 1)
+    selected: list[int] = []
+    if target_idx is not None:
+        selected.append(target_idx)
+    remaining = max(0, budget - len(selected))
+    if remaining > 0:
+        candidates = (
+            [0]
+            if remaining == 1
+            else [
+                int(round(float(idx) * float(len(grasps) - 1) / float(remaining - 1)))
+                for idx in range(remaining)
+            ]
+        )
+        for idx in candidates:
+            if idx not in selected:
+                selected.append(idx)
+    for idx in range(len(grasps)):
+        if len(selected) >= budget:
+            break
+        if idx not in selected:
+            selected.append(idx)
+    selected = selected[:budget]
+    target_marker_idx = selected.index(target_idx) if target_idx in selected else None
+    return [grasps[idx] for idx in selected], target_marker_idx
+
+
+def _spawn_grasp_pose_overlay(
+    overlay_path: Path | None,
+    *,
+    max_count: int,
+    axis_length: float,
+    axis_thickness: float,
+) -> dict[str, object]:
+    if overlay_path is None:
+        return {"enabled": False, "reason": "missing_path"}
+    if not overlay_path.is_file():
+        return {"enabled": False, "reason": "path_not_found", "path": str(overlay_path)}
+    payload = json.loads(overlay_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        return {"enabled": False, "reason": "payload_not_mapping", "path": str(overlay_path)}
+    stage = omni.usd.get_context().get_stage()
+    if stage is None:
+        return {"enabled": False, "reason": "missing_usd_stage", "path": str(overlay_path)}
+
+    grasps, target_marker_idx = _grasp_overlay_candidates(payload, max_count)
+    if not grasps:
+        return {"enabled": False, "reason": "no_valid_grasp_matrices", "path": str(overlay_path)}
+
+    root_path = "/World/GraspPoseOverlay"
+    looks_root = "/World/Looks/GraspPoseOverlay"
+    UsdGeom.Xform.Define(stage, root_path)
+    UsdGeom.Xform.Define(stage, looks_root)
+    x_mat = _usd_material(stage, f"{looks_root}/axis_x_red", (0.88, 0.08, 0.06))
+    y_mat = _usd_material(stage, f"{looks_root}/axis_y_green", (0.08, 0.62, 0.18))
+    z_mat = _usd_material(stage, f"{looks_root}/axis_z_blue", (0.10, 0.25, 0.92))
+    center_mat = _usd_material(stage, f"{looks_root}/selected_center", (1.0, 0.95, 0.70))
+
+    markers: list[dict[str, object]] = []
+    for marker_idx, transform in enumerate(grasps):
+        is_selected = target_marker_idx is not None and marker_idx == target_marker_idx
+        marker_path = f"{root_path}/g_{marker_idx:03d}"
+        marker_root = UsdGeom.Xform.Define(stage, marker_path).GetPrim()
+        position = tuple(float(v) for v in transform[:3, 3])
+        quat = _matrix_to_quat_xyzw(transform)
+        _usd_set_xform(marker_root, position, rotate_quat_xyzw=quat)
+        length = float(axis_length) * (1.35 if is_selected else 1.0)
+        thickness = float(axis_thickness) * (1.35 if is_selected else 1.0)
+        half = 0.5 * length
+        _usd_add_box(stage, f"{marker_path}/x_axis", (half, 0.0, 0.0), (length, thickness, thickness), x_mat)
+        _usd_add_box(stage, f"{marker_path}/y_axis", (0.0, half, 0.0), (thickness, length, thickness), y_mat)
+        _usd_add_box(stage, f"{marker_path}/z_axis", (0.0, 0.0, half), (thickness, thickness, length), z_mat)
+        if is_selected:
+            _usd_add_box(
+                stage,
+                f"{marker_path}/selected_center",
+                (0.0, 0.0, 0.0),
+                (2.5 * thickness, 2.5 * thickness, 2.5 * thickness),
+                center_mat,
+            )
+        markers.append(
+            {
+                "path": marker_path,
+                "is_selected": bool(is_selected),
+                "position_w": [float(v) for v in position],
+                "axis_z_w": [float(v) for v in transform[:3, 2]],
+            }
+        )
+    return {
+        "enabled": True,
+        "path": str(overlay_path),
+        "root_path": root_path,
+        "visualized_count": len(markers),
+        "selected_marker_index": target_marker_idx,
+        "axis_length": float(axis_length),
+        "axis_thickness": float(axis_thickness),
+        "markers": markers,
+    }
 
 
 def _initial_clearance_summary(task_env, snapshot: dict[str, object]) -> dict[str, object] | None:
@@ -1065,6 +1806,613 @@ def _step_physics_without_task_reset(task_env, hold_joint_pos: torch.Tensor | No
     task_env.scene.update(dt=task_env.sim.cfg.dt)
 
 
+def _manual_action_step(task_env, actions: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    task_env._pre_physics_step(actions)
+    for _ in range(int(task_env.cfg.decimation)):
+        task_env._apply_action()
+        task_env.scene.write_data_to_sim()
+        task_env.sim.step(render=False)
+        task_env.scene.update(dt=task_env.sim.cfg.dt)
+    task_env.episode_length_buf += 1
+    if hasattr(task_env, "common_step_counter"):
+        task_env.common_step_counter += 1
+    task_env._compute_intermediate_values()
+    return task_env._get_dones()
+
+
+def _default_yam_rejected_trajectory_path() -> Path:
+    return Path(__file__).resolve().parents[1] / "assets" / "yam" / "rejected_nominal_trajectory_compact.json"
+
+
+def _load_demo_trajectory(path: Path) -> dict[str, object]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    frames = payload.get("frames")
+    if not isinstance(frames, list) or not frames:
+        raise ValueError(f"Expected non-empty frames list in demo trajectory: {path}")
+    joint_positions: list[np.ndarray] = []
+    phases: list[str] = []
+    for frame_idx, frame in enumerate(frames):
+        if not isinstance(frame, dict) or "joint_position" not in frame:
+            raise ValueError(f"Trajectory frame {frame_idx} has no joint_position: {path}")
+        q = np.asarray(frame["joint_position"], dtype=np.float32)
+        if q.ndim != 1:
+            raise ValueError(f"Trajectory frame {frame_idx} joint_position must be 1-D, got {q.shape}")
+        joint_positions.append(q)
+        phases.append(str(frame.get("phase") or "plan"))
+    return {
+        "path": str(path),
+        "fps": payload.get("fps"),
+        "total_frames": int(payload.get("total_frames") or len(joint_positions)),
+        "joint_names": payload.get("joint_names"),
+        "segments": payload.get("segments"),
+        "tabletop_rejected": payload.get("tabletop_rejected"),
+        "tabletop_status": payload.get("tabletop_status"),
+        "nominal_status": payload.get("nominal_status"),
+        "candidate_idx": payload.get("candidate_idx"),
+        "candidate_confidence": payload.get("candidate_confidence"),
+        "joint_positions": joint_positions,
+        "phases": phases,
+    }
+
+
+def _trajectory_source_fps(trajectory: dict[str, object]) -> float:
+    try:
+        fps = float(trajectory.get("fps") or 0.0)
+    except (TypeError, ValueError):
+        fps = 0.0
+    if not math.isfinite(fps) or fps <= 0.0:
+        return 30.0
+    return fps
+
+
+def _env_control_dt(task_env) -> float:
+    sim_dt = float(getattr(task_env.sim.cfg, "dt", 0.0))
+    decimation = max(int(getattr(task_env.cfg, "decimation", 1)), 1)
+    if not math.isfinite(sim_dt) or sim_dt <= 0.0:
+        return 1.0 / 60.0
+    return sim_dt * float(decimation)
+
+
+def _trajectory_realtime_step_count(
+    task_env,
+    trajectory: dict[str, object],
+    *,
+    start_blend_steps: int,
+) -> int:
+    source_joint_positions = trajectory["joint_positions"]
+    if not isinstance(source_joint_positions, list) or not source_joint_positions:
+        return 0
+    fps = _trajectory_source_fps(trajectory)
+    control_dt = _env_control_dt(task_env)
+    source_duration = float(max(len(source_joint_positions) - 1, 0)) / fps
+    replay_steps = int(math.ceil(source_duration / control_dt)) + 1
+    return max(1, int(start_blend_steps) + replay_steps)
+
+
+def _map_source_joint_to_env(task_env, raw_q: np.ndarray | torch.Tensor) -> torch.Tensor:
+    robot = getattr(task_env, "_robot", None)
+    if robot is None:
+        raise AttributeError("single_yam_rejected_path trajectory replay requires a robot articulation")
+    raw = torch.as_tensor(raw_q, dtype=robot.data.joint_pos.dtype, device=task_env.device).view(1, -1)
+    raw = raw.repeat(task_env.num_envs, 1)
+    joint_pos = robot.data.default_joint_pos.clone()
+    arm_count = len(getattr(task_env, "arm_joint_ids", []))
+    finger_count = len(getattr(task_env, "finger_joint_ids", []))
+    if raw.shape[1] == joint_pos.shape[1]:
+        joint_pos[:] = raw
+    elif raw.shape[1] == arm_count + finger_count:
+        joint_pos[:, task_env.arm_joint_ids] = raw[:, :arm_count]
+        joint_pos[:, task_env.finger_joint_ids] = raw[:, arm_count : arm_count + finger_count]
+    elif raw.shape[1] == arm_count + 1:
+        joint_pos[:, task_env.arm_joint_ids] = raw[:, :arm_count]
+        joint_pos[:, task_env.finger_joint_ids] = raw[:, arm_count : arm_count + 1].repeat(1, finger_count)
+    else:
+        raise ValueError(
+            f"Cannot map trajectory joint_position dim {raw.shape[1]} to "
+            f"{joint_pos.shape[1]} env joints ({arm_count} arm, {finger_count} fingers)"
+        )
+    return torch.clamp(joint_pos, task_env.robot_dof_lower_limits, task_env.robot_dof_upper_limits)
+
+
+def _map_source_joint_velocity_to_env(task_env, raw_qd: np.ndarray | torch.Tensor) -> torch.Tensor:
+    robot = getattr(task_env, "_robot", None)
+    if robot is None:
+        raise AttributeError("single_yam_rejected_path trajectory replay requires a robot articulation")
+    raw = torch.as_tensor(raw_qd, dtype=robot.data.joint_vel.dtype, device=task_env.device).view(1, -1)
+    raw = raw.repeat(task_env.num_envs, 1)
+    joint_vel = torch.zeros_like(robot.data.joint_vel)
+    arm_count = len(getattr(task_env, "arm_joint_ids", []))
+    finger_count = len(getattr(task_env, "finger_joint_ids", []))
+    if raw.shape[1] == joint_vel.shape[1]:
+        joint_vel[:] = raw
+    elif raw.shape[1] == arm_count + finger_count:
+        joint_vel[:, task_env.arm_joint_ids] = raw[:, :arm_count]
+        joint_vel[:, task_env.finger_joint_ids] = raw[:, arm_count : arm_count + finger_count]
+    elif raw.shape[1] == arm_count + 1:
+        joint_vel[:, task_env.arm_joint_ids] = raw[:, :arm_count]
+        joint_vel[:, task_env.finger_joint_ids] = raw[:, arm_count : arm_count + 1].repeat(1, finger_count)
+    else:
+        raise ValueError(
+            f"Cannot map trajectory joint velocity dim {raw.shape[1]} to "
+            f"{joint_vel.shape[1]} env joints ({arm_count} arm, {finger_count} fingers)"
+        )
+    return joint_vel
+
+
+def _apply_kinematic_joint_position(task_env, joint_pos: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    robot = getattr(task_env, "_robot", None)
+    if robot is None:
+        raise AttributeError("single_yam_rejected_path trajectory replay requires a robot articulation")
+    env_ids = robot._ALL_INDICES
+    joint_vel = torch.zeros_like(joint_pos)
+    robot.write_joint_state_to_sim(joint_pos, joint_vel, env_ids=env_ids)
+    robot.set_joint_position_target(joint_pos, env_ids=env_ids)
+    if hasattr(task_env, "robot_dof_targets"):
+        task_env.robot_dof_targets[env_ids] = joint_pos
+    if hasattr(task_env, "arm_joint_pos_target"):
+        task_env.arm_joint_pos_target[env_ids] = joint_pos[:, task_env.arm_joint_ids]
+    if hasattr(task_env, "finger_joint_pos_target"):
+        task_env.finger_joint_pos_target[env_ids] = joint_pos[:, task_env.finger_joint_ids]
+    task_env.scene.write_data_to_sim()
+    task_env.sim.forward()
+    task_env.scene.update(dt=0.0)
+    task_env.episode_length_buf += 1
+    if hasattr(task_env, "common_step_counter"):
+        task_env.common_step_counter += 1
+    task_env._compute_intermediate_values()
+    return task_env._get_dones()
+
+
+def _apply_dynamic_joint_position_target(
+    task_env,
+    joint_pos: torch.Tensor,
+    joint_vel: torch.Tensor | None = None,
+    *,
+    velocity_target_scale: float = 1.0,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    robot = getattr(task_env, "_robot", None)
+    if robot is None:
+        raise AttributeError("single_yam_rejected_path trajectory replay requires a robot articulation")
+    env_ids = robot._ALL_INDICES
+    velocity_target = None
+    if joint_vel is not None and hasattr(robot, "set_joint_velocity_target"):
+        velocity_target = float(velocity_target_scale) * joint_vel
+    if hasattr(task_env, "robot_dof_targets"):
+        task_env.robot_dof_targets[env_ids] = joint_pos
+    if hasattr(task_env, "arm_joint_pos_target"):
+        task_env.arm_joint_pos_target[env_ids] = joint_pos[:, task_env.arm_joint_ids]
+    if hasattr(task_env, "finger_joint_pos_target"):
+        task_env.finger_joint_pos_target[env_ids] = joint_pos[:, task_env.finger_joint_ids]
+    for _ in range(int(task_env.cfg.decimation)):
+        robot.set_joint_position_target(joint_pos, env_ids=env_ids)
+        if velocity_target is not None:
+            robot.set_joint_velocity_target(velocity_target, env_ids=env_ids)
+        task_env.scene.write_data_to_sim()
+        task_env.sim.step(render=False)
+        task_env.scene.update(dt=task_env.sim.cfg.dt)
+    task_env.episode_length_buf += 1
+    if hasattr(task_env, "common_step_counter"):
+        task_env.common_step_counter += 1
+    task_env._compute_intermediate_values()
+    return task_env._get_dones()
+
+
+def _single_yam_rejected_trajectory_joint_position(
+    task_env,
+    trajectory: dict[str, object],
+    step_idx: int,
+    total_steps: int,
+    *,
+    start_joint_pos: torch.Tensor,
+    start_blend_steps: int,
+    timing_mode: str,
+) -> tuple[torch.Tensor, torch.Tensor, str, int, dict[str, object]]:
+    source_joint_positions = trajectory["joint_positions"]
+    source_phases = trajectory["phases"]
+    if not isinstance(source_joint_positions, list) or not source_joint_positions:
+        raise ValueError("Trajectory has no source joint positions")
+    total_steps = max(int(total_steps), 1)
+    start_blend_steps = max(min(int(start_blend_steps), total_steps - 1), 0)
+    first_source_joint_pos = _map_source_joint_to_env(task_env, source_joint_positions[0])
+    if start_blend_steps > 0 and step_idx <= start_blend_steps:
+        alpha = float(step_idx) / float(start_blend_steps)
+        joint_pos = start_joint_pos + alpha * (first_source_joint_pos - start_joint_pos)
+        control_dt = _env_control_dt(task_env)
+        blend_velocity = (first_source_joint_pos - start_joint_pos) / max(float(start_blend_steps) * control_dt, 1.0e-9)
+        return (
+            joint_pos,
+            blend_velocity,
+            "blend_from_dextrah_start",
+            0,
+            {
+                "trajectory_timing_mode": str(timing_mode),
+                "trajectory_source_time_s": 0.0,
+                "trajectory_source_frame_float": 0.0,
+                "trajectory_source_frame_alpha": float(alpha),
+                "joint_target_velocity": _tensor_list(blend_velocity),
+            },
+        )
+
+    if str(timing_mode) == "realtime":
+        fps = _trajectory_source_fps(trajectory)
+        control_dt = _env_control_dt(task_env)
+        replay_step = max(int(step_idx) - int(start_blend_steps) - 1, 0)
+        source_time = float(replay_step) * control_dt
+        source_frame_float = min(source_time * fps, float(len(source_joint_positions) - 1))
+        lo = int(math.floor(source_frame_float))
+        hi = min(lo + 1, len(source_joint_positions) - 1)
+        alpha = float(source_frame_float - lo)
+        lo_q = np.asarray(source_joint_positions[lo], dtype=np.float32)
+        hi_q = np.asarray(source_joint_positions[hi], dtype=np.float32)
+        raw_q = lo_q + alpha * (hi_q - lo_q)
+        raw_qd = (hi_q - lo_q) * fps if hi > lo else np.zeros_like(raw_q)
+        joint_pos = _map_source_joint_to_env(task_env, raw_q)
+        joint_vel = _map_source_joint_velocity_to_env(task_env, raw_qd)
+        phase_idx = min(int(round(source_frame_float)), len(source_joint_positions) - 1)
+        phase = str(source_phases[phase_idx]) if isinstance(source_phases, list) else "trajectory"
+        return (
+            joint_pos,
+            joint_vel,
+            phase,
+            phase_idx,
+            {
+                "trajectory_timing_mode": "realtime",
+                "trajectory_source_time_s": float(min(source_time, float(len(source_joint_positions) - 1) / fps)),
+                "trajectory_source_frame_float": float(source_frame_float),
+                "trajectory_source_frame_alpha": float(alpha),
+                "joint_target_velocity": _tensor_list(joint_vel),
+            },
+        )
+
+    source_span = max(total_steps - start_blend_steps, 1)
+    source_alpha = float(step_idx - start_blend_steps - 1) / float(max(source_span - 1, 1))
+    source_idx = int(round(source_alpha * (len(source_joint_positions) - 1)))
+    source_idx = max(0, min(source_idx, len(source_joint_positions) - 1))
+    joint_pos = _map_source_joint_to_env(task_env, source_joint_positions[source_idx])
+    joint_vel = torch.zeros_like(joint_pos)
+    phase = str(source_phases[source_idx]) if isinstance(source_phases, list) else "trajectory"
+    return (
+        joint_pos,
+        joint_vel,
+        phase,
+        source_idx,
+        {
+            "trajectory_timing_mode": "stretch",
+            "trajectory_source_time_s": float(source_idx) / _trajectory_source_fps(trajectory),
+            "trajectory_source_frame_float": float(source_idx),
+            "trajectory_source_frame_alpha": 0.0,
+            "joint_target_velocity": _tensor_list(joint_vel),
+        },
+    )
+
+
+DEXTRAH_TABLE_REJECTION_TARGET_ARM_Q = (
+    -0.1004,
+    3.5656,
+    1.9488,
+    0.1869,
+    -0.0467,
+    -1.1129,
+)
+
+
+def _dextrah_table_rejection_full_target_joint_pos(task_env) -> torch.Tensor:
+    robot = getattr(task_env, "_robot", None)
+    if robot is None:
+        raise AttributeError("dextrah_table_rejection trajectory requires a robot articulation")
+    arm_joint_ids = list(getattr(task_env, "arm_joint_ids", []))
+    finger_joint_ids = list(getattr(task_env, "finger_joint_ids", []))
+    if len(arm_joint_ids) != len(DEXTRAH_TABLE_REJECTION_TARGET_ARM_Q):
+        raise ValueError(
+            "dextrah_table_rejection expects the six-joint single-YAM arm, "
+            f"got {len(arm_joint_ids)} arm joints"
+        )
+    target = robot.data.default_joint_pos.clone()
+    target_arm = torch.as_tensor(
+        DEXTRAH_TABLE_REJECTION_TARGET_ARM_Q,
+        dtype=target.dtype,
+        device=task_env.device,
+    ).view(1, -1)
+    target[:, arm_joint_ids] = target_arm.repeat(task_env.num_envs, 1)
+    if finger_joint_ids:
+        target[:, finger_joint_ids] = float(getattr(task_env.cfg, "gripper_closed_joint_pos", 0.0))
+    return torch.clamp(target, task_env.robot_dof_lower_limits, task_env.robot_dof_upper_limits)
+
+
+def _single_yam_dextrah_table_rejection_joint_position(
+    task_env,
+    step_idx: int,
+    total_steps: int,
+    *,
+    start_joint_pos: torch.Tensor,
+    target_fraction: float,
+) -> tuple[torch.Tensor, str, torch.Tensor]:
+    full_target = _dextrah_table_rejection_full_target_joint_pos(task_env)
+    target_fraction = max(0.0, min(float(target_fraction), 1.0))
+    target_joint_pos = start_joint_pos + target_fraction * (full_target - start_joint_pos)
+    total_steps = max(int(total_steps), 1)
+    approach_steps = max(int(round(0.78 * total_steps)), 1)
+    if step_idx <= approach_steps:
+        alpha = float(step_idx) / float(approach_steps)
+        alpha = alpha * alpha * (3.0 - 2.0 * alpha)
+        phase = "dextrah_current_scene_rejected_approach"
+    else:
+        alpha = 1.0
+        phase = "dextrah_current_scene_rejected_hold"
+    joint_pos = start_joint_pos + alpha * (target_joint_pos - start_joint_pos)
+    return joint_pos, phase, target_joint_pos
+
+
+def _single_yam_rejected_path_action(
+    task_env,
+    step_idx: int,
+    total_steps: int,
+    *,
+    high_hold_z: float,
+    low_hold_z: float,
+) -> tuple[torch.Tensor, str, torch.Tensor]:
+    if not all(hasattr(task_env, name) for name in ("tcp_pos", "hold_pos", "cube_pos")):
+        raise AttributeError("single_yam_rejected_path demo requires the single-YAM task state buffers")
+    task_env._compute_intermediate_values()
+    actions = torch.zeros((task_env.num_envs, int(task_env.cfg.action_space)), device=task_env.device)
+    position_scale = torch.as_tensor(task_env.cfg.ik_position_action_scale, device=task_env.device)
+
+    total_steps = max(int(total_steps), 1)
+    approach_end = max(int(round(0.32 * total_steps)), 1)
+    descend_end = max(int(round(0.72 * total_steps)), approach_end + 1)
+    table_z = float(task_env.cfg.table_surface_z)
+    target_hold = task_env.hold_pos.detach().clone()
+    target_hold[:, 0] = float(getattr(task_env.cfg, "pickup_x", task_env.cfg.table_center_x))
+    target_hold[:, 1] = float(getattr(task_env.cfg, "pickup_y", task_env.cfg.table_center_y))
+    if step_idx <= approach_end:
+        phase = "high_side_approach"
+        target_hold[:, 0] -= 0.10
+        target_hold[:, 2] = table_z + float(high_hold_z)
+        gripper_action = 1.0
+    elif step_idx <= descend_end:
+        phase = "low_clearance_rejected_approach"
+        alpha = float(step_idx - approach_end) / float(max(descend_end - approach_end, 1))
+        side_offset = -0.10 * (1.0 - alpha)
+        target_hold[:, 0] += side_offset
+        target_hold[:, 2] = table_z + (1.0 - alpha) * float(high_hold_z) + alpha * float(low_hold_z)
+        gripper_action = 1.0
+    else:
+        phase = "rejected_pose_hold"
+        target_hold[:, 2] = table_z + float(low_hold_z)
+        gripper_action = -1.0
+
+    hold_error = target_hold - task_env.hold_pos.detach()
+    actions[:, :3] = torch.clamp(hold_error / torch.clamp(position_scale, min=1.0e-6), -1.0, 1.0)
+    actions[:, 6] = float(gripper_action)
+    return actions, phase, target_hold
+
+
+def _single_yam_rejected_path_row(
+    task_env,
+    *,
+    step_idx: int,
+    phase: str,
+    target_hold: torch.Tensor,
+    actions: torch.Tensor,
+    terminated: torch.Tensor,
+    truncated: torch.Tensor,
+    joint_position: torch.Tensor | None = None,
+    source_frame_idx: int | None = None,
+    trajectory_timing: dict[str, object] | None = None,
+    trajectory_path: str | None = None,
+) -> dict[str, object]:
+    done = torch.logical_or(terminated, truncated)
+    penetration_margin = float(getattr(task_env.cfg, "finger_table_penetration_termination_margin", -0.008))
+    clearance = task_env.finger_table_clearance.detach()
+    row = {
+        "step": int(step_idx),
+        "phase": phase,
+        "target_hold_pos": _tensor_list(target_hold),
+        "action": _tensor_list(actions),
+        "tcp_pos": _tensor_list(task_env.tcp_pos),
+        "hold_pos": _tensor_list(task_env.hold_pos),
+        "target_object_pos": _tensor_list(task_env.cube_pos),
+        "target_object_quat": _tensor_list(task_env.cube_quat),
+        "target_object_velocity": _tensor_list(task_env.cube_vel),
+        "gripper_width": _tensor_list(task_env.gripper_width),
+        "finger_table_clearance": _tensor_list(clearance),
+        "finger_table_penetration_margin": penetration_margin,
+        "finger_table_penetration_rejected": _tensor_list(clearance < penetration_margin),
+        "terminated": _tensor_list(terminated),
+        "truncated": _tensor_list(truncated),
+        "done": _tensor_list(done),
+        "cube_linear_speed": _tensor_list(task_env.cube_linear_speed),
+        "cube_angular_speed": _tensor_list(task_env.cube_angular_speed),
+    }
+    if joint_position is not None:
+        row["joint_position"] = _tensor_list(joint_position)
+        robot = getattr(task_env, "_robot", None)
+        if robot is not None:
+            actual_pos = robot.data.joint_pos.detach()
+            actual_vel = robot.data.joint_vel.detach()
+            tracking_error = actual_pos - joint_position
+            row["actual_joint_position"] = _tensor_list(actual_pos)
+            row["actual_joint_velocity"] = _tensor_list(actual_vel)
+            row["joint_tracking_error"] = _tensor_list(tracking_error)
+            row["joint_tracking_error_max_abs"] = float(torch.max(torch.abs(tracking_error)).detach().cpu().item())
+    if source_frame_idx is not None:
+        row["source_frame_idx"] = int(source_frame_idx)
+    if trajectory_timing is not None:
+        row.update(trajectory_timing)
+    if trajectory_path is not None:
+        row["trajectory_path"] = str(trajectory_path)
+    return row
+
+
+def _clutter_root_state(task_env, attr: str, dim: int) -> np.ndarray:
+    clutter_objects = list(getattr(task_env, "_tabletop_clutter_objects", []))
+    values: list[np.ndarray] = []
+    env_origins = getattr(task_env.scene, "env_origins", None)
+    for clutter_object in clutter_objects:
+        tensor = getattr(getattr(clutter_object, "data", None), attr, None)
+        if not isinstance(tensor, torch.Tensor):
+            continue
+        if attr == "root_pos_w" and isinstance(env_origins, torch.Tensor):
+            tensor = tensor - env_origins
+        values.append(_tensor_numpy(tensor))
+    if not values:
+        return np.zeros((0, int(task_env.num_envs), int(dim)), dtype=np.float32)
+    return np.stack(values, axis=0).astype(np.float32, copy=False)
+
+
+def _demo_dataset_sample(
+    task_env,
+    *,
+    step_idx: int,
+    phase: str,
+    actions: torch.Tensor,
+    terminated: torch.Tensor,
+    truncated: torch.Tensor,
+    dataset_terminated: torch.Tensor | None,
+    dataset_truncated: torch.Tensor | None,
+    joint_position: torch.Tensor | None,
+    joint_velocity: torch.Tensor | None,
+    source_frame_idx: int | None,
+) -> dict[str, np.ndarray | str | int]:
+    robot = getattr(task_env, "_robot", None)
+    env_origins = task_env.scene.env_origins
+    target_root_pos = task_env._cube.data.root_pos_w - env_origins
+    observations = task_env._get_observations()
+    raw_done = torch.logical_or(terminated, truncated)
+    if dataset_terminated is None:
+        dataset_terminated = terminated
+    if dataset_truncated is None:
+        dataset_truncated = truncated
+    done = torch.logical_or(dataset_terminated, dataset_truncated)
+    if robot is not None:
+        actual_joint_position = _tensor_numpy(robot.data.joint_pos)
+        actual_joint_velocity = _tensor_numpy(robot.data.joint_vel)
+        command_shape = robot.data.joint_pos.shape
+    else:
+        actual_joint_position = np.zeros((int(task_env.num_envs), 0), dtype=np.float32)
+        actual_joint_velocity = np.zeros((int(task_env.num_envs), 0), dtype=np.float32)
+        command_shape = (int(task_env.num_envs), 0)
+    if joint_position is None:
+        command_joint_position = np.full(command_shape, np.nan, dtype=np.float32)
+    else:
+        command_joint_position = _tensor_numpy(joint_position)
+    if joint_velocity is None:
+        command_joint_velocity = np.full(command_shape, np.nan, dtype=np.float32)
+    else:
+        command_joint_velocity = _tensor_numpy(joint_velocity)
+    return {
+        "step_idx": int(step_idx),
+        "phase": str(phase),
+        "source_frame_idx": -1 if source_frame_idx is None else int(source_frame_idx),
+        "action": _tensor_numpy(actions),
+        "command_joint_position": command_joint_position,
+        "command_joint_velocity": command_joint_velocity,
+        "actual_joint_position": actual_joint_position,
+        "actual_joint_velocity": actual_joint_velocity,
+        "policy_obs": _tensor_numpy(observations["policy"]),
+        "critic_obs": _tensor_numpy(observations["critic"]),
+        "tcp_pos": _tensor_numpy(task_env.tcp_pos),
+        "tcp_quat": _tensor_numpy(task_env.tcp_quat),
+        "hold_pos": _tensor_numpy(task_env.hold_pos),
+        "target_object_center_pos": _tensor_numpy(task_env.cube_pos),
+        "target_object_quat": _tensor_numpy(task_env.cube_quat),
+        "target_object_velocity": _tensor_numpy(task_env.cube_vel),
+        "target_root_pos": _tensor_numpy(target_root_pos),
+        "target_root_quat": _tensor_numpy(task_env._cube.data.root_quat_w),
+        "target_root_velocity": _tensor_numpy(task_env._cube.data.root_vel_w),
+        "clutter_root_pos": _clutter_root_state(task_env, "root_pos_w", 3),
+        "clutter_root_quat": _clutter_root_state(task_env, "root_quat_w", 4),
+        "clutter_root_velocity": _clutter_root_state(task_env, "root_vel_w", 6),
+        "gripper_width": _tensor_numpy(task_env.gripper_width),
+        "finger_table_clearance": _tensor_numpy(task_env.finger_table_clearance),
+        "raw_task_terminated": _tensor_numpy(terminated, dtype=np.bool_),
+        "raw_task_truncated": _tensor_numpy(truncated, dtype=np.bool_),
+        "raw_task_done": _tensor_numpy(raw_done, dtype=np.bool_),
+        "terminated": _tensor_numpy(dataset_terminated, dtype=np.bool_),
+        "truncated": _tensor_numpy(dataset_truncated, dtype=np.bool_),
+        "done": _tensor_numpy(done, dtype=np.bool_),
+    }
+
+
+def _append_demo_dataset_sample(dataset: dict[str, list[object]], sample: dict[str, object]) -> None:
+    for key, value in sample.items():
+        dataset.setdefault(key, []).append(value)
+
+
+def _write_demo_dataset_npz(
+    path: Path,
+    *,
+    dataset: dict[str, list[object]],
+    rgb_frames: list[np.ndarray],
+    rgb_step_idx: list[int],
+    metadata: dict[str, object],
+) -> dict[str, object]:
+    arrays: dict[str, np.ndarray] = {}
+    for key, values in dataset.items():
+        if key == "phase":
+            arrays[key] = np.asarray(values, dtype="<U96")
+        elif key in ("step_idx", "source_frame_idx"):
+            arrays[key] = np.asarray(values, dtype=np.int64)
+        else:
+            arrays[key] = np.asarray(values)
+    arrays["rgb"] = np.asarray(rgb_frames, dtype=np.uint8)
+    arrays["rgb_step_idx"] = np.asarray(rgb_step_idx, dtype=np.int64)
+    arrays["metadata_json"] = np.asarray(json.dumps(_jsonable(metadata), indent=2))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(path, **arrays)
+    return {
+        "path": str(path),
+        "state_steps": int(len(dataset.get("step_idx", []))),
+        "rgb_frames": int(len(rgb_frames)),
+        "keys": sorted(arrays.keys()),
+    }
+
+
+def _row_max_abs_summary(rows: list[dict[str, object]], key: str) -> dict[str, object]:
+    values: list[float] = []
+    for row in rows:
+        value = row.get(key)
+        if value is None:
+            continue
+        try:
+            arr = np.asarray(value, dtype=np.float64)
+        except (TypeError, ValueError):
+            continue
+        if arr.size == 0:
+            continue
+        finite = np.abs(arr[np.isfinite(arr)])
+        if finite.size:
+            values.append(float(np.max(finite)))
+    if not values:
+        return {"count": 0, "max_abs": None, "mean_abs": None}
+    return {
+        "count": int(len(values)),
+        "max_abs": float(max(values)),
+        "mean_abs": float(sum(values) / len(values)),
+    }
+
+
+def _row_scalar_summary(rows: list[dict[str, object]], key: str) -> dict[str, object]:
+    values: list[float] = []
+    for row in rows:
+        value = row.get(key)
+        if value is None:
+            continue
+        try:
+            scalar = float(value)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(scalar):
+            values.append(abs(scalar))
+    if not values:
+        return {"count": 0, "max_abs": None, "mean_abs": None}
+    return {
+        "count": int(len(values)),
+        "max_abs": float(max(values)),
+        "mean_abs": float(sum(values) / len(values)),
+    }
+
+
 def main() -> None:
     output_dir = Path(args_cli.output_dir).expanduser().resolve()
     frame_dir = output_dir / "frames"
@@ -1073,6 +2421,19 @@ def main() -> None:
     metrics_path = (
         Path(args_cli.metrics_path).expanduser().resolve() if args_cli.metrics_path else output_dir / "metrics.json"
     )
+    stable_scene_path = (
+        Path(args_cli.stable_scene_path).expanduser().resolve()
+        if args_cli.stable_scene_path
+        else output_dir / "stable_scene.json"
+    )
+    trajectory_dataset_path = (
+        Path(args_cli.trajectory_dataset_path).expanduser().resolve()
+        if args_cli.trajectory_dataset_path
+        else output_dir / "trajectory_dataset.npz"
+    )
+    stable_scene_input_path = stable_scene_path if stable_scene_path.is_file() else None
+    stable_scene_input = _load_stable_scene(stable_scene_input_path)
+    single_yam_demo_enabled = args_cli.demo_mode in ("single_yam_rejected_path", "single_yam_trajectory")
 
     objaverse_textured_summary = None
     if args_cli.objaverse_textured_manifest_path:
@@ -1147,6 +2508,49 @@ def main() -> None:
             flush=True,
         )
 
+    if stable_scene_input is not None and single_yam_demo_enabled:
+        stable_scene_manifests = _stable_scene_asset_manifests(stable_scene_input, output_dir)
+        target_manifest_path = stable_scene_manifests.get("target_manifest_path")
+        if target_manifest_path is not None:
+            args_cli.object_asset_manifest_path = str(target_manifest_path)
+            args_cli.max_objects = 1
+            args_cli.object_asset_assignment = "round_robin"
+            if args_cli.object_validate_usd_bounds is None:
+                args_cli.object_validate_usd_bounds = False
+            print(
+                json.dumps(
+                    {
+                        "event": "stable_scene_target_manifest_prepared",
+                        "manifest_path": str(target_manifest_path),
+                        "uuid": str(stable_scene_manifests.get("target_uuid") or ""),
+                    }
+                ),
+                flush=True,
+            )
+        clutter_manifest_path = stable_scene_manifests.get("clutter_manifest_path")
+        clutter_uuids = [
+            str(uuid)
+            for uuid in stable_scene_manifests.get("clutter_uuids", [])
+            if str(uuid)
+        ]
+        if clutter_manifest_path is not None:
+            args_cli.tabletop_clutter_asset_manifest_path = str(clutter_manifest_path)
+            args_cli.tabletop_clutter_object_count = len(clutter_uuids)
+            args_cli.tabletop_clutter_max_objects = len(clutter_uuids)
+            args_cli.tabletop_clutter_asset_assignment = "round_robin"
+            if args_cli.tabletop_clutter_validate_usd_bounds is None:
+                args_cli.tabletop_clutter_validate_usd_bounds = False
+            print(
+                json.dumps(
+                    {
+                        "event": "stable_scene_clutter_manifest_prepared",
+                        "manifest_path": str(clutter_manifest_path),
+                        "uuids": clutter_uuids,
+                    }
+                ),
+                flush=True,
+            )
+
     torch.manual_seed(int(args_cli.seed))
     np.random.seed(int(args_cli.seed))
     env_cfg = parse_env_cfg(
@@ -1162,10 +2566,31 @@ def main() -> None:
     _set_if_present(env_cfg, "key_light_enabled", args_cli.key_light_enabled)
     _set_if_present(env_cfg, "key_light_intensity", args_cli.key_light_intensity)
     _set_if_present(env_cfg, "key_light_exposure", args_cli.key_light_exposure)
+    yam_arm_control_gains = _apply_yam_actuator_gain_scales(
+        env_cfg,
+        actuator_name="arm",
+        stiffness_scale=args_cli.yam_arm_stiffness_scale,
+        damping_scale=args_cli.yam_arm_damping_scale,
+        effort_scale=args_cli.yam_arm_effort_scale,
+    )
+    yam_gripper_control_gains = _apply_yam_actuator_gain_scales(
+        env_cfg,
+        actuator_name="gripper",
+        stiffness_scale=args_cli.yam_gripper_stiffness_scale,
+        damping_scale=args_cli.yam_gripper_damping_scale,
+        effort_scale=args_cli.yam_gripper_effort_scale,
+    )
+    if bool(yam_arm_control_gains.get("enabled")):
+        print(json.dumps({"event": "yam_arm_control_gains", **yam_arm_control_gains}), flush=True)
+    if bool(yam_gripper_control_gains.get("enabled")):
+        print(json.dumps({"event": "yam_gripper_control_gains", **yam_gripper_control_gains}), flush=True)
     _set_if_present(env_cfg, "object_asset_manifest_path", args_cli.object_asset_manifest_path)
     _set_if_present(env_cfg, "object_assets_dir", args_cli.object_assets_dir)
     _set_if_present(env_cfg, "max_objects", args_cli.max_objects)
     _set_if_present(env_cfg, "object_asset_assignment", args_cli.object_asset_assignment)
+    _set_if_present(env_cfg, "object_validate_usd_bounds", args_cli.object_validate_usd_bounds)
+    _set_if_present(env_cfg, "object_usd_bounds_max_ratio", args_cli.object_usd_bounds_max_ratio)
+    _set_if_present(env_cfg, "object_usd_bounds_max_dimension", args_cli.object_usd_bounds_max_dimension)
     _set_if_present(env_cfg, "require_graspgen_scale", args_cli.require_graspgen_scale)
     _set_if_present(env_cfg, "object_spawn_xy_randomization", args_cli.object_spawn_xy_randomization)
     _set_if_present(env_cfg, "object_spawn_yaw_randomization_deg", args_cli.object_spawn_yaw_randomization_deg)
@@ -1186,6 +2611,21 @@ def main() -> None:
     _set_if_present(env_cfg, "tabletop_clutter_max_objects", args_cli.tabletop_clutter_max_objects)
     _set_if_present(env_cfg, "tabletop_clutter_object_count", args_cli.tabletop_clutter_object_count)
     _set_if_present(env_cfg, "tabletop_clutter_asset_assignment", args_cli.tabletop_clutter_asset_assignment)
+    _set_if_present(
+        env_cfg,
+        "tabletop_clutter_validate_usd_bounds",
+        args_cli.tabletop_clutter_validate_usd_bounds,
+    )
+    _set_if_present(
+        env_cfg,
+        "tabletop_clutter_usd_bounds_max_ratio",
+        args_cli.tabletop_clutter_usd_bounds_max_ratio,
+    )
+    _set_if_present(
+        env_cfg,
+        "tabletop_clutter_usd_bounds_max_dimension",
+        args_cli.tabletop_clutter_usd_bounds_max_dimension,
+    )
     _set_if_present(env_cfg, "tabletop_clutter_spawn_xy_randomization", args_cli.tabletop_clutter_spawn_xy_randomization)
     _set_if_present(env_cfg, "tabletop_clutter_spawn_yaw_randomization_deg", args_cli.tabletop_clutter_spawn_yaw_randomization_deg)
     _set_if_present(env_cfg, "tabletop_clutter_spawn_z_clearance", args_cli.tabletop_clutter_spawn_z_clearance)
@@ -1256,6 +2696,63 @@ def main() -> None:
     )
     env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array")
     task_env = env.unwrapped
+    if stable_scene_input is not None and single_yam_demo_enabled:
+        target = stable_scene_input.get("target") if isinstance(stable_scene_input.get("target"), dict) else {}
+        asset = target.get("asset") if isinstance(target.get("asset"), dict) else {}
+        expected_uuid = str(asset.get("uuid") or "")
+        active_assets = list(getattr(task_env, "_object_assets", []))
+        active_indices = getattr(task_env, "object_asset_index", None)
+        active_uuid = ""
+        if active_assets and active_indices is not None:
+            active_idx = int(active_indices[0].detach().cpu().item())
+            active_uuid = str(active_assets[active_idx].get("uuid") or "")
+        if expected_uuid and active_uuid and active_uuid != expected_uuid:
+            raise RuntimeError(
+                f"Stable-scene target UUID mismatch: expected {expected_uuid}, active environment has {active_uuid}"
+            )
+        print(
+            json.dumps(
+                {
+                    "event": "stable_scene_target_asset_active",
+                    "expected_uuid": expected_uuid,
+                    "active_uuid": active_uuid,
+                }
+            ),
+            flush=True,
+        )
+        expected_clutter_uuids = []
+        stable_clutter = stable_scene_input.get("clutter") if isinstance(stable_scene_input.get("clutter"), list) else []
+        for entry in stable_clutter:
+            if not isinstance(entry, dict):
+                continue
+            clutter_asset = entry.get("asset") if isinstance(entry.get("asset"), dict) else {}
+            expected_clutter_uuids.append(str(clutter_asset.get("uuid") or ""))
+        active_clutter_uuids: list[str] = []
+        clutter_assets = list(getattr(task_env, "_tabletop_clutter_assets", []))
+        clutter_indices = getattr(task_env, "tabletop_clutter_asset_index", None)
+        if clutter_assets and clutter_indices is not None:
+            for slot_idx in range(min(len(expected_clutter_uuids), int(clutter_indices.shape[1]))):
+                active_idx = int(clutter_indices[0, slot_idx].detach().cpu().item())
+                active_clutter_uuids.append(str(clutter_assets[active_idx].get("uuid") or ""))
+        for slot_idx, expected_uuid in enumerate(expected_clutter_uuids):
+            if not expected_uuid:
+                continue
+            active_uuid = active_clutter_uuids[slot_idx] if slot_idx < len(active_clutter_uuids) else ""
+            if active_uuid and active_uuid != expected_uuid:
+                raise RuntimeError(
+                    "Stable-scene clutter UUID mismatch at slot "
+                    f"{slot_idx}: expected {expected_uuid}, active environment has {active_uuid}"
+                )
+        print(
+            json.dumps(
+                {
+                    "event": "stable_scene_clutter_assets_active",
+                    "expected_uuids": expected_clutter_uuids,
+                    "active_uuids": active_clutter_uuids,
+                }
+            ),
+            flush=True,
+        )
     eye_default, target_default = _task_camera_defaults(args_cli.task)
     eye = tuple(float(v) for v in (args_cli.camera_eye or eye_default))
     target = tuple(float(v) for v in (args_cli.camera_target or target_default))
@@ -1264,10 +2761,40 @@ def main() -> None:
     print(json.dumps({"event": "reset_start"}), flush=True)
     env.reset(seed=int(args_cli.seed))
     print(json.dumps({"event": "reset_done"}), flush=True)
+    robot_debug_site_visibility_summary = {"enabled": False}
+    if bool(args_cli.hide_robot_debug_sites):
+        robot_debug_site_visibility_summary = _hide_robot_debug_site_prims()
+        task_env.sim.forward()
+        print(
+            json.dumps(
+                {
+                    "event": "robot_debug_sites_hidden",
+                    "hidden_count": robot_debug_site_visibility_summary.get("hidden_count", 0),
+                    "hidden_paths": robot_debug_site_visibility_summary.get("hidden_paths", []),
+                }
+            ),
+            flush=True,
+        )
     for _ in range(max(int(args_cli.render_warmup_frames), 0)):
         task_env.sim.render()
         env.render()
     print(json.dumps({"event": "render_warmup_done"}), flush=True)
+    stable_scene_restore_summary = {"enabled": False}
+    if stable_scene_input is not None:
+        stable_scene_restore_summary = _restore_stable_scene(task_env, stable_scene_input)
+        for _ in range(max(int(args_cli.render_warmup_frames), 1)):
+            task_env.sim.render()
+            env.render()
+        print(
+            json.dumps(
+                {
+                    "event": "stable_scene_restored",
+                    "path": str(stable_scene_input_path),
+                    "summary": stable_scene_restore_summary,
+                }
+            ),
+            flush=True,
+        )
 
     frames: list[np.ndarray] = []
     frame_paths: list[str] = []
@@ -1295,6 +2822,43 @@ def main() -> None:
             ),
             flush=True,
         )
+    grasp_pose_overlay_path = (
+        Path(args_cli.grasp_pose_overlay_path).expanduser().resolve()
+        if args_cli.grasp_pose_overlay_path
+        else None
+    )
+    grasp_pose_overlay_summary = _spawn_grasp_pose_overlay(
+        grasp_pose_overlay_path,
+        max_count=max(1, int(args_cli.grasp_pose_overlay_max_count)),
+        axis_length=float(args_cli.grasp_pose_overlay_axis_length),
+        axis_thickness=float(args_cli.grasp_pose_overlay_axis_thickness),
+    )
+    if grasp_pose_overlay_summary.get("enabled"):
+        for _ in range(max(int(args_cli.render_warmup_frames), 1)):
+            task_env.sim.render()
+            env.render()
+        print(
+            json.dumps(
+                {
+                    "event": "grasp_pose_overlay_spawned",
+                    "path": grasp_pose_overlay_summary.get("path"),
+                    "count": grasp_pose_overlay_summary.get("visualized_count"),
+                    "selected_marker_index": grasp_pose_overlay_summary.get("selected_marker_index"),
+                }
+            ),
+            flush=True,
+        )
+    elif grasp_pose_overlay_path is not None:
+        print(
+            json.dumps(
+                {
+                    "event": "grasp_pose_overlay_skipped",
+                    "path": str(grasp_pose_overlay_path),
+                    "reason": grasp_pose_overlay_summary.get("reason"),
+                }
+            ),
+            flush=True,
+        )
     frame, frame_path = _capture_frame(env, frame_dir, 0)
     frames.append(frame)
     frame_paths.append(frame_path)
@@ -1304,19 +2868,129 @@ def main() -> None:
     hold_joint_pos = robot.data.joint_pos.detach().clone() if robot is not None else None
     capture_interval = max(int(args_cli.capture_interval), 1)
     settle_steps = max(int(args_cli.settle_steps), 0)
+    demo_steps = max(int(args_cli.demo_steps), 0)
+    demo_step_rows: list[dict[str, object]] = []
+    first_rejected_step: int | None = None
+    first_done_step: int | None = None
+    record_trajectory_dataset = bool(args_cli.record_trajectory_dataset) and single_yam_demo_enabled
+    trajectory_dataset: dict[str, list[object]] = {}
+    trajectory_rgb_frames: list[np.ndarray] = []
+    trajectory_rgb_step_idx: list[int] = []
+    demo_trajectory: dict[str, object] | None = None
+    demo_trajectory_path: Path | None = None
+    demo_trajectory_start_error: dict[str, object] | None = None
+    demo_trajectory_timing_summary: dict[str, object] | None = None
+    demo_start_joint_pos = None
+    demo_table_rejection_target_joint_pos = None
+    if single_yam_demo_enabled:
+        if robot is not None:
+            demo_start_joint_pos = robot.data.joint_pos.detach().clone()
+        trajectory_source = str(args_cli.demo_trajectory_source)
+        should_load_trajectory = trajectory_source in ("auto", "graspgenx_replay")
+        if should_load_trajectory:
+            if args_cli.demo_trajectory_path:
+                demo_trajectory_path = Path(args_cli.demo_trajectory_path).expanduser().resolve()
+            else:
+                default_trajectory_path = _default_yam_rejected_trajectory_path()
+                if default_trajectory_path.is_file():
+                    demo_trajectory_path = default_trajectory_path
+            if trajectory_source == "graspgenx_replay" and demo_trajectory_path is None:
+                raise FileNotFoundError("graspgenx_replay requested but no demo trajectory path was found")
+        if demo_trajectory_path is not None and should_load_trajectory:
+            demo_trajectory = _load_demo_trajectory(demo_trajectory_path)
+            if robot is None:
+                raise AttributeError("single_yam_rejected_path trajectory replay requires a robot articulation")
+            first_source_joint_pos = _map_source_joint_to_env(task_env, demo_trajectory["joint_positions"][0])
+            if demo_start_joint_pos is not None:
+                start_delta = first_source_joint_pos - demo_start_joint_pos
+                demo_trajectory_start_error = {
+                    "max_abs": float(torch.max(torch.abs(start_delta)).detach().cpu().item()),
+                    "l2": float(torch.linalg.norm(start_delta).detach().cpu().item()),
+                    "first_source_joint_position": _tensor_list(first_source_joint_pos),
+                    "replay_start_joint_position": _tensor_list(demo_start_joint_pos),
+                }
+            if str(args_cli.demo_trajectory_timing_mode) == "realtime":
+                requested_demo_steps = int(demo_steps)
+                source_fps = _trajectory_source_fps(demo_trajectory)
+                source_frames = int(len(demo_trajectory["joint_positions"]))
+                source_duration_s = float(max(source_frames - 1, 0)) / source_fps
+                min_replay_steps = _trajectory_realtime_step_count(
+                    task_env,
+                    demo_trajectory,
+                    start_blend_steps=int(args_cli.demo_start_blend_steps),
+                )
+                demo_steps = max(int(demo_steps), int(min_replay_steps))
+                demo_trajectory_timing_summary = {
+                    "mode": "realtime",
+                    "source_fps": float(source_fps),
+                    "source_frames": int(source_frames),
+                    "source_duration_s": float(source_duration_s),
+                    "env_control_dt_s": float(_env_control_dt(task_env)),
+                    "requested_demo_steps": int(requested_demo_steps),
+                    "min_replay_steps": int(min_replay_steps),
+                    "final_demo_steps": int(demo_steps),
+                }
+            else:
+                demo_trajectory_timing_summary = {
+                    "mode": "stretch",
+                    "requested_demo_steps": int(demo_steps),
+                    "source_fps": float(_trajectory_source_fps(demo_trajectory)),
+                    "source_frames": int(len(demo_trajectory["joint_positions"])),
+                }
+            print(
+                json.dumps(
+                    {
+                        "event": "demo_trajectory_loaded",
+                        "source": trajectory_source,
+                        "path": str(demo_trajectory_path),
+                        "source_frames": int(len(demo_trajectory["joint_positions"])),
+                        "source_fps": demo_trajectory.get("fps"),
+                        "tabletop_rejected": demo_trajectory.get("tabletop_rejected"),
+                        "tabletop_status": demo_trajectory.get("tabletop_status"),
+                        "nominal_status": demo_trajectory.get("nominal_status"),
+                        "replay_mode": str(args_cli.demo_trajectory_replay_mode),
+                        "timing_mode": str(args_cli.demo_trajectory_timing_mode),
+                        "start_blend_steps": int(args_cli.demo_start_blend_steps),
+                        "start_error": demo_trajectory_start_error,
+                        "timing": demo_trajectory_timing_summary,
+                    }
+                ),
+                flush=True,
+            )
+        elif trajectory_source == "dextrah_table_rejection":
+            if robot is None or demo_start_joint_pos is None:
+                raise AttributeError("dextrah_table_rejection requires a robot articulation")
+            demo_table_rejection_target_joint_pos = _dextrah_table_rejection_full_target_joint_pos(task_env)
+            print(
+                json.dumps(
+                    {
+                        "event": "demo_dextrah_table_rejection_target_loaded",
+                        "source": trajectory_source,
+                        "target_fraction": float(args_cli.demo_table_rejection_target_fraction),
+                        "full_target_joint_position": _tensor_list(demo_table_rejection_target_joint_pos),
+                    }
+                ),
+                flush=True,
+            )
+    planned_steps = settle_steps if args_cli.demo_mode == "settle" else demo_steps
     target_frame_count = None
     capture_step_set: set[int] | None = None
     if args_cli.video_seconds is not None:
         target_frame_count = max(int(round(float(args_cli.video_seconds) * int(args_cli.fps))), 1)
-        settle_steps, capture_step_set = _capture_steps_for_video(settle_steps, target_frame_count)
+        planned_steps, capture_step_set = _capture_steps_for_video(planned_steps, target_frame_count)
+        if args_cli.demo_mode == "settle":
+            settle_steps = planned_steps
+        else:
+            demo_steps = planned_steps
         print(
             json.dumps(
                 {
                     "event": "video_seconds_capture_plan",
+                    "demo_mode": args_cli.demo_mode,
                     "video_seconds": float(args_cli.video_seconds),
                     "fps": int(args_cli.fps),
                     "target_frame_count": int(target_frame_count),
-                    "settle_steps": int(settle_steps),
+                    "planned_steps": int(planned_steps),
                     "capture_steps": int(len(capture_step_set)),
                 }
             ),
@@ -1333,6 +3007,7 @@ def main() -> None:
             frames.append(repeat_frame)
             frame_paths.append(frame_path)
         settle_steps = 0
+        demo_steps = 0
         print(
             json.dumps(
                 {
@@ -1344,6 +3019,146 @@ def main() -> None:
             ),
             flush=True,
         )
+    elif single_yam_demo_enabled:
+        for step_idx in range(1, demo_steps + 1):
+            joint_position = None
+            joint_velocity = None
+            source_frame_idx = None
+            trajectory_timing = None
+            if demo_trajectory is not None:
+                joint_position, joint_velocity, phase, source_frame_idx, trajectory_timing = (
+                    _single_yam_rejected_trajectory_joint_position(
+                        task_env,
+                        demo_trajectory,
+                        step_idx,
+                        demo_steps,
+                        start_joint_pos=demo_start_joint_pos,
+                        start_blend_steps=int(args_cli.demo_start_blend_steps),
+                        timing_mode=str(args_cli.demo_trajectory_timing_mode),
+                    )
+                )
+                if args_cli.demo_trajectory_replay_mode == "dynamic":
+                    velocity_target = joint_velocity if bool(args_cli.demo_trajectory_velocity_targets) else None
+                    terminated, truncated = _apply_dynamic_joint_position_target(
+                        task_env,
+                        joint_position,
+                        velocity_target,
+                        velocity_target_scale=float(args_cli.demo_trajectory_velocity_target_scale),
+                    )
+                else:
+                    terminated, truncated = _apply_kinematic_joint_position(task_env, joint_position)
+                actions = torch.zeros((task_env.num_envs, int(task_env.cfg.action_space)), device=task_env.device)
+                target_hold = task_env.hold_pos.detach().clone()
+            elif args_cli.demo_trajectory_source == "dextrah_table_rejection":
+                if demo_start_joint_pos is None:
+                    raise AttributeError("dextrah_table_rejection requires a captured start joint position")
+                joint_position, phase, demo_table_rejection_target_joint_pos = (
+                    _single_yam_dextrah_table_rejection_joint_position(
+                        task_env,
+                        step_idx,
+                        demo_steps,
+                        start_joint_pos=demo_start_joint_pos,
+                        target_fraction=float(args_cli.demo_table_rejection_target_fraction),
+                    )
+                )
+                terminated, truncated = _apply_kinematic_joint_position(task_env, joint_position)
+                actions = torch.zeros((task_env.num_envs, int(task_env.cfg.action_space)), device=task_env.device)
+                target_hold = task_env.hold_pos.detach().clone()
+            else:
+                actions, phase, target_hold = _single_yam_rejected_path_action(
+                    task_env,
+                    step_idx,
+                    demo_steps,
+                    high_hold_z=float(args_cli.demo_high_hold_z),
+                    low_hold_z=float(args_cli.demo_low_hold_z),
+                )
+                terminated, truncated = _manual_action_step(task_env, actions)
+            row = _single_yam_rejected_path_row(
+                task_env,
+                step_idx=step_idx,
+                phase=phase,
+                target_hold=target_hold,
+                actions=actions,
+                terminated=terminated,
+                truncated=truncated,
+                joint_position=joint_position,
+                source_frame_idx=source_frame_idx,
+                trajectory_timing=trajectory_timing,
+                trajectory_path=None if demo_trajectory_path is None else str(demo_trajectory_path),
+            )
+            demo_step_rows.append(row)
+            if record_trajectory_dataset:
+                dataset_terminated = None
+                dataset_truncated = None
+                if demo_trajectory is not None:
+                    dataset_terminated = torch.zeros_like(terminated, dtype=torch.bool)
+                    dataset_truncated = torch.zeros_like(truncated, dtype=torch.bool)
+                    if step_idx >= demo_steps:
+                        dataset_terminated[:] = True
+                sample = _demo_dataset_sample(
+                    task_env,
+                    step_idx=step_idx,
+                    phase=phase,
+                    actions=actions,
+                    terminated=terminated,
+                    truncated=truncated,
+                    dataset_terminated=dataset_terminated,
+                    dataset_truncated=dataset_truncated,
+                    joint_position=joint_position,
+                    joint_velocity=joint_velocity,
+                    source_frame_idx=source_frame_idx,
+                )
+                _append_demo_dataset_sample(trajectory_dataset, sample)
+                record_rgb_interval = max(int(args_cli.record_rgb_interval), 1)
+                if step_idx == 1 or step_idx == demo_steps or step_idx % record_rgb_interval == 0:
+                    rgb = _resize_rgb_nearest(
+                        _frame_array(env.render()),
+                        int(args_cli.record_rgb_height),
+                        int(args_cli.record_rgb_width),
+                    )
+                    trajectory_rgb_frames.append(rgb.copy())
+                    trajectory_rgb_step_idx.append(int(step_idx))
+            rejected = torch.as_tensor(
+                task_env.finger_table_clearance
+                < float(getattr(task_env.cfg, "finger_table_penetration_termination_margin", -0.008)),
+                device=task_env.device,
+            )
+            done = torch.logical_or(terminated, truncated)
+            if first_rejected_step is None and bool(rejected.any().detach().cpu().item()):
+                first_rejected_step = int(step_idx)
+                print(
+                    json.dumps(
+                        {
+                            "event": "rejected_path_detected",
+                            "step_idx": int(step_idx),
+                            "finger_table_clearance": _tensor_list(task_env.finger_table_clearance),
+                        }
+                    ),
+                    flush=True,
+                )
+            if first_done_step is None and bool(done.any().detach().cpu().item()):
+                first_done_step = int(step_idx)
+            should_capture = (
+                step_idx in capture_step_set
+                if capture_step_set is not None
+                else (step_idx % capture_interval == 0 or step_idx == demo_steps)
+            )
+            if should_capture:
+                frame, frame_path = _capture_frame(env, frame_dir, frame_idx)
+                frames.append(frame)
+                frame_paths.append(frame_path)
+                print(
+                    json.dumps(
+                        {
+                            "event": "frame_captured",
+                            "frame_idx": int(frame_idx),
+                            "step_idx": int(step_idx),
+                            "phase": phase,
+                        }
+                    ),
+                    flush=True,
+                )
+                frame_idx += 1
     else:
         for step_idx in range(1, settle_steps + 1):
             _step_physics_without_task_reset(task_env, hold_joint_pos)
@@ -1370,21 +3185,130 @@ def main() -> None:
     final_velocity_summary = _root_velocity_summary(task_env)
     initial_clearance_summary = _initial_clearance_summary(task_env, initial_snapshot)
     final_clearance_summary = _initial_clearance_summary(task_env, final_snapshot)
+    stable_scene_written = False
+    if stable_scene_input is None:
+        stable_scene = _stable_scene_payload(
+            task_env,
+            output_dir=stable_scene_path.parent,
+            task=str(args_cli.task),
+            seed=int(args_cli.seed),
+            settle_steps=int(settle_steps if args_cli.demo_mode == "settle" else 0),
+            initial_snapshot=initial_snapshot,
+            stable_snapshot=final_snapshot,
+            initial_velocity_summary=initial_velocity_summary,
+            stable_velocity_summary=final_velocity_summary,
+            initial_clearance_summary=initial_clearance_summary,
+            stable_clearance_summary=final_clearance_summary,
+        )
+        stable_scene_path.parent.mkdir(parents=True, exist_ok=True)
+        stable_scene_path.write_text(json.dumps(_jsonable(stable_scene), indent=2), encoding="utf-8")
+        stable_scene_written = True
+        print(
+            json.dumps(
+                {
+                    "event": "stable_scene_written",
+                    "path": str(stable_scene_path),
+                    "settle_steps": int(settle_steps if args_cli.demo_mode == "settle" else 0),
+                }
+            ),
+            flush=True,
+        )
     _write_video(video_path, frames, int(args_cli.fps))
     print(json.dumps({"event": "video_written", "path": str(video_path), "frame_count": len(frames)}), flush=True)
+    trajectory_dataset_summary: dict[str, object] = {
+        "enabled": bool(record_trajectory_dataset),
+        "requested": bool(args_cli.record_trajectory_dataset),
+        "path": str(trajectory_dataset_path),
+        "record_rgb_width": int(args_cli.record_rgb_width),
+        "record_rgb_height": int(args_cli.record_rgb_height),
+        "record_rgb_interval": int(args_cli.record_rgb_interval),
+        "reason": None if record_trajectory_dataset else "not_requested_or_not_single_yam_trajectory",
+    }
+    if record_trajectory_dataset:
+        trajectory_dataset_summary = _write_demo_dataset_npz(
+            trajectory_dataset_path,
+            dataset=trajectory_dataset,
+            rgb_frames=trajectory_rgb_frames,
+            rgb_step_idx=trajectory_rgb_step_idx,
+            metadata={
+                "task": str(args_cli.task),
+                "seed": int(args_cli.seed),
+                "demo_mode": str(args_cli.demo_mode),
+                "trajectory_source": str(args_cli.demo_trajectory_source),
+                "trajectory_path": None if demo_trajectory_path is None else str(demo_trajectory_path),
+                "stable_scene_path": str(stable_scene_path),
+                "video_path": str(video_path),
+                "fps": int(args_cli.fps),
+                "control_dt_s": float(_env_control_dt(task_env)),
+                "demo_steps": int(demo_steps),
+                "source_timing": demo_trajectory_timing_summary,
+            },
+        )
+        trajectory_dataset_summary.update(
+            {
+                "enabled": True,
+                "requested": True,
+                "record_rgb_width": int(args_cli.record_rgb_width),
+                "record_rgb_height": int(args_cli.record_rgb_height),
+                "record_rgb_interval": int(args_cli.record_rgb_interval),
+                "reason": None,
+            }
+        )
+        print(json.dumps({"event": "trajectory_dataset_written", **trajectory_dataset_summary}), flush=True)
 
     metrics = {
         "task": args_cli.task,
         "num_envs": int(task_env.num_envs),
         "seed": int(args_cli.seed),
+        "demo_mode": args_cli.demo_mode,
         "settle_steps": int(settle_steps),
+        "demo_steps": int(demo_steps),
         "capture_interval": int(capture_interval),
         "fps": int(args_cli.fps),
         "video_seconds": None if args_cli.video_seconds is None else float(args_cli.video_seconds),
         "target_frame_count": target_frame_count,
+        "single_yam_rejected_path_demo": {
+            "enabled": bool(single_yam_demo_enabled),
+            "high_hold_z": float(args_cli.demo_high_hold_z),
+            "low_hold_z": float(args_cli.demo_low_hold_z),
+            "trajectory_source": str(args_cli.demo_trajectory_source),
+            "trajectory_replay_mode": str(args_cli.demo_trajectory_replay_mode),
+            "trajectory_timing_mode": str(args_cli.demo_trajectory_timing_mode),
+            "trajectory_velocity_targets": bool(args_cli.demo_trajectory_velocity_targets),
+            "trajectory_velocity_target_scale": float(args_cli.demo_trajectory_velocity_target_scale),
+            "trajectory_replay_enabled": demo_trajectory is not None,
+            "trajectory_path": None if demo_trajectory_path is None else str(demo_trajectory_path),
+            "trajectory_source_frames": None
+            if demo_trajectory is None
+            else int(len(demo_trajectory["joint_positions"])),
+            "trajectory_source_fps": None if demo_trajectory is None else demo_trajectory.get("fps"),
+            "trajectory_timing": demo_trajectory_timing_summary,
+            "trajectory_tabletop_rejected": None
+            if demo_trajectory is None
+            else demo_trajectory.get("tabletop_rejected"),
+            "trajectory_tabletop_status": None if demo_trajectory is None else demo_trajectory.get("tabletop_status"),
+            "trajectory_nominal_status": None if demo_trajectory is None else demo_trajectory.get("nominal_status"),
+            "trajectory_segments": None if demo_trajectory is None else demo_trajectory.get("segments"),
+            "start_blend_steps": int(args_cli.demo_start_blend_steps),
+            "trajectory_start_error": demo_trajectory_start_error,
+            "table_rejection_target_fraction": float(args_cli.demo_table_rejection_target_fraction),
+            "table_rejection_target_joint_position": None
+            if demo_table_rejection_target_joint_pos is None
+            else _tensor_list(demo_table_rejection_target_joint_pos),
+            "first_rejected_step": first_rejected_step,
+            "first_done_step": first_done_step,
+            "step_count": len(demo_step_rows),
+            "joint_target_velocity_summary": _row_max_abs_summary(demo_step_rows, "joint_target_velocity"),
+            "actual_joint_velocity_summary": _row_max_abs_summary(demo_step_rows, "actual_joint_velocity"),
+            "joint_tracking_error_summary": _row_scalar_summary(demo_step_rows, "joint_tracking_error_max_abs"),
+            "step_rows": demo_step_rows,
+        },
+        "trajectory_dataset": trajectory_dataset_summary,
         "camera_eye": [float(v) for v in eye],
         "camera_target": [float(v) for v in target],
         "app_rendering_mode": getattr(args_cli, "rendering_mode", None),
+        "yam_arm_control_gains": yam_arm_control_gains,
+        "yam_gripper_control_gains": yam_gripper_control_gains,
         "render_resolution": [int(v) for v in task_env.cfg.viewer.resolution]
         if hasattr(task_env.cfg, "viewer")
         else render_resolution,
@@ -1432,10 +3356,19 @@ def main() -> None:
         },
         "freeze_object_roots_for_video": bool(args_cli.freeze_object_roots_for_video),
         "repeat_initial_frame_for_video": bool(args_cli.repeat_initial_frame_for_video),
+        "robot_debug_site_visibility": robot_debug_site_visibility_summary,
         "visual_object_overlay": {
             "enabled": bool(args_cli.visual_object_overlay),
             "z_offset": float(args_cli.visual_object_overlay_z_offset),
             "objects": visual_object_overlay_summary,
+        },
+        "grasp_pose_overlay": grasp_pose_overlay_summary,
+        "stable_scene": {
+            "path": str(stable_scene_path),
+            "input_path": None if stable_scene_input_path is None else str(stable_scene_input_path),
+            "input_loaded": stable_scene_input is not None,
+            "restore": stable_scene_restore_summary,
+            "written": bool(stable_scene_written),
         },
         "video_path": str(video_path),
         "frame_paths": frame_paths,
