@@ -2186,6 +2186,8 @@ def _demo_dataset_sample(
     actions: torch.Tensor,
     terminated: torch.Tensor,
     truncated: torch.Tensor,
+    dataset_terminated: torch.Tensor | None,
+    dataset_truncated: torch.Tensor | None,
     joint_position: torch.Tensor | None,
     joint_velocity: torch.Tensor | None,
     source_frame_idx: int | None,
@@ -2194,7 +2196,12 @@ def _demo_dataset_sample(
     env_origins = task_env.scene.env_origins
     target_root_pos = task_env._cube.data.root_pos_w - env_origins
     observations = task_env._get_observations()
-    done = torch.logical_or(terminated, truncated)
+    raw_done = torch.logical_or(terminated, truncated)
+    if dataset_terminated is None:
+        dataset_terminated = terminated
+    if dataset_truncated is None:
+        dataset_truncated = truncated
+    done = torch.logical_or(dataset_terminated, dataset_truncated)
     if robot is not None:
         actual_joint_position = _tensor_numpy(robot.data.joint_pos)
         actual_joint_velocity = _tensor_numpy(robot.data.joint_vel)
@@ -2236,8 +2243,11 @@ def _demo_dataset_sample(
         "clutter_root_velocity": _clutter_root_state(task_env, "root_vel_w", 6),
         "gripper_width": _tensor_numpy(task_env.gripper_width),
         "finger_table_clearance": _tensor_numpy(task_env.finger_table_clearance),
-        "terminated": _tensor_numpy(terminated, dtype=np.bool_),
-        "truncated": _tensor_numpy(truncated, dtype=np.bool_),
+        "raw_task_terminated": _tensor_numpy(terminated, dtype=np.bool_),
+        "raw_task_truncated": _tensor_numpy(truncated, dtype=np.bool_),
+        "raw_task_done": _tensor_numpy(raw_done, dtype=np.bool_),
+        "terminated": _tensor_numpy(dataset_terminated, dtype=np.bool_),
+        "truncated": _tensor_numpy(dataset_truncated, dtype=np.bool_),
         "done": _tensor_numpy(done, dtype=np.bool_),
     }
 
@@ -2927,6 +2937,13 @@ def main() -> None:
             )
             demo_step_rows.append(row)
             if record_trajectory_dataset:
+                dataset_terminated = None
+                dataset_truncated = None
+                if demo_trajectory is not None:
+                    dataset_terminated = torch.zeros_like(terminated, dtype=torch.bool)
+                    dataset_truncated = torch.zeros_like(truncated, dtype=torch.bool)
+                    if step_idx >= demo_steps:
+                        dataset_terminated[:] = True
                 sample = _demo_dataset_sample(
                     task_env,
                     step_idx=step_idx,
@@ -2934,6 +2951,8 @@ def main() -> None:
                     actions=actions,
                     terminated=terminated,
                     truncated=truncated,
+                    dataset_terminated=dataset_terminated,
+                    dataset_truncated=dataset_truncated,
                     joint_position=joint_position,
                     joint_velocity=joint_velocity,
                     source_frame_idx=source_frame_idx,
