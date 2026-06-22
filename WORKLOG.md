@@ -10017,3 +10017,53 @@ Smoke follow-up:
   attempts and a clean high-concurrency spot-check video, increased job
   `1039183` throttle from 16 to 20; shards 16-19 started on `pool0-00002` and
   `pool0-00008`, so all 20 shards are active.
+
+2026-06-22T20:40:00Z - YAM Objaverse 300-demo collection complete and merged
+- Goal: finish monitoring the revised 300-demo YAM Objaverse collection,
+  validate artifacts, merge the current YAM collection branch to `main`, and
+  clean up merged worktrees/branches.
+- Version state: merged `codex/yam-rejected-demo` into `main` and pushed
+  `origin/main` at merge commit `9c39041352a51a42af83f6e2e300f67cbed3cddd`.
+  The revised Slurm job collected from code commit
+  `65b32317c3abb3ac7c4b830b2d0c682f17079f8c`.
+- Job: l401 Slurm array `1039183`, batch
+  `yam_objaverse_oneobj_300_top512_65b32317_20260622T173847Z`.
+- Result directory:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/yam_demos/yam_objaverse_oneobj_300_top512_65b32317_20260622T173847Z`.
+- Completion evidence: `squeue -j 1039183` returned no active tasks; every
+  array shard completed with `summary.json` status `completed`.
+- Dataset integrity: 20 shard summaries, 300 accepted lines in
+  `shard_*/accepted_demos.jsonl`, and 300 accepted validation metric lines in
+  `shard_*/accepted_validation_metrics.jsonl`. No shard/status/check failures
+  were found.
+- Rejection filters during collection: 210 planner rejects and 136 validation
+  rejects, treated as expected filtering before accepting demonstrations.
+- Aggregate accepted metrics: 300/300 demos recorded nonblank RGB and full
+  state datasets; RGB shape was `[1500, 120, 160, 3]` per accepted demo.
+  Object lift delta ranged from `0.1361 m` to `0.3120 m` with median
+  `0.2162 m`. Minimum finger-table clearance over trajectories was
+  `0.0198 m`; last-100-step clearance minimum was at least `0.1945 m`.
+  Max absolute joint tracking error ranged from `0.0120` to `0.1424`, and
+  last-100-step max absolute error was at most `0.00788`.
+- Representative final visual evidence: fetched final accepted replay
+  `yam_objaverse_oneobj_300_top512_65b32317_20260622T173847Z_s017_seed1794038_replay`
+  to
+  `cluster_results/l401/yam_objaverse_oneobj_300_top512_65b32317_final_sample/`.
+  `yam_pick_place.mp4` is 1280x720, 301 frames, 25.08 seconds at 12 FPS, and
+  the contact sheet shows pick, lift, move over bin, and drop into the bin.
+- Documentation update: updated local DEXTRAH Codex skill
+  `/home/lzha/.codex/skills/dextrah-cluster-workflow/SKILL.md` with the fixed
+  GraspGenX, cuRobo, Objaverse, YAM robot asset, container path, and validated
+  collection settings for future agents.
+- Cleanup: removed local worktrees
+  `/home/lzha/code/worktrees/DEXTRAH-yam-rejected-demo` and
+  `/home/lzha/code/worktrees/DEXTRAH-main-merge-yam-rejected-demo`; deleted
+  local merged branches `codex/yam-rejected-demo` and
+  `codex/single-yam-textured-hq-bin-20260617`; deleted remote
+  `origin/codex/yam-rejected-demo`.
+- Cleanup note: left unmerged DEXTRAH branch
+  `codex/yam-clutter-ggx-curobo/20260619T224931Z-2921323` and its worktree in
+  place because it is not an ancestor of `main`. Removed a stale cuRobo local
+  branch at the same commit as cuRobo `main`; its old worktree was
+  unregistered, but a root-owned orphaned asset directory prevented complete
+  filesystem removal without sudo.
