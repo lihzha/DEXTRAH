@@ -624,6 +624,60 @@ def _append_scripted_yam_bin_drop(
     return out, new_segments, summary
 
 
+def _make_scripted_yam_vertical_lift(
+    *,
+    pregrasp_traj: Any,
+    profile: Any,
+    bundle: Any,
+    target_center_world: Any | None,
+    selected_tool_world: Any,
+    lift_height: float,
+    lift_frames: int,
+) -> tuple[Any | None, dict[str, Any]]:
+    import numpy as np
+
+    traj = np.asarray(pregrasp_traj, dtype=np.float32)
+    if traj.ndim != 2 or traj.shape[0] == 0:
+        return None, {"enabled": True, "success": False, "reason": "empty_pregrasp_trajectory"}
+    if target_center_world is None:
+        return None, {"enabled": True, "success": False, "reason": "missing_target_center_world"}
+
+    n_arm = int(profile.n_arm)
+    q_start_arm = traj[-1, :n_arm].astype(np.float32)
+    selected_tool = np.asarray(selected_tool_world, dtype=np.float64)
+    target_center = np.asarray(target_center_world, dtype=np.float64).reshape(3)
+    tool_center_offset = selected_tool[:3, 3] - target_center
+    desired_object_lift = target_center + np.asarray([0.0, 0.0, float(lift_height)], dtype=np.float64)
+    target_link_position = desired_object_lift + tool_center_offset
+    target_link_position[2] = max(target_link_position[2], target_center[2] + float(lift_height))
+
+    q_lift, solve_summary = _solve_yam_scripted_bin_arm_pose(
+        profile=profile,
+        bundle=bundle,
+        q_start_arm=q_start_arm,
+        target_link_position_world=target_link_position,
+    )
+    summary: dict[str, Any] = {
+        "enabled": True,
+        "success": q_lift is not None,
+        "lift_mode": "scripted_minimum_jerk_joint_space",
+        "lift_height": float(lift_height),
+        "lift_frames": int(lift_frames),
+        "target_center_world": target_center.tolist(),
+        "desired_object_lift_world": desired_object_lift.tolist(),
+        "tool_minus_object_center_world_at_grasp": tool_center_offset.tolist(),
+        "target_link_position_world": target_link_position.tolist(),
+        "q_start_arm": q_start_arm.tolist(),
+        "solve": solve_summary,
+    }
+    if q_lift is None:
+        return None, summary
+    lift = _minimum_jerk_ramp(q_start_arm, q_lift.astype(np.float32), max(2, int(lift_frames))).astype(np.float32)
+    summary["q_target_arm"] = q_lift.astype(np.float32).tolist()
+    summary["total_frames"] = int(lift.shape[0])
+    return lift, summary
+
+
 def _default_clutter_obstacles() -> list[dict[str, Any]]:
     half_extents = [
         [0.040, 0.030, 0.030],
@@ -1359,6 +1413,14 @@ def parse_args() -> argparse.Namespace:
         help="For YAM pick_and_drop_in_bin, append a DEXTRAH scripted drop if cuRobo transport fails.",
     )
     parser.add_argument(
+        "--scripted_lift_mode",
+        choices=("fallback", "always", "never"),
+        default="fallback",
+        help="Use a scripted vertical lift for YAM after the cuRobo grasp segment.",
+    )
+    parser.add_argument("--scripted_lift_height", type=float, default=0.14)
+    parser.add_argument("--scripted_lift_frames", type=int, default=240)
+    parser.add_argument(
         "--scripted_bin_drop_y_offset",
         type=float,
         default=-0.08,
@@ -1660,7 +1722,36 @@ def main() -> None:
 
     trajectory_json: Path | None = None
     trajectory_start_summary: dict[str, Any] | None = None
+    scripted_lift_summary: dict[str, Any] = {"enabled": False, "reason": "not_requested"}
     scripted_place_summary: dict[str, Any] = {"enabled": False, "reason": "not_requested"}
+    if bool(success) and pregrasp_traj is not None and len(pregrasp_traj) > 0:
+        selected_tool_for_script = np.asarray(grasps_world[target_idx], dtype=float) @ _grasp_to_tool_matrix(robot_cfg)
+        lift_missing = lift_traj is None or len(lift_traj) == 0
+        use_scripted_lift = (
+            str(args.scripted_lift_mode) == "always"
+            or (str(args.scripted_lift_mode) == "fallback" and lift_missing)
+        )
+        if use_scripted_lift:
+            scripted_lift_traj, scripted_lift_summary = _make_scripted_yam_vertical_lift(
+                pregrasp_traj=pregrasp_traj,
+                profile=profile,
+                bundle=bundle,
+                target_center_world=target_center_world,
+                selected_tool_world=selected_tool_for_script,
+                lift_height=float(args.scripted_lift_height),
+                lift_frames=int(args.scripted_lift_frames),
+            )
+            scripted_lift_summary["mode"] = str(args.scripted_lift_mode)
+            scripted_lift_summary["replaced_curobo_lift"] = bool(not lift_missing)
+            if scripted_lift_traj is not None:
+                lift_traj = scripted_lift_traj
+        else:
+            scripted_lift_summary = {
+                "enabled": False,
+                "mode": str(args.scripted_lift_mode),
+                "reason": "curobo_lift_available" if not lift_missing else "disabled",
+            }
+
     if bool(success) and pregrasp_traj is not None and len(pregrasp_traj) > 0 and lift_traj is not None and len(lift_traj) > 0:
         task = get_task(str(args.plan_task))
         if hasattr(task, "MOVE_TO_BIN_FRAMES"):
@@ -1691,7 +1782,6 @@ def main() -> None:
             and bool(args.scripted_place_fallback)
             and not has_task_bin_transport
         ):
-            selected_tool_for_script = np.asarray(grasps_world[target_idx], dtype=float) @ _grasp_to_tool_matrix(robot_cfg)
             joint_traj, task_segments, scripted_place_summary = _append_scripted_yam_bin_drop(
                 joint_traj=joint_traj,
                 segments=task_segments,
@@ -1810,6 +1900,7 @@ def main() -> None:
         "plan_task": str(args.plan_task),
         "move_to_bin_frames": int(args.move_to_bin_frames),
         "drop_height_above_bin": float(args.drop_height_above_bin),
+        "scripted_lift": scripted_lift_summary,
         "scripted_place": scripted_place_summary,
         "planning_attempts": planning_attempts,
     }
