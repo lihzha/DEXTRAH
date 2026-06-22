@@ -9923,3 +9923,13 @@ Launch plan:
   `SETTLE_STEPS=100`, and the filtered Objaverse pool manifest.
 - Inspect the resulting video, validation metrics, object identities/poses, and
   dataset keys before launching the full 300-demo shard array.
+
+Smoke follow-up:
+- First smoke job `1039152` failed during Isaac asset loading because the
+  filtered pool manifest preserved the source manifest's relative
+  `asset_root="."`. After the manifest was written under the batch directory,
+  relative USD paths resolved under `/code/shards/...` inside the container
+  instead of the original Objaverse asset directory.
+- Patched `prepare_yam_objaverse_pool_manifest.py` to resolve the source
+  manifest asset root once and write that absolute root into the filtered pool
+  manifest before relaunching the smoke shard.

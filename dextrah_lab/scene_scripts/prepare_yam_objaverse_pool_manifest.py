@@ -92,6 +92,9 @@ def main() -> None:
     records = payload.get("objects")
     if not isinstance(records, list) or not records:
         raise ValueError(f"Expected non-empty objects list in {args.source_manifest}")
+    source_asset_root = Path(str(payload.get("asset_root") or ".")).expanduser()
+    if not source_asset_root.is_absolute():
+        source_asset_root = (args.source_manifest.parent / source_asset_root).resolve()
     prefer_keywords = tuple(item.strip().lower() for item in args.prefer_keywords.split(",") if item.strip())
     exclude_keywords = tuple(item.strip().lower() for item in args.exclude_keywords.split(",") if item.strip())
 
@@ -161,6 +164,7 @@ def main() -> None:
 
     output = dict(payload)
     output["format"] = "dextrah_yam_objaverse_collection_pool_v1"
+    output["asset_root"] = str(source_asset_root)
     output["source_manifest_path"] = str(args.source_manifest)
     output["selected_uuid_count"] = len(selected)
     output["objects"] = selected
