@@ -366,6 +366,16 @@ def _goal_bin_obstacles() -> list[dict[str, Any]]:
     ]
 
 
+def _goal_bin_center() -> list[float]:
+    bottom = 0.012
+    wall_h = 0.12
+    center_x = YAM_TABLE["center_x"] - 0.15
+    center_y = YAM_TABLE["center_y"] + 0.42
+    # Expose the bin pose at the top rim center for trajectory helpers. The
+    # actual collision model remains the five cuboids from _goal_bin_obstacles.
+    return [center_x, center_y, YAM_TABLE["surface_z"] + bottom + wall_h]
+
+
 def _default_clutter_obstacles() -> list[dict[str, Any]]:
     half_extents = [
         [0.040, 0.030, 0.030],
@@ -937,21 +947,51 @@ def _make_env_config(
         target_base_z = YAM_TABLE["surface_z"] + float(args.object_surface_offset)
         target_quat_xyzw = [0.0, 0.0, 0.0, 1.0]
     collision = _scene_collision(args)
-    cfg = {
-        "name": "dextrah_single_yam_graspgenx_curobo",
-        "assets": [
+    assets = [
+        {
+            "id": "table",
+            "type": "mesh_asset",
+            "params": {"mesh_file": str(table_mesh), "scale": 1.0},
+            "pose": {
+                "translation": [YAM_TABLE["center_x"], YAM_TABLE["center_y"], YAM_TABLE["center_z"]],
+                "quaternion_xyzw": [0.0, 0.0, 0.0, 1.0],
+            },
+            "support_label": "table_top",
+            "collision": "skip",
+        }
+    ]
+    if bool(args.include_goal_bin):
+        wall = 0.02
+        bottom = 0.012
+        inner_x = 0.36
+        inner_y = 0.22
+        wall_h = 0.12
+        assets.append(
             {
-                "id": "table",
-                "type": "mesh_asset",
-                "params": {"mesh_file": str(table_mesh), "scale": 1.0},
+                "id": "bin",
+                "type": "procedural_bin",
+                "params": {
+                    "width": inner_x + 2.0 * wall,
+                    "depth": inner_y + 2.0 * wall,
+                    "height": wall_h + bottom,
+                    "thickness": wall,
+                    "angle": 0.0,
+                    "use_primitives": True,
+                },
                 "pose": {
-                    "translation": [YAM_TABLE["center_x"], YAM_TABLE["center_y"], YAM_TABLE["center_z"]],
+                    "translation": _goal_bin_center(),
                     "quaternion_xyzw": [0.0, 0.0, 0.0, 1.0],
                 },
-                "support_label": "table_top",
+                # Keep the DEXTRAH-authored bin cuboids as the only cuRobo
+                # collision source so the planner and Isaac replay share the
+                # same floor/wall dimensions.
                 "collision": "skip",
             }
-        ],
+        )
+
+    cfg = {
+        "name": "dextrah_single_yam_graspgenx_curobo",
+        "assets": assets,
         "robot_base_pose": {
             "translation": list(YAM_ROBOT_BASE),
             "quaternion_xyzw": [0.0, 0.0, 0.0, 1.0],
@@ -1056,6 +1096,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--moe_obb_density", choices=("sparse", "dense", "none"), default="dense")
     parser.add_argument("--max_plan_attempts", type=int, default=32)
     parser.add_argument("--rank_grasps_by_confidence", action="store_true", default=True)
+    parser.add_argument(
+        "--plan_task",
+        choices=("pick_and_lift", "pick_and_drop_in_bin"),
+        default="pick_and_lift",
+        help="Post-grasp trajectory builder. pick_and_drop_in_bin appends a bin-drop segment.",
+    )
+    parser.add_argument("--move_to_bin_frames", type=int, default=360)
+    parser.add_argument("--drop_height_above_bin", type=float, default=0.18)
     parser.add_argument("--target_x", type=float, default=YAM_TARGET_XY[0])
     parser.add_argument("--target_y", type=float, default=YAM_TARGET_XY[1])
     parser.add_argument("--target_yaw_deg", type=float, default=0.0)
@@ -1079,6 +1127,39 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--hold_frames", type=int, default=60)
     parser.add_argument("--hold_after_close_frames", type=int, default=120)
     return parser.parse_args()
+
+
+def _annotate_trajectory_phases(path: Path, segments: list[tuple[str, int]]) -> None:
+    if not segments:
+        return
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    frames = payload.get("frames")
+    if not isinstance(frames, list):
+        return
+    idx = 0
+    normalized_segments: list[dict[str, Any]] = []
+    for phase, count in segments:
+        count_i = max(int(count), 0)
+        if count_i <= 0:
+            continue
+        start = idx
+        end = min(idx + count_i, len(frames))
+        for frame in frames[start:end]:
+            if isinstance(frame, dict):
+                frame["phase"] = str(phase)
+        normalized_segments.append({"phase": str(phase), "start": int(start), "count": int(end - start)})
+        idx = end
+        if idx >= len(frames):
+            break
+    if idx < len(frames):
+        phase = str(segments[-1][0])
+        for frame in frames[idx:]:
+            if isinstance(frame, dict):
+                frame["phase"] = phase
+        normalized_segments.append({"phase": phase, "start": int(idx), "count": int(len(frames) - idx)})
+    payload["segments"] = normalized_segments
+    payload["phase_source"] = "dextrah_task_segments"
+    path.write_text(json.dumps(_jsonable(payload), indent=2) + "\n", encoding="utf-8")
 
 
 def main() -> None:
@@ -1320,7 +1401,11 @@ def main() -> None:
     trajectory_json: Path | None = None
     trajectory_start_summary: dict[str, Any] | None = None
     if bool(success) and pregrasp_traj is not None and len(pregrasp_traj) > 0 and lift_traj is not None and len(lift_traj) > 0:
-        task = get_task("pick_and_lift")
+        task = get_task(str(args.plan_task))
+        if hasattr(task, "MOVE_TO_BIN_FRAMES"):
+            task.MOVE_TO_BIN_FRAMES = max(2, int(args.move_to_bin_frames))
+        if hasattr(task, "DROP_HEIGHT_ABOVE_BIN"):
+            task.DROP_HEIGHT_ABOVE_BIN = float(args.drop_height_above_bin)
         task_result = task.plan_actions(
             planner=planner,
             bundle=bundle,
@@ -1391,6 +1476,7 @@ def main() -> None:
             output_path=trajectory_json,
             fps=int(args.sim_fps),
         )
+        _annotate_trajectory_phases(trajectory_json, task_result.segments)
 
     overlay_json = run_dir / "grasp_pose_overlay.json"
     grasp_to_tool = _grasp_to_tool_matrix(robot_cfg)
@@ -1433,6 +1519,9 @@ def main() -> None:
         },
         "trajectory_start": trajectory_start_summary,
         "trajectory_json": None if trajectory_json is None else str(trajectory_json),
+        "plan_task": str(args.plan_task),
+        "move_to_bin_frames": int(args.move_to_bin_frames),
+        "drop_height_above_bin": float(args.drop_height_above_bin),
         "planning_attempts": planning_attempts,
     }
     _write_json(overlay_json, overlay_payload)
@@ -1456,6 +1545,9 @@ def main() -> None:
             "success": bool(success),
             "trajectory_start": trajectory_start_summary,
             "target_center_world": target_center_world,
+            "plan_task": str(args.plan_task),
+            "move_to_bin_frames": int(args.move_to_bin_frames),
+            "drop_height_above_bin": float(args.drop_height_above_bin),
             "grasp_filter": grasp_filter_summary,
             "planning_attempts": planning_attempts,
         },

@@ -9718,3 +9718,40 @@ Artifacts:
   `/home/lzha/code/cluster_results/l401/yam_joint_tracking_diagnostic/summary.csv`
 - Viewer URL:
   `http://localhost:8765/view?path=cluster_results/l401/yam_joint_tracking_diagnostic/index.html`
+
+## 2026-06-22T07:23:57Z - YAM GraspGenX/cuRobo Pick-Place Dataset Path
+
+Goal:
+- Start generating YAM demonstration trajectories where GraspGenX proposes the
+  grasp, cuRobo plans the grasping motion, and the replay records RGB plus full
+  state streams for BC.
+- First target is a single-object pick-and-drop-into-bin trajectory with video
+  inspection before scaling to multiple non-overlapping initialized objects.
+
+Changes:
+- Restored the current validated YAM-damped actuator defaults instead of the
+  direct Franka-PD experiment, because the direct Franka values showed
+  pre-contact static-command shaking.
+- Extended `plan_yam_graspgenx_curobo.py` with `--plan_task
+  pick_and_drop_in_bin`, procedural bin metadata, and trajectory phase
+  annotation.
+- Extended `render_tabletop_clutter_settle_video.py` with
+  `single_yam_trajectory` replay mode and `trajectory_dataset.npz` export:
+  RGB frames, policy/critic observations, commanded and actual joint states,
+  TCP/hold poses, target object root/center states, clutter slot root states,
+  gripper width, clearance, phase labels, and termination flags.
+- Extended the l401 render wrapper to pass dataset-recording options through
+  the Isaac Lab container.
+
+Validation:
+- `python3 -m py_compile dextrah_lab/assets/yam/bimanual_yam.py
+  dextrah_lab/scene_scripts/plan_yam_graspgenx_curobo.py
+  dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py`
+- `bash -n cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh`
+- `git diff --check`
+
+Next:
+- Commit and deploy this exact revision to an agent-owned l401 worktree.
+- Generate a one-object stable scene, plan a bin-drop trajectory, render it
+  dynamically with grasp overlay and dataset recording, inspect video/metrics,
+  then iterate until the pick, lift, transport, and drop are BC-learnable.

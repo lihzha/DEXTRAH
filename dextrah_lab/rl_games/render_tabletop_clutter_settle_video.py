@@ -33,7 +33,12 @@ parser.add_argument("--settle_steps", type=int, default=180)
 parser.add_argument("--capture_interval", type=int, default=2)
 parser.add_argument("--fps", type=int, default=30)
 parser.add_argument("--video_seconds", type=float, default=None)
-parser.add_argument("--demo_mode", type=str, default="settle", choices=("settle", "single_yam_rejected_path"))
+parser.add_argument(
+    "--demo_mode",
+    type=str,
+    default="settle",
+    choices=("settle", "single_yam_rejected_path", "single_yam_trajectory"),
+)
 parser.add_argument("--demo_steps", type=int, default=180)
 parser.add_argument("--demo_high_hold_z", type=float, default=0.16)
 parser.add_argument("--demo_low_hold_z", type=float, default=-0.02)
@@ -65,6 +70,11 @@ parser.add_argument("--demo_trajectory_velocity_targets", action=argparse.Boolea
 parser.add_argument("--demo_trajectory_velocity_target_scale", type=float, default=1.0)
 parser.add_argument("--demo_start_blend_steps", type=int, default=36)
 parser.add_argument("--stable_scene_path", type=str, default=None)
+parser.add_argument("--record_trajectory_dataset", action=argparse.BooleanOptionalAction, default=False)
+parser.add_argument("--trajectory_dataset_path", type=str, default=None)
+parser.add_argument("--record_rgb_width", type=int, default=160)
+parser.add_argument("--record_rgb_height", type=int, default=120)
+parser.add_argument("--record_rgb_interval", type=int, default=1)
 parser.add_argument("--demo_table_rejection_target_fraction", type=float, default=0.82)
 parser.add_argument("--render_warmup_frames", type=int, default=2)
 parser.add_argument("--render_width", type=int, default=None)
@@ -278,6 +288,21 @@ def _capture_frame(env, frame_dir: Path, frame_idx: int) -> tuple[np.ndarray, st
     frame_path = frame_dir / f"frame_{frame_idx:04d}.png"
     imageio.imwrite(frame_path, frame)
     return frame, str(frame_path)
+
+
+def _resize_rgb_nearest(frame: np.ndarray, height: int, width: int) -> np.ndarray:
+    height = max(int(height), 1)
+    width = max(int(width), 1)
+    frame = np.asarray(frame)
+    if frame.shape[0] == height and frame.shape[1] == width:
+        return frame.astype(np.uint8, copy=False)
+    y_idx = np.linspace(0, frame.shape[0] - 1, height).round().astype(np.int64)
+    x_idx = np.linspace(0, frame.shape[1] - 1, width).round().astype(np.int64)
+    return frame[y_idx[:, None], x_idx[None, :], :].astype(np.uint8, copy=False)
+
+
+def _tensor_numpy(value: torch.Tensor, dtype=np.float32) -> np.ndarray:
+    return value.detach().cpu().numpy().astype(dtype, copy=False)
 
 
 def _tensor_list(value: torch.Tensor):
@@ -2065,6 +2090,8 @@ def _single_yam_rejected_path_row(
         "tcp_pos": _tensor_list(task_env.tcp_pos),
         "hold_pos": _tensor_list(task_env.hold_pos),
         "target_object_pos": _tensor_list(task_env.cube_pos),
+        "target_object_quat": _tensor_list(task_env.cube_quat),
+        "target_object_velocity": _tensor_list(task_env.cube_vel),
         "gripper_width": _tensor_list(task_env.gripper_width),
         "finger_table_clearance": _tensor_list(clearance),
         "finger_table_penetration_margin": penetration_margin,
@@ -2093,6 +2120,120 @@ def _single_yam_rejected_path_row(
     if trajectory_path is not None:
         row["trajectory_path"] = str(trajectory_path)
     return row
+
+
+def _clutter_root_state(task_env, attr: str, dim: int) -> np.ndarray:
+    clutter_objects = list(getattr(task_env, "_tabletop_clutter_objects", []))
+    values: list[np.ndarray] = []
+    env_origins = getattr(task_env.scene, "env_origins", None)
+    for clutter_object in clutter_objects:
+        tensor = getattr(getattr(clutter_object, "data", None), attr, None)
+        if not isinstance(tensor, torch.Tensor):
+            continue
+        if attr == "root_pos_w" and isinstance(env_origins, torch.Tensor):
+            tensor = tensor - env_origins
+        values.append(_tensor_numpy(tensor))
+    if not values:
+        return np.zeros((0, int(task_env.num_envs), int(dim)), dtype=np.float32)
+    return np.stack(values, axis=0).astype(np.float32, copy=False)
+
+
+def _demo_dataset_sample(
+    task_env,
+    *,
+    step_idx: int,
+    phase: str,
+    actions: torch.Tensor,
+    terminated: torch.Tensor,
+    truncated: torch.Tensor,
+    joint_position: torch.Tensor | None,
+    joint_velocity: torch.Tensor | None,
+    source_frame_idx: int | None,
+) -> dict[str, np.ndarray | str | int]:
+    robot = getattr(task_env, "_robot", None)
+    env_origins = task_env.scene.env_origins
+    target_root_pos = task_env._cube.data.root_pos_w - env_origins
+    observations = task_env._get_observations()
+    done = torch.logical_or(terminated, truncated)
+    if robot is not None:
+        actual_joint_position = _tensor_numpy(robot.data.joint_pos)
+        actual_joint_velocity = _tensor_numpy(robot.data.joint_vel)
+        command_shape = robot.data.joint_pos.shape
+    else:
+        actual_joint_position = np.zeros((int(task_env.num_envs), 0), dtype=np.float32)
+        actual_joint_velocity = np.zeros((int(task_env.num_envs), 0), dtype=np.float32)
+        command_shape = (int(task_env.num_envs), 0)
+    if joint_position is None:
+        command_joint_position = np.full(command_shape, np.nan, dtype=np.float32)
+    else:
+        command_joint_position = _tensor_numpy(joint_position)
+    if joint_velocity is None:
+        command_joint_velocity = np.full(command_shape, np.nan, dtype=np.float32)
+    else:
+        command_joint_velocity = _tensor_numpy(joint_velocity)
+    return {
+        "step_idx": int(step_idx),
+        "phase": str(phase),
+        "source_frame_idx": -1 if source_frame_idx is None else int(source_frame_idx),
+        "action": _tensor_numpy(actions),
+        "command_joint_position": command_joint_position,
+        "command_joint_velocity": command_joint_velocity,
+        "actual_joint_position": actual_joint_position,
+        "actual_joint_velocity": actual_joint_velocity,
+        "policy_obs": _tensor_numpy(observations["policy"]),
+        "critic_obs": _tensor_numpy(observations["critic"]),
+        "tcp_pos": _tensor_numpy(task_env.tcp_pos),
+        "tcp_quat": _tensor_numpy(task_env.tcp_quat),
+        "hold_pos": _tensor_numpy(task_env.hold_pos),
+        "target_object_center_pos": _tensor_numpy(task_env.cube_pos),
+        "target_object_quat": _tensor_numpy(task_env.cube_quat),
+        "target_object_velocity": _tensor_numpy(task_env.cube_vel),
+        "target_root_pos": _tensor_numpy(target_root_pos),
+        "target_root_quat": _tensor_numpy(task_env._cube.data.root_quat_w),
+        "target_root_velocity": _tensor_numpy(task_env._cube.data.root_vel_w),
+        "clutter_root_pos": _clutter_root_state(task_env, "root_pos_w", 3),
+        "clutter_root_quat": _clutter_root_state(task_env, "root_quat_w", 4),
+        "clutter_root_velocity": _clutter_root_state(task_env, "root_vel_w", 6),
+        "gripper_width": _tensor_numpy(task_env.gripper_width),
+        "finger_table_clearance": _tensor_numpy(task_env.finger_table_clearance),
+        "terminated": _tensor_numpy(terminated, dtype=np.bool_),
+        "truncated": _tensor_numpy(truncated, dtype=np.bool_),
+        "done": _tensor_numpy(done, dtype=np.bool_),
+    }
+
+
+def _append_demo_dataset_sample(dataset: dict[str, list[object]], sample: dict[str, object]) -> None:
+    for key, value in sample.items():
+        dataset.setdefault(key, []).append(value)
+
+
+def _write_demo_dataset_npz(
+    path: Path,
+    *,
+    dataset: dict[str, list[object]],
+    rgb_frames: list[np.ndarray],
+    rgb_step_idx: list[int],
+    metadata: dict[str, object],
+) -> dict[str, object]:
+    arrays: dict[str, np.ndarray] = {}
+    for key, values in dataset.items():
+        if key == "phase":
+            arrays[key] = np.asarray(values, dtype="<U96")
+        elif key in ("step_idx", "source_frame_idx"):
+            arrays[key] = np.asarray(values, dtype=np.int64)
+        else:
+            arrays[key] = np.asarray(values)
+    arrays["rgb"] = np.asarray(rgb_frames, dtype=np.uint8)
+    arrays["rgb_step_idx"] = np.asarray(rgb_step_idx, dtype=np.int64)
+    arrays["metadata_json"] = np.asarray(json.dumps(_jsonable(metadata), indent=2))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(path, **arrays)
+    return {
+        "path": str(path),
+        "state_steps": int(len(dataset.get("step_idx", []))),
+        "rgb_frames": int(len(rgb_frames)),
+        "keys": sorted(arrays.keys()),
+    }
 
 
 def _row_max_abs_summary(rows: list[dict[str, object]], key: str) -> dict[str, object]:
@@ -2153,8 +2294,14 @@ def main() -> None:
         if args_cli.stable_scene_path
         else output_dir / "stable_scene.json"
     )
+    trajectory_dataset_path = (
+        Path(args_cli.trajectory_dataset_path).expanduser().resolve()
+        if args_cli.trajectory_dataset_path
+        else output_dir / "trajectory_dataset.npz"
+    )
     stable_scene_input_path = stable_scene_path if stable_scene_path.is_file() else None
     stable_scene_input = _load_stable_scene(stable_scene_input_path)
+    single_yam_demo_enabled = args_cli.demo_mode in ("single_yam_rejected_path", "single_yam_trajectory")
 
     objaverse_textured_summary = None
     if args_cli.objaverse_textured_manifest_path:
@@ -2479,13 +2626,17 @@ def main() -> None:
     demo_step_rows: list[dict[str, object]] = []
     first_rejected_step: int | None = None
     first_done_step: int | None = None
+    record_trajectory_dataset = bool(args_cli.record_trajectory_dataset) and single_yam_demo_enabled
+    trajectory_dataset: dict[str, list[object]] = {}
+    trajectory_rgb_frames: list[np.ndarray] = []
+    trajectory_rgb_step_idx: list[int] = []
     demo_trajectory: dict[str, object] | None = None
     demo_trajectory_path: Path | None = None
     demo_trajectory_start_error: dict[str, object] | None = None
     demo_trajectory_timing_summary: dict[str, object] | None = None
     demo_start_joint_pos = None
     demo_table_rejection_target_joint_pos = None
-    if args_cli.demo_mode == "single_yam_rejected_path":
+    if single_yam_demo_enabled:
         if robot is not None:
             demo_start_joint_pos = robot.data.joint_pos.detach().clone()
         trajectory_source = str(args_cli.demo_trajectory_source)
@@ -2622,7 +2773,7 @@ def main() -> None:
             ),
             flush=True,
         )
-    elif args_cli.demo_mode == "single_yam_rejected_path":
+    elif single_yam_demo_enabled:
         for step_idx in range(1, demo_steps + 1):
             joint_position = None
             joint_velocity = None
@@ -2690,6 +2841,28 @@ def main() -> None:
                 trajectory_path=None if demo_trajectory_path is None else str(demo_trajectory_path),
             )
             demo_step_rows.append(row)
+            if record_trajectory_dataset:
+                sample = _demo_dataset_sample(
+                    task_env,
+                    step_idx=step_idx,
+                    phase=phase,
+                    actions=actions,
+                    terminated=terminated,
+                    truncated=truncated,
+                    joint_position=joint_position,
+                    joint_velocity=joint_velocity,
+                    source_frame_idx=source_frame_idx,
+                )
+                _append_demo_dataset_sample(trajectory_dataset, sample)
+                record_rgb_interval = max(int(args_cli.record_rgb_interval), 1)
+                if step_idx == 1 or step_idx == demo_steps or step_idx % record_rgb_interval == 0:
+                    rgb = _resize_rgb_nearest(
+                        _frame_array(env.render()),
+                        int(args_cli.record_rgb_height),
+                        int(args_cli.record_rgb_width),
+                    )
+                    trajectory_rgb_frames.append(rgb.copy())
+                    trajectory_rgb_step_idx.append(int(step_idx))
             rejected = torch.as_tensor(
                 task_env.finger_table_clearance
                 < float(getattr(task_env.cfg, "finger_table_penetration_termination_margin", -0.008)),
@@ -2787,6 +2960,46 @@ def main() -> None:
         )
     _write_video(video_path, frames, int(args_cli.fps))
     print(json.dumps({"event": "video_written", "path": str(video_path), "frame_count": len(frames)}), flush=True)
+    trajectory_dataset_summary: dict[str, object] = {
+        "enabled": bool(record_trajectory_dataset),
+        "requested": bool(args_cli.record_trajectory_dataset),
+        "path": str(trajectory_dataset_path),
+        "record_rgb_width": int(args_cli.record_rgb_width),
+        "record_rgb_height": int(args_cli.record_rgb_height),
+        "record_rgb_interval": int(args_cli.record_rgb_interval),
+        "reason": None if record_trajectory_dataset else "not_requested_or_not_single_yam_trajectory",
+    }
+    if record_trajectory_dataset:
+        trajectory_dataset_summary = _write_demo_dataset_npz(
+            trajectory_dataset_path,
+            dataset=trajectory_dataset,
+            rgb_frames=trajectory_rgb_frames,
+            rgb_step_idx=trajectory_rgb_step_idx,
+            metadata={
+                "task": str(args_cli.task),
+                "seed": int(args_cli.seed),
+                "demo_mode": str(args_cli.demo_mode),
+                "trajectory_source": str(args_cli.demo_trajectory_source),
+                "trajectory_path": None if demo_trajectory_path is None else str(demo_trajectory_path),
+                "stable_scene_path": str(stable_scene_path),
+                "video_path": str(video_path),
+                "fps": int(args_cli.fps),
+                "control_dt_s": float(_env_control_dt(task_env)),
+                "demo_steps": int(demo_steps),
+                "source_timing": demo_trajectory_timing_summary,
+            },
+        )
+        trajectory_dataset_summary.update(
+            {
+                "enabled": True,
+                "requested": True,
+                "record_rgb_width": int(args_cli.record_rgb_width),
+                "record_rgb_height": int(args_cli.record_rgb_height),
+                "record_rgb_interval": int(args_cli.record_rgb_interval),
+                "reason": None,
+            }
+        )
+        print(json.dumps({"event": "trajectory_dataset_written", **trajectory_dataset_summary}), flush=True)
 
     metrics = {
         "task": args_cli.task,
@@ -2800,7 +3013,7 @@ def main() -> None:
         "video_seconds": None if args_cli.video_seconds is None else float(args_cli.video_seconds),
         "target_frame_count": target_frame_count,
         "single_yam_rejected_path_demo": {
-            "enabled": args_cli.demo_mode == "single_yam_rejected_path",
+            "enabled": bool(single_yam_demo_enabled),
             "high_hold_z": float(args_cli.demo_high_hold_z),
             "low_hold_z": float(args_cli.demo_low_hold_z),
             "trajectory_source": str(args_cli.demo_trajectory_source),
@@ -2835,6 +3048,7 @@ def main() -> None:
             "joint_tracking_error_summary": _row_scalar_summary(demo_step_rows, "joint_tracking_error_max_abs"),
             "step_rows": demo_step_rows,
         },
+        "trajectory_dataset": trajectory_dataset_summary,
         "camera_eye": [float(v) for v in eye],
         "camera_target": [float(v) for v in target],
         "app_rendering_mode": getattr(args_cli, "rendering_mode", None),
