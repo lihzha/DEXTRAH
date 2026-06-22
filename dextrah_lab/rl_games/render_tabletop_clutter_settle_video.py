@@ -83,6 +83,12 @@ parser.add_argument("--freeze_object_roots_for_video", action=argparse.BooleanOp
 parser.add_argument("--repeat_initial_frame_for_video", action=argparse.BooleanOptionalAction, default=False)
 parser.add_argument("--visual_object_overlay", action=argparse.BooleanOptionalAction, default=False)
 parser.add_argument("--visual_object_overlay_z_offset", type=float, default=0.0)
+parser.add_argument(
+    "--hide_robot_debug_sites",
+    action=argparse.BooleanOptionalAction,
+    default=True,
+    help="Hide visible MuJoCo robot site prims, such as YAM tcp_site/grasp_site, from rendered RGB.",
+)
 parser.add_argument("--grasp_pose_overlay_path", type=str, default=None)
 parser.add_argument("--grasp_pose_overlay_max_count", type=int, default=8)
 parser.add_argument("--grasp_pose_overlay_axis_length", type=float, default=0.075)
@@ -323,6 +329,34 @@ def _jsonable(value):
     if isinstance(value, (list, tuple)):
         return [_jsonable(v) for v in value]
     return value
+
+
+def _hide_robot_debug_site_prims(*, site_names: tuple[str, ...] = ("tcp_site", "grasp_site")) -> dict[str, object]:
+    stage = omni.usd.get_context().get_stage()
+    summary: dict[str, object] = {
+        "enabled": True,
+        "site_names": list(site_names),
+        "hidden_count": 0,
+        "hidden_paths": [],
+    }
+    if stage is None:
+        summary["reason"] = "missing_stage"
+        return summary
+
+    hidden_paths: list[str] = []
+    site_name_set = set(site_names)
+    for prim in stage.Traverse():
+        if prim.GetName() not in site_name_set:
+            continue
+        imageable = UsdGeom.Imageable(prim)
+        if not imageable:
+            continue
+        imageable.MakeInvisible()
+        hidden_paths.append(str(prim.GetPath()))
+
+    summary["hidden_count"] = len(hidden_paths)
+    summary["hidden_paths"] = hidden_paths
+    return summary
 
 
 def _quat_wxyz_to_matrix(q: list[float]) -> np.ndarray:
@@ -2727,6 +2761,20 @@ def main() -> None:
     print(json.dumps({"event": "reset_start"}), flush=True)
     env.reset(seed=int(args_cli.seed))
     print(json.dumps({"event": "reset_done"}), flush=True)
+    robot_debug_site_visibility_summary = {"enabled": False}
+    if bool(args_cli.hide_robot_debug_sites):
+        robot_debug_site_visibility_summary = _hide_robot_debug_site_prims()
+        task_env.sim.forward()
+        print(
+            json.dumps(
+                {
+                    "event": "robot_debug_sites_hidden",
+                    "hidden_count": robot_debug_site_visibility_summary.get("hidden_count", 0),
+                    "hidden_paths": robot_debug_site_visibility_summary.get("hidden_paths", []),
+                }
+            ),
+            flush=True,
+        )
     for _ in range(max(int(args_cli.render_warmup_frames), 0)):
         task_env.sim.render()
         env.render()
@@ -3308,6 +3356,7 @@ def main() -> None:
         },
         "freeze_object_roots_for_video": bool(args_cli.freeze_object_roots_for_video),
         "repeat_initial_frame_for_video": bool(args_cli.repeat_initial_frame_for_video),
+        "robot_debug_site_visibility": robot_debug_site_visibility_summary,
         "visual_object_overlay": {
             "enabled": bool(args_cli.visual_object_overlay),
             "z_offset": float(args_cli.visual_object_overlay_z_offset),
