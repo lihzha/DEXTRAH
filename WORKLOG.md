@@ -10010,3 +10010,6 @@ Smoke follow-up:
 - Second throughput adjustment: after the run reached 19 accepted demos from
   51 started attempts, increased job `1039183` throttle from 8 to 12; shards
   8-11 started on `pool0-00012` and `pool0-00041`.
+- Third throughput adjustment: after 26 accepted demos from 75 started
+  attempts, increased job `1039183` throttle from 12 to 16; shards 12-15
+  started on `pool0-00002`, `pool0-00017`, and `pool0-00041`.
