@@ -9602,3 +9602,27 @@ Artifacts:
 - Viewer URLs:
   `http://localhost:8765/view?path=cluster_results/l401/single_yam_pd_hold_damped_default_seed2_28ccd85a_20260622T0324Z/single_yam_pd_hold_damped_default.mp4`
   `http://localhost:8765/view?path=cluster_results/l401/yam_hold_damped_default_final_hold_sheet.png`
+
+## 2026-06-22T05:33:14Z - Single YAM Franka PD Defaults
+
+Goal:
+- Apply the known-good DEXTRAH Franka PD values directly to the current
+  Single-YAM robot defaults and validate the same grasp/lift demo.
+
+Mapping:
+- Franka high-PD arm uses `Kp=400`, `Kd=80`; map this to all six YAM arm
+  joints.
+- Franka shoulder effort `87` maps to YAM joints `1-4`; Franka forearm effort
+  `12` maps to YAM joints `5-6`.
+- DEXTRAH Franka finger override uses effort `1000`, stiffness `4000`, damping
+  `400`; map this directly to the two YAM finger joints.
+
+Change:
+- Updated `SINGLE_YAM_CFG` in `dextrah_lab/assets/yam/bimanual_yam.py`.
+
+Validation plan:
+- Run local `py_compile`, wrapper `bash -n`, and `git diff --check`.
+- Commit/push the config change.
+- Deploy the exact commit to the l401 agent worktree.
+- Run the same no-override seed-2 dynamic replay validation used for the
+  previous default, then inspect metrics, video, and final-hold frames.
