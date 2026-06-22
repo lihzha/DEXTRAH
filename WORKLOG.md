@@ -9626,3 +9626,48 @@ Validation plan:
 - Deploy the exact commit to the l401 agent worktree.
 - Run the same no-override seed-2 dynamic replay validation used for the
   previous default, then inspect metrics, video, and final-hold frames.
+
+Validation result:
+- Commit `5e8aea275c18efe5592239fc355e627838307f37`
+  (`Use Franka PD values for single YAM`) was pushed to
+  `codex/yam-rejected-demo`.
+- l401 GitHub fetch was still blocked by missing SSH credentials, so the exact
+  commit was transferred as a Git bundle and fetched into
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-collision-overlay-39915731`.
+- l401 no-override validation job `1038945`
+  (`single_yam_franka_pd_default_seed2_5e8aea27_20260622T0534Z`) completed
+  successfully with exit code `0:0`.
+- Slurm log confirmed all `YAM_ARM_*` and `YAM_GRIPPER_*` overrides were unset,
+  so the render exercised the Franka-mapped asset defaults.
+- Final video metadata: `1280x720`, `12` FPS, `193` frames,
+  `16.083333` seconds.
+- Final dynamic replay metrics:
+  - `first_rejected_step`: `null`
+  - max/mean joint tracking error: `0.367326 / 0.062028 rad`
+  - final held arm max/mean absolute velocity:
+    `1.474969 / 0.383300 rad/s`
+  - final held finger max/mean absolute velocity:
+    `0.413127 / 0.364168 rad/s`
+  - target lift: `0.188389 m`, XY drift `0.015385 m`
+  - final target speed: `0.449073 m/s`, angular speed `10.921917 rad/s`
+  - minimum finger/table clearance: `0.057757 m`
+- Compared with the previous YAM-damped default at `28ccd85a`, direct Franka
+  values regress the held arm max velocity from `0.149246` to
+  `1.474969 rad/s`, held finger max velocity from `0.110583` to
+  `0.413127 rad/s`, and final target angular speed from `0.835306` to
+  `10.921917 rad/s`.
+- Frame inspection and final-hold contact sheet showed positive table clearance
+  and a completed lift, but the metrics expose substantial residual contact
+  motion. Direct Franka PD is therefore implemented as requested, but it is not
+  the recommended setting if the objective is the smoothest YAM grasp/lift.
+
+Artifacts:
+- Franka-PD validation video:
+  `/home/lzha/code/cluster_results/l401/single_yam_franka_pd_default_seed2_5e8aea27_20260622T0534Z/single_yam_franka_pd_default.mp4`
+- Franka-PD metrics:
+  `/home/lzha/code/cluster_results/l401/single_yam_franka_pd_default_seed2_5e8aea27_20260622T0534Z/metrics.json`
+- Franka-PD final hold contact sheet:
+  `/home/lzha/code/cluster_results/l401/yam_franka_pd_final_hold_sheet.png`
+- Viewer URLs:
+  `http://localhost:8765/view?path=cluster_results/l401/single_yam_franka_pd_default_seed2_5e8aea27_20260622T0534Z/single_yam_franka_pd_default.mp4`
+  `http://localhost:8765/view?path=cluster_results/l401/yam_franka_pd_final_hold_sheet.png`
