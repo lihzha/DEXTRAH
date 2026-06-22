@@ -1165,9 +1165,7 @@ def _load_stable_scene(path: Path | None) -> dict[str, object] | None:
     return payload
 
 
-def _stable_scene_target_manifest(stable_scene: dict[str, object], output_dir: Path) -> Path | None:
-    target = stable_scene.get("target") if isinstance(stable_scene.get("target"), dict) else {}
-    asset = target.get("asset") if isinstance(target.get("asset"), dict) else {}
+def _stable_scene_asset_record(asset: dict[str, object]) -> dict[str, object] | None:
     uuid = str(asset.get("uuid") or "")
     usd_path = str(asset.get("usd_path") or "")
     if not uuid or not usd_path:
@@ -1194,15 +1192,65 @@ def _stable_scene_target_manifest(stable_scene: dict[str, object], output_dir: P
         value = asset.get(key)
         if value not in (None, ""):
             record[key] = value
+    return record
 
+
+def _write_stable_scene_asset_manifest(
+    records: list[dict[str, object]],
+    output_dir: Path,
+    *,
+    filename: str,
+    source: str,
+) -> Path | None:
+    if not records:
+        return None
     manifest = {
         "asset_root": "/",
-        "objects": [record],
-        "source": "stable_scene_target",
+        "objects": records,
+        "source": source,
     }
-    manifest_path = output_dir / "stable_scene_target_manifest.json"
+    manifest_path = output_dir / filename
     manifest_path.write_text(json.dumps(_jsonable(manifest), indent=2), encoding="utf-8")
     return manifest_path
+
+
+def _stable_scene_asset_manifests(stable_scene: dict[str, object], output_dir: Path) -> dict[str, object]:
+    target = stable_scene.get("target") if isinstance(stable_scene.get("target"), dict) else {}
+    target_asset = target.get("asset") if isinstance(target.get("asset"), dict) else {}
+    target_record = _stable_scene_asset_record(target_asset)
+
+    clutter_records: list[dict[str, object]] = []
+    clutter = stable_scene.get("clutter") if isinstance(stable_scene.get("clutter"), list) else []
+    for entry in clutter:
+        if not isinstance(entry, dict):
+            continue
+        asset = entry.get("asset") if isinstance(entry.get("asset"), dict) else {}
+        record = _stable_scene_asset_record(asset)
+        if record is not None:
+            clutter_records.append(record)
+
+    target_manifest_path = (
+        _write_stable_scene_asset_manifest(
+            [target_record],
+            output_dir,
+            filename="stable_scene_target_manifest.json",
+            source="stable_scene_target",
+        )
+        if target_record is not None
+        else None
+    )
+    clutter_manifest_path = _write_stable_scene_asset_manifest(
+        clutter_records,
+        output_dir,
+        filename="stable_scene_clutter_manifest.json",
+        source="stable_scene_clutter",
+    )
+    return {
+        "target_manifest_path": target_manifest_path,
+        "target_uuid": "" if target_record is None else str(target_record.get("uuid") or ""),
+        "clutter_manifest_path": clutter_manifest_path,
+        "clutter_uuids": [str(record.get("uuid") or "") for record in clutter_records],
+    }
 
 
 def _restore_robot_state_from_stable_scene(task_env, stable_scene: dict[str, object]) -> dict[str, object]:
@@ -2427,21 +2475,43 @@ def main() -> None:
         )
 
     if stable_scene_input is not None and single_yam_demo_enabled:
-        target_manifest_path = _stable_scene_target_manifest(stable_scene_input, output_dir)
+        stable_scene_manifests = _stable_scene_asset_manifests(stable_scene_input, output_dir)
+        target_manifest_path = stable_scene_manifests.get("target_manifest_path")
         if target_manifest_path is not None:
             args_cli.object_asset_manifest_path = str(target_manifest_path)
             args_cli.max_objects = 1
             args_cli.object_asset_assignment = "round_robin"
             if args_cli.object_validate_usd_bounds is None:
                 args_cli.object_validate_usd_bounds = False
-            target = stable_scene_input.get("target") if isinstance(stable_scene_input.get("target"), dict) else {}
-            asset = target.get("asset") if isinstance(target.get("asset"), dict) else {}
             print(
                 json.dumps(
                     {
                         "event": "stable_scene_target_manifest_prepared",
                         "manifest_path": str(target_manifest_path),
-                        "uuid": str(asset.get("uuid") or ""),
+                        "uuid": str(stable_scene_manifests.get("target_uuid") or ""),
+                    }
+                ),
+                flush=True,
+            )
+        clutter_manifest_path = stable_scene_manifests.get("clutter_manifest_path")
+        clutter_uuids = [
+            str(uuid)
+            for uuid in stable_scene_manifests.get("clutter_uuids", [])
+            if str(uuid)
+        ]
+        if clutter_manifest_path is not None:
+            args_cli.tabletop_clutter_asset_manifest_path = str(clutter_manifest_path)
+            args_cli.tabletop_clutter_object_count = len(clutter_uuids)
+            args_cli.tabletop_clutter_max_objects = len(clutter_uuids)
+            args_cli.tabletop_clutter_asset_assignment = "round_robin"
+            if args_cli.tabletop_clutter_validate_usd_bounds is None:
+                args_cli.tabletop_clutter_validate_usd_bounds = False
+            print(
+                json.dumps(
+                    {
+                        "event": "stable_scene_clutter_manifest_prepared",
+                        "manifest_path": str(clutter_manifest_path),
+                        "uuids": clutter_uuids,
                     }
                 ),
                 flush=True,
@@ -2612,6 +2682,39 @@ def main() -> None:
                     "event": "stable_scene_target_asset_active",
                     "expected_uuid": expected_uuid,
                     "active_uuid": active_uuid,
+                }
+            ),
+            flush=True,
+        )
+        expected_clutter_uuids = []
+        stable_clutter = stable_scene_input.get("clutter") if isinstance(stable_scene_input.get("clutter"), list) else []
+        for entry in stable_clutter:
+            if not isinstance(entry, dict):
+                continue
+            clutter_asset = entry.get("asset") if isinstance(entry.get("asset"), dict) else {}
+            expected_clutter_uuids.append(str(clutter_asset.get("uuid") or ""))
+        active_clutter_uuids: list[str] = []
+        clutter_assets = list(getattr(task_env, "_tabletop_clutter_assets", []))
+        clutter_indices = getattr(task_env, "tabletop_clutter_asset_index", None)
+        if clutter_assets and clutter_indices is not None:
+            for slot_idx in range(min(len(expected_clutter_uuids), int(clutter_indices.shape[1]))):
+                active_idx = int(clutter_indices[0, slot_idx].detach().cpu().item())
+                active_clutter_uuids.append(str(clutter_assets[active_idx].get("uuid") or ""))
+        for slot_idx, expected_uuid in enumerate(expected_clutter_uuids):
+            if not expected_uuid:
+                continue
+            active_uuid = active_clutter_uuids[slot_idx] if slot_idx < len(active_clutter_uuids) else ""
+            if active_uuid and active_uuid != expected_uuid:
+                raise RuntimeError(
+                    "Stable-scene clutter UUID mismatch at slot "
+                    f"{slot_idx}: expected {expected_uuid}, active environment has {active_uuid}"
+                )
+        print(
+            json.dumps(
+                {
+                    "event": "stable_scene_clutter_assets_active",
+                    "expected_uuids": expected_clutter_uuids,
+                    "active_uuids": active_clutter_uuids,
                 }
             ),
             flush=True,
