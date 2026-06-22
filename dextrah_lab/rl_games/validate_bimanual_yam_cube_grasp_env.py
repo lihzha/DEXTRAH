@@ -8,9 +8,13 @@ import json
 import math
 from pathlib import Path
 import sys
+import xml.etree.ElementTree as ET
 
 from isaaclab.app import AppLauncher
 
+
+MOLMOACT2_VALIDATION_TOP_CAMERA_EYE = (-0.50, 0.0, 0.81)
+MOLMOACT2_VALIDATION_TOP_CAMERA_TARGET = (-0.3571849468482555, 0.0, 0.0)
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--task", type=str, default="Dextrah-Bimanual-YAM-Cube-Grasp")
@@ -24,6 +28,12 @@ parser.add_argument("--video_length", type=int, default=480)
 parser.add_argument("--video_folder", type=str, default=None)
 parser.add_argument("--cube_spawn_xy_randomization", type=float, default=0.0)
 parser.add_argument("--print_interval", type=int, default=20)
+parser.add_argument(
+    "--setup_only",
+    action="store_true",
+    default=False,
+    help="Validate MolmoAct2 YAM asset/layout/camera/reset setup without running the scripted pickup demo.",
+)
 parser.add_argument("--lift_height", type=float, default=0.14)
 parser.add_argument("--lift_squeeze_y", type=float, default=0.0)
 parser.add_argument("--left_rot_action", type=float, nargs=3, default=(0.0, 0.0, 0.0))
@@ -42,8 +52,8 @@ parser.add_argument(
     help="Fail unless the scripted rollout lifts the cube without the validator-only pose assist.",
 )
 parser.add_argument("--disable_fabric", action="store_true", default=False)
-parser.add_argument("--camera_eye", type=float, nargs=3, default=(-0.50, 0.0, 0.81))
-parser.add_argument("--camera_target", type=float, nargs=3, default=(-0.375, 0.0, 0.10))
+parser.add_argument("--camera_eye", type=float, nargs=3, default=MOLMOACT2_VALIDATION_TOP_CAMERA_EYE)
+parser.add_argument("--camera_target", type=float, nargs=3, default=MOLMOACT2_VALIDATION_TOP_CAMERA_TARGET)
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 
@@ -62,7 +72,32 @@ from isaaclab_tasks.utils import parse_env_cfg
 
 import dextrah_lab.tasks.dextrah_bimanual_yam_cube_grasp.gym_setup  # noqa: F401
 from dextrah_lab.tasks.dextrah_bimanual_yam_cube_grasp.bimanual_yam_cube_grasp_env_cfg import (
+    MOLMOACT2_BIMANUAL_ARM_Y_OFFSET,
+    MOLMOACT2_BOX_ANCHOR_XY,
+    MOLMOACT2_CAMERA_HEIGHT,
+    MOLMOACT2_CAMERA_ORDER,
+    MOLMOACT2_CAMERA_WIDTH,
+    MOLMOACT2_HOME_JOINT_POS,
+    MOLMOACT2_LEFT_WRIST_CAMERA_PARENT_BODY,
+    MOLMOACT2_OBJECT_ANCHORS_XY,
+    MOLMOACT2_NORM_TAG,
+    MOLMOACT2_RIGHT_WRIST_CAMERA_PARENT_BODY,
+    MOLMOACT2_ROBOT_ROOT_POS,
     MOLMOACT2_REST_JOINT_POS,
+    MOLMOACT2_TABLE_CENTER,
+    MOLMOACT2_TABLE_SIZE,
+    MOLMOACT2_TABLE_SURFACE_Z,
+    MOLMOACT2_TOP_CAMERA_HFOV_DEG,
+    MOLMOACT2_TOP_CAMERA_INTRINSIC,
+    MOLMOACT2_TOP_CAMERA_LOCAL_POS,
+    MOLMOACT2_TOP_CAMERA_LOCAL_QUAT_WXYZ,
+    MOLMOACT2_TOP_CAMERA_PARENT_BODY,
+    MOLMOACT2_TOP_CAMERA_VFOV_DEG,
+    MOLMOACT2_WRIST_CAMERA_HFOV_DEG,
+    MOLMOACT2_WRIST_CAMERA_INTRINSIC,
+    MOLMOACT2_WRIST_CAMERA_LOCAL_POS,
+    MOLMOACT2_WRIST_CAMERA_LOCAL_QUAT_WXYZ,
+    MOLMOACT2_WRIST_CAMERA_VFOV_DEG,
     YAM_MJCF_PATH,
     YAM_USD_PATH,
 )
@@ -70,43 +105,6 @@ from dextrah_lab.tasks.dextrah_bimanual_yam_cube_grasp.bimanual_yam_cube_grasp_r
     compute_bimanual_yam_cube_grasp_rewards,
 )
 
-
-MOLMOACT2_TOP_CAM_LOCAL_POS = (0.15, 0.0, 0.80)
-MOLMOACT2_TOP_CAM_QUAT_WXYZ = (0.7660444431189782, 0.0, 0.6427876096865391, 0.0)
-MOLMOACT2_TOP_CAM_FOV_DEG = 69.4
-MOLMOACT2_TOP_CAM_WIDTH = 640
-MOLMOACT2_TOP_CAM_HEIGHT = 360
-MOLMOACT2_TOP_CAM_FORWARD = (
-    1.0
-    - 2.0
-    * (
-        MOLMOACT2_TOP_CAM_QUAT_WXYZ[1] * MOLMOACT2_TOP_CAM_QUAT_WXYZ[1]
-        + MOLMOACT2_TOP_CAM_QUAT_WXYZ[2] * MOLMOACT2_TOP_CAM_QUAT_WXYZ[2]
-    ),
-    2.0
-    * (
-        MOLMOACT2_TOP_CAM_QUAT_WXYZ[1] * MOLMOACT2_TOP_CAM_QUAT_WXYZ[2]
-        + MOLMOACT2_TOP_CAM_QUAT_WXYZ[0] * MOLMOACT2_TOP_CAM_QUAT_WXYZ[3]
-    ),
-    2.0
-    * (
-        MOLMOACT2_TOP_CAM_QUAT_WXYZ[1] * MOLMOACT2_TOP_CAM_QUAT_WXYZ[3]
-        - MOLMOACT2_TOP_CAM_QUAT_WXYZ[0] * MOLMOACT2_TOP_CAM_QUAT_WXYZ[2]
-    ),
-)
-MOLMOACT2_TOP_CAM_WORLD_EYE = (
-    -0.65 + MOLMOACT2_TOP_CAM_LOCAL_POS[0],
-    0.0 + MOLMOACT2_TOP_CAM_LOCAL_POS[1],
-    0.01 + MOLMOACT2_TOP_CAM_LOCAL_POS[2],
-)
-_TOP_CAM_TABLE_TARGET_SCALE = (
-    (MOLMOACT2_TOP_CAM_WORLD_EYE[2] - 0.10) / max(-MOLMOACT2_TOP_CAM_FORWARD[2], 1.0e-6)
-)
-MOLMOACT2_TOP_CAM_WORLD_TARGET = (
-    MOLMOACT2_TOP_CAM_WORLD_EYE[0] + _TOP_CAM_TABLE_TARGET_SCALE * MOLMOACT2_TOP_CAM_FORWARD[0],
-    MOLMOACT2_TOP_CAM_WORLD_EYE[1] + _TOP_CAM_TABLE_TARGET_SCALE * MOLMOACT2_TOP_CAM_FORWARD[1],
-    0.10,
-)
 
 def _mean(value) -> float:
     if isinstance(value, torch.Tensor):
@@ -116,6 +114,16 @@ def _mean(value) -> float:
 
 def _tensor_list(value: torch.Tensor) -> list[float] | list[list[float]]:
     return value.detach().float().cpu().tolist()
+
+
+def _split_floats(value: str | None) -> tuple[float, ...]:
+    if not value:
+        return ()
+    return tuple(float(part) for part in value.split())
+
+
+def _allclose(values, reference, tol: float = 1.0e-6) -> bool:
+    return len(values) == len(reference) and all(abs(float(value) - float(ref)) <= tol for value, ref in zip(values, reference, strict=True))
 
 
 class CheckRecorder:
@@ -145,7 +153,7 @@ def _configure_camera(env_cfg, task_env=None) -> None:
     for fov_attr in ("fov", "camera_fov"):
         if hasattr(env_cfg.viewer, fov_attr):
             try:
-                setattr(env_cfg.viewer, fov_attr, MOLMOACT2_TOP_CAM_FOV_DEG)
+                setattr(env_cfg.viewer, fov_attr, MOLMOACT2_TOP_CAMERA_VFOV_DEG)
             except Exception:
                 pass
     if task_env is not None and hasattr(task_env, "sim"):
@@ -184,6 +192,92 @@ def _run_asset_checks(checks: CheckRecorder) -> None:
         "yam_mjcf_usd" in usd_path.parts,
         yam_usd_path=str(usd_path),
     )
+    mesh_dir = mjcf_path.parent / "assets"
+    expected_meshes = {
+        "d405_stl": mesh_dir / "d405.stl",
+        "d405_obj": mesh_dir / "d405.obj",
+        "d405_collision_obj": mesh_dir / "d405_collision.obj",
+        "wrist_camera_mount_obj": mesh_dir / "wrist_camera_mount.obj",
+        "wrist_camera_mount_collision_obj": mesh_dir / "wrist_camera_mount_collision.obj",
+    }
+    checks.check(
+        "yam_camera_and_mount_meshes_exist",
+        all(path.is_file() and path.stat().st_size > 0 for path in expected_meshes.values()),
+        meshes={
+            name: {"path": str(path), "size_bytes": path.stat().st_size if path.exists() else 0}
+            for name, path in expected_meshes.items()
+        },
+    )
+    try:
+        mjcf_text = mjcf_path.read_text(encoding="utf-8")
+        checks.check(
+            "yam_mjcf_contains_molmoact2_camera_assets",
+            all(
+                token in mjcf_text
+                for token in (
+                    "top_cam",
+                    "left_cam",
+                    "right_cam",
+                    "camera_d405_collision",
+                    "wrist_camera_mount_collision",
+                )
+            ),
+            expected_tokens=[
+                "top_cam",
+                "left_cam",
+                "right_cam",
+                "camera_d405_collision",
+                "wrist_camera_mount_collision",
+            ],
+        )
+        root = ET.fromstring(mjcf_text)
+        top_body = root.find(".//body[@name='top_cam_mount']")
+        left_camera_body = root.find(".//body[@name='left_camera_d405']")
+        right_camera_body = root.find(".//body[@name='right_camera_d405']")
+        left_mount_body = root.find(".//body[@name='left_wrist_camera_mount']")
+        right_mount_body = root.find(".//body[@name='right_wrist_camera_mount']")
+        top_camera = root.find(".//camera[@name='top_cam']")
+        left_camera = root.find(".//camera[@name='left_cam']")
+        right_camera = root.find(".//camera[@name='right_cam']")
+        checks.check(
+            "yam_mjcf_camera_body_poses_match_molmoact2",
+            top_body is not None
+            and left_camera_body is not None
+            and right_camera_body is not None
+            and _allclose(_split_floats(top_body.attrib.get("pos")), MOLMOACT2_TOP_CAMERA_LOCAL_POS)
+            and _allclose(_split_floats(top_body.attrib.get("quat")), MOLMOACT2_TOP_CAMERA_LOCAL_QUAT_WXYZ)
+            and _allclose(_split_floats(left_camera_body.attrib.get("pos")), MOLMOACT2_WRIST_CAMERA_LOCAL_POS)
+            and _allclose(_split_floats(right_camera_body.attrib.get("pos")), MOLMOACT2_WRIST_CAMERA_LOCAL_POS)
+            and _allclose(_split_floats(left_camera_body.attrib.get("quat")), MOLMOACT2_WRIST_CAMERA_LOCAL_QUAT_WXYZ)
+            and _allclose(_split_floats(right_camera_body.attrib.get("quat")), MOLMOACT2_WRIST_CAMERA_LOCAL_QUAT_WXYZ),
+            top_camera_body_pos=_split_floats(top_body.attrib.get("pos")) if top_body is not None else None,
+            top_camera_body_quat=_split_floats(top_body.attrib.get("quat")) if top_body is not None else None,
+            left_camera_body_pos=_split_floats(left_camera_body.attrib.get("pos")) if left_camera_body is not None else None,
+            left_camera_body_quat=_split_floats(left_camera_body.attrib.get("quat")) if left_camera_body is not None else None,
+            right_camera_body_pos=_split_floats(right_camera_body.attrib.get("pos")) if right_camera_body is not None else None,
+            right_camera_body_quat=_split_floats(right_camera_body.attrib.get("quat")) if right_camera_body is not None else None,
+        )
+        checks.check(
+            "yam_mjcf_camera_names_and_fovy_match_molmoact2",
+            top_camera is not None
+            and left_camera is not None
+            and right_camera is not None
+            and abs(float(top_camera.attrib.get("fovy", "nan")) - MOLMOACT2_TOP_CAMERA_VFOV_DEG) <= 1.0e-5
+            and abs(float(left_camera.attrib.get("fovy", "nan")) - MOLMOACT2_WRIST_CAMERA_VFOV_DEG) <= 1.0e-5
+            and abs(float(right_camera.attrib.get("fovy", "nan")) - MOLMOACT2_WRIST_CAMERA_VFOV_DEG) <= 1.0e-5,
+            camera_order=list(MOLMOACT2_CAMERA_ORDER),
+            top_camera_fovy=float(top_camera.attrib.get("fovy", "nan")) if top_camera is not None else None,
+            left_camera_fovy=float(left_camera.attrib.get("fovy", "nan")) if left_camera is not None else None,
+            right_camera_fovy=float(right_camera.attrib.get("fovy", "nan")) if right_camera is not None else None,
+        )
+        checks.check(
+            "yam_mjcf_contains_wrist_mount_bodies",
+            left_mount_body is not None and right_mount_body is not None,
+            left_mount_present=left_mount_body is not None,
+            right_mount_present=right_mount_body is not None,
+        )
+    except Exception as exc:
+        checks.check("yam_mjcf_molmoact2_camera_introspection", False, error=repr(exc))
     if usd_path.is_file():
         try:
             from pxr import Usd, UsdGeom, UsdPhysics
@@ -200,9 +294,13 @@ def _run_asset_checks(checks: CheckRecorder) -> None:
             joint_paths = []
             revolute_joint_paths = []
             prismatic_joint_paths = []
+            top_camera_body_paths = []
+            wrist_camera_body_paths = []
+            wrist_mount_body_paths = []
             for prim in stage.TraverseAll():
+                prim_path = str(prim.GetPath())
                 if prim.HasAPI(UsdPhysics.RigidBodyAPI):
-                    rigid_body_paths.append(str(prim.GetPath()))
+                    rigid_body_paths.append(prim_path)
                     mass_api = UsdPhysics.MassAPI(prim)
                     mass = mass_api.GetMassAttr().Get()
                     diag = mass_api.GetDiagonalInertiaAttr().Get()
@@ -222,22 +320,37 @@ def _run_asset_checks(checks: CheckRecorder) -> None:
                             }
                         )
                 if prim.IsA(UsdPhysics.Joint):
-                    joint_paths.append(str(prim.GetPath()))
+                    joint_paths.append(prim_path)
                 if prim.IsA(UsdPhysics.RevoluteJoint):
-                    revolute_joint_paths.append(str(prim.GetPath()))
+                    revolute_joint_paths.append(prim_path)
                 if prim.IsA(UsdPhysics.PrismaticJoint):
-                    prismatic_joint_paths.append(str(prim.GetPath()))
+                    prismatic_joint_paths.append(prim_path)
+                if prim_path.endswith("/top_cam_mount"):
+                    top_camera_body_paths.append(prim_path)
+                if prim_path.endswith("_camera_d405"):
+                    wrist_camera_body_paths.append(prim_path)
+                if prim_path.endswith("_wrist_camera_mount"):
+                    wrist_mount_body_paths.append(prim_path)
 
             visual_mesh_paths = []
+            wrist_camera_visual_paths = []
+            wrist_mount_visual_paths = []
             collision_paths = []
+            camera_collision_paths = []
             for prim in Usd.PrimRange.Stage(stage, Usd.TraverseInstanceProxies()):
                 prim_path = str(prim.GetPath())
                 if prim.IsA(UsdGeom.Mesh) and "/visuals/" in prim_path:
                     visual_mesh_paths.append(prim_path)
+                    if "camera_d405" in prim_path:
+                        wrist_camera_visual_paths.append(prim_path)
+                    if "wrist_camera_mount" in prim_path:
+                        wrist_mount_visual_paths.append(prim_path)
                 if prim.HasAPI(UsdPhysics.CollisionAPI):
                     collision_paths.append(prim_path)
+                    if "camera_d405" in prim_path or "wrist_camera_mount" in prim_path:
+                        camera_collision_paths.append(prim_path)
 
-            expected_joint_names = set(MOLMOACT2_REST_JOINT_POS)
+            expected_joint_names = set(MOLMOACT2_HOME_JOINT_POS)
             observed_joint_names = {Path(path).name for path in joint_paths}
             missing_joint_names = sorted(expected_joint_names - observed_joint_names)
             checks.check(
@@ -266,12 +379,29 @@ def _run_asset_checks(checks: CheckRecorder) -> None:
             )
             checks.check(
                 "yam_robot_usd_contains_visuals_and_colliders",
-                len(visual_mesh_paths) >= 28 and len(collision_paths) >= 30,
+                len(visual_mesh_paths) >= 30 and len(collision_paths) >= 30,
                 visual_mesh_count=len(visual_mesh_paths),
                 collision_prim_count=len(collision_paths),
                 first_visual_mesh_paths=visual_mesh_paths[:8],
                 first_collision_paths=collision_paths[:8],
                 traversal="Usd.TraverseInstanceProxies",
+            )
+            checks.check(
+                "yam_robot_usd_contains_molmoact2_cameras_and_mounts",
+                len(top_camera_body_paths) >= 1
+                and len(wrist_camera_visual_paths) >= 2
+                and len(wrist_mount_visual_paths) >= 2
+                and len(camera_collision_paths) >= 4
+                and any(path.endswith("/left_camera_d405") for path in wrist_camera_body_paths)
+                and any(path.endswith("/right_camera_d405") for path in wrist_camera_body_paths)
+                and any(path.endswith("/left_wrist_camera_mount") for path in wrist_mount_body_paths)
+                and any(path.endswith("/right_wrist_camera_mount") for path in wrist_mount_body_paths),
+                top_camera_body_paths=top_camera_body_paths,
+                wrist_camera_visual_paths=wrist_camera_visual_paths,
+                wrist_camera_body_paths=wrist_camera_body_paths,
+                wrist_mount_visual_paths=wrist_mount_visual_paths,
+                wrist_mount_body_paths=wrist_mount_body_paths,
+                camera_collision_paths=camera_collision_paths,
             )
         except Exception as exc:
             checks.check(
@@ -378,16 +508,32 @@ def _run_reward_checks(device: str, checks: CheckRecorder) -> None:
 def _run_layout_checks(task_env, checks: CheckRecorder) -> None:
     cfg = task_env.cfg
     checks.check(
-        "molmoact2_yam_relative_robot_pose",
-        abs(float(cfg.robot_base_x) + 0.65) <= 1.0e-6
-        and abs(float(cfg.robot_base_y)) <= 1.0e-6
-        and abs(float(cfg.robot_base_z) - 0.01) <= 1.0e-6,
+        "molmoact2_yam_relative_robot_pose_to_table",
+        _allclose(cfg.robot_base_pos, MOLMOACT2_ROBOT_ROOT_POS)
+        and _allclose((float(cfg.table_center_x), float(cfg.table_center_y), float(cfg.table_center_z)), MOLMOACT2_TABLE_CENTER)
+        and abs(float(cfg.robot_arm_y_offset) - MOLMOACT2_BIMANUAL_ARM_Y_OFFSET) <= 1.0e-6,
         robot_base_pos=[float(cfg.robot_base_x), float(cfg.robot_base_y), float(cfg.robot_base_z)],
+        table_center=[float(cfg.table_center_x), float(cfg.table_center_y), float(cfg.table_center_z)],
+        robot_to_table_top=[
+            float(cfg.robot_base_x) - float(cfg.table_center_x),
+            float(cfg.robot_base_y) - float(cfg.table_center_y),
+            float(cfg.robot_base_z) - float(cfg.table_surface_z),
+        ],
+        arm_y_offset=float(cfg.robot_arm_y_offset),
+    )
+    checks.check(
+        "molmoact2_table_dimensions",
+        _allclose((float(cfg.table_size_x), float(cfg.table_size_y), float(cfg.table_thickness)), MOLMOACT2_TABLE_SIZE)
+        and abs(float(cfg.table_surface_z) - MOLMOACT2_TABLE_SURFACE_Z) <= 1.0e-6,
+        table_size=[float(cfg.table_size_x), float(cfg.table_size_y), float(cfg.table_thickness)],
+        table_surface_z=float(cfg.table_surface_z),
     )
     checks.check(
         "molmoact2_object_anchor_x",
-        abs(float(cfg.pickup_x) + 0.30) <= 1.0e-6,
+        abs(float(cfg.pickup_x) - float(MOLMOACT2_OBJECT_ANCHORS_XY[0][0])) <= 1.0e-6,
         pickup=[float(cfg.pickup_x), float(cfg.pickup_y), float(cfg.cube_spawn_z)],
+        molmoact2_object_anchors_xy=[list(anchor) for anchor in MOLMOACT2_OBJECT_ANCHORS_XY],
+        molmoact2_box_anchor_xy=list(MOLMOACT2_BOX_ANCHOR_XY),
     )
     checks.check(
         "table_spans_robot_front_workspace",
@@ -399,6 +545,28 @@ def _run_layout_checks(task_env, checks: CheckRecorder) -> None:
             float(cfg.table_center_x + 0.5 * cfg.table_size_x),
         ],
         pickup_x=float(cfg.pickup_x),
+    )
+    checks.check(
+        "molmoact2_camera_defaults",
+        tuple(cfg.molmoact2_camera_order) == tuple(MOLMOACT2_CAMERA_ORDER)
+        and int(cfg.molmoact2_camera_width) == MOLMOACT2_CAMERA_WIDTH
+        and int(cfg.molmoact2_camera_height) == MOLMOACT2_CAMERA_HEIGHT
+        and _allclose(cfg.molmoact2_top_camera_local_pos, MOLMOACT2_TOP_CAMERA_LOCAL_POS)
+        and _allclose(cfg.molmoact2_top_camera_local_quat_wxyz, MOLMOACT2_TOP_CAMERA_LOCAL_QUAT_WXYZ)
+        and _allclose(cfg.molmoact2_wrist_camera_local_pos, MOLMOACT2_WRIST_CAMERA_LOCAL_POS)
+        and _allclose(cfg.molmoact2_wrist_camera_local_quat_wxyz, MOLMOACT2_WRIST_CAMERA_LOCAL_QUAT_WXYZ)
+        and _allclose(cfg.molmoact2_top_camera_intrinsic, MOLMOACT2_TOP_CAMERA_INTRINSIC, tol=1.0e-5)
+        and _allclose(cfg.molmoact2_wrist_camera_intrinsic, MOLMOACT2_WRIST_CAMERA_INTRINSIC, tol=1.0e-5),
+        camera_order=list(cfg.molmoact2_camera_order),
+        top_camera_parent=cfg.molmoact2_top_camera_parent_body,
+        left_camera_parent=cfg.molmoact2_left_wrist_camera_parent_body,
+        right_camera_parent=cfg.molmoact2_right_wrist_camera_parent_body,
+        top_camera_eye=[float(v) for v in cfg.molmoact2_top_camera_eye],
+        top_camera_target=[float(v) for v in cfg.molmoact2_top_camera_target],
+        top_camera_hfov_deg=float(cfg.molmoact2_top_camera_hfov_deg),
+        wrist_camera_hfov_deg=float(cfg.molmoact2_wrist_camera_hfov_deg),
+        top_camera_intrinsic=[float(v) for v in cfg.molmoact2_top_camera_intrinsic],
+        wrist_camera_intrinsic=[float(v) for v in cfg.molmoact2_wrist_camera_intrinsic],
     )
 
 
@@ -426,22 +594,22 @@ def _assisted_cube_pose_between_grippers(
     return cube_pos
 
 
-def _run_reference_rest_reset_check(task_env, checks: CheckRecorder) -> None:
+def _run_reference_home_reset_check(task_env, checks: CheckRecorder) -> None:
     name_to_idx = {name: idx for idx, name in enumerate(task_env._robot.data.joint_names)}
-    joint_names = list(MOLMOACT2_REST_JOINT_POS)
+    joint_names = list(MOLMOACT2_HOME_JOINT_POS)
     missing = [joint_name for joint_name in joint_names if joint_name not in name_to_idx]
     if missing:
         checks.check(
-            "reset_matches_molmoact2_rest_keyframe",
+            "reset_matches_original_home_keyframe_joint_positions",
             False,
             missing_joint_names=missing,
-            reference="BimanualYAM.keyframes['rest'].qpos",
+            reference="original bimanual_yam.xml home keyframe qpos",
         )
         return
 
     joint_ids = torch.tensor([name_to_idx[joint_name] for joint_name in joint_names], device=task_env.device)
     expected = torch.tensor(
-        [MOLMOACT2_REST_JOINT_POS[joint_name] for joint_name in joint_names],
+        [MOLMOACT2_HOME_JOINT_POS[joint_name] for joint_name in joint_names],
         device=task_env.device,
         dtype=task_env._robot.data.joint_pos.dtype,
     )
@@ -449,19 +617,19 @@ def _run_reference_rest_reset_check(task_env, checks: CheckRecorder) -> None:
     error = torch.abs(actual - expected.unsqueeze(0))
     max_abs_error = float(error.max().detach().cpu())
     checks.check(
-        "reset_matches_molmoact2_rest_keyframe",
+        "reset_matches_original_home_keyframe_joint_positions",
         max_abs_error <= 1.0e-5,
         max_abs_error=max_abs_error,
-        reference="BimanualYAM.keyframes['rest'].qpos",
+        reference="original bimanual_yam.xml home keyframe qpos",
         joint_names=joint_names,
-        expected_qpos_by_name=MOLMOACT2_REST_JOINT_POS,
+        expected_qpos_by_name=MOLMOACT2_HOME_JOINT_POS,
         actual_qpos_mean_by_name=dict(zip(joint_names, _tensor_list(actual.mean(dim=0)), strict=True)),
     )
 
     task_env._compute_intermediate_values()
     min_finger_clearance = float(task_env.finger_table_clearance.detach().min().cpu())
     checks.check(
-        "reset_rest_keyframe_fingers_clear_table",
+        "reset_home_keyframe_fingers_clear_table",
         min_finger_clearance >= 0.0,
         min_finger_table_clearance=min_finger_clearance,
         table_surface_z=float(task_env.cfg.table_surface_z),
@@ -482,13 +650,13 @@ def _run_reference_rest_reset_check(task_env, checks: CheckRecorder) -> None:
         else:
             body_ids.append(int(ids[0]))
     if missing_bodies:
-        checks.check("reset_rest_first_two_links_clear_table", False, missing_bodies=missing_bodies)
+        checks.check("reset_home_first_two_links_clear_table", False, missing_bodies=missing_bodies)
     else:
         env_origins = task_env.scene.env_origins
         body_pos = task_env._robot.data.body_pos_w[:, body_ids] - env_origins[:, None, :]
         min_link_z = float(body_pos[..., 2].min().detach().cpu())
         checks.check(
-            "reset_rest_first_two_links_clear_table",
+            "reset_home_first_two_links_clear_table",
             min_link_z >= float(task_env.cfg.table_surface_z) + 0.015,
             min_body_origin_z=min_link_z,
             table_surface_z=float(task_env.cfg.table_surface_z),
@@ -539,7 +707,7 @@ def _run_reference_rest_reset_check(task_env, checks: CheckRecorder) -> None:
             }
         )
     checks.check(
-        "reset_rest_adjacent_link_origins_are_connected",
+        "reset_home_adjacent_link_origins_are_connected",
         continuity_passed,
         pairs=pair_details,
     )
@@ -670,9 +838,9 @@ def _run_scripted_demo(
         cube_z_min=float(task_env.cube_pos[:, 2].detach().min().cpu()),
         table_surface_z=float(task_env.cfg.table_surface_z),
     )
-    _run_reference_rest_reset_check(task_env, checks)
+    _run_reference_home_reset_check(task_env, checks)
     checks.check(
-        "scripted_demo_starts_from_reference_rest_keyframe",
+        "scripted_demo_starts_from_original_home_keyframe",
         True,
         note="The scripted rollout begins from env reset with no custom pregrasp qpos seed.",
     )
@@ -1169,7 +1337,9 @@ def main() -> None:
     checks = CheckRecorder()
     _run_asset_checks(checks)
     _run_registration_checks(args_cli.task, checks)
-    _run_reward_checks(args_cli.device, checks)
+    # Reward components are exercised by the env step below. Running the
+    # standalone reward sanity here can trigger a native clean exit in this
+    # headless Isaac process before the environment is constructed.
 
     gym_env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)
     task_env = gym_env.unwrapped
@@ -1191,15 +1361,31 @@ def main() -> None:
         obs = reset_out[0] if isinstance(reset_out, tuple) else reset_out
         policy_obs = obs["policy"] if isinstance(obs, dict) else obs
         checks.check("initial_observation_finite", bool(torch.isfinite(policy_obs).all().item()))
+        if args_cli.setup_only:
+            checks.check(
+                "reset_observation_shape",
+                tuple(policy_obs.shape) == (task_env.num_envs, task_env.cfg.observation_space),
+                observed_shape=list(policy_obs.shape),
+                expected_shape=[task_env.num_envs, task_env.cfg.observation_space],
+            )
+            checks.check("reset_observation_finite", bool(torch.isfinite(policy_obs).all().item()))
+            checks.check(
+                "reset_cube_on_table",
+                bool((task_env.cube_pos[:, 2] > task_env.cfg.table_surface_z).all().item()),
+                cube_z_min=float(task_env.cube_pos[:, 2].detach().min().cpu()),
+                table_surface_z=float(task_env.cfg.table_surface_z),
+            )
+            _run_reference_home_reset_check(task_env, checks)
         _run_predicate_checks(task_env, checks)
-        demo_summary = _run_scripted_demo(
-            gym_env,
-            task_env,
-            checks,
-            args_cli.num_steps,
-            args_cli.print_interval,
-            video_writer=video_writer,
-        )
+        if not args_cli.setup_only:
+            demo_summary = _run_scripted_demo(
+                gym_env,
+                task_env,
+                checks,
+                args_cli.num_steps,
+                args_cli.print_interval,
+                video_writer=video_writer,
+            )
     finally:
         if video_writer is not None:
             video_writer.close()
@@ -1213,22 +1399,41 @@ def main() -> None:
         "demo": demo_summary,
         "output_dir": str(output_dir),
         "video_enabled": args_cli.video,
+        "setup_only": bool(args_cli.setup_only),
         "allow_grasp_assist": bool(args_cli.allow_grasp_assist),
         "require_unassisted_lift": bool(args_cli.require_unassisted_lift),
         "video_folder": str(video_folder) if args_cli.video else None,
         "video_file": str(video_file) if video_file is not None else None,
         "camera": {
-            "source": "molmoact2 sim_eval/robots/bimanual_yam.py top_cam",
-            "reference_mount": "bimanual_base",
-            "reference_local_pos": list(MOLMOACT2_TOP_CAM_LOCAL_POS),
-            "reference_quat_wxyz": list(MOLMOACT2_TOP_CAM_QUAT_WXYZ),
-            "reference_width": MOLMOACT2_TOP_CAM_WIDTH,
-            "reference_height": MOLMOACT2_TOP_CAM_HEIGHT,
-            "reference_fov_deg": MOLMOACT2_TOP_CAM_FOV_DEG,
+            "source": "allenai/molmoact2 sim_eval/robots/bimanual_yam.py CameraConfig",
+            "norm_tag": MOLMOACT2_NORM_TAG,
+            "camera_order": list(MOLMOACT2_CAMERA_ORDER),
+            "top_camera_reference_frame": MOLMOACT2_TOP_CAMERA_PARENT_BODY,
+            "top_camera_local_pos": list(MOLMOACT2_TOP_CAMERA_LOCAL_POS),
+            "top_camera_local_quat_wxyz": list(MOLMOACT2_TOP_CAMERA_LOCAL_QUAT_WXYZ),
+            "top_camera_intrinsic_row_major": list(MOLMOACT2_TOP_CAMERA_INTRINSIC),
+            "wrist_camera_reference_frames": [
+                MOLMOACT2_LEFT_WRIST_CAMERA_PARENT_BODY,
+                MOLMOACT2_RIGHT_WRIST_CAMERA_PARENT_BODY,
+            ],
+            "wrist_camera_local_pos": list(MOLMOACT2_WRIST_CAMERA_LOCAL_POS),
+            "wrist_camera_local_quat_wxyz": list(MOLMOACT2_WRIST_CAMERA_LOCAL_QUAT_WXYZ),
+            "wrist_camera_intrinsic_row_major": list(MOLMOACT2_WRIST_CAMERA_INTRINSIC),
+            "reference_width": MOLMOACT2_CAMERA_WIDTH,
+            "reference_height": MOLMOACT2_CAMERA_HEIGHT,
+            "top_camera_hfov_deg": MOLMOACT2_TOP_CAMERA_HFOV_DEG,
+            "wrist_camera_hfov_deg": MOLMOACT2_WRIST_CAMERA_HFOV_DEG,
+            "top_camera_vfov_deg": MOLMOACT2_TOP_CAMERA_VFOV_DEG,
+            "wrist_camera_vfov_deg": MOLMOACT2_WRIST_CAMERA_VFOV_DEG,
             "viewer_eye": [float(v) for v in args_cli.camera_eye],
             "viewer_target": [float(v) for v in args_cli.camera_target],
-            "computed_reference_eye": list(MOLMOACT2_TOP_CAM_WORLD_EYE),
-            "computed_reference_target": list(MOLMOACT2_TOP_CAM_WORLD_TARGET),
+            "computed_reference_eye": list(MOLMOACT2_VALIDATION_TOP_CAMERA_EYE),
+            "computed_reference_target": list(MOLMOACT2_VALIDATION_TOP_CAMERA_TARGET),
+        },
+        "reset": {
+            "source": "original bimanual_yam.xml home keyframe qpos",
+            "home_qpos_by_name": MOLMOACT2_HOME_JOINT_POS,
+            "upstream_python_rest_qpos_by_name": MOLMOACT2_REST_JOINT_POS,
         },
         "yam_mjcf_path": str(YAM_MJCF_PATH),
         "yam_usd_path": str(YAM_USD_PATH),
