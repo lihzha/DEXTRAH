@@ -9979,3 +9979,7 @@ Smoke follow-up:
   every accepted entry, representative videos show smooth non-penetrating
   grasps and bin drops, RGB arrays nonblank, recorded state keys present, and
   no active Slurm work remains without monitoring.
+- Launch: submitted l401 Slurm array `1039162` with `--array=0-19%4` for batch
+  `yam_objaverse_oneobj_300_1097763a_20260622T172427Z`.
+- Result directory:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/yam_demos/yam_objaverse_oneobj_300_1097763a_20260622T172427Z`.
