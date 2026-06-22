@@ -9946,3 +9946,36 @@ Smoke follow-up:
   because unused fixed-size clutter buffers were treated as real objects.
   Patched the validator to check only `target + expected_objects - 1` clutter
   slots when `--expected_objects` is supplied.
+
+2026-06-22T17:23:09Z - YAM Objaverse 300-demo scale-up run record
+- Goal: start collecting 300 realistic Objaverse YAM pick-and-place
+  demonstrations with GraspGenX grasp generation, cuRobo motion planning,
+  scripted lift/place, dynamic replay, RGB observations, and full state
+  trajectory datasets.
+- Version state: local and l401 agent worktree both at
+  `e958fa04ad4b7e9836f784918f18e6184b80ad95` on branch
+  `codex/yam-rejected-demo`; remote l401 worktree
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-collision-overlay-39915731`.
+- Smoke evidence before scaling: replay
+  `yam_objaverse_smoke_oneobj_fa4b77a1_20260622T171217Z_s000_seed92000_replay`
+  visually picks a small Objaverse object and drops it in the bin. Corrected
+  validation `validation_metrics_rechecked_e958fa04.json` has status
+  `accepted`, 1500 state steps, RGB shape `[1500, 120, 160, 3]`, all checks
+  true, min finger-table clearance `0.0756 m`, target lift delta `0.2278 m`,
+  max target z `0.2383 m`, final target inside bin, max absolute joint error
+  `0.0360`, max L2 joint error `0.0445`, and no truncation.
+- Scale-up parameters: one object per demo for current high-yield realistic
+  Objaverse collection; 20 shards x 15 accepted demos each, four concurrent
+  one-GPU jobs, `START_SEED=93000`, `MAX_ATTEMPTS=60`, `POOL_MAX_ASSETS=2048`,
+  `NUM_GRASPS=192`, `TOPK=96`, `MAX_PLAN_ATTEMPTS=96`,
+  `SETTLE_STEPS=100`, `DEMO_STEPS_PER_OBJECT=1500`, RGB recording
+  `160x120` every step, current YAM damping/PD values unchanged.
+- Expected artifacts: per-shard `events.jsonl`, `accepted_demos.jsonl`,
+  `rejected_attempts.jsonl`, `accepted_validation_metrics.jsonl`,
+  `summary.json`; per accepted replay `trajectory_dataset.npz`,
+  `yam_pick_place.mp4`, `metrics.json`, stable scene, plan trajectory, grasp
+  overlay, and cuRobo planning summary.
+- Success criteria: 300 accepted demos total, validator status accepted for
+  every accepted entry, representative videos show smooth non-penetrating
+  grasps and bin drops, RGB arrays nonblank, recorded state keys present, and
+  no active Slurm work remains without monitoring.
