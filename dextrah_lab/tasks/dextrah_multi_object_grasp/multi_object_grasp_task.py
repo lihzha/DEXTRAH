@@ -457,7 +457,7 @@ class MultiObjectGraspTaskMixin:
                 torch.arange(self.num_envs, device=self.device),
                 self.num_unique_objects,
             ).long()
-        elif assignment in ("random", "uniform"):
+        elif assignment in ("random", "uniform", "random_without_replacement", "distinct"):
             self.object_asset_index = torch.randint(
                 self.num_unique_objects,
                 (self.num_envs,),
@@ -466,7 +466,7 @@ class MultiObjectGraspTaskMixin:
             )
         else:
             raise ValueError(
-                "object_asset_assignment must be 'round_robin' or 'random', "
+                "object_asset_assignment must be 'round_robin', 'random', or 'random_without_replacement', "
                 f"got {self.cfg.object_asset_assignment!r}"
             )
 
@@ -629,9 +629,28 @@ class MultiObjectGraspTaskMixin:
                 dtype=torch.long,
                 device=self.device,
             )
+        elif assignment in ("random_without_replacement", "distinct"):
+            object_uuids = [str(asset.get("uuid") or "") for asset in getattr(self, "_object_assets", [])]
+            clutter_uuids = [str(asset.get("uuid") or "") for asset in self._tabletop_clutter_assets]
+            same_pool_order = object_uuids == clutter_uuids and len(object_uuids) == self.num_unique_tabletop_clutter_objects
+            available_count = self.num_unique_tabletop_clutter_objects - (1 if same_pool_order else 0)
+            if self.tabletop_clutter_object_count > available_count:
+                raise ValueError(
+                    "tabletop_clutter_object_count exceeds distinct asset capacity: "
+                    f"count={self.tabletop_clutter_object_count}, available={available_count}, "
+                    f"same_pool_order={same_pool_order}"
+                )
+            rows: list[torch.Tensor] = []
+            for env_idx in range(self.num_envs):
+                perm = torch.randperm(self.num_unique_tabletop_clutter_objects, device=self.device)
+                if same_pool_order:
+                    target_idx = int(self.object_asset_index[env_idx].detach().cpu().item())
+                    perm = perm[perm != target_idx]
+                rows.append(perm[: self.tabletop_clutter_object_count].long())
+            index_flat = torch.stack(rows, dim=0).reshape(-1)
         else:
             raise ValueError(
-                "tabletop_clutter_asset_assignment must be 'round_robin' or 'random', "
+                "tabletop_clutter_asset_assignment must be 'round_robin', 'random', or 'random_without_replacement', "
                 f"got {self.cfg.tabletop_clutter_asset_assignment!r}"
             )
         self.tabletop_clutter_asset_index = index_flat.view(self.num_envs, self.tabletop_clutter_object_count)

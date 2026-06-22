@@ -8,7 +8,7 @@
 #SBATCH --time=1-00:00:00
 #SBATCH --mem=160G
 #SBATCH --cpus-per-task=16
-#SBATCH --output=/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/yam_objaverse_demos_%A_%a.out
+#SBATCH --output=/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/yam_objaverse_demos_%j.out
 
 set -euo pipefail
 
@@ -26,25 +26,20 @@ FULL_OBJAVERSE_ASSET_ROOT="${FULL_OBJAVERSE_ASSET_ROOT:-$RESULTS_NFS/assets/gras
 FULL_OBJAVERSE_MANIFEST_PATH="${FULL_OBJAVERSE_MANIFEST_PATH:-$FULL_OBJAVERSE_ASSET_ROOT/manifest.json}"
 
 SLURM_JOB_ID_SAFE="${SLURM_JOB_ID:-manual}"
-SHARD_INDEX="${SHARD_INDEX:-${SLURM_ARRAY_TASK_ID:-0}}"
-SHARD_COUNT="${SHARD_COUNT:-${SLURM_ARRAY_TASK_COUNT:-1}}"
+SHARD_INDEX="${SHARD_INDEX:-0}"
+SHARD_COUNT="${SHARD_COUNT:-1}"
 TOTAL_TARGET="${TOTAL_TARGET:-300}"
 if [ -z "${SHARD_TARGET:-}" ]; then
   SHARD_TARGET="$(( (TOTAL_TARGET + SHARD_COUNT - 1) / SHARD_COUNT ))"
 fi
 START_SEED="${START_SEED:-91000}"
 MAX_ATTEMPTS="${MAX_ATTEMPTS:-$((SHARD_TARGET * 5 + 5))}"
-OBJECTS_PER_DEMO="${OBJECTS_PER_DEMO:-3}"
-CLUTTER_OBJECT_COUNT="$((OBJECTS_PER_DEMO - 1))"
-if [ "$CLUTTER_OBJECT_COUNT" -lt 0 ]; then
-  echo "OBJECTS_PER_DEMO must be >= 1, got $OBJECTS_PER_DEMO" >&2
-  exit 2
-fi
 
 BATCH_NAME="${BATCH_NAME:-yam_objaverse_pickplace_300_$(date +%Y%m%dT%H%M%SZ)}"
 BATCH_DIR="${BATCH_DIR:-$RESULTS_NFS/yam_demos/$BATCH_NAME}"
 SHARD_DIR="$BATCH_DIR/shard_$(printf '%03d' "$SHARD_INDEX")"
 POOL_MANIFEST="${POOL_MANIFEST:-$BATCH_DIR/yam_objaverse_pool_manifest.json}"
+SELECTED_OBJECTS_JSONL="${SELECTED_OBJECTS_JSONL:-}"
 EVENTS_JSONL="$SHARD_DIR/events.jsonl"
 ACCEPTED_JSONL="$SHARD_DIR/accepted_demos.jsonl"
 REJECTED_JSONL="$SHARD_DIR/rejected_attempts.jsonl"
@@ -64,7 +59,17 @@ RECORD_RGB_WIDTH="${RECORD_RGB_WIDTH:-160}"
 RECORD_RGB_HEIGHT="${RECORD_RGB_HEIGHT:-120}"
 RECORD_RGB_INTERVAL="${RECORD_RGB_INTERVAL:-1}"
 DEMO_STEPS_PER_OBJECT="${DEMO_STEPS_PER_OBJECT:-1500}"
-DEMO_STEPS="${DEMO_STEPS:-$((DEMO_STEPS_PER_OBJECT * OBJECTS_PER_DEMO))}"
+DEMO_STEPS="${DEMO_STEPS:-}"
+OBJECTS_PER_DEMO_MIN="${OBJECTS_PER_DEMO_MIN:-${OBJECTS_PER_DEMO:-1}}"
+OBJECTS_PER_DEMO_MAX="${OBJECTS_PER_DEMO_MAX:-${OBJECTS_PER_DEMO:-5}}"
+if [ "$OBJECTS_PER_DEMO_MIN" -lt 1 ] || [ "$OBJECTS_PER_DEMO_MAX" -lt "$OBJECTS_PER_DEMO_MIN" ]; then
+  echo "Invalid object count range: OBJECTS_PER_DEMO_MIN=$OBJECTS_PER_DEMO_MIN OBJECTS_PER_DEMO_MAX=$OBJECTS_PER_DEMO_MAX" >&2
+  exit 2
+fi
+if [ "$OBJECTS_PER_DEMO_MAX" -gt 5 ]; then
+  echo "OBJECTS_PER_DEMO_MAX must be <= 5 for this collection, got $OBJECTS_PER_DEMO_MAX" >&2
+  exit 2
+fi
 
 NUM_GRASPS="${NUM_GRASPS:-96}"
 TOPK="${TOPK:-48}"
@@ -79,6 +84,8 @@ TABLETOP_CLUTTER_SPAWN_XY_RANDOMIZATION="${TABLETOP_CLUTTER_SPAWN_XY_RANDOMIZATI
 TABLETOP_CLUTTER_PLACEMENT_PADDING="${TABLETOP_CLUTTER_PLACEMENT_PADDING:-0.015}"
 TABLETOP_CLUTTER_PLACEMENT_ATTEMPTS="${TABLETOP_CLUTTER_PLACEMENT_ATTEMPTS:-1024}"
 TABLETOP_CLUTTER_MAX_XY_RADIUS="${TABLETOP_CLUTTER_MAX_XY_RADIUS:-$POOL_MAX_XY_RADIUS}"
+OBJECT_ASSET_ASSIGNMENT="${OBJECT_ASSET_ASSIGNMENT:-random}"
+TABLETOP_CLUTTER_ASSET_ASSIGNMENT="${TABLETOP_CLUTTER_ASSET_ASSIGNMENT:-random_without_replacement}"
 
 CODE_COMMIT="${CODE_COMMIT:-}"
 if [ -z "$CODE_COMMIT" ] && git -C "$CODE_NFS" rev-parse HEAD >/dev/null 2>&1; then
@@ -128,17 +135,77 @@ prepare_pool_manifest() {
       if [ -z "$output_asset_root" ]; then
         output_asset_root="$(host_to_results_container "$FULL_OBJAVERSE_ASSET_ROOT")"
       fi
-      python3 "$CODE_NFS/dextrah_lab/scene_scripts/prepare_yam_objaverse_pool_manifest.py" \
-        --source_manifest "$FULL_OBJAVERSE_MANIFEST_PATH" \
-        --output_manifest "$POOL_MANIFEST" \
-        --output_asset_root "$output_asset_root" \
-        --max_assets "$POOL_MAX_ASSETS" \
-        --seed "$START_SEED" \
-        --min_xy_radius "$POOL_MIN_XY_RADIUS" \
-        --max_xy_radius "$POOL_MAX_XY_RADIUS" \
-        --min_height "$POOL_MIN_HEIGHT" \
-        --max_height "$POOL_MAX_HEIGHT" \
-        --max_grasp_width_p95 "$POOL_MAX_GRASP_WIDTH_P95"
+      if [ -n "$SELECTED_OBJECTS_JSONL" ]; then
+        python3 - "$FULL_OBJAVERSE_MANIFEST_PATH" "$SELECTED_OBJECTS_JSONL" "$POOL_MANIFEST" "$output_asset_root" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+source_manifest = Path(sys.argv[1])
+selected_jsonl = Path(sys.argv[2])
+output_manifest = Path(sys.argv[3])
+output_asset_root = sys.argv[4]
+
+source = json.loads(source_manifest.read_text(encoding="utf-8"))
+source_objects = source.get("objects")
+if not isinstance(source_objects, list):
+    raise SystemExit(f"Source manifest has no objects list: {source_manifest}")
+by_uuid = {str(obj.get("uuid") or ""): obj for obj in source_objects if isinstance(obj, dict)}
+
+selected_rows = []
+for line in selected_jsonl.read_text(encoding="utf-8").splitlines():
+    if not line.strip():
+        continue
+    row = json.loads(line)
+    uuid = str(row.get("uuid") or "")
+    if uuid:
+        selected_rows.append(row)
+
+objects = []
+missing = []
+for rank, row in enumerate(selected_rows):
+    uuid = str(row.get("uuid") or "")
+    src = by_uuid.get(uuid)
+    if src is None:
+        missing.append(uuid)
+        continue
+    out = dict(src)
+    out["yam_selected_common50"] = {
+        "rank": int(row.get("rank", rank)),
+        "idx": row.get("idx"),
+        "seed": row.get("seed"),
+        "shape_note": row.get("shape_note"),
+    }
+    objects.append(out)
+if missing:
+    raise SystemExit(f"Selected UUIDs missing from source manifest: {missing[:8]} total={len(missing)}")
+if not objects:
+    raise SystemExit("Selected object manifest would be empty")
+
+payload = {
+    "format": "dextrah_yam_selected_common50_pool_v1",
+    "asset_root": output_asset_root,
+    "source_manifest": str(source_manifest),
+    "selected_objects_jsonl": str(selected_jsonl),
+    "objects": objects,
+}
+output_manifest.parent.mkdir(parents=True, exist_ok=True)
+output_manifest.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+print(json.dumps({"event": "selected_common50_pool_manifest_written", "path": str(output_manifest), "objects": len(objects)}))
+PY
+      else
+        python3 "$CODE_NFS/dextrah_lab/scene_scripts/prepare_yam_objaverse_pool_manifest.py" \
+          --source_manifest "$FULL_OBJAVERSE_MANIFEST_PATH" \
+          --output_manifest "$POOL_MANIFEST" \
+          --output_asset_root "$output_asset_root" \
+          --max_assets "$POOL_MAX_ASSETS" \
+          --seed "$START_SEED" \
+          --min_xy_radius "$POOL_MIN_XY_RADIUS" \
+          --max_xy_radius "$POOL_MAX_XY_RADIUS" \
+          --min_height "$POOL_MIN_HEIGHT" \
+          --max_height "$POOL_MAX_HEIGHT" \
+          --max_grasp_width_p95 "$POOL_MAX_GRASP_WIDTH_P95"
+      fi
     fi
   ) 9>"$POOL_MANIFEST.lock"
 }
@@ -162,14 +229,14 @@ run_settle() {
   VIDEO_FILENAME=settle.mp4 \
   OBJECT_ASSET_MANIFEST_PATH="$POOL_MANIFEST" \
   OBJECT_ASSETS_DIR="$(dirname "$POOL_MANIFEST")" \
-  OBJECT_ASSET_ASSIGNMENT=random \
+  OBJECT_ASSET_ASSIGNMENT="$OBJECT_ASSET_ASSIGNMENT" \
   OBJECT_VALIDATE_USD_BOUNDS=False \
   OBJECT_SPAWN_XY_RANDOMIZATION="$OBJECT_SPAWN_XY_RANDOMIZATION" \
   TABLETOP_CLUTTER_ASSET_MANIFEST_PATH="$POOL_MANIFEST" \
   TABLETOP_CLUTTER_ASSETS_DIR="$(dirname "$POOL_MANIFEST")" \
-  TABLETOP_CLUTTER_OBJECT_COUNT="$CLUTTER_OBJECT_COUNT" \
+  TABLETOP_CLUTTER_OBJECT_COUNT="$CURRENT_CLUTTER_OBJECT_COUNT" \
   TABLETOP_CLUTTER_MAX_OBJECTS=0 \
-  TABLETOP_CLUTTER_ASSET_ASSIGNMENT=random \
+  TABLETOP_CLUTTER_ASSET_ASSIGNMENT="$TABLETOP_CLUTTER_ASSET_ASSIGNMENT" \
   TABLETOP_CLUTTER_VALIDATE_USD_BOUNDS=False \
   TABLETOP_CLUTTER_SPAWN_XY_RANDOMIZATION="$TABLETOP_CLUTTER_SPAWN_XY_RANDOMIZATION" \
   TABLETOP_CLUTTER_SPAWN_Z_CLEARANCE=0.006 \
@@ -220,7 +287,7 @@ run_planner() {
         --graspgenx_root /graspgenx \
         --curobo_root /curobo \
         --seed '$seed' \
-        --max_objects '$OBJECTS_PER_DEMO' \
+        --max_objects '$CURRENT_OBJECTS_PER_DEMO' \
         --num_grasps '$NUM_GRASPS' \
         --topk '$TOPK' \
         --max_plan_attempts '$MAX_PLAN_ATTEMPTS' \
@@ -242,7 +309,7 @@ run_replay() {
   NUM_ENVS=1 \
   SEED="$seed" \
   DEMO_MODE=single_yam_trajectory \
-  DEMO_STEPS="$DEMO_STEPS" \
+  DEMO_STEPS="$CURRENT_DEMO_STEPS" \
   CAPTURE_INTERVAL="$REPLAY_CAPTURE_INTERVAL" \
   FPS="$FPS" \
   VIDEO_FILENAME=yam_pick_place.mp4 \
@@ -295,7 +362,7 @@ run_validate() {
         --metrics_path '$metrics_container' \
         --stable_scene_path '$stable_scene_container' \
         --output_path '$validation_container' \
-        --expected_objects '$OBJECTS_PER_DEMO'
+        --expected_objects '$CURRENT_OBJECTS_PER_DEMO'
     "
 }
 
@@ -311,9 +378,21 @@ PY
   fi
 }
 
+sample_objects_per_demo() {
+  local seed="$1"
+  python3 - "$seed" "$OBJECTS_PER_DEMO_MIN" "$OBJECTS_PER_DEMO_MAX" <<'PY'
+import random
+import sys
+
+seed = int(sys.argv[1])
+lo = int(sys.argv[2])
+hi = int(sys.argv[3])
+print(random.Random(seed).randint(lo, hi))
+PY
+}
+
 echo "Collecting YAM Objaverse demos"
 echo "SLURM_JOB_ID=$SLURM_JOB_ID_SAFE"
-echo "SLURM_ARRAY_TASK_ID=${SLURM_ARRAY_TASK_ID:-unset}"
 echo "CODE_NFS=$CODE_NFS"
 echo "CODE_COMMIT=${CODE_COMMIT:-unknown}"
 echo "BATCH_NAME=$BATCH_NAME"
@@ -321,8 +400,12 @@ echo "SHARD_INDEX=$SHARD_INDEX"
 echo "SHARD_COUNT=$SHARD_COUNT"
 echo "SHARD_TARGET=$SHARD_TARGET"
 echo "TOTAL_TARGET=$TOTAL_TARGET"
-echo "OBJECTS_PER_DEMO=$OBJECTS_PER_DEMO"
+echo "OBJECTS_PER_DEMO_MIN=$OBJECTS_PER_DEMO_MIN"
+echo "OBJECTS_PER_DEMO_MAX=$OBJECTS_PER_DEMO_MAX"
+echo "OBJECT_ASSET_ASSIGNMENT=$OBJECT_ASSET_ASSIGNMENT"
+echo "TABLETOP_CLUTTER_ASSET_ASSIGNMENT=$TABLETOP_CLUTTER_ASSET_ASSIGNMENT"
 echo "POOL_MANIFEST=$POOL_MANIFEST"
+echo "SELECTED_OBJECTS_JSONL=${SELECTED_OBJECTS_JSONL:-unset}"
 echo "SHARD_DIR=$SHARD_DIR"
 
 prepare_pool_manifest
@@ -332,12 +415,22 @@ json_event "collector_start" \
   "shard_count=$SHARD_COUNT" \
   "shard_target=$SHARD_TARGET" \
   "code_commit=${CODE_COMMIT:-unknown}" \
-  "pool_manifest=$POOL_MANIFEST"
+  "pool_manifest=$POOL_MANIFEST" \
+  "selected_objects_jsonl=${SELECTED_OBJECTS_JSONL:-}" \
+  "objects_per_demo_min=$OBJECTS_PER_DEMO_MIN" \
+  "objects_per_demo_max=$OBJECTS_PER_DEMO_MAX"
 
 accepted=0
 attempt=0
 while [ "$accepted" -lt "$SHARD_TARGET" ] && [ "$attempt" -lt "$MAX_ATTEMPTS" ]; do
   seed="$((START_SEED + SHARD_INDEX * 100000 + attempt))"
+  CURRENT_OBJECTS_PER_DEMO="$(sample_objects_per_demo "$seed")"
+  CURRENT_CLUTTER_OBJECT_COUNT="$((CURRENT_OBJECTS_PER_DEMO - 1))"
+  if [ -n "$DEMO_STEPS" ]; then
+    CURRENT_DEMO_STEPS="$DEMO_STEPS"
+  else
+    CURRENT_DEMO_STEPS="$((DEMO_STEPS_PER_OBJECT * CURRENT_OBJECTS_PER_DEMO))"
+  fi
   attempt_dir="$SHARD_DIR/attempt_seed_${seed}"
   mkdir -p "$attempt_dir"
   settle_run="${BATCH_NAME}_s$(printf '%03d' "$SHARD_INDEX")_seed${seed}_settle"
@@ -346,7 +439,13 @@ while [ "$accepted" -lt "$SHARD_TARGET" ] && [ "$attempt" -lt "$MAX_ATTEMPTS" ];
   plan_dir_host="$attempt_dir/plan"
   trajectory_host="$plan_dir_host/trajectory.json"
   validation_host="$attempt_dir/validation_metrics.json"
-  json_event "attempt_start" "seed=$seed" "attempt=$attempt" "accepted=$accepted"
+  json_event "attempt_start" \
+    "seed=$seed" \
+    "attempt=$attempt" \
+    "accepted=$accepted" \
+    "objects_per_demo=$CURRENT_OBJECTS_PER_DEMO" \
+    "clutter_object_count=$CURRENT_CLUTTER_OBJECT_COUNT" \
+    "demo_steps=$CURRENT_DEMO_STEPS"
 
   if ! run_settle "$seed" "$settle_run"; then
     json_event "attempt_rejected" "seed=$seed" "stage=settle" "settle_run=$settle_run"
@@ -389,23 +488,41 @@ while [ "$accepted" -lt "$SHARD_TARGET" ] && [ "$attempt" -lt "$MAX_ATTEMPTS" ];
   json_event "attempt_accepted" \
     "seed=$seed" \
     "accepted=$accepted" \
+    "objects_per_demo=$CURRENT_OBJECTS_PER_DEMO" \
     "settle_run=$settle_run" \
     "replay_run=$replay_run" \
     "trajectory=$trajectory_host" \
     "validation=$validation_host"
-  python3 - "$seed" "$settle_run" "$replay_run" "$stable_scene_host" "$trajectory_host" "$validation_host" "$RESULTS_NFS" <<'PY' >> "$ACCEPTED_JSONL"
+  python3 - "$seed" "$settle_run" "$replay_run" "$stable_scene_host" "$trajectory_host" "$validation_host" "$RESULTS_NFS" "$CURRENT_OBJECTS_PER_DEMO" <<'PY' >> "$ACCEPTED_JSONL"
 import json
 import sys
-seed, settle, replay, stable, trajectory, validation, results_nfs = sys.argv[1:]
+from pathlib import Path
+
+seed, settle, replay, stable, trajectory, validation, results_nfs, objects_per_demo = sys.argv[1:]
+trajectory_payload = {}
+validation_payload = {}
+trajectory_path = Path(trajectory)
+validation_path = Path(validation)
+if trajectory_path.is_file():
+    trajectory_payload = json.loads(trajectory_path.read_text(encoding="utf-8"))
+if validation_path.is_file():
+    validation_payload = json.loads(validation_path.read_text(encoding="utf-8"))
 print(json.dumps({
     "seed": int(seed),
+    "objects_per_demo": int(objects_per_demo),
     "settle_run": settle,
     "replay_run": replay,
     "stable_scene": stable,
     "trajectory": trajectory,
     "dataset": f"{results_nfs}/validations/{replay}/trajectory_dataset.npz",
+    "dataset_metadata": f"{results_nfs}/validations/{replay}/trajectory_dataset.npz.metadata.json",
     "video": f"{results_nfs}/validations/{replay}/yam_pick_place.mp4",
     "validation": validation,
+    "object_sequence": trajectory_payload.get("object_sequence"),
+    "trajectory_segments": trajectory_payload.get("segments"),
+    "validation_status": validation_payload.get("status"),
+    "validation_checks": validation_payload.get("checks"),
+    "validation_objects": validation_payload.get("objects"),
 }, sort_keys=True))
 PY
   record_json_file_line "$validation_host" "$SHARD_DIR/accepted_validation_metrics.jsonl"
@@ -433,6 +550,11 @@ summary = {
     "accepted_jsonl": "$ACCEPTED_JSONL",
     "rejected_jsonl": "$REJECTED_JSONL",
     "pool_manifest": "$POOL_MANIFEST",
+    "selected_objects_jsonl": "${SELECTED_OBJECTS_JSONL:-}",
+    "objects_per_demo_min": int("$OBJECTS_PER_DEMO_MIN"),
+    "objects_per_demo_max": int("$OBJECTS_PER_DEMO_MAX"),
+    "object_asset_assignment": "$OBJECT_ASSET_ASSIGNMENT",
+    "tabletop_clutter_asset_assignment": "$TABLETOP_CLUTTER_ASSET_ASSIGNMENT",
     "code_commit": "${CODE_COMMIT:-unknown}",
 }
 path = Path("$SHARD_DIR/summary.json")

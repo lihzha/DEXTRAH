@@ -1845,6 +1845,8 @@ def _load_demo_trajectory(path: Path) -> dict[str, object]:
         "total_frames": int(payload.get("total_frames") or len(joint_positions)),
         "joint_names": payload.get("joint_names"),
         "segments": payload.get("segments"),
+        "object_count": payload.get("object_count"),
+        "object_sequence": payload.get("object_sequence"),
         "tabletop_rejected": payload.get("tabletop_rejected"),
         "tabletop_status": payload.get("tabletop_status"),
         "nominal_status": payload.get("nominal_status"),
@@ -2360,8 +2362,11 @@ def _write_demo_dataset_npz(
     arrays["metadata_json"] = np.asarray(json.dumps(_jsonable(metadata), indent=2))
     path.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(path, **arrays)
+    metadata_path = path.with_suffix(path.suffix + ".metadata.json")
+    metadata_path.write_text(json.dumps(_jsonable(metadata), indent=2) + "\n", encoding="utf-8")
     return {
         "path": str(path),
+        "metadata_path": str(metadata_path),
         "state_steps": int(len(dataset.get("step_idx", []))),
         "rgb_frames": int(len(rgb_frames)),
         "keys": sorted(arrays.keys()),
@@ -3242,6 +3247,10 @@ def main() -> None:
                 "control_dt_s": float(_env_control_dt(task_env)),
                 "demo_steps": int(demo_steps),
                 "source_timing": demo_trajectory_timing_summary,
+                "trajectory_total_frames": None if demo_trajectory is None else demo_trajectory.get("total_frames"),
+                "trajectory_segments": None if demo_trajectory is None else demo_trajectory.get("segments"),
+                "trajectory_object_count": None if demo_trajectory is None else demo_trajectory.get("object_count"),
+                "trajectory_object_sequence": None if demo_trajectory is None else demo_trajectory.get("object_sequence"),
             },
         )
         trajectory_dataset_summary.update(

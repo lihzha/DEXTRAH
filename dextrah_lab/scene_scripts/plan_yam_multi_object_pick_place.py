@@ -260,14 +260,39 @@ def _combine_trajectories(
         target_grasp = annotations.get("target_tool_transform") or annotations.get("target_grasp_transform")
         if target_grasp is not None:
             selected_grasps.append(target_grasp)
+        asset = record.get("asset") if isinstance(record.get("asset"), dict) else {}
+        object_segments = [
+            segment
+            for segment in combined_segments
+            if str(segment.get("object_id")) == str(record["object_id"])
+            and int(segment.get("object_sequence_index", -1)) == int(object_idx)
+        ]
         per_object.append(
             {
                 "object_id": str(record["object_id"]),
                 "source": str(record["source"]),
                 "slot_idx": record["slot_idx"],
+                "uuid": str(asset.get("uuid") or ""),
+                "name": str(asset.get("name") or asset.get("metadata_text") or asset.get("uuid") or record["object_id"]),
+                "asset": {
+                    "uuid": str(asset.get("uuid") or ""),
+                    "name": str(asset.get("name") or ""),
+                    "metadata_text": str(asset.get("metadata_text") or ""),
+                    "usd_path": str(asset.get("usd_path") or ""),
+                    "raw_object_path": str(asset.get("raw_object_path") or ""),
+                    "grasp_prior_path": str(asset.get("grasp_prior_path") or ""),
+                    "scale": asset.get("scale"),
+                    "xy_radius": asset.get("xy_radius"),
+                    "scaled_half_extents": copy.deepcopy(asset.get("scaled_half_extents")),
+                },
                 "trajectory_path": str(path),
                 "start_frame": int(start),
+                "end_frame": int(start + len(frames) - 1),
+                "end_frame_exclusive": int(start + len(frames)),
                 "frame_count": int(len(frames)),
+                "pick_start_frame": int(start),
+                "placement_end_frame": int(start + len(frames) - 1),
+                "segments": object_segments,
             }
         )
 
@@ -287,6 +312,7 @@ def _combine_trajectories(
         "frames": combined_frames,
         "segments": combined_segments,
         "phase_source": "stitched_multi_object_dextrah_task_segments",
+        "object_count": int(len(per_object)),
         "object_sequence": per_object,
     }
     output_path.parent.mkdir(parents=True, exist_ok=True)

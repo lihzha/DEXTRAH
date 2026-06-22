@@ -32,6 +32,62 @@ def _load_json(path: Path | None) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _metadata_from_arrays(arrays: dict[str, np.ndarray]) -> dict[str, Any]:
+    raw = arrays.get("metadata_json")
+    if raw is None:
+        return {}
+    try:
+        text = str(raw.item() if getattr(raw, "shape", ()) == () else raw.reshape(-1)[0])
+    except Exception:
+        return {}
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _object_sequence_checks(
+    metadata: dict[str, Any],
+    *,
+    expected_objects: int,
+    frame_count: int,
+) -> dict[str, Any]:
+    sequence = metadata.get("trajectory_object_sequence")
+    if not isinstance(sequence, list):
+        sequence = []
+    uuids = [
+        str(item.get("uuid") or "")
+        for item in sequence
+        if isinstance(item, dict) and str(item.get("uuid") or "")
+    ]
+    frame_ranges_valid = True
+    for item in sequence:
+        if not isinstance(item, dict):
+            frame_ranges_valid = False
+            continue
+        try:
+            start = int(item.get("start_frame"))
+            end = int(item.get("end_frame"))
+            end_exclusive = int(item.get("end_frame_exclusive", end + 1))
+            count = int(item.get("frame_count", end_exclusive - start))
+        except (TypeError, ValueError):
+            frame_ranges_valid = False
+            continue
+        frame_ranges_valid = frame_ranges_valid and (
+            0 <= start <= end < end_exclusive <= frame_count and count == end_exclusive - start
+        )
+    return {
+        "sequence": sequence,
+        "checks": {
+            "object_sequence_present": bool(sequence),
+            "object_sequence_count": len(sequence) == int(expected_objects),
+            "object_sequence_frame_ranges": bool(frame_ranges_valid),
+            "object_sequence_unique_uuids": len(uuids) == len(set(uuids)),
+        },
+    }
+
+
 def _finite_summary(array: np.ndarray) -> dict[str, Any]:
     finite = np.isfinite(array)
     if not bool(finite.all()):
@@ -166,6 +222,7 @@ def main() -> None:
 
     with np.load(args.dataset_path, allow_pickle=False) as data:
         arrays = {key: data[key] for key in data.files}
+    metadata = _metadata_from_arrays(arrays)
 
     required_keys = [
         "target_root_pos",
@@ -208,9 +265,22 @@ def main() -> None:
     truncated = np.asarray(arrays.get("truncated", np.empty((0,))), dtype=bool)
 
     expected_objects = int(args.expected_objects) if args.expected_objects is not None else len(object_results)
+    state_steps = int(arrays["step_idx"].shape[0]) if "step_idx" in arrays else 0
+    try:
+        source_frame_count = int(metadata.get("trajectory_total_frames") or 0)
+    except (TypeError, ValueError):
+        source_frame_count = 0
+    if source_frame_count <= 0:
+        source_frame_count = state_steps
+    sequence_summary = _object_sequence_checks(
+        metadata,
+        expected_objects=expected_objects,
+        frame_count=source_frame_count,
+    )
     checks = {
         "required_keys_present": not missing,
         "expected_object_count": len(object_results) == expected_objects,
+        **sequence_summary["checks"],
         "all_objects_inside_bin": bool(object_results) and all(bool(item["inside_bin"]) for item in object_results),
         "all_objects_lifted": bool(object_results) and all(bool(item["passes_lift_delta"]) for item in object_results),
         "all_final_z_valid": bool(object_results) and all(bool(item["passes_final_z"]) for item in object_results),
@@ -240,11 +310,20 @@ def main() -> None:
         "objects": object_results,
         "dataset": {
             "keys": sorted(arrays.keys()),
-            "state_steps": int(arrays["step_idx"].shape[0]) if "step_idx" in arrays else None,
+            "state_steps": state_steps if state_steps > 0 else None,
             "rgb_shape": list(rgb.shape),
             "done_sum": int(done.sum()) if done.size else 0,
             "terminated_sum": int(terminated.sum()) if terminated.size else 0,
             "truncated_sum": int(truncated.sum()) if truncated.size else 0,
+        },
+        "metadata": {
+            "present": bool(metadata),
+            "task": metadata.get("task"),
+            "trajectory_path": metadata.get("trajectory_path"),
+            "trajectory_total_frames": metadata.get("trajectory_total_frames"),
+            "trajectory_object_count": metadata.get("trajectory_object_count"),
+            "trajectory_object_sequence": sequence_summary["sequence"],
+            "trajectory_segments": metadata.get("trajectory_segments"),
         },
         "finger_table_clearance": {
             "min": None if not finger_clearance.size else float(np.nanmin(finger_clearance)),
