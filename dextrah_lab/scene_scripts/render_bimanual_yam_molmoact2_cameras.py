@@ -187,7 +187,7 @@ def _make_policy_camera(
         data_types=["rgb"],
         update_period=0.0,
         spawn=_spawn_from_intrinsic(intrinsic),
-        offset=CameraCfg.OffsetCfg(pos=pos, rot=quat, convention="opengl"),
+        offset=CameraCfg.OffsetCfg(pos=pos, rot=quat, convention="world"),
     )
     return Camera(cfg)
 
@@ -443,7 +443,7 @@ def main() -> None:
                     "parent_body": MOLMOACT2_TOP_CAMERA_PARENT_BODY,
                     "local_pos": list(MOLMOACT2_TOP_CAMERA_LOCAL_POS),
                     "local_quat_wxyz": list(MOLMOACT2_TOP_CAMERA_LOCAL_QUAT_WXYZ),
-                    "convention": "opengl",
+                    "convention": "world",
                     "vfov_deg": MOLMOACT2_TOP_CAMERA_VFOV_DEG,
                     "intrinsic_row_major": list(MOLMOACT2_TOP_CAMERA_INTRINSIC),
                 },
@@ -451,7 +451,7 @@ def main() -> None:
                     "parent_body": MOLMOACT2_LEFT_WRIST_CAMERA_PARENT_BODY,
                     "local_pos": list(MOLMOACT2_WRIST_CAMERA_LOCAL_POS),
                     "local_quat_wxyz": list(MOLMOACT2_WRIST_CAMERA_LOCAL_QUAT_WXYZ),
-                    "convention": "opengl",
+                    "convention": "world",
                     "vfov_deg": MOLMOACT2_WRIST_CAMERA_VFOV_DEG,
                     "intrinsic_row_major": list(MOLMOACT2_WRIST_CAMERA_INTRINSIC),
                 },
@@ -459,7 +459,7 @@ def main() -> None:
                     "parent_body": MOLMOACT2_RIGHT_WRIST_CAMERA_PARENT_BODY,
                     "local_pos": list(MOLMOACT2_WRIST_CAMERA_LOCAL_POS),
                     "local_quat_wxyz": list(MOLMOACT2_WRIST_CAMERA_LOCAL_QUAT_WXYZ),
-                    "convention": "opengl",
+                    "convention": "world",
                     "vfov_deg": MOLMOACT2_WRIST_CAMERA_VFOV_DEG,
                     "intrinsic_row_major": list(MOLMOACT2_WRIST_CAMERA_INTRINSIC),
                 },
