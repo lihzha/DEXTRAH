@@ -906,6 +906,18 @@ def _filter_yam_grasps_by_aperture(
         keep_entries = []
         reason = "no_grasp_satisfies_aperture_lift_and_height"
 
+    if bool(allow_filter_fallback) and len(keep_entries) < max(1, int(min_keep)):
+        selected = {entry["index"] for entry in keep_entries}
+        needed = max(1, int(min_keep)) - len(keep_entries)
+        fill_entries = [
+            entry
+            for entry in sorted(scored, key=lambda entry: entry["geometry_cost"])
+            if entry["index"] not in selected
+        ][:needed]
+        if fill_entries:
+            keep_entries = [*keep_entries, *fill_entries]
+            reason = f"{reason}_min_keep_topup"
+
     keep_indices = [entry["index"] for entry in keep_entries]
     order = sorted(
         range(len(keep_indices)),
