@@ -1390,7 +1390,13 @@ def main() -> None:
                 per_object_failures = candidate_failure_counts.setdefault(selected_id, {})
                 selected_candidate_failure_count = int(per_object_failures.get(selected_original_int, 0)) + 1
                 per_object_failures[selected_original_int] = selected_candidate_failure_count
-                if selected_candidate_failure_count >= max(1, int(args.candidate_failure_limit)):
+                physical_bad_grasp = failure_cause in {
+                    "no_lift_after_close",
+                    "insufficient_lift",
+                    "not_in_goal_bin",
+                }
+                candidate_failure_limit = 1 if physical_bad_grasp else max(1, int(args.candidate_failure_limit))
+                if selected_candidate_failure_count >= candidate_failure_limit:
                     candidate_exclusions.setdefault(selected_id, set()).add(selected_original_int)
             planning_skip_ids.add(selected_id)
             terminal_failed = attempt_number >= max(1, int(args.max_attempts_per_object))
@@ -1443,6 +1449,11 @@ def main() -> None:
                 "planner_profile_index": int(plan_info.get("planner_profile_index", 0)),
                 "planner_profile_failures_before_success": planning_profile_failures,
                 "candidate_failure_limit": int(args.candidate_failure_limit),
+                "candidate_failure_limit_used": int(
+                    1
+                    if failure_cause in {"no_lift_after_close", "insufficient_lift", "not_in_goal_bin"}
+                    else max(1, int(args.candidate_failure_limit))
+                ),
                 "selected_grasp_original_index": selected_original_int,
                 "selected_candidate_failure_count": int(selected_candidate_failure_count),
                 "excluded_grasp_original_indices_before_plan": sorted(int(v) for v in excluded_grasp_original_indices),
