@@ -101,6 +101,19 @@ stage_yam_ignored_assets() {
     mkdir -p "$target/yam_mjcf_usd"
     cp -a "$YAM_ASSET_SOURCE_NFS/yam_mjcf_usd"/bimanual_yam_linear_flattened.usd "$target/yam_mjcf_usd"/
   fi
+  if [ -d "$YAM_ASSET_SOURCE_NFS/yam_mjcf_usd/configuration" ]; then
+    mkdir -p "$target/yam_mjcf_usd/configuration"
+    for asset in \
+      bimanual_yam_linear_flattened_base.usd \
+      bimanual_yam_linear_flattened_physics.usd \
+      bimanual_yam_linear_flattened_robot.usd \
+      bimanual_yam_linear_flattened_sensor.usd
+    do
+      if [ ! -s "$target/yam_mjcf_usd/configuration/$asset" ] && [ -s "$YAM_ASSET_SOURCE_NFS/yam_mjcf_usd/configuration/$asset" ]; then
+        cp -a "$YAM_ASSET_SOURCE_NFS/yam_mjcf_usd/configuration/$asset" "$target/yam_mjcf_usd/configuration/"
+      fi
+    done
+  fi
 }
 stage_yam_ignored_assets
 
@@ -181,6 +194,14 @@ srun \
       /isaac-sim/python.sh dextrah_lab/assets/scripts/prepare_yam_assets.py --headless --converter mjcf
     fi
     test -s "$YAM_USD"
+    for asset in \
+      /code/dextrah_lab/assets/yam/yam_mjcf_usd/configuration/bimanual_yam_linear_flattened_base.usd \
+      /code/dextrah_lab/assets/yam/yam_mjcf_usd/configuration/bimanual_yam_linear_flattened_physics.usd \
+      /code/dextrah_lab/assets/yam/yam_mjcf_usd/configuration/bimanual_yam_linear_flattened_robot.usd \
+      /code/dextrah_lab/assets/yam/yam_mjcf_usd/configuration/bimanual_yam_linear_flattened_sensor.usd
+    do
+      test -s "$asset" || { echo "Missing required bimanual YAM USD payload: $asset" >&2; exit 2; }
+    done
     ARGS=(
       dextrah_lab/scene_scripts/render_bimanual_yam_dual_pick_demo.py
       --headless
