@@ -355,6 +355,13 @@ def _cycled_option(values: list[float], attempt_number: int, default: float) -> 
     return float(values[(max(1, int(attempt_number)) - 1) % len(values)])
 
 
+def _rotated_options(values: list[float], attempt_number: int) -> list[float]:
+    if not values:
+        return []
+    start = (max(1, int(attempt_number)) - 1) % len(values)
+    return [float(v) for v in values[start:]] + [float(v) for v in values[:start]]
+
+
 def _planner_tool_z_options(args: argparse.Namespace) -> list[float]:
     explicit = _parse_float_list(str(args.planner_yam_grasp_to_tool_z_values))
     if explicit:
@@ -371,6 +378,59 @@ def _planner_clutter_margin_options(args: argparse.Namespace) -> list[float]:
     offsets = _parse_float_list(str(args.planner_clutter_margin_offsets))
     base = float(args.planner_clutter_margin)
     return [float(v) for v in _unique_floats([base + float(offset) for offset in offsets])] or [base]
+
+
+def _planning_profile_options(
+    args: argparse.Namespace,
+    *,
+    attempt_number: int,
+    base_finger_joint: float,
+) -> list[dict[str, float | None]]:
+    finger_options = _planning_finger_options(args, base_finger_joint)
+    tool_z_options = _planner_tool_z_options(args)
+    clutter_margin_options = _planner_clutter_margin_options(args)
+    current_finger = finger_options[(max(1, int(attempt_number)) - 1) % len(finger_options)]
+    current_tool_z = _cycled_option(tool_z_options, attempt_number, float(args.planner_yam_grasp_to_tool_z))
+    current_margin = _cycled_option(clutter_margin_options, attempt_number, float(args.planner_clutter_margin))
+    relaxed_margin = min(clutter_margin_options) if clutter_margin_options else current_margin
+    open_finger = finger_options[0] if finger_options else current_finger
+    closed_finger = finger_options[-1] if finger_options else current_finger
+
+    ordered: list[tuple[float | None, float, float]] = [
+        (current_finger, current_tool_z, current_margin),
+        (current_finger, current_tool_z, relaxed_margin),
+        (open_finger, current_tool_z, relaxed_margin),
+    ]
+    for tool_z in _rotated_options(tool_z_options, attempt_number):
+        ordered.extend(
+            [
+                (open_finger, tool_z, relaxed_margin),
+                (current_finger, tool_z, relaxed_margin),
+                (closed_finger, tool_z, relaxed_margin),
+                (open_finger, tool_z, current_margin),
+            ]
+        )
+    profiles: list[dict[str, float | None]] = []
+    seen: set[tuple[float | None, float, float]] = set()
+    for finger, tool_z, margin in ordered:
+        key = (
+            None if finger is None else round(float(finger), 7),
+            round(float(tool_z), 7),
+            round(float(margin), 7),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        profiles.append(
+            {
+                "planning_finger_joint_position": None if finger is None else float(finger),
+                "planner_yam_grasp_to_tool_z": float(tool_z),
+                "planner_clutter_margin": float(margin),
+            }
+        )
+        if len(profiles) >= max(1, int(args.max_planning_profile_trials)):
+            break
+    return profiles
 
 
 def _append_pythonpath(env: dict[str, str], paths: list[Path | None]) -> None:
@@ -449,9 +509,11 @@ def _plan_iteration(
     planning_finger_joint_position: float | None,
     planner_yam_grasp_to_tool_z: float,
     planner_clutter_margin: float,
+    planner_profile_index: int,
     excluded_grasp_original_indices: set[int],
 ) -> dict[str, Any]:
-    plan_output_dir = iteration_dir / "plan"
+    profile_idx = int(planner_profile_index)
+    plan_output_dir = iteration_dir / ("plan" if profile_idx == 0 else f"plan_profile_{profile_idx:02d}")
     run_name = "pick_drop"
     cmd = [
         str(args.planner_python.expanduser()),
@@ -511,7 +573,8 @@ def _plan_iteration(
         cmd.extend(["--graspgenx_root", str(args.graspgenx_root.expanduser().resolve())])
     if args.curobo_root is not None:
         cmd.extend(["--curobo_root", str(args.curobo_root.expanduser().resolve())])
-    _run_logged(cmd, iteration_dir / "planner.log", env=_planner_env(args), cwd=_repo_root())
+    planner_log = iteration_dir / ("planner.log" if profile_idx == 0 else f"planner_profile_{profile_idx:02d}.log")
+    _run_logged(cmd, planner_log, env=_planner_env(args), cwd=_repo_root())
     run_dir = plan_output_dir / run_name
     trajectory_path = run_dir / "trajectory.json"
     plan_summary_path = run_dir / "plan_summary.json"
@@ -536,6 +599,8 @@ def _plan_iteration(
         else float(planning_finger_joint_position),
         "planner_yam_grasp_to_tool_z": float(planner_yam_grasp_to_tool_z),
         "planner_clutter_margin": float(planner_clutter_margin),
+        "planner_profile_index": profile_idx,
+        "planner_log": str(planner_log),
         "scripted_bin_drop_y_offset": float(drop_y_offset),
     }
 
@@ -981,6 +1046,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max_attempts_per_object", type=int, default=8)
     parser.add_argument("--max_no_progress_passes", type=int, default=4)
     parser.add_argument(
+        "--max_planning_profile_trials",
+        type=int,
+        default=8,
+        help="Maximum planner profile combinations tried before skipping an object for the current pass.",
+    )
+    parser.add_argument(
         "--candidate_failure_limit",
         type=int,
         default=2,
@@ -1186,36 +1257,53 @@ def main() -> None:
         attempt_counts[selected_id] = attempt_number
         base_finger_joint = float(planning_start_joint[-1]) if planning_start_joint else float(home_joint[-1])
         finger_options = _planning_finger_options(args, base_finger_joint)
-        planning_finger_joint_position = finger_options[(attempt_number - 1) % len(finger_options)]
         tool_z_options = _planner_tool_z_options(args)
-        planner_yam_grasp_to_tool_z = _cycled_option(
-            tool_z_options,
-            attempt_number,
-            float(args.planner_yam_grasp_to_tool_z),
-        )
         clutter_margin_options = _planner_clutter_margin_options(args)
-        planner_clutter_margin = _cycled_option(
-            clutter_margin_options,
-            attempt_number,
-            float(args.planner_clutter_margin),
+        planner_profiles = _planning_profile_options(
+            args,
+            attempt_number=attempt_number,
+            base_finger_joint=base_finger_joint,
         )
         excluded_grasp_original_indices = set(candidate_exclusions.get(selected_id, set()))
 
         drop_y_offset = float(drop_y_offsets[iteration % len(drop_y_offsets)])
-        try:
-            plan_info = _plan_iteration(
-                args,
-                scene_path,
-                iteration_dir,
-                iteration,
-                drop_y_offset=drop_y_offset,
-                attempt_number=attempt_number,
-                planning_finger_joint_position=planning_finger_joint_position,
-                planner_yam_grasp_to_tool_z=planner_yam_grasp_to_tool_z,
-                planner_clutter_margin=planner_clutter_margin,
-                excluded_grasp_original_indices=excluded_grasp_original_indices,
-            )
-        except Exception as exc:
+        plan_info: dict[str, Any] | None = None
+        planning_profile_failures: list[dict[str, Any]] = []
+        for profile_idx, planner_profile in enumerate(planner_profiles):
+            planning_finger_joint_position = planner_profile["planning_finger_joint_position"]
+            planner_yam_grasp_to_tool_z = float(planner_profile["planner_yam_grasp_to_tool_z"])
+            planner_clutter_margin = float(planner_profile["planner_clutter_margin"])
+            try:
+                plan_info = _plan_iteration(
+                    args,
+                    scene_path,
+                    iteration_dir,
+                    iteration,
+                    drop_y_offset=drop_y_offset,
+                    attempt_number=attempt_number,
+                    planning_finger_joint_position=None
+                    if planning_finger_joint_position is None
+                    else float(planning_finger_joint_position),
+                    planner_yam_grasp_to_tool_z=planner_yam_grasp_to_tool_z,
+                    planner_clutter_margin=planner_clutter_margin,
+                    planner_profile_index=profile_idx,
+                    excluded_grasp_original_indices=excluded_grasp_original_indices,
+                )
+                break
+            except Exception as exc:
+                planning_profile_failures.append(
+                    {
+                        "planner_profile_index": int(profile_idx),
+                        "planning_finger_joint_position": None
+                        if planning_finger_joint_position is None
+                        else float(planning_finger_joint_position),
+                        "planner_yam_grasp_to_tool_z": float(planner_yam_grasp_to_tool_z),
+                        "planner_clutter_margin": float(planner_clutter_margin),
+                        "exception_type": type(exc).__name__,
+                        "exception": str(exc),
+                    }
+                )
+        if plan_info is None:
             planning_skip_ids.add(selected_id)
             terminal_failed = attempt_number >= max(1, int(args.max_attempts_per_object))
             if terminal_failed:
@@ -1227,16 +1315,12 @@ def main() -> None:
                 "attempt_number": int(attempt_number),
                 "max_attempts_per_object": int(args.max_attempts_per_object),
                 "terminal_failed": bool(terminal_failed),
-                "planning_finger_joint_position": None
-                if planning_finger_joint_position is None
-                else float(planning_finger_joint_position),
+                "planner_profile_failures": planning_profile_failures,
+                "max_planning_profile_trials": int(args.max_planning_profile_trials),
                 "planner_yam_grasp_to_tool_z_options": tool_z_options,
-                "planner_yam_grasp_to_tool_z": float(planner_yam_grasp_to_tool_z),
                 "planner_clutter_margin_options": clutter_margin_options,
-                "planner_clutter_margin": float(planner_clutter_margin),
+                "planning_finger_options": finger_options,
                 "excluded_grasp_original_indices": sorted(int(v) for v in excluded_grasp_original_indices),
-                "exception_type": type(exc).__name__,
-                "exception": str(exc),
                 "scene_path": str(scene_path),
                 "skip_ids_for_iteration": sorted(planning_skip_ids),
                 "failed_object_ids": sorted(failed_ids),
@@ -1355,6 +1439,9 @@ def main() -> None:
                 "planner_yam_grasp_to_tool_z": float(planner_yam_grasp_to_tool_z),
                 "planner_clutter_margin_options": clutter_margin_options,
                 "planner_clutter_margin": float(planner_clutter_margin),
+                "max_planning_profile_trials": int(args.max_planning_profile_trials),
+                "planner_profile_index": int(plan_info.get("planner_profile_index", 0)),
+                "planner_profile_failures_before_success": planning_profile_failures,
                 "candidate_failure_limit": int(args.candidate_failure_limit),
                 "selected_grasp_original_index": selected_original_int,
                 "selected_candidate_failure_count": int(selected_candidate_failure_count),
