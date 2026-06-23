@@ -51,6 +51,12 @@ def _as_float_list(value: Any, length: int, default: Sequence[float]) -> list[fl
     return [float(v) for v in value]
 
 
+def _optional_float_list(value: Any, default: Sequence[float]) -> list[float]:
+    if not isinstance(value, (list, tuple)):
+        return [float(v) for v in default]
+    return [float(v) for v in value]
+
+
 def _bounds_from_record(
     record: dict[str, object],
     *,
@@ -264,11 +270,12 @@ class MultiObjectGraspTaskMixin:
                 if not isinstance(record, dict):
                     raise ValueError(f"Object record {idx} in {manifest} is not a mapping")
                 uuid = str(record.get("uuid") or record.get("name") or f"object_{idx}")
+                primitive_shape = str(record.get("primitive_shape") or "").strip().lower()
                 usd_value = record.get("usd_path")
-                if not usd_value:
+                if not usd_value and not primitive_shape:
                     raise ValueError(f"Object record {uuid} is missing usd_path")
-                usd_path = resolve_repo_path(str(usd_value), base_dir=asset_root_path)
-                if not usd_path.is_file():
+                usd_path = resolve_repo_path(str(usd_value), base_dir=asset_root_path) if usd_value else None
+                if usd_path is not None and not usd_path.is_file():
                     raise FileNotFoundError(
                         f"Missing USD asset for {uuid}: {usd_path} "
                         f"(manifest={manifest}, asset_root={asset_root_path}, usd_path={usd_value})"
@@ -320,7 +327,10 @@ class MultiObjectGraspTaskMixin:
                 usd_bbox_size = None
                 usd_root_scale = 1.0
                 if bool(validate_usd_bounds):
-                    usd_bbox_size, usd_root_scale = _usd_default_prim_info(usd_path)
+                    if usd_path is None:
+                        usd_bbox_size = expected_size
+                    else:
+                        usd_bbox_size, usd_root_scale = _usd_default_prim_info(usd_path)
                 usd_spawn_scale = float(scale) * float(usd_root_scale)
                 usd_bounds_is_outlier, usd_bounds_max, usd_bounds_ratio = _usd_bounds_outlier(
                     usd_bbox_size,
@@ -335,7 +345,7 @@ class MultiObjectGraspTaskMixin:
                                 "event": "skip_asset_usd_bounds_outlier",
                                 "label": label,
                                 "uuid": uuid,
-                                "usd_path": str(usd_path),
+                                "usd_path": "" if usd_path is None else str(usd_path),
                                 "usd_bbox_size": usd_bbox_size,
                                 "manifest_bbox_size": expected_size,
                                 "usd_bounds_max": usd_bounds_max,
@@ -364,8 +374,15 @@ class MultiObjectGraspTaskMixin:
                         "uuid": uuid,
                         "name": name,
                         "metadata_text": _record_metadata_text(record, fallback=f"{name} {uuid}"),
-                        "usd_path": str(usd_path),
+                        "usd_path": "" if usd_path is None else str(usd_path),
                         "raw_object_path": resolved_raw_object,
+                        "primitive_shape": primitive_shape,
+                        "primitive_radius": float(record.get("primitive_radius", 0.0) or 0.0),
+                        "primitive_size": _optional_float_list(record.get("primitive_size"), expected_size),
+                        "primitive_color": _optional_float_list(
+                            record.get("primitive_color"),
+                            (0.75, 0.75, 0.75),
+                        ),
                         "scale": scale,
                         "usd_spawn_scale": usd_spawn_scale,
                         "usd_root_scale": usd_root_scale,
@@ -726,16 +743,16 @@ class MultiObjectGraspTaskMixin:
         )
         self._setup_tabletop_clutter_stable_pose_resets()
 
-    def _tabletop_goal_bin_info(self) -> dict[str, float] | None:
-        if not bool(getattr(self.cfg, "tabletop_goal_bin_enabled", False)):
+    def _tabletop_bin_info(self, prefix: str, *, enabled_default: bool = False) -> dict[str, float] | None:
+        if not bool(getattr(self.cfg, f"{prefix}_enabled", enabled_default)):
             return None
-        wall = max(float(getattr(self.cfg, "tabletop_goal_bin_wall_thickness", 0.02)), 1.0e-4)
-        bottom = max(float(getattr(self.cfg, "tabletop_goal_bin_bottom_thickness", 0.012)), 1.0e-4)
-        inner_x = max(float(getattr(self.cfg, "tabletop_goal_bin_inner_size_x", 0.22)), 2.0 * wall)
-        inner_y = max(float(getattr(self.cfg, "tabletop_goal_bin_inner_size_y", 0.22)), 2.0 * wall)
-        wall_height = max(float(getattr(self.cfg, "tabletop_goal_bin_wall_height", 0.12)), 1.0e-4)
-        center_x = float(self.cfg.table_center_x) + float(getattr(self.cfg, "tabletop_goal_bin_center_offset_x", 0.0))
-        center_y = float(self.cfg.table_center_y) + float(getattr(self.cfg, "tabletop_goal_bin_center_offset_y", 0.0))
+        wall = max(float(getattr(self.cfg, f"{prefix}_wall_thickness", 0.02)), 1.0e-4)
+        bottom = max(float(getattr(self.cfg, f"{prefix}_bottom_thickness", 0.012)), 1.0e-4)
+        inner_x = max(float(getattr(self.cfg, f"{prefix}_inner_size_x", 0.22)), 2.0 * wall)
+        inner_y = max(float(getattr(self.cfg, f"{prefix}_inner_size_y", 0.22)), 2.0 * wall)
+        wall_height = max(float(getattr(self.cfg, f"{prefix}_wall_height", 0.12)), 1.0e-4)
+        center_x = float(self.cfg.table_center_x) + float(getattr(self.cfg, f"{prefix}_center_offset_x", 0.0))
+        center_y = float(self.cfg.table_center_y) + float(getattr(self.cfg, f"{prefix}_center_offset_y", 0.0))
         table_surface_z = float(self.cfg.table_surface_z)
         outer_x = inner_x + 2.0 * wall
         outer_y = inner_y + 2.0 * wall
@@ -754,18 +771,25 @@ class MultiObjectGraspTaskMixin:
             "inner_floor_z": table_surface_z + bottom,
             "wall_center_z": table_surface_z + bottom + 0.5 * wall_height,
             "inner_top_z": table_surface_z + bottom + wall_height,
-            "goal_z": table_surface_z + bottom + float(getattr(self.cfg, "tabletop_goal_bin_goal_height", 0.06)),
-            "clearance": max(float(getattr(self.cfg, "tabletop_goal_bin_clearance", 0.10)), 0.0),
-            "placement_clearance": self._tabletop_goal_bin_placement_clearance(),
+            "goal_z": table_surface_z + bottom + float(getattr(self.cfg, f"{prefix}_goal_height", 0.06)),
+            "clearance": max(float(getattr(self.cfg, f"{prefix}_clearance", 0.10)), 0.0),
+            "placement_clearance": self._tabletop_goal_bin_placement_clearance()
+            if prefix == "tabletop_goal_bin"
+            else 0.0,
         }
+
+    def _tabletop_goal_bin_info(self) -> dict[str, float] | None:
+        return self._tabletop_bin_info("tabletop_goal_bin")
+
+    def _tabletop_source_bin_info(self) -> dict[str, float] | None:
+        return self._tabletop_bin_info("tabletop_source_bin")
 
     def _tabletop_goal_bin_placement_clearance(self) -> float:
         task_clearance = max(float(getattr(self.cfg, "tabletop_goal_bin_clearance", 0.10)), 0.0)
         placement_clearance = max(float(getattr(self.cfg, "tabletop_goal_bin_placement_clearance", 0.0)), 0.0)
         return max(task_clearance, placement_clearance)
 
-    def _spawn_tabletop_goal_bin(self) -> None:
-        info = self._tabletop_goal_bin_info()
+    def _spawn_tabletop_bin(self, info: dict[str, float] | None, *, root_name: str, prefix: str) -> None:
         if info is None:
             return
 
@@ -780,10 +804,10 @@ class MultiObjectGraspTaskMixin:
         wall_z = info["wall_center_z"]
         wall_h = info["wall_height"]
         bottom = info["bottom_thickness"]
-        floor_color = tuple(float(v) for v in getattr(self.cfg, "tabletop_goal_bin_floor_color", (0.16, 0.18, 0.20)))
-        x_wall_color = tuple(float(v) for v in getattr(self.cfg, "tabletop_goal_bin_x_wall_color", (0.12, 0.38, 0.58)))
-        y_wall_color = tuple(float(v) for v in getattr(self.cfg, "tabletop_goal_bin_y_wall_color", (0.10, 0.32, 0.50)))
-        visual_roughness = float(getattr(self.cfg, "tabletop_goal_bin_visual_roughness", 0.68))
+        floor_color = tuple(float(v) for v in getattr(self.cfg, f"{prefix}_floor_color", (0.16, 0.18, 0.20)))
+        x_wall_color = tuple(float(v) for v in getattr(self.cfg, f"{prefix}_x_wall_color", (0.12, 0.38, 0.58)))
+        y_wall_color = tuple(float(v) for v in getattr(self.cfg, f"{prefix}_y_wall_color", (0.10, 0.32, 0.50)))
+        visual_roughness = float(getattr(self.cfg, f"{prefix}_visual_roughness", 0.68))
 
         def spawn_part(path: str, center: tuple[float, float, float], size: tuple[float, float, float], color):
             cfg = sim_utils.CuboidCfg(
@@ -806,7 +830,7 @@ class MultiObjectGraspTaskMixin:
             cfg.func(path, cfg, translation=center)
 
         for env_id in range(self.num_envs):
-            root = f"/World/envs/env_{env_id}/GoalBin"
+            root = f"/World/envs/env_{env_id}/{root_name}"
             spawn_part(f"{root}/floor", (cx, cy, floor_z), (outer_x, outer_y, bottom), floor_color)
             spawn_part(
                 f"{root}/x_pos_wall",
@@ -832,6 +856,20 @@ class MultiObjectGraspTaskMixin:
                 (inner_x, wall, wall_h),
                 y_wall_color,
             )
+
+    def _spawn_tabletop_goal_bin(self) -> None:
+        self._spawn_tabletop_bin(
+            self._tabletop_goal_bin_info(),
+            root_name="GoalBin",
+            prefix="tabletop_goal_bin",
+        )
+
+    def _spawn_tabletop_source_bin(self) -> None:
+        self._spawn_tabletop_bin(
+            self._tabletop_source_bin_info(),
+            root_name="SourceBin",
+            prefix="tabletop_source_bin",
+        )
 
     def _tabletop_goal_bin_clearance(self, xy: tuple[float, float], radius: float) -> float:
         info = self._tabletop_goal_bin_info()
@@ -937,66 +975,98 @@ class MultiObjectGraspTaskMixin:
         *,
         physics_prefix: str = "object",
     ) -> None:
-        scale = float(asset.get("usd_spawn_scale", asset["scale"]))
-        object_cfg = RigidObjectCfg(
-            prim_path=prim_path,
-            spawn=sim_utils.UsdFileCfg(
-                usd_path=str(asset["usd_path"]),
-                rigid_props=sim_utils.RigidBodyPropertiesCfg(
-                    rigid_body_enabled=True,
-                    kinematic_enabled=bool(
-                        self._rigid_body_cfg_value("kinematic_enabled", prefix=physics_prefix)
-                    ),
-                    disable_gravity=bool(self._rigid_body_cfg_value("disable_gravity", prefix=physics_prefix)),
-                    linear_damping=float(self._rigid_body_cfg_value("linear_damping", prefix=physics_prefix)),
-                    angular_damping=float(self._rigid_body_cfg_value("angular_damping", prefix=physics_prefix)),
-                    enable_gyroscopic_forces=True,
-                    solver_position_iteration_count=int(
-                        self._rigid_body_cfg_value("solver_position_iterations", prefix=physics_prefix)
-                    ),
-                    solver_velocity_iteration_count=int(
-                        self._rigid_body_cfg_value("solver_velocity_iterations", prefix=physics_prefix)
-                    ),
-                    sleep_threshold=float(self._rigid_body_cfg_value("sleep_threshold", prefix=physics_prefix)),
-                    stabilization_threshold=float(
-                        self._rigid_body_cfg_value("stabilization_threshold", prefix=physics_prefix)
-                    ),
-                    max_linear_velocity=float(
-                        self._rigid_body_cfg_value("max_linear_velocity", prefix=physics_prefix)
-                    ),
-                    max_angular_velocity=float(
-                        self._rigid_body_cfg_value("max_angular_velocity", prefix=physics_prefix)
-                    ),
-                    max_depenetration_velocity=float(
-                        self._rigid_body_cfg_value("max_depenetration_velocity", prefix=physics_prefix)
-                    ),
-                ),
-                mass_props=sim_utils.MassPropertiesCfg(
-                    density=float(self._rigid_body_cfg_value("density", prefix=physics_prefix))
-                ),
-                scale=(scale, scale, scale),
+        rigid_props = sim_utils.RigidBodyPropertiesCfg(
+            rigid_body_enabled=True,
+            kinematic_enabled=bool(self._rigid_body_cfg_value("kinematic_enabled", prefix=physics_prefix)),
+            disable_gravity=bool(self._rigid_body_cfg_value("disable_gravity", prefix=physics_prefix)),
+            linear_damping=float(self._rigid_body_cfg_value("linear_damping", prefix=physics_prefix)),
+            angular_damping=float(self._rigid_body_cfg_value("angular_damping", prefix=physics_prefix)),
+            enable_gyroscopic_forces=True,
+            solver_position_iteration_count=int(
+                self._rigid_body_cfg_value("solver_position_iterations", prefix=physics_prefix)
             ),
-            init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, -10.0), rot=(1.0, 0.0, 0.0, 0.0)),
-        )
-        RigidObject(object_cfg)
-        make_uninstanceable(prim_path)
-        sim_schemas.modify_collision_properties(
-            prim_path,
-            sim_utils.CollisionPropertiesCfg(
-                collision_enabled=True,
-                contact_offset=float(self._rigid_body_cfg_value("contact_offset", prefix=physics_prefix)),
-                rest_offset=float(self._rigid_body_cfg_value("rest_offset", prefix=physics_prefix)),
+            solver_velocity_iteration_count=int(
+                self._rigid_body_cfg_value("solver_velocity_iterations", prefix=physics_prefix)
+            ),
+            sleep_threshold=float(self._rigid_body_cfg_value("sleep_threshold", prefix=physics_prefix)),
+            stabilization_threshold=float(
+                self._rigid_body_cfg_value("stabilization_threshold", prefix=physics_prefix)
+            ),
+            max_linear_velocity=float(self._rigid_body_cfg_value("max_linear_velocity", prefix=physics_prefix)),
+            max_angular_velocity=float(self._rigid_body_cfg_value("max_angular_velocity", prefix=physics_prefix)),
+            max_depenetration_velocity=float(
+                self._rigid_body_cfg_value("max_depenetration_velocity", prefix=physics_prefix)
             ),
         )
-        object_material_cfg = RigidBodyMaterialCfg(
+        mass_props = sim_utils.MassPropertiesCfg(
+            density=float(self._rigid_body_cfg_value("density", prefix=physics_prefix))
+        )
+        collision_props = sim_utils.CollisionPropertiesCfg(
+            collision_enabled=True,
+            contact_offset=float(self._rigid_body_cfg_value("contact_offset", prefix=physics_prefix)),
+            rest_offset=float(self._rigid_body_cfg_value("rest_offset", prefix=physics_prefix)),
+        )
+        physics_material = RigidBodyMaterialCfg(
             static_friction=float(self._rigid_body_cfg_value("static_friction", prefix=physics_prefix)),
             dynamic_friction=float(self._rigid_body_cfg_value("dynamic_friction", prefix=physics_prefix)),
             restitution=float(self._rigid_body_cfg_value("restitution", prefix=physics_prefix)),
             friction_combine_mode="max",
             restitution_combine_mode="min",
         )
+        primitive_shape = str(asset.get("primitive_shape") or "").lower()
+        if primitive_shape:
+            color = tuple(_optional_float_list(asset.get("primitive_color"), (0.75, 0.75, 0.75)))
+            if primitive_shape == "sphere":
+                radius = float(asset.get("primitive_radius") or max(float(v) for v in asset["scaled_half_extents"]))
+                spawn_cfg = sim_utils.SphereCfg(
+                    radius=radius,
+                    collision_props=collision_props,
+                    rigid_props=rigid_props,
+                    mass_props=mass_props,
+                    physics_material=physics_material,
+                    visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=color, roughness=0.68),
+                )
+            elif primitive_shape in {"cuboid", "box", "rectangle", "rect"}:
+                size = tuple(float(v) for v in asset.get("primitive_size") or [])
+                if len(size) != 3:
+                    bounds_min = [float(v) for v in asset["scaled_bounds_min"]]
+                    bounds_max = [float(v) for v in asset["scaled_bounds_max"]]
+                    size = tuple(bounds_max[axis] - bounds_min[axis] for axis in range(3))
+                spawn_cfg = sim_utils.CuboidCfg(
+                    size=size,
+                    collision_props=collision_props,
+                    rigid_props=rigid_props,
+                    mass_props=mass_props,
+                    physics_material=physics_material,
+                    visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=color, roughness=0.70),
+                )
+            else:
+                raise ValueError(f"Unsupported primitive_shape for {asset.get('uuid')}: {primitive_shape!r}")
+            RigidObject(
+                RigidObjectCfg(
+                    prim_path=prim_path,
+                    spawn=spawn_cfg,
+                    init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, -10.0), rot=(1.0, 0.0, 0.0, 0.0)),
+                )
+            )
+            return
+
+        scale = float(asset.get("usd_spawn_scale", asset["scale"]))
+        object_cfg = RigidObjectCfg(
+            prim_path=prim_path,
+            spawn=sim_utils.UsdFileCfg(
+                usd_path=str(asset["usd_path"]),
+                rigid_props=rigid_props,
+                mass_props=mass_props,
+                scale=(scale, scale, scale),
+            ),
+            init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, -10.0), rot=(1.0, 0.0, 0.0, 0.0)),
+        )
+        RigidObject(object_cfg)
+        make_uninstanceable(prim_path)
+        sim_schemas.modify_collision_properties(prim_path, collision_props)
         object_material_path = f"{prim_path}/physicsMaterial"
-        object_material_cfg.func(object_material_path, object_material_cfg)
+        physics_material.func(object_material_path, physics_material)
         bind_physics_material(prim_path, object_material_path)
 
     def _disable_base_link_articulation(self, prim_path: str) -> None:
@@ -1553,8 +1623,12 @@ class MultiObjectGraspTaskMixin:
         num_ids = int(env_ids.numel())
         if num_ids <= 0:
             return
+        fixed_layout = tuple(getattr(self.cfg, "tabletop_clutter_fixed_layout", ()) or ())
+        fixed_layout_enabled = bool(getattr(self.cfg, "tabletop_clutter_fixed_layout_enabled", False)) and bool(
+            fixed_layout
+        )
         z_jitter_range = max(float(getattr(self.cfg, "tabletop_clutter_spawn_z_jitter", 0.0)), 0.0)
-        non_overlapping = bool(getattr(self.cfg, "tabletop_clutter_non_overlapping", False))
+        non_overlapping = bool(getattr(self.cfg, "tabletop_clutter_non_overlapping", False)) and not fixed_layout_enabled
         clutter_xy = (
             self._sample_tabletop_clutter_xy_non_overlapping(env_ids, target_root_pos)
             if non_overlapping
@@ -1578,6 +1652,40 @@ class MultiObjectGraspTaskMixin:
                 + float(getattr(self.cfg, "tabletop_clutter_spawn_z_clearance", 0.0))
                 + z_jitter
             )
+            if fixed_layout_enabled:
+                entry = fixed_layout[slot_idx % len(fixed_layout)]
+                if not isinstance(entry, dict):
+                    raise ValueError(f"tabletop_clutter_fixed_layout entry {slot_idx} must be a mapping")
+                position_value = entry.get("root_position", entry.get("position"))
+                if position_value is None:
+                    raise ValueError(f"tabletop_clutter_fixed_layout entry {slot_idx} is missing root_position")
+                position = torch.as_tensor(
+                    _as_float_list(position_value, 3, (0.0, 0.0, 0.0)),
+                    dtype=torch.float32,
+                    device=self.device,
+                )
+                object_pos[:] = position.unsqueeze(0)
+                quat_value = entry.get("root_quat_wxyz", entry.get("quat_wxyz"))
+                if quat_value is not None:
+                    quat = torch.as_tensor(
+                        _as_float_list(quat_value, 4, (1.0, 0.0, 0.0, 0.0)),
+                        dtype=torch.float32,
+                        device=self.device,
+                    )
+                    quat = quat / torch.clamp(torch.norm(quat), min=1.0e-6)
+                    object_quat[:] = quat.unsqueeze(0)
+                elif entry.get("yaw_deg") is not None:
+                    yaw = torch.full(
+                        (num_ids,),
+                        math.radians(float(entry["yaw_deg"])),
+                        dtype=torch.float32,
+                        device=self.device,
+                    )
+                    object_quat = _yaw_quat_wxyz(yaw)
+                self.tabletop_clutter_placement_success[env_ids, slot_idx] = True
+                self.tabletop_clutter_placement_attempts[env_ids, slot_idx] = 1
+                self.tabletop_clutter_placement_min_clearance[env_ids] = float("nan")
+                self.tabletop_clutter_placement_min_bin_clearance[env_ids] = float("nan")
             object_state = torch.zeros(num_ids, 13, device=self.device)
             object_state[:, 0:3] = object_pos + self.scene.env_origins[env_ids]
             object_state[:, 3:7] = object_quat

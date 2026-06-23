@@ -45,7 +45,10 @@ YAM_TARGET_XY = [-0.30, 0.0]
 YAM_TARGET_DIMS = [0.08, 0.08, 0.08]
 YAM_GRIPPER_CENTER_LOCAL = [0.0, 0.0, 0.1098]
 YAM_GRIPPER_CENTER_TOL = [0.045, 0.040, 0.036]
+YAM_MAX_FALLBACK_GEOMETRY_COST = 0.75
 YAM_MIN_LIFT_UP_DOT = 0.40
+YAM_PREFERRED_LIFT_UP_DOT = 0.75
+YAM_LIFT_ORIENTATION_WEIGHT = 0.25
 YAM_MIN_TOOL_Z = 0.095
 
 
@@ -301,7 +304,14 @@ def _stable_scene_target_mesh_path(stable_scene: dict[str, Any] | None) -> Path 
         if candidate.is_file():
             return candidate
     asset = target.get("asset") if isinstance(target.get("asset"), dict) else {}
-    for value in (asset.get("raw_object_path"), _infer_raw_objaverse_path(str(asset.get("usd_path") or ""))):
+    candidate_values: list[object] = []
+    raw_object_path = asset.get("raw_object_path")
+    if raw_object_path:
+        candidate_values.append(raw_object_path)
+    usd_path = str(asset.get("usd_path") or "")
+    if usd_path:
+        candidate_values.append(_infer_raw_objaverse_path(usd_path))
+    for value in candidate_values:
         if not value:
             continue
         candidate = Path(str(value)).expanduser()
@@ -325,7 +335,7 @@ def _stable_scene_robot_start(stable_scene: dict[str, Any] | None) -> tuple[list
     return start_arm, finger_value
 
 
-def _goal_bin_obstacles() -> list[dict[str, Any]]:
+def _default_goal_bin_info() -> dict[str, float]:
     wall = 0.02
     bottom = 0.012
     inner_x = 0.36
@@ -335,45 +345,111 @@ def _goal_bin_obstacles() -> list[dict[str, Any]]:
     center_y = YAM_TABLE["center_y"] + 0.42
     outer_x = inner_x + 2.0 * wall
     outer_y = inner_y + 2.0 * wall
-    floor_z = YAM_TABLE["surface_z"] + 0.5 * bottom
-    wall_z = YAM_TABLE["surface_z"] + bottom + 0.5 * wall_h
+    return {
+        "center_x": center_x,
+        "center_y": center_y,
+        "inner_size_x": inner_x,
+        "inner_size_y": inner_y,
+        "outer_size_x": outer_x,
+        "outer_size_y": outer_y,
+        "wall_thickness": wall,
+        "bottom_thickness": bottom,
+        "wall_height": wall_h,
+        "table_surface_z": YAM_TABLE["surface_z"],
+        "floor_center_z": YAM_TABLE["surface_z"] + 0.5 * bottom,
+        "inner_floor_z": YAM_TABLE["surface_z"] + bottom,
+        "wall_center_z": YAM_TABLE["surface_z"] + bottom + 0.5 * wall_h,
+        "inner_top_z": YAM_TABLE["surface_z"] + bottom + wall_h,
+    }
+
+
+def _stable_scene_bin_info(stable_scene: dict[str, Any] | None, key: str) -> dict[str, float] | None:
+    if stable_scene is None:
+        return None
+    bins = stable_scene.get("bins") if isinstance(stable_scene.get("bins"), dict) else {}
+    info = bins.get(key) if isinstance(bins, dict) else None
+    if not isinstance(info, dict):
+        return None
+    required = (
+        "center_x",
+        "center_y",
+        "inner_size_x",
+        "inner_size_y",
+        "outer_size_x",
+        "outer_size_y",
+        "wall_thickness",
+        "bottom_thickness",
+        "wall_height",
+        "floor_center_z",
+        "wall_center_z",
+        "inner_top_z",
+    )
+    if any(name not in info for name in required):
+        return None
+    return {name: float(value) for name, value in info.items() if isinstance(value, (int, float))}
+
+
+def _goal_bin_info(stable_scene: dict[str, Any] | None = None) -> dict[str, float]:
+    return _stable_scene_bin_info(stable_scene, "goal") or _default_goal_bin_info()
+
+
+def _bin_obstacles(info: dict[str, float], *, name_prefix: str) -> list[dict[str, Any]]:
+    wall = float(info["wall_thickness"])
+    inner_x = float(info["inner_size_x"])
+    inner_y = float(info["inner_size_y"])
+    outer_x = float(info["outer_size_x"])
+    outer_y = float(info["outer_size_y"])
+    wall_h = float(info["wall_height"])
+    bottom = float(info["bottom_thickness"])
+    center_x = float(info["center_x"])
+    center_y = float(info["center_y"])
+    floor_z = float(info["floor_center_z"])
+    wall_z = float(info["wall_center_z"])
 
     def cuboid(name: str, xyz: list[float], dims: list[float]) -> dict[str, Any]:
         return {"name": name, "type": "cuboid", "dims": dims, "pose": [*xyz, 1.0, 0.0, 0.0, 0.0]}
 
     return [
-        cuboid("dextrah_goal_bin_floor", [center_x, center_y, floor_z], [outer_x, outer_y, bottom]),
+        cuboid(f"{name_prefix}_floor", [center_x, center_y, floor_z], [outer_x, outer_y, bottom]),
         cuboid(
-            "dextrah_goal_bin_x_pos_wall",
+            f"{name_prefix}_x_pos_wall",
             [center_x + 0.5 * inner_x + 0.5 * wall, center_y, wall_z],
             [wall, outer_y, wall_h],
         ),
         cuboid(
-            "dextrah_goal_bin_x_neg_wall",
+            f"{name_prefix}_x_neg_wall",
             [center_x - 0.5 * inner_x - 0.5 * wall, center_y, wall_z],
             [wall, outer_y, wall_h],
         ),
         cuboid(
-            "dextrah_goal_bin_y_pos_wall",
+            f"{name_prefix}_y_pos_wall",
             [center_x, center_y + 0.5 * inner_y + 0.5 * wall, wall_z],
             [inner_x, wall, wall_h],
         ),
         cuboid(
-            "dextrah_goal_bin_y_neg_wall",
+            f"{name_prefix}_y_neg_wall",
             [center_x, center_y - 0.5 * inner_y - 0.5 * wall, wall_z],
             [inner_x, wall, wall_h],
         ),
     ]
 
 
-def _goal_bin_center() -> list[float]:
-    bottom = 0.012
-    wall_h = 0.12
-    center_x = YAM_TABLE["center_x"] - 0.15
-    center_y = YAM_TABLE["center_y"] + 0.42
+def _goal_bin_obstacles(stable_scene: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    return _bin_obstacles(_goal_bin_info(stable_scene), name_prefix="dextrah_goal_bin")
+
+
+def _source_bin_obstacles(stable_scene: dict[str, Any] | None) -> list[dict[str, Any]]:
+    source_info = _stable_scene_bin_info(stable_scene, "source")
+    if source_info is None:
+        return []
+    return _bin_obstacles(source_info, name_prefix="dextrah_source_bin")
+
+
+def _goal_bin_center(stable_scene: dict[str, Any] | None = None) -> list[float]:
+    info = _goal_bin_info(stable_scene)
     # Expose the bin pose at the top rim center for trajectory helpers. The
     # actual collision model remains the five cuboids from _goal_bin_obstacles.
-    return [center_x, center_y, YAM_TABLE["surface_z"] + bottom + wall_h]
+    return [float(info["center_x"]), float(info["center_y"]), float(info["inner_top_z"])]
 
 
 def _minimum_jerk_ramp(start: Any, end: Any, n_frames: int) -> Any:
@@ -531,6 +607,7 @@ def _append_scripted_yam_bin_drop(
     bundle: Any,
     target_center_world: Any | None,
     selected_tool_world: Any,
+    bin_top_center_world: Any | None,
     move_frames: int,
     hold_frames: int,
     open_frames: int,
@@ -552,7 +629,10 @@ def _append_scripted_yam_bin_drop(
     selected_tool = np.asarray(selected_tool_world, dtype=np.float64)
     target_center = np.asarray(target_center_world, dtype=np.float64).reshape(3)
     tool_center_offset = selected_tool[:3, 3] - target_center
-    bin_top = np.asarray(_goal_bin_center(), dtype=np.float64)
+    bin_top = np.asarray(
+        _goal_bin_center() if bin_top_center_world is None else bin_top_center_world,
+        dtype=np.float64,
+    )
     desired_object_drop = np.asarray(
         [
             bin_top[0],
@@ -796,10 +876,12 @@ def _scene_collision(args: argparse.Namespace) -> list[dict[str, Any]]:
         ],
     }
     obstacles = [table]
+    stable_scene = getattr(args, "stable_scene", None)
     if bool(args.include_goal_bin):
-        obstacles.extend(_goal_bin_obstacles())
-    if getattr(args, "stable_scene", None) is not None:
-        obstacles.extend(_stable_scene_clutter_obstacles(args.stable_scene, margin=float(args.clutter_margin)))
+        obstacles.extend(_goal_bin_obstacles(stable_scene))
+    if stable_scene is not None:
+        obstacles.extend(_source_bin_obstacles(stable_scene))
+        obstacles.extend(_stable_scene_clutter_obstacles(stable_scene, margin=float(args.clutter_margin)))
     elif args.metrics_path is not None:
         obstacles.extend(_metrics_clutter_obstacles(args.metrics_path.expanduser().resolve(), margin=float(args.clutter_margin)))
     elif bool(args.include_default_clutter):
@@ -846,6 +928,7 @@ def _filter_yam_grasps_by_aperture(
     min_lift_up_dot: float,
     min_tool_z: float,
     allow_filter_fallback: bool,
+    max_fallback_geometry_cost: float,
 ) -> tuple[Any, Any, dict[str, Any]]:
     import numpy as np
 
@@ -871,12 +954,16 @@ def _filter_yam_grasps_by_aperture(
         tool_z = float(tool_T[2, 3])
         lift_ok = bool(lift_up_dot >= float(min_lift_up_dot))
         height_ok = bool(tool_z >= float(min_tool_z))
+        orientation_cost = abs(lift_up_dot - YAM_PREFERRED_LIFT_UP_DOT)
+        ranking_cost = cost + YAM_LIFT_ORIENTATION_WEIGHT * orientation_cost
         scored.append(
             {
                 "index": int(idx),
                 "confidence": float(conf[idx]),
                 "object_center_in_tool": local_center.tolist(),
                 "geometry_cost": cost,
+                "orientation_cost": orientation_cost,
+                "ranking_cost": ranking_cost,
                 "inside_aperture": inside,
                 "tool_position_world": tool_T[:3, 3].tolist(),
                 "tool_z_axis_world": tool_z_w.tolist(),
@@ -887,6 +974,27 @@ def _filter_yam_grasps_by_aperture(
             }
         )
 
+    def _ranked(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return sorted(entries, key=lambda entry: (entry["ranking_cost"], -float(entry["confidence"])))
+
+    def _extend_unique(
+        base: list[dict[str, Any]],
+        additions: list[dict[str, Any]],
+        *,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        kept = list(base)
+        seen = {int(entry["index"]) for entry in kept}
+        for entry in additions:
+            if len(kept) >= int(limit):
+                break
+            idx = int(entry["index"])
+            if idx in seen:
+                continue
+            kept.append(entry)
+            seen.add(idx)
+        return kept
+
     inside = [entry for entry in scored if entry["inside_aperture"]]
     dynamic_ok = [
         entry
@@ -894,13 +1002,40 @@ def _filter_yam_grasps_by_aperture(
         if bool(entry["lift_ok"]) and bool(entry["height_ok"])
     ]
     if dynamic_ok:
-        keep_entries = dynamic_ok
+        keep_entries = _ranked(dynamic_ok)
         reason = "inside_aperture_lift_up_and_height"
+        if bool(allow_filter_fallback) and len(keep_entries) < int(min_keep):
+            # A single strict grasp can be geometrically sound but unreachable
+            # for cuRobo in clutter. Keep strict grasps first, then bounded
+            # backups so planning can fail over without accepting far-off poses.
+            keep_entries = _extend_unique(
+                keep_entries,
+                _ranked(inside),
+                limit=max(1, int(min_keep)),
+            )
+            if len(keep_entries) < int(min_keep):
+                fallback_entries = [
+                    entry
+                    for entry in _ranked(scored)
+                    if float(entry["geometry_cost"]) <= float(max_fallback_geometry_cost)
+                ]
+                keep_entries = _extend_unique(
+                    keep_entries,
+                    fallback_entries,
+                    limit=max(1, int(min_keep)),
+                )
+            if len(keep_entries) > len(dynamic_ok):
+                reason = "inside_aperture_lift_up_and_height_with_backup_candidates"
     elif inside and bool(allow_filter_fallback):
-        keep_entries = inside
+        keep_entries = _ranked(inside)
         reason = "inside_aperture_without_lift_filter_fallback"
     elif bool(allow_filter_fallback):
-        keep_entries = sorted(scored, key=lambda entry: entry["geometry_cost"])[: max(1, int(min_keep))]
+        fallback_entries = [
+            entry
+            for entry in _ranked(scored)
+            if float(entry["geometry_cost"]) <= float(max_fallback_geometry_cost)
+        ]
+        keep_entries = fallback_entries[: max(1, int(min_keep))]
         reason = "best_geometry_fallback"
     else:
         keep_entries = []
@@ -921,7 +1056,7 @@ def _filter_yam_grasps_by_aperture(
     keep_indices = [entry["index"] for entry in keep_entries]
     order = sorted(
         range(len(keep_indices)),
-        key=lambda i: (keep_entries[i]["geometry_cost"], -float(conf[keep_indices[i]])),
+        key=lambda i: (keep_entries[i]["ranking_cost"], -float(conf[keep_indices[i]])),
     )
     keep_indices = [keep_indices[i] for i in order]
     keep_entries = [keep_entries[i] for i in order]
@@ -931,7 +1066,7 @@ def _filter_yam_grasps_by_aperture(
         # grasps that are reachable but weak in dynamic sim, so pass a
         # geometry-derived planning score while preserving true GGX
         # confidence for reporting.
-        entry["planning_score"] = float(1.0 / (1.0 + entry["geometry_cost"]) + 1.0e-4 * entry["confidence"])
+        entry["planning_score"] = float(1.0 / (1.0 + entry["ranking_cost"]) + 1.0e-4 * entry["confidence"])
     return (
         np.asarray(grasps_world)[keep_indices].astype(np.float32),
         np.asarray(conf)[keep_indices].astype(np.float32),
@@ -942,15 +1077,18 @@ def _filter_yam_grasps_by_aperture(
             "desired_object_center_in_tool": desired.tolist(),
             "tolerance": tol.tolist(),
             "min_lift_up_dot": float(min_lift_up_dot),
+            "preferred_lift_up_dot": float(YAM_PREFERRED_LIFT_UP_DOT),
+            "lift_orientation_weight": float(YAM_LIFT_ORIENTATION_WEIGHT),
             "min_tool_z": float(min_tool_z),
             "allow_filter_fallback": bool(allow_filter_fallback),
+            "max_fallback_geometry_cost": float(max_fallback_geometry_cost),
             "input_count": int(len(scored)),
             "kept_count": int(len(keep_indices)),
             "kept_original_indices": keep_indices,
             "kept": keep_entries,
-            "planning_order": "yam_aperture_lift_up_geometry_then_confidence",
+            "planning_order": "yam_aperture_side_grasp_geometry_then_confidence",
             "planning_scores": [entry["planning_score"] for entry in keep_entries],
-            "best_overall": sorted(scored, key=lambda entry: entry["geometry_cost"])[: min(8, len(scored))],
+            "best_overall": _ranked(scored)[: min(8, len(scored))],
         },
     )
 
@@ -1188,6 +1326,7 @@ def _make_robot_config(
     *,
     start_arm_joint_position: list[float] | None = None,
     start_finger_joint_position: float | None = None,
+    grasp_to_tool_z: float = 0.04,
 ) -> Path:
     start_arm = list(start_arm_joint_position or DEXTRAH_YAM_ARM_START)
     start_finger = DEXTRAH_YAM_FINGER_OPEN if start_finger_joint_position is None else float(start_finger_joint_position)
@@ -1201,7 +1340,12 @@ def _make_robot_config(
         profile_open = {"left_finger": DEXTRAH_YAM_FINGER_OPEN, "right_finger": DEXTRAH_YAM_FINGER_OPEN}
     curobo_src = (src.parent / cfg["curobo"]["robot_config"]).resolve()
     curobo_cfg = _load_yaml(curobo_src)
-    cspace = curobo_cfg.setdefault("robot_cfg", {}).setdefault("kinematics", {}).setdefault("cspace", {})
+    kinematics = curobo_cfg.setdefault("robot_cfg", {}).setdefault("kinematics", {})
+    for key in ("urdf_path", "asset_root_path"):
+        value = str(kinematics.get(key) or "")
+        if value.startswith("/graspgenx/"):
+            kinematics[key] = str(graspgenx_root / value.removeprefix("/graspgenx/"))
+    cspace = kinematics.setdefault("cspace", {})
     # Keep cuRobo's locked gripper collision state at the settled DEXTRAH
     # start width. The dynamic replay still opens to the profile width before
     # approach, but planning with the fully-open finger collision can reject
@@ -1217,11 +1361,13 @@ def _make_robot_config(
     cfg["curobo"]["robot_config"] = str(curobo_out)
     cfg["curobo"]["tool_frame"] = "link_6"
     cfg["curobo"]["default_joint_position"] = list(start_arm)
-    # The YAM GraspGenX gripper asset is already expressed in the same
-    # link_6 gripper-base convention as the DEXTRAH/URDF YAM. The upstream
-    # Franka-style -90deg X offset moves the object outside the YAM aperture.
+    # The GraspGen-X YAM gripper frame sits near the front of the sweep
+    # volume.  DEXTRAH/cuRobo control URDF link_6, whose fingertip collision
+    # pads enclose objects roughly 4 cm deeper along local +Z for the enlarged
+    # physical-contact variant. Keep this configurable for original-size
+    # legacy scenes that were authored with the unshifted frame.
     cfg["grasp_to_tool_transform"] = {
-        "translation": [0.0, 0.0, 0.0],
+        "translation": [0.0, 0.0, float(grasp_to_tool_z)],
         "quaternion_xyzw": [0.0, 0.0, 0.0, 1.0],
     }
     cfg["robot_base_pose"] = {
@@ -1275,11 +1421,12 @@ def _make_env_config(
         }
     ]
     if bool(args.include_goal_bin):
-        wall = 0.02
-        bottom = 0.012
-        inner_x = 0.36
-        inner_y = 0.22
-        wall_h = 0.12
+        goal_info = _goal_bin_info(getattr(args, "stable_scene", None))
+        wall = float(goal_info["wall_thickness"])
+        bottom = float(goal_info["bottom_thickness"])
+        inner_x = float(goal_info["inner_size_x"])
+        inner_y = float(goal_info["inner_size_y"])
+        wall_h = float(goal_info["wall_height"])
         assets.append(
             {
                 "id": "bin",
@@ -1293,7 +1440,7 @@ def _make_env_config(
                     "use_primitives": True,
                 },
                 "pose": {
-                    "translation": _goal_bin_center(),
+                    "translation": _goal_bin_center(getattr(args, "stable_scene", None)),
                     "quaternion_xyzw": [0.0, 0.0, 0.0, 1.0],
                 },
                 # Keep the DEXTRAH-authored bin cuboids as the only cuRobo
@@ -1425,6 +1572,12 @@ def parse_args() -> argparse.Namespace:
         help="For YAM pick_and_drop_in_bin, append a DEXTRAH scripted drop if cuRobo transport fails.",
     )
     parser.add_argument(
+        "--scripted_place_mode",
+        choices=("fallback", "always", "never"),
+        default="fallback",
+        help="For YAM pick_and_drop_in_bin, control whether bin placement is scripted.",
+    )
+    parser.add_argument(
         "--scripted_lift_mode",
         choices=("fallback", "always", "never"),
         default="fallback",
@@ -1455,6 +1608,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--yam_min_lift_up_dot", type=float, default=YAM_MIN_LIFT_UP_DOT)
     parser.add_argument("--yam_min_tool_z", type=float, default=YAM_MIN_TOOL_Z)
     parser.add_argument("--yam_allow_lift_filter_fallback", action="store_true")
+    parser.add_argument("--yam_max_fallback_geometry_cost", type=float, default=YAM_MAX_FALLBACK_GEOMETRY_COST)
+    parser.add_argument(
+        "--yam_grasp_to_tool_z",
+        type=float,
+        default=0.04,
+        help="Local +Z offset from the GraspGen-X grasp frame to DEXTRAH/cuRobo link_6.",
+    )
     parser.add_argument("--sim_fps", type=int, default=60)
     parser.add_argument("--start_guard_frames", type=int, default=60)
     parser.add_argument("--close_frames", type=int, default=60)
@@ -1463,7 +1623,12 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _annotate_trajectory_phases(path: Path, segments: list[tuple[str, int]]) -> None:
+def _annotate_trajectory_phases(
+    path: Path,
+    segments: list[tuple[str, int]],
+    *,
+    extra_metadata: dict[str, Any] | None = None,
+) -> None:
     if not segments:
         return
     payload = json.loads(path.read_text(encoding="utf-8"))
@@ -1493,6 +1658,8 @@ def _annotate_trajectory_phases(path: Path, segments: list[tuple[str, int]]) -> 
         normalized_segments.append({"phase": phase, "start": int(idx), "count": int(len(frames) - idx)})
     payload["segments"] = normalized_segments
     payload["phase_source"] = "dextrah_task_segments"
+    if extra_metadata:
+        payload.update(_jsonable(extra_metadata))
     path.write_text(json.dumps(_jsonable(payload), indent=2) + "\n", encoding="utf-8")
 
 
@@ -1578,6 +1745,7 @@ def main() -> None:
         run_dir,
         start_arm_joint_position=stable_start_arm_q,
         start_finger_joint_position=stable_start_finger_q,
+        grasp_to_tool_z=float(args.yam_grasp_to_tool_z),
     )
     env_config = _make_env_config(
         args,
@@ -1686,6 +1854,7 @@ def main() -> None:
             min_lift_up_dot=float(args.yam_min_lift_up_dot),
             min_tool_z=float(args.yam_min_tool_z),
             allow_filter_fallback=bool(args.yam_allow_lift_filter_fallback),
+            max_fallback_geometry_cost=float(args.yam_max_fallback_geometry_cost),
         )
         if len(grasps_world) == 0:
             raise RuntimeError("YAM aperture filtering removed all grasps")
@@ -1765,7 +1934,10 @@ def main() -> None:
             }
 
     if bool(success) and pregrasp_traj is not None and len(pregrasp_traj) > 0 and lift_traj is not None and len(lift_traj) > 0:
-        task = get_task(str(args.plan_task))
+        task_name = str(args.plan_task)
+        if task_name == "pick_and_drop_in_bin" and str(args.scripted_place_mode) == "always":
+            task_name = "pick_and_lift"
+        task = get_task(task_name)
         if hasattr(task, "MOVE_TO_BIN_FRAMES"):
             task.MOVE_TO_BIN_FRAMES = max(2, int(args.move_to_bin_frames))
         if hasattr(task, "DROP_HEIGHT_ABOVE_BIN"):
@@ -1792,7 +1964,8 @@ def main() -> None:
         if (
             str(args.plan_task) == "pick_and_drop_in_bin"
             and bool(args.scripted_place_fallback)
-            and not has_task_bin_transport
+            and str(args.scripted_place_mode) != "never"
+            and (str(args.scripted_place_mode) == "always" or not has_task_bin_transport)
         ):
             joint_traj, task_segments, scripted_place_summary = _append_scripted_yam_bin_drop(
                 joint_traj=joint_traj,
@@ -1801,16 +1974,19 @@ def main() -> None:
                 bundle=bundle,
                 target_center_world=target_center_world,
                 selected_tool_world=selected_tool_for_script,
+                bin_top_center_world=_goal_bin_center(stable_scene),
                 move_frames=int(args.move_to_bin_frames),
                 hold_frames=int(args.hold_frames),
                 open_frames=int(args.close_frames),
                 drop_height_above_bin=float(args.drop_height_above_bin),
                 drop_y_offset=float(args.scripted_bin_drop_y_offset),
             )
+            scripted_place_summary["mode"] = str(args.scripted_place_mode)
         elif str(args.plan_task) == "pick_and_drop_in_bin":
             scripted_place_summary = {
                 "enabled": bool(args.scripted_place_fallback),
                 "success": False,
+                "mode": str(args.scripted_place_mode),
                 "reason": "task_already_added_bin_transport" if has_task_bin_transport else "disabled",
             }
         expected_start_arm = np.asarray(robot_cfg["curobo"]["default_joint_position"], dtype=np.float32)
@@ -1866,7 +2042,14 @@ def main() -> None:
             output_path=trajectory_json,
             fps=int(args.sim_fps),
         )
-        _annotate_trajectory_phases(trajectory_json, task_segments)
+        _annotate_trajectory_phases(
+            trajectory_json,
+            task_segments,
+            extra_metadata={
+                "scripted_lift": scripted_lift_summary,
+                "scripted_place": scripted_place_summary,
+            },
+        )
 
     overlay_json = run_dir / "grasp_pose_overlay.json"
     grasp_to_tool = _grasp_to_tool_matrix(robot_cfg)

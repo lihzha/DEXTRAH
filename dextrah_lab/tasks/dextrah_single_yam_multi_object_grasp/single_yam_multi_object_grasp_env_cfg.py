@@ -232,3 +232,89 @@ class DextrahSingleYAMTabletopClutterGraspEnvCfg(DextrahSingleYAMMultiObjectGras
     tabletop_goal_bin_goal_height = 0.06
     tabletop_goal_bin_success_xy_tol = 0.08
     cube_success_xy_tol = tabletop_goal_bin_success_xy_tol
+
+
+@configclass
+class DextrahSingleYAMTwoBinPrimitiveGraspEnvCfg(DextrahSingleYAMMultiObjectGraspEnvCfg):
+    """Single-arm YAM source-to-destination bin demo with fixed primitive objects."""
+
+    scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=1, env_spacing=1.8, replicate_physics=False)
+    episode_length_s = 12.0
+
+    object_asset_manifest_path = "dextrah_lab/assets/primitives/yam_two_bin_primitives_manifest.json"
+    object_assets_dir = "dextrah_lab/assets/primitives"
+    max_objects = 1
+    object_asset_assignment = "round_robin"
+    require_graspgen_scale = False
+    object_validate_usd_bounds = False
+    object_spawn_xy_randomization = 0.0
+    object_spawn_yaw_randomization_deg = 0.0
+    object_spawn_z_clearance = 0.0
+    object_fixed_root_position = (-0.420, -0.225, 0.052)
+    object_fixed_root_quat_wxyz = (0.991445, 0.0, 0.0, 0.130526)
+    object_reset_settle_steps = 72
+    object_reset_zero_velocity_after_settle = True
+    object_density = 180.0
+    object_static_friction = 1.8
+    object_dynamic_friction = 1.2
+    object_linear_damping = 0.16
+    object_angular_damping = 0.75
+    object_max_depenetration_velocity = 1.5
+
+    tabletop_source_bin_enabled = True
+    tabletop_source_bin_center_offset_x = -0.18
+    tabletop_source_bin_center_offset_y = -0.22
+    tabletop_source_bin_inner_size_x = 0.36
+    tabletop_source_bin_inner_size_y = 0.28
+    tabletop_source_bin_wall_thickness = 0.02
+    tabletop_source_bin_bottom_thickness = 0.012
+    tabletop_source_bin_wall_height = 0.12
+    tabletop_source_bin_floor_color = (0.19, 0.17, 0.13)
+    tabletop_source_bin_x_wall_color = (0.58, 0.42, 0.19)
+    tabletop_source_bin_y_wall_color = (0.47, 0.34, 0.15)
+    tabletop_source_bin_visual_roughness = 0.74
+
+    tabletop_goal_bin_enabled = True
+    tabletop_goal_bin_center_offset_x = -0.18
+    tabletop_goal_bin_center_offset_y = 0.22
+    tabletop_goal_bin_inner_size_x = 0.36
+    tabletop_goal_bin_inner_size_y = 0.28
+    tabletop_goal_bin_wall_thickness = 0.02
+    tabletop_goal_bin_bottom_thickness = 0.012
+    tabletop_goal_bin_wall_height = 0.12
+    tabletop_goal_bin_clearance = 0.06
+    tabletop_goal_bin_placement_clearance = 0.04
+    tabletop_goal_bin_goal_height = 0.06
+    tabletop_goal_bin_success_xy_tol = 0.10
+    tabletop_goal_bin_floor_color = (0.13, 0.16, 0.18)
+    tabletop_goal_bin_x_wall_color = (0.14, 0.43, 0.61)
+    tabletop_goal_bin_y_wall_color = (0.11, 0.34, 0.52)
+    tabletop_goal_bin_visual_roughness = 0.70
+    cube_success_xy_tol = tabletop_goal_bin_success_xy_tol
+
+    tabletop_clutter_enabled = True
+    tabletop_clutter_object_count = 5
+    tabletop_clutter_asset_manifest_path = object_asset_manifest_path
+    tabletop_clutter_assets_dir = object_assets_dir
+    tabletop_clutter_max_objects = 5
+    tabletop_clutter_asset_assignment = "round_robin"
+    tabletop_clutter_require_graspgen_scale = False
+    tabletop_clutter_validate_usd_bounds = False
+    tabletop_clutter_spawn_xy_randomization = 0.0
+    tabletop_clutter_spawn_yaw_randomization_deg = 0.0
+    tabletop_clutter_spawn_z_clearance = 0.0
+    tabletop_clutter_spawn_z_jitter = 0.0
+    tabletop_clutter_non_overlapping = False
+    tabletop_clutter_kinematic_enabled = True
+    tabletop_clutter_disable_gravity = True
+    tabletop_clutter_density = 160.0
+    tabletop_clutter_static_friction = 1.8
+    tabletop_clutter_dynamic_friction = 1.2
+    tabletop_clutter_fixed_layout_enabled = True
+    tabletop_clutter_fixed_layout = (
+        {"root_position": (-0.300, -0.300, 0.052), "yaw_deg": -8.0},
+        {"root_position": (-0.410, -0.295, 0.074), "yaw_deg": 22.0},
+        {"root_position": (-0.225, -0.210, 0.052), "yaw_deg": 0.0},
+        {"root_position": (-0.405, -0.145, 0.067), "yaw_deg": -30.0},
+        {"root_position": (-0.300, -0.215, 0.125), "yaw_deg": 0.0},
+    )
