@@ -21,6 +21,7 @@ ENV_ROOT="${ENV_ROOT:-$NFS_ROOT/envs}"
 ENV_NAME="${ENV_NAME:-dextrah-isaaclab}"
 RESULTS_NFS="${RESULTS_NFS:-$NFS_ROOT/results/dextrah}"
 CACHE_NFS="${CACHE_NFS:-$NFS_ROOT/isaac_cache}"
+HOST_RESULTS_ROOT="${HOST_RESULTS_ROOT:-$RESULTS_NFS}"
 
 SLURM_JOB_ID_SAFE="${SLURM_JOB_ID:-manual}"
 RUN_NAME="${RUN_NAME:-yam_rgb_dp_dataset_${SLURM_JOB_ID_SAFE}_$(date +%Y%m%d_%H%M%S)}"
@@ -86,7 +87,7 @@ mkdir -p \
   "$CACHE_NFS/data" "$CACHE_NFS/documents"
 
 export MANIFEST_ARG OUTPUT_ARG METADATA_OUTPUT_ARG MAX_DEMOS IMAGE_HEIGHT IMAGE_WIDTH
-export ROBOT_STATE_MODE ACTION_MODE MAKE_REPORT REPORT_DIR_ARG ENV_NAME
+export ROBOT_STATE_MODE ACTION_MODE MAKE_REPORT REPORT_DIR_ARG ENV_NAME HOST_RESULTS_ROOT
 
 echo "Running DextrAH YAM RGB DP dataset conversion"
 echo "SLURM_JOB_ID=$SLURM_JOB_ID_SAFE"
@@ -127,7 +128,7 @@ srun \
       --output "$OUTPUT_ARG"
       --metadata-output "$METADATA_OUTPUT_ARG"
       --results-root /results
-      --host-results-root "$RESULTS_NFS"
+      --host-results-root "$HOST_RESULTS_ROOT"
       --image-height "$IMAGE_HEIGHT"
       --image-width "$IMAGE_WIDTH"
       --robot-state-mode "$ROBOT_STATE_MODE"
