@@ -71,3 +71,28 @@ sbatch --parsable --exclude=pool0-00006,pool0-00032 --export=ALL,CODE_NFS=/lustr
 - Job `1039397` started early on `pool0-00012` and failed during asset preparation because the D405 wrist camera mesh was not present in the detached l401 worktree. The real local D405 STL/OBJ plus generated collision/mount meshes were copied into the ignored remote asset directory for the render smoke.
 - Job `1039404` then reached project code on `pool0-00009` but failed because the render script imported the package `__init__` instead of the `gym_setup` registration module. Patched the script to import `dextrah_lab.tasks.dextrah_bimanual_yam_cube_grasp.gym_setup`.
 - Job `1039427` completed and wrote videos, but frame inspection showed the policy cameras were interpreted with the wrong camera convention: top camera was mostly sideways/background and wrist cameras were blank background. Patched the render script to mount policy cameras with Isaac Lab `world` convention, preserving the exact MolmoAct2 local positions/quaternions while using +X-forward camera semantics.
+- Smoke job `1039481` at commit `3635db8e016fafa6d848bcfa34f1592141a4a2d7` completed on l401 after the convention fix. Frame inspection showed the overview, `top_cam`, `left_cam`, and `right_cam` all rendering nonblank, correctly oriented views of the table/cube setup.
+- Full l401 render job `1039482` completed with run name `yam_molmoact2_camviz_full_3635db8_20260622T1718`. Artifacts were fetched to `cluster_results/l401/yam_molmoact2_camviz_full_3635db8_20260622T1718/`.
+- Video outputs:
+  - `bimanual_yam_molmoact2_cameras_composite.mp4`: 1280 x 720, 48 frames, 12 FPS, 4.0 seconds
+  - `overview.mp4`: 640 x 360, 48 frames, 12 FPS, 4.0 seconds
+  - `top_cam.mp4`: 640 x 360, 48 frames, 12 FPS, 4.0 seconds
+  - `left_cam.mp4`: 640 x 360, 48 frames, 12 FPS, 4.0 seconds
+  - `right_cam.mp4`: 640 x 360, 48 frames, 12 FPS, 4.0 seconds
+- `metadata.json` intrinsic checks against the MolmoAct2 reference matrices:
+  - `top_cam`: max absolute error `1.2519613619588199e-05`
+  - `left_cam`: max absolute error `1.4845767339011218e-05`
+  - `right_cam`: max absolute error `1.4845767339011218e-05`
+- `metadata.json` resolved camera parents:
+  - `top_cam`: `/World/envs/env_0/Robot/bimanual_base`
+  - `left_cam`: `/World/envs/env_0/Robot/bimanual_base/left_link_6`
+  - `right_cam`: `/World/envs/env_0/Robot/bimanual_base/right_link_6`
+- Policy camera convention is `world` for all three policy cameras, matching the SAPIEN/MolmoAct2 +X-forward local camera pose semantics while retaining the exact upstream local poses and HFOV-derived intrinsics.
+- Representative composite frames `0000`, `0024`, and `0047` were inspected visually. The top camera sees both grippers and the cube; both wrist cameras see the table and cube from wrist-mounted viewpoints; no blank/sideways camera streams remained.
+- Opened the full composite video with:
+
+```bash
+viz-open cluster_results/l401/yam_molmoact2_camviz_full_3635db8_20260622T1718/bimanual_yam_molmoact2_cameras_composite.mp4
+```
+
+  Local viewer URL: `http://localhost:8765/view?path=DEXTRAH/cluster_results/l401/yam_molmoact2_camviz_full_3635db8_20260622T1718/bimanual_yam_molmoact2_cameras_composite.mp4`
