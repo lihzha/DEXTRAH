@@ -40,6 +40,12 @@ ID_EXPECTED_OBJECTS="${ID_EXPECTED_OBJECTS:-1}"
 ID_CASE_INDEX="${ID_CASE_INDEX:-0}"
 OOD_SEED="${OOD_SEED:-9400001}"
 OOD_SETTLE_STEPS="${OOD_SETTLE_STEPS:-100}"
+OOD_MIN_XY_RADIUS="${OOD_MIN_XY_RADIUS:-0.012}"
+OOD_MAX_XY_RADIUS="${OOD_MAX_XY_RADIUS:-0.075}"
+OOD_MIN_HEIGHT="${OOD_MIN_HEIGHT:-0.010}"
+OOD_MAX_HEIGHT="${OOD_MAX_HEIGHT:-0.160}"
+OOD_MAX_GRASP_WIDTH_P95="${OOD_MAX_GRASP_WIDTH_P95:-0.145}"
+OOD_EXCLUDE_KEYWORDS="${OOD_EXCLUDE_KEYWORDS:-animal,building,car,chair,person,plant,room,statue,tree,vehicle}"
 DEMO_STEPS="${DEMO_STEPS:-1621}"
 CAPTURE_INTERVAL="${CAPTURE_INTERVAL:-20}"
 FPS="${FPS:-30}"
@@ -104,12 +110,15 @@ mkdir -p \
   "$CACHE_NFS/data" "$CACHE_NFS/documents"
 
 CASE_ENV_HOST="$RUN_DIR_HOST/case_env.sh"
-python3 - "$ACCEPTED_MANIFEST_HOST" "$FULL_OBJAVERSE_MANIFEST_HOST" "$RUN_DIR_HOST" "$ID_EXPECTED_OBJECTS" "$ID_CASE_INDEX" "$OOD_SEED" "$RESULTS_NFS" "$FULL_OBJAVERSE_CONTAINER_ASSET_ROOT" <<'PY'
+python3 - "$ACCEPTED_MANIFEST_HOST" "$FULL_OBJAVERSE_MANIFEST_HOST" "$RUN_DIR_HOST" "$ID_EXPECTED_OBJECTS" "$ID_CASE_INDEX" "$OOD_SEED" "$RESULTS_NFS" "$FULL_OBJAVERSE_CONTAINER_ASSET_ROOT" "$OOD_MIN_XY_RADIUS" "$OOD_MAX_XY_RADIUS" "$OOD_MIN_HEIGHT" "$OOD_MAX_HEIGHT" "$OOD_MAX_GRASP_WIDTH_P95" "$OOD_EXCLUDE_KEYWORDS" <<'PY'
 import json
+import math
 import random
 import shlex
 import sys
+from collections import Counter
 from pathlib import Path
+from typing import Any
 
 accepted_manifest = Path(sys.argv[1])
 full_manifest = Path(sys.argv[2])
@@ -119,12 +128,71 @@ id_case_index = int(sys.argv[5])
 ood_seed = int(sys.argv[6])
 results_root = Path(sys.argv[7])
 container_asset_root = sys.argv[8]
+ood_min_xy_radius = float(sys.argv[9])
+ood_max_xy_radius = float(sys.argv[10])
+ood_min_height = float(sys.argv[11])
+ood_max_height = float(sys.argv[12])
+ood_max_grasp_width_p95 = float(sys.argv[13])
+ood_exclude_keywords = tuple(item.strip().lower() for item in sys.argv[14].split(",") if item.strip())
 
 def host_path(value):
     text = str(value or "")
     if text.startswith("/results/"):
         return str(results_root / text[len("/results/"):])
     return text
+
+def as_float_list(value: Any, length: int) -> list[float] | None:
+    if not isinstance(value, list) or len(value) != length:
+        return None
+    try:
+        values = [float(v) for v in value]
+    except (TypeError, ValueError):
+        return None
+    if not all(math.isfinite(v) for v in values):
+        return None
+    return values
+
+def bounds(record: dict[str, Any]) -> tuple[list[float], list[float]] | None:
+    bounds_min = as_float_list(record.get("scaled_bounds_min"), 3)
+    bounds_max = as_float_list(record.get("scaled_bounds_max"), 3)
+    if bounds_min is not None and bounds_max is not None:
+        return bounds_min, bounds_max
+    half_extents = as_float_list(record.get("scaled_half_extents"), 3)
+    if half_extents is not None:
+        return [-v for v in half_extents], half_extents
+    try:
+        scale = float(record.get("scale", 1.0))
+    except (TypeError, ValueError):
+        return None
+    raw_min = as_float_list(record.get("bounds_min"), 3)
+    raw_max = as_float_list(record.get("bounds_max"), 3)
+    if raw_min is not None and raw_max is not None:
+        return [scale * v for v in raw_min], [scale * v for v in raw_max]
+    raw_half = as_float_list(record.get("half_extents"), 3)
+    if raw_half is not None:
+        half = [scale * v for v in raw_half]
+        return [-v for v in half], half
+    return None
+
+def xy_radius(bounds_min: list[float], bounds_max: list[float]) -> float:
+    return max(abs(bounds_min[0]), abs(bounds_max[0]), abs(bounds_min[1]), abs(bounds_max[1]))
+
+def height(bounds_min: list[float], bounds_max: list[float]) -> float:
+    return bounds_max[2] - bounds_min[2]
+
+def metadata_text(record: dict[str, Any]) -> str:
+    fragments: list[str] = []
+    for key in ("name", "title", "category", "categories", "labels", "tags", "description", "metadata", "uuid"):
+        value = record.get(key)
+        if value is None:
+            continue
+        if isinstance(value, (list, tuple)):
+            fragments.extend(str(item) for item in value)
+        elif isinstance(value, dict):
+            fragments.extend(str(item) for item in value.values())
+        else:
+            fragments.append(str(value))
+    return " ".join(fragments).lower()
 
 rows = []
 for line in accepted_manifest.read_text(encoding="utf-8").splitlines():
@@ -190,26 +258,84 @@ source = json.loads(full_manifest.read_text(encoding="utf-8"))
 objects = source.get("objects")
 if not isinstance(objects, list):
     raise SystemExit(f"Full manifest has no objects list: {full_manifest}")
-candidates = [
-    dict(obj)
-    for obj in objects
-    if isinstance(obj, dict)
-    and str(obj.get("uuid") or "")
-    and str(obj.get("uuid") or "") not in train_uuids
-    and (obj.get("usd_path") or obj.get("path"))
-]
+skipped = Counter()
+candidates = []
+for obj in objects:
+    if not isinstance(obj, dict):
+        skipped["not_object"] += 1
+        continue
+    uuid = str(obj.get("uuid") or "")
+    if not uuid:
+        skipped["missing_uuid"] += 1
+        continue
+    if uuid in train_uuids:
+        skipped["training_uuid"] += 1
+        continue
+    if not (obj.get("usd_path") or obj.get("path")):
+        skipped["missing_usd_path"] += 1
+        continue
+    obj_bounds = bounds(obj)
+    if obj_bounds is None:
+        skipped["invalid_bounds"] += 1
+        continue
+    bounds_min, bounds_max = obj_bounds
+    radius = xy_radius(bounds_min, bounds_max)
+    object_height = height(bounds_min, bounds_max)
+    if radius < ood_min_xy_radius:
+        skipped["too_small_xy_radius"] += 1
+        continue
+    if radius > ood_max_xy_radius:
+        skipped["too_large_xy_radius"] += 1
+        continue
+    if object_height < ood_min_height:
+        skipped["too_short"] += 1
+        continue
+    if object_height > ood_max_height:
+        skipped["too_tall"] += 1
+        continue
+    prior = obj.get("grasp_prior") if isinstance(obj.get("grasp_prior"), dict) else {}
+    width_p95 = prior.get("grasp_width_p95")
+    if width_p95 is not None:
+        try:
+            if float(width_p95) > ood_max_grasp_width_p95:
+                skipped["too_wide_grasp"] += 1
+                continue
+        except (TypeError, ValueError):
+            pass
+    text = metadata_text(obj)
+    if any(keyword in text for keyword in ood_exclude_keywords):
+        skipped["excluded_keyword"] += 1
+        continue
+    normalized = dict(obj)
+    normalized["yam_rgb_dp_eval_filter"] = {
+        "xy_radius": radius,
+        "height": object_height,
+    }
+    candidates.append(normalized)
 if not candidates:
-    raise SystemExit("No OOD candidates after excluding training UUIDs")
+    raise SystemExit(f"No OOD candidates after filtering; skipped={dict(skipped)}")
 rng = random.Random(ood_seed)
 rng.shuffle(candidates)
 ood_object = candidates[0]
+ood_filter = {
+    "source_count": len(objects),
+    "candidate_count": len(candidates),
+    "excluded_training_uuid_count": len(train_uuids),
+    "skipped": dict(sorted(skipped.items())),
+    "seed": ood_seed,
+    "min_xy_radius": ood_min_xy_radius,
+    "max_xy_radius": ood_max_xy_radius,
+    "min_height": ood_min_height,
+    "max_height": ood_max_height,
+    "max_grasp_width_p95": ood_max_grasp_width_p95,
+    "exclude_keywords": list(ood_exclude_keywords),
+}
 ood_manifest = run_dir / "ood_object_manifest.json"
 ood_payload = {
     "format": "dextrah_yam_rgb_dp_ood_eval_manifest_v1",
     "asset_root": container_asset_root,
     "source_manifest": str(full_manifest),
-    "excluded_training_uuid_count": len(train_uuids),
-    "seed": ood_seed,
+    "ood_filter": ood_filter,
     "objects": [ood_object],
 }
 ood_manifest.write_text(json.dumps(ood_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -226,6 +352,7 @@ ood_case = {
         "xy_radius": ood_object.get("xy_radius"),
         "scaled_half_extents": ood_object.get("scaled_half_extents"),
     },
+    "ood_filter": ood_filter,
 }
 (run_dir / "ood_case.json").write_text(json.dumps(ood_case, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
@@ -259,6 +386,7 @@ echo "CODE_COMMIT=${CODE_COMMIT:-unknown}"
 echo "CHECKPOINT_HOST=$CHECKPOINT_HOST"
 echo "ID_STABLE_SCENE_HOST=$ID_STABLE_SCENE_HOST"
 echo "OOD_MANIFEST_HOST=$OOD_MANIFEST_HOST"
+echo "OOD_FILTER=min_xy=$OOD_MIN_XY_RADIUS max_xy=$OOD_MAX_XY_RADIUS min_height=$OOD_MIN_HEIGHT max_height=$OOD_MAX_HEIGHT max_width_p95=$OOD_MAX_GRASP_WIDTH_P95 exclude=$OOD_EXCLUDE_KEYWORDS"
 echo "DEMO_STEPS=$DEMO_STEPS"
 echo "CAPTURE_INTERVAL=$CAPTURE_INTERVAL"
 echo "VALIDATION_REQUIRE_ACCEPTED=$VALIDATION_REQUIRE_ACCEPTED"
