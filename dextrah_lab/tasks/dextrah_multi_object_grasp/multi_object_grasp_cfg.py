@@ -114,6 +114,27 @@ class MultiObjectGraspTaskCfg:
     tabletop_goal_bin_y_wall_color = (0.15, 0.38, 0.54)
     tabletop_goal_bin_visual_roughness = 0.68
 
+    # Optional fixed source bin. This is separate from the goal bin so demos can
+    # model source-to-destination bin transfer without overloading success logic.
+    tabletop_source_bin_enabled = False
+    tabletop_source_bin_center_offset_x = 0.0
+    tabletop_source_bin_center_offset_y = 0.0
+    tabletop_source_bin_inner_size_x = 0.22
+    tabletop_source_bin_inner_size_y = 0.22
+    tabletop_source_bin_wall_thickness = 0.02
+    tabletop_source_bin_bottom_thickness = 0.012
+    tabletop_source_bin_wall_height = 0.12
+    tabletop_source_bin_floor_color = (0.18, 0.17, 0.14)
+    tabletop_source_bin_x_wall_color = (0.58, 0.43, 0.20)
+    tabletop_source_bin_y_wall_color = (0.48, 0.35, 0.16)
+    tabletop_source_bin_visual_roughness = 0.72
+
+    # Optional deterministic object layouts used by scripted render/demo tasks.
+    object_fixed_root_position = None
+    object_fixed_root_quat_wxyz = None
+    tabletop_clutter_fixed_layout_enabled = False
+    tabletop_clutter_fixed_layout = ()
+
     tabletop_clutter_density = 500.0
     tabletop_clutter_kinematic_enabled = False
     tabletop_clutter_disable_gravity = False

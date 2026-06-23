@@ -1,0 +1,66 @@
+{
+  "asset_root": "../../..",
+  "source": "repo_primitives_yam_two_bin_demo",
+  "objects": [
+    {
+      "uuid": "two_bin_rect_target",
+      "name": "two_bin_rect_target",
+      "primitive_shape": "cuboid",
+      "primitive_size": [0.130, 0.100, 0.080],
+      "primitive_color": [0.77, 0.24, 0.18],
+      "raw_object_path": "dextrah_lab/assets/primitives/raw/two_bin_rect_target.obj",
+      "scale": 1.0,
+      "scaled_bounds_min": [-0.065, -0.050, -0.040],
+      "scaled_bounds_max": [0.065, 0.050, 0.040],
+      "grasp_size": 0.140
+    },
+    {
+      "uuid": "two_bin_sphere_small",
+      "name": "two_bin_sphere_small",
+      "primitive_shape": "sphere",
+      "primitive_radius": 0.055,
+      "primitive_color": [0.20, 0.52, 0.72],
+      "raw_object_path": "dextrah_lab/assets/primitives/raw/two_bin_sphere_small.obj",
+      "scale": 1.0,
+      "scaled_bounds_min": [-0.055, -0.055, -0.055],
+      "scaled_bounds_max": [0.055, 0.055, 0.055],
+      "grasp_size": 0.120
+    },
+    {
+      "uuid": "two_bin_rect_low",
+      "name": "two_bin_rect_low",
+      "primitive_shape": "cuboid",
+      "primitive_size": [0.125, 0.100, 0.080],
+      "primitive_color": [0.28, 0.58, 0.32],
+      "raw_object_path": "dextrah_lab/assets/primitives/raw/two_bin_rect_low.obj",
+      "scale": 1.0,
+      "scaled_bounds_min": [-0.0625, -0.050, -0.040],
+      "scaled_bounds_max": [0.0625, 0.050, 0.040],
+      "grasp_size": 0.135
+    },
+    {
+      "uuid": "two_bin_sphere_large",
+      "name": "two_bin_sphere_large",
+      "primitive_shape": "sphere",
+      "primitive_radius": 0.062,
+      "primitive_color": [0.80, 0.62, 0.20],
+      "raw_object_path": "dextrah_lab/assets/primitives/raw/two_bin_sphere_large.obj",
+      "scale": 1.0,
+      "scaled_bounds_min": [-0.062, -0.062, -0.062],
+      "scaled_bounds_max": [0.062, 0.062, 0.062],
+      "grasp_size": 0.135
+    },
+    {
+      "uuid": "two_bin_rect_tall",
+      "name": "two_bin_rect_tall",
+      "primitive_shape": "cuboid",
+      "primitive_size": [0.112, 0.102, 0.090],
+      "primitive_color": [0.48, 0.35, 0.68],
+      "raw_object_path": "dextrah_lab/assets/primitives/raw/two_bin_rect_tall.obj",
+      "scale": 1.0,
+      "scaled_bounds_min": [-0.056, -0.051, -0.045],
+      "scaled_bounds_max": [0.056, 0.051, 0.045],
+      "grasp_size": 0.125
+    }
+  ]
+}

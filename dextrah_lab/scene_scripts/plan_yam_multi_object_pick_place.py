@@ -312,6 +312,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--move_to_bin_frames", type=int, default=360)
     parser.add_argument("--drop_height_above_bin", type=float, default=0.18)
     parser.add_argument("--scripted_bin_drop_y_offset", type=float, default=-0.08)
+    parser.add_argument("--scripted_place_mode", choices=("fallback", "always", "never"), default="fallback")
     parser.add_argument("--scripted_lift_mode", choices=("fallback", "always", "never"), default="always")
     parser.add_argument("--scripted_lift_height", type=float, default=0.14)
     parser.add_argument("--scripted_lift_frames", type=int, default=240)
@@ -382,6 +383,8 @@ def main() -> None:
             str(int(args.scripted_lift_frames)),
             "--scripted_bin_drop_y_offset",
             str(float(args.scripted_bin_drop_y_offset)),
+            "--scripted_place_mode",
+            str(args.scripted_place_mode),
             "--start_guard_frames",
             str(int(args.start_guard_frames)),
         ]

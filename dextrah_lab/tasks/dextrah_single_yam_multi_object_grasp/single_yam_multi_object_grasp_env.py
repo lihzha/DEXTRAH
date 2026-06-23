@@ -85,6 +85,7 @@ class DextrahSingleYAMMultiObjectGraspEnv(MultiObjectGraspTaskMixin, DirectRLEnv
         self.scene.rigid_objects["table"] = self._table
         self._spawn_multi_object_assets()
         self._spawn_tabletop_clutter_assets()
+        self._spawn_tabletop_source_bin()
         self._spawn_tabletop_goal_bin()
 
         light_cfg = sim_utils.DomeLightCfg(
@@ -379,6 +380,22 @@ class DextrahSingleYAMMultiObjectGraspEnv(MultiObjectGraspTaskMixin, DirectRLEnv
             + object_root_z_offset
             + float(self.cfg.object_spawn_z_clearance)
         )
+        fixed_root_position = getattr(self.cfg, "object_fixed_root_position", None)
+        if fixed_root_position is not None:
+            object_pos[:] = torch.as_tensor(
+                tuple(float(v) for v in fixed_root_position),
+                dtype=torch.float32,
+                device=self.device,
+            ).unsqueeze(0)
+        fixed_root_quat = getattr(self.cfg, "object_fixed_root_quat_wxyz", None)
+        if fixed_root_quat is not None:
+            fixed_quat = torch.as_tensor(
+                tuple(float(v) for v in fixed_root_quat),
+                dtype=torch.float32,
+                device=self.device,
+            )
+            fixed_quat = fixed_quat / torch.clamp(torch.norm(fixed_quat), min=1.0e-6)
+            object_quat[:] = fixed_quat.unsqueeze(0)
         object_state = torch.zeros(num_ids, 13, device=self.device)
         object_state[:, 0:3] = object_pos + self.scene.env_origins[env_ids]
         object_state[:, 3:7] = object_quat

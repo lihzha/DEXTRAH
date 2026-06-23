@@ -68,8 +68,20 @@ parser.add_argument(
 )
 parser.add_argument("--demo_trajectory_velocity_targets", action=argparse.BooleanOptionalAction, default=False)
 parser.add_argument("--demo_trajectory_velocity_target_scale", type=float, default=1.0)
+parser.add_argument(
+    "--scripted_target_transport",
+    action=argparse.BooleanOptionalAction,
+    default=False,
+    help="During trajectory replay, carry the target with the gripper through lift/place phases and release it over the bin.",
+)
 parser.add_argument("--demo_start_blend_steps", type=int, default=36)
 parser.add_argument("--stable_scene_path", type=str, default=None)
+parser.add_argument(
+    "--stable_scene_output_path",
+    type=str,
+    default=None,
+    help="Optional path for writing the final settled/replayed stable scene even when --stable_scene_path is an input.",
+)
 parser.add_argument("--record_trajectory_dataset", action=argparse.BooleanOptionalAction, default=False)
 parser.add_argument("--trajectory_dataset_path", type=str, default=None)
 parser.add_argument("--record_rgb_width", type=int, default=160)
@@ -1152,6 +1164,17 @@ def _stable_scene_payload(
                     "root_transform": _matrix_from_pose_wxyz(root_pos, root_quat),
                 }
             )
+    bins: dict[str, object] = {}
+    for key, method_name in (
+        ("source", "_tabletop_source_bin_info"),
+        ("goal", "_tabletop_goal_bin_info"),
+    ):
+        method = getattr(task_env, method_name, None)
+        if not callable(method):
+            continue
+        info = method()
+        if info is not None:
+            bins[key] = _jsonable(info)
 
     return {
         "format": "dextrah_stable_scene_v1",
@@ -1169,6 +1192,7 @@ def _stable_scene_payload(
             "root_transform": _matrix_from_pose_wxyz(target_pos, target_quat),
         },
         "clutter": clutter_entries,
+        "bins": bins,
         "snapshots": {
             "initial": initial_snapshot,
             "stable": stable_snapshot,
@@ -1202,17 +1226,23 @@ def _load_stable_scene(path: Path | None) -> dict[str, object] | None:
 def _stable_scene_asset_record(asset: dict[str, object]) -> dict[str, object] | None:
     uuid = str(asset.get("uuid") or "")
     usd_path = str(asset.get("usd_path") or "")
-    if not uuid or not usd_path:
+    primitive_shape = str(asset.get("primitive_shape") or "")
+    if not uuid or (not usd_path and not primitive_shape):
         return None
 
     record: dict[str, object] = {
         "uuid": uuid,
         "name": str(asset.get("name") or uuid),
-        "usd_path": usd_path,
     }
+    if usd_path:
+        record["usd_path"] = usd_path
     for key in (
         "metadata_text",
         "raw_object_path",
+        "primitive_shape",
+        "primitive_radius",
+        "primitive_size",
+        "primitive_color",
         "scale",
         "usd_spawn_scale",
         "usd_root_scale",
@@ -1385,6 +1415,30 @@ def _restore_root_snapshot(task_env, snapshot: dict[str, object]) -> None:
         for slot_idx, (slot_pos, slot_quat) in enumerate(zip(clutter_positions, clutter_quats, strict=False)):
             slot_pos_tensor, slot_quat_tensor = _pose_from_lists(slot_pos, slot_quat)
             sync_clutter_roots(env_ids, slot_idx, slot_pos_tensor, slot_quat_tensor)
+
+
+def _set_target_root_pose_env(task_env, pos_env: torch.Tensor, quat_wxyz: torch.Tensor) -> None:
+    env_ids = torch.arange(int(task_env.num_envs), dtype=torch.long, device=task_env.device)
+    env_origins = task_env.scene.env_origins
+    pos = torch.as_tensor(pos_env, dtype=torch.float32, device=task_env.device)
+    quat = torch.as_tensor(quat_wxyz, dtype=torch.float32, device=task_env.device)
+    if pos.ndim == 1:
+        pos = pos.unsqueeze(0)
+    if quat.ndim == 1:
+        quat = quat.unsqueeze(0)
+    state = torch.zeros((int(task_env.num_envs), 13), dtype=torch.float32, device=task_env.device)
+    state[:, 0:3] = pos + env_origins[env_ids]
+    state[:, 3:7] = quat
+    zero_vel = torch.zeros((int(task_env.num_envs), 6), dtype=torch.float32, device=task_env.device)
+    task_env._cube.write_root_state_to_sim(state, env_ids=env_ids)
+    task_env._cube.write_root_velocity_to_sim(zero_vel, env_ids=env_ids)
+    sync_target_roots = getattr(task_env, "_set_object_asset_root_pose", None)
+    if callable(sync_target_roots):
+        sync_target_roots(env_ids, pos, quat)
+    task_env.scene.write_data_to_sim()
+    task_env.sim.forward()
+    task_env.scene.update(dt=0.0)
+    task_env._compute_intermediate_values()
 
 
 def _spawn_visual_object_overlay(task_env, snapshot: dict[str, object], *, z_offset: float = 0.0) -> list[dict[str, object]]:
@@ -1850,6 +1904,7 @@ def _load_demo_trajectory(path: Path) -> dict[str, object]:
         "nominal_status": payload.get("nominal_status"),
         "candidate_idx": payload.get("candidate_idx"),
         "candidate_confidence": payload.get("candidate_confidence"),
+        "scripted_place": payload.get("scripted_place"),
         "joint_positions": joint_positions,
         "phases": phases,
     }
@@ -2508,7 +2563,7 @@ def main() -> None:
             flush=True,
         )
 
-    if stable_scene_input is not None and single_yam_demo_enabled:
+    if stable_scene_input is not None:
         stable_scene_manifests = _stable_scene_asset_manifests(stable_scene_input, output_dir)
         target_manifest_path = stable_scene_manifests.get("target_manifest_path")
         if target_manifest_path is not None:
@@ -2696,7 +2751,7 @@ def main() -> None:
     )
     env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array")
     task_env = env.unwrapped
-    if stable_scene_input is not None and single_yam_demo_enabled:
+    if stable_scene_input is not None:
         target = stable_scene_input.get("target") if isinstance(stable_scene_input.get("target"), dict) else {}
         asset = target.get("asset") if isinstance(target.get("asset"), dict) else {}
         expected_uuid = str(asset.get("uuid") or "")
@@ -2882,6 +2937,8 @@ def main() -> None:
     demo_trajectory_timing_summary: dict[str, object] | None = None
     demo_start_joint_pos = None
     demo_table_rejection_target_joint_pos = None
+    scripted_transport_desired_drop_env = None
+    scripted_transport_drop_segment: tuple[int, int] | None = None
     if single_yam_demo_enabled:
         if robot is not None:
             demo_start_joint_pos = robot.data.joint_pos.detach().clone()
@@ -2937,6 +2994,27 @@ def main() -> None:
                     "source_fps": float(_trajectory_source_fps(demo_trajectory)),
                     "source_frames": int(len(demo_trajectory["joint_positions"])),
                 }
+            scripted_place = demo_trajectory.get("scripted_place")
+            if isinstance(scripted_place, dict):
+                desired_drop = scripted_place.get("desired_object_drop_world")
+                if isinstance(desired_drop, (list, tuple)) and len(desired_drop) == 3:
+                    drop_world = torch.as_tensor(
+                        desired_drop,
+                        dtype=task_env.tcp_pos.dtype,
+                        device=task_env.device,
+                    ).view(1, 3)
+                    scripted_transport_desired_drop_env = drop_world.repeat(task_env.num_envs, 1) - task_env.scene.env_origins
+                segments = demo_trajectory.get("segments")
+                if isinstance(segments, list):
+                    for segment in segments:
+                        if not isinstance(segment, dict):
+                            continue
+                        if str(segment.get("phase") or "") != "move_to_above_bin_scripted":
+                            continue
+                        start = int(segment.get("start") or 0)
+                        count = max(int(segment.get("count") or 0), 1)
+                        scripted_transport_drop_segment = (start, count)
+                        break
             print(
                 json.dumps(
                     {
@@ -2997,6 +3075,10 @@ def main() -> None:
             flush=True,
         )
     frame_idx = 1
+    scripted_transport_enabled = False
+    scripted_transport_started_step = None
+    scripted_transport_released_step = None
+    scripted_transport_place_start_pos = None
     if bool(args_cli.repeat_initial_frame_for_video):
         if target_frame_count is None:
             raise ValueError("--repeat_initial_frame_for_video requires --video_seconds")
@@ -3020,6 +3102,9 @@ def main() -> None:
             flush=True,
         )
     elif single_yam_demo_enabled:
+        scripted_transport_enabled = bool(args_cli.scripted_target_transport)
+        scripted_transport_offset = None
+        scripted_transport_quat = None
         for step_idx in range(1, demo_steps + 1):
             joint_position = None
             joint_velocity = None
@@ -3073,6 +3158,52 @@ def main() -> None:
                     low_hold_z=float(args_cli.demo_low_hold_z),
                 )
                 terminated, truncated = _manual_action_step(task_env, actions)
+            if scripted_transport_enabled:
+                phase_text = str(phase)
+                carry_tokens = (
+                    "lift_object",
+                    "hold_after_lift",
+                    "move_to_above_bin_scripted",
+                    "hold_above_bin",
+                )
+                if scripted_transport_desired_drop_env is not None:
+                    carry_tokens = (*carry_tokens, "open_fingers_to_drop")
+                carry_target = any(
+                    token in phase_text
+                    for token in carry_tokens
+                )
+                if carry_target:
+                    if scripted_transport_offset is None:
+                        target_pos_env = task_env._cube.data.root_pos_w - task_env.scene.env_origins
+                        scripted_transport_offset = (target_pos_env - task_env.tcp_pos).detach().clone()
+                        scripted_transport_quat = task_env._cube.data.root_quat_w.detach().clone()
+                        scripted_transport_started_step = int(step_idx)
+                    target_pos_env = task_env.tcp_pos + scripted_transport_offset
+                    if scripted_transport_desired_drop_env is not None:
+                        if "move_to_above_bin_scripted" in phase_text:
+                            if scripted_transport_place_start_pos is None:
+                                scripted_transport_place_start_pos = target_pos_env.detach().clone()
+                            if scripted_transport_drop_segment is not None:
+                                segment_start, segment_count = scripted_transport_drop_segment
+                                alpha = float(source_frame_idx - segment_start) / float(max(segment_count - 1, 1))
+                                alpha = max(0.0, min(1.0, alpha))
+                            else:
+                                alpha = 0.0
+                            target_pos_env = (
+                                scripted_transport_place_start_pos
+                                + float(alpha) * (scripted_transport_desired_drop_env - scripted_transport_place_start_pos)
+                            )
+                        elif any(token in phase_text for token in ("hold_above_bin", "open_fingers_to_drop")):
+                            target_pos_env = scripted_transport_desired_drop_env
+                    _set_target_root_pose_env(task_env, target_pos_env, scripted_transport_quat)
+                release_tokens = ("hold_after_drop",) if scripted_transport_desired_drop_env is not None else (
+                    "open_fingers_to_drop",
+                    "hold_after_drop",
+                )
+                if scripted_transport_offset is not None and scripted_transport_released_step is None and any(
+                    token in phase_text for token in release_tokens
+                ):
+                    scripted_transport_released_step = int(step_idx)
             row = _single_yam_rejected_path_row(
                 task_env,
                 step_idx=step_idx,
@@ -3186,10 +3317,15 @@ def main() -> None:
     initial_clearance_summary = _initial_clearance_summary(task_env, initial_snapshot)
     final_clearance_summary = _initial_clearance_summary(task_env, final_snapshot)
     stable_scene_written = False
-    if stable_scene_input is None:
+    stable_scene_output_path = (
+        Path(args_cli.stable_scene_output_path).expanduser().resolve()
+        if args_cli.stable_scene_output_path
+        else None
+    )
+    if stable_scene_input is None or stable_scene_output_path is not None:
         stable_scene = _stable_scene_payload(
             task_env,
-            output_dir=stable_scene_path.parent,
+            output_dir=(stable_scene_output_path or stable_scene_path).parent,
             task=str(args_cli.task),
             seed=int(args_cli.seed),
             settle_steps=int(settle_steps if args_cli.demo_mode == "settle" else 0),
@@ -3200,14 +3336,15 @@ def main() -> None:
             initial_clearance_summary=initial_clearance_summary,
             stable_clearance_summary=final_clearance_summary,
         )
-        stable_scene_path.parent.mkdir(parents=True, exist_ok=True)
-        stable_scene_path.write_text(json.dumps(_jsonable(stable_scene), indent=2), encoding="utf-8")
+        stable_write_path = stable_scene_output_path or stable_scene_path
+        stable_write_path.parent.mkdir(parents=True, exist_ok=True)
+        stable_write_path.write_text(json.dumps(_jsonable(stable_scene), indent=2), encoding="utf-8")
         stable_scene_written = True
         print(
             json.dumps(
                 {
                     "event": "stable_scene_written",
-                    "path": str(stable_scene_path),
+                    "path": str(stable_write_path),
                     "settle_steps": int(settle_steps if args_cli.demo_mode == "settle" else 0),
                 }
             ),
@@ -3276,6 +3413,20 @@ def main() -> None:
             "trajectory_timing_mode": str(args_cli.demo_trajectory_timing_mode),
             "trajectory_velocity_targets": bool(args_cli.demo_trajectory_velocity_targets),
             "trajectory_velocity_target_scale": float(args_cli.demo_trajectory_velocity_target_scale),
+            "scripted_target_transport": {
+                "enabled": bool(scripted_transport_enabled),
+                "started_step": scripted_transport_started_step,
+                "released_step": scripted_transport_released_step,
+                "desired_drop_env": None
+                if scripted_transport_desired_drop_env is None
+                else _tensor_list(scripted_transport_desired_drop_env),
+                "drop_segment": None
+                if scripted_transport_drop_segment is None
+                else {
+                    "start": int(scripted_transport_drop_segment[0]),
+                    "count": int(scripted_transport_drop_segment[1]),
+                },
+            },
             "trajectory_replay_enabled": demo_trajectory is not None,
             "trajectory_path": None if demo_trajectory_path is None else str(demo_trajectory_path),
             "trajectory_source_frames": None
@@ -3352,6 +3503,18 @@ def main() -> None:
             ],
             "tabletop_goal_bin_visual_roughness": float(
                 getattr(task_env.cfg, "tabletop_goal_bin_visual_roughness", 0.0)
+            ),
+            "tabletop_source_bin_floor_color": [
+                float(v) for v in getattr(task_env.cfg, "tabletop_source_bin_floor_color", ())
+            ],
+            "tabletop_source_bin_x_wall_color": [
+                float(v) for v in getattr(task_env.cfg, "tabletop_source_bin_x_wall_color", ())
+            ],
+            "tabletop_source_bin_y_wall_color": [
+                float(v) for v in getattr(task_env.cfg, "tabletop_source_bin_y_wall_color", ())
+            ],
+            "tabletop_source_bin_visual_roughness": float(
+                getattr(task_env.cfg, "tabletop_source_bin_visual_roughness", 0.0)
             ),
         },
         "freeze_object_roots_for_video": bool(args_cli.freeze_object_roots_for_video),
