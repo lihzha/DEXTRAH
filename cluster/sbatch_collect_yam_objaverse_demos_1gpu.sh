@@ -74,6 +74,8 @@ fi
 NUM_GRASPS="${NUM_GRASPS:-96}"
 TOPK="${TOPK:-48}"
 MAX_PLAN_ATTEMPTS="${MAX_PLAN_ATTEMPTS:-48}"
+YAM_GRASP_FILTER_MIN_KEEP="${YAM_GRASP_FILTER_MIN_KEEP:-4}"
+YAM_ALLOW_LIFT_FILTER_FALLBACK="${YAM_ALLOW_LIFT_FILTER_FALLBACK:-False}"
 SCRIPTED_LIFT_HEIGHT="${SCRIPTED_LIFT_HEIGHT:-0.14}"
 SCRIPTED_LIFT_FRAMES="${SCRIPTED_LIFT_FRAMES:-240}"
 MOVE_TO_BIN_FRAMES="${MOVE_TO_BIN_FRAMES:-360}"
@@ -282,6 +284,10 @@ run_planner() {
       export PATH=/envs/$GRASPGENX_VENV_NAME/bin:\$PATH
       export PYTHONPATH=/code:/graspgenx:/graspgenx/end2end:\${PYTHONPATH:-}
       cd /code
+      planner_extra_args=(--yam_grasp_filter_min_keep '$YAM_GRASP_FILTER_MIN_KEEP')
+      if [ \"\$(printf '%s' '$YAM_ALLOW_LIFT_FILTER_FALLBACK' | tr '[:upper:]' '[:lower:]')\" = true ]; then
+        planner_extra_args+=(--yam_allow_lift_filter_fallback)
+      fi
       python dextrah_lab/scene_scripts/plan_yam_multi_object_pick_place.py \
         --stable_scene_path '$stable_scene_container' \
         --output_dir '$plan_dir_container' \
@@ -299,7 +305,8 @@ run_planner() {
         --scripted_bin_drop_y_offset_after_first '$SCRIPTED_BIN_DROP_Y_OFFSET_AFTER_FIRST' \
         --scripted_lift_mode always \
         --scripted_lift_height '$SCRIPTED_LIFT_HEIGHT' \
-        --scripted_lift_frames '$SCRIPTED_LIFT_FRAMES'
+        --scripted_lift_frames '$SCRIPTED_LIFT_FRAMES' \
+        \"\${planner_extra_args[@]}\"
     "
 }
 
@@ -418,6 +425,8 @@ echo "OBJECT_ASSET_ASSIGNMENT=$OBJECT_ASSET_ASSIGNMENT"
 echo "TABLETOP_CLUTTER_ASSET_ASSIGNMENT=$TABLETOP_CLUTTER_ASSET_ASSIGNMENT"
 echo "SCRIPTED_BIN_DROP_Y_OFFSET=$SCRIPTED_BIN_DROP_Y_OFFSET"
 echo "SCRIPTED_BIN_DROP_Y_OFFSET_AFTER_FIRST=$SCRIPTED_BIN_DROP_Y_OFFSET_AFTER_FIRST"
+echo "YAM_GRASP_FILTER_MIN_KEEP=$YAM_GRASP_FILTER_MIN_KEEP"
+echo "YAM_ALLOW_LIFT_FILTER_FALLBACK=$YAM_ALLOW_LIFT_FILTER_FALLBACK"
 echo "POOL_MANIFEST=$POOL_MANIFEST"
 echo "SELECTED_OBJECTS_JSONL=${SELECTED_OBJECTS_JSONL:-unset}"
 echo "SHARD_DIR=$SHARD_DIR"
@@ -434,7 +443,9 @@ json_event "collector_start" \
   "objects_per_demo_min=$OBJECTS_PER_DEMO_MIN" \
   "objects_per_demo_max=$OBJECTS_PER_DEMO_MAX" \
   "scripted_bin_drop_y_offset=$SCRIPTED_BIN_DROP_Y_OFFSET" \
-  "scripted_bin_drop_y_offset_after_first=$SCRIPTED_BIN_DROP_Y_OFFSET_AFTER_FIRST"
+  "scripted_bin_drop_y_offset_after_first=$SCRIPTED_BIN_DROP_Y_OFFSET_AFTER_FIRST" \
+  "yam_grasp_filter_min_keep=$YAM_GRASP_FILTER_MIN_KEEP" \
+  "yam_allow_lift_filter_fallback=$YAM_ALLOW_LIFT_FILTER_FALLBACK"
 
 accepted=0
 attempt=0
@@ -571,6 +582,8 @@ summary = {
     "objects_per_demo_max": int("$OBJECTS_PER_DEMO_MAX"),
     "object_asset_assignment": "$OBJECT_ASSET_ASSIGNMENT",
     "tabletop_clutter_asset_assignment": "$TABLETOP_CLUTTER_ASSET_ASSIGNMENT",
+    "yam_grasp_filter_min_keep": int("$YAM_GRASP_FILTER_MIN_KEEP"),
+    "yam_allow_lift_filter_fallback": "$YAM_ALLOW_LIFT_FILTER_FALLBACK",
     "code_commit": "${CODE_COMMIT:-unknown}",
 }
 path = Path("$SHARD_DIR/summary.json")

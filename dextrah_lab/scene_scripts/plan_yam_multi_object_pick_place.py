@@ -343,6 +343,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--scripted_lift_height", type=float, default=0.14)
     parser.add_argument("--scripted_lift_frames", type=int, default=240)
     parser.add_argument("--start_guard_frames", type=int, default=60)
+    parser.add_argument("--yam_grasp_filter_min_keep", type=int, default=None)
+    parser.add_argument("--yam_allow_lift_filter_fallback", action="store_true")
     return parser.parse_args()
 
 
@@ -415,6 +417,10 @@ def main() -> None:
             "--start_guard_frames",
             str(int(args.start_guard_frames)),
         ]
+        if args.yam_grasp_filter_min_keep is not None:
+            cmd.extend(["--yam_grasp_filter_min_keep", str(int(args.yam_grasp_filter_min_keep))])
+        if bool(args.yam_allow_lift_filter_fallback):
+            cmd.append("--yam_allow_lift_filter_fallback")
         if args.graspgenx_root is not None:
             cmd.extend(["--graspgenx_root", str(args.graspgenx_root.expanduser().resolve())])
         if args.curobo_root is not None:
