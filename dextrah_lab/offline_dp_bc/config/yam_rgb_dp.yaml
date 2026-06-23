@@ -1,13 +1,14 @@
-# RGB Diffusion Policy template for DEXTRAH Franka cube BC.
-# Observations intentionally exclude privileged object state. The policy sees:
-# - image: same viewport camera used by eval videos, resized to 96x96.
-# - robot_state: EE position, EE quaternion, and gripper width.
+# RGB Diffusion Policy template for YAM pick-place BC.
+# Observations intentionally exclude object state. The policy sees:
+# - image: replay camera RGB resized to 96x128.
+# - robot_state: YAM proprioception, currently actual joint positions.
+# Actions are absolute YAM command joint-position targets.
 
 _target_: diffusion_policy.workspace.train_diffusion_unet_image_workspace.TrainDiffusionUnetImageWorkspace
 
 name: train_diffusion_unet_image
-task_name: franka_cube_rgb
-exp_name: franka_cube_rgb_dp_bc_warmstart
+task_name: yam_rgb
+exp_name: yam_rgb_dp_bc
 
 horizon: 16
 n_obs_steps: 2
@@ -21,17 +22,17 @@ obs_as_global_cond: true
 shape_meta:
   obs:
     image:
-      shape: [3, 96, 96]
+      shape: [3, 96, 128]
       type: rgb
     robot_state:
       shape: [8]
       type: low_dim
   action:
-    shape: [7]
+    shape: [8]
 
 policy:
   _target_: dextrah_lab.offline_dp_bc.weighted_diffusion_policy.WeightedDiffusionUnetImagePolicy
-  action_loss_weights: [1, 1, 1, 1, 1, 1, 8]
+  action_loss_weights: [1, 1, 1, 1, 1, 1, 1, 1]
   distill_reference_checkpoint: null
   distill_loss_weight: 0.0
   distill_mask_key: distill_mask
@@ -100,9 +101,9 @@ val_dataloader:
   persistent_workers: false
 
 task:
-  name: franka_cube_rgb
-  task_name: franka_cube
-  dataset_path: data/franka_cube_dp_bc/franka_cube_rgb_demos.npz
+  name: yam_rgb
+  task_name: yam_pick_place
+  dataset_path: data/yam_rgb_demos.npz
   dataset:
     _target_: dextrah_lab.offline_dp_bc.dp_dataset.FrankaCubeRgbDataset
     dataset_path: ${task.dataset_path}
@@ -112,7 +113,7 @@ task:
     seed: 42
     val_ratio: 0.1
     action_normalizer: limits_clamp_constant
-    action_dim: 7
+    action_dim: 8
     image_key: image
     robot_state_key: robot_state
     obs_image_name: image
@@ -145,15 +146,15 @@ training:
 
 logging:
   project: diffusion_policy_debug
-  name: franka_cube_rgb_dp_bc_warmstart
+  name: yam_rgb_dp_bc
   group: null
   id: null
   mode: offline
   resume: false
   tags:
     - train_diffusion_unet_image
-    - franka_cube_rgb
-    - dextrah_bc_warmstart
+    - yam_rgb
+    - dextrah_bc
 
 checkpoint:
   save_last_ckpt: true

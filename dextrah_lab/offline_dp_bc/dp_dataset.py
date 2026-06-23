@@ -307,6 +307,7 @@ class FrankaCubeRgbDataset(BaseImageDataset):
         robot_state_key: str = "robot_state",
         obs_image_name: str = "image",
         obs_robot_state_name: str = "robot_state",
+        action_dim: int = 7,
         append_phase_progress: bool = False,
         phase_key: str = "phase_ids",
         normalizer_checkpoint: str | None = None,
@@ -327,6 +328,7 @@ class FrankaCubeRgbDataset(BaseImageDataset):
         self.robot_state_key = str(robot_state_key)
         self.obs_image_name = str(obs_image_name)
         self.obs_robot_state_name = str(obs_robot_state_name)
+        self.action_dim = int(action_dim)
         self.append_phase_progress = bool(append_phase_progress)
         self.phase_key = str(phase_key)
         self.normalizer_checkpoint = None if normalizer_checkpoint in (None, "") else str(normalizer_checkpoint)
@@ -356,8 +358,8 @@ class FrankaCubeRgbDataset(BaseImageDataset):
             raise ValueError(f"image must be NHWC or NCHW RGB, got {self.image.shape}")
         if self.robot_state.ndim != 2:
             raise ValueError(f"robot_state must be rank 2, got {self.robot_state.shape}")
-        if self.action.ndim != 2 or self.action.shape[1] != 7:
-            raise ValueError(f"Expected DEXTRAH 7D actions, got {self.action.shape}")
+        if self.action.ndim != 2 or self.action.shape[1] != self.action_dim:
+            raise ValueError(f"Expected DEXTRAH {self.action_dim}D actions, got {self.action.shape}")
         n = int(self.image.shape[0])
         if self.robot_state.shape[0] != n or self.action.shape[0] != n:
             raise ValueError(

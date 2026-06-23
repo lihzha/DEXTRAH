@@ -31,7 +31,12 @@ def _episode_bounds(episode_ends: np.ndarray) -> list[tuple[int, int]]:
     return [(int(start), int(end)) for start, end in zip(starts, episode_ends)]
 
 
-def _validate(data: np.lib.npyio.NpzFile, *, expected_robot_state_dim: int) -> list[str]:
+def _validate(
+    data: np.lib.npyio.NpzFile,
+    *,
+    expected_robot_state_dim: int,
+    expected_action_dim: int,
+) -> list[str]:
     errors: list[str] = []
     for key in ("image", "robot_state", "action", "episode_ends"):
         if key not in data.files:
@@ -50,8 +55,8 @@ def _validate(data: np.lib.npyio.NpzFile, *, expected_robot_state_dim: int) -> l
         errors.append(
             f"robot_state must be ({image.shape[0]},{expected_robot_state_dim}), got {robot_state.shape}"
         )
-    if action.shape != (image.shape[0], 7):
-        errors.append(f"action must be ({image.shape[0]},7), got {action.shape}")
+    if action.shape != (image.shape[0], int(expected_action_dim)):
+        errors.append(f"action must be ({image.shape[0]},{expected_action_dim}), got {action.shape}")
     if episode_ends.ndim != 1 or episode_ends.size == 0 or int(episode_ends[-1]) != int(image.shape[0]):
         errors.append("episode_ends must be 1D cumulative exclusive and end at image length")
     for key in ("rollout_ids", "rollout_reset_joint_blend_alpha", "rollout_reset_cube_pos_blend_alpha"):
@@ -152,6 +157,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dataset", required=True, type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--expected-robot-state-dim", type=int, default=8)
+    parser.add_argument("--expected-action-dim", type=int, default=7)
     parser.add_argument("--video-output", type=Path, default=None)
     parser.add_argument("--video-episodes", type=int, default=3)
     parser.add_argument("--video-seed", type=int, default=42)
@@ -166,7 +172,11 @@ def main() -> None:
     output_dir = args.output_dir.expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     data = np.load(dataset_path, allow_pickle=False)
-    validation_errors = _validate(data, expected_robot_state_dim=int(args.expected_robot_state_dim))
+    validation_errors = _validate(
+        data,
+        expected_robot_state_dim=int(args.expected_robot_state_dim),
+        expected_action_dim=int(args.expected_action_dim),
+    )
     if validation_errors:
         raise ValueError("; ".join(validation_errors))
 
@@ -257,7 +267,7 @@ def main() -> None:
     report_md.write_text(
         "\n".join(
             [
-                "# Franka Cube RGB Dataset Report",
+                "# RGB Dataset Report",
                 "",
                 f"- dataset: `{dataset_path}`",
                 f"- image/robot/action: `{tuple(image.shape)}` / `{tuple(robot_state.shape)}` / `{tuple(action.shape)}`",
