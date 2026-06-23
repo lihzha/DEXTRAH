@@ -196,8 +196,8 @@ def _make_policy_camera(
 
 
 def _make_overview_camera() -> Camera:
-    eye = (-0.92, -0.74, 0.34)
-    target = (-0.30, 0.0, 0.14)
+    eye = (-0.46, -1.08, 0.22)
+    target = (-0.30, 0.0, 0.16)
     cfg = CameraCfg(
         prim_path="/World/BimanualYamDualPickOverviewCamera",
         width=MOLMOACT2_CAMERA_WIDTH,
@@ -205,7 +205,7 @@ def _make_overview_camera() -> Camera:
         data_types=["rgb"],
         update_period=0.0,
         spawn=sim_utils.PinholeCameraCfg(
-            focal_length=18.0,
+            focal_length=16.0,
             horizontal_aperture=20.955,
             clipping_range=(0.01, 20.0),
         ),
