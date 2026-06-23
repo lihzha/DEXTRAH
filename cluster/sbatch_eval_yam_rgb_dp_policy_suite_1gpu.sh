@@ -1,0 +1,492 @@
+#!/bin/bash
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --account=nvr_lpr_rvp
+#SBATCH --gpus-per-node=1
+#SBATCH --job-name=yam_rgb_dp_eval
+#SBATCH --partition=batch
+#SBATCH --time=0-02:00:00
+#SBATCH --mem=160G
+#SBATCH --cpus-per-task=16
+#SBATCH --output=/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/yam_rgb_dp_eval_suite_%j.out
+
+set -euo pipefail
+
+NFS_ROOT="${NFS_ROOT:-/lustre/fsw/portfolios/nvr/users/lzha}"
+CODE_NFS="${CODE_NFS:-$NFS_ROOT/src/DEXTRAH}"
+FABRICS_NFS="${FABRICS_NFS:-$NFS_ROOT/src/FABRICS}"
+ISAACLAB_NFS="${ISAACLAB_NFS:-$NFS_ROOT/src/IsaacLab-v2.2.1}"
+ROBOLAB_NFS="${ROBOLAB_NFS:-$NFS_ROOT/src/RoboLab}"
+OFFICIAL_DP_NFS="${OFFICIAL_DP_NFS:-$NFS_ROOT/src/external/real-stanford-diffusion_policy}"
+IMAGE="${IMAGE:-$NFS_ROOT/cache/isaac_lab_2.2.0.sqsh}"
+ENV_ROOT="${ENV_ROOT:-$NFS_ROOT/envs}"
+ENV_NAME="${ENV_NAME:-dextrah-isaaclab}"
+DP_ENV_NAME="${DP_ENV_NAME:-franka-cube-dp-bc-warmstart-official-dp}"
+RESULTS_NFS="${RESULTS_NFS:-$NFS_ROOT/results/dextrah}"
+CACHE_NFS="${CACHE_NFS:-$NFS_ROOT/isaac_cache}"
+
+TASK="${TASK:-Dextrah-Single-YAM-Tabletop-Clutter-Grasp}"
+CHECKPOINT_HOST="${CHECKPOINT_HOST:-$RESULTS_NFS/dp_bc/checkpoints/yam_rgb_dp_full500_b16_s10000_20260623/latest.ckpt}"
+ACCEPTED_MANIFEST_HOST="${ACCEPTED_MANIFEST_HOST:-$RESULTS_NFS/yam_demos/yam_selected50_multidemo_500_dropoffset_20260622/accepted_demos_first500.jsonl}"
+FULL_OBJAVERSE_ASSET_ROOT="${FULL_OBJAVERSE_ASSET_ROOT:-$RESULTS_NFS/assets/graspgen_objects_full_cpu_20260617_153051}"
+FULL_OBJAVERSE_MANIFEST_HOST="${FULL_OBJAVERSE_MANIFEST_HOST:-$FULL_OBJAVERSE_ASSET_ROOT/manifest.json}"
+FULL_OBJAVERSE_CONTAINER_ASSET_ROOT="${FULL_OBJAVERSE_CONTAINER_ASSET_ROOT:-/results/assets/graspgen_objects_full_cpu_20260617_153051}"
+
+SLURM_JOB_ID_SAFE="${SLURM_JOB_ID:-manual}"
+RUN_NAME="${RUN_NAME:-yam_rgb_dp_eval_suite_${SLURM_JOB_ID_SAFE}_$(date +%Y%m%d_%H%M%S)}"
+RUN_DIR_HOST="$RESULTS_NFS/evals/$RUN_NAME"
+RUN_DIR_CONTAINER="/results/evals/$RUN_NAME"
+ID_EXPECTED_OBJECTS="${ID_EXPECTED_OBJECTS:-1}"
+ID_CASE_INDEX="${ID_CASE_INDEX:-0}"
+OOD_SEED="${OOD_SEED:-9400001}"
+OOD_SETTLE_STEPS="${OOD_SETTLE_STEPS:-100}"
+DEMO_STEPS="${DEMO_STEPS:-1621}"
+CAPTURE_INTERVAL="${CAPTURE_INTERVAL:-20}"
+FPS="${FPS:-30}"
+RECORD_RGB_WIDTH="${RECORD_RGB_WIDTH:-160}"
+RECORD_RGB_HEIGHT="${RECORD_RGB_HEIGHT:-120}"
+RECORD_RGB_INTERVAL="${RECORD_RGB_INTERVAL:-1}"
+POLICY_IMAGE_HEIGHT="${POLICY_IMAGE_HEIGHT:-96}"
+POLICY_IMAGE_WIDTH="${POLICY_IMAGE_WIDTH:-128}"
+NUM_INFERENCE_STEPS="${NUM_INFERENCE_STEPS:-100}"
+NUM_ACTION_SAMPLES="${NUM_ACTION_SAMPLES:-1}"
+POLICY_SAMPLE_SEED="${POLICY_SAMPLE_SEED:-}"
+ACTION_CHUNK_STEPS="${ACTION_CHUNK_STEPS:-8}"
+POLICY_MAX_JOINT_DELTA="${POLICY_MAX_JOINT_DELTA:-0.20}"
+POLICY_MAX_GRIPPER_DELTA="${POLICY_MAX_GRIPPER_DELTA:-0.02}"
+VALIDATION_REQUIRE_ACCEPTED="${VALIDATION_REQUIRE_ACCEPTED:-False}"
+DISABLE_FABRIC="${DISABLE_FABRIC:-False}"
+PREPARE_YAM_ASSETS="${PREPARE_YAM_ASSETS:-auto}"
+YAM_ASSET_PREPARE_LOCK="${YAM_ASSET_PREPARE_LOCK:-$RESULTS_NFS/locks/yam_asset_prepare.lock}"
+CODE_COMMIT="${CODE_COMMIT:-}"
+if [ -z "$CODE_COMMIT" ] && git -C "$CODE_NFS" rev-parse HEAD >/dev/null 2>&1; then
+  CODE_COMMIT="$(git -C "$CODE_NFS" rev-parse HEAD)"
+fi
+
+if [ ! -f "$IMAGE" ]; then
+  echo "Missing Isaac Lab container image: $IMAGE" >&2
+  exit 2
+fi
+if [ ! -d "$ENV_ROOT/$ENV_NAME/site" ]; then
+  echo "Missing DEXTRAH Python target: $ENV_ROOT/$ENV_NAME/site" >&2
+  exit 2
+fi
+if [ ! -d "$ENV_ROOT/$DP_ENV_NAME/site" ]; then
+  echo "Missing Diffusion Policy Python target: $ENV_ROOT/$DP_ENV_NAME/site" >&2
+  exit 2
+fi
+if [ ! -f "$CHECKPOINT_HOST" ]; then
+  echo "Missing checkpoint: $CHECKPOINT_HOST" >&2
+  exit 2
+fi
+if [ ! -f "$ACCEPTED_MANIFEST_HOST" ]; then
+  echo "Missing accepted demo manifest: $ACCEPTED_MANIFEST_HOST" >&2
+  exit 2
+fi
+if [ ! -f "$FULL_OBJAVERSE_MANIFEST_HOST" ]; then
+  echo "Missing full Objaverse manifest: $FULL_OBJAVERSE_MANIFEST_HOST" >&2
+  exit 2
+fi
+if [ -n "$CODE_COMMIT" ]; then
+  actual_commit="$(git -C "$CODE_NFS" rev-parse HEAD)"
+  if [ "$actual_commit" != "$CODE_COMMIT" ]; then
+    echo "CODE_COMMIT mismatch: expected $CODE_COMMIT, found $actual_commit in $CODE_NFS" >&2
+    exit 2
+  fi
+fi
+
+mkdir -p \
+  "$RUN_DIR_HOST" \
+  "$NFS_ROOT/slurm_logs/dextrah" \
+  "$CACHE_NFS/kit" "$CACHE_NFS/ov" "$CACHE_NFS/pip" \
+  "$CACHE_NFS/glcache" "$CACHE_NFS/computecache" \
+  "$CACHE_NFS/omni_logs" "$CACHE_NFS/carb_logs" \
+  "$CACHE_NFS/data" "$CACHE_NFS/documents"
+
+CASE_ENV_HOST="$RUN_DIR_HOST/case_env.sh"
+python3 - "$ACCEPTED_MANIFEST_HOST" "$FULL_OBJAVERSE_MANIFEST_HOST" "$RUN_DIR_HOST" "$ID_EXPECTED_OBJECTS" "$ID_CASE_INDEX" "$OOD_SEED" "$RESULTS_NFS" "$FULL_OBJAVERSE_CONTAINER_ASSET_ROOT" <<'PY'
+import json
+import random
+import shlex
+import sys
+from pathlib import Path
+
+accepted_manifest = Path(sys.argv[1])
+full_manifest = Path(sys.argv[2])
+run_dir = Path(sys.argv[3])
+id_expected_objects = int(sys.argv[4])
+id_case_index = int(sys.argv[5])
+ood_seed = int(sys.argv[6])
+results_root = Path(sys.argv[7])
+container_asset_root = sys.argv[8]
+
+def host_path(value):
+    text = str(value or "")
+    if text.startswith("/results/"):
+        return str(results_root / text[len("/results/"):])
+    return text
+
+rows = []
+for line in accepted_manifest.read_text(encoding="utf-8").splitlines():
+    if not line.strip():
+        continue
+    row = json.loads(line)
+    rows.append(row)
+if not rows:
+    raise SystemExit(f"No rows in accepted manifest: {accepted_manifest}")
+
+matching = []
+for row in rows:
+    sequence = row.get("object_sequence")
+    count = row.get("objects_per_demo")
+    if count is None and isinstance(sequence, list):
+        count = len(sequence)
+    try:
+        count = int(count)
+    except (TypeError, ValueError):
+        count = -1
+    if count == id_expected_objects:
+        matching.append(row)
+pool = matching if matching else rows
+id_row = pool[id_case_index % len(pool)]
+stable_scene = id_row.get("stable_scene")
+if not stable_scene:
+    metadata = id_row.get("dataset_metadata")
+    if isinstance(metadata, dict):
+        stable_scene = metadata.get("stable_scene_path")
+if not stable_scene and id_row.get("dataset"):
+    try:
+        import numpy as np
+        with np.load(host_path(id_row["dataset"]), allow_pickle=False) as data:
+            metadata = json.loads(str(data["metadata_json"].item()))
+        stable_scene = metadata.get("stable_scene_path")
+    except Exception as exc:
+        raise SystemExit(f"Could not resolve stable scene from dataset metadata: {exc}") from exc
+stable_scene = host_path(stable_scene)
+if not stable_scene or not Path(stable_scene).is_file():
+    raise SystemExit(f"Resolved ID stable scene does not exist: {stable_scene}")
+id_sequence = id_row.get("object_sequence") if isinstance(id_row.get("object_sequence"), list) else []
+id_case = {
+    "case": "id",
+    "source_manifest": str(accepted_manifest),
+    "stable_scene_host": stable_scene,
+    "expected_objects": int(id_expected_objects if matching else len(id_sequence) or 1),
+    "objects_per_demo": id_row.get("objects_per_demo"),
+    "dataset": id_row.get("dataset"),
+    "video": id_row.get("video"),
+    "object_sequence": id_sequence,
+}
+(run_dir / "id_case.json").write_text(json.dumps(id_case, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+train_uuids = set()
+for row in rows:
+    sequence = row.get("object_sequence")
+    if not isinstance(sequence, list):
+        continue
+    for item in sequence:
+        if isinstance(item, dict) and item.get("uuid"):
+            train_uuids.add(str(item["uuid"]))
+source = json.loads(full_manifest.read_text(encoding="utf-8"))
+objects = source.get("objects")
+if not isinstance(objects, list):
+    raise SystemExit(f"Full manifest has no objects list: {full_manifest}")
+candidates = [
+    dict(obj)
+    for obj in objects
+    if isinstance(obj, dict)
+    and str(obj.get("uuid") or "")
+    and str(obj.get("uuid") or "") not in train_uuids
+    and (obj.get("usd_path") or obj.get("path"))
+]
+if not candidates:
+    raise SystemExit("No OOD candidates after excluding training UUIDs")
+rng = random.Random(ood_seed)
+rng.shuffle(candidates)
+ood_object = candidates[0]
+ood_manifest = run_dir / "ood_object_manifest.json"
+ood_payload = {
+    "format": "dextrah_yam_rgb_dp_ood_eval_manifest_v1",
+    "asset_root": container_asset_root,
+    "source_manifest": str(full_manifest),
+    "excluded_training_uuid_count": len(train_uuids),
+    "seed": ood_seed,
+    "objects": [ood_object],
+}
+ood_manifest.write_text(json.dumps(ood_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+ood_case = {
+    "case": "ood",
+    "source_manifest": str(full_manifest),
+    "manifest_host": str(ood_manifest),
+    "expected_objects": 1,
+    "seed": ood_seed,
+    "object": {
+        "uuid": str(ood_object.get("uuid") or ""),
+        "name": str(ood_object.get("name") or ood_object.get("uuid") or ""),
+        "usd_path": str(ood_object.get("usd_path") or ood_object.get("path") or ""),
+        "xy_radius": ood_object.get("xy_radius"),
+        "scaled_half_extents": ood_object.get("scaled_half_extents"),
+    },
+}
+(run_dir / "ood_case.json").write_text(json.dumps(ood_case, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+env = {
+    "ID_STABLE_SCENE_HOST": stable_scene,
+    "ID_EXPECTED_OBJECTS_RESOLVED": str(id_case["expected_objects"]),
+    "OOD_MANIFEST_HOST": str(ood_manifest),
+    "OOD_EXPECTED_OBJECTS_RESOLVED": "1",
+}
+(run_dir / "case_env.sh").write_text("".join(f"{key}={shlex.quote(value)}\n" for key, value in env.items()), encoding="utf-8")
+print(json.dumps({"event": "yam_rgb_dp_eval_cases_prepared", "id": id_case, "ood": ood_case}, sort_keys=True))
+PY
+# shellcheck source=/dev/null
+source "$CASE_ENV_HOST"
+
+export NFS_ROOT CODE_NFS FABRICS_NFS ISAACLAB_NFS ROBOLAB_NFS OFFICIAL_DP_NFS RESULTS_NFS ENV_ROOT ENV_NAME DP_ENV_NAME
+export TASK RUN_NAME RUN_DIR_CONTAINER CHECKPOINT_HOST FULL_OBJAVERSE_ASSET_ROOT FULL_OBJAVERSE_MANIFEST_HOST
+export FULL_OBJAVERSE_CONTAINER_ASSET_ROOT ID_STABLE_SCENE_HOST ID_EXPECTED_OBJECTS_RESOLVED
+export OOD_MANIFEST_HOST OOD_EXPECTED_OBJECTS_RESOLVED OOD_SETTLE_STEPS OOD_SEED
+export DEMO_STEPS CAPTURE_INTERVAL FPS RECORD_RGB_WIDTH RECORD_RGB_HEIGHT RECORD_RGB_INTERVAL
+export POLICY_IMAGE_HEIGHT POLICY_IMAGE_WIDTH NUM_INFERENCE_STEPS NUM_ACTION_SAMPLES POLICY_SAMPLE_SEED
+export ACTION_CHUNK_STEPS POLICY_MAX_JOINT_DELTA POLICY_MAX_GRIPPER_DELTA VALIDATION_REQUIRE_ACCEPTED
+export DISABLE_FABRIC PREPARE_YAM_ASSETS YAM_ASSET_PREPARE_LOCK CODE_COMMIT
+
+echo "Running YAM RGB-DP eval suite"
+echo "SLURM_JOB_ID=$SLURM_JOB_ID_SAFE"
+echo "SLURM_JOB_NODELIST=${SLURM_JOB_NODELIST:-unset}"
+echo "RUN_DIR_HOST=$RUN_DIR_HOST"
+echo "CODE_NFS=$CODE_NFS"
+echo "CODE_COMMIT=${CODE_COMMIT:-unknown}"
+echo "CHECKPOINT_HOST=$CHECKPOINT_HOST"
+echo "ID_STABLE_SCENE_HOST=$ID_STABLE_SCENE_HOST"
+echo "OOD_MANIFEST_HOST=$OOD_MANIFEST_HOST"
+echo "DEMO_STEPS=$DEMO_STEPS"
+echo "CAPTURE_INTERVAL=$CAPTURE_INTERVAL"
+echo "VALIDATION_REQUIRE_ACCEPTED=$VALIDATION_REQUIRE_ACCEPTED"
+
+srun \
+  --ntasks=1 \
+  --container-image="$IMAGE" \
+  --container-mounts=/dev/shm:/dev/shm,"$CODE_NFS":/code,"$FABRICS_NFS":/fabrics,"$ISAACLAB_NFS":/IsaacLab,"$ROBOLAB_NFS":/home/lzha/code/RoboLab,"$OFFICIAL_DP_NFS":/official_dp,"$ENV_ROOT":/envs,"$RESULTS_NFS":/results,"$CACHE_NFS/kit":/isaac-sim/kit/cache,"$CACHE_NFS/ov":/root/.cache/ov,"$CACHE_NFS/pip":/root/.cache/pip,"$CACHE_NFS/glcache":/root/.cache/nvidia/GLCache,"$CACHE_NFS/computecache":/root/.nv/ComputeCache,"$CACHE_NFS/omni_logs":/root/.nvidia-omniverse/logs,"$CACHE_NFS/carb_logs":/isaac-sim/kit/logs/Kit/Isaac-Sim,"$CACHE_NFS/data":/root/.local/share/ov/data,"$CACHE_NFS/documents":/root/Documents \
+  --no-container-entrypoint \
+  --container-remap-root \
+  --container-writable \
+  --export=ALL,PYTHONUNBUFFERED=1,HYDRA_FULL_ERROR=1,PYTHONFAULTHANDLER=1,TORCH_SHOW_CPP_STACKTRACES=1,ACCEPT_EULA=Y,PRIVACY_CONSENT=Y \
+  bash -lc '
+    set -euo pipefail
+    export SITE="/envs/$ENV_NAME/site"
+    export DP_SITE="/envs/$DP_ENV_NAME/site"
+    export PYTHONPATH="$SITE:$DP_SITE:/code:/fabrics/src:/official_dp"
+    for d in /IsaacLab/source/*; do
+      if [ -d "$d" ]; then
+        export PYTHONPATH="$d:$PYTHONPATH"
+      fi
+    done
+    export WANDB_MODE=offline
+    mkdir -p "$RUN_DIR_CONTAINER"/{id,ood,ood_settle} /results/logs
+
+    cd /code
+    echo "container_host=$(hostname)"
+    echo "container_cuda_visible_devices=${CUDA_VISIBLE_DEVICES:-unset}"
+    echo "CODE_COMMIT=${CODE_COMMIT:-unknown}"
+    git rev-parse HEAD 2>/dev/null || true
+    nvidia-smi || true
+
+    if [[ "$TASK" == *YAM* ]]; then
+      YAM_USD=/code/dextrah_lab/assets/yam/yam_mjcf_usd/yam_linear.usd
+      YAM_PREPARE_ARGS=(--headless --converter mjcf --robot single)
+      if [ "$PREPARE_YAM_ASSETS" = "True" ] || { [ "$PREPARE_YAM_ASSETS" = "auto" ] && [ ! -s "$YAM_USD" ]; }; then
+        mkdir -p "$(dirname "$YAM_ASSET_PREPARE_LOCK")"
+        (
+          flock 9
+          if [ "$PREPARE_YAM_ASSETS" = "True" ] || { [ "$PREPARE_YAM_ASSETS" = "auto" ] && [ ! -s "$YAM_USD" ]; }; then
+            /isaac-sim/python.sh dextrah_lab/assets/scripts/prepare_yam_assets.py "${YAM_PREPARE_ARGS[@]}"
+          fi
+        ) 9>"$YAM_ASSET_PREPARE_LOCK"
+      fi
+      test -s "$YAM_USD"
+    fi
+
+    container_path_arg() {
+      local value="$1"
+      if [ -z "$value" ]; then
+        return 0
+      fi
+      if [[ "$value" == "$RESULTS_NFS"* ]]; then
+        printf "/results%s" "${value#$RESULTS_NFS}"
+      elif [[ "$value" == "$CODE_NFS"* ]]; then
+        printf "/code%s" "${value#$CODE_NFS}"
+      elif [[ "$value" == "$FABRICS_NFS"* ]]; then
+        printf "/fabrics%s" "${value#$FABRICS_NFS}"
+      elif [[ "$value" == "$ISAACLAB_NFS"* ]]; then
+        printf "/IsaacLab%s" "${value#$ISAACLAB_NFS}"
+      elif [[ "$value" == "$OFFICIAL_DP_NFS"* ]]; then
+        printf "/official_dp%s" "${value#$OFFICIAL_DP_NFS}"
+      else
+        printf "%s" "$value"
+      fi
+    }
+
+    bool_arg() {
+      local flag="$1"
+      local value="$2"
+      if [ "$value" = "True" ] || [ "$value" = "true" ] || [ "$value" = "1" ]; then
+        printf "%s" "$flag"
+      fi
+    }
+
+    run_settle_ood() {
+      local manifest_container
+      manifest_container="$(container_path_arg "$OOD_MANIFEST_HOST")"
+      /isaac-sim/python.sh /code/dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py \
+        --task "$TASK" \
+        --num_envs 1 \
+        --seed "$OOD_SEED" \
+        --output_dir "$RUN_DIR_CONTAINER/ood_settle" \
+        --video_path "$RUN_DIR_CONTAINER/ood_settle/settle.mp4" \
+        --metrics_path "$RUN_DIR_CONTAINER/ood_settle/metrics.json" \
+        --stable_scene_output_path "$RUN_DIR_CONTAINER/ood/stable_scene.json" \
+        --demo_mode settle \
+        --settle_steps "$OOD_SETTLE_STEPS" \
+        --capture_interval "$CAPTURE_INTERVAL" \
+        --fps "$FPS" \
+        --object_asset_manifest_path "$manifest_container" \
+        --object_assets_dir "$FULL_OBJAVERSE_CONTAINER_ASSET_ROOT" \
+        --max_objects 1 \
+        --object_asset_assignment round_robin \
+        --object_validate_usd_bounds \
+        --tabletop_clutter_asset_manifest_path "$manifest_container" \
+        --tabletop_clutter_assets_dir "$FULL_OBJAVERSE_CONTAINER_ASSET_ROOT" \
+        --tabletop_clutter_max_objects 0 \
+        --tabletop_clutter_object_count 0 \
+        --tabletop_clutter_asset_assignment round_robin \
+        --no-tabletop_clutter_validate_usd_bounds \
+        --headless \
+        $(bool_arg --disable_fabric "$DISABLE_FABRIC")
+      test -s "$RUN_DIR_CONTAINER/ood/stable_scene.json"
+    }
+
+    run_policy_case() {
+      local case_name="$1"
+      local seed="$2"
+      local stable_scene_host="$3"
+      local stable_scene_container
+      stable_scene_container="$(container_path_arg "$stable_scene_host")"
+      local out_dir="$RUN_DIR_CONTAINER/$case_name"
+      local checkpoint_container
+      checkpoint_container="$(container_path_arg "$CHECKPOINT_HOST")"
+      local policy_seed_args=()
+      if [ -n "$POLICY_SAMPLE_SEED" ]; then
+        policy_seed_args=(--policy_sample_seed "$POLICY_SAMPLE_SEED")
+      fi
+      /isaac-sim/python.sh /code/dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py \
+        --task "$TASK" \
+        --num_envs 1 \
+        --seed "$seed" \
+        --output_dir "$out_dir" \
+        --video_path "$out_dir/policy.mp4" \
+        --metrics_path "$out_dir/metrics.json" \
+        --stable_scene_path "$stable_scene_container" \
+        --demo_mode single_yam_rgb_dp_policy \
+        --demo_steps "$DEMO_STEPS" \
+        --demo_trajectory_source none \
+        --checkpoint "$checkpoint_container" \
+        --diffusion_policy_root /official_dp \
+        --policy_image_height "$POLICY_IMAGE_HEIGHT" \
+        --policy_image_width "$POLICY_IMAGE_WIDTH" \
+        --num_inference_steps "$NUM_INFERENCE_STEPS" \
+        --num_action_samples "$NUM_ACTION_SAMPLES" \
+        --action_chunk_steps "$ACTION_CHUNK_STEPS" \
+        --policy_max_joint_delta "$POLICY_MAX_JOINT_DELTA" \
+        --policy_max_gripper_delta "$POLICY_MAX_GRIPPER_DELTA" \
+        --record_trajectory_dataset \
+        --trajectory_dataset_path "$out_dir/trajectory_dataset.npz" \
+        --record_rgb_width "$RECORD_RGB_WIDTH" \
+        --record_rgb_height "$RECORD_RGB_HEIGHT" \
+        --record_rgb_interval "$RECORD_RGB_INTERVAL" \
+        --capture_interval "$CAPTURE_INTERVAL" \
+        --fps "$FPS" \
+        --headless \
+        $(bool_arg --disable_fabric "$DISABLE_FABRIC") \
+        "${policy_seed_args[@]}"
+      test -s "$out_dir/policy.mp4"
+      test -s "$out_dir/metrics.json"
+      test -s "$out_dir/trajectory_dataset.npz"
+    }
+
+    validate_case() {
+      local case_name="$1"
+      local expected_objects="$2"
+      local stable_scene_container="$3"
+      set +e
+      python3 /code/dextrah_lab/scene_scripts/validate_yam_pick_place_dataset.py \
+        --dataset_path "$RUN_DIR_CONTAINER/$case_name/trajectory_dataset.npz" \
+        --metrics_path "$RUN_DIR_CONTAINER/$case_name/metrics.json" \
+        --stable_scene_path "$stable_scene_container" \
+        --output_path "$RUN_DIR_CONTAINER/$case_name/validation_metrics.json" \
+        --expected_objects "$expected_objects"
+      local status=$?
+      set -e
+      echo "validation_exit_$case_name=$status"
+      if [ "$VALIDATION_REQUIRE_ACCEPTED" = "True" ] || [ "$VALIDATION_REQUIRE_ACCEPTED" = "true" ] || [ "$VALIDATION_REQUIRE_ACCEPTED" = "1" ]; then
+        return "$status"
+      fi
+      return 0
+    }
+
+    run_settle_ood
+    run_policy_case id 42 "$ID_STABLE_SCENE_HOST"
+    run_policy_case ood "$OOD_SEED" "$RESULTS_NFS/evals/${RUN_NAME}/ood/stable_scene.json"
+    validate_case id "$ID_EXPECTED_OBJECTS_RESOLVED" "$(container_path_arg "$ID_STABLE_SCENE_HOST")"
+    validate_case ood "$OOD_EXPECTED_OBJECTS_RESOLVED" "$RUN_DIR_CONTAINER/ood/stable_scene.json"
+
+    python3 - "$RUN_DIR_CONTAINER" "$CHECKPOINT_HOST" "$CODE_COMMIT" <<'"'"'PY'"'"'
+import json
+import sys
+from pathlib import Path
+
+run_dir = Path(sys.argv[1])
+checkpoint = sys.argv[2]
+code_commit = sys.argv[3]
+
+def read_json(path):
+    try:
+        return json.loads(Path(path).read_text(encoding="utf-8"))
+    except Exception as exc:
+        return {"_read_error": str(exc), "_path": str(path)}
+
+cases = {}
+for case_name in ("id", "ood"):
+    metrics = read_json(run_dir / case_name / "metrics.json")
+    validation = read_json(run_dir / case_name / "validation_metrics.json")
+    rgb_dp = metrics.get("rgb_dp_policy_eval") if isinstance(metrics.get("rgb_dp_policy_eval"), dict) else {}
+    traj = metrics.get("trajectory_dataset") if isinstance(metrics.get("trajectory_dataset"), dict) else {}
+    cases[case_name] = {
+        "metrics_path": str(run_dir / case_name / "metrics.json"),
+        "video_path": str(run_dir / case_name / "policy.mp4"),
+        "dataset_path": str(run_dir / case_name / "trajectory_dataset.npz"),
+        "validation_path": str(run_dir / case_name / "validation_metrics.json"),
+        "validation_status": validation.get("status"),
+        "validation_checks": validation.get("checks"),
+        "policy_call_count": rgb_dp.get("policy_call_count"),
+        "clipped_step_count": rgb_dp.get("clipped_step_count"),
+        "action_min": rgb_dp.get("action_min"),
+        "action_max": rgb_dp.get("action_max"),
+        "trajectory_dataset": traj,
+    }
+summary = {
+    "run_dir": str(run_dir),
+    "checkpoint": checkpoint,
+    "code_commit": code_commit,
+    "cases": cases,
+    "id_case": read_json(run_dir / "id_case.json"),
+    "ood_case": read_json(run_dir / "ood_case.json"),
+}
+(run_dir / "suite_summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+print(json.dumps({"event": "yam_rgb_dp_eval_suite_done", "summary_path": str(run_dir / "suite_summary.json")}, sort_keys=True))
+PY
+  '
+
+echo "Finished. Host artifacts:"
+echo "  $RUN_DIR_HOST/id/policy.mp4"
+echo "  $RUN_DIR_HOST/ood/policy.mp4"
+echo "  $RUN_DIR_HOST/suite_summary.json"

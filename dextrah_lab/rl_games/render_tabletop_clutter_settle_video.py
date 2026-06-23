@@ -11,6 +11,7 @@ from pathlib import Path
 import shutil
 import sys
 import traceback
+from typing import Any
 
 from isaaclab.app import AppLauncher
 
@@ -37,11 +38,32 @@ parser.add_argument(
     "--demo_mode",
     type=str,
     default="settle",
-    choices=("settle", "single_yam_rejected_path", "single_yam_trajectory"),
+    choices=("settle", "single_yam_rejected_path", "single_yam_trajectory", "single_yam_rgb_dp_policy"),
 )
 parser.add_argument("--demo_steps", type=int, default=180)
 parser.add_argument("--demo_high_hold_z", type=float, default=0.16)
 parser.add_argument("--demo_low_hold_z", type=float, default=-0.02)
+parser.add_argument("--checkpoint", type=str, default=None)
+parser.add_argument("--diffusion_policy_root", type=str, default=None)
+parser.add_argument("--policy_image_height", type=int, default=96)
+parser.add_argument("--policy_image_width", type=int, default=128)
+parser.add_argument("--policy_robot_state_dim", type=int, default=8)
+parser.add_argument("--num_inference_steps", type=int, default=100)
+parser.add_argument("--num_action_samples", type=int, default=1)
+parser.add_argument("--policy_sample_seed", type=int, default=None)
+parser.add_argument("--action_chunk_steps", type=int, default=8)
+parser.add_argument(
+    "--policy_max_joint_delta",
+    type=float,
+    default=0.20,
+    help="Maximum per-control-step absolute command change for arm joints; <=0 disables.",
+)
+parser.add_argument(
+    "--policy_max_gripper_delta",
+    type=float,
+    default=0.02,
+    help="Maximum per-control-step absolute command change for gripper joints; <=0 disables.",
+)
 parser.add_argument("--demo_trajectory_path", type=str, default=None)
 parser.add_argument(
     "--demo_trajectory_source",
@@ -325,6 +347,54 @@ def _tensor_numpy(value: torch.Tensor, dtype=np.float32) -> np.ndarray:
 
 def _tensor_list(value: torch.Tensor):
     return value.detach().float().cpu().tolist()
+
+
+def _stage(name: str, **details: Any) -> None:
+    print("YAM_RGB_DP_EVAL_STAGE " + json.dumps({"stage": name, **details}, sort_keys=True, default=str), flush=True)
+
+
+class ImageRobotObsHistory:
+    def __init__(self, n_obs_steps: int, height: int, width: int, robot_state_dim: int):
+        self.n_obs_steps = int(n_obs_steps)
+        self.height = int(height)
+        self.width = int(width)
+        self.robot_state_dim = int(robot_state_dim)
+        self.image = np.zeros((self.n_obs_steps, self.height, self.width, 3), dtype=np.uint8)
+        self.robot_state = np.zeros((self.n_obs_steps, self.robot_state_dim), dtype=np.float32)
+        self.initialized = False
+
+    def reset(self, image: np.ndarray, robot_state: np.ndarray) -> None:
+        image = np.asarray(image, dtype=np.uint8)
+        robot_state = np.asarray(robot_state, dtype=np.float32)
+        if image.shape != (self.height, self.width, 3):
+            raise ValueError(f"Expected RGB shape {(self.height, self.width, 3)}, got {image.shape}")
+        if robot_state.shape != (self.robot_state_dim,):
+            raise ValueError(f"Expected robot_state shape ({self.robot_state_dim},), got {robot_state.shape}")
+        self.image[:] = image[None, ...]
+        self.robot_state[:] = robot_state[None, ...]
+        self.initialized = True
+
+    def push(self, image: np.ndarray, robot_state: np.ndarray) -> None:
+        if not self.initialized:
+            self.reset(image, robot_state)
+            return
+        image = np.asarray(image, dtype=np.uint8)
+        robot_state = np.asarray(robot_state, dtype=np.float32)
+        if image.shape != (self.height, self.width, 3):
+            raise ValueError(f"Expected RGB shape {(self.height, self.width, 3)}, got {image.shape}")
+        if robot_state.shape != (self.robot_state_dim,):
+            raise ValueError(f"Expected robot_state shape ({self.robot_state_dim},), got {robot_state.shape}")
+        self.image[:-1] = self.image[1:]
+        self.image[-1] = image
+        self.robot_state[:-1] = self.robot_state[1:]
+        self.robot_state[-1] = robot_state
+
+    def as_policy_obs(self, device: torch.device) -> dict[str, torch.Tensor]:
+        image = np.moveaxis(self.image.astype(np.float32) / 255.0, -1, 1)
+        return {
+            "image": torch.as_tensor(image[None], dtype=torch.float32, device=device),
+            "robot_state": torch.as_tensor(self.robot_state[None], dtype=torch.float32, device=device),
+        }
 
 
 def _jsonable(value):
@@ -1996,6 +2066,132 @@ def _map_source_joint_velocity_to_env(task_env, raw_qd: np.ndarray | torch.Tenso
     return joint_vel
 
 
+def _load_rgb_dp_policy(checkpoint: Path, device: str, diffusion_policy_root: str | None):
+    if diffusion_policy_root:
+        root = str(Path(diffusion_policy_root).expanduser().resolve())
+        if root not in sys.path:
+            sys.path.insert(0, root)
+        _stage("official_dp_root_added", diffusion_policy_root=root)
+    from diffusion_policy.workspace.train_diffusion_unet_image_workspace import TrainDiffusionUnetImageWorkspace
+
+    _stage("checkpoint_load_start", checkpoint=str(checkpoint))
+    workspace = TrainDiffusionUnetImageWorkspace.create_from_checkpoint(str(checkpoint))
+    policy = workspace.ema_model if getattr(workspace, "ema_model", None) is not None else workspace.model
+    policy.num_inference_steps = int(args_cli.num_inference_steps)
+    policy.to(torch.device(device))
+    policy.eval()
+    _stage(
+        "policy_ready",
+        workspace=workspace.__class__.__name__,
+        policy=policy.__class__.__name__,
+        n_obs_steps=int(getattr(policy, "n_obs_steps", 1)),
+        num_inference_steps=int(policy.num_inference_steps),
+        device=str(device),
+    )
+    return workspace, policy
+
+
+def _render_policy_rgb_obs(env) -> np.ndarray:
+    return _resize_rgb_nearest(
+        _frame_array(env.render()),
+        int(args_cli.policy_image_height),
+        int(args_cli.policy_image_width),
+    )
+
+
+def _yam_policy_robot_state(task_env) -> np.ndarray:
+    robot = getattr(task_env, "_robot", None)
+    if robot is None:
+        raise AttributeError("YAM RGB-DP eval requires a robot articulation")
+    joint_pos = robot.data.joint_pos.detach()
+    if int(joint_pos.shape[0]) != 1:
+        raise ValueError(f"YAM RGB-DP eval currently expects num_envs=1, got joint_pos shape {tuple(joint_pos.shape)}")
+    arm_ids = list(getattr(task_env, "arm_joint_ids", []))
+    finger_ids = list(getattr(task_env, "finger_joint_ids", []))
+    expected_dim = int(args_cli.policy_robot_state_dim)
+    if int(joint_pos.shape[1]) == expected_dim:
+        state = joint_pos[0]
+    elif len(arm_ids) + len(finger_ids) == expected_dim:
+        state = torch.cat((joint_pos[0, arm_ids], joint_pos[0, finger_ids]), dim=0)
+    else:
+        raise ValueError(
+            f"Cannot build {expected_dim}D YAM policy robot_state from joint_pos shape {tuple(joint_pos.shape)} "
+            f"({len(arm_ids)} arm, {len(finger_ids)} fingers)"
+        )
+    return state.detach().float().cpu().numpy().astype(np.float32, copy=False)
+
+
+def _predict_rgb_dp_action_sequence(policy: Any, history: ImageRobotObsHistory, call_idx: int) -> np.ndarray:
+    device = next(policy.parameters()).device
+    sample_count = max(1, int(args_cli.num_action_samples))
+    samples: list[torch.Tensor] = []
+    with torch.inference_mode():
+        for sample_idx in range(sample_count):
+            if args_cli.policy_sample_seed is not None:
+                seed = int(args_cli.policy_sample_seed) + int(call_idx) * sample_count + sample_idx
+                torch.manual_seed(seed)
+                if torch.cuda.is_available():
+                    torch.cuda.manual_seed_all(seed)
+            result = policy.predict_action(history.as_policy_obs(device))
+            if "action" not in result:
+                raise KeyError(f"Diffusion policy predict_action did not return an action key: {sorted(result.keys())}")
+            samples.append(result["action"])
+        action = samples[0] if len(samples) == 1 else torch.stack(samples, dim=0).mean(dim=0)
+    action_np = action.detach().float().cpu().numpy()
+    if action_np.ndim == 3 and action_np.shape[0] == 1:
+        action_np = action_np[0]
+    if action_np.ndim != 2:
+        raise RuntimeError(f"Unexpected RGB-DP action sequence shape {action_np.shape}")
+    return action_np.astype(np.float32, copy=False)
+
+
+def _policy_joint_delta_limit(task_env, *, arm_delta: float, gripper_delta: float) -> torch.Tensor:
+    robot = getattr(task_env, "_robot", None)
+    if robot is None:
+        raise AttributeError("YAM RGB-DP eval requires a robot articulation")
+    limit = torch.full_like(robot.data.joint_pos, float("inf"))
+    arm_ids = list(getattr(task_env, "arm_joint_ids", []))
+    finger_ids = list(getattr(task_env, "finger_joint_ids", []))
+    if math.isfinite(float(arm_delta)) and float(arm_delta) > 0.0 and arm_ids:
+        limit[:, arm_ids] = float(arm_delta)
+    if math.isfinite(float(gripper_delta)) and float(gripper_delta) > 0.0 and finger_ids:
+        limit[:, finger_ids] = float(gripper_delta)
+    return limit
+
+
+def _policy_joint_target_from_action(
+    task_env,
+    raw_action: np.ndarray,
+    *,
+    previous_target: torch.Tensor | None,
+) -> tuple[torch.Tensor, dict[str, object]]:
+    desired = _map_source_joint_to_env(task_env, raw_action)
+    robot = getattr(task_env, "_robot", None)
+    if robot is None:
+        raise AttributeError("YAM RGB-DP eval requires a robot articulation")
+    reference = previous_target.detach().clone() if previous_target is not None else robot.data.joint_pos.detach().clone()
+    delta = desired - reference
+    limit = _policy_joint_delta_limit(
+        task_env,
+        arm_delta=float(args_cli.policy_max_joint_delta),
+        gripper_delta=float(args_cli.policy_max_gripper_delta),
+    )
+    clamped_delta = torch.minimum(torch.maximum(delta, -limit), limit)
+    joint_pos = reference + clamped_delta
+    joint_pos = torch.clamp(joint_pos, task_env.robot_dof_lower_limits, task_env.robot_dof_upper_limits)
+    clipped = torch.abs(clamped_delta - delta) > 1.0e-8
+    return joint_pos, {
+        "raw_action": np.asarray(raw_action, dtype=np.float32).reshape(-1).astype(float).tolist(),
+        "desired_joint_position": _tensor_list(desired),
+        "reference_joint_position": _tensor_list(reference),
+        "applied_joint_position": _tensor_list(joint_pos),
+        "max_abs_delta_desired": float(torch.max(torch.abs(delta)).detach().cpu().item()),
+        "max_abs_delta_applied": float(torch.max(torch.abs(clamped_delta)).detach().cpu().item()),
+        "clipped_any": bool(clipped.any().detach().cpu().item()),
+        "clipped_count": int(torch.count_nonzero(clipped).detach().cpu().item()),
+    }
+
+
 def _apply_kinematic_joint_position(task_env, joint_pos: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     robot = getattr(task_env, "_robot", None)
     if robot is None:
@@ -2473,6 +2669,41 @@ def _row_scalar_summary(rows: list[dict[str, object]], key: str) -> dict[str, ob
     }
 
 
+def _stable_scene_object_sequence(stable_scene: dict[str, object] | None, frame_count: int) -> list[dict[str, object]]:
+    if not isinstance(stable_scene, dict):
+        return []
+    end = max(int(frame_count) - 1, 0)
+    end_exclusive = max(int(frame_count), 1)
+    sequence: list[dict[str, object]] = []
+
+    def append_entry(source: object, slot_idx: int) -> None:
+        if not isinstance(source, dict):
+            return
+        asset = source.get("asset") if isinstance(source.get("asset"), dict) else {}
+        uuid = str(asset.get("uuid") or source.get("uuid") or "")
+        if not uuid:
+            return
+        sequence.append(
+            {
+                "slot_idx": int(slot_idx),
+                "uuid": uuid,
+                "name": str(asset.get("name") or source.get("name") or uuid),
+                "asset_path": str(asset.get("usd_path") or asset.get("path") or ""),
+                "start_frame": 0,
+                "end_frame": int(end),
+                "end_frame_exclusive": int(end_exclusive),
+                "frame_count": int(end_exclusive),
+                "source": "stable_scene",
+            }
+        )
+
+    append_entry(stable_scene.get("target"), 0)
+    clutter = stable_scene.get("clutter") if isinstance(stable_scene.get("clutter"), list) else []
+    for slot_idx, item in enumerate(clutter, start=1):
+        append_entry(item, slot_idx)
+    return sequence
+
+
 def main() -> None:
     output_dir = Path(args_cli.output_dir).expanduser().resolve()
     frame_dir = output_dir / "frames"
@@ -2493,7 +2724,20 @@ def main() -> None:
     )
     stable_scene_input_path = stable_scene_path if stable_scene_path.is_file() else None
     stable_scene_input = _load_stable_scene(stable_scene_input_path)
-    single_yam_demo_enabled = args_cli.demo_mode in ("single_yam_rejected_path", "single_yam_trajectory")
+    single_yam_demo_enabled = args_cli.demo_mode in (
+        "single_yam_rejected_path",
+        "single_yam_trajectory",
+        "single_yam_rgb_dp_policy",
+    )
+    rgb_dp_eval_enabled = args_cli.demo_mode == "single_yam_rgb_dp_policy"
+    rgb_dp_checkpoint = Path(args_cli.checkpoint).expanduser().resolve() if args_cli.checkpoint else None
+    if rgb_dp_eval_enabled:
+        if rgb_dp_checkpoint is None:
+            raise ValueError("--demo_mode single_yam_rgb_dp_policy requires --checkpoint")
+        if not rgb_dp_checkpoint.is_file():
+            raise FileNotFoundError(rgb_dp_checkpoint)
+        if int(args_cli.num_envs) != 1:
+            raise ValueError("single_yam_rgb_dp_policy currently supports --num_envs 1")
 
     objaverse_textured_summary = None
     if args_cli.objaverse_textured_manifest_path:
@@ -2946,11 +3190,61 @@ def main() -> None:
     demo_table_rejection_target_joint_pos = None
     scripted_transport_desired_drop_env = None
     scripted_transport_drop_segment: tuple[int, int] | None = None
+    rgb_dp_workspace = None
+    rgb_dp_policy = None
+    rgb_dp_history: ImageRobotObsHistory | None = None
+    rgb_dp_action_queue = np.empty((0, 0), dtype=np.float32)
+    rgb_dp_policy_call_idx = 0
+    rgb_dp_action_queue_policy_call_idx = -1
+    rgb_dp_action_queue_step_offset = 0
+    rgb_dp_action_trace: list[dict[str, object]] = []
+    rgb_dp_action_min = np.full(int(args_cli.policy_robot_state_dim), np.inf, dtype=np.float64)
+    rgb_dp_action_max = np.full(int(args_cli.policy_robot_state_dim), -np.inf, dtype=np.float64)
+    rgb_dp_joint_target_last = None
     if single_yam_demo_enabled:
         if robot is not None:
             demo_start_joint_pos = robot.data.joint_pos.detach().clone()
+        if rgb_dp_eval_enabled:
+            if robot is None:
+                raise AttributeError("single_yam_rgb_dp_policy requires a robot articulation")
+            rgb_dp_workspace, rgb_dp_policy = _load_rgb_dp_policy(
+                rgb_dp_checkpoint,
+                str(args_cli.device),
+                args_cli.diffusion_policy_root,
+            )
+            rgb_dp_history = ImageRobotObsHistory(
+                n_obs_steps=int(getattr(rgb_dp_policy, "n_obs_steps", 1)),
+                height=int(args_cli.policy_image_height),
+                width=int(args_cli.policy_image_width),
+                robot_state_dim=int(args_cli.policy_robot_state_dim),
+            )
+            rgb_dp_history.reset(_render_policy_rgb_obs(env), _yam_policy_robot_state(task_env))
+            rgb_dp_joint_target_last = robot.data.joint_pos.detach().clone()
+            print(
+                json.dumps(
+                    {
+                        "event": "rgb_dp_policy_eval_ready",
+                        "checkpoint": str(rgb_dp_checkpoint),
+                        "workspace": rgb_dp_workspace.__class__.__name__,
+                        "policy": rgb_dp_policy.__class__.__name__,
+                        "n_obs_steps": int(getattr(rgb_dp_policy, "n_obs_steps", 1)),
+                        "policy_image_shape": [
+                            int(args_cli.policy_image_height),
+                            int(args_cli.policy_image_width),
+                            3,
+                        ],
+                        "robot_state_dim": int(args_cli.policy_robot_state_dim),
+                        "num_inference_steps": int(args_cli.num_inference_steps),
+                        "num_action_samples": int(args_cli.num_action_samples),
+                        "action_chunk_steps": int(args_cli.action_chunk_steps),
+                        "policy_max_joint_delta": float(args_cli.policy_max_joint_delta),
+                        "policy_max_gripper_delta": float(args_cli.policy_max_gripper_delta),
+                    }
+                ),
+                flush=True,
+            )
         trajectory_source = str(args_cli.demo_trajectory_source)
-        should_load_trajectory = trajectory_source in ("auto", "graspgenx_replay")
+        should_load_trajectory = (not rgb_dp_eval_enabled) and trajectory_source in ("auto", "graspgenx_replay")
         if should_load_trajectory:
             if args_cli.demo_trajectory_path:
                 demo_trajectory_path = Path(args_cli.demo_trajectory_path).expanduser().resolve()
@@ -3117,7 +3411,55 @@ def main() -> None:
             joint_velocity = None
             source_frame_idx = None
             trajectory_timing = None
-            if demo_trajectory is not None:
+            if rgb_dp_eval_enabled:
+                if rgb_dp_policy is None or rgb_dp_history is None:
+                    raise RuntimeError("RGB-DP policy eval was enabled but the policy/history was not initialized")
+                new_policy_call = False
+                if rgb_dp_action_queue.shape[0] == 0:
+                    rgb_dp_history.push(_render_policy_rgb_obs(env), _yam_policy_robot_state(task_env))
+                    action_seq = _predict_rgb_dp_action_sequence(
+                        rgb_dp_policy,
+                        rgb_dp_history,
+                        rgb_dp_policy_call_idx,
+                    )
+                    if action_seq.shape[1] != int(args_cli.policy_robot_state_dim):
+                        raise RuntimeError(
+                            "YAM RGB-DP policy action dim must match direct joint target dim "
+                            f"{int(args_cli.policy_robot_state_dim)}, got {action_seq.shape}"
+                        )
+                    chunk_steps = min(max(1, int(args_cli.action_chunk_steps)), int(action_seq.shape[0]))
+                    rgb_dp_action_queue = np.asarray(action_seq[:chunk_steps], dtype=np.float32)
+                    rgb_dp_action_queue_policy_call_idx = int(rgb_dp_policy_call_idx)
+                    rgb_dp_action_queue_step_offset = 0
+                    rgb_dp_policy_call_idx += 1
+                    new_policy_call = True
+                raw_policy_action = rgb_dp_action_queue[0].copy()
+                queue_step_offset = int(rgb_dp_action_queue_step_offset)
+                rgb_dp_action_queue = rgb_dp_action_queue[1:]
+                rgb_dp_action_queue_step_offset += 1
+                joint_position, trajectory_timing = _policy_joint_target_from_action(
+                    task_env,
+                    raw_policy_action,
+                    previous_target=rgb_dp_joint_target_last,
+                )
+                terminated, truncated = _apply_dynamic_joint_position_target(task_env, joint_position, None)
+                rgb_dp_joint_target_last = joint_position.detach().clone()
+                actions = torch.zeros((task_env.num_envs, int(task_env.cfg.action_space)), device=task_env.device)
+                target_hold = task_env.hold_pos.detach().clone()
+                phase = "rgb_dp_policy"
+                source_frame_idx = int(rgb_dp_action_queue_policy_call_idx)
+                rgb_dp_action_min = np.minimum(rgb_dp_action_min, raw_policy_action.astype(np.float64))
+                rgb_dp_action_max = np.maximum(rgb_dp_action_max, raw_policy_action.astype(np.float64))
+                rgb_dp_action_trace.append(
+                    {
+                        "step": int(step_idx),
+                        "policy_call_index": int(rgb_dp_action_queue_policy_call_idx),
+                        "queue_step_offset": int(queue_step_offset),
+                        "new_policy_call": bool(new_policy_call),
+                        **trajectory_timing,
+                    }
+                )
+            elif demo_trajectory is not None:
                 joint_position, joint_velocity, phase, source_frame_idx, trajectory_timing = (
                     _single_yam_rejected_trajectory_joint_position(
                         task_env,
@@ -3228,7 +3570,12 @@ def main() -> None:
             if record_trajectory_dataset:
                 dataset_terminated = None
                 dataset_truncated = None
-                if demo_trajectory is not None:
+                if rgb_dp_eval_enabled:
+                    dataset_terminated = torch.zeros_like(terminated, dtype=torch.bool)
+                    dataset_truncated = torch.zeros_like(truncated, dtype=torch.bool)
+                    if step_idx >= demo_steps:
+                        dataset_terminated[:] = True
+                elif demo_trajectory is not None:
                     dataset_terminated = torch.zeros_like(terminated, dtype=torch.bool)
                     dataset_truncated = torch.zeros_like(truncated, dtype=torch.bool)
                     if step_idx >= demo_steps:
@@ -3368,6 +3715,7 @@ def main() -> None:
         "record_rgb_interval": int(args_cli.record_rgb_interval),
         "reason": None if record_trajectory_dataset else "not_requested_or_not_single_yam_trajectory",
     }
+    stable_scene_sequence = _stable_scene_object_sequence(stable_scene_input, demo_steps)
     if record_trajectory_dataset:
         trajectory_dataset_summary = _write_demo_dataset_npz(
             trajectory_dataset_path,
@@ -3388,8 +3736,32 @@ def main() -> None:
                 "source_timing": demo_trajectory_timing_summary,
                 "trajectory_total_frames": None if demo_trajectory is None else demo_trajectory.get("total_frames"),
                 "trajectory_segments": None if demo_trajectory is None else demo_trajectory.get("segments"),
-                "trajectory_object_count": None if demo_trajectory is None else demo_trajectory.get("object_count"),
-                "trajectory_object_sequence": None if demo_trajectory is None else demo_trajectory.get("object_sequence"),
+                "trajectory_object_count": len(stable_scene_sequence)
+                if rgb_dp_eval_enabled
+                else (None if demo_trajectory is None else demo_trajectory.get("object_count")),
+                "trajectory_object_sequence": stable_scene_sequence
+                if rgb_dp_eval_enabled
+                else (None if demo_trajectory is None else demo_trajectory.get("object_sequence")),
+                "rgb_dp_policy_eval": None
+                if not rgb_dp_eval_enabled
+                else {
+                    "checkpoint": None if rgb_dp_checkpoint is None else str(rgb_dp_checkpoint),
+                    "diffusion_policy_root": args_cli.diffusion_policy_root,
+                    "workspace": None if rgb_dp_workspace is None else rgb_dp_workspace.__class__.__name__,
+                    "policy": None if rgb_dp_policy is None else rgb_dp_policy.__class__.__name__,
+                    "policy_image_shape": [
+                        int(args_cli.policy_image_height),
+                        int(args_cli.policy_image_width),
+                        3,
+                    ],
+                    "robot_state_dim": int(args_cli.policy_robot_state_dim),
+                    "num_inference_steps": int(args_cli.num_inference_steps),
+                    "num_action_samples": int(args_cli.num_action_samples),
+                    "policy_sample_seed": args_cli.policy_sample_seed,
+                    "action_chunk_steps": int(args_cli.action_chunk_steps),
+                    "policy_max_joint_delta": float(args_cli.policy_max_joint_delta),
+                    "policy_max_gripper_delta": float(args_cli.policy_max_gripper_delta),
+                },
             },
         )
         trajectory_dataset_summary.update(
@@ -3464,6 +3836,37 @@ def main() -> None:
             "actual_joint_velocity_summary": _row_max_abs_summary(demo_step_rows, "actual_joint_velocity"),
             "joint_tracking_error_summary": _row_scalar_summary(demo_step_rows, "joint_tracking_error_max_abs"),
             "step_rows": demo_step_rows,
+        },
+        "rgb_dp_policy_eval": {
+            "enabled": bool(rgb_dp_eval_enabled),
+            "checkpoint": None if rgb_dp_checkpoint is None else str(rgb_dp_checkpoint),
+            "diffusion_policy_root": args_cli.diffusion_policy_root,
+            "workspace": None if rgb_dp_workspace is None else rgb_dp_workspace.__class__.__name__,
+            "policy": None if rgb_dp_policy is None else rgb_dp_policy.__class__.__name__,
+            "privileged_object_state_in_policy": False,
+            "obs_schema": {
+                "image": [3, int(args_cli.policy_image_height), int(args_cli.policy_image_width)],
+                "robot_state": int(args_cli.policy_robot_state_dim),
+            },
+            "num_inference_steps": int(args_cli.num_inference_steps),
+            "num_action_samples": int(args_cli.num_action_samples),
+            "policy_sample_seed": args_cli.policy_sample_seed,
+            "action_chunk_steps": int(args_cli.action_chunk_steps),
+            "policy_call_count": int(rgb_dp_policy_call_idx),
+            "policy_max_joint_delta": float(args_cli.policy_max_joint_delta),
+            "policy_max_gripper_delta": float(args_cli.policy_max_gripper_delta),
+            "action_min": None if not rgb_dp_action_trace else rgb_dp_action_min.astype(float).tolist(),
+            "action_max": None if not rgb_dp_action_trace else rgb_dp_action_max.astype(float).tolist(),
+            "joint_target_delta_desired_summary": _row_scalar_summary(
+                rgb_dp_action_trace,
+                "max_abs_delta_desired",
+            ),
+            "joint_target_delta_applied_summary": _row_scalar_summary(
+                rgb_dp_action_trace,
+                "max_abs_delta_applied",
+            ),
+            "clipped_step_count": int(sum(1 for row in rgb_dp_action_trace if bool(row.get("clipped_any")))),
+            "action_trace": rgb_dp_action_trace,
         },
         "trajectory_dataset": trajectory_dataset_summary,
         "camera_eye": [float(v) for v in eye],
