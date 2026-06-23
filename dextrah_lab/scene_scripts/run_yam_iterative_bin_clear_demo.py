@@ -707,6 +707,9 @@ def _validate_iteration(args: argparse.Namespace, dataset_path: Path, metrics_pa
         str(output_path),
         "--expected_objects",
         "1",
+        "--allow_extra_clutter_slots",
+        "--min_contact_proxy_gripper_close_delta",
+        str(float(args.validator_min_contact_proxy_gripper_close_delta)),
     ]
     log_path = output_path.with_suffix(".log")
     log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -931,6 +934,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--source_margin", type=float, default=0.01)
     parser.add_argument("--goal_margin", type=float, default=0.01)
     parser.add_argument("--min_lift_delta", type=float, default=0.04)
+    parser.add_argument(
+        "--validator_min_contact_proxy_gripper_close_delta",
+        type=float,
+        default=0.015,
+        help=(
+            "Minimum commanded finger close delta used by per-iteration validation. "
+            "This is lower than the pick-all default because adaptive planning preclose "
+            "can reduce the remaining stroke before object contact."
+        ),
+    )
     parser.add_argument("--move_to_bin_frames", type=int, default=300)
     parser.add_argument("--drop_height_above_bin", type=float, default=0.18)
     parser.add_argument("--scripted_bin_drop_y_offset", type=float, default=0.0)

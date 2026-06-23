@@ -1778,6 +1778,7 @@ def _annotate_trajectory_phases(
     path: Path,
     segments: list[tuple[str, int]],
     *,
+    stable_scene: dict[str, Any] | None = None,
     extra_metadata: dict[str, Any] | None = None,
 ) -> None:
     if not segments:
@@ -1809,9 +1810,68 @@ def _annotate_trajectory_phases(
         normalized_segments.append({"phase": phase, "start": int(idx), "count": int(len(frames) - idx)})
     payload["segments"] = normalized_segments
     payload["phase_source"] = "dextrah_task_segments"
+    object_sequence = _single_object_sequence_from_stable_scene(
+        stable_scene,
+        trajectory_path=path,
+        frame_count=len(frames),
+        segments=normalized_segments,
+    )
+    if object_sequence:
+        payload["object_count"] = len(object_sequence)
+        payload["object_sequence"] = object_sequence
     if extra_metadata:
         payload.update(_jsonable(extra_metadata))
     path.write_text(json.dumps(_jsonable(payload), indent=2) + "\n", encoding="utf-8")
+
+
+def _single_object_sequence_from_stable_scene(
+    stable_scene: dict[str, Any] | None,
+    *,
+    trajectory_path: Path,
+    frame_count: int,
+    segments: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if not isinstance(stable_scene, dict) or frame_count <= 0:
+        return []
+    selected = stable_scene.get("planner_selected_object") if isinstance(stable_scene.get("planner_selected_object"), dict) else {}
+    target = stable_scene.get("target") if isinstance(stable_scene.get("target"), dict) else {}
+    asset = target.get("asset") if isinstance(target.get("asset"), dict) else {}
+    object_id = str(
+        selected.get("object_id")
+        or target.get("source_object_id")
+        or target.get("object_id")
+        or "target"
+    )
+    uuid = str(asset.get("uuid") or object_id)
+    name = str(asset.get("name") or asset.get("metadata_text") or uuid)
+    return [
+        {
+            "object_id": object_id,
+            "source": "single_object_graspgenx_curobo",
+            "slot_idx": target.get("slot_idx"),
+            "uuid": uuid,
+            "name": name,
+            "asset": {
+                "uuid": uuid,
+                "name": str(asset.get("name") or ""),
+                "metadata_text": str(asset.get("metadata_text") or ""),
+                "usd_path": str(asset.get("usd_path") or ""),
+                "raw_object_path": str(asset.get("raw_object_path") or ""),
+                "grasp_prior_path": str(asset.get("grasp_prior_path") or ""),
+                "scale": asset.get("scale"),
+                "xy_radius": asset.get("xy_radius"),
+                "scaled_half_extents": copy.deepcopy(asset.get("scaled_half_extents")),
+            },
+            "trajectory_path": str(trajectory_path),
+            "start_frame": 0,
+            "end_frame": int(frame_count - 1),
+            "end_frame_exclusive": int(frame_count),
+            "frame_count": int(frame_count),
+            "pick_start_frame": 0,
+            "placement_end_frame": int(frame_count - 1),
+            "segments": copy.deepcopy(segments),
+        }
+    ]
 
 
 def main() -> None:
@@ -2222,6 +2282,7 @@ def main() -> None:
         _annotate_trajectory_phases(
             trajectory_json,
             task_segments,
+            stable_scene=stable_scene,
             extra_metadata={
                 "scripted_lift": scripted_lift_summary,
                 "scripted_place": scripted_place_summary,

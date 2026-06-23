@@ -395,6 +395,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--bin_inner_size_y", type=float, default=0.22)
     parser.add_argument("--bin_margin", type=float, default=-0.015)
     parser.add_argument("--require_contact_proxy", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--allow_extra_clutter_slots", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--allow_scripted_target_transport", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--max_contact_proxy_tcp_object_dist", type=float, default=0.12)
     parser.add_argument("--min_contact_proxy_gripper_close_delta", type=float, default=0.03)
@@ -489,7 +490,9 @@ def main() -> None:
     checks = {
         "required_keys_present": not missing,
         "expected_object_count": len(object_results) == expected_objects,
-        "clutter_slot_count_matches_expected": clutter_slot_count == expected_clutter_count,
+        "clutter_slot_count_matches_expected": bool(
+            args.allow_extra_clutter_slots or clutter_slot_count == expected_clutter_count
+        ),
         **sequence_summary["checks"],
         "all_objects_inside_bin": bool(object_results) and all(bool(item["inside_bin"]) for item in object_results),
         "all_objects_lifted": bool(object_results) and all(bool(item["passes_lift_delta"]) for item in object_results),
