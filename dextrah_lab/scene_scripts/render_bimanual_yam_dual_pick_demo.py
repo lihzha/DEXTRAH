@@ -29,6 +29,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--render_stride", type=int, default=3)
     parser.add_argument("--fps", type=int, default=20)
     parser.add_argument("--sim_steps_per_frame", type=int, default=1)
+    parser.add_argument("--dynamic_replay", action="store_true")
+    parser.add_argument("--settle_steps", type=int, default=60)
     parser.add_argument("--disable_fabric", action="store_true")
     parser.add_argument("--video_crf", type=int, default=18)
     AppLauncher.add_app_launcher_args(parser)
@@ -314,6 +316,122 @@ def _root_state(device: torch.device, pos: list[float], quat_wxyz: list[float] |
     return state
 
 
+def _as_float_list(tensor: torch.Tensor) -> list[float]:
+    return [float(v) for v in tensor.detach().cpu().tolist()]
+
+
+def _joint_target_from_frame(
+    *,
+    robot: Any,
+    planned_ids: list[int],
+    frame: dict[str, Any],
+) -> torch.Tensor:
+    joint_pos = robot.data.default_joint_pos.clone()
+    q = torch.tensor(frame["joint_position"], dtype=torch.float32, device=robot.device)
+    joint_pos[:, planned_ids] = q.unsqueeze(0)
+    return joint_pos
+
+
+def _write_joint_target(robot: Any, joint_pos: torch.Tensor) -> None:
+    robot.set_joint_position_target(joint_pos)
+    robot.write_data_to_sim()
+
+
+def _write_joint_state(robot: Any, joint_pos: torch.Tensor) -> None:
+    joint_vel = torch.zeros_like(joint_pos)
+    robot.write_joint_state_to_sim(joint_pos, joint_vel)
+    _write_joint_target(robot, joint_pos)
+
+
+def _step_dynamic_scene(task_env: Any, robot: Any, joint_pos: torch.Tensor, sim_dt: float, steps: int) -> None:
+    for _ in range(max(1, int(steps))):
+        _write_joint_target(robot, joint_pos)
+        task_env.scene.write_data_to_sim()
+        task_env.sim.step(render=False)
+        task_env.scene.update(sim_dt)
+
+
+def _settle_dynamic_scene(task_env: Any, robot: Any, joint_pos: torch.Tensor, sim_dt: float, steps: int) -> None:
+    for _ in range(max(0, int(steps))):
+        _write_joint_target(robot, joint_pos)
+        task_env.scene.write_data_to_sim()
+        task_env.sim.step(render=False)
+        task_env.scene.update(sim_dt)
+
+
+def _rigid_object_state_record(obj: RigidObject) -> dict[str, list[float]]:
+    data = obj.data
+    root_vel = getattr(data, "root_vel_w", None)
+    if root_vel is not None:
+        lin_vel = root_vel[0, 0:3]
+        ang_vel = root_vel[0, 3:6]
+    else:
+        lin_vel = getattr(data, "root_lin_vel_w", torch.zeros((1, 3), device=obj.device))[0]
+        ang_vel = getattr(data, "root_ang_vel_w", torch.zeros((1, 3), device=obj.device))[0]
+    return {
+        "position": _as_float_list(data.root_pos_w[0]),
+        "quat_wxyz": _as_float_list(data.root_quat_w[0]),
+        "linear_velocity": _as_float_list(lin_vel),
+        "angular_velocity": _as_float_list(ang_vel),
+    }
+
+
+def _find_body_id(robot: Any, name: str) -> int:
+    ids, names = robot.find_bodies(name)
+    if len(ids) != 1:
+        raise RuntimeError(f"Expected one body named {name!r}, got {names}")
+    return int(ids[0])
+
+
+def _body_position(robot: Any, body_id: int) -> np.ndarray:
+    return robot.data.body_pos_w[0, body_id].detach().cpu().numpy().astype(np.float64)
+
+
+def _finger_metrics(robot: Any, body_ids: dict[str, Any], side: str, object_position: list[float]) -> dict[str, Any]:
+    finger_positions = [_body_position(robot, body_id) for body_id in body_ids[f"{side}_fingers"]]
+    finger_center = 0.5 * (finger_positions[0] + finger_positions[1])
+    object_np = np.asarray(object_position, dtype=np.float64)
+    return {
+        "link6_position": [float(v) for v in _body_position(robot, int(body_ids[f"{side}_link6"]))],
+        "finger_positions": [[float(v) for v in pos] for pos in finger_positions],
+        "finger_center_position": [float(v) for v in finger_center],
+        "gripper_width": float(np.linalg.norm(finger_positions[0] - finger_positions[1])),
+        "object_to_finger_center_distance": float(np.linalg.norm(object_np - finger_center)),
+    }
+
+
+def _summarize_object_trace(
+    *,
+    object_trace: list[dict[str, Any]],
+    object_records: dict[str, Any],
+    dynamic_replay: bool,
+) -> dict[str, Any]:
+    summary: dict[str, Any] = {"dynamic_replay": bool(dynamic_replay)}
+    for side in ("left", "right"):
+        initial = [float(v) for v in object_records[side]["bimanual_center_world"]]
+        actual_positions = [
+            record[f"{side}_actual_position"]
+            for record in object_trace
+            if isinstance(record.get(f"{side}_actual_position"), list)
+        ]
+        if not actual_positions:
+            continue
+        initial_z = float(initial[2])
+        max_z = max(float(pos[2]) for pos in actual_positions)
+        final = [float(v) for v in actual_positions[-1]]
+        xy_error = float(np.linalg.norm(np.asarray(final[:2], dtype=np.float64) - np.asarray(initial[:2], dtype=np.float64)))
+        summary[side] = {
+            "initial_position": initial,
+            "final_position": final,
+            "max_z": max_z,
+            "max_lift": max_z - initial_z,
+            "final_lift": float(final[2]) - initial_z,
+            "final_xy_error": xy_error,
+            "lifted_at_least_2cm": bool(max_z - initial_z >= 0.02),
+        }
+    return summary
+
+
 def _object_position_for_frame(
     *,
     robot: Any,
@@ -332,23 +450,41 @@ def _object_position_for_frame(
     return [float(v) for v in pos]
 
 
-def _spawn_right_object(object_record: dict[str, Any]) -> RigidObject:
+def _spawn_right_object(object_record: dict[str, Any], *, dynamic: bool) -> RigidObject:
     dims = tuple(float(v) for v in object_record["dims"])
     center = tuple(float(v) for v in object_record["bimanual_center_world"])
+    rigid_props_kwargs: dict[str, Any] = {
+        "rigid_body_enabled": True,
+        "kinematic_enabled": not dynamic,
+        "disable_gravity": not dynamic,
+        "solver_position_iteration_count": 32 if dynamic else 16,
+        "solver_velocity_iteration_count": 8 if dynamic else 4,
+    }
+    if dynamic:
+        rigid_props_kwargs.update(
+            {
+                "linear_damping": 0.20,
+                "angular_damping": 1.00,
+                "enable_gyroscopic_forces": True,
+                "sleep_threshold": 0.02,
+                "stabilization_threshold": 0.01,
+                "max_depenetration_velocity": 1.0,
+            }
+        )
     cfg = RigidObjectCfg(
         prim_path="/World/envs/env_0/RightObject",
         spawn=sim_utils.CuboidCfg(
             size=dims,
             collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=True, contact_offset=0.002),
-            rigid_props=sim_utils.RigidBodyPropertiesCfg(
-                rigid_body_enabled=True,
-                kinematic_enabled=True,
-                disable_gravity=True,
-                solver_position_iteration_count=16,
-                solver_velocity_iteration_count=4,
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(**rigid_props_kwargs),
+            mass_props=sim_utils.MassPropertiesCfg(density=38.0 if dynamic else 40.0),
+            physics_material=RigidBodyMaterialCfg(
+                static_friction=1.6 if dynamic else 1.4,
+                dynamic_friction=1.1,
+                restitution=0.0,
+                friction_combine_mode="max",
+                restitution_combine_mode="min",
             ),
-            mass_props=sim_utils.MassPropertiesCfg(density=40.0),
-            physics_material=RigidBodyMaterialCfg(static_friction=1.4, dynamic_friction=1.1, restitution=0.0),
             visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.20, 0.78, 0.45), roughness=0.65),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=center, rot=(1.0, 0.0, 0.0, 0.0)),
@@ -356,7 +492,7 @@ def _spawn_right_object(object_record: dict[str, Any]) -> RigidObject:
     return RigidObject(cfg)
 
 
-def _configure_env_for_left_object(env_cfg: Any, left_record: dict[str, Any]) -> None:
+def _configure_env_for_left_object(env_cfg: Any, left_record: dict[str, Any], *, dynamic: bool) -> None:
     dims = [float(v) for v in left_record["dims"]]
     center = [float(v) for v in left_record["bimanual_center_world"]]
     size = float(max(dims))
@@ -368,8 +504,8 @@ def _configure_env_for_left_object(env_cfg: Any, left_record: dict[str, Any]) ->
     env_cfg.cube_spawn_z = float(center[2])
     env_cfg.cube.spawn.size = tuple(dims)
     env_cfg.cube.init_state.pos = tuple(center)
-    env_cfg.cube.spawn.rigid_props.kinematic_enabled = True
-    env_cfg.cube.spawn.rigid_props.disable_gravity = True
+    env_cfg.cube.spawn.rigid_props.kinematic_enabled = not dynamic
+    env_cfg.cube.spawn.rigid_props.disable_gravity = not dynamic
     env_cfg.cube.spawn.visual_material = sim_utils.PreviewSurfaceCfg(
         diffuse_color=(0.14, 0.58, 0.96),
         roughness=0.65,
@@ -402,7 +538,8 @@ def main() -> None:
         use_fabric=not args_cli.disable_fabric,
     )
     env_cfg.seed = args_cli.seed
-    _configure_env_for_left_object(env_cfg, object_records["left"])
+    dynamic_replay = bool(args_cli.dynamic_replay)
+    _configure_env_for_left_object(env_cfg, object_records["left"], dynamic=dynamic_replay)
 
     _log("creating Gym environment")
     env = gym.make(args_cli.task, cfg=env_cfg, render_mode=None)
@@ -411,7 +548,7 @@ def main() -> None:
         env.reset(seed=args_cli.seed)
         robot = task_env._robot
         left_object = task_env._cube
-        right_object = _spawn_right_object(object_records["right"])
+        right_object = _spawn_right_object(object_records["right"], dynamic=dynamic_replay)
         task_env.scene.rigid_objects["right_object"] = right_object
 
         stage = omni.usd.get_context().get_stage()
@@ -456,51 +593,83 @@ def main() -> None:
         if missing:
             raise RuntimeError(f"Trajectory joint names missing from bimanual robot: {missing}")
         planned_ids = [joint_index[name] for name in planned_names]
-        left_body_id = int(robot.find_bodies("left_link_6")[0][0])
-        right_body_id = int(robot.find_bodies("right_link_6")[0][0])
+        body_ids = {
+            "left_link6": _find_body_id(robot, "left_link_6"),
+            "right_link6": _find_body_id(robot, "right_link_6"),
+            "left_fingers": [
+                _find_body_id(robot, "left_link_left_finger"),
+                _find_body_id(robot, "left_link_right_finger"),
+            ],
+            "right_fingers": [
+                _find_body_id(robot, "right_link_left_finger"),
+                _find_body_id(robot, "right_link_right_finger"),
+            ],
+        }
 
-        dt = float(getattr(task_env, "step_dt", task_env.cfg.sim.dt))
+        sim_dt = float(task_env.cfg.sim.dt)
         render_stride = max(1, int(args_cli.render_stride))
+        sim_steps_per_frame = max(1, int(args_cli.sim_steps_per_frame))
         video_frames: dict[str, list[np.ndarray]] = {name: [] for name in cameras}
         composite_frames: list[np.ndarray] = []
         sample_stats: dict[str, dict[str, dict[str, float]]] = {}
         object_trace: list[dict[str, Any]] = []
 
-        for source_frame_idx in range(0, len(frames), render_stride):
-            frame = frames[source_frame_idx]
-            joint_pos = robot.data.default_joint_pos.clone()
-            joint_vel = torch.zeros_like(joint_pos)
-            q = torch.tensor(frame["joint_position"], dtype=torch.float32, device=robot.device)
-            joint_pos[:, planned_ids] = q.unsqueeze(0)
-            robot.write_joint_state_to_sim(joint_pos, joint_vel)
-            robot.set_joint_position_target(joint_pos)
+        initial_joint_pos = _joint_target_from_frame(robot=robot, planned_ids=planned_ids, frame=frames[0])
+        _write_joint_state(robot, initial_joint_pos)
+        right_object.write_root_state_to_sim(_root_state(right_object.device, object_records["right"]["bimanual_center_world"]))
+        left_object.write_root_state_to_sim(_root_state(left_object.device, object_records["left"]["bimanual_center_world"]))
+        task_env.scene.write_data_to_sim()
+        task_env.sim.forward()
+        task_env.scene.update(sim_dt)
+        if dynamic_replay and int(args_cli.settle_steps) > 0:
+            _log(f"settling dynamic replay for {int(args_cli.settle_steps)} sim steps")
+            _settle_dynamic_scene(task_env, robot, initial_joint_pos, sim_dt, int(args_cli.settle_steps))
 
+        source_indices = range(len(frames)) if dynamic_replay else range(0, len(frames), render_stride)
+        for source_frame_idx in source_indices:
+            frame = frames[source_frame_idx]
+            joint_pos = _joint_target_from_frame(robot=robot, planned_ids=planned_ids, frame=frame)
             left_pos = _object_position_for_frame(
                 robot=robot,
-                body_id=left_body_id,
+                body_id=int(body_ids["left_link6"]),
                 frame_idx=source_frame_idx,
                 object_record=object_records["left"],
             )
             right_pos = _object_position_for_frame(
                 robot=robot,
-                body_id=right_body_id,
+                body_id=int(body_ids["right_link6"]),
                 frame_idx=source_frame_idx,
                 object_record=object_records["right"],
             )
-            left_object.write_root_state_to_sim(_root_state(left_object.device, left_pos))
-            right_object.write_root_state_to_sim(_root_state(right_object.device, right_pos))
 
-            task_env.scene.write_data_to_sim()
-            task_env.sim.forward()
-            task_env.scene.update(dt)
+            if dynamic_replay:
+                _step_dynamic_scene(task_env, robot, joint_pos, sim_dt, sim_steps_per_frame)
+                capture_frame = source_frame_idx % render_stride == 0 or source_frame_idx == len(frames) - 1
+                camera_dt = sim_dt * sim_steps_per_frame
+            else:
+                _write_joint_state(robot, joint_pos)
+                left_object.write_root_state_to_sim(_root_state(left_object.device, left_pos))
+                right_object.write_root_state_to_sim(_root_state(right_object.device, right_pos))
+                task_env.scene.write_data_to_sim()
+                task_env.sim.forward()
+                task_env.scene.update(sim_dt)
+                capture_frame = True
+                camera_dt = sim_dt
+            if not capture_frame:
+                continue
+
             task_env.sim.render()
-            task_env.scene.update(dt)
-            actual_left_pos = [float(v) for v in left_object.data.root_pos_w[0].detach().cpu().tolist()]
-            actual_right_pos = [float(v) for v in right_object.data.root_pos_w[0].detach().cpu().tolist()]
+            task_env.scene.update(sim_dt)
+            left_state = _rigid_object_state_record(left_object)
+            right_state = _rigid_object_state_record(right_object)
+            left_actual_pos = left_state["position"]
+            right_actual_pos = right_state["position"]
+            left_metrics = _finger_metrics(robot, body_ids, "left", left_actual_pos)
+            right_metrics = _finger_metrics(robot, body_ids, "right", right_actual_pos)
 
             frame_images: dict[str, np.ndarray] = {}
             for name, camera in cameras.items():
-                camera.update(dt)
+                camera.update(camera_dt)
                 rgb = _rgb_to_array(camera.data.output["rgb"])
                 frame_images[name] = rgb
                 video_frames[name].append(rgb)
@@ -514,8 +683,20 @@ def main() -> None:
                     "source_frame": source_frame_idx,
                     "left_position": left_pos,
                     "right_position": right_pos,
-                    "left_actual_position": actual_left_pos,
-                    "right_actual_position": actual_right_pos,
+                    "left_reference_position": left_pos,
+                    "right_reference_position": right_pos,
+                    "left_actual_position": left_actual_pos,
+                    "right_actual_position": right_actual_pos,
+                    "left_actual_quat_wxyz": left_state["quat_wxyz"],
+                    "right_actual_quat_wxyz": right_state["quat_wxyz"],
+                    "left_actual_linear_velocity": left_state["linear_velocity"],
+                    "right_actual_linear_velocity": right_state["linear_velocity"],
+                    "left_actual_angular_velocity": left_state["angular_velocity"],
+                    "right_actual_angular_velocity": right_state["angular_velocity"],
+                    "left_finger_metrics": left_metrics,
+                    "right_finger_metrics": right_metrics,
+                    "actual_joint_position": _as_float_list(robot.data.joint_pos[0, planned_ids]),
+                    "target_joint_position": [float(v) for v in frame["joint_position"]],
                     "left_phase": frame.get("left_phase"),
                     "right_phase": frame.get("right_phase"),
                 }
@@ -538,11 +719,21 @@ def main() -> None:
             "trajectory_format": trajectory.get("format"),
             "trajectory_total_frames": len(frames),
             "render_stride": render_stride,
+            "sim_steps_per_frame": sim_steps_per_frame,
+            "settle_steps": int(args_cli.settle_steps),
             "rendered_frames": len(composite_frames),
             "fps": int(args_cli.fps),
             "joint_names": planned_names,
             "object_records": object_records,
-            "object_pose_mode": "kinematic_follow_link6_after_arm_attach_frame",
+            "object_pose_mode": (
+                "dynamic_rigidbody_contact_replay" if dynamic_replay else "kinematic_follow_link6_after_arm_attach_frame"
+            ),
+            "dynamic_replay": dynamic_replay,
+            "dynamic_summary": _summarize_object_trace(
+                object_trace=object_trace,
+                object_records=object_records,
+                dynamic_replay=dynamic_replay,
+            ),
             "object_trace": object_trace,
             "camera_parent_paths": {
                 "top_cam": base_path,
