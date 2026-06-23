@@ -10,6 +10,7 @@ world for visualization.
 from __future__ import annotations
 
 import argparse
+import copy
 import importlib
 import json
 import math
@@ -704,6 +705,70 @@ def _append_scripted_yam_bin_drop(
     return out, new_segments, summary
 
 
+def _apply_yam_planning_preclose_to_pick_segments(
+    joint_traj: Any,
+    segments: list[tuple[str, int]],
+    *,
+    profile: Any,
+    planning_finger_joint_position: float | None,
+) -> tuple[Any, dict[str, Any]]:
+    import numpy as np
+
+    if planning_finger_joint_position is None:
+        return joint_traj, {"enabled": False, "reason": "planning_finger_not_set"}
+    traj = np.asarray(joint_traj, dtype=np.float32).copy()
+    n_arm = int(profile.n_arm)
+    n_grip = int(profile.n_gripper)
+    if traj.ndim != 2 or n_grip <= 0 or traj.shape[1] < n_arm + n_grip:
+        return traj, {
+            "enabled": True,
+            "success": False,
+            "reason": "trajectory_dimension_mismatch",
+            "trajectory_shape": list(traj.shape),
+            "n_arm": n_arm,
+            "n_gripper": n_grip,
+        }
+    preclose = np.full((n_grip,), float(planning_finger_joint_position), dtype=np.float32)
+    preclose_phases = {
+        "go_to_pre_grasp_pose",
+        "hold_at_pre_grasp",
+        "go_from_pre_grasp_to_grasp_pose",
+        "hold_at_grasp",
+    }
+    cursor = 0
+    preclose_frames = 0
+    close_frames = 0
+    close_end: list[float] | None = None
+    for phase, count in segments:
+        count_i = max(int(count), 0)
+        start = cursor
+        end = min(cursor + count_i, traj.shape[0])
+        cursor += count_i
+        if end <= start:
+            continue
+        grip_slice = (slice(start, end), slice(n_arm, n_arm + n_grip))
+        if str(phase) in preclose_phases:
+            traj[grip_slice] = preclose.reshape(1, -1)
+            preclose_frames += int(end - start)
+        elif str(phase) == "close_fingers":
+            close_end_values = traj[end - 1, n_arm : n_arm + n_grip].astype(np.float32)
+            alpha = np.linspace(0.0, 1.0, end - start, dtype=np.float32).reshape(-1, 1)
+            traj[grip_slice] = preclose.reshape(1, -1) + alpha * (
+                close_end_values.reshape(1, -1) - preclose.reshape(1, -1)
+            )
+            close_frames += int(end - start)
+            close_end = close_end_values.tolist()
+    return traj, {
+        "enabled": True,
+        "success": True,
+        "planning_finger_joint_position": float(planning_finger_joint_position),
+        "preclose_frames": int(preclose_frames),
+        "close_frames": int(close_frames),
+        "close_end": close_end,
+        "phases": sorted(preclose_phases),
+    }
+
+
 def _make_scripted_yam_vertical_lift(
     *,
     pregrasp_traj: Any,
@@ -918,6 +983,63 @@ def _target_center_from_info(target_info: dict[str, Any] | None) -> Any | None:
     return center[:3]
 
 
+def _parse_int_set(value: str | None) -> set[int]:
+    if value is None:
+        return set()
+    out: set[int] = set()
+    for part in str(value).split(","):
+        part = part.strip()
+        if not part:
+            continue
+        out.add(int(part))
+    return out
+
+
+def _apply_grasp_original_index_exclusions(
+    grasps_world: Any,
+    conf: Any,
+    grasp_filter_summary: dict[str, Any],
+    exclude_original_indices: set[int],
+) -> tuple[Any, Any, dict[str, Any]]:
+    import numpy as np
+
+    if not exclude_original_indices:
+        return grasps_world, conf, grasp_filter_summary
+    grasps_np = np.asarray(grasps_world)
+    conf_np = np.asarray(conf)
+    original_indices_raw = grasp_filter_summary.get("kept_original_indices")
+    if isinstance(original_indices_raw, list) and len(original_indices_raw) == len(grasps_np):
+        original_indices = [int(v) for v in original_indices_raw]
+    else:
+        original_indices = list(range(len(grasps_np)))
+    keep_positions = [
+        idx
+        for idx, original_idx in enumerate(original_indices)
+        if int(original_idx) not in exclude_original_indices
+    ]
+    summary = copy.deepcopy(grasp_filter_summary)
+    summary["excluded_original_indices"] = sorted(int(v) for v in exclude_original_indices)
+    summary["excluded_count"] = int(len(original_indices) - len(keep_positions))
+    summary["input_count_before_exclusion"] = int(len(original_indices))
+    summary["kept_count_before_exclusion"] = int(len(original_indices))
+    summary["kept_count"] = int(len(keep_positions))
+    if not keep_positions:
+        raise RuntimeError(
+            "All YAM grasp candidates were excluded by --exclude_grasp_original_indices"
+        )
+
+    def _subset_list(name: str) -> None:
+        values = summary.get(name)
+        if isinstance(values, list) and len(values) == len(original_indices):
+            summary[name] = [values[i] for i in keep_positions]
+
+    _subset_list("kept_original_indices")
+    _subset_list("kept")
+    _subset_list("planning_scores")
+    summary["exclusion_applied"] = True
+    return grasps_np[keep_positions].astype(np.float32), conf_np[keep_positions].astype(np.float32), summary
+
+
 def _filter_yam_grasps_by_aperture(
     grasps_world: Any,
     conf: Any,
@@ -1104,6 +1226,7 @@ def _plan_yam_to_grasp_vertical_lift(
     robot_base_T: Any,
     force_idx: int = -1,
     rank_by_confidence: bool = False,
+    candidate_original_indices: list[int] | None = None,
 ) -> tuple[bool, Any, int, Any | None, Any | None]:
     """Plan a YAM grasp with vertical lift in robot/world coordinates.
 
@@ -1212,6 +1335,11 @@ def _plan_yam_to_grasp_vertical_lift(
                 attempt_log.append(
                     {
                         "candidate_indices": [int(i) for i in idx_subset],
+                        "candidate_original_indices": [
+                            int(candidate_original_indices[i])
+                            for i in idx_subset
+                            if candidate_original_indices is not None and 0 <= i < len(candidate_original_indices)
+                        ],
                         "label": _label,
                         "exception": True,
                     }
@@ -1227,6 +1355,11 @@ def _plan_yam_to_grasp_vertical_lift(
             attempt_log.append(
                 {
                     "candidate_indices": [int(i) for i in idx_subset],
+                    "candidate_original_indices": [
+                        int(candidate_original_indices[i])
+                        for i in idx_subset
+                        if candidate_original_indices is not None and 0 <= i < len(candidate_original_indices)
+                    ],
                     "label": _label,
                     "status": str(getattr(result, "status", "<no status>")),
                     "success": bool(success_flag),
@@ -1326,10 +1459,12 @@ def _make_robot_config(
     *,
     start_arm_joint_position: list[float] | None = None,
     start_finger_joint_position: float | None = None,
+    planning_finger_joint_position: float | None = None,
     grasp_to_tool_z: float = 0.04,
 ) -> Path:
     start_arm = list(start_arm_joint_position or DEXTRAH_YAM_ARM_START)
     start_finger = DEXTRAH_YAM_FINGER_OPEN if start_finger_joint_position is None else float(start_finger_joint_position)
+    planning_finger = start_finger if planning_finger_joint_position is None else float(planning_finger_joint_position)
     src = graspgenx_root / "end2end/robots/yam_linear.yaml"
     cfg = _load_yaml(src)
     profile_open = {
@@ -1350,10 +1485,10 @@ def _make_robot_config(
     # start width. The dynamic replay still opens to the profile width before
     # approach, but planning with the fully-open finger collision can reject
     # otherwise valid grasp goals near the table/clutter.
-    cspace["default_joint_position"] = [*start_arm, start_finger, start_finger]
+    cspace["default_joint_position"] = [*start_arm, planning_finger, planning_finger]
     lock = curobo_cfg["robot_cfg"]["kinematics"].setdefault("lock_joints", {})
-    lock["left_finger"] = start_finger
-    lock["right_finger"] = start_finger
+    lock["left_finger"] = planning_finger
+    lock["right_finger"] = planning_finger
     curobo_out = run_dir / "configs/yam_linear_curobo_dextrah.yml"
     _write_yaml(curobo_out, curobo_cfg)
 
@@ -1376,6 +1511,7 @@ def _make_robot_config(
     }
     cfg["gripper_open"] = profile_open
     cfg["dextrah_start_gripper_open"] = {"left_finger": start_finger, "right_finger": start_finger}
+    cfg["dextrah_planning_gripper_open"] = {"left_finger": planning_finger, "right_finger": planning_finger}
     out = run_dir / "configs/yam_linear_dextrah.yaml"
     _write_yaml(out, cfg)
     return out
@@ -1615,6 +1751,21 @@ def parse_args() -> argparse.Namespace:
         default=0.04,
         help="Local +Z offset from the GraspGen-X grasp frame to DEXTRAH/cuRobo link_6.",
     )
+    parser.add_argument(
+        "--planning_finger_joint_position",
+        type=float,
+        default=None,
+        help=(
+            "Optional YAM finger joint value used for cuRobo locked-finger collision checking. "
+            "The replay trajectory precloses to this value before arm motion."
+        ),
+    )
+    parser.add_argument(
+        "--exclude_grasp_original_indices",
+        type=str,
+        default="",
+        help="Comma-separated GraspGen-X candidate indices to remove before cuRobo planning.",
+    )
     parser.add_argument("--sim_fps", type=int, default=60)
     parser.add_argument("--start_guard_frames", type=int, default=60)
     parser.add_argument("--close_frames", type=int, default=60)
@@ -1745,6 +1896,7 @@ def main() -> None:
         run_dir,
         start_arm_joint_position=stable_start_arm_q,
         start_finger_joint_position=stable_start_finger_q,
+        planning_finger_joint_position=args.planning_finger_joint_position,
         grasp_to_tool_z=float(args.yam_grasp_to_tool_z),
     )
     env_config = _make_env_config(
@@ -1860,6 +2012,18 @@ def main() -> None:
             raise RuntimeError("YAM aperture filtering removed all grasps")
     else:
         grasp_filter_summary = {"enabled": False, "reason": "disabled"}
+    exclude_original_indices = _parse_int_set(args.exclude_grasp_original_indices)
+    grasps_world, conf, grasp_filter_summary = _apply_grasp_original_index_exclusions(
+        grasps_world,
+        conf,
+        grasp_filter_summary,
+        exclude_original_indices,
+    )
+    candidate_original_indices_raw = grasp_filter_summary.get("kept_original_indices")
+    if isinstance(candidate_original_indices_raw, list) and len(candidate_original_indices_raw) == len(grasps_world):
+        candidate_original_indices = [int(v) for v in candidate_original_indices_raw]
+    else:
+        candidate_original_indices = list(range(len(grasps_world)))
 
     scene_model = collision_world_to_curobo(bundle.collision_world, bundle.robot_base_T)
     collision_scene_model_json = run_dir / "collision_scene_model.json"
@@ -1894,17 +2058,24 @@ def main() -> None:
         robot_base_T=bundle.robot_base_T,
         force_idx=-1,
         rank_by_confidence=bool(args.rank_grasps_by_confidence),
+        candidate_original_indices=candidate_original_indices,
     )
     planner_status = str(getattr(result, "status", "<no result>")) if result is not None else "<no result>"
     planning_attempts = getattr(result, "_yam_attempt_log", None) if result is not None else None
 
     if target_idx < 0:
         target_idx = int(np.argmax(actual_conf))
+    selected_grasp_original_index = (
+        int(candidate_original_indices[target_idx])
+        if 0 <= int(target_idx) < len(candidate_original_indices)
+        else int(target_idx)
+    )
 
     trajectory_json: Path | None = None
     trajectory_start_summary: dict[str, Any] | None = None
     scripted_lift_summary: dict[str, Any] = {"enabled": False, "reason": "not_requested"}
     scripted_place_summary: dict[str, Any] = {"enabled": False, "reason": "not_requested"}
+    planning_preclose_summary: dict[str, Any] = {"enabled": False, "reason": "not_requested"}
     if bool(success) and pregrasp_traj is not None and len(pregrasp_traj) > 0:
         selected_tool_for_script = np.asarray(grasps_world[target_idx], dtype=float) @ _grasp_to_tool_matrix(robot_cfg)
         lift_missing = lift_traj is None or len(lift_traj) == 0
@@ -1960,6 +2131,12 @@ def main() -> None:
         )
         joint_traj = np.asarray(task_result.joint_traj, dtype=np.float32)
         task_segments = list(task_result.segments)
+        joint_traj, planning_preclose_summary = _apply_yam_planning_preclose_to_pick_segments(
+            joint_traj,
+            task_segments,
+            profile=profile,
+            planning_finger_joint_position=args.planning_finger_joint_position,
+        )
         has_task_bin_transport = any(str(name) == "move_to_above_bin" for name, _count in task_segments)
         if (
             str(args.plan_task) == "pick_and_drop_in_bin"
@@ -2048,6 +2225,7 @@ def main() -> None:
             extra_metadata={
                 "scripted_lift": scripted_lift_summary,
                 "scripted_place": scripted_place_summary,
+                "planning_preclose": planning_preclose_summary,
             },
         )
 
@@ -2059,6 +2237,7 @@ def main() -> None:
         "status": "accepted" if bool(success) else "rejected_or_failed",
         "planner_status": planner_status,
         "selected_grasp_index": int(target_idx),
+        "selected_grasp_original_index": int(selected_grasp_original_index),
         "selected_grasp_confidence": float(actual_conf[target_idx]),
         "selected_grasp_planning_score": float(planning_conf[target_idx]),
         "selected_grasp_world": grasps_world[target_idx],
@@ -2088,6 +2267,8 @@ def main() -> None:
             "target_alignment": target_alignment,
             "grasp_filter": grasp_filter_summary,
             "grasp_to_tool_transform": robot_cfg.get("grasp_to_tool_transform"),
+            "candidate_original_indices": candidate_original_indices,
+            "excluded_grasp_original_indices": sorted(exclude_original_indices),
             "table": dict(YAM_TABLE),
         },
         "trajectory_start": trajectory_start_summary,
@@ -2097,6 +2278,7 @@ def main() -> None:
         "drop_height_above_bin": float(args.drop_height_above_bin),
         "scripted_lift": scripted_lift_summary,
         "scripted_place": scripted_place_summary,
+        "planning_preclose": planning_preclose_summary,
         "planning_attempts": planning_attempts,
     }
     _write_json(overlay_json, overlay_payload)
@@ -2118,13 +2300,18 @@ def main() -> None:
         {
             **asdict(summary),
             "success": bool(success),
+            "selected_grasp_original_index": int(selected_grasp_original_index),
             "trajectory_start": trajectory_start_summary,
             "target_center_world": target_center_world,
             "plan_task": str(args.plan_task),
             "move_to_bin_frames": int(args.move_to_bin_frames),
             "drop_height_above_bin": float(args.drop_height_above_bin),
             "scripted_place": scripted_place_summary,
+            "scripted_lift": scripted_lift_summary,
+            "planning_preclose": planning_preclose_summary,
             "grasp_filter": grasp_filter_summary,
+            "candidate_original_indices": candidate_original_indices,
+            "excluded_grasp_original_indices": sorted(exclude_original_indices),
             "planning_attempts": planning_attempts,
         },
     )

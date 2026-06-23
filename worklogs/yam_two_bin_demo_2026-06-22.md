@@ -77,6 +77,67 @@
   - Frame inspection confirmed initial source-bin clutter, mid-run object transfer, and final empty source bin with all objects in the goal bin.
 - Process cleanup check found no active demo Isaac/planner/render jobs after completion.
 
+## 2026-06-23 11:19 PDT
+
+- User requested robustness improvements from `main` after merging the previous demo:
+  - try narrower planning gripper states when fully-open YAM finger collision blocks paths;
+  - let object order matter by deferring failed objects and retrying them after scene progress;
+  - validate additional GraspGen-X candidates after dynamic validation rejects a planned grasp.
+- Development isolation:
+  - worktree: `/home/lzha/code/worktrees/DEXTRAH/yam-adaptive-grasp-retry-20260623T0109Z`
+  - branch: `codex/yam-adaptive-grasp-retry-20260623T0109Z`
+  - base HEAD: `5b0d1cb794119f342037c61c181e11866c8e2690`
+  - dirty source files: `plan_yam_graspgenx_curobo.py`, `run_yam_iterative_bin_clear_demo.py`
+- Patched planner behavior:
+  - added `--planning_finger_joint_position`, which locks cuRobo finger collision at a requested preclosed value;
+  - the exported replay trajectory now precloses pick approach/grasp phases to the same planning value, while preserving full-open release for drop;
+  - added `--exclude_grasp_original_indices` and records `selected_grasp_original_index` so failed dynamic candidates can be excluded on retry.
+- Patched iterative behavior:
+  - added adaptive planning finger options from `--planner_finger_preclose_offsets` or explicit `--planner_finger_joint_positions`;
+  - planning/validation failures now defer the object for the current pass instead of marking it permanently failed;
+  - successful picks clear the deferred set, letting previously blocked objects become selectable after scene updates;
+  - `--max_attempts_per_object` and `--max_no_progress_passes` bound the retry loop.
+- Static check passed:
+  - `/home/lzha/code/.venvs/dextrah-isaaclab/bin/python -m py_compile dextrah_lab/scene_scripts/plan_yam_graspgenx_curobo.py dextrah_lab/scene_scripts/run_yam_iterative_bin_clear_demo.py`
+- Input scene:
+  - copied the shared original-size stable scene layout into `artifacts/yam_two_bin_original_size_assets/settle/stable_scene.json`;
+  - rewrote raw primitive mesh paths to the current worktree's tracked `dextrah_lab/assets/primitives/raw/*_original.obj` files.
+- Smoke launch plan:
+  - output: `artifacts/yam_two_bin_adaptive_retry_smoke`
+  - local GPU only, headless Isaac rendering only
+  - max attempts: 3 total demo attempts for a quick behavior check
+  - continuous episode enabled, scripted return-home enabled by implication
+  - original-size settings retained: `--planner_yam_grasp_to_tool_z 0.0`, `--planner_clutter_margin 0.006`, no lift-filter fallback
+  - success criteria: planner summaries record planning preclose/candidate IDs, validation failures add candidate exclusions, deferred object behavior appears in `retry_policy`, a two-view MP4 is composed, sampled frames are nonblank, and no active jobs remain.
+
+## 2026-06-23 11:35 PDT
+
+- Initial smoke launch failed after planning because the isolated worktree lacked generated YAM USD assets:
+  - missing path: `dextrah_lab/assets/yam/yam_mjcf_usd/yam_linear.usd`
+  - fix: copied the generated `yam_mjcf_usd` directory from canonical `/home/lzha/code/DEXTRAH` into the isolated worktree.
+- Relaunched smoke completed under `artifacts/yam_two_bin_adaptive_retry_smoke` with status `partial`.
+- Smoke evidence:
+  - composed video: `artifacts/yam_two_bin_adaptive_retry_smoke/yam_two_bin_iterative_two_view.mp4`
+  - `ffprobe`: 768x320, 753 frames, 12 fps, 62.75 s.
+  - sampled frames in `artifacts/yam_two_bin_adaptive_retry_smoke/inspection_frames` showed valid side-by-side default/top-down panes.
+  - no `settle_refresh` directories were generated.
+- Retry mechanics observed:
+  - attempts: `clutter_04`, then `clutter_02`, then `clutter_00`;
+  - each validation failure deferred that object and moved to the next object instead of stopping;
+  - planner summaries recorded `planning_preclose.enabled=true`;
+  - validation failures recorded candidate exclusions:
+    - `clutter_04`: selected original candidate `31`, excluded after validation `[31]`
+    - `clutter_02`: selected original candidate `31`, excluded after validation `[31]`
+    - `clutter_00`: selected original candidate `16`, excluded after validation `[16]`
+  - continuity diagnostics showed exact previous-final to next-start joint continuity after iteration 0 and small final-to-home errors around `2.1e-5`.
+- Follow-up patch after smoke:
+  - final `failed_object_ids` now reports all unaccepted objects, while `source_remaining_object_ids` separately reports objects still physically in the source bin.
+- Full launch plan:
+  - output: `artifacts/yam_two_bin_adaptive_retry_final`
+  - no `--max_picks`
+  - same adaptive retry and original-size settings as smoke;
+  - final run may remain `partial`, but should exercise candidate/preclose retries for any object that remains in the source bin after failures.
+
 ## 2026-06-22 22:34 PDT
 
 - User inspection found the generated iterative artifact is physically invalid: the gripper does not visibly contact the selected object, but the object moves to the destination bin.

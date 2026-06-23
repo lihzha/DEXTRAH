@@ -326,6 +326,29 @@ def _parse_float_list(value: str) -> list[float]:
     return [float(part.strip()) for part in value.split(",") if part.strip()]
 
 
+def _unique_floats(values: list[float], *, ndigits: int = 6) -> list[float]:
+    out: list[float] = []
+    seen: set[float] = set()
+    for value in values:
+        rounded = round(float(value), ndigits)
+        if rounded in seen:
+            continue
+        seen.add(rounded)
+        out.append(float(value))
+    return out
+
+
+def _planning_finger_options(args: argparse.Namespace, base_finger_joint: float) -> list[float | None]:
+    explicit = _parse_float_list(str(args.planner_finger_joint_positions))
+    if explicit:
+        return [float(v) for v in _unique_floats(explicit)]
+    offsets = _parse_float_list(str(args.planner_finger_preclose_offsets))
+    if not offsets:
+        return [None]
+    base = float(base_finger_joint)
+    return [float(v) for v in _unique_floats([min(0.0, base + float(offset)) for offset in offsets])]
+
+
 def _append_pythonpath(env: dict[str, str], paths: list[Path | None]) -> None:
     existing = env.get("PYTHONPATH", "")
     values = [str(path) for path in paths if path is not None]
@@ -398,6 +421,9 @@ def _plan_iteration(
     iteration: int,
     *,
     drop_y_offset: float,
+    attempt_number: int,
+    planning_finger_joint_position: float | None,
+    excluded_grasp_original_indices: set[int],
 ) -> dict[str, Any]:
     plan_output_dir = iteration_dir / "plan"
     run_name = "pick_drop"
@@ -444,6 +470,15 @@ def _plan_iteration(
         "--yam_grasp_to_tool_z",
         str(float(args.planner_yam_grasp_to_tool_z)),
     ]
+    if planning_finger_joint_position is not None:
+        cmd.extend(["--planning_finger_joint_position", str(float(planning_finger_joint_position))])
+    if excluded_grasp_original_indices:
+        cmd.extend(
+            [
+                "--exclude_grasp_original_indices",
+                ",".join(str(int(v)) for v in sorted(excluded_grasp_original_indices)),
+            ]
+        )
     if bool(args.yam_allow_lift_filter_fallback):
         cmd.append("--yam_allow_lift_filter_fallback")
     if args.graspgenx_root is not None:
@@ -465,6 +500,14 @@ def _plan_iteration(
         "trajectory_path": str(trajectory_path),
         "plan_summary_path": str(plan_summary_path),
         "selected_grasp_confidence": plan_summary.get("selected_grasp_confidence"),
+        "selected_grasp_index": plan_summary.get("selected_grasp_index"),
+        "selected_grasp_original_index": plan_summary.get("selected_grasp_original_index"),
+        "planning_preclose": plan_summary.get("planning_preclose"),
+        "excluded_grasp_original_indices": sorted(int(v) for v in excluded_grasp_original_indices),
+        "attempt_number": int(attempt_number),
+        "planning_finger_joint_position": None
+        if planning_finger_joint_position is None
+        else float(planning_finger_joint_position),
         "scripted_bin_drop_y_offset": float(drop_y_offset),
     }
 
@@ -843,6 +886,23 @@ def parse_args() -> argparse.Namespace:
         help="Forwarded to plan_yam_graspgenx_curobo.py --yam_grasp_to_tool_z.",
     )
     parser.add_argument("--planner_clutter_margin", type=float, default=-0.025)
+    parser.add_argument(
+        "--planner_finger_preclose_offsets",
+        type=str,
+        default="0.0,0.008,0.016,0.024,0.032,0.040",
+        help=(
+            "Comma-separated offsets added to the current start finger joint for adaptive "
+            "cuRobo planning collision states. Values are clamped at 0.0."
+        ),
+    )
+    parser.add_argument(
+        "--planner_finger_joint_positions",
+        type=str,
+        default="",
+        help="Explicit comma-separated planning finger joint values; overrides preclose offsets when set.",
+    )
+    parser.add_argument("--max_attempts_per_object", type=int, default=8)
+    parser.add_argument("--max_no_progress_passes", type=int, default=2)
     parser.add_argument("--max_picks", type=int, default=None)
     parser.add_argument("--allow_partial", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument(
@@ -935,6 +995,9 @@ def main() -> None:
 
     iteration = 0
     planning_skip_ids: set[str] = set()
+    attempt_counts: dict[str, int] = {}
+    candidate_exclusions: dict[str, set[int]] = {}
+    no_progress_passes = 0
     while True:
         if args.max_picks is not None and iteration >= int(args.max_picks):
             break
@@ -947,13 +1010,51 @@ def main() -> None:
         if selected is None:
             if planning_skip_ids:
                 skipped = sorted(planning_skip_ids)
-                _write_json(output_dir / "planning_exhausted.json", {"iteration": int(iteration), "skipped_object_ids": skipped})
+                no_progress_passes += 1
+                exhausted = no_progress_passes >= max(1, int(args.max_no_progress_passes))
+                _write_json(
+                    output_dir / f"planning_pass_exhausted_{no_progress_passes:02d}.json",
+                    {
+                        "iteration": int(iteration),
+                        "skipped_object_ids": skipped,
+                        "no_progress_passes": int(no_progress_passes),
+                        "max_no_progress_passes": int(args.max_no_progress_passes),
+                        "exhausted": bool(exhausted),
+                    },
+                )
                 print(
-                    json.dumps({"event": "planning_exhausted", "iteration": iteration, "skipped_object_ids": skipped}),
+                    json.dumps(
+                        {
+                            "event": "planning_pass_exhausted",
+                            "iteration": iteration,
+                            "skipped_object_ids": skipped,
+                            "no_progress_passes": no_progress_passes,
+                            "exhausted": exhausted,
+                        }
+                    ),
                     flush=True,
                 )
-                if not bool(args.allow_partial):
-                    raise RuntimeError(f"No remaining source-bin object planned successfully at iteration {iteration}: {skipped}")
+                if exhausted:
+                    failed_ids.update(skipped)
+                    if not bool(args.allow_partial):
+                        raise RuntimeError(
+                            f"No remaining source-bin object planned successfully after "
+                            f"{no_progress_passes} no-progress pass(es): {skipped}"
+                        )
+                    break
+                planning_skip_ids.clear()
+                continue
+            if not bool(args.allow_partial):
+                remaining = [
+                    str(obj["object_id"])
+                    for obj in objects
+                    if _inside_bin_center(obj["root_position"], source_bin, margin=float(args.source_margin))
+                    and str(obj["object_id"]) not in failed_ids
+                ]
+                if remaining:
+                    raise RuntimeError(
+                        f"No remaining source-bin object planned successfully at iteration {iteration}: {remaining}"
+                    )
             break
         selected_id = str(selected["object_id"])
         iteration_dir = output_dir / f"iter_{iteration:02d}_{selected_id}"
@@ -987,17 +1088,41 @@ def main() -> None:
         scene_path = iteration_dir / "planning_scene.json"
         _write_json(scene_path, planning_scene)
         planning_start_joint = _robot_joint_from_scene(planning_scene) or home_joint
+        attempt_number = int(attempt_counts.get(selected_id, 0)) + 1
+        attempt_counts[selected_id] = attempt_number
+        base_finger_joint = float(planning_start_joint[-1]) if planning_start_joint else float(home_joint[-1])
+        finger_options = _planning_finger_options(args, base_finger_joint)
+        planning_finger_joint_position = finger_options[(attempt_number - 1) % len(finger_options)]
+        excluded_grasp_original_indices = set(candidate_exclusions.get(selected_id, set()))
 
         drop_y_offset = float(drop_y_offsets[iteration % len(drop_y_offsets)])
         try:
-            plan_info = _plan_iteration(args, scene_path, iteration_dir, iteration, drop_y_offset=drop_y_offset)
+            plan_info = _plan_iteration(
+                args,
+                scene_path,
+                iteration_dir,
+                iteration,
+                drop_y_offset=drop_y_offset,
+                attempt_number=attempt_number,
+                planning_finger_joint_position=planning_finger_joint_position,
+                excluded_grasp_original_indices=excluded_grasp_original_indices,
+            )
         except Exception as exc:
             planning_skip_ids.add(selected_id)
-            failed_ids.add(selected_id)
+            terminal_failed = attempt_number >= max(1, int(args.max_attempts_per_object))
+            if terminal_failed:
+                failed_ids.add(selected_id)
             failure = {
                 "iteration": int(iteration),
                 "object_id": selected_id,
                 "status": "planning_failed",
+                "attempt_number": int(attempt_number),
+                "max_attempts_per_object": int(args.max_attempts_per_object),
+                "terminal_failed": bool(terminal_failed),
+                "planning_finger_joint_position": None
+                if planning_finger_joint_position is None
+                else float(planning_finger_joint_position),
+                "excluded_grasp_original_indices": sorted(int(v) for v in excluded_grasp_original_indices),
                 "exception_type": type(exc).__name__,
                 "exception": str(exc),
                 "scene_path": str(scene_path),
@@ -1007,6 +1132,7 @@ def main() -> None:
             _write_json(iteration_dir / "planning_failure.json", failure)
             iteration_records.append(failure)
             print(json.dumps({"event": "iteration_plan_failed", **failure}), flush=True)
+            iteration += 1
             continue
         planner_trajectory_path = Path(plan_info["trajectory_path"])
         trajectory_path = planner_trajectory_path
@@ -1060,7 +1186,15 @@ def main() -> None:
         }
         validation_status = str(validation.get("status") or "unknown")
         if validation_status != "accepted":
-            failed_ids.add(selected_id)
+            selected_original = plan_info.get("selected_grasp_original_index")
+            if selected_original is not None:
+                candidate_exclusions.setdefault(selected_id, set()).add(int(selected_original))
+            planning_skip_ids.add(selected_id)
+            terminal_failed = attempt_number >= max(1, int(args.max_attempts_per_object))
+            if terminal_failed:
+                failed_ids.add(selected_id)
+        else:
+            terminal_failed = False
         topdown_info = _render_iteration(
             args,
             scene_path=scene_path,
@@ -1073,6 +1207,7 @@ def main() -> None:
         )
         if validation_status == "accepted":
             picked_ids.append(selected_id)
+            no_progress_passes = 0
         default_videos.append(Path(default_info["video_path"]))
         topdown_videos.append(Path(topdown_info["video_path"]))
         record = {
@@ -1089,6 +1224,19 @@ def main() -> None:
             "validation_status": validation_status,
             "motion": motion,
             "continuity": continuity,
+            "retry_policy": {
+                "attempt_number": int(attempt_number),
+                "max_attempts_per_object": int(args.max_attempts_per_object),
+                "terminal_failed": bool(terminal_failed),
+                "planning_finger_options": finger_options,
+                "planning_finger_joint_position": None
+                if planning_finger_joint_position is None
+                else float(planning_finger_joint_position),
+                "excluded_grasp_original_indices_before_plan": sorted(int(v) for v in excluded_grasp_original_indices),
+                "excluded_grasp_original_indices_after_validation": sorted(
+                    int(v) for v in candidate_exclusions.get(selected_id, set())
+                ),
+            },
         }
         iteration_records.append(record)
         _write_json(iteration_dir / "iteration_summary.json", record)
@@ -1107,7 +1255,8 @@ def main() -> None:
             flush=True,
         )
         iteration += 1
-        planning_skip_ids.clear()
+        if validation_status == "accepted":
+            planning_skip_ids.clear()
 
     final_validation = _final_validation(
         objects=objects,
@@ -1118,8 +1267,22 @@ def main() -> None:
         min_lift_delta=float(args.min_lift_delta),
         iteration_records=iteration_records,
     )
-    final_validation["failed_object_ids"] = sorted(failed_ids)
-    final_validation["failed_object_count"] = int(len(failed_ids))
+    picked_set = set(picked_ids)
+    unpicked_ids = {str(obj["object_id"]) for obj in objects if str(obj["object_id"]) not in picked_set}
+    source_remaining_ids = {
+        str(obj["object_id"])
+        for obj in objects
+        if _inside_bin_center(obj["root_position"], source_bin, margin=float(args.source_margin))
+    }
+    final_failed_ids = sorted(set(failed_ids) | unpicked_ids)
+    final_validation["failed_object_ids"] = final_failed_ids
+    final_validation["failed_object_count"] = int(len(final_failed_ids))
+    final_validation["terminal_failed_object_ids"] = sorted(failed_ids)
+    final_validation["source_remaining_object_ids"] = sorted(source_remaining_ids)
+    final_validation["attempt_counts"] = {key: int(value) for key, value in sorted(attempt_counts.items())}
+    final_validation["candidate_exclusions"] = {
+        key: sorted(int(v) for v in value) for key, value in sorted(candidate_exclusions.items())
+    }
     if args.allow_partial and final_validation["status"] == "rejected":
         final_validation["status"] = "partial"
         final_validation["allow_partial"] = True
@@ -1138,7 +1301,13 @@ def main() -> None:
         "final_validation_path": str(output_dir / "iterative_validation.json"),
         "final_objects": objects,
         "picked_object_ids": picked_ids,
-        "failed_object_ids": sorted(failed_ids),
+        "failed_object_ids": final_failed_ids,
+        "terminal_failed_object_ids": sorted(failed_ids),
+        "source_remaining_object_ids": sorted(source_remaining_ids),
+        "attempt_counts": {key: int(value) for key, value in sorted(attempt_counts.items())},
+        "candidate_exclusions": {
+            key: sorted(int(v) for v in value) for key, value in sorted(candidate_exclusions.items())
+        },
         "default_videos": [str(path) for path in default_videos],
         "topdown_videos": [str(path) for path in topdown_videos],
     }
