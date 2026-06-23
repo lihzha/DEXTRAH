@@ -40,6 +40,7 @@ ID_EXPECTED_OBJECTS="${ID_EXPECTED_OBJECTS:-1}"
 ID_CASE_INDEX="${ID_CASE_INDEX:-0}"
 OOD_SEED="${OOD_SEED:-9400001}"
 OOD_SETTLE_STEPS="${OOD_SETTLE_STEPS:-100}"
+OOD_MANIFEST_POOL_SIZE="${OOD_MANIFEST_POOL_SIZE:-512}"
 OOD_MIN_XY_RADIUS="${OOD_MIN_XY_RADIUS:-0.012}"
 OOD_MAX_XY_RADIUS="${OOD_MAX_XY_RADIUS:-0.075}"
 OOD_MIN_HEIGHT="${OOD_MIN_HEIGHT:-0.010}"
@@ -110,7 +111,7 @@ mkdir -p \
   "$CACHE_NFS/data" "$CACHE_NFS/documents"
 
 CASE_ENV_HOST="$RUN_DIR_HOST/case_env.sh"
-python3 - "$ACCEPTED_MANIFEST_HOST" "$FULL_OBJAVERSE_MANIFEST_HOST" "$RUN_DIR_HOST" "$ID_EXPECTED_OBJECTS" "$ID_CASE_INDEX" "$OOD_SEED" "$RESULTS_NFS" "$FULL_OBJAVERSE_CONTAINER_ASSET_ROOT" "$OOD_MIN_XY_RADIUS" "$OOD_MAX_XY_RADIUS" "$OOD_MIN_HEIGHT" "$OOD_MAX_HEIGHT" "$OOD_MAX_GRASP_WIDTH_P95" "$OOD_EXCLUDE_KEYWORDS" <<'PY'
+python3 - "$ACCEPTED_MANIFEST_HOST" "$FULL_OBJAVERSE_MANIFEST_HOST" "$RUN_DIR_HOST" "$ID_EXPECTED_OBJECTS" "$ID_CASE_INDEX" "$OOD_SEED" "$RESULTS_NFS" "$FULL_OBJAVERSE_CONTAINER_ASSET_ROOT" "$OOD_MANIFEST_POOL_SIZE" "$OOD_MIN_XY_RADIUS" "$OOD_MAX_XY_RADIUS" "$OOD_MIN_HEIGHT" "$OOD_MAX_HEIGHT" "$OOD_MAX_GRASP_WIDTH_P95" "$OOD_EXCLUDE_KEYWORDS" <<'PY'
 import json
 import math
 import random
@@ -128,12 +129,13 @@ id_case_index = int(sys.argv[5])
 ood_seed = int(sys.argv[6])
 results_root = Path(sys.argv[7])
 container_asset_root = sys.argv[8]
-ood_min_xy_radius = float(sys.argv[9])
-ood_max_xy_radius = float(sys.argv[10])
-ood_min_height = float(sys.argv[11])
-ood_max_height = float(sys.argv[12])
-ood_max_grasp_width_p95 = float(sys.argv[13])
-ood_exclude_keywords = tuple(item.strip().lower() for item in sys.argv[14].split(",") if item.strip())
+ood_manifest_pool_size = int(sys.argv[9])
+ood_min_xy_radius = float(sys.argv[10])
+ood_max_xy_radius = float(sys.argv[11])
+ood_min_height = float(sys.argv[12])
+ood_max_height = float(sys.argv[13])
+ood_max_grasp_width_p95 = float(sys.argv[14])
+ood_exclude_keywords = tuple(item.strip().lower() for item in sys.argv[15].split(",") if item.strip())
 
 def host_path(value):
     text = str(value or "")
@@ -316,10 +318,12 @@ if not candidates:
     raise SystemExit(f"No OOD candidates after filtering; skipped={dict(skipped)}")
 rng = random.Random(ood_seed)
 rng.shuffle(candidates)
-ood_object = candidates[0]
+ood_pool = candidates if ood_manifest_pool_size <= 0 else candidates[:ood_manifest_pool_size]
+ood_object = ood_pool[0]
 ood_filter = {
     "source_count": len(objects),
     "candidate_count": len(candidates),
+    "manifest_pool_size": len(ood_pool),
     "excluded_training_uuid_count": len(train_uuids),
     "skipped": dict(sorted(skipped.items())),
     "seed": ood_seed,
@@ -336,7 +340,7 @@ ood_payload = {
     "asset_root": container_asset_root,
     "source_manifest": str(full_manifest),
     "ood_filter": ood_filter,
-    "objects": [ood_object],
+    "objects": ood_pool,
 }
 ood_manifest.write_text(json.dumps(ood_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 ood_case = {
@@ -345,13 +349,14 @@ ood_case = {
     "manifest_host": str(ood_manifest),
     "expected_objects": 1,
     "seed": ood_seed,
-    "object": {
+    "first_manifest_candidate": {
         "uuid": str(ood_object.get("uuid") or ""),
         "name": str(ood_object.get("name") or ood_object.get("uuid") or ""),
         "usd_path": str(ood_object.get("usd_path") or ood_object.get("path") or ""),
         "xy_radius": ood_object.get("xy_radius"),
         "scaled_half_extents": ood_object.get("scaled_half_extents"),
     },
+    "manifest_candidate_uuids": [str(obj.get("uuid") or "") for obj in ood_pool[:64]],
     "ood_filter": ood_filter,
 }
 (run_dir / "ood_case.json").write_text(json.dumps(ood_case, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -386,7 +391,7 @@ echo "CODE_COMMIT=${CODE_COMMIT:-unknown}"
 echo "CHECKPOINT_HOST=$CHECKPOINT_HOST"
 echo "ID_STABLE_SCENE_HOST=$ID_STABLE_SCENE_HOST"
 echo "OOD_MANIFEST_HOST=$OOD_MANIFEST_HOST"
-echo "OOD_FILTER=min_xy=$OOD_MIN_XY_RADIUS max_xy=$OOD_MAX_XY_RADIUS min_height=$OOD_MIN_HEIGHT max_height=$OOD_MAX_HEIGHT max_width_p95=$OOD_MAX_GRASP_WIDTH_P95 exclude=$OOD_EXCLUDE_KEYWORDS"
+echo "OOD_FILTER=pool=$OOD_MANIFEST_POOL_SIZE min_xy=$OOD_MIN_XY_RADIUS max_xy=$OOD_MAX_XY_RADIUS min_height=$OOD_MIN_HEIGHT max_height=$OOD_MAX_HEIGHT max_width_p95=$OOD_MAX_GRASP_WIDTH_P95 exclude=$OOD_EXCLUDE_KEYWORDS"
 echo "DEMO_STEPS=$DEMO_STEPS"
 echo "CAPTURE_INTERVAL=$CAPTURE_INTERVAL"
 echo "VALIDATION_REQUIRE_ACCEPTED=$VALIDATION_REQUIRE_ACCEPTED"
