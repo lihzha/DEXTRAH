@@ -403,9 +403,10 @@ srun \
   --no-container-entrypoint \
   --container-remap-root \
   --container-writable \
-  --export=ALL,PYTHONUNBUFFERED=1,HYDRA_FULL_ERROR=1,PYTHONFAULTHANDLER=1,TORCH_SHOW_CPP_STACKTRACES=1,ACCEPT_EULA=Y,PRIVACY_CONSENT=Y \
+  --export=ALL,PYTHONUNBUFFERED=1,HYDRA_FULL_ERROR=1,PYTHONFAULTHANDLER=1,TORCH_SHOW_CPP_STACKTRACES=1,PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python,ACCEPT_EULA=Y,PRIVACY_CONSENT=Y \
   bash -lc '
     set -euo pipefail
+    export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
     export SITE="/envs/$ENV_NAME/site"
     export DP_SITE="/envs/$DP_ENV_NAME/site"
     export PYTHONPATH="$SITE:$DP_SITE:/code:/fabrics/src:/official_dp"
