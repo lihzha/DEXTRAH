@@ -385,7 +385,7 @@ def _planning_profile_options(
     *,
     attempt_number: int,
     base_finger_joint: float,
-) -> list[dict[str, float | None]]:
+) -> list[dict[str, float | bool | None]]:
     finger_options = _planning_finger_options(args, base_finger_joint)
     tool_z_options = _planner_tool_z_options(args)
     clutter_margin_options = _planner_clutter_margin_options(args)
@@ -396,27 +396,32 @@ def _planning_profile_options(
     open_finger = finger_options[0] if finger_options else current_finger
     closed_finger = finger_options[-1] if finger_options else current_finger
 
-    ordered: list[tuple[float | None, float, float]] = [
-        (current_finger, current_tool_z, current_margin),
-        (current_finger, current_tool_z, relaxed_margin),
-        (open_finger, current_tool_z, relaxed_margin),
+    ordered: list[tuple[float | None, float, float, bool]] = [
+        (current_finger, current_tool_z, current_margin, True),
+        (current_finger, current_tool_z, relaxed_margin, True),
+        (open_finger, current_tool_z, relaxed_margin, True),
+        (current_finger, current_tool_z, relaxed_margin, False),
+        (open_finger, current_tool_z, relaxed_margin, False),
     ]
     for tool_z in _rotated_options(tool_z_options, attempt_number):
         ordered.extend(
             [
-                (open_finger, tool_z, relaxed_margin),
-                (current_finger, tool_z, relaxed_margin),
-                (closed_finger, tool_z, relaxed_margin),
-                (open_finger, tool_z, current_margin),
+                (open_finger, tool_z, relaxed_margin, True),
+                (current_finger, tool_z, relaxed_margin, True),
+                (closed_finger, tool_z, relaxed_margin, True),
+                (open_finger, tool_z, current_margin, True),
+                (open_finger, tool_z, relaxed_margin, False),
+                (current_finger, tool_z, relaxed_margin, False),
             ]
         )
-    profiles: list[dict[str, float | None]] = []
-    seen: set[tuple[float | None, float, float]] = set()
-    for finger, tool_z, margin in ordered:
+    profiles: list[dict[str, float | bool | None]] = []
+    seen: set[tuple[float | None, float, float, bool]] = set()
+    for finger, tool_z, margin, include_default_clutter in ordered:
         key = (
             None if finger is None else round(float(finger), 7),
             round(float(tool_z), 7),
             round(float(margin), 7),
+            bool(include_default_clutter),
         )
         if key in seen:
             continue
@@ -426,6 +431,7 @@ def _planning_profile_options(
                 "planning_finger_joint_position": None if finger is None else float(finger),
                 "planner_yam_grasp_to_tool_z": float(tool_z),
                 "planner_clutter_margin": float(margin),
+                "planner_include_default_clutter": bool(include_default_clutter),
             }
         )
         if len(profiles) >= max(1, int(args.max_planning_profile_trials)):
@@ -509,6 +515,7 @@ def _plan_iteration(
     planning_finger_joint_position: float | None,
     planner_yam_grasp_to_tool_z: float,
     planner_clutter_margin: float,
+    planner_include_default_clutter: bool,
     planner_profile_index: int,
     excluded_grasp_original_indices: set[int],
 ) -> dict[str, Any]:
@@ -560,6 +567,8 @@ def _plan_iteration(
     ]
     if planning_finger_joint_position is not None:
         cmd.extend(["--planning_finger_joint_position", str(float(planning_finger_joint_position))])
+    if not bool(planner_include_default_clutter):
+        cmd.append("--no-include_default_clutter")
     if excluded_grasp_original_indices:
         cmd.extend(
             [
@@ -599,6 +608,7 @@ def _plan_iteration(
         else float(planning_finger_joint_position),
         "planner_yam_grasp_to_tool_z": float(planner_yam_grasp_to_tool_z),
         "planner_clutter_margin": float(planner_clutter_margin),
+        "planner_include_default_clutter": bool(planner_include_default_clutter),
         "planner_profile_index": profile_idx,
         "planner_log": str(planner_log),
         "scripted_bin_drop_y_offset": float(drop_y_offset),
@@ -1273,6 +1283,7 @@ def main() -> None:
             planning_finger_joint_position = planner_profile["planning_finger_joint_position"]
             planner_yam_grasp_to_tool_z = float(planner_profile["planner_yam_grasp_to_tool_z"])
             planner_clutter_margin = float(planner_profile["planner_clutter_margin"])
+            planner_include_default_clutter = bool(planner_profile["planner_include_default_clutter"])
             try:
                 plan_info = _plan_iteration(
                     args,
@@ -1286,6 +1297,7 @@ def main() -> None:
                     else float(planning_finger_joint_position),
                     planner_yam_grasp_to_tool_z=planner_yam_grasp_to_tool_z,
                     planner_clutter_margin=planner_clutter_margin,
+                    planner_include_default_clutter=planner_include_default_clutter,
                     planner_profile_index=profile_idx,
                     excluded_grasp_original_indices=excluded_grasp_original_indices,
                 )
@@ -1299,6 +1311,7 @@ def main() -> None:
                         else float(planning_finger_joint_position),
                         "planner_yam_grasp_to_tool_z": float(planner_yam_grasp_to_tool_z),
                         "planner_clutter_margin": float(planner_clutter_margin),
+                        "planner_include_default_clutter": bool(planner_include_default_clutter),
                         "exception_type": type(exc).__name__,
                         "exception": str(exc),
                     }
@@ -1320,6 +1333,7 @@ def main() -> None:
                 "planner_yam_grasp_to_tool_z_options": tool_z_options,
                 "planner_clutter_margin_options": clutter_margin_options,
                 "planning_finger_options": finger_options,
+                "planner_profile_options": planner_profiles,
                 "excluded_grasp_original_indices": sorted(int(v) for v in excluded_grasp_original_indices),
                 "scene_path": str(scene_path),
                 "skip_ids_for_iteration": sorted(planning_skip_ids),
@@ -1445,6 +1459,7 @@ def main() -> None:
                 "planner_yam_grasp_to_tool_z": float(planner_yam_grasp_to_tool_z),
                 "planner_clutter_margin_options": clutter_margin_options,
                 "planner_clutter_margin": float(planner_clutter_margin),
+                "planner_include_default_clutter": bool(plan_info.get("planner_include_default_clutter", True)),
                 "max_planning_profile_trials": int(args.max_planning_profile_trials),
                 "planner_profile_index": int(plan_info.get("planner_profile_index", 0)),
                 "planner_profile_failures_before_success": planning_profile_failures,
