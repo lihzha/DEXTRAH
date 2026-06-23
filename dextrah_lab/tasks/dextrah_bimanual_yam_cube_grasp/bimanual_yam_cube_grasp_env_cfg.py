@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 import isaaclab.sim as sim_utils
 from isaaclab.assets import ArticulationCfg, RigidObjectCfg
 from isaaclab.envs import DirectRLEnvCfg
@@ -14,12 +16,39 @@ from dextrah_lab.assets.yam.bimanual_yam import (
     BIMANUAL_YAM_CFG,
     BIMANUAL_YAM_MJCF_PATH,
     BIMANUAL_YAM_USD_PATH,
+    MOLMOACT2_BIMANUAL_ARM_Y_OFFSET,
+    MOLMOACT2_BOX_ANCHOR_XY,
+    MOLMOACT2_CAMERA_HEIGHT,
+    MOLMOACT2_CAMERA_ORDER,
+    MOLMOACT2_CAMERA_WIDTH,
+    MOLMOACT2_HOME_JOINT_POS,
+    MOLMOACT2_LEFT_CAMERA_UID,
+    MOLMOACT2_LEFT_WRIST_CAMERA_PARENT_BODY,
+    MOLMOACT2_OBJECT_ANCHORS_XY,
+    MOLMOACT2_NORM_TAG,
+    MOLMOACT2_RIGHT_CAMERA_UID,
+    MOLMOACT2_RIGHT_WRIST_CAMERA_PARENT_BODY,
+    MOLMOACT2_ROBOT_ROOT_POS,
     MOLMOACT2_REST_JOINT_POS,
+    MOLMOACT2_TABLE_CENTER,
+    MOLMOACT2_TABLE_SIZE,
+    MOLMOACT2_TABLE_SURFACE_Z,
+    MOLMOACT2_TOP_CAMERA_HFOV_DEG,
+    MOLMOACT2_TOP_CAMERA_INTRINSIC,
+    MOLMOACT2_TOP_CAMERA_LOCAL_POS,
+    MOLMOACT2_TOP_CAMERA_LOCAL_QUAT_WXYZ,
+    MOLMOACT2_TOP_CAMERA_PARENT_BODY,
+    MOLMOACT2_TOP_CAMERA_UID,
+    MOLMOACT2_TOP_CAMERA_VFOV_DEG,
+    MOLMOACT2_WRIST_CAMERA_HFOV_DEG,
+    MOLMOACT2_WRIST_CAMERA_INTRINSIC,
+    MOLMOACT2_WRIST_CAMERA_LOCAL_POS,
+    MOLMOACT2_WRIST_CAMERA_LOCAL_QUAT_WXYZ,
+    MOLMOACT2_WRIST_CAMERA_VFOV_DEG,
 )
 
 YAM_MJCF_PATH = BIMANUAL_YAM_MJCF_PATH
 YAM_USD_PATH = BIMANUAL_YAM_USD_PATH
-
 
 def _bimanual_yam_robot_cfg(
     robot_base_pos: tuple[float, float, float],
@@ -28,7 +57,7 @@ def _bimanual_yam_robot_cfg(
         init_state=ArticulationCfg.InitialStateCfg(
             pos=robot_base_pos,
             rot=(1.0, 0.0, 0.0, 0.0),
-            joint_pos=MOLMOACT2_REST_JOINT_POS,
+            joint_pos=MOLMOACT2_HOME_JOINT_POS,
             joint_vel={".*": 0.0},
         ),
     )
@@ -66,22 +95,61 @@ class DextrahBimanualYAMCubeGraspEnvCfg(DirectRLEnvCfg):
             gpu_max_rigid_patch_count=4 * 5 * 2**15,
         ),
     )
-    scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=1024, env_spacing=1.8, replicate_physics=False)
+    scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=1024, env_spacing=3.0, replicate_physics=False)
 
-    # MolmoAct2 YAM-relative layout. Their ManiSkill task places the YAM base
-    # at (-0.65, 0, 0.01), the box at (-0.15, 0), and objects near x=-0.30
-    # with left/right split on +Y/-Y.
-    robot_base_x = -0.65
-    robot_base_y = 0.0
-    robot_base_z = 0.01
+    table_surface_z = MOLMOACT2_TABLE_SURFACE_Z
+    table_thickness = MOLMOACT2_TABLE_SIZE[2]
+    table_center_x = MOLMOACT2_TABLE_CENTER[0]
+    table_center_y = MOLMOACT2_TABLE_CENTER[1]
+    table_center_z = MOLMOACT2_TABLE_CENTER[2]
+    table_size_x = MOLMOACT2_TABLE_SIZE[0]
+    table_size_y = MOLMOACT2_TABLE_SIZE[1]
+
+    robot_base_x = MOLMOACT2_ROBOT_ROOT_POS[0]
+    robot_base_y = MOLMOACT2_ROBOT_ROOT_POS[1]
+    robot_base_z = MOLMOACT2_ROBOT_ROOT_POS[2]
     robot_base_pos = (robot_base_x, robot_base_y, robot_base_z)
-    table_surface_z = 0.0
-    table_thickness = 0.052
-    table_center_x = -0.27
-    table_center_y = 0.0
-    table_center_z = table_surface_z - 0.5 * table_thickness
-    table_size_x = 0.74
-    table_size_y = 0.74
+    robot_arm_y_offset = MOLMOACT2_BIMANUAL_ARM_Y_OFFSET
+    reset_joint_pos = MOLMOACT2_HOME_JOINT_POS
+    rest_joint_pos = MOLMOACT2_REST_JOINT_POS
+
+    molmoact2_norm_tag = MOLMOACT2_NORM_TAG
+    molmoact2_camera_order = MOLMOACT2_CAMERA_ORDER
+    molmoact2_camera_width = MOLMOACT2_CAMERA_WIDTH
+    molmoact2_camera_height = MOLMOACT2_CAMERA_HEIGHT
+    molmoact2_top_camera_uid = MOLMOACT2_TOP_CAMERA_UID
+    molmoact2_left_camera_uid = MOLMOACT2_LEFT_CAMERA_UID
+    molmoact2_right_camera_uid = MOLMOACT2_RIGHT_CAMERA_UID
+    molmoact2_top_camera_parent_body = MOLMOACT2_TOP_CAMERA_PARENT_BODY
+    molmoact2_left_wrist_camera_parent_body = MOLMOACT2_LEFT_WRIST_CAMERA_PARENT_BODY
+    molmoact2_right_wrist_camera_parent_body = MOLMOACT2_RIGHT_WRIST_CAMERA_PARENT_BODY
+    molmoact2_top_camera_local_pos = MOLMOACT2_TOP_CAMERA_LOCAL_POS
+    molmoact2_top_camera_local_quat_wxyz = MOLMOACT2_TOP_CAMERA_LOCAL_QUAT_WXYZ
+    molmoact2_wrist_camera_local_pos = MOLMOACT2_WRIST_CAMERA_LOCAL_POS
+    molmoact2_wrist_camera_local_quat_wxyz = MOLMOACT2_WRIST_CAMERA_LOCAL_QUAT_WXYZ
+    molmoact2_top_camera_hfov_deg = MOLMOACT2_TOP_CAMERA_HFOV_DEG
+    molmoact2_wrist_camera_hfov_deg = MOLMOACT2_WRIST_CAMERA_HFOV_DEG
+    molmoact2_top_camera_vfov_deg = MOLMOACT2_TOP_CAMERA_VFOV_DEG
+    molmoact2_wrist_camera_vfov_deg = MOLMOACT2_WRIST_CAMERA_VFOV_DEG
+    molmoact2_top_camera_intrinsic = MOLMOACT2_TOP_CAMERA_INTRINSIC
+    molmoact2_wrist_camera_intrinsic = MOLMOACT2_WRIST_CAMERA_INTRINSIC
+    molmoact2_top_camera_eye = (
+        robot_base_x + MOLMOACT2_TOP_CAMERA_LOCAL_POS[0],
+        robot_base_y + MOLMOACT2_TOP_CAMERA_LOCAL_POS[1],
+        robot_base_z + MOLMOACT2_TOP_CAMERA_LOCAL_POS[2],
+    )
+    _top_camera_y_rot = 2.0 * math.atan2(
+        MOLMOACT2_TOP_CAMERA_LOCAL_QUAT_WXYZ[2],
+        MOLMOACT2_TOP_CAMERA_LOCAL_QUAT_WXYZ[0],
+    )
+    molmoact2_top_camera_target = (
+        molmoact2_top_camera_eye[0]
+        + (molmoact2_top_camera_eye[2] - table_surface_z) / math.tan(_top_camera_y_rot),
+        molmoact2_top_camera_eye[1],
+        table_surface_z,
+    )
+    molmoact2_object_anchors_xy = MOLMOACT2_OBJECT_ANCHORS_XY
+    molmoact2_box_anchor_xy = MOLMOACT2_BOX_ANCHOR_XY
 
     pickup_x = -0.30
     pickup_y = 0.0
