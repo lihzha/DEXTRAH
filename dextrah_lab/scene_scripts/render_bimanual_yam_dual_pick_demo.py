@@ -718,7 +718,6 @@ def main() -> None:
         sim_dt = float(task_env.cfg.sim.dt)
         render_stride = max(1, int(args_cli.render_stride))
         sim_steps_per_frame = max(1, int(args_cli.sim_steps_per_frame))
-        video_frames: dict[str, list[np.ndarray]] = {name: [] for name in cameras}
         composite_frames: list[np.ndarray] = []
         sample_stats: dict[str, dict[str, dict[str, float]]] = {}
         object_trace: list[dict[str, Any]] = []
@@ -766,6 +765,7 @@ def main() -> None:
         }
         _initialize_cameras(cameras)
         _warmup_cameras(task_env, cameras, sim_dt, int(args_cli.warmup_render_updates))
+        video_frames: dict[str, list[np.ndarray]] = {name: [] for name in cameras}
 
         source_indices = range(len(frames)) if dynamic_replay else range(0, len(frames), render_stride)
         for source_frame_idx in source_indices:
