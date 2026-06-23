@@ -33,6 +33,13 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--settle_steps", type=int, default=60)
     parser.add_argument("--disable_fabric", action="store_true")
     parser.add_argument("--video_crf", type=int, default=18)
+    parser.add_argument("--warmup_render_updates", type=int, default=6)
+    parser.add_argument("--render_sync_updates", type=int, default=3)
+    parser.add_argument("--force_camera_recompute", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--visual_motion_check", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--fail_on_static_visual", action="store_true")
+    parser.add_argument("--visual_motion_min_changed_pixels", type=int, default=2500)
+    parser.add_argument("--visual_motion_diff_threshold", type=int, default=8)
     AppLauncher.add_app_launcher_args(parser)
     return parser
 
@@ -216,6 +223,56 @@ def _make_overview_camera() -> Camera:
     return Camera(cfg)
 
 
+def _initialize_camera_sensor(camera: Camera) -> None:
+    if camera.is_initialized:
+        camera.reset()
+        return
+    camera._initialize_impl()
+    camera._is_initialized = True
+    camera.reset()
+
+
+def _initialize_cameras(cameras: dict[str, Camera]) -> None:
+    for name, camera in cameras.items():
+        _log(f"initializing camera sensor: {name}")
+        _initialize_camera_sensor(camera)
+
+
+def _flush_render_updates(count: int) -> None:
+    for _ in range(max(0, int(count))):
+        simulation_app.update()
+
+
+def _sync_render_and_update_cameras(
+    *,
+    task_env: Any,
+    cameras: dict[str, Camera],
+    camera_dt: float,
+    force_recompute: bool,
+    render_sync_updates: int,
+) -> dict[str, np.ndarray]:
+    task_env.scene.write_data_to_sim()
+    task_env.sim.render()
+    _flush_render_updates(render_sync_updates)
+
+    images: dict[str, np.ndarray] = {}
+    for name, camera in cameras.items():
+        camera.update(camera_dt, force_recompute=force_recompute)
+        if force_recompute:
+            camera.update(0.0, force_recompute=True)
+        images[name] = _rgb_to_array(camera.data.output["rgb"])
+    return images
+
+
+def _warmup_cameras(task_env: Any, cameras: dict[str, Camera], sim_dt: float, updates: int) -> None:
+    for _ in range(max(0, int(updates))):
+        task_env.scene.write_data_to_sim()
+        task_env.sim.render()
+        _flush_render_updates(1)
+        for camera in cameras.values():
+            camera.update(sim_dt, force_recompute=True)
+
+
 def _rgb_to_array(rgb_tensor: torch.Tensor) -> np.ndarray:
     rgb = rgb_tensor.detach().cpu().numpy()
     if rgb.ndim == 4:
@@ -306,6 +363,89 @@ def _image_stats(array: np.ndarray) -> dict[str, float]:
         "min": float(np.min(array)),
         "max": float(np.max(array)),
     }
+
+
+def _changed_pixels(
+    first: np.ndarray,
+    last: np.ndarray,
+    *,
+    box: tuple[int, int, int, int],
+    threshold: int,
+) -> int:
+    x0, y0, x1, y1 = box
+    first_crop = first[y0:y1, x0:x1, :3].astype(np.int16)
+    last_crop = last[y0:y1, x0:x1, :3].astype(np.int16)
+    delta = np.max(np.abs(first_crop - last_crop), axis=2)
+    return int(np.count_nonzero(delta > int(threshold)))
+
+
+def _visual_motion_diagnostics(
+    video_frames: dict[str, list[np.ndarray]],
+    *,
+    min_changed_pixels: int,
+    diff_threshold: int,
+) -> dict[str, Any]:
+    diagnostics: dict[str, Any] = {
+        "checked": False,
+        "passed": False,
+        "min_changed_pixels": int(min_changed_pixels),
+        "diff_threshold": int(diff_threshold),
+    }
+    top_frames = video_frames.get("top_cam", [])
+    overview_frames = video_frames.get("overview", [])
+    if len(top_frames) < 2:
+        diagnostics["reason"] = "top_cam_has_fewer_than_two_frames"
+        diagnostics["top_cam_frame_count"] = len(top_frames)
+        return diagnostics
+
+    top_height, top_width = top_frames[0].shape[:2]
+    crop_boxes = {
+        "top_left_arm_crop": (0, int(top_height * 0.35), int(top_width * 0.45), top_height),
+        "top_right_arm_crop": (int(top_width * 0.55), int(top_height * 0.35), top_width, top_height),
+        "top_center_workspace_crop": (
+            int(top_width * 0.22),
+            int(top_height * 0.25),
+            int(top_width * 0.78),
+            top_height,
+        ),
+    }
+    changed_pixels = {
+        name: _changed_pixels(top_frames[0], top_frames[-1], box=box, threshold=diff_threshold)
+        for name, box in crop_boxes.items()
+    }
+    diagnostics.update(
+        {
+            "checked": True,
+            "top_cam_frame_count": len(top_frames),
+            "top_cam_shape": [int(top_height), int(top_width)],
+            "crop_boxes_xyxy": {name: [int(v) for v in box] for name, box in crop_boxes.items()},
+            "changed_pixels": changed_pixels,
+            "min_arm_changed_pixels": int(
+                min(changed_pixels["top_left_arm_crop"], changed_pixels["top_right_arm_crop"])
+            ),
+            "max_arm_changed_pixels": int(
+                max(changed_pixels["top_left_arm_crop"], changed_pixels["top_right_arm_crop"])
+            ),
+            "max_changed_pixels": int(max(changed_pixels.values())),
+        }
+    )
+    if len(overview_frames) >= 2:
+        overview_height, overview_width = overview_frames[0].shape[:2]
+        overview_box = (
+            int(overview_width * 0.10),
+            int(overview_height * 0.10),
+            int(overview_width * 0.90),
+            int(overview_height * 0.95),
+        )
+        diagnostics["overview_changed_pixels"] = _changed_pixels(
+            overview_frames[0],
+            overview_frames[-1],
+            box=overview_box,
+            threshold=diff_threshold,
+        )
+        diagnostics["overview_crop_box_xyxy"] = [int(v) for v in overview_box]
+    diagnostics["passed"] = bool(int(diagnostics["min_arm_changed_pixels"]) >= int(min_changed_pixels))
+    return diagnostics
 
 
 def _root_state(device: torch.device, pos: list[float], quat_wxyz: list[float] | None = None) -> torch.Tensor:
@@ -551,37 +691,6 @@ def main() -> None:
         right_object = _spawn_right_object(object_records["right"], dynamic=dynamic_replay)
         task_env.scene.rigid_objects["right_object"] = right_object
 
-        stage = omni.usd.get_context().get_stage()
-        base_path = _find_body_prim_path(stage, MOLMOACT2_TOP_CAMERA_PARENT_BODY)
-        left_wrist_path = _find_body_prim_path(stage, MOLMOACT2_LEFT_WRIST_CAMERA_PARENT_BODY)
-        right_wrist_path = _find_body_prim_path(stage, MOLMOACT2_RIGHT_WRIST_CAMERA_PARENT_BODY)
-        _log(f"camera parents: top={base_path}, left={left_wrist_path}, right={right_wrist_path}")
-
-        cameras = {
-            "overview": _make_overview_camera(),
-            "top_cam": _make_policy_camera(
-                "top_cam",
-                base_path,
-                MOLMOACT2_TOP_CAMERA_LOCAL_POS,
-                MOLMOACT2_TOP_CAMERA_LOCAL_QUAT_WXYZ,
-                MOLMOACT2_TOP_CAMERA_INTRINSIC,
-            ),
-            "left_cam": _make_policy_camera(
-                "left_cam",
-                left_wrist_path,
-                MOLMOACT2_WRIST_CAMERA_LOCAL_POS,
-                MOLMOACT2_WRIST_CAMERA_LOCAL_QUAT_WXYZ,
-                MOLMOACT2_WRIST_CAMERA_INTRINSIC,
-            ),
-            "right_cam": _make_policy_camera(
-                "right_cam",
-                right_wrist_path,
-                MOLMOACT2_WRIST_CAMERA_LOCAL_POS,
-                MOLMOACT2_WRIST_CAMERA_LOCAL_QUAT_WXYZ,
-                MOLMOACT2_WRIST_CAMERA_INTRINSIC,
-            ),
-        }
-
         task_env.sim.reset()
         env.reset(seed=args_cli.seed)
         right_object.write_root_state_to_sim(_root_state(right_object.device, object_records["right"]["bimanual_center_world"]))
@@ -625,6 +734,39 @@ def main() -> None:
             _log(f"settling dynamic replay for {int(args_cli.settle_steps)} sim steps")
             _settle_dynamic_scene(task_env, robot, initial_joint_pos, sim_dt, int(args_cli.settle_steps))
 
+        stage = omni.usd.get_context().get_stage()
+        base_path = _find_body_prim_path(stage, MOLMOACT2_TOP_CAMERA_PARENT_BODY)
+        left_wrist_path = _find_body_prim_path(stage, MOLMOACT2_LEFT_WRIST_CAMERA_PARENT_BODY)
+        right_wrist_path = _find_body_prim_path(stage, MOLMOACT2_RIGHT_WRIST_CAMERA_PARENT_BODY)
+        _log(f"camera parents: top={base_path}, left={left_wrist_path}, right={right_wrist_path}")
+
+        cameras = {
+            "overview": _make_overview_camera(),
+            "top_cam": _make_policy_camera(
+                "top_cam",
+                base_path,
+                MOLMOACT2_TOP_CAMERA_LOCAL_POS,
+                MOLMOACT2_TOP_CAMERA_LOCAL_QUAT_WXYZ,
+                MOLMOACT2_TOP_CAMERA_INTRINSIC,
+            ),
+            "left_cam": _make_policy_camera(
+                "left_cam",
+                left_wrist_path,
+                MOLMOACT2_WRIST_CAMERA_LOCAL_POS,
+                MOLMOACT2_WRIST_CAMERA_LOCAL_QUAT_WXYZ,
+                MOLMOACT2_WRIST_CAMERA_INTRINSIC,
+            ),
+            "right_cam": _make_policy_camera(
+                "right_cam",
+                right_wrist_path,
+                MOLMOACT2_WRIST_CAMERA_LOCAL_POS,
+                MOLMOACT2_WRIST_CAMERA_LOCAL_QUAT_WXYZ,
+                MOLMOACT2_WRIST_CAMERA_INTRINSIC,
+            ),
+        }
+        _initialize_cameras(cameras)
+        _warmup_cameras(task_env, cameras, sim_dt, int(args_cli.warmup_render_updates))
+
         source_indices = range(len(frames)) if dynamic_replay else range(0, len(frames), render_stride)
         for source_frame_idx in source_indices:
             frame = frames[source_frame_idx]
@@ -658,7 +800,13 @@ def main() -> None:
             if not capture_frame:
                 continue
 
-            task_env.sim.render()
+            frame_images = _sync_render_and_update_cameras(
+                task_env=task_env,
+                cameras=cameras,
+                camera_dt=camera_dt,
+                force_recompute=bool(args_cli.force_camera_recompute),
+                render_sync_updates=int(args_cli.render_sync_updates),
+            )
             task_env.scene.update(sim_dt)
             left_state = _rigid_object_state_record(left_object)
             right_state = _rigid_object_state_record(right_object)
@@ -667,10 +815,7 @@ def main() -> None:
             left_metrics = _finger_metrics(robot, body_ids, "left", left_actual_pos)
             right_metrics = _finger_metrics(robot, body_ids, "right", right_actual_pos)
 
-            frame_images: dict[str, np.ndarray] = {}
-            for name, camera in cameras.items():
-                camera.update(camera_dt)
-                rgb = _rgb_to_array(camera.data.output["rgb"])
+            for name, rgb in frame_images.items():
                 frame_images[name] = rgb
                 video_frames[name].append(rgb)
                 _save_png(frames_dir / name / f"{len(composite_frames):04d}.png", rgb)
@@ -712,6 +857,15 @@ def main() -> None:
         composite_path = output_dir / "bimanual_yam_dual_pick_composite.mp4"
         _write_video(composite_path, composite_frames, args_cli.fps, args_cli.video_crf)
         video_paths["composite"] = str(composite_path)
+        visual_motion = (
+            _visual_motion_diagnostics(
+                video_frames,
+                min_changed_pixels=int(args_cli.visual_motion_min_changed_pixels),
+                diff_threshold=int(args_cli.visual_motion_diff_threshold),
+            )
+            if bool(args_cli.visual_motion_check)
+            else {"checked": False, "reason": "disabled"}
+        )
 
         metadata = {
             "task": args_cli.task,
@@ -729,11 +883,17 @@ def main() -> None:
                 "dynamic_rigidbody_contact_replay" if dynamic_replay else "kinematic_follow_link6_after_arm_attach_frame"
             ),
             "dynamic_replay": dynamic_replay,
+            "render_sync": {
+                "warmup_render_updates": int(args_cli.warmup_render_updates),
+                "render_sync_updates": int(args_cli.render_sync_updates),
+                "force_camera_recompute": bool(args_cli.force_camera_recompute),
+            },
             "dynamic_summary": _summarize_object_trace(
                 object_trace=object_trace,
                 object_records=object_records,
                 dynamic_replay=dynamic_replay,
             ),
+            "visual_motion_diagnostics": visual_motion,
             "object_trace": object_trace,
             "camera_parent_paths": {
                 "top_cam": base_path,
@@ -748,6 +908,10 @@ def main() -> None:
         _write_json(output_dir / "metadata.json", metadata)
         _log(f"composite video: {composite_path}")
         _log(f"metadata: {output_dir / 'metadata.json'}")
+        if bool(args_cli.fail_on_static_visual) and bool(args_cli.visual_motion_check) and not bool(
+            visual_motion.get("passed", False)
+        ):
+            raise RuntimeError(f"Visual motion check failed: {visual_motion}")
     finally:
         env.close()
 
