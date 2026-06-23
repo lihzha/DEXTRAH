@@ -1423,7 +1423,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--scripted_bin_drop_y_offset",
         type=float,
-        default=-0.08,
+        default=0.0,
         help="Object-center Y offset from the bin center for the scripted drop target.",
     )
     parser.add_argument("--target_x", type=float, default=YAM_TARGET_XY[0])
