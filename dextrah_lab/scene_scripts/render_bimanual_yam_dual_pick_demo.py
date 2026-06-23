@@ -474,8 +474,6 @@ def main() -> None:
             joint_pos[:, planned_ids] = q.unsqueeze(0)
             robot.write_joint_state_to_sim(joint_pos, joint_vel)
             robot.set_joint_position_target(joint_pos)
-            robot.write_data_to_sim()
-            robot.update(dt)
 
             left_pos = _object_position_for_frame(
                 robot=robot,
@@ -491,15 +489,14 @@ def main() -> None:
             )
             left_object.write_root_state_to_sim(_root_state(left_object.device, left_pos))
             right_object.write_root_state_to_sim(_root_state(right_object.device, right_pos))
-            left_object.update(dt)
-            right_object.update(dt)
 
-            for _ in range(max(1, int(args_cli.sim_steps_per_frame))):
-                task_env.sim.step(render=False)
+            task_env.scene.write_data_to_sim()
+            task_env.sim.forward()
+            task_env.scene.update(dt)
             task_env.sim.render()
-            robot.update(dt)
-            left_object.update(dt)
-            right_object.update(dt)
+            task_env.scene.update(dt)
+            actual_left_pos = [float(v) for v in left_object.data.root_pos_w[0].detach().cpu().tolist()]
+            actual_right_pos = [float(v) for v in right_object.data.root_pos_w[0].detach().cpu().tolist()]
 
             frame_images: dict[str, np.ndarray] = {}
             for name, camera in cameras.items():
@@ -517,6 +514,8 @@ def main() -> None:
                     "source_frame": source_frame_idx,
                     "left_position": left_pos,
                     "right_position": right_pos,
+                    "left_actual_position": actual_left_pos,
+                    "right_actual_position": actual_right_pos,
                     "left_phase": frame.get("left_phase"),
                     "right_phase": frame.get("right_phase"),
                 }
