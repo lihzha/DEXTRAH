@@ -152,10 +152,12 @@ def _planning_scene_for_object(
     selected_idx: int,
     *,
     start_joint_position: list[float] | None,
+    completed_indices: set[int] | None = None,
 ) -> dict[str, Any]:
     scene = copy.deepcopy(base_scene)
     selected = objects[selected_idx]
-    obstacles = [obj for idx, obj in enumerate(objects) if idx != selected_idx]
+    completed = set(completed_indices or set())
+    obstacles = [obj for idx, obj in enumerate(objects) if idx != selected_idx and idx not in completed]
     scene["target"] = _object_as_target(selected)
     scene["clutter"] = [_object_as_clutter(obj, slot_idx) for slot_idx, obj in enumerate(obstacles)]
     snapshots = scene.setdefault("snapshots", {})
@@ -170,6 +172,7 @@ def _planning_scene_for_object(
         "object_id": selected["object_id"],
         "source": selected["source"],
         "slot_idx": selected["slot_idx"],
+        "completed_object_ids": [str(objects[idx]["object_id"]) for idx in sorted(completed)],
         "obstacle_object_ids": [obj["object_id"] for obj in obstacles],
     }
     return scene
@@ -364,6 +367,7 @@ def main() -> None:
     trajectory_paths: list[Path] = []
     object_records: list[dict[str, Any]] = []
     object_summaries: list[dict[str, Any]] = []
+    completed_indices: set[int] = set()
     env = os.environ.copy()
 
     for sequence_idx, object_idx in enumerate(order):
@@ -376,6 +380,7 @@ def main() -> None:
             objects,
             object_idx,
             start_joint_position=current_joint,
+            completed_indices=completed_indices,
         )
         planning_scene_path = object_dir / "planning_scene.json"
         planning_scene_path.write_text(json.dumps(_jsonable(planning_scene), indent=2) + "\n", encoding="utf-8")
@@ -442,6 +447,7 @@ def main() -> None:
         current_joint = _trajectory_last_joint(trajectory_path)
         trajectory_paths.append(trajectory_path)
         object_records.append(obj)
+        completed_indices.add(object_idx)
         object_summaries.append(
             {
                 "object_id": object_id,
