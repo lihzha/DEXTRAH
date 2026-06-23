@@ -217,6 +217,76 @@ def _trajectory_last_joint(path: Path) -> list[float]:
     return [float(v) for v in joint]
 
 
+def _stable_start_joint(stable_scene: dict[str, Any]) -> list[float]:
+    robot = stable_scene.get("robot") if isinstance(stable_scene.get("robot"), dict) else {}
+    joint = robot.get("joint_position")
+    if isinstance(joint, list) and joint:
+        values = joint[0] if isinstance(joint[0], list) else joint
+        if isinstance(values, list) and values:
+            return [float(v) for v in values]
+    arm = robot.get("arm_joint_position")
+    fingers = robot.get("finger_joint_position")
+    if isinstance(arm, list) and arm and isinstance(fingers, list) and fingers:
+        arm_values = arm[0] if isinstance(arm[0], list) else arm
+        finger_values = fingers[0] if isinstance(fingers[0], list) else fingers
+        if isinstance(arm_values, list) and isinstance(finger_values, list):
+            return [float(v) for v in [*arm_values, *finger_values]]
+    raise ValueError("Stable scene is missing robot start joint_position")
+
+
+def _minimum_jerk(alpha: float) -> float:
+    a = max(0.0, min(1.0, float(alpha)))
+    return 10.0 * a**3 - 15.0 * a**4 + 6.0 * a**5
+
+
+def _append_return_to_start(path: Path, target_joint: list[float], frame_count: int) -> None:
+    if int(frame_count) <= 0:
+        return
+    payload = _load_json(path)
+    frames = payload.get("frames")
+    if not isinstance(frames, list) or not frames:
+        raise ValueError(f"Trajectory has no frames: {path}")
+    start_joint = frames[-1].get("joint_position") if isinstance(frames[-1], dict) else None
+    if not isinstance(start_joint, list):
+        raise ValueError(f"Last trajectory frame has no joint_position: {path}")
+    start = [float(v) for v in start_joint]
+    target = [float(v) for v in target_joint]
+    if len(start) != len(target):
+        raise ValueError(f"Return-to-start joint length mismatch: {len(start)} != {len(target)}")
+    parts = copy.deepcopy(frames[-1].get("parts")) if isinstance(frames[-1], dict) else None
+    segment_start = len(frames)
+    for idx in range(1, int(frame_count) + 1):
+        blend = _minimum_jerk(idx / float(frame_count))
+        joint = [float(s + blend * (t - s)) for s, t in zip(start, target, strict=True)]
+        frame = {"phase": "return_to_start_pose", "joint_position": joint}
+        if parts is not None:
+            frame["parts"] = copy.deepcopy(parts)
+        frames.append(frame)
+    segments = payload.setdefault("segments", [])
+    if isinstance(segments, list):
+        segments.append({"phase": "return_to_start_pose", "start": int(segment_start), "count": int(frame_count)})
+    payload["total_frames"] = int(len(frames))
+    path.write_text(json.dumps(_jsonable(payload), indent=2) + "\n", encoding="utf-8")
+
+
+def _placement_end_relative(payload: dict[str, Any], default: int) -> int:
+    placement_end = int(default)
+    segments = payload.get("segments")
+    if not isinstance(segments, list):
+        return placement_end
+    for segment in segments:
+        if not isinstance(segment, dict):
+            continue
+        phase = str(segment.get("phase") or "")
+        if phase == "return_to_start_pose":
+            continue
+        start = int(segment.get("start", 0))
+        count = int(segment.get("count", 0))
+        if count > 0:
+            placement_end = max(placement_end, start + count - 1)
+    return placement_end
+
+
 def _combine_trajectories(
     trajectory_paths: list[Path],
     object_records: list[dict[str, Any]],
@@ -270,6 +340,7 @@ def _combine_trajectories(
             if str(segment.get("object_id")) == str(record["object_id"])
             and int(segment.get("object_sequence_index", -1)) == int(object_idx)
         ]
+        placement_end_relative = _placement_end_relative(payload, len(frames) - 1)
         per_object.append(
             {
                 "object_id": str(record["object_id"]),
@@ -294,7 +365,7 @@ def _combine_trajectories(
                 "end_frame_exclusive": int(start + len(frames)),
                 "frame_count": int(len(frames)),
                 "pick_start_frame": int(start),
-                "placement_end_frame": int(start + len(frames) - 1),
+                "placement_end_frame": int(start + placement_end_relative),
                 "segments": object_segments,
             }
         )
@@ -346,6 +417,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--scripted_lift_height", type=float, default=0.14)
     parser.add_argument("--scripted_lift_frames", type=int, default=240)
     parser.add_argument("--start_guard_frames", type=int, default=60)
+    parser.add_argument("--return_to_start_frames", type=int, default=240)
     parser.add_argument("--yam_grasp_filter_min_keep", type=int, default=None)
     parser.add_argument("--yam_allow_lift_filter_fallback", action="store_true")
     return parser.parse_args()
@@ -368,6 +440,7 @@ def main() -> None:
     object_records: list[dict[str, Any]] = []
     object_summaries: list[dict[str, Any]] = []
     completed_indices: set[int] = set()
+    start_joint = _stable_start_joint(stable_scene)
     env = os.environ.copy()
 
     for sequence_idx, object_idx in enumerate(order):
@@ -444,7 +517,11 @@ def main() -> None:
         plan_summary = _load_json(plan_summary_path) if plan_summary_path.is_file() else {}
         if plan_summary.get("status") not in (None, "accepted"):
             raise RuntimeError(f"Planner did not accept {object_id}; see {plan_summary_path}")
-        current_joint = _trajectory_last_joint(trajectory_path)
+        if sequence_idx < len(order) - 1:
+            _append_return_to_start(trajectory_path, start_joint, int(args.return_to_start_frames))
+            current_joint = list(start_joint)
+        else:
+            current_joint = _trajectory_last_joint(trajectory_path)
         trajectory_paths.append(trajectory_path)
         object_records.append(obj)
         completed_indices.add(object_idx)

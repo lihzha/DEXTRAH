@@ -78,6 +78,7 @@ YAM_GRASP_FILTER_MIN_KEEP="${YAM_GRASP_FILTER_MIN_KEEP:-4}"
 YAM_ALLOW_LIFT_FILTER_FALLBACK="${YAM_ALLOW_LIFT_FILTER_FALLBACK:-False}"
 SCRIPTED_LIFT_HEIGHT="${SCRIPTED_LIFT_HEIGHT:-0.14}"
 SCRIPTED_LIFT_FRAMES="${SCRIPTED_LIFT_FRAMES:-240}"
+RETURN_TO_START_FRAMES="${RETURN_TO_START_FRAMES:-240}"
 MOVE_TO_BIN_FRAMES="${MOVE_TO_BIN_FRAMES:-360}"
 DROP_HEIGHT_ABOVE_BIN="${DROP_HEIGHT_ABOVE_BIN:-0.18}"
 SCRIPTED_BIN_DROP_Y_OFFSET="${SCRIPTED_BIN_DROP_Y_OFFSET:-0.0}"
@@ -306,6 +307,7 @@ run_planner() {
         --scripted_lift_mode always \
         --scripted_lift_height '$SCRIPTED_LIFT_HEIGHT' \
         --scripted_lift_frames '$SCRIPTED_LIFT_FRAMES' \
+        --return_to_start_frames '$RETURN_TO_START_FRAMES' \
         \"\${planner_extra_args[@]}\"
     "
 }
@@ -427,6 +429,7 @@ echo "SCRIPTED_BIN_DROP_Y_OFFSET=$SCRIPTED_BIN_DROP_Y_OFFSET"
 echo "SCRIPTED_BIN_DROP_Y_OFFSET_AFTER_FIRST=$SCRIPTED_BIN_DROP_Y_OFFSET_AFTER_FIRST"
 echo "YAM_GRASP_FILTER_MIN_KEEP=$YAM_GRASP_FILTER_MIN_KEEP"
 echo "YAM_ALLOW_LIFT_FILTER_FALLBACK=$YAM_ALLOW_LIFT_FILTER_FALLBACK"
+echo "RETURN_TO_START_FRAMES=$RETURN_TO_START_FRAMES"
 echo "POOL_MANIFEST=$POOL_MANIFEST"
 echo "SELECTED_OBJECTS_JSONL=${SELECTED_OBJECTS_JSONL:-unset}"
 echo "SHARD_DIR=$SHARD_DIR"
@@ -445,7 +448,8 @@ json_event "collector_start" \
   "scripted_bin_drop_y_offset=$SCRIPTED_BIN_DROP_Y_OFFSET" \
   "scripted_bin_drop_y_offset_after_first=$SCRIPTED_BIN_DROP_Y_OFFSET_AFTER_FIRST" \
   "yam_grasp_filter_min_keep=$YAM_GRASP_FILTER_MIN_KEEP" \
-  "yam_allow_lift_filter_fallback=$YAM_ALLOW_LIFT_FILTER_FALLBACK"
+  "yam_allow_lift_filter_fallback=$YAM_ALLOW_LIFT_FILTER_FALLBACK" \
+  "return_to_start_frames=$RETURN_TO_START_FRAMES"
 
 accepted=0
 attempt=0
@@ -584,6 +588,7 @@ summary = {
     "tabletop_clutter_asset_assignment": "$TABLETOP_CLUTTER_ASSET_ASSIGNMENT",
     "yam_grasp_filter_min_keep": int("$YAM_GRASP_FILTER_MIN_KEEP"),
     "yam_allow_lift_filter_fallback": "$YAM_ALLOW_LIFT_FILTER_FALLBACK",
+    "return_to_start_frames": int("$RETURN_TO_START_FRAMES"),
     "code_commit": "${CODE_COMMIT:-unknown}",
 }
 path = Path("$SHARD_DIR/summary.json")
