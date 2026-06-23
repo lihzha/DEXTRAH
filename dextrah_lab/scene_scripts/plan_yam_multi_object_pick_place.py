@@ -152,10 +152,12 @@ def _planning_scene_for_object(
     selected_idx: int,
     *,
     start_joint_position: list[float] | None,
+    completed_indices: set[int] | None = None,
 ) -> dict[str, Any]:
     scene = copy.deepcopy(base_scene)
     selected = objects[selected_idx]
-    obstacles = [obj for idx, obj in enumerate(objects) if idx != selected_idx]
+    completed = set(completed_indices or set())
+    obstacles = [obj for idx, obj in enumerate(objects) if idx != selected_idx and idx not in completed]
     scene["target"] = _object_as_target(selected)
     scene["clutter"] = [_object_as_clutter(obj, slot_idx) for slot_idx, obj in enumerate(obstacles)]
     snapshots = scene.setdefault("snapshots", {})
@@ -170,6 +172,7 @@ def _planning_scene_for_object(
         "object_id": selected["object_id"],
         "source": selected["source"],
         "slot_idx": selected["slot_idx"],
+        "completed_object_ids": [str(objects[idx]["object_id"]) for idx in sorted(completed)],
         "obstacle_object_ids": [obj["object_id"] for obj in obstacles],
     }
     return scene
@@ -212,6 +215,76 @@ def _trajectory_last_joint(path: Path) -> list[float]:
     if not isinstance(joint, list):
         raise ValueError(f"Last trajectory frame has no joint_position: {path}")
     return [float(v) for v in joint]
+
+
+def _stable_start_joint(stable_scene: dict[str, Any]) -> list[float]:
+    robot = stable_scene.get("robot") if isinstance(stable_scene.get("robot"), dict) else {}
+    joint = robot.get("joint_position")
+    if isinstance(joint, list) and joint:
+        values = joint[0] if isinstance(joint[0], list) else joint
+        if isinstance(values, list) and values:
+            return [float(v) for v in values]
+    arm = robot.get("arm_joint_position")
+    fingers = robot.get("finger_joint_position")
+    if isinstance(arm, list) and arm and isinstance(fingers, list) and fingers:
+        arm_values = arm[0] if isinstance(arm[0], list) else arm
+        finger_values = fingers[0] if isinstance(fingers[0], list) else fingers
+        if isinstance(arm_values, list) and isinstance(finger_values, list):
+            return [float(v) for v in [*arm_values, *finger_values]]
+    raise ValueError("Stable scene is missing robot start joint_position")
+
+
+def _minimum_jerk(alpha: float) -> float:
+    a = max(0.0, min(1.0, float(alpha)))
+    return 10.0 * a**3 - 15.0 * a**4 + 6.0 * a**5
+
+
+def _append_return_to_start(path: Path, target_joint: list[float], frame_count: int) -> None:
+    if int(frame_count) <= 0:
+        return
+    payload = _load_json(path)
+    frames = payload.get("frames")
+    if not isinstance(frames, list) or not frames:
+        raise ValueError(f"Trajectory has no frames: {path}")
+    start_joint = frames[-1].get("joint_position") if isinstance(frames[-1], dict) else None
+    if not isinstance(start_joint, list):
+        raise ValueError(f"Last trajectory frame has no joint_position: {path}")
+    start = [float(v) for v in start_joint]
+    target = [float(v) for v in target_joint]
+    if len(start) != len(target):
+        raise ValueError(f"Return-to-start joint length mismatch: {len(start)} != {len(target)}")
+    parts = copy.deepcopy(frames[-1].get("parts")) if isinstance(frames[-1], dict) else None
+    segment_start = len(frames)
+    for idx in range(1, int(frame_count) + 1):
+        blend = _minimum_jerk(idx / float(frame_count))
+        joint = [float(s + blend * (t - s)) for s, t in zip(start, target, strict=True)]
+        frame = {"phase": "return_to_start_pose", "joint_position": joint}
+        if parts is not None:
+            frame["parts"] = copy.deepcopy(parts)
+        frames.append(frame)
+    segments = payload.setdefault("segments", [])
+    if isinstance(segments, list):
+        segments.append({"phase": "return_to_start_pose", "start": int(segment_start), "count": int(frame_count)})
+    payload["total_frames"] = int(len(frames))
+    path.write_text(json.dumps(_jsonable(payload), indent=2) + "\n", encoding="utf-8")
+
+
+def _placement_end_relative(payload: dict[str, Any], default: int) -> int:
+    placement_end = int(default)
+    segments = payload.get("segments")
+    if not isinstance(segments, list):
+        return placement_end
+    for segment in segments:
+        if not isinstance(segment, dict):
+            continue
+        phase = str(segment.get("phase") or "")
+        if phase == "return_to_start_pose":
+            continue
+        start = int(segment.get("start", 0))
+        count = int(segment.get("count", 0))
+        if count > 0:
+            placement_end = max(placement_end, start + count - 1)
+    return placement_end
 
 
 def _combine_trajectories(
@@ -260,14 +333,40 @@ def _combine_trajectories(
         target_grasp = annotations.get("target_tool_transform") or annotations.get("target_grasp_transform")
         if target_grasp is not None:
             selected_grasps.append(target_grasp)
+        asset = record.get("asset") if isinstance(record.get("asset"), dict) else {}
+        object_segments = [
+            segment
+            for segment in combined_segments
+            if str(segment.get("object_id")) == str(record["object_id"])
+            and int(segment.get("object_sequence_index", -1)) == int(object_idx)
+        ]
+        placement_end_relative = _placement_end_relative(payload, len(frames) - 1)
         per_object.append(
             {
                 "object_id": str(record["object_id"]),
                 "source": str(record["source"]),
                 "slot_idx": record["slot_idx"],
+                "uuid": str(asset.get("uuid") or ""),
+                "name": str(asset.get("name") or asset.get("metadata_text") or asset.get("uuid") or record["object_id"]),
+                "asset": {
+                    "uuid": str(asset.get("uuid") or ""),
+                    "name": str(asset.get("name") or ""),
+                    "metadata_text": str(asset.get("metadata_text") or ""),
+                    "usd_path": str(asset.get("usd_path") or ""),
+                    "raw_object_path": str(asset.get("raw_object_path") or ""),
+                    "grasp_prior_path": str(asset.get("grasp_prior_path") or ""),
+                    "scale": asset.get("scale"),
+                    "xy_radius": asset.get("xy_radius"),
+                    "scaled_half_extents": copy.deepcopy(asset.get("scaled_half_extents")),
+                },
                 "trajectory_path": str(path),
                 "start_frame": int(start),
+                "end_frame": int(start + len(frames) - 1),
+                "end_frame_exclusive": int(start + len(frames)),
                 "frame_count": int(len(frames)),
+                "pick_start_frame": int(start),
+                "placement_end_frame": int(start + placement_end_relative),
+                "segments": object_segments,
             }
         )
 
@@ -287,6 +386,7 @@ def _combine_trajectories(
         "frames": combined_frames,
         "segments": combined_segments,
         "phase_source": "stitched_multi_object_dextrah_task_segments",
+        "object_count": int(len(per_object)),
         "object_sequence": per_object,
     }
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -311,11 +411,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max_plan_attempts", type=int, default=32)
     parser.add_argument("--move_to_bin_frames", type=int, default=360)
     parser.add_argument("--drop_height_above_bin", type=float, default=0.18)
-    parser.add_argument("--scripted_bin_drop_y_offset", type=float, default=-0.08)
+    parser.add_argument("--scripted_bin_drop_y_offset", type=float, default=0.0)
+    parser.add_argument("--scripted_bin_drop_y_offset_after_first", type=float, default=None)
     parser.add_argument("--scripted_lift_mode", choices=("fallback", "always", "never"), default="always")
     parser.add_argument("--scripted_lift_height", type=float, default=0.14)
     parser.add_argument("--scripted_lift_frames", type=int, default=240)
     parser.add_argument("--start_guard_frames", type=int, default=60)
+    parser.add_argument("--return_to_start_frames", type=int, default=240)
+    parser.add_argument("--strict_object_order", action="store_true")
+    parser.add_argument("--yam_grasp_filter_min_keep", type=int, default=None)
+    parser.add_argument("--yam_allow_lift_filter_fallback", action="store_true")
     return parser.parse_args()
 
 
@@ -335,103 +440,174 @@ def main() -> None:
     trajectory_paths: list[Path] = []
     object_records: list[dict[str, Any]] = []
     object_summaries: list[dict[str, Any]] = []
+    completed_indices: set[int] = set()
+    planning_failures: list[dict[str, Any]] = []
+    start_joint = _stable_start_joint(stable_scene)
     env = os.environ.copy()
 
-    for sequence_idx, object_idx in enumerate(order):
-        obj = objects[object_idx]
-        object_id = str(obj["object_id"])
-        object_dir = output_dir / f"{sequence_idx:02d}_{object_id}"
-        object_dir.mkdir(parents=True, exist_ok=True)
-        planning_scene = _planning_scene_for_object(
-            stable_scene,
-            objects,
-            object_idx,
-            start_joint_position=current_joint,
-        )
-        planning_scene_path = object_dir / "planning_scene.json"
-        planning_scene_path.write_text(json.dumps(_jsonable(planning_scene), indent=2) + "\n", encoding="utf-8")
-        cmd = [
-            str(args.python),
-            str(args.planner_script.expanduser().resolve()),
-            "--stable_scene_path",
-            str(planning_scene_path),
-            "--output_dir",
-            str(object_dir),
-            "--run_name",
-            args.run_name or f"yam_multi_{sequence_idx:02d}_{object_id}",
-            "--seed",
-            str(int(args.seed) + sequence_idx),
-            "--num_grasps",
-            str(int(args.num_grasps)),
-            "--topk",
-            str(int(args.topk)),
-            "--max_plan_attempts",
-            str(int(args.max_plan_attempts)),
-            "--plan_task",
-            "pick_and_drop_in_bin",
-            "--scripted_place_fallback",
-            "--move_to_bin_frames",
-            str(int(args.move_to_bin_frames)),
-            "--drop_height_above_bin",
-            str(float(args.drop_height_above_bin)),
-            "--scripted_lift_mode",
-            str(args.scripted_lift_mode),
-            "--scripted_lift_height",
-            str(float(args.scripted_lift_height)),
-            "--scripted_lift_frames",
-            str(int(args.scripted_lift_frames)),
-            "--scripted_bin_drop_y_offset",
-            str(float(args.scripted_bin_drop_y_offset)),
-            "--start_guard_frames",
-            str(int(args.start_guard_frames)),
-        ]
-        if args.graspgenx_root is not None:
-            cmd.extend(["--graspgenx_root", str(args.graspgenx_root.expanduser().resolve())])
-        if args.curobo_root is not None:
-            cmd.extend(["--curobo_root", str(args.curobo_root.expanduser().resolve())])
-        log_path = object_dir / "planner_stdout_stderr.log"
-        with log_path.open("w", encoding="utf-8") as log_file:
-            print(json.dumps({"event": "planning_object_start", "object_id": object_id, "cmd": cmd}), flush=True)
-            result = subprocess.run(cmd, stdout=log_file, stderr=subprocess.STDOUT, text=True, env=env, check=False)
-        if result.returncode != 0:
-            raise RuntimeError(f"Planner failed for {object_id}; see {log_path}")
-        plan_dir = object_dir / (args.run_name or f"yam_multi_{sequence_idx:02d}_{object_id}")
-        trajectory_path = plan_dir / "trajectory.json"
-        plan_summary_path = plan_dir / "plan_summary.json"
-        if not trajectory_path.is_file():
-            raise FileNotFoundError(f"Missing trajectory for {object_id}: {trajectory_path}")
-        plan_summary = _load_json(plan_summary_path) if plan_summary_path.is_file() else {}
-        if plan_summary.get("status") not in (None, "accepted"):
-            raise RuntimeError(f"Planner did not accept {object_id}; see {plan_summary_path}")
-        current_joint = _trajectory_last_joint(trajectory_path)
-        trajectory_paths.append(trajectory_path)
-        object_records.append(obj)
-        object_summaries.append(
-            {
-                "object_id": object_id,
-                "source": obj["source"],
-                "slot_idx": obj["slot_idx"],
-                "planning_scene_path": str(planning_scene_path),
-                "plan_dir": str(plan_dir),
-                "trajectory_path": str(trajectory_path),
-                "plan_summary_path": str(plan_summary_path),
-                "selected_grasp_confidence": plan_summary.get("selected_grasp_confidence"),
-                "scripted_place": plan_summary.get("diagnostics", {}).get("scripted_place")
-                if isinstance(plan_summary.get("diagnostics"), dict)
-                else None,
-            }
-        )
-        print(
-            json.dumps(
-                {
-                    "event": "planning_object_done",
+    remaining = list(order)
+    sequence_idx = 0
+    while remaining:
+        candidates = [remaining[0]] if bool(args.strict_object_order) else list(remaining)
+        step_failures: list[dict[str, Any]] = []
+        planned = False
+        for candidate_rank, object_idx in enumerate(candidates):
+            obj = objects[object_idx]
+            object_id = str(obj["object_id"])
+            object_dir = output_dir / f"{sequence_idx:02d}_{candidate_rank:02d}_{object_id}"
+            object_dir.mkdir(parents=True, exist_ok=True)
+            planning_scene = _planning_scene_for_object(
+                stable_scene,
+                objects,
+                object_idx,
+                start_joint_position=current_joint,
+                completed_indices=completed_indices,
+            )
+            planning_scene_path = object_dir / "planning_scene.json"
+            planning_scene_path.write_text(json.dumps(_jsonable(planning_scene), indent=2) + "\n", encoding="utf-8")
+            drop_y_offset = float(args.scripted_bin_drop_y_offset)
+            if sequence_idx > 0 and args.scripted_bin_drop_y_offset_after_first is not None:
+                drop_y_offset = float(args.scripted_bin_drop_y_offset_after_first)
+            run_name = args.run_name or f"yam_multi_{sequence_idx:02d}_{candidate_rank:02d}_{object_id}"
+            cmd = [
+                str(args.python),
+                str(args.planner_script.expanduser().resolve()),
+                "--stable_scene_path",
+                str(planning_scene_path),
+                "--output_dir",
+                str(object_dir),
+                "--run_name",
+                run_name,
+                "--seed",
+                str(int(args.seed) + sequence_idx * 100 + candidate_rank),
+                "--num_grasps",
+                str(int(args.num_grasps)),
+                "--topk",
+                str(int(args.topk)),
+                "--max_plan_attempts",
+                str(int(args.max_plan_attempts)),
+                "--plan_task",
+                "pick_and_drop_in_bin",
+                "--scripted_place_fallback",
+                "--move_to_bin_frames",
+                str(int(args.move_to_bin_frames)),
+                "--drop_height_above_bin",
+                str(float(args.drop_height_above_bin)),
+                "--scripted_lift_mode",
+                str(args.scripted_lift_mode),
+                "--scripted_lift_height",
+                str(float(args.scripted_lift_height)),
+                "--scripted_lift_frames",
+                str(int(args.scripted_lift_frames)),
+                "--scripted_bin_drop_y_offset",
+                str(float(drop_y_offset)),
+                "--start_guard_frames",
+                str(int(args.start_guard_frames)),
+            ]
+            if args.yam_grasp_filter_min_keep is not None:
+                cmd.extend(["--yam_grasp_filter_min_keep", str(int(args.yam_grasp_filter_min_keep))])
+            if bool(args.yam_allow_lift_filter_fallback):
+                cmd.append("--yam_allow_lift_filter_fallback")
+            if args.graspgenx_root is not None:
+                cmd.extend(["--graspgenx_root", str(args.graspgenx_root.expanduser().resolve())])
+            if args.curobo_root is not None:
+                cmd.extend(["--curobo_root", str(args.curobo_root.expanduser().resolve())])
+            log_path = object_dir / "planner_stdout_stderr.log"
+            print(
+                json.dumps(
+                    {
+                        "event": "planning_object_start",
+                        "object_id": object_id,
+                        "sequence_idx": sequence_idx,
+                        "candidate_rank": candidate_rank,
+                        "remaining_object_ids": [str(objects[idx]["object_id"]) for idx in remaining],
+                        "cmd": cmd,
+                    }
+                ),
+                flush=True,
+            )
+            with log_path.open("w", encoding="utf-8") as log_file:
+                result = subprocess.run(cmd, stdout=log_file, stderr=subprocess.STDOUT, text=True, env=env, check=False)
+            plan_dir = object_dir / run_name
+            trajectory_path = plan_dir / "trajectory.json"
+            plan_summary_path = plan_dir / "plan_summary.json"
+            plan_summary = _load_json(plan_summary_path) if plan_summary_path.is_file() else {}
+            failure_reason: str | None = None
+            if result.returncode != 0:
+                failure_reason = f"planner_returncode_{result.returncode}"
+            elif not trajectory_path.is_file():
+                failure_reason = "trajectory_missing"
+            elif plan_summary.get("status") not in (None, "accepted"):
+                failure_reason = f"planner_status_{plan_summary.get('status')}"
+            if failure_reason is not None:
+                failure = {
                     "object_id": object_id,
-                    "trajectory_path": str(trajectory_path),
-                    "last_joint_position": current_joint,
+                    "source": obj["source"],
+                    "slot_idx": obj["slot_idx"],
+                    "sequence_idx": sequence_idx,
+                    "candidate_rank": candidate_rank,
+                    "reason": failure_reason,
+                    "planning_scene_path": str(planning_scene_path),
+                    "plan_dir": str(plan_dir),
+                    "plan_summary_path": str(plan_summary_path),
+                    "log_path": str(log_path),
+                    "planner_status": plan_summary.get("planner_status"),
+                    "num_grasps": plan_summary.get("num_grasps"),
                 }
-            ),
-            flush=True,
-        )
+                step_failures.append(failure)
+                planning_failures.append(failure)
+                print(json.dumps({"event": "planning_object_rejected", **failure}), flush=True)
+                continue
+
+            if len(remaining) > 1:
+                _append_return_to_start(trajectory_path, start_joint, int(args.return_to_start_frames))
+                current_joint = list(start_joint)
+            else:
+                current_joint = _trajectory_last_joint(trajectory_path)
+            trajectory_paths.append(trajectory_path)
+            object_records.append(obj)
+            completed_indices.add(object_idx)
+            remaining.remove(object_idx)
+            object_summaries.append(
+                {
+                    "object_id": object_id,
+                    "source": obj["source"],
+                    "slot_idx": obj["slot_idx"],
+                    "sequence_idx": sequence_idx,
+                    "candidate_rank": candidate_rank,
+                    "planning_scene_path": str(planning_scene_path),
+                    "plan_dir": str(plan_dir),
+                    "trajectory_path": str(trajectory_path),
+                    "plan_summary_path": str(plan_summary_path),
+                    "selected_grasp_confidence": plan_summary.get("selected_grasp_confidence"),
+                    "scripted_place": plan_summary.get("diagnostics", {}).get("scripted_place")
+                    if isinstance(plan_summary.get("diagnostics"), dict)
+                    else None,
+                }
+            )
+            print(
+                json.dumps(
+                    {
+                        "event": "planning_object_done",
+                        "object_id": object_id,
+                        "sequence_idx": sequence_idx,
+                        "candidate_rank": candidate_rank,
+                        "trajectory_path": str(trajectory_path),
+                        "last_joint_position": current_joint,
+                    }
+                ),
+                flush=True,
+            )
+            sequence_idx += 1
+            planned = True
+            break
+        if not planned:
+            failure_path = output_dir / "planning_failures.json"
+            failure_path.write_text(json.dumps(_jsonable(planning_failures), indent=2) + "\n", encoding="utf-8")
+            raise RuntimeError(
+                "No remaining object could be planned at sequence "
+                f"{sequence_idx}; failures written to {failure_path}; step_failures={step_failures}"
+            )
 
     combined_path = output_dir / "trajectory.json"
     combined = _combine_trajectories(trajectory_paths, object_records, combined_path)
@@ -456,7 +632,9 @@ def main() -> None:
         "trajectory_json": str(combined_path),
         "grasp_pose_overlay": str(overlay_path),
         "object_order": [objects[idx]["object_id"] for idx in order],
+        "planned_object_order": [record["object_id"] for record in object_records],
         "objects": object_summaries,
+        "planning_failures": planning_failures,
         "total_frames": int(combined["total_frames"]),
         "fps": int(combined["fps"]),
     }
