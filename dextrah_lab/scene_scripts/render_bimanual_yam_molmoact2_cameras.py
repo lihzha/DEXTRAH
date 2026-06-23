@@ -63,7 +63,7 @@ from isaaclab.sensors.camera import Camera, CameraCfg  # noqa: E402
 from isaaclab_tasks.utils import parse_env_cfg  # noqa: E402
 
 _log("importing DEXTRAH task and MolmoAct2 constants")
-import dextrah_lab.tasks.dextrah_bimanual_yam_cube_grasp  # noqa: F401,E402
+import dextrah_lab.tasks.dextrah_bimanual_yam_cube_grasp.gym_setup  # noqa: F401,E402
 from dextrah_lab.assets.yam.bimanual_yam import (  # noqa: E402
     MOLMOACT2_CAMERA_HEIGHT,
     MOLMOACT2_CAMERA_ORDER,

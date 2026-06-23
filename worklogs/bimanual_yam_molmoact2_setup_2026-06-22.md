@@ -51,3 +51,22 @@ OMNI_KIT_ACCEPT_EULA=YES ACCEPT_EULA=Y PRIVACY_CONSENT=Y CI=1 NONINTERACTIVE=1 P
   - `bimanual_yam_linear_flattened.usd`
 - Setup-only Isaac validation passed with metrics at `/tmp/dextrah_bimanual_yam_molmoact2_setup_validate/metrics.json`.
 - Full scripted pickup validation was also run once. All setup checks passed, but the existing scripted cube pickup failed after switching to the original home qpos because the controller missed contact by about 1.4 mm and did not lift. Metrics are at `/tmp/dextrah_bimanual_yam_molmoact2_validate/metrics.json`. This is tracked as a scripted-controller issue, not a setup-alignment failure.
+
+## Camera Visualization Follow-up
+
+- Added `dextrah_lab/scene_scripts/render_bimanual_yam_molmoact2_cameras.py` to render the overview, `top_cam`, `left_cam`, and `right_cam` streams with the shared MolmoAct2 camera constants.
+- Added `cluster/sbatch_render_bimanual_yam_molmoact2_cameras_1gpu.sh` for l401 fallback rendering.
+- Local strict headless render attempts reached Isaac/Kit startup but one run hit Vulkan `ERROR_DEVICE_LOST` and later runs stalled before project logs, so the render was moved to l401 per the Isaac Lab fallback guidance.
+- Committed local changes as `78b99de4d3e61b9b80981db09650a015707f6b32` on `codex/yam-molmoact2-alignment`.
+- l401 could not fetch GitHub directly due SSH public-key denial, so the commit was transferred as a Git bundle and fetched into the fixed remote repo.
+- Remote worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-molmoact2-camera-viz-78b99de`, detached at `78b99de4d3e61b9b80981db09650a015707f6b32`.
+- Submitted l401 smoke render job `1039396`:
+
+```bash
+sbatch --parsable --exclude=pool0-00006,pool0-00032 --export=ALL,CODE_NFS=/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-molmoact2-camera-viz-78b99de,CODE_COMMIT=78b99de4d3e61b9b80981db09650a015707f6b32,RUN_NAME=yam_molmoact2_camviz_smoke_78b99de_20260622T1624,FRAMES=3,FPS=3,SIM_STEPS_PER_FRAME=1,DISABLE_FABRIC=True,PREPARE_YAM_ASSETS=auto cluster/sbatch_render_bimanual_yam_molmoact2_cameras_1gpu.sh
+```
+
+- Tried one additional local run with `--rendering_mode performance`; it also stalled before project logs and was stopped.
+- Replaced pending smoke job `1039396` with leaner job `1039397` (`8` CPUs, `32G`, `10` minutes) using run name `yam_molmoact2_camviz_smoke_78b99de_20260622T1630`. Slurm estimated start: `2026-06-22T17:29:51` on `pool0-00009`.
+- Job `1039397` started early on `pool0-00012` and failed during asset preparation because the D405 wrist camera mesh was not present in the detached l401 worktree. The real local D405 STL/OBJ plus generated collision/mount meshes were copied into the ignored remote asset directory for the render smoke.
+- Job `1039404` then reached project code on `pool0-00009` but failed because the render script imported the package `__init__` instead of the `gym_setup` registration module. Patched the script to import `dextrah_lab.tasks.dextrah_bimanual_yam_cube_grasp.gym_setup`.
