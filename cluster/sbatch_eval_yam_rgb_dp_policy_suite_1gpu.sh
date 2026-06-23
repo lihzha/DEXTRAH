@@ -552,7 +552,7 @@ srun \
       local expected_objects="$2"
       local stable_scene_container="$3"
       set +e
-      python3 /code/dextrah_lab/scene_scripts/validate_yam_pick_place_dataset.py \
+      /isaac-sim/python.sh /code/dextrah_lab/scene_scripts/validate_yam_pick_place_dataset.py \
         --dataset_path "$RUN_DIR_CONTAINER/$case_name/trajectory_dataset.npz" \
         --metrics_path "$RUN_DIR_CONTAINER/$case_name/metrics.json" \
         --stable_scene_path "$stable_scene_container" \
@@ -573,7 +573,7 @@ srun \
     validate_case id "$ID_EXPECTED_OBJECTS_RESOLVED" "$(container_path_arg "$ID_STABLE_SCENE_HOST")"
     validate_case ood "$OOD_EXPECTED_OBJECTS_RESOLVED" "$RUN_DIR_CONTAINER/ood/stable_scene.json"
 
-    python3 - "$RUN_DIR_CONTAINER" "$CHECKPOINT_HOST" "$CODE_COMMIT" <<'"'"'PY'"'"'
+    /isaac-sim/python.sh - "$RUN_DIR_CONTAINER" "$CHECKPOINT_HOST" "$CODE_COMMIT" <<'"'"'PY'"'"'
 import json
 import sys
 from pathlib import Path
