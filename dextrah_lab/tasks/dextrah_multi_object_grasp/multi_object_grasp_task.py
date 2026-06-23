@@ -633,19 +633,24 @@ class MultiObjectGraspTaskMixin:
             object_uuids = [str(asset.get("uuid") or "") for asset in getattr(self, "_object_assets", [])]
             clutter_uuids = [str(asset.get("uuid") or "") for asset in self._tabletop_clutter_assets]
             same_pool_order = object_uuids == clutter_uuids and len(object_uuids) == self.num_unique_tabletop_clutter_objects
-            available_count = self.num_unique_tabletop_clutter_objects - (1 if same_pool_order else 0)
+            target_overlap = bool(set(object_uuids) & set(clutter_uuids))
+            available_count = self.num_unique_tabletop_clutter_objects - (1 if target_overlap else 0)
             if self.tabletop_clutter_object_count > available_count:
                 raise ValueError(
                     "tabletop_clutter_object_count exceeds distinct asset capacity: "
                     f"count={self.tabletop_clutter_object_count}, available={available_count}, "
-                    f"same_pool_order={same_pool_order}"
+                    f"same_pool_order={same_pool_order}, target_overlap={target_overlap}"
                 )
             rows: list[torch.Tensor] = []
             for env_idx in range(self.num_envs):
                 perm = torch.randperm(self.num_unique_tabletop_clutter_objects, device=self.device)
-                if same_pool_order:
+                if target_overlap:
                     target_idx = int(self.object_asset_index[env_idx].detach().cpu().item())
-                    perm = perm[perm != target_idx]
+                    target_uuid = object_uuids[target_idx] if 0 <= target_idx < len(object_uuids) else ""
+                    if target_uuid:
+                        for clutter_idx, clutter_uuid in enumerate(clutter_uuids):
+                            if clutter_uuid == target_uuid:
+                                perm = perm[perm != int(clutter_idx)]
                 rows.append(perm[: self.tabletop_clutter_object_count].long())
             index_flat = torch.stack(rows, dim=0).reshape(-1)
         else:
