@@ -314,3 +314,20 @@
   - inspection frames extracted to `artifacts/yam_two_bin_iterative_original_size_continuous_home_final/inspection_frames`.
   - sampled frames showed valid side-by-side default/top-down panes, two objects in the goal bin by the final frame, and the remaining failed objects still in the source bin.
 - Process cleanup check found no active demo Isaac/planner/render jobs after completion.
+
+## 2026-06-23 22:39 PDT
+
+- Started branch `codex/yam-success-all-20260623T223903Z` from updated `main` to improve all-object pick-and-place success without changing the environment.
+- Baseline artifact diagnosis from the prior adaptive run showed most failures were physical grasp failures (`no contact` / `insufficient lift`), not bin-drop failures.
+- Patch in progress in `run_yam_iterative_bin_clear_demo.py`:
+  - retries now cycle YAM grasp-to-tool z offsets, clutter collision margins, and planning finger preclose values per object attempt;
+  - validation failures are classified into coarse causes such as `no_near_contact`, `no_lift_after_close`, and `not_in_goal_bin`;
+  - selected grasp candidates are no longer excluded after one physical failure; `--candidate_failure_limit` controls when to blacklist them.
+- Static checks passed:
+  - `/home/lzha/code/.venvs/dextrah-isaaclab/bin/python -m py_compile dextrah_lab/scene_scripts/run_yam_iterative_bin_clear_demo.py dextrah_lab/scene_scripts/plan_yam_graspgenx_curobo.py dextrah_lab/scene_scripts/validate_yam_pick_place_dataset.py`
+  - `git diff --check`
+- Copied the original-size stable-scene artifact into this worktree and rewrote primitive raw mesh references to local branch paths.
+- Next run:
+  - output: `artifacts/yam_two_bin_success_profile_smoke`
+  - continuous/headless demo, no environment reset between attempts;
+  - first bounded smoke to check whether the retry profiles improve contact/lift before running a full all-object pass.

@@ -349,6 +349,30 @@ def _planning_finger_options(args: argparse.Namespace, base_finger_joint: float)
     return [float(v) for v in _unique_floats([min(0.0, base + float(offset)) for offset in offsets])]
 
 
+def _cycled_option(values: list[float], attempt_number: int, default: float) -> float:
+    if not values:
+        return float(default)
+    return float(values[(max(1, int(attempt_number)) - 1) % len(values)])
+
+
+def _planner_tool_z_options(args: argparse.Namespace) -> list[float]:
+    explicit = _parse_float_list(str(args.planner_yam_grasp_to_tool_z_values))
+    if explicit:
+        return [float(v) for v in _unique_floats(explicit)]
+    offsets = _parse_float_list(str(args.planner_yam_grasp_to_tool_z_offsets))
+    base = float(args.planner_yam_grasp_to_tool_z)
+    return [float(v) for v in _unique_floats([base + float(offset) for offset in offsets])] or [base]
+
+
+def _planner_clutter_margin_options(args: argparse.Namespace) -> list[float]:
+    explicit = _parse_float_list(str(args.planner_clutter_margin_values))
+    if explicit:
+        return [float(v) for v in _unique_floats(explicit)]
+    offsets = _parse_float_list(str(args.planner_clutter_margin_offsets))
+    base = float(args.planner_clutter_margin)
+    return [float(v) for v in _unique_floats([base + float(offset) for offset in offsets])] or [base]
+
+
 def _append_pythonpath(env: dict[str, str], paths: list[Path | None]) -> None:
     existing = env.get("PYTHONPATH", "")
     values = [str(path) for path in paths if path is not None]
@@ -423,6 +447,8 @@ def _plan_iteration(
     drop_y_offset: float,
     attempt_number: int,
     planning_finger_joint_position: float | None,
+    planner_yam_grasp_to_tool_z: float,
+    planner_clutter_margin: float,
     excluded_grasp_original_indices: set[int],
 ) -> dict[str, Any]:
     plan_output_dir = iteration_dir / "plan"
@@ -464,11 +490,11 @@ def _plan_iteration(
         "--start_guard_frames",
         str(int(args.start_guard_frames)),
         "--clutter_margin",
-        str(float(args.planner_clutter_margin)),
+        str(float(planner_clutter_margin)),
         "--yam_grasp_filter_min_keep",
         str(int(args.yam_grasp_filter_min_keep)),
         "--yam_grasp_to_tool_z",
-        str(float(args.planner_yam_grasp_to_tool_z)),
+        str(float(planner_yam_grasp_to_tool_z)),
     ]
     if planning_finger_joint_position is not None:
         cmd.extend(["--planning_finger_joint_position", str(float(planning_finger_joint_position))])
@@ -508,6 +534,8 @@ def _plan_iteration(
         "planning_finger_joint_position": None
         if planning_finger_joint_position is None
         else float(planning_finger_joint_position),
+        "planner_yam_grasp_to_tool_z": float(planner_yam_grasp_to_tool_z),
+        "planner_clutter_margin": float(planner_clutter_margin),
         "scripted_bin_drop_y_offset": float(drop_y_offset),
     }
 
@@ -798,6 +826,25 @@ def _joint_delta_summary(a: list[float] | None, b: list[float] | None) -> dict[s
     }
 
 
+def _classify_validation_failure(validation: dict[str, Any]) -> str:
+    if str(validation.get("status") or "") == "accepted":
+        return "accepted"
+    contact_proxy = validation.get("contact_proxy")
+    if isinstance(contact_proxy, dict):
+        if not bool(contact_proxy.get("near_tcp_object")):
+            return "no_near_contact"
+        if not bool(contact_proxy.get("object_lifted_while_close_commanded")):
+            return "no_lift_after_close"
+    objects = validation.get("objects")
+    if isinstance(objects, list) and objects:
+        row = objects[0] if isinstance(objects[0], dict) else {}
+        if not bool(row.get("lifted")):
+            return "insufficient_lift"
+        if not bool(row.get("inside_bin")):
+            return "not_in_goal_bin"
+    return "validation_failed"
+
+
 def _compose_final_video(args: argparse.Namespace, left_videos: list[Path], right_videos: list[Path], output_path: Path) -> None:
     cmd = [
         str(args.compose_python.expanduser()),
@@ -888,7 +935,34 @@ def parse_args() -> argparse.Namespace:
         default=0.04,
         help="Forwarded to plan_yam_graspgenx_curobo.py --yam_grasp_to_tool_z.",
     )
+    parser.add_argument(
+        "--planner_yam_grasp_to_tool_z_offsets",
+        type=str,
+        default="0.0,0.02,0.04,0.06",
+        help=(
+            "Comma-separated offsets added to --planner_yam_grasp_to_tool_z across retry attempts. "
+            "Positive values lower the top-down YAM tool into the grasp."
+        ),
+    )
+    parser.add_argument(
+        "--planner_yam_grasp_to_tool_z_values",
+        type=str,
+        default="",
+        help="Explicit comma-separated YAM grasp-to-tool z values; overrides offsets when set.",
+    )
     parser.add_argument("--planner_clutter_margin", type=float, default=-0.025)
+    parser.add_argument(
+        "--planner_clutter_margin_offsets",
+        type=str,
+        default="0.0,-0.006,-0.016,-0.031",
+        help="Comma-separated offsets added to --planner_clutter_margin across retry attempts.",
+    )
+    parser.add_argument(
+        "--planner_clutter_margin_values",
+        type=str,
+        default="",
+        help="Explicit comma-separated clutter margins; overrides offsets when set.",
+    )
     parser.add_argument(
         "--planner_finger_preclose_offsets",
         type=str,
@@ -905,7 +979,13 @@ def parse_args() -> argparse.Namespace:
         help="Explicit comma-separated planning finger joint values; overrides preclose offsets when set.",
     )
     parser.add_argument("--max_attempts_per_object", type=int, default=8)
-    parser.add_argument("--max_no_progress_passes", type=int, default=2)
+    parser.add_argument("--max_no_progress_passes", type=int, default=4)
+    parser.add_argument(
+        "--candidate_failure_limit",
+        type=int,
+        default=2,
+        help="Only exclude a selected grasp candidate after this many validation failures for the object.",
+    )
     parser.add_argument("--max_picks", type=int, default=None)
     parser.add_argument("--allow_partial", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument(
@@ -1010,6 +1090,7 @@ def main() -> None:
     planning_skip_ids: set[str] = set()
     attempt_counts: dict[str, int] = {}
     candidate_exclusions: dict[str, set[int]] = {}
+    candidate_failure_counts: dict[str, dict[int, int]] = {}
     no_progress_passes = 0
     while True:
         if args.max_picks is not None and iteration >= int(args.max_picks):
@@ -1106,6 +1187,18 @@ def main() -> None:
         base_finger_joint = float(planning_start_joint[-1]) if planning_start_joint else float(home_joint[-1])
         finger_options = _planning_finger_options(args, base_finger_joint)
         planning_finger_joint_position = finger_options[(attempt_number - 1) % len(finger_options)]
+        tool_z_options = _planner_tool_z_options(args)
+        planner_yam_grasp_to_tool_z = _cycled_option(
+            tool_z_options,
+            attempt_number,
+            float(args.planner_yam_grasp_to_tool_z),
+        )
+        clutter_margin_options = _planner_clutter_margin_options(args)
+        planner_clutter_margin = _cycled_option(
+            clutter_margin_options,
+            attempt_number,
+            float(args.planner_clutter_margin),
+        )
         excluded_grasp_original_indices = set(candidate_exclusions.get(selected_id, set()))
 
         drop_y_offset = float(drop_y_offsets[iteration % len(drop_y_offsets)])
@@ -1118,6 +1211,8 @@ def main() -> None:
                 drop_y_offset=drop_y_offset,
                 attempt_number=attempt_number,
                 planning_finger_joint_position=planning_finger_joint_position,
+                planner_yam_grasp_to_tool_z=planner_yam_grasp_to_tool_z,
+                planner_clutter_margin=planner_clutter_margin,
                 excluded_grasp_original_indices=excluded_grasp_original_indices,
             )
         except Exception as exc:
@@ -1135,6 +1230,10 @@ def main() -> None:
                 "planning_finger_joint_position": None
                 if planning_finger_joint_position is None
                 else float(planning_finger_joint_position),
+                "planner_yam_grasp_to_tool_z_options": tool_z_options,
+                "planner_yam_grasp_to_tool_z": float(planner_yam_grasp_to_tool_z),
+                "planner_clutter_margin_options": clutter_margin_options,
+                "planner_clutter_margin": float(planner_clutter_margin),
                 "excluded_grasp_original_indices": sorted(int(v) for v in excluded_grasp_original_indices),
                 "exception_type": type(exc).__name__,
                 "exception": str(exc),
@@ -1198,10 +1297,17 @@ def main() -> None:
             "return_home": return_home_info,
         }
         validation_status = str(validation.get("status") or "unknown")
+        failure_cause = _classify_validation_failure(validation)
+        selected_original = plan_info.get("selected_grasp_original_index")
+        selected_original_int = None if selected_original is None else int(selected_original)
+        selected_candidate_failure_count = 0
         if validation_status != "accepted":
-            selected_original = plan_info.get("selected_grasp_original_index")
-            if selected_original is not None:
-                candidate_exclusions.setdefault(selected_id, set()).add(int(selected_original))
+            if selected_original_int is not None:
+                per_object_failures = candidate_failure_counts.setdefault(selected_id, {})
+                selected_candidate_failure_count = int(per_object_failures.get(selected_original_int, 0)) + 1
+                per_object_failures[selected_original_int] = selected_candidate_failure_count
+                if selected_candidate_failure_count >= max(1, int(args.candidate_failure_limit)):
+                    candidate_exclusions.setdefault(selected_id, set()).add(selected_original_int)
             planning_skip_ids.add(selected_id)
             terminal_failed = attempt_number >= max(1, int(args.max_attempts_per_object))
             if terminal_failed:
@@ -1245,11 +1351,19 @@ def main() -> None:
                 "planning_finger_joint_position": None
                 if planning_finger_joint_position is None
                 else float(planning_finger_joint_position),
+                "planner_yam_grasp_to_tool_z_options": tool_z_options,
+                "planner_yam_grasp_to_tool_z": float(planner_yam_grasp_to_tool_z),
+                "planner_clutter_margin_options": clutter_margin_options,
+                "planner_clutter_margin": float(planner_clutter_margin),
+                "candidate_failure_limit": int(args.candidate_failure_limit),
+                "selected_grasp_original_index": selected_original_int,
+                "selected_candidate_failure_count": int(selected_candidate_failure_count),
                 "excluded_grasp_original_indices_before_plan": sorted(int(v) for v in excluded_grasp_original_indices),
                 "excluded_grasp_original_indices_after_validation": sorted(
                     int(v) for v in candidate_exclusions.get(selected_id, set())
                 ),
             },
+            "failure_cause": failure_cause,
         }
         iteration_records.append(record)
         _write_json(iteration_dir / "iteration_summary.json", record)
@@ -1262,6 +1376,7 @@ def main() -> None:
                     "iteration": iteration,
                     "object_id": selected_id,
                     "validation_status": validation_status,
+                    "failure_cause": failure_cause,
                     "motion": motion,
                 }
             ),
@@ -1296,6 +1411,10 @@ def main() -> None:
     final_validation["candidate_exclusions"] = {
         key: sorted(int(v) for v in value) for key, value in sorted(candidate_exclusions.items())
     }
+    final_validation["candidate_failure_counts"] = {
+        object_id: {str(idx): int(count) for idx, count in sorted(counts.items())}
+        for object_id, counts in sorted(candidate_failure_counts.items())
+    }
     if args.allow_partial and final_validation["status"] == "rejected":
         final_validation["status"] = "partial"
         final_validation["allow_partial"] = True
@@ -1320,6 +1439,10 @@ def main() -> None:
         "attempt_counts": {key: int(value) for key, value in sorted(attempt_counts.items())},
         "candidate_exclusions": {
             key: sorted(int(v) for v in value) for key, value in sorted(candidate_exclusions.items())
+        },
+        "candidate_failure_counts": {
+            object_id: {str(idx): int(count) for idx, count in sorted(counts.items())}
+            for object_id, counts in sorted(candidate_failure_counts.items())
         },
         "default_videos": [str(path) for path in default_videos],
         "topdown_videos": [str(path) for path in topdown_videos],
