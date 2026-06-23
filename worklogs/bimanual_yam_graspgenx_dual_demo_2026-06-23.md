@@ -72,12 +72,29 @@ Check whether the bimanual YAM setup is ready for a GraspGenX + cuRobo demo, the
   - Dynamic metadata reports left cube max lift `0.1277 m`, final lift `0.1266 m`.
   - Dynamic metadata reports right cube max lift `0.1297 m`, final lift `0.1295 m`.
   - Trace checkpoints show both cubes remain near table height through source frame 480, then lift during the `lift_object` phase and end near z=0.154-0.157 m.
-  - Representative frame inspection and pixel-difference checks show nonblank video streams; top-camera motion is visually subtle because it mostly hides height, so the metadata trace is the stronger validation artifact.
+  - Follow-up visual inspection showed the rendered arms were effectively static even though metadata changed. This run is not accepted as visual validation of dynamic replay.
+- Render-sync fix at commit `88e1e7cb` moved camera construction after reset/settle, manually initialized camera sensors, forced render/sensor updates, and added top-camera arm-crop visual-motion diagnostics with an optional static-video failure mode.
+- Follow-up commit `f1444eca` fixed the frame-buffer initialization order introduced by that refactor.
+- L401 rerun attempts:
+  - Job `1039749` was submitted at `88e1e7cb` and canceled while still pending on resources.
+  - Job `1039750` was submitted with a smaller resource request and canceled after an A1001 run started.
+- A1001 validation attempts used the same shared NFS code/env/container paths as L401:
+  - Job `29414752` at `88e1e7cb` failed before rendering with `UnboundLocalError` because `video_frames` was initialized before the moved `cameras` object.
+  - Job `29414888` at `f1444eca` completed successfully on `batch-block1-0044`.
+    - Run dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/bimanual_yam_dual_pick_dynamic_replay/yam_dynamic_replay_visualfix_a100_f1444eca_smallobj_20260622T2302`
+    - Local copy: `cluster_results/a1001/yam_dynamic_replay_visualfix_a100_f1444eca_smallobj_20260622T2302`
+    - Slurm accounting: `COMPLETED`, exit `0:0`, elapsed `00:02:54`.
+    - `ffprobe` verified the composite video as 1280x720, 211 frames, 15 fps, 14.07 seconds.
+    - `ffprobe` verified overview, top, left wrist, and right wrist camera videos as 640x360, 211 frames, 15 fps, 14.07 seconds.
+    - Dynamic metadata reports left cube max lift `0.1271 m`, final lift `0.1271 m`.
+    - Dynamic metadata reports right cube max lift `0.1296 m`, final lift `0.1296 m`.
+    - Visual-motion diagnostics passed with `top_left_arm_crop=18868`, `top_right_arm_crop=16168`, threshold `2500`, and `overview_changed_pixels=33022`.
+    - Manual inspection of start/mid/end contact sheets confirmed both arms move into the workspace and lift the objects.
 
 ## Conclusion
 
 - Single-YAM GraspGenX + cuRobo is ready for the YAM profile on l401.
 - The bimanual YAM is not yet natively ready as one 16-DOF cuRobo robot. There is no native bimanual YAM cuRobo asset/profile in the checked setup.
 - A composed bimanual demo path now exists: plan each YAM independently with GraspGenX/cuRobo, synchronize the two plans, and replay them on the Isaac Lab bimanual YAM scene.
-- Dynamic contact replay now also exists and completed on l401 for the 5.5 cm object setup, with both cubes physically lifting under the replayed joint targets.
+- Dynamic contact replay now also exists for the 5.5 cm object setup, with both cubes physically lifting under the replayed joint targets and with camera-frame visual-motion validation guarding against stale rendered arms.
 - The remaining readiness gap is native bimanual GraspGenX/cuRobo integration: the current planner still composes two independent single-arm YAM plans rather than planning one collision-aware 16-DOF bimanual robot.
