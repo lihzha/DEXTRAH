@@ -36,9 +36,10 @@ SLURM_JOB_ID_SAFE="${SLURM_JOB_ID:-manual}"
 RUN_NAME="${RUN_NAME:-yam_rgb_dp_eval_suite_${SLURM_JOB_ID_SAFE}_$(date +%Y%m%d_%H%M%S)}"
 RUN_DIR_HOST="$RESULTS_NFS/evals/$RUN_NAME"
 RUN_DIR_CONTAINER="/results/evals/$RUN_NAME"
-ID_EXPECTED_OBJECTS="${ID_EXPECTED_OBJECTS:-1}"
+ID_EXPECTED_OBJECTS="${ID_EXPECTED_OBJECTS:-3}"
 ID_CASE_INDEX="${ID_CASE_INDEX:-0}"
 OOD_SEED="${OOD_SEED:-9400001}"
+OOD_EXPECTED_OBJECTS="${OOD_EXPECTED_OBJECTS:-$ID_EXPECTED_OBJECTS}"
 OOD_SETTLE_STEPS="${OOD_SETTLE_STEPS:-100}"
 OOD_MANIFEST_POOL_SIZE="${OOD_MANIFEST_POOL_SIZE:-512}"
 OOD_MIN_XY_RADIUS="${OOD_MIN_XY_RADIUS:-0.012}"
@@ -47,6 +48,14 @@ OOD_MIN_HEIGHT="${OOD_MIN_HEIGHT:-0.010}"
 OOD_MAX_HEIGHT="${OOD_MAX_HEIGHT:-0.160}"
 OOD_MAX_GRASP_WIDTH_P95="${OOD_MAX_GRASP_WIDTH_P95:-0.145}"
 OOD_EXCLUDE_KEYWORDS="${OOD_EXCLUDE_KEYWORDS:-animal,building,car,chair,person,plant,room,statue,tree,vehicle}"
+if [ "$ID_EXPECTED_OBJECTS" -lt 1 ]; then
+  echo "ID_EXPECTED_OBJECTS must be >= 1, got $ID_EXPECTED_OBJECTS" >&2
+  exit 2
+fi
+if [ "$OOD_EXPECTED_OBJECTS" -lt 1 ]; then
+  echo "OOD_EXPECTED_OBJECTS must be >= 1, got $OOD_EXPECTED_OBJECTS" >&2
+  exit 2
+fi
 DEMO_STEPS="${DEMO_STEPS:-1621}"
 CAPTURE_INTERVAL="${CAPTURE_INTERVAL:-20}"
 FPS="${FPS:-30}"
@@ -111,7 +120,7 @@ mkdir -p \
   "$CACHE_NFS/data" "$CACHE_NFS/documents"
 
 CASE_ENV_HOST="$RUN_DIR_HOST/case_env.sh"
-python3 - "$ACCEPTED_MANIFEST_HOST" "$FULL_OBJAVERSE_MANIFEST_HOST" "$RUN_DIR_HOST" "$ID_EXPECTED_OBJECTS" "$ID_CASE_INDEX" "$OOD_SEED" "$RESULTS_NFS" "$FULL_OBJAVERSE_CONTAINER_ASSET_ROOT" "$OOD_MANIFEST_POOL_SIZE" "$OOD_MIN_XY_RADIUS" "$OOD_MAX_XY_RADIUS" "$OOD_MIN_HEIGHT" "$OOD_MAX_HEIGHT" "$OOD_MAX_GRASP_WIDTH_P95" "$OOD_EXCLUDE_KEYWORDS" <<'PY'
+python3 - "$ACCEPTED_MANIFEST_HOST" "$FULL_OBJAVERSE_MANIFEST_HOST" "$RUN_DIR_HOST" "$ID_EXPECTED_OBJECTS" "$ID_CASE_INDEX" "$OOD_SEED" "$RESULTS_NFS" "$FULL_OBJAVERSE_CONTAINER_ASSET_ROOT" "$OOD_MANIFEST_POOL_SIZE" "$OOD_MIN_XY_RADIUS" "$OOD_MAX_XY_RADIUS" "$OOD_MIN_HEIGHT" "$OOD_MAX_HEIGHT" "$OOD_MAX_GRASP_WIDTH_P95" "$OOD_EXPECTED_OBJECTS" "$OOD_EXCLUDE_KEYWORDS" <<'PY'
 import json
 import math
 import random
@@ -135,7 +144,10 @@ ood_max_xy_radius = float(sys.argv[11])
 ood_min_height = float(sys.argv[12])
 ood_max_height = float(sys.argv[13])
 ood_max_grasp_width_p95 = float(sys.argv[14])
-ood_exclude_keywords = tuple(item.strip().lower() for item in sys.argv[15].split(",") if item.strip())
+ood_expected_objects = int(sys.argv[15])
+ood_exclude_keywords = tuple(item.strip().lower() for item in sys.argv[16].split(",") if item.strip())
+if ood_expected_objects < 1:
+    raise SystemExit(f"OOD expected object count must be >= 1, got {ood_expected_objects}")
 
 def host_path(value):
     text = str(value or "")
@@ -347,7 +359,7 @@ ood_case = {
     "case": "ood",
     "source_manifest": str(full_manifest),
     "manifest_host": str(ood_manifest),
-    "expected_objects": 1,
+    "expected_objects": int(ood_expected_objects),
     "seed": ood_seed,
     "first_manifest_candidate": {
         "uuid": str(ood_object.get("uuid") or ""),
@@ -365,7 +377,7 @@ env = {
     "ID_STABLE_SCENE_HOST": stable_scene,
     "ID_EXPECTED_OBJECTS_RESOLVED": str(id_case["expected_objects"]),
     "OOD_MANIFEST_HOST": str(ood_manifest),
-    "OOD_EXPECTED_OBJECTS_RESOLVED": "1",
+    "OOD_EXPECTED_OBJECTS_RESOLVED": str(ood_expected_objects),
 }
 (run_dir / "case_env.sh").write_text("".join(f"{key}={shlex.quote(value)}\n" for key, value in env.items()), encoding="utf-8")
 print(json.dumps({"event": "yam_rgb_dp_eval_cases_prepared", "id": id_case, "ood": ood_case}, sort_keys=True))
@@ -390,7 +402,9 @@ echo "CODE_NFS=$CODE_NFS"
 echo "CODE_COMMIT=${CODE_COMMIT:-unknown}"
 echo "CHECKPOINT_HOST=$CHECKPOINT_HOST"
 echo "ID_STABLE_SCENE_HOST=$ID_STABLE_SCENE_HOST"
+echo "ID_EXPECTED_OBJECTS_RESOLVED=$ID_EXPECTED_OBJECTS_RESOLVED"
 echo "OOD_MANIFEST_HOST=$OOD_MANIFEST_HOST"
+echo "OOD_EXPECTED_OBJECTS_RESOLVED=$OOD_EXPECTED_OBJECTS_RESOLVED"
 echo "OOD_FILTER=pool=$OOD_MANIFEST_POOL_SIZE min_xy=$OOD_MIN_XY_RADIUS max_xy=$OOD_MAX_XY_RADIUS min_height=$OOD_MIN_HEIGHT max_height=$OOD_MAX_HEIGHT max_width_p95=$OOD_MAX_GRASP_WIDTH_P95 exclude=$OOD_EXCLUDE_KEYWORDS"
 echo "DEMO_STEPS=$DEMO_STEPS"
 echo "CAPTURE_INTERVAL=$CAPTURE_INTERVAL"
@@ -471,6 +485,10 @@ srun \
     run_settle_ood() {
       local manifest_container
       manifest_container="$(container_path_arg "$OOD_MANIFEST_HOST")"
+      local ood_expected_objects
+      local ood_clutter_count
+      ood_expected_objects="${OOD_EXPECTED_OBJECTS_RESOLVED:-1}"
+      ood_clutter_count=$((ood_expected_objects - 1))
       /isaac-sim/python.sh /code/dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py \
         --task "$TASK" \
         --num_envs 1 \
@@ -490,8 +508,8 @@ srun \
         --object_validate_usd_bounds \
         --tabletop_clutter_asset_manifest_path "$manifest_container" \
         --tabletop_clutter_assets_dir "$FULL_OBJAVERSE_CONTAINER_ASSET_ROOT" \
-        --tabletop_clutter_max_objects 0 \
-        --tabletop_clutter_object_count 0 \
+        --tabletop_clutter_max_objects "$ood_clutter_count" \
+        --tabletop_clutter_object_count "$ood_clutter_count" \
         --tabletop_clutter_asset_assignment round_robin \
         --no-tabletop_clutter_validate_usd_bounds \
         --headless \
