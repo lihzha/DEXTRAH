@@ -3,6 +3,51 @@
 Append-only project worklog for the DextrAH privileged FGP teacher training
 thread. This follows the `robotics-cluster-development-core` worklog contract.
 
+## 2026-06-24 10:01 PDT - YAM Corner Camera Table Size Correction
+
+Goal:
+- Correct the new YAM scene-camera visualization after the tabletop still
+  appeared too large relative to the robot and edge-mounted real setup.
+
+Hypothesis:
+- The physical single-YAM table is `1.04 x 1.20`, but the visual tabletop
+  surround/texture overlay was still `1.90 x 1.90`, making RGB renders look as
+  if the table were much larger than the actual task geometry.
+
+Change:
+- Updated YAM policy tabletop surround defaults from `1.90 1.90` to
+  `1.04 1.20` in the render script and cluster launcher defaults.
+
+Command / Job:
+- local job: `n/a`, PTY render from
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/yam-rgb-diffusion-20260624`.
+- command: `python dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py --task Dextrah-Single-YAM-Two-Bin-Primitive-Grasp --yam_policy_scene_randomization --rendering_mode performance --render_width 320 --render_height 320 --video_seconds 0.5 --headless`
+- run_dir: `/home/lzha/code/local_results/yam_camera_corner_table104x120_20260624T165953Z`
+- artifact: `/home/lzha/code/local_results/yam_camera_corner_table104x120_20260624T165953Z/settle.mp4`
+- viewer: `http://localhost:8765/view?path=local_results/yam_camera_corner_table104x120_20260624T165953Z/settle.mp4`
+
+Result:
+- status: completed local smoke render.
+- evidence: `metrics.json` reports `yam_policy_tabletop_surround.size =
+  [1.04, 1.2]`, `camera_eye =
+  [0.5654243548829307, -0.7598266511819668, 1.1984340780045533]`, and
+  `camera_target = [-0.12540355559271774, -0.02667100546025564,
+  0.03565278866657702]`.
+- evidence: inspected `frames/frame_0000.png`; the table edge is now visible,
+  the robot remains in frame, and the oversized synthetic tabletop is removed.
+
+Analysis:
+- The previous camera artifact looked too table-dominant primarily because the
+  rendered tabletop surround did not match the configured physical table.
+- The view still has a large table footprint because the camera is intentionally
+  near the right/front corner and aimed at the table center; further reduction
+  would require moving the camera farther back/up or increasing FOV, which would
+  show more background.
+
+Next:
+- Use the corrected table-sized surround as the default for future YAM RGB
+  replay/data-generation renders.
+
 ## Job Contract
 
 - task: DextrAH Privileged FGP Teacher Training from the README.

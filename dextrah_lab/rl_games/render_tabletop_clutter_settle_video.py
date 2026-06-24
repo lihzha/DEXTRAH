@@ -133,7 +133,7 @@ parser.add_argument("--yam_policy_dome_light_intensity_range", type=float, nargs
 parser.add_argument("--yam_policy_key_light_intensity_range", type=float, nargs=2, default=(250.0, 1400.0))
 parser.add_argument("--yam_policy_material_value_range", type=float, nargs=2, default=(0.32, 0.82))
 parser.add_argument("--yam_policy_tabletop_surround", action=argparse.BooleanOptionalAction, default=True)
-parser.add_argument("--yam_policy_tabletop_surround_size", type=float, nargs=2, default=(1.90, 1.90))
+parser.add_argument("--yam_policy_tabletop_surround_size", type=float, nargs=2, default=(1.04, 1.20))
 parser.add_argument("--yam_policy_tabletop_surround_top_z_offset", type=float, default=-0.004)
 parser.add_argument("--yam_policy_tabletop_surround_thickness", type=float, default=0.006)
 parser.add_argument("--yam_policy_tabletop_surround_color_jitter", type=float, default=0.08)
@@ -2195,7 +2195,7 @@ def _spawn_yam_policy_tabletop_surround(task_env) -> dict[str, object]:
         return {"enabled": False, "reason": "missing_usd_stage"}
     dome_light_texture = _apply_yam_policy_dome_light_texture(stage, cfg)
     env_origins = task_env.scene.env_origins.detach().float().cpu().numpy()
-    size_xy = tuple(float(v) for v in getattr(cfg, "yam_policy_tabletop_surround_size", (1.90, 1.90)))
+    size_xy = tuple(float(v) for v in getattr(cfg, "yam_policy_tabletop_surround_size", (1.04, 1.20)))
     if len(size_xy) != 2:
         return {"enabled": False, "reason": "invalid_size", "size": list(size_xy)}
     thickness = float(getattr(cfg, "yam_policy_tabletop_surround_thickness", 0.006))
