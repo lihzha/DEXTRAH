@@ -1604,19 +1604,65 @@ def _yam_contact_phase_progress_features(phase_id: int, progress: float) -> np.n
     return out
 
 
-def _phase_progress_from_dataset_frame(data: np.lib.npyio.NpzFile, frame_idx: int) -> np.ndarray:
-    if "phase_ids" not in data.files:
-        raise KeyError("Phase/progress observation augmentation requires phase_ids in the dataset")
-    if "episode_ends" not in data.files:
-        raise KeyError("Phase/progress observation augmentation requires episode_ends in the dataset")
-    phase_ids = np.asarray(data["phase_ids"], dtype=np.int32)
-    episode_ends = np.asarray(data["episode_ends"], dtype=np.int64)
+def _yam_coarse_contact_phase_id(phase: str) -> int:
+    leaf = str(phase).split("/")[-1]
+    if leaf in {"go_to_pre_grasp_pose", "hold_at_pre_grasp", "go_from_pre_grasp_to_grasp_pose", "hold_at_grasp"}:
+        return 0
+    if leaf in {"close_fingers", "hold_after_close"}:
+        return 1
+    if leaf in {
+        "lift_object",
+        "hold_after_lift",
+        "move_to_above_bin_scripted",
+        "hold_above_bin",
+        "open_fingers_to_drop",
+        "hold_after_drop",
+        "return_to_start_pose",
+    }:
+        return 2
+    return -1
+
+
+def _yam_phase_ids_and_episode_ends(data: np.lib.npyio.NpzFile) -> tuple[np.ndarray, np.ndarray]:
+    if "phase_ids" in data.files:
+        phase_ids = np.asarray(data["phase_ids"], dtype=np.int32)
+    elif "phase" in data.files:
+        phases = np.asarray(data["phase"]).astype(str).reshape(-1)
+        phase_ids = np.asarray([_yam_coarse_contact_phase_id(value) for value in phases], dtype=np.int32)
+    else:
+        raise KeyError("Phase/progress observation augmentation requires phase_ids or phase in the dataset")
     if phase_ids.ndim != 1:
         raise ValueError(f"phase_ids must be 1D, got {phase_ids.shape}")
+    if "episode_ends" in data.files:
+        episode_ends = np.asarray(data["episode_ends"], dtype=np.int64)
+    else:
+        episode_ends = np.asarray([int(phase_ids.shape[0])], dtype=np.int64)
+    return phase_ids, episode_ends
+
+
+def _validate_yam_phase_schedule(
+    phase_ids: np.ndarray,
+    episode_ends: np.ndarray,
+    *,
+    dataset_path: Path | str | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    prefix = f"{dataset_path}: " if dataset_path is not None else ""
+    if phase_ids.ndim != 1:
+        raise ValueError(f"{prefix}phase_ids must be 1D, got {phase_ids.shape}")
     if episode_ends.ndim != 1 or episode_ends.size == 0:
-        raise ValueError(f"episode_ends must be nonempty 1D, got {episode_ends.shape}")
+        raise ValueError(f"{prefix}episode_ends must be nonempty 1D, got {episode_ends.shape}")
     if int(episode_ends[-1]) != int(phase_ids.shape[0]):
-        raise ValueError(f"episode_ends[-1]={episode_ends[-1]} does not match phase_ids length {phase_ids.shape[0]}")
+        raise ValueError(
+            f"{prefix}episode_ends[-1]={episode_ends[-1]} does not match phase_ids length {phase_ids.shape[0]}"
+        )
+    unique = set(int(v) for v in np.unique(phase_ids))
+    if not unique.issubset({-1, 0, 1, 2}):
+        raise ValueError(f"{prefix}expected phase ids in {{-1,0,1,2}}, got {sorted(unique)}")
+    return phase_ids.astype(np.int32, copy=False), episode_ends.astype(np.int64, copy=False)
+
+
+def _phase_progress_from_dataset_frame(data: np.lib.npyio.NpzFile, frame_idx: int) -> np.ndarray:
+    phase_ids, episode_ends = _validate_yam_phase_schedule(*_yam_phase_ids_and_episode_ends(data))
     frame = int(np.clip(int(frame_idx), 0, int(phase_ids.shape[0] - 1)))
     episode_idx = int(np.searchsorted(episode_ends, frame, side="right"))
     episode_start = 0 if episode_idx == 0 else int(episode_ends[episode_idx - 1])
@@ -1633,24 +1679,12 @@ class YamRgbPhaseProgressProvider:
         if not self.dataset_path.is_file():
             raise FileNotFoundError(self.dataset_path)
         with np.load(self.dataset_path, allow_pickle=False) as data:
-            if "phase_ids" not in data.files:
-                raise KeyError(f"{self.dataset_path} missing phase_ids")
-            if "episode_ends" not in data.files:
-                raise KeyError(f"{self.dataset_path} missing episode_ends")
-            self.phase_ids = np.asarray(data["phase_ids"], dtype=np.int32).copy()
-            self.episode_ends = np.asarray(data["episode_ends"], dtype=np.int64).copy()
-        if self.phase_ids.ndim != 1:
-            raise ValueError(f"{self.dataset_path}: phase_ids must be 1D, got {self.phase_ids.shape}")
-        if self.episode_ends.ndim != 1 or self.episode_ends.size == 0:
-            raise ValueError(f"{self.dataset_path}: episode_ends must be nonempty 1D, got {self.episode_ends.shape}")
-        if int(self.episode_ends[-1]) != int(self.phase_ids.shape[0]):
-            raise ValueError(
-                f"{self.dataset_path}: episode_ends[-1]={self.episode_ends[-1]} "
-                f"does not match phase_ids length {self.phase_ids.shape[0]}"
+            phase_ids, episode_ends = _validate_yam_phase_schedule(
+                *_yam_phase_ids_and_episode_ends(data),
+                dataset_path=self.dataset_path,
             )
-        unique = set(int(v) for v in np.unique(self.phase_ids))
-        if not unique.issubset({-1, 0, 1, 2}):
-            raise ValueError(f"{self.dataset_path}: expected phase ids in {{-1,0,1,2}}, got {sorted(unique)}")
+            self.phase_ids = phase_ids.copy()
+            self.episode_ends = episode_ends.copy()
         self.base_frame = int(np.clip(int(base_frame), 0, max(int(self.phase_ids.shape[0]) - 1, 0)))
 
     def feature_for_frame(self, frame_idx: int) -> np.ndarray:
