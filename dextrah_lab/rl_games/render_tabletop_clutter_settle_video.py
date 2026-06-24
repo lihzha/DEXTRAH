@@ -3907,8 +3907,23 @@ def main() -> None:
                 if rgb_dp_policy is None or rgb_dp_history is None:
                     raise RuntimeError("RGB-DP policy eval was enabled but the policy/history was not initialized")
                 new_policy_call = False
+                obs_source = "queued_action"
+                if not bool(args_cli.policy_teacher_force_source_history):
+                    if rgb_dp_first_obs_override is not None:
+                        obs_image, obs_robot_state = rgb_dp_first_obs_override
+                        rgb_dp_first_obs_override = None
+                        obs_source = "bootstrap_source"
+                    else:
+                        obs_image = _render_policy_rgb_obs(env)
+                        phase_features = (
+                            rgb_dp_phase_progress_provider.feature_for_step(int(step_idx) - 1)
+                            if rgb_dp_phase_progress_provider is not None
+                            else None
+                        )
+                        obs_robot_state = _yam_policy_robot_state(task_env, phase_features=phase_features)
+                        obs_source = "live_render"
+                    rgb_dp_history.push(obs_image, obs_robot_state)
                 if rgb_dp_action_queue.shape[0] == 0:
-                    obs_source = "live_render"
                     if bool(args_cli.policy_teacher_force_source_history):
                         if policy_bootstrap_dataset_path is None:
                             raise RuntimeError("Teacher-forced source history requested without a bootstrap dataset")
@@ -3930,20 +3945,6 @@ def main() -> None:
                         rgb_dp_history.robot_state[:] = history_robot_states
                         rgb_dp_history.initialized = True
                         obs_source = f"bootstrap_teacher_forced:{source_frame}"
-                    elif rgb_dp_first_obs_override is not None:
-                        obs_image, obs_robot_state = rgb_dp_first_obs_override
-                        rgb_dp_first_obs_override = None
-                        obs_source = "bootstrap_source"
-                        rgb_dp_history.push(obs_image, obs_robot_state)
-                    else:
-                        obs_image = _render_policy_rgb_obs(env)
-                        phase_features = (
-                            rgb_dp_phase_progress_provider.feature_for_step(int(step_idx) - 1)
-                            if rgb_dp_phase_progress_provider is not None
-                            else None
-                        )
-                        obs_robot_state = _yam_policy_robot_state(task_env, phase_features=phase_features)
-                        rgb_dp_history.push(obs_image, obs_robot_state)
                     action_seq = _predict_rgb_dp_action_sequence(
                         rgb_dp_policy,
                         rgb_dp_history,
@@ -3983,7 +3984,7 @@ def main() -> None:
                         "policy_call_index": int(rgb_dp_action_queue_policy_call_idx),
                         "queue_step_offset": int(queue_step_offset),
                         "new_policy_call": bool(new_policy_call),
-                        "obs_source": obs_source if bool(new_policy_call) else "queued_action",
+                        "obs_source": obs_source if bool(new_policy_call) else f"queued_action_history_updated:{obs_source}",
                         **trajectory_timing,
                     }
                 )
