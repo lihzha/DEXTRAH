@@ -10472,3 +10472,17 @@ Smoke follow-up:
   `256x256`, `rendering_mode=quality`, and the RoboLab table/background/HDR
   texture directories. The jobs are pending because all L40 GPU nodes remain
   planned/drained for maintenance.
+
+2026-06-24T13:41:00Z - Source queue cleanup and wave3 shard-cap audit
+- Added `dextrah_lab/offline_dp_bc/inspect_yam_rgb_observations.py`, a local
+  utility that turns completed L40 replay NPZs or `accepted_rgb_replays.jsonl`
+  files into scene/wrist contact sheets plus a JSON report with shape,
+  brightness, black/white pixel, and frame-delta checks. Validated it on the
+  existing `yam_rgb_l40_final_short_fixed_20260624T104806Z` local artifacts and
+  opened the generated sheet with `viz-open`.
+- Canceled stale pending wave2 source jobs `29473535` and `29473537`; they were
+  redundant with the larger filtered wave3 and had produced no shard outputs.
+- Retried submitting remaining wave3 shards `20`-`23`, but Slurm still returned
+  `QOSMaxSubmitJobPerUserLimit`. The effective A100 GPU submit cap appears to
+  already be consumed by the `20` pending `yam_fbig` wave3 jobs, so shards
+  `20`-`23` must wait until one of those pending jobs starts or clears.
