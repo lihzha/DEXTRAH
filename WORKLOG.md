@@ -10513,3 +10513,28 @@ Smoke follow-up:
   `YAM_POLICY_TABLETOP_SURROUND_SIZE` default from the enlarged `2.25 2.05`
   back to the original `1.90 1.90`. The generic render wrapper already used
   `1.90 1.90`.
+
+2026-06-24T16:41:00Z - Corner-camera deployment blocked by SSH auth
+- Local validation remained limited to syntax checks after the corner-camera
+  commit because every L40/A100 login host rejected SSH public-key auth:
+  `l401`, `l402`, `a1001`, and `a1002` all returned
+  `Permission denied (publickey,password)` with `BatchMode=yes`.
+- Diagnosed the local SSH side: the default `SSH_AUTH_SOCK` pointed at a
+  missing `/tmp` socket, the persistent socket in `~/.ssh/agent` refused
+  connections, and a fresh `ssh-agent` could load both local keys
+  (`id_ed25519` and `google_compute_engine`). The servers still rejected the
+  offered keys, so the remaining blocker is cluster-side/auth infrastructure.
+- Attempted local Isaac camera smoke renders using the primitive single-YAM
+  two-bin task and copied ignored generated YAM USD/MJCF assets from the main
+  checkout into the agent worktree for runtime use. The first local run used
+  `rendering_mode=quality` at `640x640`; the second used
+  `rendering_mode=performance` at `320x320`. Both failed before scene logs or
+  output frames with Vulkan `ERROR_DEVICE_LOST`/GPU crash in the local
+  Isaac Sim renderer, so local visual validation is not a reliable surface.
+- No local render process remained after the crash handlers exited, no
+  artifacts were produced in the two local run directories, and the worktree
+  remained clean. The next required action is still to deploy the current
+  branch head (worklog-only on top of implementation commit
+  `148b6f4a0c11356f965297cd6e011ad6ea9b56d3`), cancel stale queued L40/A100 jobs
+  pinned to older commits, and relaunch the L40 quality visual sample once SSH
+  auth works.
