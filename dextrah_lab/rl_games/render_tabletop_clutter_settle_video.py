@@ -53,6 +53,34 @@ parser.add_argument("--num_action_samples", type=int, default=1)
 parser.add_argument("--policy_sample_seed", type=int, default=None)
 parser.add_argument("--action_chunk_steps", type=int, default=8)
 parser.add_argument(
+    "--policy_bootstrap_trajectory_dataset_path",
+    type=str,
+    default=None,
+    help="Optional recorded trajectory_dataset.npz used to restore an exact source frame before RGB-DP rollout.",
+)
+parser.add_argument(
+    "--policy_bootstrap_frame",
+    type=int,
+    default=0,
+    help="Frame index inside --policy_bootstrap_trajectory_dataset_path to restore before RGB-DP rollout.",
+)
+parser.add_argument(
+    "--policy_bootstrap_history",
+    type=str,
+    default="none",
+    choices=("none", "source_preceding", "source_current"),
+    help=(
+        "How to initialize RGB-DP observation history from the bootstrap dataset. "
+        "source_preceding ends the history at frame-1 so the first live/source-current push completes it."
+    ),
+)
+parser.add_argument(
+    "--policy_first_obs_from_bootstrap_source",
+    action=argparse.BooleanOptionalAction,
+    default=False,
+    help="For the first policy call only, push source RGB/proprio at the bootstrap frame instead of a live render.",
+)
+parser.add_argument(
     "--policy_max_joint_delta",
     type=float,
     default=0.20,
@@ -1485,6 +1513,143 @@ def _restore_root_snapshot(task_env, snapshot: dict[str, object]) -> None:
         for slot_idx, (slot_pos, slot_quat) in enumerate(zip(clutter_positions, clutter_quats, strict=False)):
             slot_pos_tensor, slot_quat_tensor = _pose_from_lists(slot_pos, slot_quat)
             sync_clutter_roots(env_ids, slot_idx, slot_pos_tensor, slot_quat_tensor)
+
+
+def _trajectory_frame_array(data: np.lib.npyio.NpzFile, key: str, frame_idx: int) -> np.ndarray:
+    if key not in data.files:
+        raise KeyError(f"Bootstrap trajectory dataset missing {key!r}")
+    arr = np.asarray(data[key])
+    if arr.shape[0] <= frame_idx:
+        raise IndexError(f"Frame {frame_idx} out of range for {key} with shape {arr.shape}")
+    return np.asarray(arr[frame_idx])
+
+
+def _trajectory_frame_env_array(data: np.lib.npyio.NpzFile, key: str, frame_idx: int) -> np.ndarray:
+    value = _trajectory_frame_array(data, key, frame_idx)
+    if value.ndim >= 2 and value.shape[0] == 1:
+        value = value[0]
+    return np.asarray(value)
+
+
+def _source_rgb_obs_from_bootstrap_frame(
+    data: np.lib.npyio.NpzFile,
+    frame_idx: int,
+    *,
+    height: int,
+    width: int,
+) -> np.ndarray:
+    rgb = _trajectory_frame_array(data, "rgb", frame_idx)
+    return _resize_rgb_nearest(rgb, int(height), int(width))
+
+
+def _source_robot_state_from_bootstrap_frame(data: np.lib.npyio.NpzFile, frame_idx: int) -> np.ndarray:
+    q = _trajectory_frame_env_array(data, "actual_joint_position", frame_idx)
+    return np.asarray(q, dtype=np.float32).reshape(-1)
+
+
+def _policy_history_from_bootstrap_dataset(
+    data: np.lib.npyio.NpzFile,
+    frame_idx: int,
+    *,
+    n_obs_steps: int,
+    height: int,
+    width: int,
+    mode: str,
+) -> tuple[np.ndarray, np.ndarray] | None:
+    if mode == "none":
+        return None
+    if mode == "source_preceding":
+        end_frame = int(frame_idx) - 1
+    elif mode == "source_current":
+        end_frame = int(frame_idx)
+    else:
+        raise ValueError(f"Unsupported policy bootstrap history mode {mode!r}")
+    n_frames = int(np.asarray(data["rgb"]).shape[0])
+    end_frame = int(np.clip(end_frame, 0, max(n_frames - 1, 0)))
+    start_frame = end_frame - (int(n_obs_steps) - 1)
+    frame_ids = np.arange(start_frame, end_frame + 1, dtype=np.int64)
+    frame_ids = np.clip(frame_ids, 0, max(n_frames - 1, 0))
+    images = np.stack(
+        [
+            _source_rgb_obs_from_bootstrap_frame(data, int(idx), height=height, width=width)
+            for idx in frame_ids
+        ],
+        axis=0,
+    )
+    robot_states = np.stack(
+        [_source_robot_state_from_bootstrap_frame(data, int(idx)) for idx in frame_ids],
+        axis=0,
+    ).astype(np.float32, copy=False)
+    return images, robot_states
+
+
+def _restore_policy_bootstrap_frame(
+    task_env,
+    dataset_path: Path,
+    *,
+    frame_idx: int,
+) -> dict[str, object]:
+    if not dataset_path.is_file():
+        raise FileNotFoundError(dataset_path)
+    with np.load(dataset_path, allow_pickle=False) as data:
+        n_frames = int(np.asarray(data["actual_joint_position"]).shape[0])
+        if n_frames <= 0:
+            raise ValueError(f"Bootstrap trajectory dataset is empty: {dataset_path}")
+        frame = int(np.clip(int(frame_idx), 0, n_frames - 1))
+        phase = str(_trajectory_frame_array(data, "phase", frame))
+        source_frame_idx = int(_trajectory_frame_array(data, "source_frame_idx", frame))
+
+        target_pos = _trajectory_frame_env_array(data, "target_root_pos", frame).reshape(1, 3)
+        target_quat = _trajectory_frame_env_array(data, "target_root_quat", frame).reshape(1, 4)
+        clutter_pos = _trajectory_frame_array(data, "clutter_root_pos", frame)
+        clutter_quat = _trajectory_frame_array(data, "clutter_root_quat", frame)
+        clutter_pos_by_slot = [np.asarray(slot_pos).reshape(1, 3).astype(float).tolist() for slot_pos in clutter_pos]
+        clutter_quat_by_slot = [np.asarray(slot_quat).reshape(1, 4).astype(float).tolist() for slot_quat in clutter_quat]
+        _restore_root_snapshot(
+            task_env,
+            {
+                "target_root_pos": target_pos.astype(float).tolist(),
+                "target_root_quat": target_quat.astype(float).tolist(),
+                "clutter_root_pos_by_slot": clutter_pos_by_slot,
+                "clutter_root_quat_by_slot": clutter_quat_by_slot,
+            },
+        )
+
+        robot = getattr(task_env, "_robot", None)
+        if robot is None:
+            raise AttributeError("RGB-DP policy bootstrap requires a robot articulation")
+        env_ids = robot._ALL_INDICES
+        q_actual = _map_source_joint_to_env(task_env, _trajectory_frame_env_array(data, "actual_joint_position", frame))
+        qd_actual = _map_source_joint_velocity_to_env(
+            task_env,
+            _trajectory_frame_env_array(data, "actual_joint_velocity", frame),
+        )
+        q_command = _map_source_joint_to_env(task_env, _trajectory_frame_env_array(data, "command_joint_position", frame))
+        robot.write_joint_state_to_sim(q_actual, qd_actual, env_ids=env_ids)
+        robot.set_joint_position_target(q_command, env_ids=env_ids)
+        if hasattr(task_env, "robot_dof_targets"):
+            task_env.robot_dof_targets[env_ids] = q_command
+        if hasattr(task_env, "arm_joint_pos_target"):
+            task_env.arm_joint_pos_target[env_ids] = q_command[:, task_env.arm_joint_ids]
+        if hasattr(task_env, "finger_joint_pos_target"):
+            task_env.finger_joint_pos_target[env_ids] = q_command[:, task_env.finger_joint_ids]
+        task_env.scene.write_data_to_sim()
+        task_env.sim.forward()
+        task_env.scene.update(dt=0.0)
+        task_env._compute_intermediate_values()
+        return {
+            "enabled": True,
+            "dataset_path": str(dataset_path),
+            "requested_frame": int(frame_idx),
+            "frame": int(frame),
+            "num_frames": int(n_frames),
+            "phase": phase,
+            "source_frame_idx": source_frame_idx,
+            "actual_joint_position": _tensor_list(q_actual),
+            "command_joint_position": _tensor_list(q_command),
+            "target_root_pos": target_pos.reshape(-1).astype(float).tolist(),
+            "clutter_root_pos": [np.asarray(slot).reshape(-1).astype(float).tolist() for slot in clutter_pos],
+        }
 
 
 def _set_target_root_pose_env(task_env, pos_env: torch.Tensor, quat_wxyz: torch.Tensor) -> None:
@@ -3102,6 +3267,25 @@ def main() -> None:
             flush=True,
         )
 
+    policy_bootstrap_summary: dict[str, object] = {"enabled": False}
+    policy_bootstrap_dataset_path = (
+        Path(args_cli.policy_bootstrap_trajectory_dataset_path).expanduser().resolve()
+        if args_cli.policy_bootstrap_trajectory_dataset_path
+        else None
+    )
+    if policy_bootstrap_dataset_path is not None:
+        if not rgb_dp_eval_enabled:
+            raise ValueError("--policy_bootstrap_trajectory_dataset_path is only supported for single_yam_rgb_dp_policy")
+        policy_bootstrap_summary = _restore_policy_bootstrap_frame(
+            task_env,
+            policy_bootstrap_dataset_path,
+            frame_idx=int(args_cli.policy_bootstrap_frame),
+        )
+        for _ in range(max(int(args_cli.render_warmup_frames), 1)):
+            task_env.sim.render()
+            env.render()
+        print(json.dumps({"event": "policy_bootstrap_frame_restored", "summary": policy_bootstrap_summary}), flush=True)
+
     frames: list[np.ndarray] = []
     frame_paths: list[str] = []
     initial_snapshot = _root_snapshot(task_env)
@@ -3201,6 +3385,7 @@ def main() -> None:
     rgb_dp_action_min = np.full(int(args_cli.policy_robot_state_dim), np.inf, dtype=np.float64)
     rgb_dp_action_max = np.full(int(args_cli.policy_robot_state_dim), -np.inf, dtype=np.float64)
     rgb_dp_joint_target_last = None
+    rgb_dp_first_obs_override: tuple[np.ndarray, np.ndarray] | None = None
     if single_yam_demo_enabled:
         if robot is not None:
             demo_start_joint_pos = robot.data.joint_pos.detach().clone()
@@ -3218,7 +3403,47 @@ def main() -> None:
                 width=int(args_cli.policy_image_width),
                 robot_state_dim=int(args_cli.policy_robot_state_dim),
             )
-            rgb_dp_history.reset(_render_policy_rgb_obs(env), _yam_policy_robot_state(task_env))
+            history_bootstrap_loaded = False
+            if policy_bootstrap_dataset_path is not None and args_cli.policy_bootstrap_history != "none":
+                with np.load(policy_bootstrap_dataset_path, allow_pickle=False) as bootstrap_data:
+                    frame_idx = int(policy_bootstrap_summary.get("frame", args_cli.policy_bootstrap_frame))
+                    history_payload = _policy_history_from_bootstrap_dataset(
+                        bootstrap_data,
+                        frame_idx,
+                        n_obs_steps=int(getattr(rgb_dp_policy, "n_obs_steps", 1)),
+                        height=int(args_cli.policy_image_height),
+                        width=int(args_cli.policy_image_width),
+                        mode=str(args_cli.policy_bootstrap_history),
+                    )
+                    if history_payload is not None:
+                        history_images, history_robot_states = history_payload
+                        if history_images.shape != rgb_dp_history.image.shape:
+                            raise ValueError(
+                                f"Bootstrap image history shape {history_images.shape} != {rgb_dp_history.image.shape}"
+                            )
+                        if history_robot_states.shape != rgb_dp_history.robot_state.shape:
+                            raise ValueError(
+                                "Bootstrap robot_state history shape "
+                                f"{history_robot_states.shape} != {rgb_dp_history.robot_state.shape}"
+                            )
+                        rgb_dp_history.image[:] = history_images
+                        rgb_dp_history.robot_state[:] = history_robot_states
+                        rgb_dp_history.initialized = True
+                        history_bootstrap_loaded = True
+                    if bool(args_cli.policy_first_obs_from_bootstrap_source):
+                        rgb_dp_first_obs_override = (
+                            _source_rgb_obs_from_bootstrap_frame(
+                                bootstrap_data,
+                                frame_idx,
+                                height=int(args_cli.policy_image_height),
+                                width=int(args_cli.policy_image_width),
+                            ),
+                            _source_robot_state_from_bootstrap_frame(bootstrap_data, frame_idx),
+                        )
+            elif bool(args_cli.policy_first_obs_from_bootstrap_source):
+                raise ValueError("--policy_first_obs_from_bootstrap_source requires --policy_bootstrap_trajectory_dataset_path")
+            if not history_bootstrap_loaded:
+                rgb_dp_history.reset(_render_policy_rgb_obs(env), _yam_policy_robot_state(task_env))
             rgb_dp_joint_target_last = robot.data.joint_pos.detach().clone()
             print(
                 json.dumps(
@@ -3239,6 +3464,10 @@ def main() -> None:
                         "action_chunk_steps": int(args_cli.action_chunk_steps),
                         "policy_max_joint_delta": float(args_cli.policy_max_joint_delta),
                         "policy_max_gripper_delta": float(args_cli.policy_max_gripper_delta),
+                        "policy_bootstrap": policy_bootstrap_summary,
+                        "policy_bootstrap_history": str(args_cli.policy_bootstrap_history),
+                        "policy_bootstrap_history_loaded": bool(history_bootstrap_loaded),
+                        "policy_first_obs_from_bootstrap_source": bool(args_cli.policy_first_obs_from_bootstrap_source),
                     }
                 ),
                 flush=True,
@@ -3416,7 +3645,15 @@ def main() -> None:
                     raise RuntimeError("RGB-DP policy eval was enabled but the policy/history was not initialized")
                 new_policy_call = False
                 if rgb_dp_action_queue.shape[0] == 0:
-                    rgb_dp_history.push(_render_policy_rgb_obs(env), _yam_policy_robot_state(task_env))
+                    obs_source = "live_render"
+                    if rgb_dp_first_obs_override is not None:
+                        obs_image, obs_robot_state = rgb_dp_first_obs_override
+                        rgb_dp_first_obs_override = None
+                        obs_source = "bootstrap_source"
+                    else:
+                        obs_image = _render_policy_rgb_obs(env)
+                        obs_robot_state = _yam_policy_robot_state(task_env)
+                    rgb_dp_history.push(obs_image, obs_robot_state)
                     action_seq = _predict_rgb_dp_action_sequence(
                         rgb_dp_policy,
                         rgb_dp_history,
@@ -3456,6 +3693,7 @@ def main() -> None:
                         "policy_call_index": int(rgb_dp_action_queue_policy_call_idx),
                         "queue_step_offset": int(queue_step_offset),
                         "new_policy_call": bool(new_policy_call),
+                        "obs_source": obs_source if bool(new_policy_call) else "queued_action",
                         **trajectory_timing,
                     }
                 )
@@ -3853,6 +4091,9 @@ def main() -> None:
             "policy_sample_seed": args_cli.policy_sample_seed,
             "action_chunk_steps": int(args_cli.action_chunk_steps),
             "policy_call_count": int(rgb_dp_policy_call_idx),
+            "policy_bootstrap": policy_bootstrap_summary,
+            "policy_bootstrap_history": str(args_cli.policy_bootstrap_history),
+            "policy_first_obs_from_bootstrap_source": bool(args_cli.policy_first_obs_from_bootstrap_source),
             "policy_max_joint_delta": float(args_cli.policy_max_joint_delta),
             "policy_max_gripper_delta": float(args_cli.policy_max_gripper_delta),
             "action_min": None if not rgb_dp_action_trace else rgb_dp_action_min.astype(float).tolist(),
