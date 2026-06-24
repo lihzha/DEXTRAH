@@ -10232,3 +10232,50 @@ Smoke follow-up:
   ranges to object `[-0.30, -0.12]` and bin `[0.08, 0.30]`. This preserves
   right-side object and left-side bin randomization while keeping the transport
   range closer to the previously accepted smoke.
+
+2026-06-24T11:10:02Z - Final short candidate accepted; L40 RGB replay and metadata fix
+- Continued candidate tuning after the narrowed-Y patch. Diagnosed additional
+  planner/validation rejects as object-shape and drop-margin issues, then
+  committed:
+  `a6f6c26b` manifest filters for minimum XY/Z extents and max XY aspect,
+  `73aaf534` compact single-object policy pool defaults,
+  `a9297df3` tall-narrow object rejection, `6466bb2a` larger randomized bin
+  sizes plus `SCRIPTED_BIN_DROP_Y_OFFSET=-0.04`, `7d98de6d` L40 replay TSV
+  stdin fix, `9da88796` restored-bin metadata fix, and `54bcf185` effective
+  randomization logging.
+- A100 final-short source smoke
+  `yam_rgb_candidate_final_short_a100_20260624T103439Z` completed on jobs
+  `29472633` and `29472637`; both shards accepted on first attempt. Combined
+  source JSONL:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/yam_demos/yam_rgb_candidate_final_short_a100_20260624T103439Z/accepted_demos_combined.jsonl`.
+- L40 replay bug diagnosis: first replay `1041721` only processed row 0
+  because the nested Isaac wrapper consumed the shard TSV stdin. Commit
+  `7d98de6d` changed the wrapper call to `bash ... </dev/null`. Fixed replay
+  `1041723`, batch `yam_rgb_l40_final_short_fixed_20260624T104806Z`,
+  accepted `2`, failed `0`, with `quality` rendering, `1024x1024` render
+  frames, and `256x256` `scene_rgb`/`wrist_rgb` policy observations.
+- Local visual artifacts:
+  `cluster_results/l401/yam_rgb_l40_final_short_fixed_20260624T104806Z/inspection/final_short_scene_wrist_sheet.png`,
+  `.../validations/yam_rgb_l40_final_short_fixed_20260624T104806Z_s000_row000000/yam_rgb_replay.mp4`,
+  and `.../validations/yam_rgb_l40_final_short_fixed_20260624T104806Z_s000_row000001/yam_rgb_replay.mp4`.
+  The scene camera shows mostly table/surround/bin/object/robot with only a
+  narrow background strip; wrist D405 observations are nonblank and track the
+  object/bin interaction.
+- Dataset evidence: row 0 has `scene_rgb`/`wrist_rgb` `[845,256,256,3]`,
+  `robot_state` `[845,1,24]`, `action` `[845,1,7]`; row 1 has
+  `scene_rgb`/`wrist_rgb` `[825,256,256,3]`, `robot_state` `[825,1,24]`,
+  `action` `[825,1,7]`. Both final object centers are inside the actual
+  rendered randomized bin.
+- Metadata issue found during inspection: replay sampled a fresh pre-restore
+  `yam_policy_scene_randomization.goal_bin`, then restored the source stable
+  scene bin before env creation, so the environment/RGB were correct but the
+  summary field was misleading. Commit `9da88796` makes `goal_bin`/`source_bin`
+  report the effective restored bins and preserves `pre_restore_goal_bin`; L40
+  metadata smoke `1041727`, batch
+  `yam_rgb_l40_metadata_smoke_20260624T1104Z`, accepted `1`, failed `0`, and
+  confirmed `goal_bin` matches `tabletop_clutter_summary.goal_bin`.
+- Current remote agent worktree
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-rgb-diffusion-20260624`
+  is deployed at commit `54bcf185a534365e15bbfb8cace374541f6436b7` and is
+  ready for 500-trajectory A100 source generation followed by L40 quality RGB
+  replay.

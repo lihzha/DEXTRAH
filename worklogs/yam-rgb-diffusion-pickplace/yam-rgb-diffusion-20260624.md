@@ -170,3 +170,49 @@
   object Y `[-0.30, -0.12]` and bin Y `[0.08, 0.30]`, still keeping object on
   robot-right negative Y and bin on robot-left positive Y, but closer to the
   previously accepted smoke range.
+
+## 2026-06-24T11:10:02Z Final Short Candidate And Metadata Smoke
+
+- follow-up object/bin fixes: added manifest filters for minimum XY/Z extents,
+  max XY aspect, and max Z-to-min-XY aspect; set compact single-object defaults
+  (`POOL_MAX_XY_RADIUS=0.060`, `POOL_MIN_XY_HALF_EXTENT=0.020`,
+  `POOL_MIN_Z_HALF_EXTENT=0.032`, `POOL_MAX_XY_ASPECT=2.0`,
+  `POOL_MAX_Z_TO_MIN_XY_ASPECT=1.8`); enlarged randomized bin sizes to
+  X `[0.34,0.46]`, Y `[0.30,0.42]`; and biased drop target with
+  `SCRIPTED_BIN_DROP_Y_OFFSET=-0.04`.
+- final A100 source smoke:
+  `yam_rgb_candidate_final_short_a100_20260624T103439Z`, jobs `29472633` and
+  `29472637`, accepted both shards on first attempt. Combined source rows:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/yam_demos/yam_rgb_candidate_final_short_a100_20260624T103439Z/accepted_demos_combined.jsonl`.
+- L40 fixed replay:
+  `yam_rgb_l40_final_short_fixed_20260624T104806Z`, job `1041723`, accepted
+  `2`, failed `0`, after commit `7d98de6d` fixed nested wrapper stdin
+  consumption. Render mode was `quality`, render frames were `1024x1024`, and
+  policy observations were `256x256`.
+- inspected local observation sheets and videos under
+  `/home/lzha/code/cluster_results/l401/yam_rgb_l40_final_short_fixed_20260624T104806Z/`.
+  Scene framing is good for sim2real: table/surround/bin/object/most robot
+  dominate the view and only a narrow wall/background strip remains. Wrist D405
+  stream is nonblank and sees the object near grasp/drop.
+- replay dataset shapes:
+  row 0 `scene_rgb`/`wrist_rgb` `[845,256,256,3]`, `robot_state`
+  `[845,1,24]`, `action` `[845,1,7]`; row 1 `scene_rgb`/`wrist_rgb`
+  `[825,256,256,3]`, `robot_state` `[825,1,24]`, `action` `[825,1,7]`.
+  Final object centers are inside the actual rendered randomized bin for both
+  rows.
+- metadata correction: replay first sampled a fresh pre-restore randomized bin
+  and then restored the source stable-scene bin, leaving the old summary
+  misleading. Commit `9da88796` updates `yam_policy_scene_randomization` so
+  `goal_bin`/`source_bin` report the effective restored bins while preserving
+  `pre_restore_goal_bin`; commit `54bcf185` makes the `creating_env` log use
+  the same effective summary.
+- validation after metadata fix: L40 metadata smoke `1041727`, batch
+  `yam_rgb_l40_metadata_smoke_20260624T1104Z`, accepted `1`, failed `0`.
+  Metrics confirm `metadata_bin_source=stable_scene_restore`,
+  `yam_policy_scene_randomization.goal_bin == tabletop_clutter_summary.goal_bin`,
+  render mode `quality`, render resolution `[1024,1024]`, `scene_rgb`/`wrist_rgb`
+  `[845,256,256,3]`, and `robot_state` `[845,1,24]`.
+- current commit deployed on the shared remote agent worktree:
+  `54bcf185a534365e15bbfb8cace374541f6436b7`. Next step is the full
+  500-trajectory A100 source run, then L40 quality replay from the accepted
+  source rows.
