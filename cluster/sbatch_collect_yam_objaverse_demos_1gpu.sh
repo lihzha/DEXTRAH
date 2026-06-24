@@ -99,6 +99,12 @@ TABLETOP_CLUTTER_PLACEMENT_ATTEMPTS="${TABLETOP_CLUTTER_PLACEMENT_ATTEMPTS:-1024
 TABLETOP_CLUTTER_MAX_XY_RADIUS="${TABLETOP_CLUTTER_MAX_XY_RADIUS:-$POOL_MAX_XY_RADIUS}"
 OBJECT_ASSET_ASSIGNMENT="${OBJECT_ASSET_ASSIGNMENT:-random}"
 TABLETOP_CLUTTER_ASSET_ASSIGNMENT="${TABLETOP_CLUTTER_ASSET_ASSIGNMENT:-random_without_replacement}"
+POST_SETTLE_TARGET_FILTER="${POST_SETTLE_TARGET_FILTER:-False}"
+POST_SETTLE_TARGET_X_RANGE="${POST_SETTLE_TARGET_X_RANGE:-}"
+POST_SETTLE_TARGET_Y_RANGE="${POST_SETTLE_TARGET_Y_RANGE:-}"
+POST_SETTLE_TARGET_RANGE_MARGIN="${POST_SETTLE_TARGET_RANGE_MARGIN:-0.035}"
+POST_SETTLE_TARGET_MIN_Z="${POST_SETTLE_TARGET_MIN_Z:-0.0}"
+POST_SETTLE_TARGET_MAX_Z="${POST_SETTLE_TARGET_MAX_Z:-0.085}"
 
 CODE_COMMIT="${CODE_COMMIT:-}"
 if [ -z "$CODE_COMMIT" ] && git -C "$CODE_NFS" rev-parse HEAD >/dev/null 2>&1; then
@@ -137,6 +143,103 @@ host_to_results_container() {
   else
     printf "%s" "$value"
   fi
+}
+
+stable_scene_passes_post_settle_filter() {
+  local stable_scene_host="$1"
+  local filter_json_host="$2"
+  python3 - "$stable_scene_host" "$filter_json_host" <<'PY'
+import json
+import math
+import os
+import sys
+from pathlib import Path
+
+
+def _truthy(value: str) -> bool:
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _parse_range(value: str) -> tuple[float, float] | None:
+    parts = value.replace(",", " ").split()
+    if len(parts) != 2:
+        return None
+    lo, hi = float(parts[0]), float(parts[1])
+    return (min(lo, hi), max(lo, hi))
+
+
+stable_scene_path = Path(sys.argv[1])
+output_path = Path(sys.argv[2])
+enabled = _truthy(os.environ.get("POST_SETTLE_TARGET_FILTER", "False"))
+payload: dict[str, object] = {
+    "enabled": enabled,
+    "stable_scene": str(stable_scene_path),
+}
+if not enabled:
+    payload.update({"passes": True, "reason": "disabled"})
+    output_path.write_text(json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8")
+    raise SystemExit(0)
+
+try:
+    stable_scene = json.loads(stable_scene_path.read_text(encoding="utf-8"))
+except Exception as exc:
+    payload.update({"passes": False, "reason": "stable_scene_read_failed", "error": str(exc)})
+    output_path.write_text(json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8")
+    raise SystemExit(1)
+
+target = stable_scene.get("target") if isinstance(stable_scene, dict) else {}
+target = target if isinstance(target, dict) else {}
+pos = target.get("root_position")
+asset = target.get("asset") if isinstance(target.get("asset"), dict) else {}
+payload["asset_uuid"] = asset.get("uuid")
+payload["root_position"] = pos
+
+reasons: list[str] = []
+if not isinstance(pos, list) or len(pos) < 3:
+    reasons.append("missing_target_root_position")
+else:
+    try:
+        xyz = [float(pos[i]) for i in range(3)]
+    except Exception:
+        xyz = [float("nan"), float("nan"), float("nan")]
+    if not all(math.isfinite(v) for v in xyz):
+        reasons.append("nonfinite_target_root_position")
+    else:
+        margin = float(os.environ.get("POST_SETTLE_TARGET_RANGE_MARGIN", "0.035"))
+        x_range = _parse_range(os.environ.get("POST_SETTLE_TARGET_X_RANGE", ""))
+        if x_range is None:
+            x_range = _parse_range(os.environ.get("YAM_POLICY_OBJECT_X_RANGE", ""))
+            if x_range is not None:
+                x_range = (x_range[0] - margin, x_range[1] + margin)
+        y_range = _parse_range(os.environ.get("POST_SETTLE_TARGET_Y_RANGE", ""))
+        if y_range is None:
+            y_range = _parse_range(os.environ.get("YAM_POLICY_OBJECT_Y_RANGE", ""))
+            if y_range is not None:
+                y_range = (y_range[0] - margin, y_range[1] + margin)
+        min_z = float(os.environ.get("POST_SETTLE_TARGET_MIN_Z", "0.0"))
+        max_z = float(os.environ.get("POST_SETTLE_TARGET_MAX_Z", "0.085"))
+        payload.update(
+            {
+                "effective_x_range": x_range,
+                "effective_y_range": y_range,
+                "min_z": min_z,
+                "max_z": max_z,
+            }
+        )
+        if x_range is not None and not (x_range[0] <= xyz[0] <= x_range[1]):
+            reasons.append("target_x_outside_post_settle_range")
+        if y_range is not None and not (y_range[0] <= xyz[1] <= y_range[1]):
+            reasons.append("target_y_outside_post_settle_range")
+        if xyz[2] < min_z:
+            reasons.append("target_z_below_post_settle_min")
+        if xyz[2] > max_z:
+            reasons.append("target_z_above_post_settle_max")
+
+passes = not reasons
+payload.update({"passes": passes, "reasons": reasons})
+output_path.write_text(json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8")
+raise SystemExit(0 if passes else 1)
+PY
 }
 
 prepare_pool_manifest() {
@@ -457,6 +560,10 @@ echo "POOL_MIN_XY_HALF_EXTENT=$POOL_MIN_XY_HALF_EXTENT"
 echo "POOL_MIN_Z_HALF_EXTENT=$POOL_MIN_Z_HALF_EXTENT"
 echo "POOL_MAX_XY_ASPECT=$POOL_MAX_XY_ASPECT"
 echo "POOL_MAX_Z_TO_MIN_XY_ASPECT=$POOL_MAX_Z_TO_MIN_XY_ASPECT"
+echo "POST_SETTLE_TARGET_FILTER=$POST_SETTLE_TARGET_FILTER"
+echo "POST_SETTLE_TARGET_RANGE_MARGIN=$POST_SETTLE_TARGET_RANGE_MARGIN"
+echo "POST_SETTLE_TARGET_MIN_Z=$POST_SETTLE_TARGET_MIN_Z"
+echo "POST_SETTLE_TARGET_MAX_Z=$POST_SETTLE_TARGET_MAX_Z"
 echo "SELECTED_OBJECTS_JSONL=${SELECTED_OBJECTS_JSONL:-unset}"
 echo "SHARD_DIR=$SHARD_DIR"
 
@@ -491,7 +598,11 @@ json_event "pool_filter_config" \
   "pool_min_z_half_extent=$POOL_MIN_Z_HALF_EXTENT" \
   "pool_max_xy_aspect=$POOL_MAX_XY_ASPECT" \
   "pool_max_z_to_min_xy_aspect=$POOL_MAX_Z_TO_MIN_XY_ASPECT" \
-  "pool_max_grasp_width_p95=$POOL_MAX_GRASP_WIDTH_P95"
+  "pool_max_grasp_width_p95=$POOL_MAX_GRASP_WIDTH_P95" \
+  "post_settle_target_filter=$POST_SETTLE_TARGET_FILTER" \
+  "post_settle_target_range_margin=$POST_SETTLE_TARGET_RANGE_MARGIN" \
+  "post_settle_target_min_z=$POST_SETTLE_TARGET_MIN_Z" \
+  "post_settle_target_max_z=$POST_SETTLE_TARGET_MAX_Z"
 
 accepted=0
 attempt=0
@@ -512,6 +623,7 @@ while [ "$accepted" -lt "$SHARD_TARGET" ] && [ "$attempt" -lt "$MAX_ATTEMPTS" ];
   plan_dir_host="$attempt_dir/plan"
   trajectory_host="$plan_dir_host/trajectory.json"
   validation_host="$attempt_dir/validation_metrics.json"
+  post_settle_filter_host="$attempt_dir/post_settle_filter.json"
   json_event "attempt_start" \
     "seed=$seed" \
     "attempt=$attempt" \
@@ -529,6 +641,23 @@ while [ "$accepted" -lt "$SHARD_TARGET" ] && [ "$attempt" -lt "$MAX_ATTEMPTS" ];
   if [ ! -s "$stable_scene_host" ]; then
     json_event "attempt_rejected" "seed=$seed" "stage=stable_scene_missing" "settle_run=$settle_run"
     echo "{\"seed\":$seed,\"stage\":\"stable_scene_missing\",\"settle_run\":\"$settle_run\"}" >> "$REJECTED_JSONL"
+    attempt="$((attempt + 1))"
+    continue
+  fi
+  if ! stable_scene_passes_post_settle_filter "$stable_scene_host" "$post_settle_filter_host"; then
+    json_event "attempt_rejected" "seed=$seed" "stage=post_settle_filter" "settle_run=$settle_run" "filter=$post_settle_filter_host"
+    python3 - "$seed" "$settle_run" "$post_settle_filter_host" <<'PY' >> "$REJECTED_JSONL"
+import json
+import sys
+from pathlib import Path
+
+seed, settle_run, filter_path = sys.argv[1:]
+payload = {"seed": int(seed), "stage": "post_settle_filter", "settle_run": settle_run, "filter": filter_path}
+path = Path(filter_path)
+if path.is_file():
+    payload["filter_result"] = json.loads(path.read_text(encoding="utf-8"))
+print(json.dumps(payload, sort_keys=True))
+PY
     attempt="$((attempt + 1))"
     continue
   fi

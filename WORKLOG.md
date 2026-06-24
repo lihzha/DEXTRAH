@@ -10327,3 +10327,28 @@ Smoke follow-up:
   cohort, so two low-yield old shards were replaced by fallback wave 2
   `yam_rgb_source_fallback_wave2_16_a100_20260624T1218Z` (jobs `29473409`,
   `29473410`), currently pending behind maintenance.
+
+2026-06-24T12:34:00Z - Post-settle target filter for source efficiency
+- While monitoring the active fallback source wave, accepted rows reached at
+  least `106` total across active cohorts, and fallback rows were still the
+  best-yielding cohort. Accepted validation metrics showed nonblank RGB,
+  object lifted, object inside the randomized bin, no truncation, and required
+  robot/action datasets present.
+- Planner-stage rejects in fallback were mostly cuRobo goalset misses rather
+  than validation failures. Comparing current fallback accepted versus failed
+  plan summaries showed accepted rows had settled target centers inside the
+  intended right-side object band, while some planner failures had target
+  centers outside the spawn band after settling or below the tabletop.
+- Added an opt-out `POST_SETTLE_TARGET_FILTER` to
+  `cluster/sbatch_collect_yam_objaverse_demos_1gpu.sh`, enabled by the
+  single-object policy wrapper. It checks `stable_scene.json` before expensive
+  planning and rejects scenes whose settled target root pose is outside the
+  object region plus `0.035 m`, below `z=0.0`, or above `z=0.085`.
+- Retrospective filter check on the current fallback wave rejected `0/22`
+  accepted rows and `4/22` planner-fail rows (`2` below-table, `1` X drift,
+  `1` Y drift), so it should improve source efficiency without narrowing the
+  accepted distribution.
+- Local validation passed: `bash -n
+  cluster/sbatch_collect_yam_objaverse_demos_1gpu.sh`, `bash -n
+  cluster/sbatch_collect_yam_single_object_policy_demos_1gpu.sh`, and
+  `git diff --check`.

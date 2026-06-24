@@ -280,3 +280,27 @@
   `yam_rgb_source_fallback_wave2_16_a100_20260624T1218Z` submitted jobs
   `29473409` and `29473410` after replacing two low-yield old shards; those
   jobs are pending behind maintenance.
+
+## 2026-06-24T12:34:00Z Post-Settle Source Filter
+
+- active source monitoring showed at least `106` total accepted rows across
+  pre-wave/tuned/fallback cohorts. Fallback remains the strongest cohort; its
+  accepted validation metrics pass nonblank RGB, object lifted, object inside
+  randomized bin, no truncation, and required trajectory dataset keys.
+- fallback planner rejects are dominated by cuRobo goalset no-solution cases.
+  Success/failure comparison showed a subset of failures have target root poses
+  that drifted outside the intended right-side object region after settle or
+  dipped below the tabletop, wasting expensive planning time.
+- patched `cluster/sbatch_collect_yam_objaverse_demos_1gpu.sh` with an
+  opt-out `POST_SETTLE_TARGET_FILTER` that reads `stable_scene.json` after
+  settle and before planning. It logs rejected attempts as
+  `stage=post_settle_filter` with a JSON diagnostic.
+- enabled that filter in
+  `cluster/sbatch_collect_yam_single_object_policy_demos_1gpu.sh` with
+  `POST_SETTLE_TARGET_RANGE_MARGIN=0.035`, `POST_SETTLE_TARGET_MIN_Z=0.0`,
+  and `POST_SETTLE_TARGET_MAX_Z=0.085`. Effective X/Y ranges are derived from
+  the single-object spawn windows plus the margin.
+- retrospective check on the current fallback batch: rejected `0/22` accepted
+  demos and `4/22` planner failures (`2` below-table, `1` X drift, `1` Y
+  drift). Local checks passed: both affected shell scripts with `bash -n` and
+  `git diff --check`.
