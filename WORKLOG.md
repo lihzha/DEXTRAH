@@ -10067,3 +10067,27 @@ Smoke follow-up:
   branch at the same commit as cuRobo `main`; its old worktree was
   unregistered, but a root-owned orphaned asset directory prevented complete
   filesystem removal without sudo.
+
+2026-06-24T06:32:40Z - Clean YAM RGB-DP data/training integration
+- Goal: merge only the YAM RGB Diffusion Policy pieces that are known-correct
+  from `codex/yam-rgb-dp-eval` into `main`.
+- Version state: created clean integration worktree
+  `/home/lzha/code/worktrees/DEXTRAH/yam-rgb-dp-clean-main-20260624` from
+  `origin/main` commit `5b0d1cb794119f342037c61c181e11866c8e2690`.
+- Included scope: YAM accepted-demo to RGB-DP NPZ conversion, conversion Slurm
+  wrapper, YAM RGB-DP training config, action-dimension plumbing in the generic
+  RGB dataset/report tools, and generic config/image/action shape overrides in
+  the RGB-DP training wrapper.
+- Excluded scope: YAM RGB policy evaluation suite, render/eval script policy
+  debug path, source-frame bootstrapping, teacher-forced/source-history eval,
+  and phase/progress policy-input experiments. The default YAM config remains
+  RGB plus 8D robot joint state and 8D joint-position action labels.
+- Validation plan: run Python syntax checks, Slurm shell syntax checks, a tiny
+  synthetic converter smoke, inspect the final diff, then merge the clean
+  integration branch into `main`.
+- Validation result: `python3 -m py_compile` passed for the converter,
+  dataset, and report modules; `bash -n` passed for the conversion and training
+  Slurm wrappers; `git diff --check` passed; a four-frame synthetic YAM replay
+  smoke using `/home/lzha/code/graspgenx/.venv/bin/python` converted to RGB-DP
+  NPZ with image shape `[4, 6, 8, 3]`, robot state shape `[4, 8]`, action
+  shape `[4, 8]`, and expected episode/phase metadata.
