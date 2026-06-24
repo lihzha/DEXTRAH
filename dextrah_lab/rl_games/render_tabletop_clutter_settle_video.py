@@ -130,6 +130,11 @@ parser.add_argument("--yam_policy_scene_camera_target_jitter", type=float, nargs
 parser.add_argument("--yam_policy_dome_light_intensity_range", type=float, nargs=2, default=(450.0, 1600.0))
 parser.add_argument("--yam_policy_key_light_intensity_range", type=float, nargs=2, default=(250.0, 1400.0))
 parser.add_argument("--yam_policy_material_value_range", type=float, nargs=2, default=(0.32, 0.82))
+parser.add_argument("--yam_policy_tabletop_surround", action=argparse.BooleanOptionalAction, default=True)
+parser.add_argument("--yam_policy_tabletop_surround_size", type=float, nargs=2, default=(1.90, 1.90))
+parser.add_argument("--yam_policy_tabletop_surround_top_z_offset", type=float, default=-0.004)
+parser.add_argument("--yam_policy_tabletop_surround_thickness", type=float, default=0.006)
+parser.add_argument("--yam_policy_tabletop_surround_color_jitter", type=float, default=0.08)
 parser.add_argument("--record_multicam_rgb", action=argparse.BooleanOptionalAction, default=False)
 parser.add_argument("--record_scene_rgb", action=argparse.BooleanOptionalAction, default=True)
 parser.add_argument("--record_wrist_rgb", action=argparse.BooleanOptionalAction, default=True)
@@ -644,6 +649,26 @@ def _apply_yam_policy_scene_randomization(env_cfg, args, rng: np.random.Generato
             table_color,
             roughness=float(rng.uniform(0.45, 0.92)),
         )
+    surround_color = tuple(
+        float(
+            np.clip(
+                channel
+                + rng.uniform(
+                    -args.yam_policy_tabletop_surround_color_jitter,
+                    args.yam_policy_tabletop_surround_color_jitter,
+                ),
+                0.05,
+                0.95,
+            )
+        )
+        for channel in table_color
+    )
+    setattr(env_cfg, "yam_policy_tabletop_surround_enabled", bool(args.yam_policy_tabletop_surround))
+    setattr(env_cfg, "yam_policy_tabletop_surround_size", tuple(float(v) for v in args.yam_policy_tabletop_surround_size))
+    setattr(env_cfg, "yam_policy_tabletop_surround_top_z_offset", float(args.yam_policy_tabletop_surround_top_z_offset))
+    setattr(env_cfg, "yam_policy_tabletop_surround_thickness", float(args.yam_policy_tabletop_surround_thickness))
+    setattr(env_cfg, "yam_policy_tabletop_surround_color", surround_color)
+    setattr(env_cfg, "yam_policy_tabletop_surround_roughness", float(rng.uniform(0.52, 0.95)))
     setattr(env_cfg, "tabletop_goal_bin_floor_color", bin_floor_color)
     setattr(env_cfg, "tabletop_goal_bin_x_wall_color", x_wall_color)
     setattr(env_cfg, "tabletop_goal_bin_y_wall_color", y_wall_color)
@@ -683,6 +708,13 @@ def _apply_yam_policy_scene_randomization(env_cfg, args, rng: np.random.Generato
             "goal_bin_floor_color": bin_floor_color,
             "goal_bin_x_wall_color": x_wall_color,
             "goal_bin_y_wall_color": y_wall_color,
+            "tabletop_surround_color": surround_color,
+        },
+        "tabletop_surround": {
+            "enabled": bool(args.yam_policy_tabletop_surround),
+            "size": [float(v) for v in args.yam_policy_tabletop_surround_size],
+            "top_z_offset": float(args.yam_policy_tabletop_surround_top_z_offset),
+            "thickness": float(args.yam_policy_tabletop_surround_thickness),
         },
         "lighting": {
             "dome_light_intensity": dome_light,
@@ -1866,12 +1898,18 @@ def _usd_set_xform(
         xformable.AddScaleOp().Set(Gf.Vec3f(*[float(v) for v in scale]))
 
 
-def _usd_material(stage: Usd.Stage, path: str, color: tuple[float, float, float]) -> UsdShade.Material:
+def _usd_material(
+    stage: Usd.Stage,
+    path: str,
+    color: tuple[float, float, float],
+    *,
+    roughness: float = 0.42,
+) -> UsdShade.Material:
     mat = UsdShade.Material.Define(stage, path)
     shader = UsdShade.Shader.Define(stage, f"{path}/Shader")
     shader.CreateIdAttr("UsdPreviewSurface")
     shader.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).Set(Gf.Vec3f(*color))
-    shader.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(0.42)
+    shader.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(float(roughness))
     shader.CreateInput("metallic", Sdf.ValueTypeNames.Float).Set(0.0)
     mat.CreateSurfaceOutput().ConnectToSource(shader.ConnectableAPI(), "surface")
     return mat
@@ -1893,6 +1931,47 @@ def _usd_add_box(
     prim = cube.GetPrim()
     _usd_set_xform(prim, center, scale=size)
     _usd_bind(prim, mat)
+
+
+def _spawn_yam_policy_tabletop_surround(task_env) -> dict[str, object]:
+    cfg = task_env.cfg
+    if not bool(getattr(cfg, "yam_policy_tabletop_surround_enabled", False)):
+        return {"enabled": False}
+    stage = omni.usd.get_context().get_stage()
+    if stage is None:
+        return {"enabled": False, "reason": "missing_usd_stage"}
+    env_origins = task_env.scene.env_origins.detach().float().cpu().numpy()
+    size_xy = tuple(float(v) for v in getattr(cfg, "yam_policy_tabletop_surround_size", (1.90, 1.90)))
+    if len(size_xy) != 2:
+        return {"enabled": False, "reason": "invalid_size", "size": list(size_xy)}
+    thickness = float(getattr(cfg, "yam_policy_tabletop_surround_thickness", 0.006))
+    top_z = float(cfg.table_surface_z) + float(getattr(cfg, "yam_policy_tabletop_surround_top_z_offset", -0.004))
+    center_z = top_z - 0.5 * thickness
+    color = tuple(float(v) for v in getattr(cfg, "yam_policy_tabletop_surround_color", (0.48, 0.48, 0.45)))
+    roughness = float(getattr(cfg, "yam_policy_tabletop_surround_roughness", 0.72))
+    looks_root = "/World/Looks/YAMPolicyTabletopSurround"
+    UsdGeom.Xform.Define(stage, looks_root)
+    mat = _usd_material(stage, f"{looks_root}/surface", color, roughness=roughness)
+    spawned: list[dict[str, object]] = []
+    for env_id, origin in enumerate(env_origins):
+        center = (
+            float(origin[0]) + float(cfg.table_center_x),
+            float(origin[1]) + float(cfg.table_center_y),
+            float(origin[2]) + center_z,
+        )
+        path = f"/World/envs/env_{env_id}/YAMPolicyTabletopSurround"
+        _usd_add_box(stage, path, center, (size_xy[0], size_xy[1], thickness), mat)
+        spawned.append({"env_id": int(env_id), "path": path, "center": [float(v) for v in center]})
+    task_env.sim.forward()
+    return {
+        "enabled": True,
+        "size": [float(v) for v in size_xy],
+        "top_z": float(top_z),
+        "thickness": float(thickness),
+        "color": [float(v) for v in color],
+        "roughness": roughness,
+        "spawned": spawned,
+    }
 
 
 def _grasp_overlay_candidates(payload: dict[str, object], max_count: int) -> tuple[list[np.ndarray], int | None]:
@@ -3154,6 +3233,12 @@ def main() -> None:
     )
     env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array")
     task_env = env.unwrapped
+    yam_policy_tabletop_surround_summary = _spawn_yam_policy_tabletop_surround(task_env)
+    if yam_policy_tabletop_surround_summary.get("enabled"):
+        print(
+            json.dumps({"event": "yam_policy_tabletop_surround_spawned", **yam_policy_tabletop_surround_summary}),
+            flush=True,
+        )
     if stable_scene_input is not None:
         target = stable_scene_input.get("target") if isinstance(stable_scene_input.get("target"), dict) else {}
         asset = target.get("asset") if isinstance(target.get("asset"), dict) else {}
@@ -3944,6 +4029,7 @@ def main() -> None:
         "camera_eye": [float(v) for v in eye],
         "camera_target": [float(v) for v in target],
         "scene_camera": scene_camera_summary,
+        "yam_policy_tabletop_surround": yam_policy_tabletop_surround_summary,
         "app_rendering_mode": getattr(args_cli, "rendering_mode", None),
         "yam_policy_scene_randomization": getattr(
             task_env.cfg,
