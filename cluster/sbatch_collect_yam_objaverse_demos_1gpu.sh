@@ -52,6 +52,7 @@ POOL_MAX_HEIGHT="${POOL_MAX_HEIGHT:-0.160}"
 POOL_MIN_XY_HALF_EXTENT="${POOL_MIN_XY_HALF_EXTENT:-0.0}"
 POOL_MIN_Z_HALF_EXTENT="${POOL_MIN_Z_HALF_EXTENT:-0.0}"
 POOL_MAX_XY_ASPECT="${POOL_MAX_XY_ASPECT:-0.0}"
+POOL_MAX_Z_TO_MIN_XY_ASPECT="${POOL_MAX_Z_TO_MIN_XY_ASPECT:-0.0}"
 POOL_MAX_GRASP_WIDTH_P95="${POOL_MAX_GRASP_WIDTH_P95:-0.145}"
 
 SETTLE_STEPS="${SETTLE_STEPS:-100}"
@@ -219,6 +220,7 @@ PY
           --min_xy_half_extent "$POOL_MIN_XY_HALF_EXTENT" \
           --min_z_half_extent "$POOL_MIN_Z_HALF_EXTENT" \
           --max_xy_aspect "$POOL_MAX_XY_ASPECT" \
+          --max_z_to_min_xy_aspect "$POOL_MAX_Z_TO_MIN_XY_ASPECT" \
           --max_grasp_width_p95 "$POOL_MAX_GRASP_WIDTH_P95"
       fi
     fi
@@ -454,6 +456,7 @@ echo "POOL_MANIFEST=$POOL_MANIFEST"
 echo "POOL_MIN_XY_HALF_EXTENT=$POOL_MIN_XY_HALF_EXTENT"
 echo "POOL_MIN_Z_HALF_EXTENT=$POOL_MIN_Z_HALF_EXTENT"
 echo "POOL_MAX_XY_ASPECT=$POOL_MAX_XY_ASPECT"
+echo "POOL_MAX_Z_TO_MIN_XY_ASPECT=$POOL_MAX_Z_TO_MIN_XY_ASPECT"
 echo "SELECTED_OBJECTS_JSONL=${SELECTED_OBJECTS_JSONL:-unset}"
 echo "SHARD_DIR=$SHARD_DIR"
 
@@ -487,6 +490,7 @@ json_event "pool_filter_config" \
   "pool_min_xy_half_extent=$POOL_MIN_XY_HALF_EXTENT" \
   "pool_min_z_half_extent=$POOL_MIN_Z_HALF_EXTENT" \
   "pool_max_xy_aspect=$POOL_MAX_XY_ASPECT" \
+  "pool_max_z_to_min_xy_aspect=$POOL_MAX_Z_TO_MIN_XY_ASPECT" \
   "pool_max_grasp_width_p95=$POOL_MAX_GRASP_WIDTH_P95"
 
 accepted=0

@@ -108,6 +108,15 @@ def parse_args() -> argparse.Namespace:
         default=0.0,
         help="Reject elongated XY shapes when max(X,Y) / min(X,Y) exceeds this value. Use <=0 to disable.",
     )
+    parser.add_argument(
+        "--max_z_to_min_xy_aspect",
+        type=float,
+        default=0.0,
+        help=(
+            "Reject tall narrow shapes when Z half extent divided by the smaller XY half extent "
+            "exceeds this value. Use <=0 to disable."
+        ),
+    )
     parser.add_argument("--max_grasp_width_p95", type=float, default=0.145)
     parser.add_argument("--prefer_keywords", type=str, default="")
     parser.add_argument("--exclude_keywords", type=str, default="animal,building,car,chair,person,plant,room,statue,tree,vehicle")
@@ -136,6 +145,7 @@ def main() -> None:
         "too_thin_xy": 0,
         "too_flat_z": 0,
         "too_elongated_xy": 0,
+        "too_tall_for_footprint": 0,
         "too_wide_grasp": 0,
         "excluded_keyword": 0,
     }
@@ -156,6 +166,7 @@ def main() -> None:
         min_xy_extent = min(x_extent, y_extent)
         z_half_extent = 0.5 * height
         xy_aspect = max_xy_extent / min_xy_extent if min_xy_extent > 1e-9 else float("inf")
+        z_to_min_xy_aspect = z_half_extent / min_xy_half_extent if min_xy_half_extent > 1e-9 else float("inf")
         if radius < float(args.min_xy_radius):
             skipped["too_small"] += 1
             continue
@@ -176,6 +187,9 @@ def main() -> None:
             continue
         if float(args.max_xy_aspect) > 0.0 and xy_aspect > float(args.max_xy_aspect):
             skipped["too_elongated_xy"] += 1
+            continue
+        if float(args.max_z_to_min_xy_aspect) > 0.0 and z_to_min_xy_aspect > float(args.max_z_to_min_xy_aspect):
+            skipped["too_tall_for_footprint"] += 1
             continue
         prior = record.get("grasp_prior") if isinstance(record.get("grasp_prior"), dict) else {}
         width_p95 = prior.get("grasp_width_p95")
@@ -200,6 +214,7 @@ def main() -> None:
             "min_xy_half_extent": min_xy_half_extent,
             "z_half_extent": z_half_extent,
             "xy_aspect": xy_aspect,
+            "z_to_min_xy_aspect": z_to_min_xy_aspect,
             "score": score,
         }
         accepted.append((score, normalized))
@@ -230,6 +245,7 @@ def main() -> None:
         "min_xy_half_extent": float(args.min_xy_half_extent),
         "min_z_half_extent": float(args.min_z_half_extent),
         "max_xy_aspect": float(args.max_xy_aspect),
+        "max_z_to_min_xy_aspect": float(args.max_z_to_min_xy_aspect),
         "max_grasp_width_p95": float(args.max_grasp_width_p95),
         "prefer_keywords": list(prefer_keywords),
         "exclude_keywords": list(exclude_keywords),
