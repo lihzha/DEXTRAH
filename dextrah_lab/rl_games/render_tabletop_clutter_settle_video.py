@@ -3381,7 +3381,11 @@ def main() -> None:
                 "capture_interval": int(args_cli.capture_interval),
                 "render_resolution": render_resolution,
                 "output_dir": str(output_dir),
-                "yam_policy_scene_randomization": yam_policy_randomization,
+                "yam_policy_scene_randomization": getattr(
+                    env_cfg,
+                    "yam_policy_scene_randomization_summary",
+                    yam_policy_randomization,
+                ),
             }
         ),
         flush=True,
