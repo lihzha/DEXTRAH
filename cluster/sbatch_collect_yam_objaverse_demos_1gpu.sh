@@ -49,6 +49,9 @@ POOL_MIN_XY_RADIUS="${POOL_MIN_XY_RADIUS:-0.012}"
 POOL_MAX_XY_RADIUS="${POOL_MAX_XY_RADIUS:-0.075}"
 POOL_MIN_HEIGHT="${POOL_MIN_HEIGHT:-0.010}"
 POOL_MAX_HEIGHT="${POOL_MAX_HEIGHT:-0.160}"
+POOL_MIN_XY_HALF_EXTENT="${POOL_MIN_XY_HALF_EXTENT:-0.0}"
+POOL_MIN_Z_HALF_EXTENT="${POOL_MIN_Z_HALF_EXTENT:-0.0}"
+POOL_MAX_XY_ASPECT="${POOL_MAX_XY_ASPECT:-0.0}"
 POOL_MAX_GRASP_WIDTH_P95="${POOL_MAX_GRASP_WIDTH_P95:-0.145}"
 
 SETTLE_STEPS="${SETTLE_STEPS:-100}"
@@ -213,6 +216,9 @@ PY
           --max_xy_radius "$POOL_MAX_XY_RADIUS" \
           --min_height "$POOL_MIN_HEIGHT" \
           --max_height "$POOL_MAX_HEIGHT" \
+          --min_xy_half_extent "$POOL_MIN_XY_HALF_EXTENT" \
+          --min_z_half_extent "$POOL_MIN_Z_HALF_EXTENT" \
+          --max_xy_aspect "$POOL_MAX_XY_ASPECT" \
           --max_grasp_width_p95 "$POOL_MAX_GRASP_WIDTH_P95"
       fi
     fi
@@ -445,6 +451,9 @@ echo "SCRIPTED_LIFT_FRAMES=$SCRIPTED_LIFT_FRAMES"
 echo "MOVE_TO_BIN_FRAMES=$MOVE_TO_BIN_FRAMES"
 echo "RETURN_TO_START_FRAMES=$RETURN_TO_START_FRAMES"
 echo "POOL_MANIFEST=$POOL_MANIFEST"
+echo "POOL_MIN_XY_HALF_EXTENT=$POOL_MIN_XY_HALF_EXTENT"
+echo "POOL_MIN_Z_HALF_EXTENT=$POOL_MIN_Z_HALF_EXTENT"
+echo "POOL_MAX_XY_ASPECT=$POOL_MAX_XY_ASPECT"
 echo "SELECTED_OBJECTS_JSONL=${SELECTED_OBJECTS_JSONL:-unset}"
 echo "SHARD_DIR=$SHARD_DIR"
 
@@ -470,6 +479,15 @@ json_event "collector_start" \
   "scripted_lift_frames=$SCRIPTED_LIFT_FRAMES" \
   "move_to_bin_frames=$MOVE_TO_BIN_FRAMES" \
   "return_to_start_frames=$RETURN_TO_START_FRAMES"
+json_event "pool_filter_config" \
+  "pool_min_xy_radius=$POOL_MIN_XY_RADIUS" \
+  "pool_max_xy_radius=$POOL_MAX_XY_RADIUS" \
+  "pool_min_height=$POOL_MIN_HEIGHT" \
+  "pool_max_height=$POOL_MAX_HEIGHT" \
+  "pool_min_xy_half_extent=$POOL_MIN_XY_HALF_EXTENT" \
+  "pool_min_z_half_extent=$POOL_MIN_Z_HALF_EXTENT" \
+  "pool_max_xy_aspect=$POOL_MAX_XY_ASPECT" \
+  "pool_max_grasp_width_p95=$POOL_MAX_GRASP_WIDTH_P95"
 
 accepted=0
 attempt=0

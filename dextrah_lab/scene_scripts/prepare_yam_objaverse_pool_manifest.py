@@ -55,6 +55,10 @@ def _height(bounds_min: list[float], bounds_max: list[float]) -> float:
     return bounds_max[2] - bounds_min[2]
 
 
+def _axis_extent(bounds_min: list[float], bounds_max: list[float], axis: int) -> float:
+    return bounds_max[axis] - bounds_min[axis]
+
+
 def _metadata_text(record: dict[str, Any]) -> str:
     fragments: list[str] = []
     for key in ("name", "title", "category", "categories", "labels", "tags", "description", "metadata", "uuid"):
@@ -86,6 +90,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max_xy_radius", type=float, default=0.075)
     parser.add_argument("--min_height", type=float, default=0.010)
     parser.add_argument("--max_height", type=float, default=0.160)
+    parser.add_argument(
+        "--min_xy_half_extent",
+        type=float,
+        default=0.0,
+        help="Reject very thin XY shapes by requiring both X/Y half extents to exceed this value.",
+    )
+    parser.add_argument(
+        "--min_z_half_extent",
+        type=float,
+        default=0.0,
+        help="Reject flat shapes by requiring the Z half extent to exceed this value.",
+    )
+    parser.add_argument(
+        "--max_xy_aspect",
+        type=float,
+        default=0.0,
+        help="Reject elongated XY shapes when max(X,Y) / min(X,Y) exceeds this value. Use <=0 to disable.",
+    )
     parser.add_argument("--max_grasp_width_p95", type=float, default=0.145)
     parser.add_argument("--prefer_keywords", type=str, default="")
     parser.add_argument("--exclude_keywords", type=str, default="animal,building,car,chair,person,plant,room,statue,tree,vehicle")
@@ -111,6 +133,9 @@ def main() -> None:
         "too_large": 0,
         "too_short": 0,
         "too_tall": 0,
+        "too_thin_xy": 0,
+        "too_flat_z": 0,
+        "too_elongated_xy": 0,
         "too_wide_grasp": 0,
         "excluded_keyword": 0,
     }
@@ -124,6 +149,13 @@ def main() -> None:
         bounds_min, bounds_max = bounds
         radius = _xy_radius(bounds_min, bounds_max)
         height = _height(bounds_min, bounds_max)
+        x_extent = _axis_extent(bounds_min, bounds_max, 0)
+        y_extent = _axis_extent(bounds_min, bounds_max, 1)
+        min_xy_half_extent = 0.5 * min(x_extent, y_extent)
+        max_xy_extent = max(x_extent, y_extent)
+        min_xy_extent = min(x_extent, y_extent)
+        z_half_extent = 0.5 * height
+        xy_aspect = max_xy_extent / min_xy_extent if min_xy_extent > 1e-9 else float("inf")
         if radius < float(args.min_xy_radius):
             skipped["too_small"] += 1
             continue
@@ -135,6 +167,15 @@ def main() -> None:
             continue
         if height > float(args.max_height):
             skipped["too_tall"] += 1
+            continue
+        if min_xy_half_extent < float(args.min_xy_half_extent):
+            skipped["too_thin_xy"] += 1
+            continue
+        if z_half_extent < float(args.min_z_half_extent):
+            skipped["too_flat_z"] += 1
+            continue
+        if float(args.max_xy_aspect) > 0.0 and xy_aspect > float(args.max_xy_aspect):
+            skipped["too_elongated_xy"] += 1
             continue
         prior = record.get("grasp_prior") if isinstance(record.get("grasp_prior"), dict) else {}
         width_p95 = prior.get("grasp_width_p95")
@@ -156,6 +197,9 @@ def main() -> None:
         normalized["yam_collection_filter"] = {
             "xy_radius": radius,
             "height": height,
+            "min_xy_half_extent": min_xy_half_extent,
+            "z_half_extent": z_half_extent,
+            "xy_aspect": xy_aspect,
             "score": score,
         }
         accepted.append((score, normalized))
@@ -183,6 +227,9 @@ def main() -> None:
         "max_xy_radius": float(args.max_xy_radius),
         "min_height": float(args.min_height),
         "max_height": float(args.max_height),
+        "min_xy_half_extent": float(args.min_xy_half_extent),
+        "min_z_half_extent": float(args.min_z_half_extent),
+        "max_xy_aspect": float(args.max_xy_aspect),
         "max_grasp_width_p95": float(args.max_grasp_width_p95),
         "prefer_keywords": list(prefer_keywords),
         "exclude_keywords": list(exclude_keywords),
