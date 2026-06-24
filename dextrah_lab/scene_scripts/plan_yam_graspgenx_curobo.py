@@ -1692,7 +1692,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--grasp_planner", choices=("graspmoe", "diffusion", "topdown"), default="graspmoe")
     parser.add_argument("--moe_obb_density", choices=("sparse", "dense", "none"), default="dense")
     parser.add_argument("--max_plan_attempts", type=int, default=32)
-    parser.add_argument("--rank_grasps_by_confidence", action="store_true", default=True)
+    parser.add_argument(
+        "--rank_grasps_by_confidence",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Plan singleton grasps in confidence order. Disabled by default for "
+            "YAM data generation so cuRobo can choose among a batched reachable "
+            "goalset instead of failing on one awkward top-ranked grasp at a time."
+        ),
+    )
     parser.add_argument(
         "--plan_task",
         choices=("pick_and_lift", "pick_and_drop_in_bin"),
@@ -2335,6 +2344,7 @@ def main() -> None:
         "trajectory_start": trajectory_start_summary,
         "trajectory_json": None if trajectory_json is None else str(trajectory_json),
         "plan_task": str(args.plan_task),
+        "rank_grasps_by_confidence": bool(args.rank_grasps_by_confidence),
         "move_to_bin_frames": int(args.move_to_bin_frames),
         "drop_height_above_bin": float(args.drop_height_above_bin),
         "scripted_lift": scripted_lift_summary,
@@ -2365,6 +2375,7 @@ def main() -> None:
             "trajectory_start": trajectory_start_summary,
             "target_center_world": target_center_world,
             "plan_task": str(args.plan_task),
+            "rank_grasps_by_confidence": bool(args.rank_grasps_by_confidence),
             "move_to_bin_frames": int(args.move_to_bin_frames),
             "drop_height_above_bin": float(args.drop_height_above_bin),
             "scripted_place": scripted_place_summary,
