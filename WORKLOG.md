@@ -3,6 +3,67 @@
 Append-only project worklog for the DextrAH privileged FGP teacher training
 thread. This follows the `robotics-cluster-development-core` worklog contract.
 
+## 2026-06-24 15:06 PDT - YAM Real Table-Edge Camera And Robot Layout
+
+Goal:
+- Match the YAM policy scene camera and robot placement to the supplied real
+  tabletop photo: robot on the right half of the table, camera mounted near the
+  same table edge to the robot's left, looking down into the tabletop with
+  minimal visible background.
+
+Hypothesis:
+- The remaining sim2real mismatch was mostly camera geometry: the previous
+  corner/high camera saw too much room/floor. Moving the YAM base rightward and
+  placing the scene camera over the near table edge should produce a table-
+  dominant policy observation without increasing physical table size.
+
+Change:
+- Shifted the YAM base and pickup site to table-right (`robot_base_y=-0.25`,
+  `pickup_y=-0.25`).
+- Updated the default YAM scene camera to `eye=[-0.56, -0.18, 0.63]`,
+  `target=[-0.30, -0.18, 0.00]`.
+- Disabled YAM policy background walls by default for render and single-object
+  collection launchers, since the real camera should not see wall/background.
+
+Command / Job:
+- local job: `n/a`, bounded local Isaac Lab render loop from
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/yam-rgb-diffusion-20260624`.
+- command shape: `/home/lzha/code/.venvs/dextrah-isaaclab/bin/python dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py --task Dextrah-Single-YAM-Two-Bin-Primitive-Grasp --num_envs 1 --render_width 320 --render_height 320 --video_seconds 0.5 --fps 4 --settle_steps 4 --headless --device cuda:0 --rendering_mode performance`
+- final run_dir:
+  `/home/lzha/code/local_results/yam_real_edge_camera_pose063_square_loop_20260624T220445Z/attempt_2`
+- artifact:
+  `/home/lzha/code/local_results/yam_real_edge_camera_pose063_square_loop_20260624T220445Z/attempt_2/settle.mp4`
+- viewer:
+  `http://localhost:8765/view?path=local_results/yam_real_edge_camera_pose063_square_loop_20260624T220445Z/attempt_2/settle.mp4`
+- L40 fallback check: `ssh -o BatchMode=yes -o ConnectTimeout=8 l401 ...`
+  failed with `Permission denied (publickey,password)`.
+
+Result:
+- status: completed local smoke render and visual inspection.
+- evidence: `ffprobe` reports `320x320`, `2` frames, `0.5s`, `4 fps`.
+- evidence: `metrics.json` reports `camera_eye=[-0.56, -0.18, 0.63]`,
+  `camera_target=[-0.30, -0.18, 0.00]`, and `frame_count=2`.
+- evidence: inspected `frames/frame_0000.png` and `frames/frame_0001.png`;
+  the policy crop is dominated by tabletop and bins, with only a small edge of
+  robot/base at the lower/right border and no broad room/background region.
+
+Analysis:
+- A higher/lower-camera sweep showed the tradeoff: `z=0.60` removed background
+  best but cropped out nearly all robot context; `z=0.66` preserved more robot
+  context but showed a little more table-edge spill. `z=0.63` is the best
+  inspected compromise for the current square policy crop.
+- Isaac local renderer startup is nondeterministic on this workstation: several
+  attempts stalled after `viewportHandle` warnings and before task parsing.
+  Short timeout/retry loops worked; successful runs reached task parsing in
+  about 9 seconds.
+- A viewer-camera focal-length experiment applied at the USD attribute level
+  but did not materially change `env.render()` output, so it was not retained.
+
+Next:
+- Use this camera/robot layout as the baseline for YAM single-object policy
+  collection and for subsequent table texture, lighting, and object/bin
+  randomization renders.
+
 ## 2026-06-24 10:01 PDT - YAM Corner Camera Table Size Correction
 
 Goal:

@@ -81,10 +81,10 @@ class DextrahSingleYAMMultiObjectGraspEnvCfg(MultiObjectGraspTaskCfg, DirectRLEn
     key_light_angle = 0.8
     key_light_rotation_deg = (50.0, 0.0, -35.0)
 
-    # MolmoAct2/YAM-relative layout. The single arm sits left of the table and
-    # reaches toward the tabletop pickup site.
+    # YAM-relative layout. The single arm is mounted on the near table edge and
+    # shifted onto the table-right half, matching the real camera/robot setup.
     robot_base_x = -0.65
-    robot_base_y = 0.0
+    robot_base_y = -0.25
     robot_base_z = 0.01
     robot_base_pos = (robot_base_x, robot_base_y, robot_base_z)
     table_surface_z = 0.0
@@ -96,7 +96,7 @@ class DextrahSingleYAMMultiObjectGraspEnvCfg(MultiObjectGraspTaskCfg, DirectRLEn
     table_size_y = 1.20
 
     pickup_x = -0.30
-    pickup_y = 0.0
+    pickup_y = -0.25
 
     # Success and reset behavior for the target object.
     cube_lift_height = 0.08

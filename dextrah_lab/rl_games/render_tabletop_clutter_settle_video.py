@@ -17,8 +17,8 @@ from isaaclab.app import AppLauncher
 
 DEFAULT_FRANKA_CAMERA_EYE = (-0.10, -1.05, 1.36)
 DEFAULT_FRANKA_CAMERA_TARGET = (-0.62, 0.0, 0.78)
-DEFAULT_YAM_CAMERA_EYE = (0.55, -0.78, 1.16)
-DEFAULT_YAM_CAMERA_TARGET = (-0.12, 0.0, 0.05)
+DEFAULT_YAM_CAMERA_EYE = (-0.56, -0.18, 0.63)
+DEFAULT_YAM_CAMERA_TARGET = (-0.30, -0.18, 0.00)
 DEFAULT_TASK = "Dextrah-Single-YAM-Tabletop-Clutter-Grasp"
 SURFACE_TEXTURE_EXTS = (".png", ".jpg", ".jpeg")
 DOME_TEXTURE_EXTS = (".hdr", ".exr")
@@ -142,7 +142,7 @@ parser.add_argument("--yam_policy_tabletop_texture_patch_count_range", type=int,
 parser.add_argument("--yam_policy_tabletop_texture_color_jitter", type=float, default=0.16)
 parser.add_argument("--yam_policy_table_texture_dir", type=str, default=None)
 parser.add_argument("--yam_policy_table_texture_tiling_range", type=float, nargs=2, default=(1.4, 3.8))
-parser.add_argument("--yam_policy_background_walls", action=argparse.BooleanOptionalAction, default=True)
+parser.add_argument("--yam_policy_background_walls", action=argparse.BooleanOptionalAction, default=False)
 parser.add_argument("--yam_policy_background_wall_distance", type=float, default=1.28)
 parser.add_argument("--yam_policy_background_wall_height", type=float, default=0.72)
 parser.add_argument("--yam_policy_background_wall_thickness", type=float, default=0.025)
