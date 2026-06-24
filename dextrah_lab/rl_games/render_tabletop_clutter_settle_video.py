@@ -133,6 +133,13 @@ parser.add_argument("--yam_policy_material_value_range", type=float, nargs=2, de
 parser.add_argument("--record_multicam_rgb", action=argparse.BooleanOptionalAction, default=False)
 parser.add_argument("--record_scene_rgb", action=argparse.BooleanOptionalAction, default=True)
 parser.add_argument("--record_wrist_rgb", action=argparse.BooleanOptionalAction, default=True)
+parser.add_argument(
+    "--wrist_camera_mode",
+    type=str,
+    default="sensor",
+    choices=("sensor", "viewer"),
+    help="Use an IsaacLab Camera sensor on YAM link_6 or the legacy TCP-relative viewer camera for wrist RGB.",
+)
 parser.add_argument("--wrist_camera_pos_offset", type=float, nargs=3, default=(0.035, 0.0, 0.085))
 parser.add_argument("--wrist_camera_forward", type=float, nargs=3, default=(0.16, 0.0, -0.10))
 parser.add_argument("--yam_arm_stiffness_scale", type=float, default=None)
@@ -224,6 +231,7 @@ import isaaclab.sim as sim_utils
 from isaacsim.core.utils.extensions import enable_extension
 from isaaclab.sim.converters import MeshConverter, MeshConverterCfg
 from isaaclab.sim.schemas import schemas as sim_schemas
+from isaaclab.sensors.camera import Camera, CameraCfg
 from isaaclab_tasks.utils import parse_env_cfg
 import omni.usd
 from pxr import Gf, Sdf, Usd, UsdGeom, UsdPhysics, UsdShade
@@ -233,6 +241,14 @@ import dextrah_lab.tasks.dextrah_franka_multi_object_grasp.gym_setup  # noqa: F4
 import dextrah_lab.tasks.dextrah_franka_star_kitting.gym_setup  # noqa: F401
 
 if "YAM" in args_cli.task:
+    from dextrah_lab.assets.yam.bimanual_yam import (
+        MOLMOACT2_CAMERA_HEIGHT,
+        MOLMOACT2_CAMERA_WIDTH,
+        MOLMOACT2_WRIST_CAMERA_INTRINSIC,
+        MOLMOACT2_WRIST_CAMERA_LOCAL_POS,
+        MOLMOACT2_WRIST_CAMERA_LOCAL_QUAT_WXYZ,
+    )
+
     import dextrah_lab.tasks.dextrah_bimanual_yam_cube_grasp.gym_setup  # noqa: F401
     import dextrah_lab.tasks.dextrah_single_yam_multi_object_grasp.gym_setup  # noqa: F401
 
@@ -329,6 +345,89 @@ def _capture_frame(env, frame_dir: Path, frame_idx: int) -> tuple[np.ndarray, st
     frame_path = frame_dir / f"frame_{frame_idx:04d}.png"
     imageio.imwrite(frame_path, frame)
     return frame, str(frame_path)
+
+
+def _camera_rgb_array(rgb_tensor: torch.Tensor) -> np.ndarray:
+    rgb = rgb_tensor.detach().cpu().numpy()
+    if rgb.ndim == 4:
+        rgb = rgb[0]
+    if rgb.shape[-1] > 3:
+        rgb = rgb[..., :3]
+    if rgb.dtype != np.uint8:
+        if rgb.max(initial=0.0) <= 1.0:
+            rgb = np.clip(rgb * 255.0, 0.0, 255.0)
+        rgb = np.clip(rgb, 0.0, 255.0).astype(np.uint8)
+    return np.ascontiguousarray(rgb)
+
+
+def _find_body_prim_path(stage, body_name: str) -> str:
+    preferred: list[str] = []
+    fallback: list[str] = []
+    for prim in stage.Traverse():
+        if prim.GetName() != body_name:
+            continue
+        path = str(prim.GetPath())
+        if "/joints" in path or "/collisions" in path or "/visuals" in path:
+            continue
+        fallback.append(path)
+        if "/World/envs/env_0/" in path:
+            preferred.append(path)
+    matches = preferred or fallback
+    if not matches:
+        raise RuntimeError(f"Could not find body prim named {body_name!r}")
+    matches.sort(key=len)
+    return matches[0]
+
+
+def _spawn_d405_from_intrinsic() -> sim_utils.PinholeCameraCfg:
+    return sim_utils.PinholeCameraCfg.from_intrinsic_matrix(
+        intrinsic_matrix=list(MOLMOACT2_WRIST_CAMERA_INTRINSIC),
+        width=MOLMOACT2_CAMERA_WIDTH,
+        height=MOLMOACT2_CAMERA_HEIGHT,
+        focal_length=24.0,
+        focus_distance=400.0,
+        clipping_range=(0.01, 10.0),
+    )
+
+
+def _make_single_yam_wrist_camera(task_env) -> tuple[Camera, dict[str, object]]:
+    stage = omni.usd.get_context().get_stage()
+    if stage is None:
+        raise RuntimeError("Cannot create wrist camera without a USD stage")
+    parent_path = _find_body_prim_path(stage, "link_6")
+    cfg = CameraCfg(
+        prim_path=f"{parent_path}/wrist_d405_policy_sensor",
+        width=MOLMOACT2_CAMERA_WIDTH,
+        height=MOLMOACT2_CAMERA_HEIGHT,
+        data_types=["rgb"],
+        update_period=0.0,
+        spawn=_spawn_d405_from_intrinsic(),
+        offset=CameraCfg.OffsetCfg(
+            pos=MOLMOACT2_WRIST_CAMERA_LOCAL_POS,
+            rot=MOLMOACT2_WRIST_CAMERA_LOCAL_QUAT_WXYZ,
+            convention="world",
+        ),
+    )
+    camera = Camera(cfg)
+    if camera.is_initialized:
+        camera.reset()
+    else:
+        camera._initialize_impl()
+        camera._is_initialized = True
+        camera.reset()
+    task_env.sim.render()
+    camera.update(0.0, force_recompute=True)
+    return camera, {
+        "enabled": True,
+        "mode": "sensor",
+        "parent_path": parent_path,
+        "prim_path": cfg.prim_path,
+        "width": int(MOLMOACT2_CAMERA_WIDTH),
+        "height": int(MOLMOACT2_CAMERA_HEIGHT),
+        "local_pos": [float(v) for v in MOLMOACT2_WRIST_CAMERA_LOCAL_POS],
+        "local_quat_wxyz": [float(v) for v in MOLMOACT2_WRIST_CAMERA_LOCAL_QUAT_WXYZ],
+        "intrinsic_row_major": [float(v) for v in MOLMOACT2_WRIST_CAMERA_INTRINSIC],
+    }
 
 
 def _resize_rgb_nearest(frame: np.ndarray, height: int, width: int) -> np.ndarray:
@@ -2670,6 +2769,8 @@ def _capture_policy_rgb_streams(
     *,
     scene_eye: tuple[float, float, float],
     scene_target: tuple[float, float, float],
+    wrist_camera: Camera | None = None,
+    camera_dt: float = 0.0,
 ) -> dict[str, np.ndarray]:
     frames: dict[str, np.ndarray] = {}
     if bool(args.record_scene_rgb):
@@ -2685,15 +2786,23 @@ def _capture_policy_rgb_streams(
             int(args.record_rgb_width),
         ).copy()
     if bool(args.record_wrist_rgb):
-        wrist_eye, wrist_target = _wrist_camera_eye_target(task_env, args)
-        task_env.sim.set_camera_view(
-            eye=wrist_eye,
-            target=wrist_target,
-            camera_prim_path=task_env.cfg.viewer.cam_prim_path,
-        )
-        task_env.sim.render()
+        if wrist_camera is not None:
+            task_env.scene.write_data_to_sim()
+            task_env.sim.render()
+            wrist_camera.update(float(camera_dt), force_recompute=True)
+            wrist_camera.update(0.0, force_recompute=True)
+            wrist_rgb = _camera_rgb_array(wrist_camera.data.output["rgb"])
+        else:
+            wrist_eye, wrist_target = _wrist_camera_eye_target(task_env, args)
+            task_env.sim.set_camera_view(
+                eye=wrist_eye,
+                target=wrist_target,
+                camera_prim_path=task_env.cfg.viewer.cam_prim_path,
+            )
+            task_env.sim.render()
+            wrist_rgb = _frame_array(env.render())
         frames["wrist_rgb"] = _resize_rgb_nearest(
-            _frame_array(env.render()),
+            wrist_rgb,
             int(args.record_rgb_height),
             int(args.record_rgb_width),
         ).copy()
@@ -3160,6 +3269,32 @@ def main() -> None:
             flush=True,
         )
 
+    wrist_camera: Camera | None = None
+    wrist_camera_summary: dict[str, object] = {
+        "enabled": False,
+        "mode": str(args_cli.wrist_camera_mode),
+    }
+    if (
+        bool(args_cli.record_multicam_rgb)
+        and bool(args_cli.record_wrist_rgb)
+        and str(args_cli.wrist_camera_mode) == "sensor"
+    ):
+        try:
+            wrist_camera, wrist_camera_summary = _make_single_yam_wrist_camera(task_env)
+        except Exception as exc:
+            wrist_camera = None
+            wrist_camera_summary = {
+                "enabled": False,
+                "mode": "viewer_fallback",
+                "reason": f"{type(exc).__name__}: {exc}",
+            }
+        for _ in range(max(int(args_cli.render_warmup_frames), 1)):
+            task_env.scene.write_data_to_sim()
+            task_env.sim.render()
+            if wrist_camera is not None:
+                wrist_camera.update(float(_env_control_dt(task_env)), force_recompute=True)
+        print(json.dumps({"event": "wrist_camera_prepared", **wrist_camera_summary}), flush=True)
+
     frames: list[np.ndarray] = []
     frame_paths: list[str] = []
     initial_snapshot = _root_snapshot(task_env)
@@ -3559,6 +3694,8 @@ def main() -> None:
                             args_cli,
                             scene_eye=eye,
                             scene_target=target,
+                            wrist_camera=wrist_camera,
+                            camera_dt=_env_control_dt(task_env),
                         )
                         for view_key, view_rgb in rgb_views.items():
                             trajectory_rgb_streams.setdefault(view_key, []).append(view_rgb.copy())
@@ -3720,7 +3857,11 @@ def main() -> None:
                     "enabled": bool(args_cli.record_multicam_rgb),
                     "scene_rgb": bool(args_cli.record_scene_rgb),
                     "wrist_rgb": bool(args_cli.record_wrist_rgb),
-                    "wrist_camera_model": "virtual_tcp_relative_d405_view",
+                    "wrist_camera_model": "single_yam_link6_d405_sensor"
+                    if wrist_camera is not None
+                    else "virtual_tcp_relative_d405_view",
+                    "wrist_camera_mode": str(args_cli.wrist_camera_mode),
+                    "wrist_camera_sensor": wrist_camera_summary,
                     "wrist_camera_pos_offset": [float(v) for v in args_cli.wrist_camera_pos_offset],
                     "wrist_camera_forward": [float(v) for v in args_cli.wrist_camera_forward],
                 },
