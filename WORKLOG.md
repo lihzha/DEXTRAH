@@ -10644,3 +10644,42 @@ Smoke follow-up:
   `148b6f4a0c11356f965297cd6e011ad6ea9b56d3`), cancel stale queued L40/A100 jobs
   pinned to older commits, and relaunch the L40 quality visual sample once SSH
   auth works.
+
+2026-06-24T23:01:20Z - Single-object policy scene correction and local visual validation
+- User pointed out that the visual was still using a clutter/two-bin task. Added
+  `Dextrah-Single-YAM-Single-Object-Policy-Grasp`, a Gym task that disables
+  tabletop clutter and the source bin, keeps one target object on robot-right
+  (`-Y`), and keeps only a randomized goal bin on robot-left (`+Y`).
+- Parameterized the A100 shared collection wrapper with `YAM_POLICY_TASK` and
+  made the single-object policy wrapper default it to the new task. Also updated
+  the L40 RGB replay wrapper to use the same task by default, so replays do not
+  silently fall back to `Dextrah-Single-YAM-Tabletop-Clutter-Grasp`.
+- Retuned the default YAM scene camera to the real table-edge setup used in the
+  accepted local visual: eye `(-0.58, -0.12, 0.74)`, target
+  `(-0.26, -0.28, 0.0)`. The render shows table-only background, the robot on
+  the right edge, one object on the right half of the table, and one goal bin on
+  the left.
+- Added small CC0 Poly Haven wood textures under
+  `dextrah_lab/assets/textures/`, changed default table randomization to the
+  light-wood pool, resolved relative texture roots against the repo root, added
+  `_diff_` filename support, and disabled the previous default `6-14` colored
+  tabletop patches because they looked synthetic and mismatched the real light
+  wood tabletop.
+- Local render loop:
+  - First corrected smoke:
+    `/home/lzha/code/local_results/yam_single_object_policy_scene_20260624T222610Z/attempt_4/settle.mp4`;
+    task metadata confirmed one goal bin, `clutter=[]`, and no source bin.
+  - Final accepted visual:
+    `/home/lzha/code/local_results/yam_single_object_policy_scene_20260624T222610Z/final_quality_lightwood_bright/attempt_2/settle.mp4`;
+    `512x512`, `quality`, 2 frames, no background walls, no clutter, one
+    `goal` bin, target `small_8_cyl`, and table texture path from the light
+    wood pool. Opened with
+    `viz-open`: `http://localhost:8765/view?path=local_results/yam_single_object_policy_scene_20260624T222610Z/final_quality_lightwood_bright/attempt_2/settle.mp4`.
+  - Additional PNG/UV texture tests repeatedly stalled before DEXTRAH task
+    parsing on the local Isaac renderer; they produced no accepted artifact.
+    This matches the known local `viewportHandle` startup stall pattern, not a
+    scene semantic failure.
+- Validation passed: `py_compile` for the render/task files, `bash -n` for the
+  A100 collection, shared render, and L40 replay wrappers, `ffprobe` on the
+  final MP4, metadata inspection of `metrics.json` and `stable_scene.json`, and
+  a local process check showing no remaining Isaac/render jobs.

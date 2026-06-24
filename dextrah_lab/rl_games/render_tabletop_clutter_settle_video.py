@@ -17,9 +17,9 @@ from isaaclab.app import AppLauncher
 
 DEFAULT_FRANKA_CAMERA_EYE = (-0.10, -1.05, 1.36)
 DEFAULT_FRANKA_CAMERA_TARGET = (-0.62, 0.0, 0.78)
-DEFAULT_YAM_CAMERA_EYE = (-0.56, -0.18, 0.63)
-DEFAULT_YAM_CAMERA_TARGET = (-0.30, -0.18, 0.00)
-DEFAULT_TASK = "Dextrah-Single-YAM-Tabletop-Clutter-Grasp"
+DEFAULT_YAM_CAMERA_EYE = (-0.58, -0.12, 0.74)
+DEFAULT_YAM_CAMERA_TARGET = (-0.26, -0.28, 0.00)
+DEFAULT_TASK = "Dextrah-Single-YAM-Single-Object-Policy-Grasp"
 SURFACE_TEXTURE_EXTS = (".png", ".jpg", ".jpeg")
 DOME_TEXTURE_EXTS = (".hdr", ".exr")
 
@@ -138,7 +138,7 @@ parser.add_argument("--yam_policy_tabletop_surround_top_z_offset", type=float, d
 parser.add_argument("--yam_policy_tabletop_surround_thickness", type=float, default=0.006)
 parser.add_argument("--yam_policy_tabletop_surround_color_jitter", type=float, default=0.08)
 parser.add_argument("--yam_policy_tabletop_texture", action=argparse.BooleanOptionalAction, default=True)
-parser.add_argument("--yam_policy_tabletop_texture_patch_count_range", type=int, nargs=2, default=(6, 14))
+parser.add_argument("--yam_policy_tabletop_texture_patch_count_range", type=int, nargs=2, default=(0, 0))
 parser.add_argument("--yam_policy_tabletop_texture_color_jitter", type=float, default=0.16)
 parser.add_argument("--yam_policy_table_texture_dir", type=str, default=None)
 parser.add_argument("--yam_policy_table_texture_tiling_range", type=float, nargs=2, default=(1.4, 3.8))
@@ -617,6 +617,8 @@ def _texture_candidates(
         if not raw_root:
             continue
         root = Path(raw_root).expanduser()
+        if not root.is_absolute():
+            root = (Path(__file__).resolve().parents[2] / root).resolve()
         if not root.exists():
             continue
         paths = [root] if root.is_file() else root.rglob("*")
@@ -792,7 +794,7 @@ def _apply_yam_policy_scene_randomization(env_cfg, args, rng: np.random.Generato
         rng,
         args.yam_policy_table_texture_dir,
         exts=SURFACE_TEXTURE_EXTS,
-        include_tokens=("albedo", "diffuse", "basecolor", "color"),
+        include_tokens=("albedo", "diffuse", "diff", "basecolor", "color"),
         exclude_tokens=("normal", "orm", "rough", "metal", "height"),
     )
     table_texture_tiling_range = _range_pair(
@@ -2088,6 +2090,7 @@ def _usd_material(
         st_reader = UsdShade.Shader.Define(stage, f"{path}/PrimvarReader_st")
         st_reader.CreateIdAttr("UsdPrimvarReader_float2")
         st_reader.CreateInput("varname", Sdf.ValueTypeNames.Token).Set("st")
+        st_reader.CreateOutput("result", Sdf.ValueTypeNames.Float2)
         texture = UsdShade.Shader.Define(stage, f"{path}/DiffuseTexture")
         texture.CreateIdAttr("UsdUVTexture")
         texture.CreateInput("file", Sdf.ValueTypeNames.Asset).Set(Sdf.AssetPath(str(texture_file)))

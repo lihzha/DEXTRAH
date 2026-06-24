@@ -24,6 +24,7 @@ PIP_CACHE_NFS="${PIP_CACHE_NFS:-$NFS_ROOT/cache/pip}"
 
 FULL_OBJAVERSE_ASSET_ROOT="${FULL_OBJAVERSE_ASSET_ROOT:-$RESULTS_NFS/assets/graspgen_objects_full_cpu_20260617_153051}"
 FULL_OBJAVERSE_MANIFEST_PATH="${FULL_OBJAVERSE_MANIFEST_PATH:-$FULL_OBJAVERSE_ASSET_ROOT/manifest.json}"
+YAM_POLICY_TASK="${YAM_POLICY_TASK:-Dextrah-Single-YAM-Tabletop-Clutter-Grasp}"
 
 SLURM_JOB_ID_SAFE="${SLURM_JOB_ID:-manual}"
 SHARD_INDEX="${SHARD_INDEX:-0}"
@@ -338,7 +339,7 @@ run_settle() {
   local seed="$1"
   local run_name="$2"
   RUN_NAME="$run_name" \
-  TASK="Dextrah-Single-YAM-Tabletop-Clutter-Grasp" \
+  TASK="$YAM_POLICY_TASK" \
   NUM_ENVS=1 \
   SEED="$seed" \
   SETTLE_STEPS="$SETTLE_STEPS" \
@@ -437,7 +438,7 @@ run_replay() {
   local stable_scene_host="$3"
   local trajectory_host="$4"
   RUN_NAME="$run_name" \
-  TASK="Dextrah-Single-YAM-Tabletop-Clutter-Grasp" \
+  TASK="$YAM_POLICY_TASK" \
   NUM_ENVS=1 \
   SEED="$seed" \
   DEMO_MODE=single_yam_trajectory \
@@ -535,6 +536,7 @@ echo "Collecting YAM Objaverse demos"
 echo "SLURM_JOB_ID=$SLURM_JOB_ID_SAFE"
 echo "CODE_NFS=$CODE_NFS"
 echo "CODE_COMMIT=${CODE_COMMIT:-unknown}"
+echo "YAM_POLICY_TASK=$YAM_POLICY_TASK"
 echo "BATCH_NAME=$BATCH_NAME"
 echo "SHARD_INDEX=$SHARD_INDEX"
 echo "SHARD_COUNT=$SHARD_COUNT"

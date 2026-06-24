@@ -239,6 +239,48 @@ class DextrahSingleYAMTabletopClutterGraspEnvCfg(DextrahSingleYAMMultiObjectGras
 
 
 @configclass
+class DextrahSingleYAMSingleObjectPolicyGraspEnvCfg(DextrahSingleYAMMultiObjectGraspEnvCfg):
+    """Single-object YAM tabletop policy scene with one target object and one goal bin."""
+
+    scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=1, env_spacing=1.8, replicate_physics=False)
+    episode_length_s = 12.0
+
+    # Production policy data uses the Objaverse-backed GraspGen pool. Local
+    # smoke renders can override these to repo-local primitive manifests.
+    object_asset_manifest_path = GRASPGEN_FULL_OBJAVERSE_MANIFEST_PATH
+    object_assets_dir = GRASPGEN_FULL_OBJAVERSE_ASSET_ROOT
+    max_objects = 0
+    object_asset_assignment = "random"
+    require_graspgen_scale = True
+    object_validate_usd_bounds = True
+    object_spawn_xy_randomization = 0.0
+    object_spawn_x_randomization = 0.045
+    object_spawn_y_randomization = 0.045
+    object_spawn_yaw_randomization_deg = 180.0
+    object_spawn_z_clearance = 0.006
+    object_reset_settle_steps = 100
+    object_reset_zero_velocity_after_settle = True
+
+    tabletop_clutter_enabled = False
+    tabletop_clutter_object_count = 0
+    tabletop_source_bin_enabled = False
+
+    tabletop_goal_bin_enabled = True
+    tabletop_goal_bin_center_offset_x = -0.10
+    tabletop_goal_bin_center_offset_y = 0.20
+    tabletop_goal_bin_inner_size_x = 0.42
+    tabletop_goal_bin_inner_size_y = 0.40
+    tabletop_goal_bin_wall_thickness = 0.02
+    tabletop_goal_bin_bottom_thickness = 0.012
+    tabletop_goal_bin_wall_height = 0.12
+    tabletop_goal_bin_clearance = 0.08
+    tabletop_goal_bin_placement_clearance = 0.08
+    tabletop_goal_bin_goal_height = 0.06
+    tabletop_goal_bin_success_xy_tol = 0.12
+    cube_success_xy_tol = tabletop_goal_bin_success_xy_tol
+
+
+@configclass
 class DextrahSingleYAMTwoBinPrimitiveGraspEnvCfg(DextrahSingleYAMMultiObjectGraspEnvCfg):
     """Single-arm YAM source-to-destination bin demo with fixed primitive objects."""
 
