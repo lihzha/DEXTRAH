@@ -10453,3 +10453,22 @@ Smoke follow-up:
   pending behind maintenance; A100 source jobs are either running old accepted
   source collection or pending maintenance. No intervention was needed on the
   source jobs during this patch.
+
+2026-06-24T13:25:00Z - Texture-randomized L40 visual sample submitted
+- Committed the texture/HDR randomization patch as
+  `c6cafcdb1af63acd1db97afa194a3f9416a6f544` and pushed it to the
+  `codex/yam-rgb-diffusion-pickplace/yam-rgb-diffusion-20260624` branch.
+- Deployed the exact commit to L40-visible worktree
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-rgb-diffusion-20260624-texture-c6cafcdb`
+  using a self-contained Git bundle, copied `72` warmed YAM asset files from
+  the prior camera-retune worktree, and verified shell syntax on the deployed
+  wrappers. RoboLab assets were present on Lustre: `95` indoor HDR files and
+  `12` fixture albedo PNG files in the default directories.
+- Canceled stale pre-texture L40 camera-retune jobs `1041737`-`1041739`.
+- Submitted replacement L40 quality visual replay
+  `yam_rgb_l40_texture_sample_20260624T1310Z` as ordinary jobs `1041742`,
+  `1041743`, and `1041744` with job prefix `yam_texvis`. The run record pins
+  commit `c6cafcdb...`, render resolution `1024x1024`, policy RGB
+  `256x256`, `rendering_mode=quality`, and the RoboLab table/background/HDR
+  texture directories. The jobs are pending because all L40 GPU nodes remain
+  planned/drained for maintenance.
