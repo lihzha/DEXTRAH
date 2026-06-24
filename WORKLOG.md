@@ -10210,3 +10210,15 @@ Smoke follow-up:
   `RETURN_TO_START_FRAMES=60`.
 - Local checks passed after timing patch: `python3 -m py_compile`,
   `bash -n`, and `git diff --check`.
+- Candidate A100 source-generation attempt
+  `yam_rgb_candidate_short_a100_20260624T0905Z` launched from commit
+  `bca4e017be20c44382b86917fccb5fbdab063e41` with two ordinary jobs
+  (`29469215`, `29469216`) and target `4`. Both shards rejected their first
+  seeds at planner stage before trajectory generation; summaries showed cuRobo
+  goalset planning returned `None`, which points to object-pool difficulty
+  rather than the shorter motion timing.
+- Cancelled jobs `29469215` and `29469216` after the first planner rejects to
+  avoid wasting A100 time. Patch in progress: make the dedicated single-object
+  policy wrapper use the previously validated high-yield pool defaults
+  `POOL_MAX_ASSETS=512`, `POOL_MAX_GRASP_WIDTH_P95=0.110`, and
+  `MAX_ATTEMPTS=180`.

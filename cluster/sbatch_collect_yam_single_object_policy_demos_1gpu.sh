@@ -40,11 +40,14 @@ export RECORD_WRIST_RGB="${RECORD_WRIST_RGB:-False}"
 export RENDERING_MODE="${RENDERING_MODE:-balanced}"
 
 export DEMO_STEPS_PER_OBJECT="${DEMO_STEPS_PER_OBJECT:-900}"
+export MAX_ATTEMPTS="${MAX_ATTEMPTS:-180}"
 export NUM_GRASPS="${NUM_GRASPS:-192}"
 export TOPK="${TOPK:-96}"
 export MAX_PLAN_ATTEMPTS="${MAX_PLAN_ATTEMPTS:-96}"
 export YAM_GRASP_FILTER_MIN_KEEP="${YAM_GRASP_FILTER_MIN_KEEP:-4}"
 export YAM_ALLOW_LIFT_FILTER_FALLBACK="${YAM_ALLOW_LIFT_FILTER_FALLBACK:-True}"
+export POOL_MAX_ASSETS="${POOL_MAX_ASSETS:-512}"
+export POOL_MAX_GRASP_WIDTH_P95="${POOL_MAX_GRASP_WIDTH_P95:-0.110}"
 
 # Keep the generated motion more continuous than the earlier visualization
 # demos while retaining enough samples through lift/transport/drop.
@@ -87,6 +90,9 @@ echo "BATCH_DIR=$BATCH_DIR"
 echo "TOTAL_TARGET=$TOTAL_TARGET"
 echo "OBJECT_Y_RANGE=$YAM_POLICY_OBJECT_Y_RANGE"
 echo "BIN_Y_RANGE=$YAM_POLICY_BIN_Y_RANGE"
+echo "POOL_MAX_ASSETS=$POOL_MAX_ASSETS"
+echo "POOL_MAX_GRASP_WIDTH_P95=$POOL_MAX_GRASP_WIDTH_P95"
+echo "MAX_ATTEMPTS=$MAX_ATTEMPTS"
 echo "MOTION_TIMING=start_guard:$START_GUARD_FRAMES close:$CLOSE_FRAMES hold:$HOLD_FRAMES after_close:$HOLD_AFTER_CLOSE_FRAMES lift:$SCRIPTED_LIFT_FRAMES bin:$MOVE_TO_BIN_FRAMES return:$RETURN_TO_START_FRAMES"
 
 exec bash "$CODE_NFS/cluster/sbatch_collect_yam_objaverse_demos_1gpu.sh"

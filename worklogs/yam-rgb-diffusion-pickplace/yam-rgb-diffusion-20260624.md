@@ -143,3 +143,19 @@
   stops while preserving enough close/drop dwell for physical validation.
 - validation after timing cleanup passed: `python3 -m py_compile`,
   `bash -n`, and `git diff --check`.
+- candidate data attempt: committed timing cleanup as
+  `bca4e017be20c44382b86917fccb5fbdab063e41`, pushed the branch, and deployed
+  the exact commit to the l401/A100 agent worktree via Git bundle because l401
+  still cannot fetch from GitHub. Launched A100 no-array candidate batch
+  `yam_rgb_candidate_short_a100_20260624T0905Z` with jobs `29469215` and
+  `29469216`, two shards, target `4`, and short timing active.
+- candidate diagnosis: both shards rejected their first seed at planner stage
+  before trajectory generation; per-seed summaries showed cuRobo goalset
+  planning returned `None` with grasps available, which is a normal planning
+  miss from the broader object pool, not evidence that the shorter trajectory
+  timing broke validation. Cancelled both jobs before additional wasted A100
+  time.
+- follow-up patch: set dedicated single-object policy wrapper defaults to the
+  previously validated high-yield object pool and attempt budget:
+  `POOL_MAX_ASSETS=512`, `POOL_MAX_GRASP_WIDTH_P95=0.110`, and
+  `MAX_ATTEMPTS=180`, while keeping the short motion timing.
