@@ -135,6 +135,13 @@ parser.add_argument("--yam_policy_tabletop_surround_size", type=float, nargs=2, 
 parser.add_argument("--yam_policy_tabletop_surround_top_z_offset", type=float, default=-0.004)
 parser.add_argument("--yam_policy_tabletop_surround_thickness", type=float, default=0.006)
 parser.add_argument("--yam_policy_tabletop_surround_color_jitter", type=float, default=0.08)
+parser.add_argument("--yam_policy_tabletop_texture", action=argparse.BooleanOptionalAction, default=True)
+parser.add_argument("--yam_policy_tabletop_texture_patch_count_range", type=int, nargs=2, default=(6, 14))
+parser.add_argument("--yam_policy_tabletop_texture_color_jitter", type=float, default=0.16)
+parser.add_argument("--yam_policy_background_walls", action=argparse.BooleanOptionalAction, default=True)
+parser.add_argument("--yam_policy_background_wall_distance", type=float, default=1.28)
+parser.add_argument("--yam_policy_background_wall_height", type=float, default=0.72)
+parser.add_argument("--yam_policy_background_wall_thickness", type=float, default=0.025)
 parser.add_argument("--record_multicam_rgb", action=argparse.BooleanOptionalAction, default=False)
 parser.add_argument("--record_scene_rgb", action=argparse.BooleanOptionalAction, default=True)
 parser.add_argument("--record_wrist_rgb", action=argparse.BooleanOptionalAction, default=True)
@@ -563,6 +570,18 @@ def _random_color(rng: np.random.Generator, value_range) -> tuple[float, float, 
     return tuple(float(max(0.0, min(1.0, c + m))) for c in rgb)
 
 
+def _jitter_color(
+    rng: np.random.Generator,
+    base: tuple[float, float, float],
+    jitter: float,
+    *,
+    min_value: float = 0.05,
+    max_value: float = 0.95,
+) -> tuple[float, float, float]:
+    jitter = max(float(jitter), 0.0)
+    return tuple(float(np.clip(float(channel) + rng.uniform(-jitter, jitter), min_value, max_value)) for channel in base)
+
+
 def _set_preview_surface_color(material, color: tuple[float, float, float], roughness: float | None = None) -> bool:
     if material is None:
         return False
@@ -649,26 +668,46 @@ def _apply_yam_policy_scene_randomization(env_cfg, args, rng: np.random.Generato
             table_color,
             roughness=float(rng.uniform(0.45, 0.92)),
         )
-    surround_color = tuple(
-        float(
-            np.clip(
-                channel
-                + rng.uniform(
-                    -args.yam_policy_tabletop_surround_color_jitter,
-                    args.yam_policy_tabletop_surround_color_jitter,
-                ),
-                0.05,
-                0.95,
+    surround_size = tuple(float(v) for v in args.yam_policy_tabletop_surround_size)
+    surround_color = _jitter_color(rng, table_color, args.yam_policy_tabletop_surround_color_jitter)
+    texture_count_range = tuple(int(v) for v in args.yam_policy_tabletop_texture_patch_count_range)
+    if texture_count_range[1] < texture_count_range[0]:
+        raise ValueError(f"Invalid yam_policy_tabletop_texture_patch_count_range: {texture_count_range}")
+    texture_patch_count = int(rng.integers(texture_count_range[0], texture_count_range[1] + 1))
+    texture_patches: list[dict[str, object]] = []
+    if bool(args.yam_policy_tabletop_texture):
+        for _patch_idx in range(texture_patch_count):
+            along_x = bool(rng.integers(0, 2))
+            long_dim = float(rng.uniform(0.35, 0.95))
+            short_dim = float(rng.uniform(0.018, 0.075))
+            size_x = long_dim if along_x else short_dim
+            size_y = short_dim if along_x else long_dim
+            margin = 0.08
+            max_x = max(0.01, 0.5 * surround_size[0] - margin - 0.5 * size_x)
+            max_y = max(0.01, 0.5 * surround_size[1] - margin - 0.5 * size_y)
+            texture_patches.append(
+                {
+                    "center_offset": [float(rng.uniform(-max_x, max_x)), float(rng.uniform(-max_y, max_y))],
+                    "size": [size_x, size_y],
+                    "color": [float(v) for v in _jitter_color(rng, table_color, args.yam_policy_tabletop_texture_color_jitter)],
+                }
             )
-        )
-        for channel in table_color
-    )
+    background_wall_color = _random_color(rng, args.yam_policy_material_value_range)
     setattr(env_cfg, "yam_policy_tabletop_surround_enabled", bool(args.yam_policy_tabletop_surround))
-    setattr(env_cfg, "yam_policy_tabletop_surround_size", tuple(float(v) for v in args.yam_policy_tabletop_surround_size))
+    setattr(env_cfg, "yam_policy_tabletop_surround_size", surround_size)
     setattr(env_cfg, "yam_policy_tabletop_surround_top_z_offset", float(args.yam_policy_tabletop_surround_top_z_offset))
     setattr(env_cfg, "yam_policy_tabletop_surround_thickness", float(args.yam_policy_tabletop_surround_thickness))
     setattr(env_cfg, "yam_policy_tabletop_surround_color", surround_color)
     setattr(env_cfg, "yam_policy_tabletop_surround_roughness", float(rng.uniform(0.52, 0.95)))
+    setattr(env_cfg, "yam_policy_tabletop_texture_enabled", bool(args.yam_policy_tabletop_texture))
+    setattr(env_cfg, "yam_policy_tabletop_texture_patches", texture_patches)
+    setattr(env_cfg, "yam_policy_tabletop_texture_roughness", float(rng.uniform(0.60, 0.96)))
+    setattr(env_cfg, "yam_policy_background_walls_enabled", bool(args.yam_policy_background_walls))
+    setattr(env_cfg, "yam_policy_background_wall_distance", float(args.yam_policy_background_wall_distance))
+    setattr(env_cfg, "yam_policy_background_wall_height", float(args.yam_policy_background_wall_height))
+    setattr(env_cfg, "yam_policy_background_wall_thickness", float(args.yam_policy_background_wall_thickness))
+    setattr(env_cfg, "yam_policy_background_wall_color", background_wall_color)
+    setattr(env_cfg, "yam_policy_background_wall_roughness", float(rng.uniform(0.58, 0.95)))
     setattr(env_cfg, "tabletop_goal_bin_floor_color", bin_floor_color)
     setattr(env_cfg, "tabletop_goal_bin_x_wall_color", x_wall_color)
     setattr(env_cfg, "tabletop_goal_bin_y_wall_color", y_wall_color)
@@ -715,6 +754,18 @@ def _apply_yam_policy_scene_randomization(env_cfg, args, rng: np.random.Generato
             "size": [float(v) for v in args.yam_policy_tabletop_surround_size],
             "top_z_offset": float(args.yam_policy_tabletop_surround_top_z_offset),
             "thickness": float(args.yam_policy_tabletop_surround_thickness),
+        },
+        "tabletop_texture": {
+            "enabled": bool(args.yam_policy_tabletop_texture),
+            "patch_count": len(texture_patches),
+            "patches": texture_patches,
+        },
+        "background_walls": {
+            "enabled": bool(args.yam_policy_background_walls),
+            "distance": float(args.yam_policy_background_wall_distance),
+            "height": float(args.yam_policy_background_wall_height),
+            "thickness": float(args.yam_policy_background_wall_thickness),
+            "color": [float(v) for v in background_wall_color],
         },
         "lighting": {
             "dome_light_intensity": dome_light,
@@ -1935,7 +1986,10 @@ def _usd_add_box(
 
 def _spawn_yam_policy_tabletop_surround(task_env) -> dict[str, object]:
     cfg = task_env.cfg
-    if not bool(getattr(cfg, "yam_policy_tabletop_surround_enabled", False)):
+    surround_enabled = bool(getattr(cfg, "yam_policy_tabletop_surround_enabled", False))
+    texture_enabled = bool(getattr(cfg, "yam_policy_tabletop_texture_enabled", False))
+    walls_enabled = bool(getattr(cfg, "yam_policy_background_walls_enabled", False))
+    if not (surround_enabled or texture_enabled or walls_enabled):
         return {"enabled": False}
     stage = omni.usd.get_context().get_stage()
     if stage is None:
@@ -1951,26 +2005,103 @@ def _spawn_yam_policy_tabletop_surround(task_env) -> dict[str, object]:
     roughness = float(getattr(cfg, "yam_policy_tabletop_surround_roughness", 0.72))
     looks_root = "/World/Looks/YAMPolicyTabletopSurround"
     UsdGeom.Xform.Define(stage, looks_root)
-    mat = _usd_material(stage, f"{looks_root}/surface", color, roughness=roughness)
+    surround_mat = _usd_material(stage, f"{looks_root}/surface", color, roughness=roughness)
     spawned: list[dict[str, object]] = []
-    for env_id, origin in enumerate(env_origins):
-        center = (
-            float(origin[0]) + float(cfg.table_center_x),
-            float(origin[1]) + float(cfg.table_center_y),
-            float(origin[2]) + center_z,
+    if surround_enabled:
+        for env_id, origin in enumerate(env_origins):
+            center = (
+                float(origin[0]) + float(cfg.table_center_x),
+                float(origin[1]) + float(cfg.table_center_y),
+                float(origin[2]) + center_z,
+            )
+            path = f"/World/envs/env_{env_id}/YAMPolicyTabletopSurround"
+            _usd_add_box(stage, path, center, (size_xy[0], size_xy[1], thickness), surround_mat)
+            spawned.append({"env_id": int(env_id), "path": path, "center": [float(v) for v in center]})
+
+    texture_patches: list[dict[str, object]] = []
+    if texture_enabled:
+        patches = list(getattr(cfg, "yam_policy_tabletop_texture_patches", []))
+        patch_thickness = 0.001
+        patch_center_z = float(cfg.table_surface_z) + 0.0005
+        texture_roughness = float(getattr(cfg, "yam_policy_tabletop_texture_roughness", 0.78))
+        for patch_idx, patch in enumerate(patches):
+            if not isinstance(patch, dict):
+                continue
+            patch_size = patch.get("size", (0.25, 0.04))
+            patch_offset = patch.get("center_offset", (0.0, 0.0))
+            if len(patch_size) != 2 or len(patch_offset) != 2:
+                continue
+            patch_color = tuple(float(v) for v in patch.get("color", color))
+            patch_mat = _usd_material(stage, f"{looks_root}/texture_{patch_idx:02d}", patch_color, roughness=texture_roughness)
+            for env_id, origin in enumerate(env_origins):
+                center = (
+                    float(origin[0]) + float(cfg.table_center_x) + float(patch_offset[0]),
+                    float(origin[1]) + float(cfg.table_center_y) + float(patch_offset[1]),
+                    float(origin[2]) + patch_center_z,
+                )
+                path = f"/World/envs/env_{env_id}/YAMPolicyTabletopTexture/patch_{patch_idx:02d}"
+                _usd_add_box(
+                    stage,
+                    path,
+                    center,
+                    (float(patch_size[0]), float(patch_size[1]), patch_thickness),
+                    patch_mat,
+                )
+            texture_patches.append(
+                {
+                    "patch_idx": int(patch_idx),
+                    "center_offset": [float(v) for v in patch_offset],
+                    "size": [float(v) for v in patch_size],
+                    "color": [float(v) for v in patch_color],
+                }
+            )
+
+    background_walls: list[dict[str, object]] = []
+    if walls_enabled:
+        wall_distance = float(getattr(cfg, "yam_policy_background_wall_distance", 1.28))
+        wall_height = float(getattr(cfg, "yam_policy_background_wall_height", 0.72))
+        wall_thickness = float(getattr(cfg, "yam_policy_background_wall_thickness", 0.025))
+        wall_color = tuple(float(v) for v in getattr(cfg, "yam_policy_background_wall_color", (0.55, 0.56, 0.54)))
+        wall_roughness = float(getattr(cfg, "yam_policy_background_wall_roughness", 0.80))
+        wall_mat = _usd_material(stage, f"{looks_root}/background_wall", wall_color, roughness=wall_roughness)
+        wall_center_z = float(cfg.table_surface_z) + 0.5 * wall_height
+        wall_specs = (
+            ("back_y", (0.0, wall_distance, wall_center_z), (2.0 * wall_distance, wall_thickness, wall_height)),
+            ("left_x", (-wall_distance, 0.0, wall_center_z), (wall_thickness, 2.0 * wall_distance, wall_height)),
+            ("right_x", (wall_distance, 0.0, wall_center_z), (wall_thickness, 2.0 * wall_distance, wall_height)),
         )
-        path = f"/World/envs/env_{env_id}/YAMPolicyTabletopSurround"
-        _usd_add_box(stage, path, center, (size_xy[0], size_xy[1], thickness), mat)
-        spawned.append({"env_id": int(env_id), "path": path, "center": [float(v) for v in center]})
+        for env_id, origin in enumerate(env_origins):
+            for wall_name, wall_offset, wall_size in wall_specs:
+                center = (
+                    float(origin[0]) + float(cfg.table_center_x) + float(wall_offset[0]),
+                    float(origin[1]) + float(cfg.table_center_y) + float(wall_offset[1]),
+                    float(origin[2]) + float(wall_offset[2]),
+                )
+                path = f"/World/envs/env_{env_id}/YAMPolicyBackground/{wall_name}"
+                _usd_add_box(stage, path, center, wall_size, wall_mat)
+                background_walls.append(
+                    {
+                        "env_id": int(env_id),
+                        "name": wall_name,
+                        "path": path,
+                        "center": [float(v) for v in center],
+                        "size": [float(v) for v in wall_size],
+                    }
+                )
     task_env.sim.forward()
     return {
         "enabled": True,
+        "surround_enabled": surround_enabled,
+        "texture_enabled": texture_enabled,
+        "background_walls_enabled": walls_enabled,
         "size": [float(v) for v in size_xy],
         "top_z": float(top_z),
         "thickness": float(thickness),
         "color": [float(v) for v in color],
         "roughness": roughness,
         "spawned": spawned,
+        "texture_patches": texture_patches,
+        "background_walls": background_walls,
     }
 
 

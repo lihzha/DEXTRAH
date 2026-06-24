@@ -10146,3 +10146,36 @@ Smoke follow-up:
   `http://localhost:8765/view?path=cluster_results/l401/yam_rgb_vis_l40_d405_smoke_20260624T080057Z/observation_streams_side_by_side.mp4`,
   `http://localhost:8765/view?path=cluster_results/l401/yam_rgb_vis_l40_d405_smoke_20260624T080057Z/replay/yam_rgb_replay.mp4`, and
   `http://localhost:8765/view?path=cluster_results/l401/yam_rgb_vis_l40_close_smoke_20260624T074746Z/settle/settle.mp4`.
+
+2026-06-24T08:48:56Z - YAM RGB scene camera and domain-randomization loop
+- Goal: reduce scene-camera exposure to simulator floor/background while
+  preserving enough robot/table/bin context for sim2real RGB policy training.
+- Version state: agent worktree on branch
+  `codex/yam-rgb-diffusion-pickplace/yam-rgb-diffusion-20260624`; cluster
+  replay worktree last verified at commit
+  `303d5ce8508bf38863ddd251fc59f777039c75e1`.
+- Rendering-quality check: the replay path is using Isaac Lab
+  `--rendering_mode quality`, the highest AppLauncher preset available here.
+  It is not a custom offline path-tracing accumulation mode.
+- Camera-fit replay `1041672`, batch
+  `yam_rgb_vis_l40_camfit_smoke_20260624T081842Z`, produced local contact
+  sheets under
+  `cluster_results/l401/yam_rgb_vis_l40_camfit_smoke_20260624T081842Z/`.
+  Visual inspection showed the camera was improved but still included large
+  blue floor/background regions and partial robot crop.
+- Tightened square replay `1041673`, batch
+  `yam_rgb_vis_l40_camfit2_smoke_20260624T083000Z`, rendered at `1024x1024` in
+  `quality` mode. Cluster-side RGB statistics showed the mean blue/background
+  fraction worsened from about `0.2895` to `0.3521`, indicating camera-only
+  tightening is not sufficient because the physical tabletop footprint is
+  smaller than the policy camera frustum.
+- Patch in progress: add visual-only tabletop surround, randomized tabletop
+  texture strips, and neutral randomized background walls to the YAM policy
+  scene. These are USD render cubes without collision APIs so they should not
+  change physical trajectory validation.
+- Local validation passed after the patch: `python3 -m py_compile` on the
+  touched render/eval modules, `bash -n` on the settle and L40 replay wrappers,
+  and `git diff --check`.
+- Current infrastructure note: l401 SSH checks timed out during the update
+  window, so the next launch is blocked until Git push and remote worktree
+  update can be retried and monitored.

@@ -67,3 +67,38 @@
   - scene+wrist observation video: `http://localhost:8765/view?path=cluster_results/l401/yam_rgb_vis_l40_d405_smoke_20260624T080057Z/observation_streams_side_by_side.mp4`
   - scene-camera replay: `http://localhost:8765/view?path=cluster_results/l401/yam_rgb_vis_l40_d405_smoke_20260624T080057Z/replay/yam_rgb_replay.mp4`
   - randomized environment settle: `http://localhost:8765/view?path=cluster_results/l401/yam_rgb_vis_l40_close_smoke_20260624T074746Z/settle/settle.mp4`
+
+## 2026-06-24T08:48:56Z Camera Fit And Visual Randomization Loop
+
+- confirmed rendering mode: the L40 replay wrapper uses Isaac Lab
+  `--rendering_mode quality`, which is the highest AppLauncher preset exposed
+  by the local Isaac Lab stack. This is not a custom offline path-traced
+  accumulation pass.
+- camera-fit run `1041672`, batch
+  `yam_rgb_vis_l40_camfit_smoke_20260624T081842Z`, replayed one accepted demo
+  at commit `32b848ffe6add9bc94cc20808f22b268879a2e8e` with scene camera near
+  `[-0.6684, -0.6951, 0.8556]` looking at `[-0.3267, 0.0232, 0.0086]`.
+  Artifact inspection showed better downward framing but still visible blue
+  floor/background wedges and a partial robot crop.
+- tightened-camera run `1041673`, batch
+  `yam_rgb_vis_l40_camfit2_smoke_20260624T083000Z`, replayed one accepted demo
+  at commit `303d5ce8508bf38863ddd251fc59f777039c75e1`, `quality` rendering,
+  `1024x1024` render resolution, camera near
+  `[-0.5947, -0.5258, 0.8165]` looking at `[-0.2975, 0.0319, -0.0143]`.
+  Cluster-side image statistics found mean blue/background fraction increased
+  from roughly `0.2895` to `0.3521`; source diagnosis is that camera-only
+  tightening exposes simulator floor/background because the real table region
+  is smaller than the square scene-camera frustum.
+- implementation response: added render-only YAM policy tabletop surround,
+  procedural tabletop texture strips, and neutral randomized background walls
+  to `render_tabletop_clutter_settle_video.py` and the settle/replay wrapper.
+  These USD cubes are visual-only and do not add collision APIs, so they should
+  change RGB domain coverage without changing trajectories or grasp validation.
+- local validation passed: `python3 -m py_compile` on the touched render/eval
+  modules, `bash -n` on the settle and L40 replay wrappers, and
+  `git diff --check`.
+- current blocker before launch: l401 SSH checks timed out, and the local
+  branch is ahead of origin by the visual-surround commit plus this
+  texture/background change. Next step is to commit, retry push/update of the
+  l401 worktree, replay one accepted demo in `quality`, inspect frames/video,
+  and then decide whether to scale to candidate data generation.
