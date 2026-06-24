@@ -241,3 +241,22 @@
 - validation after the wrapper edit passed: `bash -n
   cluster/sbatch_collect_yam_single_object_policy_demos_1gpu.sh` and
   `git diff --check`.
+- deployed commit `05fb97597a9b977c566d6987ceea6056cf861296` into sibling
+  remote worktree
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-rgb-diffusion-20260624-tuned-05fb9759`
+  to avoid changing code underneath the running pre-wave.
+- cancelled five zero-accept old pre-wave shards and submitted tuned mini-wave
+  `yam_rgb_source_tuned_smoke40_a100_20260624T1138Z`, jobs `29473187`,
+  `29473189`, `29473190`, `29473191`, and `29473192`, with target `8` per
+  shard and 95 minute walltime.
+- the first fresh-worktree tuned attempts hit one-time asset-copy races in the
+  YAM asset directory; subsequent retries created scenes and planned normally
+  after the asset directory was populated.
+- after roughly six minutes, tuned had two durable accepted rows and no
+  validation rejects. Their final object centers were inside the restored bins
+  with comfortable margins; remaining tuned misses were planner/candidate
+  misses.
+- follow-up patch in progress: enable `YAM_ALLOW_LIFT_FILTER_FALLBACK=True`
+  for future waves because some tuned planner rejects were caused by
+  `YAM aperture filtering removed all grasps`; replay validation will continue
+  to filter failed lifts/drops.

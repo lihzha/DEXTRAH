@@ -10300,3 +10300,14 @@ Smoke follow-up:
 - Local validation after the wrapper edit passed: `bash -n
   cluster/sbatch_collect_yam_single_object_policy_demos_1gpu.sh` and
   `git diff --check`.
+- Submitted tuned mini-wave `yam_rgb_source_tuned_smoke40_a100_20260624T1138Z`
+  on five ordinary A100 jobs using sibling worktree
+  `yam-rgb-diffusion-20260624-tuned-05fb9759`. The first fresh-worktree
+  attempts hit a one-time asset-copy race, then retries proceeded normally.
+  After about six minutes the tuned wave had two accepted rows with larger
+  bin/drop margins and no validation rejects.
+- Additional diagnosis: some tuned planner rejects were
+  `YAM aperture filtering removed all grasps`. For future waves, enabled the
+  existing `YAM_ALLOW_LIFT_FILTER_FALLBACK=True` default so those scenes can
+  fall back to the broader grasp set and rely on replay validation to reject
+  bad grasps.
