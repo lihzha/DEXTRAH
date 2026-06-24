@@ -239,8 +239,8 @@ MIX_ACTION_SOURCES = ("policy_reference_mix", "policy_reference_mix_hold")
 HOLD_ACTION_SOURCES = ("reference_delta_hold", "policy_reference_mix_hold")
 DEFAULT_FRANKA_CAMERA_EYE = (-0.10, -1.05, 1.36)
 DEFAULT_FRANKA_CAMERA_TARGET = (-0.62, 0.0, 0.78)
-DEFAULT_YAM_CAMERA_EYE = (-0.52, -0.86, 0.72)
-DEFAULT_YAM_CAMERA_TARGET = (-0.27, 0.0, 0.08)
+DEFAULT_YAM_CAMERA_EYE = (-0.70, -0.72, 0.86)
+DEFAULT_YAM_CAMERA_TARGET = (-0.29, 0.02, 0.03)
 
 
 def _task_camera_defaults(task: str | None) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
