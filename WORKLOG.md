@@ -10397,3 +10397,33 @@ Smoke follow-up:
 - Local validation passed: `bash -n` on the L40 replay submitter/wrapper,
   `py_compile` on `render_tabletop_clutter_settle_video.py`, and
   `git diff --check`.
+- Committed the camera/submitter patch as
+  `bd1bd49dca6bdfa51b1bfaa331a934d3163e5d22`, pushed the branch, deployed it
+  by Git bundle to L40 worktree
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-rgb-diffusion-20260624-camera-bd1bd49`,
+  and warmed `72` YAM asset files.
+- Submitted replacement L40 quality replay sample
+  `yam_rgb_l40_camera_retune_sample_20260624T1252Z` as jobs
+  `1041737`-`1041739`. The run record pins code commit `bd1bd49d...`,
+  `rendering_mode=quality`, render resolution `1024x1024`, and policy RGB
+  resolution `256x256`. Jobs are pending behind L40 maintenance.
+
+2026-06-24T12:55:00Z - Larger filtered A100 source wave queued
+- Added `CODE_NFS`/`CODE_COMMIT` recording and per-shard export to the A100
+  no-array source submitter, validated it with `bash -n` and `git diff
+  --check`, committed as `7c82b53ef100d27772218217d992e132b3b24899`, and
+  pushed the branch.
+- Deployed commit `7c82b53e...` by Git bundle to A100-visible worktree
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-rgb-diffusion-20260624-source-7c82b53e`,
+  copied warmed YAM assets, and verified shell syntax for the source submitter
+  plus both collection wrappers.
+- Submitted filtered source wave
+  `yam_rgb_source_filter_wave3_360_a100_20260624T1254Z` from that worktree.
+  Slurm accepted 20 ordinary jobs (`29473614`-`29473631`, `29473633`,
+  `29473639`), shards `0`-`19`, target `15` each for `300` queued accepted
+  demos. Shards `20`-`23` were blocked by `QOSMaxSubmitJobPerUserLimit` and
+  should be submitted after active/pending jobs clear.
+- Latest accepted source count after the launch check was `153` total:
+  prewave `107`, tuned `16`, fallback `30`, filtered wave2 `0`, filtered
+  wave3 `0`. Existing active/pending source work is expected to bring the
+  total close to the 500 target once maintenance clears.
