@@ -10091,3 +10091,7 @@ Smoke follow-up:
   smoke using `/home/lzha/code/graspgenx/.venv/bin/python` converted to RGB-DP
   NPZ with image shape `[4, 6, 8, 3]`, robot state shape `[4, 8]`, action
   shape `[4, 8]`, and expected episode/phase metadata.
+- Merge status: clean implementation commit
+  `e292c82c26597fa03cb0d9a5fdff91efac7dca6a` fast-forwarded from
+  `origin/main` and was pushed to `origin/main`. `CODEX_AGENT_ID` for this
+  integration was `codex-yam-rgb-dp-clean-main-20260624`.
