@@ -13,6 +13,18 @@ MAX_ROWS="${MAX_ROWS:-0}"
 JOB_NAME_PREFIX="${JOB_NAME_PREFIX:-yam_policy_rgb}"
 LOG_DIR="${LOG_DIR:-$NFS_ROOT/slurm_logs/dextrah}"
 WRAPPER="${WRAPPER:-$CODE_NFS/cluster/sbatch_replay_yam_policy_rgb_l40_1gpu.sh}"
+RENDER_WIDTH="${RENDER_WIDTH:-1024}"
+RENDER_HEIGHT="${RENDER_HEIGHT:-1024}"
+RENDERING_MODE="${RENDERING_MODE:-quality}"
+RECORD_RGB_WIDTH="${RECORD_RGB_WIDTH:-256}"
+RECORD_RGB_HEIGHT="${RECORD_RGB_HEIGHT:-256}"
+RECORD_RGB_INTERVAL="${RECORD_RGB_INTERVAL:-1}"
+CAMERA_EYE="${CAMERA_EYE:-}"
+CAMERA_TARGET="${CAMERA_TARGET:-}"
+CODE_COMMIT="${CODE_COMMIT:-}"
+if [ -z "$CODE_COMMIT" ] && git -C "$CODE_NFS" rev-parse HEAD >/dev/null 2>&1; then
+  CODE_COMMIT="$(git -C "$CODE_NFS" rev-parse HEAD)"
+fi
 
 if [ "$SHARD_COUNT" -lt 1 ]; then
   echo "SHARD_COUNT must be >= 1" >&2
@@ -42,14 +54,20 @@ from pathlib import Path
 
 payload = {
     "accepted_jsonl": "$ACCEPTED_JSONL",
+    "code_commit": "$CODE_COMMIT",
+    "code_nfs": "$CODE_NFS",
     "rgb_batch_name": "$RGB_BATCH_NAME",
     "rgb_batch_dir": "$RGB_BATCH_DIR",
     "shard_count": int("$SHARD_COUNT"),
     "max_concurrent": int("$MAX_CONCURRENT"),
     "max_rows_per_shard": int("$MAX_ROWS"),
     "wrapper": "$WRAPPER",
-    "rendering_mode": "quality",
-    "image_resolution": [256, 256],
+    "rendering_mode": "$RENDERING_MODE",
+    "render_resolution": [int("$RENDER_WIDTH"), int("$RENDER_HEIGHT")],
+    "image_resolution": [int("$RECORD_RGB_WIDTH"), int("$RECORD_RGB_HEIGHT")],
+    "record_rgb_interval": int("$RECORD_RGB_INTERVAL"),
+    "camera_eye": "$CAMERA_EYE" or None,
+    "camera_target": "$CAMERA_TARGET" or None,
 }
 Path("$run_record").write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 print(json.dumps({"event": "rgb_submitter_config_written", "path": "$run_record"}))
@@ -68,7 +86,7 @@ for shard_index in $(seq 0 "$((SHARD_COUNT - 1))"); do
   job_id="$(
     sbatch --parsable \
       --job-name="$job_name" \
-      --export=ALL,CODE_NFS="$CODE_NFS",RESULTS_NFS="$RESULTS_NFS",ACCEPTED_JSONL="$ACCEPTED_JSONL",RGB_BATCH_NAME="$RGB_BATCH_NAME",RGB_BATCH_DIR="$RGB_BATCH_DIR",SHARD_COUNT="$SHARD_COUNT",SHARD_INDEX="$shard_index",MAX_ROWS="$MAX_ROWS" \
+      --export=ALL,CODE_NFS="$CODE_NFS",RESULTS_NFS="$RESULTS_NFS",ACCEPTED_JSONL="$ACCEPTED_JSONL",RGB_BATCH_NAME="$RGB_BATCH_NAME",RGB_BATCH_DIR="$RGB_BATCH_DIR",SHARD_COUNT="$SHARD_COUNT",SHARD_INDEX="$shard_index",MAX_ROWS="$MAX_ROWS",RENDER_WIDTH="$RENDER_WIDTH",RENDER_HEIGHT="$RENDER_HEIGHT",RENDERING_MODE="$RENDERING_MODE",RECORD_RGB_WIDTH="$RECORD_RGB_WIDTH",RECORD_RGB_HEIGHT="$RECORD_RGB_HEIGHT",RECORD_RGB_INTERVAL="$RECORD_RGB_INTERVAL",CAMERA_EYE="$CAMERA_EYE",CAMERA_TARGET="$CAMERA_TARGET",CODE_COMMIT="$CODE_COMMIT" \
       "$WRAPPER"
   )"
   echo "$job_id shard=$shard_index name=$job_name" | tee -a "$submitted"

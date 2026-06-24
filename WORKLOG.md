@@ -10375,3 +10375,25 @@ Smoke follow-up:
   randomized bin on robot-left, and table/surround dominating the camera. Local
   NPZ inspection showed finite `robot_state`/`action`, nonblank RGB, and
   `900` state steps per sampled replay.
+
+2026-06-24T12:50:26Z - Scene camera retune before L40 quality visual replay
+- Audited the Isaac Lab render path for the YAM RGB policy replay. Isaac Lab
+  v2.2.1 only exposes `performance`, `balanced`, and `quality` rendering
+  presets through `--rendering_mode`; the L40 replay wrapper already uses
+  `quality`, whose preset enables reflections, indirect diffuse/global
+  illumination, shadows, ambient occlusion, DL denoising, and DLSS quality.
+- The pending L40 visual replay
+  `yam_rgb_l40_source_visual_sample_20260624T1200Z` was pinned to older
+  fallback commit `f91eb2630efd26fd95570512676bd105723c14ce`, so jobs
+  `1041731`-`1041733` were canceled before consuming post-maintenance L40 time.
+- Retuned the default YAM scene camera from `(-0.62, -0.54, 0.82) ->
+  (-0.27, 0.03, 0.00)` to `(-0.68, -0.62, 1.05) -> (-0.24, 0.02, 0.08)`.
+  The intent is a higher robot-right oblique view that keeps the table,
+  object/bin workspace, and robot in frame while reducing wall/background
+  pixels for sim2real robustness.
+- Updated the L40 RGB replay submitter to record and forward exact
+  `CODE_COMMIT`, render resolution, policy RGB resolution, RGB interval, and
+  optional camera overrides in the no-array run record.
+- Local validation passed: `bash -n` on the L40 replay submitter/wrapper,
+  `py_compile` on `render_tabletop_clutter_settle_video.py`, and
+  `git diff --check`.
