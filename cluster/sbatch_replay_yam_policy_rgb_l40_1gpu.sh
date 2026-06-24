@@ -120,7 +120,7 @@ echo "RECORD_RGB=${RECORD_RGB_WIDTH}x${RECORD_RGB_HEIGHT}"
 echo "ROWS_TSV=$ROWS_TSV"
 
 run_render_wrapper() {
-  bash "$CODE_NFS/cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh"
+  bash "$CODE_NFS/cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh" </dev/null
 }
 
 accepted=0
