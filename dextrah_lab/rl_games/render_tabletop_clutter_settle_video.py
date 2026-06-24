@@ -81,6 +81,15 @@ parser.add_argument(
     help="For the first policy call only, push source RGB/proprio at the bootstrap frame instead of a live render.",
 )
 parser.add_argument(
+    "--policy_teacher_force_source_history",
+    action=argparse.BooleanOptionalAction,
+    default=False,
+    help=(
+        "For every new policy call, replace live RGB/proprio history with source trajectory history at "
+        "policy_bootstrap_frame + current step. Diagnostic only."
+    ),
+)
+parser.add_argument(
     "--policy_max_joint_delta",
     type=float,
     default=0.20,
@@ -3442,6 +3451,8 @@ def main() -> None:
                         )
             elif bool(args_cli.policy_first_obs_from_bootstrap_source):
                 raise ValueError("--policy_first_obs_from_bootstrap_source requires --policy_bootstrap_trajectory_dataset_path")
+            if bool(args_cli.policy_teacher_force_source_history) and policy_bootstrap_dataset_path is None:
+                raise ValueError("--policy_teacher_force_source_history requires --policy_bootstrap_trajectory_dataset_path")
             if not history_bootstrap_loaded:
                 rgb_dp_history.reset(_render_policy_rgb_obs(env), _yam_policy_robot_state(task_env))
             rgb_dp_joint_target_last = robot.data.joint_pos.detach().clone()
@@ -3468,6 +3479,7 @@ def main() -> None:
                         "policy_bootstrap_history": str(args_cli.policy_bootstrap_history),
                         "policy_bootstrap_history_loaded": bool(history_bootstrap_loaded),
                         "policy_first_obs_from_bootstrap_source": bool(args_cli.policy_first_obs_from_bootstrap_source),
+                        "policy_teacher_force_source_history": bool(args_cli.policy_teacher_force_source_history),
                     }
                 ),
                 flush=True,
@@ -3646,14 +3658,35 @@ def main() -> None:
                 new_policy_call = False
                 if rgb_dp_action_queue.shape[0] == 0:
                     obs_source = "live_render"
-                    if rgb_dp_first_obs_override is not None:
+                    if bool(args_cli.policy_teacher_force_source_history):
+                        if policy_bootstrap_dataset_path is None:
+                            raise RuntimeError("Teacher-forced source history requested without a bootstrap dataset")
+                        source_frame = int(policy_bootstrap_summary.get("frame", args_cli.policy_bootstrap_frame)) + int(step_idx) - 1
+                        with np.load(policy_bootstrap_dataset_path, allow_pickle=False) as bootstrap_data:
+                            history_payload = _policy_history_from_bootstrap_dataset(
+                                bootstrap_data,
+                                source_frame,
+                                n_obs_steps=int(getattr(rgb_dp_policy, "n_obs_steps", 1)),
+                                height=int(args_cli.policy_image_height),
+                                width=int(args_cli.policy_image_width),
+                                mode="source_current",
+                            )
+                        if history_payload is None:
+                            raise RuntimeError("Teacher-forced source history failed to build a history payload")
+                        history_images, history_robot_states = history_payload
+                        rgb_dp_history.image[:] = history_images
+                        rgb_dp_history.robot_state[:] = history_robot_states
+                        rgb_dp_history.initialized = True
+                        obs_source = f"bootstrap_teacher_forced:{source_frame}"
+                    elif rgb_dp_first_obs_override is not None:
                         obs_image, obs_robot_state = rgb_dp_first_obs_override
                         rgb_dp_first_obs_override = None
                         obs_source = "bootstrap_source"
+                        rgb_dp_history.push(obs_image, obs_robot_state)
                     else:
                         obs_image = _render_policy_rgb_obs(env)
                         obs_robot_state = _yam_policy_robot_state(task_env)
-                    rgb_dp_history.push(obs_image, obs_robot_state)
+                        rgb_dp_history.push(obs_image, obs_robot_state)
                     action_seq = _predict_rgb_dp_action_sequence(
                         rgb_dp_policy,
                         rgb_dp_history,
@@ -4094,6 +4127,7 @@ def main() -> None:
             "policy_bootstrap": policy_bootstrap_summary,
             "policy_bootstrap_history": str(args_cli.policy_bootstrap_history),
             "policy_first_obs_from_bootstrap_source": bool(args_cli.policy_first_obs_from_bootstrap_source),
+            "policy_teacher_force_source_history": bool(args_cli.policy_teacher_force_source_history),
             "policy_max_joint_delta": float(args_cli.policy_max_joint_delta),
             "policy_max_gripper_delta": float(args_cli.policy_max_gripper_delta),
             "action_min": None if not rgb_dp_action_trace else rgb_dp_action_min.astype(float).tolist(),
