@@ -17,8 +17,8 @@ from isaaclab.app import AppLauncher
 
 DEFAULT_FRANKA_CAMERA_EYE = (-0.10, -1.05, 1.36)
 DEFAULT_FRANKA_CAMERA_TARGET = (-0.62, 0.0, 0.78)
-DEFAULT_YAM_CAMERA_EYE = (-0.70, -0.72, 0.86)
-DEFAULT_YAM_CAMERA_TARGET = (-0.29, 0.02, 0.03)
+DEFAULT_YAM_CAMERA_EYE = (-0.62, -0.54, 0.82)
+DEFAULT_YAM_CAMERA_TARGET = (-0.27, 0.03, 0.00)
 DEFAULT_TASK = "Dextrah-Single-YAM-Tabletop-Clutter-Grasp"
 
 
@@ -125,8 +125,8 @@ parser.add_argument("--yam_policy_bin_y_range", type=float, nargs=2, default=(0.
 parser.add_argument("--yam_policy_bin_inner_size_x_range", type=float, nargs=2, default=(0.28, 0.42))
 parser.add_argument("--yam_policy_bin_inner_size_y_range", type=float, nargs=2, default=(0.20, 0.34))
 parser.add_argument("--yam_policy_bin_wall_height_range", type=float, nargs=2, default=(0.08, 0.16))
-parser.add_argument("--yam_policy_scene_camera_eye_jitter", type=float, nargs=3, default=(0.05, 0.07, 0.05))
-parser.add_argument("--yam_policy_scene_camera_target_jitter", type=float, nargs=3, default=(0.04, 0.05, 0.03))
+parser.add_argument("--yam_policy_scene_camera_eye_jitter", type=float, nargs=3, default=(0.04, 0.04, 0.04))
+parser.add_argument("--yam_policy_scene_camera_target_jitter", type=float, nargs=3, default=(0.03, 0.03, 0.02))
 parser.add_argument("--yam_policy_dome_light_intensity_range", type=float, nargs=2, default=(450.0, 1600.0))
 parser.add_argument("--yam_policy_key_light_intensity_range", type=float, nargs=2, default=(250.0, 1400.0))
 parser.add_argument("--yam_policy_material_value_range", type=float, nargs=2, default=(0.32, 0.82))
