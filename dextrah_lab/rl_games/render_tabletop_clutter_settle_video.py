@@ -58,6 +58,22 @@ parser.add_argument(
     ),
 )
 parser.add_argument("--policy_robot_state_dim", type=int, default=8)
+parser.add_argument("--policy_action_dim", type=int, default=8)
+parser.add_argument(
+    "--policy_append_phase_progress",
+    action=argparse.BooleanOptionalAction,
+    default=False,
+    help="Append one-hot contact phase and episode progress features to YAM RGB-DP robot_state observations.",
+)
+parser.add_argument(
+    "--policy_phase_progress_dataset",
+    type=str,
+    default=None,
+    help=(
+        "Optional trajectory_dataset.npz containing phase_ids and episode_ends for runtime phase/progress features. "
+        "If omitted with --policy_append_phase_progress, the bootstrap dataset is used when available."
+    ),
+)
 parser.add_argument("--num_inference_steps", type=int, default=100)
 parser.add_argument("--num_action_samples", type=int, default=1)
 parser.add_argument("--policy_sample_seed", type=int, default=None)
@@ -1576,6 +1592,90 @@ def _trajectory_frame_env_array(data: np.lib.npyio.NpzFile, key: str, frame_idx:
     return np.asarray(value)
 
 
+def _yam_contact_phase_progress_features(phase_id: int, progress: float) -> np.ndarray:
+    phase = int(phase_id)
+    if phase < 0:
+        phase = 0
+    if phase not in (0, 1, 2):
+        raise ValueError(f"Expected contact phase id in {{-1,0,1,2}}, got {phase_id}")
+    out = np.zeros((4,), dtype=np.float32)
+    out[phase] = 1.0
+    out[3] = float(np.clip(float(progress), 0.0, 1.0))
+    return out
+
+
+def _phase_progress_from_dataset_frame(data: np.lib.npyio.NpzFile, frame_idx: int) -> np.ndarray:
+    if "phase_ids" not in data.files:
+        raise KeyError("Phase/progress observation augmentation requires phase_ids in the dataset")
+    if "episode_ends" not in data.files:
+        raise KeyError("Phase/progress observation augmentation requires episode_ends in the dataset")
+    phase_ids = np.asarray(data["phase_ids"], dtype=np.int32)
+    episode_ends = np.asarray(data["episode_ends"], dtype=np.int64)
+    if phase_ids.ndim != 1:
+        raise ValueError(f"phase_ids must be 1D, got {phase_ids.shape}")
+    if episode_ends.ndim != 1 or episode_ends.size == 0:
+        raise ValueError(f"episode_ends must be nonempty 1D, got {episode_ends.shape}")
+    if int(episode_ends[-1]) != int(phase_ids.shape[0]):
+        raise ValueError(f"episode_ends[-1]={episode_ends[-1]} does not match phase_ids length {phase_ids.shape[0]}")
+    frame = int(np.clip(int(frame_idx), 0, int(phase_ids.shape[0] - 1)))
+    episode_idx = int(np.searchsorted(episode_ends, frame, side="right"))
+    episode_start = 0 if episode_idx == 0 else int(episode_ends[episode_idx - 1])
+    episode_end = int(episode_ends[min(episode_idx, int(episode_ends.size - 1))])
+    local_step = int(np.clip(frame - episode_start, 0, max(episode_end - episode_start - 1, 0)))
+    denom = max(1, episode_end - episode_start - 1)
+    progress = float(local_step) / float(denom)
+    return _yam_contact_phase_progress_features(int(phase_ids[frame]), progress)
+
+
+class YamRgbPhaseProgressProvider:
+    def __init__(self, dataset_path: Path, *, base_frame: int = 0):
+        self.dataset_path = Path(dataset_path).expanduser().resolve()
+        if not self.dataset_path.is_file():
+            raise FileNotFoundError(self.dataset_path)
+        with np.load(self.dataset_path, allow_pickle=False) as data:
+            if "phase_ids" not in data.files:
+                raise KeyError(f"{self.dataset_path} missing phase_ids")
+            if "episode_ends" not in data.files:
+                raise KeyError(f"{self.dataset_path} missing episode_ends")
+            self.phase_ids = np.asarray(data["phase_ids"], dtype=np.int32).copy()
+            self.episode_ends = np.asarray(data["episode_ends"], dtype=np.int64).copy()
+        if self.phase_ids.ndim != 1:
+            raise ValueError(f"{self.dataset_path}: phase_ids must be 1D, got {self.phase_ids.shape}")
+        if self.episode_ends.ndim != 1 or self.episode_ends.size == 0:
+            raise ValueError(f"{self.dataset_path}: episode_ends must be nonempty 1D, got {self.episode_ends.shape}")
+        if int(self.episode_ends[-1]) != int(self.phase_ids.shape[0]):
+            raise ValueError(
+                f"{self.dataset_path}: episode_ends[-1]={self.episode_ends[-1]} "
+                f"does not match phase_ids length {self.phase_ids.shape[0]}"
+            )
+        unique = set(int(v) for v in np.unique(self.phase_ids))
+        if not unique.issubset({-1, 0, 1, 2}):
+            raise ValueError(f"{self.dataset_path}: expected phase ids in {{-1,0,1,2}}, got {sorted(unique)}")
+        self.base_frame = int(np.clip(int(base_frame), 0, max(int(self.phase_ids.shape[0]) - 1, 0)))
+
+    def feature_for_frame(self, frame_idx: int) -> np.ndarray:
+        frame = int(np.clip(int(frame_idx), 0, max(int(self.phase_ids.shape[0]) - 1, 0)))
+        episode_idx = int(np.searchsorted(self.episode_ends, frame, side="right"))
+        episode_start = 0 if episode_idx == 0 else int(self.episode_ends[episode_idx - 1])
+        episode_end = int(self.episode_ends[min(episode_idx, int(self.episode_ends.size - 1))])
+        local_step = int(np.clip(frame - episode_start, 0, max(episode_end - episode_start - 1, 0)))
+        denom = max(1, episode_end - episode_start - 1)
+        progress = float(local_step) / float(denom)
+        return _yam_contact_phase_progress_features(int(self.phase_ids[frame]), progress)
+
+    def feature_for_step(self, rollout_step: int) -> np.ndarray:
+        return self.feature_for_frame(int(self.base_frame) + int(rollout_step))
+
+    def summary(self) -> dict[str, object]:
+        return {
+            "dataset_path": str(self.dataset_path),
+            "base_frame": int(self.base_frame),
+            "num_rows": int(self.phase_ids.shape[0]),
+            "episode_count": int(self.episode_ends.size),
+            "feature_names": ["phase_align_open", "phase_close_hold", "phase_lift", "episode_progress"],
+        }
+
+
 def _source_rgb_obs_from_bootstrap_frame(
     data: np.lib.npyio.NpzFile,
     frame_idx: int,
@@ -1587,9 +1687,20 @@ def _source_rgb_obs_from_bootstrap_frame(
     return _resize_rgb_nearest(rgb, int(height), int(width))
 
 
-def _source_robot_state_from_bootstrap_frame(data: np.lib.npyio.NpzFile, frame_idx: int) -> np.ndarray:
+def _source_robot_state_from_bootstrap_frame(
+    data: np.lib.npyio.NpzFile,
+    frame_idx: int,
+    *,
+    append_phase_progress: bool = False,
+) -> np.ndarray:
     q = _trajectory_frame_env_array(data, "actual_joint_position", frame_idx)
-    return np.asarray(q, dtype=np.float32).reshape(-1)
+    robot_state = np.asarray(q, dtype=np.float32).reshape(-1)
+    if append_phase_progress:
+        robot_state = np.concatenate(
+            (robot_state, _phase_progress_from_dataset_frame(data, int(frame_idx))),
+            axis=0,
+        ).astype(np.float32, copy=False)
+    return robot_state
 
 
 def _policy_history_from_bootstrap_dataset(
@@ -1600,6 +1711,7 @@ def _policy_history_from_bootstrap_dataset(
     height: int,
     width: int,
     mode: str,
+    append_phase_progress: bool = False,
 ) -> tuple[np.ndarray, np.ndarray] | None:
     if mode == "none":
         return None
@@ -1622,7 +1734,14 @@ def _policy_history_from_bootstrap_dataset(
         axis=0,
     )
     robot_states = np.stack(
-        [_source_robot_state_from_bootstrap_frame(data, int(idx)) for idx in frame_ids],
+        [
+            _source_robot_state_from_bootstrap_frame(
+                data,
+                int(idx),
+                append_phase_progress=bool(append_phase_progress),
+            )
+            for idx in frame_ids
+        ],
         axis=0,
     ).astype(np.float32, copy=False)
     return images, robot_states
@@ -2310,7 +2429,7 @@ def _render_policy_rgb_obs(env) -> np.ndarray:
     )
 
 
-def _yam_policy_robot_state(task_env) -> np.ndarray:
+def _yam_policy_robot_state(task_env, phase_features: np.ndarray | None = None) -> np.ndarray:
     robot = getattr(task_env, "_robot", None)
     if robot is None:
         raise AttributeError("YAM RGB-DP eval requires a robot articulation")
@@ -2319,17 +2438,31 @@ def _yam_policy_robot_state(task_env) -> np.ndarray:
         raise ValueError(f"YAM RGB-DP eval currently expects num_envs=1, got joint_pos shape {tuple(joint_pos.shape)}")
     arm_ids = list(getattr(task_env, "arm_joint_ids", []))
     finger_ids = list(getattr(task_env, "finger_joint_ids", []))
+    append_phase_progress = bool(args_cli.policy_append_phase_progress)
     expected_dim = int(args_cli.policy_robot_state_dim)
-    if int(joint_pos.shape[1]) == expected_dim:
+    base_expected_dim = expected_dim - 4 if append_phase_progress else expected_dim
+    if base_expected_dim <= 0:
+        raise ValueError(f"Invalid policy_robot_state_dim={expected_dim} for phase/progress augmentation")
+    if int(joint_pos.shape[1]) == base_expected_dim:
         state = joint_pos[0]
-    elif len(arm_ids) + len(finger_ids) == expected_dim:
+    elif len(arm_ids) + len(finger_ids) == base_expected_dim:
         state = torch.cat((joint_pos[0, arm_ids], joint_pos[0, finger_ids]), dim=0)
     else:
         raise ValueError(
-            f"Cannot build {expected_dim}D YAM policy robot_state from joint_pos shape {tuple(joint_pos.shape)} "
+            f"Cannot build {base_expected_dim}D base YAM policy robot_state from joint_pos shape {tuple(joint_pos.shape)} "
             f"({len(arm_ids)} arm, {len(finger_ids)} fingers)"
         )
-    return state.detach().float().cpu().numpy().astype(np.float32, copy=False)
+    robot_state = state.detach().float().cpu().numpy().astype(np.float32, copy=False)
+    if append_phase_progress:
+        if phase_features is None:
+            raise ValueError("--policy_append_phase_progress requires runtime phase_features")
+        phase = np.asarray(phase_features, dtype=np.float32).reshape(-1)
+        if phase.shape != (4,):
+            raise ValueError(f"Expected 4D phase/progress features, got {phase.shape}")
+        robot_state = np.concatenate((robot_state, phase), axis=0).astype(np.float32, copy=False)
+    if robot_state.shape != (expected_dim,):
+        raise ValueError(f"Expected policy robot_state shape ({expected_dim},), got {robot_state.shape}")
+    return robot_state
 
 
 def _predict_rgb_dp_action_sequence(policy: Any, history: ImageRobotObsHistory, call_idx: int) -> np.ndarray:
@@ -3428,10 +3561,11 @@ def main() -> None:
     rgb_dp_action_queue_policy_call_idx = -1
     rgb_dp_action_queue_step_offset = 0
     rgb_dp_action_trace: list[dict[str, object]] = []
-    rgb_dp_action_min = np.full(int(args_cli.policy_robot_state_dim), np.inf, dtype=np.float64)
-    rgb_dp_action_max = np.full(int(args_cli.policy_robot_state_dim), -np.inf, dtype=np.float64)
+    rgb_dp_action_min = np.full(int(args_cli.policy_action_dim), np.inf, dtype=np.float64)
+    rgb_dp_action_max = np.full(int(args_cli.policy_action_dim), -np.inf, dtype=np.float64)
     rgb_dp_joint_target_last = None
     rgb_dp_first_obs_override: tuple[np.ndarray, np.ndarray] | None = None
+    rgb_dp_phase_progress_provider: YamRgbPhaseProgressProvider | None = None
     if single_yam_demo_enabled:
         if robot is not None:
             demo_start_joint_pos = robot.data.joint_pos.detach().clone()
@@ -3443,6 +3577,31 @@ def main() -> None:
                 str(args_cli.device),
                 args_cli.diffusion_policy_root,
             )
+            if bool(args_cli.policy_append_phase_progress):
+                phase_dataset_path = (
+                    Path(args_cli.policy_phase_progress_dataset).expanduser().resolve()
+                    if args_cli.policy_phase_progress_dataset
+                    else policy_bootstrap_dataset_path
+                )
+                if phase_dataset_path is None:
+                    raise ValueError(
+                        "--policy_append_phase_progress requires --policy_phase_progress_dataset "
+                        "or --policy_bootstrap_trajectory_dataset_path"
+                    )
+                phase_base_frame = int(policy_bootstrap_summary.get("frame", args_cli.policy_bootstrap_frame))
+                rgb_dp_phase_progress_provider = YamRgbPhaseProgressProvider(
+                    phase_dataset_path,
+                    base_frame=phase_base_frame,
+                )
+                print(
+                    json.dumps(
+                        {
+                            "event": "yam_rgb_dp_phase_progress_provider_loaded",
+                            "summary": rgb_dp_phase_progress_provider.summary(),
+                        }
+                    ),
+                    flush=True,
+                )
             rgb_dp_history = ImageRobotObsHistory(
                 n_obs_steps=int(getattr(rgb_dp_policy, "n_obs_steps", 1)),
                 height=int(args_cli.policy_image_height),
@@ -3460,6 +3619,7 @@ def main() -> None:
                         height=int(args_cli.policy_image_height),
                         width=int(args_cli.policy_image_width),
                         mode=str(args_cli.policy_bootstrap_history),
+                        append_phase_progress=bool(args_cli.policy_append_phase_progress),
                     )
                     if history_payload is not None:
                         history_images, history_robot_states = history_payload
@@ -3484,14 +3644,26 @@ def main() -> None:
                                 height=int(args_cli.policy_image_height),
                                 width=int(args_cli.policy_image_width),
                             ),
-                            _source_robot_state_from_bootstrap_frame(bootstrap_data, frame_idx),
+                            _source_robot_state_from_bootstrap_frame(
+                                bootstrap_data,
+                                frame_idx,
+                                append_phase_progress=bool(args_cli.policy_append_phase_progress),
+                            ),
                         )
             elif bool(args_cli.policy_first_obs_from_bootstrap_source):
                 raise ValueError("--policy_first_obs_from_bootstrap_source requires --policy_bootstrap_trajectory_dataset_path")
             if bool(args_cli.policy_teacher_force_source_history) and policy_bootstrap_dataset_path is None:
                 raise ValueError("--policy_teacher_force_source_history requires --policy_bootstrap_trajectory_dataset_path")
             if not history_bootstrap_loaded:
-                rgb_dp_history.reset(_render_policy_rgb_obs(env), _yam_policy_robot_state(task_env))
+                initial_phase_features = (
+                    rgb_dp_phase_progress_provider.feature_for_step(0)
+                    if rgb_dp_phase_progress_provider is not None
+                    else None
+                )
+                rgb_dp_history.reset(
+                    _render_policy_rgb_obs(env),
+                    _yam_policy_robot_state(task_env, phase_features=initial_phase_features),
+                )
             rgb_dp_joint_target_last = robot.data.joint_pos.detach().clone()
             print(
                 json.dumps(
@@ -3508,6 +3680,13 @@ def main() -> None:
                         ],
                         "policy_image_aspect_mode": str(args_cli.policy_image_aspect_mode),
                         "robot_state_dim": int(args_cli.policy_robot_state_dim),
+                        "action_dim": int(args_cli.policy_action_dim),
+                        "policy_append_phase_progress": bool(args_cli.policy_append_phase_progress),
+                        "policy_phase_progress_provider": (
+                            None
+                            if rgb_dp_phase_progress_provider is None
+                            else rgb_dp_phase_progress_provider.summary()
+                        ),
                         "num_inference_steps": int(args_cli.num_inference_steps),
                         "num_action_samples": int(args_cli.num_action_samples),
                         "action_chunk_steps": int(args_cli.action_chunk_steps),
@@ -3708,6 +3887,7 @@ def main() -> None:
                                 height=int(args_cli.policy_image_height),
                                 width=int(args_cli.policy_image_width),
                                 mode="source_current",
+                                append_phase_progress=bool(args_cli.policy_append_phase_progress),
                             )
                         if history_payload is None:
                             raise RuntimeError("Teacher-forced source history failed to build a history payload")
@@ -3723,17 +3903,22 @@ def main() -> None:
                         rgb_dp_history.push(obs_image, obs_robot_state)
                     else:
                         obs_image = _render_policy_rgb_obs(env)
-                        obs_robot_state = _yam_policy_robot_state(task_env)
+                        phase_features = (
+                            rgb_dp_phase_progress_provider.feature_for_step(int(step_idx) - 1)
+                            if rgb_dp_phase_progress_provider is not None
+                            else None
+                        )
+                        obs_robot_state = _yam_policy_robot_state(task_env, phase_features=phase_features)
                         rgb_dp_history.push(obs_image, obs_robot_state)
                     action_seq = _predict_rgb_dp_action_sequence(
                         rgb_dp_policy,
                         rgb_dp_history,
                         rgb_dp_policy_call_idx,
                     )
-                    if action_seq.shape[1] != int(args_cli.policy_robot_state_dim):
+                    if action_seq.shape[1] != int(args_cli.policy_action_dim):
                         raise RuntimeError(
                             "YAM RGB-DP policy action dim must match direct joint target dim "
-                            f"{int(args_cli.policy_robot_state_dim)}, got {action_seq.shape}"
+                            f"{int(args_cli.policy_action_dim)}, got {action_seq.shape}"
                         )
                     chunk_steps = min(max(1, int(args_cli.action_chunk_steps)), int(action_seq.shape[0]))
                     rgb_dp_action_queue = np.asarray(action_seq[:chunk_steps], dtype=np.float32)
@@ -4158,6 +4343,13 @@ def main() -> None:
                 "image": [3, int(args_cli.policy_image_height), int(args_cli.policy_image_width)],
                 "robot_state": int(args_cli.policy_robot_state_dim),
             },
+            "action_dim": int(args_cli.policy_action_dim),
+            "policy_append_phase_progress": bool(args_cli.policy_append_phase_progress),
+            "policy_phase_progress_provider": (
+                None
+                if rgb_dp_phase_progress_provider is None
+                else rgb_dp_phase_progress_provider.summary()
+            ),
             "num_inference_steps": int(args_cli.num_inference_steps),
             "num_action_samples": int(args_cli.num_action_samples),
             "policy_sample_seed": args_cli.policy_sample_seed,
