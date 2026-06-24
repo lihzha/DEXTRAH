@@ -10222,3 +10222,13 @@ Smoke follow-up:
   policy wrapper use the previously validated high-yield pool defaults
   `POOL_MAX_ASSETS=512`, `POOL_MAX_GRASP_WIDTH_P95=0.110`, and
   `MAX_ATTEMPTS=180`.
+- High-yield relaunch `yam_rgb_candidate_hiyield_a100_20260624T0913Z` from
+  commit `f9ec6e82d4ec00fff1ce9f33057e858f04db32a6` used the high-yield pool
+  and short timing, but both first seeds again rejected at planner stage. The
+  sampled bins still included far-left positions (for example `Y=0.455`), so
+  the remaining issue is workspace reach/planning distance, not the object pool
+  or motion timing. Cancelled jobs `29469493` and `29469495`.
+- Patch in progress: narrow the dedicated single-object policy default Y
+  ranges to object `[-0.30, -0.12]` and bin `[0.08, 0.30]`. This preserves
+  right-side object and left-side bin randomization while keeping the transport
+  range closer to the previously accepted smoke.

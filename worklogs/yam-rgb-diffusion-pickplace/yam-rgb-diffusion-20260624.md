@@ -159,3 +159,14 @@
   previously validated high-yield object pool and attempt budget:
   `POOL_MAX_ASSETS=512`, `POOL_MAX_GRASP_WIDTH_P95=0.110`, and
   `MAX_ATTEMPTS=180`, while keeping the short motion timing.
+- high-yield relaunch: committed pool fix as
+  `f9ec6e82d4ec00fff1ce9f33057e858f04db32a6`, deployed via Git bundle, and
+  launched A100 batch `yam_rgb_candidate_hiyield_a100_20260624T0913Z` with jobs
+  `29469493` and `29469495`. Both first seeds again rejected at planner stage.
+  The logs show the high-yield pool was active, so the remaining problem is
+  reach/planning distance from the broad Y ranges; one sampled bin was near
+  `Y=0.455`.
+- follow-up patch: narrow only the dedicated single-object policy defaults to
+  object Y `[-0.30, -0.12]` and bin Y `[0.08, 0.30]`, still keeping object on
+  robot-right negative Y and bin on robot-left positive Y, but closer to the
+  previously accepted smoke range.
