@@ -331,3 +331,26 @@
   - output: `artifacts/yam_two_bin_success_profile_smoke`
   - continuous/headless demo, no environment reset between attempts;
   - first bounded smoke to check whether the retry profiles improve contact/lift before running a full all-object pass.
+
+## 2026-06-23 23:58 PDT
+
+- Added and tested per-object planner profile search in `run_yam_iterative_bin_clear_demo.py`.
+- Bounded smoke `artifacts/yam_two_bin_success_profile_smoke2` stayed `partial`:
+  - accepted: `clutter_02`, `clutter_00`;
+  - hard failures split into two classes:
+    - `clutter_04`: deeper profiles failed curobo planning;
+    - `clutter_01`, `clutter_03`, `target`: reached/closed but failed lift.
+- Added failure-cause-aware candidate exclusion:
+  - close/no-lift candidates are now excluded after one physical failure;
+  - pure no-contact candidates still use the configured retry limit.
+- Bounded smoke `artifacts/yam_two_bin_success_candidate_exclude_smoke` verified the exclusion policy:
+  - `clutter_01` excluded candidates `45` then `15`;
+  - `clutter_03` excluded `13`;
+  - `target` excluded `15`;
+  - remaining failures became planning failures once weak candidates were removed.
+- Added clutter-ignored planner profiles (`--no-include_default_clutter`) for close-object cases while keeping physics replay unchanged.
+- Bounded smoke `artifacts/yam_two_bin_ignore_clutter_profile_smoke` showed clutter-ignored profiles were reached but did not improve final accepted count.
+- Current diagnosis:
+  - retry bookkeeping is working;
+  - profile search alone is insufficient;
+  - next checks are broader GGX/curobo candidate coverage, then a true fallback primitive such as nudge/push or a geometry-derived candidate family if broader candidates still fail.
