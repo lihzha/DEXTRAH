@@ -10501,3 +10501,15 @@ Smoke follow-up:
   total `166` accepted with `70` unique objects. The queued wave3 target is
   `300` accepted demos across the 20 submitted shards; shards `20`-`23` remain
   unsubmitted until the A100 submit cap opens.
+
+2026-06-24T14:08:00Z - Camera moved to real-table forward/right corner
+- User feedback: the previous visual sample made the table too dominant and
+  did not reflect the real setup, where the YAM is mounted at the table edge.
+- Retuned the default YAM scene camera from the high robot-right/back view to a
+  high forward/right table-corner view: eye `(0.55, -0.78, 1.16)`, target
+  `(-0.12, 0.0, 0.05)`. In the current YAM coordinates, `+x` is forward from
+  the robot toward the far table edge and `-y` is robot-right.
+- Reverted the single-object policy collection wrapper's
+  `YAM_POLICY_TABLETOP_SURROUND_SIZE` default from the enlarged `2.25 2.05`
+  back to the original `1.90 1.90`. The generic render wrapper already used
+  `1.90 1.90`.
