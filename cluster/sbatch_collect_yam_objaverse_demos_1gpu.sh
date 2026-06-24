@@ -80,6 +80,10 @@ SCRIPTED_LIFT_HEIGHT="${SCRIPTED_LIFT_HEIGHT:-0.14}"
 SCRIPTED_LIFT_FRAMES="${SCRIPTED_LIFT_FRAMES:-240}"
 RETURN_TO_START_FRAMES="${RETURN_TO_START_FRAMES:-240}"
 MOVE_TO_BIN_FRAMES="${MOVE_TO_BIN_FRAMES:-360}"
+START_GUARD_FRAMES="${START_GUARD_FRAMES:-60}"
+CLOSE_FRAMES="${CLOSE_FRAMES:-60}"
+HOLD_FRAMES="${HOLD_FRAMES:-60}"
+HOLD_AFTER_CLOSE_FRAMES="${HOLD_AFTER_CLOSE_FRAMES:-120}"
 DROP_HEIGHT_ABOVE_BIN="${DROP_HEIGHT_ABOVE_BIN:-0.18}"
 SCRIPTED_BIN_DROP_Y_OFFSET="${SCRIPTED_BIN_DROP_Y_OFFSET:-0.0}"
 SCRIPTED_BIN_DROP_Y_OFFSET_AFTER_FIRST="${SCRIPTED_BIN_DROP_Y_OFFSET_AFTER_FIRST:--0.08}"
@@ -307,6 +311,10 @@ run_planner() {
         --scripted_lift_mode always \
         --scripted_lift_height '$SCRIPTED_LIFT_HEIGHT' \
         --scripted_lift_frames '$SCRIPTED_LIFT_FRAMES' \
+        --start_guard_frames '$START_GUARD_FRAMES' \
+        --close_frames '$CLOSE_FRAMES' \
+        --hold_frames '$HOLD_FRAMES' \
+        --hold_after_close_frames '$HOLD_AFTER_CLOSE_FRAMES' \
         --return_to_start_frames '$RETURN_TO_START_FRAMES' \
         \"\${planner_extra_args[@]}\"
     "
@@ -429,6 +437,12 @@ echo "SCRIPTED_BIN_DROP_Y_OFFSET=$SCRIPTED_BIN_DROP_Y_OFFSET"
 echo "SCRIPTED_BIN_DROP_Y_OFFSET_AFTER_FIRST=$SCRIPTED_BIN_DROP_Y_OFFSET_AFTER_FIRST"
 echo "YAM_GRASP_FILTER_MIN_KEEP=$YAM_GRASP_FILTER_MIN_KEEP"
 echo "YAM_ALLOW_LIFT_FILTER_FALLBACK=$YAM_ALLOW_LIFT_FILTER_FALLBACK"
+echo "START_GUARD_FRAMES=$START_GUARD_FRAMES"
+echo "CLOSE_FRAMES=$CLOSE_FRAMES"
+echo "HOLD_FRAMES=$HOLD_FRAMES"
+echo "HOLD_AFTER_CLOSE_FRAMES=$HOLD_AFTER_CLOSE_FRAMES"
+echo "SCRIPTED_LIFT_FRAMES=$SCRIPTED_LIFT_FRAMES"
+echo "MOVE_TO_BIN_FRAMES=$MOVE_TO_BIN_FRAMES"
 echo "RETURN_TO_START_FRAMES=$RETURN_TO_START_FRAMES"
 echo "POOL_MANIFEST=$POOL_MANIFEST"
 echo "SELECTED_OBJECTS_JSONL=${SELECTED_OBJECTS_JSONL:-unset}"
@@ -449,6 +463,12 @@ json_event "collector_start" \
   "scripted_bin_drop_y_offset_after_first=$SCRIPTED_BIN_DROP_Y_OFFSET_AFTER_FIRST" \
   "yam_grasp_filter_min_keep=$YAM_GRASP_FILTER_MIN_KEEP" \
   "yam_allow_lift_filter_fallback=$YAM_ALLOW_LIFT_FILTER_FALLBACK" \
+  "start_guard_frames=$START_GUARD_FRAMES" \
+  "close_frames=$CLOSE_FRAMES" \
+  "hold_frames=$HOLD_FRAMES" \
+  "hold_after_close_frames=$HOLD_AFTER_CLOSE_FRAMES" \
+  "scripted_lift_frames=$SCRIPTED_LIFT_FRAMES" \
+  "move_to_bin_frames=$MOVE_TO_BIN_FRAMES" \
   "return_to_start_frames=$RETURN_TO_START_FRAMES"
 
 accepted=0
@@ -588,6 +608,12 @@ summary = {
     "tabletop_clutter_asset_assignment": "$TABLETOP_CLUTTER_ASSET_ASSIGNMENT",
     "yam_grasp_filter_min_keep": int("$YAM_GRASP_FILTER_MIN_KEEP"),
     "yam_allow_lift_filter_fallback": "$YAM_ALLOW_LIFT_FILTER_FALLBACK",
+    "start_guard_frames": int("$START_GUARD_FRAMES"),
+    "close_frames": int("$CLOSE_FRAMES"),
+    "hold_frames": int("$HOLD_FRAMES"),
+    "hold_after_close_frames": int("$HOLD_AFTER_CLOSE_FRAMES"),
+    "scripted_lift_frames": int("$SCRIPTED_LIFT_FRAMES"),
+    "move_to_bin_frames": int("$MOVE_TO_BIN_FRAMES"),
     "return_to_start_frames": int("$RETURN_TO_START_FRAMES"),
     "code_commit": "${CODE_COMMIT:-unknown}",
 }

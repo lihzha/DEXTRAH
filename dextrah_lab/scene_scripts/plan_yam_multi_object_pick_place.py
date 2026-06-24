@@ -418,6 +418,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--scripted_lift_height", type=float, default=0.14)
     parser.add_argument("--scripted_lift_frames", type=int, default=240)
     parser.add_argument("--start_guard_frames", type=int, default=60)
+    parser.add_argument("--close_frames", type=int, default=60)
+    parser.add_argument("--hold_frames", type=int, default=60)
+    parser.add_argument("--hold_after_close_frames", type=int, default=120)
     parser.add_argument("--return_to_start_frames", type=int, default=240)
     parser.add_argument("--strict_object_order", action="store_true")
     parser.add_argument("--yam_grasp_filter_min_keep", type=int, default=None)
@@ -506,6 +509,12 @@ def main() -> None:
                 str(args.scripted_place_mode),
                 "--start_guard_frames",
                 str(int(args.start_guard_frames)),
+                "--close_frames",
+                str(int(args.close_frames)),
+                "--hold_frames",
+                str(int(args.hold_frames)),
+                "--hold_after_close_frames",
+                str(int(args.hold_after_close_frames)),
             ]
             if args.yam_grasp_filter_min_keep is not None:
                 cmd.extend(["--yam_grasp_filter_min_keep", str(int(args.yam_grasp_filter_min_keep))])
@@ -640,6 +649,15 @@ def main() -> None:
         "planning_failures": planning_failures,
         "total_frames": int(combined["total_frames"]),
         "fps": int(combined["fps"]),
+        "motion_timing": {
+            "start_guard_frames": int(args.start_guard_frames),
+            "close_frames": int(args.close_frames),
+            "hold_frames": int(args.hold_frames),
+            "hold_after_close_frames": int(args.hold_after_close_frames),
+            "scripted_lift_frames": int(args.scripted_lift_frames),
+            "move_to_bin_frames": int(args.move_to_bin_frames),
+            "return_to_start_frames": int(args.return_to_start_frames),
+        },
     }
     (output_dir / "multi_plan_summary.json").write_text(json.dumps(_jsonable(summary), indent=2) + "\n", encoding="utf-8")
     print(json.dumps({"event": "multi_plan_complete", **summary}, indent=2), flush=True)

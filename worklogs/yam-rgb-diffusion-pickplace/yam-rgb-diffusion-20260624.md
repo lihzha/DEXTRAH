@@ -102,3 +102,44 @@
   texture/background change. Next step is to commit, retry push/update of the
   l401 worktree, replay one accepted demo in `quality`, inspect frames/video,
   and then decide whether to scale to candidate data generation.
+- launch update: committed and pushed final visual-randomization code through
+  `4bf3071394cf851089e153dd951a29e792319413`; l401 could not fetch from
+  GitHub due SSH key rejection, so the exact commits were deployed via Git
+  bundle fetch into the agent worktree. Submitted L40 replay job `1041674`
+  (`yamvis_surtex`) from remote worktree
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-rgb-diffusion-20260624`
+  with batch `yam_rgb_vis_l40_surround_tex_smoke_20260624T0852Z`, source
+  accepted JSONL
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/yam_demos/yam_rgb_vis_l40_close_smoke_20260624T074746Z/shard_000/accepted_demos.jsonl`,
+  `RENDERING_MODE=quality`, render resolution `1024x1024`, policy RGB
+  `256x256`, surround size `2.25 x 2.05`, tabletop texture enabled, background
+  walls enabled, result directory
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/yam_policy_rgb_replays/yam_rgb_vis_l40_surround_tex_smoke_20260624T0852Z`,
+  and log
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/yam_policy_rgb_1041674.out`.
+- result update: job `1041674` completed with accepted RGB replay count `1`,
+  failed `0`, `quality` rendering, `1024x1024` render resolution, and `256x256`
+  recorded scene/wrist streams. Local artifacts are under
+  `/home/lzha/code/cluster_results/l401/yam_rgb_vis_l40_surround_tex_smoke_20260624T0852Z/`.
+  The scene replay contact sheet shows the table/surround, bin, object, and
+  most of the YAM arm dominate the frame; only a narrow wall/background strip
+  remains. Wrist D405 observations are nonblank and useful during object/bin
+  interactions. `viz-open` URLs:
+  `http://localhost:8765/view?path=cluster_results/l401/yam_rgb_vis_l40_surround_tex_smoke_20260624T0852Z/inspection/scene_replay_video_sheet.png`
+  and
+  `http://localhost:8765/view?path=cluster_results/l401/yam_rgb_vis_l40_surround_tex_smoke_20260624T0852Z/validation/yam_rgb_replay.mp4`.
+- dataset evidence: replay metadata reports `scene_rgb` and `wrist_rgb` arrays
+  `[1417, 256, 256, 3]`, `robot_state` `[1417, 1, 24]`, and `action`
+  `[1417, 1, 7]`; the old blue/background proxy dropped to about `0.068`.
+  This is good enough to move from visual-fit work into candidate data
+  generation.
+- timing cleanup: before candidate generation, patched the planner path so the
+  shared multi-object planner forwards `close_frames`, `hold_frames`, and
+  `hold_after_close_frames` into the per-object YAM planner, and the shared
+  collector records those timing knobs. The single-object policy wrapper now
+  defaults to `START_GUARD_FRAMES=12`, `CLOSE_FRAMES=36`, `HOLD_FRAMES=12`,
+  `HOLD_AFTER_CLOSE_FRAMES=24`, `SCRIPTED_LIFT_FRAMES=120`,
+  `MOVE_TO_BIN_FRAMES=220`, and `RETURN_TO_START_FRAMES=60` to reduce scripted
+  stops while preserving enough close/drop dwell for physical validation.
+- validation after timing cleanup passed: `python3 -m py_compile`,
+  `bash -n`, and `git diff --check`.

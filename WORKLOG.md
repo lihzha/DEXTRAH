@@ -10179,3 +10179,34 @@ Smoke follow-up:
 - Current infrastructure note: l401 SSH checks timed out during the update
   window, so the next launch is blocked until Git push and remote worktree
   update can be retried and monitored.
+
+2026-06-24T09:00:33Z - Visual-surround replay accepted; planner timing cleanup
+- L40 replay job `1041674`, batch
+  `yam_rgb_vis_l40_surround_tex_smoke_20260624T0852Z`, completed with accepted
+  RGB replay count `1`, failed `0`, `quality` rendering, `1024x1024` render
+  resolution, and `256x256` recorded scene/wrist streams.
+- Artifact inspection:
+  `cluster_results/l401/yam_rgb_vis_l40_surround_tex_smoke_20260624T0852Z/inspection/scene_replay_video_sheet.png`
+  shows table/surround, bin, object, and most of the YAM arm dominate the scene
+  camera; only a narrow wall/background strip remains. The wrist D405 stream is
+  nonblank and sees the object/table/bin during the relevant phases.
+- `viz-open` URLs:
+  `http://localhost:8765/view?path=cluster_results/l401/yam_rgb_vis_l40_surround_tex_smoke_20260624T0852Z/inspection/scene_replay_video_sheet.png`
+  and
+  `http://localhost:8765/view?path=cluster_results/l401/yam_rgb_vis_l40_surround_tex_smoke_20260624T0852Z/validation/yam_rgb_replay.mp4`.
+- Dataset evidence: replay NPZ metadata reports `scene_rgb` and `wrist_rgb`
+  arrays with `[1417, 256, 256, 3]`, `robot_state` `[1417, 1, 24]`, and
+  `action` `[1417, 1, 7]`; scene/wrist nonzero fractions are effectively 1.
+  The blue/background proxy dropped to about `0.068`, so the visual-only
+  tabletop surround and walls solved the main background mismatch issue for the
+  current camera.
+- Remaining issue before candidate generation: the source trajectory still had
+  inherited scripted stops (`hold_at_pre_grasp`, `hold_at_grasp`,
+  `hold_after_close`, `hold_above_bin`, `hold_after_drop`). Patched the
+  multi-object planner and shared collector to expose close/hold timing, and
+  set the single-object policy wrapper defaults to `START_GUARD_FRAMES=12`,
+  `CLOSE_FRAMES=36`, `HOLD_FRAMES=12`, `HOLD_AFTER_CLOSE_FRAMES=24`,
+  `SCRIPTED_LIFT_FRAMES=120`, `MOVE_TO_BIN_FRAMES=220`, and
+  `RETURN_TO_START_FRAMES=60`.
+- Local checks passed after timing patch: `python3 -m py_compile`,
+  `bash -n`, and `git diff --check`.
