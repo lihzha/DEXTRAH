@@ -216,3 +216,28 @@
   `54bcf185a534365e15bbfb8cace374541f6436b7`. Next step is the full
   500-trajectory A100 source run, then L40 quality replay from the accepted
   source rows.
+
+## 2026-06-24T11:34:00Z Production Pre-Wave And Reach Tuning
+
+- first full-source attempt `yam_rgb_source500_a100_20260624T1110Z` submitted
+  ordinary jobs until Slurm hit `QOSMaxSubmitJobPerUserLimit`; the 20 submitted
+  jobs were then pending behind maintenance, so they were cancelled before
+  consuming GPU time.
+- relaunched `yam_rgb_source_prewave200_a100_20260624T1118Z` with 20 ordinary
+  A100 jobs, target 10 accepted demos per shard, from commit
+  `567be544e2a87cc4a12ab88a9b4b0934cde65ea3`.
+- early diagnostics showed 10 durable accepted demos after roughly 13 minutes
+  across 20 running GPUs. The accepted rows validate single-object
+  table-right-to-bin-left behavior; failures were mostly cuRobo goalset
+  planner misses with grasp candidates present, not rendering or dataset
+  failures.
+- patched the single-object policy wrapper for subsequent waves to improve
+  production yield and drop margin while preserving randomization: object X
+  `[-0.33,-0.24]`, object Y `[-0.32,-0.23]`, bin X `[-0.32,-0.12]`, bin Y
+  `[0.10,0.26]`, bin sizes X `[0.38,0.48]` and Y `[0.36,0.46]`, bin height
+  `[0.08,0.14]`, `MAX_PLAN_ATTEMPTS=128`, centered drop
+  `SCRIPTED_BIN_DROP_Y_OFFSET=0.0`, and explicit visual surround
+  `YAM_POLICY_TABLETOP_SURROUND=True`, size `2.25 2.05`.
+- validation after the wrapper edit passed: `bash -n
+  cluster/sbatch_collect_yam_single_object_policy_demos_1gpu.sh` and
+  `git diff --check`.

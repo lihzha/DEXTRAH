@@ -10279,3 +10279,24 @@ Smoke follow-up:
   is deployed at commit `54bcf185a534365e15bbfb8cace374541f6436b7` and is
   ready for 500-trajectory A100 source generation followed by L40 quality RGB
   replay.
+
+2026-06-24T11:34:00Z - Production pre-wave yield and source default tuning
+- Initial 500-source submission hit `QOSMaxSubmitJobPerUserLimit` at 20 jobs
+  and those jobs were pending behind maintenance, so they were cancelled before
+  running. Relaunched a pre-maintenance ordinary-job wave
+  `yam_rgb_source_prewave200_a100_20260624T1118Z` with 20 shards, target 10
+  each, from commit `567be544e2a87cc4a12ab88a9b4b0934cde65ea3`.
+- Early pre-wave diagnostics: 20 jobs were running and reached 10 durable
+  accepted demos after roughly 13 minutes. Validation failures were rare; most
+  misses were planner-stage cuRobo goalset failures with grasp candidates
+  available, indicating the randomized source/bin reach envelope was still too
+  broad for efficient production.
+- Patched the dedicated single-object policy wrapper for future waves:
+  `MAX_PLAN_ATTEMPTS=128`, object X `[-0.33,-0.24]`, object Y
+  `[-0.32,-0.23]`, bin X `[-0.32,-0.12]`, bin Y `[0.10,0.26]`, bin inner
+  size X `[0.38,0.48]`, bin inner size Y `[0.36,0.46]`, bin wall height
+  `[0.08,0.14]`, `SCRIPTED_BIN_DROP_Y_OFFSET=0.0`, and explicit tabletop
+  surround defaults `True` with size `2.25 x 2.05`.
+- Local validation after the wrapper edit passed: `bash -n
+  cluster/sbatch_collect_yam_single_object_policy_demos_1gpu.sh` and
+  `git diff --check`.
