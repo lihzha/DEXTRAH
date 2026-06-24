@@ -40,3 +40,30 @@
 - before launching cluster jobs, commit/push this branch and deploy the exact commit to the cluster checkout used as `CODE_NFS`.
 - recommended next validation is a one-row A100 collection smoke followed by one-row L40 `quality` replay and artifact inspection of `scene_rgb`, `wrist_rgb`, metadata, metrics, and video.
 - for a stricter physical camera model, replace the current TCP-relative wrist viewpoint with the bimanual YAM `CameraCfg`/D405 prim path after a single-YAM wrist camera parent convention is finalized.
+
+## 2026-06-24 Visualization Smoke Launch
+
+- committed and pushed implementation: `8edc9727c75f72ba49a28bed9b02b30c7db09122`.
+- deployed exact commit to remote worktree: `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-rgb-diffusion-20260624`.
+- A100 collection smoke:
+  - job_id: `29466685`
+  - batch_name: `yam_rgb_vis_smoke_20260624T072333Z`
+  - batch_dir: `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/yam_demos/yam_rgb_vis_smoke_20260624T072333Z`
+  - log: `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/yam_policy_demo_29466685.out`
+  - command shape: `sbatch --export=ALL,CODE_NFS=<agent-worktree>,RESULTS_NFS=<results>,CODE_COMMIT=8edc9727...,TOTAL_TARGET=1,SHARD_COUNT=1,SHARD_INDEX=0,SHARD_TARGET=1,MAX_ATTEMPTS=10,START_SEED=26062400 ... sbatch_collect_yam_single_object_policy_demos_1gpu.sh`
+  - success criteria: one accepted row in `shard_000/accepted_demos.jsonl`, valid stable scene, planned trajectory, replay dataset, validation metrics, and MP4.
+
+## 2026-06-24 Visualization Smoke Result
+
+- accepted source demo: L40 job `1041670`, batch `yam_rgb_vis_l40_close_smoke_20260624T074746Z`, seed `26062800`, validation status `accepted`.
+- axis check: object initial Y `-0.1714` (robot-right/negative-Y), randomized goal-bin center Y `0.1305` (robot-left/positive-Y), final object position inside bin.
+- validation checks passed: `all_objects_inside_bin`, `all_objects_lifted`, `rgb_nonblank`, `scripted_target_transport_disabled`, finite joint/clearance checks, and not truncated final.
+- wrist-camera inspection found the first virtual TCP-relative wrist stream was nonblank but poorly aimed. Patched `render_tabletop_clutter_settle_video.py` in commit `2c43c163fb4444212c613d34ffb470b8a192542c` to use a parented IsaacLab D405 `Camera` sensor on `/World/envs/env_0/Robot/arm/link_6` with the existing MolmoAct2 D405 intrinsics and mount pose.
+- accepted D405 RGB replay: L40 job `1041671`, batch `yam_rgb_vis_l40_d405_smoke_20260624T080057Z`, accepted `1`, failed `0`, rendering mode `quality`, output resolution `256x256`.
+- final D405 NPZ shapes: `scene_rgb`, `wrist_rgb`, and `rgb` are `[1417, 256, 256, 3]`; `robot_state` is `[1417, 1, 24]`; `action` is `[1417, 1, 7]`. `wrist_rgb` nonzero fraction: `0.999968`.
+- local artifacts: `/home/lzha/code/cluster_results/l401/yam_rgb_vis_l40_d405_smoke_20260624T080057Z/`.
+- `viz-open` URLs:
+  - contact sheet: `http://localhost:8765/view?path=cluster_results/l401/yam_rgb_vis_l40_d405_smoke_20260624T080057Z/observation_contact_sheet.png`
+  - scene+wrist observation video: `http://localhost:8765/view?path=cluster_results/l401/yam_rgb_vis_l40_d405_smoke_20260624T080057Z/observation_streams_side_by_side.mp4`
+  - scene-camera replay: `http://localhost:8765/view?path=cluster_results/l401/yam_rgb_vis_l40_d405_smoke_20260624T080057Z/replay/yam_rgb_replay.mp4`
+  - randomized environment settle: `http://localhost:8765/view?path=cluster_results/l401/yam_rgb_vis_l40_close_smoke_20260624T074746Z/settle/settle.mp4`

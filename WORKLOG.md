@@ -10067,3 +10067,82 @@ Smoke follow-up:
   branch at the same commit as cuRobo `main`; its old worktree was
   unregistered, but a root-owned orphaned asset directory prevented complete
   filesystem removal without sudo.
+
+2026-06-24T07:35:00Z - YAM RGB policy visualization smoke on L40
+- Goal: visualize the newly randomized one-object YAM RGB pick/place scene and
+  verify policy-observation artifacts with scene and wrist RGB streams.
+- Version state: agent worktree
+  `/home/lzha/code/.codex-worktrees/DEXTRAH/yam-rgb-diffusion-20260624` on
+  branch `codex/yam-rgb-diffusion-pickplace/yam-rgb-diffusion-20260624`;
+  cluster checkout
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-rgb-diffusion-20260624`
+  at commit `8edc9727c75f72ba49a28bed9b02b30c7db09122`.
+- A100 smoke `29466685` was cancelled after two planner rejects and a Vulkan
+  `ERROR_DEVICE_LOST` renderer crash on the third settle attempt; no accepted
+  demo was produced.
+- Replacement L40 smoke job: Slurm `1041667`, job name `yamvis_l40_smoke`, node
+  `pool0-00017`, batch
+  `yam_rgb_vis_l40_smoke_20260624T073451Z`, result directory
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/yam_demos/yam_rgb_vis_l40_smoke_20260624T073451Z`,
+  log
+  `/lustre/fsw/portfolios/nvr/users/lzha/slurm_logs/dextrah/yam_objaverse_demos_1041667.out`.
+- L40 parameters: `SELECTED_OBJECTS_JSONL` from the prior selected common-50
+  manifest, `OBJECT_ASSET_ASSIGNMENT=round_robin`, one object, no clutter,
+  object region X `[-0.36,-0.24]` and Y `[-0.34,-0.22]`, bin region X
+  `[-0.28,-0.14]` and Y `[0.22,0.36]`, randomized bin size/height,
+  randomized materials/lights/camera jitter, `RENDERING_MODE=quality`,
+  `RECORD_RGB_WIDTH=256`, `RECORD_RGB_HEIGHT=256`,
+  `RECORD_MULTICAM_RGB=True`, `RECORD_SCENE_RGB=True`,
+  `RECORD_WRIST_RGB=True`, and `RECORD_RGB_INTERVAL=1`.
+- Success criteria: one accepted demo, replay MP4 visually showing pick/lift/drop
+  into the left-side randomized bin, `trajectory_dataset.npz` containing
+  nonblank `scene_rgb`, `wrist_rgb`, and non-privileged `robot_state`, plus a
+  local contact sheet opened with `viz-open`.
+- L40 relaunch note: job `1041667` was cancelled after the first planner
+  attempt failed during Warp/cuRobo kernel compilation with
+  `OSError: [Errno 122] Disk quota exceeded`. Relaunched as Slurm `1041668`,
+  job name `yamvis_l40_cache`, batch
+  `yam_rgb_vis_l40_cache_smoke_20260624T073818Z`, with `WARP_CACHE_PATH`,
+  `CUDA_CACHE_PATH`, `XDG_CACHE_HOME`, `HOME`, and `TORCH_EXTENSIONS_DIR`
+  redirected under `/results/cache`.
+- Second L40 relaunch note: job `1041668` was cancelled because exporting
+  `HOME=/results/cache/home` caused Pyxis to try to mount `/results/cache/home`
+  before the `/results` mount existed inside the container. Relaunched as Slurm
+  `1041669`, job name `yamvis_l40_wcache`, batch
+  `yam_rgb_vis_l40_warpcache_smoke_20260624T074005Z`, with only
+  `WARP_CACHE_PATH`, `CUDA_CACHE_PATH`, `XDG_CACHE_HOME`, and
+  `TORCH_EXTENSIONS_DIR` redirected to `/results/cache`.
+- Third L40 relaunch note: job `1041669` was cancelled after the first two
+  infrastructure-clean attempts rejected at planning and the run kept sampling
+  the same rank-0 selected object because `OBJECT_ASSET_ASSIGNMENT=round_robin`.
+  Relaunched as Slurm `1041670`, job name `yamvis_l40_close`, batch
+  `yam_rgb_vis_l40_close_smoke_20260624T074746Z`, with random object selection
+  from the selected-50 pool and a closer smoke layout: object Y `[-0.18,-0.08]`
+  and bin Y `[0.08,0.22]`, preserving object on robot-right/negative-Y and bin
+  on robot-left/positive-Y.
+- Job `1041670` completed with one accepted demo on seed `26062800`. Source
+  validation status was `accepted`; object initial position was
+  `[-0.3022, -0.1714, 0.0347]`, final position was
+  `[-0.2215, 0.1047, 0.0448]`, the randomized goal bin center was
+  `[-0.2788, 0.1305]`, and validation checks included
+  `all_objects_inside_bin`, `all_objects_lifted`, `rgb_nonblank`, and
+  `scripted_target_transport_disabled`.
+- Artifact inspection found the initial virtual TCP-relative wrist stream was
+  nonblank but poorly aimed/occluded. Patched the renderer in commit
+  `2c43c163fb4444212c613d34ffb470b8a192542c` to capture wrist RGB from an
+  IsaacLab D405 `Camera` sensor parented to
+  `/World/envs/env_0/Robot/arm/link_6`, using the existing MolmoAct2 D405
+  intrinsics and mount pose.
+- Replay-only L40 job `1041671`, job name `yamvis_l40_d405`, batch
+  `yam_rgb_vis_l40_d405_smoke_20260624T080057Z`, completed with accepted RGB
+  replay count `1` and failed count `0`. The final D405 NPZ contains
+  `scene_rgb`, `wrist_rgb`, and `rgb` arrays of shape
+  `[1417, 256, 256, 3]`, plus `robot_state` shape `[1417, 1, 24]`; `wrist_rgb`
+  nonzero fraction was `0.999968`.
+- Local visualization artifacts:
+  `cluster_results/l401/yam_rgb_vis_l40_d405_smoke_20260624T080057Z/`.
+  Opened with `viz-open`:
+  `http://localhost:8765/view?path=cluster_results/l401/yam_rgb_vis_l40_d405_smoke_20260624T080057Z/observation_contact_sheet.png`,
+  `http://localhost:8765/view?path=cluster_results/l401/yam_rgb_vis_l40_d405_smoke_20260624T080057Z/observation_streams_side_by_side.mp4`,
+  `http://localhost:8765/view?path=cluster_results/l401/yam_rgb_vis_l40_d405_smoke_20260624T080057Z/replay/yam_rgb_replay.mp4`, and
+  `http://localhost:8765/view?path=cluster_results/l401/yam_rgb_vis_l40_close_smoke_20260624T074746Z/settle/settle.mp4`.
