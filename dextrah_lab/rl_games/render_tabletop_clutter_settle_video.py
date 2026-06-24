@@ -623,6 +623,33 @@ def _apply_stable_scene_bins_to_env_cfg(env_cfg, stable_scene: dict[str, object]
     return summary
 
 
+def _update_yam_policy_randomization_with_restored_bins(env_cfg, stable_scene_bin_restore: dict[str, object]) -> None:
+    if not bool(stable_scene_bin_restore.get("enabled")):
+        return
+    current_summary = getattr(env_cfg, "yam_policy_scene_randomization_summary", {"enabled": False})
+    if not isinstance(current_summary, dict):
+        return
+    bins = stable_scene_bin_restore.get("bins") if isinstance(stable_scene_bin_restore.get("bins"), dict) else {}
+    if not bins:
+        return
+    restored_summary = dict(current_summary)
+    for bin_name, summary_key in (("goal", "goal_bin"), ("source", "source_bin")):
+        info = bins.get(bin_name) if isinstance(bins.get(bin_name), dict) else None
+        if info is None:
+            continue
+        previous_key = f"pre_restore_{summary_key}"
+        if summary_key in restored_summary and previous_key not in restored_summary:
+            restored_summary[previous_key] = restored_summary[summary_key]
+        restored_summary[summary_key] = {
+            key: float(info[key])
+            for key in ("center_x", "center_y", "inner_size_x", "inner_size_y", "wall_height")
+            if key in info
+        }
+    restored_summary["stable_scene_bin_restore"] = stable_scene_bin_restore
+    restored_summary["bin_source"] = "stable_scene_restore"
+    setattr(env_cfg, "yam_policy_scene_randomization_summary", restored_summary)
+
+
 def _apply_yam_policy_scene_randomization(env_cfg, args, rng: np.random.Generator) -> dict[str, object]:
     if not bool(args.yam_policy_scene_randomization):
         return {"enabled": False}
@@ -3327,10 +3354,7 @@ def main() -> None:
         _set_if_present(env_cfg, "tabletop_clutter_prioritize_common_objects", False)
     stable_scene_bin_restore = _apply_stable_scene_bins_to_env_cfg(env_cfg, stable_scene_input)
     if bool(stable_scene_bin_restore.get("enabled")):
-        current_summary = getattr(env_cfg, "yam_policy_scene_randomization_summary", {"enabled": False})
-        if isinstance(current_summary, dict):
-            current_summary["stable_scene_bin_restore"] = stable_scene_bin_restore
-            setattr(env_cfg, "yam_policy_scene_randomization_summary", current_summary)
+        _update_yam_policy_randomization_with_restored_bins(env_cfg, stable_scene_bin_restore)
         print(json.dumps({"event": "stable_scene_bins_applied", **stable_scene_bin_restore}), flush=True)
     _set_if_present(env_cfg, "object_reset_settle_steps", 0)
 
