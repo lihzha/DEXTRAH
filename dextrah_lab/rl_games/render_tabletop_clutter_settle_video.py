@@ -20,6 +20,8 @@ DEFAULT_FRANKA_CAMERA_TARGET = (-0.62, 0.0, 0.78)
 DEFAULT_YAM_CAMERA_EYE = (-0.68, -0.62, 1.05)
 DEFAULT_YAM_CAMERA_TARGET = (-0.24, 0.02, 0.08)
 DEFAULT_TASK = "Dextrah-Single-YAM-Tabletop-Clutter-Grasp"
+SURFACE_TEXTURE_EXTS = (".png", ".jpg", ".jpeg")
+DOME_TEXTURE_EXTS = (".hdr", ".exr")
 
 
 parser = argparse.ArgumentParser(description=__doc__)
@@ -138,10 +140,15 @@ parser.add_argument("--yam_policy_tabletop_surround_color_jitter", type=float, d
 parser.add_argument("--yam_policy_tabletop_texture", action=argparse.BooleanOptionalAction, default=True)
 parser.add_argument("--yam_policy_tabletop_texture_patch_count_range", type=int, nargs=2, default=(6, 14))
 parser.add_argument("--yam_policy_tabletop_texture_color_jitter", type=float, default=0.16)
+parser.add_argument("--yam_policy_table_texture_dir", type=str, default=None)
+parser.add_argument("--yam_policy_table_texture_tiling_range", type=float, nargs=2, default=(1.4, 3.8))
 parser.add_argument("--yam_policy_background_walls", action=argparse.BooleanOptionalAction, default=True)
 parser.add_argument("--yam_policy_background_wall_distance", type=float, default=1.28)
 parser.add_argument("--yam_policy_background_wall_height", type=float, default=0.72)
 parser.add_argument("--yam_policy_background_wall_thickness", type=float, default=0.025)
+parser.add_argument("--yam_policy_background_texture_dir", type=str, default=None)
+parser.add_argument("--yam_policy_background_texture_tiling_range", type=float, nargs=2, default=(1.0, 2.2))
+parser.add_argument("--yam_policy_dome_light_texture_dir", type=str, default=None)
 parser.add_argument("--record_multicam_rgb", action=argparse.BooleanOptionalAction, default=False)
 parser.add_argument("--record_scene_rgb", action=argparse.BooleanOptionalAction, default=True)
 parser.add_argument("--record_wrist_rgb", action=argparse.BooleanOptionalAction, default=True)
@@ -595,6 +602,58 @@ def _set_preview_surface_color(material, color: tuple[float, float, float], roug
     return changed
 
 
+def _texture_candidates(
+    roots: str | None,
+    *,
+    exts: tuple[str, ...],
+    include_tokens: tuple[str, ...] = (),
+    exclude_tokens: tuple[str, ...] = (),
+) -> list[str]:
+    if roots is None or not str(roots).strip():
+        return []
+    candidates: list[str] = []
+    for raw_root in str(roots).split(os.pathsep):
+        raw_root = raw_root.strip()
+        if not raw_root:
+            continue
+        root = Path(raw_root).expanduser()
+        if not root.exists():
+            continue
+        paths = [root] if root.is_file() else root.rglob("*")
+        for path in paths:
+            if not path.is_file():
+                continue
+            name = path.name.lower()
+            suffix = path.suffix.lower()
+            if suffix not in exts:
+                continue
+            if include_tokens and not any(token in name for token in include_tokens):
+                continue
+            if exclude_tokens and any(token in name for token in exclude_tokens):
+                continue
+            candidates.append(str(path))
+    return sorted(dict.fromkeys(candidates))
+
+
+def _sample_texture_path(
+    rng: np.random.Generator,
+    roots: str | None,
+    *,
+    exts: tuple[str, ...],
+    include_tokens: tuple[str, ...] = (),
+    exclude_tokens: tuple[str, ...] = (),
+) -> str:
+    candidates = _texture_candidates(
+        roots,
+        exts=exts,
+        include_tokens=include_tokens,
+        exclude_tokens=exclude_tokens,
+    )
+    if not candidates:
+        return ""
+    return candidates[int(rng.integers(0, len(candidates)))]
+
+
 def _apply_stable_scene_bins_to_env_cfg(env_cfg, stable_scene: dict[str, object] | None) -> dict[str, object]:
     if not isinstance(stable_scene, dict):
         return {"enabled": False}
@@ -729,12 +788,42 @@ def _apply_yam_policy_scene_randomization(env_cfg, args, rng: np.random.Generato
     setattr(env_cfg, "yam_policy_tabletop_texture_enabled", bool(args.yam_policy_tabletop_texture))
     setattr(env_cfg, "yam_policy_tabletop_texture_patches", texture_patches)
     setattr(env_cfg, "yam_policy_tabletop_texture_roughness", float(rng.uniform(0.60, 0.96)))
+    table_texture_path = _sample_texture_path(
+        rng,
+        args.yam_policy_table_texture_dir,
+        exts=SURFACE_TEXTURE_EXTS,
+        include_tokens=("albedo", "diffuse", "basecolor", "color"),
+        exclude_tokens=("normal", "orm", "rough", "metal", "height"),
+    )
+    table_texture_tiling_range = _range_pair(
+        args.yam_policy_table_texture_tiling_range,
+        name="yam_policy_table_texture_tiling_range",
+    )
+    table_texture_tiling = float(rng.uniform(table_texture_tiling_range[0], table_texture_tiling_range[1]))
+    setattr(env_cfg, "yam_policy_table_texture_path", table_texture_path)
+    setattr(env_cfg, "yam_policy_table_texture_tiling", table_texture_tiling)
     setattr(env_cfg, "yam_policy_background_walls_enabled", bool(args.yam_policy_background_walls))
     setattr(env_cfg, "yam_policy_background_wall_distance", float(args.yam_policy_background_wall_distance))
     setattr(env_cfg, "yam_policy_background_wall_height", float(args.yam_policy_background_wall_height))
     setattr(env_cfg, "yam_policy_background_wall_thickness", float(args.yam_policy_background_wall_thickness))
     setattr(env_cfg, "yam_policy_background_wall_color", background_wall_color)
     setattr(env_cfg, "yam_policy_background_wall_roughness", float(rng.uniform(0.58, 0.95)))
+    background_texture_path = _sample_texture_path(
+        rng,
+        args.yam_policy_background_texture_dir,
+        exts=SURFACE_TEXTURE_EXTS,
+        exclude_tokens=("normal", "orm", "rough", "metal", "height"),
+    )
+    background_texture_tiling_range = _range_pair(
+        args.yam_policy_background_texture_tiling_range,
+        name="yam_policy_background_texture_tiling_range",
+    )
+    background_texture_tiling = float(rng.uniform(background_texture_tiling_range[0], background_texture_tiling_range[1]))
+    dome_texture_roots = args.yam_policy_dome_light_texture_dir or args.yam_policy_background_texture_dir
+    dome_texture_path = _sample_texture_path(rng, dome_texture_roots, exts=DOME_TEXTURE_EXTS)
+    setattr(env_cfg, "yam_policy_background_texture_path", background_texture_path)
+    setattr(env_cfg, "yam_policy_background_texture_tiling", background_texture_tiling)
+    setattr(env_cfg, "yam_policy_dome_light_texture_path", dome_texture_path)
     setattr(env_cfg, "tabletop_goal_bin_floor_color", bin_floor_color)
     setattr(env_cfg, "tabletop_goal_bin_x_wall_color", x_wall_color)
     setattr(env_cfg, "tabletop_goal_bin_y_wall_color", y_wall_color)
@@ -786,6 +875,9 @@ def _apply_yam_policy_scene_randomization(env_cfg, args, rng: np.random.Generato
             "enabled": bool(args.yam_policy_tabletop_texture),
             "patch_count": len(texture_patches),
             "patches": texture_patches,
+            "table_texture_dir": args.yam_policy_table_texture_dir,
+            "table_texture_path": table_texture_path or None,
+            "table_texture_tiling": table_texture_tiling,
         },
         "background_walls": {
             "enabled": bool(args.yam_policy_background_walls),
@@ -793,9 +885,14 @@ def _apply_yam_policy_scene_randomization(env_cfg, args, rng: np.random.Generato
             "height": float(args.yam_policy_background_wall_height),
             "thickness": float(args.yam_policy_background_wall_thickness),
             "color": [float(v) for v in background_wall_color],
+            "background_texture_dir": args.yam_policy_background_texture_dir,
+            "background_texture_path": background_texture_path or None,
+            "background_texture_tiling": background_texture_tiling,
         },
         "lighting": {
             "dome_light_intensity": dome_light,
+            "dome_light_texture_dir": dome_texture_roots,
+            "dome_light_texture_path": dome_texture_path or None,
             "key_light_intensity": key_light,
             "key_light_rotation_deg": [float(v) for v in getattr(env_cfg, "key_light_rotation_deg", ())],
         },
@@ -1982,11 +2079,26 @@ def _usd_material(
     color: tuple[float, float, float],
     *,
     roughness: float = 0.42,
+    texture_file: str | None = None,
 ) -> UsdShade.Material:
     mat = UsdShade.Material.Define(stage, path)
     shader = UsdShade.Shader.Define(stage, f"{path}/Shader")
     shader.CreateIdAttr("UsdPreviewSurface")
-    shader.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).Set(Gf.Vec3f(*color))
+    if texture_file:
+        st_reader = UsdShade.Shader.Define(stage, f"{path}/PrimvarReader_st")
+        st_reader.CreateIdAttr("UsdPrimvarReader_float2")
+        st_reader.CreateInput("varname", Sdf.ValueTypeNames.Token).Set("st")
+        texture = UsdShade.Shader.Define(stage, f"{path}/DiffuseTexture")
+        texture.CreateIdAttr("UsdUVTexture")
+        texture.CreateInput("file", Sdf.ValueTypeNames.Asset).Set(Sdf.AssetPath(str(texture_file)))
+        texture.CreateInput("sourceColorSpace", Sdf.ValueTypeNames.Token).Set("sRGB")
+        texture.CreateInput("wrapS", Sdf.ValueTypeNames.Token).Set("repeat")
+        texture.CreateInput("wrapT", Sdf.ValueTypeNames.Token).Set("repeat")
+        texture.CreateInput("st", Sdf.ValueTypeNames.Float2).ConnectToSource(st_reader.ConnectableAPI(), "result")
+        texture.CreateOutput("rgb", Sdf.ValueTypeNames.Float3)
+        shader.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).ConnectToSource(texture.ConnectableAPI(), "rgb")
+    else:
+        shader.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).Set(Gf.Vec3f(*color))
     shader.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(float(roughness))
     shader.CreateInput("metallic", Sdf.ValueTypeNames.Float).Set(0.0)
     mat.CreateSurfaceOutput().ConnectToSource(shader.ConnectableAPI(), "surface")
@@ -2011,16 +2123,77 @@ def _usd_add_box(
     _usd_bind(prim, mat)
 
 
+def _usd_add_quad(
+    stage: Usd.Stage,
+    path: str,
+    points: tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]],
+    uvs: tuple[tuple[float, float], tuple[float, float], tuple[float, float], tuple[float, float]],
+    mat: UsdShade.Material,
+) -> None:
+    mesh = UsdGeom.Mesh.Define(stage, path)
+    mesh.CreatePointsAttr([Gf.Vec3f(*[float(v) for v in point]) for point in points])
+    mesh.CreateFaceVertexCountsAttr([4])
+    mesh.CreateFaceVertexIndicesAttr([0, 1, 2, 3])
+    mesh.CreateDoubleSidedAttr(True)
+    min_pt = tuple(min(float(point[axis]) for point in points) for axis in range(3))
+    max_pt = tuple(max(float(point[axis]) for point in points) for axis in range(3))
+    mesh.CreateExtentAttr([Gf.Vec3f(*min_pt), Gf.Vec3f(*max_pt)])
+    st = UsdGeom.PrimvarsAPI(mesh.GetPrim()).CreatePrimvar(
+        "st",
+        Sdf.ValueTypeNames.TexCoord2fArray,
+        UsdGeom.Tokens.faceVarying,
+    )
+    st.Set([Gf.Vec2f(*[float(v) for v in uv]) for uv in uvs])
+    _usd_bind(mesh.GetPrim(), mat)
+
+
+def _usd_add_xy_quad(
+    stage: Usd.Stage,
+    path: str,
+    center: tuple[float, float, float],
+    size_xy: tuple[float, float],
+    mat: UsdShade.Material,
+    *,
+    uv_scale: tuple[float, float],
+) -> None:
+    cx, cy, cz = (float(v) for v in center)
+    sx, sy = (float(v) for v in size_xy)
+    ux, uy = (float(v) for v in uv_scale)
+    points = (
+        (cx - 0.5 * sx, cy - 0.5 * sy, cz),
+        (cx + 0.5 * sx, cy - 0.5 * sy, cz),
+        (cx + 0.5 * sx, cy + 0.5 * sy, cz),
+        (cx - 0.5 * sx, cy + 0.5 * sy, cz),
+    )
+    _usd_add_quad(stage, path, points, ((0.0, 0.0), (ux, 0.0), (ux, uy), (0.0, uy)), mat)
+
+
+def _apply_yam_policy_dome_light_texture(stage: Usd.Stage, cfg) -> dict[str, object]:
+    texture_path = str(getattr(cfg, "yam_policy_dome_light_texture_path", "") or "")
+    if not texture_path:
+        return {"enabled": False}
+    light_prim = stage.GetPrimAtPath("/World/Light")
+    if not light_prim.IsValid():
+        return {"enabled": False, "texture_path": texture_path, "reason": "missing_world_light"}
+    attr = light_prim.GetAttribute("inputs:texture:file")
+    if not attr:
+        attr = light_prim.CreateAttribute("inputs:texture:file", Sdf.ValueTypeNames.Asset)
+    attr.Set(Sdf.AssetPath(texture_path))
+    return {"enabled": True, "texture_path": texture_path}
+
+
 def _spawn_yam_policy_tabletop_surround(task_env) -> dict[str, object]:
     cfg = task_env.cfg
     surround_enabled = bool(getattr(cfg, "yam_policy_tabletop_surround_enabled", False))
     texture_enabled = bool(getattr(cfg, "yam_policy_tabletop_texture_enabled", False))
     walls_enabled = bool(getattr(cfg, "yam_policy_background_walls_enabled", False))
-    if not (surround_enabled or texture_enabled or walls_enabled):
+    dome_texture_requested = bool(str(getattr(cfg, "yam_policy_dome_light_texture_path", "") or ""))
+    if not (surround_enabled or texture_enabled or walls_enabled or dome_texture_requested):
         return {"enabled": False}
     stage = omni.usd.get_context().get_stage()
     if stage is None:
         return {"enabled": False, "reason": "missing_usd_stage"}
+    dome_light_texture = _apply_yam_policy_dome_light_texture(stage, cfg)
     env_origins = task_env.scene.env_origins.detach().float().cpu().numpy()
     size_xy = tuple(float(v) for v in getattr(cfg, "yam_policy_tabletop_surround_size", (1.90, 1.90)))
     if len(size_xy) != 2:
@@ -2030,10 +2203,22 @@ def _spawn_yam_policy_tabletop_surround(task_env) -> dict[str, object]:
     center_z = top_z - 0.5 * thickness
     color = tuple(float(v) for v in getattr(cfg, "yam_policy_tabletop_surround_color", (0.48, 0.48, 0.45)))
     roughness = float(getattr(cfg, "yam_policy_tabletop_surround_roughness", 0.72))
+    table_texture_path = str(getattr(cfg, "yam_policy_table_texture_path", "") or "")
+    table_texture_tiling = float(getattr(cfg, "yam_policy_table_texture_tiling", 2.4))
     looks_root = "/World/Looks/YAMPolicyTabletopSurround"
     UsdGeom.Xform.Define(stage, looks_root)
     surround_mat = _usd_material(stage, f"{looks_root}/surface", color, roughness=roughness)
+    table_texture_mat = None
+    if table_texture_path:
+        table_texture_mat = _usd_material(
+            stage,
+            f"{looks_root}/table_texture",
+            color,
+            roughness=float(getattr(cfg, "yam_policy_tabletop_texture_roughness", roughness)),
+            texture_file=table_texture_path,
+        )
     spawned: list[dict[str, object]] = []
+    table_texture_quads: list[dict[str, object]] = []
     if surround_enabled:
         for env_id, origin in enumerate(env_origins):
             center = (
@@ -2044,6 +2229,24 @@ def _spawn_yam_policy_tabletop_surround(task_env) -> dict[str, object]:
             path = f"/World/envs/env_{env_id}/YAMPolicyTabletopSurround"
             _usd_add_box(stage, path, center, (size_xy[0], size_xy[1], thickness), surround_mat)
             spawned.append({"env_id": int(env_id), "path": path, "center": [float(v) for v in center]})
+            if table_texture_mat is not None:
+                quad_center = (center[0], center[1], float(origin[2]) + float(cfg.table_surface_z) + 0.0008)
+                quad_path = f"/World/envs/env_{env_id}/YAMPolicyTabletopTexture/full_surface"
+                uv_scale = (
+                    table_texture_tiling,
+                    table_texture_tiling * max(0.1, size_xy[1] / max(size_xy[0], 1e-6)),
+                )
+                _usd_add_xy_quad(stage, quad_path, quad_center, size_xy, table_texture_mat, uv_scale=uv_scale)
+                table_texture_quads.append(
+                    {
+                        "env_id": int(env_id),
+                        "path": quad_path,
+                        "center": [float(v) for v in quad_center],
+                        "size": [float(v) for v in size_xy],
+                        "texture_path": table_texture_path,
+                        "uv_scale": [float(v) for v in uv_scale],
+                    }
+                )
 
     texture_patches: list[dict[str, object]] = []
     if texture_enabled:
@@ -2091,6 +2294,17 @@ def _spawn_yam_policy_tabletop_surround(task_env) -> dict[str, object]:
         wall_color = tuple(float(v) for v in getattr(cfg, "yam_policy_background_wall_color", (0.55, 0.56, 0.54)))
         wall_roughness = float(getattr(cfg, "yam_policy_background_wall_roughness", 0.80))
         wall_mat = _usd_material(stage, f"{looks_root}/background_wall", wall_color, roughness=wall_roughness)
+        background_texture_path = str(getattr(cfg, "yam_policy_background_texture_path", "") or "")
+        background_texture_tiling = float(getattr(cfg, "yam_policy_background_texture_tiling", 1.4))
+        wall_texture_mat = None
+        if background_texture_path:
+            wall_texture_mat = _usd_material(
+                stage,
+                f"{looks_root}/background_wall_texture",
+                wall_color,
+                roughness=wall_roughness,
+                texture_file=background_texture_path,
+            )
         wall_center_z = float(cfg.table_surface_z) + 0.5 * wall_height
         wall_specs = (
             ("back_y", (0.0, wall_distance, wall_center_z), (2.0 * wall_distance, wall_thickness, wall_height)),
@@ -2106,6 +2320,41 @@ def _spawn_yam_policy_tabletop_surround(task_env) -> dict[str, object]:
                 )
                 path = f"/World/envs/env_{env_id}/YAMPolicyBackground/{wall_name}"
                 _usd_add_box(stage, path, center, wall_size, wall_mat)
+                texture_path = ""
+                texture_quad_path = ""
+                if wall_texture_mat is not None:
+                    base_z = float(origin[2]) + float(cfg.table_surface_z)
+                    if wall_name == "back_y":
+                        y = center[1] - 0.5 * wall_thickness - 0.001
+                        points = (
+                            (center[0] - wall_distance, y, base_z),
+                            (center[0] + wall_distance, y, base_z),
+                            (center[0] + wall_distance, y, base_z + wall_height),
+                            (center[0] - wall_distance, y, base_z + wall_height),
+                        )
+                    else:
+                        sign = -1.0 if wall_name == "left_x" else 1.0
+                        x = center[0] - sign * (0.5 * wall_thickness + 0.001)
+                        points = (
+                            (x, center[1] - wall_distance, base_z),
+                            (x, center[1] + wall_distance, base_z),
+                            (x, center[1] + wall_distance, base_z + wall_height),
+                            (x, center[1] - wall_distance, base_z + wall_height),
+                        )
+                    texture_quad_path = f"{path}/texture_face"
+                    _usd_add_quad(
+                        stage,
+                        texture_quad_path,
+                        points,
+                        (
+                            (0.0, 0.0),
+                            (background_texture_tiling, 0.0),
+                            (background_texture_tiling, background_texture_tiling),
+                            (0.0, background_texture_tiling),
+                        ),
+                        wall_texture_mat,
+                    )
+                    texture_path = background_texture_path
                 background_walls.append(
                     {
                         "env_id": int(env_id),
@@ -2113,6 +2362,8 @@ def _spawn_yam_policy_tabletop_surround(task_env) -> dict[str, object]:
                         "path": path,
                         "center": [float(v) for v in center],
                         "size": [float(v) for v in wall_size],
+                        "texture_path": texture_path or None,
+                        "texture_quad_path": texture_quad_path or None,
                     }
                 )
     task_env.sim.forward()
@@ -2126,7 +2377,9 @@ def _spawn_yam_policy_tabletop_surround(task_env) -> dict[str, object]:
         "thickness": float(thickness),
         "color": [float(v) for v in color],
         "roughness": roughness,
+        "dome_light_texture": dome_light_texture,
         "spawned": spawned,
+        "table_texture_quads": table_texture_quads,
         "texture_patches": texture_patches,
         "background_walls": background_walls,
     }

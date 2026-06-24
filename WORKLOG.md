@@ -10427,3 +10427,29 @@ Smoke follow-up:
   prewave `107`, tuned `16`, fallback `30`, filtered wave2 `0`, filtered
   wave3 `0`. Existing active/pending source work is expected to bring the
   total close to the 500 target once maintenance clears.
+
+2026-06-24T13:18:00Z - RoboLab texture and HDR randomization for YAM visual replay
+- Added real visual-domain randomization to
+  `dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py`: the YAM
+  policy scene now samples albedo-like table textures, indoor background wall
+  textures, and HDR dome-light maps from user-configurable directories. The
+  selected file paths and tiling factors are recorded in the scene
+  randomization summary and metrics for later artifact audit.
+- Implemented textured USD PreviewSurface materials using `UsdUVTexture` and
+  explicit UV mesh quads for the tabletop overlay and background walls, while
+  preserving the existing box overlays as flat-color fallback visuals. This is
+  intended to improve RGB sim2real variation without changing contact geometry.
+- Wired defaults through the generic render wrapper and L40 RGB replay
+  submitter/wrapper. Default assets are mounted RoboLab paths:
+  `/home/lzha/code/RoboLab/assets/fixtures/textures` for table albedo maps and
+  `/home/lzha/code/RoboLab/assets/backgrounds/indoors` for background PNG/HDR
+  maps. The submitter run record now captures these texture settings.
+- Local validation passed: `py_compile` on the scene script, `bash -n` on the
+  generic render wrapper, L40 replay wrapper, and L40 no-array submitter, plus
+  `git diff --check`. A local pure USD smoke was not possible because the local
+  DEXTRAH venv does not expose `pxr`; full validation will come from the next
+  L40 quality replay once GPU nodes return from maintenance.
+- Live scheduler state before commit: L40 jobs `1041737`-`1041739` remain
+  pending behind maintenance; A100 source jobs are either running old accepted
+  source collection or pending maintenance. No intervention was needed on the
+  source jobs during this patch.
