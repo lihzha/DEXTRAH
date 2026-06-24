@@ -10486,3 +10486,18 @@ Smoke follow-up:
   `QOSMaxSubmitJobPerUserLimit`. The effective A100 GPU submit cap appears to
   already be consumed by the `20` pending `yam_fbig` wave3 jobs, so shards
   `20`-`23` must wait until one of those pending jobs starts or clears.
+
+2026-06-24T13:55:00Z - Maintenance blocker status
+- Updated the 20 pending wave3 jobs (`29473614`-`29473631`, `29473633`,
+  `29473639`) from the short A100 partitions to `backfill_singlenode` with
+  `scontrol update`. Slurm accepted the partition update, but the jobs remain
+  pending due to the active storage maintenance reservation. A100 reservation
+  `oos_maint_storage_upgrade` runs until `2026-06-24T19:00:00`.
+- L40 texture visual jobs `1041742`-`1041744` remain pending with
+  `ReqNodeNotAvail,_Reserved_for_maintenance`; Slurm reports
+  `StartTime=2026-06-24T20:00:00` for the first job.
+- Older running source jobs have cleared. Latest source totals before the
+  pending wave3 starts: prewave `118`, tuned `16`, fallback `32`, wave3 `0`,
+  total `166` accepted with `70` unique objects. The queued wave3 target is
+  `300` accepted demos across the 20 submitted shards; shards `20`-`23` remain
+  unsubmitted until the A100 submit cap opens.
