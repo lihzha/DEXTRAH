@@ -315,6 +315,10 @@
   `yam_rgb_source_filter_wave2_16_a100_20260624T1236Z`, target `16` accepted
   demos. Both jobs are pending behind A100 maintenance; Slurm accepted them
   with the recurring stale-data warning.
+- rerouted the same batch to `backfill_singlenode` after Slurm projected the
+  first filtered jobs to start at `19:00`. Replacement jobs `29473535` and
+  `29473537` are also pending with `ReqNodeNotAvail, Reserved for maintenance`
+  and `StartTime=Unknown`, so this is an A100 maintenance/scheduler block.
 - fetched four accepted fallback source replays and generated local inspection
   sheet
   `/home/lzha/code/cluster_results/a1001/yam_rgb_source_fallback_smoke32_a100_20260624T1147Z/sample/inspection/fallback_source_motion_sheet.png`.
