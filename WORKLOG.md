@@ -10352,3 +10352,21 @@ Smoke follow-up:
   cluster/sbatch_collect_yam_objaverse_demos_1gpu.sh`, `bash -n
   cluster/sbatch_collect_yam_single_object_policy_demos_1gpu.sh`, and
   `git diff --check`.
+- Committed the filter as `c22bfb637016a8074c28ff0ebf6d3a38477fc827`. A100
+  login could not authenticate to GitHub, so the commit was deployed via a Git
+  bundle into the canonical remote repo and materialized as detached worktree
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-rgb-diffusion-20260624-filter-c22bfb63`.
+  The worktree passed both `bash -n` checks and has warmed YAM assets copied
+  under `dextrah_lab/assets/yam`.
+- Replaced pending unfiltered wave2 jobs `29473409`/`29473410` with filtered
+  ordinary jobs `29473480` and `29473481`, batch
+  `yam_rgb_source_filter_wave2_16_a100_20260624T1236Z`, target `16` accepted
+  rows. Jobs are pending behind A100 maintenance. Slurm repeated the stale-data
+  quota warning but accepted the jobs.
+- Fetched four accepted A100 fallback replay directories locally and generated
+  motion sheet
+  `cluster_results/a1001/yam_rgb_source_fallback_smoke32_a100_20260624T1147Z/sample/inspection/fallback_source_motion_sheet.png`.
+  Source videos are coherent pick-place motions with object on robot-right,
+  randomized bin on robot-left, and table/surround dominating the camera. Local
+  NPZ inspection showed finite `robot_state`/`action`, nonblank RGB, and
+  `900` state steps per sampled replay.

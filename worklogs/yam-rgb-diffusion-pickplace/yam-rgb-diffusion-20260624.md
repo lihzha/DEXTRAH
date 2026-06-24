@@ -304,3 +304,21 @@
   demos and `4/22` planner failures (`2` below-table, `1` X drift, `1` Y
   drift). Local checks passed: both affected shell scripts with `bash -n` and
   `git diff --check`.
+- committed as `c22bfb637016a8074c28ff0ebf6d3a38477fc827`. Since `a1001`
+  could not authenticate to GitHub, deployed with a complete Git bundle into
+  the remote canonical repo and created detached worktree
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-rgb-diffusion-20260624-filter-c22bfb63`.
+  The remote worktree passed both shell syntax checks and has the warmed YAM
+  assets copied into `dextrah_lab/assets/yam`.
+- cancelled pending unfiltered jobs `29473409` and `29473410`, then submitted
+  filtered ordinary jobs `29473480` and `29473481`, batch
+  `yam_rgb_source_filter_wave2_16_a100_20260624T1236Z`, target `16` accepted
+  demos. Both jobs are pending behind A100 maintenance; Slurm accepted them
+  with the recurring stale-data warning.
+- fetched four accepted fallback source replays and generated local inspection
+  sheet
+  `/home/lzha/code/cluster_results/a1001/yam_rgb_source_fallback_smoke32_a100_20260624T1147Z/sample/inspection/fallback_source_motion_sheet.png`.
+  `viz-open` URLs were produced for the sheet and one representative MP4.
+  Sample datasets have nonblank `rgb` `[226,120,160,3]`, finite
+  `robot_state` `[900,1,24]`, finite `action` `[900,1,7]`, and coherent
+  right-side object to left-side bin motion.
