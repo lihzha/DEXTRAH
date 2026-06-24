@@ -112,6 +112,29 @@ parser.add_argument("--key_light_intensity", type=float, default=None)
 parser.add_argument("--key_light_exposure", type=float, default=None)
 parser.add_argument("--camera_eye", type=float, nargs=3, default=None)
 parser.add_argument("--camera_target", type=float, nargs=3, default=None)
+parser.add_argument(
+    "--yam_policy_scene_randomization",
+    action=argparse.BooleanOptionalAction,
+    default=False,
+    help="Randomize the single-YAM one-object policy scene layout and visual conditions before env creation.",
+)
+parser.add_argument("--yam_policy_object_x_range", type=float, nargs=2, default=(-0.42, -0.22))
+parser.add_argument("--yam_policy_object_y_range", type=float, nargs=2, default=(-0.42, -0.18))
+parser.add_argument("--yam_policy_bin_x_range", type=float, nargs=2, default=(-0.34, -0.10))
+parser.add_argument("--yam_policy_bin_y_range", type=float, nargs=2, default=(0.20, 0.46))
+parser.add_argument("--yam_policy_bin_inner_size_x_range", type=float, nargs=2, default=(0.28, 0.42))
+parser.add_argument("--yam_policy_bin_inner_size_y_range", type=float, nargs=2, default=(0.20, 0.34))
+parser.add_argument("--yam_policy_bin_wall_height_range", type=float, nargs=2, default=(0.08, 0.16))
+parser.add_argument("--yam_policy_scene_camera_eye_jitter", type=float, nargs=3, default=(0.05, 0.07, 0.05))
+parser.add_argument("--yam_policy_scene_camera_target_jitter", type=float, nargs=3, default=(0.04, 0.05, 0.03))
+parser.add_argument("--yam_policy_dome_light_intensity_range", type=float, nargs=2, default=(450.0, 1600.0))
+parser.add_argument("--yam_policy_key_light_intensity_range", type=float, nargs=2, default=(250.0, 1400.0))
+parser.add_argument("--yam_policy_material_value_range", type=float, nargs=2, default=(0.32, 0.82))
+parser.add_argument("--record_multicam_rgb", action=argparse.BooleanOptionalAction, default=False)
+parser.add_argument("--record_scene_rgb", action=argparse.BooleanOptionalAction, default=True)
+parser.add_argument("--record_wrist_rgb", action=argparse.BooleanOptionalAction, default=True)
+parser.add_argument("--wrist_camera_pos_offset", type=float, nargs=3, default=(0.035, 0.0, 0.085))
+parser.add_argument("--wrist_camera_forward", type=float, nargs=3, default=(0.16, 0.0, -0.10))
 parser.add_argument("--yam_arm_stiffness_scale", type=float, default=None)
 parser.add_argument("--yam_arm_damping_scale", type=float, default=None)
 parser.add_argument("--yam_arm_effort_scale", type=float, default=None)
@@ -392,6 +415,184 @@ def _matrix_from_pose_wxyz(pos: list[float], quat_wxyz: list[float]) -> list[lis
     mat[:3, :3] = _quat_wxyz_to_matrix(quat_wxyz)
     mat[:3, 3] = np.asarray(pos, dtype=np.float64)
     return mat.tolist()
+
+
+def _range_pair(values, *, name: str) -> tuple[float, float]:
+    if values is None or len(values) != 2:
+        raise ValueError(f"{name} must contain exactly two values")
+    lo, hi = (float(values[0]), float(values[1]))
+    if lo > hi:
+        lo, hi = hi, lo
+    return lo, hi
+
+
+def _rng_uniform(rng: np.random.Generator, values, *, name: str) -> float:
+    lo, hi = _range_pair(values, name=name)
+    return float(rng.uniform(lo, hi))
+
+
+def _rng_vec_jitter(rng: np.random.Generator, base: tuple[float, float, float], jitter) -> tuple[float, float, float]:
+    jitter_arr = np.asarray(tuple(float(v) for v in jitter), dtype=np.float64)
+    if jitter_arr.shape != (3,):
+        raise ValueError(f"Expected 3D jitter, got {jitter}")
+    delta = rng.uniform(-jitter_arr, jitter_arr)
+    return tuple(float(v) for v in np.asarray(base, dtype=np.float64) + delta)
+
+
+def _random_color(rng: np.random.Generator, value_range) -> tuple[float, float, float]:
+    lo, hi = _range_pair(value_range, name="material_value_range")
+    hue = float(rng.uniform(0.0, 1.0))
+    sat = float(rng.uniform(0.12, 0.42))
+    val = float(rng.uniform(lo, hi))
+    chroma = val * sat
+    x = chroma * (1.0 - abs((hue * 6.0) % 2.0 - 1.0))
+    m = val - chroma
+    sector = int(hue * 6.0) % 6
+    rgb = (
+        (chroma, x, 0.0),
+        (x, chroma, 0.0),
+        (0.0, chroma, x),
+        (0.0, x, chroma),
+        (x, 0.0, chroma),
+        (chroma, 0.0, x),
+    )[sector]
+    return tuple(float(max(0.0, min(1.0, c + m))) for c in rgb)
+
+
+def _set_preview_surface_color(material, color: tuple[float, float, float], roughness: float | None = None) -> bool:
+    if material is None:
+        return False
+    changed = False
+    if hasattr(material, "diffuse_color"):
+        material.diffuse_color = tuple(float(v) for v in color)
+        changed = True
+    if roughness is not None and hasattr(material, "roughness"):
+        material.roughness = float(roughness)
+        changed = True
+    return changed
+
+
+def _apply_stable_scene_bins_to_env_cfg(env_cfg, stable_scene: dict[str, object] | None) -> dict[str, object]:
+    if not isinstance(stable_scene, dict):
+        return {"enabled": False}
+    bins = stable_scene.get("bins") if isinstance(stable_scene.get("bins"), dict) else {}
+    summary: dict[str, object] = {"enabled": True, "bins": {}}
+    for bin_name, prefix in (("goal", "tabletop_goal_bin"), ("source", "tabletop_source_bin")):
+        info = bins.get(bin_name) if isinstance(bins.get(bin_name), dict) else None
+        if info is None:
+            continue
+        setattr(env_cfg, f"{prefix}_enabled", True)
+        setattr(env_cfg, f"{prefix}_center_offset_x", float(info["center_x"]) - float(env_cfg.table_center_x))
+        setattr(env_cfg, f"{prefix}_center_offset_y", float(info["center_y"]) - float(env_cfg.table_center_y))
+        for key in ("inner_size_x", "inner_size_y", "wall_thickness", "bottom_thickness", "wall_height"):
+            if key in info:
+                setattr(env_cfg, f"{prefix}_{key}", float(info[key]))
+        if "clearance" in info:
+            setattr(env_cfg, f"{prefix}_clearance", float(info["clearance"]))
+        if bin_name == "goal" and "placement_clearance" in info:
+            setattr(env_cfg, f"{prefix}_placement_clearance", float(info["placement_clearance"]))
+        if "goal_z" in info:
+            goal_height = float(info["goal_z"]) - float(info.get("table_surface_z", env_cfg.table_surface_z)) - float(
+                info.get("bottom_thickness", getattr(env_cfg, f"{prefix}_bottom_thickness", 0.012))
+            )
+            setattr(env_cfg, f"{prefix}_goal_height", max(goal_height, 0.0))
+        summary["bins"][bin_name] = {str(k): _jsonable(v) for k, v in info.items()}
+    return summary
+
+
+def _apply_yam_policy_scene_randomization(env_cfg, args, rng: np.random.Generator) -> dict[str, object]:
+    if not bool(args.yam_policy_scene_randomization):
+        return {"enabled": False}
+    object_x_range = _range_pair(args.yam_policy_object_x_range, name="yam_policy_object_x_range")
+    object_y_range = _range_pair(args.yam_policy_object_y_range, name="yam_policy_object_y_range")
+    object_center_x = 0.5 * (object_x_range[0] + object_x_range[1])
+    object_center_y = 0.5 * (object_y_range[0] + object_y_range[1])
+    bin_x = _rng_uniform(rng, args.yam_policy_bin_x_range, name="yam_policy_bin_x_range")
+    bin_y = _rng_uniform(rng, args.yam_policy_bin_y_range, name="yam_policy_bin_y_range")
+    bin_inner_x = _rng_uniform(rng, args.yam_policy_bin_inner_size_x_range, name="yam_policy_bin_inner_size_x_range")
+    bin_inner_y = _rng_uniform(rng, args.yam_policy_bin_inner_size_y_range, name="yam_policy_bin_inner_size_y_range")
+    bin_wall_height = _rng_uniform(rng, args.yam_policy_bin_wall_height_range, name="yam_policy_bin_wall_height_range")
+
+    setattr(env_cfg, "object_spawn_center_offset_x", object_center_x - float(env_cfg.table_center_x))
+    setattr(env_cfg, "object_spawn_center_offset_y", object_center_y - float(env_cfg.table_center_y))
+    setattr(env_cfg, "object_spawn_x_randomization", 0.5 * abs(object_x_range[1] - object_x_range[0]))
+    setattr(env_cfg, "object_spawn_y_randomization", 0.5 * abs(object_y_range[1] - object_y_range[0]))
+    setattr(env_cfg, "object_spawn_xy_randomization", 0.0)
+    setattr(env_cfg, "tabletop_goal_bin_enabled", True)
+    setattr(env_cfg, "tabletop_goal_bin_center_offset_x", bin_x - float(env_cfg.table_center_x))
+    setattr(env_cfg, "tabletop_goal_bin_center_offset_y", bin_y - float(env_cfg.table_center_y))
+    setattr(env_cfg, "tabletop_goal_bin_inner_size_x", bin_inner_x)
+    setattr(env_cfg, "tabletop_goal_bin_inner_size_y", bin_inner_y)
+    setattr(env_cfg, "tabletop_goal_bin_wall_height", bin_wall_height)
+    setattr(env_cfg, "tabletop_goal_bin_clearance", 0.08)
+    setattr(env_cfg, "tabletop_goal_bin_placement_clearance", 0.08)
+    setattr(env_cfg, "tabletop_goal_bin_success_xy_tol", min(0.12, 0.35 * min(bin_inner_x, bin_inner_y)))
+    setattr(env_cfg, "cube_success_xy_tol", getattr(env_cfg, "tabletop_goal_bin_success_xy_tol"))
+    setattr(env_cfg, "tabletop_source_bin_enabled", False)
+
+    table_color = _random_color(rng, args.yam_policy_material_value_range)
+    ground_color = _random_color(rng, args.yam_policy_material_value_range)
+    bin_floor_color = _random_color(rng, args.yam_policy_material_value_range)
+    x_wall_color = _random_color(rng, args.yam_policy_material_value_range)
+    y_wall_color = _random_color(rng, args.yam_policy_material_value_range)
+    setattr(env_cfg, "ground_plane_color", ground_color)
+    table_material_changed = False
+    table_cfg = getattr(env_cfg, "table", None)
+    table_spawn = getattr(table_cfg, "spawn", None)
+    if table_spawn is not None:
+        table_material_changed = _set_preview_surface_color(
+            getattr(table_spawn, "visual_material", None),
+            table_color,
+            roughness=float(rng.uniform(0.45, 0.92)),
+        )
+    setattr(env_cfg, "tabletop_goal_bin_floor_color", bin_floor_color)
+    setattr(env_cfg, "tabletop_goal_bin_x_wall_color", x_wall_color)
+    setattr(env_cfg, "tabletop_goal_bin_y_wall_color", y_wall_color)
+    setattr(env_cfg, "tabletop_goal_bin_visual_roughness", float(rng.uniform(0.45, 0.92)))
+
+    dome_light = _rng_uniform(rng, args.yam_policy_dome_light_intensity_range, name="yam_policy_dome_light_intensity_range")
+    key_light = _rng_uniform(rng, args.yam_policy_key_light_intensity_range, name="yam_policy_key_light_intensity_range")
+    setattr(env_cfg, "dome_light_intensity", dome_light)
+    setattr(env_cfg, "key_light_enabled", True)
+    setattr(env_cfg, "key_light_intensity", key_light)
+    setattr(env_cfg, "key_light_rotation_deg", tuple(float(v) for v in rng.uniform((35.0, -8.0, -75.0), (72.0, 8.0, 35.0))))
+
+    summary = {
+        "enabled": True,
+        "coordinate_convention": {
+            "x": "YAM forward toward table",
+            "positive_y": "robot-left/table-left",
+            "negative_y": "robot-right/table-right",
+        },
+        "object_region": {
+            "center_x": object_center_x,
+            "center_y": object_center_y,
+            "x_range": [float(v) for v in args.yam_policy_object_x_range],
+            "y_range": [float(v) for v in args.yam_policy_object_y_range],
+        },
+        "goal_bin": {
+            "center_x": bin_x,
+            "center_y": bin_y,
+            "inner_size_x": bin_inner_x,
+            "inner_size_y": bin_inner_y,
+            "wall_height": bin_wall_height,
+        },
+        "materials": {
+            "table_color": table_color,
+            "table_material_changed": bool(table_material_changed),
+            "ground_color": ground_color,
+            "goal_bin_floor_color": bin_floor_color,
+            "goal_bin_x_wall_color": x_wall_color,
+            "goal_bin_y_wall_color": y_wall_color,
+        },
+        "lighting": {
+            "dome_light_intensity": dome_light,
+            "key_light_intensity": key_light,
+            "key_light_rotation_deg": [float(v) for v in getattr(env_cfg, "key_light_rotation_deg", ())],
+        },
+    }
+    setattr(env_cfg, "yam_policy_scene_randomization_summary", summary)
+    return summary
 
 
 def _resolve_path(value: str | Path, *, base_dir: Path) -> Path:
@@ -1205,6 +1406,9 @@ def _stable_scene_payload(
             "initial": initial_clearance_summary,
             "stable": stable_clearance_summary,
         },
+        "yam_policy_scene_randomization": _jsonable(
+            getattr(task_env.cfg, "yam_policy_scene_randomization_summary", {"enabled": False})
+        ),
         "multi_object_asset_summary": task_env.multi_object_asset_summary()
         if hasattr(task_env, "multi_object_asset_summary")
         else None,
@@ -2357,6 +2561,19 @@ def _demo_dataset_sample(
         command_joint_velocity = np.full(command_shape, np.nan, dtype=np.float32)
     else:
         command_joint_velocity = _tensor_numpy(joint_velocity)
+    tcp_pos = _tensor_numpy(task_env.tcp_pos)
+    tcp_quat = _tensor_numpy(task_env.tcp_quat)
+    gripper_width = _tensor_numpy(task_env.gripper_width)
+    robot_state = np.concatenate(
+        (
+            actual_joint_position,
+            actual_joint_velocity,
+            tcp_pos,
+            tcp_quat,
+            gripper_width.reshape((gripper_width.shape[0], -1)),
+        ),
+        axis=1,
+    ).astype(np.float32, copy=False)
     return {
         "step_idx": int(step_idx),
         "phase": str(phase),
@@ -2368,8 +2585,8 @@ def _demo_dataset_sample(
         "actual_joint_velocity": actual_joint_velocity,
         "policy_obs": _tensor_numpy(observations["policy"]),
         "critic_obs": _tensor_numpy(observations["critic"]),
-        "tcp_pos": _tensor_numpy(task_env.tcp_pos),
-        "tcp_quat": _tensor_numpy(task_env.tcp_quat),
+        "tcp_pos": tcp_pos,
+        "tcp_quat": tcp_quat,
         "hold_pos": _tensor_numpy(task_env.hold_pos),
         "target_object_center_pos": _tensor_numpy(task_env.cube_pos),
         "target_object_quat": _tensor_numpy(task_env.cube_quat),
@@ -2380,7 +2597,8 @@ def _demo_dataset_sample(
         "clutter_root_pos": _clutter_root_state(task_env, "root_pos_w", 3),
         "clutter_root_quat": _clutter_root_state(task_env, "root_quat_w", 4),
         "clutter_root_velocity": _clutter_root_state(task_env, "root_vel_w", 6),
-        "gripper_width": _tensor_numpy(task_env.gripper_width),
+        "gripper_width": gripper_width,
+        "robot_state": robot_state,
         "finger_table_clearance": _tensor_numpy(task_env.finger_table_clearance),
         "raw_task_terminated": _tensor_numpy(terminated, dtype=np.bool_),
         "raw_task_truncated": _tensor_numpy(truncated, dtype=np.bool_),
@@ -2402,6 +2620,7 @@ def _write_demo_dataset_npz(
     dataset: dict[str, list[object]],
     rgb_frames: list[np.ndarray],
     rgb_step_idx: list[int],
+    rgb_streams: dict[str, list[np.ndarray]] | None = None,
     metadata: dict[str, object],
 ) -> dict[str, object]:
     arrays: dict[str, np.ndarray] = {}
@@ -2414,6 +2633,10 @@ def _write_demo_dataset_npz(
             arrays[key] = np.asarray(values)
     arrays["rgb"] = np.asarray(rgb_frames, dtype=np.uint8)
     arrays["rgb_step_idx"] = np.asarray(rgb_step_idx, dtype=np.int64)
+    stream_counts: dict[str, int] = {}
+    for key, frames in (rgb_streams or {}).items():
+        arrays[key] = np.asarray(frames, dtype=np.uint8)
+        stream_counts[key] = int(len(frames))
     arrays["metadata_json"] = np.asarray(json.dumps(_jsonable(metadata), indent=2))
     path.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(path, **arrays)
@@ -2424,8 +2647,62 @@ def _write_demo_dataset_npz(
         "metadata_path": str(metadata_path),
         "state_steps": int(len(dataset.get("step_idx", []))),
         "rgb_frames": int(len(rgb_frames)),
+        "rgb_streams": stream_counts,
         "keys": sorted(arrays.keys()),
     }
+
+
+def _wrist_camera_eye_target(task_env, args) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
+    tcp_pos = task_env.tcp_pos[0].detach().cpu().numpy().astype(np.float64)
+    tcp_quat = task_env.tcp_quat[0].detach().cpu().numpy().astype(np.float64)
+    rot = _quat_wxyz_to_matrix(tcp_quat.tolist())
+    pos_offset = np.asarray(tuple(float(v) for v in args.wrist_camera_pos_offset), dtype=np.float64)
+    forward = np.asarray(tuple(float(v) for v in args.wrist_camera_forward), dtype=np.float64)
+    eye = tcp_pos + rot @ pos_offset
+    target = eye + rot @ forward
+    return tuple(float(v) for v in eye), tuple(float(v) for v in target)
+
+
+def _capture_policy_rgb_streams(
+    env,
+    task_env,
+    args,
+    *,
+    scene_eye: tuple[float, float, float],
+    scene_target: tuple[float, float, float],
+) -> dict[str, np.ndarray]:
+    frames: dict[str, np.ndarray] = {}
+    if bool(args.record_scene_rgb):
+        task_env.sim.set_camera_view(
+            eye=scene_eye,
+            target=scene_target,
+            camera_prim_path=task_env.cfg.viewer.cam_prim_path,
+        )
+        task_env.sim.render()
+        frames["scene_rgb"] = _resize_rgb_nearest(
+            _frame_array(env.render()),
+            int(args.record_rgb_height),
+            int(args.record_rgb_width),
+        ).copy()
+    if bool(args.record_wrist_rgb):
+        wrist_eye, wrist_target = _wrist_camera_eye_target(task_env, args)
+        task_env.sim.set_camera_view(
+            eye=wrist_eye,
+            target=wrist_target,
+            camera_prim_path=task_env.cfg.viewer.cam_prim_path,
+        )
+        task_env.sim.render()
+        frames["wrist_rgb"] = _resize_rgb_nearest(
+            _frame_array(env.render()),
+            int(args.record_rgb_height),
+            int(args.record_rgb_width),
+        ).copy()
+    task_env.sim.set_camera_view(
+        eye=scene_eye,
+        target=scene_target,
+        camera_prim_path=task_env.cfg.viewer.cam_prim_path,
+    )
+    return frames
 
 
 def _row_max_abs_summary(rows: list[dict[str, object]], key: str) -> dict[str, object]:
@@ -2613,6 +2890,7 @@ def main() -> None:
 
     torch.manual_seed(int(args_cli.seed))
     np.random.seed(int(args_cli.seed))
+    randomization_rng = np.random.default_rng(int(args_cli.seed) + 1009)
     env_cfg = parse_env_cfg(
         args_cli.task,
         device=args_cli.device,
@@ -2644,6 +2922,7 @@ def main() -> None:
         print(json.dumps({"event": "yam_arm_control_gains", **yam_arm_control_gains}), flush=True)
     if bool(yam_gripper_control_gains.get("enabled")):
         print(json.dumps({"event": "yam_gripper_control_gains", **yam_gripper_control_gains}), flush=True)
+    yam_policy_randomization = _apply_yam_policy_scene_randomization(env_cfg, args_cli, randomization_rng)
     _set_if_present(env_cfg, "object_asset_manifest_path", args_cli.object_asset_manifest_path)
     _set_if_present(env_cfg, "object_assets_dir", args_cli.object_assets_dir)
     _set_if_present(env_cfg, "max_objects", args_cli.max_objects)
@@ -2727,6 +3006,13 @@ def main() -> None:
     )
     if stable_scene_input is not None and single_yam_demo_enabled:
         _set_if_present(env_cfg, "tabletop_clutter_prioritize_common_objects", False)
+    stable_scene_bin_restore = _apply_stable_scene_bins_to_env_cfg(env_cfg, stable_scene_input)
+    if bool(stable_scene_bin_restore.get("enabled")):
+        current_summary = getattr(env_cfg, "yam_policy_scene_randomization_summary", {"enabled": False})
+        if isinstance(current_summary, dict):
+            current_summary["stable_scene_bin_restore"] = stable_scene_bin_restore
+            setattr(env_cfg, "yam_policy_scene_randomization_summary", current_summary)
+        print(json.dumps({"event": "stable_scene_bins_applied", **stable_scene_bin_restore}), flush=True)
     _set_if_present(env_cfg, "object_reset_settle_steps", 0)
 
     render_resolution = None
@@ -2752,6 +3038,7 @@ def main() -> None:
                 "capture_interval": int(args_cli.capture_interval),
                 "render_resolution": render_resolution,
                 "output_dir": str(output_dir),
+                "yam_policy_scene_randomization": yam_policy_randomization,
             }
         ),
         flush=True,
@@ -2818,6 +3105,21 @@ def main() -> None:
     eye_default, target_default = _task_camera_defaults(args_cli.task)
     eye = tuple(float(v) for v in (args_cli.camera_eye or eye_default))
     target = tuple(float(v) for v in (args_cli.camera_target or target_default))
+    scene_camera_summary: dict[str, object] = {
+        "randomized": False,
+        "eye": [float(v) for v in eye],
+        "target": [float(v) for v in target],
+    }
+    if bool(args_cli.yam_policy_scene_randomization) and args_cli.camera_eye is None and args_cli.camera_target is None:
+        eye = _rng_vec_jitter(randomization_rng, eye, args_cli.yam_policy_scene_camera_eye_jitter)
+        target = _rng_vec_jitter(randomization_rng, target, args_cli.yam_policy_scene_camera_target_jitter)
+        scene_camera_summary = {
+            "randomized": True,
+            "eye": [float(v) for v in eye],
+            "target": [float(v) for v in target],
+            "eye_jitter": [float(v) for v in args_cli.yam_policy_scene_camera_eye_jitter],
+            "target_jitter": [float(v) for v in args_cli.yam_policy_scene_camera_target_jitter],
+        }
     task_env.sim.set_camera_view(eye=eye, target=target, camera_prim_path=task_env.cfg.viewer.cam_prim_path)
 
     print(json.dumps({"event": "reset_start"}), flush=True)
@@ -2938,6 +3240,7 @@ def main() -> None:
     trajectory_dataset: dict[str, list[object]] = {}
     trajectory_rgb_frames: list[np.ndarray] = []
     trajectory_rgb_step_idx: list[int] = []
+    trajectory_rgb_streams: dict[str, list[np.ndarray]] = {}
     demo_trajectory: dict[str, object] | None = None
     demo_trajectory_path: Path | None = None
     demo_trajectory_start_error: dict[str, object] | None = None
@@ -3249,11 +3552,27 @@ def main() -> None:
                 _append_demo_dataset_sample(trajectory_dataset, sample)
                 record_rgb_interval = max(int(args_cli.record_rgb_interval), 1)
                 if step_idx == 1 or step_idx == demo_steps or step_idx % record_rgb_interval == 0:
-                    rgb = _resize_rgb_nearest(
-                        _frame_array(env.render()),
-                        int(args_cli.record_rgb_height),
-                        int(args_cli.record_rgb_width),
-                    )
+                    if bool(args_cli.record_multicam_rgb):
+                        rgb_views = _capture_policy_rgb_streams(
+                            env,
+                            task_env,
+                            args_cli,
+                            scene_eye=eye,
+                            scene_target=target,
+                        )
+                        for view_key, view_rgb in rgb_views.items():
+                            trajectory_rgb_streams.setdefault(view_key, []).append(view_rgb.copy())
+                        rgb = rgb_views.get("scene_rgb")
+                        if rgb is None:
+                            if not rgb_views:
+                                raise ValueError("--record_multicam_rgb requires at least one enabled RGB stream")
+                            rgb = next(iter(rgb_views.values()))
+                    else:
+                        rgb = _resize_rgb_nearest(
+                            _frame_array(env.render()),
+                            int(args_cli.record_rgb_height),
+                            int(args_cli.record_rgb_width),
+                        )
                     trajectory_rgb_frames.append(rgb.copy())
                     trajectory_rgb_step_idx.append(int(step_idx))
             rejected = torch.as_tensor(
@@ -3374,6 +3693,7 @@ def main() -> None:
             dataset=trajectory_dataset,
             rgb_frames=trajectory_rgb_frames,
             rgb_step_idx=trajectory_rgb_step_idx,
+            rgb_streams=trajectory_rgb_streams,
             metadata={
                 "task": str(args_cli.task),
                 "seed": int(args_cli.seed),
@@ -3390,6 +3710,20 @@ def main() -> None:
                 "trajectory_segments": None if demo_trajectory is None else demo_trajectory.get("segments"),
                 "trajectory_object_count": None if demo_trajectory is None else demo_trajectory.get("object_count"),
                 "trajectory_object_sequence": None if demo_trajectory is None else demo_trajectory.get("object_sequence"),
+                "yam_policy_scene_randomization": getattr(
+                    task_env.cfg,
+                    "yam_policy_scene_randomization_summary",
+                    {"enabled": False},
+                ),
+                "scene_camera": scene_camera_summary,
+                "record_multicam_rgb": {
+                    "enabled": bool(args_cli.record_multicam_rgb),
+                    "scene_rgb": bool(args_cli.record_scene_rgb),
+                    "wrist_rgb": bool(args_cli.record_wrist_rgb),
+                    "wrist_camera_model": "virtual_tcp_relative_d405_view",
+                    "wrist_camera_pos_offset": [float(v) for v in args_cli.wrist_camera_pos_offset],
+                    "wrist_camera_forward": [float(v) for v in args_cli.wrist_camera_forward],
+                },
             },
         )
         trajectory_dataset_summary.update(
@@ -3468,7 +3802,13 @@ def main() -> None:
         "trajectory_dataset": trajectory_dataset_summary,
         "camera_eye": [float(v) for v in eye],
         "camera_target": [float(v) for v in target],
+        "scene_camera": scene_camera_summary,
         "app_rendering_mode": getattr(args_cli, "rendering_mode", None),
+        "yam_policy_scene_randomization": getattr(
+            task_env.cfg,
+            "yam_policy_scene_randomization_summary",
+            {"enabled": False},
+        ),
         "yam_arm_control_gains": yam_arm_control_gains,
         "yam_gripper_control_gains": yam_gripper_control_gains,
         "render_resolution": [int(v) for v in task_env.cfg.viewer.resolution]

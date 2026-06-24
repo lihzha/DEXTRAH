@@ -1,0 +1,166 @@
+# RGB Diffusion Policy config for single-YAM one-object pick-and-place.
+# Policy observations intentionally exclude privileged object/bin state and
+# never include phase/progress features.
+
+_target_: diffusion_policy.workspace.train_diffusion_unet_image_workspace.TrainDiffusionUnetImageWorkspace
+
+name: train_diffusion_unet_image
+task_name: yam_pickplace_rgb
+exp_name: yam_pickplace_rgb_dp_bc
+
+horizon: 16
+n_obs_steps: 1
+n_action_steps: 8
+n_latency_steps: 0
+dataset_obs_steps: ${n_obs_steps}
+past_action_visible: false
+keypoint_visible_rate: 1.0
+obs_as_global_cond: true
+
+shape_meta:
+  obs:
+    scene_rgb:
+      shape: [3, 256, 256]
+      type: rgb
+    wrist_rgb:
+      shape: [3, 256, 256]
+      type: rgb
+    robot_state:
+      shape: [24]
+      type: low_dim
+  action:
+    shape: [7]
+
+policy:
+  _target_: dextrah_lab.offline_dp_bc.weighted_diffusion_policy.WeightedDiffusionUnetImagePolicy
+  action_loss_weights: [1, 1, 1, 1, 1, 1, 8]
+  distill_reference_checkpoint: null
+  distill_loss_weight: 0.0
+  distill_mask_key: distill_mask
+  distill_use_action_loss_weights: true
+  shape_meta: ${shape_meta}
+  noise_scheduler:
+    _target_: diffusers.schedulers.scheduling_ddpm.DDPMScheduler
+    num_train_timesteps: 100
+    beta_start: 0.0001
+    beta_end: 0.02
+    beta_schedule: squaredcos_cap_v2
+    variance_type: fixed_small
+    clip_sample: true
+    prediction_type: epsilon
+  obs_encoder:
+    _target_: diffusion_policy.model.vision.multi_image_obs_encoder.MultiImageObsEncoder
+    shape_meta: ${shape_meta}
+    rgb_model:
+      _target_: diffusion_policy.model.vision.model_getter.get_resnet
+      name: resnet18
+      weights: null
+    resize_shape: null
+    crop_shape: null
+    random_crop: false
+    use_group_norm: true
+    share_rgb_model: false
+    imagenet_norm: true
+  horizon: ${horizon}
+  n_action_steps: ${eval:'${n_action_steps}+${n_latency_steps}'}
+  n_obs_steps: ${n_obs_steps}
+  num_inference_steps: 100
+  obs_as_global_cond: ${obs_as_global_cond}
+  diffusion_step_embed_dim: 128
+  down_dims: [256, 512, 1024]
+  kernel_size: 5
+  n_groups: 8
+  cond_predict_scale: true
+
+optimizer:
+  _target_: torch.optim.AdamW
+  lr: 0.0001
+  betas: [0.95, 0.999]
+  eps: 1.0e-08
+  weight_decay: 1.0e-06
+
+ema:
+  _target_: diffusion_policy.model.diffusion.ema_model.EMAModel
+  update_after_step: 0
+  inv_gamma: 1.0
+  power: 0.75
+  min_value: 0.0
+  max_value: 0.9999
+
+dataloader:
+  batch_size: 8
+  num_workers: 2
+  shuffle: true
+  pin_memory: true
+  persistent_workers: true
+
+val_dataloader:
+  batch_size: 8
+  num_workers: 2
+  shuffle: false
+  pin_memory: true
+  persistent_workers: true
+
+task:
+  name: yam_pickplace_rgb
+  task_name: yam_pickplace
+  manifest_path: data/yam_pickplace_rgb_policy/manifest.json
+  dataset:
+    _target_: dextrah_lab.offline_dp_bc.dp_dataset.YamRgbShardedDataset
+    manifest_path: ${task.manifest_path}
+    horizon: ${horizon}
+    pad_before: 0
+    pad_after: 15
+    seed: 42
+    val_ratio: 0.1
+    action_normalizer: limits_clamp_constant
+    image_keys: [scene_rgb, wrist_rgb]
+    robot_state_key: robot_state
+    obs_robot_state_name: robot_state
+  env_runner:
+    _target_: dextrah_lab.offline_dp_bc.dp_dataset.NoopImageRunner
+    metric_prefix: test
+
+training:
+  seed: 42
+  device: cuda:0
+  debug: false
+  resume: false
+  lr_scheduler: cosine
+  lr_warmup_steps: 500
+  num_epochs: 50
+  gradient_accumulate_every: 1
+  use_ema: true
+  freeze_encoder: false
+  rollout_every: 10
+  val_every: 1
+  sample_every: 5
+  checkpoint_every: 1
+  max_train_steps: 100000
+  max_val_steps: 200
+  tqdm_interval_sec: 5.0
+
+logging:
+  project: yam_pickplace_rgb_dp
+  name: yam_pickplace_rgb_dp_bc
+  group: null
+  id: null
+  mode: offline
+  resume: false
+  tags:
+    - train_diffusion_unet_image
+    - yam_pickplace_rgb
+    - sim2real
+
+checkpoint:
+  save_last_ckpt: true
+  save_last_snapshot: false
+  topk:
+    monitor_key: test_mean_score
+    mode: max
+    k: 1
+    format_str: epoch={epoch:04d}-test_mean_score={test_mean_score:.3f}.ckpt
+
+multi_run:
+  run_dir: data/outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_${task_name}
+  wandb_name_base: ${now:%Y.%m.%d-%H.%M.%S}_${name}_${task_name}

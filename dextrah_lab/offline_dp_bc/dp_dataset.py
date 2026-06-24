@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import json
 from pathlib import Path
 from typing import Any
 
@@ -538,6 +539,239 @@ class FrankaCubeRgbDataset(BaseImageDataset):
         if self.row_distill_mask is not None:
             sample["distill_mask"] = torch.from_numpy(self.row_distill_mask[frame_ids])
         return sample
+
+
+class YamRgbShardedDataset(BaseImageDataset):
+    """Manifest-backed two-camera YAM RGB dataset for image Diffusion Policy.
+
+    The manifest is produced by ``make_yam_rgb_policy_shards.py``.  Each shard
+    is one episode with only non-privileged policy fields:
+    ``scene_rgb``, ``wrist_rgb``, ``robot_state``, ``action``, and
+    ``episode_ends``.
+    """
+
+    def __init__(
+        self,
+        manifest_path: str,
+        horizon: int = 16,
+        pad_before: int = 0,
+        pad_after: int = 15,
+        seed: int = 42,
+        val_ratio: float = 0.0,
+        max_train_episodes: int | None = None,
+        split: str = "train",
+        action_normalizer: str = "limits_clamp_constant",
+        image_keys: list[str] | tuple[str, ...] = ("scene_rgb", "wrist_rgb"),
+        robot_state_key: str = "robot_state",
+        obs_robot_state_name: str = "robot_state",
+        normalizer_checkpoint: str | None = None,
+    ):
+        super().__init__()
+        self.manifest_path = str(manifest_path)
+        self.horizon = int(horizon)
+        self.pad_before = int(pad_before)
+        self.pad_after = int(pad_after)
+        self.seed = int(seed)
+        self.val_ratio = float(val_ratio)
+        self.max_train_episodes = max_train_episodes
+        self.split = str(split)
+        self.action_normalizer = str(action_normalizer)
+        self.image_keys = tuple(str(k) for k in image_keys)
+        self.robot_state_key = str(robot_state_key)
+        self.obs_robot_state_name = str(obs_robot_state_name)
+        self.normalizer_checkpoint = None if normalizer_checkpoint in (None, "") else str(normalizer_checkpoint)
+        if not self.image_keys:
+            raise ValueError("image_keys must not be empty")
+
+        manifest_file = Path(self.manifest_path).expanduser().resolve()
+        payload = json.loads(manifest_file.read_text(encoding="utf-8"))
+        raw_shards = payload.get("shards")
+        if not isinstance(raw_shards, list) or not raw_shards:
+            raise ValueError(f"{manifest_file} has no shards")
+        self.shard_paths = [
+            (Path(str(row["path"])) if Path(str(row["path"])).is_absolute() else manifest_file.parent / str(row["path"]))
+            for row in raw_shards
+        ]
+        self.shard_paths = [path.expanduser().resolve() for path in self.shard_paths]
+        for path in self.shard_paths:
+            if not path.is_file():
+                raise FileNotFoundError(path)
+
+        self._shard_lengths: list[int] = []
+        robot_parts: list[np.ndarray] = []
+        action_parts: list[np.ndarray] = []
+        for path in self.shard_paths:
+            with np.load(path, allow_pickle=False) as data:
+                robot = np.asarray(data[self.robot_state_key], dtype=np.float32)
+                action = np.asarray(data["action"], dtype=np.float32)
+                if robot.ndim != 2:
+                    raise ValueError(f"{path}: robot_state must be rank 2, got {robot.shape}")
+                if action.ndim != 2 or action.shape[1] != 7:
+                    raise ValueError(f"{path}: action must be (N,7), got {action.shape}")
+                if robot.shape[0] != action.shape[0]:
+                    raise ValueError(f"{path}: robot/action length mismatch {robot.shape} vs {action.shape}")
+                for key in self.image_keys:
+                    image = np.asarray(data[key])
+                    if image.ndim != 4:
+                        raise ValueError(f"{path}: {key} must be rank 4, got {image.shape}")
+                    if image.shape[0] != action.shape[0]:
+                        raise ValueError(f"{path}: {key} length {image.shape[0]} != action length {action.shape[0]}")
+                self._shard_lengths.append(int(action.shape[0]))
+                robot_parts.append(robot)
+                action_parts.append(action)
+        self.robot_state = np.concatenate(robot_parts, axis=0).astype(np.float32, copy=False)
+        self.action = np.concatenate(action_parts, axis=0).astype(np.float32, copy=False)
+        self.episode_ends = np.cumsum(np.asarray(self._shard_lengths, dtype=np.int64))
+        self.episode_starts = np.concatenate(([0], self.episode_ends[:-1])).astype(np.int64)
+        self.train_episode_mask = self._make_train_episode_mask()
+        self.indices = self._build_indices(self.split)
+        self._cache_shard_idx: int | None = None
+        self._cache_data: dict[str, np.ndarray] | None = None
+
+    def _make_train_episode_mask(self) -> np.ndarray:
+        n_eps = int(len(self.shard_paths))
+        rng = np.random.default_rng(self.seed)
+        if self.val_ratio <= 0.0 or n_eps == 1:
+            train_mask = np.ones(n_eps, dtype=bool)
+        else:
+            val_count = min(max(1, round(n_eps * min(max(self.val_ratio, 0.0), 1.0))), n_eps - 1)
+            val_ids = rng.choice(n_eps, size=val_count, replace=False)
+            train_mask = np.ones(n_eps, dtype=bool)
+            train_mask[val_ids] = False
+        if self.max_train_episodes is not None and int(self.max_train_episodes) < int(train_mask.sum()):
+            train_ids = np.nonzero(train_mask)[0]
+            keep = rng.choice(train_ids, size=int(self.max_train_episodes), replace=False)
+            new_mask = np.zeros_like(train_mask)
+            new_mask[keep] = True
+            train_mask = new_mask
+        return train_mask
+
+    def _build_indices(self, split: str) -> list[tuple[int, int]]:
+        if split not in {"train", "val", "all"}:
+            raise ValueError(f"Unsupported split {split!r}")
+        indices: list[tuple[int, int]] = []
+        for ep_idx, length in enumerate(self._shard_lengths):
+            if split == "train" and not self.train_episode_mask[ep_idx]:
+                continue
+            if split == "val" and self.train_episode_mask[ep_idx]:
+                continue
+            for local_t in range(int(length)):
+                indices.append((int(ep_idx), int(local_t)))
+        return indices
+
+    def get_validation_dataset(self):
+        val_set = copy.copy(self)
+        val_set.split = "val"
+        val_set.indices = self._build_indices("val")
+        val_set._cache_shard_idx = None
+        val_set._cache_data = None
+        return val_set
+
+    def get_normalizer(self, **kwargs):
+        if LinearNormalizer is None or SingleFieldLinearNormalizer is None or get_image_range_normalizer is None:
+            raise ImportError(
+                "diffusion_policy is not installed; install real-stanford/diffusion_policy "
+                "to use get_normalizer in the official workspace."
+            )
+        if self.normalizer_checkpoint is not None:
+            normalizer = _linear_normalizer_from_checkpoint(self.normalizer_checkpoint)
+            expected = set(self.image_keys).union({self.obs_robot_state_name, "action"})
+            missing = expected.difference(normalizer.params_dict.keys())
+            if missing:
+                raise KeyError(
+                    f"Normalizer checkpoint {self.normalizer_checkpoint} is missing fields {sorted(missing)}"
+                )
+            robot_scale = normalizer.params_dict[self.obs_robot_state_name]["scale"]
+            action_scale = normalizer.params_dict["action"]["scale"]
+            if int(robot_scale.numel()) != int(self.robot_state.shape[1]):
+                raise ValueError(
+                    f"Reference normalizer robot_state dim {robot_scale.numel()} "
+                    f"does not match dataset dim {self.robot_state.shape[1]}"
+                )
+            if int(action_scale.numel()) != int(self.action.shape[1]):
+                raise ValueError(
+                    f"Reference normalizer action dim {action_scale.numel()} "
+                    f"does not match dataset dim {self.action.shape[1]}"
+                )
+            return normalizer
+        normalizer = LinearNormalizer()
+        for key in self.image_keys:
+            normalizer[key] = get_image_range_normalizer()
+        normalizer[self.obs_robot_state_name] = SingleFieldLinearNormalizer.create_fit(
+            self.robot_state,
+            last_n_dims=1,
+            mode=kwargs.get("robot_state_mode", "limits"),
+            output_max=1.0,
+            output_min=-1.0,
+        )
+        if self.action_normalizer == "identity":
+            stat = array_to_stats(self.action)
+            normalizer["action"] = get_identity_normalizer_from_stat(stat)
+        elif self.action_normalizer == "limits":
+            normalizer["action"] = SingleFieldLinearNormalizer.create_fit(
+                self.action,
+                last_n_dims=1,
+                mode="limits",
+                output_max=1.0,
+                output_min=-1.0,
+            )
+        elif self.action_normalizer == "limits_clamp_constant":
+            normalizer["action"] = _create_limits_clamp_constant_action_normalizer(self.action)
+        else:
+            raise ValueError(f"Unsupported action_normalizer {self.action_normalizer!r}")
+        return normalizer
+
+    def get_all_actions(self) -> torch.Tensor:
+        return torch.from_numpy(self.action)
+
+    def __len__(self) -> int:
+        return len(self.indices)
+
+    def _load_shard(self, shard_idx: int) -> dict[str, np.ndarray]:
+        if self._cache_shard_idx == int(shard_idx) and self._cache_data is not None:
+            return self._cache_data
+        path = self.shard_paths[int(shard_idx)]
+        with np.load(path, allow_pickle=False) as data:
+            loaded = {
+                key: np.asarray(data[key])
+                for key in (*self.image_keys, self.robot_state_key, "action")
+            }
+        self._cache_shard_idx = int(shard_idx)
+        self._cache_data = loaded
+        return loaded
+
+    @staticmethod
+    def _image_chw_float(image: np.ndarray, frame_ids: np.ndarray) -> np.ndarray:
+        frames = np.asarray(image[frame_ids])
+        if frames.ndim != 4:
+            raise ValueError(f"image frames must be rank 4, got {frames.shape}")
+        if frames.shape[-1] == 3:
+            frames = np.moveaxis(frames, -1, 1)
+        elif frames.shape[1] != 3:
+            raise ValueError(f"image must be NHWC or NCHW RGB, got {frames.shape}")
+        frames = frames.astype(np.float32, copy=False)
+        if frames.max(initial=0.0) > 1.0:
+            frames = frames / 255.0
+        return frames
+
+    def __getitem__(self, idx: int) -> dict[str, Any]:
+        shard_idx, center = self.indices[idx]
+        length = int(self._shard_lengths[shard_idx])
+        seq_start = int(center) - self.pad_before
+        frame_ids = np.arange(seq_start, seq_start + self.horizon, dtype=np.int64)
+        frame_ids = np.clip(frame_ids, 0, length - 1)
+        shard = self._load_shard(shard_idx)
+        obs = {
+            key: torch.from_numpy(self._image_chw_float(shard[key], frame_ids))
+            for key in self.image_keys
+        }
+        obs[self.obs_robot_state_name] = torch.from_numpy(
+            np.asarray(shard[self.robot_state_key], dtype=np.float32)[frame_ids]
+        )
+        return {
+            "obs": obs,
+            "action": torch.from_numpy(np.asarray(shard["action"], dtype=np.float32)[frame_ids]),
+        }
 
 
 class NoopLowdimRunner(BaseLowdimRunner):

@@ -156,6 +156,10 @@ class DextrahSingleYAMMultiObjectGraspEnvCfg(MultiObjectGraspTaskCfg, DirectRLEn
     object_spawn_center_offset_x = pickup_x - table_center_x
     object_spawn_center_offset_y = pickup_y - table_center_y
     object_spawn_xy_randomization = 0.08
+    # Optional per-axis jitter overrides.  When left as None, the legacy square
+    # object_spawn_xy_randomization is used for both axes.
+    object_spawn_x_randomization = None
+    object_spawn_y_randomization = None
     object_spawn_yaw_randomization_deg = 180.0
     object_stable_pose_enabled = False
     object_reset_settle_steps = 0

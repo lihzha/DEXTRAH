@@ -361,9 +361,18 @@ class DextrahSingleYAMMultiObjectGraspEnv(MultiObjectGraspTaskMixin, DirectRLEnv
         spawn_xy = torch.zeros(num_ids, 2, device=self.device)
         spawn_xy[:, 0] = float(self.cfg.table_center_x) + float(self.cfg.object_spawn_center_offset_x)
         spawn_xy[:, 1] = float(self.cfg.table_center_y) + float(self.cfg.object_spawn_center_offset_y)
-        spawn_xy += float(self.cfg.object_spawn_xy_randomization) * (
-            2.0 * torch.rand(num_ids, 2, device=self.device) - 1.0
+        spawn_randomization = max(float(self.cfg.object_spawn_xy_randomization), 0.0)
+        spawn_x_randomization = getattr(self.cfg, "object_spawn_x_randomization", None)
+        spawn_y_randomization = getattr(self.cfg, "object_spawn_y_randomization", None)
+        spawn_ranges = torch.tensor(
+            [
+                spawn_randomization if spawn_x_randomization is None else max(float(spawn_x_randomization), 0.0),
+                spawn_randomization if spawn_y_randomization is None else max(float(spawn_y_randomization), 0.0),
+            ],
+            dtype=torch.float32,
+            device=self.device,
         )
+        spawn_xy += (2.0 * torch.rand(num_ids, 2, device=self.device) - 1.0) * spawn_ranges.unsqueeze(0)
         min_x = float(self.cfg.table_center_x - 0.5 * self.cfg.table_size_x) + object_radius_xy
         max_x = float(self.cfg.table_center_x + 0.5 * self.cfg.table_size_x) - object_radius_xy
         min_y = float(self.cfg.table_center_y - 0.5 * self.cfg.table_size_y) + object_radius_xy
