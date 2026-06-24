@@ -47,6 +47,16 @@ parser.add_argument("--checkpoint", type=str, default=None)
 parser.add_argument("--diffusion_policy_root", type=str, default=None)
 parser.add_argument("--policy_image_height", type=int, default=96)
 parser.add_argument("--policy_image_width", type=int, default=128)
+parser.add_argument(
+    "--policy_image_aspect_mode",
+    type=str,
+    default="stretch",
+    choices=("stretch", "center_crop"),
+    help=(
+        "How to adapt env.render() frames to the policy image shape. "
+        "center_crop preserves the policy aspect ratio before resize; stretch is the historical behavior."
+    ),
+)
 parser.add_argument("--policy_robot_state_dim", type=int, default=8)
 parser.add_argument("--num_inference_steps", type=int, default=100)
 parser.add_argument("--num_action_samples", type=int, default=1)
@@ -376,6 +386,32 @@ def _resize_rgb_nearest(frame: np.ndarray, height: int, width: int) -> np.ndarra
     y_idx = np.linspace(0, frame.shape[0] - 1, height).round().astype(np.int64)
     x_idx = np.linspace(0, frame.shape[1] - 1, width).round().astype(np.int64)
     return frame[y_idx[:, None], x_idx[None, :], :].astype(np.uint8, copy=False)
+
+
+def _center_crop_to_aspect(frame: np.ndarray, height: int, width: int) -> np.ndarray:
+    frame = np.asarray(frame)
+    frame_h, frame_w = int(frame.shape[0]), int(frame.shape[1])
+    if frame_h <= 0 or frame_w <= 0:
+        raise ValueError(f"Cannot crop empty frame with shape {frame.shape}")
+    target_aspect = float(width) / float(max(int(height), 1))
+    frame_aspect = float(frame_w) / float(frame_h)
+    if math.isclose(frame_aspect, target_aspect, rel_tol=1.0e-4, abs_tol=1.0e-4):
+        return frame
+    if frame_aspect > target_aspect:
+        crop_w = max(int(round(frame_h * target_aspect)), 1)
+        x0 = max((frame_w - crop_w) // 2, 0)
+        return frame[:, x0 : x0 + crop_w, :]
+    crop_h = max(int(round(frame_w / target_aspect)), 1)
+    y0 = max((frame_h - crop_h) // 2, 0)
+    return frame[y0 : y0 + crop_h, :, :]
+
+
+def _resize_policy_rgb(frame: np.ndarray, height: int, width: int, *, aspect_mode: str) -> np.ndarray:
+    if str(aspect_mode) == "center_crop":
+        frame = _center_crop_to_aspect(frame, int(height), int(width))
+    elif str(aspect_mode) != "stretch":
+        raise ValueError(f"Unsupported policy image aspect mode {aspect_mode!r}")
+    return _resize_rgb_nearest(frame, int(height), int(width))
 
 
 def _tensor_numpy(value: torch.Tensor, dtype=np.float32) -> np.ndarray:
@@ -2266,10 +2302,11 @@ def _load_rgb_dp_policy(checkpoint: Path, device: str, diffusion_policy_root: st
 
 
 def _render_policy_rgb_obs(env) -> np.ndarray:
-    return _resize_rgb_nearest(
+    return _resize_policy_rgb(
         _frame_array(env.render()),
         int(args_cli.policy_image_height),
         int(args_cli.policy_image_width),
+        aspect_mode=str(args_cli.policy_image_aspect_mode),
     )
 
 
@@ -3469,6 +3506,7 @@ def main() -> None:
                             int(args_cli.policy_image_width),
                             3,
                         ],
+                        "policy_image_aspect_mode": str(args_cli.policy_image_aspect_mode),
                         "robot_state_dim": int(args_cli.policy_robot_state_dim),
                         "num_inference_steps": int(args_cli.num_inference_steps),
                         "num_action_samples": int(args_cli.num_action_samples),
@@ -4025,6 +4063,7 @@ def main() -> None:
                         int(args_cli.policy_image_width),
                         3,
                     ],
+                    "policy_image_aspect_mode": str(args_cli.policy_image_aspect_mode),
                     "robot_state_dim": int(args_cli.policy_robot_state_dim),
                     "num_inference_steps": int(args_cli.num_inference_steps),
                     "num_action_samples": int(args_cli.num_action_samples),
