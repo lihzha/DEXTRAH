@@ -260,3 +260,23 @@
   for future waves because some tuned planner rejects were caused by
   `YAM aperture filtering removed all grasps`; replay validation will continue
   to filter failed lifts/drops.
+- committed fallback default as
+  `f91eb2630efd26fd95570512676bd105723c14ce`, deployed it to sibling worktree
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-rgb-diffusion-20260624-fallback-f91eb263`,
+  and copied warmed YAM mesh assets from the tuned worktree to avoid fresh
+  worktree asset-copy races.
+- launched fallback smoke
+  `yam_rgb_source_fallback_smoke32_a100_20260624T1147Z`, jobs `29473246`-
+  `29473249`. Fallback became the best-yielding active cohort.
+- created six-row source visual sample
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/yam_demos/yam_rgb_source_visual_sample_20260624T1158Z.jsonl`
+  covering old pre-wave, tuned, and fallback accepted rows. Submitted L40
+  quality replay sample `yam_rgb_l40_source_visual_sample_20260624T1200Z`,
+  jobs `1041731`-`1041733`, with `quality` rendering, `1024x1024` render
+  frames, and `256x256` scene/wrist RGB observations. These jobs are pending
+  behind L40 maintenance.
+- source progress at latest check: pre-wave `75`, tuned `12`, fallback `17`,
+  for `104` accepted rows total. Fallback wave 2
+  `yam_rgb_source_fallback_wave2_16_a100_20260624T1218Z` submitted jobs
+  `29473409` and `29473410` after replacing two low-yield old shards; those
+  jobs are pending behind maintenance.

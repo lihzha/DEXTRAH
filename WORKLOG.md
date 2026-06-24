@@ -10311,3 +10311,19 @@ Smoke follow-up:
   existing `YAM_ALLOW_LIFT_FILTER_FALLBACK=True` default so those scenes can
   fall back to the broader grasp set and rely on replay validation to reject
   bad grasps.
+- Deployed fallback commit `f91eb2630efd26fd95570512676bd105723c14ce` to
+  sibling worktree
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-rgb-diffusion-20260624-fallback-f91eb263`
+  and pre-populated YAM mesh assets from the warmed tuned worktree to avoid the
+  first-use asset-copy race.
+- Submitted fallback mini-wave
+  `yam_rgb_source_fallback_smoke32_a100_20260624T1147Z` (jobs `29473246`-
+  `29473249`) and L40 visual sample
+  `yam_rgb_l40_source_visual_sample_20260624T1200Z` (jobs `1041731`-`1041733`)
+  from a six-row source sample spanning old/tuned/fallback rows. L40 jobs are
+  pending behind maintenance.
+- At the latest check, accepted source rows were: pre-wave `75`, tuned `12`,
+  fallback `17` (`104` total). Fallback settings were the best-yielding active
+  cohort, so two low-yield old shards were replaced by fallback wave 2
+  `yam_rgb_source_fallback_wave2_16_a100_20260624T1218Z` (jobs `29473409`,
+  `29473410`), currently pending behind maintenance.
