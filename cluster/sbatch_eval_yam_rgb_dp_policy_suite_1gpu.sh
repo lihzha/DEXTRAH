@@ -56,7 +56,10 @@ if [ "$OOD_EXPECTED_OBJECTS" -lt 1 ]; then
   echo "OOD_EXPECTED_OBJECTS must be >= 1, got $OOD_EXPECTED_OBJECTS" >&2
   exit 2
 fi
-DEMO_STEPS="${DEMO_STEPS:-1621}"
+DEMO_STEPS_PER_OBJECT="${DEMO_STEPS_PER_OBJECT:-1621}"
+DEMO_STEPS="${DEMO_STEPS:-$DEMO_STEPS_PER_OBJECT}"
+ID_DEMO_STEPS="${ID_DEMO_STEPS:-}"
+OOD_DEMO_STEPS="${OOD_DEMO_STEPS:-}"
 CAPTURE_INTERVAL="${CAPTURE_INTERVAL:-20}"
 FPS="${FPS:-30}"
 RECORD_RGB_WIDTH="${RECORD_RGB_WIDTH:-160}"
@@ -120,7 +123,7 @@ mkdir -p \
   "$CACHE_NFS/data" "$CACHE_NFS/documents"
 
 CASE_ENV_HOST="$RUN_DIR_HOST/case_env.sh"
-python3 - "$ACCEPTED_MANIFEST_HOST" "$FULL_OBJAVERSE_MANIFEST_HOST" "$RUN_DIR_HOST" "$ID_EXPECTED_OBJECTS" "$ID_CASE_INDEX" "$OOD_SEED" "$RESULTS_NFS" "$FULL_OBJAVERSE_CONTAINER_ASSET_ROOT" "$OOD_MANIFEST_POOL_SIZE" "$OOD_MIN_XY_RADIUS" "$OOD_MAX_XY_RADIUS" "$OOD_MIN_HEIGHT" "$OOD_MAX_HEIGHT" "$OOD_MAX_GRASP_WIDTH_P95" "$OOD_EXPECTED_OBJECTS" "$OOD_EXCLUDE_KEYWORDS" <<'PY'
+python3 - "$ACCEPTED_MANIFEST_HOST" "$FULL_OBJAVERSE_MANIFEST_HOST" "$RUN_DIR_HOST" "$ID_EXPECTED_OBJECTS" "$ID_CASE_INDEX" "$OOD_SEED" "$RESULTS_NFS" "$FULL_OBJAVERSE_CONTAINER_ASSET_ROOT" "$OOD_MANIFEST_POOL_SIZE" "$OOD_MIN_XY_RADIUS" "$OOD_MAX_XY_RADIUS" "$OOD_MIN_HEIGHT" "$OOD_MAX_HEIGHT" "$OOD_MAX_GRASP_WIDTH_P95" "$OOD_EXPECTED_OBJECTS" "$OOD_EXCLUDE_KEYWORDS" "$DEMO_STEPS_PER_OBJECT" <<'PY'
 import json
 import math
 import random
@@ -146,8 +149,31 @@ ood_max_height = float(sys.argv[13])
 ood_max_grasp_width_p95 = float(sys.argv[14])
 ood_expected_objects = int(sys.argv[15])
 ood_exclude_keywords = tuple(item.strip().lower() for item in sys.argv[16].split(",") if item.strip())
+demo_steps_per_object = int(sys.argv[17])
 if ood_expected_objects < 1:
     raise SystemExit(f"OOD expected object count must be >= 1, got {ood_expected_objects}")
+if demo_steps_per_object < 1:
+    raise SystemExit(f"DEMO_STEPS_PER_OBJECT must be >= 1, got {demo_steps_per_object}")
+
+def sequence_frame_count(sequence: Any) -> int:
+    if not isinstance(sequence, list):
+        return 0
+    end_exclusive = 0
+    for item in sequence:
+        if not isinstance(item, dict):
+            continue
+        value = item.get("end_frame_exclusive")
+        if value is None and item.get("end_frame") is not None:
+            value = int(item["end_frame"]) + 1
+        if value is None and item.get("start_frame") is not None and item.get("frame_count") is not None:
+            value = int(item["start_frame"]) + int(item["frame_count"])
+        if value is None:
+            continue
+        try:
+            end_exclusive = max(end_exclusive, int(value))
+        except (TypeError, ValueError):
+            continue
+    return int(end_exclusive)
 
 def host_path(value):
     text = str(value or "")
@@ -258,6 +284,11 @@ id_case = {
     "video": id_row.get("video"),
     "object_sequence": id_sequence,
 }
+id_demo_steps = max(
+    int(id_case["expected_objects"]) * int(demo_steps_per_object),
+    sequence_frame_count(id_sequence),
+    int(demo_steps_per_object),
+)
 (run_dir / "id_case.json").write_text(json.dumps(id_case, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 train_uuids = set()
@@ -371,13 +402,16 @@ ood_case = {
     "manifest_candidate_uuids": [str(obj.get("uuid") or "") for obj in ood_pool[:64]],
     "ood_filter": ood_filter,
 }
+ood_demo_steps = max(int(ood_expected_objects) * int(demo_steps_per_object), int(demo_steps_per_object))
 (run_dir / "ood_case.json").write_text(json.dumps(ood_case, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 env = {
     "ID_STABLE_SCENE_HOST": stable_scene,
     "ID_EXPECTED_OBJECTS_RESOLVED": str(id_case["expected_objects"]),
+    "ID_DEMO_STEPS_RESOLVED": str(id_demo_steps),
     "OOD_MANIFEST_HOST": str(ood_manifest),
     "OOD_EXPECTED_OBJECTS_RESOLVED": str(ood_expected_objects),
+    "OOD_DEMO_STEPS_RESOLVED": str(ood_demo_steps),
 }
 (run_dir / "case_env.sh").write_text("".join(f"{key}={shlex.quote(value)}\n" for key, value in env.items()), encoding="utf-8")
 print(json.dumps({"event": "yam_rgb_dp_eval_cases_prepared", "id": id_case, "ood": ood_case}, sort_keys=True))
@@ -389,7 +423,10 @@ export NFS_ROOT CODE_NFS FABRICS_NFS ISAACLAB_NFS ROBOLAB_NFS OFFICIAL_DP_NFS RE
 export TASK RUN_NAME RUN_DIR_CONTAINER CHECKPOINT_HOST FULL_OBJAVERSE_ASSET_ROOT FULL_OBJAVERSE_MANIFEST_HOST
 export FULL_OBJAVERSE_CONTAINER_ASSET_ROOT ID_STABLE_SCENE_HOST ID_EXPECTED_OBJECTS_RESOLVED
 export OOD_MANIFEST_HOST OOD_EXPECTED_OBJECTS_RESOLVED OOD_SETTLE_STEPS OOD_SEED
-export DEMO_STEPS CAPTURE_INTERVAL FPS RECORD_RGB_WIDTH RECORD_RGB_HEIGHT RECORD_RGB_INTERVAL
+ID_DEMO_STEPS="${ID_DEMO_STEPS:-$ID_DEMO_STEPS_RESOLVED}"
+OOD_DEMO_STEPS="${OOD_DEMO_STEPS:-$OOD_DEMO_STEPS_RESOLVED}"
+export DEMO_STEPS_PER_OBJECT DEMO_STEPS ID_DEMO_STEPS OOD_DEMO_STEPS
+export CAPTURE_INTERVAL FPS RECORD_RGB_WIDTH RECORD_RGB_HEIGHT RECORD_RGB_INTERVAL
 export POLICY_IMAGE_HEIGHT POLICY_IMAGE_WIDTH NUM_INFERENCE_STEPS NUM_ACTION_SAMPLES POLICY_SAMPLE_SEED
 export ACTION_CHUNK_STEPS POLICY_MAX_JOINT_DELTA POLICY_MAX_GRIPPER_DELTA VALIDATION_REQUIRE_ACCEPTED
 export DISABLE_FABRIC PREPARE_YAM_ASSETS YAM_ASSET_PREPARE_LOCK CODE_COMMIT
@@ -403,9 +440,12 @@ echo "CODE_COMMIT=${CODE_COMMIT:-unknown}"
 echo "CHECKPOINT_HOST=$CHECKPOINT_HOST"
 echo "ID_STABLE_SCENE_HOST=$ID_STABLE_SCENE_HOST"
 echo "ID_EXPECTED_OBJECTS_RESOLVED=$ID_EXPECTED_OBJECTS_RESOLVED"
+echo "ID_DEMO_STEPS=$ID_DEMO_STEPS"
 echo "OOD_MANIFEST_HOST=$OOD_MANIFEST_HOST"
 echo "OOD_EXPECTED_OBJECTS_RESOLVED=$OOD_EXPECTED_OBJECTS_RESOLVED"
+echo "OOD_DEMO_STEPS=$OOD_DEMO_STEPS"
 echo "OOD_FILTER=pool=$OOD_MANIFEST_POOL_SIZE min_xy=$OOD_MIN_XY_RADIUS max_xy=$OOD_MAX_XY_RADIUS min_height=$OOD_MIN_HEIGHT max_height=$OOD_MAX_HEIGHT max_width_p95=$OOD_MAX_GRASP_WIDTH_P95 exclude=$OOD_EXCLUDE_KEYWORDS"
+echo "DEMO_STEPS_PER_OBJECT=$DEMO_STEPS_PER_OBJECT"
 echo "DEMO_STEPS=$DEMO_STEPS"
 echo "CAPTURE_INTERVAL=$CAPTURE_INTERVAL"
 echo "VALIDATION_REQUIRE_ACCEPTED=$VALIDATION_REQUIRE_ACCEPTED"
@@ -521,6 +561,7 @@ srun \
       local case_name="$1"
       local seed="$2"
       local stable_scene_host="$3"
+      local case_demo_steps="${4:-$DEMO_STEPS}"
       local stable_scene_container
       stable_scene_container="$(container_path_arg "$stable_scene_host")"
       local out_dir="$RUN_DIR_CONTAINER/$case_name"
@@ -539,7 +580,7 @@ srun \
         --metrics_path "$out_dir/metrics.json" \
         --stable_scene_path "$stable_scene_container" \
         --demo_mode single_yam_rgb_dp_policy \
-        --demo_steps "$DEMO_STEPS" \
+        --demo_steps "$case_demo_steps" \
         --demo_trajectory_source none \
         --checkpoint "$checkpoint_container" \
         --diffusion_policy_root /official_dp \
@@ -586,8 +627,8 @@ srun \
     }
 
     run_settle_ood
-    run_policy_case id 42 "$ID_STABLE_SCENE_HOST"
-    run_policy_case ood "$OOD_SEED" "$RESULTS_NFS/evals/${RUN_NAME}/ood/stable_scene.json"
+    run_policy_case id 42 "$ID_STABLE_SCENE_HOST" "$ID_DEMO_STEPS"
+    run_policy_case ood "$OOD_SEED" "$RESULTS_NFS/evals/${RUN_NAME}/ood/stable_scene.json" "$OOD_DEMO_STEPS"
     validate_case id "$ID_EXPECTED_OBJECTS_RESOLVED" "$(container_path_arg "$ID_STABLE_SCENE_HOST")"
     validate_case ood "$OOD_EXPECTED_OBJECTS_RESOLVED" "$RUN_DIR_CONTAINER/ood/stable_scene.json"
 
