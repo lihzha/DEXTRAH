@@ -10728,3 +10728,17 @@ Smoke follow-up:
   local failures are the known workstation renderer instability and missing
   local production Objaverse assets, not an interactive prompt. Process checks
   showed no remaining local render jobs.
+
+2026-06-25T01:42:00Z - Align YAM scene camera axis with table Y
+- User clarified the desired table-edge scene camera geometry: it should not be
+  yawed relative to the table image, and the projection of the camera optical
+  axis on the XY plane should be parallel with the table Y axis.
+- Updated the default YAM scene camera target from `(-0.30, -0.18, 0.0)` to
+  `(-0.56, 0.08, 0.0)` while keeping the eye at `(-0.56, -0.18, 0.63)`. The
+  default XY look vector is now `(0.0, 0.26)`, which is parallel to Y.
+- Updated scene-camera randomization so the default YAM camera uses a shared X
+  jitter for eye and target. This preserves `eye.x == target.x` during camera
+  randomization while still randomizing eye/target Y and Z.
+- Validation passed: `py_compile` for the render script, `bash -n` for the
+  shared render and L40 RGB replay wrappers, and a geometry check confirming
+  `parallel_to_y=True`.
