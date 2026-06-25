@@ -395,3 +395,25 @@
   SSH agent is available to forward. A100 Slurm does not expose the standalone
   L40 hosts, so high-quality RGB replay is still gated on resolving L40 access
   once source rows are ready.
+
+## 2026-06-25T10:43:03Z Expanded Source Wave
+
+- aggregate monitor at `10:43:43Z` showed the original 20 shards still
+  running, with `91` accepted, `214` rejected, and reject stages
+  `planner=132`, `validation=44`, `post_settle_filter=38`.
+- inspected a representative planner reject. The failure was a genuine cuRobo
+  approach-planning miss (`Planning to approach pose failed`) with five grasp
+  candidates after filtering, not a scene/runtime crash. Current validator and
+  scene settings were left unchanged.
+- submitted additional independent shard indices `20`-`49` into the same
+  batch directory using the same commit
+  `e2688b91236363314c5d0b4efab851bc854ac43d`, qpos, dynamic replay, gripper
+  gains, bad-node excludes, and `SCRIPTED_BIN_DROP_Y_OFFSET=-0.08`.
+  Submitted jobs: `29483175`, `29483176`, `29483177`, `29483178`,
+  `29483180`, `29483182`, `29483183`, `29483185`, `29483187`, `29483188`,
+  `29483189`, `29483190`, `29483192`, `29483194`, `29483196`, `29483197`,
+  `29483198`, `29483200`, `29483201`, `29483202`, `29483203`, `29483204`,
+  `29483207`, `29483208`, `29483209`, `29483210`, `29483212`, `29483214`,
+  `29483215`, and `29483216`.
+- Slurm started all 30 extra shard jobs immediately. It emitted an advisory
+  stale-data quota warning on submission, but accepted the jobs.
