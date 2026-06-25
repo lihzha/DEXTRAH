@@ -11240,3 +11240,24 @@ Smoke follow-up:
 - Next step: scale A100 source demonstration collection to 500 accepted demos
   using the same code commit and excluding `batch-block7-01934` and
   `batch-block5-00055`.
+
+2026-06-25T19:45:00Z - Monitor source collection and patch L40 RGB replay gripper gains
+- Continued the active A100 source batch
+  `yam_single_object_center_y_dynamic_500_20260625T165831Z`. The remote
+  autosubmit controller is running and maintaining ordinary Slurm shard jobs;
+  latest snapshot showed `262` accepted source demos, no stale running shards,
+  and `22` active `yam_centery500_*` jobs.
+- While the source batch runs, audited the downstream L40 RGB replay path before
+  full-quality replay. The generic render wrapper already supports
+  `YAM_GRIPPER_STIFFNESS_SCALE`, `YAM_GRIPPER_DAMPING_SCALE`, and
+  `YAM_GRIPPER_EFFORT_SCALE`, but `sbatch_replay_yam_policy_rgb_l40_1gpu.sh`
+  did not pass them into the per-row dynamic replay call.
+- Patched the L40 RGB replay wrapper and no-array submitter to default and
+  forward the selected YAM gripper gains `2.0/0.25/5.0`, and record them in
+  `no_array_submitter_config.json`.
+- Validation passed:
+  `bash -n cluster/sbatch_replay_yam_policy_rgb_l40_1gpu.sh` and
+  `bash -n cluster/submit_yam_policy_rgb_replay_no_array_l401.sh`.
+- Next step: commit/deploy this downstream-only patch to the L40 replay and
+  A100 conversion/training worktrees, without changing the active A100 source
+  worktree pinned to `7e754bfc`.
