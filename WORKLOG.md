@@ -10780,8 +10780,45 @@ Smoke follow-up:
   optical-axis projection, but the frame is tightly cropped toward the
   bin/table edge and shows little robot context. I tried centered-X y-parallel
   candidates at `eye.x == target.x == -0.30`
-  (`yam_scene_camera_yaxis_ptykit_20260625T034728Z_x030_320`,
+ (`yam_scene_camera_yaxis_ptykit_20260625T034728Z_x030_320`,
   `yam_scene_camera_yaxis_ptykit_20260625T034932Z_x030_retry_320`, and
   `yam_scene_camera_yaxis_ptykit_20260625T035052Z_x030_nofabric_320`), but each
   stalled before task parsing. L40 fallback checks on l401/l402/l403 were
   blocked by SSH `Permission denied (publickey,password)`.
+
+2026-06-25T04:24:00Z - Correct YAM scene camera axis to X-parallel
+- User corrected the intended camera geometry: the scene-camera optical-axis
+  projection should be parallel to table/robot X, not Y.
+- Updated `dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py`:
+  default YAM scene camera is now `eye=(-0.56, -0.18, 0.63)`, target
+  `(-0.30, -0.18, 0.00)`, and YAM scene-camera randomization preserves a
+  shared Y jitter so `eye.y == target.y` remains true when defaults are used.
+  Metrics now record `xy_projection_axis="x"` and `shared_y_jitter`.
+- Validation passed:
+  `/home/lzha/code/.venvs/dextrah-isaaclab/bin/python -m py_compile
+  dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py`,
+  `bash -n cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh
+  cluster/sbatch_replay_yam_policy_rgb_l40_1gpu.sh`, and a geometry check
+  confirmed `delta_xy=(0.26, 0.0)` / `parallel_to_x=True`.
+- Local render attempts:
+  - `yam_scene_camera_xaxis_ptykit_20260625T041413Z_320` and
+    `yam_scene_camera_xaxis_ptykit_20260625T041610Z_320_retry1` used PTY,
+    prompt/noninteractive env vars, `CUDA_VISIBLE_DEVICES=0`, and the strict
+    single-GPU Kit flags, but stalled before DEXTRAH task parsing.
+  - `yam_scene_camera_xaxis_nocudavis_20260625T041820Z_320_retry2` unset
+    `CUDA_VISIBLE_DEVICES` while keeping `--device cuda:0` and explicit Kit GPU
+    selection; it reached task creation and completed.
+- Successful artifact:
+  `/home/lzha/code/local_results/yam_scene_camera_xaxis_nocudavis_20260625T041820Z_320_retry2/settle.mp4`.
+  `ffprobe` reports `320x320`, 2 frames, 0.5 seconds. `metrics.json` records
+  scene camera eye `[-0.56, -0.18, 0.63]`, target `[-0.30, -0.18, 0.0]`,
+  `xy_projection_axis="x"`, `shared_y_jitter=0.0`, task
+  `Dextrah-Single-YAM-Single-Object-Policy-Grasp`, and
+  `app_rendering_mode="performance"`.
+- Opened with `viz-open`:
+  `http://localhost:8765/view?path=local_results/yam_scene_camera_xaxis_nocudavis_20260625T041820Z_320_retry2/settle.mp4`.
+- Visual inspection: the smoke frame is table-only with no simulator
+  background, the goal bin on the left, the object on the right half, and the
+  robot entering from the near table edge. The local `performance` render is
+  visibly noisy; L40 quality replay remains the path for final photorealistic
+  RGB observations.
