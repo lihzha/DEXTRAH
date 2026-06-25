@@ -417,3 +417,12 @@
   `29483215`, and `29483216`.
 - Slurm started all 30 extra shard jobs immediately. It emitted an advisory
   stale-data quota warning on submission, but accepted the jobs.
+- mid-run inspection at `251` accepted rows fetched source row `249`
+  (`shard_048`, seed `73800006`) to
+  `/home/lzha/code/cluster_results/a100/yam_yoff08_500_mid_sample/`.
+  `ffprobe` reported a `1280x720`, `91` frame, `7.58s`, `12 FPS` video.
+  Contact sheet and MP4 were opened with `viz-open`. Visual inspection: the
+  source replay has the object visible at the beginning, continuous robot
+  motion into the left-side bin, and a frame dominated by table/bin/robot with
+  no meaningful background. Empty black cells in the contact sheet are unused
+  tile slots, not video frames.
