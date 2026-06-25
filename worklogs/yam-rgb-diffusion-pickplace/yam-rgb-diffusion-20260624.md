@@ -571,3 +571,26 @@
   active jobs from an older `CODE_COMMIT` are still calling scripts from it.
   For future source or replay fixes while jobs are active, deploy a separate
   remote worktree path and submit only new jobs against that path.
+
+## 2026-06-25T19:20:00Z Source Autosubmit Controller
+
+- the centered-y source batch had `229` accepted rows with `22` active
+  `yam_centery500` jobs and `24` total A100 jobs for the user. No new
+  commit-matched shard was stale.
+- started a remote source autosubmit controller on A100 to append ordinary
+  shards into the same batch without mutating the active worktree:
+  - PID: `2047837`
+  - script:
+    `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/yam_demos/yam_single_object_center_y_dynamic_500_20260625T165831Z/source_autosubmit_controller.sh`
+  - log:
+    `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/yam_demos/yam_single_object_center_y_dynamic_500_20260625T165831Z/source_autosubmit_controller.log`
+  - next shard: `048`
+  - caps: `YAM_ACTIVE_CAP=22`, `TOTAL_ACTIVE_CAP=24`
+  - target: stop submitting once accepted demos reach `500`
+  - buffer: maintain projected capacity up to `530` accepted demos to tolerate
+    incomplete shards without large overrun.
+- controller submission settings match the commit-matched wave:
+  `CODE_COMMIT=7e754bfc7dbea882ee4ffbb08f80f575105e1fcd`,
+  `SHARD_TARGET=10`, `MAX_ATTEMPTS=300`, `START_SEED=79000000`,
+  `YAM_POLICY_OBJECT_Y_RANGE=-0.16 -0.04`,
+  `SCRIPTED_BIN_DROP_Y_OFFSET=-0.08`, and gripper gains `2.0/0.25/5.0`.
