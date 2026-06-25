@@ -10974,3 +10974,32 @@ Smoke follow-up:
   visible from the near edge. The `z=0.8` height gives more workspace coverage
   but also exposes more table-edge/surround strips near the bottom and right
   than the previous `z=0.68` camera.
+
+2026-06-25T05:53:45Z - Move YAM scene camera forward
+- User asked to move the camera forward a little bit.
+- Interpreted forward as `+X` in the YAM convention (`x` is robot forward
+  toward the table). Shifted both scene camera eye and target 4 cm forward:
+  eye from `(-0.56, -0.10, 0.80)` to `(-0.52, -0.10, 0.80)`, and target from
+  `(-0.30, -0.10, 0.0)` to `(-0.26, -0.10, 0.0)`. This preserves the
+  x-parallel camera-axis projection and keeps the requested `z=0.8` height.
+- Validation passed:
+  `/home/lzha/code/.venvs/dextrah-isaaclab/bin/python -m py_compile
+  dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py`, and an AST
+  geometry check reported `delta_xy=(0.26, 0.0)`, `parallel_to_x=True`,
+  `height=0.8`, and `forward_shift_from_prev_m=0.04`.
+- Successful quality render:
+  `/home/lzha/code/local_results/yam_scene_camera_fwd04_left10_z080_quality_video_20260625T055246Z_1024/settle.mp4`.
+  The launch used `--rendering_mode quality`, `1024x1024`, `8 fps`, `3.0 s`,
+  prompt-safe EULA/CI environment variables, `DISPLAY=:1`, and explicit
+  single-GPU Kit args.
+- Evidence: `ffprobe` reports `1024x1024`, `8 fps`, `3.0 s`, `24` frames.
+  `metrics.json` records camera eye `[-0.52, -0.10, 0.80]`, target
+  `[-0.26, -0.10, 0.0]`, `xy_projection_axis="x"`, and
+  `app_rendering_mode="quality"`.
+- Opened with `viz-open`:
+  `http://localhost:8765/view?path=local_results/yam_scene_camera_fwd04_left10_z080_quality_video_20260625T055246Z_1024/settle.mp4`.
+- Visual inspection of `frame_0000.png` and `frame_0023.png`: the scene is not
+  blank, bin remains left, object remains right, and robot remains visible from
+  the near edge. The forward shift reduces bottom table-edge/surround exposure
+  slightly relative to the prior `(-0.56, -0.10, 0.80)` camera, while a narrow
+  right-side surround strip remains due to the high `z=0.8` view.
