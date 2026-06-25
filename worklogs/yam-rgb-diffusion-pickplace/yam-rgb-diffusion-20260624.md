@@ -621,3 +621,15 @@
     `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-rgb-diffusion-a100-dp-9287922c`
   - L40 quality replay/eval worktree:
     `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-rgb-diffusion-l40-dp-9287922c`
+
+## 2026-06-25T19:50:00Z YAM RGB Dataset Conversion Wrapper
+
+- added `cluster/sbatch_make_yam_rgb_policy_shards_1gpu.sh` to convert L40
+  RGB replay `accepted_rgb_replays.jsonl` files into manifest-backed sharded
+  Diffusion Policy datasets with `scene_rgb`, `wrist_rgb`, `robot_state`, and
+  `action`.
+- wrapper runs the existing
+  `dextrah_lab/offline_dp_bc/make_yam_rgb_policy_shards.py` converter inside
+  the Isaac Lab container, validates the manifest has both RGB keys and a
+  positive step count, and supports `CODE_COMMIT` guarding.
+- validation passed: `bash -n cluster/sbatch_make_yam_rgb_policy_shards_1gpu.sh`.
