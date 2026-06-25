@@ -135,9 +135,12 @@ def _download_assets(repo_id: str, force: bool) -> Path:
             if path.exists():
                 shutil.rmtree(path)
     assets_root.mkdir(parents=True, exist_ok=True)
-    if yam_mjcf_dir.exists():
+    # Several Slurm shards may reach first-time asset preparation together on a
+    # shared NFS worktree.  Make the copy idempotent so a directory created by a
+    # racing process does not fail the whole render.
+    if yam_mjcf_dir.exists() and force:
         shutil.rmtree(yam_mjcf_dir)
-    shutil.copytree(source_assets / "yam_mujoco", yam_mjcf_dir)
+    shutil.copytree(source_assets / "yam_mujoco", yam_mjcf_dir, dirs_exist_ok=True)
     if not source_xml.is_file():
         raise FileNotFoundError(f"Expected YAM MJCF after copy: {source_xml}")
     print(f"Installed YAM MJCF assets at {yam_mjcf_dir}")

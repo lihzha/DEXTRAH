@@ -11261,3 +11261,35 @@ Smoke follow-up:
 - Next step: commit/deploy this downstream-only patch to the L40 replay and
   A100 conversion/training worktrees, without changing the active A100 source
   worktree pinned to `7e754bfc`.
+- Committed and pushed `c9281c84` with the L40 RGB replay gripper gain
+  pass-through. GitHub fetch from L40 was blocked by public-key auth, so staged
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/bundles/DEXTRAH/yam-rgb-diffusion-c9281c84.bundle`
+  and fetched it into the downstream-only worktrees
+  `yam-rgb-diffusion-l40-dp-9287922c` and
+  `yam-rgb-diffusion-a100-dp-9287922c`. Both are detached at `c9281c84`;
+  the active source-generation worktree remains detached at `7e754bfc`.
+- The first source autosubmit controller exited after shard 55 without an
+  explicit error. Launched robust runtime controller
+  `source_autosubmit_controller_v2.sh` under `nohup`, PID `2189072`, continuing
+  from `source_autosubmit_next_shard.txt=56`. It submitted shards `56` and
+  `57` as jobs `29497228` and `29497231`.
+- To avoid waiting for all 500 source demos before using L40 time, aggregated
+  the first `250` accepted source rows into
+  `accepted_prefix_250_for_l40_20260625T1952Z.jsonl` and launched L40 quality
+  replay batch `yam_rgb_quality_center_y_prefix250_20260625T1953Z`.
+- L40 replay launch details: submitter PID `2491300`, log
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/yam_policy_rgb_replays/yam_rgb_quality_center_y_prefix250_20260625T1953Z/submitter.log`,
+  `SHARD_COUNT=50`, `MAX_CONCURRENT=20`, `RENDERING_MODE=quality`,
+  `RENDER_WIDTH=1024`, `RENDER_HEIGHT=1024`, recorded RGB `256x256`, gripper
+  gains `2.0/0.25/5.0`, explicit scene camera
+  `(-0.50, 0.04, 0.68) -> (-0.25, 0.04, 0.03)`, and texture/HDR directories
+  under the Lustre DEXTRAH/RoboLab paths. Initial jobs `1042638`-`1042657`
+  cover shards `0`-`19`.
+- Early L40 inspection found the first row in shards `0`-`2` failed before
+  rendering because concurrent jobs reached first-time YAM asset materialization
+  and `prepare_yam_assets.py` raised `FileExistsError` for
+  `dextrah_lab/assets/yam/yam_mujoco`. The shared `yam_linear.usd` and MJCF
+  files now exist, so later rows in the running jobs proceed into Isaac Lab.
+  Patched `prepare_yam_assets.py` to make the MJCF copy idempotent with
+  `dirs_exist_ok=True`, preventing this startup race in subsequent L40 replay
+  batches. The failed prefix rows will be replayed later.
