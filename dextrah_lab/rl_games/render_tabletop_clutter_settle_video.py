@@ -63,7 +63,7 @@ parser.add_argument(
 parser.add_argument(
     "--demo_trajectory_replay_mode",
     type=str,
-    default="kinematic",
+    default="dynamic",
     choices=("kinematic", "dynamic"),
 )
 parser.add_argument(

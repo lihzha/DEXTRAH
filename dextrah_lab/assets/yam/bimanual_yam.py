@@ -141,11 +141,11 @@ MOLMOACT2_SINGLE_REST_JOINT_POS = {
 }
 
 MOLMOACT2_SINGLE_HOME_JOINT_POS = {
-    # Matches yam_linear.xml keyframe named "home" for the gripper-down reset pose.
+    # Single-YAM gripper-down reset pose used for policy data collection/eval.
     "joint1": 0.0,
-    "joint2": 1.047,
-    "joint3": 1.047,
-    "joint4": 0.0,
+    "joint2": 1.0,
+    "joint3": 1.0,
+    "joint4": -1.5,
     "joint5": 0.0,
     "joint6": 0.0,
     "left_finger": 0.0,
