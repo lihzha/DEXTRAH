@@ -426,3 +426,22 @@
   motion into the left-side bin, and a frame dominated by table/bin/robot with
   no meaningful background. Empty black cells in the contact sheet are unused
   tile slots, not video frames.
+- final cutoff loop reached `500` accepted rows at `12:31Z`, wrote and
+  verified
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/yam_demos/yam_single_object_qpos_dynamic_yoff08_500_20260625T093853Z/accepted_500.jsonl`
+  with exactly `500` lines, and wrote
+  `accepted_500_summary.json`. Local copies are under
+  `/home/lzha/code/cluster_results/a100/yam_yoff08_500_accepted/`.
+  The selected rows are all single-object demos, with seeds spanning
+  `69000001` through `73900034`.
+- canceled remaining source jobs after the aggregate file was verified. One
+  source job (`29484661`, shard `004`) briefly relaunched/requeued after the
+  bulk cancel; it was explicitly canceled and the source queue then cleared.
+- retried L40 access for the high-quality replay stage. Direct local SSH to
+  `l401`, `l402`, `l403`, and `l40data` still fails with
+  `Permission denied (publickey,password)`. A100 cannot resolve those aliases.
+  Local SSH config only contains direct `10.49.119.*` host mappings with
+  `ForwardAgent`; `ssh-add -l` reports no local agent, and explicit
+  `~/.ssh/id_ed25519` and `~/.ssh/google_compute_engine` attempts to `l401`
+  are also rejected. High-quality L40 replay, RGB shard conversion, diffusion
+  training, and evaluation remain blocked on L40 authentication.
