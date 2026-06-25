@@ -10916,3 +10916,32 @@ Smoke follow-up:
   table edge. This sample still uses the current flat randomized table material;
   texture asset randomization remains a separate follow-up before final data
   generation.
+
+2026-06-25T05:35:29Z - Raise YAM scene camera slightly
+- User asked to put the scene camera slightly higher.
+- Raised only `DEFAULT_YAM_CAMERA_EYE.z` in
+  `dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py` from `0.63 m`
+  to `0.68 m`. Kept eye XY `(-0.56, -0.14)`, target
+  `(-0.30, -0.14, 0.0)`, and all bin/object randomization unchanged, so the
+  camera optical-axis projection remains parallel to table X.
+- Validation passed:
+  `/home/lzha/code/.venvs/dextrah-isaaclab/bin/python -m py_compile
+  dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py`, and an AST
+  geometry check reported `delta_xy=(0.26, 0.0)`, `parallel_to_x=True`, and
+  `height=0.68`.
+- Successful quality render:
+  `/home/lzha/code/local_results/yam_scene_camera_high68_quality_video_20260625T053431Z_1024/settle.mp4`.
+  The launch used `--rendering_mode quality`, `1024x1024`, `8 fps`, `3.0 s`,
+  prompt-safe EULA/CI environment variables, `DISPLAY=:1`, and explicit
+  single-GPU Kit args.
+- Evidence: `ffprobe` reports `1024x1024`, `8 fps`, `3.0 s`, `24` frames.
+  `metrics.json` records camera eye `[-0.56, -0.14, 0.68]`, target
+  `[-0.30, -0.14, 0.0]`, `xy_projection_axis="x"`, and
+  `app_rendering_mode="quality"`.
+- Opened with `viz-open`:
+  `http://localhost:8765/view?path=local_results/yam_scene_camera_high68_quality_video_20260625T053431Z_1024/settle.mp4`.
+- Visual inspection of `frame_0000.png` and `frame_0023.png`: the higher camera
+  is valid, the scene is not blank, the bin remains on the left, object remains
+  on the right, and the tabletop still dominates the frame. A thin
+  table-edge/surround strip is visible near the right/near boundaries, but no
+  far room background dominates the image.
