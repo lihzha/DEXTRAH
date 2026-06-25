@@ -10892,3 +10892,27 @@ Smoke follow-up:
   `Permission denied (publickey,password)`.
 - Process/GPU cleanup check after the failed renders showed no remaining local
   Isaac/render process and the RTX 6000 Ada back at desktop baseline memory.
+
+2026-06-25T05:04:48Z - Render high-quality YAM single-object scene video
+- User asked for a video rendered with the highest-quality mode planned for
+  data observation replay.
+- L40 direct SSH remained blocked by auth earlier in the session, so rendered
+  locally on the RTX 6000 Ada with the same data replay render preset:
+  `--rendering_mode quality`, `1024x1024`, headless rendering, explicit
+  single-GPU Kit args, `DISPLAY=:1`, and prompt-safe EULA/CI environment
+  variables.
+- Successful artifact:
+  `/home/lzha/code/local_results/yam_scene_camera_smallbin_quality_video_20260625T050352Z_1024/settle.mp4`.
+- Evidence: `ffprobe` reports `1024x1024`, `8 fps`, `3.0 s`, `24` frames.
+  `metrics.json` records `app_rendering_mode="quality"`, scene camera eye
+  `[-0.56, -0.14, 0.63]`, target `[-0.30, -0.14, 0.0]`,
+  `xy_projection_axis="x"`, `shared_y_jitter=0.0`, and the sampled smaller
+  randomized bin inner size `0.2395 x 0.1751 m`, height `0.1373 m`.
+- Opened with `viz-open`:
+  `http://localhost:8765/view?path=local_results/yam_scene_camera_smallbin_quality_video_20260625T050352Z_1024/settle.mp4`.
+- Visual inspection of `frame_0000.png` and `frame_0023.png`: the video is not
+  blank, background is excluded, the object is on the right side, the bin is on
+  the left side with the smaller footprint, and the robot enters from the near
+  table edge. This sample still uses the current flat randomized table material;
+  texture asset randomization remains a separate follow-up before final data
+  generation.
