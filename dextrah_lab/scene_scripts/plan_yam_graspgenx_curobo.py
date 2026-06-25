@@ -41,7 +41,9 @@ YAM_TABLE = {
     "size_y": 1.20,
 }
 YAM_TABLE["center_z"] = YAM_TABLE["surface_z"] - 0.5 * YAM_TABLE["thickness"]
-YAM_ROBOT_BASE = [-0.65, 0.0, 0.01]
+# Match DextrahSingleYAMMultiObjectGraspEnvCfg: the real/sim YAM is mounted on
+# the table-right half, not centered on the table Y axis.
+YAM_ROBOT_BASE = [-0.65, -0.25, 0.01]
 YAM_TARGET_XY = [-0.30, 0.0]
 YAM_TARGET_DIMS = [0.08, 0.08, 0.08]
 YAM_GRIPPER_CENTER_LOCAL = [0.0, 0.0, 0.1098]
