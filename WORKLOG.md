@@ -11208,3 +11208,35 @@ Smoke follow-up:
   `BATCH_NAME=yam_qpos_dynamic_smoke_basefix_20260625T082731Z`,
   `START_SEED=66003000`, `MAX_ATTEMPTS=8`, dynamic replay, and
   `--exclude=batch-block7-01934`.
+
+2026-06-25T08:44:00Z - Corrected qpos/dynamic A100 source-demo smoke accepted
+- Smoke `29480936` stalled after reset on `batch-block5-00055`; cancelled it
+  and treated that node as another renderer/sim-stall exclusion.
+- Launched retry smoke `29480957` from remote worktree commit `119b8809` with
+  `BATCH_NAME=yam_qpos_dynamic_smoke_basefix_retry_20260625T083200Z`,
+  `START_SEED=66004000`, `TOTAL_TARGET=1`, `MAX_ATTEMPTS=8`, dynamic replay,
+  and `--exclude=batch-block7-01934,batch-block5-00055`. The job ran on
+  `batch-block7-02044`.
+- The retry accepted on the first attempt. Validation path:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/yam_demos/yam_qpos_dynamic_smoke_basefix_retry_20260625T083200Z/shard_000/attempt_seed_66004000/validation_metrics.json`.
+- Evidence: validation status `accepted`; all checks passed including
+  `all_objects_lifted`, `all_objects_inside_bin`, `contact_proxy`,
+  `rgb_present`, `rgb_nonblank`, `done_once_or_more`, and
+  `not_truncated_final`. Dynamic replay loaded the requested start qpos exactly:
+  first source and replay start joint positions were both
+  `[0.0, 1.0, 1.0, -1.5, 0.0, 0.0, 0.0, 0.0]`.
+- Replay metrics: `DEMO_TRAJECTORY_REPLAY_MODE=dynamic`, `900` state steps,
+  `226` RGB frames at `160x120` for the source-smoke dataset, and A100
+  visualization video `1280x720`, `91` frames, `7.58 s`.
+- Fetched local artifacts under
+  `/home/lzha/code/cluster_results/a100/yam_qpos_dynamic_smoke_basefix_retry/`.
+  Contact-sheet inspection showed the object starts visible on the center-right
+  table band, the arm enters from the right, lifts the object, moves over the
+  randomized bin, and drops it inside without visible room background.
+- Opened replay artifacts with `viz-open`:
+  `http://localhost:8765/view?path=cluster_results/a100/yam_qpos_dynamic_smoke_basefix_retry/replay/yam_pick_place.mp4`
+  and
+  `http://localhost:8765/view?path=cluster_results/a100/yam_qpos_dynamic_smoke_basefix_retry/replay_contact_sheet.png`.
+- Next step: scale A100 source demonstration collection to 500 accepted demos
+  using the same code commit and excluding `batch-block7-01934` and
+  `batch-block5-00055`.
