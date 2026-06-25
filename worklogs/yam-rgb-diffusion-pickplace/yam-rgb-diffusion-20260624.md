@@ -594,3 +594,23 @@
   `SHARD_TARGET=10`, `MAX_ATTEMPTS=300`, `START_SEED=79000000`,
   `YAM_POLICY_OBJECT_Y_RANGE=-0.16 -0.04`,
   `SCRIPTED_BIN_DROP_Y_OFFSET=-0.08`, and gripper gains `2.0/0.25/5.0`.
+
+## 2026-06-25T19:38:00Z YAM RGB Policy Eval Path
+
+- while A100 source collection continued, added a dedicated closed-loop YAM
+  RGB Diffusion Policy evaluator:
+  `dextrah_lab/rl_games/eval_yam_pickplace_rgb_dp_policy.py`.
+- evaluator policy inputs are exactly `scene_rgb`, `wrist_rgb`, and 24D
+  `robot_state`; it records task/object/bin metrics for evaluation but never
+  passes privileged object/bin state or phase/progress features to the policy.
+- evaluator creates the same link-6 D405 wrist camera sensor used by replay and
+  uses the patched scene camera default with optional small jitter. It also
+  forces the requested YAM default pose `(0, 1, 1, -1.5, 0, 0)` and gripper
+  qpos `0.0` during reset config.
+- added L40-oriented wrapper:
+  `cluster/sbatch_eval_yam_pickplace_rgb_dp_policy_1gpu.sh`, defaulting to
+  `RENDERING_MODE=quality`, 256x256 scene+wrist RGB, centered object/bin
+  randomization, and gripper gains `2.0/0.25/5.0`.
+- validation passed:
+  `python3 -m py_compile dextrah_lab/rl_games/eval_yam_pickplace_rgb_dp_policy.py`
+  and `bash -n cluster/sbatch_eval_yam_pickplace_rgb_dp_policy_1gpu.sh`.
