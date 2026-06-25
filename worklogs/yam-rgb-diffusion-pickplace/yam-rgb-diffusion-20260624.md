@@ -326,3 +326,49 @@
   Sample datasets have nonblank `rgb` `[226,120,160,3]`, finite
   `robot_state` `[900,1,24]`, finite `action` `[900,1,7]`, and coherent
   right-side object to left-side bin motion.
+
+## 2026-06-25T09:39:37Z Gripper-Down Qpos And Dynamic Drop Tuning
+
+- updated the YAM default/home qpos to the requested gripper-down pose
+  `(0.0, 1.0, 1.0, -1.5, 0.0, 0.0)` for the six arm joints, with fingers
+  open at `0.0`, and made the default demo replay mode `dynamic`.
+- fixed a planner/sim base mismatch in `plan_yam_graspgenx_curobo.py`:
+  planner YAM base now matches the single-YAM policy environment base
+  `[-0.65, -0.25, 0.01]`. The corrected qpos/dynamic smoke
+  `29480957`, batch `yam_qpos_dynamic_smoke_basefix_retry_20260625T083200Z`,
+  accepted on the first attempt.
+- full 500-source attempt before the place fix produced no accepted demos
+  because lifted objects often never received a bin-transport segment. The
+  failing seed `67000000` showed `scripted_place.success=false` from a strict
+  IK tolerance despite the approximate solved object drop being inside the
+  randomized bin.
+- patched scripted bin placement to accept approximate IK only when the solved
+  object drop point is inside the randomized bin, and to reject planner outputs
+  that still lack a bin transport/open segment for `pick_and_drop_in_bin`.
+  Commit deployed on A100 via bundle:
+  `e2688b91236363314c5d0b4efab851bc854ac43d`.
+- the same seed then transported to the bin but dynamic replay overshot the
+  far +Y bin wall with zero drop offset. A seed-specific smoke with
+  `SCRIPTED_BIN_DROP_Y_OFFSET=-0.08`, gripper gains
+  `stiffness_scale=2.0`, `damping_scale=0.25`, `effort_scale=5.0`, and
+  dynamic replay accepted on the first attempt:
+  `29481883`, batch
+  `yam_qpos_dynamic_placefix_seed67000000_yoff08_retry_20260625T093214Z`.
+  Validation passed all checks; final object center
+  `[-0.1153, 0.2435, 0.0641]` was inside bin center
+  `[-0.1816, 0.1971]`, size `[0.2942, 0.1983]`.
+- visual smoke artifacts copied locally:
+  `/home/lzha/code/cluster_results/a100/yam_yoff08_seed67000000/yam_pick_place.mp4`
+  and contact sheet
+  `/home/lzha/code/cluster_results/a100/yam_yoff08_seed67000000/contact_sheet.jpg`.
+  Inspection shows the scene camera sees the object initially, mostly table
+  and robot, no visible room background, and a plausible continuous
+  pick-transport-drop motion.
+- launched current 500-source A100 collection batch
+  `yam_single_object_qpos_dynamic_yoff08_500_20260625T093853Z` from commit
+  `e2688b91236363314c5d0b4efab851bc854ac43d`, with `TOTAL_TARGET=500`,
+  `SHARD_COUNT=20`, `MAX_CONCURRENT=4`, `START_SEED=69000000`,
+  `SCRIPTED_BIN_DROP_Y_OFFSET=-0.08`, same gripper gains, and bad-node
+  excludes `batch-block7-01934,batch-block5-00055,batch-block7-01554`.
+  First submitted shards are `29481954`, `29481955`, `29481957`, and
+  `29481958`.
