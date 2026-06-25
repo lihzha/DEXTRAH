@@ -27,7 +27,7 @@ from isaaclab.app import AppLauncher
 DEFAULT_FRANKA_CAMERA_EYE = (-0.10, -1.05, 1.36)
 DEFAULT_FRANKA_CAMERA_TARGET = (-0.62, 0.0, 0.78)
 DEFAULT_YAM_CAMERA_EYE = (-0.56, -0.18, 0.63)
-DEFAULT_YAM_CAMERA_TARGET = (-0.56, 0.08, 0.00)
+DEFAULT_YAM_CAMERA_TARGET = (-0.30, -0.18, 0.00)
 DEFAULT_TASK = "Dextrah-Single-YAM-Single-Object-Policy-Grasp"
 SURFACE_TEXTURE_EXTS = (".png", ".jpg", ".jpeg")
 DOME_TEXTURE_EXTS = (".hdr", ".exr")
@@ -3729,28 +3729,28 @@ def main() -> None:
         "target": [float(v) for v in target],
     }
     if bool(args_cli.yam_policy_scene_randomization) and args_cli.camera_eye is None and args_cli.camera_target is None:
-        preserve_y_axis_projection = (
+        preserve_x_axis_projection = (
             "YAM" in args_cli.task
-            and abs(float(eye_default[0]) - float(target_default[0])) < 1e-6
-            and abs(float(eye[0]) - float(target[0])) < 1e-6
+            and abs(float(eye_default[1]) - float(target_default[1])) < 1e-6
+            and abs(float(eye[1]) - float(target[1])) < 1e-6
         )
-        if preserve_y_axis_projection:
+        if preserve_x_axis_projection:
             eye_jitter = tuple(float(v) for v in args_cli.yam_policy_scene_camera_eye_jitter)
             target_jitter = tuple(float(v) for v in args_cli.yam_policy_scene_camera_target_jitter)
-            shared_x_radius = min(abs(eye_jitter[0]), abs(target_jitter[0]))
-            shared_x_jitter = float(randomization_rng.uniform(-shared_x_radius, shared_x_radius))
+            shared_y_radius = min(abs(eye_jitter[1]), abs(target_jitter[1]))
+            shared_y_jitter = float(randomization_rng.uniform(-shared_y_radius, shared_y_radius))
             eye = (
-                float(eye[0]) + shared_x_jitter,
-                float(eye[1]) + float(randomization_rng.uniform(-abs(eye_jitter[1]), abs(eye_jitter[1]))),
+                float(eye[0]) + float(randomization_rng.uniform(-abs(eye_jitter[0]), abs(eye_jitter[0]))),
+                float(eye[1]) + shared_y_jitter,
                 float(eye[2]) + float(randomization_rng.uniform(-abs(eye_jitter[2]), abs(eye_jitter[2]))),
             )
             target = (
-                float(target[0]) + shared_x_jitter,
-                float(target[1]) + float(randomization_rng.uniform(-abs(target_jitter[1]), abs(target_jitter[1]))),
+                float(target[0]) + float(randomization_rng.uniform(-abs(target_jitter[0]), abs(target_jitter[0]))),
+                float(target[1]) + shared_y_jitter,
                 float(target[2]) + float(randomization_rng.uniform(-abs(target_jitter[2]), abs(target_jitter[2]))),
             )
         else:
-            shared_x_jitter = None
+            shared_y_jitter = None
             eye = _rng_vec_jitter(randomization_rng, eye, args_cli.yam_policy_scene_camera_eye_jitter)
             target = _rng_vec_jitter(randomization_rng, target, args_cli.yam_policy_scene_camera_target_jitter)
         scene_camera_summary = {
@@ -3759,8 +3759,8 @@ def main() -> None:
             "target": [float(v) for v in target],
             "eye_jitter": [float(v) for v in args_cli.yam_policy_scene_camera_eye_jitter],
             "target_jitter": [float(v) for v in args_cli.yam_policy_scene_camera_target_jitter],
-            "xy_projection_axis": "y" if preserve_y_axis_projection else "free",
-            "shared_x_jitter": shared_x_jitter,
+            "xy_projection_axis": "x" if preserve_x_axis_projection else "free",
+            "shared_y_jitter": shared_y_jitter,
         }
     task_env.sim.set_camera_view(eye=eye, target=target, camera_prim_path=task_env.cfg.viewer.cam_prim_path)
 
