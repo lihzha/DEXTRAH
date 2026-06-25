@@ -614,3 +614,10 @@
 - validation passed:
   `python3 -m py_compile dextrah_lab/rl_games/eval_yam_pickplace_rgb_dp_policy.py`
   and `bash -n cluster/sbatch_eval_yam_pickplace_rgb_dp_policy_1gpu.sh`.
+- deployed commit `9287922cce131632b4f960d75d261d43ee5cd1d3` to separate
+  downstream worktrees without touching the active A100 source-generation
+  checkout:
+  - A100 conversion/training worktree:
+    `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-rgb-diffusion-a100-dp-9287922c`
+  - L40 quality replay/eval worktree:
+    `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-rgb-diffusion-l40-dp-9287922c`
