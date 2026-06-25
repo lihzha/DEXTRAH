@@ -10683,3 +10683,21 @@ Smoke follow-up:
   A100 collection, shared render, and L40 replay wrappers, `ffprobe` on the
   final MP4, metadata inspection of `metrics.json` and `stable_scene.json`, and
   a local process check showing no remaining Isaac/render jobs.
+
+2026-06-25T01:05:00Z - Restore no-yaw YAM scene camera pose
+- User feedback: the single-object scene camera should not have the extra
+  rotation introduced in the latest table-edge/corner retune. The prior
+  clutter-bin picking camera pose was preferred.
+- Restored the default YAM scene camera in
+  `dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py` to the
+  previous clutter-bin pose: eye `(-0.56, -0.18, 0.63)`, target
+  `(-0.30, -0.18, 0.0)`. Keeping eye and target at the same Y removes the
+  lateral yaw component while preserving the single-object policy task.
+- Validation passed: `py_compile` for the render script and `bash -n` for the
+  render and L40 replay wrappers.
+- Tried a short local `512x512` quality render of
+  `Dextrah-Single-YAM-Single-Object-Policy-Grasp` into
+  `local_results/yam_single_object_camera_oldpose_20260624T235500Z`, but the
+  workstation renderer stalled before DEXTRAH task logs and surfaced local
+  Vulkan `ERROR_DEVICE_LOST` after termination. No MP4 or metrics file was
+  produced, and a process check showed no remaining render process.

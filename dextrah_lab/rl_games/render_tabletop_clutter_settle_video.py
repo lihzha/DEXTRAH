@@ -17,8 +17,8 @@ from isaaclab.app import AppLauncher
 
 DEFAULT_FRANKA_CAMERA_EYE = (-0.10, -1.05, 1.36)
 DEFAULT_FRANKA_CAMERA_TARGET = (-0.62, 0.0, 0.78)
-DEFAULT_YAM_CAMERA_EYE = (-0.58, -0.12, 0.74)
-DEFAULT_YAM_CAMERA_TARGET = (-0.26, -0.28, 0.00)
+DEFAULT_YAM_CAMERA_EYE = (-0.56, -0.18, 0.63)
+DEFAULT_YAM_CAMERA_TARGET = (-0.30, -0.18, 0.00)
 DEFAULT_TASK = "Dextrah-Single-YAM-Single-Object-Policy-Grasp"
 SURFACE_TEXTURE_EXTS = (".png", ".jpg", ".jpeg")
 DOME_TEXTURE_EXTS = (".hdr", ".exr")
