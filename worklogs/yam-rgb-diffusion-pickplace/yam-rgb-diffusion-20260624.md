@@ -535,3 +535,39 @@
 - early log checks on jobs `29491998`, `29492000`, `29492001`, and `29492002`
   confirm the new object-y range, dynamic replay mode, commit hash, and gripper
   gains. Startup warnings are standard headless Isaac warnings.
+
+## 2026-06-25T17:58:00Z Source Collection Timeout Fix and Relaunch
+
+- first source wave reached `81` accepted rows, but several shards hung inside
+  a single settle attempt. Cancelled stale shards `004`, `007`, `014`, and
+  `018`, then submitted replacement shards `022`-`026`.
+- diagnosed that updating the shared A100 worktree from `92fad5038` to a newer
+  commit while the original jobs were still running caused later attempts in
+  those old jobs to fail the render wrapper's `CODE_COMMIT` guard. The failed
+  attempts were recorded as settle rejects and did not produce validation
+  artifacts. Accepted rows produced before the checkout mutation remain valid.
+- patched `cluster/sbatch_collect_yam_objaverse_demos_1gpu.sh` with
+  configurable per-stage timeouts:
+  `SETTLE_TIMEOUT_SECONDS=600`, `PLANNER_TIMEOUT_SECONDS=900`,
+  `REPLAY_TIMEOUT_SECONDS=900`, and `VALIDATE_TIMEOUT_SECONDS=180`.
+  The timeout values are logged in `collector_start` metadata.
+- validated with `bash -n` on the shared and single-object collection wrappers.
+  Committed and pushed as `7e754bfc7dbea882ee4ffbb08f80f575105e1fcd`
+  (`Add timeouts to YAM demo collection stages`).
+- deployed commit `7e754bfc7` to the A100 checkout by Git bundle because the
+  A100 host does not have GitHub SSH credentials.
+- launched a new commit-matched wave with `CODE_COMMIT=7e754bfc7` and
+  `MAX_ATTEMPTS=300`:
+  - shard `026`: job `29493194`
+  - shards `027`-`047`: jobs `29493305`, `29493306`, `29493307`,
+    `29493308`, `29493309`, `29493310`, `29493311`, `29493312`,
+    `29493313`, `29493314`, `29493315`, `29493316`, `29493317`,
+    `29493318`, `29493319`, `29493320`, `29493321`, `29493322`,
+    `29493323`, `29493324`, and `29493326`
+- fresh inspection of new shard event logs confirms `code_commit=7e754bfc7`
+  and timeout metadata are present. Early new rejects are planner or
+  post-settle-filter rejects, not commit-mismatch rejects.
+- important operational note: do not mutate a shared remote worktree while
+  active jobs from an older `CODE_COMMIT` are still calling scripts from it.
+  For future source or replay fixes while jobs are active, deploy a separate
+  remote worktree path and submit only new jobs against that path.
