@@ -161,7 +161,7 @@ def _truthy(value: str) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _parse_range(value: str) -> tuple[float, float] | None:
+def _parse_range(value):
     parts = value.replace(",", " ").split()
     if len(parts) != 2:
         return None
@@ -172,7 +172,7 @@ def _parse_range(value: str) -> tuple[float, float] | None:
 stable_scene_path = Path(sys.argv[1])
 output_path = Path(sys.argv[2])
 enabled = _truthy(os.environ.get("POST_SETTLE_TARGET_FILTER", "False"))
-payload: dict[str, object] = {
+payload = {
     "enabled": enabled,
     "stable_scene": str(stable_scene_path),
 }
@@ -195,7 +195,7 @@ asset = target.get("asset") if isinstance(target.get("asset"), dict) else {}
 payload["asset_uuid"] = asset.get("uuid")
 payload["root_position"] = pos
 
-reasons: list[str] = []
+reasons = []
 if not isinstance(pos, list) or len(pos) < 3:
     reasons.append("missing_target_root_position")
 else:
