@@ -3,6 +3,44 @@
 Append-only project worklog for the DextrAH privileged FGP teacher training
 thread. This follows the `robotics-cluster-development-core` worklog contract.
 
+## 2026-06-25 00:20 PDT - YAM Qpos And Dynamic Replay Correction
+
+Goal:
+- Apply the user-provided single-YAM gripper-down qpos, force dynamic replay
+  defaults for trajectory replay, and start the corrected 500-demo source
+  collection pipeline.
+
+Change:
+- Updated the single-YAM reset qpos to `(0.0, 1.0, 1.0, -1.5, 0.0, 0.0)`
+  plus open fingers.
+- Changed the generic trajectory replay default from `kinematic` to `dynamic`;
+  collection and L40 replay wrappers already pass dynamic replay explicitly.
+- Fixed the single-object collection wrapper's default attempt cap to scale
+  with `SHARD_TARGET`, so `TOTAL_TARGET=500` cannot silently under-attempt.
+
+Validation:
+- `py_compile` passed for the touched Python files.
+- `bash -n` passed for collection/render/replay/train wrappers.
+- `git diff --check` passed.
+- Commit `023860d486e52610a93cb3c0c0b697e378116788` was pushed to
+  `origin/codex/yam-rgb-diffusion-pickplace/yam-rgb-diffusion-20260624`.
+- Remote cluster source worktree was staged from a git bundle:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-rgb-diffusion-qpos-dynamic-023860d4`.
+
+Job / Artifact:
+- Cancelled stale `yam_fbig_s000` through `yam_fbig_s019` jobs from obsolete
+  source tree `yam-rgb-diffusion-20260624-source-7c82b53e`; they were stuck
+  retrying Slurm step creation and predated this qpos correction.
+- Local RTX 6000 Ada quality smoke failed with Isaac/Kit Vulkan
+  `ERROR_DEVICE_LOST`; no local MP4 or metrics were written.
+- L40 direct SSH remains blocked from local and A100-side paths with
+  publickey/password denial.
+- Submitted corrected A100 one-demo source-collection smoke:
+  job `29479266`, batch
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/yam_demos/yam_qpos_dynamic_smoke_20260625T071817Z`.
+  Current state: pending on `QOSMaxJobsPerUserLimit` behind an unrelated GPU
+  job.
+
 ## 2026-06-24 15:06 PDT - YAM Real Table-Edge Camera And Robot Layout
 
 Goal:
