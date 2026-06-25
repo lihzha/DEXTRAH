@@ -10742,3 +10742,14 @@ Smoke follow-up:
 - Validation passed: `py_compile` for the render script, `bash -n` for the
   shared render and L40 RGB replay wrappers, and a geometry check confirming
   `parallel_to_y=True`.
+- Local visual smoke attempt:
+  `/home/lzha/code/local_results/yam_scene_camera_yaxis_smoke_20260625T033202Z`
+  used the repo-local primitive manifest, `512x512`, `performance` rendering,
+  prompt/noninteractive env vars, and the strict single-GPU Kit flags. It timed
+  out after 240 seconds with exit status 124 before reaching the DEXTRAH
+  `creating_env` log line. No MP4 or metrics file was produced. The log stalled
+  in Isaac/Kit headless window/viewport startup with `Failed to acquire
+  IWindowing interface`, `viewportHandle not found`, and related no-default-
+  window errors, matching the known local workstation renderer blocker rather
+  than a camera-config failure. Process checks showed no remaining local render
+  jobs.
