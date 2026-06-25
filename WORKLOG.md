@@ -11003,3 +11003,36 @@ Smoke follow-up:
   the near edge. The forward shift reduces bottom table-edge/surround exposure
   slightly relative to the prior `(-0.56, -0.10, 0.80)` camera, while a narrow
   right-side surround strip remains due to the high `z=0.8` view.
+
+2026-06-25T06:33:18Z - Render YAM pick-place demo with visible object
+- Goal: render a high-quality demo where the current right-mounted YAM picks a
+  single object from the right side of the table and places it in the left-side
+  bin.
+- Replayed source trajectory:
+  `/home/lzha/code/worktrees/DEXTRAH/yam-success-all-20260623T223903Z/artifacts/yam_two_bin_success_profile_smoke2/iter_02_clutter_00/trajectory_with_return_home.json`.
+  Because that trajectory predates the current robot `Y` shift, fixed the demo
+  object/bin layout at object `(-0.38, -0.52)` and bin center
+  `(-0.30, -0.045)` to match the current right-mounted robot frame.
+- Tried the trajectory's original red target asset first, but the changed
+  contact geometry caused the grasp to miss and the object stayed at the start.
+  The validated primitive small cuboid succeeded physically but was too white
+  and hard to see, so added
+  `dextrah_lab/assets/primitives/yam_demo_colored_small_cuboid_manifest.json`
+  with the same 25 x 25 x 60 mm bounds and a red visual material.
+- Final render:
+  `/home/lzha/code/local_results/yam_pickplace_demo_colored_cuboid_camera_yneg018_quality_20260625T063318Z_1024/yam_pickplace_demo_colored_cuboid_camera_yneg018_quality.mp4`.
+  Launch used `--rendering_mode quality`, `1024x1024`, `12 fps`, `8.0 s`,
+  dynamic trajectory replay, realtime timing, prompt-safe EULA/CI environment
+  variables, `DISPLAY=:1`, and explicit single-GPU Kit args.
+- Evidence: `ffprobe` reports `1024x1024`, `12 fps`, `8.0 s`, and `96` frames.
+  `metrics.json` records camera eye `[-0.52, -0.18, 0.80]`, target
+  `[-0.26, -0.18, 0.0]`, `app_rendering_mode="quality"`, active object
+  `demo_red_small_5_cuboid`, and final object position
+  `[-0.2397406995, 0.0066328580, 0.0419999473]`, inside the bin bounds
+  `x=[-0.40, -0.20]`, `y=[-0.125, 0.035]`.
+- Opened with `viz-open`:
+  `http://localhost:8765/view?path=local_results/yam_pickplace_demo_colored_cuboid_camera_yneg018_quality_20260625T063318Z_1024/yam_pickplace_demo_colored_cuboid_camera_yneg018_quality.mp4`.
+- Visual inspection of frames `0000`, `0022`, `0038`, `0058`, `0078`, and
+  `0092`: the red cuboid is visible initially, carried by the gripper, released
+  into the bin, and visible in the bin after the robot returns. The camera sees
+  mostly tabletop with only a narrow edge/surround strip.

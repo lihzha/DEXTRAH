@@ -1,0 +1,17 @@
+{
+  "asset_root": "../../..",
+  "source": "repo_primitives_yam_pick_place_colored_demo",
+  "objects": [
+    {
+      "uuid": "demo_red_small_5_cuboid",
+      "name": "demo_red_small_5_cuboid",
+      "primitive_shape": "cuboid",
+      "primitive_size": [0.025, 0.025, 0.060],
+      "primitive_color": [0.78, 0.14, 0.08],
+      "scale": 1.0,
+      "scaled_bounds_min": [-0.0125, -0.0125, -0.0300],
+      "scaled_bounds_max": [0.0125, 0.0125, 0.0300],
+      "grasp_size": 0.060
+    }
+  ]
+}
