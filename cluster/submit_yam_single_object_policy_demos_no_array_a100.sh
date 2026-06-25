@@ -13,6 +13,7 @@ START_SEED="${START_SEED:-2400000}"
 JOB_NAME_PREFIX="${JOB_NAME_PREFIX:-yam_policy_demo}"
 LOG_DIR="${LOG_DIR:-$NFS_ROOT/slurm_logs/dextrah}"
 WRAPPER="${WRAPPER:-$CODE_NFS/cluster/sbatch_collect_yam_single_object_policy_demos_1gpu.sh}"
+SBATCH_EXCLUDE="${SBATCH_EXCLUDE:-}"
 CODE_COMMIT="${CODE_COMMIT:-}"
 if [ -z "$CODE_COMMIT" ] && git -C "$CODE_NFS" rev-parse HEAD >/dev/null 2>&1; then
   CODE_COMMIT="$(git -C "$CODE_NFS" rev-parse HEAD)"
@@ -49,6 +50,7 @@ payload = {
     "shard_count": int("$SHARD_COUNT"),
     "max_concurrent": int("$MAX_CONCURRENT"),
     "start_seed": int("$START_SEED"),
+    "sbatch_exclude": "$SBATCH_EXCLUDE",
     "wrapper": "$WRAPPER",
     "axis_convention": {
         "x": "YAM forward/back",
@@ -70,9 +72,13 @@ for shard_index in $(seq 0 "$((SHARD_COUNT - 1))"); do
   done
   shard_target="$(( (TOTAL_TARGET + SHARD_COUNT - 1 - shard_index) / SHARD_COUNT ))"
   job_name="${JOB_NAME_PREFIX}_s$(printf '%03d' "$shard_index")"
+  sbatch_args=(--job-name="$job_name")
+  if [ -n "$SBATCH_EXCLUDE" ]; then
+    sbatch_args+=(--exclude="$SBATCH_EXCLUDE")
+  fi
   job_id="$(
     sbatch --parsable \
-      --job-name="$job_name" \
+      "${sbatch_args[@]}" \
       --export=ALL,CODE_NFS="$CODE_NFS",RESULTS_NFS="$RESULTS_NFS",BATCH_NAME="$BATCH_NAME",BATCH_DIR="$BATCH_DIR",TOTAL_TARGET="$TOTAL_TARGET",SHARD_COUNT="$SHARD_COUNT",SHARD_INDEX="$shard_index",SHARD_TARGET="$shard_target",START_SEED="$START_SEED",CODE_COMMIT="$CODE_COMMIT" \
       "$WRAPPER"
   )"
