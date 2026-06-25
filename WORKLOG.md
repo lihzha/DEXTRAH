@@ -10822,3 +10822,33 @@ Smoke follow-up:
   robot entering from the near table edge. The local `performance` render is
   visibly noisy; L40 quality replay remains the path for final photorealistic
   RGB observations.
+
+2026-06-25T04:36:00Z - Move X-parallel YAM scene camera left
+- User asked to move the scene camera left a little bit.
+- Interpreted "left" using the YAM coordinate convention as `+Y`. Shifted the
+  default scene camera 4 cm left while preserving the X-parallel optical-axis
+  projection: eye changed from `(-0.56, -0.18, 0.63)` to
+  `(-0.56, -0.14, 0.63)`, and target changed from `(-0.30, -0.18, 0.00)` to
+  `(-0.30, -0.14, 0.00)`.
+- Validation passed:
+  `/home/lzha/code/.venvs/dextrah-isaaclab/bin/python -m py_compile
+  dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py`,
+  `bash -n cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh
+  cluster/sbatch_replay_yam_policy_rgb_l40_1gpu.sh`, and a geometry check
+  confirmed `delta_xy=(0.26, 0.0)`, `parallel_to_x=True`, and
+  `left_shift_m=0.04`.
+- Successful local smoke render:
+  `/home/lzha/code/local_results/yam_scene_camera_xaxis_left04_nocudavis_20260625T043242Z_320/settle.mp4`.
+  The launch used the no-`CUDA_VISIBLE_DEVICES` variant that avoids the local
+  pre-task renderer stall, with `--device cuda:0`, explicit single-GPU Kit
+  selection, `320x320`, 2 frames, and `app_rendering_mode="performance"`.
+- Evidence: `ffprobe` reports `320x320`, 2 frames, 0.5 seconds. `metrics.json`
+  records scene camera eye `[-0.56, -0.14, 0.63]`, target
+  `[-0.30, -0.14, 0.0]`, `xy_projection_axis="x"`, and
+  `shared_y_jitter=0.0`.
+- Opened with `viz-open`:
+  `http://localhost:8765/view?path=local_results/yam_scene_camera_xaxis_left04_nocudavis_20260625T043242Z_320/settle.mp4`.
+- Visual inspection: compared to the prior x-parallel smoke, the frame shows
+  more of the left-side bin while keeping the object on the right and the robot
+  entering from the near table edge. Background remains out of view. The local
+  render is still noisy because it uses the quick `performance` preset.
