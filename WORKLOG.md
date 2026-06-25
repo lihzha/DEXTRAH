@@ -11168,3 +11168,43 @@ Smoke follow-up:
   the scene camera still sees no room background.
 - Opened with `viz-open`:
   `http://localhost:8765/view?path=local_results/yam_object_center_right_initial_visibility_quality_20260625T070633Z_640/initial_visibility.mp4`.
+
+2026-06-25T08:28:00Z - Start qpos/dynamic source-demo collection and fix planner base mismatch
+- User requested the gripper-down default qpos `(0.0, 1.0, 1.0, -1.5,
+  0.0, 0.0)` and dynamic replay for all data collection/eval/replay paths.
+- Committed and pushed `023860d4`: updated
+  `MOLMOACT2_SINGLE_HOME_JOINT_POS` to the requested arm qpos with fingers at
+  `0.0`; changed tabletop replay defaults and A100 collection defaults to
+  dynamic replay; made `MAX_ATTEMPTS` scale with shard target.
+- Committed and pushed `01dca3a4`: removed Python 3.10-only type annotations
+  from the cluster-side post-settle filter helper after the first smoke failed
+  on the older login Python with `TypeError: 'type' object is not
+  subscriptable`.
+- Submitted smoke `29480714` from `01dca3a4`; it failed before project code
+  on A100 node `batch-block7-01934` with CUDA/Vulkan device initialization
+  errors (`CUDA error 999`, `No device could be created`). Cancelled it and
+  added `SBATCH_EXCLUDE` support in the no-array A100 submitter.
+- Committed and pushed `c603869a`: `SBATCH_EXCLUDE` is recorded in
+  `no_array_submitter_config.json` and forwarded to each `sbatch` shard launch,
+  so full collection can avoid renderer-bad nodes.
+- Retry smoke `29480756` from `01dca3a4` on `batch-block4-2007` reached
+  settle, planning, and dynamic replay. Metrics showed the requested qpos was
+  restored exactly at replay start and dynamic replay was active, but
+  validation rejected the trajectory: `min_tcp_object_dist` was about
+  `0.229 m`, `all_objects_lifted=false`, and `all_objects_inside_bin=false`.
+  Fetched and opened the failed replay:
+  `http://localhost:8765/view?path=cluster_results/a100/yam_qpos_dynamic_smoke_filterfix_retry/attempt_66002000/replay/yam_pick_place.mp4`.
+- Diagnosis: Isaac task mounts the single YAM at `(-0.65, -0.25, 0.01)` on
+  the table-right half, while `plan_yam_graspgenx_curobo.py` still used
+  `YAM_ROBOT_BASE = [-0.65, 0.0, 0.01]`. The 25 cm planner/sim Y-offset
+  matches the observed TCP-object miss. Cancelled the retry smoke before
+  wasting attempts.
+- Committed and pushed `119b8809`: changed the planner base to
+  `[-0.65, -0.25, 0.01]`, matching
+  `DextrahSingleYAMMultiObjectGraspEnvCfg.robot_base_pos`.
+- Staged `119b8809` to remote worktree
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-rgb-diffusion-basefix-119b8809`
+  and launched corrected smoke `29480936` with
+  `BATCH_NAME=yam_qpos_dynamic_smoke_basefix_20260625T082731Z`,
+  `START_SEED=66003000`, `MAX_ATTEMPTS=8`, dynamic replay, and
+  `--exclude=batch-block7-01934`.
