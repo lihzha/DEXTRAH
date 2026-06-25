@@ -10753,3 +10753,35 @@ Smoke follow-up:
   window errors, matching the known local workstation renderer blocker rather
   than a camera-config failure. Process checks showed no remaining local render
   jobs.
+
+2026-06-25T03:55:00Z - Render Y-parallel YAM scene camera
+- User asked to keep trying until the corrected camera successfully rendered.
+- Failed local attempts:
+  - `yam_scene_camera_yaxis_retry_20260625T034046Z_320` used
+    `--headless --device cuda:0` and full single-GPU Kit args, but hit
+    `ERROR_DEVICE_LOST` before task parsing and exited 139.
+  - `yam_scene_camera_yaxis_retry_20260625T034338Z_320_nocudavis` removed
+    CUDA visibility overrides, but Kit enumerated both GPUs and stalled before
+    task parsing.
+  - `yam_scene_camera_yaxis_pty_20260625T034506Z_320` used PTY with the simple
+    known-good command shape, but stalled before task parsing.
+- Successful render:
+  `/home/lzha/code/local_results/yam_scene_camera_yaxis_ptykit_20260625T034626Z_320`.
+  The successful recipe was PTY execution with prompt/noninteractive env vars,
+  `--headless --device cuda:0 --rendering_mode performance`, explicit
+  single-GPU Kit settings, repo-local primitive object assets, `320x320`, and
+  2 frames at 4 fps.
+- Evidence: `ffprobe` reports `320x320`, 2 frames, 0.5 seconds. `metrics.json`
+  records scene camera eye `[-0.56, -0.18, 0.63]`, target
+  `[-0.56, 0.08, 0.0]`, `xy_projection_axis="y"`, and `shared_x_jitter=0.0`.
+  Opened with `viz-open`:
+  `http://localhost:8765/view?path=local_results/yam_scene_camera_yaxis_ptykit_20260625T034626Z_320/settle.mp4`.
+- Visual inspection: the render is valid and confirms the requested y-parallel
+  optical-axis projection, but the frame is tightly cropped toward the
+  bin/table edge and shows little robot context. I tried centered-X y-parallel
+  candidates at `eye.x == target.x == -0.30`
+  (`yam_scene_camera_yaxis_ptykit_20260625T034728Z_x030_320`,
+  `yam_scene_camera_yaxis_ptykit_20260625T034932Z_x030_retry_320`, and
+  `yam_scene_camera_yaxis_ptykit_20260625T035052Z_x030_nofabric_320`), but each
+  stalled before task parsing. L40 fallback checks on l401/l402/l403 were
+  blocked by SSH `Permission denied (publickey,password)`.
