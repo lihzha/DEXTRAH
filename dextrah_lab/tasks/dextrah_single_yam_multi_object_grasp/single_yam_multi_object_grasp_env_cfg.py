@@ -96,7 +96,7 @@ class DextrahSingleYAMMultiObjectGraspEnvCfg(MultiObjectGraspTaskCfg, DirectRLEn
     table_size_y = 1.20
 
     pickup_x = -0.30
-    pickup_y = -0.25
+    pickup_y = -0.18
 
     # Success and reset behavior for the target object.
     cube_lift_height = 0.08

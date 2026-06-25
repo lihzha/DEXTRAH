@@ -11093,3 +11093,40 @@ Smoke follow-up:
   `http://localhost:8765/view?path=local_results/yam_pickplace_demo_homepose_camera_left10_binaware_multicam_quality_20260625T065158Z_1024/scene_wrist_rgb_side_by_side.mp4`
   and
   `http://localhost:8765/view?path=local_results/yam_pickplace_demo_homepose_camera_left10_binaware_multicam_quality_20260625T065158Z_1024/yam_pickplace_demo_homepose_camera_left10_binaware_multicam_quality.mp4`.
+
+2026-06-25T07:07:08Z - Move single-object data starts toward table center for scene-camera visibility
+- User noted that during data collection the object should be initialized more
+  toward the table center so the scene camera captures it at the beginning.
+- Tightened the randomized single-object policy object region from the older
+  right-edge-biased ranges to a center-right tabletop band:
+  `x=[-0.34, -0.22]`, `y=[-0.24, -0.12]`. This keeps the object on the robot
+  right side (`negative Y`) while moving it closer to the scene camera target
+  and away from the near/right crop edge.
+- Updated matching defaults in:
+  `dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py`,
+  `cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh`, and
+  `cluster/sbatch_collect_yam_single_object_policy_demos_1gpu.sh`.
+- Moved the deterministic task pickup lane in
+  `dextrah_lab/tasks/dextrah_single_yam_multi_object_grasp/single_yam_multi_object_grasp_env_cfg.py`
+  from `pickup_y=-0.25` to `pickup_y=-0.18`, so non-randomized debug/eval/data
+  starts are consistent with the same center-right lane.
+- Validation passed:
+  `/home/lzha/code/.venvs/dextrah-isaaclab/bin/python -m py_compile
+  dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py
+  dextrah_lab/tasks/dextrah_single_yam_multi_object_grasp/single_yam_multi_object_grasp_env_cfg.py`
+  and `bash -n cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh
+  cluster/sbatch_collect_yam_single_object_policy_demos_1gpu.sh`.
+- Rendered a short quality framing sample with no explicit camera override:
+  `/home/lzha/code/local_results/yam_object_center_right_initial_visibility_quality_20260625T070633Z_640/initial_visibility.mp4`.
+  The launch used `--rendering_mode quality`, `640x640`, `4 fps`, `1.0 s`,
+  the updated default object ranges, camera eye `[-0.52, -0.08, 0.80]`, target
+  `[-0.26, -0.08, 0.0]`, and zero camera jitter.
+- Evidence: `ffprobe` reports `640x640`, 4 frames, 1.0 second. `metrics.json`
+  records object region center `[-0.28, -0.18]`, actual initial target
+  `[-0.3319662809, -0.1266227365, 0.0360]`, and
+  `app_rendering_mode="quality"`.
+- Visual inspection of `frame_0000.png`: the red cuboid is clearly visible
+  near the center-right tabletop between the robot and bin at the beginning;
+  the scene camera still sees no room background.
+- Opened with `viz-open`:
+  `http://localhost:8765/view?path=local_results/yam_object_center_right_initial_visibility_quality_20260625T070633Z_640/initial_visibility.mp4`.

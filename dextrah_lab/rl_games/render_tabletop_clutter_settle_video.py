@@ -129,8 +129,8 @@ parser.add_argument(
     default=False,
     help="Randomize the single-YAM one-object policy scene layout and visual conditions before env creation.",
 )
-parser.add_argument("--yam_policy_object_x_range", type=float, nargs=2, default=(-0.42, -0.22))
-parser.add_argument("--yam_policy_object_y_range", type=float, nargs=2, default=(-0.42, -0.18))
+parser.add_argument("--yam_policy_object_x_range", type=float, nargs=2, default=(-0.34, -0.22))
+parser.add_argument("--yam_policy_object_y_range", type=float, nargs=2, default=(-0.24, -0.12))
 parser.add_argument("--yam_policy_bin_x_range", type=float, nargs=2, default=(-0.34, -0.10))
 parser.add_argument("--yam_policy_bin_y_range", type=float, nargs=2, default=(0.20, 0.46))
 parser.add_argument("--yam_policy_bin_inner_size_x_range", type=float, nargs=2, default=(0.22, 0.32))
