@@ -495,3 +495,43 @@
 - validation passed locally:
   `python3 -m py_compile dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py`
   and `bash -n` on the affected Slurm wrappers and submitters.
+- committed patch as `92fad5038b4e80c48b1129b5c4126dd938c68e5b` and pushed
+  branch `codex/yam-rgb-diffusion-pickplace/yam-rgb-diffusion-20260624`.
+  Deployed the exact commit by Git bundle to:
+  - L40 worktree:
+    `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-rgb-diffusion-l40-0053cad6`
+  - A100 worktree:
+    `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-rgb-diffusion-a100-92fad503`
+- post-patch L40 default-camera smoke
+  `yam_rgb_default_camera_postpatch_20260625T165236Z`, job `1041929`,
+  accepted `1/1` using default camera randomization, quality rendering,
+  dynamic replay, 256x256 scene+wrist RGB, and the same gripper gains.
+  Visual inspection showed table-dominated frames with no meaningful scene
+  background leakage. Local artifacts:
+  `/home/lzha/code/cluster_results/l401/yam_rgb_default_camera_postpatch_20260625T165236Z/inspection/postpatch_default_scene_wrist_contact_sheet.jpg`
+  and
+  `/home/lzha/code/cluster_results/l401/yam_rgb_default_camera_postpatch_20260625T165236Z/validation/yam_rgb_replay.mp4`.
+
+## 2026-06-25T16:59:00Z Centered-Y Source Regeneration Launch
+
+- launched regenerated A100 source collection from commit
+  `92fad5038b4e80c48b1129b5c4126dd938c68e5b` to improve initial object
+  visibility before L40 RGB replay/training.
+- batch:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/yam_demos/yam_single_object_center_y_dynamic_500_20260625T165831Z`
+- exact submit settings:
+  `TOTAL_TARGET=500`, `SHARD_COUNT=50`, `MAX_CONCURRENT=50`,
+  `START_SEED=79000000`, `JOB_NAME_PREFIX=yam_centery500`,
+  `YAM_POLICY_OBJECT_Y_RANGE=-0.16 -0.04`,
+  `SCRIPTED_BIN_DROP_Y_OFFSET=-0.08`, dynamic replay, and gripper gains
+  `2.0/0.25/5.0`.
+- Slurm accepted shards `0`-`21` before hitting
+  `QOSMaxSubmitJobPerUserLimit`; submitted jobs are `29491998`, `29492000`,
+  `29492001`, `29492002`, `29492003`, `29492004`, `29492006`, `29492007`,
+  `29492009`, `29492010`, `29492011`, `29492012`, `29492013`, `29492014`,
+  `29492015`, `29492016`, `29492017`, `29492018`, `29492019`, `29492020`,
+  `29492021`, and `29492023`. Remaining shards `22`-`49` need rolling
+  submission as the queue clears.
+- early log checks on jobs `29491998`, `29492000`, `29492001`, and `29492002`
+  confirm the new object-y range, dynamic replay mode, commit hash, and gripper
+  gains. Startup warnings are standard headless Isaac warnings.
