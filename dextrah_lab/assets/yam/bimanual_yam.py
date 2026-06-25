@@ -140,6 +140,18 @@ MOLMOACT2_SINGLE_REST_JOINT_POS = {
     "right_finger": -0.02,
 }
 
+MOLMOACT2_SINGLE_HOME_JOINT_POS = {
+    # Matches yam_linear.xml keyframe named "home" for the gripper-down reset pose.
+    "joint1": 0.0,
+    "joint2": 1.047,
+    "joint3": 1.047,
+    "joint4": 0.0,
+    "joint5": 0.0,
+    "joint6": 0.0,
+    "left_finger": 0.0,
+    "right_finger": 0.0,
+}
+
 BIMANUAL_YAM_CFG = ArticulationCfg(
     prim_path="{ENV_REGEX_NS}/Robot",
     spawn=sim_utils.UsdFileCfg(
@@ -250,7 +262,7 @@ SINGLE_YAM_CFG = ArticulationCfg(
     init_state=ArticulationCfg.InitialStateCfg(
         pos=(0.0, 0.0, 0.0),
         rot=(1.0, 0.0, 0.0, 0.0),
-        joint_pos=MOLMOACT2_SINGLE_REST_JOINT_POS,
+        joint_pos=MOLMOACT2_SINGLE_HOME_JOINT_POS,
         joint_vel={".*": 0.0},
     ),
     actuators={

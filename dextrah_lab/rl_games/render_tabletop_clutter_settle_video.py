@@ -26,8 +26,8 @@ from isaaclab.app import AppLauncher
 
 DEFAULT_FRANKA_CAMERA_EYE = (-0.10, -1.05, 1.36)
 DEFAULT_FRANKA_CAMERA_TARGET = (-0.62, 0.0, 0.78)
-DEFAULT_YAM_CAMERA_EYE = (-0.52, -0.10, 0.80)
-DEFAULT_YAM_CAMERA_TARGET = (-0.26, -0.10, 0.00)
+DEFAULT_YAM_CAMERA_EYE = (-0.52, -0.08, 0.80)
+DEFAULT_YAM_CAMERA_TARGET = (-0.26, -0.08, 0.00)
 DEFAULT_TASK = "Dextrah-Single-YAM-Single-Object-Policy-Grasp"
 SURFACE_TEXTURE_EXTS = (".png", ".jpg", ".jpeg")
 DOME_TEXTURE_EXTS = (".hdr", ".exr")
@@ -3916,6 +3916,7 @@ def main() -> None:
     demo_start_joint_pos = None
     demo_table_rejection_target_joint_pos = None
     scripted_transport_desired_drop_env = None
+    scripted_transport_desired_drop_source = None
     scripted_transport_drop_segment: tuple[int, int] | None = None
     if single_yam_demo_enabled:
         if robot is not None:
@@ -3972,16 +3973,34 @@ def main() -> None:
                     "source_fps": float(_trajectory_source_fps(demo_trajectory)),
                     "source_frames": int(len(demo_trajectory["joint_positions"])),
                 }
+            goal_bin_info_fn = getattr(task_env, "_tabletop_goal_bin_info", None)
+            goal_bin_info = goal_bin_info_fn() if callable(goal_bin_info_fn) else None
+            if isinstance(goal_bin_info, dict):
+                drop_z = float(goal_bin_info.get("inner_top_z", goal_bin_info.get("goal_z", 0.0))) + 0.05
+                drop_env = torch.as_tensor(
+                    [
+                        [
+                            float(goal_bin_info["center_x"]),
+                            float(goal_bin_info["center_y"]),
+                            drop_z,
+                        ]
+                    ],
+                    dtype=task_env.tcp_pos.dtype,
+                    device=task_env.device,
+                )
+                scripted_transport_desired_drop_env = drop_env.repeat(task_env.num_envs, 1)
+                scripted_transport_desired_drop_source = "current_goal_bin"
             scripted_place = demo_trajectory.get("scripted_place")
             if isinstance(scripted_place, dict):
                 desired_drop = scripted_place.get("desired_object_drop_world")
-                if isinstance(desired_drop, (list, tuple)) and len(desired_drop) == 3:
+                if scripted_transport_desired_drop_env is None and isinstance(desired_drop, (list, tuple)) and len(desired_drop) == 3:
                     drop_world = torch.as_tensor(
                         desired_drop,
                         dtype=task_env.tcp_pos.dtype,
                         device=task_env.device,
                     ).view(1, 3)
                     scripted_transport_desired_drop_env = drop_world.repeat(task_env.num_envs, 1) - task_env.scene.env_origins
+                    scripted_transport_desired_drop_source = "trajectory_scripted_place"
                 segments = demo_trajectory.get("segments")
                 if isinstance(segments, list):
                     for segment in segments:
@@ -4439,6 +4458,7 @@ def main() -> None:
                 "desired_drop_env": None
                 if scripted_transport_desired_drop_env is None
                 else _tensor_list(scripted_transport_desired_drop_env),
+                "desired_drop_source": scripted_transport_desired_drop_source,
                 "drop_segment": None
                 if scripted_transport_drop_segment is None
                 else {

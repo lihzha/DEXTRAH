@@ -10,7 +10,7 @@ from isaaclab.sim import PhysxCfg, SimulationCfg
 from isaaclab.sim.spawners.materials.physics_materials_cfg import RigidBodyMaterialCfg
 from isaaclab.utils import configclass
 
-from dextrah_lab.assets.yam.bimanual_yam import MOLMOACT2_SINGLE_REST_JOINT_POS, SINGLE_YAM_CFG
+from dextrah_lab.assets.yam.bimanual_yam import MOLMOACT2_SINGLE_HOME_JOINT_POS, SINGLE_YAM_CFG
 from dextrah_lab.tasks.dextrah_multi_object_grasp.multi_object_grasp_cfg import (
     GRASPGEN_FULL_OBJAVERSE_ASSET_ROOT,
     GRASPGEN_FULL_OBJAVERSE_MANIFEST_PATH,
@@ -27,7 +27,7 @@ def _single_yam_robot_cfg(robot_base_pos: tuple[float, float, float]) -> Articul
         init_state=ArticulationCfg.InitialStateCfg(
             pos=robot_base_pos,
             rot=(1.0, 0.0, 0.0, 0.0),
-            joint_pos=MOLMOACT2_SINGLE_REST_JOINT_POS,
+            joint_pos=MOLMOACT2_SINGLE_HOME_JOINT_POS,
             joint_vel={".*": 0.0},
         ),
     )

@@ -11036,3 +11036,60 @@ Smoke follow-up:
   `0092`: the red cuboid is visible initially, carried by the gripper, released
   into the bin, and visible in the bin after the robot returns. The camera sees
   mostly tabletop with only a narrow edge/surround strip.
+
+2026-06-25T06:53:56Z - Shift camera left, use YAM gripper-down home pose, and render wrist RGB
+- User asked to move the scene camera left by 10 cm, set the YAM default pose to
+  the existing gripper-pointing-down pose for data collection/eval/everything,
+  and render the wrist observation side by side.
+- Changed `DEFAULT_YAM_CAMERA_EYE` / `DEFAULT_YAM_CAMERA_TARGET` in
+  `dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py` from
+  `(-0.52, -0.10, 0.80)` / `(-0.26, -0.10, 0.0)` to
+  `(-0.52, -0.08, 0.80)` / `(-0.26, -0.08, 0.0)`. This is the requested
+  10 cm left shift relative to the last accepted `y=-0.18` render while
+  preserving the x-parallel scene-camera projection.
+- Added `MOLMOACT2_SINGLE_HOME_JOINT_POS` in
+  `dextrah_lab/assets/yam/bimanual_yam.py`, matching the single YAM
+  `yam_linear.xml` home keyframe `0, 1.047, 1.047, 0, 0, 0, 0, 0`. Switched
+  both `SINGLE_YAM_CFG` and
+  `DextrahSingleYAMMultiObjectGraspEnvCfg._single_yam_robot_cfg()` to use it,
+  so direct asset use, data collection, eval, and reset defaults share the
+  gripper-down home pose.
+- First multicam render with the new home pose and camera completed, but
+  inspection found a real bug: scripted target transport used the replay JSON's
+  old `desired_object_drop_world` Y coordinate `0.205` while the current
+  randomized goal bin was at `y=-0.045`. Patched trajectory replay to prefer
+  the active env's `_tabletop_goal_bin_info()` for the scripted drop target,
+  using bin center XY and `inner_top_z + 0.05`; it records
+  `desired_drop_source="current_goal_bin"` in metrics. The JSON drop point is
+  now only a fallback when no current goal bin exists.
+- Validation passed:
+  `/home/lzha/code/.venvs/dextrah-isaaclab/bin/python -m py_compile
+  dextrah_lab/assets/yam/bimanual_yam.py
+  dextrah_lab/tasks/dextrah_single_yam_multi_object_grasp/single_yam_multi_object_grasp_env_cfg.py
+  dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py`.
+- Final quality render:
+  `/home/lzha/code/local_results/yam_pickplace_demo_homepose_camera_left10_binaware_multicam_quality_20260625T065158Z_1024/yam_pickplace_demo_homepose_camera_left10_binaware_multicam_quality.mp4`.
+  Launch used `--rendering_mode quality`, `1024x1024`, `12 fps`, `8.0 s`,
+  prompt-safe noninteractive/EULA env vars, `DISPLAY=:1`, explicit single-GPU
+  Kit args, the D405 link-6 wrist camera sensor, and `320x320` recorded policy
+  RGB streams every 16 sim steps.
+- Evidence: `ffprobe` reports the main video is `1024x1024`, 96 frames,
+  8.0 seconds. `metrics.json` records scene camera eye `[-0.52, -0.08, 0.80]`,
+  target `[-0.26, -0.08, 0.0]`, `xy_projection_axis="x"`, and
+  `app_rendering_mode="quality"`. The D405 wrist sensor was prepared at
+  `/World/envs/env_0/Robot/arm/link_6/wrist_d405_policy_sensor`.
+- Final object/bin check: object final position
+  `[-0.3001687527, -0.0452003665, 0.0420000069]` is inside the current bin
+  bounds `x=[-0.40, -0.20]`, `y=[-0.125, 0.035]`. The scripted drop target
+  was `[-0.3000000119, -0.0450000018, 0.1819999963]` from
+  `current_goal_bin`.
+- Side-by-side observation video:
+  `/home/lzha/code/local_results/yam_pickplace_demo_homepose_camera_left10_binaware_multicam_quality_20260625T065158Z_1024/scene_wrist_rgb_side_by_side.mp4`.
+  It is `640x320`, 98 frames, 8.17 seconds, with `scene_rgb` on the left and
+  `wrist_rgb` on the right. Preview inspection of frames `0000`, `0049`, and
+  `0097` showed nonblank scene and wrist streams, visible grasp/drop context,
+  and the red object resting inside the bin at the end.
+- Opened artifacts with `viz-open`:
+  `http://localhost:8765/view?path=local_results/yam_pickplace_demo_homepose_camera_left10_binaware_multicam_quality_20260625T065158Z_1024/scene_wrist_rgb_side_by_side.mp4`
+  and
+  `http://localhost:8765/view?path=local_results/yam_pickplace_demo_homepose_camera_left10_binaware_multicam_quality_20260625T065158Z_1024/yam_pickplace_demo_homepose_camera_left10_binaware_multicam_quality.mp4`.
