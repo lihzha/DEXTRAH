@@ -268,8 +268,8 @@ class DextrahSingleYAMSingleObjectPolicyGraspEnvCfg(DextrahSingleYAMMultiObjectG
     tabletop_goal_bin_enabled = True
     tabletop_goal_bin_center_offset_x = -0.10
     tabletop_goal_bin_center_offset_y = 0.20
-    tabletop_goal_bin_inner_size_x = 0.42
-    tabletop_goal_bin_inner_size_y = 0.40
+    tabletop_goal_bin_inner_size_x = 0.28
+    tabletop_goal_bin_inner_size_y = 0.22
     tabletop_goal_bin_wall_thickness = 0.02
     tabletop_goal_bin_bottom_thickness = 0.012
     tabletop_goal_bin_wall_height = 0.12
