@@ -11293,3 +11293,39 @@ Smoke follow-up:
   Patched `prepare_yam_assets.py` to make the MJCF copy idempotent with
   `dirs_exist_ok=True`, preventing this startup race in subsequent L40 replay
   batches. The failed prefix rows will be replayed later.
+
+2026-06-25T20:23:00Z - Correct L40 RGB replay camera randomization
+- Inspected the early L40 prefix replay artifacts and found the visual framing
+  was acceptable, but `trajectory_dataset.npz.metadata.json` recorded
+  `"scene_camera": {"randomized": false, ...}`. Root cause: the prefix launch
+  exported explicit `CAMERA_EYE=(-0.50, 0.04, 0.68)` and
+  `CAMERA_TARGET=(-0.25, 0.04, 0.03)`. The render wrapper passes those through
+  as `--camera_eye/--camera_target`, and the Python randomization path only
+  jitters the default YAM camera when both CLI camera overrides are absent.
+- Marked `yam_rgb_quality_center_y_prefix250_20260625T1953Z` as superseded for
+  final training data and cancelled its `yam_rgb_cy250a_*` jobs. Kept the
+  fetched fixed-camera artifacts only as debug evidence.
+- Copied generated YAM MJCF/USD assets from the earlier successful L40 worktree
+  into the patched downstream worktree
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-rgb-diffusion-l40-dp-676632ea`
+  to avoid repeated first-use conversion.
+- Relaunched the first-250 replay as
+  `yam_rgb_quality_center_y_prefix250_camjit_20260625T2014Z` from commit
+  `676632ea8f0d6b1cf3300f2b10fab9665088f907`, with `CAMERA_EYE` and
+  `CAMERA_TARGET` unset, `RENDERING_MODE=quality`, `1024x1024` render,
+  recorded scene/wrist RGB `256x256`, dynamic replay, and gripper gains
+  `2.0/0.25/5.0`. Submitter PID `2498929`; initial jobs `1042756`-`1042775`.
+- Verified first accepted corrected row
+  `shard_000/row_000000/trajectory_dataset.npz`: metadata records
+  `"scene_camera.randomized": true`, camera eye
+  `[-0.5084234813, 0.0399455140, 0.6660028372]`, target
+  `[-0.2530419320, 0.0399455140, 0.0307849949]`, jitter ranges
+  `eye=(0.018,0.018,0.018)`, `target=(0.012,0.012,0.012)`, and
+  `xy_projection_axis="x"`. Wrist D405 sensor stream is enabled.
+- Fetched the corrected row-0 video/dataset locally and opened:
+  `http://localhost:8765/view?path=cluster_results/l401/yam_rgb_quality_center_y_prefix250_camjit_20260625T2014Z/samples/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/validations/yam_rgb_quality_center_y_prefix250_camjit_20260625T2014Z_s000_row000000/yam_rgb_replay.mp4`
+  and
+  `http://localhost:8765/view?path=cluster_results/l401/yam_rgb_quality_center_y_prefix250_camjit_20260625T2014Z/inspection/row000000_scene_wrist_contact_sheet.jpg`.
+  Visual inspection: scene stream is table-dominant with bin/object visible and
+  no meaningful room background; wrist stream follows object/bin through grasp
+  and drop.
