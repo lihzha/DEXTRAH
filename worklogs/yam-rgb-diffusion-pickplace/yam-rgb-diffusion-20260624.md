@@ -372,3 +372,26 @@
   excludes `batch-block7-01934,batch-block5-00055,batch-block7-01554`.
   First submitted shards are `29481954`, `29481955`, `29481957`, and
   `29481958`.
+
+## 2026-06-25T09:58:31Z Full Source Wave Monitoring
+
+- stopped the conservative no-array submitter after the first four shards and
+  manually submitted remaining shards `4`-`19` into the same batch directory
+  with the same commit/settings, because the initial four-concurrent throttle
+  was too slow for the 500-demo target. Slurm accepted all remaining shards;
+  20 shard jobs are running under prefix `yam_yoff08_500`.
+- aggregate monitor at `09:58:31Z`: `19` accepted, `46` rejected. Reject
+  stages were `planner=31`, `post_settle_filter=10`, `validation=5`.
+  Validation rejects were mostly real missed lifts or out-of-bin drops; only
+  one was a marginal clearance-only reject, so the validator was left
+  unchanged.
+- current accepted source visual sample copied to
+  `/home/lzha/code/cluster_results/a100/yam_yoff08_500_sample/`; contact sheet
+  `contact_sheet.jpg` shows the object visible at the start, robot/bin/table
+  visible throughout, and only a very small non-table edge sliver in some
+  frames.
+- L40 direct SSH remains blocked from both local host and A100:
+  `l401/l402/l403/l40data` all deny public-key/password auth, and no local
+  SSH agent is available to forward. A100 Slurm does not expose the standalone
+  L40 hosts, so high-quality RGB replay is still gated on resolving L40 access
+  once source rows are ready.
