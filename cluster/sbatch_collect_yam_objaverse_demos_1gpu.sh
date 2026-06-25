@@ -35,6 +35,10 @@ if [ -z "${SHARD_TARGET:-}" ]; then
 fi
 START_SEED="${START_SEED:-91000}"
 MAX_ATTEMPTS="${MAX_ATTEMPTS:-$((SHARD_TARGET * 5 + 5))}"
+SETTLE_TIMEOUT_SECONDS="${SETTLE_TIMEOUT_SECONDS:-600}"
+PLANNER_TIMEOUT_SECONDS="${PLANNER_TIMEOUT_SECONDS:-900}"
+REPLAY_TIMEOUT_SECONDS="${REPLAY_TIMEOUT_SECONDS:-900}"
+VALIDATE_TIMEOUT_SECONDS="${VALIDATE_TIMEOUT_SECONDS:-180}"
 
 BATCH_NAME="${BATCH_NAME:-yam_objaverse_pickplace_300_$(date +%Y%m%dT%H%M%SZ)}"
 BATCH_DIR="${BATCH_DIR:-$RESULTS_NFS/yam_demos/$BATCH_NAME}"
@@ -375,7 +379,8 @@ run_settle() {
   TABLETOP_CLUTTER_MAX_DEPENETRATION_VELOCITY=2.0 \
   CODE_NFS="$CODE_NFS" \
   CODE_COMMIT="$CODE_COMMIT" \
-  run_render_wrapper
+  timeout --kill-after=60s "${SETTLE_TIMEOUT_SECONDS}s" \
+    bash "$CODE_NFS/cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh"
 }
 
 run_planner() {
@@ -387,6 +392,7 @@ run_planner() {
   stable_scene_container="$(host_to_results_container "$stable_scene_host")"
   plan_dir_container="$(host_to_results_container "$plan_dir_host")"
   mkdir -p "$plan_dir_host"
+  timeout --kill-after=60s "${PLANNER_TIMEOUT_SECONDS}s" \
   srun \
     --ntasks=1 \
     --container-image="$GRASPGENX_IMAGE" \
@@ -472,7 +478,8 @@ run_replay() {
   HIDE_ROBOT_DEBUG_SITES=True \
   CODE_NFS="$CODE_NFS" \
   CODE_COMMIT="$CODE_COMMIT" \
-  run_render_wrapper
+  timeout --kill-after=60s "${REPLAY_TIMEOUT_SECONDS}s" \
+    bash "$CODE_NFS/cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh"
 }
 
 run_validate() {
@@ -485,6 +492,7 @@ run_validate() {
   local validation_container
   stable_scene_container="$(host_to_results_container "$stable_scene_host")"
   validation_container="$(host_to_results_container "$validation_host")"
+  timeout --kill-after=30s "${VALIDATE_TIMEOUT_SECONDS}s" \
   srun \
     --ntasks=1 \
     --container-image="$GRASPGENX_IMAGE" \
@@ -557,6 +565,7 @@ echo "HOLD_AFTER_CLOSE_FRAMES=$HOLD_AFTER_CLOSE_FRAMES"
 echo "SCRIPTED_LIFT_FRAMES=$SCRIPTED_LIFT_FRAMES"
 echo "MOVE_TO_BIN_FRAMES=$MOVE_TO_BIN_FRAMES"
 echo "RETURN_TO_START_FRAMES=$RETURN_TO_START_FRAMES"
+echo "STAGE_TIMEOUTS_SECONDS=settle:$SETTLE_TIMEOUT_SECONDS planner:$PLANNER_TIMEOUT_SECONDS replay:$REPLAY_TIMEOUT_SECONDS validate:$VALIDATE_TIMEOUT_SECONDS"
 echo "POOL_MANIFEST=$POOL_MANIFEST"
 echo "POOL_MIN_XY_HALF_EXTENT=$POOL_MIN_XY_HALF_EXTENT"
 echo "POOL_MIN_Z_HALF_EXTENT=$POOL_MIN_Z_HALF_EXTENT"
@@ -590,7 +599,11 @@ json_event "collector_start" \
   "hold_after_close_frames=$HOLD_AFTER_CLOSE_FRAMES" \
   "scripted_lift_frames=$SCRIPTED_LIFT_FRAMES" \
   "move_to_bin_frames=$MOVE_TO_BIN_FRAMES" \
-  "return_to_start_frames=$RETURN_TO_START_FRAMES"
+  "return_to_start_frames=$RETURN_TO_START_FRAMES" \
+  "settle_timeout_seconds=$SETTLE_TIMEOUT_SECONDS" \
+  "planner_timeout_seconds=$PLANNER_TIMEOUT_SECONDS" \
+  "replay_timeout_seconds=$REPLAY_TIMEOUT_SECONDS" \
+  "validate_timeout_seconds=$VALIDATE_TIMEOUT_SECONDS"
 json_event "pool_filter_config" \
   "pool_min_xy_radius=$POOL_MIN_XY_RADIUS" \
   "pool_max_xy_radius=$POOL_MAX_XY_RADIUS" \
