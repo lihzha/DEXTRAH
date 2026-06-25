@@ -486,6 +486,7 @@ def _solve_yam_scripted_bin_arm_pose(
     bundle: Any,
     q_start_arm: Any,
     target_link_position_world: Any,
+    max_position_error: float = 0.025,
 ) -> tuple[Any | None, dict[str, Any]]:
     import numpy as np
     from scipy.optimize import least_squares
@@ -581,7 +582,9 @@ def _solve_yam_scripted_bin_arm_pose(
     ramp_positions = np.asarray([_position(q) for q in ramp], dtype=np.float64)
     summary = {
         "enabled": True,
-        "success": bool(position_error <= 0.025),
+        "success": bool(position_error <= float(max_position_error)),
+        "strict_success": bool(position_error <= 0.025),
+        "max_position_error": float(max_position_error),
         "target_link_position_world": target.tolist(),
         "solved_link_position_world": pos_best.tolist(),
         "position_error": position_error,
@@ -611,6 +614,7 @@ def _append_scripted_yam_bin_drop(
     target_center_world: Any | None,
     selected_tool_world: Any,
     bin_top_center_world: Any | None,
+    bin_info: dict[str, float] | None,
     move_frames: int,
     hold_frames: int,
     open_frames: int,
@@ -655,13 +659,37 @@ def _append_scripted_yam_bin_drop(
         bundle=bundle,
         q_start_arm=q_start_arm,
         target_link_position_world=target_link_position,
+        max_position_error=0.060,
     )
+    solved_object_drop: list[float] | None = None
+    solved_inside_bin_xy: bool | None = None
+    if q_bin is not None:
+        solved_link = np.asarray(
+            solve_summary.get("solved_link_position_world", target_link_position),
+            dtype=np.float64,
+        ).reshape(3)
+        solved_object = solved_link - tool_center_offset
+        solved_object_drop = solved_object.tolist()
+        info = _goal_bin_info() if bin_info is None else bin_info
+        margin = 0.005
+        half_x = max(0.0, 0.5 * float(info["inner_size_x"]) - margin)
+        half_y = max(0.0, 0.5 * float(info["inner_size_y"]) - margin)
+        dx = abs(float(solved_object[0]) - float(info["center_x"]))
+        dy = abs(float(solved_object[1]) - float(info["center_y"]))
+        solved_inside_bin_xy = bool(dx <= half_x and dy <= half_y)
+        if not solved_inside_bin_xy:
+            q_bin = None
     summary: dict[str, Any] = {
         "enabled": True,
         "success": q_bin is not None,
         "drop_mode": "scripted_minimum_jerk_joint_space",
         "bin_top_center_world": bin_top.tolist(),
         "desired_object_drop_world": desired_object_drop.tolist(),
+        "solved_object_drop_world": solved_object_drop,
+        "solved_object_inside_bin_xy": solved_inside_bin_xy,
+        "accepted_approximate_inside_bin": bool(
+            q_bin is not None and not bool(solve_summary.get("strict_success", False))
+        ),
         "tool_minus_object_center_world_at_grasp": tool_center_offset.tolist(),
         "target_link_position_world": target_link_position.tolist(),
         "drop_y_offset": float(drop_y_offset),
@@ -672,6 +700,8 @@ def _append_scripted_yam_bin_drop(
         "solve": solve_summary,
     }
     if q_bin is None:
+        if solved_inside_bin_xy is False:
+            summary["reason"] = "solved_object_drop_outside_bin"
         return traj, segments, summary
 
     move_arm = _minimum_jerk_ramp(q_start_arm, q_bin, max(2, int(move_frames)))
@@ -2223,6 +2253,7 @@ def main() -> None:
                 target_center_world=target_center_world,
                 selected_tool_world=selected_tool_for_script,
                 bin_top_center_world=_goal_bin_center(stable_scene),
+                bin_info=_goal_bin_info(stable_scene),
                 move_frames=int(args.move_to_bin_frames),
                 hold_frames=int(args.hold_frames),
                 open_frames=int(args.close_frames),
@@ -2237,6 +2268,16 @@ def main() -> None:
                 "mode": str(args.scripted_place_mode),
                 "reason": "task_already_added_bin_transport" if has_task_bin_transport else "disabled",
             }
+        if str(args.plan_task) == "pick_and_drop_in_bin":
+            has_any_bin_transport = any(
+                str(name) in {"move_to_above_bin", "move_to_above_bin_scripted", "open_fingers_to_drop"}
+                for name, _count in task_segments
+            )
+            if not has_any_bin_transport:
+                raise RuntimeError(
+                    "No valid bin transport/drop phase for pick_and_drop_in_bin; "
+                    f"scripted_place={scripted_place_summary}"
+                )
         expected_start_arm = np.asarray(robot_cfg["curobo"]["default_joint_position"], dtype=np.float32)
         expected_start_grip = np.asarray(
             [
