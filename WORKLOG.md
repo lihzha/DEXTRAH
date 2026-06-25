@@ -10852,3 +10852,43 @@ Smoke follow-up:
   more of the left-side bin while keeping the object on the right and the robot
   entering from the near table edge. Background remains out of view. The local
   render is still noisy because it uses the quick `performance` preset.
+
+2026-06-25T04:55:00Z - Shrink single-object YAM policy goal bin
+- User asked to make the bin smaller.
+- Updated the randomized policy-scene goal-bin footprint defaults from
+  `inner_size_x_range=(0.28, 0.42)` / `inner_size_y_range=(0.20, 0.34)` to
+  `inner_size_x_range=(0.22, 0.32)` / `inner_size_y_range=(0.16, 0.24)` in
+  `dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py` and
+  `cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh`.
+- Updated the single-object policy collection wrapper defaults in
+  `cluster/sbatch_collect_yam_single_object_policy_demos_1gpu.sh` from the
+  previous large-bin `0.38-0.48 x 0.36-0.46 m` range to the same smaller
+  `0.22-0.32 x 0.16-0.24 m` range, so generated trajectories use the smaller
+  bin by default.
+- Also reduced the non-randomized
+  `DextrahSingleYAMSingleObjectPolicyGraspEnvCfg` goal-bin default from
+  `0.42 x 0.40 m` to `0.28 x 0.22 m`, so deterministic debug/smoke scenes no
+  longer show the oversized bin.
+- Validation passed:
+  `/home/lzha/code/.venvs/dextrah-isaaclab/bin/python -m py_compile
+  dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py
+  dextrah_lab/tasks/dextrah_single_yam_multi_object_grasp/single_yam_multi_object_grasp_env_cfg.py`
+  and `bash -n cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh
+  cluster/sbatch_replay_yam_policy_rgb_l40_1gpu.sh
+  cluster/sbatch_collect_yam_single_object_policy_demos_1gpu.sh`.
+- Local render attempts for visual confirmation were blocked by Isaac/Kit
+  startup instability before project logs:
+  `yam_scene_camera_smallbin_nocudavis_20260625T044009Z_320`,
+  `yam_scene_camera_smallbin_nocudavis_20260625T044146Z_320_retry1`,
+  `yam_scene_camera_smallbin_fixed_nocudavis_20260625T044324Z_320`,
+  `yam_scene_camera_smallbin_fixed_cudavis_20260625T044526Z_320_retry2`,
+  and `yam_scene_camera_smallbin_nocudavis_20260625T044710Z_320_retry3`
+  all stalled before the DEXTRAH task `creating_env` log line.
+  A non-PTY prompt-safe attempt
+  `yam_scene_camera_smallbin_nonpty_20260625T044814Z_320_retry4` hit local
+  Vulkan `ERROR_DEVICE_LOST` and exited 139 before writing an MP4 or metrics.
+- L40 fallback check was still blocked by SSH auth:
+  `ssh -o BatchMode=yes -o ConnectTimeout=8 l401 'hostname && date'` returned
+  `Permission denied (publickey,password)`.
+- Process/GPU cleanup check after the failed renders showed no remaining local
+  Isaac/render process and the RTX 6000 Ada back at desktop baseline memory.
