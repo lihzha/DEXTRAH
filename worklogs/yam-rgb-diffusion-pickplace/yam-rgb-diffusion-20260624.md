@@ -445,3 +445,53 @@
   `~/.ssh/id_ed25519` and `~/.ssh/google_compute_engine` attempts to `l401`
   are also rejected. High-quality L40 replay, RGB shard conversion, diffusion
   training, and evaluation remain blocked on L40 authentication.
+
+## 2026-06-25T16:50:00Z L40 Camera Candidate Loop And Patch
+
+- L40 access is now available from this environment through `ssh l401`; the
+  user's interactive `sshl401` wrapper/alias is not defined in the non-
+  interactive Codex shell, but direct `ssh l401` reaches
+  `oci-ord-cs-004-login-01` without a password prompt.
+- rendered and inspected L40 quality-mode one-row RGB replay candidates from
+  commit `0053cad68f8bf24c7f54ca3b1eff6879649465ec` with dynamic replay,
+  qpos-start source rows, and gripper gains
+  `YAM_GRIPPER_STIFFNESS_SCALE=2.0`,
+  `YAM_GRIPPER_DAMPING_SCALE=0.25`,
+  `YAM_GRIPPER_EFFORT_SCALE=5.0`.
+  - `yam_rgb_camera_candidate3_20260625T162944Z`
+    (`eye=(-0.51,-0.16,0.72)`, `target=(-0.24,-0.16,0.02)`) accepted
+    1/1 but still exposed a right-side off-table strip and hid the initial
+    object behind the robot.
+  - `yam_rgb_camera_candidate4_20260625T163659Z`
+    (`eye=(-0.50,-0.08,0.72)`, `target=(-0.23,-0.08,0.03)`) accepted
+    1/1 and improved over candidate 3 but kept a top-right table-edge sliver.
+  - `yam_rgb_camera_candidate5_20260625T163659Z`
+    (`eye=(-0.50,0.04,0.74)`, `target=(-0.22,0.04,0.03)`) accepted
+    1/1 and improved robot/bin coverage but exposed a top off-table strip.
+  - `yam_rgb_camera_candidate6_20260625T164313Z`
+    (`eye=(-0.50,0.04,0.68)`, `target=(-0.25,0.04,0.03)`) accepted
+    1/1 and gave the best scene camera: high-resolution frames are dominated
+    by table/bin/robot with no meaningful visible background while preserving
+    x-parallel camera-axis projection.
+- local visual evidence:
+  - candidate 6 contact sheet:
+    `/home/lzha/code/cluster_results/l401/yam_rgb_camera_candidate6_20260625T164313Z/inspection/candidate6_scene_wrist_contact_sheet.jpg`
+  - candidate 6 validation video:
+    `/home/lzha/code/cluster_results/l401/yam_rgb_camera_candidate6_20260625T164313Z/validation/yam_rgb_replay.mp4`
+  - candidate 6 tensors: `scene_rgb` and `wrist_rgb` are both
+    `(825,256,256,3)` uint8 and nonblank.
+- source-row distribution diagnostic over the first 500 accepted A100 demos:
+  target `y` spans roughly `[-0.267,-0.090]` with median `-0.177`.
+  This explains why the hard row-0 object remains weakly visible at the start
+  even with the improved camera. The next source collection should keep the
+  object on robot-right but closer to the table center.
+- patched defaults in `render_tabletop_clutter_settle_video.py`,
+  `sbatch_render_tabletop_clutter_settle_video_1gpu.sh`,
+  `sbatch_collect_yam_single_object_policy_demos_1gpu.sh`, and
+  `sbatch_replay_yam_policy_rgb_l40_1gpu.sh`:
+  candidate-6 camera base, reduced camera jitter
+  `(0.018,0.018,0.018)` / `(0.012,0.012,0.012)`, and single-object target
+  `YAM_POLICY_OBJECT_Y_RANGE=-0.16 -0.04` for future data generation.
+- validation passed locally:
+  `python3 -m py_compile dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py`
+  and `bash -n` on the affected Slurm wrappers and submitters.
