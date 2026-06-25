@@ -12,6 +12,15 @@ import shutil
 import sys
 import traceback
 
+# Isaac Sim's pip/runtime launcher checks these before our main code runs.
+# Set defaults here so local/headless invocations cannot block on prompts.
+os.environ.setdefault("OMNI_KIT_ACCEPT_EULA", "YES")
+os.environ.setdefault("ISAACSIM_ACCEPT_EULA", "YES")
+os.environ.setdefault("ACCEPT_EULA", "Y")
+os.environ.setdefault("PRIVACY_CONSENT", "Y")
+os.environ.setdefault("CI", "1")
+os.environ.setdefault("NONINTERACTIVE", "1")
+
 from isaaclab.app import AppLauncher
 
 

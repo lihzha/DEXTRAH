@@ -10701,3 +10701,30 @@ Smoke follow-up:
   workstation renderer stalled before DEXTRAH task logs and surfaced local
   Vulkan `ERROR_DEVICE_LOST` after termination. No MP4 or metrics file was
   produced, and a process check showed no remaining render process.
+
+2026-06-25T01:25:00Z - Apply Isaac prompt handling before render startup
+- User pointed out the local `ERROR_DEVICE_LOST` path had previously been
+  worked around by handling Isaac/Omniverse interactive prompts via
+  environment variables. Patched
+  `dextrah_lab/rl_games/render_tabletop_clutter_settle_video.py` to set
+  `OMNI_KIT_ACCEPT_EULA=YES`, `ISAACSIM_ACCEPT_EULA=YES`, `ACCEPT_EULA=Y`,
+  `PRIVACY_CONSENT=Y`, `CI=1`, and `NONINTERACTIVE=1` before importing
+  `isaaclab.app.AppLauncher`.
+- Updated `cluster/sbatch_render_tabletop_clutter_settle_video_1gpu.sh` to
+  export the same prompt variables into the Pyxis container. The L40 replay
+  wrapper already invokes the nested render wrapper with `</dev/null`, which
+  is the required stdin isolation fix for replay loops.
+- Validation: `py_compile` for the render script and `bash -n` for the render
+  and L40 replay wrappers passed.
+- Local render evidence: the prompt-fixed performance smoke
+  `local_results/yam_single_object_camera_oldpose_source_promptfix_perf_20260625T0125Z`
+  reached DEXTRAH task creation and printed the
+  `Dextrah-Single-YAM-Single-Object-Policy-Grasp` config plus the restored
+  no-yaw camera path before failing on the expected missing local production
+  Objaverse manifest at `/results/assets/graspgen_objects_full_cpu_20260617_153051/manifest.json`.
+  Follow-up primitive-manifest local attempts either stalled before task logs
+  or hit the workstation Vulkan `ERROR_DEVICE_LOST`; no MP4 was produced.
+- Analysis: the original prompt blocker is fixed in source/wrapper. Remaining
+  local failures are the known workstation renderer instability and missing
+  local production Objaverse assets, not an interactive prompt. Process checks
+  showed no remaining local render jobs.
