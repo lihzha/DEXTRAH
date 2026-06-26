@@ -12237,3 +12237,8 @@ Smoke follow-up:
   `/World/envs/env_0/Robot/arm/link_6/wrist_d405_policy_sensor`. This closes
   the remaining obvious default-pose/source-scene parity check; I am continuing
   the long training run and periodic eval monitoring.
+- The L40 replay wrapper that generated this source data is explicitly set to
+  `DEMO_TRAJECTORY_REPLAY_MODE=dynamic`, `DEMO_TRAJECTORY_TIMING_MODE=realtime`,
+  and `RENDERING_MODE=quality`. The sampled replay metadata's
+  `source_timing.mode="realtime"` therefore refers to timing, not kinematic
+  replay.
