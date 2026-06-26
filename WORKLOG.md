@@ -11581,3 +11581,12 @@ Smoke follow-up:
   `LR=0.0001`, `LR_WARMUP_STEPS=500`, `n_obs_steps=1`, `IMAGE_SIZE=256`.
   Expected staged checkpoint:
   `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/yam_pickplace_rgb_dp_500_mmap_20k_20260626T0115Z/latest.ckpt`.
+- Candidate training job `29507167` failed after `00:10:58`, not from loss
+  instability. It reached `global_step=2000`; train loss dropped from about
+  `2.18` to `0.044`, and epoch-0 validation loss was `0.19619430601596832`.
+  Failure root cause: checkpoint top-k monitors `test_mean_score`, but
+  `ROLLOUT_EVERY=1000` only logged the Noop runner metric at epoch 0, so epoch
+  1 checkpointing raised `KeyError: test_mean_score`. Patched
+  `yam_pickplace_rgb_dp.yaml` and the training wrapper default to
+  `rollout_every=1`; the Noop runner is cheap and should run every epoch when
+  checkpointing every epoch.
