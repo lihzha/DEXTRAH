@@ -12017,3 +12017,10 @@ Smoke follow-up:
   `git diff --check`. Next step is to deploy this exact revision to the l401
   agent worktree, stop monitor PID `3071195`, and restart the monitor before
   the 100k threshold.
+- Committed and pushed the guard as
+  `36e2a58e8f58a1a4b1af180d13b22ff7672510ed`, deployed it to the l401 agent
+  worktree via Git bundle, and verified the remote wrapper with `bash -n`.
+  Stopped the original l401 monitor PID `3071195` and restarted it with the
+  same monitor/run configuration plus `CHECKPOINT_FRESH_AFTER_THRESHOLD=True`.
+  Replacement monitor PID: `3135358`; log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_horizonfix_20260626T080838Z_periodic_monitor/monitor_fresh_checkpoint_36e2a58e.log`.
