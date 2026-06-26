@@ -656,3 +656,18 @@
   width only for older datasets without phase.
 - Validation before commit: `python3 -m py_compile
   dextrah_lab/offline_dp_bc/make_yam_rgb_policy_shards.py`.
+
+## 2026-06-26T02:56:00Z Phase-Gripper Rebuild Audit
+
+- One-row A100 shard smoke `29512372`
+  (`yam_rgb_policy_shards_phase_smoke_20260626T0234Z`) confirmed the relabel
+  path writes `gripper_label_source=phase` and produces `+1/-1/+1` transitions
+  around close and drop.
+- Full 500-shard rebuild `29512393`
+  (`yam_rgb_policy_shards_500_mmap_phasegrip_20260626T0242Z`) completed with
+  500 shards and 414,460 steps, but aggregate action audit found extra reopen
+  transitions in some episodes during bin transport.
+- Source inspection showed scripted place phases are labeled
+  `target/move_to_above_bin_scripted`; the converter close-phase allowlist only
+  included `target/move_to_above_bin`. Added the scripted alias before training
+  so labels keep the gripper closed through object transport to the bin.

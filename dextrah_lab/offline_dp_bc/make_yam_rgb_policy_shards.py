@@ -38,6 +38,7 @@ YAM_CLOSE_PHASE_NAMES = (
     "target/lift_object",
     "target/hold_after_lift",
     "target/move_to_above_bin",
+    "target/move_to_above_bin_scripted",
     "target/hold_above_bin",
 )
 
