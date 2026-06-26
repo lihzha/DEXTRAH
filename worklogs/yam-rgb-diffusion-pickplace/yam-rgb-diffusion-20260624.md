@@ -633,3 +633,26 @@
   the Isaac Lab container, validates the manifest has both RGB keys and a
   positive step count, and supports `CODE_COMMIT` guarding.
 - validation passed: `bash -n cluster/sbatch_make_yam_rgb_policy_shards_1gpu.sh`.
+
+## 2026-06-26T02:31:00Z Closed-Loop Eval Relabel Finding
+
+- L40 quality-render eval smoke `1044919`
+  (`yam_pickplace_rgb_dp_500_mmap_20k_eval_smoke3_20260626T022031Z`) completed
+  2 episodes and wrote video/metrics locally under
+  `cluster_results/l401/yam_pickplace_rgb_dp_500_mmap_20k_eval_smoke3_20260626T022031Z`.
+  It reported `episode_success_rate=0.0`, max lift below `1e-6`, and gripper
+  actions remained positive.
+- The first smoke was only 240 steps; source demo phase inspection showed close
+  begins around step 243 and lift around step 303, so a longer quality eval was
+  launched.
+- L40 long smoke `1044968`
+  (`yam_pickplace_rgb_dp_500_mmap_20k_eval_longsmoke_20260626T022701Z`) ran to
+  truncation at step 719. It still had `episode_success_rate=0.0`, max lift
+  `6.4e-7`, and policy gripper action range `[0.276, 1.0]`.
+- Root cause hypothesis: the dataset converter labeled the gripper action from
+  measured `gripper_width`; the replayed demos have contact-limited widths that
+  map to positive/open actions even during close/lift phases. The converter now
+  uses phase-derived open/close labels when `phase` is present and falls back to
+  width only for older datasets without phase.
+- Validation before commit: `python3 -m py_compile
+  dextrah_lab/offline_dp_bc/make_yam_rgb_policy_shards.py`.

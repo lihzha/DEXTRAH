@@ -20,9 +20,9 @@ from typing import Any
 import numpy as np
 
 try:
-    from .action_conversion import DextrahActionConvention, derive_relative_ee_actions
+    from .action_conversion import DextrahActionConvention, derive_relative_ee_actions, phase_gripper_actions
 except ImportError:  # pragma: no cover - supports direct script execution.
-    from action_conversion import DextrahActionConvention, derive_relative_ee_actions
+    from action_conversion import DextrahActionConvention, derive_relative_ee_actions, phase_gripper_actions
 
 
 YAM_ACTION_CONVENTION = DextrahActionConvention(
@@ -30,6 +30,15 @@ YAM_ACTION_CONVENTION = DextrahActionConvention(
     rotation_scale=(0.22, 0.22, 0.25),
     world_to_action_quat_wxyz=(1.0, 0.0, 0.0, 0.0),
     max_gripper_width=0.17,
+)
+
+YAM_CLOSE_PHASE_NAMES = (
+    "target/close_fingers",
+    "target/hold_after_close",
+    "target/lift_object",
+    "target/hold_after_lift",
+    "target/move_to_above_bin",
+    "target/hold_above_bin",
 )
 
 
@@ -98,6 +107,7 @@ def _convert_one(
     *,
     compress: bool,
     output_format: str,
+    gripper_label_source: str,
 ) -> dict[str, Any]:
     src = Path(str(row["dataset"])).expanduser()
     if not src.is_file():
@@ -119,9 +129,28 @@ def _convert_one(
         tcp_quat = _squeeze_env(np.asarray(data["tcp_quat"], dtype=np.float32), key="tcp_quat")[row_ids]
         gripper_width = _squeeze_env(np.asarray(data["gripper_width"], dtype=np.float32), key="gripper_width")[row_ids]
         gripper_width = gripper_width.reshape(-1)
+        phases = None
+        if "phase" in data.files:
+            phases = np.asarray(data["phase"])[row_ids].astype(str).reshape(-1)
+        actual_gripper_label_source = str(gripper_label_source)
+        if actual_gripper_label_source == "auto":
+            actual_gripper_label_source = "phase" if phases is not None else "width"
+        if actual_gripper_label_source == "phase":
+            if phases is None:
+                raise KeyError(f"{src} missing 'phase'; required for gripper_label_source='phase'")
+            gripper_action = phase_gripper_actions(
+                phases,
+                convention=YAM_ACTION_CONVENTION,
+                close_phase_names=YAM_CLOSE_PHASE_NAMES,
+            )
+        elif actual_gripper_label_source == "width":
+            gripper_action = None
+        else:
+            raise ValueError(f"Unsupported gripper_label_source {gripper_label_source!r}")
         action = derive_relative_ee_actions(
             tcp_pos,
             tcp_quat,
+            gripper_action=gripper_action,
             gripper_width=gripper_width,
             convention=YAM_ACTION_CONVENTION,
             terminal_action="repeat",
@@ -137,6 +166,8 @@ def _convert_one(
                 "position_scale": list(YAM_ACTION_CONVENTION.position_scale),
                 "rotation_scale": list(YAM_ACTION_CONVENTION.rotation_scale),
                 "max_gripper_width": float(YAM_ACTION_CONVENTION.max_gripper_width),
+                "gripper_label_source": actual_gripper_label_source,
+                "close_phase_names": list(YAM_CLOSE_PHASE_NAMES),
             },
         }
         robot_state = robot_state.astype(np.float32, copy=False)
@@ -202,6 +233,17 @@ def main() -> None:
             "mmap-friendly .npy arrays for efficient image-policy training."
         ),
     )
+    parser.add_argument(
+        "--gripper_label_source",
+        choices=("auto", "phase", "width"),
+        default="auto",
+        help=(
+            "How to label the gripper action. 'auto' uses phase-derived open/close "
+            "commands when a phase column is present, otherwise measured width. "
+            "Phase labels avoid teaching the policy to stay open during close/lift "
+            "segments where measured gripper width lags or remains contact-limited."
+        ),
+    )
     args = parser.parse_args()
 
     output_dir = args.output_dir.expanduser().resolve()
@@ -212,7 +254,16 @@ def main() -> None:
     shards = []
     compress = not bool(args.no_compress)
     for idx, row in enumerate(rows):
-        shards.append(_convert_one(row, output_dir, idx, compress=compress, output_format=args.output_format))
+        shards.append(
+            _convert_one(
+                row,
+                output_dir,
+                idx,
+                compress=compress,
+                output_format=args.output_format,
+                gripper_label_source=args.gripper_label_source,
+            )
+        )
     payload = {
         "format": "dextrah_yam_rgb_policy_sharded_v1",
         "num_shards": len(shards),
@@ -220,6 +271,7 @@ def main() -> None:
         "image_keys": ["scene_rgb", "wrist_rgb"],
         "robot_state_key": "robot_state",
         "action_key": "action",
+        "gripper_label_source": str(args.gripper_label_source),
         "compressed": compress if args.output_format == "npz" else False,
         "storage": args.output_format,
         "shards": shards,
