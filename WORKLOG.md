@@ -11611,3 +11611,18 @@ Smoke follow-up:
   Run name: `yam_pickplace_rgb_dp_500_mmap_20k_resume2_20260626T0136Z`;
   config remains `NUM_EPOCHS=18`, `MAX_TRAIN_STEPS=1000`,
   `MAX_VAL_STEPS=50`, batch size `8`, `ROLLOUT_EVERY=1`.
+- Resume2 job `29507542` completed successfully. It reached
+  `global_step=20017`, wrote the staged checkpoint
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/yam_pickplace_rgb_dp_500_mmap_20k_resume2_20260626T0136Z/latest.ckpt`,
+  and reported finite final metrics: `last_train_loss=0.031190508258529006`,
+  `last_val_loss=0.028292257338762283`, and `test_mean_score=0.0` from the
+  expected Noop runner. Training outputs are in
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb/yam_pickplace_rgb_dp_500_mmap_20k_resume2_20260626T0136Z/official_dp_train`.
+- L40 GitHub fetch is blocked by SSH key access, so the latest local branch
+  commit `0dd18168b41b2a6f5c75135b34e6cc60dfe65c2d` was transferred to L40 as
+  a small Git bundle based on `676632ea8f0d6b1cf3300f2b10fab9665088f907`.
+  Created the L40 eval worktree
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-rgb-diffusion-l40-dp-0dd18168`
+  at `0dd18168b41b2a6f5c75135b34e6cc60dfe65c2d`. The eval wrapper passed
+  `bash -n`, and `dextrah_lab/rl_games/eval_yam_pickplace_rgb_dp_policy.py`
+  passed `python3 -m py_compile`.
