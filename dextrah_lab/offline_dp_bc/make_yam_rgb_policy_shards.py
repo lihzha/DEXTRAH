@@ -91,7 +91,7 @@ def _rgb_array(data: np.lib.npyio.NpzFile, key: str, fallback: str | None = None
     return arr
 
 
-def _convert_one(row: dict[str, Any], output_dir: Path, index: int) -> dict[str, Any]:
+def _convert_one(row: dict[str, Any], output_dir: Path, index: int, *, compress: bool) -> dict[str, Any]:
     src = Path(str(row["dataset"])).expanduser()
     if not src.is_file():
         raise FileNotFoundError(src)
@@ -133,7 +133,8 @@ def _convert_one(row: dict[str, Any], output_dir: Path, index: int) -> dict[str,
                 "max_gripper_width": float(YAM_ACTION_CONVENTION.max_gripper_width),
             },
         }
-        np.savez_compressed(
+        save_fn = np.savez_compressed if compress else np.savez
+        save_fn(
             out,
             scene_rgb=scene_rgb,
             wrist_rgb=wrist_rgb,
@@ -150,6 +151,7 @@ def _convert_one(row: dict[str, Any], output_dir: Path, index: int) -> dict[str,
         "wrist_rgb_shape": list(wrist_rgb.shape),
         "robot_state_shape": list(robot_state.shape),
         "action_shape": list(action.shape),
+        "compressed": bool(compress),
     }
 
 
@@ -159,6 +161,11 @@ def main() -> None:
     parser.add_argument("--accepted_jsonl", type=Path, action="append", default=[])
     parser.add_argument("--output_dir", type=Path, required=True)
     parser.add_argument("--manifest", type=Path, default=None)
+    parser.add_argument(
+        "--no_compress",
+        action="store_true",
+        help="Write uncompressed NPZ shards. This is faster and often preferable on shared filesystems.",
+    )
     args = parser.parse_args()
 
     output_dir = args.output_dir.expanduser().resolve()
@@ -167,8 +174,9 @@ def main() -> None:
     rows = _source_rows([p.expanduser() for p in args.dataset], [p.expanduser() for p in args.accepted_jsonl])
 
     shards = []
+    compress = not bool(args.no_compress)
     for idx, row in enumerate(rows):
-        shards.append(_convert_one(row, output_dir, idx))
+        shards.append(_convert_one(row, output_dir, idx, compress=compress))
     payload = {
         "format": "dextrah_yam_rgb_policy_sharded_v1",
         "num_shards": len(shards),
@@ -176,6 +184,7 @@ def main() -> None:
         "image_keys": ["scene_rgb", "wrist_rgb"],
         "robot_state_key": "robot_state",
         "action_key": "action",
+        "compressed": compress,
         "shards": shards,
     }
     manifest_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")

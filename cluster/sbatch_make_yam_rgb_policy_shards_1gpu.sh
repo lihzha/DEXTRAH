@@ -28,6 +28,7 @@ ACCEPTED_JSONL="${ACCEPTED_JSONL:?Set ACCEPTED_JSONL to the L40 RGB replay accep
 OUTPUT_DIR="${OUTPUT_DIR:-$RESULTS_NFS/dp_bc/yam_pickplace_rgb_policy/$RUN_NAME/shards}"
 MANIFEST="${MANIFEST:-$RESULTS_NFS/dp_bc/yam_pickplace_rgb_policy/$RUN_NAME/manifest.json}"
 MIN_SHARDS="${MIN_SHARDS:-1}"
+COMPRESS_SHARDS="${COMPRESS_SHARDS:-True}"
 CODE_COMMIT="${CODE_COMMIT:-}"
 
 host_path_from_container() {
@@ -97,6 +98,7 @@ echo "OUTPUT_DIR_ARG=$OUTPUT_DIR_ARG"
 echo "MANIFEST_HOST=$MANIFEST_HOST"
 echo "MANIFEST_ARG=$MANIFEST_ARG"
 echo "MIN_SHARDS=$MIN_SHARDS"
+echo "COMPRESS_SHARDS=$COMPRESS_SHARDS"
 
 srun \
   --ntasks=1 \
@@ -125,6 +127,9 @@ srun \
       --output_dir "$OUTPUT_DIR_ARG"
       --manifest "$MANIFEST_ARG"
     )
+    if [ "$COMPRESS_SHARDS" != "True" ] && [ "$COMPRESS_SHARDS" != "true" ] && [ "$COMPRESS_SHARDS" != "1" ]; then
+      CMD+=(--no_compress)
+    fi
     printf "yam_rgb_shard_command="
     printf "%q " "${CMD[@]}"
     printf "\n"

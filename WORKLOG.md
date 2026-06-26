@@ -11329,3 +11329,185 @@ Smoke follow-up:
   Visual inspection: scene stream is table-dominant with bin/object visible and
   no meaningful room background; wrist stream follows object/bin through grasp
   and drop.
+
+2026-06-25T20:52:00Z - L40 RGB replay stale-job intervention
+- Continued monitoring corrected L40 quality replay batch
+  `yam_rgb_quality_center_y_prefix250_camjit_20260625T2014Z`. Count reached
+  `165/250` accepted RGB replays with `0` recorded replay failures, but jobs
+  `1042770`, `1042771`, and `1042772` on `pool0-00005` had produced no rows
+  after roughly 43 minutes. Their logs stopped at Isaac Kit message-queue
+  errors before any DEXTRAH project events.
+- Jobs `1042759` and `1042862` had produced partial rows (`2/5` and `1/5`)
+  but then stopped logging after environment reset for more than 20 minutes,
+  while comparable shards completed all five rows in a few minutes.
+- Cancelled stale L40 jobs `1042759`, `1042770`, `1042771`, `1042772`, and
+  `1042862`. The accepted rows already written in their shard directories are
+  preserved. Plan is to build a sparse retry JSONL after the main prefix batch
+  drains, keeping original source-row indices with blank lines for already
+  accepted rows.
+- The final prefix shard job `1042992` stalled after reset with `4/5` rows
+  accepted and no log progress for more than 13 minutes. Cancelled it and
+  marked its remaining row for replay in the next batch.
+- Prefix-main L40 replay drained with `227` unique accepted RGB rows and `0`
+  recorded replay failures. Missing first-250 source indices are:
+  `14,15,16,64,65,66,73,103,114,115,116,123,153,164,165,166,173,203,214,215,216,223,245`.
+  Next replay batch should use a sparse 500-line manifest containing these 23
+  missing prefix rows plus source rows `250-499`.
+
+2026-06-25T21:24:00Z - Freeze 500 source demos and launch remaining L40 replay
+- A100 source generation crossed the target at `501+` accepted rows. Wrote
+  exactly `500` selected source rows to
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/yam_demos/yam_single_object_center_y_dynamic_500_20260625T165831Z/accepted_500.jsonl`.
+  The freeze script observed `502` accepted rows at write time and selected the
+  first 500 in deterministic shard/source order.
+- Killed the source autosubmit controller PID `2189072` if still alive and
+  cancelled remaining `yam_centery500_*` A100 jobs. A follow-up queue check
+  showed no active `yam_centery500_*` jobs.
+- Built sparse remaining replay manifest
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/yam_demos/yam_single_object_center_y_dynamic_500_20260625T165831Z/accepted_remaining_500_for_l40_20260625T2124Z.jsonl`.
+  It has 500 physical lines, `273` nonblank rows, `23` missing prefix rows, and
+  `250` suffix rows.
+- Launched L40 quality replay batch
+  `yam_rgb_quality_center_y_remaining500_camjit_20260625T2124Z` from commit
+  `676632ea8f0d6b1cf3300f2b10fab9665088f907` using `SHARD_COUNT=60`,
+  `MAX_CONCURRENT=20`, job prefix `yam_rgb_cyrem`, quality render
+  `1024x1024`, recorded scene/wrist RGB `256x256`, dynamic replay, camera
+  randomization enabled by leaving `CAMERA_EYE/TARGET` empty, and gripper gains
+  `2.0/0.25/5.0`. Submitter PID `2541835`; initial jobs `1043217`-`1043236`.
+- Early monitor: remaining replay reached `37` accepted RGB rows with no
+  recorded failures. Job `1043230` / shard `013` reached environment reset but
+  then stopped with `0/6` rows accepted for more than 10 minutes, so cancelled
+  it and will include its six source rows in the follow-up retry manifest.
+- Later monitor: remaining replay reached `72` accepted RGB rows with no
+  recorded failures and new shards `020`-`026` were being submitted. Job
+  `1043235` / shard `018` accepted `1/5` rows, then stalled after reset for
+  more than 10 minutes; cancelled it and will include its four unaccepted rows
+  in the follow-up retry manifest.
+- Remaining replay reached `126` accepted RGB rows with no recorded failures.
+  Job `1043227` / shard `010` accepted `4/5` rows, then the final row hit the
+  Isaac message-queue startup failure; cancelled it and will retry the one
+  unaccepted row later.
+- Remaining replay reached `161` accepted RGB rows with no recorded failures
+  and the submitter had reached shards `050`-`051`. Job `1043349` / shard
+  `030` stayed at `0/4` rows after reset for more than 13 minutes; cancelled it
+  and will retry its four rows later.
+- Remaining replay reached `244` accepted RGB rows with no recorded failures
+  and all 60 shards had been submitted. Log inspection found job `1043469` /
+  shard `050` stalled after reset at `1/4` rows, and job `1043454` / shard
+  `045` hit the Isaac message-queue startup failure at `3/5` rows. Cancelled
+  both and will retry their unaccepted rows later.
+- Final remaining-replay monitor reached `251` accepted RGB rows and `0`
+  recorded failures. Job `1043480` / shard `054` accepted `3/5` rows, then
+  stopped after environment reset for more than 10 minutes; cancelled it.
+- Combined corrected prefix replay
+  `yam_rgb_quality_center_y_prefix250_camjit_20260625T2014Z` and remaining
+  replay `yam_rgb_quality_center_y_remaining500_camjit_20260625T2124Z` produced
+  `478` unique accepted source rows with no duplicates. Missing source indices:
+  `73,253,270,313,318,330,350,373,378,390,405,410,414,433,438,450,465,470,474,490,493,498`.
+- Built sparse retry manifest
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/yam_demos/yam_single_object_center_y_dynamic_500_20260625T165831Z/accepted_retry_missing_22_for_l40_20260625T2220Z.jsonl`.
+  Launched L40 quality retry batch
+  `yam_rgb_quality_center_y_retry500_camjit_20260625T2221Z` from commit
+  `676632ea8f0d6b1cf3300f2b10fab9665088f907` with `SHARD_COUNT=32`,
+  `MAX_CONCURRENT=12`, job prefix `yam_rgb_cyrtry`, quality render
+  `1024x1024`, recorded scene/wrist RGB `256x256`, dynamic replay, camera
+  randomization enabled, NFS RoboLab background/dome texture paths, and gripper
+  gains `2.0/0.25/5.0`. Submitter PID `2573828`.
+- Retry batch `yam_rgb_quality_center_y_retry500_camjit_20260625T2221Z`
+  accepted `17/22` rows with `0` recorded replay failures. Cancelled stale
+  startup-only jobs `1043609` / shard `009`, `1043614` / shard `014`, and
+  `1043638` / shard `030`; logs for these jobs stopped in Isaac/Kit startup
+  warnings and NGX context messages before DEXTRAH replay events.
+- Recomputed all corrected L40 replay coverage at `495/500` unique accepted
+  source rows with `0` duplicate rows and `0` failure JSONL rows. Missing
+  source indices: `73,270,318,350,414`.
+- Built sparse retry2 manifest
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/yam_demos/yam_single_object_center_y_dynamic_500_20260625T165831Z/accepted_retry2_missing_5_for_l40_20260625T2237Z.jsonl`.
+  Launched L40 quality retry2 batch
+  `yam_rgb_quality_center_y_retry2_500_camjit_20260625T2237Z` with
+  `SHARD_COUNT=17`, `MAX_CONCURRENT=8`, job prefix `yam_rgb_cyrt2`, and the
+  same commit/render/camera/randomization/gripper settings as retry1.
+  Submitter PID `2583968`.
+- Retry2 accepted row `350`, bringing combined L40 replay coverage to
+  `496/500`. Cancelled startup-stalled jobs `1043745`, `1043746`, `1043754`,
+  and `1043757`; logs again stopped before DEXTRAH replay events. Three of the
+  cancelled jobs were on `pool0-00023` and one was on `pool0-00006`.
+- Recomputed all accepted RGB coverage at `496/500`, with `0` duplicate rows
+  and `0` failure JSONL rows. Missing source indices: `73,270,318,414`.
+- Built sparse retry3 manifest
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/yam_demos/yam_single_object_center_y_dynamic_500_20260625T165831Z/accepted_retry3_missing_4_for_l40_20260625T2249Z.jsonl`.
+  Launched L40 quality retry3 batch
+  `yam_rgb_quality_center_y_retry3_500_camjit_20260625T2250Z` with
+  `SHARD_COUNT=13`, `MAX_CONCURRENT=4`, job prefix `yam_rgb_cyrt3`, and
+  `SBATCH_EXCLUDE=pool0-00002,pool0-00006,pool0-00023`. Submitter PID
+  `2590542`.
+- Retry3 placed nonempty jobs on excluded bad node `pool0-00006`, so the
+  environment variable was not sufficient. Killed the retry3 submitter and
+  cancelled jobs `1043813`, `1043818`, `1043820`, and `1043824`.
+- Submitted retry4 manually with command-line
+  `--exclude=pool0-00002,pool0-00006,pool0-00023`; jobs `1043831`-`1043834`
+  landed on `pool0-00021` and `pool0-00019`, but all four rows still stalled
+  for more than 10 minutes before DEXTRAH replay events. Cancelled them and
+  switched to replacement source demos instead of repeatedly retrying these
+  four source rows.
+- The original source batch has `502` accepted demos, so two extras are
+  available after the frozen first 500. Built sparse extra manifest
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/yam_demos/yam_single_object_center_y_dynamic_500_20260625T165831Z/accepted_extra_500_501_for_l40_20260625T2304Z.jsonl`
+  and launched L40 quality replay batch
+  `yam_rgb_quality_center_y_extra2_500_camjit_20260625T2304Z` for source rows
+  `500` and `501`; jobs `1043891` and `1043892`.
+- Launched A100 top-up source batch
+  `yam_single_object_center_y_topup8_20260625T2304Z` from source commit
+  `92fad5038b4e80c48b1129b5c4126dd938c68e5b`, `TOTAL_TARGET=8`,
+  `SHARD_COUNT=8`, `MAX_CONCURRENT=8`, and `START_SEED=88000000`.
+  Submitter PID `3762201`.
+- Extra L40 replay batch `yam_rgb_quality_center_y_extra2_500_camjit_20260625T2304Z`
+  accepted both source rows `500` and `501` with `0` failures. Combined usable
+  RGB coverage is now `498` rows if the four repeatedly stalled source rows are
+  excluded.
+- A100 top-up batch `yam_single_object_center_y_topup8_20260625T2304Z`
+  accepted `0/8`; root cause was not data yield. The submitter pinned stale
+  commit `92fad5038b4e80c48b1129b5c4126dd938c68e5b`, while the remote source
+  worktree had advanced to `7e754bfc7dbea882ee4ffbb08f80f575105e1fcd`, so
+  every settle attempt failed immediately on CODE_COMMIT mismatch.
+- Relaunched corrected A100 top-up batch
+  `yam_single_object_center_y_topup4_20260625T2309Z` with actual source commit
+  `7e754bfc7dbea882ee4ffbb08f80f575105e1fcd`, `TOTAL_TARGET=4`,
+  `SHARD_COUNT=4`, `MAX_CONCURRENT=4`, `START_SEED=89000000`,
+  `MAX_ATTEMPTS=180`, and `MAX_PLAN_ATTEMPTS=160`. Submitter PID `3791710`.
+- Corrected top-up reached its first accepted source demo at seed `89000003`
+  while other shards continued running. Built sparse top-up replay manifest
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/yam_demos/yam_single_object_center_y_topup4_20260625T2309Z/accepted_topup_for_l40_20260625T2325Z.jsonl`
+  with source index `600`, and launched L40 quality replay batch
+  `yam_rgb_quality_center_y_topup_replay_20260625T2325Z`, job `1044005`.
+- Top-up replay `yam_rgb_quality_center_y_topup_replay_20260625T2325Z`
+  accepted source index `600` with `0` failures, bringing usable RGB replay
+  coverage to `499` after dropping the four pathological source rows. The
+  remaining A100 top-up shards are still running to produce at least one more
+  source demo.
+- Corrected A100 top-up completed with `4/4` accepted source demos and `16`
+  rejected attempts: seeds `89000003`, `89100006`, `89200004`, and `89300003`.
+  Built sparse top-up-more replay manifest
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/yam_demos/yam_single_object_center_y_topup4_20260625T2309Z/accepted_topup_more_for_l40_20260625T2347Z.jsonl`
+  for source indices `601`, `602`, and `603`, and launched L40 quality replay
+  batch `yam_rgb_quality_center_y_topup_more_replay_20260625T2347Z`; jobs
+  `1044121`-`1044123`.
+- Top-up-more L40 replay accepted source indices `601`, `602`, and `603` with
+  `0` failures. Built final deterministic training JSONL
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/yam_policy_rgb_replays/final_yam_rgb_policy_500_20260625T2352Z/accepted_rgb_500.jsonl`
+  with exactly `500` rows and no duplicate dataset paths. The final set drops
+  repeatedly hanging source rows `73,270,318,414`, uses replacements
+  `500,501,600,601`, and keeps `602,603` as backup accepted RGB rows.
+- Launched A100 shard conversion job `29505654` from commit
+  `676632ea8f0d6b1cf3300f2b10fab9665088f907` with final accepted JSONL
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/yam_policy_rgb_replays/final_yam_rgb_policy_500_20260625T2352Z/accepted_rgb_500.jsonl`.
+  Expected manifest:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb_policy/yam_rgb_policy_shards_500_20260625T2353Z/manifest.json`.
+- Conversion job `29505654` failed because the final JSONL stored host
+  `/lustre/...` dataset paths, while the converter runs inside a container with
+  results mounted at `/results`. Rewrote
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/yam_policy_rgb_replays/final_yam_rgb_policy_500_20260625T2352Z/accepted_rgb_500.container_paths.jsonl`
+  with `500` rows and container-visible paths.
+- Relaunched A100 shard conversion job `29505779` with the container-path
+  JSONL. Expected manifest:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb_policy/yam_rgb_policy_shards_500_paths_20260625T2357Z/manifest.json`.
