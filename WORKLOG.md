@@ -12117,3 +12117,30 @@ Smoke follow-up:
 - The l401 periodic monitor remains alive and correctly idle after the 100k
   eval. Its next trigger is 200k, where it should again wait for a checkpoint
   fresher than the threshold before submitting the next quality-render eval.
+
+## 2026-06-26 11:52 PDT - 200k Threshold And 240k Periodic Eval
+
+- The second A100 allocation `29521783` timed out after logging to
+  `global_step=200624`; the latest saved checkpoint at that moment was the
+  pre-threshold epoch checkpoint `global_step=195358`, with
+  `val_loss=0.012892438098788261`. The submitter launched replacement job
+  `29524985`, which resumed from the saved checkpoint and continued training.
+- The l401 monitor saw `threshold=200000 step=200624` and correctly waited for
+  a checkpoint newer than the threshold. It did not launch eval from the
+  `195358` checkpoint. A fresh checkpoint landed at `global_step=239197` with
+  `val_loss=0.01125381514430046`, continuing the validation improvement trend.
+  The monitor submitted eval job `1049453` from snapshot
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_horizonfix_20260626T080838Z/periodic_eval_snapshots/step_0240143.ckpt`.
+- Eval job `1049453` completed successfully (`COMPLETED`, exit `0:0`) and
+  produced a 1280x720 60 FPS video with 2400 frames plus full step-0..2400
+  side-by-side scene/wrist observations for 3 episodes. Metrics remain
+  structurally correct: 7200 total steps, full long horizon active,
+  `scene_rgb` and `wrist_rgb` `[3, 256, 256]`, 24D robot state,
+  no phase/progress input, no privileged object state, and both table/HDR
+  texture randomization enabled. Visual inspection of step 0 and step 2400
+  confirmed valid tabletop scene RGB and live wrist RGB.
+- Behavioral result is still `episode_success_rate=0.0` with no lift
+  (`max_lift_height` about `6.5e-7`). The policy gets visual contact/proximity
+  in wrist view but does not yet grasp/lift, so this remains a slow convergence
+  issue rather than an eval/train mismatch. A100 training continued past
+  `global_step=273140` with last-5000 train-loss mean about `0.01137`.
