@@ -62,6 +62,8 @@ parser.add_argument("--yam_policy_bin_wall_height_range", type=float, nargs=2, d
 parser.add_argument("--yam_policy_dome_light_intensity_range", type=float, nargs=2, default=(450.0, 1600.0))
 parser.add_argument("--yam_policy_key_light_intensity_range", type=float, nargs=2, default=(250.0, 1400.0))
 parser.add_argument("--yam_policy_material_value_range", type=float, nargs=2, default=(0.32, 0.82))
+parser.add_argument("--yam_policy_table_texture_dir", type=str, default="")
+parser.add_argument("--yam_policy_table_texture_tiling_range", type=float, nargs=2, default=(1.4, 3.8))
 parser.add_argument("--yam_policy_object_asset_manifest_path", type=str, default="")
 parser.add_argument("--yam_policy_object_assets_dir", type=str, default="")
 parser.add_argument("--yam_policy_max_objects", type=int, default=0)
@@ -71,6 +73,8 @@ parser.add_argument("--yam_default_finger_qpos", type=float, default=0.0)
 parser.add_argument("--yam_gripper_stiffness_scale", type=float, default=2.0)
 parser.add_argument("--yam_gripper_damping_scale", type=float, default=0.25)
 parser.add_argument("--yam_gripper_effort_scale", type=float, default=5.0)
+parser.add_argument("--debug_obs_interval", type=int, default=0)
+parser.add_argument("--debug_obs_max_frames", type=int, default=120)
 parser.add_argument("--disable_fabric", action="store_true", default=False)
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
@@ -90,6 +94,7 @@ import isaaclab_tasks  # noqa: F401
 import omni.usd
 from isaaclab.sensors.camera import Camera, CameraCfg
 from isaaclab_tasks.utils import parse_env_cfg
+from pxr import Gf, Sdf, UsdGeom, UsdShade
 
 import dextrah_lab.tasks.dextrah_single_yam_multi_object_grasp.gym_setup  # noqa: F401
 from dextrah_lab.assets.yam.bimanual_yam import (
@@ -314,6 +319,138 @@ def _apply_scene_randomization(env_cfg: Any, rng: np.random.Generator) -> dict[s
     return summary
 
 
+def _texture_candidates(raw_roots: str | None) -> list[Path]:
+    if not raw_roots:
+        return []
+    roots = [Path(item).expanduser() for item in str(raw_roots).split(":") if item.strip()]
+    exts = {".jpg", ".jpeg", ".png"}
+    candidates: list[Path] = []
+    for root in roots:
+        if root.is_file() and root.suffix.lower() in exts:
+            candidates.append(root)
+        elif root.is_dir():
+            candidates.extend(path for path in root.rglob("*") if path.is_file() and path.suffix.lower() in exts)
+    return sorted({path.resolve() for path in candidates})
+
+
+def _sample_texture_path(rng: np.random.Generator, raw_roots: str | None) -> str:
+    candidates = _texture_candidates(raw_roots)
+    if not candidates:
+        return ""
+    return str(candidates[int(rng.integers(0, len(candidates)))])
+
+
+def _usd_texture_material(stage: Any, path: str, texture_file: str, *, roughness: float) -> UsdShade.Material:
+    mat = UsdShade.Material.Define(stage, path)
+    shader = UsdShade.Shader.Define(stage, f"{path}/Shader")
+    shader.CreateIdAttr("UsdPreviewSurface")
+    st_reader = UsdShade.Shader.Define(stage, f"{path}/PrimvarReader_st")
+    st_reader.CreateIdAttr("UsdPrimvarReader_float2")
+    st_reader.CreateInput("varname", Sdf.ValueTypeNames.Token).Set("st")
+    st_reader.CreateOutput("result", Sdf.ValueTypeNames.Float2)
+    texture = UsdShade.Shader.Define(stage, f"{path}/DiffuseTexture")
+    texture.CreateIdAttr("UsdUVTexture")
+    texture.CreateInput("file", Sdf.ValueTypeNames.Asset).Set(Sdf.AssetPath(str(texture_file)))
+    texture.CreateInput("sourceColorSpace", Sdf.ValueTypeNames.Token).Set("sRGB")
+    texture.CreateInput("wrapS", Sdf.ValueTypeNames.Token).Set("repeat")
+    texture.CreateInput("wrapT", Sdf.ValueTypeNames.Token).Set("repeat")
+    texture.CreateInput("st", Sdf.ValueTypeNames.Float2).ConnectToSource(st_reader.ConnectableAPI(), "result")
+    texture.CreateOutput("rgb", Sdf.ValueTypeNames.Float3)
+    shader.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).ConnectToSource(texture.ConnectableAPI(), "rgb")
+    shader.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(float(roughness))
+    shader.CreateInput("metallic", Sdf.ValueTypeNames.Float).Set(0.0)
+    mat.CreateSurfaceOutput().ConnectToSource(shader.ConnectableAPI(), "surface")
+    return mat
+
+
+def _usd_bind(prim: Any, mat: UsdShade.Material) -> None:
+    UsdShade.MaterialBindingAPI.Apply(prim).Bind(mat)
+
+
+def _usd_add_xy_quad(
+    stage: Any,
+    path: str,
+    center: tuple[float, float, float],
+    size_xy: tuple[float, float],
+    mat: UsdShade.Material,
+    *,
+    uv_scale: tuple[float, float],
+) -> None:
+    cx, cy, cz = (float(v) for v in center)
+    sx, sy = (float(v) for v in size_xy)
+    ux, uy = (float(v) for v in uv_scale)
+    points = (
+        (cx - 0.5 * sx, cy - 0.5 * sy, cz),
+        (cx + 0.5 * sx, cy - 0.5 * sy, cz),
+        (cx + 0.5 * sx, cy + 0.5 * sy, cz),
+        (cx - 0.5 * sx, cy + 0.5 * sy, cz),
+    )
+    mesh = UsdGeom.Mesh.Define(stage, path)
+    mesh.CreatePointsAttr([Gf.Vec3f(*point) for point in points])
+    mesh.CreateFaceVertexCountsAttr([4])
+    mesh.CreateFaceVertexIndicesAttr([0, 1, 2, 3])
+    mesh.CreateDoubleSidedAttr(True)
+    mesh.CreateExtentAttr(
+        [
+            Gf.Vec3f(*(min(point[axis] for point in points) for axis in range(3))),
+            Gf.Vec3f(*(max(point[axis] for point in points) for axis in range(3))),
+        ]
+    )
+    st = UsdGeom.PrimvarsAPI(mesh.GetPrim()).CreatePrimvar(
+        "st",
+        Sdf.ValueTypeNames.TexCoord2fArray,
+        UsdGeom.Tokens.faceVarying,
+    )
+    st.Set([Gf.Vec2f(0.0, 0.0), Gf.Vec2f(ux, 0.0), Gf.Vec2f(ux, uy), Gf.Vec2f(0.0, uy)])
+    _usd_bind(mesh.GetPrim(), mat)
+
+
+def _apply_eval_table_texture(task_env: Any, rng: np.random.Generator) -> dict[str, Any]:
+    texture_path = _sample_texture_path(rng, args_cli.yam_policy_table_texture_dir)
+    if not texture_path:
+        return {"enabled": False, "texture_dir": str(args_cli.yam_policy_table_texture_dir or "")}
+    stage = omni.usd.get_context().get_stage()
+    if stage is None:
+        return {"enabled": False, "texture_path": texture_path, "reason": "missing_usd_stage"}
+    tiling_range = _range_pair(args_cli.yam_policy_table_texture_tiling_range, name="yam_policy_table_texture_tiling_range")
+    tiling = float(rng.uniform(tiling_range[0], tiling_range[1]))
+    roughness = float(rng.uniform(0.60, 0.96))
+    cfg = task_env.cfg
+    looks_root = "/World/Looks/YAMPolicyEvalTexture"
+    UsdGeom.Xform.Define(stage, looks_root)
+    mat = _usd_texture_material(stage, f"{looks_root}/table_texture", texture_path, roughness=roughness)
+    env_origins = task_env.scene.env_origins.detach().float().cpu().numpy()
+    size_xy = (float(cfg.table_size_x), float(cfg.table_size_y))
+    records: list[dict[str, Any]] = []
+    for env_id, origin in enumerate(env_origins):
+        center = (
+            float(origin[0]) + float(cfg.table_center_x),
+            float(origin[1]) + float(cfg.table_center_y),
+            float(origin[2]) + float(cfg.table_surface_z) + 0.0008,
+        )
+        uv_scale = (tiling, tiling * max(0.1, size_xy[1] / max(size_xy[0], 1.0e-6)))
+        path = f"/World/envs/env_{env_id}/YAMPolicyEvalTableTexture/full_surface"
+        _usd_add_xy_quad(stage, path, center, size_xy, mat, uv_scale=uv_scale)
+        records.append(
+            {
+                "env_id": int(env_id),
+                "path": path,
+                "center": [float(v) for v in center],
+                "size": [float(v) for v in size_xy],
+                "uv_scale": [float(v) for v in uv_scale],
+            }
+        )
+    task_env.sim.forward()
+    return {
+        "enabled": True,
+        "texture_dir": str(args_cli.yam_policy_table_texture_dir or ""),
+        "texture_path": texture_path,
+        "tiling": tiling,
+        "roughness": roughness,
+        "quads": records,
+    }
+
+
 def _jitter_vec(
     rng: np.random.Generator,
     base: tuple[float, float, float] | list[float],
@@ -374,6 +511,48 @@ def _resize_rgb_nearest(frame: np.ndarray, height: int, width: int) -> np.ndarra
     y_idx = np.linspace(0, rgb.shape[0] - 1, height).round().astype(np.int64)
     x_idx = np.linspace(0, rgb.shape[1] - 1, width).round().astype(np.int64)
     return rgb[y_idx[:, None], x_idx[None, :], :].copy()
+
+
+def _save_debug_obs_frame(
+    output_dir: Path,
+    obs: dict[str, np.ndarray],
+    *,
+    episode: int,
+    step: int,
+    action: np.ndarray | None,
+    paths: list[str],
+) -> None:
+    if len(paths) >= max(0, int(args_cli.debug_obs_max_frames)):
+        return
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+    except Exception as exc:
+        _stage("debug_obs_disabled", reason=f"pil_import_failed:{exc.__class__.__name__}")
+        args_cli.debug_obs_interval = 0
+        return
+    scene = np.asarray(obs["scene_rgb"], dtype=np.uint8)
+    wrist = np.asarray(obs["wrist_rgb"], dtype=np.uint8)
+    if scene.shape != wrist.shape:
+        return
+    frame_h, frame_w = scene.shape[:2]
+    header_h = 28
+    canvas = Image.new("RGB", (frame_w * 2, frame_h + header_h), (18, 18, 18))
+    canvas.paste(Image.fromarray(scene, mode="RGB"), (0, header_h))
+    canvas.paste(Image.fromarray(wrist, mode="RGB"), (frame_w, header_h))
+    draw = ImageDraw.Draw(canvas)
+    font = ImageFont.load_default()
+    label = f"ep={episode} step={step}"
+    if action is not None:
+        flat = np.asarray(action, dtype=np.float32).reshape(-1)
+        label += " action=[" + ", ".join(f"{v:+.3f}" for v in flat[:7]) + "]"
+    draw.text((6, 7), label, fill=(238, 238, 232), font=font)
+    draw.text((max(2, frame_w // 2 - 38), frame_h + header_h - 15), "scene", fill=(238, 238, 232), font=font)
+    draw.text((frame_w + max(2, frame_w // 2 - 34), frame_h + header_h - 15), "wrist", fill=(238, 238, 232), font=font)
+    debug_dir = output_dir / "debug_obs"
+    debug_dir.mkdir(parents=True, exist_ok=True)
+    path = debug_dir / f"obs_ep{episode:03d}_step{step:04d}.png"
+    canvas.save(path)
+    paths.append(str(path))
 
 
 def _find_body_prim_path(stage: Any, body_name: str) -> str:
@@ -695,6 +874,8 @@ def main() -> None:
     gym_env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array")
     task_env = gym_env.unwrapped
     _configure_camera(env_cfg, scene_eye, scene_target, task_env)
+    appearance_summary = {"table_texture": _apply_eval_table_texture(task_env, rng)}
+    _stage("appearance_ready", appearance=appearance_summary)
     wrist_camera, wrist_camera_summary = _make_single_yam_wrist_camera(task_env)
     if args_cli.video:
         gym_env = gym.wrappers.RecordVideo(
@@ -713,10 +894,12 @@ def main() -> None:
     action_max = np.full(7, -np.inf, dtype=np.float64)
     policy_call_idx = 0
     env_closed = False
+    debug_obs_paths: list[str] = []
     try:
         for episode in range(int(args_cli.num_episodes)):
             _policy_obs_from_reset(gym_env.reset(seed=int(args_cli.seed) + episode))
             obs = _capture_obs(gym_env, task_env, wrist_camera, scene_eye, scene_target)
+            current_obs = obs
             history = RgbRobotObsHistory(
                 n_obs_steps=int(policy.n_obs_steps),
                 height=int(args_cli.image_height),
@@ -724,11 +907,14 @@ def main() -> None:
                 robot_state_dim=24,
             )
             history.reset(obs)
+            if int(args_cli.debug_obs_interval) > 0:
+                _save_debug_obs_frame(output_dir, current_obs, episode=episode, step=0, action=None, paths=debug_obs_paths)
             action_queue = np.empty((1, 0, 7), dtype=np.float32)
             done_count = 0
             first_done: dict[str, Any] | None = None
             episode_records: list[dict[str, float | int | None]] = []
             chunk_steps_requested = max(1, int(args_cli.action_chunk_steps))
+            debug_interval = max(0, int(args_cli.debug_obs_interval))
             for step in range(int(args_cli.num_steps)):
                 if not simulation_app.is_running():
                     break
@@ -750,6 +936,15 @@ def main() -> None:
                 clip = float(args_cli.clip_actions)
                 if math.isfinite(clip) and clip > 0.0:
                     action_np = np.clip(action_np, -clip, clip)
+                if debug_interval > 0 and (step == 0 or (step + 1) % debug_interval == 0):
+                    _save_debug_obs_frame(
+                        output_dir,
+                        current_obs,
+                        episode=episode,
+                        step=step + 1,
+                        action=action_np,
+                        paths=debug_obs_paths,
+                    )
                 action_min = np.minimum(action_min, action_np.min(axis=0))
                 action_max = np.maximum(action_max, action_np.max(axis=0))
                 action_trace.append(
@@ -783,6 +978,7 @@ def main() -> None:
                     history.reset(next_obs)
                 else:
                     history.push(next_obs)
+                current_obs = next_obs
                 task_metrics = _collect_task_metrics(task_env)
                 record: dict[str, float | int | None] = {
                     "episode": int(episode),
@@ -852,6 +1048,7 @@ def main() -> None:
         "scene_camera": {"eye": [float(v) for v in scene_eye], "target": [float(v) for v in scene_target]},
         "object_asset_overrides": object_asset_summary,
         "scene_randomization": randomization_summary,
+        "appearance": appearance_summary,
         "robot_default_pose": pose_summary,
         "gripper_gain_scales": gain_summary,
         "num_episodes_requested": int(args_cli.num_episodes),
@@ -868,6 +1065,7 @@ def main() -> None:
         "episodes": episode_summaries,
         "video_enabled": bool(args_cli.video),
         "video_files": _latest_video_files(video_folder if args_cli.video else None),
+        "debug_obs_files": debug_obs_paths,
         "env_closed": env_closed,
         "output_dir": str(output_dir),
         "metrics_path": str(metrics_path),

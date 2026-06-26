@@ -11712,3 +11712,42 @@ Smoke follow-up:
   can see table edge/blue floor near the bin during the later part of motion.
   The sampled first-row pose action norms are nonzero (`0.011-0.026`), matching
   the intended trim of the initial static warmup.
+- Completed A100 training job `29515669` for the trimmed 500-shard RGB
+  Diffusion Policy run
+  `yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_20k_20260626T044711Z`.
+  The job exited `0:0`, wrote checkpoint
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_20k_20260626T044711Z/latest.ckpt`,
+  and ended with finite metrics: final train loss `0.08026480994550511`, mean
+  last-100 train loss `0.030980980730931272`, mean last-1000 train loss
+  `0.030880429746521543`, and final validation loss `0.02585003338754177`.
+- Ran offline coherence diagnostic job `29516407` on the same checkpoint and
+  trimmed manifest. It completed in `00:01:16`; report:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/diagnostics/yam_rgb_dp_offline_diag_phasegrip2_trimstart_20k_20260626T054752Z/yam_rgb_offline_coherence_report.md`.
+  On 138 sampled rows, predicted first-action pose L2 mean was
+  `0.023348585729473743` vs label `0.022454329663705194`
+  (`pose_l2_ratio_mean=1.039825551649133`) and gripper sign match was
+  `0.782608695652174`. This supports that the checkpoint is coherent on
+  actual training observations.
+- Launched L40 quality-render closed-loop eval smoke job `1046074` with
+  one episode, 720 steps, video capture, and the filtered Objaverse manifest.
+  The job completed but did not solve the task: success rate `0.0`,
+  max lift height `6.407499313354492e-07`, and the object essentially remained
+  at reset. The first applied action was very small in pose
+  (`[0.00247, -0.000052, 0.01475, 0.00105, -0.01019, 0.00151]`) and closed the
+  gripper (`-1.0`), unlike sampled first labels from the trimmed training
+  shards. The rollout video also showed a flat diffuse table appearance,
+  whereas the high-quality replay training observations used wood table
+  textures. Current diagnosis: closed-loop eval observations are visually
+  out-of-distribution, especially table appearance and possibly wrist context,
+  rather than a globally collapsed policy.
+- Patched the YAM RGB policy evaluator and L40 eval wrapper to add eval-time
+  table texture overlays and saved scene/wrist debug observation frames. The
+  wrapper now forwards `YAM_POLICY_TABLE_TEXTURE_DIR`,
+  `YAM_POLICY_TABLE_TEXTURE_TILING_RANGE`, `DEBUG_OBS_INTERVAL`, and
+  `DEBUG_OBS_MAX_FRAMES`. Local checks passed:
+  `/home/lzha/code/.venvs/dextrah-isaaclab/bin/python -m py_compile dextrah_lab/rl_games/eval_yam_pickplace_rgb_dp_policy.py`
+  and `bash -n cluster/sbatch_eval_yam_pickplace_rgb_dp_policy_1gpu.sh`.
+  Next step: commit, deploy the exact revision to the L40 worktree, rerun a
+  short textured eval with debug observations enabled, inspect video/metrics
+  and the direct policy-input frames, then decide whether the remaining failure
+  is camera/appearance support or action/control dynamics.
