@@ -12144,3 +12144,32 @@ Smoke follow-up:
   in wrist view but does not yet grasp/lift, so this remains a slow convergence
   issue rather than an eval/train mismatch. A100 training continued past
   `global_step=273140` with last-5000 train-loss mean about `0.01137`.
+
+## 2026-06-26 13:35 PDT - 300k Threshold Parity Audit
+
+- The current A100 allocation `29529321` is running after the submitter resumed
+  from the previous wall-time timeout. The live JSON log reached
+  `global_step=302976` with finite train losses; the latest saved checkpoint is
+  still the epoch checkpoint at `global_step=283037`, with
+  `val_loss=0.01050512120127678`, so the saved validation curve is still
+  improving.
+- The l401 periodic monitor saw `threshold=300000 step=301639` and is correctly
+  waiting for a checkpoint whose mtime is newer than the threshold crossing.
+  This preserves the intended fresh-checkpoint guard and prevents evaluating
+  the stale 283k checkpoint as the 300k result.
+- I re-audited the train/eval schema before the next eval. The actual first
+  training shard contains only `scene_rgb.npy`, `wrist_rgb.npy`,
+  `robot_state.npy`, `action.npy`, and `episode_ends.npy`; shapes are
+  `scene_rgb=(794,256,256,3)`, `wrist_rgb=(794,256,256,3)`,
+  `robot_state=(794,24)`, and `action=(794,7)`. The apparent `phase` string in
+  the manifest is only from the run/source path name (`phasegrip2`), not a
+  policy input array.
+- The 109k and 240k eval metrics both confirm full-horizon evaluation:
+  `num_steps_requested=2400`, `steps_completed=7200`, and
+  `episode_length.after_s=40.03333333333333`. They also report the intended
+  policy observation schema (`scene_rgb` and `wrist_rgb` `[3,256,256]`,
+  `robot_state=24`) with `phase_progress_in_policy=false` and
+  `privileged_object_state_in_policy=false`. Table texture and HDR dome texture
+  randomization are enabled in the eval artifacts. I do not see an eval/train
+  observation-schema mismatch; the remaining failures still point to
+  undertrained diffusion behavior.
