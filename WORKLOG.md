@@ -11651,3 +11651,51 @@ Smoke follow-up:
   `yam_policy_object_validate_usd_bounds`. Local checks passed:
   `python3 -m py_compile dextrah_lab/rl_games/eval_yam_pickplace_rgb_dp_policy.py`
   and `bash -n cluster/sbatch_eval_yam_pickplace_rgb_dp_policy_1gpu.sh`.
+- Visualized corrected `phasegrip2` training data locally:
+  contact sheet
+  `/home/lzha/code/cluster_results/a1001/training_data_phasegrip2_20260626T0328Z/training_data_contact_sheet.png`
+  and scene/wrist side-by-side clip
+  `/home/lzha/code/cluster_results/a1001/training_data_phasegrip2_20260626T0328Z/training_data_shard000123_scene_wrist.mp4`.
+  The scene camera sees mostly table/object/bin with little background; wrist
+  observations are valid but naturally see more table edge/background during
+  motion.
+- Added YAM-specific offline RGB DP coherence diagnostics:
+  `dextrah_lab/offline_dp_bc/diagnose_yam_rgb_dp_offline_coherence.py` and
+  `cluster/sbatch_diagnose_yam_rgb_dp_offline_coherence_1gpu.sh`.
+  The first diagnostic job `29515397` failed because the wrapper used
+  `python3` inside the Isaac container; fixed it to use `/isaac-sim/python.sh`
+  and reran as job `29515408`.
+- Offline coherence job `29515408` completed successfully on the corrected
+  `phasegrip2` 20k checkpoint. Report:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/diagnostics/yam_rgb_dp_offline_diag_phasegrip2_20k_retry_20260626T042222Z/yam_rgb_offline_coherence_report.md`.
+  On 112 training-shard observations, predicted first-action pose L2 mean was
+  `0.022936` vs label `0.022756` (`pose_l2_ratio_mean=1.008`), so the policy
+  is not globally collapsed offline. Gripper sign matched `0.768` of sampled
+  rows. The eval failure is therefore more consistent with closed-loop
+  reset/support drift than with a pure checkpoint/action-scale failure.
+- Audited original `phasegrip2` shard action starts with short container job
+  `29515432`: first pose-action norm above `0.01` occurs at rows `49-52`
+  across shards, and near-static pose rows average about `29.3%`. This is a
+  closed-loop deadlock risk for `n_obs_steps=1` without phase/progress: reset
+  observations are labeled with zero/near-zero actions and can repeat forever.
+- Patched `make_yam_rgb_policy_shards.py` and the shard Slurm wrapper to
+  support reproducible initial-static trimming with
+  `--trim_initial_static_pose_threshold` and
+  `--trim_initial_static_keep_steps`. Local commit:
+  `74f7f4a2fa42af341ae92cb577967902a6aa632c`.
+- Rebuilt the 500-shard RGB policy dataset with
+  `TRIM_INITIAL_STATIC_POSE_THRESHOLD=0.01`,
+  `TRIM_INITIAL_STATIC_KEEP_STEPS=0`, `OUTPUT_FORMAT=npy_dir`, and
+  `COMPRESS_SHARDS=False` in A100 job `29515469`. It completed in `00:17:58`.
+  Manifest:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb_policy/yam_rgb_policy_shards_500_mmap_phasegrip2_trimstart_20260626T042729Z/manifest.json`.
+  It contains `500` shards and `389607` rows.
+- Audited the trimmed manifest with short container job `29515647`: trim starts
+  are `49-52` rows, first pose-action norm is above `0.010` in every shard
+  (`bad_first_pose_count=0`), first gripper labels are all open, and full action
+  range remains `[-1, +1]` on the gripper with the prior pose min/max intact.
+- Launched A100 training job `29515669` on the trimmed manifest. Run name:
+  `yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_20k_20260626T044711Z`.
+  Config: `NUM_EPOCHS=1`, `MAX_TRAIN_STEPS=20000`, `MAX_VAL_STEPS=200`,
+  batch size `8`, `IMAGE_SIZE=256`, `n_obs_steps=1`. Staged checkpoint target:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_20k_20260626T044711Z/latest.ckpt`.
