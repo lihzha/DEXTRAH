@@ -12044,3 +12044,11 @@ Smoke follow-up:
   eval wrapper and periodic monitor, and `git diff --check`. Next step is to
   commit, deploy the exact revision to the l401 agent worktree, and restart the
   monitor before the first 100k-step eval threshold.
+- Committed and pushed as
+  `9ebdd4ffb52065a57aea4c37a8937fcac1d6e025`, deployed to the l401 agent
+  worktree via Git bundle, and verified remote `bash -n` for the eval wrapper
+  and monitor. Training was still below the first eval threshold
+  (`global_step=73095`), so the old monitor PID `3135358` was stopped and a
+  replacement monitor was started with the same run configuration plus HDR
+  texture eval parity. Replacement monitor PID: `3139751`; log:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_horizonfix_20260626T080838Z_periodic_monitor/monitor_hdr_9ebdd4ff.log`.
