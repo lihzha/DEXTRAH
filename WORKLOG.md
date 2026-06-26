@@ -12242,3 +12242,15 @@ Smoke follow-up:
   and `RENDERING_MODE=quality`. The sampled replay metadata's
   `source_timing.mode="realtime"` therefore refers to timing, not kinematic
   replay.
+
+## 2026-06-26 16:06 PDT - 370k Checkpoint Monitor
+
+- The active A100 allocation `29529321` wrote a new checkpoint at
+  `global_step=370716` with checkpoint mtime `2026-06-26T23:01:44Z`.
+  Validation loss is `0.010359618812799454`, which is worse than the prior
+  `326876` checkpoint (`0.009620319120585918`) but still in the same finite
+  band. The last-1000 train-loss mean around this window was about `0.0105`.
+- This checkpoint is below the next periodic eval threshold (`400000`), so the
+  L40 monitor correctly did not submit a new eval. The A100 job and L40 monitor
+  both remain alive; continue training toward the 400k threshold and inspect the
+  next fresh-threshold eval.
