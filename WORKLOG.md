@@ -11772,3 +11772,20 @@ Smoke follow-up:
   wrapper. Local checks passed:
   `/home/lzha/code/.venvs/dextrah-isaaclab/bin/python -m py_compile dextrah_lab/rl_games/eval_yam_pickplace_rgb_dp_policy.py`
   and `bash -n cluster/sbatch_eval_yam_pickplace_rgb_dp_policy_1gpu.sh`.
+- Deployed commit `2c75236b500fba578c6af70c22eaa3171b22a0f2` to the L40
+  eval worktree and launched capture-fix eval job `1046183`
+  (`yam_pickplace_rgb_dp_phasegrip2_trimstart_20k_eval_capturefix_20260626T061437Z`).
+  The job completed `0:0`; the scene RGB retry fixed the black reset frame
+  (`scene_rgb_capture_recovered` on attempt 2 with mean RGB about `104.0`).
+  Local artifacts:
+  `/home/lzha/code/cluster_results/l401/yam_pickplace_rgb_dp_phasegrip2_trimstart_20k_eval_capturefix_20260626T061437Z/videos/yam-pickplace-rgb-dp-eval-step-0.mp4`,
+  `/home/lzha/code/cluster_results/l401/yam_pickplace_rgb_dp_phasegrip2_trimstart_20k_eval_capturefix_20260626T061437Z/metrics.json`,
+  and
+  `/home/lzha/code/cluster_results/l401/yam_pickplace_rgb_dp_phasegrip2_trimstart_20k_eval_capturefix_20260626T061437Z/debug_obs/obs_ep000_step0000.png`.
+  The reset debug observation is now valid, table-textured, and contains the
+  object/bin, but the closed-loop policy still fails (`episode_success_rate=0`,
+  max lift `2.2351741790771484e-08`, minimum hold-to-object distance
+  `0.28253647685050964`). The first action remains a premature close
+  (`gripper=-0.986`) with tiny pose motion, so the remaining issue is likely
+  observation support at the eval reset state, robot-state/action schema drift,
+  or controller-frame mismatch rather than a blank scene-camera frame.
