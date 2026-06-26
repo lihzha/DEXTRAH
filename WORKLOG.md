@@ -11990,3 +11990,11 @@ Smoke follow-up:
   first training job is still live. This lets the restarted supervisor wait on
   job `29518087` and then continue the same run without submitting a duplicate
   A100 job.
+- Restarted the A100 submitter with `ADOPT_JOB_ID=29518087`; replacement PID is
+  `3167244` and it adopted the live job at `global_step=59848` without
+  submitting a duplicate. The first epoch boundary then completed normally:
+  fresh `latest.ckpt` and `epoch=0000-test_mean_score=0.000.ckpt` were written
+  at about 03:00 PDT, and the first validation row at `global_step=63839` has
+  `val_loss=0.01996723562479019`, `train_loss=0.027428813466033642`, and
+  `test_mean_score=0.0`. Training continued into epoch 1; at
+  `global_step=67201`, the last-1000 train-loss mean was about `0.0209`.
