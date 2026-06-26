@@ -11937,3 +11937,38 @@ Smoke follow-up:
   `python3 -m py_compile dextrah_lab/rl_games/eval_yam_pickplace_rgb_dp_policy.py`,
   `bash -n cluster/sbatch_eval_yam_pickplace_rgb_dp_policy_1gpu.sh cluster/submit_yam_rgb_dp_checkpoint_eval_monitor_l401.sh`,
   and `git diff --check`.
+- Committed and pushed the horizon fix as
+  `be86f4a080dfcbb4a96d29be2585b13d72ecf430`, deployed it to the l401/A100
+  agent worktree via Git bundle, and re-materialized the generated
+  `yam_mjcf_usd` asset subtree in that worktree.
+- Relaunched the long-horizon smoke as l401 job `1046747`, run
+  `yam_pickplace_rgb_dp_20k_eval_horizonfix_20260626T080337Z`. It completed
+  successfully with `steps_completed=2400`, `num_steps_requested=2400`,
+  `episode_length.after_s=40.03333333333333`, `done_count=0`, no truncation,
+  `phase_progress_in_policy=false`, and
+  `privileged_object_state_in_policy=false`. The video is 1280x720,
+  `2399` frames at 60 FPS (`39.98s`), and the policy-input debug video is
+  1024x568, 48 frames at 8 FPS. Local artifacts:
+  `/home/lzha/code/cluster_results/l401/yam_pickplace_rgb_dp_20k_eval_horizonfix_20260626T080337Z/videos/yam-pickplace-rgb-dp-eval-step-0.mp4`,
+  `/home/lzha/code/cluster_results/l401/yam_pickplace_rgb_dp_20k_eval_horizonfix_20260626T080337Z/eval_policy_obs_scene_wrist_debug.mp4`,
+  and
+  `/home/lzha/code/cluster_results/l401/yam_pickplace_rgb_dp_20k_eval_horizonfix_20260626T080337Z/metrics.json`.
+  Visual inspection confirmed the scene camera stays tabletop-dominant with
+  object/bin visible and little background; wrist observations are live through
+  step 2400. The 20k policy still fails behaviorally (`episode_success_rate=0`,
+  max lift about `6.5e-7`), which is now treated as undertraining rather than
+  a short-horizon eval bug.
+- Launched long A100 training via background submitter PID `2636435` on
+  `a1001`. Run:
+  `yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_horizonfix_20260626T080838Z`.
+  First submitted A100 job: `29518087`. Target: `2,000,000` global steps,
+  resumed from the 20k checkpoint, using the 500-demo mmap manifest, 256x256
+  `scene_rgb`/`wrist_rgb`, 24D robot state, 7D action, `n_obs_steps=1`,
+  `n_action_steps=8`, `batch_size=8`, `lr=1e-4`, `TOPK_CHECKPOINTS=50`. Early
+  rows are finite and advancing past resume (`global_step=20101`,
+  train loss around `0.012-0.023`).
+- Launched l401 periodic eval monitor PID `3071195` for the same train run.
+  It will snapshot checkpoints and submit quality-render eval every 100k
+  training steps with `NUM_EPISODES=3`, `NUM_STEPS=2400`, `VIDEO_LENGTH=2400`,
+  `ACTION_CHUNK_STEPS=8`, scene camera X-parallel jitter, filtered Objaverse
+  manifest, table texture randomization, and open-finger reset.
