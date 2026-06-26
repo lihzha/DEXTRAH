@@ -12173,3 +12173,42 @@ Smoke follow-up:
   randomization are enabled in the eval artifacts. I do not see an eval/train
   observation-schema mismatch; the remaining failures still point to
   undertrained diffusion behavior.
+
+## 2026-06-26 15:08 PDT - 327k Eval And Gripper/Schema Audit
+
+- A fresh checkpoint landed at `global_step=326876` with
+  `val_loss=0.009620319120585918`, improving over the `283037` checkpoint
+  (`0.01050512120127678`). The l401 periodic monitor waited for that fresh
+  checkpoint after the 300k threshold and submitted eval job `1050527` from
+  snapshot
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_horizonfix_20260626T080838Z/periodic_eval_snapshots/step_0327219.ckpt`.
+- Eval job `1050527` completed (`COMPLETED`, exit `0:0`) and artifacts were
+  fetched locally under
+  `/home/lzha/code/cluster_results/l401/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_horizonfix_20260626T080838Z_periodic_eval_step0327219`.
+  The side-by-side scene/wrist video is `1280x720`, `60 FPS`, `2400` frames,
+  and `40.0s`, confirming the long eval horizon in the rendered artifact.
+- The 327k metrics again show eval/train observation parity: 3 episodes,
+  7200 total steps, `num_steps_requested=2400`, `scene_rgb` and `wrist_rgb`
+  `[3,256,256]`, `robot_state=24`, `phase_progress_in_policy=false`, and
+  `privileged_object_state_in_policy=false`. Table wood texture and HDR dome
+  texture randomization are enabled, with the same scene camera geometry used
+  for this run.
+- Behavior is still unsuccessful: `episode_success_rate=0.0`, no lift
+  (`max_lift_height` near zero), and final object poses remain on the table.
+  The action trace narrows the failure mode. Episodes 0 and 1 keep the gripper
+  open for all 2400 steps (`action[6]` about `+1.0` throughout), while episode
+  2 closes early (`first_close_idx=52`, `action[6]` near `-1.0`) but off target.
+  Visual inspection of `obs_ep000_step0240`, `obs_ep000_step1200`, and
+  `obs_ep002_step0240` confirms live scene/wrist RGB and shows the policy either
+  hovering near the object open or closing after drifting away.
+- I audited the training labels and a checkpoint offline to look for gripper
+  sign or normalizer bugs. Across the 500-demo mmap dataset, all episodes have
+  close labels; close labels are 69.81% of 389607 action rows and the first
+  close step has median 173. The offline checkpoint diagnostic on the 327k
+  snapshot passed: over 174 selected dataset rows, gripper sign match was
+  `0.908`; close-labeled rows predicted mean gripper `-0.812` vs label `-1.0`,
+  and open-labeled rows predicted mean `+0.819` vs label `+1.0`. This makes a
+  global action-sign, missing-input, or normalization mismatch unlikely. The
+  remaining issue is closed-loop state distribution/undertraining, so the next
+  step is to continue the 2M-step training run and inspect the next periodic
+  evals.
