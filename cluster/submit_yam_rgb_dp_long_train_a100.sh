@@ -21,6 +21,7 @@ CODE_COMMIT="${CODE_COMMIT:-}"
 SLURM_QUERY_FAILURE_RETRIES="${SLURM_QUERY_FAILURE_RETRIES:-5}"
 SBATCH_RETRIES="${SBATCH_RETRIES:-5}"
 SBATCH_RETRY_SECONDS="${SBATCH_RETRY_SECONDS:-60}"
+ADOPT_JOB_ID="${ADOPT_JOB_ID:-}"
 
 if [ -z "$CODE_COMMIT" ] && git -C "$CODE_NFS" rev-parse HEAD >/dev/null 2>&1; then
   CODE_COMMIT="$(git -C "$CODE_NFS" rev-parse HEAD)"
@@ -57,6 +58,7 @@ payload = {
     "wrapper": "$WRAPPER",
     "max_submissions": int("$MAX_SUBMISSIONS"),
     "poll_seconds": int("$POLL_SECONDS"),
+    "adopt_job_id": "$ADOPT_JOB_ID" or None,
 }
 Path("$CONFIG_JSON").write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 print(json.dumps({"event": "long_train_submitter_config_written", "path": "$CONFIG_JSON"}))
@@ -163,6 +165,24 @@ submit_train_job() {
 }
 
 submission=0
+if [ -n "$ADOPT_JOB_ID" ]; then
+  current_step="$(last_step)"
+  submission=$((submission + 1))
+  printf "%s\t%s\t%s\t%s\t%s\n" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$submission" "$ADOPT_JOB_ID" "adopted" "$current_step" | tee -a "$SUBMITTED_TSV"
+  wait_for_job "$ADOPT_JOB_ID"
+  state="$(job_state "$ADOPT_JOB_ID")"
+  new_step="$(last_step)"
+  echo "adopted_job_done job_id=$ADOPT_JOB_ID state=${state:-unknown} previous_step=$current_step new_step=$new_step"
+  if log_has_failure "$ADOPT_JOB_ID"; then
+    echo "Detected failure pattern in $LOG_DIR/train_yam_rgb_dp_${ADOPT_JOB_ID}.out" >&2
+    exit 1
+  fi
+  if [ "$new_step" -le "$current_step" ] && [ "${state%%+*}" != "TIMEOUT" ]; then
+    echo "Adopted training job made no progress and did not time out; stopping." >&2
+    exit 1
+  fi
+fi
+
 while [ "$submission" -lt "$MAX_SUBMISSIONS" ]; do
   current_step="$(last_step)"
   if [ "$current_step" -ge "$((TARGET_TRAIN_STEPS - 1))" ]; then

@@ -11986,3 +11986,7 @@ Smoke follow-up:
   retries failed `squeue` queries, requires two consecutive empty `squeue`
   results before considering a job gone, and wraps `sbatch` submission in a
   retry loop. Validation passed with `bash -n` and `git diff --check`.
+- Added `ADOPT_JOB_ID` support before restarting the submitter, because the
+  first training job is still live. This lets the restarted supervisor wait on
+  job `29518087` and then continue the same run without submitting a duplicate
+  A100 job.
