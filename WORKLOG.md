@@ -11530,3 +11530,23 @@ Smoke follow-up:
   `wrist_rgb`, `robot_state`, and `action` only. This is the dataset manifest
   for RGB Diffusion Policy training:
   `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb_policy/yam_rgb_policy_shards_500_uncompressed_20260626T0008Z/manifest.json`.
+- Launched A100 RGB Diffusion Policy smoke training job `29506783` using
+  manifest
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb_policy/yam_rgb_policy_shards_500_uncompressed_20260626T0008Z/manifest.json`.
+  Run name: `yam_pickplace_rgb_dp_500_smoke_20260626T0019Z`; remote code:
+  `/lustre/fsw/portfolios/nvr/users/lzha/src/worktrees/DEXTRAH/yam-rgb-diffusion-a100-dp-676632ea`
+  at `69761750c0e60b21cf2acff33c901c76862a923f`; config: `NUM_EPOCHS=1`,
+  `MAX_TRAIN_STEPS=20`, `MAX_VAL_STEPS=5`, batch size `4`. Success criteria:
+  loader/config import succeeds, losses are finite, and `latest.ckpt` is
+  written under
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb/yam_pickplace_rgb_dp_500_smoke_20260626T0019Z/official_dp_train`.
+- Cancelled smoke job `29506783` after `00:04:12`. It reached model creation
+  but remained CPU/I/O-bound with GPU idle while constructing the dataset from
+  large per-episode NPZ shards. Root cause: the dataset constructor read full
+  RGB arrays during shape checks, and the old NPZ-backed sample path would
+  reload whole RGB shards for random frame access during training.
+- Patched the RGB policy data path to support `OUTPUT_FORMAT=npy_dir`: the
+  converter writes one mmap-friendly directory per trajectory with separate
+  `.npy` arrays, the Slurm conversion wrapper exposes the format, and
+  `YamRgbShardedDataset` reads manifest shape metadata and memory maps
+  directory shards. The NPZ path remains as fallback for existing artifacts.

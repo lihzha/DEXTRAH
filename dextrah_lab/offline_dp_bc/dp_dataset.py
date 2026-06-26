@@ -588,20 +588,25 @@ class YamRgbShardedDataset(BaseImageDataset):
         raw_shards = payload.get("shards")
         if not isinstance(raw_shards, list) or not raw_shards:
             raise ValueError(f"{manifest_file} has no shards")
+        self._shard_rows = raw_shards
         self.shard_paths = [
             (Path(str(row["path"])) if Path(str(row["path"])).is_absolute() else manifest_file.parent / str(row["path"]))
             for row in raw_shards
         ]
         self.shard_paths = [path.expanduser().resolve() for path in self.shard_paths]
-        for path in self.shard_paths:
-            if not path.is_file():
-                raise FileNotFoundError(path)
-
         self._shard_lengths: list[int] = []
         robot_parts: list[np.ndarray] = []
         action_parts: list[np.ndarray] = []
-        for path in self.shard_paths:
-            with np.load(path, allow_pickle=False) as data:
+        for row, path in zip(raw_shards, self.shard_paths):
+            if path.is_dir():
+                data = self._load_npy_dir_metadata(path)
+                close_data = False
+            elif path.is_file():
+                data = np.load(path, allow_pickle=False)
+                close_data = True
+            else:
+                raise FileNotFoundError(path)
+            try:
                 robot = np.asarray(data[self.robot_state_key], dtype=np.float32)
                 action = np.asarray(data["action"], dtype=np.float32)
                 if robot.ndim != 2:
@@ -611,14 +616,19 @@ class YamRgbShardedDataset(BaseImageDataset):
                 if robot.shape[0] != action.shape[0]:
                     raise ValueError(f"{path}: robot/action length mismatch {robot.shape} vs {action.shape}")
                 for key in self.image_keys:
-                    image = np.asarray(data[key])
-                    if image.ndim != 4:
-                        raise ValueError(f"{path}: {key} must be rank 4, got {image.shape}")
-                    if image.shape[0] != action.shape[0]:
-                        raise ValueError(f"{path}: {key} length {image.shape[0]} != action length {action.shape[0]}")
+                    shape = row.get(f"{key}_shape")
+                    if shape is None:
+                        shape = tuple(np.asarray(data[key]).shape)
+                    if len(shape) != 4:
+                        raise ValueError(f"{path}: {key} must be rank 4, got {shape}")
+                    if int(shape[0]) != int(action.shape[0]):
+                        raise ValueError(f"{path}: {key} length {shape[0]} != action length {action.shape[0]}")
                 self._shard_lengths.append(int(action.shape[0]))
                 robot_parts.append(robot)
                 action_parts.append(action)
+            finally:
+                if close_data:
+                    data.close()
         self.robot_state = np.concatenate(robot_parts, axis=0).astype(np.float32, copy=False)
         self.action = np.concatenate(action_parts, axis=0).astype(np.float32, copy=False)
         self.episode_ends = np.cumsum(np.asarray(self._shard_lengths, dtype=np.int64))
@@ -731,13 +741,31 @@ class YamRgbShardedDataset(BaseImageDataset):
         if self._cache_shard_idx == int(shard_idx) and self._cache_data is not None:
             return self._cache_data
         path = self.shard_paths[int(shard_idx)]
-        with np.load(path, allow_pickle=False) as data:
-            loaded = {
-                key: np.asarray(data[key])
-                for key in (*self.image_keys, self.robot_state_key, "action")
-            }
+        if path.is_dir():
+            loaded = self._load_npy_dir_arrays(path)
+        else:
+            with np.load(path, allow_pickle=False) as data:
+                loaded = {
+                    key: np.asarray(data[key])
+                    for key in (*self.image_keys, self.robot_state_key, "action")
+                }
         self._cache_shard_idx = int(shard_idx)
         self._cache_data = loaded
+        return loaded
+
+    def _load_npy_dir_metadata(self, path: Path) -> dict[str, np.ndarray]:
+        return {
+            self.robot_state_key: np.load(path / f"{self.robot_state_key}.npy", mmap_mode="r", allow_pickle=False),
+            "action": np.load(path / "action.npy", mmap_mode="r", allow_pickle=False),
+        }
+
+    def _load_npy_dir_arrays(self, path: Path) -> dict[str, np.ndarray]:
+        loaded = {
+            key: np.load(path / f"{key}.npy", mmap_mode="r", allow_pickle=False)
+            for key in self.image_keys
+        }
+        loaded[self.robot_state_key] = np.load(path / f"{self.robot_state_key}.npy", mmap_mode="r", allow_pickle=False)
+        loaded["action"] = np.load(path / "action.npy", mmap_mode="r", allow_pickle=False)
         return loaded
 
     @staticmethod

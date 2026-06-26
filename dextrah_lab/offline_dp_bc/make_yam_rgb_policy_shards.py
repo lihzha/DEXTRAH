@@ -91,7 +91,14 @@ def _rgb_array(data: np.lib.npyio.NpzFile, key: str, fallback: str | None = None
     return arr
 
 
-def _convert_one(row: dict[str, Any], output_dir: Path, index: int, *, compress: bool) -> dict[str, Any]:
+def _convert_one(
+    row: dict[str, Any],
+    output_dir: Path,
+    index: int,
+    *,
+    compress: bool,
+    output_format: str,
+) -> dict[str, Any]:
     src = Path(str(row["dataset"])).expanduser()
     if not src.is_file():
         raise FileNotFoundError(src)
@@ -121,7 +128,6 @@ def _convert_one(row: dict[str, Any], output_dir: Path, index: int, *, compress:
         )
         if robot_state.shape[0] != action.shape[0]:
             raise ValueError(f"{src}: robot/action length mismatch {robot_state.shape} vs {action.shape}")
-        out = output_dir / f"yam_rgb_policy_{index:06d}.npz"
         metadata = {
             "source_dataset": str(src),
             "source_row": row,
@@ -133,16 +139,36 @@ def _convert_one(row: dict[str, Any], output_dir: Path, index: int, *, compress:
                 "max_gripper_width": float(YAM_ACTION_CONVENTION.max_gripper_width),
             },
         }
-        save_fn = np.savez_compressed if compress else np.savez
-        save_fn(
-            out,
-            scene_rgb=scene_rgb,
-            wrist_rgb=wrist_rgb,
-            robot_state=robot_state.astype(np.float32, copy=False),
-            action=action.astype(np.float32, copy=False),
-            episode_ends=np.asarray([int(action.shape[0])], dtype=np.int64),
-            metadata_json=np.asarray(json.dumps(metadata, indent=2, sort_keys=True)),
-        )
+        robot_state = robot_state.astype(np.float32, copy=False)
+        action = action.astype(np.float32, copy=False)
+        episode_ends = np.asarray([int(action.shape[0])], dtype=np.int64)
+        metadata_json = np.asarray(json.dumps(metadata, indent=2, sort_keys=True))
+        if output_format == "npz":
+            out = output_dir / f"yam_rgb_policy_{index:06d}.npz"
+            save_fn = np.savez_compressed if compress else np.savez
+            save_fn(
+                out,
+                scene_rgb=scene_rgb,
+                wrist_rgb=wrist_rgb,
+                robot_state=robot_state,
+                action=action,
+                episode_ends=episode_ends,
+                metadata_json=metadata_json,
+            )
+        elif output_format == "npy_dir":
+            out = output_dir / f"yam_rgb_policy_{index:06d}"
+            out.mkdir(parents=True, exist_ok=True)
+            np.save(out / "scene_rgb.npy", scene_rgb, allow_pickle=False)
+            np.save(out / "wrist_rgb.npy", wrist_rgb, allow_pickle=False)
+            np.save(out / "robot_state.npy", robot_state, allow_pickle=False)
+            np.save(out / "action.npy", action, allow_pickle=False)
+            np.save(out / "episode_ends.npy", episode_ends, allow_pickle=False)
+            (out / "metadata.json").write_text(
+                json.dumps(metadata, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+        else:
+            raise ValueError(f"Unsupported output format {output_format!r}")
     return {
         "path": str(out),
         "source_dataset": str(src),
@@ -151,7 +177,8 @@ def _convert_one(row: dict[str, Any], output_dir: Path, index: int, *, compress:
         "wrist_rgb_shape": list(wrist_rgb.shape),
         "robot_state_shape": list(robot_state.shape),
         "action_shape": list(action.shape),
-        "compressed": bool(compress),
+        "compressed": bool(compress) if output_format == "npz" else False,
+        "storage": output_format,
     }
 
 
@@ -166,6 +193,15 @@ def main() -> None:
         action="store_true",
         help="Write uncompressed NPZ shards. This is faster and often preferable on shared filesystems.",
     )
+    parser.add_argument(
+        "--output_format",
+        choices=("npz", "npy_dir"),
+        default="npz",
+        help=(
+            "Shard storage format. npy_dir writes one directory per episode with "
+            "mmap-friendly .npy arrays for efficient image-policy training."
+        ),
+    )
     args = parser.parse_args()
 
     output_dir = args.output_dir.expanduser().resolve()
@@ -176,7 +212,7 @@ def main() -> None:
     shards = []
     compress = not bool(args.no_compress)
     for idx, row in enumerate(rows):
-        shards.append(_convert_one(row, output_dir, idx, compress=compress))
+        shards.append(_convert_one(row, output_dir, idx, compress=compress, output_format=args.output_format))
     payload = {
         "format": "dextrah_yam_rgb_policy_sharded_v1",
         "num_shards": len(shards),
@@ -184,7 +220,8 @@ def main() -> None:
         "image_keys": ["scene_rgb", "wrist_rgb"],
         "robot_state_key": "robot_state",
         "action_key": "action",
-        "compressed": compress,
+        "compressed": compress if args.output_format == "npz" else False,
+        "storage": args.output_format,
         "shards": shards,
     }
     manifest_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")

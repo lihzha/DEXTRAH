@@ -29,6 +29,7 @@ OUTPUT_DIR="${OUTPUT_DIR:-$RESULTS_NFS/dp_bc/yam_pickplace_rgb_policy/$RUN_NAME/
 MANIFEST="${MANIFEST:-$RESULTS_NFS/dp_bc/yam_pickplace_rgb_policy/$RUN_NAME/manifest.json}"
 MIN_SHARDS="${MIN_SHARDS:-1}"
 COMPRESS_SHARDS="${COMPRESS_SHARDS:-True}"
+OUTPUT_FORMAT="${OUTPUT_FORMAT:-npz}"
 CODE_COMMIT="${CODE_COMMIT:-}"
 
 host_path_from_container() {
@@ -84,7 +85,7 @@ mkdir -p \
   "$CACHE_NFS/omni_logs" "$CACHE_NFS/carb_logs" \
   "$CACHE_NFS/data" "$CACHE_NFS/documents"
 
-export ACCEPTED_JSONL_ARG OUTPUT_DIR_ARG MANIFEST_ARG ENV_NAME
+export ACCEPTED_JSONL_ARG OUTPUT_DIR_ARG MANIFEST_ARG ENV_NAME COMPRESS_SHARDS OUTPUT_FORMAT
 
 echo "Building YAM RGB policy shards"
 echo "SLURM_JOB_ID=$SLURM_JOB_ID_SAFE"
@@ -99,6 +100,7 @@ echo "MANIFEST_HOST=$MANIFEST_HOST"
 echo "MANIFEST_ARG=$MANIFEST_ARG"
 echo "MIN_SHARDS=$MIN_SHARDS"
 echo "COMPRESS_SHARDS=$COMPRESS_SHARDS"
+echo "OUTPUT_FORMAT=$OUTPUT_FORMAT"
 
 srun \
   --ntasks=1 \
@@ -130,6 +132,7 @@ srun \
     if [ "$COMPRESS_SHARDS" != "True" ] && [ "$COMPRESS_SHARDS" != "true" ] && [ "$COMPRESS_SHARDS" != "1" ]; then
       CMD+=(--no_compress)
     fi
+    CMD+=(--output_format "$OUTPUT_FORMAT")
     printf "yam_rgb_shard_command="
     printf "%q " "${CMD[@]}"
     printf "\n"
