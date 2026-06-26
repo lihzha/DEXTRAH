@@ -11972,3 +11972,17 @@ Smoke follow-up:
   training steps with `NUM_EPISODES=3`, `NUM_STEPS=2400`, `VIDEO_LENGTH=2400`,
   `ACTION_CHUNK_STEPS=8`, scene camera X-parallel jitter, filtered Objaverse
   manifest, table texture randomization, and open-finger reset.
+
+## 2026-06-26 02:35 PDT - YAM RGB A100 Submitter Slurm Query Guard
+
+- The first A100 training job `29518087` continued running normally, but the
+  background submitter PID `2636435` exited after `squeue`/`sacct` briefly
+  failed to report the live job and a follow-up `sbatch` attempt hit a transient
+  Slurm configuration read error (`slurm.conf is empty`,
+  `ClusterName needs to be specified`). `sacct` later correctly reported
+  `29518087` as `RUNNING`, so this was a supervisor robustness issue, not a
+  training failure.
+- Patched `cluster/submit_yam_rgb_dp_long_train_a100.sh` so `wait_for_job`
+  retries failed `squeue` queries, requires two consecutive empty `squeue`
+  results before considering a job gone, and wraps `sbatch` submission in a
+  retry loop. Validation passed with `bash -n` and `git diff --check`.

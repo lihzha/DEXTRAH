@@ -18,6 +18,9 @@ MAX_SUBMISSIONS="${MAX_SUBMISSIONS:-128}"
 POLL_SECONDS="${POLL_SECONDS:-60}"
 JOB_NAME="${JOB_NAME:-yam_rgb_dp_train}"
 CODE_COMMIT="${CODE_COMMIT:-}"
+SLURM_QUERY_FAILURE_RETRIES="${SLURM_QUERY_FAILURE_RETRIES:-5}"
+SBATCH_RETRIES="${SBATCH_RETRIES:-5}"
+SBATCH_RETRY_SECONDS="${SBATCH_RETRY_SECONDS:-60}"
 
 if [ -z "$CODE_COMMIT" ] && git -C "$CODE_NFS" rev-parse HEAD >/dev/null 2>&1; then
   CODE_COMMIT="$(git -C "$CODE_NFS" rev-parse HEAD)"
@@ -80,7 +83,32 @@ PY
 
 wait_for_job() {
   local job_id="$1"
-  while squeue -h -j "$job_id" >/dev/null 2>&1 && [ -n "$(squeue -h -j "$job_id" 2>/dev/null)" ]; do
+  local failures=0
+  local empty_results=0
+  local out rc
+  while true; do
+    set +e
+    out="$(squeue -h -j "$job_id" 2>&1)"
+    rc=$?
+    set -e
+    if [ "$rc" -ne 0 ]; then
+      failures=$((failures + 1))
+      echo "squeue_query_failed job_id=$job_id attempt=$failures rc=$rc output=$out" >&2
+      if [ "$failures" -ge "$SLURM_QUERY_FAILURE_RETRIES" ]; then
+        return "$rc"
+      fi
+      sleep "$POLL_SECONDS"
+      continue
+    fi
+    failures=0
+    if [ -z "$out" ]; then
+      empty_results=$((empty_results + 1))
+      if [ "$empty_results" -ge 2 ]; then
+        break
+      fi
+    else
+      empty_results=0
+    fi
     sleep "$POLL_SECONDS"
   done
 }
@@ -99,6 +127,39 @@ log_has_failure() {
     return 0
   fi
   return 1
+}
+
+submit_train_job() {
+  local resume="$1"
+  local init_arg="$2"
+  local attempt=1
+  local out rc err
+  while true; do
+    err="$SUBMIT_DIR/sbatch_attempt_${attempt}.err"
+    set +e
+    out="$(
+      sbatch --parsable \
+        --job-name="$JOB_NAME" \
+        --export=ALL,CODE_NFS="$CODE_NFS",RESULTS_NFS="$RESULTS_NFS",RUN_NAME="$RUN_NAME",MANIFEST="$MANIFEST",INIT_CHECKPOINT="$init_arg",RESUME="$resume",NUM_EPOCHS="$NUM_EPOCHS",MAX_TRAIN_STEPS="$MAX_TRAIN_STEPS",TOPK_CHECKPOINTS="$TOPK_CHECKPOINTS" \
+        "$WRAPPER" \
+        2>"$err"
+    )"
+    rc=$?
+    set -e
+    if [ "$rc" -eq 0 ]; then
+      if [ -s "$err" ]; then
+        cat "$err" >&2
+      fi
+      printf "%s\n" "$out"
+      return 0
+    fi
+    echo "sbatch_failed attempt=$attempt rc=$rc stdout=$out stderr=$(cat "$err" 2>/dev/null || true)" >&2
+    if [ "$attempt" -ge "$SBATCH_RETRIES" ]; then
+      return "$rc"
+    fi
+    attempt=$((attempt + 1))
+    sleep "$SBATCH_RETRY_SECONDS"
+  done
 }
 
 submission=0
@@ -120,12 +181,7 @@ while [ "$submission" -lt "$MAX_SUBMISSIONS" ]; do
     exit 1
   fi
 
-  job_id="$(
-    sbatch --parsable \
-      --job-name="$JOB_NAME" \
-      --export=ALL,CODE_NFS="$CODE_NFS",RESULTS_NFS="$RESULTS_NFS",RUN_NAME="$RUN_NAME",MANIFEST="$MANIFEST",INIT_CHECKPOINT="$init_arg",RESUME="$resume",NUM_EPOCHS="$NUM_EPOCHS",MAX_TRAIN_STEPS="$MAX_TRAIN_STEPS",TOPK_CHECKPOINTS="$TOPK_CHECKPOINTS" \
-      "$WRAPPER"
-  )"
+  job_id="$(submit_train_job "$resume" "$init_arg")"
   submission=$((submission + 1))
   printf "%s\t%s\t%s\t%s\t%s\n" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$submission" "$job_id" "$resume" "$current_step" | tee -a "$SUBMITTED_TSV"
   wait_for_job "$job_id"
