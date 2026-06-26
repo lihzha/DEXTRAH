@@ -11604,3 +11604,10 @@ Smoke follow-up:
   YAML config did not declare the key. Added
   `task.dataset.normalizer_checkpoint: null` to
   `yam_pickplace_rgb_dp.yaml` so resume can load the checkpoint normalizer.
+- Local config fix commit: `dd48a9d6c6cb5f6bacbfeac553fc6413862b5c8c`.
+  A100 code-only config fix commit:
+  `1071db647942bf531815ca5512758249f7666461`.
+- Relaunched A100 candidate training job `29507542` from the same checkpoint.
+  Run name: `yam_pickplace_rgb_dp_500_mmap_20k_resume2_20260626T0136Z`;
+  config remains `NUM_EPOCHS=18`, `MAX_TRAIN_STEPS=1000`,
+  `MAX_VAL_STEPS=50`, batch size `8`, `ROLLOUT_EVERY=1`.
