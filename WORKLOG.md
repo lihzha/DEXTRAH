@@ -12052,3 +12052,17 @@ Smoke follow-up:
   replacement monitor was started with the same run configuration plus HDR
   texture eval parity. Replacement monitor PID: `3139751`; log:
   `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_horizonfix_20260626T080838Z_periodic_monitor/monitor_hdr_9ebdd4ff.log`.
+- Submitted an immediate short L40 runtime smoke from the updated eval commit
+  before waiting for the 100k periodic checkpoint: job `1047432`, run
+  `yam_pickplace_rgb_dp_eval_hdr_smoke_20260626T101937Z`, `NUM_EPISODES=1`,
+  `NUM_STEPS=240`, `RENDERING_MODE=quality`. It completed successfully
+  (`COMPLETED`, exit `0:0`) and wrote a 1280x720 MP4 plus side-by-side
+  scene/wrist debug observations. Metrics confirm `scene_rgb` and `wrist_rgb`
+  are `[3, 256, 256]`, `robot_state` is 24D,
+  `phase_progress_in_policy=false`, and
+  `privileged_object_state_in_policy=false`. The eval appearance summary shows
+  both table texture randomization and HDR dome texture randomization were
+  active (`fireplace_2k.png` dome texture and
+  `plank_flooring_02_diff_1k.png` table texture for this seed). Visual
+  inspection of step 0 and step 120 debug observations showed tabletop-only
+  scene RGB with object/bin visible and live wrist RGB.
