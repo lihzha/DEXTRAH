@@ -62,6 +62,10 @@ parser.add_argument("--yam_policy_bin_wall_height_range", type=float, nargs=2, d
 parser.add_argument("--yam_policy_dome_light_intensity_range", type=float, nargs=2, default=(450.0, 1600.0))
 parser.add_argument("--yam_policy_key_light_intensity_range", type=float, nargs=2, default=(250.0, 1400.0))
 parser.add_argument("--yam_policy_material_value_range", type=float, nargs=2, default=(0.32, 0.82))
+parser.add_argument("--yam_policy_object_asset_manifest_path", type=str, default="")
+parser.add_argument("--yam_policy_object_assets_dir", type=str, default="")
+parser.add_argument("--yam_policy_max_objects", type=int, default=0)
+parser.add_argument("--yam_policy_object_validate_usd_bounds", action=argparse.BooleanOptionalAction, default=None)
 parser.add_argument("--yam_default_arm_qpos", type=float, nargs=6, default=DEFAULT_YAM_ARM_QPOS)
 parser.add_argument("--yam_default_finger_qpos", type=float, default=0.0)
 parser.add_argument("--yam_gripper_stiffness_scale", type=float, default=2.0)
@@ -193,6 +197,31 @@ def _apply_yam_default_pose(env_cfg: Any) -> dict[str, Any]:
     if init_state is not None:
         init_state.joint_pos = dict(joint_pos)
     return {"joint_pos": joint_pos}
+
+
+def _apply_object_asset_overrides(env_cfg: Any) -> dict[str, Any]:
+    summary: dict[str, Any] = {"enabled": False}
+    manifest_path = str(args_cli.yam_policy_object_asset_manifest_path or "").strip()
+    assets_dir = str(args_cli.yam_policy_object_assets_dir or "").strip()
+    max_objects = int(args_cli.yam_policy_max_objects)
+    validate_bounds = args_cli.yam_policy_object_validate_usd_bounds
+    if manifest_path:
+        env_cfg.object_asset_manifest_path = manifest_path
+        summary["object_asset_manifest_path"] = manifest_path
+        summary["enabled"] = True
+    if assets_dir:
+        env_cfg.object_assets_dir = assets_dir
+        summary["object_assets_dir"] = assets_dir
+        summary["enabled"] = True
+    if max_objects > 0:
+        env_cfg.max_objects = max_objects
+        summary["max_objects"] = int(max_objects)
+        summary["enabled"] = True
+    if validate_bounds is not None:
+        env_cfg.object_validate_usd_bounds = bool(validate_bounds)
+        summary["object_validate_usd_bounds"] = bool(validate_bounds)
+        summary["enabled"] = True
+    return summary
 
 
 def _apply_scene_randomization(env_cfg: Any, rng: np.random.Generator) -> dict[str, Any]:
@@ -638,6 +667,7 @@ def main() -> None:
     env_cfg.seed = int(args_cli.seed)
     pose_summary = _apply_yam_default_pose(env_cfg)
     gain_summary = _apply_yam_actuator_gain_scales(env_cfg)
+    object_asset_summary = _apply_object_asset_overrides(env_cfg)
     randomization_summary = _apply_scene_randomization(env_cfg, rng)
     _configure_camera(env_cfg, scene_eye, scene_target)
 
@@ -654,6 +684,7 @@ def main() -> None:
         image_shape=[int(args_cli.image_height), int(args_cli.image_width), 3],
         robot_default_pose=pose_summary,
         gripper_gain_scales=gain_summary,
+        object_asset_overrides=object_asset_summary,
         scene_randomization=randomization_summary,
     )
 
@@ -819,6 +850,7 @@ def main() -> None:
         "phase_progress_in_policy": False,
         "wrist_camera": wrist_camera_summary,
         "scene_camera": {"eye": [float(v) for v in scene_eye], "target": [float(v) for v in scene_target]},
+        "object_asset_overrides": object_asset_summary,
         "scene_randomization": randomization_summary,
         "robot_default_pose": pose_summary,
         "gripper_gain_scales": gain_summary,

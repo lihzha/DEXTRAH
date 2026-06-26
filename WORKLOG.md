@@ -11626,3 +11626,28 @@ Smoke follow-up:
   at `0dd18168b41b2a6f5c75135b34e6cc60dfe65c2d`. The eval wrapper passed
   `bash -n`, and `dextrah_lab/rl_games/eval_yam_pickplace_rgb_dp_policy.py`
   passed `python3 -m py_compile`.
+- Launched L40 quality-render eval smoke job `1044881` from the `0dd18168`
+  worktree with `NUM_EPISODES=2`, `NUM_STEPS=240`, `IMAGE_SIZE=256`,
+  `RENDERING_MODE=quality`, and video capture enabled. It loaded Isaac and the
+  trained RGB Diffusion Policy checkpoint successfully, then failed during
+  environment construction because the new bundle-created worktree did not
+  have generated single-arm YAM MJCF USD assets:
+  `/code/dextrah_lab/assets/yam/yam_mjcf_usd/yam_linear.usd`.
+- Generated the missing single-arm YAM assets in the L40 eval worktree with
+  one-off Slurm job `1044890` using
+  `prepare_yam_assets.py --headless --device cuda:0 --converter mjcf --robot single`.
+  The job completed with exit `0:0` and wrote
+  `yam_linear.usd` plus `configuration/yam_linear_{base,physics,robot,sensor}.usd`.
+- Relaunched L40 eval smoke job `1044893`. It passed the previous USD failure
+  and reached environment construction, but the default single-object policy
+  task scanned the full Objaverse manifest (`max_objects=0`), reaching only
+  `shards/011` after about 90 seconds. Cancelled the job and identified the
+  filtered policy-data manifest used for collection:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/yam_demos/yam_single_object_center_y_dynamic_500_20260625T165831Z/yam_objaverse_pool_manifest.json`
+  with `120` vetted objects and container-visible `/results/assets/...` paths.
+- Patched the YAM RGB DP eval script and Slurm wrapper to expose object asset
+  overrides: `yam_policy_object_asset_manifest_path`,
+  `yam_policy_object_assets_dir`, `yam_policy_max_objects`, and
+  `yam_policy_object_validate_usd_bounds`. Local checks passed:
+  `python3 -m py_compile dextrah_lab/rl_games/eval_yam_pickplace_rgb_dp_policy.py`
+  and `bash -n cluster/sbatch_eval_yam_pickplace_rgb_dp_policy_1gpu.sh`.
