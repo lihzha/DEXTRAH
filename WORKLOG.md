@@ -11511,3 +11511,22 @@ Smoke follow-up:
 - Relaunched A100 shard conversion job `29505779` with the container-path
   JSONL. Expected manifest:
   `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb_policy/yam_rgb_policy_shards_500_paths_20260625T2357Z/manifest.json`.
+- Conversion job `29505779` was still at only `23` written shards after roughly
+  `8.5` minutes because `np.savez_compressed` was too slow on the shared
+  filesystem. Cancelled it before the 2-hour walltime risk became material.
+- Local commit `7ec95f521828578cfab71c211e3ef37e9f7b2436` adds
+  `--no_compress` to `make_yam_rgb_policy_shards.py` and exposes
+  `COMPRESS_SHARDS=False` in the shard conversion Slurm wrapper. A100 cannot
+  fetch GitHub directly, so the two code-file patch was applied with Git in
+  the remote worktree and committed there as
+  `69761750c0e60b21cf2acff33c901c76862a923f`.
+- Launched uncompressed A100 shard conversion job `29506350` from remote commit
+  `69761750c0e60b21cf2acff33c901c76862a923f` with `COMPRESS_SHARDS=False`.
+  Expected manifest:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb_policy/yam_rgb_policy_shards_500_uncompressed_20260626T0008Z/manifest.json`.
+- Conversion job `29506350` completed successfully in `00:18:02` on
+  `batch-block7-03162`. The final manifest passed the wrapper validation with
+  `500` uncompressed shards and `414460` total steps, using `scene_rgb`,
+  `wrist_rgb`, `robot_state`, and `action` only. This is the dataset manifest
+  for RGB Diffusion Policy training:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb_policy/yam_rgb_policy_shards_500_uncompressed_20260626T0008Z/manifest.json`.
