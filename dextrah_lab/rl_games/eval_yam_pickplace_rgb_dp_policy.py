@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import sys
 import traceback
 from datetime import datetime
@@ -23,6 +24,8 @@ DEFAULT_SCENE_CAMERA_EYE = (-0.50, 0.04, 0.68)
 DEFAULT_SCENE_CAMERA_TARGET = (-0.25, 0.04, 0.03)
 DEFAULT_YAM_ARM_QPOS = (0.0, 1.0, 1.0, -1.5, 0.0, 0.0)
 ACTION_NAMES = ["dx", "dy", "dz", "droll", "dpitch", "dyaw", "gripper"]
+SURFACE_TEXTURE_EXTS = (".jpg", ".jpeg", ".png")
+DOME_TEXTURE_EXTS = (".hdr", ".exr", ".jpg", ".jpeg", ".png")
 
 
 parser = argparse.ArgumentParser(description=__doc__)
@@ -64,6 +67,7 @@ parser.add_argument("--yam_policy_key_light_intensity_range", type=float, nargs=
 parser.add_argument("--yam_policy_material_value_range", type=float, nargs=2, default=(0.32, 0.82))
 parser.add_argument("--yam_policy_table_texture_dir", type=str, default="")
 parser.add_argument("--yam_policy_table_texture_tiling_range", type=float, nargs=2, default=(1.4, 3.8))
+parser.add_argument("--yam_policy_dome_light_texture_dir", type=str, default="")
 parser.add_argument("--yam_policy_object_asset_manifest_path", type=str, default="")
 parser.add_argument("--yam_policy_object_assets_dir", type=str, default="")
 parser.add_argument("--yam_policy_max_objects", type=int, default=0)
@@ -343,22 +347,50 @@ def _apply_scene_randomization(env_cfg: Any, rng: np.random.Generator) -> dict[s
     return summary
 
 
-def _texture_candidates(raw_roots: str | None) -> list[Path]:
+def _texture_candidates(
+    raw_roots: str | None,
+    *,
+    exts: tuple[str, ...],
+    include_tokens: tuple[str, ...] = (),
+    exclude_tokens: tuple[str, ...] = (),
+) -> list[Path]:
     if not raw_roots:
         return []
-    roots = [Path(item).expanduser() for item in str(raw_roots).split(":") if item.strip()]
-    exts = {".jpg", ".jpeg", ".png"}
+    allowed_exts = {item.lower() for item in exts}
     candidates: list[Path] = []
-    for root in roots:
-        if root.is_file() and root.suffix.lower() in exts:
+    for raw_root in str(raw_roots).split(os.pathsep):
+        if not raw_root.strip():
+            continue
+        root = Path(raw_root).expanduser()
+        if root.is_file() and root.suffix.lower() in allowed_exts:
             candidates.append(root)
         elif root.is_dir():
-            candidates.extend(path for path in root.rglob("*") if path.is_file() and path.suffix.lower() in exts)
+            for path in root.rglob("*"):
+                if not path.is_file() or path.suffix.lower() not in allowed_exts:
+                    continue
+                name = path.name.lower()
+                if include_tokens and not any(token in name for token in include_tokens):
+                    continue
+                if exclude_tokens and any(token in name for token in exclude_tokens):
+                    continue
+                candidates.append(path)
     return sorted({path.resolve() for path in candidates})
 
 
-def _sample_texture_path(rng: np.random.Generator, raw_roots: str | None) -> str:
-    candidates = _texture_candidates(raw_roots)
+def _sample_texture_path(
+    rng: np.random.Generator,
+    raw_roots: str | None,
+    *,
+    exts: tuple[str, ...],
+    include_tokens: tuple[str, ...] = (),
+    exclude_tokens: tuple[str, ...] = (),
+) -> str:
+    candidates = _texture_candidates(
+        raw_roots,
+        exts=exts,
+        include_tokens=include_tokens,
+        exclude_tokens=exclude_tokens,
+    )
     if not candidates:
         return ""
     return str(candidates[int(rng.integers(0, len(candidates)))])
@@ -430,7 +462,13 @@ def _usd_add_xy_quad(
 
 
 def _apply_eval_table_texture(task_env: Any, rng: np.random.Generator) -> dict[str, Any]:
-    texture_path = _sample_texture_path(rng, args_cli.yam_policy_table_texture_dir)
+    texture_path = _sample_texture_path(
+        rng,
+        args_cli.yam_policy_table_texture_dir,
+        exts=SURFACE_TEXTURE_EXTS,
+        include_tokens=("albedo", "diffuse", "diff", "basecolor", "color"),
+        exclude_tokens=("normal", "orm", "rough", "metal", "height"),
+    )
     if not texture_path:
         return {"enabled": False, "texture_dir": str(args_cli.yam_policy_table_texture_dir or "")}
     stage = omni.usd.get_context().get_stage()
@@ -472,6 +510,31 @@ def _apply_eval_table_texture(task_env: Any, rng: np.random.Generator) -> dict[s
         "tiling": tiling,
         "roughness": roughness,
         "quads": records,
+    }
+
+
+def _apply_eval_dome_light_texture(rng: np.random.Generator) -> dict[str, Any]:
+    texture_path = _sample_texture_path(
+        rng,
+        args_cli.yam_policy_dome_light_texture_dir,
+        exts=DOME_TEXTURE_EXTS,
+    )
+    if not texture_path:
+        return {"enabled": False, "texture_dir": str(args_cli.yam_policy_dome_light_texture_dir or "")}
+    stage = omni.usd.get_context().get_stage()
+    if stage is None:
+        return {"enabled": False, "texture_path": texture_path, "reason": "missing_usd_stage"}
+    light_prim = stage.GetPrimAtPath("/World/Light")
+    if not light_prim.IsValid():
+        return {"enabled": False, "texture_path": texture_path, "reason": "missing_world_light"}
+    attr = light_prim.GetAttribute("inputs:texture:file")
+    if not attr:
+        attr = light_prim.CreateAttribute("inputs:texture:file", Sdf.ValueTypeNames.Asset)
+    attr.Set(Sdf.AssetPath(texture_path))
+    return {
+        "enabled": True,
+        "texture_dir": str(args_cli.yam_policy_dome_light_texture_dir or ""),
+        "texture_path": texture_path,
     }
 
 
@@ -982,7 +1045,10 @@ def main() -> None:
     gym_env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array")
     task_env = gym_env.unwrapped
     _configure_camera(env_cfg, scene_eye, scene_target, task_env)
-    appearance_summary = {"table_texture": _apply_eval_table_texture(task_env, rng)}
+    appearance_summary = {
+        "table_texture": _apply_eval_table_texture(task_env, rng),
+        "dome_light_texture": _apply_eval_dome_light_texture(rng),
+    }
     _stage("appearance_ready", appearance=appearance_summary)
     wrist_camera, wrist_camera_summary = _make_single_yam_wrist_camera(task_env)
     if args_cli.video:

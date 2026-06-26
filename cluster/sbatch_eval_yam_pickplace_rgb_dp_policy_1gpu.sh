@@ -16,6 +16,7 @@ NFS_ROOT="${NFS_ROOT:-/lustre/fsw/portfolios/nvr/users/lzha}"
 CODE_NFS="${CODE_NFS:-$NFS_ROOT/src/DEXTRAH}"
 FABRICS_NFS="${FABRICS_NFS:-$NFS_ROOT/src/FABRICS}"
 ISAACLAB_NFS="${ISAACLAB_NFS:-$NFS_ROOT/src/IsaacLab-v2.2.1}"
+ROBOLAB_NFS="${ROBOLAB_NFS:-$NFS_ROOT/src/RoboLab}"
 IMAGE="${IMAGE:-$NFS_ROOT/cache/isaac_lab_2.2.0.sqsh}"
 ENV_ROOT="${ENV_ROOT:-$NFS_ROOT/envs}"
 ENV_NAME="${ENV_NAME:-dextrah-isaaclab}"
@@ -69,6 +70,7 @@ YAM_POLICY_KEY_LIGHT_INTENSITY_RANGE="${YAM_POLICY_KEY_LIGHT_INTENSITY_RANGE:-25
 YAM_POLICY_MATERIAL_VALUE_RANGE="${YAM_POLICY_MATERIAL_VALUE_RANGE:-0.32 0.82}"
 YAM_POLICY_TABLE_TEXTURE_DIR="${YAM_POLICY_TABLE_TEXTURE_DIR:-/code/dextrah_lab/assets/textures/tabletop_wood_light_polyhaven}"
 YAM_POLICY_TABLE_TEXTURE_TILING_RANGE="${YAM_POLICY_TABLE_TEXTURE_TILING_RANGE:-1.4 3.8}"
+YAM_POLICY_DOME_LIGHT_TEXTURE_DIR="${YAM_POLICY_DOME_LIGHT_TEXTURE_DIR:-/home/lzha/code/RoboLab/assets/backgrounds/indoors}"
 YAM_POLICY_OBJECT_ASSET_MANIFEST_PATH="${YAM_POLICY_OBJECT_ASSET_MANIFEST_PATH:-}"
 YAM_POLICY_OBJECT_ASSETS_DIR="${YAM_POLICY_OBJECT_ASSETS_DIR:-}"
 YAM_POLICY_MAX_OBJECTS="${YAM_POLICY_MAX_OBJECTS:-0}"
@@ -151,6 +153,7 @@ export YAM_POLICY_OBJECT_X_RANGE YAM_POLICY_OBJECT_Y_RANGE YAM_POLICY_BIN_X_RANG
 export YAM_POLICY_BIN_INNER_SIZE_X_RANGE YAM_POLICY_BIN_INNER_SIZE_Y_RANGE YAM_POLICY_BIN_WALL_HEIGHT_RANGE
 export YAM_POLICY_DOME_LIGHT_INTENSITY_RANGE YAM_POLICY_KEY_LIGHT_INTENSITY_RANGE YAM_POLICY_MATERIAL_VALUE_RANGE
 export YAM_POLICY_TABLE_TEXTURE_DIR YAM_POLICY_TABLE_TEXTURE_TILING_RANGE
+export YAM_POLICY_DOME_LIGHT_TEXTURE_DIR
 export YAM_POLICY_OBJECT_ASSET_MANIFEST_PATH YAM_POLICY_OBJECT_ASSETS_DIR YAM_POLICY_MAX_OBJECTS
 export YAM_POLICY_OBJECT_VALIDATE_USD_BOUNDS
 export YAM_DEFAULT_ARM_QPOS YAM_DEFAULT_FINGER_QPOS
@@ -187,6 +190,7 @@ echo "YAM_POLICY_MAX_OBJECTS=$YAM_POLICY_MAX_OBJECTS"
 echo "YAM_POLICY_OBJECT_VALIDATE_USD_BOUNDS=$YAM_POLICY_OBJECT_VALIDATE_USD_BOUNDS"
 echo "YAM_POLICY_TABLE_TEXTURE_DIR=$YAM_POLICY_TABLE_TEXTURE_DIR"
 echo "YAM_POLICY_TABLE_TEXTURE_TILING_RANGE=$YAM_POLICY_TABLE_TEXTURE_TILING_RANGE"
+echo "YAM_POLICY_DOME_LIGHT_TEXTURE_DIR=$YAM_POLICY_DOME_LIGHT_TEXTURE_DIR"
 echo "YAM_DEFAULT_ARM_QPOS=$YAM_DEFAULT_ARM_QPOS"
 echo "YAM_DEFAULT_FINGER_QPOS=$YAM_DEFAULT_FINGER_QPOS"
 echo "YAM_GRIPPER_GAINS=$YAM_GRIPPER_STIFFNESS_SCALE/$YAM_GRIPPER_DAMPING_SCALE/$YAM_GRIPPER_EFFORT_SCALE"
@@ -200,7 +204,7 @@ echo "METRICS_CONTAINER=$METRICS_CONTAINER"
 srun \
   --ntasks=1 \
   --container-image="$IMAGE" \
-  --container-mounts=/dev/shm:/dev/shm,"$CODE_NFS":/code,"$FABRICS_NFS":/fabrics,"$ISAACLAB_NFS":/IsaacLab,"$OFFICIAL_DP_NFS":/official_dp,"$ENV_ROOT":/envs,"$RESULTS_NFS":/results,"$CACHE_NFS/kit":/isaac-sim/kit/cache,"$CACHE_NFS/ov":/root/.cache/ov,"$CACHE_NFS/pip":/root/.cache/pip,"$CACHE_NFS/glcache":/root/.cache/nvidia/GLCache,"$CACHE_NFS/computecache":/root/.nv/ComputeCache,"$CACHE_NFS/omni_logs":/root/.nvidia-omniverse/logs,"$CACHE_NFS/carb_logs":/isaac-sim/kit/logs/Kit/Isaac-Sim,"$CACHE_NFS/data":/root/.local/share/ov/data,"$CACHE_NFS/documents":/root/Documents \
+  --container-mounts=/dev/shm:/dev/shm,"$CODE_NFS":/code,"$FABRICS_NFS":/fabrics,"$ISAACLAB_NFS":/IsaacLab,"$ROBOLAB_NFS":/home/lzha/code/RoboLab,"$OFFICIAL_DP_NFS":/official_dp,"$ENV_ROOT":/envs,"$RESULTS_NFS":/results,"$CACHE_NFS/kit":/isaac-sim/kit/cache,"$CACHE_NFS/ov":/root/.cache/ov,"$CACHE_NFS/pip":/root/.cache/pip,"$CACHE_NFS/glcache":/root/.cache/nvidia/GLCache,"$CACHE_NFS/computecache":/root/.nv/ComputeCache,"$CACHE_NFS/omni_logs":/root/.nvidia-omniverse/logs,"$CACHE_NFS/carb_logs":/isaac-sim/kit/logs/Kit/Isaac-Sim,"$CACHE_NFS/data":/root/.local/share/ov/data,"$CACHE_NFS/documents":/root/Documents \
   --no-container-entrypoint \
   --container-remap-root \
   --container-writable \
@@ -290,6 +294,7 @@ srun \
       --yam_policy_material_value_range $YAM_POLICY_MATERIAL_VALUE_RANGE
       --yam_policy_table_texture_dir "$YAM_POLICY_TABLE_TEXTURE_DIR"
       --yam_policy_table_texture_tiling_range $YAM_POLICY_TABLE_TEXTURE_TILING_RANGE
+      --yam_policy_dome_light_texture_dir "$YAM_POLICY_DOME_LIGHT_TEXTURE_DIR"
       "${OBJECT_ASSET_ARGS[@]}"
       --yam_default_arm_qpos $YAM_DEFAULT_ARM_QPOS
       --yam_default_finger_qpos "$YAM_DEFAULT_FINGER_QPOS"

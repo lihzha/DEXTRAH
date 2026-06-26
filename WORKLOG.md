@@ -12024,3 +12024,23 @@ Smoke follow-up:
   same monitor/run configuration plus `CHECKPOINT_FRESH_AFTER_THRESHOLD=True`.
   Replacement monitor PID: `3135358`; log:
   `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_horizonfix_20260626T080838Z_periodic_monitor/monitor_fresh_checkpoint_36e2a58e.log`.
+
+## 2026-06-26 03:17 PDT - YAM RGB Eval Lighting Parity Guard
+
+- Continued the eval/train mismatch audit for the long YAM RGB diffusion run.
+  The dataset replay metadata shows table texture randomization and HDR dome
+  light texture randomization from RoboLab indoor backgrounds. Eval already
+  randomized table textures, object/bin/camera pose, and wrist/scene RGB, but
+  it did not apply the HDR dome light texture pool.
+- Patched `dextrah_lab/rl_games/eval_yam_pickplace_rgb_dp_policy.py` to sample
+  eval dome light textures from the same HDR/EXR/image pool, record the sampled
+  path in `appearance_summary`, and keep table texture sampling aligned with
+  the replay-side albedo/diffuse/basecolor file filters. Patched
+  `cluster/sbatch_eval_yam_pickplace_rgb_dp_policy_1gpu.sh` and
+  `cluster/submit_yam_rgb_dp_checkpoint_eval_monitor_l401.sh` so periodic L40
+  eval jobs mount RoboLab and pass `YAM_POLICY_DOME_LIGHT_TEXTURE_DIR`.
+- Validation passed locally with `python3 -m py_compile
+  dextrah_lab/rl_games/eval_yam_pickplace_rgb_dp_policy.py`, `bash -n` for the
+  eval wrapper and periodic monitor, and `git diff --check`. Next step is to
+  commit, deploy the exact revision to the l401 agent worktree, and restart the
+  monitor before the first 100k-step eval threshold.
