@@ -11550,3 +11550,34 @@ Smoke follow-up:
   `.npy` arrays, the Slurm conversion wrapper exposes the format, and
   `YamRgbShardedDataset` reads manifest shape metadata and memory maps
   directory shards. The NPZ path remains as fallback for existing artifacts.
+- Local commit `0f0804119876e90966c511fc34209d922b90bb3c` contains the mmap
+  shard/loader patch. Because A100 still cannot fetch from GitHub, the three
+  code-file patch was applied directly to the A100 worktree and committed
+  there as `b5eab5d7ab40a8faa80e8b7ea28d3e87604647da`.
+- Launched A100 mmap shard conversion job `29506905` from remote commit
+  `b5eab5d7ab40a8faa80e8b7ea28d3e87604647da` with
+  `OUTPUT_FORMAT=npy_dir`, `COMPRESS_SHARDS=False`, and `MIN_SHARDS=500`.
+  Expected manifest:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb_policy/yam_rgb_policy_shards_500_mmap_20260626T0046Z/manifest.json`.
+- Mmap shard conversion job `29506905` completed successfully in `00:17:21`
+  on `batch-block4-2033`. The validated manifest has `500` shards,
+  `414460` steps, `storage=npy_dir`, `compressed=false`, image keys
+  `scene_rgb,wrist_rgb`, robot key `robot_state`, and action key `action`.
+  Output size is `152G`.
+- Launched A100 mmap smoke training job `29507143` using manifest
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb_policy/yam_rgb_policy_shards_500_mmap_20260626T0046Z/manifest.json`.
+  Run name: `yam_pickplace_rgb_dp_500_mmap_smoke_20260626T0110Z`; config:
+  `NUM_EPOCHS=1`, `MAX_TRAIN_STEPS=20`, `MAX_VAL_STEPS=5`, batch size `4`.
+- Mmap smoke training job `29507143` completed successfully. It reached
+  `global_step=19`, wrote `latest.ckpt`, and reported finite metrics:
+  `last_train_loss=2.102919751405716`, `last_val_loss=2.1972286701202393`,
+  `train_action_mse_error=0.04595`. The mmap loader fixed the prior startup
+  bottleneck; the progress bar reached `18/93273` train batches in about
+  `5` seconds.
+- Launched A100 candidate RGB Diffusion Policy training job `29507167` using
+  the mmap manifest. Run name:
+  `yam_pickplace_rgb_dp_500_mmap_20k_20260626T0115Z`; config:
+  `NUM_EPOCHS=20`, `MAX_TRAIN_STEPS=1000`, `MAX_VAL_STEPS=50`, batch size `8`,
+  `LR=0.0001`, `LR_WARMUP_STEPS=500`, `n_obs_steps=1`, `IMAGE_SIZE=256`.
+  Expected staged checkpoint:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/yam_pickplace_rgb_dp_500_mmap_20k_20260626T0115Z/latest.ckpt`.
