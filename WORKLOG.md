@@ -11998,3 +11998,22 @@ Smoke follow-up:
   `val_loss=0.01996723562479019`, `train_loss=0.027428813466033642`, and
   `test_mean_score=0.0`. Training continued into epoch 1; at
   `global_step=67201`, the last-1000 train-loss mean was about `0.0209`.
+
+## 2026-06-26 03:09 PDT - YAM RGB Periodic Eval Fresh-Checkpoint Guard
+
+- Audited the long-training/eval handoff before the first periodic eval. The
+  A100 job `29518087` is still running, now around `global_step=68210`, with
+  the first epoch checkpoint saved at `global_step=63839`
+  (`val_loss=0.01996723562479019`). Since this diffusion trainer saves at epoch
+  boundaries, a naive 100k-step monitor trigger could evaluate the stale
+  63,839-step `latest.ckpt` before the next checkpoint is written.
+- Patched `cluster/submit_yam_rgb_dp_checkpoint_eval_monitor_l401.sh` so each
+  eval threshold records the wall-clock time it was crossed and, by default,
+  waits until `latest.ckpt` has an mtime after that threshold before taking a
+  snapshot and submitting the L40 quality-render eval. This keeps periodic eval
+  jobs tied to fresh saved checkpoints instead of stale step-threshold state.
+- Validation passed: `bash -n
+  cluster/submit_yam_rgb_dp_checkpoint_eval_monitor_l401.sh` and
+  `git diff --check`. Next step is to deploy this exact revision to the l401
+  agent worktree, stop monitor PID `3071195`, and restart the monitor before
+  the 100k threshold.

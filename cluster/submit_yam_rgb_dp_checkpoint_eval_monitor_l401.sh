@@ -22,6 +22,7 @@ MAX_EVALS="${MAX_EVALS:-0}"
 MAX_CONCURRENT_EVALS="${MAX_CONCURRENT_EVALS:-1}"
 JOB_NAME_PREFIX="${JOB_NAME_PREFIX:-yam_rgb_dp_eval}"
 CODE_COMMIT="${CODE_COMMIT:-}"
+CHECKPOINT_FRESH_AFTER_THRESHOLD="${CHECKPOINT_FRESH_AFTER_THRESHOLD:-True}"
 
 NUM_EPISODES="${NUM_EPISODES:-3}"
 NUM_STEPS="${NUM_STEPS:-2400}"
@@ -64,6 +65,7 @@ payload = {
     "snapshot_dir": "$SNAPSHOT_DIR",
     "eval_every_steps": int("$EVAL_EVERY_STEPS"),
     "target_train_steps": int("$TARGET_TRAIN_STEPS"),
+    "checkpoint_fresh_after_threshold": "$CHECKPOINT_FRESH_AFTER_THRESHOLD",
     "num_episodes": int("$NUM_EPISODES"),
     "num_steps": int("$NUM_STEPS"),
     "video_length": int("$VIDEO_LENGTH"),
@@ -113,11 +115,35 @@ stable_copy_checkpoint() {
   [ -s "$dst" ]
 }
 
+checkpoint_mtime() {
+  local path="$1"
+  if [ -s "$path" ]; then
+    stat -c %Y "$path"
+  else
+    echo 0
+  fi
+}
+
 evals=0
 next_threshold="$EVAL_EVERY_STEPS"
+threshold_seen_at=0
+threshold_seen_step=-1
 while true; do
   step="$(last_step)"
   if [ "$step" -ge "$next_threshold" ] && [ -s "$CHECKPOINT_HOST" ]; then
+    if [ "$threshold_seen_at" -eq 0 ]; then
+      threshold_seen_at="$(date +%s)"
+      threshold_seen_step="$step"
+      echo "threshold_seen threshold=$next_threshold step=$step wall_time=$threshold_seen_at checkpoint_mtime=$(checkpoint_mtime "$CHECKPOINT_HOST")"
+    fi
+    if [ "$CHECKPOINT_FRESH_AFTER_THRESHOLD" = "True" ]; then
+      ckpt_mtime="$(checkpoint_mtime "$CHECKPOINT_HOST")"
+      if [ "$ckpt_mtime" -lt "$threshold_seen_at" ]; then
+        echo "waiting_for_fresh_checkpoint threshold=$next_threshold threshold_seen_step=$threshold_seen_step current_step=$step checkpoint_mtime=$ckpt_mtime threshold_seen_at=$threshold_seen_at path=$CHECKPOINT_HOST"
+        sleep "$POLL_SECONDS"
+        continue
+      fi
+    fi
     while [ "$(active_eval_jobs)" -ge "$MAX_CONCURRENT_EVALS" ]; do
       sleep "$POLL_SECONDS"
     done
@@ -141,6 +167,8 @@ while true; do
     while [ "$next_threshold" -le "$step" ]; do
       next_threshold=$((next_threshold + EVAL_EVERY_STEPS))
     done
+    threshold_seen_at=0
+    threshold_seen_step=-1
     if [ "$MAX_EVALS" -gt 0 ] && [ "$evals" -ge "$MAX_EVALS" ]; then
       echo "max_evals_reached evals=$evals"
       exit 0
