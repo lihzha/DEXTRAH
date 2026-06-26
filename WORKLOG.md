@@ -12100,3 +12100,20 @@ Smoke follow-up:
   official Diffusion Policy image workspace only checkpoints at epoch end; I am
   leaving the trainer code unchanged during the active run and monitoring saved
   checkpoints/evals as the authoritative progress.
+
+## 2026-06-26 07:01 PDT - Long Training Continues Past 151k
+
+- Replacement A100 job `29521783` passed the stale timed-out max step from the
+  first allocation and continued normally. The live tail rows reached
+  `global_step=122797` with finite losses, clearing the resume discontinuity.
+- The next epoch checkpoint landed at about `2026-06-26T13:55:55Z`. The latest
+  validation row is `global_step=151518`, `val_loss=0.01370234601199627`,
+  `train_loss=0.015922926524889306`, and `test_mean_score=0.0`. This is a
+  clear validation-loss improvement over the 107,679-step checkpoint
+  (`0.01753971539437771`) and the original 63,839-step checkpoint
+  (`0.01996723562479019`). Training continued into epoch 2; tail rows around
+  `global_step=153583` were finite, with the last-5000 train-loss mean about
+  `0.0154`.
+- The l401 periodic monitor remains alive and correctly idle after the 100k
+  eval. Its next trigger is 200k, where it should again wait for a checkpoint
+  fresher than the threshold before submitting the next quality-render eval.
