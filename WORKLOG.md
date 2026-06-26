@@ -12254,3 +12254,15 @@ Smoke follow-up:
   L40 monitor correctly did not submit a new eval. The A100 job and L40 monitor
   both remain alive; continue training toward the 400k threshold and inspect the
   next fresh-threshold eval.
+
+## 2026-06-26 16:40 PDT - A100 Timeout And Resume After 370k
+
+- A100 job `29529321` timed out at unsaved max log step `388534`; the latest
+  durable checkpoint remained the `370716` checkpoint from
+  `2026-06-26T23:01:44Z`.
+- The central submitter remained alive and launched replacement A100 job
+  `29534729` at `2026-06-26T23:37:26Z`. Fresh log-tail rows from the new job
+  start at `global_step=370764+`, confirming it resumed from the saved
+  `370716` checkpoint rather than from the unsaved timed-out step. The next
+  important threshold remains `400000`, where the L40 eval monitor should wait
+  for a fresh post-threshold checkpoint before rendering.
