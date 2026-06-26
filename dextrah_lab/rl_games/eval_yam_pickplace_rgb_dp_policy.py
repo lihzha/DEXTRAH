@@ -206,6 +206,28 @@ def _apply_yam_default_pose(env_cfg: Any) -> dict[str, Any]:
     return {"joint_pos": joint_pos}
 
 
+def _apply_eval_episode_length(env_cfg: Any) -> dict[str, Any]:
+    sim_dt = float(getattr(getattr(env_cfg, "sim", None), "dt", getattr(env_cfg, "sim_dt", 1.0 / 120.0)))
+    decimation = int(getattr(env_cfg, "decimation", 1))
+    env_dt = sim_dt * float(decimation)
+    requested_steps = max(1, int(args_cli.num_steps))
+    # Isaac Lab truncates at max_episode_length - 1, so leave a small step margin.
+    required_episode_length_s = float(requested_steps + 2) * env_dt
+    before = float(getattr(env_cfg, "episode_length_s", 0.0) or 0.0)
+    after = max(before, required_episode_length_s)
+    env_cfg.episode_length_s = float(after)
+    return {
+        "enabled": bool(after > before + 1e-9),
+        "before_s": before,
+        "after_s": float(after),
+        "env_dt": float(env_dt),
+        "decimation": int(decimation),
+        "sim_dt": float(sim_dt),
+        "requested_steps": int(requested_steps),
+        "required_episode_length_s": float(required_episode_length_s),
+    }
+
+
 def _apply_object_asset_overrides(env_cfg: Any) -> dict[str, Any]:
     summary: dict[str, Any] = {"enabled": False}
     manifest_path = str(args_cli.yam_policy_object_asset_manifest_path or "").strip()
@@ -927,6 +949,7 @@ def main() -> None:
         use_fabric=not args_cli.disable_fabric,
     )
     env_cfg.seed = int(args_cli.seed)
+    episode_length_summary = _apply_eval_episode_length(env_cfg)
     pose_summary = _apply_yam_default_pose(env_cfg)
     gain_summary = _apply_yam_actuator_gain_scales(env_cfg)
     object_asset_summary = _apply_object_asset_overrides(env_cfg)
@@ -945,6 +968,7 @@ def main() -> None:
         scene_camera={"eye": [float(v) for v in scene_eye], "target": [float(v) for v in scene_target]},
         scene_camera_jitter=scene_camera_jitter_summary,
         image_shape=[int(args_cli.image_height), int(args_cli.image_width), 3],
+        episode_length=episode_length_summary,
         robot_default_pose=pose_summary,
         gripper_gain_scales=gain_summary,
         object_asset_overrides=object_asset_summary,
@@ -1134,6 +1158,7 @@ def main() -> None:
         "object_asset_overrides": object_asset_summary,
         "scene_randomization": randomization_summary,
         "appearance": appearance_summary,
+        "episode_length": episode_length_summary,
         "robot_default_pose": pose_summary,
         "gripper_gain_scales": gain_summary,
         "num_episodes_requested": int(args_cli.num_episodes),

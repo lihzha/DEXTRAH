@@ -319,17 +319,31 @@ if [ ! -s "$RUN_DIR_HOST/metrics.json" ]; then
   exit 1
 fi
 
-python3 - "$RUN_DIR_HOST/metrics.json" <<'PY'
+python3 - "$RUN_DIR_HOST/metrics.json" "$NUM_STEPS" <<'PY'
 import json
 import math
 import sys
 
 path = sys.argv[1]
+requested_steps = int(sys.argv[2])
 payload = json.load(open(path, "r", encoding="utf-8"))
 summary = payload.get("summary", {})
 rate = summary.get("episode_success_rate")
 if rate is not None and not math.isfinite(float(rate)):
     raise SystemExit(f"Non-finite episode_success_rate: {rate}")
+early_truncations = []
+for episode in summary.get("episodes", []):
+    steps_completed = int(episode.get("steps_completed") or 0)
+    first_done = episode.get("first_done") or {}
+    if steps_completed < requested_steps and bool(first_done.get("truncated")) and not bool(first_done.get("terminated")):
+        early_truncations.append({
+            "episode": episode.get("episode"),
+            "steps_completed": steps_completed,
+            "requested_steps": requested_steps,
+            "first_done": first_done,
+        })
+if early_truncations:
+    raise SystemExit("Eval truncated before requested horizon: " + json.dumps(early_truncations[:3], sort_keys=True))
 print("YAM RGB DP eval metrics passed")
 print(json.dumps({
     "episodes_completed": summary.get("episodes_completed"),

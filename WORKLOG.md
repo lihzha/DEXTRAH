@@ -11917,3 +11917,23 @@ Smoke follow-up:
   error from the current 500-demo image policy, possibly worsened by one-step
   observation and limited reset/context coverage rather than an immediate
   camera or action-scale bug.
+
+## 2026-06-26 01:05 PDT - YAM RGB Eval Horizon Override
+
+- The first long-horizon smoke (`1046681`,
+  `yam_pickplace_rgb_dp_20k_eval_longhorizon_camparity_20260626T075427Z`)
+  requested `NUM_STEPS=2400` and `VIDEO_LENGTH=2400`, but still stopped after
+  `719` steps with `first_done.truncated=true`. This exposed a real eval
+  horizon bug: the single-YAM policy-grasp task config keeps
+  `episode_length_s=12.0`, which is only about `720` control steps at 60 Hz.
+  The wrapper's requested horizon did not override the task max episode length.
+- Patched `eval_yam_pickplace_rgb_dp_policy.py` to set eval-only
+  `env_cfg.episode_length_s` from `num_steps * sim.dt * decimation`, with a
+  small step margin, before environment construction. The summary now records
+  the original and effective episode length. Patched the L40 eval wrapper to
+  fail if an episode ends early due to pure truncation before the requested
+  horizon, so this cannot silently pass as "metrics passed" again.
+- Cheap checks passed:
+  `python3 -m py_compile dextrah_lab/rl_games/eval_yam_pickplace_rgb_dp_policy.py`,
+  `bash -n cluster/sbatch_eval_yam_pickplace_rgb_dp_policy_1gpu.sh cluster/submit_yam_rgb_dp_checkpoint_eval_monitor_l401.sh`,
+  and `git diff --check`.
