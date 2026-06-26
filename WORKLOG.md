@@ -11789,3 +11789,65 @@ Smoke follow-up:
   (`gripper=-0.986`) with tiny pose motion, so the remaining issue is likely
   observation support at the eval reset state, robot-state/action schema drift,
   or controller-frame mismatch rather than a blank scene-camera frame.
+- Visualized eval policy-input observations by composing the saved debug
+  scene/wrist PNGs from job `1046183` into
+  `/home/lzha/code/cluster_results/l401/yam_pickplace_rgb_dp_phasegrip2_trimstart_20k_eval_capturefix_20260626T061437Z/eval_policy_obs_scene_wrist_debug.mp4`.
+  The reset frame is visually valid, but a YAM-specific train/eval support audit
+  found a concrete proprio mismatch: trimmed training starts have
+  `left_finger/right_finger` joint positions around `-0.0474`, while the eval
+  default pose had both finger joints at `0.0`. Since the RGB policy receives
+  the raw 24D robot state (`qpos`, `qvel`, `tcp_pos`, `tcp_quat`,
+  `gripper_width`), this is an out-of-support input even if the rendered
+  gripper appears open and the scalar `gripper_width` is near the training
+  value.
+- Patched eval and its L40 wrapper so `YAM_DEFAULT_FINGER_QPOS` defaults to the
+  task's open joint position `-0.0475`, matching the data collection starts.
+  Local checks passed:
+  `/home/lzha/code/.venvs/dextrah-isaaclab/bin/python -m py_compile dextrah_lab/rl_games/eval_yam_pickplace_rgb_dp_policy.py`
+  and `bash -n cluster/sbatch_eval_yam_pickplace_rgb_dp_policy_1gpu.sh`.
+  Commit: `caaf656c621a8b144be40547f0a5a1e14cd09f99`.
+- Deployed commit `caaf656c621a8b144be40547f0a5a1e14cd09f99` to the L40
+  worktree via Git bundle and launched corrected eval job `1046539` with
+  `YAM_DEFAULT_FINGER_QPOS=-0.0475`, one 720-step episode, quality rendering,
+  video capture, and scene/wrist debug observations every 40 steps. Run:
+  `yam_pickplace_rgb_dp_phasegrip2_trimstart_20k_eval_openfinger_20260626T072245Z`.
+  Result directory:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/evals/yam_pickplace_rgb_dp_phasegrip2_trimstart_20k_eval_openfinger_20260626T072245Z`.
+- Cancelled job `1046539` after it spent startup time scanning the full
+  Objaverse pool because the filtered manifest override was missing. Relaunched
+  the same open-finger eval as job `1046545` with
+  `YAM_POLICY_OBJECT_ASSET_MANIFEST_PATH=/results/yam_demos/yam_single_object_center_y_dynamic_500_20260625T165831Z/yam_objaverse_pool_manifest.json`,
+  `YAM_POLICY_MAX_OBJECTS=120`, and
+  `YAM_POLICY_OBJECT_VALIDATE_USD_BOUNDS=False`. Run:
+  `yam_pickplace_rgb_dp_phasegrip2_trimstart_20k_eval_openfinger_filtered_20260626T072454Z`.
+- Job `1046545` completed `0:0` on `pool0-00014` in `00:03:24`. It produced a
+  1280x720, 719-frame quality-render eval video and 19 direct policy-input
+  scene/wrist debug frames. Local artifacts:
+  `/home/lzha/code/cluster_results/l401/yam_pickplace_rgb_dp_phasegrip2_trimstart_20k_eval_openfinger_filtered_20260626T072454Z/videos/yam-pickplace-rgb-dp-eval-step-0.mp4`,
+  `/home/lzha/code/cluster_results/l401/yam_pickplace_rgb_dp_phasegrip2_trimstart_20k_eval_openfinger_filtered_20260626T072454Z/eval_policy_obs_scene_wrist_debug.mp4`,
+  and
+  `/home/lzha/code/cluster_results/l401/yam_pickplace_rgb_dp_phasegrip2_trimstart_20k_eval_openfinger_filtered_20260626T072454Z/metrics.json`.
+  `viz-open` URLs were created for all three artifacts.
+- Corrected eval still failed behaviorally: `episode_success_rate=0.0`, max
+  lift `6.407499313354492e-07`, minimum hold-to-object distance
+  `0.2743546962738037`, and no grasp success. Visual inspection of the direct
+  scene/wrist observations confirmed both cameras are live and the scene view
+  contains the object and bin throughout; full rollout keyframes show the object
+  stays on the table and the robot only reaches the lower/right image edge late
+  in the rollout.
+- Ran a mmap support audit of the 500 trimmed training shards against the
+  corrected eval. The policy surface now matches: `scene_rgb`, `wrist_rgb`,
+  24D `robot_state`, 7D action, `n_obs_steps=1`, no phase/progress input, and no
+  privileged object/bin state. Training shard action support was
+  `dx [-0.0827, 0.2461]`, `dy [-0.0779, 0.2887]`, `dz [-0.1561, 0.1242]`,
+  `droll [-0.2299, 0.1768]`, `dpitch [-0.1808, 0.1264]`,
+  `dyaw [-0.2095, 0.3062]`, `gripper [-1, 1]`; the corrected eval action
+  extrema all fall inside those ranges. Corrected default arm qpos is inside
+  first-row train support, and finger qpos `-0.0475` is inside the full train
+  range and only about `1e-5` below the strict first-row minimum due settled
+  reset noise. The previous `0.0` finger reset was the concrete eval-train
+  mismatch; after the patch, no remaining obvious schema/action-range mismatch
+  was found. Remaining likely issue is closed-loop generalization/compounding
+  error from the current 500-demo image policy, possibly worsened by one-step
+  observation and limited reset/context coverage rather than an immediate
+  camera or action-scale bug.
