@@ -109,6 +109,8 @@ def _convert_one(
     compress: bool,
     output_format: str,
     gripper_label_source: str,
+    trim_initial_static_pose_threshold: float,
+    trim_initial_static_keep_steps: int,
 ) -> dict[str, Any]:
     src = Path(str(row["dataset"])).expanduser()
     if not src.is_file():
@@ -158,11 +160,36 @@ def _convert_one(
         )
         if robot_state.shape[0] != action.shape[0]:
             raise ValueError(f"{src}: robot/action length mismatch {robot_state.shape} vs {action.shape}")
+        trim_start = 0
+        trim_threshold = float(trim_initial_static_pose_threshold)
+        if trim_threshold > 0.0:
+            pose_norm = np.linalg.norm(action[:, :6], axis=1)
+            moving = np.flatnonzero(pose_norm > trim_threshold)
+            if moving.size:
+                trim_start = max(0, int(moving[0]) - max(int(trim_initial_static_keep_steps), 0))
+            else:
+                trim_start = 0
+            if trim_start > 0:
+                scene_rgb = scene_rgb[trim_start:]
+                wrist_rgb = wrist_rgb[trim_start:]
+                robot_state = robot_state[trim_start:]
+                action = action[trim_start:]
+                if phases is not None:
+                    phases = phases[trim_start:]
+                if action.shape[0] <= 0:
+                    raise ValueError(f"{src}: trimming removed all rows")
         metadata = {
             "source_dataset": str(src),
             "source_row": row,
             "policy_inputs": ["scene_rgb", "wrist_rgb", "robot_state"],
             "excluded_inputs": ["phase", "progress", "object_state", "bin_state", "target_state", "privileged_obs"],
+            "trim": {
+                "initial_static_pose_threshold": trim_threshold,
+                "initial_static_keep_steps": int(trim_initial_static_keep_steps),
+                "start_row": int(trim_start),
+                "original_num_steps": int(row_ids.shape[0]),
+                "num_steps": int(action.shape[0]),
+            },
             "action_convention": {
                 "position_scale": list(YAM_ACTION_CONVENTION.position_scale),
                 "rotation_scale": list(YAM_ACTION_CONVENTION.rotation_scale),
@@ -245,6 +272,22 @@ def main() -> None:
             "segments where measured gripper width lags or remains contact-limited."
         ),
     )
+    parser.add_argument(
+        "--trim_initial_static_pose_threshold",
+        type=float,
+        default=0.0,
+        help=(
+            "If positive, drop initial rows before the first pose-action norm above "
+            "this threshold. This removes reset/start waits that can deadlock "
+            "n_obs_steps=1 policies without phase/progress inputs."
+        ),
+    )
+    parser.add_argument(
+        "--trim_initial_static_keep_steps",
+        type=int,
+        default=0,
+        help="Number of rows to keep before the first above-threshold initial pose action.",
+    )
     args = parser.parse_args()
 
     output_dir = args.output_dir.expanduser().resolve()
@@ -263,6 +306,8 @@ def main() -> None:
                 compress=compress,
                 output_format=args.output_format,
                 gripper_label_source=args.gripper_label_source,
+                trim_initial_static_pose_threshold=float(args.trim_initial_static_pose_threshold),
+                trim_initial_static_keep_steps=int(args.trim_initial_static_keep_steps),
             )
         )
     payload = {
@@ -273,6 +318,8 @@ def main() -> None:
         "robot_state_key": "robot_state",
         "action_key": "action",
         "gripper_label_source": str(args.gripper_label_source),
+        "trim_initial_static_pose_threshold": float(args.trim_initial_static_pose_threshold),
+        "trim_initial_static_keep_steps": int(args.trim_initial_static_keep_steps),
         "compressed": compress if args.output_format == "npz" else False,
         "storage": args.output_format,
         "shards": shards,

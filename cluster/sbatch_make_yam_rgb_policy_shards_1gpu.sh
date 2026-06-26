@@ -30,6 +30,8 @@ MANIFEST="${MANIFEST:-$RESULTS_NFS/dp_bc/yam_pickplace_rgb_policy/$RUN_NAME/mani
 MIN_SHARDS="${MIN_SHARDS:-1}"
 COMPRESS_SHARDS="${COMPRESS_SHARDS:-True}"
 OUTPUT_FORMAT="${OUTPUT_FORMAT:-npz}"
+TRIM_INITIAL_STATIC_POSE_THRESHOLD="${TRIM_INITIAL_STATIC_POSE_THRESHOLD:-0.0}"
+TRIM_INITIAL_STATIC_KEEP_STEPS="${TRIM_INITIAL_STATIC_KEEP_STEPS:-0}"
 CODE_COMMIT="${CODE_COMMIT:-}"
 
 host_path_from_container() {
@@ -86,6 +88,7 @@ mkdir -p \
   "$CACHE_NFS/data" "$CACHE_NFS/documents"
 
 export ACCEPTED_JSONL_ARG OUTPUT_DIR_ARG MANIFEST_ARG ENV_NAME COMPRESS_SHARDS OUTPUT_FORMAT
+export TRIM_INITIAL_STATIC_POSE_THRESHOLD TRIM_INITIAL_STATIC_KEEP_STEPS
 
 echo "Building YAM RGB policy shards"
 echo "SLURM_JOB_ID=$SLURM_JOB_ID_SAFE"
@@ -101,6 +104,8 @@ echo "MANIFEST_ARG=$MANIFEST_ARG"
 echo "MIN_SHARDS=$MIN_SHARDS"
 echo "COMPRESS_SHARDS=$COMPRESS_SHARDS"
 echo "OUTPUT_FORMAT=$OUTPUT_FORMAT"
+echo "TRIM_INITIAL_STATIC_POSE_THRESHOLD=$TRIM_INITIAL_STATIC_POSE_THRESHOLD"
+echo "TRIM_INITIAL_STATIC_KEEP_STEPS=$TRIM_INITIAL_STATIC_KEEP_STEPS"
 
 srun \
   --ntasks=1 \
@@ -133,6 +138,12 @@ srun \
       CMD+=(--no_compress)
     fi
     CMD+=(--output_format "$OUTPUT_FORMAT")
+    if [ "$TRIM_INITIAL_STATIC_POSE_THRESHOLD" != "0.0" ] && [ "$TRIM_INITIAL_STATIC_POSE_THRESHOLD" != "0" ]; then
+      CMD+=(
+        --trim_initial_static_pose_threshold "$TRIM_INITIAL_STATIC_POSE_THRESHOLD"
+        --trim_initial_static_keep_steps "$TRIM_INITIAL_STATIC_KEEP_STEPS"
+      )
+    fi
     printf "yam_rgb_shard_command="
     printf "%q " "${CMD[@]}"
     printf "\n"
