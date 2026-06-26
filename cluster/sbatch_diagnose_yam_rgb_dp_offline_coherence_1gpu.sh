@@ -138,7 +138,7 @@ srun \
     done
 
     CMD=(
-      python3 /code/dextrah_lab/offline_dp_bc/diagnose_yam_rgb_dp_offline_coherence.py
+      /isaac-sim/python.sh /code/dextrah_lab/offline_dp_bc/diagnose_yam_rgb_dp_offline_coherence.py
       --checkpoint "$CHECKPOINT_ARG"
       --manifest "$MANIFEST_ARG"
       --output-dir "$OUTPUT_DIR_ARG"
