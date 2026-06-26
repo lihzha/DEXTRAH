@@ -117,6 +117,7 @@ task:
     image_keys: [scene_rgb, wrist_rgb]
     robot_state_key: robot_state
     obs_robot_state_name: robot_state
+    normalizer_checkpoint: null
   env_runner:
     _target_: dextrah_lab.offline_dp_bc.dp_dataset.NoopImageRunner
     metric_prefix: test

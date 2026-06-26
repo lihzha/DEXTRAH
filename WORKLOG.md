@@ -11590,3 +11590,17 @@ Smoke follow-up:
   `yam_pickplace_rgb_dp.yaml` and the training wrapper default to
   `rollout_every=1`; the Noop runner is cheap and should run every epoch when
   checkpointing every epoch.
+- Local fix commit: `c90d736e156dc2572cb9f0d17f49199b121070e0`. A100
+  code-only fix commit: `d895d9722608dde0aebd6f3f1aecac45bc84db92`.
+- Relaunched A100 candidate training job `29507505` from the failed run's
+  `official_dp_train/checkpoints/latest.ckpt`. Run name:
+  `yam_pickplace_rgb_dp_500_mmap_20k_resume_20260626T0129Z`; config:
+  `NUM_EPOCHS=18`, `MAX_TRAIN_STEPS=1000`, `MAX_VAL_STEPS=50`, batch size `8`,
+  `ROLLOUT_EVERY=1`. Expected staged checkpoint:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/yam_pickplace_rgb_dp_500_mmap_20k_resume_20260626T0129Z/latest.ckpt`.
+- Resume job `29507505` failed before training because Hydra rejected the
+  wrapper's `task.dataset.normalizer_checkpoint=...` override; the
+  `YamRgbShardedDataset` constructor supports the parameter, but the structured
+  YAML config did not declare the key. Added
+  `task.dataset.normalizer_checkpoint: null` to
+  `yam_pickplace_rgb_dp.yaml` so resume can load the checkpoint normalizer.
