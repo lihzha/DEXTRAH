@@ -12066,3 +12066,37 @@ Smoke follow-up:
   `plank_flooring_02_diff_1k.png` table texture for this seed). Visual
   inspection of step 0 and step 120 debug observations showed tabletop-only
   scene RGB with object/bin visible and live wrist RGB.
+
+## 2026-06-26 05:04 PDT - First Fresh-Checkpoint Periodic Eval
+
+- The long A100 run crossed the first periodic eval threshold at 100k steps.
+  The l401 monitor correctly did not evaluate the stale 63,839-step checkpoint:
+  it logged `threshold_seen threshold=100000 step=100507` followed by repeated
+  `waiting_for_fresh_checkpoint` entries while `latest.ckpt` still had the old
+  mtime.
+- A fresh checkpoint landed at about `2026-06-26T11:29:44Z`, with the second
+  validation row at `global_step=107679` and improved `val_loss=0.01753971539437771`
+  (`test_mean_score=0.0`). The l401 monitor then submitted job `1047799` from
+  snapshot
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_horizonfix_20260626T080838Z/periodic_eval_snapshots/step_0109218.ckpt`.
+- Periodic eval job `1047799` completed successfully (`COMPLETED`, exit `0:0`).
+  It produced 3 episodes, 7200 total env steps, a 1280x720 60 FPS MP4 with
+  2400 frames, and side-by-side scene/wrist debug observations through step
+  2400 for each episode. Metrics confirm the long horizon was active
+  (`episode_length.after_s=40.03333333333333`), `scene_rgb` and `wrist_rgb`
+  were `[3, 256, 256]`, `robot_state` was 24D,
+  `phase_progress_in_policy=false`, and
+  `privileged_object_state_in_policy=false`. HDR dome texture and table texture
+  randomization were both enabled. Visual inspection of the first and final
+  debug frames showed valid tabletop-only scene RGB and live wrist RGB. The
+  policy still had `episode_success_rate=0.0` at this early checkpoint, with
+  max object lift around `6.5e-7`, so behavior remains an undertraining issue,
+  not an eval/train schema or horizon issue.
+- The first A100 allocation `29518087` timed out after advancing the JSON log to
+  `global_step=121896`, but the latest saved checkpoint was the epoch checkpoint
+  at `107679`. The submitter detected `TIMEOUT`, submitted replacement job
+  `29521783`, and the new job resumed cleanly from the saved checkpoint
+  (`global_step=107680+` tail rows). This wastes some in-epoch work because the
+  official Diffusion Policy image workspace only checkpoints at epoch end; I am
+  leaving the trainer code unchanged during the active run and monitoring saved
+  checkpoints/evals as the authoritative progress.
