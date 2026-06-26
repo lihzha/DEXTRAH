@@ -11699,3 +11699,16 @@ Smoke follow-up:
   Config: `NUM_EPOCHS=1`, `MAX_TRAIN_STEPS=20000`, `MAX_VAL_STEPS=200`,
   batch size `8`, `IMAGE_SIZE=256`, `n_obs_steps=1`. Staged checkpoint target:
   `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_20k_20260626T044711Z/latest.ckpt`.
+- Visualized the current trimmed 500-shard training data directly from the
+  `npy_dir` manifest with six sampled shards and a side-by-side scene/wrist
+  clip from shard `000123`. Remote artifact directory:
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/visualizations/yam_rgb_training_data_trimstart_20260626T0520Z`.
+  Local viewer artifacts:
+  `/home/lzha/code/cluster_results/a1001/yam_rgb_training_data_trimstart_20260626T0520Z/training_data_trimstart_contact_sheet.png`
+  and
+  `/home/lzha/code/cluster_results/a1001/yam_rgb_training_data_trimstart_20260626T0520Z/training_data_trimstart_shard000123_scene_wrist.mp4`.
+  Visual inspection: scene camera views are table-dominated with object/bin
+  visible at the start and little-to-no background; wrist views are valid but
+  can see table edge/blue floor near the bin during the later part of motion.
+  The sampled first-row pose action norms are nonzero (`0.011-0.026`), matching
+  the intended trim of the initial static warmup.
