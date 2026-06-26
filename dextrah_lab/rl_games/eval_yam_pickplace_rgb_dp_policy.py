@@ -75,6 +75,8 @@ parser.add_argument("--yam_gripper_damping_scale", type=float, default=0.25)
 parser.add_argument("--yam_gripper_effort_scale", type=float, default=5.0)
 parser.add_argument("--debug_obs_interval", type=int, default=0)
 parser.add_argument("--debug_obs_max_frames", type=int, default=120)
+parser.add_argument("--scene_rgb_capture_attempts", type=int, default=6)
+parser.add_argument("--scene_rgb_black_mean_threshold", type=float, default=3.0)
 parser.add_argument("--disable_fabric", action="store_true", default=False)
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
@@ -513,6 +515,56 @@ def _resize_rgb_nearest(frame: np.ndarray, height: int, width: int) -> np.ndarra
     return rgb[y_idx[:, None], x_idx[None, :], :].copy()
 
 
+def _render_scene_frame(gym_env: Any, task_env: Any) -> np.ndarray:
+    # Prefer the unwrapped env so observation capture is independent of the
+    # video wrapper's bookkeeping.
+    for renderer in (task_env, gym_env):
+        render_fn = getattr(renderer, "render", None)
+        if render_fn is None:
+            continue
+        frame = render_fn()
+        if frame is not None:
+            return _frame_array(frame)
+    raise RuntimeError("No scene renderer produced an RGB frame")
+
+
+def _capture_scene_rgb(
+    gym_env: Any,
+    task_env: Any,
+    scene_eye: tuple[float, float, float],
+    scene_target: tuple[float, float, float],
+) -> np.ndarray:
+    attempts = max(1, int(args_cli.scene_rgb_capture_attempts))
+    threshold = float(args_cli.scene_rgb_black_mean_threshold)
+    last_frame: np.ndarray | None = None
+    last_mean = 0.0
+    for attempt in range(attempts):
+        task_env.sim.set_camera_view(
+            eye=scene_eye,
+            target=scene_target,
+            camera_prim_path=task_env.cfg.viewer.cam_prim_path,
+        )
+        task_env.sim.render()
+        frame = _render_scene_frame(gym_env, task_env)
+        last_frame = frame
+        last_mean = float(np.asarray(frame[..., :3], dtype=np.float32).mean())
+        if threshold <= 0.0 or last_mean >= threshold:
+            if attempt > 0:
+                _stage("scene_rgb_capture_recovered", attempt=attempt + 1, mean=last_mean)
+            break
+        _stage("scene_rgb_capture_retry", attempt=attempt + 1, mean=last_mean)
+        task_env.sim.render()
+    if last_frame is None:
+        raise RuntimeError("Scene RGB capture failed without returning a frame")
+    if threshold > 0.0 and last_mean < threshold:
+        _stage("scene_rgb_capture_black_after_retries", attempts=attempts, mean=last_mean)
+    return _resize_rgb_nearest(
+        last_frame,
+        int(args_cli.image_height),
+        int(args_cli.image_width),
+    )
+
+
 def _save_debug_obs_frame(
     output_dir: Path,
     obs: dict[str, np.ndarray],
@@ -649,17 +701,7 @@ def _capture_obs(
     scene_eye: tuple[float, float, float],
     scene_target: tuple[float, float, float],
 ) -> dict[str, np.ndarray]:
-    task_env.sim.set_camera_view(
-        eye=scene_eye,
-        target=scene_target,
-        camera_prim_path=task_env.cfg.viewer.cam_prim_path,
-    )
-    task_env.sim.render()
-    scene_rgb = _resize_rgb_nearest(
-        _frame_array(gym_env.render()),
-        int(args_cli.image_height),
-        int(args_cli.image_width),
-    )
+    scene_rgb = _capture_scene_rgb(gym_env, task_env, scene_eye, scene_target)
     task_env.scene.write_data_to_sim()
     task_env.sim.render()
     wrist_camera.update(float(task_env.dt), force_recompute=True)

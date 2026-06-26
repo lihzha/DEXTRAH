@@ -11751,3 +11751,24 @@ Smoke follow-up:
   short textured eval with debug observations enabled, inspect video/metrics
   and the direct policy-input frames, then decide whether the remaining failure
   is camera/appearance support or action/control dynamics.
+- Deployed commit `4809fdf976e3d76e814f2936fd4c505d34d5c3b0` to the L40
+  eval worktree via Git bundle and launched L40 quality eval job `1046135`
+  (`yam_pickplace_rgb_dp_phasegrip2_trimstart_20k_eval_texture_debug_20260626T060807Z`)
+  with table texture overlay and direct scene/wrist debug observation PNGs.
+  The job completed `0:0` and wrote a 1280x720, 719-frame video plus 19 debug
+  observation frames. It still failed the task (`episode_success_rate=0.0`,
+  max lift `2.2351741790771484e-08`, minimum hold-to-object distance
+  `0.28251972794532776`).
+- Inspection of the debug observation PNGs found the immediate issue: the
+  reset and first-step policy observations had a black scene-camera half while
+  the wrist camera was valid. Later debug frames showed the scene camera
+  correctly, so this is a viewport/readback warmup problem at reset rather than
+  an absent camera or texture failure. The first action from this bad obs closed
+  the gripper (`-0.986`) and the policy never approached the object.
+- Patched `eval_yam_pickplace_rgb_dp_policy.py` to prefer the unwrapped env
+  render for policy scene RGB capture and retry scene frames whose mean RGB is
+  below a configurable black-frame threshold. Exposed
+  `SCENE_RGB_CAPTURE_ATTEMPTS` and `SCENE_RGB_BLACK_MEAN_THRESHOLD` in the L40
+  wrapper. Local checks passed:
+  `/home/lzha/code/.venvs/dextrah-isaaclab/bin/python -m py_compile dextrah_lab/rl_games/eval_yam_pickplace_rgb_dp_policy.py`
+  and `bash -n cluster/sbatch_eval_yam_pickplace_rgb_dp_policy_1gpu.sh`.
