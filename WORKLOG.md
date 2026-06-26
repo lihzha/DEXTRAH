@@ -12212,3 +12212,28 @@ Smoke follow-up:
   remaining issue is closed-loop state distribution/undertraining, so the next
   step is to continue the 2M-step training run and inspect the next periodic
   evals.
+
+## 2026-06-26 15:15 PDT - Source Replay Default-Pose Parity Check
+
+- I fetched one source replay trajectory and its matching mmap policy shard for
+  local inspection:
+  `/home/lzha/code/cluster_results/a1001/yam_rgb_parity_inspect/source_row_000000/trajectory_dataset.npz`
+  and
+  `/home/lzha/code/cluster_results/a1001/yam_rgb_parity_inspect/shard_000000`.
+  The source replay contains `scene_rgb`, `wrist_rgb`, `robot_state`, `action`,
+  `metadata_json`, and debug-only privileged arrays, while the training shard
+  contains only `scene_rgb`, `wrist_rgb`, `robot_state`, `action`, and
+  `episode_ends`.
+- The source replay row-0 `robot_state` begins with the requested default arm
+  pose `(0.0, 1.0, 1.0, -1.5, 0.0, 0.0)` and gripper state `0.1078`. After
+  trimming, the mmap shard row-0 `robot_state` is still near
+  `(0.0, 1.0, 1.0, -1.5, 0.0, 0.0)` with finger qpos near `-0.0475` and
+  gripper width about `0.1863`; the first action label is open (`action[6]=1`).
+  The 327k eval metrics report the same default pose via `robot_default_pose`.
+- The sampled replay metadata confirms the intended training-source scene:
+  `trajectory_object_count=1`, randomized `goal_bin` size/location/height,
+  randomized tabletop texture and lighting, scene camera jitter with
+  `xy_projection_axis="x"`, and a wrist D405 sensor on
+  `/World/envs/env_0/Robot/arm/link_6/wrist_d405_policy_sensor`. This closes
+  the remaining obvious default-pose/source-scene parity check; I am continuing
+  the long training run and periodic eval monitoring.
