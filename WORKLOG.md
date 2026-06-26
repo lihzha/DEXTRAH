@@ -3,6 +3,72 @@
 Append-only project worklog for the DextrAH privileged FGP teacher training
 thread. This follows the `robotics-cluster-development-core` worklog contract.
 
+## 2026-06-26 08:15 PDT - YAM RGB Eval/Train Parity And Long Training Setup
+
+Goal:
+- Before scaling RGB Diffusion Policy training, audit remaining train/eval
+  mismatches, make eval rollouts longer, and prepare a resumable long-training
+  plus periodic-eval workflow.
+
+Hypothesis:
+- The previous corrected eval still failed partly because the current model is
+  undertrained, but horizon and subtle eval-camera drift should be fixed before
+  spending multi-day A100 time.
+
+Evidence / Audit:
+- The current trim-start checkpoint run
+  `yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_20k_20260626T044711Z`
+  trained to global step `19999` in A100 job `29515669`; elapsed time was
+  `00:59:30`, final `val_loss=0.0258500334`, and final
+  `train_action_mse_error=0.0706115216`.
+- Parsed all `500` training shard metadata rows from
+  `yam_rgb_policy_shards_500_mmap_phasegrip2_trimstart_20260626T042729Z`.
+  Actual post-stable-restore train distribution:
+  - goal bin center y: min/mean/max `0.10006 / 0.18365 / 0.25976`
+  - goal bin center x: min/mean/max `-0.31946 / -0.22282 / -0.12010`
+  - object center: fixed `(-0.28, -0.10)`
+  - scene camera eye y and target y are equal per episode; projection axis is
+    `x`
+  - table texture and tabletop surround are enabled for all rows; background
+    walls are disabled for all rows.
+- Therefore eval's object/bin ranges are aligned with the actual training data.
+  The wider replay-wrapper pre-restore bin y range is not the policy-observed
+  distribution because stable-scene restore overwrites it.
+- Found one remaining concrete eval/train mismatch: eval jittered scene camera
+  eye and target y independently, while training uses shared y jitter to keep
+  the camera optical-axis projection parallel to table x.
+
+Change:
+- Patched `eval_yam_pickplace_rgb_dp_policy.py` to use shared-y scene camera
+  jitter when the base eye/target y coordinates match, matching the replay data
+  path's `xy_projection_axis="x"` behavior.
+- Added eval metrics fields for `scene_camera_jitter`, `action_chunk_steps`,
+  `num_inference_steps`, and `num_action_samples`.
+- Increased YAM RGB eval wrapper defaults from `720` to `2400` steps and video
+  frames.
+- Changed YAM RGB training wrapper default `MAX_TRAIN_STEPS` to `2,000,000`
+  and added `TOPK_CHECKPOINTS` so epoch checkpoints can be retained for
+  periodic eval.
+- Added `cluster/submit_yam_rgb_dp_long_train_a100.sh`, a non-array submitter
+  that relaunches/resumes the short-allocation A100 training wrapper until the
+  target step is reached.
+- Added `cluster/submit_yam_rgb_dp_checkpoint_eval_monitor_l401.sh`, a non-array
+  L40 monitor that snapshots stable checkpoints and submits periodic quality
+  eval jobs with long horizon.
+
+Validation:
+- `bash -n` passed for the touched train/eval wrappers and both new submitters.
+- `python3 -m py_compile dextrah_lab/rl_games/eval_yam_pickplace_rgb_dp_policy.py`
+  passed.
+- `git diff --check` passed.
+
+Next:
+- Commit and deploy this source to agent-owned A100/L40 worktrees.
+- Run a corrected long-horizon eval smoke on the existing 20k checkpoint to
+  verify the scene camera parity metadata and video length.
+- Launch the resumable long training from the 20k checkpoint and start the L40
+  periodic eval monitor.
+
 ## 2026-06-25 00:20 PDT - YAM Qpos And Dynamic Replay Correction
 
 Goal:

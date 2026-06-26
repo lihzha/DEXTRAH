@@ -461,6 +461,48 @@ def _jitter_vec(
     return tuple(float(b + rng.uniform(-abs(j), abs(j))) for b, j in zip(base, jitter, strict=True))
 
 
+def _jitter_scene_camera(
+    rng: np.random.Generator,
+) -> tuple[tuple[float, float, float], tuple[float, float, float], dict[str, Any]]:
+    eye = tuple(float(v) for v in args_cli.camera_eye)
+    target = tuple(float(v) for v in args_cli.camera_target)
+    preserve_x_axis_projection = (
+        abs(float(eye[1]) - float(target[1])) < 1.0e-6
+        and abs(float(DEFAULT_SCENE_CAMERA_EYE[1]) - float(DEFAULT_SCENE_CAMERA_TARGET[1])) < 1.0e-6
+    )
+    if preserve_x_axis_projection:
+        eye_jitter = tuple(float(v) for v in args_cli.scene_camera_eye_jitter)
+        target_jitter = tuple(float(v) for v in args_cli.scene_camera_target_jitter)
+        shared_y_radius = min(abs(eye_jitter[1]), abs(target_jitter[1]))
+        shared_y_jitter = float(rng.uniform(-shared_y_radius, shared_y_radius))
+        eye = (
+            float(eye[0]) + float(rng.uniform(-abs(eye_jitter[0]), abs(eye_jitter[0]))),
+            float(eye[1]) + shared_y_jitter,
+            float(eye[2]) + float(rng.uniform(-abs(eye_jitter[2]), abs(eye_jitter[2]))),
+        )
+        target = (
+            float(target[0]) + float(rng.uniform(-abs(target_jitter[0]), abs(target_jitter[0]))),
+            float(target[1]) + shared_y_jitter,
+            float(target[2]) + float(rng.uniform(-abs(target_jitter[2]), abs(target_jitter[2]))),
+        )
+        summary = {
+            "eye_jitter": [float(v) for v in args_cli.scene_camera_eye_jitter],
+            "target_jitter": [float(v) for v in args_cli.scene_camera_target_jitter],
+            "xy_projection_axis": "x",
+            "shared_y_jitter": shared_y_jitter,
+        }
+    else:
+        eye = _jitter_vec(rng, eye, args_cli.scene_camera_eye_jitter)
+        target = _jitter_vec(rng, target, args_cli.scene_camera_target_jitter)
+        summary = {
+            "eye_jitter": [float(v) for v in args_cli.scene_camera_eye_jitter],
+            "target_jitter": [float(v) for v in args_cli.scene_camera_target_jitter],
+            "xy_projection_axis": "free",
+            "shared_y_jitter": None,
+        }
+    return eye, target, summary
+
+
 def _configure_camera(env_cfg: Any, scene_eye: tuple[float, float, float], scene_target: tuple[float, float, float], task_env: Any | None = None) -> None:
     if hasattr(env_cfg, "viewer"):
         env_cfg.viewer.eye = tuple(float(v) for v in scene_eye)
@@ -877,8 +919,7 @@ def main() -> None:
         raise ValueError("--num_episodes must be positive")
 
     rng = np.random.default_rng(int(args_cli.seed))
-    scene_eye = _jitter_vec(rng, args_cli.camera_eye, args_cli.scene_camera_eye_jitter)
-    scene_target = _jitter_vec(rng, args_cli.camera_target, args_cli.scene_camera_target_jitter)
+    scene_eye, scene_target, scene_camera_jitter_summary = _jitter_scene_camera(rng)
     env_cfg = parse_env_cfg(
         args_cli.task,
         device=args_cli.device,
@@ -902,6 +943,7 @@ def main() -> None:
         num_episodes=int(args_cli.num_episodes),
         num_steps=int(args_cli.num_steps),
         scene_camera={"eye": [float(v) for v in scene_eye], "target": [float(v) for v in scene_target]},
+        scene_camera_jitter=scene_camera_jitter_summary,
         image_shape=[int(args_cli.image_height), int(args_cli.image_width), 3],
         robot_default_pose=pose_summary,
         gripper_gain_scales=gain_summary,
@@ -1088,6 +1130,7 @@ def main() -> None:
         "phase_progress_in_policy": False,
         "wrist_camera": wrist_camera_summary,
         "scene_camera": {"eye": [float(v) for v in scene_eye], "target": [float(v) for v in scene_target]},
+        "scene_camera_jitter": scene_camera_jitter_summary,
         "object_asset_overrides": object_asset_summary,
         "scene_randomization": randomization_summary,
         "appearance": appearance_summary,
@@ -1095,6 +1138,9 @@ def main() -> None:
         "gripper_gain_scales": gain_summary,
         "num_episodes_requested": int(args_cli.num_episodes),
         "num_steps_requested": int(args_cli.num_steps),
+        "action_chunk_steps": int(args_cli.action_chunk_steps),
+        "num_inference_steps": int(args_cli.num_inference_steps),
+        "num_action_samples": int(args_cli.num_action_samples),
         "episode_success_rate": sum(success_flags) / len(success_flags) if success_flags else None,
         "episodes_completed": int(len(episode_summaries)),
         "steps_completed": int(len(step_metrics)),
