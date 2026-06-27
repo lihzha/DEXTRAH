@@ -994,3 +994,17 @@
   visual inspection shows the object/bin/table fill the scene view with no
   visible background. Continue training; current failures are policy behavior,
   not visual artifact or horizon/schema mismatch.
+
+## 2026-06-27T19:26:00Z A100 Timeout And Resume From 809k
+
+- A100 job `29547249` timed out after unsaved rows up to
+  `global_step=831210`. The latest durable checkpoint remained the 809k
+  checkpoint from `2026-06-27T18:35:42Z` with validation
+  `global_step=809111`, `val_loss=0.007627719081938267`.
+- The submitter stayed alive and launched replacement job `29550010` at
+  `2026-06-27T19:22:02Z` on `batch-block7-03313`.
+- Verified fresh training rows restarted from the durable checkpoint, not from
+  the unsaved timeout tail: after startup the log appended
+  `global_step=809209+` through `809228` at the inspection check, with latest
+  validation still `global_step=809111`. Continue monitoring toward the 900k
+  threshold.
