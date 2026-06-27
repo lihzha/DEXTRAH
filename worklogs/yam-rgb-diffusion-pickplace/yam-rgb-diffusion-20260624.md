@@ -756,3 +756,33 @@
   into tiny pose deltas without reaching or lifting the object. This looks like
   continued undertraining/closed-loop weakness rather than a camera/schema or
   eval-horizon bug.
+
+## 2026-06-27T06:10:08Z 504k Offline Coherence Diagnostic
+
+- Launched a short A100 offline coherence diagnostic for the exact checkpoint
+  used by the 500k periodic eval:
+  job `29539184`, snapshot
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/checkpoints/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_horizonfix_20260626T080838Z/periodic_eval_snapshots/step_0504041.ckpt`,
+  manifest
+  `/lustre/fsw/portfolios/nvr/users/lzha/results/dextrah/dp_bc/yam_pickplace_rgb_policy/yam_rgb_policy_shards_500_mmap_phasegrip2_trimstart_20260626T042729Z/manifest.json`.
+- The diagnostic completed successfully on `batch-block1-2092` in `00:01:03`
+  and scored `112` stored dataset observations with the official DP checkpoint
+  loader and the same policy code path used by eval. Local artifacts were
+  fetched to
+  `/home/lzha/code/cluster_results/a1003/yam_rgb_dp_offline_diag_step0504041_20260627T060638Z/`;
+  viewer URL:
+  `http://localhost:8765/view?path=cluster_results/a1003/yam_rgb_dp_offline_diag_step0504041_20260627T060638Z/yam_rgb_offline_coherence_report.md`.
+- Summary: pose scale is aligned (`pred_first_pose_l2_mean=0.0308`,
+  `label_first_pose_l2_mean=0.0294`, `pose_l2_ratio_mean=1.046`), and gripper
+  sign match is `0.964`. By regime, close rows have predicted mean gripper
+  `-0.928` against label `-1.0`; open rows have predicted mean gripper
+  `0.927` against label `1.0`.
+- This makes a remaining train/eval plumbing bug unlikely for the 504k
+  checkpoint. The failed closed-loop behavior remains best explained by
+  undertraining/closed-loop distribution drift rather than image layout,
+  normalizer, action scale, checkpoint source, or gripper-sign mismatch.
+- Live state after the diagnostic: A100 long-train submitter PID `2013382` is
+  still active, job `29537920` is running on `batch-block5-02014`, and the
+  trainer is in epoch 6 at about `global_step=521041`. The L40 periodic eval
+  monitor PID `3139751` remains alive and is correctly waiting for the next
+  fresh checkpoint after the `600000` threshold.
