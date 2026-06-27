@@ -12266,3 +12266,86 @@ Smoke follow-up:
   `370716` checkpoint rather than from the unsaved timed-out step. The next
   important threshold remains `400000`, where the L40 eval monitor should wait
   for a fresh post-threshold checkpoint before rendering.
+
+## 2026-06-26 18:45 PDT - 416k Long-Horizon Eval And 4-Sample Diagnostic Launch
+
+- A fresh post-400k checkpoint landed at `global_step=414555` with
+  `val_loss=0.009068747982382774`, the best validation loss so far. The
+  periodic monitor correctly waited for a checkpoint with mtime newer than the
+  400k threshold crossing, then submitted l401 eval job `1051510` from snapshot
+  `step_0416608.ckpt`.
+- Eval job `1051510` completed successfully on `pool0-00013` in `00:25:05`.
+  The fetched artifacts are under
+  `/home/lzha/code/cluster_results/l401/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_horizonfix_20260626T080838Z_periodic_eval_step0416608`.
+  The simulator MP4 is `1280x720`, `60 FPS`, `2400` frames, and `40.0s`;
+  the policy observation side-by-side clip is `1024x568`, `36` frames, and
+  `9.0s`.
+- Metrics confirm the long eval horizon and no privileged eval/train input
+  mismatch: `episodes_completed=3`, `steps_completed=7200`,
+  `num_steps_requested=2400`, `episode_length.after_s=40.03333333333333`,
+  policy observation schema `scene_rgb=[3,256,256]`, `wrist_rgb=[3,256,256]`,
+  `robot_state=24`, `phase_progress_in_policy=false`, and
+  `privileged_object_state_in_policy=false`. Table texture randomization and
+  HDR dome light texture randomization were both enabled for the eval.
+- Behavior remains unsuccessful at 416k: `episode_success_rate=0.0`, no done
+  or truncation in any episode, and max object lift is only numerical noise
+  (`6.5e-7 m`, `6.4e-7 m`, `5.2e-8 m`). Action traces are bounded and not
+  sign-flipped: episode 0 hard-closes from step 25, episode 1 stays open, and
+  episode 2 hard-closes from step 545; all three decay to tiny pose corrections
+  late in the horizon. Visual inspection of the scene/wrist debug frames shows
+  live cameras, object/bin visible from the scene camera, and no black-frame
+  issue. This still points to closed-loop policy quality / undertraining or
+  stochastic sampling variance rather than an obvious eval/train plumbing bug.
+- I launched one additional deterministic 4-sample averaged diagnostic eval on
+  the same 416k snapshot to test sampling variance:
+  l401 job `1051627`,
+  run
+  `yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_horizonfix_20260626T080838Z_eval_step0416608_seed42_4sample_20260627T014456Z`,
+  `NUM_ACTION_SAMPLES=4`, `POLICY_SAMPLE_SEED=42`, `NUM_STEPS=2400`,
+  `NUM_EPISODES=3`, and the same object/bin/camera/texture settings as the
+  periodic eval.
+- The A100 trainer remains active as job `29534729`; it has reached about
+  `global_step=431k` with finite loss. The latest durable checkpoint remains
+  `414555`; continue monitoring toward the next fresh checkpoint after the
+  500k threshold.
+
+## 2026-06-26 19:35 PDT - 416k 4-Sample Diagnostic Completion
+
+- The deterministic 4-sample averaged l401 diagnostic eval job `1051627`
+  completed successfully on `pool0-00013` in `00:46:24`. Fetched artifacts are
+  under
+  `/home/lzha/code/cluster_results/l401/yam_pickplace_rgb_dp_eval_step0416608_seed42_4sample_20260627T014456Z`.
+  The simulator rollout video is `1280x720`, `60 FPS`, `2400` frames, and
+  `40.0s`; the generated policy-observation side-by-side clip is `1024x568`,
+  `4 FPS`, `36` frames, and `9.0s`. I also generated
+  `obs_debug_grid_selected.png` for direct scene/wrist frame inspection.
+- Metrics match the intended long-horizon, no-privileged-input eval:
+  `num_action_samples=4`, `episodes_completed=3`, `steps_completed=7200`,
+  `num_steps_requested=2400`, `scene_rgb=[3,256,256]`,
+  `wrist_rgb=[3,256,256]`, `robot_state=24`,
+  `phase_progress_in_policy=false`, and
+  `privileged_object_state_in_policy=false`.
+- The 4-sample diagnostic did not improve behavior. `episode_success_rate=0.0`
+  for all 3 episodes; each ran the full 2400 steps with no done or truncation,
+  and max object lift stayed at numerical noise (`6.5e-7 m`, `6.4e-7 m`,
+  `5.2e-8 m`). The per-episode final gripper width was about `0.1078 m`, and
+  final object poses stayed on the tabletop.
+- The action trace shows a consistent early-close failure with averaged
+  diffusion samples: episode 0 first hard-close at step 33, episode 1 first
+  negative gripper at step 27 and first hard-close at step 33, and episode 2
+  first negative/hard-close at steps 26/33. Pose command norms are nonzero
+  early (`max` about `0.13`, `0.14`, `0.16`) and decay to tiny late corrections
+  (`last100` mean about `0.0010-0.0015`), so the policy is not blocked by eval
+  horizon; it closes early and then stalls without lifting.
+- Visual inspection of the selected frame grid confirms both camera streams
+  are live: the scene camera sees the randomized object and left bin with
+  almost no background, and the wrist stream sees the gripper/table. Across
+  all three episodes the object remains stationary on the table. This further
+  supports the current diagnosis: no obvious eval/train plumbing mismatch
+  remains; the failure is closed-loop policy quality / undertraining at this
+  checkpoint.
+- Current live state after the diagnostic: A100 job `29534729` is still running
+  at about `global_step=449k`, with finite loss and latest durable checkpoint
+  still `414555`. The l401 periodic eval monitor PID `3139751` remains alive
+  and has not launched the 500k eval yet because it is waiting for a fresh
+  checkpoint after the next threshold.
