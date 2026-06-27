@@ -1025,3 +1025,19 @@
   no active `yam_rgb_dp_eval` job. This is expected because the checkpoint is
   below the next `900000` step periodic-eval threshold. Continue monitoring for
   either the 900k checkpoint/eval handoff or an A100 timeout/relaunch.
+
+## 2026-06-27T23:17:00Z A100 Timeout And Resume From 853k
+
+- A100 job `29550010` timed out at `2026-06-27T23:12:39Z` after reaching an
+  unsaved tail of `global_step=877881`, `epoch=10`. No checkpoint newer than
+  the `852950` validation checkpoint was written before timeout.
+- The submitter remained alive and recorded:
+  `job_done job_id=29550010 state=TIMEOUT previous_step=831210 new_step=877881`,
+  then launched replacement job `29552222` at `2026-06-27T23:14:25Z` on
+  `batch-block7-03039`.
+- Verified replacement job `29552222` is running and resumed from the durable
+  checkpoint, not from the unsaved timeout tail: appended rows restarted at
+  `global_step=852976+` through `853018` during the verification check.
+- L40 eval ledger remains unchanged at row `8`, latest `step_0809686`, because
+  no post-900k checkpoint exists yet. Continue monitoring toward the 900k
+  threshold from job `29552222`.
