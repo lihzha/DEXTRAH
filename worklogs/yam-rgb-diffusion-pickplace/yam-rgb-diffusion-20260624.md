@@ -936,3 +936,18 @@
   background; failure is policy behavior, not rendering or camera coverage.
 - Continue the long training run toward the next 800k eval threshold while
   watching for A100 timeout/requeue from job `29544942`.
+
+## 2026-06-27T15:35:00Z A100 Timeout And Resume From 721k
+
+- A100 job `29544942` timed out after unsaved rows up to
+  `global_step=737191`. The latest durable checkpoint remained the 721k
+  checkpoint from `2026-06-27T14:53:55Z` with validation
+  `global_step=721432`, `val_loss=0.00905994325876236`.
+- The submitter stayed alive and launched replacement job `29547249` at
+  `2026-06-27T15:30:03Z` on `batch-block7-01718`
+  (`ExcNodeList=batch-block7-03023`). `scontrol show job` reports it running
+  with `TimeLimit=03:50:00`.
+- Verified fresh training rows restarted from the durable checkpoint rather
+  than the unsaved timeout tail: recent rows are `global_step=721999+` through
+  `722624` at the inspection check, with latest validation still
+  `global_step=721432`. Continue monitoring toward the 800k threshold.
