@@ -1008,3 +1008,20 @@
   `global_step=809209+` through `809228` at the inspection check, with latest
   validation still `global_step=809111`. Continue monitoring toward the 900k
   threshold.
+
+## 2026-06-27T21:42:00Z A100 Checkpoint Below 900k Threshold
+
+- A100 job `29550010` remains running on `batch-block7-03313` and passed the
+  previous unsaved timeout tail. Live training reached
+  `global_step=853299`, `epoch=10`, after saving a new durable checkpoint.
+- New checkpoint files: `latest.ckpt` at `2026-06-27T21:38:52Z` and
+  `epoch=0009-test_mean_score=0.000.ckpt` at `2026-06-27T21:38:53Z`, both
+  `1606332835` bytes.
+- Validation for this checkpoint: `global_step=852950`, `epoch=9`,
+  `val_loss=0.009496203623712063`. This is worse than the best 809k validation
+  loss (`0.007627719081938267`), so continue training rather than selecting it
+  as a candidate.
+- The L40 periodic eval ledger remains at row `8`, latest `step_0809686`, with
+  no active `yam_rgb_dp_eval` job. This is expected because the checkpoint is
+  below the next `900000` step periodic-eval threshold. Continue monitoring for
+  either the 900k checkpoint/eval handoff or an A100 timeout/relaunch.
