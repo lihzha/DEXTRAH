@@ -900,3 +900,39 @@
   `step_0634735.ckpt` / job `1054027`, so it did not launch a below-threshold
   eval. Continue monitoring job `29544942` toward the 700k threshold and the
   next fresh post-threshold eval.
+
+## 2026-06-27T15:24:00Z 721k Periodic Eval Evidence
+
+- The trainer crossed the 700k threshold at `global_step=700321`. The L40
+  monitor correctly waited for a checkpoint newer than the 677k checkpoint.
+  A100 job `29544942` then wrote `epoch=0008-test_mean_score=0.000.ckpt` and
+  `latest.ckpt` at `2026-06-27T14:53:55Z` / `2026-06-27T14:53:56Z`.
+  Validation row: `global_step=721432`, `epoch=8`,
+  `val_loss=0.00905994325876236`.
+- The L40 periodic monitor submitted eval job `1054936` from snapshot
+  `step_0721648.ckpt` at `2026-06-27T14:54:39Z`; it ran on `pool0-00004` and
+  completed successfully. Fetched artifacts are under
+  `/home/lzha/code/cluster_results/l401/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_horizonfix_20260626T080838Z_periodic_eval_step0721648`.
+- Opened latest visualization artifacts:
+  rollout
+  `http://localhost:8765/view?path=cluster_results/l401/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_horizonfix_20260626T080838Z_periodic_eval_step0721648/videos/yam-pickplace-rgb-dp-eval-step-0.mp4`,
+  scene/wrist observation clip
+  `http://localhost:8765/view?path=cluster_results/l401/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_horizonfix_20260626T080838Z_periodic_eval_step0721648/videos/yam-pickplace-rgb-dp-eval-step-0-scene-wrist-obs.mp4`,
+  and observation grid
+  `http://localhost:8765/view?path=cluster_results/l401/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_horizonfix_20260626T080838Z_periodic_eval_step0721648/obs_ep000_grid.png`.
+  The rollout is `1280x720`, `60 FPS`, `2400` frames, and `40.0s`.
+- Metrics remain unsuccessful and have regressed in gripper behavior:
+  `episode_success_rate=0.0`, `episodes_completed=3`,
+  `steps_completed=7200`, `num_steps_requested=2400`, reward mean
+  `2.8776030362645786`, and no object lift. The action range shows gripper
+  commands stayed open throughout (`action_min` gripper `0.9944270849227905`,
+  `action_max` gripper `1.0`), unlike some earlier checkpoints that attempted
+  a close. Final gripper widths stayed open around `0.186 m` in all episodes.
+- Eval/train schema remains clean: `scene_rgb=[3,256,256]`,
+  `wrist_rgb=[3,256,256]`, `robot_state=24`,
+  `phase_progress_in_policy=false`, and
+  `privileged_object_state_in_policy=false`. Visual inspection confirms camera
+  framing is still good with table/object/bin filling the view and no visible
+  background; failure is policy behavior, not rendering or camera coverage.
+- Continue the long training run toward the next 800k eval threshold while
+  watching for A100 timeout/requeue from job `29544942`.
