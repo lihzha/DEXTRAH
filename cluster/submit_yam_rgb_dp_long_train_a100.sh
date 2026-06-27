@@ -22,6 +22,7 @@ SLURM_QUERY_FAILURE_RETRIES="${SLURM_QUERY_FAILURE_RETRIES:-5}"
 SBATCH_RETRIES="${SBATCH_RETRIES:-5}"
 SBATCH_RETRY_SECONDS="${SBATCH_RETRY_SECONDS:-60}"
 ADOPT_JOB_ID="${ADOPT_JOB_ID:-}"
+SBATCH_EXCLUDE="${SBATCH_EXCLUDE:-}"
 
 if [ -z "$CODE_COMMIT" ] && git -C "$CODE_NFS" rev-parse HEAD >/dev/null 2>&1; then
   CODE_COMMIT="$(git -C "$CODE_NFS" rev-parse HEAD)"
@@ -59,6 +60,7 @@ payload = {
     "max_submissions": int("$MAX_SUBMISSIONS"),
     "poll_seconds": int("$POLL_SECONDS"),
     "adopt_job_id": "$ADOPT_JOB_ID" or None,
+    "sbatch_exclude": "$SBATCH_EXCLUDE" or None,
 }
 Path("$CONFIG_JSON").write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 print(json.dumps({"event": "long_train_submitter_config_written", "path": "$CONFIG_JSON"}))
@@ -70,7 +72,7 @@ import json
 import sys
 from pathlib import Path
 path = Path(sys.argv[1])
-best = -1
+latest = -1
 if path.is_file():
     for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
         try:
@@ -78,8 +80,8 @@ if path.is_file():
         except json.JSONDecodeError:
             continue
         if "global_step" in row:
-            best = max(best, int(row["global_step"]))
-print(best)
+            latest = int(row["global_step"])
+print(latest)
 PY
 }
 
@@ -138,10 +140,16 @@ submit_train_job() {
   local out rc err
   while true; do
     err="$SUBMIT_DIR/sbatch_attempt_${attempt}.err"
+    sbatch_args=(
+      --parsable
+      --job-name="$JOB_NAME"
+    )
+    if [ -n "$SBATCH_EXCLUDE" ]; then
+      sbatch_args+=(--exclude="$SBATCH_EXCLUDE")
+    fi
     set +e
     out="$(
-      sbatch --parsable \
-        --job-name="$JOB_NAME" \
+      sbatch "${sbatch_args[@]}" \
         --export=ALL,CODE_NFS="$CODE_NFS",RESULTS_NFS="$RESULTS_NFS",RUN_NAME="$RUN_NAME",MANIFEST="$MANIFEST",INIT_CHECKPOINT="$init_arg",RESUME="$resume",NUM_EPOCHS="$NUM_EPOCHS",MAX_TRAIN_STEPS="$MAX_TRAIN_STEPS",TOPK_CHECKPOINTS="$TOPK_CHECKPOINTS" \
         "$WRAPPER" \
         2>"$err"

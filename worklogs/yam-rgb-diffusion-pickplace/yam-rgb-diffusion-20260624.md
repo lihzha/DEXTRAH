@@ -671,3 +671,25 @@
   `target/move_to_above_bin_scripted`; the converter close-phase allowlist only
   included `target/move_to_above_bin`. Added the scripted alias before training
   so labels keep the gripper closed through object transport to the bin.
+
+## 2026-06-27T03:49:14Z Long-Run Restart Robustness
+
+- Inherited long YAM RGB Diffusion Policy training run
+  `yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_horizonfix_20260626T080838Z`.
+  The latest durable checkpoint is epoch 5 at `global_step=458395`; the live
+  A100 job `29537791` on `batch-block7-03023` had only advanced to about
+  `global_step=460294` after roughly 20 minutes and `nvidia-smi` showed `0%`
+  GPU utilization, so the job is not likely to reach the next epoch checkpoint
+  before the short A100 wall time.
+- Eval/train audit remains clean: policy observations are `scene_rgb`,
+  `wrist_rgb`, and 24D `robot_state`; no phase/progress or privileged object
+  state is used. Periodic L40 eval monitor `3139751` has already run long
+  horizon evals at steps 109218, 240143, 327219, and 416608, with 2400-step
+  episodes and both camera streams.
+- Patched `cluster/submit_yam_rgb_dp_long_train_a100.sh` so progress tracking
+  uses the latest appended `logs.json.txt` record instead of the maximum
+  historical step. This avoids stale unsaved timeout rows causing a restarted
+  checkpoint resume to look like non-progress.
+- Added `SBATCH_EXCLUDE` support to the long-train submitter and recorded it in
+  `long_train_submitter_config.json`. Next step is to deploy this patch,
+  stop the old submitter/job, and relaunch excluding `batch-block7-03023`.
