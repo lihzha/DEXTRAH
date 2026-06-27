@@ -962,3 +962,35 @@
   L40 monitor and submitted-eval ledger remained unchanged, ending at
   `step_0721648.ckpt` / job `1054936`; no below-threshold eval was launched.
   Continue monitoring toward the next fresh post-800k eval.
+
+## 2026-06-27T19:07:00Z 809k Periodic Eval Evidence
+
+- The trainer crossed the 800k threshold at `global_step=800111`. The L40
+  monitor correctly waited for a checkpoint newer than the 765k checkpoint.
+  A100 job `29547249` then wrote `epoch=0009-test_mean_score=0.000.ckpt` and
+  `latest.ckpt` at `2026-06-27T18:35:42Z`. Validation row:
+  `global_step=809111`, `epoch=9`, `val_loss=0.007627719081938267`, the best
+  validation loss observed so far in this long run.
+- The L40 periodic monitor submitted eval job `1055852` from snapshot
+  `step_0809686.ckpt`; it ran on `pool0-00014` and completed successfully.
+  Fetched artifacts are under
+  `/home/lzha/code/cluster_results/l401/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_horizonfix_20260626T080838Z_periodic_eval_step0809686`.
+- Opened latest visualization artifacts:
+  rollout
+  `http://localhost:8765/view?path=cluster_results/l401/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_horizonfix_20260626T080838Z_periodic_eval_step0809686/videos/yam-pickplace-rgb-dp-eval-step-0.mp4`,
+  scene/wrist observation clip
+  `http://localhost:8765/view?path=cluster_results/l401/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_horizonfix_20260626T080838Z_periodic_eval_step0809686/videos/yam-pickplace-rgb-dp-eval-step-0-scene-wrist-obs.mp4`,
+  and observation grid
+  `http://localhost:8765/view?path=cluster_results/l401/yam_pickplace_rgb_dp_500_mmap_phasegrip2_trimstart_long2m_horizonfix_20260626T080838Z_periodic_eval_step0809686/obs_ep000_grid.png`.
+- Metrics remain unsuccessful: `episode_success_rate=0.0`,
+  `episodes_completed=3`, `steps_completed=7200`, `num_steps_requested=2400`,
+  reward mean `2.8673445861207116`, and no object lift. The gripper behavior
+  is still regressed relative to earlier checkpoints: action gripper stays open
+  throughout (`action_min` gripper `0.9941266775131226`, `action_max` gripper
+  `1.0`) and all final gripper widths are around `0.186 m`.
+- Eval/train schema remains clean and camera framing remains suitable:
+  `scene_rgb=[3,256,256]`, `wrist_rgb=[3,256,256]`, `robot_state=24`,
+  `phase_progress_in_policy=false`, `privileged_object_state_in_policy=false`;
+  visual inspection shows the object/bin/table fill the scene view with no
+  visible background. Continue training; current failures are policy behavior,
+  not visual artifact or horizon/schema mismatch.
