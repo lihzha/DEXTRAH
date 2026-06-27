@@ -786,3 +786,20 @@
   trainer is in epoch 6 at about `global_step=521041`. The L40 periodic eval
   monitor PID `3139751` remains alive and is correctly waiting for the next
   fresh checkpoint after the `600000` threshold.
+
+## 2026-06-27T07:12:56Z Epoch 6 Durable Checkpoint
+
+- A100 job `29537920` on `batch-block5-02014` reached the next durable save.
+  `epoch=0006-test_mean_score=0.000.ckpt` and `latest.ckpt` were written at
+  `2026-06-27T07:11:34Z` with size `1606332835` bytes.
+- Validation row: `global_step=546074`, `epoch=6`,
+  `val_loss=0.010338570922613144`. This is worse than the 502k validation
+  loss (`0.008938116021454334`) but finite; training continued into epoch 7
+  and was at about `global_step=546718` at the verification check.
+- The L40 periodic eval monitor PID `3139751` stayed idle, as intended, because
+  this checkpoint is below the next `600000` eval threshold. The submitted eval
+  ledger still ends at snapshot `step_0504041.ckpt` / l401 job `1052572`.
+- Next step: keep the A100 submitter PID `2013382` under supervision through
+  the current allocation's remaining wall time. It is unlikely to finish epoch
+  7 before timeout, so the expected healthy behavior is a timeout/relaunch from
+  the fresh `546074` checkpoint.
